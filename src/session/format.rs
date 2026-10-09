@@ -366,58 +366,37 @@ unsafe fn format_cb_session_active(mut ft: *mut format_tree) -> Option<CString> 
     Some(c"0".to_owned())
 }
 
-unsafe fn format_cb_session_activity_flag(mut ft: *mut format_tree) -> Option<CString> {
+/// Whether any winlink in the format's session carries `flag`, as tmux 3.8's
+/// session flag callbacks walk the whole session rather than its current
+/// winlink.
+unsafe fn format_session_winlink_flag(ft: *mut format_tree, flag: i32) -> Option<CString> {
     let format_session_owner = (*ft).s.upgrade();
     let format_session = format_session_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    if !format_session.is_null() {
-        wl = (*format_session).current_winlink();
-        if wl.is_alive() {
-            if wl.get_unchecked().flags & WINLINK_ACTIVITY != 0 {
-                return Some(c"1".to_owned());
-            }
-            return Some(c"0".to_owned());
-        }
+    if format_session.is_null() {
+        return None;
     }
-    None
+    let mut wl = winlinks_minmax(&(*format_session).windows, RB_NEGINF);
+    while wl.is_alive() {
+        if wl.get_unchecked().flags & flag != 0 {
+            return Some(c"1".to_owned());
+        }
+        wl = winlinks_next(wl.get_unchecked());
+    }
+    Some(c"0".to_owned())
 }
 
-unsafe fn format_cb_session_bell_flag(mut ft: *mut format_tree) -> Option<CString> {
-    let format_session_owner = (*ft).s.upgrade();
-    let format_session = format_session_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    if !format_session.is_null() {
-        wl = (*format_session).current_winlink();
-        if wl.is_alive() {
-            if wl.get_unchecked().flags & WINLINK_BELL != 0 {
-                return Some(c"1".to_owned());
-            }
-            return Some(c"0".to_owned());
-        }
-    }
-    None
+unsafe fn format_cb_session_activity_flag(ft: *mut format_tree) -> Option<CString> {
+    format_session_winlink_flag(ft, WINLINK_ACTIVITY)
 }
 
-unsafe fn format_cb_session_silence_flag(mut ft: *mut format_tree) -> Option<CString> {
-    let format_session_owner = (*ft).s.upgrade();
-    let format_session = format_session_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    if !format_session.is_null() {
-        wl = (*format_session).current_winlink();
-        if wl.is_alive() {
-            if wl.get_unchecked().flags & WINLINK_SILENCE != 0 {
-                return Some(c"1".to_owned());
-            }
-            return Some(c"0".to_owned());
-        }
-    }
-    None
+unsafe fn format_cb_session_bell_flag(ft: *mut format_tree) -> Option<CString> {
+    format_session_winlink_flag(ft, WINLINK_BELL)
+}
+
+unsafe fn format_cb_session_silence_flag(ft: *mut format_tree) -> Option<CString> {
+    format_session_winlink_flag(ft, WINLINK_SILENCE)
 }
 
 unsafe fn format_cb_session_attached(mut ft: *mut format_tree) -> Option<CString> {
