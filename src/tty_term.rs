@@ -90,7 +90,7 @@ pub(crate) unsafe fn tty_term_descriptions(
         })
 }
 
-static mut tty_term_codes: [tty_term_code_entry; 234] = [
+static mut tty_term_codes: [tty_term_code_entry; 236] = [
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
         name: c"acsc",
@@ -229,6 +229,10 @@ static mut tty_term_codes: [tty_term_code_entry; 234] = [
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
+        name: c"Dsesc",
+    },
+    tty_term_code_entry {
+        type_0: TTYCODE_STRING,
         name: c"Dsfcs",
     },
     tty_term_code_entry {
@@ -266,6 +270,10 @@ static mut tty_term_codes: [tty_term_code_entry; 234] = [
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
         name: c"Eneks",
+    },
+    tty_term_code_entry {
+        type_0: TTYCODE_STRING,
+        name: c"Enesc",
     },
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
@@ -1029,7 +1037,7 @@ static mut tty_term_codes: [tty_term_code_entry; 234] = [
     },
 ];
 pub unsafe fn tty_term_ncodes() -> u_int {
-    (::core::mem::size_of::<[tty_term_code_entry; 234]>() as usize)
+    (::core::mem::size_of::<[tty_term_code_entry; 236]>() as usize)
         .wrapping_div(::core::mem::size_of::<tty_term_code_entry>() as usize) as u_int
 }
 fn tty_term_strip(s: &CStr) -> CString {

@@ -800,9 +800,10 @@ pub unsafe fn tty_stop_tty(owner: &ClientRef) {
                 CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_DSBP).as_ptr()),
             );
         }
-        if terminal_term(tty).flags & TERM_VT100LIKE != 0 {
-            tty_raw(fd, c"\x1B[?7727l");
-        }
+        tty_raw(
+            fd,
+            CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_DSESC).as_ptr()),
+        );
         tty_raw(
             fd,
             CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_DSFCS).as_ptr()),
@@ -895,9 +896,7 @@ pub unsafe fn tty_update_features(owner: &ClientRef) {
         if options_get_number(global_options, c"focus-events") != 0 {
             tty_puts(tty, tty_term_string(terminal_term(tty), TTYC_ENFCS));
         }
-        if terminal_term(tty).flags & TERM_VT100LIKE != 0 {
-            tty_puts(tty, c"\x1B[?7727h");
-        }
+        tty_puts(tty, tty_term_string(terminal_term(tty), TTYC_ENESC));
     };
     server_redraw_client(owner);
     tty_invalidate(owner);

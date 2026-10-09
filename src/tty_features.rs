@@ -106,6 +106,12 @@ static tty_feature_focus: tty_feature = tty_feature {
     capabilities: Some(tty_feature_focus_capabilities),
     flags: 0 as ::core::ffi::c_int,
 };
+static tty_feature_appesc_capabilities: &[&CStr] = &[c"Enesc=\\E[?7727h", c"Dsesc=\\E[?7727l"];
+static tty_feature_appesc: tty_feature = tty_feature {
+    name: c"appesc",
+    capabilities: Some(tty_feature_appesc_capabilities),
+    flags: 0 as ::core::ffi::c_int,
+};
 static tty_feature_cstyle_capabilities: &[&CStr] = &[c"Ss=\\E[%p1%d q", c"Se=\\E[2 q"];
 static tty_feature_cstyle: tty_feature = tty_feature {
     name: c"cstyle",
@@ -184,9 +190,10 @@ static tty_feature_utf8: tty_feature = tty_feature {
     capabilities: None,
     flags: 0 as ::core::ffi::c_int,
 };
-static tty_features: [&tty_feature; 22] = {
+static tty_features: [&tty_feature; 23] = {
     [
         &tty_feature_256,
+        &tty_feature_appesc,
         &tty_feature_bpaste,
         &tty_feature_ccolour,
         &tty_feature_clipboard,
@@ -435,7 +442,7 @@ pub unsafe fn tty_default_features(owner: &ClientRef, name: &CStr) {
         C2RustUnnamed_35 {
             name: c"mintty",
             version: 0,
-            features: c"256,RGB,bpaste,clipboard,mouse,strikethrough,title,ccolour,cstyle,extkeys,margins,overline,usstyle",
+            features: c"256,RGB,bpaste,clipboard,mouse,strikethrough,title,appesc,ccolour,cstyle,extkeys,margins,overline,usstyle",
         },
         C2RustUnnamed_35 {
             name: c"tmux",
@@ -460,12 +467,12 @@ pub unsafe fn tty_default_features(owner: &ClientRef, name: &CStr) {
         C2RustUnnamed_35 {
             name: c"WezTerm",
             version: 0,
-            features: c"256,RGB,bpaste,clipboard,mouse,strikethrough,title,ccolour,cstyle,extkeys,focus,hyperlinks,usstyle",
+            features: c"256,RGB,bpaste,clipboard,mouse,strikethrough,title,ccolour,cstyle,extkeys,focus,hyperlinks,margins,usstyle",
         },
         C2RustUnnamed_35 {
             name: c"ghostty",
             version: 0,
-            features: c"256,RGB,bpaste,clipboard,mouse,strikethrough,title,ccolour,cstyle,extkeys,focus,overline,hyperlinks,osc7,sync,usstyle,progressbar",
+            features: c"256,RGB,bpaste,clipboard,mouse,strikethrough,title,ccolour,cstyle,extkeys,focus,margins,overline,hyperlinks,osc7,sync,usstyle,progressbar",
         },
         C2RustUnnamed_35 {
             name: c"Rio",
