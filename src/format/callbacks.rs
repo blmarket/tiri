@@ -1224,7 +1224,7 @@ unsafe fn format_cb_window_end_flag(mut ft: *mut format_tree) -> Option<CString>
 }
 unsafe fn format_cb_window_flags(mut ft: *mut format_tree) -> Option<CString> {
     if (*ft).winlink_handle().is_alive() {
-        return Some(crate::src::shared::window::WindowRef::winlink_flags(
+        return Some(crate::src::window::window_printable_flags(
             ((*ft).winlink_handle()).clone(),
             true,
         ));
@@ -1406,7 +1406,7 @@ unsafe fn format_cb_window_panes(ft: *mut format_tree) -> Option<CString> {
 
 unsafe fn format_cb_window_raw_flags(mut ft: *mut format_tree) -> Option<CString> {
     if (*ft).winlink_handle().is_alive() {
-        return Some(crate::src::shared::window::WindowRef::winlink_flags(
+        return Some(crate::src::window::window_printable_flags(
             ((*ft).winlink_handle()).clone(),
             false,
         ));

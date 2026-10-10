@@ -230,7 +230,7 @@ unsafe fn window_fire_pane_changed(
     events_fire(c"window-pane-changed", payload);
 }
 
-unsafe fn window_find_by_id_str(s: &CStr) -> Option<WindowRef> {
+pub unsafe fn window_find_by_id_str(s: &CStr) -> Option<WindowRef> {
     let s: *const ::core::ffi::c_char = s.as_ptr();
     let mut id: u_int = 0;
     if *s as ::core::ffi::c_int != '@' as i32 {
@@ -247,7 +247,7 @@ unsafe fn window_find_by_id_str(s: &CStr) -> Option<WindowRef> {
     }
     window_find_by_id(id)
 }
-unsafe fn window_find_by_id(id: u_int) -> Option<WindowRef> {
+pub unsafe fn window_find_by_id(id: u_int) -> Option<WindowRef> {
     let mut w = window::default();
     w.id = id;
     windows_find(&windows, &w)
@@ -265,7 +265,7 @@ unsafe fn window_replace_name(w_owner: &WindowRef, name: CString) -> CString {
     ::core::mem::replace(&mut (*w).name, name)
 }
 /// Return one owned reference; callers must release it after linking the window.
-unsafe fn window_create(
+pub unsafe fn window_create(
     mut sx: u_int,
     mut sy: u_int,
     mut xpixel: u_int,
@@ -746,9 +746,9 @@ unsafe fn window_destroy_panes(window: &WindowRef) {
         pane.destroy();
     }
 }
-unsafe fn window_printable_flags(
+pub unsafe fn window_printable_flags(
     mut wl: refbox::Weak<winlink>,
-    mut escape: ::core::ffi::c_int,
+    escape: bool,
 ) -> std::ffi::CString {
     let session_owner = wl.get_unchecked().session.upgrade();
     let mut flags: [::core::ffi::c_char; 32] = [0; 32];
@@ -757,7 +757,7 @@ unsafe fn window_printable_flags(
         let fresh3 = pos;
         pos = pos.wrapping_add(1);
         flags[fresh3 as usize] = '#' as i32 as ::core::ffi::c_char;
-        if escape != 0 {
+        if escape {
             let fresh4 = pos;
             pos = pos.wrapping_add(1);
             flags[fresh4 as usize] = '#' as i32 as ::core::ffi::c_char;

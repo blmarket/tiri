@@ -1011,7 +1011,7 @@ unsafe fn server_client_set_session(c_owner: &ClientRef, s_owner: Option<&Sessio
         let link = old.current_winlink();
         if link.is_alive() {
             if let Some(window) = link.get_unchecked().window_handle().cloned() {
-                crate::src::shared::window::WindowRef::update_focus_for(Some(&window));
+                window.update_focus();
                 window.release(c"client old-session focus");
             }
         }
@@ -1033,7 +1033,7 @@ unsafe fn server_client_set_session(c_owner: &ClientRef, s_owner: Option<&Sessio
                 .window_handle()
                 .cloned()
                 .expect("attached session window");
-            crate::src::shared::window::WindowRef::update_focus_for(Some(&window));
+            window.update_focus();
             window.release(c"client new-session focus");
         }
         session.on_attached();

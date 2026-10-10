@@ -50,30 +50,13 @@ impl WindowIndex for windows {
 }
 
 pub trait Window {
-    /// Create and register an initialized Window; linking transfers the caller's
-    /// explicit release duty to its winlink.
-    unsafe fn create(sx: u32, sy: u32, xpixel: u32, ypixel: u32) -> Self
-    where
-        Self: Sized;
-    unsafe fn find_by_id(id: u32) -> Option<Self>
-    where
-        Self: Sized;
-    unsafe fn find_by_id_str(id: &CStr) -> Option<Self>
-    where
-        Self: Sized;
     unsafe fn retain(&self, from: &CStr) -> Self
     where
         Self: Sized;
     unsafe fn update_focus(&self);
-    unsafe fn update_focus_for(window: Option<&Self>)
-    where
-        Self: Sized;
     unsafe fn redraw_active_switch(&self, pane: Option<&Rc<UnsafeCell<window_pane>>>);
     unsafe fn pane_at(&self, x: u32, y: u32) -> Option<Rc<UnsafeCell<window_pane>>>;
     unsafe fn find_pane(&self, name: &CStr) -> Option<Rc<UnsafeCell<window_pane>>>;
-    unsafe fn winlink_flags(link: refbox::Weak<winlink>, escape: bool) -> CString
-    where
-        Self: Sized;
 
     /// Selection history is separate from pane order. Only pure history edits
     /// may run while this component is borrowed.
@@ -243,23 +226,11 @@ pub trait Window {
 }
 
 impl Window for WindowRef {
-    unsafe fn create(sx: u32, sy: u32, xpixel: u32, ypixel: u32) -> Self {
-        window_create(sx, sy, xpixel, ypixel)
-    }
-    unsafe fn find_by_id(id: u32) -> Option<Self> {
-        window_find_by_id(id)
-    }
-    unsafe fn find_by_id_str(id: &CStr) -> Option<Self> {
-        window_find_by_id_str(&*id)
-    }
     unsafe fn retain(&self, from: &CStr) -> Self {
         window_add_ref(self, &*from)
     }
     unsafe fn update_focus(&self) {
         window_update_focus(Some(self));
-    }
-    unsafe fn update_focus_for(window: Option<&Self>) {
-        window_update_focus(window);
     }
     unsafe fn redraw_active_switch(&self, pane: Option<&Rc<UnsafeCell<window_pane>>>) {
         window_redraw_active_switch(self, pane);
@@ -269,9 +240,6 @@ impl Window for WindowRef {
     }
     unsafe fn find_pane(&self, name: &CStr) -> Option<Rc<UnsafeCell<window_pane>>> {
         window_find_string(self, name)
-    }
-    unsafe fn winlink_flags(link: refbox::Weak<winlink>, escape: bool) -> CString {
-        window_printable_flags(link, escape as i32)
     }
 
     type PaneHistoryMut<'a> = &'a mut window_pane_history;

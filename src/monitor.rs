@@ -369,7 +369,7 @@ unsafe fn monitor_check_window(monitor: &refbox::Weak<monitor_set>, name: &CStr)
     let Some((client, session)) = monitor_context(monitor) else {
         return;
     };
-    let Some(window) = crate::src::shared::window::WindowRef::find_by_id(target) else {
+    let Some(window) = crate::src::window::window_find_by_id(target) else {
         return;
     };
     let mut link = window.next_winlink(None);

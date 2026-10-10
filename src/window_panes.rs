@@ -132,7 +132,7 @@ unsafe fn window_panes_get_source(
     wlp: *mut refbox::Weak<winlink>,
     session_owner: &mut Option<SessionRef>,
 ) -> Option<WindowWeak> {
-    let window_owner = crate::src::shared::window::WindowRef::find_by_id((*data).source_window)?;
+    let window_owner = crate::src::window::window_find_by_id((*data).source_window)?;
     let mut link = refbox::Weak::new();
     *session_owner = crate::src::shared::session::SessionRef::find_by_id((*data).source_session);
     if let Some(session) = session_owner.as_ref() {

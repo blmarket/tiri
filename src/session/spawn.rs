@@ -73,7 +73,7 @@ pub(super) unsafe fn spawn_window(
             &mut ypixel,
             -1,
         );
-        let window = crate::src::shared::window::WindowRef::create(sx, sy, xpixel, ypixel);
+        let window = crate::src::window::window_create(sx, sy, xpixel, ypixel);
         created_window = Rc::downgrade(&window);
         if !(*s).curw.is_alive() {
             (*s).curw = sc.winlink_handle();

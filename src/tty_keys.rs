@@ -2270,9 +2270,8 @@ unsafe fn tty_keys_update_focus(client: &ClientRef) {
         let window = link.get_unchecked().window_handle().cloned();
         window
     };
-    crate::src::shared::window::WindowRef::update_focus_for(window.as_ref());
     if let Some(window) = window {
-        use crate::src::window::Window;
+        window.update_focus();
         window.release(c"terminal focus update");
     }
 }

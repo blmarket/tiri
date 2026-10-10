@@ -170,7 +170,7 @@ unsafe fn cmd_break_pane_exec(
                 .expect("a removal is never refused");
             let (sx, sy) = source_window.size();
             let (xpixel, ypixel) = source_window.cell_size();
-            let window = crate::src::shared::window::WindowRef::create(sx, sy, xpixel, ypixel);
+            let window = crate::src::window::window_create(sx, sy, xpixel, ypixel);
             let destination = std::rc::Rc::downgrade(&window);
             pane_owner.reparent(&window);
             window.set_latest_client(tc.as_ref());

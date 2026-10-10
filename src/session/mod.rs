@@ -590,13 +590,13 @@ unsafe fn session_set_current(
     (*s).set_curw(wl.clone());
     if options_get_number(global_options, c"focus-events") != 0 {
         if old.is_alive() {
-            crate::src::shared::window::WindowRef::update_focus_for(
-                old.get_unchecked().window_handle().cloned().as_ref(),
-            );
+            if let Some(window) = old.get_unchecked().window_handle().cloned() {
+                window.update_focus();
+            }
         }
-        crate::src::shared::window::WindowRef::update_focus_for(
-            wl.get_unchecked().window_handle().cloned().as_ref(),
-        );
+        if let Some(window) = wl.get_unchecked().window_handle().cloned() {
+            window.update_focus();
+        }
     }
     winlink_clear_flags(wl.clone());
     (&std::rc::Rc::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window")))

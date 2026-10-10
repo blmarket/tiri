@@ -291,7 +291,7 @@ unsafe fn cmd_find_get_window(
     ));
     if *window as ::core::ffi::c_int == '@' as i32 {
         let window_owner =
-            crate::src::shared::window::WindowRef::find_by_id_str(std::ffi::CStr::from_ptr(window));
+            crate::src::window::window_find_by_id_str(std::ffi::CStr::from_ptr(window));
         let result = (|| {
             (*fs).set_w(window_owner.as_ref());
             if (*fs).window_handle().is_none() {
@@ -349,7 +349,7 @@ unsafe fn cmd_find_get_window_with_session(
     (*fs).set_w(((*fs).winlink_handle()).get_unchecked().window_handle());
     if *window as ::core::ffi::c_int == '@' as i32 {
         let window_owner =
-            crate::src::shared::window::WindowRef::find_by_id_str(std::ffi::CStr::from_ptr(window));
+            crate::src::window::window_find_by_id_str(std::ffi::CStr::from_ptr(window));
         let result = (|| {
             (*fs).set_w(window_owner.as_ref());
             if (*fs).window_handle().is_none()
