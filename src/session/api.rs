@@ -295,7 +295,7 @@ impl Session for SessionRef {
             wp: Default::default(),
             idx: 0,
         };
-        cmd_find_from_session(&mut find, self, 0);
+        find = cmd_find_state::find_from_session(self, 0);
         let mut payload = event_payload_create();
         event_payload_set_target(&mut payload, &find);
         event_payload_set_session(&mut payload, c"session", self.clone());

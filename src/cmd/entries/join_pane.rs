@@ -1,6 +1,5 @@
 use crate::src::arguments::args_has;
 use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::find::cmd_find_from_session;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_state_owned};
 use crate::src::events::events_fire_window;
 use crate::src::resize::recalculate_sizes;
@@ -125,8 +124,7 @@ unsafe fn cmd_join_pane_exec(
         if args_has(args, 'd' as i32 as u_char) == 0 {
             dst_window.select_pane(&src_pane_owner, true);
             (dst_s.as_ref().expect("live session")).select_index(dst_idx);
-            cmd_find_from_session(
-                &mut *current.current.borrow_mut(),
+            *current.current.borrow_mut() = cmd_find_state::find_from_session(
                 dst_s.as_ref().expect("live session"),
                 0 as ::core::ffi::c_int,
             );

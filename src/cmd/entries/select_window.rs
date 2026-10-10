@@ -1,5 +1,4 @@
 use crate::src::arguments::args_has;
-use crate::src::cmd::find::cmd_find_from_session;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_state_owned, cmdq_insert_hook};
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::resize::recalculate_sizes;
@@ -176,8 +175,7 @@ unsafe fn cmd_select_window_exec(
             cmdq_error(item_handle, |out| out.write_all(b"no last window"));
             return CMD_RETURN_ERROR;
         }
-        cmd_find_from_session(
-            &mut *current.current.borrow_mut(),
+        *current.current.borrow_mut() = cmd_find_state::find_from_session(
             s.as_ref().expect("live session"),
             0 as ::core::ffi::c_int,
         );
@@ -200,8 +198,7 @@ unsafe fn cmd_select_window_exec(
                 current.current.borrow().session_handle().as_ref(),
                 s.as_ref(),
             ) {
-                cmd_find_from_session(
-                    &mut *current.current.borrow_mut(),
+                *current.current.borrow_mut() = cmd_find_state::find_from_session(
                     s.as_ref().expect("live session"),
                     0 as ::core::ffi::c_int,
                 );
@@ -210,8 +207,7 @@ unsafe fn cmd_select_window_exec(
         } else if (s.as_ref().expect("live session")).select_index(wl.get_unchecked().idx)
             == 0 as ::core::ffi::c_int
         {
-            cmd_find_from_session(
-                &mut *current.current.borrow_mut(),
+            *current.current.borrow_mut() = cmd_find_state::find_from_session(
                 s.as_ref().expect("live session"),
                 0 as ::core::ffi::c_int,
             );

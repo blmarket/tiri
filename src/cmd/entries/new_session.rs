@@ -1,7 +1,6 @@
 use crate::src::arguments::{args_count, args_flag_values, args_get, args_has, args_to_vector};
 use crate::src::cfg::{cfg_finished, cfg_show_causes};
 use crate::src::cmd::entries::attach_session::cmd_attach_session;
-use crate::src::cmd::find::cmd_find_from_session;
 use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_client, cmdq_get_flags, cmdq_get_state_owned, cmdq_insert_hook, cmdq_print,
 };
@@ -756,14 +755,14 @@ unsafe fn cmd_new_session_exec(
                                                         }
                                                         if args_has(args, 'd' as i32 as u_char) == 0
                                                         {
-                                                            cmd_find_from_session(
-                                                                &mut *current.current.borrow_mut(),
-                                                                &s.clone().expect("live session"),
-                                                                0 as ::core::ffi::c_int,
-                                                            );
+                                                            *current.current.borrow_mut() =
+                                                                cmd_find_state::find_from_session(
+                                                                    &s.clone()
+                                                                        .expect("live session"),
+                                                                    0 as ::core::ffi::c_int,
+                                                                );
                                                         }
-                                                        cmd_find_from_session(
-                                                            &raw mut fs,
+                                                        fs = cmd_find_state::find_from_session(
                                                             &s.clone().expect("live session"),
                                                             0 as ::core::ffi::c_int,
                                                         );

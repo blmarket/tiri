@@ -1,6 +1,5 @@
 //! Group indexes and membership are independently owned. Session state is
 //! accessed through its trait; no Session model storage belongs to this module.
-use crate::src::cmd::find::cmd_find_from_session;
 use crate::src::events::events_fire;
 use crate::src::events_payload::{
     event_payload_create, event_payload_set_session, event_payload_set_string,
@@ -157,7 +156,7 @@ unsafe fn session_group_fire(name: &CStr, group: *mut session_group, owner: &Ses
     };
     let mut payload = event_payload_create();
     if owner.is_registered() {
-        cmd_find_from_session(&mut target, owner, 0);
+        target = cmd_find_state::find_from_session(owner, 0);
         event_payload_set_target(&mut payload, &target);
     }
     event_payload_set_session(&mut payload, c"session", owner.clone());

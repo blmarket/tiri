@@ -1,6 +1,6 @@
 use crate::src::cmd::find::{
-    cmd_find_from_nothing, cmd_find_from_pane, cmd_find_from_session, cmd_find_from_session_window,
-    cmd_find_from_winlink, cmd_find_from_winlink_pane, cmd_find_valid_state,
+    cmd_find_from_nothing, cmd_find_from_pane, cmd_find_from_session_window, cmd_find_from_winlink,
+    cmd_find_from_winlink_pane, cmd_find_valid_state,
 };
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::nullable_cstr;
@@ -217,7 +217,7 @@ pub unsafe fn event_payload_get_target(ep: &event_payload, fs: &mut cmd_find_sta
     }
     if let Some(session) = session.as_ref() {
         if session.is_registered() {
-            cmd_find_from_session(fs, session, flags);
+            *fs = cmd_find_state::find_from_session(session, flags);
             if cmd_find_valid_state(fs) != 0 {
                 return 1;
             }

@@ -1,7 +1,7 @@
 use crate::src::cmd::cmd_list_print_cstring;
 use crate::src::cmd::find::{
     cmd_find_copy_state, cmd_find_empty_state, cmd_find_from_nothing, cmd_find_from_pane,
-    cmd_find_from_session, cmd_find_from_winlink, cmd_find_from_winlink_pane, cmd_find_valid_state,
+    cmd_find_from_winlink, cmd_find_from_winlink_pane, cmd_find_valid_state,
 };
 use crate::src::cmd::parse::cmd_parse_from_string;
 use crate::src::cmd::queue::{
@@ -473,8 +473,7 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, fallback: &cmd_find_state, g
     } else if let Some(pane_owner_value) = pane_owner.as_ref() {
         cmd_find_from_pane(&raw mut fs, pane_owner_value, 0 as ::core::ffi::c_int);
     } else if !s.is_none() {
-        cmd_find_from_session(
-            &raw mut fs,
+        fs = cmd_find_state::find_from_session(
             &s.clone().expect("live session"),
             0 as ::core::ffi::c_int,
         );

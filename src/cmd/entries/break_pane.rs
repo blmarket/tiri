@@ -1,6 +1,5 @@
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::find::cmd_find_from_session;
 use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_state_owned, cmdq_get_target_client, cmdq_print,
 };
@@ -224,8 +223,7 @@ unsafe fn cmd_break_pane_exec(
             );
             if args_has(args, 'd' as i32 as u_char) == 0 {
                 (dst_s.as_ref().expect("live session")).select_index(wl.get_unchecked().idx);
-                cmd_find_from_session(
-                    &mut *current.current.borrow_mut(),
+                *current.current.borrow_mut() = cmd_find_state::find_from_session(
                     dst_s.as_ref().expect("live session"),
                     0 as ::core::ffi::c_int,
                 );

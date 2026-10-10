@@ -852,23 +852,21 @@ unsafe fn cmd_find_log_state(prefix: &CStr, mut fs: *mut cmd_find_state) {
         log_debug(format_args!("{}: idx=none", log_cstr(prefix)));
     };
 }
-pub unsafe fn cmd_find_from_session(
-    mut fs: *mut cmd_find_state,
-    s_owner: &SessionRef,
-    mut flags: ::core::ffi::c_int,
-) {
-    *fs = cmd_find_state::clear_state(flags);
-    (*fs).set_s(Some(s_owner));
-    (*fs).set_wl(
-        ((*fs)
-            .session_handle()
-            .expect("live session")
-            .current_winlink())
-        .clone(),
-    );
-    (*fs).set_w(((*fs).winlink_handle()).get_unchecked().window_handle());
-    (*fs).set_wp(((((*fs).window_handle().as_ref()).expect("live window")).active_pane()).as_ref());
-    cmd_find_log_state(c"cmd_find_from_session", fs);
+impl cmd_find_state {
+    pub unsafe fn find_from_session(s_owner: &SessionRef, flags: ::core::ffi::c_int) -> Self {
+        let mut fs = Self::clear_state(flags);
+        fs.set_s(Some(s_owner));
+        fs.set_wl(s_owner.current_winlink().clone());
+        fs.set_w(fs.winlink_handle().get_unchecked().window_handle());
+        fs.set_wp(
+            fs.window_handle()
+                .expect("live window")
+                .active_pane()
+                .as_ref(),
+        );
+        cmd_find_log_state(c"cmd_find_from_session", &mut fs);
+        fs
+    }
 }
 pub unsafe fn cmd_find_from_winlink(
     mut fs: *mut cmd_find_state,
@@ -1036,8 +1034,7 @@ pub unsafe fn cmd_find_from_client(
             .as_ref(),
         );
         if (*fs).pane_handle().is_none() {
-            cmd_find_from_session(
-                fs,
+            *fs = cmd_find_state::find_from_session(
                 &c.as_ref()
                     .expect("live client")
                     .attached_session()

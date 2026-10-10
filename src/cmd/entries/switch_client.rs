@@ -1,6 +1,6 @@
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::find::{cmd_find_from_session, cmd_find_target};
+use crate::src::cmd::find::cmd_find_target;
 use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_client, cmdq_get_flags, cmdq_get_state_owned, cmdq_get_target_client,
 };
@@ -218,8 +218,7 @@ unsafe fn cmd_switch_client_exec(
         }
         if wl.is_alive() {
             (s.as_ref().expect("live session")).select_winlink(wl.clone());
-            cmd_find_from_session(
-                &mut *current.current.borrow_mut(),
+            *current.current.borrow_mut() = cmd_find_state::find_from_session(
                 s.as_ref().expect("live session"),
                 0 as ::core::ffi::c_int,
             );

@@ -1,6 +1,5 @@
 use crate::src::cmd::find::{
-    cmd_find_from_client, cmd_find_from_pane, cmd_find_from_session, cmd_find_from_window,
-    cmd_find_from_winlink,
+    cmd_find_from_client, cmd_find_from_pane, cmd_find_from_window, cmd_find_from_winlink,
 };
 use crate::src::events_payload::{
     event_payload_create, event_payload_log, event_payload_set_client, event_payload_set_int,
@@ -163,7 +162,7 @@ pub unsafe fn events_fire_session(name: &CStr, owner: SessionRef) {
     };
     let mut ep = event_payload_create();
     if owner.is_registered() {
-        cmd_find_from_session(&raw mut fs, &owner, 0 as ::core::ffi::c_int);
+        fs = cmd_find_state::find_from_session(&owner, 0 as ::core::ffi::c_int);
         event_payload_set_target(&mut ep, &fs);
     }
     event_payload_set_session(&mut ep, c"session", owner);
