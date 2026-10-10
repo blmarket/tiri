@@ -1,5 +1,5 @@
 use crate::src::cmd::entries::wait_for::cmd_wait_for_flush;
-use crate::src::cmd::find::{cmd_find_valid_state};
+use crate::src::cmd::find::cmd_find_valid_state;
 use crate::src::cmd::queue::cmdq_next;
 use crate::src::compat::systemd::{systemd_activated, systemd_create_socket};
 use crate::src::control_notify::control_build_events;

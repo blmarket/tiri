@@ -3,8 +3,8 @@ use crate::src::arguments::{
 };
 use crate::src::cfg::{cfg_add_cause, cfg_finished};
 use crate::src::cmd::find::{
-    cmd_find_client, cmd_find_copy_state, cmd_find_from_client,
-    cmd_find_target, cmd_find_valid_state,
+    cmd_find_client, cmd_find_copy_state, cmd_find_from_client, cmd_find_target,
+    cmd_find_valid_state,
 };
 use crate::src::cmd::{
     cmd_get_args_mut, cmd_get_entry, cmd_get_group, cmd_get_source, cmd_print_cstring,

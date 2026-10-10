@@ -1,5 +1,5 @@
 use crate::src::cmd::cmd_table;
-use crate::src::cmd::find::{cmd_find_valid_state};
+use crate::src::cmd::find::cmd_find_valid_state;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_add, format_create_defaults, format_create_from_state, format_expand_time_cstring,

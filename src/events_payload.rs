@@ -1,7 +1,6 @@
 use crate::src::cmd::find::{
-    cmd_find_from_nothing, cmd_find_from_pane, cmd_find_from_session,
-    cmd_find_from_session_window, cmd_find_from_winlink, cmd_find_from_winlink_pane,
-    cmd_find_valid_state,
+    cmd_find_from_nothing, cmd_find_from_pane, cmd_find_from_session, cmd_find_from_session_window,
+    cmd_find_from_winlink, cmd_find_from_winlink_pane, cmd_find_valid_state,
 };
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::nullable_cstr;

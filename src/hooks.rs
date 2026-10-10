@@ -1,8 +1,7 @@
 use crate::src::cmd::cmd_list_print_cstring;
 use crate::src::cmd::find::{
-    cmd_find_copy_state, cmd_find_empty_state, cmd_find_from_nothing,
-    cmd_find_from_pane, cmd_find_from_session, cmd_find_from_winlink, cmd_find_from_winlink_pane,
-    cmd_find_valid_state,
+    cmd_find_copy_state, cmd_find_empty_state, cmd_find_from_nothing, cmd_find_from_pane,
+    cmd_find_from_session, cmd_find_from_winlink, cmd_find_from_winlink_pane, cmd_find_valid_state,
 };
 use crate::src::cmd::parse::cmd_parse_from_string;
 use crate::src::cmd::queue::{
