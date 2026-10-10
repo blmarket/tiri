@@ -1279,7 +1279,7 @@ impl Client for ClientRef {
                 .window_handle()
                 .is_some_and(|owner| Rc::ptr_eq(owner, &window))
         };
-        window.release(c"client pane render parent");
+        crate::src::window::window_remove_ref(window, c"client pane render parent");
         if invisible || !matches {
             return i32::from(matches);
         }

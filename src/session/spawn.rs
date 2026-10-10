@@ -82,7 +82,7 @@ pub(super) unsafe fn spawn_window(
         window.set_latest_client(target_client.as_ref());
         winlink_set_window(sc.winlink_handle(), &window);
         // The new link owns the window before the constructor owner is released.
-        window.release(c"spawn_window");
+        crate::src::window::window_remove_ref(window, c"spawn_window");
     }
 
     sc.flags |= SPAWN_NONOTIFY;
@@ -101,7 +101,7 @@ pub(super) unsafe fn spawn_window(
             .upgrade()
             .expect("spawned window remains live");
         initialize_spawned_window(sc, &window);
-        window.release(c"spawn_window initialization");
+        crate::src::window::window_remove_ref(window, c"spawn_window initialization");
     }
     if sc.flags & SPAWN_DETACHED == 0 {
         session_select(&session, sc.winlink_handle().get_unchecked().idx);

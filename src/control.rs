@@ -372,7 +372,7 @@ unsafe fn control_session_has_pane(
 ) -> bool {
     let parent = pane.window_observer().upgrade().expect("live pane parent");
     let present = session.with_winlinks(|links| winlink_find_by_window(links, &parent).is_alive());
-    parent.release(c"control_session_has_pane");
+    crate::src::window::window_remove_ref(parent, c"control_session_has_pane");
     present
 }
 unsafe fn control_window_pane(c: &ClientRef, pane: u_int) -> Option<Rc<UnsafeCell<window_pane>>> {
@@ -1210,7 +1210,7 @@ unsafe fn control_sub_change(change: &monitor_change) {
                 .upgrade()
                 .expect("live subscription pane parent");
             let id = window.id();
-            window.release(c"control_sub_change");
+            crate::src::window::window_remove_ref(window, c"control_sub_change");
             (id, Some(pane.id()))
         } else {
             (

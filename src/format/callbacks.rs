@@ -225,7 +225,7 @@ unsafe fn format_cb_window_layout(ft: *mut format_tree) -> Option<CString> {
         .as_ref()
         .is_some_and(|client| client.uses_legacy_layout_format());
     let value = window.layout_string(legacy);
-    window.release(c"format window layout");
+    crate::src::window::window_remove_ref(window, c"format window layout");
     value
 }
 
@@ -233,7 +233,7 @@ unsafe fn format_cb_window_layout(ft: *mut format_tree) -> Option<CString> {
 unsafe fn format_cb_window_layout_name(ft: *mut format_tree) -> Option<CString> {
     let window = (*ft).w.upgrade()?;
     let name = window.layout().name().to_owned();
-    window.release(c"format window layout name");
+    crate::src::window::window_remove_ref(window, c"format window layout name");
     Some(name)
 }
 
@@ -1198,7 +1198,7 @@ unsafe fn format_cb_window_cell_height(ft: *mut format_tree) -> Option<CString> 
     let window = (*ft).w.upgrade()?;
     let value =
         CString::new(window.cell_size().1.to_string()).expect("formatted number contains no NUL");
-    window.release(c"format window_cell_height");
+    crate::src::window::window_remove_ref(window, c"format window_cell_height");
     Some(value)
 }
 
@@ -1206,7 +1206,7 @@ unsafe fn format_cb_window_cell_width(ft: *mut format_tree) -> Option<CString> {
     let window = (*ft).w.upgrade()?;
     let value =
         CString::new(window.cell_size().0.to_string()).expect("formatted number contains no NUL");
-    window.release(c"format window_cell_width");
+    crate::src::window::window_remove_ref(window, c"format window_cell_width");
     Some(value)
 }
 
@@ -1243,7 +1243,7 @@ unsafe fn format_cb_window_height(ft: *mut format_tree) -> Option<CString> {
     let window = (*ft).w.upgrade()?;
     let value =
         CString::new(window.size().1.to_string()).expect("formatted number contains no NUL");
-    window.release(c"format window_height");
+    crate::src::window::window_remove_ref(window, c"format window_height");
     Some(value)
 }
 
@@ -1257,13 +1257,13 @@ unsafe fn format_cb_window_manual_height(ft: *mut format_tree) -> Option<CString
     } else {
         c"".to_owned()
     };
-    window.release(c"format manual window height");
+    crate::src::window::window_remove_ref(window, c"format manual window height");
     Some(value)
 }
 unsafe fn format_cb_window_id(ft: *mut format_tree) -> Option<CString> {
     let window = (*ft).w.upgrade()?;
     let value = CString::new(format!("@{}", window.id())).expect("formatted ID contains no NUL");
-    window.release(c"format window ID");
+    crate::src::window::window_remove_ref(window, c"format window ID");
     Some(value)
 }
 
@@ -1360,7 +1360,7 @@ unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<C
         s_owner = s.as_ref().expect("live session").next_session();
         s = s_owner.clone();
     }
-    window.release(c"format linked sessions");
+    crate::src::window::window_remove_ref(window, c"format linked sessions");
     Some(CString::new(format!("{}", (n) as u32)).expect("formatted numbers contain no NUL"))
 }
 unsafe fn format_cb_window_marked_flag(mut ft: *mut format_tree) -> Option<CString> {
@@ -1376,7 +1376,7 @@ unsafe fn format_cb_window_marked_flag(mut ft: *mut format_tree) -> Option<CStri
 unsafe fn format_cb_window_name(ft: *mut format_tree) -> Option<CString> {
     let window = (*ft).w.upgrade()?;
     let value = window.name();
-    window.release(c"format window name");
+    crate::src::window::window_remove_ref(window, c"format window name");
     Some(value)
 }
 
@@ -1400,7 +1400,7 @@ unsafe fn format_cb_window_panes(ft: *mut format_tree) -> Option<CString> {
     let window = (*ft).w.upgrade()?;
     let value = CString::new(window.pane_snapshot().len().to_string())
         .expect("formatted number contains no NUL");
-    window.release(c"format window_panes");
+    crate::src::window::window_remove_ref(window, c"format window_panes");
     Some(value)
 }
 
@@ -1438,7 +1438,7 @@ unsafe fn format_cb_window_width(ft: *mut format_tree) -> Option<CString> {
     let window = (*ft).w.upgrade()?;
     let value =
         CString::new(window.size().0.to_string()).expect("formatted number contains no NUL");
-    window.release(c"format window_width");
+    crate::src::window::window_remove_ref(window, c"format window_width");
     Some(value)
 }
 
@@ -1452,7 +1452,7 @@ unsafe fn format_cb_window_manual_width(ft: *mut format_tree) -> Option<CString>
     } else {
         c"".to_owned()
     };
-    window.release(c"format manual window width");
+    crate::src::window::window_remove_ref(window, c"format manual window width");
     Some(value)
 }
 
@@ -1518,7 +1518,7 @@ unsafe fn format_cb_start_time(_ft: *mut format_tree) -> Option<time_t> {
 unsafe fn format_cb_window_activity(ft: *mut format_tree) -> Option<time_t> {
     let window = (*ft).w.upgrade()?;
     let value = crate::src::shared::time::unix_seconds(window.activity_time());
-    window.release(c"format window activity");
+    crate::src::window::window_remove_ref(window, c"format window activity");
     Some(value)
 }
 
@@ -1596,7 +1596,7 @@ impl FormatTableEntry {
         } else if model_key(self.key, b"window_") {
             if let Some(owner) = (*ft).w.upgrade() {
                 let result = owner.format_value(self.key, &mut *ft);
-                owner.release(c"format builtin");
+                crate::src::window::window_remove_ref(owner, c"format builtin");
                 return result;
             }
         } else if model_key(self.key, b"pane_") {

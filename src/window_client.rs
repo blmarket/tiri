@@ -420,7 +420,7 @@ unsafe fn window_client_draw(
     {
         preview_pane = window_owner.last_active_pane();
     }
-    window_owner.release(c"client preview lookup");
+    crate::src::window::window_remove_ref(window_owner, c"client preview lookup");
     lines = status_line_size(c);
     if lines >= sy {
         lines = 0 as u_int;

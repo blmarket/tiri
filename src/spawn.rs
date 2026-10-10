@@ -181,7 +181,7 @@ pub(crate) unsafe fn prepare_respawn_window(
         window.select_pane(&source_pane_owner, false);
         true
     })();
-    window.release(c"prepare respawn window");
+    crate::src::window::window_remove_ref(window, c"prepare respawn window");
     result
 }
 /// Initialize the newly-created window's name and fill cells without emitting
@@ -324,6 +324,6 @@ pub(crate) unsafe fn spawn_editor(
         )?;
         Some(pane.install_editor(owner))
     })();
-    original_window.release(c"spawn editor");
+    crate::src::window::window_remove_ref(original_window, c"spawn editor");
     result
 }

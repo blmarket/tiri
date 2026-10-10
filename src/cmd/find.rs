@@ -211,7 +211,7 @@ unsafe fn cmd_find_best_winlink_with_window(fs: *mut cmd_find_state) -> ::core::
             candidate = winlinks_next(candidate.get_unchecked());
         }
     }
-    window.release(c"find window link");
+    crate::src::window::window_remove_ref(window, c"find window link");
     if !selected.is_alive() {
         return -1;
     }
@@ -300,7 +300,7 @@ unsafe fn cmd_find_get_window(
             cmd_find_best_session_with_window(fs)
         })();
         if let Some(window) = window_owner {
-            window.release(c"cmd_find_get_window");
+            crate::src::window::window_remove_ref(window, c"cmd_find_get_window");
         }
         return result;
     }
@@ -363,7 +363,7 @@ unsafe fn cmd_find_get_window_with_session(
             cmd_find_best_winlink_with_window(fs)
         })();
         if let Some(window) = window_owner {
-            window.release(c"cmd_find_get_window_with_session");
+            crate::src::window::window_remove_ref(window, c"cmd_find_get_window_with_session");
         }
         return result;
     }
@@ -675,7 +675,7 @@ unsafe fn cmd_find_get_pane_with_window(
             .last_active_pane()
             .as_ref()
             .map_or_else(std::rc::Weak::new, Rc::downgrade);
-        window.release(c"find last active pane");
+        crate::src::window::window_remove_ref(window, c"find last active pane");
         if (*fs).pane_handle().is_none() {
             return -(1 as ::core::ffi::c_int);
         }
@@ -948,7 +948,7 @@ pub unsafe fn cmd_find_from_pane(
 ) -> i32 {
     let window = pane.window_observer().upgrade().expect("pane window");
     let result = cmd_find_from_window(fs, &window, flags);
-    window.release(c"find pane parent");
+    crate::src::window::window_remove_ref(window, c"find pane parent");
     if result != 0 {
         return -1;
     }

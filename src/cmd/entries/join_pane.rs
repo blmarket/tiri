@@ -139,9 +139,9 @@ unsafe fn cmd_join_pane_exec(
         CMD_RETURN_NORMAL
     })();
     if let Some(window) = src_window {
-        window.release(c"join pane source");
+        crate::src::window::window_remove_ref(window, c"join pane source");
     }
-    dst_window.release(c"join pane destination");
+    crate::src::window::window_remove_ref(dst_window, c"join pane destination");
     result
 }
 

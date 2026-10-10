@@ -211,15 +211,6 @@ pub trait Window {
         key: &CStr,
         context: &mut crate::src::shared::format::format_tree,
     ) -> Option<crate::src::format::FormatValue>;
-    /// Required for owners that may be final: close callbacks execute while an
-    /// owner is still live, and may retain it to postpone destruction.
-    unsafe fn release(self, from: &CStr)
-    where
-        Self: Sized;
-    /// Run the final-close decision while a containing winlink still publishes
-    /// its Rc. The caller then detaches and drops exactly that reference; this
-    /// operation must not manufacture an extra owner before testing the count.
-    unsafe fn prepare_release(&self, from: &CStr);
 }
 
 impl Window for WindowRef {
@@ -485,7 +476,7 @@ impl Window for WindowRef {
                     if let Some(window) = observer.upgrade() {
                         drop((*window.get()).offset_timer.take());
                         crate::src::tty::tty_update_window_offset(&window);
-                        window.release(c"offset update timer");
+                        window_remove_ref(window, c"offset update timer");
                     }
                 })
                 .expect("arm timer"),
@@ -703,12 +694,6 @@ impl Window for WindowRef {
     ) -> Option<crate::src::format::FormatValue> {
         crate::src::format::window_format_value(self, key, context)
     }
-    unsafe fn release(self, from: &CStr) {
-        window_remove_ref(self, &*from);
-    }
-    unsafe fn prepare_release(&self, from: &CStr) {
-        window_prepare_release(self, &*from);
-    }
 }
 
 unsafe fn resize_fire_window_resized(w_owner: &WindowRef, mut old_sx: u_int, mut old_sy: u_int) {
@@ -831,7 +816,7 @@ mod tests {
                 original.data.data[0], b'I',
                 "fill snapshots survive refresh"
             );
-            owner.release(c"fill rendering test");
+            window_remove_ref(owner, c"fill rendering test");
             crate::src::tmux::global_options = previous_server_options;
             crate::src::options::options_free(server_options);
         }

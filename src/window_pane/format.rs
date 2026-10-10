@@ -1353,7 +1353,7 @@ unsafe fn format_cb_pane_last(ft: *mut format_tree) -> Option<CString> {
         .as_ref()
         .is_some_and(|last| Rc::ptr_eq(last, &pane));
     let value = if is_last { c"1" } else { c"0" }.to_owned();
-    window.release(c"format last pane");
+    crate::src::window::window_remove_ref(window, c"format last pane");
     Some(value)
 }
 

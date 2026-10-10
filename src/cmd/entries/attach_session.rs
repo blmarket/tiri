@@ -133,7 +133,7 @@ pub unsafe fn cmd_attach_session(
                 .upgrade()
                 .expect("attach pane window");
             window.select_pane(pane, true);
-            window.release(c"attach pane selection");
+            crate::src::window::window_remove_ref(window, c"attach pane selection");
         }
         (s.as_ref().expect("live session")).select_winlink(wl.clone());
         if let Some(wp_value) = wp.as_ref() {

@@ -71,6 +71,6 @@ unsafe fn cmd_rename_window_exec(
         (wl.get_unchecked().window_handle().as_ref()).expect("live window"),
     );
     server_status_window((wl.get_unchecked().window_handle().as_ref()).expect("live window"));
-    window.release(c"cmd_rename_window");
+    crate::src::window::window_remove_ref(window, c"cmd_rename_window");
     CMD_RETURN_NORMAL
 }

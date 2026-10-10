@@ -489,6 +489,6 @@ pub unsafe fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
     while let Some(window_owner) = window_cursor.take() {
         recalculate_size(&window_owner, now);
         window_cursor = window_owner.next_window();
-        window_owner.release(c"window traversal");
+        crate::src::window::window_remove_ref(window_owner, c"window traversal");
     }
 }

@@ -66,6 +66,6 @@ unsafe fn cmd_select_layout_exec(
             CMD_RETURN_ERROR
         }
     };
-    window_owner.release(c"cmd_select_layout_exec");
+    crate::src::window::window_remove_ref(window_owner, c"cmd_select_layout_exec");
     result
 }

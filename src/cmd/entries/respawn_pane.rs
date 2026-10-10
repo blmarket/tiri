@@ -13,7 +13,6 @@ use crate::src::shared::session::SessionRef;
 use crate::src::shared::spawn::spawn_context;
 use crate::src::shared::spawn::{SPAWN_EMPTY, SPAWN_KILL, SPAWN_RESPAWN};
 use crate::src::shared::window::winlink;
-use crate::src::window::Window as _;
 use crate::src::window_pane::WindowPane;
 pub static cmd_respawn_pane_entry: cmd_entry = {
     cmd_entry {
@@ -111,6 +110,6 @@ unsafe fn cmd_respawn_pane_exec(
         .expect("respawn pane window");
     server_redraw_window_borders(&window);
     server_status_window(&window);
-    window.release(c"respawn pane status");
+    crate::src::window::window_remove_ref(window, c"respawn pane status");
     CMD_RETURN_NORMAL
 }

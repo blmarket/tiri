@@ -883,7 +883,7 @@ unsafe fn server_client_attached_lost(c_owner: &ClientRef) {
             }
         }
         window_cursor = window_owner.next_window();
-        window_owner.release(c"window traversal");
+        crate::src::window::window_remove_ref(window_owner, c"window traversal");
     }
 }
 unsafe fn server_client_fire_session_changed(c_owner: &ClientRef, old_owner: Option<&SessionRef>) {
@@ -1012,7 +1012,7 @@ unsafe fn server_client_set_session(c_owner: &ClientRef, s_owner: Option<&Sessio
         if link.is_alive() {
             if let Some(window) = link.get_unchecked().window_handle().cloned() {
                 window.update_focus();
-                window.release(c"client old-session focus");
+                crate::src::window::window_remove_ref(window, c"client old-session focus");
             }
         }
     }
@@ -1034,7 +1034,7 @@ unsafe fn server_client_set_session(c_owner: &ClientRef, s_owner: Option<&Sessio
                 .cloned()
                 .expect("attached session window");
             window.update_focus();
-            window.release(c"client new-session focus");
+            crate::src::window::window_remove_ref(window, c"client new-session focus");
         }
         session.on_attached();
         tty_update_client_offset(c_owner);
@@ -1211,7 +1211,7 @@ unsafe fn server_client_update_scrollbar_hover(
             cursor = window_owner.next_pane(Some(&pane_owner));
         }
     })();
-    window_owner.release(c"server_client_update_scrollbar_hover");
+    crate::src::window::window_remove_ref(window_owner, c"server_client_update_scrollbar_hover");
 }
 
 unsafe fn server_client_check_mouse_in_pane(
@@ -1226,7 +1226,7 @@ unsafe fn server_client_check_mouse_in_pane(
 unsafe fn server_client_pane_window_id(pane: &Rc<UnsafeCell<window_pane>>) -> u32 {
     let window = pane.window_observer().upgrade().expect("pane event window");
     let id = window.id();
-    window.release(c"pane event window");
+    crate::src::window::window_remove_ref(window, c"pane event window");
     id
 }
 
@@ -1760,7 +1760,7 @@ unsafe fn server_client_check_mouse(
         }
         key
     })();
-    window_owner.release(c"server_client_check_mouse");
+    crate::src::window::window_remove_ref(window_owner, c"server_client_check_mouse");
     result
 }
 unsafe fn server_client_update_theme_colours(c_owner: Option<&ClientRef>) {
@@ -1893,7 +1893,7 @@ unsafe fn server_client_update_latest(c_owner: &ClientRef) {
         .cloned()
         .expect("attached session window");
     if !window.set_latest_client(Some(c_owner)) {
-        window.release(c"client latest window");
+        crate::src::window::window_remove_ref(window, c"client latest window");
         return;
     }
     let use_latest = window.with_options_mut(|options| {
@@ -1905,7 +1905,7 @@ unsafe fn server_client_update_latest(c_owner: &ClientRef) {
     if use_latest {
         recalculate_size(&window, 0);
     }
-    window.release(c"client latest window");
+    crate::src::window::window_remove_ref(window, c"client latest window");
     events_fire_client(c"client-active", c_owner.clone());
 }
 
@@ -2457,7 +2457,7 @@ unsafe fn server_client_handle_key0(
                 prompt_pane = prompt_window.next_pane(Some(pane_owner));
             }
         }
-        prompt_window.release(c"prompt pane lookup");
+        crate::src::window::window_remove_ref(prompt_window, c"prompt pane lookup");
         if let Some(pane_owner) = prompt_pane.filter(|pane| pane.prompt_position(true).is_some()) {
             match pane_owner.prompt_key(Some(owner), (*event).key, Some(&mut (*event).m))
                 as ::core::ffi::c_uint
@@ -2520,7 +2520,7 @@ unsafe fn server_client_loop() {
     while let Some(window_owner) = window_cursor.take() {
         server_client_check_window_resize(&window_owner);
         window_cursor = window_owner.next_window();
-        window_owner.release(c"window traversal");
+        crate::src::window::window_remove_ref(window_owner, c"window traversal");
     }
     let mut window_cursor = windows.first();
     while let Some(window_owner) = window_cursor.take() {
@@ -2530,7 +2530,7 @@ unsafe fn server_client_loop() {
             pane_cursor = pane_owner.next_in_window();
         }
         window_cursor = window_owner.next_window();
-        window_owner.release(c"window traversal");
+        crate::src::window::window_remove_ref(window_owner, c"window traversal");
     }
     let mut registry_c_owner = clients.first();
     while let Some(client_owner) = registry_c_owner {
@@ -2558,7 +2558,7 @@ unsafe fn server_client_loop() {
         }
         check_window_name(&window_owner);
         window_cursor = window_owner.next_window();
-        window_owner.release(c"window traversal");
+        crate::src::window::window_remove_ref(window_owner, c"window traversal");
     }
     let mut window_cursor = windows.first();
     while let Some(window_owner) = window_cursor.take() {
@@ -2568,7 +2568,7 @@ unsafe fn server_client_loop() {
             pane_cursor = pane_owner.next_in_window();
         }
         window_cursor = window_owner.next_window();
-        window_owner.release(c"window traversal");
+        crate::src::window::window_remove_ref(window_owner, c"window traversal");
     }
 }
 unsafe fn server_client_check_window_resize(owner: &WindowRef) {
@@ -2820,7 +2820,7 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
         };
         (*tty).flags |= flags;
     })();
-    window_owner.release(c"server_client_reset_state");
+    crate::src::window::window_remove_ref(window_owner, c"server_client_reset_state");
 }
 unsafe fn server_client_repeat_timer(owner: &ClientRef) {
     let c = owner.get();
@@ -2977,7 +2977,7 @@ unsafe fn server_client_check_modes(client_owner: &ClientRef) {
             cursor = pane_owner.next_in_window();
         }
     })();
-    window_owner.release(c"server_client_check_modes");
+    crate::src::window::window_remove_ref(window_owner, c"server_client_check_modes");
 }
 unsafe fn server_client_any_pane_redraw(c: &client, window: &WindowRef) -> bool {
     if c.flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
@@ -3144,7 +3144,7 @@ unsafe fn server_client_check_redraw(client_owner: &ClientRef) {
             { (*c).redraw }
         ));
     })();
-    window_owner.release(c"server_client_check_redraw");
+    crate::src::window::window_remove_ref(window_owner, c"server_client_check_redraw");
 }
 unsafe fn server_client_set_title(client_owner: &ClientRef) {
     let mut template_session_value: Option<std::ffi::CString> = None;

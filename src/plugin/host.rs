@@ -1,7 +1,6 @@
 //! The small adapter between plugin observations and pane ownership.
 use super::{Host, PaneActivity, PaneId};
 use crate::src::shared::pane::window_pane;
-use crate::src::window::Window;
 use crate::src::window_pane::{observability, WindowPane};
 use hmux_agent::observability::v1::{PaneObservability, ServerObservability};
 use std::cell::UnsafeCell;
@@ -50,7 +49,7 @@ pub(super) fn invalidate(id: PaneId) {
         pane.release(c"plugin redraw");
         if let Some(window) = window {
             crate::src::server_fn::server_status_window(&window);
-            window.release(c"plugin redraw");
+            crate::src::window::window_remove_ref(window, c"plugin redraw");
         }
     }
 }

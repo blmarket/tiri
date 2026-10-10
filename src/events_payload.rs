@@ -48,7 +48,7 @@ unsafe fn event_payload_free_target(ep: &mut event_payload) {
         session.release(c"event_payload_free_target");
     }
     if let Some(window) = ep.target_window.take() {
-        window.release(c"event_payload_free_target");
+        crate::src::window::window_remove_ref(window, c"event_payload_free_target");
     }
     if let Some(pane) = ep.target_pane.take() {
         pane.release(c"event_payload_free_target");
@@ -66,7 +66,9 @@ impl Drop for event_payload_item {
             match value {
                 EventPayloadValue::Client(client) => client.release(),
                 EventPayloadValue::Session(session) => session.release(c"event_payload_free_value"),
-                EventPayloadValue::Window(window) => window.release(c"event_payload_free_value"),
+                EventPayloadValue::Window(window) => {
+                    crate::src::window::window_remove_ref(window, c"event_payload_free_value")
+                }
                 EventPayloadValue::Pane(pane) => pane.release(c"event_payload_free_value"),
                 _ => {}
             }

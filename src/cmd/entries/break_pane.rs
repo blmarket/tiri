@@ -204,13 +204,13 @@ unsafe fn cmd_break_pane_exec(
                 Ok(wl) => wl,
                 Err(error) => {
                     cmdq_error(item_handle, |out| write_cstr(out, &*error));
-                    window.release(c"cmd_break_pane_exec");
+                    crate::src::window::window_remove_ref(window, c"cmd_break_pane_exec");
                     return CMD_RETURN_ERROR;
                 }
             };
             pane_owner.mark_changed();
             pane_owner.refresh_palette();
-            window.release(c"cmd_break_pane_exec");
+            crate::src::window::window_remove_ref(window, c"cmd_break_pane_exec");
             events_fire_window(
                 c"window-created",
                 destination.upgrade().expect("live destination window"),
@@ -256,6 +256,6 @@ unsafe fn cmd_break_pane_exec(
         }
         CMD_RETURN_NORMAL
     })();
-    source_window.release(c"break pane source");
+    crate::src::window::window_remove_ref(source_window, c"break pane source");
     result
 }

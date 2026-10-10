@@ -295,14 +295,14 @@ unsafe fn unset_window_panes(
         return Ok(());
     };
     let mut next = window.next_pane(None);
-    window.release(c"set-option pane traversal");
+    crate::src::window::window_remove_ref(window, c"set-option pane traversal");
     while let Some(pane) = next.take() {
         let scope = OptionsScope::Pane(std::rc::Rc::downgrade(&pane));
         let result = scope.remove_or_default(name, array_key);
         if result.is_ok() {
             if let Some(parent) = pane.window_observer().upgrade() {
                 next = parent.next_pane(Some(&pane));
-                parent.release(c"set-option pane successor");
+                crate::src::window::window_remove_ref(parent, c"set-option pane successor");
             }
         }
         pane.release(c"set-option pane traversal");

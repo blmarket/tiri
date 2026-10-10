@@ -3833,7 +3833,7 @@ unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
         m += 1;
     }
     if let Some(window) = window_owner {
-        window.release(c"input window operations");
+        crate::src::window::window_remove_ref(window, c"input window operations");
     }
 }
 unsafe fn input_csi_dispatch_sgr_256_do(
@@ -4642,7 +4642,7 @@ unsafe fn input_exit_rename(ictx: *mut input_ctx) {
     }
     server_redraw_window_borders(&window);
     server_status_window(&window);
-    window.release(c"input rename");
+    crate::src::window::window_remove_ref(window, c"input rename");
 }
 unsafe fn input_top_bit_set(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
@@ -5714,7 +5714,7 @@ unsafe fn input_add_request(
         );
         loop_0 = registry_loop_0_owner.clone();
     }
-    window.release(c"input request target");
+    crate::src::window::window_remove_ref(window, c"input request target");
     if c.is_none() {
         return -(1 as ::core::ffi::c_int);
     }

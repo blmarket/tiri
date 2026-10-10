@@ -377,7 +377,7 @@ pub(super) unsafe fn format_find(
         Some(found)
     })();
     if let Some(window) = format_window_owner {
-        window.release(c"format lookup");
+        crate::src::window::window_remove_ref(window, c"format lookup");
     }
     result
 }
@@ -1298,9 +1298,10 @@ pub(super) unsafe fn format_loop_panes(
     }
     drop(active);
     drop(all);
-    format_window_owner
-        .expect("format window")
-        .release(c"format pane loop");
+    crate::src::window::window_remove_ref(
+        format_window_owner.expect("format window"),
+        c"format pane loop",
+    );
     Some(CString::new(buffer).expect("format loop output contains no NUL"))
 }
 
@@ -1509,7 +1510,7 @@ pub(super) unsafe fn format_loop_options(
     // All option visits and recursive formatting have ended. This upgrade may
     // now be the last owner after a format callback removed its winlink.
     if let Some(window) = window {
-        window.release(c"format option loop");
+        crate::src::window::window_remove_ref(window, c"format option loop");
     }
     result
 }

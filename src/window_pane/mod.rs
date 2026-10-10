@@ -427,7 +427,7 @@ unsafe fn window_pane_send_resize(wp: &window_pane, sx: u_int, sy: u_int) {
     ws.ws_row = sy as ::core::ffi::c_ushort;
     let parent = wp.window.upgrade().expect("live pane parent");
     let (xpixel, ypixel) = parent.cell_size();
-    parent.release(c"window_pane_send_resize");
+    crate::src::window::window_remove_ref(parent, c"window_pane_send_resize");
     ws.ws_xpixel = xpixel.wrapping_mul(ws.ws_col as u_int) as ::core::ffi::c_ushort;
     ws.ws_ypixel = ypixel.wrapping_mul(ws.ws_row as u_int) as ::core::ffi::c_ushort;
     if crate::src::shared::terminal::set_size(wp.fd.as_ref().map_or(-1, AsRawFd::as_raw_fd), &ws)
@@ -447,7 +447,7 @@ unsafe fn window_pane_update_focus(wp_owner: Option<&Rc<std::cell::UnsafeCell<wi
     let parent = pane.window_observer().upgrade().expect("live pane parent");
     let focused = parent.pane_is_focused(pane);
     pane.update_focus(focused);
-    parent.release(c"window_pane_update_focus");
+    crate::src::window::window_remove_ref(parent, c"window_pane_update_focus");
 }
 
 unsafe fn window_pane_at_index(
@@ -1414,7 +1414,7 @@ unsafe fn window_pane_copy_paste(
         }
         cursor = window_owner.next_pane(Some(&pane_owner));
     }
-    window_owner.release(c"window_pane_copy_paste");
+    crate::src::window::window_remove_ref(window_owner, c"window_pane_copy_paste");
 }
 
 unsafe fn window_pane_copy_key(
@@ -1440,7 +1440,7 @@ unsafe fn window_pane_copy_key(
         }
         cursor = window_owner.next_pane(Some(&pane_owner));
     }
-    window_owner.release(c"window_pane_copy_key");
+    crate::src::window::window_remove_ref(window_owner, c"window_pane_copy_key");
 }
 
 unsafe fn window_pane_paste(

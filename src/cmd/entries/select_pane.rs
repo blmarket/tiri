@@ -199,7 +199,7 @@ unsafe fn cmd_select_pane_marked_pane(
             .expect("marked pane window");
         server_redraw_window_borders(&window);
         server_status_window(&window);
-        window.release(c"marked pane redraw");
+        crate::src::window::window_remove_ref(window, c"marked pane redraw");
     }
     CMD_RETURN_NORMAL
 }
@@ -339,6 +339,6 @@ unsafe fn cmd_select_pane_exec(
         cmd_select_pane_redraw(&window);
         CMD_RETURN_NORMAL
     })();
-    window.release(c"select pane target");
+    crate::src::window::window_remove_ref(window, c"select pane target");
     result
 }

@@ -62,7 +62,7 @@ unsafe fn cmd_swap_pane_exec(
         src_idx = ((*source).winlink_handle()).get_unchecked().idx;
         if args_has(args, 'D' as i32 as u_char) != 0 {
             let previous = std::mem::replace(&mut src_window_owner, dst_window_owner.clone());
-            previous.release(c"cmd_swap_pane_exec");
+            crate::src::window::window_remove_ref(previous, c"cmd_swap_pane_exec");
 
             // The strip does not wrap; the last pane stays in place.
             src_pane_owner = dst_window_owner
@@ -70,7 +70,7 @@ unsafe fn cmd_swap_pane_exec(
                 .unwrap_or_else(|| dst_pane_owner.clone());
         } else if args_has(args, 'U' as i32 as u_char) != 0 {
             let previous = std::mem::replace(&mut src_window_owner, dst_window_owner.clone());
-            previous.release(c"cmd_swap_pane_exec");
+            crate::src::window::window_remove_ref(previous, c"cmd_swap_pane_exec");
 
             // The strip does not wrap; the first pane stays in place.
             src_pane_owner = dst_window_owner
@@ -183,7 +183,7 @@ unsafe fn cmd_swap_pane_exec(
         }
         CMD_RETURN_NORMAL
     })();
-    src_window_owner.release(c"cmd_swap_pane_exec");
-    dst_window_owner.release(c"cmd_swap_pane_exec");
+    crate::src::window::window_remove_ref(src_window_owner, c"cmd_swap_pane_exec");
+    crate::src::window::window_remove_ref(dst_window_owner, c"cmd_swap_pane_exec");
     result
 }

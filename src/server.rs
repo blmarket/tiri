@@ -568,7 +568,7 @@ unsafe fn server_child_exited(pid: pid_t, status: i32) {
             }
             pane_cursor = window_owner.next_pane(Some(&pane_owner));
         }
-        window_owner.release(c"window traversal");
+        crate::src::window::window_remove_ref(window_owner, c"window traversal");
     }
     job_check_died(pid, status);
 }
@@ -586,7 +586,7 @@ unsafe fn server_child_stopped(pid: pid_t, status: i32) {
             pane_cursor = window_owner.next_pane(Some(&pane_owner));
         }
         window_cursor = window_owner.next_window();
-        window_owner.release(c"window traversal");
+        crate::src::window::window_remove_ref(window_owner, c"window traversal");
     }
     job_check_died(pid, status);
 }

@@ -74,6 +74,6 @@ unsafe fn cmd_rotate_window_exec(
         server_redraw_window(&(window_owner));
         CMD_RETURN_NORMAL
     };
-    window_owner.release(c"cmd_rotate_window_exec");
+    crate::src::window::window_remove_ref(window_owner, c"cmd_rotate_window_exec");
     result
 }

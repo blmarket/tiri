@@ -348,15 +348,19 @@ pub unsafe fn window_add_ref(w_owner: &WindowRef, from: &CStr) -> WindowRef {
 }
 /// Consume a window reference, performing final cleanup while it is still held.
 /// Brief upgraded borrows may drop normally only while another owner is guaranteed
-/// to remain. Any owner that may be the final live reference must use this path.
-unsafe fn window_remove_ref(owner: WindowRef, from: &CStr) {
+/// to remain. Any owner that may be the final live reference must use this path:
+/// close callbacks execute while the owner is still live, and may retain it to
+/// postpone destruction.
+pub unsafe fn window_remove_ref(owner: WindowRef, from: &CStr) {
     window_prepare_release(&owner, from);
     drop(owner);
 }
 
 // Both ordinary owners and winlinks keep their reference alive through this call.
 // Winlinks keep the field published so close callbacks can still inspect it.
-unsafe fn window_prepare_release(w_owner: &WindowRef, from: &CStr) {
+// The caller then detaches and drops exactly that reference; this operation must
+// not manufacture an extra owner before testing the count.
+pub unsafe fn window_prepare_release(w_owner: &WindowRef, from: &CStr) {
     let mut w = w_owner.get();
     if (*w).lifecycle == WindowLifecycle::Live && Rc::strong_count(w_owner) == 1 {
         events_fire_window(c"window-closed", Rc::clone(w_owner));

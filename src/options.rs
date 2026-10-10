@@ -1432,7 +1432,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
                 }
             }
             window_cursor = window_owner.next_window();
-            window_owner.release(c"window traversal");
+            crate::src::window::window_remove_ref(window_owner, c"window traversal");
         }
     }
     if strcmp(name, c"cursor-colour".as_ptr()) == 0 as ::core::ffi::c_int {
@@ -1454,7 +1454,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
         while let Some(window_owner) = window_cursor.take() {
             window_owner.refresh_fill_cells();
             window_cursor = window_owner.next_window();
-            window_owner.release(c"window traversal");
+            crate::src::window::window_remove_ref(window_owner, c"window traversal");
         }
     }
     if strcmp(name, c"key-table".as_ptr()) == 0 as ::core::ffi::c_int {
@@ -1541,7 +1541,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
             window_owner.refresh_scrollbars();
             window_owner.refit();
             window_cursor = window_owner.next_window();
-            window_owner.release(c"window traversal");
+            crate::src::window::window_remove_ref(window_owner, c"window traversal");
         }
     }
     if strcmp(name, c"pane-scrollbars".as_ptr()) == 0 as ::core::ffi::c_int {
@@ -1561,7 +1561,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
         while let Some(window_owner) = window_cursor.take() {
             window_owner.refit();
             window_cursor = window_owner.next_window();
-            window_owner.release(c"window traversal");
+            crate::src::window::window_remove_ref(window_owner, c"window traversal");
         }
     }
     if strcmp(name, c"codepoint-widths".as_ptr()) == 0 as ::core::ffi::c_int {

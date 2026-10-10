@@ -92,7 +92,7 @@ mod tests {
             assert_eq!(window.pending_alerts(), 0);
             assert_eq!(window.queue_alerts(WINDOW_BELL), Some(true));
             window.finish_alerts();
-            window.release(c"alert membership test");
+            window_remove_ref(window, c"alert membership test");
         }
     }
 }

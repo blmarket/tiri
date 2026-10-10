@@ -273,7 +273,7 @@ unsafe fn window_tree_preview(
 unsafe fn window_tree_pane_index(pane: &Rc<UnsafeCell<window_pane>>) -> Option<u32> {
     let window = pane.window_observer().upgrade()?;
     let index = window.pane_index(&Rc::downgrade(pane));
-    window.release(c"tree pane index");
+    crate::src::window::window_remove_ref(window, c"tree pane index");
     index
 }
 unsafe fn window_tree_build_pane(
@@ -964,7 +964,7 @@ unsafe fn window_tree_draw_session(
                 }
             }
             format_free(ft_owner);
-            window.release(c"tree session preview");
+            crate::src::window::window_remove_ref(window, c"tree session preview");
             if loop_0 != end.wrapping_sub(1 as u_int) {
                 screen_write_cursormove(
                     &mut *ctx,
@@ -1270,7 +1270,7 @@ unsafe fn window_tree_draw_window(
             next = pane_owner.next_in_window();
         }
     })();
-    window.release(c"tree window preview");
+    crate::src::window::window_remove_ref(window, c"tree window preview");
 }
 unsafe fn window_tree_draw_info(
     mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
@@ -2280,7 +2280,7 @@ unsafe fn window_tree_mouse(
                 std::rc::Rc::as_ptr(&pane_owner) as uint64_t,
             );
         }
-        window.release(c"window_tree_get_target");
+        crate::src::window::window_remove_ref(window, c"window_tree_get_target");
         return '\r' as i32 as key_code;
     }
     KEYC_NONE as ::core::ffi::c_ulong as key_code

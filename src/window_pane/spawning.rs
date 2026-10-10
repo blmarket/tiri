@@ -696,7 +696,7 @@ pub(super) unsafe fn spawn_pane(
         }
         Some(new_pane_owner)
     })();
-    original_window.release(c"spawn pane");
+    crate::src::window::window_remove_ref(original_window, c"spawn pane");
     result
 }
 pub(super) unsafe fn finish_editing(wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {

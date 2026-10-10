@@ -214,7 +214,7 @@ unsafe fn cmd_switch_client_exec(
                 .expect("switch window");
             window_owner.redraw_active_switch(wp.as_ref());
             window_owner.select_pane(wp.as_ref().expect("target pane"), true);
-            window_owner.release(c"switch client pane");
+            crate::src::window::window_remove_ref(window_owner, c"switch client pane");
         }
         if wl.is_alive() {
             (s.as_ref().expect("live session")).select_winlink(wl.clone());

@@ -11,7 +11,6 @@ use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::session_group;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
-use crate::src::window::Window as _;
 use crate::src::window::{winlink_find_by_index, winlink_find_by_window};
 use crate::src::window_pane::WindowPane as _;
 
@@ -198,7 +197,10 @@ pub unsafe fn server_kill_window(owner: WindowRef, mut renumber: ::core::ffi::c_
         s = s_owner.clone();
     }
     recalculate_sizes();
-    owner.release(std::ffi::CStr::from_ptr(c"server_kill_window".as_ptr()));
+    crate::src::window::window_remove_ref(
+        owner,
+        std::ffi::CStr::from_ptr(c"server_kill_window".as_ptr()),
+    );
 }
 pub unsafe fn server_renumber_session(s_owner: &SessionRef) {
     let s = Some(s_owner.clone());
@@ -290,7 +292,7 @@ pub unsafe fn server_link_window(
         .expect("source window")
         .clone();
     let attached = (dst.as_ref().expect("live session")).attach_window(&window_owner, dstidx);
-    window_owner.release(c"server_link_window");
+    crate::src::window::window_remove_ref(window_owner, c"server_link_window");
     dstwl = attached?;
     if marked_pane.winlink_handle() == srcwl {
         marked_pane.set_wl((dstwl).clone());

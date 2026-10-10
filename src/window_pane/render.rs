@@ -62,7 +62,7 @@ pub(super) unsafe fn is_obscured(pane: &Rc<UnsafeCell<window_pane>>) -> bool {
         || yoff < 0
         || (xoff as u32).wrapping_add(sx) > wsx
         || (yoff as u32).wrapping_add(sy) > wsy;
-    window.release(c"pane obscured");
+    crate::src::window::window_remove_ref(window, c"pane obscured");
     outside
 }
 
@@ -79,7 +79,7 @@ pub(super) unsafe fn alternate_screen_changed(pane: &Rc<UnsafeCell<window_pane>>
         window_pane_clear_resizes(&mut *pane.get(), std::ptr::null_mut());
     }
     server_redraw_window_borders(&window);
-    window.release(c"pane alternate screen");
+    crate::src::window::window_remove_ref(window, c"pane alternate screen");
 }
 
 fn apply_style(cell: &mut grid_cell, parsed: style) {
@@ -145,7 +145,7 @@ pub(super) unsafe fn default_colours(pane: &Rc<UnsafeCell<window_pane>>) -> (gri
     let active = window
         .active_pane()
         .is_some_and(|owner| Rc::ptr_eq(&owner, pane));
-    window.release(c"pane default colours");
+    crate::src::window::window_remove_ref(window, c"pane default colours");
     let state = &*pane.get();
     let mut cell = grid_default_cell;
     cell.fg = if active && state.cached_active_gc.fg != 8 {
@@ -480,7 +480,7 @@ pub(super) unsafe fn visible_ranges(
         .upgrade()
         .expect("live pane parent");
     let window_size = window.logical_size();
-    window.release(c"visible pane range");
+    crate::src::window::window_remove_ref(window, c"visible pane range");
     if py as u_int >= window_size.1 || px as u_int >= window_size.0 {
         return;
     }

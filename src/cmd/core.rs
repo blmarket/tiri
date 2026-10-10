@@ -632,15 +632,14 @@ pub unsafe fn cmd_mouse_window(
     if (*m).w == -(1 as ::core::ffi::c_int) {
         wl = s.as_ref().expect("live session").current_winlink();
     } else {
-        let Some(window) = crate::src::window::window_find_by_id((*m).w as u_int)
-        else {
+        let Some(window) = crate::src::window::window_find_by_id((*m).w as u_int) else {
             return refbox::Weak::new();
         };
         wl = s
             .as_ref()
             .expect("live session")
             .with_winlinks(|links| winlink_find_by_window(links, &window));
-        window.release(c"cmd_mouse_window");
+        crate::src::window::window_remove_ref(window, c"cmd_mouse_window");
     }
     if let Some(sp) = sp {
         *sp = Some(session_owner);

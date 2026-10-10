@@ -418,7 +418,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     unsafe fn next_in_window(&self) -> Option<Self> {
         let window = self.window_observer().upgrade()?;
         let next = window.next_pane(Some(self));
-        window.release(c"pane successor parent");
+        crate::src::window::window_remove_ref(window, c"pane successor parent");
         next
     }
 
@@ -623,20 +623,20 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     unsafe fn window_size(&self) -> (u32, u32) {
         let window = self.window_observer().upgrade().expect("live pane parent");
         let size = window.logical_size();
-        window.release(c"pane window size");
+        crate::src::window::window_remove_ref(window, c"pane window size");
         size
     }
     unsafe fn schedule_offset_update(&self) {
         let window = self.window_observer().upgrade().expect("live pane parent");
         window.schedule_offset_update();
-        window.release(c"pane cursor update");
+        crate::src::window::window_remove_ref(window, c"pane cursor update");
     }
     unsafe fn draws_inactive_screen(&self) -> bool {
         let window = self.window_observer().upgrade().expect("live pane parent");
         let inactive = !window
             .active_pane()
             .is_some_and(|owner| Rc::ptr_eq(&owner, self));
-        window.release(c"pane write screen");
+        crate::src::window::window_remove_ref(window, c"pane write screen");
         inactive || !matches!((*self.get()).screen_source, PaneScreenSource::Base)
     }
     unsafe fn output_suppressed(&self) -> bool {
