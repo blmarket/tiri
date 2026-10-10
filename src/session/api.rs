@@ -222,9 +222,11 @@ impl Session for SessionRef {
     unsafe fn select_last_window(&self) -> i32 {
         session_last(self)
     }
+
     unsafe fn window_linked_outside_group(session: Option<&Self>, window: &WindowRef) -> bool {
-        session_is_linked(session, window) != 0
+        session_is_linked(session, window)
     }
+
     type Environment<'a> = &'a environ;
     type EnvironmentMut<'a> = &'a mut environ;
     unsafe fn borrow_environment(&self) -> Option<Self::Environment<'_>> {

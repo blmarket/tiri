@@ -440,15 +440,23 @@ unsafe fn session_detach(
     session_group_synchronize_from(s_owner);
     0 as ::core::ffi::c_int
 }
-unsafe fn session_is_linked(s: Option<&SessionRef>, w: &WindowRef) -> ::core::ffi::c_int {
+
+unsafe fn session_is_linked(s: Option<&SessionRef>, w: &WindowRef) -> bool {
+    let mut next = w.next_winlink(None);
+    let mut n = 0;
+    while next.is_alive() {
+        n += 1;
+        next = w.next_winlink(Some(next));
+    }
+
     let group = session_group_for(&s.map_or_else(std::rc::Weak::new, Rc::downgrade));
-    let members = if group.is_null() {
-        1
-    } else {
-        session_group_count(group) as usize
-    };
-    w.is_linked_outside_group(members) as ::core::ffi::c_int
+    if group.is_null() {
+        return n != 1;
+    }
+
+    return n != session_group_count(group);
 }
+
 unsafe fn session_next_alert(mut wl: refbox::Weak<winlink>) -> refbox::Weak<winlink> {
     while wl.is_alive() {
         if wl.get_unchecked().flags & WINLINK_ALERTFLAGS != 0 {

@@ -396,9 +396,6 @@ impl Window for WindowRef {
     unsafe fn contains_pane(&self, pane: &Weak<UnsafeCell<window_pane>>) -> bool {
         window_has_pane(&*self.get(), pane)
     }
-    unsafe fn is_linked_outside_group(&self, members: usize) -> bool {
-        Rc::strong_count(self) != members
-    }
     unsafe fn pending_alerts(&self) -> i32 {
         (*self.get()).flags & crate::src::shared::window::WINDOW_ALERTFLAGS
     }
