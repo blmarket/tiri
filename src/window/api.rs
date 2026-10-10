@@ -114,9 +114,6 @@ pub trait Window {
     /// Immediate association edits; the Session index retains the link itself.
     unsafe fn add_winlink(&self, link: refbox::Weak<winlink>);
     unsafe fn remove_winlink(&self, link: refbox::Weak<winlink>);
-    /// Preserve unlink's ownership-based check. Borrow the published winlink
-    /// owner directly: cloning it before this query changes the decision.
-    unsafe fn is_linked_outside_group(&self, members: usize) -> bool;
     unsafe fn contains_pane(&self, pane: &Weak<UnsafeCell<window_pane>>) -> bool;
     /// Only alert bits, never the window's other bookkeeping flags.
     unsafe fn pending_alerts(&self) -> i32;
