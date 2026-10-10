@@ -203,8 +203,23 @@ pub unsafe fn winlink_add(
     wl
 }
 
+// Keep the field published through the close notification. Its callback can
+// inspect the winlink or retain the window. Detach only after that notification,
+// then drop the consumed Rc without notifying or cleaning up twice.
 unsafe fn winlink_release_window(mut wl: refbox::Weak<winlink>, from: &CStr) {
-    window_remove_ref(wl.get_mut_unchecked().window_owner.take().unwrap(), from);
+    window_prepare_release(
+        wl.get_unchecked()
+            .window_owner
+            .as_ref()
+            .expect("winlink window reference"),
+        from,
+    );
+    drop(
+        wl.get_mut_unchecked()
+            .window_owner
+            .take()
+            .expect("winlink window reference"),
+    );
 }
 
 pub unsafe fn winlink_set_window(mut wl: refbox::Weak<winlink>, w_owner: &WindowRef) {

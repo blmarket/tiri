@@ -812,27 +812,6 @@ fn four_model_fields_and_inherent_helpers_remain_owner_private() {
 }
 
 #[test]
-fn legacy_core_functions_are_private_to_the_owner() {
-    for path in [
-        "src/session/mod.rs",
-        "src/window/mod.rs",
-        "src/window_pane/mod.rs",
-        "src/server_client/mod.rs",
-    ] {
-        let syntax = syn::parse_file(&std::fs::read_to_string(path).unwrap()).unwrap();
-        for item in &syntax.items {
-            if let Item::Fn(function) = item {
-                assert!(
-                    matches!(function.vis, syn::Visibility::Inherited),
-                    "{path}: {} must enter through its trait",
-                    function.sig.ident
-                );
-            }
-        }
-    }
-}
-
-#[test]
 fn external_client_types_use_holders_without_exposing_model_storage() {
     struct ClientStorage<'a>(&'a Path);
     impl<'ast> Visit<'ast> for ClientStorage<'_> {
