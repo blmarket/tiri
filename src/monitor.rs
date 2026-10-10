@@ -197,22 +197,15 @@ unsafe fn monitor_check_value(
         let last = match target {
             MonitorValueTarget::Session => &mut item.last,
             MonitorValueTarget::Pane(pane, index) => {
-                let find = monitor_pane {
-                    pane,
-                    idx: index,
-                    ..monitor_pane::empty()
-                };
-                let mut record = monitor_panes_find(&mut item.panes, &find);
+                let mut record = monitor_panes_find(&mut item.panes, pane, index);
                 if record.is_null() {
-                    assert!(monitor_panes_insert(&mut item.panes, Box::new(find)).is_ok());
-                    record = monitor_panes_find(
-                        &mut item.panes,
-                        &monitor_pane {
-                            pane,
-                            idx: index,
-                            ..monitor_pane::empty()
-                        },
-                    );
+                    let mut owner = Box::new(monitor_pane {
+                        pane,
+                        idx: index,
+                        ..monitor_pane::empty()
+                    });
+                    record = &raw mut *owner;
+                    assert!(monitor_panes_insert(&mut item.panes, owner).is_ok());
                 }
                 if let Some(generation) = generation {
                     (*record).generation = generation;
@@ -220,22 +213,15 @@ unsafe fn monitor_check_value(
                 &mut (*record).last
             }
             MonitorValueTarget::Window(window, index) => {
-                let find = monitor_window {
-                    window,
-                    idx: index,
-                    ..monitor_window::empty()
-                };
-                let mut record = monitor_windows_find(&mut item.windows, &find);
+                let mut record = monitor_windows_find(&mut item.windows, window, index);
                 if record.is_null() {
-                    assert!(monitor_windows_insert(&mut item.windows, Box::new(find)).is_ok());
-                    record = monitor_windows_find(
-                        &mut item.windows,
-                        &monitor_window {
-                            window,
-                            idx: index,
-                            ..monitor_window::empty()
-                        },
-                    );
+                    let mut owner = Box::new(monitor_window {
+                        window,
+                        idx: index,
+                        ..monitor_window::empty()
+                    });
+                    record = &raw mut *owner;
+                    assert!(monitor_windows_insert(&mut item.windows, owner).is_ok());
                 }
                 if let Some(generation) = generation {
                     (*record).generation = generation;
@@ -921,9 +907,8 @@ unsafe fn monitor_items_next(head: &mut monitor_items, elm: &monitor_item) -> *m
 }
 
 // Parent indexes own stable Box records; no independent index allocation.
-unsafe fn monitor_panes_find(head: &mut monitor_panes, elm: &monitor_pane) -> *mut monitor_pane {
-    let key = (elm.pane, elm.idx);
-    head.get_mut(&key)
+unsafe fn monitor_panes_find(head: &mut monitor_panes, pane: u32, idx: u32) -> *mut monitor_pane {
+    head.get_mut(&(pane, idx))
         .map_or(std::ptr::null_mut(), |node| &raw mut **node)
 }
 unsafe fn monitor_panes_insert(
@@ -975,10 +960,10 @@ unsafe fn monitor_panes_next(head: &mut monitor_panes, elm: &monitor_pane) -> *m
 // Parent indexes own stable Box records; no independent index allocation.
 unsafe fn monitor_windows_find(
     head: &mut monitor_windows,
-    elm: &monitor_window,
+    window: u32,
+    idx: u32,
 ) -> *mut monitor_window {
-    let key = (elm.window, elm.idx);
-    head.get_mut(&key)
+    head.get_mut(&(window, idx))
         .map_or(std::ptr::null_mut(), |node| &raw mut **node)
 }
 unsafe fn monitor_windows_insert(

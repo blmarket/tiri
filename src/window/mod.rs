@@ -64,14 +64,6 @@ pub static mut windows: windows = windows { storage: None };
 
 static mut next_window_id: u_int = 0;
 
-fn windows_find(head: &windows, elm: &window) -> Option<WindowRef> {
-    let owner = head.storage.as_ref()?;
-    let map = owner
-        .try_borrow_mut()
-        .expect("window index already borrowed");
-    map.get(&elm.id)?.upgrade()
-}
-
 /// Register an observer, without adding a strong reference to the window.
 unsafe fn windows_insert(head: *mut windows, window: &WindowRef) -> Option<WindowRef> {
     let elm = window.get();
@@ -248,9 +240,12 @@ pub unsafe fn window_find_by_id_str(s: &CStr) -> Option<WindowRef> {
     window_find_by_id(id)
 }
 pub unsafe fn window_find_by_id(id: u_int) -> Option<WindowRef> {
-    let mut w = window::default();
-    w.id = id;
-    windows_find(&windows, &w)
+    let head: &windows = &windows;
+    let owner = head.storage.as_ref()?;
+    let map = owner
+        .try_borrow_mut()
+        .expect("window index already borrowed");
+    map.get(&id)?.upgrade()
 }
 unsafe fn window_update_activity(w_owner: &WindowRef) {
     let mut w = w_owner.get();
@@ -837,13 +832,10 @@ unsafe fn window_get_pane_lines(w: &window) -> pane_lines {
 
 impl Drop for window {
     fn drop(&mut self) {
-        // Stack lookup keys have no shared lifecycle. Rc windows must be explicitly
-        // cleaned up before the last owner is dropped; Drop does no model cleanup.
+        // Windows must be explicitly cleaned up before the last owner is dropped;
+        // Drop does no model cleanup.
         assert!(
-            matches!(
-                self.lifecycle,
-                WindowLifecycle::Unowned | WindowLifecycle::Destroyed
-            ),
+            self.lifecycle == WindowLifecycle::Destroyed,
             "window must be released through window_remove_ref"
         );
     }

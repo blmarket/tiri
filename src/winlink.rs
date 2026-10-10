@@ -18,22 +18,12 @@ pub use crate::src::shared::window::{
 };
 use crate::src::shared::window::{WINLINK_ALERTFLAGS, WINLINK_VISITED};
 
-pub fn winlinks_find(head: &winlinks, elm: &winlink) -> refbox::Weak<winlink> {
+pub fn winlinks_nfind(head: &winlinks, idx: ::core::ffi::c_int) -> refbox::Weak<winlink> {
     let owner = head;
     let map = owner
         .try_borrow_mut()
         .expect("winlink index already borrowed");
-    let key = elm.idx;
-    map.get(&key)
-        .map_or(refbox::Weak::new(), |owner| owner.downgrade())
-}
-
-pub fn winlinks_nfind(head: &winlinks, elm: &winlink) -> refbox::Weak<winlink> {
-    let owner = head;
-    let map = owner
-        .try_borrow_mut()
-        .expect("winlink index already borrowed");
-    let key = elm.idx;
+    let key = idx;
     map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
         .next()
         .map_or(refbox::Weak::new(), |(_, owner)| owner.downgrade())
@@ -96,20 +86,16 @@ pub unsafe fn winlink_find_by_window(wwl: &winlinks, w_owner: &WindowRef) -> ref
 
 pub unsafe fn winlink_find_by_index(
     wwl: &winlinks,
-    mut idx: ::core::ffi::c_int,
+    idx: ::core::ffi::c_int,
 ) -> refbox::Weak<winlink> {
-    let mut wl: winlink = winlink {
-        idx: 0,
-        session: std::rc::Weak::new(),
-        window_owner: None,
-        flags: 0,
-        owner: refbox::Weak::new(),
-    };
     if idx < 0 as ::core::ffi::c_int {
         fatalx(|out| out.write_all(b"bad index"));
     }
-    wl.idx = idx;
-    winlinks_find(wwl, &wl)
+    let map = wwl
+        .try_borrow_mut()
+        .expect("winlink index already borrowed");
+    map.get(&idx)
+        .map_or(refbox::Weak::new(), |owner| owner.downgrade())
 }
 
 pub unsafe fn winlink_find_by_window_id(wwl: &winlinks, mut id: u_int) -> refbox::Weak<winlink> {

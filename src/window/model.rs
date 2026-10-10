@@ -10,11 +10,8 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::src::shared::window::{window_winlinks, WindowIndex};
 /// Explicit cleanup is separate from the lifetime of retained Rc allocations.
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub(super) enum WindowLifecycle {
-    /// A plain lookup value has no shared allocation to release.
-    #[default]
-    Unowned,
     Live,
     Destroying,
     Destroyed,
@@ -64,10 +61,26 @@ pub struct window {
     /// Weak traversal handle into the containing index.
     pub(super) owner: refbox::Weak<WindowIndex>,
 }
-impl Default for window {
-    fn default() -> Self {
-        Self {
-            lifecycle: Default::default(),
+impl window {
+    pub(super) fn invalidate_scene(&mut self) {
+        self.redraw_scene_generation = self.redraw_scene_generation.wrapping_add(1);
+    }
+    /// Retain the active pane for the current operation.
+    pub(super) fn active_pane(&self) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
+        self.active.upgrade()
+    }
+
+    /// The caller supplies a live Rc-backed pane.
+    pub(super) fn set_active(
+        &mut self,
+        pane: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
+    ) {
+        self.active = pane.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
+    }
+
+    pub(super) fn new() -> WindowRef {
+        let value = Self {
+            lifecycle: WindowLifecycle::Live,
             id: Default::default(),
             latest: Default::default(),
             name: Default::default(),
@@ -101,30 +114,7 @@ impl Default for window {
             options: Default::default(),
             winlinks: Default::default(),
             owner: Default::default(),
-        }
-    }
-}
-
-impl window {
-    pub(super) fn invalidate_scene(&mut self) {
-        self.redraw_scene_generation = self.redraw_scene_generation.wrapping_add(1);
-    }
-    /// Retain the active pane for the current operation.
-    pub(super) fn active_pane(&self) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
-        self.active.upgrade()
-    }
-
-    /// The caller supplies a live Rc-backed pane.
-    pub(super) fn set_active(
-        &mut self,
-        pane: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
-    ) {
-        self.active = pane.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-    }
-
-    pub(super) fn new() -> WindowRef {
-        let mut value = Self::default();
-        value.lifecycle = WindowLifecycle::Live;
+        };
         std::rc::Rc::new(std::cell::UnsafeCell::new(value))
     }
 }

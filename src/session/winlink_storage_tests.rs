@@ -22,14 +22,10 @@ fn owned_winlinks_preserve_duplicates_bounds_and_traversal() {
         assert!(!winlink_add(&mut *head, 42).is_alive());
         assert_eq!(weak, existing);
         assert!(weak.is_alive());
-        let mut probe: winlink = Default::default();
-        probe.idx = 42;
-        probe.owner = refbox::Weak::new();
-        assert_eq!(winlinks_find(&*head, &probe), existing);
-        assert_eq!(winlinks_nfind(&*head, &probe), existing);
-        probe.idx = 8;
-        assert!(!winlinks_find(&*head, &probe).is_alive());
-        assert_eq!(winlinks_nfind(&*head, &probe), existing);
+        assert_eq!(winlink_find_by_index(&*head, 42), existing);
+        assert_eq!(winlinks_nfind(&*head, 42), existing);
+        assert!(!winlink_find_by_index(&*head, 8).is_alive());
+        assert_eq!(winlinks_nfind(&*head, 8), existing);
         let mut node = winlinks_minmax(&*head, -1);
         for id in [0, 7, 42, i32::MAX] {
             assert_eq!(node.get_unchecked().idx, id);
@@ -50,7 +46,7 @@ fn owned_winlinks_preserve_duplicates_bounds_and_traversal() {
         }
         assert_eq!(weak.try_borrow_mut().err(), Some(BorrowError::Dropped));
         assert!(crate::src::window::winlinks_is_empty(&head));
-        assert!(!winlinks_nfind(&*head, &probe).is_alive());
+        assert!(!winlinks_nfind(&*head, 8).is_alive());
         let replacement = winlink_add(&mut *head, 42);
         assert!(replacement.is_alive());
         winlink_remove(&mut *head, (replacement).clone());
