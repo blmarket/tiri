@@ -1,6 +1,5 @@
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::session::Session;
-use crate::src::shared::window::WindowRef;
 use std::time::SystemTime;
 mod alerts;
 mod api;
@@ -12,7 +11,8 @@ pub use crate::src::window_pane::*;
 pub use crate::src::winlink::*;
 pub use layout::{LayoutAction, LayoutKind};
 pub use model::window;
-use model::WindowLifecycle;
+mod owner;
+pub use owner::{WindowRef, WindowWeak};
 
 use crate::src::alerts::alerts_queue;
 use crate::src::cmd::find::{cmd_find_from_pane, cmd_find_from_window};
@@ -24,7 +24,7 @@ use crate::src::events_payload::{
 };
 use crate::src::ffi::libc::strcasecmp;
 use crate::src::format::bytes::write_cstr;
-use crate::src::log::{log_cstr, log_debug};
+use crate::src::log::log_debug;
 use crate::src::options::options_owner_ptr;
 use crate::src::options::{options_get_number, options_get_number_ref};
 
@@ -72,10 +72,10 @@ unsafe fn windows_insert(head: *mut windows, window: &WindowRef) -> Option<Windo
     let mut map = owner
         .try_borrow_mut()
         .expect("window index already borrowed");
-    if let Some(existing) = map.get(&(*elm).id).and_then(std::rc::Weak::upgrade) {
+    if let Some(existing) = map.get(&(*elm).id).and_then(WindowWeak::upgrade) {
         return Some(existing);
     }
-    map.insert((*elm).id, Rc::downgrade(window));
+    map.insert((*elm).id, WindowRef::downgrade(window));
     (*elm).owner = observer;
     None
 }
@@ -92,7 +92,7 @@ unsafe fn windows_remove(head: &mut windows, elm: &WindowRef) -> bool {
         let id = (*elm.get()).id;
         if !map
             .get(&id)
-            .is_some_and(|weak| weak.ptr_eq(&Rc::downgrade(elm)))
+            .is_some_and(|weak| weak.ptr_eq(&WindowRef::downgrade(elm)))
         {
             return false;
         }
@@ -111,7 +111,7 @@ fn windows_minmax(head: &windows) -> Option<WindowRef> {
     let map = owner
         .try_borrow_mut()
         .expect("window index already borrowed");
-    map.values().find_map(std::rc::Weak::upgrade)
+    map.values().find_map(WindowWeak::upgrade)
 }
 
 fn windows_next(elm: &window) -> Option<WindowRef> {
@@ -190,14 +190,14 @@ unsafe fn window_fire_renamed(w_owner: &WindowRef, old_name: &CStr) {
         flags: 0,
         s: std::rc::Weak::new(),
         wl: refbox::Weak::new(),
-        w: std::rc::Weak::new(),
+        w: WindowWeak::new(),
         wp: std::rc::Weak::new(),
         idx: 0,
     };
     let mut ep = event_payload_create();
     cmd_find_from_window(&raw mut fs, w_owner, 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut ep, &fs);
-    event_payload_set_window(&mut ep, c"window", std::rc::Rc::clone(w_owner));
+    event_payload_set_window(&mut ep, c"window", WindowRef::clone(w_owner));
     event_payload_set_string(&mut ep, c"old_name", |out| {
         write_cstr(out, nullable_cstr(old_name.as_ptr()))
     });
@@ -316,8 +316,6 @@ pub unsafe fn window_create(
 }
 unsafe fn window_destroy(w_owner: &WindowRef) {
     let mut w = w_owner.get();
-    assert_eq!((*w).lifecycle, WindowLifecycle::Live);
-    (*w).lifecycle = WindowLifecycle::Destroying;
     log_debug(format_args!("window @{} destroyed", { (*w).id }));
     // The releasing owner keeps weak parent links upgradeable throughout cleanup.
     if !(*w).owner.is_empty() {
@@ -328,47 +326,6 @@ unsafe fn window_destroy(w_owner: &WindowRef) {
     drop((*w).alerts_timer.take());
     drop((*w).offset_timer.take());
     drop((*w).options.take());
-    (*w).lifecycle = WindowLifecycle::Destroyed;
-}
-
-pub unsafe fn window_add_ref(w_owner: &WindowRef, from: &CStr) -> WindowRef {
-    let mut w = w_owner.get();
-    let owner = Rc::clone(w_owner);
-    log_debug(format_args!(
-        "retain window @{} ({})",
-        { (*w).id },
-        log_cstr(from)
-    ));
-    owner
-}
-/// Consume a window reference, performing final cleanup while it is still held.
-/// Brief upgraded borrows may drop normally only while another owner is guaranteed
-/// to remain. Any owner that may be the final live reference must use this path:
-/// close callbacks execute while the owner is still live, and may retain it to
-/// postpone destruction.
-pub unsafe fn window_remove_ref(owner: WindowRef, from: &CStr) {
-    window_prepare_release(&owner, from);
-    drop(owner);
-}
-
-// Both ordinary owners and winlinks keep their reference alive through this call.
-// Winlinks keep the field published so close callbacks can still inspect it.
-// The caller then detaches and drops exactly that reference; this operation must
-// not manufacture an extra owner before testing the count.
-pub unsafe fn window_prepare_release(w_owner: &WindowRef, from: &CStr) {
-    let mut w = w_owner.get();
-    if (*w).lifecycle == WindowLifecycle::Live && Rc::strong_count(w_owner) == 1 {
-        events_fire_window(c"window-closed", Rc::clone(w_owner));
-        // Close callbacks can retain the window. Defer cleanup until their release.
-        if (*w).lifecycle == WindowLifecycle::Live && Rc::strong_count(w_owner) == 1 {
-            window_destroy(w_owner);
-        }
-    }
-    log_debug(format_args!(
-        "release window @{} ({})",
-        { (*w).id },
-        log_cstr(from)
-    ));
 }
 
 unsafe fn window_set_name(w_owner: &WindowRef, new_name: &CStr, mut untrusted: ::core::ffi::c_int) {
@@ -612,7 +569,7 @@ unsafe fn window_rearrange_panes(
         .collect::<Vec<_>>();
     for pane in &arrived {
         assert!(
-            pane.window_observer().ptr_eq(&Rc::downgrade(window)),
+            pane.window_observer().ptr_eq(&WindowRef::downgrade(window)),
             "an arriving pane is reparented to the window"
         );
     }
@@ -828,26 +785,4 @@ unsafe fn window_get_pane_lines(w: &window) -> pane_lines {
         w.options.as_deref().expect("window options"),
         c"pane-border-lines",
     ) as pane_lines
-}
-
-impl Drop for window {
-    fn drop(&mut self) {
-        // Windows must be explicitly cleaned up before the last owner is dropped;
-        // Drop does no model cleanup.
-        assert!(
-            self.lifecycle == WindowLifecycle::Destroyed,
-            "window must be released through window_remove_ref"
-        );
-    }
-}
-
-#[cfg(test)]
-mod teardown_tests {
-    use super::*;
-
-    #[test]
-    #[should_panic(expected = "window must be released through window_remove_ref")]
-    fn dropping_the_last_owner_without_explicit_release_is_rejected() {
-        drop(window::new());
-    }
 }

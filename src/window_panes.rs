@@ -147,8 +147,8 @@ unsafe fn window_panes_get_source(
     if !wlp.is_null() {
         *wlp = link;
     }
-    let window = Rc::downgrade(&window_owner);
-    crate::src::window::window_remove_ref(window_owner, c"window_panes_get_source");
+    let window = WindowRef::downgrade(&window_owner);
+    drop(window_owner);
     Some(window)
 }
 unsafe fn window_panes_set_preview(data: *mut window_panes_modedata) {
@@ -553,7 +553,7 @@ unsafe fn window_panes_draw_number(
         .active_pane()
         .as_ref()
         .is_some_and(|active| Rc::ptr_eq(active, wp_owner));
-    crate::src::window::window_remove_ref(window, c"display-panes active pane");
+    drop(window);
     if active {
         name = c"display-panes-active-colour".as_ptr();
     } else {
@@ -725,7 +725,7 @@ unsafe fn window_panes_draw_pane(
         .upgrade()
         .expect("live pane parent");
     let index = window.pane_index(&Rc::downgrade(wp_owner));
-    crate::src::window::window_remove_ref(window, c"display-panes pane index");
+    drop(window);
     let Some(pane) = index else {
         return;
     };
@@ -843,7 +843,7 @@ unsafe fn window_panes_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         screen_write_stop(&mut ctx);
         mode_pane_owner.request_redraw(false);
     })();
-    crate::src::window::window_remove_ref(window, c"display-panes layout preview");
+    drop(window);
     if let Some(owner) = source_session_owner {
         drop(owner);
     }

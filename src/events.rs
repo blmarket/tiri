@@ -135,7 +135,7 @@ pub unsafe fn events_fire_client(name: &CStr, owner: ClientRef) {
         event_payload_set_window(
             &mut ep,
             c"window",
-            std::rc::Rc::clone((fs.window_handle().as_ref()).expect("live window")),
+            WindowRef::clone((fs.window_handle().as_ref()).expect("live window")),
         );
     }
     if fs.winlink_handle().is_alive() {
@@ -181,7 +181,7 @@ pub unsafe fn events_fire_window(name: &CStr, owner: WindowRef) {
     let mut ep = event_payload_create();
     cmd_find_from_window(
         &raw mut fs,
-        &std::rc::Rc::clone(&(owner)),
+        &WindowRef::clone(&(owner)),
         0 as ::core::ffi::c_int,
     );
     event_payload_set_target(&mut ep, &fs);
@@ -229,7 +229,7 @@ pub unsafe fn events_fire_winlink(name: &CStr, mut wl: refbox::Weak<winlink>) {
     event_payload_set_window(
         &mut ep,
         c"window",
-        std::rc::Rc::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
+        WindowRef::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
     );
     event_payload_set_int(&mut ep, c"window_index", wl.get_unchecked().idx);
     events_fire(name, ep);

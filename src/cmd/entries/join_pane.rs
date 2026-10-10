@@ -83,7 +83,7 @@ unsafe fn cmd_join_pane_exec(
             return CMD_RETURN_ERROR;
         }
         let before = args_has(args, 'b' as i32 as u_char) != 0;
-        let same_window = std::rc::Rc::ptr_eq(src_owner, &dst_window);
+        let same_window = WindowRef::ptr_eq(src_owner, &dst_window);
         // The pane's place beside its target, in the destination's list.
         let mut order = dst_window
             .pane_snapshot()
@@ -139,9 +139,9 @@ unsafe fn cmd_join_pane_exec(
         CMD_RETURN_NORMAL
     })();
     if let Some(window) = src_window {
-        crate::src::window::window_remove_ref(window, c"join pane source");
+        drop(window);
     }
-    crate::src::window::window_remove_ref(dst_window, c"join pane destination");
+    drop(dst_window);
     result
 }
 
@@ -154,5 +154,5 @@ unsafe fn cmd_join_pane_finish(source: WindowRef, destination: &WindowRef) {
     } else {
         events_fire_window(c"window-layout-changed", source);
     }
-    events_fire_window(c"window-layout-changed", std::rc::Rc::clone(destination));
+    events_fire_window(c"window-layout-changed", WindowRef::clone(destination));
 }

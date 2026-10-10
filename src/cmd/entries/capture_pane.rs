@@ -90,7 +90,7 @@ unsafe fn cmd_capture_pane_exec(
             .upgrade()
             .expect("clear-history pane window");
         server_redraw_window(&window);
-        crate::src::window::window_remove_ref(window, c"clear-history redraw");
+        drop(window);
         return CMD_RETURN_NORMAL;
     }
     buf = match pane_owner.capture(&mut *args, item_handle) {

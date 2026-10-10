@@ -32,7 +32,7 @@ pub(super) unsafe fn compare(
     let order_index = |parent: &WindowWeak, observer: &std::rc::Weak<UnsafeCell<window_pane>>| {
         let window = parent.upgrade()?;
         let index = window.pane_index(observer);
-        crate::src::window::window_remove_ref(window, c"pane sort");
+        drop(window);
         index
     };
     let result = match criteria.order {

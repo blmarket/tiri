@@ -7,6 +7,7 @@ use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::window::winlink;
+use crate::src::shared::window::WindowRef;
 use crate::src::window::Window as _;
 use std::rc::Rc;
 pub static cmd_rotate_window_entry: cmd_entry = {
@@ -64,7 +65,7 @@ unsafe fn cmd_rotate_window_exec(
             .and_then(|pane| window_owner.step_pane(Some(&Rc::downgrade(&pane)), down))
             .or_else(|| window_owner.step_pane(None, down))
             .expect("rotation window has an active candidate");
-        std::rc::Rc::clone(&(window_owner)).select_pane(&selected_pane, true);
+        WindowRef::clone(&(window_owner)).select_pane(&selected_pane, true);
         cmd_find_from_winlink_pane(
             &mut *current.current.borrow_mut(),
             wl.clone(),
@@ -74,6 +75,6 @@ unsafe fn cmd_rotate_window_exec(
         server_redraw_window(&(window_owner));
         CMD_RETURN_NORMAL
     };
-    crate::src::window::window_remove_ref(window_owner, c"cmd_rotate_window_exec");
+    drop(window_owner);
     result
 }

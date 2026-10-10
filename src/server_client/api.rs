@@ -1,5 +1,6 @@
 //! Operations on retained clients. Legacy dispatch remains explicitly unsafe:
 //! an Rc keeps storage alive, but does not make reentrant model borrows exclusive.
+use crate::src::shared::window::WindowWeak;
 
 use super::*;
 use crate::src::control::{control_get_window_size, control_write_output};
@@ -466,13 +467,13 @@ impl Client for ClientRef {
     }
     unsafe fn reset_pan(&self, window: Option<&WindowRef>) {
         let state = &mut *self.get();
-        if window.is_none_or(|window| state.pan_window.ptr_eq(&Rc::downgrade(window))) {
-            state.pan_window = Weak::new();
+        if window.is_none_or(|window| state.pan_window.ptr_eq(&WindowRef::downgrade(window))) {
+            state.pan_window = WindowWeak::new();
         }
     }
     unsafe fn apply_pan(&self, window: &WindowRef, view: &mut tty_window_view) -> bool {
         let (sx, sy) = window.logical_size();
-        let observer = Rc::downgrade(window);
+        let observer = WindowRef::downgrade(window);
         let state = &mut *self.get();
         if !state.pan_window.ptr_eq(&observer) {
             return false;
@@ -493,7 +494,7 @@ impl Client for ClientRef {
     }
     unsafe fn pan_window(&self, window: &WindowRef, direction: Direction, amount: u32) {
         let (width, height) = window.logical_size();
-        let observer = Rc::downgrade(window);
+        let observer = WindowRef::downgrade(window);
         let state = &mut *self.get();
         if !state.pan_window.ptr_eq(&observer) {
             state.pan_window = observer;
@@ -897,7 +898,7 @@ impl Client for ClientRef {
         let link = session.current_winlink();
         link.get_unchecked()
             .window_handle()
-            .is_some_and(|owner| Rc::ptr_eq(owner, window))
+            .is_some_and(|owner| WindowRef::ptr_eq(owner, window))
     }
 
     unsafe fn participates_in_window_sizing(&self) -> bool {
@@ -1265,7 +1266,7 @@ impl Client for ClientRef {
                     let entry = link.get_unchecked();
                     if entry
                         .window_handle()
-                        .is_some_and(|owner| Rc::ptr_eq(owner, &window))
+                        .is_some_and(|owner| WindowRef::ptr_eq(owner, &window))
                     {
                         return true;
                     }
@@ -1277,9 +1278,9 @@ impl Client for ClientRef {
             let link = session.current_winlink();
             link.get_unchecked()
                 .window_handle()
-                .is_some_and(|owner| Rc::ptr_eq(owner, &window))
+                .is_some_and(|owner| WindowRef::ptr_eq(owner, &window))
         };
-        crate::src::window::window_remove_ref(window, c"client pane render parent");
+        drop(window);
         if invisible || !matches {
             return i32::from(matches);
         }

@@ -437,7 +437,7 @@ impl Window for WindowRef {
                     state.id,
                     left.as_micros()
                 ));
-                let observer = Rc::downgrade(self);
+                let observer = WindowRef::downgrade(self);
                 state.name_event = Some(
                     Timer::new(left, move || {
                         if let Some(owner) = observer.upgrade() {
@@ -464,13 +464,13 @@ impl Window for WindowRef {
         let state = &mut *self.get();
         if state.offset_timer.is_none() {
             let delay = Duration::from_micros(10_000);
-            let observer = Rc::downgrade(self);
+            let observer = WindowRef::downgrade(self);
             state.offset_timer = Some(
                 Timer::new(delay, move || {
                     if let Some(window) = observer.upgrade() {
                         drop((*window.get()).offset_timer.take());
                         crate::src::tty::tty_update_window_offset(&window);
-                        window_remove_ref(window, c"offset update timer");
+                        drop(window);
                     }
                 })
                 .expect("arm timer"),
@@ -703,7 +703,7 @@ unsafe fn resize_fire_window_resized(w_owner: &WindowRef, mut old_sx: u_int, mut
     let mut ep = event_payload_create();
     cmd_find_from_window(&raw mut fs, w_owner, 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut ep, &fs);
-    event_payload_set_window(&mut ep, c"window", std::rc::Rc::clone(w_owner));
+    event_payload_set_window(&mut ep, c"window", WindowRef::clone(w_owner));
     event_payload_set_uint(&mut ep, c"width", (*w).sx);
     event_payload_set_uint(&mut ep, c"height", (*w).sy);
     event_payload_set_uint(&mut ep, c"old_width", old_sx);
@@ -741,7 +741,7 @@ unsafe fn resize_window(
         { sy }
     ));
     server_redraw_window(w_owner);
-    events_fire_window(c"window-layout-changed", std::rc::Rc::clone(w_owner));
+    events_fire_window(c"window-layout-changed", WindowRef::clone(w_owner));
     resize_fire_window_resized(w_owner, old_sx, old_sy);
     (*w).flags &= !WINDOW_RESIZE;
 }
@@ -810,7 +810,7 @@ mod tests {
                 original.data.data[0], b'I',
                 "fill snapshots survive refresh"
             );
-            window_remove_ref(owner, c"fill rendering test");
+            drop(owner);
             crate::src::tmux::global_options = previous_server_options;
             crate::src::options::options_free(server_options);
         }

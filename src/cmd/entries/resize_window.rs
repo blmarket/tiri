@@ -155,6 +155,6 @@ unsafe fn cmd_resize_window_exec(
         recalculate_size(&window_owner, 1 as ::core::ffi::c_int);
         CMD_RETURN_NORMAL
     })();
-    crate::src::window::window_remove_ref(window_owner, c"resize window command");
+    drop(window_owner);
     result
 }

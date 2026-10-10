@@ -10,6 +10,7 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
 use crate::src::names::default_window_name_cstring;
 use crate::src::options::{options_get_number, options_set_number};
+use crate::src::shared::window::WindowRef;
 use crate::src::window::Window as _;
 
 use crate::src::server_client::Client as _;
@@ -171,7 +172,7 @@ unsafe fn cmd_break_pane_exec(
             let (sx, sy) = source_window.size();
             let (xpixel, ypixel) = source_window.cell_size();
             let window = crate::src::window::window_create(sx, sy, xpixel, ypixel);
-            let destination = std::rc::Rc::downgrade(&window);
+            let destination = WindowRef::downgrade(&window);
             pane_owner.reparent(&window);
             window.set_latest_client(tc.as_ref());
             window
@@ -204,13 +205,13 @@ unsafe fn cmd_break_pane_exec(
                 Ok(wl) => wl,
                 Err(error) => {
                     cmdq_error(item_handle, |out| write_cstr(out, &*error));
-                    crate::src::window::window_remove_ref(window, c"cmd_break_pane_exec");
+                    drop(window);
                     return CMD_RETURN_ERROR;
                 }
             };
             pane_owner.mark_changed();
             pane_owner.refresh_palette();
-            crate::src::window::window_remove_ref(window, c"cmd_break_pane_exec");
+            drop(window);
             events_fire_window(
                 c"window-created",
                 destination.upgrade().expect("live destination window"),
@@ -256,6 +257,6 @@ unsafe fn cmd_break_pane_exec(
         }
         CMD_RETURN_NORMAL
     })();
-    crate::src::window::window_remove_ref(source_window, c"break pane source");
+    drop(source_window);
     result
 }

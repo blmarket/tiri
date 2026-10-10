@@ -93,7 +93,7 @@ pub unsafe fn server_redraw_window(window: &WindowRef) {
                     .ok()
                     .and_then(|link| link.window_owner.clone())
             })
-            .is_some_and(|current| std::rc::Rc::ptr_eq(window, &current));
+            .is_some_and(|current| WindowRef::ptr_eq(window, &current));
         if matches {
             server_redraw_client(client);
         }
@@ -114,7 +114,7 @@ pub unsafe fn server_redraw_window_borders(window: &WindowRef) {
                     .ok()
                     .and_then(|link| link.window_owner.clone())
             })
-            .is_some_and(|current| std::rc::Rc::ptr_eq(window, &current));
+            .is_some_and(|current| WindowRef::ptr_eq(window, &current));
         if matches {
             client.request_redraw(CLIENT_REDRAWBORDERS as u64);
         }
@@ -175,7 +175,7 @@ pub unsafe fn server_kill_window(owner: WindowRef, mut renumber: ::core::ffi::c_
         if !(!s.as_ref().expect("live session").contains_window(&owner)) {
             loop {
                 wl = s.as_ref().expect("live session").with_winlinks(|links| {
-                    winlink_find_by_window(links, &std::rc::Rc::clone(&(owner)))
+                    winlink_find_by_window(links, &WindowRef::clone(&(owner)))
                 });
                 if !wl.is_alive() {
                     break;
@@ -197,10 +197,7 @@ pub unsafe fn server_kill_window(owner: WindowRef, mut renumber: ::core::ffi::c_
         s = s_owner.clone();
     }
     recalculate_sizes();
-    crate::src::window::window_remove_ref(
-        owner,
-        std::ffi::CStr::from_ptr(c"server_kill_window".as_ptr()),
-    );
+    drop(owner);
 }
 pub unsafe fn server_renumber_session(s_owner: &SessionRef) {
     let s = Some(s_owner.clone());
@@ -292,7 +289,7 @@ pub unsafe fn server_link_window(
         .expect("source window")
         .clone();
     let attached = (dst.as_ref().expect("live session")).attach_window(&window_owner, dstidx);
-    crate::src::window::window_remove_ref(window_owner, c"server_link_window");
+    drop(window_owner);
     dstwl = attached?;
     if marked_pane.winlink_handle() == srcwl {
         marked_pane.set_wl((dstwl).clone());

@@ -418,7 +418,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     unsafe fn next_in_window(&self) -> Option<Self> {
         let window = self.window_observer().upgrade()?;
         let next = window.next_pane(Some(self));
-        crate::src::window::window_remove_ref(window, c"pane successor parent");
+        drop(window);
         next
     }
 
@@ -623,20 +623,20 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     unsafe fn window_size(&self) -> (u32, u32) {
         let window = self.window_observer().upgrade().expect("live pane parent");
         let size = window.logical_size();
-        crate::src::window::window_remove_ref(window, c"pane window size");
+        drop(window);
         size
     }
     unsafe fn schedule_offset_update(&self) {
         let window = self.window_observer().upgrade().expect("live pane parent");
         window.schedule_offset_update();
-        crate::src::window::window_remove_ref(window, c"pane cursor update");
+        drop(window);
     }
     unsafe fn draws_inactive_screen(&self) -> bool {
         let window = self.window_observer().upgrade().expect("live pane parent");
         let inactive = !window
             .active_pane()
             .is_some_and(|owner| Rc::ptr_eq(&owner, self));
-        crate::src::window::window_remove_ref(window, c"pane write screen");
+        drop(window);
         inactive || !matches!((*self.get()).screen_source, PaneScreenSource::Base)
     }
     unsafe fn output_suppressed(&self) -> bool {
@@ -952,14 +952,14 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     }
     unsafe fn reparent(&self, window: &WindowRef) {
         let state = &mut *self.get();
-        state.window = Rc::downgrade(window);
+        state.window = WindowRef::downgrade(window);
         state
             .options
             .as_deref_mut()
             .expect("live pane options")
-            .parent = Some(crate::src::options::OptionsScope::Window(Rc::downgrade(
-            window,
-        )));
+            .parent = Some(crate::src::options::OptionsScope::Window(
+            WindowRef::downgrade(window),
+        ));
         state.flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
     }
 

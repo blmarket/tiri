@@ -62,7 +62,7 @@ unsafe fn cmd_swap_pane_exec(
         src_idx = ((*source).winlink_handle()).get_unchecked().idx;
         if args_has(args, 'D' as i32 as u_char) != 0 {
             let previous = std::mem::replace(&mut src_window_owner, dst_window_owner.clone());
-            crate::src::window::window_remove_ref(previous, c"cmd_swap_pane_exec");
+            drop(previous);
 
             // The strip does not wrap; the last pane stays in place.
             src_pane_owner = dst_window_owner
@@ -70,7 +70,7 @@ unsafe fn cmd_swap_pane_exec(
                 .unwrap_or_else(|| dst_pane_owner.clone());
         } else if args_has(args, 'U' as i32 as u_char) != 0 {
             let previous = std::mem::replace(&mut src_window_owner, dst_window_owner.clone());
-            crate::src::window::window_remove_ref(previous, c"cmd_swap_pane_exec");
+            drop(previous);
 
             // The strip does not wrap; the first pane stays in place.
             src_pane_owner = dst_window_owner
@@ -99,7 +99,7 @@ unsafe fn cmd_swap_pane_exec(
                     })
                     .collect::<Vec<_>>()
             };
-            if Rc::ptr_eq(&src_window_owner, &dst_window_owner) {
+            if WindowRef::ptr_eq(&src_window_owner, &dst_window_owner) {
                 dst_window_owner
                     .rearrange_panes(&swapped(&dst_window_owner))
                     .expect("a reorder is never refused");
@@ -128,9 +128,9 @@ unsafe fn cmd_swap_pane_exec(
                 }
             }
             if args_has(args, 'd' as i32 as u_char) == 0 {
-                if !Rc::ptr_eq(&src_window_owner, &dst_window_owner) {
+                if !WindowRef::ptr_eq(&src_window_owner, &dst_window_owner) {
                     src_window_owner.select_pane(&dst_pane_owner, true);
-                    std::rc::Rc::clone(&(dst_window_owner)).select_pane(&src_pane_owner, true);
+                    WindowRef::clone(&(dst_window_owner)).select_pane(&src_pane_owner, true);
                 } else {
                     src_window_owner.select_pane(&dst_pane_owner, true);
                 }
@@ -145,10 +145,10 @@ unsafe fn cmd_swap_pane_exec(
                     .active_pane()
                     .is_some_and(|pane| Rc::ptr_eq(&pane, &dst_pane_owner))
                 {
-                    std::rc::Rc::clone(&(dst_window_owner)).select_pane(&src_pane_owner, true);
+                    WindowRef::clone(&(dst_window_owner)).select_pane(&src_pane_owner, true);
                 }
             }
-            if !Rc::ptr_eq(&src_window_owner, &dst_window_owner) {
+            if !WindowRef::ptr_eq(&src_window_owner, &dst_window_owner) {
                 crate::src::shared::pane::pane_history_remove(
                     src_window_owner.borrow_pane_history_mut(),
                     &Rc::downgrade(&src_pane_owner),
@@ -162,28 +162,31 @@ unsafe fn cmd_swap_pane_exec(
                 server_redraw_window(&src_window_owner);
             }
             server_redraw_window(&(dst_window_owner));
-            if !Rc::ptr_eq(&src_window_owner, &dst_window_owner) {
+            if !WindowRef::ptr_eq(&src_window_owner, &dst_window_owner) {
                 src_pane_owner.notify_moved(
                     &src_window_owner,
                     src_idx,
-                    &std::rc::Rc::clone(&(dst_window_owner)),
+                    &WindowRef::clone(&(dst_window_owner)),
                     dst_idx,
                 );
                 dst_pane_owner.notify_moved(
-                    &std::rc::Rc::clone(&(dst_window_owner)),
+                    &WindowRef::clone(&(dst_window_owner)),
                     dst_idx,
                     &src_window_owner,
                     src_idx,
                 );
             }
             // Across two windows each rearrange announced its own change.
-            if Rc::ptr_eq(&src_window_owner, &dst_window_owner) {
-                events_fire_window(c"window-layout-changed", Rc::clone(&src_window_owner));
+            if WindowRef::ptr_eq(&src_window_owner, &dst_window_owner) {
+                events_fire_window(
+                    c"window-layout-changed",
+                    WindowRef::clone(&src_window_owner),
+                );
             }
         }
         CMD_RETURN_NORMAL
     })();
-    crate::src::window::window_remove_ref(src_window_owner, c"cmd_swap_pane_exec");
-    crate::src::window::window_remove_ref(dst_window_owner, c"cmd_swap_pane_exec");
+    drop(src_window_owner);
+    drop(dst_window_owner);
     result
 }

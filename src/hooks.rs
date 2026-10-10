@@ -45,6 +45,7 @@ use crate::src::shared::options::options_entry;
 use crate::src::shared::options::OPTIONS_TABLE_IS_HOOK;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::SessionRef;
+use crate::src::shared::window::{WindowRef, WindowWeak};
 use crate::src::window::WindowPane;
 use std::ffi::{CStr, CString};
 
@@ -169,7 +170,7 @@ unsafe fn hooks_insert(
         if source.is_none() && fs.wl.is_alive() {
             let link = fs.wl.get_unchecked();
             let window = link.window_handle().expect("hook window");
-            source = OptionsScope::Window(std::rc::Rc::downgrade(window)).resolve(name, false);
+            source = OptionsScope::Window(WindowRef::downgrade(window)).resolve(name, false);
         }
         source
     };
@@ -459,7 +460,7 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, fallback: &cmd_find_state, g
             .ptr_eq(
                 &wl.get_unchecked()
                     .window_handle()
-                    .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
+                    .map_or_else(WindowWeak::new, WindowRef::downgrade),
             )
     {
         cmd_find_from_winlink_pane(
@@ -504,7 +505,7 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, fallback: &cmd_find_state, g
         event_payload_set_window(
             &mut ep,
             c"window",
-            std::rc::Rc::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
+            WindowRef::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
         );
         event_payload_set_int(&mut ep, c"window_index", wl.get_unchecked().idx);
     }

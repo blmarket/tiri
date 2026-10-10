@@ -3,6 +3,7 @@ use crate::src::format::bytes::nullable_cstr;
 use crate::src::session::Session;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::window::WindowRef;
+use crate::src::shared::window::WindowWeak;
 use crate::src::window::*;
 use std::os::fd::AsRawFd;
 use std::time::Duration;
@@ -250,7 +251,7 @@ unsafe fn window_fire_pane_moved(
         flags: 0,
         s: std::rc::Weak::new(),
         wl: refbox::Weak::new(),
-        w: std::rc::Weak::new(),
+        w: WindowWeak::new(),
         wp: std::rc::Weak::new(),
         idx: 0,
     };
@@ -258,9 +259,9 @@ unsafe fn window_fire_pane_moved(
     cmd_find_from_pane(&raw mut fs, wp_owner, 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut ep, &fs);
     event_payload_set_pane(&mut ep, c"pane", Rc::clone(wp_owner));
-    event_payload_set_window(&mut ep, c"window", std::rc::Rc::clone(new_w_owner));
-    event_payload_set_window(&mut ep, c"old_window", std::rc::Rc::clone(old_w_owner));
-    event_payload_set_window(&mut ep, c"new_window", std::rc::Rc::clone(new_w_owner));
+    event_payload_set_window(&mut ep, c"window", WindowRef::clone(new_w_owner));
+    event_payload_set_window(&mut ep, c"old_window", WindowRef::clone(old_w_owner));
+    event_payload_set_window(&mut ep, c"new_window", WindowRef::clone(new_w_owner));
     if old_idx != -(1 as ::core::ffi::c_int) {
         event_payload_set_int(&mut ep, c"old_window_index", old_idx);
     }
@@ -285,7 +286,7 @@ unsafe fn window_fire_pane_mode_changed(
         flags: 0,
         s: std::rc::Weak::new(),
         wl: refbox::Weak::new(),
-        w: std::rc::Weak::new(),
+        w: WindowWeak::new(),
         wp: std::rc::Weak::new(),
         idx: 0,
     };
@@ -296,7 +297,7 @@ unsafe fn window_fire_pane_mode_changed(
     event_payload_set_window(
         &mut ep,
         c"window",
-        std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")),
+        WindowRef::clone(((*wp).window_handle().as_ref()).expect("live window")),
     );
     if !current.is_null() {
         event_payload_set_string(&mut ep, c"current_mode", |out| {
@@ -322,7 +323,7 @@ unsafe fn window_fire_pane_prompt(
         flags: 0,
         s: std::rc::Weak::new(),
         wl: refbox::Weak::new(),
-        w: std::rc::Weak::new(),
+        w: WindowWeak::new(),
         wp: std::rc::Weak::new(),
         idx: 0,
     };
@@ -334,7 +335,7 @@ unsafe fn window_fire_pane_prompt(
     event_payload_set_window(
         &mut ep,
         c"window",
-        std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")),
+        WindowRef::clone(((*wp).window_handle().as_ref()).expect("live window")),
     );
     event_payload_set_string(&mut ep, c"prompt_type", |out| {
         out.write_all(type_string.to_bytes())
@@ -427,7 +428,7 @@ unsafe fn window_pane_send_resize(wp: &window_pane, sx: u_int, sy: u_int) {
     ws.ws_row = sy as ::core::ffi::c_ushort;
     let parent = wp.window.upgrade().expect("live pane parent");
     let (xpixel, ypixel) = parent.cell_size();
-    crate::src::window::window_remove_ref(parent, c"window_pane_send_resize");
+    drop(parent);
     ws.ws_xpixel = xpixel.wrapping_mul(ws.ws_col as u_int) as ::core::ffi::c_ushort;
     ws.ws_ypixel = ypixel.wrapping_mul(ws.ws_row as u_int) as ::core::ffi::c_ushort;
     if crate::src::shared::terminal::set_size(wp.fd.as_ref().map_or(-1, AsRawFd::as_raw_fd), &ws)
@@ -447,7 +448,7 @@ unsafe fn window_pane_update_focus(wp_owner: Option<&Rc<std::cell::UnsafeCell<wi
     let parent = pane.window_observer().upgrade().expect("live pane parent");
     let focused = parent.pane_is_focused(pane);
     pane.update_focus(focused);
-    crate::src::window::window_remove_ref(parent, c"window_pane_update_focus");
+    drop(parent);
 }
 
 unsafe fn window_pane_at_index(
@@ -632,9 +633,9 @@ unsafe fn window_pane_create(
     let mut host: [::core::ffi::c_char; 65] = [0; 65];
     let owner = window_pane::new();
     wp = owner.get();
-    (*wp).window = std::rc::Rc::downgrade(w_owner).clone();
+    (*wp).window = WindowRef::downgrade(w_owner).clone();
     (*wp).options = Some(crate::src::options::options_create_owned(Some(
-        crate::src::options::OptionsScope::Window(Rc::downgrade(w_owner)),
+        crate::src::options::OptionsScope::Window(WindowRef::downgrade(w_owner)),
     )));
     (*wp).flags = PANE_STYLECHANGED;
     (*wp).cmd_status = -(1 as ::core::ffi::c_int);
@@ -921,7 +922,7 @@ unsafe fn window_pane_resize(
         flags: 0,
         s: std::rc::Weak::new(),
         wl: refbox::Weak::new(),
-        w: std::rc::Weak::new(),
+        w: WindowWeak::new(),
         wp: std::rc::Weak::new(),
         idx: 0,
     };
@@ -962,7 +963,7 @@ unsafe fn window_pane_resize(
     event_payload_set_window(
         &mut ep,
         c"window",
-        std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")),
+        WindowRef::clone(((*wp).window_handle().as_ref()).expect("live window")),
     );
     event_payload_set_uint(&mut ep, c"width", sx);
     event_payload_set_uint(&mut ep, c"height", sy);
@@ -1414,7 +1415,7 @@ unsafe fn window_pane_copy_paste(
         }
         cursor = window_owner.next_pane(Some(&pane_owner));
     }
-    crate::src::window::window_remove_ref(window_owner, c"window_pane_copy_paste");
+    drop(window_owner);
 }
 
 unsafe fn window_pane_copy_key(
@@ -1440,7 +1441,7 @@ unsafe fn window_pane_copy_key(
         }
         cursor = window_owner.next_pane(Some(&pane_owner));
     }
-    crate::src::window::window_remove_ref(window_owner, c"window_pane_copy_key");
+    drop(window_owner);
 }
 
 unsafe fn window_pane_paste(
@@ -1933,7 +1934,7 @@ unsafe fn window_get_bg_client(
                     .attached_session()
                     .upgrade()
                     .expect("live session")
-                    .contains_window(&std::rc::Rc::clone(
+                    .contains_window(&WindowRef::clone(
                         ((*wp).window_handle().as_ref()).expect("live window"),
                     )) as i32)
                     == 0)
@@ -1991,7 +1992,7 @@ unsafe fn window_pane_get_fg(
                     .attached_session()
                     .upgrade()
                     .expect("live session")
-                    .contains_window(&std::rc::Rc::clone(
+                    .contains_window(&WindowRef::clone(
                         ((*wp).window_handle().as_ref()).expect("live window"),
                     )) as i32)
                     == 0)

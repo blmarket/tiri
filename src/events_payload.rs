@@ -22,6 +22,7 @@ use crate::src::shared::format::format_tree;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
+use crate::src::shared::window::WindowWeak;
 use crate::src::window::{winlink_find_by_index, Window};
 use crate::src::{server_client::Client, session::Session, window::WindowPane};
 use hmux_buffer::SegmentedBuf;
@@ -48,7 +49,7 @@ unsafe fn event_payload_free_target(ep: &mut event_payload) {
         session.release(c"event_payload_free_target");
     }
     if let Some(window) = ep.target_window.take() {
-        crate::src::window::window_remove_ref(window, c"event_payload_free_target");
+        drop(window);
     }
     if let Some(pane) = ep.target_pane.take() {
         pane.release(c"event_payload_free_target");
@@ -66,9 +67,7 @@ impl Drop for event_payload_item {
             match value {
                 EventPayloadValue::Client(client) => client.release(),
                 EventPayloadValue::Session(session) => session.release(c"event_payload_free_value"),
-                EventPayloadValue::Window(window) => {
-                    crate::src::window::window_remove_ref(window, c"event_payload_free_value")
-                }
+                EventPayloadValue::Window(window) => drop(window),
                 EventPayloadValue::Pane(pane) => pane.release(c"event_payload_free_value"),
                 _ => {}
             }
@@ -141,7 +140,7 @@ pub unsafe fn event_payload_set_target(ep: &mut event_payload, fs: &cmd_find_sta
             target.w = ep
                 .target_window
                 .as_ref()
-                .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
+                .map_or_else(WindowWeak::new, WindowRef::downgrade);
         }
     } else {
         target.idx = -1;
@@ -166,7 +165,7 @@ pub unsafe fn event_payload_get_target(ep: &event_payload, fs: &mut cmd_find_sta
                     && !link
                         .get_unchecked()
                         .window_handle()
-                        .is_some_and(|owner| std::rc::Rc::ptr_eq(owner, window))
+                        .is_some_and(|owner| WindowRef::ptr_eq(owner, window))
                 {
                     link = refbox::Weak::new();
                 }

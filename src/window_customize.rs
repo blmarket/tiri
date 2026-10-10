@@ -443,7 +443,7 @@ unsafe fn window_customize_scope_text(
             idx = window
                 .pane_index(&Rc::downgrade(&pane))
                 .expect("pane belongs to window ordering");
-            crate::src::window::window_remove_ref(window, c"customize pane index");
+            drop(window);
             CString::new(format!("pane {idx}")).expect("pane index contains no NUL")
         }
         4 | 9 => {

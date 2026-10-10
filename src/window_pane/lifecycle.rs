@@ -22,6 +22,7 @@ use crate::src::screen_write::{
 };
 use crate::src::server_client::Client;
 use crate::src::shared::client::ClientRef;
+use crate::src::shared::window::{WindowRef, WindowWeak};
 use crate::src::tmux::sig2name;
 use crate::src::window::Window as _;
 use crate::src::window_pane::WindowPane as _;
@@ -52,7 +53,7 @@ unsafe fn server_fire_pane_exit(
         flags: 0,
         s: std::rc::Weak::new(),
         wl: refbox::Weak::new(),
-        w: std::rc::Weak::new(),
+        w: WindowWeak::new(),
         wp: std::rc::Weak::new(),
         idx: 0,
     };
@@ -64,7 +65,7 @@ unsafe fn server_fire_pane_exit(
     event_payload_set_window(
         &mut ep,
         c"window",
-        std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")),
+        WindowRef::clone(((*wp).window_handle().as_ref()).expect("live window")),
     );
     if status & 0x7f as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
         event_payload_set_int(
@@ -98,9 +99,9 @@ pub(super) unsafe fn kill_process(pane_owner: &std::rc::Rc<std::cell::UnsafeCell
         server_kill_window(window_owner, 1);
         recalculate_sizes();
     } else {
-        crate::src::window::window_remove_ref(window_owner, c"server_kill_pane");
+        drop(window_owner);
         ClientRef::forget_pane(pane_owner);
-        std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window"))
+        WindowRef::clone(((*wp).window_handle().as_ref()).expect("live window"))
             .remove_pane(pane_owner);
         server_redraw_window(((*wp).window_handle().as_ref()).expect("live window"));
     };
@@ -153,7 +154,7 @@ pub(super) unsafe fn finish_process(
         drop((*wp).pipe_fd.take());
     }
     if !(*wp).flags & PANE_STATUSREADY != 0 {
-        crate::src::window::window_remove_ref(window_owner, c"server_destroy_pane");
+        drop(window_owner);
         return;
     }
     remain_on_exit = options_get_number(
@@ -183,7 +184,7 @@ pub(super) unsafe fn finish_process(
         3275366147856559585 => {}
         _ => {
             if (*wp).flags & PANE_STATUSDRAWN != 0 {
-                crate::src::window::window_remove_ref(window_owner, c"server_destroy_pane");
+                drop(window_owner);
                 return;
             }
             (*wp).flags |= PANE_STATUSDRAWN;
@@ -225,7 +226,7 @@ pub(super) unsafe fn finish_process(
             }
             (*wp).base.mode &= !MODE_CURSOR;
             (*wp).flags |= PANE_REDRAW;
-            crate::src::window::window_remove_ref(window_owner, c"server_destroy_pane");
+            drop(window_owner);
             return;
         }
     }
@@ -233,11 +234,11 @@ pub(super) unsafe fn finish_process(
         server_fire_pane_exit(c"pane-exited", pane_owner);
     }
     ClientRef::forget_pane(pane_owner);
-    std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window"))
+    WindowRef::clone(((*wp).window_handle().as_ref()).expect("live window"))
         .remove_pane(pane_owner);
     if window_owner.next_pane(None).is_none() {
         server_kill_window(
-            std::rc::Rc::downgrade(((*wp).window_handle().as_ref()).expect("live window"))
+            WindowRef::downgrade(((*wp).window_handle().as_ref()).expect("live window"))
                 .upgrade()
                 .expect("live pane window"),
             1,
@@ -245,7 +246,7 @@ pub(super) unsafe fn finish_process(
     } else {
         server_redraw_window(((*wp).window_handle().as_ref()).expect("live window"));
     };
-    crate::src::window::window_remove_ref(window_owner, c"server_destroy_pane");
+    drop(window_owner);
 }
 pub(super) unsafe fn process_exited(
     pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,

@@ -1,10 +1,5 @@
 //! Window identities and shared link/mode component declarations.
-pub use crate::src::window::window;
-
-/// Retained Window identity. Final owners must use Window::release.
-pub type WindowRef = std::rc::Rc<std::cell::UnsafeCell<window>>;
-/// Nonowning Window identity, including callback and parent links.
-pub type WindowWeak = std::rc::Weak<std::cell::UnsafeCell<window>>;
+pub use crate::src::window::{window, WindowRef, WindowWeak};
 
 use super::abi::u_int;
 use super::arguments::args;

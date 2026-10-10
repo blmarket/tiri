@@ -39,7 +39,7 @@ unsafe fn alerts_callback() {
             log_hex(alerts as u32 as u64)
         ));
         owner.finish_alerts();
-        crate::src::window::window_remove_ref(owner, c"alerts_callback");
+        drop(owner);
         if !has_next {
             break;
         }
@@ -61,7 +61,7 @@ pub unsafe fn alerts_reset_all() {
     while let Some(owner) = cursor {
         owner.reset_alert_timer();
         cursor = owner.next_window();
-        crate::src::window::window_remove_ref(owner, c"window traversal");
+        drop(owner);
     }
 }
 

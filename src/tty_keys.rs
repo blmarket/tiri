@@ -2272,7 +2272,7 @@ unsafe fn tty_keys_update_focus(client: &ClientRef) {
     };
     if let Some(window) = window {
         window.update_focus();
-        crate::src::window::window_remove_ref(window, c"terminal focus update");
+        drop(window);
     }
 }
 

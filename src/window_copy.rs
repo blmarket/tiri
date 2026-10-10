@@ -70,6 +70,7 @@ use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::style::*;
+use crate::src::shared::window::WindowRef;
 pub use crate::src::shared::window::{window, window_mode, window_mode_entry, winlink};
 use crate::src::status::status_message_set;
 use crate::src::style::style_apply_with_options;
@@ -893,7 +894,7 @@ pub unsafe fn window_copy_scroll(
 ) {
     let mut wme: refbox::Weak<window_mode_entry> = pane_owner.mode_entry();
     if !!wme.is_alive() {
-        std::rc::Rc::clone(&pane_owner.window_observer().upgrade().expect("live window"))
+        WindowRef::clone(&pane_owner.window_observer().upgrade().expect("live window"))
             .select_pane(pane_owner, false);
         window_copy_scroll1(wme.clone(), pane_owner, sl_mpos, my, tty_oy, scroll_exit);
     }

@@ -9,18 +9,9 @@ use crate::src::shared::window::WindowRef;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::src::shared::window::{window_winlinks, WindowIndex};
-/// Explicit cleanup is separate from the lifetime of retained Rc allocations.
-#[derive(Debug, PartialEq, Eq)]
-pub(super) enum WindowLifecycle {
-    Live,
-    Destroying,
-    Destroyed,
-}
-
 #[repr(C)]
-/// Rc-owned window record; retain/release preserves pre-close notifications.
+/// Window record owned through `WindowRef`; dropping the last owner closes it.
 pub struct window {
-    pub(super) lifecycle: WindowLifecycle,
     pub(super) id: u_int,
     /// Nonowning identity of the client last active in this window.
     pub(super) latest: ClientWeak,
@@ -80,7 +71,6 @@ impl window {
 
     pub(super) fn new() -> WindowRef {
         let value = Self {
-            lifecycle: WindowLifecycle::Live,
             id: Default::default(),
             latest: Default::default(),
             name: Default::default(),
@@ -115,6 +105,6 @@ impl window {
             winlinks: Default::default(),
             owner: Default::default(),
         };
-        std::rc::Rc::new(std::cell::UnsafeCell::new(value))
+        WindowRef::new(value)
     }
 }

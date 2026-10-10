@@ -17,7 +17,7 @@ pub(super) unsafe fn reset_timer(owner: &WindowRef) {
         timeout.as_secs() as u32
     ));
     if timeout.as_secs() != 0 {
-        let observer = Rc::downgrade(owner);
+        let observer = WindowRef::downgrade(owner);
         (*w).alerts_timer = Some(
             Timer::new(timeout, move || {
                 if let Some(owner) = observer.upgrade() {
@@ -83,16 +83,16 @@ mod tests {
             assert_eq!(window.queue_alerts(WINDOW_ACTIVITY), None);
             assert_ne!(window.pending_alerts() & WINDOW_ACTIVITY, 0);
             window.with_options_mut(|options| options_set_number(options, c"monitor-bell", 1));
-            let count = Rc::strong_count(&window);
+            let count = WindowRef::strong_count(&window);
             assert_eq!(window.queue_alerts(WINDOW_BELL), Some(true));
             // Reentrant delivery can set another flag, but cannot claim another owner.
             assert_eq!(window.queue_alerts(WINDOW_BELL), Some(false));
-            assert_eq!(Rc::strong_count(&window), count);
+            assert_eq!(WindowRef::strong_count(&window), count);
             window.finish_alerts();
             assert_eq!(window.pending_alerts(), 0);
             assert_eq!(window.queue_alerts(WINDOW_BELL), Some(true));
             window.finish_alerts();
-            window_remove_ref(window, c"alert membership test");
+            drop(window);
         }
     }
 }

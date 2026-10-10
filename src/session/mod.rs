@@ -1,3 +1,4 @@
+use crate::src::shared::window::WindowWeak;
 use crate::src::window::Window as _;
 mod alerts;
 mod api;
@@ -548,7 +549,7 @@ unsafe fn session_fire_window_changed(
         flags: 0,
         s: std::rc::Weak::new(),
         wl: refbox::Weak::new(),
-        w: std::rc::Weak::new(),
+        w: WindowWeak::new(),
         wp: std::rc::Weak::new(),
         idx: 0,
     };
@@ -559,12 +560,12 @@ unsafe fn session_fire_window_changed(
     event_payload_set_window(
         &mut ep,
         c"window",
-        std::rc::Rc::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
+        WindowRef::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
     );
     event_payload_set_window(
         &mut ep,
         c"new_window",
-        std::rc::Rc::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
+        WindowRef::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
     );
     event_payload_set_int(&mut ep, c"window_index", wl.get_unchecked().idx);
     event_payload_set_int(&mut ep, c"new_window_index", wl.get_unchecked().idx);
@@ -572,9 +573,7 @@ unsafe fn session_fire_window_changed(
         event_payload_set_window(
             &mut ep,
             c"old_window",
-            std::rc::Rc::clone(
-                (old.get_unchecked().window_handle().as_ref()).expect("live window"),
-            ),
+            WindowRef::clone((old.get_unchecked().window_handle().as_ref()).expect("live window")),
         );
         event_payload_set_int(&mut ep, c"old_window_index", old.get_unchecked().idx);
     }
@@ -607,9 +606,9 @@ unsafe fn session_set_current(
         }
     }
     winlink_clear_flags(wl.clone());
-    (&std::rc::Rc::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window")))
+    (&WindowRef::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window")))
         .update_activity();
-    tty_update_window_offset(&std::rc::Rc::clone(
+    tty_update_window_offset(&WindowRef::clone(
         (wl.get_unchecked().window_handle().as_ref()).expect("live window"),
     ));
     session_fire_window_changed(s_owner, wl.clone(), (old).clone());
@@ -726,9 +725,7 @@ unsafe fn session_renumber_windows(s_owner: &SessionRef) {
         wl_new.get_mut_unchecked().session = std::rc::Rc::downgrade(s_owner);
         winlink_set_window(
             (wl_new).clone(),
-            &std::rc::Rc::clone(
-                (wl.get_unchecked().window_handle().as_ref()).expect("live window"),
-            ),
+            &WindowRef::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
         );
         wl_new.get_mut_unchecked().flags |= wl.get_unchecked().flags & WINLINK_ALERTFLAGS;
         if wl == marked_pane.winlink_handle() {
@@ -752,9 +749,7 @@ unsafe fn session_renumber_windows(s_owner: &SessionRef) {
         wl.get_mut_unchecked().flags &= !WINLINK_VISITED;
         wl_new = winlink_find_by_window(
             &(*s).windows,
-            &std::rc::Rc::clone(
-                (wl.get_unchecked().window_handle().as_ref()).expect("live window"),
-            ),
+            &WindowRef::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
         );
         if wl_new.is_alive() {
             crate::src::window::winlink_stack_append(&mut (*s).lastw, (wl_new).clone());

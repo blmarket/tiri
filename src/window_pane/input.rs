@@ -61,6 +61,7 @@ use crate::src::session::Session as _;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::input::{input_request_clipboard_data, input_request_palette_data};
 use crate::src::shared::pane::pane_output_data as window_pane_get_new_data;
+use crate::src::shared::window::WindowRef;
 use crate::src::style::colour::{
     colour_force_rgb, colour_join_rgb, colour_palette_clear, colour_palette_get,
     colour_palette_set, colour_parse_x11_logged, colour_split_rgb,
@@ -2018,7 +2019,7 @@ unsafe fn input_fire_pane_title_changed(
     event_payload_set_window(
         &mut ep,
         c"window",
-        std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")),
+        WindowRef::clone(((*wp).window_handle().as_ref()).expect("live window")),
     );
     event_payload_set_string(&mut ep, c"new_title", |out| {
         write_cstr(out, nullable_cstr(title.as_ptr()))
@@ -2225,7 +2226,7 @@ pub(super) unsafe fn input_parse_buffer(
         return;
     }
     (*wp).output_generation = (*wp).output_generation.wrapping_add(1);
-    (&std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window"))).update_activity();
+    (&WindowRef::clone(((*wp).window_handle().as_ref()).expect("live window"))).update_activity();
     if !(*wp).flags & PANE_ACTIVITY != 0 {
         (*wp).flags |= PANE_ACTIVITY;
         events_fire_pane(c"pane-activity", std::rc::Rc::clone(wp_owner));
@@ -2507,7 +2508,7 @@ unsafe fn input_c0_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                     std::rc::Rc::clone(input_pane_owner.as_ref().expect("live pane")),
                 );
                 alerts_queue(
-                    &std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")),
+                    &WindowRef::clone(((*wp).window_handle().as_ref()).expect("live window")),
                     WINDOW_BELL,
                 );
             }
@@ -3833,7 +3834,7 @@ unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
         m += 1;
     }
     if let Some(window) = window_owner {
-        crate::src::window::window_remove_ref(window, c"input window operations");
+        drop(window);
     }
 }
 unsafe fn input_csi_dispatch_sgr_256_do(
@@ -4625,7 +4626,7 @@ unsafe fn input_exit_rename(ictx: *mut input_ctx) {
     let name = name.to_owned();
     let window = pane.window_observer().upgrade().expect("pane window");
     if (*ictx).input_len == 0 {
-        let scope = crate::src::options::OptionsScope::Window(std::rc::Rc::downgrade(&window));
+        let scope = crate::src::options::OptionsScope::Window(WindowRef::downgrade(&window));
         scope
             .remove_or_default(c"automatic-rename", None)
             .expect("remove local automatic-rename option");
@@ -4642,7 +4643,7 @@ unsafe fn input_exit_rename(ictx: *mut input_ctx) {
     }
     server_redraw_window_borders(&window);
     server_status_window(&window);
-    crate::src::window::window_remove_ref(window, c"input rename");
+    drop(window);
 }
 unsafe fn input_top_bit_set(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
@@ -5221,7 +5222,7 @@ unsafe fn input_fire_command_event(
     event_payload_set_window(
         &mut ep,
         c"window",
-        std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")),
+        WindowRef::clone(((*wp).window_handle().as_ref()).expect("live window")),
     );
     event_payload_set_pane(&mut ep, c"pane", std::rc::Rc::clone(wp_owner));
     if (*wp).cmd_status != -(1 as ::core::ffi::c_int) {
@@ -5714,7 +5715,7 @@ unsafe fn input_add_request(
         );
         loop_0 = registry_loop_0_owner.clone();
     }
-    crate::src::window::window_remove_ref(window, c"input request target");
+    drop(window);
     if c.is_none() {
         return -(1 as ::core::ffi::c_int);
     }

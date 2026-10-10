@@ -49,7 +49,7 @@ pub(super) fn invalidate(id: PaneId) {
         pane.release(c"plugin redraw");
         if let Some(window) = window {
             crate::src::server_fn::server_status_window(&window);
-            crate::src::window::window_remove_ref(window, c"plugin redraw");
+            drop(window);
         }
     }
 }

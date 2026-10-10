@@ -395,7 +395,7 @@ pub unsafe fn recalculate_size(w_owner: &WindowRef, mut now: ::core::ffi::c_int)
                     .current_winlink()
                     .get_unchecked()
                     .window_handle()
-                    .is_none_or(|current| !std::rc::Rc::ptr_eq(current, w_owner))
+                    .is_none_or(|current| !WindowRef::ptr_eq(current, w_owner))
             } else {
                 !session.contains_window(w_owner)
             }
@@ -489,6 +489,6 @@ pub unsafe fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
     while let Some(window_owner) = window_cursor.take() {
         recalculate_size(&window_owner, now);
         window_cursor = window_owner.next_window();
-        crate::src::window::window_remove_ref(window_owner, c"window traversal");
+        drop(window_owner);
     }
 }

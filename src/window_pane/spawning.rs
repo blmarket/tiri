@@ -105,7 +105,7 @@ unsafe fn spawn_fire_pane_created(
     event_payload_set_window(
         &mut ep,
         c"window",
-        std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")),
+        WindowRef::clone(((*wp).window_handle().as_ref()).expect("live window")),
     );
     event_payload_set_int(
         &mut ep,
@@ -505,7 +505,7 @@ pub(super) unsafe fn spawn_pane(
                 (*new_wp).fd = None;
                 if !(*sc).flags & SPAWN_RESPAWN != 0 {
                     ClientRef::forget_pane(&new_pane_owner);
-                    std::rc::Rc::clone(
+                    WindowRef::clone(
                         (((*sc).winlink_handle())
                             .get_unchecked()
                             .window_handle()
@@ -663,7 +663,7 @@ pub(super) unsafe fn spawn_pane(
             .is_none()
         {
             if (*sc).flags & SPAWN_NONOTIFY != 0 {
-                std::rc::Rc::clone(
+                WindowRef::clone(
                     (((*sc).winlink_handle())
                         .get_unchecked()
                         .window_handle()
@@ -672,7 +672,7 @@ pub(super) unsafe fn spawn_pane(
                 )
                 .select_pane(&new_pane_owner, false);
             } else {
-                std::rc::Rc::clone(
+                WindowRef::clone(
                     (((*sc).winlink_handle())
                         .get_unchecked()
                         .window_handle()
@@ -685,7 +685,7 @@ pub(super) unsafe fn spawn_pane(
         if !(*sc).flags & SPAWN_NONOTIFY != 0 {
             events_fire_window(
                 c"window-layout-changed",
-                std::rc::Rc::clone(
+                WindowRef::clone(
                     (((*sc).winlink_handle())
                         .get_unchecked()
                         .window_handle()
@@ -696,7 +696,7 @@ pub(super) unsafe fn spawn_pane(
         }
         Some(new_pane_owner)
     })();
-    crate::src::window::window_remove_ref(original_window, c"spawn pane");
+    drop(original_window);
     result
 }
 pub(super) unsafe fn finish_editing(wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {

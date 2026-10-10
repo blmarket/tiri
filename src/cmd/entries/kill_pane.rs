@@ -6,6 +6,7 @@ use crate::src::format::{
 };
 use crate::src::server_client::Client as _;
 use crate::src::shared::client::ClientRef;
+use crate::src::shared::window::WindowRef;
 use std::ffi::CStr;
 
 use crate::src::server_fn::{server_kill_pane, server_redraw_window};
@@ -100,7 +101,7 @@ unsafe fn cmd_kill_pane_all(
             ) != 0
         {
             ClientRef::forget_pane(&pane_owner);
-            std::rc::Rc::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window"))
+            WindowRef::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window"))
                 .remove_pane(&pane_owner);
         }
     }

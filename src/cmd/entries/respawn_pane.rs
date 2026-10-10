@@ -110,6 +110,6 @@ unsafe fn cmd_respawn_pane_exec(
         .expect("respawn pane window");
     server_redraw_window_borders(&window);
     server_status_window(&window);
-    crate::src::window::window_remove_ref(window, c"respawn pane status");
+    drop(window);
     CMD_RETURN_NORMAL
 }

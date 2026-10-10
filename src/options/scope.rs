@@ -69,7 +69,7 @@ impl OptionsScope {
             Self::Window(observer) => {
                 let owner = observer.upgrade().expect("live option window");
                 let result = owner.with_options_mut(visit);
-                crate::src::window::window_remove_ref(owner, c"options scope");
+                drop(owner);
                 result
             }
             Self::Pane(observer) => {

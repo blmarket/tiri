@@ -34,6 +34,7 @@ use crate::src::regsub::regsub_cstring;
 use crate::src::server::clients;
 use crate::src::server::{marked_pane, server_check_marked};
 use crate::src::session::SessionIndex as _;
+use crate::src::shared::window::WindowWeak;
 use crate::src::window::Window as _;
 
 use crate::src::server_client::Client as _;
@@ -481,7 +482,7 @@ unsafe fn format_defaults_client(mut ft: *mut format_tree, c_owner: &ClientRef) 
     (*ft).c = std::rc::Rc::downgrade(c_owner);
 }
 pub unsafe fn format_defaults_window(mut ft: *mut format_tree, w_owner: Option<&WindowRef>) {
-    (*ft).w = w_owner.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
+    (*ft).w = w_owner.map_or_else(WindowWeak::new, WindowRef::downgrade);
 }
 unsafe fn format_defaults_winlink(mut ft: *mut format_tree, mut wl: refbox::Weak<winlink>) {
     if (*ft).w.upgrade().is_none() {

@@ -1118,7 +1118,7 @@ pub unsafe fn tty_update_window_offset(w_owner: &WindowRef) {
                 .current_winlink())
             .get_unchecked()
             .window_handle()
-            .is_some_and(|owner| std::rc::Rc::ptr_eq(owner, w_owner))
+            .is_some_and(|owner| WindowRef::ptr_eq(owner, w_owner))
         {
             tty_update_client_offset(&c.clone().expect("live client"));
         }

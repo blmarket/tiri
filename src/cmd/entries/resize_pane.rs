@@ -47,7 +47,7 @@ unsafe fn cmd_resize_pane_exec(
     if args_has(args, b'Z') != 0 {
         let window_owner = (*target).w.upgrade().expect("live resize target window");
         let toggled = window_owner.layout_action(&pane_owner, LayoutAction::ToggleZoom);
-        crate::src::window::window_remove_ref(window_owner, c"cmd_resize_pane_exec");
+        drop(window_owner);
         if let Err(cause) = toggled {
             cmdq_error(item_handle, |out| out.write_all(cause.to_bytes()));
             return CMD_RETURN_ERROR;

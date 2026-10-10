@@ -346,7 +346,7 @@ unsafe fn monitor_check_pane(monitor: &refbox::Weak<monitor_set>, name: &CStr) {
         }
         link = window.next_winlink(Some(link));
     }
-    crate::src::window::window_remove_ref(window, c"monitor_check_pane");
+    drop(window);
 }
 unsafe fn monitor_check_window(monitor: &refbox::Weak<monitor_set>, name: &CStr) {
     let Some(target) = monitor_with_item(monitor, name, |item| item.id) else {
@@ -389,7 +389,7 @@ unsafe fn monitor_check_window(monitor: &refbox::Weak<monitor_set>, name: &CStr)
         }
         link = window.next_winlink(Some(link));
     }
-    crate::src::window::window_remove_ref(window, c"monitor_check_window");
+    drop(window);
 }
 unsafe fn monitor_check_all_panes_one(
     monitor: &refbox::Weak<monitor_set>,
@@ -530,11 +530,11 @@ unsafe fn monitor_check_all_panes(monitor: &refbox::Weak<monitor_set>) {
                 .as_ref()
                 .and_then(|window| window.next_pane(Some(&pane)));
             if let Some(window) = next_window {
-                crate::src::window::window_remove_ref(window, c"monitor pane successor");
+                drop(window);
             }
         }
         if let Some(window) = window {
-            crate::src::window::window_remove_ref(window, c"monitor all panes window");
+            drop(window);
         }
         if !link.is_alive() {
             break;

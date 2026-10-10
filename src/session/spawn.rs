@@ -1,5 +1,6 @@
 //! Session-owned window creation/replacement transaction. Link index, current
 //! selection, MRU removal, and group synchronization remain inside Session.
+use crate::src::shared::window::{WindowRef, WindowWeak};
 
 use super::*;
 use crate::src::events::events_fire_window;
@@ -20,7 +21,7 @@ pub(super) unsafe fn spawn_window(
     let target_client = sc.tc.upgrade();
     let s = session.get();
     let mut index = sc.idx;
-    let mut created_window = std::rc::Weak::new();
+    let mut created_window = WindowWeak::new();
     spawn_log(c"spawn_window", sc);
 
     if sc.flags & SPAWN_RESPAWN != 0 && !prepare_respawn_window(sc, cause) {
@@ -74,7 +75,7 @@ pub(super) unsafe fn spawn_window(
             -1,
         );
         let window = crate::src::window::window_create(sx, sy, xpixel, ypixel);
-        created_window = Rc::downgrade(&window);
+        created_window = WindowRef::downgrade(&window);
         if !(*s).curw.is_alive() {
             (*s).curw = sc.winlink_handle();
         }
@@ -82,7 +83,7 @@ pub(super) unsafe fn spawn_window(
         window.set_latest_client(target_client.as_ref());
         winlink_set_window(sc.winlink_handle(), &window);
         // The new link owns the window before the constructor owner is released.
-        crate::src::window::window_remove_ref(window, c"spawn_window");
+        drop(window);
     }
 
     sc.flags |= SPAWN_NONOTIFY;
@@ -101,7 +102,7 @@ pub(super) unsafe fn spawn_window(
             .upgrade()
             .expect("spawned window remains live");
         initialize_spawned_window(sc, &window);
-        crate::src::window::window_remove_ref(window, c"spawn_window initialization");
+        drop(window);
     }
     if sc.flags & SPAWN_DETACHED == 0 {
         session_select(&session, sc.winlink_handle().get_unchecked().idx);

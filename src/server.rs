@@ -23,6 +23,7 @@ use crate::src::reactor;
 use crate::src::server_acl::{server_acl_init, server_acl_join};
 use crate::src::server_client::Client as _;
 use crate::src::session::SessionIndex as _;
+use crate::src::shared::window::WindowWeak;
 use crate::src::window::Window as _;
 use crate::src::window::WindowIndex as _;
 use std::os::fd::{FromRawFd, IntoRawFd, OwnedFd};
@@ -106,7 +107,7 @@ pub static mut marked_pane: cmd_find_state = cmd_find_state {
     flags: 0,
     s: std::rc::Weak::new(),
     wl: refbox::Weak::new(),
-    w: std::rc::Weak::new(),
+    w: WindowWeak::new(),
     wp: std::rc::Weak::new(),
     idx: 0,
 };
@@ -568,7 +569,7 @@ unsafe fn server_child_exited(pid: pid_t, status: i32) {
             }
             pane_cursor = window_owner.next_pane(Some(&pane_owner));
         }
-        crate::src::window::window_remove_ref(window_owner, c"window traversal");
+        drop(window_owner);
     }
     job_check_died(pid, status);
 }
@@ -586,7 +587,7 @@ unsafe fn server_child_stopped(pid: pid_t, status: i32) {
             pane_cursor = window_owner.next_pane(Some(&pane_owner));
         }
         window_cursor = window_owner.next_window();
-        crate::src::window::window_remove_ref(window_owner, c"window traversal");
+        drop(window_owner);
     }
     job_check_died(pid, status);
 }

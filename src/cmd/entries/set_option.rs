@@ -29,6 +29,7 @@ use crate::src::shared::monitor::{MONITOR_NOTIFY_TRUE, MONITOR_SESSION};
 use crate::src::shared::options::{
     OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_NONE, OPTIONS_TABLE_WINDOW,
 };
+use crate::src::shared::window::WindowRef;
 use crate::src::window::{Window, WindowPane};
 use std::ffi::{CStr, CString};
 pub static cmd_set_option_entry: cmd_entry = {
@@ -163,7 +164,7 @@ unsafe fn cmd_set_hook_event_exec(
         event_payload_set_window(
             &mut ep,
             c"window",
-            std::rc::Rc::clone(((*target).window_handle().as_ref()).expect("live window")),
+            WindowRef::clone(((*target).window_handle().as_ref()).expect("live window")),
         );
     }
     if (*target).winlink_handle().is_alive() {
@@ -295,14 +296,14 @@ unsafe fn unset_window_panes(
         return Ok(());
     };
     let mut next = window.next_pane(None);
-    crate::src::window::window_remove_ref(window, c"set-option pane traversal");
+    drop(window);
     while let Some(pane) = next.take() {
         let scope = OptionsScope::Pane(std::rc::Rc::downgrade(&pane));
         let result = scope.remove_or_default(name, array_key);
         if result.is_ok() {
             if let Some(parent) = pane.window_observer().upgrade() {
                 next = parent.next_pane(Some(&pane));
-                crate::src::window::window_remove_ref(parent, c"set-option pane successor");
+                drop(parent);
             }
         }
         pane.release(c"set-option pane traversal");

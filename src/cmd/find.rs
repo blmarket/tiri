@@ -17,6 +17,7 @@ use crate::src::shared::layout::Direction;
 use crate::src::shared::rc::same;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
+use crate::src::shared::window::WindowWeak;
 use crate::src::window::Window;
 use crate::src::window::{
     winlink_find_by_index, winlink_next_by_number, winlink_previous_by_number, winlinks_minmax,
@@ -211,7 +212,7 @@ unsafe fn cmd_find_best_winlink_with_window(fs: *mut cmd_find_state) -> ::core::
             candidate = winlinks_next(candidate.get_unchecked());
         }
     }
-    crate::src::window::window_remove_ref(window, c"find window link");
+    drop(window);
     if !selected.is_alive() {
         return -1;
     }
@@ -300,7 +301,7 @@ unsafe fn cmd_find_get_window(
             cmd_find_best_session_with_window(fs)
         })();
         if let Some(window) = window_owner {
-            crate::src::window::window_remove_ref(window, c"cmd_find_get_window");
+            drop(window);
         }
         return result;
     }
@@ -363,7 +364,7 @@ unsafe fn cmd_find_get_window_with_session(
             cmd_find_best_winlink_with_window(fs)
         })();
         if let Some(window) = window_owner {
-            crate::src::window::window_remove_ref(window, c"cmd_find_get_window_with_session");
+            drop(window);
         }
         return result;
     }
@@ -675,7 +676,7 @@ unsafe fn cmd_find_get_pane_with_window(
             .last_active_pane()
             .as_ref()
             .map_or_else(std::rc::Weak::new, Rc::downgrade);
-        crate::src::window::window_remove_ref(window, c"find last active pane");
+        drop(window);
         if (*fs).pane_handle().is_none() {
             return -(1 as ::core::ffi::c_int);
         }
@@ -770,7 +771,7 @@ pub unsafe fn cmd_find_clear_state(mut fs: *mut cmd_find_state, mut flags: ::cor
 pub fn cmd_find_empty_state(fs: &cmd_find_state) -> ::core::ffi::c_int {
     (fs.s.ptr_eq(&std::rc::Weak::new())
         && fs.wl.is_empty()
-        && fs.w.ptr_eq(&std::rc::Weak::new())
+        && fs.w.ptr_eq(&WindowWeak::new())
         && fs.wp.ptr_eq(&std::rc::Weak::new())) as ::core::ffi::c_int
 }
 pub unsafe fn cmd_find_valid_state(fs: &cmd_find_state) -> ::core::ffi::c_int {
@@ -785,7 +786,7 @@ pub unsafe fn cmd_find_valid_state(fs: &cmd_find_state) -> ::core::ffi::c_int {
     if sessions.resolve(&fs.s).is_none()
         || !wl
             .window_handle()
-            .is_some_and(|window| std::rc::Rc::ptr_eq(window, &w))
+            .is_some_and(|window| WindowRef::ptr_eq(window, &w))
     {
         return 0;
     }
@@ -948,7 +949,7 @@ pub unsafe fn cmd_find_from_pane(
 ) -> i32 {
     let window = pane.window_observer().upgrade().expect("pane window");
     let result = cmd_find_from_window(fs, &window, flags);
-    crate::src::window::window_remove_ref(window, c"find pane parent");
+    drop(window);
     if result != 0 {
         return -1;
     }

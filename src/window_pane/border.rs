@@ -23,7 +23,7 @@ pub(super) unsafe fn cell(
 ) {
     let window = pane.window_observer().upgrade().expect("live pane parent");
     let index = window.pane_index(&Rc::downgrade(pane));
-    crate::src::window::window_remove_ref(window, c"pane border cell");
+    drop(window);
     window_get_border_cell(index, pane.pane_lines(), cell_type, cell);
 }
 
@@ -44,7 +44,7 @@ pub(super) unsafe fn border_style(
     let active = window
         .active_pane()
         .is_some_and(|active| Rc::ptr_eq(&active, pane));
-    crate::src::window::window_remove_ref(window, c"pane border style");
+    drop(window);
     let cached = {
         let state = &*pane.get();
         if active {
@@ -117,7 +117,7 @@ pub(super) unsafe fn make_status(
         .upgrade()
         .expect("live pane status parent");
     let index = window.pane_index(&Rc::downgrade(pane));
-    crate::src::window::window_remove_ref(window, c"pane status index");
+    drop(window);
     let (mut old, mut ranges) = {
         let state = &mut *pane.get();
         (

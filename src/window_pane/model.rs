@@ -159,8 +159,7 @@ impl Default for window_pane {
 }
 
 impl window_pane {
-    /// Retain the parent for the current operation. Release potentially final
-    /// owners through Window::release, as with other window handles.
+    /// Retain the parent for the current operation.
     pub(super) fn window_handle(&self) -> Option<WindowRef> {
         self.window.upgrade()
     }

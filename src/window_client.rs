@@ -39,6 +39,7 @@ use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;
 use crate::src::shared::style::*;
 use crate::src::shared::tty::TERM_INVALIDMS;
+use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::{window_mode, window_mode_entry, winlink};
 use crate::src::sort::sort_get_clients;
 use crate::src::status::{status_at_line, status_line_size};
@@ -275,7 +276,7 @@ unsafe fn window_client_draw_info(
 ) {
     let c = item.client();
     let mut s: *mut screen = (*ctx).screen_ptr();
-    let options_window = std::rc::Rc::downgrade(
+    let options_window = WindowRef::downgrade(
         c.attached_session()
             .upgrade()
             .expect("live session")
@@ -411,7 +412,7 @@ unsafe fn window_client_draw(
         .window_handle()
         .expect("live window")
         .clone();
-    let options_window = std::rc::Rc::downgrade(&window_owner);
+    let options_window = WindowRef::downgrade(&window_owner);
     let mut preview_pane = window_owner.active_pane();
     if (*data).hide_preview_this_pane != 0
         && preview_pane
@@ -420,7 +421,7 @@ unsafe fn window_client_draw(
     {
         preview_pane = window_owner.last_active_pane();
     }
-    crate::src::window::window_remove_ref(window_owner, c"client preview lookup");
+    drop(window_owner);
     lines = status_line_size(c);
     if lines >= sy {
         lines = 0 as u_int;

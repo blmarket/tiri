@@ -202,7 +202,7 @@ unsafe fn cmd_split_window_exec(
                     out.write_all(b"create pane failed: ")?;
                     write_cstr(out, cause.as_deref())
                 });
-                crate::src::window::window_remove_ref(window_owner, c"cmd_split_window");
+                drop(window_owner);
                 return CMD_RETURN_ERROR;
             }
         };
@@ -428,24 +428,15 @@ unsafe fn cmd_split_window_exec(
                                             );
                                             drop(sc.environ.take());
                                             if input != 0 {
-                                                crate::src::window::window_remove_ref(
-                                                    window_owner,
-                                                    c"cmd_split_window",
-                                                );
+                                                drop(window_owner);
                                                 return CMD_RETURN_WAIT;
                                             }
                                             if args_has(args, 'W' as i32 as u_char) != 0 {
                                                 new_pane.wait_until_close(item_handle);
-                                                crate::src::window::window_remove_ref(
-                                                    window_owner,
-                                                    c"cmd_split_window",
-                                                );
+                                                drop(window_owner);
                                                 return CMD_RETURN_WAIT;
                                             }
-                                            crate::src::window::window_remove_ref(
-                                                window_owner,
-                                                c"cmd_split_window",
-                                            );
+                                            drop(window_owner);
                                             return CMD_RETURN_NORMAL;
                                         }
                                     }
@@ -461,9 +452,9 @@ unsafe fn cmd_split_window_exec(
             original_window.remove_pane(new_pane);
         }
         drop(sc.environ.take());
-        crate::src::window::window_remove_ref(window_owner, c"cmd_split_window");
+        drop(window_owner);
         CMD_RETURN_ERROR
     })();
-    crate::src::window::window_remove_ref(original_window, c"split target window");
+    drop(original_window);
     result
 }

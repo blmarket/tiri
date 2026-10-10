@@ -639,7 +639,7 @@ pub unsafe fn cmd_mouse_window(
             .as_ref()
             .expect("live session")
             .with_winlinks(|links| winlink_find_by_window(links, &window));
-        crate::src::window::window_remove_ref(window, c"cmd_mouse_window");
+        drop(window);
     }
     if let Some(sp) = sp {
         *sp = Some(session_owner);

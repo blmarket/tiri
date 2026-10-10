@@ -31,7 +31,7 @@ pub(super) unsafe fn in_scrollbar_area(
         .upgrade()
         .expect("scrollbar pane window");
     let position = window.scrollbar_position();
-    crate::src::window::window_remove_ref(window, c"scrollbar pane window");
+    drop(window);
     if position == PANE_SCROLLBARS_LEFT {
         start = xoff;
         end = xoff + total as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
@@ -50,7 +50,7 @@ pub(super) unsafe fn mouse_location(
 ) -> key_code_mouse_location {
     let window = pane.window_observer().upgrade().expect("mouse pane window");
     let location = mouse_location_in(pane, &window, x, y, slider);
-    crate::src::window::window_remove_ref(window, c"mouse pane window");
+    drop(window);
     location
 }
 

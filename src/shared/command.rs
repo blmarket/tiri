@@ -169,7 +169,7 @@ impl cmd_find_state {
     }
 
     pub fn set_w(&mut self, value: Option<&WindowRef>) {
-        self.w = value.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
+        self.w = value.map_or_else(WindowWeak::new, WindowRef::downgrade);
     }
 
     /// Retain the target allocation; callbacks may still invalidate it logically.

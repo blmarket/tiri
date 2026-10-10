@@ -6,8 +6,6 @@ use crate::src::shared::window::WindowRef;
 use crate::src::window::*;
 
 use crate::src::server_fn::server_status_session;
-use std::ffi::CStr;
-use std::rc::Rc;
 
 use crate::src::shared::abi::*;
 use crate::src::shared::limits::INT_MAX;
@@ -75,7 +73,7 @@ pub unsafe fn winlink_find_by_window(wwl: &winlinks, w_owner: &WindowRef) -> ref
         if wl
             .get_unchecked()
             .window_handle()
-            .is_some_and(|window| Rc::ptr_eq(window, w_owner))
+            .is_some_and(|window| WindowRef::ptr_eq(window, w_owner))
         {
             return wl;
         }
@@ -189,31 +187,21 @@ pub unsafe fn winlink_add(
     wl
 }
 
-// Keep the field published through the close notification. Its callback can
-// inspect the winlink or retain the window. Detach only after that notification,
-// then drop the consumed Rc without notifying or cleaning up twice.
-unsafe fn winlink_release_window(mut wl: refbox::Weak<winlink>, from: &CStr) {
-    window_prepare_release(
-        wl.get_unchecked()
-            .window_owner
-            .as_ref()
-            .expect("winlink window reference"),
-        from,
-    );
-    drop(
-        wl.get_mut_unchecked()
-            .window_owner
-            .take()
-            .expect("winlink window reference"),
-    );
+// Drop the reference in place: the field stays published through the close
+// notification, so its callbacks can still inspect the winlink.
+unsafe fn winlink_release_window(mut wl: refbox::Weak<winlink>) {
+    let field = &raw mut wl.get_mut_unchecked().window_owner;
+    assert!((*field).is_some(), "winlink window reference");
+    std::ptr::drop_in_place(field);
+    std::ptr::write(field, None);
 }
 
 pub unsafe fn winlink_set_window(mut wl: refbox::Weak<winlink>, w_owner: &WindowRef) {
     if let Some(previous) = wl.get_unchecked().window_handle() {
         previous.remove_winlink(wl.clone());
-        winlink_release_window(wl.clone(), c"winlink_set_window");
+        winlink_release_window(wl.clone());
     }
-    wl.get_mut_unchecked().window_owner = Some(window_add_ref(w_owner, c"winlink_set_window"));
+    wl.get_mut_unchecked().window_owner = Some(w_owner.clone());
     w_owner.add_winlink(wl);
 }
 
@@ -223,7 +211,7 @@ pub unsafe fn winlink_remove(mut wwl: *mut winlinks, mut wl: refbox::Weak<winlin
     }
     if let Some(window) = wl.get_unchecked().window_handle() {
         window.remove_winlink(wl.clone());
-        winlink_release_window(wl.clone(), c"winlink_remove");
+        winlink_release_window(wl.clone());
     }
     // Window teardown above may reenter; borrow the owning map only afterward.
     let idx = wl.get_unchecked().idx;

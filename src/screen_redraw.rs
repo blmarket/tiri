@@ -735,7 +735,7 @@ unsafe fn redraw_make_scene(client_owner: &ClientRef) -> Option<Box<redraw_scene
     let mut y: u_int = 0;
     let mut x0: u_int = 0;
     if c.as_ref().expect("live client").flags() & CLIENT_SUSPENDED as uint64_t != 0 {
-        crate::src::window::window_remove_ref(window_owner, c"suspended redraw scene");
+        drop(window_owner);
         return None;
     }
     redraw_set_context(client_owner, &mut bctx);
@@ -757,7 +757,7 @@ unsafe fn redraw_make_scene(client_owner: &ClientRef) -> Option<Box<redraw_scene
     redraw_build_cells(&raw mut bctx, &mut cells.0);
     let mut scene = Box::new(redraw_scene {
         c: std::rc::Rc::downgrade(client_owner),
-        w: std::rc::Rc::downgrade(&window_owner).clone(),
+        w: WindowRef::downgrade(&window_owner).clone(),
         lines: Box::default(),
         generation: window_owner.scene_generation(),
         sx: bctx.sx,
@@ -811,7 +811,7 @@ unsafe fn redraw_make_scene(client_owner: &ClientRef) -> Option<Box<redraw_scene
         ),
         { window_owner.id() }
     ));
-    crate::src::window::window_remove_ref(window_owner, c"redraw scene build");
+    drop(window_owner);
     Some(scene)
 }
 
@@ -820,7 +820,7 @@ pub unsafe fn redraw_invalidate_all_scenes() {
     while let Some(window_owner) = window_cursor.take() {
         window_owner.invalidate_scene();
         window_cursor = window_owner.next_window();
-        crate::src::window::window_remove_ref(window_owner, c"window traversal");
+        drop(window_owner);
     }
 }
 unsafe fn redraw_get_scene(client_owner: &ClientRef) -> Option<Box<redraw_scene>> {
@@ -840,7 +840,7 @@ unsafe fn redraw_get_scene(client_owner: &ClientRef) -> Option<Box<redraw_scene>
     let scene = client_owner.take_redraw_scene();
     let reason = match scene.as_deref() {
         None => Some("missing"),
-        Some(scene) if !scene.w.ptr_eq(&std::rc::Rc::downgrade(&window_owner)) => {
+        Some(scene) if !scene.w.ptr_eq(&WindowRef::downgrade(&window_owner)) => {
             Some("window changed")
         }
         Some(scene) if scene.generation != window_owner.scene_generation() => {
@@ -868,7 +868,7 @@ unsafe fn redraw_get_scene(client_owner: &ClientRef) -> Option<Box<redraw_scene>
     } else {
         scene
     };
-    crate::src::window::window_remove_ref(window_owner, c"redraw scene lookup");
+    drop(window_owner);
     result
 }
 
@@ -934,7 +934,7 @@ unsafe fn redraw_get_default_border_style(
     }
     *gc = *dgc;
     *pane_lines = dctx.pane_lines;
-    crate::src::window::window_remove_ref(window_owner, c"default border style");
+    drop(window_owner);
 }
 fn redraw_get_pane_for_border_style(
     active: Option<&std::rc::Weak<std::cell::UnsafeCell<window_pane>>>,
@@ -1408,7 +1408,7 @@ unsafe fn redraw_draw_scene(
     let mut y: u_int = 0;
     let mut lines: u_int = 0;
     let Some(mut dctx) = redraw_set_draw_context(scene) else {
-        crate::src::window::window_remove_ref(window_owner, c"unavailable redraw context");
+        drop(window_owner);
         return;
     };
     if flags & (REDRAW_PANE_BORDER | REDRAW_PANE_STATUS) != 0 {
@@ -1434,7 +1434,7 @@ unsafe fn redraw_draw_scene(
         if !redraw && flags != REDRAW_ALL {
             flags &= !REDRAW_PANE_STATUS;
             if flags == 0 {
-                crate::src::window::window_remove_ref(window_owner, c"unchanged pane status");
+                drop(window_owner);
                 return;
             }
         }
@@ -1521,7 +1521,7 @@ unsafe fn redraw_draw_scene(
         ),
         { (window_owner).id() }
     ));
-    crate::src::window::window_remove_ref(window_owner, c"redraw scene");
+    drop(window_owner);
 }
 pub unsafe fn redraw_screen(client_owner: &ClientRef) {
     let mut c: Option<ClientRef> = Some(client_owner.clone());

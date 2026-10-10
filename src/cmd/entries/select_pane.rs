@@ -106,7 +106,7 @@ unsafe fn cmd_select_pane_redraw(w_owner: &WindowRef) {
                 .current_winlink())
             .get_unchecked()
             .window_handle()
-            .is_some_and(|owner| std::rc::Rc::ptr_eq(owner, w_owner))
+            .is_some_and(|owner| WindowRef::ptr_eq(owner, w_owner))
                 && tty_window_bigger(c.as_ref().expect("live client")) != 0
             {
                 server_redraw_client(c.as_ref().expect("live client"));
@@ -120,7 +120,7 @@ unsafe fn cmd_select_pane_redraw(w_owner: &WindowRef) {
                     .current_winlink())
                 .get_unchecked()
                 .window_handle()
-                .is_some_and(|owner| std::rc::Rc::ptr_eq(owner, w_owner))
+                .is_some_and(|owner| WindowRef::ptr_eq(owner, w_owner))
                 {
                     c.as_ref()
                         .expect("live client")
@@ -199,7 +199,7 @@ unsafe fn cmd_select_pane_marked_pane(
             .expect("marked pane window");
         server_redraw_window_borders(&window);
         server_status_window(&window);
-        crate::src::window::window_remove_ref(window, c"marked pane redraw");
+        drop(window);
     }
     CMD_RETURN_NORMAL
 }
@@ -339,6 +339,6 @@ unsafe fn cmd_select_pane_exec(
         cmd_select_pane_redraw(&window);
         CMD_RETURN_NORMAL
     })();
-    crate::src::window::window_remove_ref(window, c"select pane target");
+    drop(window);
     result
 }

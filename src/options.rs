@@ -23,6 +23,7 @@ use crate::src::server::clients;
 use crate::src::server::current_time;
 use crate::src::server_client::Client as _;
 use crate::src::session::SessionIndex as _;
+use crate::src::shared::window::WindowRef;
 use crate::src::window::WindowIndex as _;
 
 use crate::src::server_fn::server_redraw_client;
@@ -1115,7 +1116,7 @@ unsafe fn options_select_scope(
         OPTIONS_TABLE_WINDOW if global => (Some(OptionsScope::GlobalWindow), c"window"),
         OPTIONS_TABLE_WINDOW => {
             let scope = if fs.wl.is_alive() {
-                Some(OptionsScope::Window(std::rc::Rc::downgrade(
+                Some(OptionsScope::Window(WindowRef::downgrade(
                     fs.wl
                         .get_unchecked()
                         .window_handle()
@@ -1432,7 +1433,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
                 }
             }
             window_cursor = window_owner.next_window();
-            crate::src::window::window_remove_ref(window_owner, c"window traversal");
+            drop(window_owner);
         }
     }
     if strcmp(name, c"cursor-colour".as_ptr()) == 0 as ::core::ffi::c_int {
@@ -1454,7 +1455,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
         while let Some(window_owner) = window_cursor.take() {
             window_owner.refresh_fill_cells();
             window_cursor = window_owner.next_window();
-            crate::src::window::window_remove_ref(window_owner, c"window traversal");
+            drop(window_owner);
         }
     }
     if strcmp(name, c"key-table".as_ptr()) == 0 as ::core::ffi::c_int {
@@ -1541,7 +1542,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
             window_owner.refresh_scrollbars();
             window_owner.refit();
             window_cursor = window_owner.next_window();
-            crate::src::window::window_remove_ref(window_owner, c"window traversal");
+            drop(window_owner);
         }
     }
     if strcmp(name, c"pane-scrollbars".as_ptr()) == 0 as ::core::ffi::c_int {
@@ -1561,7 +1562,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
         while let Some(window_owner) = window_cursor.take() {
             window_owner.refit();
             window_cursor = window_owner.next_window();
-            crate::src::window::window_remove_ref(window_owner, c"window traversal");
+            drop(window_owner);
         }
     }
     if strcmp(name, c"codepoint-widths".as_ptr()) == 0 as ::core::ffi::c_int {

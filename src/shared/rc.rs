@@ -11,10 +11,21 @@ pub fn as_ptr<T>(owner: &Rc<UnsafeCell<T>>) -> *mut T {
     owner.get()
 }
 
+/// Retained handles compared by allocation identity.
+pub trait SameAllocation {
+    fn same_allocation(a: &Self, b: &Self) -> bool;
+}
+
+impl<T> SameAllocation for Rc<T> {
+    fn same_allocation(a: &Self, b: &Self) -> bool {
+        Rc::ptr_eq(a, b)
+    }
+}
+
 /// Compare optional retained handles by allocation identity, including absent targets.
-pub fn same<T>(a: Option<&Rc<T>>, b: Option<&Rc<T>>) -> bool {
+pub fn same<P: SameAllocation>(a: Option<&P>, b: Option<&P>) -> bool {
     match (a, b) {
-        (Some(a), Some(b)) => Rc::ptr_eq(a, b),
+        (Some(a), Some(b)) => P::same_allocation(a, b),
         (None, None) => true,
         _ => false,
     }
