@@ -1,5 +1,5 @@
 use crate::src::cmd::find::{
-    cmd_find_clear_state, cmd_find_from_nothing, cmd_find_from_pane, cmd_find_from_session,
+    cmd_find_from_nothing, cmd_find_from_pane, cmd_find_from_session,
     cmd_find_from_session_window, cmd_find_from_winlink, cmd_find_from_winlink_pane,
     cmd_find_valid_state,
 };
@@ -54,7 +54,7 @@ unsafe fn event_payload_free_target(ep: &mut event_payload) {
     if let Some(pane) = ep.target_pane.take() {
         pane.release(c"event_payload_free_target");
     }
-    cmd_find_clear_state(target, 0 as ::core::ffi::c_int);
+    *target = cmd_find_state::clear_state(0 as ::core::ffi::c_int);
 }
 impl Drop for event_payload_item {
     fn drop(&mut self) {
@@ -172,7 +172,7 @@ pub unsafe fn event_payload_get_target(ep: &event_payload, fs: &mut cmd_find_sta
             }
         }
     }
-    cmd_find_clear_state(fs, flags);
+    *fs = cmd_find_state::clear_state(flags);
     fs.s = target.s.clone();
     fs.w = target.w.clone();
     fs.wp = target.wp.clone();
@@ -227,7 +227,7 @@ pub unsafe fn event_payload_get_target(ep: &event_payload, fs: &mut cmd_find_sta
     if cmd_find_from_nothing(fs, flags) == 0 {
         return 1;
     }
-    cmd_find_clear_state(fs, flags);
+    *fs = cmd_find_state::clear_state(flags);
     0
 }
 pub unsafe fn event_payload_set_string(

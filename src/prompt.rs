@@ -1,5 +1,5 @@
 use crate::src::cmd::cmd_table;
-use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_valid_state};
+use crate::src::cmd::find::{cmd_find_valid_state};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_add, format_create_defaults, format_create_from_state, format_expand_time_cstring,
@@ -174,7 +174,7 @@ pub unsafe fn prompt_create(
             fs.pane_handle().as_ref(),
         )
     } else {
-        cmd_find_clear_state(&mut pr.state, 0);
+        pr.state = cmd_find_state::clear_state(0);
         format_create_defaults(None, None, None, refbox::Weak::new(), None)
     };
     let ft = &raw mut *ft_owner;

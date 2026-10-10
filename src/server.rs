@@ -1,5 +1,5 @@
 use crate::src::cmd::entries::wait_for::cmd_wait_for_flush;
-use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_valid_state};
+use crate::src::cmd::find::{cmd_find_valid_state};
 use crate::src::cmd::queue::cmdq_next;
 use crate::src::compat::systemd::{systemd_activated, systemd_create_socket};
 use crate::src::control_notify::control_build_events;
@@ -120,7 +120,7 @@ pub unsafe fn server_set_marked(
     mut wl: refbox::Weak<winlink>,
     wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
 ) {
-    cmd_find_clear_state(&raw mut marked_pane, 0 as ::core::ffi::c_int);
+    marked_pane = cmd_find_state::clear_state(0 as ::core::ffi::c_int);
     marked_pane.set_s(s_owner);
     marked_pane.set_wl(wl.clone());
     if wl.is_alive() {
@@ -129,7 +129,7 @@ pub unsafe fn server_set_marked(
     marked_pane.wp = wp_owner.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
 }
 pub unsafe fn server_clear_marked() {
-    cmd_find_clear_state(&raw mut marked_pane, 0 as ::core::ffi::c_int);
+    marked_pane = cmd_find_state::clear_state(0 as ::core::ffi::c_int);
 }
 pub unsafe fn server_is_marked(
     s_owner: Option<&SessionRef>,

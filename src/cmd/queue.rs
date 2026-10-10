@@ -3,7 +3,7 @@ use crate::src::arguments::{
 };
 use crate::src::cfg::{cfg_add_cause, cfg_finished};
 use crate::src::cmd::find::{
-    cmd_find_clear_state, cmd_find_client, cmd_find_copy_state, cmd_find_from_client,
+    cmd_find_client, cmd_find_copy_state, cmd_find_from_client,
     cmd_find_target, cmd_find_valid_state,
 };
 use crate::src::cmd::{
@@ -420,7 +420,7 @@ pub unsafe fn cmdq_new_state(
     if !current.is_null() && cmd_find_valid_state(&*current) != 0 {
         cmd_find_copy_state(&mut target, &*current);
     } else {
-        cmd_find_clear_state(&mut target, 0);
+        target = cmd_find_state::clear_state(0);
     }
     std::rc::Rc::new(cmdq_state {
         flags,
@@ -758,7 +758,7 @@ unsafe fn cmdq_find_flag(
         flag.flags,
     ) != 0 as ::core::ffi::c_int
     {
-        cmd_find_clear_state(fs, 0 as ::core::ffi::c_int);
+        *fs = cmd_find_state::clear_state(0 as ::core::ffi::c_int);
         return CMD_RETURN_ERROR;
     }
     CMD_RETURN_NORMAL

@@ -1,5 +1,5 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
-use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_from_winlink_pane};
+use crate::src::cmd::find::{cmd_find_from_winlink_pane};
 use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned};
 use crate::src::ffi::libc::{__ctype_tolower_loc, strcasestr, strstr};
 use crate::src::format::{
@@ -1946,7 +1946,7 @@ unsafe fn window_tree_get_target(
         Some(CString::new(bytes).expect("tree target contains no NUL"))
     });
     if target.is_none() {
-        cmd_find_clear_state(fs, 0);
+        *fs = cmd_find_state::clear_state(0);
     } else {
         cmd_find_from_winlink_pane(
             fs,

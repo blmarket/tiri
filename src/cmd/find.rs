@@ -761,13 +761,6 @@ unsafe fn cmd_find_get_pane_with_window(
     }
     -(1 as ::core::ffi::c_int)
 }
-pub unsafe fn cmd_find_clear_state(mut fs: *mut cmd_find_state, mut flags: ::core::ffi::c_int) {
-    *fs = cmd_find_state {
-        flags,
-        idx: -1,
-        ..Default::default()
-    };
-}
 pub fn cmd_find_empty_state(fs: &cmd_find_state) -> ::core::ffi::c_int {
     (fs.s.ptr_eq(&std::rc::Weak::new())
         && fs.wl.is_empty()
@@ -864,7 +857,7 @@ pub unsafe fn cmd_find_from_session(
     s_owner: &SessionRef,
     mut flags: ::core::ffi::c_int,
 ) {
-    cmd_find_clear_state(fs, flags);
+    *fs = cmd_find_state::clear_state(flags);
     (*fs).set_s(Some(s_owner));
     (*fs).set_wl(
         ((*fs)
@@ -882,7 +875,7 @@ pub unsafe fn cmd_find_from_winlink(
     mut wl: refbox::Weak<winlink>,
     mut flags: ::core::ffi::c_int,
 ) {
-    cmd_find_clear_state(fs, flags);
+    *fs = cmd_find_state::clear_state(flags);
     (*fs).s = wl.get_unchecked().session.clone();
     (*fs).set_wl(wl.clone());
     (*fs).set_w(wl.get_unchecked().window_handle());
@@ -898,11 +891,11 @@ pub unsafe fn cmd_find_from_session_window(
     w_owner: &WindowRef,
     mut flags: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    cmd_find_clear_state(fs, flags);
+    *fs = cmd_find_state::clear_state(flags);
     (*fs).set_s(Some(s_owner));
     (*fs).set_w(Some(w_owner));
     if cmd_find_best_winlink_with_window(fs) != 0 as ::core::ffi::c_int {
-        cmd_find_clear_state(fs, flags);
+        *fs = cmd_find_state::clear_state(flags);
         return -(1 as ::core::ffi::c_int);
     }
     (*fs).set_wp(((((*fs).window_handle().as_ref()).expect("live window")).active_pane()).as_ref());
@@ -914,14 +907,14 @@ pub unsafe fn cmd_find_from_window(
     w_owner: &WindowRef,
     mut flags: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    cmd_find_clear_state(fs, flags);
+    *fs = cmd_find_state::clear_state(flags);
     (*fs).set_w(Some(w_owner));
     if cmd_find_best_session_with_window(fs) != 0 as ::core::ffi::c_int {
-        cmd_find_clear_state(fs, flags);
+        *fs = cmd_find_state::clear_state(flags);
         return -(1 as ::core::ffi::c_int);
     }
     if cmd_find_best_winlink_with_window(fs) != 0 as ::core::ffi::c_int {
-        cmd_find_clear_state(fs, flags);
+        *fs = cmd_find_state::clear_state(flags);
         return -(1 as ::core::ffi::c_int);
     }
     (*fs).set_wp(((((*fs).window_handle().as_ref()).expect("live window")).active_pane()).as_ref());
@@ -934,7 +927,7 @@ pub unsafe fn cmd_find_from_winlink_pane(
     wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut flags: ::core::ffi::c_int,
 ) {
-    cmd_find_clear_state(fs, flags);
+    *fs = cmd_find_state::clear_state(flags);
     (*fs).s = wl.get_unchecked().session.clone();
     (*fs).set_wl(wl.clone());
     (*fs).idx = ((*fs).winlink_handle()).get_unchecked().idx;
@@ -961,13 +954,13 @@ pub unsafe fn cmd_find_from_nothing(
     mut fs: *mut cmd_find_state,
     mut flags: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    cmd_find_clear_state(fs, flags);
+    *fs = cmd_find_state::clear_state(flags);
     let best_session_owner = cmd_find_best_session(None, flags);
     (*fs).s = best_session_owner
         .as_ref()
         .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     if (*fs).session_handle().is_none() {
-        cmd_find_clear_state(fs, flags);
+        *fs = cmd_find_state::clear_state(flags);
         return -(1 as ::core::ffi::c_int);
     }
     (*fs).set_wl(
@@ -989,7 +982,7 @@ pub unsafe fn cmd_find_from_mouse(
 ) -> ::core::ffi::c_int {
     let mouse_pane_owner;
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    cmd_find_clear_state(fs, flags);
+    *fs = cmd_find_state::clear_state(flags);
     if (*m).valid == 0 {
         return -(1 as ::core::ffi::c_int);
     }
@@ -1002,7 +995,7 @@ pub unsafe fn cmd_find_from_mouse(
         (*fs).set_wp(mouse_pane_owner.as_ref());
     }
     if (*fs).pane_handle().is_none() {
-        cmd_find_clear_state(fs, flags);
+        *fs = cmd_find_state::clear_state(flags);
         return -(1 as ::core::ffi::c_int);
     }
     (*fs).set_w(((*fs).winlink_handle()).get_unchecked().window_handle());
@@ -1026,7 +1019,7 @@ pub unsafe fn cmd_find_from_client(
         .upgrade()
         .is_none()
     {
-        cmd_find_clear_state(fs, flags);
+        *fs = cmd_find_state::clear_state(flags);
         (*fs).set_wp(
             ((((c
                 .as_ref()
@@ -1072,7 +1065,7 @@ pub unsafe fn cmd_find_from_client(
         cmd_find_log_state(c"cmd_find_from_client", fs);
         return 0 as ::core::ffi::c_int;
     }
-    cmd_find_clear_state(fs, flags);
+    *fs = cmd_find_state::clear_state(flags);
     let inside_pane_owner = cmd_find_inside_pane(c_owner);
 
     if let Some(pane) = inside_pane_owner.as_ref() {
@@ -1220,7 +1213,7 @@ pub unsafe fn cmd_find_target(
     let queue_current = cmdq_get_state_owned(&*(item)).current_snapshot();
     let mut queue_event = cmdq_get_event(&*(item));
     let mut current_context: Option<cmd_find_state> = None;
-    cmd_find_clear_state(fs, flags);
+    *fs = cmd_find_state::clear_state(flags);
     if server_check_marked() != 0 && flags & CMD_FIND_DEFAULT_MARKED != 0 {
         current_context = Some(marked_pane.clone());
         log_debug(format_args!(
@@ -1692,7 +1685,7 @@ unsafe fn cmd_find_current_client(
 
         inside_pane_owner.is_some()
     } {
-        cmd_find_clear_state(&raw mut fs, CMD_FIND_QUIET);
+        fs = cmd_find_state::clear_state(CMD_FIND_QUIET);
         fs.w = inside_pane_owner
             .as_ref()
             .expect("inside pane")

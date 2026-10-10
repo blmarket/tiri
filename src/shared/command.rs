@@ -154,6 +154,14 @@ pub struct cmd_find_state {
 }
 
 impl cmd_find_state {
+    pub fn clear_state(flags: ::core::ffi::c_int) -> Self {
+        Self {
+            flags,
+            idx: -1,
+            ..Default::default()
+        }
+    }
+
     /// Retain the target allocation; callbacks may still invalidate it logically.
     pub fn session_handle(&self) -> Option<SessionRef> {
         self.s.upgrade()
