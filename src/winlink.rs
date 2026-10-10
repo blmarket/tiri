@@ -225,7 +225,7 @@ pub unsafe fn winlink_set_window(mut wl: refbox::Weak<winlink>, w_owner: &Window
         previous.remove_winlink(wl.clone());
         winlink_release_window(wl.clone(), c"winlink_set_window");
     }
-    wl.get_mut_unchecked().window_owner = Some(w_owner.retain(c"winlink_set_window"));
+    wl.get_mut_unchecked().window_owner = Some(window_add_ref(w_owner, c"winlink_set_window"));
     w_owner.add_winlink(wl);
 }
 

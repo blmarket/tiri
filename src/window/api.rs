@@ -50,9 +50,6 @@ impl WindowIndex for windows {
 }
 
 pub trait Window {
-    unsafe fn retain(&self, from: &CStr) -> Self
-    where
-        Self: Sized;
     unsafe fn update_focus(&self);
     unsafe fn redraw_active_switch(&self, pane: Option<&Rc<UnsafeCell<window_pane>>>);
     unsafe fn pane_at(&self, x: u32, y: u32) -> Option<Rc<UnsafeCell<window_pane>>>;
@@ -226,9 +223,6 @@ pub trait Window {
 }
 
 impl Window for WindowRef {
-    unsafe fn retain(&self, from: &CStr) -> Self {
-        window_add_ref(self, &*from)
-    }
     unsafe fn update_focus(&self) {
         window_update_focus(Some(self));
     }

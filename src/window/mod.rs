@@ -336,7 +336,7 @@ unsafe fn window_destroy(w_owner: &WindowRef) {
     (*w).lifecycle = WindowLifecycle::Destroyed;
 }
 
-unsafe fn window_add_ref(w_owner: &WindowRef, from: &CStr) -> WindowRef {
+pub unsafe fn window_add_ref(w_owner: &WindowRef, from: &CStr) -> WindowRef {
     let mut w = w_owner.get();
     let owner = Rc::clone(w_owner);
     log_debug(format_args!(
