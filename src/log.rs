@@ -1,29 +1,24 @@
-use crate::src::compat::stdio::CFile;
 use crate::src::compat::vis::strvis;
-use crate::src::ffi::libc::{
-    __errno_location, exit, fflush, fopen, fprintf, getpid, setvbuf, snprintf, strerror,
-};
+use crate::src::ffi::libc::{__errno_location, exit, getpid, snprintf, strerror};
 use crate::src::format::bytes::format_bytes;
 use crate::src::format::bytes::try_format_message_with;
 use crate::src::shared::abi::*;
-use crate::src::shared::stdio::FILE;
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
-use std::ffi::{CStr, CString};
+use std::ffi::CStr;
 use std::fmt;
+use std::fs::{File, OpenOptions};
+use std::io::Write;
+use std::os::unix::ffi::OsStrExt;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 mod format;
 pub use format::{log_byte, log_bytes, log_cstr, log_cstr_n, log_cstr_width, log_hex, log_pointer};
 
-pub const _IOLBF: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-
-static mut log_file: Option<CFile> = None;
+static mut log_file: Option<File> = None;
 static mut log_level: ::core::ffi::c_int = 0;
 
-unsafe fn log_file_ptr() -> *mut FILE {
-    log_file
-        .as_ref()
-        .map_or(::core::ptr::null_mut::<FILE>(), CFile::as_ptr)
+unsafe fn log_file_mut() -> Option<&'static mut File> {
+    (*&raw mut log_file).as_mut()
 }
 pub unsafe fn log_add_level() {
     log_level += 1;
@@ -42,18 +37,11 @@ pub unsafe fn log_open(name: &CStr) {
     path.push(b'-');
     path.extend_from_slice(pid.as_bytes());
     path.extend_from_slice(b".log");
-    let path = CString::new(path).expect("log filename components contain no interior NUL");
-    let file = fopen(path.as_ptr(), c"a".as_ptr()) as *mut FILE;
-    let Some(file) = CFile::from_raw(file) else {
+    let path = std::ffi::OsStr::from_bytes(&path);
+    let Ok(file) = OpenOptions::new().append(true).create(true).open(path) else {
         return;
     };
     log_file = Some(file);
-    setvbuf(
-        log_file_ptr(),
-        ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        _IOLBF,
-        0 as size_t,
-    );
 }
 pub unsafe fn log_toggle(name: &CStr) {
     if log_level == 0 as ::core::ffi::c_int {
@@ -73,10 +61,9 @@ unsafe fn log_message(
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
     prefix: &CStr,
 ) {
-    let file = log_file_ptr();
-    if file.is_null() {
+    let Some(file) = log_file_mut() else {
         return;
-    }
+    };
     let Some(s) = try_format_message_with(write) else {
         return;
     };
@@ -100,28 +87,21 @@ unsafe fn log_message(
         VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL,
     );
     drop(s);
-    log_write_escaped(CStr::from_ptr(out.as_ptr().cast()), prefix);
+    let message = CStr::from_bytes_until_nul(&out).unwrap();
+    log_write_escaped(file, message.to_bytes(), prefix.to_bytes());
 }
 
-unsafe fn log_write_escaped(message: &CStr, prefix: &CStr) {
-    let file = log_file_ptr();
-    if file.is_null() {
-        return;
-    }
+/// Write one complete log line with a single write, so the line reaches the
+/// file immediately and is never interleaved with another process's output.
+fn log_write_escaped(file: &mut File, message: &[u8], prefix: &[u8]) {
     let tv = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default();
-    if fprintf(
-        file,
-        c"%lld.%06d %s%s\n".as_ptr(),
-        tv.as_secs() as ::core::ffi::c_longlong,
-        tv.subsec_micros() as ::core::ffi::c_int,
-        prefix.as_ptr(),
-        message.as_ptr(),
-    ) != -(1 as ::core::ffi::c_int)
-    {
-        fflush(file);
-    }
+    let mut line = format!("{}.{:06} ", tv.as_secs(), tv.subsec_micros()).into_bytes();
+    line.extend_from_slice(prefix);
+    line.extend_from_slice(message);
+    line.push(b'\n');
+    let _ = file.write_all(&line);
 }
 /// Write a debug message, formatting only while logging is enabled.
 ///
@@ -130,12 +110,14 @@ unsafe fn log_write_escaped(message: &CStr, prefix: &CStr) {
 /// backslashes, newlines and non-UTF-8 bytes). Arguments are escaped once,
 /// before interpolation. As before, an embedded NUL ends the message.
 pub unsafe fn log_debug(args: fmt::Arguments<'_>) {
-    if log_file_ptr().is_null() {
+    let Some(file) = log_file_mut() else {
         return;
-    }
+    };
     let mut message = format_bytes(args);
-    message.push(0);
-    log_write_escaped(CStr::from_bytes_until_nul(&message).unwrap(), c"");
+    if let Some(end) = message.iter().position(|&byte| byte == 0) {
+        message.truncate(end);
+    }
+    log_write_escaped(file, &message, b"");
 }
 pub unsafe fn fatal(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) -> ! {
     let mut tmp: [::core::ffi::c_char; 256] = [0; 256];
@@ -273,7 +255,7 @@ mod tests {
         }
     }
 
-    struct RestoreLog(Option<CFile>);
+    struct RestoreLog(Option<File>);
     impl Drop for RestoreLog {
         fn drop(&mut self) {
             unsafe {
@@ -307,8 +289,10 @@ mod tests {
             assert!(!file.is_null());
             let fd = libc::dup(libc::fileno(file));
             assert!(fd >= 0);
-            let mut reader = std::fs::File::from_raw_fd(fd);
-            let _restore = RestoreLog((&raw mut log_file).replace(CFile::from_raw(file.cast())));
+            libc::fclose(file);
+            let mut reader = File::from_raw_fd(fd);
+            let writer = reader.try_clone().unwrap();
+            let _restore = RestoreLog((&raw mut log_file).replace(Some(writer)));
             log_debug(format_args!("packet: {}", log_bytes(b"\x80\n\\")));
             log_debug(format_args!("stop{}ignored", log_byte(0)));
             reader.seek(SeekFrom::Start(0)).unwrap();
