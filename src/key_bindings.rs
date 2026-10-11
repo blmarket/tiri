@@ -277,7 +277,7 @@ pub unsafe fn key_bindings_init() {
         c"bind -N 'Toggle the active pane between half and full width' -Tstrip f { resize-pane -Z }",
         c"bind -N 'Swap the active pane with the pane to the left' -Tstrip H { swap-pane -U }",
         c"bind -N 'Swap the active pane with the pane to the right' -Tstrip L { swap-pane -D }",
-        c"bind -N 'Kill the active pane' -Tstrip x { kill-pane }",
+        c"bind -N 'Kill the active pane' -Tstrip x { confirm-before -p\"kill-pane #P? (y/n)\" kill-pane }",
         c"bind -N 'Select window 0' -Tstrip 0 { select-window -t:=0 }",
         c"bind -N 'Select window 1' -Tstrip 1 { select-window -t:=1 }",
         c"bind -N 'Select window 2' -Tstrip 2 { select-window -t:=2 }",
