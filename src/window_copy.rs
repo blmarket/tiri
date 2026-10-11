@@ -11,7 +11,7 @@ use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
-    format_add, format_add_owned_cb, format_create_defaults, format_expand_cstring, format_free,
+    format_add, format_add_owned_cb, format_create_defaults, format_expand_cstring,
     format_get_pane, format_grid_hyperlink_cstring, format_single_cstring,
 };
 use crate::src::format_draw::format_draw;
@@ -27,16 +27,15 @@ use crate::src::grid::{
     grid_in_set, grid_line_length, grid_line_limit, grid_line_time, grid_peek_line,
     grid_unwrap_position, grid_wrap_position,
 };
-use crate::src::input::{input_free, input_init, input_parse_screen};
+use crate::src::input::{input_init, input_parse_screen};
 use crate::src::job::{job_get_event, job_run};
 use crate::src::log::{fatal, fatalx, log_cstr, log_debug};
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::paste::{paste_add_owned, paste_buffer_data, paste_get_top, paste_set_owned};
 use crate::src::reactor::bufferevent_write;
 use crate::src::screen::{
-    screen_check_selection, screen_clear_selection, screen_free, screen_hide_selection,
-    screen_init, screen_resize, screen_resize_cursor, screen_set_default_cursor,
-    screen_set_selection,
+    screen_check_selection, screen_clear_selection, screen_hide_selection, screen_init,
+    screen_resize, screen_resize_cursor, screen_set_default_cursor, screen_set_selection,
 };
 use crate::src::screen_write::{
     screen_write_carriagereturn, screen_write_cell, screen_write_cursormove,
@@ -160,7 +159,7 @@ impl window_copy_mode_data {
 
     fn clear_backing(&mut self) {
         if let Some(mut backing) = self.backing.take() {
-            unsafe { screen_free(&mut backing) };
+            drop(backing);
         }
     }
 }
@@ -798,10 +797,10 @@ unsafe fn window_copy_free(mut wme: refbox::Weak<window_mode_entry>) {
     drop((*data).refresh_timer.take());
     window_copy_clear_searchmark(&mut *data);
     if let Some(ictx) = (*data).ictx.take() {
-        input_free(ictx);
+        drop(ictx);
     }
     (*data).clear_backing();
-    screen_free(&mut (*data).screen);
+    drop(std::mem::take(&mut (*data).screen));
     drop(wme.get_mut_unchecked().boxed_data.take());
 }
 pub unsafe fn window_copy_add(
@@ -6317,7 +6316,7 @@ unsafe fn window_copy_search(
         }
     }
     window_copy_redraw_screen(wme.clone());
-    screen_free(&mut ss);
+    drop(ss);
     found
 }
 unsafe fn window_copy_visible_lines(
@@ -6633,7 +6632,7 @@ unsafe fn window_copy_search_marks(
         }
     }
     if ssp == &raw mut ss {
-        screen_free(&mut ss);
+        drop(ss);
     }
     drop(regex_owner);
     1 as ::core::ffi::c_int
@@ -7501,7 +7500,7 @@ unsafe fn window_copy_write_line(
         );
         screen_write_putc(&mut *ctx, &grid_default_cell, '$' as i32 as u_char);
     }
-    format_free(ft_owner);
+    drop(ft_owner);
 }
 unsafe fn window_copy_write_lines(
     mut wme: refbox::Weak<window_mode_entry>,
@@ -8067,7 +8066,7 @@ unsafe fn window_copy_set_selection(
         },
     );
     gc.flags = (gc.flags as ::core::ffi::c_int | GRID_FLAG_NOPALETTE) as u_char;
-    format_free(ft_owner);
+    drop(ft_owner);
     clipx = window_copy_line_number_width(wme.clone());
     if clipx >= (*s).grid().sx {
         clipx = (*s).grid().sx.wrapping_sub(1 as u_int);
@@ -10016,7 +10015,7 @@ mod regex_cell_tests {
 mod backing_owner_tests {
     use super::*;
     use crate::src::grid::grid_set_cell;
-    use crate::src::options::{options_create, options_default, options_free};
+    use crate::src::options::{options_create, options_default};
     use crate::src::options_table::options_table;
 
     struct ScreenOptions(*mut options, Option<Box<options>>);
@@ -10038,7 +10037,7 @@ mod backing_owner_tests {
     impl Drop for ScreenOptions {
         fn drop(&mut self) {
             unsafe {
-                options_free(self.1.take().expect("test options owner"));
+                drop(self.1.take().expect("test options owner"));
                 global_options = self.0;
             }
         }
@@ -10079,9 +10078,9 @@ mod backing_owner_tests {
             assert_eq!(byte_at(&source, 4, 0), b'E');
 
             // The borrowed source can be freed before its independent snapshot.
-            screen_free(&mut source);
+            drop(source);
             assert_eq!(byte_at(data.backing(), 3, 1), b'H');
-            screen_free(&mut hint);
+            drop(hint);
             drop(data);
         }
     }

@@ -167,10 +167,6 @@ pub fn hyperlinks_reset(hl: &HyperlinksRef) {
     table.by_uri.clear();
 }
 
-pub fn hyperlinks_free(hl: HyperlinksRef) {
-    drop(hl);
-}
-
 impl Drop for hyperlinks {
     fn drop(&mut self) {
         if !self.by_inner.is_empty() {

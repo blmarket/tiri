@@ -1,5 +1,5 @@
 use hmux::src::environ::environ_create;
-use hmux::src::options::{options_create, options_default, options_free};
+use hmux::src::options::{options_create, options_default};
 use hmux::src::options_table::options_table;
 use hmux::src::prompt::{
     prompt_create, prompt_free, prompt_incremental_start, prompt_set_options, prompt_update,
@@ -243,8 +243,8 @@ fn creation_preserves_input_expansion_incremental_state_and_owned_resources() {
             global_s_options,
             global_w_options,
         ) = saved;
-        options_free(server_owner);
-        options_free(session_owner);
-        options_free(window_owner);
+        drop(server_owner);
+        drop(session_owner);
+        drop(window_owner);
     }
 }

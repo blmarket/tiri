@@ -5,7 +5,6 @@ use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_create_with_client, format_defaults, format_each, format_expand_time_cstring,
-    format_free,
 };
 use crate::src::json::{json_parse, json_to_string};
 use crate::src::reactor::{evbuffer_add_formatted, evbuffer_new};
@@ -161,7 +160,7 @@ unsafe fn cmd_display_message_exec(
                 write_cstr(out, &*value)
             });
         });
-        format_free(ft_owner);
+        drop(ft_owner);
         return CMD_RETURN_NORMAL;
     }
     let mut msg = if args_has(args, 'l' as i32 as u_char) != 0 {
@@ -173,7 +172,7 @@ unsafe fn cmd_display_message_exec(
         let Some(jn) = json_parse(&msg, Some(&mut cause)) else {
             cmdq_error(item_handle, |out| write_cstr(out, cause.as_deref()));
             drop(msg);
-            format_free(ft_owner);
+            drop(ft_owner);
             return CMD_RETURN_ERROR;
         };
         msg = json_to_string(&jn);
@@ -202,6 +201,6 @@ unsafe fn cmd_display_message_exec(
         );
     }
     drop(msg);
-    format_free(ft_owner);
+    drop(ft_owner);
     CMD_RETURN_NORMAL
 }

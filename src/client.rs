@@ -475,7 +475,7 @@ pub unsafe fn client_main(
         client_exitsession.take();
         client_exitval
     })();
-    crate::src::proc::proc_free(process_owner);
+    drop(process_owner);
     client_peer = std::ptr::null_mut();
     client_proc = std::ptr::null_mut();
     result

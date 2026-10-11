@@ -3,7 +3,7 @@ use crate::src::cmd::parse::{cmd_parse_and_append, cmd_parse_error_uppercase_fir
 use crate::src::cmd::queue::cmdq_new_state;
 use crate::src::cmd::{cmd_mouse_at, cmd_template_replace_cstring};
 use crate::src::format::bytes::write_cstr;
-use crate::src::format::{format_create, format_defaults, format_expand_cstring, format_free};
+use crate::src::format::{format_create, format_defaults, format_expand_cstring};
 use crate::src::format_draw::format_draw;
 use crate::src::fuzzy::fuzzy_match_owned;
 use crate::src::grid::{grid_default_cell, grid_get_cell};
@@ -11,7 +11,7 @@ use crate::src::prompt::{
     prompt_create, prompt_draw, prompt_free, prompt_incremental_start, prompt_key, prompt_mouse,
     prompt_set_options, prompt_update,
 };
-use crate::src::screen::{screen_free, screen_init, screen_resize};
+use crate::src::screen::{screen_init, screen_resize};
 use crate::src::screen_write::{
     screen_write_cell, screen_write_clearendofline, screen_write_clearscreen,
     screen_write_cursormove, screen_write_start, screen_write_stop,
@@ -153,7 +153,7 @@ unsafe fn window_switch_add_session(
     *order = (*order).wrapping_add(1);
     (*item).order = fresh7;
     (*item).text = format_expand_cstring(ft, (*data).format.as_ptr());
-    format_free(ft_owner);
+    drop(ft_owner);
 }
 unsafe fn window_switch_add_window(
     mut data: *mut window_switch_modedata,
@@ -176,7 +176,7 @@ unsafe fn window_switch_add_window(
     *order = (*order).wrapping_add(1);
     (*item).order = fresh4;
     (*item).text = format_expand_cstring(ft, (*data).format.as_ptr());
-    format_free(ft_owner);
+    drop(ft_owner);
 }
 fn window_switch_matches(
     items: &mut [Box<window_switch_itemdata>],
@@ -522,7 +522,7 @@ unsafe fn window_switch_free(mut wme: refbox::Weak<window_mode_entry>) {
     if let Some(prompt) = (*data).prompt.take() {
         prompt_free(&prompt.downgrade());
     }
-    screen_free(&mut (*data).screen);
+    drop(std::mem::take(&mut (*data).screen));
     drop(wme.get_mut_unchecked().boxed_data.take());
 }
 unsafe fn window_switch_resize(

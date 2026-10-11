@@ -7,7 +7,7 @@ use crate::src::cmd::{cmd_mouse_at, cmd_template_replace_cstring};
 use crate::src::ffi::libc::{__ctype_tolower_loc, strcasestr, strstr};
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
-use crate::src::format::{format_add, format_create_defaults, format_expand_cstring, format_free};
+use crate::src::format::{format_add, format_create_defaults, format_expand_cstring};
 use crate::src::format_draw::{format_draw, format_width};
 use crate::src::grid::grid_default_cell;
 use crate::src::key_string::key_string_format;
@@ -17,7 +17,7 @@ use crate::src::prompt::{
     prompt_closed, prompt_create, prompt_draw, prompt_free, prompt_key, prompt_mouse,
     prompt_set_options,
 };
-use crate::src::screen::{screen_free, screen_init, screen_resize};
+use crate::src::screen::{screen_init, screen_resize};
 use crate::src::screen_write::{
     screen_write_box, screen_write_clearcharacter, screen_write_clearendofline,
     screen_write_clearscreen, screen_write_cursormove, screen_write_puts, screen_write_start,
@@ -689,7 +689,7 @@ pub unsafe fn mode_tree_free(owner: std::rc::Rc<std::cell::UnsafeCell<mode_tree_
     let mtd = &mut *owner.get();
     mode_tree_free_items(&mut mtd.children);
     mode_tree_clear_lines(&mut *mtd);
-    screen_free(&mut mtd.screen);
+    drop(std::mem::take(&mut mtd.screen));
     mtd.search = None;
     mtd.filter = None;
     mtd.dead = 1 as ::core::ffi::c_int;
@@ -1149,7 +1149,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
         }
         i = i.wrapping_add(1);
     }
-    format_free(ft_owner);
+    drop(ft_owner);
     if !((*mtd).preview == MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int) {
         sy = (*s).grid().sy;
         if !(sy <= 4 as u_int
@@ -1787,7 +1787,7 @@ unsafe fn mode_tree_draw_help(
         mode_tree_draw_help_line(ctx, &gc, ft, line, item, x, y, w);
         y = y.wrapping_add(1);
     }
-    format_free(ft_owner);
+    drop(ft_owner);
 }
 unsafe fn mode_tree_display_help(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
     let mtd = tree_owner.get();

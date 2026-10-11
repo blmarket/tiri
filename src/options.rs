@@ -210,10 +210,6 @@ pub fn options_create(parent: Option<OptionsScope>) -> Box<options> {
     options_create_owned(parent)
 }
 
-pub unsafe fn options_free(oo: Box<options>) {
-    drop(oo);
-}
-
 impl Drop for options {
     fn drop(&mut self) {
         unsafe {
@@ -1656,7 +1652,7 @@ mod array_string_owner_tests {
             assert_eq!(options_to_string(array, c"2").as_bytes(), b"DISPLAY");
             assert_eq!(options_to_string(array, c"002").as_bytes(), b"DISPLAY");
             assert_eq!(options_to_string(array, c"3").as_bytes(), b"");
-            options_free(oo);
+            drop(oo);
         }
     }
 }

@@ -2,7 +2,7 @@ use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client};
 use crate::src::format::{
-    format_create_with_client, format_defaults, format_expand_cstring, format_free, format_true,
+    format_create_with_client, format_defaults, format_expand_cstring, format_true,
 };
 use crate::src::server_client::Client as _;
 use crate::src::shared::client::ClientRef;
@@ -134,6 +134,6 @@ unsafe fn cmd_kill_pane_filter(
     format_defaults(ft, None, Some(s_owner), wl.clone(), Some(pane_owner));
     let expanded = format_expand_cstring(ft, filter);
     flag = format_true(expanded.as_ptr());
-    format_free(ft_owner);
+    drop(ft_owner);
     flag
 }

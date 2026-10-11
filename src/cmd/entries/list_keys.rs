@@ -4,7 +4,7 @@ use crate::src::cmd::{cmd_get_args_mut, cmd_list_print_cstring};
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
-    format_add, format_create_with_client, format_defaults, format_expand_cstring, format_free,
+    format_add, format_create_with_client, format_defaults, format_expand_cstring,
 };
 use crate::src::key_bindings::{
     key_bindings_get_table, key_bindings_has_repeat, key_bindings_tables,
@@ -288,6 +288,6 @@ unsafe fn cmd_list_keys_exec(
             break;
         }
     }
-    format_free(ft_owner);
+    drop(ft_owner);
     CMD_RETURN_NORMAL
 }

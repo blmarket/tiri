@@ -69,7 +69,7 @@ fn ordered_names_survive_updates_and_removal() {
         .is_null());
         // Repopulate so destruction also exercises nonempty storage.
         options_set_string(oo, c"@again", 0, |out| out.write_all(b"value"));
-        options_free(oo_owner);
+        drop(oo_owner);
     }
 }
 
@@ -143,7 +143,7 @@ fn aliases_parent_fallback_and_shadowing() {
             options_get_string(child, c"display-panes-colour").as_c_str(),
             c"red"
         );
-        options_free(child_owner);
+        drop(child_owner);
         assert_eq!(
             hmux::src::options::options_get_only_mut(
                 &mut *(parent),
@@ -153,7 +153,7 @@ fn aliases_parent_fallback_and_shadowing() {
             inherited
         );
         hmux::src::tmux::global_options = saved_global;
-        options_free(parent_owner);
+        drop(parent_owner);
     }
 }
 
@@ -258,7 +258,7 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
             ),
             c"(null)tail"
         );
-        options_free(oo_owner);
+        drop(oo_owner);
     }
 }
 
@@ -444,7 +444,7 @@ fn array_keys_order_normalize_and_keep_stable_items() {
             .next()
             .map_or(std::ptr::null_mut(), |item| item)
             .is_null());
-        options_free(oo_owner);
+        drop(oo_owner);
     }
 }
 
@@ -520,7 +520,7 @@ fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
             CStr::from_ptr(cause.as_ref().unwrap().as_ptr()),
             c"bad colour: invalid-colour"
         );
-        options_free(oo_owner);
+        drop(oo_owner);
     }
 }
 
@@ -534,7 +534,7 @@ unsafe fn with_global_options(body: impl FnOnce(*mut hmux::src::shared::options:
     hmux::src::tmux::global_options = global;
     body(global);
     hmux::src::tmux::global_options = saved;
-    options_free(global_owner);
+    drop(global_owner);
 }
 
 fn table_entry(name: &CStr) -> &'static hmux::src::shared::options::options_table_entry {
@@ -599,7 +599,7 @@ fn command_arrays_parse_items_and_assign_unseparated_values() {
             // An empty value assigns nothing.
             assert_eq!(options_array_assign(hook, c"", null_mut()), 0);
             assert_eq!(options_array_iter(&*hook).count(), 2);
-            options_free(oo_owner);
+            drop(oo_owner);
         });
     }
 }
@@ -637,7 +637,7 @@ fn set_command_publishes_a_local_default_before_replacing_it() {
                 options_to_cstring(inherited, None, 0).as_bytes(),
                 b"new-session"
             );
-            options_free(child_owner);
+            drop(child_owner);
         });
     }
 }

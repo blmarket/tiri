@@ -3,7 +3,6 @@ use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_add, format_create, format_create_defaults, format_defaults, format_expand_time_cstring,
-    format_free,
 };
 use crate::src::format_draw::format_draw;
 use crate::src::grid::{grid_cells_equal, grid_compare};
@@ -14,7 +13,7 @@ use crate::src::prompt::{
     prompt_set_options, prompt_update,
 };
 use crate::src::reactor::Timer;
-use crate::src::screen::{screen_free, screen_init, screen_resize};
+use crate::src::screen::{screen_init, screen_resize};
 use crate::src::screen_write::{
     screen_write_cursormove, screen_write_fast_copy, screen_write_putc, screen_write_start,
     screen_write_stop,
@@ -26,7 +25,7 @@ use crate::src::session::Session as _;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
 use crate::src::shared::session::SessionRef;
-use crate::src::style::{style_ranges_clear, style_ranges_free, style_ranges_init};
+use crate::src::style::{style_ranges_clear, style_ranges_init};
 use crate::src::tmux::global_s_options;
 use std::ffi::{CStr, CString};
 use std::time::Duration;
@@ -180,7 +179,7 @@ pub(crate) unsafe fn status_pop_screen(client: &ClientRef) {
         })
     };
     if let Some(mut active) = active {
-        screen_free(&mut active);
+        drop(active);
     }
 }
 pub unsafe fn status_init(status: &mut status_line, width: u_int) {
@@ -207,17 +206,15 @@ pub unsafe fn status_free(status: &mut status_line) {
         < (::core::mem::size_of::<[style_line_entry; 5]>() as usize)
             .wrapping_div(::core::mem::size_of::<style_line_entry>() as usize)
     {
-        style_ranges_free(
-            &raw mut (*(&raw mut (*sl).entries as *mut style_line_entry).offset(i as isize)).ranges,
-        );
+        drop(std::mem::take(&mut (*sl).entries[i as usize].ranges));
         (*sl).entries[i as usize].expanded = None;
         i = i.wrapping_add(1);
     }
     drop((*sl).timer.take());
     if let Some(mut active) = (*sl).active.take() {
-        screen_free(&mut active);
+        drop(active);
     }
-    screen_free(&mut (*sl).screen);
+    drop(std::mem::take(&mut (*sl).screen));
 }
 pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
     let mut c: Option<ClientRef> = Some(c_owner.clone());
@@ -401,7 +398,7 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
         ctx.borrow_screen(&mut status.screen);
         screen_write_stop(&mut ctx);
     }
-    format_free(ft_owner);
+    drop(ft_owner);
     log_debug(format_args!(
         "{} exit: force={}, changed={}",
         "status_redraw",
@@ -573,7 +570,7 @@ pub unsafe fn status_message_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
         .expect("option snapshot")
         .as_ptr();
     let expanded = format_expand_time_cstring(ft, msgfmt);
-    format_free(ft_owner);
+    drop(ft_owner);
     // Formatting above may reenter Client. Only component-only screen drawing
     // follows; with no pane or init callback it cannot dispatch terminal output.
     let mut status = c_owner.borrow_status_mut();
@@ -604,7 +601,7 @@ pub unsafe fn status_message_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
     screen_write_stop(&mut ctx);
     let changed = grid_compare((*sl).active_screen().grid(), old_screen.grid()) != 0;
     let _ = status;
-    screen_free(&mut old_screen);
+    drop(old_screen);
     i32::from(changed)
 }
 unsafe fn status_prompt_accept(c_owner: &ClientRef) -> cmd_retval {
@@ -788,7 +785,7 @@ pub unsafe fn status_prompt_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
     screen_write_stop(&mut ctx);
     let changed = grid_compare((*sl).active_screen().grid(), old_screen.grid()) != 0;
     let _ = status;
-    screen_free(&mut old_screen);
+    drop(old_screen);
     i32::from(changed)
 }
 pub unsafe fn status_prompt_cursor(c: &ClientRef) -> (u_int, u_int) {

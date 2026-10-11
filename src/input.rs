@@ -3,7 +3,7 @@ pub(crate) use crate::src::window_pane::{
     input_complete_request, input_free_request, input_request_matches,
 };
 pub use crate::src::window_pane::{
-    input_csi_type, input_esc_type, input_free, input_init, input_parse_screen, input_pending,
+    input_csi_type, input_esc_type, input_init, input_parse_screen, input_pending,
     input_reply_clipboard, input_request_reply, input_reset, input_set_buffer_size,
     input_table_entry, InputRequestReply, INPUT_BUF_START, INPUT_CSI_CBT, INPUT_CSI_CNL,
     INPUT_CSI_CPL, INPUT_CSI_CUB, INPUT_CSI_CUD, INPUT_CSI_CUF, INPUT_CSI_CUP, INPUT_CSI_CUU,

@@ -5,7 +5,7 @@ use crate::src::cmd::{
 };
 use crate::src::environ::environ_put;
 use crate::src::format::{
-    format_create_with_client, format_defaults, format_expand_cstring, format_free, format_true,
+    format_create_with_client, format_defaults, format_expand_cstring, format_true,
 };
 use crate::src::log::{fatalx, log_bytes, log_debug};
 use crate::src::shared::abi::*;
@@ -162,7 +162,7 @@ impl hmux_cmdparse::Context for ParserContext<'_, '_> {
                 (*fsp).pane_handle().as_ref(),
             );
             let expanded = format_expand_cstring(ft, token.as_c_str().as_ptr());
-            format_free(ft_owner);
+            drop(ft_owner);
             take_parser_token(expanded)
         }
     }

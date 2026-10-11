@@ -404,15 +404,15 @@ static mut global_w_options_owner: Option<Box<options>> = None;
 
 pub(crate) unsafe fn free_global_options() {
     if let Some(owner) = global_options_owner.take() {
-        crate::src::options::options_free(owner);
+        drop(owner);
         global_options = std::ptr::null_mut();
     }
     if let Some(owner) = global_s_options_owner.take() {
-        crate::src::options::options_free(owner);
+        drop(owner);
         global_s_options = std::ptr::null_mut();
     }
     if let Some(owner) = global_w_options_owner.take() {
-        crate::src::options::options_free(owner);
+        drop(owner);
         global_w_options = std::ptr::null_mut();
     }
 }

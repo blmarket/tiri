@@ -11,9 +11,7 @@ use crate::src::ffi::libc::strtod;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
-use crate::src::format::{
-    format_add, format_create_from_target, format_expand_cstring, format_free,
-};
+use crate::src::format::{format_add, format_create_from_target, format_expand_cstring};
 use crate::src::job::job_run;
 use crate::src::reactor::{
     evbuffer_add, evbuffer_get_length, evbuffer_new, evbuffer_pullup, evbuffer_readln,
@@ -222,7 +220,7 @@ unsafe fn cmd_run_shell_exec(
                 i = i.wrapping_add(1);
             }
             cdata.cmd = Some(format_expand_cstring(ft, cmd));
-            format_free(ft_owner);
+            drop(ft_owner);
         }
     } else {
         cdata.state = Some(args_make_commands_prepare(

@@ -5,7 +5,7 @@ use crate::src::events_payload::{
 };
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
-use crate::src::format::{format_create, format_defaults, format_expand_cstring, format_free};
+use crate::src::format::{format_create, format_defaults, format_expand_cstring};
 use crate::src::server::clients;
 use crate::src::server_client::Client;
 use crate::src::session::Session;
@@ -71,7 +71,7 @@ unsafe fn control_window_layout_changed_cb(_name: &CStr, payload: &mut event_pay
             c"%layout-change #{window_id} #{window_layout} #{window_layout} #{window_raw_flags}"
                 .as_ptr(),
         );
-        format_free(format);
+        drop(format);
         client.notify(|out| out.write_all(message.as_bytes()));
     });
 }

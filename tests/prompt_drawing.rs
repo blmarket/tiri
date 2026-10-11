@@ -1,9 +1,9 @@
 use hmux::src::environ::environ_create;
 use hmux::src::grid::{grid_default_cell, grid_get_cell, grid_string_cells_bytes};
-use hmux::src::options::{options_create, options_default, options_free};
+use hmux::src::options::{options_create, options_default};
 use hmux::src::options_table::options_table;
 use hmux::src::prompt::{prompt_create, prompt_draw, prompt_free};
-use hmux::src::screen::{screen_free, screen_init};
+use hmux::src::screen::screen_init;
 use hmux::src::screen_write::{screen_write_start, screen_write_stop};
 use hmux::src::shared::display::{SCREEN_CURSOR_BLOCK, SCREEN_CURSOR_UNDERLINE};
 use hmux::src::shared::grid::{GRID_ATTR_UNDERSCORE, GRID_STRING_TRIM_SPACES};
@@ -233,7 +233,7 @@ fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {
                 grid_get_cell(s.grid(), 8, 0, &mut cell);
                 assert_ne!(cell.attr as i32 & GRID_ATTR_UNDERSCORE, 0);
             }
-            screen_free(&mut s);
+            drop(s);
             prompt_free(&prompt.downgrade());
         }
         (
@@ -242,8 +242,8 @@ fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {
             global_s_options,
             global_w_options,
         ) = saved;
-        options_free(server_owner);
-        options_free(session_owner);
-        options_free(window_owner);
+        drop(server_owner);
+        drop(session_owner);
+        drop(window_owner);
     }
 }

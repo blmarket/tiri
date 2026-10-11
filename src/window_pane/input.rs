@@ -2089,10 +2089,6 @@ pub unsafe fn input_init(
     owner
 }
 
-pub fn input_free(ictx: Box<input_ctx>) {
-    drop(ictx);
-}
-
 impl Drop for input_ctx {
     fn drop(&mut self) {
         unsafe {

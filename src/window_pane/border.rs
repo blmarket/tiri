@@ -1,7 +1,7 @@
 //! Pane border cache and status rendering.
 use super::*;
 use crate::src::format::{
-    format_create, format_create_defaults, format_defaults, format_expand_time_cstring, format_free,
+    format_create, format_create_defaults, format_defaults, format_expand_time_cstring,
 };
 use crate::src::format_draw::format_draw;
 use crate::src::grid::{grid_compare, grid_default_cell};
@@ -66,7 +66,7 @@ pub(super) unsafe fn border_style(
     style_apply_with_options(&mut cell, key, Some(&mut context), |visit| {
         pane.with_options_mut(|options| visit(options));
     });
-    format_free(context);
+    drop(context);
     let state = &mut *pane.get();
     if active {
         state.active_border_gc = cell;
@@ -140,9 +140,9 @@ pub(super) unsafe fn make_status(
     style_ranges_clear(&mut ranges);
     format_draw(&mut write, &cell, width, expanded.as_ptr(), &mut ranges, 0);
     screen_write_stop(&mut write);
-    format_free(context);
+    drop(context);
     let changed = grid_compare(next.grid(), old.grid()) != 0;
-    screen_free(&mut old);
+    drop(old);
     {
         let state = &mut *pane.get();
         state.status_screen = next;

@@ -3,7 +3,7 @@ use crate::src::cmd::queue::{cmdq_error, cmdq_print};
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
-    format_add, format_add_time, format_create_from_target, format_expand_cstring, format_free,
+    format_add, format_add_time, format_create_from_target, format_expand_cstring,
     format_single_from_target_cstring,
 };
 use crate::src::hooks::{
@@ -346,12 +346,12 @@ unsafe fn cmd_show_options_print(
         true
     });
     if print != Some(true) {
-        format_free(ft_owner);
+        drop(ft_owner);
         return;
     }
     let template = template.as_deref().unwrap_or(SHOW_OPTIONS_TEMPLATE);
     let line = format_expand_cstring(ft, template.as_ptr());
-    format_free(ft_owner);
+    drop(ft_owner);
     cmdq_print(item_handle, |out| write_cstr(out, &*line));
 }
 
@@ -424,10 +424,10 @@ unsafe fn cmd_show_hooks_print_monitor(
     });
     if print == Some(true) {
         let line = format_expand_cstring(ft, template.as_ptr());
-        format_free(ft_owner);
+        drop(ft_owner);
         cmdq_print(item_handle, |out| write_cstr(out, &*line));
     } else {
-        format_free(ft_owner);
+        drop(ft_owner);
     }
     print.is_some()
 }

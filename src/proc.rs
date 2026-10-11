@@ -292,16 +292,18 @@ pub unsafe fn proc_start(name: &CStr) -> Box<tmuxproc> {
     })
 }
 /// Stop observers and release peers before releasing the process allocation.
-/// Call only after dispatch has returned and no further process use is possible.
-pub unsafe fn proc_free(mut owner: Box<tmuxproc>) {
-    let tp = &raw mut *owner;
-    proc_clear_signals(tp, 0);
-    // Remove through the owner, not a peer's parent back-pointer: that pointer
-    // predates the unique Box passed to this function and must not mutate it.
-    while let Some(peer) = owner.peers.pop() {
-        proc_free_peer(peer);
+/// Drop only after dispatch has returned and no further process use is possible.
+impl Drop for tmuxproc {
+    fn drop(&mut self) {
+        unsafe {
+            proc_clear_signals(self, 0);
+            // Remove through the owner, not a peer's parent back-pointer: that
+            // pointer predates this unique borrow and must not mutate it.
+            while let Some(peer) = self.peers.pop() {
+                proc_free_peer(peer);
+            }
+        }
     }
-    drop(owner);
 }
 
 /// Drive the process until exit, then release streams and the runtime owner.
@@ -536,7 +538,7 @@ mod ownership_tests {
                     Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe
                 ));
                 drop(task);
-                proc_free(owner);
+                drop(owner);
             }
         }
     }

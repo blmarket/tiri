@@ -8,7 +8,7 @@
 use super::{server_client_timer, ClientRef};
 use crate::src::grid::grid_default_cell;
 use crate::src::key_string::key_string_format;
-use crate::src::screen::{screen_free, screen_init};
+use crate::src::screen::screen_init;
 use crate::src::screen_write::{
     screen_write_box, screen_write_cursormove, screen_write_nputs, screen_write_start,
     screen_write_stop,
@@ -44,10 +44,10 @@ impl Overlay {
         &self.screen
     }
 
-    /// Keep the explicit screen free before the owner is dropped.
-    fn free(mut self) {
-        drop(self.timer.take());
-        unsafe { screen_free(&mut self.screen) };
+    /// Stop the timer before releasing the screen.
+    fn free(self) {
+        drop(self.timer);
+        drop(self.screen);
     }
 }
 

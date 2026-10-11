@@ -3,7 +3,7 @@ use crate::src::ffi::libc::{
     memcpy, snprintf, strcasecmp, strchr, strcmp, strcspn, strlcpy, strncasecmp, strspn,
 };
 use crate::src::format::bytes::xformat_with;
-use crate::src::format::{format_create, format_free, format_single_cstring};
+use crate::src::format::{format_create, format_single_cstring};
 use crate::src::grid::grid_default_cell;
 use crate::src::hyperlinks::{hyperlinks_get, hyperlinks_put, HyperlinksRef};
 use crate::src::log::{fatalx, log_cstr, log_debug};
@@ -984,7 +984,7 @@ pub unsafe fn style_add(
     }
     (*gc).attr |= parsed.gc.attr;
     if let Some(context) = owned_context {
-        format_free(context);
+        drop(context);
     }
     parsed
 }
@@ -1095,11 +1095,6 @@ pub unsafe fn style_ranges_clear(mut srs: *mut style_ranges) {
         (*srs).clear();
     }
 }
-pub unsafe fn style_ranges_free(mut srs: *mut style_ranges) {
-    if !srs.is_null() {
-        *srs = Vec::new();
-    }
-}
 pub unsafe fn style_ranges_get_range(mut srs: *mut style_ranges, mut x: u_int) -> *mut style_range {
     if srs.is_null() {
         return ::core::ptr::null_mut::<style_range>();
@@ -1116,8 +1111,8 @@ pub unsafe fn style_ranges_get_range(mut srs: *mut style_ranges, mut x: u_int) -
 #[cfg(test)]
 mod style_ranges_tests {
     use super::{
-        style_range, style_ranges, style_ranges_clear, style_ranges_free, style_ranges_get_range,
-        style_ranges_init, STYLE_RANGE_LEFT,
+        style_range, style_ranges, style_ranges_clear, style_ranges_get_range, style_ranges_init,
+        STYLE_RANGE_LEFT,
     };
     use crate::src::shared::abi::u_int;
 
@@ -1165,7 +1160,7 @@ mod style_ranges_tests {
             ranges.push(after_clear);
             assert_eq!(style_ranges_get_range(&mut ranges, 32), after_clear_ptr);
 
-            style_ranges_free(&mut ranges);
+            drop(std::mem::take(&mut ranges));
             assert!(ranges.is_empty());
             assert_eq!(ranges.capacity(), 0);
             assert!(style_ranges_get_range(&mut ranges, 32).is_null());
@@ -1173,7 +1168,6 @@ mod style_ranges_tests {
             style_ranges_init(&mut ranges);
             ranges.push(range(40, 45));
             assert!(!style_ranges_get_range(&mut ranges, 42).is_null());
-            style_ranges_free(&mut ranges);
         }
     }
 }

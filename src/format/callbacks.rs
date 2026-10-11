@@ -92,11 +92,9 @@ unsafe fn format_cb_session_stack(ft: *mut format_tree) -> Option<CString> {
 unsafe fn format_cb_window_stack_index(ft: *mut format_tree) -> Option<CString> {
     let link = (*ft).winlink_handle();
     let owner = link.try_borrow_mut().ok()?.session.upgrade()?;
-    let mut context = format_tree {
-        s: Rc::downgrade(&owner),
-        wl: link,
-        ..Default::default()
-    };
+    let mut context = format_tree::default();
+    context.s = Rc::downgrade(&owner);
+    context.wl = link;
     match owner.format_value(c"window_stack_index", &mut context)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("window_stack_index is a string builtin"),
@@ -2504,7 +2502,7 @@ mod owned_callback_tests {
             assert_eq!(format_cb_buffer_full(ft).unwrap().as_c_str(), c"A");
             assert_eq!(format_cb_buffer_size(ft).unwrap().as_c_str(), c"1");
             (*ft).pb = None;
-            format_free(ft_owner);
+            drop(ft_owner);
         }
     }
 
@@ -2528,7 +2526,7 @@ mod owned_callback_tests {
             ] {
                 assert!(format_table_get(key).unwrap().get(ft).is_none());
             }
-            format_free(ft_owner);
+            drop(ft_owner);
         }
     }
 
@@ -2561,7 +2559,7 @@ mod owned_callback_tests {
             drop(pb);
             assert!(!weak.is_alive(), "format tree only observes the buffer");
             assert!(format_cb_buffer_full(ft).is_none());
-            format_free(ft_owner);
+            drop(ft_owner);
             assert!(!weak.is_alive());
             assert_eq!(full.as_bytes(), b"A\xff");
             assert!(!sample.as_bytes().is_empty());

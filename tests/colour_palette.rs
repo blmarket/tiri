@@ -23,10 +23,6 @@ fn overrides_fall_back_to_defaults_and_clear_preserves_defaults() {
     assert_eq!((p.fg, p.bg), (8, 8));
     assert!(p.palette.is_none());
     assert_eq!(colour_palette_get(Some(&p), 1), 2);
-    colour_palette_free(Some(&mut p));
-    colour_palette_free(Some(&mut p));
-    assert!(p.default_palette.is_none());
-    assert_eq!(colour_palette_get(Some(&p), 1), -1);
     colour_palette_set(Some(&mut p), 1, 5);
     colour_palette_init(&mut p);
     assert!(p.palette.is_none());
@@ -55,7 +51,6 @@ fn indices_are_normalized_and_invalid_indices_are_rejected() {
         assert_eq!(colour_palette_get(None, 0), -1);
         assert_eq!(colour_palette_set(None, 0, 1), 0);
         colour_palette_clear(None);
-        colour_palette_free(None);
         colour_palette_from_option(None, null_mut());
     }
 }
@@ -95,7 +90,7 @@ fn option_reload_replaces_defaults_without_changing_overrides() {
         colour_palette_from_option(Some(&mut p), oo);
         assert!(p.default_palette.is_none());
         assert_eq!(colour_palette_get(Some(&p), COLOUR_FLAG_256 | 255), -1);
-        options_free(oo_owner);
+        drop(oo_owner);
         // The arrays are released by normal Rust drop when p leaves scope.
     }
 }

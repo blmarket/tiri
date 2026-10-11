@@ -1,6 +1,6 @@
 use crate::src::ffi::libc::{__ctype_b_loc, __xpg_basename, strchr, strcspn, strlen, strncmp};
 use crate::src::format::{
-    format_create, format_defaults_pane, format_defaults_window, format_expand_cstring, format_free,
+    format_create, format_defaults_pane, format_defaults_window, format_expand_cstring,
 };
 use crate::src::log::log_debug;
 use crate::src::options::options_get_number;
@@ -80,7 +80,7 @@ unsafe fn format_window_name(owner: &WindowRef) -> CString {
         &mut *context,
         format.as_deref().map_or(std::ptr::null(), CStr::as_ptr),
     );
-    format_free(context);
+    drop(context);
     name
 }
 

@@ -25,7 +25,6 @@ use crate::src::ffi::utempter::utempter_add_record;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
-use crate::src::input::input_free;
 use crate::src::log::{log_close, log_cstr, log_debug};
 use crate::src::options::{options_get_number, options_get_string, options_set_number};
 use crate::src::proc::proc_clear_signals;
@@ -321,7 +320,7 @@ pub(super) unsafe fn spawn_pane(
             window_pane_reset_mode_all(source_pane_owner.as_ref().expect("respawn source pane"));
             screen_reinit(&mut (*source_pane).base, 0 as ::core::ffi::c_int);
             if let Some(ictx) = (*source_pane).ictx.take() {
-                input_free(ictx);
+                drop(ictx);
             }
             (*source_pane).offset.used = 0 as size_t;
             (*source_pane).base_offset = 0 as size_t;

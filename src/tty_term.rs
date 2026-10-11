@@ -1492,14 +1492,11 @@ pub unsafe fn tty_term_create(
     drop(owner);
     Err(error.expect("unsupported terminal has an error message"))
 }
-pub fn tty_term_free(term: Box<tty_term>) {
-    drop(term);
-}
 
 impl Drop for tty_term {
     fn drop(&mut self) {
         // Empty/test terminals are unregistered. Constructor failure follows
-        // the same retirement path as the existing explicit tty_term_free.
+        // the same retirement path as an ordinary drop.
         if !self.registered {
             return;
         }

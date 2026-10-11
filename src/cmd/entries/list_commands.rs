@@ -3,7 +3,7 @@ use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print};
 use crate::src::cmd::{cmd_find, cmd_get_args_mut, cmd_table};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
-    format_add, format_create_with_client, format_defaults, format_expand_cstring, format_free,
+    format_add, format_create_with_client, format_defaults, format_expand_cstring,
 };
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -98,11 +98,11 @@ unsafe fn cmd_list_commands(
             }
             Err(cause) => {
                 cmdq_error(item_handle, |out| write_cstr(out, &*cause));
-                format_free(ft_owner);
+                drop(ft_owner);
                 return CMD_RETURN_ERROR;
             }
         }
     }
-    format_free(ft_owner);
+    drop(ft_owner);
     CMD_RETURN_NORMAL
 }

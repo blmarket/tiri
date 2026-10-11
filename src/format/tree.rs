@@ -173,20 +173,21 @@ pub unsafe fn format_create_owned(
     format_create_box(c.cloned(), item_handle, tag, flags)
 }
 
-unsafe fn format_clear(ft: *mut format_tree) {
-    // Capture destructors may add entries to this same tree. End each map
-    // borrow before dispatch, and never hold a whole-tree reference here.
-    while let Some((_, entry)) = (*ft).tree.pop_first() {
-        drop(entry);
+impl Drop for format_tree {
+    fn drop(&mut self) {
+        let ft: *mut format_tree = self;
+        unsafe {
+            // Capture destructors may add entries to this same tree. End each map
+            // borrow before dispatch, and never hold a whole-tree reference here.
+            // Entries go before the client: field drop order would release it first.
+            while let Some((_, entry)) = (*ft).tree.pop_first() {
+                drop(entry);
+            }
+            if let Some(client) = (*ft).client.take() {
+                (client).release();
+            }
+        }
     }
-    if let Some(client) = (*ft).client.take() {
-        (client).release();
-    }
-}
-
-pub unsafe fn format_free(mut owner: Box<format_tree>) {
-    format_clear(&raw mut *owner);
-    drop(owner);
 }
 
 pub fn format_owner_ptr(owner: &mut Option<Box<format_tree>>) -> *mut format_tree {
@@ -328,7 +329,7 @@ mod tests {
                 Some(FormatValue::Time(123))
             ));
             assert_eq!(calls.get(), 2);
-            format_free(ft_owner);
+            drop(ft_owner);
         }
     }
 
@@ -357,7 +358,7 @@ mod tests {
                 address
             );
             let entry = (*ft).tree.remove(key.as_bytes()).unwrap();
-            format_free(ft_owner);
+            drop(ft_owner);
             assert_eq!(entry.key, key);
             assert_eq!(entry.state.text().unwrap().to_bytes(), b"first\xff-next");
         }
@@ -412,7 +413,7 @@ mod tests {
                 Some(c"recursive".to_owned())
             });
             assert_eq!(text_value(ft, c"owned").unwrap().as_c_str(), c"recursive");
-            format_free(ft_owner);
+            drop(ft_owner);
         }
     }
 
@@ -437,13 +438,13 @@ mod tests {
             ));
             format_add_cstr(ft, c"owned", c"recovered");
             assert_eq!(text_value(ft, c"owned").unwrap().as_c_str(), c"recovered");
-            format_free(ft_owner);
+            drop(ft_owner);
         }
     }
 
     #[test]
     fn expansion_resolves_the_entry_again_after_a_callback_removes_it() {
-        use crate::src::options::{options_create, options_free};
+        use crate::src::options::options_create;
         unsafe {
             let saved = (global_options, global_w_options, global_s_options);
             let mut global_options_owner = options_create(None);
@@ -467,10 +468,10 @@ mod tests {
                     .as_c_str(),
                 c"beforeafter"
             );
-            format_free(ft_owner);
-            options_free(global_options_owner);
-            options_free(global_w_options_owner);
-            options_free(global_s_options_owner);
+            drop(ft_owner);
+            drop(global_options_owner);
+            drop(global_w_options_owner);
+            drop(global_s_options_owner);
             (global_options, global_w_options, global_s_options) = saved;
         }
     }
@@ -499,7 +500,7 @@ mod tests {
             assert!(drops.borrow().is_empty());
             format_add_cstr(ft, c"replace", c"literal");
             assert_eq!(*drops.borrow(), [3]);
-            format_free(ft_owner);
+            drop(ft_owner);
             assert_eq!(*drops.borrow(), [3, 1, 2]);
         }
     }
@@ -540,7 +541,7 @@ mod tests {
                         assert_eq!(text_value(ft, c"from-drop").unwrap().as_c_str(), c"created");
                     }
                 }
-                format_free(owner);
+                drop(owner);
                 assert_eq!(calls.get(), 2);
             }
         }
@@ -576,8 +577,8 @@ mod tests {
                 text_value(destination, c"cached").unwrap().as_c_str(),
                 c"value"
             );
-            format_free(source_owner);
-            format_free(destination_owner);
+            drop(source_owner);
+            drop(destination_owner);
         }
     }
 }

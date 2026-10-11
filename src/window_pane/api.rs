@@ -273,7 +273,7 @@ pub trait WindowPane {
     /// Replace destination with an independent rectangular copy. Coordinates
     /// are relative to the visible screen, excluding history. `displayed`
     /// selects the active mode screen; false selects the process's base screen.
-    /// The destination must not alias any pane screen; caller must screen_free it.
+    /// The destination must not alias any pane screen; caller must drop it.
     unsafe fn copy_screen(
         &self,
         destination: &mut screen,
@@ -1192,7 +1192,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
                 cells.push(cell);
             }
         }
-        screen_free(destination);
+        drop(std::mem::take(destination));
         screen_init(destination, sx, sy, 0);
         destination.title = source.title.clone();
         destination.path = source.path.clone();
@@ -1720,7 +1720,7 @@ mod tests {
                     .as_c_str(),
                 c"https://example.test/pane"
             );
-            screen_free(&mut copied);
+            drop(copied);
             global_options = previous_options;
             drop(options);
         }

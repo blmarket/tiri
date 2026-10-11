@@ -1,6 +1,6 @@
 //! Pane rendering operations. Model access ends before terminal or format callbacks.
 use super::*;
-use crate::src::format::{format_create, format_defaults, format_free};
+use crate::src::format::{format_create, format_defaults};
 use crate::src::grid::grid_default_cell;
 use crate::src::prompt::prompt_draw;
 use crate::src::screen_redraw::{redraw_draw_ctx, REDRAW_SCROLLBAR_LEFT, REDRAW_STATUS_TOP};
@@ -139,7 +139,7 @@ pub(super) unsafe fn default_colours(pane: &Rc<UnsafeCell<window_pane>>) -> (gri
                 state.cached_dim = parsed.dim as u32;
             }
         }
-        format_free(context);
+        drop(context);
     }
     let window = pane.window_observer().upgrade().expect("live pane parent");
     let active = window
@@ -446,7 +446,7 @@ pub(super) unsafe fn draw_prompt(
             None,
         );
     };
-    screen_free(&mut screen);
+    drop(screen);
 }
 
 pub(super) unsafe fn visible_ranges(

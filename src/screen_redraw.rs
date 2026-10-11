@@ -1,5 +1,5 @@
 use crate::src::format::bytes::write_cstr;
-use crate::src::format::{format_create_defaults, format_free};
+use crate::src::format::format_create_defaults;
 use crate::src::log::{fatalx, log_cstr, log_debug, log_get_level};
 use crate::src::options::options_get_number;
 use crate::src::server::{marked_pane, server_is_marked};
@@ -928,7 +928,7 @@ unsafe fn redraw_get_default_border_style(
         style_apply_with_options(&mut *dgc, c"pane-border-style", Some(&mut *ft), |visit| {
             window_owner.with_options_mut(visit)
         });
-        format_free(ft_owner);
+        drop(ft_owner);
         dctx.pane_lines = window_owner.pane_border_lines();
         dctx.flags |= REDRAW_DEFAULT_SET;
     }

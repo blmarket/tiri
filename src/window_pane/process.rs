@@ -8,9 +8,7 @@ use crate::src::ffi::libc::{
 };
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
-use crate::src::format::{
-    format_create_with_client, format_defaults, format_expand_time_cstring, format_free,
-};
+use crate::src::format::{format_create_with_client, format_defaults, format_expand_time_cstring};
 use crate::src::log::{fatalx, log_debug};
 use crate::src::proc::proc_clear_signals;
 use crate::src::reactor::BufferEvent;
@@ -110,7 +108,7 @@ pub(super) unsafe fn pipe_pane(
         ft,
         args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
     );
-    format_free(ft_owner);
+    drop(ft_owner);
     sigfillset(&raw mut set);
     sigprocmask(SIG_BLOCK, &raw mut set, &raw mut oldset);
     (*wp).pipe_pid = fork() as pid_t;

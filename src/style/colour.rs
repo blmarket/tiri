@@ -3685,12 +3685,6 @@ pub fn colour_palette_clear(p: Option<&mut colour_palette>) {
         p.palette = None;
     }
 }
-pub fn colour_palette_free(p: Option<&mut colour_palette>) {
-    if let Some(p) = p {
-        p.palette = None;
-        p.default_palette = None;
-    }
-}
 pub fn colour_palette_get(
     p: Option<&colour_palette>,
     mut n: ::core::ffi::c_int,

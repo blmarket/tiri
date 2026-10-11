@@ -7,11 +7,11 @@ use crate::src::cmd::queue::{
 };
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::{xformat, xformat_with};
-use crate::src::format::{format_create_defaults, format_free, format_single_cstring};
+use crate::src::format::{format_create_defaults, format_single_cstring};
 use crate::src::format_draw::format_draw;
 use crate::src::grid::grid_default_cell;
 use crate::src::options::{options_get_number, options_get_string};
-use crate::src::screen::{screen_free, screen_init, screen_resize};
+use crate::src::screen::{screen_init, screen_resize};
 use crate::src::screen_write::{
     screen_write_cell, screen_write_clearscreen, screen_write_cursormove, screen_write_fast_copy,
     screen_write_preview, screen_write_putc, screen_write_puts, screen_write_start,
@@ -307,7 +307,7 @@ unsafe fn window_panes_get_border_cell(
                 .with_options_mut(visit)
         },
     );
-    format_free(ft_owner);
+    drop(ft_owner);
     if let Some(owner) = session_owner {
         drop(owner);
     }
@@ -572,7 +572,7 @@ unsafe fn window_panes_draw_number(
                 .with_options_mut(visit)
         },
     );
-    format_free(ft_owner);
+    drop(ft_owner);
     bgc = grid_default_cell;
     bgc.bg = fgc.fg;
     format = 0 as u_int;
@@ -760,7 +760,7 @@ unsafe fn window_panes_draw_pane(
         } else {
             screen_write_preview(&mut *ctx, s, sx, sy);
         }
-        screen_free(&mut snapshot);
+        drop(snapshot);
     }
     window_panes_draw_number(data, ctx, wp_owner, pane, x, y, sx, sy);
 }
@@ -1004,9 +1004,9 @@ unsafe fn window_panes_free(mut wme: refbox::Weak<window_mode_entry>) {
     drop((*data).state.take());
     window_panes_free_areas(data);
     if let Some(mut preview) = (*data).preview.take() {
-        screen_free(&mut preview);
+        drop(preview);
     }
-    screen_free(&mut (*data).screen);
+    drop(std::mem::take(&mut (*data).screen));
     drop(wme.get_mut_unchecked().boxed_data.take());
 }
 unsafe fn window_panes_resize(

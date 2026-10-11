@@ -55,9 +55,7 @@ use crate::src::reactor::{
     bufferevent_disable, bufferevent_enable, bufferevent_new, bufferevent_write, evbuffer_drain,
     evbuffer_get_length, evbuffer_pullup,
 };
-use crate::src::screen::{
-    screen_free, screen_init, screen_resize, screen_set_default_cursor, screen_set_title,
-};
+use crate::src::screen::{screen_init, screen_resize, screen_set_default_cursor, screen_set_title};
 pub use api::WindowPane;
 
 use crate::src::server::clients;
@@ -72,12 +70,9 @@ use crate::src::shared::prompt::prompt_create_data;
 use crate::src::spawn::spawn_editor_finish;
 use crate::src::status::status_at_line;
 use crate::src::style::colour::{
-    colour_palette_free, colour_palette_from_option, colour_palette_get, colour_palette_init,
-    colour_totheme,
+    colour_palette_from_option, colour_palette_get, colour_palette_init, colour_totheme,
 };
-use crate::src::style::{
-    style_ranges_free, style_ranges_init, style_set_scrollbar_style_from_option,
-};
+use crate::src::style::{style_ranges_init, style_set_scrollbar_style_from_option};
 use crate::src::tmux::setblocking;
 use crate::src::tty::tty_default_colours;
 use crate::src::window_copy::{window_copy_mode, window_view_mode};
@@ -788,7 +783,7 @@ unsafe fn window_pane_destroy(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>
     std::mem::take(&mut (*wp).event).free();
     drop((*wp).fd.take());
     if let Some(ictx) = (*wp).ictx.take() {
-        input_free(ictx);
+        drop(ictx);
     }
     if (*wp).pipe_fd.is_some() {
         std::mem::take(&mut (*wp).pipe_event).free();
@@ -813,16 +808,14 @@ unsafe fn window_pane_free(wp_value: &mut window_pane) {
     }
     window_pane_set_searchstr(&mut *wp, None);
     if (*wp).status_screen.grid.is_some() {
-        screen_free(&mut (*wp).status_screen);
+        drop(std::mem::take(&mut (*wp).status_screen));
     }
     if (*wp).base.grid.is_some() {
-        screen_free(&mut (*wp).base);
+        drop(std::mem::take(&mut (*wp).base));
     }
     drop((*wp).options.take());
     window_pane_set_cwd(&mut *wp, None);
     window_pane_set_shell(&mut *wp, None);
-    colour_palette_free(Some(&mut (*wp).palette));
-    style_ranges_free(&raw mut (*wp).border_status_line.ranges);
 }
 
 unsafe fn window_pane_read_callback(owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
@@ -2283,7 +2276,7 @@ mod pane_prompt_data_tests {
 
 pub(crate) use input::{input_complete_request, input_free_request, input_request_matches};
 pub use input::{
-    input_csi_type, input_esc_type, input_free, input_init, input_parse_screen, input_pending,
+    input_csi_type, input_esc_type, input_init, input_parse_screen, input_pending,
     input_reply_clipboard, input_request_reply, input_reset, input_set_buffer_size,
     input_table_entry, InputRequestReply, INPUT_BUF_START, INPUT_CSI_CBT, INPUT_CSI_CNL,
     INPUT_CSI_CPL, INPUT_CSI_CUB, INPUT_CSI_CUD, INPUT_CSI_CUF, INPUT_CSI_CUP, INPUT_CSI_CUU,

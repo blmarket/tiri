@@ -146,7 +146,7 @@ fn selection_matches_hmux_environment_semantics() {
 
 #[test]
 fn publishing_does_not_override_context_entries_or_user_options() {
-    use crate::src::format::{format_add_cstr, format_create, format_expand_cstring, format_free};
+    use crate::src::format::{format_add_cstr, format_create, format_expand_cstring};
     use crate::src::options::{options_create, options_set_string};
     use crate::src::tmux::{global_options, global_s_options, global_w_options};
     unsafe {
@@ -173,7 +173,7 @@ fn publishing_does_not_override_context_entries_or_user_options() {
             enumerated.push((key, value));
         }
         assert_eq!(enumerated.len(), 2);
-        format_free(tree);
+        drop(tree);
         global_options = previous.0;
         global_s_options = previous.1;
         global_w_options = previous.2;

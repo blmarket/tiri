@@ -25,7 +25,7 @@ fn deduplication_reference_lifetime_reset_and_global_eviction() {
     let first_external_address = link.external_id.as_ptr() as usize;
     drop(link);
     let shared = hyperlinks_copy(&a);
-    hyperlinks_free(a);
+    drop(a);
     let link = hyperlinks_get(&shared, first).unwrap();
     assert_eq!(link.external_id.as_ptr() as usize, first_external_address);
     assert_eq!(link.external_id.as_c_str(), c"tmux1");
@@ -94,10 +94,10 @@ fn deduplication_reference_lifetime_reset_and_global_eviction() {
         hyperlinks_get(&d, d_only).unwrap().uri.as_c_str(),
         c"d-only"
     );
-    hyperlinks_free(c);
-    hyperlinks_free(d);
-    hyperlinks_free(shared);
-    hyperlinks_free(b);
+    drop(c);
+    drop(d);
+    drop(shared);
+    drop(b);
 }
 
 #[test]

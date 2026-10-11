@@ -9,9 +9,7 @@ use crate::src::events_payload::{
 use crate::src::ffi::libc::strcmp;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
-use crate::src::format::{
-    format_create_with_client, format_expand_cstring, format_free, format_true,
-};
+use crate::src::format::{format_create_with_client, format_expand_cstring, format_true};
 use crate::src::hooks::hooks_valid_event_name;
 use crate::src::log::{log_cstr, log_debug, log_pointer};
 use crate::src::server_client::Client as _;
@@ -314,9 +312,7 @@ unsafe fn cmd_wait_for_event_cb(
     wei: *mut wait_event_item,
 ) {
     let Some(item_owner) = (*wei).item.upgrade() else {
-        if let Some(owner) = wait_event_items_remove(&raw mut wait_event_items, wei) {
-            cmd_wait_for_event_free(owner);
-        }
+        drop(wait_event_items_remove(&raw mut wait_event_items, wei));
         return;
     };
     let item = item_owner.get();
@@ -347,30 +343,23 @@ unsafe fn cmd_wait_for_event_cb(
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
         flag = format_true(expanded.as_ptr());
-        format_free(ft_owner);
+        drop(ft_owner);
         if flag == 0 {
             return;
         }
     }
     let owner = wait_event_items_remove(&raw mut wait_event_items, wei);
     cmdq_continue(&item_owner);
-    if let Some(owner) = owner {
-        cmd_wait_for_event_free(owner);
-    }
+    drop(owner);
 }
-unsafe fn cmd_wait_for_event_free(owner: Box<wait_event_item>) {
-    events_remove_sink(owner.sink);
+impl Drop for wait_event_item {
+    fn drop(&mut self) {
+        unsafe { events_remove_sink(self.sink) };
+    }
 }
 
-unsafe fn cmd_wait_for_event_prune_expired(items: &mut Vec<Box<wait_event_item>>) {
-    let mut index = 0;
-    while index < items.len() {
-        if items[index].item.upgrade().is_none() {
-            cmd_wait_for_event_free(items.remove(index));
-        } else {
-            index += 1;
-        }
-    }
+fn cmd_wait_for_event_prune_expired(items: &mut Vec<Box<wait_event_item>>) {
+    items.retain(|owner| owner.item.upgrade().is_some());
 }
 unsafe fn cmd_wait_for_event(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
@@ -452,7 +441,7 @@ unsafe fn cmd_wait_for_event_wake(
             if let Some(item) = owner.item.upgrade() {
                 cmdq_continue(&item);
             }
-            cmd_wait_for_event_free(owner);
+            drop(owner);
             return CMD_RETURN_NORMAL;
         }
         index += 1;
@@ -644,7 +633,7 @@ pub unsafe fn cmd_wait_for_flush() {
         if let Some(item) = owner.item.upgrade() {
             cmdq_continue(&item);
         }
-        cmd_wait_for_event_free(owner);
+        drop(owner);
         wei = wei1;
     }
     let channels = (&raw mut wait_channels)

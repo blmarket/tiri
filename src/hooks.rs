@@ -14,7 +14,7 @@ use crate::src::events_payload::{
 };
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
-    format_add, format_create_defaults, format_create_owned, format_expand_cstring, format_free,
+    format_add, format_create_defaults, format_create_owned, format_expand_cstring,
     format_log_debug, format_merge,
 };
 use crate::src::log::{log_cstr, log_debug, log_get_level};
@@ -126,7 +126,7 @@ unsafe fn hooks_parse(hd: *mut hooks_data, fs: &cmd_find_state, value: &CStr) ->
     ft = &raw mut *ft_owner;
     format_merge(ft, &raw mut *(*hd).formats);
     let expanded = format_expand_cstring(ft, value.as_ptr());
-    format_free(ft_owner);
+    drop(ft_owner);
     let pr = cmd_parse_from_string(
         expanded.as_c_str(),
         ::core::ptr::null_mut::<cmd_parse_input>(),
@@ -285,7 +285,7 @@ unsafe fn hooks_insert_event(
     };
     event_payload_get_target(ep, &mut hd.fs);
     hooks_insert(item_handle, &raw mut hd);
-    format_free(hd.formats);
+    drop(hd.formats);
 }
 unsafe fn CString_cb(name: &CStr, payload: &mut event_payload) {
     let name = name.as_ptr();
@@ -378,7 +378,7 @@ pub unsafe fn hooks_run(
     format_add(&raw mut *hd.formats, c"hook", |out| write_cstr(out, &*name));
     format_log_debug(&raw mut *hd.formats, c"hooks_run");
     hooks_insert(item_handle, &raw mut hd);
-    format_free(hd.formats);
+    drop(hd.formats);
 }
 impl Drop for hooks_monitor {
     fn drop(&mut self) {

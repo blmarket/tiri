@@ -699,8 +699,7 @@ unsafe fn format_cb_window_stack_index(mut ft: *mut format_tree) -> Option<CStri
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::src::format::{format_create, format_free};
-    use crate::src::options::options_free;
+    use crate::src::format::format_create;
 
     #[test]
     fn session_formats_observe_context_session_without_retaining_it() {
@@ -720,7 +719,7 @@ mod tests {
             assert!(observer.upgrade().is_none());
             assert!(format_cb_session_name(ft).is_none());
             assert!(format_cb_session_id(ft).is_none());
-            format_free(ft_owner);
+            drop(ft_owner);
         }
     }
 
@@ -746,7 +745,7 @@ mod tests {
                     .as_c_str(),
                 c""
             );
-            format_free(ft_owner);
+            drop(ft_owner);
         }
     }
 
@@ -779,7 +778,7 @@ mod tests {
                 .format_value(c"client_created", &mut context)
                 .is_none());
             assert!(context.s.ptr_eq(&Rc::downgrade(&session)));
-            options_free((*session.get()).options.take().unwrap());
+            drop((*session.get()).options.take().unwrap());
         }
     }
 
@@ -809,7 +808,7 @@ mod tests {
 
             winlink_stack_remove(&raw mut (*owner.get()).lastw, link.clone());
             winlink_remove(&raw mut (*owner.get()).windows, link);
-            options_free((*other.get()).options.take().unwrap());
+            drop((*other.get()).options.take().unwrap());
         }
     }
 }

@@ -2,7 +2,7 @@ use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::ffi::libc::{strcasestr, strstr};
 use crate::src::format::{
     format_add, format_create, format_defaults, format_defaults_paste_buffer,
-    format_expand_cstring, format_free, format_true,
+    format_expand_cstring, format_true,
 };
 use crate::src::grid::grid_default_cell;
 use crate::src::key_string::key_string_parse_cstr;
@@ -204,7 +204,7 @@ unsafe fn window_buffer_build(
                     );
                 }
             }
-            format_free(ft_owner);
+            drop(ft_owner);
         }
         i = i.wrapping_add(1);
     }
@@ -305,7 +305,7 @@ unsafe fn window_buffer_get_key(
     format_add(ft, c"line", |out| write!(out, "{}", { line }));
     let expanded = format_expand_cstring(ft, (*data).key_format.as_ptr());
     key = key_string_parse_cstr(expanded.as_c_str()).unwrap_or(KEYC_UNKNOWN);
-    format_free(ft_owner);
+    drop(ft_owner);
     key
 }
 fn window_buffer_sort(sort_crit: &mut sort_criteria) {

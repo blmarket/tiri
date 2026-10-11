@@ -114,7 +114,7 @@ pub const FORMAT_EXPAND_NOJOBS: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 
 pub const FORMAT_EXPAND_NOCYCLE: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 
-/// Box-owned by format_create; borrowed pointers are invalid after format_free.
+/// Box-owned by format_create; borrowed pointers are invalid after it is dropped.
 #[derive(Default)]
 #[repr(C)]
 pub struct format_tree {

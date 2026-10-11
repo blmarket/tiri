@@ -1,7 +1,7 @@
 //! Style evaluation over scoped option access, without holding a component
 //! borrow across format callbacks.
 
-use crate::src::format::{format_create, format_expand_cstring, format_free};
+use crate::src::format::{format_create, format_expand_cstring};
 use crate::src::grid::grid_default_cell;
 use crate::src::options::{options_get_only_mut, options_is_string, OptionsScope};
 use crate::src::shared::format::{format_tree, FORMAT_NOJOBS};
@@ -44,7 +44,7 @@ pub unsafe fn style_apply_with_options(
     }
     cell.attr |= parsed.gc.attr;
     if let Some(context) = owned_context {
-        format_free(context);
+        drop(context);
     }
 }
 
@@ -241,7 +241,7 @@ mod tests {
                 options_get_only_mut(&mut child, c"@style").unwrap().cached,
                 1
             );
-            format_free(context);
+            drop(context);
             EVALUATING.with(|slot| slot.set((std::ptr::null_mut(), std::ptr::null_mut(), false)));
             (global_options, global_s_options, global_w_options) = saved;
         }

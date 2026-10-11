@@ -42,7 +42,7 @@ use crate::src::file::{
 };
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
-    format_create, format_defaults, format_expand_cstring, format_expand_time_cstring, format_free,
+    format_create, format_defaults, format_expand_cstring, format_expand_time_cstring,
     format_lost_client,
 };
 use crate::src::key_bindings::{key_bindings_dispatch, key_bindings_get, key_bindings_get_table};
@@ -1809,7 +1809,7 @@ unsafe fn server_client_update_theme_colours(c_owner: Option<&ClientRef>) {
         }
         i = i.wrapping_add(1);
     }
-    format_free(ft_owner);
+    drop(ft_owner);
 }
 unsafe fn server_client_is_bracket_paste(c: &mut client, mut key: key_code) -> ::core::ffi::c_int {
     if key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
@@ -3193,7 +3193,7 @@ unsafe fn server_client_set_title(client_owner: &ClientRef) {
             tty_set_title(terminal, &title)
         };
     }
-    format_free(ft_owner);
+    drop(ft_owner);
 }
 /// Acquire the current active pane for an immediate client operation.
 /// Raw relationship fields are accessed only while resolving the handle.

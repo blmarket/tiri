@@ -2,7 +2,7 @@ use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::compat::imsg::*;
 use crate::src::format::{
     format_add, format_create, format_create_defaults, format_defaults, format_expand_cstring,
-    format_free, format_single_cstring, format_true,
+    format_single_cstring, format_true,
 };
 use crate::src::format_draw::format_draw;
 use crate::src::grid::grid_default_cell;
@@ -362,7 +362,7 @@ unsafe fn window_client_draw_info(
         );
         screen_write_vline(&mut *ctx, sy.wrapping_sub(i), Some(&gc));
     }
-    format_free(ft_owner);
+    drop(ft_owner);
 }
 unsafe fn window_client_draw(
     data: *mut window_client_modedata,
@@ -447,7 +447,7 @@ unsafe fn window_client_draw(
             sx,
             sy.wrapping_sub(2 as u_int).wrapping_sub(lines),
         );
-        crate::src::screen::screen_free(&mut snapshot);
+        drop(snapshot);
     }
     if let Some(pane) = preview_pane {
         pane.release(c"client pane preview");
@@ -503,7 +503,7 @@ unsafe fn window_client_draw(
     // status grid before rendering so no status borrow spans that dispatch.
     let mut preview = window_client_status_snapshot(c, lines);
     screen_write_fast_copy(ctx, &preview, 0, 0, sx, lines);
-    crate::src::screen::screen_free(&mut preview);
+    drop(preview);
 }
 unsafe fn window_client_status_snapshot(c: &ClientRef, lines: u32) -> screen {
     let status = c.borrow_status();
@@ -536,7 +536,7 @@ unsafe fn window_client_get_key(
     format_add(ft, c"line", |out| write!(out, "{}", { line }));
     let expanded = format_expand_cstring(ft, (*data).key_format.as_ptr());
     key = key_string_parse_cstr(expanded.as_c_str()).unwrap_or(KEYC_UNKNOWN);
-    format_free(ft_owner);
+    drop(ft_owner);
     key
 }
 fn window_client_sort(sort_crit: &mut sort_criteria) {

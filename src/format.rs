@@ -125,8 +125,8 @@ pub use tree::format_add_owned_cb;
 use tree::*;
 pub use tree::{
     format_add, format_add_cstr, format_add_time, format_create, format_create_owned,
-    format_create_with_client, format_each, format_free, format_get_pane, format_log_debug,
-    format_merge, format_owner_ptr,
+    format_create_with_client, format_each, format_get_pane, format_log_debug, format_merge,
+    format_owner_ptr,
 };
 mod jobs;
 use jobs::*;

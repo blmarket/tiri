@@ -82,7 +82,8 @@ fn screen_write_get_citem() -> Box<screen_write_citem> {
     item
 }
 fn screen_write_free_citem(item: Box<screen_write_citem>) {
-    WRITE_ITEM_POOL.with(|pool| pool.borrow_mut().push_back(item));
+    // Screens may drop during thread teardown, after the pool is gone.
+    let _ = WRITE_ITEM_POOL.try_with(|pool| pool.borrow_mut().push_back(item));
 }
 fn screen_write_current_item(ctx: &mut screen_write_ctx) -> &mut screen_write_citem {
     ctx.item

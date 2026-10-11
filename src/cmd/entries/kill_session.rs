@@ -2,7 +2,7 @@ use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client};
 use crate::src::format::{
-    format_create_with_client, format_defaults, format_expand_cstring, format_free, format_true,
+    format_create_with_client, format_defaults, format_expand_cstring, format_true,
 };
 use crate::src::server_fn::{server_destroy_session, server_redraw_session};
 use crate::src::session::sessions;
@@ -155,6 +155,6 @@ unsafe fn cmd_kill_session_filter(
     format_defaults(ft, None, Some(s_owner), (refbox::Weak::new()).clone(), None);
     let expanded = format_expand_cstring(ft, filter);
     flag = format_true(expanded.as_ptr());
-    format_free(ft_owner);
+    drop(ft_owner);
     flag
 }

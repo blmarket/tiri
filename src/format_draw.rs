@@ -3,7 +3,7 @@ use crate::src::format::format_skip;
 use crate::src::grid::grid_default_cell;
 use crate::src::hyperlinks::hyperlinks_put;
 use crate::src::log::{log_cstr, log_debug};
-use crate::src::screen::{screen_free, screen_init};
+use crate::src::screen::screen_init;
 use crate::src::screen_write::{
     screen_write_cell, screen_write_clearendofline, screen_write_cursormove,
     screen_write_fast_copy, screen_write_putc, screen_write_start, screen_write_stop,
@@ -1584,7 +1584,7 @@ pub unsafe fn format_draw(
     }
     i = 0 as u_int;
     while i < TOTAL as ::core::ffi::c_int as u_int {
-        screen_free(&mut s[i as usize]);
+        drop(std::mem::take(&mut s[i as usize]));
         i = i.wrapping_add(1);
     }
     screen_write_cursormove(
@@ -1877,7 +1877,7 @@ mod range_tests {
                         )
                     })
                     .collect();
-                screen_free(&mut output);
+                drop(output);
                 global_options = saved_options;
                 assert_eq!(actual, expected, "available width {width}");
             }

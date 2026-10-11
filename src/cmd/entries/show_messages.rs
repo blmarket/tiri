@@ -3,7 +3,7 @@ use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_get_target_client, cmdq_print};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
-    format_add, format_add_time, format_create_from_target, format_expand_cstring, format_free,
+    format_add, format_add_time, format_create_from_target, format_expand_cstring,
 };
 use crate::src::job::job_print_summary;
 use crate::src::server::message_log;
@@ -110,6 +110,6 @@ unsafe fn cmd_show_messages_exec(
         let s = format_expand_cstring(ft, SHOW_MESSAGES_TEMPLATE.as_ptr());
         cmdq_print(item_handle, |out| write_cstr(out, &*s));
     }
-    format_free(ft_owner);
+    drop(ft_owner);
     CMD_RETURN_NORMAL
 }

@@ -81,18 +81,21 @@ pub fn screen_reset_hyperlinks(s: &mut screen) {
         s.hyperlinks = Some(hyperlinks_init());
     }
 }
-pub unsafe fn screen_free(s: &mut screen) {
-    drop(s.sel.take());
-    s.tabs = Vec::new();
-    s.path = None;
-    s.title = CString::default();
-    if s.write_list.is_some() {
-        screen_write_free_list(s);
+impl Drop for screen {
+    fn drop(&mut self) {
+        let s = self;
+        drop(s.sel.take());
+        s.tabs = Vec::new();
+        s.path = None;
+        s.title = CString::default();
+        if s.write_list.is_some() {
+            unsafe { screen_write_free_list(s) };
+        }
+        drop(s.saved_grid.take());
+        drop(s.grid.take());
+        drop(s.hyperlinks.take());
+        screen_free_titles(s);
     }
-    drop(s.saved_grid.take());
-    drop(s.grid.take());
-    drop(s.hyperlinks.take());
-    screen_free_titles(s);
 }
 pub unsafe fn screen_reset_tabs(s: &mut screen) {
     let bytes = (s.grid().sx as usize).div_ceil(8);

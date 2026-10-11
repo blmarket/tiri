@@ -291,7 +291,7 @@ pub(crate) unsafe fn server_start(
             c_value.exit_with_message(cause, Some(1));
         } else {
             fprintf(stderr, c"%s\n".as_ptr(), cause.as_ptr());
-            crate::src::proc::proc_free(process_owner);
+            drop(process_owner);
             server_proc = std::ptr::null_mut();
             crate::src::plugin::shutdown();
             reactor::shutdown_runtime(runtime);
@@ -308,7 +308,7 @@ pub(crate) unsafe fn server_start(
     job_kill_all();
     prompt_save_history();
     server_clear_messages();
-    crate::src::proc::proc_free(process_owner);
+    drop(process_owner);
     server_proc = std::ptr::null_mut();
     exit(0 as ::core::ffi::c_int);
 }

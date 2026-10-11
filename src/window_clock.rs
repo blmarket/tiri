@@ -1,9 +1,9 @@
 use crate::src::ffi::libc::{gmtime_r, localtime, strftime, strlcat, strlen, time};
 use crate::src::format::bytes::write_cstr;
-use crate::src::format::{format_create_defaults, format_free};
+use crate::src::format::format_create_defaults;
 use crate::src::grid::grid_default_cell;
 use crate::src::options::options_get_number;
-use crate::src::screen::{screen_free, screen_init, screen_resize};
+use crate::src::screen::{screen_init, screen_resize};
 use crate::src::screen_write::{
     screen_write_clearscreen, screen_write_cursormove, screen_write_putc, screen_write_puts,
     screen_write_start, screen_write_stop,
@@ -701,7 +701,7 @@ unsafe fn window_clock_get_screen(wme: refbox::Weak<window_mode_entry>) -> *mut 
 unsafe fn window_clock_free(mut wme: refbox::Weak<window_mode_entry>) {
     let mut data: *mut window_clock_mode_data = window_clock_data(wme.clone());
     drop((*data).timer.take());
-    screen_free(&mut (*data).screen);
+    drop(std::mem::take(&mut (*data).screen));
     drop(wme.get_mut_unchecked().boxed_data.take());
 }
 unsafe fn window_clock_resize(
@@ -786,7 +786,7 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
             .expect("live clock window")
             .with_options_mut(visit)
     });
-    format_free(ft_owner);
+    drop(ft_owner);
     colour = gc.fg;
     style = options_window
         .upgrade()

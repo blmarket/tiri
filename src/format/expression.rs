@@ -999,7 +999,7 @@ pub(super) unsafe fn format_loop_sessions(
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
         let expanded = format_expand1_cstring(&raw mut next, use_0);
-        format_free(nft_owner);
+        drop(nft_owner);
         buffer.extend_from_slice(expanded.as_bytes());
         i += 1;
     }
@@ -1197,7 +1197,7 @@ pub(super) unsafe fn format_loop_windows(
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
         let expanded = format_expand1_cstring(&raw mut next, use_0);
-        format_free(nft_owner);
+        drop(nft_owner);
         buffer.extend_from_slice(expanded.as_bytes());
         i += 1;
     }
@@ -1292,7 +1292,7 @@ pub(super) unsafe fn format_loop_panes(
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
         let expanded = format_expand1_cstring(&raw mut next, use_0);
-        format_free(nft_owner);
+        drop(nft_owner);
         buffer.extend_from_slice(expanded.as_bytes());
         i += 1;
     }
@@ -1393,7 +1393,7 @@ unsafe fn format_loop_emit_option(
     format_copy_state(&mut next, es, 0);
     next.ft = &mut *context;
     let expanded = format_expand1_cstring(&mut next, fmt);
-    format_free(context);
+    drop(context);
     buffer.extend_from_slice(expanded.as_bytes());
 }
 
@@ -1602,7 +1602,7 @@ pub(super) unsafe fn format_loop_environ(
         format_copy_state(&mut next, es, 0);
         next.ft = &mut *context;
         let expanded = format_expand1_cstring(&mut next, fmt);
-        format_free(context);
+        drop(context);
         buffer.extend_from_slice(expanded.as_bytes());
     }
     CString::new(buffer).expect("format loop output contains no NUL")
@@ -1676,7 +1676,7 @@ pub(super) unsafe fn format_loop_clients(
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
         let expanded = format_expand1_cstring(&raw mut next, fmt);
-        format_free(nft_owner);
+        drop(nft_owner);
         buffer.extend_from_slice(expanded.as_bytes());
         i += 1;
     }
@@ -3165,7 +3165,7 @@ pub(crate) unsafe fn format_single_cstring(
     let mut ft_owner = format_create_defaults(item_handle, c_owner, s_owner, wl.clone(), wp_owner);
     let ft = &raw mut *ft_owner;
     let expanded = format_expand_cstring(ft, fmt);
-    format_free(ft_owner);
+    drop(ft_owner);
     expanded
 }
 pub(crate) unsafe fn format_single_from_state_cstring(
@@ -3267,7 +3267,7 @@ mod format_choose_tests {
             let owned = format_expand_cstring(ft, input.as_ptr());
             let timed_owned = format_expand_time_cstring(ft, input.as_ptr());
             drop(input);
-            format_free(ft_owner);
+            drop(ft_owner);
 
             assert_eq!(owned.as_bytes(), b"\xff:#:,:}:tail");
             assert_eq!(timed_owned.as_bytes(), owned.as_bytes());
@@ -3311,7 +3311,7 @@ mod format_choose_tests {
             assert!(format_expand1_cstring(&raw mut es, too_long.as_ptr())
                 .as_bytes()
                 .is_empty());
-            format_free(ft_owner);
+            drop(ft_owner);
         }
     }
 
@@ -3359,7 +3359,7 @@ mod format_choose_tests {
             }
 
             assert!(format_choose(&raw mut es, c"no delimiter".as_ptr()).is_none());
-            format_free(ft_owner);
+            drop(ft_owner);
         }
     }
 }

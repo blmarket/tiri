@@ -22,8 +22,8 @@ use crate::src::environ::{environ_clear, environ_find, environ_iter, environ_set
 use crate::src::ffi::libc::{__ctype_tolower_loc, strchr, strcmp, strcspn, strlcat, strlen};
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::{
-    format_add, format_create_from_state, format_expand_cstring, format_free,
-    format_pretty_time_cstring, format_true,
+    format_add, format_create_from_state, format_expand_cstring, format_pretty_time_cstring,
+    format_true,
 };
 use crate::src::grid::grid_default_cell;
 use crate::src::hooks::{
@@ -43,7 +43,7 @@ use crate::src::mode_tree::{
 };
 use crate::src::options::{
     options_array_get, options_array_get_index, options_create, options_default,
-    options_default_to_cstring, options_free, options_get_fire_count, options_get_fire_time,
+    options_default_to_cstring, options_get_fire_count, options_get_fire_time,
     options_get_number_ref, options_match_owned, options_push_changes, options_set_number,
     options_to_cstring,
 };
@@ -846,7 +846,7 @@ unsafe fn window_customize_option_is_changed(
         } else {
             true
         };
-        options_free(defaults_owner);
+        drop(defaults_owner);
         return result as i32;
     }
     let value = options_to_cstring(option, nullable_cstr(std::ptr::null()), 0);
@@ -1323,7 +1323,7 @@ unsafe fn window_customize_build_keys(
             count = count.wrapping_add(1);
         }
     }
-    format_free(ft_owner);
+    drop(ft_owner);
     if (*data).hide_default != 0 && count == 0 as u_int {
         mode_tree_remove(&mut *(*data).tree_owner().get(), &top);
     }
@@ -1577,7 +1577,7 @@ unsafe fn window_customize_build(
         filter,
         &raw mut fs,
     );
-    format_free(ft_owner);
+    drop(ft_owner);
     let mut ft_owner = format_create_from_state(None, None, &fs);
     ft = &raw mut *ft_owner;
     format_add(ft, c"is_environment", |out| out.write_all(b"0"));
@@ -1587,7 +1587,7 @@ unsafe fn window_customize_build(
             window_customize_build_keys(mode_owner, &kt, ft, filter, &raw mut fs);
         }
     }
-    format_free(ft_owner);
+    drop(ft_owner);
 }
 unsafe fn window_customize_draw_key(
     item: &window_customize_itemdata,
@@ -2453,7 +2453,7 @@ write_cstr(out, nullable_cstr(unit))
         }
     }
     drop(default_value);
-    format_free(ft_owner);
+    drop(ft_owner);
 }
 unsafe fn window_customize_draw_environment(
     mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,

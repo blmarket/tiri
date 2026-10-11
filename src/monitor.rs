@@ -1,7 +1,5 @@
 use crate::src::ffi::libc::sscanf;
-use crate::src::format::{
-    format_create, format_defaults, format_expand_cstring, format_free, format_true,
-};
+use crate::src::format::{format_create, format_defaults, format_expand_cstring, format_true};
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::reactor::Timer;
 use crate::src::server::current_time;
@@ -323,7 +321,7 @@ unsafe fn monitor_check_pane(monitor: &refbox::Weak<monitor_set>, name: &CStr) {
             let mut formats =
                 monitor_create_formats(client.as_ref(), Some(&session), link.clone(), Some(&pane));
             let value = monitor_expand(monitor, name, &mut formats);
-            format_free(formats);
+            drop(formats);
             let Some(value) = value else { break };
             if link.is_alive() {
                 let index = link.get_unchecked().idx as u32;
@@ -368,7 +366,7 @@ unsafe fn monitor_check_window(monitor: &refbox::Weak<monitor_set>, name: &CStr)
             let mut formats =
                 monitor_create_formats(client.as_ref(), Some(&session), link.clone(), None);
             let value = monitor_expand(monitor, name, &mut formats);
-            format_free(formats);
+            drop(formats);
             let Some(value) = value else { break };
             if link.is_alive() {
                 let index = link.get_unchecked().idx as u32;
@@ -485,7 +483,7 @@ unsafe fn monitor_check_sessions(monitor: &refbox::Weak<monitor_set>) {
             monitor_check_session(monitor, &name, &mut formats);
         }
     });
-    format_free(formats);
+    drop(formats);
 }
 unsafe fn monitor_check_panes_windows(monitor: &refbox::Weak<monitor_set>) {
     monitor_visit(monitor, |name, kind| match kind {
@@ -523,7 +521,7 @@ unsafe fn monitor_check_all_panes(monitor: &refbox::Weak<monitor_set>) {
                     );
                 }
             });
-            format_free(formats);
+            drop(formats);
             // Keep the legacy live parent lookup after callbacks that may move a pane.
             let next_window = pane.window_observer().upgrade();
             cursor = next_window
@@ -574,7 +572,7 @@ unsafe fn monitor_check_all_windows(monitor: &refbox::Weak<monitor_set>) {
                 );
             }
         });
-        format_free(formats);
+        drop(formats);
         if !link.is_alive() {
             break;
         }

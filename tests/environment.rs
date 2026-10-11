@@ -191,7 +191,7 @@ fn iteration_allows_nested_reads_and_copy_from_an_owned_snapshot() {
 #[test]
 fn update_borrows_sources_and_accepts_owned_snapshots() {
     use hmux::src::environ::environ_update;
-    use hmux::src::options::{options_array_set, options_create, options_empty, options_free};
+    use hmux::src::options::{options_array_set, options_create, options_empty};
     use std::ptr::null_mut;
     unsafe {
         let mut options_owner = options_create(None);
@@ -236,7 +236,7 @@ fn update_borrows_sources_and_accepts_owned_snapshots() {
             source.find_bytes(b"missing").unwrap().unwrap().value(),
             None
         );
-        options_free(options_owner);
+        drop(options_owner);
     }
 }
 

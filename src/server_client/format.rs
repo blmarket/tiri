@@ -169,7 +169,7 @@ mod tests {
             assert_eq!(name.as_bytes(), b"client-\xff");
             context.c = std::rc::Weak::new();
             assert!(owner.format_value(c"client_name", &mut context).is_none());
-            format_free(context);
+            drop(context);
         }
     }
 }

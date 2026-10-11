@@ -1,11 +1,9 @@
-use crate::src::format::{
-    format_add, format_create, format_defaults, format_expand_cstring, format_free,
-};
+use crate::src::format::{format_add, format_create, format_defaults, format_expand_cstring};
 use crate::src::format_draw::format_draw;
 use crate::src::grid::grid_default_cell;
 use crate::src::grid::view::grid_view_get_cell;
 use crate::src::options::options_get_string;
-use crate::src::screen::{screen_free, screen_init};
+use crate::src::screen::screen_init;
 use crate::src::screen_write::{screen_write_start, screen_write_stop};
 use crate::src::shared::abi::*;
 use crate::src::shared::borders::{CELL_BORDERS, SIMPLE_BORDERS};
@@ -71,7 +69,7 @@ pub(crate) unsafe fn window_render_fill_cell(
     });
     let value = w_owner.with_options_mut(|options| options_get_string(options, c"fill-character"));
     let expanded = format_expand_cstring(ft, value.as_ptr());
-    format_free(ft_owner);
+    drop(ft_owner);
     screen_init(&mut s, 1 as u_int, 1 as u_int, 0 as u_int);
     screen_write_start(&mut ctx, &raw mut s);
     format_draw(
@@ -84,7 +82,7 @@ pub(crate) unsafe fn window_render_fill_cell(
     );
     screen_write_stop(&mut ctx);
     grid_view_get_cell(s.grid(), 0 as u_int, 0 as u_int, &mut new_gc);
-    screen_free(&mut s);
+    drop(s);
     (new_gc.data.width == 1).then_some(new_gc)
 }
 pub unsafe fn window_set_fill_cells(w_owner: &WindowRef) {

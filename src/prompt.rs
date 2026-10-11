@@ -2,7 +2,6 @@ use crate::src::cmd::cmd_table;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_add, format_create_defaults, format_create_from_state, format_expand_time_cstring,
-    format_free,
 };
 use crate::src::format_draw::{format_draw, format_width};
 use crate::src::grid::grid_default_cell;
@@ -208,7 +207,7 @@ pub unsafe fn prompt_create(
     pr.message_format = pd.message_format;
     pr.keys = pd.keys;
     pr.word_separators = pd.word_separators;
-    format_free(ft_owner);
+    drop(ft_owner);
     drop(pr);
     owner
 }
@@ -359,7 +358,7 @@ pub unsafe fn prompt_update(pr: &mut prompt, msg: &CStr, input: Option<&CStr>) {
     pr.hindex.fill(0);
     pr.closed = 0;
     prompt_clear_complete(pr);
-    format_free(ft_owner);
+    drop(ft_owner);
 }
 pub fn prompt_closed(pr: &prompt) -> ::core::ffi::c_int {
     pr.closed
@@ -532,7 +531,7 @@ unsafe fn prompt_layout(
         prompt_effective_style(pr, sy, ft);
     }
     let expanded = prompt_expand1(pr, ft);
-    format_free(ft_owner);
+    drop(ft_owner);
     if aw == 0 as u_int {
         return (pl, expanded);
     }

@@ -4,8 +4,7 @@ use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print};
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
-    format_add, format_create_with_client, format_defaults, format_expand_cstring, format_free,
-    format_true,
+    format_add, format_create_with_client, format_defaults, format_expand_cstring, format_true,
 };
 use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
@@ -116,7 +115,7 @@ unsafe fn cmd_list_clients_exec(
                 let line = format_expand_cstring(ft, template);
                 cmdq_print(item_handle, |out| write_cstr(out, &*line));
             }
-            format_free(ft_owner);
+            drop(ft_owner);
         }
         i = i.wrapping_add(1);
     }

@@ -1,9 +1,7 @@
 //! Prompt history owns strings and supplies independent snapshots to readers.
 
 use hmux::src::format::bytes::write_cstr;
-use hmux::src::options::{
-    options_create, options_default, options_free, options_set_number, options_set_string,
-};
+use hmux::src::options::{options_create, options_default, options_set_number, options_set_string};
 use hmux::src::options_table::options_table;
 use hmux::src::prompt_history::{
     prompt_add_history, prompt_down_history, prompt_history_clear, prompt_history_get,
@@ -242,6 +240,6 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         prompt_history_clear(PROMPT_TYPE_COMMAND);
         prompt_history_clear(PROMPT_TYPE_SEARCH);
         global_options = previous_options;
-        options_free(options_owner);
+        drop(options_owner);
     }
 }

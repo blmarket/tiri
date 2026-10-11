@@ -82,9 +82,9 @@ use crate::src::tty_features::tty_apply_features;
 use crate::src::tty_keys::{tty_keys_build, tty_keys_free, tty_keys_next};
 use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::tty_term::{
-    tty_term_apply_overrides, tty_term_create, tty_term_flag, tty_term_free, tty_term_has,
-    tty_term_number, tty_term_string, tty_term_string_i, tty_term_string_ii, tty_term_string_iii,
-    tty_term_string_s, tty_term_string_ss,
+    tty_term_apply_overrides, tty_term_create, tty_term_flag, tty_term_has, tty_term_number,
+    tty_term_string, tty_term_string_i, tty_term_string_ii, tty_term_string_iii, tty_term_string_s,
+    tty_term_string_ss,
 };
 use crate::src::window::{Window, WindowPane};
 use std::time::Duration;
@@ -854,7 +854,7 @@ pub unsafe fn tty_close(owner: &ClientRef) {
         terminal.term.take()
     };
     if let Some(term) = term {
-        tty_term_free(term);
+        drop(term);
     }
     let mut terminal = owner.borrow_terminal_mut();
     tty_keys_free(&mut *terminal);

@@ -813,7 +813,7 @@ mod tests {
             );
             drop(owner);
             crate::src::tmux::global_options = previous_server_options;
-            crate::src::options::options_free(server_options);
+            drop(server_options);
         }
     }
 }
