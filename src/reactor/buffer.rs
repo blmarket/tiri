@@ -139,7 +139,7 @@ mod tests {
             assert_eq!(
                 append_formatted(&mut buffer, |out| {
                     write_cstr(out, &*text)?;
-                    write!(out, ":{}:{}", (-7i32) as i32, (42usize) as usize)
+                    write!(out, ":{}:{}", { -7i32 }, { 42usize })
                 }),
                 (size + 6) as c_int
             );
@@ -173,7 +173,7 @@ mod tests {
         assert_eq!(
             append_formatted(&mut buffer, |out| {
                 out.write_all(&[(0i32) as u8])?;
-                write!(out, ":{}", (7i32) as i32)
+                write!(out, ":{}", { 7i32 })
             }),
             3
         );

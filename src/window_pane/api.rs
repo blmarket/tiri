@@ -682,7 +682,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         window_pane_upgrade(observer)
     }
     unsafe fn release(self, source: &CStr) {
-        window_pane_remove_ref(self, &*source);
+        window_pane_remove_ref(self, source);
     }
     unsafe fn tty_name(&self) -> CString {
         CStr::from_ptr((*self.get()).tty.as_ptr()).to_owned()
@@ -716,7 +716,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
             self,
             client,
             find.map_or(std::ptr::null_mut(), |find| find),
-            &*message,
+            message,
             input,
             inputcb,
             freecb,
@@ -725,7 +725,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         );
     }
     unsafe fn update_prompt(&self, message: &CStr, input: Option<&CStr>) {
-        window_pane_update_prompt(self, &*message, input);
+        window_pane_update_prompt(self, message, input);
     }
     unsafe fn paste_buffer(&self, bytes: &[u8], separator: &[u8], bracket: bool, raw: bool) {
         let pane = &*self.get();
@@ -737,7 +737,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         let write = |bytes: &[u8]| {
             let _ = pane
                 .event
-                .with_ptr(|event| crate::src::reactor::bufferevent_write(event, &bytes));
+                .with_ptr(|event| crate::src::reactor::bufferevent_write(event, bytes));
         };
         if bracket {
             write(b"\x1b[200~");
@@ -1618,7 +1618,7 @@ mod tests {
         (*pane.get()).pipe_fd = None;
         let stream = bufferevent_new(-1, None, None, None);
         (*pane.get()).event = StreamHandle::from_ptr(stream);
-        evbuffer_add(&mut (*stream).input, &bytes);
+        evbuffer_add(&mut (*stream).input, bytes);
         pane
     }
 

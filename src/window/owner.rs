@@ -111,7 +111,7 @@ mod tests {
                 c"window-closed",
                 Rc::new(move |_, _| observed.set(observed.get() + 1)),
             );
-            let owner = window::new();
+            let owner = window::new_ref();
             let weak = WindowRef::downgrade(&owner);
             drop(owner.clone());
             assert_eq!(closed.get(), 0);

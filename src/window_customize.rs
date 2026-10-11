@@ -723,9 +723,9 @@ unsafe fn window_customize_set_option_value(
         return -1;
     }
     if item.option_type == WINDOW_CUSTOMIZE_HOOKS && name.to_bytes().first() == Some(&b'@') {
-        hooks_add_event(&*name);
+        hooks_add_event(name);
     }
-    options_push_changes(&*name);
+    options_push_changes(name);
     0
 }
 
@@ -823,7 +823,7 @@ unsafe fn window_customize_option_is_changed(
     };
     if (*option).monitor_data.is_some()
         || ((*option).name.as_bytes().first() == Some(&b'@')
-            && hooks_is_event(&*((*option).name)) != 0)
+            && hooks_is_event(&((*option).name)) != 0)
     {
         return 1;
     }
@@ -2333,7 +2333,7 @@ sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
 0 as ::core::ffi::c_int,
 c"The default is: ",
 |out| {
-write_cstr(out, (&*default_value).as_c_str())?;
+write_cstr(out, default_value.as_c_str())?;
 write_cstr(out, nullable_cstr(space))?;
 write_cstr(out, nullable_cstr(unit))
 }) == 0
@@ -2803,14 +2803,17 @@ fn window_customize_prompt_callbacks<T: 'static>(
     (inputcb, freecb)
 }
 
+/// Prompt input handler that receives the live customize mode owner.
+type window_customize_mode_prompt_fn = unsafe fn(
+    Option<&ClientRef>,
+    &Rc<UnsafeCell<window_customize_modedata>>,
+    Option<&CStr>,
+    prompt_key_result,
+) -> prompt_result;
+
 fn window_customize_mode_prompt_callbacks(
     owner: Rc<UnsafeCell<window_customize_modedata>>,
-    callback: unsafe fn(
-        Option<&ClientRef>,
-        &Rc<UnsafeCell<window_customize_modedata>>,
-        Option<&CStr>,
-        prompt_key_result,
-    ) -> prompt_result,
+    callback: window_customize_mode_prompt_fn,
 ) -> (mode_tree_prompt_input_cb, prompt_free_cb) {
     let weak = Rc::downgrade(&owner);
     let inputcb: mode_tree_prompt_input_cb = Some(Box::new(move |client, text, key| {
@@ -2844,11 +2847,11 @@ unsafe fn window_customize_set_option_callback(
         return PROMPT_CLOSE;
     }
     let mut cause = None;
-    if window_customize_set_option_value(item, Some(&*value), &mut cause) != 0 {
+    if window_customize_set_option_value(item, Some(value), &mut cause) != 0 {
         window_customize_uppercase_cause(&mut cause);
         if let Some(cause_value) = cause.as_ref() {
             status_message_set(c, -1, 1, 0, 0, |out| {
-                write_cstr(out, (&*cause_value).as_c_str())
+                write_cstr(out, cause_value.as_c_str())
             });
         }
         return PROMPT_CLOSE;
@@ -3189,7 +3192,7 @@ unsafe fn window_customize_add_environment_callback(
         let name = CString::new(&CStr::from_ptr(s).to_bytes()[..value.offset_from(s) as usize])
             .expect("environment name contains no NUL");
         environment.edit(|env| {
-            environ_set(env, &*name, 0, |out| {
+            environ_set(env, &name, 0, |out| {
                 write_cstr(
                     out,
                     nullable_cstr(value.offset(1 as ::core::ffi::c_int as isize)),
@@ -3234,7 +3237,7 @@ unsafe fn window_customize_add_environment(
 unsafe fn window_customize_edit_close_cb(
     editor: NonNull<spawn_editor_state>,
     buf: Option<Vec<u8>>,
-    ed: Box<window_customize_editdata>,
+    ed: window_customize_editdata,
 ) {
     let mut current_block: u64;
     let item = &*ed.item;
@@ -3406,11 +3409,11 @@ unsafe fn window_customize_start_edit(
     }
     // The callback owns the record and receives editor identity at dispatch.
     // Startup failure and cancellation drop the capture normally.
-    let ed = Box::new(window_customize_editdata {
+    let ed = window_customize_editdata {
         wp_id: mode_pane_owner.id(),
         edit_type,
         item: window_customize_copy_item(item),
-    });
+    };
     let bytes = value.to_bytes();
     let bytes = if bytes.is_empty() { b"\n" } else { bytes };
     let editor = spawn_editor(
@@ -3625,17 +3628,17 @@ unsafe fn window_customize_set_array_key_callback(
     if owner.with_entry(name, |entry| options_array_get(entry, new_key).is_some()) != Some(false) {
         return PROMPT_CLOSE;
     }
-    let value = options_to_cstring(option, Some(&*old_key), 0);
+    let value = options_to_cstring(option, Some(old_key), 0);
     if let Err(error) = owner.set_array_item(name, new_key, Some(&value), false) {
         let mut cause = Some(error);
         window_customize_uppercase_cause(&mut cause);
         status_message_set(c, -1, 1, 0, 0, |out| {
-            write_cstr(out, (&*(cause.as_ref().unwrap())).as_c_str())
+            write_cstr(out, (cause.as_ref().unwrap()).as_c_str())
         });
         return PROMPT_CLOSE;
     }
     let _ = owner.set_array_item(name, old_key, None, false);
-    options_push_changes(&*name);
+    options_push_changes(name);
     mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
     mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
     mode_pane_owner.request_redraw(false);
@@ -4762,11 +4765,11 @@ mod item_owner_tests {
 
     #[test]
     fn editor_cancellation_drops_its_owned_record_without_dispatch() {
-        let edit = Box::new(window_customize_editdata {
+        let edit = window_customize_editdata {
             wp_id: u_int::MAX,
             edit_type: WINDOW_CUSTOMIZE_EDIT_OPTION,
             item: window_customize_new_item(),
-        });
+        };
         let capture = (edit, Rc::new(()));
         let observer = Rc::downgrade(&capture.1);
         let mut state = spawn_editor_state {

@@ -94,7 +94,7 @@ pub unsafe fn start_cfg() {
         flags = CMD_PARSE_QUIET;
     }
     for path in cfg_files() {
-        load_cfg(&*path, registry_c_owner.as_ref(), flags);
+        load_cfg(path, registry_c_owner.as_ref(), flags);
     }
     cmdq_append(
         None,
@@ -315,23 +315,10 @@ pub unsafe fn cfg_show_causes(s_owner: Option<&SessionRef>) {
         });
     } else {
         if s.is_none() {
-            if !c.is_none()
-                && !c
-                    .as_ref()
-                    .expect("live client")
-                    .attached_session()
-                    .upgrade()
-                    .is_none()
-            {
-                s = c
-                    .as_ref()
-                    .expect("live client")
-                    .attached_session()
-                    .upgrade();
-            } else {
-                let mut s_owner = sessions.first();
-                s = s_owner;
-            }
+            s = c
+                .as_ref()
+                .and_then(|c| c.attached_session().upgrade())
+                .or_else(|| sessions.first());
         }
         if s.is_none() || !s.as_ref().expect("live session").is_attached() {
             return;
@@ -368,7 +355,7 @@ mod tests {
             let _ = cfg_test_take_causes();
             cfg_add_cause(|out| {
                 write_cstr(out, c"first")?;
-                write!(out, ":{}", (7u32) as u32)
+                write!(out, ":{}", { 7u32 })
             });
             cfg_add_cause(|out| write_cstr(out, c"second\xff"));
         }

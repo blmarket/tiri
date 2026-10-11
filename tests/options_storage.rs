@@ -78,7 +78,7 @@ fn aliases_parent_fallback_and_shadowing() {
     unsafe {
         let mut parent_owner = options_create(None);
         let parent = &raw mut *parent_owner;
-        let saved_global = std::mem::replace(&mut hmux::src::tmux::global_options, parent);
+        let saved_global = std::ptr::replace(&raw mut hmux::src::tmux::global_options, parent);
         let mut child_owner = options_create(Some(OptionsScope::GlobalServer));
         let child = &raw mut *child_owner;
         let inherited = options_set_string(parent, c"@shared", 0, |out| out.write_all(b"parent"));
@@ -290,11 +290,11 @@ fn array_keys_order_normalize_and_keep_stable_items() {
         for key in keys {
             let key = CString::new(*key).unwrap();
             assert_eq!(
-                options_array_set(array, &*key, Some(c"value"), 0, null_mut()),
+                options_array_set(array, &key, Some(c"value"), 0, null_mut()),
                 0
             );
         }
-        let first = options_array_iter_mut(&mut *(array))
+        let _first = options_array_iter_mut(&mut *(array))
             .next()
             .map_or(std::ptr::null_mut(), |item| item);
         let two = options_array_iter_mut(&mut *array)
@@ -379,7 +379,7 @@ fn array_keys_order_normalize_and_keep_stable_items() {
         }
         for invalid in [c"", c"4294967296"] {
             assert_eq!(
-                options_array_set(array, &*invalid, Some(c"bad"), 0, null_mut()),
+                options_array_set(array, invalid, Some(c"bad"), 0, null_mut()),
                 -1
             );
             assert!(hmux::src::options::options_array_get_mut(
@@ -412,7 +412,7 @@ fn array_keys_order_normalize_and_keep_stable_items() {
                 *key
             );
             let key = CString::new(*key).unwrap();
-            assert_eq!(options_array_set(array, &*key, None, 0, null_mut()), 0);
+            assert_eq!(options_array_set(array, &key, None, 0, null_mut()), 0);
         }
         assert!(options_array_iter_mut(&mut *(array))
             .next()
@@ -424,7 +424,7 @@ fn array_keys_order_normalize_and_keep_stable_items() {
             for index in (0..128).rev() {
                 let key = CString::new(index.to_string()).unwrap();
                 assert_eq!(
-                    options_array_set(array, &*key, Some(c"again"), 0, null_mut()),
+                    options_array_set(array, &key, Some(c"again"), 0, null_mut()),
                     0
                 );
             }

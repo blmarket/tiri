@@ -107,7 +107,7 @@ unsafe fn cmd_display_message_exec(
             Err(error) => {
                 cmdq_error(item_handle, |out| {
                     out.write_all(b"delay ")?;
-                    write_cstr(out, &*(error.message()))
+                    write_cstr(out, error.message())
                 });
                 return CMD_RETURN_ERROR;
             }

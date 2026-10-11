@@ -39,12 +39,14 @@ fn sgr_mouse_output_counts_the_final_character_as_one_byte() {
     let mut screen = screen::default();
     screen.mode = MODE_MOUSE_BUTTON | MODE_MOUSE_SGR;
     for byte in [b'M', b'm', 0xff, 0] {
-        let mut mouse = mouse_event::default();
-        mouse.sgr_type = byte as u32;
-        mouse.sgr_b = 4;
+        let mouse = mouse_event {
+            sgr_type: byte as u32,
+            sgr_b: 4,
+            ..Default::default()
+        };
         let mut buf = [0; 40];
         unsafe {
-            let len = input_key_get_mouse(&mut screen, &mut mouse, 9, 19, &mut buf).unwrap();
+            let len = input_key_get_mouse(&mut screen, &mouse, 9, 19, &mut buf).unwrap();
             let mut expected = b"\x1b[<4;10;20".to_vec();
             expected.push(byte);
             assert_eq!(

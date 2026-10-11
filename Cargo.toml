@@ -37,3 +37,7 @@ refbox = { package = "hmux-refbox", path = "hmux-refbox" }
 [dev-dependencies]
 syn = { version = "2", features = ["full", "visit"] }
 quote = "1"
+
+[lints.clippy]
+missing_safety_doc = "allow"
+too_many_arguments = "allow"

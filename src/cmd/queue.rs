@@ -636,7 +636,7 @@ pub unsafe fn cmdq_insert_hook(
             i = i.wrapping_add(1);
         }
     }
-    events_fire(&*name, ep);
+    events_fire(&name, ep);
 }
 pub unsafe fn cmdq_continue(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) {
     let item = item_handle.get();
@@ -1142,74 +1142,72 @@ pub unsafe fn cmdq_error(
         "cmdq_error",
         crate::src::log::log_bytes(msg.as_bytes())
     ));
-    if c.is_none() {
-        let (source, source_line) = cmd_get_source(cmd.get_unchecked());
-        file = source.map_or(std::ptr::null(), |file| file.as_ptr());
-        line = source_line;
-        if cfg_finished == 0 {
-            if !file.is_null() {
-                cfg_add_cause(|out| {
+    match c.as_ref() {
+        None => {
+            let (source, source_line) = cmd_get_source(cmd.get_unchecked());
+            file = source.map_or(std::ptr::null(), |file| file.as_ptr());
+            line = source_line;
+            if cfg_finished == 0 {
+                if !file.is_null() {
+                    cfg_add_cause(|out| {
+                        write_cstr(out, nullable_cstr(file))?;
+                        write!(out, ":{}: ", (line) as u32)?;
+                        write_cstr(out, &*msg)
+                    });
+                } else {
+                    cfg_add_cause(|out| write_cstr(out, &*msg));
+                }
+            } else if !file.is_null() {
+                server_add_message(|out| {
+                    out.write_all(b"message: ")?;
                     write_cstr(out, nullable_cstr(file))?;
                     write!(out, ":{}: ", (line) as u32)?;
                     write_cstr(out, &*msg)
                 });
             } else {
-                cfg_add_cause(|out| write_cstr(out, &*msg));
+                server_add_message(|out| {
+                    out.write_all(b"message: ")?;
+                    write_cstr(out, &*msg)
+                });
             }
-        } else if !file.is_null() {
+        }
+        Some(client)
+            if client.attached_session().upgrade().is_none()
+                || client.flags() & CLIENT_CONTROL as uint64_t != 0 =>
+        {
             server_add_message(|out| {
-                out.write_all(b"message: ")?;
-                write_cstr(out, nullable_cstr(file))?;
-                write!(out, ":{}: ", (line) as u32)?;
+                write_cstr(out, (client.name()).as_deref())?;
+                out.write_all(b" message: ")?;
                 write_cstr(out, &*msg)
             });
-        } else {
-            server_add_message(|out| {
-                out.write_all(b"message: ")?;
-                write_cstr(out, &*msg)
-            });
+            if !client.flags() & CLIENT_UTF8 as uint64_t != 0 {
+                msg = utf8_sanitize_cstring(msg.as_c_str());
+            }
+            if client.flags() & CLIENT_CONTROL as uint64_t != 0 {
+                control_write(client, |out| write_cstr(out, &*msg));
+            } else {
+                file_error(c_owner.as_ref(), |out| {
+                    write_cstr(out, &*msg)?;
+                    out.write_all(b"\n")
+                });
+            }
+            client.set_return_value(1);
         }
-    } else if c
-        .as_ref()
-        .expect("live client")
-        .attached_session()
-        .upgrade()
-        .is_none()
-        || c.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0
-    {
-        server_add_message(|out| {
-            write_cstr(out, (c.as_ref().expect("live client").name()).as_deref())?;
-            out.write_all(b" message: ")?;
-            write_cstr(out, &*msg)
-        });
-        if !c.as_ref().expect("live client").flags() & CLIENT_UTF8 as uint64_t != 0 {
-            msg = utf8_sanitize_cstring(msg.as_c_str());
+        Some(_) => {
+            let mut bytes = msg.into_bytes_with_nul();
+            bytes[0] = *(*__ctype_toupper_loc()).offset(bytes[0] as isize) as u8;
+            // The bytes came from a CString; toupper maps NUL to NUL and a
+            // non-NUL byte to a non-NUL byte, so the terminator stays at the end.
+            msg = CString::from_vec_with_nul_unchecked(bytes);
+            status_message_set(
+                c.as_ref(),
+                -(1 as ::core::ffi::c_int),
+                1 as ::core::ffi::c_int,
+                0 as ::core::ffi::c_int,
+                0 as ::core::ffi::c_int,
+                |out| write_cstr(out, &*msg),
+            );
         }
-        if c.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0 {
-            control_write(&c.clone().expect("live client"), |out| {
-                write_cstr(out, &*msg)
-            });
-        } else {
-            file_error(c_owner.as_ref(), |out| {
-                write_cstr(out, &*msg)?;
-                out.write_all(b"\n")
-            });
-        }
-        c.as_ref().expect("live client").set_return_value(1);
-    } else {
-        let mut bytes = msg.into_bytes_with_nul();
-        bytes[0] = *(*__ctype_toupper_loc()).offset(bytes[0] as isize) as u8;
-        // The bytes came from a CString; toupper maps NUL to NUL and a
-        // non-NUL byte to a non-NUL byte, so the terminator stays at the end.
-        msg = CString::from_vec_with_nul_unchecked(bytes);
-        status_message_set(
-            c.as_ref(),
-            -(1 as ::core::ffi::c_int),
-            1 as ::core::ffi::c_int,
-            0 as ::core::ffi::c_int,
-            0 as ::core::ffi::c_int,
-            |out| write_cstr(out, &*msg),
-        );
     }
 }
 

@@ -92,44 +92,48 @@ impl window_mode_entry {
     }
 }
 
+/// Enters a mode for an entry, optionally on behalf of a queue item; returns
+/// the screen the mode draws to.
+pub type window_mode_init_cb = unsafe fn(
+    refbox::Weak<window_mode_entry>,
+    Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    *mut cmd_find_state,
+    *mut args,
+) -> *mut screen;
+/// Resizes a mode's screen to the given width and height.
+pub type window_mode_resize_cb = unsafe fn(refbox::Weak<window_mode_entry>, u_int, u_int);
+/// Handles a key from a client in the mode's winlink.
+pub type window_mode_key_cb = unsafe fn(
+    refbox::Weak<window_mode_entry>,
+    &ClientRef,
+    refbox::Weak<winlink>,
+    key_code,
+    *mut mouse_event,
+);
+/// Runs a mode command (send-keys -X) with its arguments.
+pub type window_mode_command_cb = unsafe fn(
+    refbox::Weak<window_mode_entry>,
+    Option<&ClientRef>,
+    Option<&SessionRef>,
+    refbox::Weak<winlink>,
+    *mut args,
+    *mut mouse_event,
+);
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_mode {
     pub name: &'static ::std::ffi::CStr,
     pub default_format: Option<&'static std::ffi::CStr>,
     pub flags: ::core::ffi::c_int,
-    pub init: Option<
-        unsafe fn(
-            refbox::Weak<window_mode_entry>,
-            Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
-            *mut cmd_find_state,
-            *mut args,
-        ) -> *mut screen,
-    >,
+    pub init: Option<window_mode_init_cb>,
     pub free: Option<unsafe fn(refbox::Weak<window_mode_entry>) -> ()>,
-    pub resize: Option<unsafe fn(refbox::Weak<window_mode_entry>, u_int, u_int) -> ()>,
+    pub resize: Option<window_mode_resize_cb>,
     pub update: Option<unsafe fn(refbox::Weak<window_mode_entry>) -> ()>,
     pub style_changed: Option<unsafe fn(refbox::Weak<window_mode_entry>) -> ()>,
-    pub key: Option<
-        unsafe fn(
-            refbox::Weak<window_mode_entry>,
-            &ClientRef,
-            refbox::Weak<winlink>,
-            key_code,
-            *mut mouse_event,
-        ) -> (),
-    >,
+    pub key: Option<window_mode_key_cb>,
     pub key_table: Option<unsafe fn(refbox::Weak<window_mode_entry>) -> &'static std::ffi::CStr>,
-    pub command: Option<
-        unsafe fn(
-            refbox::Weak<window_mode_entry>,
-            Option<&ClientRef>,
-            Option<&SessionRef>,
-            refbox::Weak<winlink>,
-            *mut args,
-            *mut mouse_event,
-        ) -> (),
-    >,
+    pub command: Option<window_mode_command_cb>,
     pub formats: Option<unsafe fn(refbox::Weak<window_mode_entry>, *mut format_tree) -> ()>,
     pub get_screen: Option<unsafe fn(refbox::Weak<window_mode_entry>) -> *mut screen>,
     pub display_screen: Option<unsafe fn(refbox::Weak<window_mode_entry>) -> *mut screen>,

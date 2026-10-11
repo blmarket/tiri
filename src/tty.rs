@@ -382,7 +382,7 @@ unsafe fn tty_write_callback(owner: &ClientRef, result: std::io::Result<usize>) 
             written,
             size
         ));
-        if let Some(left) = terminal.acknowledge_terminal_redraw(written as usize) {
+        if let Some(left) = terminal.acknowledge_terminal_redraw(written) {
             log_debug(format_args!(
                 "{}: waiting for redraw, {} bytes left",
                 log_cstr(terminal.name().as_deref().unwrap_or(c"(null)")),
@@ -566,7 +566,7 @@ pub unsafe fn tty_start_tty(owner: &ClientRef) {
                 as tcflag_t;
         tio.c_cc[VMIN as usize] = 1 as cc_t;
         tio.c_cc[VTIME as usize] = 0 as cc_t;
-        if crate::src::shared::terminal::set_attributes(fd, TCSANOW, &mut tio)
+        if crate::src::shared::terminal::set_attributes(fd, TCSANOW, &tio)
             == 0 as ::core::ffi::c_int
         {
             let _ =
@@ -942,7 +942,7 @@ pub(crate) unsafe fn tty_raw(fd: i32, text: &CStr) {
                 if let Poll::Ready(result) = send.as_mut().poll(cx) {
                     return Poll::Ready(result);
                 }
-                if let Poll::Ready(_) = stop.as_mut().poll(cx) {
+                if stop.as_mut().poll(cx).is_ready() {
                     return Poll::Ready(Ok(()));
                 }
                 Poll::Pending
@@ -2037,7 +2037,7 @@ unsafe fn tty_selection_sequence(
     Some(tty_term_string_ss(
         term,
         TTYC_MS,
-        &*clip,
+        clip,
         CStr::from_ptr(encoded.as_ptr().cast()),
     ))
 }

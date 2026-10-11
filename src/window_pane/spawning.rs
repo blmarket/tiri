@@ -116,7 +116,7 @@ unsafe fn spawn_fire_pane_created(
     };
     if let Some(cmd) = cmd.as_ref().filter(|text| !text.as_bytes().is_empty()) {
         event_payload_set_string(&mut ep, c"pane_command", |out| {
-            write_cstr(out, (&*cmd).as_c_str())
+            write_cstr(out, cmd.as_c_str())
         });
     } else if (*wp).shell.is_some() {
         event_payload_set_string(&mut ep, c"pane_command", |out| {
@@ -373,14 +373,11 @@ pub(super) unsafe fn spawn_pane(
         environ_set(child, c"TMUX_PANE", 0 as ::core::ffi::c_int, |out| {
             write!(out, "%{}", ((*new_wp).id) as u32)
         });
-        if !c.is_none()
-            && c.as_ref()
-                .expect("live client")
-                .attached_session()
-                .upgrade()
-                .is_none()
+        if let Some(client) = c
+            .as_ref()
+            .filter(|client| client.attached_session().upgrade().is_none())
         {
-            let path = c.as_ref().expect("live client").with_environment(|env| {
+            let path = client.with_environment(|env| {
                 env.and_then(|env| env.find(c"PATH"))
                     .map(|entry| entry.value.clone())
             });
@@ -390,7 +387,7 @@ pub(super) unsafe fn spawn_pane(
         }
         if child.find(c"PATH").is_none() {
             environ_set(child, c"PATH", 0 as ::core::ffi::c_int, |out| {
-                write_cstr(out, &*_PATH_DEFPATH)
+                write_cstr(out, _PATH_DEFPATH)
             });
         }
         if !(*sc).flags & SPAWN_RESPAWN != 0 {
@@ -555,7 +552,7 @@ pub(super) unsafe fn spawn_pane(
                     now.c_cc[VERASE as usize] = key as cc_t;
                 }
                 now.c_iflag |= IUTF8 as tcflag_t;
-                if crate::src::shared::terminal::set_attributes(STDIN_FILENO, TCSANOW, &mut now)
+                if crate::src::shared::terminal::set_attributes(STDIN_FILENO, TCSANOW, &now)
                     != 0 as ::core::ffi::c_int
                 {
                     _exit(1 as ::core::ffi::c_int);
@@ -738,7 +735,7 @@ pub(super) unsafe fn finish_editing(wp_owner: &std::rc::Rc<std::cell::UnsafeCell
                     } else {
                         let mut bytes = Vec::new();
                         if bytes.try_reserve_exact(len as usize).is_ok() {
-                            bytes.resize(len as usize, 0);
+                            bytes.extend(std::iter::repeat_n(0u8, len as usize));
                             if fread(
                                 bytes.as_mut_ptr().cast::<::core::ffi::c_void>(),
                                 len as size_t,

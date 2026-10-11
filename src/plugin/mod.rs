@@ -343,9 +343,7 @@ fn tick() {
         let mut values = PaneValues::new(variables);
         let result = plugin.refresh(&host, &mut values);
         if let Err(error) = &result {
-            unsafe {
-                crate::src::log::log_debug(format_args!("plugin {}: {error}", plugin.name()));
-            }
+            crate::src::log::log_debug(format_args!("plugin {}: {error}", plugin.name()));
         }
         let changed = REGISTRY.with(|registry| {
             let mut registry = registry.borrow_mut();

@@ -51,7 +51,7 @@ unsafe fn cmd_list_single_command(
         write_cstr(out, &*entry.name)
     });
     format_add(ft, c"command_list_alias", |out| {
-        write_cstr(out, &*entry.alias.unwrap_or(c""))
+        write_cstr(out, entry.alias.unwrap_or(c""))
     });
     format_add(ft, c"command_list_usage", |out| {
         write_cstr(out, &*entry.usage)

@@ -6661,7 +6661,7 @@ unsafe fn window_copy_goto_line(mut wme: refbox::Weak<window_mode_entry>, linest
     let mut line: u_int = 0;
     let mut lineno: ::core::ffi::c_int = 0;
     let parsed = strtonum(
-        &linestr,
+        linestr,
         -(1 as ::core::ffi::c_int) as ::core::ffi::c_longlong,
         INT_MAX as ::core::ffi::c_longlong,
     );

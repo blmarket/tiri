@@ -719,13 +719,11 @@ pub fn mode_tree_add(
     text: Option<&CStr>,
     expanded: i32,
 ) -> ModeTreeItemRef {
-    unsafe {
-        log_debug(format_args!(
-            "mode_tree_add: {tag}, {} {}",
-            log_bytes(name.to_bytes()),
-            log_bytes(text.unwrap_or(c"").to_bytes())
-        ));
-    }
+    log_debug(format_args!(
+        "mode_tree_add: {tag}, {} {}",
+        log_bytes(name.to_bytes()),
+        log_bytes(text.unwrap_or(c"").to_bytes())
+    ));
     let mut row = mode_tree_item {
         parent: parent.cloned().unwrap_or_default(),
         itemdata,
@@ -2429,10 +2427,10 @@ mod mode_tree_tests {
                 tree.keycb = Some(Box::new(|_, _| b'y' as key_code));
                 b'x' as key_code
             }));
-            mode_tree_build_lines(&owner, &[row.clone()], 0);
+            mode_tree_build_lines(&owner, std::slice::from_ref(&row), 0);
             assert_eq!(row.borrow().key, b'x' as key_code);
             mode_tree_clear_lines(&mut *owner.get());
-            mode_tree_build_lines(&owner, &[row.clone()], 0);
+            mode_tree_build_lines(&owner, std::slice::from_ref(&row), 0);
             assert_eq!(row.borrow().key, b'y' as key_code);
             drop(owner);
             assert!(observer.upgrade().is_none());
@@ -2587,20 +2585,20 @@ mod queued_prompt_accept_tests {
             assert_eq!(Rc::strong_count(&tree), 1);
             assert_eq!(
                 input(None, None, PROMPT_KEY_HANDLED) as u32,
-                PROMPT_CONTINUE as u32
+                PROMPT_CONTINUE
             );
             assert_eq!(CALLS.load(Ordering::Relaxed), 1);
             (*tree.get()).dead = 1;
             assert_eq!(
                 input(None, None, PROMPT_KEY_HANDLED) as u32,
-                PROMPT_CLOSE as u32
+                PROMPT_CLOSE
             );
             assert_eq!(CALLS.load(Ordering::Relaxed), 1);
             drop(tree);
             assert!(observer.upgrade().is_none());
             assert_eq!(
                 input(None, None, PROMPT_KEY_HANDLED) as u32,
-                PROMPT_CLOSE as u32
+                PROMPT_CLOSE
             );
         }
     }

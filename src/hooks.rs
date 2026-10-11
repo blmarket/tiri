@@ -46,8 +46,7 @@ use std::ffi::{CStr, CString};
 
 #[derive(Default)]
 struct HooksEvents {
-    // Boxes keep each event record stable when the owning vector grows.
-    events: Vec<Box<CString>>,
+    events: Vec<CString>,
 }
 
 impl HooksEvents {
@@ -61,7 +60,7 @@ impl HooksEvents {
         if self.contains(name.as_c_str()) {
             return false;
         }
-        self.events.push(Box::new(name));
+        self.events.push(name);
         true
     }
 }
@@ -229,7 +228,7 @@ unsafe fn hooks_insert(
                     0 => {
                         if let Some(error) = pr.error.as_ref() {
                             cmdq_error(item_handle.expect("hook command item"), |out| {
-                                write_cstr(out, (&*error).as_c_str())
+                                write_cstr(out, error.as_c_str())
                             });
                         }
                     }
@@ -276,7 +275,7 @@ unsafe fn hooks_insert_event(
     format_add(ft, c"hook", |out| write_cstr(out, &*name));
     format_log_debug(ft, c"hooks_insert_event");
     let mut hd = hooks_data {
-        name: name,
+        name,
         fs: cmd_find_state::default(),
         formats,
         oo,
@@ -367,7 +366,7 @@ pub unsafe fn hooks_run(
     let item = item_handle.map_or(std::ptr::null_mut(), |item| item.get());
     let target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut hd = hooks_data {
-        name: name,
+        name,
         fs: cmd_find_state::default(),
         formats: format_create_owned(None, None, 0, FORMAT_NOJOBS),
         oo: None,
@@ -419,7 +418,7 @@ unsafe fn hooks_monitor_hook_cb(
     }
     hooks_insert_event(
         cmdq_running().upgrade().as_ref(),
-        &*name,
+        name,
         payload,
         Some(scope.clone()),
         1,
@@ -446,23 +445,15 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, fallback: &cmd_find_state, g
         crate::src::shared::events::EventPayloadIdentity::HookMonitor(generation),
     );
     fs = cmd_find_state::clear_state(0 as ::core::ffi::c_int);
-    if wl.is_alive()
-        && pane_owner.is_some()
-        && pane_owner
-            .as_ref()
-            .expect("live pane")
-            .window_observer()
-            .ptr_eq(
+    if let Some(pane) = pane_owner.as_ref().filter(|pane| {
+        wl.is_alive()
+            && pane.window_observer().ptr_eq(
                 &wl.get_unchecked()
                     .window_handle()
                     .map_or_else(WindowWeak::new, WindowRef::downgrade),
             )
-    {
-        fs = cmd_find_state::find_from_winlink_pane(
-            wl.clone(),
-            pane_owner.as_ref().expect("monitor pane"),
-            0 as ::core::ffi::c_int,
-        );
+    }) {
+        fs = cmd_find_state::find_from_winlink_pane(wl.clone(), pane, 0 as ::core::ffi::c_int);
     } else if wl.is_alive() {
         fs = cmd_find_state::find_from_winlink(wl.clone(), 0 as ::core::ffi::c_int);
     } else if let Some(pane_owner_value) = pane_owner.as_ref() {
@@ -518,7 +509,7 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, fallback: &cmd_find_state, g
     }
     // Payload construction has finished reading the link. Dispatch may unlink it.
     event_payload_set_target(&mut ep, &fs);
-    events_fire(&*change.name, ep);
+    events_fire(change.name, ep);
     drop(session_owner);
     drop(client_owner);
 }
@@ -632,7 +623,6 @@ mod CStrings_tests {
         let name = CString::new(vec![b'@', 0xff]).unwrap();
         assert!(registry.insert(name));
 
-        let event_address = &*registry.events[0] as *const CString;
         let name_address = registry.events[0].as_ptr();
 
         for i in 0..128 {
@@ -640,15 +630,14 @@ mod CStrings_tests {
             assert!(registry.insert(other));
         }
 
-        // The first owner and its C string stay at stable addresses as the
-        // collection grows, and arbitrary non-UTF-8 event names are preserved.
-        assert_eq!(&*registry.events[0] as *const CString, event_address);
+        // The first C string stays at a stable address as the collection
+        // grows, and arbitrary non-UTF-8 event names are preserved.
         assert_eq!(registry.events[0].as_ptr(), name_address);
         assert_eq!(
             unsafe { CStr::from_ptr(name_address) }.to_bytes(),
             [b'@', 0xff]
         );
-        assert!(registry.contains(CStr::from_bytes_with_nul(b"@\xff\0").unwrap()));
+        assert!(registry.contains(c"@\xff"));
         assert!(!registry.insert(CString::new(vec![b'@', 0xff]).unwrap()));
     }
 }

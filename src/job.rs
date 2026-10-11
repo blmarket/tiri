@@ -167,29 +167,32 @@ pub unsafe fn job_run(
         );
         current_block = 224731115979188411;
     } else if let Ok((parent, child)) = hmux_rt::unix::socket_pair() {
-        out_owner = Some([OwnedFd::from(parent), OwnedFd::from(child)]);
+        out_owner = Some([parent, child]);
         pid = fork() as pid_t;
         current_block = 224731115979188411;
     } else {
         current_block = 12393940290395533062;
     }
     if current_block == 224731115979188411 {
-        if cmd.is_none() {
-            cmd_log_argv(argv, c"job_run:");
-            log_debug(format_args!(
-                "{}: cwd={}, shell={}",
-                "job_run",
-                log_cstr(cwd.unwrap_or(c"")),
-                log_cstr(CStr::from_ptr(shell))
-            ));
-        } else {
-            log_debug(format_args!(
-                "{}: cmd={}, cwd={}, shell={}",
-                "job_run",
-                log_cstr(cmd.unwrap()),
-                log_cstr(cwd.unwrap_or(c"")),
-                log_cstr(CStr::from_ptr(shell))
-            ));
+        match cmd {
+            None => {
+                cmd_log_argv(argv, c"job_run:");
+                log_debug(format_args!(
+                    "{}: cwd={}, shell={}",
+                    "job_run",
+                    log_cstr(cwd.unwrap_or(c"")),
+                    log_cstr(CStr::from_ptr(shell))
+                ));
+            }
+            Some(cmd) => {
+                log_debug(format_args!(
+                    "{}: cmd={}, cwd={}, shell={}",
+                    "job_run",
+                    log_cstr(cmd),
+                    log_cstr(cwd.unwrap_or(c"")),
+                    log_cstr(CStr::from_ptr(shell))
+                ));
+            }
         }
         match pid {
             -1 => {
@@ -686,7 +689,7 @@ mod job_stream_tests {
 
             for eof_first in [false, true] {
                 let stream = bufferevent_new(-1, None, None, None);
-                crate::src::reactor::evbuffer_add(&mut *(*stream).input, b"remaining");
+                crate::src::reactor::evbuffer_add(&mut (*stream).input, b"remaining");
                 let handle = job_insert(RefBox::new(job {
                     pid: 1234567,
                     event: crate::src::reactor::StreamHandle::from_ptr(stream),
@@ -731,7 +734,7 @@ mod job_stream_tests {
             });
             let handle = owner.downgrade();
             assert_eq!(job_get_event(&handle), stream);
-            crate::src::reactor::evbuffer_add(&mut *(*stream).input, b"output");
+            crate::src::reactor::evbuffer_add(&mut (*stream).input, b"output");
             assert_eq!(
                 job_completion(&owner.try_borrow_mut().unwrap()).output,
                 b"output"

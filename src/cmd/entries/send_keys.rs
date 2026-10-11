@@ -265,7 +265,7 @@ unsafe fn cmd_send_keys_exec(
             Err(error) => {
                 cmdq_error(item_handle, |out| {
                     out.write_all(b"repeat count ")?;
-                    write_cstr(out, &*(error.message()))
+                    write_cstr(out, error.message())
                 });
                 return CMD_RETURN_ERROR;
             }

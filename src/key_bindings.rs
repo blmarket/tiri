@@ -21,13 +21,12 @@ use crate::src::shared::key::*;
 use crate::src::shared::key::{key_binding, key_event, key_table};
 use std::ffi::CStr;
 
+/// Key tables indexed by name bytes.
+type KeyTableMap = std::collections::BTreeMap<Vec<u8>, std::rc::Rc<std::cell::RefCell<key_table>>>;
+
 #[repr(C)]
 pub struct key_tables {
-    pub storage: Option<
-        refbox::RefBox<
-            std::collections::BTreeMap<Vec<u8>, std::rc::Rc<std::cell::RefCell<key_table>>>,
-        >,
-    >,
+    pub storage: Option<refbox::RefBox<KeyTableMap>>,
 }
 
 static mut key_tables: key_tables = key_tables { storage: None };

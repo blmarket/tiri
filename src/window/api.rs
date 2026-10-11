@@ -425,7 +425,7 @@ impl Window for WindowRef {
         (*self.get()).name.clone()
     }
     unsafe fn rename(&self, name: &CStr, untrusted: bool) {
-        window_set_name(self, &*name, untrusted as i32);
+        window_set_name(self, name, untrusted as i32);
     }
     unsafe fn begin_name_check(&self, now: Instant) -> bool {
         let state = &mut *self.get();
@@ -767,7 +767,7 @@ mod tests {
             );
             let previous_server_options =
                 std::mem::replace(&mut crate::src::tmux::global_options, &mut *server_options);
-            let owner = window::new();
+            let owner = window::new_ref();
             let mut options = options_create(None);
             let entry = crate::src::options_table::options_table
                 .iter()

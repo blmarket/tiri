@@ -2222,7 +2222,7 @@ pub(super) unsafe fn input_parse_buffer(
         return;
     }
     (*wp).output_generation = (*wp).output_generation.wrapping_add(1);
-    (&WindowRef::clone(((*wp).window_handle().as_ref()).expect("live window"))).update_activity();
+    WindowRef::clone(((*wp).window_handle().as_ref()).expect("live window")).update_activity();
     if !(*wp).flags & PANE_ACTIVITY != 0 {
         (*wp).flags |= PANE_ACTIVITY;
         events_fire_pane(c"pane-activity", std::rc::Rc::clone(wp_owner));
@@ -2362,7 +2362,7 @@ unsafe fn input_reply(
         ir = input_make_request(ictx, INPUT_REQUEST_QUEUE);
         (*ir).data = Some(reply);
     } else {
-        input_send_reply(ictx, &*reply);
+        input_send_reply(ictx, &reply);
     };
 }
 unsafe fn input_clear(mut ictx: *mut input_ctx) {
@@ -3710,10 +3710,8 @@ unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
                 current_block_25 = 8019652857213515700;
             }
             14 => {
-                if window_owner.is_none() {
-                    current_block_25 = 980989089337379490;
-                } else {
-                    let (xpixel, ypixel) = window_owner.as_ref().unwrap().cell_size();
+                if let Some(window) = &window_owner {
+                    let (xpixel, ypixel) = window.cell_size();
                     input_reply(ictx, 1 as ::core::ffi::c_int, |out| {
                         write!(
                             out,
@@ -3722,14 +3720,12 @@ unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
                             (x.wrapping_mul(xpixel)) as u32
                         )
                     });
-                    current_block_25 = 980989089337379490;
                 }
+                current_block_25 = 980989089337379490;
             }
             15 => {
-                if window_owner.is_none() {
-                    current_block_25 = 980989089337379490;
-                } else {
-                    let (xpixel, ypixel) = window_owner.as_ref().unwrap().cell_size();
+                if let Some(window) = &window_owner {
+                    let (xpixel, ypixel) = window.cell_size();
                     input_reply(ictx, 1 as ::core::ffi::c_int, |out| {
                         write!(
                             out,
@@ -3738,19 +3734,17 @@ unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
                             (x.wrapping_mul(xpixel)) as u32
                         )
                     });
-                    current_block_25 = 980989089337379490;
                 }
+                current_block_25 = 980989089337379490;
             }
             16 => {
-                if window_owner.is_none() {
-                    current_block_25 = 980989089337379490;
-                } else {
-                    let (xpixel, ypixel) = window_owner.as_ref().unwrap().cell_size();
+                if let Some(window) = &window_owner {
+                    let (xpixel, ypixel) = window.cell_size();
                     input_reply(ictx, 1 as ::core::ffi::c_int, |out| {
                         write!(out, "\x1B[6;{};{}t", { ypixel }, { xpixel })
                     });
-                    current_block_25 = 980989089337379490;
                 }
+                current_block_25 = 980989089337379490;
             }
             18 => {
                 input_reply(ictx, 1 as ::core::ffi::c_int, |out| {
@@ -3794,7 +3788,7 @@ unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
                         if !wp.is_null() {
                             input_fire_pane_title_changed(
                                 input_pane_owner.as_ref().expect("live pane"),
-                                &*((*(*sctx).screen_ptr()).title),
+                                &((*(*sctx).screen_ptr()).title),
                             );
                             server_redraw_window_borders(
                                 window_owner.as_ref().expect("pane window"),

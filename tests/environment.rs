@@ -204,7 +204,7 @@ fn update_borrows_sources_and_accepts_owned_snapshots() {
         let array = options_empty(options, definition);
         for (index, pattern) in [(c"0", c"a*"), (c"1", c"missing")] {
             assert_eq!(
-                options_array_set(array, &*index, Some(&*pattern), 0, null_mut()),
+                options_array_set(array, index, Some(pattern), 0, null_mut()),
                 0
             );
         }

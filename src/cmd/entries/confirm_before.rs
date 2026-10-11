@@ -129,7 +129,7 @@ unsafe fn cmd_confirm_before_exec(
     status_prompt_set(
         &tc.clone().expect("live client"),
         target.as_ref(),
-        &*new_prompt,
+        &new_prompt,
         nullable_cstr(::core::ptr::null::<::core::ffi::c_char>()),
         inputcb,
         None,

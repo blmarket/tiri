@@ -427,7 +427,7 @@ pub static mut ptm_fd: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
 pub static mut shell_command: Option<CString> = None;
 /// The socket path chosen at startup (or by systemd activation).
 pub unsafe fn socket_path_cstr() -> &'static CStr {
-    (*&raw const socket_path)
+    socket_path
         .as_deref()
         .expect("socket path is set")
 }
@@ -494,7 +494,7 @@ unsafe fn expand_path(path: &CStr, home: Option<&CStr>) -> Option<CString> {
         let name_end = slash.unwrap_or(path_bytes.len());
         let name =
             CString::new(&path_bytes[1..name_end]).expect("variable name comes from a C string");
-        value = environ_find(global_environ.as_deref().expect("environment"), &*name);
+        value = environ_find(global_environ.as_deref().expect("environment"), &name);
         value?;
         // On glibc, the previous `%s` rendered a cleared environment value
         // as `(null)`. Keep that behavior if this entry has no value.
@@ -891,7 +891,7 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
     cfg_set_files(config_paths);
     argc -= BSDoptind;
     argv = argv.offset(BSDoptind as isize);
-    if (*&raw const shell_command).is_some() && argc != 0 as ::core::ffi::c_int {
+    if shell_command.is_some() && argc != 0 as ::core::ffi::c_int {
         usage(1 as ::core::ffi::c_int);
     }
     if flags & CLIENT_NOFORK as uint64_t != 0 && argc != 0 as ::core::ffi::c_int {

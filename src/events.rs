@@ -17,7 +17,7 @@ use crate::src::shared::window::WindowRef;
 use crate::src::window_pane::WindowPane as _;
 use std::ffi::CStr;
 
-static mut events_sinks: Vec<Box<events_sink>> = Vec::new();
+static mut events_sinks: Vec<events_sink> = Vec::new();
 static mut events_dispatching: u_int = 0;
 static mut events_generation: u_int = 0;
 static mut events_next_sink_id: u64 = 0;
@@ -41,13 +41,13 @@ pub unsafe fn events_add_sink(name: &CStr, cb: events_cb) -> EventSinkId {
         .checked_add(1)
         .expect("event sink IDs exhausted");
     let id = EventSinkId(events_next_sink_id);
-    let owner = Box::new(events_sink {
+    let owner = events_sink {
         id,
         name: name.to_owned(),
         cb,
         dead: 0,
         generation: events_generation,
-    });
+    };
 
     events_sinks.push(owner);
     id

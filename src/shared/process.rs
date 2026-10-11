@@ -8,6 +8,9 @@ pub enum PeerMessage<'a> {
     Message(&'a mut imsg),
 }
 
+/// Receives each message (or disconnect) delivered to a peer.
+pub type peer_dispatch_cb = Box<dyn for<'a> FnMut(PeerMessage<'a>)>;
+
 /// Owned by the parent process's peer list until `proc_remove_peer`.
 pub struct tmuxpeer {
     pub parent: *mut tmuxproc,
@@ -17,7 +20,7 @@ pub struct tmuxpeer {
     pub uid: uid_t,
     pub gid: gid_t,
     pub flags: ::core::ffi::c_int,
-    pub dispatchcb: Option<Box<dyn for<'a> FnMut(PeerMessage<'a>)>>,
+    pub dispatchcb: Option<peer_dispatch_cb>,
 }
 
 impl Default for tmuxpeer {

@@ -503,7 +503,7 @@ unsafe fn prompt_effective_style(pr: &prompt, sy: &mut style, ft: *mut format_tr
     };
     style_set(sy, cell);
     let expanded = format_expand_time_cstring(ft, text.as_ptr());
-    if style_parse(sy, &grid_default_cell, &*expanded) != 0 {
+    if style_parse(sy, &grid_default_cell, &expanded) != 0 {
         style_set(sy, cell);
     }
 }
@@ -1614,7 +1614,7 @@ unsafe fn prompt_complete_commands(s: &CStr) -> Vec<CString> {
             .collect::<Vec<_>>()
             .into_iter();
         a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-            crate::src::options::options_array_item(a_root, &*key)
+            crate::src::options::options_array_item(a_root, &key)
         });
         while !a.is_null() {
             let value = (*(crate::src::options::options_array_item_value_mut(&mut *(a))
@@ -1629,7 +1629,7 @@ unsafe fn prompt_complete_commands(s: &CStr) -> Vec<CString> {
                 }
             }
             a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-                crate::src::options::options_array_item(a_root, &*key)
+                crate::src::options::options_array_item(a_root, &key)
             });
         }
     }
@@ -1874,7 +1874,7 @@ mod prompt_buffer_tests {
         pr.buffer.push(cell(b'!'));
 
         unsafe {
-            assert_eq!(prompt_replace_complete(&mut *pr, Some(&replacement)), 1);
+            assert_eq!(prompt_replace_complete(&mut pr, Some(&replacement)), 1);
             assert_eq!(utf8_tocstr_cstring(&pr.buffer).as_bytes(), b"cmd \xff tail");
             assert_eq!(pr.index, 5);
             assert_eq!(pr.buffer.len(), utf8_strlen(&pr.buffer) + 1);
@@ -2394,7 +2394,7 @@ mod prompt_buffer_tests {
         pr.buffer.push(cell(b'!'));
 
         unsafe {
-            assert_eq!(prompt_paste(&mut *pr), 1);
+            assert_eq!(prompt_paste(&mut pr), 1);
             prompt_trim_buffer(&mut pr);
             assert_eq!(
                 utf8_tocstr_cstring(&pr.buffer).as_bytes(),

@@ -133,7 +133,7 @@ impl Drop for cmd_source_file_data {
 
 unsafe fn cmd_source_file_complete_cb(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-    mut cdata: Box<cmd_source_file_data>,
+    mut cdata: cmd_source_file_data,
 ) -> cmd_retval {
     cdata.decrement_depth();
     cfg_print_causes(item_handle);
@@ -161,7 +161,7 @@ unsafe fn cmd_source_file_complete(mut cdata: Box<cmd_source_file_data>) {
     let new_item_allocation = cmdq_get_callback_owned(
         c"cmd_source_file_complete_cb",
         Some(Box::new(move |item| unsafe {
-            cmd_source_file_complete_cb(item, cdata)
+            cmd_source_file_complete_cb(item, *cdata)
         })),
     );
     cmdq_insert_after(&after_owner, new_item_allocation);
@@ -269,28 +269,27 @@ unsafe fn cmd_source_file_exec(
     let mut parse_flags: ::core::ffi::c_int = 0;
     let mut i: u_int = 0;
     let mut j: u_int = 0;
-    if c.is_none() {
-        if cmd_source_file_depth >= CMD_SOURCE_FILE_DEPTH_LIMIT as u_int {
-            cmdq_error(item_handle, |out| out.write_all(b"too many nested files"));
-            return CMD_RETURN_ERROR;
+    match &c {
+        None => {
+            if cmd_source_file_depth >= CMD_SOURCE_FILE_DEPTH_LIMIT as u_int {
+                cmdq_error(item_handle, |out| out.write_all(b"too many nested files"));
+                return CMD_RETURN_ERROR;
+            }
+            cmd_source_file_depth = cmd_source_file_depth.wrapping_add(1);
+            log_debug(format_args!("{}: depth now {}", "cmd_source_file_exec", {
+                cmd_source_file_depth
+            }));
         }
-        cmd_source_file_depth = cmd_source_file_depth.wrapping_add(1);
-        log_debug(format_args!("{}: depth now {}", "cmd_source_file_exec", {
-            cmd_source_file_depth
-        }));
-    } else {
-        let Some(depth) = c
-            .as_ref()
-            .expect("live client")
-            .enter_source_file(CMD_SOURCE_FILE_DEPTH_LIMIT as u32)
-        else {
-            cmdq_error(item_handle, |out| out.write_all(b"too many nested files"));
-            return CMD_RETURN_ERROR;
-        };
-        log_debug(format_args!(
-            "{}: depth now {}",
-            "cmd_source_file_exec", depth
-        ));
+        Some(client) => {
+            let Some(depth) = client.enter_source_file(CMD_SOURCE_FILE_DEPTH_LIMIT as u32) else {
+                cmdq_error(item_handle, |out| out.write_all(b"too many nested files"));
+                return CMD_RETURN_ERROR;
+            };
+            log_debug(format_args!(
+                "{}: depth now {}",
+                "cmd_source_file_exec", depth
+            ));
+        }
     }
     let mut cdata = Box::new(cmd_source_file_data {
         item: std::rc::Rc::downgrade(item_handle),

@@ -479,8 +479,8 @@ impl Screen {
                 32..=126 => self.put(byte as char),
                 _ => {
                     let n = match byte {
-                        ..0xe0 => 2,
-                        ..0xf0 => 3,
+                        0x80..0xe0 => 2,
+                        0xe0..0xf0 => 3,
                         _ => 4,
                     };
                     if start + n > bytes.len() {

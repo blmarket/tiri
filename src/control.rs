@@ -117,168 +117,6 @@ fn control_add_block(
     cs.add_block(owner)
 }
 
-#[cfg(test)]
-mod control_queue_tests {
-    use super::*;
-
-    #[test]
-    fn state_block_owner_preserves_order_addresses_and_reply_accounting() {
-        unsafe {
-            let mut owner = control_state::new();
-            let cs = &mut owner;
-
-            let output = control_add_block(cs, control_block::new(None, 10));
-            let reply_text = CString::new(b"reply-\xff".as_slice()).unwrap();
-            let reply = control_add_block(cs, control_block::new(Some(reply_text), 0));
-            cs.queued_reply_bytes = 8;
-            for size in 1..=64 {
-                control_add_block(cs, control_block::new(None, size));
-            }
-
-            assert_eq!(control_first_block(cs), output);
-            assert_eq!(cs.block(1), reply);
-            assert_eq!(
-                reply
-                    .try_borrow_mut()
-                    .expect("live control block")
-                    .line
-                    .as_deref()
-                    .expect("reply text")
-                    .to_bytes(),
-                b"reply-\xff"
-            );
-
-            control_free_block(cs, &output);
-            assert_eq!(control_first_block(cs), reply);
-            assert_eq!(cs.queued_reply_bytes, 8);
-            control_free_block(cs, &reply);
-            assert_eq!(cs.block(0), control_first_block(cs));
-            assert_eq!(cs.queued_reply_bytes, 0);
-        }
-    }
-
-    #[test]
-    fn deferred_line_transfer_keeps_bytes_alive() {
-        let mut owner = control_state::new();
-        owner
-            .deferred
-            .push_back(CString::new(b"first-\xff".as_slice()).unwrap());
-        owner.deferred.push_back(CString::new("second").unwrap());
-        let line = owner.deferred.pop_front().unwrap();
-        assert_eq!(line.as_bytes(), b"first-\xff");
-        let line = owner.deferred.pop_front().unwrap();
-        assert_eq!(line.as_bytes(), b"second");
-    }
-
-    #[test]
-    fn pane_block_handles_keep_order_and_addresses_while_state_owns_blocks() {
-        unsafe {
-            let mut owner = control_state::new();
-            let cs = &mut owner;
-            let first = control_add_block(cs, control_block::new(None, 12));
-            let first_weak = first.clone();
-            let middle = control_add_block(cs, control_block::new(None, 23));
-            let middle_weak = middle.clone();
-            let last = control_add_block(cs, control_block::new(None, 34));
-            let last_weak = last.clone();
-            let mut pane = control_pane {
-                pane: 7,
-                offset: window_pane_offset { used: 0 },
-                queued: window_pane_offset { used: 0 },
-                flags: 0,
-                pending_flag: 0,
-                blocks: VecDeque::from([first_weak, middle_weak.clone(), last_weak]),
-            };
-
-            assert_eq!(control_first_pane_block(&pane), first);
-            control_remove_pane_block(&mut pane, &middle);
-            control_free_block(cs, &middle);
-            assert!(!middle_weak.is_alive());
-            assert_eq!(control_first_pane_block(&pane), first);
-            assert_eq!(last.try_borrow_mut().expect("live control block").size, 34);
-            assert_eq!(cs.block(0), first);
-            assert_eq!(cs.block(1), last);
-            control_remove_pane_block(&mut pane, &first);
-            control_free_block(cs, &first);
-            assert_eq!(control_first_pane_block(&pane), last);
-            assert_eq!(control_first_block(cs), last);
-            control_remove_pane_block(&mut pane, &last);
-            control_free_block(cs, &last);
-            assert!(!control_first_block(cs).is_alive());
-        }
-    }
-
-    #[test]
-    fn pending_snapshot_defers_reentrant_appends_to_the_next_pass() {
-        let mut owner = control_state::new();
-        owner.pending_panes.extend([4, 9]);
-        let pass = owner.pending_snapshot();
-        owner.pending_panes.push_back(12);
-        assert_eq!(pass, [4, 9]);
-        assert!(owner.remove_pending(4));
-        assert!(!owner.remove_pending(4));
-        assert_eq!(owner.pending_snapshot(), [9, 12]);
-    }
-
-    #[test]
-    fn pane_index_owns_pane_boxes_and_keeps_addresses_stable() {
-        let mut index = Default::default();
-        let mut id = 4;
-        let mut offset = window_pane_offset::default();
-        offset.used = 123;
-        let first = control_add_pane(&mut index, id, offset);
-        assert_eq!((first.offset.used, first.queued.used), (123, 123));
-        first.flags = CONTROL_PANE_OFF;
-        let address = first as *mut control_pane as usize;
-        for id in 5..100 {
-            control_add_pane(&mut index, id, offset);
-        }
-        id = 4;
-        offset.used = 456;
-        let first = control_add_pane(&mut index, id, offset);
-        assert_eq!(first as *mut control_pane as usize, address);
-        assert_eq!(
-            (first.offset.used, first.queued.used, first.flags),
-            (123, 123, CONTROL_PANE_OFF)
-        );
-        let moved = index;
-        assert_eq!(moved.get(&9).unwrap().pane, 9);
-        assert!(moved.get(&100).is_none());
-        drop(moved);
-    }
-
-    #[test]
-    fn window_index_owns_overrides_and_borrows_stable_entries() {
-        let mut index: control_windows = Default::default();
-        assert!(index.get(&4).is_none());
-        index.remove(&4);
-        assert!(index.is_empty());
-
-        control_windows_set(&mut index, 4, 80, 24);
-        let address = index.get(&4).unwrap().as_ref() as *const control_window as usize;
-        for id in 5..100 {
-            control_windows_set(&mut index, id, id, id + 1);
-        }
-        control_windows_set(&mut index, 4, 120, 40);
-        let mut moved = index;
-        let first = moved.get(&4).unwrap();
-        assert_eq!(first.as_ref() as *const control_window as usize, address);
-        assert_eq!((first.sx, first.sy), (120, 40));
-        moved.remove(&4);
-        assert!(moved.get(&4).is_none());
-        assert_eq!(moved.get(&9).unwrap().sx, 9);
-        // Dropping a populated index owns cleanup for all remaining overrides.
-        drop(moved);
-
-        let mut index = Default::default();
-        control_windows_set(&mut index, 4, 80, 24);
-        index.remove(&4);
-        assert!(index.is_empty());
-        control_windows_set(&mut index, 4, 90, 30);
-        assert_eq!(index.get(&4).unwrap().sy, 30);
-    }
-}
-
 unsafe fn control_free_block(cs: &mut control_state, cb: &refbox::Weak<control_block>) {
     control_release_block(&mut cs.all_blocks, &mut cs.queued_reply_bytes, cb);
 }
@@ -1385,4 +1223,165 @@ fn control_windows_set(windows: &mut control_windows, window: u_int, sx: u_int, 
         .or_insert_with(|| Box::new(control_window { window, sx, sy }));
     entry.sx = sx;
     entry.sy = sy;
+}
+
+#[cfg(test)]
+mod control_queue_tests {
+    use super::*;
+
+    #[test]
+    fn state_block_owner_preserves_order_addresses_and_reply_accounting() {
+        unsafe {
+            let mut owner = control_state::new();
+            let cs = &mut owner;
+
+            let output = control_add_block(cs, control_block::new(None, 10));
+            let reply_text = CString::new(b"reply-\xff".as_slice()).unwrap();
+            let reply = control_add_block(cs, control_block::new(Some(reply_text), 0));
+            cs.queued_reply_bytes = 8;
+            for size in 1..=64 {
+                control_add_block(cs, control_block::new(None, size));
+            }
+
+            assert_eq!(control_first_block(cs), output);
+            assert_eq!(cs.block(1), reply);
+            assert_eq!(
+                reply
+                    .try_borrow_mut()
+                    .expect("live control block")
+                    .line
+                    .as_deref()
+                    .expect("reply text")
+                    .to_bytes(),
+                b"reply-\xff"
+            );
+
+            control_free_block(cs, &output);
+            assert_eq!(control_first_block(cs), reply);
+            assert_eq!(cs.queued_reply_bytes, 8);
+            control_free_block(cs, &reply);
+            assert_eq!(cs.block(0), control_first_block(cs));
+            assert_eq!(cs.queued_reply_bytes, 0);
+        }
+    }
+
+    #[test]
+    fn deferred_line_transfer_keeps_bytes_alive() {
+        let mut owner = control_state::new();
+        owner
+            .deferred
+            .push_back(CString::new(b"first-\xff".as_slice()).unwrap());
+        owner.deferred.push_back(CString::new("second").unwrap());
+        let line = owner.deferred.pop_front().unwrap();
+        assert_eq!(line.as_bytes(), b"first-\xff");
+        let line = owner.deferred.pop_front().unwrap();
+        assert_eq!(line.as_bytes(), b"second");
+    }
+
+    #[test]
+    fn pane_block_handles_keep_order_and_addresses_while_state_owns_blocks() {
+        unsafe {
+            let mut owner = control_state::new();
+            let cs = &mut owner;
+            let first = control_add_block(cs, control_block::new(None, 12));
+            let first_weak = first.clone();
+            let middle = control_add_block(cs, control_block::new(None, 23));
+            let middle_weak = middle.clone();
+            let last = control_add_block(cs, control_block::new(None, 34));
+            let last_weak = last.clone();
+            let mut pane = control_pane {
+                pane: 7,
+                offset: window_pane_offset { used: 0 },
+                queued: window_pane_offset { used: 0 },
+                flags: 0,
+                pending_flag: 0,
+                blocks: VecDeque::from([first_weak, middle_weak.clone(), last_weak]),
+            };
+
+            assert_eq!(control_first_pane_block(&pane), first);
+            control_remove_pane_block(&mut pane, &middle);
+            control_free_block(cs, &middle);
+            assert!(!middle_weak.is_alive());
+            assert_eq!(control_first_pane_block(&pane), first);
+            assert_eq!(last.try_borrow_mut().expect("live control block").size, 34);
+            assert_eq!(cs.block(0), first);
+            assert_eq!(cs.block(1), last);
+            control_remove_pane_block(&mut pane, &first);
+            control_free_block(cs, &first);
+            assert_eq!(control_first_pane_block(&pane), last);
+            assert_eq!(control_first_block(cs), last);
+            control_remove_pane_block(&mut pane, &last);
+            control_free_block(cs, &last);
+            assert!(!control_first_block(cs).is_alive());
+        }
+    }
+
+    #[test]
+    fn pending_snapshot_defers_reentrant_appends_to_the_next_pass() {
+        let mut owner = control_state::new();
+        owner.pending_panes.extend([4, 9]);
+        let pass = owner.pending_snapshot();
+        owner.pending_panes.push_back(12);
+        assert_eq!(pass, [4, 9]);
+        assert!(owner.remove_pending(4));
+        assert!(!owner.remove_pending(4));
+        assert_eq!(owner.pending_snapshot(), [9, 12]);
+    }
+
+    #[test]
+    fn pane_index_owns_pane_boxes_and_keeps_addresses_stable() {
+        let mut index = Default::default();
+        let mut id = 4;
+        let mut offset = window_pane_offset { used: 123 };
+        let first = control_add_pane(&mut index, id, offset);
+        assert_eq!((first.offset.used, first.queued.used), (123, 123));
+        first.flags = CONTROL_PANE_OFF;
+        let address = first as *mut control_pane as usize;
+        for id in 5..100 {
+            control_add_pane(&mut index, id, offset);
+        }
+        id = 4;
+        offset.used = 456;
+        let first = control_add_pane(&mut index, id, offset);
+        assert_eq!(first as *mut control_pane as usize, address);
+        assert_eq!(
+            (first.offset.used, first.queued.used, first.flags),
+            (123, 123, CONTROL_PANE_OFF)
+        );
+        let moved = index;
+        assert_eq!(moved.get(&9).unwrap().pane, 9);
+        assert!(!moved.contains_key(&100));
+        drop(moved);
+    }
+
+    #[test]
+    fn window_index_owns_overrides_and_borrows_stable_entries() {
+        let mut index: control_windows = Default::default();
+        assert!(!index.contains_key(&4));
+        index.remove(&4);
+        assert!(index.is_empty());
+
+        control_windows_set(&mut index, 4, 80, 24);
+        let address = index.get(&4).unwrap().as_ref() as *const control_window as usize;
+        for id in 5..100 {
+            control_windows_set(&mut index, id, id, id + 1);
+        }
+        control_windows_set(&mut index, 4, 120, 40);
+        let mut moved = index;
+        let first = moved.get(&4).unwrap();
+        assert_eq!(first.as_ref() as *const control_window as usize, address);
+        assert_eq!((first.sx, first.sy), (120, 40));
+        moved.remove(&4);
+        assert!(!moved.contains_key(&4));
+        assert_eq!(moved.get(&9).unwrap().sx, 9);
+        // Dropping a populated index owns cleanup for all remaining overrides.
+        drop(moved);
+
+        let mut index = Default::default();
+        control_windows_set(&mut index, 4, 80, 24);
+        index.remove(&4);
+        assert!(index.is_empty());
+        control_windows_set(&mut index, 4, 90, 30);
+        assert_eq!(index.get(&4).unwrap().sy, 30);
+    }
 }

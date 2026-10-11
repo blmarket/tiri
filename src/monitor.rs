@@ -840,13 +840,11 @@ pub unsafe fn monitor_remove(monitor: &refbox::Weak<monitor_set>, name: &CStr) {
     }
 }
 pub unsafe fn monitor_get_fire_count(monitor: &refbox::Weak<monitor_set>, name: &CStr) -> u_int {
-    let name = name;
     monitor_borrow(monitor)
         .and_then(|state| state.items.get(name.to_bytes()).map(|item| item.fire_count))
         .unwrap_or(0)
 }
 pub unsafe fn monitor_get_fire_time(monitor: &refbox::Weak<monitor_set>, name: &CStr) -> time_t {
-    let name = name;
     monitor_borrow(monitor)
         .and_then(|state| state.items.get(name.to_bytes()).map(|item| item.fire_time))
         .unwrap_or(0)
@@ -1024,7 +1022,7 @@ mod ownership_tests {
         unsafe {
             let owner = monitor_create(Rc::new(|_| {}));
             for name in [c"a", c"c", c"e"] {
-                monitor_add(&owner.downgrade(), &*name, MONITOR_SESSION, -1, c"", 0);
+                monitor_add(&owner.downgrade(), name, MONITOR_SESSION, -1, c"", 0);
             }
             let mut visited = Vec::new();
             monitor_visit(&owner.downgrade(), |name, _| {
@@ -1032,7 +1030,7 @@ mod ownership_tests {
                 if name.as_c_str() == c"a" {
                     // b precedes the already-prefetched c; d is discovered later.
                     for name in [c"b", c"d"] {
-                        monitor_add(&owner.downgrade(), &*name, MONITOR_SESSION, -1, c"", 0);
+                        monitor_add(&owner.downgrade(), name, MONITOR_SESSION, -1, c"", 0);
                     }
                     // A prefetched name resolves the current entry when visited.
                     monitor_add(&owner.downgrade(), c"c", MONITOR_SESSION, -1, c"new", 0);
@@ -1124,7 +1122,7 @@ mod ownership_tests {
                     let mut capture = callback_capture.borrow_mut();
                     capture.value = change.value.to_bytes().to_vec();
                     capture.last = change.last.expect("previous value").to_bytes().to_vec();
-                    monitor_remove(&capture.set, &*change.name);
+                    monitor_remove(&capture.set, change.name);
                     capture.name = change.name.to_bytes().to_vec();
                 }),
             );
@@ -1203,8 +1201,7 @@ mod ownership_tests {
             assert!(monitor_items_insert(&mut head, first_owner).is_ok());
             assert!(monitor_items_insert(&mut head, second_owner).is_ok());
             let (existing, duplicate_owner) = monitor_items_insert(&mut head, duplicate_owner)
-                .err()
-                .expect("duplicate returned to caller");
+                .expect_err("duplicate returned to caller");
             assert_eq!(existing, first);
             assert!(monitor_items_remove(&mut other, first).is_none());
 

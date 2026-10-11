@@ -179,14 +179,14 @@ pub unsafe fn environ_update(oo: *mut options, src: &environ, dst: &mut environ)
         let mut found = false;
         for entry in environ_iter(src) {
             if fnmatch(pattern.as_ptr(), entry.name.as_ptr(), 0) == 0 {
-                environ_set(dst, &*entry.name, 0, |out| {
+                environ_set(dst, &entry.name, 0, |out| {
                     write_cstr(out, entry.value.as_deref())
                 });
                 found = true;
             }
         }
         if !found {
-            environ_clear(dst, &*pattern);
+            environ_clear(dst, &pattern);
         }
     }
 }

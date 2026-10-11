@@ -75,7 +75,7 @@ pub fn json_find<'a>(node: &'a json_node, key: &CStr) -> Option<&'a json_node> {
     fields.entries.get(key.to_bytes()).map(Box::as_ref)
 }
 
-pub fn json_array_members(node: &json_node) -> Option<&[Box<json_node>]> {
+pub fn json_array_members(node: &json_node) -> Option<&[json_node]> {
     let JsonValue::Array(members) = &node.value else {
         return None;
     };
@@ -132,7 +132,7 @@ pub fn json_find_object<'a>(node: &'a json_node, key: &CStr) -> Result<&'a json_
 pub fn json_find_array<'a>(
     node: &'a json_node,
     key: &CStr,
-) -> Result<&'a [Box<json_node>], CString> {
+) -> Result<&'a [json_node], CString> {
     json_array_members(json_require(node, key)?)
         .ok_or_else(|| json_key_error(key, b"expected an array"))
 }
@@ -388,7 +388,7 @@ fn json_parse_array(
         let JsonValue::Array(members) = &mut array.value else {
             unreachable!()
         };
-        members.members.push(member);
+        members.members.push(*member);
         if tokens[0].type_0 == TOK_COMMA {
             if tokens[1].type_0 == TOK_CLOSEARRAY {
                 pctx.error(c"invalid array", &tokens[0]);

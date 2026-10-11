@@ -201,7 +201,7 @@ pub(super) unsafe fn pipe_pane(
                 ::core::ptr::null_mut::<sigset_t>(),
             );
             drop(child);
-            (*wp).pipe_fd = Some(parent.into());
+            (*wp).pipe_fd = Some(parent);
             memcpy(
                 wpo as *mut ::core::ffi::c_void,
                 &raw mut (*wp).offset as *const ::core::ffi::c_void,

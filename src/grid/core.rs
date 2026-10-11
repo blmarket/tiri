@@ -1640,7 +1640,7 @@ mod storage_tests {
                     grid_get_cell(&owner, 1 + index as u_int, row, &mut actual);
                     assert_eq!(
                         (actual.data.size, actual.data.width, actual.data.data[0]),
-                        (1, 1, *byte as u8)
+                        (1, 1, (*byte))
                     );
                     assert_eq!((actual.fg, actual.link), (cell.fg, cell.link));
                 }
@@ -1699,8 +1699,10 @@ mod storage_tests {
     #[test]
     fn clearing_extended_cells_preserves_moved_entries_and_reuses_live_slots() {
         unsafe {
-            let mut line = grid_line::default();
-            line.cellsize = 2;
+            let mut line = grid_line {
+                cellsize: 2,
+                ..Default::default()
+            };
             line.celldata.resize_with(2, grid_cell_entry::default);
             let mut cell = grid_default_cell;
             cell.fg = COLOUR_FLAG_RGB | 0xabcdef;
@@ -1743,10 +1745,12 @@ mod storage_tests {
     #[test]
     fn line_compaction_remaps_live_offsets_and_releases_unused_entries() {
         unsafe {
-            let mut line = grid_line::default();
-            line.cellsize = 5;
-            line.extdsize = 6;
-            line.flags = GRID_LINE_EXTENDED as u_short;
+            let mut line = grid_line {
+                cellsize: 5,
+                extdsize: 6,
+                flags: GRID_LINE_EXTENDED as u_short,
+                ..Default::default()
+            };
             line.celldata.resize_with(6, grid_cell_entry::default);
             line.extddata.resize_with(6, grid_extd_entry::default);
             for (index, extended) in line.extddata.iter_mut().enumerate() {
@@ -1824,8 +1828,8 @@ mod storage_tests {
     fn borrowed_line_lookup_covers_history_and_rejects_spare_storage() {
         unsafe {
             let mut owner = grid_create(8, 2, 10);
-            grid_scroll_history(&mut *owner, 8);
-            grid_adjust_lines(&mut *owner, 4);
+            grid_scroll_history(&mut owner, 8);
+            grid_adjust_lines(&mut owner, 4);
             owner.linedata[0].time = 1;
             owner.linedata[1].time = 9;
             owner.linedata[3].time = 77;
@@ -1882,20 +1886,20 @@ mod storage_tests {
             let mut a = grid_create(2, 1, 10);
             let mut b = grid_create(2, 1, 10);
             assert_eq!(grid_compare(&a, &b), 0);
-            grid_set_cell(&mut *a, 0, 0, &grid_default_cell);
+            grid_set_cell(&mut a, 0, 0, &grid_default_cell);
             assert_eq!(grid_compare(&a, &b), 1);
-            grid_set_cell(&mut *b, 0, 0, &grid_default_cell);
+            grid_set_cell(&mut b, 0, 0, &grid_default_cell);
             assert_eq!(grid_compare(&a, &b), 0);
 
-            grid_scroll_history(&mut *a, 8);
-            grid_scroll_history(&mut *b, 8);
+            grid_scroll_history(&mut a, 8);
+            grid_scroll_history(&mut b, 8);
             let mut cell = grid_default_cell;
             cell.data.data[0] = b'X';
-            grid_set_cell(&mut *a, 0, 1, &cell);
+            grid_set_cell(&mut a, 0, 1, &cell);
             assert_eq!(grid_compare(&a, &b), 0);
-            grid_set_cell(&mut *a, 0, 0, &cell);
+            grid_set_cell(&mut a, 0, 0, &cell);
             assert_eq!(grid_compare(&a, &b), 1);
-            grid_set_cell(&mut *b, 0, 0, &cell);
+            grid_set_cell(&mut b, 0, 0, &cell);
             a.linedata[0].time = 17;
             a.linedata[0].flags ^= GRID_LINE_WRAPPED as u_short;
             assert_eq!(grid_compare(&a, &b), 0);
@@ -1946,7 +1950,7 @@ mod storage_tests {
             compact.fg = COLOUR_FLAG_256 | 99;
             compact.bg = COLOUR_FLAG_256 | 17;
             compact.attr = 3;
-            grid_set_cell(&mut *owner, 0, 0, &compact);
+            grid_set_cell(&mut owner, 0, 0, &compact);
             grid_get_cell(&owner, 0, 0, &mut actual);
             assert_same_cell(&actual, &compact);
 
@@ -1955,13 +1959,13 @@ mod storage_tests {
             extended.fg = COLOUR_FLAG_RGB | 0xabcdef;
             extended.us = COLOUR_FLAG_RGB | 0x123456;
             extended.link = 7;
-            grid_set_cell(&mut *owner, 1, 0, &extended);
+            grid_set_cell(&mut owner, 1, 0, &extended);
             grid_get_cell(&owner, 1, 0, &mut actual);
             assert_same_cell(&actual, &extended);
 
             let mut tab = default;
             grid_set_tab(&mut tab, 3);
-            grid_set_cell(&mut *owner, 3, 0, &tab);
+            grid_set_cell(&mut owner, 3, 0, &tab);
             grid_get_cell(&owner, 3, 0, &mut actual);
             assert_same_cell(&actual, &tab);
 
@@ -1977,9 +1981,9 @@ mod storage_tests {
             let mut owner = grid_create(8, 1, 0);
             let mut cell = grid_default_cell;
             grid_set_tab(&mut cell, 3);
-            grid_set_cell(&mut *owner, 2, 0, &cell);
-            grid_set_padding(&mut *owner, 3, 0, 8);
-            grid_set_padding(&mut *owner, 4, 0, 8);
+            grid_set_cell(&mut owner, 2, 0, &cell);
+            grid_set_padding(&mut owner, 3, 0, 8);
+            grid_set_padding(&mut owner, 4, 0, 8);
             assert_eq!(grid_line_length(&owner, 0), 5);
             assert_eq!(grid_line_limit(&owner, 0), 2);
             for (x, expected) in [(2, 3), (3, 2), (4, 1)] {
@@ -1990,8 +1994,8 @@ mod storage_tests {
 
             cell = grid_default_cell;
             cell.data = crate::src::text::utf8::utf8_fromcstr_vec(c"　")[0];
-            grid_set_cell(&mut *owner, 5, 0, &cell);
-            grid_set_padding(&mut *owner, 6, 0, 8);
+            grid_set_cell(&mut owner, 5, 0, &cell);
+            grid_set_padding(&mut owner, 6, 0, 8);
             assert_eq!(grid_line_length(&owner, 0), 7);
             assert_eq!(grid_line_limit(&owner, 0), 5);
             assert_eq!(grid_in_set(&owner, 5, 0, c" "), 2);
@@ -2007,7 +2011,7 @@ mod storage_tests {
             let mut cell = grid_default_cell;
             cell.data.data[0] = *byte;
             cell.fg = COLOUR_FLAG_RGB | (*byte as i32);
-            grid_set_cell(&mut *owner, 0, y as u_int, &cell);
+            grid_set_cell(&mut owner, 0, y as u_int, &cell);
         }
         owner
     }
@@ -2251,18 +2255,18 @@ mod storage_tests {
                 owner.linedata[0].extddata.as_ptr(),
                 copy.linedata[0].extddata.as_ptr()
             );
-            grid_move_lines(&mut *owner, 0, 1, 3, 8);
+            grid_move_lines(&mut owner, 0, 1, 3, 8);
             assert_eq!(labels(&mut owner), b"BCD ");
-            grid_move_lines(&mut *owner, 1, 0, 3, 8);
+            grid_move_lines(&mut owner, 1, 0, 3, 8);
             assert_eq!(labels(&mut owner), b" BCD");
             assert_eq!(labels(&mut copy), b"ABCD");
             drop(owner);
             assert_eq!(labels(&mut copy), b"ABCD");
 
             let mut owner = labeled_grid();
-            grid_scroll_history_region(&mut *owner, 1, 2, 8);
+            grid_scroll_history_region(&mut owner, 1, 2, 8);
             assert_eq!(labels(&mut owner), b"BAC D");
-            grid_collect_history(&mut *owner, 0);
+            grid_collect_history(&mut owner, 0);
             assert_eq!(labels(&mut owner), b"AC D");
             // Repeated extended-cell updates and history compaction must retain
             // the active entry while releasing unreachable extended entries.
@@ -2270,15 +2274,15 @@ mod storage_tests {
             cell.fg = COLOUR_FLAG_RGB | 0x123456;
             cell.data.data[0] = b'X';
             for _ in 0..8 {
-                grid_set_cell(&mut *owner, 0, 0, &cell);
+                grid_set_cell(&mut owner, 0, 0, &cell);
             }
-            grid_scroll_history(&mut *owner, 8);
+            grid_scroll_history(&mut owner, 8);
             assert_eq!(labels(&mut owner), b"XC D ");
             assert_eq!(
                 owner.linedata[0].extddata.len(),
                 owner.linedata[0].extdsize as usize
             );
-            grid_clear_history(&mut *owner);
+            grid_clear_history(&mut owner);
             assert_eq!(labels(&mut owner), b"C D ");
             assert_eq!(owner.linedata.len(), 4);
         }

@@ -164,7 +164,7 @@ unsafe fn session_group_fire(name: &CStr, group: *mut session_group, owner: &Ses
         write_cstr(out, &*((*group).name))
     });
     event_payload_set_uint(&mut payload, c"group_size", session_group_count(group));
-    events_fire(&*name, payload);
+    events_fire(name, payload);
 }
 
 pub unsafe fn session_group_add(group: *mut session_group, owner: &SessionRef) {

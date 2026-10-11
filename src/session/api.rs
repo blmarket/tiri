@@ -438,7 +438,7 @@ impl Session for SessionRef {
         ((*self.get()).statusat, (*self.get()).statuslines)
     }
     unsafe fn join_group(&self, name: &CStr) {
-        let group = session_group_new(&*name);
+        let group = session_group_new(name);
         session_group_add(group, self);
         session_group_synchronize_to(self);
     }
@@ -471,7 +471,7 @@ impl Session for SessionRef {
         super::format::format_value(self, key, context)
     }
     unsafe fn destroy(&self, notify: bool, from: &CStr) {
-        session_destroy(self, notify as i32, &*from);
+        session_destroy(self, notify as i32, from);
     }
 }
 

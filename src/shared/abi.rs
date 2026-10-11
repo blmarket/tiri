@@ -64,6 +64,8 @@ pub type __syscall_slong_t = ::core::ffi::c_long;
 pub type __clockid_t = ::core::ffi::c_int;
 pub type clockid_t = __clockid_t;
 
+pub const NULL_0: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
+
 #[cfg(test)]
 mod tests {
     use super::NULL;
@@ -73,5 +75,3 @@ mod tests {
         assert!(NULL.is_null());
     }
 }
-
-pub const NULL_0: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();

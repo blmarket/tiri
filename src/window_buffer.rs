@@ -503,7 +503,7 @@ unsafe fn window_buffer_draw_waiting(data: *mut window_buffer_modedata) {
 unsafe fn window_buffer_edit_close_cb(
     editor: NonNull<spawn_editor_state>,
     buf: Option<Vec<u8>>,
-    ed: Box<window_buffer_editdata>,
+    ed: window_buffer_editdata,
 ) {
     let mut data: *mut window_buffer_modedata = ::core::ptr::null_mut::<window_buffer_modedata>();
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
@@ -577,11 +577,11 @@ unsafe fn window_buffer_start_edit(
     let name = paste_buffer_name(&pb.borrow()).to_owned();
     // The completion callback owns the record. Cancellation drops its capture;
     // dispatch supplies editor identity without sharing the startup record.
-    let ed = Box::new(window_buffer_editdata {
+    let ed = window_buffer_editdata {
         wp_id: mode_pane_owner.id(),
         name: Some(name),
         pb: pb.clone(),
-    });
+    };
     let editor = spawn_editor(
         client_owner,
         |stream| spawn_editor_write(stream, paste_buffer_data(&pb.borrow()).unwrap_or_default()),
@@ -709,11 +709,11 @@ mod tests {
                     0,
                 );
                 let original = paste_get_name(name).unwrap();
-                let edit = Box::new(window_buffer_editdata {
+                let edit = window_buffer_editdata {
                     wp_id: u_int::MAX,
                     name: Some(name.to_owned()),
                     pb: original.clone(),
-                });
+                };
                 let buffer_observer = edit.pb.clone();
                 drop(original);
                 let capture = (edit, Rc::new(()));
@@ -801,7 +801,7 @@ mod tests {
         let first_name = first.try_borrow_mut().unwrap().name.as_ptr();
         drop(source);
 
-        let empty = CStr::from_bytes_with_nul(b"\0").unwrap();
+        let empty = c"";
         let empty_item = window_buffer_add_item(&mut items, empty, 0, 0);
         for _ in 0..512 {
             window_buffer_add_item(&mut items, empty, 0, 0);

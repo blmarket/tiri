@@ -49,9 +49,19 @@ fn run_parse(input: &[u8]) -> (Option<Vec<u8>>, Option<Vec<u8>>) {
     })
 }
 
+/// Input bytes, then the expected option name and array key.
+type ParseCase = (&'static [u8], Option<&'static [u8]>, Option<&'static [u8]>);
+/// Input bytes, expected name and array key, then the expected ambiguity flag.
+type MatchCase = (
+    &'static [u8],
+    Option<&'static [u8]>,
+    Option<&'static [u8]>,
+    i32,
+);
+
 #[test]
 fn options_parse_array_key_preserves_bytes_and_normalizes_numbers() {
-    let cases: &[(&[u8], Option<&[u8]>, Option<&[u8]>)] = &[
+    let cases: &[ParseCase] = &[
         (b"status-format[0007]", Some(b"status-format"), Some(b"7")),
         (b"@test[\xff]", Some(b"@test"), Some(b"\xff")),
         (
@@ -71,7 +81,7 @@ fn options_parse_array_key_preserves_bytes_and_normalizes_numbers() {
     }
 }
 
-const CASES: &[(&[u8], Option<&[u8]>, Option<&[u8]>, i32)] = &[
+const CASES: &[MatchCase] = &[
     (b"status", Some(b"status"), None, 0),
     (b"mous", Some(b"mouse"), None, 0),
     (b"pane-colors", Some(b"pane-colours"), None, 0),

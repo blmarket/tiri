@@ -45,6 +45,7 @@ fn filename_survives_input_mutation_and_original_command_free() {
 
         // The parser must retain its own bytes, including non-UTF-8 bytes.
         filename[0] = b'X';
+        assert_eq!(&filename[..7], b"Xource-");
         assert_eq!(
             CStr::from_ptr(
                 (command.try_borrow_mut().unwrap().file)

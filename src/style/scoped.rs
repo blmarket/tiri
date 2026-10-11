@@ -90,9 +90,9 @@ pub unsafe fn style_resolve_with_options(
             let mut parsed = None;
             let mut parse = |entry: &mut options_entry| {
                 let failed = if colour {
-                    style_parse_colour(&mut entry.style, &grid_default_cell, &*text)
+                    style_parse_colour(&mut entry.style, &grid_default_cell, &text)
                 } else {
-                    style_parse(&mut entry.style, &grid_default_cell, &*text)
+                    style_parse(&mut entry.style, &grid_default_cell, &text)
                 };
                 if failed == 0 {
                     parsed = Some(entry.style);

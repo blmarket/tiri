@@ -31,7 +31,7 @@ use std::rc::Rc;
 
 /// The command set and its children retain their separate heap allocations.
 struct cmd_parse_commands {
-    items: Vec<Box<cmd_parse_command>>,
+    items: Vec<cmd_parse_command>,
 }
 
 struct cmd_parse_command {
@@ -113,11 +113,11 @@ unsafe fn cmd_parse_print_commands(mut pi: *mut cmd_parse_input, cmdlist: &cmd_l
         });
     }
 }
-fn cmd_parse_new_command(line: u_int) -> Box<cmd_parse_command> {
-    Box::new(cmd_parse_command {
+fn cmd_parse_new_command(line: u_int) -> cmd_parse_command {
+    cmd_parse_command {
         line,
         arguments: VecDeque::new(),
-    })
+    }
 }
 
 fn cmd_parse_new_commands() -> Box<cmd_parse_commands> {
@@ -183,7 +183,7 @@ impl hmux_cmdparse::Context for ParserContext<'_, '_> {
             if self.0.borrow().input.flags & CMD_PARSE_PARSEONLY == 0 && active {
                 environ_put(
                     global_environ.as_deref_mut().expect("environment"),
-                    &*(token.as_c_str()),
+                    token.as_c_str(),
                     if hidden { ENVIRON_HIDDEN } else { 0 },
                 );
             }
@@ -621,8 +621,10 @@ mod parser_collection_tests {
     use super::*;
 
     unsafe fn parse_commands(input: &[u8]) -> Vec<Vec<Vec<u8>>> {
-        let mut pi: cmd_parse_input = Default::default();
-        pi.line = 1;
+        let mut pi = cmd_parse_input {
+            line: 1,
+            ..Default::default()
+        };
         let cmds = cmd_parse_do_buffer(input, &mut pi).expect("valid parser test input");
         let result = cmds
             .items
@@ -642,7 +644,7 @@ mod parser_collection_tests {
         result
     }
 
-    fn string_command(line: u_int, strings: &[&CStr]) -> Box<cmd_parse_command> {
+    fn string_command(line: u_int, strings: &[&CStr]) -> cmd_parse_command {
         let mut cmd = cmd_parse_new_command(line);
         cmd.arguments.extend(
             strings
@@ -684,12 +686,13 @@ mod parser_collection_tests {
                 .push_back(Box::new(cmd_parse_argument::ParsedCommands(second)));
             let mut source = cmd_parse_new_commands();
             source.items.push(outer);
-            let address = source.items[0].as_ref() as *const cmd_parse_command as usize;
+            let address =
+                source.items[0].arguments[0].as_ref() as *const cmd_parse_argument as usize;
             let mut destination = cmd_parse_new_commands();
             destination.items.push(source.items.pop().unwrap());
             drop(source);
             assert_eq!(
-                destination.items[0].as_ref() as *const cmd_parse_command as usize,
+                destination.items[0].arguments[0].as_ref() as *const cmd_parse_argument as usize,
                 address
             );
             assert_eq!(first_observer.strong_count(), 1);
@@ -865,8 +868,10 @@ mod parser_collection_tests {
     fn parser_collections_preserve_order_scope_and_element_addresses() {
         let _guard = crate::src::cfg::CFG_TEST_LOCK.lock().unwrap();
         unsafe {
-            let mut pi: cmd_parse_input = Default::default();
-            pi.line = 1;
+            let mut pi = cmd_parse_input {
+                line: 1,
+                ..Default::default()
+            };
             let malformed = b"%if 1\ndisplay-message unfinished\n";
             let failed = cmd_parse_do_buffer(malformed, &mut pi);
             assert!(failed.is_err());
@@ -903,7 +908,6 @@ mod parser_collection_tests {
                 .arguments
                 .push_back(Box::new(cmd_parse_argument::String(CString::default())));
             cmds.items.push(first_cmd);
-            let command_address = cmds.items[0].as_ref() as *const cmd_parse_command as usize;
             let argument_address =
                 cmds.items[0].arguments[0].as_ref() as *const cmd_parse_argument as usize;
             for _ in 0..128 {
@@ -912,10 +916,6 @@ mod parser_collection_tests {
                     .push_back(Box::new(cmd_parse_argument::String(CString::default())));
                 cmds.items.push(cmd);
             }
-            assert_eq!(
-                cmds.items[0].as_ref() as *const cmd_parse_command as usize,
-                command_address
-            );
             assert_eq!(
                 cmds.items[0].arguments[0].as_ref() as *const cmd_parse_argument as usize,
                 argument_address

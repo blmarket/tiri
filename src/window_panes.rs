@@ -286,12 +286,8 @@ unsafe fn window_panes_get_border_cell(
         None,
         None,
         s.as_ref(),
-        (if s.is_none() {
-            refbox::Weak::new()
-        } else {
-            s.as_ref().expect("live session").current_winlink()
-        })
-        .clone(),
+        s.as_ref()
+            .map_or_else(refbox::Weak::new, |session| session.current_winlink()),
         Some(&mode_pane_owner),
     );
     ft = &raw mut *ft_owner;
@@ -394,11 +390,9 @@ unsafe fn window_panes_draw_format(
     };
     let session_owner = window_panes_session(data);
     let mut s = session_owner.clone();
-    let mut wl: refbox::Weak<winlink> = if s.is_none() {
-        refbox::Weak::new()
-    } else {
-        s.as_ref().expect("live session").current_winlink()
-    };
+    let mut wl: refbox::Weak<winlink> = s
+        .as_ref()
+        .map_or_else(refbox::Weak::new, |session| session.current_winlink());
     if sx == 0 as u_int {
         if let Some(owner) = session_owner {
             drop(owner);
@@ -475,11 +469,9 @@ unsafe fn window_panes_draw_number(
     };
     let session_owner = window_panes_session(data);
     let mut s = session_owner.clone();
-    let mut wl: refbox::Weak<winlink> = if s.is_none() {
-        refbox::Weak::new()
-    } else {
-        s.as_ref().expect("live session").current_winlink()
-    };
+    let mut wl: refbox::Weak<winlink> = s
+        .as_ref()
+        .map_or_else(refbox::Weak::new, |session| session.current_winlink());
     let options_window = mode_pane_owner.window_observer();
     let mut fgc: grid_cell = grid_cell {
         data: utf8_data {
@@ -542,8 +534,8 @@ unsafe fn window_panes_draw_number(
     if window_panes_get_source(data, &raw mut wl, &mut source_session_owner).is_some() {
         s = source_session_owner.clone();
     }
-    if !s.is_none() && !wl.is_alive() {
-        wl = s.as_ref().expect("live session").current_winlink();
+    if let Some(session) = s.as_ref().filter(|_| !wl.is_alive()) {
+        wl = session.current_winlink();
     }
     let window = wp_owner
         .window_observer()
@@ -903,7 +895,7 @@ unsafe fn window_panes_init(
             Err(error) => {
                 cmdq_error(item_handle.expect("command queue item"), |out| {
                     out.write_all(b"delay ")?;
-                    write_cstr(out, &*(error.message()))
+                    write_cstr(out, error.message())
                 });
                 return ::core::ptr::null_mut::<screen>();
             }

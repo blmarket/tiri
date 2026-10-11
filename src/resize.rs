@@ -87,8 +87,8 @@ unsafe fn clients_calculate_size(
     }
     *ypixel = 0 as u_int;
     *xpixel = *ypixel;
-    if type_0 == WINDOW_SIZE_LATEST && w_owner.is_some() {
-        n = clients_with_window(w_owner.expect("live window"));
+    if let Some(w) = w_owner.filter(|_| type_0 == WINDOW_SIZE_LATEST) {
+        n = clients_with_window(w);
     }
     if !(type_0 == WINDOW_SIZE_MANUAL) {
         let mut registry_loop_0_owner = clients.first();
@@ -271,24 +271,17 @@ pub unsafe fn default_window_size(
     if type_0 == -(1 as ::core::ffi::c_int) {
         type_0 = options_get_number(global_w_options, c"window-size") as ::core::ffi::c_int;
     }
-    if type_0 == WINDOW_SIZE_LATEST
-        && !c.is_none()
-        && c_owner
-            .expect("sizing client")
-            .participates_in_window_sizing()
+    if let Some(sizing_client) = c_owner
+        .filter(|client| type_0 == WINDOW_SIZE_LATEST && client.participates_in_window_sizing())
     {
-        let dimensions = c_owner.expect("latest sizing client").window_size(None);
+        let dimensions = sizing_client.window_size(None);
         (*sx, *sy, *xpixel, *ypixel) = dimensions;
         log_debug(format_args!(
             "{}: using {}x{} from {}",
             "default_window_size",
             { *sx },
             { *sy },
-            log_cstr(
-                (c.as_ref().expect("live client").name())
-                    .as_deref()
-                    .unwrap_or(c"(null)")
-            )
+            log_cstr(sizing_client.name().as_deref().unwrap_or(c"(null)"))
         ));
     } else {
         if !c.is_none()

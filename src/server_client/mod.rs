@@ -1112,9 +1112,7 @@ unsafe fn server_client_lost(client_owner: &ClientRef) {
 }
 /// Release one client owner after its caller has finished using it.
 fn server_client_unref_owned(c: ClientRef) {
-    unsafe {
-        log_debug(format_args!("unref client {}", log_pointer(c.get())));
-    }
+    log_debug(format_args!("unref client {}", log_pointer(c.get())));
     drop(c);
 }
 unsafe fn server_client_free(c_value: &mut client) {
@@ -1527,64 +1525,61 @@ unsafe fn server_client_check_mouse(
                 let hit_window_owner = &window_owner;
                 selected_pane = hit_window_owner.pane_at(px, py);
             }
-            if selected_pane.is_none() {
-                loc = KEYC_MOUSE_LOCATION_EMPTY;
-                (*m).w = (window_owner).id() as ::core::ffi::c_int;
-                log_debug(format_args!(
-                    "mouse {},{} on empty area",
-                    (x) as u32,
-                    (y) as u32
-                ));
-            } else {
-                let pane_owner = selected_pane.as_ref().expect("mouse target pane");
-                loc = server_client_check_mouse_in_pane(
-                    pane_owner,
-                    px as ::core::ffi::c_int,
-                    py as ::core::ffi::c_int,
-                    &mut sl_mpos,
-                );
-                if loc as ::core::ffi::c_uint
-                    == KEYC_MOUSE_LOCATION_PANE as ::core::ffi::c_int as ::core::ffi::c_uint
-                {
+            match &selected_pane {
+                None => {
+                    loc = KEYC_MOUSE_LOCATION_EMPTY;
+                    (*m).w = (window_owner).id() as ::core::ffi::c_int;
                     log_debug(format_args!(
-                        "mouse {},{} on pane %{}",
+                        "mouse {},{} on empty area",
                         (x) as u32,
-                        (y) as u32,
-                        { selected_pane.as_ref().expect("selected pane").id() }
+                        (y) as u32
                     ));
-                } else if loc as ::core::ffi::c_uint
-                    == KEYC_MOUSE_LOCATION_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
-                {
-                    if let Some(range) = selected_pane
-                        .as_ref()
-                        .expect("mouse border pane")
-                        .status_range(px, py)
-                    {
-                        n = range.argument;
-                        loc = (KEYC_MOUSE_LOCATION_CONTROL0 as ::core::ffi::c_int as u_int)
-                            .wrapping_add(n)
-                            as key_code_mouse_location;
-                    }
-                    log_debug(format_args!("mouse on pane %{} border", {
-                        selected_pane.as_ref().expect("selected pane").id()
-                    }));
-                } else if loc as ::core::ffi::c_uint
-                    == KEYC_MOUSE_LOCATION_SCROLLBAR_UP as ::core::ffi::c_int as ::core::ffi::c_uint
-                    || loc as ::core::ffi::c_uint
-                        == KEYC_MOUSE_LOCATION_SCROLLBAR_SLIDER as ::core::ffi::c_int
-                            as ::core::ffi::c_uint
-                    || loc as ::core::ffi::c_uint
-                        == KEYC_MOUSE_LOCATION_SCROLLBAR_DOWN as ::core::ffi::c_int
-                            as ::core::ffi::c_uint
-                {
-                    log_debug(format_args!("mouse on pane %{} scrollbar", {
-                        selected_pane.as_ref().expect("selected pane").id()
-                    }));
                 }
-                (*m).wp = selected_pane.as_ref().expect("selected pane").id() as ::core::ffi::c_int;
-                (*m).w =
-                    server_client_pane_window_id(selected_pane.as_ref().expect("selected pane"))
-                        as ::core::ffi::c_int;
+                Some(pane_owner) => {
+                    loc = server_client_check_mouse_in_pane(
+                        pane_owner,
+                        px as ::core::ffi::c_int,
+                        py as ::core::ffi::c_int,
+                        &mut sl_mpos,
+                    );
+                    if loc as ::core::ffi::c_uint
+                        == KEYC_MOUSE_LOCATION_PANE as ::core::ffi::c_int as ::core::ffi::c_uint
+                    {
+                        log_debug(format_args!(
+                            "mouse {},{} on pane %{}",
+                            (x) as u32,
+                            (y) as u32,
+                            { pane_owner.id() }
+                        ));
+                    } else if loc as ::core::ffi::c_uint
+                        == KEYC_MOUSE_LOCATION_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
+                    {
+                        if let Some(range) = pane_owner.status_range(px, py) {
+                            n = range.argument;
+                            loc = (KEYC_MOUSE_LOCATION_CONTROL0 as ::core::ffi::c_int as u_int)
+                                .wrapping_add(n)
+                                as key_code_mouse_location;
+                        }
+                        log_debug(format_args!("mouse on pane %{} border", {
+                            pane_owner.id()
+                        }));
+                    } else if loc as ::core::ffi::c_uint
+                        == KEYC_MOUSE_LOCATION_SCROLLBAR_UP as ::core::ffi::c_int
+                            as ::core::ffi::c_uint
+                        || loc as ::core::ffi::c_uint
+                            == KEYC_MOUSE_LOCATION_SCROLLBAR_SLIDER as ::core::ffi::c_int
+                                as ::core::ffi::c_uint
+                        || loc as ::core::ffi::c_uint
+                            == KEYC_MOUSE_LOCATION_SCROLLBAR_DOWN as ::core::ffi::c_int
+                                as ::core::ffi::c_uint
+                    {
+                        log_debug(format_args!("mouse on pane %{} scrollbar", {
+                            pane_owner.id()
+                        }));
+                    }
+                    (*m).wp = pane_owner.id() as ::core::ffi::c_int;
+                    (*m).w = server_client_pane_window_id(pane_owner) as ::core::ffi::c_int;
+                }
             }
         } else {
             server_client_update_scrollbar_hover(
@@ -1669,18 +1664,20 @@ unsafe fn server_client_check_mouse(
                 == KEYC_MOUSE_LOCATION_PANE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             key = KEYC_MOUSEMOVE_PANE as ::core::ffi::c_ulong as key_code;
-            if !selected_pane.is_none()
-                && !window_owner.active_pane().as_ref().is_some_and(|active| {
-                    Rc::ptr_eq(active, selected_pane.as_ref().expect("mouse pane"))
-                })
-                && s.as_ref()
-                    .expect("live session")
-                    .with_options_mut(|options| options_get_number(options, c"focus-follows-mouse"))
-                    != 0
-            {
+            if let Some(pane_owner) = selected_pane.as_ref().filter(|pane_owner| {
+                !window_owner
+                    .active_pane()
+                    .as_ref()
+                    .is_some_and(|active| Rc::ptr_eq(active, pane_owner))
+                    && s.as_ref()
+                        .expect("live session")
+                        .with_options_mut(|options| {
+                            options_get_number(options, c"focus-follows-mouse")
+                        })
+                        != 0
+            }) {
                 WindowRef::clone(&(window_owner)).redraw_active_switch(selected_pane.as_ref());
-                WindowRef::clone(&(window_owner))
-                    .select_pane(selected_pane.as_ref().expect("mouse pane"), true);
+                WindowRef::clone(&(window_owner)).select_pane(pane_owner, true);
                 server_redraw_window_borders(&(window_owner));
                 server_status_window(&(window_owner));
             }
@@ -1982,13 +1979,14 @@ unsafe fn server_client_key_callback(
     };
     c = c_owner.get();
     s = (*c).session_handle();
-    if !(s.is_none() || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
-        wl = s.as_ref().expect("live session").current_winlink();
+    if let Some(session) = s
+        .as_ref()
+        .filter(|_| (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t == 0)
+    {
+        wl = session.current_winlink();
         (*c).last_activity_time = (*c).activity_time;
         (*c).activity_time = SystemTime::now();
-        s.as_ref()
-            .expect("live session")
-            .update_activity(Some((*c).activity_time));
+        session.update_activity(Some((*c).activity_time));
         (*m).valid = 0 as ::core::ffi::c_int;
         if key == KEYC_MOUSE as ::core::ffi::c_ulong as key_code
             || key == KEYC_DOUBLECLICK as ::core::ffi::c_ulong as key_code
@@ -2052,9 +2050,7 @@ unsafe fn server_client_key_callback(
                             <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int
                                 as ::core::ffi::c_ulonglong)
                                 << 32 as ::core::ffi::c_int)
-                    && s.as_ref()
-                        .expect("live session")
-                        .with_options_mut(|options| options_get_number(options, c"mouse"))
+                    && session.with_options_mut(|options| options_get_number(options, c"mouse"))
                         == 0
                 {
                     current_block = 15469183920764600035;
@@ -2107,14 +2103,10 @@ unsafe fn server_client_key_callback(
                         table = table_owner.as_ref().expect("key table").clone();
                         first = table.clone();
                         '_table_changed: loop {
-                            prefix = s
-                                .as_ref()
-                                .expect("live session")
+                            prefix = session
                                 .with_options_mut(|options| options_get_number(options, c"prefix"))
                                 as key_code;
-                            prefix2 = s
-                                .as_ref()
-                                .expect("live session")
+                            prefix2 = session
                                 .with_options_mut(|options| options_get_number(options, c"prefix2"))
                                 as key_code;
                             key0 = (key as ::core::ffi::c_ulonglong
@@ -2138,17 +2130,20 @@ unsafe fn server_client_key_callback(
                             } else {
                                 flags = (*c).flags;
                                 loop {
-                                    if target_pane.is_none() {
-                                        log_debug(format_args!(
-                                            "key table {} (no pane)",
-                                            log_cstr(&table.borrow().name)
-                                        ));
-                                    } else {
-                                        log_debug(format_args!(
-                                            "key table {} (pane %{})",
-                                            log_cstr(&table.borrow().name),
-                                            { target_pane.as_ref().expect("key pane").id() }
-                                        ));
+                                    match &target_pane {
+                                        None => {
+                                            log_debug(format_args!(
+                                                "key table {} (no pane)",
+                                                log_cstr(&table.borrow().name)
+                                            ));
+                                        }
+                                        Some(target_pane) => {
+                                            log_debug(format_args!(
+                                                "key table {} (pane %{})",
+                                                log_cstr(&table.borrow().name),
+                                                { target_pane.id() }
+                                            ));
+                                        }
                                     }
                                     if (*c).flags & CLIENT_REPEAT as uint64_t != 0 {
                                         log_debug(format_args!("currently repeating"));
@@ -2681,13 +2676,8 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
         }
         flags = (*tty).flags & TTY_BLOCK;
         (*tty).flags &= !TTY_BLOCK;
-        if active_owner.is_some() && (*c).prompt.is_none() {
-            s = Some(
-                active_owner
-                    .as_ref()
-                    .expect("active pane")
-                    .screen_mode(true),
-            );
+        if let Some(active) = active_owner.as_ref().filter(|_| (*c).prompt.is_none()) {
+            s = Some(active.screen_mode(true));
         } else {
             s = Some(ScreenMode::from(&*(*c).status.active_screen()));
         }

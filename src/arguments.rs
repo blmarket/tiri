@@ -540,137 +540,6 @@ pub fn args_get(args: &args, flag: u_char) -> Option<&CStr> {
     args_last_value(args, flag).and_then(args_value::as_string)
 }
 
-#[cfg(test)]
-mod ownership_tests {
-    use super::*;
-
-    #[test]
-    fn parser_slices_preserve_optional_values_and_flag_boundaries() {
-        unsafe {
-            let spec = args_parse {
-                template: c"ao::r:",
-                lower: 0,
-                upper: -1,
-                cb: None,
-            };
-            let cases: &[(&[&[u8]], Option<&[u8]>, bool, &[&[u8]])] = &[
-                (&[b"-o"], None, false, &[]),
-                (&[b"-o", b"-a"], None, true, &[]),
-                (&[b"-o", b"--", b"-a"], None, false, &[b"-a"]),
-                (&[b"-o", b"-7"], Some(b"-7"), false, &[]),
-                (&[b"-o", b"-"], Some(b"-"), false, &[]),
-                (&[b"-o", b""], Some(b""), false, &[]),
-                (
-                    &[b"-aoRAW\xff", b"tail"],
-                    Some(b"RAW\xff"),
-                    true,
-                    &[b"tail"],
-                ),
-                (&[b"", b"-a"], None, false, &[b"", b"-a"]),
-                (&[b"-", b"-a"], None, false, &[b"-", b"-a"]),
-            ];
-            for &(input, optional, has_a, positional) in cases {
-                let values: Vec<_> = std::iter::once(b"test".as_slice())
-                    .chain(input.iter().copied())
-                    .map(|bytes| args_value::string(CString::new(bytes).unwrap()))
-                    .collect();
-                let parsed = args_parse(&spec, &values).unwrap();
-                assert_eq!(
-                    args_last_string(&parsed, b'o').map(CStr::to_bytes),
-                    optional,
-                    "{input:?}"
-                );
-                assert_eq!(
-                    args_flags(&parsed).any(|flag| flag == b'a'),
-                    has_a,
-                    "{input:?}"
-                );
-                let actual: Vec<_> = parsed
-                    .values
-                    .iter()
-                    .map(|value| value.as_string().expect("string argument").to_bytes())
-                    .collect();
-                assert_eq!(actual, positional, "{input:?}");
-            }
-            let values = [
-                args_value::string(c"test".to_owned()),
-                args_value::string(c"-a".to_owned()),
-                args_value::string(c"-?".to_owned()),
-            ];
-            assert!(args_parse(&spec, &values[..2]).is_ok());
-            assert!(matches!(
-                args_parse(&spec, &values),
-                Err(ArgsParseError::Usage)
-            ));
-            let required = args_parse { lower: 1, ..spec };
-            assert!(args_parse(&required, &[]).is_ok());
-            assert!(args_parse(&required, &values[..1]).is_err());
-        }
-    }
-
-    #[test]
-    fn dropping_argument_owner_releases_flag_and_positional_command_references() {
-        unsafe {
-            let commands = crate::src::cmd::cmd_list_new();
-            let mut owner = Box::new(args::empty());
-            args_set_value(
-                &mut owner,
-                b'c',
-                Some(args_value::commands(commands.clone())),
-                0,
-            );
-            args_push_positional_owned(&mut owner, args_value::commands(commands.clone()));
-            assert_eq!(std::rc::Rc::strong_count(&commands), 3);
-            drop(owner);
-            assert_eq!(std::rc::Rc::strong_count(&commands), 1);
-            drop(commands);
-        }
-    }
-
-    #[test]
-    fn repeated_optional_flags_keep_first_insertion_flags_and_print_separator() {
-        let mut args = args::empty();
-        args_set_value(&mut args, b'x', None, 0);
-        args_set_value(&mut args, b'x', None, 0);
-        args_set_value(
-            &mut args,
-            b'f',
-            Some(args_value::string(c"first".into())),
-            0,
-        );
-        args_set_value(
-            &mut args,
-            b'f',
-            Some(args_value::string(c"second".into())),
-            0,
-        );
-        args_set_value(&mut args, b'z', None, ARGS_ENTRY_OPTIONAL_VALUE);
-        args_set_value(&mut args, b'z', None, 0);
-        args_push_positional_owned(&mut args, args_value::string(c"-target".into()));
-        unsafe {
-            assert_eq!(
-                args_print_cstring(&mut args).as_bytes(),
-                b"-xx -f first -f second -z -- -target"
-            );
-            assert_eq!(
-                args_percentage_result(&mut args, b'z', 0, 100, 80),
-                Err(ArgumentValueError::Empty)
-            );
-            assert_eq!(
-                args_percentage_result(&mut args, b'y', 0, 100, 80),
-                Err(ArgumentValueError::Missing)
-            );
-            // A string value is converted, as a percentage of the current
-            // value or as a plain number.
-            args_set_value(&mut args, b'p', Some(args_value::string(c"25%".into())), 0);
-            args_set_value(&mut args, b'n', Some(args_value::string(c"7".into())), 0);
-            assert_eq!(args_percentage_result(&mut args, b'p', 0, 100, 80), Ok(20));
-            assert_eq!(args_percentage_result(&mut args, b'n', 0, 100, 80), Ok(7));
-        }
-        assert_eq!(args.tree[&b'z'].flags, ARGS_ENTRY_OPTIONAL_VALUE);
-    }
-}
-
 pub unsafe fn args_count(mut args: *mut args) -> u_int {
     (*args).values.len() as u_int
 }
@@ -1037,4 +906,137 @@ pub fn args_string_percentage_result(
         maxval,
         curval,
     )
+}
+
+#[cfg(test)]
+mod ownership_tests {
+    use super::*;
+
+    #[test]
+    fn parser_slices_preserve_optional_values_and_flag_boundaries() {
+        unsafe {
+            let spec = args_parse {
+                template: c"ao::r:",
+                lower: 0,
+                upper: -1,
+                cb: None,
+            };
+            /// (argv, -o value, whether -a is set, remaining positional arguments)
+            type ParseCase<'a> = (&'a [&'a [u8]], Option<&'a [u8]>, bool, &'a [&'a [u8]]);
+            let cases: &[ParseCase] = &[
+                (&[b"-o"], None, false, &[]),
+                (&[b"-o", b"-a"], None, true, &[]),
+                (&[b"-o", b"--", b"-a"], None, false, &[b"-a"]),
+                (&[b"-o", b"-7"], Some(b"-7"), false, &[]),
+                (&[b"-o", b"-"], Some(b"-"), false, &[]),
+                (&[b"-o", b""], Some(b""), false, &[]),
+                (
+                    &[b"-aoRAW\xff", b"tail"],
+                    Some(b"RAW\xff"),
+                    true,
+                    &[b"tail"],
+                ),
+                (&[b"", b"-a"], None, false, &[b"", b"-a"]),
+                (&[b"-", b"-a"], None, false, &[b"-", b"-a"]),
+            ];
+            for &(input, optional, has_a, positional) in cases {
+                let values: Vec<_> = std::iter::once(b"test".as_slice())
+                    .chain(input.iter().copied())
+                    .map(|bytes| args_value::string(CString::new(bytes).unwrap()))
+                    .collect();
+                let parsed = args_parse(&spec, &values).unwrap();
+                assert_eq!(
+                    args_last_string(&parsed, b'o').map(CStr::to_bytes),
+                    optional,
+                    "{input:?}"
+                );
+                assert_eq!(
+                    args_flags(&parsed).any(|flag| flag == b'a'),
+                    has_a,
+                    "{input:?}"
+                );
+                let actual: Vec<_> = parsed
+                    .values
+                    .iter()
+                    .map(|value| value.as_string().expect("string argument").to_bytes())
+                    .collect();
+                assert_eq!(actual, positional, "{input:?}");
+            }
+            let values = [
+                args_value::string(c"test".to_owned()),
+                args_value::string(c"-a".to_owned()),
+                args_value::string(c"-?".to_owned()),
+            ];
+            assert!(args_parse(&spec, &values[..2]).is_ok());
+            assert!(matches!(
+                args_parse(&spec, &values),
+                Err(ArgsParseError::Usage)
+            ));
+            let required = args_parse { lower: 1, ..spec };
+            assert!(args_parse(&required, &[]).is_ok());
+            assert!(args_parse(&required, &values[..1]).is_err());
+        }
+    }
+
+    #[test]
+    fn dropping_argument_owner_releases_flag_and_positional_command_references() {
+        unsafe {
+            let commands = crate::src::cmd::cmd_list_new();
+            let mut owner = Box::new(args::empty());
+            args_set_value(
+                &mut owner,
+                b'c',
+                Some(args_value::commands(commands.clone())),
+                0,
+            );
+            args_push_positional_owned(&mut owner, args_value::commands(commands.clone()));
+            assert_eq!(std::rc::Rc::strong_count(&commands), 3);
+            drop(owner);
+            assert_eq!(std::rc::Rc::strong_count(&commands), 1);
+            drop(commands);
+        }
+    }
+
+    #[test]
+    fn repeated_optional_flags_keep_first_insertion_flags_and_print_separator() {
+        let mut args = args::empty();
+        args_set_value(&mut args, b'x', None, 0);
+        args_set_value(&mut args, b'x', None, 0);
+        args_set_value(
+            &mut args,
+            b'f',
+            Some(args_value::string(c"first".into())),
+            0,
+        );
+        args_set_value(
+            &mut args,
+            b'f',
+            Some(args_value::string(c"second".into())),
+            0,
+        );
+        args_set_value(&mut args, b'z', None, ARGS_ENTRY_OPTIONAL_VALUE);
+        args_set_value(&mut args, b'z', None, 0);
+        args_push_positional_owned(&mut args, args_value::string(c"-target".into()));
+        unsafe {
+            assert_eq!(
+                args_print_cstring(&args).as_bytes(),
+                b"-xx -f first -f second -z -- -target"
+            );
+            assert_eq!(
+                args_percentage_result(&mut args, b'z', 0, 100, 80),
+                Err(ArgumentValueError::Empty)
+            );
+            assert_eq!(
+                args_percentage_result(&mut args, b'y', 0, 100, 80),
+                Err(ArgumentValueError::Missing)
+            );
+            // A string value is converted, as a percentage of the current
+            // value or as a plain number.
+            args_set_value(&mut args, b'p', Some(args_value::string(c"25%".into())), 0);
+            args_set_value(&mut args, b'n', Some(args_value::string(c"7".into())), 0);
+            assert_eq!(args_percentage_result(&mut args, b'p', 0, 100, 80), Ok(20));
+            assert_eq!(args_percentage_result(&mut args, b'n', 0, 100, 80), Ok(7));
+        }
+        assert_eq!(args.tree[&b'z'].flags, ARGS_ENTRY_OPTIONAL_VALUE);
+    }
 }

@@ -963,16 +963,18 @@ pub(super) unsafe fn format_loop_sessions(
         format_log1(es, c"format_loop_sessions".as_ptr(), |out| {
             write!(out, "session loop: ${}", session.id())
         });
-        let use_0 = if active.is_some()
-            && format_client_owner.as_ref().is_some_and(|client| {
-                client
-                    .attached_session()
-                    .upgrade()
-                    .is_some_and(|attached| std::rc::Rc::ptr_eq(&attached, session))
-            }) {
-            active.as_ref().unwrap().as_ptr()
-        } else {
-            all.as_ptr()
+        let use_0 = match &active {
+            Some(active_fmt)
+                if format_client_owner.as_ref().is_some_and(|client| {
+                    client
+                        .attached_session()
+                        .upgrade()
+                        .is_some_and(|attached| std::rc::Rc::ptr_eq(&attached, session))
+                }) =>
+            {
+                active_fmt.as_ptr()
+            }
+            _ => all.as_ptr(),
         };
         let mut nft_owner = format_create_with_client(
             client_owner.as_ref(),
@@ -1143,10 +1145,9 @@ pub(super) unsafe fn format_loop_windows(
                 { window_id }
             )
         });
-        let use_0 = if active.is_some() && wl == session.current_winlink() {
-            active.as_ref().unwrap().as_ptr()
-        } else {
-            all.as_ptr()
+        let use_0 = match &active {
+            Some(active_fmt) if wl == session.current_winlink() => active_fmt.as_ptr(),
+            _ => all.as_ptr(),
         };
         let mut nft_owner = format_create_with_client(
             client_owner.as_ref(),
@@ -1256,16 +1257,17 @@ pub(super) unsafe fn format_loop_panes(
         format_log1(es, c"format_loop_panes".as_ptr(), |out| {
             write!(out, "pane loop: %{}", pane.id())
         });
-        let use_0 = if active.is_some()
-            && format_window_owner
-                .as_ref()
-                .expect("live window")
-                .active_pane()
-                .is_some_and(|active| std::rc::Rc::ptr_eq(&active, pane))
-        {
-            active.as_ref().unwrap().as_ptr()
-        } else {
-            all.as_ptr()
+        let use_0 = match &active {
+            Some(active_fmt)
+                if format_window_owner
+                    .as_ref()
+                    .expect("live window")
+                    .active_pane()
+                    .is_some_and(|active| std::rc::Rc::ptr_eq(&active, pane)) =>
+            {
+                active_fmt.as_ptr()
+            }
+            _ => all.as_ptr(),
         };
         let mut nft_owner = format_create_with_client(
             client_owner.as_ref(),
@@ -1555,7 +1557,7 @@ pub(super) unsafe fn format_loop_environ(
     let mut buffer = Vec::new();
     for (index, name) in names.into_iter().enumerate() {
         let mut entry = None;
-        access(&mut |environment| entry = environ_find(environment, &*name).cloned());
+        access(&mut |environment| entry = environ_find(environment, &name).cloned());
         let Some(entry) = entry else { continue };
         format_log1(es, c"format_loop_environ".as_ptr(), |out| {
             out.write_all(b"environment loop: ")?;
@@ -1771,7 +1773,7 @@ pub(super) unsafe fn format_replace_expression(
         }
         if argc >= 3 as ::core::ffi::c_int {
             let parsed = strtonum(
-                &*(*mexp).arg(2),
+                (*mexp).arg(2),
                 -FORMAT_MAX_PRECISION as ::core::ffi::c_longlong,
                 FORMAT_MAX_PRECISION as ::core::ffi::c_longlong,
             );
@@ -1794,93 +1796,97 @@ pub(super) unsafe fn format_replace_expression(
             7376217411786091060 => {}
             _ => {
                 let operands = format_choose(es, copy);
-                if operands.is_none() {
-                    format_log1(es, c"format_replace_expression".as_ptr(), |out| {
-                        out.write_all(b"expression syntax error")
-                    });
-                } else {
-                    let (left, right) = operands.unwrap();
-                    mleft = strtod(left.as_ptr(), &raw mut endch);
-                    if *endch as ::core::ffi::c_int != '\0' as i32 {
+                match operands {
+                    None => {
                         format_log1(es, c"format_replace_expression".as_ptr(), |out| {
-                            out.write_all(b"expression left side is invalid: ")?;
-                            write_cstr(out, &*left)
+                            out.write_all(b"expression syntax error")
                         });
-                    } else {
-                        mright = strtod(right.as_ptr(), &raw mut endch);
+                    }
+                    Some((left, right)) => {
+                        mleft = strtod(left.as_ptr(), &raw mut endch);
                         if *endch as ::core::ffi::c_int != '\0' as i32 {
                             format_log1(es, c"format_replace_expression".as_ptr(), |out| {
-                                out.write_all(b"expression right side is invalid: ")?;
-                                write_cstr(out, &*right)
+                                out.write_all(b"expression left side is invalid: ")?;
+                                write_cstr(out, &*left)
                             });
                         } else {
-                            if use_fp == 0 {
-                                mleft = format_expression_integer(mleft) as f64;
-                                mright = format_expression_integer(mright) as f64;
+                            mright = strtod(right.as_ptr(), &raw mut endch);
+                            if *endch as ::core::ffi::c_int != '\0' as i32 {
+                                format_log1(es, c"format_replace_expression".as_ptr(), |out| {
+                                    out.write_all(b"expression right side is invalid: ")?;
+                                    write_cstr(out, &*right)
+                                });
+                            } else {
+                                if use_fp == 0 {
+                                    mleft = format_expression_integer(mleft) as f64;
+                                    mright = format_expression_integer(mright) as f64;
+                                }
+                                format_log1(es, c"format_replace_expression".as_ptr(), |out| {
+                                    out.write_all(b"expression left side is: ")?;
+                                    out.write_all(format_float(mleft, prec as i32).as_bytes())
+                                });
+                                format_log1(es, c"format_replace_expression".as_ptr(), |out| {
+                                    out.write_all(b"expression right side is: ")?;
+                                    out.write_all(format_float(mright, prec as i32).as_bytes())
+                                });
+                                match operator as ::core::ffi::c_uint {
+                                    0 => {
+                                        result = mleft + mright;
+                                    }
+                                    1 => {
+                                        result = mleft - mright;
+                                    }
+                                    2 => {
+                                        result = mleft * mright;
+                                    }
+                                    3 => {
+                                        result = mleft / mright;
+                                    }
+                                    4 => {
+                                        result = fmod(mleft, mright);
+                                    }
+                                    5 => {
+                                        result = (fabs(mleft - mright) < 1e-9f64)
+                                            as ::core::ffi::c_int
+                                            as ::core::ffi::c_double;
+                                    }
+                                    6 => {
+                                        result = (fabs(mleft - mright) > 1e-9f64)
+                                            as ::core::ffi::c_int
+                                            as ::core::ffi::c_double;
+                                    }
+                                    7 => {
+                                        result = (mleft > mright) as ::core::ffi::c_int
+                                            as ::core::ffi::c_double;
+                                    }
+                                    8 => {
+                                        result = (mleft >= mright) as ::core::ffi::c_int
+                                            as ::core::ffi::c_double;
+                                    }
+                                    9 => {
+                                        result = (mleft < mright) as ::core::ffi::c_int
+                                            as ::core::ffi::c_double;
+                                    }
+                                    10 => {
+                                        result = (mleft <= mright) as ::core::ffi::c_int
+                                            as ::core::ffi::c_double;
+                                    }
+                                    _ => {}
+                                }
+                                let value = format_float(
+                                    if use_fp != 0 {
+                                        result
+                                    } else {
+                                        format_expression_integer(result) as f64
+                                    },
+                                    prec as ::core::ffi::c_int,
+                                );
+                                format_log1(es, c"format_replace_expression".as_ptr(), |out| {
+                                    out.write_all(b"expression result is ")?;
+                                    write_cstr(out, &*value)
+                                });
+                                return Some(value);
                             }
-                            format_log1(es, c"format_replace_expression".as_ptr(), |out| {
-                                out.write_all(b"expression left side is: ")?;
-                                out.write_all(format_float(mleft, prec as i32).as_bytes())
-                            });
-                            format_log1(es, c"format_replace_expression".as_ptr(), |out| {
-                                out.write_all(b"expression right side is: ")?;
-                                out.write_all(format_float(mright, prec as i32).as_bytes())
-                            });
-                            match operator as ::core::ffi::c_uint {
-                                0 => {
-                                    result = mleft + mright;
-                                }
-                                1 => {
-                                    result = mleft - mright;
-                                }
-                                2 => {
-                                    result = mleft * mright;
-                                }
-                                3 => {
-                                    result = mleft / mright;
-                                }
-                                4 => {
-                                    result = fmod(mleft, mright);
-                                }
-                                5 => {
-                                    result = (fabs(mleft - mright) < 1e-9f64) as ::core::ffi::c_int
-                                        as ::core::ffi::c_double;
-                                }
-                                6 => {
-                                    result = (fabs(mleft - mright) > 1e-9f64) as ::core::ffi::c_int
-                                        as ::core::ffi::c_double;
-                                }
-                                7 => {
-                                    result = (mleft > mright) as ::core::ffi::c_int
-                                        as ::core::ffi::c_double;
-                                }
-                                8 => {
-                                    result = (mleft >= mright) as ::core::ffi::c_int
-                                        as ::core::ffi::c_double;
-                                }
-                                9 => {
-                                    result = (mleft < mright) as ::core::ffi::c_int
-                                        as ::core::ffi::c_double;
-                                }
-                                10 => {
-                                    result = (mleft <= mright) as ::core::ffi::c_int
-                                        as ::core::ffi::c_double;
-                                }
-                                _ => {}
-                            }
-                            let value = format_float(
-                                if use_fp != 0 {
-                                    result
-                                } else {
-                                    format_expression_integer(result) as f64
-                                },
-                                prec as ::core::ffi::c_int,
-                            );
-                            format_log1(es, c"format_replace_expression".as_ptr(), |out| {
-                                out.write_all(b"expression result is ")?;
-                                write_cstr(out, &*value)
-                            });
-                            return Some(value);
                         }
                     }
                 }
@@ -2047,7 +2053,7 @@ pub(super) unsafe fn format_replace(
                 61 => {
                     if !((*fm).argc() < 1 as ::core::ffi::c_int) {
                         let parsed = strtonum(
-                            &*(*fm).arg(0),
+                            (*fm).arg(0),
                             -FORMAT_MAX_WIDTH as ::core::ffi::c_longlong,
                             FORMAT_MAX_WIDTH as ::core::ffi::c_longlong,
                         );
@@ -2063,7 +2069,7 @@ pub(super) unsafe fn format_replace(
                 112 => {
                     if !((*fm).argc() < 1 as ::core::ffi::c_int) {
                         let parsed = strtonum(
-                            &*(*fm).arg(0),
+                            (*fm).arg(0),
                             -FORMAT_MAX_WIDTH as ::core::ffi::c_longlong,
                             FORMAT_MAX_WIDTH as ::core::ffi::c_longlong,
                         );
@@ -2077,7 +2083,7 @@ pub(super) unsafe fn format_replace(
                     modifiers = (modifiers as ::core::ffi::c_ulonglong | FORMAT_CYCLE) as uint64_t;
                     if !((*fm).argc() < 1 as ::core::ffi::c_int) {
                         let parsed = strtonum(
-                            &*(*fm).arg(0),
+                            (*fm).arg(0),
                             1 as ::core::ffi::c_longlong,
                             100 as ::core::ffi::c_longlong,
                         );
@@ -2464,60 +2470,57 @@ pub(super) unsafe fn format_replace(
             current_block = 1803726662341650892;
         } else if !search.is_null() {
             let new = format_expand1_cstring(es, copy);
-            if format_pane_owner.is_none() {
-                format_log1(es, c"format_replace".as_ptr(), |out| {
-                    out.write_all(b"search '")?;
-                    write_cstr(out, &*new)?;
-                    out.write_all(b"' but no pane")
-                });
-                value = c"0".to_owned();
-            } else {
-                format_log1(es, c"format_replace".as_ptr(), |out| {
-                    out.write_all(b"search '")?;
-                    write_cstr(out, &*new)?;
-                    write!(
-                        out,
-                        "' pane %{}",
-                        format_pane_owner.as_ref().expect("search pane owner").id()
-                    )
-                });
-                value = format_search(
-                    &*search,
-                    format_pane_owner.as_ref().expect("search pane owner"),
-                    &new,
-                );
+            match &format_pane_owner {
+                None => {
+                    format_log1(es, c"format_replace".as_ptr(), |out| {
+                        out.write_all(b"search '")?;
+                        write_cstr(out, &*new)?;
+                        out.write_all(b"' but no pane")
+                    });
+                    value = c"0".to_owned();
+                }
+                Some(search_pane) => {
+                    format_log1(es, c"format_replace".as_ptr(), |out| {
+                        out.write_all(b"search '")?;
+                        write_cstr(out, &*new)?;
+                        write!(out, "' pane %{}", search_pane.id())
+                    });
+                    value = format_search(&*search, search_pane, &new);
+                }
             }
             current_block = 1803726662341650892;
         } else if modifiers & FORMAT_REPEAT as uint64_t != 0 {
             let operands = format_choose(es, copy);
-            if operands.is_none() {
-                format_log1(es, c"format_replace".as_ptr(), |out| {
-                    out.write_all(b"repeat syntax error: ")?;
-                    write_cstr(out, nullable_cstr(copy))
-                });
-                current_block = 6506207624831006569;
-            } else {
-                let (left, right) = operands.unwrap();
-                let parsed = strtonum(
-                    &right,
-                    1 as ::core::ffi::c_longlong,
-                    FORMAT_MAX_REPEAT as ::core::ffi::c_longlong,
-                );
-                nrep = parsed.unwrap_or(0) as u_int;
-                if parsed.is_err() {
-                    value = CString::default();
-                    current_block = 1803726662341650892;
-                } else {
-                    let mut repeated = Vec::new();
-                    current_block = 1803726662341650892;
-                    for _ in 0..nrep {
-                        if format_check_time(es, &raw mut check) == 0 {
-                            current_block = 6506207624831006569;
-                            break;
+            match operands {
+                None => {
+                    format_log1(es, c"format_replace".as_ptr(), |out| {
+                        out.write_all(b"repeat syntax error: ")?;
+                        write_cstr(out, nullable_cstr(copy))
+                    });
+                    current_block = 6506207624831006569;
+                }
+                Some((left, right)) => {
+                    let parsed = strtonum(
+                        &right,
+                        1 as ::core::ffi::c_longlong,
+                        FORMAT_MAX_REPEAT as ::core::ffi::c_longlong,
+                    );
+                    nrep = parsed.unwrap_or(0) as u_int;
+                    if parsed.is_err() {
+                        value = CString::default();
+                        current_block = 1803726662341650892;
+                    } else {
+                        let mut repeated = Vec::new();
+                        current_block = 1803726662341650892;
+                        for _ in 0..nrep {
+                            if format_check_time(es, &raw mut check) == 0 {
+                                current_block = 6506207624831006569;
+                                break;
+                            }
+                            repeated.extend_from_slice(left.as_bytes());
                         }
-                        repeated.extend_from_slice(left.as_bytes());
+                        value = CString::new(repeated).expect("repeated C string contains no NUL");
                     }
-                    value = CString::new(repeated).expect("repeated C string contains no NUL");
                 }
             }
         } else if modifiers & FORMAT_NOT as uint64_t != 0 {
@@ -2543,105 +2546,107 @@ pub(super) unsafe fn format_replace(
             current_block = 1803726662341650892;
         } else if !cmp.is_null() {
             let operands = format_choose(es, copy);
-            if operands.is_none() {
-                format_log1(es, c"format_replace".as_ptr(), |out| {
-                    out.write_all(b"compare ")?;
-                    write_cstr(
-                        out,
-                        nullable_cstr(&raw mut (*cmp).modifier as *mut ::core::ffi::c_char),
-                    )?;
-                    out.write_all(b" syntax error: ")?;
-                    write_cstr(out, nullable_cstr(copy))
-                });
-                current_block = 6506207624831006569;
-            } else {
-                let (left, right) = operands.unwrap();
-                format_log1(es, c"format_replace".as_ptr(), |out| {
-                    out.write_all(b"compare ")?;
-                    write_cstr(
-                        out,
-                        nullable_cstr(&raw mut (*cmp).modifier as *mut ::core::ffi::c_char),
-                    )?;
-                    out.write_all(b" left is: ")?;
-                    write_cstr(out, &*left)
-                });
-                format_log1(es, c"format_replace".as_ptr(), |out| {
-                    out.write_all(b"compare ")?;
-                    write_cstr(
-                        out,
-                        nullable_cstr(&raw mut (*cmp).modifier as *mut ::core::ffi::c_char),
-                    )?;
-                    out.write_all(b" right is: ")?;
-                    write_cstr(out, &*right)
-                });
-                if strcmp(
-                    &raw mut (*cmp).modifier as *mut ::core::ffi::c_char,
-                    c"==".as_ptr(),
-                ) == 0 as ::core::ffi::c_int
-                {
-                    if strcmp(left.as_ptr(), right.as_ptr()) == 0 as ::core::ffi::c_int {
-                        value = c"1".to_owned();
-                    } else {
-                        value = c"0".to_owned();
-                    }
-                } else if strcmp(
-                    &raw mut (*cmp).modifier as *mut ::core::ffi::c_char,
-                    c"!=".as_ptr(),
-                ) == 0 as ::core::ffi::c_int
-                {
-                    if strcmp(left.as_ptr(), right.as_ptr()) != 0 as ::core::ffi::c_int {
-                        value = c"1".to_owned();
-                    } else {
-                        value = c"0".to_owned();
-                    }
-                } else if strcmp(
-                    &raw mut (*cmp).modifier as *mut ::core::ffi::c_char,
-                    c"<".as_ptr(),
-                ) == 0 as ::core::ffi::c_int
-                {
-                    if strcmp(left.as_ptr(), right.as_ptr()) < 0 as ::core::ffi::c_int {
-                        value = c"1".to_owned();
-                    } else {
-                        value = c"0".to_owned();
-                    }
-                } else if strcmp(
-                    &raw mut (*cmp).modifier as *mut ::core::ffi::c_char,
-                    c">".as_ptr(),
-                ) == 0 as ::core::ffi::c_int
-                {
-                    if strcmp(left.as_ptr(), right.as_ptr()) > 0 as ::core::ffi::c_int {
-                        value = c"1".to_owned();
-                    } else {
-                        value = c"0".to_owned();
-                    }
-                } else if strcmp(
-                    &raw mut (*cmp).modifier as *mut ::core::ffi::c_char,
-                    c"<=".as_ptr(),
-                ) == 0 as ::core::ffi::c_int
-                {
-                    if strcmp(left.as_ptr(), right.as_ptr()) <= 0 as ::core::ffi::c_int {
-                        value = c"1".to_owned();
-                    } else {
-                        value = c"0".to_owned();
-                    }
-                } else if strcmp(
-                    &raw mut (*cmp).modifier as *mut ::core::ffi::c_char,
-                    c">=".as_ptr(),
-                ) == 0 as ::core::ffi::c_int
-                {
-                    if strcmp(left.as_ptr(), right.as_ptr()) >= 0 as ::core::ffi::c_int {
-                        value = c"1".to_owned();
-                    } else {
-                        value = c"0".to_owned();
-                    }
-                } else if strcmp(
-                    &raw mut (*cmp).modifier as *mut ::core::ffi::c_char,
-                    c"m".as_ptr(),
-                ) == 0 as ::core::ffi::c_int
-                {
-                    value = format_match(&*cmp, &left, &right);
+            match operands {
+                None => {
+                    format_log1(es, c"format_replace".as_ptr(), |out| {
+                        out.write_all(b"compare ")?;
+                        write_cstr(
+                            out,
+                            nullable_cstr(&raw mut (*cmp).modifier as *mut ::core::ffi::c_char),
+                        )?;
+                        out.write_all(b" syntax error: ")?;
+                        write_cstr(out, nullable_cstr(copy))
+                    });
+                    current_block = 6506207624831006569;
                 }
-                current_block = 1803726662341650892;
+                Some((left, right)) => {
+                    format_log1(es, c"format_replace".as_ptr(), |out| {
+                        out.write_all(b"compare ")?;
+                        write_cstr(
+                            out,
+                            nullable_cstr(&raw mut (*cmp).modifier as *mut ::core::ffi::c_char),
+                        )?;
+                        out.write_all(b" left is: ")?;
+                        write_cstr(out, &*left)
+                    });
+                    format_log1(es, c"format_replace".as_ptr(), |out| {
+                        out.write_all(b"compare ")?;
+                        write_cstr(
+                            out,
+                            nullable_cstr(&raw mut (*cmp).modifier as *mut ::core::ffi::c_char),
+                        )?;
+                        out.write_all(b" right is: ")?;
+                        write_cstr(out, &*right)
+                    });
+                    if strcmp(
+                        &raw mut (*cmp).modifier as *mut ::core::ffi::c_char,
+                        c"==".as_ptr(),
+                    ) == 0 as ::core::ffi::c_int
+                    {
+                        if strcmp(left.as_ptr(), right.as_ptr()) == 0 as ::core::ffi::c_int {
+                            value = c"1".to_owned();
+                        } else {
+                            value = c"0".to_owned();
+                        }
+                    } else if strcmp(
+                        &raw mut (*cmp).modifier as *mut ::core::ffi::c_char,
+                        c"!=".as_ptr(),
+                    ) == 0 as ::core::ffi::c_int
+                    {
+                        if strcmp(left.as_ptr(), right.as_ptr()) != 0 as ::core::ffi::c_int {
+                            value = c"1".to_owned();
+                        } else {
+                            value = c"0".to_owned();
+                        }
+                    } else if strcmp(
+                        &raw mut (*cmp).modifier as *mut ::core::ffi::c_char,
+                        c"<".as_ptr(),
+                    ) == 0 as ::core::ffi::c_int
+                    {
+                        if strcmp(left.as_ptr(), right.as_ptr()) < 0 as ::core::ffi::c_int {
+                            value = c"1".to_owned();
+                        } else {
+                            value = c"0".to_owned();
+                        }
+                    } else if strcmp(
+                        &raw mut (*cmp).modifier as *mut ::core::ffi::c_char,
+                        c">".as_ptr(),
+                    ) == 0 as ::core::ffi::c_int
+                    {
+                        if strcmp(left.as_ptr(), right.as_ptr()) > 0 as ::core::ffi::c_int {
+                            value = c"1".to_owned();
+                        } else {
+                            value = c"0".to_owned();
+                        }
+                    } else if strcmp(
+                        &raw mut (*cmp).modifier as *mut ::core::ffi::c_char,
+                        c"<=".as_ptr(),
+                    ) == 0 as ::core::ffi::c_int
+                    {
+                        if strcmp(left.as_ptr(), right.as_ptr()) <= 0 as ::core::ffi::c_int {
+                            value = c"1".to_owned();
+                        } else {
+                            value = c"0".to_owned();
+                        }
+                    } else if strcmp(
+                        &raw mut (*cmp).modifier as *mut ::core::ffi::c_char,
+                        c">=".as_ptr(),
+                    ) == 0 as ::core::ffi::c_int
+                    {
+                        if strcmp(left.as_ptr(), right.as_ptr()) >= 0 as ::core::ffi::c_int {
+                            value = c"1".to_owned();
+                        } else {
+                            value = c"0".to_owned();
+                        }
+                    } else if strcmp(
+                        &raw mut (*cmp).modifier as *mut ::core::ffi::c_char,
+                        c"m".as_ptr(),
+                    ) == 0 as ::core::ffi::c_int
+                    {
+                        value = format_match(&*cmp, &left, &right);
+                    }
+                    current_block = 1803726662341650892;
+                }
             }
         } else {
             if *copy as ::core::ffi::c_int == '?' as i32 {
@@ -2679,26 +2684,29 @@ pub(super) unsafe fn format_replace(
                                 .as_ref()
                                 .map_or(::core::ptr::null(), |s| s.as_ptr()),
                         );
-                        let condition_is_true = if found.is_none() {
-                            let expanded = format_expand1_cstring(es, condition.as_ptr());
-                            if expanded.as_c_str() == condition.as_c_str() {
+                        let condition_is_true = match &found {
+                            None => {
+                                let expanded = format_expand1_cstring(es, condition.as_ptr());
+                                if expanded.as_c_str() == condition.as_c_str() {
+                                    format_log1(es, c"format_replace".as_ptr(), |out| {
+                                        out.write_all(b"condition '")?;
+                                        write_cstr(out, &*condition)?;
+                                        out.write_all(b"' not found; assuming false")
+                                    });
+                                    false
+                                } else {
+                                    format_true(expanded.as_ptr()) != 0
+                                }
+                            }
+                            Some(found_value) => {
                                 format_log1(es, c"format_replace".as_ptr(), |out| {
                                     out.write_all(b"condition '")?;
                                     write_cstr(out, &*condition)?;
-                                    out.write_all(b"' not found; assuming false")
+                                    out.write_all(b"' found: ")?;
+                                    write_cstr(out, found_value.as_c_str())
                                 });
-                                false
-                            } else {
-                                format_true(expanded.as_ptr()) != 0
+                                format_true(found_value.as_ptr()) != 0
                             }
-                        } else {
-                            format_log1(es, c"format_replace".as_ptr(), |out| {
-                                out.write_all(b"condition '")?;
-                                write_cstr(out, &*condition)?;
-                                out.write_all(b"' found: ")?;
-                                write_cstr(out, (&*(found.as_ref().unwrap())).as_c_str())
-                            });
-                            format_true(found.as_ref().unwrap().as_ptr()) != 0
                         };
                         drop(found);
                         cp = cp2.offset(1 as ::core::ffi::c_int as isize);
@@ -2979,7 +2987,7 @@ pub(super) unsafe fn format_expand1_cstring(
                         });
                         CString::default()
                     } else {
-                        let out = format_job_get(es, &*name);
+                        let out = format_job_get(es, &name);
                         format_log1(es, c"format_expand1".as_ptr(), |writer| {
                             writer.write_all(b"#() result: ")?;
                             write_cstr(writer, &*out)
@@ -3289,13 +3297,16 @@ mod format_choose_tests {
                 .is_empty());
             // The first NUL still terminates the input, including invalid bytes after it.
             assert_eq!(
-                format_expand_cstring(ft, b"first\0\xffignored\0".as_ptr().cast()).as_bytes(),
+                format_expand_cstring(ft, b"first\0\xffignored\0".as_slice().as_ptr().cast())
+                    .as_bytes(),
                 b"first"
             );
-            let mut es: format_expand_state = Default::default();
-            es.ft = ft;
-            es.start_time = get_timer();
-            es.loop_0 = FORMAT_LOOP_LIMIT as u_int;
+            let mut es = format_expand_state {
+                ft,
+                start_time: get_timer(),
+                loop_0: FORMAT_LOOP_LIMIT as u_int,
+                ..Default::default()
+            };
             assert!(format_expand1_cstring(&raw mut es, c"limit".as_ptr())
                 .as_bytes()
                 .is_empty());
@@ -3320,9 +3331,11 @@ mod format_choose_tests {
         unsafe {
             let mut ft_owner = format_create(None, None, 0, 0);
             let ft = &raw mut *ft_owner;
-            let mut es: format_expand_state = Default::default();
-            es.ft = ft;
-            es.start_time = get_timer();
+            let mut es = format_expand_state {
+                ft,
+                start_time: get_timer(),
+                ..Default::default()
+            };
 
             for (input, expected_left, expected_right) in [
                 (

@@ -126,13 +126,13 @@ impl OptionsScope {
         let Some(key) = options_array_correct_key(key) else {
             return Err(options_string_cause(c"bad array key: %s", &[key]));
         };
-        if definition.type_0 == OPTIONS_TABLE_COMMAND && value.is_some() {
-            let commands = parse_commands(value.unwrap(), parse)?;
+        if let Some(value) = value.filter(|_| definition.type_0 == OPTIONS_TABLE_COMMAND) {
+            let commands = parse_commands(value, parse)?;
             self.with_entry(name, |entry| {
                 assert_eq!(entry.id(), identity, "array option replaced while parsing");
-                let item = options_array_item(entry, &*key);
+                let item = options_array_item(entry, &key);
                 let item = if item.is_null() {
-                    options_array_new(entry, &*key)
+                    options_array_new(entry, &key)
                 } else {
                     options_value_free(&raw mut (*item).value);
                     item
@@ -146,7 +146,7 @@ impl OptionsScope {
         let result = self
             .with_entry(name, |entry| {
                 assert_eq!(entry.id(), identity, "array option identity");
-                options_array_set(entry, &*key, value, append as i32, &mut cause)
+                options_array_set(entry, &key, value, append as i32, &mut cause)
             })
             .expect("local array option");
         if result == 0 {
@@ -231,8 +231,8 @@ impl OptionsScope {
         };
         if let Some(key) = key {
             self.set_array_item(name, key, None, false)?;
-        } else if self.is_global() && definition.is_some() {
-            self.reset_default_with_parser(definition.unwrap(), &mut command_parser);
+        } else if let Some(definition) = definition.filter(|_| self.is_global()) {
+            self.reset_default_with_parser(definition, &mut command_parser);
         } else {
             self.remove_entry(name);
         }

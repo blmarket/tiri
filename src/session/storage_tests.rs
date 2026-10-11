@@ -25,7 +25,7 @@ fn saved_name_survives_removal_of_current_successor_and_entire_index() {
             .to_bytes()
             .to_vec();
         assert_eq!(
-            sessions_next(&mut *first.get())
+            sessions_next(&*first.get())
                 .as_ref()
                 .map_or(std::ptr::null_mut(), |owner| owner.get()),
             &mut *second.get() as *mut _

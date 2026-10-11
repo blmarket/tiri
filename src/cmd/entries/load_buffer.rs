@@ -108,7 +108,7 @@ unsafe fn cmd_load_buffer_done(
             if !item.is_null() {
                 cmdq_error(
                     item_owner.as_ref().expect("live command queue item"),
-                    |out| write_cstr(out, (&*(cause.as_ref().unwrap())).as_c_str()),
+                    |out| write_cstr(out, (cause.as_ref().unwrap()).as_c_str()),
                 );
             }
         } else if tc.is_some_and(|client| {
@@ -155,7 +155,7 @@ unsafe fn cmd_load_buffer_exec(
     );
     file_read_with_cmdq_wait(
         queue_client.as_ref(),
-        &*path,
+        &path,
         Some(Box::new(move |event| unsafe {
             cmd_load_buffer_done(
                 &mut cdata,

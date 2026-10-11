@@ -79,27 +79,25 @@ pub(crate) unsafe fn spawn_log(from: &CStr, mut sc: *mut spawn_context) {
         log_cstr(name),
         log_hex((((*sc).flags) as u32) as u64)
     ));
-    if wl.is_alive() && wp0_owner.is_some() {
-        xformat(
-            &mut tmp,
-            format_args!(
-                "wl={} wp0=%{}",
-                { wl.get_unchecked().idx },
-                wp0_owner.as_ref().unwrap().id()
-            ),
-        );
-    } else if wl.is_alive() {
-        xformat(
-            &mut tmp,
-            format_args!("wl={} wp0=none", { wl.get_unchecked().idx }),
-        );
-    } else if wp0_owner.is_some() {
-        xformat(
-            &mut tmp,
-            format_args!("wl=none wp0=%{}", wp0_owner.as_ref().unwrap().id()),
-        );
-    } else {
-        xformat(&mut tmp, format_args!("wl=none wp0=none"));
+    match (wl.is_alive(), wp0_owner.as_ref()) {
+        (true, Some(wp0)) => {
+            xformat(
+                &mut tmp,
+                format_args!("wl={} wp0=%{}", { wl.get_unchecked().idx }, wp0.id()),
+            );
+        }
+        (true, None) => {
+            xformat(
+                &mut tmp,
+                format_args!("wl={} wp0=none", { wl.get_unchecked().idx }),
+            );
+        }
+        (false, Some(wp0)) => {
+            xformat(&mut tmp, format_args!("wl=none wp0=%{}", wp0.id()));
+        }
+        (false, None) => {
+            xformat(&mut tmp, format_args!("wl=none wp0=none"));
+        }
     }
     log_debug(format_args!(
         "{}: s=${} {} idx={}",

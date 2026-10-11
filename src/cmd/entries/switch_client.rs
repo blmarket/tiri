@@ -190,24 +190,22 @@ unsafe fn cmd_switch_client_exec(
         if cmdq_get_client((item).as_ref()).is_none() {
             return CMD_RETURN_NORMAL;
         }
-        if wl.is_alive()
-            && wp.is_some()
-            && !wl
-                .get_unchecked()
-                .window_handle()
-                .expect("live window")
-                .active_pane()
-                .is_some_and(|active| {
-                    std::rc::Rc::ptr_eq(&active, wp.as_ref().expect("target pane"))
-                })
-        {
+        if let Some(pane) = wp.as_ref().filter(|pane| {
+            wl.is_alive()
+                && !wl
+                    .get_unchecked()
+                    .window_handle()
+                    .expect("live window")
+                    .active_pane()
+                    .is_some_and(|active| std::rc::Rc::ptr_eq(&active, pane))
+        }) {
             let window_owner = wl
                 .get_unchecked()
                 .window_handle()
                 .cloned()
                 .expect("switch window");
             window_owner.redraw_active_switch(wp.as_ref());
-            window_owner.select_pane(wp.as_ref().expect("target pane"), true);
+            window_owner.select_pane(pane, true);
             drop(window_owner);
         }
         if wl.is_alive() {

@@ -18,7 +18,7 @@ fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {
     unsafe {
         assert!(!libc::setlocale(libc::LC_CTYPE, c"C.UTF-8".as_ptr()).is_null());
         let saved = (
-            global_environ.take(),
+            std::ptr::replace(&raw mut global_environ, None),
             global_options,
             global_s_options,
             global_w_options,
@@ -34,7 +34,7 @@ fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {
         global_options = server;
         global_s_options = session;
         global_w_options = window;
-        let definition = (&options_table)
+        let definition = options_table
             .iter()
             .find(|entry| entry.name == Some(c"extended-keys"))
             .unwrap();

@@ -369,21 +369,24 @@ pub unsafe fn file_print(
     }
     find.stream = 1 as ::core::ffi::c_int;
     let file_owner = client_owner.find_file(find.stream);
-    if file_owner.is_none() {
-        let transfer_owner =
-            file_create_with_client(Some(client_owner), 1 as ::core::ffi::c_int, None);
-        let cf = &mut *transfer_owner.get();
-        file_set_path(&mut *cf, CString::new("-").unwrap());
-        evbuffer_add_formatted(&mut cf.buffer, write);
-        msg.stream = 1 as ::core::ffi::c_int;
-        msg.fd = STDOUT_FILENO;
-        msg.flags = 0 as ::core::ffi::c_int;
-        client_owner.send_message(MSG_WRITE_OPEN, None, bytes_of(&msg));
-    } else {
-        let cf = &mut *file_owner.as_ref().expect("looked-up file").get();
-        evbuffer_add_formatted(&mut cf.buffer, write);
-        file_push(file_owner.as_ref().expect("looked-up file"));
-    };
+    match file_owner {
+        None => {
+            let transfer_owner =
+                file_create_with_client(Some(client_owner), 1 as ::core::ffi::c_int, None);
+            let cf = &mut *transfer_owner.get();
+            file_set_path(&mut *cf, CString::new("-").unwrap());
+            evbuffer_add_formatted(&mut cf.buffer, write);
+            msg.stream = 1 as ::core::ffi::c_int;
+            msg.fd = STDOUT_FILENO;
+            msg.flags = 0 as ::core::ffi::c_int;
+            client_owner.send_message(MSG_WRITE_OPEN, None, bytes_of(&msg));
+        }
+        Some(file_owner) => {
+            let cf = &mut *file_owner.get();
+            evbuffer_add_formatted(&mut cf.buffer, write);
+            file_push(&file_owner);
+        }
+    }
 }
 pub unsafe fn file_print_buffer(client_owner: Option<&ClientRef>, data: &[u8]) {
     let Some(client_owner) = client_owner else {
@@ -400,21 +403,24 @@ pub unsafe fn file_print_buffer(client_owner: Option<&ClientRef>, data: &[u8]) {
     }
     find.stream = 1 as ::core::ffi::c_int;
     let file_owner = client_owner.find_file(find.stream);
-    if file_owner.is_none() {
-        let transfer_owner =
-            file_create_with_client(Some(client_owner), 1 as ::core::ffi::c_int, None);
-        let cf = &mut *transfer_owner.get();
-        file_set_path(&mut *cf, CString::new("-").unwrap());
-        evbuffer_add(&mut cf.buffer, &data);
-        msg.stream = 1 as ::core::ffi::c_int;
-        msg.fd = STDOUT_FILENO;
-        msg.flags = 0 as ::core::ffi::c_int;
-        client_owner.send_message(MSG_WRITE_OPEN, None, bytes_of(&msg));
-    } else {
-        let cf = &mut *file_owner.as_ref().expect("looked-up file").get();
-        evbuffer_add(&mut cf.buffer, &data);
-        file_push(file_owner.as_ref().expect("looked-up file"));
-    };
+    match file_owner {
+        None => {
+            let transfer_owner =
+                file_create_with_client(Some(client_owner), 1 as ::core::ffi::c_int, None);
+            let cf = &mut *transfer_owner.get();
+            file_set_path(&mut *cf, CString::new("-").unwrap());
+            evbuffer_add(&mut cf.buffer, data);
+            msg.stream = 1 as ::core::ffi::c_int;
+            msg.fd = STDOUT_FILENO;
+            msg.flags = 0 as ::core::ffi::c_int;
+            client_owner.send_message(MSG_WRITE_OPEN, None, bytes_of(&msg));
+        }
+        Some(file_owner) => {
+            let cf = &mut *file_owner.get();
+            evbuffer_add(&mut cf.buffer, data);
+            file_push(&file_owner);
+        }
+    }
 }
 pub unsafe fn file_error(
     client_owner: Option<&ClientRef>,
@@ -434,21 +440,24 @@ pub unsafe fn file_error(
     }
     find.stream = 2 as ::core::ffi::c_int;
     let file_owner = client_owner.find_file(find.stream);
-    if file_owner.is_none() {
-        let transfer_owner =
-            file_create_with_client(Some(client_owner), 2 as ::core::ffi::c_int, None);
-        let cf = &mut *transfer_owner.get();
-        file_set_path(&mut *cf, CString::new("-").unwrap());
-        evbuffer_add_formatted(&mut cf.buffer, write);
-        msg.stream = 2 as ::core::ffi::c_int;
-        msg.fd = STDERR_FILENO;
-        msg.flags = 0 as ::core::ffi::c_int;
-        client_owner.send_message(MSG_WRITE_OPEN, None, bytes_of(&msg));
-    } else {
-        let cf = &mut *file_owner.as_ref().expect("looked-up file").get();
-        evbuffer_add_formatted(&mut cf.buffer, write);
-        file_push(file_owner.as_ref().expect("looked-up file"));
-    };
+    match file_owner {
+        None => {
+            let transfer_owner =
+                file_create_with_client(Some(client_owner), 2 as ::core::ffi::c_int, None);
+            let cf = &mut *transfer_owner.get();
+            file_set_path(&mut *cf, CString::new("-").unwrap());
+            evbuffer_add_formatted(&mut cf.buffer, write);
+            msg.stream = 2 as ::core::ffi::c_int;
+            msg.fd = STDERR_FILENO;
+            msg.flags = 0 as ::core::ffi::c_int;
+            client_owner.send_message(MSG_WRITE_OPEN, None, bytes_of(&msg));
+        }
+        Some(file_owner) => {
+            let cf = &mut *file_owner.get();
+            evbuffer_add_formatted(&mut cf.buffer, write);
+            file_push(&file_owner);
+        }
+    }
 }
 
 pub(crate) unsafe fn file_write_with_cmdq_wait(
@@ -470,13 +479,16 @@ pub(crate) unsafe fn file_write_with_cmdq_wait(
     );
 }
 
+/// The queue item a write blocks, plus the callback to run if it is cancelled.
+type FileCmdqWait<'a> = (&'a Rc<UnsafeCell<cmdq_item>>, Option<Box<dyn FnOnce()>>);
+
 unsafe fn file_write_impl(
     client_owner: Option<&ClientRef>,
     path: &CStr,
     mut flags: ::core::ffi::c_int,
     bdata: &[u8],
     mut cb: client_file_cb,
-    wait: Option<(&Rc<UnsafeCell<cmdq_item>>, Option<Box<dyn FnOnce()>>)>,
+    wait: Option<FileCmdqWait<'_>>,
 ) {
     let mut current_block: u64;
     let mut msglen: size_t = 0;

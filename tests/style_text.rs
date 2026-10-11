@@ -191,7 +191,7 @@ fn caller_buffers_are_bounded_and_match_owned_formatting() {
         (-1, b"none".as_slice()),
         (COLOUR_FLAG_THEME | 1, b"themewhite".as_slice()),
         (COLOUR_FLAG_RGB | 0xabcdef, b"#abcdef".as_slice()),
-        (COLOUR_FLAG_256 | 0, b"colour0".as_slice()),
+        (COLOUR_FLAG_256, b"colour0".as_slice()),
         (COLOUR_FLAG_256 | 255, b"colour255".as_slice()),
         (10, b"invalid".as_slice()),
     ];
@@ -391,9 +391,9 @@ fn frozen_x11_aliases() {
 
 #[test]
 fn x11_name_trimming_preserves_bytes_and_c_termination() {
-    let alice_blue = Some(COLOUR_FLAG_RGB | 0xf0f8ff);
-    assert_eq!(colour_parse_x11(b"  AliceBlue  "), alice_blue);
-    assert_eq!(colour_parse_x11(b"  ALICEBLUE  "), alice_blue);
+    let alice_blue = COLOUR_FLAG_RGB | 0xf0f8ff;
+    assert_eq!(colour_parse_x11(b"  AliceBlue  "), Some(alice_blue));
+    assert_eq!(colour_parse_x11(b"  ALICEBLUE  "), Some(alice_blue));
     assert_eq!(colour_parse_x11(b"AliceBlue\t"), None);
     assert_eq!(colour_parse_x11(b"   "), None);
     assert_eq!(colour_parse_x11(b" \xff "), None);
@@ -402,7 +402,7 @@ fn x11_name_trimming_preserves_bytes_and_c_termination() {
     let c_input = b"  AliceBlue  \0red\0";
     assert_eq!(
         unsafe { colour_parseX11(c_input.as_ptr().cast()) },
-        alice_blue.unwrap()
+        alice_blue
     );
 }
 

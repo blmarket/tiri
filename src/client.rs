@@ -160,7 +160,7 @@ unsafe fn client_connect(path: &CStr, flags: uint64_t) -> io::Result<OwnedFd> {
             let mut name = path.to_bytes().to_vec();
             name.extend_from_slice(b".lock");
             lockfile = Some(CString::new(name).expect("socket path has no interior NUL"));
-            match client_get_lock(&*(lockfile.as_ref().unwrap())) {
+            match client_get_lock(lockfile.as_ref().unwrap()) {
                 ClientLock::Acquired(fd) => lockfd = Some(fd),
                 ClientLock::Retry => {
                     lockfile = None;
@@ -249,7 +249,7 @@ pub unsafe fn client_main(
     };
     let mut size: size_t = 0;
     let mut caps = Vec::new();
-    if (*&raw const shell_command).is_some() {
+    if shell_command.is_some() {
         msg = MSG_SHELL;
         flags |= CLIENT_STARTSERVER as uint64_t;
     } else if argv.is_empty() {
@@ -279,7 +279,7 @@ pub unsafe fn client_main(
         let connection = if systemd_activated() != 0 {
             Ok(server_start(flags, &mut None, &mut None))
         } else {
-            client_connect(&*(socket_path_cstr()), client_flags)
+            client_connect(socket_path_cstr(), client_flags)
         };
         let fd = match connection {
             Ok(fd) => fd,
@@ -362,9 +362,9 @@ pub unsafe fn client_main(
             tio.c_cflag = (CREAD | CS8 | HUPCL) as tcflag_t;
             tio.c_cc[VMIN as usize] = 1 as cc_t;
             tio.c_cc[VTIME as usize] = 0 as cc_t;
-            cfsetispeed(&mut tio, cfgetispeed(&mut saved_tio));
-            cfsetospeed(&mut tio, cfgetospeed(&mut saved_tio));
-            crate::src::shared::terminal::set_attributes(STDIN_FILENO, TCSANOW, &mut tio);
+            cfsetispeed(&mut tio, cfgetispeed(&saved_tio));
+            cfsetospeed(&mut tio, cfgetospeed(&saved_tio));
+            crate::src::shared::terminal::set_attributes(STDIN_FILENO, TCSANOW, &tio);
         }
         client_send_identify(
             &ttynam,
@@ -421,13 +421,13 @@ pub unsafe fn client_main(
                 crate::src::shared::terminal::set_attributes(
                     STDOUT_FILENO,
                     TCSAFLUSH,
-                    &mut saved_tio,
+                    &saved_tio,
                 );
             }
             let (shell, command) = client_exec_payload
                 .as_ref()
                 .expect("MSG_EXEC requires a stored shell and command");
-            client_exec(&*shell, Some(&*command));
+            client_exec(shell, Some(command));
         }
         if client_attached != 0 {
             if client_exitreason as ::core::ffi::c_uint
@@ -460,7 +460,7 @@ pub unsafe fn client_main(
                 crate::src::shared::terminal::set_attributes(
                     STDOUT_FILENO,
                     TCSAFLUSH,
-                    &mut saved_tio,
+                    &saved_tio,
                 );
             }
         } else if client_exitreason as ::core::ffi::c_uint
@@ -749,7 +749,7 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
             {
                 fatalx(|out| out.write_all(b"bad MSG_SHELL string"));
             }
-            client_exec(CStr::from_ptr(data), (*&raw const shell_command).as_deref());
+            client_exec(CStr::from_ptr(data), shell_command.as_deref());
         }
         MSG_DETACH | MSG_DETACHKILL => {
             proc_send(client_peer, MSG_EXITING, None, &[]);

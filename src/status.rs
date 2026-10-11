@@ -313,16 +313,7 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
     let format_owner =
         OptionsScope::Session(std::rc::Rc::downgrade(s.as_ref().expect("live session")))
             .resolve(c"status-format", false);
-    if format_owner.is_none() {
-        let mut status = c_owner.borrow_status_mut();
-        ctx.borrow_screen(&mut status.screen);
-        n = 0 as u_int;
-        while n < width.wrapping_mul(lines) {
-            screen_write_putc(&mut ctx, &gc, ' ' as i32 as u_char);
-            n = n.wrapping_add(1);
-        }
-        ctx.target = Default::default();
-    } else {
+    if let Some(format_owner) = &format_owner {
         i = 0 as u_int;
         while i < lines {
             {
@@ -337,8 +328,6 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
                 ctx.target = Default::default();
             }
             let line_format = format_owner
-                .as_ref()
-                .expect("resolved format owner")
                 .with_entry(c"status-format", |entry| {
                     crate::src::options::options_array_get_index_mut(entry, i)
                         .map(|value| value.string_ptr().map(|text| text.to_owned()))
@@ -392,6 +381,15 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
             }
             i = i.wrapping_add(1);
         }
+    } else {
+        let mut status = c_owner.borrow_status_mut();
+        ctx.borrow_screen(&mut status.screen);
+        n = 0 as u_int;
+        while n < width.wrapping_mul(lines) {
+            screen_write_putc(&mut ctx, &gc, ' ' as i32 as u_char);
+            n = n.wrapping_add(1);
+        }
+        ctx.target = Default::default();
     }
     {
         let mut status = c_owner.borrow_status_mut();
@@ -420,18 +418,6 @@ fn status_message_escape(s: &CStr) -> CString {
     CString::new(escaped).expect("C string has no interior NUL")
 }
 
-#[cfg(test)]
-mod status_message_escape_tests {
-    use super::{status_message_escape, CString};
-
-    #[test]
-    fn doubles_hash_without_changing_other_bytes() {
-        let input = CString::new(b"#\xff##tail".as_slice()).unwrap();
-        let escaped = status_message_escape(input.as_c_str());
-        assert_eq!(escaped.as_bytes(), b"##\xff####tail");
-        assert!(status_message_escape(c"").as_bytes().is_empty());
-    }
-}
 pub unsafe fn status_message_set(
     c_owner: Option<&ClientRef>,
     mut delay: ::core::ffi::c_int,
@@ -849,4 +835,17 @@ pub unsafe fn status_prompt_key(
         status_prompt_clear(c_owner);
     }
     result
+}
+
+#[cfg(test)]
+mod status_message_escape_tests {
+    use super::{status_message_escape, CString};
+
+    #[test]
+    fn doubles_hash_without_changing_other_bytes() {
+        let input = CString::new(b"#\xff##tail".as_slice()).unwrap();
+        let escaped = status_message_escape(input.as_c_str());
+        assert_eq!(escaped.as_bytes(), b"##\xff####tail");
+        assert!(status_message_escape(c"").as_bytes().is_empty());
+    }
 }

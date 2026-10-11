@@ -977,7 +977,7 @@ mod tests {
         let val = 123456;
         let ref_box = RefBox::new(val);
         let weak = RefBox::downgrade(&ref_box);
-        assert_eq!(weak.is_alive(), true);
+        assert!(weak.is_alive());
         drop(ref_box);
     }
 
@@ -986,9 +986,9 @@ mod tests {
         let val = 123456;
         let ref_box = RefBox::new(val);
         let weak = RefBox::downgrade(&ref_box);
-        assert_eq!(weak.is_alive(), true);
+        assert!(weak.is_alive());
         drop(ref_box);
-        assert_eq!(weak.is_alive(), false);
+        assert!(!weak.is_alive());
     }
 
     #[test]
@@ -1075,7 +1075,7 @@ mod tests {
         let ref_box = RefBox::new(123456);
         let weak = RefBox::downgrade(&ref_box);
         let borrow = weak.try_borrow_mut_or_else(|| "was borrowed", || "was dropped");
-        assert!(matches!(borrow, Ok(_)));
+        assert!(borrow.is_ok());
         drop(borrow);
         drop(weak);
         drop(ref_box);
@@ -1086,7 +1086,7 @@ mod tests {
         let ref_box = RefBox::new(123456);
         let weak = RefBox::downgrade(&ref_box);
         let borrow = weak.try_borrow_mut_or_else(|| "was borrowed", || "was dropped");
-        assert!(matches!(borrow, Ok(_)));
+        assert!(borrow.is_ok());
         let borrow2 = weak.try_borrow_mut_or_else(|| "was borrowed", || "was dropped");
         assert!(matches!(borrow2, Err("was borrowed")));
         drop(borrow);
@@ -1100,7 +1100,7 @@ mod tests {
         let ref_box = RefBox::new(123456);
         let weak = RefBox::downgrade(&ref_box);
         let borrow = ref_box.try_borrow_mut_or_else(|| "was borrowed");
-        assert!(matches!(borrow, Ok(_)));
+        assert!(borrow.is_ok());
         let borrow2 = weak.try_borrow_mut_or_else(|| "was borrowed", || "was dropped");
         assert!(matches!(borrow2, Err("was borrowed")));
         drop(borrow);

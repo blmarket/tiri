@@ -375,25 +375,13 @@ pub unsafe fn format_defaults(
     wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
 ) {
     let mut c: Option<ClientRef> = c_owner.cloned();
-    if !c.is_none() && !c.as_ref().expect("live client").name().is_none() {
-        log_debug(format_args!(
-            "{}: c={}",
-            "format_defaults",
-            log_cstr(
-                (c.as_ref().expect("live client").name())
-                    .as_deref()
-                    .unwrap_or(c"(null)")
-            )
-        ));
+    if let Some(name) = c.as_ref().and_then(|c| c.name()) {
+        log_debug(format_args!("{}: c={}", "format_defaults", log_cstr(&name)));
     } else {
         log_debug(format_args!("{}: c=none", "format_defaults"));
     }
-    if s_owner.is_some() {
-        log_debug(format_args!(
-            "{}: s=${}",
-            "format_defaults",
-            s_owner.expect("format session").id()
-        ));
+    if let Some(s) = s_owner {
+        log_debug(format_args!("{}: s=${}", "format_defaults", s.id()));
     } else {
         log_debug(format_args!("{}: s=none", "format_defaults"));
     }
@@ -406,12 +394,8 @@ pub unsafe fn format_defaults(
     } else {
         log_debug(format_args!("{}: wl=none", "format_defaults"));
     }
-    if wp_owner.is_some() {
-        log_debug(format_args!(
-            "{}: wp=%{}",
-            "format_defaults",
-            wp_owner.expect("format pane").id()
-        ));
+    if let Some(wp) = wp_owner {
+        log_debug(format_args!("{}: wp=%{}", "format_defaults", wp.id()));
     } else {
         log_debug(format_args!("{}: wp=none", "format_defaults"));
     }

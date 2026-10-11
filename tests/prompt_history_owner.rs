@@ -19,7 +19,7 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         let mut options_owner = options_create(None);
         let options = &raw mut *options_owner;
         for name in [c"prompt-history-limit", c"history-file"] {
-            let definition = (&options_table)
+            let definition = options_table
                 .iter()
                 .find(|entry| entry.name == Some(name))
                 .unwrap();

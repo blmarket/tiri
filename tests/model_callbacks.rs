@@ -20,6 +20,15 @@ unsafe fn mode_screen(_: refbox::Weak<window::window_mode_entry>) -> *mut screen
     null_mut()
 }
 
+/// Invokes a parser through the shared-module slot type.
+fn parse_through(
+    callback: hmux::src::shared::arguments::args_parse_cb,
+    args: &mut arguments::args,
+    index: hmux::src::shared::abi::u_int,
+) -> hmux::src::shared::arguments::args_parse_type {
+    callback.expect("parser assigned")(args, index).expect("index parses")
+}
+
 #[test]
 fn callbacks_cross_original_module_paths_without_conversion() {
     let parse_callback: arguments::args_parse_cb = Some(parse);
@@ -32,7 +41,7 @@ fn callbacks_cross_original_module_paths_without_conversion() {
     let copy_mode: hmux::src::window_copy::window_mode = mode;
     let mut parsed_args = arguments::args::empty();
     assert_eq!(
-        parser_callback.unwrap()(&mut parsed_args, 7).unwrap(),
+        parse_through(parser_callback, &mut parsed_args, 7),
         hmux::src::shared::arguments::ARGS_PARSE_STRING
     );
     assert!(draw_callback.is_some());

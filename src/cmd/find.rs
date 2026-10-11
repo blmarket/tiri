@@ -243,7 +243,7 @@ impl cmd_find_state {
         if self.session_handle().is_some() {
             return 0;
         }
-        if let Some(client) = cmd_find_client(None, Some(&*target), 1) {
+        if let Some(client) = cmd_find_client(None, Some(target), 1) {
             if let Some(session) = client.attached_session().upgrade() {
                 self.set_s(Some(&session));
                 return 0;
@@ -957,9 +957,7 @@ impl cmd_find_state {
         let mut wl = refbox::Weak::new();
         let mut mouse_session_owner = None;
         let mouse_pane_owner = cmd_mouse_pane(m, Some(&mut mouse_session_owner), &raw mut wl);
-        if mouse_pane_owner.is_none() {
-            return None;
-        }
+        mouse_pane_owner.as_ref()?;
         fs.set_s(mouse_session_owner.as_ref());
         fs.set_wl(wl);
         fs.set_wp(mouse_pane_owner.as_ref());
@@ -1175,21 +1173,12 @@ impl cmd_find_state {
                 || strcmp(target, c"{current}".as_ptr()) == 0 as ::core::ffi::c_int
             {
                 c = queue_client_ptr;
-                if c.is_none()
-                    || c.as_ref()
-                        .expect("live client")
-                        .attached_session()
-                        .upgrade()
-                        .is_none()
+                if let Some(client) = c
+                    .as_ref()
+                    .filter(|client| client.attached_session().upgrade().is_some())
                 {
-                    cmdq_error(item_handle.expect("command queue item"), |out| {
-                        out.write_all(b"no current client")
-                    });
-                    current_block = 5193823237153215208;
-                } else {
                     self.set_wl(
-                        (c.as_ref()
-                            .expect("live client")
+                        (client
                             .attached_session()
                             .upgrade()
                             .expect("live session")
@@ -1197,9 +1186,7 @@ impl cmd_find_state {
                         .clone(),
                     );
                     self.set_wp(
-                        ((((c
-                            .as_ref()
-                            .expect("live client")
+                        ((((client
                             .attached_session()
                             .upgrade()
                             .expect("live session")
@@ -1212,8 +1199,7 @@ impl cmd_find_state {
                         .as_ref(),
                     );
                     self.set_w(
-                        (c.as_ref()
-                            .expect("live client")
+                        (client
                             .attached_session()
                             .upgrade()
                             .expect("live session")
@@ -1222,6 +1208,11 @@ impl cmd_find_state {
                         .window_handle(),
                     );
                     current_block = 15319680530019787978;
+                } else {
+                    cmdq_error(item_handle.expect("command queue item"), |out| {
+                        out.write_all(b"no current client")
+                    });
+                    current_block = 5193823237153215208;
                 }
             } else if strcmp(target, c"=".as_ptr()) == 0 as ::core::ffi::c_int
                 || strcmp(target, c"{mouse}".as_ptr()) == 0 as ::core::ffi::c_int
@@ -1298,7 +1289,7 @@ impl cmd_find_state {
                     }
                     current_block = 5193823237153215208;
                 } else {
-                    self.copy_from(&*&raw const marked_pane);
+                    self.copy_from(&marked_pane);
                     current_block = 15319680530019787978;
                 }
             } else {

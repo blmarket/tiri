@@ -335,7 +335,7 @@ impl Client for ClientRef {
     }
 
     unsafe fn parse_flags(&self, flags: &CStr) {
-        server_client_set_flags(self, &*flags);
+        server_client_set_flags(self, flags);
     }
 
     unsafe fn update_theme_colours(&self) {
@@ -450,8 +450,8 @@ impl Client for ClientRef {
     unsafe fn parse_terminal_features(&self, features: &CStr, separators: &CStr) {
         let state = &mut *self.get();
         crate::src::tty_features::tty_parse_features(
-            &*features,
-            &*separators,
+            features,
+            separators,
             &mut state.term_features,
             &mut state.term_nofeatures,
         );
@@ -874,7 +874,7 @@ impl Client for ClientRef {
         (*self.get()).flags & CLIENT_READONLY as u64 != 0
     }
     unsafe fn exec(&self, command: &CStr) {
-        server_client_exec(self, &*command);
+        server_client_exec(self, command);
     }
     unsafe fn is_control(&self) -> bool {
         (*self.get()).flags & CLIENT_CONTROL as u64 != 0
@@ -1200,7 +1200,7 @@ impl Client for ClientRef {
         kind: prompt_type,
     ) {
         crate::src::status::status_prompt_set(
-            self, find, &*message, input, inputcb, freecb, flags, kind,
+            self, find, message, input, inputcb, freecb, flags, kind,
         );
     }
 
@@ -1343,7 +1343,7 @@ impl Client for ClientRef {
             .to_owned();
             crate::src::tty::tty_raw(
                 (*self.get()).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
-                &*output,
+                &output,
             );
         }
         self.update_flags(CLIENT_SUSPENDED as u64, 0);

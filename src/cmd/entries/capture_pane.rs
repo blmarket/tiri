@@ -131,7 +131,7 @@ unsafe fn cmd_capture_pane_exec(
         ) != 0 as ::core::ffi::c_int
         {
             cmdq_error(item_handle, |out| {
-                write_cstr(out, (&*(cause.as_ref().unwrap())).as_c_str())
+                write_cstr(out, (cause.as_ref().unwrap()).as_c_str())
             });
             return CMD_RETURN_ERROR;
         }

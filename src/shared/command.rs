@@ -20,27 +20,35 @@ pub const CMD_FIND_SESSION: cmd_find_type = 2;
 pub const CMD_FIND_WINDOW: cmd_find_type = 1;
 pub const CMD_FIND_PANE: cmd_find_type = 0;
 
+/// The argv wire representation is malformed: the count is out of range or
+/// the buffer holds fewer NUL-terminated arguments than declared.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidArgv;
+
 /// Decode the length-delimited argv wire representation. The final byte is
 /// forced to NUL before token scans, matching the old C decoder.
-pub fn unpack_argv(buffer: &mut [u8], argc: ::core::ffi::c_int) -> Result<Vec<CString>, ()> {
+pub fn unpack_argv(
+    buffer: &mut [u8],
+    argc: ::core::ffi::c_int,
+) -> Result<Vec<CString>, InvalidArgv> {
     if argc == 0 {
         return Ok(Vec::new());
     }
     if !(0..=1000).contains(&argc) || buffer.is_empty() {
-        return Err(());
+        return Err(InvalidArgv);
     }
     *buffer.last_mut().expect("nonempty buffer") = 0;
     let mut result = Vec::with_capacity(argc as usize);
     let mut start = 0;
     for _ in 0..argc {
         if start >= buffer.len() {
-            return Err(());
+            return Err(InvalidArgv);
         }
         let tail = &buffer[start..];
-        let end = tail.iter().position(|byte| *byte == 0).ok_or(())?;
+        let end = tail.iter().position(|byte| *byte == 0).ok_or(InvalidArgv)?;
         result.push(
             CStr::from_bytes_with_nul(&tail[..=end])
-                .map_err(|_| ())?
+                .map_err(|_| InvalidArgv)?
                 .to_owned(),
         );
         start += end + 1;
@@ -251,10 +259,13 @@ pub struct cmd_entry {
     pub target: cmd_entry_flag,
     pub flags: ::core::ffi::c_int,
     // The dispatching queue item retains the command-list owner through this call.
-    pub exec: Option<
-        unsafe fn(refbox::Weak<cmd>, &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval,
-    >,
+    pub exec: Option<cmd_exec_fn>,
 }
+
+/// Command entry point; the dispatching queue item retains the command-list
+/// owner for the duration of the call.
+pub type cmd_exec_fn =
+    unsafe fn(refbox::Weak<cmd>, &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval;
 
 #[repr(C)]
 /// Queue items and callers share ownership through ordinary Rc handles.

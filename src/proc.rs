@@ -450,7 +450,7 @@ pub unsafe fn proc_kill_peer(mut peer: *mut tmuxpeer) {
     (*peer).flags |= PEER_BAD;
 }
 pub unsafe fn proc_toggle_log(mut tp: *mut tmuxproc) {
-    log_toggle(&*((*tp).name));
+    log_toggle(&((*tp).name));
 }
 pub unsafe fn proc_fork_and_daemon() -> (pid_t, OwnedFd) {
     assert!(
@@ -469,11 +469,11 @@ pub unsafe fn proc_fork_and_daemon() -> (pid_t, OwnedFd) {
             if daemon(1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int) != 0 as ::core::ffi::c_int {
                 fatal(|out| out.write_all(b"daemon failed"));
             }
-            (0, child.into())
+            (0, child)
         }
         _ => {
             drop(child);
-            (pid, parent.into())
+            (pid, parent)
         }
     }
 }
@@ -548,8 +548,10 @@ mod ownership_tests {
         use std::io::Read;
         // A bad peer, and a message too large to compose.
         for (flags, len) in [(PEER_BAD, 0), (0, MAX_IMSGSIZE as usize)] {
-            let mut peer = tmuxpeer::default();
-            peer.flags = flags;
+            let mut peer = tmuxpeer {
+                flags,
+                ..Default::default()
+            };
             let (socket, mut remote) = UnixStream::pair().unwrap();
             remote.set_nonblocking(true).unwrap();
             assert_eq!(

@@ -62,10 +62,10 @@ unsafe fn cmd_refresh_client_update_subscription(tc_owner: &ClientRef, value: &C
     };
     control_add_sub(
         tc_owner,
-        &*parsed.name,
+        &parsed.name,
         parsed.type_0,
         parsed.id,
-        &*parsed.format,
+        &parsed.format,
     );
 }
 unsafe fn cmd_refresh_client_control_client_size(

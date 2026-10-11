@@ -69,7 +69,7 @@ mod tests {
     #[test]
     fn queue_membership_covers_delivery_and_disabled_alerts_still_record_flags() {
         unsafe {
-            let window = window::new();
+            let window = window::new_ref();
             let mut options = options_create(None);
             for name in [c"monitor-bell", c"monitor-activity", c"monitor-silence"] {
                 let definition = crate::src::options_table::options_table

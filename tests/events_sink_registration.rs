@@ -31,19 +31,19 @@ fn sink_ids_survive_self_removal_and_do_not_remove_replacements() {
             }),
         ));
 
-        events_fire(&*name, event_payload_create());
+        events_fire(name, event_payload_create());
         assert_eq!(first_calls.get(), 1);
         assert_eq!(second_calls.get(), 0);
         assert_ne!(first_id.get(), second_id.get());
 
         events_remove_sink(first_id.get());
-        events_fire(&*name, event_payload_create());
+        events_fire(name, event_payload_create());
         assert_eq!(first_calls.get(), 1);
         assert_eq!(second_calls.get(), 1);
 
         events_remove_sink(second_id.get());
         events_remove_sink(EventSinkId::default());
-        events_fire(&*name, event_payload_create());
+        events_fire(name, event_payload_create());
         assert_eq!(second_calls.get(), 1);
     }
 }

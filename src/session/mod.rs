@@ -454,7 +454,7 @@ unsafe fn session_is_linked(s: Option<&SessionRef>, w: &WindowRef) -> bool {
         return n != 1;
     }
 
-    return n != session_group_count(group);
+    n != session_group_count(group)
 }
 
 unsafe fn session_next_alert(mut wl: refbox::Weak<winlink>) -> refbox::Weak<winlink> {
@@ -605,7 +605,7 @@ unsafe fn session_set_current(
         }
     }
     winlink_clear_flags(wl.clone());
-    (&WindowRef::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window")))
+    WindowRef::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window"))
         .update_activity();
     tty_update_window_offset(&WindowRef::clone(
         (wl.get_unchecked().window_handle().as_ref()).expect("live window"),

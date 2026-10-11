@@ -182,7 +182,7 @@ unsafe fn cmd_set_hook_event_exec(
             (*target).pane_handle().expect("live pane"),
         );
     }
-    events_fire(&*argument, ep);
+    events_fire(&argument, ep);
     CMD_RETURN_NORMAL
 }
 unsafe fn cmd_set_hook_monitor_exec(
@@ -221,7 +221,7 @@ unsafe fn cmd_set_hook_monitor_exec(
     }
     let mut selected = None;
     let mut cause = None;
-    if options_scope_from_name(args, window, &*name, target, &mut selected, &mut cause)
+    if options_scope_from_name(args, window, &name, target, &mut selected, &mut cause)
         == OPTIONS_TABLE_NONE
     {
         return set_option_error(item_handle, cause.as_deref().expect("scope failure"));
@@ -230,7 +230,7 @@ unsafe fn cmd_set_hook_monitor_exec(
     let mut fs = cmd_find_state::default();
     fs.copy_from(target);
     if unsubscribe {
-        hooks_monitor_remove(&selected, &*name);
+        hooks_monitor_remove(&selected, &name);
         return CMD_RETURN_NORMAL;
     }
     if args_count(args) != 0 {
@@ -247,7 +247,7 @@ unsafe fn cmd_set_hook_monitor_exec(
             selected
                 .set_from_string(None, &name, Some(&value), args_has(args, b'a') != 0)
                 .expect("monitor name is a user string option");
-            options_push_changes(&*name);
+            options_push_changes(&name);
         }
     }
     let session = if selected.is_global() {
@@ -262,7 +262,7 @@ unsafe fn cmd_set_hook_monitor_exec(
     };
     hooks_monitor_add(
         &selected,
-        &*name,
+        &name,
         kind,
         id,
         CStr::from_ptr(format.as_deref().expect("monitor format").as_ptr()),
@@ -338,7 +338,7 @@ unsafe fn cmd_set_option_exec(
         args_string(&mut *args, 0).map_or(std::ptr::null(), CStr::as_ptr),
     );
     if set_hook && args_has(args, b'R') != 0 {
-        hooks_run(Some(item_handle), &*argument);
+        hooks_run(Some(item_handle), &argument);
         return CMD_RETURN_NORMAL;
     }
     let parsed = match options_match_owned(&argument) {
@@ -379,7 +379,7 @@ unsafe fn cmd_set_option_exec(
     let scope = options_scope_from_name(
         args,
         window,
-        &*parsed.name,
+        &parsed.name,
         target,
         &mut selected,
         &mut cause,
@@ -469,7 +469,7 @@ unsafe fn cmd_set_option_exec(
         Err(cause) => set_option_error(item_handle, &cause),
         Ok(false) => CMD_RETURN_NORMAL,
         Ok(true) => {
-            options_push_changes(&*name);
+            options_push_changes(name);
             CMD_RETURN_NORMAL
         }
     }

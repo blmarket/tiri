@@ -225,9 +225,7 @@ pub(crate) unsafe fn screen_write_initctx(
         }
     }
     if !ctx.flags & SCREEN_WRITE_SYNC != 0 {
-        if write_pane.is_some_and(|pane| pane.draws_inactive_screen()) {
-            ttyctx.flags |= TTY_CTX_SYNC;
-        } else if is_sync != 0 {
+        if write_pane.is_some_and(|pane| pane.draws_inactive_screen()) || is_sync != 0 {
             ttyctx.flags |= TTY_CTX_SYNC;
         }
         tty_write(|tty, ctx| tty_cmd_syncstart(tty, ctx), ttyctx);
@@ -2000,8 +1998,8 @@ pub unsafe fn screen_write_fullredraw(ctx: &mut screen_write_ctx) {
         1 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    if ttyctx.redraw_cb.is_some() {
-        ttyctx.redraw_cb.as_ref().expect("non-null redraw callback")(&ttyctx);
+    if let Some(redraw_cb) = &ttyctx.redraw_cb {
+        redraw_cb(&ttyctx);
     }
 }
 fn screen_write_collect_trim(
@@ -2093,13 +2091,8 @@ unsafe fn screen_write_collect_flush_scrolled(ctx: &mut screen_write_ctx) -> ::c
         screen_write_redraw_pane(ctx, &mut ttyctx);
         return 0 as ::core::ffi::c_int;
     }
-    if wp.is_some()
-        && wp.is_some_and(|pane| {
-            let bar = &pane;
-            bar.scrollbar_visible() && bar.scrollbar_overlay()
-        })
-    {
-        wp.expect("write pane").request_redraw(false);
+    if let Some(pane) = wp.filter(|pane| pane.scrollbar_visible() && pane.scrollbar_overlay()) {
+        pane.request_redraw(false);
         return 0 as ::core::ffi::c_int;
     }
     log_debug(format_args!(
@@ -2120,16 +2113,14 @@ unsafe fn screen_write_collect_flush_scrolled(ctx: &mut screen_write_ctx) -> ::c
             .wrapping_sub((*s).rupper)
             .wrapping_add(1 as u_int);
     }
-    if wp.is_some()
-        && (wp.expect("write pane").geometry().3 as u_int)
-            .wrapping_add(wp.expect("write pane").geometry().1)
-            > wp.expect("write pane").window_size().1
-    {
-        ttyctx.orlower = ttyctx.orlower.wrapping_sub(
-            (wp.expect("write pane").geometry().3 as u_int)
-                .wrapping_add(wp.expect("write pane").geometry().1)
-                .wrapping_sub(wp.expect("write pane").window_size().1),
-        );
+    if let Some(pane) = wp {
+        let pane_bottom = (pane.geometry().3 as u_int).wrapping_add(pane.geometry().1);
+        let window_sy = pane.window_size().1;
+        if pane_bottom > window_sy {
+            ttyctx.orlower = ttyctx
+                .orlower
+                .wrapping_sub(pane_bottom.wrapping_sub(window_sy));
+        }
     }
     ttyctx.data = tty_command_data::Count(ctx.scrolled);
     ttyctx.bg = ctx.bg;
@@ -3139,8 +3130,8 @@ pub unsafe fn screen_write_alternateon(
         1 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    if ttyctx.redraw_cb.is_some() {
-        ttyctx.redraw_cb.as_ref().expect("non-null redraw callback")(&ttyctx);
+    if let Some(redraw_cb) = &ttyctx.redraw_cb {
+        redraw_cb(&ttyctx);
     }
 }
 pub unsafe fn screen_write_alternateoff(
@@ -3171,8 +3162,8 @@ pub unsafe fn screen_write_alternateoff(
         1 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    if ttyctx.redraw_cb.is_some() {
-        ttyctx.redraw_cb.as_ref().expect("non-null redraw callback")(&ttyctx);
+    if let Some(redraw_cb) = &ttyctx.redraw_cb {
+        redraw_cb(&ttyctx);
     }
 }
 
@@ -3387,19 +3378,19 @@ mod write_row_tests {
             for (index, &expected) in [0, 2, 3, 99, 4].iter().enumerate() {
                 let row = &mut s.write_rows_mut()[index];
                 assert_eq!(row.data.as_ptr(), allocations[index]);
-                let item = row.items.get(0).unwrap();
-                assert_eq!((*item).bg, expected);
+                let item = row.items.front().unwrap();
+                assert_eq!(item.bg, expected);
                 assert!(row.items.get(1).is_none());
             }
             assert_eq!(s.write_rows()[3].data[0], b'B');
-            let item = s.write_rows()[3].items.get(0).unwrap();
-            assert_eq!(((*item).x, (*item).used, (*item).type_0), (0, 4, CLEAR));
+            let item = s.write_rows()[3].items.front().unwrap();
+            assert_eq!((item.x, item.used, item.type_0), (0, 4, CLEAR));
 
             s.rupper = 2;
             s.rlower = 2;
             screen_write_collect_scroll(&mut ctx, 100);
             assert_eq!(s.write_rows()[2].data.as_ptr(), allocations[2]);
-            assert_eq!(s.write_rows()[2].items.get(0).unwrap().bg, 100);
+            assert_eq!(s.write_rows()[2].items.front().unwrap().bg, 100);
 
             crate::src::screen::screen_resize(&mut s, 6, 3, 0);
             assert_eq!(s.write_rows().len(), 3);
@@ -3450,18 +3441,15 @@ mod write_row_tests {
             ctx.item = Some(screen_write_get_citem());
             for (x, used, wrapped) in [(0, 10, 1), (3, 3, 0)] {
                 let item = screen_write_current_item(&mut ctx);
-                (*item).x = x;
-                (*item).used = used;
-                (*item).wrapped = wrapped;
+                item.x = x;
+                item.used = used;
+                item.wrapped = wrapped;
                 screen_write_collect_insert(&mut ctx);
             }
             let mut intervals = Vec::new();
             let mut index = 0;
-            loop {
-                let Some(item) = s.write_rows()[0].items.get(index) else {
-                    break;
-                };
-                intervals.push(((*item).x, (*item).used, (*item).wrapped));
+            while let Some(item) = s.write_rows()[0].items.get(index) {
+                intervals.push((item.x, item.used, item.wrapped));
                 index += 1;
             }
             assert_eq!(intervals, [(0, 3, 1), (3, 3, 0), (6, 4, 0)]);

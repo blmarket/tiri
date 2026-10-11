@@ -134,7 +134,7 @@ unsafe fn cmd_save_buffer_exec(
         {
             let buffer = pb.borrow();
             let bufdata = paste_buffer_data(&buffer).unwrap_or_default();
-            evbuffer_add(&mut evb, &bufdata);
+            evbuffer_add(&mut evb, bufdata);
         }
         cmdq_print_data(item_handle, &mut evb);
         return CMD_RETURN_NORMAL;
@@ -161,7 +161,7 @@ unsafe fn cmd_save_buffer_exec(
         queue_client.as_ref(),
         CStr::from_ptr(path),
         flags,
-        &bufdata,
+        bufdata,
         Some(Box::new(move |event| unsafe {
             cmd_save_buffer_done(
                 &waiting_item

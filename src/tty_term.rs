@@ -1220,7 +1220,7 @@ pub unsafe fn tty_term_apply_overrides(mut term: *mut tty_term) {
         .collect::<Vec<_>>()
         .into_iter();
     a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-        crate::src::options::options_array_item(a_root, &*key)
+        crate::src::options::options_array_item(a_root, &key)
     });
     while !a.is_null() {
         ov = crate::src::options::options_array_item_value_mut(&mut *(a))
@@ -1240,7 +1240,7 @@ pub unsafe fn tty_term_apply_overrides(mut term: *mut tty_term) {
             tty_term_apply(term, s.add(offset), 0 as ::core::ffi::c_int);
         }
         a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-            crate::src::options::options_array_item(a_root, &*key)
+            crate::src::options::options_array_item(a_root, &key)
         });
     }
     log_debug(format_args!(
@@ -1408,7 +1408,7 @@ pub unsafe fn tty_term_create(
         .collect::<Vec<_>>()
         .into_iter();
     a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-        crate::src::options::options_array_item(a_root, &*key)
+        crate::src::options::options_array_item(a_root, &key)
     });
     while !a.is_null() {
         ov = crate::src::options::options_array_item_value_mut(&mut *(a))
@@ -1428,7 +1428,7 @@ pub unsafe fn tty_term_create(
             tty_parse_client_features(client_owner, CStr::from_ptr(s.add(offset)), c":");
         }
         a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-            crate::src::options::options_array_item(a_root, &*key)
+            crate::src::options::options_array_item(a_root, &key)
         });
     }
     del_curterm(cur_term);
@@ -1626,7 +1626,7 @@ pub unsafe fn tty_term_string_i(
     mut code: tty_code_code,
     mut a: ::core::ffi::c_int,
 ) -> std::ffi::CString {
-    let mut x: *const ::core::ffi::c_char = tty_term_string(&*(term), code).as_ptr();
+    let mut x: *const ::core::ffi::c_char = tty_term_string(term, code).as_ptr();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     s = tiparm_s(1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int, x, a);
     if s.is_null() {
@@ -1644,7 +1644,7 @@ pub unsafe fn tty_term_string_ii(
     mut a: ::core::ffi::c_int,
     mut b: ::core::ffi::c_int,
 ) -> std::ffi::CString {
-    let mut x: *const ::core::ffi::c_char = tty_term_string(&*(term), code).as_ptr();
+    let mut x: *const ::core::ffi::c_char = tty_term_string(term, code).as_ptr();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     s = tiparm_s(2 as ::core::ffi::c_int, 0 as ::core::ffi::c_int, x, a, b);
     if s.is_null() {
@@ -1663,7 +1663,7 @@ pub unsafe fn tty_term_string_iii(
     mut b: ::core::ffi::c_int,
     mut c: ::core::ffi::c_int,
 ) -> std::ffi::CString {
-    let mut x: *const ::core::ffi::c_char = tty_term_string(&*(term), code).as_ptr();
+    let mut x: *const ::core::ffi::c_char = tty_term_string(term, code).as_ptr();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     s = tiparm_s(3 as ::core::ffi::c_int, 0 as ::core::ffi::c_int, x, a, b, c);
     if s.is_null() {
@@ -1680,7 +1680,7 @@ pub unsafe fn tty_term_string_s(
     mut code: tty_code_code,
     a: &CStr,
 ) -> std::ffi::CString {
-    let mut x: *const ::core::ffi::c_char = tty_term_string(&*(term), code).as_ptr();
+    let mut x: *const ::core::ffi::c_char = tty_term_string(term, code).as_ptr();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     s = tiparm_s(
         1 as ::core::ffi::c_int,
@@ -1703,7 +1703,7 @@ pub unsafe fn tty_term_string_ss(
     a: &CStr,
     b: &CStr,
 ) -> std::ffi::CString {
-    let mut x: *const ::core::ffi::c_char = tty_term_string(&*(term), code).as_ptr();
+    let mut x: *const ::core::ffi::c_char = tty_term_string(term, code).as_ptr();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     s = tiparm_s(
         2 as ::core::ffi::c_int,
@@ -1820,9 +1820,9 @@ mod term_string_owner_tests {
                 ),
             ] {
                 term.codes[TTYC_CLEAR as usize] = value;
-                let expected = format!("{:4}: clear: {suffix}", TTYC_CLEAR as u32);
+                let expected = format!("{:4}: clear: {suffix}", { TTYC_CLEAR });
                 assert_eq!(
-                    tty_term_describe(&mut term, TTYC_CLEAR).as_bytes(),
+                    tty_term_describe(&term, TTYC_CLEAR).as_bytes(),
                     expected.as_bytes(),
                 );
             }
@@ -1834,35 +1834,35 @@ mod term_string_owner_tests {
         unsafe {
             let mut term = tty_term::empty();
             term.codes = vec![tty_code::None; tty_term_ncodes() as usize].into_boxed_slice();
-            assert_eq!(tty_term_has(&mut term, TTYC_CLEAR), 0);
-            assert_eq!(tty_term_string(&*(&mut term), TTYC_CLEAR), c"");
-            assert_eq!(tty_term_number(&mut term, TTYC_COLORS), 0);
-            assert_eq!(tty_term_flag(&mut term, TTYC_AM), 0);
+            assert_eq!(tty_term_has(&term, TTYC_CLEAR), 0);
+            assert_eq!(tty_term_string(&term, TTYC_CLEAR), c"");
+            assert_eq!(tty_term_number(&term, TTYC_COLORS), 0);
+            assert_eq!(tty_term_flag(&term, TTYC_AM), 0);
 
             let overrides =
                 CString::new(b"clear=first:colors=256:am:bel=high\xff".as_slice()).unwrap();
             tty_term_apply(&mut term, overrides.as_ptr(), 1);
             drop(overrides);
-            assert_eq!(tty_term_string(&*(&mut term), TTYC_CLEAR), c"first");
+            assert_eq!(tty_term_string(&term, TTYC_CLEAR), c"first");
             assert_eq!(
-                tty_term_string(&*(&mut term), TTYC_BEL).to_bytes(),
+                tty_term_string(&term, TTYC_BEL).to_bytes(),
                 b"high\xff"
             );
-            assert_eq!(tty_term_number(&mut term, TTYC_COLORS), 256);
-            assert_eq!(tty_term_flag(&mut term, TTYC_AM), 1);
+            assert_eq!(tty_term_number(&term, TTYC_COLORS), 256);
+            assert_eq!(tty_term_flag(&term, TTYC_AM), 1);
 
             tty_term_apply(&mut term, c"clear=second:colors=invalid".as_ptr(), 1);
-            assert_eq!(tty_term_string(&*(&mut term), TTYC_CLEAR), c"second");
-            assert_eq!(tty_term_number(&mut term, TTYC_COLORS), 256);
+            assert_eq!(tty_term_string(&term, TTYC_CLEAR), c"second");
+            assert_eq!(tty_term_number(&term, TTYC_COLORS), 256);
             tty_term_apply(&mut term, c"clear=:colors@:am@".as_ptr(), 1);
-            assert_eq!(tty_term_has(&mut term, TTYC_CLEAR), 1);
-            assert_eq!(tty_term_string(&*(&mut term), TTYC_CLEAR), c"");
-            assert_eq!(tty_term_has(&mut term, TTYC_COLORS), 0);
-            assert_eq!(tty_term_has(&mut term, TTYC_AM), 0);
+            assert_eq!(tty_term_has(&term, TTYC_CLEAR), 1);
+            assert_eq!(tty_term_string(&term, TTYC_CLEAR), c"");
+            assert_eq!(tty_term_has(&term, TTYC_COLORS), 0);
+            assert_eq!(tty_term_has(&term, TTYC_AM), 0);
             tty_term_apply(&mut term, c"clear@".as_ptr(), 1);
-            assert_eq!(tty_term_has(&mut term, TTYC_CLEAR), 0);
+            assert_eq!(tty_term_has(&term, TTYC_CLEAR), 0);
             tty_term_apply(&mut term, c"clear=restored".as_ptr(), 1);
-            assert_eq!(tty_term_string(&*(&mut term), TTYC_CLEAR), c"restored");
+            assert_eq!(tty_term_string(&term, TTYC_CLEAR), c"restored");
         }
     }
 
@@ -1873,11 +1873,11 @@ mod term_string_owner_tests {
             term.codes = vec![tty_code::None; tty_term_ncodes() as usize].into_boxed_slice();
             term.codes[TTYC_MS as usize] = tty_code::String(CString::default());
             tty_term_validate(&mut term);
-            assert_eq!(tty_term_has(&mut term, TTYC_MS), 0);
+            assert_eq!(tty_term_has(&term, TTYC_MS), 0);
             assert_ne!(term.flags & TERM_INVALIDMS, 0);
             term.codes[TTYC_MS as usize] = tty_code::String(c"%p1%s%p2%s".to_owned());
             tty_term_validate(&mut term);
-            assert_eq!(tty_term_has(&mut term, TTYC_MS), 1);
+            assert_eq!(tty_term_has(&term, TTYC_MS), 1);
             assert_eq!(term.flags & TERM_INVALIDMS, 0);
         }
     }

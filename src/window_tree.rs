@@ -959,7 +959,7 @@ unsafe fn window_tree_draw_session(
                         sy,
                         &gc,
                         &label_gc,
-                        &*label,
+                        &label,
                     );
                 }
             }
@@ -1249,7 +1249,7 @@ unsafe fn window_tree_draw_window(
                                 sy,
                                 &gc,
                                 &label_gc,
-                                &*label,
+                                &label,
                             );
                         }
                     }
@@ -2003,14 +2003,17 @@ unsafe fn window_tree_enqueue_command_done(
     );
     cmdq_append(client_owner, item_allocation);
 }
+/// Prompt input handler that receives the live tree mode owner.
+type window_tree_prompt_fn = unsafe fn(
+    Option<&ClientRef>,
+    &Rc<UnsafeCell<window_tree_modedata>>,
+    Option<&CStr>,
+    prompt_key_result,
+) -> prompt_result;
+
 fn window_tree_prompt_callbacks(
     mode: Rc<UnsafeCell<window_tree_modedata>>,
-    callback: unsafe fn(
-        Option<&ClientRef>,
-        &Rc<UnsafeCell<window_tree_modedata>>,
-        Option<&CStr>,
-        prompt_key_result,
-    ) -> prompt_result,
+    callback: window_tree_prompt_fn,
 ) -> (
     crate::src::shared::mode_tree::mode_tree_prompt_input_cb,
     crate::src::shared::prompt::prompt_free_cb,

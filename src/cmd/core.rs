@@ -293,7 +293,7 @@ pub unsafe fn cmd_get_alias(name: &CStr) -> Option<CString> {
         .collect::<Vec<_>>()
         .into_iter();
     a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-        crate::src::options::options_array_item(a_root, &*key)
+        crate::src::options::options_array_item(a_root, &key)
     });
     while !a.is_null() {
         ov = crate::src::options::options_array_item_value_mut(&mut *(a))
@@ -325,7 +325,7 @@ pub unsafe fn cmd_get_alias(name: &CStr) -> Option<CString> {
             }
         }
         a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-            crate::src::options::options_array_item(a_root, &*key)
+            crate::src::options::options_array_item(a_root, &key)
         });
     }
     None
@@ -752,9 +752,12 @@ pub(crate) unsafe fn cmd_template_replace_cstring(
 mod template_replace_tests {
     use super::*;
 
+    /// (template, replacement, index, expected output)
+    type TemplateCase<'a> = (&'a [u8], &'a [u8], i32, &'a [u8]);
+
     #[test]
     fn preserves_template_substitution_and_quoting_bytes() {
-        let cases: &[(&[u8], &[u8], i32, &[u8])] = &[
+        let cases: &[TemplateCase] = &[
             (b"plain\0", b"unused\0", 1, b"plain"),
             (b"A%1B\0", b"\xff\0", 1, b"A\xffB"),
             (b"A%2B\0", b"x\0", 1, b"A%2B"),
@@ -774,8 +777,8 @@ mod template_replace_tests {
 
         let owned = unsafe {
             cmd_template_replace(
-                CStr::from_bytes_with_nul(b"%1\0").unwrap(),
-                CStr::from_bytes_with_nul(b"x\0").unwrap(),
+                c"%1",
+                c"x",
                 1,
             )
         };

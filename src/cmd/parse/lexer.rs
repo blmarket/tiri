@@ -442,7 +442,7 @@ impl<'a, 'input> Lexer<'a, 'input> {
         }
         let name = finish(name);
         unsafe {
-            let entry = environ_find(global_environ.as_deref().expect("environment"), &*name);
+            let entry = environ_find(global_environ.as_deref().expect("environment"), &name);
             if let Some(entry) = entry {
                 if let Some(value) = &entry.value {
                     bytes.extend_from_slice(value.as_bytes());

@@ -232,8 +232,11 @@ unsafe fn cmd_run_shell_exec(
             1 as ::core::ffi::c_int,
         ));
     }
-    if args_has(args, 't' as i32 as u_char) != 0 && pane_owner.is_some() {
-        cdata.wp_id = pane_owner.as_ref().expect("shell target pane").id() as ::core::ffi::c_int;
+    if let Some(pane) = pane_owner
+        .as_ref()
+        .filter(|_| args_has(args, 't' as i32 as u_char) != 0)
+    {
+        cdata.wp_id = pane.id() as ::core::ffi::c_int;
     } else {
         cdata.wp_id = -(1 as ::core::ffi::c_int);
     }
@@ -312,7 +315,7 @@ unsafe fn cmd_run_shell_timer(mut cdata: Box<cmd_run_shell_data>) {
                     0 as ::core::ffi::c_int,
                     |out| {
                         out.write_all(b"failed to run command: ")?;
-                        write_cstr(out, &*(cmd.unwrap()))
+                        write_cstr(out, cmd.unwrap())
                     },
                 );
             } else {
@@ -320,7 +323,7 @@ unsafe fn cmd_run_shell_timer(mut cdata: Box<cmd_run_shell_data>) {
                     item_owner.as_ref().expect("live command queue item"),
                     |out| {
                         out.write_all(b"failed to run command: ")?;
-                        write_cstr(out, &*(cmd.unwrap()))
+                        write_cstr(out, cmd.unwrap())
                     },
                 );
                 cmdq_continue(item_owner.as_ref().expect("live command queue item"));
@@ -432,7 +435,7 @@ unsafe fn cmd_run_shell_callback(completion: JobCompletion, cdata: &cmd_run_shel
         }
     }
     if let Some(msg) = msg.as_ref() {
-        cmd_run_shell_print(cdata, &*msg);
+        cmd_run_shell_print(cdata, msg);
     }
     if cdata.wait {
         if let Some(client) = cmdq_get_client((item).as_ref()) {

@@ -23,11 +23,16 @@ pub struct grid_cell {
     pub link: u_int,
 }
 
+/// Heap header for a `GridArray`. Boxing the Vec header (rather than holding
+/// it inline) keeps `GridArray` pointer-sized; see `GridArray`.
+#[derive(Clone)]
+struct GridArrayStorage<T>(Vec<T>);
+
 /// Pointer-sized owner preserves the line-header size exposed by history byte
 /// formats. The Vec owns its elements; unused arrays need no allocation.
 #[derive(Clone)]
 #[repr(transparent)]
-pub struct GridArray<T>(Option<Box<Vec<T>>>);
+pub struct GridArray<T>(Option<Box<GridArrayStorage<T>>>);
 
 impl<T> Default for GridArray<T> {
     fn default() -> Self {
@@ -37,37 +42,39 @@ impl<T> Default for GridArray<T> {
 impl<T> std::ops::Deref for GridArray<T> {
     type Target = [T];
     fn deref(&self) -> &[T] {
-        self.0.as_deref().map_or(&[], |items| items.as_slice())
+        self.0.as_deref().map_or(&[], |items| items.0.as_slice())
     }
 }
 impl<T> std::ops::DerefMut for GridArray<T> {
     fn deref_mut(&mut self) -> &mut [T] {
-        self.0
-            .get_or_insert_with(|| Box::new(Vec::new()))
-            .as_mut_slice()
+        self.storage().as_mut_slice()
     }
 }
 impl<T> GridArray<T> {
+    fn storage(&mut self) -> &mut Vec<T> {
+        &mut self
+            .0
+            .get_or_insert_with(|| Box::new(GridArrayStorage(Vec::new())))
+            .0
+    }
     // Vec pointer access does not materialize a slice reference. Callers may
     // retain disjoint element pointers until an operation changes the array.
     pub(crate) fn as_mut_ptr(&mut self) -> *mut T {
         self.0
             .as_mut()
             .map_or(std::ptr::NonNull::dangling().as_ptr(), |items| {
-                items.as_mut_ptr()
+                items.0.as_mut_ptr()
             })
     }
     pub(crate) fn as_ptr(&self) -> *const T {
         self.0
             .as_ref()
             .map_or(std::ptr::NonNull::dangling().as_ptr(), |items| {
-                items.as_ptr()
+                items.0.as_ptr()
             })
     }
     pub(crate) fn resize_with(&mut self, len: usize, init: impl FnMut() -> T) {
-        self.0
-            .get_or_insert_with(|| Box::new(Vec::new()))
-            .resize_with(len, init);
+        self.storage().resize_with(len, init);
     }
     pub(crate) fn clear(&mut self) {
         // Keep the translated explicit release behavior, including capacity.
@@ -219,6 +226,9 @@ pub struct grid_reader<'a> {
     pub cy: u_int,
 }
 
+pub const WHITESPACE: [::core::ffi::c_char; 3] =
+    unsafe { ::core::mem::transmute::<[u8; 3], [::core::ffi::c_char; 3]>(*b"\t \0") };
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -260,6 +270,3 @@ mod tests {
         assert_eq!(offset_of!(grid_cell_entry, flags), 4);
     }
 }
-
-pub const WHITESPACE: [::core::ffi::c_char; 3] =
-    unsafe { ::core::mem::transmute::<[u8; 3], [::core::ffi::c_char; 3]>(*b"\t \0") };

@@ -165,11 +165,11 @@ fn find_window_filter(
 #[cfg(test)]
 mod tests {
     use super::find_window_filter;
-    use std::ffi::CStr;
+    
 
     #[test]
     fn find_window_filter_preserves_all_flag_combinations_and_bytes() {
-        let pattern = CStr::from_bytes_with_nul(b"a\xff\0").unwrap();
+        let pattern = c"a\xff";
         let suffix = c"/ri";
         let star = c"*";
         let cases: &[(bool, bool, bool, &[u8])] = &[

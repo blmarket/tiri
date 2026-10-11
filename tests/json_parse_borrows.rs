@@ -83,8 +83,8 @@ fn recursive_borrows_preserve_depth_limit_and_restore_depth_for_siblings() {
             // The outer object and innermost empty object count toward depth.
             let nested = format!(
                 "{}{{}}{}",
-                open.repeat((depth - 1) as usize),
-                close.repeat((depth - 1) as usize)
+                open.repeat(depth - 1),
+                close.repeat(depth - 1)
             );
             let input = CString::new(format!(r#"{{"a":{nested},"b":{nested}}}"#)).unwrap();
             let mut cause = None;

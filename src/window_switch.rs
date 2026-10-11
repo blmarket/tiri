@@ -59,7 +59,7 @@ pub struct window_switch_modedata {
     pub prompt: Option<refbox::RefBox<crate::src::shared::prompt::prompt>>,
     pub prompt_cx: u_int,
     // Match indices are rebuilt whenever the owned row list changes.
-    item_list: Vec<Box<window_switch_itemdata>>,
+    item_list: Vec<window_switch_itemdata>,
     matches: Vec<usize>,
     pub current: u_int,
     pub offset: u_int,
@@ -120,39 +120,42 @@ pub static window_switch_mode: window_mode = {
 };
 unsafe fn window_switch_add_item(
     mut data: *mut window_switch_modedata,
-) -> *mut window_switch_itemdata {
-    let mut item = Box::new(window_switch_itemdata {
-        type_0: WINDOW_SWITCH_TYPE_SESSION,
-        session: 0,
-        winlink: 0,
-        text: CString::default(),
+    type_0: window_switch_type,
+    session: ::core::ffi::c_int,
+    winlink: ::core::ffi::c_int,
+    order: *mut u_int,
+    ft: *mut format_tree,
+) {
+    let fresh = *order;
+    *order = (*order).wrapping_add(1);
+    let text = format_expand_cstring(ft, (*data).format.as_ptr());
+    (*data).item_list.push(window_switch_itemdata {
+        type_0,
+        session,
+        winlink,
+        text,
         match_mask: None,
         score: 0,
-        order: 0,
+        order: fresh,
     });
-    let ptr = &raw mut *item;
-    (*data).item_list.push(item);
-    ptr
 }
 unsafe fn window_switch_add_session(
     mut data: *mut window_switch_modedata,
     s_owner: &SessionRef,
     mut order: *mut u_int,
 ) {
-    let s = Some(s_owner.clone());
-    let mut item: *mut window_switch_itemdata = ::core::ptr::null_mut::<window_switch_itemdata>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut ft_owner = format_create(None, None, FORMAT_NONE, 0 as ::core::ffi::c_int);
     ft = &raw mut *ft_owner;
     format_defaults(ft, None, Some(s_owner), (refbox::Weak::new()).clone(), None);
-    item = window_switch_add_item(data);
-    (*item).type_0 = WINDOW_SWITCH_TYPE_SESSION;
-    (*item).session = s.as_ref().expect("live session").id() as ::core::ffi::c_int;
-    (*item).winlink = -(1 as ::core::ffi::c_int);
-    let fresh7 = *order;
-    *order = (*order).wrapping_add(1);
-    (*item).order = fresh7;
-    (*item).text = format_expand_cstring(ft, (*data).format.as_ptr());
+    window_switch_add_item(
+        data,
+        WINDOW_SWITCH_TYPE_SESSION,
+        s_owner.id() as ::core::ffi::c_int,
+        -(1 as ::core::ffi::c_int),
+        order,
+        ft,
+    );
     drop(ft_owner);
 }
 unsafe fn window_switch_add_window(
@@ -160,7 +163,6 @@ unsafe fn window_switch_add_window(
     mut wl: refbox::Weak<winlink>,
     mut order: *mut u_int,
 ) {
-    let mut item: *mut window_switch_itemdata = ::core::ptr::null_mut::<window_switch_itemdata>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let Some(session_owner) = wl.get_unchecked().session.upgrade() else {
         return;
@@ -168,18 +170,18 @@ unsafe fn window_switch_add_window(
     let mut ft_owner = format_create(None, None, FORMAT_NONE, 0 as ::core::ffi::c_int);
     ft = &raw mut *ft_owner;
     format_defaults(ft, None, Some(&session_owner), wl.clone(), None);
-    item = window_switch_add_item(data);
-    (*item).type_0 = WINDOW_SWITCH_TYPE_WINDOW;
-    (*item).session = session_owner.id() as ::core::ffi::c_int;
-    (*item).winlink = wl.get_unchecked().idx;
-    let fresh4 = *order;
-    *order = (*order).wrapping_add(1);
-    (*item).order = fresh4;
-    (*item).text = format_expand_cstring(ft, (*data).format.as_ptr());
+    window_switch_add_item(
+        data,
+        WINDOW_SWITCH_TYPE_WINDOW,
+        session_owner.id() as ::core::ffi::c_int,
+        wl.get_unchecked().idx,
+        order,
+        ft,
+    );
     drop(ft_owner);
 }
 fn window_switch_matches(
-    items: &mut [Box<window_switch_itemdata>],
+    items: &mut [window_switch_itemdata],
     filter: &CStr,
     width: u_int,
 ) -> Vec<usize> {
@@ -358,7 +360,7 @@ unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
             break;
         }
         let row = (&(*data).matches)[idx as usize];
-        item = &raw mut *(&mut (*data).item_list)[row];
+        item = &raw mut (&mut (*data).item_list)[row];
         screen_write_cursormove(
             &mut ctx,
             0 as ::core::ffi::c_int,
@@ -558,7 +560,7 @@ unsafe fn window_switch_run_command(
         return 0 as ::core::ffi::c_int;
     }
     let row = (&(*data).matches)[(*data).current as usize];
-    item = &raw mut *(&mut (*data).item_list)[row];
+    item = &raw mut (&mut (*data).item_list)[row];
     fs = cmd_find_state::clear_state(0 as ::core::ffi::c_int);
     match (*item).type_0 as ::core::ffi::c_uint {
         0 => {
@@ -1047,8 +1049,8 @@ unsafe fn window_switch_key(
 mod match_tests {
     use super::*;
 
-    fn row(text: &CStr, order: u_int) -> Box<window_switch_itemdata> {
-        Box::new(window_switch_itemdata {
+    fn row(text: &CStr, order: u_int) -> window_switch_itemdata {
+        window_switch_itemdata {
             type_0: WINDOW_SWITCH_TYPE_SESSION,
             session: 0,
             winlink: 0,
@@ -1056,7 +1058,7 @@ mod match_tests {
             match_mask: None,
             score: 0,
             order,
-        })
+        }
     }
 
     #[test]

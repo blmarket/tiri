@@ -43,7 +43,7 @@ impl JsonValue {
 
 #[derive(Debug, Default)]
 pub struct json_members_storage {
-    pub(crate) members: Vec<Box<json_node>>,
+    pub(crate) members: Vec<json_node>,
 }
 
 #[derive(Debug, Default)]

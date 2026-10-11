@@ -320,8 +320,7 @@ pub unsafe fn utf8_strvis(dst: &mut [u8], src: &[u8], flag: i32) -> usize {
             offset = start;
         }
         let next = src.get(offset + 1).copied();
-        if flag & VIS_DQ != 0 && src[offset] == b'$' && next.is_some() {
-            let next = next.unwrap();
+        if let Some(next) = next.filter(|_| flag & VIS_DQ != 0 && src[offset] == b'$') {
             if is_alpha(next) || matches!(next, b'_' | b'{') {
                 dst[written] = b'\\';
                 written += 1;
@@ -656,7 +655,7 @@ mod tests {
 
     #[test]
     fn owned_cell_decoder_retries_each_byte_after_a_bad_sequence() {
-        let cells = utf8_fromcstr_vec(CStr::from_bytes_with_nul(b"\xe2(\xa1\0").unwrap());
+        let cells = utf8_fromcstr_vec(c"\xe2(\xa1");
         assert_eq!(cells.len(), 4);
         for (cell, byte) in cells[..3].iter().zip([0xe2, b'(', 0xa1]) {
             assert_eq!(cell.size, 1);

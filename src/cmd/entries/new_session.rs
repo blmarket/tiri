@@ -314,21 +314,16 @@ unsafe fn cmd_new_session_exec(
                 5193972633326621385 => {}
                 _ => {
                     detached = args_has(args, 'd' as i32 as u_char);
-                    if c.is_none() {
-                        detached = 1 as ::core::ffi::c_int;
-                    } else if c.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t
-                        != 0
-                    {
-                        is_control = 1 as ::core::ffi::c_int;
+                    match &c {
+                        None => detached = 1 as ::core::ffi::c_int,
+                        Some(client) if client.flags() & CLIENT_CONTROL as uint64_t != 0 => {
+                            is_control = 1 as ::core::ffi::c_int;
+                        }
+                        Some(_) => {}
                     }
                     already_attached = 0 as ::core::ffi::c_int;
-                    if !c.is_none()
-                        && !c
-                            .as_ref()
-                            .expect("live client")
-                            .attached_session()
-                            .upgrade()
-                            .is_none()
+                    if c.as_ref()
+                        .is_some_and(|client| client.attached_session().upgrade().is_some())
                     {
                         already_attached = 1 as ::core::ffi::c_int;
                     }
@@ -551,12 +546,10 @@ unsafe fn cmd_new_session_exec(
                                                         );
                                                     }
                                                     env = Some(environ_create());
-                                                    if !c.is_none()
-                                                        && args_has(args, 'E' as i32 as u_char) == 0
-                                                    {
-                                                        let client_environment = c
-                                                            .as_ref()
-                                                            .expect("live client")
+                                                    if let Some(client) = c.as_ref().filter(|_| {
+                                                        args_has(args, 'E' as i32 as u_char) == 0
+                                                    }) {
+                                                        let client_environment = client
                                                             .with_environment(|env| {
                                                                 env.expect("client environment")
                                                                     .clone()

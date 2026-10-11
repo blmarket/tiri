@@ -273,7 +273,7 @@ pub unsafe fn window_create(
     if ypixel == 0 as u_int {
         ypixel = DEFAULT_YPIXEL as u_int;
     }
-    let owner = window::new();
+    let owner = window::new_ref();
     let w = owner.get();
     (*w).flags = 0 as ::core::ffi::c_int;
     (*w).panes = window_panes::default();
@@ -334,7 +334,7 @@ unsafe fn window_set_name(w_owner: &WindowRef, new_name: &CStr, mut untrusted: :
     if let Some(name) = clean_name_cstring(new_name, untrusted) {
         // Keep the previous owner alive across synchronous rename callbacks.
         let last = window_replace_name(w_owner, name);
-        window_fire_renamed(w_owner, &*last);
+        window_fire_renamed(w_owner, &last);
     }
 }
 unsafe fn window_resize(

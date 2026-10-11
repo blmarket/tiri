@@ -90,7 +90,7 @@ mod tests {
     fn owner_operations_preserve_item_addresses_and_order() {
         let mut dst = screen_write_items::default();
         let mut src = screen_write_items::default();
-        let make_item = || Box::new(Default::default());
+        let make_item = || Box::default();
 
         let first = make_item();
         let first_ptr = address(&first);
@@ -102,7 +102,7 @@ mod tests {
         let inserted = make_item();
         let inserted_ptr = address(&inserted);
         dst.insert(1, inserted);
-        assert_eq!(address(dst.get(0).unwrap()), first_ptr);
+        assert_eq!(address(dst.front().unwrap()), first_ptr);
         assert_eq!(address(dst.get(1).unwrap()), inserted_ptr);
         assert_eq!(address(dst.get(2).unwrap()), second_ptr);
 
@@ -112,7 +112,7 @@ mod tests {
             src_last = address(&item);
             src.push_back(item);
         }
-        let src_first = address(src.get(0).unwrap());
+        let src_first = address(src.front().unwrap());
         dst.append(&mut src);
         assert!(src.is_empty());
         assert_eq!(address(dst.get(2).unwrap()), second_ptr);
@@ -121,7 +121,7 @@ mod tests {
         assert!(dst.get(67).is_none());
         assert_eq!(address(dst.get(1).unwrap()), inserted_ptr);
         dst.append(&mut src);
-        assert_eq!(address(dst.get(0).unwrap()), first_ptr);
+        assert_eq!(address(dst.front().unwrap()), first_ptr);
 
         let tail = make_item();
         let tail_ptr = address(&tail);
@@ -131,8 +131,8 @@ mod tests {
 
         let removed = dst.remove(1).expect("linked write command");
         assert_eq!(address(&removed), inserted_ptr);
-        assert_eq!(address(dst.get(0).unwrap()), first_ptr);
+        assert_eq!(address(dst.front().unwrap()), first_ptr);
         assert_eq!(address(dst.get(1).unwrap()), second_ptr);
-        assert_eq!(address(dst.get(0).unwrap()), first_ptr);
+        assert_eq!(address(dst.front().unwrap()), first_ptr);
     }
 }

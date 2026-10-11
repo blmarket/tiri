@@ -1198,7 +1198,7 @@ pub unsafe fn format_draw(
                 ))
                 .expect("format style contains an interior NUL");
                 style_copy(&raw mut saved_sy, &raw mut sy);
-                if style_parse(&raw mut sy, &current_default, &*style_text)
+                if style_parse(&raw mut sy, &current_default, &style_text)
                     != 0 as ::core::ffi::c_int
                 {
                     log_debug(format_args!(

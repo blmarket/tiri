@@ -1355,7 +1355,7 @@ pub unsafe fn tty_keys_build(mut tty: *mut tty) {
     for (index, value) in keys {
         tty_keys_add(
             tty,
-            &*value,
+            &value,
             (KEYC_USER as ::core::ffi::c_ulong).wrapping_add(index as ::core::ffi::c_ulong)
                 as key_code,
         );
@@ -2426,7 +2426,7 @@ unsafe fn tty_keys_extended_key(
         log_debug(format_args!(
             "{}: extended key {} is {:x} ({})",
             log_cstr(diagnostic_name.unwrap_or(c"(null)")),
-            log_cstr_n(&bytes[..*size as usize]),
+            log_cstr_n(&bytes[..*size]),
             (nkey) as u64,
             crate::src::log::log_bytes(key_string.as_bytes())
         ));
@@ -2490,7 +2490,7 @@ unsafe fn tty_keys_mouse(
         log_debug(format_args!(
             "{}: mouse input: {}",
             log_cstr(diagnostic_name.unwrap_or(c"(null)")),
-            log_cstr_n(&bytes[..*size as usize])
+            log_cstr_n(&bytes[..*size])
         ));
         if b < MOUSE_PARAM_BTN_OFF as u_int
             || x < MOUSE_PARAM_POS_OFF as u_int
@@ -2557,7 +2557,7 @@ unsafe fn tty_keys_mouse(
         log_debug(format_args!(
             "{}: mouse input (SGR): {}",
             log_cstr(diagnostic_name.unwrap_or(c"(null)")),
-            log_cstr_n(&bytes[..*size as usize])
+            log_cstr_n(&bytes[..*size])
         ));
         if x < 1 as u_int || y < 1 as u_int {
             return -(2 as ::core::ffi::c_int);
@@ -2843,7 +2843,7 @@ unsafe fn tty_keys_device_attributes(
                 .as_deref()
                 .unwrap_or(c"(null)")
         ),
-        log_cstr_n(&bytes[..*size as usize])
+        log_cstr_n(&bytes[..*size])
     ));
     tty_update_features(terminal_client_owner);
     terminal_client_owner.borrow_terminal_mut().flags |= TTY_HAVEDA;
@@ -2915,7 +2915,7 @@ unsafe fn tty_keys_sync(
                 .as_deref()
                 .unwrap_or(c"(null)")
         ),
-        log_cstr_n(&bytes[..*size as usize])
+        log_cstr_n(&bytes[..*size])
     ));
     terminal_client_owner.borrow_terminal_mut().flags |= TTY_HAVESYNC;
     0 as ::core::ffi::c_int
@@ -3049,7 +3049,7 @@ unsafe fn tty_keys_device_attributes2(
                 .as_deref()
                 .unwrap_or(c"(null)")
         ),
-        log_cstr_n(&bytes[..*size as usize])
+        log_cstr_n(&bytes[..*size])
     ));
     tty_update_features(terminal_client_owner);
     terminal_client_owner.borrow_terminal_mut().flags |= TTY_HAVEDA2;
@@ -3184,7 +3184,7 @@ unsafe fn tty_keys_extended_device_attributes(
                 .as_deref()
                 .unwrap_or(c"(null)")
         ),
-        log_cstr_n(&bytes[..*size as usize])
+        log_cstr_n(&bytes[..*size])
     ));
     terminal_client_owner.record_terminal_type(CStr::from_ptr(tmp.as_ptr()));
     tty_update_features(terminal_client_owner);

@@ -92,7 +92,7 @@ unsafe fn cmd_resize_window_exec(
                 Err(error) => {
                     cmdq_error(item_handle, |out| {
                         out.write_all(b"width ")?;
-                        write_cstr(out, &*(error.message()))
+                        write_cstr(out, error.message())
                     });
                     return CMD_RETURN_ERROR;
                 }
@@ -109,7 +109,7 @@ unsafe fn cmd_resize_window_exec(
                 Err(error) => {
                     cmdq_error(item_handle, |out| {
                         out.write_all(b"height ")?;
-                        write_cstr(out, &*(error.message()))
+                        write_cstr(out, error.message())
                     });
                     return CMD_RETURN_ERROR;
                 }

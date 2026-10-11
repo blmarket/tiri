@@ -1366,10 +1366,10 @@ unsafe fn window_pane_copy_paste(
             log_debug(format_args!(
                 "{}: {}",
                 "window_pane_copy_paste",
-                log_cstr_n(&bytes)
+                log_cstr_n(bytes)
             ));
             let _ = (*loop_0).event.with_ptr(|event| unsafe {
-                bufferevent_write(event, &bytes);
+                bufferevent_write(event, bytes);
             });
         }
         cursor = window_owner.next_pane(Some(&pane_owner));
@@ -1429,10 +1429,10 @@ unsafe fn window_pane_paste(
     log_debug(format_args!(
         "{}: {}",
         "window_pane_paste",
-        log_cstr_n(&bytes)
+        log_cstr_n(bytes)
     ));
     let _ = (*wp).event.with_ptr(|event| unsafe {
-        bufferevent_write(event, &bytes);
+        bufferevent_write(event, bytes);
     });
     if options_get_number(
         options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
@@ -1648,8 +1648,11 @@ unsafe fn window_pane_input_callback(
         client.request_exit(1);
     }
     let file = cdata.file.upgrade();
-    if file.is_some() && !closed && (wp.is_null() || client.is_dead() || error != 0) {
-        file_cancel(&mut *file.as_ref().unwrap().get());
+    if let Some(cancelled) = file
+        .as_ref()
+        .filter(|_| !closed && (wp.is_null() || client.is_dead() || error != 0))
+    {
+        file_cancel(&mut *cancelled.get());
     } else if file.is_none() || closed || error != 0 {
         cmdq_continue(
             &cdata
@@ -2134,12 +2137,31 @@ unsafe fn window_pane_get_pane_lines(wp: &window_pane) -> pane_lines {
 
 impl Drop for window_pane {
     fn drop(&mut self) {
-        unsafe { log_debug(format_args!("pane %{} freed", { self.id })) };
+        log_debug(format_args!("pane %{} freed", { self.id }));
         // Logical destroy normally takes the parser first; direct owner
         // destruction must still drop it before the screens it writes to.
         drop(self.ictx.take());
     }
 }
+
+pub(crate) use input::{input_complete_request, input_free_request, input_request_matches};
+pub use input::{
+    input_csi_type, input_esc_type, input_init, input_parse_screen, input_pending,
+    input_reply_clipboard, input_request_reply, input_reset, input_set_buffer_size,
+    input_table_entry, InputRequestReply, INPUT_BUF_START, INPUT_CSI_CBT, INPUT_CSI_CNL,
+    INPUT_CSI_CPL, INPUT_CSI_CUB, INPUT_CSI_CUD, INPUT_CSI_CUF, INPUT_CSI_CUP, INPUT_CSI_CUU,
+    INPUT_CSI_DA, INPUT_CSI_DA_TWO, INPUT_CSI_DCH, INPUT_CSI_DECSCUSR, INPUT_CSI_DECSTBM,
+    INPUT_CSI_DL, INPUT_CSI_DSR, INPUT_CSI_DSR_PRIVATE, INPUT_CSI_ECH, INPUT_CSI_ED, INPUT_CSI_EL,
+    INPUT_CSI_HPA, INPUT_CSI_ICH, INPUT_CSI_IL, INPUT_CSI_MODOFF, INPUT_CSI_MODSET,
+    INPUT_CSI_QUERY, INPUT_CSI_QUERY_PRIVATE, INPUT_CSI_RCP, INPUT_CSI_REP, INPUT_CSI_RM,
+    INPUT_CSI_RM_PRIVATE, INPUT_CSI_SCP, INPUT_CSI_SD, INPUT_CSI_SGR, INPUT_CSI_SM,
+    INPUT_CSI_SM_GRAPHICS, INPUT_CSI_SM_PRIVATE, INPUT_CSI_SU, INPUT_CSI_TBC, INPUT_CSI_VPA,
+    INPUT_CSI_WINOPS, INPUT_CSI_XDA, INPUT_DISCARD, INPUT_END_BEL, INPUT_END_ST, INPUT_ESC_DECALN,
+    INPUT_ESC_DECKPAM, INPUT_ESC_DECKPNM, INPUT_ESC_DECRC, INPUT_ESC_DECSC, INPUT_ESC_HTS,
+    INPUT_ESC_IND, INPUT_ESC_NEL, INPUT_ESC_RI, INPUT_ESC_RIS, INPUT_ESC_SCSG0_OFF,
+    INPUT_ESC_SCSG0_ON, INPUT_ESC_SCSG1_OFF, INPUT_ESC_SCSG1_ON, INPUT_ESC_ST, INPUT_LAST,
+    INPUT_REQUEST_TIMEOUT,
+};
 
 #[cfg(test)]
 mod pane_prompt_data_tests {
@@ -2239,22 +2261,3 @@ mod pane_prompt_data_tests {
         }
     }
 }
-
-pub(crate) use input::{input_complete_request, input_free_request, input_request_matches};
-pub use input::{
-    input_csi_type, input_esc_type, input_init, input_parse_screen, input_pending,
-    input_reply_clipboard, input_request_reply, input_reset, input_set_buffer_size,
-    input_table_entry, InputRequestReply, INPUT_BUF_START, INPUT_CSI_CBT, INPUT_CSI_CNL,
-    INPUT_CSI_CPL, INPUT_CSI_CUB, INPUT_CSI_CUD, INPUT_CSI_CUF, INPUT_CSI_CUP, INPUT_CSI_CUU,
-    INPUT_CSI_DA, INPUT_CSI_DA_TWO, INPUT_CSI_DCH, INPUT_CSI_DECSCUSR, INPUT_CSI_DECSTBM,
-    INPUT_CSI_DL, INPUT_CSI_DSR, INPUT_CSI_DSR_PRIVATE, INPUT_CSI_ECH, INPUT_CSI_ED, INPUT_CSI_EL,
-    INPUT_CSI_HPA, INPUT_CSI_ICH, INPUT_CSI_IL, INPUT_CSI_MODOFF, INPUT_CSI_MODSET,
-    INPUT_CSI_QUERY, INPUT_CSI_QUERY_PRIVATE, INPUT_CSI_RCP, INPUT_CSI_REP, INPUT_CSI_RM,
-    INPUT_CSI_RM_PRIVATE, INPUT_CSI_SCP, INPUT_CSI_SD, INPUT_CSI_SGR, INPUT_CSI_SM,
-    INPUT_CSI_SM_GRAPHICS, INPUT_CSI_SM_PRIVATE, INPUT_CSI_SU, INPUT_CSI_TBC, INPUT_CSI_VPA,
-    INPUT_CSI_WINOPS, INPUT_CSI_XDA, INPUT_DISCARD, INPUT_END_BEL, INPUT_END_ST, INPUT_ESC_DECALN,
-    INPUT_ESC_DECKPAM, INPUT_ESC_DECKPNM, INPUT_ESC_DECRC, INPUT_ESC_DECSC, INPUT_ESC_HTS,
-    INPUT_ESC_IND, INPUT_ESC_NEL, INPUT_ESC_RI, INPUT_ESC_RIS, INPUT_ESC_SCSG0_OFF,
-    INPUT_ESC_SCSG0_ON, INPUT_ESC_SCSG1_OFF, INPUT_ESC_SCSG1_ON, INPUT_ESC_ST, INPUT_LAST,
-    INPUT_REQUEST_TIMEOUT,
-};

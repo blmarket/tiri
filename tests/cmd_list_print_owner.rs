@@ -117,7 +117,7 @@ fn list_printer_preserves_empty_and_group_separator_bytes() {
             b"{ display-message ; display-message ;; display-message }"
         );
 
-        let argv = args_to_vector(&*args);
+        let argv = args_to_vector(&args);
         assert_eq!(argv.len(), 1);
         assert_eq!(
             argv[0].as_bytes(),

@@ -22,7 +22,7 @@ fn input_bytes(prompt: &prompt) -> Vec<u8> {
 fn creation_preserves_input_expansion_incremental_state_and_owned_resources() {
     unsafe {
         let saved = (
-            global_environ.take(),
+            std::ptr::replace(&raw mut global_environ, None),
             global_options,
             global_s_options,
             global_w_options,
@@ -49,14 +49,14 @@ fn creation_preserves_input_expansion_incremental_state_and_owned_resources() {
             c"status-keys",
             c"word-separators",
         ] {
-            let definition = (&options_table)
+            let definition = options_table
                 .iter()
                 .find(|entry| entry.name == Some(name))
                 .unwrap();
             options_default(session, definition);
         }
         let events = Rc::new(RefCell::new(Vec::new()));
-        let mut state = cmd_find_state {
+        let state = cmd_find_state {
             flags: 77,
             idx: 9,
             ..Default::default()

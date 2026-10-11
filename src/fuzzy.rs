@@ -158,7 +158,7 @@ unsafe fn fuzzy_scan(text: &CStr, widths: &mut [u_int; 5]) -> Vec<fuzzy_char> {
                     }
                     let len = end.offset_from(start) as usize;
                     let style_text = CString::new(&style_start[..len]).unwrap();
-                    if style_parse(&mut sy, &grid_default_cell, &*style_text) == 0 {
+                    if style_parse(&mut sy, &grid_default_cell, &style_text) == 0 {
                         current = fuzzy_align(sy.align);
                     }
                     remaining = &style_start[len + 1..];

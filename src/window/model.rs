@@ -69,7 +69,7 @@ impl window {
         self.active = pane.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     }
 
-    pub(super) fn new() -> WindowRef {
+    pub(super) fn new_ref() -> WindowRef {
         let value = Self {
             id: Default::default(),
             latest: Default::default(),

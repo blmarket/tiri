@@ -80,7 +80,7 @@ fn rejects_invalid_bytes_and_sentinels_have_distinct_contracts() {
 #[test]
 fn empty_inputs_are_rejected_by_both_rust_parse_entry_points() {
     assert_eq!(key_string_parse(b""), None);
-    let empty = CStr::from_bytes_with_nul(b"\0").unwrap();
+    let empty = c"";
     assert_eq!(key_string_parse_cstr(empty), None);
 }
 
@@ -100,7 +100,7 @@ fn safe_cstr_parser_preserves_prefix_and_suffix_boundaries() {
         assert_eq!(key_string_parse(&input[..input.len() - 1]), Some(expected));
     }
 
-    let numeric = CStr::from_bytes_with_nul(b"0x41tail\0").unwrap();
+    let numeric = c"0x41tail";
     let numeric_key = key_string_parse_cstr(numeric).expect("numeric key");
     assert_eq!(key_string_parse(b"0x41tail"), Some(numeric_key));
     assert_eq!(formatted(numeric_key, false), b"A");
@@ -116,14 +116,14 @@ fn safe_cstr_parser_keeps_invalid_bytes_and_sentinels_at_the_boundary() {
         let cstr = CStr::from_bytes_with_nul(input).unwrap();
         assert_eq!(key_string_parse_cstr(cstr), None, "{input:?}");
         unsafe {
-            assert_eq!(key_string_lookup_string(&*cstr), KEYC_UNKNOWN);
+            assert_eq!(key_string_lookup_string(cstr), KEYC_UNKNOWN);
         }
     }
 
-    let unknown = CStr::from_bytes_with_nul(b"Unknown\0").unwrap();
+    let unknown = c"Unknown";
     assert_eq!(key_string_parse_cstr(unknown), None);
     unsafe {
-        assert_eq!(key_string_lookup_string(&*unknown), KEYC_UNKNOWN);
+        assert_eq!(key_string_lookup_string(unknown), KEYC_UNKNOWN);
     }
 }
 
@@ -213,7 +213,7 @@ fn c_exports_remain_narrow_compatibility_adapters() {
     unsafe {
         let input = CString::new("C-a").unwrap();
         assert_eq!(
-            key_string_lookup_string(&*input),
+            key_string_lookup_string(&input),
             key_string_parse_cstr(&input).unwrap()
         );
 

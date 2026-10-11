@@ -213,7 +213,7 @@ unsafe fn paste_fire_event(
     // Finish reading the buffer before dispatch: listeners may look up,
     // replace, or rename buffers synchronously.
     event_payload_set_string(&mut ep, c"paste_buffer", write);
-    events_fire(&*name, ep);
+    events_fire(name, ep);
 }
 
 pub fn paste_buffer_name(pb: &paste_buffer) -> &CStr {

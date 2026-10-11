@@ -1056,7 +1056,7 @@ pub unsafe fn style_set_scrollbar_style_from_option(
         (refbox::Weak::new()).clone(),
         None,
     );
-    if style_parse(sb_style, &grid_default_cell, &*style) != 0 as ::core::ffi::c_int {
+    if style_parse(sb_style, &grid_default_cell, &style) != 0 as ::core::ffi::c_int {
         fatalx(|out| out.write_all(b"bad pane-scrollbars-style default"));
     }
     let value = crate::src::options::options_get_string_optional(oo, c"pane-scrollbars-style");
@@ -1069,8 +1069,8 @@ pub unsafe fn style_set_scrollbar_style_from_option(
             (refbox::Weak::new()).clone(),
             None,
         );
-        if style_parse(sb_style, &grid_default_cell, &*expanded) != 0 as ::core::ffi::c_int {
-            style_parse(sb_style, &grid_default_cell, &*style);
+        if style_parse(sb_style, &grid_default_cell, &expanded) != 0 as ::core::ffi::c_int {
+            style_parse(sb_style, &grid_default_cell, &style);
         }
     }
     if (*sb_style).width < 1 as ::core::ffi::c_int {
@@ -1128,8 +1128,7 @@ mod style_ranges_tests {
 
     #[test]
     fn cloned_ranges_own_independent_boxes() {
-        let mut original = style_ranges::default();
-        original.push(range(2, 4));
+        let original: style_ranges = vec![range(2, 4)];
         let cloned = original.clone();
         assert!(!std::ptr::eq(
             original.as_slice()[0].as_ref(),

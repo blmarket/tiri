@@ -299,7 +299,7 @@ pub unsafe fn options_default(
             options_array_set(
                 o,
                 CStr::from_ptr(&raw mut key as *mut ::core::ffi::c_char),
-                Some(&*value),
+                Some(*value),
                 0 as ::core::ffi::c_int,
                 ::core::ptr::null_mut::<Option<CString>>(),
             );
@@ -457,7 +457,7 @@ pub unsafe fn options_array_clear(mut o: *mut options_entry) {
         .map(|item| item.key.clone())
         .collect();
     for key in keys {
-        let item = options_array_item(o, &*key);
+        let item = options_array_item(o, &key);
         if !item.is_null() {
             options_array_free(o, item);
         }
@@ -525,7 +525,7 @@ pub unsafe fn options_array_set(
         return -(1 as ::core::ffi::c_int);
     };
     if value.is_null() {
-        a = options_array_item(o, &*new_key);
+        a = options_array_item(o, &new_key);
         if !a.is_null() {
             options_array_free(o, a);
         }
@@ -545,9 +545,9 @@ pub unsafe fn options_array_set(
             }
             return -(1 as ::core::ffi::c_int);
         }
-        a = options_array_item(o, &*new_key);
+        a = options_array_item(o, &new_key);
         if a.is_null() {
-            a = options_array_new(o, &*new_key);
+            a = options_array_new(o, &new_key);
         } else {
             options_value_free(&raw mut (*a).value);
         }
@@ -558,7 +558,7 @@ pub unsafe fn options_array_set(
         .tableentry
         .is_none_or(|entry| entry.type_0 == OPTIONS_TABLE_STRING)
     {
-        a = options_array_item(o, &*new_key);
+        a = options_array_item(o, &new_key);
         let owned_value = if !a.is_null() && append != 0 {
             let previous = (*a).value.string_ptr().expect("string option").to_bytes();
             let suffix = CStr::from_ptr(value).to_bytes();
@@ -570,7 +570,7 @@ pub unsafe fn options_array_set(
             CStr::from_ptr(value).to_owned()
         };
         if a.is_null() {
-            a = options_array_new(o, &*new_key);
+            a = options_array_new(o, &new_key);
         }
         set_array_string(&mut *a, owned_value);
         return 0 as ::core::ffi::c_int;
@@ -584,9 +584,9 @@ pub unsafe fn options_array_set(
             format_options_cause!(cause, c"bad colour: %s", CStr::from_ptr(value),);
             return -(1 as ::core::ffi::c_int);
         }
-        a = options_array_item(o, &*new_key);
+        a = options_array_item(o, &new_key);
         if a.is_null() {
-            a = options_array_new(o, &*new_key);
+            a = options_array_new(o, &new_key);
         } else {
             options_value_free(&raw mut (*a).value);
         }
@@ -1312,7 +1312,7 @@ pub unsafe fn options_from_string(
                 write_cstr(out, nullable_cstr(value))
             });
             let new = options_get_string(oo, name);
-            if options_from_string_check(oe, &*new, cause) != 0 as ::core::ffi::c_int {
+            if options_from_string_check(oe, &new, cause) != 0 as ::core::ffi::c_int {
                 options_set_string(oo, name, 0 as ::core::ffi::c_int, |out| {
                     write_cstr(out, &*old)
                 });

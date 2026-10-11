@@ -179,7 +179,7 @@ unsafe fn cmd_show_options_exec(
     let scope = options_scope_from_name(
         args,
         window,
-        &*parsed.name,
+        &parsed.name,
         target,
         &mut selected,
         &mut cause,
@@ -223,7 +223,7 @@ unsafe fn show_options_scope_error(
     if quiet {
         return CMD_RETURN_NORMAL;
     }
-    cmdq_error(item, |out| write_cstr(out, &*cause.expect("scope failure")));
+    cmdq_error(item, |out| write_cstr(out, cause.expect("scope failure")));
     CMD_RETURN_ERROR
 }
 
@@ -271,7 +271,7 @@ unsafe fn cmd_show_options_print(
                     let present = scope.with_entry(name, |entry| {
                         entry.id() == identity
                             && options_is_array(entry) != 0
-                            && !options_array_item(entry, &*key).is_null()
+                            && !options_array_item(entry, &key).is_null()
                     });
                     if present != Some(true) {
                         break;
@@ -334,7 +334,7 @@ unsafe fn cmd_show_options_print(
             format_add(ft, name, |out| write!(out, "{value}"));
         }
         format_add(ft, c"option_array_key", |out| {
-            write_cstr(out, &*array_key.unwrap_or(c""))
+            write_cstr(out, array_key.unwrap_or(c""))
         });
         if show_hooks {
             show_hook_add_fire_formats(
@@ -460,7 +460,7 @@ unsafe fn cmd_show_options_all(
             continue;
         }
         let user_hook =
-            name.as_bytes().first() == Some(&b'@') && (hooks_is_event(&*name) != 0 || monitor);
+            name.as_bytes().first() == Some(&b'@') && (hooks_is_event(&name) != 0 || monitor);
         if (show_hooks && user_hook) || (!show_hooks && (!user_hook || include_hooks)) {
             cmd_show_options_print(self_0.clone(), item_handle, selected, &name, None, 0, false);
         }

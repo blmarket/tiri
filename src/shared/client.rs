@@ -73,6 +73,20 @@ pub const CLIENT_ALLREDRAWFLAGS: ::core::ffi::c_int =
     CLIENT_REDRAWWINDOW | CLIENT_REDRAWSTATUS | CLIENT_REDRAWSTATUSALWAYS | CLIENT_REDRAWBORDERS;
 pub const CLIENT_NODETACHFLAGS: ::core::ffi::c_int = CLIENT_DEAD | CLIENT_EXIT;
 
+pub use crate::src::server_client::client;
+
+/// Retained Client identity. Consumers use Client operations and bounded
+/// component borrows; the cell representation is selected here.
+pub type ClientRef = Rc<UnsafeCell<client>>;
+/// Nonowning Client identity retained by callbacks and back references.
+pub type ClientWeak = std::rc::Weak<UnsafeCell<client>>;
+
+pub use crate::src::file::{client_file, client_file_cb, client_file_event, client_files};
+
+pub fn client_handle(owner: &Option<ClientRef>) -> Option<&ClientRef> {
+    owner.as_ref()
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -92,18 +106,4 @@ mod tests {
         assert_eq!(CLIENT_EXIT_DETACHED, 1);
         assert_eq!(CLIENT_EXIT_NONE, 0);
     }
-}
-
-pub use crate::src::server_client::client;
-
-/// Retained Client identity. Consumers use Client operations and bounded
-/// component borrows; the cell representation is selected here.
-pub type ClientRef = Rc<UnsafeCell<client>>;
-/// Nonowning Client identity retained by callbacks and back references.
-pub type ClientWeak = std::rc::Weak<UnsafeCell<client>>;
-
-pub use crate::src::file::{client_file, client_file_cb, client_file_event, client_files};
-
-pub fn client_handle(owner: &Option<ClientRef>) -> Option<&ClientRef> {
-    owner.as_ref()
 }

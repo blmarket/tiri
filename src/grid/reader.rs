@@ -530,18 +530,18 @@ mod tests {
             {
                 let mut cell = grid_default_cell;
                 cell.data = data;
-                grid_set_cell(&mut *owner, column, row as u_int, &cell);
+                grid_set_cell(&mut owner, column, row as u_int, &cell);
                 for offset in 1..data.width as u_int {
-                    grid_set_padding(&mut *owner, column + offset, row as u_int, 8);
+                    grid_set_padding(&mut owner, column + offset, row as u_int, 8);
                 }
                 column += data.width as u_int;
             }
         }
         let mut tab = grid_default_cell;
         grid_set_tab(&mut tab, 3);
-        grid_set_cell(&mut *owner, 2, 0, &tab);
+        grid_set_cell(&mut owner, 2, 0, &tab);
         for column in 3..5 {
-            grid_set_padding(&mut *owner, column, 0, 8);
+            grid_set_padding(&mut owner, column, 0, 8);
         }
         owner.linedata[0].flags |= GRID_LINE_WRAPPED as u_short;
         owner

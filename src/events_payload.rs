@@ -462,18 +462,18 @@ mod tests {
         unsafe {
             let mut ep = event_payload_create();
             let name = CString::new(vec![b'k', 0xff]).unwrap();
-            event_payload_set_string(&mut *ep, &*name, |out| write_cstr(out, c"old"));
+            event_payload_set_string(&mut ep, &name, |out| write_cstr(out, c"old"));
             let old_name =
-                event_payload_item_name(event_payload_items(&*ep).next().unwrap()).as_ptr();
-            event_payload_set_int(&mut *ep, CStr::from_ptr(old_name), 42);
+                event_payload_item_name(event_payload_items(&ep).next().unwrap()).as_ptr();
+            event_payload_set_int(&mut ep, CStr::from_ptr(old_name), 42);
 
-            let replacement = event_payload_items(&*ep).next().unwrap();
+            let replacement = event_payload_items(&ep).next().unwrap();
             assert_eq!(
                 event_payload_item_name(replacement).to_bytes(),
                 name.as_bytes()
             );
-            assert_eq!((*replacement).value.number(), 42);
-            assert_eq!(event_payload_items(&*ep).count(), 1);
+            assert_eq!(replacement.value.number(), 42);
+            assert_eq!(event_payload_items(&ep).count(), 1);
             drop(ep);
         }
     }
@@ -495,7 +495,7 @@ mod tests {
             let mut moved = payload;
             for i in 0..128 {
                 let key = CString::new(format!("extra-{i}")).unwrap();
-                event_payload_set_int(&mut moved, &*key, i);
+                event_payload_set_int(&mut moved, &key, i);
             }
             assert_eq!(
                 event_payload_items(&moved).next().unwrap() as *const event_payload_item as usize,
