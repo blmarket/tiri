@@ -1,7 +1,6 @@
 //! Pane process creation and editor completion keep storage inside its owner.
 use super::{
-    window_pane_create, window_pane_index, window_pane_reset_mode_all, window_pane_set_cwd,
-    window_pane_set_event, window_pane_set_shell,
+    window_pane_create, window_pane_index, window_pane_reset_mode_all, window_pane_set_event,
 };
 use crate::src::cmd::queue::cmdq_get_client;
 use crate::src::cmd::{cmd_log_argv, cmd_stringify_argv_cstring};
@@ -363,7 +362,7 @@ pub(super) unsafe fn spawn_pane(
             (*new_wp).argv = (*sc).argv.clone();
         }
         if let Some(cwd) = cwd.take() {
-            window_pane_set_cwd(&mut *new_wp, Some(cwd));
+            (*new_wp).cwd = Some(cwd);
         }
         // Each fork path owns its environment until it has been installed.
         let mut child_owner = Some(environ_for_session(Some(&session_owner), 0));
@@ -401,7 +400,7 @@ pub(super) unsafe fn spawn_pane(
             if checkshell(nullable_cstr(tmp)) == 0 {
                 tmp = _PATH_BSHELL.as_ptr();
             }
-            window_pane_set_shell(&mut *new_wp, Some(CStr::from_ptr(tmp).to_owned()));
+            (*new_wp).shell = Some(CStr::from_ptr(tmp).to_owned());
         }
         environ_set(child, c"SHELL", 0 as ::core::ffi::c_int, |out| {
             write_cstr(out, (*new_wp).shell.as_deref())

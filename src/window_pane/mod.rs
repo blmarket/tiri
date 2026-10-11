@@ -605,16 +605,6 @@ unsafe fn window_pane_mode_promote(
     window_pane_mode_insert_front(&mut *wp, entry);
 }
 
-/// Replace the pane-owned shell string.
-fn window_pane_set_shell(wp: &mut window_pane, shell: Option<CString>) {
-    wp.shell = shell;
-}
-
-/// Replace the pane-owned cwd string.
-fn window_pane_set_cwd(wp: &mut window_pane, cwd: Option<CString>) {
-    wp.cwd = cwd;
-}
-
 unsafe fn window_pane_create(
     w_owner: &WindowRef,
     mut sx: u_int,
@@ -2144,39 +2134,10 @@ unsafe fn window_pane_get_pane_lines(wp: &window_pane) -> pane_lines {
 
 impl Drop for window_pane {
     fn drop(&mut self) {
-        unsafe {
-            // let wp: *mut window_pane = self as *mut _;
-            log_debug(format_args!("pane %{} freed", { self.id }));
-            // Logical pane destruction normally takes this first. Also keep direct
-            // owner destruction safe: parser timers and sync state precede screens.
-            if let Some(input) = self.ictx.take() {
-                drop(input);
-                // The parser cannot upgrade its weak pane during the final Rc drop,
-                // so stop sync directly; logical destroy already cleared dirty rows.
-                if self.base.mode & crate::src::shared::screen::MODE_SYNC != 0 {
-                    drop(self.sync_timer.take());
-                    self.base.mode &= !crate::src::shared::screen::MODE_SYNC;
-                    assert!(
-                        self.sync_dirty.is_none(),
-                        "dirty pane must be logically destroyed before final parser cleanup"
-                    );
-                    log_debug(format_args!(
-                        "screen_write_stop_sync: %{} stopped sync mode",
-                        { self.id }
-                    ));
-                }
-            }
-            self.searchstr = None;
-            if self.status_screen.grid.is_some() {
-                drop(std::mem::take(&mut self.status_screen));
-            }
-            if self.base.grid.is_some() {
-                drop(std::mem::take(&mut self.base));
-            }
-            drop(self.options.take());
-            window_pane_set_cwd(&mut *wp, None);
-            window_pane_set_shell(&mut *wp, None);
-        }
+        unsafe { log_debug(format_args!("pane %{} freed", { self.id })) };
+        // Logical destroy normally takes the parser first; direct owner
+        // destruction must still drop it before the screens it writes to.
+        drop(self.ictx.take());
     }
 }
 
