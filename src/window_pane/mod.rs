@@ -803,8 +803,20 @@ unsafe fn window_pane_free(wp_value: &mut window_pane) {
     // owner destruction safe: parser timers and sync state precede screens.
     if let Some(input) = (*wp).ictx.take() {
         drop(input);
-        // The parser cannot upgrade its weak pane during the final Rc drop.
-        pane_sync::stop_unowned(&mut *wp);
+        // The parser cannot upgrade its weak pane during the final Rc drop,
+        // so stop sync directly; logical destroy already cleared dirty rows.
+        if (*wp).base.mode & crate::src::shared::screen::MODE_SYNC != 0 {
+            drop((*wp).sync_timer.take());
+            (*wp).base.mode &= !crate::src::shared::screen::MODE_SYNC;
+            assert!(
+                (*wp).sync_dirty.is_none(),
+                "dirty pane must be logically destroyed before final parser cleanup"
+            );
+            log_debug(format_args!(
+                "screen_write_stop_sync: %{} stopped sync mode",
+                { (*wp).id }
+            ));
+        }
     }
     window_pane_set_searchstr(&mut *wp, None);
     if (*wp).status_screen.grid.is_some() {

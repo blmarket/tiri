@@ -50,24 +50,6 @@ pub(super) unsafe fn stop(pane: &Rc<UnsafeCell<window_pane>>) {
     ));
 }
 
-/// Final allocation cleanup cannot manufacture an Rc or an UnsafeCell reference
-/// from `&mut window_pane`. The logical destroy path already clears dirty rows.
-pub(super) unsafe fn stop_unowned(state: &mut window_pane) {
-    if state.base.mode & MODE_SYNC == 0 {
-        return;
-    }
-    drop(state.sync_timer.take());
-    state.base.mode &= !MODE_SYNC;
-    assert!(
-        state.sync_dirty.is_none(),
-        "dirty pane must be logically destroyed before final parser cleanup"
-    );
-    log_debug(format_args!(
-        "screen_write_stop_sync: %{} stopped sync mode",
-        state.id
-    ));
-}
-
 pub(super) fn clear_dirty(state: &mut window_pane) {
     state.sync_dirty = None;
     state.sync_dirty_size = 0;
