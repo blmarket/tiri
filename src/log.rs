@@ -119,7 +119,7 @@ fn log_write_escaped(file: &mut File, message: &[u8], prefix: &[u8]) {
 /// or `log_cstr` for data that needs the logger's byte escaping (including
 /// backslashes, newlines and non-UTF-8 bytes). Arguments are escaped once,
 /// before interpolation. As before, an embedded NUL ends the message.
-pub unsafe fn log_debug(args: fmt::Arguments<'_>) {
+pub fn log_debug(args: fmt::Arguments<'_>) {
     if !log_enabled() {
         return;
     }
