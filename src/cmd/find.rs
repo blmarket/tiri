@@ -761,12 +761,6 @@ unsafe fn cmd_find_get_pane_with_window(
     }
     -(1 as ::core::ffi::c_int)
 }
-pub fn cmd_find_empty_state(fs: &cmd_find_state) -> ::core::ffi::c_int {
-    (fs.s.ptr_eq(&std::rc::Weak::new())
-        && fs.wl.is_empty()
-        && fs.w.ptr_eq(&WindowWeak::new())
-        && fs.wp.ptr_eq(&std::rc::Weak::new())) as ::core::ffi::c_int
-}
 pub unsafe fn cmd_find_valid_state(fs: &cmd_find_state) -> ::core::ffi::c_int {
     // Pin the Rc allocations while checking membership. No callbacks run here,
     // so the existing window owner remains responsible for close notification.
@@ -853,6 +847,12 @@ unsafe fn cmd_find_log_state(prefix: &CStr, mut fs: *mut cmd_find_state) {
     };
 }
 impl cmd_find_state {
+    pub fn is_empty(&self) -> bool {
+        self.s.ptr_eq(&std::rc::Weak::new())
+            && self.wl.is_empty()
+            && self.w.ptr_eq(&WindowWeak::new())
+            && self.wp.ptr_eq(&std::rc::Weak::new())
+    }
     pub unsafe fn find_from_session(s_owner: &SessionRef, flags: ::core::ffi::c_int) -> Self {
         let mut fs = Self::clear_state(flags);
         fs.set_s(Some(s_owner));

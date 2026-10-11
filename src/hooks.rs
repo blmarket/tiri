@@ -1,5 +1,5 @@
 use crate::src::cmd::cmd_list_print_cstring;
-use crate::src::cmd::find::{cmd_find_copy_state, cmd_find_empty_state, cmd_find_valid_state};
+use crate::src::cmd::find::{cmd_find_copy_state, cmd_find_valid_state};
 use crate::src::cmd::parse::cmd_parse_from_string;
 use crate::src::cmd::queue::{
     cmdq_add_formats, cmdq_append, cmdq_error, cmdq_get_command, cmdq_get_event, cmdq_get_flags,
@@ -145,7 +145,7 @@ unsafe fn hooks_insert(
         "hooks_insert: inserting hook {}",
         crate::src::log::log_bytes((*hd).name.to_bytes())
     ));
-    if cmd_find_empty_state(&(*hd).fs) != 0 || cmd_find_valid_state(&(*hd).fs) == 0 {
+    if (*hd).fs.is_empty() || cmd_find_valid_state(&(*hd).fs) == 0 {
         fs = cmd_find_state::find_from_nothing(0).unwrap_or_else(|| cmd_find_state::clear_state(0));
     } else {
         cmd_find_copy_state(&mut fs, &(*hd).fs);
