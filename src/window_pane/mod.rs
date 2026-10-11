@@ -796,40 +796,6 @@ unsafe fn window_pane_destroy(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>
     window_pane_remove_ref(owner, c"window_pane_destroy");
 }
 
-unsafe fn window_pane_free(wp_value: &mut window_pane) {
-    let wp: *mut window_pane = wp_value as *mut _;
-    log_debug(format_args!("pane %{} freed", { (*wp).id }));
-    // Logical pane destruction normally takes this first. Also keep direct
-    // owner destruction safe: parser timers and sync state precede screens.
-    if let Some(input) = (*wp).ictx.take() {
-        drop(input);
-        // The parser cannot upgrade its weak pane during the final Rc drop,
-        // so stop sync directly; logical destroy already cleared dirty rows.
-        if (*wp).base.mode & crate::src::shared::screen::MODE_SYNC != 0 {
-            drop((*wp).sync_timer.take());
-            (*wp).base.mode &= !crate::src::shared::screen::MODE_SYNC;
-            assert!(
-                (*wp).sync_dirty.is_none(),
-                "dirty pane must be logically destroyed before final parser cleanup"
-            );
-            log_debug(format_args!(
-                "screen_write_stop_sync: %{} stopped sync mode",
-                { (*wp).id }
-            ));
-        }
-    }
-    window_pane_set_searchstr(&mut *wp, None);
-    if (*wp).status_screen.grid.is_some() {
-        drop(std::mem::take(&mut (*wp).status_screen));
-    }
-    if (*wp).base.grid.is_some() {
-        drop(std::mem::take(&mut (*wp).base));
-    }
-    drop((*wp).options.take());
-    window_pane_set_cwd(&mut *wp, None);
-    window_pane_set_shell(&mut *wp, None);
-}
-
 unsafe fn window_pane_read_callback(owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
     let wp = owner.get();
     let (input, pipe, base, pipe_offset, has_pipe) = {
@@ -2183,7 +2149,41 @@ unsafe fn window_pane_get_pane_lines(wp: &window_pane) -> pane_lines {
 
 impl Drop for window_pane {
     fn drop(&mut self) {
-        unsafe { window_pane_free(self) }
+        unsafe {
+            {
+                let wp: *mut window_pane = self as *mut _;
+                log_debug(format_args!("pane %{} freed", { (*wp).id }));
+                // Logical pane destruction normally takes this first. Also keep direct
+                // owner destruction safe: parser timers and sync state precede screens.
+                if let Some(input) = (*wp).ictx.take() {
+                    drop(input);
+                    // The parser cannot upgrade its weak pane during the final Rc drop,
+                    // so stop sync directly; logical destroy already cleared dirty rows.
+                    if (*wp).base.mode & crate::src::shared::screen::MODE_SYNC != 0 {
+                        drop((*wp).sync_timer.take());
+                        (*wp).base.mode &= !crate::src::shared::screen::MODE_SYNC;
+                        assert!(
+                            (*wp).sync_dirty.is_none(),
+                            "dirty pane must be logically destroyed before final parser cleanup"
+                        );
+                        log_debug(format_args!(
+                            "screen_write_stop_sync: %{} stopped sync mode",
+                            { (*wp).id }
+                        ));
+                    }
+                }
+                window_pane_set_searchstr(&mut *wp, None);
+                if (*wp).status_screen.grid.is_some() {
+                    drop(std::mem::take(&mut (*wp).status_screen));
+                }
+                if (*wp).base.grid.is_some() {
+                    drop(std::mem::take(&mut (*wp).base));
+                }
+                drop((*wp).options.take());
+                window_pane_set_cwd(&mut *wp, None);
+                window_pane_set_shell(&mut *wp, None);
+            }
+        }
     }
 }
 
