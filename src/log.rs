@@ -4,6 +4,7 @@ use crate::src::format::bytes::format_bytes;
 use crate::src::format::bytes::try_format_message_with;
 use crate::src::shared::abi::*;
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
+use std::cell::{Cell, RefCell};
 use std::ffi::CStr;
 use std::fmt;
 use std::fs::{File, OpenOptions};
@@ -14,20 +15,29 @@ use std::time::{SystemTime, UNIX_EPOCH};
 mod format;
 pub use format::{log_byte, log_bytes, log_cstr, log_cstr_n, log_cstr_width, log_hex, log_pointer};
 
-static mut log_file: Option<File> = None;
-static mut log_level: ::core::ffi::c_int = 0;
+thread_local! {
+    static LOG_FILE: RefCell<Option<File>> = const { RefCell::new(None) };
+    static LOG_LEVEL: Cell<::core::ffi::c_int> = const { Cell::new(0) };
+}
 
-unsafe fn log_file_mut() -> Option<&'static mut File> {
-    (*&raw mut log_file).as_mut()
+fn log_enabled() -> bool {
+    LOG_FILE.with_borrow(Option::is_some)
+}
+fn log_write(message: &[u8], prefix: &[u8]) {
+    LOG_FILE.with_borrow_mut(|file| {
+        if let Some(file) = file {
+            log_write_escaped(file, message, prefix);
+        }
+    });
 }
 pub unsafe fn log_add_level() {
-    log_level += 1;
+    LOG_LEVEL.set(LOG_LEVEL.get() + 1);
 }
 pub unsafe fn log_get_level() -> ::core::ffi::c_int {
-    log_level
+    LOG_LEVEL.get()
 }
 pub unsafe fn log_open(name: &CStr) {
-    if log_level == 0 as ::core::ffi::c_int {
+    if LOG_LEVEL.get() == 0 as ::core::ffi::c_int {
         return;
     }
     log_close();
@@ -41,29 +51,29 @@ pub unsafe fn log_open(name: &CStr) {
     let Ok(file) = OpenOptions::new().append(true).create(true).open(path) else {
         return;
     };
-    log_file = Some(file);
+    LOG_FILE.set(Some(file));
 }
 pub unsafe fn log_toggle(name: &CStr) {
-    if log_level == 0 as ::core::ffi::c_int {
-        log_level = 1 as ::core::ffi::c_int;
+    if LOG_LEVEL.get() == 0 as ::core::ffi::c_int {
+        LOG_LEVEL.set(1 as ::core::ffi::c_int);
         log_open(name);
         log_debug(format_args!("log opened"));
     } else {
         log_debug(format_args!("log closed"));
-        log_level = 0 as ::core::ffi::c_int;
+        LOG_LEVEL.set(0 as ::core::ffi::c_int);
         log_close();
     };
 }
 pub unsafe fn log_close() {
-    log_file = None;
+    LOG_FILE.set(None);
 }
 unsafe fn log_message(
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
     prefix: &CStr,
 ) {
-    let Some(file) = log_file_mut() else {
+    if !log_enabled() {
         return;
-    };
+    }
     let Some(s) = try_format_message_with(write) else {
         return;
     };
@@ -88,7 +98,7 @@ unsafe fn log_message(
     );
     drop(s);
     let message = CStr::from_bytes_until_nul(&out).unwrap();
-    log_write_escaped(file, message.to_bytes(), prefix.to_bytes());
+    log_write(message.to_bytes(), prefix.to_bytes());
 }
 
 /// Write one complete log line with a single write, so the line reaches the
@@ -110,14 +120,14 @@ fn log_write_escaped(file: &mut File, message: &[u8], prefix: &[u8]) {
 /// backslashes, newlines and non-UTF-8 bytes). Arguments are escaped once,
 /// before interpolation. As before, an embedded NUL ends the message.
 pub unsafe fn log_debug(args: fmt::Arguments<'_>) {
-    let Some(file) = log_file_mut() else {
+    if !log_enabled() {
         return;
-    };
+    }
     let mut message = format_bytes(args);
     if let Some(end) = message.iter().position(|&byte| byte == 0) {
         message.truncate(end);
     }
-    log_write_escaped(file, &message, b"");
+    log_write(&message, b"");
 }
 pub unsafe fn fatal(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) -> ! {
     let mut tmp: [::core::ffi::c_char; 256] = [0; 256];
@@ -258,9 +268,7 @@ mod tests {
     struct RestoreLog(Option<File>);
     impl Drop for RestoreLog {
         fn drop(&mut self) {
-            unsafe {
-                log_file = self.0.take();
-            }
+            LOG_FILE.set(self.0.take());
         }
     }
 
@@ -273,7 +281,7 @@ mod tests {
             }
         }
         unsafe {
-            let _restore = RestoreLog((&raw mut log_file).replace(None));
+            let _restore = RestoreLog(LOG_FILE.replace(None));
             log_debug(format_args!("{}", MustNotFormat));
             log_message(
                 |_| panic!("disabled logger invoked the message writer"),
@@ -292,7 +300,7 @@ mod tests {
             libc::fclose(file);
             let mut reader = File::from_raw_fd(fd);
             let writer = reader.try_clone().unwrap();
-            let _restore = RestoreLog((&raw mut log_file).replace(Some(writer)));
+            let _restore = RestoreLog(LOG_FILE.replace(Some(writer)));
             log_debug(format_args!("packet: {}", log_bytes(b"\x80\n\\")));
             log_debug(format_args!("stop{}ignored", log_byte(0)));
             reader.seek(SeekFrom::Start(0)).unwrap();
