@@ -1,8 +1,9 @@
 //! C-b keeps tmux's prefix table. C-a enters the strip table, where c inserts
 //! a pane in the active pane's directory, h, j, k and l select, f toggles the
-//! width, H and L reorder, Space switches the layout, x kills after confirming and a second C-a
-//! reaches the application. C creates a window as c does after C-b, and the
-//! arrows, 0 to 9, d, PgUp and PgDn work as after C-b.
+//! width, H and L reorder, Space switches the layout, x kills after a
+//! confirmation and a second C-a reaches the application. C creates a window
+//! as c does after C-b, and the arrows, 0 to 9, d, PgUp and PgDn work as after
+//! C-b.
 
 #![cfg(unix)]
 
@@ -102,9 +103,7 @@ fn ctrl_a_keys_drive_the_strip() {
     server.success(&["select-pane", "-t", &panes[1]]);
 
     client.send(b"\x01x");
-    wait_until("the kill-pane prompt", || {
-        server.display("#{client_prompt}") == "1"
-    });
+    client.wait_screen(|screen| screen.row(23).starts_with("kill-pane"));
     assert_eq!(ids(&server).len(), 2);
     client.send(b"y");
     wait_until("x", || ids(&server) == [panes[0].clone()]);
