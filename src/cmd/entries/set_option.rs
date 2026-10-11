@@ -1,5 +1,4 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
-use crate::src::cmd::find::cmd_find_copy_state;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client};
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::events::events_fire;
@@ -229,7 +228,7 @@ unsafe fn cmd_set_hook_monitor_exec(
     }
     let selected = selected.expect("selected monitor scope");
     let mut fs = cmd_find_state::default();
-    cmd_find_copy_state(&mut fs, target);
+    fs.copy_from(target);
     if unsubscribe {
         hooks_monitor_remove(&selected, &*name);
         return CMD_RETURN_NORMAL;

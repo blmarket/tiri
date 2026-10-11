@@ -1,4 +1,3 @@
-use crate::src::cmd::find::cmd_find_valid_state;
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
@@ -178,7 +177,7 @@ pub unsafe fn event_payload_get_target(ep: &event_payload, fs: &mut cmd_find_sta
     } else {
         -1
     };
-    if cmd_find_valid_state(fs) != 0 {
+    if fs.is_valid() {
         return 1;
     }
     if let Some(pane) = pane.as_ref() {
@@ -190,20 +189,20 @@ pub unsafe fn event_payload_get_target(ep: &event_payload, fs: &mut cmd_find_sta
                 .contains_pane(&target.wp)
         {
             *fs = cmd_find_state::find_from_winlink_pane(link.clone(), pane, flags);
-            if cmd_find_valid_state(fs) != 0 {
+            if fs.is_valid() {
                 return 1;
             }
         }
         if let Some(found) = cmd_find_state::find_from_pane(pane, flags) {
             *fs = found;
-            if cmd_find_valid_state(fs) != 0 {
+            if fs.is_valid() {
                 return 1;
             }
         }
     }
     if link.is_alive() {
         *fs = cmd_find_state::find_from_winlink(link, flags);
-        if cmd_find_valid_state(fs) != 0 {
+        if fs.is_valid() {
             return 1;
         }
     }
@@ -211,7 +210,7 @@ pub unsafe fn event_payload_get_target(ep: &event_payload, fs: &mut cmd_find_sta
         if session.is_registered() {
             if let Some(found) = cmd_find_state::find_from_session_window(session, window, flags) {
                 *fs = found;
-                if cmd_find_valid_state(fs) != 0 {
+                if fs.is_valid() {
                     return 1;
                 }
             }
@@ -220,7 +219,7 @@ pub unsafe fn event_payload_get_target(ep: &event_payload, fs: &mut cmd_find_sta
     if let Some(session) = session.as_ref() {
         if session.is_registered() {
             *fs = cmd_find_state::find_from_session(session, flags);
-            if cmd_find_valid_state(fs) != 0 {
+            if fs.is_valid() {
                 return 1;
             }
         }

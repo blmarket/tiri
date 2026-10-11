@@ -1,5 +1,4 @@
 use crate::src::cmd::entries::wait_for::cmd_wait_for_flush;
-use crate::src::cmd::find::cmd_find_valid_state;
 use crate::src::cmd::queue::cmdq_next;
 use crate::src::compat::systemd::{systemd_activated, systemd_create_socket};
 use crate::src::control_notify::control_build_events;
@@ -155,7 +154,7 @@ pub unsafe fn server_is_marked(
     server_check_marked()
 }
 pub unsafe fn server_check_marked() -> ::core::ffi::c_int {
-    cmd_find_valid_state(&marked_pane)
+    marked_pane.is_valid() as ::core::ffi::c_int
 }
 // The compatibility systemd adapter still transfers ownership as a raw fd.
 pub unsafe fn server_create_socket(flags: uint64_t) -> Result<::core::ffi::c_int, CString> {

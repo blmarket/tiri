@@ -2,9 +2,7 @@ use crate::src::arguments::{
     args_count, args_flag_values, args_flags, args_get, args_print_cstring, args_string,
 };
 use crate::src::cfg::{cfg_add_cause, cfg_finished};
-use crate::src::cmd::find::{
-    cmd_find_client, cmd_find_copy_state, cmd_find_target, cmd_find_valid_state,
-};
+use crate::src::cmd::find::cmd_find_client;
 use crate::src::cmd::{
     cmd_get_args_mut, cmd_get_entry, cmd_get_group, cmd_get_source, cmd_print_cstring,
 };
@@ -416,8 +414,8 @@ pub unsafe fn cmdq_new_state(
         (*event).metadata_snapshot()
     };
     let mut target = cmd_find_state::default();
-    if !current.is_null() && cmd_find_valid_state(&*current) != 0 {
-        cmd_find_copy_state(&mut target, &*current);
+    if !current.is_null() && (*current).is_valid() {
+        target.copy_from(&*current);
     } else {
         target = cmd_find_state::clear_state(0);
     }
@@ -750,8 +748,7 @@ unsafe fn cmdq_find_flag(
         flag.flag as u_char,
     )
     .map_or(std::ptr::null(), |value| value.as_ptr());
-    if cmd_find_target(
-        fs,
+    if (*fs).find_target(
         Some(item_handle),
         nullable_cstr(value),
         flag.type_0,
@@ -925,10 +922,10 @@ unsafe fn cmdq_fire_command(
                 if !(retval as ::core::ffi::c_int == CMD_RETURN_ERROR as ::core::ffi::c_int)
                     && entry.flags & CMD_AFTERHOOK != 0
                 {
-                    if cmd_find_valid_state(&(*item).target) != 0 {
+                    if (*item).target.is_valid() {
                         fsp = &raw mut (*item).target;
                         current_block = 8704759739624374314;
-                    } else if cmd_find_valid_state(&state.current.borrow()) != 0 {
+                    } else if state.current.borrow().is_valid() {
                         fs = state.current_snapshot();
                         fsp = &mut fs;
                         current_block = 8704759739624374314;
@@ -963,9 +960,9 @@ unsafe fn cmdq_fire_command(
     (*item).client = saved;
     if retval as ::core::ffi::c_int == CMD_RETURN_ERROR as ::core::ffi::c_int {
         fsp = ::core::ptr::null_mut::<cmd_find_state>();
-        if cmd_find_valid_state(&(*item).target) != 0 {
+        if (*item).target.is_valid() {
             fsp = &raw mut (*item).target;
-        } else if cmd_find_valid_state(&state.current.borrow()) != 0 {
+        } else if state.current.borrow().is_valid() {
             fs = state.current_snapshot();
             fsp = &mut fs;
         } else if let Some(found) =

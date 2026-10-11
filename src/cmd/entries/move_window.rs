@@ -1,5 +1,4 @@
 use crate::src::arguments::{args_get, args_has};
-use crate::src::cmd::find::cmd_find_target;
 use crate::src::cmd::queue::cmdq_error;
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::format::bytes::nullable_cstr;
@@ -94,8 +93,7 @@ unsafe fn cmd_move_window_exec(
     let mut sflag: ::core::ffi::c_int = 0;
     let mut before: ::core::ffi::c_int = 0;
     if args_has(args, 'r' as i32 as u_char) != 0 {
-        if cmd_find_target(
-            &raw mut target,
+        if target.find_target(
             Some(item_handle),
             nullable_cstr(tflag),
             CMD_FIND_SESSION,
@@ -112,8 +110,7 @@ unsafe fn cmd_move_window_exec(
         server_status_session(&target.session_handle().expect("live session"));
         return CMD_RETURN_NORMAL;
     }
-    if cmd_find_target(
-        &raw mut target,
+    if target.find_target(
         Some(item_handle),
         nullable_cstr(tflag),
         CMD_FIND_WINDOW,

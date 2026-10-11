@@ -1,5 +1,4 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
-use crate::src::cmd::find::{cmd_find_copy_state, cmd_find_valid_state};
 use crate::src::ffi::libc::{strcasestr, strstr};
 use crate::src::format::{
     format_add, format_create, format_defaults, format_defaults_paste_buffer,
@@ -163,7 +162,7 @@ unsafe fn window_buffer_build(
             buffer.size(),
         );
     }
-    if cmd_find_valid_state(&(*data).fs) != 0 {
+    if (*data).fs.is_valid() {
         s = (*data).fs.session_handle();
         wl = (*data).fs.winlink_handle();
         pane_owner = (*data).fs.pane_handle();
@@ -290,7 +289,7 @@ unsafe fn window_buffer_get_key(
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut pane_owner = None;
     let mut key: key_code = 0;
-    if cmd_find_valid_state(&(*data).fs) != 0 {
+    if (*data).fs.is_valid() {
         s = (*data).fs.session_handle();
         wl = (*data).fs.winlink_handle();
         pane_owner = (*data).fs.pane_handle();
@@ -388,7 +387,7 @@ unsafe fn window_buffer_init(
     data = owner.get();
     wme.get_mut_unchecked().boxed_data = Some(owner);
     let data_handle = std::ptr::NonNull::new(data).expect("live buffer mode data");
-    cmd_find_copy_state(&raw mut (*data).fs, &*fs);
+    (*data).fs.copy_from(&*fs);
     (*data).data = Some(mode_tree_start(
         &mode_pane_owner,
         args,

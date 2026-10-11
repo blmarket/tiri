@@ -1,6 +1,5 @@
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::find::cmd_find_target;
 use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_client, cmdq_get_flags, cmdq_get_state_owned, cmdq_get_target_client,
 };
@@ -99,13 +98,8 @@ unsafe fn cmd_switch_client_exec(
         type_0 = CMD_FIND_SESSION;
         flags = CMD_FIND_PREFER_UNATTACHED;
     }
-    if cmd_find_target(
-        &raw mut target,
-        Some(item_handle),
-        nullable_cstr(tflag),
-        type_0,
-        flags,
-    ) != 0 as ::core::ffi::c_int
+    if target.find_target(Some(item_handle), nullable_cstr(tflag), type_0, flags)
+        != 0 as ::core::ffi::c_int
     {
         return CMD_RETURN_ERROR;
     }

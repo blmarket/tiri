@@ -17,7 +17,6 @@ use std::rc::{Rc, Weak};
 
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_list_print_cstring;
-use crate::src::cmd::find::{cmd_find_copy_state, cmd_find_valid_state};
 use crate::src::cmd::parse::{cmd_parse_error_uppercase_first, cmd_parse_from_string};
 use crate::src::environ::{environ_clear, environ_find, environ_iter, environ_set, environ_unset};
 use crate::src::ffi::libc::{__ctype_tolower_loc, strchr, strcmp, strcspn, strlcat, strlen};
@@ -409,9 +408,9 @@ unsafe fn window_customize_check_item(
     };
     let mut fallback = cmd_find_state::default();
     let fs = output.unwrap_or(&mut fallback);
-    if cmd_find_valid_state(&data.fs) != 0 {
+    if data.fs.is_valid() {
         let mut source = data.fs.clone();
-        cmd_find_copy_state(fs, &source);
+        fs.copy_from(&source);
     } else {
         *fs = cmd_find_state::find_from_pane(&mode_pane_owner, 0)
             .unwrap_or_else(|| cmd_find_state::clear_state(0));
@@ -1472,8 +1471,8 @@ unsafe fn window_customize_build(
     };
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     (*data).item_list.clear();
-    if cmd_find_valid_state(&(*data).fs) != 0 {
-        cmd_find_copy_state(&raw mut fs, &(*data).fs);
+    if (*data).fs.is_valid() {
+        fs.copy_from(&(*data).fs);
     } else {
         fs = cmd_find_state::find_from_pane(&mode_pane_owner, 0 as ::core::ffi::c_int)
             .unwrap_or_else(|| cmd_find_state::clear_state(0 as ::core::ffi::c_int));
@@ -4262,8 +4261,8 @@ unsafe fn window_customize_add_current(
         idx: 0,
     };
     let name = mode_tree_get_current_name(&*(*data).tree_owner().get());
-    if cmd_find_valid_state(&(*data).fs) != 0 {
-        cmd_find_copy_state(&raw mut fs, &(*data).fs);
+    if (*data).fs.is_valid() {
+        fs.copy_from(&(*data).fs);
     } else {
         fs = cmd_find_state::find_from_pane(&mode_pane_owner, 0 as ::core::ffi::c_int)
             .unwrap_or_else(|| cmd_find_state::clear_state(0 as ::core::ffi::c_int));

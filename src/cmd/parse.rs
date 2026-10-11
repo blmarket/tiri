@@ -1,4 +1,3 @@
-use crate::src::cmd::find::cmd_find_valid_state;
 use crate::src::cmd::queue::{cmdq_append, cmdq_get_command, cmdq_print};
 use crate::src::cmd::{
     cmd_get_alias, cmd_list_append, cmd_list_append_all, cmd_list_move, cmd_list_new,
@@ -140,7 +139,7 @@ impl hmux_cmdparse::Context for ParserContext<'_, '_> {
             let pi = &mut *session.input;
             let client_owner = pi.c.upgrade();
             let mut fs: cmd_find_state = Default::default();
-            let fsp = if cmd_find_valid_state(&pi.fs) != 0 {
+            let fsp = if pi.fs.is_valid() {
                 &raw mut pi.fs
             } else {
                 fs = cmd_find_state::find_from_client(client_owner.as_ref(), 0)

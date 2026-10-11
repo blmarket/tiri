@@ -1,5 +1,4 @@
 use crate::src::cmd::cmd_list_print_cstring;
-use crate::src::cmd::find::{cmd_find_copy_state, cmd_find_valid_state};
 use crate::src::cmd::parse::cmd_parse_from_string;
 use crate::src::cmd::queue::{
     cmdq_add_formats, cmdq_append, cmdq_error, cmdq_get_command, cmdq_get_event, cmdq_get_flags,
@@ -145,10 +144,10 @@ unsafe fn hooks_insert(
         "hooks_insert: inserting hook {}",
         crate::src::log::log_bytes((*hd).name.to_bytes())
     ));
-    if (*hd).fs.is_empty() || cmd_find_valid_state(&(*hd).fs) == 0 {
+    if (*hd).fs.is_empty() || !(*hd).fs.is_valid() {
         fs = cmd_find_state::find_from_nothing(0).unwrap_or_else(|| cmd_find_state::clear_state(0));
     } else {
-        cmd_find_copy_state(&mut fs, &(*hd).fs);
+        fs.copy_from(&(*hd).fs);
     }
     let name = (*hd).name;
     let source = if let Some(scope) = &(*hd).oo {
@@ -375,7 +374,7 @@ pub unsafe fn hooks_run(
         client: (*item).client.clone(),
         expand: 0,
     };
-    cmd_find_copy_state(&raw mut hd.fs, target);
+    hd.fs.copy_from(target);
     format_add(&raw mut *hd.formats, c"hook", |out| write_cstr(out, &*name));
     format_log_debug(&raw mut *hd.formats, c"hooks_run");
     hooks_insert(item_handle, &raw mut hd);
@@ -475,7 +474,7 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, fallback: &cmd_find_state, g
             0 as ::core::ffi::c_int,
         );
     } else {
-        cmd_find_copy_state(&raw mut fs, fallback);
+        fs.copy_from(fallback);
     }
     event_payload_set_string(&mut ep, c"value", |out| {
         out.write_all(change.value.to_bytes())
@@ -545,7 +544,7 @@ pub unsafe fn hooks_monitor_add(
         .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
         .expect("hook monitor identity exhausted");
     let mut fallback = cmd_find_state::default();
-    cmd_find_copy_state(&mut fallback, &*fs);
+    fallback.copy_from(&*fs);
     let callback_scope = scope.clone();
     let mut owner = Box::new(hooks_monitor {
         generation,

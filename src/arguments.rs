@@ -1,4 +1,3 @@
-use crate::src::cmd::find::cmd_find_copy_state;
 use crate::src::cmd::parse::cmd_parse_from_string;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target_client};
 use crate::src::cmd::{
@@ -764,7 +763,7 @@ pub unsafe fn args_make_commands_prepare(
         .as_ref()
         .map_or_else(std::rc::Weak::new, Rc::downgrade);
     state.client = tc_owner;
-    cmd_find_copy_state(&raw mut state.pi.fs, &*target);
+    state.pi.fs.copy_from(&*target);
     state
 }
 pub unsafe fn args_make_commands(

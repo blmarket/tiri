@@ -1,5 +1,4 @@
 use crate::src::cmd::cmd_table;
-use crate::src::cmd::find::cmd_find_valid_state;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_add, format_create_defaults, format_create_from_state, format_expand_time_cstring,
@@ -156,7 +155,7 @@ pub unsafe fn prompt_create(
     let owner = refbox::RefBox::new(prompt::default());
     let mut pr = owner.try_borrow_mut().expect("live unborrowed prompt");
     let mut ft_owner = if let Some(fs) = pd.fs {
-        // Copy the selected target, matching cmd_find_copy_state rather than
+        // Copy the selected target, matching cmd_find_state::copy_from rather than
         // inheriting the source's search flags or current-state pointer.
         pr.state = cmd_find_state {
             s: fs.s.clone(),
@@ -342,7 +341,7 @@ fn prompt_incremental_input(pr: &prompt, prefix: u8) -> CString {
     CString::new(bytes).expect("the first NUL ends the prompt input")
 }
 pub unsafe fn prompt_update(pr: &mut prompt, msg: &CStr, input: Option<&CStr>) {
-    let mut ft_owner = if cmd_find_valid_state(&pr.state) != 0 {
+    let mut ft_owner = if pr.state.is_valid() {
         format_create_from_state(None, None, &pr.state)
     } else {
         format_create_defaults(None, None, None, refbox::Weak::new(), None)
@@ -473,7 +472,7 @@ unsafe fn prompt_draw_complete(
 }
 unsafe fn prompt_format_tree(pr: &prompt) -> Box<format_tree> {
     let mut owner;
-    if cmd_find_valid_state(&pr.state) != 0 {
+    if pr.state.is_valid() {
         owner = format_create_from_state(None, None, &pr.state);
     } else {
         owner = format_create_defaults(None, None, None, (refbox::Weak::new()).clone(), None);
