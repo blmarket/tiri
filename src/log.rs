@@ -113,12 +113,7 @@ fn log_write_escaped(file: &mut File, message: &[u8], prefix: &[u8]) {
     line.push(b'\n');
     let _ = file.write_all(&line);
 }
-/// Write a debug message, formatting only while logging is enabled.
-///
-/// Literal text and numeric arguments are written as supplied. Use `log_bytes`
-/// or `log_cstr` for data that needs the logger's byte escaping (including
-/// backslashes, newlines and non-UTF-8 bytes). Arguments are escaped once,
-/// before interpolation. As before, an embedded NUL ends the message.
+
 pub fn log_debug(args: fmt::Arguments<'_>) {
     if !log_enabled() {
         return;
@@ -129,6 +124,7 @@ pub fn log_debug(args: fmt::Arguments<'_>) {
     }
     log_write(&message, b"");
 }
+
 pub unsafe fn fatal(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) -> ! {
     let mut tmp: [::core::ffi::c_char; 256] = [0; 256];
     if snprintf(
