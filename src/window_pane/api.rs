@@ -1417,7 +1417,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     }
     unsafe fn save_search(&self, value: CString, regex: i32) {
         let pane = &mut *self.get();
-        window_pane_set_searchstr(pane, Some(value));
+        pane.searchstr = Some(value);
         pane.searchregex = regex;
     }
     unsafe fn show_scrollbar(&self) {
