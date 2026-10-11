@@ -15,7 +15,6 @@ mod owner;
 pub use owner::{WindowRef, WindowWeak};
 
 use crate::src::alerts::alerts_queue;
-use crate::src::cmd::find::{cmd_find_from_pane, cmd_find_from_window};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::events::{events_fire, events_fire_window};
 use crate::src::events_payload::{
@@ -195,7 +194,8 @@ unsafe fn window_fire_renamed(w_owner: &WindowRef, old_name: &CStr) {
         idx: 0,
     };
     let mut ep = event_payload_create();
-    cmd_find_from_window(&raw mut fs, w_owner, 0 as ::core::ffi::c_int);
+    fs = cmd_find_state::find_from_window(w_owner, 0 as ::core::ffi::c_int)
+        .unwrap_or_else(|| cmd_find_state::clear_state(0 as ::core::ffi::c_int));
     event_payload_set_target(&mut ep, &fs);
     event_payload_set_window(&mut ep, c"window", WindowRef::clone(w_owner));
     event_payload_set_string(&mut ep, c"old_name", |out| {
@@ -211,7 +211,8 @@ unsafe fn window_fire_pane_changed(
 ) {
     let mut find = cmd_find_state::default();
     let mut payload = event_payload_create();
-    cmd_find_from_pane(&mut find, pane, 0);
+    find =
+        cmd_find_state::find_from_pane(pane, 0).unwrap_or_else(|| cmd_find_state::clear_state(0));
     event_payload_set_target(&mut payload, &find);
     event_payload_set_window(&mut payload, c"window", window.clone());
     event_payload_set_pane(&mut payload, c"pane", pane.clone());

@@ -3,7 +3,6 @@ use super::{
     window_pane_create, window_pane_index, window_pane_reset_mode_all, window_pane_set_cwd,
     window_pane_set_event, window_pane_set_shell,
 };
-use crate::src::cmd::find::cmd_find_from_winlink_pane;
 use crate::src::cmd::queue::cmdq_get_client;
 use crate::src::cmd::{cmd_log_argv, cmd_stringify_argv_cstring};
 use crate::src::compat::fdforkpty::fdforkpty;
@@ -90,8 +89,7 @@ unsafe fn spawn_fire_pane_created(
         .as_ref()
         .map_or(::core::ptr::null(), |value| value.as_ptr());
     let mut ep = event_payload_create();
-    cmd_find_from_winlink_pane(
-        &raw mut fs,
+    fs = cmd_find_state::find_from_winlink_pane(
         ((*sc).winlink_handle()).clone(),
         wp_owner,
         0 as ::core::ffi::c_int,

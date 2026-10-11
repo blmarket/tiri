@@ -701,7 +701,8 @@ unsafe fn resize_fire_window_resized(w_owner: &WindowRef, mut old_sx: u_int, mut
         idx: 0,
     };
     let mut ep = event_payload_create();
-    cmd_find_from_window(&raw mut fs, w_owner, 0 as ::core::ffi::c_int);
+    fs = cmd_find_state::find_from_window(w_owner, 0 as ::core::ffi::c_int)
+        .unwrap_or_else(|| cmd_find_state::clear_state(0 as ::core::ffi::c_int));
     event_payload_set_target(&mut ep, &fs);
     event_payload_set_window(&mut ep, c"window", WindowRef::clone(w_owner));
     event_payload_set_uint(&mut ep, c"width", (*w).sx);

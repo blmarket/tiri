@@ -4,7 +4,6 @@ use super::{
     window_pane_get_theme, window_pane_update_used_data,
 };
 use crate::src::alerts::alerts_queue;
-use crate::src::cmd::find::cmd_find_from_pane;
 use crate::src::compat::strtonum::strtonum;
 use crate::src::events::{events_fire, events_fire_pane};
 use crate::src::events_payload::{
@@ -2013,7 +2012,8 @@ unsafe fn input_fire_pane_title_changed(
         idx: 0,
     };
     let mut ep = event_payload_create();
-    cmd_find_from_pane(&raw mut fs, wp_owner, 0 as ::core::ffi::c_int);
+    fs = cmd_find_state::find_from_pane(wp_owner, 0 as ::core::ffi::c_int)
+        .unwrap_or_else(|| cmd_find_state::clear_state(0 as ::core::ffi::c_int));
     event_payload_set_target(&mut ep, &fs);
     event_payload_set_pane(&mut ep, c"pane", std::rc::Rc::clone(wp_owner));
     event_payload_set_window(
@@ -5203,7 +5203,8 @@ unsafe fn input_fire_command_event(
     let mut end: time_t = 0;
     let mut tend: time_t = (*wp).cmd_end_time;
     let mut ep = event_payload_create();
-    cmd_find_from_pane(&raw mut fs, wp_owner, 0 as ::core::ffi::c_int);
+    fs = cmd_find_state::find_from_pane(wp_owner, 0 as ::core::ffi::c_int)
+        .unwrap_or_else(|| cmd_find_state::clear_state(0 as ::core::ffi::c_int));
     event_payload_set_target(&mut ep, &fs);
     if !fs.session_handle().is_none() {
         event_payload_set_session(

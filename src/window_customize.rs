@@ -17,7 +17,7 @@ use std::rc::{Rc, Weak};
 
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_list_print_cstring;
-use crate::src::cmd::find::{cmd_find_copy_state, cmd_find_from_pane, cmd_find_valid_state};
+use crate::src::cmd::find::{cmd_find_copy_state, cmd_find_valid_state};
 use crate::src::cmd::parse::{cmd_parse_error_uppercase_first, cmd_parse_from_string};
 use crate::src::environ::{environ_clear, environ_find, environ_iter, environ_set, environ_unset};
 use crate::src::ffi::libc::{__ctype_tolower_loc, strchr, strcmp, strcspn, strlcat, strlen};
@@ -413,7 +413,8 @@ unsafe fn window_customize_check_item(
         let mut source = data.fs.clone();
         cmd_find_copy_state(fs, &source);
     } else {
-        cmd_find_from_pane(fs, &mode_pane_owner, 0);
+        *fs = cmd_find_state::find_from_pane(&mode_pane_owner, 0)
+            .unwrap_or_else(|| cmd_find_state::clear_state(0));
     }
     if item.type_0 == WINDOW_CUSTOMIZE_ITEM_ENVIRONMENT {
         return item
@@ -1474,7 +1475,8 @@ unsafe fn window_customize_build(
     if cmd_find_valid_state(&(*data).fs) != 0 {
         cmd_find_copy_state(&raw mut fs, &(*data).fs);
     } else {
-        cmd_find_from_pane(&raw mut fs, &mode_pane_owner, 0 as ::core::ffi::c_int);
+        fs = cmd_find_state::find_from_pane(&mode_pane_owner, 0 as ::core::ffi::c_int)
+            .unwrap_or_else(|| cmd_find_state::clear_state(0 as ::core::ffi::c_int));
     }
     let mut ft_owner = format_create_from_state(None, None, &fs);
     ft = &raw mut *ft_owner;
@@ -4263,7 +4265,8 @@ unsafe fn window_customize_add_current(
     if cmd_find_valid_state(&(*data).fs) != 0 {
         cmd_find_copy_state(&raw mut fs, &(*data).fs);
     } else {
-        cmd_find_from_pane(&raw mut fs, &mode_pane_owner, 0 as ::core::ffi::c_int);
+        fs = cmd_find_state::find_from_pane(&mode_pane_owner, 0 as ::core::ffi::c_int)
+            .unwrap_or_else(|| cmd_find_state::clear_state(0 as ::core::ffi::c_int));
     }
     if name.as_ref() == c"Server Options" {
         window_customize_add_option(

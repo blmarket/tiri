@@ -2,7 +2,6 @@ use crate::src::arguments::{
     args_count, args_flag_values, args_get, args_has, args_string, args_to_vector,
 };
 use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::find::{cmd_find_from_pane, cmd_find_from_winlink_pane};
 use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_state_owned, cmdq_get_target_client, cmdq_insert_hook, cmdq_print,
 };
@@ -338,11 +337,13 @@ unsafe fn cmd_split_window_exec(
                                         );
                                         new_pane.set_title(&title);
                                         let mut ep = event_payload_create();
-                                        cmd_find_from_pane(
-                                            &raw mut fs,
+                                        fs = cmd_find_state::find_from_pane(
                                             new_pane,
                                             0 as ::core::ffi::c_int,
-                                        );
+                                        )
+                                        .unwrap_or_else(|| {
+                                            cmd_find_state::clear_state(0 as ::core::ffi::c_int)
+                                        });
                                         event_payload_set_target(&mut ep, &fs);
                                         event_payload_set_pane(
                                             &mut ep,
@@ -383,12 +384,12 @@ unsafe fn cmd_split_window_exec(
                                         9814746494299271243 => {}
                                         _ => {
                                             if !flags & SPAWN_DETACHED != 0 {
-                                                cmd_find_from_winlink_pane(
-                                                    &mut *current.current.borrow_mut(),
-                                                    wl.clone(),
-                                                    new_pane,
-                                                    0 as ::core::ffi::c_int,
-                                                );
+                                                *current.current.borrow_mut() =
+                                                    cmd_find_state::find_from_winlink_pane(
+                                                        wl.clone(),
+                                                        new_pane,
+                                                        0 as ::core::ffi::c_int,
+                                                    );
                                             }
                                             server_redraw_window(&original_window);
                                             server_redraw_session(
@@ -414,8 +415,7 @@ unsafe fn cmd_split_window_exec(
                                                     write_cstr(out, &*cp)
                                                 });
                                             }
-                                            cmd_find_from_winlink_pane(
-                                                &raw mut fs,
+                                            fs = cmd_find_state::find_from_winlink_pane(
                                                 wl.clone(),
                                                 new_pane,
                                                 0 as ::core::ffi::c_int,

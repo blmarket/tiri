@@ -2,7 +2,6 @@ use crate::src::arguments::{
     args_count, args_flag_values, args_get, args_has, args_string, args_to_vector,
 };
 use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::find::cmd_find_from_winlink;
 use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_client, cmdq_get_state_owned, cmdq_get_target, cmdq_get_target_client,
     cmdq_insert_hook, cmdq_print,
@@ -274,11 +273,8 @@ unsafe fn cmd_new_window_exec(
         if args_has(args, 'd' as i32 as u_char) == 0
             || new_wl == s.as_ref().expect("live session").current_winlink()
         {
-            cmd_find_from_winlink(
-                &mut *current.current.borrow_mut(),
-                (new_wl).clone(),
-                0 as ::core::ffi::c_int,
-            );
+            *current.current.borrow_mut() =
+                cmd_find_state::find_from_winlink((new_wl).clone(), 0 as ::core::ffi::c_int);
             server_redraw_session_group(s.as_ref().expect("live session"));
         } else {
             server_status_session_group(s.as_ref().expect("live session"));
@@ -301,7 +297,7 @@ unsafe fn cmd_new_window_exec(
             );
             cmdq_print(item_handle, |out| out.write_all(cp.as_bytes()));
         }
-        cmd_find_from_winlink(&raw mut fs, (new_wl).clone(), 0 as ::core::ffi::c_int);
+        fs = cmd_find_state::find_from_winlink((new_wl).clone(), 0 as ::core::ffi::c_int);
         cmdq_insert_hook(Some(&session_owner), item_handle, &raw mut fs, |out| {
             out.write_all(b"after-new-window")
         });

@@ -2,7 +2,6 @@ use crate::src::arguments::{
     args_count, args_get, args_has, args_make_commands, args_make_commands_prepare, args_string,
 };
 use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::find::cmd_find_from_nothing;
 use crate::src::cmd::parse::cmd_parse_error_uppercase_first;
 use crate::src::cmd::queue::{
     cmdq_append, cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_command,
@@ -120,8 +119,7 @@ unsafe fn cmd_run_shell_print(cdata: &cmd_run_shell_data, msg: &CStr) {
                     .active_pane()
             });
         if pane.is_none() {
-            let mut find = cmd_find_state::default();
-            if cmd_find_from_nothing(&mut find, 0) == 0 {
+            if let Some(find) = cmd_find_state::find_from_nothing(0) {
                 pane = find.pane_handle();
             }
         }

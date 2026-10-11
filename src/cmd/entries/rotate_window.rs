@@ -1,6 +1,5 @@
 use crate::src::arguments::args_has;
 use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::find::cmd_find_from_winlink_pane;
 use crate::src::cmd::queue::cmdq_get_state_owned;
 use crate::src::server_fn::server_redraw_window;
 use crate::src::shared::arguments::{args, args_parse};
@@ -66,8 +65,7 @@ unsafe fn cmd_rotate_window_exec(
             .or_else(|| window_owner.step_pane(None, down))
             .expect("rotation window has an active candidate");
         WindowRef::clone(&(window_owner)).select_pane(&selected_pane, true);
-        cmd_find_from_winlink_pane(
-            &mut *current.current.borrow_mut(),
+        *current.current.borrow_mut() = cmd_find_state::find_from_winlink_pane(
             wl.clone(),
             &selected_pane,
             0 as ::core::ffi::c_int,

@@ -1,5 +1,4 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
-use crate::src::cmd::find::cmd_find_from_winlink;
 use crate::src::cmd::parse::{cmd_parse_and_append, cmd_parse_error_uppercase_first};
 use crate::src::cmd::queue::cmdq_new_state;
 use crate::src::cmd::{cmd_mouse_at, cmd_template_replace_cstring};
@@ -583,7 +582,7 @@ unsafe fn window_switch_run_command(
                     bytes.extend_from_slice((wl.get_unchecked().idx as u32).to_string().as_bytes());
                     bytes.push(b'.');
                     target = Some(CString::new(bytes).expect("window target contains no NUL"));
-                    cmd_find_from_winlink(&raw mut fs, wl.clone(), 0 as ::core::ffi::c_int);
+                    fs = cmd_find_state::find_from_winlink(wl.clone(), 0 as ::core::ffi::c_int);
                 }
             }
         }

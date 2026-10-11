@@ -19,7 +19,6 @@ pub use crate::src::session_group::{
 pub use api::{Session, SessionIndex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use crate::src::cmd::find::cmd_find_from_winlink;
 use crate::src::compat::strtonum::strtonum;
 use crate::src::events::{events_fire, events_fire_session, events_fire_winlink};
 use crate::src::events_payload::{
@@ -554,7 +553,7 @@ unsafe fn session_fire_window_changed(
         idx: 0,
     };
     let mut ep = event_payload_create();
-    cmd_find_from_winlink(&raw mut fs, wl.clone(), 0 as ::core::ffi::c_int);
+    fs = cmd_find_state::find_from_winlink(wl.clone(), 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut ep, &fs);
     event_payload_set_session(&mut ep, c"session", std::rc::Rc::clone(s_owner));
     event_payload_set_window(

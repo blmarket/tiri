@@ -1,6 +1,5 @@
 //! Pane process exit and explicit teardown transactions.
 use super::window_pane_wait_finish;
-use crate::src::cmd::find::cmd_find_from_pane;
 use crate::src::events::events_fire;
 use crate::src::events_payload::{
     event_payload_create, event_payload_set_int, event_payload_set_pane, event_payload_set_string,
@@ -59,7 +58,8 @@ unsafe fn server_fire_pane_exit(
     };
     let mut status: ::core::ffi::c_int = (*wp).status;
     let mut ep = event_payload_create();
-    cmd_find_from_pane(&raw mut fs, wp_owner, 0 as ::core::ffi::c_int);
+    fs = cmd_find_state::find_from_pane(wp_owner, 0 as ::core::ffi::c_int)
+        .unwrap_or_else(|| cmd_find_state::clear_state(0 as ::core::ffi::c_int));
     event_payload_set_target(&mut ep, &fs);
     event_payload_set_pane(&mut ep, c"pane", std::rc::Rc::clone(wp_owner));
     event_payload_set_window(

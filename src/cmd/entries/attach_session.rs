@@ -1,7 +1,7 @@
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cfg::{cfg_finished, cfg_show_causes};
 use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::find::{cmd_find_from_winlink, cmd_find_from_winlink_pane, cmd_find_target};
+use crate::src::cmd::find::cmd_find_target;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_flags, cmdq_get_state_owned};
 use crate::src::compat::imsg::*;
 use crate::src::events::events_fire_client;
@@ -137,18 +137,14 @@ pub unsafe fn cmd_attach_session(
         }
         (s.as_ref().expect("live session")).select_winlink(wl.clone());
         if let Some(wp_value) = wp.as_ref() {
-            cmd_find_from_winlink_pane(
-                &mut *current.current.borrow_mut(),
+            *current.current.borrow_mut() = cmd_find_state::find_from_winlink_pane(
                 wl.clone(),
                 wp_value,
                 0 as ::core::ffi::c_int,
             );
         } else {
-            cmd_find_from_winlink(
-                &mut *current.current.borrow_mut(),
-                wl.clone(),
-                0 as ::core::ffi::c_int,
-            );
+            *current.current.borrow_mut() =
+                cmd_find_state::find_from_winlink(wl.clone(), 0 as ::core::ffi::c_int);
         }
     }
     if !cflag.is_null() {

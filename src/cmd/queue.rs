@@ -3,8 +3,7 @@ use crate::src::arguments::{
 };
 use crate::src::cfg::{cfg_add_cause, cfg_finished};
 use crate::src::cmd::find::{
-    cmd_find_client, cmd_find_copy_state, cmd_find_from_client, cmd_find_target,
-    cmd_find_valid_state,
+    cmd_find_client, cmd_find_copy_state, cmd_find_target, cmd_find_valid_state,
 };
 use crate::src::cmd::{
     cmd_get_args_mut, cmd_get_entry, cmd_get_group, cmd_get_source, cmd_print_cstring,
@@ -741,7 +740,8 @@ unsafe fn cmdq_find_flag(
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if flag.flag as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
         let target_client = cmdq_get_target_client((item).as_ref());
-        cmd_find_from_client(fs, target_client.as_ref(), 0 as ::core::ffi::c_int);
+        *fs = cmd_find_state::find_from_client(target_client.as_ref(), 0 as ::core::ffi::c_int)
+            .unwrap_or_else(|| cmd_find_state::clear_state(0 as ::core::ffi::c_int));
         return CMD_RETURN_NORMAL;
     }
     value = args_get(
@@ -932,12 +932,11 @@ unsafe fn cmdq_fire_command(
                         fs = state.current_snapshot();
                         fsp = &mut fs;
                         current_block = 8704759739624374314;
-                    } else if cmd_find_from_client(
-                        &raw mut fs,
+                    } else if let Some(found) = cmd_find_state::find_from_client(
                         execution_client.as_ref(),
                         0 as ::core::ffi::c_int,
-                    ) == 0 as ::core::ffi::c_int
-                    {
+                    ) {
+                        fs = found;
                         fsp = &raw mut fs;
                         current_block = 8704759739624374314;
                     } else {
@@ -969,9 +968,10 @@ unsafe fn cmdq_fire_command(
         } else if cmd_find_valid_state(&state.current.borrow()) != 0 {
             fs = state.current_snapshot();
             fsp = &mut fs;
-        } else if cmd_find_from_client(&raw mut fs, saved_client.as_ref(), 0 as ::core::ffi::c_int)
-            == 0 as ::core::ffi::c_int
+        } else if let Some(found) =
+            cmd_find_state::find_from_client(saved_client.as_ref(), 0 as ::core::ffi::c_int)
         {
+            fs = found;
             fsp = &raw mut fs;
         }
         cmdq_insert_hook(

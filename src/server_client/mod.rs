@@ -17,7 +17,6 @@ pub use api::Client;
 pub use model::client;
 
 use crate::src::cfg::{cfg_client, cfg_finished, start_cfg};
-use crate::src::cmd::find::{cmd_find_from_client, cmd_find_from_mouse};
 use crate::src::cmd::parse::cmd_parse_from_argv;
 use crate::src::cmd::queue::{
     cmdq_abort_owned_wait, cmdq_append, cmdq_error, cmdq_get_callback_owned, cmdq_get_client,
@@ -896,7 +895,8 @@ unsafe fn server_client_fire_session_changed(c_owner: &ClientRef, old_owner: Opt
         idx: 0,
     };
     let mut ep = event_payload_create();
-    cmd_find_from_client(&raw mut fs, Some(c_owner), 0 as ::core::ffi::c_int);
+    fs = cmd_find_state::find_from_client(Some(c_owner), 0 as ::core::ffi::c_int)
+        .unwrap_or_else(|| cmd_find_state::clear_state(0 as ::core::ffi::c_int));
     event_payload_set_target(&mut ep, &fs);
     event_payload_set_client(&mut ep, std::rc::Rc::clone(c_owner));
     if !fs.session_handle().is_none() {
@@ -950,7 +950,8 @@ unsafe fn server_client_fire_resized(c_owner: &ClientRef, mut old_sx: u_int, mut
         idx: 0,
     };
     let mut ep = event_payload_create();
-    cmd_find_from_client(&raw mut fs, Some(c_owner), 0 as ::core::ffi::c_int);
+    fs = cmd_find_state::find_from_client(Some(c_owner), 0 as ::core::ffi::c_int)
+        .unwrap_or_else(|| cmd_find_state::clear_state(0 as ::core::ffi::c_int));
     event_payload_set_target(&mut ep, &fs);
     event_payload_set_client(&mut ep, std::rc::Rc::clone(c_owner));
     if !fs.session_handle().is_none() {
@@ -2023,7 +2024,7 @@ unsafe fn server_client_key_callback(
         match current_block {
             1578459965781631232 => {}
             _ => {
-                if !(key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
+                let mouse_fs = if key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
                     == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
                     || key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
                         >= (KEYC_TYPE_MOUSEMOVE as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
@@ -2031,11 +2032,16 @@ unsafe fn server_client_key_callback(
                         && key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
                             <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int
                                 as ::core::ffi::c_ulonglong)
-                                << 32 as ::core::ffi::c_int)
-                    || cmd_find_from_mouse(&raw mut fs, m) != 0 as ::core::ffi::c_int
+                                << 32 as ::core::ffi::c_int
                 {
-                    cmd_find_from_client(&raw mut fs, Some(&c_owner), 0 as ::core::ffi::c_int);
-                }
+                    cmd_find_state::find_from_mouse(m)
+                } else {
+                    None
+                };
+                fs = mouse_fs.unwrap_or_else(|| {
+                    cmd_find_state::find_from_client(Some(&c_owner), 0 as ::core::ffi::c_int)
+                        .unwrap_or_else(|| cmd_find_state::clear_state(0 as ::core::ffi::c_int))
+                });
                 target_pane = fs.pane_handle();
                 if (key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
                     == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong

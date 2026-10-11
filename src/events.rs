@@ -1,6 +1,3 @@
-use crate::src::cmd::find::{
-    cmd_find_from_client, cmd_find_from_pane, cmd_find_from_window, cmd_find_from_winlink,
-};
 use crate::src::events_payload::{
     event_payload_create, event_payload_log, event_payload_set_client, event_payload_set_int,
     event_payload_set_pane, event_payload_set_session, event_payload_set_string,
@@ -120,7 +117,8 @@ pub unsafe fn events_fire_client(name: &CStr, owner: ClientRef) {
         idx: 0,
     };
     let mut ep = event_payload_create();
-    cmd_find_from_client(&raw mut fs, Some(&owner), 0 as ::core::ffi::c_int);
+    fs = cmd_find_state::find_from_client(Some(&owner), 0 as ::core::ffi::c_int)
+        .unwrap_or_else(|| cmd_find_state::clear_state(0 as ::core::ffi::c_int));
     event_payload_set_target(&mut ep, &fs);
     event_payload_set_client(&mut ep, owner);
     if !fs.session_handle().is_none() {
@@ -178,11 +176,8 @@ pub unsafe fn events_fire_window(name: &CStr, owner: WindowRef) {
         idx: 0,
     };
     let mut ep = event_payload_create();
-    cmd_find_from_window(
-        &raw mut fs,
-        &WindowRef::clone(&(owner)),
-        0 as ::core::ffi::c_int,
-    );
+    fs = cmd_find_state::find_from_window(&WindowRef::clone(&(owner)), 0 as ::core::ffi::c_int)
+        .unwrap_or_else(|| cmd_find_state::clear_state(0 as ::core::ffi::c_int));
     event_payload_set_target(&mut ep, &fs);
     event_payload_set_window(&mut ep, c"window", owner);
     events_fire(name, ep);
@@ -200,7 +195,8 @@ pub unsafe fn events_fire_pane(
         idx: 0,
     };
     let mut ep = event_payload_create();
-    cmd_find_from_pane(&raw mut fs, &owner, 0 as ::core::ffi::c_int);
+    fs = cmd_find_state::find_from_pane(&owner, 0 as ::core::ffi::c_int)
+        .unwrap_or_else(|| cmd_find_state::clear_state(0 as ::core::ffi::c_int));
     event_payload_set_target(&mut ep, &fs);
     let window = owner
         .window_observer()
@@ -220,7 +216,7 @@ pub unsafe fn events_fire_winlink(name: &CStr, mut wl: refbox::Weak<winlink>) {
         idx: 0,
     };
     let mut ep = event_payload_create();
-    cmd_find_from_winlink(&raw mut fs, wl.clone(), 0 as ::core::ffi::c_int);
+    fs = cmd_find_state::find_from_winlink(wl.clone(), 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut ep, &fs);
     if let Some(session_owner) = wl.get_unchecked().session.upgrade() {
         event_payload_set_session(&mut ep, c"session", session_owner.clone());

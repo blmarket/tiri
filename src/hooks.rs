@@ -1,8 +1,5 @@
 use crate::src::cmd::cmd_list_print_cstring;
-use crate::src::cmd::find::{
-    cmd_find_copy_state, cmd_find_empty_state, cmd_find_from_nothing, cmd_find_from_pane,
-    cmd_find_from_winlink, cmd_find_from_winlink_pane, cmd_find_valid_state,
-};
+use crate::src::cmd::find::{cmd_find_copy_state, cmd_find_empty_state, cmd_find_valid_state};
 use crate::src::cmd::parse::cmd_parse_from_string;
 use crate::src::cmd::queue::{
     cmdq_add_formats, cmdq_append, cmdq_error, cmdq_get_command, cmdq_get_event, cmdq_get_flags,
@@ -149,7 +146,7 @@ unsafe fn hooks_insert(
         crate::src::log::log_bytes((*hd).name.to_bytes())
     ));
     if cmd_find_empty_state(&(*hd).fs) != 0 || cmd_find_valid_state(&(*hd).fs) == 0 {
-        cmd_find_from_nothing(&mut fs, 0);
+        fs = cmd_find_state::find_from_nothing(0).unwrap_or_else(|| cmd_find_state::clear_state(0));
     } else {
         cmd_find_copy_state(&mut fs, &(*hd).fs);
     }
@@ -462,16 +459,16 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, fallback: &cmd_find_state, g
                     .map_or_else(WindowWeak::new, WindowRef::downgrade),
             )
     {
-        cmd_find_from_winlink_pane(
-            &raw mut fs,
+        fs = cmd_find_state::find_from_winlink_pane(
             wl.clone(),
             pane_owner.as_ref().expect("monitor pane"),
             0 as ::core::ffi::c_int,
         );
     } else if wl.is_alive() {
-        cmd_find_from_winlink(&raw mut fs, wl.clone(), 0 as ::core::ffi::c_int);
+        fs = cmd_find_state::find_from_winlink(wl.clone(), 0 as ::core::ffi::c_int);
     } else if let Some(pane_owner_value) = pane_owner.as_ref() {
-        cmd_find_from_pane(&raw mut fs, pane_owner_value, 0 as ::core::ffi::c_int);
+        fs = cmd_find_state::find_from_pane(pane_owner_value, 0 as ::core::ffi::c_int)
+            .unwrap_or_else(|| cmd_find_state::clear_state(0 as ::core::ffi::c_int));
     } else if !s.is_none() {
         fs = cmd_find_state::find_from_session(
             &s.clone().expect("live session"),

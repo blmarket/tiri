@@ -1,7 +1,4 @@
 use crate::src::arguments::{args_get, args_has};
-use crate::src::cmd::find::{
-    cmd_find_from_pane, cmd_find_from_winlink, cmd_find_from_winlink_pane,
-};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_state_owned, cmdq_insert_hook, cmdq_print};
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::events::events_fire;
@@ -171,7 +168,8 @@ unsafe fn cmd_select_pane_marked_pane(
     let marked = marked_pane.pane_handle();
     let mut find = cmd_find_state::default();
     let payload_pane = marked.as_ref().or(previous.as_ref()).unwrap_or(&pane);
-    cmd_find_from_pane(&mut find, payload_pane, 0);
+    find = cmd_find_state::find_from_pane(payload_pane, 0)
+        .unwrap_or_else(|| cmd_find_state::clear_state(0));
     let mut payload = event_payload_create();
     event_payload_set_target(&mut payload, &find);
     event_payload_set_pane(&mut payload, c"pane", payload_pane.clone());
@@ -239,7 +237,8 @@ unsafe fn cmd_select_pane_exec(
             } else {
                 window.redraw_active_switch(Some(&last));
                 if window.select_pane(&last, true) != 0 {
-                    cmd_find_from_winlink(&mut *current.current.borrow_mut(), link.clone(), 0);
+                    *current.current.borrow_mut() =
+                        cmd_find_state::find_from_winlink(link.clone(), 0);
                     cmd_select_pane_redraw(&window);
                 }
             }
@@ -306,7 +305,8 @@ unsafe fn cmd_select_pane_exec(
             );
             if pane.set_title(&title) {
                 let mut find = cmd_find_state::default();
-                cmd_find_from_pane(&mut find, &pane, 0);
+                find = cmd_find_state::find_from_pane(&pane, 0)
+                    .unwrap_or_else(|| cmd_find_state::clear_state(0));
                 let mut payload = event_payload_create();
                 event_payload_set_target(&mut payload, &find);
                 event_payload_set_pane(&mut payload, c"pane", pane.clone());
@@ -328,7 +328,8 @@ unsafe fn cmd_select_pane_exec(
         }
         window.redraw_active_switch(Some(&pane));
         if window.select_pane(&pane, true) != 0 {
-            cmd_find_from_winlink_pane(&mut *current.current.borrow_mut(), link.clone(), &pane, 0);
+            *current.current.borrow_mut() =
+                cmd_find_state::find_from_winlink_pane(link.clone(), &pane, 0);
         }
         cmdq_insert_hook(
             session.as_ref(),

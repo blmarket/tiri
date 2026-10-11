@@ -1,7 +1,4 @@
-use crate::src::cmd::find::{
-    cmd_find_from_nothing, cmd_find_from_pane, cmd_find_from_session_window, cmd_find_from_winlink,
-    cmd_find_from_winlink_pane, cmd_find_valid_state,
-};
+use crate::src::cmd::find::cmd_find_valid_state;
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
@@ -192,27 +189,32 @@ pub unsafe fn event_payload_get_target(ep: &event_payload, fs: &mut cmd_find_sta
                 .expect("linked window")
                 .contains_pane(&target.wp)
         {
-            cmd_find_from_winlink_pane(fs, link.clone(), pane, flags);
+            *fs = cmd_find_state::find_from_winlink_pane(link.clone(), pane, flags);
             if cmd_find_valid_state(fs) != 0 {
                 return 1;
             }
         }
-        if cmd_find_from_pane(fs, pane, flags) == 0 && cmd_find_valid_state(fs) != 0 {
-            return 1;
+        if let Some(found) = cmd_find_state::find_from_pane(pane, flags) {
+            *fs = found;
+            if cmd_find_valid_state(fs) != 0 {
+                return 1;
+            }
         }
     }
     if link.is_alive() {
-        cmd_find_from_winlink(fs, link, flags);
+        *fs = cmd_find_state::find_from_winlink(link, flags);
         if cmd_find_valid_state(fs) != 0 {
             return 1;
         }
     }
     if let (Some(session), Some(window)) = (&session, &window) {
-        if session.is_registered()
-            && cmd_find_from_session_window(fs, session, window, flags) == 0
-            && cmd_find_valid_state(fs) != 0
-        {
-            return 1;
+        if session.is_registered() {
+            if let Some(found) = cmd_find_state::find_from_session_window(session, window, flags) {
+                *fs = found;
+                if cmd_find_valid_state(fs) != 0 {
+                    return 1;
+                }
+            }
         }
     }
     if let Some(session) = session.as_ref() {
@@ -223,7 +225,8 @@ pub unsafe fn event_payload_get_target(ep: &event_payload, fs: &mut cmd_find_sta
             }
         }
     }
-    if cmd_find_from_nothing(fs, flags) == 0 {
+    if let Some(found) = cmd_find_state::find_from_nothing(flags) {
+        *fs = found;
         return 1;
     }
     *fs = cmd_find_state::clear_state(flags);

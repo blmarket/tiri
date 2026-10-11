@@ -867,223 +867,156 @@ impl cmd_find_state {
         cmd_find_log_state(c"cmd_find_from_session", &mut fs);
         fs
     }
-}
-pub unsafe fn cmd_find_from_winlink(
-    mut fs: *mut cmd_find_state,
-    mut wl: refbox::Weak<winlink>,
-    mut flags: ::core::ffi::c_int,
-) {
-    *fs = cmd_find_state::clear_state(flags);
-    (*fs).s = wl.get_unchecked().session.clone();
-    (*fs).set_wl(wl.clone());
-    (*fs).set_w(wl.get_unchecked().window_handle());
-    (*fs).set_wp(
-        (((wl.get_unchecked().window_handle().as_ref()).expect("live window")).active_pane())
-            .as_ref(),
-    );
-    cmd_find_log_state(c"cmd_find_from_winlink", fs);
-}
-pub unsafe fn cmd_find_from_session_window(
-    mut fs: *mut cmd_find_state,
-    s_owner: &SessionRef,
-    w_owner: &WindowRef,
-    mut flags: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
-    *fs = cmd_find_state::clear_state(flags);
-    (*fs).set_s(Some(s_owner));
-    (*fs).set_w(Some(w_owner));
-    if cmd_find_best_winlink_with_window(fs) != 0 as ::core::ffi::c_int {
-        *fs = cmd_find_state::clear_state(flags);
-        return -(1 as ::core::ffi::c_int);
-    }
-    (*fs).set_wp(((((*fs).window_handle().as_ref()).expect("live window")).active_pane()).as_ref());
-    cmd_find_log_state(c"cmd_find_from_session_window", fs);
-    0 as ::core::ffi::c_int
-}
-pub unsafe fn cmd_find_from_window(
-    mut fs: *mut cmd_find_state,
-    w_owner: &WindowRef,
-    mut flags: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
-    *fs = cmd_find_state::clear_state(flags);
-    (*fs).set_w(Some(w_owner));
-    if cmd_find_best_session_with_window(fs) != 0 as ::core::ffi::c_int {
-        *fs = cmd_find_state::clear_state(flags);
-        return -(1 as ::core::ffi::c_int);
-    }
-    if cmd_find_best_winlink_with_window(fs) != 0 as ::core::ffi::c_int {
-        *fs = cmd_find_state::clear_state(flags);
-        return -(1 as ::core::ffi::c_int);
-    }
-    (*fs).set_wp(((((*fs).window_handle().as_ref()).expect("live window")).active_pane()).as_ref());
-    cmd_find_log_state(c"cmd_find_from_window", fs);
-    0 as ::core::ffi::c_int
-}
-pub unsafe fn cmd_find_from_winlink_pane(
-    mut fs: *mut cmd_find_state,
-    mut wl: refbox::Weak<winlink>,
-    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-    mut flags: ::core::ffi::c_int,
-) {
-    *fs = cmd_find_state::clear_state(flags);
-    (*fs).s = wl.get_unchecked().session.clone();
-    (*fs).set_wl(wl.clone());
-    (*fs).idx = ((*fs).winlink_handle()).get_unchecked().idx;
-    (*fs).set_w(((*fs).winlink_handle()).get_unchecked().window_handle());
-    (*fs).set_wp(Some(wp_owner));
-    cmd_find_log_state(c"cmd_find_from_winlink_pane", fs);
-}
-pub unsafe fn cmd_find_from_pane(
-    fs: *mut cmd_find_state,
-    pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-    flags: i32,
-) -> i32 {
-    let window = pane.window_observer().upgrade().expect("pane window");
-    let result = cmd_find_from_window(fs, &window, flags);
-    drop(window);
-    if result != 0 {
-        return -1;
-    }
-    (*fs).set_wp(Some(pane));
-    cmd_find_log_state(c"cmd_find_from_pane", fs);
-    0
-}
-pub unsafe fn cmd_find_from_nothing(
-    mut fs: *mut cmd_find_state,
-    mut flags: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
-    *fs = cmd_find_state::clear_state(flags);
-    let best_session_owner = cmd_find_best_session(None, flags);
-    (*fs).s = best_session_owner
-        .as_ref()
-        .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-    if (*fs).session_handle().is_none() {
-        *fs = cmd_find_state::clear_state(flags);
-        return -(1 as ::core::ffi::c_int);
-    }
-    (*fs).set_wl(
-        ((*fs)
-            .session_handle()
-            .expect("live session")
-            .current_winlink())
-        .clone(),
-    );
-    (*fs).idx = ((*fs).winlink_handle()).get_unchecked().idx;
-    (*fs).set_w(((*fs).winlink_handle()).get_unchecked().window_handle());
-    (*fs).set_wp(((((*fs).window_handle().as_ref()).expect("live window")).active_pane()).as_ref());
-    cmd_find_log_state(c"cmd_find_from_nothing", fs);
-    0 as ::core::ffi::c_int
-}
-pub unsafe fn cmd_find_from_mouse(
-    mut fs: *mut cmd_find_state,
-    mut m: *mut mouse_event,
-) -> ::core::ffi::c_int {
-    let mouse_pane_owner;
-    let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    *fs = cmd_find_state::clear_state(flags);
-    if (*m).valid == 0 {
-        return -(1 as ::core::ffi::c_int);
-    }
-    {
-        let mut wl = refbox::Weak::new();
-        let mut mouse_session_owner = None;
-        mouse_pane_owner = cmd_mouse_pane(m, Some(&mut mouse_session_owner), &raw mut wl);
-        (*fs).set_s(mouse_session_owner.as_ref());
-        (*fs).set_wl(wl.clone());
-        (*fs).set_wp(mouse_pane_owner.as_ref());
-    }
-    if (*fs).pane_handle().is_none() {
-        *fs = cmd_find_state::clear_state(flags);
-        return -(1 as ::core::ffi::c_int);
-    }
-    (*fs).set_w(((*fs).winlink_handle()).get_unchecked().window_handle());
-    cmd_find_log_state(c"cmd_find_from_mouse", fs);
-    0 as ::core::ffi::c_int
-}
-pub unsafe fn cmd_find_from_client(
-    mut fs: *mut cmd_find_state,
-    c_owner: Option<&ClientRef>,
-    mut flags: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
-    let mut c: Option<ClientRef> = c_owner.cloned();
-
-    if c.is_none() {
-        return cmd_find_from_nothing(fs, flags);
-    }
-    if !c
-        .as_ref()
-        .expect("live client")
-        .attached_session()
-        .upgrade()
-        .is_none()
-    {
-        *fs = cmd_find_state::clear_state(flags);
-        (*fs).set_wp(
-            ((((c
-                .as_ref()
-                .expect("live client")
-                .attached_session()
-                .upgrade()
-                .expect("live session")
-                .current_winlink())
-            .get_unchecked()
-            .window_handle()
-            .as_ref())
-            .expect("live window"))
-            .active_pane())
-            .as_ref(),
-        );
-        if (*fs).pane_handle().is_none() {
-            *fs = cmd_find_state::find_from_session(
-                &c.as_ref()
-                    .expect("live client")
-                    .attached_session()
-                    .upgrade()
-                    .expect("live session"),
-                flags,
-            );
-            return 0 as ::core::ffi::c_int;
-        }
-        (*fs).set_s(
-            c.as_ref()
-                .expect("live client")
-                .attached_session()
-                .upgrade()
+    pub unsafe fn find_from_winlink(wl: refbox::Weak<winlink>, flags: ::core::ffi::c_int) -> Self {
+        let mut fs = Self::clear_state(flags);
+        fs.s = wl.get_unchecked().session.clone();
+        fs.set_w(wl.get_unchecked().window_handle());
+        fs.set_wp(
+            wl.get_unchecked()
+                .window_handle()
+                .expect("live window")
+                .active_pane()
                 .as_ref(),
         );
-        (*fs).set_wl(
-            ((*fs)
-                .session_handle()
-                .expect("live session")
-                .current_winlink())
-            .clone(),
-        );
-        (*fs).set_w(((*fs).winlink_handle()).get_unchecked().window_handle());
-        cmd_find_log_state(c"cmd_find_from_client", fs);
-        return 0 as ::core::ffi::c_int;
+        fs.set_wl(wl);
+        cmd_find_log_state(c"cmd_find_from_winlink", &mut fs);
+        fs
     }
-    *fs = cmd_find_state::clear_state(flags);
-    let inside_pane_owner = cmd_find_inside_pane(c_owner);
-
-    if let Some(pane) = inside_pane_owner.as_ref() {
-        (*fs).w = pane.window_observer();
-        if !(cmd_find_best_session_with_window(fs) != 0 as ::core::ffi::c_int) {
-            (*fs).set_wl(
-                ((*fs)
-                    .session_handle()
-                    .expect("live session")
-                    .current_winlink())
-                .clone(),
-            );
-            (*fs).set_w(((*fs).winlink_handle()).get_unchecked().window_handle());
-            (*fs).set_wp(
-                ((((*fs).window_handle().as_ref()).expect("live window")).active_pane()).as_ref(),
-            );
-            cmd_find_log_state(c"cmd_find_from_client", fs);
-            return 0 as ::core::ffi::c_int;
+    pub unsafe fn find_from_session_window(
+        s_owner: &SessionRef,
+        w_owner: &WindowRef,
+        flags: ::core::ffi::c_int,
+    ) -> Option<Self> {
+        let mut fs = Self::clear_state(flags);
+        fs.set_s(Some(s_owner));
+        fs.set_w(Some(w_owner));
+        if cmd_find_best_winlink_with_window(&mut fs) != 0 {
+            return None;
         }
+        fs.set_wp(w_owner.active_pane().as_ref());
+        cmd_find_log_state(c"cmd_find_from_session_window", &mut fs);
+        Some(fs)
     }
-    cmd_find_from_nothing(fs, flags)
+    pub unsafe fn find_from_window(w_owner: &WindowRef, flags: ::core::ffi::c_int) -> Option<Self> {
+        let mut fs = Self::clear_state(flags);
+        fs.set_w(Some(w_owner));
+        if cmd_find_best_session_with_window(&mut fs) != 0 {
+            return None;
+        }
+        if cmd_find_best_winlink_with_window(&mut fs) != 0 {
+            return None;
+        }
+        fs.set_wp(w_owner.active_pane().as_ref());
+        cmd_find_log_state(c"cmd_find_from_window", &mut fs);
+        Some(fs)
+    }
+    pub unsafe fn find_from_winlink_pane(
+        wl: refbox::Weak<winlink>,
+        wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+        flags: ::core::ffi::c_int,
+    ) -> Self {
+        let mut fs = Self::clear_state(flags);
+        fs.s = wl.get_unchecked().session.clone();
+        fs.idx = wl.get_unchecked().idx;
+        fs.set_w(wl.get_unchecked().window_handle());
+        fs.set_wl(wl);
+        fs.set_wp(Some(wp_owner));
+        cmd_find_log_state(c"cmd_find_from_winlink_pane", &mut fs);
+        fs
+    }
+    pub unsafe fn find_from_pane(
+        pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+        flags: ::core::ffi::c_int,
+    ) -> Option<Self> {
+        let window = pane.window_observer().upgrade().expect("pane window");
+        let mut fs = Self::find_from_window(&window, flags)?;
+        drop(window);
+        fs.set_wp(Some(pane));
+        cmd_find_log_state(c"cmd_find_from_pane", &mut fs);
+        Some(fs)
+    }
+    pub unsafe fn find_from_nothing(flags: ::core::ffi::c_int) -> Option<Self> {
+        let mut fs = Self::clear_state(flags);
+        let session = cmd_find_best_session(None, flags)?;
+        fs.set_s(Some(&session));
+        fs.set_wl(session.current_winlink().clone());
+        fs.idx = fs.winlink_handle().get_unchecked().idx;
+        fs.set_w(fs.winlink_handle().get_unchecked().window_handle());
+        fs.set_wp(
+            fs.window_handle()
+                .expect("live window")
+                .active_pane()
+                .as_ref(),
+        );
+        cmd_find_log_state(c"cmd_find_from_nothing", &mut fs);
+        Some(fs)
+    }
+    pub unsafe fn find_from_mouse(m: *mut mouse_event) -> Option<Self> {
+        if (*m).valid == 0 {
+            return None;
+        }
+        let mut fs = Self::clear_state(0);
+        let mut wl = refbox::Weak::new();
+        let mut mouse_session_owner = None;
+        let mouse_pane_owner = cmd_mouse_pane(m, Some(&mut mouse_session_owner), &raw mut wl);
+        if mouse_pane_owner.is_none() {
+            return None;
+        }
+        fs.set_s(mouse_session_owner.as_ref());
+        fs.set_wl(wl);
+        fs.set_wp(mouse_pane_owner.as_ref());
+        fs.set_w(fs.winlink_handle().get_unchecked().window_handle());
+        cmd_find_log_state(c"cmd_find_from_mouse", &mut fs);
+        Some(fs)
+    }
+    pub unsafe fn find_from_client(
+        c_owner: Option<&ClientRef>,
+        flags: ::core::ffi::c_int,
+    ) -> Option<Self> {
+        let Some(c) = c_owner else {
+            return Self::find_from_nothing(flags);
+        };
+        if let Some(session) = c.attached_session().upgrade() {
+            let wl = session.current_winlink().clone();
+            let Some(pane) = wl
+                .get_unchecked()
+                .window_handle()
+                .expect("live window")
+                .active_pane()
+            else {
+                return Some(Self::find_from_session(&session, flags));
+            };
+            let mut fs = Self::clear_state(flags);
+            fs.set_s(Some(&session));
+            fs.set_w(wl.get_unchecked().window_handle());
+            fs.set_wl(wl);
+            fs.set_wp(Some(&pane));
+            cmd_find_log_state(c"cmd_find_from_client", &mut fs);
+            return Some(fs);
+        }
+        if let Some(pane) = cmd_find_inside_pane(c_owner) {
+            let mut fs = Self::clear_state(flags);
+            fs.w = pane.window_observer();
+            if cmd_find_best_session_with_window(&mut fs) == 0 {
+                fs.set_wl(
+                    fs.session_handle()
+                        .expect("live session")
+                        .current_winlink()
+                        .clone(),
+                );
+                fs.set_w(fs.winlink_handle().get_unchecked().window_handle());
+                fs.set_wp(
+                    fs.window_handle()
+                        .expect("live window")
+                        .active_pane()
+                        .as_ref(),
+                );
+                cmd_find_log_state(c"cmd_find_from_client", &mut fs);
+                return Some(fs);
+            }
+        }
+        Self::find_from_nothing(flags)
+    }
 }
 pub unsafe fn cmd_find_target(
     mut fs: *mut cmd_find_state,
@@ -1100,14 +1033,6 @@ pub unsafe fn cmd_find_target(
     let mut current_block: u64;
     let mut m: *mut mouse_event = ::core::ptr::null_mut::<mouse_event>();
     let mut c: Option<ClientRef> = None;
-    let mut current: cmd_find_state = cmd_find_state {
-        flags: 0,
-        s: Default::default(),
-        wl: Default::default(),
-        w: Default::default(),
-        wp: Default::default(),
-        idx: 0,
-    };
     let mut colon: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut period: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut copy: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
@@ -1222,8 +1147,7 @@ pub unsafe fn cmd_find_target(
         current_context = Some(queue_current);
         log_debug(format_args!("{}: current is from queue", "cmd_find_target"));
         current_block = 1836292691772056875;
-    } else if cmd_find_from_client(&raw mut current, queue_client_ptr.as_ref(), flags)
-        == 0 as ::core::ffi::c_int
+    } else if let Some(current) = cmd_find_state::find_from_client(queue_client_ptr.as_ref(), flags)
     {
         current_context = Some(current);
         log_debug(format_args!(

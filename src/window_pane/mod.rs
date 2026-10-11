@@ -28,7 +28,6 @@ mod pane_sync;
 use self::input::{input_parse_buffer, input_parse_pane};
 use crate::src::arguments::args_has;
 use crate::src::cmd::cmd_mouse_at;
-use crate::src::cmd::find::cmd_find_from_pane;
 use crate::src::cmd::queue::{cmdq_continue, cmdq_get_client};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::events::{events_fire, events_fire_pane};
@@ -256,7 +255,8 @@ unsafe fn window_fire_pane_moved(
         idx: 0,
     };
     let mut ep = event_payload_create();
-    cmd_find_from_pane(&raw mut fs, wp_owner, 0 as ::core::ffi::c_int);
+    fs = cmd_find_state::find_from_pane(wp_owner, 0 as ::core::ffi::c_int)
+        .unwrap_or_else(|| cmd_find_state::clear_state(0 as ::core::ffi::c_int));
     event_payload_set_target(&mut ep, &fs);
     event_payload_set_pane(&mut ep, c"pane", Rc::clone(wp_owner));
     event_payload_set_window(&mut ep, c"window", WindowRef::clone(new_w_owner));
@@ -291,7 +291,8 @@ unsafe fn window_fire_pane_mode_changed(
         idx: 0,
     };
     let mut ep = event_payload_create();
-    cmd_find_from_pane(&raw mut fs, wp_owner, 0 as ::core::ffi::c_int);
+    fs = cmd_find_state::find_from_pane(wp_owner, 0 as ::core::ffi::c_int)
+        .unwrap_or_else(|| cmd_find_state::clear_state(0 as ::core::ffi::c_int));
     event_payload_set_target(&mut ep, &fs);
     event_payload_set_pane(&mut ep, c"pane", std::rc::Rc::clone(wp_owner));
     event_payload_set_window(
@@ -329,7 +330,8 @@ unsafe fn window_fire_pane_prompt(
     };
     let type_string = prompt_type_string(type_0);
     let mut ep = event_payload_create();
-    cmd_find_from_pane(&raw mut fs, wp_owner, 0 as ::core::ffi::c_int);
+    fs = cmd_find_state::find_from_pane(wp_owner, 0 as ::core::ffi::c_int)
+        .unwrap_or_else(|| cmd_find_state::clear_state(0 as ::core::ffi::c_int));
     event_payload_set_target(&mut ep, &fs);
     event_payload_set_pane(&mut ep, c"pane", std::rc::Rc::clone(wp_owner));
     event_payload_set_window(
@@ -957,7 +959,8 @@ unsafe fn window_pane_resize(
             .expect("non-null function pointer")(wme, sx, sy);
     }
     let mut ep = event_payload_create();
-    cmd_find_from_pane(&raw mut fs, pane_owner, 0 as ::core::ffi::c_int);
+    fs = cmd_find_state::find_from_pane(pane_owner, 0 as ::core::ffi::c_int)
+        .unwrap_or_else(|| cmd_find_state::clear_state(0 as ::core::ffi::c_int));
     event_payload_set_target(&mut ep, &fs);
     event_payload_set_pane(&mut ep, c"pane", std::rc::Rc::clone(pane_owner));
     event_payload_set_window(
