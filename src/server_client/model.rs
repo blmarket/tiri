@@ -1,4 +1,4 @@
-//! Authoritative client objects, file transfers, and scalar domains.
+//! Authoritative client objects, file transfers, overlays, and scalar domains.
 use crate::src::shared::client::ClientWeak;
 use crate::src::shared::session::{SessionRef, SessionWeak};
 use crate::src::shared::window::WindowWeak;
@@ -89,6 +89,8 @@ pub struct client {
     pub(super) pan_window: WindowWeak,
     pub(super) pan_ox: u_int,
     pub(super) pan_oy: u_int,
+    pub(super) overlay: Option<super::client_overlay::Overlay>,
+    pub(super) overlay_generation: u64,
     pub(super) files: client_files,
     pub(super) source_file_depth: u_int,
 }
@@ -174,6 +176,8 @@ impl client {
             pan_window: Default::default(),
             pan_ox: Default::default(),
             pan_oy: Default::default(),
+            overlay: None,
+            overlay_generation: 0,
             files: Default::default(),
             source_file_depth: Default::default(),
         }

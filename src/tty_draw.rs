@@ -39,7 +39,8 @@ unsafe fn tty_draw_line_clear(
     if nx == 0 as u_int {
         return;
     }
-    if wrapped == 0
+    if !client.clips_terminal_output()
+        && wrapped == 0
         && nx >= 10 as u_int
         && tty_fake_bce(client.borrow_terminal(), defaults, bg) == 0
     {

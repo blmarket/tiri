@@ -33,6 +33,38 @@ impl visible_ranges {
             .all(|range| range.nx == 0)
     }
 
+    /// Keep the parts of a row outside the overlay's rectangle.
+    pub fn exclude_box(&mut self, area: (u_int, u_int, u_int, u_int), row: (u_int, u_int, u_int)) {
+        let (x, y, sx, sy) = area;
+        let (px, py, nx) = row;
+        if py < y || py > y.wrapping_add(sy).wrapping_sub(1) {
+            self.ensure(1);
+            self.storage[0] = visible_range { px, nx };
+            self.used = 1;
+            return;
+        }
+        self.ensure(2);
+        self.storage[0] = if px < x {
+            visible_range {
+                px,
+                nx: x.wrapping_sub(px).min(nx),
+            }
+        } else {
+            visible_range::default()
+        };
+        let right = x.wrapping_add(sx).max(px);
+        let end = px.wrapping_add(nx);
+        self.storage[1] = if end > right {
+            visible_range {
+                px: right,
+                nx: end.wrapping_sub(right),
+            }
+        } else {
+            visible_range::default()
+        };
+        self.used = 2;
+    }
+
     pub fn ensure(&mut self, n: u_int) {
         if self.storage.len() < n as usize {
             self.storage.resize(n as usize, visible_range::default());

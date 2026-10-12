@@ -508,22 +508,20 @@ fn layout_only_commands_and_flags_are_gone() {
 }
 
 #[test]
-fn menus_and_popups_are_gone() {
+fn menus_and_popups_are_available() {
     let server = Server::new();
     server.start(80, 24, 1);
     for args in [
-        &["display-menu", "Item", "", "new-pane"][..],
-        &["display-popup", "-E", "true"],
-        &["set", "-w", "menu-style", "fg=red"],
+        &["set", "-w", "menu-style", "fg=red"][..],
         &["set", "-w", "popup-border-lines", "double"],
     ] {
-        assert!(
-            !server.run(args).status.success(),
-            "{args:?} still accepted"
-        );
+        server.success(args);
     }
+    let commands = server.success(&["list-commands", "-F", "#{command_list_name}"]);
+    assert!(commands.lines().any(|name| name == "display-menu"));
+    assert!(commands.lines().any(|name| name == "display-popup"));
     let keys = server.success(&["list-keys"]);
-    assert!(!keys.contains("display-menu"));
+    assert!(keys.contains("display-menu"));
 }
 
 #[test]

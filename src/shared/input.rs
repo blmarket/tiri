@@ -25,6 +25,7 @@ pub enum InputPalette {
     #[default]
     None,
     Pane(std::rc::Weak<std::cell::UnsafeCell<window_pane>>),
+    Popup(refbox::Weak<colour_palette>),
 }
 
 impl InputPalette {
@@ -40,6 +41,14 @@ impl InputPalette {
                 };
                 unsafe { owner.release(c"input palette") };
                 Some(result)
+            }
+            Self::Popup(observer) => {
+                let mut palette = match observer.try_borrow_mut() {
+                    Ok(palette) => palette,
+                    Err(refbox::BorrowError::Dropped) => return None,
+                    Err(refbox::BorrowError::Borrowed) => panic!("popup palette already borrowed"),
+                };
+                Some(access(&mut palette))
             }
         }
     }

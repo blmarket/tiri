@@ -53,10 +53,10 @@ impl<'ast> Visit<'ast> for Audit {
                     && attr
                         .parse_args::<syn::Path>()
                         .is_ok_and(|p| p.is_ident("test"))
-            })
-                && self.consumer {
-                    return; // Test fixtures may initialize owner state directly.
-                }
+            }) && self.consumer
+            {
+                return; // Test fixtures may initialize owner state directly.
+            }
         }
         visit::visit_item(self, item);
     }

@@ -255,6 +255,7 @@ pub const TTY_CTX_WINDOW_BIGGER: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub const TTY_CTX_WRAPPED: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const TTY_CTX_INVISIBLE_PANES: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const TTY_CTX_SYNC: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
+pub const TTY_CTX_OVERLAY_SYNC: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
 pub const TTY_CTX_CELL_INVALIDATE: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
 pub const TTY_CTX_PANE_OBSCURED: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
 pub const TTY_NOCURSOR: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
@@ -462,6 +463,7 @@ pub enum PaletteSource {
     #[default]
     None,
     Pane(std::rc::Weak<std::cell::UnsafeCell<window_pane>>),
+    Popup(refbox::Weak<colour_palette>),
     Snapshot(Box<colour_palette>),
 }
 
@@ -477,6 +479,11 @@ impl PaletteSource {
                 let palette = owner.as_ref().map(|pane| pane.borrow_palette());
                 read(palette)
             }
+            Self::Popup(palette) => match palette.try_borrow_mut() {
+                Ok(borrowed) => read(Some(&borrowed)),
+                Err(refbox::BorrowError::Dropped) => read(None),
+                Err(refbox::BorrowError::Borrowed) => panic!("popup palette already borrowed"),
+            },
             Self::Snapshot(palette) => read(Some(palette)),
         }
     }

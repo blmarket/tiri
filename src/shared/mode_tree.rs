@@ -2,6 +2,7 @@
 
 use super::abi::{size_t, u_int, uint64_t};
 use super::key::key_code;
+use super::menu::menu_item;
 use super::pane::window_pane;
 use super::prompt::{prompt_free_cb, prompt_key_result, prompt_result};
 use super::screen::screen;
@@ -25,11 +26,13 @@ pub struct mode_tree_help_info {
 pub struct mode_tree_data {
     pub dead: ::core::ffi::c_int,
     pub wp: Weak<UnsafeCell<window_pane>>,
+    pub menu: &'static [menu_item<'static>],
     pub sort_crit: sort_criteria,
     pub view_name: Option<&'static ::std::ffi::CStr>,
     pub buildcb: mode_tree_build_cb,
     pub drawcb: mode_tree_draw_cb,
     pub searchcb: mode_tree_search_cb,
+    pub menucb: mode_tree_menu_cb,
     pub heightcb: mode_tree_height_cb,
     pub keycb: mode_tree_key_cb,
     pub swapcb: mode_tree_swap_cb,
@@ -63,6 +66,7 @@ impl Default for mode_tree_data {
         Self {
             dead: 0,
             wp: Weak::new(),
+            menu: &[],
             sort_crit: sort_criteria {
                 order: 0,
                 reversed: 0,
@@ -72,6 +76,7 @@ impl Default for mode_tree_data {
             buildcb: None,
             drawcb: None,
             searchcb: None,
+            menucb: None,
             heightcb: None,
             keycb: None,
             swapcb: None,
@@ -350,6 +355,8 @@ pub type mode_tree_swap_cb =
 pub type mode_tree_key_cb = Option<Box<dyn FnMut(&ModeTreeItemData, u_int) -> key_code>>;
 
 pub type mode_tree_height_cb = Option<Box<dyn FnMut(u_int) -> u_int>>;
+
+pub type mode_tree_menu_cb = Option<Box<dyn FnMut(&ClientRef, key_code)>>;
 
 pub type mode_tree_search_cb =
     Option<Box<dyn FnMut(&ModeTreeItemData, &std::ffi::CStr, bool) -> bool>>;

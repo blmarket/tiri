@@ -8,9 +8,11 @@ use crate::src::reactor::BufferEvent;
 use crate::src::session::Session;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::control::control_state;
+use crate::src::shared::display::visible_ranges;
 use crate::src::shared::environment::environ;
 use crate::src::shared::layout::Direction;
 use crate::src::shared::prompt::{prompt_free_cb, prompt_type};
+use crate::src::shared::screen::screen;
 use crate::src::shared::session::{SessionRef, SessionWeak};
 use crate::src::shared::status::status_prompt_input_cb;
 use crate::src::shared::terminal::termios;
@@ -265,10 +267,28 @@ pub trait Client {
         flags: i32,
         kind: prompt_type,
     );
+    /// Install callbacks and typed payload as one owned overlay. Callback
+    /// retirement remains explicit and runs without a live client borrow.
+    unsafe fn set_overlay(&self, overlay: Overlay);
+    unsafe fn clear_overlay(&self);
+    unsafe fn has_overlay(&self) -> bool;
+    unsafe fn clips_terminal_output(&self) -> bool;
+    unsafe fn draw_overlay(&self);
+    unsafe fn overlay_ranges(&self, px: u_int, py: u_int, nx: u_int) -> Option<visible_ranges>;
+    /// Return only the popup's nonowning identity; acquire its state afterwards.
+    unsafe fn popup_overlay(&self) -> Option<crate::src::popup::PopupHandle>;
+    /// Temporarily remove clipping for an overlay's own output. Restore only if
+    /// callbacks did not retire/replace the overlay during `draw`; no model
+    /// borrow spans that closure. The supplied callback replaces the old one.
+    unsafe fn with_overlay_check_disabled<R>(
+        &self,
+        restore: overlay_check_cb,
+        draw: impl FnOnce() -> R,
+    ) -> R;
     unsafe fn terminal_size(&self) -> (u32, u32);
     unsafe fn terminal_started(&self) -> bool;
     unsafe fn terminal_view(&self) -> crate::src::shared::tty::tty_window_view;
-    /// An active render owns its scene across formatting callbacks.
+    /// An active render owns its scene across formatting and overlay callbacks.
     unsafe fn take_redraw_scene(&self) -> Option<Box<crate::src::shared::redraw::redraw_scene>>;
     /// Keep a replacement installed by a nested render, if one exists.
     unsafe fn restore_redraw_scene(&self, scene: Box<crate::src::shared::redraw::redraw_scene>);
@@ -276,8 +296,21 @@ pub trait Client {
     unsafe fn refresh_terminal_size(&self);
     /// Query the owned descriptor without exposing it to terminal consumers.
     unsafe fn query_terminal_size(&self) -> Option<crate::src::shared::posix_terminal::winsize>;
+    unsafe fn draw_overlay_screen(
+        &self,
+        screen: &screen,
+        x: u32,
+        y: u32,
+        sx: u32,
+        sy: u32,
+        style: &tty_style_ctx,
+    );
     /// Draw from the current status screen and terminal under one Client borrow.
+    /// Clipping/overlay callbacks must have completed before calling this.
     unsafe fn draw_status_line(&self, row: u32, x: u32, width: u32, y: u32);
+    /// Prepare direct overlay output, deferring it when a full overlay redraw
+    /// is already pending. Coordinates refer to the complete terminal.
+    unsafe fn prepare_overlay_render(&self, context: &mut tty_ctx, x: u32, y: u32) -> bool;
     /// Select this client's view of a pane for a terminal command: 0 skips it,
     /// -1 defers to full redraw, and 1 permits immediate output.
     unsafe fn prepare_pane_render(
@@ -886,7 +919,12 @@ impl Client for ClientRef {
 
     unsafe fn focuses_window(&self, window: &WindowRef) -> bool {
         let flags = (*self.get()).flags;
-        if flags & CLIENT_FOCUSED as u64 == 0 {
+        if flags & CLIENT_FOCUSED as u64 == 0
+            || (*self.get())
+                .overlay
+                .as_ref()
+                .is_some_and(|overlay| overlay.draw.is_some())
+        {
             return false;
         }
         let Some(session) = self.attached_session().upgrade() else {
@@ -1204,6 +1242,59 @@ impl Client for ClientRef {
         );
     }
 
+    unsafe fn set_overlay(&self, overlay: Overlay) {
+        server_client_set_overlay(self, overlay);
+    }
+
+    unsafe fn clear_overlay(&self) {
+        server_client_clear_overlay(self);
+    }
+    unsafe fn has_overlay(&self) -> bool {
+        (*self.get())
+            .overlay
+            .as_ref()
+            .is_some_and(|overlay| overlay.draw.is_some())
+    }
+    unsafe fn clips_terminal_output(&self) -> bool {
+        (*self.get())
+            .overlay
+            .as_ref()
+            .is_some_and(|overlay| overlay.check.is_some())
+    }
+
+    unsafe fn draw_overlay(&self) {
+        server_client_overlay_draw(self);
+    }
+    unsafe fn overlay_ranges(&self, px: u_int, py: u_int, nx: u_int) -> Option<visible_ranges> {
+        server_client_overlay_check(self, px, py, nx)
+    }
+
+    unsafe fn popup_overlay(&self) -> Option<crate::src::popup::PopupHandle> {
+        (*self.get()).overlay.as_ref()?.popup_handle()
+    }
+
+    unsafe fn with_overlay_check_disabled<R>(
+        &self,
+        restore: overlay_check_cb,
+        draw: impl FnOnce() -> R,
+    ) -> R {
+        let generation = (*self.get()).overlay_generation;
+        // Retire the previous callback before running output, as the popup
+        // implementation did. Its captured values may themselves reenter.
+        let displaced = (*self.get())
+            .overlay
+            .as_mut()
+            .and_then(|overlay| overlay.check.take());
+        drop(displaced);
+        let result = draw();
+        if (*self.get()).overlay_generation == generation && (*self.get()).overlay.is_some() {
+            let displaced =
+                std::mem::replace(&mut (*self.get()).overlay.as_mut().unwrap().check, restore);
+            drop(displaced);
+        }
+        result
+    }
+
     unsafe fn terminal_size(&self) -> (u32, u32) {
         ((*self.get()).tty.sx, (*self.get()).tty.sy)
     }
@@ -1226,6 +1317,29 @@ impl Client for ClientRef {
         tty_resize(self);
     }
 
+    unsafe fn draw_overlay_screen(
+        &self,
+        source: &screen,
+        x: u32,
+        y: u32,
+        sx: u32,
+        sy: u32,
+        style: &tty_style_ctx,
+    ) {
+        for row in 0..sy {
+            crate::src::tty_draw::tty_draw_line(
+                self,
+                source,
+                0,
+                row,
+                sx,
+                x,
+                y.wrapping_add(row),
+                Some(style),
+            );
+        }
+    }
+
     unsafe fn draw_status_line(&self, row: u32, x: u32, width: u32, y: u32) {
         // Output only updates terminal state. Temporarily move the selected
         // screen out of its holder so no status/model borrow spans drawing.
@@ -1244,6 +1358,20 @@ impl Client for ClientRef {
         } else {
             status.screen = source;
         }
+    }
+
+    unsafe fn prepare_overlay_render(&self, context: &mut tty_ctx, x: u32, y: u32) -> bool {
+        if (*self.get()).flags & CLIENT_REDRAWOVERLAY as u64 != 0 {
+            return false;
+        }
+        context.wox = 0;
+        context.woy = 0;
+        (context.wsx, context.wsy) = self.terminal_size();
+        context.rxoff = x as i32;
+        context.xoff = context.rxoff;
+        context.ryoff = y as i32;
+        context.yoff = context.ryoff;
+        true
     }
 
     unsafe fn prepare_pane_render(
@@ -1399,6 +1527,50 @@ mod tests {
             assert_eq!(owner.enter_source_file(2), Some(2));
             assert_eq!(owner.leave_source_file(), 1);
             assert_eq!(owner.leave_source_file(), 0);
+        }
+    }
+
+    #[test]
+    fn temporarily_disabled_clipping_does_not_replace_a_reentrant_overlay() {
+        unsafe {
+            let client = client::new();
+            let stale_calls = Rc::new(std::cell::Cell::new(0));
+            let replacement_calls = Rc::new(std::cell::Cell::new(0));
+            client.set_overlay(Overlay::callbacks(
+                Some(Box::new(|_, _, _, _| visible_ranges::default())),
+                None,
+                None,
+                None,
+                None,
+                None,
+            ));
+            let stale = stale_calls.clone();
+            let restored: overlay_check_cb = Some(Box::new(move |_, _, _, _| {
+                stale.set(stale.get() + 1);
+                visible_ranges::default()
+            }));
+            let replacement = replacement_calls.clone();
+            let result = client.with_overlay_check_disabled(restored, || {
+                assert!(server_client_overlay_check(&client, 0, 0, 1).is_none());
+                client.set_overlay(Overlay::callbacks(
+                    Some(Box::new(move |_, _, _, _| {
+                        replacement.set(replacement.get() + 1);
+                        visible_ranges::default()
+                    })),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                ));
+                7
+            });
+            assert_eq!(result, 7);
+            assert!((*client.get()).overlay.is_some());
+            assert!(server_client_overlay_check(&client, 0, 0, 1).is_some());
+            assert_eq!(stale_calls.get(), 0);
+            assert_eq!(replacement_calls.get(), 1);
+            client.clear_overlay();
         }
     }
 

@@ -1844,10 +1844,7 @@ mod term_string_owner_tests {
             tty_term_apply(&mut term, overrides.as_ptr(), 1);
             drop(overrides);
             assert_eq!(tty_term_string(&term, TTYC_CLEAR), c"first");
-            assert_eq!(
-                tty_term_string(&term, TTYC_BEL).to_bytes(),
-                b"high\xff"
-            );
+            assert_eq!(tty_term_string(&term, TTYC_BEL).to_bytes(), b"high\xff");
             assert_eq!(tty_term_number(&term, TTYC_COLORS), 256);
             assert_eq!(tty_term_flag(&term, TTYC_AM), 1);
 

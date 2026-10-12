@@ -1,6 +1,7 @@
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_create_defaults;
 use crate::src::log::{fatalx, log_cstr, log_debug, log_get_level};
+use crate::src::menu::{menu_height, menu_screen, menu_update, menu_width, menu_x, menu_y};
 use crate::src::options::options_get_number;
 use crate::src::server::{marked_pane, server_is_marked};
 use crate::src::server_client::Client as _;
@@ -12,7 +13,8 @@ use crate::src::shared::borders::{
 };
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::{
-    CLIENT_REDRAWBORDERS, CLIENT_REDRAWSTATUS, CLIENT_REDRAWWINDOW, CLIENT_SUSPENDED, CLIENT_UTF8,
+    CLIENT_REDRAWBORDERS, CLIENT_REDRAWMENU, CLIENT_REDRAWOVERLAY, CLIENT_REDRAWSTATUS,
+    CLIENT_REDRAWWINDOW, CLIENT_SUSPENDED, CLIENT_UTF8,
 };
 use crate::src::shared::format::format_tree;
 use crate::src::shared::grid::*;
@@ -36,7 +38,11 @@ use crate::src::status::{
 };
 use crate::src::style::style_apply_with_options;
 use crate::src::text::utf8::utf8_set;
-use crate::src::tty::{tty_cell, tty_cursor, tty_puts, tty_reset, tty_sync_start, tty_update_mode};
+use crate::src::tty::{
+    tty_cell, tty_check_overlay_range, tty_cursor, tty_puts, tty_reset, tty_sync_start,
+    tty_update_mode,
+};
+use crate::src::tty_draw::tty_draw_line;
 use crate::src::tty_term::tty_term_has;
 use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::window::windows;
@@ -47,6 +53,7 @@ use crate::src::window::WindowPane;
 use crate::src::window_border::{window_get_border_cell, window_get_fill_cell};
 use std::cell::RefCell;
 
+pub const REDRAW_SPAN_MENU: redraw_span_type = 6;
 pub const REDRAW_SPAN_SCROLLBAR: redraw_span_type = 5;
 pub const REDRAW_SPAN_BORDER: redraw_span_type = 4;
 pub const REDRAW_SPAN_STATUS: redraw_span_type = 3;
@@ -80,7 +87,7 @@ pub struct redraw_build_ctx<'a> {
     pub cells: &'a mut [redraw_build_cell],
 }
 
-pub const REDRAW_SPAN_TYPES: ::core::ffi::c_int = 6 as ::core::ffi::c_int;
+pub const REDRAW_SPAN_TYPES: ::core::ffi::c_int = 7 as ::core::ffi::c_int;
 pub const REDRAW_BORDER_IS_ARROW: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const REDRAW_SCROLLBAR_LEFT: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const REDRAW_SCROLLBAR_RIGHT: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
@@ -92,6 +99,8 @@ pub const REDRAW_PANE_BORDER: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
 pub const REDRAW_PANE_STATUS: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
 pub const REDRAW_PANE_SCROLLBAR: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
 pub const REDRAW_STATUS: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
+pub const REDRAW_MENU: ::core::ffi::c_int = 0x80 as ::core::ffi::c_int;
+pub const REDRAW_OVERLAY: ::core::ffi::c_int = 0x100 as ::core::ffi::c_int;
 pub const REDRAW_ALL: ::core::ffi::c_int = 0x7fffffff as ::core::ffi::c_int;
 pub const REDRAW_START_ISOLATE: &std::ffi::CStr = c"\u{2066}";
 pub const REDRAW_END_ISOLATE: &std::ffi::CStr = c"\u{2069}";
@@ -131,6 +140,8 @@ fn redraw_flags_to_string(flags: ::core::ffi::c_int) -> std::ffi::CString {
         (REDRAW_PANE_BORDER, "border"),
         (REDRAW_PANE_STATUS, "pane-status"),
         (REDRAW_PANE_SCROLLBAR, "scrollbar"),
+        (REDRAW_MENU, "menu"),
+        (REDRAW_OVERLAY, "overlay"),
     ] {
         if flags & flag != 0 {
             names.push(name);
@@ -645,6 +656,33 @@ unsafe fn redraw_mark_frame_cell(
         ..Default::default()
     });
 }
+unsafe fn redraw_mark_menu(bctx: *mut redraw_build_ctx) {
+    let Some(owner) = (*bctx).w.menu_observer() else {
+        return;
+    };
+    let md = owner.try_borrow_mut().expect("live unborrowed menu");
+    let observer = owner.clone();
+    for py in 0..menu_height(&md) {
+        for px in 0..menu_width(&md) {
+            let (mut x, mut y) = (0, 0);
+            if redraw_window_to_scene(
+                bctx,
+                menu_x(&md).wrapping_add(px) as ::core::ffi::c_int,
+                menu_y(&md).wrapping_add(py) as ::core::ffi::c_int,
+                &mut x,
+                &mut y,
+            ) != 0
+            {
+                let cell = &mut *redraw_get_build_cell(bctx, x, y);
+                cell.data = redraw_span_data::Menu(crate::src::shared::redraw::RedrawMenuSpan {
+                    md: observer.clone(),
+                    px,
+                    py,
+                });
+            }
+        }
+    }
+}
 fn redraw_compare_data(a: &redraw_build_cell, b: &redraw_build_cell) -> bool {
     use redraw_span_data::*;
     match (&a.data, &b.data) {
@@ -654,6 +692,7 @@ fn redraw_compare_data(a: &redraw_build_cell, b: &redraw_build_cell) -> bool {
             a.wp.ptr_eq(&b.wp) && a.offset.wrapping_add(1) == b.offset && a.cell_type == b.cell_type
         }
         (Scrollbar(a), Scrollbar(b)) => a == b,
+        (Menu(a), Menu(b)) => a.md == b.md && a.py == b.py && a.px.wrapping_add(1) == b.px,
         (Outside, Outside) | (Empty, Empty) => true,
         _ => false,
     }
@@ -703,6 +742,7 @@ unsafe fn redraw_build_cells<'a>(
     for pane_owner in (*bctx).w.pane_snapshot() {
         redraw_mark_border_status(bctx, &pane_owner);
     }
+    redraw_mark_menu(bctx);
 }
 unsafe fn redraw_make_scene(client_owner: &ClientRef) -> Option<Box<redraw_scene>> {
     let mut c: Option<ClientRef> = Some(client_owner.clone());
@@ -1104,12 +1144,39 @@ unsafe fn redraw_draw_status_span(
         true,
     );
 }
-unsafe fn redraw_draw_span(dctx: &mut redraw_draw_ctx<'_>, span: &redraw_span, mut y: u_int) {
-    let data = &span.data;
-    let type_0: redraw_span_type = data.kind();
-    if dctx.scene.c.strong_count() == 0 {
+unsafe fn redraw_draw_menu_span(
+    dctx: &mut redraw_draw_ctx<'_>,
+    span: &redraw_span,
+    x: u_int,
+    y: u_int,
+    n: u_int,
+) {
+    let data = span.data.menu();
+    let md = match data.md.try_borrow_mut() {
+        Ok(md) => md,
+        Err(refbox::BorrowError::Dropped) => return,
+        Err(refbox::BorrowError::Borrowed) => panic!("menu already borrowed during redraw"),
+    };
+    if md.closed {
         return;
     }
+    let scene = dctx.scene;
+    let Some(client_owner) = scene.c.upgrade() else {
+        return;
+    };
+    let px = data.px.wrapping_add(x.wrapping_sub(span.x));
+    {
+        let terminal = &(client_owner);
+        tty_draw_line(terminal, menu_screen(&md), px, data.py, n, x, y, None);
+    };
+}
+unsafe fn redraw_draw_span(dctx: &mut redraw_draw_ctx<'_>, span: &redraw_span, mut y: u_int) {
+    let scene = dctx.scene;
+    let data = &span.data;
+    let type_0: redraw_span_type = data.kind();
+    let Some(client_owner) = scene.c.upgrade() else {
+        return;
+    };
     if type_0 == REDRAW_SPAN_STATUS
         && data
             .status()
@@ -1122,21 +1189,30 @@ unsafe fn redraw_draw_span(dctx: &mut redraw_draw_ctx<'_>, span: &redraw_span, m
     if span.width == 0 {
         return;
     }
-    let (x, n) = (span.x, span.width);
-    match type_0 as ::core::ffi::c_uint {
-        REDRAW_SPAN_PANE => {
-            redraw_draw_pane_span(dctx, span, x, y, n);
+    let ranges = tty_check_overlay_range(&client_owner, span.x, y, span.width);
+    for range in ranges.storage.iter().take(ranges.used as usize) {
+        if range.nx == 0 {
+            continue;
         }
-        REDRAW_SPAN_STATUS => {
-            redraw_draw_status_span(dctx, span, x, y, n);
+        let (x, n) = (range.px, range.nx);
+        match type_0 as ::core::ffi::c_uint {
+            REDRAW_SPAN_PANE => {
+                redraw_draw_pane_span(dctx, span, x, y, n);
+            }
+            REDRAW_SPAN_STATUS => {
+                redraw_draw_status_span(dctx, span, x, y, n);
+            }
+            REDRAW_SPAN_BORDER | REDRAW_SPAN_OUTSIDE | REDRAW_SPAN_EMPTY => {
+                redraw_draw_border_span(dctx, span, x, y, n);
+            }
+            REDRAW_SPAN_SCROLLBAR => {
+                redraw_draw_scrollbar_span(dctx, span, x, y, n);
+            }
+            REDRAW_SPAN_MENU => {
+                redraw_draw_menu_span(dctx, span, x, y, n);
+            }
+            _ => {}
         }
-        REDRAW_SPAN_BORDER | REDRAW_SPAN_OUTSIDE | REDRAW_SPAN_EMPTY => {
-            redraw_draw_border_span(dctx, span, x, y, n);
-        }
-        REDRAW_SPAN_SCROLLBAR => {
-            redraw_draw_scrollbar_span(dctx, span, x, y, n);
-        }
-        _ => {}
     }
 }
 unsafe fn redraw_draw_pane_lines(
@@ -1182,6 +1258,7 @@ unsafe fn redraw_draw_lines(dctx: &mut redraw_draw_ctx<'_>, flags: ::core::ffi::
         REDRAW_PANE_STATUS,
         REDRAW_PANE_BORDER,
         REDRAW_PANE_SCROLLBAR,
+        REDRAW_MENU,
     ];
     for (y, line) in scene.lines.iter().enumerate() {
         let cy = if dctx.flags & REDRAW_STATUS_TOP != 0 {
@@ -1196,6 +1273,19 @@ unsafe fn redraw_draw_lines(dctx: &mut redraw_draw_ctx<'_>, flags: ::core::ffi::
             for span in spans.iter() {
                 redraw_draw_span(dctx, span, cy);
             }
+        }
+    }
+}
+unsafe fn redraw_draw_menu_lines(dctx: &mut redraw_draw_ctx<'_>) {
+    let scene = dctx.scene;
+    for (y, line) in scene.lines.iter().enumerate() {
+        let cy = if dctx.flags & REDRAW_STATUS_TOP != 0 {
+            dctx.status_lines.wrapping_add(y as u_int)
+        } else {
+            y as u_int
+        };
+        for span in line[REDRAW_SPAN_MENU as usize].iter() {
+            redraw_draw_span(dctx, span, cy);
         }
     }
 }
@@ -1411,6 +1501,9 @@ unsafe fn redraw_draw_scene(
         drop(window_owner);
         return;
     };
+    if let Some(menu) = window_owner.menu_observer() {
+        menu_update(&mut menu.try_borrow_mut().expect("live unborrowed menu"));
+    }
     if flags & (REDRAW_PANE_BORDER | REDRAW_PANE_STATUS) != 0 {
         for pane_owner in window_owner.pane_snapshot() {
             pane_owner.reset_border_cache();
@@ -1476,6 +1569,9 @@ unsafe fn redraw_draw_scene(
             }
         }
     }
+    if window_owner.menu_observer().is_some() && flags & REDRAW_MENU != 0 {
+        redraw_draw_menu_lines(&mut dctx);
+    }
     if flags & REDRAW_STATUS != 0 {
         lines = dctx.status_lines;
         if c.as_ref()
@@ -1502,11 +1598,17 @@ unsafe fn redraw_draw_scene(
         i = 0;
         while i < lines {
             let width = client_owner.terminal_size().0;
-            if width != 0 {
-                client_owner.draw_status_line(i, 0, width, y.wrapping_add(i));
+            let ranges = tty_check_overlay_range(client_owner, 0, y.wrapping_add(i), width);
+            for range in ranges.storage.iter().take(ranges.used as usize) {
+                if range.nx != 0 {
+                    client_owner.draw_status_line(i, range.px, range.nx, y.wrapping_add(i));
+                }
             }
             i = i.wrapping_add(1);
         }
+    }
+    if flags & REDRAW_OVERLAY != 0 {
+        client_owner.draw_overlay();
     }
     {
         let terminal = &(client_owner);
@@ -1527,13 +1629,39 @@ pub unsafe fn redraw_screen(client_owner: &ClientRef) {
     let mut c: Option<ClientRef> = Some(client_owner.clone());
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if c.as_ref().expect("live client").flags() & CLIENT_REDRAWWINDOW as uint64_t != 0 {
-        redraw_draw(client_owner, None, REDRAW_ALL);
+        if c.as_ref().expect("live client").flags() & CLIENT_REDRAWOVERLAY as uint64_t != 0 {
+            redraw_draw(client_owner, None, REDRAW_ALL);
+        } else {
+            redraw_draw(client_owner, None, REDRAW_ALL & !REDRAW_OVERLAY);
+        }
     } else {
         if c.as_ref().expect("live client").flags() & CLIENT_REDRAWBORDERS as uint64_t != 0 {
             flags |= REDRAW_PANE_BORDER | REDRAW_PANE_STATUS;
         }
         if c.as_ref().expect("live client").flags() & CLIENT_REDRAWSTATUS as uint64_t != 0 {
             flags |= REDRAW_STATUS | REDRAW_PANE_STATUS;
+        }
+        if c.as_ref().expect("live client").flags() & CLIENT_REDRAWOVERLAY as uint64_t != 0 {
+            flags |= REDRAW_OVERLAY;
+        }
+        if c.as_ref().expect("live client").flags() & CLIENT_REDRAWMENU as uint64_t != 0 {
+            flags |= REDRAW_MENU;
+        }
+        if (c
+            .as_ref()
+            .expect("live client")
+            .attached_session()
+            .upgrade()
+            .expect("live session")
+            .current_winlink())
+        .get_unchecked()
+        .window_handle()
+        .as_ref()
+        .expect("current window")
+        .menu_observer()
+        .is_some()
+        {
+            flags |= REDRAW_MENU;
         }
         if flags != 0 as ::core::ffi::c_int {
             redraw_draw(client_owner, None, flags);
@@ -1544,15 +1672,104 @@ pub unsafe fn redraw_pane(
     client_owner: &ClientRef,
     pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
 ) {
+    let mut c: Option<ClientRef> = Some(client_owner.clone());
     redraw_draw(
         client_owner,
         Some(pane_owner),
         REDRAW_PANE | REDRAW_PANE_SCROLLBAR,
     );
+    if (c
+        .as_ref()
+        .expect("live client")
+        .attached_session()
+        .upgrade()
+        .expect("live session")
+        .current_winlink())
+    .get_unchecked()
+    .window_handle()
+    .as_ref()
+    .expect("current window")
+    .menu_observer()
+    .is_some()
+    {
+        redraw_draw(client_owner, None, REDRAW_MENU);
+    }
 }
 pub unsafe fn redraw_pane_scrollbar(
     client_owner: &ClientRef,
     pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
 ) {
     redraw_draw(client_owner, Some(pane_owner), REDRAW_PANE_SCROLLBAR);
+}
+
+#[cfg(test)]
+mod menu_observer_tests {
+    use super::*;
+    use crate::src::shared::menu::{menu, menu_data};
+    use crate::src::shared::redraw::RedrawMenuSpan;
+
+    #[test]
+    fn cached_spans_observe_menu_lifetimes_and_scratch_releases_observers() {
+        let owner = refbox::RefBox::new(menu_data::new(Box::new(menu {
+            title: c"Observed".to_owned(),
+            items: Vec::new(),
+            width: 10,
+        })));
+        let mut cell = redraw_build_cell {
+            data: redraw_span_data::Menu(RedrawMenuSpan {
+                md: owner.downgrade(),
+                px: 0,
+                py: 0,
+            }),
+        };
+        let mut next = cell.clone();
+        next.data.menu_mut().px = 1;
+        assert!(redraw_compare_data(&cell, &next));
+        let mut span = redraw_span {
+            x: 0,
+            width: 2,
+            data: cell.data.clone(),
+        };
+        assert!(cell.data.menu().md.is(&owner));
+        let weak_count = owner.weak_count();
+        {
+            let mut scratch = RedrawCellScratch::take();
+            scratch.0.extend([cell.clone(), next.clone()]);
+            assert_eq!(owner.weak_count(), weak_count + 2);
+        }
+        assert_eq!(owner.weak_count(), weak_count);
+        REDRAW_CELLS.with(|cache| assert!(cache.borrow().is_empty()));
+        let scene = redraw_scene {
+            c: std::rc::Weak::new(),
+            w: crate::src::shared::window::WindowWeak::new(),
+            lines: Box::default(),
+            generation: 0,
+            sx: 0,
+            sy: 0,
+            ox: 0,
+            oy: 0,
+        };
+        let mut dctx = redraw_draw_ctx {
+            scene: &scene,
+            active: std::rc::Weak::new(),
+            marked: std::rc::Weak::new(),
+            status_lines: 0,
+            pane_lines: PANE_LINES_SINGLE,
+            default_gc: grid_cell::default(),
+            flags: 0,
+        };
+        owner.try_borrow_mut().unwrap().closed = true;
+        // Closed and expired spans return before accessing the drawing context.
+        unsafe {
+            redraw_draw_menu_span(&mut dctx, &span, 0, 0, 2);
+        }
+        drop(owner);
+        assert!(!span.data.menu().md.is_alive());
+        unsafe {
+            redraw_draw_menu_span(&mut dctx, &span, 0, 0, 2);
+        }
+        assert!(redraw_compare_data(&cell, &next));
+        cell.data = redraw_span_data::Empty;
+        assert!(!redraw_compare_data(&cell, &next));
+    }
 }

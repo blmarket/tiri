@@ -26,6 +26,7 @@ use crate::src::shared::display::visible_range;
 use crate::src::shared::grid::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::limits::UINT_MAX;
+use crate::src::shared::menu::menu;
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::screen::{
@@ -41,8 +42,8 @@ use crate::src::shared::tty::{
     tty_command_data, tty_ctx, tty_ctx_redraw_cb, tty_ctx_set_client_cb,
 };
 use crate::src::shared::tty::{
-    TTY_CTX_CELL_INVALIDATE, TTY_CTX_INVISIBLE_PANES, TTY_CTX_PANE_OBSCURED, TTY_CTX_SYNC,
-    TTY_CTX_WRAPPED,
+    TTY_CTX_CELL_INVALIDATE, TTY_CTX_INVISIBLE_PANES, TTY_CTX_OVERLAY_SYNC, TTY_CTX_PANE_OBSCURED,
+    TTY_CTX_SYNC, TTY_CTX_WRAPPED,
 };
 use crate::src::shared::utf8::*;
 use crate::src::text::utf8::{utf8_append, utf8_copy, utf8_fromcstr_vec, utf8_open, utf8_set};
@@ -225,8 +226,15 @@ pub(crate) unsafe fn screen_write_initctx(
         }
     }
     if !ctx.flags & SCREEN_WRITE_SYNC != 0 {
-        if write_pane.is_some_and(|pane| pane.draws_inactive_screen()) || is_sync != 0 {
+        if write_pane.is_some_and(|pane| pane.draws_inactive_screen()) {
             ttyctx.flags |= TTY_CTX_SYNC;
+        } else {
+            if write_pane.is_none() {
+                ttyctx.flags |= TTY_CTX_OVERLAY_SYNC;
+            }
+            if is_sync != 0 {
+                ttyctx.flags |= TTY_CTX_SYNC;
+            }
         }
         tty_write(|tty, ctx| tty_cmd_syncstart(tty, ctx), ttyctx);
         ctx.flags |= SCREEN_WRITE_SYNC;
@@ -602,8 +610,8 @@ pub unsafe fn screen_write_fast_copy(
             if !window_position_is_visible(&r, (xoff as u_int).wrapping_add((*s).cx)) {
                 break;
             }
-            ttyctx.flags &= TTY_CTX_SYNC;
-            tty_write(|tty, ctx| tty_cmd_cell(tty, ctx, &gc), &mut ttyctx);
+            ttyctx.flags &= TTY_CTX_OVERLAY_SYNC | TTY_CTX_SYNC;
+            tty_write(|tty, ctx| tty_cmd_cell(tty, ctx, &*s, &gc), &mut ttyctx);
             ttyctx.ocx = ttyctx.ocx.wrapping_add(1);
             (*s).cx = (*s).cx.wrapping_add(1);
             xx = xx.wrapping_add(1);
@@ -713,6 +721,74 @@ pub unsafe fn screen_write_vline(
         cy.wrapping_add(ny).wrapping_sub(1 as u_int) as ::core::ffi::c_int,
     );
     screen_write_putc(ctx, &gc, ('x' as i32) as u_char);
+    screen_write_set_cursor(ctx, cx as ::core::ffi::c_int, cy as ::core::ffi::c_int);
+}
+pub unsafe fn screen_write_menu(
+    ctx: &mut screen_write_ctx,
+    menu: &menu,
+    choice: ::core::ffi::c_int,
+    lines: box_lines,
+    menu_gc: &grid_cell,
+    border_gc: Option<&grid_cell>,
+    choice_gc: &grid_cell,
+) {
+    let cx = (*ctx.screen_ptr()).cx;
+    let cy = (*ctx.screen_ptr()).cy;
+    let width = menu.width;
+    let mut default_gc = *menu_gc;
+    screen_write_box(
+        ctx,
+        width.wrapping_add(4),
+        menu.count().wrapping_add(2),
+        lines,
+        border_gc,
+        Some(menu.title.as_c_str()),
+    );
+    for (index, item) in menu.items.iter().enumerate() {
+        let y = cy.wrapping_add(1).wrapping_add(index as u_int);
+        let Some(name) = item.name.as_deref() else {
+            screen_write_cursormove(ctx, cx as ::core::ffi::c_int, y as ::core::ffi::c_int, 0);
+            screen_write_hline(ctx, width.wrapping_add(4), 1, 1, lines, border_gc);
+            continue;
+        };
+        let disabled = name.to_bytes().first() == Some(&b'-');
+        let gc = if choice >= 0 && index == choice as usize && !disabled {
+            choice_gc
+        } else {
+            &default_gc
+        };
+        screen_write_cursormove(
+            ctx,
+            cx.wrapping_add(1) as ::core::ffi::c_int,
+            y as ::core::ffi::c_int,
+            0,
+        );
+        for _ in 0..width.wrapping_add(2) {
+            screen_write_putc(ctx, gc, b' ');
+        }
+        screen_write_cursormove(
+            ctx,
+            cx.wrapping_add(2) as ::core::ffi::c_int,
+            y as ::core::ffi::c_int,
+            0,
+        );
+        if disabled {
+            default_gc.attr |= GRID_ATTR_DIM as u_short;
+            let name = CStr::from_bytes_with_nul(&name.to_bytes_with_nul()[1..])
+                .expect("removing the disabled marker preserves the terminator");
+            format_draw(
+                ctx,
+                &default_gc,
+                width,
+                name.as_ptr(),
+                std::ptr::null_mut(),
+                0,
+            );
+            default_gc.attr &= !(GRID_ATTR_DIM as u_short);
+        } else {
+            format_draw(ctx, gc, width, name.as_ptr(), std::ptr::null_mut(), 0);
+        }
+    }
     screen_write_set_cursor(ctx, cx as ::core::ffi::c_int, cy as ::core::ffi::c_int);
 }
 pub unsafe fn screen_write_box(
@@ -1075,7 +1151,7 @@ pub(crate) unsafe fn screen_write_redraw_line(
                                     }
                                     &ngc
                                 };
-                            tty_write(|tty, ctx| tty_cmd_cell(tty, ctx, cell), ttyctx);
+                            tty_write(|tty, ctx| tty_cmd_cell(tty, ctx, &*s, cell), ttyctx);
                         }
                     }
                 }
@@ -2819,7 +2895,7 @@ pub unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cell) {
     }
     if vis >= width {
         if screen_write_should_draw_line(ctx, (*s).cy) != 0 {
-            tty_write(|tty, ctx| tty_cmd_cell(tty, ctx, &tmp_gc), &mut ttyctx);
+            tty_write(|tty, ctx| tty_cmd_cell(tty, ctx, &*s, &tmp_gc), &mut ttyctx);
         }
         return;
     }
@@ -2835,7 +2911,7 @@ pub unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cell) {
             while n < ri.nx {
                 ttyctx.ocx =
                     (ri.px as ::core::ffi::c_int - xoff + n as ::core::ffi::c_int) as u_int;
-                tty_write(|tty, ctx| tty_cmd_cell(tty, ctx, &tmp_gc), &mut ttyctx);
+                tty_write(|tty, ctx| tty_cmd_cell(tty, ctx, &*s, &tmp_gc), &mut ttyctx);
                 n = n.wrapping_add(1);
             }
         }
@@ -2989,7 +3065,7 @@ unsafe fn screen_write_combine(ctx: &mut screen_write_ctx, gc: &grid_cell) -> ::
         ttyctx.flags |= TTY_CTX_CELL_INVALIDATE;
     }
     if screen_write_should_draw_line(ctx, cy) != 0 {
-        tty_write(|tty, ctx| tty_cmd_cell(tty, ctx, &last), &mut ttyctx);
+        tty_write(|tty, ctx| tty_cmd_cell(tty, ctx, &*s, &last), &mut ttyctx);
     }
     screen_write_set_cursor(ctx, cx as ::core::ffi::c_int, cy as ::core::ffi::c_int);
     1 as ::core::ffi::c_int
@@ -3219,17 +3295,18 @@ mod write_ctx_tests {
         unsafe {
             let mut s = screen::empty();
             s.grid = Some(crate::src::grid::grid_create(8, 2, 0));
+            let palette = refbox::RefBox::new(colour_palette {
+                fg: 3,
+                bg: 4,
+                ..Default::default()
+            });
+            let palette_observer = palette.downgrade();
             let mut ctx = screen_write_ctx {
                 flags: SCREEN_WRITE_SYNC,
                 init_ctx_cb: Some(Box::new(move |ttyctx| {
                     ttyctx.style_ctx.defaults.fg = 7;
-                    ttyctx.style_ctx.palette = crate::src::shared::tty::PaletteSource::Snapshot(
-                        Box::new(colour_palette {
-                            fg: 3,
-                            bg: 4,
-                            ..Default::default()
-                        }),
-                    );
+                    ttyctx.style_ctx.palette =
+                        crate::src::shared::tty::PaletteSource::Popup(palette_observer.clone());
                 })),
                 ..Default::default()
             };
@@ -3241,14 +3318,19 @@ mod write_ctx_tests {
                 (7, 4)
             );
             let previous = std::hint::black_box(ttyctx);
+            palette.try_borrow_mut().unwrap().bg = 6;
             ttyctx = tty_ctx::default();
             screen_write_initctx(&mut ctx, &mut ttyctx, 0, 0);
+            assert_eq!(
+                (ttyctx.style_ctx.defaults.fg, ttyctx.style_ctx.defaults.bg),
+                (7, 6)
+            );
             assert_eq!(
                 (
                     previous.style_ctx.defaults.fg,
                     previous.style_ctx.defaults.bg
                 ),
-                (ttyctx.style_ctx.defaults.fg, ttyctx.style_ctx.defaults.bg)
+                (7, 4)
             );
         }
     }

@@ -24,7 +24,7 @@ use crate::src::server::server_start;
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{ssize_t, uint32_t};
 use crate::src::shared::client::*;
-pub use crate::src::shared::client::{client, client_files};
+pub use crate::src::shared::client::{client, client_files, overlay_mode_cb};
 use crate::src::shared::client::{
     CLIENT_CONTROL, CLIENT_CONTROLCONTROL, CLIENT_CONTROL_WAITEXIT, CLIENT_LOGIN,
     CLIENT_NOSTARTSERVER, CLIENT_STARTSERVER, CLIENT_WRITE_ACK,
@@ -418,11 +418,7 @@ pub unsafe fn client_main(
             == MSG_EXEC as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             if client_flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {
-                crate::src::shared::terminal::set_attributes(
-                    STDOUT_FILENO,
-                    TCSAFLUSH,
-                    &saved_tio,
-                );
+                crate::src::shared::terminal::set_attributes(STDOUT_FILENO, TCSAFLUSH, &saved_tio);
             }
             let (shell, command) = client_exec_payload
                 .as_ref()
@@ -457,11 +453,7 @@ pub unsafe fn client_main(
             if client_flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {
                 printf(c"\x1B\\".as_ptr());
                 fflush(stdout);
-                crate::src::shared::terminal::set_attributes(
-                    STDOUT_FILENO,
-                    TCSAFLUSH,
-                    &saved_tio,
-                );
+                crate::src::shared::terminal::set_attributes(STDOUT_FILENO, TCSAFLUSH, &saved_tio);
             }
         } else if client_exitreason as ::core::ffi::c_uint
             != CLIENT_EXIT_NONE as ::core::ffi::c_int as ::core::ffi::c_uint

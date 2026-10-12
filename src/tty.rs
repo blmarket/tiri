@@ -62,10 +62,11 @@ pub use crate::src::shared::tty::{tty, tty_ctx, tty_ctx_set_client_cb, tty_style
 use crate::src::shared::tty::{
     TERM_256COLOURS, TERM_DECFRA, TERM_DECSLRM, TERM_NOAM, TERM_RGBCOLOURS, TERM_VT100LIKE,
     TTY_ALL_REQUEST_FLAGS, TTY_BLOCK, TTY_BLOCK_INTERVAL, TTY_CTX_CELL_INVALIDATE,
-    TTY_CTX_INVISIBLE_PANES, TTY_CTX_PANE_OBSCURED, TTY_CTX_SYNC, TTY_CTX_WINDOW_BIGGER,
-    TTY_CTX_WRAPPED, TTY_FREEZE, TTY_HAVEDA, TTY_HAVEDA2, TTY_HAVESYNC, TTY_HAVEXDA, TTY_NOBLOCK,
-    TTY_NOCURSOR, TTY_OPENED, TTY_OSC52QUERY, TTY_QUERY_TIMEOUT, TTY_REQUEST_LIMIT, TTY_STARTED,
-    TTY_SYNCING, TTY_TIMER, TTY_WAITBG, TTY_WAITFG, TTY_WINSIZEQUERY,
+    TTY_CTX_INVISIBLE_PANES, TTY_CTX_OVERLAY_SYNC, TTY_CTX_PANE_OBSCURED, TTY_CTX_SYNC,
+    TTY_CTX_WINDOW_BIGGER, TTY_CTX_WRAPPED, TTY_FREEZE, TTY_HAVEDA, TTY_HAVEDA2, TTY_HAVESYNC,
+    TTY_HAVEXDA, TTY_NOBLOCK, TTY_NOCURSOR, TTY_OPENED, TTY_OSC52QUERY, TTY_QUERY_TIMEOUT,
+    TTY_REQUEST_LIMIT, TTY_STARTED, TTY_SYNCING, TTY_TIMER, TTY_WAITBG, TTY_WAITFG,
+    TTY_WINSIZEQUERY,
 };
 use crate::src::shared::utf8::UTF8_SIZE;
 use crate::src::shared::window::WindowRef;
@@ -1285,7 +1286,7 @@ unsafe fn tty_clear_line(
         return;
     }
     let complete = (|tty: &ClientRef| {
-        if tty_fake_bce(tty.borrow_terminal(), defaults, bg) == 0 {
+        if !tty.clips_terminal_output() && tty_fake_bce(tty.borrow_terminal(), defaults, bg) == 0 {
             if px.wrapping_add(nx) >= terminal_value!(tty, sx)
                 && tty_term_has(terminal_term(tty), TTYC_EL) != 0
             {
@@ -1310,10 +1311,17 @@ unsafe fn tty_clear_line(
     if complete {
         return;
     }
-    if nx != 0 {
-        tty_cursor(owner, px, py);
-        tty_repeat_space(owner, nx);
-    }
+    let ranges = tty_check_overlay_range(owner, px, py, nx);
+    {
+        let terminal = owner;
+
+        for range in ranges.storage.iter().take(ranges.used as usize) {
+            if range.nx != 0 {
+                tty_cursor(terminal, range.px, py);
+                tty_repeat_space(terminal, range.nx);
+            }
+        }
+    };
 }
 unsafe fn tty_clear_pane_line(
     owner: &ClientRef,
@@ -1332,15 +1340,18 @@ unsafe fn tty_clear_pane_line(
         py
     ));
     if let Some(line) = tty_clamp_line(ctx, px, py, nx) {
-        if line.width != 0 {
-            tty_clear_line(
-                owner,
-                &ctx.style_ctx.defaults,
-                line.y,
-                line.x,
-                line.width,
-                bg,
-            );
+        let ranges = tty_check_overlay_range(owner, line.x, line.y, line.width);
+        for range in ranges.storage.iter().take(ranges.used as usize) {
+            if range.nx != 0 {
+                tty_clear_line(
+                    owner,
+                    &ctx.style_ctx.defaults,
+                    line.y,
+                    range.px,
+                    range.nx,
+                    bg,
+                );
+            }
         }
     }
 }
@@ -1433,7 +1444,7 @@ unsafe fn tty_clear_area(
     let defaults = &ctx.style_ctx.defaults;
     let complete = (|tty: &ClientRef| {
         let mut tmp: [u8; 64] = [0; 64];
-        if tty_fake_bce(tty.borrow_terminal(), defaults, bg) == 0 {
+        if !tty.clips_terminal_output() && tty_fake_bce(tty.borrow_terminal(), defaults, bg) == 0 {
             if px == 0 as u_int
                 && px.wrapping_add(nx) >= terminal_value!(tty, sx)
                 && py.wrapping_add(ny) >= terminal_value!(tty, sy)
@@ -1531,33 +1542,50 @@ unsafe fn tty_draw_pane(owner: &ClientRef, ctx: &tty_ctx, s: &screen, py: u_int)
         };
         line
     };
-    if line.width != 0 {
-        tty_draw_line(
-            owner,
-            s,
-            line.skip,
-            py,
-            line.width,
-            line.x,
-            line.y,
-            Some(&ctx.style_ctx),
-        );
-    }
+    let ranges = tty_check_overlay_range(owner, line.x, line.y, line.width);
+    {
+        let terminal = owner;
+
+        for range in ranges.storage.iter().take(ranges.used as usize) {
+            if range.nx != 0 {
+                tty_draw_line(
+                    terminal,
+                    s,
+                    line.skip.wrapping_add(range.px).wrapping_sub(line.x),
+                    py,
+                    range.nx,
+                    range.px,
+                    line.y,
+                    Some(&ctx.style_ctx),
+                );
+            }
+        }
+    };
 }
 pub unsafe fn tty_cmd_redrawline(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
     if let Some(line) = tty_clamp_line(ctx, ctx.ocx, ctx.ocy, ctx.data.count()) {
-        if line.width != 0 {
-            tty_draw_line(
-                owner,
-                s,
-                ctx.ocx.wrapping_add(line.skip),
-                ctx.ocy,
-                line.width,
-                line.x,
-                line.y,
-                Some(&ctx.style_ctx),
-            );
-        }
+        let ranges = tty_check_overlay_range(owner, line.x, line.y, line.width);
+        {
+            let terminal = owner;
+
+            for range in ranges.storage.iter().take(ranges.used as usize) {
+                if range.nx != 0 {
+                    tty_draw_line(
+                        terminal,
+                        s,
+                        ctx.ocx
+                            .wrapping_add(line.skip)
+                            .wrapping_add(range.px)
+                            .wrapping_sub(line.x),
+                        ctx.ocy,
+                        range.nx,
+                        range.px,
+                        line.y,
+                        Some(&ctx.style_ctx),
+                    );
+                }
+            }
+        };
     }
 }
 pub unsafe fn tty_check_codeset(utf8: bool, gc: &grid_cell) -> grid_cell {
@@ -1589,6 +1617,30 @@ pub unsafe fn tty_check_codeset(utf8: bool, gc: &grid_cell) -> grid_cell {
     new.data.data[..new.data.size as usize].fill(b'_');
     new
 }
+unsafe fn tty_check_overlay(owner: &ClientRef, px: u_int, py: u_int) -> bool {
+    let mut ranges = tty_check_overlay_range(owner, px, py, 1);
+    !ranges.is_empty()
+}
+
+/// Return owned clipping geometry. Overlay callbacks run without a terminal
+/// borrow, and nested output cannot replace the caller's ranges in place.
+pub unsafe fn tty_check_overlay_range(
+    owner: &ClientRef,
+    px: u_int,
+    py: u_int,
+    nx: u_int,
+) -> visible_ranges {
+    if let Some(ranges) = owner.overlay_ranges(px, py, nx) {
+        ranges
+    } else {
+        let mut ranges = visible_ranges::default();
+        ranges.ensure(1);
+        ranges.storage[0] = visible_range { px, nx };
+        ranges.used = 1;
+        ranges
+    }
+}
+
 unsafe fn tty_client_ready(ctx: &tty_ctx, owner: &ClientRef) -> bool {
     if owner.attached_session().upgrade().is_none() {
         return false;
@@ -1631,6 +1683,7 @@ pub unsafe fn tty_cmd_insertcharacter(owner: &ClientRef, ctx: &tty_ctx, s: &scre
             || tty_fake_bce(tty.borrow_terminal(), &ctx.style_ctx.defaults, ctx.bg) != 0
             || tty_term_has(terminal_term(tty), TTYC_ICH) == 0
                 && tty_term_has(terminal_term(tty), TTYC_ICH1) == 0
+            || tty.clips_terminal_output()
         {
             return false;
         }
@@ -1651,6 +1704,7 @@ pub unsafe fn tty_cmd_deletecharacter(owner: &ClientRef, ctx: &tty_ctx, s: &scre
             || tty_fake_bce(tty.borrow_terminal(), &ctx.style_ctx.defaults, ctx.bg) != 0
             || tty_term_has(terminal_term(tty), TTYC_DCH) == 0
                 && tty_term_has(terminal_term(tty), TTYC_DCH1) == 0
+            || tty.clips_terminal_output()
         {
             return false;
         }
@@ -1681,6 +1735,7 @@ pub unsafe fn tty_cmd_insertline(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
             || tty_term_has(terminal_term(tty), TTYC_IL1) == 0
             || ctx.sx == 1 as u_int
             || ctx.sy == 1 as u_int
+            || tty.clips_terminal_output()
         {
             return false;
         }
@@ -1707,6 +1762,7 @@ pub unsafe fn tty_cmd_deleteline(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
             || tty_term_has(terminal_term(tty), TTYC_DL1) == 0
             || ctx.sx == 1 as u_int
             || ctx.sy == 1 as u_int
+            || tty.clips_terminal_output()
         {
             return false;
         }
@@ -1738,6 +1794,7 @@ pub unsafe fn tty_cmd_reverseindex(owner: &ClientRef, ctx: &tty_ctx, s: &screen)
                 && tty_term_has(terminal_term(tty), TTYC_RIN) == 0
             || ctx.sx == 1 as u_int
             || ctx.sy == 1 as u_int
+            || tty.clips_terminal_output()
         {
             return false;
         }
@@ -1767,6 +1824,7 @@ pub unsafe fn tty_cmd_scrollup(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
             || tty_term_has(terminal_term(tty), TTYC_CSR) == 0
             || ctx.sx == 1 as u_int
             || ctx.sy == 1 as u_int
+            || tty.clips_terminal_output()
         {
             return false;
         }
@@ -1815,6 +1873,7 @@ pub unsafe fn tty_cmd_scrolldown(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
                 && tty_term_has(terminal_term(tty), TTYC_RIN) == 0
             || ctx.sx == 1 as u_int
             || ctx.sy == 1 as u_int
+            || tty.clips_terminal_output()
         {
             return false;
         }
@@ -1904,7 +1963,7 @@ pub unsafe fn tty_cmd_alignmenttest(owner: &ClientRef, ctx: &tty_ctx) {
     let complete = (|tty: &ClientRef| {
         let mut i: u_int = 0;
         let mut j: u_int = 0;
-        if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0 {
+        if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0 || tty.clips_terminal_output() {
             return false;
         }
         tty_attributes(tty, &grid_default_cell, Some(&ctx.style_ctx));
@@ -1927,12 +1986,43 @@ pub unsafe fn tty_cmd_alignmenttest(owner: &ClientRef, ctx: &tty_ctx) {
         ctx.redraw_cb.as_ref().expect("non-null redraw callback")(ctx);
     }
 }
-pub unsafe fn tty_cmd_cell(owner: &ClientRef, ctx: &tty_ctx, gc: &grid_cell) {
+pub unsafe fn tty_cmd_cell(owner: &ClientRef, ctx: &tty_ctx, s: &screen, gc: &grid_cell) {
     let px = (ctx.xoff as u_int)
         .wrapping_add(ctx.ocx)
         .wrapping_sub(ctx.wox);
+    let py = (ctx.yoff as u_int)
+        .wrapping_add(ctx.ocy)
+        .wrapping_sub(ctx.woy);
     if tty_is_visible(ctx, ctx.ocx, ctx.ocy, 1, 1) == 0 {
         return;
+    }
+    if gc.data.width == 1 && !tty_check_overlay(owner, px, py) {
+        return;
+    }
+    if gc.data.width > 1 {
+        let ranges = tty_check_overlay_range(owner, px, py, gc.data.width as u_int);
+        let visible = ranges
+            .storage
+            .iter()
+            .take(ranges.used as usize)
+            .fold(0_u32, |total, range| total.wrapping_add(range.nx));
+        if visible < gc.data.width as u_int {
+            {
+                let terminal = owner;
+
+                tty_draw_line(
+                    terminal,
+                    s,
+                    s.cx,
+                    s.cy,
+                    gc.data.width as u_int,
+                    px,
+                    py,
+                    Some(&ctx.style_ctx),
+                );
+            };
+            return;
+        }
     }
     {
         let terminal = owner;
@@ -1993,8 +2083,30 @@ pub unsafe fn tty_cmd_cells(owner: &ClientRef, ctx: &tty_ctx, s: &screen, gc: &g
         tty_margin_off(terminal);
         tty_cursor_pane_unless_wrap(terminal, ctx, ctx.ocx, ctx.ocy);
         tty_attributes(terminal, gc, Some(&ctx.style_ctx));
-        if n != 0 {
-            tty_putn(terminal, data, n as u_int);
+    };
+    let px = (ctx.xoff as u_int)
+        .wrapping_add(ctx.ocx)
+        .wrapping_sub(ctx.wox);
+    let py = (ctx.yoff as u_int)
+        .wrapping_add(ctx.ocy)
+        .wrapping_sub(ctx.woy);
+    let ranges = tty_check_overlay_range(owner, px, py, n as u_int);
+    {
+        let terminal = owner;
+
+        for range in ranges.storage.iter().take(ranges.used as usize) {
+            if range.nx != 0 {
+                let cx = range
+                    .px
+                    .wrapping_sub(ctx.xoff as u_int)
+                    .wrapping_add(ctx.wox);
+                tty_cursor_pane_unless_wrap(terminal, ctx, cx, ctx.ocy);
+                tty_putn(
+                    terminal,
+                    &data[(range.px - px) as usize..(range.px - px + range.nx) as usize],
+                    range.nx,
+                );
+            }
         }
     };
 }
@@ -2051,13 +2163,18 @@ pub unsafe fn tty_cmd_rawstring(owner: &ClientRef, ctx: &tty_ctx) {
     };
 }
 pub unsafe fn tty_cmd_syncstart(owner: &ClientRef, ctx: &tty_ctx) {
-    if ctx.flags & TTY_CTX_SYNC != 0 {
+    let sync = if ctx.flags & TTY_CTX_OVERLAY_SYNC != 0 {
+        ctx.flags & TTY_CTX_SYNC != 0
+    } else {
+        ctx.flags & TTY_CTX_SYNC != 0 || owner.has_overlay()
+    };
+    if sync {
         tty_sync_start(owner);
     }
 }
 
 pub unsafe fn tty_cell(owner: &ClientRef, gc: &grid_cell, style_ctx: Option<&tty_style_ctx>) {
-    {
+    let cursor = {
         let terminal = owner.borrow_terminal();
         if terminal
             .term
@@ -2068,8 +2185,9 @@ pub unsafe fn tty_cell(owner: &ClientRef, gc: &grid_cell, style_ctx: Option<&tty
         {
             return;
         }
-    }
-    if gc.flags as i32 & GRID_FLAG_PADDING != 0 {
+        (terminal.cx, terminal.cy)
+    };
+    if gc.flags as i32 & GRID_FLAG_PADDING != 0 || !tty_check_overlay(owner, cursor.0, cursor.1) {
         return;
     }
     (|terminal: &ClientRef| {

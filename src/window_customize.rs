@@ -67,6 +67,7 @@ use crate::src::shared::key::*;
 use crate::src::shared::key::{key_binding, key_table};
 use crate::src::shared::layout::*;
 use crate::src::shared::limits::INT_MAX;
+use crate::src::shared::menu::menu_item;
 use crate::src::shared::mode_tree::{
     mode_tree_data, mode_tree_help_info, mode_tree_prompt_input_cb, ModeTreeItemData,
     ModeTreeItemRef,
@@ -286,6 +287,63 @@ unsafe fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
 }
 
 pub const WINDOW_CUSTOMIZE_DEFAULT_FORMAT: &CStr = c"#{?is_option,#{?option_is_global,,#[reverse](#{option_scope})#[default] }#[fg=themelightgrey]#[ignore]#{option_value}#{?option_unit, #{option_unit},},#{?is_environment,#[fg=themelightgrey]#[ignore]#{environment_value},#{key}}}";
+static window_customize_menu_items: [menu_item<'static>; 11] = [
+    menu_item {
+        name: c"Select",
+        key: '\r' as i32 as key_code,
+        command: None,
+    },
+    menu_item {
+        name: c"Edit",
+        key: 'e' as i32 as key_code,
+        command: None,
+    },
+    menu_item {
+        name: c"Expand",
+        key: KEYC_RIGHT as ::core::ffi::c_ulong as key_code,
+        command: None,
+    },
+    menu_item {
+        name: c"",
+        key: KEYC_NONE as ::core::ffi::c_ulong as key_code,
+        command: None,
+    },
+    menu_item {
+        name: c"Tag",
+        key: 't' as i32 as key_code,
+        command: None,
+    },
+    menu_item {
+        name: c"Tag All",
+        key: '\u{14}' as i32 as key_code,
+        command: None,
+    },
+    menu_item {
+        name: c"Tag None",
+        key: 'T' as i32 as key_code,
+        command: None,
+    },
+    menu_item {
+        name: c"",
+        key: KEYC_NONE as ::core::ffi::c_ulong as key_code,
+        command: None,
+    },
+    menu_item {
+        name: c"Changed Only",
+        key: 'C' as i32 as key_code,
+        command: None,
+    },
+    menu_item {
+        name: c"",
+        key: KEYC_NONE as ::core::ffi::c_ulong as key_code,
+        command: None,
+    },
+    menu_item {
+        name: c"Cancel",
+        key: 'q' as i32 as key_code,
+        command: None,
+    },
+];
 pub static window_customize_mode: window_mode = {
     window_mode {
         name: c"options-mode",
@@ -2619,6 +2677,33 @@ unsafe fn window_customize_draw(
         window_customize_draw_option(mode_owner, item, ctx, sx, sy);
     };
 }
+unsafe fn window_customize_menu(
+    mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
+    c: &ClientRef,
+    mut key: key_code,
+) {
+    let data = mode_owner.get();
+    let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*data).wp) else {
+        return;
+    };
+    let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
+    wme = mode_pane_owner.mode_entry();
+    if !wme.is_alive()
+        || wme
+            .get_unchecked()
+            .shared_data_ptr::<window_customize_modedata>()
+            != Some(data)
+    {
+        return;
+    }
+    window_customize_key(
+        wme.clone(),
+        c,
+        (refbox::Weak::new()).clone(),
+        key,
+        ::core::ptr::null_mut::<mouse_event>(),
+    );
+}
 unsafe fn window_customize_height() -> u_int {
     12 as u_int
 }
@@ -2681,6 +2766,7 @@ unsafe fn window_customize_init(
     let build_mode = Rc::downgrade(&owner);
     wme.get_mut_unchecked().data_owner = Some(owner);
     let draw_mode = build_mode.clone();
+    let menu_mode = build_mode.clone();
     if args_has(args, 'y' as i32 as u_char) != 0 {
         (*data).prompt_flags = PROMPT_ACCEPT;
     }
@@ -2705,11 +2791,18 @@ unsafe fn window_customize_init(
             window_customize_draw(&mode, &item_owner, ctx, sx, sy)
         })),
         None,
+        Some(Box::new(move |client, key| {
+            let Some(mode) = window_customize_live_mode(&menu_mode) else {
+                return;
+            };
+            window_customize_menu(&mode, client, key)
+        })),
         Some(Box::new(move |_| window_customize_height())),
         None,
         None,
         None,
         Some(window_customize_help),
+        &window_customize_menu_items,
         &raw mut s,
     ));
     mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));

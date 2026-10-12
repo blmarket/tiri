@@ -28,6 +28,7 @@ use crate::src::shared::format::FORMAT_NONE;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::layout::*;
+use crate::src::shared::menu::menu_item;
 use crate::src::shared::mode_tree::ModeTreeItemSnapshot;
 use crate::src::shared::mode_tree::{mode_tree_data, mode_tree_help_info, ModeTreeItemData};
 use crate::src::shared::mouse::mouse_event;
@@ -142,6 +143,48 @@ const window_client_info_lines: [&CStr; 23] = [
     c"#[fg=themelightgrey]extended-keys #[#{E:tree-mode-border-style},acs]x#[default] #{?#{!=:#{extended-keys},off},#{?#{I/f:extkeys},,#[fg=themered]}#{extended-keys},#[fg=themelightgrey]off} #{?#{I/f:extkeys},,#[align=right]unavailable: [Eneks] or [Dseks] missing}",
     c"#[fg=themelightgrey]set-titles    #[#{E:tree-mode-border-style},acs]x#[default] #{?set-titles,on,#[fg=themelightgrey]off}",
     c"#[fg=themelightgrey]escape-time   #[#{E:tree-mode-border-style},acs]x#[default] #{escape-time} ms",
+];
+static window_client_menu_items: [menu_item<'static>; 8] = [
+    menu_item {
+        name: c"Detach",
+        key: 'd' as i32 as key_code,
+        command: None,
+    },
+    menu_item {
+        name: c"Detach Tagged",
+        key: 'D' as i32 as key_code,
+        command: None,
+    },
+    menu_item {
+        name: c"",
+        key: KEYC_NONE as ::core::ffi::c_ulong as key_code,
+        command: None,
+    },
+    menu_item {
+        name: c"Tag",
+        key: 't' as i32 as key_code,
+        command: None,
+    },
+    menu_item {
+        name: c"Tag All",
+        key: '\u{14}' as i32 as key_code,
+        command: None,
+    },
+    menu_item {
+        name: c"Tag None",
+        key: 'T' as i32 as key_code,
+        command: None,
+    },
+    menu_item {
+        name: c"",
+        key: KEYC_NONE as ::core::ffi::c_ulong as key_code,
+        command: None,
+    },
+    menu_item {
+        name: c"Cancel",
+        key: 'q' as i32 as key_code,
+        command: None,
+    },
 ];
 pub static window_client_mode: window_mode = {
     window_mode {
@@ -450,7 +493,7 @@ unsafe fn window_client_draw(
         drop(snapshot);
     }
     if let Some(pane) = preview_pane {
-        pane.release(c"client pane preview");
+        drop(pane);
     }
     if at != 0 as u_int {
         screen_write_cursormove(
@@ -517,6 +560,30 @@ unsafe fn window_client_status_snapshot(c: &ClientRef, lines: u32) -> screen {
     snapshot
 }
 
+unsafe fn window_client_menu(data: *mut window_client_modedata, c: &ClientRef, mut key: key_code) {
+    let Some(mode_pane_owner) =
+        std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&(*data).wp)
+    else {
+        return;
+    };
+    let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
+    wme = mode_pane_owner.mode_entry();
+    if !wme.is_alive()
+        || wme
+            .get_unchecked()
+            .boxed_data_ptr::<window_client_modedata>()
+            != Some(data)
+    {
+        return;
+    }
+    window_client_key(
+        wme.clone(),
+        c,
+        (refbox::Weak::new()).clone(),
+        key,
+        ::core::ptr::null_mut::<mouse_event>(),
+    );
+}
 unsafe fn window_client_get_key(
     data: *mut window_client_modedata,
     item: &window_client_itemdata,
@@ -632,6 +699,9 @@ unsafe fn window_client_init(
             window_client_draw(data_handle.as_ptr(), &item, ctx, sx, sy)
         })),
         None,
+        Some(Box::new(move |client, key| {
+            window_client_menu(data_handle.as_ptr(), client, key)
+        })),
         None,
         Some(Box::new(move |itemdata, line| {
             let item = itemdata.as_client().expect("client row payload");
@@ -640,6 +710,7 @@ unsafe fn window_client_init(
         None,
         Some(window_client_sort),
         Some(window_client_help),
+        &window_client_menu_items,
         &raw mut s,
     ));
     if (*data).preview_is_info != 0 {

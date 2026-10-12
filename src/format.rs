@@ -152,6 +152,7 @@ mod expression;
 pub use expression::format_expand_cstring;
 pub(crate) use expression::format_pretty_time_cstring;
 pub(crate) use expression::format_quote_shell_single;
+pub(crate) use expression::format_single_from_state_cstring;
 use expression::*;
 pub(crate) use expression::{
     format_expand_time_cstring, format_single_cstring, format_single_from_target_cstring,

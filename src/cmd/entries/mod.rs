@@ -9,6 +9,7 @@ pub mod command_prompt;
 pub mod confirm_before;
 pub mod copy_mode;
 pub mod detach_client;
+pub mod display_menu;
 pub mod display_message;
 pub mod find_window;
 pub mod if_shell;

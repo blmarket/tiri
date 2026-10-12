@@ -11,9 +11,11 @@ use std::os::fd::{AsRawFd, OwnedFd};
 use std::time::{Duration, SystemTime};
 use std::{cell::UnsafeCell, rc::Rc};
 mod api;
+mod client_overlay;
 mod format;
 mod model;
 pub use api::Client;
+pub use client_overlay::Overlay;
 pub use model::client;
 
 use crate::src::cfg::{cfg_client, cfg_finished, start_cfg};
@@ -48,6 +50,7 @@ use crate::src::format::{
 use crate::src::key_bindings::{key_bindings_dispatch, key_bindings_get, key_bindings_get_table};
 use crate::src::key_string::key_string_format;
 use crate::src::log::{fatal, log_cstr, log_debug, log_get_level, log_hex, log_pointer};
+use crate::src::menu::{menu_close, menu_get_cursor, menu_key, menu_screen};
 use crate::src::names::check_window_name;
 use crate::src::options::{options_get_command, options_get_number, options_get_string};
 use crate::src::proc::{bytes_of, proc_add_peer, proc_kill_peer, proc_remove_peer, proc_send};
@@ -92,8 +95,11 @@ use std::ffi::{CStr, CString};
 
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
-pub use crate::src::shared::client::client_file;
 use crate::src::shared::client::*;
+pub use crate::src::shared::client::{
+    client_file, overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb,
+    overlay_mode_cb, overlay_resize_cb,
+};
 
 impl client {
     /// Allocate a client on the server thread.
@@ -628,14 +634,15 @@ use crate::src::shared::client::{
     CLIENT_CONTROL_WAITEXIT, CLIENT_DEAD, CLIENT_DOUBLECLICK, CLIENT_EXIT, CLIENT_EXITED,
     CLIENT_FOCUSED, CLIENT_IDENTIFIED, CLIENT_IGNORESIZE, CLIENT_NODETACHFLAGS,
     CLIENT_NO_DETACH_ON_DESTROY, CLIENT_PASTE_TIME_LIMIT, CLIENT_READONLY, CLIENT_REDRAWBORDERS,
-    CLIENT_REDRAWSCROLLBARS, CLIENT_REDRAWSTATUS, CLIENT_REDRAWWINDOW, CLIENT_REPEAT,
-    CLIENT_STATUSFORCE, CLIENT_SUSPENDED, CLIENT_TERMINAL, CLIENT_TRIPLECLICK,
-    CLIENT_UNATTACHEDFLAGS, CLIENT_UTF8,
+    CLIENT_REDRAWMENU, CLIENT_REDRAWOVERLAY, CLIENT_REDRAWSCROLLBARS, CLIENT_REDRAWSTATUS,
+    CLIENT_REDRAWWINDOW, CLIENT_REPEAT, CLIENT_STATUSFORCE, CLIENT_SUSPENDED, CLIENT_TERMINAL,
+    CLIENT_TRIPLECLICK, CLIENT_UNATTACHEDFLAGS, CLIENT_UTF8,
 };
 use crate::src::shared::colour::*;
 use crate::src::shared::colour::{COLOUR_FLAG_THEME, COLOUR_THEME_COUNT};
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
+use crate::src::shared::display::visible_ranges;
 use crate::src::shared::environment::environ_entry;
 use crate::src::shared::errno::EINTR;
 use crate::src::shared::event::*;
@@ -644,6 +651,7 @@ use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
 use crate::src::shared::key::KEY_BINDING_REPEAT;
 use crate::src::shared::key::*;
 use crate::src::shared::key::{key_event, key_table, KeyBindingCommand};
+use crate::src::shared::limits::UINT_MAX;
 use crate::src::shared::mouse::{
     mouse_event, MOUSE_BUTTON_1, MOUSE_BUTTON_10, MOUSE_BUTTON_11, MOUSE_BUTTON_2, MOUSE_BUTTON_3,
     MOUSE_BUTTON_6, MOUSE_BUTTON_7, MOUSE_BUTTON_8, MOUSE_BUTTON_9, MOUSE_MASK_BUTTONS,
@@ -691,6 +699,154 @@ unsafe fn server_client_how_many() -> u_int {
     }
     n
 }
+unsafe fn server_client_update_overlay_focus(owner: &ClientRef) {
+    use crate::src::session::Session;
+    use crate::src::window::Window;
+    let Some(session) = owner.attached_session().upgrade() else {
+        return;
+    };
+    let link = session.current_winlink();
+    if let Some(window) = link.get_unchecked().window_handle().cloned() {
+        window.update_focus();
+        drop(window);
+    }
+}
+
+unsafe fn server_client_set_overlay(c_owner: &ClientRef, overlay: Overlay) {
+    let c = c_owner.get();
+    // Cleanup can install another overlay. Retire it through the same path
+    // before publishing this caller's replacement, never by overwriting it.
+    while (*c).overlay.is_some() {
+        server_client_clear_overlay(c_owner);
+    }
+    (*c).overlay_generation = (*c)
+        .overlay_generation
+        .checked_add(1)
+        .expect("overlay generation exhausted");
+    if overlay.check.is_none() {
+        (*c).tty.flags |= TTY_FREEZE;
+    }
+    if overlay.mode.is_none() {
+        (*c).tty.flags |= TTY_NOCURSOR;
+    }
+    (*c).overlay = Some(overlay);
+    server_client_update_overlay_focus(c_owner);
+    c_owner.request_redraw(CLIENT_ALLREDRAWFLAGS as u64);
+}
+unsafe fn server_client_clear_overlay(c_owner: &ClientRef) {
+    let c = c_owner.get();
+    let Some(overlay) = (*c).overlay.take() else {
+        return;
+    };
+    (*c).overlay_generation = (*c)
+        .overlay_generation
+        .checked_add(1)
+        .expect("overlay generation exhausted");
+    let generation = (*c).overlay_generation;
+    overlay.free(c_owner);
+    if (*c).overlay_generation == generation {
+        (*c).tty.flags &= !(TTY_FREEZE | TTY_NOCURSOR);
+    }
+    server_client_update_overlay_focus(c_owner);
+    c_owner.request_redraw(CLIENT_ALLREDRAWFLAGS as u64);
+}
+// A callback may clear or replace its overlay. Restore only the generation
+// that was borrowed, and discard results from a retired owner.
+unsafe fn server_client_overlay_draw(c_owner: &ClientRef) {
+    let c = c_owner.get();
+    let generation = (*c).overlay_generation;
+    let Some(mut callback) = (*c)
+        .overlay
+        .as_mut()
+        .and_then(|overlay| overlay.draw.take())
+    else {
+        return;
+    };
+    callback(c_owner);
+    if (*c).overlay_generation == generation {
+        if let Some(overlay) = (*c).overlay.as_mut() {
+            if overlay.draw.is_none() {
+                overlay.draw = Some(callback);
+            }
+        }
+    }
+}
+
+unsafe fn server_client_overlay_key(c_owner: &ClientRef, event: &mut key_event) -> Option<i32> {
+    let c = c_owner.get();
+    let generation = (*c).overlay_generation;
+    let mut callback = (*c).overlay.as_mut()?.key.take()?;
+    let result = callback(c_owner, event);
+    if (*c).overlay_generation != generation {
+        // This event was handled by the retired overlay. In particular, an
+        // old close request must not close a newly installed overlay.
+        return Some(0);
+    }
+    if let Some(overlay) = (*c).overlay.as_mut() {
+        if overlay.key.is_none() {
+            overlay.key = Some(callback);
+        }
+    }
+    Some(result)
+}
+
+unsafe fn server_client_overlay_mode(c_owner: &ClientRef) -> Option<(ScreenMode, u_int, u_int)> {
+    let c = c_owner.get();
+    let generation = (*c).overlay_generation;
+    let mut callback = (*c).overlay.as_mut()?.mode.take()?;
+    let result = callback(c_owner);
+    if (*c).overlay_generation != generation {
+        return None;
+    }
+    if let Some(overlay) = (*c).overlay.as_mut() {
+        if overlay.mode.is_none() {
+            overlay.mode = Some(callback);
+        }
+    }
+    result
+}
+
+unsafe fn server_client_overlay_resize(c_owner: &ClientRef) {
+    let c = c_owner.get();
+    let generation = (*c).overlay_generation;
+    let Some(mut callback) = (*c)
+        .overlay
+        .as_mut()
+        .and_then(|overlay| overlay.resize.take())
+    else {
+        return;
+    };
+    callback(c_owner);
+    if (*c).overlay_generation == generation {
+        if let Some(overlay) = (*c).overlay.as_mut() {
+            if overlay.resize.is_none() {
+                overlay.resize = Some(callback);
+            }
+        }
+    }
+}
+
+unsafe fn server_client_overlay_check(
+    c_owner: &ClientRef,
+    px: u_int,
+    py: u_int,
+    nx: u_int,
+) -> Option<visible_ranges> {
+    let c = c_owner.get();
+    let generation = (*c).overlay_generation;
+    let mut callback = (*c).overlay.as_mut()?.check.take()?;
+    let result = callback(c_owner, px, py, nx);
+    if (*c).overlay_generation != generation {
+        return None;
+    }
+    if let Some(overlay) = (*c).overlay.as_mut() {
+        if overlay.check.is_none() {
+            overlay.check = Some(callback);
+        }
+    }
+    Some(result)
+}
+
 unsafe fn server_client_check_nested(c: &client) -> ::core::ffi::c_int {
     let mut envent: Option<&environ_entry> = None;
     envent = environ_find(c.environ.as_deref().expect("environment"), c"TMUX");
@@ -1053,6 +1209,7 @@ unsafe fn server_client_lost(client_owner: &ClientRef) {
         cfg_client = std::rc::Weak::new();
     }
     (*c).flags |= CLIENT_DEAD as uint64_t;
+    server_client_clear_overlay(client_owner);
     status_prompt_clear(client_owner);
     status_message_clear(client_owner);
     cmdq_abort_owned_wait(client_owner);
@@ -2391,6 +2548,61 @@ impl Drop for QueuedKeyEvent {
     }
 }
 
+unsafe fn server_client_handle_menu_key(
+    owner: &ClientRef,
+    mut event: *mut key_event,
+) -> ::core::ffi::c_int {
+    let c = owner.get();
+    let (window, menu) = {
+        let retained = (*c)
+            .session_handle()
+            .expect("live session")
+            .current_winlink()
+            .get_unchecked()
+            .window_handle()
+            .cloned()
+            .expect("current window");
+        (
+            crate::src::shared::window::WindowRef::downgrade(&retained),
+            retained.menu_observer(),
+        )
+    };
+    let Some(menu) = menu else { return 0 };
+    let mut new_event = (*event).metadata_snapshot();
+    let mut m: *mut mouse_event = std::ptr::null_mut();
+    if (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
+        == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
+        || (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
+            >= (KEYC_TYPE_MOUSEMOVE as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
+                << 32 as ::core::ffi::c_int
+            && (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
+                <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
+                    << 32 as ::core::ffi::c_int
+    {
+        m = &raw mut new_event.m;
+        (*m).statusat = status_at_line(owner);
+        (*m).statuslines = status_line_size(owner);
+        let tty_window_view { ox, oy, .. } = tty_window_offset(&(*c).tty);
+        (*m).x = (*m).x.wrapping_add(ox);
+        if (*m).statusat == 0 as ::core::ffi::c_int {
+            if (*m).y < (*m).statuslines {
+                (*m).y = UINT_MAX as u_int;
+                (*m).x = (*m).y;
+            } else {
+                (*m).y = (*m).y.wrapping_sub((*m).statuslines).wrapping_add(oy);
+            }
+        } else if (*m).statusat > 0 as ::core::ffi::c_int && (*m).y >= (*m).statusat as u_int {
+            (*m).y = UINT_MAX as u_int;
+            (*m).x = (*m).y;
+        } else {
+            (*m).y = (*m).y.wrapping_add(oy);
+        }
+    }
+    if menu_key(Some(owner), &menu, &new_event) == 1 {
+        menu_close(&window, Some(&menu));
+    }
+    1 as ::core::ffi::c_int
+}
 unsafe fn server_client_handle_key0(
     owner: &ClientRef,
     mut owned: Box<key_event>,
@@ -2421,6 +2633,17 @@ unsafe fn server_client_handle_key0(
             }
             status_message_clear(owner);
         }
+        if let Some(result) = server_client_overlay_key(owner, &mut *event) {
+            match result {
+                0 => return 0 as ::core::ffi::c_int,
+                1 => {
+                    server_client_clear_overlay(owner);
+                    return 0 as ::core::ffi::c_int;
+                }
+                _ => {}
+            }
+        }
+        server_client_clear_overlay(owner);
         let active_pane_owner = (((s.as_ref().expect("live session").current_winlink())
             .get_unchecked()
             .window_handle()
@@ -2428,6 +2651,9 @@ unsafe fn server_client_handle_key0(
         .expect("live window"))
         .active_pane();
         if server_client_handle_dead_key(active_pane_owner.as_ref(), (*event).key) != 0 {
+            return 0 as ::core::ffi::c_int;
+        }
+        if server_client_handle_menu_key(owner, event) != 0 {
             return 0 as ::core::ffi::c_int;
         }
         if (*c).prompt.is_some() {
@@ -2676,7 +2902,25 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
         }
         flags = (*tty).flags & TTY_BLOCK;
         (*tty).flags &= !TTY_BLOCK;
-        if let Some(active) = active_owner.as_ref().filter(|_| (*c).prompt.is_none()) {
+        let menu_owner = window_owner.menu_observer();
+        if (*c)
+            .overlay
+            .as_ref()
+            .is_some_and(|overlay| overlay.draw.is_some())
+        {
+            if let Some((overlay_screen, overlay_cx, overlay_cy)) =
+                server_client_overlay_mode(client_owner)
+            {
+                s = Some(overlay_screen);
+                cx = overlay_cx;
+                cy = overlay_cy;
+            }
+        } else if let Some(menu) = menu_owner.as_ref() {
+            let menu_borrow = menu.try_borrow_mut().expect("live unborrowed menu");
+            let md = &*menu_borrow;
+            (cx, cy) = menu_get_cursor(md);
+            s = Some(ScreenMode::from(menu_screen(md)));
+        } else if let Some(active) = active_owner.as_ref().filter(|_| (*c).prompt.is_none()) {
             s = Some(active.screen_mode(true));
         } else {
             s = Some(ScreenMode::from(&*(*c).status.active_screen()));
@@ -2700,16 +2944,35 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
         if (*c).prompt.is_some() {
             prompt = 1 as u_int;
             (cx, cy) = status_prompt_cursor(client_owner);
-        } else if active_owner.is_some() {
-            if let Some(cursor) = server_client_prompt_cursor(
-                client_owner,
-                active_owner.as_ref().expect("active pane"),
-                PromptCursor { mode, cx, cy },
-            ) {
-                prompt = 1;
-                mode = cursor.mode;
-                cx = cursor.cx;
-                cy = cursor.cy;
+        } else if active_owner.is_some()
+            && !(*c)
+                .overlay
+                .as_ref()
+                .is_some_and(|overlay| overlay.draw.is_some())
+        {
+            if window_owner.menu_observer().is_some() {
+                let tty_window_view { ox, oy, sx, sy, .. } = tty_window_offset(&*tty);
+                if cx < ox || cx >= ox.wrapping_add(sx) || cy < oy || cy >= oy.wrapping_add(sy) {
+                    mode &= !MODE_CURSOR;
+                } else {
+                    cx = cx.wrapping_sub(ox);
+                    cy = cy.wrapping_sub(oy);
+                    if status_at_line(client_owner) == 0 as ::core::ffi::c_int {
+                        cy = cy.wrapping_add(status_line_size(client_owner));
+                    }
+                }
+                prompt = 1 as u_int;
+            } else {
+                if let Some(cursor) = server_client_prompt_cursor(
+                    client_owner,
+                    active_owner.as_ref().expect("active pane"),
+                    PromptCursor { mode, cx, cy },
+                ) {
+                    prompt = 1;
+                    mode = cursor.mode;
+                    cx = cursor.cx;
+                    cy = cursor.cy;
+                }
             }
             if prompt == 0 {
                 let s = s.expect("active pane screen mode");
@@ -2766,7 +3029,12 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
                     mode &= !MODE_CURSOR;
                 }
             }
-        } else {
+        } else if !(*c)
+            .overlay
+            .as_ref()
+            .is_some_and(|overlay| overlay.mode.is_some())
+            || s.is_none()
+        {
             mode &= !MODE_CURSOR;
         }
         if !pane_mode & MODE_SYNC != 0 {
@@ -2786,13 +3054,20 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
             s = None;
         }
         if session_owner.with_options_mut(|options| options_get_number(options, c"mouse")) != 0 {
-            mode &= !ALL_MOUSE_MODES;
-            let mut cursor = window_owner.next_pane(None);
-            while let Some(pane_owner) = cursor {
-                if pane_owner.screen_mode(true).mode & MODE_MOUSE_ALL != 0 {
-                    mode |= MODE_MOUSE_ALL;
+            if !(*c)
+                .overlay
+                .as_ref()
+                .is_some_and(|overlay| overlay.draw.is_some())
+                && window_owner.menu_observer().is_none()
+            {
+                mode &= !ALL_MOUSE_MODES;
+                let mut cursor = window_owner.next_pane(None);
+                while let Some(pane_owner) = cursor {
+                    if pane_owner.screen_mode(true).mode & MODE_MOUSE_ALL != 0 {
+                        mode |= MODE_MOUSE_ALL;
+                    }
+                    cursor = pane_owner.next_in_window();
                 }
-                cursor = pane_owner.next_in_window();
             }
             if session_owner
                 .with_options_mut(|options| options_get_number(options, c"focus-follows-mouse"))
@@ -2805,7 +3080,12 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
                 mode |= MODE_MOUSE_BUTTON;
             }
         }
-        if prompt != 0 {
+        if !(*c)
+            .overlay
+            .as_ref()
+            .is_some_and(|overlay| overlay.draw.is_some())
+            && prompt != 0
+        {
             mode &= !MODE_BRACKETPASTE;
         }
         {
@@ -3013,7 +3293,7 @@ unsafe fn server_client_check_redraw(client_owner: &ClientRef) {
         }
         if (*c).flags & CLIENT_ALLREDRAWFLAGS as uint64_t != 0 {
             log_debug(format_args!(
-                "{}: redraw{}{}{}",
+                "{}: redraw{}{}{}{}{}",
                 log_cstr((*c).name.as_deref().unwrap_or(c"(null)")),
                 log_cstr(if (*c).flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
                     c" window"
@@ -3027,6 +3307,16 @@ unsafe fn server_client_check_redraw(client_owner: &ClientRef) {
                 }),
                 log_cstr(if (*c).flags & CLIENT_REDRAWBORDERS as uint64_t != 0 {
                     c" borders"
+                } else {
+                    c""
+                }),
+                log_cstr(if (*c).flags & CLIENT_REDRAWOVERLAY as uint64_t != 0 {
+                    c" overlay"
+                } else {
+                    c""
+                }),
+                log_cstr(if (*c).flags & CLIENT_REDRAWMENU as uint64_t != 0 {
+                    c" menu"
                 } else {
                     c""
                 })
@@ -3291,6 +3581,15 @@ unsafe fn server_client_dispatch(
                     tty_repeat_requests(terminal, 0 as ::core::ffi::c_int)
                 };
                 recalculate_sizes();
+                if !(*c)
+                    .overlay
+                    .as_ref()
+                    .is_some_and(|overlay| overlay.resize.is_some())
+                {
+                    server_client_clear_overlay(owner);
+                } else {
+                    server_client_overlay_resize(owner);
+                }
                 (*c).flags |= CLIENT_ALLREDRAWFLAGS as u64;
                 if !(*c).session_handle().is_none() {
                     server_client_fire_resized(owner, old_sx, old_sy);

@@ -63,8 +63,9 @@ result. Screen-write contexts keep their existing explicit stop requirement.
 Terminal output helpers retain Client holders and open brief terminal component
 loans for each read or update. There is no TerminalOutput view. Input decoding
 uses SegmentedBuf's contiguous bytes directly, extracts owned reply data before
-dispatch, and retains no copied Rc byte cache. Clients have no overlays: menus,
-popups and the client overlay mechanism were removed.
+dispatch, and retains no copied Rc byte cache. Typed overlay state groups the
+installed callbacks, generation and popup payload; callback extraction and
+restoration preserve reentrant replacement and explicit free ordering.
 
 ## Lifetime and destruction
 
@@ -78,7 +79,7 @@ release merely because the temporary Rc goes out of scope.
 Session and Client release operations retain the existing deferred event-loop
 cleanup. Window release runs close callbacks while an owner remains live, then
 checks whether callbacks retained it. Pane destroy/stream/parser/mode cleanup,
-monitor_destroy and timer/task cancellation remain explicit. The
+overlay free, monitor_destroy and timer/task cancellation remain explicit. The
 migration adds no Drop responsibility for core-model resource cleanup.
 
 Tests use production model operations and preserve explicit teardown.

@@ -9,7 +9,7 @@ use crate::src::ffi::libc::{
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::log_bytes;
-use crate::src::log::{fatalx, log_cstr, log_debug};
+use crate::src::log::{fatal, fatalx, log_cstr, log_debug};
 use crate::src::options::options_get_string;
 use crate::src::proc::proc_clear_signals;
 use crate::src::reactor::BufferEvent;
@@ -445,6 +445,25 @@ pub unsafe fn job_free(handle: &Weak<job>) {
     drop(owner);
 }
 
+pub unsafe fn job_resize(handle: &Weak<job>, sx: u_int, sy: u_int) {
+    let job = handle.try_borrow_mut().expect("live popup job");
+    if job.fd.is_none() || job.flags & JOB_PTY == 0 {
+        return;
+    }
+    log_debug(format_args!("resize job: {}x{}", sx, sy));
+    let ws = winsize {
+        ws_row: sy as _,
+        ws_col: sx as _,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    };
+    if crate::src::shared::terminal::set_size(job.fd.as_ref().expect("job PTY").as_raw_fd(), &ws)
+        == -1
+    {
+        fatal(|out| out.write_all(b"ioctl failed"));
+    }
+}
+
 unsafe fn job_read_callback(handle: &Weak<job>) {
     let callback_slot = {
         let Some(job) = job_borrow_live(handle) else {
@@ -500,7 +519,7 @@ unsafe fn job_finish(handle: &Weak<job>) {
     if let Some((callback, result)) = completion {
         callback(result);
     }
-    // Completion may already have cancelled the job, or its owning cache.
+    // Completion may already have cancelled the job, or its owning popup/cache.
     job_free(handle);
 }
 

@@ -20,7 +20,7 @@ pub struct redraw_scene {
     pub oy: u_int,
 }
 
-pub type redraw_line = [redraw_spans; 6];
+pub type redraw_line = [redraw_spans; 7];
 
 /// Preserve stable heap allocation while drawing helpers borrow spans.
 pub type redraw_spans = Vec<Box<redraw_span>>;
@@ -41,6 +41,7 @@ pub enum redraw_span_data {
     Status(RedrawStatusSpan),
     Border(RedrawBorderSpan),
     Scrollbar(RedrawScrollbarSpan),
+    Menu(RedrawMenuSpan),
 }
 
 impl Default for redraw_span_data {
@@ -58,6 +59,7 @@ impl redraw_span_data {
             Self::Status(_) => 3,
             Self::Border(_) => 4,
             Self::Scrollbar(_) => 5,
+            Self::Menu(_) => 6,
         }
     }
     pub fn pane(&self) -> &RedrawPaneSpan {
@@ -105,6 +107,18 @@ impl redraw_span_data {
     pub fn scrollbar_mut(&mut self) -> &mut RedrawScrollbarSpan {
         let Self::Scrollbar(data) = self else {
             panic!("scrollbar span expected")
+        };
+        data
+    }
+    pub fn menu(&self) -> &RedrawMenuSpan {
+        let Self::Menu(data) = self else {
+            panic!("menu span expected")
+        };
+        data
+    }
+    pub fn menu_mut(&mut self) -> &mut RedrawMenuSpan {
+        let Self::Menu(data) = self else {
+            panic!("menu span expected")
         };
         data
     }
@@ -183,6 +197,12 @@ impl PartialEq for RedrawScrollbarSpan {
 }
 impl Eq for RedrawScrollbarSpan {}
 
+#[derive(Clone)]
+pub struct RedrawMenuSpan {
+    pub md: refbox::Weak<crate::src::shared::menu::menu_data>,
+    pub px: u_int,
+    pub py: u_int,
+}
 pub type redraw_span_type = ::core::ffi::c_uint;
 
 #[cfg(test)]

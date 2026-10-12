@@ -24,6 +24,7 @@ use crate::src::shared::command::{cmd_find_state, cmdq_item};
 use crate::src::shared::format::format_tree;
 use crate::src::shared::format::FORMAT_NONE;
 use crate::src::shared::key::*;
+use crate::src::shared::menu::menu_item;
 use crate::src::shared::mode_tree::ModeTreeItemSnapshot;
 use crate::src::shared::mode_tree::{mode_tree_data, mode_tree_help_info, ModeTreeItemData};
 use crate::src::shared::mouse::mouse_event;
@@ -82,6 +83,63 @@ pub const WINDOW_BUFFER_DEFAULT_COMMAND: &std::ffi::CStr = c"paste-buffer -p -b 
 pub const WINDOW_BUFFER_DEFAULT_FORMAT: &CStr = c"#{t/p:buffer_created}: #{buffer_sample}";
 pub const WINDOW_BUFFER_DEFAULT_KEY_FORMAT: &std::ffi::CStr =
     c"#{?#{e|<:#{line},10},#{line},#{e|<:#{line},36},M-#{a:#{e|+:97,#{e|-:#{line},10}}}}";
+static window_buffer_menu_items: [menu_item<'static>; 11] = [
+    menu_item {
+        name: c"Paste",
+        key: 'p' as i32 as key_code,
+        command: None,
+    },
+    menu_item {
+        name: c"Paste Tagged",
+        key: 'P' as i32 as key_code,
+        command: None,
+    },
+    menu_item {
+        name: c"",
+        key: KEYC_NONE as ::core::ffi::c_ulong as key_code,
+        command: None,
+    },
+    menu_item {
+        name: c"Tag",
+        key: 't' as i32 as key_code,
+        command: None,
+    },
+    menu_item {
+        name: c"Tag All",
+        key: '\u{14}' as i32 as key_code,
+        command: None,
+    },
+    menu_item {
+        name: c"Tag None",
+        key: 'T' as i32 as key_code,
+        command: None,
+    },
+    menu_item {
+        name: c"",
+        key: KEYC_NONE as ::core::ffi::c_ulong as key_code,
+        command: None,
+    },
+    menu_item {
+        name: c"Delete",
+        key: 'd' as i32 as key_code,
+        command: None,
+    },
+    menu_item {
+        name: c"Delete Tagged",
+        key: 'D' as i32 as key_code,
+        command: None,
+    },
+    menu_item {
+        name: c"",
+        key: KEYC_NONE as ::core::ffi::c_ulong as key_code,
+        command: None,
+    },
+    menu_item {
+        name: c"Cancel",
+        key: 'q' as i32 as key_code,
+        command: None,
+    },
+];
 pub static window_buffer_mode: window_mode = {
     window_mode {
         name: c"buffer-mode",
@@ -279,6 +337,30 @@ unsafe fn window_buffer_search(item: &window_buffer_itemdata, search: &CStr, ica
         icase,
     )
 }
+unsafe fn window_buffer_menu(data: *mut window_buffer_modedata, c: &ClientRef, mut key: key_code) {
+    let Some(mode_pane_owner) =
+        std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&(*data).wp)
+    else {
+        return;
+    };
+    let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
+    wme = mode_pane_owner.mode_entry();
+    if !wme.is_alive()
+        || wme
+            .get_unchecked()
+            .boxed_data_ptr::<window_buffer_modedata>()
+            != Some(data)
+    {
+        return;
+    }
+    window_buffer_key(
+        wme.clone(),
+        c,
+        (refbox::Weak::new()).clone(),
+        key,
+        ::core::ptr::null_mut::<mouse_event>(),
+    );
+}
 unsafe fn window_buffer_get_key(
     data: *mut window_buffer_modedata,
     item: &window_buffer_itemdata,
@@ -404,6 +486,9 @@ unsafe fn window_buffer_init(
             let item = itemdata.as_buffer().expect("buffer row payload");
             window_buffer_search(&item, search, icase)
         })),
+        Some(Box::new(move |client, key| {
+            window_buffer_menu(data_handle.as_ptr(), client, key)
+        })),
         None,
         Some(Box::new(move |itemdata, line| {
             let item = itemdata.as_buffer().expect("buffer row payload");
@@ -412,6 +497,7 @@ unsafe fn window_buffer_init(
         None,
         Some(window_buffer_sort),
         Some(window_buffer_help),
+        &window_buffer_menu_items,
         &raw mut s,
     ));
     mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));

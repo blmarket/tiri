@@ -24,6 +24,7 @@ use crate::src::events_payload::{
 use crate::src::ffi::libc::strcasecmp;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::log_debug;
+use crate::src::menu::{menu_destroy, menu_resize};
 use crate::src::options::options_owner_ptr;
 use crate::src::options::{options_get_number, options_get_number_ref};
 
@@ -322,6 +323,7 @@ unsafe fn window_destroy(w_owner: &WindowRef) {
     if !(*w).owner.is_empty() {
         windows_remove(&mut windows, w_owner);
     }
+    menu_destroy((*w).menu.take());
     window_destroy_panes(w_owner);
     drop((*w).name_event.take());
     drop((*w).alerts_timer.take());
@@ -375,6 +377,15 @@ unsafe fn window_resize(
     (*w).sx = sx;
     (*w).sy = sy;
     window_arrange(w_owner);
+    if let Some(menu) = (*w).menu.as_ref().map(|menu| menu.downgrade()) {
+        let (menu_sx, menu_sy) = w_owner.logical_size();
+        menu_resize(
+            &mut menu.try_borrow_mut().expect("live unborrowed menu"),
+            menu_sx,
+            menu_sy,
+        );
+        server_redraw_window(w_owner);
+    }
     if xpixel != -(1 as ::core::ffi::c_int) {
         (*w).xpixel = xpixel as u_int;
     }

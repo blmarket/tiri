@@ -136,10 +136,8 @@ fn command_values_and_cached_strings_keep_their_storage_ownership() {
 
         let mut args = args_create();
         args_push_positional_commands(&mut args, cmd_list_new());
-        let first =
-            args_string(&mut args, 0).map_or(std::ptr::null(), |value| value.as_ptr());
-        let second =
-            args_string(&mut args, 0).map_or(std::ptr::null(), |value| value.as_ptr());
+        let first = args_string(&mut args, 0).map_or(std::ptr::null(), |value| value.as_ptr());
+        let second = args_string(&mut args, 0).map_or(std::ptr::null(), |value| value.as_ptr());
         assert_eq!(first, second);
         assert_eq!(CStr::from_ptr(first).to_bytes(), b"");
         drop(args);
@@ -218,8 +216,7 @@ fn positional_command_cache_survives_array_growth_and_copy() {
             args_string(&mut args, 0).map_or(std::ptr::null(), |value| value.as_ptr()),
             first
         );
-        let second =
-            args_string(&mut args, 1).map_or(std::ptr::null(), |value| value.as_ptr());
+        let second = args_string(&mut args, 1).map_or(std::ptr::null(), |value| value.as_ptr());
         assert_ne!(first, second);
 
         let mut copied = args_copy(&args, &Vec::new());
