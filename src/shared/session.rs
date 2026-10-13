@@ -10,8 +10,6 @@ pub type SessionWeak = std::rc::Weak<std::cell::UnsafeCell<session>>;
 #[repr(C)]
 pub struct session_group {
     pub name: std::ffi::CString,
-    /// Weak back-reference to the session group index that owns this group.
-    pub owner: refbox::Weak<std::collections::BTreeMap<Vec<u8>, Box<session_group>>>,
     /// Membership observes globally owned sessions without retaining them.
     pub(crate) members: Vec<SessionWeak>,
 }
@@ -20,7 +18,6 @@ impl session_group {
     pub fn empty() -> Self {
         Self {
             name: Default::default(),
-            owner: refbox::Weak::new(),
             members: Default::default(),
         }
     }
@@ -28,5 +25,5 @@ impl session_group {
 
 #[repr(C)]
 pub struct session_groups {
-    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<Vec<u8>, Box<session_group>>>>,
+    pub storage: std::collections::BTreeMap<Vec<u8>, Box<session_group>>,
 }

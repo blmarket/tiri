@@ -14,7 +14,7 @@ fn node(name: &CStr) -> SessionRef {
 #[test]
 fn saved_name_survives_removal_of_current_successor_and_entire_index() {
     unsafe {
-        let mut head = sessions { storage: None };
+        let mut head = sessions::default();
         let first = node(c"a1");
         let second = node(c"a2");
         let last = node(c"b1");
@@ -25,7 +25,7 @@ fn saved_name_survives_removal_of_current_successor_and_entire_index() {
             .to_bytes()
             .to_vec();
         assert_eq!(
-            sessions_next(&*first.get())
+            sessions_next(&head, &*first.get())
                 .as_ref()
                 .map_or(std::ptr::null_mut(), |owner| owner.get()),
             &mut *second.get() as *mut _
@@ -48,7 +48,7 @@ fn saved_name_survives_removal_of_current_successor_and_entire_index() {
             .to_vec();
         sessions_remove(&mut head, &last);
         drop(last);
-        assert!(head.storage.is_none());
+        assert!(head.storage.is_empty());
         assert!(sessions_after(&head, &last_name).is_none());
 
         // Resuming reads the head afresh even after its previous map was freed.
@@ -68,7 +68,7 @@ fn saved_name_survives_removal_of_current_successor_and_entire_index() {
 fn previous_session_observer_requires_registration_without_retaining_session() {
     use std::rc::Rc;
     unsafe {
-        let mut head = sessions { storage: None };
+        let mut head = sessions::default();
         let previous = node(c"previous");
         let observer = Rc::downgrade(&previous);
         assert!(sessions_resolve(&head, &observer).is_none());
@@ -94,7 +94,7 @@ fn previous_session_observer_requires_registration_without_retaining_session() {
 fn duplicate_insertion_returns_retained_identity_and_wrong_owner_cannot_remove_it() {
     use std::rc::Rc;
     unsafe {
-        let mut head = sessions { storage: None };
+        let mut head = sessions::default();
         let original = node(c"same-name");
         let duplicate = node(c"same-name");
         let observer = Rc::downgrade(&original);
@@ -104,7 +104,7 @@ fn duplicate_insertion_returns_retained_identity_and_wrong_owner_cannot_remove_i
         assert!(sessions_remove(&mut head, &duplicate).is_none());
         let removed = sessions_remove(&mut head, &original).unwrap();
         assert!(Rc::ptr_eq(&removed, &original));
-        assert!(head.storage.is_none());
+        assert!(head.storage.is_empty());
         drop(removed);
         drop(original);
         assert!(

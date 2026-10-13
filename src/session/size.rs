@@ -12,7 +12,7 @@ pub(super) unsafe fn recalculate_size_state() {
     while let Some(owner) = cursor {
         (*owner.get()).attached = 0;
         status_update_cache(&mut *owner.get());
-        cursor = sessions_next(&*owner.get());
+        cursor = sessions_next(&sessions, &*owner.get());
     }
     let mut cursor = clients.first();
     while let Some(owner) = cursor {

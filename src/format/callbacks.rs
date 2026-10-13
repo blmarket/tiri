@@ -1330,7 +1330,7 @@ unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<C
         .window_handle()
         .expect("linked window")
         .clone();
-    sg = session_groups_minmax(&session_groups);
+    sg = session_groups_minmax();
     while !sg.is_null() {
         let group_members = crate::src::session::session_group_members(sg);
         s = group_members.first().cloned();

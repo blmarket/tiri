@@ -18,10 +18,10 @@ pub trait SessionIndex {
 
 impl SessionIndex for crate::src::shared::session::sessions {
     unsafe fn reset(&mut self) {
-        self.storage = None;
+        self.storage.clear();
     }
     fn has_entries(&self) -> bool {
-        self.storage.is_some()
+        !self.storage.is_empty()
     }
     fn first(&self) -> Option<SessionRef> {
         sessions_minmax(self)
@@ -99,7 +99,7 @@ pub trait Session {
 
     /// Registry liveness is distinct from retained allocation liveness.
     unsafe fn is_registered(&self) -> bool;
-    /// Advance in the live containing registry; destructive walks use sessions_after.
+    /// Advance in the session registry by name.
     unsafe fn next_session(&self) -> Option<SessionRef>;
     unsafe fn contains_window(&self, window: &WindowRef) -> bool;
     unsafe fn id(&self) -> u32;
@@ -249,7 +249,7 @@ impl Session for SessionRef {
         sessions_resolve(&sessions, &Rc::downgrade(self)).is_some()
     }
     unsafe fn next_session(&self) -> Option<SessionRef> {
-        sessions_next(&*self.get())
+        sessions_next(&sessions, &*self.get())
     }
     unsafe fn contains_window(&self, window: &WindowRef) -> bool {
         use crate::src::window::Window;

@@ -79,10 +79,6 @@ pub struct window_pane {
     pub(super) control_bg: ::core::ffi::c_int,
     pub(super) control_fg: ::core::ffi::c_int,
     pub(super) scrollbar_style: style,
-    /// Weak traversal handle into the containing index.
-    pub(super) owner: refbox::Weak<
-        std::collections::BTreeMap<u_int, std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
-    >,
 }
 impl Default for window_pane {
     fn default() -> Self {
@@ -153,7 +149,6 @@ impl Default for window_pane {
             control_bg: Default::default(),
             control_fg: Default::default(),
             scrollbar_style: Default::default(),
-            owner: Default::default(),
         }
     }
 }

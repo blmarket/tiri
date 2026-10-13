@@ -26,10 +26,12 @@ type KeyTableMap = std::collections::BTreeMap<Vec<u8>, std::rc::Rc<std::cell::Re
 
 #[repr(C)]
 pub struct key_tables {
-    pub storage: Option<refbox::RefBox<KeyTableMap>>,
+    pub storage: KeyTableMap,
 }
 
-static mut key_tables: key_tables = key_tables { storage: None };
+static mut key_tables: key_tables = key_tables {
+    storage: KeyTableMap::new(),
+};
 
 pub(crate) fn key_bindings_set_note(bd: &mut key_binding, note: Option<&CStr>) {
     bd.note = note.map(CStr::to_owned);
@@ -39,13 +41,8 @@ pub unsafe fn key_bindings_get_table(
     name: &CStr,
     create: i32,
 ) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
-    if let Some(index) = key_tables.storage.as_ref() {
-        let map = index
-            .try_borrow_mut()
-            .expect("key table index already borrowed");
-        if let Some(table) = map.get(name.to_bytes()) {
-            return Some(table.clone());
-        }
+    if let Some(table) = key_tables.storage.get(name.to_bytes()) {
+        return Some(table.clone());
     }
     if create == 0 {
         return None;
@@ -66,13 +63,7 @@ pub fn key_bindings_get_default(table: &key_table, key: key_code) -> Option<&key
 
 /// Retain the tables while callers borrow their bindings for listing.
 pub unsafe fn key_bindings_tables() -> Vec<std::rc::Rc<std::cell::RefCell<key_table>>> {
-    let Some(index) = key_tables.storage.as_ref() else {
-        return Vec::new();
-    };
-    let map = index
-        .try_borrow_mut()
-        .expect("key table index already borrowed");
-    map.values().cloned().collect()
+    key_tables.storage.values().cloned().collect()
 }
 
 pub unsafe fn key_bindings_add(
@@ -566,74 +557,37 @@ pub fn key_tables_find(
     head: &key_tables,
     elm: &key_table,
 ) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
-    let owner = head.storage.as_ref()?;
-    let map = owner
-        .try_borrow_mut()
-        .expect("key table index already borrowed");
-    map.get(elm.name.as_bytes()).cloned()
+    head.storage.get(elm.name.as_bytes()).cloned()
 }
 pub unsafe fn key_tables_insert(
     head: *mut key_tables,
     table: std::rc::Rc<std::cell::RefCell<key_table>>,
 ) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
     let key = table.borrow().name.as_bytes().to_vec();
-    let owner = (*head).storage.get_or_insert_with(refbox::RefBox::default);
-    let observer = owner.downgrade();
-    let mut map = owner
-        .try_borrow_mut()
-        .expect("key table index already borrowed");
-    if let Some(existing) = map.get(&key) {
-        return Some(existing.clone());
+    match (*head).storage.entry(key) {
+        std::collections::btree_map::Entry::Occupied(entry) => Some(entry.get().clone()),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(table);
+            None
+        }
     }
-    table.borrow_mut().owner = observer;
-    map.insert(key, table);
-    None
 }
 pub unsafe fn key_tables_remove(
     head: *mut key_tables,
     table: &std::rc::Rc<std::cell::RefCell<key_table>>,
 ) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
     let key = table.borrow().name.as_bytes().to_vec();
-    let owner = (*head).storage.as_ref()?;
-    let (detached, empty) = {
-        let mut map = owner
-            .try_borrow_mut()
-            .expect("key table index already borrowed");
-        if !map
-            .get(&key)
-            .is_some_and(|candidate| std::rc::Rc::ptr_eq(candidate, table))
-        {
-            return None;
-        }
-        let detached = map.remove(&key).expect("matching key table");
-        (detached, map.is_empty())
-    };
-    table.borrow_mut().owner = refbox::Weak::new();
-    if empty {
-        (*head).storage = None;
+    let map = &mut (*head).storage;
+    if !map
+        .get(&key)
+        .is_some_and(|candidate| std::rc::Rc::ptr_eq(candidate, table))
+    {
+        return None;
     }
-    Some(detached)
+    map.remove(&key)
 }
 pub fn key_tables_minmax(head: &key_tables) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
-    let owner = head.storage.as_ref()?;
-    let map = owner
-        .try_borrow_mut()
-        .expect("key table index already borrowed");
-    map.first_key_value().map(|(_, table)| table.clone())
-}
-pub fn key_tables_next(elm: &key_table) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
-    let owner = &elm.owner;
-    let map = match owner.try_borrow_mut() {
-        Ok(map) => map,
-        Err(refbox::BorrowError::Dropped) => return None,
-        Err(refbox::BorrowError::Borrowed) => panic!("key table index already borrowed"),
-    };
-    map.range::<[u8], _>((
-        std::ops::Bound::Excluded(elm.name.as_bytes()),
-        std::ops::Bound::Unbounded,
-    ))
-    .next()
-    .map(|(_, table)| table.clone())
+    head.storage.values().next().cloned()
 }
 
 #[cfg(test)]
@@ -657,7 +611,9 @@ mod ownership_tests {
     fn table_index_returns_owners_and_removes_only_matching_allocations() {
         use std::cell::RefCell;
         unsafe {
-            let mut index = key_tables { storage: None };
+            let mut index = key_tables {
+                storage: KeyTableMap::new(),
+            };
             let mut a = key_table::empty();
             a.name = c"a".to_owned();
             let a = Rc::new(RefCell::new(a));
@@ -676,18 +632,15 @@ mod ownership_tests {
             ));
             assert!(key_tables_remove(&mut index, &duplicate).is_none());
             assert!(Rc::ptr_eq(&key_tables_minmax(&index).unwrap(), &a));
-            assert!(Rc::ptr_eq(&key_tables_next(&a.borrow()).unwrap(), &b));
-            assert!(key_tables_next(&b.borrow()).is_none());
             let observed = Rc::downgrade(&a);
             let found = key_tables_find(&index, &duplicate.borrow()).unwrap();
             drop(key_tables_remove(&mut index, &a));
-            assert!(a.borrow().owner.is_empty());
             drop(a);
             assert!(observed.upgrade().is_some());
             drop(found);
             assert!(observed.upgrade().is_none());
             drop(key_tables_remove(&mut index, &b));
-            assert!(index.storage.is_none());
+            assert!(index.storage.is_empty());
         }
     }
 

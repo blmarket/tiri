@@ -11,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[derive(Default)]
 #[repr(C)]
 pub struct sessions {
-    pub(super) storage: Option<refbox::RefBox<std::collections::BTreeMap<Vec<u8>, SessionRef>>>,
+    pub(super) storage: std::collections::BTreeMap<Vec<u8>, SessionRef>,
 }
 
 #[repr(C)]
@@ -34,8 +34,6 @@ pub struct session {
     pub(super) attached: u_int,
     pub(super) tio: Option<Box<termios>>,
     pub(super) environ: Option<Box<environ>>,
-    /// Weak traversal handle into the containing index.
-    pub(super) owner: refbox::Weak<std::collections::BTreeMap<Vec<u8>, SessionRef>>,
 }
 
 impl session {
@@ -73,7 +71,6 @@ impl session {
             attached: Default::default(),
             tio: Default::default(),
             environ: Default::default(),
-            owner: refbox::Weak::new(),
         }
     }
 }

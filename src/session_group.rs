@@ -13,24 +13,24 @@ use crate::src::shared::session::{session_group, session_groups, SessionRef, Ses
 use std::ffi::CStr;
 use std::rc::Rc;
 
-pub static mut session_groups: session_groups = session_groups { storage: None };
+pub static mut session_groups: session_groups = session_groups {
+    storage: std::collections::BTreeMap::new(),
+};
 
-pub fn session_groups_find(head: &session_groups, elm: &session_group) -> *mut session_group {
-    let Some(owner) = head.storage.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = owner
-        .try_borrow_mut()
-        .expect("session group index already borrowed");
-    let key = elm.name.as_bytes();
-    map.get(key)
+unsafe fn session_groups_storage(
+) -> &'static mut std::collections::BTreeMap<Vec<u8>, Box<session_group>> {
+    &mut (*&raw mut session_groups).storage
+}
+
+pub unsafe fn session_groups_find(elm: &session_group) -> *mut session_group {
+    session_groups_storage()
+        .get(elm.name.as_bytes())
         .map_or(std::ptr::null_mut(), |owner| owner.node_ptr())
 }
 impl session_group {
     pub fn new(name: &std::ffi::CStr) -> Box<Self> {
         Box::new(session_group {
             name: name.to_owned(),
-            owner: refbox::Weak::new(),
             members: Vec::new(),
         })
     }
@@ -42,81 +42,48 @@ impl session_group {
 
 /// Consumes the new owner. On a duplicate name, the old node is returned and
 /// the incoming owner is dropped without entering the index.
-pub unsafe fn session_groups_insert(
-    head: *mut session_groups,
-    owner: Box<session_group>,
-) -> *mut session_group {
-    let key = owner.name.to_bytes();
-    let storage = (*head).storage.get_or_insert_with(refbox::RefBox::default);
-    let observer = storage.downgrade();
-    let mut map = storage
-        .try_borrow_mut()
-        .expect("session group index already borrowed");
-    match map.entry(key.to_vec()) {
-        std::collections::btree_map::Entry::Occupied(entry) => return entry.get().node_ptr(),
+pub unsafe fn session_groups_insert(owner: Box<session_group>) -> *mut session_group {
+    let key = owner.name.to_bytes().to_vec();
+    match session_groups_storage().entry(key) {
+        std::collections::btree_map::Entry::Occupied(entry) => entry.get().node_ptr(),
         std::collections::btree_map::Entry::Vacant(entry) => {
-            let elm = owner.node_ptr();
             entry.insert(owner);
-            (*elm).owner = observer;
+            std::ptr::null_mut()
         }
     }
-    std::ptr::null_mut()
 }
 /// Removes and drops the indexed owner. A same-name node outside the index is
 /// not adopted or removed.
-pub unsafe fn session_groups_remove(head: *mut session_groups, elm: *mut session_group) -> bool {
+pub unsafe fn session_groups_remove(elm: *mut session_group) -> bool {
     if elm.is_null() {
         return false;
     }
+    let map = session_groups_storage();
     let key = (*elm).name.as_bytes();
-    let Some(storage) = (*head).storage.as_ref() else {
+    if map.get(key).map(|owner| owner.node_ptr()) != Some(elm) {
         return false;
-    };
-    // End the map borrow before dropping the group and its name.
-    let (removed, empty) = {
-        let mut map = storage
-            .try_borrow_mut()
-            .expect("session group index already borrowed");
-        if map.get(key).map(|owner| owner.node_ptr()) != Some(elm) {
-            return false;
-        }
-        (*elm).owner = refbox::Weak::new();
-        (
-            map.remove(key).expect("indexed session group disappeared"),
-            map.is_empty(),
-        )
-    };
-    if empty {
-        (*head).storage = None;
     }
+    // Detach from the map before dropping the group and its name.
+    let removed = map.remove(key).expect("indexed session group disappeared");
     drop(removed);
     true
 }
-pub fn session_groups_minmax(head: &session_groups) -> *mut session_group {
-    let Some(storage) = head.storage.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    let map = storage
-        .try_borrow_mut()
-        .expect("session group index already borrowed");
-    let pair = map.first_key_value();
-    pair.map_or(std::ptr::null_mut(), |(_, owner)| owner.node_ptr())
+pub unsafe fn session_groups_minmax() -> *mut session_group {
+    session_groups_storage()
+        .values()
+        .next()
+        .map_or(std::ptr::null_mut(), |owner| owner.node_ptr())
 }
 pub unsafe fn session_groups_next(elm: &session_group) -> *mut session_group {
-    let owner = &elm.owner;
-    let map = match owner.try_borrow_mut() {
-        Ok(map) => map,
-        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
-        Err(refbox::BorrowError::Borrowed) => panic!("session group index already borrowed"),
-    };
     let key = elm.name.as_bytes();
-    map.range::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
+    session_groups_storage()
+        .range::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
         .next()
         .map_or(std::ptr::null_mut(), |(_, owner)| owner.node_ptr())
 }
 /// Membership compares nonowning identities without projecting Session storage.
 pub unsafe fn session_group_for(target: &SessionWeak) -> *mut session_group {
-    let mut group = session_groups_minmax(&session_groups);
+    let mut group = session_groups_minmax();
     while let Some(value) = group.as_ref() {
         if value.members.iter().any(|member| member.ptr_eq(target)) {
             return group;
@@ -131,7 +98,7 @@ pub unsafe fn session_group_find(name: &CStr) -> *mut session_group {
         name: name.to_owned(),
         ..session_group::empty()
     };
-    session_groups_find(&session_groups, &key)
+    session_groups_find(&key)
 }
 
 pub unsafe fn session_group_new(name: &CStr) -> *mut session_group {
@@ -141,7 +108,7 @@ pub unsafe fn session_group_new(name: &CStr) -> *mut session_group {
     }
     let owner = session_group::new(name);
     let group = owner.node_ptr();
-    assert!(session_groups_insert(&raw mut session_groups, owner).is_null());
+    assert!(session_groups_insert(owner).is_null());
     group
 }
 
@@ -188,7 +155,7 @@ pub(crate) unsafe fn session_group_remove(owner: &SessionRef) {
         .expect("session group membership disappeared");
     members.remove(index);
     if members.is_empty() {
-        assert!(session_groups_remove(&raw mut session_groups, group));
+        assert!(session_groups_remove(group));
     }
 }
 

@@ -528,11 +528,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     }
 
     unsafe fn all_panes() -> Vec<Self> {
-        let Some(index) = all_window_panes.storage.as_ref() else {
-            return Vec::new();
-        };
-        let panes = index.try_borrow_mut().expect("pane registry unborrowed");
-        panes.values().cloned().collect()
+        all_window_panes.storage.values().cloned().collect()
     }
 
     unsafe fn scrollbar_visible(&self) -> bool {
@@ -1459,7 +1455,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         )
     }
     unsafe fn reset_registry() {
-        all_window_panes.storage = None;
+        all_window_panes.storage.clear();
     }
     unsafe fn notify_moved(
         &self,

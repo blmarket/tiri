@@ -39,8 +39,8 @@ use crate::src::window::Window as _;
 
 use crate::src::server_client::Client as _;
 use crate::src::server_fn::server_status_client;
-use crate::src::session::{session_groups, sessions, Session};
 use crate::src::session::{session_groups_minmax, session_groups_next};
+use crate::src::session::{sessions, Session};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::session_group;
 use crate::src::shared::session::SessionRef;

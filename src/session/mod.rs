@@ -60,7 +60,9 @@ use size::status_update_cache;
 use sort::sort_get_sessions;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
-pub static mut sessions: sessions = sessions { storage: None };
+pub static mut sessions: sessions = sessions {
+    storage: std::collections::BTreeMap::new(),
+};
 static mut next_session_id: u_int = 0;
 
 /// `session.cwd` borrows this value until replacement or early destruction.
@@ -76,102 +78,57 @@ fn sessions_key(elm: &session) -> Vec<u8> {
     elm.name.as_bytes().to_vec()
 }
 fn sessions_find(head: &sessions, elm: &session) -> Option<SessionRef> {
-    let owner = head.storage.as_ref()?;
-    let map = owner
-        .try_borrow_mut()
-        .expect("session index already borrowed");
-    map.get(elm.name.as_bytes()).cloned()
+    head.storage.get(elm.name.as_bytes()).cloned()
 }
 unsafe fn sessions_insert(head: &mut sessions, session: SessionRef) -> Option<SessionRef> {
-    let elm = session.get();
-    let key = (*elm).name.as_bytes();
-    let owner = head.storage.get_or_insert_with(refbox::RefBox::default);
-    let observer = owner.downgrade();
-    let mut map = owner
-        .try_borrow_mut()
-        .expect("session index already borrowed");
-    match map.entry(key.to_vec()) {
+    let key = (*session.get()).name.as_bytes().to_vec();
+    match head.storage.entry(key) {
         std::collections::btree_map::Entry::Occupied(entry) => Some(entry.get().clone()),
         std::collections::btree_map::Entry::Vacant(entry) => {
             entry.insert(session);
-            (*elm).owner = observer;
             None
         }
     }
 }
 unsafe fn sessions_remove(head: &mut sessions, elm: &SessionRef) -> Option<SessionRef> {
     let key = (*elm.get()).name.as_bytes();
-    let owner = head.storage.as_ref()?;
-    let (session, empty) = {
-        let mut map = owner
-            .try_borrow_mut()
-            .expect("session index already borrowed");
-        if !map
-            .get(key)
-            .is_some_and(|candidate| Rc::ptr_eq(candidate, elm))
-        {
-            return None;
-        }
-        (map.remove(key).expect("matching session"), map.is_empty())
-    };
-    (*session.get()).owner = refbox::Weak::new();
-    if empty {
-        head.storage = None;
+    if !head
+        .storage
+        .get(key)
+        .is_some_and(|candidate| Rc::ptr_eq(candidate, elm))
+    {
+        return None;
     }
-    Some(session)
+    head.storage.remove(key)
 }
 fn sessions_minmax(head: &sessions) -> Option<SessionRef> {
-    let owner = head.storage.as_ref()?;
-    let map = owner
-        .try_borrow_mut()
-        .expect("session index already borrowed");
-    let pair = map.first_key_value();
-    pair.map(|(_, node)| Rc::clone(node))
+    head.storage.values().next().cloned()
 }
 /// Resume a potentially destructive walk using a saved name and the live index.
 /// The named session and any of its successors may already have been removed.
 fn sessions_after(head: &sessions, name: &[u8]) -> Option<SessionRef> {
-    let owner = head.storage.as_ref()?;
-    let map = owner
-        .try_borrow_mut()
-        .expect("session index already borrowed");
-    map.range::<[u8], _>((std::ops::Bound::Excluded(name), std::ops::Bound::Unbounded))
+    head.storage
+        .range::<[u8], _>((std::ops::Bound::Excluded(name), std::ops::Bound::Unbounded))
         .next()
         .map(|(_, node)| Rc::clone(node))
 }
 
-/// The session must still belong to its index. Destructive walks use sessions_after.
-unsafe fn sessions_next(elm: &session) -> Option<SessionRef> {
-    let owner = &elm.owner;
-    let map = match owner.try_borrow_mut() {
-        Ok(map) => map,
-        Err(refbox::BorrowError::Dropped) => return None,
-        Err(refbox::BorrowError::Borrowed) => panic!("session index already borrowed"),
-    };
-    let key = elm.name.as_bytes();
-    map.range::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
-        .next()
-        .map(|(_, node)| Rc::clone(node))
+/// Successor of `elm` by name; `elm` itself need not still be indexed.
+fn sessions_next(head: &sessions, elm: &session) -> Option<SessionRef> {
+    sessions_after(head, elm.name.as_bytes())
 }
 /// Resolve an observer only while its session remains in this index.
 /// A removed session can still be retained by queued events or other owners.
 fn sessions_resolve(head: &sessions, observer: &SessionWeak) -> Option<SessionRef> {
     let owner = observer.upgrade()?;
-    let index = head.storage.as_ref()?;
-    let map = index
-        .try_borrow_mut()
-        .expect("session index already borrowed");
-    map.values()
+    head.storage
+        .values()
         .any(|candidate| Rc::ptr_eq(candidate, &owner))
         .then_some(owner)
 }
 
 unsafe fn session_find(name: &CStr) -> Option<SessionRef> {
-    let index = sessions.storage.as_ref()?;
-    let map = index
-        .try_borrow_mut()
-        .expect("session index already borrowed");
-    map.get(name.to_bytes()).cloned()
+    sessions.storage.get(name.to_bytes()).cloned()
 }
 unsafe fn session_find_by_id_str(s: &CStr) -> Option<SessionRef> {
     let mut id: u_int = 0;
@@ -199,7 +156,7 @@ unsafe fn session_find_by_id(mut id: u_int) -> Option<SessionRef> {
         if (*s).id == id {
             return s_owner;
         }
-        s_owner = sessions_next(&*s);
+        s_owner = sessions_next(&sessions, &*s);
         s = s_owner
             .as_ref()
             .map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -806,7 +763,6 @@ unsafe fn session_update_history(session: &session) {
 #[cfg(test)]
 mod session_index_tests {
     use super::*;
-    use crate::src::shared::session::session_groups;
 
     #[test]
     fn current_winlink_observer_expires_when_index_removes_it() {
@@ -821,38 +777,6 @@ mod session_index_tests {
             assert!(!session.curw.is_empty());
             session.set_curw(refbox::Weak::new());
             assert!(session.curw.is_empty());
-        }
-    }
-
-    #[test]
-    fn session_group_index_drops_nodes_after_releasing_the_map_borrow() {
-        unsafe {
-            let mut head = session_groups { storage: None };
-            let mut other = session_groups { storage: None };
-            let first_owner = session_group::new(c"alpha");
-            let first = first_owner.node_ptr();
-            let second_owner = session_group::new(c"beta");
-            let second = second_owner.node_ptr();
-            assert!(session_groups_insert(&mut head, first_owner).is_null());
-            assert!(session_groups_insert(&mut head, second_owner).is_null());
-
-            let index_observer = (*second).owner.clone();
-            let duplicate = session_group::new(c"alpha");
-            assert_eq!(session_groups_insert(&mut head, duplicate), first);
-            assert!(!(*second).owner.is_empty());
-            assert!(!session_groups_remove(&mut other, second));
-            assert!(!(*second).owner.is_empty());
-
-            let mut moved = head;
-            assert_eq!(session_groups_next(&*first), second);
-            assert!(session_groups_remove(&mut moved, first));
-            assert!(index_observer.try_borrow_mut().is_ok());
-            assert!(session_groups_remove(&mut moved, second));
-            drop(moved);
-            assert!(matches!(
-                index_observer.try_borrow_mut(),
-                Err(refbox::BorrowError::Dropped)
-            ));
         }
     }
 }

@@ -155,7 +155,9 @@ impl Drop for window_pane_input_data {
 
 pub const FIONREAD: ::core::ffi::c_int = 0x541b as ::core::ffi::c_int;
 
-static mut all_window_panes: window_pane_tree = window_pane_tree { storage: None };
+static mut all_window_panes: window_pane_tree = window_pane_tree {
+    storage: std::collections::BTreeMap::new(),
+};
 
 static mut next_window_pane_id: u_int = 0;
 
@@ -165,23 +167,17 @@ fn window_pane_tree_find(
     head: &window_pane_tree,
     id: u_int,
 ) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    let index = head.storage.as_ref()?;
-    let map = index.try_borrow_mut().expect("pane index already borrowed");
-    map.get(&id).cloned()
+    head.storage.get(&id).cloned()
 }
 
 unsafe fn window_pane_tree_insert(
     head: &mut window_pane_tree,
     pane: Rc<std::cell::UnsafeCell<window_pane>>,
 ) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    let node = &mut *pane.get();
-    let index = head.storage.get_or_insert_with(refbox::RefBox::default);
-    let observer = index.downgrade();
-    let mut map = index.try_borrow_mut().expect("pane index already borrowed");
-    match map.entry(node.id) {
+    let id = (*pane.get()).id;
+    match head.storage.entry(id) {
         std::collections::btree_map::Entry::Occupied(entry) => Some(entry.get().clone()),
         std::collections::btree_map::Entry::Vacant(entry) => {
-            node.owner = observer;
             entry.insert(pane);
             None
         }
@@ -192,46 +188,21 @@ unsafe fn window_pane_tree_remove(
     head: &mut window_pane_tree,
     pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
 ) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    let pane = &mut *pane_owner.get();
-    let index = head.storage.as_ref()?;
-    let (owner, empty) = {
-        let mut map = index.try_borrow_mut().expect("pane index already borrowed");
-        if !map
-            .get(&pane.id)
-            .is_some_and(|owner| Rc::ptr_eq(owner, pane_owner))
-        {
-            return None;
-        }
-        (map.remove(&pane.id).expect("matching pane"), map.is_empty())
-    };
-    pane.owner = refbox::Weak::new();
-    if empty {
-        head.storage = None;
+    let id = (*pane_owner.get()).id;
+    if !head
+        .storage
+        .get(&id)
+        .is_some_and(|owner| Rc::ptr_eq(owner, pane_owner))
+    {
+        return None;
     }
-    Some(owner)
+    head.storage.remove(&id)
 }
 
 fn window_pane_tree_minmax(
     head: &window_pane_tree,
 ) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    let index = head.storage.as_ref()?;
-    let map = index.try_borrow_mut().expect("pane index already borrowed");
-    map.first_key_value().map(|(_, owner)| owner.clone())
-}
-
-fn window_pane_tree_next(pane: &window_pane) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    let index = &pane.owner;
-    let map = match index.try_borrow_mut() {
-        Ok(map) => map,
-        Err(refbox::BorrowError::Dropped) => return None,
-        Err(refbox::BorrowError::Borrowed) => panic!("pane index already borrowed"),
-    };
-    map.range((
-        std::ops::Bound::Excluded(&pane.id),
-        std::ops::Bound::Unbounded,
-    ))
-    .next()
-    .map(|(_, owner)| owner.clone())
+    head.storage.values().next().cloned()
 }
 
 unsafe fn window_fire_pane_moved(

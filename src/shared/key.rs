@@ -1504,10 +1504,6 @@ pub struct key_table {
     pub activity_time: SystemTime,
     pub key_bindings: key_bindings,
     pub default_key_bindings: key_bindings,
-    /// Weak traversal handle into the containing index.
-    pub owner: refbox::Weak<
-        std::collections::BTreeMap<Vec<u8>, std::rc::Rc<std::cell::RefCell<key_table>>>,
-    >,
 }
 
 impl key_table {
@@ -1525,7 +1521,6 @@ impl key_table {
             activity_time: UNIX_EPOCH,
             key_bindings: key_bindings::default(),
             default_key_bindings: key_bindings::default(),
-            owner: refbox::Weak::new(),
         }
     }
 }

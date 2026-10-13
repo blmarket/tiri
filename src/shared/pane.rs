@@ -234,11 +234,7 @@ pub type window_pane_history = VecDeque<std::rc::Weak<std::cell::UnsafeCell<wind
 #[repr(C)]
 pub struct window_pane_tree {
     /// The global pane index owns both its map and the Rc pane records.
-    pub storage: Option<
-        refbox::RefBox<
-            std::collections::BTreeMap<u_int, std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
-        >,
-    >,
+    pub storage: std::collections::BTreeMap<u_int, std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
 }
 
 pub fn pane_history_first(history: &window_pane_history) -> Option<Rc<UnsafeCell<window_pane>>> {

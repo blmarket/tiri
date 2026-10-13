@@ -5,7 +5,7 @@ use std::ffi::CString;
 fn named_group_owns_borrowed_name_and_reuses_stable_allocation() {
     unsafe {
         let head = &raw mut session_groups;
-        assert!((*head).storage.is_none());
+        assert!((*head).storage.is_empty());
         let borrowed_name = CString::new(b"gr\xffup".to_vec()).unwrap();
         let first = session_group_new(&borrowed_name);
         drop(borrowed_name);
@@ -14,7 +14,7 @@ fn named_group_owns_borrowed_name_and_reuses_stable_allocation() {
         assert_eq!(session_group_find(c"gr\xffup"), first);
         assert!(session_group_find(c"missing").is_null());
         assert!(session_group_members(first).is_empty());
-        assert!(session_groups_remove(head, first));
-        assert!((*head).storage.is_none());
+        assert!(session_groups_remove(first));
+        assert!((*head).storage.is_empty());
     }
 }
