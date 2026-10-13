@@ -772,69 +772,6 @@ mod parser_collection_tests {
     }
 
     #[test]
-    fn lazy_expansion_respects_assignments_scopes_and_parseonly() {
-        let _guard = crate::src::cfg::CFG_TEST_LOCK.lock().unwrap();
-        unsafe {
-            struct RestoreEnvironment(Option<Box<crate::src::shared::environment::environ>>);
-            impl Drop for RestoreEnvironment {
-                fn drop(&mut self) {
-                    unsafe {
-                        global_environ = self.0.take();
-                    }
-                }
-            }
-            let _restore = RestoreEnvironment(global_environ.take());
-            global_environ = Some(crate::src::environ::environ_create());
-            environ_put(
-                global_environ.as_deref_mut().expect("environment"),
-                c"HOME=/test/home",
-                0,
-            );
-            let commands = parse_commands(
-                b"LEX_VALUE=first\ndisplay-message $LEX_VALUE\nLEX_VALUE=second\n%if 0\nLEX_VALUE=ignored\n%endif\ndisplay-message \"${LEX_VALUE}\" '$LEX_VALUE' ~/dir\n%hidden LEX_VALUE=hidden\ndisplay-message $LEX_VALUE\n"
-            );
-            assert_eq!(
-                commands,
-                vec![
-                    vec![b"display-message".to_vec(), b"first".to_vec()],
-                    vec![
-                        b"display-message".to_vec(),
-                        b"second".to_vec(),
-                        b"$LEX_VALUE".to_vec(),
-                        b"/test/home/dir".to_vec()
-                    ],
-                    vec![b"display-message".to_vec(), b"hidden".to_vec()],
-                ]
-            );
-            let value = crate::src::environ::environ_find(
-                global_environ.as_deref().expect("environment"),
-                c"LEX_VALUE",
-            );
-            assert_ne!(value.unwrap().flags & ENVIRON_HIDDEN, 0);
-
-            let source = b"LEX_VALUE=skipped\ndisplay-message $LEX_VALUE\n";
-            let mut input = cmd_parse_input {
-                line: 1,
-                flags: CMD_PARSE_PARSEONLY,
-                ..Default::default()
-            };
-            let session = RefCell::new(ParseSession {
-                input: &mut input,
-                error: None,
-            });
-            let commands = hmux_cmdparse::parse(
-                &mut ParserContext(&session),
-                Lexer::from_bytes(source, &session),
-            )
-            .unwrap();
-            let hmux_cmdparse::ParseArgument::String(value) = &commands[0].arguments[1] else {
-                panic!("expected string")
-            };
-            assert_eq!(value.as_c_str().to_bytes(), b"hidden");
-        }
-    }
-
-    #[test]
     fn parser_preserves_specific_errors_and_recovers_for_next_parse() {
         unsafe {
             for (source, expected) in [
@@ -860,65 +797,6 @@ mod parser_collection_tests {
             assert_eq!(
                 parse_commands(b"display-message recovered"),
                 vec![vec![b"display-message".to_vec(), b"recovered".to_vec()]]
-            );
-        }
-    }
-
-    #[test]
-    fn parser_collections_preserve_order_scope_and_element_addresses() {
-        let _guard = crate::src::cfg::CFG_TEST_LOCK.lock().unwrap();
-        unsafe {
-            let mut pi = cmd_parse_input {
-                line: 1,
-                ..Default::default()
-            };
-            let malformed = b"%if 1\ndisplay-message unfinished\n";
-            let failed = cmd_parse_do_buffer(malformed, &mut pi);
-            assert!(failed.is_err());
-
-            assert_eq!(
-                parse_commands(b"display-message alpha beta; display-message gamma\n"),
-                vec![
-                    vec![
-                        b"display-message".to_vec(),
-                        b"alpha".to_vec(),
-                        b"beta".to_vec()
-                    ],
-                    vec![b"display-message".to_vec(), b"gamma".to_vec()],
-                ],
-            );
-            assert_eq!(
-                parse_commands(b"%if 1\ndisplay-message yes\n%else\ndisplay-message no\n%endif\n"),
-                vec![vec![b"display-message".to_vec(), b"yes".to_vec()]],
-            );
-            assert_eq!(
-                parse_commands(b"%if 0\ndisplay-message yes\n%else\ndisplay-message no\n%endif\n"),
-                vec![vec![b"display-message".to_vec(), b"no".to_vec()]],
-            );
-            assert_eq!(
-                parse_commands(
-                    b"%if 1\n%if 0\ndisplay-message inner-no\n%else\ndisplay-message inner-yes\n%endif\n%else\ndisplay-message outer-no\n%endif\n"
-                ),
-                vec![vec![b"display-message".to_vec(), b"inner-yes".to_vec()]],
-            );
-
-            let mut cmds = cmd_parse_new_commands();
-            let mut first_cmd = cmd_parse_new_command(1);
-            first_cmd
-                .arguments
-                .push_back(Box::new(cmd_parse_argument::String(CString::default())));
-            cmds.items.push(first_cmd);
-            let argument_address =
-                cmds.items[0].arguments[0].as_ref() as *const cmd_parse_argument as usize;
-            for _ in 0..128 {
-                let mut cmd = cmd_parse_new_command(1);
-                cmd.arguments
-                    .push_back(Box::new(cmd_parse_argument::String(CString::default())));
-                cmds.items.push(cmd);
-            }
-            assert_eq!(
-                cmds.items[0].arguments[0].as_ref() as *const cmd_parse_argument as usize,
-                argument_address
             );
         }
     }

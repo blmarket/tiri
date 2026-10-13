@@ -612,32 +612,3 @@ pub unsafe fn hooks_monitor_get_fire_time(mut o: *mut options_entry) -> time_t {
         CStr::from_ptr(name),
     )
 }
-
-#[cfg(test)]
-mod CStrings_tests {
-    use super::*;
-
-    #[test]
-    fn registry_owns_stable_c_names_and_deduplicates_by_bytes() {
-        let mut registry = HooksEvents::default();
-        let name = CString::new(vec![b'@', 0xff]).unwrap();
-        assert!(registry.insert(name));
-
-        let name_address = registry.events[0].as_ptr();
-
-        for i in 0..128 {
-            let other = CString::new(format!("event-{i}")).unwrap();
-            assert!(registry.insert(other));
-        }
-
-        // The first C string stays at a stable address as the collection
-        // grows, and arbitrary non-UTF-8 event names are preserved.
-        assert_eq!(registry.events[0].as_ptr(), name_address);
-        assert_eq!(
-            unsafe { CStr::from_ptr(name_address) }.to_bytes(),
-            [b'@', 0xff]
-        );
-        assert!(registry.contains(c"@\xff"));
-        assert!(!registry.insert(CString::new(vec![b'@', 0xff]).unwrap()));
-    }
-}

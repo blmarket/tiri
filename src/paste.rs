@@ -11,8 +11,6 @@ use crate::src::tmux::{clean_name_cstring, global_options};
 use refbox::RefBox;
 use std::cell::RefCell;
 use std::ffi::{CStr, CString};
-#[cfg(test)]
-use std::rc::Rc;
 
 fn paste_name_cause(cause: Option<&mut Option<CString>>, prefix: &[u8], name: &CStr) {
     let Some(cause) = cause else {
@@ -460,7 +458,7 @@ pub(crate) unsafe fn paste_make_sample_cstring(pb: &paste_buffer) -> CString {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::ffi::CString;
+    use std::{ffi::CString, rc::Rc};
 
     #[test]
     fn invalid_names_return_owned_diagnostics() {

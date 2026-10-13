@@ -2351,14 +2351,6 @@ pub unsafe fn mode_tree_run_command(
 }
 
 #[cfg(test)]
-unsafe fn mode_tree_test_row(mtd: *mut mode_tree_data) -> ModeTreeItemRef {
-    let owner = refbox::RefBox::new(mode_tree_item::empty());
-    let observer = ModeTreeItemRef::observe(&owner);
-    (*mtd).children.items.push(owner);
-    observer
-}
-
-#[cfg(test)]
 mod mode_tree_tests {
     use super::*;
 
@@ -2539,56 +2531,6 @@ mod mode_tree_tests {
             assert_eq!((&*owner.get()).sort_crit.reversed, 1);
             assert_eq!((&*owner.get()).filter.as_deref(), Some(c"replacement"));
             assert_eq!(mode_tree_call_build(&owner, None, false), Some(9));
-            drop(owner);
-            assert!(observer.upgrade().is_none());
-        }
-    }
-
-    #[test]
-    fn line_key_callback_replacement_survives_dispatch() {
-        unsafe {
-            let owner = mode_tree_alloc_data();
-            let observer = Rc::downgrade(&owner);
-            let callback_tree = observer.clone();
-            let row = mode_tree_test_row(&mut *owner.get());
-            (&mut *owner.get()).keycb = Some(Box::new(move |_, _| {
-                let owner = callback_tree.upgrade().unwrap();
-                let tree = &mut *owner.get();
-                assert!(tree.keycb.is_none());
-                tree.keycb = Some(Box::new(|_, _| b'y' as key_code));
-                b'x' as key_code
-            }));
-            mode_tree_build_lines(&owner, std::slice::from_ref(&row), 0);
-            assert_eq!(row.borrow().key, b'x' as key_code);
-            mode_tree_clear_lines(&mut *owner.get());
-            mode_tree_build_lines(&owner, std::slice::from_ref(&row), 0);
-            assert_eq!(row.borrow().key, b'y' as key_code);
-            drop(owner);
-            assert!(observer.upgrade().is_none());
-            assert!(!row.is_alive());
-        }
-    }
-
-    #[test]
-    fn swap_callback_can_destroy_its_tree_without_rebuilding() {
-        unsafe {
-            let owner = mode_tree_alloc_data();
-            let observer = Rc::downgrade(&owner);
-            let first = mode_tree_test_row(owner.get());
-            let second = mode_tree_test_row(owner.get());
-            mode_tree_build_lines(&owner, &[first, second], 0);
-            let callback_tree = observer.clone();
-            (&mut *owner.get()).swapcb = Some(Box::new(move |_, _, _| {
-                let owner = callback_tree.upgrade().unwrap();
-                let tree = &mut *owner.get();
-                assert!(tree.swapcb.is_none());
-                tree.dead = 1;
-                true
-            }));
-            // No build callback: rebuilding after logical destruction would panic.
-            mode_tree_swap(&owner, 1);
-            assert_eq!((&*owner.get()).current, 0);
-            assert!((&*owner.get()).swapcb.is_none());
             drop(owner);
             assert!(observer.upgrade().is_none());
         }

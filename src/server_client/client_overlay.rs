@@ -9,8 +9,6 @@ use crate::src::shared::client::{
 
 enum OverlayData {
     Popup(refbox::RefBox<PopupState>),
-    #[cfg(test)]
-    CallbackOnly,
 }
 
 /// One installed overlay owns its callbacks and its concrete payload together.
@@ -45,31 +43,9 @@ impl Overlay {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn callbacks(
-        check: overlay_check_cb,
-        mode: overlay_mode_cb,
-        draw: overlay_draw_cb,
-        key: overlay_key_cb,
-        free: overlay_free_cb,
-        resize: overlay_resize_cb,
-    ) -> Self {
-        Self {
-            check,
-            mode,
-            draw,
-            key,
-            free,
-            resize,
-            data: OverlayData::CallbackOnly,
-        }
-    }
-
     pub(super) fn popup_handle(&self) -> Option<PopupHandle> {
         match &self.data {
             OverlayData::Popup(owner) => Some(PopupHandle::new(owner.downgrade())),
-            #[cfg(test)]
-            OverlayData::CallbackOnly => None,
         }
     }
 

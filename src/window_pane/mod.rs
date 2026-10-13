@@ -532,26 +532,6 @@ unsafe fn window_pane_upgrade(
     Some(owner)
 }
 
-#[cfg(test)]
-unsafe fn window_pane_mode_next(
-    wme: refbox::Weak<window_mode_entry>,
-) -> refbox::Weak<window_mode_entry> {
-    if !wme.is_alive() {
-        return refbox::Weak::new();
-    }
-    let Some(pane_owner) = wme.get_unchecked().wp.upgrade() else {
-        return refbox::Weak::new();
-    };
-    let storage = &(*pane_owner.get()).modes;
-    let Some(index) = storage.iter().position(|entry| wme.is(entry)) else {
-        return refbox::Weak::new();
-    };
-    index
-        .checked_sub(1)
-        .and_then(|below| storage.get(below))
-        .map_or(refbox::Weak::new(), |entry| entry.downgrade())
-}
-
 /// Resolve a live mode entry against its pane-owned stack before observing it.
 unsafe fn window_pane_mode_weak(
     wme: refbox::Weak<window_mode_entry>,

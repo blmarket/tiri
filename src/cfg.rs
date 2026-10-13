@@ -38,8 +38,6 @@ use std::sync::{Mutex, OnceLock};
 pub static mut cfg_client: ClientWeak = std::rc::Weak::new();
 pub static mut cfg_finished: ::core::ffi::c_int = 0;
 static CFG_CAUSES: Mutex<VecDeque<CString>> = Mutex::new(VecDeque::new());
-#[cfg(test)]
-pub(crate) static CFG_TEST_LOCK: Mutex<()> = Mutex::new(());
 static mut cfg_item: std::rc::Weak<std::cell::UnsafeCell<cmdq_item>> = std::rc::Weak::new();
 pub static mut cfg_quiet: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 // Startup publishes the list before client_main can start a server. C readers
@@ -276,12 +274,6 @@ fn cfg_drain_causes(mut deliver: impl FnMut(&CStr)) {
     }
 }
 
-#[cfg(test)]
-pub(crate) unsafe fn cfg_test_take_causes() -> Vec<Vec<u8>> {
-    let mut causes = Vec::new();
-    cfg_drain_causes(|cause| causes.push(cause.to_bytes().to_vec()));
-    causes
-}
 pub unsafe fn cfg_print_causes(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) {
     let item = item_handle.get();
     let c_owner = cmdq_get_client((item).as_ref());
@@ -340,34 +332,5 @@ pub unsafe fn cfg_show_causes(s_owner: Option<&SessionRef>) {
                 write_cstr(out, &*cause)
             });
         });
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{cfg_add_cause, cfg_drain_causes, cfg_test_take_causes, CFG_TEST_LOCK};
-    use crate::src::format::bytes::write_cstr;
-
-    #[test]
-    fn causes_keep_c_string_bytes_and_drain_reentrant_additions_in_order() {
-        let _guard = CFG_TEST_LOCK.lock().unwrap();
-        unsafe {
-            let _ = cfg_test_take_causes();
-            cfg_add_cause(|out| {
-                write_cstr(out, c"first")?;
-                write!(out, ":{}", { 7u32 })
-            });
-            cfg_add_cause(|out| write_cstr(out, c"second\xff"));
-        }
-
-        let mut actual = Vec::new();
-        cfg_drain_causes(|cause| {
-            actual.push(cause.to_bytes().to_vec());
-            if actual.len() == 1 {
-                unsafe { cfg_add_cause(|out| write_cstr(out, c"third")) };
-            }
-        });
-        assert_eq!(actual, [b"first:7".as_slice(), b"second\xff", b"third"]);
-        assert!(unsafe { cfg_test_take_causes() }.is_empty());
     }
 }

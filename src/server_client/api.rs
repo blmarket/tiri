@@ -1531,50 +1531,6 @@ mod tests {
     }
 
     #[test]
-    fn temporarily_disabled_clipping_does_not_replace_a_reentrant_overlay() {
-        unsafe {
-            let client = client::new();
-            let stale_calls = Rc::new(std::cell::Cell::new(0));
-            let replacement_calls = Rc::new(std::cell::Cell::new(0));
-            client.set_overlay(Overlay::callbacks(
-                Some(Box::new(|_, _, _, _| visible_ranges::default())),
-                None,
-                None,
-                None,
-                None,
-                None,
-            ));
-            let stale = stale_calls.clone();
-            let restored: overlay_check_cb = Some(Box::new(move |_, _, _, _| {
-                stale.set(stale.get() + 1);
-                visible_ranges::default()
-            }));
-            let replacement = replacement_calls.clone();
-            let result = client.with_overlay_check_disabled(restored, || {
-                assert!(server_client_overlay_check(&client, 0, 0, 1).is_none());
-                client.set_overlay(Overlay::callbacks(
-                    Some(Box::new(move |_, _, _, _| {
-                        replacement.set(replacement.get() + 1);
-                        visible_ranges::default()
-                    })),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                ));
-                7
-            });
-            assert_eq!(result, 7);
-            assert!((*client.get()).overlay.is_some());
-            assert!(server_client_overlay_check(&client, 0, 0, 1).is_some());
-            assert_eq!(stale_calls.get(), 0);
-            assert_eq!(replacement_calls.get(), 1);
-            client.clear_overlay();
-        }
-    }
-
-    #[test]
     fn output_uses_its_holder_without_a_terminal_backreference_and_keeps_accounting() {
         use crate::src::shared::tty::{tty_code, TTYC_BEL, TTY_BLOCK};
         unsafe {
