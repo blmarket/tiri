@@ -72,7 +72,7 @@ pub fn json_find<'a>(node: &'a json_node, key: &CStr) -> Option<&'a json_node> {
     let JsonValue::Object(fields) = &node.value else {
         return None;
     };
-    fields.entries.get(key.to_bytes()).map(Box::as_ref)
+    fields.entries.get(key).map(Box::as_ref)
 }
 
 pub fn json_array_members(node: &json_node) -> Option<&[json_node]> {
@@ -347,7 +347,7 @@ fn json_parse_object(
         let JsonValue::Object(fields) = &mut object.value else {
             unreachable!()
         };
-        fields.entries.insert(key.to_bytes().to_vec(), field);
+        fields.entries.insert(key, field);
         if tokens[0].type_0 == TOK_COMMA {
             if tokens[1].type_0 == TOK_CLOSEOBJECT {
                 pctx.error(c"invalid object", &tokens[0]);
@@ -479,7 +479,7 @@ fn json_string_append(buffer: &mut SegmentedBuf, node: &json_node) {
                     buffer.put_slice(b",");
                 }
                 buffer.put_slice(b"\"");
-                buffer.put_slice(key);
+                buffer.put_slice(key.to_bytes());
                 buffer.put_slice(b"\":");
                 json_string_append(buffer, field);
             }

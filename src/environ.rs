@@ -26,7 +26,7 @@ impl Drop for ProcessEnvironmentSeed {
 
 impl environ {
     pub fn find(&self, name: &CStr) -> Option<&environ_entry> {
-        self.entries.get(name.to_bytes()).map(Box::as_ref)
+        self.entries.get(name).map(Box::as_ref)
     }
 
     pub fn find_bytes(&self, name: &[u8]) -> Result<Option<&environ_entry>, NulError> {
@@ -40,12 +40,12 @@ impl environ {
 
     pub fn set_cstr(&mut self, name: &CStr, flags: ::core::ffi::c_int, value: &CStr) {
         let value = value.to_owned();
-        if let Some(entry) = self.entries.get_mut(name.to_bytes()) {
+        if let Some(entry) = self.entries.get_mut(name) {
             entry.flags = flags;
             entry.value = Some(value);
         } else {
             self.entries.insert(
-                name.to_bytes().to_vec(),
+                name.to_owned(),
                 Box::new(environ_entry::new(name.to_owned(), flags, Some(value))),
             );
         }
@@ -62,11 +62,11 @@ impl environ {
     }
 
     pub fn clear_cstr(&mut self, name: &CStr) {
-        if let Some(entry) = self.entries.get_mut(name.to_bytes()) {
+        if let Some(entry) = self.entries.get_mut(name) {
             entry.value = None;
         } else {
             self.entries.insert(
-                name.to_bytes().to_vec(),
+                name.to_owned(),
                 Box::new(environ_entry::new(name.to_owned(), 0, None)),
             );
         }
@@ -78,7 +78,7 @@ impl environ {
     }
 
     pub fn unset_cstr(&mut self, name: &CStr) {
-        self.entries.remove(name.to_bytes());
+        self.entries.remove(name);
     }
 
     pub fn copy_from(&mut self, source: &environ) {

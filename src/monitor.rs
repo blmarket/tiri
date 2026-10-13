@@ -58,10 +58,7 @@ fn monitor_first_item(observer: &refbox::Weak<monitor_set>) -> Option<CString> {
 fn monitor_next_item(observer: &refbox::Weak<monitor_set>, after: &CStr) -> Option<CString> {
     monitor_borrow(observer)?
         .items
-        .range((
-            std::ops::Bound::Excluded(after.to_bytes().to_vec()),
-            std::ops::Bound::Unbounded,
-        ))
+        .range::<CStr, _>((std::ops::Bound::Excluded(after), std::ops::Bound::Unbounded))
         .next()
         .map(|(_, item)| item.name.clone())
 }
@@ -71,10 +68,7 @@ fn monitor_with_item<R>(
     operation: impl FnOnce(&mut monitor_item) -> R,
 ) -> Option<R> {
     let mut state = monitor_borrow(observer)?;
-    state
-        .items
-        .get_mut(name.to_bytes())
-        .map(|item| operation(item))
+    state.items.get_mut(name).map(|item| operation(item))
 }
 unsafe fn monitor_expand(
     monitor: &refbox::Weak<monitor_set>,
@@ -840,18 +834,18 @@ pub unsafe fn monitor_remove(monitor: &refbox::Weak<monitor_set>, name: &CStr) {
 }
 pub unsafe fn monitor_get_fire_count(monitor: &refbox::Weak<monitor_set>, name: &CStr) -> u_int {
     monitor_borrow(monitor)
-        .and_then(|state| state.items.get(name.to_bytes()).map(|item| item.fire_count))
+        .and_then(|state| state.items.get(name).map(|item| item.fire_count))
         .unwrap_or(0)
 }
 pub unsafe fn monitor_get_fire_time(monitor: &refbox::Weak<monitor_set>, name: &CStr) -> time_t {
     monitor_borrow(monitor)
-        .and_then(|state| state.items.get(name.to_bytes()).map(|item| item.fire_time))
+        .and_then(|state| state.items.get(name).map(|item| item.fire_time))
         .unwrap_or(0)
 }
 
 // Parent indexes own stable Box records; no independent index allocation.
 unsafe fn monitor_items_find(head: &mut monitor_items, elm: &monitor_item) -> *mut monitor_item {
-    let key = elm.name.as_bytes().to_vec();
+    let key = elm.name.clone();
     head.get_mut(&key)
         .map_or(std::ptr::null_mut(), |node| &raw mut **node)
 }
@@ -859,7 +853,7 @@ unsafe fn monitor_items_insert(
     head: &mut monitor_items,
     elm: Box<monitor_item>,
 ) -> Result<(), (*mut monitor_item, Box<monitor_item>)> {
-    let key = elm.name.as_bytes().to_vec();
+    let key = elm.name.clone();
     match head.entry(key) {
         std::collections::btree_map::Entry::Occupied(mut entry) => {
             Err((&raw mut **entry.get_mut(), elm))
@@ -875,7 +869,7 @@ unsafe fn monitor_items_remove(
     elm: *mut monitor_item,
 ) -> Option<Box<monitor_item>> {
     let elm = elm.as_ref()?;
-    let key = elm.name.as_bytes().to_vec();
+    let key = elm.name.clone();
     if head
         .get(&key)
         .is_none_or(|node| !std::ptr::eq(&**node, elm))
@@ -889,7 +883,7 @@ unsafe fn monitor_items_minmax(head: &mut monitor_items) -> *mut monitor_item {
         .map_or(std::ptr::null_mut(), |mut entry| &raw mut **entry.get_mut())
 }
 unsafe fn monitor_items_next(head: &mut monitor_items, elm: &monitor_item) -> *mut monitor_item {
-    let key = elm.name.as_bytes().to_vec();
+    let key = elm.name.clone();
     if head
         .get(&key)
         .is_none_or(|node| !std::ptr::eq(&**node, elm))

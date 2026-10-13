@@ -48,7 +48,7 @@ pub struct json_members_storage {
 
 #[derive(Debug, Default)]
 pub struct json_fields {
-    pub(crate) entries: BTreeMap<Vec<u8>, Box<json_node>>,
+    pub(crate) entries: BTreeMap<std::ffi::CString, Box<json_node>>,
 }
 
 pub type json_node_type = ::core::ffi::c_uint;

@@ -45,7 +45,7 @@ mod tests {
 /// Box-owned by options_create; inheritance carries the parent's owner identity.
 #[repr(C)]
 pub struct options {
-    pub(crate) tree: BTreeMap<Vec<u8>, Box<options_entry>>,
+    pub(crate) tree: BTreeMap<CString, Box<options_entry>>,
     pub parent: Option<crate::src::options::OptionsScope>,
 }
 

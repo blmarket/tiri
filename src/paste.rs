@@ -27,7 +27,7 @@ pub struct paste_time_tree {
 }
 #[derive(Default)]
 pub struct paste_name_tree {
-    entries: std::collections::BTreeMap<Vec<u8>, PasteBufferRef>,
+    entries: std::collections::BTreeMap<CString, PasteBufferRef>,
 }
 
 thread_local! {
@@ -53,19 +53,15 @@ fn paste_replace_name(pb: &mut paste_buffer, name: CString) -> CString {
     std::mem::replace(&mut pb.name, name)
 }
 
-fn paste_name_key(name: &CStr) -> Vec<u8> {
-    name.to_bytes().to_vec()
-}
-
 fn paste_name_tree_find(head: &paste_name_tree, name: &CStr) -> Option<PasteBufferRef> {
-    head.entries.get(&paste_name_key(name)).cloned()
+    head.entries.get(name).cloned()
 }
 
 fn paste_name_tree_insert(
     head: &mut paste_name_tree,
     elm: &PasteBufferRef,
 ) -> Option<PasteBufferRef> {
-    let key = paste_name_key(&elm.borrow().name);
+    let key = elm.borrow().name.clone();
     match head.entries.entry(key) {
         std::collections::btree_map::Entry::Occupied(entry) => Some(entry.get().clone()),
         std::collections::btree_map::Entry::Vacant(entry) => {
@@ -79,7 +75,7 @@ fn paste_name_tree_remove(
     head: &mut paste_name_tree,
     elm: &paste_buffer,
 ) -> Option<PasteBufferRef> {
-    head.entries.remove(&paste_name_key(&elm.name))
+    head.entries.remove(elm.name.as_c_str())
 }
 
 // Larger orders come first; equal orders remain duplicates as in tmux's tree.
@@ -550,7 +546,10 @@ mod tests {
             a
         ));
         assert_eq!(
-            tree.entries.keys().map(Vec::as_slice).collect::<Vec<_>>(),
+            tree.entries
+                .keys()
+                .map(|key| key.to_bytes())
+                .collect::<Vec<_>>(),
             vec![&b"a"[..], &b"a0"[..], &b"a\xff"[..], &b"z"[..]]
         );
         assert!(PartialEq::eq(

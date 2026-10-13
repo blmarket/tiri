@@ -14,7 +14,7 @@ pub(super) fn format_entry_tree_find<'a>(
     tree: &'a format_entry_tree,
     key: &CStr,
 ) -> Option<&'a format_entry> {
-    tree.get(key.to_bytes()).map(Box::as_ref)
+    tree.get(key).map(Box::as_ref)
 }
 
 /// Evaluate without retaining an entry borrow: callbacks may replace or remove
@@ -23,7 +23,7 @@ unsafe fn format_entry_ensure_value(ft: *mut format_tree, key: &CStr) {
     use std::sync::atomic::{AtomicU64, Ordering};
     static NEXT_EVALUATION: AtomicU64 = AtomicU64::new(0);
     let (evaluation, callback) = {
-        let Some(entry) = (*ft).tree.get_mut(key.to_bytes()) else {
+        let Some(entry) = (*ft).tree.get_mut(key) else {
             return;
         };
         if !matches!(entry.state, FormatEntryState::Lazy(_)) {
@@ -45,7 +45,7 @@ unsafe fn format_entry_ensure_value(ft: *mut format_tree, key: &CStr) {
 
     // Resolve both the key and evaluation identity after the callback. Even a
     // removed/reinserted entry at the same address must not receive this result.
-    if let Some(entry) = (*ft).tree.get_mut(key.to_bytes()) {
+    if let Some(entry) = (*ft).tree.get_mut(key) {
         if matches!(entry.state, FormatEntryState::Evaluating(id) if id == evaluation) {
             entry.state = FormatEntryState::Cached { value, callback };
         }
@@ -72,7 +72,7 @@ unsafe fn format_entry_set(ft: *mut format_tree, key: &CStr, state: FormatEntryS
     use std::collections::btree_map::Entry;
 
     let key = key.to_owned();
-    let old = match (*ft).tree.entry(key.as_bytes().to_vec()) {
+    let old = match (*ft).tree.entry(key.clone()) {
         Entry::Occupied(mut entry) => Some(std::mem::replace(&mut entry.get_mut().state, state)),
         Entry::Vacant(entry) => {
             entry.insert(Box::new(format_entry { key, state }));
@@ -357,7 +357,7 @@ mod tests {
                 format_entry_tree_find(&(*ft).tree, &key).unwrap() as *const _ as usize,
                 address
             );
-            let entry = (*ft).tree.remove(key.as_bytes()).unwrap();
+            let entry = (*ft).tree.remove(&key).unwrap();
             drop(ft_owner);
             assert_eq!(entry.key, key);
             assert_eq!(entry.state.text().unwrap().to_bytes(), b"first\xff-next");
@@ -376,7 +376,7 @@ mod tests {
             assert_eq!(text_value(ft, c"owned").unwrap().as_c_str(), c"replacement");
 
             format_add_owned_cb(ft, c"owned", |ft| {
-                let removed = (*ft.as_ptr()).tree.remove(b"owned".as_slice());
+                let removed = (*ft.as_ptr()).tree.remove(c"owned");
                 drop(removed);
                 Some(c"stale".to_owned())
             });
@@ -386,7 +386,7 @@ mod tests {
             let replacement_calls = Rc::new(Cell::new(0));
             let observed = replacement_calls.clone();
             format_add_owned_cb(ft, c"owned", move |ft| {
-                let removed = (*ft.as_ptr()).tree.remove(b"owned".as_slice());
+                let removed = (*ft.as_ptr()).tree.remove(c"owned");
                 drop(removed);
                 let observed = observed.clone();
                 format_add_owned_cb(ft.as_ptr(), c"owned", move |_| {
@@ -424,7 +424,7 @@ mod tests {
             let mut ft_owner = tree();
             let ft = &raw mut *ft_owner;
             format_add_owned_cb(ft, c"owned", |ft| {
-                drop((*ft.as_ptr()).tree.remove(b"owned".as_slice()));
+                drop((*ft.as_ptr()).tree.remove(c"owned"));
                 format_add_owned_cb(ft.as_ptr(), c"owned", |_| panic!("replacement callback"));
                 assert!(
                     catch_unwind(AssertUnwindSafe(|| text_value(ft.as_ptr(), c"owned"))).is_err()
@@ -456,11 +456,7 @@ mod tests {
             let mut ft_owner = tree();
             let ft = &raw mut *ft_owner;
             format_add_owned_cb(ft, c"custom_removed_entry", |ft| {
-                drop(
-                    (*ft.as_ptr())
-                        .tree
-                        .remove(b"custom_removed_entry".as_slice()),
-                );
+                drop((*ft.as_ptr()).tree.remove(c"custom_removed_entry"));
                 Some(c"stale".to_owned())
             });
             assert_eq!(

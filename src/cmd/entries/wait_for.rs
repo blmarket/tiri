@@ -35,7 +35,7 @@ pub struct wait_channel {
 }
 
 pub struct wait_channels {
-    entries: std::collections::BTreeMap<Vec<u8>, Box<wait_channel>>,
+    entries: std::collections::BTreeMap<std::ffi::CString, Box<wait_channel>>,
 }
 // The map owns each channel and its queues through this stable C-shaped
 // prefix. The name stays alive until the channel is removed.
@@ -79,13 +79,9 @@ static mut wait_channels: wait_channels = wait_channels {
     entries: std::collections::BTreeMap::new(),
 };
 
-fn wait_channel_key(name: &CStr) -> Vec<u8> {
-    name.to_bytes().to_vec()
-}
-
 fn wait_channels_find(head: &mut wait_channels, name: &CStr) -> *mut wait_channel {
     head.entries
-        .get_mut(&wait_channel_key(name))
+        .get_mut(name)
         .map(|owner| &raw mut **owner)
         .unwrap_or(::core::ptr::null_mut::<wait_channel>())
 }
@@ -94,7 +90,7 @@ fn wait_channels_insert(
     head: &mut wait_channels,
     mut owner: Box<wait_channel>,
 ) -> *mut wait_channel {
-    let key = wait_channel_key(owner.name.as_c_str());
+    let key = owner.name.clone();
     match head.entries.entry(key) {
         std::collections::btree_map::Entry::Occupied(mut entry) => &raw mut **entry.get_mut(),
         std::collections::btree_map::Entry::Vacant(entry) => {
@@ -106,7 +102,9 @@ fn wait_channels_insert(
 }
 
 fn wait_channels_remove(head: &mut wait_channels, elm: &wait_channel) -> Option<Box<wait_channel>> {
-    head.entries.remove(&wait_channel_key(elm.name.as_c_str()))
+    // elm lives inside the map; copy its name before unlinking it.
+    let key = elm.name.clone();
+    head.entries.remove(&key)
 }
 
 // Each channel is the first field of its boxed owner, so pointers handed to

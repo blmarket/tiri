@@ -148,7 +148,7 @@ pub type format_job_tree = std::collections::BTreeMap<(u_int, Vec<u8>), Box<form
 
 /// Ordered owners for a format tree's heap-allocated entries.
 /// Keys retain the original C string bytes so ordering matches `strcmp`.
-pub type format_entry_tree = BTreeMap<Vec<u8>, Box<format_entry>>;
+pub type format_entry_tree = BTreeMap<std::ffi::CString, Box<format_entry>>;
 
 pub struct format_entry {
     pub key: std::ffi::CString,

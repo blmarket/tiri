@@ -21,8 +21,9 @@ use crate::src::shared::key::*;
 use crate::src::shared::key::{key_binding, key_event, key_table};
 use std::ffi::CStr;
 
-/// Key tables indexed by name bytes.
-type KeyTableMap = std::collections::BTreeMap<Vec<u8>, std::rc::Rc<std::cell::RefCell<key_table>>>;
+/// Key tables indexed by name.
+type KeyTableMap =
+    std::collections::BTreeMap<std::ffi::CString, std::rc::Rc<std::cell::RefCell<key_table>>>;
 
 #[repr(C)]
 pub struct key_tables {
@@ -41,14 +42,14 @@ thread_local! {
 /// duration and returns owned `Rc`s; removed tables are dropped by the caller.
 impl key_tables {
     pub fn find(name: &CStr) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
-        KEY_TABLES.with_borrow(|index| index.storage.get(name.to_bytes()).cloned())
+        KEY_TABLES.with_borrow(|index| index.storage.get(name).cloned())
     }
 
     /// An existing table with the same name wins and is returned.
     pub fn insert(
         table: std::rc::Rc<std::cell::RefCell<key_table>>,
     ) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
-        let key = table.borrow().name.as_bytes().to_vec();
+        let key = table.borrow().name.clone();
         KEY_TABLES.with_borrow_mut(|index| match index.storage.entry(key) {
             std::collections::btree_map::Entry::Occupied(entry) => Some(entry.get().clone()),
             std::collections::btree_map::Entry::Vacant(entry) => {
@@ -62,7 +63,7 @@ impl key_tables {
     pub fn remove(
         table: &std::rc::Rc<std::cell::RefCell<key_table>>,
     ) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
-        let key = table.borrow().name.as_bytes().to_vec();
+        let key = table.borrow().name.clone();
         KEY_TABLES.with_borrow_mut(|index| {
             if !index
                 .storage

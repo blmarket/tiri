@@ -231,18 +231,18 @@ pub fn options_iter_mut(oo: &mut options) -> impl DoubleEndedIterator<Item = &mu
     oo.tree.values_mut().map(Box::as_mut)
 }
 pub fn options_get_only<'a>(oo: &'a options, name: &CStr) -> Option<&'a options_entry> {
-    let key = if oo.tree.contains_key(name.to_bytes()) {
-        name.to_bytes()
+    let key = if oo.tree.contains_key(name) {
+        name
     } else {
-        options_map_name(name).to_bytes()
+        options_map_name(name)
     };
     oo.tree.get(key).map(Box::as_ref)
 }
 pub fn options_get_only_mut<'a>(oo: &'a mut options, name: &CStr) -> Option<&'a mut options_entry> {
-    let key = if oo.tree.contains_key(name.to_bytes()) {
-        name.to_bytes()
+    let key = if oo.tree.contains_key(name) {
+        name
     } else {
-        options_map_name(name).to_bytes()
+        options_map_name(name)
     };
     oo.tree.get_mut(key).map(Box::as_mut)
 }
@@ -365,7 +365,7 @@ unsafe fn options_add(mut oo: *mut options, name: &CStr) -> *mut options_entry {
         fire_time: 0,
     });
     o = &raw mut *owned;
-    (*oo).tree.insert(owned.name.as_bytes().to_vec(), owned);
+    (*oo).tree.insert(owned.name.clone(), owned);
     o
 }
 unsafe fn options_remove(mut o: *mut options_entry) {
@@ -381,8 +381,8 @@ unsafe fn options_remove(mut o: *mut options_entry) {
     options_value_free(&raw mut (*o).value);
     drop((*o).monitor_data.take());
     // Cleanup above must precede unlinking and dropping the boxed entry.
-    let key = (*o).name.as_bytes().to_vec();
-    drop((*oo).tree.remove(key.as_slice()));
+    let key = (*o).name.clone();
+    drop((*oo).tree.remove(&key));
 }
 pub fn options_name(o: &options_entry) -> &CStr {
     &o.name

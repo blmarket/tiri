@@ -36,7 +36,7 @@ pub fn monitor_callback(callback: impl Fn(&monitor_change) + 'static) -> monitor
     std::rc::Rc::new(callback)
 }
 
-pub type monitor_items = std::collections::BTreeMap<Vec<u8>, Box<monitor_item>>;
+pub type monitor_items = std::collections::BTreeMap<std::ffi::CString, Box<monitor_item>>;
 
 #[repr(C)]
 pub struct monitor_item {

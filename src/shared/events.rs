@@ -49,8 +49,8 @@ pub fn events_callback(
     std::rc::Rc::new(callback)
 }
 
-/// Byte keys preserve C string ordering for the owned payload items.
-pub type event_payload_tree = BTreeMap<Vec<u8>, Box<event_payload_item>>;
+/// Name keys preserve C string ordering for the owned payload items.
+pub type event_payload_tree = BTreeMap<std::ffi::CString, Box<event_payload_item>>;
 
 pub enum EventPayloadValue {
     String(std::ffi::CString),

@@ -8,7 +8,7 @@ pub const ENVIRON_HIDDEN: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 #[derive(Default, Clone)]
 #[repr(C)]
 pub struct environ {
-    pub(crate) entries: BTreeMap<Vec<u8>, Box<environ_entry>>,
+    pub(crate) entries: BTreeMap<std::ffi::CString, Box<environ_entry>>,
 }
 
 #[derive(Clone)]

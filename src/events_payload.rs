@@ -31,7 +31,7 @@ pub const EVENT_PAYLOAD_CLIENT: event_payload_type = 4;
 pub const EVENT_PAYLOAD_STRING: event_payload_type = 0;
 
 fn event_payload_find<'a>(ep: &'a event_payload, name: &CStr) -> Option<&'a event_payload_item> {
-    ep.items.get(name.to_bytes()).map(Box::as_ref)
+    ep.items.get(name).map(Box::as_ref)
 }
 
 pub fn event_payload_items(ep: &event_payload) -> impl Iterator<Item = &event_payload_item> {
@@ -74,7 +74,7 @@ unsafe fn event_payload_set_item(ep: &mut event_payload, name: &CStr, value: Eve
     // A legacy caller may borrow the old item's name. Copy it before removing
     // that owner, and finish removal before releasing references can dispatch.
     let name = name.to_owned();
-    let key = name.to_bytes().to_vec();
+    let key = name.clone();
     let new = Box::new(event_payload_item { name, value });
     let old = ep.items.remove(&key);
     drop(old);
@@ -508,7 +508,7 @@ mod tests {
                     .collect::<Vec<_>>(),
                 [b"alpha".as_slice(), b"beta".as_slice()]
             );
-            let item = moved.items.remove(b"alpha".as_slice()).unwrap();
+            let item = moved.items.remove(c"alpha").unwrap();
             assert_eq!(item.value.number(), 1);
             assert!(event_payload_find(&moved, c"alpha").is_none());
             drop(moved);

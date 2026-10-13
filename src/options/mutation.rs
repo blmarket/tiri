@@ -261,7 +261,7 @@ impl OptionsScope {
         let removed = self.with_local(|table| {
             if options_get_only(table, &canonical_name).is_some_and(|entry| entry.id() == identity)
             {
-                table.tree.remove(canonical_name.to_bytes())
+                table.tree.remove(&canonical_name)
             } else {
                 None
             }
