@@ -248,7 +248,6 @@ pub(crate) unsafe fn server_start(
     }
     input_key_build();
     utf8_update_width_cache();
-    windows.storage = None;
     <std::rc::Rc<std::cell::UnsafeCell<window_pane>> as crate::src::window_pane::WindowPane>::reset_registry();
     clients.clear();
     sessions.reset();

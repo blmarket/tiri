@@ -8,7 +8,7 @@ use crate::src::shared::pane::{window_pane, window_pane_history, window_panes};
 use crate::src::shared::window::WindowRef;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use crate::src::shared::window::{window_winlinks, WindowIndex};
+use crate::src::shared::window::window_winlinks;
 #[repr(C)]
 /// Window record owned through `WindowRef`; dropping the last owner closes it.
 pub struct window {
@@ -52,8 +52,6 @@ pub struct window {
     pub(super) alerts_queued: ::core::ffi::c_int,
     pub(super) options: Option<Box<options>>,
     pub(super) winlinks: window_winlinks,
-    /// Weak traversal handle into the containing index.
-    pub(super) owner: refbox::Weak<WindowIndex>,
 }
 impl window {
     pub(super) fn invalidate_scene(&mut self) {
@@ -109,7 +107,6 @@ impl window {
             alerts_queued: Default::default(),
             options: Default::default(),
             winlinks: Default::default(),
-            owner: Default::default(),
         };
         WindowRef::new(value)
     }

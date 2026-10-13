@@ -16,7 +16,7 @@ use std::time::{Duration, Instant, SystemTime};
 /// successful lookup and traversal return one explicit Window release duty.
 pub trait WindowIndex {
     unsafe fn insert(&mut self, window: &WindowRef) -> Option<WindowRef>;
-    unsafe fn remove(&mut self, window: &WindowRef) -> bool;
+    unsafe fn remove(&mut self, window: &WindowRef);
     unsafe fn first(&self) -> Option<WindowRef>;
     unsafe fn resolve(&self, id: u32) -> Option<WindowRef>;
     fn is_empty(&self) -> bool;
@@ -26,27 +26,19 @@ impl WindowIndex for windows {
     unsafe fn insert(&mut self, window: &WindowRef) -> Option<WindowRef> {
         windows_insert(self, window)
     }
-    unsafe fn remove(&mut self, window: &WindowRef) -> bool {
-        windows_remove(self, window)
+    unsafe fn remove(&mut self, window: &WindowRef) {
+        windows_remove(self, window);
     }
     unsafe fn first(&self) -> Option<WindowRef> {
         windows_minmax(self)
     }
     unsafe fn resolve(&self, id: u32) -> Option<WindowRef> {
-        let map = self
-            .storage
-            .as_ref()?
-            .try_borrow_mut()
-            .expect("window index already borrowed");
+        let map = &self.storage;
         map.get(&id)?.upgrade()
     }
+
     fn is_empty(&self) -> bool {
-        self.storage.as_ref().is_none_or(|owner| {
-            owner
-                .try_borrow_mut()
-                .expect("window index already borrowed")
-                .is_empty()
-        })
+        self.storage.is_empty()
     }
 }
 

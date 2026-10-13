@@ -1,5 +1,6 @@
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::session::Session;
+use std::collections::BTreeMap;
 use std::time::SystemTime;
 mod alerts;
 mod api;
@@ -60,67 +61,41 @@ use crate::src::shared::window::{
 
 pub const DEFAULT_XPIXEL: ::core::ffi::c_int = 16 as ::core::ffi::c_int;
 pub const DEFAULT_YPIXEL: ::core::ffi::c_int = 32 as ::core::ffi::c_int;
-pub static mut windows: windows = windows { storage: None };
+pub static mut windows: windows = windows {
+    storage: BTreeMap::new(),
+};
 
 static mut next_window_id: u_int = 0;
 
 /// Register an observer, without adding a strong reference to the window.
 unsafe fn windows_insert(head: *mut windows, window: &WindowRef) -> Option<WindowRef> {
     let elm = window.get();
-    let owner = (*head).storage.get_or_insert_with(refbox::RefBox::default);
-    let observer = owner.downgrade();
-    let mut map = owner
-        .try_borrow_mut()
-        .expect("window index already borrowed");
+    let map = &mut (*head).storage;
     if let Some(existing) = map.get(&(*elm).id).and_then(WindowWeak::upgrade) {
         return Some(existing);
     }
     map.insert((*elm).id, WindowRef::downgrade(window));
-    (*elm).owner = observer;
     None
 }
 
 /// Remove the matching observer without retaining or releasing the window.
-unsafe fn windows_remove(head: &mut windows, elm: &WindowRef) -> bool {
-    let Some(owner) = head.storage.as_ref() else {
-        return false;
-    };
-    let empty = {
-        let mut map = owner
-            .try_borrow_mut()
-            .expect("window index already borrowed");
-        let id = (*elm.get()).id;
-        if !map
-            .get(&id)
-            .is_some_and(|weak| weak.ptr_eq(&WindowRef::downgrade(elm)))
-        {
-            return false;
-        }
+unsafe fn windows_remove(head: &mut windows, elm: &WindowRef) {
+    let map = &mut head.storage;
+    let id = (*elm.get()).id;
+    if map
+        .get(&id)
+        .is_some_and(|weak| weak.ptr_eq(&WindowRef::downgrade(elm)))
+    {
         map.remove(&id);
-        map.is_empty()
-    };
-    (*elm.get()).owner = refbox::Weak::new();
-    if empty {
-        head.storage = None;
     }
-    true
 }
 
 fn windows_minmax(head: &windows) -> Option<WindowRef> {
-    let owner = head.storage.as_ref()?;
-    let map = owner
-        .try_borrow_mut()
-        .expect("window index already borrowed");
-    map.values().find_map(WindowWeak::upgrade)
+    head.storage.values().find_map(WindowWeak::upgrade)
 }
 
-fn windows_next(elm: &window) -> Option<WindowRef> {
-    let owner = &elm.owner;
-    let map = match owner.try_borrow_mut() {
-        Ok(map) => map,
-        Err(refbox::BorrowError::Dropped) => return None,
-        Err(refbox::BorrowError::Borrowed) => panic!("window index already borrowed"),
-    };
+unsafe fn windows_next(elm: &window) -> Option<WindowRef> {
+    let map = &windows.storage;
     map.range((
         std::ops::Bound::Excluded(&elm.id),
         std::ops::Bound::Unbounded,
@@ -242,12 +217,7 @@ pub unsafe fn window_find_by_id_str(s: &CStr) -> Option<WindowRef> {
     window_find_by_id(id)
 }
 pub unsafe fn window_find_by_id(id: u_int) -> Option<WindowRef> {
-    let head: &windows = &windows;
-    let owner = head.storage.as_ref()?;
-    let map = owner
-        .try_borrow_mut()
-        .expect("window index already borrowed");
-    map.get(&id)?.upgrade()
+    windows.storage.get(&id)?.upgrade()
 }
 unsafe fn window_update_activity(w_owner: &WindowRef) {
     let mut w = w_owner.get();
@@ -298,7 +268,6 @@ pub unsafe fn window_create(
         c"pane-scrollbars-position",
     ) as ::core::ffi::c_int;
     (*w).winlinks = Default::default();
-    (*w).owner = refbox::Weak::new();
     let fresh0 = next_window_id;
     next_window_id = next_window_id.wrapping_add(1);
     (*w).id = fresh0;
@@ -320,9 +289,7 @@ unsafe fn window_destroy(w_owner: &WindowRef) {
     let mut w = w_owner.get();
     log_debug(format_args!("window @{} destroyed", { (*w).id }));
     // The releasing owner keeps weak parent links upgradeable throughout cleanup.
-    if !(*w).owner.is_empty() {
-        windows_remove(&mut windows, w_owner);
-    }
+    windows_remove(&mut windows, w_owner);
     menu_destroy((*w).menu.take());
     window_destroy_panes(w_owner);
     drop((*w).name_event.take());
@@ -797,4 +764,43 @@ unsafe fn window_get_pane_lines(w: &window) -> pane_lines {
         w.options.as_deref().expect("window options"),
         c"pane-border-lines",
     ) as pane_lines
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `next_window` must keep working for a window that was already removed
+    /// from the index (e.g. a traversal cursor destroyed by a callback).
+    #[test]
+    fn next_window_of_removed_window_continues_traversal() {
+        unsafe {
+            let a = window::new_ref();
+            let b = window::new_ref();
+            let c = window::new_ref();
+            (*a.get()).id = 0xFFFF_0001;
+            (*b.get()).id = 0xFFFF_0002;
+            (*c.get()).id = 0xFFFF_0003;
+            for w in [&a, &b, &c] {
+                assert!(windows_insert(&raw mut windows, w).is_none());
+            }
+
+            assert!(WindowRef::ptr_eq(&windows_next(&*a.get()).unwrap(), &b));
+
+            windows_remove(&mut windows, &b);
+            assert!(window_find_by_id(0xFFFF_0002).is_none());
+            // Previous behaviour returned None here (the window's `owner`
+            // handle had been reset), ending the traversal early.
+            assert!(WindowRef::ptr_eq(&windows_next(&*b.get()).unwrap(), &c));
+            assert!(WindowRef::ptr_eq(&windows_next(&*a.get()).unwrap(), &c));
+
+            // Dropping the last owner unregisters the window.
+            drop(a);
+            drop(b);
+            drop(c);
+            assert!(window_find_by_id(0xFFFF_0001).is_none());
+            assert!(window_find_by_id(0xFFFF_0003).is_none());
+            assert!(!windows.storage.contains_key(&0xFFFF_0003));
+        }
+    }
 }
