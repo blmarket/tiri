@@ -100,7 +100,6 @@ use crate::src::shared::options::{
     OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_IS_COLOUR, OPTIONS_TABLE_IS_STYLE, OPTIONS_TABLE_NONE,
     OPTIONS_TABLE_PANE, OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION, OPTIONS_TABLE_WINDOW,
 };
-use crate::src::shared::pane::window_pane;
 use crate::src::shared::style::*;
 use crate::src::shared::tty::TTY_OPENED;
 
@@ -1431,16 +1430,12 @@ pub unsafe fn options_push_changes(name: &CStr) {
         }
     }
     if strcmp(name, c"cursor-colour".as_ptr()) == 0 as ::core::ffi::c_int {
-        for pane_owner in
-            <std::rc::Rc<std::cell::UnsafeCell<window_pane>> as WindowPane>::all_panes()
-        {
+        for pane_owner in crate::src::shared::pane::window_pane_tree::snapshot() {
             pane_owner.reset_default_cursor();
         }
     }
     if strcmp(name, c"cursor-style".as_ptr()) == 0 as ::core::ffi::c_int {
-        for pane_owner in
-            <std::rc::Rc<std::cell::UnsafeCell<window_pane>> as WindowPane>::all_panes()
-        {
+        for pane_owner in crate::src::shared::pane::window_pane_tree::snapshot() {
             pane_owner.reset_default_cursor();
         }
     }
@@ -1507,23 +1502,17 @@ pub unsafe fn options_push_changes(name: &CStr) {
     if strcmp(name, c"window-style".as_ptr()) == 0 as ::core::ffi::c_int
         || strcmp(name, c"window-active-style".as_ptr()) == 0 as ::core::ffi::c_int
     {
-        for pane_owner in
-            <std::rc::Rc<std::cell::UnsafeCell<window_pane>> as WindowPane>::all_panes()
-        {
+        for pane_owner in crate::src::shared::pane::window_pane_tree::snapshot() {
             pane_owner.mark_style_changed(true);
         }
     }
     if *name as ::core::ffi::c_int == '@' as i32 {
-        for pane_owner in
-            <std::rc::Rc<std::cell::UnsafeCell<window_pane>> as WindowPane>::all_panes()
-        {
+        for pane_owner in crate::src::shared::pane::window_pane_tree::snapshot() {
             pane_owner.mark_style_changed(false);
         }
     }
     if strcmp(name, c"pane-colours".as_ptr()) == 0 as ::core::ffi::c_int {
-        for pane_owner in
-            <std::rc::Rc<std::cell::UnsafeCell<window_pane>> as WindowPane>::all_panes()
-        {
+        for pane_owner in crate::src::shared::pane::window_pane_tree::snapshot() {
             pane_owner.refresh_palette();
         }
     }
@@ -1540,16 +1529,12 @@ pub unsafe fn options_push_changes(name: &CStr) {
         }
     }
     if strcmp(name, c"pane-scrollbars".as_ptr()) == 0 as ::core::ffi::c_int {
-        for pane_owner in
-            <std::rc::Rc<std::cell::UnsafeCell<window_pane>> as WindowPane>::all_panes()
-        {
+        for pane_owner in crate::src::shared::pane::window_pane_tree::snapshot() {
             pane_owner.hide_scrollbar();
         }
     }
     if strcmp(name, c"pane-scrollbars-style".as_ptr()) == 0 as ::core::ffi::c_int {
-        for pane_owner in
-            <std::rc::Rc<std::cell::UnsafeCell<window_pane>> as WindowPane>::all_panes()
-        {
+        for pane_owner in crate::src::shared::pane::window_pane_tree::snapshot() {
             pane_owner.refresh_scrollbar_style();
         }
         let mut window_cursor = windows::first();

@@ -49,25 +49,25 @@ fn cursor_observation_preserves_terminal_shape_and_blink() {
 
 #[test]
 fn weak_observation_expires_on_destruction_and_cannot_follow_reused_id() {
-    use super::super::{all_window_panes, window_pane_tree_insert, window_pane_tree_remove};
+    use crate::src::shared::pane::window_pane_tree;
     use crate::src::shared::pane::PANE_DESTROYED;
     unsafe {
         let owner = window_pane::new();
         (*owner.get()).id = 71;
         (*owner.get()).output_generation = 42;
-        window_pane_tree_insert(&mut all_window_panes, owner.clone());
+        window_pane_tree::insert(owner.clone());
         let observed = resolve(PaneId(71)).unwrap();
         assert_eq!(observed.output_revision().unwrap(), 42);
-        let registry_owner = window_pane_tree_remove(&mut all_window_panes, &owner).unwrap();
+        let registry_owner = window_pane_tree::remove(&owner).unwrap();
         (*owner.get()).flags |= PANE_DESTROYED;
         drop(registry_owner);
         assert!(observed.output_revision().is_err());
         let replacement = window_pane::new();
         (*replacement.get()).id = 71;
-        window_pane_tree_insert(&mut all_window_panes, replacement.clone());
+        window_pane_tree::insert(replacement.clone());
         assert!(observed.process().is_err());
         assert_eq!(resolve(PaneId(71)).unwrap().output_revision().unwrap(), 0);
-        drop(window_pane_tree_remove(&mut all_window_panes, &replacement));
+        drop(window_pane_tree::remove(&replacement));
         // Drop cannot retain pane storage: these observations only hold Weak.
         assert_eq!(Rc::strong_count(&owner), 1);
         drop(observed);

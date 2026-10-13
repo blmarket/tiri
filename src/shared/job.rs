@@ -3,6 +3,12 @@
 use super::abi::pid_t;
 use std::cell::RefCell;
 use std::rc::Rc;
+/// Every live job, newest first. The server thread owns them; observers never
+/// retain a process or stream.
+pub struct jobs {
+    pub(crate) storage: Vec<refbox::RefBox<job>>,
+}
+
 pub const JOB_NOWAIT: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 
 pub const JOB_SHOWSTDERR: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;

@@ -70,7 +70,7 @@ unsafe fn cmd_find_inside_pane(
     let client = client?;
     let terminal = client.tty_name();
     let indexed = terminal.as_deref().and_then(|name| {
-        std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::all_panes()
+        crate::src::shared::pane::window_pane_tree::snapshot()
             .into_iter()
             .find(|pane| pane.has_tty() && pane.matches_terminal_name(name))
     });

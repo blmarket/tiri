@@ -24,7 +24,7 @@ use crate::src::shared::environment::environ;
 use crate::src::shared::event::*;
 use crate::src::shared::event::{EV_READ, EV_WRITE};
 use crate::src::shared::job::{
-    job, job_complete_cb, job_free_cb, job_state, job_update_cb, JobCompletion, JobExitStatus,
+    job, job_complete_cb, job_free_cb, job_state, job_update_cb, jobs, JobCompletion, JobExitStatus,
 };
 use crate::src::shared::job::{
     JOB_DEFAULTSHELL, JOB_KEEPWRITE, JOB_NOWAIT, JOB_PTY, JOB_SHOWSTDERR,
@@ -69,18 +69,34 @@ unsafe fn job_completion(job: &job) -> JobCompletion {
 }
 pub const O_RDWR: ::core::ffi::c_int = 0o2 as ::core::ffi::c_int;
 
-// The server thread owns every job. Observers never retain a process or stream.
-static mut all_jobs: Vec<RefBox<job>> = Vec::new();
-
-unsafe fn job_insert(owner: RefBox<job>) -> Weak<job> {
-    let observer = owner.downgrade();
-    // Keep the previous newest-first traversal order.
-    all_jobs.insert(0, owner);
-    observer
+thread_local! {
+    static JOBS: std::cell::RefCell<jobs> = const {
+        std::cell::RefCell::new(jobs {
+            storage: Vec::new(),
+        })
+    };
 }
 
-unsafe fn job_snapshot() -> Vec<Weak<job>> {
-    all_jobs.iter().map(RefBox::downgrade).collect()
+/// Each call borrows the job list only for its own duration and returns
+/// nonowning handles; a removed owner is dropped by the caller.
+impl jobs {
+    fn insert(owner: RefBox<job>) -> Weak<job> {
+        let observer = owner.downgrade();
+        // Keep the previous newest-first traversal order.
+        JOBS.with_borrow_mut(|jobs| jobs.storage.insert(0, owner));
+        observer
+    }
+
+    fn remove(handle: &Weak<job>) -> Option<RefBox<job>> {
+        JOBS.with_borrow_mut(|jobs| {
+            let index = jobs.storage.iter().position(|owner| handle.is(owner))?;
+            Some(jobs.storage.remove(index))
+        })
+    }
+
+    fn snapshot() -> Vec<Weak<job>> {
+        JOBS.with_borrow(|jobs| jobs.storage.iter().map(RefBox::downgrade).collect())
+    }
 }
 
 /// Start a registry-owned job and return its nonowning identity.
@@ -356,7 +372,7 @@ pub unsafe fn job_run(
                 }
                 let fd = value.fd.as_ref().expect("job descriptor").as_raw_fd();
                 setblocking(fd, 0);
-                let job = job_insert(RefBox::new(value));
+                let job = jobs::insert(RefBox::new(value));
                 let read_job = job.clone();
                 let write_job = job.clone();
                 let error_job = job.clone();
@@ -414,12 +430,9 @@ unsafe fn job_log(action: &str, job: &job) {
 /// Remove ownership before callbacks, but keep the allocation and resources alive
 /// until the free callback returns. Reentrant cancellation is a no-op.
 pub unsafe fn job_free(handle: &Weak<job>) {
-    let owner = {
-        let owners = &mut all_jobs;
-        let Some(index) = owners.iter().position(|owner| handle.is(owner)) else {
-            return;
-        };
-        owners.remove(index)
+    // The borrow ends inside remove; teardown below may re-enter the list.
+    let Some(owner) = jobs::remove(handle) else {
+        return;
     };
     let callback = {
         let mut job = owner
@@ -545,7 +558,7 @@ unsafe fn job_error_callback(handle: &Weak<job>) {
 }
 
 pub unsafe fn job_check_died(pid: pid_t, status: ::core::ffi::c_int) {
-    let Some(handle) = job_snapshot()
+    let Some(handle) = jobs::snapshot()
         .into_iter()
         .find(|handle| handle.try_borrow_mut().expect("registered job").pid == pid)
     else {
@@ -585,7 +598,7 @@ pub unsafe fn job_get_event(handle: &Weak<job>) -> *mut bufferevent {
 }
 
 pub unsafe fn job_kill_all() {
-    for handle in job_snapshot() {
+    for handle in jobs::snapshot() {
         let job = handle.try_borrow_mut().expect("registered job");
         if job.pid != -1 {
             kill(job.pid as __pid_t, SIGTERM);
@@ -594,7 +607,7 @@ pub unsafe fn job_kill_all() {
 }
 
 pub unsafe fn job_still_running() -> ::core::ffi::c_int {
-    job_snapshot().iter().any(|handle| {
+    jobs::snapshot().iter().any(|handle| {
         let job = handle.try_borrow_mut().expect("registered job");
         job.flags & JOB_NOWAIT == 0 && job.state == JOB_RUNNING
     }) as _
@@ -604,7 +617,7 @@ pub unsafe fn job_print_summary(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut blank: ::core::ffi::c_int,
 ) {
-    for (n, handle) in job_snapshot().into_iter().enumerate() {
+    for (n, handle) in jobs::snapshot().into_iter().enumerate() {
         let (cmd, fd, pid, status) = {
             let job = handle.try_borrow_mut().expect("registered job");
             (
@@ -647,14 +660,14 @@ mod job_stream_tests {
         use hmux_rt::Runtime as _;
         let runtime = hmux_rt::mio::Runtime::new().unwrap();
         unsafe {
-            assert!(job_snapshot().is_empty());
+            assert!(jobs::snapshot().is_empty());
             let calls = Rc::new(Cell::new(0));
-            let second = job_insert(RefBox::new(idle_job()));
+            let second = jobs::insert(RefBox::new(idle_job()));
             let second_observer = second.clone();
             let (socket, remote) = UnixStream::pair().unwrap();
             let fd = socket.as_raw_fd();
             let stream = bufferevent_new(fd, None, None, None);
-            let first = job_insert(RefBox::new(job {
+            let first = jobs::insert(RefBox::new(job {
                 fd: Some(socket.into()),
                 event: crate::src::reactor::StreamHandle::from_ptr(stream),
                 ..idle_job()
@@ -664,7 +677,7 @@ mod job_stream_tests {
             let observed = calls.clone();
             let callback_first = first.clone();
             first.try_borrow_mut().unwrap().freecb = Some(Box::new(move || {
-                assert_eq!(job_snapshot(), vec![second.clone()]);
+                assert_eq!(jobs::snapshot(), vec![second.clone()]);
                 // Owner and resources remain live, with no outstanding borrow.
                 assert_eq!(
                     callback_first
@@ -680,7 +693,7 @@ mod job_stream_tests {
                 assert!(::libc::fcntl(fd, ::libc::F_GETFD) >= 0);
                 job_free(&callback_first); // reentrant cancellation is harmless
                 job_free(&second);
-                let replacement = job_insert(RefBox::new(idle_job()));
+                let replacement = jobs::insert(RefBox::new(idle_job()));
                 assert_ne!(replacement, callback_first);
                 job_free(&replacement);
                 observed.set(observed.get() + 1);
@@ -692,10 +705,10 @@ mod job_stream_tests {
             assert!(event.ptr().is_null());
             assert_eq!(::libc::fcntl(fd, ::libc::F_GETFD), -1);
             drop(remote);
-            assert!(job_snapshot().is_empty());
+            assert!(jobs::snapshot().is_empty());
 
             // Update callbacks can cancel their own registry owner.
-            let update = job_insert(RefBox::new(idle_job()));
+            let update = jobs::insert(RefBox::new(idle_job()));
             let observed = calls.clone();
             update.try_borrow_mut().unwrap().updatecb = job_update_callback(move |job| {
                 observed.set(observed.get() + 1);
@@ -709,7 +722,7 @@ mod job_stream_tests {
             for eof_first in [false, true] {
                 let stream = bufferevent_new(-1, None, None, None);
                 crate::src::reactor::evbuffer_add(&mut (*stream).input, b"remaining");
-                let handle = job_insert(RefBox::new(job {
+                let handle = jobs::insert(RefBox::new(job {
                     pid: 1234567,
                     event: crate::src::reactor::StreamHandle::from_ptr(stream),
                     ..idle_job()
@@ -738,7 +751,7 @@ mod job_stream_tests {
                 job_write_callback(&handle);
             }
             assert_eq!(calls.get(), 4);
-            assert!(job_snapshot().is_empty());
+            assert!(jobs::snapshot().is_empty());
             crate::src::reactor::shutdown_runtime(runtime);
         }
     }

@@ -26,12 +26,60 @@ type KeyTableMap = std::collections::BTreeMap<Vec<u8>, std::rc::Rc<std::cell::Re
 
 #[repr(C)]
 pub struct key_tables {
-    pub storage: KeyTableMap,
+    pub(crate) storage: KeyTableMap,
 }
 
-static mut key_tables: key_tables = key_tables {
-    storage: KeyTableMap::new(),
-};
+thread_local! {
+    static KEY_TABLES: std::cell::RefCell<key_tables> = const {
+        std::cell::RefCell::new(key_tables {
+            storage: KeyTableMap::new(),
+        })
+    };
+}
+
+/// The key table index owns the tables. Each call borrows it only for its own
+/// duration and returns owned `Rc`s; removed tables are dropped by the caller.
+impl key_tables {
+    pub fn find(name: &CStr) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
+        KEY_TABLES.with_borrow(|index| index.storage.get(name.to_bytes()).cloned())
+    }
+
+    /// An existing table with the same name wins and is returned.
+    pub fn insert(
+        table: std::rc::Rc<std::cell::RefCell<key_table>>,
+    ) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
+        let key = table.borrow().name.as_bytes().to_vec();
+        KEY_TABLES.with_borrow_mut(|index| match index.storage.entry(key) {
+            std::collections::btree_map::Entry::Occupied(entry) => Some(entry.get().clone()),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(table);
+                None
+            }
+        })
+    }
+
+    /// Removes and returns the indexed owner only if it is `table`.
+    pub fn remove(
+        table: &std::rc::Rc<std::cell::RefCell<key_table>>,
+    ) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
+        let key = table.borrow().name.as_bytes().to_vec();
+        KEY_TABLES.with_borrow_mut(|index| {
+            if !index
+                .storage
+                .get(&key)
+                .is_some_and(|candidate| std::rc::Rc::ptr_eq(candidate, table))
+            {
+                return None;
+            }
+            index.storage.remove(&key)
+        })
+    }
+
+    /// Retain the tables, in name order, while callers borrow their bindings.
+    pub fn snapshot() -> Vec<std::rc::Rc<std::cell::RefCell<key_table>>> {
+        KEY_TABLES.with_borrow(|index| index.storage.values().cloned().collect())
+    }
+}
 
 pub(crate) fn key_bindings_set_note(bd: &mut key_binding, note: Option<&CStr>) {
     bd.note = note.map(CStr::to_owned);
@@ -41,8 +89,8 @@ pub unsafe fn key_bindings_get_table(
     name: &CStr,
     create: i32,
 ) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
-    if let Some(table) = key_tables.storage.get(name.to_bytes()) {
-        return Some(table.clone());
+    if let Some(table) = key_tables::find(name) {
+        return Some(table);
     }
     if create == 0 {
         return None;
@@ -50,7 +98,7 @@ pub unsafe fn key_bindings_get_table(
     let mut value = key_table::empty();
     value.name = name.to_owned();
     let table = std::rc::Rc::new(std::cell::RefCell::new(value));
-    key_tables_insert(&raw mut key_tables, table.clone());
+    key_tables::insert(table.clone());
     Some(table)
 }
 pub fn key_bindings_get(table: &key_table, key: key_code) -> Option<&key_binding> {
@@ -59,11 +107,6 @@ pub fn key_bindings_get(table: &key_table, key: key_code) -> Option<&key_binding
 
 pub fn key_bindings_get_default(table: &key_table, key: key_code) -> Option<&key_binding> {
     table.default_key_bindings.get(key)
-}
-
-/// Retain the tables while callers borrow their bindings for listing.
-pub unsafe fn key_bindings_tables() -> Vec<std::rc::Rc<std::cell::RefCell<key_table>>> {
-    key_tables.storage.values().cloned().collect()
 }
 
 pub unsafe fn key_bindings_add(
@@ -123,7 +166,7 @@ pub unsafe fn key_bindings_remove(name: &CStr, key: key_code) {
     drop(bd);
     if table.key_bindings.storage.is_empty() && table.default_key_bindings.storage.is_empty() {
         drop(table);
-        drop(key_tables_remove(&raw mut key_tables, &owner));
+        drop(key_tables::remove(&owner));
     }
 }
 
@@ -150,7 +193,7 @@ pub unsafe fn key_bindings_reset(name: &CStr, key: key_code) {
 pub unsafe fn key_bindings_remove_table(name: &CStr) {
     let mut c: Option<ClientRef> = None;
     if let Some(owner) = key_bindings_get_table(name, 0) {
-        let detached = key_tables_remove(&raw mut key_tables, &owner);
+        let detached = key_tables::remove(&owner);
         let mut registry_c_owner = clients.first();
         c = registry_c_owner.clone();
         while !c.is_none() {
@@ -167,7 +210,7 @@ pub unsafe fn key_bindings_remove_table(name: &CStr) {
 
 /// Snapshot startup defaults with their own command-list reference and note.
 unsafe fn key_bindings_init_done() -> cmd_retval {
-    for owner in key_bindings_tables() {
+    for owner in key_tables::snapshot() {
         let mut table = owner.borrow_mut();
         let table_ref = &mut *table;
         for bd in table_ref.key_bindings.iter() {
@@ -553,43 +596,6 @@ pub fn key_bindings_has_repeat(bindings: &[&key_binding]) -> bool {
     bindings.iter().any(|bd| bd.flags & KEY_BINDING_REPEAT != 0)
 }
 
-pub fn key_tables_find(
-    head: &key_tables,
-    elm: &key_table,
-) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
-    head.storage.get(elm.name.as_bytes()).cloned()
-}
-pub unsafe fn key_tables_insert(
-    head: *mut key_tables,
-    table: std::rc::Rc<std::cell::RefCell<key_table>>,
-) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
-    let key = table.borrow().name.as_bytes().to_vec();
-    match (*head).storage.entry(key) {
-        std::collections::btree_map::Entry::Occupied(entry) => Some(entry.get().clone()),
-        std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(table);
-            None
-        }
-    }
-}
-pub unsafe fn key_tables_remove(
-    head: *mut key_tables,
-    table: &std::rc::Rc<std::cell::RefCell<key_table>>,
-) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
-    let key = table.borrow().name.as_bytes().to_vec();
-    let map = &mut (*head).storage;
-    if !map
-        .get(&key)
-        .is_some_and(|candidate| std::rc::Rc::ptr_eq(candidate, table))
-    {
-        return None;
-    }
-    map.remove(&key)
-}
-pub fn key_tables_minmax(head: &key_tables) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
-    head.storage.values().next().cloned()
-}
-
 #[cfg(test)]
 mod ownership_tests {
     use super::*;
@@ -610,38 +616,33 @@ mod ownership_tests {
     #[test]
     fn table_index_returns_owners_and_removes_only_matching_allocations() {
         use std::cell::RefCell;
-        unsafe {
-            let mut index = key_tables {
-                storage: KeyTableMap::new(),
-            };
-            let mut a = key_table::empty();
-            a.name = c"a".to_owned();
-            let a = Rc::new(RefCell::new(a));
-            let mut b = key_table::empty();
-            b.name = c"b".to_owned();
-            let b = Rc::new(RefCell::new(b));
-            let mut duplicate = key_table::empty();
-            duplicate.name = c"a".to_owned();
-            let duplicate = Rc::new(RefCell::new(duplicate));
-            assert_ne!(a.borrow().identity, duplicate.borrow().identity);
-            assert!(key_tables_insert(&mut index, a.clone()).is_none());
-            assert!(key_tables_insert(&mut index, b.clone()).is_none());
-            assert!(Rc::ptr_eq(
-                &key_tables_insert(&mut index, duplicate.clone()).unwrap(),
-                &a
-            ));
-            assert!(key_tables_remove(&mut index, &duplicate).is_none());
-            assert!(Rc::ptr_eq(&key_tables_minmax(&index).unwrap(), &a));
-            let observed = Rc::downgrade(&a);
-            let found = key_tables_find(&index, &duplicate.borrow()).unwrap();
-            drop(key_tables_remove(&mut index, &a));
-            drop(a);
-            assert!(observed.upgrade().is_some());
-            drop(found);
-            assert!(observed.upgrade().is_none());
-            drop(key_tables_remove(&mut index, &b));
-            assert!(index.storage.is_empty());
-        }
+        let mut a = key_table::empty();
+        a.name = c"a".to_owned();
+        let a = Rc::new(RefCell::new(a));
+        let mut b = key_table::empty();
+        b.name = c"b".to_owned();
+        let b = Rc::new(RefCell::new(b));
+        let mut duplicate = key_table::empty();
+        duplicate.name = c"a".to_owned();
+        let duplicate = Rc::new(RefCell::new(duplicate));
+        assert_ne!(a.borrow().identity, duplicate.borrow().identity);
+        assert!(key_tables::insert(a.clone()).is_none());
+        assert!(key_tables::insert(b.clone()).is_none());
+        assert!(Rc::ptr_eq(
+            &key_tables::insert(duplicate.clone()).unwrap(),
+            &a
+        ));
+        assert!(key_tables::remove(&duplicate).is_none());
+        assert!(Rc::ptr_eq(&key_tables::snapshot()[0], &a));
+        let observed = Rc::downgrade(&a);
+        let found = key_tables::find(c"a").unwrap();
+        drop(key_tables::remove(&a));
+        drop(a);
+        assert!(observed.upgrade().is_some());
+        drop(found);
+        assert!(observed.upgrade().is_none());
+        drop(key_tables::remove(&b));
+        assert!(key_tables::snapshot().is_empty());
     }
 
     #[test]
@@ -667,7 +668,7 @@ mod ownership_tests {
             assert!(commands.upgrade().is_none());
             drop(index.remove(2));
             drop(index.remove(13));
-            assert!(index.storage.is_empty());
+            assert!(key_tables::snapshot().is_empty());
         }
     }
 

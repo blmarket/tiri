@@ -246,7 +246,7 @@ pub(crate) unsafe fn server_start(
     }
     input_key_build();
     utf8_update_width_cache();
-    <std::rc::Rc<std::cell::UnsafeCell<window_pane>> as crate::src::window_pane::WindowPane>::reset_registry();
+    crate::src::shared::pane::window_pane_tree::clear();
     clients.clear();
     sessions::clear();
     key_bindings_init();

@@ -22,11 +22,6 @@ use std::time::Duration;
 /// preconditions. Component closures must not reenter model code, destroy an
 /// owner, alter component parent links, or let component references escape.
 pub trait WindowPane {
-    /// Retain registry membership before operations that may dispatch callbacks.
-    unsafe fn all_panes() -> Vec<Self>
-    where
-        Self: Sized;
-
     /// Visible geometry including the reserved scrollbar area, copied for hit testing.
     unsafe fn outer_geometry(&self) -> (i32, i32, u32, u32);
     unsafe fn pane_lines(&self) -> pane_lines;
@@ -379,10 +374,6 @@ pub trait WindowPane {
         new_window: &WindowRef,
         new_index: i32,
     );
-    /// Reset the empty pane registry during fresh server startup.
-    unsafe fn reset_registry()
-    where
-        Self: Sized;
     unsafe fn destroy_ready(&self) -> bool;
     unsafe fn destroy(&self);
 }
@@ -525,10 +516,6 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         } else {
             window_pane_scrollbar_start_timer(self);
         }
-    }
-
-    unsafe fn all_panes() -> Vec<Self> {
-        all_window_panes.storage.values().cloned().collect()
     }
 
     unsafe fn scrollbar_visible(&self) -> bool {
@@ -1047,8 +1034,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
 
     unsafe fn on_selected(&self, record_activity: bool) {
         if record_activity {
-            (*self.get()).active_point = next_active_point;
-            next_active_point = next_active_point.wrapping_add(1);
+            (*self.get()).active_point = window_pane_tree::next_active_point();
         }
         (*self.get()).flags |= PANE_CHANGED;
     }
@@ -1454,9 +1440,6 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
             mouse.map_or(std::ptr::null_mut(), |mouse| mouse),
         )
     }
-    unsafe fn reset_registry() {
-        all_window_panes.storage.clear();
-    }
     unsafe fn notify_moved(
         &self,
         old_window: &WindowRef,
@@ -1624,16 +1607,21 @@ mod tests {
             let pane = window_pane::new();
             (*pane.get()).fd = None;
             (*pane.get()).pipe_fd = None;
-            let previous = next_active_point;
+            let previous = window_pane_tree::peek_active_point();
             pane.on_selected(true);
             assert_eq!((*pane.get()).active_point, previous);
-            assert_eq!(next_active_point, previous.wrapping_add(1));
+            assert_eq!(
+                window_pane_tree::peek_active_point(),
+                previous.wrapping_add(1)
+            );
             (*pane.get()).flags &= !PANE_CHANGED;
             pane.on_selected(false);
             assert_eq!((*pane.get()).active_point, previous);
-            assert_eq!(next_active_point, previous.wrapping_add(1));
+            assert_eq!(
+                window_pane_tree::peek_active_point(),
+                previous.wrapping_add(1)
+            );
             assert_ne!((*pane.get()).flags & PANE_CHANGED, 0);
-            next_active_point = previous;
             drop(pane);
         }
     }
@@ -1728,7 +1716,7 @@ mod tests {
             let pane = buffered_pane(b"pending");
             let stream = (*pane.get()).event.clone();
             let observer = Rc::downgrade(&pane);
-            window_pane_tree_insert(&mut all_window_panes, Rc::clone(&pane));
+            window_pane_tree::insert(Rc::clone(&pane));
             pane.destroy();
             assert!(!stream.is_alive());
             assert!(window_pane_upgrade(&observer).is_none());

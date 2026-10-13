@@ -34,36 +34,44 @@ pub struct input_key_entry {
 }
 #[derive(Default)]
 pub struct input_key_tree {
-    entries: std::collections::BTreeMap<key_code, InputKeyValue>,
+    entries: std::collections::BTreeMap<key_code, input_key_entry>,
 }
 
 pub const MOTION_MOUSE_MODES: ::core::ffi::c_int = MODE_MOUSE_BUTTON | MODE_MOUSE_ALL;
 
-// Defaults have immutable static backing; generated entries own stable boxes.
-enum InputKeyValue {
-    Static(&'static input_key_entry),
-    Generated(Box<input_key_entry>),
+thread_local! {
+    static INPUT_KEY_TREE: std::cell::RefCell<input_key_tree> = const {
+        std::cell::RefCell::new(input_key_tree {
+            entries: std::collections::BTreeMap::new(),
+        })
+    };
 }
-impl InputKeyValue {
-    fn entry(&self) -> &input_key_entry {
-        match self {
-            Self::Static(entry) => entry,
-            Self::Generated(entry) => entry,
-        }
+
+/// Each call borrows the tree only for its own duration and returns copies;
+/// default entries borrow their static data.
+impl input_key_tree {
+    pub fn find(key: key_code) -> Option<input_key_entry> {
+        INPUT_KEY_TREE.with_borrow(|tree| tree.entries.get(&key).cloned())
+    }
+
+    /// The first entry for a key wins; later duplicates are dropped.
+    fn insert(entry: input_key_entry) {
+        INPUT_KEY_TREE.with_borrow_mut(|tree| {
+            tree.entries.entry(entry.key).or_insert(entry);
+        });
+    }
+
+    fn snapshot() -> Vec<input_key_entry> {
+        INPUT_KEY_TREE.with_borrow(|tree| tree.entries.values().cloned().collect())
+    }
+
+    #[cfg(test)]
+    fn clear() {
+        INPUT_KEY_TREE.with_borrow_mut(|tree| tree.entries.clear());
     }
 }
 
-fn input_key_tree_find(head: &input_key_tree, key: key_code) -> Option<&input_key_entry> {
-    head.entries.get(&key).map(|value| value.entry())
-}
-
-fn input_key_tree_insert_generated(head: &mut input_key_tree, generated: Box<input_key_entry>) {
-    head.entries
-        .entry(generated.key)
-        .or_insert(InputKeyValue::Generated(generated));
-}
-
-fn input_key_generated(template: &CStr, key: key_code, j: u_int) -> Box<input_key_entry> {
+fn input_key_generated(template: &CStr, key: key_code, j: u_int) -> input_key_entry {
     let mut bytes = template.to_bytes().to_vec();
     let modifier = bytes
         .iter()
@@ -71,14 +79,11 @@ fn input_key_generated(template: &CStr, key: key_code, j: u_int) -> Box<input_ke
         .expect("modified key template has no placeholder");
     bytes[modifier] = b'0' + j as u8;
     let data = CString::new(bytes).expect("modified key template contains an interior NUL");
-    Box::new(input_key_entry {
+    input_key_entry {
         key,
         data: Cow::Owned(data),
-    })
+    }
 }
-pub static mut input_key_tree: input_key_tree = input_key_tree {
-    entries: std::collections::BTreeMap::new(),
-};
 
 static input_key_defaults: [input_key_entry; 85] = [
     input_key_entry {
@@ -433,9 +438,6 @@ static input_key_modifiers: [key_code; 9] = [
     KEYC_META | KEYC_IMPLIED_META | KEYC_CTRL,
     KEYC_SHIFT | KEYC_META | KEYC_IMPLIED_META | KEYC_CTRL,
 ];
-unsafe fn input_key_get(key: key_code) -> Option<&'static input_key_entry> {
-    input_key_tree_find(&input_key_tree, key)
-}
 unsafe fn input_key_split2(mut c: u_int, mut dst: *mut u_char) -> size_t {
     if c > 0x7f as u_int {
         *dst.offset(0 as ::core::ffi::c_int as isize) =
@@ -448,23 +450,19 @@ unsafe fn input_key_split2(mut c: u_int, mut dst: *mut u_char) -> size_t {
     1 as size_t
 }
 pub unsafe fn input_key_build() {
-    let tree = &mut input_key_tree;
     for entry in &input_key_defaults {
         if entry.key & KEYC_BUILD_MODIFIERS == 0 {
-            tree.entries
-                .entry(entry.key)
-                .or_insert(InputKeyValue::Static(entry));
+            input_key_tree::insert(entry.clone());
         } else {
             for (j, modifier) in input_key_modifiers.iter().enumerate().skip(2) {
                 let key = entry.key & !KEYC_BUILD_MODIFIERS;
                 let generated =
                     input_key_generated(entry.data.as_ref(), key | modifier, j as u_int);
-                input_key_tree_insert_generated(tree, generated);
+                input_key_tree::insert(generated);
             }
         }
     }
-    for value in tree.entries.values() {
-        let entry = value.entry();
+    for entry in input_key_tree::snapshot() {
         let key_string = key_string_format(entry.key, true);
         log_debug(format_args!(
             "{}: 0x{:x} ({}) is {}",
@@ -730,18 +728,18 @@ pub unsafe fn input_key(
     if !(*s).mode & MODE_KCURSOR != 0 {
         key &= !KEYC_CURSOR;
     }
-    let mut ike = input_key_get(key);
+    let mut ike = input_key_tree::find(key);
     if ike.is_none()
         && key as ::core::ffi::c_ulonglong & KEYC_META != 0
         && !(key as ::core::ffi::c_ulonglong) & KEYC_IMPLIED_META != 0
     {
-        ike = input_key_get(key & !KEYC_META);
+        ike = input_key_tree::find(key & !KEYC_META);
     }
     if ike.is_none() && key as ::core::ffi::c_ulonglong & KEYC_CURSOR != 0 {
-        ike = input_key_get(key & !KEYC_CURSOR);
+        ike = input_key_tree::find(key & !KEYC_CURSOR);
     }
     if ike.is_none() && key as ::core::ffi::c_ulonglong & KEYC_KEYPAD != 0 {
-        ike = input_key_get(key & !KEYC_KEYPAD);
+        ike = input_key_tree::find(key & !KEYC_KEYPAD);
     }
     if let Some(ike) = ike {
         log_debug(format_args!(
@@ -895,26 +893,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn generated_entries_keep_stable_data_and_first_duplicate() {
-        unsafe {
-            let mut tree = input_key_tree::default();
-            input_key_tree_insert_generated(&mut tree, input_key_generated(c"\x1b[1;_A", 7, 2));
-            let first = std::ptr::from_ref(input_key_tree_find(&tree, 7).unwrap());
-            assert_eq!((*first).data.as_ref(), c"\x1b[1;2A");
-
-            for key in 10..110 {
-                input_key_tree_insert_generated(
-                    &mut tree,
-                    input_key_generated(c"\x1b[1;_B", key, 3),
-                );
-            }
-            input_key_tree_insert_generated(&mut tree, input_key_generated(c"\x1b[1;_C", 7, 4));
-            assert_eq!(tree.entries.len(), 101);
-            assert_eq!(
-                input_key_tree_find(&tree, 7).map(std::ptr::from_ref),
-                Some(first)
-            );
-            assert_eq!((*first).data.as_ref(), c"\x1b[1;2A");
+    fn generated_entries_keep_first_duplicate() {
+        input_key_tree::insert(input_key_generated(c"\x1b[1;_A", 7, 2));
+        assert_eq!(input_key_tree::find(7).unwrap().data.as_ref(), c"\x1b[1;2A");
+        for key in 10..110 {
+            input_key_tree::insert(input_key_generated(c"\x1b[1;_B", key, 3));
         }
+        input_key_tree::insert(input_key_generated(c"\x1b[1;_C", 7, 4));
+        assert_eq!(input_key_tree::snapshot().len(), 101);
+        assert_eq!(input_key_tree::find(7).unwrap().data.as_ref(), c"\x1b[1;2A");
+        input_key_tree::clear();
     }
 }

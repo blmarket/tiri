@@ -7,8 +7,53 @@ use crate::src::shared::window::WindowRef;
 use crate::src::window::{windows, winlinks_minmax, winlinks_next, Window};
 use std::collections::VecDeque;
 
-static mut alerts_task: Option<hmux_rt::mio::Task> = None::<hmux_rt::mio::Task>;
-static mut alerts_list: VecDeque<WindowRef> = VecDeque::new();
+/// Windows waiting for alert delivery and the task that drains them.
+struct alerts {
+    list: VecDeque<WindowRef>,
+    task: Option<hmux_rt::mio::Task>,
+}
+
+thread_local! {
+    static ALERTS: std::cell::RefCell<alerts> = const {
+        std::cell::RefCell::new(alerts {
+            list: VecDeque::new(),
+            task: None,
+        })
+    };
+}
+
+/// Each call borrows the queue only for its own duration; delivery, window
+/// drops and task drops happen after the borrow ends, so they may requeue.
+impl alerts {
+    fn pop_front() -> Option<(WindowRef, bool)> {
+        ALERTS.with_borrow_mut(|alerts| alerts_pop_front(&mut alerts.list))
+    }
+
+    fn push_back(owner: WindowRef) {
+        ALERTS.with_borrow_mut(|alerts| alerts.list.push_back(owner));
+    }
+
+    fn is_scheduled() -> bool {
+        ALERTS.with_borrow(|alerts| alerts.task.is_some())
+    }
+
+    fn set_task(task: Option<hmux_rt::mio::Task>) {
+        let previous = ALERTS.with_borrow_mut(|alerts| std::mem::replace(&mut alerts.task, task));
+        drop(previous);
+    }
+
+    /// Ends dispatch when nothing is queued; returns whether it ended.
+    fn finish_if_idle() -> bool {
+        let finished = ALERTS.with_borrow_mut(|alerts| {
+            if alerts.list.is_empty() {
+                Some(alerts.task.take())
+            } else {
+                None
+            }
+        });
+        finished.map(drop).is_some()
+    }
+}
 
 fn alerts_pop_front<T>(queue: &mut VecDeque<T>) -> Option<(T, bool)> {
     let item = queue.pop_front()?;
@@ -27,7 +72,7 @@ fn alerts_enqueue<T>(queue: &mut VecDeque<T>, queued: &mut ::core::ffi::c_int, i
 
 unsafe fn alerts_callback() {
     loop {
-        let Some((owner, has_next)) = alerts_pop_front(&mut alerts_list) else {
+        let Some((owner, has_next)) = alerts::pop_front() else {
             break;
         };
         // Membership remains set throughout callbacks to suppress requeueing.
@@ -65,14 +110,14 @@ pub unsafe fn alerts_reset_all() {
 }
 
 unsafe fn schedule(id: u32) {
-    if alerts_task.is_none() {
+    if !alerts::is_scheduled() {
         log_debug(format_args!("alerts check queued (by @{})", id));
-        crate::src::reactor::task_start(&mut alerts_task, || {
+        let mut task = None;
+        crate::src::reactor::task_start(&mut task, || {
             Ok(async {
                 loop {
                     alerts_callback();
-                    if alerts_list.is_empty() {
-                        drop(alerts_task.take());
+                    if alerts::finish_if_idle() {
                         break;
                     }
                     crate::src::reactor::yield_now().await;
@@ -80,13 +125,14 @@ unsafe fn schedule(id: u32) {
             })
         })
         .expect("start alert dispatch");
+        alerts::set_task(task);
     }
 }
 
 pub unsafe fn alerts_queue(owner: &WindowRef, flags: i32) {
     if let Some(newly_queued) = owner.queue_alerts(flags) {
         if newly_queued {
-            alerts_list.push_back(owner.clone());
+            alerts::push_back(owner.clone());
         }
         schedule(owner.id());
     }

@@ -1,6 +1,6 @@
 //! The small adapter between plugin observations and pane ownership.
 use super::{Host, PaneActivity, PaneId};
-use crate::src::shared::pane::window_pane;
+use crate::src::shared::pane::{window_pane, window_pane_tree};
 use crate::src::window_pane::{observability, WindowPane};
 use hmux_agent::observability::v1::{PaneObservability, ServerObservability};
 use std::cell::UnsafeCell;
@@ -14,7 +14,7 @@ pub(super) struct ServerHost;
 impl ServerObservability for ServerHost {
     fn pane_ids(&self) -> io::Result<Vec<PaneId>> {
         unsafe {
-            Ok(<Rc<UnsafeCell<window_pane>>>::all_panes()
+            Ok(window_pane_tree::snapshot()
                 .into_iter()
                 .map(|pane| {
                     let id = PaneId(pane.id());

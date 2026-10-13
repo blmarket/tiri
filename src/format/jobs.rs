@@ -38,7 +38,10 @@ fn format_job_message(fj: &format_job, suffix: &[u8]) -> CString {
 
 // Cache storage is owned by Client or by the process. Callbacks carry a weak
 // Client and entry identity, never a reference or pointer into either cache.
-static mut format_jobs: format_job_tree = format_job_tree::new();
+thread_local! {
+    static FORMAT_JOBS: std::cell::RefCell<format_job_tree> =
+        const { std::cell::RefCell::new(format_job_tree::new()) };
+}
 
 #[derive(Clone)]
 enum JobCache {
@@ -57,7 +60,7 @@ impl JobCache {
     /// or free processes, notify clients, or return borrowed components.
     unsafe fn with_cache<R>(&self, edit: impl FnOnce(&mut format_job_tree) -> R) -> Option<R> {
         match self {
-            Self::Global => Some(edit(&mut format_jobs)),
+            Self::Global => Some(FORMAT_JOBS.with_borrow_mut(edit)),
             Self::Client(observer) => {
                 let client = observer.upgrade()?;
                 let mut cache = client.borrow_format_jobs_mut();

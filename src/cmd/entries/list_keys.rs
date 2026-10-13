@@ -6,9 +6,7 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_add, format_create_with_client, format_defaults, format_expand_cstring,
 };
-use crate::src::key_bindings::{
-    key_bindings_get_table, key_bindings_has_repeat, key_bindings_tables,
-};
+use crate::src::key_bindings::{key_bindings_get_table, key_bindings_has_repeat, key_tables};
 use crate::src::key_string::{key_string_format, key_string_parse_cstr};
 use crate::src::options::options_get_number;
 use crate::src::server_client::Client as _;
@@ -220,7 +218,7 @@ unsafe fn cmd_list_keys_exec(
     if template.is_null() {
         template = LIST_KEYS_TEMPLATE.as_ptr();
     }
-    let table_owners = key_bindings_tables();
+    let table_owners = key_tables::snapshot();
     let tables: Vec<_> = table_owners.iter().map(|table| table.borrow()).collect();
     let table_borrow = table.as_ref().map(|table| table.borrow());
     let mut bindings = if let Some(table) = table_borrow.as_ref() {

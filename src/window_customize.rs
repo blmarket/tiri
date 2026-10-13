@@ -32,7 +32,7 @@ use crate::src::hooks::{
 };
 use crate::src::key_bindings::{
     key_bindings_add, key_bindings_get, key_bindings_get_default, key_bindings_remove,
-    key_bindings_reset, key_bindings_set_note, key_bindings_tables,
+    key_bindings_reset, key_bindings_set_note, key_tables,
 };
 use crate::src::key_string::{key_string_format, key_string_parse_cstr};
 use crate::src::mode_tree::{
@@ -1639,7 +1639,7 @@ unsafe fn window_customize_build(
     let mut ft_owner = format_create_from_state(None, None, &fs);
     ft = &raw mut *ft_owner;
     format_add(ft, c"is_environment", |out| out.write_all(b"0"));
-    for table_owner in key_bindings_tables() {
+    for table_owner in key_tables::snapshot() {
         let kt = table_owner.borrow();
         if !kt.key_bindings.storage.is_empty() {
             window_customize_build_keys(mode_owner, &kt, ft, filter, &raw mut fs);

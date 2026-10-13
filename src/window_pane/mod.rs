@@ -155,54 +155,89 @@ impl Drop for window_pane_input_data {
 
 pub const FIONREAD: ::core::ffi::c_int = 0x541b as ::core::ffi::c_int;
 
-static mut all_window_panes: window_pane_tree = window_pane_tree {
-    storage: std::collections::BTreeMap::new(),
-};
-
-static mut next_window_pane_id: u_int = 0;
-
-static mut next_active_point: u_int = 0;
-
-fn window_pane_tree_find(
-    head: &window_pane_tree,
-    id: u_int,
-) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    head.storage.get(&id).cloned()
+thread_local! {
+    static WINDOW_PANES: std::cell::RefCell<window_pane_tree> = const {
+        std::cell::RefCell::new(window_pane_tree {
+            storage: std::collections::BTreeMap::new(),
+        })
+    };
+    static NEXT_WINDOW_PANE_ID: std::cell::Cell<u_int> = const { std::cell::Cell::new(0) };
+    static NEXT_ACTIVE_POINT: std::cell::Cell<u_int> = const { std::cell::Cell::new(0) };
 }
 
-unsafe fn window_pane_tree_insert(
-    head: &mut window_pane_tree,
-    pane: Rc<std::cell::UnsafeCell<window_pane>>,
-) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    let id = (*pane.get()).id;
-    match head.storage.entry(id) {
-        std::collections::btree_map::Entry::Occupied(entry) => Some(entry.get().clone()),
-        std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(pane);
-            None
-        }
+/// The pane index owns the strong pane records. Each call borrows it only for
+/// its own duration and returns owned values, so removed owners are dropped
+/// by the caller after the borrow has ended.
+impl window_pane_tree {
+    /// An existing entry for the same id wins and is returned.
+    pub fn insert(
+        pane: Rc<std::cell::UnsafeCell<window_pane>>,
+    ) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
+        let id = unsafe { (*pane.get()).id };
+        WINDOW_PANES.with_borrow_mut(|tree| match tree.storage.entry(id) {
+            std::collections::btree_map::Entry::Occupied(entry) => Some(entry.get().clone()),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(pane);
+                None
+            }
+        })
     }
-}
 
-unsafe fn window_pane_tree_remove(
-    head: &mut window_pane_tree,
-    pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
-) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    let id = (*pane_owner.get()).id;
-    if !head
-        .storage
-        .get(&id)
-        .is_some_and(|owner| Rc::ptr_eq(owner, pane_owner))
-    {
-        return None;
+    /// Removes and returns the indexed owner only if it is `pane_owner`.
+    pub fn remove(
+        pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
+    ) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
+        let id = unsafe { (*pane_owner.get()).id };
+        WINDOW_PANES.with_borrow_mut(|tree| {
+            if !tree
+                .storage
+                .get(&id)
+                .is_some_and(|owner| Rc::ptr_eq(owner, pane_owner))
+            {
+                return None;
+            }
+            tree.storage.remove(&id)
+        })
     }
-    head.storage.remove(&id)
-}
 
-fn window_pane_tree_minmax(
-    head: &window_pane_tree,
-) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    head.storage.values().next().cloned()
+    pub fn find(id: u_int) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
+        WINDOW_PANES.with_borrow(|tree| tree.storage.get(&id).cloned())
+    }
+
+    /// Retains every registered pane so callers may iterate while panes are
+    /// destroyed.
+    pub fn snapshot() -> Vec<Rc<std::cell::UnsafeCell<window_pane>>> {
+        WINDOW_PANES.with_borrow(|tree| tree.storage.values().cloned().collect())
+    }
+
+    /// Reset the pane registry during fresh server startup.
+    pub fn clear() {
+        let removed = WINDOW_PANES.with_borrow_mut(|tree| std::mem::take(&mut tree.storage));
+        // The borrow ended above, so dropping owners cannot re-enter the index.
+        drop(removed);
+    }
+
+    fn alloc_id() -> u_int {
+        NEXT_WINDOW_PANE_ID.with(|next| {
+            let id = next.get();
+            next.set(id.wrapping_add(1));
+            id
+        })
+    }
+
+    /// Returns the current activity point and advances it.
+    pub fn next_active_point() -> u_int {
+        NEXT_ACTIVE_POINT.with(|next| {
+            let point = next.get();
+            next.set(point.wrapping_add(1));
+            point
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn peek_active_point() -> u_int {
+        NEXT_ACTIVE_POINT.with(std::cell::Cell::get)
+    }
 }
 
 unsafe fn window_fire_pane_moved(
@@ -487,7 +522,7 @@ unsafe fn window_pane_find_by_id_str(s: &CStr) -> Option<Rc<std::cell::UnsafeCel
 }
 
 unsafe fn window_pane_find_by_id(id: u_int) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    window_pane_tree_find(&all_window_panes, id)
+    window_pane_tree::find(id)
 }
 
 /// Retain a live pane for an operation through a nonowning model link.
@@ -570,10 +605,8 @@ unsafe fn window_pane_create(
     )));
     (*wp).flags = PANE_STYLECHANGED;
     (*wp).cmd_status = -(1 as ::core::ffi::c_int);
-    let fresh2 = next_window_pane_id;
-    next_window_pane_id = next_window_pane_id.wrapping_add(1);
-    (*wp).id = fresh2;
-    window_pane_tree_insert(&mut all_window_panes, owner.clone());
+    (*wp).id = window_pane_tree::alloc_id();
+    window_pane_tree::insert(owner.clone());
     (*wp).fd = None;
     (*wp).modes = window_pane_modes::default();
     (*wp).resize_queue = window_pane_resizes::default();
@@ -703,8 +736,7 @@ unsafe fn window_pane_destroy(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>
     let wp = pane_owner.get();
     window_pane_wait_finish(pane_owner);
     spawn_editor_finish(pane_owner);
-    let owner =
-        window_pane_tree_remove(&mut all_window_panes, pane_owner).expect("registered pane owner");
+    let owner = window_pane_tree::remove(pane_owner).expect("registered pane owner");
     (*wp).flags |= PANE_DESTROYED;
     window_pane_clear_prompt(&owner);
     window_pane_free_modes(&owner);
@@ -2156,7 +2188,7 @@ mod pane_prompt_data_tests {
             (*wp).id = u_int::MAX - 1;
             // This fixture exercises cleanup without firing pane hook events.
             (*wp).flags = PANE_DESTROYED;
-            assert!(window_pane_tree_insert(&mut all_window_panes, pane.clone()).is_none());
+            assert!(window_pane_tree::insert(pane.clone()).is_none());
             let old_data = data((*wp).id);
             let old_weak = old_data.downgrade();
             let old_prompt = attach(old_data);
@@ -2201,12 +2233,7 @@ mod pane_prompt_data_tests {
             assert!(!replacement_observer.is_alive());
             drop(replacement);
             assert!(!replacement_weak.is_alive());
-            assert_eq!(
-                window_pane_tree_remove(&mut all_window_panes, &pane)
-                    .unwrap()
-                    .get(),
-                wp
-            );
+            assert_eq!(window_pane_tree::remove(&pane).unwrap().get(), wp);
         }
     }
 }

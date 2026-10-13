@@ -860,7 +860,7 @@ unsafe fn server_client_check_nested(c: &client) -> ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
     let ttyname = c.ttyname.as_deref().expect("client tty name");
-    if Rc::<UnsafeCell<window_pane>>::all_panes()
+    if crate::src::shared::pane::window_pane_tree::snapshot()
         .iter()
         .any(|pane| pane.matches_terminal_name(ttyname))
     {

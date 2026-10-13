@@ -170,7 +170,7 @@ mod tests {
             pane.stop_sync();
             pane.start_sync();
             assert!(!pane.should_draw_rows(true, 0, 1, 2));
-            window_pane_tree_insert(&mut all_window_panes, pane.clone());
+            super::window_pane_tree::insert(pane.clone());
             pane.destroy();
             assert!(!pending());
             assert!((*pane.get()).sync_dirty.is_none());
