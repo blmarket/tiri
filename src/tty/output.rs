@@ -1177,7 +1177,7 @@ pub(super) unsafe fn tty_check_us(
 pub(super) unsafe fn tty_colours_fg(client: &ClientRef, gc: &grid_cell) {
     let mut s: [u8; 32] = [0; 32];
     if terminal_value!(client, cell.fg) >= 90 as ::core::ffi::c_int
-        && terminal_value!(client, cell.bg) <= 97 as ::core::ffi::c_int
+        && terminal_value!(client, cell.fg) <= 97 as ::core::ffi::c_int
         && (gc.fg < 90 as ::core::ffi::c_int || gc.fg > 97 as ::core::ffi::c_int)
     {
         tty_reset(client);
