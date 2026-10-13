@@ -193,7 +193,7 @@ impl window_pane {
 
 impl window_pane {
     pub(super) fn active_mode(&self) -> Option<&'static window_mode> {
-        let entry = self.modes.first()?;
+        let entry = self.modes.last()?;
         Some(
             entry
                 .try_borrow_mut()
@@ -205,7 +205,7 @@ impl window_pane {
     /// Observe the current entry without retaining the pane-owned allocation.
     pub(super) fn active_mode_entry(&self) -> refbox::Weak<window_mode_entry> {
         self.modes
-            .first()
+            .last()
             .map_or_else(refbox::Weak::new, refbox::RefBox::downgrade)
     }
 }

@@ -92,7 +92,6 @@ pub enum PaneScreenSource {
     Mode(refbox::Weak<window_mode_entry>),
 }
 
-/// Pane-owned mode entries stay allocated until explicit mode cleanup removes them.
 pub type window_pane_modes = Vec<refbox::RefBox<window_mode_entry>>;
 
 /// Ordered, non-owning pane handles. Retained Rc references keep allocations

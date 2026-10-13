@@ -532,9 +532,6 @@ unsafe fn window_pane_upgrade(
     Some(owner)
 }
 
-/// Return the next mode in a pane's stack. Entries are boxed individually,
-/// so this derives ordering from the owning collection without putting queue
-/// links into each callback-visible mode entry.
 #[cfg(test)]
 unsafe fn window_pane_mode_next(
     wme: refbox::Weak<window_mode_entry>,
@@ -549,8 +546,9 @@ unsafe fn window_pane_mode_next(
     let Some(index) = storage.iter().position(|entry| wme.is(entry)) else {
         return refbox::Weak::new();
     };
-    storage
-        .get(index + 1)
+    index
+        .checked_sub(1)
+        .and_then(|below| storage.get(below))
         .map_or(refbox::Weak::new(), |entry| entry.downgrade())
 }
 
@@ -571,13 +569,13 @@ unsafe fn window_pane_mode_weak(
         .downgrade()
 }
 
-unsafe fn window_pane_mode_insert_front(
+unsafe fn window_pane_mode_push(
     wp: &mut window_pane,
     entry: refbox::RefBox<window_mode_entry>,
 ) -> refbox::Weak<window_mode_entry> {
     let storage = &mut wp.modes;
     let weak = entry.downgrade();
-    storage.insert(0, entry);
+    storage.push(entry);
     weak
 }
 
@@ -602,7 +600,7 @@ unsafe fn window_pane_mode_promote(
     let Some(entry) = window_pane_mode_remove(&mut *(wp), wme.clone()) else {
         return;
     };
-    window_pane_mode_insert_front(&mut *wp, entry);
+    window_pane_mode_push(&mut *wp, entry);
 }
 
 unsafe fn window_pane_create(
@@ -979,7 +977,7 @@ unsafe fn window_pane_set_mode(
             prefix: 1,
             kill: 0,
         });
-        wme = window_pane_mode_insert_front(&mut *wp, entry);
+        wme = window_pane_mode_push(&mut *wp, entry);
         mode_screen =
             wme.get_unchecked()
                 .mode
