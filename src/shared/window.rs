@@ -167,7 +167,7 @@ pub type winlink_stack = std::collections::VecDeque<refbox::Weak<winlink>>;
 #[repr(C)]
 pub struct windows {
     /// Weak id-ordered index; window records remain externally owned.
-    pub storage: WindowIndex,
+    pub(crate) storage: WindowIndex,
 }
 
 impl winlink {

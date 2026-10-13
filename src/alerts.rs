@@ -4,7 +4,6 @@ use crate::src::session::Session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::WindowRef;
-use crate::src::window::WindowIndex as _;
 use crate::src::window::{windows, winlinks_minmax, winlinks_next, Window};
 use std::collections::VecDeque;
 
@@ -57,7 +56,7 @@ pub unsafe fn alerts_check_session(session: &SessionRef) {
 }
 
 pub unsafe fn alerts_reset_all() {
-    let mut cursor = windows.first();
+    let mut cursor = windows::first();
     while let Some(owner) = cursor {
         owner.reset_alert_timer();
         cursor = owner.next_window();

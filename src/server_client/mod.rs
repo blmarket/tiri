@@ -5,7 +5,6 @@ use crate::src::shared::client::{ClientRef, ClientWeak};
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
 use crate::src::window::Window as _;
-use crate::src::window::WindowIndex as _;
 use crate::src::window_pane::WindowPane as _;
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::time::{Duration, SystemTime};
@@ -1002,7 +1001,7 @@ unsafe fn server_client_attached_lost(c_owner: &ClientRef) {
     let mut s: Option<SessionRef> = None;
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
     log_debug(format_args!("lost attached client {}", log_pointer(c)));
-    let mut window_cursor = windows.first();
+    let mut window_cursor = windows::first();
     while let Some(window_owner) = window_cursor.take() {
         if window_owner.is_latest_client(c_owner) {
             let mut found: Option<ClientRef> = None;
@@ -2743,13 +2742,13 @@ unsafe fn server_client_handle_key_after(
     server_client_handle_key0(owner, event, after_handle, next)
 }
 unsafe fn server_client_loop() {
-    let mut window_cursor = windows.first();
+    let mut window_cursor = windows::first();
     while let Some(window_owner) = window_cursor.take() {
         server_client_check_window_resize(&window_owner);
         window_cursor = window_owner.next_window();
         drop(window_owner);
     }
-    let mut window_cursor = windows.first();
+    let mut window_cursor = windows::first();
     while let Some(window_owner) = window_cursor.take() {
         let mut pane_cursor = window_owner.next_pane(None);
         while let Some(pane_owner) = pane_cursor {
@@ -2776,7 +2775,7 @@ unsafe fn server_client_loop() {
         }
         registry_c_owner = clients.next(&client_owner);
     }
-    let mut window_cursor = windows.first();
+    let mut window_cursor = windows::first();
     while let Some(window_owner) = window_cursor.take() {
         let mut pane_cursor = window_owner.next_pane(None);
         while let Some(pane_owner) = pane_cursor {
@@ -2787,7 +2786,7 @@ unsafe fn server_client_loop() {
         window_cursor = window_owner.next_window();
         drop(window_owner);
     }
-    let mut window_cursor = windows.first();
+    let mut window_cursor = windows::first();
     while let Some(window_owner) = window_cursor.take() {
         let mut pane_cursor = window_owner.next_pane(None);
         while let Some(pane_owner) = pane_cursor {

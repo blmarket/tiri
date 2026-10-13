@@ -47,7 +47,6 @@ use crate::src::tty_term::tty_term_has;
 use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::window::windows;
 use crate::src::window::Window as _;
-use crate::src::window::WindowIndex as _;
 
 use crate::src::window::WindowPane;
 use crate::src::window_border::{window_get_border_cell, window_get_fill_cell};
@@ -856,7 +855,7 @@ unsafe fn redraw_make_scene(client_owner: &ClientRef) -> Option<Box<redraw_scene
 }
 
 pub unsafe fn redraw_invalidate_all_scenes() {
-    let mut window_cursor = windows.first();
+    let mut window_cursor = windows::first();
     while let Some(window_owner) = window_cursor.take() {
         window_owner.invalidate_scene();
         window_cursor = window_owner.next_window();

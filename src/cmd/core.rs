@@ -635,7 +635,7 @@ pub unsafe fn cmd_mouse_window(
     if (*m).w == -(1 as ::core::ffi::c_int) {
         wl = s.as_ref().expect("live session").current_winlink();
     } else {
-        let Some(window) = crate::src::window::window_find_by_id((*m).w as u_int) else {
+        let Some(window) = crate::src::window::windows::resolve((*m).w as u_int) else {
             return refbox::Weak::new();
         };
         wl = s

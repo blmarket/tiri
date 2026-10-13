@@ -16,7 +16,6 @@ use crate::src::tmux::global_w_options;
 use crate::src::tty::tty_update_window_offset;
 use crate::src::window::windows;
 use crate::src::window::Window as _;
-use crate::src::window::WindowIndex as _;
 
 pub unsafe fn resize_window(window: &WindowRef, sx: u_int, sy: u_int, xpixel: i32, ypixel: i32) {
     use crate::src::window::Window;
@@ -478,7 +477,7 @@ pub unsafe fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
             clients.next(registry_c_owner.as_ref().expect("current registry client"));
         c = registry_c_owner.clone();
     }
-    let mut window_cursor = windows.first();
+    let mut window_cursor = windows::first();
     while let Some(window_owner) = window_cursor.take() {
         recalculate_size(&window_owner, now);
         window_cursor = window_owner.next_window();

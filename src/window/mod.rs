@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::time::SystemTime;
 mod alerts;
 mod api;
-pub use api::{Window, WindowIndex};
+pub use api::Window;
 
 mod layout;
 mod model;
@@ -61,46 +61,81 @@ use crate::src::shared::window::{
 
 pub const DEFAULT_XPIXEL: ::core::ffi::c_int = 16 as ::core::ffi::c_int;
 pub const DEFAULT_YPIXEL: ::core::ffi::c_int = 32 as ::core::ffi::c_int;
-pub static mut windows: windows = windows {
-    storage: BTreeMap::new(),
-};
+thread_local! {
+    static WINDOWS: std::cell::RefCell<windows> = const {
+        std::cell::RefCell::new(windows {
+            storage: BTreeMap::new(),
+        })
+    };
+    static NEXT_WINDOW_ID: std::cell::Cell<u_int> = const { std::cell::Cell::new(0) };
+}
 
-static mut next_window_id: u_int = 0;
-
-/// Register an observer, without adding a strong reference to the window.
-unsafe fn windows_insert(head: *mut windows, window: &WindowRef) -> Option<WindowRef> {
-    let elm = window.get();
-    let map = &mut (*head).storage;
-    if let Some(existing) = map.get(&(*elm).id).and_then(WindowWeak::upgrade) {
-        return Some(existing);
+/// The window index only observes: entries are weak and windows are owned
+/// elsewhere. Each call borrows the index for its own duration and returns
+/// owned handles, so callbacks may reenter it between calls.
+impl windows {
+    /// Register an observer, without adding a strong reference to the window.
+    /// An existing live entry for the same id wins and is returned.
+    pub fn insert(window: &WindowRef) -> Option<WindowRef> {
+        let id = unsafe { (*window.get()).id };
+        WINDOWS.with_borrow_mut(|index| {
+            if let Some(existing) = index.storage.get(&id).and_then(WindowWeak::upgrade) {
+                return Some(existing);
+            }
+            index.storage.insert(id, WindowRef::downgrade(window));
+            None
+        })
     }
-    map.insert((*elm).id, WindowRef::downgrade(window));
-    None
-}
 
-/// Remove the matching observer without retaining or releasing the window.
-unsafe fn windows_remove(head: &mut windows, elm: &WindowRef) {
-    let map = &mut head.storage;
-    let id = (*elm.get()).id;
-    if map
-        .get(&id)
-        .is_some_and(|weak| weak.ptr_eq(&WindowRef::downgrade(elm)))
-    {
-        map.remove(&id);
+    /// Remove the matching observer without retaining or releasing the window.
+    pub fn remove(window: &WindowRef) {
+        let id = unsafe { (*window.get()).id };
+        let removed = WINDOWS.with_borrow_mut(|index| {
+            if index
+                .storage
+                .get(&id)
+                .is_some_and(|weak| weak.ptr_eq(&WindowRef::downgrade(window)))
+            {
+                index.storage.remove(&id)
+            } else {
+                None
+            }
+        });
+        drop(removed);
     }
-}
 
-fn windows_minmax(head: &windows) -> Option<WindowRef> {
-    head.storage.values().find_map(WindowWeak::upgrade)
-}
+    pub fn first() -> Option<WindowRef> {
+        WINDOWS.with_borrow(|index| index.storage.values().find_map(WindowWeak::upgrade))
+    }
 
-unsafe fn windows_next(elm: &window) -> Option<WindowRef> {
-    let map = &windows.storage;
-    map.range((
-        std::ops::Bound::Excluded(&elm.id),
-        std::ops::Bound::Unbounded,
-    ))
-    .find_map(|(_, weak)| weak.upgrade())
+    /// The live window with the next greater id; `after` need not be indexed.
+    pub fn next(after: &window) -> Option<WindowRef> {
+        WINDOWS.with_borrow(|index| {
+            index
+                .storage
+                .range((
+                    std::ops::Bound::Excluded(&after.id),
+                    std::ops::Bound::Unbounded,
+                ))
+                .find_map(|(_, weak)| weak.upgrade())
+        })
+    }
+
+    pub fn resolve(id: u32) -> Option<WindowRef> {
+        WINDOWS.with_borrow(|index| index.storage.get(&id)?.upgrade())
+    }
+
+    pub fn is_empty() -> bool {
+        WINDOWS.with_borrow(|index| index.storage.is_empty())
+    }
+
+    fn alloc_id() -> u_int {
+        NEXT_WINDOW_ID.with(|next| {
+            let id = next.get();
+            next.set(id.wrapping_add(1));
+            id
+        })
+    }
 }
 
 /// Return the first winlink in a window's association order.
@@ -214,10 +249,7 @@ pub unsafe fn window_find_by_id_str(s: &CStr) -> Option<WindowRef> {
     if parsed.is_err() {
         return None;
     }
-    window_find_by_id(id)
-}
-pub unsafe fn window_find_by_id(id: u_int) -> Option<WindowRef> {
-    windows.storage.get(&id)?.upgrade()
+    windows::resolve(id)
 }
 unsafe fn window_update_activity(w_owner: &WindowRef) {
     let mut w = w_owner.get();
@@ -268,10 +300,8 @@ pub unsafe fn window_create(
         c"pane-scrollbars-position",
     ) as ::core::ffi::c_int;
     (*w).winlinks = Default::default();
-    let fresh0 = next_window_id;
-    next_window_id = next_window_id.wrapping_add(1);
-    (*w).id = fresh0;
-    windows_insert(&raw mut windows, &owner);
+    (*w).id = windows::alloc_id();
+    windows::insert(&owner);
     (*w).creation_time = SystemTime::now();
     window_update_activity(&owner);
     log_debug(format_args!(
@@ -289,7 +319,7 @@ unsafe fn window_destroy(w_owner: &WindowRef) {
     let mut w = w_owner.get();
     log_debug(format_args!("window @{} destroyed", { (*w).id }));
     // The releasing owner keeps weak parent links upgradeable throughout cleanup.
-    windows_remove(&mut windows, w_owner);
+    windows::remove(w_owner);
     menu_destroy((*w).menu.take());
     window_destroy_panes(w_owner);
     drop((*w).name_event.take());
@@ -782,25 +812,25 @@ mod tests {
             (*b.get()).id = 0xFFFF_0002;
             (*c.get()).id = 0xFFFF_0003;
             for w in [&a, &b, &c] {
-                assert!(windows_insert(&raw mut windows, w).is_none());
+                assert!(windows::insert(w).is_none());
             }
 
-            assert!(WindowRef::ptr_eq(&windows_next(&*a.get()).unwrap(), &b));
+            assert!(WindowRef::ptr_eq(&windows::next(&*a.get()).unwrap(), &b));
 
-            windows_remove(&mut windows, &b);
-            assert!(window_find_by_id(0xFFFF_0002).is_none());
+            windows::remove(&b);
+            assert!(windows::resolve(0xFFFF_0002).is_none());
             // Previous behaviour returned None here (the window's `owner`
             // handle had been reset), ending the traversal early.
-            assert!(WindowRef::ptr_eq(&windows_next(&*b.get()).unwrap(), &c));
-            assert!(WindowRef::ptr_eq(&windows_next(&*a.get()).unwrap(), &c));
+            assert!(WindowRef::ptr_eq(&windows::next(&*b.get()).unwrap(), &c));
+            assert!(WindowRef::ptr_eq(&windows::next(&*a.get()).unwrap(), &c));
 
             // Dropping the last owner unregisters the window.
             drop(a);
             drop(b);
             drop(c);
-            assert!(window_find_by_id(0xFFFF_0001).is_none());
-            assert!(window_find_by_id(0xFFFF_0003).is_none());
-            assert!(!windows.storage.contains_key(&0xFFFF_0003));
+            assert!(windows::resolve(0xFFFF_0001).is_none());
+            assert!(windows::resolve(0xFFFF_0003).is_none());
+            assert!(windows::is_empty());
         }
     }
 }

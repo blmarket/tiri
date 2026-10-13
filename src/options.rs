@@ -24,7 +24,6 @@ use crate::src::server::current_time;
 use crate::src::server_client::Client as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::shared::window::WindowRef;
-use crate::src::window::WindowIndex as _;
 
 use crate::src::server_fn::server_redraw_client;
 use crate::src::session::sessions;
@@ -1418,7 +1417,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
         }
     }
     if strcmp(name, c"automatic-rename".as_ptr()) == 0 as ::core::ffi::c_int {
-        let mut window_cursor = windows.first();
+        let mut window_cursor = windows::first();
         while let Some(window_owner) = window_cursor.take() {
             if let Some(active) = window_owner.active_pane() {
                 if window_owner
@@ -1447,7 +1446,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
         }
     }
     if strcmp(name, c"fill-character".as_ptr()) == 0 as ::core::ffi::c_int {
-        let mut window_cursor = windows.first();
+        let mut window_cursor = windows::first();
         while let Some(window_owner) = window_cursor.take() {
             window_owner.refresh_fill_cells();
             window_cursor = window_owner.next_window();
@@ -1533,7 +1532,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
         || strcmp(name, c"pane-scrollbars".as_ptr()) == 0 as ::core::ffi::c_int
         || strcmp(name, c"pane-scrollbars-position".as_ptr()) == 0 as ::core::ffi::c_int
     {
-        let mut window_cursor = windows.first();
+        let mut window_cursor = windows::first();
         while let Some(window_owner) = window_cursor.take() {
             window_owner.refresh_scrollbars();
             window_owner.refit();
@@ -1554,7 +1553,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
         {
             pane_owner.refresh_scrollbar_style();
         }
-        let mut window_cursor = windows.first();
+        let mut window_cursor = windows::first();
         while let Some(window_owner) = window_cursor.take() {
             window_owner.refit();
             window_cursor = window_owner.next_window();

@@ -24,7 +24,6 @@ use crate::src::server_client::Client as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::shared::window::WindowWeak;
 use crate::src::window::Window as _;
-use crate::src::window::WindowIndex as _;
 use std::os::fd::{FromRawFd, IntoRawFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::net::UnixListener;
@@ -557,7 +556,7 @@ unsafe fn server_child_signal() {
     }
 }
 unsafe fn server_child_exited(pid: pid_t, status: i32) {
-    let mut window_cursor = windows.first();
+    let mut window_cursor = windows::first();
     while let Some(window_owner) = window_cursor.take() {
         window_cursor = window_owner.next_window();
         let mut pane_cursor = window_owner.next_pane(None);
@@ -575,7 +574,7 @@ unsafe fn server_child_stopped(pid: pid_t, status: i32) {
     if (status & 0xff00) >> 8 == SIGTTIN || (status & 0xff00) >> 8 == SIGTTOU {
         return;
     }
-    let mut window_cursor = windows.first();
+    let mut window_cursor = windows::first();
     while let Some(window_owner) = window_cursor.take() {
         let mut pane_cursor = window_owner.next_pane(None);
         while let Some(pane_owner) = pane_cursor {

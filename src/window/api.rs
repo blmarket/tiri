@@ -12,36 +12,6 @@ use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::{WINDOW_MAXIMUM, WINDOW_MINIMUM, WINDOW_RESIZE};
 use std::time::{Duration, Instant, SystemTime};
 
-/// Operations on independently movable registry heads. Entries remain weak;
-/// successful lookup and traversal return one explicit Window release duty.
-pub trait WindowIndex {
-    unsafe fn insert(&mut self, window: &WindowRef) -> Option<WindowRef>;
-    unsafe fn remove(&mut self, window: &WindowRef);
-    unsafe fn first(&self) -> Option<WindowRef>;
-    unsafe fn resolve(&self, id: u32) -> Option<WindowRef>;
-    fn is_empty(&self) -> bool;
-}
-
-impl WindowIndex for windows {
-    unsafe fn insert(&mut self, window: &WindowRef) -> Option<WindowRef> {
-        windows_insert(self, window)
-    }
-    unsafe fn remove(&mut self, window: &WindowRef) {
-        windows_remove(self, window);
-    }
-    unsafe fn first(&self) -> Option<WindowRef> {
-        windows_minmax(self)
-    }
-    unsafe fn resolve(&self, id: u32) -> Option<WindowRef> {
-        let map = &self.storage;
-        map.get(&id)?.upgrade()
-    }
-
-    fn is_empty(&self) -> bool {
-        self.storage.is_empty()
-    }
-}
-
 pub trait Window {
     unsafe fn update_focus(&self);
     unsafe fn redraw_active_switch(&self, pane: Option<&Rc<UnsafeCell<window_pane>>>);
@@ -435,7 +405,7 @@ impl Window for WindowRef {
         window_winlinks_remove(&mut *self.get(), link);
     }
     unsafe fn next_window(&self) -> Option<WindowRef> {
-        windows_next(&*self.get())
+        windows::next(&*self.get())
     }
     unsafe fn next_winlink(&self, after: Option<refbox::Weak<winlink>>) -> refbox::Weak<winlink> {
         if let Some(after) = after {
