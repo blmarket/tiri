@@ -52,7 +52,6 @@ use crate::src::shared::prompt::{
 };
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::session::session_group;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;
@@ -616,8 +615,8 @@ unsafe fn window_tree_build(
     let data = mode_owner.get();
     let mut squash_groups: ::core::ffi::c_int = (*data).squash_groups;
     let mut s: Option<SessionRef> = None;
-    let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
-    let mut current: *mut session_group = ::core::ptr::null_mut::<session_group>();
+    let mut sg = crate::src::shared::session::SessionGroupWeak::new();
+    let mut current = crate::src::shared::session::SessionGroupWeak::new();
     let mut i: u_int = 0;
     current = crate::src::session::session_groups::for_session(&(*data).fs.s);
     (*data).item_list.clear();
@@ -635,14 +634,14 @@ unsafe fn window_tree_build(
                 &s.as_ref()
                     .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
             );
-            !sg.is_null()
+            sg.is_alive()
         } {
             if sg == current
                 && !crate::src::shared::rc::same(s.as_ref(), (*data).fs.session_handle().as_ref())
                 || sg != current
                     && !crate::src::shared::rc::same(
                         s.as_ref(),
-                        crate::src::session::session_group_members(sg).first(),
+                        crate::src::session::session_group_members(&sg).first(),
                     )
             {
                 current_block_12 = 3640593987805443782;

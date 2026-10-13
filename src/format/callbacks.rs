@@ -1318,7 +1318,7 @@ unsafe fn format_cb_window_linked(mut ft: *mut format_tree) -> Option<CString> {
     None
 }
 unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<CString> {
-    let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
+    let mut sg = crate::src::shared::session::SessionGroupWeak::new();
     let mut s: Option<SessionRef> = None;
     let mut n: u_int = 0 as u_int;
     if !(*ft).winlink_handle().is_alive() {
@@ -1331,23 +1331,23 @@ unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<C
         .expect("linked window")
         .clone();
     sg = session_groups::minmax();
-    while !sg.is_null() {
-        let group_members = crate::src::session::session_group_members(sg);
+    while sg.is_alive() {
+        let group_members = crate::src::session::session_group_members(&sg);
         s = group_members.first().cloned();
         if group_members.first().is_some_and(|session| {
             session.with_winlinks(|links| winlink_find_by_window(links, &window).is_alive())
         }) {
             n = n.wrapping_add(1);
         }
-        sg = session_groups::next(&*sg);
+        sg = session_groups::next(&sg);
     }
     let mut s_owner = sessions.first();
     s = s_owner.clone();
     while !s.is_none() {
-        if crate::src::session::session_groups::for_session(&Rc::downgrade(
+        if !crate::src::session::session_groups::for_session(&Rc::downgrade(
             s_owner.as_ref().expect("registered session"),
         ))
-        .is_null()
+        .is_alive()
             && s_owner
                 .as_ref()
                 .expect("registered session")

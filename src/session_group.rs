@@ -9,7 +9,9 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::session::Session;
 use crate::src::shared::abi::u_int;
 use crate::src::shared::command::cmd_find_state;
-use crate::src::shared::session::{session_group, session_groups, SessionRef, SessionWeak};
+use crate::src::shared::session::{
+    session_group, session_groups, SessionGroupWeak, SessionRef, SessionWeak,
+};
 use std::ffi::CStr;
 use std::rc::Rc;
 
@@ -22,90 +24,113 @@ thread_local! {
 }
 
 impl session_group {
-    pub fn new(name: &std::ffi::CStr) -> Box<Self> {
-        Box::new(session_group {
+    pub fn new(name: &std::ffi::CStr) -> refbox::RefBox<Self> {
+        refbox::RefBox::new(session_group {
             name: name.to_owned(),
             members: Vec::new(),
         })
     }
+}
 
-    pub fn node_ptr(&self) -> *mut session_group {
-        (self as *const Self).cast_mut()
-    }
+/// Group access is short and never calls out, so a borrow cannot be active
+/// when another one starts.
+fn with_group<R>(
+    group: &refbox::RefBox<session_group>,
+    op: impl FnOnce(&mut session_group) -> R,
+) -> R {
+    group
+        .try_access_mut(op)
+        .expect("session group already borrowed")
 }
 
 /// The group index is thread-local; each call borrows it only for its own
-/// duration. Returned node pointers stay valid until `remove` drops the owner.
+/// duration. Returned handles stop being alive once `remove` drops the owner.
 impl session_groups {
     pub fn is_empty() -> bool {
         SESSION_GROUPS.with_borrow(|groups| groups.storage.is_empty())
     }
-    pub fn find(name: &CStr) -> *mut session_group {
+    pub fn find(name: &CStr) -> SessionGroupWeak {
         SESSION_GROUPS.with_borrow(|groups| {
             groups
                 .storage
                 .get(name.to_bytes())
-                .map_or(std::ptr::null_mut(), |owner| owner.node_ptr())
+                .map_or_else(SessionGroupWeak::new, refbox::RefBox::downgrade)
         })
     }
     /// Returns the group with this name, creating it when absent.
-    pub fn find_or_create(name: &CStr) -> *mut session_group {
+    pub fn find_or_create(name: &CStr) -> SessionGroupWeak {
         SESSION_GROUPS.with_borrow_mut(|groups| {
             groups
                 .storage
                 .entry(name.to_bytes().to_vec())
                 .or_insert_with(|| session_group::new(name))
-                .node_ptr()
+                .downgrade()
         })
     }
-    /// Removes and drops the indexed owner. A node outside the index is not
-    /// adopted or removed.
-    pub fn remove(elm: *mut session_group) -> bool {
+    /// Removes and drops the indexed owner. A handle outside the index is not
+    /// removed.
+    pub fn remove(elm: &SessionGroupWeak) -> bool {
         let removed = SESSION_GROUPS.with_borrow_mut(|groups| {
             let key = groups
                 .storage
                 .iter()
-                .find(|(_, owner)| owner.node_ptr() == elm)
+                .find(|(_, owner)| elm.is(owner))
                 .map(|(key, _)| key.clone())?;
             groups.storage.remove(&key)
         });
         // The borrow ended above, so dropping the group cannot re-enter the index.
         removed.is_some()
     }
-    pub fn minmax() -> *mut session_group {
+    pub fn minmax() -> SessionGroupWeak {
         SESSION_GROUPS.with_borrow(|groups| {
             groups
                 .storage
                 .values()
                 .next()
-                .map_or(std::ptr::null_mut(), |owner| owner.node_ptr())
+                .map_or_else(SessionGroupWeak::new, refbox::RefBox::downgrade)
         })
     }
-    pub fn next(elm: &session_group) -> *mut session_group {
+    pub fn next(elm: &SessionGroupWeak) -> SessionGroupWeak {
+        let name = session_group_name(elm);
         SESSION_GROUPS.with_borrow(|groups| {
             groups
                 .storage
                 .range::<[u8], _>((
-                    std::ops::Bound::Excluded(elm.name.as_bytes()),
+                    std::ops::Bound::Excluded(name.as_bytes()),
                     std::ops::Bound::Unbounded,
                 ))
                 .next()
-                .map_or(std::ptr::null_mut(), |(_, owner)| owner.node_ptr())
+                .map_or_else(SessionGroupWeak::new, |(_, owner)| owner.downgrade())
         })
     }
     /// Membership compares nonowning identities without projecting Session storage.
-    pub fn for_session(target: &SessionWeak) -> *mut session_group {
+    pub fn for_session(target: &SessionWeak) -> SessionGroupWeak {
         SESSION_GROUPS.with_borrow(|groups| {
             groups
                 .storage
                 .values()
-                .find(|group| group.members.iter().any(|member| member.ptr_eq(target)))
-                .map_or(std::ptr::null_mut(), |group| group.node_ptr())
+                .find(|owner| {
+                    with_group(owner, |group| {
+                        group.members.iter().any(|member| member.ptr_eq(target))
+                    })
+                })
+                .map_or_else(SessionGroupWeak::new, refbox::RefBox::downgrade)
         })
     }
 }
 
-unsafe fn session_group_fire(name: &CStr, group: *mut session_group, owner: &SessionRef) {
+/// Accesses a live group through its handle; see `with_group`.
+fn access<R>(group: &SessionGroupWeak, op: impl FnOnce(&mut session_group) -> R) -> R {
+    group
+        .try_access_mut(op)
+        .expect("session group is not alive or already borrowed")
+}
+
+pub fn session_group_name(group: &SessionGroupWeak) -> std::ffi::CString {
+    access(group, |group| group.name.clone())
+}
+
+unsafe fn session_group_fire(name: &CStr, group: &SessionGroupWeak, owner: &SessionRef) {
     let mut target = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -120,63 +145,71 @@ unsafe fn session_group_fire(name: &CStr, group: *mut session_group, owner: &Ses
         event_payload_set_target(&mut payload, &target);
     }
     event_payload_set_session(&mut payload, c"session", owner.clone());
+    let group_name = session_group_name(group);
     event_payload_set_string(&mut payload, c"group", |out| {
-        write_cstr(out, &*((*group).name))
+        write_cstr(out, group_name.as_c_str())
     });
     event_payload_set_uint(&mut payload, c"group_size", session_group_count(group));
     events_fire(name, payload);
 }
 
-pub unsafe fn session_group_add(group: *mut session_group, owner: &SessionRef) {
-    if session_groups::for_session(&Rc::downgrade(owner)).is_null() {
-        (*group).members.push(Rc::downgrade(owner));
+pub unsafe fn session_group_add(group: &SessionGroupWeak, owner: &SessionRef) {
+    if !session_groups::for_session(&Rc::downgrade(owner)).is_alive() {
+        access(group, |group| group.members.push(Rc::downgrade(owner)));
         session_group_fire(c"session-added-to-group", group, owner);
     }
 }
 
 pub(crate) unsafe fn session_group_remove(owner: &SessionRef) {
     let group = session_groups::for_session(&Rc::downgrade(owner));
-    if group.is_null() {
+    if !group.is_alive() {
         return;
     }
     // Notify while membership is still published, before removing this identity.
-    session_group_fire(c"session-removed-from-group", group, owner);
-    let members = &mut (*group).members;
-    let index = members
-        .iter()
-        .position(|member| member.ptr_eq(&Rc::downgrade(owner)))
-        .expect("session group membership disappeared");
-    members.remove(index);
-    if members.is_empty() {
-        assert!(session_groups::remove(group));
+    session_group_fire(c"session-removed-from-group", &group, owner);
+    let now_empty = access(&group, |group| {
+        let members = &mut group.members;
+        let index = members
+            .iter()
+            .position(|member| member.ptr_eq(&Rc::downgrade(owner)))
+            .expect("session group membership disappeared");
+        members.remove(index);
+        members.is_empty()
+    });
+    if now_empty {
+        assert!(session_groups::remove(&group));
     }
 }
 
 /// Retain live members in insertion order for the entire caller operation.
 /// Callbacks may remove membership or destroy the group while this snapshot exists.
-pub unsafe fn session_group_members(group: *mut session_group) -> Vec<SessionRef> {
-    let Some(group) = group.as_ref() else {
+pub fn session_group_members(group: &SessionGroupWeak) -> Vec<SessionRef> {
+    if !group.is_alive() {
         return Vec::new();
-    };
-    group
-        .members
-        .iter()
-        .filter_map(std::rc::Weak::upgrade)
-        .collect()
-}
-
-pub unsafe fn session_group_count(group: *mut session_group) -> u_int {
-    u_int::try_from(
-        (*group)
+    }
+    access(group, |group| {
+        group
             .members
             .iter()
-            .filter(|member| member.strong_count() != 0)
-            .count(),
-    )
-    .expect("session group has too many members")
+            .filter_map(std::rc::Weak::upgrade)
+            .collect()
+    })
 }
 
-pub unsafe fn session_group_attached_count(group: *mut session_group) -> u_int {
+pub fn session_group_count(group: &SessionGroupWeak) -> u_int {
+    access(group, |group| {
+        u_int::try_from(
+            group
+                .members
+                .iter()
+                .filter(|member| member.strong_count() != 0)
+                .count(),
+        )
+        .expect("session group has too many members")
+    })
+}
+
+pub unsafe fn session_group_attached_count(group: &SessionGroupWeak) -> u_int {
     session_group_members(group)
         .iter()
         .fold(0, |count, member| {
@@ -186,10 +219,10 @@ pub unsafe fn session_group_attached_count(group: *mut session_group) -> u_int {
 
 pub unsafe fn session_group_synchronize_to(owner: &SessionRef) {
     let group = session_groups::for_session(&Rc::downgrade(owner));
-    if group.is_null() {
+    if !group.is_alive() {
         return;
     }
-    let source = session_group_members(group)
+    let source = session_group_members(&group)
         .into_iter()
         .find(|member| !Rc::ptr_eq(member, owner));
     if let Some(source) = source {
@@ -199,10 +232,10 @@ pub unsafe fn session_group_synchronize_to(owner: &SessionRef) {
 
 pub unsafe fn session_group_synchronize_from(source: &SessionRef) {
     let group = session_groups::for_session(&Rc::downgrade(source));
-    if group.is_null() {
+    if !group.is_alive() {
         return;
     }
-    for owner in session_group_members(group) {
+    for owner in session_group_members(&group) {
         if !Rc::ptr_eq(&owner, source) {
             owner.synchronize_windows_from(source);
         }

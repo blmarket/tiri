@@ -8,7 +8,6 @@ use crate::src::session::sessions;
 use crate::src::session::Session;
 use crate::src::session::SessionIndex as _;
 use crate::src::shared::client::ClientRef;
-use crate::src::shared::session::session_group;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
 use crate::src::window::{winlink_find_by_index, winlink_find_by_window};
@@ -45,10 +44,10 @@ pub unsafe fn server_redraw_session(session: &SessionRef) {
 }
 pub unsafe fn server_redraw_session_group(session: &SessionRef) {
     let group = crate::src::session::session_groups::for_session(&std::rc::Rc::downgrade(session));
-    if group.is_null() {
+    if !group.is_alive() {
         server_redraw_session(session);
     } else {
-        for owner in crate::src::session::session_group_members(group) {
+        for owner in crate::src::session::session_group_members(&group) {
             server_redraw_session(&owner);
         }
     }
@@ -69,10 +68,10 @@ pub unsafe fn server_status_session(session: &SessionRef) {
 }
 pub unsafe fn server_status_session_group(session: &SessionRef) {
     let group = crate::src::session::session_groups::for_session(&std::rc::Rc::downgrade(session));
-    if group.is_null() {
+    if !group.is_alive() {
         server_status_session(session);
     } else {
-        for owner in crate::src::session::session_group_members(group) {
+        for owner in crate::src::session::session_group_members(&group) {
             server_status_session(&owner);
         }
     }
@@ -222,7 +221,7 @@ pub unsafe fn server_kill_window(owner: WindowRef, mut renumber: ::core::ffi::c_
 }
 pub unsafe fn server_renumber_session(s_owner: &SessionRef) {
     let s = Some(s_owner.clone());
-    let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
+    let mut sg = crate::src::shared::session::SessionGroupWeak::new();
     if s.as_ref()
         .expect("live session")
         .with_options_mut(|options| options_get_number(options, c"renumber-windows"))
@@ -232,8 +231,8 @@ pub unsafe fn server_renumber_session(s_owner: &SessionRef) {
             &s.as_ref()
                 .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
         );
-        if !sg.is_null() {
-            for session_owner in crate::src::session::session_group_members(sg) {
+        if sg.is_alive() {
+            for session_owner in crate::src::session::session_group_members(&sg) {
                 session_owner.renumber_windows();
             }
         } else {
@@ -262,8 +261,8 @@ pub unsafe fn server_link_window(
     let src = Some(src_owner.clone());
     let dst = Some(dst_owner.clone());
     let mut dstwl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut srcsg: *mut session_group = ::core::ptr::null_mut::<session_group>();
-    let mut dstsg: *mut session_group = ::core::ptr::null_mut::<session_group>();
+    let mut srcsg = crate::src::shared::session::SessionGroupWeak::new();
+    let mut dstsg = crate::src::shared::session::SessionGroupWeak::new();
     srcsg = crate::src::session::session_groups::for_session(
         &src.as_ref()
             .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
@@ -273,8 +272,8 @@ pub unsafe fn server_link_window(
             .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
     );
     if !std::rc::Rc::ptr_eq(src_owner, dst_owner)
-        && !srcsg.is_null()
-        && !dstsg.is_null()
+        && srcsg.is_alive()
+        && dstsg.is_alive()
         && srcsg == dstsg
     {
         return Err(c"sessions are grouped".to_owned());
@@ -338,19 +337,19 @@ pub unsafe fn server_destroy_pane(
 unsafe fn server_destroy_session_group(s_owner: &SessionRef) {
     let s = Some(s_owner.clone());
     let source = s_owner.clone();
-    let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
+    let mut sg = crate::src::shared::session::SessionGroupWeak::new();
     sg = crate::src::session::session_groups::for_session(
         &s.as_ref()
             .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
     );
-    if sg.is_null() {
+    if !sg.is_alive() {
         server_destroy_session(&source);
         (&source).destroy(
             (1 as ::core::ffi::c_int) != 0,
             std::ffi::CStr::from_ptr(c"server_destroy_session_group".as_ptr()),
         );
     } else {
-        for session_owner in crate::src::session::session_group_members(sg) {
+        for session_owner in crate::src::session::session_group_members(&sg) {
             server_destroy_session(&session_owner);
             (&session_owner).destroy(
                 (1 as ::core::ffi::c_int) != 0,
@@ -452,7 +451,7 @@ pub unsafe fn server_destroy_session(source: &SessionRef) {
 }
 pub unsafe fn server_check_unattached() {
     let mut s: Option<SessionRef> = None;
-    let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
+    let mut sg = crate::src::shared::session::SessionGroupWeak::new();
     let mut current_block_4: u64;
     let mut s_owner = sessions.first();
     s = s_owner.clone();
@@ -473,7 +472,7 @@ pub unsafe fn server_check_unattached() {
                                 &s.as_ref()
                                     .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
                             );
-                            if !sg.is_null() && session_group_count(sg) == 1 as u_int {
+                            if sg.is_alive() && session_group_count(&sg) == 1 as u_int {
                                 current_block_4 = 16668937799742929182;
                             } else {
                                 current_block_4 = 13109137661213826276;
@@ -484,7 +483,7 @@ pub unsafe fn server_check_unattached() {
                                 &s.as_ref()
                                     .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
                             );
-                            if sg.is_null() || session_group_count(sg) <= 1 as u_int {
+                            if !sg.is_alive() || session_group_count(&sg) <= 1 as u_int {
                                 current_block_4 = 16668937799742929182;
                             } else {
                                 current_block_4 = 13109137661213826276;
@@ -511,7 +510,7 @@ pub unsafe fn server_check_unattached() {
                                 &s.as_ref()
                                     .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
                             );
-                            if !sg.is_null() && session_group_count(sg) == 1 as u_int {
+                            if sg.is_alive() && session_group_count(&sg) == 1 as u_int {
                                 current_block_4 = 16668937799742929182;
                             } else {
                                 current_block_4 = 13109137661213826276;
@@ -522,7 +521,7 @@ pub unsafe fn server_check_unattached() {
                                 &s.as_ref()
                                     .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
                             );
-                            if sg.is_null() || session_group_count(sg) <= 1 as u_int {
+                            if !sg.is_alive() || session_group_count(&sg) <= 1 as u_int {
                                 current_block_4 = 16668937799742929182;
                             } else {
                                 current_block_4 = 13109137661213826276;
@@ -549,7 +548,7 @@ pub unsafe fn server_check_unattached() {
                                 &s.as_ref()
                                     .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
                             );
-                            if !sg.is_null() && session_group_count(sg) == 1 as u_int {
+                            if sg.is_alive() && session_group_count(&sg) == 1 as u_int {
                                 current_block_4 = 16668937799742929182;
                             } else {
                                 current_block_4 = 13109137661213826276;
@@ -560,7 +559,7 @@ pub unsafe fn server_check_unattached() {
                                 &s.as_ref()
                                     .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
                             );
-                            if sg.is_null() || session_group_count(sg) <= 1 as u_int {
+                            if !sg.is_alive() || session_group_count(&sg) <= 1 as u_int {
                                 current_block_4 = 16668937799742929182;
                             } else {
                                 current_block_4 = 13109137661213826276;

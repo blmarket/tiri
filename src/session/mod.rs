@@ -12,7 +12,7 @@ mod format;
 use crate::src::session_group::session_group_remove;
 pub use crate::src::session_group::{
     session_group_add, session_group_attached_count, session_group_count, session_group_members,
-    session_group_synchronize_from, session_group_synchronize_to,
+    session_group_name, session_group_synchronize_from, session_group_synchronize_to,
 };
 pub use crate::src::shared::session::session_groups;
 pub use api::{Session, SessionIndex};
@@ -38,7 +38,6 @@ use crate::src::shared::event::*;
 use crate::src::shared::limits::UINT_MAX;
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::session::session_group;
 use crate::src::shared::session::{SessionRef, SessionWeak};
 use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::terminal::*;
@@ -408,11 +407,11 @@ unsafe fn session_is_linked(s: Option<&SessionRef>, w: &WindowRef) -> bool {
     let group = crate::src::session::session_groups::for_session(
         &s.map_or_else(std::rc::Weak::new, Rc::downgrade),
     );
-    if group.is_null() {
+    if !group.is_alive() {
         return n != 1;
     }
 
-    n != session_group_count(group)
+    n != session_group_count(&group)
 }
 
 unsafe fn session_next_alert(mut wl: refbox::Weak<winlink>) -> refbox::Weak<winlink> {

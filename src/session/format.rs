@@ -265,16 +265,16 @@ unsafe fn format_cb_session_group_list(mut ft: *mut format_tree) -> Option<CStri
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s: *mut session = format_session;
-    let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
+    let mut sg = crate::src::shared::session::SessionGroupWeak::new();
     if s.is_null() {
         return None;
     }
     sg = session_groups::for_session(&(*ft).s);
-    if sg.is_null() {
+    if !sg.is_alive() {
         return None;
     }
     let mut names = Vec::<u8>::new();
-    for loop_0 in crate::src::session::session_group_members(sg) {
+    for loop_0 in crate::src::session::session_group_members(&sg) {
         if !names.is_empty() {
             names.push(b',');
         }
@@ -294,13 +294,13 @@ unsafe fn format_cb_session_group_attached_list(mut ft: *mut format_tree) -> Opt
     let mut s: *mut session = format_session;
     let mut client_session: *mut session = ::core::ptr::null_mut::<session>();
     let _session_loop: *mut session = ::core::ptr::null_mut::<session>();
-    let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
+    let mut sg = crate::src::shared::session::SessionGroupWeak::new();
     let mut loop_0: Option<ClientRef> = None;
     if s.is_null() {
         return None;
     }
     sg = session_groups::for_session(&(*ft).s);
-    if sg.is_null() {
+    if !sg.is_alive() {
         return None;
     }
     let mut names = Vec::<u8>::new();
@@ -315,7 +315,7 @@ unsafe fn format_cb_session_group_attached_list(mut ft: *mut format_tree) -> Opt
             .as_ref()
             .map_or(std::ptr::null_mut(), |owner| owner.get());
         if !client_session.is_null() {
-            for session_loop in crate::src::session::session_group_members(sg) {
+            for session_loop in crate::src::session::session_group_members(&sg) {
                 if session_loop.get() == client_session {
                     if !names.is_empty() {
                         names.push(b',');
@@ -427,12 +427,12 @@ unsafe fn format_cb_session_group(mut ft: *mut format_tree) -> Option<CString> {
     let format_session = format_session_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
+    let mut sg = crate::src::shared::session::SessionGroupWeak::new();
     if !format_session.is_null() && {
         sg = session_groups::for_session(&(*ft).s);
-        !sg.is_null()
+        sg.is_alive()
     } {
-        return Some((*sg).name.clone());
+        return Some(crate::src::session::session_group_name(&sg));
     }
     None
 }
@@ -442,13 +442,13 @@ unsafe fn format_cb_session_group_attached(mut ft: *mut format_tree) -> Option<C
     let format_session = format_session_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
+    let mut sg = crate::src::shared::session::SessionGroupWeak::new();
     if !format_session.is_null() && {
         sg = session_groups::for_session(&(*ft).s);
-        !sg.is_null()
+        sg.is_alive()
     } {
         return Some(
-            CString::new(format!("{}", (session_group_attached_count(sg)) as u32))
+            CString::new(format!("{}", (session_group_attached_count(&sg)) as u32))
                 .expect("formatted numbers contain no NUL"),
         );
     }
@@ -460,12 +460,12 @@ unsafe fn format_cb_session_group_many_attached(mut ft: *mut format_tree) -> Opt
     let format_session = format_session_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
+    let mut sg = crate::src::shared::session::SessionGroupWeak::new();
     if !format_session.is_null() && {
         sg = session_groups::for_session(&(*ft).s);
-        !sg.is_null()
+        sg.is_alive()
     } {
-        if session_group_attached_count(sg) > 1 as u_int {
+        if session_group_attached_count(&sg) > 1 as u_int {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());
@@ -478,13 +478,13 @@ unsafe fn format_cb_session_group_size(mut ft: *mut format_tree) -> Option<CStri
     let format_session = format_session_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
+    let mut sg = crate::src::shared::session::SessionGroupWeak::new();
     if !format_session.is_null() && {
         sg = session_groups::for_session(&(*ft).s);
-        !sg.is_null()
+        sg.is_alive()
     } {
         return Some(
-            CString::new(format!("{}", (session_group_count(sg)) as u32))
+            CString::new(format!("{}", (session_group_count(&sg)) as u32))
                 .expect("formatted numbers contain no NUL"),
         );
     }
@@ -497,7 +497,7 @@ unsafe fn format_cb_session_grouped(mut ft: *mut format_tree) -> Option<CString>
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     if !format_session.is_null() {
-        if !session_groups::for_session(&(*ft).s).is_null() {
+        if session_groups::for_session(&(*ft).s).is_alive() {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());

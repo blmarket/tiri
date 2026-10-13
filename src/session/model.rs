@@ -95,23 +95,28 @@ mod retained_session_tests {
             (*last.get()).attached = 3;
             let first_weak = Rc::downgrade(&first);
             let last_weak = Rc::downgrade(&last);
-            let mut group = session_group::empty();
-            group.members = vec![
-                first_weak.clone(),
-                Rc::downgrade(&expired),
-                last_weak.clone(),
-            ];
+            let mut owner = session_group::new(c"model");
+            owner
+                .try_access_mut(|group| {
+                    group.members = vec![
+                        first_weak.clone(),
+                        Rc::downgrade(&expired),
+                        last_weak.clone(),
+                    ]
+                })
+                .unwrap();
+            let group = owner.downgrade();
             assert_eq!(Rc::strong_count(&first), 1);
             drop(expired);
-            assert_eq!(session_group_count(&mut group), 2);
-            assert_eq!(session_group_attached_count(&mut group), 5);
-            let snapshot = session_group_members(&mut group);
+            assert_eq!(session_group_count(&group), 2);
+            assert_eq!(session_group_attached_count(&group), 5);
+            let snapshot = session_group_members(&group);
             assert_eq!(snapshot.len(), 2);
             assert!(Rc::ptr_eq(&snapshot[0], &first));
             assert!(Rc::ptr_eq(&snapshot[1], &last));
             drop(first);
             drop(last);
-            drop(group);
+            drop(owner);
             assert!(first_weak.upgrade().is_some());
             assert!(last_weak.upgrade().is_some());
             drop(snapshot);

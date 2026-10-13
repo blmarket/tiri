@@ -16,7 +16,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::format::format_tree;
 use crate::src::shared::format::FORMAT_NONE;
-use crate::src::shared::session::session_group;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::winlink;
@@ -57,7 +56,7 @@ unsafe fn cmd_kill_session_exec(
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let source = (*target).s.upgrade().expect("live target session");
-    let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
+    let mut sg = crate::src::shared::session::SessionGroupWeak::new();
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut filter: *const ::core::ffi::c_char =
         args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
@@ -83,9 +82,9 @@ unsafe fn cmd_kill_session_exec(
         return cmd_kill_session_all(item_handle, filter);
     } else if args_has(args, 'g' as i32 as u_char) != 0 && {
         sg = crate::src::session::session_groups::for_session(&std::rc::Rc::downgrade(&source));
-        !sg.is_null()
+        sg.is_alive()
     } {
-        for session_owner in crate::src::session::session_group_members(sg) {
+        for session_owner in crate::src::session::session_group_members(&sg) {
             server_destroy_session(&session_owner);
             session_owner.destroy(
                 (1 as ::core::ffi::c_int) != 0,

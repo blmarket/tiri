@@ -29,7 +29,6 @@ use crate::src::shared::command::{
 use crate::src::shared::environment::environ;
 use crate::src::shared::limits::USHRT_MAX;
 use crate::src::shared::options::options;
-use crate::src::shared::session::session_group;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::spawn::spawn_context;
 use crate::src::shared::terminal::*;
@@ -123,7 +122,7 @@ unsafe fn cmd_new_session_exec(
         c2rust_unnamed_0: termios_output_speed { __ospeed: 0 },
     };
     let mut tiop: *mut termios = ::core::ptr::null_mut::<termios>();
-    let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
+    let mut sg = crate::src::shared::session::SessionGroupWeak::new();
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut group: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut tmp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -286,8 +285,8 @@ unsafe fn cmd_new_session_exec(
                             .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
                     );
                 }
-                if !sg.is_null() {
-                    prefix = Some((*sg).name.clone());
+                if sg.is_alive() {
+                    prefix = Some(crate::src::session::session_group_name(&sg));
                     current_block = 6717214610478484138;
                 } else if let Some(groupwith_value) = groupwith.as_ref() {
                     prefix = Some(groupwith_value.name().clone());
@@ -608,7 +607,7 @@ unsafe fn cmd_new_session_exec(
                                                         });
                                                     } else {
                                                         if !group.is_null() {
-                                                            if sg.is_null() {
+                                                            if !sg.is_alive() {
                                                                 if let Some(groupwith_value) =
                                                                     groupwith.as_ref()
                                                                 {
@@ -621,7 +620,7 @@ unsafe fn cmd_new_session_exec(
                                                                         ),
                                                                     );
                                                                     session_group_add(
-                                                                        sg, groupwith_owner.as_ref().expect("retained group session"),
+                                                                        &sg, groupwith_owner.as_ref().expect("retained group session"),
                                                                     );
                                                                 } else {
                                                                     sg = session_groups::find_or_create(
@@ -629,7 +628,7 @@ unsafe fn cmd_new_session_exec(
                                                                     );
                                                                 }
                                                             }
-                                                            session_group_add(sg, &session_owner);
+                                                            session_group_add(&sg, &session_owner);
                                                             session_group_synchronize_to(
                                                                 &s.clone().expect("live session"),
                                                             );
