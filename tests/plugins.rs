@@ -240,6 +240,35 @@ fn defaults_match_hmux_and_plugin_output_preserves_user_options() {
 }
 
 #[test]
+fn window_status_lists_pane_emojis_in_layout_order() {
+    let server = Server::start(None, "");
+    let repo = server.repo();
+    let shell = server.pane(repo.to_str().unwrap());
+    // Created second but placed first, so creation and layout orders differ.
+    let running = server.run(&[
+        "new-pane",
+        "-b",
+        "-d",
+        "-t",
+        &shell,
+        "-P",
+        "-F",
+        "#{pane_id}",
+        "-c",
+        repo.to_str().unwrap(),
+        "sleep 1000",
+    ]);
+    assert_eq!(server.format(&running, "#{pane_index}"), "0");
+    assert_eq!(server.format(&shell, "#{pane_index}"), "1");
+    server.await_format(&running, "#{pane_state_emoji}", "🔧");
+    server.await_format(&shell, "#{pane_state_emoji}", "💲");
+    assert_eq!(
+        server.format(&shell, "#{E:window-status-format}"),
+        "0:#[nounderscore]🔧#[default]💲#[default] project*"
+    );
+}
+
+#[test]
 fn selection_and_configuration_override_only_presentation_defaults() {
     for disabled in ["none", ""] {
         let server = Server::start(Some(disabled), "");
