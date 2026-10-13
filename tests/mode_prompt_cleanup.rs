@@ -23,7 +23,7 @@ impl Server {
             .expect("clock after epoch")
             .as_nanos();
         let directory = std::env::temp_dir().join(format!(
-            "hmux-mode-prompt-cleanup-{}-{stamp}",
+            "tiri-mode-prompt-cleanup-{}-{stamp}",
             std::process::id()
         ));
         fs::create_dir(&directory).expect("create private directory");
@@ -32,7 +32,7 @@ impl Server {
     }
 
     fn run(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_hmux"))
+        Command::new(env!("CARGO_BIN_EXE_tiri"))
             .args(["-f", "/dev/null", "-S"])
             .arg(&self.socket)
             .args(args)
@@ -41,7 +41,7 @@ impl Server {
             .env("LC_ALL", "C")
             .env_remove("TMUX")
             .output()
-            .expect("run hmux command")
+            .expect("run tiri command")
     }
 
     fn command(&self, args: &[&str]) -> Output {
@@ -68,16 +68,23 @@ struct AttachedClient {
 impl AttachedClient {
     fn new(server: &Server) -> Self {
         let mut fd = -1;
-        let size = libc::winsize {
+        let mut size = libc::winsize {
             ws_row: 30,
             ws_col: 100,
             ws_xpixel: 0,
             ws_ypixel: 0,
         };
-        let pid = unsafe { libc::forkpty(&mut fd, std::ptr::null_mut(), std::ptr::null(), &size) };
+        let pid = unsafe {
+            libc::forkpty(
+                &mut fd,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                &raw mut size,
+            )
+        };
         assert!(pid >= 0, "forkpty: {}", std::io::Error::last_os_error());
         if pid == 0 {
-            let error = Command::new(env!("CARGO_BIN_EXE_hmux"))
+            let error = Command::new(env!("CARGO_BIN_EXE_tiri"))
                 .args(["-f", "/dev/null", "-S"])
                 .arg(&server.socket)
                 .args(["attach-session", "-t", "mode:0.0"])
@@ -131,9 +138,13 @@ impl AttachedClient {
 
 impl Drop for AttachedClient {
     fn drop(&mut self) {
-        unsafe {
-            libc::kill(self.pid, libc::SIGTERM);
-            libc::waitpid(self.pid, std::ptr::null_mut(), 0);
+        unsafe { libc::kill(self.pid, libc::SIGTERM) };
+        // Drain the terminal while the client exits: a full PTY buffer (only
+        // 1KiB on macOS) would block its final writes forever.
+        let mut chunk = [0; 8192];
+        while unsafe { libc::waitpid(self.pid, std::ptr::null_mut(), libc::WNOHANG) } == 0 {
+            let _ = self.master.read(&mut chunk);
+            thread::sleep(Duration::from_millis(10));
         }
     }
 }

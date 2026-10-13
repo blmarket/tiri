@@ -4,6 +4,7 @@ use crate::src::compat::imsg::imsg;
 use crate::src::compat::imsg::msg_command;
 use crate::src::compat::imsg::*;
 use crate::src::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE, PROTOCOL_VERSION};
+#[cfg(target_os = "linux")]
 use crate::src::compat::systemd::systemd_activated;
 use crate::src::control::control_wait_exit;
 use crate::src::ffi::libc::{
@@ -36,8 +37,8 @@ use crate::src::shared::posix_io::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, W
 use crate::src::shared::posix_terminal::{ICRNL, ONLCR, OPOST, TCSANOW, VMIN, VTIME};
 use crate::src::shared::process::{tmuxpeer, tmuxproc};
 pub use crate::src::shared::signal::{
-    __sighandler_t, __sigset_t, sigaction, sigaction___sigaction_handler, siginfo_t, ProcessSignal,
-    SA_RESTART, SIGCHLD, SIGCONT, SIGHUP, SIGTERM, SIGTSTP, SIGWINCH, SIG_DFL,
+    ProcessSignal, SA_RESTART, SIGCHLD, SIGCONT, SIGHUP, SIGTERM, SIGTSTP, SIGWINCH, SIG_DFL,
+    SIG_IGN,
 };
 use crate::src::shared::terminal::*;
 use crate::src::tmux::{
@@ -45,24 +46,13 @@ use crate::src::tmux::{
     shell_command, socket_path_cstr,
 };
 use crate::src::tty_term::tty_term_read_list;
-use hmux_rt::Runtime as _;
+use tiri_rt::Runtime as _;
 use std::ffi::{CStr, CString, OsStr};
 use std::io;
 use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
 
-pub const ECONNREFUSED: ::core::ffi::c_int = 111 as ::core::ffi::c_int;
-
-pub const LOCK_EX: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
-pub const LOCK_NB: ::core::ffi::c_int = 4 as ::core::ffi::c_int;
-
-pub const IXANY: ::core::ffi::c_int = 0o4000 as ::core::ffi::c_int;
-
-pub const CS8: ::core::ffi::c_int = 0o60 as ::core::ffi::c_int;
-pub const CREAD: ::core::ffi::c_int = 0o200 as ::core::ffi::c_int;
-pub const HUPCL: ::core::ffi::c_int = 0o2000 as ::core::ffi::c_int;
-
-pub const TCSAFLUSH: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
+pub use ::libc::{CREAD, CS8, ECONNREFUSED, HUPCL, IXANY, LOCK_EX, LOCK_NB, TCSAFLUSH};
 
 static mut client_proc: *mut tmuxproc = ::core::ptr::null::<tmuxproc>() as *mut tmuxproc;
 static mut client_peer: *mut tmuxpeer = ::core::ptr::null::<tmuxpeer>() as *mut tmuxpeer;
@@ -106,14 +96,14 @@ enum ClientLock {
 
 unsafe fn client_get_lock(lockfile: &CStr) -> ClientLock {
     log_debug(format_args!("lock file is {}", log_cstr(lockfile)));
-    let lock = match hmux_rt::unix::open(lockfile, libc::O_WRONLY | libc::O_CREAT, 0o600) {
+    let lock = match tiri_rt::unix::open(lockfile, libc::O_WRONLY | libc::O_CREAT, 0o600) {
         Ok(file) => file,
         Err(error) => {
             log_debug(format_args!("open failed: {error}"));
             return ClientLock::Unavailable;
         }
     };
-    if let Err(error) = hmux_rt::unix::lock(lock.as_fd(), LOCK_EX | LOCK_NB) {
+    if let Err(error) = tiri_rt::unix::lock(lock.as_fd(), LOCK_EX | LOCK_NB) {
         log_debug(format_args!(
             "flock failed: {}",
             log_cstr(CStr::from_ptr(strerror(*__errno_location())))
@@ -121,7 +111,7 @@ unsafe fn client_get_lock(lockfile: &CStr) -> ClientLock {
         if error.raw_os_error() != Some(EAGAIN) {
             return ClientLock::Acquired(lock);
         }
-        while hmux_rt::unix::lock(lock.as_fd(), LOCK_EX)
+        while tiri_rt::unix::lock(lock.as_fd(), LOCK_EX)
             .is_err_and(|error| error.kind() == io::ErrorKind::Interrupted)
         {}
         return ClientLock::Retry;
@@ -141,7 +131,7 @@ unsafe fn client_connect(path: &CStr, flags: uint64_t) -> io::Result<OwnedFd> {
     log_debug(format_args!("socket is {}", log_cstr(path)));
     loop {
         log_debug(format_args!("trying connect"));
-        let error = match hmux_rt::unix::connect(std::path::Path::new(connect_path)) {
+        let error = match tiri_rt::unix::connect(std::path::Path::new(connect_path)) {
             Ok(socket) => {
                 drop(lockfd);
                 setblocking(socket.as_raw_fd(), 0);
@@ -227,26 +217,8 @@ pub unsafe fn client_main(
     let mut cwd_owner: Option<CString> = None;
     let mut ppid: pid_t = 0;
     let mut msg: msgtype = 0 as msgtype;
-    let mut tio: termios = termios {
-        c_iflag: 0,
-        c_oflag: 0,
-        c_cflag: 0,
-        c_lflag: 0,
-        c_line: 0,
-        c_cc: [0; 32],
-        c2rust_unnamed: termios_input_speed { __ispeed: 0 },
-        c2rust_unnamed_0: termios_output_speed { __ospeed: 0 },
-    };
-    let mut saved_tio: termios = termios {
-        c_iflag: 0,
-        c_oflag: 0,
-        c_cflag: 0,
-        c_lflag: 0,
-        c_line: 0,
-        c_cc: [0; 32],
-        c2rust_unnamed: termios_input_speed { __ispeed: 0 },
-        c2rust_unnamed_0: termios_output_speed { __ospeed: 0 },
-    };
+    let mut tio: termios = unsafe { ::core::mem::zeroed() };
+    let mut saved_tio: termios = unsafe { ::core::mem::zeroed() };
     let mut size: size_t = 0;
     let mut caps = Vec::new();
     if shell_command.is_some() {
@@ -276,7 +248,12 @@ pub unsafe fn client_main(
             "flags are {}",
             log_hex(client_flags as ::core::ffi::c_ulonglong)
         ));
-        let connection = if systemd_activated() != 0 {
+        // Socket activation is only available through systemd.
+        #[cfg(target_os = "linux")]
+        let activated = systemd_activated() != 0;
+        #[cfg(not(target_os = "linux"))]
+        let activated = false;
+        let connection = if activated {
             Ok(server_start(flags, &mut None, &mut None))
         } else {
             client_connect(socket_path_cstr(), client_flags)
@@ -303,7 +280,7 @@ pub unsafe fn client_main(
         };
         // Connecting may daemonize a new server. Initialize each process's
         // runtime only after that fork.
-        let runtime = hmux_rt::mio::Runtime::new().expect("hmux-rt initialization");
+        let runtime = tiri_rt::mio::Runtime::new().expect("tiri-rt initialization");
         proc_set_signals(
             client_proc,
             Some(Box::new(|sig| unsafe { client_signal(sig) })),
@@ -319,7 +296,7 @@ pub unsafe fn client_main(
             .insert(find_cwd().unwrap_or_else(|| find_home_cstr().unwrap_or(c"/").to_owned()))
             .as_ptr();
         let ttynam =
-            hmux_rt::unix::terminal_name(std::os::fd::BorrowedFd::borrow_raw(STDIN_FILENO))
+            tiri_rt::unix::terminal_name(std::os::fd::BorrowedFd::borrow_raw(STDIN_FILENO))
                 .unwrap_or_default();
         termname = getenv(c"TERM".as_ptr());
         if termname.is_null() {
@@ -328,7 +305,7 @@ pub unsafe fn client_main(
         if 0 as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
             fatal(|out| out.write_all(b"pledge failed"));
         }
-        if hmux_rt::unix::terminal_attributes(std::os::fd::BorrowedFd::borrow_raw(STDIN_FILENO))
+        if tiri_rt::unix::terminal_attributes(std::os::fd::BorrowedFd::borrow_raw(STDIN_FILENO))
             .is_ok()
             && *termname as ::core::ffi::c_int != '\0' as i32
         {
@@ -341,7 +318,7 @@ pub unsafe fn client_main(
             }
         }
         if ptm_fd != -(1 as ::core::ffi::c_int) {
-            let _ = hmux_rt::unix::close(ptm_fd);
+            let _ = tiri_rt::unix::close(ptm_fd);
         }
         crate::src::tmux::free_global_options();
         drop(global_environ.take());
@@ -360,8 +337,8 @@ pub unsafe fn client_main(
             tio.c_iflag = (ICRNL | IXANY) as tcflag_t;
             tio.c_oflag = (OPOST | ONLCR) as tcflag_t;
             tio.c_cflag = (CREAD | CS8 | HUPCL) as tcflag_t;
-            tio.c_cc[VMIN as usize] = 1 as cc_t;
-            tio.c_cc[VTIME as usize] = 0 as cc_t;
+            tio.c_cc[VMIN] = 1 as cc_t;
+            tio.c_cc[VTIME] = 0 as cc_t;
             cfsetispeed(&mut tio, cfgetispeed(&saved_tio));
             cfsetospeed(&mut tio, cfgetospeed(&saved_tio));
             crate::src::shared::terminal::set_attributes(STDIN_FILENO, TCSANOW, &tio);
@@ -553,7 +530,7 @@ unsafe fn client_exec(shell: &CStr, shellcmd: Option<&CStr>) -> ! {
     setblocking(STDIN_FILENO, 1 as ::core::ffi::c_int);
     setblocking(STDOUT_FILENO, 1 as ::core::ffi::c_int);
     setblocking(STDERR_FILENO, 1 as ::core::ffi::c_int);
-    hmux_rt::unix::close_from(STDERR_FILENO + 1 as ::core::ffi::c_int);
+    tiri_rt::unix::close_from(STDERR_FILENO + 1 as ::core::ffi::c_int);
     execl(
         shell.as_ptr(),
         argv0.as_ptr(),
@@ -564,12 +541,7 @@ unsafe fn client_exec(shell: &CStr, shellcmd: Option<&CStr>) -> ! {
     fatal(|out| out.write_all(b"execl failed"));
 }
 unsafe fn client_signal(sig: ProcessSignal) {
-    let mut sigact: sigaction = sigaction {
-        __sigaction_handler: sigaction___sigaction_handler { sa_handler: None },
-        sa_mask: __sigset_t { __val: [0; 16] },
-        sa_flags: 0,
-        sa_restorer: None,
-    };
+    let mut sigact: sigaction = unsafe { ::core::mem::zeroed() };
     let mut status: ::core::ffi::c_int = 0;
     let mut pid: pid_t = 0;
     log_debug(format_args!(
@@ -623,10 +595,7 @@ unsafe fn client_signal(sig: ProcessSignal) {
                 );
                 sigemptyset(&raw mut sigact.sa_mask);
                 sigact.sa_flags = SA_RESTART;
-                sigact.__sigaction_handler.sa_handler =
-                    ::core::mem::transmute::<::libc::intptr_t, __sighandler_t>(
-                        1 as ::core::ffi::c_int as ::libc::intptr_t,
-                    );
+                sigact.sa_sigaction = SIG_IGN;
                 if sigaction(
                     SIGTSTP,
                     &raw mut sigact,
@@ -784,12 +753,7 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
     };
 }
 unsafe fn client_dispatch_attached(imsg: &mut imsg) {
-    let mut sigact: sigaction = sigaction {
-        __sigaction_handler: sigaction___sigaction_handler { sa_handler: None },
-        sa_mask: __sigset_t { __val: [0; 16] },
-        sa_flags: 0,
-        sa_restorer: None,
-    };
+    let mut sigact: sigaction = unsafe { ::core::mem::zeroed() };
     let mut data: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut datalen: ssize_t = 0;
     data = imsg.data.as_mut_ptr().cast::<::core::ffi::c_char>();
@@ -869,7 +833,7 @@ unsafe fn client_dispatch_attached(imsg: &mut imsg) {
             );
             sigemptyset(&raw mut sigact.sa_mask);
             sigact.sa_flags = SA_RESTART;
-            sigact.__sigaction_handler.sa_handler = SIG_DFL;
+            sigact.sa_sigaction = SIG_DFL;
             if sigaction(
                 SIGTSTP,
                 &raw mut sigact,

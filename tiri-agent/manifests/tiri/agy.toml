@@ -1,0 +1,36 @@
+# tiri's reading of Antigravity CLI, layered over herdr's antigravity.toml (see
+# ../README.md). `version` is the herdr manifest this overlay was reviewed
+# against.
+id = "agy"
+version = "2026.10.05.1"
+
+# A background task agy is still running, listed under the composer:
+#   ● [22:37:14] sleep 12 && echo finished running
+# agy hands back the composer and the resting footer while the task runs, but
+# the turn is not over: herdr reads this as idle, while a loop runner on tiri
+# must not end a run on top of a live tool.
+[[rules]]
+id = "running_task_working"
+state = "working"
+priority = 120
+region = "bottom_lines(16)"
+visible_working = true
+line_regex = ['(?i)^\s*●.*\srunning\s*$']
+
+# User-opened overlays carry no lifecycle signal. The slash-command menu also
+# flips the footer to `esc to cancel`, which herdr otherwise reads as work.
+[[rules]]
+id = "shortcuts_overlay"
+state = "unknown"
+priority = 200
+region = "bottom_lines(16)"
+skip_state_update = true
+contains = ["navigate", "esc close"]
+
+[[rules]]
+id = "slash_menu"
+state = "unknown"
+priority = 200
+region = "bottom_lines(16)"
+skip_state_update = true
+contains = ["enter select", "tab complete"]

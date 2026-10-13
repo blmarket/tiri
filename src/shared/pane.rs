@@ -19,7 +19,7 @@ pub struct window_pane_offset {
 
 /// Unconsumed output for a copied pane offset, without borrowing a pane model.
 pub fn pane_output_data<'a>(
-    input: &'a mut hmux_buffer::SegmentedBuf,
+    input: &'a mut tiri_buffer::SegmentedBuf,
     base_offset: size_t,
     offset: &window_pane_offset,
 ) -> &'a [u8] {

@@ -34,13 +34,12 @@ use crate::src::shared::pane::window_pane_offset;
 use crate::src::shared::session::SessionRef;
 use crate::src::tmux::get_timer;
 use crate::src::window::{winlink_find_by_window, Window, WindowPane};
-use hmux_buffer::SegmentedBuf;
+use tiri_buffer::SegmentedBuf;
 use std::cell::UnsafeCell;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
 
-pub const POLLIN: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const INFTIM: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
 pub const CONTROL_PANE_OFF: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const CONTROL_PANE_PAUSED: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
@@ -666,16 +665,16 @@ pub unsafe fn control_all_done(c: &ClientRef) -> ::core::ffi::c_int {
         == 0 as size_t) as ::core::ffi::c_int
 }
 pub unsafe fn control_wait_exit() {
-    use hmux_rt::{AsyncRead as _, Runtime as _};
+    use tiri_rt::{AsyncRead as _, Runtime as _};
     use std::os::fd::AsFd;
     let stdin = std::io::stdin();
     let fd = stdin.as_fd();
-    let Ok(was_nonblocking) = hmux_rt::unix::set_nonblocking(fd, true) else {
+    let Ok(was_nonblocking) = tiri_rt::unix::set_nonblocking(fd, true) else {
         return;
     };
     let result = (|| -> std::io::Result<()> {
-        let mut runtime = hmux_rt::mio::Runtime::new()?;
-        let source = runtime.enter(|| hmux_rt::mio::Io::new(fd.try_clone_to_owned()?))?;
+        let mut runtime = tiri_rt::mio::Runtime::new()?;
+        let source = runtime.enter(|| tiri_rt::mio::Io::new(fd.try_clone_to_owned()?))?;
         runtime.block_on(async {
             let mut buffer = evbuffer_new();
             loop {
@@ -690,14 +689,14 @@ pub unsafe fn control_wait_exit() {
                         return Ok(());
                     }
                     bytes.truncate(received.bytes);
-                    use hmux_buffer::BufMut as _;
-                    buffer.put(hmux_buffer::SegmentedBuf::from(bytes));
+                    use tiri_buffer::BufMut as _;
+                    buffer.put(tiri_buffer::SegmentedBuf::from(bytes));
                 }
             }
         })?
     })();
     let _ = result;
-    let _ = hmux_rt::unix::set_nonblocking(fd, was_nonblocking);
+    let _ = tiri_rt::unix::set_nonblocking(fd, was_nonblocking);
 }
 unsafe fn control_flush_all_blocks(client: &ClientRef) {
     loop {

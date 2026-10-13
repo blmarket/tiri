@@ -1,0 +1,17 @@
+[package]
+name = "tiri-agent"
+version = "0.1.0"
+edition = "2024"
+description = "Agent detection and pane observability contracts shared by tmux-compatible servers"
+license = "GPL-3.0-only"
+
+[dependencies]
+tiri-rt = { path = "../tiri-rt" }
+libc = "0.2"
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+toml = { version = "1", default-features = false, features = ["parse", "serde"] }
+tracing = "0.1"
+
+[dev-dependencies]
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

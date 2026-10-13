@@ -17,11 +17,11 @@ pub unsafe fn getpeereid(
     mut gid: *mut gid_t,
 ) -> ::core::ffi::c_int {
     if s < 0 {
-        *libc::__errno_location() = libc::EBADF;
+        *crate::src::ffi::libc::__errno_location() = libc::EBADF;
         return -1;
     }
     crate::src::reactor::io_status(
-        hmux_rt::unix::peer_credentials(std::os::fd::BorrowedFd::borrow_raw(s)).map(
+        tiri_rt::unix::peer_credentials(std::os::fd::BorrowedFd::borrow_raw(s)).map(
             |(user, group)| {
                 *uid = user;
                 *gid = group;

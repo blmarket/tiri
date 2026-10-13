@@ -3,9 +3,7 @@ use crate::src::arguments::{args_count, args_has, args_string};
 use crate::src::cmd::{cmd_mouse_at, cmd_mouse_pane};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::events::events_fire_pane;
-use crate::src::ffi::libc::{
-    __ctype_tolower_loc, abs, llabs, memcmp, strcasecmp, strchr, strcmp, strcspn, strncmp,
-};
+use crate::src::ffi::libc::{abs, llabs, memcmp, strcasecmp, strchr, strcmp, strcspn, strncmp};
 use crate::src::ffi::regex::{CompiledRegex, RegexMatch, RegexStorage};
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::nullable_cstr;
@@ -364,13 +362,13 @@ pub type window_copy_line_numbers = ::core::ffi::c_uint;
 #[inline]
 unsafe fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
     if __c >= -(128 as ::core::ffi::c_int) && __c < 256 as ::core::ffi::c_int {
-        *(*__ctype_tolower_loc()).offset(__c as isize) as ::core::ffi::c_int
+        ::libc::tolower(__c as ::core::ffi::c_int) as ::core::ffi::c_int
     } else {
         __c
     }
 }
 
-pub const REG_NOTBOL: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
+pub use ::libc::REG_NOTBOL;
 pub static window_copy_mode: window_mode = {
     window_mode {
         name: c"copy-mode",
@@ -5350,15 +5348,15 @@ unsafe fn window_copy_search_compare(
                         (if __c < -(128 as ::core::ffi::c_int) || __c > 255 as ::core::ffi::c_int {
                             __c as __int32_t
                         } else {
-                            *(*__ctype_tolower_loc()).offset(__c as isize)
+                            ::libc::tolower(__c as ::core::ffi::c_int)
                         }) as ::core::ffi::c_int;
                 } else {
                     __res =
                         tolower(ud.data[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int);
                 }
             } else {
-                __res = *(*__ctype_tolower_loc()).offset(
-                    ud.data[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int as isize,
+                __res = ::libc::tolower(
+                    ud.data[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int,
                 ) as ::core::ffi::c_int;
             }
             __res
@@ -5890,15 +5888,14 @@ unsafe fn window_copy_is_lowercase(mut ptr: *const ::core::ffi::c_char) -> ::cor
                         {
                             __c as __int32_t
                         } else {
-                            *(*__ctype_tolower_loc()).offset(__c as isize)
+                            ::libc::tolower(__c as ::core::ffi::c_int)
                         }) as ::core::ffi::c_int;
                     } else {
                         __res = tolower(*ptr as u_char as ::core::ffi::c_int);
                     }
                 } else {
-                    __res = *(*__ctype_tolower_loc())
-                        .offset(*ptr as u_char as ::core::ffi::c_int as isize)
-                        as ::core::ffi::c_int;
+                    __res =
+                        ::libc::tolower(*ptr as u_char as ::core::ffi::c_int) as ::core::ffi::c_int;
                 }
                 __res
             })

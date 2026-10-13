@@ -54,7 +54,7 @@ use crate::src::style::colour::{colour_palette_from_option, colour_palette_init}
 use crate::src::style::{style_apply_with_options, style_parse, style_set};
 use crate::src::tmux::global_w_options;
 use crate::src::window::Window;
-use hmux_buffer::SegmentedBuf;
+use tiri_buffer::SegmentedBuf;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;

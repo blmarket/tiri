@@ -1,7 +1,7 @@
 //! Legacy buffer helpers over plain segmented byte storage.
 //! Stream scheduling belongs to bufferevent, not these storage operations.
 use crate::src::shared::abi::{size_t, ssize_t};
-use hmux_buffer::{Buf, BufMut, Buffer, LineEnding, SegmentedBuf};
+use tiri_buffer::{Buf, BufMut, Buffer, LineEnding, SegmentedBuf};
 use std::ffi::c_int;
 
 pub fn evbuffer_new() -> Box<SegmentedBuf> {

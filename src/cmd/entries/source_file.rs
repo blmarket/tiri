@@ -5,7 +5,7 @@ use crate::src::cmd::queue::{
 };
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_parse_flags};
 use crate::src::compat::glob::GlobResult;
-use crate::src::ffi::libc::{__ctype_b_loc, strcmp, strerror};
+use crate::src::ffi::libc::{strcmp, strerror};
 use crate::src::file::file_read_with_cmdq_wait;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
@@ -26,9 +26,8 @@ use crate::src::shared::command::{
     CMD_FIND_CANFAIL, CMD_PARSE_PARSEONLY, CMD_PARSE_QUIET, CMD_PARSE_VERBOSE,
     CMD_SOURCE_FILE_DEPTH_LIMIT,
 };
-use crate::src::shared::ctype::_ISalnum;
 use crate::src::shared::errno::{EINVAL, ENOENT, ENOMEM};
-use hmux_buffer::SegmentedBuf;
+use tiri_buffer::SegmentedBuf;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
@@ -44,8 +43,7 @@ pub struct cmd_source_file_data {
     pub files: Vec<CString>,
 }
 
-pub const GLOB_NOSPACE: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const GLOB_NOMATCH: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
+pub use ::libc::{GLOB_NOMATCH, GLOB_NOSPACE};
 static mut cmd_source_file_depth: u_int = 0;
 pub static cmd_source_file_entry: cmd_entry = {
     cmd_entry {
@@ -242,12 +240,7 @@ unsafe fn cmd_source_file_add(cdata: &mut cmd_source_file_data, path: &CStr) {
 unsafe fn cmd_source_file_quote_for_glob(path: &CStr) -> CString {
     let mut quoted = Vec::new();
     for &byte in path.to_bytes() {
-        if byte < 128
-            && *(*__ctype_b_loc()).offset(byte as isize) as ::core::ffi::c_int
-                & _ISalnum as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
-                == 0
-            && byte != b'/'
-        {
+        if byte < 128 && ::libc::isalnum(byte as ::core::ffi::c_int) == 0 && byte != b'/' {
             quoted.push(b'\\');
         }
         quoted.push(byte);

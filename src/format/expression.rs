@@ -61,32 +61,8 @@ pub(super) fn format_quote_style(s: &CStr) -> CString {
     CString::new(quoted).expect("style-quoted C string contains no NUL")
 }
 pub(crate) unsafe fn format_pretty_time_cstring(mut t: time_t) -> CString {
-    let mut now_tm: tm = tm {
-        tm_sec: 0,
-        tm_min: 0,
-        tm_hour: 0,
-        tm_mday: 0,
-        tm_mon: 0,
-        tm_year: 0,
-        tm_wday: 0,
-        tm_yday: 0,
-        tm_isdst: 0,
-        tm_gmtoff: 0,
-        tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
-    };
-    let mut tm: tm = tm {
-        tm_sec: 0,
-        tm_min: 0,
-        tm_hour: 0,
-        tm_mday: 0,
-        tm_mon: 0,
-        tm_year: 0,
-        tm_wday: 0,
-        tm_yday: 0,
-        tm_isdst: 0,
-        tm_gmtoff: 0,
-        tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
-    };
+    let mut now_tm: tm = unsafe { ::core::mem::zeroed() };
+    let mut tm: tm = unsafe { ::core::mem::zeroed() };
     let mut now: time_t = 0;
     let mut age: time_t = 0;
     let mut s: [::core::ffi::c_char; 9] = [0; 9];
@@ -207,19 +183,7 @@ pub(super) unsafe fn format_find(
         let mut found: Option<CString> = None;
         let mut s: [::core::ffi::c_char; 512] = [0; 512];
         let mut t: time_t = 0 as time_t;
-        let mut tm: tm = tm {
-            tm_sec: 0,
-            tm_min: 0,
-            tm_hour: 0,
-            tm_mday: 0,
-            tm_mon: 0,
-            tm_year: 0,
-            tm_wday: 0,
-            tm_yday: 0,
-            tm_isdst: 0,
-            tm_gmtoff: 0,
-            tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
-        };
+        let mut tm: tm = unsafe { ::core::mem::zeroed() };
         let parsed_option = options_parse_owned(CStr::from_ptr(key));
         if let Some(parsed) = &parsed_option {
             let name = parsed.name.as_ptr();
@@ -356,7 +320,7 @@ pub(super) unsafe fn format_find(
         if modifiers & FORMAT_BASENAME as uint64_t != 0 {
             // basename/dirname may mutate their input or return a static string.
             let mut scratch = found.into_bytes_with_nul();
-            found = CStr::from_ptr(__xpg_basename(scratch.as_mut_ptr().cast())).to_owned();
+            found = CStr::from_ptr(basename(scratch.as_mut_ptr().cast())).to_owned();
         }
         if modifiers & FORMAT_DIRNAME as uint64_t != 0 {
             let mut scratch = found.into_bytes_with_nul();
@@ -678,11 +642,9 @@ pub(super) unsafe fn format_build_modifiers(
                 cp = cp.offset(1);
             } else {
                 argv = Vec::new();
-                if *(*__ctype_b_loc())
-                    .offset(*cp.offset(1 as ::core::ffi::c_int as isize) as u_char
-                        as ::core::ffi::c_int as isize) as ::core::ffi::c_int
-                    & _ISpunct as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
-                    == 0
+                if ::libc::ispunct(
+                    *cp.offset(1 as ::core::ffi::c_int as isize) as u_char as ::core::ffi::c_int
+                ) == 0
                     || *cp.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
                         == '-' as i32
                 {
@@ -938,19 +900,7 @@ pub(super) unsafe fn format_loop_sessions(
         start_time: 0,
         flags: 0,
         time: 0,
-        tm: tm {
-            tm_sec: 0,
-            tm_min: 0,
-            tm_hour: 0,
-            tm_mday: 0,
-            tm_mon: 0,
-            tm_year: 0,
-            tm_wday: 0,
-            tm_yday: 0,
-            tm_isdst: 0,
-            tm_gmtoff: 0,
-            tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
-        },
+        tm: unsafe { ::core::mem::zeroed() },
     };
     let mut buffer = Vec::new();
     let mut i: ::core::ffi::c_int = 0;
@@ -1102,19 +1052,7 @@ pub(super) unsafe fn format_loop_windows(
         start_time: 0,
         flags: 0,
         time: 0,
-        tm: tm {
-            tm_sec: 0,
-            tm_min: 0,
-            tm_hour: 0,
-            tm_mday: 0,
-            tm_mon: 0,
-            tm_year: 0,
-            tm_wday: 0,
-            tm_yday: 0,
-            tm_isdst: 0,
-            tm_gmtoff: 0,
-            tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
-        },
+        tm: unsafe { ::core::mem::zeroed() },
     };
     let mut buffer = Vec::new();
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
@@ -1226,19 +1164,7 @@ pub(super) unsafe fn format_loop_panes(
         start_time: 0,
         flags: 0,
         time: 0,
-        tm: tm {
-            tm_sec: 0,
-            tm_min: 0,
-            tm_hour: 0,
-            tm_mday: 0,
-            tm_mon: 0,
-            tm_year: 0,
-            tm_wday: 0,
-            tm_yday: 0,
-            tm_isdst: 0,
-            tm_gmtoff: 0,
-            tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
-        },
+        tm: unsafe { ::core::mem::zeroed() },
     };
     let mut buffer = Vec::new();
     let mut i: ::core::ffi::c_int = 0;
@@ -1627,19 +1553,7 @@ pub(super) unsafe fn format_loop_clients(
         start_time: 0,
         flags: 0,
         time: 0,
-        tm: tm {
-            tm_sec: 0,
-            tm_min: 0,
-            tm_hour: 0,
-            tm_mday: 0,
-            tm_mon: 0,
-            tm_year: 0,
-            tm_wday: 0,
-            tm_yday: 0,
-            tm_isdst: 0,
-            tm_gmtoff: 0,
-            tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
-        },
+        tm: unsafe { ::core::mem::zeroed() },
     };
     let mut buffer = Vec::new();
     let mut i: ::core::ffi::c_int = 0;
@@ -1988,19 +1902,7 @@ pub(super) unsafe fn format_replace(
         start_time: 0,
         flags: 0,
         time: 0,
-        tm: tm {
-            tm_sec: 0,
-            tm_min: 0,
-            tm_hour: 0,
-            tm_mday: 0,
-            tm_mon: 0,
-            tm_year: 0,
-            tm_wday: 0,
-            tm_yday: 0,
-            tm_isdst: 0,
-            tm_gmtoff: 0,
-            tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
-        },
+        tm: unsafe { ::core::mem::zeroed() },
     };
     let _envent: Option<&environ_entry> = None;
     (*sc).order = SORT_ORDER;
@@ -3103,19 +3005,7 @@ pub(crate) unsafe fn format_expand_time_cstring(
         start_time: 0,
         flags: 0,
         time: 0,
-        tm: tm {
-            tm_sec: 0,
-            tm_min: 0,
-            tm_hour: 0,
-            tm_mday: 0,
-            tm_mon: 0,
-            tm_year: 0,
-            tm_wday: 0,
-            tm_yday: 0,
-            tm_isdst: 0,
-            tm_gmtoff: 0,
-            tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
-        },
+        tm: unsafe { ::core::mem::zeroed() },
     };
     memset(
         &raw mut es as *mut ::core::ffi::c_void,
@@ -3138,19 +3028,7 @@ pub unsafe fn format_expand_cstring(
         start_time: 0,
         flags: 0,
         time: 0,
-        tm: tm {
-            tm_sec: 0,
-            tm_min: 0,
-            tm_hour: 0,
-            tm_mday: 0,
-            tm_mon: 0,
-            tm_year: 0,
-            tm_wday: 0,
-            tm_yday: 0,
-            tm_isdst: 0,
-            tm_gmtoff: 0,
-            tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
-        },
+        tm: unsafe { ::core::mem::zeroed() },
     };
     memset(
         &raw mut es as *mut ::core::ffi::c_void,
@@ -3234,23 +3112,37 @@ mod format_float_tests {
         for value in values {
             for precision in [-100, -1, 0, 1, 2, 6, 17, 100] {
                 // The application keeps LC_NUMERIC and the rounding mode at
-                // their defaults. Compare with the formatter being replaced.
-                let expected = unsafe {
-                    let len =
-                        libc::snprintf(std::ptr::null_mut(), 0, c"%.*f".as_ptr(), precision, value);
-                    assert!(len >= 0);
-                    let mut bytes = vec![0u8; len as usize + 1];
-                    assert_eq!(
-                        libc::snprintf(
-                            bytes.as_mut_ptr().cast(),
-                            bytes.len(),
+                // their defaults. Compare with the formatter being replaced,
+                // except for glibc's NaN sign, which other libcs drop.
+                let expected = if value.is_nan() {
+                    if value.is_sign_negative() {
+                        c"-nan".to_owned()
+                    } else {
+                        c"nan".to_owned()
+                    }
+                } else {
+                    unsafe {
+                        let len = libc::snprintf(
+                            std::ptr::null_mut(),
+                            0,
                             c"%.*f".as_ptr(),
                             precision,
                             value,
-                        ),
-                        len
-                    );
-                    CString::from_vec_with_nul(bytes).unwrap()
+                        );
+                        assert!(len >= 0);
+                        let mut bytes = vec![0u8; len as usize + 1];
+                        assert_eq!(
+                            libc::snprintf(
+                                bytes.as_mut_ptr().cast(),
+                                bytes.len(),
+                                c"%.*f".as_ptr(),
+                                precision,
+                                value,
+                            ),
+                            len
+                        );
+                        CString::from_vec_with_nul(bytes).unwrap()
+                    }
                 };
                 assert_eq!(
                     format_float(value, precision),

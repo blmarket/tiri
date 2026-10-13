@@ -123,7 +123,7 @@ pub unsafe fn load_cfg(
     let state;
 
     log_debug(format_args!("loading {}", log_cstr(path)));
-    f = fopen(path.as_ptr(), c"rb".as_ptr()) as *mut FILE;
+    f = fopen(path.as_ptr(), c"rb".as_ptr());
     if f.is_null() {
         if *__errno_location() == ENOENT && flags & CMD_PARSE_QUIET != 0 {
             return 0 as ::core::ffi::c_int;

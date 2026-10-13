@@ -18,6 +18,7 @@ pub mod compat {
     pub mod setproctitle;
     pub mod stdio;
     pub mod strtonum;
+    #[cfg(target_os = "linux")]
     pub mod systemd;
     pub mod unvis;
     pub mod utf8proc;
@@ -49,7 +50,7 @@ pub mod names;
 pub mod options;
 pub mod options_parse;
 pub mod options_table;
-pub mod osdep_linux;
+pub mod osdep;
 pub mod paste;
 pub mod plugin;
 pub mod popup;

@@ -2,10 +2,8 @@ use crate::src::bracketed_paste::{
     match_bracketed_paste_boundary, BracketedPasteBoundary, BracketedPasteBoundaryMatch,
 };
 use crate::src::events::events_fire_client;
-use crate::src::ffi::libc::{
-    __ctype_b_loc, sscanf, strcspn, strlcpy, strncmp, strsep, strtol, strtoul,
-};
-use crate::src::ffi::resolv::__b64_pton;
+use crate::src::ffi::libc::{sscanf, strcspn, strlcpy, strncmp, strsep, strtol, strtoul};
+use crate::src::ffi::resolv::b64_pton;
 use crate::src::input::{input_request_reply, InputRequestReply};
 use crate::src::key_string::key_string_format;
 use crate::src::log::{log_cstr, log_cstr_n, log_debug, log_get_level, log_hex};
@@ -20,7 +18,6 @@ use crate::src::shared::abi::*;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::CLIENT_FOCUSED;
 use crate::src::shared::control_character::{C0_CR, C0_ESC, C0_HT, C0_NUL};
-use crate::src::shared::ctype::_ISdigit;
 use crate::src::shared::grid::*;
 use crate::src::shared::input::{input_request_clipboard_data, input_request_palette_data};
 use crate::src::shared::key::key_event;
@@ -68,7 +65,7 @@ pub struct tty_default_key_xterm {
     pub template: &'static ::std::ffi::CStr,
     pub key: key_code,
 }
-pub const _POSIX_VDISABLE: ::core::ffi::c_int = '\0' as i32;
+pub use ::libc::_POSIX_VDISABLE;
 
 static mut tty_default_raw_keys: [tty_default_key_raw; 102] = [
     tty_default_key_raw {
@@ -1530,10 +1527,7 @@ unsafe fn tty_keys_winsz(
         if *buf.add(end) as ::core::ffi::c_int == 't' as i32 {
             break;
         }
-        if *(*__ctype_b_loc()).offset(*buf.add(end) as u_char as ::core::ffi::c_int as isize)
-            as ::core::ffi::c_int
-            & _ISdigit as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
-            == 0
+        if ::libc::isdigit(*buf.add(end) as u_char as ::core::ffi::c_int) == 0
             && *buf.add(end) as ::core::ffi::c_int != ';' as i32
         {
             break;
@@ -2056,8 +2050,8 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                         | key as ::core::ffi::c_ulonglong & KEYC_META)
                         as key_code;
                 }
-                bspace = terminal_client_owner.borrow_terminal().tio.c_cc[VERASE as usize];
-                if bspace as ::core::ffi::c_int != _POSIX_VDISABLE {
+                bspace = terminal_client_owner.borrow_terminal().tio.0.c_cc[VERASE];
+                if bspace != _POSIX_VDISABLE {
                     if key == bspace as key_code {
                         log_debug(format_args!(
                             "{}: key {} is BSpace",
@@ -2327,10 +2321,7 @@ unsafe fn tty_keys_extended_key(
         if *buf.add(end) as ::core::ffi::c_int == '~' as i32 {
             break;
         }
-        if *(*__ctype_b_loc()).offset(*buf.add(end) as u_char as ::core::ffi::c_int as isize)
-            as ::core::ffi::c_int
-            & _ISdigit as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
-            == 0
+        if ::libc::isdigit(*buf.add(end) as u_char as ::core::ffi::c_int) == 0
             && *buf.add(end) as ::core::ffi::c_int != ';' as i32
         {
             break;
@@ -2370,8 +2361,8 @@ unsafe fn tty_keys_extended_key(
         return -(1 as ::core::ffi::c_int);
     }
     *size = end.wrapping_add(1 as size_t);
-    bspace = tty.tio.c_cc[VERASE as usize];
-    if bspace as ::core::ffi::c_int != _POSIX_VDISABLE && number == bspace as u_int {
+    bspace = tty.tio.0.c_cc[VERASE];
+    if bspace != _POSIX_VDISABLE && number == bspace as u_int {
         nkey = KEYC_BSPACE as ::core::ffi::c_ulong as key_code;
     } else {
         nkey = number as key_code;
@@ -2681,7 +2672,7 @@ unsafe fn tty_keys_clipboard(
         return 0 as ::core::ffi::c_int;
     }
     let mut out = Vec::<u8>::with_capacity(needed);
-    outlen = __b64_pton(
+    outlen = b64_pton(
         copy.as_ptr().cast::<::core::ffi::c_char>(),
         out.as_mut_ptr(),
         needed,

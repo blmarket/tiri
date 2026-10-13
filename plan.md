@@ -166,7 +166,7 @@ that honest. No change needed now, document it on `window_create`.
 
 ## Non-goals
 
-- Deferring event dispatch through the command queue the way tmux does. hmux
+- Deferring event dispatch through the command queue the way tmux does. tiri
   fires synchronously today and this plan keeps that.
 - Touching `src/compat/`.
 - Changing session or pane lifecycle. Sessions already close explicitly

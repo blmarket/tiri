@@ -1,14 +1,14 @@
 [workspace]
 members = [
-    "hmux-agent",
-    "hmux-buffer",
-    "hmux-cmdparse",
-    "hmux-rt",
-    "hmux-refbox",
+    "tiri-agent",
+    "tiri-buffer",
+    "tiri-cmdparse",
+    "tiri-rt",
+    "tiri-refbox",
 ]
 
 [package]
-name = "hmux"
+name = "tiri"
 authors = ["C2Rust"]
 version = "0.0.0"
 publish = false
@@ -16,23 +16,22 @@ edition = "2021"
 autobins = false
 
 [lib]
-name = "hmux"
+name = "tiri"
 path = "src/lib.rs"
 crate-type = ["rlib"]
 
 [[bin]]
 path = "src/main.rs"
-name = "hmux"
+name = "tiri"
 
 [dependencies]
-hmux-agent = { path = "hmux-agent" }
+tiri-agent = { path = "tiri-agent" }
 futures-core = "0.3"
-hmux-cmdparse = { path = "hmux-cmdparse" }
-hmux-rt = { path = "hmux-rt" }
-hmux-buffer = { path = "hmux-buffer" }
-c2rust-bitfields = "0.22.1"
+tiri-cmdparse = { path = "tiri-cmdparse" }
+tiri-rt = { path = "tiri-rt" }
+tiri-buffer = { path = "tiri-buffer" }
 libc = "0.2"
-refbox = { package = "hmux-refbox", path = "hmux-refbox" }
+refbox = { package = "tiri-refbox", path = "tiri-refbox" }
 
 [dev-dependencies]
 syn = { version = "2", features = ["full", "visit"] }

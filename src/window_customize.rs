@@ -19,7 +19,7 @@ use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_list_print_cstring;
 use crate::src::cmd::parse::{cmd_parse_error_uppercase_first, cmd_parse_from_string};
 use crate::src::environ::{environ_clear, environ_find, environ_iter, environ_set, environ_unset};
-use crate::src::ffi::libc::{__ctype_tolower_loc, strchr, strcmp, strcspn, strlcat, strlen};
+use crate::src::ffi::libc::{strchr, strcmp, strcspn, strlcat, strlen};
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::{
     format_add, format_create_from_state, format_expand_cstring, format_pretty_time_cstring,
@@ -280,7 +280,7 @@ pub const WINDOW_CUSTOMIZE_EDIT_OPTION: window_customize_edit_type = 0;
 #[inline]
 unsafe fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
     if __c >= -(128 as ::core::ffi::c_int) && __c < 256 as ::core::ffi::c_int {
-        *(*__ctype_tolower_loc()).offset(__c as isize) as ::core::ffi::c_int
+        ::libc::tolower(__c as ::core::ffi::c_int) as ::core::ffi::c_int
     } else {
         __c
     }
@@ -4254,7 +4254,7 @@ unsafe fn window_customize_change_current_callback(
                 __res = (if __c < -(128 as ::core::ffi::c_int) || __c > 255 as ::core::ffi::c_int {
                     __c as __int32_t
                 } else {
-                    *(*__ctype_tolower_loc()).offset(__c as isize)
+                    ::libc::tolower(__c as ::core::ffi::c_int)
                 }) as ::core::ffi::c_int;
             } else {
                 __res = tolower(
@@ -4262,9 +4262,9 @@ unsafe fn window_customize_change_current_callback(
                 );
             }
         } else {
-            __res = *(*__ctype_tolower_loc()).offset(*s.offset(0 as ::core::ffi::c_int as isize)
-                as u_char as ::core::ffi::c_int
-                as isize) as ::core::ffi::c_int;
+            __res = ::libc::tolower(
+                *s.offset(0 as ::core::ffi::c_int as isize) as u_char as ::core::ffi::c_int
+            ) as ::core::ffi::c_int;
         }
         __res
     }) != 'y' as i32
@@ -4305,7 +4305,7 @@ unsafe fn window_customize_change_tagged_callback(
                 __res = (if __c < -(128 as ::core::ffi::c_int) || __c > 255 as ::core::ffi::c_int {
                     __c as __int32_t
                 } else {
-                    *(*__ctype_tolower_loc()).offset(__c as isize)
+                    ::libc::tolower(__c as ::core::ffi::c_int)
                 }) as ::core::ffi::c_int;
             } else {
                 __res = tolower(
@@ -4313,9 +4313,9 @@ unsafe fn window_customize_change_tagged_callback(
                 );
             }
         } else {
-            __res = *(*__ctype_tolower_loc()).offset(*s.offset(0 as ::core::ffi::c_int as isize)
-                as u_char as ::core::ffi::c_int
-                as isize) as ::core::ffi::c_int;
+            __res = ::libc::tolower(
+                *s.offset(0 as ::core::ffi::c_int as isize) as u_char as ::core::ffi::c_int
+            ) as ::core::ffi::c_int;
         }
         __res
     }) != 'y' as i32

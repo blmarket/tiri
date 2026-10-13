@@ -128,12 +128,12 @@ fn cmd_parse_new_commands() -> Box<cmd_parse_commands> {
 // the live environment. Pull one token at a time so assignments affect later words.
 struct ParserContext<'a, 'input>(&'a RefCell<ParseSession<'input>>);
 
-impl hmux_cmdparse::Context for ParserContext<'_, '_> {
+impl tiri_cmdparse::Context for ParserContext<'_, '_> {
     fn line(&self) -> u32 {
         self.0.borrow().input.line
     }
 
-    fn expand_format(&mut self, token: hmux_cmdparse::TokenText) -> hmux_cmdparse::TokenText {
+    fn expand_format(&mut self, token: tiri_cmdparse::TokenText) -> tiri_cmdparse::TokenText {
         unsafe {
             let mut session = self.0.borrow_mut();
             let pi = &mut *session.input;
@@ -169,16 +169,16 @@ impl hmux_cmdparse::Context for ParserContext<'_, '_> {
 
     fn put_environ(
         &mut self,
-        token: hmux_cmdparse::TokenText,
+        token: tiri_cmdparse::TokenText,
         hidden: bool,
         active: bool,
-    ) -> Result<(), hmux_cmdparse::LexError> {
+    ) -> Result<(), tiri_cmdparse::LexError> {
         unsafe {
             if token.as_c_str().to_bytes().len() > CMD_PARSE_MAX_ENVIRON_LEN as usize {
                 self.0
                     .borrow_mut()
                     .record_error(c"environment variable is too long");
-                return Err(hmux_cmdparse::LexError);
+                return Err(tiri_cmdparse::LexError);
             }
             if self.0.borrow().input.flags & CMD_PARSE_PARSEONLY == 0 && active {
                 environ_put(
@@ -191,25 +191,25 @@ impl hmux_cmdparse::Context for ParserContext<'_, '_> {
         Ok(())
     }
 
-    fn is_true(&self, token: &hmux_cmdparse::TokenText) -> bool {
+    fn is_true(&self, token: &tiri_cmdparse::TokenText) -> bool {
         unsafe { format_true(token.as_c_str().as_ptr()) != 0 }
     }
 }
 
-fn take_parser_token(text: CString) -> hmux_cmdparse::TokenText {
-    hmux_cmdparse::TokenText::from_cstring(text)
+fn take_parser_token(text: CString) -> tiri_cmdparse::TokenText {
+    tiri_cmdparse::TokenText::from_cstring(text)
 }
 
-fn build_parser_commands(commands: Vec<hmux_cmdparse::ParseCommand>) -> Box<cmd_parse_commands> {
+fn build_parser_commands(commands: Vec<tiri_cmdparse::ParseCommand>) -> Box<cmd_parse_commands> {
     let mut output = cmd_parse_new_commands();
     for command in commands {
         let mut cmd = cmd_parse_new_command(command.line);
         for argument in command.arguments {
             let arg = match argument {
-                hmux_cmdparse::ParseArgument::String(text) => {
+                tiri_cmdparse::ParseArgument::String(text) => {
                     cmd_parse_argument::String(text.as_c_str().to_owned())
                 }
-                hmux_cmdparse::ParseArgument::Commands(commands) => {
+                tiri_cmdparse::ParseArgument::Commands(commands) => {
                     cmd_parse_argument::Commands(build_parser_commands(commands))
                 }
             };
@@ -224,7 +224,7 @@ fn cmd_parse_run_parser(
     session: &RefCell<ParseSession<'_>>,
     lexer: Lexer<'_, '_>,
 ) -> Result<Box<cmd_parse_commands>, CString> {
-    match hmux_cmdparse::parse(&mut ParserContext(session), lexer) {
+    match tiri_cmdparse::parse(&mut ParserContext(session), lexer) {
         Ok(commands) => Ok(build_parser_commands(commands)),
         Err(_) => {
             let mut session = session.borrow_mut();

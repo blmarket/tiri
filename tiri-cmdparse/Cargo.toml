@@ -1,0 +1,13 @@
+[package]
+name = "tiri-cmdparse"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "GPL-3.0-only"
+description = "Owned LALRPOP command grammar for tiri"
+
+[dependencies]
+lalrpop-util = { version = "0.23.1", default-features = false, features = ["std"] }
+
+[build-dependencies]
+lalrpop = { version = "0.23.1", default-features = false }

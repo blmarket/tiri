@@ -5,7 +5,6 @@ use crate::src::cmd::{
     cmd_log_argv, cmd_template_replace_cstring,
 };
 use crate::src::compat::strtonum::strtonum;
-use crate::src::ffi::libc::__ctype_b_loc;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::log::{fatalx, log_byte, log_bytes, log_cstr, log_debug};
@@ -18,7 +17,6 @@ pub use crate::src::shared::arguments::{
     args, args_entry, args_parse, args_parse_cb, args_tree, args_value, args_values,
 };
 use crate::src::shared::command::{cmd, cmd_find_state, cmd_list, cmdq_item};
-use crate::src::shared::ctype::{_ISalnum, _ISalpha};
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_DQ, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::text::utf8::utf8_strvis;
 use std::borrow::Cow;
@@ -140,8 +138,7 @@ unsafe fn args_parse_flag_argument(
                 let bytes = value.as_string().expect("string argument").to_bytes();
                 bytes.first() == Some(&b'-')
                     && bytes.get(1).is_some_and(|next| {
-                        *next == b'-'
-                            || *(*__ctype_b_loc()).add(*next as usize) & _ISalpha as u16 != 0
+                        *next == b'-' || ::libc::isalpha(*next as ::core::ffi::c_int) != 0
                     })
             });
         if skip_optional {
@@ -192,7 +189,7 @@ unsafe fn args_parse_flags(
         if flag == b'?' {
             return Err(ArgsParseError::Usage);
         }
-        if *(*__ctype_b_loc()).add(flag as usize) & _ISalnum as u16 == 0 {
+        if ::libc::isalnum(flag as ::core::ffi::c_int) == 0 {
             return Err(ArgsParseError::Message(parse_flag_error(
                 b"invalid flag -",
                 flag,

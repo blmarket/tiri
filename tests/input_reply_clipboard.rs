@@ -1,5 +1,5 @@
-use hmux::src::input::input_reply_clipboard;
-use hmux::src::reactor::{bufferevent_free, bufferevent_new, evbuffer_pullup};
+use tiri::src::input::input_reply_clipboard;
+use tiri::src::reactor::{bufferevent_free, bufferevent_new, evbuffer_pullup};
 use std::ffi::c_char;
 
 fn reply(buf: *const c_char, len: usize, end: &'static [u8], clip: c_char) -> Vec<u8> {

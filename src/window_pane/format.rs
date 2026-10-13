@@ -8,7 +8,7 @@ use crate::src::format::{format_tree, FormatValue, FORMAT_TYPE_PANE};
 use crate::src::grid::grid_get_line;
 use crate::src::grid::view::grid_view_get_cell;
 use crate::src::names::parse_window_name_cstring;
-use crate::src::osdep_linux::{osdep_get_cwd, osdep_get_name_cstring};
+use crate::src::osdep::{osdep_get_cwd, osdep_get_name_cstring};
 use crate::src::shared::pane::{PANE_CMDRUNNING, PANE_STATUSDRAWN};
 use crate::src::shared::screen::*;
 use crate::src::style::colour::colour_format;
@@ -233,15 +233,10 @@ unsafe fn format_cb_current_path(mut ft: *mut format_tree) -> Option<CString> {
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = format_pane;
-    let mut cwd: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if wp.is_null() {
         return None;
     }
-    cwd = osdep_get_cwd((*wp).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd));
-    if cwd.is_null() {
-        return None;
-    }
-    Some(CStr::from_ptr(cwd).to_owned())
+    osdep_get_cwd((*wp).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd))
 }
 
 unsafe fn format_cb_history_bytes(mut ft: *mut format_tree) -> Option<CString> {

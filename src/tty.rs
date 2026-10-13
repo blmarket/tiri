@@ -1,6 +1,6 @@
 use crate::src::reactor::Timer;
 use crate::src::server_client::ClientRegistry;
-use hmux_rt::{AsyncRead as _, AsyncWrite as _};
+use tiri_rt::{AsyncRead as _, AsyncWrite as _};
 // Copy a terminal field and release its component borrow before a nested output
 // operation. Writes evaluate their source before borrowing the destination.
 macro_rules! terminal_value {
@@ -25,7 +25,7 @@ mod output;
 pub use output::*;
 
 use crate::src::ffi::libc::{abs, getpid, strcmp, strncmp, time};
-use crate::src::ffi::resolv::__b64_ntop;
+use crate::src::ffi::resolv::b64_ntop;
 use crate::src::format::bytes::{format_cstring, xformat};
 use crate::src::grid::{grid_cells_equal, grid_default_cell};
 use crate::src::hyperlinks::hyperlinks_get;
@@ -101,35 +101,12 @@ pub(crate) unsafe fn terminal_term(owner: &ClientRef) -> &tty_term {
     std::ptr::NonNull::from(term).as_ref()
 }
 
-pub const TIOCGWINSZ: ::core::ffi::c_int = 0x5413 as ::core::ffi::c_int;
+pub use ::libc::{
+    ECHO, ECHOCTL, ECHOE, ECHOKE, ECHONL, ECHOPRT, ICANON, IEXTEN, IGNBRK, IGNCR, IMAXBEL, INLCR,
+    ISIG, ISTRIP, IXOFF, IXON, OCRNL, ONLRET, TCOFLUSH,
+};
 
-pub const F_SETFD: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
-pub const FD_CLOEXEC: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-
-pub const IGNBRK: ::core::ffi::c_int = 0o1 as ::core::ffi::c_int;
-pub const ISTRIP: ::core::ffi::c_int = 0o40 as ::core::ffi::c_int;
-pub const INLCR: ::core::ffi::c_int = 0o100 as ::core::ffi::c_int;
-pub const IGNCR: ::core::ffi::c_int = 0o200 as ::core::ffi::c_int;
-
-pub const IXON: ::core::ffi::c_int = 0o2000 as ::core::ffi::c_int;
-pub const IXOFF: ::core::ffi::c_int = 0o10000 as ::core::ffi::c_int;
-pub const IMAXBEL: ::core::ffi::c_int = 0o20000 as ::core::ffi::c_int;
-
-pub const OCRNL: ::core::ffi::c_int = 0o10 as ::core::ffi::c_int;
-pub const ONLRET: ::core::ffi::c_int = 0o40 as ::core::ffi::c_int;
-pub const ISIG: ::core::ffi::c_int = 0o1 as ::core::ffi::c_int;
-pub const ICANON: ::core::ffi::c_int = 0o2 as ::core::ffi::c_int;
-pub const ECHO: ::core::ffi::c_int = 0o10 as ::core::ffi::c_int;
-pub const ECHOE: ::core::ffi::c_int = 0o20 as ::core::ffi::c_int;
-pub const ECHONL: ::core::ffi::c_int = 0o100 as ::core::ffi::c_int;
-pub const ECHOCTL: ::core::ffi::c_int = 0o1000 as ::core::ffi::c_int;
-pub const ECHOPRT: ::core::ffi::c_int = 0o2000 as ::core::ffi::c_int;
-pub const ECHOKE: ::core::ffi::c_int = 0o4000 as ::core::ffi::c_int;
-pub const IEXTEN: ::core::ffi::c_int = 0o100000 as ::core::ffi::c_int;
-
-pub const TCOFLUSH: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-
-static mut tty_log: Option<(hmux_rt::mio::Runtime, hmux_rt::mio::Io)> = None;
+static mut tty_log: Option<(tiri_rt::mio::Runtime, tiri_rt::mio::Io)> = None;
 static mut tty_default_style_ctx: tty_style_ctx = {
     tty_style_ctx {
         defaults: grid_default_cell,
@@ -144,15 +121,15 @@ pub unsafe fn tty_create_log() {
         &mut name,
         format_args!("tmux-out-{}.log", getpid() as ::core::ffi::c_long),
     );
-    use hmux_rt::Runtime as _;
+    use tiri_rt::Runtime as _;
     tty_log = (|| -> std::io::Result<_> {
-        let file = hmux_rt::unix::open(
+        let file = tiri_rt::unix::open(
             CStr::from_bytes_until_nul(&name).expect("xformat output is terminated"),
             O_WRONLY | O_CREAT | O_TRUNC,
             0o644,
         )?;
-        let runtime = hmux_rt::mio::Runtime::new()?;
-        let source = runtime.enter(|| hmux_rt::mio::Io::new(file))?;
+        let runtime = tiri_rt::mio::Runtime::new()?;
+        let source = runtime.enter(|| tiri_rt::mio::Io::new(file))?;
         Ok((runtime, source))
     })()
     .ok();
@@ -169,7 +146,7 @@ pub(crate) unsafe fn tty_initialize_component(
     observer: ClientWeak,
 ) -> i32 {
     if fd < 0
-        || hmux_rt::unix::terminal_attributes(std::os::fd::BorrowedFd::borrow_raw(fd)).is_err()
+        || tiri_rt::unix::terminal_attributes(std::os::fd::BorrowedFd::borrow_raw(fd)).is_err()
     {
         return -1;
     }
@@ -181,7 +158,7 @@ pub(crate) unsafe fn tty_initialize_component(
     terminal.bg = -1;
     terminal.fg = terminal.bg;
     terminal.mouse_last_pane = -1;
-    if crate::src::shared::terminal::read_attributes(fd, &mut terminal.tio) != 0 {
+    if crate::src::shared::terminal::read_attributes(fd, &mut terminal.tio.0) != 0 {
         return -1;
     }
     0
@@ -545,33 +522,24 @@ pub unsafe fn tty_start_tty(owner: &ClientRef) {
 
         let fd = tty.terminal_fd();
 
-        let mut tio: termios = termios {
-            c_iflag: 0,
-            c_oflag: 0,
-            c_cflag: 0,
-            c_lflag: 0,
-            c_line: 0,
-            c_cc: [0; 32],
-            c2rust_unnamed: termios_input_speed { __ispeed: 0 },
-            c2rust_unnamed_0: termios_output_speed { __ospeed: 0 },
-        };
+        let mut tio: termios = unsafe { ::core::mem::zeroed() };
         let mut i: u_int = 0;
         setblocking(fd, 0 as ::core::ffi::c_int);
         tty_start_read(&mut *tty.borrow_terminal_mut());
-        tio = terminal_value!(tty, tio);
+        tio = terminal_value!(tty, tio).0;
         tio.c_iflag &= !(IXON | IXOFF | ICRNL | INLCR | IGNCR | IMAXBEL | ISTRIP) as tcflag_t;
         tio.c_iflag |= IGNBRK as tcflag_t;
         tio.c_oflag &= !(OPOST | ONLCR | OCRNL | ONLRET) as tcflag_t;
         tio.c_lflag &=
             !(IEXTEN | ICANON | ECHO | ECHOE | ECHONL | ECHOCTL | ECHOPRT | ECHOKE | ISIG)
                 as tcflag_t;
-        tio.c_cc[VMIN as usize] = 1 as cc_t;
-        tio.c_cc[VTIME as usize] = 0 as cc_t;
+        tio.c_cc[VMIN] = 1 as cc_t;
+        tio.c_cc[VTIME] = 0 as cc_t;
         if crate::src::shared::terminal::set_attributes(fd, TCSANOW, &tio)
             == 0 as ::core::ffi::c_int
         {
             let _ =
-                hmux_rt::unix::discard_terminal(std::os::fd::BorrowedFd::borrow_raw(fd), TCOFLUSH);
+                tiri_rt::unix::discard_terminal(std::os::fd::BorrowedFd::borrow_raw(fd), TCOFLUSH);
         }
         if options_get_number(global_options, c"clear-on-attach") != 0 {
             tty_putcode(tty, TTYC_SMCUP);
@@ -721,7 +689,7 @@ pub unsafe fn tty_stop_tty(owner: &ClientRef) {
         if crate::src::shared::terminal::read_size(fd, &mut ws) == -(1 as ::core::ffi::c_int) {
             return;
         }
-        let saved_termios = terminal_value!(tty, tio);
+        let saved_termios = terminal_value!(tty, tio).0;
         if crate::src::shared::terminal::set_attributes(fd, TCSANOW, &saved_termios)
             == -(1 as ::core::ffi::c_int)
         {
@@ -903,7 +871,7 @@ pub unsafe fn tty_update_features(owner: &ClientRef) {
     tty_invalidate(owner);
 }
 pub(crate) unsafe fn tty_raw(fd: i32, text: &CStr) {
-    use hmux_rt::Runtime as _;
+    use tiri_rt::Runtime as _;
     use std::future::{poll_fn, Future};
     use std::pin::pin;
     use std::task::Poll;
@@ -912,17 +880,17 @@ pub(crate) unsafe fn tty_raw(fd: i32, text: &CStr) {
     }
     let bytes = text.to_bytes();
     let borrowed = std::os::fd::BorrowedFd::borrow_raw(fd);
-    let Ok(was_nonblocking) = hmux_rt::unix::set_nonblocking(borrowed, true) else {
+    let Ok(was_nonblocking) = tiri_rt::unix::set_nonblocking(borrowed, true) else {
         return;
     };
     // Teardown is synchronous and may run inside an application callback. Use
     // an independent driver so it never reenters the application's runtime.
     let _ = (|| -> std::io::Result<()> {
-        let mut runtime = hmux_rt::mio::Runtime::new()?;
+        let mut runtime = tiri_rt::mio::Runtime::new()?;
         let (source, stop) = runtime.enter(|| -> std::io::Result<_> {
-            let source = hmux_rt::mio::Io::new(borrowed.try_clone_to_owned()?)?;
+            let source = tiri_rt::mio::Io::new(borrowed.try_clone_to_owned()?)?;
             let stop =
-                hmux_rt::mio::Sleep::new(std::time::Instant::now() + Duration::from_micros(500));
+                tiri_rt::mio::Sleep::new(std::time::Instant::now() + Duration::from_micros(500));
             Ok((source, stop))
         })?;
         runtime.block_on(async {
@@ -951,7 +919,7 @@ pub(crate) unsafe fn tty_raw(fd: i32, text: &CStr) {
             .await
         })?
     })();
-    let _ = hmux_rt::unix::set_nonblocking(borrowed, was_nonblocking);
+    let _ = tiri_rt::unix::set_nonblocking(borrowed, was_nonblocking);
 }
 
 /// The part of the terminal that shows `window`: the window's size, cut to the
@@ -2144,7 +2112,7 @@ unsafe fn tty_selection_sequence(
         .wrapping_mul(data.len().wrapping_add(2) / 3)
         .wrapping_add(1);
     let mut encoded = vec![0; size];
-    __b64_ntop(data.as_ptr(), data.len(), encoded.as_mut_ptr().cast(), size);
+    b64_ntop(data.as_ptr(), data.len(), encoded.as_mut_ptr().cast(), size);
     terminal.flags |= TTY_NOBLOCK;
     Some(tty_term_string_ss(
         term,

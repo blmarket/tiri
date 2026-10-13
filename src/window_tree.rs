@@ -1,6 +1,6 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned};
-use crate::src::ffi::libc::{__ctype_tolower_loc, strcasestr, strstr};
+use crate::src::ffi::libc::{strcasestr, strstr};
 use crate::src::format::{
     format_add, format_create, format_defaults, format_expand_cstring, format_single_cstring,
     format_true,
@@ -119,7 +119,7 @@ pub struct window_tree_itemdata {
 #[inline]
 unsafe fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
     if __c >= -(128 as ::core::ffi::c_int) && __c < 256 as ::core::ffi::c_int {
-        *(*__ctype_tolower_loc()).offset(__c as isize) as ::core::ffi::c_int
+        ::libc::tolower(__c as ::core::ffi::c_int) as ::core::ffi::c_int
     } else {
         __c
     }
@@ -2212,7 +2212,7 @@ unsafe fn window_tree_kill_current_callback(
                 __res = (if __c < -(128 as ::core::ffi::c_int) || __c > 255 as ::core::ffi::c_int {
                     __c as __int32_t
                 } else {
-                    *(*__ctype_tolower_loc()).offset(__c as isize)
+                    ::libc::tolower(__c as ::core::ffi::c_int)
                 }) as ::core::ffi::c_int;
             } else {
                 __res = tolower(
@@ -2220,9 +2220,9 @@ unsafe fn window_tree_kill_current_callback(
                 );
             }
         } else {
-            __res = *(*__ctype_tolower_loc()).offset(*s.offset(0 as ::core::ffi::c_int as isize)
-                as u_char as ::core::ffi::c_int
-                as isize) as ::core::ffi::c_int;
+            __res = ::libc::tolower(
+                *s.offset(0 as ::core::ffi::c_int as isize) as u_char as ::core::ffi::c_int
+            ) as ::core::ffi::c_int;
         }
         __res
     }) != 'y' as i32
@@ -2262,7 +2262,7 @@ unsafe fn window_tree_kill_tagged_callback(
                 __res = (if __c < -(128 as ::core::ffi::c_int) || __c > 255 as ::core::ffi::c_int {
                     __c as __int32_t
                 } else {
-                    *(*__ctype_tolower_loc()).offset(__c as isize)
+                    ::libc::tolower(__c as ::core::ffi::c_int)
                 }) as ::core::ffi::c_int;
             } else {
                 __res = tolower(
@@ -2270,9 +2270,9 @@ unsafe fn window_tree_kill_tagged_callback(
                 );
             }
         } else {
-            __res = *(*__ctype_tolower_loc()).offset(*s.offset(0 as ::core::ffi::c_int as isize)
-                as u_char as ::core::ffi::c_int
-                as isize) as ::core::ffi::c_int;
+            __res = ::libc::tolower(
+                *s.offset(0 as ::core::ffi::c_int as isize) as u_char as ::core::ffi::c_int
+            ) as ::core::ffi::c_int;
         }
         __res
     }) != 'y' as i32

@@ -5,7 +5,7 @@
 //! Streams own their buffers; these layouts are independent of libevent.
 use super::abi::*;
 pub use crate::src::reactor::{bufferevent_ops, Timer};
-use hmux_buffer::SegmentedBuf;
+use tiri_buffer::SegmentedBuf;
 
 #[derive(Default)]
 #[repr(C)]

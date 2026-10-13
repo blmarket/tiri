@@ -28,7 +28,10 @@ extern "C" {
 
 /// Encode into the fixed storage used by a terminal cell. utf8proc writes at
 /// most four bytes, and leaves the buffer untouched for invalid codepoints.
-pub(crate) fn encode_cell(codepoint: i32, output: &mut [u8; 32]) -> Result<usize, i32> {
+pub(crate) fn encode_cell(
+    codepoint: crate::src::shared::utf8::wchar_t,
+    output: &mut [u8; 32],
+) -> Result<usize, i32> {
     let size = unsafe {
         crate::src::compat::utf8proc::utf8proc_wctomb(output.as_mut_ptr().cast(), codepoint)
     };

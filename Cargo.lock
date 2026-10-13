@@ -57,27 +57,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
-name = "c2rust-bitfields"
-version = "0.22.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e91b9a85391b09c224053f3c45344f0639822e641f9d2b4f351bb3152600742d"
-dependencies = [
- "c2rust-bitfields-derive",
-]
-
-[[package]]
-name = "c2rust-bitfields-derive"
-version = "0.22.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "153187c06ed005d5cb75ed9f0a2f274836f54f6b2efdc1f45136e728764875f9"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.106",
- "unicode-ident",
-]
-
-[[package]]
 name = "cfg-if"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -185,64 +164,6 @@ name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
-
-[[package]]
-name = "hmux"
-version = "0.0.0"
-dependencies = [
- "c2rust-bitfields",
- "futures-core",
- "hmux-agent",
- "hmux-buffer",
- "hmux-cmdparse",
- "hmux-refbox",
- "hmux-rt",
- "libc",
- "quote",
- "syn 2.0.106",
-]
-
-[[package]]
-name = "hmux-agent"
-version = "0.1.0"
-dependencies = [
- "hmux-rt",
- "libc",
- "regex",
- "serde",
- "toml",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "hmux-buffer"
-version = "0.1.0"
-dependencies = [
- "bytes",
-]
-
-[[package]]
-name = "hmux-cmdparse"
-version = "0.1.0"
-dependencies = [
- "lalrpop",
- "lalrpop-util",
-]
-
-[[package]]
-name = "hmux-refbox"
-version = "0.4.1"
-
-[[package]]
-name = "hmux-rt"
-version = "0.1.0"
-dependencies = [
- "errno",
- "libc",
- "mio",
- "signal-hook",
-]
 
 [[package]]
 name = "indexmap"
@@ -643,6 +564,63 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ad99c4c6d32803332c548b1af0540b357b3f5fc0be8f6c6bfe8b2e6ae784070"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "tiri"
+version = "0.0.0"
+dependencies = [
+ "futures-core",
+ "libc",
+ "quote",
+ "syn 2.0.106",
+ "tiri-agent",
+ "tiri-buffer",
+ "tiri-cmdparse",
+ "tiri-refbox",
+ "tiri-rt",
+]
+
+[[package]]
+name = "tiri-agent"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "regex",
+ "serde",
+ "tiri-rt",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "tiri-buffer"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+]
+
+[[package]]
+name = "tiri-cmdparse"
+version = "0.1.0"
+dependencies = [
+ "lalrpop",
+ "lalrpop-util",
+]
+
+[[package]]
+name = "tiri-refbox"
+version = "0.4.1"
+
+[[package]]
+name = "tiri-rt"
+version = "0.1.0"
+dependencies = [
+ "errno",
+ "libc",
+ "mio",
+ "signal-hook",
 ]
 
 [[package]]

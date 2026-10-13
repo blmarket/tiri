@@ -7,9 +7,9 @@ use crate::src::cmd::queue::{
 use crate::src::compat::strtonum::strtonum;
 use crate::src::environ::{environ_find, environ_iter};
 use crate::src::ffi::libc::{
-    __ctype_b_loc, __xpg_basename, ctime_r, dirname, fnmatch, gethostname, getpid, getpwuid,
-    getuid, localtime_r, memcmp, memcpy, memset, strcasecmp, strchr, strcmp, strcspn, strftime,
-    strlen, strstr, strtod, time,
+    basename, ctime_r, dirname, fnmatch, gethostname, getpid, getpwuid, getuid, localtime_r,
+    memcmp, memcpy, memset, strcasecmp, strchr, strcmp, strcspn, strftime, strlen, strstr, strtod,
+    time,
 };
 use crate::src::ffi::libm::{fabs, fmod};
 use crate::src::ffi::regex::RegexStorage;
@@ -66,7 +66,6 @@ use std::ffi::{CStr, CString};
 use crate::src::shared::abi::*;
 use crate::src::shared::client::CLIENT_UNATTACHEDFLAGS;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
-use crate::src::shared::ctype::_ISpunct;
 use crate::src::shared::environment::ENVIRON_HIDDEN;
 use crate::src::shared::environment::{environ, environ_entry};
 pub use crate::src::shared::format::{
@@ -174,7 +173,7 @@ impl format_modifier {
         &self.argv[index]
     }
 }
-#[derive(Copy, Clone, Default)]
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct format_expand_state {
     pub ft: *mut format_tree,
@@ -183,6 +182,13 @@ pub struct format_expand_state {
     pub flags: ::core::ffi::c_int,
     pub time: time_t,
     pub tm: tm,
+}
+
+impl Default for format_expand_state {
+    fn default() -> Self {
+        // SAFETY: every field is an integer or a nullable pointer.
+        unsafe { ::core::mem::zeroed() }
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -204,7 +210,7 @@ pub const SUBTRACT: C2RustUnnamed_44 = 1;
 pub const ADD: C2RustUnnamed_44 = 0;
 pub type C2RustUnnamed_44 = ::core::ffi::c_uint;
 
-pub const REG_NOSUB: ::core::ffi::c_int = (1 as ::core::ffi::c_int) << 3 as ::core::ffi::c_int;
+pub use ::libc::REG_NOSUB;
 pub const INT64_MAX: ::core::ffi::c_long = 9223372036854775807 as ::core::ffi::c_long;
 
 static mut sort_crit: sort_criteria = sort_criteria {

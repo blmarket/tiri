@@ -25,7 +25,7 @@ tmux.overrideAttrs (old: {
   '';
   postInstall = (old.postInstall or "") + ''
     mkdir -p "$out/share/tmux"
-    printf '%s\n' '${revision}' > "$out/share/tmux/hmux-upstream-revision"
+    printf '%s\n' '${revision}' > "$out/share/tmux/tiri-upstream-revision"
     printf '%s\n' "$source/tmux.tar" > "$out/share/tmux/source"
   '';
 })

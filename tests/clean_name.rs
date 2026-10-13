@@ -1,4 +1,4 @@
-use hmux::src::tmux::clean_name_cstring;
+use tiri::src::tmux::clean_name_cstring;
 use std::ffi::CStr;
 
 unsafe fn cleaned(input: &[u8], untrusted: bool) -> Option<Vec<u8>> {

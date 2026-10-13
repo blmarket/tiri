@@ -18,7 +18,7 @@ mod host;
 #[cfg(test)]
 mod tests;
 
-pub use hmux_agent::observability::v1::{PaneId, ServerObservability};
+pub use tiri_agent::observability::v1::{PaneId, ServerObservability};
 use host::ServerHost;
 
 /// An owned snapshot of the process and terminal state needed to classify a

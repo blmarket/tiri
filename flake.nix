@@ -1,5 +1,5 @@
 {
-  description = "hmux development environment";
+  description = "tiri development environment";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
   inputs.rust-overlay.url = "github:oxalica/rust-overlay";
@@ -21,7 +21,6 @@
       rustNightlyFor = pkgs: pkgs.rust-bin.nightly.latest.default.override {
         extensions = [ "rust-src" "rust-analyzer" "llvm-tools-preview" ];
       };
-      agentmonFor = pkgs: pkgs.callPackage ./agentmon-tui/package.nix { };
       cargoLlvmCovFor = pkgs: pkgs.callPackage ./nix/cargo-llvm-cov.nix { };
     in
     {
@@ -35,8 +34,8 @@
             cargo = rustNightly;
             rustc = rustNightly;
           };
-          hmux = rustPlatform.buildRustPackage {
-            pname = "hmux";
+          tiri = rustPlatform.buildRustPackage {
+            pname = "tiri";
             version = "0.0.0";
             src = ./.;
 
@@ -55,31 +54,17 @@
             # need a process each; `make unit-c2rs` is where they run.
             doCheck = false;
 
-            meta.mainProgram = "hmux";
+            meta.mainProgram = "tiri";
           };
         in
         {
-          agentmon = agentmonFor pkgs;
           tmux-target = pkgs.callPackage ./nix/tmux-target.nix { };
           tmux = self.packages.${system}.tmux-target;
         }
         // nixpkgs.lib.optionalAttrs (pkgs.stdenv.hostPlatform.isLinux) {
-          inherit hmux;
-          default = hmux;
+          inherit tiri;
+          default = tiri;
         });
-
-      apps = forAllSystems (system: {
-        agentmon = {
-          type = "app";
-          program = "${self.packages.${system}.agentmon}/bin/agentmon";
-          meta.description = "Create and monitor coding-agent runs through hmux";
-        };
-        looper = {
-          type = "app";
-          program = "${self.packages.${system}.agentmon}/bin/looper";
-          meta.description = "Run a coding agent in a loop through hmux";
-        };
-      });
 
       devShells = forAllSystems (system:
         let
@@ -89,7 +74,6 @@
           rustStable = rustStableFor pkgs;
           rustNightly = rustNightlyFor pkgs;
           cargoLlvmCov = cargoLlvmCovFor pkgs;
-          agentmon = agentmonFor pkgs;
         in
         {
           default = pkgs.mkShell ({
@@ -116,7 +100,6 @@
               pkgs.bashInteractive
               tmuxTarget
               rustNightly
-              agentmon # the `agentmon` dashboard and the `looper` loop runner
               pkgs.cargo-nextest
               cargoLlvmCov
               pkgs.gnumake

@@ -1,15 +1,15 @@
-use hmux::src::shared::command::cmd_list;
+use tiri::src::shared::command::cmd_list;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
 
-use hmux::src::arguments::{
+use tiri::src::arguments::{
     args_copy, args_create, args_first_value, args_parse as parse_args, args_percentage_result,
     args_push_positional_commands, args_set_owned_commands, args_string,
     args_string_percentage_result, args_strtonum_result, parse_number, parse_percentage,
     ArgumentValueError,
 };
-use hmux::src::cmd::{cmd_list_new, cmd_list_print};
-use hmux::src::shared::arguments::{args, args_parse, ArgumentValue, ARGS_PARSE_COMMANDS};
+use tiri::src::cmd::{cmd_list_new, cmd_list_print};
+use tiri::src::shared::arguments::{args, args_parse, ArgumentValue, ARGS_PARSE_COMMANDS};
 
 fn cstring(value: &str) -> CString {
     CString::new(value).expect("test input contains no NUL")
@@ -149,7 +149,7 @@ fn borrowed_parser_command_retains_only_while_stored() {
     fn commands(
         _: &mut args,
         _: core::ffi::c_uint,
-    ) -> Result<core::ffi::c_uint, hmux::src::shared::arguments::ArgsParseError> {
+    ) -> Result<core::ffi::c_uint, tiri::src::shared::arguments::ArgsParseError> {
         Ok(ARGS_PARSE_COMMANDS)
     }
 
@@ -183,7 +183,7 @@ fn positional_command_cache_survives_array_growth_and_copy() {
     fn command_argument(
         args: &mut args,
         count: core::ffi::c_uint,
-    ) -> Result<core::ffi::c_uint, hmux::src::shared::arguments::ArgsParseError> {
+    ) -> Result<core::ffi::c_uint, tiri::src::shared::arguments::ArgsParseError> {
         if count == 1 {
             // Populate the positional cache while the value array still grows.
             args_string(args, 0);
@@ -253,8 +253,8 @@ fn rejected_command_argument_keeps_source_value_ownership() {
             .err()
             .expect("command value must be rejected");
         let error = match error {
-            hmux::src::arguments::ArgsParseError::Message(error) => error,
-            hmux::src::arguments::ArgsParseError::Usage => panic!("expected a diagnostic"),
+            tiri::src::arguments::ArgsParseError::Message(error) => error,
+            tiri::src::arguments::ArgsParseError::Usage => panic!("expected a diagnostic"),
         };
         assert_eq!(error.to_bytes(), b"argument 1 must be \"string\"");
         drop(values);

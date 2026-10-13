@@ -142,7 +142,7 @@ pub unsafe fn systemd_create_socket(
         {
             *__errno_location() = EPFNOSUPPORT;
         } else {
-            match hmux_rt::unix::socket_path(std::os::fd::BorrowedFd::borrow_raw(fd)) {
+            match tiri_rt::unix::socket_path(std::os::fd::BorrowedFd::borrow_raw(fd)) {
                 Ok(path) => {
                     socket_path = Some(path.unwrap_or_default());
                     return Ok(fd);

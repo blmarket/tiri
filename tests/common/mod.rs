@@ -1,4 +1,4 @@
-//! Server harness shared by integration tests that drive a real hmux server.
+//! Server harness shared by integration tests that drive a real tiri server.
 
 #![allow(dead_code)] // Each test binary uses a different subset.
 
@@ -22,14 +22,14 @@ impl Server {
             .expect("clock after epoch")
             .as_nanos();
         let directory =
-            std::env::temp_dir().join(format!("hmux-test-{}-{stamp}", std::process::id()));
+            std::env::temp_dir().join(format!("tiri-test-{}-{stamp}", std::process::id()));
         fs::create_dir(&directory).expect("create socket directory");
         let socket = directory.join("socket");
         Self { directory, socket }
     }
 
     pub fn command(&self) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_hmux"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_tiri"));
         command
             .args(["-f", "/dev/null", "-S"])
             .arg(&self.socket)
@@ -43,7 +43,7 @@ impl Server {
     }
 
     pub fn run(&self, args: &[&str]) -> Output {
-        self.command().args(args).output().expect("run hmux")
+        self.command().args(args).output().expect("run tiri")
     }
 
     pub fn success(&self, args: &[&str]) -> String {
@@ -511,7 +511,7 @@ pub struct TerminalClient {
 
 impl TerminalClient {
     fn new(server: &Server, width: u16, height: u16) -> Self {
-        let size = libc::winsize {
+        let mut size = libc::winsize {
             ws_row: height,
             ws_col: width,
             ws_xpixel: 0,
@@ -523,8 +523,8 @@ impl TerminalClient {
                 &mut master,
                 &mut slave,
                 std::ptr::null_mut(),
-                std::ptr::null(),
-                &size,
+                std::ptr::null_mut(),
+                &raw mut size,
             )
         };
         assert_eq!(opened, 0, "openpty: {}", std::io::Error::last_os_error());
@@ -538,7 +538,7 @@ impl TerminalClient {
             .stderr(slave);
         unsafe {
             command.pre_exec(|| {
-                if libc::setsid() == -1 || libc::ioctl(0, libc::TIOCSCTTY, 0) == -1 {
+                if libc::setsid() == -1 || libc::ioctl(0, libc::TIOCSCTTY as _, 0) == -1 {
                     return Err(std::io::Error::last_os_error());
                 }
                 Ok(())

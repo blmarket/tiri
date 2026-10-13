@@ -1,4 +1,4 @@
-use hmux::src::{
+use tiri::src::{
     grid::grid_default_cell,
     input_keys::input_key_get_mouse,
     shared::{

@@ -1,0 +1,4 @@
+# tiri's reading of Codex, layered over herdr's codex.toml (see ../README.md).
+# `version` is the herdr manifest this overlay was reviewed against.
+id = "codex"
+version = "2026.10.01.1"

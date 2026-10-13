@@ -10,7 +10,7 @@ use std::collections::VecDeque;
 /// Windows waiting for alert delivery and the task that drains them.
 struct alerts {
     list: VecDeque<WindowRef>,
-    task: Option<hmux_rt::mio::Task>,
+    task: Option<tiri_rt::mio::Task>,
 }
 
 thread_local! {
@@ -37,7 +37,7 @@ impl alerts {
         ALERTS.with_borrow(|alerts| alerts.task.is_some())
     }
 
-    fn set_task(task: Option<hmux_rt::mio::Task>) {
+    fn set_task(task: Option<tiri_rt::mio::Task>) {
         let previous = ALERTS.with_borrow_mut(|alerts| std::mem::replace(&mut alerts.task, task));
         drop(previous);
     }

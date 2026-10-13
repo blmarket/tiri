@@ -1,7 +1,7 @@
-use hmux::src::shared::grid::utf8_data;
-use hmux::src::shared::utf8::{UTF8_DONE, UTF8_ERROR, UTF8_MORE};
-use hmux::src::text::utf8::{utf8_append, utf8_cstrhas, utf8_open, utf8_towc};
-use hmux::src::text::utf8_decode::{decode_utf8, DecodeResult};
+use tiri::src::shared::grid::utf8_data;
+use tiri::src::shared::utf8::{UTF8_DONE, UTF8_ERROR, UTF8_MORE};
+use tiri::src::text::utf8::{utf8_append, utf8_cstrhas, utf8_open, utf8_towc};
+use tiri::src::text::utf8_decode::{decode_utf8, DecodeResult};
 use std::ffi::CStr;
 
 fn empty_data() -> utf8_data {
@@ -61,7 +61,7 @@ fn legacy_codepoint_conversion_accepts_an_embedded_nul_cell() {
     data.data[0] = 0;
     data.have = 1;
     data.size = 1;
-    let mut codepoint = -1;
+    let mut codepoint = -1i32 as libc::wchar_t;
 
     unsafe {
         assert_eq!(utf8_towc(&data, &mut codepoint), UTF8_DONE);
@@ -75,12 +75,12 @@ fn legacy_codepoint_conversion_keeps_combined_cell_first_codepoint_behavior() {
     data.data[..2].copy_from_slice(b"ab");
     data.have = 2;
     data.size = 2;
-    let mut codepoint = -1;
+    let mut codepoint = -1i32 as libc::wchar_t;
 
     unsafe {
         assert_eq!(utf8_towc(&data, &mut codepoint), UTF8_DONE);
     }
-    assert_eq!(codepoint, b'a' as i32);
+    assert_eq!(codepoint, b'a' as libc::wchar_t);
 }
 
 #[test]
@@ -96,7 +96,7 @@ fn helper_keeps_trailing_bytes_for_the_next_decode() {
 
 #[test]
 fn copied_cells_clear_unused_bytes_and_allow_self_assignment() {
-    use hmux::src::text::utf8::{utf8_copy, utf8_set};
+    use tiri::src::text::utf8::{utf8_copy, utf8_set};
     let mut cell = utf8_data {
         data: [0xab; 32],
         have: 2,
@@ -126,9 +126,9 @@ fn copied_cells_clear_unused_bytes_and_allow_self_assignment() {
 
 #[test]
 fn codepoint_encoding_preserves_failure_outputs_and_unused_bytes() {
-    use hmux::src::text::utf8::utf8_fromwc;
+    use tiri::src::text::utf8::utf8_fromwc;
     unsafe {
-        for codepoint in [-1, 0xd800, 0x110000] {
+        for codepoint in [-1i32 as libc::wchar_t, 0xd800, 0x110000] {
             let mut cell = utf8_data {
                 data: [0xaa; 32],
                 have: 7,
@@ -170,7 +170,7 @@ fn codepoint_encoding_preserves_failure_outputs_and_unused_bytes() {
 
 #[test]
 fn whitespace_scanning_respects_decode_order_and_cell_bounds() {
-    use hmux::src::text::utf8::utf8_has_whitespace;
+    use tiri::src::text::utf8::utf8_has_whitespace;
     for (bytes, expected) in [
         (&b"a\xc2\xa0"[..], 1),
         (&b"a\xe3\x80\x80"[..], 1),

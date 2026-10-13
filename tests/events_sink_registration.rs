@@ -1,6 +1,6 @@
-use hmux::src::events::{events_add_sink, events_fire, events_remove_sink};
-use hmux::src::events_payload::event_payload_create;
-use hmux::src::shared::events::{events_callback, EventSinkId};
+use tiri::src::events::{events_add_sink, events_fire, events_remove_sink};
+use tiri::src::events_payload::event_payload_create;
+use tiri::src::shared::events::{events_callback, EventSinkId};
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -50,12 +50,12 @@ fn sink_ids_survive_self_removal_and_do_not_remove_replacements() {
 
 #[test]
 fn firing_with_logging_enabled_records_the_name_and_every_payload_item() {
-    use hmux::src::events_payload::{event_payload_set_int, event_payload_set_string};
-    use hmux::src::log::{log_add_level, log_get_level, log_open, log_toggle};
+    use tiri::src::events_payload::{event_payload_set_int, event_payload_set_string};
+    use tiri::src::log::{log_add_level, log_get_level, log_open, log_toggle};
 
     // The server log is written to the working directory; keep it private.
     let directory = std::env::temp_dir().join(format!(
-        "hmux-events-log-{}-{}",
+        "tiri-events-log-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

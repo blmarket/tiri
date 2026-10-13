@@ -4,7 +4,7 @@ use crate::src::cmd::queue::{
     cmdq_append, cmdq_get_callback_owned, cmdq_get_client, cmdq_new_state,
 };
 use crate::src::cmd::{cmd_mouse_at, cmd_template_replace_cstring};
-use crate::src::ffi::libc::{__ctype_tolower_loc, strcasestr, strstr};
+use crate::src::ffi::libc::{strcasestr, strstr};
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_add, format_create_defaults, format_expand_cstring};
@@ -83,7 +83,7 @@ pub const MODE_TREE_PREVIEW_OFF: mode_tree_preview = 0;
 #[inline]
 unsafe fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
     if __c >= -(128 as ::core::ffi::c_int) && __c < 256 as ::core::ffi::c_int {
-        *(*__ctype_tolower_loc()).offset(__c as isize) as ::core::ffi::c_int
+        ::libc::tolower(__c as ::core::ffi::c_int) as ::core::ffi::c_int
     } else {
         __c
     }
@@ -149,15 +149,14 @@ unsafe fn mode_tree_is_lowercase(mut ptr: *const ::core::ffi::c_char) -> ::core:
                         {
                             __c as __int32_t
                         } else {
-                            *(*__ctype_tolower_loc()).offset(__c as isize)
+                            ::libc::tolower(__c as ::core::ffi::c_int)
                         }) as ::core::ffi::c_int;
                     } else {
                         __res = tolower(*ptr as u_char as ::core::ffi::c_int);
                     }
                 } else {
-                    __res = *(*__ctype_tolower_loc())
-                        .offset(*ptr as u_char as ::core::ffi::c_int as isize)
-                        as ::core::ffi::c_int;
+                    __res =
+                        ::libc::tolower(*ptr as u_char as ::core::ffi::c_int) as ::core::ffi::c_int;
                 }
                 __res
             })

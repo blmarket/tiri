@@ -36,8 +36,11 @@ use crate::src::events_payload::{
     event_payload_create, event_payload_set_int, event_payload_set_pane, event_payload_set_string,
     event_payload_set_target, event_payload_set_uint, event_payload_set_window,
 };
-use crate::src::ffi::libc::{__ctype_b_loc, fnmatch, gethostname, getpid, kill, memset};
+use crate::src::ffi::libc::{fnmatch, gethostname, memset};
+#[cfg(target_os = "linux")]
+use crate::src::ffi::libc::{getpid, kill};
 use crate::src::ffi::regex::RegexStorage;
+#[cfg(target_os = "linux")]
 use crate::src::ffi::utempter::utempter_remove_record;
 use crate::src::file::{file_cancel, file_read_with_cmdq_wait_init};
 use crate::src::format::bytes::write_cstr;
@@ -76,7 +79,7 @@ use crate::src::style::{style_ranges_init, style_set_scrollbar_style_from_option
 use crate::src::tmux::setblocking;
 use crate::src::tty::tty_default_colours;
 use crate::src::window_copy::{window_copy_mode, window_view_mode};
-use hmux_buffer::SegmentedBuf;
+use tiri_buffer::SegmentedBuf;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
@@ -87,7 +90,6 @@ use crate::src::shared::client::{client_file, client_file_cb};
 use crate::src::shared::client::{CLIENT_DEAD, CLIENT_EXITED, CLIENT_UNATTACHEDFLAGS};
 use crate::src::shared::colour::*;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
-use crate::src::shared::ctype::_ISspace;
 use crate::src::shared::display::*;
 use crate::src::shared::event::*;
 use crate::src::shared::event::{EV_READ, EV_WRITE};
@@ -114,6 +116,7 @@ use crate::src::shared::posix_terminal::winsize;
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{prompt_free_cb, prompt_result, PROMPT_CLOSE};
 use crate::src::shared::screen::{screen, MODE_BRACKETPASTE, MODE_FOCUSON, MODE_THEME_UPDATES};
+#[cfg(target_os = "linux")]
 use crate::src::shared::signal::SIGCHLD;
 use crate::src::shared::spawn::spawn_editor_state;
 use crate::src::shared::status::status_prompt_input_cb;
@@ -152,8 +155,6 @@ impl Drop for window_pane_input_data {
         }
     }
 }
-
-pub const FIONREAD: ::core::ffi::c_int = 0x541b as ::core::ffi::c_int;
 
 thread_local! {
     static WINDOW_PANES: std::cell::RefCell<window_pane_tree> = const {
@@ -361,7 +362,7 @@ unsafe fn window_pane_destroy_ready(
     if (*wp)
         .fd
         .as_ref()
-        .and_then(|fd| hmux_rt::unix::bytes_available(std::os::fd::AsFd::as_fd(fd)).ok())
+        .and_then(|fd| tiri_rt::unix::bytes_available(std::os::fd::AsFd::as_fd(fd)).ok())
         .is_some_and(|n| n > 0)
     {
         return 0 as ::core::ffi::c_int;
@@ -741,6 +742,7 @@ unsafe fn window_pane_destroy(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>
     window_pane_clear_prompt(&owner);
     window_pane_free_modes(&owner);
     pane_owner.clear_sync_dirty();
+    #[cfg(target_os = "linux")]
     if (*wp).fd.is_some() {
         utempter_remove_record((*wp).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd));
         kill(getpid(), SIGCHLD);
@@ -1532,10 +1534,7 @@ unsafe fn window_pane_search(
             line.truncate(nul);
         }
         while let Some(&last) = line.last() {
-            if *(*__ctype_b_loc()).offset(last as ::core::ffi::c_int as isize) as ::core::ffi::c_int
-                & _ISspace as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
-                == 0
-            {
+            if ::libc::isspace(last as ::core::ffi::c_int) == 0 {
                 break;
             }
             line.pop();

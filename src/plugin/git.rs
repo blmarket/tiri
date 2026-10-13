@@ -546,7 +546,7 @@ mod tests {
     #[test]
     fn a_linked_worktree_is_named_apart_from_its_repository() {
         let scratch = Scratch::new();
-        let gitdir = scratch.dir("hmux/.git/worktrees/h1");
+        let gitdir = scratch.dir("tiri/.git/worktrees/h1");
         fs::write(gitdir.join("commondir"), "../..\n").expect("commondir");
         fs::write(gitdir.join("HEAD"), "ref: refs/heads/h1\n").expect("HEAD");
         scratch.write(
@@ -558,7 +558,7 @@ mod tests {
         let found = Discovery::find(&deep).expect("a worktree");
         assert_eq!(found.worktree, scratch.root.join("h1"));
         assert_eq!(found.gitdir, gitdir);
-        assert_eq!(found.repo, c"hmux", "the repository, not the worktree");
+        assert_eq!(found.repo, c"tiri", "the repository, not the worktree");
         assert_eq!(file_name(&found.worktree), c"h1");
         assert_eq!(subdir(&found.worktree, &deep), c"tmux-c2rs/src");
         assert_eq!(
@@ -577,11 +577,11 @@ mod tests {
     #[test]
     fn a_plain_checkout_is_its_own_repository() {
         let scratch = Scratch::new();
-        scratch.write("hmux/.git/HEAD", "ref: refs/heads/master\n");
+        scratch.write("tiri/.git/HEAD", "ref: refs/heads/master\n");
 
-        let found = Discovery::find(&scratch.dir("hmux")).expect("a worktree");
-        assert_eq!(found.repo, c"hmux");
-        assert_eq!(found.gitdir, scratch.root.join("hmux/.git"));
+        let found = Discovery::find(&scratch.dir("tiri")).expect("a worktree");
+        assert_eq!(found.repo, c"tiri");
+        assert_eq!(found.gitdir, scratch.root.join("tiri/.git"));
         assert_eq!(Repo::read(&found, (None, None)).branch, c"master");
     }
 
@@ -695,8 +695,8 @@ mod tests {
             Path::new("/a/b/.git")
         );
         assert_eq!(normalize(Path::new("/a/./b/")), Path::new("/a/b"));
-        assert_eq!(repo_name(Path::new("/a/hmux/.git")), c"hmux");
-        assert_eq!(repo_name(Path::new("/a/hmux.git")), c"hmux", "a bare repo");
+        assert_eq!(repo_name(Path::new("/a/tiri/.git")), c"tiri");
+        assert_eq!(repo_name(Path::new("/a/tiri.git")), c"tiri", "a bare repo");
     }
 
     #[test]

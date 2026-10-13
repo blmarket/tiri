@@ -2,11 +2,10 @@
 //! after any preceding grammar actions have updated the application environment.
 use super::{ParseSession, RefCell};
 use crate::src::environ::environ_find;
-use crate::src::ffi::libc::{__ctype_b_loc, getc, getpwnam, getpwuid, getuid, ungetc, wctomb};
-use crate::src::shared::ctype::{_ISalnum, _ISdigit};
+use crate::src::ffi::libc::{getc, getpwnam, getpwuid, getuid, ungetc, wctomb};
 use crate::src::shared::stdio::{EOF, FILE};
 use crate::src::tmux::global_environ;
-use hmux_cmdparse::{Token, TokenText};
+use tiri_cmdparse::{Token, TokenText};
 use std::ffi::{c_char, CStr, CString};
 
 type LocatedToken = (usize, Token, usize);
@@ -491,7 +490,7 @@ impl<'a, 'input> Lexer<'a, 'input> {
 }
 
 impl Iterator for Lexer<'_, '_> {
-    type Item = Result<LocatedToken, hmux_cmdparse::LexError>;
+    type Item = Result<LocatedToken, tiri_cmdparse::LexError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.finished {
@@ -507,7 +506,7 @@ impl Iterator for Lexer<'_, '_> {
             Err(error) => {
                 self.finished = true;
                 self.session.borrow_mut().record_error(error.message());
-                Some(Err(hmux_cmdparse::LexError))
+                Some(Err(tiri_cmdparse::LexError))
             }
         }
     }
@@ -527,14 +526,13 @@ fn finish(mut bytes: Vec<u8>) -> CString {
 }
 
 fn is_digit(byte: u8) -> bool {
-    unsafe { *(*__ctype_b_loc()).add(byte as usize) & _ISdigit as u16 != 0 }
+    unsafe { ::libc::isdigit(byte as ::core::ffi::c_int) != 0 }
 }
 
 fn is_variable(byte: u8, first: bool) -> bool {
     byte != b'='
         && !(first && is_digit(byte))
-        && (byte == b'_'
-            || unsafe { *(*__ctype_b_loc()).add(byte as usize) & _ISalnum as u16 != 0 })
+        && (byte == b'_' || unsafe { ::libc::isalnum(byte as ::core::ffi::c_int) != 0 })
 }
 
 #[cfg(test)]

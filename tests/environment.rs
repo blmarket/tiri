@@ -1,6 +1,6 @@
 //! Environment-owner compatibility and lifetime checks.
-use hmux::src::environ::{environ, environ_create, ENVIRON_HIDDEN};
-use hmux::src::format::bytes::write_cstr;
+use tiri::src::environ::{environ, environ_create, ENVIRON_HIDDEN};
+use tiri::src::format::bytes::write_cstr;
 use std::ffi::CStr;
 
 #[test]
@@ -110,7 +110,7 @@ fn updates_preserve_entry_addresses_and_iteration_supports_removal_by_snapshot()
 
 #[test]
 fn formatted_updates_use_an_owned_snapshot_of_the_previous_value() {
-    use hmux::src::environ::environ_set;
+    use tiri::src::environ::environ_set;
     let mut env = environ_create();
     env.set(b"VAR", ENVIRON_HIDDEN, b"old\xff").unwrap();
     let entry = std::ptr::from_ref(env.find(c"VAR").unwrap());
@@ -138,7 +138,7 @@ fn formatted_updates_use_an_owned_snapshot_of_the_previous_value() {
 
 #[test]
 fn put_splits_first_equals_and_preserves_c_string_bytes() {
-    use hmux::src::environ::environ_put;
+    use tiri::src::environ::environ_put;
 
     let mut env = environ_create();
     unsafe {
@@ -174,7 +174,7 @@ fn put_splits_first_equals_and_preserves_c_string_bytes() {
 
 #[test]
 fn iteration_allows_nested_reads_and_copy_from_an_owned_snapshot() {
-    use hmux::src::environ::environ_copy;
+    use tiri::src::environ::environ_copy;
     let mut env = environ_create();
     env.set(b"a", 7, b"one").unwrap();
     env.clear(b"b").unwrap();
@@ -190,13 +190,13 @@ fn iteration_allows_nested_reads_and_copy_from_an_owned_snapshot() {
 
 #[test]
 fn update_borrows_sources_and_accepts_owned_snapshots() {
-    use hmux::src::environ::environ_update;
-    use hmux::src::options::{options_array_set, options_create, options_empty};
+    use tiri::src::environ::environ_update;
+    use tiri::src::options::{options_array_set, options_create, options_empty};
     use std::ptr::null_mut;
     unsafe {
         let mut options_owner = options_create(None);
         let options = &raw mut *options_owner;
-        let table = &raw const hmux::src::options_table::options_table;
+        let table = &raw const tiri::src::options_table::options_table;
         let definition = (*table)
             .iter()
             .find(|entry| entry.name == Some(c"update-environment"))

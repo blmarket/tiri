@@ -1,12 +1,12 @@
 //! Timer work is a future owned by the caller's task handle.
-use hmux_rt::Handle as _;
+use tiri_rt::Handle as _;
 use std::io;
 use std::time::{Duration, Instant};
 
 /// Owns one scheduled future. Dropping it cancels the work.
 /// Owners that track active work clear their timer from the callback.
 pub struct Timer {
-    _task: hmux_rt::mio::Task,
+    _task: tiri_rt::mio::Task,
 }
 
 impl Timer {
@@ -15,8 +15,8 @@ impl Timer {
         let now = Instant::now();
         // Preserve the existing behavior: an overflowing deadline is expired.
         let deadline = now.checked_add(delay).unwrap_or(now);
-        let handle = hmux_rt::mio::Handle::current();
-        let sleep = hmux_rt::mio::Sleep::new(deadline);
+        let handle = tiri_rt::mio::Handle::current();
+        let sleep = tiri_rt::mio::Sleep::new(deadline);
         let task = handle.spawn(async move {
             sleep.await.expect("timer wait failed");
             callback();

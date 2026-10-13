@@ -1,4 +1,4 @@
-use hmux::src::monitor::{
+use tiri::src::monitor::{
     monitor_parse_owned, MONITOR_ALL_PANES, MONITOR_ALL_WINDOWS, MONITOR_PANE, MONITOR_SESSION,
     MONITOR_WINDOW,
 };

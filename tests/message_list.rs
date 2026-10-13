@@ -1,4 +1,4 @@
-use hmux::src::shared::status::message_list;
+use tiri::src::shared::status::message_list;
 use std::ffi::CString;
 use std::time::{Duration, UNIX_EPOCH};
 

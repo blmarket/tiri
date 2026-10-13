@@ -25,7 +25,13 @@ impl Server {
             .as_nanos();
         // Keep the socket below the Unix domain path length limit.
         let directory = PathBuf::from("/tmp").join(format!("hxe{:x}{stamp:x}", std::process::id()));
-        let socket_base = directory.join(OsString::from_vec(b"socket-\xff".to_vec()));
+        // APFS only stores UTF-8 names; elsewhere keep a non-UTF-8 byte.
+        let name: &[u8] = if cfg!(target_vendor = "apple") {
+            "socket-\u{ff}".as_bytes()
+        } else {
+            b"socket-\xff"
+        };
+        let socket_base = directory.join(OsString::from_vec(name.to_vec()));
         let config_root = directory.join("xdg");
         let home = directory.join("home");
         fs::create_dir_all(&socket_base).expect("create socket base");
@@ -46,7 +52,7 @@ impl Server {
     }
 
     fn run(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_hmux"))
+        Command::new(env!("CARGO_BIN_EXE_tiri"))
             .arg("-L")
             .arg(&self.label)
             .args(args)
@@ -57,11 +63,11 @@ impl Server {
             .env("TERM", "xterm-256color")
             .env("SHELL", "/bin/sh")
             .output()
-            .expect("run hmux")
+            .expect("run tiri")
     }
 
     fn run_without_tmpdir(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_hmux"))
+        Command::new(env!("CARGO_BIN_EXE_tiri"))
             .arg("-L")
             .arg(&self.label)
             .args(args)
@@ -72,7 +78,7 @@ impl Server {
             .env("TERM", "xterm-256color")
             .env("SHELL", "/bin/sh")
             .output()
-            .expect("run hmux without TMUX_TMPDIR")
+            .expect("run tiri without TMUX_TMPDIR")
     }
 }
 

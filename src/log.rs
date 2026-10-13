@@ -243,15 +243,19 @@ mod tests {
     fn pointer_and_hex_spelling_match_printf() {
         unsafe {
             let byte = 0u8;
-            for ptr in [
-                std::ptr::null(),
-                (&raw const byte).cast::<::core::ffi::c_void>(),
-            ] {
-                assert_eq!(
-                    message(format_args!("{}", log_pointer(ptr))),
-                    legacy_message!(c"%p".as_ptr(), ptr)
-                );
-            }
+            let ptr = (&raw const byte).cast::<::core::ffi::c_void>();
+            assert_eq!(
+                message(format_args!("{}", log_pointer(ptr))),
+                legacy_message!(c"%p".as_ptr(), ptr)
+            );
+            // Logs keep glibc's null spelling; other libcs print it differently.
+            assert_eq!(
+                message(format_args!(
+                    "{}",
+                    log_pointer(std::ptr::null::<::core::ffi::c_void>())
+                )),
+                b"(nil)"
+            );
             for value in [0u64, 1, 0xff, u64::MAX] {
                 assert_eq!(
                     message(format_args!("{}", log_hex(value))),

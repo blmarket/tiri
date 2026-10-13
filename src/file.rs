@@ -94,11 +94,7 @@ pub struct msg_write_done {
     pub error: ::core::ffi::c_int,
 }
 
-pub const EIO: ::core::ffi::c_int = 5 as ::core::ffi::c_int;
-
-pub const EBADF: ::core::ffi::c_int = 9 as ::core::ffi::c_int;
-
-pub const O_RDONLY: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+pub use ::libc::{EBADF, EIO, O_RDONLY};
 
 unsafe fn read_imsg_payload<T: Copy>(imsg: &imsg) -> Option<T> {
     if imsg.data.len() < ::core::mem::size_of::<T>() {
@@ -527,7 +523,7 @@ unsafe fn file_write_impl(
                     .as_ref()
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 mode,
-            ) as *mut FILE;
+            );
             if f.is_null() {
                 cf.error = *__errno_location();
             } else {
@@ -634,7 +630,7 @@ pub(crate) unsafe fn file_read_with_cmdq_wait_init(
                     .as_ref()
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 c"rb".as_ptr(),
-            ) as *mut FILE;
+            );
             if f.is_null() {
                 cf.error = *__errno_location();
             } else {
@@ -821,7 +817,7 @@ unsafe fn file_write_finished(owner: &Rc<UnsafeCell<client_file>>) {
     std::mem::take(&mut cf.event).free();
     if let Some(fd) = cf.fd.take() {
         // Completion must report close errors; consume ownership before closing.
-        if let Err(error) = hmux_rt::unix::close(fd.into_raw_fd()) {
+        if let Err(error) = tiri_rt::unix::close(fd.into_raw_fd()) {
             if cf.error == 0 {
                 cf.error = error.raw_os_error().unwrap_or(libc::EIO);
             }
@@ -931,7 +927,7 @@ pub unsafe fn file_write_open(
             error = EBADF;
         } else {
             let fd = if msg.fd == -1 {
-                hmux_rt::unix::open(
+                tiri_rt::unix::open(
                     CStr::from_ptr(path),
                     libc::O_WRONLY | libc::O_CREAT | msg.flags | O_NONBLOCK,
                     0o644,
@@ -943,7 +939,7 @@ pub unsafe fn file_write_open(
                     _ => Err(io::Error::from_raw_os_error(EBADF)),
                 };
                 if close_received != 0 && (msg.fd == STDOUT_FILENO || msg.fd == STDERR_FILENO) {
-                    let _ = hmux_rt::unix::close(msg.fd);
+                    let _ = tiri_rt::unix::close(msg.fd);
                 }
                 duplicate
             };
@@ -1126,14 +1122,14 @@ pub unsafe fn file_read_open(
             error = EBADF;
         } else {
             let fd = if msg.fd == -1 {
-                hmux_rt::unix::open(CStr::from_ptr(path), libc::O_RDONLY | O_NONBLOCK, 0)
+                tiri_rt::unix::open(CStr::from_ptr(path), libc::O_RDONLY | O_NONBLOCK, 0)
             } else {
                 let duplicate = match msg.fd {
                     STDIN_FILENO => io::stdin().as_fd().try_clone_to_owned(),
                     _ => Err(io::Error::from_raw_os_error(EBADF)),
                 };
                 if close_received != 0 && (msg.fd == STDIN_FILENO) {
-                    let _ = hmux_rt::unix::close(msg.fd);
+                    let _ = tiri_rt::unix::close(msg.fd);
                 }
                 duplicate
             };

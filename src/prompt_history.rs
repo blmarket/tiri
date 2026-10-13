@@ -80,7 +80,7 @@ pub unsafe fn prompt_load_history() {
         "loading history from {}",
         log_bytes(history_file.as_bytes())
     ));
-    f = fopen(history_file.as_ptr(), c"r".as_ptr()) as *mut FILE;
+    f = fopen(history_file.as_ptr(), c"r".as_ptr());
     if f.is_null() {
         log_debug(format_args!(
             "{}: {}",
@@ -107,7 +107,7 @@ pub unsafe fn prompt_save_history() {
         "saving history to {}",
         log_bytes(history_file.as_bytes())
     ));
-    f = fopen(history_file.as_ptr(), c"w".as_ptr()) as *mut FILE;
+    f = fopen(history_file.as_ptr(), c"w".as_ptr());
     if f.is_null() {
         log_debug(format_args!(
             "{}: {}",

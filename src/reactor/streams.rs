@@ -3,9 +3,9 @@ use super::io;
 use crate::src::control::CONTROL_BUFFER_LOW;
 use crate::src::shared::event::{bufferevent, bufferevent_data_cb, bufferevent_event_cb};
 pub use api::*;
-use hmux_buffer::{Buf, BufMut, SegmentedBuf};
-use hmux_rt::Handle as _;
-use hmux_rt::{AsyncRead as _, AsyncWrite as _};
+use tiri_buffer::{Buf, BufMut, SegmentedBuf};
+use tiri_rt::Handle as _;
+use tiri_rt::{AsyncRead as _, AsyncWrite as _};
 use std::cell::{Cell, RefCell};
 use std::ffi::{c_int, c_short};
 use std::future::{poll_fn, Future};
@@ -21,7 +21,7 @@ pub(crate) struct StreamState {
     generation: Cell<u64>,
     write_requested: Cell<bool>,
     wake: RefCell<Option<LocalWaker>>,
-    task: RefCell<Option<hmux_rt::mio::Task>>,
+    task: RefCell<Option<tiri_rt::mio::Task>>,
 }
 
 /// Observe a runtime-owned stream without extending its allocation lifetime.
@@ -110,11 +110,11 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
     // SAFETY: the stream's model owner keeps this descriptor open through registration.
     let source = io(unsafe { std::os::fd::BorrowedFd::borrow_raw(state.fd) })?;
     let s = state.clone();
-    let handle = hmux_rt::mio::Handle::current();
+    let handle = tiri_rt::mio::Handle::current();
     let task = handle.spawn(async move {
         enum Completion {
             Changed,
-            Read(std::io::Result<hmux_rt::Received>),
+            Read(std::io::Result<tiri_rt::Received>),
             Write(std::io::Result<usize>),
         }
         let mut prefer_write = false;
@@ -197,7 +197,8 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
                     Completion::Read(result) => {
                         (*stream).enabled &= !2;
                         let flags = if let Err(error) = result {
-                            *libc::__errno_location() = error.raw_os_error().unwrap_or(libc::EIO);
+                            *crate::src::ffi::libc::__errno_location() =
+                                error.raw_os_error().unwrap_or(libc::EIO);
                             1 | 0x20
                         } else {
                             1 | 0x10
@@ -215,7 +216,7 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
                     }
                     Completion::Write(result) => {
                         (*stream).enabled &= !4;
-                        *libc::__errno_location() = result
+                        *crate::src::ffi::libc::__errno_location() = result
                             .err()
                             .and_then(|error| error.raw_os_error())
                             .unwrap_or(libc::EIO);
@@ -250,7 +251,7 @@ pub unsafe fn bufferevent_new(
     let was_nonblocking = if fd == -1 {
         true
     } else {
-        match hmux_rt::unix::set_nonblocking(std::os::fd::BorrowedFd::borrow_raw(fd), true) {
+        match tiri_rt::unix::set_nonblocking(std::os::fd::BorrowedFd::borrow_raw(fd), true) {
             Ok(previous) => previous,
             Err(error) => {
                 super::io_status(Err(error));
@@ -286,11 +287,12 @@ pub unsafe fn bufferevent_new(
     });
     if let Err(error) = start(&s) {
         bufferevent_free(stream);
-        *libc::__errno_location() = if error.kind() == std::io::ErrorKind::Unsupported {
-            libc::EOPNOTSUPP
-        } else {
-            error.raw_os_error().unwrap_or(libc::EIO)
-        };
+        *crate::src::ffi::libc::__errno_location() =
+            if error.kind() == std::io::ErrorKind::Unsupported {
+                libc::EOPNOTSUPP
+            } else {
+                error.raw_os_error().unwrap_or(libc::EIO)
+            };
         return std::ptr::null_mut();
     }
     stream
@@ -306,7 +308,7 @@ pub unsafe fn bufferevent_free(stream: *mut bufferevent) {
         drop(task);
         if s.fd != -1 && s.pid == std::process::id() && !s.was_nonblocking {
             let _ =
-                hmux_rt::unix::set_nonblocking(std::os::fd::BorrowedFd::borrow_raw(s.fd), false);
+                tiri_rt::unix::set_nonblocking(std::os::fd::BorrowedFd::borrow_raw(s.fd), false);
         }
         // Task state may still be retained by the callback that called free.
         // Detach the allocation now and release the slot borrow before capture Drop.

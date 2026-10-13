@@ -1,0 +1,17 @@
+# tiri's reading of OpenCode, layered over herdr's opencode.toml (see
+# ../README.md). `version` is the herdr manifest this overlay was reviewed
+# against.
+id = "opencode"
+version = "2026.06.10.1"
+
+# OpenCode's footer interrupt hints, with or without its name on the line.
+[[rules]]
+id = "bare_interrupt_hint_working"
+state = "working"
+priority = 110
+region = "bottom_lines(24)"
+visible_working = true
+any = [
+  { contains = ["esc interrupt"] },
+  { contains = ["esc again to interrupt"] },
+]

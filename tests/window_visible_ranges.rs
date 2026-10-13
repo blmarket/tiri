@@ -1,6 +1,6 @@
-use hmux::src::shared::display::visible_range;
-use hmux::src::shared::pane::window_pane;
-use hmux::src::window_visible::{window_position_is_visible, window_visible_ranges};
+use tiri::src::shared::display::visible_range;
+use tiri::src::shared::pane::window_pane;
+use tiri::src::window_visible::{window_position_is_visible, window_visible_ranges};
 use std::cell::UnsafeCell;
 use std::rc::Rc;
 

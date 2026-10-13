@@ -58,10 +58,7 @@ impl spawn_editor_state {
     }
 }
 
-pub const SEEK_SET: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const SEEK_END: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
-
-pub const IUTF8: ::core::ffi::c_int = 0o40000 as ::core::ffi::c_int;
+pub use ::libc::{IUTF8, SEEK_END, SEEK_SET};
 
 pub const _PATH_DEFPATH: &std::ffi::CStr = c"/usr/bin:/bin";
 

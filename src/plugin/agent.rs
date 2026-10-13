@@ -1,8 +1,8 @@
-//! Existing hmux-agent detectors hosted through hmux pane observations.
+//! Existing tiri-agent detectors hosted through tiri pane observations.
 use super::{Host, PaneActivity, PaneId, PaneValues, Plugin, Variable};
-use hmux_agent::integration::status::{AgentStatus, StatusHub};
-use hmux_agent::integration::AgentObserver;
-use hmux_agent::pane_class::{PaneClass, PaneProcessProbe};
+use tiri_agent::integration::status::{AgentStatus, StatusHub};
+use tiri_agent::integration::AgentObserver;
+use tiri_agent::pane_class::{PaneClass, PaneProcessProbe};
 use std::ffi::CString;
 use std::io;
 use std::time::Duration;
@@ -119,7 +119,7 @@ fn publish(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hmux_agent::integration::AgentState;
+    use tiri_agent::integration::AgentState;
 
     #[test]
     fn publishes_agent_metadata_and_classifies_non_agent_panes() {

@@ -1,6 +1,5 @@
-use crate::src::ffi::libc::{__ctype_b_loc, memcpy};
+use crate::src::ffi::libc::memcpy;
 use crate::src::shared::abi::*;
-use crate::src::shared::ctype::{_IScntrl, _ISgraph};
 use crate::src::shared::limits::UCHAR_MAX;
 use crate::src::shared::vis::{
     VIS_CSTYLE, VIS_DQ, VIS_NL, VIS_NOSLASH, VIS_OCTAL, VIS_SAFE, VIS_TAB,
@@ -24,10 +23,7 @@ pub unsafe fn vis(
                 == 0 as ::core::ffi::c_int
             && (c != '*' as i32 && c != '?' as i32 && c != '[' as i32 && c != '#' as i32
                 || flag & VIS_GLOB == 0 as ::core::ffi::c_int)
-            && *(*__ctype_b_loc()).offset(c as u_char as ::core::ffi::c_int as isize)
-                as ::core::ffi::c_int
-                & _ISgraph as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
-                != 0
+            && ::libc::isgraph(c as u_char as ::core::ffi::c_int) != 0
             || flag & VIS_SP == 0 as ::core::ffi::c_int && c == ' ' as i32
             || flag & VIS_TAB == 0 as ::core::ffi::c_int && c == '\t' as i32
             || flag & VIS_NL == 0 as ::core::ffi::c_int && c == '\n' as i32
@@ -35,11 +31,7 @@ pub unsafe fn vis(
                 && (c == '\u{8}' as i32
                     || c == '\u{7}' as i32
                     || c == '\r' as i32
-                    || *(*__ctype_b_loc()).offset(c as u_char as ::core::ffi::c_int as isize)
-                        as ::core::ffi::c_int
-                        & _ISgraph as ::core::ffi::c_int as ::core::ffi::c_ushort
-                            as ::core::ffi::c_int
-                        != 0))
+                    || ::libc::isgraph(c as u_char as ::core::ffi::c_int) != 0))
     {
         if c == '"' as i32 && flag & VIS_DQ != 0 as ::core::ffi::c_int
             || c == '\\' as i32 && flag & VIS_NOSLASH == 0 as ::core::ffi::c_int
@@ -890,11 +882,7 @@ pub unsafe fn vis(
                 dst = dst.offset(1);
                 *fresh27 = 'M' as i32 as ::core::ffi::c_char;
             }
-            if *(*__ctype_b_loc()).offset(c as u_char as ::core::ffi::c_int as isize)
-                as ::core::ffi::c_int
-                & _IScntrl as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
-                != 0
-            {
+            if ::libc::iscntrl(c as u_char as ::core::ffi::c_int) != 0 {
                 let fresh28 = dst;
                 dst = dst.offset(1);
                 *fresh28 = '^' as i32 as ::core::ffi::c_char;
@@ -969,10 +957,7 @@ pub unsafe fn strnvis(
                     == 0 as ::core::ffi::c_int
                 && (c != '*' as i32 && c != '?' as i32 && c != '[' as i32 && c != '#' as i32
                     || flag & VIS_GLOB == 0 as ::core::ffi::c_int)
-                && *(*__ctype_b_loc()).offset(c as u_char as ::core::ffi::c_int as isize)
-                    as ::core::ffi::c_int
-                    & _ISgraph as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
-                    != 0
+                && ::libc::isgraph(c as u_char as ::core::ffi::c_int) != 0
                 || flag & VIS_SP == 0 as ::core::ffi::c_int && c == ' ' as i32
                 || flag & VIS_TAB == 0 as ::core::ffi::c_int && c == '\t' as i32
                 || flag & VIS_NL == 0 as ::core::ffi::c_int && c == '\n' as i32
@@ -980,11 +965,7 @@ pub unsafe fn strnvis(
                     && (c == '\u{8}' as i32
                         || c == '\u{7}' as i32
                         || c == '\r' as i32
-                        || *(*__ctype_b_loc()).offset(c as u_char as ::core::ffi::c_int as isize)
-                            as ::core::ffi::c_int
-                            & _ISgraph as ::core::ffi::c_int as ::core::ffi::c_ushort
-                                as ::core::ffi::c_int
-                            != 0))
+                        || ::libc::isgraph(c as u_char as ::core::ffi::c_int) != 0))
         {
             if c == '"' as i32 && flag & VIS_DQ != 0 as ::core::ffi::c_int
                 || c == '\\' as i32 && flag & VIS_NOSLASH == 0 as ::core::ffi::c_int

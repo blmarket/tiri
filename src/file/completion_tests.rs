@@ -37,8 +37,8 @@ unsafe fn start_read(
 
 #[test]
 fn local_completion_can_be_cancelled_after_runtime_shutdown() {
-    use hmux_rt::Runtime as _;
-    let runtime = hmux_rt::mio::Runtime::new().unwrap();
+    use tiri_rt::Runtime as _;
+    let runtime = tiri_rt::mio::Runtime::new().unwrap();
     unsafe {
         let data = Rc::new(());
         let retained = data.clone();

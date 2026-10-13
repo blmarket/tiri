@@ -8,9 +8,9 @@ use super::grid::grid_cell;
 use super::key::key_code;
 use super::mouse::mouse_event;
 use super::pane::window_pane;
-use super::terminal::termios;
+use super::terminal::TerminalAttributes;
 use crate::src::shared::client::{ClientRef, ClientWeak};
-use hmux_buffer::SegmentedBuf;
+use tiri_buffer::SegmentedBuf;
 pub type tty_code_code = ::core::ffi::c_uint;
 pub const TTYC_XT: tty_code_code = 235;
 pub const TTYC_VPA: tty_code_code = 234;
@@ -357,14 +357,14 @@ pub struct tty {
     pub rupper: u_int,
     pub rleft: u_int,
     pub rright: u_int,
-    pub read_task: Option<hmux_rt::mio::Task>,
+    pub read_task: Option<tiri_rt::mio::Task>,
     pub in_0: Option<Box<crate::src::tty::TerminalInput>>,
-    pub write_task: Option<hmux_rt::mio::Task>,
+    pub write_task: Option<tiri_rt::mio::Task>,
     pub io_fd: Option<i32>,
     pub out: Option<Box<SegmentedBuf>>,
     pub timer: Option<Timer>,
     pub discarded: size_t,
-    pub tio: termios,
+    pub tio: TerminalAttributes,
     pub r: visible_ranges,
     pub cell: grid_cell,
     pub last_cell: grid_cell,

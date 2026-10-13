@@ -36,7 +36,7 @@ use crate::src::shared::posix_io::{
 use crate::src::shared::posix_terminal::winsize;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::signal::{
-    __sigset_t, sigset_t, SIGCONT, SIGTERM, SIGTTIN, SIGTTOU, SIG_BLOCK, SIG_SETMASK,
+    sigset_t, SIGCONT, SIGTERM, SIGTTIN, SIGTTOU, SIG_BLOCK, SIG_SETMASK,
 };
 use crate::src::shared::terminal::*;
 use crate::src::tmux::{
@@ -45,9 +45,6 @@ use crate::src::tmux::{
 use refbox::{RefBox, Weak};
 use std::ffi::{CStr, CString};
 use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
-
-pub type C2RustUnnamed = ::core::ffi::c_uint;
-pub const SHUT_WR: C2RustUnnamed = 1;
 
 pub const JOB_CLOSED: job_state = 2;
 pub const JOB_DEAD: job_state = 1;
@@ -67,7 +64,7 @@ unsafe fn job_completion(job: &job) -> JobCompletion {
         output,
     }
 }
-pub const O_RDWR: ::core::ffi::c_int = 0o2 as ::core::ffi::c_int;
+pub use ::libc::O_RDWR;
 
 thread_local! {
     static JOBS: std::cell::RefCell<jobs> = const {
@@ -124,8 +121,8 @@ pub unsafe fn job_run(
     let mut do_close: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
     let mut home: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut shell: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut set: sigset_t = __sigset_t { __val: [0; 16] };
-    let mut oldset: sigset_t = __sigset_t { __val: [0; 16] };
+    let mut set: sigset_t = unsafe { ::core::mem::zeroed() };
+    let mut oldset: sigset_t = unsafe { ::core::mem::zeroed() };
     let mut ws: winsize = winsize {
         ws_row: 0,
         ws_col: 0,
@@ -182,7 +179,7 @@ pub unsafe fn job_run(
             &raw mut ws,
         );
         current_block = 224731115979188411;
-    } else if let Ok((parent, child)) = hmux_rt::unix::socket_pair() {
+    } else if let Ok((parent, child)) = tiri_rt::unix::socket_pair() {
         out_owner = Some([parent, child]);
         pid = fork() as pid_t;
         current_block = 224731115979188411;
@@ -251,7 +248,7 @@ pub unsafe fn job_run(
                 // keeps its owner for the parent-side return path.
                 drop(env_owner.take());
                 if !flags & JOB_PTY != 0 {
-                    if hmux_rt::unix::redirect(
+                    if tiri_rt::unix::redirect(
                         std::os::fd::BorrowedFd::borrow_raw(out[1 as ::core::ffi::c_int as usize]),
                         STDIN_FILENO,
                     )
@@ -262,7 +259,7 @@ pub unsafe fn job_run(
                     do_close = (do_close != 0
                         && out[1 as ::core::ffi::c_int as usize] != STDIN_FILENO)
                         as ::core::ffi::c_int;
-                    if hmux_rt::unix::redirect(
+                    if tiri_rt::unix::redirect(
                         std::os::fd::BorrowedFd::borrow_raw(out[1 as ::core::ffi::c_int as usize]),
                         STDOUT_FILENO,
                     )
@@ -274,7 +271,7 @@ pub unsafe fn job_run(
                         && out[1 as ::core::ffi::c_int as usize] != STDOUT_FILENO)
                         as ::core::ffi::c_int;
                     if flags & JOB_SHOWSTDERR != 0 {
-                        if hmux_rt::unix::redirect(
+                        if tiri_rt::unix::redirect(
                             std::os::fd::BorrowedFd::borrow_raw(
                                 out[1 as ::core::ffi::c_int as usize],
                             ),
@@ -288,14 +285,14 @@ pub unsafe fn job_run(
                             && out[1 as ::core::ffi::c_int as usize] != STDERR_FILENO)
                             as ::core::ffi::c_int;
                     } else {
-                        nullfd = match hmux_rt::unix::open(_PATH_DEVNULL, O_RDWR, 0) {
+                        nullfd = match tiri_rt::unix::open(_PATH_DEVNULL, O_RDWR, 0) {
                             Ok(fd) => fd.into_raw_fd(),
                             Err(error) => crate::src::reactor::io_status(Err(error)),
                         };
                         if nullfd == -(1 as ::core::ffi::c_int) {
                             _exit(1 as ::core::ffi::c_int);
                         }
-                        if hmux_rt::unix::redirect(
+                        if tiri_rt::unix::redirect(
                             std::os::fd::BorrowedFd::borrow_raw(nullfd),
                             STDERR_FILENO,
                         )
@@ -304,15 +301,15 @@ pub unsafe fn job_run(
                             _exit(1 as ::core::ffi::c_int);
                         }
                         if nullfd != STDERR_FILENO {
-                            let _ = hmux_rt::unix::close(nullfd);
+                            let _ = tiri_rt::unix::close(nullfd);
                         }
                     }
                     if do_close != 0 {
-                        let _ = hmux_rt::unix::close(out[1 as ::core::ffi::c_int as usize]);
+                        let _ = tiri_rt::unix::close(out[1 as ::core::ffi::c_int as usize]);
                     }
-                    let _ = hmux_rt::unix::close(out[0 as ::core::ffi::c_int as usize]);
+                    let _ = tiri_rt::unix::close(out[0 as ::core::ffi::c_int as usize]);
                 }
-                hmux_rt::unix::close_from(STDERR_FILENO + 1 as ::core::ffi::c_int);
+                tiri_rt::unix::close_from(STDERR_FILENO + 1 as ::core::ffi::c_int);
                 if let Some(cmd) = cmd {
                     if flags & JOB_DEFAULTSHELL != 0 {
                         setenv(c"SHELL".as_ptr(), shell, 1 as ::core::ffi::c_int);
@@ -511,7 +508,7 @@ unsafe fn job_write_callback(handle: &Weak<job>) {
     job_log("write", &job);
     log_debug(format_args!("job output left {}", len));
     if len == 0 && job.flags & JOB_KEEPWRITE == 0 {
-        let _ = hmux_rt::unix::shutdown_write(std::os::fd::AsFd::as_fd(
+        let _ = tiri_rt::unix::shutdown_write(std::os::fd::AsFd::as_fd(
             job.fd.as_ref().expect("job descriptor"),
         ));
         job.event.with_ptr(|stream| {
@@ -657,8 +654,8 @@ mod job_stream_tests {
 
     #[test]
     fn registry_cleanup_reentrancy_and_both_completion_orders() {
-        use hmux_rt::Runtime as _;
-        let runtime = hmux_rt::mio::Runtime::new().unwrap();
+        use tiri_rt::Runtime as _;
+        let runtime = tiri_rt::mio::Runtime::new().unwrap();
         unsafe {
             assert!(jobs::snapshot().is_empty());
             let calls = Rc::new(Cell::new(0));

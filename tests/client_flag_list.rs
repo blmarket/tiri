@@ -21,11 +21,11 @@ impl Server {
             .expect("clock after epoch")
             .as_nanos();
         let directory =
-            std::env::temp_dir().join(format!("hmux-client-flags-{}-{stamp}", std::process::id()));
+            std::env::temp_dir().join(format!("tiri-client-flags-{}-{stamp}", std::process::id()));
         fs::create_dir(&directory).expect("create private socket directory");
         let socket = directory.join("socket");
         Self {
-            binary: PathBuf::from(env!("CARGO_BIN_EXE_hmux")),
+            binary: PathBuf::from(env!("CARGO_BIN_EXE_tiri")),
             directory,
             socket,
         }
@@ -44,7 +44,7 @@ impl Server {
     }
 
     fn run(&self, args: &[&str]) -> Output {
-        self.command().args(args).output().expect("run hmux")
+        self.command().args(args).output().expect("run tiri")
     }
 
     fn control_client(&self) -> Child {

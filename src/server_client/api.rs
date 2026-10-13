@@ -847,7 +847,7 @@ impl Client for ClientRef {
         *depth
     }
     unsafe fn capture_termios(&self) -> termios {
-        let mut result = termios::default();
+        let mut result: termios = ::core::mem::zeroed();
         if crate::src::shared::terminal::read_attributes(
             (*self.get()).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
             &mut result,

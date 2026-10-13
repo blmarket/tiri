@@ -14,7 +14,7 @@ use crate::src::events_payload::{
 use crate::src::ffi::libc::{
     strchr, strcmp, strlen, strncmp, strpbrk, strsep, strstr, strtol, time,
 };
-use crate::src::ffi::resolv::{__b64_ntop, __b64_pton};
+use crate::src::ffi::resolv::{b64_ntop, b64_pton};
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
@@ -70,7 +70,7 @@ use crate::src::tmux::{get_timer, getversion, global_options, global_w_options};
 use crate::src::tty::{tty_default_colours, tty_set_selection};
 use crate::src::window::Window as _;
 use crate::src::window::WindowPane;
-use hmux_buffer::SegmentedBuf;
+use tiri_buffer::SegmentedBuf;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 use std::time::Duration;
@@ -5443,7 +5443,7 @@ unsafe fn input_osc_52_parse(
         return None;
     }
     let mut out = vec![0; len];
-    let outlen = __b64_pton(end, out.as_mut_ptr(), len);
+    let outlen = b64_pton(end, out.as_mut_ptr(), len);
     if outlen == -(1 as ::core::ffi::c_int) {
         return None;
     }
@@ -5561,7 +5561,7 @@ pub unsafe fn input_reply_clipboard(
             .wrapping_mul(len.wrapping_add(2 as size_t).wrapping_div(3 as size_t))
             .wrapping_add(1 as size_t) as ::core::ffi::c_int;
         out.resize(outlen as usize, 0);
-        outlen = __b64_ntop(
+        outlen = b64_ntop(
             buf as *const ::core::ffi::c_uchar,
             len,
             out.as_mut_ptr().cast(),

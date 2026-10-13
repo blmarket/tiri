@@ -132,7 +132,7 @@ fn snapshots_are_per_pane_and_remove_disappeared_values() {
 }
 
 #[test]
-fn selection_matches_hmux_environment_semantics() {
+fn selection_matches_tiri_environment_semantics() {
     assert_eq!(enabled_names(None), ["agent", "git"]);
     assert_eq!(
         enabled_names(Some(OsStr::new(" Agent , Git "))),
@@ -210,7 +210,7 @@ fn failed_registration_drops_plugin_outside_registry_borrows() {
 
 #[test]
 fn refresh_reads_previous_snapshot_and_errors_do_not_publish_partial_values() {
-    use hmux_rt::Runtime as _;
+    use tiri_rt::Runtime as _;
     use std::cell::Cell;
     use std::rc::Rc;
 
@@ -254,7 +254,7 @@ fn refresh_reads_previous_snapshot_and_errors_do_not_publish_partial_values() {
         }
     }
     shutdown();
-    let runtime = hmux_rt::mio::Runtime::new().unwrap();
+    let runtime = tiri_rt::mio::Runtime::new().unwrap();
     let calls = Rc::new(Cell::new(0));
     let dropped = Rc::new(Cell::new(false));
     unsafe {

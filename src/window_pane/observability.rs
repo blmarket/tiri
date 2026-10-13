@@ -13,10 +13,10 @@ use crate::src::shared::pane::PANE_STATUSREADY;
 use crate::src::shared::screen::{
     screen, MODE_CURSOR, MODE_CURSOR_BLINKING, MODE_CURSOR_BLINKING_SET,
 };
-use hmux_agent::observability::v1::{
+use tiri_agent::observability::v1::{
     PaneId, PaneObservability, PaneProcess, ScreenSource, ScreenTail,
 };
-use hmux_agent::pane_class::{stringify_argv, PaneProcessProbe};
+use tiri_agent::pane_class::{stringify_argv, PaneProcessProbe};
 use std::cell::UnsafeCell;
 use std::ffi::CString;
 use std::io;
@@ -108,10 +108,10 @@ fn process_groups(pane: &window_pane) -> (Option<i32>, Option<i32>) {
         return (None, None);
     };
     (
-        hmux_rt::unix::terminal_foreground_group(fd.as_fd())
+        tiri_rt::unix::terminal_foreground_group(fd.as_fd())
             .ok()
             .filter(|&pid| pid > 0),
-        hmux_rt::unix::terminal_session(fd.as_fd())
+        tiri_rt::unix::terminal_session(fd.as_fd())
             .ok()
             .filter(|&pid| pid > 0),
     )

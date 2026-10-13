@@ -88,7 +88,7 @@ use crate::src::window::windows;
 use crate::src::window::winlink_find_by_index;
 use crate::src::window_copy::{window_copy_add, window_view_mode};
 use crate::src::window_visible::{window_position_is_visible, window_visible_ranges};
-use hmux_buffer::SegmentedBuf;
+use tiri_buffer::SegmentedBuf;
 use std::ffi::{CStr, CString};
 
 use crate::src::shared::abi::ssize_t;
@@ -986,7 +986,7 @@ unsafe fn server_client_open(owner: &ClientRef) -> Result<(), CString> {
         || [STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO]
             .into_iter()
             .any(|fd| {
-                hmux_rt::unix::terminal_name(std::os::fd::BorrowedFd::borrow_raw(fd))
+                tiri_rt::unix::terminal_name(std::os::fd::BorrowedFd::borrow_raw(fd))
                     .ok()
                     .is_some_and(|name| Some(name.as_c_str()) == client_name)
             })

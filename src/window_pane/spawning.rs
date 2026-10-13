@@ -6,6 +6,7 @@ use crate::src::cmd::queue::cmdq_get_client;
 use crate::src::cmd::{cmd_log_argv, cmd_stringify_argv_cstring};
 use crate::src::compat::fdforkpty::fdforkpty;
 use crate::src::compat::stdio::CFile;
+#[cfg(target_os = "linux")]
 use crate::src::compat::systemd::systemd_move_to_new_cgroup;
 use crate::src::control::control_reset_pane;
 use crate::src::environ::{
@@ -17,9 +18,12 @@ use crate::src::events_payload::{
     event_payload_set_string, event_payload_set_target, event_payload_set_window,
 };
 use crate::src::ffi::libc::{
-    __errno_location, _exit, chdir, execl, execvp, fopen, fread, fseeko, ftello, getcwd, getpid,
-    kill, memset, sigfillset, sigprocmask, strerror, strrchr,
+    __errno_location, _exit, chdir, execl, execvp, fopen, fread, fseeko, ftello, getcwd, memset,
+    sigfillset, sigprocmask, strerror, strrchr,
 };
+#[cfg(target_os = "linux")]
+use crate::src::ffi::libc::{getpid, kill};
+#[cfg(target_os = "linux")]
 use crate::src::ffi::utempter::utempter_add_record;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
@@ -54,7 +58,9 @@ use crate::src::shared::pane::{PANE_EMPTY, PANE_EXITED, PANE_STATUSDRAWN, PANE_S
 use crate::src::shared::posix_io::{_PATH_BSHELL, STDERR_FILENO, STDIN_FILENO};
 use crate::src::shared::posix_terminal::{winsize, TCSANOW, VERASE};
 use crate::src::shared::screen::{MODE_CRLF, MODE_CURSOR};
-use crate::src::shared::signal::{__sigset_t, sigset_t, SIGCHLD, SIGHUP, SIG_BLOCK, SIG_SETMASK};
+#[cfg(target_os = "linux")]
+use crate::src::shared::signal::SIGCHLD;
+use crate::src::shared::signal::{sigset_t, SIGHUP, SIG_BLOCK, SIG_SETMASK};
 use crate::src::shared::spawn::spawn_editor_state;
 use crate::src::shared::spawn::{
     SPAWN_BEFORE, SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_KILL, SPAWN_NONOTIFY, SPAWN_RESPAWN,
@@ -62,7 +68,9 @@ use crate::src::shared::spawn::{
 use crate::src::shared::stdio::FILE;
 use crate::src::shared::terminal::*;
 
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+#[cfg(target_os = "linux")]
+use std::os::fd::AsRawFd;
+use std::os::fd::{FromRawFd, OwnedFd};
 
 use crate::src::shared::spawn::EditorHandle;
 use crate::src::spawn::{
@@ -224,24 +232,15 @@ pub(super) unsafe fn spawn_pane(
             find_home_cstr().map_or(::core::ptr::null(), CStr::as_ptr);
         let mut actual_cwd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         let mut idx: u_int = 0;
-        let mut now: termios = termios {
-            c_iflag: 0,
-            c_oflag: 0,
-            c_cflag: 0,
-            c_lflag: 0,
-            c_line: 0,
-            c_cc: [0; 32],
-            c2rust_unnamed: termios_input_speed { __ispeed: 0 },
-            c2rust_unnamed_0: termios_output_speed { __ospeed: 0 },
-        };
+        let mut now: termios = unsafe { ::core::mem::zeroed() };
         let mut ws: winsize = winsize {
             ws_row: 0,
             ws_col: 0,
             ws_xpixel: 0,
             ws_ypixel: 0,
         };
-        let mut set: sigset_t = __sigset_t { __val: [0; 16] };
-        let mut oldset: sigset_t = __sigset_t { __val: [0; 16] };
+        let mut set: sigset_t = unsafe { ::core::mem::zeroed() };
+        let mut oldset: sigset_t = unsafe { ::core::mem::zeroed() };
         let mut key: key_code = 0;
         let c_owner;
         if !item.is_null() {
@@ -523,15 +522,18 @@ pub(super) unsafe fn spawn_pane(
                     chdir(c"/".as_ptr());
                 }
             } else {
-                let (systemd_status, systemd_error) = systemd_move_to_new_cgroup();
-                if systemd_status < 0 as ::core::ffi::c_int {
-                    log_debug(format_args!(
-                        "{}: moving pane to new cgroup failed: {}",
-                        "spawn_pane",
-                        log_cstr(systemd_error.as_deref().unwrap_or(c"(null)"))
-                    ));
+                #[cfg(target_os = "linux")]
+                {
+                    let (systemd_status, systemd_error) = systemd_move_to_new_cgroup();
+                    if systemd_status < 0 as ::core::ffi::c_int {
+                        log_debug(format_args!(
+                            "{}: moving pane to new cgroup failed: {}",
+                            "spawn_pane",
+                            log_cstr(systemd_error.as_deref().unwrap_or(c"(null)"))
+                        ));
+                    }
+                    drop(systemd_error);
                 }
-                drop(systemd_error);
                 if !actual_cwd.is_null() {
                     environ_set(child, c"PWD", 0 as ::core::ffi::c_int, |out| {
                         write_cstr(out, nullable_cstr(actual_cwd))
@@ -547,9 +549,9 @@ pub(super) unsafe fn spawn_pane(
                 }
                 key = options_get_number(global_options, c"backspace") as key_code;
                 if key >= 0x7f as key_code {
-                    now.c_cc[VERASE as usize] = '\u{7f}' as i32 as cc_t;
+                    now.c_cc[VERASE] = '\u{7f}' as i32 as cc_t;
                 } else {
-                    now.c_cc[VERASE as usize] = key as cc_t;
+                    now.c_cc[VERASE] = key as cc_t;
                 }
                 now.c_iflag |= IUTF8 as tcflag_t;
                 if crate::src::shared::terminal::set_attributes(STDIN_FILENO, TCSANOW, &now)
@@ -558,7 +560,7 @@ pub(super) unsafe fn spawn_pane(
                     _exit(1 as ::core::ffi::c_int);
                 }
                 proc_clear_signals(server_proc, 1 as ::core::ffi::c_int);
-                hmux_rt::unix::close_from(STDERR_FILENO + 1 as ::core::ffi::c_int);
+                tiri_rt::unix::close_from(STDERR_FILENO + 1 as ::core::ffi::c_int);
                 sigprocmask(
                     SIG_SETMASK,
                     &raw mut oldset,
@@ -625,6 +627,7 @@ pub(super) unsafe fn spawn_pane(
                 _exit(1 as ::core::ffi::c_int);
             }
         }
+        #[cfg(target_os = "linux")]
         if !(*new_wp).flags & PANE_EMPTY != 0 {
             let record = CString::new(format!("tmux({}).%{}", getpid(), (*new_wp).id))
                 .expect("pane login record contains no NUL");
@@ -723,7 +726,7 @@ pub(super) unsafe fn finish_editing(wp_owner: &std::rc::Rc<std::cell::UnsafeCell
         );
         return;
     }
-    f = fopen(((*es).path).as_ptr().cast_mut(), c"r".as_ptr()) as *mut FILE;
+    f = fopen(((*es).path).as_ptr().cast_mut(), c"r".as_ptr());
     if !f.is_null() {
         let stream = CFile::from_raw(f).expect("fopen returned a non-null stream");
         if fseeko(stream.as_ptr(), 0 as __off_t, SEEK_END) == 0 as ::core::ffi::c_int {
@@ -781,6 +784,7 @@ mod tests {
     use crate::src::spawn::{spawn_editor_fdopen, spawn_editor_finish};
     use std::ffi::CStr;
     use std::fs;
+    use std::os::fd::AsRawFd;
     use std::process::{Command, Stdio};
     use std::thread;
     use std::time::{Duration, Instant};
@@ -815,7 +819,7 @@ mod tests {
         }
     }
 
-    const CHILD_CASE: &str = "HMUX_EDITOR_FD_OWNER_CASE";
+    const CHILD_CASE: &str = "TIRI_EDITOR_FD_OWNER_CASE";
     const SUCCESS_CASE: &str = "success";
     const SUCCESS_TEST: &str =
         "src::window_pane::spawning::tests::editor_completion_reads_and_unlinks";
@@ -845,7 +849,7 @@ mod tests {
     }
 
     unsafe fn create_temp_file() -> (OwnedFd, std::ffi::CString) {
-        let mut template = b"/tmp/hmux-editor-owner-XXXXXX\0".to_vec();
+        let mut template = b"/tmp/tiri-editor-owner-XXXXXX\0".to_vec();
         let fd = mkstemp(template.as_mut_ptr() as *mut ::core::ffi::c_char);
         assert!(
             fd >= 0,

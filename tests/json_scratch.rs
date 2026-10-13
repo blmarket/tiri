@@ -1,4 +1,4 @@
-use hmux::src::json::{json_find, json_parse};
+use tiri::src::json::{json_find, json_parse};
 use std::ffi::CString;
 
 #[test]
@@ -83,7 +83,7 @@ fn token_growth_keeps_late_keys_and_cleans_up_on_error() {
 
 #[test]
 fn lookups_borrow_owned_values_and_preserve_error_bytes() {
-    use hmux::src::json::{
+    use tiri::src::json::{
         json_find_array, json_find_boolean, json_find_number, json_find_object, json_find_string,
     };
     let input = c"{\"text\":\"\xff\",\"number\":42,\"boolean\":false,\"object\":{},\"array\":[{}]}";

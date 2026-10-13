@@ -1,5 +1,5 @@
 use crate::src::compat::strtonum::strtonum;
-use crate::src::ffi::libc::{__ctype_b_loc, sscanf, strcasecmp, strcmp, strlen, strncasecmp};
+use crate::src::ffi::libc::{sscanf, strcasecmp, strcmp, strlen, strncasecmp};
 use crate::src::ffi::libm::round;
 use crate::src::log::log_cstr;
 use crate::src::server_client::Client;
@@ -7,7 +7,6 @@ use crate::src::shared::abi::*;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::colour::*;
 use crate::src::shared::colour::{COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME};
-use crate::src::shared::ctype::_ISxdigit;
 use crate::src::shared::options::options;
 use crate::src::shared::tty::{TERM_256COLOURS, TERM_RGBCOLOURS};
 
@@ -533,11 +532,7 @@ unsafe fn colour_fromstring_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
     let mut i: u_int = 0;
     if *s as ::core::ffi::c_int == '#' as i32 && strlen(s) == 7 as size_t {
         cp = s.offset(1 as ::core::ffi::c_int as isize);
-        while *(*__ctype_b_loc()).offset(*cp as u_char as ::core::ffi::c_int as isize)
-            as ::core::ffi::c_int
-            & _ISxdigit as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
-            != 0
-        {
+        while ::libc::isxdigit(*cp as u_char as ::core::ffi::c_int) != 0 {
             cp = cp.offset(1);
         }
         if *cp as ::core::ffi::c_int != '\0' as i32 {

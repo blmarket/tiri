@@ -17,7 +17,7 @@ use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_TFLAG};
 use crate::src::tty::tty_set_selection;
-use hmux_buffer::SegmentedBuf;
+use tiri_buffer::SegmentedBuf;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::Weak;
@@ -174,7 +174,7 @@ unsafe fn cmd_load_buffer_exec(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hmux_buffer::{Buf, BufMut, Buffer, SegmentedBuf};
+    use tiri_buffer::{Buf, BufMut, Buffer, SegmentedBuf};
 
     #[test]
     fn file_progress_keeps_segments_until_completion() {

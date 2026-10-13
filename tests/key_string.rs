@@ -1,8 +1,8 @@
-use hmux::src::key_string::{
+use tiri::src::key_string::{
     key_string_format, key_string_format_into, key_string_lookup_string, key_string_parse,
     key_string_parse_cstr,
 };
-use hmux::src::shared::key::*;
+use tiri::src::shared::key::*;
 use std::ffi::{CStr, CString};
 
 fn formatted(key: key_code, with_flags: bool) -> Vec<u8> {

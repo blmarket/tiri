@@ -1414,7 +1414,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     }
     unsafe fn process_name(&self) -> Option<CString> {
         let descriptor = (*self.get()).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd);
-        crate::src::osdep_linux::osdep_get_name_cstring(descriptor)
+        crate::src::osdep::osdep_get_name_cstring(descriptor)
     }
     unsafe fn draw_editor_waiting(&self, pid: pid_t) {
         super::mode_visuals::draw_editor_waiting(self, pid);

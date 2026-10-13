@@ -1,6 +1,6 @@
 use super::*;
 use crate::src::shared::client::{ClientRef, ClientWeak};
-use hmux_buffer::SegmentedBuf;
+use tiri_buffer::SegmentedBuf;
 
 /// The stream index owns active file records until completion unlinks them.
 /// Its holder is either the server's ClientRef or the process client singleton.
@@ -34,8 +34,8 @@ pub struct client_file {
     pub(super) wait_client: ClientWeak,
     pub(super) cancel_data: Option<Box<dyn FnOnce()>>,
     pub(super) completed: bool,
-    pub(super) done_task: Option<hmux_rt::mio::Task>,
-    pub(super) push_task: Option<hmux_rt::mio::Task>,
+    pub(super) done_task: Option<tiri_rt::mio::Task>,
+    pub(super) push_task: Option<tiri_rt::mio::Task>,
     pub(super) read: super::stream::ReadState,
 }
 

@@ -111,16 +111,7 @@ unsafe fn cmd_new_session_exec(
     let mut groupwith_owner = None;
     let mut env: Option<Box<environ>> = None;
     let mut oo: Option<Box<options>> = None;
-    let mut tio: termios = termios {
-        c_iflag: 0,
-        c_oflag: 0,
-        c_cflag: 0,
-        c_lflag: 0,
-        c_line: 0,
-        c_cc: [0; 32],
-        c2rust_unnamed: termios_input_speed { __ispeed: 0 },
-        c2rust_unnamed_0: termios_output_speed { __ospeed: 0 },
-    };
+    let mut tio: termios = unsafe { ::core::mem::zeroed() };
     let mut tiop: *mut termios = ::core::ptr::null_mut::<termios>();
     let mut sg = crate::src::shared::session::SessionGroupWeak::new();
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();

@@ -142,7 +142,7 @@ impl BufferEvent for StreamHandle {
                 return Err(StreamError::InvalidRange);
             }
             let mut copied = 0;
-            for chunk in hmux_buffer::Buffer::chunks(&*stream.input) {
+            for chunk in tiri_buffer::Buffer::chunks(&*stream.input) {
                 if offset >= chunk.len() {
                     offset -= chunk.len();
                     continue;

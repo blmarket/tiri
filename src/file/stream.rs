@@ -3,7 +3,7 @@
 //! consumption: the peer can continue sending and input can continue growing.
 use super::*;
 use futures_core::Stream;
-use hmux_buffer::{Buf, BufMut, SegmentedBuf};
+use tiri_buffer::{Buf, BufMut, SegmentedBuf};
 use std::io;
 use std::pin::Pin;
 use std::task::{Context, LocalWaker, Poll, Waker};

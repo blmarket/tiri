@@ -1,8 +1,8 @@
 use crate::src::compat::getprogname::getprogname;
-use crate::src::ffi::libc::{prctl, snprintf, strrchr};
+use crate::src::ffi::libc::{snprintf, strrchr};
 use crate::src::shared::abi::*;
 
-pub const PR_SET_NAME: ::core::ffi::c_int = 15 as ::core::ffi::c_int;
+#[cfg(target_os = "linux")]
 pub unsafe fn setproctitle(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) {
     let mut title: [::core::ffi::c_char; 16] = [0; 16];
     let mut name: [::core::ffi::c_char; 16] = [0; 16];
@@ -25,5 +25,11 @@ pub unsafe fn setproctitle(write: impl FnOnce(&mut dyn std::io::Write) -> std::i
             *cp = '\0' as i32 as ::core::ffi::c_char;
         }
     }
-    prctl(PR_SET_NAME, &raw mut name as *mut ::core::ffi::c_char);
+    ::libc::prctl(
+        ::libc::PR_SET_NAME,
+        &raw mut name as *mut ::core::ffi::c_char,
+    );
 }
+// Like tmux's compat fallback, platforms without PR_SET_NAME keep their title.
+#[cfg(not(target_os = "linux"))]
+pub unsafe fn setproctitle(_write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) {}

@@ -1,10 +1,11 @@
 use crate::src::cmd::entries::wait_for::cmd_wait_for_flush;
 use crate::src::cmd::queue::cmdq_next;
+#[cfg(target_os = "linux")]
 use crate::src::compat::systemd::{systemd_activated, systemd_create_socket};
 use crate::src::control_notify::control_build_events;
 use crate::src::ffi::libc::{
-    __errno_location, chmod, exit, fprintf, kill, killpg, malloc_trim, sigfillset, sigprocmask,
-    stat, stderr, strerror, strsignal, time, umask, unlink, waitpid,
+    __errno_location, chmod, exit, fprintf, kill, killpg, sigfillset, sigprocmask, stat, stderr,
+    strerror, strsignal, time, umask, unlink, waitpid,
 };
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::format_tidy_jobs;
@@ -24,7 +25,9 @@ use crate::src::server_client::Client as _;
 use crate::src::server_client::ClientRegistry;
 use crate::src::shared::window::WindowWeak;
 use crate::src::window::Window as _;
-use std::os::fd::{FromRawFd, IntoRawFd, OwnedFd};
+#[cfg(target_os = "linux")]
+use std::os::fd::FromRawFd;
+use std::os::fd::{IntoRawFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::net::UnixListener;
 
@@ -40,7 +43,7 @@ use crate::src::tty::tty_create_log;
 
 use crate::src::window::windows;
 use crate::src::window_pane::WindowPane as _;
-use hmux_rt::{AsyncAccept as _, Runtime as _};
+use tiri_rt::{AsyncAccept as _, Runtime as _};
 use std::time::{Duration, SystemTime};
 
 use std::ffi::{CStr, CString, OsStr};
@@ -57,48 +60,27 @@ use crate::src::shared::command::cmd_find_state;
 use crate::src::shared::errno::{EAGAIN, ECHILD, EINTR, ENAMETOOLONG};
 use crate::src::shared::event::*;
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::posix_io::stat;
-use crate::src::shared::posix_io::{__S_IEXEC, __S_IREAD, S_IRWXU, WAIT_ANY, WNOHANG};
+use crate::src::shared::posix_io::{S_IRWXU, WAIT_ANY, WNOHANG};
 use crate::src::shared::process::tmuxproc;
 use crate::src::shared::signal::{
-    __sigset_t, sigset_t, ProcessSignal, SIGCONT, SIGTTIN, SIGTTOU, SIG_BLOCK, SIG_SETMASK,
+    sigset_t, ProcessSignal, SIGCONT, SIGTTIN, SIGTTOU, SIG_BLOCK, SIG_SETMASK,
 };
-use crate::src::shared::socket::sa_family_t;
-use crate::src::shared::time::timespec;
 use crate::src::shared::window::winlink;
 
 pub type mode_t = __mode_t;
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct sockaddr_storage {
-    pub ss_family: sa_family_t,
-    pub __ss_padding: [::core::ffi::c_char; 118],
-    pub __ss_align: ::core::ffi::c_ulong,
-}
+pub const ACCESSPERMS: mode_t = S_IRWXU | S_IRWXG | S_IRWXO;
 
-pub const ACCESSPERMS: ::core::ffi::c_int = S_IRWXU | S_IRWXG | S_IRWXO;
+pub use ::libc::{
+    ECONNABORTED, EMFILE, ENFILE, S_IRGRP, S_IROTH, S_IRUSR, S_IRWXG, S_IRWXO, S_IXGRP, S_IXOTH,
+    S_IXUSR, WUNTRACED,
+};
 
-pub const WUNTRACED: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
-
-pub const ECONNABORTED: ::core::ffi::c_int = 103 as ::core::ffi::c_int;
-
-pub const ENFILE: ::core::ffi::c_int = 23 as ::core::ffi::c_int;
-pub const EMFILE: ::core::ffi::c_int = 24 as ::core::ffi::c_int;
-pub const S_IRUSR: ::core::ffi::c_int = __S_IREAD;
-pub const S_IXUSR: ::core::ffi::c_int = __S_IEXEC;
-
-pub const S_IRGRP: ::core::ffi::c_int = S_IRUSR >> 3 as ::core::ffi::c_int;
-pub const S_IXGRP: ::core::ffi::c_int = S_IXUSR >> 3 as ::core::ffi::c_int;
-pub const S_IRWXG: ::core::ffi::c_int = S_IRWXU >> 3 as ::core::ffi::c_int;
-pub const S_IROTH: ::core::ffi::c_int = S_IRGRP >> 3 as ::core::ffi::c_int;
-pub const S_IXOTH: ::core::ffi::c_int = S_IXGRP >> 3 as ::core::ffi::c_int;
-pub const S_IRWXO: ::core::ffi::c_int = S_IRWXG >> 3 as ::core::ffi::c_int;
 pub static mut server_proc: *mut tmuxproc = ::core::ptr::null::<tmuxproc>() as *mut tmuxproc;
 static mut server_fd: Option<UnixListener> = None;
 static mut server_client_flags: uint64_t = 0;
 static mut server_exit: ::core::ffi::c_int = 0;
-static mut server_accept_task: Option<hmux_rt::mio::Task> = None::<hmux_rt::mio::Task>;
+static mut server_accept_task: Option<tiri_rt::mio::Task> = None::<tiri_rt::mio::Task>;
 static mut server_ev_tidy: Option<Timer> = None;
 pub static mut marked_pane: cmd_find_state = cmd_find_state {
     flags: 0,
@@ -171,7 +153,7 @@ unsafe fn server_create_listener(flags: uint64_t) -> Result<UnixListener, CStrin
         } else {
             umask((S_IXUSR | S_IRWXG | S_IRWXO) as __mode_t)
         };
-        let listener = hmux_rt::unix::listen(std::path::Path::new(OsStr::from_bytes(path)), 128);
+        let listener = tiri_rt::unix::listen(std::path::Path::new(OsStr::from_bytes(path)), 128);
         umask(mask);
         let listener = listener?;
         Ok(listener)
@@ -192,7 +174,8 @@ unsafe fn server_tidy_event() {
     let tv = Duration::from_secs(3600);
     let mut t: uint64_t = get_timer();
     format_tidy_jobs();
-    malloc_trim(0 as size_t);
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    crate::src::ffi::libc::malloc_trim(0 as size_t);
     log_debug(format_args!(
         "{}: took {} milliseconds",
         "server_tidy_event",
@@ -206,8 +189,8 @@ pub(crate) unsafe fn server_start(
     lockfile: &mut Option<CString>,
 ) -> OwnedFd {
     let mut fd = None;
-    let mut set: sigset_t = __sigset_t { __val: [0; 16] };
-    let mut oldset: sigset_t = __sigset_t { __val: [0; 16] };
+    let mut set: sigset_t = unsafe { ::core::mem::zeroed() };
+    let mut oldset: sigset_t = unsafe { ::core::mem::zeroed() };
     let mut c: Option<ClientRef> = None;
     let mut cause: Option<CString> = None;
     let tv = Duration::from_secs(3600);
@@ -226,7 +209,7 @@ pub(crate) unsafe fn server_start(
         fd = Some(socket);
     }
     server_client_flags = flags;
-    let runtime = hmux_rt::mio::Runtime::new().expect("hmux-rt initialization");
+    let runtime = tiri_rt::mio::Runtime::new().expect("tiri-rt initialization");
     let mut process_owner = proc_start(c"server");
     server_proc = &raw mut *process_owner;
     proc_set_signals(
@@ -255,12 +238,15 @@ pub(crate) unsafe fn server_start(
     server_clear_messages();
     start_time = SystemTime::now();
     crate::src::plugin::init();
+    #[cfg(target_os = "linux")]
     let listener = if systemd_activated() != 0 {
         // SAFETY: the compatibility adapter transfers the activated listening socket.
         systemd_create_socket(flags as ::core::ffi::c_int).map(|fd| UnixListener::from_raw_fd(fd))
     } else {
         server_create_listener(flags)
     };
+    #[cfg(not(target_os = "linux"))]
+    let listener = server_create_listener(flags);
     match listener {
         Ok(socket) => {
             server_fd = Some(socket);
@@ -386,33 +372,8 @@ pub unsafe fn server_update_socket() {
     let mut s: Option<SessionRef> = None;
     static mut last: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     let mut n: ::core::ffi::c_int = 0;
-    let mut mode: ::core::ffi::c_int = 0;
-    let mut sb: stat = stat {
-        st_dev: 0,
-        st_ino: 0,
-        st_nlink: 0,
-        st_mode: 0,
-        st_uid: 0,
-        st_gid: 0,
-        __pad0: 0,
-        st_rdev: 0,
-        st_size: 0,
-        st_blksize: 0,
-        st_blocks: 0,
-        st_atim: timespec {
-            tv_sec: 0,
-            tv_nsec: 0,
-        },
-        st_mtim: timespec {
-            tv_sec: 0,
-            tv_nsec: 0,
-        },
-        st_ctim: timespec {
-            tv_sec: 0,
-            tv_nsec: 0,
-        },
-        __glibc_reserved: [0; 3],
-    };
+    let mut mode: __mode_t = 0;
+    let mut sb: stat = unsafe { ::core::mem::zeroed() };
     n = 0 as ::core::ffi::c_int;
     let mut s_owner = sessions::first();
     s = s_owner.clone();
@@ -430,7 +391,7 @@ pub unsafe fn server_update_socket() {
         if stat(socket_path_cstr().as_ptr(), &raw mut sb) != 0 as ::core::ffi::c_int {
             return;
         }
-        mode = (sb.st_mode & ACCESSPERMS as __mode_t) as ::core::ffi::c_int;
+        mode = sb.st_mode & ACCESSPERMS;
         if n != 0 as ::core::ffi::c_int {
             if mode & S_IRUSR != 0 {
                 mode |= S_IXUSR;
@@ -444,7 +405,7 @@ pub unsafe fn server_update_socket() {
         } else {
             mode &= !(S_IXUSR | S_IXGRP | S_IXOTH);
         }
-        chmod(socket_path_cstr().as_ptr(), mode as __mode_t);
+        chmod(socket_path_cstr().as_ptr(), mode);
     }
 }
 unsafe fn server_accept(result: io::Result<OwnedFd>) {
@@ -478,7 +439,7 @@ pub unsafe fn server_add_accept(mut timeout: ::core::ffi::c_int) {
     };
     if timeout == 0 as ::core::ffi::c_int {
         crate::src::reactor::task_start(&mut server_accept_task, move || {
-            let source = hmux_rt::mio::Listener::new(socket.try_clone()?)?;
+            let source = tiri_rt::mio::Listener::new(socket.try_clone()?)?;
             Ok(async move {
                 let accepted = source.accept().await;
                 unsafe { server_accept(accepted) };
@@ -489,7 +450,7 @@ pub unsafe fn server_add_accept(mut timeout: ::core::ffi::c_int) {
         let now = std::time::Instant::now();
         let deadline = now.checked_add(tv).unwrap_or(now);
         crate::src::reactor::task_start(&mut server_accept_task, move || {
-            let wait = hmux_rt::mio::Sleep::new(deadline);
+            let wait = tiri_rt::mio::Sleep::new(deadline);
             Ok(async move {
                 wait.await.expect("accept backoff wait");
                 unsafe { server_add_accept(0) };

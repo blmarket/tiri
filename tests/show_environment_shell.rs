@@ -19,7 +19,7 @@ impl Server {
             .expect("clock after epoch")
             .as_nanos();
         let directory = std::env::temp_dir().join(format!(
-            "hmux-show-environment-{}-{stamp}",
+            "tiri-show-environment-{}-{stamp}",
             std::process::id()
         ));
         fs::create_dir(&directory).expect("create socket directory");
@@ -28,7 +28,7 @@ impl Server {
     }
 
     fn command(&self) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_hmux"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_tiri"));
         command
             .args(["-f", "/dev/null", "-S"])
             .arg(&self.socket)
@@ -40,7 +40,7 @@ impl Server {
     }
 
     fn run(&self, args: &[&str]) -> Output {
-        self.command().args(args).output().expect("run hmux")
+        self.command().args(args).output().expect("run tiri")
     }
 }
 

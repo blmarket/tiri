@@ -1,62 +1,42 @@
 //! Foreign declarations supplied by libc.
+//! Declarations whose types or symbols vary by platform come from the libc crate.
 
-use crate::src::shared::abi::{
-    __gid_t, __int32_t, __mode_t, __off_t, __pid_t, __uid_t, clockid_t, size_t, speed_t, ssize_t,
-    time_t,
-};
-use crate::src::shared::account::{group, passwd};
-use crate::src::shared::posix_io::{glob_t, stat};
-use crate::src::shared::posix_terminal::winsize;
-use crate::src::shared::signal::{sigaction, sigset_t};
+use crate::src::shared::abi::{__off_t, __pid_t, __uid_t, size_t, ssize_t, time_t};
 use crate::src::shared::stdio::FILE;
-use crate::src::shared::terminal::termios;
-use crate::src::shared::time::{timespec, tm};
 use crate::src::shared::utf8::wchar_t;
+#[cfg(target_os = "linux")]
+pub use ::libc::__errno_location;
+#[cfg(target_vendor = "apple")]
+pub use ::libc::__error as __errno_location;
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+pub use ::libc::malloc_trim;
+pub use ::libc::{
+    cfgetispeed, cfgetospeed, cfmakeraw, cfsetispeed, cfsetospeed, chmod, clock_gettime, ctime_r,
+    forkpty, getgrgid, getgrnam, getpwnam, getpwuid, glob, globfree, gmtime_r, localtime,
+    localtime_r, lstat, mkdir, sigaction, sigemptyset, sigfillset, sigprocmask, stat, strftime,
+    umask, uname, utsname,
+};
+
+#[cfg(target_os = "linux")]
+extern "C" {
+    pub static mut program_invocation_short_name: *mut ::core::ffi::c_char;
+}
+
 pub type __useconds_t = ::core::ffi::c_uint;
 
 pub type nl_item = ::core::ffi::c_int;
 
-pub type __ssize_t = ::core::ffi::c_long;
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct utsname {
-    pub sysname: [::core::ffi::c_char; 65],
-    pub nodename: [::core::ffi::c_char; 65],
-    pub release: [::core::ffi::c_char; 65],
-    pub version: [::core::ffi::c_char; 65],
-    pub machine: [::core::ffi::c_char; 65],
-    pub domainname: [::core::ffi::c_char; 65],
-}
-
-pub type nfds_t = ::core::ffi::c_ulong;
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct pollfd {
-    pub fd: ::core::ffi::c_int,
-    pub events: ::core::ffi::c_short,
-    pub revents: ::core::ffi::c_short,
-}
-
-pub use ::libc::msghdr;
-
 extern "C" {
-    pub type _IO_codecvt;
-    pub type _IO_marker;
-    pub type _IO_wide_data;
-    pub fn __ctype_b_loc() -> *mut *const ::core::ffi::c_ushort;
-    pub fn __ctype_get_mb_cur_max() -> size_t;
-    pub fn __ctype_tolower_loc() -> *mut *const __int32_t;
-    pub fn __ctype_toupper_loc() -> *mut *const __int32_t;
-    pub fn __errno_location() -> *mut ::core::ffi::c_int;
-    pub fn __getdelim(
-        __lineptr: *mut *mut ::core::ffi::c_char,
-        __n: *mut size_t,
-        __delimiter: ::core::ffi::c_int,
-        __stream: *mut FILE,
-    ) -> __ssize_t;
-    pub fn __xpg_basename(__path: *mut ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
+    /// POSIX basename, which glibc exports under its XPG name.
+    #[cfg_attr(
+        all(target_os = "linux", target_env = "gnu"),
+        link_name = "__xpg_basename"
+    )]
+    pub fn basename(__path: *mut ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
+    #[cfg_attr(target_vendor = "apple", link_name = "__stderrp")]
+    pub static mut stderr: *mut FILE;
+    #[cfg_attr(target_vendor = "apple", link_name = "__stdoutp")]
+    pub static mut stdout: *mut FILE;
     pub fn _exit(__status: ::core::ffi::c_int) -> !;
     pub fn abs(__x: ::core::ffi::c_int) -> ::core::ffi::c_int;
     pub fn access(
@@ -64,23 +44,11 @@ extern "C" {
         __type: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
     pub fn calloc(__nmemb: size_t, __size: size_t) -> *mut ::core::ffi::c_void;
-    pub fn cfgetispeed(__termios_p: *const termios) -> speed_t;
-    pub fn cfgetospeed(__termios_p: *const termios) -> speed_t;
-    pub fn cfmakeraw(__termios_p: *mut termios);
-    pub fn cfsetispeed(__termios_p: *mut termios, __speed: speed_t) -> ::core::ffi::c_int;
-    pub fn cfsetospeed(__termios_p: *mut termios, __speed: speed_t) -> ::core::ffi::c_int;
     pub fn chdir(__path: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    pub fn chmod(__file: *const ::core::ffi::c_char, __mode: __mode_t) -> ::core::ffi::c_int;
-    pub fn clock_gettime(__clock_id: clockid_t, __tp: *mut timespec) -> ::core::ffi::c_int;
-    pub fn ctime_r(
-        __timer: *const time_t,
-        __buf: *mut ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
     pub fn daemon(
         __nochdir: ::core::ffi::c_int,
         __noclose: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
-    pub type dirent;
     pub fn dirname(__path: *mut ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
     pub static mut environ: *mut *mut ::core::ffi::c_char;
     pub fn err(_: ::core::ffi::c_int, _: *const ::core::ffi::c_char, ...);
@@ -139,34 +107,13 @@ extern "C" {
     pub fn getc(__stream: *mut FILE) -> ::core::ffi::c_int;
     pub fn getcwd(__buf: *mut ::core::ffi::c_char, __size: size_t) -> *mut ::core::ffi::c_char;
     pub fn getenv(__name: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    pub fn getgrgid(__gid: __gid_t) -> *mut group;
-    pub fn getgrnam(__name: *const ::core::ffi::c_char) -> *mut group;
     pub fn gethostname(__name: *mut ::core::ffi::c_char, __len: size_t) -> ::core::ffi::c_int;
     pub fn getpid() -> __pid_t;
     pub fn getppid() -> __pid_t;
-    pub fn getpwnam(__name: *const ::core::ffi::c_char) -> *mut passwd;
-    pub fn getpwuid(__uid: __uid_t) -> *mut passwd;
     pub fn getuid() -> __uid_t;
-    pub fn glob(
-        __pattern: *const ::core::ffi::c_char,
-        __flags: ::core::ffi::c_int,
-        __errfunc: Option<
-            unsafe extern "C" fn(
-                *const ::core::ffi::c_char,
-                ::core::ffi::c_int,
-            ) -> ::core::ffi::c_int,
-        >,
-        __pglob: *mut glob_t,
-    ) -> ::core::ffi::c_int;
-    pub fn globfree(__pglob: *mut glob_t);
-    pub fn gmtime_r(__timer: *const time_t, __tp: *mut tm) -> *mut tm;
     pub fn kill(__pid: __pid_t, __sig: ::core::ffi::c_int) -> ::core::ffi::c_int;
     pub fn killpg(__pgrp: __pid_t, __sig: ::core::ffi::c_int) -> ::core::ffi::c_int;
     pub fn llabs(__x: ::core::ffi::c_longlong) -> ::core::ffi::c_longlong;
-    pub fn localtime(__timer: *const time_t) -> *mut tm;
-    pub fn localtime_r(__timer: *const time_t, __tp: *mut tm) -> *mut tm;
-    pub fn lstat(__file: *const ::core::ffi::c_char, __buf: *mut stat) -> ::core::ffi::c_int;
-    pub fn malloc_trim(__pad: size_t) -> ::core::ffi::c_int;
     pub fn memchr(
         __s: *const ::core::ffi::c_void,
         __c: ::core::ffi::c_int,
@@ -192,12 +139,9 @@ extern "C" {
         __c: ::core::ffi::c_int,
         __n: size_t,
     ) -> *mut ::core::ffi::c_void;
-    pub fn mkdir(__path: *const ::core::ffi::c_char, __mode: __mode_t) -> ::core::ffi::c_int;
     pub fn mkstemp(__template: *mut ::core::ffi::c_char) -> ::core::ffi::c_int;
     pub fn nl_langinfo(__item: nl_item) -> *mut ::core::ffi::c_char;
-    pub fn prctl(__option: ::core::ffi::c_int, ...) -> ::core::ffi::c_int;
     pub fn printf(__format: *const ::core::ffi::c_char, ...) -> ::core::ffi::c_int;
-    pub static mut program_invocation_short_name: *mut ::core::ffi::c_char;
     pub fn readlink(
         __path: *const ::core::ffi::c_char,
         __buf: *mut ::core::ffi::c_char,
@@ -223,41 +167,17 @@ extern "C" {
         __modes: ::core::ffi::c_int,
         __n: size_t,
     ) -> ::core::ffi::c_int;
-    pub fn sigaction(
-        __sig: ::core::ffi::c_int,
-        __act: *const sigaction,
-        __oact: *mut sigaction,
-    ) -> ::core::ffi::c_int;
-    pub fn sigemptyset(__set: *mut sigset_t) -> ::core::ffi::c_int;
-    pub fn sigfillset(__set: *mut sigset_t) -> ::core::ffi::c_int;
-    pub fn sigprocmask(
-        __how: ::core::ffi::c_int,
-        __set: *const sigset_t,
-        __oset: *mut sigset_t,
-    ) -> ::core::ffi::c_int;
     pub fn snprintf(
         __s: *mut ::core::ffi::c_char,
         __maxlen: size_t,
         __format: *const ::core::ffi::c_char,
         ...
     ) -> ::core::ffi::c_int;
-    pub type sockaddr_at;
-    pub type sockaddr_ax25;
-    pub type sockaddr_dl;
-    pub type sockaddr_eon;
-    pub type sockaddr_inarp;
-    pub type sockaddr_ipx;
-    pub type sockaddr_iso;
-    pub type sockaddr_ns;
-    pub type sockaddr_x25;
     pub fn sscanf(
         __s: *const ::core::ffi::c_char,
         __format: *const ::core::ffi::c_char,
         ...
     ) -> ::core::ffi::c_int;
-    pub fn stat(__file: *const ::core::ffi::c_char, __buf: *mut stat) -> ::core::ffi::c_int;
-    pub static mut stderr: *mut FILE;
-    pub static mut stdout: *mut FILE;
     pub fn strcasecmp(
         __s1: *const ::core::ffi::c_char,
         __s2: *const ::core::ffi::c_char,
@@ -279,12 +199,6 @@ extern "C" {
         __reject: *const ::core::ffi::c_char,
     ) -> ::core::ffi::c_ulong;
     pub fn strerror(__errnum: ::core::ffi::c_int) -> *mut ::core::ffi::c_char;
-    pub fn strftime(
-        __s: *mut ::core::ffi::c_char,
-        __maxsize: size_t,
-        __format: *const ::core::ffi::c_char,
-        __tp: *const tm,
-    ) -> size_t;
     pub fn strlcat(
         __dest: *mut ::core::ffi::c_char,
         __src: *const ::core::ffi::c_char,
@@ -354,8 +268,6 @@ extern "C" {
     pub fn system(__command: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
     pub fn time(__timer: *mut time_t) -> time_t;
     pub fn tzset();
-    pub fn umask(__mask: __mode_t) -> __mode_t;
-    pub fn uname(__name: *mut utsname) -> ::core::ffi::c_int;
     pub fn ungetc(__c: ::core::ffi::c_int, __stream: *mut FILE) -> ::core::ffi::c_int;
     pub fn unlink(__name: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
     pub fn unsetenv(__name: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
@@ -378,10 +290,4 @@ extern "C" {
     ) -> __pid_t;
     pub fn warnx(_: *const ::core::ffi::c_char, ...);
     pub fn wctomb(__s: *mut ::core::ffi::c_char, __wchar: wchar_t) -> ::core::ffi::c_int;
-    pub fn forkpty(
-        __amaster: *mut ::core::ffi::c_int,
-        __name: *mut ::core::ffi::c_char,
-        __termp: *const termios,
-        __winp: *const winsize,
-    ) -> ::core::ffi::c_int;
 }

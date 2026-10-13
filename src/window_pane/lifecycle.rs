@@ -5,7 +5,9 @@ use crate::src::events_payload::{
     event_payload_create, event_payload_set_int, event_payload_set_pane, event_payload_set_string,
     event_payload_set_target, event_payload_set_window,
 };
+#[cfg(target_os = "linux")]
 use crate::src::ffi::libc::{getpid, kill};
+#[cfg(target_os = "linux")]
 use crate::src::ffi::utempter::utempter_remove_record;
 use crate::src::format::format_single_cstring;
 use crate::src::format_draw::format_draw;
@@ -26,6 +28,7 @@ use crate::src::tmux::sig2name;
 use crate::src::window::Window as _;
 use crate::src::window_pane::WindowPane as _;
 use std::ffi::CStr;
+#[cfg(target_os = "linux")]
 use std::os::fd::AsRawFd;
 use std::time::SystemTime;
 
@@ -36,6 +39,7 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::{PANE_REDRAW, PANE_STATUSDRAWN, PANE_STATUSREADY};
 use crate::src::shared::screen::MODE_CURSOR;
 use crate::src::shared::screen_write::screen_write_ctx;
+#[cfg(target_os = "linux")]
 use crate::src::shared::signal::SIGCHLD;
 use crate::src::shared::style::*;
 
@@ -144,8 +148,11 @@ pub(super) unsafe fn finish_process(
     let mut sx: u_int = (*wp).base.grid().sx;
     let mut sy: u_int = (*wp).base.grid().sy;
     if (*wp).fd.is_some() {
-        utempter_remove_record((*wp).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd));
-        kill(getpid(), SIGCHLD);
+        #[cfg(target_os = "linux")]
+        {
+            utempter_remove_record((*wp).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd));
+            kill(getpid(), SIGCHLD);
+        }
         std::mem::take(&mut (*wp).event).free();
         drop((*wp).fd.take());
     }

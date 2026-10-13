@@ -9,7 +9,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 const TIMEOUT: Duration = Duration::from_secs(8);
-const HMUX_STATUS: &str = "#I:#{P:#{?#{m:*fable*,#{pane_agent_model}},#[bg=red],#{?#{m:*luna*,#{pane_agent_model}},#[bg=brightblue],}}#{pane_state_emoji}#[default],#{?#{>:#{window_panes},1},#{?window_active,#[nounderscore],#[underscore]},}#{?#{m:*fable*,#{pane_agent_model}},#[bg=red],#{?#{m:*luna*,#{pane_agent_model}},#[bg=brightblue],}}#{pane_state_emoji}#[default]} #{?git_worktree,#{git_worktree}#{?git_subdir,/,},#{?pane_current_path,#{b:pane_current_path},#{b:session_path}}}#{?git_action, [#{git_action}#{?git_action_total, #{git_action_step}/#{git_action_total},}],}#{?window_flags,#{window_flags}, }";
+const TIRI_STATUS: &str = "#I:#{P/i:#{?#{m:*fable*,#{pane_agent_model}},#[bg=red],#{?#{m:*luna*,#{pane_agent_model}},#[bg=brightblue],}}#{pane_state_emoji}#[default],#{?window_active,#[nounderscore],#[underscore]}#{?#{m:*fable*,#{pane_agent_model}},#[bg=red],#{?#{m:*luna*,#{pane_agent_model}},#[bg=brightblue],}}#{pane_state_emoji}#[default]} #{?git_worktree,#{git_worktree}#{?git_subdir,/,},#{?pane_current_path,#{b:pane_current_path},#{b:session_path}}}#{?git_action, [#{git_action}#{?git_action_total, #{git_action_step}/#{git_action_total},}],}#{?window_flags,#{window_flags}, }";
 
 struct Server {
     root: PathBuf,
@@ -20,13 +20,13 @@ impl Server {
     fn start(plugins: Option<&str>, config: &str) -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let root = std::env::temp_dir().join(format!(
-            "hmux-plugins-{}-{}",
+            "tiri-plugins-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir(&root).unwrap();
         fs::write(root.join("config"), config).unwrap();
-        let mut command = Command::new(env!("CARGO_BIN_EXE_hmux"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_tiri"));
         command
             .args(["-D", "-S"])
             .arg(root.join("socket"))
@@ -60,7 +60,7 @@ impl Server {
     }
 
     fn command(&self) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_hmux"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_tiri"));
         command
             .arg("-S")
             .arg(self.root.join("socket"))
@@ -149,7 +149,7 @@ impl Drop for Server {
 }
 
 #[test]
-fn defaults_match_hmux_and_plugin_output_preserves_user_options() {
+fn defaults_match_tiri_and_plugin_output_preserves_user_options() {
     let server = Server::start(None, "");
     let repo = server.repo();
     let pane = server.pane(repo.to_str().unwrap());
@@ -180,11 +180,11 @@ fn defaults_match_hmux_and_plugin_output_preserves_user_options() {
     );
     assert_eq!(
         server.run(&["show-options", "-gwv", "window-status-format"]),
-        HMUX_STATUS
+        TIRI_STATUS
     );
     assert_eq!(
         server.run(&["show-options", "-gwv", "window-status-current-format"]),
-        HMUX_STATUS
+        TIRI_STATUS
     );
     assert_eq!(server.run(&["show-options", "-gv", "prefix"]), "C-b");
     assert!(server
@@ -264,7 +264,7 @@ fn window_status_lists_pane_emojis_in_layout_order() {
     server.await_format(&shell, "#{pane_state_emoji}", "💲");
     assert_eq!(
         server.format(&shell, "#{E:window-status-format}"),
-        "0:#[nounderscore]🔧#[default]💲#[default] project*"
+        "0:🔧#[default]#[nounderscore]💲#[default] project*"
     );
 }
 

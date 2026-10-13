@@ -1,6 +1,6 @@
-use hmux::src::shared::borders::{CELL_LR, CELL_RD};
-use hmux::src::shared::tty::{tty, tty_code, tty_term, TTYC_U8};
-use hmux::src::tty_acs::{
+use tiri::src::shared::borders::{CELL_LR, CELL_RD};
+use tiri::src::shared::tty::{tty, tty_code, tty_term, TTYC_U8};
+use tiri::src::tty_acs::{
     tty_acs_double_borders, tty_acs_get, tty_acs_heavy_borders, tty_acs_needed,
     tty_acs_reverse_get, tty_acs_rounded_borders,
 };

@@ -1,16 +1,16 @@
-use hmux::src::environ::environ_create;
-use hmux::src::grid::{grid_default_cell, grid_get_cell, grid_string_cells_bytes};
-use hmux::src::options::{options_create, options_default};
-use hmux::src::options_table::options_table;
-use hmux::src::prompt::{prompt_create, prompt_draw, prompt_free};
-use hmux::src::screen::screen_init;
-use hmux::src::screen_write::{screen_write_start, screen_write_stop};
-use hmux::src::shared::display::{SCREEN_CURSOR_BLOCK, SCREEN_CURSOR_UNDERLINE};
-use hmux::src::shared::grid::{GRID_ATTR_UNDERSCORE, GRID_STRING_TRIM_SPACES};
-use hmux::src::shared::prompt::*;
-use hmux::src::shared::screen::{screen, MODE_CURSOR, MODE_CURSOR_BLINKING};
-use hmux::src::shared::screen_write::screen_write_ctx;
-use hmux::src::tmux::{global_environ, global_options, global_s_options, global_w_options};
+use tiri::src::environ::environ_create;
+use tiri::src::grid::{grid_default_cell, grid_get_cell, grid_string_cells_bytes};
+use tiri::src::options::{options_create, options_default};
+use tiri::src::options_table::options_table;
+use tiri::src::prompt::{prompt_create, prompt_draw, prompt_free};
+use tiri::src::screen::screen_init;
+use tiri::src::screen_write::{screen_write_start, screen_write_stop};
+use tiri::src::shared::display::{SCREEN_CURSOR_BLOCK, SCREEN_CURSOR_UNDERLINE};
+use tiri::src::shared::grid::{GRID_ATTR_UNDERSCORE, GRID_STRING_TRIM_SPACES};
+use tiri::src::shared::prompt::*;
+use tiri::src::shared::screen::{screen, MODE_CURSOR, MODE_CURSOR_BLINKING};
+use tiri::src::shared::screen_write::screen_write_ctx;
+use tiri::src::tmux::{global_environ, global_options, global_s_options, global_w_options};
 use std::ffi::CStr;
 
 #[test]

@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{__ctype_tolower_loc, sscanf, strcasecmp, wctomb};
+use crate::src::ffi::libc::{sscanf, strcasecmp, wctomb};
 use crate::src::shared::abi::*;
 use crate::src::shared::control_character::{
     C0_ASC, C0_BEL, C0_BS, C0_CAN, C0_CR, C0_DC1, C0_DC2, C0_DC3, C0_DC4, C0_DLE, C0_EM, C0_ENQ,
@@ -23,7 +23,7 @@ pub struct C2RustUnnamed_1 {
 #[inline]
 unsafe fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
     if __c >= -(128 as ::core::ffi::c_int) && __c < 256 as ::core::ffi::c_int {
-        *(*__ctype_tolower_loc()).offset(__c as isize) as ::core::ffi::c_int
+        ::libc::tolower(__c as ::core::ffi::c_int) as ::core::ffi::c_int
     } else {
         __c
     }

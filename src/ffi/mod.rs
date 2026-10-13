@@ -7,7 +7,9 @@ pub mod ncurses;
 pub mod numbers;
 pub mod regex;
 pub mod resolv;
+#[cfg(target_os = "linux")]
 pub mod systemd;
+#[cfg(target_os = "linux")]
 pub mod utempter;
 pub mod utf8proc;
 pub mod vis;

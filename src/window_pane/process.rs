@@ -33,7 +33,7 @@ use crate::src::shared::posix_io::{
     _PATH_BSHELL, _PATH_DEVNULL, O_WRONLY, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO,
 };
 use crate::src::shared::session::SessionRef;
-use crate::src::shared::signal::{__sigset_t, sigset_t, SIG_BLOCK, SIG_SETMASK};
+use crate::src::shared::signal::{sigset_t, SIG_BLOCK, SIG_SETMASK};
 use crate::src::shared::window::winlink;
 use crate::src::tmux::setblocking;
 use std::os::fd::{AsRawFd, IntoRawFd};
@@ -58,8 +58,8 @@ pub(super) unsafe fn pipe_pane(
     let mut in_0: ::core::ffi::c_int = 0;
     let mut out: ::core::ffi::c_int = 0;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut set: sigset_t = __sigset_t { __val: [0; 16] };
-    let mut oldset: sigset_t = __sigset_t { __val: [0; 16] };
+    let mut set: sigset_t = unsafe { ::core::mem::zeroed() };
+    let mut oldset: sigset_t = unsafe { ::core::mem::zeroed() };
     if window_pane_exited(&*wp) != 0 {
         cmdq_error(item_handle, |out| out.write_all(b"target pane has exited"));
         return CMD_RETURN_ERROR;
@@ -89,7 +89,7 @@ pub(super) unsafe fn pipe_pane(
         in_0 = 0 as ::core::ffi::c_int;
         out = 1 as ::core::ffi::c_int;
     }
-    let (parent, child) = match hmux_rt::unix::socket_pair() {
+    let (parent, child) = match tiri_rt::unix::socket_pair() {
         Ok(pair) => pair,
         Err(error) => {
             cmdq_error(item_handle, |out| write!(out, "socketpair error: {error}"));
@@ -138,12 +138,12 @@ pub(super) unsafe fn pipe_pane(
             if setpgid(0 as __pid_t, 0 as __pid_t) == -(1 as ::core::ffi::c_int) {
                 _exit(1 as ::core::ffi::c_int);
             }
-            null_fd = match hmux_rt::unix::open(_PATH_DEVNULL, O_WRONLY, 0) {
+            null_fd = match tiri_rt::unix::open(_PATH_DEVNULL, O_WRONLY, 0) {
                 Ok(fd) => fd.into_raw_fd(),
                 Err(error) => crate::src::reactor::io_status(Err(error)),
             };
             if out != 0 {
-                if hmux_rt::unix::redirect(
+                if tiri_rt::unix::redirect(
                     std::os::fd::BorrowedFd::borrow_raw(child_fd),
                     STDIN_FILENO,
                 )
@@ -151,7 +151,7 @@ pub(super) unsafe fn pipe_pane(
                 {
                     _exit(1 as ::core::ffi::c_int);
                 }
-            } else if hmux_rt::unix::redirect(
+            } else if tiri_rt::unix::redirect(
                 std::os::fd::BorrowedFd::borrow_raw(null_fd),
                 STDIN_FILENO,
             )
@@ -160,7 +160,7 @@ pub(super) unsafe fn pipe_pane(
                 _exit(1 as ::core::ffi::c_int);
             }
             if in_0 != 0 {
-                if hmux_rt::unix::redirect(
+                if tiri_rt::unix::redirect(
                     std::os::fd::BorrowedFd::borrow_raw(child_fd),
                     STDOUT_FILENO,
                 )
@@ -169,9 +169,9 @@ pub(super) unsafe fn pipe_pane(
                     _exit(1 as ::core::ffi::c_int);
                 }
                 if child_fd != STDOUT_FILENO {
-                    let _ = hmux_rt::unix::close(child_fd);
+                    let _ = tiri_rt::unix::close(child_fd);
                 }
-            } else if hmux_rt::unix::redirect(
+            } else if tiri_rt::unix::redirect(
                 std::os::fd::BorrowedFd::borrow_raw(null_fd),
                 STDOUT_FILENO,
             )
@@ -179,12 +179,12 @@ pub(super) unsafe fn pipe_pane(
             {
                 _exit(1 as ::core::ffi::c_int);
             }
-            if hmux_rt::unix::redirect(std::os::fd::BorrowedFd::borrow_raw(null_fd), STDERR_FILENO)
+            if tiri_rt::unix::redirect(std::os::fd::BorrowedFd::borrow_raw(null_fd), STDERR_FILENO)
                 .is_err()
             {
                 _exit(1 as ::core::ffi::c_int);
             }
-            hmux_rt::unix::close_from(STDERR_FILENO + 1 as ::core::ffi::c_int);
+            tiri_rt::unix::close_from(STDERR_FILENO + 1 as ::core::ffi::c_int);
             execl(
                 _PATH_BSHELL.as_ptr(),
                 c"sh".as_ptr(),
@@ -307,10 +307,10 @@ mod pipe_stream_tests {
 
     #[test]
     fn pipe_error_closes_descriptor_while_pane_remains_alive() {
-        use hmux_rt::Runtime as _;
+        use tiri_rt::Runtime as _;
         use std::os::unix::net::UnixStream;
 
-        let runtime = hmux_rt::mio::Runtime::new().unwrap();
+        let runtime = tiri_rt::mio::Runtime::new().unwrap();
         unsafe {
             let pane = window_pane::new();
             let (socket, _receiver) = UnixStream::pair().unwrap();

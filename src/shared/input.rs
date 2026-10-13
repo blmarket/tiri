@@ -2,7 +2,7 @@
 use crate::src::window_pane::WindowPane as _;
 
 use crate::src::shared::client::ClientWeak;
-use hmux_buffer::SegmentedBuf;
+use tiri_buffer::SegmentedBuf;
 use std::collections::VecDeque;
 use std::ffi::CString;
 

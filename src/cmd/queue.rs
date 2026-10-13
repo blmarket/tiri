@@ -12,7 +12,7 @@ use crate::src::events_payload::{
     event_payload_create, event_payload_set_identity, event_payload_set_string,
     event_payload_set_target,
 };
-use crate::src::ffi::libc::{__ctype_toupper_loc, getpwuid, getuid, time};
+use crate::src::ffi::libc::{getpwuid, getuid, time};
 use crate::src::file::{file_cancel_cmdq_wait, file_error};
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::nullable_cstr;
@@ -48,13 +48,13 @@ use crate::src::shared::key::*;
 use crate::src::shared::session::SessionRef;
 use crate::src::status::status_message_set;
 use crate::src::text::utf8::utf8_sanitize_cstring;
-use hmux_buffer::SegmentedBuf;
+use tiri_buffer::SegmentedBuf;
 use std::ffi::{CStr, CString};
 
 /// Queue-created command state. Only this module may construct or remove it.
 ///
 /// ```compile_fail
-/// use hmux::src::shared::command::cmdq_item;
+/// use tiri::src::shared::command::cmdq_item;
 /// let item = cmdq_item::empty();
 /// ```
 pub struct cmdq_item {
@@ -83,7 +83,7 @@ pub struct cmdq_item {
     cancel_data: Option<Box<dyn FnOnce()>>,
     /// A foreground command owns its delayed work until dispatch or removal.
     wait_timer: Option<crate::src::reactor::Timer>,
-    file_task: Option<hmux_rt::mio::Task>,
+    file_task: Option<tiri_rt::mio::Task>,
     wait_file: std::rc::Weak<std::cell::UnsafeCell<client_file>>,
 }
 
@@ -136,7 +136,7 @@ impl cmdq_item {
 /// the process. The private deque owns stable command item allocations.
 ///
 /// ```compile_fail
-/// use hmux::src::cmd::queue::cmdq_new;
+/// use tiri::src::cmd::queue::cmdq_new;
 /// let mut queue = cmdq_new();
 /// queue.list.pop_front();
 /// ```
@@ -250,7 +250,7 @@ pub(crate) fn cmdq_set_wait_file(
     item.wait_file = std::rc::Rc::downgrade(file);
 }
 
-pub(crate) fn cmdq_set_file_task(item: &mut cmdq_item, task: hmux_rt::mio::Task) {
+pub(crate) fn cmdq_set_file_task(item: &mut cmdq_item, task: tiri_rt::mio::Task) {
     assert!(
         item.file_task.is_none(),
         "queue item already has a file task"
@@ -1195,7 +1195,7 @@ pub unsafe fn cmdq_error(
         }
         Some(_) => {
             let mut bytes = msg.into_bytes_with_nul();
-            bytes[0] = *(*__ctype_toupper_loc()).offset(bytes[0] as isize) as u8;
+            bytes[0] = ::libc::toupper(bytes[0] as ::core::ffi::c_int) as u8;
             // The bytes came from a CString; toupper maps NUL to NUL and a
             // non-NUL byte to a non-NUL byte, so the terminator stays at the end.
             msg = CString::from_vec_with_nul_unchecked(bytes);

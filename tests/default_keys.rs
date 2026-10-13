@@ -42,7 +42,7 @@ fn ctrl_a_keys_drive_the_strip() {
         .duration_since(UNIX_EPOCH)
         .expect("clock after epoch")
         .as_nanos();
-    let directory = std::env::temp_dir().join(format!("hmux keys {stamp}"));
+    let directory = std::env::temp_dir().join(format!("tiri keys {stamp}"));
     fs::create_dir(&directory).expect("create directory");
     let directory = directory.canonicalize().expect("canonical directory");
     let path = directory.to_str().expect("UTF-8 directory").to_owned();

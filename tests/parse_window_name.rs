@@ -1,4 +1,4 @@
-use hmux::src::names::parse_window_name_cstring;
+use tiri::src::names::parse_window_name_cstring;
 use std::ffi::CStr;
 
 unsafe fn parsed(input: &[u8]) -> Vec<u8> {

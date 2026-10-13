@@ -19,17 +19,15 @@ use crate::src::shared::process::PeerMessage;
 use crate::src::shared::process::{tmuxpeer, tmuxproc};
 use crate::src::shared::signal::ProcessSignal;
 pub use crate::src::shared::signal::{
-    __sighandler_t, __sigset_t, sigaction, sigaction___sigaction_handler, SA_RESTART, SIGCHLD,
-    SIGCONT, SIGHUP, SIGINT, SIGTERM, SIGTSTP, SIGTTIN, SIGTTOU, SIGUSR1, SIGUSR2, SIGWINCH,
-    SIG_DFL,
+    SA_RESTART, SIGCHLD, SIGCONT, SIGHUP, SIGINT, SIGTERM, SIGTSTP, SIGTTIN, SIGTTOU, SIGUSR1,
+    SIGUSR2, SIGWINCH, SIG_DFL, SIG_IGN,
 };
 use crate::src::tmux::{getversion, socket_path_cstr};
-use hmux_rt::{AsyncRead as _, AsyncWrite as _, Runtime as _, Signals as _};
+use tiri_rt::{AsyncRead as _, AsyncWrite as _, Runtime as _, Signals as _};
 use std::ffi::CStr;
 use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 
-pub const SIGQUIT: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
-pub const SIGPIPE: ::core::ffi::c_int = 13 as ::core::ffi::c_int;
+pub use ::libc::{SIGPIPE, SIGQUIT};
 
 pub const NCURSES_VERSION_PATCH: ::core::ffi::c_int = 20251230 as ::core::ffi::c_int;
 pub const NCURSES_VERSION: &std::ffi::CStr = c"6.6";
@@ -60,7 +58,7 @@ unsafe fn proc_disconnect(peer: *mut tmuxpeer) {
     proc_dispatch(peer, PeerMessage::Disconnected);
 }
 
-unsafe fn proc_receive(peer: *mut tmuxpeer, bytes: &[u8], received: hmux_rt::Received) -> bool {
+unsafe fn proc_receive(peer: *mut tmuxpeer, bytes: &[u8], received: tiri_rt::Received) -> bool {
     if received.bytes == 0
         || imsgbuf_receive(&mut (*peer).ibuf, &bytes[..received.bytes], received.fd).is_err()
     {
@@ -117,7 +115,7 @@ unsafe fn proc_update_io(peer: *mut tmuxpeer) {
             use std::pin::pin;
             use std::task::Poll;
             enum Completion {
-                Read(std::io::Result<hmux_rt::Received>),
+                Read(std::io::Result<tiri_rt::Received>),
                 Write(std::io::Result<usize>),
             }
             let mut prefer_write = false;
@@ -170,7 +168,7 @@ unsafe fn proc_update_io(peer: *mut tmuxpeer) {
                         {
                             // This resource shortage is transient but not a
                             // readiness transition. Retry without a busy loop.
-                            hmux_rt::mio::Sleep::new(
+                            tiri_rt::mio::Sleep::new(
                                 std::time::Instant::now() + std::time::Duration::from_millis(1),
                             )
                             .await
@@ -231,14 +229,7 @@ pub unsafe fn proc_send(
     0 as ::core::ffi::c_int
 }
 pub unsafe fn proc_start(name: &CStr) -> Box<tmuxproc> {
-    let mut u: utsname = utsname {
-        sysname: [0; 65],
-        nodename: [0; 65],
-        release: [0; 65],
-        version: [0; 65],
-        machine: [0; 65],
-        domainname: [0; 65],
-    };
+    let mut u: utsname = unsafe { ::core::mem::zeroed() };
     log_open(name);
     setproctitle(|out| {
         write_cstr(out, &*name)?;
@@ -273,7 +264,7 @@ pub unsafe fn proc_start(name: &CStr) -> Box<tmuxproc> {
             &raw mut u.version as *mut ::core::ffi::c_char
         ))
     ));
-    log_debug(format_args!("using runtime hmux-rt mio"));
+    log_debug(format_args!("using runtime tiri-rt mio"));
     log_debug(format_args!(
         "using utf8proc {}",
         log_cstr(CStr::from_ptr(utf8proc_version()))
@@ -309,7 +300,7 @@ impl Drop for tmuxproc {
 /// Drive the process until exit, then release streams and the runtime owner.
 pub unsafe fn proc_loop(
     mut tp: *mut tmuxproc,
-    mut runtime: hmux_rt::mio::Runtime,
+    mut runtime: tiri_rt::mio::Runtime,
     mut loopcb: Option<&mut dyn FnMut() -> bool>,
 ) {
     log_debug(format_args!(
@@ -317,7 +308,7 @@ pub unsafe fn proc_loop(
         crate::src::log::log_bytes((*tp).name.as_bytes())
     ));
     loop {
-        runtime.poll(None).expect("hmux-rt poll");
+        runtime.poll(None).expect("tiri-rt poll");
         let exiting = (*tp).exit != 0;
         let drained = (*tp)
             .peers
@@ -341,12 +332,7 @@ pub unsafe fn proc_set_signals(
     mut tp: *mut tmuxproc,
     mut signalcb: Option<Box<dyn FnMut(ProcessSignal)>>,
 ) {
-    let mut sa: sigaction = sigaction {
-        __sigaction_handler: sigaction___sigaction_handler { sa_handler: None },
-        sa_mask: __sigset_t { __val: [0; 16] },
-        sa_flags: 0,
-        sa_restorer: None,
-    };
+    let mut sa: sigaction = unsafe { ::core::mem::zeroed() };
     (*tp).signalcb = signalcb;
     memset(
         &raw mut sa as *mut ::core::ffi::c_void,
@@ -355,16 +341,14 @@ pub unsafe fn proc_set_signals(
     );
     sigemptyset(&raw mut sa.sa_mask);
     sa.sa_flags = SA_RESTART;
-    sa.__sigaction_handler.sa_handler = ::core::mem::transmute::<::libc::intptr_t, __sighandler_t>(
-        1 as ::core::ffi::c_int as ::libc::intptr_t,
-    );
+    sa.sa_sigaction = SIG_IGN;
     sigaction(SIGPIPE, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
     sigaction(SIGTSTP, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
     sigaction(SIGTTIN, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
     sigaction(SIGTTOU, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
     sigaction(SIGQUIT, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
     crate::src::reactor::task_start(&mut (*tp).signal_task, move || {
-        let mut signals = hmux_rt::mio::Signals::new(&[
+        let mut signals = tiri_rt::mio::Signals::new(&[
             SIGINT, SIGHUP, SIGCHLD, SIGCONT, SIGTERM, SIGUSR1, SIGUSR2, SIGWINCH,
         ])?;
         Ok(async move {
@@ -378,12 +362,7 @@ pub unsafe fn proc_set_signals(
     .expect("start process signals");
 }
 pub unsafe fn proc_clear_signals(mut tp: *mut tmuxproc, mut defaults: ::core::ffi::c_int) {
-    let mut sa: sigaction = sigaction {
-        __sigaction_handler: sigaction___sigaction_handler { sa_handler: None },
-        sa_mask: __sigset_t { __val: [0; 16] },
-        sa_flags: 0,
-        sa_restorer: None,
-    };
+    let mut sa: sigaction = unsafe { ::core::mem::zeroed() };
     memset(
         &raw mut sa as *mut ::core::ffi::c_void,
         0 as ::core::ffi::c_int,
@@ -391,7 +370,7 @@ pub unsafe fn proc_clear_signals(mut tp: *mut tmuxproc, mut defaults: ::core::ff
     );
     sigemptyset(&raw mut sa.sa_mask);
     sa.sa_flags = SA_RESTART;
-    sa.__sigaction_handler.sa_handler = SIG_DFL;
+    sa.sa_sigaction = SIG_DFL;
     sigaction(SIGPIPE, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
     sigaction(SIGTSTP, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
     drop((*tp).signal_task.take());
@@ -454,10 +433,10 @@ pub unsafe fn proc_toggle_log(mut tp: *mut tmuxproc) {
 }
 pub unsafe fn proc_fork_and_daemon() -> (pid_t, OwnedFd) {
     assert!(
-        !hmux_rt::mio::Runtime::is_initialized(),
+        !tiri_rt::mio::Runtime::is_initialized(),
         "daemonize before initializing the runtime"
     );
-    let (parent, child) = hmux_rt::unix::socket_pair()
+    let (parent, child) = tiri_rt::unix::socket_pair()
         .unwrap_or_else(|_| fatal(|out| out.write_all(b"socketpair failed")));
     let pid = fork() as pid_t;
     match pid {
@@ -492,10 +471,10 @@ mod ownership_tests {
     #[test]
     fn loop_exit_releases_streams_and_runtime_for_both_exit_paths() {
         use crate::src::reactor::{BufferEvent as _, StreamHandle};
-        use hmux_rt::Handle as _;
+        use tiri_rt::Handle as _;
 
         for callback_exit in [false, true] {
-            let runtime = hmux_rt::mio::Runtime::new().unwrap();
+            let runtime = tiri_rt::mio::Runtime::new().unwrap();
             let handle = runtime.handle();
             let mut owner = Box::new(tmuxproc {
                 name: c"loop-ownership-test".to_owned(),
@@ -520,7 +499,7 @@ mod ownership_tests {
                     })
                     .unwrap();
                 let mut callback = || {
-                    assert!(hmux_rt::mio::Runtime::is_initialized());
+                    assert!(tiri_rt::mio::Runtime::is_initialized());
                     false
                 };
                 let loopcb: Option<&mut dyn FnMut() -> bool> = if callback_exit {
@@ -532,7 +511,7 @@ mod ownership_tests {
 
                 assert!(!observer.is_alive());
                 assert_eq!(libc::fcntl(fd, libc::F_GETFL), flags);
-                assert!(!hmux_rt::mio::Runtime::is_initialized());
+                assert!(!tiri_rt::mio::Runtime::is_initialized());
                 assert!(matches!(
                     handle.spawn(async {}),
                     Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe

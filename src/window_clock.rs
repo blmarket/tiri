@@ -624,32 +624,8 @@ unsafe fn window_clock_timer_callback(wme: refbox::Weak<window_mode_entry>) {
         .upgrade()
         .expect("mode belongs to a live pane");
     let mut data: *mut window_clock_mode_data = window_clock_data(wme.clone());
-    let mut now: tm = tm {
-        tm_sec: 0,
-        tm_min: 0,
-        tm_hour: 0,
-        tm_mday: 0,
-        tm_mon: 0,
-        tm_year: 0,
-        tm_wday: 0,
-        tm_yday: 0,
-        tm_isdst: 0,
-        tm_gmtoff: 0,
-        tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
-    };
-    let mut then: tm = tm {
-        tm_sec: 0,
-        tm_min: 0,
-        tm_hour: 0,
-        tm_mday: 0,
-        tm_mon: 0,
-        tm_year: 0,
-        tm_wday: 0,
-        tm_yday: 0,
-        tm_isdst: 0,
-        tm_gmtoff: 0,
-        tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
-    };
+    let mut now: tm = unsafe { ::core::mem::zeroed() };
+    let mut then: tm = unsafe { ::core::mem::zeroed() };
     let mut t: time_t = 0;
     drop((*data).timer.take());
     t = time(::core::ptr::null_mut::<time_t>());

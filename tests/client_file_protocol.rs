@@ -21,7 +21,7 @@ impl Server {
             .unwrap()
             .as_nanos();
         let directory = std::env::temp_dir().join(format!(
-            "hmux-file-wire-{role}-{}-{stamp}",
+            "tiri-file-wire-{role}-{}-{stamp}",
             std::process::id()
         ));
         fs::create_dir(&directory).unwrap();
@@ -211,16 +211,16 @@ fn file_transfers_interoperate_with_unmodified_tmux_in_both_roles() {
         return;
     };
     let reference = PathBuf::from(reference);
-    let hmux = Path::new(env!("CARGO_BIN_EXE_hmux"));
-    let hmux_server = Server::new(hmux, "hmux-server");
-    exercise_files(&hmux_server, &reference);
+    let tiri = Path::new(env!("CARGO_BIN_EXE_tiri"));
+    let tiri_server = Server::new(tiri, "tiri-server");
+    exercise_files(&tiri_server, &reference);
     let reference_server = Server::new(&reference, "tmux-server");
-    exercise_files(&reference_server, hmux);
+    exercise_files(&reference_server, tiri);
 }
 
 #[test]
-fn file_transfers_work_with_hmux_client_and_server() {
-    let hmux = Path::new(env!("CARGO_BIN_EXE_hmux"));
-    let server = Server::new(hmux, "hmux-both");
-    exercise_files(&server, hmux);
+fn file_transfers_work_with_tiri_client_and_server() {
+    let tiri = Path::new(env!("CARGO_BIN_EXE_tiri"));
+    let server = Server::new(tiri, "tiri-both");
+    exercise_files(&server, tiri);
 }

@@ -1,6 +1,6 @@
 //! Behavior of the Rust-owned option-name index through the existing API.
-use hmux::src::format::bytes::write_cstr;
-use hmux::src::options::*;
+use tiri::src::format::bytes::write_cstr;
+use tiri::src::options::*;
 use std::ffi::{CStr, CString};
 use std::ptr::null_mut;
 
@@ -24,7 +24,7 @@ fn ordered_names_survive_updates_and_removal() {
         for (name, &entry) in names.iter().zip(&pointers) {
             let name = CString::new(name.as_slice()).unwrap();
             assert_eq!(
-                hmux::src::options::options_get_only_mut(
+                tiri::src::options::options_get_only_mut(
                     &mut *(oo),
                     std::ffi::CStr::from_ptr(name.as_ptr())
                 )
@@ -61,7 +61,7 @@ fn ordered_names_survive_updates_and_removal() {
             assert_eq!(options_remove_or_default(entry, None, null_mut()), 0);
         }
         assert!(options_iter(&*oo).next().is_none());
-        assert!(hmux::src::options::options_get_only_mut(
+        assert!(tiri::src::options::options_get_only_mut(
             &mut *(oo),
             std::ffi::CStr::from_ptr(c"@key-000".as_ptr())
         )
@@ -78,11 +78,11 @@ fn aliases_parent_fallback_and_shadowing() {
     unsafe {
         let mut parent_owner = options_create(None);
         let parent = &raw mut *parent_owner;
-        let saved_global = std::ptr::replace(&raw mut hmux::src::tmux::global_options, parent);
+        let saved_global = std::ptr::replace(&raw mut tiri::src::tmux::global_options, parent);
         let mut child_owner = options_create(Some(OptionsScope::GlobalServer));
         let child = &raw mut *child_owner;
         let inherited = options_set_string(parent, c"@shared", 0, |out| out.write_all(b"parent"));
-        assert!(hmux::src::options::options_get_only_mut(
+        assert!(tiri::src::options::options_get_only_mut(
             &mut *(child),
             std::ffi::CStr::from_ptr(c"@shared".as_ptr())
         )
@@ -106,14 +106,14 @@ fn aliases_parent_fallback_and_shadowing() {
 
         // Use an actual option-table entry so alias lookup and value cleanup
         // follow the same path as built-in options.
-        let table = &raw const hmux::src::options_table::options_table;
+        let table = &raw const tiri::src::options_table::options_table;
         let definition = (*table)
             .iter()
             .find(|oe| oe.name == Some(c"display-panes-colour"))
             .unwrap();
         let canonical = options_default(parent, definition);
         assert_eq!(
-            hmux::src::options::options_get_only_mut(
+            tiri::src::options::options_get_only_mut(
                 &mut *(parent),
                 std::ffi::CStr::from_ptr(c"display-panes-color".as_ptr())
             )
@@ -145,14 +145,14 @@ fn aliases_parent_fallback_and_shadowing() {
         );
         drop(child_owner);
         assert_eq!(
-            hmux::src::options::options_get_only_mut(
+            tiri::src::options::options_get_only_mut(
                 &mut *(parent),
                 std::ffi::CStr::from_ptr(c"@shared".as_ptr())
             )
             .map_or(std::ptr::null_mut(), |entry| entry),
             inherited
         );
-        hmux::src::tmux::global_options = saved_global;
+        tiri::src::tmux::global_options = saved_global;
         drop(parent_owner);
     }
 }
@@ -215,7 +215,7 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
             c""
         );
 
-        let table = &raw const hmux::src::options_table::options_table;
+        let table = &raw const tiri::src::options_table::options_table;
         let definition = (*table)
             .iter()
             .find(|oe| oe.name == Some(c"status-left"))
@@ -231,7 +231,7 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
             definition.default_str.unwrap()
         );
         assert_eq!(
-            hmux::src::options::options_get_only_mut(&mut *(oo), definition.name.unwrap())
+            tiri::src::options::options_get_only_mut(&mut *(oo), definition.name.unwrap())
                 .map_or(std::ptr::null_mut(), |entry| entry),
             default
         );
@@ -267,7 +267,7 @@ fn array_keys_order_normalize_and_keep_stable_items() {
     unsafe {
         let mut oo_owner = options_create(None);
         let oo = &raw mut *oo_owner;
-        let table = &raw const hmux::src::options_table::options_table;
+        let table = &raw const tiri::src::options_table::options_table;
         let definition = (*table)
             .iter()
             .find(|oe| oe.name == Some(c"update-environment"))
@@ -315,27 +315,27 @@ fn array_keys_order_normalize_and_keep_stable_items() {
             two
         );
         assert_eq!(
-            hmux::src::options::options_array_get_mut(
+            tiri::src::options::options_array_get_mut(
                 &mut *(array),
                 std::ffi::CStr::from_ptr(c"02".as_ptr())
             )
             .map_or(std::ptr::null_mut(), |value| value),
-            (hmux::src::options::options_array_item_value_mut(&mut *(two))
-                as *mut hmux::src::shared::options::options_value)
+            (tiri::src::options::options_array_item_value_mut(&mut *(two))
+                as *mut tiri::src::shared::options::options_value)
         );
         assert_eq!(
-            hmux::src::options::options_array_get_index_mut(&mut *(array), 2)
+            tiri::src::options::options_array_get_index_mut(&mut *(array), 2)
                 .map_or(std::ptr::null_mut(), |value| value),
-            (hmux::src::options::options_array_item_value_mut(&mut *(two))
-                as *mut hmux::src::shared::options::options_value)
+            (tiri::src::options::options_array_item_value_mut(&mut *(two))
+                as *mut tiri::src::shared::options::options_value)
         );
         for (index, key) in [(0, c"0"), (u32::MAX, c"4294967295")] {
-            let value = hmux::src::options::options_array_get_index_mut(&mut *(array), index)
+            let value = tiri::src::options::options_array_get_index_mut(&mut *(array), index)
                 .map_or(std::ptr::null_mut(), |value| value);
             assert!(!value.is_null());
             assert_eq!(
                 value,
-                hmux::src::options::options_array_get_mut(
+                tiri::src::options::options_array_get_mut(
                     &mut *(array),
                     std::ffi::CStr::from_ptr(key.as_ptr())
                 )
@@ -343,18 +343,18 @@ fn array_keys_order_normalize_and_keep_stable_items() {
             );
         }
         assert!(
-            hmux::src::options::options_array_get_index_mut(&mut *(array), 3)
+            tiri::src::options::options_array_get_index_mut(&mut *(array), 3)
                 .map_or(std::ptr::null_mut(), |value| value)
                 .is_null()
         );
         let non_utf8 = c"\xff";
-        let non_utf8_value = hmux::src::options::options_array_get_mut(
+        let non_utf8_value = tiri::src::options::options_array_get_mut(
             &mut *(array),
             std::ffi::CStr::from_ptr(non_utf8.as_ptr()),
         )
         .map_or(std::ptr::null_mut(), |value| value);
         assert!(!non_utf8_value.is_null());
-        assert!(hmux::src::options::options_array_get_mut(
+        assert!(tiri::src::options::options_array_get_mut(
             &mut *(array),
             std::ffi::CStr::from_ptr(c"".as_ptr())
         )
@@ -362,8 +362,8 @@ fn array_keys_order_normalize_and_keep_stable_items() {
         .is_null());
         assert_eq!(
             CStr::from_ptr(
-                (*(hmux::src::options::options_array_item_value_mut(&mut *(two))
-                    as *mut hmux::src::shared::options::options_value))
+                (*(tiri::src::options::options_array_item_value_mut(&mut *(two))
+                    as *mut tiri::src::shared::options::options_value))
                     .string_ptr()
                     .map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut())
             ),
@@ -382,7 +382,7 @@ fn array_keys_order_normalize_and_keep_stable_items() {
                 options_array_set(array, invalid, Some(c"bad"), 0, null_mut()),
                 -1
             );
-            assert!(hmux::src::options::options_array_get_mut(
+            assert!(tiri::src::options::options_array_get_mut(
                 &mut *(array),
                 std::ffi::CStr::from_ptr(invalid.as_ptr())
             )
@@ -453,7 +453,7 @@ fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
     unsafe {
         let mut oo_owner = options_create(None);
         let oo = &raw mut *oo_owner;
-        let table = &raw const hmux::src::options_table::options_table;
+        let table = &raw const tiri::src::options_table::options_table;
         let definition = (*table)
             .iter()
             .find(|oe| oe.name == Some(c"update-environment"))
@@ -471,7 +471,7 @@ fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
         input.fill(b'x');
         for (index, expected) in [b"ONE".as_slice(), b"\xff", b"TWO"].iter().enumerate() {
             let key = CString::new(index.to_string()).unwrap();
-            let value = hmux::src::options::options_array_get_mut(
+            let value = tiri::src::options::options_array_get_mut(
                 &mut *(strings),
                 std::ffi::CStr::from_ptr(key.as_ptr()),
             )
@@ -487,7 +487,7 @@ fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
                 *expected
             );
         }
-        assert!(hmux::src::options::options_array_get_mut(
+        assert!(tiri::src::options::options_array_get_mut(
             &mut *(strings),
             std::ffi::CStr::from_ptr(c"3".as_ptr())
         )
@@ -504,13 +504,13 @@ fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
             options_array_assign(colours, c"red,,invalid-colour", &mut cause),
             -1
         );
-        assert!(!hmux::src::options::options_array_get_mut(
+        assert!(!tiri::src::options::options_array_get_mut(
             &mut *(colours),
             std::ffi::CStr::from_ptr(c"0".as_ptr())
         )
         .map_or(std::ptr::null_mut(), |value| value)
         .is_null());
-        assert!(hmux::src::options::options_array_get_mut(
+        assert!(tiri::src::options::options_array_get_mut(
             &mut *(colours),
             std::ffi::CStr::from_ptr(c"1".as_ptr())
         )
@@ -527,18 +527,18 @@ fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
 /// Run `body` with `global_options` pointing at a fresh, empty table so command
 /// parsing (which consults `command-alias`) and parent fallback have a server
 /// table to read, restoring the previous pointer afterwards.
-unsafe fn with_global_options(body: impl FnOnce(*mut hmux::src::shared::options::options)) {
+unsafe fn with_global_options(body: impl FnOnce(*mut tiri::src::shared::options::options)) {
     let mut global_owner = options_create(None);
     let global = &raw mut *global_owner;
-    let saved = hmux::src::tmux::global_options;
-    hmux::src::tmux::global_options = global;
+    let saved = tiri::src::tmux::global_options;
+    tiri::src::tmux::global_options = global;
     body(global);
-    hmux::src::tmux::global_options = saved;
+    tiri::src::tmux::global_options = saved;
     drop(global_owner);
 }
 
-fn table_entry(name: &CStr) -> &'static hmux::src::shared::options::options_table_entry {
-    hmux::src::options_table::options_table
+fn table_entry(name: &CStr) -> &'static tiri::src::shared::options::options_table_entry {
+    tiri::src::options_table::options_table
         .iter()
         .find(|oe| oe.name == Some(name))
         .unwrap()
@@ -619,7 +619,7 @@ fn set_command_publishes_a_local_default_before_replacing_it() {
             assert!(options_get_only(&*child, c"default-client-command").is_none());
 
             let mut parsed =
-                hmux::src::cmd::parse::cmd_parse_from_string(c"list-sessions -F x", null_mut());
+                tiri::src::cmd::parse::cmd_parse_from_string(c"list-sessions -F x", null_mut());
             let local =
                 options_set_command(child, c"default-client-command", parsed.take_cmdlist());
             assert!(!local.is_null());

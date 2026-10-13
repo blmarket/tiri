@@ -7,7 +7,7 @@ pub(crate) struct GlobResult(glob_t);
 
 impl GlobResult {
     pub(crate) unsafe fn run(pattern: &CStr) -> (Self, c_int) {
-        let mut result = Self(Default::default());
+        let mut result = Self(::core::mem::zeroed());
         let status = glob(pattern.as_ptr(), 0, None, &mut result.0);
         (result, status)
     }

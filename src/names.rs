@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{__ctype_b_loc, __xpg_basename, strchr, strcspn, strlen, strncmp};
+use crate::src::ffi::libc::{basename, strchr, strcspn, strlen, strncmp};
 use crate::src::format::{
     format_create, format_defaults_pane, format_defaults_window, format_expand_cstring,
 };
@@ -6,7 +6,6 @@ use crate::src::log::log_debug;
 use crate::src::options::options_get_number;
 use crate::src::server_fn::{server_redraw_window_borders, server_status_window};
 use crate::src::shared::abi::*;
-use crate::src::shared::ctype::{_ISalnum, _ISpunct};
 use crate::src::shared::format::FORMAT_WINDOW;
 use crate::src::shared::window::WindowRef;
 use crate::src::tmux::clean_name_cstring;
@@ -116,14 +115,8 @@ pub unsafe fn parse_window_name_cstring(in_0: &CStr) -> CString {
             .add(strlen(name))
             .offset(-(1 as ::core::ffi::c_int as isize));
         while ptr > name
-            && *(*__ctype_b_loc()).offset(*ptr as u_char as ::core::ffi::c_int as isize)
-                as ::core::ffi::c_int
-                & _ISalnum as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
-                == 0
-            && *(*__ctype_b_loc()).offset(*ptr as u_char as ::core::ffi::c_int as isize)
-                as ::core::ffi::c_int
-                & _ISpunct as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
-                == 0
+            && ::libc::isalnum(*ptr as u_char as ::core::ffi::c_int) == 0
+            && ::libc::ispunct(*ptr as u_char as ::core::ffi::c_int) == 0
         {
             let fresh0 = ptr;
             ptr = ptr.offset(-1);
@@ -131,7 +124,7 @@ pub unsafe fn parse_window_name_cstring(in_0: &CStr) -> CString {
         }
     }
     if *name as ::core::ffi::c_int == '/' as i32 {
-        name = __xpg_basename(name);
+        name = basename(name);
     }
     clean_name_cstring(CStr::from_ptr(name), 0).unwrap_or_else(|| c"".to_owned())
 }

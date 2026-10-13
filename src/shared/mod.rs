@@ -14,7 +14,6 @@ pub mod colour;
 pub mod command;
 pub mod control;
 pub mod control_character;
-pub mod ctype;
 pub mod display;
 pub mod environment;
 pub mod errno;

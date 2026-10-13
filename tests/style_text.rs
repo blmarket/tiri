@@ -1,6 +1,6 @@
 //! Compatibility observations recorded before replacing the text APIs.
-use hmux::src::shared::colour::{COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME};
-use hmux::src::{shared::grid::*, style::attributes::*, style::colour::*};
+use tiri::src::shared::colour::{COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME};
+use tiri::src::{shared::grid::*, style::attributes::*, style::colour::*};
 use std::ffi::{CStr, CString};
 
 #[test]
@@ -305,7 +305,7 @@ fn every_attribute_and_index() {
 
 #[test]
 fn locale_child() {
-    let Ok(locale) = std::env::var("HMUX_STYLE_TEST_LOCALE") else {
+    let Ok(locale) = std::env::var("TIRI_STYLE_TEST_LOCALE") else {
         return;
     };
     let locale = CString::new(locale).unwrap();
@@ -358,7 +358,7 @@ fn locale_contract_in_isolated_processes() {
         assert!(
             std::process::Command::new(std::env::current_exe().unwrap())
                 .args(["--exact", "locale_child", "--nocapture"])
-                .env("HMUX_STYLE_TEST_LOCALE", locale)
+                .env("TIRI_STYLE_TEST_LOCALE", locale)
                 .status()
                 .unwrap()
                 .success(),

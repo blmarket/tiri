@@ -1,5 +1,5 @@
 //! Exercise the public substitution API's owned result.
-use hmux::src::regsub::regsub_cstring;
+use tiri::src::regsub::regsub_cstring;
 use std::ffi::CStr;
 
 #[test]

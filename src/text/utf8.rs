@@ -839,7 +839,7 @@ mod tests {
                 (0xE013, 0),
                 (0xE020, 1),
                 (0xE040, 1),
-                ('z' as i32, 2),
+                ('z' as wchar_t, 2),
             ] {
                 assert_eq!(
                     utf8_find_in_width_cache(codepoint),
@@ -862,14 +862,29 @@ mod tests {
             ] {
                 utf8_add_to_width_cache(CStr::from_bytes_until_nul(entry).unwrap());
             }
-            for codepoint in [0xE030, 0xE041, 0xE022, 'a' as i32, 'b' as i32, '(' as i32] {
+            for codepoint in [
+                0xE030,
+                0xE041,
+                0xE022,
+                'a' as wchar_t,
+                'b' as wchar_t,
+                '(' as wchar_t,
+            ] {
                 assert!(
                     utf8_find_in_width_cache(codepoint).is_none(),
                     "unexpected U+{codepoint:04X}"
                 );
             }
 
-            for codepoint in [0xE010, 0xE011, 0xE012, 0xE013, 0xE020, 0xE040, 'z' as i32] {
+            for codepoint in [
+                0xE010,
+                0xE011,
+                0xE012,
+                0xE013,
+                0xE020,
+                0xE040,
+                'z' as wchar_t,
+            ] {
                 UTF8_WIDTHS.lock().unwrap().remove(codepoint);
             }
         }

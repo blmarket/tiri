@@ -1,6 +1,6 @@
-use hmux::src::options::*;
-use hmux::src::shared::colour::{colour_palette, COLOUR_FLAG_256};
-use hmux::src::style::colour::*;
+use tiri::src::options::*;
+use tiri::src::shared::colour::{colour_palette, COLOUR_FLAG_256};
+use tiri::src::style::colour::*;
 use std::ptr::null_mut;
 
 #[test]
@@ -60,7 +60,7 @@ fn option_reload_replaces_defaults_without_changing_overrides() {
     unsafe {
         let mut oo_owner = options_create(None);
         let oo = &raw mut *oo_owner;
-        let table = &raw const hmux::src::options_table::options_table;
+        let table = &raw const tiri::src::options_table::options_table;
         let definition = (*table)
             .iter()
             .find(|oe| oe.name == Some(c"pane-colours"))

@@ -1,4 +1,4 @@
-//! Application compatibility over hmux-rt and hmux-buffer.
+//! Application compatibility over tiri-rt and tiri-buffer.
 //!
 //! Streams own their buffers. Task handles own their cancellable futures;
 //! callbacks run without registry borrows. Descriptor leases are
@@ -21,10 +21,10 @@ pub struct bufferevent_ops {
     _private: [u8; 0],
 }
 /// Create a task-owned registration; no raw descriptor lookup survives this call.
-pub(crate) fn io(fd: BorrowedFd<'_>) -> std::io::Result<hmux_rt::mio::Io> {
+pub(crate) fn io(fd: BorrowedFd<'_>) -> std::io::Result<tiri_rt::mio::Io> {
     // Retain the open file description through callback cancellation.
     let lease = fd.try_clone_to_owned()?;
-    hmux_rt::mio::Io::new(lease)
+    tiri_rt::mio::Io::new(lease)
 }
 /// Translate an owned I/O error at the remaining C-style callback boundary.
 pub(crate) fn io_status(result: std::io::Result<()>) -> i32 {
@@ -32,7 +32,8 @@ pub(crate) fn io_status(result: std::io::Result<()>) -> i32 {
         Ok(()) => 0,
         Err(error) => {
             unsafe {
-                *libc::__errno_location() = error.raw_os_error().unwrap_or(libc::EIO);
+                *crate::src::ffi::libc::__errno_location() =
+                    error.raw_os_error().unwrap_or(libc::EIO);
             }
             -1
         }
@@ -40,7 +41,7 @@ pub(crate) fn io_status(result: std::io::Result<()>) -> i32 {
 }
 /// Free compatibility streams before dropping the runtime that drives them.
 /// Taking ownership keeps shutdown outside an active runtime poll.
-pub fn shutdown_runtime(runtime: hmux_rt::mio::Runtime) {
+pub fn shutdown_runtime(runtime: tiri_rt::mio::Runtime) {
     streams::clear();
     // The runtime clears its current handle after destructors run.
     drop(runtime);

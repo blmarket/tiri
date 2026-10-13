@@ -1,6 +1,6 @@
 //! Isolated option-name regressions for set-option/show-options parsing.
 
-use hmux::src::options::{options_match_owned, options_parse_owned, OptionMatchFailure};
+use tiri::src::options::{options_match_owned, options_parse_owned, OptionMatchFailure};
 use std::ffi::CString;
 
 #[derive(Debug, PartialEq, Eq)]
