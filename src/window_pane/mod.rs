@@ -1,5 +1,6 @@
 //! Pane implementation. Window state is accessed through the Window trait.
 use crate::src::format::bytes::nullable_cstr;
+use crate::src::server_client::ClientRegistry;
 use crate::src::session::Session;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::window::WindowRef;
@@ -58,7 +59,6 @@ use crate::src::reactor::{
 use crate::src::screen::{screen_init, screen_resize, screen_set_default_cursor, screen_set_title};
 pub use api::WindowPane;
 
-use crate::src::server::clients;
 use crate::src::server::{marked_pane, server_check_marked};
 use crate::src::server_client::Client;
 use crate::src::server_fn::{
@@ -789,10 +789,10 @@ unsafe fn window_pane_read_callback(owner: &Rc<std::cell::UnsafeCell<window_pane
         }
     }
     log_debug(format_args!("%{} has {} bytes", { (*wp).id }, { size }));
-    let mut registry_c_owner = clients.first();
+    let mut registry_c_owner = ClientRegistry::first();
     while let Some(client) = registry_c_owner {
         client.control_write_output(owner);
-        registry_c_owner = clients.next(&client);
+        registry_c_owner = ClientRegistry::next(&client);
     }
     input_parse_pane(owner);
     let _ = (*wp).event.with_ptr(|event| unsafe {
@@ -1860,7 +1860,7 @@ unsafe fn window_get_bg_client(
 ) -> ::core::ffi::c_int {
     let mut wp = wp_owner.get();
     let mut loop_0: Option<ClientRef> = None;
-    let mut registry_loop_0_owner = clients.first();
+    let mut registry_loop_0_owner = ClientRegistry::first();
     loop_0 = registry_loop_0_owner.clone();
     while !loop_0.is_none() {
         if !(loop_0.as_ref().expect("live client").flags() & CLIENT_UNATTACHEDFLAGS as uint64_t
@@ -1886,7 +1886,7 @@ unsafe fn window_get_bg_client(
         {
             return loop_0.as_ref().expect("live client").borrow_terminal().bg;
         }
-        registry_loop_0_owner = clients.next(
+        registry_loop_0_owner = ClientRegistry::next(
             registry_loop_0_owner
                 .as_ref()
                 .expect("current registry client"),
@@ -1903,12 +1903,12 @@ unsafe fn window_pane_get_bg_control_client(
     if colour == -1 {
         return -1;
     }
-    let mut cursor = clients.first();
+    let mut cursor = ClientRegistry::first();
     while let Some(client) = cursor {
         if client.is_control() {
             return colour;
         }
-        cursor = clients.next(&client);
+        cursor = ClientRegistry::next(&client);
     }
     -1
 }
@@ -1918,7 +1918,7 @@ unsafe fn window_pane_get_fg(
 ) -> ::core::ffi::c_int {
     let mut wp = wp_owner.get();
     let mut loop_0: Option<ClientRef> = None;
-    let mut registry_loop_0_owner = clients.first();
+    let mut registry_loop_0_owner = ClientRegistry::first();
     loop_0 = registry_loop_0_owner.clone();
     while !loop_0.is_none() {
         if !(loop_0.as_ref().expect("live client").flags() & CLIENT_UNATTACHEDFLAGS as uint64_t
@@ -1944,7 +1944,7 @@ unsafe fn window_pane_get_fg(
         {
             return loop_0.as_ref().expect("live client").borrow_terminal().fg;
         }
-        registry_loop_0_owner = clients.next(
+        registry_loop_0_owner = ClientRegistry::next(
             registry_loop_0_owner
                 .as_ref()
                 .expect("current registry client"),
@@ -1961,12 +1961,12 @@ unsafe fn window_pane_get_fg_control_client(
     if colour == -1 {
         return -1;
     }
-    let mut cursor = clients.first();
+    let mut cursor = ClientRegistry::first();
     while let Some(client) = cursor {
         if client.is_control() {
             return colour;
         }
-        cursor = clients.next(&client);
+        cursor = ClientRegistry::next(&client);
     }
     -1
 }
@@ -1982,7 +1982,7 @@ unsafe fn window_pane_get_theme(
         return THEME_UNKNOWN;
     }
     let window = (*wp).window_handle().expect("live window");
-    let mut registry_loop_0_owner = clients.first();
+    let mut registry_loop_0_owner = ClientRegistry::first();
     loop_0 = registry_loop_0_owner.clone();
     while !loop_0.is_none() {
         if !(loop_0.as_ref().expect("live client").flags() & CLIENT_UNATTACHEDFLAGS as uint64_t
@@ -2012,7 +2012,7 @@ unsafe fn window_pane_get_theme(
                 _ => {}
             }
         }
-        registry_loop_0_owner = clients.next(
+        registry_loop_0_owner = ClientRegistry::next(
             registry_loop_0_owner
                 .as_ref()
                 .expect("current registry client"),

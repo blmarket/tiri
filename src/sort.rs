@@ -1,7 +1,7 @@
 use crate::src::ffi::libc::{strcasecmp, strcmp};
 use crate::src::paste::paste_walk;
-use crate::src::server::clients;
 use crate::src::server_client::Client as _;
+use crate::src::server_client::ClientRegistry;
 use crate::src::session::sessions;
 use std::ffi::CStr;
 
@@ -262,9 +262,9 @@ pub fn sort_get_buffers(sort_crit: &sort_criteria) -> Vec<PasteBufferRef> {
 }
 pub unsafe fn sort_get_clients(sort_crit: *mut sort_criteria) -> Vec<ClientRef> {
     let mut clients_sorted = Vec::new();
-    let mut current = clients.first();
+    let mut current = ClientRegistry::first();
     while let Some(owner) = current {
-        current = clients.next(&owner);
+        current = ClientRegistry::next(&owner);
         let client = &owner;
         if client.flags() & CLIENT_UNATTACHEDFLAGS as uint64_t == 0
             && client.flags() & CLIENT_ATTACHED as uint64_t != 0

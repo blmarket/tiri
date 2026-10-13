@@ -1,4 +1,5 @@
 use crate::src::reactor::Timer;
+use crate::src::server_client::ClientRegistry;
 use hmux_rt::{AsyncRead as _, AsyncWrite as _};
 // Copy a terminal field and release its component borrow before a nested output
 // operation. Writes evaluate their source before borrowing the destination.
@@ -33,7 +34,6 @@ use crate::src::options::{options_get_number, options_get_string};
 use crate::src::reactor;
 use crate::src::reactor::{evbuffer_add, evbuffer_drain, evbuffer_get_length, evbuffer_new};
 use crate::src::screen::screen_mode_display;
-use crate::src::server::clients;
 use crate::src::server_client::Client as _;
 use crate::src::server_fn::server_redraw_client;
 use crate::src::session::Session;
@@ -1094,7 +1094,7 @@ unsafe fn tty_window_offset1(owner: &ClientRef) -> tty_window_view {
 }
 pub unsafe fn tty_update_window_offset(w_owner: &WindowRef) {
     let mut c: Option<ClientRef> = None;
-    let mut registry_c_owner = clients.first();
+    let mut registry_c_owner = ClientRegistry::first();
     c = registry_c_owner.clone();
     while !c.is_none() {
         if !c
@@ -1124,7 +1124,7 @@ pub unsafe fn tty_update_window_offset(w_owner: &WindowRef) {
             tty_update_client_offset(&c.clone().expect("live client"));
         }
         registry_c_owner =
-            clients.next(registry_c_owner.as_ref().expect("current registry client"));
+            ClientRegistry::next(registry_c_owner.as_ref().expect("current registry client"));
         c = registry_c_owner.clone();
     }
 }
@@ -1658,7 +1658,7 @@ pub unsafe fn tty_write(mut cmdfn: impl FnMut(&ClientRef, &tty_ctx), ctx: &mut t
     let Some(mut set_client_cb) = ctx.set_client_cb.take() else {
         return;
     };
-    let mut cursor = clients.first();
+    let mut cursor = ClientRegistry::first();
     while let Some(owner) = cursor {
         if tty_client_ready(ctx, &owner) {
             let state = set_client_cb(ctx, &owner);
@@ -1669,7 +1669,7 @@ pub unsafe fn tty_write(mut cmdfn: impl FnMut(&ClientRef, &tty_ctx), ctx: &mut t
                 cmdfn(&owner, ctx);
             }
         }
-        cursor = clients.next(&owner);
+        cursor = ClientRegistry::next(&owner);
     }
     if ctx.set_client_cb.is_none() {
         ctx.set_client_cb = Some(set_client_cb);

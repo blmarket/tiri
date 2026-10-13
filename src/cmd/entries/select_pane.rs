@@ -9,11 +9,11 @@ use crate::src::events_payload::{
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::options::{options_get_string, options_set_string};
-use crate::src::server::clients;
 use crate::src::server::{
     marked_pane, server_check_marked, server_clear_marked, server_is_marked, server_set_marked,
 };
 use crate::src::server_client::Client as _;
+use crate::src::server_client::ClientRegistry;
 use crate::src::server_fn::{
     server_redraw_client, server_redraw_window_borders, server_status_window,
 };
@@ -83,7 +83,7 @@ pub static cmd_last_pane_entry: cmd_entry = {
 };
 unsafe fn cmd_select_pane_redraw(w_owner: &WindowRef) {
     let mut c: Option<ClientRef> = None;
-    let mut registry_c_owner = clients.first();
+    let mut registry_c_owner = ClientRegistry::first();
     c = registry_c_owner.clone();
     while !c.is_none() {
         if !(c
@@ -139,7 +139,7 @@ unsafe fn cmd_select_pane_redraw(w_owner: &WindowRef) {
             }
         }
         registry_c_owner =
-            clients.next(registry_c_owner.as_ref().expect("current registry client"));
+            ClientRegistry::next(registry_c_owner.as_ref().expect("current registry client"));
         c = registry_c_owner.clone();
     }
 }

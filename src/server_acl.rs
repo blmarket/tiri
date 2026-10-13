@@ -2,8 +2,8 @@ use crate::src::cmd::queue::cmdq_print;
 use crate::src::ffi::libc::{getgrgid, getpwuid, getuid};
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
-use crate::src::server::clients;
 use crate::src::server_client::Client as _;
+use crate::src::server_client::ClientRegistry;
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{__gid_t, __uid_t, gid_t, id_t, uid_t};
 use crate::src::shared::account::{group, passwd};
@@ -103,7 +103,7 @@ unsafe fn server_acl_check(c: &ClientRef) -> Option<server_acl_entry> {
 }
 unsafe fn server_acl_update() {
     let mut c: Option<ClientRef> = None;
-    let mut registry_c_owner = clients.first();
+    let mut registry_c_owner = ClientRegistry::first();
     c = registry_c_owner.clone();
     while !c.is_none() {
         match server_acl_check(c.as_ref().expect("live client")) {
@@ -121,7 +121,7 @@ unsafe fn server_acl_update() {
                 .update_flags(0, !(!CLIENT_READONLY as uint64_t)),
         }
         registry_c_owner =
-            clients.next(registry_c_owner.as_ref().expect("current registry client"));
+            ClientRegistry::next(registry_c_owner.as_ref().expect("current registry client"));
         c = registry_c_owner.clone();
     }
 }

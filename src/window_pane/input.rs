@@ -53,8 +53,8 @@ use crate::src::screen_write::{
     screen_write_scrollup, screen_write_setselection, screen_write_start,
     screen_write_start_callback, screen_write_start_pane, screen_write_stop,
 };
-use crate::src::server::clients;
 use crate::src::server_client::Client as _;
+use crate::src::server_client::ClientRegistry;
 use crate::src::server_fn::{server_redraw_window_borders, server_status_window};
 use crate::src::session::Session as _;
 use crate::src::shared::client::ClientRef;
@@ -5680,7 +5680,7 @@ unsafe fn input_add_request(
         .window_observer()
         .upgrade()
         .expect("pane window");
-    let mut registry_loop_0_owner = clients.first();
+    let mut registry_loop_0_owner = ClientRegistry::first();
     loop_0 = registry_loop_0_owner.clone();
     while !loop_0.is_none() {
         if !(loop_0.as_ref().expect("live client").flags() & CLIENT_UNATTACHEDFLAGS as uint64_t
@@ -5706,7 +5706,7 @@ unsafe fn input_add_request(
         {
             c = loop_0;
         }
-        registry_loop_0_owner = clients.next(
+        registry_loop_0_owner = ClientRegistry::next(
             registry_loop_0_owner
                 .as_ref()
                 .expect("current registry client"),

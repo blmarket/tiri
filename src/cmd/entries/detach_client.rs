@@ -4,8 +4,8 @@ use crate::src::cmd::queue::{
 };
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::compat::imsg::*;
-use crate::src::server::clients;
 use crate::src::server_client::Client;
+use crate::src::server_client::ClientRegistry;
 use crate::src::shared::arguments::args_parse;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::*;
@@ -106,24 +106,24 @@ unsafe fn cmd_detach_client_exec(
         };
         let observer = std::rc::Rc::downgrade(&session);
         drop(session);
-        let mut cursor = clients.first();
+        let mut cursor = ClientRegistry::first();
         while let Some(client) = cursor {
             if client.attached_session().ptr_eq(&observer) {
                 detach(&client);
             }
-            cursor = clients.next(&client);
+            cursor = ClientRegistry::next(&client);
         }
         return CMD_RETURN_STOP;
     }
     if args_has(args, b'a') != 0 {
-        let mut cursor = clients.first();
+        let mut cursor = ClientRegistry::first();
         while let Some(client) = cursor {
             if client.attached_session().upgrade().is_some()
                 && !std::rc::Rc::ptr_eq(&client, &target)
             {
                 detach(&client);
             }
-            cursor = clients.next(&client);
+            cursor = ClientRegistry::next(&client);
         }
         return CMD_RETURN_NORMAL;
     }

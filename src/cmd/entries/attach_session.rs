@@ -8,7 +8,7 @@ use crate::src::ffi::libc::{getuid, strcspn};
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
-use crate::src::server::clients;
+use crate::src::server_client::ClientRegistry;
 use crate::src::window::Window as _;
 use std::ffi::CStr;
 
@@ -183,7 +183,7 @@ pub unsafe fn cmd_attach_session(
             } else {
                 msgtype = MSG_DETACH;
             }
-            let mut registry_c_loop_owner = clients.first();
+            let mut registry_c_loop_owner = ClientRegistry::first();
             c_loop = registry_c_loop_owner.clone();
             while !c_loop.is_none() {
                 if !(!crate::src::shared::rc::same(
@@ -198,7 +198,7 @@ pub unsafe fn cmd_attach_session(
                 {
                     c_loop.clone().expect("live client").detach(msgtype);
                 }
-                registry_c_loop_owner = clients.next(
+                registry_c_loop_owner = ClientRegistry::next(
                     registry_c_loop_owner
                         .as_ref()
                         .expect("current registry client"),
@@ -234,7 +234,7 @@ pub unsafe fn cmd_attach_session(
             } else {
                 msgtype = MSG_DETACH;
             }
-            let mut registry_c_loop_owner = clients.first();
+            let mut registry_c_loop_owner = ClientRegistry::first();
             c_loop = registry_c_loop_owner.clone();
             while !c_loop.is_none() {
                 if !(!crate::src::shared::rc::same(
@@ -249,7 +249,7 @@ pub unsafe fn cmd_attach_session(
                 {
                     c_loop.clone().expect("live client").detach(msgtype);
                 }
-                registry_c_loop_owner = clients.next(
+                registry_c_loop_owner = ClientRegistry::next(
                     registry_c_loop_owner
                         .as_ref()
                         .expect("current registry client"),

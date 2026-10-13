@@ -19,9 +19,9 @@ use crate::src::options_parse::{
 use crate::src::options_table::{options_other_names, options_table};
 use crate::src::resize::recalculate_sizes;
 use crate::src::screen_redraw::redraw_invalidate_all_scenes;
-use crate::src::server::clients;
 use crate::src::server::current_time;
 use crate::src::server_client::Client as _;
+use crate::src::server_client::ClientRegistry;
 use crate::src::shared::window::WindowRef;
 
 use crate::src::server_fn::server_redraw_client;
@@ -1388,7 +1388,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
         || strncmp(name, c"dark-theme-".as_ptr(), 11 as size_t) == 0 as ::core::ffi::c_int
         || strncmp(name, c"light-theme-".as_ptr(), 12 as size_t) == 0 as ::core::ffi::c_int
     {
-        let mut registry_loop_0_owner = clients.first();
+        let mut registry_loop_0_owner = ClientRegistry::first();
         loop_0 = registry_loop_0_owner.clone();
         while !loop_0.is_none() {
             if let Some(client) = loop_0.as_ref() {
@@ -1406,7 +1406,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
                 }
             };
             server_redraw_client(loop_0.as_ref().expect("live client"));
-            registry_loop_0_owner = clients.next(
+            registry_loop_0_owner = ClientRegistry::next(
                 registry_loop_0_owner
                     .as_ref()
                     .expect("current registry client"),
@@ -1448,11 +1448,11 @@ pub unsafe fn options_push_changes(name: &CStr) {
         }
     }
     if strcmp(name, c"key-table".as_ptr()) == 0 as ::core::ffi::c_int {
-        let mut registry_loop_0_owner = clients.first();
+        let mut registry_loop_0_owner = ClientRegistry::first();
         loop_0 = registry_loop_0_owner.clone();
         while !loop_0.is_none() {
             loop_0.clone().expect("live client").set_key_table(None);
-            registry_loop_0_owner = clients.next(
+            registry_loop_0_owner = ClientRegistry::next(
                 registry_loop_0_owner
                     .as_ref()
                     .expect("current registry client"),
@@ -1461,7 +1461,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
         }
     }
     if strcmp(name, c"user-keys".as_ptr()) == 0 as ::core::ffi::c_int {
-        let mut registry_loop_0_owner = clients.first();
+        let mut registry_loop_0_owner = ClientRegistry::first();
         loop_0 = registry_loop_0_owner.clone();
         while !loop_0.is_none() {
             {
@@ -1471,7 +1471,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
                     tty_keys_build(&mut *terminal);
                 }
             }
-            registry_loop_0_owner = clients.next(
+            registry_loop_0_owner = ClientRegistry::next(
                 registry_loop_0_owner
                     .as_ref()
                     .expect("current registry client"),
@@ -1560,7 +1560,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
         }
     }
     recalculate_sizes();
-    let mut registry_loop_0_owner = clients.first();
+    let mut registry_loop_0_owner = ClientRegistry::first();
     loop_0 = registry_loop_0_owner.clone();
     while !loop_0.is_none() {
         if !loop_0
@@ -1572,7 +1572,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
         {
             server_redraw_client(loop_0.as_ref().expect("live client"));
         }
-        registry_loop_0_owner = clients.next(
+        registry_loop_0_owner = ClientRegistry::next(
             registry_loop_0_owner
                 .as_ref()
                 .expect("current registry client"),

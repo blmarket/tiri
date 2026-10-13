@@ -1,7 +1,7 @@
 //! Session-owned cache publication used by creation and the sizing pass.
 use super::*;
-use crate::src::server::clients;
 use crate::src::server_client::Client;
+use crate::src::server_client::ClientRegistry;
 
 /// Publish the Session-owned state used by the subsequent client/window sizing
 /// passes. A removed Session can still be retained by a closing client: preserve
@@ -14,7 +14,7 @@ pub(super) unsafe fn recalculate_size_state() {
         status_update_cache(&mut *owner.get());
         cursor = sessions::after((*owner.get()).name.as_bytes());
     }
-    let mut cursor = clients.first();
+    let mut cursor = ClientRegistry::first();
     while let Some(owner) = cursor {
         if owner.counts_as_attached() {
             if let Some(session) = owner.attached_session().upgrade() {
@@ -22,7 +22,7 @@ pub(super) unsafe fn recalculate_size_state() {
                 state.attached = state.attached.wrapping_add(1);
             }
         }
-        cursor = clients.next(&owner);
+        cursor = ClientRegistry::next(&owner);
     }
 }
 

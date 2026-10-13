@@ -945,9 +945,9 @@ impl Client for ClientRef {
             return false;
         }
         if client.flags & CLIENT_IGNORESIZE as u64 != 0 {
-            let mut next = clients.first();
+            let mut next = ClientRegistry::first();
             while let Some(owner) = next {
-                next = clients.next(&owner);
+                next = ClientRegistry::next(&owner);
                 let other = &*owner.get();
                 if other.session.upgrade().is_some()
                     && other.flags & (CLIENT_NOSIZEFLAGS | CLIENT_IGNORESIZE) as u64 == 0

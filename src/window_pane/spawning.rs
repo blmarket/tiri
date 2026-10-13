@@ -29,9 +29,9 @@ use crate::src::options::{options_get_number, options_get_string, options_set_nu
 use crate::src::proc::proc_clear_signals;
 use crate::src::reactor::BufferEvent;
 use crate::src::screen::screen_reinit;
-use crate::src::server::clients;
 use crate::src::server::server_proc;
 use crate::src::server_client::Client;
+use crate::src::server_client::ClientRegistry;
 use crate::src::window::Window as _;
 
 use crate::src::session::Session;
@@ -324,7 +324,7 @@ pub(super) unsafe fn spawn_pane(
             (*source_pane).offset.used = 0 as size_t;
             (*source_pane).base_offset = 0 as size_t;
             (*source_pane).pipe_offset.used = 0 as size_t;
-            let mut registry_loop_0_owner = clients.first();
+            let mut registry_loop_0_owner = ClientRegistry::first();
             loop_0 = registry_loop_0_owner.clone();
             while !loop_0.is_none() {
                 if loop_0.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0 {
@@ -333,7 +333,7 @@ pub(super) unsafe fn spawn_pane(
                         source_pane_owner.as_ref().expect("respawn pane"),
                     );
                 }
-                registry_loop_0_owner = clients.next(
+                registry_loop_0_owner = ClientRegistry::next(
                     registry_loop_0_owner
                         .as_ref()
                         .expect("current registry client"),

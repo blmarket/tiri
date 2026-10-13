@@ -12,8 +12,8 @@ use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::prompt_history::prompt_load_history;
-use crate::src::server::clients;
 use crate::src::server_client::Client as _;
+use crate::src::server_client::ClientRegistry;
 use crate::src::session::sessions;
 
 use crate::src::session::Session as _;
@@ -74,7 +74,7 @@ unsafe fn cfg_done() -> cmd_retval {
 pub unsafe fn start_cfg() {
     let mut c: Option<ClientRef> = None;
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let mut registry_c_owner = clients.first();
+    let mut registry_c_owner = ClientRegistry::first();
     c = registry_c_owner.clone();
     cfg_client = registry_c_owner
         .as_ref()
@@ -292,7 +292,7 @@ pub unsafe fn cfg_print_causes(item_handle: &std::rc::Rc<std::cell::UnsafeCell<c
 }
 pub unsafe fn cfg_show_causes(s_owner: Option<&SessionRef>) {
     let mut s = s_owner.cloned();
-    let mut registry_c_owner = clients.first();
+    let mut registry_c_owner = ClientRegistry::first();
     let mut c: Option<ClientRef> = registry_c_owner.clone();
     if CFG_CAUSES.lock().unwrap().is_empty() {
         return;

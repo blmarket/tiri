@@ -4,6 +4,7 @@ use crate::src::grid::{grid_get_cell, grid_set_cell};
 use crate::src::hyperlinks::{hyperlinks_get, hyperlinks_put};
 use crate::src::reactor::Interests;
 use crate::src::server_client::Client;
+use crate::src::server_client::ClientRegistry;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::colour::colour_palette;
 use crate::src::shared::command::{cmd, cmd_retval};
@@ -1516,7 +1517,7 @@ unsafe fn finish_buffer(owner: &Rc<UnsafeCell<window_pane>>) {
     }
     let mut off = true;
     let mut attached = false;
-    let mut cursor = clients.first();
+    let mut cursor = ClientRegistry::first();
     while let Some(client) = cursor {
         if client.attached_session().upgrade().is_some() {
             attached = true;
@@ -1533,7 +1534,7 @@ unsafe fn finish_buffer(owner: &Rc<UnsafeCell<window_pane>>) {
                 }
             }
         }
-        cursor = clients.next(&client);
+        cursor = ClientRegistry::next(&client);
     }
     if !attached {
         off = false;
@@ -1553,7 +1554,7 @@ unsafe fn finish_buffer(owner: &Rc<UnsafeCell<window_pane>>) {
             if (*pane).pipe_fd.is_some() {
                 (*pane).pipe_offset.used = (*pane).pipe_offset.used.wrapping_sub(base);
             }
-            let mut cursor = clients.first();
+            let mut cursor = ClientRegistry::first();
             while let Some(client) = cursor {
                 if client.attached_session().upgrade().is_some() && client.is_control() {
                     client.with_output_offset(owner.id(), |offset, blocked| {
@@ -1564,7 +1565,7 @@ unsafe fn finish_buffer(owner: &Rc<UnsafeCell<window_pane>>) {
                         }
                     });
                 }
-                cursor = clients.next(&client);
+                cursor = ClientRegistry::next(&client);
             }
             (*pane).base_offset = count;
         } else {

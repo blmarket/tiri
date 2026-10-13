@@ -1,8 +1,8 @@
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::resize::recalculate_sizes;
-use crate::src::server::clients;
 use crate::src::server::marked_pane;
 use crate::src::server_client::Client as _;
+use crate::src::server_client::ClientRegistry;
 use crate::src::session::session_group_count;
 use crate::src::session::sessions;
 use crate::src::session::Session;
@@ -29,9 +29,9 @@ pub unsafe fn server_status_client(c: &ClientRef) {
     c.request_redraw(CLIENT_REDRAWSTATUS as u64);
 }
 pub unsafe fn server_redraw_session(session: &SessionRef) {
-    let mut next = clients.first();
+    let mut next = ClientRegistry::first();
     while let Some(client_owner) = next {
-        next = clients.next(&client_owner);
+        next = ClientRegistry::next(&client_owner);
         let client = &client_owner;
         if client
             .attached_session()
@@ -53,9 +53,9 @@ pub unsafe fn server_redraw_session_group(session: &SessionRef) {
 }
 
 pub unsafe fn server_status_session(session: &SessionRef) {
-    let mut next = clients.first();
+    let mut next = ClientRegistry::first();
     while let Some(client_owner) = next {
-        next = clients.next(&client_owner);
+        next = ClientRegistry::next(&client_owner);
         let client = &client_owner;
         if client
             .attached_session()
@@ -77,9 +77,9 @@ pub unsafe fn server_status_session_group(session: &SessionRef) {
 }
 
 pub unsafe fn server_redraw_window(window: &WindowRef) {
-    let mut next = clients.first();
+    let mut next = ClientRegistry::first();
     while let Some(client_owner) = next {
-        next = clients.next(&client_owner);
+        next = ClientRegistry::next(&client_owner);
         let client = &client_owner;
         let matches = client
             .attached_session()
@@ -98,9 +98,9 @@ pub unsafe fn server_redraw_window(window: &WindowRef) {
     }
 }
 pub unsafe fn server_redraw_window_menu(window_owner: &WindowRef) {
-    let mut next = clients.first();
+    let mut next = ClientRegistry::first();
     while let Some(client_owner) = next {
-        next = clients.next(&client_owner);
+        next = ClientRegistry::next(&client_owner);
         let client = &client_owner;
         let matches = client
             .attached_session()
@@ -119,9 +119,9 @@ pub unsafe fn server_redraw_window_menu(window_owner: &WindowRef) {
     }
 }
 pub unsafe fn server_redraw_window_borders(window: &WindowRef) {
-    let mut next = clients.first();
+    let mut next = ClientRegistry::first();
     while let Some(client_owner) = next {
-        next = clients.next(&client_owner);
+        next = ClientRegistry::next(&client_owner);
         let client = &client_owner;
         let matches = client
             .attached_session()
@@ -149,23 +149,23 @@ pub unsafe fn server_status_window(window: &WindowRef) {
     }
 }
 pub unsafe fn server_lock() {
-    let mut next = clients.first();
+    let mut next = ClientRegistry::first();
     while let Some(owner) = next {
         if !owner.attached_session().upgrade().is_none() {
             server_lock_client(&owner);
         }
-        next = clients.next(&owner);
+        next = ClientRegistry::next(&owner);
     }
 }
 pub unsafe fn server_lock_session(session_owner: &SessionRef) {
     let observer = std::rc::Rc::downgrade(session_owner);
-    let mut next = clients.first();
+    let mut next = ClientRegistry::first();
     while let Some(owner) = next {
         let matches = owner.attached_session().ptr_eq(&observer);
         if matches {
             server_lock_client(&owner);
         }
-        next = clients.next(&owner);
+        next = ClientRegistry::next(&owner);
     }
 }
 pub unsafe fn server_lock_client(client_owner: &ClientRef) {
@@ -419,7 +419,7 @@ pub unsafe fn server_destroy_session(source: &SessionRef) {
     } else {
         None
     };
-    let mut registry_c_owner = clients.first();
+    let mut registry_c_owner = ClientRegistry::first();
     c = registry_c_owner.clone();
     while !c.is_none() {
         if !(!crate::src::shared::rc::same(
@@ -441,7 +441,7 @@ pub unsafe fn server_destroy_session(source: &SessionRef) {
                 .reattach_after_session_destroy(target);
         }
         registry_c_owner =
-            clients.next(registry_c_owner.as_ref().expect("current registry client"));
+            ClientRegistry::next(registry_c_owner.as_ref().expect("current registry client"));
         c = registry_c_owner.clone();
     }
     recalculate_sizes();

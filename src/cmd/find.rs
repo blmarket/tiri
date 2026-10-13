@@ -6,9 +6,9 @@ use crate::src::ffi::libc::{fnmatch, strchr, strcmp, strlcat, strlen, strncmp};
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::{fatalx, log_cstr, log_debug, log_pointer};
-use crate::src::server::clients;
 use crate::src::server::{marked_pane, server_check_marked};
 use crate::src::server_client::Client;
+use crate::src::server_client::ClientRegistry;
 use crate::src::session::sessions;
 use crate::src::session::Session;
 use crate::src::shared::client::ClientRef;
@@ -101,9 +101,9 @@ unsafe fn cmd_find_client_better(c: &ClientRef, than: Option<&ClientRef>) -> boo
 }
 pub unsafe fn cmd_find_best_client(s: &SessionRef) -> Option<ClientRef> {
     let mut best: Option<ClientRef> = None;
-    let mut cursor = clients.first();
+    let mut cursor = ClientRegistry::first();
     while let Some(owner) = cursor {
-        cursor = clients.next(&owner);
+        cursor = ClientRegistry::next(&owner);
         let Some(attached) = owner.attached_session().upgrade() else {
             continue;
         };
@@ -1642,7 +1642,7 @@ pub unsafe fn cmd_find_client(
     let target_bytes = CStr::from_ptr(target).to_bytes();
     let trimmed = target_bytes.strip_suffix(b":").unwrap_or(target_bytes);
     let copy = CString::new(trimmed).expect("client target came from a C string");
-    let mut found = clients.first();
+    let mut found = ClientRegistry::first();
     while let Some(client) = found.as_ref() {
         if client.attached_session().upgrade().is_some() {
             if client
@@ -1661,7 +1661,7 @@ pub unsafe fn cmd_find_client(
                 }
             }
         }
-        found = clients.next(client);
+        found = ClientRegistry::next(client);
     }
     if found.is_none() && quiet == 0 {
         cmdq_error(item_handle.expect("command queue item"), |out| {

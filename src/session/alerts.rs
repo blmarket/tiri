@@ -1,8 +1,8 @@
 //! Session alert delivery preserves association order and per-cycle deduplication.
 use super::*;
 use crate::src::events::events_fire_winlink;
-use crate::src::server::clients;
 use crate::src::server_client::Client;
+use crate::src::server_client::ClientRegistry;
 use crate::src::server_fn::server_status_session;
 use crate::src::shared::alerts::{ALERT_ANY, ALERT_CURRENT, ALERT_OTHER};
 use crate::src::shared::window::WindowRef;
@@ -179,7 +179,7 @@ unsafe fn alerts_set_message(mut wl: refbox::Weak<winlink>, type_0: &CStr, optio
         options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
         option,
     ) as i32;
-    let mut cursor = clients.first();
+    let mut cursor = ClientRegistry::first();
     while let Some(client) = cursor {
         if client
             .attached_session()
@@ -193,6 +193,6 @@ unsafe fn alerts_set_message(mut wl: refbox::Weak<winlink>, type_0: &CStr, optio
                 wl.get_unchecked().idx,
             );
         }
-        cursor = clients.next(&client);
+        cursor = ClientRegistry::next(&client);
     }
 }

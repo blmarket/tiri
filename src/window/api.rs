@@ -6,6 +6,7 @@
 //! let references or pointers escape.
 
 use super::*;
+use crate::src::server_client::ClientRegistry;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::menu::menu_data;
 use crate::src::shared::window::WindowRef;
@@ -689,12 +690,12 @@ impl Window for WindowRef {
         {
             return false;
         }
-        let mut cursor = clients.first();
+        let mut cursor = ClientRegistry::first();
         while let Some(client) = cursor {
             if client.focuses_window(self) {
                 return true;
             }
-            cursor = clients.next(&client);
+            cursor = ClientRegistry::next(&client);
         }
         false
     }

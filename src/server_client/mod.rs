@@ -116,65 +116,76 @@ pub struct ClientRegistry {
     ordered: Vec<ClientRef>,
 }
 
-impl ClientRegistry {
-    pub(crate) const fn new() -> Self {
-        Self {
+thread_local! {
+    static CLIENTS: std::cell::RefCell<ClientRegistry> = const {
+        std::cell::RefCell::new(ClientRegistry {
             ordered: Vec::new(),
-        }
+        })
+    };
+}
+
+impl ClientRegistry {
+    pub fn first() -> Option<ClientRef> {
+        CLIENTS.with_borrow(|registry| registry.ordered.first().cloned())
     }
 
-    pub(crate) fn first(&self) -> Option<ClientRef> {
-        self.ordered.first().cloned()
-    }
-
-    pub(crate) fn next(&self, current: &ClientRef) -> Option<ClientRef> {
+    /// Follow the client's own successor link; this deliberately does not
+    /// borrow the registry so traversal survives removal of `current`.
+    pub fn next(current: &ClientRef) -> Option<ClientRef> {
         unsafe { (*current.get()).registry_next.upgrade() }
     }
 
-    pub(crate) fn push_back(&mut self, owner: ClientRef) {
-        assert!(
-            !self
-                .ordered
-                .iter()
-                .any(|current| std::rc::Rc::ptr_eq(current, &owner)),
-            "client registered twice"
-        );
-        unsafe {
-            if let Some(previous) = self.ordered.last() {
-                (*previous.get()).registry_next = std::rc::Rc::downgrade(&owner);
+    pub fn push_back(owner: ClientRef) {
+        CLIENTS.with_borrow_mut(|registry| {
+            assert!(
+                !registry
+                    .ordered
+                    .iter()
+                    .any(|current| std::rc::Rc::ptr_eq(current, &owner)),
+                "client registered twice"
+            );
+            unsafe {
+                if let Some(previous) = registry.ordered.last() {
+                    (*previous.get()).registry_next = std::rc::Rc::downgrade(&owner);
+                }
+                (*owner.get()).registry_next = std::rc::Weak::new();
             }
-            (*owner.get()).registry_next = std::rc::Weak::new();
-        }
-        self.ordered.push(owner);
+            registry.ordered.push(owner);
+        })
     }
 
     /// Transfer the registry's strong reference to explicit cleanup, preserving
     /// the removed client's successor so an in-progress traversal can continue.
-    pub(crate) fn remove(&mut self, observer: &ClientWeak) -> Option<ClientRef> {
-        let index = self
-            .ordered
-            .iter()
-            .position(|owner| std::rc::Weak::ptr_eq(&std::rc::Rc::downgrade(owner), observer))?;
-        if index > 0 {
-            unsafe {
-                (*self.ordered[index - 1].get()).registry_next =
-                    (*self.ordered[index].get()).registry_next.clone();
+    pub fn remove(observer: &ClientWeak) -> Option<ClientRef> {
+        CLIENTS.with_borrow_mut(|registry| {
+            let index = registry.ordered.iter().position(|owner| {
+                std::rc::Weak::ptr_eq(&std::rc::Rc::downgrade(owner), observer)
+            })?;
+            if index > 0 {
+                unsafe {
+                    (*registry.ordered[index - 1].get()).registry_next =
+                        (*registry.ordered[index].get()).registry_next.clone();
+                }
             }
-        }
-        Some(self.ordered.remove(index))
+            Some(registry.ordered.remove(index))
+        })
     }
 
-    pub(crate) fn clear(&mut self) {
-        for owner in std::mem::take(&mut self.ordered) {
-            unsafe {
-                (*owner.get()).registry_next = std::rc::Weak::new();
+    pub fn clear() {
+        let owners = CLIENTS.with_borrow_mut(|registry| {
+            let owners = std::mem::take(&mut registry.ordered);
+            for owner in &owners {
+                unsafe {
+                    (*owner.get()).registry_next = std::rc::Weak::new();
+                }
             }
+            owners
+        });
+        for owner in owners {
             server_client_unref_owned(owner);
         }
     }
 }
-
-pub static mut clients: ClientRegistry = ClientRegistry::new();
 
 fn server_client_set_message(c: &mut client, message: Option<CString>) {
     c.message_string = message;
@@ -680,7 +691,7 @@ unsafe fn server_client_how_many() -> u_int {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut n: u_int = 0;
     n = 0 as u_int;
-    let mut registry_c_owner = clients.first();
+    let mut registry_c_owner = ClientRegistry::first();
     c = registry_c_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -690,7 +701,7 @@ unsafe fn server_client_how_many() -> u_int {
             n = n.wrapping_add(1);
         }
         registry_c_owner =
-            clients.next(registry_c_owner.as_ref().expect("current registry client"));
+            ClientRegistry::next(registry_c_owner.as_ref().expect("current registry client"));
         c = registry_c_owner
             .as_ref()
             .map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -961,7 +972,7 @@ unsafe fn server_client_create(fd: OwnedFd) -> ClientRef {
     (*c).flags |= CLIENT_FOCUSED as uint64_t;
     (*c).keytable = key_bindings_get_table(c"root", 1);
     (*c).click_wp = -(1 as ::core::ffi::c_int);
-    clients.push_back(owner.clone());
+    ClientRegistry::push_back(owner.clone());
     log_debug(format_args!("new client {}", log_pointer(c)));
     owner
 }
@@ -1004,7 +1015,7 @@ unsafe fn server_client_attached_lost(c_owner: &ClientRef) {
     while let Some(window_owner) = window_cursor.take() {
         if window_owner.is_latest_client(c_owner) {
             let mut found: Option<ClientRef> = None;
-            let mut registry_loop_0_owner = clients.first();
+            let mut registry_loop_0_owner = ClientRegistry::first();
             loop_0 = registry_loop_0_owner
                 .as_ref()
                 .map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -1022,7 +1033,7 @@ unsafe fn server_client_attached_lost(c_owner: &ClientRef) {
                 {
                     found = registry_loop_0_owner.clone();
                 }
-                registry_loop_0_owner = clients.next(
+                registry_loop_0_owner = ClientRegistry::next(
                     registry_loop_0_owner
                         .as_ref()
                         .expect("current registry client"),
@@ -1213,9 +1224,8 @@ unsafe fn server_client_lost(client_owner: &ClientRef) {
     cmdq_abort_owned_wait(client_owner);
     let files = client_owner.file_handles();
     crate::src::file::client_files_interrupt(files, EINTR);
-    let registry_owner = clients
-        .remove(&Rc::downgrade(client_owner))
-        .expect("registered client owner");
+    let registry_owner =
+        ClientRegistry::remove(&Rc::downgrade(client_owner)).expect("registered client owner");
     log_debug(format_args!("lost client {}", log_pointer(c)));
     if (*c).flags & CLIENT_ATTACHED as uint64_t != 0 {
         server_client_attached_lost(client_owner);
@@ -2755,7 +2765,7 @@ unsafe fn server_client_loop() {
         window_cursor = window_owner.next_window();
         drop(window_owner);
     }
-    let mut registry_c_owner = clients.first();
+    let mut registry_c_owner = ClientRegistry::first();
     while let Some(client_owner) = registry_c_owner {
         let c = client_owner.get();
         server_client_check_exit(&client_owner, 0 as ::core::ffi::c_int);
@@ -2770,7 +2780,7 @@ unsafe fn server_client_loop() {
             server_client_check_redraw(&client_owner);
             server_client_reset_state(&client_owner);
         }
-        registry_c_owner = clients.next(&client_owner);
+        registry_c_owner = ClientRegistry::next(&client_owner);
     }
     let mut window_cursor = windows::first();
     while let Some(window_owner) = window_cursor.take() {
@@ -4050,7 +4060,7 @@ unsafe fn server_client_dispatch_identify(
     }
     if !(*c).flags & CLIENT_EXIT as uint64_t != 0
         && cfg_finished == 0
-        && clients.first().is_some_and(|owner| owner.get() == c)
+        && ClientRegistry::first().is_some_and(|owner| owner.get() == c)
     {
         start_cfg();
     }
@@ -4214,7 +4224,7 @@ unsafe fn server_client_get_flags(c: &client) -> CString {
 unsafe fn server_client_remove_pane(wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
     let pane_id = wp_owner.id();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    let mut registry_c_owner = clients.first();
+    let mut registry_c_owner = ClientRegistry::first();
     c = registry_c_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -4225,7 +4235,7 @@ unsafe fn server_client_remove_pane(wp_owner: &std::rc::Rc<std::cell::UnsafeCell
             (*c).tty.mouse_scrolling_flag = 0 as ::core::ffi::c_int;
         }
         registry_c_owner =
-            clients.next(registry_c_owner.as_ref().expect("current registry client"));
+            ClientRegistry::next(registry_c_owner.as_ref().expect("current registry client"));
         c = registry_c_owner
             .as_ref()
             .map_or(std::ptr::null_mut(), |owner| owner.get());

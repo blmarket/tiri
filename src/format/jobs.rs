@@ -1,4 +1,5 @@
 use crate::src::log::{log_cstr, log_pointer};
+use crate::src::server_client::ClientRegistry;
 use crate::src::shared::client::{ClientRef, ClientWeak};
 // Private job-integration implementation.  This module owns the process-wide
 // format-job cache, per-client cache interaction, job callbacks, and tidy
@@ -334,14 +335,14 @@ unsafe fn format_job_tidy_at(cache: &JobCache, force: i32, now: time_t) {
 
 pub unsafe fn format_tidy_jobs() {
     format_job_tidy_at(&JobCache::Global, 0, time(std::ptr::null_mut()));
-    let mut current = clients.first();
+    let mut current = ClientRegistry::first();
     while let Some(client) = current {
         format_job_tidy_at(
             &JobCache::for_client(Some(&client)),
             0,
             time(std::ptr::null_mut()),
         );
-        current = clients.next(&client);
+        current = ClientRegistry::next(&client);
     }
 }
 

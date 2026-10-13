@@ -1,4 +1,5 @@
 use crate::src::format::bytes::nullable_cstr;
+use crate::src::server_client::ClientRegistry;
 use crate::src::session::Session;
 use std::collections::BTreeMap;
 use std::time::SystemTime;
@@ -29,7 +30,6 @@ use crate::src::menu::{menu_destroy, menu_resize};
 use crate::src::options::options_owner_ptr;
 use crate::src::options::{options_get_number, options_get_number_ref};
 
-use crate::src::server::clients;
 use crate::src::server::{marked_pane, server_check_marked, server_clear_marked};
 use crate::src::server_client::Client;
 use crate::src::server_fn::server_redraw_window;
@@ -423,10 +423,10 @@ unsafe fn window_set_active_pane(
     (*w).active = observer;
     // Selecting a pane ends explicit panning of this window, so every client
     // showing it follows the new active pane.
-    let mut client = clients.first();
+    let mut client = ClientRegistry::first();
     while let Some(current) = client {
         current.reset_pan(Some(window));
-        client = clients.next(&current);
+        client = ClientRegistry::next(&current);
     }
     pane.on_selected(true);
     if options_get_number(global_options, c"focus-events") != 0 {

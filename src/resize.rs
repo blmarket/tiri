@@ -1,8 +1,8 @@
 use crate::src::ffi::libc::sscanf;
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::options::{options_get_number, options_get_string};
-use crate::src::server::clients;
 use crate::src::server_client::Client as _;
+use crate::src::server_client::ClientRegistry;
 use crate::src::session::Session as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::{ClientRef, CLIENT_CONTROL, CLIENT_STATUSOFF};
@@ -24,7 +24,7 @@ pub unsafe fn resize_window(window: &WindowRef, sx: u_int, sy: u_int, xpixel: i3
 unsafe fn clients_with_window(w_owner: &WindowRef) -> u_int {
     let mut loop_0: Option<ClientRef> = None;
     let mut n: u_int = 0 as u_int;
-    let mut registry_loop_0_owner = clients.first();
+    let mut registry_loop_0_owner = ClientRegistry::first();
     loop_0 = registry_loop_0_owner.clone();
     while !loop_0.is_none() {
         if !(!registry_loop_0_owner
@@ -45,7 +45,7 @@ unsafe fn clients_with_window(w_owner: &WindowRef) -> u_int {
                 break;
             }
         }
-        registry_loop_0_owner = clients.next(
+        registry_loop_0_owner = ClientRegistry::next(
             registry_loop_0_owner
                 .as_ref()
                 .expect("current registry client"),
@@ -90,7 +90,7 @@ unsafe fn clients_calculate_size(
         n = clients_with_window(w);
     }
     if !(type_0 == WINDOW_SIZE_MANUAL) {
-        let mut registry_loop_0_owner = clients.first();
+        let mut registry_loop_0_owner = ClientRegistry::first();
         loop_0 = registry_loop_0_owner.clone();
         while !loop_0.is_none() {
             if !crate::src::shared::rc::same(loop_0.as_ref(), c.as_ref())
@@ -175,7 +175,7 @@ unsafe fn clients_calculate_size(
                     { *sy }
                 ));
             }
-            registry_loop_0_owner = clients.next(
+            registry_loop_0_owner = ClientRegistry::next(
                 registry_loop_0_owner
                     .as_ref()
                     .expect("current registry client"),
@@ -197,7 +197,7 @@ unsafe fn clients_calculate_size(
         }
     }
     if let Some(w_owner_value) = w_owner {
-        let mut registry_loop_0_owner = clients.first();
+        let mut registry_loop_0_owner = ClientRegistry::first();
         loop_0 = registry_loop_0_owner.clone();
         while !loop_0.is_none() {
             if !(!crate::src::shared::rc::same(loop_0.as_ref(), c.as_ref())
@@ -213,7 +213,7 @@ unsafe fn clients_calculate_size(
                     .expect("current registry client")
                     .constrain_window_size(w_owner_value, &mut *sx, &mut *sy);
             }
-            registry_loop_0_owner = clients.next(
+            registry_loop_0_owner = ClientRegistry::next(
                 registry_loop_0_owner
                     .as_ref()
                     .expect("current registry client"),
@@ -440,7 +440,7 @@ pub unsafe fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
     let mut _s: Option<SessionRef> = None;
     let mut c: Option<ClientRef> = None;
     crate::src::shared::session::SessionRef::recalculate_attachment_status();
-    let mut registry_c_owner = clients.first();
+    let mut registry_c_owner = ClientRegistry::first();
     c = registry_c_owner.clone();
     while !c.is_none() {
         _s = c
@@ -474,7 +474,7 @@ pub unsafe fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
             }
         }
         registry_c_owner =
-            clients.next(registry_c_owner.as_ref().expect("current registry client"));
+            ClientRegistry::next(registry_c_owner.as_ref().expect("current registry client"));
         c = registry_c_owner.clone();
     }
     let mut window_cursor = windows::first();

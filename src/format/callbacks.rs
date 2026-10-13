@@ -1,3 +1,4 @@
+use crate::src::server_client::ClientRegistry;
 use crate::src::shared::client::client_handle;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::SessionRef;
@@ -174,7 +175,7 @@ unsafe fn format_cb_window_active_clients(ft: *mut format_tree) -> Option<CStrin
     }
     let window = link.get_unchecked().window_handle();
     let mut count = 0u32;
-    let mut cursor = clients.first();
+    let mut cursor = ClientRegistry::first();
     while let Some(client) = cursor {
         if let Some(session) = client.attached_session().upgrade() {
             if same(
@@ -184,7 +185,7 @@ unsafe fn format_cb_window_active_clients(ft: *mut format_tree) -> Option<CStrin
                 count = count.wrapping_add(1);
             }
         }
-        cursor = clients.next(&client);
+        cursor = ClientRegistry::next(&client);
     }
     Some(CString::new(count.to_string()).expect("formatted number contains no NUL"))
 }
@@ -196,7 +197,7 @@ unsafe fn format_cb_window_active_clients_list(ft: *mut format_tree) -> Option<C
     }
     let window = link.get_unchecked().window_handle();
     let mut names = Vec::new();
-    let mut cursor = clients.first();
+    let mut cursor = ClientRegistry::first();
     while let Some(client) = cursor {
         if let Some(session) = client.attached_session().upgrade() {
             if same(
@@ -209,7 +210,7 @@ unsafe fn format_cb_window_active_clients_list(ft: *mut format_tree) -> Option<C
                 names.extend_from_slice(client.name().as_deref().expect("client name").to_bytes());
             }
         }
-        cursor = clients.next(&client);
+        cursor = ClientRegistry::next(&client);
     }
     if names.is_empty() {
         return None;

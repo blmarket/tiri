@@ -18,9 +18,9 @@ use crate::src::screen_write::{
     screen_write_cursormove, screen_write_fast_copy, screen_write_putc, screen_write_start,
     screen_write_stop,
 };
-use crate::src::server::clients;
 use crate::src::server::server_add_message;
 use crate::src::server_client::Client as _;
+use crate::src::server_client::ClientRegistry;
 use crate::src::session::Session as _;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
@@ -93,12 +93,12 @@ pub unsafe fn status_timer_start(client: &ClientRef) {
 }
 pub unsafe fn status_timer_start_all() {
     let mut c: Option<ClientRef> = None;
-    let mut registry_c_owner = clients.first();
+    let mut registry_c_owner = ClientRegistry::first();
     c = registry_c_owner.clone();
     while !c.is_none() {
         status_timer_start(&c.clone().expect("live client"));
         registry_c_owner =
-            clients.next(registry_c_owner.as_ref().expect("current registry client"));
+            ClientRegistry::next(registry_c_owner.as_ref().expect("current registry client"));
         c = registry_c_owner.clone();
     }
 }

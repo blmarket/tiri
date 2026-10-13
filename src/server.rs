@@ -21,6 +21,7 @@ use crate::src::prompt_history::prompt_save_history;
 use crate::src::reactor;
 use crate::src::server_acl::{server_acl_init, server_acl_join};
 use crate::src::server_client::Client as _;
+use crate::src::server_client::ClientRegistry;
 use crate::src::shared::window::WindowWeak;
 use crate::src::window::Window as _;
 use std::os::fd::{FromRawFd, IntoRawFd, OwnedFd};
@@ -49,7 +50,6 @@ unsafe fn server_clear_messages() {
     message_log.clear();
 }
 
-pub use crate::src::server_client::clients;
 use crate::src::shared::abi::__mode_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::{CLIENT_DEFAULTSOCKET, CLIENT_IDENTIFIED, CLIENT_NOFORK};
@@ -247,7 +247,7 @@ pub(crate) unsafe fn server_start(
     input_key_build();
     utf8_update_width_cache();
     crate::src::shared::pane::window_pane_tree::clear();
-    clients.clear();
+    ClientRegistry::clear();
     sessions::clear();
     key_bindings_init();
     control_build_events();
@@ -315,14 +315,14 @@ unsafe fn server_loop() -> ::core::ffi::c_int {
     current_time = time(::core::ptr::null_mut::<time_t>());
     loop {
         items = cmdq_next(None);
-        let mut registry_c_owner = clients.first();
+        let mut registry_c_owner = ClientRegistry::first();
         c = registry_c_owner.clone();
         while !c.is_none() {
             if c.as_ref().expect("live client").flags() & CLIENT_IDENTIFIED as uint64_t != 0 {
                 items = items.wrapping_add(cmdq_next(registry_c_owner.as_ref()));
             }
             registry_c_owner =
-                clients.next(registry_c_owner.as_ref().expect("current registry client"));
+                ClientRegistry::next(registry_c_owner.as_ref().expect("current registry client"));
             c = registry_c_owner.clone();
         }
         if !(items != 0 as u_int) {
@@ -336,7 +336,7 @@ unsafe fn server_loop() -> ::core::ffi::c_int {
     if options_get_number(global_options, c"exit-unattached") == 0 && !sessions::is_empty() {
         return 0 as ::core::ffi::c_int;
     }
-    let mut registry_c_owner = clients.first();
+    let mut registry_c_owner = ClientRegistry::first();
     c = registry_c_owner.clone();
     while !c.is_none() {
         if !c
@@ -349,11 +349,11 @@ unsafe fn server_loop() -> ::core::ffi::c_int {
             return 0 as ::core::ffi::c_int;
         }
         registry_c_owner =
-            clients.next(registry_c_owner.as_ref().expect("current registry client"));
+            ClientRegistry::next(registry_c_owner.as_ref().expect("current registry client"));
         c = registry_c_owner.clone();
     }
     cmd_wait_for_flush();
-    if clients.first().is_some() {
+    if ClientRegistry::first().is_some() {
         return 0 as ::core::ffi::c_int;
     }
     if job_still_running() != 0 {
@@ -364,10 +364,10 @@ unsafe fn server_loop() -> ::core::ffi::c_int {
 unsafe fn server_send_exit() {
     let mut s: Option<SessionRef> = None;
     cmd_wait_for_flush();
-    let mut registry_c_owner = clients.first();
+    let mut registry_c_owner = ClientRegistry::first();
     while let Some(client_owner) = registry_c_owner {
         let _c: Option<ClientRef> = Some(client_owner.clone());
-        registry_c_owner = clients.next(&client_owner);
+        registry_c_owner = ClientRegistry::next(&client_owner);
         client_owner.shutdown();
     }
     let mut s_owner = sessions::first();

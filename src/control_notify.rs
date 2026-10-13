@@ -6,8 +6,8 @@ use crate::src::events_payload::{
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_create, format_defaults, format_expand_cstring};
-use crate::src::server::clients;
 use crate::src::server_client::Client;
+use crate::src::server_client::ClientRegistry;
 use crate::src::session::Session;
 use crate::src::shared::abi::u_int;
 use crate::src::shared::client::ClientRef;
@@ -25,12 +25,12 @@ pub struct C2RustUnnamed_35 {
 // Query eligibility at each visit, then release all state before formatting.
 // Preserve live registry traversal rather than snapshotting recipients.
 unsafe fn recipients(mut visit: impl FnMut(&ClientRef)) {
-    let mut cursor = clients.first();
+    let mut cursor = ClientRegistry::first();
     while let Some(client) = cursor {
         if client.receives_notifications() {
             visit(&client);
         }
-        cursor = clients.next(&client);
+        cursor = ClientRegistry::next(&client);
     }
 }
 

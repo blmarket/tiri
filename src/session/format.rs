@@ -4,8 +4,9 @@ use crate::src::ffi::libc::strlcat;
 use crate::src::format::bytes::xformat;
 use crate::src::format::FORMAT_TYPE_SESSION;
 use crate::src::format::{format_tree, FormatValue};
-use crate::src::server::{clients, server_check_marked};
+use crate::src::server::server_check_marked;
 use crate::src::server_client::Client as _;
+use crate::src::server_client::ClientRegistry;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::{WINLINK_ACTIVITY, WINLINK_BELL, WINLINK_SILENCE};
@@ -76,7 +77,7 @@ unsafe fn format_cb_session_attached_list(mut ft: *mut format_tree) -> Option<CS
         return None;
     }
     let mut names = Vec::<u8>::new();
-    let mut registry_loop_0_owner = clients.first();
+    let mut registry_loop_0_owner = ClientRegistry::first();
     loop_0 = registry_loop_0_owner.clone();
     while !loop_0.is_none() {
         if loop_0
@@ -98,7 +99,7 @@ unsafe fn format_cb_session_attached_list(mut ft: *mut format_tree) -> Option<CS
                     .to_bytes(),
             );
         }
-        registry_loop_0_owner = clients.next(
+        registry_loop_0_owner = ClientRegistry::next(
             registry_loop_0_owner
                 .as_ref()
                 .expect("current registry client"),
@@ -304,7 +305,7 @@ unsafe fn format_cb_session_group_attached_list(mut ft: *mut format_tree) -> Opt
         return None;
     }
     let mut names = Vec::<u8>::new();
-    let mut registry_loop_0_owner = clients.first();
+    let mut registry_loop_0_owner = ClientRegistry::first();
     loop_0 = registry_loop_0_owner.clone();
     while !loop_0.is_none() {
         client_session = loop_0
@@ -329,7 +330,7 @@ unsafe fn format_cb_session_group_attached_list(mut ft: *mut format_tree) -> Opt
                 }
             }
         }
-        registry_loop_0_owner = clients.next(
+        registry_loop_0_owner = ClientRegistry::next(
             registry_loop_0_owner
                 .as_ref()
                 .expect("current registry client"),

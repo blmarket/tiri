@@ -6,7 +6,7 @@ use crate::src::cmd::queue::{
 use crate::src::cmd::{cmd_list_all_have, cmd_list_print_cstring};
 use crate::src::key_string::key_string_format;
 use crate::src::log::{fatalx, log_cstr, log_debug, log_hex};
-use crate::src::server::clients;
+use crate::src::server_client::ClientRegistry;
 
 use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
@@ -194,14 +194,14 @@ pub unsafe fn key_bindings_remove_table(name: &CStr) {
     let mut c: Option<ClientRef> = None;
     if let Some(owner) = key_bindings_get_table(name, 0) {
         let detached = key_tables::remove(&owner);
-        let mut registry_c_owner = clients.first();
+        let mut registry_c_owner = ClientRegistry::first();
         c = registry_c_owner.clone();
         while !c.is_none() {
             if c.as_ref().expect("live client").uses_key_table(&owner) {
                 c.clone().expect("live client").set_key_table(None);
             }
             registry_c_owner =
-                clients.next(registry_c_owner.as_ref().expect("current registry client"));
+                ClientRegistry::next(registry_c_owner.as_ref().expect("current registry client"));
             c = registry_c_owner.clone();
         }
         drop(detached);
