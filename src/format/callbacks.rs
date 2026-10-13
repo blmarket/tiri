@@ -1330,7 +1330,7 @@ unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<C
         .window_handle()
         .expect("linked window")
         .clone();
-    sg = session_groups_minmax();
+    sg = session_groups::minmax();
     while !sg.is_null() {
         let group_members = crate::src::session::session_group_members(sg);
         s = group_members.first().cloned();
@@ -1339,12 +1339,12 @@ unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<C
         }) {
             n = n.wrapping_add(1);
         }
-        sg = session_groups_next(&*sg);
+        sg = session_groups::next(&*sg);
     }
     let mut s_owner = sessions.first();
     s = s_owner.clone();
     while !s.is_none() {
-        if crate::src::session::session_group_for(&Rc::downgrade(
+        if crate::src::session::session_groups::for_session(&Rc::downgrade(
             s_owner.as_ref().expect("registered session"),
         ))
         .is_null()

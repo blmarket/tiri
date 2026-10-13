@@ -44,7 +44,7 @@ pub unsafe fn server_redraw_session(session: &SessionRef) {
     }
 }
 pub unsafe fn server_redraw_session_group(session: &SessionRef) {
-    let group = crate::src::session::session_group_for(&std::rc::Rc::downgrade(session));
+    let group = crate::src::session::session_groups::for_session(&std::rc::Rc::downgrade(session));
     if group.is_null() {
         server_redraw_session(session);
     } else {
@@ -68,7 +68,7 @@ pub unsafe fn server_status_session(session: &SessionRef) {
     }
 }
 pub unsafe fn server_status_session_group(session: &SessionRef) {
-    let group = crate::src::session::session_group_for(&std::rc::Rc::downgrade(session));
+    let group = crate::src::session::session_groups::for_session(&std::rc::Rc::downgrade(session));
     if group.is_null() {
         server_status_session(session);
     } else {
@@ -228,7 +228,7 @@ pub unsafe fn server_renumber_session(s_owner: &SessionRef) {
         .with_options_mut(|options| options_get_number(options, c"renumber-windows"))
         != 0
     {
-        sg = crate::src::session::session_group_for(
+        sg = crate::src::session::session_groups::for_session(
             &s.as_ref()
                 .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
         );
@@ -264,11 +264,11 @@ pub unsafe fn server_link_window(
     let mut dstwl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut srcsg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut dstsg: *mut session_group = ::core::ptr::null_mut::<session_group>();
-    srcsg = crate::src::session::session_group_for(
+    srcsg = crate::src::session::session_groups::for_session(
         &src.as_ref()
             .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
     );
-    dstsg = crate::src::session::session_group_for(
+    dstsg = crate::src::session::session_groups::for_session(
         &dst.as_ref()
             .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
     );
@@ -339,7 +339,7 @@ unsafe fn server_destroy_session_group(s_owner: &SessionRef) {
     let s = Some(s_owner.clone());
     let source = s_owner.clone();
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
-    sg = crate::src::session::session_group_for(
+    sg = crate::src::session::session_groups::for_session(
         &s.as_ref()
             .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
     );
@@ -469,7 +469,7 @@ pub unsafe fn server_check_unattached() {
                     current_block_4 = 6116987625208566775;
                     match current_block_4 {
                         11000743977270914936 => {
-                            sg = crate::src::session::session_group_for(
+                            sg = crate::src::session::session_groups::for_session(
                                 &s.as_ref()
                                     .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
                             );
@@ -480,7 +480,7 @@ pub unsafe fn server_check_unattached() {
                             }
                         }
                         6116987625208566775 => {
-                            sg = crate::src::session::session_group_for(
+                            sg = crate::src::session::session_groups::for_session(
                                 &s.as_ref()
                                     .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
                             );
@@ -507,7 +507,7 @@ pub unsafe fn server_check_unattached() {
                     current_block_4 = 11000743977270914936;
                     match current_block_4 {
                         11000743977270914936 => {
-                            sg = crate::src::session::session_group_for(
+                            sg = crate::src::session::session_groups::for_session(
                                 &s.as_ref()
                                     .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
                             );
@@ -518,7 +518,7 @@ pub unsafe fn server_check_unattached() {
                             }
                         }
                         6116987625208566775 => {
-                            sg = crate::src::session::session_group_for(
+                            sg = crate::src::session::session_groups::for_session(
                                 &s.as_ref()
                                     .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
                             );
@@ -545,7 +545,7 @@ pub unsafe fn server_check_unattached() {
                     current_block_4 = 13109137661213826276;
                     match current_block_4 {
                         11000743977270914936 => {
-                            sg = crate::src::session::session_group_for(
+                            sg = crate::src::session::session_groups::for_session(
                                 &s.as_ref()
                                     .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
                             );
@@ -556,7 +556,7 @@ pub unsafe fn server_check_unattached() {
                             }
                         }
                         6116987625208566775 => {
-                            sg = crate::src::session::session_group_for(
+                            sg = crate::src::session::session_groups::for_session(
                                 &s.as_ref()
                                     .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
                             );

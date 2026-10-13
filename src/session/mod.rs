@@ -11,11 +11,10 @@ pub use model::{session, sessions};
 mod format;
 use crate::src::session_group::session_group_remove;
 pub use crate::src::session_group::{
-    session_group_add, session_group_attached_count, session_group_count, session_group_find,
-    session_group_for, session_group_members, session_group_new, session_group_synchronize_from,
-    session_group_synchronize_to, session_groups, session_groups_find, session_groups_insert,
-    session_groups_minmax, session_groups_next, session_groups_remove,
+    session_group_add, session_group_attached_count, session_group_count, session_group_members,
+    session_group_synchronize_from, session_group_synchronize_to,
 };
+pub use crate::src::shared::session::session_groups;
 pub use api::{Session, SessionIndex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -406,7 +405,9 @@ unsafe fn session_is_linked(s: Option<&SessionRef>, w: &WindowRef) -> bool {
         next = w.next_winlink(Some(next));
     }
 
-    let group = session_group_for(&s.map_or_else(std::rc::Weak::new, Rc::downgrade));
+    let group = crate::src::session::session_groups::for_session(
+        &s.map_or_else(std::rc::Weak::new, Rc::downgrade),
+    );
     if group.is_null() {
         return n != 1;
     }

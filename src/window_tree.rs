@@ -619,7 +619,7 @@ unsafe fn window_tree_build(
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut current: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut i: u_int = 0;
-    current = crate::src::session::session_group_for(&(*data).fs.s);
+    current = crate::src::session::session_groups::for_session(&(*data).fs.s);
     (*data).item_list.clear();
     let l = sort_get_sessions(&*sort_crit);
     let n = u_int::try_from(l.len()).expect("too many sessions for window tree");
@@ -631,7 +631,7 @@ unsafe fn window_tree_build(
     while i < n {
         s = Some(l[i as usize].clone());
         if squash_groups != 0 && {
-            sg = crate::src::session::session_group_for(
+            sg = crate::src::session::session_groups::for_session(
                 &s.as_ref()
                     .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
             );

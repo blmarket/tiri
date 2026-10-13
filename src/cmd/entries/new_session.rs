@@ -16,9 +16,7 @@ use crate::src::options::{options_get_number, options_get_string, options_set_st
 use crate::src::server_client::Client as _;
 
 use crate::src::session::Session;
-use crate::src::session::{
-    session_group_add, session_group_find, session_group_new, session_group_synchronize_to,
-};
+use crate::src::session::{session_group_add, session_group_synchronize_to, session_groups};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::ClientRef;
@@ -280,9 +278,9 @@ unsafe fn cmd_new_session_exec(
                 groupwith_owner = (*target).s.upgrade();
                 groupwith = groupwith_owner.clone();
                 if groupwith.is_none() {
-                    sg = session_group_find(CStr::from_ptr(group));
+                    sg = session_groups::find(CStr::from_ptr(group));
                 } else {
-                    sg = crate::src::session::session_group_for(
+                    sg = crate::src::session::session_groups::for_session(
                         &groupwith
                             .as_ref()
                             .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
@@ -614,7 +612,7 @@ unsafe fn cmd_new_session_exec(
                                                                 if let Some(groupwith_value) =
                                                                     groupwith.as_ref()
                                                                 {
-                                                                    sg = session_group_new(
+                                                                    sg = session_groups::find_or_create(
                                                                         CStr::from_ptr(
                                                                             (groupwith_value
                                                                                 .name())
@@ -626,7 +624,7 @@ unsafe fn cmd_new_session_exec(
                                                                         sg, groupwith_owner.as_ref().expect("retained group session"),
                                                                     );
                                                                 } else {
-                                                                    sg = session_group_new(
+                                                                    sg = session_groups::find_or_create(
                                                                         CStr::from_ptr(group),
                                                                     );
                                                                 }

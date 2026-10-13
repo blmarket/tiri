@@ -269,7 +269,7 @@ unsafe fn format_cb_session_group_list(mut ft: *mut format_tree) -> Option<CStri
     if s.is_null() {
         return None;
     }
-    sg = session_group_for(&(*ft).s);
+    sg = session_groups::for_session(&(*ft).s);
     if sg.is_null() {
         return None;
     }
@@ -299,7 +299,7 @@ unsafe fn format_cb_session_group_attached_list(mut ft: *mut format_tree) -> Opt
     if s.is_null() {
         return None;
     }
-    sg = session_group_for(&(*ft).s);
+    sg = session_groups::for_session(&(*ft).s);
     if sg.is_null() {
         return None;
     }
@@ -429,7 +429,7 @@ unsafe fn format_cb_session_group(mut ft: *mut format_tree) -> Option<CString> {
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     if !format_session.is_null() && {
-        sg = session_group_for(&(*ft).s);
+        sg = session_groups::for_session(&(*ft).s);
         !sg.is_null()
     } {
         return Some((*sg).name.clone());
@@ -444,7 +444,7 @@ unsafe fn format_cb_session_group_attached(mut ft: *mut format_tree) -> Option<C
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     if !format_session.is_null() && {
-        sg = session_group_for(&(*ft).s);
+        sg = session_groups::for_session(&(*ft).s);
         !sg.is_null()
     } {
         return Some(
@@ -462,7 +462,7 @@ unsafe fn format_cb_session_group_many_attached(mut ft: *mut format_tree) -> Opt
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     if !format_session.is_null() && {
-        sg = session_group_for(&(*ft).s);
+        sg = session_groups::for_session(&(*ft).s);
         !sg.is_null()
     } {
         if session_group_attached_count(sg) > 1 as u_int {
@@ -480,7 +480,7 @@ unsafe fn format_cb_session_group_size(mut ft: *mut format_tree) -> Option<CStri
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     if !format_session.is_null() && {
-        sg = session_group_for(&(*ft).s);
+        sg = session_groups::for_session(&(*ft).s);
         !sg.is_null()
     } {
         return Some(
@@ -497,7 +497,7 @@ unsafe fn format_cb_session_grouped(mut ft: *mut format_tree) -> Option<CString>
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     if !format_session.is_null() {
-        if !session_group_for(&(*ft).s).is_null() {
+        if !session_groups::for_session(&(*ft).s).is_null() {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());

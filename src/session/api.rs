@@ -438,7 +438,7 @@ impl Session for SessionRef {
         ((*self.get()).statusat, (*self.get()).statuslines)
     }
     unsafe fn join_group(&self, name: &CStr) {
-        let group = session_group_new(name);
+        let group = session_groups::find_or_create(name);
         session_group_add(group, self);
         session_group_synchronize_to(self);
     }
@@ -481,25 +481,26 @@ mod tests {
 
     #[test]
     fn joining_a_group_creates_it_once_and_keeps_a_single_membership() {
-        use crate::src::session_group::{
-            session_group_count, session_group_find, session_group_for, session_group_remove,
-        };
+        use crate::src::session_group::{session_group_count, session_group_remove};
         unsafe {
             let session = session::new();
-            assert!(session_group_find(c"joined").is_null());
+            assert!(session_groups::find(c"joined").is_null());
             session.join_group(c"joined");
-            let group = session_group_find(c"joined");
+            let group = session_groups::find(c"joined");
             assert!(!group.is_null());
-            assert_eq!(session_group_for(&std::rc::Rc::downgrade(&session)), group);
+            assert_eq!(
+                session_groups::for_session(&std::rc::Rc::downgrade(&session)),
+                group
+            );
             assert_eq!(session_group_count(group), 1);
             assert_eq!((*group).name.as_c_str(), c"joined");
             // Joining by the same name finds the existing group again.
             session.join_group(c"joined");
-            assert_eq!(session_group_find(c"joined"), group);
+            assert_eq!(session_groups::find(c"joined"), group);
             assert_eq!(session_group_count(group), 1);
             // Leaving as the last member destroys the group.
             session_group_remove(&session);
-            assert!(session_group_find(c"joined").is_null());
+            assert!(session_groups::find(c"joined").is_null());
         }
     }
 

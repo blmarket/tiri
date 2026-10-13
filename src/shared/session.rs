@@ -25,5 +25,5 @@ impl session_group {
 
 #[repr(C)]
 pub struct session_groups {
-    pub storage: std::collections::BTreeMap<Vec<u8>, Box<session_group>>,
+    pub(crate) storage: std::collections::BTreeMap<Vec<u8>, Box<session_group>>,
 }

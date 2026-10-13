@@ -56,11 +56,11 @@ unsafe fn cmd_swap_window_exec(
     let mut sg_dst: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut wl_src: refbox::Weak<winlink> = (*source).winlink_handle();
     let mut wl_dst: refbox::Weak<winlink> = (*target).winlink_handle();
-    sg_src = crate::src::session::session_group_for(
+    sg_src = crate::src::session::session_groups::for_session(
         &src.as_ref()
             .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
     );
-    sg_dst = crate::src::session::session_group_for(
+    sg_dst = crate::src::session::session_groups::for_session(
         &dst.as_ref()
             .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
     );
