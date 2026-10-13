@@ -12,7 +12,7 @@ pub(super) unsafe fn recalculate_size_state() {
     while let Some(owner) = cursor {
         (*owner.get()).attached = 0;
         status_update_cache(&mut *owner.get());
-        cursor = sessions::after((*owner.get()).name.as_bytes());
+        cursor = sessions::after((*owner.get()).name.as_c_str());
     }
     let mut cursor = ClientRegistry::first();
     while let Some(owner) = cursor {

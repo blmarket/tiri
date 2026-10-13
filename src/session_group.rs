@@ -53,7 +53,7 @@ impl session_groups {
         SESSION_GROUPS.with_borrow(|groups| {
             groups
                 .storage
-                .get(name.to_bytes())
+                .get(name)
                 .map_or_else(SessionGroupWeak::new, refbox::RefBox::downgrade)
         })
     }
@@ -62,7 +62,7 @@ impl session_groups {
         SESSION_GROUPS.with_borrow_mut(|groups| {
             groups
                 .storage
-                .entry(name.to_bytes().to_vec())
+                .entry(name.to_owned())
                 .or_insert_with(|| session_group::new(name))
                 .downgrade()
         })
@@ -95,8 +95,8 @@ impl session_groups {
         SESSION_GROUPS.with_borrow(|groups| {
             groups
                 .storage
-                .range::<[u8], _>((
-                    std::ops::Bound::Excluded(name.as_bytes()),
+                .range::<CStr, _>((
+                    std::ops::Bound::Excluded(name.as_c_str()),
                     std::ops::Bound::Unbounded,
                 ))
                 .next()

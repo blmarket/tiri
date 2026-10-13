@@ -302,7 +302,7 @@ pub unsafe fn sort_get_winlinks(sort_crit: *mut sort_criteria) -> Vec<refbox::We
             links.push(wl.clone());
             wl = winlinks_next(wl.get_unchecked());
         }
-        s_owner = sessions::after(s_owner.as_ref().expect("live session").name().as_bytes());
+        s_owner = sessions::after(s_owner.as_ref().expect("live session").name().as_c_str());
     }
     sort_by_criteria(&mut links, &*sort_crit, |a, b, criteria| unsafe {
         sort_winlink_cmp((*a).clone(), (*b).clone(), criteria)

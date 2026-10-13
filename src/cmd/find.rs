@@ -151,7 +151,7 @@ unsafe fn cmd_find_best_session(
         None => {
             let mut cursor = sessions::first();
             while let Some(owner) = cursor {
-                cursor = sessions::after(owner.name().as_bytes());
+                cursor = sessions::after(owner.name().as_c_str());
                 all.push(owner);
             }
             &all
@@ -185,7 +185,7 @@ impl cmd_find_state {
         let mut candidates = Vec::new();
         let mut cursor = sessions::first();
         while let Some(owner) = cursor {
-            cursor = sessions::after(owner.name().as_bytes());
+            cursor = sessions::after(owner.name().as_c_str());
             if owner.contains_window(&window_owner) {
                 candidates.push(owner);
             }
@@ -267,7 +267,7 @@ impl cmd_find_state {
                     }
                     matched = Some(session.clone());
                 }
-                cursor = sessions::after(session.name().as_bytes());
+                cursor = sessions::after(session.name().as_c_str());
             }
             if let Some(session) = matched {
                 self.set_s(Some(&session));

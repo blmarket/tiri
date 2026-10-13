@@ -19,11 +19,9 @@ fn saved_name_survives_removal_of_current_successor_and_entire_index() {
         sessions::insert(first.clone());
         sessions::insert(second.clone());
         sessions::insert(last.clone());
-        let name = CStr::from_ptr(((*first.get()).name).as_ptr().cast_mut())
-            .to_bytes()
-            .to_vec();
+        let name = (*first.get()).name.clone();
         assert_eq!(
-            sessions::after((*first.get()).name.as_bytes())
+            sessions::after((*first.get()).name.as_c_str())
                 .as_ref()
                 .map_or(std::ptr::null_mut(), |owner| owner.get()),
             &mut *second.get() as *mut _
@@ -41,9 +39,7 @@ fn saved_name_survives_removal_of_current_successor_and_entire_index() {
             &mut *last.get() as *mut _
         );
 
-        let last_name = CStr::from_ptr(((*last.get()).name).as_ptr().cast_mut())
-            .to_bytes()
-            .to_vec();
+        let last_name = (*last.get()).name.clone();
         sessions::remove(&last);
         drop(last);
         assert!(sessions::is_empty());

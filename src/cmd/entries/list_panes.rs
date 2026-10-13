@@ -103,7 +103,7 @@ unsafe fn cmd_list_panes_server(
             item_handle,
             2 as ::core::ffi::c_int,
         );
-        s_owner = sessions::after(s.as_ref().expect("live session").name().as_bytes());
+        s_owner = sessions::after(s.as_ref().expect("live session").name().as_c_str());
         s = s_owner.clone();
     }
 }

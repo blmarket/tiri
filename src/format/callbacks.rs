@@ -968,7 +968,7 @@ unsafe fn format_cb_server_sessions(_ft: *mut format_tree) -> Option<CString> {
     s = s_owner.clone();
     while !s.is_none() {
         n = n.wrapping_add(1);
-        s_owner = sessions::after(s.as_ref().expect("live session").name().as_bytes());
+        s_owner = sessions::after(s.as_ref().expect("live session").name().as_c_str());
         s = s_owner.clone();
     }
     Some(CString::new(format!("{}", (n) as u32)).expect("formatted numbers contain no NUL"))
@@ -1311,7 +1311,7 @@ unsafe fn format_cb_window_linked(mut ft: *mut format_tree) -> Option<CString> {
                 }
                 wl = winlinks_next(wl.get_unchecked());
             }
-            s_owner = sessions::after(s.as_ref().expect("live session").name().as_bytes());
+            s_owner = sessions::after(s.as_ref().expect("live session").name().as_c_str());
             s = s_owner.clone();
         }
         return Some(c"0".to_owned());
@@ -1356,7 +1356,7 @@ unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<C
         {
             n = n.wrapping_add(1);
         }
-        s_owner = sessions::after(s.as_ref().expect("live session").name().as_bytes());
+        s_owner = sessions::after(s.as_ref().expect("live session").name().as_c_str());
         s = s_owner.clone();
     }
     drop(window);

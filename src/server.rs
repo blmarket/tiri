@@ -373,7 +373,7 @@ unsafe fn server_send_exit() {
     let mut s_owner = sessions::first();
     s = s_owner.clone();
     while !s.is_none() {
-        let name = s.as_ref().expect("live session").name().into_bytes();
+        let name = s.as_ref().expect("live session").name();
         (s_owner.as_ref().expect("registered session")).destroy(
             (1 as ::core::ffi::c_int) != 0,
             std::ffi::CStr::from_ptr(c"server_send_exit".as_ptr()),
@@ -421,7 +421,7 @@ pub unsafe fn server_update_socket() {
             n += 1;
             break;
         } else {
-            s_owner = sessions::after(s.as_ref().expect("live session").name().as_bytes());
+            s_owner = sessions::after(s.as_ref().expect("live session").name().as_c_str());
             s = s_owner.clone();
         }
     }

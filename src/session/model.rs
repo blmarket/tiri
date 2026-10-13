@@ -11,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[derive(Default)]
 #[repr(C)]
 pub struct sessions {
-    pub(super) storage: std::collections::BTreeMap<Vec<u8>, SessionRef>,
+    pub(super) storage: std::collections::BTreeMap<std::ffi::CString, SessionRef>,
 }
 
 #[repr(C)]

@@ -110,7 +110,7 @@ unsafe fn cmd_kill_session_all(
     let mut sloop_owner = sessions::first();
     sloop = sloop_owner.clone();
     while !sloop.is_none() {
-        let name = sloop.as_ref().expect("live session").name().into_bytes();
+        let name = sloop.as_ref().expect("live session").name();
         if !(crate::src::shared::rc::same(sloop.as_ref(), s.as_ref()))
             && !(cmd_kill_session_filter(
                 item_handle,

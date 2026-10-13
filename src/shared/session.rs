@@ -19,5 +19,5 @@ pub struct session_group {
 
 #[repr(C)]
 pub struct session_groups {
-    pub(crate) storage: std::collections::BTreeMap<Vec<u8>, refbox::RefBox<session_group>>,
+    pub(crate) storage: std::collections::BTreeMap<std::ffi::CString, refbox::RefBox<session_group>>,
 }

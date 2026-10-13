@@ -1555,7 +1555,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
         s = s_owner.clone();
         while !s.is_none() {
             s.as_ref().expect("live session").update_history();
-            s_owner = sessions::after(s.as_ref().expect("live session").name().as_bytes());
+            s_owner = sessions::after(s.as_ref().expect("live session").name().as_c_str());
             s = s_owner.clone();
         }
     }

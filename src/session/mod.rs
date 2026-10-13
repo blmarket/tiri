@@ -74,7 +74,7 @@ impl sessions {
     /// Index a session under its current name. An existing entry with the same
     /// name wins and is returned.
     pub fn insert(session: SessionRef) -> Option<SessionRef> {
-        let key = unsafe { (*session.get()).name.as_bytes().to_vec() };
+        let key = unsafe { (*session.get()).name.clone() };
         SESSIONS.with_borrow_mut(|index| match index.storage.entry(key) {
             std::collections::btree_map::Entry::Occupied(entry) => Some(entry.get().clone()),
             std::collections::btree_map::Entry::Vacant(entry) => {
@@ -86,7 +86,7 @@ impl sessions {
 
     /// Remove and return the index owner, only if `session` is the indexed one.
     pub fn remove(session: &SessionRef) -> Option<SessionRef> {
-        let key = unsafe { (*session.get()).name.as_bytes() };
+        let key = unsafe { (*session.get()).name.as_c_str() };
         SESSIONS.with_borrow_mut(|index| {
             if !index
                 .storage
@@ -106,18 +106,18 @@ impl sessions {
     /// Resume a potentially destructive walk using a saved name and the live
     /// index. The named session and any of its successors may already have
     /// been removed.
-    pub fn after(name: &[u8]) -> Option<SessionRef> {
+    pub fn after(name: &CStr) -> Option<SessionRef> {
         SESSIONS.with_borrow(|index| {
             index
                 .storage
-                .range::<[u8], _>((std::ops::Bound::Excluded(name), std::ops::Bound::Unbounded))
+                .range::<CStr, _>((std::ops::Bound::Excluded(name), std::ops::Bound::Unbounded))
                 .next()
                 .map(|(_, node)| Rc::clone(node))
         })
     }
 
     pub fn find(name: &CStr) -> Option<SessionRef> {
-        SESSIONS.with_borrow(|index| index.storage.get(name.to_bytes()).cloned())
+        SESSIONS.with_borrow(|index| index.storage.get(name).cloned())
     }
 
     pub fn find_by_id(id: u_int) -> Option<SessionRef> {

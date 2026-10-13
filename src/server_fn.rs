@@ -145,7 +145,7 @@ pub unsafe fn server_status_window(window: &WindowRef) {
         if session_owner.contains_window(window) {
             server_status_session(&session_owner);
         }
-        next = sessions::after(session_owner.name().as_bytes());
+        next = sessions::after(session_owner.name().as_c_str());
     }
 }
 pub unsafe fn server_lock() {
@@ -190,7 +190,7 @@ pub unsafe fn server_kill_window(owner: WindowRef, mut renumber: ::core::ffi::c_
     s = s_owner.clone();
     while !s.is_none() {
         // Destroying a group may remove both s and its next session.
-        let name = s.as_ref().expect("live session").name().into_bytes();
+        let name = s.as_ref().expect("live session").name();
         if !(!s.as_ref().expect("live session").contains_window(&owner)) {
             loop {
                 wl = s.as_ref().expect("live session").with_winlinks(|links| {
@@ -245,7 +245,7 @@ pub unsafe fn server_renumber_all() {
     s = s_owner.clone();
     while !s.is_none() {
         server_renumber_session(s.as_ref().expect("live session"));
-        s_owner = sessions::after(s.as_ref().expect("live session").name().as_bytes());
+        s_owner = sessions::after(s.as_ref().expect("live session").name().as_c_str());
         s = s_owner.clone();
     }
 }
@@ -364,7 +364,7 @@ unsafe fn server_find_session(
     let mut selected: Option<SessionRef> = None;
     let mut current = sessions::first();
     while let Some(owner) = current {
-        current = sessions::after(owner.name().as_bytes());
+        current = sessions::after(owner.name().as_c_str());
         if !std::rc::Rc::ptr_eq(&owner, excluded) && choose(&owner, selected.as_ref()) {
             selected = Some(owner);
         }
@@ -453,7 +453,7 @@ pub unsafe fn server_check_unattached() {
     let mut s_owner = sessions::first();
     s = s_owner.clone();
     while !s.is_none() {
-        let name = s.as_ref().expect("live session").name().into_bytes();
+        let name = s.as_ref().expect("live session").name();
         if !(s.as_ref().expect("live session").is_attached()) {
             match s
                 .as_ref()
