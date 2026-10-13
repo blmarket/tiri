@@ -1,6 +1,4 @@
-use crate::src::session::{
-    session_next_session, session_previous_session, sessions, sessions_insert, sessions_remove,
-};
+use crate::src::session::{session_next_session, session_previous_session, sessions};
 use crate::src::shared::session::session;
 use crate::src::shared::sort::{sort_criteria, SORT_NAME};
 use crate::src::sort::sort_get_sessions;
@@ -9,15 +7,14 @@ use std::rc::Rc;
 #[test]
 fn sorted_and_adjacent_results_survive_session_removal() {
     unsafe {
-        let head = &raw mut sessions;
         let first = session::new();
         let last = session::new();
         (*first.get()).name = c"a".to_owned();
         (*last.get()).name = c"z".to_owned();
         let first_weak = Rc::downgrade(&first);
         let last_weak = Rc::downgrade(&last);
-        sessions_insert(&mut *head, last.clone());
-        sessions_insert(&mut *head, first.clone());
+        sessions::insert(last.clone());
+        sessions::insert(first.clone());
         let criteria = sort_criteria {
             order: SORT_NAME,
             reversed: 0,
@@ -30,13 +27,13 @@ fn sorted_and_adjacent_results_survive_session_removal() {
         let previous = session_previous_session(Some(&first), &criteria).unwrap();
         assert!(Rc::ptr_eq(&next, &first));
         assert!(Rc::ptr_eq(&previous, &last));
-        sessions_remove(&mut *head, &first);
+        sessions::remove(&first);
         assert!(session_next_session(Some(&first), &criteria).is_none());
         assert!(Rc::ptr_eq(
             &session_previous_session(Some(&last), &criteria).unwrap(),
             &last,
         ));
-        sessions_remove(&mut *head, &last);
+        sessions::remove(&last);
         drop(first);
         drop(last);
         assert_eq!((*sorted[0].get()).name.as_c_str(), c"a");

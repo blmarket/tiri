@@ -4,7 +4,6 @@ use crate::src::log::{log_cstr, log_debug};
 use crate::src::reactor::Timer;
 use crate::src::server::current_time;
 use crate::src::server_client::Client as _;
-use crate::src::session::SessionIndex as _;
 use crate::src::session::{sessions, Session as _};
 use crate::src::shared::abi::*;
 use crate::src::shared::client::{ClientRef, ClientWeak};
@@ -136,9 +135,9 @@ unsafe fn monitor_get_session(
         return client?.attached_session().upgrade();
     }
     let Some(session) = session else {
-        return sessions.first();
+        return sessions::first();
     };
-    let indexed = crate::src::shared::session::SessionRef::find_by_id(session.id())?;
+    let indexed = crate::src::session::sessions::find_by_id(session.id())?;
     Rc::ptr_eq(&session, &indexed).then_some(indexed)
 }
 unsafe fn monitor_context(

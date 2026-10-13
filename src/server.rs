@@ -21,7 +21,6 @@ use crate::src::prompt_history::prompt_save_history;
 use crate::src::reactor;
 use crate::src::server_acl::{server_acl_init, server_acl_join};
 use crate::src::server_client::Client as _;
-use crate::src::session::SessionIndex as _;
 use crate::src::shared::window::WindowWeak;
 use crate::src::window::Window as _;
 use std::os::fd::{FromRawFd, IntoRawFd, OwnedFd};
@@ -249,7 +248,7 @@ pub(crate) unsafe fn server_start(
     utf8_update_width_cache();
     <std::rc::Rc<std::cell::UnsafeCell<window_pane>> as crate::src::window_pane::WindowPane>::reset_registry();
     clients.clear();
-    sessions.reset();
+    sessions::clear();
     key_bindings_init();
     control_build_events();
     hooks_build_events();
@@ -334,7 +333,7 @@ unsafe fn server_loop() -> ::core::ffi::c_int {
     if options_get_number(global_options, c"exit-empty") == 0 && server_exit == 0 {
         return 0 as ::core::ffi::c_int;
     }
-    if options_get_number(global_options, c"exit-unattached") == 0 && sessions.has_entries() {
+    if options_get_number(global_options, c"exit-unattached") == 0 && !sessions::is_empty() {
         return 0 as ::core::ffi::c_int;
     }
     let mut registry_c_owner = clients.first();
@@ -371,7 +370,7 @@ unsafe fn server_send_exit() {
         registry_c_owner = clients.next(&client_owner);
         client_owner.shutdown();
     }
-    let mut s_owner = sessions.first();
+    let mut s_owner = sessions::first();
     s = s_owner.clone();
     while !s.is_none() {
         let name = s.as_ref().expect("live session").name().into_bytes();
@@ -379,7 +378,7 @@ unsafe fn server_send_exit() {
             (1 as ::core::ffi::c_int) != 0,
             std::ffi::CStr::from_ptr(c"server_send_exit".as_ptr()),
         );
-        s_owner = sessions.after(&name);
+        s_owner = sessions::after(&name);
         s = s_owner.clone();
     }
 }
@@ -415,14 +414,14 @@ pub unsafe fn server_update_socket() {
         __glibc_reserved: [0; 3],
     };
     n = 0 as ::core::ffi::c_int;
-    let mut s_owner = sessions.first();
+    let mut s_owner = sessions::first();
     s = s_owner.clone();
     while !s.is_none() {
         if s.as_ref().expect("live session").is_attached() {
             n += 1;
             break;
         } else {
-            s_owner = s.as_ref().expect("live session").next_session();
+            s_owner = sessions::after(s.as_ref().expect("live session").name().as_bytes());
             s = s_owner.clone();
         }
     }

@@ -3,7 +3,6 @@ use crate::src::paste::paste_walk;
 use crate::src::server::clients;
 use crate::src::server_client::Client as _;
 use crate::src::session::sessions;
-use crate::src::session::SessionIndex as _;
 use std::ffi::CStr;
 
 use crate::src::session::Session;
@@ -293,7 +292,7 @@ pub unsafe fn sort_get_panes_window(
 }
 pub unsafe fn sort_get_winlinks(sort_crit: *mut sort_criteria) -> Vec<refbox::Weak<winlink>> {
     let mut links = Vec::new();
-    let mut s_owner = sessions.first();
+    let mut s_owner = sessions::first();
     while s_owner.is_some() {
         let mut wl = s_owner
             .as_ref()
@@ -303,7 +302,7 @@ pub unsafe fn sort_get_winlinks(sort_crit: *mut sort_criteria) -> Vec<refbox::We
             links.push(wl.clone());
             wl = winlinks_next(wl.get_unchecked());
         }
-        s_owner = s_owner.as_ref().expect("live session").next_session();
+        s_owner = sessions::after(s_owner.as_ref().expect("live session").name().as_bytes());
     }
     sort_by_criteria(&mut links, &*sort_crit, |a, b, criteria| unsafe {
         sort_winlink_cmp((*a).clone(), (*b).clone(), criteria)

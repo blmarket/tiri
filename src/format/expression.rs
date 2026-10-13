@@ -915,7 +915,7 @@ pub(super) unsafe fn format_session_name(
     fmt: *const ::core::ffi::c_char,
 ) -> CString {
     let name = format_expand1_cstring(es, fmt);
-    if crate::src::shared::session::SessionRef::find(&name).is_some() {
+    if crate::src::session::sessions::find(&name).is_some() {
         c"1".to_owned()
     } else {
         c"0".to_owned()

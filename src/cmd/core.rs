@@ -627,8 +627,7 @@ pub unsafe fn cmd_mouse_window(
     if (*m).s == -1 {
         return refbox::Weak::new();
     }
-    let Some(session_owner) = crate::src::shared::session::SessionRef::find_by_id((*m).s as u_int)
-    else {
+    let Some(session_owner) = crate::src::session::sessions::find_by_id((*m).s as u_int) else {
         return refbox::Weak::new();
     };
     s = Some(session_owner.clone());

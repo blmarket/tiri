@@ -8,11 +8,11 @@ use crate::src::server_client::Client;
 /// the legacy accumulation for that Session without refreshing its cached layout.
 /// Neither registry traversal nor numeric option lookup invokes callbacks.
 pub(super) unsafe fn recalculate_size_state() {
-    let mut cursor = sessions_minmax(&sessions);
+    let mut cursor = sessions::first();
     while let Some(owner) = cursor {
         (*owner.get()).attached = 0;
         status_update_cache(&mut *owner.get());
-        cursor = sessions_next(&sessions, &*owner.get());
+        cursor = sessions::after((*owner.get()).name.as_bytes());
     }
     let mut cursor = clients.first();
     while let Some(owner) = cursor {

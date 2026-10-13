@@ -33,7 +33,6 @@ use crate::src::reactor::{evbuffer_add, evbuffer_new, evbuffer_pullup, evbuffer_
 use crate::src::regsub::regsub_cstring;
 use crate::src::server::clients;
 use crate::src::server::{marked_pane, server_check_marked};
-use crate::src::session::SessionIndex as _;
 use crate::src::shared::window::WindowWeak;
 use crate::src::window::Window as _;
 

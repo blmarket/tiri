@@ -6,7 +6,6 @@ use crate::src::server_client::Client as _;
 use crate::src::session::session_group_count;
 use crate::src::session::sessions;
 use crate::src::session::Session;
-use crate::src::session::SessionIndex as _;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
@@ -141,12 +140,12 @@ pub unsafe fn server_redraw_window_borders(window: &WindowRef) {
     }
 }
 pub unsafe fn server_status_window(window: &WindowRef) {
-    let mut next = sessions.first();
+    let mut next = sessions::first();
     while let Some(session_owner) = next {
         if session_owner.contains_window(window) {
             server_status_session(&session_owner);
         }
-        next = session_owner.next_session();
+        next = sessions::after(session_owner.name().as_bytes());
     }
 }
 pub unsafe fn server_lock() {
@@ -187,7 +186,7 @@ pub unsafe fn server_kill_pane(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<wi
 pub unsafe fn server_kill_window(owner: WindowRef, mut renumber: ::core::ffi::c_int) {
     let mut s: Option<SessionRef> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut s_owner = sessions.first();
+    let mut s_owner = sessions::first();
     s = s_owner.clone();
     while !s.is_none() {
         // Destroying a group may remove both s and its next session.
@@ -213,7 +212,7 @@ pub unsafe fn server_kill_window(owner: WindowRef, mut renumber: ::core::ffi::c_
                 server_renumber_session(s.as_ref().expect("live session"));
             }
         }
-        s_owner = sessions.after(&name);
+        s_owner = sessions::after(&name);
         s = s_owner.clone();
     }
     recalculate_sizes();
@@ -242,11 +241,11 @@ pub unsafe fn server_renumber_session(s_owner: &SessionRef) {
 }
 pub unsafe fn server_renumber_all() {
     let mut s: Option<SessionRef> = None;
-    let mut s_owner = sessions.first();
+    let mut s_owner = sessions::first();
     s = s_owner.clone();
     while !s.is_none() {
         server_renumber_session(s.as_ref().expect("live session"));
-        s_owner = s.as_ref().expect("live session").next_session();
+        s_owner = sessions::after(s.as_ref().expect("live session").name().as_bytes());
         s = s_owner.clone();
     }
 }
@@ -359,14 +358,13 @@ unsafe fn server_destroy_session_group(s_owner: &SessionRef) {
     };
 }
 unsafe fn server_find_session(
-    head: &crate::src::shared::session::sessions,
     excluded: &SessionRef,
     mut choose: impl FnMut(&SessionRef, Option<&SessionRef>) -> bool,
 ) -> Option<SessionRef> {
     let mut selected: Option<SessionRef> = None;
-    let mut current = head.first();
+    let mut current = sessions::first();
     while let Some(owner) = current {
-        current = owner.next_session();
+        current = sessions::after(owner.name().as_bytes());
         if !std::rc::Rc::ptr_eq(&owner, excluded) && choose(&owner, selected.as_ref()) {
             selected = Some(owner);
         }
@@ -395,12 +393,11 @@ pub unsafe fn server_destroy_session(source: &SessionRef) {
         .expect("live session")
         .with_options_mut(|options| options_get_number(options, c"detach-on-destroy"))
         as ::core::ffi::c_int;
-    let head = &sessions;
     let mut replacement = match detach_on_destroy {
-        0 => server_find_session(head, s.as_ref().expect("live session"), |a, b| {
+        0 => server_find_session(s.as_ref().expect("live session"), |a, b| {
             server_newer_session(a, b)
         }),
-        2 => server_find_session(head, s.as_ref().expect("live session"), |a, b| {
+        2 => server_find_session(s.as_ref().expect("live session"), |a, b| {
             server_newer_detached_session(a, b)
         }),
         3 => (Some(s.as_ref().expect("live session")))
@@ -416,7 +413,7 @@ pub unsafe fn server_destroy_session(source: &SessionRef) {
         replacement = None;
     }
     let fallback = if replacement.is_none() && matches!(detach_on_destroy, 1 | 2) {
-        server_find_session(head, s.as_ref().expect("live session"), |a, b| {
+        server_find_session(s.as_ref().expect("live session"), |a, b| {
             server_newer_session(a, b)
         })
     } else {
@@ -453,7 +450,7 @@ pub unsafe fn server_check_unattached() {
     let mut s: Option<SessionRef> = None;
     let mut sg = crate::src::shared::session::SessionGroupWeak::new();
     let mut current_block_4: u64;
-    let mut s_owner = sessions.first();
+    let mut s_owner = sessions::first();
     s = s_owner.clone();
     while !s.is_none() {
         let name = s.as_ref().expect("live session").name().into_bytes();
@@ -580,7 +577,7 @@ pub unsafe fn server_check_unattached() {
                 }
             }
         }
-        s_owner = sessions.after(&name);
+        s_owner = sessions::after(&name);
         s = s_owner.clone();
     }
 }

@@ -564,7 +564,7 @@ unsafe fn window_switch_run_command(
     fs = cmd_find_state::clear_state(0 as ::core::ffi::c_int);
     match (*item).type_0 as ::core::ffi::c_uint {
         0 => {
-            s = crate::src::shared::session::SessionRef::find_by_id((*item).session as u_int);
+            s = crate::src::session::sessions::find_by_id((*item).session as u_int);
             if let Some(s_value) = s.as_ref() {
                 let mut bytes = Vec::from(b"=".as_slice());
                 bytes.extend_from_slice(s_value.name().as_bytes());
@@ -574,7 +574,7 @@ unsafe fn window_switch_run_command(
             }
         }
         1 => {
-            s = crate::src::shared::session::SessionRef::find_by_id((*item).session as u_int);
+            s = crate::src::session::sessions::find_by_id((*item).session as u_int);
             if let Some(s_value) = s.as_ref() {
                 wl = s_value.with_winlinks(|links| winlink_find_by_index(links, (*item).winlink));
                 if !s.is_none() && wl.is_alive() {

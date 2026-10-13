@@ -7,7 +7,6 @@ use crate::src::format::{
 use crate::src::server_fn::{server_destroy_session, server_redraw_session};
 use crate::src::session::sessions;
 use crate::src::session::Session;
-use crate::src::session::SessionIndex as _;
 use std::ffi::CStr;
 
 use crate::src::shared::abi::*;
@@ -108,7 +107,7 @@ unsafe fn cmd_kill_session_all(
     let mut s: Option<SessionRef> =
         (*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item)).session_handle();
     let mut sloop: Option<SessionRef> = None;
-    let mut sloop_owner = sessions.first();
+    let mut sloop_owner = sessions::first();
     sloop = sloop_owner.clone();
     while !sloop.is_none() {
         let name = sloop.as_ref().expect("live session").name().into_bytes();
@@ -125,7 +124,7 @@ unsafe fn cmd_kill_session_all(
                 std::ffi::CStr::from_ptr(c"cmd_kill_session_all".as_ptr()),
             );
         }
-        sloop_owner = sessions.after(&name);
+        sloop_owner = sessions::after(&name);
         sloop = sloop_owner.clone();
     }
     CMD_RETURN_NORMAL

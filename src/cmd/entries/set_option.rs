@@ -16,7 +16,6 @@ use crate::src::options::{
 };
 use crate::src::session::sessions;
 use crate::src::session::Session;
-use crate::src::session::SessionIndex as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -350,7 +349,7 @@ unsafe fn cmd_set_option_exec(
             // Preserve the pinned oracle's parse-failure ambiguity diagnostic.
             let ambiguous = match failure {
                 OptionMatchFailure::Ambiguous => true,
-                OptionMatchFailure::Parse => sessions.has_entries(),
+                OptionMatchFailure::Parse => !sessions::is_empty(),
                 _ => false,
             };
             cmdq_error(item_handle, |out| {

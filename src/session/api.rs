@@ -5,35 +5,6 @@ use crate::src::shared::spawn::spawn_context;
 use crate::src::shared::window::WindowRef;
 use std::time::SystemTime;
 
-/// Operations on the independent Session registry, including detached test heads.
-/// Entries retain their existing weak index identity and retirement behavior.
-pub trait SessionIndex {
-    /// Restore the existing empty-registry state during server initialization.
-    unsafe fn reset(&mut self);
-    fn has_entries(&self) -> bool;
-    fn first(&self) -> Option<SessionRef>;
-    fn after(&self, name: &[u8]) -> Option<SessionRef>;
-    fn resolve(&self, observer: &SessionWeak) -> Option<SessionRef>;
-}
-
-impl SessionIndex for crate::src::shared::session::sessions {
-    unsafe fn reset(&mut self) {
-        self.storage.clear();
-    }
-    fn has_entries(&self) -> bool {
-        !self.storage.is_empty()
-    }
-    fn first(&self) -> Option<SessionRef> {
-        sessions_minmax(self)
-    }
-    fn after(&self, name: &[u8]) -> Option<SessionRef> {
-        sessions_after(self, name)
-    }
-    fn resolve(&self, observer: &SessionWeak) -> Option<SessionRef> {
-        sessions_resolve(self, observer)
-    }
-}
-
 /// The caller must preserve the legacy single-threaded borrow and logical
 /// lifetime rules. No model/component reference may survive a callback.
 pub trait Session {
@@ -55,19 +26,10 @@ pub trait Session {
     ) -> Self
     where
         Self: Sized;
-    unsafe fn find(name: &CStr) -> Option<Self>
-    where
-        Self: Sized;
-    unsafe fn find_by_id(id: u32) -> Option<Self>
-    where
-        Self: Sized;
     unsafe fn find_by_id_str(id: &CStr) -> Option<Self>
     where
         Self: Sized;
     unsafe fn sorted(criteria: &sort_criteria) -> Vec<Self>
-    where
-        Self: Sized;
-    unsafe fn next_id() -> u32
     where
         Self: Sized;
     /// Release this owner now, preserving the release diagnostics.
@@ -99,8 +61,6 @@ pub trait Session {
 
     /// Registry liveness is distinct from retained allocation liveness.
     unsafe fn is_registered(&self) -> bool;
-    /// Advance in the session registry by name.
-    unsafe fn next_session(&self) -> Option<SessionRef>;
     unsafe fn contains_window(&self, window: &WindowRef) -> bool;
     unsafe fn id(&self) -> u32;
     unsafe fn name(&self) -> CString;
@@ -188,20 +148,11 @@ impl Session for SessionRef {
     ) -> Self {
         session_create(prefix, name, cwd, environment, options, termios)
     }
-    unsafe fn find(name: &CStr) -> Option<Self> {
-        session_find(name)
-    }
-    unsafe fn find_by_id(id: u32) -> Option<Self> {
-        session_find_by_id(id)
-    }
     unsafe fn find_by_id_str(id: &CStr) -> Option<Self> {
         session_find_by_id_str(id)
     }
     unsafe fn sorted(criteria: &sort_criteria) -> Vec<Self> {
         sort_get_sessions(criteria)
-    }
-    unsafe fn next_id() -> u32 {
-        next_session_id
     }
     unsafe fn release(self, from: &CStr) {
         session_remove_ref(self, from);
@@ -246,10 +197,7 @@ impl Session for SessionRef {
     }
 
     unsafe fn is_registered(&self) -> bool {
-        sessions_resolve(&sessions, &Rc::downgrade(self)).is_some()
-    }
-    unsafe fn next_session(&self) -> Option<SessionRef> {
-        sessions_next(&sessions, &*self.get())
+        sessions::resolve(&Rc::downgrade(self)).is_some()
     }
     unsafe fn contains_window(&self, window: &WindowRef) -> bool {
         use crate::src::window::Window;
@@ -282,7 +230,7 @@ impl Session for SessionRef {
         if old_name == new_name {
             return Ok(());
         }
-        if session_find(&new_name).is_some() {
+        if sessions::find(&new_name).is_some() {
             let mut message = b"duplicate session: ".to_vec();
             message.extend_from_slice(new_name.as_bytes());
             return Err(CString::new(message).expect("C string name"));
@@ -305,9 +253,9 @@ impl Session for SessionRef {
         event_payload_set_string(&mut payload, c"new_name", |out| {
             out.write_all(new_name.as_bytes())
         });
-        let owner = sessions_remove(&mut sessions, self).expect("registered session owner");
+        let owner = sessions::remove(self).expect("registered session owner");
         drop(session_replace_name(&mut *self.get(), new_name));
-        sessions_insert(&mut sessions, owner);
+        sessions::insert(owner);
         crate::src::server_fn::server_status_session(self);
         events_fire(c"session-renamed", payload);
         Ok(())

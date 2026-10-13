@@ -806,7 +806,7 @@ unsafe fn format_cb_mouse_y(ft: *mut format_tree) -> Option<CString> {
 }
 unsafe fn format_cb_next_session_id(_ft: *mut format_tree) -> Option<CString> {
     Some(
-        CString::new(format!("${}", SessionRef::next_id()))
+        CString::new(format!("${}", crate::src::session::sessions::next_id()))
             .expect("formatted numbers contain no NUL"),
     )
 }
@@ -963,11 +963,11 @@ unsafe fn format_cb_scroll_region_upper(ft: *mut format_tree) -> Option<CString>
 unsafe fn format_cb_server_sessions(_ft: *mut format_tree) -> Option<CString> {
     let mut s: Option<SessionRef> = None;
     let mut n: u_int = 0 as u_int;
-    let mut s_owner = sessions.first();
+    let mut s_owner = sessions::first();
     s = s_owner.clone();
     while !s.is_none() {
         n = n.wrapping_add(1);
-        s_owner = s.as_ref().expect("live session").next_session();
+        s_owner = sessions::after(s.as_ref().expect("live session").name().as_bytes());
         s = s_owner.clone();
     }
     Some(CString::new(format!("{}", (n) as u32)).expect("formatted numbers contain no NUL"))
@@ -1291,7 +1291,7 @@ unsafe fn format_cb_window_linked(mut ft: *mut format_tree) -> Option<CString> {
     let mut s: Option<SessionRef> = None;
     let mut found: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if (*ft).winlink_handle().is_alive() {
-        let mut s_owner = sessions.first();
+        let mut s_owner = sessions::first();
         s = s_owner.clone();
         while !s.is_none() {
             wl = s_owner
@@ -1310,7 +1310,7 @@ unsafe fn format_cb_window_linked(mut ft: *mut format_tree) -> Option<CString> {
                 }
                 wl = winlinks_next(wl.get_unchecked());
             }
-            s_owner = s.as_ref().expect("live session").next_session();
+            s_owner = sessions::after(s.as_ref().expect("live session").name().as_bytes());
             s = s_owner.clone();
         }
         return Some(c"0".to_owned());
@@ -1341,7 +1341,7 @@ unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<C
         }
         sg = session_groups::next(&sg);
     }
-    let mut s_owner = sessions.first();
+    let mut s_owner = sessions::first();
     s = s_owner.clone();
     while !s.is_none() {
         if !crate::src::session::session_groups::for_session(&Rc::downgrade(
@@ -1355,7 +1355,7 @@ unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<C
         {
             n = n.wrapping_add(1);
         }
-        s_owner = s.as_ref().expect("live session").next_session();
+        s_owner = sessions::after(s.as_ref().expect("live session").name().as_bytes());
         s = s_owner.clone();
     }
     drop(window);

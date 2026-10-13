@@ -31,7 +31,7 @@ pub(super) unsafe fn value(
         b"client_session" => owner.attached_session().upgrade()?.name(),
         b"client_last_session" => {
             let previous = owner.previous_session();
-            sessions.resolve(&previous)?.name()
+            sessions::resolve(&previous)?.name()
         }
         b"client_control_mode" => boolean(owner.is_control()),
         b"client_readonly" => boolean(owner.is_read_only()),

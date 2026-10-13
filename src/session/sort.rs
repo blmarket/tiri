@@ -28,9 +28,9 @@ unsafe fn sort_session_cmp(sa: &session, sb: &session, sort_crit: &sort_criteria
 }
 pub(super) unsafe fn sort_get_sessions(sort_crit: &sort_criteria) -> Vec<SessionRef> {
     let mut sessions_sorted = Vec::new();
-    let mut current = sessions_minmax(&sessions);
+    let mut current = sessions::first();
     while let Some(owner) = current {
-        current = sessions_next(&sessions, &*owner.get());
+        current = sessions::after((*owner.get()).name.as_bytes());
         sessions_sorted.push(owner);
     }
     sort_by_criteria(&mut sessions_sorted, sort_crit, |a, b, criteria| unsafe {

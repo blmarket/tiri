@@ -237,8 +237,7 @@ unsafe fn cmd_new_session_exec(
     if current_block == 10043043949733653460 {
         if args_has(args, 'A' as i32 as u_char) != 0 {
             if !sname.is_null() {
-                as_0 =
-                    crate::src::shared::session::SessionRef::find(std::ffi::CStr::from_ptr(sname));
+                as_0 = crate::src::session::sessions::find(std::ffi::CStr::from_ptr(sname));
             } else {
                 as_0 = (*target).session_handle();
             }
@@ -263,8 +262,7 @@ unsafe fn cmd_new_session_exec(
             }
         }
         if !sname.is_null()
-            && crate::src::shared::session::SessionRef::find(std::ffi::CStr::from_ptr(sname))
-                .is_some()
+            && crate::src::session::sessions::find(std::ffi::CStr::from_ptr(sname)).is_some()
         {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"duplicate session: ")?;

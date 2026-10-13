@@ -15,7 +15,7 @@ pub use crate::src::session_group::{
     session_group_name, session_group_synchronize_from, session_group_synchronize_to,
 };
 pub use crate::src::shared::session::session_groups;
-pub use api::{Session, SessionIndex};
+pub use api::Session;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::src::compat::strtonum::strtonum;
@@ -58,10 +58,115 @@ use size::status_update_cache;
 use sort::sort_get_sessions;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
-pub static mut sessions: sessions = sessions {
-    storage: std::collections::BTreeMap::new(),
-};
-static mut next_session_id: u_int = 0;
+thread_local! {
+    static SESSIONS: std::cell::RefCell<sessions> = const {
+        std::cell::RefCell::new(sessions {
+            storage: std::collections::BTreeMap::new(),
+        })
+    };
+    static NEXT_SESSION_ID: std::cell::Cell<u_int> = const { std::cell::Cell::new(0) };
+}
+
+/// The session index holds the strong owner of each registered session. Each
+/// call borrows the index for its own duration and returns owned handles;
+/// removed owners are dropped by the caller after the borrow ends.
+impl sessions {
+    /// Index a session under its current name. An existing entry with the same
+    /// name wins and is returned.
+    pub fn insert(session: SessionRef) -> Option<SessionRef> {
+        let key = unsafe { (*session.get()).name.as_bytes().to_vec() };
+        SESSIONS.with_borrow_mut(|index| match index.storage.entry(key) {
+            std::collections::btree_map::Entry::Occupied(entry) => Some(entry.get().clone()),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(session);
+                None
+            }
+        })
+    }
+
+    /// Remove and return the index owner, only if `session` is the indexed one.
+    pub fn remove(session: &SessionRef) -> Option<SessionRef> {
+        let key = unsafe { (*session.get()).name.as_bytes() };
+        SESSIONS.with_borrow_mut(|index| {
+            if !index
+                .storage
+                .get(key)
+                .is_some_and(|candidate| Rc::ptr_eq(candidate, session))
+            {
+                return None;
+            }
+            index.storage.remove(key)
+        })
+    }
+
+    pub fn first() -> Option<SessionRef> {
+        SESSIONS.with_borrow(|index| index.storage.values().next().cloned())
+    }
+
+    /// Resume a potentially destructive walk using a saved name and the live
+    /// index. The named session and any of its successors may already have
+    /// been removed.
+    pub fn after(name: &[u8]) -> Option<SessionRef> {
+        SESSIONS.with_borrow(|index| {
+            index
+                .storage
+                .range::<[u8], _>((std::ops::Bound::Excluded(name), std::ops::Bound::Unbounded))
+                .next()
+                .map(|(_, node)| Rc::clone(node))
+        })
+    }
+
+    pub fn find(name: &CStr) -> Option<SessionRef> {
+        SESSIONS.with_borrow(|index| index.storage.get(name.to_bytes()).cloned())
+    }
+
+    pub fn find_by_id(id: u_int) -> Option<SessionRef> {
+        SESSIONS.with_borrow(|index| {
+            index
+                .storage
+                .values()
+                .find(|owner| unsafe { (*owner.get()).id } == id)
+                .cloned()
+        })
+    }
+
+    /// Resolve an observer only while its session remains in this index.
+    /// A removed session can still be retained by queued events or other owners.
+    pub fn resolve(observer: &SessionWeak) -> Option<SessionRef> {
+        let owner = observer.upgrade()?;
+        SESSIONS
+            .with_borrow(|index| {
+                index
+                    .storage
+                    .values()
+                    .any(|candidate| Rc::ptr_eq(candidate, &owner))
+            })
+            .then_some(owner)
+    }
+
+    pub fn is_empty() -> bool {
+        SESSIONS.with_borrow(|index| index.storage.is_empty())
+    }
+
+    /// Restore the empty-registry state during server initialization.
+    pub fn clear() {
+        let storage = SESSIONS.with_borrow_mut(|index| std::mem::take(&mut index.storage));
+        drop(storage);
+    }
+
+    /// The id the next created session will receive.
+    pub fn next_id() -> u_int {
+        NEXT_SESSION_ID.get()
+    }
+
+    fn alloc_id() -> u_int {
+        NEXT_SESSION_ID.with(|next| {
+            let id = next.get();
+            next.set(id.wrapping_add(1));
+            id
+        })
+    }
+}
 
 /// `session.cwd` borrows this value until replacement or early destruction.
 fn session_set_cwd(s: &mut session, cwd: Option<CString>) {
@@ -71,62 +176,6 @@ fn session_set_cwd(s: &mut session, cwd: Option<CString>) {
 /// Replace the borrowed public name after callers remove the old map key.
 fn session_replace_name(s: &mut session, name: CString) -> CString {
     std::mem::replace(&mut s.name, name)
-}
-fn sessions_key(elm: &session) -> Vec<u8> {
-    elm.name.as_bytes().to_vec()
-}
-fn sessions_find(head: &sessions, elm: &session) -> Option<SessionRef> {
-    head.storage.get(elm.name.as_bytes()).cloned()
-}
-unsafe fn sessions_insert(head: &mut sessions, session: SessionRef) -> Option<SessionRef> {
-    let key = (*session.get()).name.as_bytes().to_vec();
-    match head.storage.entry(key) {
-        std::collections::btree_map::Entry::Occupied(entry) => Some(entry.get().clone()),
-        std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(session);
-            None
-        }
-    }
-}
-unsafe fn sessions_remove(head: &mut sessions, elm: &SessionRef) -> Option<SessionRef> {
-    let key = (*elm.get()).name.as_bytes();
-    if !head
-        .storage
-        .get(key)
-        .is_some_and(|candidate| Rc::ptr_eq(candidate, elm))
-    {
-        return None;
-    }
-    head.storage.remove(key)
-}
-fn sessions_minmax(head: &sessions) -> Option<SessionRef> {
-    head.storage.values().next().cloned()
-}
-/// Resume a potentially destructive walk using a saved name and the live index.
-/// The named session and any of its successors may already have been removed.
-fn sessions_after(head: &sessions, name: &[u8]) -> Option<SessionRef> {
-    head.storage
-        .range::<[u8], _>((std::ops::Bound::Excluded(name), std::ops::Bound::Unbounded))
-        .next()
-        .map(|(_, node)| Rc::clone(node))
-}
-
-/// Successor of `elm` by name; `elm` itself need not still be indexed.
-fn sessions_next(head: &sessions, elm: &session) -> Option<SessionRef> {
-    sessions_after(head, elm.name.as_bytes())
-}
-/// Resolve an observer only while its session remains in this index.
-/// A removed session can still be retained by queued events or other owners.
-fn sessions_resolve(head: &sessions, observer: &SessionWeak) -> Option<SessionRef> {
-    let owner = observer.upgrade()?;
-    head.storage
-        .values()
-        .any(|candidate| Rc::ptr_eq(candidate, &owner))
-        .then_some(owner)
-}
-
-unsafe fn session_find(name: &CStr) -> Option<SessionRef> {
-    sessions.storage.get(name.to_bytes()).cloned()
 }
 unsafe fn session_find_by_id_str(s: &CStr) -> Option<SessionRef> {
     let mut id: u_int = 0;
@@ -142,24 +191,7 @@ unsafe fn session_find_by_id_str(s: &CStr) -> Option<SessionRef> {
     if parsed.is_err() {
         return None;
     }
-    session_find_by_id(id)
-}
-unsafe fn session_find_by_id(mut id: u_int) -> Option<SessionRef> {
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut s_owner = sessions_minmax(&sessions);
-    s = s_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !s.is_null() {
-        if (*s).id == id {
-            return s_owner;
-        }
-        s_owner = sessions_next(&sessions, &*s);
-        s = s_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-    }
-    None
+    sessions::find_by_id(id)
 }
 unsafe fn session_create(
     prefix: Option<&CStr>,
@@ -181,14 +213,10 @@ unsafe fn session_create(
     status_update_cache(&mut *(s));
     if let Some(name) = name {
         drop(session_replace_name(&mut *s, name.to_owned()));
-        let fresh0 = next_session_id;
-        next_session_id = next_session_id.wrapping_add(1);
-        (*s).id = fresh0;
+        (*s).id = sessions::alloc_id();
     } else {
         loop {
-            let fresh1 = next_session_id;
-            next_session_id = next_session_id.wrapping_add(1);
-            (*s).id = fresh1;
+            (*s).id = sessions::alloc_id();
             let mut generated = prefix.map_or_else(Vec::new, |prefix| {
                 let mut bytes = prefix.to_bytes().to_vec();
                 bytes.push(b'-');
@@ -199,12 +227,12 @@ unsafe fn session_create(
                 &mut *s,
                 CString::new(generated).expect("generated name has no NUL"),
             ));
-            if sessions_find(&sessions, &*s).is_none() {
+            if sessions::find(&(*s).name).is_none() {
                 break;
             }
         }
     }
-    sessions_insert(&mut sessions, Rc::clone(&owner));
+    sessions::insert(Rc::clone(&owner));
     log_debug(format_args!(
         "new session {} ${}",
         log_bytes((*s).name.as_bytes()),
@@ -248,7 +276,7 @@ unsafe fn session_destroy(s_owner: &SessionRef, mut notify: ::core::ffi::c_int, 
         return;
     }
     (*s).set_curw((refbox::Weak::new()).clone());
-    let owner = sessions_remove(&mut sessions, s_owner).expect("registered session owner");
+    let owner = sessions::remove(s_owner).expect("registered session owner");
     if notify != 0 {
         events_fire_session(c"session-closed", std::rc::Rc::clone(s_owner));
     }

@@ -7,7 +7,6 @@ use crate::src::format::{
     format_add, format_create_with_client, format_defaults, format_expand_cstring, format_true,
 };
 use crate::src::session::sessions;
-use crate::src::session::SessionIndex as _;
 
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
@@ -95,7 +94,7 @@ unsafe fn cmd_list_panes_server(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
 ) {
     let mut s: Option<SessionRef> = None;
-    let mut s_owner = sessions.first();
+    let mut s_owner = sessions::first();
     s = s_owner.clone();
     while !s.is_none() {
         cmd_list_panes_session(
@@ -104,7 +103,7 @@ unsafe fn cmd_list_panes_server(
             item_handle,
             2 as ::core::ffi::c_int,
         );
-        s_owner = s.as_ref().expect("live session").next_session();
+        s_owner = sessions::after(s.as_ref().expect("live session").name().as_bytes());
         s = s_owner.clone();
     }
 }

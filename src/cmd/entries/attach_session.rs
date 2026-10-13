@@ -9,7 +9,6 @@ use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
 use crate::src::server::clients;
-use crate::src::session::SessionIndex as _;
 use crate::src::window::Window as _;
 use std::ffi::CStr;
 
@@ -89,7 +88,7 @@ pub unsafe fn cmd_attach_session(
     let mut wp = None;
     let mut msgtype: msgtype = 0 as msgtype;
     let mut uid: uid_t = 0;
-    if !sessions.has_entries() {
+    if !!sessions::is_empty() {
         cmdq_error(item_handle, |out| out.write_all(b"no sessions"));
         return CMD_RETURN_ERROR;
     }

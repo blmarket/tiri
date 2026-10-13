@@ -15,7 +15,6 @@ use crate::src::prompt_history::prompt_load_history;
 use crate::src::server::clients;
 use crate::src::server_client::Client as _;
 use crate::src::session::sessions;
-use crate::src::session::SessionIndex as _;
 
 use crate::src::session::Session as _;
 use crate::src::shared::abi::*;
@@ -310,7 +309,7 @@ pub unsafe fn cfg_show_causes(s_owner: Option<&SessionRef>) {
             s = c
                 .as_ref()
                 .and_then(|c| c.attached_session().upgrade())
-                .or_else(|| sessions.first());
+                .or_else(|| sessions::first());
         }
         if s.is_none() || !s.as_ref().expect("live session").is_attached() {
             return;

@@ -11,7 +11,6 @@ use crate::src::server::{marked_pane, server_check_marked};
 use crate::src::server_client::Client;
 use crate::src::session::sessions;
 use crate::src::session::Session;
-use crate::src::session::SessionIndex as _;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::layout::Direction;
 use crate::src::shared::rc::same;
@@ -150,9 +149,9 @@ unsafe fn cmd_find_best_session(
     let candidates = match candidates {
         Some(candidates) => candidates,
         None => {
-            let mut cursor = sessions.first();
+            let mut cursor = sessions::first();
             while let Some(owner) = cursor {
-                cursor = owner.next_session();
+                cursor = sessions::after(owner.name().as_bytes());
                 all.push(owner);
             }
             &all
@@ -184,9 +183,9 @@ impl cmd_find_state {
             return -1;
         };
         let mut candidates = Vec::new();
-        let mut cursor = sessions.first();
+        let mut cursor = sessions::first();
         while let Some(owner) = cursor {
-            cursor = owner.next_session();
+            cursor = sessions::after(owner.name().as_bytes());
             if owner.contains_window(&window_owner) {
                 candidates.push(owner);
             }
@@ -239,7 +238,7 @@ impl cmd_find_state {
                 -1
             };
         }
-        self.set_s(crate::src::shared::session::SessionRef::find(target).as_ref());
+        self.set_s(crate::src::session::sessions::find(target).as_ref());
         if self.session_handle().is_some() {
             return 0;
         }
@@ -255,7 +254,7 @@ impl cmd_find_state {
         // Prefix matching precedes glob matching; either must be unambiguous.
         for glob in [false, true] {
             let mut matched = None;
-            let mut cursor = sessions.first();
+            let mut cursor = sessions::first();
             while let Some(session) = cursor {
                 let name = session.name();
                 if if glob {
@@ -268,7 +267,7 @@ impl cmd_find_state {
                     }
                     matched = Some(session.clone());
                 }
-                cursor = session.next_session();
+                cursor = sessions::after(session.name().as_bytes());
             }
             if let Some(session) = matched {
                 self.set_s(Some(&session));
@@ -770,7 +769,7 @@ impl cmd_find_state {
         let Ok(wl) = self.wl.try_borrow_mut() else {
             return false;
         };
-        if sessions.resolve(&self.s).is_none()
+        if sessions::resolve(&self.s).is_none()
             || !wl
                 .window_handle()
                 .is_some_and(|window| WindowRef::ptr_eq(window, &w))

@@ -1,6 +1,5 @@
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::session::Session as _;
-use crate::src::session::SessionIndex as _;
 use crate::src::shared::client::{ClientRef, ClientWeak};
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
@@ -1597,9 +1596,7 @@ unsafe fn server_client_check_mouse(
                         loc = KEYC_MOUSE_LOCATION_STATUS;
                     }
                     5 => {
-                        if crate::src::shared::session::SessionRef::find_by_id(sr.argument)
-                            .is_none()
-                        {
+                        if crate::src::session::sessions::find_by_id(sr.argument).is_none() {
                             return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                         }
                         (*m).s = sr.argument as ::core::ffi::c_int;

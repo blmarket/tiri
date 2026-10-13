@@ -7,7 +7,6 @@ use crate::src::ffi::libc::{getuid, strcmp, strcspn};
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::key_bindings::key_bindings_get_table;
-use crate::src::session::SessionIndex as _;
 use crate::src::window::Window as _;
 
 use crate::src::shared::abi::uid_t;
@@ -179,8 +178,9 @@ unsafe fn cmd_switch_client_exec(
             return CMD_RETURN_ERROR;
         }
     } else if args_has(args, 'l' as i32 as u_char) != 0 {
-        selected_session = crate::src::session::sessions
-            .resolve(&tc.as_ref().expect("live client").previous_session());
+        selected_session = crate::src::session::sessions::resolve(
+            &tc.as_ref().expect("live client").previous_session(),
+        );
         s = selected_session.clone();
         if s.is_none() {
             cmdq_error(item_handle, |out| out.write_all(b"can't find last session"));

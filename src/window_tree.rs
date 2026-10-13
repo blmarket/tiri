@@ -267,8 +267,7 @@ struct WindowTreeTarget {
 }
 
 unsafe fn window_tree_pull_item(item: &window_tree_itemdata) -> WindowTreeTarget {
-    let Some(session) = crate::src::shared::session::SessionRef::find_by_id(item.session as u_int)
-    else {
+    let Some(session) = crate::src::session::sessions::find_by_id(item.session as u_int) else {
         return WindowTreeTarget::default();
     };
     let s = Some(session.clone());

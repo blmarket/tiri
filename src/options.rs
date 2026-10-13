@@ -22,7 +22,6 @@ use crate::src::screen_redraw::redraw_invalidate_all_scenes;
 use crate::src::server::clients;
 use crate::src::server::current_time;
 use crate::src::server_client::Client as _;
-use crate::src::session::SessionIndex as _;
 use crate::src::shared::window::WindowRef;
 
 use crate::src::server_fn::server_redraw_client;
@@ -1567,11 +1566,11 @@ pub unsafe fn options_push_changes(name: &CStr) {
         input_set_buffer_size(options_get_number(global_options, c"input-buffer-size") as size_t);
     }
     if strcmp(name, c"history-limit".as_ptr()) == 0 as ::core::ffi::c_int {
-        let mut s_owner = sessions.first();
+        let mut s_owner = sessions::first();
         s = s_owner.clone();
         while !s.is_none() {
             s.as_ref().expect("live session").update_history();
-            s_owner = s.as_ref().expect("live session").next_session();
+            s_owner = sessions::after(s.as_ref().expect("live session").name().as_bytes());
             s = s_owner.clone();
         }
     }
