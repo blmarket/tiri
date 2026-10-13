@@ -129,10 +129,7 @@ pub fn json_find_object<'a>(node: &'a json_node, key: &CStr) -> Result<&'a json_
         .ok_or_else(|| json_key_error(key, b"expected an object"))
 }
 
-pub fn json_find_array<'a>(
-    node: &'a json_node,
-    key: &CStr,
-) -> Result<&'a [json_node], CString> {
+pub fn json_find_array<'a>(node: &'a json_node, key: &CStr) -> Result<&'a [json_node], CString> {
     json_array_members(json_require(node, key)?)
         .ok_or_else(|| json_key_error(key, b"expected an array"))
 }

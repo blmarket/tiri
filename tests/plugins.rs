@@ -9,7 +9,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 const TIMEOUT: Duration = Duration::from_secs(8);
-const HMUX_STATUS: &str = "#I:#{?#{m:*fable*,#{pane_agent_model}},#[bg=red],#{?#{m:*luna*,#{pane_agent_model}},#[bg=brightblue],}}#{pane_state_emoji}#[default] #{?git_worktree,#{git_worktree}#{?git_subdir,/,},#{?pane_current_path,#{b:pane_current_path},#{b:session_path}}}#{?git_action, [#{git_action}#{?git_action_total, #{git_action_step}/#{git_action_total},}],}#{?window_flags,#{window_flags}, }";
+const HMUX_STATUS: &str = "#I:#{P:#{?#{m:*fable*,#{pane_agent_model}},#[bg=red],#{?#{m:*luna*,#{pane_agent_model}},#[bg=brightblue],}}#{pane_state_emoji}#[default],#{?#{>:#{window_panes},1},#{?window_active,#[nounderscore],#[underscore]},}#{?#{m:*fable*,#{pane_agent_model}},#[bg=red],#{?#{m:*luna*,#{pane_agent_model}},#[bg=brightblue],}}#{pane_state_emoji}#[default]} #{?git_worktree,#{git_worktree}#{?git_subdir,/,},#{?pane_current_path,#{b:pane_current_path},#{b:session_path}}}#{?git_action, [#{git_action}#{?git_action_total, #{git_action_step}/#{git_action_total},}],}#{?window_flags,#{window_flags}, }";
 
 struct Server {
     root: PathBuf,
@@ -190,6 +190,36 @@ fn defaults_match_hmux_and_plugin_output_preserves_user_options() {
     assert!(server
         .format(&pane, "#{E:window-status-format}")
         .contains("💲#[default] project"));
+    server.run(&["new-pane", "-d", "-t", &pane, "-c", repo.to_str().unwrap()]);
+    server.await_format(
+        &pane,
+        "#{E:window-status-format}",
+        "0:#[nounderscore]💲#[default]💲#[default] project*",
+    );
+    let inactive = server.run(&[
+        "new-window",
+        "-d",
+        "-t",
+        &format!("{}:", server.format(&pane, "#{session_id}")),
+        "-c",
+        repo.to_str().unwrap(),
+        "-P",
+        "-F",
+        "#{pane_id}",
+    ]);
+    server.run(&[
+        "new-pane",
+        "-d",
+        "-t",
+        &inactive,
+        "-c",
+        repo.to_str().unwrap(),
+    ]);
+    server.await_format(
+        &inactive,
+        "#{E:window-status-format}",
+        "1:#[underscore]💲#[default]💲#[default] project ",
+    );
     let all = server.run(&["display-message", "-a", "-t", &pane]);
     let plugin_fields: Vec<_> = all
         .lines()

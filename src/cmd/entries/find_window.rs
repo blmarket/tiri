@@ -165,7 +165,6 @@ fn find_window_filter(
 #[cfg(test)]
 mod tests {
     use super::find_window_filter;
-    
 
     #[test]
     fn find_window_filter_preserves_all_flag_combinations_and_bytes() {

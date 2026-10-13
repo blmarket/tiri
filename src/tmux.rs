@@ -427,9 +427,7 @@ pub static mut ptm_fd: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
 pub static mut shell_command: Option<CString> = None;
 /// The socket path chosen at startup (or by systemd activation).
 pub unsafe fn socket_path_cstr() -> &'static CStr {
-    socket_path
-        .as_deref()
-        .expect("socket path is set")
+    socket_path.as_deref().expect("socket path is set")
 }
 unsafe fn usage(mut status: ::core::ffi::c_int) -> ! {
     fprintf(
