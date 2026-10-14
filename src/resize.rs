@@ -355,7 +355,7 @@ pub unsafe fn recalculate_size(w_owner: &WindowRef, mut now: ::core::ffi::c_int)
     let mut type_0: ::core::ffi::c_int = 0;
     let mut current: ::core::ffi::c_int = 0;
     let mut changed: ::core::ffi::c_int = 0;
-    if (w_owner).active_pane().is_none() {
+    if (w_owner).active_pane().upgrade().is_none() {
         return;
     }
     log_debug(format_args!(
@@ -480,7 +480,7 @@ pub unsafe fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
     let mut window_cursor = windows::first();
     while let Some(window_owner) = window_cursor.take() {
         recalculate_size(&window_owner, now);
-        window_cursor = window_owner.next_window();
+        window_cursor = window_owner.next_window().upgrade();
         drop(window_owner);
     }
 }

@@ -104,7 +104,7 @@ pub unsafe fn alerts_reset_all() {
     let mut cursor = windows::first();
     while let Some(owner) = cursor {
         owner.reset_alert_timer();
-        cursor = owner.next_window();
+        cursor = owner.next_window().upgrade();
         drop(owner);
     }
 }

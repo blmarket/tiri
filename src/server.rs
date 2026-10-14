@@ -518,13 +518,15 @@ unsafe fn server_child_signal() {
 unsafe fn server_child_exited(pid: pid_t, status: i32) {
     let mut window_cursor = windows::first();
     while let Some(window_owner) = window_cursor.take() {
-        window_cursor = window_owner.next_window();
-        let mut pane_cursor = window_owner.next_pane(None);
-        while let Some(pane_owner) = pane_cursor {
+        window_cursor = window_owner.next_window().upgrade();
+        for pane_owner in window_owner
+            .pane_snapshot()
+            .iter()
+            .filter_map(std::rc::Weak::upgrade)
+        {
             if pane_owner.process_exited(pid, status) {
                 break;
             }
-            pane_cursor = window_owner.next_pane(Some(&pane_owner));
         }
         drop(window_owner);
     }
@@ -536,14 +538,16 @@ unsafe fn server_child_stopped(pid: pid_t, status: i32) {
     }
     let mut window_cursor = windows::first();
     while let Some(window_owner) = window_cursor.take() {
-        let mut pane_cursor = window_owner.next_pane(None);
-        while let Some(pane_owner) = pane_cursor {
+        for pane_owner in window_owner
+            .pane_snapshot()
+            .iter()
+            .filter_map(std::rc::Weak::upgrade)
+        {
             if pane_owner.process_id() == pid && killpg(pid as __pid_t, SIGCONT) != 0 {
                 kill(pid as __pid_t, SIGCONT);
             }
-            pane_cursor = window_owner.next_pane(Some(&pane_owner));
         }
-        window_cursor = window_owner.next_window();
+        window_cursor = window_owner.next_window().upgrade();
         drop(window_owner);
     }
     job_check_died(pid, status);

@@ -8,7 +8,6 @@ use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state
 use crate::src::shared::window::winlink;
 use crate::src::shared::window::WindowRef;
 use crate::src::window::Window as _;
-use std::rc::Rc;
 pub static cmd_rotate_window_entry: cmd_entry = {
     cmd_entry {
         name: c"rotate-window",
@@ -48,7 +47,11 @@ unsafe fn cmd_rotate_window_exec(
     let window_owner = (*target).w.upgrade().expect("live rotation window");
     let result = {
         let down = args_has(args, b'D') != 0;
-        let mut order = window_owner.pane_snapshot();
+        let mut order = window_owner
+            .pane_snapshot()
+            .iter()
+            .filter_map(std::rc::Weak::upgrade)
+            .collect::<Vec<_>>();
         // Down moves the last pane to the front; up the first to the end.
         if down {
             order.rotate_right(1);
@@ -60,9 +63,9 @@ unsafe fn cmd_rotate_window_exec(
             .expect("a reorder is never refused");
         // Selection follows the active pane's old position in the strip.
         let selected_pane = window_owner
-            .active_pane()
-            .and_then(|pane| window_owner.step_pane(Some(&Rc::downgrade(&pane)), down))
-            .or_else(|| window_owner.step_pane(None, down))
+            .step_pane(Some(&window_owner.active_pane()), down)
+            .upgrade()
+            .or_else(|| window_owner.step_pane(None, down).upgrade())
             .expect("rotation window has an active candidate");
         WindowRef::clone(&(window_owner)).select_pane(&selected_pane, true);
         *current.current.borrow_mut() = cmd_find_state::find_from_winlink_pane(

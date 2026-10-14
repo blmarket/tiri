@@ -142,9 +142,7 @@ pub(super) unsafe fn default_colours(pane: &Rc<UnsafeCell<window_pane>>) -> (gri
         drop(context);
     }
     let window = pane.window_observer().upgrade().expect("live pane parent");
-    let active = window
-        .active_pane()
-        .is_some_and(|owner| Rc::ptr_eq(&owner, pane));
+    let active = window.active_pane().ptr_eq(&Rc::downgrade(pane));
     drop(window);
     let state = &*pane.get();
     let mut cell = grid_default_cell;

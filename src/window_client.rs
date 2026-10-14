@@ -456,13 +456,13 @@ unsafe fn window_client_draw(
         .expect("live window")
         .clone();
     let options_window = WindowRef::downgrade(&window_owner);
-    let mut preview_pane = window_owner.active_pane();
+    let mut preview_pane = window_owner.active_pane().upgrade();
     if (*data).hide_preview_this_pane != 0
         && preview_pane
             .as_ref()
             .is_some_and(|pane| std::rc::Rc::ptr_eq(pane, &mode_pane_owner))
     {
-        preview_pane = window_owner.last_active_pane();
+        preview_pane = window_owner.last_active_pane().upgrade();
     }
     drop(window_owner);
     lines = status_line_size(c);

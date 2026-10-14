@@ -102,10 +102,6 @@ pub trait WindowPane {
         other: &Self,
         criteria: &crate::src::shared::sort::sort_criteria,
     ) -> std::cmp::Ordering;
-    unsafe fn next_in_window(&self) -> Option<Self>
-    where
-        Self: Sized;
-
     unsafe fn matches_terminal_name(&self, name: &CStr) -> bool;
     unsafe fn close_after_key(&self, key: key_code) -> bool;
     unsafe fn has_exited(&self) -> bool;
@@ -407,13 +403,6 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     ) -> std::cmp::Ordering {
         sort::compare(self, other, criteria)
     }
-    unsafe fn next_in_window(&self) -> Option<Self> {
-        let window = self.window_observer().upgrade()?;
-        let next = window.next_pane(Some(self));
-        drop(window);
-        next
-    }
-
     unsafe fn matches_terminal_name(&self, name: &CStr) -> bool {
         CStr::from_ptr((*self.get()).tty.as_ptr()) == name
     }
@@ -617,9 +606,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     }
     unsafe fn draws_inactive_screen(&self) -> bool {
         let window = self.window_observer().upgrade().expect("live pane parent");
-        let inactive = !window
-            .active_pane()
-            .is_some_and(|owner| Rc::ptr_eq(&owner, self));
+        let inactive = !window.active_pane().ptr_eq(&Rc::downgrade(self));
         drop(window);
         inactive || !matches!((*self.get()).screen_source, PaneScreenSource::Base)
     }

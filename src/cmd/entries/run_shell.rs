@@ -115,6 +115,7 @@ unsafe fn cmd_run_shell_print(cdata: &cmd_run_shell_data, msg: &CStr) {
                     .window_handle()
                     .expect("live window")
                     .active_pane()
+                    .upgrade()
             });
         if pane.is_none() {
             if let Some(find) = cmd_find_state::find_from_nothing(0) {

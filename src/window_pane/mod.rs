@@ -459,7 +459,7 @@ unsafe fn window_pane_at_index(
     w: &WindowRef,
     idx: u_int,
 ) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    w.pane_at_index(idx)
+    w.pane_at_index(idx).upgrade()
 }
 
 unsafe fn window_pane_next_by_number(
@@ -467,7 +467,7 @@ unsafe fn window_pane_next_by_number(
     pane: Option<&Rc<std::cell::UnsafeCell<window_pane>>>,
     n: u_int,
 ) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    w.pane_by_number(pane, n, false)
+    w.pane_by_number(pane, n, false).upgrade()
 }
 
 unsafe fn window_pane_previous_by_number(
@@ -475,7 +475,7 @@ unsafe fn window_pane_previous_by_number(
     pane: Option<&Rc<std::cell::UnsafeCell<window_pane>>>,
     n: u_int,
 ) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    w.pane_by_number(pane, n, true)
+    w.pane_by_number(pane, n, true).upgrade()
 }
 
 unsafe fn window_pane_index(pane: &Rc<std::cell::UnsafeCell<window_pane>>) -> Option<u32> {
@@ -491,18 +491,12 @@ unsafe fn window_pane_printable_flags(
     let window = (*wp).window_handle().expect("live window");
     let mut flags: [::core::ffi::c_char; 32] = [0; 32];
     let mut pos: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if window
-        .active_pane_observer()
-        .ptr_eq(&Rc::downgrade(wp_owner))
-    {
+    if window.active_pane().ptr_eq(&Rc::downgrade(wp_owner)) {
         let fresh12 = pos;
         pos += 1;
         flags[fresh12 as usize] = '*' as i32 as ::core::ffi::c_char;
     }
-    if window
-        .last_active_pane()
-        .is_some_and(|pane| Rc::ptr_eq(&pane, wp_owner))
-    {
+    if window.last_active_pane().ptr_eq(&Rc::downgrade(wp_owner)) {
         let fresh13 = pos;
         pos += 1;
         flags[fresh13 as usize] = '-' as i32 as ::core::ffi::c_char;
@@ -1333,8 +1327,11 @@ unsafe fn window_pane_copy_paste(
 ) {
     let wp = owner.get();
     let window_owner = owner.window_observer().upgrade().expect("pane window");
-    let mut cursor = window_owner.next_pane(None);
-    while let Some(pane_owner) = cursor {
+    for pane_owner in window_owner
+        .pane_snapshot()
+        .iter()
+        .filter_map(std::rc::Weak::upgrade)
+    {
         let loop_0 = pane_owner.get();
         if loop_0 != wp
             && (*loop_0).modes.is_empty()
@@ -1355,7 +1352,6 @@ unsafe fn window_pane_copy_paste(
                 bufferevent_write(event, bytes);
             });
         }
-        cursor = window_owner.next_pane(Some(&pane_owner));
     }
     drop(window_owner);
 }
@@ -1366,8 +1362,11 @@ unsafe fn window_pane_copy_key(
 ) {
     let wp = owner.get();
     let window_owner = owner.window_observer().upgrade().expect("pane window");
-    let mut cursor = window_owner.next_pane(None);
-    while let Some(pane_owner) = cursor {
+    for pane_owner in window_owner
+        .pane_snapshot()
+        .iter()
+        .filter_map(std::rc::Weak::upgrade)
+    {
         let loop_0 = pane_owner.get();
         if loop_0 != wp
             && (*loop_0).modes.is_empty()
@@ -1381,7 +1380,6 @@ unsafe fn window_pane_copy_key(
         {
             input_key_pane(&pane_owner, key, ::core::ptr::null_mut::<mouse_event>());
         }
-        cursor = window_owner.next_pane(Some(&pane_owner));
     }
     drop(window_owner);
 }

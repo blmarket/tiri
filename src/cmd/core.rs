@@ -659,7 +659,7 @@ pub unsafe fn cmd_mouse_pane(
     }
     let window = link.get_unchecked().window_handle().expect("linked window");
     let pane = if (*m).wp == -1 {
-        window.active_pane()
+        window.active_pane().upgrade()
     } else {
         let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::find_by_id((*m).wp as u_int)?;
         if !window.contains_pane(&std::rc::Rc::downgrade(&pane)) {

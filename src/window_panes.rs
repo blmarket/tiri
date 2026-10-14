@@ -191,7 +191,7 @@ unsafe fn window_panes_pane_geometry(
     window
         .pane_cells()
         .into_iter()
-        .find_map(|(candidate, cell)| Rc::ptr_eq(&candidate, pane).then_some(cell))
+        .find_map(|(candidate, cell)| candidate.ptr_eq(&Rc::downgrade(pane)).then_some(cell))
 }
 fn window_panes_scaled_geometry(
     geometry: &layout_geometry,
@@ -541,10 +541,7 @@ unsafe fn window_panes_draw_number(
         .window_observer()
         .upgrade()
         .expect("live pane parent");
-    let active = window
-        .active_pane()
-        .as_ref()
-        .is_some_and(|active| Rc::ptr_eq(active, wp_owner));
+    let active = window.active_pane().ptr_eq(&Rc::downgrade(wp_owner));
     drop(window);
     if active {
         name = c"display-panes-active-colour".as_ptr();
@@ -808,7 +805,7 @@ unsafe fn window_panes_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         .upgrade()
         .expect("source window remains owned");
     (|| {
-        if window.next_pane(None).is_none() {
+        if window.pane_snapshot().is_empty() {
             return;
         }
         // Preview the panes, not the blank extent past the rightmost one.
@@ -825,10 +822,12 @@ unsafe fn window_panes_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         window_panes_free_areas(data);
         screen_write_start(&mut ctx, &raw mut (*data).screen);
         screen_write_clearscreen(&mut ctx, 8 as u_int);
-        let mut next = window.next_pane(None);
-        while let Some(pane) = next {
+        for pane in window
+            .pane_snapshot()
+            .iter()
+            .filter_map(std::rc::Weak::upgrade)
+        {
             window_panes_draw_pane(data, &raw mut ctx, &pane, osx, osy, sx, sy);
-            next = pane.next_in_window();
         }
         window_panes_get_border_cell(data, &raw mut border_gc);
         window_panes_draw_borders(&raw mut ctx, &window, &border_gc, osx, osy, sx, sy);
@@ -1082,7 +1081,7 @@ unsafe fn window_panes_key_pane(
         .unwrap()
         .upgrade()
         .expect("source window remains owned");
-    let result = window_owner.pane_at_index(index);
+    let result = window_owner.pane_at_index(index).upgrade();
     drop(window_owner);
     if let Some(owner) = source_session_owner {
         drop(owner);

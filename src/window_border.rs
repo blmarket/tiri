@@ -61,7 +61,7 @@ pub(crate) unsafe fn window_render_fill_cell(
         None,
         None,
         (refbox::Weak::new()).clone(),
-        w_owner.active_pane().as_ref(),
+        w_owner.active_pane().upgrade().as_ref(),
     );
     format_add(ft, c"is_inside", |out| write!(out, "{}", (inside) as i32));
     format_add(ft, c"is_outside", |out| {

@@ -156,7 +156,11 @@ unsafe fn place_new_pane(
     sc: &spawn_context,
     window: &WindowRef,
 ) -> Result<std::rc::Rc<std::cell::UnsafeCell<window_pane>>, &'static CStr> {
-    let mut panes = window.pane_snapshot();
+    let mut panes = window
+        .pane_snapshot()
+        .iter()
+        .filter_map(std::rc::Weak::upgrade)
+        .collect::<Vec<_>>();
     // A new window's first pane has no neighbour; otherwise the pane goes
     // beside its source.
     let position = if panes.is_empty() {
@@ -656,6 +660,7 @@ pub(super) unsafe fn spawn_pane(
                 .as_ref())
             .expect("live window"))
             .active_pane()
+            .upgrade()
             .is_none()
         {
             if (*sc).flags & SPAWN_NONOTIFY != 0 {

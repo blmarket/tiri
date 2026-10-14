@@ -81,16 +81,12 @@ unsafe fn cmd_kill_pane_all(
     let mut s: Option<SessionRef> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let target_pane = (*target).pane_handle().expect("kill target pane");
-    let mut cursor = wl
+    let panes = wl
         .get_unchecked()
         .window_handle()
-        .and_then(|window| window.next_pane(None));
-    while let Some(pane_owner) = cursor {
-        cursor = wl
-            .get_unchecked()
-            .window_handle()
-            .expect("linked window")
-            .step_pane(Some(&std::rc::Rc::downgrade(&pane_owner)), false);
+        .map(|window| window.pane_snapshot())
+        .unwrap_or_default();
+    for pane_owner in panes.iter().filter_map(std::rc::Weak::upgrade) {
         if !std::rc::Rc::ptr_eq(&pane_owner, &target_pane)
             && cmd_kill_pane_filter(
                 item_handle,

@@ -284,7 +284,11 @@ pub unsafe fn sort_get_panes_window(
     w: &WindowRef,
     sort_crit: &sort_criteria,
 ) -> Vec<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
-    let mut panes = w.pane_snapshot();
+    let mut panes = w
+        .pane_snapshot()
+        .iter()
+        .filter_map(std::rc::Weak::upgrade)
+        .collect::<Vec<_>>();
     sort_by_criteria(&mut panes, sort_crit, |a, b, criteria| unsafe {
         a.compare_for_sort(b, criteria)
     });

@@ -110,37 +110,30 @@ impl window_panes {
             .collect()
     }
 
-    pub fn first(&self) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
-        self.storage
-            .first()
-            .map(|weak| weak.upgrade().expect("live pane in ordering"))
+    pub fn first(&self) -> Option<std::rc::Weak<std::cell::UnsafeCell<window_pane>>> {
+        self.storage.first().cloned()
     }
 
     pub fn next(
         &self,
         pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-    ) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
-        let storage = &self.storage;
-        let position = storage.iter().position(|weak| weak.ptr_eq(pane))?;
-        storage
-            .get(position + 1)
-            .map(|weak| weak.upgrade().expect("live pane in ordering"))
+    ) -> Option<std::rc::Weak<std::cell::UnsafeCell<window_pane>>> {
+        let position = self.position(pane)?;
+        self.storage.get(position + 1).cloned()
     }
 
-    pub fn last(&self) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
-        self.storage
-            .last()
-            .map(|weak| weak.upgrade().expect("live pane in ordering"))
+    pub fn last(&self) -> Option<std::rc::Weak<std::cell::UnsafeCell<window_pane>>> {
+        self.storage.last().cloned()
     }
 
     pub fn previous(
         &self,
         pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-    ) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
+    ) -> Option<std::rc::Weak<std::cell::UnsafeCell<window_pane>>> {
         self.position(pane)
             .and_then(|position| position.checked_sub(1))
             .and_then(|position| self.storage.get(position))
-            .map(|weak| weak.upgrade().expect("live pane in ordering"))
+            .cloned()
     }
 
     pub fn position(

@@ -162,7 +162,8 @@ unsafe fn cmd_break_pane_exec(
             ClientRef::forget_pane(&pane_owner);
             let rest = source_window
                 .pane_snapshot()
-                .into_iter()
+                .iter()
+                .filter_map(std::rc::Weak::upgrade)
                 .filter(|pane| !std::rc::Rc::ptr_eq(pane, &pane_owner))
                 .collect::<Vec<_>>();
             source_window

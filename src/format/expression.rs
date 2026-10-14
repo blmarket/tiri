@@ -1189,7 +1189,7 @@ pub(super) unsafe fn format_loop_panes(
                     .as_ref()
                     .expect("live window")
                     .active_pane()
-                    .is_some_and(|active| std::rc::Rc::ptr_eq(&active, pane)) =>
+                    .ptr_eq(&std::rc::Rc::downgrade(pane)) =>
             {
                 active_fmt.as_ptr()
             }

@@ -1046,7 +1046,7 @@ unsafe fn server_client_attached_lost(c_owner: &ClientRef) {
                 server_client_update_latest(&found);
             }
         }
-        window_cursor = window_owner.next_window();
+        window_cursor = window_owner.next_window().upgrade();
         drop(window_owner);
     }
 }
@@ -1369,10 +1369,12 @@ unsafe fn server_client_update_scrollbar_hover(
         if type_0 != KEYC_TYPE_MOUSEMOVE as ::core::ffi::c_int {
             return;
         }
-        let mut cursor = window_owner.next_pane(None);
-        while let Some(pane_owner) = cursor {
+        for pane_owner in window_owner
+            .pane_snapshot()
+            .iter()
+            .filter_map(std::rc::Weak::upgrade)
+        {
             pane_owner.update_scrollbar_hover(px, py);
-            cursor = window_owner.next_pane(Some(&pane_owner));
         }
     })();
     drop(window_owner);
@@ -1686,7 +1688,7 @@ unsafe fn server_client_check_mouse(
                 selected_pane = last_pane.clone();
             } else {
                 let hit_window_owner = &window_owner;
-                selected_pane = hit_window_owner.pane_at(px, py);
+                selected_pane = hit_window_owner.pane_at(px, py).upgrade();
             }
             match &selected_pane {
                 None => {
@@ -1830,8 +1832,7 @@ unsafe fn server_client_check_mouse(
             if let Some(pane_owner) = selected_pane.as_ref().filter(|pane_owner| {
                 !window_owner
                     .active_pane()
-                    .as_ref()
-                    .is_some_and(|active| Rc::ptr_eq(active, pane_owner))
+                    .ptr_eq(&Rc::downgrade(pane_owner))
                     && s.as_ref()
                         .expect("live session")
                         .with_options_mut(|options| {
@@ -1859,7 +1860,7 @@ unsafe fn server_client_check_mouse(
                 (b & MOUSE_MASK_BUTTONS as u_int).wrapping_add(1 as u_int) as ::core::ffi::c_int;
             if last_pane.is_none() {
                 let hit_window_owner = &window_owner;
-                selected_pane = hit_window_owner.pane_at(px, py);
+                selected_pane = hit_window_owner.pane_at(px, py).upgrade();
                 last_pane = selected_pane.clone();
                 if let Some(selected_pane_value) = selected_pane.as_ref() {
                     (*c).tty.mouse_last_pane = selected_pane_value.id() as ::core::ffi::c_int;
@@ -2655,7 +2656,8 @@ unsafe fn server_client_handle_key0(
             .window_handle()
             .as_ref())
         .expect("live window"))
-        .active_pane();
+        .active_pane()
+        .upgrade();
         if server_client_handle_dead_key(active_pane_owner.as_ref(), (*event).key) != 0 {
             return 0 as ::core::ffi::c_int;
         }
@@ -2677,18 +2679,16 @@ unsafe fn server_client_handle_key0(
             .window_handle()
             .cloned()
             .expect("prompt window");
-        let mut prompt_pane = prompt_window.active_pane();
+        let mut prompt_pane = prompt_window.active_pane().upgrade();
         if !prompt_pane
             .as_ref()
             .is_some_and(|pane| pane.prompt_position(true).is_some())
         {
-            prompt_pane = prompt_window.next_pane(None);
-            while let Some(pane_owner) = prompt_pane.as_ref() {
-                if pane_owner.prompt_position(true).is_some() {
-                    break;
-                }
-                prompt_pane = prompt_window.next_pane(Some(pane_owner));
-            }
+            prompt_pane = prompt_window
+                .pane_snapshot()
+                .iter()
+                .filter_map(std::rc::Weak::upgrade)
+                .find(|pane| pane.prompt_position(true).is_some());
         }
         drop(prompt_window);
         if let Some(pane_owner) = prompt_pane.filter(|pane| pane.prompt_position(true).is_some()) {
@@ -2752,17 +2752,19 @@ unsafe fn server_client_loop() {
     let mut window_cursor = windows::first();
     while let Some(window_owner) = window_cursor.take() {
         server_client_check_window_resize(&window_owner);
-        window_cursor = window_owner.next_window();
+        window_cursor = window_owner.next_window().upgrade();
         drop(window_owner);
     }
     let mut window_cursor = windows::first();
     while let Some(window_owner) = window_cursor.take() {
-        let mut pane_cursor = window_owner.next_pane(None);
-        while let Some(pane_owner) = pane_cursor {
+        for pane_owner in window_owner
+            .pane_snapshot()
+            .iter()
+            .filter_map(std::rc::Weak::upgrade)
+        {
             pane_owner.notify_style_changed();
-            pane_cursor = pane_owner.next_in_window();
         }
-        window_cursor = window_owner.next_window();
+        window_cursor = window_owner.next_window().upgrade();
         drop(window_owner);
     }
     let mut registry_c_owner = ClientRegistry::first();
@@ -2784,23 +2786,27 @@ unsafe fn server_client_loop() {
     }
     let mut window_cursor = windows::first();
     while let Some(window_owner) = window_cursor.take() {
-        let mut pane_cursor = window_owner.next_pane(None);
-        while let Some(pane_owner) = pane_cursor {
+        for pane_owner in window_owner
+            .pane_snapshot()
+            .iter()
+            .filter_map(std::rc::Weak::upgrade)
+        {
             pane_owner.finish_cycle();
-            pane_cursor = pane_owner.next_in_window();
         }
         check_window_name(&window_owner);
-        window_cursor = window_owner.next_window();
+        window_cursor = window_owner.next_window().upgrade();
         drop(window_owner);
     }
     let mut window_cursor = windows::first();
     while let Some(window_owner) = window_cursor.take() {
-        let mut pane_cursor = window_owner.next_pane(None);
-        while let Some(pane_owner) = pane_cursor {
+        for pane_owner in window_owner
+            .pane_snapshot()
+            .iter()
+            .filter_map(std::rc::Weak::upgrade)
+        {
             pane_owner.send_theme_update();
-            pane_cursor = pane_owner.next_in_window();
         }
-        window_cursor = window_owner.next_window();
+        window_cursor = window_owner.next_window().upgrade();
         drop(window_owner);
     }
 }
@@ -2892,7 +2898,7 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
     (|| {
         let mut r = Vec::new();
         let mut tty: *mut tty = &raw mut (*c).tty;
-        let active_owner = window_owner.active_pane();
+        let active_owner = window_owner.active_pane().upgrade();
         let mut s: Option<ScreenMode> = None;
 
         let mut mode: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -3067,12 +3073,14 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
                 && window_owner.menu_observer().is_none()
             {
                 mode &= !ALL_MOUSE_MODES;
-                let mut cursor = window_owner.next_pane(None);
-                while let Some(pane_owner) = cursor {
+                for pane_owner in window_owner
+                    .pane_snapshot()
+                    .iter()
+                    .filter_map(std::rc::Weak::upgrade)
+                {
                     if pane_owner.screen_mode(true).mode & MODE_MOUSE_ALL != 0 {
                         mode |= MODE_MOUSE_ALL;
                     }
-                    cursor = pane_owner.next_in_window();
                 }
             }
             if session_owner
@@ -3242,8 +3250,11 @@ unsafe fn server_client_check_modes(client_owner: &ClientRef) {
         if !(*c).flags & CLIENT_REDRAWSTATUS as uint64_t != 0 {
             return;
         }
-        let mut cursor = window_owner.next_pane(None);
-        while let Some(pane_owner) = cursor {
+        for pane_owner in window_owner
+            .pane_snapshot()
+            .iter()
+            .filter_map(std::rc::Weak::upgrade)
+        {
             let wme = pane_owner.mode_entry();
             let update = if wme.is_alive() {
                 wme.try_borrow_mut()
@@ -3256,7 +3267,6 @@ unsafe fn server_client_check_modes(client_owner: &ClientRef) {
             if let Some(update) = update {
                 update(wme);
             }
-            cursor = pane_owner.next_in_window();
         }
     })();
     drop(window_owner);
@@ -3267,7 +3277,8 @@ unsafe fn server_client_any_pane_redraw(c: &client, window: &WindowRef) -> bool 
     }
     window
         .pane_snapshot()
-        .into_iter()
+        .iter()
+        .filter_map(std::rc::Weak::upgrade)
         .any(|pane| pane.needs_redraw(false) || pane.needs_redraw(true))
 }
 unsafe fn server_client_check_redraw(client_owner: &ClientRef) {
@@ -3364,18 +3375,18 @@ unsafe fn server_client_check_redraw(client_owner: &ClientRef) {
                     .expect("arm timer"),
                 );
             }
-            let mut cursor = window_owner.next_pane(None);
-            while let Some(pane_owner) = cursor {
+            for pane_owner in window_owner
+                .pane_snapshot()
+                .iter()
+                .filter_map(std::rc::Weak::upgrade)
+            {
                 if pane_owner.needs_redraw(false) {
                     (*c).flags |= CLIENT_REDRAWWINDOW as uint64_t;
                     break;
-                } else {
-                    if pane_owner.needs_redraw(true) {
-                        (*c).flags = ((*c).flags as ::core::ffi::c_ulonglong
-                            | CLIENT_REDRAWSCROLLBARS)
-                            as uint64_t;
-                    }
-                    cursor = window_owner.next_pane(Some(&pane_owner));
+                }
+                if pane_owner.needs_redraw(true) {
+                    (*c).flags = ((*c).flags as ::core::ffi::c_ulonglong | CLIENT_REDRAWSCROLLBARS)
+                        as uint64_t;
                 }
             }
             return;
@@ -3387,7 +3398,11 @@ unsafe fn server_client_check_redraw(client_owner: &ClientRef) {
         tflags = (*tty).flags & (TTY_BLOCK | TTY_FREEZE | TTY_NOCURSOR);
         (*tty).flags = (*tty).flags & !(TTY_BLOCK | TTY_FREEZE) | TTY_NOCURSOR;
         if !(*c).flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
-            for pane_owner in window_owner.pane_snapshot() {
+            for pane_owner in window_owner
+                .pane_snapshot()
+                .iter()
+                .filter_map(std::rc::Weak::upgrade)
+            {
                 if pane_owner.needs_redraw(false) {
                     log_debug(format_args!(
                         "{}: redraw pane %{}",
@@ -3489,7 +3504,7 @@ unsafe fn server_client_active_pane(
     let session_owner = c.session.upgrade()?;
     let current = session_owner.current_winlink();
     let link = current.try_borrow_mut().ok()?;
-    link.window_owner.as_ref()?.active_pane()
+    link.window_owner.as_ref()?.active_pane().upgrade()
 }
 
 unsafe fn server_client_set_path(owner: &ClientRef) {
@@ -4315,6 +4330,7 @@ unsafe fn server_client_print(
                 .as_ref()
                 .expect("live window")
                 .active_pane()
+                .upgrade()
                 .expect("view-mode pane");
             if !pane_owner.is_mode(&window_view_mode) {
                 pane_owner.set_mode(None, &window_view_mode, None, None, None);

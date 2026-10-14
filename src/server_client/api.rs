@@ -169,11 +169,8 @@ pub trait Client {
     /// Stream-ordered observations; each yield resolves the current holder.
     unsafe fn file_handles(
         &self,
-    ) -> impl std::iter::FusedIterator<Item = Rc<UnsafeCell<crate::src::file::client_file>>> + 'static;
-    unsafe fn find_file(
-        &self,
-        stream: i32,
-    ) -> Option<Rc<UnsafeCell<crate::src::file::client_file>>>;
+    ) -> impl std::iter::FusedIterator<Item = Weak<UnsafeCell<crate::src::file::client_file>>> + 'static;
+    unsafe fn find_file(&self, stream: i32) -> Weak<UnsafeCell<crate::src::file::client_file>>;
     /// Observe a request owned by input_ctx. Its owner must explicitly retire
     /// this observation before freeing the request.
     unsafe fn observe_input_request(&self, request: &mut crate::src::shared::input::input_request);
@@ -813,15 +810,15 @@ impl Client for ClientRef {
     }
     unsafe fn file_handles(
         &self,
-    ) -> impl std::iter::FusedIterator<Item = Rc<UnsafeCell<crate::src::file::client_file>>> + 'static
+    ) -> impl std::iter::FusedIterator<Item = Weak<UnsafeCell<crate::src::file::client_file>>> + 'static
     {
         crate::src::file::client_files_iter(&(*self.get()).files)
     }
-    unsafe fn find_file(
-        &self,
-        stream: i32,
-    ) -> Option<Rc<UnsafeCell<crate::src::file::client_file>>> {
-        crate::src::file::client_files_find_stream(&(*self.get()).files, stream)
+    unsafe fn find_file(&self, stream: i32) -> Weak<UnsafeCell<crate::src::file::client_file>> {
+        (*self.get())
+            .files
+            .get(&stream)
+            .map_or_else(Weak::new, Rc::downgrade)
     }
     unsafe fn remember_session(&self) {
         let state = &mut *self.get();

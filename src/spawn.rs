@@ -132,16 +132,12 @@ pub(crate) unsafe fn prepare_respawn_window(
         .expect("live respawn window");
     let result = (|| {
         if !(*sc).flags & SPAWN_KILL != 0 {
-            let mut next = window.next_pane(None);
-            let mut live = false;
-            while let Some(pane) = next {
-                if pane.has_tty() {
-                    live = true;
-                    break;
-                }
-                next = window.next_pane(Some(&pane));
-            }
-            if live {
+            if window
+                .pane_snapshot()
+                .iter()
+                .filter_map(std::rc::Weak::upgrade)
+                .any(|pane| pane.has_tty())
+            {
                 set_spawn_cause(
                     cause.as_mut(),
                     &[
@@ -159,12 +155,16 @@ pub(crate) unsafe fn prepare_respawn_window(
                 return false;
             }
         }
-        let source_pane_owner = window.next_pane(None).expect("respawn window has a pane");
+        let source_pane_owner = window
+            .step_pane(None, false)
+            .upgrade()
+            .expect("respawn window has a pane");
         (*sc).wp0 = std::rc::Rc::downgrade(&source_pane_owner);
         // The window keeps only the source pane, and selects it.
         let rest = window
             .pane_snapshot()
-            .into_iter()
+            .iter()
+            .filter_map(std::rc::Weak::upgrade)
             .filter(|pane| !std::rc::Rc::ptr_eq(pane, &source_pane_owner))
             .collect::<Vec<_>>();
         window
@@ -295,7 +295,10 @@ pub(crate) unsafe fn spawn_editor(
         es = &raw mut *owner;
         // The editor runs in a temporary pane beside the active one; it
         // closes when the editor exits and selection returns to that pane.
-        let source = original_window.active_pane().expect("editor source pane");
+        let source = original_window
+            .active_pane()
+            .upgrade()
+            .expect("editor source pane");
         let cmd = CString::new(
             [
                 CStr::from_ptr(editor).to_bytes(),

@@ -989,6 +989,7 @@ unsafe fn format_cb_pane_active(mut ft: *mut format_tree) -> Option<CString> {
         if format_pane
             == (((*format_pane).window_handle().as_ref()).expect("live window"))
                 .active_pane()
+                .upgrade()
                 .as_ref()
                 .map_or(std::ptr::null_mut(), |owner| owner.get())
         {
@@ -1017,7 +1018,11 @@ unsafe fn format_cb_pane_at_right(ft: *mut format_tree) -> Option<CString> {
     // The last pane ends the strip; the extent past it is blank.
     let pane = (*ft).wp.upgrade()?;
     Some(
-        if pane.next_in_window().is_none() {
+        if pane
+            .window_observer()
+            .upgrade()
+            .is_none_or(|window| window.step_pane(Some(&(*ft).wp), false).upgrade().is_none())
+        {
             c"1"
         } else {
             c"0"
@@ -1343,10 +1348,7 @@ unsafe fn format_cb_pane_last(ft: *mut format_tree) -> Option<CString> {
     let Some(window) = pane.window_observer().upgrade() else {
         return Some(c"0".to_owned());
     };
-    let is_last = window
-        .last_active_pane()
-        .as_ref()
-        .is_some_and(|last| Rc::ptr_eq(last, &pane));
+    let is_last = window.last_active_pane().ptr_eq(&Rc::downgrade(&pane));
     let value = if is_last { c"1" } else { c"0" }.to_owned();
     drop(window);
     Some(value)

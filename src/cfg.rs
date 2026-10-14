@@ -322,6 +322,7 @@ pub unsafe fn cfg_show_causes(s_owner: Option<&SessionRef>) {
             .window_handle()
             .expect("live window")
             .active_pane()
+            .upgrade()
             .expect("view-mode pane");
         if !pane_owner.is_mode(&window_view_mode) {
             pane_owner.set_mode(None, &window_view_mode, None, None, None);

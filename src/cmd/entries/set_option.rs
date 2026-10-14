@@ -293,14 +293,16 @@ unsafe fn unset_window_panes(
     let Some(window) = target.window_handle() else {
         return Ok(());
     };
-    let mut next = window.next_pane(None);
+    let mut next = window.step_pane(None, false).upgrade();
     drop(window);
     while let Some(pane) = next.take() {
         let scope = OptionsScope::Pane(std::rc::Rc::downgrade(&pane));
         let result = scope.remove_or_default(name, array_key);
         if result.is_ok() {
             if let Some(parent) = pane.window_observer().upgrade() {
-                next = parent.next_pane(Some(&pane));
+                next = parent
+                    .step_pane(Some(&std::rc::Rc::downgrade(&pane)), false)
+                    .upgrade();
                 drop(parent);
             }
         }

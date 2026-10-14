@@ -495,7 +495,9 @@ unsafe fn monitor_check_all_panes(monitor: &refbox::Weak<monitor_set>) {
     let mut link = session.with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
     while link.is_alive() && monitor.is_alive() {
         let window = link.get_unchecked().window_handle().cloned();
-        let mut cursor = window.as_ref().and_then(|window| window.next_pane(None));
+        let mut cursor = window
+            .as_ref()
+            .and_then(|window| window.step_pane(None, false).upgrade());
         while let Some(pane) = cursor {
             if !link.is_alive() || !monitor.is_alive() {
                 break;
@@ -517,9 +519,11 @@ unsafe fn monitor_check_all_panes(monitor: &refbox::Weak<monitor_set>) {
             drop(formats);
             // Keep the legacy live parent lookup after callbacks that may move a pane.
             let next_window = pane.window_observer().upgrade();
-            cursor = next_window
-                .as_ref()
-                .and_then(|window| window.next_pane(Some(&pane)));
+            cursor = next_window.as_ref().and_then(|window| {
+                window
+                    .step_pane(Some(&std::rc::Rc::downgrade(&pane)), false)
+                    .upgrade()
+            });
             if let Some(window) = next_window {
                 drop(window);
             }

@@ -292,7 +292,8 @@ unsafe fn cmd_new_window_exec(
                 Some(&session_owner),
                 (new_wl).clone(),
                 (((new_wl.get_unchecked().window_handle().as_ref()).expect("live window"))
-                    .active_pane())
+                    .active_pane()
+                    .upgrade())
                 .as_ref(),
             );
             cmdq_print(item_handle, |out| out.write_all(cp.as_bytes()));

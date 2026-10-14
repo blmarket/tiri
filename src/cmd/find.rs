@@ -139,7 +139,7 @@ unsafe fn cmd_find_session_valid(s: &SessionRef) -> i32 {
     }
     link.get_unchecked()
         .window_handle()
-        .is_some_and(|window| window.active_pane().is_some()) as i32
+        .is_some_and(|window| window.active_pane().upgrade().is_some()) as i32
 }
 unsafe fn cmd_find_best_session(
     candidates: Option<&[SessionRef]>,
@@ -607,7 +607,10 @@ impl cmd_find_state {
                 == 0 as ::core::ffi::c_int
         {
             self.set_wp(
-                (((self.window_handle().as_ref()).expect("live window")).active_pane()).as_ref(),
+                (((self.window_handle().as_ref()).expect("live window"))
+                    .active_pane()
+                    .upgrade())
+                .as_ref(),
             );
             return 0 as ::core::ffi::c_int;
         }
@@ -670,10 +673,7 @@ impl cmd_find_state {
         }
         if strcmp(pane, c"!".as_ptr()) == 0 as ::core::ffi::c_int {
             let window = self.window_handle().expect("target window");
-            self.wp = window
-                .last_active_pane()
-                .as_ref()
-                .map_or_else(std::rc::Weak::new, Rc::downgrade);
+            self.wp = window.last_active_pane();
             drop(window);
             if self.pane_handle().is_none() {
                 return -(1 as ::core::ffi::c_int);
@@ -692,12 +692,12 @@ impl cmd_find_state {
             // The layout's neighbour of the active pane; there is none past the
             // edge.
             let window_owner = self.w.upgrade().expect("target window");
-            let selected = window_owner
+            self.wp = window_owner
                 .active_pane()
-                .and_then(|active| window_owner.pane_in_direction(&active, direction));
-            self.wp = selected
-                .as_ref()
-                .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
+                .upgrade()
+                .map_or_else(std::rc::Weak::new, |active| {
+                    window_owner.pane_in_direction(&active, direction)
+                });
             if self.pane_handle().is_none() {
                 return -(1 as ::core::ffi::c_int);
             }
@@ -720,15 +720,12 @@ impl cmd_find_state {
                 n = 1 as u_int;
             }
             let window_owner = self.w.upgrade().expect("target window");
-            let active_owner = window_owner.active_pane();
-            let selected = if *pane == b'+' as std::ffi::c_char {
+            let active_owner = window_owner.active_pane().upgrade();
+            self.wp = if *pane == b'+' as std::ffi::c_char {
                 window_owner.pane_by_number(active_owner.as_ref(), n, false)
             } else {
                 window_owner.pane_by_number(active_owner.as_ref(), n, true)
             };
-            self.wp = selected
-                .as_ref()
-                .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
             if !self.pane_handle().is_none() {
                 return 0 as ::core::ffi::c_int;
             }
@@ -741,19 +738,13 @@ impl cmd_find_state {
         idx = parsed.unwrap_or(0) as ::core::ffi::c_int;
         if parsed.is_ok() {
             let window_owner = self.w.upgrade().expect("target window");
-            let selected = window_owner.pane_at_index(idx as u_int);
-            self.wp = selected
-                .as_ref()
-                .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
+            self.wp = window_owner.pane_at_index(idx as u_int);
             if !self.pane_handle().is_none() {
                 return 0 as ::core::ffi::c_int;
             }
         }
         let window_owner = self.w.upgrade().expect("target window");
-        let selected = window_owner.find_pane(CStr::from_ptr(pane));
-        self.wp = selected
-            .as_ref()
-            .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
+        self.wp = window_owner.find_pane(CStr::from_ptr(pane));
         if !self.pane_handle().is_none() {
             return 0 as ::core::ffi::c_int;
         }
@@ -781,14 +772,7 @@ impl cmd_find_state {
         if member != self.wl {
             return false;
         }
-        let mut cursor = w.next_pane(None);
-        while let Some(pane) = cursor {
-            if std::rc::Rc::downgrade(&pane).ptr_eq(&self.wp) {
-                return true;
-            }
-            cursor = w.next_pane(Some(&pane));
-        }
-        false
+        w.contains_pane(&self.wp)
     }
     pub fn copy_from(&mut self, src: &Self) {
         let source = src.clone();
@@ -859,6 +843,7 @@ impl cmd_find_state {
             fs.window_handle()
                 .expect("live window")
                 .active_pane()
+                .upgrade()
                 .as_ref(),
         );
         fs.log_state(c"cmd_find_from_session");
@@ -873,6 +858,7 @@ impl cmd_find_state {
                 .window_handle()
                 .expect("live window")
                 .active_pane()
+                .upgrade()
                 .as_ref(),
         );
         fs.set_wl(wl);
@@ -890,7 +876,7 @@ impl cmd_find_state {
         if fs.best_winlink_with_window() != 0 {
             return None;
         }
-        fs.set_wp(w_owner.active_pane().as_ref());
+        fs.set_wp(w_owner.active_pane().upgrade().as_ref());
         fs.log_state(c"cmd_find_from_session_window");
         Some(fs)
     }
@@ -903,7 +889,7 @@ impl cmd_find_state {
         if fs.best_winlink_with_window() != 0 {
             return None;
         }
-        fs.set_wp(w_owner.active_pane().as_ref());
+        fs.set_wp(w_owner.active_pane().upgrade().as_ref());
         fs.log_state(c"cmd_find_from_window");
         Some(fs)
     }
@@ -943,6 +929,7 @@ impl cmd_find_state {
             fs.window_handle()
                 .expect("live window")
                 .active_pane()
+                .upgrade()
                 .as_ref(),
         );
         fs.log_state(c"cmd_find_from_nothing");
@@ -978,6 +965,7 @@ impl cmd_find_state {
                 .window_handle()
                 .expect("live window")
                 .active_pane()
+                .upgrade()
             else {
                 return Some(Self::find_from_session(&session, flags));
             };
@@ -1004,6 +992,7 @@ impl cmd_find_state {
                     fs.window_handle()
                         .expect("live window")
                         .active_pane()
+                        .upgrade()
                         .as_ref(),
                 );
                 fs.log_state(c"cmd_find_from_client");
@@ -1194,7 +1183,8 @@ impl cmd_find_state {
                         .window_handle()
                         .as_ref())
                         .expect("live window"))
-                        .active_pane())
+                        .active_pane()
+                        .upgrade())
                         .as_ref(),
                     );
                     self.set_w(
@@ -1262,8 +1252,10 @@ impl cmd_find_state {
                     if self.winlink_handle().is_alive() {
                         self.set_w((self.winlink_handle()).get_unchecked().window_handle());
                         self.set_wp(
-                            (((self.window_handle().as_ref()).expect("live window")).active_pane())
-                                .as_ref(),
+                            (((self.window_handle().as_ref()).expect("live window"))
+                                .active_pane()
+                                .upgrade())
+                            .as_ref(),
                         );
                     }
                 }
@@ -1425,7 +1417,8 @@ impl cmd_find_state {
                             self.set_w((self.winlink_handle()).get_unchecked().window_handle());
                             self.set_wp(
                                 (((self.window_handle().as_ref()).expect("live window"))
-                                    .active_pane())
+                                    .active_pane()
+                                    .upgrade())
                                 .as_ref(),
                             );
                             current_block = 15319680530019787978;
@@ -1442,7 +1435,8 @@ impl cmd_find_state {
                                             .window_handle()
                                             .as_ref())
                                         .expect("live window"))
-                                        .active_pane())
+                                        .active_pane()
+                                        .upgrade())
                                         .as_ref(),
                                     );
                                 }
@@ -1492,7 +1486,8 @@ impl cmd_find_state {
                                         .window_handle()
                                         .as_ref())
                                     .expect("live window"))
-                                    .active_pane())
+                                    .active_pane()
+                                    .upgrade())
                                     .as_ref(),
                                 );
                             }

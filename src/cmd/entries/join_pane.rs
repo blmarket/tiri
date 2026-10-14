@@ -86,7 +86,8 @@ unsafe fn cmd_join_pane_exec(
         // The pane's place beside its target, in the destination's list.
         let mut order = dst_window
             .pane_snapshot()
-            .into_iter()
+            .iter()
+            .filter_map(std::rc::Weak::upgrade)
             .filter(|pane| !std::rc::Rc::ptr_eq(pane, &src_pane_owner))
             .collect::<Vec<_>>();
         let target = order
@@ -108,7 +109,8 @@ unsafe fn cmd_join_pane_exec(
         if !same_window {
             let rest = src_owner
                 .pane_snapshot()
-                .into_iter()
+                .iter()
+                .filter_map(std::rc::Weak::upgrade)
                 .filter(|pane| !std::rc::Rc::ptr_eq(pane, &src_pane_owner))
                 .collect::<Vec<_>>();
             src_owner

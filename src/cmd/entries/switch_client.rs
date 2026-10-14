@@ -197,7 +197,7 @@ unsafe fn cmd_switch_client_exec(
                     .window_handle()
                     .expect("live window")
                     .active_pane()
-                    .is_some_and(|active| std::rc::Rc::ptr_eq(&active, pane))
+                    .ptr_eq(&std::rc::Rc::downgrade(pane))
         }) {
             let window_owner = wl
                 .get_unchecked()

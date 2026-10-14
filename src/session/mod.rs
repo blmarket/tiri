@@ -763,10 +763,14 @@ unsafe fn session_theme_changed(session: Option<&session>) {
     let mut link = winlinks_minmax(&session.windows, RB_NEGINF);
     while link.is_alive() {
         let wl = link.get_unchecked();
-        let mut next = wl.window_handle().and_then(|window| window.next_pane(None));
-        while let Some(owner) = next {
+        for owner in wl
+            .window_handle()
+            .map(|window| window.pane_snapshot())
+            .unwrap_or_default()
+            .iter()
+            .filter_map(std::rc::Weak::upgrade)
+        {
             owner.mark_theme_changed();
-            next = owner.next_in_window();
         }
         link = winlinks_next(wl);
     }
@@ -779,10 +783,14 @@ unsafe fn session_update_history(session: &session) {
     let mut link = winlinks_minmax(&session.windows, RB_NEGINF);
     while link.is_alive() {
         let wl = link.get_unchecked();
-        let mut next = wl.window_handle().and_then(|window| window.next_pane(None));
-        while let Some(owner) = next {
+        for owner in wl
+            .window_handle()
+            .map(|window| window.pane_snapshot())
+            .unwrap_or_default()
+            .iter()
+            .filter_map(std::rc::Weak::upgrade)
+        {
             owner.update_history_limit(limit);
-            next = owner.next_in_window();
         }
         link = winlinks_next(wl);
     }

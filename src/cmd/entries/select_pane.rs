@@ -217,14 +217,13 @@ unsafe fn cmd_select_pane_exec(
     let window = target.w.upgrade().expect("select target window");
     let result = (|| {
         if std::ptr::eq(entry, &cmd_last_pane_entry) || args_has(arguments, b'l') != 0 {
-            let mut last = window.last_active_pane();
+            let mut last = window.last_active_pane().upgrade();
             if last.is_none() && window.pane_snapshot().len() == 2 {
-                last = window.active_pane().and_then(|active| {
-                    let observer = std::rc::Rc::downgrade(&active);
-                    window
-                        .step_pane(Some(&observer), true)
-                        .or_else(|| window.step_pane(Some(&observer), false))
-                });
+                let active = window.active_pane();
+                last = window
+                    .step_pane(Some(&active), true)
+                    .upgrade()
+                    .or_else(|| window.step_pane(Some(&active), false).upgrade());
             }
             let Some(last) = last else {
                 cmdq_error(item_handle, |out| out.write_all(b"no last pane"));
@@ -285,7 +284,10 @@ unsafe fn cmd_select_pane_exec(
         .find(|&(flag, _)| args_has(arguments, flag) != 0)
         .map(|(_, direction)| direction);
         let pane = if let Some(direction) = direction {
-            let Some(selected) = window.pane_in_direction(&original_pane, direction) else {
+            let Some(selected) = window
+                .pane_in_direction(&original_pane, direction)
+                .upgrade()
+            else {
                 return CMD_RETURN_NORMAL;
             };
             selected
@@ -320,10 +322,7 @@ unsafe fn cmd_select_pane_exec(
             }
             return CMD_RETURN_NORMAL;
         }
-        if window
-            .active_pane()
-            .is_some_and(|active| std::rc::Rc::ptr_eq(&active, &pane))
-        {
+        if window.active_pane().ptr_eq(&std::rc::Rc::downgrade(&pane)) {
             return CMD_RETURN_NORMAL;
         }
         window.redraw_active_switch(Some(&pane));

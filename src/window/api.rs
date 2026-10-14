@@ -9,15 +9,15 @@ use super::*;
 use crate::src::server_client::ClientRegistry;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::menu::menu_data;
-use crate::src::shared::window::WindowRef;
+use crate::src::shared::window::{WindowRef, WindowWeak};
 use crate::src::shared::window::{WINDOW_MAXIMUM, WINDOW_MINIMUM, WINDOW_RESIZE};
 use std::time::{Duration, Instant, SystemTime};
 
 pub trait Window {
     unsafe fn update_focus(&self);
     unsafe fn redraw_active_switch(&self, pane: Option<&Rc<UnsafeCell<window_pane>>>);
-    unsafe fn pane_at(&self, x: u32, y: u32) -> Option<Rc<UnsafeCell<window_pane>>>;
-    unsafe fn find_pane(&self, name: &CStr) -> Option<Rc<UnsafeCell<window_pane>>>;
+    unsafe fn pane_at(&self, x: u32, y: u32) -> Weak<UnsafeCell<window_pane>>;
+    unsafe fn find_pane(&self, name: &CStr) -> Weak<UnsafeCell<window_pane>>;
 
     /// Selection history is separate from pane order. Only pure history edits
     /// may run while this component is borrowed.
@@ -58,10 +58,10 @@ pub trait Window {
         &self,
         pane: &Rc<UnsafeCell<window_pane>>,
         direction: Direction,
-    ) -> Option<Rc<UnsafeCell<window_pane>>>;
+    ) -> Weak<UnsafeCell<window_pane>>;
     /// The layout's rectangles in pane order, before pane border and
-    /// scrollbar adjustments. Retained panes and copied geometry only.
-    unsafe fn pane_cells(&self) -> Vec<(Rc<UnsafeCell<window_pane>>, layout_geometry)>;
+    /// scrollbar adjustments. Pane identities and copied geometry only.
+    unsafe fn pane_cells(&self) -> Vec<(Weak<UnsafeCell<window_pane>>, layout_geometry)>;
     /// The area clients clip and pan across, as the layout computes it from
     /// the panes and the window size. A strip's width is its last pane's
     /// first column plus the window width.
@@ -71,8 +71,8 @@ pub trait Window {
     unsafe fn layout_string(&self, legacy: bool) -> Option<CString>;
 
     unsafe fn id(&self) -> u32;
-    /// Registry successor. The returned owner retains the explicit release duty.
-    unsafe fn next_window(&self) -> Option<WindowRef>;
+    /// Registry successor.
+    unsafe fn next_window(&self) -> WindowWeak;
     /// Live association traversal; callbacks may change the list between calls.
     unsafe fn next_winlink(&self, after: Option<refbox::Weak<winlink>>) -> refbox::Weak<winlink>;
     /// Immediate association edits; the Session index retains the link itself.
@@ -101,19 +101,22 @@ pub trait Window {
     /// Coalesce cursor-driven offset updates at the existing 10 ms deadline.
     /// The timer observes this window weakly; dispatch borrows only on demand.
     unsafe fn schedule_offset_update(&self);
-    unsafe fn active_pane(&self) -> Option<Rc<UnsafeCell<window_pane>>>;
     /// Copy identity without upgrading it or changing pane ownership.
-    unsafe fn active_pane_observer(&self) -> Weak<UnsafeCell<window_pane>>;
+    unsafe fn active_pane(&self) -> Weak<UnsafeCell<window_pane>>;
     /// Most recently active pane from selection history.
-    unsafe fn last_active_pane(&self) -> Option<Rc<UnsafeCell<window_pane>>>;
-    /// Retain the current pane order without retaining a Window borrow, for
-    /// sorting, rendering and other walks that may reenter the Window.
-    unsafe fn pane_snapshot(&self) -> Vec<Rc<UnsafeCell<window_pane>>>;
+    unsafe fn last_active_pane(&self) -> Weak<UnsafeCell<window_pane>>;
+    /// Copy the current pane order without retaining a Window borrow, for
+    /// sorting, rendering and other walks that may reenter the Window. Walks
+    /// resolve each pane as they reach it.
+    unsafe fn pane_snapshot(&self) -> Vec<Weak<UnsafeCell<window_pane>>>;
+    /// The pane before or after `from` in pane order, without wrapping; `None`
+    /// gives the first or last pane. Empty past either end, or when `from` is
+    /// not in this window.
     unsafe fn step_pane(
         &self,
         after: Option<&Weak<UnsafeCell<window_pane>>>,
         reverse: bool,
-    ) -> Option<Rc<UnsafeCell<window_pane>>>;
+    ) -> Weak<UnsafeCell<window_pane>>;
     unsafe fn scrollbar_mode(&self) -> i32;
     unsafe fn scrollbar_position(&self) -> i32;
     /// Refresh cached scrollbar policy after options change. Pane resizing is
@@ -122,7 +125,7 @@ pub trait Window {
     /// The window's pane-border-status: off, top or bottom.
     unsafe fn pane_border_status(&self) -> i32;
     unsafe fn pane_border_lines(&self) -> pane_lines;
-    unsafe fn pane_at_index(&self, index: u32) -> Option<Rc<UnsafeCell<window_pane>>>;
+    unsafe fn pane_at_index(&self, index: u32) -> Weak<UnsafeCell<window_pane>>;
     unsafe fn pane_index(&self, pane: &Weak<UnsafeCell<window_pane>>) -> Option<u32>;
     unsafe fn pane_history_index(&self, pane: &Weak<UnsafeCell<window_pane>>) -> Option<u32>;
     /// Advance in pane order with wrapping, retaining the original zero-step result.
@@ -131,14 +134,9 @@ pub trait Window {
         pane: Option<&Rc<UnsafeCell<window_pane>>>,
         count: u32,
         reverse: bool,
-    ) -> Option<Rc<UnsafeCell<window_pane>>>;
+    ) -> Weak<UnsafeCell<window_pane>>;
     unsafe fn creation_time(&self) -> SystemTime;
     unsafe fn activity_time(&self) -> SystemTime;
-    /// `None` starts traversal; `Some` continues after that pane, without wrapping.
-    unsafe fn next_pane(
-        &self,
-        after: Option<&Rc<UnsafeCell<window_pane>>>,
-    ) -> Option<Rc<UnsafeCell<window_pane>>>;
     unsafe fn select_pane(&self, pane: &Rc<UnsafeCell<window_pane>>, notify: bool) -> i32;
     unsafe fn size(&self) -> (u32, u32);
     unsafe fn manual_size(&self) -> (u32, u32);
@@ -197,10 +195,10 @@ impl Window for WindowRef {
     unsafe fn redraw_active_switch(&self, pane: Option<&Rc<UnsafeCell<window_pane>>>) {
         window_redraw_active_switch(self, pane);
     }
-    unsafe fn pane_at(&self, x: u32, y: u32) -> Option<Rc<UnsafeCell<window_pane>>> {
+    unsafe fn pane_at(&self, x: u32, y: u32) -> Weak<UnsafeCell<window_pane>> {
         window_get_active_at(self, x, y)
     }
-    unsafe fn find_pane(&self, name: &CStr) -> Option<Rc<UnsafeCell<window_pane>>> {
+    unsafe fn find_pane(&self, name: &CStr) -> Weak<UnsafeCell<window_pane>> {
         window_find_string(self, name)
     }
 
@@ -263,17 +261,18 @@ impl Window for WindowRef {
         &self,
         pane: &Rc<UnsafeCell<window_pane>>,
         direction: Direction,
-    ) -> Option<Rc<UnsafeCell<window_pane>>> {
+    ) -> Weak<UnsafeCell<window_pane>> {
+        let pane = Rc::downgrade(pane);
         let cells = window_pane_cells(self);
         let from = cells
             .iter()
-            .position(|(candidate, _)| Rc::ptr_eq(candidate, pane))
+            .position(|(candidate, _)| candidate.ptr_eq(&pane))
             .expect("pane belongs to window");
         let geometry = cells.iter().map(|&(_, cell)| cell).collect::<Vec<_>>();
-        let to = layout::adjacent(&geometry, from, direction)?;
-        Some(cells[to].0.clone())
+        layout::adjacent(&geometry, from, direction)
+            .map_or_else(Weak::new, |to| cells[to].0.clone())
     }
-    unsafe fn pane_cells(&self) -> Vec<(Rc<UnsafeCell<window_pane>>, layout_geometry)> {
+    unsafe fn pane_cells(&self) -> Vec<(Weak<UnsafeCell<window_pane>>, layout_geometry)> {
         window_pane_cells(self)
     }
     unsafe fn logical_size(&self) -> (u32, u32) {
@@ -288,12 +287,12 @@ impl Window for WindowRef {
         )
     }
     unsafe fn layout_string(&self, legacy: bool) -> Option<CString> {
-        let active = self.active_pane_observer();
+        let active = self.active_pane();
         let entries = self
             .pane_cells()
             .into_iter()
-            .map(|(pane, geometry)| {
-                let observer = Rc::downgrade(&pane);
+            .map(|(observer, geometry)| {
+                let pane = observer.upgrade().expect("laid out pane is live");
                 layout::LayoutEntry {
                     geometry,
                     id: pane.id(),
@@ -405,7 +404,7 @@ impl Window for WindowRef {
     unsafe fn remove_winlink(&self, link: refbox::Weak<winlink>) {
         window_winlinks_remove(&mut *self.get(), link);
     }
-    unsafe fn next_window(&self) -> Option<WindowRef> {
+    unsafe fn next_window(&self) -> WindowWeak {
         windows::next(&*self.get())
     }
     unsafe fn next_winlink(&self, after: Option<refbox::Weak<winlink>>) -> refbox::Weak<winlink> {
@@ -502,23 +501,24 @@ impl Window for WindowRef {
             );
         }
     }
-    unsafe fn active_pane(&self) -> Option<Rc<UnsafeCell<window_pane>>> {
-        (*self.get()).active_pane()
-    }
-    unsafe fn active_pane_observer(&self) -> Weak<UnsafeCell<window_pane>> {
+    unsafe fn active_pane(&self) -> Weak<UnsafeCell<window_pane>> {
         (*self.get()).active.clone()
     }
-    unsafe fn last_active_pane(&self) -> Option<Rc<UnsafeCell<window_pane>>> {
-        crate::src::shared::pane::pane_history_first(&(*self.get()).last_panes)
+    unsafe fn last_active_pane(&self) -> Weak<UnsafeCell<window_pane>> {
+        (*self.get())
+            .last_panes
+            .front()
+            .cloned()
+            .unwrap_or_default()
     }
-    unsafe fn pane_snapshot(&self) -> Vec<Rc<UnsafeCell<window_pane>>> {
-        (*self.get()).panes.snapshot()
+    unsafe fn pane_snapshot(&self) -> Vec<Weak<UnsafeCell<window_pane>>> {
+        (*self.get()).panes.storage.clone()
     }
     unsafe fn step_pane(
         &self,
         after: Option<&Weak<UnsafeCell<window_pane>>>,
         reverse: bool,
-    ) -> Option<Rc<UnsafeCell<window_pane>>> {
+    ) -> Weak<UnsafeCell<window_pane>> {
         let panes = &(*self.get()).panes;
         match (after, reverse) {
             (None, false) => panes.first(),
@@ -526,6 +526,7 @@ impl Window for WindowRef {
             (Some(pane), false) => panes.next(pane),
             (Some(pane), true) => panes.previous(pane),
         }
+        .unwrap_or_default()
     }
     unsafe fn scrollbar_mode(&self) -> i32 {
         (*self.get()).sb
@@ -545,7 +546,7 @@ impl Window for WindowRef {
     unsafe fn pane_border_lines(&self) -> pane_lines {
         window_get_pane_lines(&*self.get())
     }
-    unsafe fn pane_at_index(&self, index: u32) -> Option<Rc<UnsafeCell<window_pane>>> {
+    unsafe fn pane_at_index(&self, index: u32) -> Weak<UnsafeCell<window_pane>> {
         let state = &mut *self.get();
         let base = options_get_number(
             state.options.as_deref_mut().expect("window options"),
@@ -555,7 +556,8 @@ impl Window for WindowRef {
             .panes
             .storage
             .get(index.wrapping_sub(base) as usize)
-            .map(|pane| pane.upgrade().expect("live pane in ordering"))
+            .cloned()
+            .unwrap_or_default()
     }
     unsafe fn pane_index(&self, pane: &Weak<UnsafeCell<window_pane>>) -> Option<u32> {
         let state = &mut *self.get();
@@ -580,14 +582,12 @@ impl Window for WindowRef {
         pane: Option<&Rc<UnsafeCell<window_pane>>>,
         count: u32,
         reverse: bool,
-    ) -> Option<Rc<UnsafeCell<window_pane>>> {
+    ) -> Weak<UnsafeCell<window_pane>> {
         let panes = &(*self.get()).panes;
-        let mut current = pane.cloned();
+        let mut current = pane.map(Rc::downgrade);
         for _ in 0..count {
             current = current
-                .as_ref()
                 .and_then(|pane| {
-                    let pane = Rc::downgrade(pane);
                     if reverse {
                         panes.previous(&pane)
                     } else {
@@ -596,20 +596,13 @@ impl Window for WindowRef {
                 })
                 .or_else(|| if reverse { panes.last() } else { panes.first() });
         }
-        current
+        current.unwrap_or_default()
     }
     unsafe fn creation_time(&self) -> SystemTime {
         (*self.get()).creation_time
     }
     unsafe fn activity_time(&self) -> SystemTime {
         (*self.get()).activity_time
-    }
-    unsafe fn next_pane(
-        &self,
-        after: Option<&Rc<UnsafeCell<window_pane>>>,
-    ) -> Option<Rc<UnsafeCell<window_pane>>> {
-        let panes = &(*self.get()).panes;
-        after.map_or_else(|| panes.first(), |pane| panes.next(&Rc::downgrade(pane)))
     }
     unsafe fn select_pane(&self, pane: &Rc<UnsafeCell<window_pane>>, notify: bool) -> i32 {
         assert!(
@@ -683,11 +676,7 @@ impl Window for WindowRef {
     }
     unsafe fn pane_is_focused(&self, pane: &Rc<UnsafeCell<window_pane>>) -> bool {
         use crate::src::server_client::Client;
-        if (*self.get()).menu.is_some()
-            || !self
-                .active_pane()
-                .is_some_and(|active| Rc::ptr_eq(&active, pane))
-        {
+        if (*self.get()).menu.is_some() || !self.active_pane().ptr_eq(&Rc::downgrade(pane)) {
             return false;
         }
         let mut cursor = ClientRegistry::first();

@@ -1027,10 +1027,10 @@ unsafe fn tty_window_offset1(owner: &ClientRef) -> tty_window_view {
         .max()
         .unwrap_or(0);
     let content = strip.saturating_add(1).min(sx).max(view.sx);
-    let active = window.active_pane().and_then(|active| {
+    let active = window.active_pane().upgrade().and_then(|active| {
         cells
             .iter()
-            .find(|(pane, _)| std::rc::Rc::ptr_eq(pane, &active))
+            .find(|(pane, _)| pane.ptr_eq(&std::rc::Rc::downgrade(&active)))
             .map(|&(_, cell)| (active.visible_cursor_in_window(), cell))
     });
     if let Some((cursor, cell)) = active {

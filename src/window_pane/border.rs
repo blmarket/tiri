@@ -41,9 +41,7 @@ pub(super) unsafe fn border_style(
         .window_handle()
         .expect("live border window")
         .clone();
-    let active = window
-        .active_pane()
-        .is_some_and(|active| Rc::ptr_eq(&active, pane));
+    let active = window.active_pane().ptr_eq(&Rc::downgrade(pane));
     drop(window);
     let cached = {
         let state = &*pane.get();

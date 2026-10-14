@@ -440,7 +440,7 @@ pub unsafe fn format_defaults(
         wl.try_borrow_mut().ok().and_then(|link| {
             link.window_owner
                 .as_ref()
-                .and_then(|owner| owner.active_pane())
+                .and_then(|owner| owner.active_pane().upgrade())
         })
     });
     if let Some(client) = c_owner {

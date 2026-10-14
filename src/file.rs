@@ -364,7 +364,7 @@ pub unsafe fn file_print(
         return;
     }
     find.stream = 1 as ::core::ffi::c_int;
-    let file_owner = client_owner.find_file(find.stream);
+    let file_owner = client_owner.find_file(find.stream).upgrade();
     match file_owner {
         None => {
             let transfer_owner =
@@ -398,7 +398,7 @@ pub unsafe fn file_print_buffer(client_owner: Option<&ClientRef>, data: &[u8]) {
         return;
     }
     find.stream = 1 as ::core::ffi::c_int;
-    let file_owner = client_owner.find_file(find.stream);
+    let file_owner = client_owner.find_file(find.stream).upgrade();
     match file_owner {
         None => {
             let transfer_owner =
@@ -435,7 +435,7 @@ pub unsafe fn file_error(
         return;
     }
     find.stream = 2 as ::core::ffi::c_int;
-    let file_owner = client_owner.find_file(find.stream);
+    let file_owner = client_owner.find_file(find.stream).upgrade();
     match file_owner {
         None => {
             let transfer_owner =
@@ -789,7 +789,7 @@ unsafe fn file_push(file_owner: &Rc<UnsafeCell<client_file>>) {
 pub unsafe fn file_write_left(files: &client_files) -> ::core::ffi::c_int {
     let mut left: size_t = 0;
     let mut waiting: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    for file in client_files_iter(files) {
+    for file in client_files_iter(files).filter_map(|file| file.upgrade()) {
         let cf = &*file.get();
         if let Some(remaining) = cf
             .event
@@ -1193,7 +1193,7 @@ pub unsafe fn file_write_ready(client: &ClientRef, imsg: &imsg) -> ::core::ffi::
     let msg = read_imsg_payload::<msg_write_ready>(imsg).unwrap();
     let mut find: client_file = client_file::empty();
     find.stream = msg.stream;
-    let Some(file_owner) = client.find_file(find.stream) else {
+    let Some(file_owner) = client.find_file(find.stream).upgrade() else {
         return 0 as ::core::ffi::c_int;
     };
     let cf = &mut *file_owner.get();
@@ -1213,7 +1213,7 @@ pub unsafe fn file_write_done(client: &ClientRef, imsg: &imsg) -> ::core::ffi::c
     let msg = read_imsg_payload::<msg_write_done>(imsg).unwrap();
     let mut find: client_file = client_file::empty();
     find.stream = msg.stream;
-    let Some(file_owner) = client.find_file(find.stream) else {
+    let Some(file_owner) = client.find_file(find.stream).upgrade() else {
         return 0 as ::core::ffi::c_int;
     };
     let cf = &mut *file_owner.get();
@@ -1239,7 +1239,7 @@ pub unsafe fn file_read_data(client: &ClientRef, imsg: &imsg) -> ::core::ffi::c_
     let bdata = &imsg.data[::core::mem::size_of::<msg_read_data>()..msglen];
     let bsize = bdata.len();
     find.stream = msg.stream;
-    let Some(file_owner) = client.find_file(find.stream) else {
+    let Some(file_owner) = client.find_file(find.stream).upgrade() else {
         return 0 as ::core::ffi::c_int;
     };
     let cf = &mut *file_owner.get();
@@ -1270,7 +1270,7 @@ pub unsafe fn file_read_done(client: &ClientRef, imsg: &imsg) -> ::core::ffi::c_
     let msg = read_imsg_payload::<msg_read_done>(imsg).unwrap();
     let mut find: client_file = client_file::empty();
     find.stream = msg.stream;
-    let Some(file_owner) = client.find_file(find.stream) else {
+    let Some(file_owner) = client.find_file(find.stream).upgrade() else {
         return 0 as ::core::ffi::c_int;
     };
     let cf = &mut *file_owner.get();
@@ -1348,16 +1348,18 @@ pub fn client_files_is_empty(files: &client_files) -> bool {
 
 pub(crate) unsafe fn client_files_has_pending_data(files: &client_files) -> bool {
     client_files_iter(files).any(|owner| {
+        let owner = owner.upgrade().expect("indexed file is live");
         let file = &*owner.get();
         evbuffer_get_length(&file.buffer) != 0 || evbuffer_get_length(&file.read.input) != 0
     })
 }
 
 pub(crate) unsafe fn client_files_interrupt(
-    files: impl Iterator<Item = Rc<UnsafeCell<client_file>>>,
+    files: impl Iterator<Item = Weak<UnsafeCell<client_file>>>,
     error: i32,
 ) {
     for file in files {
+        let file = file.upgrade().expect("indexed file is live");
         (*file.get()).error = error;
         file_fire_done(&file);
     }
@@ -1368,22 +1370,24 @@ pub(crate) unsafe fn client_files_interrupt(
 /// index, so removing or replacing a stream also removes it from traversal.
 pub fn client_files_iter(
     files: &client_files,
-) -> impl std::iter::FusedIterator<Item = Rc<UnsafeCell<client_file>>> {
+) -> impl std::iter::FusedIterator<Item = Weak<UnsafeCell<client_file>>> {
     let entries: Vec<_> = files.values().map(Rc::downgrade).collect();
-    entries.into_iter().filter_map(|entry| {
-        let owner = entry.upgrade()?;
+    entries.into_iter().filter(|entry| {
+        let Some(owner) = entry.upgrade() else {
+            return false;
+        };
         let file = unsafe { &*owner.get() };
-        let indexed = unsafe {
+        unsafe {
             match file.registration {
-                FileRegistration::Unlinked => None,
+                FileRegistration::Unlinked => false,
                 FileRegistration::Client => file
                     .c
                     .as_ref()
-                    .and_then(|client| client.find_file(file.stream)),
-                FileRegistration::Peer => crate::src::client::client_find_file(file.stream),
+                    .is_some_and(|client| client.find_file(file.stream).ptr_eq(entry)),
+                FileRegistration::Peer => crate::src::client::client_find_file(file.stream)
+                    .is_some_and(|indexed| Rc::ptr_eq(&indexed, &owner)),
             }
-        };
-        indexed.filter(|indexed| Rc::ptr_eq(indexed, &owner))
+        }
     })
 }
 

@@ -109,7 +109,7 @@ impl windows {
     }
 
     /// The live window with the next greater id; `after` need not be indexed.
-    pub fn next(after: &window) -> Option<WindowRef> {
+    pub fn next(after: &window) -> WindowWeak {
         WINDOWS.with_borrow(|index| {
             index
                 .storage
@@ -117,7 +117,10 @@ impl windows {
                     std::ops::Bound::Excluded(&after.id),
                     std::ops::Bound::Unbounded,
                 ))
-                .find_map(|(_, weak)| weak.upgrade())
+                .map(|(_, weak)| weak)
+                .find(|weak| weak.strong_count() != 0)
+                .cloned()
+                .unwrap_or_default()
         })
     }
 
@@ -398,7 +401,7 @@ fn window_has_pane(w: &window, pane: &std::rc::Weak<std::cell::UnsafeCell<window
 
 unsafe fn window_update_focus(w_owner: Option<&WindowRef>) {
     if let Some(window) = w_owner {
-        if let Some(pane) = window.active_pane() {
+        if let Some(pane) = window.active_pane().upgrade() {
             pane.update_focus(window.pane_is_focused(&pane));
         }
     }
@@ -415,7 +418,7 @@ unsafe fn window_set_active_pane(
     if (*w).active.ptr_eq(&observer) {
         return 0;
     }
-    let previous = window.active_pane();
+    let previous = window.active_pane().upgrade();
     pane_history_remove(&mut (*w).last_panes, &observer);
     if let Some(previous) = previous.as_ref() {
         pane_history_push(&mut (*w).last_panes, Rc::downgrade(previous));
@@ -438,7 +441,7 @@ unsafe fn window_set_active_pane(
     tty_update_window_offset(window);
     server_redraw_window(window);
     if notify != 0 {
-        if let Some(active) = window.active_pane() {
+        if let Some(active) = window.active_pane().upgrade() {
             window_fire_pane_changed(window, &active, previous.as_ref());
         }
     }
@@ -475,7 +478,7 @@ unsafe fn window_get_active_at(
     window_owner: &WindowRef,
     mut x: u_int,
     mut y: u_int,
-) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
+) -> Weak<std::cell::UnsafeCell<window_pane>> {
     let w = window_owner.get();
     let mut xoff: ::core::ffi::c_int = 0;
     let mut yoff: ::core::ffi::c_int = 0;
@@ -484,7 +487,8 @@ unsafe fn window_get_active_at(
     // A pane owns its rows and the separator column after it, and its status
     // row above or below it when pane-border-status is on.
     let status = window_get_pane_status(&*w);
-    for candidate in (*w).panes.snapshot() {
+    for observer in (*w).panes.storage.clone() {
+        let candidate = observer.upgrade().expect("live pane in ordering");
         (xoff, yoff, sx, sy) = candidate.outer_geometry();
         if (x as ::core::ffi::c_int) < xoff || x > (xoff as u_int).wrapping_add(sx) {
             continue;
@@ -496,14 +500,14 @@ unsafe fn window_get_active_at(
         if (y as ::core::ffi::c_int) < top || y >= bottom {
             continue;
         }
-        return Some(candidate);
+        return observer;
     }
-    None
+    Weak::new()
 }
 unsafe fn window_find_string(
     window_owner: &WindowRef,
     name: &CStr,
-) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
+) -> Weak<std::cell::UnsafeCell<window_pane>> {
     let w = window_owner.get();
     // Positions are measured across the panes, not the blank extent past them.
     let (wsx, wsy) = (
@@ -544,7 +548,7 @@ unsafe fn window_find_string(
         x = wsx.wrapping_sub(1 as u_int);
         y = bottom;
     } else {
-        return None;
+        return Weak::new();
     }
     window_get_active_at(window_owner, x, y)
 }
@@ -655,8 +659,9 @@ unsafe fn window_rearrange_panes(
 
 /// Take `pane` out of its window and destroy it.
 unsafe fn window_remove_pane(window: &WindowRef, pane: &Rc<UnsafeCell<window_pane>>) {
-    let rest = window
-        .pane_snapshot()
+    let rest = (*window.get())
+        .panes
+        .snapshot()
         .into_iter()
         .filter(|candidate| !Rc::ptr_eq(candidate, pane))
         .collect::<Vec<_>>();
@@ -674,8 +679,8 @@ unsafe fn window_arrangement(window: &WindowRef) -> Vec<layout_geometry> {
 /// The rectangles for the current panes, in pane order.
 unsafe fn window_pane_cells(
     window: &WindowRef,
-) -> Vec<(Rc<UnsafeCell<window_pane>>, layout_geometry)> {
-    let panes = window.pane_snapshot();
+) -> Vec<(Weak<UnsafeCell<window_pane>>, layout_geometry)> {
+    let panes = (*window.get()).panes.storage.clone();
     panes.into_iter().zip(window_arrangement(window)).collect()
 }
 
@@ -684,8 +689,9 @@ unsafe fn window_pane_cells(
 /// or the options the layout reads ends here, and the clients showing the
 /// window follow the result.
 unsafe fn window_arrange(window: &WindowRef) {
-    let cells = window
-        .pane_snapshot()
+    let cells = (*window.get())
+        .panes
+        .snapshot()
         .into_iter()
         .zip(window_arrangement(window));
     let mut moved = false;
@@ -764,11 +770,11 @@ pub unsafe fn window_printable_flags(
 }
 
 fn window_pane_first(w: Option<&window>) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    w?.panes.first()
+    Some(w?.panes.first()?.upgrade().expect("live pane in ordering"))
 }
 
 fn window_pane_last(w: Option<&window>) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    w?.panes.last()
+    Some(w?.panes.last()?.upgrade().expect("live pane in ordering"))
 }
 
 fn window_pane_stack_first(w: Option<&window>) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
@@ -815,14 +821,23 @@ mod tests {
                 assert!(windows::insert(w).is_none());
             }
 
-            assert!(WindowRef::ptr_eq(&windows::next(&*a.get()).unwrap(), &b));
+            assert!(WindowRef::ptr_eq(
+                &windows::next(&*a.get()).upgrade().unwrap(),
+                &b
+            ));
 
             windows::remove(&b);
             assert!(windows::resolve(0xFFFF_0002).is_none());
             // Previous behaviour returned None here (the window's `owner`
             // handle had been reset), ending the traversal early.
-            assert!(WindowRef::ptr_eq(&windows::next(&*b.get()).unwrap(), &c));
-            assert!(WindowRef::ptr_eq(&windows::next(&*a.get()).unwrap(), &c));
+            assert!(WindowRef::ptr_eq(
+                &windows::next(&*b.get()).upgrade().unwrap(),
+                &c
+            ));
+            assert!(WindowRef::ptr_eq(
+                &windows::next(&*a.get()).upgrade().unwrap(),
+                &c
+            ));
 
             // Dropping the last owner unregisters the window.
             drop(a);

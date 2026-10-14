@@ -1417,7 +1417,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
     if strcmp(name, c"automatic-rename".as_ptr()) == 0 as ::core::ffi::c_int {
         let mut window_cursor = windows::first();
         while let Some(window_owner) = window_cursor.take() {
-            if let Some(active) = window_owner.active_pane() {
+            if let Some(active) = window_owner.active_pane().upgrade() {
                 if window_owner
                     .with_options_mut(|options| options_get_number(options, c"automatic-rename"))
                     != 0
@@ -1425,7 +1425,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
                     active.mark_changed();
                 }
             }
-            window_cursor = window_owner.next_window();
+            window_cursor = window_owner.next_window().upgrade();
             drop(window_owner);
         }
     }
@@ -1443,7 +1443,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
         let mut window_cursor = windows::first();
         while let Some(window_owner) = window_cursor.take() {
             window_owner.refresh_fill_cells();
-            window_cursor = window_owner.next_window();
+            window_cursor = window_owner.next_window().upgrade();
             drop(window_owner);
         }
     }
@@ -1524,7 +1524,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
         while let Some(window_owner) = window_cursor.take() {
             window_owner.refresh_scrollbars();
             window_owner.refit();
-            window_cursor = window_owner.next_window();
+            window_cursor = window_owner.next_window().upgrade();
             drop(window_owner);
         }
     }
@@ -1540,7 +1540,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
         let mut window_cursor = windows::first();
         while let Some(window_owner) = window_cursor.take() {
             window_owner.refit();
-            window_cursor = window_owner.next_window();
+            window_cursor = window_owner.next_window().upgrade();
             drop(window_owner);
         }
     }

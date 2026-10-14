@@ -732,13 +732,24 @@ unsafe fn redraw_build_cells<'a>(
         }
         y = y.wrapping_add(1);
     }
-    for pane_owner in (*bctx).w.pane_snapshot().into_iter().rev() {
+    for pane_owner in (*bctx)
+        .w
+        .pane_snapshot()
+        .iter()
+        .filter_map(std::rc::Weak::upgrade)
+        .rev()
+    {
         redraw_mark_pane(bctx, &pane_owner);
     }
     redraw_set_border_types(bctx);
     redraw_mark_split_colours(bctx);
     redraw_mark_window_frame(bctx);
-    for pane_owner in (*bctx).w.pane_snapshot() {
+    for pane_owner in (*bctx)
+        .w
+        .pane_snapshot()
+        .iter()
+        .filter_map(std::rc::Weak::upgrade)
+    {
         redraw_mark_border_status(bctx, &pane_owner);
     }
     redraw_mark_menu(bctx);
@@ -858,7 +869,7 @@ pub unsafe fn redraw_invalidate_all_scenes() {
     let mut window_cursor = windows::first();
     while let Some(window_owner) = window_cursor.take() {
         window_owner.invalidate_scene();
-        window_cursor = window_owner.next_window();
+        window_cursor = window_owner.next_window().upgrade();
         drop(window_owner);
     }
 }
@@ -1372,7 +1383,7 @@ unsafe fn redraw_set_draw_context(scene: &redraw_scene) -> Option<redraw_draw_ct
         .upgrade();
     let mut dctx = redraw_draw_ctx {
         scene,
-        active: window_owner.active_pane_observer(),
+        active: window_owner.active_pane(),
         marked: std::rc::Weak::new(),
         status_lines: status_line_size(c.as_ref().expect("live client")),
         pane_lines: PANE_LINES_SINGLE,
@@ -1504,13 +1515,21 @@ unsafe fn redraw_draw_scene(
         menu_update(&mut menu.try_borrow_mut().expect("live unborrowed menu"));
     }
     if flags & (REDRAW_PANE_BORDER | REDRAW_PANE_STATUS) != 0 {
-        for pane_owner in window_owner.pane_snapshot() {
+        for pane_owner in window_owner
+            .pane_snapshot()
+            .iter()
+            .filter_map(std::rc::Weak::upgrade)
+        {
             pane_owner.reset_border_cache();
         }
     }
     if flags & REDRAW_PANE_STATUS != 0 {
         let mut redraw = false;
-        for pane_owner in window_owner.pane_snapshot() {
+        for pane_owner in window_owner
+            .pane_snapshot()
+            .iter()
+            .filter_map(std::rc::Weak::upgrade)
+        {
             pane_owner.set_new_status(flags == REDRAW_ALL);
             if let Some((width, status_spans, first_status_span)) =
                 redraw_pane_status_width(&dctx, &pane_owner)
@@ -1536,7 +1555,11 @@ unsafe fn redraw_draw_scene(
             pane.stop_sync();
             pane.clear_sync_dirty();
         } else {
-            for pane in window_owner.pane_snapshot() {
+            for pane in window_owner
+                .pane_snapshot()
+                .iter()
+                .filter_map(std::rc::Weak::upgrade)
+            {
                 pane.stop_sync();
                 pane.clear_sync_dirty();
             }
@@ -1563,7 +1586,11 @@ unsafe fn redraw_draw_scene(
         if let Some(wp) = wp {
             redraw_draw_pane_prompt(&mut dctx, wp);
         } else {
-            for pane_owner in window_owner.pane_snapshot() {
+            for pane_owner in window_owner
+                .pane_snapshot()
+                .iter()
+                .filter_map(std::rc::Weak::upgrade)
+            {
                 redraw_draw_pane_prompt(&mut dctx, &pane_owner);
             }
         }

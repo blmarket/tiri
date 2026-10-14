@@ -51,7 +51,7 @@ unsafe fn control_window_layout_changed_cb(_name: &CStr, payload: &mut event_pay
     let Some(window) = event_payload_get_window(payload) else {
         return;
     };
-    if !window.next_winlink(None).is_alive() || window.next_pane(None).is_none() {
+    if !window.next_winlink(None).is_alive() || window.pane_snapshot().is_empty() {
         return;
     }
     recipients(|client| {
@@ -80,7 +80,7 @@ unsafe fn control_window_pane_changed_cb(_name: &CStr, payload: &mut event_paylo
     let Some(window) = event_payload_get_window(payload) else {
         return;
     };
-    if window.active_pane().is_none() {
+    if window.active_pane().upgrade().is_none() {
         return;
     }
     recipients(|client| {
@@ -89,7 +89,7 @@ unsafe fn control_window_pane_changed_cb(_name: &CStr, payload: &mut event_paylo
                 out,
                 "%window-pane-changed @{} %{}",
                 window.id(),
-                window.active_pane().expect("active pane").id()
+                window.active_pane().upgrade().expect("active pane").id()
             )
         })
     });

@@ -243,7 +243,7 @@ pub(super) unsafe fn finish_process(
     ClientRef::forget_pane(pane_owner);
     WindowRef::clone(((*wp).window_handle().as_ref()).expect("live window"))
         .remove_pane(pane_owner);
-    if window_owner.next_pane(None).is_none() {
+    if window_owner.pane_snapshot().is_empty() {
         server_kill_window(
             WindowRef::downgrade(((*wp).window_handle().as_ref()).expect("live window"))
                 .upgrade()

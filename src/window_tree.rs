@@ -282,7 +282,10 @@ unsafe fn window_tree_pull_item(item: &window_tree_itemdata) -> WindowTreeTarget
         return WindowTreeTarget::default();
     };
     let pane = if item.type_0 == WINDOW_TREE_SESSION || item.type_0 == WINDOW_TREE_WINDOW {
-        link.window_handle().expect("live window").active_pane()
+        link.window_handle()
+            .expect("live window")
+            .active_pane()
+            .upgrade()
     } else {
         let pane = Rc::<UnsafeCell<window_pane>>::find_by_id(item.pane as u_int);
         if !pane.as_ref().is_some_and(|owner| {
@@ -433,6 +436,7 @@ unsafe fn window_tree_build_window(
     if !wl.get_unchecked().window_handle().is_none()
         && !((wl.get_unchecked().window_handle().as_ref()).expect("live window"))
             .active_pane()
+            .upgrade()
             .is_none()
     {
         tag = (FORMAT_PANE
@@ -440,6 +444,7 @@ unsafe fn window_tree_build_window(
                 .window_handle()
                 .expect("live window")
                 .active_pane()
+                .upgrade()
                 .expect("active pane")
                 .id()) as uint64_t;
     }
@@ -531,6 +536,7 @@ unsafe fn window_tree_build_session(
         && !wl.get_unchecked().window_handle().is_none()
         && !((wl.get_unchecked().window_handle().as_ref()).expect("live window"))
             .active_pane()
+            .upgrade()
             .is_none()
     {
         tag = (FORMAT_PANE
@@ -538,6 +544,7 @@ unsafe fn window_tree_build_session(
                 .window_handle()
                 .expect("live window")
                 .active_pane()
+                .upgrade()
                 .expect("active pane")
                 .id()) as uint64_t;
     }
@@ -1003,7 +1010,7 @@ unsafe fn window_tree_draw_session(
                 cy as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
             );
-            let preview_pane = window.active_pane().expect("active preview pane");
+            let preview_pane = window.active_pane().upgrade().expect("active preview pane");
             window_tree_preview(&preview_pane, &mut *ctx, width, sy);
             drop(preview_pane);
             let format = window.with_options_mut(|options| {
@@ -1124,19 +1131,17 @@ unsafe fn window_tree_draw_window(
             visible = total;
         }
         current = 0 as u_int;
-        let mut next = window.next_pane(None);
-        while let Some(pane_owner) = next {
+        for pane_owner in window
+            .pane_snapshot()
+            .iter()
+            .filter_map(std::rc::Weak::upgrade)
+        {
             if !((*data).hide_preview_this_pane != 0 && Rc::ptr_eq(&pane_owner, &mode_pane_owner)) {
-                if window
-                    .active_pane()
-                    .as_ref()
-                    .is_some_and(|active| Rc::ptr_eq(active, &pane_owner))
-                {
+                if window.active_pane().ptr_eq(&Rc::downgrade(&pane_owner)) {
                     break;
                 }
                 current = current.wrapping_add(1);
             }
-            next = pane_owner.next_in_window();
         }
         if current < visible {
             start = 0 as u_int;
@@ -1235,8 +1240,11 @@ unsafe fn window_tree_draw_window(
         (*data).each = each;
         loop_0 = 0 as u_int;
         i = loop_0;
-        let mut next = window.next_pane(None);
-        while let Some(pane_owner) = next {
+        for pane_owner in window
+            .pane_snapshot()
+            .iter()
+            .filter_map(std::rc::Weak::upgrade)
+        {
             if !((*data).hide_preview_this_pane != 0 && Rc::ptr_eq(&pane_owner, &mode_pane_owner)) {
                 if loop_0 == end {
                     break;
@@ -1328,7 +1336,6 @@ unsafe fn window_tree_draw_window(
                     i = i.wrapping_add(1);
                 }
             }
-            next = pane_owner.next_in_window();
         }
     })();
     drop(window);
@@ -2363,15 +2370,10 @@ unsafe fn window_tree_mouse(
             .window_handle()
             .expect("tree target window")
             .clone();
-        let mut pane = window.next_pane(None);
-        for _ in 0..(*data).start.wrapping_add(x) {
-            pane = pane
-                .as_ref()
-                .and_then(|owner| window.next_pane(Some(owner)));
-            if pane.is_none() {
-                break;
-            }
-        }
+        let pane = window
+            .pane_snapshot()
+            .get((*data).start.wrapping_add(x) as usize)
+            .and_then(std::rc::Weak::upgrade);
         if let Some(pane_owner) = pane {
             mode_tree_set_current(
                 &mut *(*data).tree_owner().get(),
