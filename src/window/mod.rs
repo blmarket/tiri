@@ -48,9 +48,7 @@ use crate::src::shared::layout::layout_geometry;
 use crate::src::shared::layout::*;
 use crate::src::shared::limits::UINT_MAX;
 use crate::src::shared::options::options;
-use crate::src::shared::pane::{
-    pane_history_first, pane_history_push, pane_history_remove, window_pane_history, window_panes,
-};
+use crate::src::shared::pane::{window_panes, PaneHistory};
 use crate::src::shared::pane::{PANE_STATUS_BOTTOM, PANE_STATUS_TOP};
 pub use crate::src::shared::window::{
     window_mode, window_mode_entry, window_winlinks, windows, winlink, winlink_stack, winlinks,
@@ -283,7 +281,7 @@ pub unsafe fn window_create(
     let w = owner.get();
     (*w).flags = 0 as ::core::ffi::c_int;
     (*w).panes = window_panes::default();
-    (*w).last_panes = window_pane_history::default();
+    (*w).last_panes = PaneHistory::default();
     (*w).set_active(None);
     (*w).sx = sx;
     (*w).sy = sy;
@@ -318,6 +316,7 @@ pub unsafe fn window_create(
     ));
     owner
 }
+
 unsafe fn window_destroy(w_owner: &WindowRef) {
     let mut w = w_owner.get();
     log_debug(format_args!("window @{} destroyed", { (*w).id }));
@@ -419,9 +418,9 @@ unsafe fn window_set_active_pane(
         return 0;
     }
     let previous = window.active_pane().upgrade();
-    pane_history_remove(&mut (*w).last_panes, &observer);
+    (*w).last_panes.remove(&observer);
     if let Some(previous) = previous.as_ref() {
-        pane_history_push(&mut (*w).last_panes, Rc::downgrade(previous));
+        (*w).last_panes.push(Rc::downgrade(previous));
     }
     (*w).active = observer;
     // Selecting a pane ends explicit panning of this window, so every client
@@ -601,7 +600,7 @@ unsafe fn window_rearrange_panes(
         {
             server_clear_marked();
         }
-        pane_history_remove(&mut (*w).last_panes, &Rc::downgrade(pane));
+        (*w).last_panes.remove(&Rc::downgrade(pane));
     }
     let previous_active = (*w).active_pane();
     let replacement = match previous_active.as_ref() {
@@ -614,7 +613,7 @@ unsafe fn window_rearrange_panes(
                 .get(slot)
                 .filter(|pane| present(&arrived.iter().cloned().cloned().collect::<Vec<_>>(), pane))
                 .cloned()
-                .or_else(|| crate::src::shared::pane::pane_history_first(&(*w).last_panes))
+                .or_else(|| (*w).last_panes.first().upgrade())
                 .or_else(|| {
                     old[..slot]
                         .iter()
@@ -639,7 +638,7 @@ unsafe fn window_rearrange_panes(
     {
         (*w).active = replacement.as_ref().map_or_else(Weak::new, Rc::downgrade);
         if let Some(replacement) = replacement.as_ref() {
-            pane_history_remove(&mut (*w).last_panes, &Rc::downgrade(replacement));
+            (*w).last_panes.remove(&Rc::downgrade(replacement));
             replacement.on_selected(false);
         }
     }
@@ -709,9 +708,6 @@ unsafe fn window_arrange(window: &WindowRef) {
 
 unsafe fn window_destroy_panes(window: &WindowRef) {
     let w = window.get();
-    while let Some(pane) = pane_history_first(&(*w).last_panes) {
-        pane_history_remove(&mut (*w).last_panes, &Rc::downgrade(&pane));
-    }
     while let Some(pane) = window_pane_first(w.as_ref()) {
         (*w).panes.remove(&Rc::downgrade(&pane));
         pane.destroy();
@@ -775,17 +771,6 @@ fn window_pane_first(w: Option<&window>) -> Option<Rc<std::cell::UnsafeCell<wind
 
 fn window_pane_last(w: Option<&window>) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
     Some(w?.panes.last()?.upgrade().expect("live pane in ordering"))
-}
-
-fn window_pane_stack_first(w: Option<&window>) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    crate::src::shared::pane::pane_history_first(&w?.last_panes)
-}
-
-fn window_pane_stack_next(
-    w: Option<&window>,
-    wp: &Rc<UnsafeCell<window_pane>>,
-) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    crate::src::shared::pane::pane_history_next(&w?.last_panes, &Rc::downgrade(wp))
 }
 
 unsafe fn window_get_pane_status(w: &window) -> ::core::ffi::c_int {

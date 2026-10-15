@@ -4,7 +4,7 @@ pub use crate::src::window_pane::window_pane;
 use crate::src::shared::client::ClientWeak;
 use std::cell::UnsafeCell;
 use std::collections::VecDeque;
-use std::rc::{Rc, Weak};
+use std::rc::Weak;
 
 use super::abi::{size_t, u_int};
 use super::prompt::{prompt_free_cb, prompt_type};
@@ -222,41 +222,33 @@ impl window_panes {
 }
 
 /// Most-recently-visited pane handles, with the newest pane at the front.
-pub type window_pane_history = VecDeque<std::rc::Weak<std::cell::UnsafeCell<window_pane>>>;
+#[derive(Default)]
+pub struct PaneHistory {
+    panes: VecDeque<Weak<UnsafeCell<window_pane>>>,
+}
+
+impl PaneHistory {
+    pub fn first(&self) -> Weak<UnsafeCell<window_pane>> {
+        self.panes.front().cloned().unwrap_or_default()
+    }
+
+    pub fn position(&self, pane: &Weak<UnsafeCell<window_pane>>) -> Option<usize> {
+        self.panes.iter().position(|weak| weak.ptr_eq(pane))
+    }
+
+    pub fn push(&mut self, pane: Weak<UnsafeCell<window_pane>>) {
+        assert!(pane.strong_count() != 0, "live pane for insertion");
+        self.remove(&pane);
+        self.panes.push_front(pane);
+    }
+
+    pub fn remove(&mut self, pane: &Weak<UnsafeCell<window_pane>>) {
+        self.panes.retain(|weak| !weak.ptr_eq(pane));
+    }
+}
 
 #[repr(C)]
 pub struct window_pane_tree {
     /// The global pane index owns both its map and the Rc pane records.
     pub storage: std::collections::BTreeMap<u_int, std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
-}
-
-pub fn pane_history_first(history: &window_pane_history) -> Option<Rc<UnsafeCell<window_pane>>> {
-    history
-        .front()
-        .map(|weak| weak.upgrade().expect("live pane in ordering"))
-}
-
-pub fn pane_history_next(
-    history: &window_pane_history,
-    pane: &Weak<UnsafeCell<window_pane>>,
-) -> Option<Rc<UnsafeCell<window_pane>>> {
-    let position = history.iter().position(|weak| weak.ptr_eq(pane))?;
-    history
-        .get(position + 1)
-        .map(|weak| weak.upgrade().expect("live pane in ordering"))
-}
-
-pub fn pane_history_remove(
-    history: &mut window_pane_history,
-    pane: &Weak<UnsafeCell<window_pane>>,
-) -> bool {
-    let old_len = history.len();
-    history.retain(|weak| !weak.ptr_eq(pane));
-    old_len != history.len()
-}
-
-pub fn pane_history_push(history: &mut window_pane_history, pane: Weak<UnsafeCell<window_pane>>) {
-    assert!(pane.strong_count() != 0, "live pane for insertion");
-    pane_history_remove(history, &pane);
-    history.push_front(pane);
 }

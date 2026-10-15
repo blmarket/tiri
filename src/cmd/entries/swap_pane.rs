@@ -156,14 +156,12 @@ unsafe fn cmd_swap_pane_exec(
                 }
             }
             if !WindowRef::ptr_eq(&src_window_owner, &dst_window_owner) {
-                crate::src::shared::pane::pane_history_remove(
-                    src_window_owner.borrow_pane_history_mut(),
-                    &Rc::downgrade(&src_pane_owner),
-                );
-                crate::src::shared::pane::pane_history_remove(
-                    dst_window_owner.borrow_pane_history_mut(),
-                    &Rc::downgrade(&dst_pane_owner),
-                );
+                src_window_owner
+                    .borrow_pane_history_mut()
+                    .remove(&Rc::downgrade(&src_pane_owner));
+                dst_window_owner
+                    .borrow_pane_history_mut()
+                    .remove(&Rc::downgrade(&dst_pane_owner));
                 src_pane_owner.refresh_palette();
                 dst_pane_owner.refresh_palette();
                 server_redraw_window(&src_window_owner);

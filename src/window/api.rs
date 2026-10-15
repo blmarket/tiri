@@ -21,7 +21,7 @@ pub trait Window {
 
     /// Selection history is separate from pane order. Only pure history edits
     /// may run while this component is borrowed.
-    type PaneHistoryMut<'a>: std::ops::DerefMut<Target = window_pane_history>
+    type PaneHistoryMut<'a>: std::ops::DerefMut<Target = PaneHistory>
     where
         Self: 'a;
     unsafe fn borrow_pane_history_mut(&self) -> Self::PaneHistoryMut<'_>;
@@ -202,7 +202,7 @@ impl Window for WindowRef {
         window_find_string(self, name)
     }
 
-    type PaneHistoryMut<'a> = &'a mut window_pane_history;
+    type PaneHistoryMut<'a> = &'a mut PaneHistory;
     unsafe fn borrow_pane_history_mut(&self) -> Self::PaneHistoryMut<'_> {
         &mut (*self.get()).last_panes
     }
@@ -505,11 +505,7 @@ impl Window for WindowRef {
         (*self.get()).active.clone()
     }
     unsafe fn last_active_pane(&self) -> Weak<UnsafeCell<window_pane>> {
-        (*self.get())
-            .last_panes
-            .front()
-            .cloned()
-            .unwrap_or_default()
+        (*self.get()).last_panes.first()
     }
     unsafe fn pane_snapshot(&self) -> Vec<Weak<UnsafeCell<window_pane>>> {
         (*self.get()).panes.storage.clone()
@@ -573,8 +569,7 @@ impl Window for WindowRef {
     unsafe fn pane_history_index(&self, pane: &Weak<UnsafeCell<window_pane>>) -> Option<u32> {
         (*self.get())
             .last_panes
-            .iter()
-            .position(|entry| entry.ptr_eq(pane))
+            .position(pane)
             .map(|index| index as u32)
     }
     unsafe fn pane_by_number(

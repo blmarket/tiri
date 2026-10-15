@@ -108,9 +108,7 @@ use crate::src::shared::pane::{
     PANE_SCROLLBARS_MODAL, PANE_STATUSREADY, PANE_STATUS_BOTTOM, PANE_STATUS_OFF, PANE_STATUS_TOP,
     PANE_STYLECHANGED, PANE_THEMECHANGED, PANE_UNSEENCHANGES,
 };
-use crate::src::shared::pane::{
-    window_pane_history, window_pane_modes, window_pane_prompt, PaneScreenSource,
-};
+use crate::src::shared::pane::{window_pane_modes, window_pane_prompt, PaneScreenSource};
 use crate::src::shared::posix_io::FNM_CASEFOLD;
 use crate::src::shared::posix_terminal::winsize;
 use crate::src::shared::prompt::*;
@@ -1589,24 +1587,6 @@ unsafe fn window_pane_full_size_offset(
         (*wp).xoff
     };
     (xoff, (*wp).yoff, (*wp).sx.wrapping_add(sb_w), (*wp).sy)
-}
-
-unsafe fn window_pane_stack_push(
-    stack: *mut window_pane_history,
-    pane: Option<&Rc<UnsafeCell<window_pane>>>,
-) {
-    if let Some(pane) = pane {
-        crate::src::shared::pane::pane_history_push(&mut *stack, Rc::downgrade(pane));
-    }
-}
-
-unsafe fn window_pane_stack_remove(
-    stack: *mut window_pane_history,
-    pane: Option<&Rc<UnsafeCell<window_pane>>>,
-) {
-    if let Some(pane) = pane {
-        crate::src::shared::pane::pane_history_remove(&mut *stack, &Rc::downgrade(pane));
-    }
 }
 
 unsafe fn window_pane_input_callback(

@@ -4,7 +4,7 @@ use crate::src::shared::client::ClientWeak;
 use crate::src::shared::event::Timer;
 use crate::src::shared::grid::grid_cell;
 use crate::src::shared::options::options;
-use crate::src::shared::pane::{window_pane, window_pane_history, window_panes};
+use crate::src::shared::pane::{window_pane, window_panes, PaneHistory};
 use crate::src::shared::window::WindowRef;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -24,7 +24,7 @@ pub struct window {
     pub(super) creation_time: SystemTime,
     /// Current pane identity; the pane index owns the allocation.
     pub(super) active: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-    pub(super) last_panes: window_pane_history,
+    pub(super) last_panes: PaneHistory,
     /// The pane order.
     pub(super) panes: window_panes,
     /// The arrangement of the panes and its own record of each one; every
