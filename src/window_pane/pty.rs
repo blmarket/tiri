@@ -21,7 +21,7 @@ impl PanePty {
             return;
         }
         unsafe {
-            let record = std::ffi::CString::new(format!("tmux({}).%{}", getpid(), id))
+            let record = std::ffi::CString::new(format!("tmux({}).%{}", libc::getpid(), id))
                 .expect("pane login record contains no NUL");
             utempter_add_record(self.fd.as_raw_fd(), record.as_ptr());
             // utempter forks its helper; reap it through the server's handler.

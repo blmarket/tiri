@@ -2,7 +2,6 @@
 use super::pty::PanePty;
 use super::{
     window_pane_create, window_pane_index, window_pane_reset_mode_all, window_pane_set_event,
-    window_pane_utmp_add,
 };
 use crate::src::cmd::queue::cmdq_get_client;
 use crate::src::cmd::{cmd_log_argv, cmd_stringify_argv_cstring};
@@ -626,7 +625,7 @@ pub(super) unsafe fn spawn_pane(
             }
         }
         (*new_wp).flags &= !PANE_EXITED;
-        window_pane_utmp_add(&mut *new_wp);
+        new_pane_owner.refresh_utmp();
         sigprocmask(
             SIG_SETMASK,
             &raw mut oldset,

@@ -13,6 +13,7 @@ use crate::src::shared::pane::{
 };
 use crate::src::shared::screen::MODE_SYNC;
 use crate::src::shared::window::{WindowRef, WindowWeak};
+use crate::src::tmux::global_options;
 use std::ffi::CStr;
 use std::os::fd::AsRawFd;
 use std::time::Duration;
@@ -181,7 +182,8 @@ pub trait WindowPane {
     unsafe fn hide_scrollbar(&self);
     unsafe fn refresh_scrollbar_style(&self);
     unsafe fn reset_default_cursor(&self);
-    /// Add or remove this pane's utmp record to match the server option.
+    /// Record the pane in utmp while it runs a command and the server option
+    /// allows it; otherwise drop its record. Closing the pty drops it too.
     unsafe fn refresh_utmp(&self);
     unsafe fn reset_border_cache(&self);
     /// Draw a separator of `cell_type`, a `CELL_*` line kind, in this pane's
@@ -545,11 +547,18 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     }
 
     unsafe fn refresh_utmp(&self) {
+        // The option exists only when utempter is linked.
+        if !cfg!(target_os = "linux") {
+            return;
+        }
         let pane = &mut *self.get();
-        if options_get_number(global_options, c"utmp") != 0 {
-            window_pane_utmp_add(pane);
+        let Some(pty) = pane.fd.as_mut() else { return };
+        if pane.flags & (PANE_EMPTY | PANE_EXITED) == 0
+            && options_get_number(global_options, c"utmp") != 0
+        {
+            pty.utmp_add(pane.id);
         } else {
-            window_pane_utmp_remove(pane);
+            pty.utmp_remove();
         }
     }
 

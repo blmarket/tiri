@@ -73,7 +73,7 @@ use crate::src::style::colour::{
     colour_palette_from_option, colour_palette_get, colour_palette_init, colour_totheme,
 };
 use crate::src::style::{style_ranges_init, style_set_scrollbar_style_from_option};
-use crate::src::tmux::{global_options, setblocking};
+use crate::src::tmux::setblocking;
 use crate::src::tty::tty_default_colours;
 use crate::src::window_copy::{window_copy_mode, window_view_mode};
 use tiri_buffer::SegmentedBuf;
@@ -718,28 +718,6 @@ unsafe fn window_pane_scrollbar_redraw_visibility(
         .invalidate_scene();
     (*wp).flags |= PANE_REDRAW;
     server_redraw_window(((*wp).window_handle().as_ref()).expect("live window"));
-}
-
-/// Record a pane with a running command in utmp while the server option allows it.
-unsafe fn window_pane_utmp_add(wp: &mut window_pane) {
-    // The option exists only when utempter is linked.
-    if !cfg!(target_os = "linux")
-        || wp.flags & (PANE_EMPTY | PANE_EXITED) != 0
-        || options_get_number(global_options, c"utmp") == 0
-    {
-        return;
-    }
-    let id = wp.id;
-    if let Some(pty) = wp.fd.as_mut() {
-        pty.utmp_add(id);
-    }
-}
-
-/// Closing the pty also removes its record; this is for keeping the pty.
-fn window_pane_utmp_remove(wp: &mut window_pane) {
-    if let Some(pty) = wp.fd.as_mut() {
-        pty.utmp_remove();
-    }
 }
 
 unsafe fn window_pane_destroy(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
