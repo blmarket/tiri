@@ -20,6 +20,7 @@ mod model;
 mod mouse;
 pub(crate) mod observability;
 mod process;
+mod pty;
 mod render;
 mod sort;
 mod spawning;
@@ -37,11 +38,7 @@ use crate::src::events_payload::{
     event_payload_set_target, event_payload_set_uint, event_payload_set_window,
 };
 use crate::src::ffi::libc::{fnmatch, gethostname, memset};
-#[cfg(target_os = "linux")]
-use crate::src::ffi::libc::{getpid, kill};
 use crate::src::ffi::regex::RegexStorage;
-#[cfg(target_os = "linux")]
-use crate::src::ffi::utempter::utempter_remove_record;
 use crate::src::file::{file_cancel, file_read_with_cmdq_wait_init};
 use crate::src::format::bytes::write_cstr;
 use crate::src::grid::grid_cells_look_equal;
@@ -76,7 +73,7 @@ use crate::src::style::colour::{
     colour_palette_from_option, colour_palette_get, colour_palette_init, colour_totheme,
 };
 use crate::src::style::{style_ranges_init, style_set_scrollbar_style_from_option};
-use crate::src::tmux::setblocking;
+use crate::src::tmux::{global_options, setblocking};
 use crate::src::tty::tty_default_colours;
 use crate::src::window_copy::{window_copy_mode, window_view_mode};
 use tiri_buffer::SegmentedBuf;
@@ -114,8 +111,6 @@ use crate::src::shared::posix_terminal::winsize;
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{prompt_free_cb, prompt_result, PROMPT_CLOSE};
 use crate::src::shared::screen::{screen, MODE_BRACKETPASTE, MODE_FOCUSON, MODE_THEME_UPDATES};
-#[cfg(target_os = "linux")]
-use crate::src::shared::signal::SIGCHLD;
 use crate::src::shared::spawn::spawn_editor_state;
 use crate::src::shared::status::status_prompt_input_cb;
 use crate::src::shared::style::*;
@@ -725,6 +720,28 @@ unsafe fn window_pane_scrollbar_redraw_visibility(
     server_redraw_window(((*wp).window_handle().as_ref()).expect("live window"));
 }
 
+/// Record a pane with a running command in utmp while the server option allows it.
+unsafe fn window_pane_utmp_add(wp: &mut window_pane) {
+    // The option exists only when utempter is linked.
+    if !cfg!(target_os = "linux")
+        || wp.flags & (PANE_EMPTY | PANE_EXITED) != 0
+        || options_get_number(global_options, c"utmp") == 0
+    {
+        return;
+    }
+    let id = wp.id;
+    if let Some(pty) = wp.fd.as_mut() {
+        pty.utmp_add(id);
+    }
+}
+
+/// Closing the pty also removes its record; this is for keeping the pty.
+fn window_pane_utmp_remove(wp: &mut window_pane) {
+    if let Some(pty) = wp.fd.as_mut() {
+        pty.utmp_remove();
+    }
+}
+
 unsafe fn window_pane_destroy(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
     let wp = pane_owner.get();
     window_pane_wait_finish(pane_owner);
@@ -734,11 +751,6 @@ unsafe fn window_pane_destroy(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>
     window_pane_clear_prompt(&owner);
     window_pane_free_modes(&owner);
     pane_owner.clear_sync_dirty();
-    #[cfg(target_os = "linux")]
-    if (*wp).fd.is_some() {
-        utempter_remove_record((*wp).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd));
-        kill(getpid(), SIGCHLD);
-    }
     // Empty panes have stream buffers and an input parser without a PTY.
     std::mem::take(&mut (*wp).event).free();
     drop((*wp).fd.take());

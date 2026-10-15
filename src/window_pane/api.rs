@@ -181,6 +181,8 @@ pub trait WindowPane {
     unsafe fn hide_scrollbar(&self);
     unsafe fn refresh_scrollbar_style(&self);
     unsafe fn reset_default_cursor(&self);
+    /// Add or remove this pane's utmp record to match the server option.
+    unsafe fn refresh_utmp(&self);
     unsafe fn reset_border_cache(&self);
     /// Draw a separator of `cell_type`, a `CELL_*` line kind, in this pane's
     /// border lines.
@@ -541,6 +543,16 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     unsafe fn reset_default_cursor(&self) {
         window_pane_default_cursor(self);
     }
+
+    unsafe fn refresh_utmp(&self) {
+        let pane = &mut *self.get();
+        if options_get_number(global_options, c"utmp") != 0 {
+            window_pane_utmp_add(pane);
+        } else {
+            window_pane_utmp_remove(pane);
+        }
+    }
+
     unsafe fn reset_border_cache(&self) {
         let pane = &mut *self.get();
         pane.border_gc_set = 0;

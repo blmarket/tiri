@@ -1460,6 +1460,11 @@ pub unsafe fn options_push_changes(name: &CStr) {
             loop_0 = registry_loop_0_owner.clone();
         }
     }
+    if strcmp(name, c"utmp".as_ptr()) == 0 as ::core::ffi::c_int {
+        for pane_owner in crate::src::shared::pane::window_pane_tree::snapshot() {
+            pane_owner.refresh_utmp();
+        }
+    }
     if strcmp(name, c"user-keys".as_ptr()) == 0 as ::core::ffi::c_int {
         let mut registry_loop_0_owner = ClientRegistry::first();
         loop_0 = registry_loop_0_owner.clone();

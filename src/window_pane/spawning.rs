@@ -1,6 +1,8 @@
 //! Pane process creation and editor completion keep storage inside its owner.
+use super::pty::PanePty;
 use super::{
     window_pane_create, window_pane_index, window_pane_reset_mode_all, window_pane_set_event,
+    window_pane_utmp_add,
 };
 use crate::src::cmd::queue::cmdq_get_client;
 use crate::src::cmd::{cmd_log_argv, cmd_stringify_argv_cstring};
@@ -21,10 +23,6 @@ use crate::src::ffi::libc::{
     __errno_location, _exit, chdir, execl, execvp, fopen, fread, fseeko, ftello, getcwd, memset,
     sigfillset, sigprocmask, strerror, strrchr,
 };
-#[cfg(target_os = "linux")]
-use crate::src::ffi::libc::{getpid, kill};
-#[cfg(target_os = "linux")]
-use crate::src::ffi::utempter::utempter_add_record;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
@@ -58,8 +56,6 @@ use crate::src::shared::pane::{PANE_EMPTY, PANE_EXITED, PANE_STATUSDRAWN, PANE_S
 use crate::src::shared::posix_io::{_PATH_BSHELL, STDERR_FILENO, STDIN_FILENO};
 use crate::src::shared::posix_terminal::{winsize, TCSANOW, VERASE};
 use crate::src::shared::screen::{MODE_CRLF, MODE_CURSOR};
-#[cfg(target_os = "linux")]
-use crate::src::shared::signal::SIGCHLD;
 use crate::src::shared::signal::{sigset_t, SIGHUP, SIG_BLOCK, SIG_SETMASK};
 use crate::src::shared::spawn::spawn_editor_state;
 use crate::src::shared::spawn::{
@@ -68,8 +64,6 @@ use crate::src::shared::spawn::{
 use crate::src::shared::stdio::FILE;
 use crate::src::shared::terminal::*;
 
-#[cfg(target_os = "linux")]
-use std::os::fd::AsRawFd;
 use std::os::fd::{FromRawFd, OwnedFd};
 
 use crate::src::shared::spawn::EditorHandle;
@@ -518,7 +512,7 @@ pub(super) unsafe fn spawn_pane(
                 return None;
             }
             if (*new_wp).pid != 0 as ::core::ffi::c_int {
-                (*new_wp).fd = Some(OwnedFd::from_raw_fd(master));
+                (*new_wp).fd = Some(PanePty::new(OwnedFd::from_raw_fd(master)));
                 if !actual_cwd.is_null()
                     && chdir(&raw mut path as *mut ::core::ffi::c_char) != 0 as ::core::ffi::c_int
                     && (home.is_null() || chdir(home) != 0 as ::core::ffi::c_int)
@@ -631,17 +625,8 @@ pub(super) unsafe fn spawn_pane(
                 _exit(1 as ::core::ffi::c_int);
             }
         }
-        #[cfg(target_os = "linux")]
-        if !(*new_wp).flags & PANE_EMPTY != 0 {
-            let record = CString::new(format!("tmux({}).%{}", getpid(), (*new_wp).id))
-                .expect("pane login record contains no NUL");
-            utempter_add_record(
-                (*new_wp).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
-                record.as_ptr(),
-            );
-            kill(getpid(), SIGCHLD);
-        }
         (*new_wp).flags &= !PANE_EXITED;
+        window_pane_utmp_add(&mut *new_wp);
         sigprocmask(
             SIG_SETMASK,
             &raw mut oldset,

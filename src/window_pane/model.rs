@@ -37,7 +37,7 @@ pub struct window_pane {
     pub(super) cmd_start_time: time_t,
     pub(super) cmd_end_time: time_t,
     pub(super) cmd_status: ::core::ffi::c_int,
-    pub(super) fd: Option<std::os::fd::OwnedFd>,
+    pub(super) fd: Option<super::pty::PanePty>,
     /// Observes the runtime-owned pane stream, including empty pane buffers.
     pub(super) event: crate::src::reactor::StreamHandle,
     pub(super) offset: window_pane_offset,
