@@ -35,15 +35,17 @@ all = [
 # box once it has launched them, so the prompt reads idle while they work.
 # Claude Code lists each running subagent under the prompt box with its
 # elapsed time and token count, and drops the row when it finishes; the
-# `● main` row heading the list carries no counter.
+# `● main` row heading the list carries no counter. A dynamic workflow's row
+# writes its elapsed time without a space between units.
 #   ◯ general-purpose  Reading e2e_status rende…  3m 42s · ↓ 93.1k tokens
+#   ◯ cmdq-future-series  ▰▰▰▰▰▰▱▱▱▱  5/8 · 55m58s · ↓ 1.5m tokens
 [[rules]]
 id = "subagent_rows_working"
 state = "working"
 priority = 965
 region = "after_last_horizontal_rule"
 visible_working = true
-line_regex = ['^\s*[^\s\p{Alphabetic}\p{N}] .*\s\d+[hms] · ↓ .* tokens\s*$']
+line_regex = ['^\s*[^\s\p{Alphabetic}\p{N}] .*\s(?:\d+[hms])+ · ↓ .* tokens\s*$']
 not = [
   { contains = ["enter to select"] },
   { contains = ["esc to cancel"] },

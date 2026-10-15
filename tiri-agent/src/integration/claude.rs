@@ -274,6 +274,25 @@ mod tests {
     }
 
     #[test]
+    fn a_running_dynamic_workflow_reports_working_at_the_prompt() {
+        // A workflow's footer row writes its elapsed time without the space a
+        // subagent's row puts between units.
+        let screen = "\
+✻ Waiting for 1 dynamic workflow to finish
+─────────────────────────────────── ultracode ─
+❯
+─────────────
+  /home/blmarket/proj/h1/tiri  h1  Opus 5.5  ctx 87%
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents
+
+  ◯ cmdq-future-series  ▰▰▰▰▰▰▰▰▰▰▰▰▱▱▱▱▱▱▱▱  5/8 · 55m58s · ↓ 1.5m tokens";
+        assert_eq!(
+            detect(screen, Some("✳ Plan.md subagent commits")),
+            Detection::State(AgentState::Working)
+        );
+    }
+
+    #[test]
     fn a_footer_without_subagent_rows_stays_idle() {
         // Once the last subagent finishes its row is gone, and the leftover
         // `● main` row and the transcript's waiting line are not work.
