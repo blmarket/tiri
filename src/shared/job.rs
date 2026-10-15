@@ -25,7 +25,7 @@ pub struct job {
     pub cmd: Option<std::ffi::CString>,
     pub pid: pid_t,
     pub tty: [::core::ffi::c_char; 32],
-    pub status: ::core::ffi::c_int,
+    pub status: std::process::ExitStatus,
     pub fd: Option<std::os::fd::OwnedFd>,
     pub event: crate::src::reactor::StreamHandle,
     pub updatecb: job_update_cb,
@@ -57,28 +57,8 @@ pub fn job_update_callback(callback: impl FnMut(&refbox::Weak<job>) + 'static) -
     Some(Rc::new(RefCell::new(Some(Box::new(callback)))))
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum JobExitStatus {
-    Exited(::core::ffi::c_int),
-    Signaled(::core::ffi::c_int),
-    Other(::core::ffi::c_int),
-}
-
-impl JobExitStatus {
-    pub fn from_wait_status(status: ::core::ffi::c_int) -> Self {
-        let signal = status & 0x7f;
-        if signal == 0 {
-            Self::Exited((status & 0xff00) >> 8)
-        } else if signal != 0x7f {
-            Self::Signaled(signal)
-        } else {
-            Self::Other(status)
-        }
-    }
-}
-
 pub struct JobCompletion {
-    pub status: JobExitStatus,
+    pub status: std::process::ExitStatus,
     pub output: Vec<u8>,
 }
 

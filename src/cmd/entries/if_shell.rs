@@ -22,7 +22,7 @@ use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::CMD_FIND_CANFAIL;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::job::{JobCompletion, JobExitStatus};
+use crate::src::shared::job::JobCompletion;
 use crate::src::shared::session::SessionRef;
 use crate::src::status::status_message_set;
 use std::cell::UnsafeCell;
@@ -192,7 +192,7 @@ unsafe fn cmd_if_shell_callback(completion: JobCompletion, cdata: &mut cmd_if_sh
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let new_item_allocation;
-    let state = if completion.status == JobExitStatus::Exited(0) {
+    let state = if completion.status.success() {
         cdata.cmd_if.as_deref_mut()
     } else {
         cdata.cmd_else.as_deref_mut()
@@ -269,7 +269,7 @@ mod tests {
         unsafe {
             cmd_if_shell_callback(
                 JobCompletion {
-                    status: JobExitStatus::Exited(0),
+                    status: Default::default(),
                     output: Vec::new(),
                 },
                 &mut data,

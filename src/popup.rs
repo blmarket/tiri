@@ -31,7 +31,7 @@ use crate::src::shared::environment::environ;
 use crate::src::shared::format::format_tree;
 use crate::src::shared::grid::*;
 use crate::src::shared::input::input_ctx;
-use crate::src::shared::job::{job, job_update_callback, JobCompletion, JobExitStatus};
+use crate::src::shared::job::{job, job_update_callback, JobCompletion};
 use crate::src::shared::job::{JOB_DEFAULTSHELL, JOB_KEEPWRITE, JOB_NOWAIT, JOB_PTY};
 use crate::src::shared::key::key_event;
 use crate::src::shared::key::*;
@@ -56,6 +56,7 @@ use crate::src::tmux::global_w_options;
 use crate::src::window::Window;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
+use std::os::unix::process::ExitStatusExt;
 use std::rc::Rc;
 use std::rc::Weak;
 use tiri_buffer::SegmentedBuf;
@@ -811,11 +812,11 @@ unsafe fn popup_job_update_cb(job: &refbox::Weak<job>, popup: &PopupGuard) {
 }
 unsafe fn popup_job_complete_cb(completion: JobCompletion, popup: &PopupGuard) {
     let pd = popup.as_ptr();
-    (*pd).status = match completion.status {
-        JobExitStatus::Exited(code) => code,
-        JobExitStatus::Signaled(signal) => signal,
-        JobExitStatus::Other(_) => 0,
-    };
+    (*pd).status = completion
+        .status
+        .code()
+        .or(completion.status.signal())
+        .unwrap_or(0);
     (*pd).job = refbox::Weak::new();
     if (*pd).flags & POPUP_CLOSEEXIT != 0
         || (*pd).flags & POPUP_CLOSEEXITZERO != 0 && (*pd).status == 0 as ::core::ffi::c_int

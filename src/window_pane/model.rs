@@ -27,7 +27,8 @@ pub struct window_pane {
     pub(super) cwd: Option<CString>,
     pub(super) pid: pid_t,
     pub(super) tty: [::core::ffi::c_char; 32],
-    pub(super) status: ::core::ffi::c_int,
+    /// Set once the process is reaped; cleared on respawn.
+    pub(super) exit_status: Option<std::process::ExitStatus>,
     pub(super) dead_time: SystemTime,
     pub(super) wait_item: std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>,
     pub(super) editor: Option<Box<spawn_editor_state>>,
@@ -103,7 +104,7 @@ impl Default for window_pane {
             cwd: Default::default(),
             pid: Default::default(),
             tty: Default::default(),
-            status: Default::default(),
+            exit_status: None,
             dead_time: UNIX_EPOCH,
             wait_item: Default::default(),
             editor: Default::default(),

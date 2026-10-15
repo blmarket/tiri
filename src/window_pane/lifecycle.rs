@@ -24,13 +24,15 @@ use crate::src::tmux::sig2name;
 use crate::src::window::Window as _;
 use crate::src::window_pane::WindowPane as _;
 use std::ffi::CStr;
+use std::os::unix::process::ExitStatusExt;
+use std::process::ExitStatus;
 use std::time::SystemTime;
 
 use crate::src::shared::abi::*;
 use crate::src::shared::command::cmd_find_state;
 use crate::src::shared::grid::*;
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::{PANE_REDRAW, PANE_STATUSDRAWN, PANE_STATUSREADY};
+use crate::src::shared::pane::{PANE_REDRAW, PANE_STATUSDRAWN};
 use crate::src::shared::screen::MODE_CURSOR;
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::style::*;
@@ -52,7 +54,8 @@ unsafe fn server_fire_pane_exit(
         wp: std::rc::Weak::new(),
         idx: 0,
     };
-    let mut status: ::core::ffi::c_int = (*wp).status;
+    // An exit seen before the process is reaped reports success, as before.
+    let status = (*wp).exit_status.unwrap_or_default();
     let mut ep = event_payload_create();
     fs = cmd_find_state::find_from_pane(wp_owner, 0 as ::core::ffi::c_int)
         .unwrap_or_else(|| cmd_find_state::clear_state(0 as ::core::ffi::c_int));
@@ -63,26 +66,14 @@ unsafe fn server_fire_pane_exit(
         c"window",
         WindowRef::clone(((*wp).window_handle().as_ref()).expect("live window")),
     );
-    if status & 0x7f as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
-        event_payload_set_int(
-            &mut ep,
-            c"exit_status",
-            (status & 0xff00 as ::core::ffi::c_int) >> 8 as ::core::ffi::c_int,
-        );
-    } else if ((status & 0x7f as ::core::ffi::c_int) + 1 as ::core::ffi::c_int)
-        as ::core::ffi::c_schar as ::core::ffi::c_int
-        >> 1 as ::core::ffi::c_int
-        > 0 as ::core::ffi::c_int
-    {
+    if let Some(code) = status.code() {
+        event_payload_set_int(&mut ep, c"exit_status", code);
+    } else if let Some(signal) = status.signal() {
         event_payload_set_string(&mut ep, c"exit_signal", |out| {
-            out.write_all(sig2name(status & 0x7f as ::core::ffi::c_int).as_bytes())
+            out.write_all(sig2name(signal).as_bytes())
         });
     }
-    event_payload_set_int(
-        &mut ep,
-        c"exit_success",
-        (status == 0 as ::core::ffi::c_int) as ::core::ffi::c_int,
-    );
+    event_payload_set_int(&mut ep, c"exit_success", status.success() as ::core::ffi::c_int);
     events_fire(name, ep);
 }
 pub(super) unsafe fn kill_process(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
@@ -147,10 +138,10 @@ pub(super) unsafe fn finish_process(
         std::mem::take(&mut (*wp).pipe_event).free();
         drop((*wp).pipe_fd.take());
     }
-    if !(*wp).flags & PANE_STATUSREADY != 0 {
+    let Some(exit_status) = (*wp).exit_status else {
         drop(window_owner);
         return;
-    }
+    };
     remain_on_exit = options_get_number(
         options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
         c"remain-on-exit",
@@ -158,10 +149,7 @@ pub(super) unsafe fn finish_process(
     let mut current_block_37: u64;
     match remain_on_exit {
         2 | 4 => {
-            if (*wp).status & 0x7f as ::core::ffi::c_int == 0 as ::core::ffi::c_int
-                && ((*wp).status & 0xff00 as ::core::ffi::c_int) >> 8 as ::core::ffi::c_int
-                    == 0 as ::core::ffi::c_int
-            {
+            if exit_status.success() {
                 current_block_37 = 3275366147856559585;
             } else {
                 current_block_37 = 2300157484894416861;
@@ -245,15 +233,14 @@ pub(super) unsafe fn finish_process(
 pub(super) unsafe fn process_exited(
     pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     pid: pid_t,
-    status: i32,
+    status: ExitStatus,
 ) -> bool {
     {
         let state = &mut *pane.get();
         if state.pid != pid {
             return false;
         }
-        state.status = status;
-        state.flags |= PANE_STATUSREADY;
+        state.exit_status = Some(status);
         log_debug(format_args!("%{} exited", state.id));
         state.flags |= PANE_EXITED;
     }

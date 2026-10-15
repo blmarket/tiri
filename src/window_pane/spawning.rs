@@ -52,7 +52,7 @@ use crate::src::shared::command::{cmd_find_state, cmdq_item};
 use crate::src::shared::key::*;
 use crate::src::shared::limits::SIZE_MAX;
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::{PANE_EMPTY, PANE_EXITED, PANE_STATUSDRAWN, PANE_STATUSREADY};
+use crate::src::shared::pane::{PANE_EMPTY, PANE_EXITED, PANE_STATUSDRAWN};
 use crate::src::shared::posix_io::{_PATH_BSHELL, STDERR_FILENO, STDIN_FILENO};
 use crate::src::shared::posix_terminal::{winsize, TCSANOW, VERASE};
 use crate::src::shared::screen::{MODE_CRLF, MODE_CURSOR};
@@ -65,6 +65,7 @@ use crate::src::shared::stdio::FILE;
 use crate::src::shared::terminal::*;
 
 use std::os::fd::{FromRawFd, OwnedFd};
+use std::os::unix::process::ExitStatusExt;
 
 use crate::src::shared::spawn::EditorHandle;
 use crate::src::spawn::{
@@ -339,7 +340,8 @@ pub(super) unsafe fn spawn_pane(
             }
             new_pane_owner = source_pane_owner.as_ref().expect("respawn pane").clone();
             new_wp = new_pane_owner.get();
-            (*new_wp).flags &= !(PANE_STATUSREADY | PANE_STATUSDRAWN);
+            (*new_wp).flags &= !PANE_STATUSDRAWN;
+            (*new_wp).exit_status = None;
         } else {
             new_pane_owner = created_pane.expect("new pane placed");
             new_wp = new_pane_owner.get();
@@ -694,18 +696,13 @@ pub(super) unsafe fn finish_editing(wp_owner: &std::rc::Rc<std::cell::UnsafeCell
     let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
     let mut result: Option<Vec<u8>> = None;
     let mut len: off_t = 0 as off_t;
-    let mut status: ::core::ffi::c_int = 128 as ::core::ffi::c_int + SIGHUP;
-    if (*wp).flags & PANE_STATUSREADY != 0 {
-        if (*wp).status & 0x7f as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
-            status = ((*wp).status & 0xff00 as ::core::ffi::c_int) >> 8 as ::core::ffi::c_int;
-        } else if (((*wp).status & 0x7f as ::core::ffi::c_int) + 1 as ::core::ffi::c_int)
-            as ::core::ffi::c_schar as ::core::ffi::c_int
-            >> 1 as ::core::ffi::c_int
-            > 0 as ::core::ffi::c_int
-        {
-            status = ((*wp).status & 0x7f as ::core::ffi::c_int) + 128 as ::core::ffi::c_int;
-        }
-    }
+    let status = match (*wp).exit_status {
+        Some(exit_status) => exit_status
+            .code()
+            .or(exit_status.signal().map(|signal| signal + 128))
+            .unwrap_or(0),
+        None => 128 + SIGHUP,
+    };
     if (*es).cb.is_none() {
         return;
     }
@@ -767,6 +764,7 @@ pub(super) unsafe fn install_editor(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::ExitStatus;
     use crate::src::shared::spawn::spawn_finish_edit_cb;
     use crate::src::shared::spawn::EditorHandle;
     use crate::src::spawn::{spawn_editor_fdopen, spawn_editor_finish};
@@ -896,8 +894,7 @@ mod tests {
                 let pane_owner = window_pane::new();
                 let wp = pane_owner.get();
                 (*wp).editor = Some(state);
-                (*wp).flags = PANE_STATUSREADY;
-                (*wp).status = 0;
+                (*wp).exit_status = Some(ExitStatus::from_raw(0));
                 spawn_editor_finish(&pane_owner);
                 assert_eq!(
                     result.try_borrow_mut().expect("live editor result").take(),
@@ -917,8 +914,7 @@ mod tests {
                 let pane_owner = window_pane::new();
                 let wp = pane_owner.get();
                 (*wp).editor = Some(state);
-                (*wp).flags = PANE_STATUSREADY;
-                (*wp).status = 0;
+                (*wp).exit_status = Some(ExitStatus::from_raw(0));
                 spawn_editor_finish(&pane_owner);
                 assert_eq!(
                     result.try_borrow_mut().expect("live editor result").take(),
@@ -938,8 +934,7 @@ mod tests {
                 let pane_owner = window_pane::new();
                 let wp = pane_owner.get();
                 (*wp).editor = Some(state);
-                (*wp).flags = PANE_STATUSREADY;
-                (*wp).status = 1 << 8;
+                (*wp).exit_status = Some(ExitStatus::from_raw(1 << 8));
                 spawn_editor_finish(&pane_owner);
                 assert_eq!(
                     result.try_borrow_mut().expect("live editor result").take(),

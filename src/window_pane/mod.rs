@@ -78,6 +78,7 @@ use crate::src::tty::tty_default_colours;
 use crate::src::window_copy::{window_copy_mode, window_view_mode};
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
+use std::os::unix::process::ExitStatusExt;
 use std::rc::{Rc, Weak};
 use tiri_buffer::SegmentedBuf;
 
@@ -102,7 +103,7 @@ use crate::src::shared::pane::{
     pane_output_data, window_pane_offset, window_pane_resize, window_pane_resizes, PANE_CHANGED,
     PANE_DESTROYED, PANE_EMPTY, PANE_EXITED, PANE_FOCUSED, PANE_INPUTOFF, PANE_REDRAW,
     PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_ALWAYS, PANE_SCROLLBARS_AUTOHIDE, PANE_SCROLLBARS_LEFT,
-    PANE_SCROLLBARS_MODAL, PANE_STATUSREADY, PANE_STATUS_BOTTOM, PANE_STATUS_OFF, PANE_STATUS_TOP,
+    PANE_SCROLLBARS_MODAL, PANE_STATUS_BOTTOM, PANE_STATUS_OFF, PANE_STATUS_TOP,
     PANE_STYLECHANGED, PANE_THEMECHANGED, PANE_UNSEENCHANGES,
 };
 use crate::src::shared::pane::{window_pane_modes, window_pane_prompt, PaneScreenSource};
@@ -356,10 +357,10 @@ unsafe fn window_pane_destroy_ready(
     if !(*wp).flags & PANE_EXITED != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    if (*wp).wait_item.strong_count() != 0 && !(*wp).flags & PANE_STATUSREADY != 0 {
+    if (*wp).wait_item.strong_count() != 0 && (*wp).exit_status.is_none() {
         return 0 as ::core::ffi::c_int;
     }
-    if (*wp).editor.is_some() && !(*wp).flags & PANE_STATUSREADY != 0 {
+    if (*wp).editor.is_some() && (*wp).exit_status.is_none() {
         return 0 as ::core::ffi::c_int;
     }
     1 as ::core::ffi::c_int
@@ -625,23 +626,14 @@ unsafe fn window_pane_create(
 }
 
 unsafe fn window_pane_wait_finish(wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
-    let mut wp = wp_owner.get();
+    let wp = wp_owner.get();
     let item_owner = std::mem::take(&mut (*wp).wait_item).upgrade();
     let Some(item_owner) = item_owner else { return };
     let item = item_owner.get();
-    let _c: Option<ClientRef> = None;
-    let mut retval: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if (*wp).flags & PANE_STATUSREADY != 0 {
-        if (*wp).status & 0x7f as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
-            retval = ((*wp).status & 0xff00 as ::core::ffi::c_int) >> 8 as ::core::ffi::c_int;
-        } else if (((*wp).status & 0x7f as ::core::ffi::c_int) + 1 as ::core::ffi::c_int)
-            as ::core::ffi::c_schar as ::core::ffi::c_int
-            >> 1 as ::core::ffi::c_int
-            > 0 as ::core::ffi::c_int
-        {
-            retval = ((*wp).status & 0x7f as ::core::ffi::c_int) + 128 as ::core::ffi::c_int;
-        }
-    }
+    let retval = (*wp)
+        .exit_status
+        .and_then(|status| status.code().or(status.signal().map(|signal| signal + 128)))
+        .unwrap_or(0);
     let c_owner = cmdq_get_client((item).as_ref());
     if let Some(client) = c_owner.as_ref() {
         if client.attached_session().upgrade().is_none() {

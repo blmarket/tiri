@@ -30,7 +30,7 @@ use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::event::*;
 use crate::src::shared::format::format_tree;
-use crate::src::shared::job::{JobCompletion, JobExitStatus, JOB_NOWAIT, JOB_SHOWSTDERR};
+use crate::src::shared::job::{JobCompletion, JOB_NOWAIT, JOB_SHOWSTDERR};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::SessionRef;
 use crate::src::status::status_message_set;
@@ -39,6 +39,7 @@ use crate::src::window_copy::{window_copy_add, window_view_mode};
 use crate::src::window_pane::WindowPane as _;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
+use std::os::unix::process::ExitStatusExt;
 use std::rc::Weak;
 use std::time::Duration;
 
@@ -415,25 +416,19 @@ unsafe fn cmd_run_shell_callback(completion: JobCompletion, cdata: &cmd_run_shel
         partial_line.push(0);
         cmd_run_shell_print(cdata, CStr::from_ptr(partial_line.as_ptr().cast()));
     }
-    match completion.status {
-        JobExitStatus::Exited(code) => {
-            retcode = code;
-            if retcode != 0 as ::core::ffi::c_int {
-                msg = Some(cmd_run_shell_status_message(cmd, b"' returned ", retcode));
-            }
+    if let Some(code) = completion.status.code() {
+        retcode = code;
+        if retcode != 0 as ::core::ffi::c_int {
+            msg = Some(cmd_run_shell_status_message(cmd, b"' returned ", retcode));
         }
-        JobExitStatus::Signaled(signal) => {
-            retcode = signal;
-            msg = Some(cmd_run_shell_status_message(
-                cmd,
-                b"' terminated by signal ",
-                retcode,
-            ));
-            retcode += 128 as ::core::ffi::c_int;
-        }
-        JobExitStatus::Other(_) => {
-            retcode = 0;
-        }
+    } else if let Some(signal) = completion.status.signal() {
+        retcode = signal;
+        msg = Some(cmd_run_shell_status_message(
+            cmd,
+            b"' terminated by signal ",
+            retcode,
+        ));
+        retcode += 128 as ::core::ffi::c_int;
     }
     if let Some(msg) = msg.as_ref() {
         cmd_run_shell_print(cdata, msg);
@@ -481,7 +476,7 @@ mod tests {
         unsafe {
             cmd_run_shell_callback(
                 JobCompletion {
-                    status: JobExitStatus::Exited(0),
+                    status: Default::default(),
                     output: Vec::new(),
                 },
                 &data,

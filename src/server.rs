@@ -30,6 +30,8 @@ use libc::{
 use std::os::fd::FromRawFd;
 use std::os::fd::{IntoRawFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
+use std::os::unix::process::ExitStatusExt;
+use std::process::ExitStatus;
 use std::os::unix::net::UnixListener;
 
 use crate::src::session::sessions;
@@ -501,19 +503,15 @@ unsafe fn server_child_signal() {
             0 => return,
             _ => {}
         }
-        if status & 0xff as ::core::ffi::c_int == 0x7f as ::core::ffi::c_int {
+        let status = ExitStatus::from_raw(status);
+        if status.stopped_signal().is_some() {
             server_child_stopped(pid, status);
-        } else if status & 0x7f as ::core::ffi::c_int == 0 as ::core::ffi::c_int
-            || ((status & 0x7f as ::core::ffi::c_int) + 1 as ::core::ffi::c_int)
-                as ::core::ffi::c_schar as ::core::ffi::c_int
-                >> 1 as ::core::ffi::c_int
-                > 0 as ::core::ffi::c_int
-        {
+        } else if status.code().is_some() || status.signal().is_some() {
             server_child_exited(pid, status);
         }
     }
 }
-unsafe fn server_child_exited(pid: pid_t, status: i32) {
+unsafe fn server_child_exited(pid: pid_t, status: ExitStatus) {
     let mut window_cursor = windows::first();
     while let Some(window_owner) = window_cursor.take() {
         window_cursor = window_owner.next_window().upgrade();
@@ -530,8 +528,8 @@ unsafe fn server_child_exited(pid: pid_t, status: i32) {
     }
     job_check_died(pid, status);
 }
-unsafe fn server_child_stopped(pid: pid_t, status: i32) {
-    if (status & 0xff00) >> 8 == SIGTTIN || (status & 0xff00) >> 8 == SIGTTOU {
+unsafe fn server_child_stopped(pid: pid_t, status: ExitStatus) {
+    if matches!(status.stopped_signal(), Some(SIGTTIN | SIGTTOU)) {
         return;
     }
     let mut window_cursor = windows::first();

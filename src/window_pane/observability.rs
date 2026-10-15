@@ -9,7 +9,6 @@ use crate::src::shared::display::{
 use crate::src::shared::grid::{
     grid, GRID_LINE_WRAPPED, GRID_STRING_EMPTY_CELLS, GRID_STRING_TRIM_SPACES,
 };
-use crate::src::shared::pane::PANE_STATUSREADY;
 use crate::src::shared::screen::{
     screen, MODE_CURSOR, MODE_CURSOR_BLINKING, MODE_CURSOR_BLINKING_SET,
 };
@@ -90,7 +89,7 @@ pub(crate) unsafe fn activity(id: PaneId) -> Option<PaneActivity> {
                 Some(stringify_argv(&pane.argv))
             },
             alternate_on: pane.base.saved_grid.is_some(),
-            exited: pane.fd.is_none() && pane.flags & PANE_STATUSREADY != 0,
+            exited: pane.fd.is_none() && pane.exit_status.is_some(),
         }
     })
 }

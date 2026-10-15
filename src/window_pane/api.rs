@@ -299,7 +299,7 @@ pub trait WindowPane {
     ) -> cmd_retval;
     unsafe fn process_id(&self) -> pid_t;
     /// Record an exit before finishing waits/editors; false means a different process.
-    unsafe fn process_exited(&self, pid: pid_t, status: i32) -> bool;
+    unsafe fn process_exited(&self, pid: pid_t, status: std::process::ExitStatus) -> bool;
     unsafe fn kill_process(&self);
     /// Close descriptors before exit notifications and remain-on-exit rendering.
     unsafe fn finish_process(&self, notify: i32);
@@ -1287,7 +1287,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     unsafe fn process_id(&self) -> pid_t {
         (*self.get()).pid
     }
-    unsafe fn process_exited(&self, pid: pid_t, status: i32) -> bool {
+    unsafe fn process_exited(&self, pid: pid_t, status: std::process::ExitStatus) -> bool {
         lifecycle::process_exited(self, pid, status)
     }
     unsafe fn kill_process(&self) {

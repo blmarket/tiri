@@ -21,7 +21,7 @@ use crate::src::shared::environment::environ;
 use crate::src::shared::event::*;
 use crate::src::shared::event::{EV_READ, EV_WRITE};
 use crate::src::shared::job::{
-    job, job_complete_cb, job_free_cb, job_state, job_update_cb, jobs, JobCompletion, JobExitStatus,
+    job, job_complete_cb, job_free_cb, job_state, job_update_cb, jobs, JobCompletion,
 };
 use crate::src::shared::job::{
     JOB_DEFAULTSHELL, JOB_KEEPWRITE, JOB_NOWAIT, JOB_PTY, JOB_SHOWSTDERR,
@@ -45,6 +45,8 @@ use libc::{
 use refbox::{RefBox, Weak};
 use std::ffi::{CStr, CString};
 use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
+use std::os::unix::process::ExitStatusExt;
+use std::process::ExitStatus;
 
 pub const JOB_CLOSED: job_state = 2;
 pub const JOB_DEAD: job_state = 1;
@@ -60,7 +62,7 @@ unsafe fn job_completion(job: &job) -> JobCompletion {
         })
         .unwrap_or_default();
     JobCompletion {
-        status: JobExitStatus::from_wait_status(job.status),
+        status: job.status,
         output,
     }
 }
@@ -554,7 +556,7 @@ unsafe fn job_error_callback(handle: &Weak<job>) {
     }
 }
 
-pub unsafe fn job_check_died(pid: pid_t, status: ::core::ffi::c_int) {
+pub unsafe fn job_check_died(pid: pid_t, status: ExitStatus) {
     let Some(handle) = jobs::snapshot()
         .into_iter()
         .find(|handle| handle.try_borrow_mut().expect("registered job").pid == pid)
@@ -563,8 +565,7 @@ pub unsafe fn job_check_died(pid: pid_t, status: ::core::ffi::c_int) {
     };
     let complete = {
         let mut job = handle.try_borrow_mut().expect("registered job");
-        if status & 0xff == 0x7f {
-            let signal = (status & 0xff00) >> 8;
+        if let Some(signal) = status.stopped_signal() {
             if signal != SIGTTIN && signal != SIGTTOU {
                 killpg(job.pid as __pid_t, SIGCONT);
             }
@@ -631,7 +632,7 @@ pub unsafe fn job_print_summary(
         cmdq_print(item_handle, |out| {
             write!(out, "Job {}: ", n)?;
             out.write_all(cmd.as_deref().unwrap_or(c"(null)").to_bytes())?;
-            write!(out, " [fd={}, pid={}, status={}]", fd, pid, status)
+            write!(out, " [fd={}, pid={}, status={}]", fd, pid, status.into_raw())
         });
     }
 }
@@ -728,7 +729,7 @@ mod job_stream_tests {
                 let observed = calls.clone();
                 handle.try_borrow_mut().unwrap().completecb = Some(Box::new(move |completion| {
                     assert_eq!(completion.output, b"remaining");
-                    assert_eq!(completion.status, JobExitStatus::Exited(7));
+                    assert_eq!(completion.status.code(), Some(7));
                     assert_eq!(callback_handle.try_borrow_mut().unwrap().pid, -1);
                     observed.set(observed.get() + 1);
                     // Completion may cancel itself while the dispatcher runs.
@@ -737,9 +738,9 @@ mod job_stream_tests {
                 if eof_first {
                     job_error_callback(&handle);
                     assert_eq!(handle.try_borrow_mut().unwrap().state, JOB_CLOSED);
-                    job_check_died(1234567, 7 << 8);
+                    job_check_died(1234567, ExitStatus::from_raw(7 << 8));
                 } else {
-                    job_check_died(1234567, 7 << 8);
+                    job_check_died(1234567, ExitStatus::from_raw(7 << 8));
                     assert_eq!(handle.try_borrow_mut().unwrap().state, JOB_DEAD);
                     job_error_callback(&handle);
                 }

@@ -15,6 +15,7 @@ use crate::src::tmux::sig2name;
 use libc::time;
 use std::fmt::Write as _;
 use std::os::fd::AsRawFd;
+use std::os::unix::process::ExitStatusExt;
 
 pub(super) unsafe fn format_value(
     owner: &Rc<UnsafeCell<window_pane>>,
@@ -1056,7 +1057,7 @@ unsafe fn format_cb_pane_dead(mut ft: *mut format_tree) -> Option<CString> {
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = format_pane;
     if !wp.is_null() {
-        if (*wp).fd.is_none() && (*wp).flags & PANE_STATUSREADY != 0 {
+        if (*wp).fd.is_none() && (*wp).exit_status.is_some() {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());
@@ -1071,15 +1072,10 @@ unsafe fn format_cb_pane_dead_signal(mut ft: *mut format_tree) -> Option<CString
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = format_pane;
     if !wp.is_null() {
-        if (*wp).flags & PANE_STATUSREADY != 0
-            && (((*wp).status & 0x7f as ::core::ffi::c_int) + 1 as ::core::ffi::c_int)
-                as ::core::ffi::c_schar as ::core::ffi::c_int
-                >> 1 as ::core::ffi::c_int
-                > 0 as ::core::ffi::c_int
-        {
-            return Some(sig2name((*wp).status & 0x7f as ::core::ffi::c_int));
-        }
-        return None;
+        return (*wp)
+            .exit_status
+            .and_then(|status| status.signal())
+            .map(sig2name);
     }
     None
 }
@@ -1091,19 +1087,9 @@ unsafe fn format_cb_pane_dead_status(mut ft: *mut format_tree) -> Option<CString
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = format_pane;
     if !wp.is_null() {
-        if (*wp).flags & PANE_STATUSREADY != 0
-            && (*wp).status & 0x7f as ::core::ffi::c_int == 0 as ::core::ffi::c_int
-        {
-            return Some(
-                CString::new(format!(
-                    "{}",
-                    (((*wp).status & 0xff00 as ::core::ffi::c_int) >> 8 as ::core::ffi::c_int)
-                        as i32
-                ))
-                .expect("formatted numbers contain no NUL"),
-            );
-        }
-        return None;
+        return (*wp).exit_status.and_then(|status| status.code()).map(|code| {
+            CString::new(format!("{}", code)).expect("formatted numbers contain no NUL")
+        });
     }
     None
 }
