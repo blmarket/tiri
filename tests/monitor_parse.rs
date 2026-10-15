@@ -1,8 +1,8 @@
+use std::ffi::CString;
 use tiri::src::monitor::{
     monitor_parse_owned, MONITOR_ALL_PANES, MONITOR_ALL_WINDOWS, MONITOR_PANE, MONITOR_SESSION,
     MONITOR_WINDOW,
 };
-use std::ffi::CString;
 
 fn parse(input: &[u8]) -> (i32, Option<Vec<u8>>, u32, i32, Option<Vec<u8>>) {
     let input = CString::new(input).unwrap();

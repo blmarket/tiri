@@ -1,8 +1,8 @@
-use crate::src::ffi::libc::{strcasecmp, strcmp};
 use crate::src::paste::paste_walk;
 use crate::src::server_client::Client as _;
 use crate::src::server_client::ClientRegistry;
 use crate::src::session::sessions;
+use libc::{strcasecmp, strcmp};
 use std::ffi::CStr;
 
 use crate::src::session::Session;

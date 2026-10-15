@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{__errno_location, free, getpid, getppid, strcmp, strerror};
+use crate::src::ffi::libc::__errno_location;
 use crate::src::ffi::systemd::{
     sd_bus, sd_bus_error, sd_bus_message, sd_bus_slot, sd_id128, sd_id128_t,
 };
@@ -15,6 +15,7 @@ use crate::src::shared::abi::*;
 use crate::src::shared::errno::E2BIG;
 use crate::src::shared::socket::SOCK_STREAM;
 use crate::src::tmux::socket_path;
+use libc::{free, getpid, getppid, strcmp, strerror};
 use std::ffi::{CStr, CString};
 use std::time::Instant;
 

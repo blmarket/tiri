@@ -7,8 +7,6 @@ use crate::src::compat::imsg::{
     imsgbuf_receive, imsgbuf_written,
 };
 use crate::src::compat::setproctitle::setproctitle;
-use crate::src::ffi::libc::utsname;
-use crate::src::ffi::libc::{daemon, fork, getpid, memset, sigaction, sigemptyset, uname};
 use crate::src::ffi::utf8proc::utf8proc_version;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::{fatal, log_cstr, log_debug, log_open, log_pointer, log_toggle};
@@ -23,9 +21,11 @@ pub use crate::src::shared::signal::{
     SIGUSR2, SIGWINCH, SIG_DFL, SIG_IGN,
 };
 use crate::src::tmux::{getversion, socket_path_cstr};
-use tiri_rt::{AsyncRead as _, AsyncWrite as _, Runtime as _, Signals as _};
+use libc::utsname;
+use libc::{daemon, fork, getpid, memset, sigaction, sigemptyset, uname};
 use std::ffi::CStr;
 use std::os::fd::{AsFd, AsRawFd, OwnedFd};
+use tiri_rt::{AsyncRead as _, AsyncWrite as _, Runtime as _, Signals as _};
 
 pub use ::libc::{SIGPIPE, SIGQUIT};
 

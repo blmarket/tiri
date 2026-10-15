@@ -1,8 +1,8 @@
-use tiri_rt::{AsyncRead, AsyncWrite, Handle, Runtime, mio, unix};
 use std::io::{IoSlice, Read, Write};
 use std::os::fd::{AsFd, AsRawFd, IntoRawFd};
 use std::os::unix::net::UnixStream;
 use std::time::{Duration, Instant};
+use tiri_rt::{AsyncRead, AsyncWrite, Handle, Runtime, mio, unix};
 
 #[test]
 fn borrowed_driver_waits_for_io_and_timers_without_retaining_its_future() {

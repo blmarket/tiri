@@ -34,11 +34,11 @@ use crate::src::shared::pane::window_pane_offset;
 use crate::src::shared::session::SessionRef;
 use crate::src::tmux::get_timer;
 use crate::src::window::{winlink_find_by_window, Window, WindowPane};
-use tiri_buffer::SegmentedBuf;
 use std::cell::UnsafeCell;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
+use tiri_buffer::SegmentedBuf;
 
 pub const INFTIM: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
 pub const CONTROL_PANE_OFF: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
@@ -665,8 +665,8 @@ pub unsafe fn control_all_done(c: &ClientRef) -> ::core::ffi::c_int {
         == 0 as size_t) as ::core::ffi::c_int
 }
 pub unsafe fn control_wait_exit() {
-    use tiri_rt::{AsyncRead as _, Runtime as _};
     use std::os::fd::AsFd;
+    use tiri_rt::{AsyncRead as _, Runtime as _};
     let stdin = std::io::stdin();
     let fd = stdin.as_fd();
     let Ok(was_nonblocking) = tiri_rt::unix::set_nonblocking(fd, true) else {

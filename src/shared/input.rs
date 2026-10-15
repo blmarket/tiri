@@ -2,9 +2,9 @@
 use crate::src::window_pane::WindowPane as _;
 
 use crate::src::shared::client::ClientWeak;
-use tiri_buffer::SegmentedBuf;
 use std::collections::VecDeque;
 use std::ffi::CString;
+use tiri_buffer::SegmentedBuf;
 
 use super::abi::{size_t, u_char, u_int, uint64_t};
 use super::colour::colour_palette;

@@ -1,5 +1,4 @@
 //! Byte I/O owns registration, directional waits, and descriptor cleanup.
-use tiri_rt::{AsyncRead as _, AsyncWrite as _, Handle as _, Received, Runtime as _, mio};
 use std::cell::Cell;
 use std::future::Future;
 use std::io::{self, IoSlice, Read, Write};
@@ -9,6 +8,7 @@ use std::pin::pin;
 use std::rc::Rc;
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
+use tiri_rt::{AsyncRead as _, AsyncWrite as _, Handle as _, Received, Runtime as _, mio};
 
 fn assert_closed(raw: RawFd) {
     // SAFETY: F_GETFD only queries the descriptor number.

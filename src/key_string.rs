@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{sscanf, strcasecmp, wctomb};
+use crate::src::ffi::libc::wctomb;
 use crate::src::shared::abi::*;
 use crate::src::shared::control_character::{
     C0_ASC, C0_BEL, C0_BS, C0_CAN, C0_CR, C0_DC1, C0_DC2, C0_DC3, C0_DC4, C0_DLE, C0_EM, C0_ENQ,
@@ -12,6 +12,7 @@ use crate::src::shared::utf8::*;
 use crate::src::text::utf8::{
     utf8_append, utf8_from_data, utf8_fromcstr_vec, utf8_open, utf8_to_data,
 };
+use libc::{sscanf, strcasecmp};
 use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone)]

@@ -36,7 +36,7 @@ use crate::src::events_payload::{
     event_payload_set_session, event_payload_set_target, event_payload_set_uint,
     event_payload_set_window,
 };
-use crate::src::ffi::libc::{access, memcpy, sscanf, strchr, strcmp, strsep};
+use crate::src::ffi::libc::strsep;
 use crate::src::file::{
     file_print, file_read_data, file_read_done, file_write_done, file_write_ready,
 };
@@ -63,6 +63,7 @@ use crate::src::server::{current_time, server_add_accept, server_proc, server_up
 use crate::src::server_fn::{
     server_check_unattached, server_redraw_window_borders, server_status_window,
 };
+use libc::{access, memcpy, sscanf, strchr, strcmp};
 
 use crate::src::shared::command::unpack_argv;
 use crate::src::status::{
@@ -88,8 +89,8 @@ use crate::src::window::windows;
 use crate::src::window::winlink_find_by_index;
 use crate::src::window_copy::{window_copy_add, window_view_mode};
 use crate::src::window_visible::{window_position_is_visible, window_visible_ranges};
-use tiri_buffer::SegmentedBuf;
 use std::ffi::{CStr, CString};
+use tiri_buffer::SegmentedBuf;
 
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;

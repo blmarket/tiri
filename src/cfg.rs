@@ -6,7 +6,7 @@ use crate::src::cmd::queue::{
 };
 use crate::src::compat::stdio::CFile;
 use crate::src::control::control_notify_write;
-use crate::src::ffi::libc::{__errno_location, fopen, strerror};
+use crate::src::ffi::libc::__errno_location;
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
@@ -15,6 +15,7 @@ use crate::src::prompt_history::prompt_load_history;
 use crate::src::server_client::Client as _;
 use crate::src::server_client::ClientRegistry;
 use crate::src::session::sessions;
+use libc::{fopen, strerror};
 
 use crate::src::session::Session as _;
 use crate::src::shared::abi::*;

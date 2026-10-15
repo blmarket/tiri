@@ -2,7 +2,7 @@ use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_event, cmdq_g
 use crate::src::cmd::{cmd_mouse_pane, cmd_mouse_window};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::environ::environ_find;
-use crate::src::ffi::libc::{fnmatch, strchr, strcmp, strlcat, strlen, strncmp};
+use crate::src::ffi::libc::strlcat;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::{fatalx, log_cstr, log_debug, log_pointer};
@@ -23,6 +23,7 @@ use crate::src::window::{
     winlinks_next,
 };
 use crate::src::window_pane::WindowPane as _;
+use libc::{fnmatch, strchr, strcmp, strlen, strncmp};
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
 

@@ -3,7 +3,7 @@ use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_list_print_cstring;
 use crate::src::cmd::parse::cmd_parse_from_string;
 use crate::src::compat::strtonum::strtonum;
-use crate::src::ffi::libc::{fnmatch, strcasecmp, strcmp, strncmp, strsep, strstr};
+use crate::src::ffi::libc::strsep;
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
@@ -23,6 +23,7 @@ use crate::src::server::current_time;
 use crate::src::server_client::Client as _;
 use crate::src::server_client::ClientRegistry;
 use crate::src::shared::window::WindowRef;
+use libc::{fnmatch, strcasecmp, strcmp, strncmp, strstr};
 
 use crate::src::server_fn::server_redraw_client;
 use crate::src::session::sessions;

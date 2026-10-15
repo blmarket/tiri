@@ -1,7 +1,7 @@
 //! Environment-owner compatibility and lifetime checks.
+use std::ffi::CStr;
 use tiri::src::environ::{environ, environ_create, ENVIRON_HIDDEN};
 use tiri::src::format::bytes::write_cstr;
-use std::ffi::CStr;
 
 #[test]
 fn owner_preserves_missing_valueless_flags_order_and_bytes() {
@@ -190,9 +190,9 @@ fn iteration_allows_nested_reads_and_copy_from_an_owned_snapshot() {
 
 #[test]
 fn update_borrows_sources_and_accepts_owned_snapshots() {
+    use std::ptr::null_mut;
     use tiri::src::environ::environ_update;
     use tiri::src::options::{options_array_set, options_create, options_empty};
-    use std::ptr::null_mut;
     unsafe {
         let mut options_owner = options_create(None);
         let options = &raw mut *options_owner;

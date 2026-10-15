@@ -1,6 +1,6 @@
-use tiri::src::shared::status::message_list;
 use std::ffi::CString;
 use std::time::{Duration, UNIX_EPOCH};
+use tiri::src::shared::status::message_list;
 
 #[test]
 fn message_list_owns_entries_trims_oldest_and_reverses_for_display() {

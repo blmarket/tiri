@@ -1,7 +1,7 @@
-use crate::src::ffi::libc::forkpty;
 use crate::src::shared::abi::*;
 use crate::src::shared::posix_terminal::winsize;
 use crate::src::shared::terminal::*;
+use libc::forkpty;
 pub unsafe fn getptmfd() -> ::core::ffi::c_int {
     2147483647 as ::core::ffi::c_int
 }

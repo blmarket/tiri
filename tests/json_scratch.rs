@@ -1,5 +1,5 @@
-use tiri::src::json::{json_find, json_parse};
 use std::ffi::CString;
+use tiri::src::json::{json_find, json_parse};
 
 #[test]
 fn object_keys_survive_scratch_and_input_destruction() {

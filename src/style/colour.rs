@@ -1,5 +1,4 @@
 use crate::src::compat::strtonum::strtonum;
-use crate::src::ffi::libc::{sscanf, strcasecmp, strcmp, strlen, strncasecmp};
 use crate::src::ffi::libm::round;
 use crate::src::log::log_cstr;
 use crate::src::server_client::Client;
@@ -9,6 +8,7 @@ use crate::src::shared::colour::*;
 use crate::src::shared::colour::{COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME};
 use crate::src::shared::options::options;
 use crate::src::shared::tty::{TERM_256COLOURS, TERM_RGBCOLOURS};
+use libc::{sscanf, strcasecmp, strcmp, strlen, strncasecmp};
 
 #[derive(Copy, Clone)]
 #[repr(C)]

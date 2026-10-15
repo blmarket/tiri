@@ -1,5 +1,4 @@
 use crate::src::cmd::queue::{cmdq_continue, cmdq_get_client};
-use crate::src::ffi::libc::memcpy;
 use crate::src::format::format_create_defaults;
 use crate::src::grid::grid_default_cell;
 use crate::src::input::{input_init, input_parse_screen};
@@ -15,6 +14,7 @@ use crate::src::screen_write::{
     screen_write_box, screen_write_clearscreen, screen_write_cursormove, screen_write_fast_copy,
     screen_write_start, screen_write_stop,
 };
+use libc::memcpy;
 
 use crate::src::server_client::{Client, Overlay};
 use crate::src::session::Session;
@@ -54,11 +54,11 @@ use crate::src::style::colour::{colour_palette_from_option, colour_palette_init}
 use crate::src::style::{style_apply_with_options, style_parse, style_set};
 use crate::src::tmux::global_w_options;
 use crate::src::window::Window;
-use tiri_buffer::SegmentedBuf;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
 use std::rc::Weak;
+use tiri_buffer::SegmentedBuf;
 
 pub struct popup_data {
     published: bool,

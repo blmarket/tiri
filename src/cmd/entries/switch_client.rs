@@ -3,11 +3,11 @@ use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_client, cmdq_get_flags, cmdq_get_state_owned, cmdq_get_target_client,
 };
-use crate::src::ffi::libc::{getuid, strcmp, strcspn};
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::key_bindings::key_bindings_get_table;
 use crate::src::window::Window as _;
+use libc::{getuid, strcmp, strcspn};
 
 use crate::src::shared::abi::uid_t;
 use crate::src::shared::abi::*;

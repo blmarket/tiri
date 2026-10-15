@@ -1,7 +1,5 @@
 use crate::src::compat::strtonum::strtonum;
-use crate::src::ffi::libc::{
-    memcpy, snprintf, strcasecmp, strchr, strcmp, strcspn, strlcpy, strncasecmp, strspn,
-};
+use crate::src::ffi::libc::strlcpy;
 use crate::src::format::bytes::xformat_with;
 use crate::src::format::{format_create, format_single_cstring};
 use crate::src::grid::grid_default_cell;
@@ -28,6 +26,7 @@ pub use crate::src::shared::tty::tty_term;
 use crate::src::style::attributes::{attributes_format, attributes_parse_cstr};
 use crate::src::style::colour::{colour_format, colour_parse_cstr};
 use crate::src::text::utf8::utf8_set;
+use libc::{memcpy, snprintf, strcasecmp, strchr, strcmp, strcspn, strncasecmp, strspn};
 use std::ffi::{CStr, CString};
 
 pub const STYLE_WIDTH_DEFAULT: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);

@@ -4,12 +4,12 @@ use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_flags, cmdq_get_state_owned};
 use crate::src::compat::imsg::*;
 use crate::src::events::events_fire_client;
-use crate::src::ffi::libc::{getuid, strcspn};
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
 use crate::src::server_client::ClientRegistry;
 use crate::src::window::Window as _;
+use libc::{getuid, strcspn};
 use std::ffi::CStr;
 
 use crate::src::session::sessions;

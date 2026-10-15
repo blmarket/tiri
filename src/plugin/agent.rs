@@ -1,11 +1,11 @@
 //! Existing tiri-agent detectors hosted through tiri pane observations.
 use super::{Host, PaneActivity, PaneId, PaneValues, Plugin, Variable};
-use tiri_agent::integration::status::{AgentStatus, StatusHub};
-use tiri_agent::integration::AgentObserver;
-use tiri_agent::pane_class::{PaneClass, PaneProcessProbe};
 use std::ffi::CString;
 use std::io;
 use std::time::Duration;
+use tiri_agent::integration::status::{AgentStatus, StatusHub};
+use tiri_agent::integration::AgentObserver;
+use tiri_agent::pane_class::{PaneClass, PaneProcessProbe};
 
 const VARIABLES: &[Variable] = &[
     Variable::new(c"pane_agent"),

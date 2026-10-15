@@ -13,10 +13,6 @@ use crate::src::shared::pane::PANE_STATUSREADY;
 use crate::src::shared::screen::{
     screen, MODE_CURSOR, MODE_CURSOR_BLINKING, MODE_CURSOR_BLINKING_SET,
 };
-use tiri_agent::observability::v1::{
-    PaneId, PaneObservability, PaneProcess, ScreenSource, ScreenTail,
-};
-use tiri_agent::pane_class::{stringify_argv, PaneProcessProbe};
 use std::cell::UnsafeCell;
 use std::ffi::CString;
 use std::io;
@@ -24,6 +20,10 @@ use std::os::fd::AsFd;
 use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
+use tiri_agent::observability::v1::{
+    PaneId, PaneObservability, PaneProcess, ScreenSource, ScreenTail,
+};
+use tiri_agent::pane_class::{stringify_argv, PaneProcessProbe};
 
 struct PaneView {
     id: PaneId,

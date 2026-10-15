@@ -1,6 +1,6 @@
-use crate::src::ffi::libc::calloc;
 use crate::src::log::{fatal, fatalx};
 use crate::src::shared::abi::*;
+use libc::calloc;
 pub unsafe fn xcalloc(size: size_t) -> *mut ::core::ffi::c_void {
     if size == 0 {
         fatalx(|out| out.write_all(b"xcalloc: zero size"));

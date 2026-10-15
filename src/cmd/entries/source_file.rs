@@ -5,7 +5,6 @@ use crate::src::cmd::queue::{
 };
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_parse_flags};
 use crate::src::compat::glob::GlobResult;
-use crate::src::ffi::libc::{strcmp, strerror};
 use crate::src::file::file_read_with_cmdq_wait;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
@@ -13,6 +12,7 @@ use crate::src::format::format_single_from_target_cstring;
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::reactor::evbuffer_pullup;
 use crate::src::server_client::Client as _;
+use libc::{strcmp, strerror};
 
 use crate::src::shared::abi::__size_t;
 use crate::src::shared::abi::*;
@@ -27,10 +27,10 @@ use crate::src::shared::command::{
     CMD_SOURCE_FILE_DEPTH_LIMIT,
 };
 use crate::src::shared::errno::{EINVAL, ENOENT, ENOMEM};
-use tiri_buffer::SegmentedBuf;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
+use tiri_buffer::SegmentedBuf;
 
 pub struct cmd_source_file_data {
     pub item: Weak<UnsafeCell<cmdq_item>>,

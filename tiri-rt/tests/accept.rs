@@ -1,4 +1,3 @@
-use tiri_rt::{AsyncAccept, AsyncRead, Runtime, mio};
 use std::future::Future;
 use std::io::{self, Write};
 use std::os::fd::{AsRawFd, OwnedFd};
@@ -8,6 +7,7 @@ use std::pin::pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
+use tiri_rt::{AsyncAccept, AsyncRead, Runtime, mio};
 
 struct SocketPath(PathBuf);
 

@@ -3,9 +3,6 @@ use crate::src::cmd::queue::cmdq_print;
 use crate::src::cmd::{cmd_log_argv, cmd_stringify_argv_cstring};
 use crate::src::compat::fdforkpty::fdforkpty;
 use crate::src::environ::{environ_copy, environ_for_session, environ_push, environ_set};
-use crate::src::ffi::libc::{
-    _exit, chdir, execl, execvp, fork, kill, killpg, memset, setenv, sigfillset, sigprocmask,
-};
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::log_bytes;
@@ -41,6 +38,9 @@ use crate::src::shared::signal::{
 use crate::src::shared::terminal::*;
 use crate::src::tmux::{
     checkshell, find_home_cstr, global_s_options, ptm_fd, setblocking, shell_argv0_cstring,
+};
+use libc::{
+    _exit, chdir, execl, execvp, fork, kill, killpg, memset, setenv, sigfillset, sigprocmask,
 };
 use refbox::{RefBox, Weak};
 use std::ffi::{CStr, CString};
@@ -329,7 +329,7 @@ pub unsafe fn job_run(
                     argvp = pointer_view.as_mut_ptr();
                     execvp(
                         *argvp.offset(0 as ::core::ffi::c_int as isize),
-                        argvp as *const *mut ::core::ffi::c_char,
+                        argvp as *const *const ::core::ffi::c_char,
                     );
                     _exit(1 as ::core::ffi::c_int);
                 }

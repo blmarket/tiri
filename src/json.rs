@@ -3,9 +3,9 @@
 use crate::src::reactor::{evbuffer_add_formatted, evbuffer_new, evbuffer_pullup};
 use crate::src::shared::abi::int64_t;
 use crate::src::shared::json::{json_node, json_node_type, JsonValue};
+use std::ffi::{CStr, CString};
 use tiri_buffer::BufMut;
 use tiri_buffer::SegmentedBuf;
-use std::ffi::{CStr, CString};
 
 pub const NODE_ARRAY: json_node_type = 4;
 pub const NODE_OBJECT: json_node_type = 3;

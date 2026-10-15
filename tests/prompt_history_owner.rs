@@ -1,5 +1,7 @@
 //! Prompt history owns strings and supplies independent snapshots to readers.
 
+use std::ffi::CString;
+use std::os::unix::ffi::OsStrExt;
 use tiri::src::format::bytes::write_cstr;
 use tiri::src::options::{options_create, options_default, options_set_number, options_set_string};
 use tiri::src::options_table::options_table;
@@ -9,8 +11,6 @@ use tiri::src::prompt_history::{
 };
 use tiri::src::shared::prompt::{PROMPT_TYPE_COMMAND, PROMPT_TYPE_SEARCH};
 use tiri::src::tmux::global_options;
-use std::ffi::CString;
-use std::os::unix::ffi::OsStrExt;
 
 #[test]
 fn history_owns_entries_and_preserves_order_pruning_and_navigation() {

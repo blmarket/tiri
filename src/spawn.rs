@@ -1,12 +1,13 @@
 use crate::src::compat::stdio::CFile;
 use crate::src::environ::environ_create;
-use crate::src::ffi::libc::{__errno_location, fdopen, fwrite, mkstemp, unlink};
+use crate::src::ffi::libc::__errno_location;
 use crate::src::format::bytes::xformat;
 use crate::src::log::{log_cstr, log_debug, log_hex};
 use crate::src::names::default_window_name_cstring;
 use crate::src::options::options_get_string;
 use crate::src::server_client::Client as _;
 use crate::src::window::Window as _;
+use libc::{fdopen, fwrite, mkstemp, unlink};
 
 use crate::src::session::Session;
 use crate::src::shared::client::ClientRef;

@@ -4,7 +4,6 @@ use crate::src::cmd::queue::{
     cmdq_append, cmdq_get_callback_owned, cmdq_get_client, cmdq_new_state,
 };
 use crate::src::cmd::{cmd_mouse_at, cmd_template_replace_cstring};
-use crate::src::ffi::libc::{strcasestr, strstr};
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_add, format_create_defaults, format_expand_cstring};
@@ -55,6 +54,7 @@ use crate::src::shared::prompt::{
 use crate::src::shared::screen::{screen, MODE_CURSOR};
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::style::*;
+use libc::{strcasestr, strstr};
 
 use crate::src::sort::{sort_next_order, sort_order_from_string, sort_order_to_string};
 use crate::src::status::status_message_set;

@@ -1,5 +1,4 @@
 use super::window_pane;
-use crate::src::ffi::libc::strlen;
 use crate::src::format::bytes::{write_cstr, xformat};
 use crate::src::grid::grid_default_cell;
 use crate::src::screen_write::{
@@ -10,6 +9,7 @@ use crate::src::shared::abi::{pid_t, size_t, ssize_t, u_int};
 use crate::src::shared::layout::BOX_LINES_DEFAULT;
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
+use libc::strlen;
 use std::{cell::UnsafeCell, rc::Rc};
 
 pub(super) unsafe fn draw_editor_waiting(owner: &Rc<UnsafeCell<window_pane>>, pid: pid_t) {

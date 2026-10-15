@@ -24,7 +24,6 @@ use crate::src::events_payload::{
     event_payload_create, event_payload_set_int, event_payload_set_session,
     event_payload_set_string, event_payload_set_target, event_payload_set_window,
 };
-use crate::src::ffi::libc::strcmp;
 use crate::src::log::{log_bytes, log_cstr, log_debug};
 use crate::src::options::options_get_number;
 use crate::src::options::options_owner_ptr;
@@ -53,6 +52,7 @@ use crate::src::window::{
     winlink_stack_push, winlink_stack_remove, winlinks_minmax, winlinks_next,
 };
 use crate::src::window_pane::WindowPane as _;
+use libc::strcmp;
 use size::recalculate_size_state;
 use size::status_update_cache;
 use sort::sort_get_sessions;

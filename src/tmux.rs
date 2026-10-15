@@ -12,12 +12,7 @@ use crate::src::compat::fdforkpty::getptmfd;
 use crate::src::compat::getopt_long::{BSDgetopt, BSDoptarg, BSDoptind};
 use crate::src::compat::getprogname::getprogname;
 use crate::src::environ::{environ_create, environ_find, environ_put, environ_set};
-use crate::src::ffi::libc::nl_item;
-use crate::src::ffi::libc::{
-    __errno_location, access, clock_gettime, environ, err, errx, exit, fprintf, getcwd, getenv,
-    getpwuid, getuid, lstat, mkdir, nl_langinfo, printf, realpath, setlocale, stderr, stdout,
-    strcasecmp, strcasestr, strcmp, strerror, strrchr, strsep, strstr, tzset,
-};
+use crate::src::ffi::libc::{__errno_location, environ, err, errx, stderr, stdout, strsep, tzset};
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::{log_add_level, log_cstr, log_debug};
@@ -44,6 +39,12 @@ use crate::src::shared::time::{timespec, CLOCK_REALTIME};
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::text::utf8::{utf8_isvalid, utf8_stravis_cstring};
 use crate::src::tty_features::tty_parse_features;
+use ::libc::nl_item;
+use libc::{
+    access, clock_gettime, exit, fprintf, getcwd, getenv, getpwuid, getuid, lstat, mkdir,
+    nl_langinfo, printf, realpath, setlocale, strcasecmp, strcasestr, strcmp, strerror, strrchr,
+    strstr,
+};
 use std::ffi::{CStr, CString};
 use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};

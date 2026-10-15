@@ -1,6 +1,4 @@
 //! FD passing is part of ordinary I/O, including one-way adapters.
-use tiri_rt::stream::{Reader, Writer};
-use tiri_rt::{AsyncRead, AsyncWrite, Runtime, mio};
 use std::future::{Future, poll_fn};
 use std::io::{self, IoSlice, Read, Write};
 use std::os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd};
@@ -8,6 +6,8 @@ use std::os::unix::net::UnixStream;
 use std::pin::{Pin, pin};
 use std::task::{Context, Poll, Waker};
 use std::time::{Duration, Instant};
+use tiri_rt::stream::{Reader, Writer};
+use tiri_rt::{AsyncRead, AsyncWrite, Runtime, mio};
 
 fn tick(runtime: &mut mio::Runtime) {
     runtime.poll(Some(Duration::ZERO)).unwrap();

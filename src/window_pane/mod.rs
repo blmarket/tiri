@@ -37,7 +37,6 @@ use crate::src::events_payload::{
     event_payload_create, event_payload_set_int, event_payload_set_pane, event_payload_set_string,
     event_payload_set_target, event_payload_set_uint, event_payload_set_window,
 };
-use crate::src::ffi::libc::{fnmatch, gethostname, memset};
 use crate::src::ffi::regex::RegexStorage;
 use crate::src::file::{file_cancel, file_read_with_cmdq_wait_init};
 use crate::src::format::bytes::write_cstr;
@@ -58,6 +57,7 @@ use crate::src::reactor::{
 };
 use crate::src::screen::{screen_init, screen_resize, screen_set_default_cursor, screen_set_title};
 pub use api::WindowPane;
+use libc::{fnmatch, gethostname, memset};
 
 use crate::src::server::{marked_pane, server_check_marked};
 use crate::src::server_client::Client;
@@ -76,10 +76,10 @@ use crate::src::style::{style_ranges_init, style_set_scrollbar_style_from_option
 use crate::src::tmux::setblocking;
 use crate::src::tty::tty_default_colours;
 use crate::src::window_copy::{window_copy_mode, window_view_mode};
-use tiri_buffer::SegmentedBuf;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
+use tiri_buffer::SegmentedBuf;
 
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;

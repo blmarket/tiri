@@ -1,5 +1,5 @@
-use tiri::src::hyperlinks::*;
 use std::ffi::CString;
+use tiri::src::hyperlinks::*;
 
 #[test]
 fn deduplication_reference_lifetime_reset_and_global_eviction() {

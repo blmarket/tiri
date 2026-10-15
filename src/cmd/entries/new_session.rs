@@ -8,12 +8,12 @@ use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::environ::{environ_create, environ_put, environ_update};
 use crate::src::events::events_fire_session;
-use crate::src::ffi::libc::{sscanf, strcmp};
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
 use crate::src::options::{options_get_number, options_get_string, options_set_string};
 use crate::src::server_client::Client as _;
+use libc::{sscanf, strcmp};
 
 use crate::src::session::Session;
 use crate::src::session::{session_group_add, session_group_synchronize_to, session_groups};

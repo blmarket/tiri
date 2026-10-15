@@ -5,7 +5,6 @@ use crate::src::arguments::{
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_event, cmdq_get_target_client};
 use crate::src::cmd::{cmd_append_argv, cmd_get_args_mut};
 use crate::src::environ::{environ_create, environ_put};
-use crate::src::ffi::libc::{strcmp, strtol};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_add, format_create_from_target, format_expand_cstring, format_single_from_target_cstring,
@@ -15,6 +14,7 @@ use crate::src::log::{log_cstr, log_debug};
 use crate::src::menu::{menu_add_item, menu_create, menu_display};
 use crate::src::options::{options_find_choice, options_get_number, options_get_string};
 use crate::src::popup::{popup_display, popup_modify, popup_present};
+use libc::{strcmp, strtol};
 
 use crate::src::server_client::Client as _;
 use crate::src::session::Session;

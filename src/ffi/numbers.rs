@@ -1,7 +1,8 @@
 //! Borrowed string interfaces to the existing C numeric conversions.
 
-use super::libc::{__errno_location, strtoull};
+use super::libc::__errno_location;
 use crate::src::compat::strtonum::strtonum;
+use libc::strtoull;
 use std::ffi::CStr;
 
 pub(crate) fn decimal_in_range(input: &CStr, min: i64, max: i64) -> Option<i64> {

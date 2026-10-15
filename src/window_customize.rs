@@ -19,7 +19,7 @@ use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_list_print_cstring;
 use crate::src::cmd::parse::{cmd_parse_error_uppercase_first, cmd_parse_from_string};
 use crate::src::environ::{environ_clear, environ_find, environ_iter, environ_set, environ_unset};
-use crate::src::ffi::libc::{strchr, strcmp, strcspn, strlcat, strlen};
+use crate::src::ffi::libc::strlcat;
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::{
     format_add, format_create_from_state, format_expand_cstring, format_pretty_time_cstring,
@@ -90,6 +90,7 @@ use crate::src::shared::window::{window_mode, window_mode_entry, winlink};
 use crate::src::spawn::{spawn_editor, spawn_editor_write};
 use crate::src::status::status_message_set;
 use crate::src::tmux::global_environ;
+use libc::{strchr, strcmp, strcspn, strlen};
 
 fn window_customize_uppercase_cause(cause: &mut Option<CString>) {
     if let Some(message) = cause.take() {

@@ -1,5 +1,5 @@
-use tiri::src::session::*;
 use std::ffi::CString;
+use tiri::src::session::*;
 
 #[test]
 fn named_group_owns_borrowed_name_and_reuses_stable_allocation() {

@@ -1,6 +1,6 @@
 //! Exercise the public substitution API's owned result.
-use tiri::src::regsub::regsub_cstring;
 use std::ffi::CStr;
+use tiri::src::regsub::regsub_cstring;
 
 #[test]
 fn substitution_preserves_matches_and_returns_freeable_bytes() {

@@ -1,7 +1,6 @@
 use crate::src::arguments::{args_count, args_has, args_string, args_strtonum_and_expand_result};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_event, cmdq_get_target_client};
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry, cmd_mouse_pane};
-use crate::src::ffi::libc::strtol;
 use crate::src::format::bytes::write_cstr;
 use crate::src::key_bindings::{key_bindings_dispatch, key_bindings_get, key_bindings_get_table};
 use crate::src::key_string::key_string_parse_cstr;
@@ -27,6 +26,7 @@ use crate::src::shared::utf8::*;
 use crate::src::shared::window::{window_mode_entry, winlink};
 use crate::src::text::utf8::{utf8_from_data, utf8_fromcstr_vec};
 use crate::src::window::WindowPane;
+use libc::strtol;
 pub static cmd_send_keys_entry: cmd_entry = {
     cmd_entry {
         name: c"send-keys",

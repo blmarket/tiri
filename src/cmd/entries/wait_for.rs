@@ -6,7 +6,6 @@ use crate::src::events_payload::{
     event_payload_add_formats, event_payload_item_name, event_payload_item_print_owned,
     event_payload_items,
 };
-use crate::src::ffi::libc::strcmp;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_create_with_client, format_expand_cstring, format_true};
@@ -21,6 +20,7 @@ use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item, wai
 use crate::src::shared::events::{event_payload, events_callback, EventSinkId};
 use crate::src::shared::format::format_tree;
 use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
+use libc::strcmp;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::Weak;

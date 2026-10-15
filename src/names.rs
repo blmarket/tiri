@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{basename, strchr, strcspn, strlen, strncmp};
+use crate::src::ffi::libc::basename;
 use crate::src::format::{
     format_create, format_defaults_pane, format_defaults_window, format_expand_cstring,
 };
@@ -11,6 +11,7 @@ use crate::src::shared::window::WindowRef;
 use crate::src::tmux::clean_name_cstring;
 use crate::src::window::Window as _;
 use crate::src::window::WindowPane as _;
+use libc::{strchr, strcspn, strlen, strncmp};
 use std::ffi::{CStr, CString};
 use std::time::{Duration, Instant};
 

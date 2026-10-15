@@ -1,7 +1,7 @@
 //! Compatibility observations recorded before replacing the text APIs.
+use std::ffi::{CStr, CString};
 use tiri::src::shared::colour::{COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME};
 use tiri::src::{shared::grid::*, style::attributes::*, style::colour::*};
-use std::ffi::{CStr, CString};
 
 #[test]
 fn legacy_text_contract() {

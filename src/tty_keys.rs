@@ -2,7 +2,7 @@ use crate::src::bracketed_paste::{
     match_bracketed_paste_boundary, BracketedPasteBoundary, BracketedPasteBoundaryMatch,
 };
 use crate::src::events::events_fire_client;
-use crate::src::ffi::libc::{sscanf, strcspn, strlcpy, strncmp, strsep, strtol, strtoul};
+use crate::src::ffi::libc::{strlcpy, strsep};
 use crate::src::ffi::resolv::b64_pton;
 use crate::src::input::{input_request_reply, InputRequestReply};
 use crate::src::key_string::key_string_format;
@@ -12,6 +12,7 @@ use crate::src::paste::paste_add_owned;
 use crate::src::reactor::Timer;
 use crate::src::server_client::Client as _;
 use crate::src::window::Window as _;
+use libc::{sscanf, strcspn, strncmp, strtol, strtoul};
 
 use crate::src::session::Session;
 use crate::src::shared::abi::*;

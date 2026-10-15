@@ -1,3 +1,4 @@
+use std::ffi::c_char;
 use tiri::src::{
     grid::grid_default_cell,
     input_keys::input_key_get_mouse,
@@ -8,7 +9,6 @@ use tiri::src::{
     },
     style::{style_set, style_tostring},
 };
-use std::ffi::c_char;
 
 #[test]
 fn style_appends_preserve_raw_range_bytes_and_numeric_fields() {

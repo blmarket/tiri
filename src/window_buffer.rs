@@ -1,5 +1,4 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
-use crate::src::ffi::libc::{strcasestr, strstr};
 use crate::src::format::{
     format_add, format_create, format_defaults, format_defaults_paste_buffer,
     format_expand_cstring, format_true,
@@ -42,6 +41,7 @@ use crate::src::sort::sort_get_buffers;
 use crate::src::spawn::{spawn_editor, spawn_editor_write};
 use crate::src::text::utf8::utf8_strvis;
 use crate::src::window_pane::WindowPane as _;
+use libc::{strcasestr, strstr};
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::ptr::NonNull;

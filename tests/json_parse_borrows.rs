@@ -1,5 +1,5 @@
-use tiri::src::json::{json_parse, json_to_string, PARSE_DEPTH_MAX};
 use std::ffi::CString;
+use tiri::src::json::{json_parse, json_to_string, PARSE_DEPTH_MAX};
 
 #[test]
 fn truncated_tokens_report_errors_with_or_without_diagnostics() {

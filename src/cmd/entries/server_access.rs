@@ -1,7 +1,6 @@
 use crate::src::arguments::{args_count, args_has, args_string};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target_client};
-use crate::src::ffi::libc::{getgrnam, getpwnam, getuid};
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
@@ -18,6 +17,7 @@ use crate::src::shared::command::CMD_CLIENT_CANFAIL;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::server_acl::SERVER_ACL_IS_GROUP;
+use libc::{getgrnam, getpwnam, getuid};
 use std::ffi::CStr;
 pub static cmd_server_access_entry: cmd_entry = {
     cmd_entry {

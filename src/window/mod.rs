@@ -23,12 +23,12 @@ use crate::src::events_payload::{
     event_payload_create, event_payload_set_pane, event_payload_set_string,
     event_payload_set_target, event_payload_set_uint, event_payload_set_window,
 };
-use crate::src::ffi::libc::strcasecmp;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::log_debug;
 use crate::src::menu::{menu_destroy, menu_resize};
 use crate::src::options::options_owner_ptr;
 use crate::src::options::{options_get_number, options_get_number_ref};
+use libc::strcasecmp;
 
 use crate::src::server::{marked_pane, server_check_marked, server_clear_marked};
 use crate::src::server_client::Client;

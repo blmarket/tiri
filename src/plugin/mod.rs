@@ -18,8 +18,8 @@ mod host;
 #[cfg(test)]
 mod tests;
 
-pub use tiri_agent::observability::v1::{PaneId, ServerObservability};
 use host::ServerHost;
+pub use tiri_agent::observability::v1::{PaneId, ServerObservability};
 
 /// An owned snapshot of the process and terminal state needed to classify a
 /// non-agent pane. It contains no pane owner or borrowed terminal descriptor.

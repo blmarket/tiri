@@ -1,7 +1,6 @@
 use crate::src::compat::strtonum::strtonum;
 use crate::src::compat::unvis::strunvis;
 use crate::src::compat::vis::strnvis;
-use crate::src::ffi::libc::{fnmatch, strchr, strcmp, strcspn, strlen, strncmp};
 use crate::src::ffi::ncurses::{
     cur_term, del_curterm, setupterm, tigetflag, tigetnum, tigetstr, tiparm_s,
 };
@@ -22,6 +21,7 @@ use crate::src::shared::tty::{
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::tmux::global_options;
 use crate::src::tty_features::{tty_apply_features, tty_parse_client_features};
+use libc::{fnmatch, strchr, strcmp, strcspn, strlen, strncmp};
 use std::ffi::{CStr, CString};
 
 pub const TTYCODE_FLAG: tty_code_type = 3;

@@ -1,3 +1,4 @@
+use std::ffi::CString;
 use tiri::src::arguments::{
     args_create, args_print, args_push_positional_commands, args_set_flag, args_set_owned_commands,
     args_set_owned_string, args_to_vector, ARGS_ENTRY_OPTIONAL_VALUE,
@@ -7,7 +8,6 @@ use tiri::src::cmd::{
     CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS,
 };
 use tiri::src::shared::arguments::ArgumentValue;
-use std::ffi::CString;
 
 #[test]
 fn argument_printer_preserves_flag_groups_values_and_optional_separator() {

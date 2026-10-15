@@ -210,9 +210,9 @@ fn failed_registration_drops_plugin_outside_registry_borrows() {
 
 #[test]
 fn refresh_reads_previous_snapshot_and_errors_do_not_publish_partial_values() {
-    use tiri_rt::Runtime as _;
     use std::cell::Cell;
     use std::rc::Rc;
+    use tiri_rt::Runtime as _;
 
     struct Refresh {
         calls: Rc<Cell<usize>>,

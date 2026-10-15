@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{strcmp, strlcpy, strlen};
+use crate::src::ffi::libc::strlcpy;
 use crate::src::format::format_skip;
 use crate::src::grid::grid_default_cell;
 use crate::src::hyperlinks::hyperlinks_put;
@@ -16,6 +16,7 @@ use crate::src::shared::style::*;
 use crate::src::shared::utf8::*;
 use crate::src::style::{style_copy, style_link, style_parse, style_set, style_tostring};
 use crate::src::text::utf8::{utf8_append, utf8_open, utf8_set};
+use libc::{strcmp, strlen};
 use std::ffi::{CStr, CString};
 
 pub const TOTAL: C2RustUnnamed_39 = 8;

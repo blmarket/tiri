@@ -1,6 +1,5 @@
 use super::WindowPane;
 use crate::src::arguments::{args_get, args_has, args_strtonum_and_expand_result};
-use crate::src::ffi::libc::snprintf;
 use crate::src::grid::{
     grid_cell_attr_display, grid_cell_flags_display, grid_clear_history, grid_default_cell,
     grid_get_cell, grid_get_line, grid_line_flags_display, grid_line_time, grid_peek_line,
@@ -21,6 +20,7 @@ use crate::src::shared::screen::screen;
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::style::colour::colour_format;
 use crate::src::text::utf8::utf8_strvis;
+use libc::snprintf;
 use std::ffi::{CStr, CString};
 use std::io::Write;
 use std::{cell::UnsafeCell, rc::Rc};

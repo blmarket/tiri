@@ -1,6 +1,5 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned};
-use crate::src::ffi::libc::{strcasestr, strstr};
 use crate::src::format::{
     format_add, format_create, format_defaults, format_expand_cstring, format_single_cstring,
     format_true,
@@ -67,6 +66,7 @@ use crate::src::style::style_apply_with_options;
 use crate::src::window::Window;
 use crate::src::window::WindowPane;
 use crate::src::window::{winlink_count, winlink_find_by_index, winlinks_minmax, winlinks_next};
+use libc::{strcasestr, strstr};
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};

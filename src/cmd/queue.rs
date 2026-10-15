@@ -12,7 +12,6 @@ use crate::src::events_payload::{
     event_payload_create, event_payload_set_identity, event_payload_set_string,
     event_payload_set_target,
 };
-use crate::src::ffi::libc::{getpwuid, getuid, time};
 use crate::src::file::{file_cancel_cmdq_wait, file_error};
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::nullable_cstr;
@@ -48,8 +47,9 @@ use crate::src::shared::key::*;
 use crate::src::shared::session::SessionRef;
 use crate::src::status::status_message_set;
 use crate::src::text::utf8::utf8_sanitize_cstring;
-use tiri_buffer::SegmentedBuf;
+use libc::{getpwuid, getuid, time};
 use std::ffi::{CStr, CString};
+use tiri_buffer::SegmentedBuf;
 
 /// Queue-created command state. Only this module may construct or remove it.
 ///

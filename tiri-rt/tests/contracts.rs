@@ -1,8 +1,6 @@
 //! Executor and readiness contracts; process-global behavior is tested separately.
 #![feature(local_waker)]
 
-use tiri_rt::mio;
-use tiri_rt::{AsyncRead, AsyncWrite, Handle, Received, Runtime};
 use std::cell::{Cell, RefCell};
 use std::future::{Future, poll_fn};
 use std::io::{self, IoSlice, Read, Write};
@@ -12,6 +10,8 @@ use std::pin::Pin;
 use std::rc::Rc;
 use std::task::{Context, Poll, Waker};
 use std::time::{Duration, Instant};
+use tiri_rt::mio;
+use tiri_rt::{AsyncRead, AsyncWrite, Handle, Received, Runtime};
 
 fn tick(runtime: &mut mio::Runtime) {
     runtime.poll(Some(Duration::ZERO)).unwrap()

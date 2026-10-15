@@ -1,9 +1,10 @@
 use crate::src::compat::vis::strvis;
-use crate::src::ffi::libc::{__errno_location, exit, getpid, snprintf, strerror};
+use crate::src::ffi::libc::__errno_location;
 use crate::src::format::bytes::format_bytes;
 use crate::src::format::bytes::try_format_message_with;
 use crate::src::shared::abi::*;
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
+use libc::{exit, getpid, snprintf, strerror};
 use std::cell::{Cell, RefCell};
 use std::ffi::CStr;
 use std::fmt;

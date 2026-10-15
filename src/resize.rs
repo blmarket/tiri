@@ -1,4 +1,3 @@
-use crate::src::ffi::libc::sscanf;
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::server_client::Client as _;
@@ -16,6 +15,7 @@ use crate::src::tmux::global_w_options;
 use crate::src::tty::tty_update_window_offset;
 use crate::src::window::windows;
 use crate::src::window::Window as _;
+use libc::sscanf;
 
 pub unsafe fn resize_window(window: &WindowRef, sx: u_int, sy: u_int, xpixel: i32, ypixel: i32) {
     use crate::src::window::Window;

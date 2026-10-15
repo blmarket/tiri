@@ -24,7 +24,6 @@ pub use input::TerminalInput;
 mod output;
 pub use output::*;
 
-use crate::src::ffi::libc::{abs, getpid, strcmp, strncmp, time};
 use crate::src::ffi::resolv::b64_ntop;
 use crate::src::format::bytes::{format_cstring, xformat};
 use crate::src::grid::{grid_cells_equal, grid_default_cell};
@@ -88,6 +87,7 @@ use crate::src::tty_term::{
     tty_term_string_ss,
 };
 use crate::src::window::{Window, WindowPane};
+use libc::{abs, getpid, strcmp, strncmp, time};
 use std::time::Duration;
 
 use std::ffi::CStr;
@@ -871,10 +871,10 @@ pub unsafe fn tty_update_features(owner: &ClientRef) {
     tty_invalidate(owner);
 }
 pub(crate) unsafe fn tty_raw(fd: i32, text: &CStr) {
-    use tiri_rt::Runtime as _;
     use std::future::{poll_fn, Future};
     use std::pin::pin;
     use std::task::Poll;
+    use tiri_rt::Runtime as _;
     if fd < 0 {
         return;
     }

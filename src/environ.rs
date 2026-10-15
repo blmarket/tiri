@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{environ, fnmatch, free, getpid, setenv};
+use crate::src::ffi::libc::environ;
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::{log_cstr, log_debug};
@@ -7,6 +7,7 @@ use crate::src::session::Session;
 use crate::src::shared::session::SessionRef;
 use crate::src::tmux::{getversion, global_environ, global_options, socket_path_cstr};
 use crate::src::xmalloc::xcalloc;
+use libc::{fnmatch, free, getpid, setenv};
 use std::ffi::{CStr, CString, NulError};
 
 struct ProcessEnvironmentSeed(*mut *mut ::core::ffi::c_char);

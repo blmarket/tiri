@@ -6,11 +6,11 @@ use crate::src::control::{
     control_add_sub, control_clear_window_size, control_continue_pane, control_pause_pane,
     control_remove_sub, control_set_pane_off, control_set_pane_on, control_set_window_size,
 };
-use crate::src::ffi::libc::sscanf;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::monitor::monitor_parse_owned;
 use crate::src::resize::recalculate_sizes_now;
+use libc::sscanf;
 
 use crate::src::server_client::Client as _;
 use crate::src::server_fn::{server_redraw_client, server_status_client};

@@ -18,10 +18,7 @@ use crate::src::events_payload::{
     event_payload_create, event_payload_set_int, event_payload_set_pane, event_payload_set_session,
     event_payload_set_string, event_payload_set_target, event_payload_set_window,
 };
-use crate::src::ffi::libc::{
-    __errno_location, _exit, chdir, execl, execvp, fopen, fread, fseeko, ftello, getcwd, memset,
-    sigfillset, sigprocmask, strerror, strrchr,
-};
+use crate::src::ffi::libc::__errno_location;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
@@ -34,6 +31,10 @@ use crate::src::server::server_proc;
 use crate::src::server_client::Client;
 use crate::src::server_client::ClientRegistry;
 use crate::src::window::Window as _;
+use libc::{
+    _exit, chdir, execl, execvp, fopen, fread, fseeko, ftello, getcwd, memset, sigfillset,
+    sigprocmask, strerror, strrchr,
+};
 
 use crate::src::session::Session;
 use crate::src::shared::client::ClientRef;
@@ -576,7 +577,7 @@ pub(super) unsafe fn spawn_pane(
                     argvp = exec_argv.as_mut_ptr().cast();
                     execvp(
                         *argvp.offset(0 as ::core::ffi::c_int as isize),
-                        argvp as *const *mut ::core::ffi::c_char,
+                        argvp as *const *const ::core::ffi::c_char,
                     );
                     _exit(1 as ::core::ffi::c_int);
                 }
@@ -733,7 +734,7 @@ pub(super) unsafe fn finish_editing(wp_owner: &std::rc::Rc<std::cell::UnsafeCell
                                 len as size_t,
                                 1 as size_t,
                                 stream.as_ptr(),
-                            ) == 1 as ::core::ffi::c_ulong
+                            ) == 1
                             {
                                 result = Some(bytes);
                             }
@@ -766,11 +767,11 @@ pub(super) unsafe fn install_editor(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::src::ffi::libc::fclose;
-    use crate::src::ffi::libc::{fwrite, mkstemp};
     use crate::src::shared::spawn::spawn_finish_edit_cb;
     use crate::src::shared::spawn::EditorHandle;
     use crate::src::spawn::{spawn_editor_fdopen, spawn_editor_finish};
+    use libc::fclose;
+    use libc::{fwrite, mkstemp};
     use std::ffi::CStr;
     use std::fs;
     use std::os::fd::AsRawFd;

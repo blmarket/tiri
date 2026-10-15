@@ -1,8 +1,8 @@
 //! Behavior of the Rust-owned option-name index through the existing API.
-use tiri::src::format::bytes::write_cstr;
-use tiri::src::options::*;
 use std::ffi::{CStr, CString};
 use std::ptr::null_mut;
+use tiri::src::format::bytes::write_cstr;
+use tiri::src::options::*;
 
 #[test]
 fn ordered_names_survive_updates_and_removal() {

@@ -2,7 +2,6 @@ use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::cmdq_error;
 use crate::src::environ::{environ_clear, environ_set, environ_unset};
-use crate::src::ffi::libc::strchr;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
@@ -15,6 +14,7 @@ use crate::src::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
 use crate::src::shared::environment::environ;
 use crate::src::shared::environment::ENVIRON_HIDDEN;
 use crate::src::tmux::global_environ;
+use libc::strchr;
 use std::ffi::CStr;
 pub static cmd_set_environment_entry: cmd_entry = {
     cmd_entry {

@@ -7,11 +7,7 @@ use crate::src::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE, PROTOCOL_VERSION}
 #[cfg(target_os = "linux")]
 use crate::src::compat::systemd::systemd_activated;
 use crate::src::control::control_wait_exit;
-use crate::src::ffi::libc::{
-    __errno_location, cfgetispeed, cfgetospeed, cfmakeraw, cfsetispeed, cfsetospeed, environ,
-    execl, fflush, fprintf, getenv, getpid, getppid, kill, memset, printf, setenv, sigaction,
-    sigemptyset, stderr, stdout, strerror, strlen, strsignal, system, unlink, waitpid,
-};
+use crate::src::ffi::libc::{__errno_location, environ, stderr, stdout};
 use crate::src::file::{
     file_read_cancel, file_read_open, file_write_close, file_write_data, file_write_left,
     file_write_open,
@@ -46,11 +42,16 @@ use crate::src::tmux::{
     shell_command, socket_path_cstr,
 };
 use crate::src::tty_term::tty_term_read_list;
-use tiri_rt::Runtime as _;
+use libc::{
+    cfgetispeed, cfgetospeed, cfmakeraw, cfsetispeed, cfsetospeed, execl, fflush, fprintf, getenv,
+    getpid, getppid, kill, memset, printf, setenv, sigaction, sigemptyset, strerror, strlen,
+    strsignal, system, unlink, waitpid,
+};
 use std::ffi::{CStr, CString, OsStr};
 use std::io;
 use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
+use tiri_rt::Runtime as _;
 
 pub use ::libc::{CREAD, CS8, ECONNREFUSED, HUPCL, IXANY, LOCK_EX, LOCK_NB, TCSAFLUSH};
 

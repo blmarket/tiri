@@ -2,11 +2,11 @@
 use super::{Host, PaneActivity, PaneId};
 use crate::src::shared::pane::{window_pane, window_pane_tree};
 use crate::src::window_pane::{observability, WindowPane};
-use tiri_agent::observability::v1::{PaneObservability, ServerObservability};
 use std::cell::UnsafeCell;
 use std::io;
 use std::path::PathBuf;
 use std::rc::Rc;
+use tiri_agent::observability::v1::{PaneObservability, ServerObservability};
 
 #[derive(Clone, Copy)]
 pub(super) struct ServerHost;

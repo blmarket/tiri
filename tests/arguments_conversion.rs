@@ -1,6 +1,6 @@
-use tiri::src::shared::command::cmd_list;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
+use tiri::src::shared::command::cmd_list;
 
 use tiri::src::arguments::{
     args_copy, args_create, args_first_value, args_parse as parse_args, args_percentage_result,

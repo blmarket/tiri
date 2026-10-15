@@ -1,6 +1,6 @@
 use crate::src::compat::getprogname::getprogname;
-use crate::src::ffi::libc::{snprintf, strrchr};
 use crate::src::shared::abi::*;
+use libc::{snprintf, strrchr};
 
 #[cfg(target_os = "linux")]
 pub unsafe fn setproctitle(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) {

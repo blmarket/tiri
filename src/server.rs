@@ -3,10 +3,7 @@ use crate::src::cmd::queue::cmdq_next;
 #[cfg(target_os = "linux")]
 use crate::src::compat::systemd::{systemd_activated, systemd_create_socket};
 use crate::src::control_notify::control_build_events;
-use crate::src::ffi::libc::{
-    __errno_location, chmod, exit, fprintf, kill, killpg, sigfillset, sigprocmask, stat, stderr,
-    strerror, strsignal, time, umask, unlink, waitpid,
-};
+use crate::src::ffi::libc::{__errno_location, stderr};
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::format_tidy_jobs;
 use crate::src::hooks::hooks_build_events;
@@ -25,6 +22,10 @@ use crate::src::server_client::Client as _;
 use crate::src::server_client::ClientRegistry;
 use crate::src::shared::window::WindowWeak;
 use crate::src::window::Window as _;
+use libc::{
+    chmod, exit, fprintf, kill, killpg, sigfillset, sigprocmask, stat, strerror, strsignal, time,
+    umask, unlink, waitpid,
+};
 #[cfg(target_os = "linux")]
 use std::os::fd::FromRawFd;
 use std::os::fd::{IntoRawFd, OwnedFd};
@@ -43,8 +44,8 @@ use crate::src::tty::tty_create_log;
 
 use crate::src::window::windows;
 use crate::src::window_pane::WindowPane as _;
-use tiri_rt::{AsyncAccept as _, Runtime as _};
 use std::time::{Duration, SystemTime};
+use tiri_rt::{AsyncAccept as _, Runtime as _};
 
 use std::ffi::{CStr, CString, OsStr};
 use std::io;
@@ -175,7 +176,7 @@ unsafe fn server_tidy_event() {
     let mut t: uint64_t = get_timer();
     format_tidy_jobs();
     #[cfg(all(target_os = "linux", target_env = "gnu"))]
-    crate::src::ffi::libc::malloc_trim(0 as size_t);
+    libc::malloc_trim(0 as size_t);
     log_debug(format_args!(
         "{}: took {} milliseconds",
         "server_tidy_event",

@@ -10,9 +10,7 @@ use crate::src::compat::imsg::imsg;
 use crate::src::compat::imsg::*;
 use crate::src::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE};
 use crate::src::compat::stdio::CFile;
-use crate::src::ffi::libc::{
-    __errno_location, ferror, fopen, fread, fwrite, memcpy, strcmp, strlen,
-};
+use crate::src::ffi::libc::__errno_location;
 use crate::src::log::{fatalx, log_cstr, log_debug};
 use crate::src::proc::{bytes_of, proc_send};
 use crate::src::reactor::BufferEvent;
@@ -20,6 +18,7 @@ use crate::src::reactor::{
     bufferevent_enable, bufferevent_get_input, bufferevent_new, bufferevent_write, evbuffer_add,
     evbuffer_add_formatted, evbuffer_drain, evbuffer_get_length, evbuffer_pullup,
 };
+use libc::{ferror, fopen, fread, fwrite, memcpy, strcmp, strlen};
 
 use crate::src::server_client::Client as _;
 use crate::src::shared::abi::ssize_t;

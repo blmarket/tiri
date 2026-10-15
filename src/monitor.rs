@@ -1,4 +1,3 @@
-use crate::src::ffi::libc::sscanf;
 use crate::src::format::{format_create, format_defaults, format_expand_cstring, format_true};
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::reactor::Timer;
@@ -23,6 +22,7 @@ use crate::src::shared::window::winlink;
 use crate::src::window::Window as _;
 use crate::src::window::{winlinks_minmax, winlinks_next};
 use crate::src::window_pane::WindowPane as _;
+use libc::sscanf;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};

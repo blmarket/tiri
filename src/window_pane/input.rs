@@ -11,9 +11,7 @@ use crate::src::events_payload::{
     event_payload_set_string, event_payload_set_target, event_payload_set_time,
     event_payload_set_uint, event_payload_set_window,
 };
-use crate::src::ffi::libc::{
-    strchr, strcmp, strlen, strncmp, strpbrk, strsep, strstr, strtol, time,
-};
+use crate::src::ffi::libc::strsep;
 use crate::src::ffi::resolv::{b64_ntop, b64_pton};
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::nullable_cstr;
@@ -70,10 +68,11 @@ use crate::src::tmux::{get_timer, getversion, global_options, global_w_options};
 use crate::src::tty::{tty_default_colours, tty_set_selection};
 use crate::src::window::Window as _;
 use crate::src::window::WindowPane;
-use tiri_buffer::SegmentedBuf;
+use libc::{strchr, strcmp, strlen, strncmp, strpbrk, strstr, strtol, time};
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 use std::time::Duration;
+use tiri_buffer::SegmentedBuf;
 
 use crate::src::shared::abi::*;
 use crate::src::shared::client::CLIENT_UNATTACHEDFLAGS;

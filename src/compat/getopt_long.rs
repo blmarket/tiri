@@ -1,5 +1,6 @@
-use crate::src::ffi::libc::{getenv, strchr, strlen, strncmp, warnx};
+use crate::src::ffi::libc::warnx;
 use crate::src::shared::abi::*;
+use libc::{getenv, strchr, strlen, strncmp};
 
 #[derive(Copy, Clone)]
 #[repr(C)]

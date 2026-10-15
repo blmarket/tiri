@@ -7,7 +7,6 @@ use crate::src::cmd::queue::{
     cmdq_append, cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_command,
     cmdq_get_target_client, cmdq_insert_after, cmdq_print,
 };
-use crate::src::ffi::libc::strtod;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
@@ -16,6 +15,7 @@ use crate::src::job::job_run;
 use crate::src::reactor::{
     evbuffer_add, evbuffer_get_length, evbuffer_new, evbuffer_pullup, evbuffer_readln,
 };
+use libc::strtod;
 
 use crate::src::server_client::Client as _;
 

@@ -1,7 +1,7 @@
 //! Timer work is a future owned by the caller's task handle.
-use tiri_rt::Handle as _;
 use std::io;
 use std::time::{Duration, Instant};
+use tiri_rt::Handle as _;
 
 /// Owns one scheduled future. Dropping it cancels the work.
 /// Owners that track active work clear their timer from the callback.

@@ -1,7 +1,7 @@
 //! Application-owned futures with explicit and drop cancellation.
-use tiri_rt::Handle as _;
 use std::future::Future;
 use std::io;
+use tiri_rt::Handle as _;
 
 /// Replace the owner's task. Dropping the runtime task cancels it.
 /// Owners that use the slot to track active work must clear it on completion.

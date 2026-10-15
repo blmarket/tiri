@@ -23,7 +23,7 @@ pub(super) unsafe fn compare(
             b.id,
             b.sx.wrapping_mul(b.sy),
             b.window.clone(),
-            crate::src::ffi::libc::strcmp(
+            libc::strcmp(
                 (*a.screen_ptr()).title.as_ptr(),
                 (*b.screen_ptr()).title.as_ptr(),
             ),

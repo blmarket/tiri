@@ -1,5 +1,5 @@
 use crate::src::compat::stdio::CFile;
-use crate::src::ffi::libc::{__errno_location, fgetc, fopen, fputc, fputs, strerror};
+use crate::src::ffi::libc::__errno_location;
 use crate::src::log::{log_bytes, log_cstr, log_debug};
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::prompt::prompt_type_string;
@@ -8,6 +8,7 @@ use crate::src::shared::prompt::PROMPT_NTYPES;
 use crate::src::shared::prompt::*;
 use crate::src::shared::stdio::FILE;
 use crate::src::tmux::{find_home_cstr, global_options};
+use libc::{fgetc, fopen, fputc, fputs, strerror};
 use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 

@@ -1,13 +1,13 @@
 use crate::src::arguments::{args_get, args_has, args_string};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_target_client};
-use crate::src::ffi::libc::strerror;
 use crate::src::file::file_read_with_cmdq_wait;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::paste::paste_set_owned;
 use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
+use libc::strerror;
 
 use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
@@ -17,10 +17,10 @@ use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_TFLAG};
 use crate::src::tty::tty_set_selection;
-use tiri_buffer::SegmentedBuf;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::Weak;
+use tiri_buffer::SegmentedBuf;
 
 #[repr(C)]
 pub struct cmd_load_buffer_data {

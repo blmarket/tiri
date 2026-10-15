@@ -1,6 +1,6 @@
 //! Shared declarations retain their types across former translation-unit boundaries.
-use tiri::src::{arguments, screen, tty, window};
 use std::ptr::null_mut;
+use tiri::src::{arguments, screen, tty, window};
 
 fn parse(
     _: &mut arguments::args,

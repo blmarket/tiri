@@ -1,7 +1,7 @@
+use std::ptr::null_mut;
 use tiri::src::options::*;
 use tiri::src::shared::colour::{colour_palette, COLOUR_FLAG_256};
 use tiri::src::style::colour::*;
-use std::ptr::null_mut;
 
 #[test]
 fn overrides_fall_back_to_defaults_and_clear_preserves_defaults() {

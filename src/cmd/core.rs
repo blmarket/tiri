@@ -76,9 +76,10 @@ use crate::src::cmd::entries::swap_window::cmd_swap_window_entry;
 use crate::src::cmd::entries::switch_client::cmd_switch_client_entry;
 use crate::src::cmd::entries::unbind_key::cmd_unbind_key_entry;
 use crate::src::cmd::entries::wait_for::cmd_wait_for_entry;
-use crate::src::ffi::libc::{strchr, strlcpy, strncmp};
+use crate::src::ffi::libc::strlcpy;
 use crate::src::log::{fatalx, log_bytes, log_debug};
 use crate::src::window::Window as _;
+use libc::{strchr, strncmp};
 
 use crate::src::session::Session;
 use crate::src::shared::abi::*;

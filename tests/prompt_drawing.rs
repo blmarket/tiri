@@ -1,3 +1,4 @@
+use std::ffi::CStr;
 use tiri::src::environ::environ_create;
 use tiri::src::grid::{grid_default_cell, grid_get_cell, grid_string_cells_bytes};
 use tiri::src::options::{options_create, options_default};
@@ -11,7 +12,6 @@ use tiri::src::shared::prompt::*;
 use tiri::src::shared::screen::{screen, MODE_CURSOR, MODE_CURSOR_BLINKING};
 use tiri::src::shared::screen_write::screen_write_ctx;
 use tiri::src::tmux::{global_environ, global_options, global_s_options, global_w_options};
-use std::ffi::CStr;
 
 #[test]
 fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {

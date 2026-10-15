@@ -7,7 +7,6 @@ use crate::src::cmd::queue::{
     cmdq_insert_hook, cmdq_print,
 };
 use crate::src::environ::{environ_create, environ_put};
-use crate::src::ffi::libc::strcmp;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
@@ -16,6 +15,7 @@ use crate::src::server_client::Client as _;
 use crate::src::server_fn::{
     server_redraw_session, server_redraw_session_group, server_status_session_group,
 };
+use libc::strcmp;
 
 use crate::src::session::Session;
 use crate::src::shared::abi::*;

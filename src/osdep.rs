@@ -1,9 +1,9 @@
 //! Pane process queries, delegated to the per-OS platform boundary.
 
-use tiri_agent::platform::{CurrentPlatform, Platform};
 use std::ffi::CString;
 use std::os::fd::BorrowedFd;
 use std::os::unix::ffi::OsStrExt;
+use tiri_agent::platform::{CurrentPlatform, Platform};
 
 /// The foreground process group's argv[0], as tmux's osdep_get_name.
 pub(crate) unsafe fn osdep_get_name_cstring(fd: ::core::ffi::c_int) -> Option<CString> {

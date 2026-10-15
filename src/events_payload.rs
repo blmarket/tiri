@@ -20,8 +20,8 @@ use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::WindowWeak;
 use crate::src::window::{winlink_find_by_index, Window};
 use crate::src::{server_client::Client, session::Session, window::WindowPane};
-use tiri_buffer::SegmentedBuf;
 use std::ffi::{CStr, CString};
+use tiri_buffer::SegmentedBuf;
 
 pub const EVENT_PAYLOAD_POINTER: event_payload_type = 8;
 pub const EVENT_PAYLOAD_PANE: event_payload_type = 7;

@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{gmtime_r, localtime, strftime, strlcat, strlen, time};
+use crate::src::ffi::libc::strlcat;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_create_defaults;
 use crate::src::grid::grid_default_cell;
@@ -23,6 +23,7 @@ use crate::src::shared::time::tm;
 use crate::src::shared::window::{window_mode, window_mode_entry, winlink};
 use crate::src::style::style_apply_with_options;
 use crate::src::window::Window as _;
+use libc::{gmtime_r, localtime, strftime, strlen, time};
 
 use crate::src::window_pane::WindowPane as _;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};

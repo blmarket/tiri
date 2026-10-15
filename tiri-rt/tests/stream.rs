@@ -1,6 +1,4 @@
 //! Byte-stream adapter contracts over the local runtime.
-use tiri_rt::stream::Reader;
-use tiri_rt::{AsyncRead, AsyncWrite, Handle, Received, Runtime, mio};
 use std::cell::RefCell;
 use std::future::Future;
 use std::io::{self, IoSlice, Write};
@@ -9,6 +7,8 @@ use std::pin::Pin;
 use std::rc::Rc;
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
+use tiri_rt::stream::Reader;
+use tiri_rt::{AsyncRead, AsyncWrite, Handle, Received, Runtime, mio};
 
 fn tick(runtime: &mut mio::Runtime) {
     runtime.poll(Some(Duration::ZERO)).unwrap();
@@ -148,8 +148,8 @@ fn direct_io_reads_and_writes_can_wait_independently() {
 
 #[test]
 fn writer_owns_registration_and_closes_it_on_drop() {
-    use tiri_rt::stream::Writer;
     use std::io::Read;
+    use tiri_rt::stream::Writer;
     let mut runtime = mio::Runtime::new().unwrap();
     for reuse in [true, false] {
         let (mut peer, socket) = UnixStream::pair().unwrap();

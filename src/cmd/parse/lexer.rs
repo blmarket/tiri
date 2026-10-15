@@ -2,11 +2,12 @@
 //! after any preceding grammar actions have updated the application environment.
 use super::{ParseSession, RefCell};
 use crate::src::environ::environ_find;
-use crate::src::ffi::libc::{getc, getpwnam, getpwuid, getuid, ungetc, wctomb};
+use crate::src::ffi::libc::{getc, wctomb};
 use crate::src::shared::stdio::{EOF, FILE};
 use crate::src::tmux::global_environ;
-use tiri_cmdparse::{Token, TokenText};
+use libc::{getpwnam, getpwuid, getuid, ungetc};
 use std::ffi::{c_char, CStr, CString};
+use tiri_cmdparse::{Token, TokenText};
 
 type LocatedToken = (usize, Token, usize);
 

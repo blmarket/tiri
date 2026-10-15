@@ -181,7 +181,7 @@ mod tests {
         for byte in [0u8, b'M', 0x80, 0xff] {
             let mut expected = [0u8; 64];
             let count = unsafe {
-                crate::src::ffi::libc::snprintf(
+                libc::snprintf(
                     expected.as_mut_ptr().cast(),
                     expected.len(),
                     c"%4u: %s:%c:%u".as_ptr(),

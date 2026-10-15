@@ -1,7 +1,6 @@
 use crate::src::arguments::{args_get, args_has, args_string};
 use crate::src::cmd::queue::{cmdq_continue, cmdq_error, cmdq_get_client, cmdq_print_data};
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
-use crate::src::ffi::libc::strerror;
 use crate::src::file::file_write_with_cmdq_wait;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
@@ -17,6 +16,7 @@ use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::command::{CMD_AFTERHOOK, CMD_BUFFER_USAGE};
 use crate::src::shared::posix_io::{O_APPEND, O_TRUNC};
+use libc::strerror;
 use std::ffi::CStr;
 pub static cmd_save_buffer_entry: cmd_entry = {
     cmd_entry {

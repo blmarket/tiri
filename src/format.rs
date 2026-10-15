@@ -6,11 +6,7 @@ use crate::src::cmd::queue::{
 };
 use crate::src::compat::strtonum::strtonum;
 use crate::src::environ::{environ_find, environ_iter};
-use crate::src::ffi::libc::{
-    basename, ctime_r, dirname, fnmatch, gethostname, getpid, getpwuid, getuid, localtime_r,
-    memcmp, memcpy, memset, strcasecmp, strchr, strcmp, strcspn, strftime, strlen, strstr, strtod,
-    time,
-};
+use crate::src::ffi::libc::basename;
 use crate::src::ffi::libm::{fabs, fmod};
 use crate::src::ffi::regex::RegexStorage;
 use crate::src::format::bytes::format_message_with;
@@ -34,6 +30,10 @@ use crate::src::regsub::regsub_cstring;
 use crate::src::server::{marked_pane, server_check_marked};
 use crate::src::shared::window::WindowWeak;
 use crate::src::window::Window as _;
+use libc::{
+    ctime_r, dirname, fnmatch, gethostname, getpid, getpwuid, getuid, localtime_r, memcmp, memcpy,
+    memset, strcasecmp, strchr, strcmp, strcspn, strftime, strlen, strstr, strtod, time,
+};
 
 use crate::src::server_client::Client as _;
 use crate::src::server_fn::server_status_client;

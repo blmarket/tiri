@@ -1,6 +1,5 @@
 #![feature(local_waker)]
 
-use tiri_rt::{AsyncRead as _, Handle as _, Runtime as _, mio};
 use std::cell::Cell;
 use std::future::Future;
 use std::io::{self, Write};
@@ -9,6 +8,7 @@ use std::pin::Pin;
 use std::rc::Rc;
 use std::task::{ContextBuilder, LocalWake, LocalWaker, Waker};
 use std::time::{Duration, Instant};
+use tiri_rt::{AsyncRead as _, Handle as _, Runtime as _, mio};
 
 #[test]
 fn constructors_work_while_the_runtime_is_borrowed() {

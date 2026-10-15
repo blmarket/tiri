@@ -1,8 +1,8 @@
+use std::ffi::CString;
 use tiri::src::json::{
     json_array_members, json_find, json_get_number, json_parse, json_to_string, NODE_ARRAY,
     NODE_OBJECT,
 };
-use std::ffi::CString;
 
 #[test]
 fn array_owned_members_preserve_order_and_iteration() {

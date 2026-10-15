@@ -1,10 +1,10 @@
 use crate::src::cmd::cmd_get_entry;
-use crate::src::ffi::libc::{getpid, kill};
 use crate::src::shared::arguments::args_parse;
 use crate::src::shared::command::CMD_STARTSERVER;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::signal::SIGTERM;
+use libc::{getpid, kill};
 pub static cmd_kill_server_entry: cmd_entry = {
     cmd_entry {
         name: c"kill-server",

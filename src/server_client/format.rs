@@ -68,7 +68,7 @@ pub(super) unsafe fn value(
             if uid == !0 {
                 return None;
             }
-            let passwd = crate::src::ffi::libc::getpwuid(uid);
+            let passwd = libc::getpwuid(uid);
             if passwd.is_null() {
                 return None;
             }

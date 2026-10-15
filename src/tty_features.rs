@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{strcasecmp, strcmp, strlen, strsep};
+use crate::src::ffi::libc::strsep;
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
@@ -8,6 +8,7 @@ use crate::src::shared::tty::{
     TERM_256COLOURS, TERM_DECFRA, TERM_DECSLRM, TERM_RGBCOLOURS, TERM_SIXEL,
 };
 use crate::src::tty_term::{tty_term_apply, tty_term_has_name};
+use libc::{strcasecmp, strcmp, strlen};
 use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone)]

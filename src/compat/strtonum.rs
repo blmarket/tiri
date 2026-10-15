@@ -1,6 +1,7 @@
-use crate::src::ffi::libc::{__errno_location, strtoll};
+use crate::src::ffi::libc::__errno_location;
 use crate::src::shared::errno::{EINVAL, ERANGE};
 use crate::src::shared::limits::__LONG_LONG_MAX__;
+use libc::strtoll;
 use std::ffi::CStr;
 
 pub const LLONG_MAX: ::core::ffi::c_longlong = __LONG_LONG_MAX__;

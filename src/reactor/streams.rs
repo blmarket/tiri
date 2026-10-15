@@ -3,15 +3,15 @@ use super::io;
 use crate::src::control::CONTROL_BUFFER_LOW;
 use crate::src::shared::event::{bufferevent, bufferevent_data_cb, bufferevent_event_cb};
 pub use api::*;
-use tiri_buffer::{Buf, BufMut, SegmentedBuf};
-use tiri_rt::Handle as _;
-use tiri_rt::{AsyncRead as _, AsyncWrite as _};
 use std::cell::{Cell, RefCell};
 use std::ffi::{c_int, c_short};
 use std::future::{poll_fn, Future};
 use std::pin::pin;
 use std::rc::{Rc, Weak};
 use std::task::{LocalWaker, Poll};
+use tiri_buffer::{Buf, BufMut, SegmentedBuf};
+use tiri_rt::Handle as _;
+use tiri_rt::{AsyncRead as _, AsyncWrite as _};
 pub(crate) struct StreamState {
     stream: RefCell<Option<Box<bufferevent>>>,
     fd: c_int,

@@ -1,5 +1,5 @@
-use crate::src::ffi::libc::{glob, globfree};
 use crate::src::shared::posix_io::glob_t;
+use libc::{glob, globfree};
 use std::ffi::{c_char, c_int, CStr};
 
 /// Owns the storage allocated by libc glob, including partial results on error.

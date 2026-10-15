@@ -1,7 +1,7 @@
 //! Scoped ownership for streams returned by libc's `fopen` and `fdopen`.
 
-use crate::src::ffi::libc::fclose;
 use crate::src::shared::stdio::FILE;
+use libc::fclose;
 use std::ptr::NonNull;
 
 pub(crate) struct CFile(NonNull<FILE>);

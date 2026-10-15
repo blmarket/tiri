@@ -1,3 +1,4 @@
+use std::ffi::CStr;
 use tiri::src::grid::view::grid_view_get_cell;
 use tiri::src::grid::{grid_cells_equal, grid_create, grid_default_cell};
 use tiri::src::options::{options_create, options_default};
@@ -8,7 +9,6 @@ use tiri::src::shared::menu::{menu, MenuRow};
 use tiri::src::shared::screen::{screen, MODE_WRAP};
 use tiri::src::shared::screen_write::screen_write_ctx;
 use tiri::src::tmux::global_options;
-use std::ffi::CStr;
 
 unsafe fn cell_at(s: &screen, x: u32, y: u32) -> grid_cell {
     let mut cell = grid_default_cell;

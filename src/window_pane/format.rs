@@ -1,7 +1,6 @@
 //! Pane-owned lazy formatting. Values leave the pane as owned bytes or timestamps.
 use super::*;
 use crate::src::cmd::cmd_stringify_argv_cstring;
-use crate::src::ffi::libc::time;
 use crate::src::format::format_quote_shell_single;
 use crate::src::format::C2RustUnnamed_43;
 use crate::src::format::{format_tree, FormatValue, FORMAT_TYPE_PANE};
@@ -13,6 +12,7 @@ use crate::src::shared::pane::{PANE_CMDRUNNING, PANE_STATUSDRAWN};
 use crate::src::shared::screen::*;
 use crate::src::style::colour::colour_format;
 use crate::src::tmux::sig2name;
+use libc::time;
 use std::fmt::Write as _;
 use std::os::fd::AsRawFd;
 
