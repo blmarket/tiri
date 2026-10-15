@@ -204,13 +204,6 @@ impl window_pane_tree {
         WINDOW_PANES.with_borrow(|tree| tree.storage.values().cloned().collect())
     }
 
-    /// Reset the pane registry during fresh server startup.
-    pub fn clear() {
-        let removed = WINDOW_PANES.with_borrow_mut(|tree| std::mem::take(&mut tree.storage));
-        // The borrow ended above, so dropping owners cannot re-enter the index.
-        drop(removed);
-    }
-
     fn alloc_id() -> u_int {
         NEXT_WINDOW_PANE_ID.with(|next| {
             let id = next.get();

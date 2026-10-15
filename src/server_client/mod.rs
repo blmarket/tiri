@@ -171,21 +171,6 @@ impl ClientRegistry {
             Some(registry.ordered.remove(index))
         })
     }
-
-    pub fn clear() {
-        let owners = CLIENTS.with_borrow_mut(|registry| {
-            let owners = std::mem::take(&mut registry.ordered);
-            for owner in &owners {
-                unsafe {
-                    (*owner.get()).registry_next = std::rc::Weak::new();
-                }
-            }
-            owners
-        });
-        for owner in owners {
-            server_client_unref_owned(owner);
-        }
-    }
 }
 
 fn server_client_set_message(c: &mut client, message: Option<CString>) {

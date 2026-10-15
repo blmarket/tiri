@@ -148,12 +148,6 @@ impl sessions {
         SESSIONS.with_borrow(|index| index.storage.is_empty())
     }
 
-    /// Restore the empty-registry state during server initialization.
-    pub fn clear() {
-        let storage = SESSIONS.with_borrow_mut(|index| std::mem::take(&mut index.storage));
-        drop(storage);
-    }
-
     /// The id the next created session will receive.
     pub fn next_id() -> u_int {
         NEXT_SESSION_ID.get()
