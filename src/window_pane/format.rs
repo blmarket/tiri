@@ -1087,9 +1087,12 @@ unsafe fn format_cb_pane_dead_status(mut ft: *mut format_tree) -> Option<CString
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = format_pane;
     if !wp.is_null() {
-        return (*wp).exit_status.and_then(|status| status.code()).map(|code| {
-            CString::new(format!("{}", code)).expect("formatted numbers contain no NUL")
-        });
+        return (*wp)
+            .exit_status
+            .and_then(|status| status.code())
+            .map(|code| {
+                CString::new(format!("{}", code)).expect("formatted numbers contain no NUL")
+            });
     }
     None
 }

@@ -205,9 +205,6 @@ impl ModeTreeItemData {
             _ => None,
         }
     }
-    pub fn is_tree(&self, item: &ModeTreeItemSnapshot<window_tree_itemdata>) -> bool {
-        matches!(self, Self::Tree(handle) if *handle == item.identity)
-    }
 
     pub fn as_tree(&self) -> Option<ModeTreeItemSnapshot<window_tree_itemdata>> {
         match self {

@@ -1,14 +1,12 @@
 //! Read-only plugin access stays inside the pane owner. Observations retain
 //! allocation identity weakly and reject logical destruction and ID reuse.
 use super::{window_pane, window_pane_find_by_id, window_pane_upgrade, WindowPane};
-use crate::src::grid::{grid_peek_line, grid_string_cells_bytes};
+use crate::src::grid::grid_string_cells_bytes;
 use crate::src::plugin::PaneActivity;
 use crate::src::shared::display::{
     SCREEN_CURSOR_BAR, SCREEN_CURSOR_BLOCK, SCREEN_CURSOR_UNDERLINE,
 };
-use crate::src::shared::grid::{
-    grid, GRID_LINE_WRAPPED, GRID_STRING_EMPTY_CELLS, GRID_STRING_TRIM_SPACES,
-};
+use crate::src::shared::grid::{grid, GRID_STRING_EMPTY_CELLS, GRID_STRING_TRIM_SPACES};
 use crate::src::shared::screen::{
     screen, MODE_CURSOR, MODE_CURSOR_BLINKING, MODE_CURSOR_BLINKING_SET,
 };
@@ -19,9 +17,7 @@ use std::os::fd::AsFd;
 use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
-use tiri_agent::observability::v1::{
-    PaneId, PaneObservability, PaneProcess, ScreenSource, ScreenTail,
-};
+use tiri_agent::observability::v1::{PaneId, PaneObservability, PaneProcess, ScreenTail};
 use tiri_agent::pane_class::{stringify_argv, PaneProcessProbe};
 
 struct PaneView {
@@ -128,25 +124,16 @@ impl PaneObservability for PaneView {
         self.read(|pane| pane.output_generation)
     }
 
-    fn screen(&self, source: ScreenSource, lines: usize) -> io::Result<ScreenTail> {
+    fn screen(&self, lines: usize) -> io::Result<ScreenTail> {
         self.read(|pane| ScreenTail {
             revision: pane.output_generation,
             text: pane
                 .base
                 .grid
                 .as_deref()
-                .map_or_else(CString::default, |grid| screen_text(grid, source, lines)),
+                .map_or_else(CString::default, |grid| screen_text(grid, lines)),
             cursor_visible: pane.base.mode & MODE_CURSOR != 0,
             cursor_shape: cursor_shape(&pane.base),
-        })
-    }
-
-    fn scrollback_rows(&self) -> io::Result<usize> {
-        self.read(|pane| {
-            pane.base
-                .grid
-                .as_deref()
-                .map_or(0, |grid| grid.hsize as usize)
         })
     }
 
@@ -195,21 +182,11 @@ fn row_text(grid: &grid, row: u32, trim: bool) -> Vec<u8> {
     unsafe { grid_string_cells_bytes(grid, 0, row, grid.sx, None, flags, None) }
 }
 
-fn wrapped(grid: &grid, row: u32) -> bool {
-    unsafe {
-        grid_peek_line(grid, row).is_some_and(|line| line.flags as i32 & GRID_LINE_WRAPPED != 0)
-    }
-}
-
-fn screen_text(grid: &grid, source: ScreenSource, lines: usize) -> CString {
+fn screen_text(grid: &grid, lines: usize) -> CString {
     if lines == 0 {
         return CString::default();
     }
-    let floor = if matches!(source, ScreenSource::Visible) {
-        grid.hsize
-    } else {
-        0
-    };
+    let floor = grid.hsize;
     let mut end = grid.hsize.saturating_add(grid.sy);
     while end > floor && row_text(grid, end - 1, true).is_empty() {
         end -= 1;
@@ -217,26 +194,13 @@ fn screen_text(grid: &grid, source: ScreenSource, lines: usize) -> CString {
     if end == floor {
         return CString::default();
     }
-    let unwrapped = matches!(source, ScreenSource::RecentUnwrapped);
-    let start = if unwrapped {
-        let mut start = end;
-        let mut count = 0;
-        while start > floor && count < lines {
-            start -= 1;
-            if start == floor || !wrapped(grid, start - 1) {
-                count += 1;
-            }
-        }
-        start
-    } else {
-        end.saturating_sub(u32::try_from(lines).unwrap_or(u32::MAX))
-            .max(floor)
-    };
+    let start = end
+        .saturating_sub(u32::try_from(lines).unwrap_or(u32::MAX))
+        .max(floor);
     let mut text = Vec::new();
     for row in start..end {
-        let continues = unwrapped && row + 1 < end && wrapped(grid, row);
-        text.extend_from_slice(&row_text(grid, row, !continues));
-        if !continues && row + 1 < end {
+        text.extend_from_slice(&row_text(grid, row, true));
+        if row + 1 < end {
             text.push(b'\n');
         }
     }

@@ -362,59 +362,6 @@ pub fn colour_format(c: i32) -> std::ffi::CString {
         .expect("colour names contain no NUL")
 }
 
-/// C ABI only. Result is valid until the next call on this thread or thread exit.
-/// Do not free it or access it concurrently with another call on that thread.
-/// Rust callers should retain colour_format's owned result instead.
-/// # Safety
-/// The returned pointer must only be read before the next call to this shim on
-/// the same thread, and must not be freed by the caller.
-pub unsafe fn colour_tostring(c: i32) -> *const libc::c_char {
-    thread_local! {
-        static BUFFER: std::cell::RefCell<std::ffi::CString> =
-            std::cell::RefCell::new(std::ffi::CString::default());
-    }
-    BUFFER.with(|buffer| {
-        let mut buffer = buffer.borrow_mut();
-        *buffer = colour_format(c);
-        buffer.as_ptr()
-    })
-}
-/// Format an SGR escape from a colour, background choice and terminal flags.
-/// Themes use their terminal fallback; resolve client-specific themes before calling.
-/// The historical capability-mask tests are preserved exactly.
-pub fn colour_format_escape(
-    mut colour: i32,
-    background: bool,
-    flags: i32,
-) -> Option<std::ffi::CString> {
-    if colour & COLOUR_FLAG_THEME != 0 {
-        // The lookup bounds-checks the low-byte index and only reads constant metadata.
-        colour = unsafe { colour_theme_terminal_colour((colour & 0xff) as u32) };
-    }
-    colour_format_escape_resolved(colour, background, flags)
-}
-
-/// Format an SGR escape into a caller-owned NUL-terminated buffer.
-///
-/// The returned length excludes the trailing NUL. A short buffer returns
-/// `None` without modifying it. This has the same theme fallback and
-/// capability semantics as [`colour_format_escape`].
-pub fn colour_format_escape_into(
-    colour: i32,
-    background: bool,
-    flags: i32,
-    output: &mut [u8],
-) -> Option<usize> {
-    let text = colour_format_escape(colour, background, flags)?;
-    let bytes = text.as_bytes();
-    if output.len() <= bytes.len() {
-        return None;
-    }
-    output[..bytes.len()].copy_from_slice(bytes);
-    output[bytes.len()] = 0;
-    Some(bytes.len())
-}
-
 pub(crate) fn colour_format_escape_resolved(
     mut colour: i32,
     background: bool,
@@ -467,24 +414,6 @@ pub unsafe fn colour_format_escape_for_client(
     colour_format_escape_resolved(colour, background, TERM_256COLOURS | TERM_RGBCOLOURS)
 }
 
-/// C ABI only. Result is null for invalid colours, otherwise valid until the next
-/// call on this thread or thread exit. Do not free or concurrently access it.
-/// # Safety
-/// A non-null client and its open terminal must be readable for this call.
-pub unsafe fn colour_toescape(c: Option<&ClientRef>, colour: i32, bg: i32) -> *const libc::c_char {
-    thread_local! {
-        static BUFFER: std::cell::RefCell<std::ffi::CString> =
-            std::cell::RefCell::new(std::ffi::CString::default());
-    }
-    let Some(text) = colour_format_escape_for_client(c, colour, bg != 0) else {
-        return std::ptr::null();
-    };
-    BUFFER.with(|buffer| {
-        let mut buffer = buffer.borrow_mut();
-        *buffer = text;
-        buffer.as_ptr()
-    })
-}
 pub unsafe fn colour_totheme(mut c: ::core::ffi::c_int) -> client_theme {
     let mut r: ::core::ffi::c_int = 0;
     let mut g: ::core::ffi::c_int = 0;
@@ -3743,46 +3672,11 @@ pub unsafe fn colour_palette_from_option(p: Option<&mut colour_palette>, oo: *mu
     }
 }
 
-/// Parse an entire byte slice with the existing C locale grammar.
-/// Embedded NUL and invalid inputs return None; no UTF-8 conversion is performed.
-pub fn colour_parse(input: &[u8]) -> Option<i32> {
-    let input = std::ffi::CString::new(input).ok()?;
-    colour_parse_cstr(&input)
-}
-
 /// Bounded C string entry point. Locale-sensitive operations remain in libc.
 pub fn colour_parse_cstr(input: &std::ffi::CStr) -> Option<i32> {
     // The kernel only reads input through its terminating NUL; it retains no pointer.
     let value = unsafe { colour_fromstring_impl(input) };
     (value != -1).then_some(value)
-}
-
-/// C ABI compatibility shim.
-/// # Safety
-/// Input must point to a readable NUL-terminated string for this call.
-pub unsafe fn colour_fromstring(input: *const libc::c_char) -> i32 {
-    colour_parse_cstr(std::ffi::CStr::from_ptr(input)).unwrap_or(-1)
-}
-
-/// Parse an entire byte slice with the existing C locale grammar.
-/// Embedded NUL and invalid inputs return None; no UTF-8 conversion is performed.
-pub fn colour_parse_name(input: &[u8]) -> Option<i32> {
-    let input = std::ffi::CString::new(input).ok()?;
-    colour_parse_name_cstr(&input)
-}
-
-/// Bounded C string entry point. Locale-sensitive operations remain in libc.
-pub fn colour_parse_name_cstr(input: &std::ffi::CStr) -> Option<i32> {
-    // The kernel only reads input through its terminating NUL; it retains no pointer.
-    let value = unsafe { colour_byname_impl(input) };
-    (value != -1).then_some(value)
-}
-
-/// Parse an entire byte slice with the existing C locale grammar.
-/// Embedded NUL and invalid inputs return None; no UTF-8 conversion is performed.
-pub fn colour_parse_x11(input: &[u8]) -> Option<i32> {
-    let input = std::ffi::CString::new(input).ok()?;
-    colour_parse_x11_cstr(&input)
 }
 
 /// Bounded C string entry point. Locale-sensitive operations remain in libc.
@@ -3805,12 +3699,4 @@ pub unsafe fn colour_parse_x11_logged(input: &std::ffi::CStr) -> Option<i32> {
         log_cstr(&formatted)
     ));
     value
-}
-
-/// C ABI compatibility shim.
-/// # Safety
-/// Input must point to a readable NUL-terminated string for this call.
-/// Call on the application thread, where the global debug log is managed.
-pub unsafe fn colour_parseX11(input: *const libc::c_char) -> i32 {
-    colour_parse_x11_logged(std::ffi::CStr::from_ptr(input)).unwrap_or(-1)
 }

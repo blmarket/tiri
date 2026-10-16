@@ -103,8 +103,8 @@ use crate::src::shared::pane::{
     pane_output_data, window_pane_offset, window_pane_resize, window_pane_resizes, PANE_CHANGED,
     PANE_DESTROYED, PANE_EMPTY, PANE_EXITED, PANE_FOCUSED, PANE_INPUTOFF, PANE_REDRAW,
     PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_ALWAYS, PANE_SCROLLBARS_AUTOHIDE, PANE_SCROLLBARS_LEFT,
-    PANE_SCROLLBARS_MODAL, PANE_STATUS_BOTTOM, PANE_STATUS_OFF, PANE_STATUS_TOP,
-    PANE_STYLECHANGED, PANE_THEMECHANGED, PANE_UNSEENCHANGES,
+    PANE_SCROLLBARS_MODAL, PANE_STATUS_BOTTOM, PANE_STATUS_OFF, PANE_STATUS_TOP, PANE_STYLECHANGED,
+    PANE_THEMECHANGED, PANE_UNSEENCHANGES,
 };
 use crate::src::shared::pane::{window_pane_modes, window_pane_prompt, PaneScreenSource};
 use crate::src::shared::posix_io::FNM_CASEFOLD;
@@ -115,10 +115,7 @@ use crate::src::shared::screen::{screen, MODE_BRACKETPASTE, MODE_FOCUSON, MODE_T
 use crate::src::shared::spawn::spawn_editor_state;
 use crate::src::shared::status::status_prompt_input_cb;
 use crate::src::shared::style::*;
-pub use crate::src::shared::window::{
-    window, window_mode, window_mode_entry, window_winlinks, windows, winlink, winlink_stack,
-    winlinks,
-};
+pub use crate::src::shared::window::{window_mode, window_mode_entry, winlink};
 use crate::src::shared::window::{WINDOW_MODE_NO_STACK, WINDOW_PANE_NO_MODE};
 use libc::{REG_EXTENDED, REG_ICASE, SIGHUP};
 
@@ -367,20 +364,6 @@ unsafe fn window_pane_destroy_ready(
     1 as ::core::ffi::c_int
 }
 
-unsafe fn window_pane_add_ref(
-    wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
-    from: &CStr,
-) -> std::rc::Rc<std::cell::UnsafeCell<window_pane>> {
-    let mut wp = wp_owner.get();
-    let owner = Rc::clone(wp_owner);
-    log_debug(format_args!(
-        "retain pane %{} ({})",
-        { (*wp).id },
-        log_cstr(from)
-    ));
-    owner
-}
-
 unsafe fn window_pane_remove_ref(
     owner: std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     from: &CStr,
@@ -428,42 +411,6 @@ unsafe fn window_pane_send_resize(wp: &window_pane, sx: u_int, sy: u_int) {
     {
         fatal(|out| out.write_all(b"ioctl failed"));
     }
-}
-
-unsafe fn window_pane_update_focus(wp_owner: Option<&Rc<std::cell::UnsafeCell<window_pane>>>) {
-    let Some(pane) = wp_owner else {
-        return;
-    };
-    if (*pane.get()).flags & PANE_EXITED != 0 {
-        return;
-    }
-    let parent = pane.window_observer().upgrade().expect("live pane parent");
-    let focused = parent.pane_is_focused(pane);
-    pane.update_focus(focused);
-    drop(parent);
-}
-
-unsafe fn window_pane_at_index(
-    w: &WindowRef,
-    idx: u_int,
-) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    w.pane_at_index(idx).upgrade()
-}
-
-unsafe fn window_pane_next_by_number(
-    w: &WindowRef,
-    pane: Option<&Rc<std::cell::UnsafeCell<window_pane>>>,
-    n: u_int,
-) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    w.pane_by_number(pane, n, false).upgrade()
-}
-
-unsafe fn window_pane_previous_by_number(
-    w: &WindowRef,
-    pane: Option<&Rc<std::cell::UnsafeCell<window_pane>>>,
-    n: u_int,
-) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    w.pane_by_number(pane, n, true).upgrade()
 }
 
 unsafe fn window_pane_index(pane: &Rc<std::cell::UnsafeCell<window_pane>>) -> Option<u32> {
@@ -519,23 +466,6 @@ unsafe fn window_pane_upgrade(
         return None;
     }
     Some(owner)
-}
-
-/// Resolve a live mode entry against its pane-owned stack before observing it.
-unsafe fn window_pane_mode_weak(
-    wme: refbox::Weak<window_mode_entry>,
-) -> refbox::Weak<window_mode_entry> {
-    let pane_owner = wme
-        .get_unchecked()
-        .wp
-        .upgrade()
-        .expect("mode belongs to a live pane");
-    let storage = &(*pane_owner.get()).modes;
-    storage
-        .iter()
-        .find(|entry| wme.is(entry))
-        .expect("mode entry belongs to its pane")
-        .downgrade()
 }
 
 unsafe fn window_pane_mode_push(
@@ -628,7 +558,9 @@ unsafe fn window_pane_create(
 
 unsafe fn window_pane_wait_finish(wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
     let wp = wp_owner.get();
-    let Some(waiter) = (*wp).wait_close.take() else { return };
+    let Some(waiter) = (*wp).wait_close.take() else {
+        return;
+    };
     let retval = (*wp)
         .exit_status
         .and_then(|status| status.code().or(status.signal().map(|signal| signal + 128)))
@@ -2068,21 +2000,8 @@ impl Drop for window_pane {
 
 pub(crate) use input::{input_complete_request, input_free_request, input_request_matches};
 pub use input::{
-    input_csi_type, input_esc_type, input_init, input_parse_screen, input_pending,
-    input_reply_clipboard, input_request_reply, input_reset, input_set_buffer_size,
-    input_table_entry, InputRequestReply, INPUT_BUF_START, INPUT_CSI_CBT, INPUT_CSI_CNL,
-    INPUT_CSI_CPL, INPUT_CSI_CUB, INPUT_CSI_CUD, INPUT_CSI_CUF, INPUT_CSI_CUP, INPUT_CSI_CUU,
-    INPUT_CSI_DA, INPUT_CSI_DA_TWO, INPUT_CSI_DCH, INPUT_CSI_DECSCUSR, INPUT_CSI_DECSTBM,
-    INPUT_CSI_DL, INPUT_CSI_DSR, INPUT_CSI_DSR_PRIVATE, INPUT_CSI_ECH, INPUT_CSI_ED, INPUT_CSI_EL,
-    INPUT_CSI_HPA, INPUT_CSI_ICH, INPUT_CSI_IL, INPUT_CSI_MODOFF, INPUT_CSI_MODSET,
-    INPUT_CSI_QUERY, INPUT_CSI_QUERY_PRIVATE, INPUT_CSI_RCP, INPUT_CSI_REP, INPUT_CSI_RM,
-    INPUT_CSI_RM_PRIVATE, INPUT_CSI_SCP, INPUT_CSI_SD, INPUT_CSI_SGR, INPUT_CSI_SM,
-    INPUT_CSI_SM_GRAPHICS, INPUT_CSI_SM_PRIVATE, INPUT_CSI_SU, INPUT_CSI_TBC, INPUT_CSI_VPA,
-    INPUT_CSI_WINOPS, INPUT_CSI_XDA, INPUT_DISCARD, INPUT_END_BEL, INPUT_END_ST, INPUT_ESC_DECALN,
-    INPUT_ESC_DECKPAM, INPUT_ESC_DECKPNM, INPUT_ESC_DECRC, INPUT_ESC_DECSC, INPUT_ESC_HTS,
-    INPUT_ESC_IND, INPUT_ESC_NEL, INPUT_ESC_RI, INPUT_ESC_RIS, INPUT_ESC_SCSG0_OFF,
-    INPUT_ESC_SCSG0_ON, INPUT_ESC_SCSG1_OFF, INPUT_ESC_SCSG1_ON, INPUT_ESC_ST, INPUT_LAST,
-    INPUT_REQUEST_TIMEOUT,
+    input_init, input_parse_screen, input_pending, input_request_reply, input_set_buffer_size,
+    InputRequestReply,
 };
 
 #[cfg(test)]
@@ -2090,7 +2009,6 @@ mod pane_prompt_data_tests {
     use super::*;
 
     use crate::src::text::utf8::utf8_fromcstr_vec;
-    use std::cell::Cell;
 
     fn data(wp_id: u_int) -> refbox::RefBox<crate::src::shared::pane::window_pane_prompt> {
         refbox::RefBox::new(window_pane_prompt {
@@ -2249,7 +2167,10 @@ mod wait_close_tests {
             drop(owner);
             assert!(client.upgrade().is_none());
             assert!(head.upgrade().is_none());
-            assert!((*pane.get()).wait_close.as_ref().is_some_and(CmdqWaiter::is_cancelled));
+            assert!((*pane.get())
+                .wait_close
+                .as_ref()
+                .is_some_and(CmdqWaiter::is_cancelled));
             assert!(!pane.destroy_ready());
             (*pane.get()).exit_status = Some(ExitStatus::from_raw(0));
             assert!(pane.destroy_ready());

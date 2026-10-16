@@ -17,21 +17,9 @@ pub use darwin::Darwin as CurrentPlatform;
 mod tests;
 
 use std::ffi::OsString;
-use std::io;
-use std::os::fd::{BorrowedFd, OwnedFd, RawFd};
+use std::os::fd::BorrowedFd;
 use std::path::PathBuf;
 use std::time::SystemTime;
-
-pub use tiri_rt::unix::Notify as OutputWakeup;
-
-/// The result of creating a pseudoterminal and forking the process.
-pub enum ForkOutcome {
-    /// The parent retains the PTY master and tracks the new child.
-    Parent { pid: libc::pid_t, master: OwnedFd },
-    /// The child has the PTY slave connected to standard input, output, and
-    /// error and must proceed directly to `exec` or `_exit`.
-    Child,
-}
 
 /// One process table record visible to the current platform.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -42,37 +30,9 @@ pub struct ProcessInfo {
 
 /// Compile-time contract implemented by each supported operating system.
 pub trait Platform {
-    /// The platform's pollable pane-output wakeup primitive.
-    type OutputWakeup: OutputWakeup;
-
-    /// Create an initially signalled pane-output wakeup.
-    fn new_output_wakeup() -> io::Result<Self::OutputWakeup>;
-
-    /// Create a PTY and fork the process.
-    ///
-    /// # Safety
-    ///
-    /// If this returns [`ForkOutcome::Child`], the caller must perform only
-    /// post-fork-safe operations and terminate the branch with `exec` or
-    /// `_exit`. It must not unwind or return to ordinary Rust code.
-    unsafe fn fork_pty(size: libc::winsize) -> io::Result<ForkOutcome>;
-
-    /// Close every open descriptor greater than or equal to `lowest`.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that no live object subsequently uses or drops
-    /// any affected descriptor. This is intended for a post-fork child that
-    /// will immediately `exec` or `_exit`.
-    unsafe fn close_fds_from(lowest: RawFd);
-
     /// Return the current directory of the process occupying the foreground of
     /// the pane represented by `pty`.
     fn pane_cwd(pty: BorrowedFd<'_>) -> Option<PathBuf>;
-
-    /// Return the effective user id the kernel reports for the far end of the
-    /// connected Unix socket `socket`, when it reports one.
-    fn peer_uid(socket: BorrowedFd<'_>) -> Option<u32>;
 
     /// Return the visible `(pid, parent pid)` process table, when available.
     fn process_table() -> Option<Vec<ProcessInfo>> {

@@ -764,7 +764,6 @@ pub(super) unsafe fn install_editor(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::process::ExitStatus;
     use crate::src::shared::spawn::spawn_finish_edit_cb;
     use crate::src::shared::spawn::EditorHandle;
     use crate::src::spawn::{spawn_editor_fdopen, spawn_editor_finish};
@@ -773,6 +772,7 @@ mod tests {
     use std::ffi::CStr;
     use std::fs;
     use std::os::fd::AsRawFd;
+    use std::process::ExitStatus;
     use std::process::{Command, Stdio};
     use std::thread;
     use std::time::{Duration, Instant};

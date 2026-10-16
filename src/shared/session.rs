@@ -1,6 +1,6 @@
 //! Session indexes and groups; Session state belongs to its owner module.
 
-pub use crate::src::session::{session, sessions};
+pub use crate::src::session::session;
 
 /// Retained Session identity. Logical destruction and deferred releases remain explicit.
 pub type SessionRef = std::rc::Rc<std::cell::UnsafeCell<session>>;

@@ -1,14 +1,13 @@
 //! macOS implementation of the operating-system boundary.
 
 use std::ffi::{OsStr, OsString};
-use std::io;
-use std::os::fd::{BorrowedFd, FromRawFd, OwnedFd, RawFd};
+use std::os::fd::BorrowedFd;
 use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
 use std::ptr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use super::{ForkOutcome, Platform, ProcessInfo};
+use super::{Platform, ProcessInfo};
 
 /// The macOS platform implementation selected by the native server.
 pub struct Darwin;
@@ -31,34 +30,6 @@ struct VnodeFdInfoWithPath {
 const PROC_PIDFDVNODEPATHINFO: libc::c_int = 2;
 
 impl Platform for Darwin {
-    type OutputWakeup = tiri_rt::unix::Notification;
-
-    fn new_output_wakeup() -> io::Result<Self::OutputWakeup> {
-        tiri_rt::unix::Notification::new()
-    }
-
-    unsafe fn fork_pty(size: libc::winsize) -> io::Result<ForkOutcome> {
-        let mut master = -1;
-        // Apple's `forkpty` takes `*mut winsize`; copy so the argument is owned.
-        let mut size = size;
-        let pid =
-            unsafe { libc::forkpty(&mut master, ptr::null_mut(), ptr::null_mut(), &mut size) };
-        if pid < 0 {
-            return Err(io::Error::last_os_error());
-        }
-        if pid == 0 {
-            return Ok(ForkOutcome::Child);
-        }
-        Ok(ForkOutcome::Parent {
-            pid,
-            master: unsafe { OwnedFd::from_raw_fd(master) },
-        })
-    }
-
-    unsafe fn close_fds_from(lowest: RawFd) {
-        unsafe { tiri_rt::unix::close_from(lowest) };
-    }
-
     fn pane_cwd(pty: BorrowedFd<'_>) -> Option<PathBuf> {
         let foreground_pgrp = tiri_rt::unix::terminal_foreground_group(pty).unwrap_or(-1);
         if foreground_pgrp <= 0 {
@@ -66,12 +37,6 @@ impl Platform for Darwin {
         }
 
         process_vnode_cwd(foreground_pgrp)
-    }
-
-    fn peer_uid(socket: BorrowedFd<'_>) -> Option<u32> {
-        tiri_rt::unix::peer_credentials(socket)
-            .ok()
-            .map(|(uid, _)| uid)
     }
 
     fn process_table() -> Option<Vec<ProcessInfo>> {
@@ -367,7 +332,7 @@ fn parse_procargs2(buffer: &[u8]) -> Vec<OsString> {
 #[cfg(test)]
 mod tests {
     use std::fs::{self, File};
-    use std::os::fd::AsFd;
+    use std::os::fd::{AsFd, FromRawFd, OwnedFd, RawFd};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;

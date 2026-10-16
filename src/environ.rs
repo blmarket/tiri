@@ -8,7 +8,7 @@ use crate::src::shared::session::SessionRef;
 use crate::src::tmux::{getversion, global_environ, global_options, socket_path_cstr};
 use crate::src::xmalloc::xcalloc;
 use libc::{fnmatch, free, getpid, setenv};
-use std::ffi::{CStr, CString, NulError};
+use std::ffi::{CStr, CString};
 
 struct ProcessEnvironmentSeed(*mut *mut ::core::ffi::c_char);
 
@@ -30,11 +30,6 @@ impl environ {
         self.entries.get(name).map(Box::as_ref)
     }
 
-    pub fn find_bytes(&self, name: &[u8]) -> Result<Option<&environ_entry>, NulError> {
-        let name = CString::new(name)?;
-        Ok(self.find(&name))
-    }
-
     pub fn entries(&self) -> impl Iterator<Item = &environ_entry> {
         self.entries.values().map(Box::as_ref)
     }
@@ -52,16 +47,6 @@ impl environ {
         }
     }
 
-    pub fn set(
-        &mut self,
-        name: &[u8],
-        flags: ::core::ffi::c_int,
-        value: &[u8],
-    ) -> Result<(), NulError> {
-        self.set_cstr(&CString::new(name)?, flags, &CString::new(value)?);
-        Ok(())
-    }
-
     pub fn clear_cstr(&mut self, name: &CStr) {
         if let Some(entry) = self.entries.get_mut(name) {
             entry.value = None;
@@ -71,11 +56,6 @@ impl environ {
                 Box::new(environ_entry::new(name.to_owned(), 0, None)),
             );
         }
-    }
-
-    pub fn clear(&mut self, name: &[u8]) -> Result<(), NulError> {
-        self.clear_cstr(&CString::new(name)?);
-        Ok(())
     }
 
     pub fn unset_cstr(&mut self, name: &CStr) {
@@ -90,24 +70,6 @@ impl environ {
                 self.clear_cstr(&entry.name);
             }
         }
-    }
-}
-
-impl environ_entry {
-    pub fn name(&self) -> &CStr {
-        &self.name
-    }
-    pub fn name_bytes(&self) -> &[u8] {
-        self.name.as_bytes()
-    }
-    pub fn value(&self) -> Option<&CStr> {
-        self.value.as_deref()
-    }
-    pub fn value_bytes(&self) -> Option<&[u8]> {
-        self.value().map(CStr::to_bytes)
-    }
-    pub fn flags(&self) -> ::core::ffi::c_int {
-        self.flags
     }
 }
 

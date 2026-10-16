@@ -30,9 +30,9 @@ use libc::{
 use std::os::fd::FromRawFd;
 use std::os::fd::{IntoRawFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
+use std::os::unix::net::UnixListener;
 use std::os::unix::process::ExitStatusExt;
 use std::process::ExitStatus;
-use std::os::unix::net::UnixListener;
 
 use crate::src::session::sessions;
 use crate::src::session::Session;

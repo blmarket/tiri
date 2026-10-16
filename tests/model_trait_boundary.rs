@@ -377,11 +377,7 @@ fn migrated_name_and_window_notification_helpers_use_holders() {
     for (path, expected) in [
         (
             "src/window_border.rs",
-            &[
-                "window_render_fill_cell",
-                "window_set_fill_cells",
-                "window_get_fill_cell",
-            ][..],
+            &["window_render_fill_cell", "window_get_fill_cell"][..],
         ),
         (
             "src/format/callbacks.rs",
@@ -967,11 +963,7 @@ fn option_inheritance_retains_owner_identity_without_component_pointers() {
 
     let functions =
         syn::parse_file(&std::fs::read_to_string(root.join("src/options.rs")).unwrap()).unwrap();
-    let constructors = [
-        "options_create",
-        "options_create_owned",
-        "options_set_parent",
-    ];
+    let constructors = ["options_create", "options_create_owned"];
     let mut checked = 0;
     for item in &functions.items {
         let Item::Fn(function) = item else { continue };

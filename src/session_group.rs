@@ -46,9 +46,6 @@ fn with_group<R>(
 /// The group index is thread-local; each call borrows it only for its own
 /// duration. Returned handles stop being alive once `remove` drops the owner.
 impl session_groups {
-    pub fn is_empty() -> bool {
-        SESSION_GROUPS.with_borrow(|groups| groups.storage.is_empty())
-    }
     pub fn find(name: &CStr) -> SessionGroupWeak {
         SESSION_GROUPS.with_borrow(|groups| {
             groups

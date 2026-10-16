@@ -10,22 +10,8 @@ use crate::src::server_fn::server_status_session;
 use crate::src::shared::abi::*;
 use crate::src::shared::limits::INT_MAX;
 use crate::src::shared::tree::{RB_INF, RB_NEGINF};
-pub use crate::src::shared::window::{
-    window, window_mode, window_mode_entry, window_winlinks, windows, winlink, winlink_stack,
-    winlinks,
-};
+pub use crate::src::shared::window::{winlink, winlink_stack, winlinks};
 use crate::src::shared::window::{WINLINK_ALERTFLAGS, WINLINK_VISITED};
-
-pub fn winlinks_nfind(head: &winlinks, idx: ::core::ffi::c_int) -> refbox::Weak<winlink> {
-    let owner = head;
-    let map = owner
-        .try_borrow_mut()
-        .expect("winlink index already borrowed");
-    let key = idx;
-    map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
-        .next()
-        .map_or(refbox::Weak::new(), |(_, owner)| owner.downgrade())
-}
 
 pub fn winlinks_minmax(head: &winlinks, direction: ::core::ffi::c_int) -> refbox::Weak<winlink> {
     let owner = head;

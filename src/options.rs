@@ -35,7 +35,7 @@ use crate::src::status::status_timer_start_all;
 use crate::src::style::colour::{colour_format, colour_parse_cstr};
 use crate::src::style::{style_parse, style_parse_colour};
 use crate::src::text::utf8::utf8_update_width_cache;
-use crate::src::tmux::{checkshell, global_options, global_s_options, global_w_options};
+use crate::src::tmux::{checkshell, global_options};
 use crate::src::tty::tty_invalidate;
 use crate::src::tty_keys::tty_keys_build;
 
@@ -222,14 +222,8 @@ impl Drop for options {
     }
 }
 
-pub unsafe fn options_set_parent(oo: *mut options, parent: Option<OptionsScope>) {
-    (*oo).parent = parent;
-}
 pub fn options_iter(oo: &options) -> impl DoubleEndedIterator<Item = &options_entry> {
     oo.tree.values().map(Box::as_ref)
-}
-pub fn options_iter_mut(oo: &mut options) -> impl DoubleEndedIterator<Item = &mut options_entry> {
-    oo.tree.values_mut().map(Box::as_mut)
 }
 pub fn options_get_only<'a>(oo: &'a options, name: &CStr) -> Option<&'a options_entry> {
     let key = if oo.tree.contains_key(name) {
@@ -392,13 +386,6 @@ pub fn options_get_monitor_data(
     o: &mut options_entry,
 ) -> Option<&mut crate::src::hooks::hooks_monitor> {
     o.monitor_data.as_deref_mut()
-}
-pub unsafe fn options_set_monitor_data(
-    mut o: *mut options_entry,
-    data: Option<Box<crate::src::hooks::hooks_monitor>>,
-) {
-    let previous = std::mem::replace(&mut (*o).monitor_data, data);
-    drop(previous);
 }
 pub unsafe fn options_hook_fired(mut o: *mut options_entry) {
     (*o).fire_count = (*o).fire_count.wrapping_add(1);
@@ -688,23 +675,6 @@ pub fn options_array_iter(
         .into_iter()
         .flat_map(|entries| entries.values().map(Box::as_ref))
 }
-pub fn options_array_iter_mut(
-    o: &mut options_entry,
-) -> impl DoubleEndedIterator<Item = &mut options_array_item> {
-    let entries = match &mut o.value {
-        options_value::Array(array) => Some(&mut array.entries),
-        _ => None,
-    };
-    entries
-        .into_iter()
-        .flat_map(|entries| entries.values_mut().map(Box::as_mut))
-}
-pub fn options_array_item_key(a: &options_array_item) -> &CStr {
-    &a.key
-}
-pub fn options_array_item_value(a: &options_array_item) -> &options_value {
-    &a.value
-}
 pub fn options_array_item_value_mut(a: &mut options_array_item) -> &mut options_value {
     &mut a.value
 }
@@ -717,10 +687,6 @@ pub unsafe fn options_is_string(mut o: *mut options_entry) -> ::core::ffi::c_int
     ((*o)
         .tableentry
         .is_none_or(|entry| entry.type_0 == OPTIONS_TABLE_STRING)) as ::core::ffi::c_int
-}
-pub(crate) unsafe fn options_to_string(o: *mut options_entry, key: &CStr) -> CString {
-    let numeric: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    options_to_cstring(o, Some(key), numeric)
 }
 
 pub unsafe fn options_to_cstring(
@@ -1586,34 +1552,6 @@ pub unsafe fn options_push_changes(name: &CStr) {
         loop_0 = registry_loop_0_owner.clone();
     }
 }
-pub unsafe fn options_remove_or_default(
-    mut o: *mut options_entry,
-    key: Option<&CStr>,
-    mut cause: *mut Option<CString>,
-) -> ::core::ffi::c_int {
-    let key: *const ::core::ffi::c_char = key.map_or(std::ptr::null(), CStr::as_ptr);
-    let mut oo: *mut options = (*o).owner;
-    if key.is_null() {
-        match (*o).tableentry {
-            Some(entry)
-                if oo == global_options || oo == global_s_options || oo == global_w_options =>
-            {
-                options_default(oo, entry);
-            }
-            _ => options_remove(o),
-        }
-    } else if options_array_set(
-        o,
-        CStr::from_ptr(key),
-        nullable_cstr(::core::ptr::null::<::core::ffi::c_char>()),
-        0 as ::core::ffi::c_int,
-        cause,
-    ) != 0 as ::core::ffi::c_int
-    {
-        return -(1 as ::core::ffi::c_int);
-    }
-    0 as ::core::ffi::c_int
-}
 
 #[cfg(test)]
 mod array_string_owner_tests {
@@ -1623,25 +1561,5 @@ mod array_string_owner_tests {
     fn formatted_diagnostic_preserves_non_utf8_arguments() {
         let message = options_string_cause(c"value is %s: %s", &[c"invalid", c"\xff"]);
         assert_eq!(message.to_bytes(), b"value is invalid: \xff");
-    }
-
-    #[test]
-    fn array_item_text_is_read_by_key() {
-        unsafe {
-            let mut oo = options_create(None);
-            let definition = options_table
-                .iter()
-                .find(|oe| oe.name == Some(c"update-environment"))
-                .unwrap();
-            let array = options_empty(&mut *oo, definition);
-            assert_eq!(
-                options_array_set(array, c"2", Some(c"DISPLAY"), 0, std::ptr::null_mut()),
-                0
-            );
-            assert_eq!(options_to_string(array, c"2").as_bytes(), b"DISPLAY");
-            assert_eq!(options_to_string(array, c"002").as_bytes(), b"DISPLAY");
-            assert_eq!(options_to_string(array, c"3").as_bytes(), b"");
-            drop(oo);
-        }
     }
 }

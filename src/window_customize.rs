@@ -4721,7 +4721,6 @@ mod tag_tests {
 #[cfg(test)]
 mod item_owner_tests {
     use super::*;
-    use crate::src::spawn::spawn_cancel_editor;
 
     #[test]
     fn detached_copy_owns_byte_preserving_strings() {
@@ -4854,35 +4853,6 @@ mod item_owner_tests {
             assert!(selected.as_customize().is_none());
             assert!(detail.as_customize().is_none());
             assert_eq!(snapshot.name.as_deref(), Some(c"stable"));
-        }
-    }
-
-    #[test]
-    fn editor_cancellation_drops_its_owned_record_without_dispatch() {
-        let edit = window_customize_editdata {
-            wp_id: u_int::MAX,
-            edit_type: WINDOW_CUSTOMIZE_EDIT_OPTION,
-            item: window_customize_new_item(),
-        };
-        let capture = (edit, Rc::new(()));
-        let observer = Rc::downgrade(&capture.1);
-        let mut state = spawn_editor_state {
-            id: Default::default(),
-            path: c"unused".to_owned(),
-            pid: 0,
-            cb: Some(Box::new(move |_, _| {
-                drop(capture);
-                panic!("cancelled editor callback ran");
-            })),
-        };
-        assert!(observer.upgrade().is_some());
-        unsafe {
-            spawn_cancel_editor(&mut state);
-        }
-        assert!(observer.upgrade().is_none());
-        assert!(state.cb.is_none());
-        unsafe {
-            spawn_cancel_editor(&mut state);
         }
     }
 }

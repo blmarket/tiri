@@ -106,7 +106,6 @@ pub trait WindowPane {
     unsafe fn matches_terminal_name(&self, name: &CStr) -> bool;
     unsafe fn close_after_key(&self, key: key_code) -> bool;
     unsafe fn has_exited(&self) -> bool;
-    unsafe fn has_modes(&self) -> bool;
     unsafe fn mode_entry(&self) -> refbox::Weak<window_mode_entry>;
     unsafe fn notify_style_changed(&self);
     unsafe fn needs_redraw(&self, scrollbar: bool) -> bool;
@@ -174,7 +173,6 @@ pub trait WindowPane {
     /// Copied appearance and slider geometry; no pane storage is lent.
     unsafe fn scrollbar_visible(&self) -> bool;
     unsafe fn scrollbar_overlay(&self) -> bool;
-    unsafe fn scrollbar_reserved(&self) -> bool;
     unsafe fn scrollbar_width(&self) -> i32;
     unsafe fn scrollbar_pad(&self) -> i32;
     unsafe fn scrollbar_slider_y(&self) -> u32;
@@ -304,10 +302,6 @@ pub trait WindowPane {
     unsafe fn kill_process(&self);
     /// Close descriptors before exit notifications and remain-on-exit rendering.
     unsafe fn finish_process(&self, notify: i32);
-    /// Parse available process output and advance the pane's output cursor.
-    unsafe fn parse_input(&self);
-    /// Parse caller-owned bytes without exposing pane screens or parser storage.
-    unsafe fn parse_output(&self, bytes: &[u8]);
     /// Create a pane beside the context's source pane (before it with
     /// SPAWN_BEFORE), or as the first pane of an empty window, place it and
     /// start its process; with SPAWN_RESPAWN restart the context's source
@@ -358,9 +352,6 @@ pub trait WindowPane {
     unsafe fn process_name(&self) -> Option<CString>;
     /// Draw the editor wait indicator on the currently displayed screen.
     unsafe fn draw_editor_waiting(&self, pid: pid_t);
-    unsafe fn create(window: &WindowRef, sx: u32, sy: u32, history_limit: u32) -> Self
-    where
-        Self: Sized;
     unsafe fn search(&self, term: &CStr, regex: bool, ignore: bool) -> u32;
     unsafe fn status_range(&self, x: u32, y: u32) -> Option<style_range>;
     unsafe fn prompt_key(
@@ -439,9 +430,6 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     unsafe fn has_exited(&self) -> bool {
         (*self.get()).flags & PANE_EXITED != 0
     }
-    unsafe fn has_modes(&self) -> bool {
-        !(*self.get()).modes.is_empty()
-    }
     unsafe fn mode_entry(&self) -> refbox::Weak<window_mode_entry> {
         (*self.get()).active_mode_entry()
     }
@@ -518,9 +506,6 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     }
     unsafe fn scrollbar_overlay(&self) -> bool {
         window_pane_scrollbar_overlay(&*self.get()) != 0
-    }
-    unsafe fn scrollbar_reserved(&self) -> bool {
-        window_pane_scrollbar_reserve(&*self.get()) != 0
     }
     unsafe fn scrollbar_width(&self) -> i32 {
         (*self.get()).scrollbar_style.width
@@ -1297,12 +1282,6 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     unsafe fn finish_process(&self, notify: i32) {
         lifecycle::finish_process(self, notify)
     }
-    unsafe fn parse_input(&self) {
-        super::input::input_parse_pane(self)
-    }
-    unsafe fn parse_output(&self, bytes: &[u8]) {
-        super::input::input_parse_buffer(self, bytes)
-    }
     unsafe fn spawn_process(
         context: *mut crate::src::shared::spawn::spawn_context,
         cause: *mut Option<CString>,
@@ -1427,9 +1406,6 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     }
     unsafe fn draw_editor_waiting(&self, pid: pid_t) {
         super::mode_visuals::draw_editor_waiting(self, pid);
-    }
-    unsafe fn create(window: &WindowRef, sx: u32, sy: u32, history_limit: u32) -> Self {
-        window_pane_create(window, sx, sy, history_limit)
     }
     unsafe fn search(&self, term: &CStr, regex: bool, ignore: bool) -> u32 {
         window_pane_search(&*self.get(), term, regex as i32, ignore as i32)

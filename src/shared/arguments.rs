@@ -74,15 +74,6 @@ pub struct args {
     pub values: Vec<args_value>,
 }
 
-impl args {
-    pub fn empty() -> Self {
-        Self {
-            tree: args_tree::default(),
-            values: Vec::new(),
-        }
-    }
-}
-
 pub enum ArgsPayload<'a> {
     None,
     String(CString),

@@ -36,7 +36,6 @@ pub type __socklen_t = ::libc::socklen_t;
 pub type ssize_t = isize;
 pub type socklen_t = __socklen_t;
 pub type uint32_t = __uint32_t;
-pub type uint16_t = __uint16_t;
 pub type uid_t = __uid_t;
 pub type __int32_t = i32;
 pub type __gid_t = ::libc::gid_t;
@@ -53,8 +52,6 @@ pub type __compar_fn_t = Option<
 pub type __int64_t = i64;
 pub type int64_t = __int64_t;
 pub type __mode_t = ::libc::mode_t;
-
-pub const NULL_0: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
 
 #[cfg(test)]
 mod tests {

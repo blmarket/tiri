@@ -8,8 +8,6 @@ pub use scoped::{style_apply_with_options, style_resolve_with_options};
 
 // Preserve the established family API without glob exports.
 pub use self::parsing::{
-    cmdq_item, environ, format_job_tree, format_tree, key_event, mouse_event, options,
-    options_entry, options_table_entry, style_add, style_apply, style_copy, style_link,
-    style_parse, style_parse_colour, style_ranges_clear, style_ranges_get_range, style_ranges_init,
-    style_set, style_set_scrollbar_style_from_option, style_tostring, tty_term, FORMAT_NOJOBS,
+    style_apply, style_copy, style_link, style_parse, style_parse_colour, style_ranges_clear,
+    style_ranges_init, style_set, style_set_scrollbar_style_from_option, style_tostring,
 };

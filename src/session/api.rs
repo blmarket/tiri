@@ -96,14 +96,6 @@ pub trait Session {
         window: &WindowRef,
         index: i32,
     ) -> Result<refbox::Weak<winlink>, CString>;
-    unsafe fn link_window(
-        &self,
-        source: &SessionRef,
-        link: refbox::Weak<winlink>,
-        index: i32,
-        replace: bool,
-        select: bool,
-    ) -> Result<(), CString>;
     unsafe fn spawn_window(
         &self,
         context: &mut spawn_context,
@@ -114,7 +106,6 @@ pub trait Session {
     unsafe fn on_attached(&self);
     unsafe fn theme_changed(&self);
     unsafe fn status_layout(&self) -> (i32, u32);
-    unsafe fn join_group(&self, name: &CStr);
     /// Scopes cannot reenter model code, run callbacks, change component parents,
     /// free components, or allow references/pointers to escape.
     unsafe fn with_options_mut<R>(&self, edit: impl FnOnce(&mut options) -> R) -> R;
@@ -330,23 +321,6 @@ impl Session for SessionRef {
     ) -> Result<refbox::Weak<winlink>, CString> {
         session_attach(self, window, index)
     }
-    unsafe fn link_window(
-        &self,
-        source: &SessionRef,
-        link: refbox::Weak<winlink>,
-        index: i32,
-        replace: bool,
-        select: bool,
-    ) -> Result<(), CString> {
-        crate::src::server_fn::server_link_window(
-            source,
-            link,
-            self,
-            index,
-            replace as i32,
-            select as i32,
-        )
-    }
     unsafe fn spawn_window(
         &self,
         context: &mut spawn_context,
@@ -384,11 +358,6 @@ impl Session for SessionRef {
     }
     unsafe fn status_layout(&self) -> (i32, u32) {
         ((*self.get()).statusat, (*self.get()).statuslines)
-    }
-    unsafe fn join_group(&self, name: &CStr) {
-        let group = session_groups::find_or_create(name);
-        session_group_add(&group, self);
-        session_group_synchronize_to(self);
     }
     unsafe fn with_options_mut<R>(&self, edit: impl FnOnce(&mut options) -> R) -> R {
         edit(
@@ -428,34 +397,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn joining_a_group_creates_it_once_and_keeps_a_single_membership() {
-        use crate::src::session_group::{session_group_count, session_group_remove};
-        unsafe {
-            let session = session::new();
-            assert!(!session_groups::find(c"joined").is_alive());
-            session.join_group(c"joined");
-            let group = session_groups::find(c"joined");
-            assert!(group.is_alive());
-            assert_eq!(
-                session_groups::for_session(&std::rc::Rc::downgrade(&session)),
-                group
-            );
-            assert_eq!(session_group_count(&group), 1);
-            assert_eq!(
-                crate::src::session::session_group_name(&group).as_c_str(),
-                c"joined"
-            );
-            // Joining by the same name finds the existing group again.
-            session.join_group(c"joined");
-            assert_eq!(session_groups::find(c"joined"), group);
-            assert_eq!(session_group_count(&group), 1);
-            // Leaving as the last member destroys the group.
-            session_group_remove(&session);
-            assert!(!session_groups::find(c"joined").is_alive());
-        }
-    }
-
-    #[test]
     fn rename_rejects_invalid_utf8_before_touching_the_registry() {
         unsafe {
             let session = session::new();
@@ -465,43 +406,6 @@ mod tests {
                 b"invalid session name: \xff"
             );
             assert_eq!(session.name().as_bytes(), b"");
-        }
-    }
-
-    #[test]
-    fn updating_environment_uses_patterns_and_clears_missing_variables() {
-        unsafe {
-            let owner = session::new();
-            let mut options = crate::src::options::options_create(None);
-            let definition = crate::src::options_table::options_table
-                .iter()
-                .find(|definition| definition.name == Some(c"update-environment"))
-                .unwrap();
-            crate::src::options::options_default(&mut *options, definition);
-            (*owner.get()).options = Some(options);
-            (*owner.get()).environ = Some(crate::src::environ::environ_create());
-            owner.with_environment_mut(|env| {
-                env.set(b"DISPLAY", 0, b"old").unwrap();
-                env.set(b"SSH_AUTH_SOCK", 0, b"old-socket").unwrap();
-                env.set(b"UNCHANGED", 0, b"keep").unwrap();
-            });
-            let mut source = environ::default();
-            source.set(b"DISPLAY", 0, b"new").unwrap();
-            source.set(b"UNCHANGED", 0, b"ignore").unwrap();
-            owner.update_environment(&source);
-            {
-                let env = owner.borrow_environment().unwrap();
-                assert_eq!(env.find(c"DISPLAY").unwrap().value(), Some(c"new"));
-                assert_eq!(env.find(c"SSH_AUTH_SOCK").unwrap().value(), None);
-                assert_eq!(env.find(c"UNCHANGED").unwrap().value(), Some(c"keep"));
-            }
-            // The read borrow has ended before the next mutation.
-            owner.with_environment_mut(|env| env.unset_cstr(c"DISPLAY"));
-            assert!(owner
-                .borrow_environment()
-                .unwrap()
-                .find(c"DISPLAY")
-                .is_none());
         }
     }
 

@@ -411,21 +411,6 @@ pub struct tty_term {
     pub(crate) registered: bool,
 }
 
-impl tty_term {
-    pub fn empty() -> Self {
-        Self {
-            name: Default::default(),
-            client: Default::default(),
-            applied_features: Default::default(),
-            acs: [[0; 2]; 256],
-            codes: Default::default(),
-            flags: Default::default(),
-            identity: std::rc::Rc::new(()),
-            registered: false,
-        }
-    }
-}
-
 /// Command metadata; screen and cell borrows are supplied only at dispatch.
 #[derive(Default)]
 pub struct tty_ctx<'a> {

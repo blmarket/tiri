@@ -17,14 +17,6 @@ impl HyperlinksRef {
     pub fn new() -> Self {
         hyperlinks_init()
     }
-
-    pub fn len(&self) -> usize {
-        self.0.borrow().by_inner.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
 }
 
 impl Default for HyperlinksRef {
@@ -148,10 +140,6 @@ pub fn hyperlinks_init() -> HyperlinksRef {
     let mut value = hyperlinks::empty();
     value.next_inner = 1;
     HyperlinksRef(Rc::new(RefCell::new(value)))
-}
-
-pub fn hyperlinks_copy(hl: &HyperlinksRef) -> HyperlinksRef {
-    hl.clone()
 }
 
 pub fn hyperlinks_reset(hl: &HyperlinksRef) {

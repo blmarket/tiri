@@ -92,12 +92,6 @@ impl redraw_span_data {
         };
         data
     }
-    pub fn status_mut(&mut self) -> &mut RedrawStatusSpan {
-        let Self::Status(data) = self else {
-            panic!("status span expected")
-        };
-        data
-    }
     pub fn scrollbar(&self) -> &RedrawScrollbarSpan {
         let Self::Scrollbar(data) = self else {
             panic!("scrollbar span expected")
@@ -111,12 +105,6 @@ impl redraw_span_data {
         data
     }
     pub fn menu(&self) -> &RedrawMenuSpan {
-        let Self::Menu(data) = self else {
-            panic!("menu span expected")
-        };
-        data
-    }
-    pub fn menu_mut(&mut self) -> &mut RedrawMenuSpan {
         let Self::Menu(data) = self else {
             panic!("menu span expected")
         };

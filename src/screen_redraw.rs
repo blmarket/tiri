@@ -86,7 +86,6 @@ pub struct redraw_build_ctx<'a> {
     pub cells: &'a mut [redraw_build_cell],
 }
 
-pub const REDRAW_SPAN_TYPES: ::core::ffi::c_int = 7 as ::core::ffi::c_int;
 pub const REDRAW_BORDER_IS_ARROW: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const REDRAW_SCROLLBAR_LEFT: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const REDRAW_SCROLLBAR_RIGHT: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
@@ -1726,76 +1725,4 @@ pub unsafe fn redraw_pane_scrollbar(
     pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
 ) {
     redraw_draw(client_owner, Some(pane_owner), REDRAW_PANE_SCROLLBAR);
-}
-
-#[cfg(test)]
-mod menu_observer_tests {
-    use super::*;
-    use crate::src::shared::menu::{menu, menu_data};
-    use crate::src::shared::redraw::RedrawMenuSpan;
-
-    #[test]
-    fn cached_spans_observe_menu_lifetimes_and_scratch_releases_observers() {
-        let owner = refbox::RefBox::new(menu_data::new(Box::new(menu {
-            title: c"Observed".to_owned(),
-            items: Vec::new(),
-            width: 10,
-        })));
-        let mut cell = redraw_build_cell {
-            data: redraw_span_data::Menu(RedrawMenuSpan {
-                md: owner.downgrade(),
-                px: 0,
-                py: 0,
-            }),
-        };
-        let mut next = cell.clone();
-        next.data.menu_mut().px = 1;
-        assert!(redraw_compare_data(&cell, &next));
-        let mut span = redraw_span {
-            x: 0,
-            width: 2,
-            data: cell.data.clone(),
-        };
-        assert!(cell.data.menu().md.is(&owner));
-        let weak_count = owner.weak_count();
-        {
-            let mut scratch = RedrawCellScratch::take();
-            scratch.0.extend([cell.clone(), next.clone()]);
-            assert_eq!(owner.weak_count(), weak_count + 2);
-        }
-        assert_eq!(owner.weak_count(), weak_count);
-        REDRAW_CELLS.with(|cache| assert!(cache.borrow().is_empty()));
-        let scene = redraw_scene {
-            c: std::rc::Weak::new(),
-            w: crate::src::shared::window::WindowWeak::new(),
-            lines: Box::default(),
-            generation: 0,
-            sx: 0,
-            sy: 0,
-            ox: 0,
-            oy: 0,
-        };
-        let mut dctx = redraw_draw_ctx {
-            scene: &scene,
-            active: std::rc::Weak::new(),
-            marked: std::rc::Weak::new(),
-            status_lines: 0,
-            pane_lines: PANE_LINES_SINGLE,
-            default_gc: grid_cell::default(),
-            flags: 0,
-        };
-        owner.try_borrow_mut().unwrap().closed = true;
-        // Closed and expired spans return before accessing the drawing context.
-        unsafe {
-            redraw_draw_menu_span(&mut dctx, &span, 0, 0, 2);
-        }
-        drop(owner);
-        assert!(!span.data.menu().md.is_alive());
-        unsafe {
-            redraw_draw_menu_span(&mut dctx, &span, 0, 0, 2);
-        }
-        assert!(redraw_compare_data(&cell, &next));
-        cell.data = redraw_span_data::Empty;
-        assert!(!redraw_compare_data(&cell, &next));
-    }
 }

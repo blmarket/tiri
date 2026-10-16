@@ -13,9 +13,7 @@ use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args_command_state;
 use crate::src::shared::arguments::*;
-pub use crate::src::shared::arguments::{
-    args, args_entry, args_parse, args_parse_cb, args_tree, args_value, args_values,
-};
+pub use crate::src::shared::arguments::{args, args_entry, args_parse, args_value};
 use crate::src::shared::command::{cmd, cmd_find_state, cmd_list, cmdq_item};
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_DQ, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::text::utf8::utf8_strvis;
@@ -111,11 +109,6 @@ pub fn args_create() -> Box<args> {
 }
 fn args_push_positional_owned(args: &mut args, value: args_value) {
     args.values.push(value);
-}
-
-/// Append a positional command list and transfer its reference into `args`.
-pub fn args_push_positional_commands(args: &mut args, cmdlist: Rc<std::cell::RefCell<cmd_list>>) {
-    args_push_positional_owned(args, args_value::commands(cmdlist));
 }
 
 unsafe fn args_parse_flag_argument(
@@ -379,9 +372,6 @@ unsafe fn args_print_add_value(buf: &mut Vec<u8>, value: &args_value) {
         _ => {}
     }
 }
-pub unsafe fn args_print(args: &args) -> CString {
-    args_print_cstring(args)
-}
 
 pub(crate) unsafe fn args_print_cstring(args: &args) -> CString {
     let mut buf = Vec::new();
@@ -524,15 +514,6 @@ pub unsafe fn args_set_flag(args: *mut args, flag: u_char, flags: ::core::ffi::c
     args_set_value(&mut *args, flag, None, flags);
 }
 
-/// Transfer a command-list reference into a flag value.
-pub fn args_set_owned_commands(
-    args: &mut args,
-    flag: u_char,
-    cmdlist: Rc<std::cell::RefCell<cmd_list>>,
-    flags: ::core::ffi::c_int,
-) {
-    args_set_value(args, flag, Some(args_value::commands(cmdlist)), flags);
-}
 pub fn args_get(args: &args, flag: u_char) -> Option<&CStr> {
     args_last_value(args, flag).and_then(args_value::as_string)
 }
@@ -714,9 +695,6 @@ pub(crate) unsafe fn args_make_commands_get_command_cstring(state: &args_command
     };
     CString::new(prefix).expect("command prefix has no NUL")
 }
-pub fn args_first_value(args: &args, flag: u_char) -> Option<&args_value> {
-    args_flag_values(args, flag).next()
-}
 
 fn strtonum_error(errstr: &CStr) -> ArgumentValueError {
     match errstr.to_bytes() {
@@ -763,36 +741,6 @@ pub fn parse_percentage(
         return percentage_share(curval, percentage, minval, maxval);
     }
     parse_number(value, minval, maxval)
-}
-
-/// Converts a percentage after expanding format expressions against `item`.
-///
-/// # Safety
-/// `item` must be a valid command-queue item whenever a format expression is
-/// expanded.
-pub unsafe fn parse_percentage_and_expand(
-    value: &CStr,
-    minval: i64,
-    maxval: i64,
-    curval: i64,
-    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
-) -> Result<i64, ArgumentValueError> {
-    let bytes = value.to_bytes();
-    if let Some(percentage) = bytes.strip_suffix(b"%") {
-        let percentage = CString::new(percentage).map_err(|_| ArgumentValueError::Invalid)?;
-        let formatted = format_single_from_target_cstring(
-            (item_handle).expect("command queue item"),
-            percentage.as_ptr(),
-        );
-        let result = parse_number(formatted.as_c_str(), 0, 1000)
-            .and_then(|percentage| percentage_share(curval, percentage, minval, maxval));
-        return result;
-    }
-    let formatted = format_single_from_target_cstring(
-        (item_handle).expect("command queue item"),
-        value.as_ptr(),
-    );
-    parse_number(formatted.as_c_str(), minval, maxval)
 }
 
 /// Converts the last string value stored for `flag` to a bounded integer.
@@ -852,53 +800,6 @@ pub unsafe fn args_percentage_result(
     }
     parse_percentage(
         value.as_string().expect("string argument"),
-        minval,
-        maxval,
-        curval,
-    )
-}
-
-/// Converts the last stored string after format expansion as an integer or percentage.
-///
-/// # Safety
-/// `args` must point to a valid argument store and `item` must be valid for
-/// format expansion.
-pub unsafe fn args_percentage_and_expand_result(
-    args: *mut args,
-    flag: u_char,
-    minval: ::core::ffi::c_longlong,
-    maxval: ::core::ffi::c_longlong,
-    curval: ::core::ffi::c_longlong,
-    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
-) -> Result<i64, ArgumentValueError> {
-    if !(&*args).tree.contains_key(&flag) {
-        return Err(ArgumentValueError::Missing);
-    }
-    let value = args_last_value(&*args, flag).ok_or(ArgumentValueError::Empty)?;
-    if value.type_0() as ::core::ffi::c_uint
-        != ARGS_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
-        || value.as_string().is_none()
-    {
-        return Err(ArgumentValueError::Missing);
-    }
-    parse_percentage_and_expand(
-        value.as_string().expect("string argument"),
-        minval,
-        maxval,
-        curval,
-        item_handle,
-    )
-}
-
-/// Converts an optional C string as an integer or percentage.
-pub fn args_string_percentage_result(
-    value: Option<&CStr>,
-    maxval: ::core::ffi::c_longlong,
-    curval: ::core::ffi::c_longlong,
-) -> Result<i64, ArgumentValueError> {
-    let minval: ::core::ffi::c_longlong = 0 as ::core::ffi::c_longlong;
-    parse_percentage(
-        value.ok_or(ArgumentValueError::Missing)?,
         minval,
         maxval,
         curval,
@@ -973,67 +874,5 @@ mod ownership_tests {
             assert!(args_parse(&required, &[]).is_ok());
             assert!(args_parse(&required, &values[..1]).is_err());
         }
-    }
-
-    #[test]
-    fn dropping_argument_owner_releases_flag_and_positional_command_references() {
-        unsafe {
-            let commands = crate::src::cmd::cmd_list_new();
-            let mut owner = Box::new(args::empty());
-            args_set_value(
-                &mut owner,
-                b'c',
-                Some(args_value::commands(commands.clone())),
-                0,
-            );
-            args_push_positional_owned(&mut owner, args_value::commands(commands.clone()));
-            assert_eq!(std::rc::Rc::strong_count(&commands), 3);
-            drop(owner);
-            assert_eq!(std::rc::Rc::strong_count(&commands), 1);
-            drop(commands);
-        }
-    }
-
-    #[test]
-    fn repeated_optional_flags_keep_first_insertion_flags_and_print_separator() {
-        let mut args = args::empty();
-        args_set_value(&mut args, b'x', None, 0);
-        args_set_value(&mut args, b'x', None, 0);
-        args_set_value(
-            &mut args,
-            b'f',
-            Some(args_value::string(c"first".into())),
-            0,
-        );
-        args_set_value(
-            &mut args,
-            b'f',
-            Some(args_value::string(c"second".into())),
-            0,
-        );
-        args_set_value(&mut args, b'z', None, ARGS_ENTRY_OPTIONAL_VALUE);
-        args_set_value(&mut args, b'z', None, 0);
-        args_push_positional_owned(&mut args, args_value::string(c"-target".into()));
-        unsafe {
-            assert_eq!(
-                args_print_cstring(&args).as_bytes(),
-                b"-xx -f first -f second -z -- -target"
-            );
-            assert_eq!(
-                args_percentage_result(&mut args, b'z', 0, 100, 80),
-                Err(ArgumentValueError::Empty)
-            );
-            assert_eq!(
-                args_percentage_result(&mut args, b'y', 0, 100, 80),
-                Err(ArgumentValueError::Missing)
-            );
-            // A string value is converted, as a percentage of the current
-            // value or as a plain number.
-            args_set_value(&mut args, b'p', Some(args_value::string(c"25%".into())), 0);
-            args_set_value(&mut args, b'n', Some(args_value::string(c"7".into())), 0);
-            assert_eq!(args_percentage_result(&mut args, b'p', 0, 100, 80), Ok(20));
-            assert_eq!(args_percentage_result(&mut args, b'n', 0, 100, 80), Ok(7));
-        }
-        assert_eq!(args.tree[&b'z'].flags, ARGS_ENTRY_OPTIONAL_VALUE);
     }
 }

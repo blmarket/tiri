@@ -30,7 +30,6 @@ pub(crate) fn set_spawn_cause(cause: Option<&mut Option<CString>>, parts: &[&[u8
 }
 
 use crate::src::shared::abi::__off_t;
-use crate::src::shared::abi::*;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::spawn::SPAWN_KILL;
 use crate::src::shared::spawn::{spawn_editor_state, spawn_finish_edit_cb};
@@ -196,18 +195,6 @@ impl Drop for spawn_editor_state {
             unlink(self.path.as_ptr());
         }
     }
-}
-pub unsafe fn spawn_cancel_editor(mut es: *mut spawn_editor_state) {
-    if es.is_null() {
-        return;
-    }
-    (*es).cb = None;
-}
-pub unsafe fn spawn_get_editor_pid(mut es: *mut spawn_editor_state) -> pid_t {
-    if es.is_null() {
-        return -(1 as pid_t);
-    }
-    (*es).pid
 }
 pub unsafe fn spawn_editor_finish(wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
     wp_owner.finish_editing();

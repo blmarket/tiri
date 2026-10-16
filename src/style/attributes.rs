@@ -117,27 +117,3 @@ pub fn attributes_format(attr: i32) -> CString {
     bytes.truncate(written + 1);
     CString::from_vec_with_nul(bytes).expect("attribute names contain no NUL")
 }
-
-/// C ABI only. The pointer is valid until the next call on this thread or thread
-/// exit. Do not free it or access it concurrently with another call on that thread.
-/// Rust callers should retain the CString returned by attributes_format instead.
-/// # Safety
-/// The returned pointer must only be read before the next call to this shim on
-/// the same thread, and must not be freed by the caller.
-pub unsafe fn attributes_tostring(attr: i32) -> *const libc::c_char {
-    thread_local! {
-        static BUFFER: std::cell::RefCell<CString> = std::cell::RefCell::new(CString::default());
-    }
-    BUFFER.with(|buffer| {
-        let mut buffer = buffer.borrow_mut();
-        *buffer = attributes_format(attr);
-        buffer.as_ptr()
-    })
-}
-
-/// C ABI only.
-/// # Safety
-/// Input must point to a readable NUL-terminated string for this call.
-pub unsafe fn attributes_fromstring(input: *const libc::c_char) -> i32 {
-    attributes_parse_cstr(CStr::from_ptr(input)).unwrap_or(-1)
-}

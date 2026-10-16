@@ -2,44 +2,17 @@
 
 use std::ffi::{OsStr, OsString};
 use std::fs;
-use std::io;
-use std::os::fd::{BorrowedFd, FromRawFd, OwnedFd, RawFd};
+use std::os::fd::BorrowedFd;
 use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
-use std::ptr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use super::{ForkOutcome, Platform, ProcessInfo};
+use super::{Platform, ProcessInfo};
 
 /// The Linux platform implementation selected by the native server.
 pub struct Linux;
 
 impl Platform for Linux {
-    type OutputWakeup = tiri_rt::unix::Notification;
-
-    fn new_output_wakeup() -> io::Result<Self::OutputWakeup> {
-        tiri_rt::unix::Notification::new()
-    }
-
-    unsafe fn fork_pty(size: libc::winsize) -> io::Result<ForkOutcome> {
-        let mut master = -1;
-        let pid = unsafe { libc::forkpty(&mut master, ptr::null_mut(), ptr::null(), &size) };
-        if pid < 0 {
-            return Err(io::Error::last_os_error());
-        }
-        if pid == 0 {
-            return Ok(ForkOutcome::Child);
-        }
-        Ok(ForkOutcome::Parent {
-            pid,
-            master: unsafe { OwnedFd::from_raw_fd(master) },
-        })
-    }
-
-    unsafe fn close_fds_from(lowest: RawFd) {
-        unsafe { tiri_rt::unix::close_from(lowest) };
-    }
-
     fn pane_cwd(pty: BorrowedFd<'_>) -> Option<PathBuf> {
         // Mirrors tmux's osdep_get_cwd: prefer the foreground process group,
         // then fall back to the session leader. The group id is only a pid
@@ -55,12 +28,6 @@ impl Platform for Linux {
         let foreground_pgrp = tiri_rt::unix::terminal_foreground_group(pty).unwrap_or(-1);
         read_cwd(foreground_pgrp)
             .or_else(|| read_cwd(tiri_rt::unix::terminal_session(pty).unwrap_or(-1)))
-    }
-
-    fn peer_uid(socket: BorrowedFd<'_>) -> Option<u32> {
-        tiri_rt::unix::peer_credentials(socket)
-            .ok()
-            .map(|(uid, _)| uid)
     }
 
     fn process_table() -> Option<Vec<ProcessInfo>> {
@@ -233,6 +200,8 @@ fn read_ppid(pid: u32) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use std::fs::File;
+    use std::io;
+    use std::ptr;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;

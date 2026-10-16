@@ -3,12 +3,9 @@ use std::rc::Rc;
 use tiri::src::shared::command::cmd_list;
 
 use tiri::src::arguments::{
-    args_copy, args_create, args_first_value, args_parse as parse_args, args_percentage_result,
-    args_push_positional_commands, args_set_owned_commands, args_string,
-    args_string_percentage_result, args_strtonum_result, parse_number, parse_percentage,
-    ArgumentValueError,
+    args_copy, args_parse as parse_args, args_string, parse_number, ArgumentValueError,
 };
-use tiri::src::cmd::{cmd_list_new, cmd_list_print};
+use tiri::src::cmd::cmd_list_new;
 use tiri::src::shared::arguments::{args, args_parse, ArgumentValue, ARGS_PARSE_COMMANDS};
 
 fn cstring(value: &str) -> CString {
@@ -66,82 +63,6 @@ fn number_helper_preserves_syntax_bounds_and_diagnostics() {
     assert_eq!(error_message(ArgumentValueError::TooSmall), b"too small");
     assert_eq!(error_message(ArgumentValueError::TooLarge), b"too large");
     assert_eq!(error_message(ArgumentValueError::Invalid), b"invalid");
-}
-
-#[test]
-fn percentage_helper_preserves_literal_and_computed_bounds() {
-    let zero = cstring("0%");
-    let full = cstring("100%");
-    let maximum = cstring("1000%");
-    let percentage_too_large = cstring("1001%");
-    let computed_too_large = cstring("101%");
-    let computed_too_small = cstring("0%");
-    let malformed = cstring("bad%");
-    let empty = cstring("");
-
-    assert_eq!(parse_percentage(zero.as_c_str(), 0, 100, 80), Ok(0));
-    assert_eq!(parse_percentage(full.as_c_str(), 0, 100, 80), Ok(80));
-    assert_eq!(parse_percentage(maximum.as_c_str(), 0, 100, 10), Ok(100));
-    assert_eq!(
-        parse_percentage(percentage_too_large.as_c_str(), 0, 100, 10),
-        Err(ArgumentValueError::TooLarge)
-    );
-    assert_eq!(
-        parse_percentage(computed_too_large.as_c_str(), 0, 100, 100),
-        Err(ArgumentValueError::TooLarge)
-    );
-    assert_eq!(
-        parse_percentage(computed_too_small.as_c_str(), 1, 100, 100),
-        Err(ArgumentValueError::TooSmall)
-    );
-    assert_eq!(
-        parse_percentage(malformed.as_c_str(), 0, 100, 100),
-        Err(ArgumentValueError::Invalid)
-    );
-    assert_eq!(
-        parse_percentage(empty.as_c_str(), 0, 100, 100),
-        Err(ArgumentValueError::Empty)
-    );
-    assert_eq!(
-        args_string_percentage_result(None, 100, 80),
-        Err(ArgumentValueError::Missing)
-    );
-    assert_eq!(
-        args_string_percentage_result(Some(zero.as_c_str()), 100, 80),
-        Ok(0)
-    );
-    assert_eq!(error_message(ArgumentValueError::Empty), b"empty");
-}
-
-#[test]
-fn command_values_and_cached_strings_keep_their_storage_ownership() {
-    unsafe {
-        let mut args = args_create();
-        let cmdlist = cmd_list_new();
-        args_set_owned_commands(&mut args, b'c', cmdlist, 0);
-
-        assert_eq!(
-            args_strtonum_result(&mut *args, b'c', 0, 100),
-            Err(ArgumentValueError::Missing)
-        );
-        assert_eq!(
-            args_percentage_result(&mut *args, b'c', 0, 100, 100),
-            Err(ArgumentValueError::Missing)
-        );
-
-        let value = args_first_value(&args, b'c').unwrap();
-        let rendered = cmd_list_print(&value.as_commands().unwrap().borrow(), 0);
-        assert_eq!(rendered.as_bytes(), b"");
-        drop(args);
-
-        let mut args = args_create();
-        args_push_positional_commands(&mut args, cmd_list_new());
-        let first = args_string(&mut args, 0).map_or(std::ptr::null(), |value| value.as_ptr());
-        let second = args_string(&mut args, 0).map_or(std::ptr::null(), |value| value.as_ptr());
-        assert_eq!(first, second);
-        assert_eq!(CStr::from_ptr(first).to_bytes(), b"");
-        drop(args);
-    }
 }
 
 #[test]

@@ -86,17 +86,13 @@ use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
 use crate::src::shared::arguments::ArgumentValue;
 use crate::src::shared::arguments::*;
-pub use crate::src::shared::command::{cmd, cmd_entry, cmd_list, cmdq_item};
+pub use crate::src::shared::command::{cmd, cmd_entry, cmd_list};
 pub use crate::src::shared::command::{CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS};
 use crate::src::shared::command::{CMD_READONLY, CMD_STARTSERVER};
-pub use crate::src::shared::environment::environ;
-pub use crate::src::shared::format::{format_job_tree, format_tree};
-pub use crate::src::shared::key::key_event;
 pub use crate::src::shared::mouse::mouse_event;
-pub use crate::src::shared::options::{options, options_array_item, options_entry, options_value};
+pub use crate::src::shared::options::{options_array_item, options_entry, options_value};
 pub use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::SessionRef;
-pub use crate::src::shared::tty::tty_term;
 pub use crate::src::shared::window::winlink;
 use crate::src::tmux::global_options;
 use crate::src::window::winlink_find_by_window;
@@ -259,9 +255,6 @@ pub(crate) unsafe fn cmd_stringify_argv_cstring(argv: &[CString]) -> Option<CStr
 }
 pub fn cmd_get_entry(cmd: &cmd) -> &'static cmd_entry {
     cmd.entry
-}
-pub fn cmd_get_args(cmd: &cmd) -> Option<&args> {
-    cmd.args.as_deref()
 }
 pub fn cmd_get_args_mut(cmd: &mut cmd) -> Option<&mut args> {
     cmd.args.as_deref_mut()
@@ -441,9 +434,6 @@ pub unsafe fn cmd_copy(cmd: &cmd, argv: &Vec<CString>) -> refbox::RefBox<cmd> {
     }
     new_cmd
 }
-pub unsafe fn cmd_print(cmd: &cmd) -> CString {
-    cmd_print_cstring(cmd)
-}
 
 pub(crate) unsafe fn cmd_print_cstring(cmd: &cmd) -> CString {
     let args = args_print_cstring(cmd.args.as_deref().expect("parsed command arguments"));
@@ -569,9 +559,6 @@ pub(crate) unsafe fn cmd_list_print_cstring(cmdlist: &cmd_list, flags: i32) -> C
     CString::new(buf).expect("command list contains no interior NUL")
 }
 
-pub unsafe fn cmd_list_print(cmdlist: &cmd_list, flags: ::core::ffi::c_int) -> CString {
-    cmd_list_print_cstring(cmdlist, flags)
-}
 pub fn cmd_list_first(cmdlist: &cmd_list) -> Option<refbox::Borrow<'_, cmd>> {
     cmdlist
         .list
@@ -673,9 +660,6 @@ pub unsafe fn cmd_mouse_pane(
     }
     pane
 }
-pub unsafe fn cmd_template_replace(template: &CStr, s: &CStr, idx: ::core::ffi::c_int) -> CString {
-    cmd_template_replace_cstring(template, s, idx)
-}
 
 pub(crate) unsafe fn cmd_template_replace_cstring(
     template: &CStr,
@@ -749,36 +733,4 @@ pub(crate) unsafe fn cmd_template_replace_cstring(
         log_bytes(text.as_bytes())
     ));
     text
-}
-
-#[cfg(test)]
-mod template_replace_tests {
-    use super::*;
-
-    /// (template, replacement, index, expected output)
-    type TemplateCase<'a> = (&'a [u8], &'a [u8], i32, &'a [u8]);
-
-    #[test]
-    fn preserves_template_substitution_and_quoting_bytes() {
-        let cases: &[TemplateCase] = &[
-            (b"plain\0", b"unused\0", 1, b"plain"),
-            (b"A%1B\0", b"\xff\0", 1, b"A\xffB"),
-            (b"A%2B\0", b"x\0", 1, b"A%2B"),
-            (b"A%%B%%C\0", b"a'b\0", 1, b"Aa'\\''bB%%C"),
-            (b"A%1%B\0", b"\"\\$;~\0", 1, b"A\\\"\\\\\\$\\;\\~B"),
-        ];
-        for &(template, replacement, idx, expected) in cases {
-            let actual = unsafe {
-                cmd_template_replace_cstring(
-                    CStr::from_bytes_with_nul(template).unwrap(),
-                    CStr::from_bytes_with_nul(replacement).unwrap(),
-                    idx,
-                )
-            };
-            assert_eq!(actual.as_bytes(), expected);
-        }
-
-        let owned = unsafe { cmd_template_replace(c"%1", c"x", 1) };
-        assert_eq!(owned.as_bytes(), b"x");
-    }
 }

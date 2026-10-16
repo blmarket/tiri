@@ -2530,41 +2530,4 @@ mod owned_callback_tests {
             drop(ft_owner);
         }
     }
-
-    #[test]
-    fn callback_strings_and_timestamps_outlive_the_buffer_and_tree() {
-        use crate::src::paste::{paste_free, paste_get_name, paste_set_owned};
-        unsafe {
-            let mut cause: Option<std::ffi::CString> = None;
-            let name = c"callback-owned-results";
-            assert_eq!(
-                paste_set_owned(
-                    b"A\xff\0B".to_vec().into_boxed_slice(),
-                    Some(name),
-                    Some(&mut cause)
-                ),
-                0
-            );
-            let pb = paste_get_name(name).unwrap();
-            let mut ft_owner = format_create(None, None, 0, 0);
-            let ft = &raw mut *ft_owner;
-            (*ft).pb = Some(pb.clone());
-            let full = format_cb_buffer_full(ft).unwrap();
-            let sample = format_cb_buffer_sample(ft).unwrap();
-            let created = format_cb_buffer_created(ft).unwrap();
-            let old_created = pb.borrow().created;
-            pb.borrow_mut().created = 0;
-            assert_eq!(format_cb_buffer_created(ft), Some(0));
-            let weak = pb.clone();
-            paste_free(&pb);
-            drop(pb);
-            assert!(!weak.is_alive(), "format tree only observes the buffer");
-            assert!(format_cb_buffer_full(ft).is_none());
-            drop(ft_owner);
-            assert!(!weak.is_alive());
-            assert_eq!(full.as_bytes(), b"A\xff");
-            assert!(!sample.as_bytes().is_empty());
-            assert_eq!(created, old_created);
-        }
-    }
 }

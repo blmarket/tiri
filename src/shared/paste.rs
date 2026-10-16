@@ -12,10 +12,6 @@ impl PasteBufferRef {
         Self(owner.downgrade())
     }
 
-    pub fn is_alive(&self) -> bool {
-        self.0.is_alive()
-    }
-
     pub fn try_borrow(&self) -> Option<Borrow<'_, paste_buffer>> {
         match self.0.try_borrow_mut() {
             Ok(value) => Some(value),

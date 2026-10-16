@@ -8,7 +8,6 @@ pub struct progress_bar {
 }
 
 pub type progress_bar_state = ::core::ffi::c_uint;
-pub const PROGRESS_BAR_PAUSED: progress_bar_state = 4;
 pub const PROGRESS_BAR_INDETERMINATE: progress_bar_state = 3;
 pub const PROGRESS_BAR_HIDDEN: progress_bar_state = 0;
 
@@ -87,7 +86,6 @@ pub struct visible_range {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ::core::mem::{align_of, offset_of, size_of};
 
     #[test]
     fn visible_ranges_owns_initialized_storage() {
@@ -104,21 +102,5 @@ mod tests {
         ranges.clear();
         assert!(ranges.storage.is_empty());
         assert_eq!(ranges.used, 0);
-    }
-
-    #[test]
-    fn display_layout_matches_translated_c_baseline() {
-        assert_eq!(size_of::<progress_bar>(), 8);
-        assert_eq!(align_of::<progress_bar>(), 4);
-        assert_eq!(offset_of!(progress_bar, state), 0);
-        assert_eq!(offset_of!(progress_bar, progress), 4);
-        assert_eq!(size_of::<progress_bar_state>(), 4);
-        assert_eq!(align_of::<progress_bar_state>(), 4);
-        assert_eq!(size_of::<screen_cursor_style>(), 4);
-        assert_eq!(align_of::<screen_cursor_style>(), 4);
-        assert_eq!(PROGRESS_BAR_HIDDEN, 0);
-        assert_eq!(PROGRESS_BAR_PAUSED, 4);
-        assert_eq!(SCREEN_CURSOR_DEFAULT, 0);
-        assert_eq!(SCREEN_CURSOR_BAR, 3);
     }
 }

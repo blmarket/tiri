@@ -40,8 +40,6 @@ pub struct client_file {
 }
 
 pub struct client_file_event<'a> {
-    /// Borrowed retained client for this callback; clone to retain it afterward.
-    pub client: Option<&'a ClientRef>,
     pub path: Option<&'a CStr>,
     pub error: i32,
     pub closed: bool,

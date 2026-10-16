@@ -7,22 +7,17 @@ use crate::src::hyperlinks::{hyperlinks_get, hyperlinks_put, HyperlinksRef};
 use crate::src::log::{fatalx, log_cstr, log_debug};
 use crate::src::options::options_string_to_style;
 use crate::src::shared::abi::*;
-pub use crate::src::shared::command::cmdq_item;
-pub use crate::src::shared::environment::environ;
+pub use crate::src::shared::format::format_tree;
 pub use crate::src::shared::format::FORMAT_NOJOBS;
-pub use crate::src::shared::format::{format_job_tree, format_tree};
 use crate::src::shared::grid::*;
 use crate::src::shared::hyperlinks::hyperlinks_uri;
-pub use crate::src::shared::key::key_event;
 pub use crate::src::shared::limits::UINT_MAX;
-pub use crate::src::shared::mouse::mouse_event;
 pub use crate::src::shared::options::options_table_entry;
 pub use crate::src::shared::options::{options, options_entry};
 pub use crate::src::shared::pane::{
     PANE_SCROLLBARS_CHARACTER, PANE_SCROLLBARS_DEFAULT_PADDING, PANE_SCROLLBARS_DEFAULT_WIDTH,
 };
 use crate::src::shared::style::*;
-pub use crate::src::shared::tty::tty_term;
 use crate::src::style::attributes::{attributes_format, attributes_parse_cstr};
 use crate::src::style::colour::{colour_format, colour_parse_cstr};
 use crate::src::text::utf8::utf8_set;
@@ -1094,25 +1089,10 @@ pub unsafe fn style_ranges_clear(mut srs: *mut style_ranges) {
         (*srs).clear();
     }
 }
-pub unsafe fn style_ranges_get_range(mut srs: *mut style_ranges, mut x: u_int) -> *mut style_range {
-    if srs.is_null() {
-        return ::core::ptr::null_mut::<style_range>();
-    }
-    for range in (*srs).as_slice() {
-        let sr = range.as_ref();
-        if x >= sr.start && x < sr.end {
-            return sr as *const style_range as *mut style_range;
-        }
-    }
-    ::core::ptr::null_mut::<style_range>()
-}
 
 #[cfg(test)]
 mod style_ranges_tests {
-    use super::{
-        style_range, style_ranges, style_ranges_clear, style_ranges_get_range, style_ranges_init,
-        STYLE_RANGE_LEFT,
-    };
+    use super::{style_range, style_ranges, STYLE_RANGE_LEFT};
     use crate::src::shared::abi::u_int;
 
     fn range(start: u_int, end: u_int) -> Box<style_range> {
@@ -1136,36 +1116,5 @@ mod style_ranges_tests {
         drop(original);
         assert_eq!(cloned.as_slice()[0].start, 2);
         assert_eq!(cloned.as_slice()[0].end, 4);
-    }
-
-    #[test]
-    fn style_ranges_own_stable_boxes_and_support_clear_and_release() {
-        let mut ranges = style_ranges::default();
-        unsafe {
-            style_ranges_init(&mut ranges);
-            let first = range(2, 4);
-            let first_ptr = (&*first) as *const style_range as *mut style_range;
-            ranges.push(first);
-            for i in 0..1024 {
-                ranges.push(range(10 + i, 11 + i));
-            }
-            assert_eq!(style_ranges_get_range(&mut ranges, 3), first_ptr);
-
-            style_ranges_clear(&mut ranges);
-            assert!(style_ranges_get_range(&mut ranges, 3).is_null());
-            let after_clear = range(30, 35);
-            let after_clear_ptr = (&*after_clear) as *const style_range as *mut style_range;
-            ranges.push(after_clear);
-            assert_eq!(style_ranges_get_range(&mut ranges, 32), after_clear_ptr);
-
-            drop(std::mem::take(&mut ranges));
-            assert!(ranges.is_empty());
-            assert_eq!(ranges.capacity(), 0);
-            assert!(style_ranges_get_range(&mut ranges, 32).is_null());
-
-            style_ranges_init(&mut ranges);
-            ranges.push(range(40, 45));
-            assert!(!style_ranges_get_range(&mut ranges, 42).is_null());
-        }
     }
 }

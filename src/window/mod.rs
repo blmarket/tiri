@@ -33,7 +33,6 @@ use libc::strcasecmp;
 use crate::src::server::{marked_pane, server_check_marked, server_clear_marked};
 use crate::src::server_client::Client;
 use crate::src::server_fn::server_redraw_window;
-use crate::src::style::colour::colour_palette_get;
 use crate::src::tmux::{clean_name_cstring, global_options};
 use crate::src::tty::tty_update_window_offset;
 use std::cell::UnsafeCell;
@@ -50,9 +49,7 @@ use crate::src::shared::limits::UINT_MAX;
 use crate::src::shared::options::options;
 use crate::src::shared::pane::{window_panes, PaneHistory};
 use crate::src::shared::pane::{PANE_STATUS_BOTTOM, PANE_STATUS_TOP};
-pub use crate::src::shared::window::{
-    window_mode, window_mode_entry, window_winlinks, windows, winlink, winlink_stack, winlinks,
-};
+pub use crate::src::shared::window::{windows, winlink};
 use crate::src::shared::window::{
     WINDOW_ACTIVITY, WINLINK_ACTIVITY, WINLINK_BELL, WINLINK_SILENCE,
 };
@@ -124,10 +121,6 @@ impl windows {
 
     pub fn resolve(id: u32) -> Option<WindowRef> {
         WINDOWS.with_borrow(|index| index.storage.get(&id)?.upgrade())
-    }
-
-    pub fn is_empty() -> bool {
-        WINDOWS.with_borrow(|index| index.storage.is_empty())
     }
 
     fn alloc_id() -> u_int {
@@ -446,13 +439,6 @@ unsafe fn window_set_active_pane(
     }
     1
 }
-unsafe fn window_pane_get_palette(
-    wp_owner: Option<&Rc<std::cell::UnsafeCell<window_pane>>>,
-    mut c: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
-    let Some(pane) = wp_owner else { return -1 };
-    colour_palette_get(Some(pane.borrow_palette()), c)
-}
 unsafe fn window_redraw_active_switch(
     window: &WindowRef,
     previous: Option<&Rc<UnsafeCell<window_pane>>>,
@@ -769,10 +755,6 @@ fn window_pane_first(w: Option<&window>) -> Option<Rc<std::cell::UnsafeCell<wind
     Some(w?.panes.first()?.upgrade().expect("live pane in ordering"))
 }
 
-fn window_pane_last(w: Option<&window>) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    Some(w?.panes.last()?.upgrade().expect("live pane in ordering"))
-}
-
 unsafe fn window_get_pane_status(w: &window) -> ::core::ffi::c_int {
     options_get_number_ref(
         w.options.as_deref().expect("window options"),
@@ -785,52 +767,4 @@ unsafe fn window_get_pane_lines(w: &window) -> pane_lines {
         w.options.as_deref().expect("window options"),
         c"pane-border-lines",
     ) as pane_lines
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// `next_window` must keep working for a window that was already removed
-    /// from the index (e.g. a traversal cursor destroyed by a callback).
-    #[test]
-    fn next_window_of_removed_window_continues_traversal() {
-        unsafe {
-            let a = window::new_ref();
-            let b = window::new_ref();
-            let c = window::new_ref();
-            (*a.get()).id = 0xFFFF_0001;
-            (*b.get()).id = 0xFFFF_0002;
-            (*c.get()).id = 0xFFFF_0003;
-            for w in [&a, &b, &c] {
-                assert!(windows::insert(w).is_none());
-            }
-
-            assert!(WindowRef::ptr_eq(
-                &windows::next(&*a.get()).upgrade().unwrap(),
-                &b
-            ));
-
-            windows::remove(&b);
-            assert!(windows::resolve(0xFFFF_0002).is_none());
-            // Previous behaviour returned None here (the window's `owner`
-            // handle had been reset), ending the traversal early.
-            assert!(WindowRef::ptr_eq(
-                &windows::next(&*b.get()).upgrade().unwrap(),
-                &c
-            ));
-            assert!(WindowRef::ptr_eq(
-                &windows::next(&*a.get()).upgrade().unwrap(),
-                &c
-            ));
-
-            // Dropping the last owner unregisters the window.
-            drop(a);
-            drop(b);
-            drop(c);
-            assert!(windows::resolve(0xFFFF_0001).is_none());
-            assert!(windows::resolve(0xFFFF_0003).is_none());
-            assert!(windows::is_empty());
-        }
-    }
 }

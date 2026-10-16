@@ -18,7 +18,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use tracing::{info, warn};
 
-use crate::observability::v1::{PaneId, PaneObservability, ScreenSource, ServerObservability};
+use crate::observability::v1::{PaneId, PaneObservability, ServerObservability};
 use crate::platform::{CurrentPlatform, Platform};
 
 use manifest::{Bundle, Rules};
@@ -727,7 +727,7 @@ fn inspect(
         }
     };
 
-    let screen = match tracked.pane.screen(ScreenSource::Visible, SCREEN_LINES) {
+    let screen = match tracked.pane.screen(SCREEN_LINES) {
         Ok(screen) => screen,
         Err(error) => {
             warn!(

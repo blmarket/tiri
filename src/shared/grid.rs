@@ -57,22 +57,6 @@ impl<T> GridArray<T> {
             .get_or_insert_with(|| Box::new(GridArrayStorage(Vec::new())))
             .0
     }
-    // Vec pointer access does not materialize a slice reference. Callers may
-    // retain disjoint element pointers until an operation changes the array.
-    pub(crate) fn as_mut_ptr(&mut self) -> *mut T {
-        self.0
-            .as_mut()
-            .map_or(std::ptr::NonNull::dangling().as_ptr(), |items| {
-                items.0.as_mut_ptr()
-            })
-    }
-    pub(crate) fn as_ptr(&self) -> *const T {
-        self.0
-            .as_ref()
-            .map_or(std::ptr::NonNull::dangling().as_ptr(), |items| {
-                items.0.as_ptr()
-            })
-    }
     pub(crate) fn resize_with(&mut self, len: usize, init: impl FnMut() -> T) {
         self.storage().resize_with(len, init);
     }

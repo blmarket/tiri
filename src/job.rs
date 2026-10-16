@@ -632,7 +632,13 @@ pub unsafe fn job_print_summary(
         cmdq_print(item_handle, |out| {
             write!(out, "Job {}: ", n)?;
             out.write_all(cmd.as_deref().unwrap_or(c"(null)").to_bytes())?;
-            write!(out, " [fd={}, pid={}, status={}]", fd, pid, status.into_raw())
+            write!(
+                out,
+                " [fd={}, pid={}, status={}]",
+                fd,
+                pid,
+                status.into_raw()
+            )
         });
     }
 }

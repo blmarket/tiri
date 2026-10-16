@@ -5716,16 +5716,6 @@ fn key_string_lookup_string_bytes(input: &CStr) -> key_code {
     key | modifiers
 }
 
-fn key_string_lookup_string_impl(string: &CStr) -> key_code {
-    key_string_lookup_string_bytes(string)
-}
-/// Parse a complete key name from bytes without converting it to UTF-8.
-/// Embedded NUL bytes and invalid key names return `None`.
-pub fn key_string_parse(input: &[u8]) -> Option<key_code> {
-    let input = CString::new(input).ok()?;
-    key_string_parse_cstr(&input)
-}
-
 /// Parse a NUL-terminated key name without retaining the input pointer.
 pub fn key_string_parse_cstr(input: &CStr) -> Option<key_code> {
     if input.to_bytes().is_empty() {
@@ -5733,29 +5723,6 @@ pub fn key_string_parse_cstr(input: &CStr) -> Option<key_code> {
     }
     let key = key_string_lookup_string_bytes(input);
     (key != KEYC_UNKNOWN).then_some(key)
-}
-
-/// C ABI compatibility shim for the historical sentinel-returning parser.
-///
-/// # Safety
-/// `string` must point to a readable NUL-terminated string for this call.
-pub unsafe fn key_string_lookup_string(string: &CStr) -> key_code {
-    key_string_lookup_string_impl(string)
-}
-
-/// Format canonical key text into a caller-owned NUL-terminated buffer.
-///
-/// The returned length excludes the trailing NUL. If `output` is too small,
-/// this function returns `None` without modifying it. The output matches
-/// [`key_string_format`].
-pub fn key_string_format_into(key: key_code, with_flags: bool, output: &mut [u8]) -> Option<usize> {
-    let formatted = key_string_format_bytes(key, with_flags);
-    if output.len() <= formatted.len() {
-        return None;
-    }
-    output[..formatted.len()].copy_from_slice(&formatted);
-    output[formatted.len()] = 0;
-    Some(formatted.len())
 }
 
 /// Format a canonical key name into an owned NUL-terminated byte string.

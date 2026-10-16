@@ -20,8 +20,8 @@ use crate::src::proc::{
 use crate::src::server::server_start;
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{ssize_t, uint32_t};
+pub use crate::src::shared::client::client_files;
 use crate::src::shared::client::*;
-pub use crate::src::shared::client::{client, client_files, overlay_mode_cb};
 use crate::src::shared::client::{
     CLIENT_CONTROL, CLIENT_CONTROLCONTROL, CLIENT_CONTROL_WAITEXIT, CLIENT_LOGIN,
     CLIENT_NOSTARTSERVER, CLIENT_STARTSERVER, CLIENT_WRITE_ACK,
@@ -33,8 +33,7 @@ use crate::src::shared::posix_io::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, W
 use crate::src::shared::posix_terminal::{ICRNL, ONLCR, OPOST, TCSANOW, VMIN, VTIME};
 use crate::src::shared::process::{tmuxpeer, tmuxproc};
 pub use crate::src::shared::signal::{
-    ProcessSignal, SA_RESTART, SIGCHLD, SIGCONT, SIGHUP, SIGTERM, SIGTSTP, SIGWINCH, SIG_DFL,
-    SIG_IGN,
+    ProcessSignal, SA_RESTART, SIGHUP, SIGTSTP, SIG_DFL, SIG_IGN,
 };
 use crate::src::shared::terminal::*;
 use crate::src::tmux::{

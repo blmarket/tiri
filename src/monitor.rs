@@ -103,12 +103,6 @@ fn monitor_visit(
     }
 }
 
-fn monitor_pane_new() -> Box<monitor_pane> {
-    Box::new(monitor_pane::empty())
-}
-fn monitor_window_new() -> Box<monitor_window> {
-    Box::new(monitor_window::empty())
-}
 unsafe fn monitor_has_client(monitor: &refbox::Weak<monitor_set>) -> bool {
     monitor_borrow(monitor).is_some_and(|state| !state.client.ptr_eq(&Weak::new()))
 }

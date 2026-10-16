@@ -49,7 +49,7 @@ use std::ffi::{CStr, CString};
 use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub use ::libc::{CLOCK_MONOTONIC, CODESET, EEXIST, F_GETFL, F_SETFL, LC_CTYPE, LC_TIME};
+pub use ::libc::{CLOCK_MONOTONIC, CODESET, EEXIST, LC_CTYPE, LC_TIME};
 
 pub use ::libc::{S_IFDIR, S_IFMT};
 

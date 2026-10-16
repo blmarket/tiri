@@ -45,17 +45,6 @@ extern "C" {
         __delim: *const ::core::ffi::c_char,
     ) -> *mut ::core::ffi::c_char;
     pub fn tzset();
-    pub fn vasprintf(
-        __ptr: *mut *mut ::core::ffi::c_char,
-        __f: *const ::core::ffi::c_char,
-        __arg: ::core::ffi::VaList,
-    ) -> ::core::ffi::c_int;
-    pub fn vsnprintf(
-        __s: *mut ::core::ffi::c_char,
-        __maxlen: size_t,
-        __format: *const ::core::ffi::c_char,
-        __arg: ::core::ffi::VaList,
-    ) -> ::core::ffi::c_int;
     pub fn warnx(_: *const ::core::ffi::c_char, ...);
     pub fn wctomb(__s: *mut ::core::ffi::c_char, __wchar: wchar_t) -> ::core::ffi::c_int;
 }

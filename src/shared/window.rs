@@ -1,5 +1,5 @@
 //! Window identities and shared link/mode component declarations.
-pub use crate::src::window::{window, WindowRef, WindowWeak};
+pub use crate::src::window::{WindowRef, WindowWeak};
 
 use super::abi::u_int;
 use super::arguments::args;

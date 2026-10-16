@@ -343,18 +343,6 @@ unsafe fn session_update_activity(owner: &SessionRef, from: Option<SystemTime>) 
         }
     }
 }
-unsafe fn session_next_session(
-    s: Option<&SessionRef>,
-    sort_crit: &sort_criteria,
-) -> Option<SessionRef> {
-    session_adjacent(s, sort_crit, false)
-}
-unsafe fn session_previous_session(
-    s: Option<&SessionRef>,
-    sort_crit: &sort_criteria,
-) -> Option<SessionRef> {
-    session_adjacent(s, sort_crit, true)
-}
 unsafe fn session_adjacent(
     s: Option<&SessionRef>,
     sort_crit: &sort_criteria,
@@ -827,9 +815,6 @@ impl Drop for session {
         unsafe { session_free(self) }
     }
 }
-
-#[cfg(test)]
-mod sorted_session_owners_tests;
 
 #[cfg(test)]
 mod winlink_storage_tests;

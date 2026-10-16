@@ -350,9 +350,6 @@ pub fn cmdq_new() -> Box<cmdq_list> {
     })
 }
 
-pub fn cmdq_get_name(item: &cmdq_item) -> Option<&std::ffi::CStr> {
-    item.name.as_deref()
-}
 pub fn cmdq_get_cmd(item: &cmdq_item) -> refbox::Weak<cmd> {
     item.command_handle()
 }

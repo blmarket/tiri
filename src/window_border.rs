@@ -85,9 +85,6 @@ pub(crate) unsafe fn window_render_fill_cell(
     drop(s);
     (new_gc.data.width == 1).then_some(new_gc)
 }
-pub unsafe fn window_set_fill_cells(w_owner: &WindowRef) {
-    w_owner.refresh_fill_cells();
-}
 
 unsafe fn window_copy_fill_cell(mut gc: *mut grid_cell, fill: &grid_cell) {
     (*gc).data = utf8_copy(&fill.data);

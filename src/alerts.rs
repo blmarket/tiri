@@ -61,15 +61,6 @@ fn alerts_pop_front<T>(queue: &mut VecDeque<T>) -> Option<(T, bool)> {
     Some((item, !queue.is_empty()))
 }
 
-fn alerts_enqueue<T>(queue: &mut VecDeque<T>, queued: &mut ::core::ffi::c_int, item: T) -> bool {
-    if *queued != 0 {
-        return false;
-    }
-    *queued = 1;
-    queue.push_back(item);
-    true
-}
-
 unsafe fn alerts_callback() {
     loop {
         let Some((owner, has_next)) = alerts::pop_front() else {
@@ -140,7 +131,7 @@ pub unsafe fn alerts_queue(owner: &WindowRef, flags: i32) {
 
 #[cfg(test)]
 mod alerts_list_tests {
-    use super::{alerts_enqueue, alerts_pop_front};
+    use super::alerts_pop_front;
     use std::collections::VecDeque;
 
     fn run_callback<T>(queue: &mut VecDeque<T>, mut process: impl FnMut(T, &mut VecDeque<T>)) {
@@ -185,26 +176,5 @@ mod alerts_list_tests {
 
         assert_eq!(seen, [1]);
         assert_eq!(queue, VecDeque::from([2]));
-    }
-
-    #[test]
-    fn queue_flag_prevents_duplicate_membership_until_cleared() {
-        let mut queue = VecDeque::new();
-        let mut queued = 0;
-
-        assert!(alerts_enqueue(&mut queue, &mut queued, 1));
-        assert!(!alerts_enqueue(&mut queue, &mut queued, 2));
-        assert_eq!(queue, VecDeque::from([1]));
-        assert_eq!(queued, 1);
-
-        let (item, has_next) = alerts_pop_front(&mut queue).unwrap();
-        assert_eq!(item, 1);
-        assert!(!has_next);
-        assert!(!alerts_enqueue(&mut queue, &mut queued, 2));
-        assert!(queue.is_empty());
-
-        queued = 0;
-        assert!(alerts_enqueue(&mut queue, &mut queued, 3));
-        assert_eq!(queue, VecDeque::from([3]));
     }
 }

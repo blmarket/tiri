@@ -57,7 +57,7 @@ use crate::src::shared::screen::{
 };
 use crate::src::shared::terminal::*;
 use crate::src::shared::tty::*;
-pub use crate::src::shared::tty::{tty, tty_ctx, tty_ctx_set_client_cb, tty_style_ctx, tty_term};
+pub use crate::src::shared::tty::{tty, tty_ctx, tty_style_ctx, tty_term};
 use crate::src::shared::tty::{
     TERM_256COLOURS, TERM_DECFRA, TERM_DECSLRM, TERM_NOAM, TERM_RGBCOLOURS, TERM_VT100LIKE,
     TTY_ALL_REQUEST_FLAGS, TTY_BLOCK, TTY_BLOCK_INTERVAL, TTY_CTX_CELL_INVALIDATE,

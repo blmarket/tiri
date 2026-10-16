@@ -1,5 +1,6 @@
+use crate::src::session::sessions;
+use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
-use crate::src::shared::session::{session, sessions};
 use std::ffi::CStr;
 
 fn node(name: &CStr) -> SessionRef {

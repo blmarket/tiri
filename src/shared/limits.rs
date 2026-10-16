@@ -19,8 +19,6 @@ pub const INT_MAX: ::core::ffi::c_int = __INT_MAX__;
 pub const USHRT_MAX: ::core::ffi::c_int =
     __SHRT_MAX__ * 2 as ::core::ffi::c_int + 1 as ::core::ffi::c_int;
 
-pub const UINT32_MAX: ::core::ffi::c_uint = 4294967295 as ::core::ffi::c_uint;
-
 pub const __LONG_LONG_MAX__: ::core::ffi::c_longlong =
     9223372036854775807 as ::core::ffi::c_longlong;
 

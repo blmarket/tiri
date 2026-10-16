@@ -45,7 +45,6 @@ pub const PANE_STYLECHANGED: ::core::ffi::c_int = 0x1000 as ::core::ffi::c_int;
 pub const PANE_THEMECHANGED: ::core::ffi::c_int = 0x2000 as ::core::ffi::c_int;
 pub const PANE_INPUTOFF: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
 pub const PANE_MINIMUM: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const PANE_MAXIMUM: ::core::ffi::c_int = 10000 as ::core::ffi::c_int;
 pub const PANE_REDRAW: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const PANE_STATUS_TOP: ::core::ffi::c_int = 1;
 pub const PANE_STATUS_BOTTOM: ::core::ffi::c_int = 2;
@@ -72,7 +71,6 @@ pub const PANE_SCROLLBARS_DEFAULT_PADDING: ::core::ffi::c_int = 0 as ::core::ffi
 pub const PANE_SCROLLBARS_DEFAULT_WIDTH: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const PANE_SCROLLBARS_CHARACTER: ::core::ffi::c_int = ' ' as i32;
 pub const PANE_FOCUSED: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const PANE_VISITED: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
 pub const PANE_DESTROYED: ::core::ffi::c_int = 0x10000 as ::core::ffi::c_int;
 
 /// The prompt cleanup closure owns this record; all other handles observe it.
@@ -142,44 +140,6 @@ impl window_panes {
         self.storage.iter().position(|weak| weak.ptr_eq(pane))
     }
 
-    pub fn push_front(&mut self, pane: std::rc::Weak<std::cell::UnsafeCell<window_pane>>) {
-        assert!(pane.strong_count() != 0, "live pane for insertion");
-        self.remove(&pane);
-        self.storage.insert(0, pane);
-    }
-
-    pub fn push_back(&mut self, pane: std::rc::Weak<std::cell::UnsafeCell<window_pane>>) {
-        assert!(pane.strong_count() != 0, "live pane for insertion");
-        self.remove(&pane);
-        self.storage.push(pane);
-    }
-
-    pub fn insert_before(
-        &mut self,
-        before: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-        pane: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-    ) {
-        assert!(pane.strong_count() != 0, "live pane for insertion");
-        self.remove(&pane);
-        let position = self
-            .position(before)
-            .expect("insertion point is not in pane collection");
-        self.storage.insert(position, pane);
-    }
-
-    pub fn insert_after(
-        &mut self,
-        after: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-        pane: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-    ) {
-        assert!(pane.strong_count() != 0, "live pane for insertion");
-        self.remove(&pane);
-        let position = self
-            .position(after)
-            .expect("insertion point is not in pane collection");
-        self.storage.insert(position + 1, pane);
-    }
-
     pub fn remove(&mut self, pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>) -> bool {
         let storage = &mut self.storage;
         let Some(position) = storage.iter().position(|weak| weak.ptr_eq(pane)) else {
@@ -187,36 +147,6 @@ impl window_panes {
         };
         storage.remove(position);
         true
-    }
-
-    pub fn swap(
-        &mut self,
-        first: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-        second: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-    ) {
-        let first_position = self
-            .position(first)
-            .expect("first pane is not in collection");
-        let second_position = self
-            .position(second)
-            .expect("second pane is not in collection");
-        self.storage.swap(first_position, second_position);
-    }
-
-    pub fn remove_at(
-        &mut self,
-        pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-    ) -> std::rc::Weak<std::cell::UnsafeCell<window_pane>> {
-        let position = self.position(pane).expect("pane is not in collection");
-        self.storage.remove(position)
-    }
-
-    pub fn insert_at(
-        &mut self,
-        position: usize,
-        pane: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-    ) {
-        self.storage.insert(position, pane);
     }
 }
 

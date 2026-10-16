@@ -93,7 +93,7 @@ pub struct msg_write_done {
     pub error: ::core::ffi::c_int,
 }
 
-pub use ::libc::{EBADF, EIO, O_RDONLY};
+pub use ::libc::{EBADF, EIO};
 
 unsafe fn read_imsg_payload<T: Copy>(imsg: &imsg) -> Option<T> {
     if imsg.data.len() < ::core::mem::size_of::<T>() {
@@ -250,7 +250,6 @@ unsafe fn file_fire_done_cb(owner: &Rc<UnsafeCell<client_file>>) {
                 )
             };
             callback(client_file_event {
-                client: client_owner.as_ref(),
                 path: path.as_deref(),
                 error,
                 closed: true,
@@ -325,7 +324,6 @@ unsafe fn file_fire_read(file_owner: &Rc<UnsafeCell<client_file>>) {
     // The listener may cancel the file. Keep its buffer outside the model so
     // that cancellation does not overlap a mutable borrow of the whole file.
     callback(client_file_event {
-        client: client_owner.as_ref(),
         path: path.as_deref(),
         error,
         closed: false,
@@ -823,7 +821,6 @@ unsafe fn file_write_finished(owner: &Rc<UnsafeCell<client_file>>) {
     file_send(cf, MSG_WRITE_DONE, None, bytes_of(&msg));
     if let Some(callback) = cf.cb.as_mut() {
         callback(client_file_event {
-            client: None,
             path: None,
             error: 0,
             closed: true,
@@ -854,7 +851,6 @@ unsafe fn file_write_error_callback(
         file_write_finished(owner);
     } else if let Some(callback) = cf.cb.as_mut() {
         callback(client_file_event {
-            client: None,
             path: None,
             error: 0,
             closed: true,
@@ -873,7 +869,6 @@ unsafe fn file_write_callback(owner: &Rc<UnsafeCell<client_file>>) {
         file_write_finished(owner);
     } else if let Some(callback) = cf.cb.as_mut() {
         callback(client_file_event {
-            client: None,
             path: None,
             error: 0,
             closed: true,

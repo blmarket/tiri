@@ -92,7 +92,7 @@ pub type ClientRef = Rc<UnsafeCell<client>>;
 /// Nonowning Client identity retained by callbacks and back references.
 pub type ClientWeak = std::rc::Weak<UnsafeCell<client>>;
 
-pub use crate::src::file::{client_file, client_file_cb, client_file_event, client_files};
+pub use crate::src::file::{client_file, client_file_cb, client_files};
 
 pub type overlay_resize_cb = Option<Box<dyn FnMut(&ClientRef)>>;
 

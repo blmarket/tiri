@@ -44,20 +44,6 @@ pub mod v1 {
         pub cursor_shape: u8,
     }
 
-    /// Which slice of a pane's terminal buffer to read.
-    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    pub enum ScreenSource {
-        /// The live viewport only — what an attached client currently sees,
-        /// with scrollback history excluded.
-        Visible,
-        /// The viewport plus recent scrollback history, rendered as displayed.
-        /// This is what lets a consumer read back beyond the current screen.
-        Recent,
-        /// Like [`Recent`](Self::Recent), but rows split only by a right-margin
-        /// soft wrap are rejoined into their logical lines.
-        RecentUnwrapped,
-    }
-
     /// Server-level access to observable panes.
     ///
     /// Resolving a pane returns a cheap, cacheable handle. Implementations must
@@ -80,7 +66,7 @@ pub mod v1 {
     ///
     /// `process` and `output_revision` are intended to be cheap. Consumers can
     /// inspect the foreground process and compare revisions before requesting
-    /// the more expensive terminal formatting performed by `last_lines`.
+    /// the more expensive terminal formatting performed by `screen`.
     ///
     /// Like [`ServerObservability`], this contract is single-threaded: a
     /// resolved handle stays on the server's thread.
@@ -92,40 +78,21 @@ pub mod v1 {
         /// terminal contents.
         fn output_revision(&self) -> io::Result<u64>;
 
-        /// Format up to `lines` rows from the bottom of the requested
-        /// [`ScreenSource`] — the visible viewport, recent scrollback, or
-        /// recent scrollback with soft wraps rejoined.
-        fn screen(&self, source: ScreenSource, lines: usize) -> io::Result<ScreenTail>;
-
-        /// The number of scrollback (history) rows above the visible viewport,
-        /// i.e. how far [`ScreenSource::Recent`] can read back.
-        fn scrollback_rows(&self) -> io::Result<usize>;
-
-        /// Format up to `lines` rows from the live bottom of the terminal,
-        /// including recent scrollback. Convenience shim over
-        /// [`screen`](Self::screen) with [`ScreenSource::Recent`].
-        fn last_lines(&self, lines: usize) -> io::Result<ScreenTail> {
-            self.screen(ScreenSource::Recent, lines)
-        }
+        /// Format up to `lines` rows from the bottom of the visible viewport.
+        fn screen(&self, lines: usize) -> io::Result<ScreenTail>;
 
         /// The pane's terminal title as set by escape sequences (OSC 0/2), or
         /// `None` when no title has been set.
         ///
         /// Some agents (e.g. Codex) report live status — working, idle, or an
         /// approval request — in the window title rather than only on screen, so
-        /// this is a distinct detection signal from [`last_lines`](Self::last_lines).
+        /// this is a distinct detection signal from [`screen`](Self::screen).
         fn title(&self) -> io::Result<Option<CString>>;
     }
 
     #[cfg(test)]
     mod tests {
-        use std::cell::RefCell;
-        use std::ffi::CString;
-        use std::io;
-
-        use super::{
-            PaneObservability, PaneProcess, ScreenSource, ScreenTail, ServerObservability,
-        };
+        use super::{PaneObservability, ServerObservability};
 
         #[test]
         fn public_traits_are_object_safe() {
@@ -134,77 +101,6 @@ pub mod v1 {
 
             accepts_server(None);
             accepts_pane(None);
-        }
-
-        /// A pane that records the [`ScreenSource`] and row count it was asked
-        /// for, so what the trait's own default method does with them can be
-        /// read back.
-        #[derive(Default)]
-        struct RecordingPane {
-            asked: RefCell<Vec<(ScreenSource, usize)>>,
-        }
-
-        impl PaneObservability for RecordingPane {
-            fn process(&self) -> io::Result<PaneProcess> {
-                Ok(PaneProcess {
-                    child_pid: None,
-                    exited: false,
-                })
-            }
-
-            fn output_revision(&self) -> io::Result<u64> {
-                Ok(1)
-            }
-
-            fn screen(&self, source: ScreenSource, lines: usize) -> io::Result<ScreenTail> {
-                self.asked.borrow_mut().push((source, lines));
-                Ok(ScreenTail {
-                    revision: 1,
-                    text: CString::new(format!("{source:?}/{lines}")).expect("screen tail"),
-                    cursor_visible: true,
-                    cursor_shape: 0,
-                })
-            }
-
-            fn scrollback_rows(&self) -> io::Result<usize> {
-                Ok(0)
-            }
-
-            fn title(&self) -> io::Result<Option<CString>> {
-                Ok(None)
-            }
-        }
-
-        /// `last_lines` is a shim the trait provides rather than something an
-        /// implementor writes, so every server gets the same answer for it:
-        /// `screen` over [`ScreenSource::Recent`], with the row count passed
-        /// straight through.
-        #[test]
-        fn last_lines_is_screen_over_recent_scrollback() {
-            let pane = RecordingPane::default();
-
-            let through_shim = pane.last_lines(12).expect("last_lines");
-            let directly = pane.screen(ScreenSource::Recent, 12).expect("screen");
-
-            assert_eq!(through_shim, directly);
-            assert_eq!(
-                *pane.asked.borrow(),
-                vec![(ScreenSource::Recent, 12), (ScreenSource::Recent, 12)],
-                "the shim asked for exactly what a direct call does"
-            );
-        }
-
-        /// The shim is reachable through a trait object too, which is how a
-        /// server hands a resolved pane to a detector.
-        #[test]
-        fn last_lines_works_through_a_trait_object() {
-            let pane = RecordingPane::default();
-            let erased: &dyn PaneObservability = &pane;
-
-            assert_eq!(
-                erased.last_lines(3).expect("last_lines").text.as_c_str(),
-                c"Recent/3"
-            );
         }
     }
 }

@@ -1,17 +1,11 @@
 #![forbid(unsafe_code)]
 
 use crate::src::reactor::{evbuffer_add_formatted, evbuffer_new, evbuffer_pullup};
-use crate::src::shared::abi::int64_t;
-use crate::src::shared::json::{json_node, json_node_type, JsonValue};
+use crate::src::shared::json::{json_node, JsonValue};
 use std::ffi::{CStr, CString};
 use tiri_buffer::BufMut;
 use tiri_buffer::SegmentedBuf;
 
-pub const NODE_ARRAY: json_node_type = 4;
-pub const NODE_OBJECT: json_node_type = 3;
-pub const NODE_BOOLEAN: json_node_type = 2;
-pub const NODE_NUMBER: json_node_type = 1;
-pub const NODE_STRING: json_node_type = 0;
 pub const ERROR_CTX_LEN: usize = 8;
 pub const PARSE_DEPTH_MAX: usize = 200;
 
@@ -73,65 +67,6 @@ pub fn json_find<'a>(node: &'a json_node, key: &CStr) -> Option<&'a json_node> {
         return None;
     };
     fields.entries.get(key).map(Box::as_ref)
-}
-
-pub fn json_array_members(node: &json_node) -> Option<&[json_node]> {
-    let JsonValue::Array(members) = &node.value else {
-        return None;
-    };
-    Some(&members.members)
-}
-
-pub fn json_get_number(node: &json_node) -> Option<int64_t> {
-    let JsonValue::Number(number) = node.value else {
-        return None;
-    };
-    Some(number)
-}
-
-pub fn json_get_object(node: &json_node) -> Option<&json_node> {
-    matches!(node.value, JsonValue::Object(_)).then_some(node)
-}
-
-fn json_key_error(key: &CStr, message: &[u8]) -> CString {
-    let mut bytes = b"key \"".to_vec();
-    bytes.extend_from_slice(key.to_bytes());
-    bytes.extend_from_slice(b"\" ");
-    bytes.extend_from_slice(message);
-    CString::new(bytes).expect("JSON diagnostic contains no NUL")
-}
-
-fn json_require<'a>(node: &'a json_node, key: &CStr) -> Result<&'a json_node, CString> {
-    json_find(node, key).ok_or_else(|| json_key_error(key, b"not found"))
-}
-
-pub fn json_find_string<'a>(node: &'a json_node, key: &CStr) -> Result<&'a CStr, CString> {
-    let JsonValue::String(string) = &json_require(node, key)?.value else {
-        return Err(json_key_error(key, b"expected a string"));
-    };
-    Ok(string)
-}
-
-pub fn json_find_number(node: &json_node, key: &CStr) -> Result<int64_t, CString> {
-    json_get_number(json_require(node, key)?)
-        .ok_or_else(|| json_key_error(key, b"expected a number"))
-}
-
-pub fn json_find_boolean(node: &json_node, key: &CStr) -> Result<i32, CString> {
-    let JsonValue::Boolean(boolean) = json_require(node, key)?.value else {
-        return Err(json_key_error(key, b"expected a boolean"));
-    };
-    Ok(boolean)
-}
-
-pub fn json_find_object<'a>(node: &'a json_node, key: &CStr) -> Result<&'a json_node, CString> {
-    json_get_object(json_require(node, key)?)
-        .ok_or_else(|| json_key_error(key, b"expected an object"))
-}
-
-pub fn json_find_array<'a>(node: &'a json_node, key: &CStr) -> Result<&'a [json_node], CString> {
-    json_array_members(json_require(node, key)?)
-        .ok_or_else(|| json_key_error(key, b"expected an array"))
 }
 
 fn json_error(cause: Option<&mut Option<CString>>, reason: &CStr, loc: &[u8]) {
@@ -246,11 +181,8 @@ fn json_tokenize_value(tokens: &[json_token], input: &[u8]) -> Option<usize> {
     }
 }
 
-fn json_create_node(key: Option<&CStr>, value: JsonValue) -> Box<json_node> {
-    Box::new(json_node {
-        key: key.map(CStr::to_owned),
-        value,
-    })
+fn json_create_node(value: JsonValue) -> Box<json_node> {
+    Box::new(json_node { value })
 }
 
 fn json_parse_tokens(
@@ -263,7 +195,7 @@ fn json_parse_tokens(
         pctx.error(c"expected object", &tokens[0]);
         return None;
     }
-    let node = json_parse_object(&mut tokens, pctx, None)?;
+    let node = json_parse_object(&mut tokens, pctx)?;
     if tokens[0].type_0 != TOK_EOF {
         pctx.error(c"unexpected trailing data", &tokens[0]);
         return None;
@@ -294,7 +226,6 @@ fn json_parse_key(
 fn json_parse_object(
     tokens: &mut &[json_token],
     pctx: &mut json_parse_ctx<'_, '_>,
-    key: Option<&CStr>,
 ) -> Option<Box<json_node>> {
     if tokens[0].type_0 != TOK_OPENOBJECT {
         return None;
@@ -305,7 +236,7 @@ fn json_parse_object(
         return None;
     }
     *tokens = &tokens[1..];
-    let mut object = json_create_node(key, JsonValue::Object(Default::default()));
+    let mut object = json_create_node(JsonValue::Object(Default::default()));
     loop {
         if tokens[0].type_0 == TOK_CLOSEOBJECT {
             *tokens = &tokens[1..];
@@ -325,19 +256,19 @@ fn json_parse_object(
         }
         *tokens = &tokens[1..];
         let field = match tokens[0].type_0 {
-            TOK_QUOTE => json_parse_string(tokens, pctx, Some(&key)),
+            TOK_QUOTE => json_parse_string(tokens, pctx),
             TOK_VALUE => {
                 let bytes = pctx.text(&tokens[0]);
                 if bytes[0].is_ascii_digit()
                     || (bytes[0] == b'-' && bytes.get(1).is_some_and(u8::is_ascii_digit))
                 {
-                    json_parse_number(tokens, pctx, Some(&key))
+                    json_parse_number(tokens, pctx)
                 } else {
-                    json_parse_boolean(tokens, pctx, Some(&key))
+                    json_parse_boolean(tokens, pctx)
                 }
             }
-            TOK_OPENOBJECT => json_parse_object(tokens, pctx, Some(&key)),
-            TOK_OPENARRAY => json_parse_array(tokens, pctx, Some(&key)),
+            TOK_OPENOBJECT => json_parse_object(tokens, pctx),
+            TOK_OPENARRAY => json_parse_array(tokens, pctx),
             _ => {
                 pctx.error(c"unexpected value when parsing object", &tokens[0]);
                 break;
@@ -365,13 +296,12 @@ fn json_parse_object(
 fn json_parse_array(
     tokens: &mut &[json_token],
     pctx: &mut json_parse_ctx<'_, '_>,
-    key: Option<&CStr>,
 ) -> Option<Box<json_node>> {
     if tokens[0].type_0 != TOK_OPENARRAY {
         return None;
     }
     *tokens = &tokens[1..];
-    let mut array = json_create_node(key, JsonValue::Array(Default::default()));
+    let mut array = json_create_node(JsonValue::Array(Default::default()));
     loop {
         if tokens[0].type_0 == TOK_CLOSEARRAY {
             *tokens = &tokens[1..];
@@ -381,7 +311,7 @@ fn json_parse_array(
             pctx.error(c"invalid array member", &tokens[0]);
             break;
         }
-        let member = json_parse_object(tokens, pctx, None)?;
+        let member = json_parse_object(tokens, pctx)?;
         let JsonValue::Array(members) = &mut array.value else {
             unreachable!()
         };
@@ -403,7 +333,6 @@ fn json_parse_array(
 fn json_parse_string(
     tokens: &mut &[json_token],
     pctx: &mut json_parse_ctx<'_, '_>,
-    key: Option<&CStr>,
 ) -> Option<Box<json_node>> {
     let start = tokens[0];
     if tokens[0].type_0 == TOK_QUOTE {
@@ -414,7 +343,7 @@ fn json_parse_string(
             if tokens[0].type_0 == TOK_QUOTE {
                 *tokens = &tokens[1..];
                 let string = CString::new(bytes).expect("JSON token contains no NUL");
-                return Some(json_create_node(key, JsonValue::String(string)));
+                return Some(json_create_node(JsonValue::String(string)));
             }
         }
     }
@@ -425,7 +354,6 @@ fn json_parse_string(
 fn json_parse_number(
     tokens: &mut &[json_token],
     pctx: &mut json_parse_ctx<'_, '_>,
-    key: Option<&CStr>,
 ) -> Option<Box<json_node>> {
     let bytes = pctx.text(&tokens[0]);
     if !(bytes.starts_with(b"0") && bytes.len() != 1
@@ -436,7 +364,7 @@ fn json_parse_number(
             .and_then(|text| text.parse::<i64>().ok())
         {
             *tokens = &tokens[1..];
-            return Some(json_create_node(key, JsonValue::Number(number)));
+            return Some(json_create_node(JsonValue::Number(number)));
         }
     }
     pctx.error(c"invalid number", &tokens[0]);
@@ -446,7 +374,6 @@ fn json_parse_number(
 fn json_parse_boolean(
     tokens: &mut &[json_token],
     pctx: &mut json_parse_ctx<'_, '_>,
-    key: Option<&CStr>,
 ) -> Option<Box<json_node>> {
     let boolean = match pctx.text(&tokens[0]) {
         b"true" => 1,
@@ -457,7 +384,7 @@ fn json_parse_boolean(
         }
     };
     *tokens = &tokens[1..];
-    Some(json_create_node(key, JsonValue::Boolean(boolean)))
+    Some(json_create_node(JsonValue::Boolean(boolean)))
 }
 fn json_string_append(buffer: &mut SegmentedBuf, node: &json_node) {
     match &node.value {

@@ -60,39 +60,3 @@ pub(super) unsafe fn queue(owner: &WindowRef, flags: i32) -> Option<bool> {
     (*w).alerts_queued = 1;
     Some(true)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::src::options::{options_create, options_default, options_set_number};
-
-    #[test]
-    fn queue_membership_covers_delivery_and_disabled_alerts_still_record_flags() {
-        unsafe {
-            let window = window::new_ref();
-            let mut options = options_create(None);
-            for name in [c"monitor-bell", c"monitor-activity", c"monitor-silence"] {
-                let definition = crate::src::options_table::options_table
-                    .iter()
-                    .find(|entry| entry.name == Some(name))
-                    .unwrap();
-                options_default(&mut *options, definition);
-                options_set_number(&mut *options, name, 0);
-            }
-            (*window.get()).options = Some(options);
-            assert_eq!(window.queue_alerts(WINDOW_ACTIVITY), None);
-            assert_ne!(window.pending_alerts() & WINDOW_ACTIVITY, 0);
-            window.with_options_mut(|options| options_set_number(options, c"monitor-bell", 1));
-            let count = WindowRef::strong_count(&window);
-            assert_eq!(window.queue_alerts(WINDOW_BELL), Some(true));
-            // Reentrant delivery can set another flag, but cannot claim another owner.
-            assert_eq!(window.queue_alerts(WINDOW_BELL), Some(false));
-            assert_eq!(WindowRef::strong_count(&window), count);
-            window.finish_alerts();
-            assert_eq!(window.pending_alerts(), 0);
-            assert_eq!(window.queue_alerts(WINDOW_BELL), Some(true));
-            window.finish_alerts();
-            drop(window);
-        }
-    }
-}

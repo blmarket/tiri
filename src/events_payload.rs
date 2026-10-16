@@ -23,12 +23,8 @@ use crate::src::{server_client::Client, session::Session, window::WindowPane};
 use std::ffi::{CStr, CString};
 use tiri_buffer::SegmentedBuf;
 
-pub const EVENT_PAYLOAD_POINTER: event_payload_type = 8;
-pub const EVENT_PAYLOAD_PANE: event_payload_type = 7;
 pub const EVENT_PAYLOAD_WINDOW: event_payload_type = 6;
 pub const EVENT_PAYLOAD_SESSION: event_payload_type = 5;
-pub const EVENT_PAYLOAD_CLIENT: event_payload_type = 4;
-pub const EVENT_PAYLOAD_STRING: event_payload_type = 0;
 
 fn event_payload_find<'a>(ep: &'a event_payload, name: &CStr) -> Option<&'a event_payload_item> {
     ep.items.get(name).map(Box::as_ref)

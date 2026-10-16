@@ -16,10 +16,6 @@ pub use streams::*;
 pub use tasks::task_start;
 pub use timers::Timer;
 
-#[repr(C)]
-pub struct bufferevent_ops {
-    _private: [u8; 0],
-}
 /// Create a task-owned registration; no raw descriptor lookup survives this call.
 pub(crate) fn io(fd: BorrowedFd<'_>) -> std::io::Result<tiri_rt::mio::Io> {
     // Retain the open file description through callback cancellation.

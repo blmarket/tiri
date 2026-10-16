@@ -27,14 +27,6 @@ impl WindowRef {
     pub fn ptr_eq(a: &Self, b: &Self) -> bool {
         Rc::ptr_eq(&a.0, &b.0)
     }
-
-    pub fn as_ptr(this: &Self) -> *const UnsafeCell<window> {
-        Rc::as_ptr(&this.0)
-    }
-
-    pub fn strong_count(this: &Self) -> usize {
-        Rc::strong_count(&this.0)
-    }
 }
 
 impl crate::src::shared::rc::SameAllocation for WindowRef {
@@ -85,10 +77,6 @@ impl WindowWeak {
 
     pub fn ptr_eq(&self, other: &Self) -> bool {
         self.0.ptr_eq(&other.0)
-    }
-
-    pub fn as_ptr(&self) -> *const UnsafeCell<window> {
-        self.0.as_ptr()
     }
 
     pub fn strong_count(&self) -> usize {

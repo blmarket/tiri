@@ -73,7 +73,11 @@ unsafe fn server_fire_pane_exit(
             out.write_all(sig2name(signal).as_bytes())
         });
     }
-    event_payload_set_int(&mut ep, c"exit_success", status.success() as ::core::ffi::c_int);
+    event_payload_set_int(
+        &mut ep,
+        c"exit_success",
+        status.success() as ::core::ffi::c_int,
+    );
     events_fire(name, ep);
 }
 pub(super) unsafe fn kill_process(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {

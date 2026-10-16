@@ -20,8 +20,8 @@ use crate::src::cfg::{cfg_client, cfg_finished, start_cfg};
 use crate::src::cmd::entries::wait_for::cmd_wait_for_client_lost;
 use crate::src::cmd::parse::cmd_parse_from_argv;
 use crate::src::cmd::queue::{
-    cmdq_append, cmdq_error, cmdq_get_callback_owned, cmdq_get_client,
-    cmdq_get_command, cmdq_get_error, cmdq_insert_after, cmdq_new, cmdq_next,
+    cmdq_append, cmdq_error, cmdq_get_callback_owned, cmdq_get_client, cmdq_get_command,
+    cmdq_get_error, cmdq_insert_after, cmdq_new, cmdq_next,
 };
 use crate::src::cmd::{cmd_list_all_have, cmd_log_argv};
 use crate::src::compat::imsg::imsg_get_fd;
@@ -95,11 +95,8 @@ use tiri_buffer::SegmentedBuf;
 
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
+pub use crate::src::shared::client::overlay_check_cb;
 use crate::src::shared::client::*;
-pub use crate::src::shared::client::{
-    client_file, overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb,
-    overlay_mode_cb, overlay_resize_cb,
-};
 
 impl client {
     /// Allocate a client on the server thread.
@@ -202,10 +199,6 @@ fn server_client_set_exit_session(c: &mut client, exit_session: Option<CString>)
     c.exit_session = exit_session;
 }
 
-fn server_client_set_user(c: &mut client, user: Option<CString>) {
-    c.user = user;
-}
-
 fn server_client_set_name(c: &mut client, name: Option<CString>) {
     c.name = name;
 }
@@ -241,7 +234,7 @@ mod client_message_owner_tests {
         server_client_ensure_term_name, server_client_replace_path, server_client_replace_title,
         server_client_set_cwd, server_client_set_exit_message, server_client_set_exit_session,
         server_client_set_name, server_client_set_term_name, server_client_set_term_type,
-        server_client_set_ttyname, server_client_set_user,
+        server_client_set_ttyname,
     };
     use std::ffi::CString;
 
@@ -489,39 +482,6 @@ mod client_message_owner_tests {
             server_client_set_exit_session(&mut *c, None);
             assert!((*c).exit_session.is_none());
             assert!(owner.exit_session.is_none());
-        }
-    }
-
-    #[test]
-    fn user_replacement_and_clear_keep_a_borrowed_client_view() {
-        unsafe {
-            let mut owner = Box::new(client::empty());
-            let c = &raw mut *owner;
-            assert!((*c).user.is_none());
-
-            server_client_set_user(&mut *c, Some(CString::new(b"user-\xff".to_vec()).unwrap()));
-            assert_eq!(
-                ((*c).user)
-                    .as_deref()
-                    .expect("string is present")
-                    .to_bytes(),
-                b"user-\xff"
-            );
-            assert_eq!(c, &raw mut *owner);
-
-            server_client_set_user(&mut *c, Some(CString::new("").unwrap()));
-            assert!(!(*c).user.is_none());
-            assert_eq!(
-                ((*c).user)
-                    .as_deref()
-                    .expect("string is present")
-                    .to_bytes(),
-                b""
-            );
-
-            server_client_set_user(&mut *c, None);
-            assert!((*c).user.is_none());
-            assert!(owner.user.is_none());
         }
     }
 
@@ -4490,7 +4450,10 @@ mod lost_queue_tests {
 
             let client = Rc::downgrade(&owner);
             drop(owner);
-            assert!(client.upgrade().is_none(), "queued items must not retain their client");
+            assert!(
+                client.upgrade().is_none(),
+                "queued items must not retain their client"
+            );
             assert!(head.upgrade().is_none());
             assert!(released.get());
             assert!(!ran.get());
@@ -4643,7 +4606,11 @@ mod lost_queue_tests {
             );
             let (ran, released) = (Rc::new(Cell::new(false)), Rc::new(Cell::new(false)));
             append_suffix(&owner, &ran, &released);
-            assert_eq!(cmdq_next(Some(&owner)), 0, "local completion must be deferred");
+            assert_eq!(
+                cmdq_next(Some(&owner)),
+                0,
+                "local completion must be deferred"
+            );
             assert!(cmdq_is_waiting(&*head.upgrade().unwrap().get()));
 
             (*owner.get()).flags |= CLIENT_DEAD as uint64_t;

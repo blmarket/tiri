@@ -23,7 +23,7 @@ use tracing_subscriber::prelude::*;
 
 use super::status::{AgentStatus, StatusHub};
 use super::*;
-use crate::observability::v1::{PaneProcess, ScreenSource, ScreenTail};
+use crate::observability::v1::{PaneProcess, ScreenTail};
 
 // Existing attribution/lifecycle fixtures exercise settled observations. Timing
 // regressions below call super::poll directly with a deterministic clock.
@@ -258,7 +258,7 @@ impl PaneObservability for ScriptedPane {
         Ok(self.cursor.get() as u64)
     }
 
-    fn screen(&self, _source: ScreenSource, _lines: usize) -> io::Result<ScreenTail> {
+    fn screen(&self, _lines: usize) -> io::Result<ScreenTail> {
         let (revision, frame) = self.current();
         Ok(ScreenTail {
             revision: revision as u64,
@@ -266,10 +266,6 @@ impl PaneObservability for ScriptedPane {
             cursor_visible: false,
             cursor_shape: 0,
         })
-    }
-
-    fn scrollback_rows(&self) -> io::Result<usize> {
-        Ok(0)
     }
 
     fn title(&self) -> io::Result<Option<CString>> {

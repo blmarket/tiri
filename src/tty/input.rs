@@ -12,9 +12,6 @@ impl TerminalInput {
     pub fn len(&self) -> usize {
         self.buffer.remaining()
     }
-    pub fn is_empty(&self) -> bool {
-        !self.buffer.has_remaining()
-    }
     pub fn append(&mut self, bytes: Vec<u8>) {
         self.buffer.put(SegmentedBuf::from(bytes));
     }
@@ -31,23 +28,6 @@ impl TerminalInput {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn contiguous_input_and_partial_drain_use_the_original_allocation() {
-        let bytes = b"a\0\xffbc".to_vec();
-        let original = bytes.as_ptr();
-        let mut input = TerminalInput {
-            buffer: bytes.into(),
-        };
-        assert_eq!(input.bytes().as_ptr(), original);
-        assert_eq!(input.bytes(), b"a\0\xffbc");
-        assert_eq!(input.len(), 5);
-        input.drain(2);
-        assert_eq!(input.bytes().as_ptr(), unsafe { original.add(2) });
-        assert_eq!(input.bytes(), b"\xffbc");
-        input.drain(usize::MAX);
-        assert!(input.is_empty());
-        assert!(input.bytes().is_empty());
-    }
     #[test]
     fn appends_preserve_remaining_input_and_empty_chunks_preserve_storage() {
         let mut input = TerminalInput::default();

@@ -46,9 +46,7 @@ use crate::src::shared::session::SessionRef;
 use crate::src::shared::signal::SIGHUP;
 use crate::src::shared::style::*;
 use crate::src::shared::tty::TTY_CTX_WINDOW_BIGGER;
-pub use crate::src::shared::tty::{
-    tty, tty_ctx, tty_ctx_redraw_cb, tty_ctx_set_client_cb, tty_style_ctx, tty_term,
-};
+pub use crate::src::shared::tty::{tty_ctx, tty_style_ctx};
 use crate::src::style::colour::{colour_palette_from_option, colour_palette_init};
 use crate::src::style::{style_apply_with_options, style_parse, style_set};
 use crate::src::tmux::global_w_options;

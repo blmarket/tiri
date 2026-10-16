@@ -500,9 +500,6 @@ fn format_is_word_separator(ws: &CStr, gc: &grid_cell) -> bool {
     }
     gc.data.size as ::core::ffi::c_int == 1 as ::core::ffi::c_int && gc.data.data[0] == b' '
 }
-pub unsafe fn format_grid_word(gd: &grid, x: u_int, y: u_int) -> Option<CString> {
-    format_grid_word_cstring(gd, x, y)
-}
 pub(crate) unsafe fn format_grid_word_cstring(
     gd: &grid,
     mut x: u_int,
@@ -590,9 +587,6 @@ pub(crate) unsafe fn format_grid_word_cstring(
         s = Some(utf8_tocstr_cstring(&ud));
     }
     s
-}
-pub unsafe fn format_grid_line(gd: &grid, y: u_int) -> Option<CString> {
-    format_grid_line_cstring(gd, y)
 }
 pub(crate) unsafe fn format_grid_line_cstring(gd: &grid, mut y: u_int) -> Option<CString> {
     let mut gc: grid_cell = grid_cell {

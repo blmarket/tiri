@@ -11,10 +11,8 @@ use crate::src::shared::control::control_state;
 use crate::src::shared::display::visible_ranges;
 use crate::src::shared::environment::environ;
 use crate::src::shared::layout::Direction;
-use crate::src::shared::prompt::{prompt_free_cb, prompt_type};
 use crate::src::shared::screen::screen;
 use crate::src::shared::session::{SessionRef, SessionWeak};
-use crate::src::shared::status::status_prompt_input_cb;
 use crate::src::shared::terminal::termios;
 use crate::src::shared::window::WindowRef;
 use crate::src::window::Window;
@@ -210,7 +208,6 @@ pub trait Client {
         after: Option<&Rc<UnsafeCell<cmdq_item>>>,
         next: Option<&mut Weak<UnsafeCell<cmdq_item>>>,
     ) -> i32;
-    unsafe fn print(&self, parse: bool, buffer: &mut SegmentedBuf);
     unsafe fn control_write_output(&self, pane: &Rc<UnsafeCell<window_pane>>);
     /// Scoped access to this control client's consumer offset. Call only for an
     /// attached control client; the bool is the existing output-disabled flag.
@@ -254,16 +251,6 @@ pub trait Client {
         no_freeze: i32,
     );
     unsafe fn status_message_text(&self) -> (Option<CString>, bool);
-    unsafe fn set_prompt(
-        &self,
-        find: Option<&cmd_find_state>,
-        message: &CStr,
-        input: Option<&CStr>,
-        inputcb: status_prompt_input_cb,
-        freecb: prompt_free_cb,
-        flags: i32,
-        kind: prompt_type,
-    );
     /// Install callbacks and typed payload as one owned overlay. Callback
     /// retirement remains explicit and runs without a live client borrow.
     unsafe fn set_overlay(&self, overlay: Overlay);
@@ -1020,10 +1007,6 @@ impl Client for ClientRef {
         server_client_handle_key_after(self, event, after, next)
     }
 
-    unsafe fn print(&self, parse: bool, buffer: &mut SegmentedBuf) {
-        server_client_print(Some(self), i32::from(parse), buffer);
-    }
-
     unsafe fn control_write_output(&self, pane: &Rc<UnsafeCell<window_pane>>) {
         if self.attached_session().upgrade().is_some() && self.is_control() {
             control_write_output(self, pane);
@@ -1222,21 +1205,6 @@ impl Client for ClientRef {
         }
         state.tty.flags |= TTY_NOCURSOR;
         state.flags |= CLIENT_REDRAWSTATUS as u64;
-    }
-
-    unsafe fn set_prompt(
-        &self,
-        find: Option<&cmd_find_state>,
-        message: &CStr,
-        input: Option<&CStr>,
-        inputcb: status_prompt_input_cb,
-        freecb: prompt_free_cb,
-        flags: i32,
-        kind: prompt_type,
-    ) {
-        crate::src::status::status_prompt_set(
-            self, find, message, input, inputcb, freecb, flags, kind,
-        );
     }
 
     unsafe fn set_overlay(&self, overlay: Overlay) {
@@ -1510,7 +1478,6 @@ mod tests {
         }
     }
     use super::*;
-    use crate::src::shared::screen::screen;
 
     #[test]
     fn source_file_reservations_preserve_limit_and_explicit_completion() {
@@ -1524,101 +1491,6 @@ mod tests {
             assert_eq!(owner.enter_source_file(2), Some(2));
             assert_eq!(owner.leave_source_file(), 1);
             assert_eq!(owner.leave_source_file(), 0);
-        }
-    }
-
-    #[test]
-    fn output_uses_its_holder_without_a_terminal_backreference_and_keeps_accounting() {
-        use crate::src::shared::tty::{tty_code, TTYC_BEL, TTY_BLOCK};
-        unsafe {
-            let owner = client::new();
-            (*owner.get()).flags |= CLIENT_UTF8 as u64;
-            (*owner.get()).redraw = 3;
-            {
-                let mut terminal = owner.borrow_terminal_mut();
-                terminal.sx = 80;
-                terminal.sy = 24;
-                terminal.cell = crate::src::grid::grid_default_cell;
-                terminal.last_cell = crate::src::grid::grid_default_cell;
-                terminal.out = Some(crate::src::reactor::evbuffer_new());
-                let mut term = tty_term::empty();
-                term.codes = vec![tty_code::None; crate::src::tty_term::tty_term_ncodes() as usize]
-                    .into_boxed_slice();
-                term.codes[TTYC_BEL as usize] = tty_code::String(c"bell".to_owned());
-                terminal.term = Some(Box::new(term));
-                assert!(terminal.client.upgrade().is_none());
-            }
-            crate::src::tty::tty_putn(&owner, b"a\0b", 3);
-            crate::src::tty::tty_putcode(&owner, TTYC_BEL);
-            owner.borrow_terminal_mut().flags |= TTY_BLOCK;
-            crate::src::tty::tty_putn(&owner, b"lost", 4);
-            assert_eq!(owner.borrow_terminal().discarded, 4);
-            owner.record_terminal_discard(4);
-            assert_eq!(owner.acknowledge_terminal_redraw(3), Some(0));
-            assert_eq!(owner.acknowledge_terminal_redraw(1), None);
-            assert_eq!(
-                (
-                    (*owner.get()).written,
-                    (*owner.get()).discarded,
-                    (*owner.get()).redraw
-                ),
-                (7, 4, 0)
-            );
-            assert_eq!(
-                crate::src::reactor::evbuffer_pullup(
-                    owner.borrow_terminal_mut().out.as_deref_mut().unwrap(),
-                    -1,
-                )
-                .unwrap(),
-                b"a\0bbell"
-            );
-        }
-    }
-
-    #[test]
-    fn drawing_status_restores_the_selected_screen_and_its_grid_owner() {
-        use crate::src::shared::tty::tty_code;
-        unsafe {
-            let owner = client::new();
-            {
-                let mut terminal = owner.borrow_terminal_mut();
-                terminal.sx = 4;
-                terminal.sy = 1;
-                terminal.cell = crate::src::grid::grid_default_cell;
-                terminal.last_cell = crate::src::grid::grid_default_cell;
-                terminal.out = Some(crate::src::reactor::evbuffer_new());
-                let mut term = tty_term::empty();
-                term.codes = vec![tty_code::None; crate::src::tty_term::tty_term_ncodes() as usize]
-                    .into_boxed_slice();
-                terminal.term = Some(Box::new(term));
-            }
-            let base_grid = {
-                let mut status = owner.borrow_status_mut();
-                status.screen.grid = Some(crate::src::grid::grid_create(4, 1, 0));
-                status.screen.title = c"base".to_owned();
-                status.screen.grid() as *const crate::src::shared::grid::grid
-            };
-            owner.draw_status_line(0, 0, 4, 0);
-            {
-                let mut status = owner.borrow_status_mut();
-                assert!(status.active.is_none());
-                assert_eq!(status.screen.title, c"base");
-                assert_eq!(status.screen.grid() as *const _, base_grid);
-                let mut active = Box::new(screen::empty());
-                active.grid = Some(crate::src::grid::grid_create(4, 1, 0));
-                active.title = c"active".to_owned();
-                status.active = Some(active);
-            }
-            let active_screen = owner.borrow_status().active.as_deref().unwrap() as *const _;
-            let active_grid = owner.borrow_status().active.as_deref().unwrap().grid() as *const _;
-            owner.draw_status_line(0, 0, 4, 0);
-            let status = owner.borrow_status();
-            let active = status.active.as_deref().unwrap();
-            assert_eq!(active as *const _, active_screen);
-            assert_eq!(active.grid() as *const _, active_grid);
-            assert_eq!(active.title, c"active");
-            assert_eq!(status.screen.grid() as *const _, base_grid);
-            assert_eq!(status.screen.title, c"base");
         }
     }
 }

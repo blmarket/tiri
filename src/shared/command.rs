@@ -113,7 +113,6 @@ pub const CMD_PARSE_MAX_ENVIRON_LEN: ::core::ffi::c_int = 16384 as ::core::ffi::
 pub const CMDQ_STATE_CONTROL: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const CMDQ_STATE_NOHOOKS: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub const CMD_BUFFER_USAGE: &std::ffi::CStr = c"[-b buffer-name]";
-pub const CMD_TARGET_WINDOW_USAGE: &std::ffi::CStr = c"[-t target-window]";
 pub const CMD_SOURCE_FILE_DEPTH_LIMIT: ::core::ffi::c_int = 50 as ::core::ffi::c_int;
 
 #[cfg(test)]

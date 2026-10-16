@@ -68,7 +68,7 @@ use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::style::*;
 use crate::src::shared::window::WindowRef;
-pub use crate::src::shared::window::{window, window_mode, window_mode_entry, winlink};
+pub use crate::src::shared::window::{window_mode, window_mode_entry, winlink};
 use crate::src::status::status_message_set;
 use crate::src::style::style_apply_with_options;
 use crate::src::text::utf8::{utf8_copy, utf8_fromcstr_vec, utf8_set, utf8_to_data};
