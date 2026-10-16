@@ -12,7 +12,7 @@ use crate::src::hooks::{
 };
 use crate::src::options::options_table_entry;
 use crate::src::options::{
-    options_array_item, options_array_iter, options_get_fire_count, options_get_fire_time,
+    options_array_get, options_array_iter, options_get_fire_count, options_get_fire_time,
     options_get_monitor_data, options_is_array, options_is_string, options_iter,
     options_match_owned, options_scope_from_flags, options_scope_from_name, options_to_cstring,
     OptionMatchFailure, OptionsScope,
@@ -271,7 +271,7 @@ unsafe fn cmd_show_options_print(
                     let present = scope.with_entry(name, |entry| {
                         entry.id() == identity
                             && options_is_array(entry) != 0
-                            && !options_array_item(entry, &key).is_null()
+                            && options_array_get(entry, &key).is_some()
                     });
                     if present != Some(true) {
                         break;

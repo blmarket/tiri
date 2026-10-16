@@ -21,7 +21,7 @@ use crate::src::shared::format::format_tree;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::MODEKEY_VI;
 use crate::src::shared::key::*;
-use crate::src::shared::options::{options, options_array_item, options_entry};
+use crate::src::shared::options::{options, options_entry};
 use crate::src::shared::prompt::prompt;
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
@@ -1598,7 +1598,6 @@ unsafe fn prompt_complete_commands(s: &CStr) -> Vec<CString> {
     let mut list = Vec::new();
     let prefix = s.to_bytes();
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
     for &entry in &cmd_table {
         let name = entry.name;
         if name.to_bytes().starts_with(prefix) {
@@ -1613,14 +1612,11 @@ unsafe fn prompt_complete_commands(s: &CStr) -> Vec<CString> {
             .map(|item| item.key.clone())
             .collect::<Vec<_>>()
             .into_iter();
-        a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-            crate::src::options::options_array_item(a_root, &key)
-        });
-        while !a.is_null() {
-            let value = (*(crate::src::options::options_array_item_value_mut(&mut *(a))
-                as *mut crate::src::shared::options::options_value))
-                .string_ptr()
-                .expect("string option");
+        while let Some(value) = a_keys
+            .next()
+            .and_then(|key| crate::src::options::options_array_get(&*a_root, &key))
+        {
+            let value = value.string_ptr().expect("string option");
             if let Some(separator) = value.to_bytes().iter().position(|&byte| byte == b'=') {
                 if prefix.len() <= separator && &value.to_bytes()[..prefix.len()] == prefix {
                     let alias = CString::new(&value.to_bytes()[..separator])
@@ -1628,9 +1624,6 @@ unsafe fn prompt_complete_commands(s: &CStr) -> Vec<CString> {
                     prompt_complete_add(&mut list, alias.as_c_str());
                 }
             }
-            a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-                crate::src::options::options_array_item(a_root, &key)
-            });
         }
     }
     list

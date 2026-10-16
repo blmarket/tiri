@@ -90,7 +90,7 @@ pub use crate::src::shared::command::{cmd, cmd_entry, cmd_list};
 pub use crate::src::shared::command::{CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS};
 use crate::src::shared::command::{CMD_READONLY, CMD_STARTSERVER};
 pub use crate::src::shared::mouse::mouse_event;
-pub use crate::src::shared::options::{options_array_item, options_entry, options_value};
+pub use crate::src::shared::options::{options_entry, options_value};
 pub use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::SessionRef;
 pub use crate::src::shared::window::winlink;
@@ -270,8 +270,7 @@ pub unsafe fn cmd_get_parse_flags(mut cmd: refbox::Weak<cmd>) -> ::core::ffi::c_
 }
 pub unsafe fn cmd_get_alias(name: &CStr) -> Option<CString> {
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    let mut ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
+    let mut ov: *const options_value = ::core::ptr::null::<options_value>();
     let mut wanted: size_t = 0;
     let mut n: size_t = 0;
     let mut equals: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -289,12 +288,11 @@ pub unsafe fn cmd_get_alias(name: &CStr) -> Option<CString> {
         .map(|item| item.key.clone())
         .collect::<Vec<_>>()
         .into_iter();
-    a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-        crate::src::options::options_array_item(a_root, &key)
-    });
-    while !a.is_null() {
-        ov = crate::src::options::options_array_item_value_mut(&mut *(a))
-            as *mut crate::src::shared::options::options_value;
+    while let Some(value) = a_keys
+        .next()
+        .and_then(|key| crate::src::options::options_array_get(&*a_root, &key))
+    {
+        ov = value as *const options_value;
         equals = strchr(
             (*ov)
                 .string_ptr()
@@ -321,9 +319,6 @@ pub unsafe fn cmd_get_alias(name: &CStr) -> Option<CString> {
                 );
             }
         }
-        a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-            crate::src::options::options_array_item(a_root, &key)
-        });
     }
     None
 }

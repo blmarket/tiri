@@ -130,14 +130,14 @@ impl OptionsScope {
             let commands = parse_commands(value, parse)?;
             self.with_entry(name, |entry| {
                 assert_eq!(entry.id(), identity, "array option replaced while parsing");
-                let item = options_array_item(entry, &key);
-                let item = if item.is_null() {
-                    options_array_new(entry, &key)
-                } else {
-                    options_value_free(&raw mut (*item).value);
-                    item
+                let ov = match options_array_get_mut(entry, &key) {
+                    Some(ov) => {
+                        options_value_free(ov);
+                        ov
+                    }
+                    None => options_array_new(entry, &key),
                 };
-                (*item).value = options_value::Command(OptionCommand(commands));
+                *ov = options_value::Command(OptionCommand(commands));
             })
             .expect("array option remains installed while parsing");
             return Ok(());

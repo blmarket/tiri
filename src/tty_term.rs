@@ -10,7 +10,7 @@ use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::{ClientRef, ClientWeak};
 use crate::src::shared::limits::INT_MAX;
-use crate::src::shared::options::{options_array_item, options_entry, options_value};
+use crate::src::shared::options::{options_entry, options_value};
 use crate::src::shared::posix_io::STDIN_FILENO;
 use crate::src::shared::tty::*;
 use crate::src::shared::tty::{tty_code, tty_code_type, tty_term};
@@ -1209,8 +1209,7 @@ pub unsafe fn tty_term_apply(
 }
 pub unsafe fn tty_term_apply_overrides(mut term: *mut tty_term) {
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    let mut ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
+    let mut ov: *const options_value = ::core::ptr::null::<options_value>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut offset: size_t = 0;
     o = crate::src::options::options_get_only_mut(
@@ -1223,12 +1222,11 @@ pub unsafe fn tty_term_apply_overrides(mut term: *mut tty_term) {
         .map(|item| item.key.clone())
         .collect::<Vec<_>>()
         .into_iter();
-    a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-        crate::src::options::options_array_item(a_root, &key)
-    });
-    while !a.is_null() {
-        ov = crate::src::options::options_array_item_value_mut(&mut *(a))
-            as *mut crate::src::shared::options::options_value;
+    while let Some(value) = a_keys
+        .next()
+        .and_then(|key| crate::src::options::options_array_get(&*a_root, &key))
+    {
+        ov = value as *const options_value;
         s = (*ov)
             .string_ptr()
             .map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut());
@@ -1243,9 +1241,6 @@ pub unsafe fn tty_term_apply_overrides(mut term: *mut tty_term) {
         }) {
             tty_term_apply(term, s.add(offset), 0 as ::core::ffi::c_int, 0);
         }
-        a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-            crate::src::options::options_array_item(a_root, &key)
-        });
     }
     log_debug(format_args!(
         "SIXEL flag is {}",
@@ -1319,8 +1314,7 @@ pub unsafe fn tty_term_create(
 ) -> Result<Box<tty_term>, CString> {
     let mut term: *mut tty_term = ::core::ptr::null_mut::<tty_term>();
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    let mut ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
+    let mut ov: *const options_value = ::core::ptr::null::<options_value>();
     let mut i: u_int = 0;
     let mut j: u_int = 0;
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -1410,12 +1404,11 @@ pub unsafe fn tty_term_create(
         .map(|item| item.key.clone())
         .collect::<Vec<_>>()
         .into_iter();
-    a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-        crate::src::options::options_array_item(a_root, &key)
-    });
-    while !a.is_null() {
-        ov = crate::src::options::options_array_item_value_mut(&mut *(a))
-            as *mut crate::src::shared::options::options_value;
+    while let Some(value) = a_keys
+        .next()
+        .and_then(|key| crate::src::options::options_array_get(&*a_root, &key))
+    {
+        ov = value as *const options_value;
         s = (*ov)
             .string_ptr()
             .map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut());
@@ -1430,9 +1423,6 @@ pub unsafe fn tty_term_create(
         }) {
             tty_parse_client_features(client_owner, CStr::from_ptr(s.add(offset)), c":");
         }
-        a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-            crate::src::options::options_array_item(a_root, &key)
-        });
     }
     del_curterm(cur_term);
     let colour_term = client_owner.with_environment(|env| {
