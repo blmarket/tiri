@@ -77,10 +77,22 @@ pub static cmd_wait_for_entry: cmd_entry = {
         exec: Some(cmd_wait_for_exec),
     }
 };
-static mut wait_event_items: Vec<wait_event_item> = Vec::new();
-static mut wait_channels: wait_channels = wait_channels {
-    entries: std::collections::BTreeMap::new(),
-};
+thread_local! {
+    static WAIT_EVENT_ITEMS: UnsafeCell<Vec<wait_event_item>> = const { UnsafeCell::new(Vec::new()) };
+    static WAIT_CHANNELS: UnsafeCell<wait_channels> = const {
+        UnsafeCell::new(wait_channels {
+            entries: std::collections::BTreeMap::new(),
+        })
+    };
+}
+// Callbacks run while these are iterated may change them, so callers re-read
+// through the pointer instead of holding a reference across a callback.
+fn wait_event_items_ptr() -> *mut Vec<wait_event_item> {
+    WAIT_EVENT_ITEMS.with(UnsafeCell::get)
+}
+fn wait_channels_ptr() -> *mut wait_channels {
+    WAIT_CHANNELS.with(UnsafeCell::get)
+}
 
 fn wait_channels_find(head: &mut wait_channels, name: &CStr) -> *mut wait_channel {
     head.entries
@@ -148,7 +160,7 @@ unsafe fn cmd_wait_for_add(name: &CStr) -> *mut wait_channel {
         waiters: Vec::new(),
         lockers: Vec::new(),
     });
-    let wc = wait_channels_insert(&mut wait_channels, owner);
+    let wc = wait_channels_insert(&mut *wait_channels_ptr(), owner);
     log_debug(format_args!("add wait channel {}", log_cstr(&(*wc).name)));
     wc
 }
@@ -163,7 +175,7 @@ unsafe fn cmd_wait_for_remove(mut wc: *mut wait_channel) {
         "remove wait channel {}",
         log_cstr(&(*wc).name)
     ));
-    drop(wait_channels_remove(&mut wait_channels, &*wc));
+    drop(wait_channels_remove(&mut *wait_channels_ptr(), &*wc));
 }
 unsafe fn cmd_wait_for_remove_empty(mut wc: *mut wait_channel) {
     if (*wc).locked != 0 || (*wc).woken != 0 {
@@ -176,7 +188,7 @@ unsafe fn cmd_wait_for_remove_empty(mut wc: *mut wait_channel) {
         "remove empty wait channel {}",
         log_cstr(&(*wc).name)
     ));
-    drop(wait_channels_remove(&mut wait_channels, &*wc));
+    drop(wait_channels_remove(&mut *wait_channels_ptr(), &*wc));
 }
 
 unsafe fn cmd_wait_for_waiter_client_name(waiter: &CmdqWaiter) -> CString {
@@ -202,7 +214,7 @@ unsafe fn cmd_wait_for_exec(
     if args_has(args, 'E' as i32 as u_char) != 0 {
         return cmd_wait_for_event(item_handle, CStr::from_ptr(name), args);
     }
-    wc = wait_channels_find(&mut wait_channels, CStr::from_ptr(name));
+    wc = wait_channels_find(&mut *wait_channels_ptr(), CStr::from_ptr(name));
     if args_has(args, 'l' as i32 as u_char) != 0 {
         return cmd_wait_for_list(item_handle, wc);
     }
@@ -245,7 +257,7 @@ unsafe fn cmd_wait_for_event_cb(
     payload: &mut event_payload,
     key: &Weak<UnsafeCell<cmdq_item>>,
 ) {
-    let items = &raw mut wait_event_items;
+    let items = wait_event_items_ptr();
     // The sink is removed together with its entry, so the entry is present.
     let Some(index) = wait_event_items_position(&*items, key) else {
         return;
@@ -345,7 +357,7 @@ unsafe fn cmd_wait_for_event(
         events_callback(move |name, payload| unsafe { cmd_wait_for_event_cb(name, payload, &key) })
     }));
     let (waiter, retval) = cmdq_wait(item_handle);
-    (&raw mut wait_event_items)
+    wait_event_items_ptr()
         .as_mut()
         .unwrap()
         .push(wait_event_item {
@@ -366,9 +378,9 @@ unsafe fn cmd_wait_for_event_list(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     name: &CStr,
 ) -> cmd_retval {
-    cmd_wait_for_event_prune_expired(&mut wait_event_items);
+    cmd_wait_for_event_prune_expired(&mut *wait_event_items_ptr());
     // Printing can fire events that change the list, so name them first.
-    let names = (&raw const wait_event_items)
+    let names = wait_event_items_ptr()
         .as_ref()
         .unwrap()
         .iter()
@@ -385,19 +397,19 @@ unsafe fn cmd_wait_for_event_wake(
     name: &CStr,
     mut args: *mut args,
 ) -> cmd_retval {
-    cmd_wait_for_event_prune_expired(&mut wait_event_items);
+    cmd_wait_for_event_prune_expired(&mut *wait_event_items_ptr());
     let mut client_name: *const ::core::ffi::c_char =
         args_get(&*(args), 'w' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut index = 0;
-    while index < (&raw const wait_event_items).as_ref().unwrap().len() {
-        let wei = &(&raw const wait_event_items).as_ref().unwrap()[index];
+    while index < wait_event_items_ptr().as_ref().unwrap().len() {
+        let wei = &wait_event_items_ptr().as_ref().unwrap()[index];
         if !(strcmp((wei.name).as_ptr().cast_mut(), name.as_ptr()) != 0 as ::core::ffi::c_int)
             && !(strcmp(
                 cmd_wait_for_waiter_client_name(&wei.waiter).as_ptr(),
                 client_name,
             ) != 0 as ::core::ffi::c_int)
         {
-            (&raw mut wait_event_items)
+            wait_event_items_ptr()
                 .as_mut()
                 .unwrap()
                 .remove(index)
@@ -562,18 +574,18 @@ pub unsafe fn cmd_wait_for_client_lost(c: &ClientRef) {
             .is_some_and(|owner| std::rc::Rc::ptr_eq(&owner, c))
     };
     let mut index = 0;
-    while index < (&raw const wait_event_items).as_ref().unwrap().len() {
-        if !lost_waiter(&(&raw const wait_event_items).as_ref().unwrap()[index].waiter) {
+    while index < wait_event_items_ptr().as_ref().unwrap().len() {
+        if !lost_waiter(&wait_event_items_ptr().as_ref().unwrap()[index].waiter) {
             index += 1;
             continue;
         }
-        (&raw mut wait_event_items)
+        wait_event_items_ptr()
             .as_mut()
             .unwrap()
             .remove(index)
             .resume();
     }
-    let channels = (&raw mut wait_channels)
+    let channels = wait_channels_ptr()
         .as_mut()
         .unwrap()
         .entries
@@ -594,14 +606,10 @@ pub unsafe fn cmd_wait_for_client_lost(c: &ClientRef) {
     }
 }
 pub unsafe fn cmd_wait_for_flush() {
-    while !(&raw const wait_event_items).as_ref().unwrap().is_empty() {
-        (&raw mut wait_event_items)
-            .as_mut()
-            .unwrap()
-            .remove(0)
-            .resume();
+    while !wait_event_items_ptr().as_ref().unwrap().is_empty() {
+        wait_event_items_ptr().as_mut().unwrap().remove(0).resume();
     }
-    let channels = (&raw mut wait_channels)
+    let channels = wait_channels_ptr()
         .as_mut()
         .unwrap()
         .entries
@@ -706,7 +714,7 @@ mod tests {
     }
 
     unsafe fn channel(name: &CStr) -> *mut wait_channel {
-        wait_channels_find(&mut *(&raw mut wait_channels), name)
+        wait_channels_find(&mut *wait_channels_ptr(), name)
     }
 
     /// Run `exec` as the next item of `owner`'s queue on the channel `name`.
@@ -885,7 +893,7 @@ mod tests {
     }
 
     unsafe fn event_sinks() -> Vec<EventSinkId> {
-        (&raw const wait_event_items)
+        wait_event_items_ptr()
             .as_ref()
             .unwrap()
             .iter()
@@ -967,7 +975,7 @@ mod tests {
             // Freeing the client drops its queue, the item and its wait.
             drop(owner);
             assert!(head.upgrade().is_none());
-            assert!((&raw const wait_event_items).as_ref().unwrap()[0]
+            assert!(wait_event_items_ptr().as_ref().unwrap()[0]
                 .waiter
                 .is_cancelled());
 

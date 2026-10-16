@@ -313,9 +313,12 @@ impl QueueTarget {
     /// dispatch and explicit item removal (which can invoke cancellation) must
     /// happen after it returns. Results must own their data.
     unsafe fn with_queue<R>(&self, operation: impl FnOnce(&mut cmdq_list) -> R) -> R {
-        static mut GLOBAL_QUEUE: Option<Box<cmdq_list>> = None;
+        thread_local! {
+            static GLOBAL_QUEUE: std::cell::RefCell<Box<cmdq_list>> =
+                std::cell::RefCell::new(cmdq_new());
+        }
         match self {
-            Self::Global => operation(GLOBAL_QUEUE.get_or_insert_with(cmdq_new)),
+            Self::Global => GLOBAL_QUEUE.with_borrow_mut(|queue| operation(queue)),
             Self::Client(observer) => {
                 let owner = observer.upgrade().expect("live command queue owner");
                 let mut queue = owner.borrow_queue_mut();
