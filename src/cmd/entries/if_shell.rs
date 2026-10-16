@@ -215,11 +215,8 @@ unsafe fn cmd_if_shell_callback(completion: JobCompletion, cdata: &mut cmd_if_sh
                         0 as ::core::ffi::c_int,
                         |out| write_cstr(out, nullable_cstr(error_ptr)),
                     );
-                } else {
-                    cmdq_error(
-                        item_owner.as_ref().expect("live command queue item"),
-                        |out| write_cstr(out, nullable_cstr(error_ptr)),
-                    );
+                } else if let Some(item_owner) = item_owner.as_ref() {
+                    cmdq_error(item_owner, |out| write_cstr(out, nullable_cstr(error_ptr)));
                 }
             }
             Ok(commands) if !cdata.wait => {
@@ -228,17 +225,18 @@ unsafe fn cmd_if_shell_callback(completion: JobCompletion, cdata: &mut cmd_if_sh
                 drop(commands);
             }
             Ok(commands) => {
-                new_item_allocation = cmdq_get_command(&commands, (*item).state.as_ref());
-                cmdq_insert_after(
-                    item_owner.as_ref().expect("live command queue item"),
-                    new_item_allocation,
-                );
+                if let Some(item_owner) = item_owner.as_ref() {
+                    new_item_allocation = cmdq_get_command(&commands, (*item).state.as_ref());
+                    cmdq_insert_after(item_owner, new_item_allocation);
+                }
                 drop(commands);
             }
         }
     }
     if cdata.wait {
-        cmdq_continue(item_owner.as_ref().expect("live command queue item"));
+        if let Some(item_owner) = item_owner.as_ref() {
+            cmdq_continue(item_owner);
+        }
     }
 }
 impl Drop for cmd_if_shell_data {

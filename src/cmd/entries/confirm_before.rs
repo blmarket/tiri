@@ -168,23 +168,20 @@ unsafe fn cmd_confirm_before_callback(
                 if item.is_null() {
                     new_item_allocation = cmdq_get_command(&cdata.cmdlist, None);
                     cmdq_append(c.as_ref(), new_item_allocation);
-                } else {
+                } else if let Some(item_owner) = item_owner.as_ref() {
                     new_item_allocation = cmdq_get_command(&cdata.cmdlist, (*item).state.as_ref());
-                    cmdq_insert_after(
-                        item_owner.as_ref().expect("live command queue item"),
-                        new_item_allocation,
-                    );
+                    cmdq_insert_after(item_owner, new_item_allocation);
                 }
             }
         }
     }
-    if !item.is_null() {
+    if let Some(item_owner) = item_owner.as_ref() {
         if let Some(client) = cmdq_get_client((item).as_ref()) {
             if client.attached_session().upgrade().is_none() {
                 client.set_return_value(retcode);
             }
         }
-        cmdq_continue(item_owner.as_ref().expect("live command queue item"));
+        cmdq_continue(item_owner);
     }
     PROMPT_CLOSE
 }

@@ -81,35 +81,28 @@ unsafe fn cmd_load_buffer_done(
     }
     let tc = cdata.client.as_ref();
     let item_owner = cdata.item.upgrade();
-    let item = item_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut bdata: *mut ::core::ffi::c_void = evbuffer_pullup(buffer, -1)
         .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
         as *mut ::core::ffi::c_void;
     let mut bsize: size_t = evbuffer_get_length(&*(buffer));
     let mut cause: Option<CString> = None;
     if error != 0 as ::core::ffi::c_int {
-        if !item.is_null() {
-            cmdq_error(
-                item_owner.as_ref().expect("live command queue item"),
-                |out| {
-                    write_cstr(out, nullable_cstr(strerror(error)))?;
-                    out.write_all(b": ")?;
-                    write_cstr(out, path)
-                },
-            );
+        if let Some(item_owner) = item_owner.as_ref() {
+            cmdq_error(item_owner, |out| {
+                write_cstr(out, nullable_cstr(strerror(error)))?;
+                out.write_all(b": ")?;
+                write_cstr(out, path)
+            });
         }
     } else if bsize != 0 as size_t {
         let owned: Box<[u8]> = std::slice::from_raw_parts(bdata.cast::<u8>(), bsize).into();
         if paste_set_owned(owned, cdata.name.as_deref(), Some(&mut cause))
             != 0 as ::core::ffi::c_int
         {
-            if !item.is_null() {
-                cmdq_error(
-                    item_owner.as_ref().expect("live command queue item"),
-                    |out| write_cstr(out, (cause.as_ref().unwrap()).as_c_str()),
-                );
+            if let Some(item_owner) = item_owner.as_ref() {
+                cmdq_error(item_owner, |out| {
+                    write_cstr(out, (cause.as_ref().unwrap()).as_c_str())
+                });
             }
         } else if tc.is_some_and(|client| {
             client.attached_session().upgrade().is_some() && !client.is_dead()
@@ -122,8 +115,8 @@ unsafe fn cmd_load_buffer_done(
         }
     }
     cdata.release_client();
-    if !item.is_null() {
-        cmdq_continue(item_owner.as_ref().expect("live command queue item"));
+    if let Some(item_owner) = item_owner.as_ref() {
+        cmdq_continue(item_owner);
     }
 }
 unsafe fn cmd_load_buffer_exec(

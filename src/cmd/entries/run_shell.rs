@@ -293,7 +293,9 @@ unsafe fn cmd_run_shell_timer(mut cdata: Box<cmd_run_shell_data>) {
     if cdata.state.is_none() {
         if cmd.is_none() {
             if cdata.wait {
-                cmdq_continue(item_owner.as_ref().expect("live command queue item"));
+                if let Some(item_owner) = item_owner.as_ref() {
+                    cmdq_continue(item_owner);
+                }
             }
             return;
         }
@@ -323,15 +325,12 @@ unsafe fn cmd_run_shell_timer(mut cdata: Box<cmd_run_shell_data>) {
                         write_cstr(out, cmd.unwrap())
                     },
                 );
-            } else {
-                cmdq_error(
-                    item_owner.as_ref().expect("live command queue item"),
-                    |out| {
-                        out.write_all(b"failed to run command: ")?;
-                        write_cstr(out, cmd.unwrap())
-                    },
-                );
-                cmdq_continue(item_owner.as_ref().expect("live command queue item"));
+            } else if let Some(item_owner) = item_owner.as_ref() {
+                cmdq_error(item_owner, |out| {
+                    out.write_all(b"failed to run command: ")?;
+                    write_cstr(out, cmd.unwrap())
+                });
+                cmdq_continue(item_owner);
             }
         } else {
             // job_run does not dispatch callbacks before returning. Transfer the
@@ -365,11 +364,8 @@ unsafe fn cmd_run_shell_timer(mut cdata: Box<cmd_run_shell_data>) {
                     0 as ::core::ffi::c_int,
                     |out| write_cstr(out, nullable_cstr(error_ptr)),
                 );
-            } else {
-                cmdq_error(
-                    item_owner.as_ref().expect("live command queue item"),
-                    |out| write_cstr(out, nullable_cstr(error_ptr)),
-                );
+            } else if let Some(item_owner) = item_owner.as_ref() {
+                cmdq_error(item_owner, |out| write_cstr(out, nullable_cstr(error_ptr)));
             }
         }
         Ok(commands) if !cdata.wait => {
@@ -378,16 +374,17 @@ unsafe fn cmd_run_shell_timer(mut cdata: Box<cmd_run_shell_data>) {
             drop(commands);
         }
         Ok(commands) => {
-            new_item_allocation = cmdq_get_command(&commands, (*item).state.as_ref());
-            cmdq_insert_after(
-                item_owner.as_ref().expect("live command queue item"),
-                new_item_allocation,
-            );
+            if let Some(item_owner) = item_owner.as_ref() {
+                new_item_allocation = cmdq_get_command(&commands, (*item).state.as_ref());
+                cmdq_insert_after(item_owner, new_item_allocation);
+            }
             drop(commands);
         }
     }
     if cdata.wait {
-        cmdq_continue(item_owner.as_ref().expect("live command queue item"));
+        if let Some(item_owner) = item_owner.as_ref() {
+            cmdq_continue(item_owner);
+        }
     }
 }
 unsafe fn cmd_run_shell_callback(completion: JobCompletion, cdata: &cmd_run_shell_data) {
@@ -442,7 +439,9 @@ unsafe fn cmd_run_shell_callback(completion: JobCompletion, cdata: &cmd_run_shel
                 client.set_return_value(retcode);
             }
         }
-        cmdq_continue(item_owner.as_ref().expect("live command queue item"));
+        if let Some(item_owner) = item_owner.as_ref() {
+            cmdq_continue(item_owner);
+        }
     }
 }
 impl Drop for cmd_run_shell_data {
