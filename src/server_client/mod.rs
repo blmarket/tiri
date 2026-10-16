@@ -20,7 +20,7 @@ use crate::src::cfg::{cfg_client, cfg_finished, start_cfg};
 use crate::src::cmd::entries::wait_for::cmd_wait_for_client_lost;
 use crate::src::cmd::parse::cmd_parse_from_argv;
 use crate::src::cmd::queue::{
-    cmdq_abort_file_wait, cmdq_append, cmdq_error, cmdq_get_callback_owned, cmdq_get_client,
+    cmdq_append, cmdq_error, cmdq_get_callback_owned, cmdq_get_client,
     cmdq_get_command, cmdq_get_error, cmdq_insert_after, cmdq_new, cmdq_next,
 };
 use crate::src::cmd::{cmd_list_all_have, cmd_log_argv};
@@ -1208,7 +1208,6 @@ unsafe fn server_client_lost(client_owner: &ClientRef) {
     server_client_clear_overlay(client_owner);
     status_prompt_clear(client_owner);
     status_message_clear(client_owner);
-    cmdq_abort_file_wait(client_owner);
     let files = client_owner.file_handles();
     crate::src::file::client_files_interrupt(files, EINTR);
     let registry_owner =
@@ -4407,5 +4406,134 @@ mod key_event_owner_tests {
 impl Drop for client {
     fn drop(&mut self) {
         unsafe { server_client_free(self) }
+    }
+}
+
+#[cfg(test)]
+mod lost_queue_tests {
+    use super::*;
+    use crate::src::cmd::queue::cmdq_continue;
+    use crate::src::shared::command::{CMDQ_WAITING, CMD_RETURN_NORMAL, CMD_RETURN_WAIT};
+    use std::cell::Cell;
+
+    struct SetOnDrop(Rc<Cell<bool>>);
+    impl Drop for SetOnDrop {
+        fn drop(&mut self) {
+            self.0.set(true);
+        }
+    }
+
+    unsafe fn client_with_queue() -> ClientRef {
+        let owner = client::new();
+        (*owner.get()).queue = Some(cmdq_new());
+        owner
+    }
+
+    /// Queue a suffix item that records whether it ran or was released.
+    unsafe fn append_suffix(owner: &ClientRef, ran: &Rc<Cell<bool>>, released: &Rc<Cell<bool>>) {
+        let ran = ran.clone();
+        let capture = SetOnDrop(released.clone());
+        cmdq_append(
+            Some(owner),
+            cmdq_get_callback_owned(
+                c"suffix",
+                Some(Box::new(move |_| {
+                    let _capture = &capture;
+                    ran.set(true);
+                    CMD_RETURN_NORMAL
+                })),
+            ),
+        );
+    }
+
+    #[test]
+    fn dropping_a_lost_client_cancels_its_waiting_queue() {
+        unsafe {
+            let owner = client_with_queue();
+            let waiter = Rc::new(Cell::new(std::rc::Weak::new()));
+            let observed = waiter.clone();
+            let head = cmdq_append(
+                Some(&owner),
+                cmdq_get_callback_owned(
+                    c"waiting head",
+                    Some(Box::new(move |item| {
+                        observed.set(Rc::downgrade(item));
+                        CMD_RETURN_WAIT
+                    })),
+                ),
+            );
+            let (ran, released) = (Rc::new(Cell::new(false)), Rc::new(Cell::new(false)));
+            append_suffix(&owner, &ran, &released);
+            cmdq_next(Some(&owner));
+            assert_ne!((*head.upgrade().unwrap().get()).flags & CMDQ_WAITING, 0);
+
+            // Loss marks the client dead and drains; the waiting head blocks the suffix.
+            (*owner.get()).flags |= CLIENT_DEAD as uint64_t;
+            cmdq_next(Some(&owner));
+            assert!(!ran.get());
+
+            let client = Rc::downgrade(&owner);
+            drop(owner);
+            assert!(client.upgrade().is_none(), "queued items must not retain their client");
+            assert!(head.upgrade().is_none());
+            assert!(released.get());
+            assert!(!ran.get());
+
+            // A waiter resuming after the drop finds nothing to continue.
+            let waiter = waiter.take();
+            assert!(waiter.upgrade().is_none());
+            if let Some(item) = waiter.upgrade() {
+                cmdq_continue(&item);
+            }
+        }
+    }
+
+    #[test]
+    fn dropping_a_lost_client_cancels_a_file_backed_wait() {
+        use tiri_rt::Runtime as _;
+        let runtime = tiri_rt::mio::Runtime::new().unwrap();
+        unsafe {
+            let owner = client_with_queue();
+            let cancelled = Rc::new(Cell::new(0));
+            let observed = cancelled.clone();
+            let file = Rc::new(Cell::new(std::rc::Weak::new()));
+            let observed_file = file.clone();
+            let mut cancel: Option<Box<dyn FnOnce()>> =
+                Some(Box::new(move || observed.set(observed.get() + 1)));
+            let head = cmdq_append(
+                Some(&owner),
+                cmdq_get_callback_owned(
+                    c"file-backed head",
+                    Some(Box::new(move |item| {
+                        crate::src::file::file_read_with_cmdq_wait_init(
+                            None,
+                            c"/dev/null",
+                            move |file| {
+                                observed_file.set(file);
+                                Some(Box::new(|_| panic!("a dropped wait must not complete")))
+                            },
+                            item,
+                            cancel.take(),
+                        );
+                        CMD_RETURN_WAIT
+                    })),
+                ),
+            );
+            let (ran, released) = (Rc::new(Cell::new(false)), Rc::new(Cell::new(false)));
+            append_suffix(&owner, &ran, &released);
+            assert_eq!(cmdq_next(Some(&owner)), 0, "local completion must be deferred");
+            assert_ne!((*head.upgrade().unwrap().get()).flags & CMDQ_WAITING, 0);
+
+            (*owner.get()).flags |= CLIENT_DEAD as uint64_t;
+            // server_client_free asserts that the client file index is empty.
+            drop(owner);
+            assert!(head.upgrade().is_none());
+            assert_eq!(cancelled.get(), 1);
+            assert!(released.get());
+            assert!(!ran.get());
+            let file = file.take();
+            crate::src::reactor::shutdown_runtime(runtime);
+            assert!(file.upgrade().is_none());
+        }
     }
 }

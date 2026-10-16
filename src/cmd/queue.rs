@@ -245,29 +245,6 @@ pub(crate) fn cmdq_clear_wait_file(
     }
 }
 
-/// A dead client cannot resume a file-backed waiting command. Cancel its
-/// callback data first, then remove the waiting item and its queued suffix.
-/// Other waits, such as a delayed command, keep their item: like tmux, their
-/// work still runs and only the resume is lost.
-pub(crate) unsafe fn cmdq_abort_file_wait(owner: &ClientRef) {
-    let queue = QueueTarget::for_client(Some(owner));
-    let Some(first) = queue.with_queue(|queue| queue.first()) else {
-        return;
-    };
-    if (*first.get()).flags & (CMDQ_FIRED | CMDQ_WAITING) != (CMDQ_FIRED | CMDQ_WAITING) {
-        return;
-    }
-    let Some(file) = (*first.get()).wait_file.upgrade() else {
-        return;
-    };
-    file_cancel_cmdq_wait(&file);
-    drop(first);
-    queue.with_queue(|queue| queue.item = std::rc::Weak::new());
-    while let Some(item) = queue.with_queue(|queue| queue.list.pop_front()) {
-        cmdq_remove(item);
-    }
-}
-
 /// The execution context of an item may change during dispatch; its queue
 /// identity does not. A weak owner avoids adding a second client lifetime duty.
 #[derive(Clone)]
