@@ -149,6 +149,10 @@ unsafe fn cmd_confirm_before_callback(
 ) -> prompt_result {
     let mut c: Option<ClientRef> = Some(c_owner.clone());
     let item_owner = cdata.item.upgrade();
+    // A lost waiter's queue is gone: the confirmed command has nowhere to run.
+    if item_owner.is_none() && !std::rc::Weak::ptr_eq(&cdata.item, &std::rc::Weak::new()) {
+        return PROMPT_CLOSE;
+    }
     let item: *mut cmdq_item = item_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());

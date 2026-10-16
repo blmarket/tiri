@@ -64,7 +64,6 @@ pub struct cmdq_item {
     next: Option<std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     /// Nonowning execution context, which can temporarily differ from the queue owner.
     pub client: ClientWeak,
-    client_owner: Option<ClientRef>,
     /// Nonowning command target; upgrade before accessing the client.
     pub target_client: ClientWeak,
     pub type_0: cmdq_type,
@@ -92,9 +91,6 @@ impl Drop for cmdq_item {
             unsafe { file_cancel_cmdq_wait(&file) };
         }
         cmdq_clear_wait_timer(self);
-        if let Some(client) = self.client_owner.take() {
-            (client).release();
-        }
         drop(self.cmdlist.take());
         drop(self.state.take());
         drop(self.cb.take());
@@ -113,7 +109,6 @@ impl cmdq_item {
             queue: Default::default(),
             next: Default::default(),
             client: Default::default(),
-            client_owner: None,
             target_client: Default::default(),
             type_0: Default::default(),
             group: Default::default(),
@@ -461,7 +456,6 @@ pub unsafe fn cmdq_append(
         let item = owner_item.get();
         assert!((*item).queue.is_none(), "detached command item");
         remaining = (*item).next.take();
-        (*item).client_owner = owner.cloned();
         (*item).client = owner.map(std::rc::Rc::downgrade).unwrap_or_default();
         (*item).queue = Some(queue.clone());
         last = std::rc::Rc::downgrade(&owner_item);
@@ -495,7 +489,6 @@ pub unsafe fn cmdq_insert_after(
         let item = owner_item.get();
         assert!((*item).queue.is_none(), "detached command item");
         remaining = (*item).next.take();
-        (*item).client_owner = c_owner.clone();
         (*item).client = c_owner
             .as_ref()
             .map(std::rc::Rc::downgrade)
@@ -781,7 +774,10 @@ unsafe fn cmdq_fire_command(
     };
     let mut flags: ::core::ffi::c_int = 0;
     let mut quiet: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if saved_client.as_ref().is_some_and(|c| c.is_dead()) {
+    // A freed client is as dead as one still marked dead.
+    let client_freed =
+        saved_client.is_none() && !std::rc::Weak::ptr_eq(&saved, &std::rc::Weak::new());
+    if client_freed || saved_client.as_ref().is_some_and(|c| c.is_dead()) {
         return CMD_RETURN_ERROR;
     }
     if cfg_finished != 0 {

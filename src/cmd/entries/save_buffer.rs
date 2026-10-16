@@ -163,10 +163,12 @@ unsafe fn cmd_save_buffer_exec(
         flags,
         bufdata,
         Some(Box::new(move |event| unsafe {
+            // A dropped item cancelled its wait; nothing is left to resume.
+            let Some(item) = waiting_item.upgrade() else {
+                return;
+            };
             cmd_save_buffer_done(
-                &waiting_item
-                    .upgrade()
-                    .expect("file wait retains command item"),
+                &item,
                 event.path,
                 event.error,
                 event.closed as ::core::ffi::c_int,

@@ -357,7 +357,9 @@ unsafe fn window_pane_destroy_ready(
     if !(*wp).flags & PANE_EXITED != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    if (*wp).wait_item.strong_count() != 0 && (*wp).exit_status.is_none() {
+    // Like tmux, a waiter keeps the pane even after its item is dropped.
+    let waited = !std::rc::Weak::ptr_eq(&(*wp).wait_item, &std::rc::Weak::new());
+    if waited && (*wp).exit_status.is_none() {
         return 0 as ::core::ffi::c_int;
     }
     if (*wp).editor.is_some() && (*wp).exit_status.is_none() {
@@ -1585,12 +1587,10 @@ unsafe fn window_pane_input_callback(
         }
         file_cancel(&mut *cancelled.get());
     } else if file.is_none() || closed || error != 0 {
-        cmdq_continue(
-            &cdata
-                .item
-                .upgrade()
-                .expect("file wait retains command item"),
-        );
+        // A dropped item cancelled its wait; nothing is left to resume.
+        if let Some(item) = cdata.item.upgrade() {
+            cmdq_continue(&item);
+        }
     } else {
         let bytes: &[u8] = if buf.is_null() {
             &[]

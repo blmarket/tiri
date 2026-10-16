@@ -267,10 +267,8 @@ unsafe fn cmd_command_prompt_callback(
 ) -> prompt_result {
     let mut c: Option<ClientRef> = c_owner.cloned();
     let mut current_block: u64;
+    // A lost waiter keeps the prompt going, but its commands have no queue.
     let item_owner = cdata.item.upgrade();
-    if cdata.wait && item_owner.is_none() {
-        return PROMPT_CLOSE;
-    }
     let item = item_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -339,11 +337,11 @@ unsafe fn cmd_command_prompt_callback(
                         drop(cmdlist);
                     }
                     Ok(cmdlist) => {
-                        new_item_allocation = cmdq_get_command(&cmdlist, (*item).state.as_ref());
-                        cmdq_insert_after(
-                            item_owner.as_ref().expect("live command queue item"),
-                            new_item_allocation,
-                        );
+                        if let Some(item_owner) = item_owner.as_ref() {
+                            new_item_allocation =
+                                cmdq_get_command(&cmdlist, (*item).state.as_ref());
+                            cmdq_insert_after(item_owner, new_item_allocation);
+                        }
                         drop(cmdlist);
                     }
                 }
@@ -355,7 +353,9 @@ unsafe fn cmd_command_prompt_callback(
     }
     if cdata.wait {
         cdata.item = Weak::new();
-        cmdq_continue(item_owner.as_ref().expect("live command queue item"));
+        if let Some(item_owner) = item_owner.as_ref() {
+            cmdq_continue(item_owner);
+        }
     }
     PROMPT_CLOSE
 }
