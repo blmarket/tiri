@@ -138,7 +138,8 @@ pub trait WindowPane {
     unsafe fn set_title(&self, title: &CStr) -> bool;
     /// Trim history below the base cursor when no mode owns the displayed screen.
     unsafe fn trim_history(&self);
-    unsafe fn wait_until_close(&self, item: &Rc<UnsafeCell<cmdq_item>>);
+    /// Finish `waiter` with the exit status once this pane closes.
+    unsafe fn wait_until_close(&self, waiter: CmdqWaiter);
     /// Start stdin delivery to an empty pane, retaining command waits in the file callback.
     unsafe fn start_input(&self, item: &Rc<UnsafeCell<cmdq_item>>) -> Result<i32, CString>;
     /// Translate a mouse report after copying pane geometry; no pane borrow
@@ -808,8 +809,8 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         pane.base.cy = pane.base.cy.wrapping_add(adjust);
         pane.flags |= PANE_REDRAW;
     }
-    unsafe fn wait_until_close(&self, item: &Rc<UnsafeCell<cmdq_item>>) {
-        (*self.get()).wait_item = Rc::downgrade(item);
+    unsafe fn wait_until_close(&self, waiter: CmdqWaiter) {
+        (*self.get()).wait_close = Some(waiter);
     }
     unsafe fn start_input(&self, item: &Rc<UnsafeCell<cmdq_item>>) -> Result<i32, CString> {
         window_pane_start_input(self, item)

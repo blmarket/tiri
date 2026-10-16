@@ -2,7 +2,7 @@ use crate::src::arguments::{
     args_count, args_flag_values, args_get, args_has, args_percentage_result, args_string,
     args_strtonum_result, args_to_vector,
 };
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_event, cmdq_get_target_client};
+use crate::src::cmd::queue::{cmdq_error, cmdq_get_event, cmdq_get_target_client, cmdq_wait};
 use crate::src::cmd::{cmd_append_argv, cmd_get_args_mut};
 use crate::src::environ::{environ_create, environ_put};
 use crate::src::format::bytes::write_cstr;
@@ -1182,27 +1182,36 @@ unsafe fn cmd_display_popup_exec(
                         lines,
                         flags,
                     );
-                } else if !(popup_display(
-                    flags,
-                    lines,
-                    Some(item_handle),
-                    px,
-                    py,
-                    w,
-                    h,
-                    env.as_deref(),
-                    shellcmd,
-                    &argv_owner,
-                    cwd,
-                    title,
-                    &tc.clone().expect("live client"),
-                    s.as_ref(),
-                    style,
-                    border_style,
-                ) != 0 as ::core::ffi::c_int)
-                {
-                    drop(env.take());
-                    return CMD_RETURN_WAIT;
+                } else {
+                    // A popup that fails to start returns NORMAL without waiting.
+                    let mut retval = CMD_RETURN_NORMAL;
+                    let wait = || {
+                        let (waiter, wait_retval) = cmdq_wait(item_handle);
+                        retval = wait_retval;
+                        waiter
+                    };
+                    if popup_display(
+                        flags,
+                        lines,
+                        wait,
+                        px,
+                        py,
+                        w,
+                        h,
+                        env.as_deref(),
+                        shellcmd,
+                        &argv_owner,
+                        cwd,
+                        title,
+                        &tc.clone().expect("live client"),
+                        s.as_ref(),
+                        style,
+                        border_style,
+                    ) == 0 as ::core::ffi::c_int
+                    {
+                        drop(env.take());
+                        return retval;
+                    }
                 }
                 current_block = 6589043366517631393;
             }

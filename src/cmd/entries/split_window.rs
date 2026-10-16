@@ -4,6 +4,7 @@ use crate::src::arguments::{
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_state_owned, cmdq_get_target_client, cmdq_insert_hook, cmdq_print,
+    cmdq_wait,
 };
 use crate::src::environ::{environ_create, environ_put};
 use crate::src::events::events_fire;
@@ -442,9 +443,10 @@ unsafe fn cmd_split_window_exec(
                                                     return CMD_RETURN_WAIT;
                                                 }
                                                 if args_has(args, 'W' as i32 as u_char) != 0 {
-                                                    new_pane.wait_until_close(item_handle);
+                                                    let (waiter, retval) = cmdq_wait(item_handle);
+                                                    new_pane.wait_until_close(waiter);
                                                     drop(window_owner);
-                                                    return CMD_RETURN_WAIT;
+                                                    return retval;
                                                 }
                                                 drop(window_owner);
                                                 return CMD_RETURN_NORMAL;

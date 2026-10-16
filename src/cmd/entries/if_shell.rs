@@ -5,8 +5,8 @@ use crate::src::arguments::{
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::parse::cmd_parse_error_uppercase_first;
 use crate::src::cmd::queue::{
-    cmdq_append, cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_command,
-    cmdq_get_target_client, cmdq_insert_after,
+    cmdq_append, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_target_client,
+    cmdq_insert_after, cmdq_resumed, cmdq_suspend,
 };
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
@@ -26,14 +26,12 @@ use crate::src::shared::job::JobCompletion;
 use crate::src::shared::session::SessionRef;
 use crate::src::status::status_message_set;
 use std::cell::UnsafeCell;
-use std::rc::Weak;
+use std::rc::{Rc, Weak};
 
 pub struct cmd_if_shell_data {
     pub cmd_if: Option<Box<args_command_state>>,
     pub cmd_else: Option<Box<args_command_state>>,
     pub client: Option<ClientRef>,
-    pub item: Weak<UnsafeCell<cmdq_item>>,
-    pub wait: bool,
 }
 pub static cmd_if_shell_entry: cmd_entry = {
     cmd_entry {
@@ -122,8 +120,6 @@ unsafe fn cmd_if_shell_exec(
         cmd_if: None,
         cmd_else: None,
         client: None,
-        item: Weak::new(),
-        wait: wait != 0,
     });
     cdata.cmd_if = Some(args_make_commands_prepare(
         self_0.clone(),
@@ -145,7 +141,6 @@ unsafe fn cmd_if_shell_exec(
     }
     if wait != 0 {
         cdata.client = cmdq_get_client((item).as_ref());
-        cdata.item = std::rc::Rc::downgrade(item_handle);
     } else {
         cdata.client = tc_owner.clone();
     }
@@ -170,27 +165,51 @@ unsafe fn cmd_if_shell_exec(
         });
         return CMD_RETURN_ERROR;
     }
-    // The job takes ownership only after startup succeeds. The record also
-    // drops when the completion callback is cancelled without being invoked.
-    job.try_borrow_mut()
-        .expect("newly registered job")
-        .completecb = Some(Box::new(move |completion| unsafe {
-        cmd_if_shell_callback(completion, &mut cdata);
-    }));
+    // job_run does not dispatch callbacks before returning. The job takes the
+    // record only after startup succeeds; dropping the callback also releases
+    // it if the job is freed before completion.
     if wait == 0 {
+        job.try_borrow_mut()
+            .expect("newly registered job")
+            .completecb = Some(Box::new(move |completion| unsafe {
+            cmd_if_shell_callback(completion, &mut cdata, None);
+        }));
         return CMD_RETURN_NORMAL;
     }
-    CMD_RETURN_WAIT
+    let (done, completed) = tiri_rt::oneshot::channel();
+    // A job freed before completion drops the sender unsent.
+    job.try_borrow_mut()
+        .expect("newly registered job")
+        .completecb = Some(Box::new(move |completion| {
+        let _ = done.send(completion);
+    }));
+    cmdq_suspend(
+        item_handle,
+        cmd_if_shell_complete(completed, cdata, Rc::downgrade(item_handle)),
+    )
 }
-unsafe fn cmd_if_shell_callback(completion: JobCompletion, cdata: &mut cmd_if_shell_data) {
-    let item_owner = cdata.item.upgrade();
-    if cdata.wait && item_owner.is_none() {
-        return;
-    }
+/// Run the callback body inside the job's completion, where tmux runs it. The
+/// continuation owns the data, and with it the client (tmux's cdata). A job
+/// freed without completing never resumes the item (tmux's cmd_if_shell_free):
+/// release the data, and the client with it, then park.
+async fn cmd_if_shell_complete(
+    completed: tiri_rt::oneshot::Receiver<JobCompletion>,
+    mut cdata: Box<cmd_if_shell_data>,
+    item: Weak<UnsafeCell<cmdq_item>>,
+) {
+    let Some(completion) = completed.await else {
+        drop(cdata);
+        return std::future::pending().await;
+    };
+    unsafe { cmd_if_shell_callback(completion, &mut cdata, Some(&item)) };
+}
+// `item` is the polled item of a foreground if-shell, and None for -b.
+unsafe fn cmd_if_shell_callback(
+    completion: JobCompletion,
+    cdata: &mut cmd_if_shell_data,
+    item: Option<&Weak<UnsafeCell<cmdq_item>>>,
+) {
     let c = cdata.client.as_ref();
-    let item = item_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let new_item_allocation;
     let state = if completion.status.success() {
         cdata.cmd_if.as_deref_mut()
@@ -200,13 +219,17 @@ unsafe fn cmd_if_shell_callback(completion: JobCompletion, cdata: &mut cmd_if_sh
     if let Some(state) = state {
         match args_make_commands(state, &Vec::new()) {
             Err(mut error) => {
-                if !cdata.wait {
+                if item.is_none() {
                     cmd_parse_error_uppercase_first(&mut error);
                 }
                 let error_ptr = error
                     .as_ref()
                     .map_or(::core::ptr::null(), |cause| cause.as_ptr());
-                if !cdata.wait {
+                if let Some(item) = item {
+                    cmdq_error(&cmdq_resumed(item), |out| {
+                        write_cstr(out, nullable_cstr(error_ptr))
+                    });
+                } else {
                     status_message_set(
                         c,
                         -(1 as ::core::ffi::c_int),
@@ -215,27 +238,19 @@ unsafe fn cmd_if_shell_callback(completion: JobCompletion, cdata: &mut cmd_if_sh
                         0 as ::core::ffi::c_int,
                         |out| write_cstr(out, nullable_cstr(error_ptr)),
                     );
-                } else if let Some(item_owner) = item_owner.as_ref() {
-                    cmdq_error(item_owner, |out| write_cstr(out, nullable_cstr(error_ptr)));
                 }
-            }
-            Ok(commands) if !cdata.wait => {
-                new_item_allocation = cmdq_get_command(&commands, None);
-                cmdq_append(c, new_item_allocation);
-                drop(commands);
             }
             Ok(commands) => {
-                if let Some(item_owner) = item_owner.as_ref() {
-                    new_item_allocation = cmdq_get_command(&commands, (*item).state.as_ref());
-                    cmdq_insert_after(item_owner, new_item_allocation);
+                if let Some(item) = item {
+                    let item = cmdq_resumed(item);
+                    new_item_allocation = cmdq_get_command(&commands, (*item.get()).state.as_ref());
+                    cmdq_insert_after(&item, new_item_allocation);
+                } else {
+                    new_item_allocation = cmdq_get_command(&commands, None);
+                    cmdq_append(c, new_item_allocation);
                 }
                 drop(commands);
             }
-        }
-    }
-    if cdata.wait {
-        if let Some(item_owner) = item_owner.as_ref() {
-            cmdq_continue(item_owner);
         }
     }
 }
@@ -254,24 +269,126 @@ impl Drop for cmd_if_shell_data {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::src::cmd::core::cmd_list_new;
+    use crate::src::cmd::queue::{cmdq_get_callback_owned, cmdq_next};
+    use crate::src::server_client::queue_test_clients as clients;
+    use crate::src::shared::client::CLIENT_DEAD;
+    use std::cell::Cell;
+    use std::os::unix::process::ExitStatusExt;
+    use std::process::ExitStatus;
+
+    /// Foreground data whose if branch is an empty command list, without an
+    /// else branch. With no if branch, the body panics if the job succeeded.
+    fn data(client: &ClientRef, branch: bool) -> Box<cmd_if_shell_data> {
+        let mut cmd_if = args_command_state::empty();
+        cmd_if.cmdlist = branch.then(|| unsafe { cmd_list_new() });
+        Box::new(cmd_if_shell_data {
+            cmd_if: Some(Box::new(cmd_if)),
+            cmd_else: None,
+            client: Some(client.clone()),
+        })
+    }
+
+    /// Queue an item whose continuation waits for a job completion on the
+    /// returned sender, as the completecb that cmd_if_shell_exec installs.
+    unsafe fn append_job_wait(
+        owner: &ClientRef,
+        cdata: Box<cmd_if_shell_data>,
+    ) -> (
+        Weak<UnsafeCell<cmdq_item>>,
+        tiri_rt::oneshot::Sender<JobCompletion>,
+    ) {
+        let (done, completed) = tiri_rt::oneshot::channel();
+        let item = cmdq_append(
+            Some(owner),
+            cmdq_get_callback_owned(
+                c"if-shell",
+                Some(Box::new(move |item| {
+                    cmdq_suspend(
+                        item,
+                        cmd_if_shell_complete(completed, cdata, Rc::downgrade(item)),
+                    )
+                })),
+            ),
+        );
+        cmdq_next(Some(owner));
+        (item, done)
+    }
+
+    /// Queue a callback that records whether it ran.
+    unsafe fn append_flag(owner: &ClientRef) -> Rc<Cell<bool>> {
+        let ran = Rc::new(Cell::new(false));
+        let flag = ran.clone();
+        cmdq_append(
+            Some(owner),
+            cmdq_get_callback_owned(
+                c"flag",
+                Some(Box::new(move |_| {
+                    flag.set(true);
+                    CMD_RETURN_NORMAL
+                })),
+            ),
+        );
+        ran
+    }
+
+    fn exited(code: i32) -> JobCompletion {
+        JobCompletion {
+            status: ExitStatus::from_raw(code << 8),
+            output: Vec::new(),
+        }
+    }
 
     #[test]
-    fn expired_wait_skips_job_completion() {
-        let mut data = cmd_if_shell_data {
-            cmd_if: None,
-            cmd_else: None,
-            client: None,
-            item: Weak::new(),
-            wait: true,
-        };
+    fn job_completion_runs_the_body_inside_the_send() {
         unsafe {
-            cmd_if_shell_callback(
-                JobCompletion {
-                    status: Default::default(),
-                    output: Vec::new(),
-                },
-                &mut data,
-            );
+            for (code, branches) in [(0, 1), (1, 0)] {
+                let owner = clients::with_queue();
+                let (head, done) = append_job_wait(&owner, data(&owner, true));
+                let ran = append_flag(&owner);
+                assert_eq!(Rc::strong_count(&owner), 2, "the data keeps the client");
+                assert!(done.send(exited(code)).is_ok());
+                // The body ran and its data was released at the job's event;
+                // removal and the chosen branch wait for cmdq_next.
+                assert_eq!(Rc::strong_count(&owner), 1);
+                assert!(head.upgrade().is_some() && !ran.get());
+                assert_eq!(cmdq_next(Some(&owner)), branches + 1);
+                assert!(head.upgrade().is_none());
+                assert!(ran.get());
+            }
+        }
+    }
+
+    #[test]
+    fn a_lost_client_is_freed_once_its_job_completes() {
+        unsafe {
+            let owner = clients::with_queue();
+            let (head, done) = append_job_wait(&owner, data(&owner, true));
+            owner.update_flags(CLIENT_DEAD as u64, 0);
+            let client = Rc::downgrade(&owner);
+            drop(owner);
+            // The data keeps the client while the job runs (L7).
+            assert!(client.upgrade().is_some());
+            assert!(done.send(exited(0)).is_ok());
+            assert!(client.upgrade().is_none());
+            assert!(head.upgrade().is_none());
+        }
+    }
+
+    #[test]
+    fn a_job_freed_unfinished_releases_the_data_and_parks() {
+        unsafe {
+            let owner = clients::with_queue();
+            let (head, done) = append_job_wait(&owner, data(&owner, false));
+            let ran = append_flag(&owner);
+            drop(done);
+            assert_eq!(Rc::strong_count(&owner), 1, "the data is released");
+            // The item never resumes and blocks its queue, as in tmux.
+            assert_eq!(cmdq_next(Some(&owner)), 0);
+            assert!(head.upgrade().is_some() && !ran.get());
+            owner.update_flags(CLIENT_DEAD as u64, 0);
+            drop(owner);
+            assert!(head.upgrade().is_none());
         }
     }
 }

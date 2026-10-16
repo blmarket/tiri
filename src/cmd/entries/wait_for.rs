@@ -1,6 +1,6 @@
 use crate::src::arguments::{args_get, args_has, args_string};
 use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::{cmdq_continue, cmdq_error, cmdq_get_client, cmdq_print};
+use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print, cmdq_wait, CmdqWaiter};
 use crate::src::events::{events_add_sink, events_remove_sink};
 use crate::src::events_payload::{
     event_payload_add_formats, event_payload_item_name, event_payload_item_print_owned,
@@ -11,12 +11,13 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_create_with_client, format_expand_cstring, format_true};
 use crate::src::hooks::hooks_valid_event_name;
 use crate::src::log::{log_cstr, log_debug, log_pointer};
+use crate::src::reactor::{evbuffer_add_formatted, evbuffer_new};
 use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item, wait_item};
+use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::events::{event_payload, events_callback, EventSinkId};
 use crate::src::shared::format::format_tree;
 use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
@@ -30,8 +31,8 @@ pub struct wait_channel {
     pub name: std::ffi::CString,
     pub locked: ::core::ffi::c_int,
     pub woken: ::core::ffi::c_int,
-    pub(crate) waiters: Vec<wait_item>,
-    pub(crate) lockers: Vec<wait_item>,
+    pub(crate) waiters: Vec<CmdqWaiter>,
+    pub(crate) lockers: Vec<CmdqWaiter>,
 }
 
 pub struct wait_channels {
@@ -42,8 +43,10 @@ pub struct wait_channels {
 
 #[repr(C)]
 pub struct wait_event_item {
+    /// Read at event time only, to expand the filter; also the entry's key.
     pub item: Weak<UnsafeCell<cmdq_item>>,
-    pub sink: EventSinkId,
+    waiter: CmdqWaiter,
+    sink: wait_event_sink,
     pub name: std::ffi::CString,
     pub filter: Option<std::ffi::CString>,
     pub verbose: ::core::ffi::c_int,
@@ -109,19 +112,18 @@ fn wait_channels_remove(head: &mut wait_channels, elm: &wait_channel) -> Option<
 
 // Each channel is the first field of its boxed owner, so pointers handed to
 // the translated C routines can still find the Rust-owned queues.
-unsafe fn wait_channel_waiters(wc: *mut wait_channel) -> *mut Vec<wait_item> {
+unsafe fn wait_channel_waiters(wc: *mut wait_channel) -> *mut Vec<CmdqWaiter> {
     &raw mut (*wc).waiters
 }
 
-unsafe fn wait_channel_lockers(wc: *mut wait_channel) -> *mut Vec<wait_item> {
+unsafe fn wait_channel_lockers(wc: *mut wait_channel) -> *mut Vec<CmdqWaiter> {
     &raw mut (*wc).lockers
 }
 
-// Continue and remove every queued item in order, front first.
-unsafe fn wait_items_continue_all(list: *mut Vec<wait_item>) {
-    while !(*list).is_empty() {
-        cmd_wait_for_continue_waiter(&(&*list)[0]);
-        drop((&mut *list).remove(0));
+// Resume and remove every queued waiter in order, front first.
+unsafe fn wait_items_continue_all(list: *mut Vec<CmdqWaiter>) {
+    for waiter in std::mem::take(&mut *list) {
+        waiter.resume();
     }
 }
 
@@ -177,36 +179,16 @@ unsafe fn cmd_wait_for_remove_empty(mut wc: *mut wait_channel) {
     drop(wait_channels_remove(&mut wait_channels, &*wc));
 }
 
-unsafe fn cmd_wait_for_item_client_name(
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> CString {
-    let item = item_handle.get();
-    let owner = cmdq_get_client((item).as_ref());
-    owner
-        .as_ref()
+unsafe fn cmd_wait_for_waiter_client_name(waiter: &CmdqWaiter) -> CString {
+    waiter
+        .client()
         .and_then(|owner| owner.name())
         .unwrap_or_default()
 }
-unsafe fn cmd_wait_for_waiter_client_name(waiter: &wait_item) -> CString {
-    waiter.item.upgrade().map_or_else(CString::default, |item| {
-        cmd_wait_for_item_client_name(&item)
-    })
-}
-
-unsafe fn cmd_wait_for_continue_waiter(waiter: &wait_item) {
-    if let Some(item) = waiter.item.upgrade() {
-        cmdq_continue(&item);
-    }
-}
 
 unsafe fn cmd_wait_for_prune_expired(wc: *mut wait_channel) {
-    (&mut *wait_channel_waiters(wc)).retain(|waiter| waiter.item.upgrade().is_some());
-    (&mut *wait_channel_lockers(wc)).retain(|waiter| waiter.item.upgrade().is_some());
-}
-unsafe fn cmd_wait_for_client_name(wei: &wait_event_item) -> CString {
-    wei.item.upgrade().map_or_else(CString::default, |item| {
-        cmd_wait_for_item_client_name(&item)
-    })
+    (&mut *wait_channel_waiters(wc)).retain(|waiter| !waiter.is_cancelled());
+    (&mut *wait_channel_lockers(wc)).retain(|waiter| !waiter.is_cancelled());
 }
 unsafe fn cmd_wait_for_exec(
     mut self_0: refbox::Weak<cmd>,
@@ -238,16 +220,15 @@ unsafe fn cmd_wait_for_exec(
     }
     cmd_wait_for_wait(item_handle, CStr::from_ptr(name), wc)
 }
-unsafe fn cmd_wait_for_event_print(
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-    ep: &event_payload,
-) {
+/// Print the payload to the waiting item's client, as cmdq_print would.
+unsafe fn cmd_wait_for_event_print(client: Option<&ClientRef>, ep: &event_payload) {
     let mut key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     for epi in event_payload_items(ep) {
         key = event_payload_item_name(epi).as_ptr();
         if *key as ::core::ffi::c_int != '_' as i32 {
             let value = event_payload_item_print_owned(epi);
-            cmdq_print(item_handle, |out| {
+            let mut evb = evbuffer_new();
+            evbuffer_add_formatted(&mut evb, |out| {
                 write_cstr(out, nullable_cstr(key))?;
                 out.write_all(b"=")?;
                 write_cstr(
@@ -255,6 +236,7 @@ unsafe fn cmd_wait_for_event_print(
                     nullable_cstr(value.as_ptr().cast::<::core::ffi::c_char>()),
                 )
             });
+            ClientRef::print_to(client, true, &mut evb);
         }
     }
 }
@@ -263,61 +245,74 @@ unsafe fn cmd_wait_for_event_cb(
     payload: &mut event_payload,
     key: &Weak<UnsafeCell<cmdq_item>>,
 ) {
+    let items = &raw mut wait_event_items;
     // The sink is removed together with its entry, so the entry is present.
-    let Some(index) =
-        wait_event_items_position((&raw const wait_event_items).as_ref().unwrap(), key)
-    else {
+    let Some(index) = wait_event_items_position(&*items, key) else {
         return;
     };
-    let (verbose, filter) = {
-        let wei = &(&raw const wait_event_items).as_ref().unwrap()[index];
-        (wei.verbose, wei.filter.clone())
-    };
-    let Some(item_owner) = key.upgrade() else {
-        drop((&raw mut wait_event_items).as_mut().unwrap().remove(index));
+    let wei = &(&*items)[index];
+    if wei.waiter.is_cancelled() {
+        drop((&mut *items).remove(index));
         return;
-    };
-    let item = item_owner.get();
-    let queue_client = cmdq_get_client((item).as_ref());
+    }
+    let (verbose, filter) = (wei.verbose, wei.filter.clone());
+    let queue_client = wei.waiter.client();
     let ep = &*payload;
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut flag: ::core::ffi::c_int = 0;
     if verbose != 0 {
-        cmd_wait_for_event_print(&item_owner, ep);
+        // Printing can enter view mode, whose events may re-enter this
+        // callback and resume the entry; neither the item nor the entry is
+        // held across it.
+        cmd_wait_for_event_print(queue_client.as_ref(), ep);
+        if wait_event_items_position(&*items, key).is_none() {
+            return;
+        }
     }
     if let Some(filter) = &filter {
+        let Some(item_owner) = key.upgrade() else {
+            return;
+        };
         let mut ft_owner = format_create_with_client(
             queue_client.as_ref(),
             Some(&item_owner),
             FORMAT_NONE,
             FORMAT_NOJOBS,
         );
-        ft = &raw mut *ft_owner;
+        drop(item_owner);
+        let ft: *mut format_tree = &raw mut *ft_owner;
         event_payload_add_formats(
             ep,
             ft,
             nullable_cstr(::core::ptr::null::<::core::ffi::c_char>()),
         );
         let expanded = format_expand_cstring(ft, filter.as_ptr().cast_mut());
-        flag = format_true(expanded.as_ptr());
+        let flag = format_true(expanded.as_ptr());
         drop(ft_owner);
         if flag == 0 {
             return;
         }
     }
-    let owner = wait_event_items_position((&raw const wait_event_items).as_ref().unwrap(), key)
-        .map(|index| (&raw mut wait_event_items).as_mut().unwrap().remove(index));
-    cmdq_continue(&item_owner);
-    drop(owner);
+    drop(queue_client);
+    if let Some(index) = wait_event_items_position(&*items, key) {
+        (&mut *items).remove(index).resume();
+    }
 }
-impl Drop for wait_event_item {
+impl wait_event_item {
+    unsafe fn resume(self) {
+        self.waiter.resume();
+        // The rest of the entry, its sink included, drops here, after the
+        // resume, as tmux frees it after cmdq_continue.
+    }
+}
+/// The entry's event sink, removed when the entry is dropped.
+struct wait_event_sink(EventSinkId);
+impl Drop for wait_event_sink {
     fn drop(&mut self) {
-        unsafe { events_remove_sink(self.sink) };
+        unsafe { events_remove_sink(self.0) };
     }
 }
 
 fn cmd_wait_for_event_prune_expired(items: &mut Vec<wait_event_item>) {
-    items.retain(|owner| owner.item.upgrade().is_some());
+    items.retain(|owner| !owner.waiter.is_cancelled());
 }
 unsafe fn cmd_wait_for_event(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
@@ -344,37 +339,44 @@ unsafe fn cmd_wait_for_event(
         cmdq_error(item_handle, |out| out.write_all(b"not able to wait"));
         return CMD_RETURN_ERROR;
     }
-    let mut owner = wait_event_item {
-        item: std::rc::Rc::downgrade(item_handle),
-        sink: EventSinkId::default(),
-        name: name.to_owned(),
-        filter: if filter.is_null() {
-            None
-        } else {
-            Some(CStr::from_ptr(filter).to_owned())
-        },
-        verbose: args_has(args, 'v' as i32 as u_char),
-    };
-
-    let key = owner.item.clone();
-    owner.sink = events_add_sink(
-        &owner.name,
-        events_callback(move |name, payload| unsafe { cmd_wait_for_event_cb(name, payload, &key) }),
-    );
-    (&raw mut wait_event_items).as_mut().unwrap().push(owner);
-    CMD_RETURN_WAIT
+    let key = std::rc::Rc::downgrade(item_handle);
+    let sink = wait_event_sink(events_add_sink(name, {
+        let key = key.clone();
+        events_callback(move |name, payload| unsafe { cmd_wait_for_event_cb(name, payload, &key) })
+    }));
+    let (waiter, retval) = cmdq_wait(item_handle);
+    (&raw mut wait_event_items)
+        .as_mut()
+        .unwrap()
+        .push(wait_event_item {
+            item: key,
+            waiter,
+            sink,
+            name: name.to_owned(),
+            filter: if filter.is_null() {
+                None
+            } else {
+                Some(CStr::from_ptr(filter).to_owned())
+            },
+            verbose: args_has(args, 'v' as i32 as u_char),
+        });
+    retval
 }
 unsafe fn cmd_wait_for_event_list(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     name: &CStr,
 ) -> cmd_retval {
     cmd_wait_for_event_prune_expired(&mut wait_event_items);
-    for wei in (&raw const wait_event_items).as_ref().unwrap() {
-        if strcmp((wei.name).as_ptr().cast_mut(), name.as_ptr()) == 0 as ::core::ffi::c_int {
-            cmdq_print(item_handle, |out| {
-                write_cstr(out, &*(cmd_wait_for_client_name(wei)))
-            });
-        }
+    // Printing can fire events that change the list, so name them first.
+    let names = (&raw const wait_event_items)
+        .as_ref()
+        .unwrap()
+        .iter()
+        .filter(|wei| wei.name.as_c_str() == name)
+        .map(|wei| cmd_wait_for_waiter_client_name(&wei.waiter))
+        .collect::<Vec<_>>();
+    for owner in names {
+        cmdq_print(item_handle, |out| write_cstr(out, owner.as_c_str()));
     }
     CMD_RETURN_NORMAL
 }
@@ -390,14 +392,16 @@ unsafe fn cmd_wait_for_event_wake(
     while index < (&raw const wait_event_items).as_ref().unwrap().len() {
         let wei = &(&raw const wait_event_items).as_ref().unwrap()[index];
         if !(strcmp((wei.name).as_ptr().cast_mut(), name.as_ptr()) != 0 as ::core::ffi::c_int)
-            && !(strcmp(cmd_wait_for_client_name(wei).as_ptr(), client_name)
-                != 0 as ::core::ffi::c_int)
+            && !(strcmp(
+                cmd_wait_for_waiter_client_name(&wei.waiter).as_ptr(),
+                client_name,
+            ) != 0 as ::core::ffi::c_int)
         {
-            let owner = (&raw mut wait_event_items).as_mut().unwrap().remove(index);
-            if let Some(item) = owner.item.upgrade() {
-                cmdq_continue(&item);
-            }
-            drop(owner);
+            (&raw mut wait_event_items)
+                .as_mut()
+                .unwrap()
+                .remove(index)
+                .resume();
             return CMD_RETURN_NORMAL;
         }
         index += 1;
@@ -441,8 +445,7 @@ unsafe fn cmd_wait_for_wake(mut args: *mut args, mut wc: *mut wait_channel) -> c
                 if strcmp(name.as_ptr(), client_name) != 0 as ::core::ffi::c_int {
                     index += 1;
                 } else {
-                    cmd_wait_for_continue_waiter(&(&*list)[index]);
-                    drop((&mut *list).remove(index));
+                    (&mut *list).remove(index).resume();
                     cmd_wait_for_remove_empty(wc);
                     return CMD_RETURN_NORMAL;
                 }
@@ -501,10 +504,9 @@ unsafe fn cmd_wait_for_wait(
         log_cstr(&(*wc).name),
         log_pointer(std::rc::Rc::as_ptr(c.as_ref().expect("waiting client")))
     ));
-    (*wait_channel_waiters(wc)).push(wait_item {
-        item: std::rc::Rc::downgrade(item_handle),
-    });
-    CMD_RETURN_WAIT
+    let (waiter, retval) = cmdq_wait(item_handle);
+    (*wait_channel_waiters(wc)).push(waiter);
+    retval
 }
 unsafe fn cmd_wait_for_lock(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
@@ -520,10 +522,9 @@ unsafe fn cmd_wait_for_lock(
         wc = cmd_wait_for_add(name);
     }
     if (*wc).locked != 0 {
-        (*wait_channel_lockers(wc)).push(wait_item {
-            item: std::rc::Rc::downgrade(item_handle),
-        });
-        return CMD_RETURN_WAIT;
+        let (waiter, retval) = cmdq_wait(item_handle);
+        (*wait_channel_lockers(wc)).push(waiter);
+        return retval;
     }
     (*wc).locked = 1 as ::core::ffi::c_int;
     CMD_RETURN_NORMAL
@@ -543,9 +544,9 @@ unsafe fn cmd_wait_for_unlock(
     }
     let lockers = wait_channel_lockers(wc);
     cmd_wait_for_prune_expired(wc);
-    if let Some(wi) = (*lockers).first() {
-        cmd_wait_for_continue_waiter(wi);
-        drop((&mut *lockers).remove(0));
+    if !(*lockers).is_empty() {
+        // The lock passes to the first locker; the channel stays locked.
+        (&mut *lockers).remove(0).resume();
     } else {
         (*wc).locked = 0 as ::core::ffi::c_int;
         cmd_wait_for_remove(wc);
@@ -555,22 +556,22 @@ unsafe fn cmd_wait_for_unlock(
 /// Continue and forget every waiter, locker and event waiter whose item
 /// belongs to a lost client, wherever that item is queued.
 pub unsafe fn cmd_wait_for_client_lost(c: &ClientRef) {
-    let lost = |item: &Weak<UnsafeCell<cmdq_item>>| {
-        item.upgrade().filter(|item| {
-            cmdq_get_client((item.get()).as_ref())
-                .is_some_and(|owner| std::rc::Rc::ptr_eq(&owner, c))
-        })
+    let lost_waiter = |waiter: &CmdqWaiter| {
+        waiter
+            .client()
+            .is_some_and(|owner| std::rc::Rc::ptr_eq(&owner, c))
     };
     let mut index = 0;
     while index < (&raw const wait_event_items).as_ref().unwrap().len() {
-        let item = lost(&(&raw const wait_event_items).as_ref().unwrap()[index].item);
-        let Some(item) = item else {
+        if !lost_waiter(&(&raw const wait_event_items).as_ref().unwrap()[index].waiter) {
             index += 1;
             continue;
-        };
-        let owner = (&raw mut wait_event_items).as_mut().unwrap().remove(index);
-        cmdq_continue(&item);
-        drop(owner);
+        }
+        (&raw mut wait_event_items)
+            .as_mut()
+            .unwrap()
+            .remove(index)
+            .resume();
     }
     let channels = (&raw mut wait_channels)
         .as_mut()
@@ -581,14 +582,12 @@ pub unsafe fn cmd_wait_for_client_lost(c: &ClientRef) {
         .collect::<Vec<_>>();
     for wc in channels {
         for list in [wait_channel_waiters(wc), wait_channel_lockers(wc)] {
-            let mut index = 0;
-            while index < (*list).len() {
-                if let Some(item) = lost(&(&*list)[index].item) {
-                    cmdq_continue(&item);
-                    drop((&mut *list).remove(index));
-                } else {
-                    index += 1;
-                }
+            let (resumed, kept) = std::mem::take(&mut *list)
+                .into_iter()
+                .partition::<Vec<_>, _>(lost_waiter);
+            *list = kept;
+            for waiter in resumed {
+                waiter.resume();
             }
         }
         cmd_wait_for_remove_empty(wc);
@@ -596,11 +595,11 @@ pub unsafe fn cmd_wait_for_client_lost(c: &ClientRef) {
 }
 pub unsafe fn cmd_wait_for_flush() {
     while !(&raw const wait_event_items).as_ref().unwrap().is_empty() {
-        let owner = (&raw mut wait_event_items).as_mut().unwrap().remove(0);
-        if let Some(item) = owner.item.upgrade() {
-            cmdq_continue(&item);
-        }
-        drop(owner);
+        (&raw mut wait_event_items)
+            .as_mut()
+            .unwrap()
+            .remove(0)
+            .resume();
     }
     let channels = (&raw mut wait_channels)
         .as_mut()
@@ -621,7 +620,13 @@ pub unsafe fn cmd_wait_for_flush() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next};
+    use crate::src::server_client::queue_test_clients as clients;
+    use crate::src::shared::client::CLIENT_DEAD;
+    use std::cell::RefCell;
     use std::ffi::CString;
+    use std::future::Future;
+    use std::rc::Rc;
 
     fn test_channel(name: &CStr) -> Box<wait_channel> {
         let name = name.to_owned();
@@ -671,22 +676,389 @@ mod tests {
         }
     }
 
-    #[test]
-    fn continue_all_drains_channel_queue_in_order() {
-        let name = CString::new("queue").unwrap();
-        let mut owner = test_channel(&name);
-        let channel = &raw mut *owner;
-        owner
-            .waiters
-            .extend((0..128).map(|_| wait_item { item: Weak::new() }));
-        owner
-            .lockers
-            .extend((0..128).map(|_| wait_item { item: Weak::new() }));
+    /// Appends its index to the trace when woken.
+    struct Record(usize, Rc<RefCell<Vec<usize>>>);
+    impl std::task::LocalWake for Record {
+        fn wake(self: Rc<Self>) {
+            self.1.borrow_mut().push(self.0);
+        }
+    }
 
+    /// Detached waiters whose resumes append their index to `trace`; the
+    /// receivers must outlive the resumes.
+    fn recorded_waiters(
+        count: usize,
+        trace: &Rc<RefCell<Vec<usize>>>,
+    ) -> (Vec<CmdqWaiter>, Vec<tiri_rt::oneshot::Receiver<()>>) {
+        (0..count)
+            .map(|index| {
+                let (waiter, mut resumed) = CmdqWaiter::detached(Weak::new());
+                let waker = std::task::LocalWaker::from(Rc::new(Record(index, trace.clone())));
+                let mut context = std::task::ContextBuilder::from_waker(std::task::Waker::noop())
+                    .local_waker(&waker)
+                    .build();
+                assert!(std::pin::Pin::new(&mut resumed)
+                    .poll(&mut context)
+                    .is_pending());
+                (waiter, resumed)
+            })
+            .unzip()
+    }
+
+    unsafe fn channel(name: &CStr) -> *mut wait_channel {
+        wait_channels_find(&mut *(&raw mut wait_channels), name)
+    }
+
+    /// Run `exec` as the next item of `owner`'s queue on the channel `name`.
+    /// The returned item stays queued while it waits.
+    unsafe fn run_on(
+        owner: &ClientRef,
+        name: &'static CStr,
+        exec: unsafe fn(&Rc<UnsafeCell<cmdq_item>>, &CStr, *mut wait_channel) -> cmd_retval,
+    ) -> Weak<UnsafeCell<cmdq_item>> {
+        let item = cmdq_append(
+            Some(owner),
+            cmdq_get_callback_owned(
+                c"wait-for",
+                Some(Box::new(move |item| exec(item, name, channel(name)))),
+            ),
+        );
+        cmdq_next(Some(owner));
+        item
+    }
+
+    unsafe fn signal(
+        _: &Rc<UnsafeCell<cmdq_item>>,
+        name: &CStr,
+        wc: *mut wait_channel,
+    ) -> cmd_retval {
+        cmd_wait_for_signal(name, wc)
+    }
+
+    #[test]
+    fn signal_resumes_waiters_in_fifo_order() {
         unsafe {
-            wait_items_continue_all(wait_channel_waiters(channel));
-            assert!((*wait_channel_waiters(channel)).is_empty());
-            assert_eq!((*wait_channel_lockers(channel)).len(), 128);
+            let (trace, locked) = Default::default();
+            let (waiters, _resumed) = recorded_waiters(128, &trace);
+            let (lockers, _locking) = recorded_waiters(4, &locked);
+            let wc = cmd_wait_for_add(c"fifo");
+            (*wc).waiters.extend(waiters);
+            (*wc).lockers.extend(lockers);
+            assert_eq!(cmd_wait_for_signal(c"fifo", wc), CMD_RETURN_NORMAL);
+            assert_eq!(*trace.borrow(), (0..128).collect::<Vec<_>>());
+            assert!((*wc).waiters.is_empty());
+            assert_eq!((*wc).woken, 0);
+            assert!(locked.borrow().is_empty());
+            assert_eq!((*wc).lockers.len(), 4);
+        }
+    }
+
+    #[test]
+    fn unlock_hands_the_lock_to_the_first_locker_only() {
+        unsafe {
+            let [holder, first, second] = [(); 3].map(|_| clients::with_queue());
+            assert!(run_on(&holder, c"l", cmd_wait_for_lock).upgrade().is_none());
+            let first_item = run_on(&first, c"l", cmd_wait_for_lock);
+            let second_item = run_on(&second, c"l", cmd_wait_for_lock);
+            assert!(first_item.upgrade().is_some() && second_item.upgrade().is_some());
+
+            assert!(run_on(&holder, c"l", cmd_wait_for_unlock)
+                .upgrade()
+                .is_none());
+            cmdq_next(Some(&first));
+            cmdq_next(Some(&second));
+            assert!(first_item.upgrade().is_none());
+            assert!(second_item.upgrade().is_some());
+            assert_eq!((*channel(c"l")).locked, 1);
+
+            assert!(run_on(&first, c"l", cmd_wait_for_unlock)
+                .upgrade()
+                .is_none());
+            cmdq_next(Some(&second));
+            assert!(second_item.upgrade().is_none());
+            assert_eq!((*channel(c"l")).locked, 1);
+
+            assert!(run_on(&second, c"l", cmd_wait_for_unlock)
+                .upgrade()
+                .is_none());
+            assert_eq!((*channel(c"l")).locked, 0);
+        }
+    }
+
+    #[test]
+    fn signal_skips_a_cancelled_waiter_and_stays_sticky() {
+        unsafe {
+            let gone = clients::with_queue();
+            let gone_item = run_on(&gone, c"c", cmd_wait_for_wait);
+            // Freeing the client drops its queue, the item and its wait.
+            drop(gone);
+            assert!(gone_item.upgrade().is_none());
+            assert!((&(*channel(c"c")).waiters)[0].is_cancelled());
+
+            let other = clients::with_queue();
+            assert!(run_on(&other, c"c", signal).upgrade().is_none());
+            assert!((*channel(c"c")).waiters.is_empty());
+            assert_eq!((*channel(c"c")).woken, 1);
+            // The remembered signal releases the next waiter at once.
+            assert!(run_on(&other, c"c", cmd_wait_for_wait).upgrade().is_none());
+            assert!(channel(c"c").is_null());
+        }
+    }
+
+    #[test]
+    fn client_lost_resumes_only_the_lost_clients_waiters() {
+        unsafe {
+            let [lost, kept, holder] = [(); 3].map(|_| clients::with_queue());
+            let lost_waiter = run_on(&lost, c"c", cmd_wait_for_wait);
+            let kept_waiter = run_on(&kept, c"c", cmd_wait_for_wait);
+            assert!(run_on(&holder, c"l", cmd_wait_for_lock).upgrade().is_none());
+
+            cmd_wait_for_client_lost(&lost);
+            cmdq_next(Some(&lost));
+            assert!(lost_waiter.upgrade().is_none());
+            assert!(kept_waiter.upgrade().is_some());
+            assert_eq!((*channel(c"c")).waiters.len(), 1);
+
+            let lost_locker = run_on(&lost, c"l", cmd_wait_for_lock);
+            let kept_locker = run_on(&holder, c"l", cmd_wait_for_lock);
+            cmd_wait_for_client_lost(&lost);
+            cmdq_next(Some(&lost));
+            assert!(lost_locker.upgrade().is_none());
+            assert!(kept_locker.upgrade().is_some());
+            assert!(kept_waiter.upgrade().is_some());
+            assert_eq!((*channel(c"l")).lockers.len(), 1);
+            assert_eq!((*channel(c"l")).locked, 1);
+        }
+    }
+
+    #[test]
+    fn a_lost_client_waiting_in_wait_for_is_freed() {
+        unsafe {
+            let owner = clients::with_queue();
+            let head = run_on(&owner, c"c", cmd_wait_for_wait);
+            // As server_client_lost does.
+            owner.update_flags(CLIENT_DEAD as u64, 0);
+            cmd_wait_for_client_lost(&owner);
+            cmdq_next(Some(&owner));
+            assert!(head.upgrade().is_none());
+            assert!(channel(c"c").is_null());
+            let client = Rc::downgrade(&owner);
+            drop(owner);
+            assert!(client.upgrade().is_none());
+        }
+    }
+
+    /// Run `wait-for -E <flags> <name>` as the next item of `owner`'s queue.
+    /// The returned item stays queued while it waits.
+    unsafe fn wait_event(
+        owner: &ClientRef,
+        name: &'static CStr,
+        flags: &[&CStr],
+    ) -> Weak<UnsafeCell<cmdq_item>> {
+        let values = [c"wait-for", c"-E"]
+            .into_iter()
+            .chain(flags.iter().copied())
+            .chain([name])
+            .map(|value| crate::src::shared::arguments::args_value::string(value.to_owned()))
+            .collect::<Vec<_>>();
+        let mut args =
+            crate::src::arguments::args_parse(&cmd_wait_for_entry.args, &values).unwrap();
+        let item = cmdq_append(
+            Some(owner),
+            cmdq_get_callback_owned(
+                c"wait-for",
+                Some(Box::new(move |item| {
+                    cmd_wait_for_event(item, name, &mut *args)
+                })),
+            ),
+        );
+        cmdq_next(Some(owner));
+        item
+    }
+
+    unsafe fn fire(name: &CStr, value: &str) {
+        let mut ep = crate::src::events_payload::event_payload_create();
+        crate::src::events_payload::event_payload_set_string(&mut ep, c"value", |out| {
+            out.write_all(value.as_bytes())
+        });
+        crate::src::events::events_fire(name, ep);
+    }
+
+    unsafe fn event_sinks() -> Vec<EventSinkId> {
+        (&raw const wait_event_items)
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|wei| wei.sink.0)
+            .collect()
+    }
+
+    /// Queue a callback behind the waiter that records whether it ran.
+    unsafe fn append_flag(owner: &ClientRef) -> Rc<std::cell::Cell<bool>> {
+        let ran = Rc::new(std::cell::Cell::new(false));
+        let flag = ran.clone();
+        cmdq_append(
+            Some(owner),
+            cmdq_get_callback_owned(
+                c"after",
+                Some(Box::new(move |_| {
+                    flag.set(true);
+                    CMD_RETURN_NORMAL
+                })),
+            ),
+        );
+        ran
+    }
+
+    #[test]
+    fn an_accepted_event_resumes_the_event_waiter() {
+        unsafe {
+            let owner = clients::with_queue();
+            let head = wait_event(&owner, c"@accepted", &[c"-F", c"#{==:#{value},y}"]);
+            let ran = append_flag(&owner);
+            let [sink] = event_sinks()[..] else {
+                panic!("one event waiter")
+            };
+            assert!(head.upgrade().is_some());
+
+            fire(c"@accepted", "y");
+            assert!(event_sinks().is_empty());
+            assert!(!crate::src::events::events_has_sink(sink));
+            cmdq_next(Some(&owner));
+            assert!(head.upgrade().is_none());
+            assert!(ran.get());
+        }
+    }
+
+    #[test]
+    fn a_rejected_event_keeps_the_event_waiter_suspended() {
+        unsafe {
+            let owner = clients::with_queue();
+            let head = wait_event(&owner, c"@rejected", &[c"-F", c"#{==:#{value},y}"]);
+            let ran = append_flag(&owner);
+            let [sink] = event_sinks()[..] else {
+                panic!("one event waiter")
+            };
+
+            fire(c"@rejected", "x");
+            cmdq_next(Some(&owner));
+            assert!(head.upgrade().is_some());
+            assert!(!ran.get());
+            assert_eq!(event_sinks(), [sink]);
+            assert!(crate::src::events::events_has_sink(sink));
+
+            // The sink stays for the next event.
+            fire(c"@rejected", "y");
+            cmdq_next(Some(&owner));
+            assert!(head.upgrade().is_none());
+            assert!(ran.get());
+            assert!(!crate::src::events::events_has_sink(sink));
+        }
+    }
+
+    #[test]
+    fn a_dropped_event_waiter_is_pruned_by_the_next_event() {
+        unsafe {
+            let owner = clients::with_queue();
+            let head = wait_event(&owner, c"@dropped", &[]);
+            let [sink] = event_sinks()[..] else {
+                panic!("one event waiter")
+            };
+            // Freeing the client drops its queue, the item and its wait.
+            drop(owner);
+            assert!(head.upgrade().is_none());
+            assert!((&raw const wait_event_items).as_ref().unwrap()[0]
+                .waiter
+                .is_cancelled());
+
+            fire(c"@dropped", "");
+            assert!(event_sinks().is_empty());
+            assert!(!crate::src::events::events_has_sink(sink));
+        }
+    }
+
+    #[test]
+    fn wake_resumes_the_first_matching_event_waiter_only() {
+        unsafe {
+            let [first, second, waker] = [(); 3].map(|_| clients::with_queue());
+            let first_item = wait_event(&first, c"@wake", &[]);
+            let second_item = wait_event(&second, c"@wake", &[]);
+            let [first_sink, second_sink] = event_sinks()[..] else {
+                panic!("two event waiters")
+            };
+            // Unnamed clients both match the empty name; the first is woken.
+            assert!(wait_event(&waker, c"@wake", &[c"-w", c""])
+                .upgrade()
+                .is_none());
+            cmdq_next(Some(&first));
+            cmdq_next(Some(&second));
+            assert!(first_item.upgrade().is_none());
+            assert!(second_item.upgrade().is_some());
+            assert!(!crate::src::events::events_has_sink(first_sink));
+            assert_eq!(event_sinks(), [second_sink]);
+        }
+    }
+
+    #[test]
+    fn client_lost_resumes_only_the_lost_clients_event_waiters() {
+        unsafe {
+            let [lost, kept] = [(); 2].map(|_| clients::with_queue());
+            let lost_item = wait_event(&lost, c"@lost", &[]);
+            let kept_item = wait_event(&kept, c"@lost", &[]);
+            let [lost_sink, kept_sink] = event_sinks()[..] else {
+                panic!("two event waiters")
+            };
+
+            cmd_wait_for_client_lost(&lost);
+            cmdq_next(Some(&lost));
+            cmdq_next(Some(&kept));
+            assert!(lost_item.upgrade().is_none());
+            assert!(kept_item.upgrade().is_some());
+            assert!(!crate::src::events::events_has_sink(lost_sink));
+            assert_eq!(event_sinks(), [kept_sink]);
+        }
+    }
+
+    #[test]
+    fn flush_resumes_every_event_waiter() {
+        unsafe {
+            let [first, second] = [(); 2].map(|_| clients::with_queue());
+            let items = [
+                wait_event(&first, c"@flush", &[]),
+                wait_event(&second, c"@flush", &[c"-F", c"0"]),
+            ];
+            let sinks = event_sinks();
+            assert_eq!(sinks.len(), 2);
+
+            cmd_wait_for_flush();
+            assert!(event_sinks().is_empty());
+            for sink in sinks {
+                assert!(!crate::src::events::events_has_sink(sink));
+            }
+            cmdq_next(Some(&first));
+            cmdq_next(Some(&second));
+            assert!(items.iter().all(|item| item.upgrade().is_none()));
+        }
+    }
+
+    #[test]
+    fn a_lost_client_waiting_for_an_event_is_freed() {
+        unsafe {
+            let owner = clients::with_queue();
+            let head = wait_event(&owner, c"@freed", &[]);
+            let [sink] = event_sinks()[..] else {
+                panic!("one event waiter")
+            };
+            // As server_client_lost does.
+            owner.update_flags(CLIENT_DEAD as u64, 0);
+            cmd_wait_for_client_lost(&owner);
+            cmdq_next(Some(&owner));
+            assert!(head.upgrade().is_none());
+            assert!(event_sinks().is_empty());
+            assert!(!crate::src::events::events_has_sink(sink));
+            let client = Rc::downgrade(&owner);
+            drop(owner);
+            assert!(client.upgrade().is_none());
         }
     }
 }

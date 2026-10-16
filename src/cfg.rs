@@ -1,8 +1,8 @@
 use crate::src::cmd::parse::{cmd_parse_from_buffer, cmd_parse_from_file};
 use crate::src::cmd::queue::{
-    cmdq_add_format, cmdq_append, cmdq_continue, cmdq_copy_state, cmdq_get_callback_owned,
-    cmdq_get_client, cmdq_get_command, cmdq_get_state, cmdq_insert_after, cmdq_new_state,
-    cmdq_print,
+    cmdq_add_format, cmdq_append, cmdq_copy_state, cmdq_get_callback_owned, cmdq_get_client,
+    cmdq_get_command, cmdq_get_state, cmdq_insert_after, cmdq_new_state, cmdq_print, cmdq_wait,
+    CmdqWaiter,
 };
 use crate::src::compat::stdio::CFile;
 use crate::src::control::control_notify_write;
@@ -38,7 +38,8 @@ use std::sync::{Mutex, OnceLock};
 pub static mut cfg_client: ClientWeak = std::rc::Weak::new();
 pub static mut cfg_finished: ::core::ffi::c_int = 0;
 static CFG_CAUSES: Mutex<VecDeque<CString>> = Mutex::new(VecDeque::new());
-static mut cfg_item: std::rc::Weak<std::cell::UnsafeCell<cmdq_item>> = std::rc::Weak::new();
+/// Resumes the startup client's `cfg_client_done` once the configuration is loaded.
+static mut CFG_WAITER: Option<CmdqWaiter> = None;
 pub static mut cfg_quiet: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 // Startup publishes the list before client_main can start a server. C readers
 // borrow the stable CString storage; the list is never mutated after publication.
@@ -54,9 +55,12 @@ pub(crate) fn cfg_set_files(files: Vec<CString>) {
 pub(crate) fn cfg_files() -> &'static [CString] {
     CFG_FILES.get().map_or(&[], Vec::as_slice)
 }
-unsafe fn cfg_client_done() -> cmd_retval {
+unsafe fn cfg_client_done(item: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     if cfg_finished == 0 {
-        return CMD_RETURN_WAIT;
+        let (waiter, retval) = cmdq_wait(item);
+        // A lost startup client's wait is replaced and never resumes.
+        drop(CFG_WAITER.replace(waiter));
+        return retval;
     }
     CMD_RETURN_NORMAL
 }
@@ -66,8 +70,8 @@ unsafe fn cfg_done() -> cmd_retval {
     }
     cfg_finished = 1 as ::core::ffi::c_int;
     cfg_show_causes(None);
-    if let Some(item) = std::mem::take(&mut cfg_item).upgrade() {
-        cmdq_continue(&item);
+    if let Some(waiter) = CFG_WAITER.take() {
+        waiter.resume();
     }
     prompt_load_history();
     CMD_RETURN_NORMAL
@@ -81,12 +85,13 @@ pub unsafe fn start_cfg() {
         .as_ref()
         .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     if !c.is_none() {
-        let item = cmdq_get_callback_owned(
-            c"cfg_client_done",
-            Some(Box::new(|_| unsafe { cfg_client_done() })),
+        cmdq_append(
+            registry_c_owner.as_ref(),
+            cmdq_get_callback_owned(
+                c"cfg_client_done",
+                Some(Box::new(|item| unsafe { cfg_client_done(item) })),
+            ),
         );
-        cfg_item = std::rc::Rc::downgrade(&item);
-        cmdq_append(registry_c_owner.as_ref(), item);
     }
     if cfg_quiet != 0 {
         flags = CMD_PARSE_QUIET;
@@ -333,5 +338,167 @@ pub unsafe fn cfg_show_causes(s_owner: Option<&SessionRef>) {
                 write_cstr(out, &*cause)
             });
         });
+    }
+}
+
+#[cfg(test)]
+mod cfg_wait_tests {
+    use super::*;
+    use crate::src::cmd::queue::{cmdq_len, cmdq_next};
+    use crate::src::options::{options_create, options_default};
+    use crate::src::options_table::options_table;
+    use crate::src::server_client::queue_test_clients as clients;
+    use crate::src::shared::client::CLIENT_DEAD;
+    use crate::src::shared::options::options;
+    use crate::src::tmux::global_options;
+    use std::cell::{Cell, UnsafeCell};
+    use std::rc::{Rc, Weak};
+
+    /// An unfinished config, and server options with no history file for
+    /// `cfg_done`.
+    struct Options(*mut options, Option<Box<options>>);
+    impl Options {
+        unsafe fn new() -> Self {
+            let previous = global_options;
+            let mut owner = options_create(None);
+            global_options = &raw mut *owner;
+            let entry = options_table
+                .iter()
+                .find(|entry| entry.name == Some(c"history-file"))
+                .unwrap();
+            options_default(global_options, entry);
+            cfg_finished = 0;
+            Self(previous, Some(owner))
+        }
+    }
+    impl Drop for Options {
+        fn drop(&mut self) {
+            unsafe {
+                drop(CFG_WAITER.take());
+                drop(self.1.take());
+                global_options = self.0;
+            }
+        }
+    }
+
+    struct SetOnDrop(Rc<Cell<bool>>);
+    impl Drop for SetOnDrop {
+        fn drop(&mut self) {
+            self.0.set(true);
+        }
+    }
+
+    /// Queue `cfg_client_done` on `owner`, then an item recording whether it
+    /// ran or was released.
+    unsafe fn startup_queue(
+        owner: &ClientRef,
+        ran: &Rc<Cell<bool>>,
+        released: &Rc<Cell<bool>>,
+    ) -> Weak<UnsafeCell<cmdq_item>> {
+        let head = cmdq_append(
+            Some(owner),
+            cmdq_get_callback_owned(
+                c"cfg_client_done",
+                Some(Box::new(|item| unsafe { cfg_client_done(item) })),
+            ),
+        );
+        let (ran, capture) = (ran.clone(), SetOnDrop(released.clone()));
+        cmdq_append(
+            Some(owner),
+            cmdq_get_callback_owned(
+                c"after config",
+                Some(Box::new(move |_| {
+                    let _capture = &capture;
+                    ran.set(true);
+                    CMD_RETURN_NORMAL
+                })),
+            ),
+        );
+        head
+    }
+
+    #[test]
+    fn cfg_done_resumes_the_waiting_startup_client() {
+        unsafe {
+            let _options = Options::new();
+            let owner = clients::with_queue();
+            let (ran, released) = (Rc::new(Cell::new(false)), Rc::new(Cell::new(false)));
+            let head = startup_queue(&owner, &ran, &released);
+            assert_eq!(cmdq_next(Some(&owner)), 0);
+            assert!(CFG_WAITER.as_ref().is_some_and(|w| !w.is_cancelled()));
+            assert!(!ran.get());
+
+            assert_eq!(cfg_done(), CMD_RETURN_NORMAL);
+            assert_eq!(cfg_finished, 1);
+            assert!(CFG_WAITER.is_none());
+            // Resumed inside cfg_done; the queue moves on at its next pass.
+            assert!(!ran.get());
+            assert_eq!(cmdq_next(Some(&owner)), 1);
+            assert!(head.upgrade().is_none());
+            assert!(ran.get());
+        }
+    }
+
+    #[test]
+    fn the_startup_client_does_not_wait_for_a_finished_config() {
+        unsafe {
+            let _options = Options::new();
+            cfg_finished = 1;
+            let owner = clients::with_queue();
+            let (ran, released) = (Rc::new(Cell::new(false)), Rc::new(Cell::new(false)));
+            startup_queue(&owner, &ran, &released);
+            assert_eq!(cmdq_next(Some(&owner)), 2);
+            assert!(ran.get());
+            assert!(CFG_WAITER.is_none());
+        }
+    }
+
+    #[test]
+    fn a_replaced_waiter_is_dropped_without_resuming() {
+        unsafe {
+            let _options = Options::new();
+            let (first, second) = (clients::with_queue(), clients::with_queue());
+            let first_ran = Rc::new(Cell::new(false));
+            let first_head = startup_queue(&first, &first_ran, &Rc::new(Cell::new(false)));
+            assert_eq!(cmdq_next(Some(&first)), 0);
+            // A later start_cfg's client replaces the wait.
+            let second_ran = Rc::new(Cell::new(false));
+            startup_queue(&second, &second_ran, &Rc::new(Cell::new(false)));
+            assert_eq!(cmdq_next(Some(&second)), 0);
+
+            cfg_done();
+            assert_eq!(cmdq_next(Some(&second)), 1);
+            assert!(second_ran.get());
+            // The first client's head stays blocked.
+            assert_eq!(cmdq_next(Some(&first)), 0);
+            assert!(first_head.upgrade().is_some());
+            assert_eq!(cmdq_len(Some(&first)), 2);
+            assert!(!first_ran.get());
+        }
+    }
+
+    #[test]
+    fn a_freed_startup_client_is_not_retained_and_cfg_done_skips_it() {
+        unsafe {
+            let _options = Options::new();
+            let owner = clients::with_queue();
+            let (ran, released) = (Rc::new(Cell::new(false)), Rc::new(Cell::new(false)));
+            let head = startup_queue(&owner, &ran, &released);
+            assert_eq!(cmdq_next(Some(&owner)), 0);
+            owner.update_flags(CLIENT_DEAD as u64, 0);
+            assert_eq!(cmdq_next(Some(&owner)), 0);
+
+            // The stored waiter holds neither the client nor its item (R2).
+            let client = Rc::downgrade(&owner);
+            drop(owner);
+            assert!(client.upgrade().is_none());
+            assert!(head.upgrade().is_none());
+            assert!(released.get());
+            assert!(CFG_WAITER.as_ref().is_some_and(CmdqWaiter::is_cancelled));
+
+            cfg_done();
+            assert!(CFG_WAITER.is_none());
+            assert!(!ran.get());
+        }
     }
 }

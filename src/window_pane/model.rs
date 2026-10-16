@@ -30,7 +30,8 @@ pub struct window_pane {
     /// Set once the process is reaped; cleared on respawn.
     pub(super) exit_status: Option<std::process::ExitStatus>,
     pub(super) dead_time: SystemTime,
-    pub(super) wait_item: std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>,
+    /// The `split-window -W` command waiting for this pane to close.
+    pub(super) wait_close: Option<CmdqWaiter>,
     pub(super) editor: Option<Box<spawn_editor_state>>,
     pub(super) output_generation: uint64_t,
     pub(super) last_output_time: time_t,
@@ -106,7 +107,7 @@ impl Default for window_pane {
             tty: Default::default(),
             exit_status: None,
             dead_time: UNIX_EPOCH,
-            wait_item: Default::default(),
+            wait_close: None,
             editor: Default::default(),
             output_generation: Default::default(),
             last_output_time: Default::default(),

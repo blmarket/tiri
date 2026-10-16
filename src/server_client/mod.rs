@@ -4409,11 +4409,33 @@ impl Drop for client {
     }
 }
 
+/// Clients for queue tests elsewhere, built without the server.
+#[cfg(test)]
+pub(crate) mod queue_test_clients {
+    use super::*;
+
+    /// A client owning only a command queue.
+    pub(crate) unsafe fn with_queue() -> ClientRef {
+        let owner = client::new();
+        (*owner.get()).queue = Some(cmdq_new());
+        owner
+    }
+
+    /// Attach or detach without the server's side effects.
+    pub(crate) unsafe fn attach(owner: &ClientRef, session: Option<&SessionRef>) {
+        (*owner.get()).set_session(session);
+    }
+
+    pub(crate) unsafe fn return_value(owner: &ClientRef) -> i32 {
+        (*owner.get()).retval
+    }
+}
+
 #[cfg(test)]
 mod lost_queue_tests {
     use super::*;
-    use crate::src::cmd::queue::cmdq_continue;
-    use crate::src::shared::command::{CMDQ_WAITING, CMD_RETURN_NORMAL, CMD_RETURN_WAIT};
+    use crate::src::cmd::queue::{cmdq_continue, cmdq_is_waiting, cmdq_suspend};
+    use crate::src::shared::command::{CMD_RETURN_NORMAL, CMD_RETURN_WAIT};
     use std::cell::Cell;
 
     struct SetOnDrop(Rc<Cell<bool>>);
@@ -4421,12 +4443,6 @@ mod lost_queue_tests {
         fn drop(&mut self) {
             self.0.set(true);
         }
-    }
-
-    unsafe fn client_with_queue() -> ClientRef {
-        let owner = client::new();
-        (*owner.get()).queue = Some(cmdq_new());
-        owner
     }
 
     /// Queue a suffix item that records whether it ran or was released.
@@ -4449,7 +4465,7 @@ mod lost_queue_tests {
     #[test]
     fn dropping_a_lost_client_cancels_its_waiting_queue() {
         unsafe {
-            let owner = client_with_queue();
+            let owner = queue_test_clients::with_queue();
             let waiter = Rc::new(Cell::new(std::rc::Weak::new()));
             let observed = waiter.clone();
             let head = cmdq_append(
@@ -4465,7 +4481,7 @@ mod lost_queue_tests {
             let (ran, released) = (Rc::new(Cell::new(false)), Rc::new(Cell::new(false)));
             append_suffix(&owner, &ran, &released);
             cmdq_next(Some(&owner));
-            assert_ne!((*head.upgrade().unwrap().get()).flags & CMDQ_WAITING, 0);
+            assert!(cmdq_is_waiting(&*head.upgrade().unwrap().get()));
 
             // Loss marks the client dead and drains; the waiting head blocks the suffix.
             (*owner.get()).flags |= CLIENT_DEAD as uint64_t;
@@ -4489,11 +4505,117 @@ mod lost_queue_tests {
     }
 
     #[test]
+    fn dropping_a_lost_client_drops_its_suspended_future() {
+        unsafe {
+            let owner = queue_test_clients::with_queue();
+            let (tx, rx) = tiri_rt::oneshot::channel::<()>();
+            let (body_ran, future_released) =
+                (Rc::new(Cell::new(false)), Rc::new(Cell::new(false)));
+            let (body, guard) = (body_ran.clone(), SetOnDrop(future_released.clone()));
+            let head = cmdq_append(
+                Some(&owner),
+                cmdq_get_callback_owned(
+                    c"suspended head",
+                    Some(Box::new(move |item| {
+                        cmdq_suspend(item, async move {
+                            let _guard = guard;
+                            let _ = rx.await;
+                            body.set(true);
+                        })
+                    })),
+                ),
+            );
+            let (ran, released) = (Rc::new(Cell::new(false)), Rc::new(Cell::new(false)));
+            append_suffix(&owner, &ran, &released);
+            assert_eq!(cmdq_next(Some(&owner)), 0);
+            (*owner.get()).flags |= CLIENT_DEAD as uint64_t;
+            assert_eq!(cmdq_next(Some(&owner)), 0);
+
+            let client = Rc::downgrade(&owner);
+            drop(owner);
+            assert!(client.upgrade().is_none());
+            assert!(head.upgrade().is_none());
+            assert!(future_released.get());
+            // The receiver, and the item waker it stored, went with the future.
+            assert!(tx.is_closed());
+            assert!(tx.send(()).is_err());
+            assert!(!body_ran.get());
+            assert!(released.get());
+            assert!(!ran.get());
+        }
+    }
+
+    /// Queue a head that suspends on `future` built from a strong client
+    /// reference, then release the test's own reference.
+    unsafe fn suspend_holding_client<F: std::future::Future<Output = ()> + 'static>(
+        future: impl FnOnce(ClientRef) -> F + 'static,
+    ) -> (
+        std::rc::Weak<UnsafeCell<client>>,
+        std::rc::Weak<UnsafeCell<cmdq_item>>,
+    ) {
+        let owner = queue_test_clients::with_queue();
+        let held = owner.clone();
+        let head = cmdq_append(
+            Some(&owner),
+            cmdq_get_callback_owned(
+                c"client-holding head",
+                Some(Box::new(move |item| cmdq_suspend(item, future(held)))),
+            ),
+        );
+        assert_eq!(cmdq_next(Some(&owner)), 0);
+        let client = Rc::downgrade(&owner);
+        drop(owner);
+        assert!(client.upgrade().is_some(), "the future holds the client");
+        (client, head)
+    }
+
+    #[test]
+    fn a_completed_future_may_release_its_own_client() {
+        unsafe {
+            let (tx, mut rx) = tiri_rt::oneshot::channel::<()>();
+            let ran = Rc::new(Cell::new(false));
+            let body = ran.clone();
+            let (client, head) = suspend_holding_client(move |held| {
+                // The client goes only when the completed future is dropped.
+                std::future::poll_fn(move |cx| {
+                    let _ = &held;
+                    std::future::Future::poll(std::pin::Pin::new(&mut rx), cx)
+                        .map(|_| body.set(true))
+                })
+            });
+            tx.send(()).unwrap();
+            assert!(ran.get());
+            assert!(client.upgrade().is_none());
+            assert!(head.upgrade().is_none());
+        }
+    }
+
+    #[test]
+    fn a_body_may_release_its_own_client_while_polled() {
+        unsafe {
+            let (tx, rx) = tiri_rt::oneshot::channel::<()>();
+            let ran = Rc::new(Cell::new(false));
+            let body = ran.clone();
+            let (client, head) = suspend_holding_client(move |held| async move {
+                let _ = rx.await;
+                let client = Rc::downgrade(&held);
+                drop(held);
+                assert!(client.upgrade().is_none(), "the queue is freed mid-poll");
+                body.set(true);
+            });
+            tx.send(()).unwrap();
+            assert!(ran.get());
+            assert!(client.upgrade().is_none());
+            assert!(head.upgrade().is_none());
+        }
+    }
+
+    #[test]
     fn dropping_a_lost_client_cancels_a_file_backed_wait() {
         use tiri_rt::Runtime as _;
         let runtime = tiri_rt::mio::Runtime::new().unwrap();
         unsafe {
-            let owner = client_with_queue();
+            let owner = queue_test_clients::with_queue();
             let cancelled = Rc::new(Cell::new(0));
             let observed = cancelled.clone();
             let file = Rc::new(Cell::new(std::rc::Weak::new()));
@@ -4522,7 +4644,7 @@ mod lost_queue_tests {
             let (ran, released) = (Rc::new(Cell::new(false)), Rc::new(Cell::new(false)));
             append_suffix(&owner, &ran, &released);
             assert_eq!(cmdq_next(Some(&owner)), 0, "local completion must be deferred");
-            assert_ne!((*head.upgrade().unwrap().get()).flags & CMDQ_WAITING, 0);
+            assert!(cmdq_is_waiting(&*head.upgrade().unwrap().get()));
 
             (*owner.get()).flags |= CLIENT_DEAD as uint64_t;
             // server_client_free asserts that the client file index is empty.

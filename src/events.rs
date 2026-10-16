@@ -121,6 +121,16 @@ pub unsafe fn events_remove_sink(id: EventSinkId) {
     }
     drop(events::remove_sink(id));
 }
+/// Whether the sink `id` is registered and not removed.
+#[cfg(test)]
+pub(crate) fn events_has_sink(id: EventSinkId) -> bool {
+    EVENTS.with_borrow(|events| {
+        events
+            .sinks
+            .iter()
+            .any(|sink| sink.id == id && sink.dead == 0)
+    })
+}
 pub unsafe fn events_fire(name: &CStr, mut ep: Box<event_payload>) {
     event_payload_set_string(&mut ep, c"event", |out| write_cstr(out, &*name));
     if log_get_level() != 0 as ::core::ffi::c_int {

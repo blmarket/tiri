@@ -3,8 +3,8 @@ use crate::src::arguments::{
     args_make_commands_prepare,
 };
 use crate::src::cmd::queue::{
-    cmdq_append, cmdq_continue, cmdq_error, cmdq_get_command, cmdq_get_error,
-    cmdq_get_target_client, cmdq_insert_after,
+    cmdq_append, cmdq_error, cmdq_get_command, cmdq_get_error, cmdq_get_target_client,
+    cmdq_insert_after, cmdq_resumed, cmdq_suspend,
 };
 use crate::src::cmd::{cmd_append_argv, cmd_get_args_mut};
 use crate::src::format::bytes::nullable_cstr;
@@ -18,7 +18,9 @@ use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::CMD_CLIENT_TFLAG;
 use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::src::shared::command::{
+    cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmd_list, cmdq_item,
+};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{
@@ -27,13 +29,15 @@ use crate::src::shared::prompt::{
 };
 use crate::src::status::{status_prompt_set, status_prompt_update};
 use crate::src::window_pane::WindowPane as _;
-use std::cell::UnsafeCell;
+use std::cell::{RefCell, UnsafeCell};
 use std::ffi::{CStr, CString};
-use std::rc::Weak;
+use std::rc::{Rc, Weak};
 
 pub struct cmd_command_prompt_cdata {
-    pub item: Weak<UnsafeCell<cmdq_item>>,
-    pub wait: bool,
+    /// Resumes the waiting item with the commands to insert after it; the
+    /// prompt closing or being freed without any drops it, which resumes the
+    /// item with nothing (tmux's cmd_command_prompt_free). None for -b and -i.
+    pub resume: Option<tiri_rt::oneshot::Sender<Rc<RefCell<cmd_list>>>>,
     pub state: Option<Box<args_command_state>>,
     pub flags: ::core::ffi::c_int,
     pub prompt_type: prompt_type,
@@ -143,8 +147,7 @@ unsafe fn cmd_command_prompt_exec(
         wait = 0 as ::core::ffi::c_int;
     }
     let mut cdata = Box::new(cmd_command_prompt_cdata {
-        item: Weak::new(),
-        wait: wait != 0,
+        resume: None,
         state: None,
         flags: 0,
         prompt_type: PROMPT_TYPE_COMMAND,
@@ -153,9 +156,6 @@ unsafe fn cmd_command_prompt_exec(
         current: 0,
         argv: Vec::new(),
     });
-    if wait != 0 {
-        cdata.item = std::rc::Rc::downgrade(item_handle);
-    }
     if pane != 0 {
         cdata.wp = std::rc::Rc::downgrade(wp.as_ref().expect("prompt target pane"));
     }
@@ -230,6 +230,18 @@ unsafe fn cmd_command_prompt_exec(
     );
     let flags = cdata.flags;
     let prompt_type = cdata.prompt_type;
+    // The prompt takes the sender; the item's waker is registered only by the
+    // first poll, after exec returns.
+    let continuation = if wait != 0 {
+        let (resume, answered) = tiri_rt::oneshot::channel();
+        cdata.resume = Some(resume);
+        Some(cmd_command_prompt_wait(
+            answered,
+            Rc::downgrade(item_handle),
+        ))
+    } else {
+        None
+    };
     let inputcb = cdata.into_callback();
     if pane != 0 {
         wp.as_ref().expect("prompt target pane").set_prompt(
@@ -254,10 +266,26 @@ unsafe fn cmd_command_prompt_exec(
             prompt_type,
         );
     }
-    if wait == 0 {
+    let Some(continuation) = continuation else {
         return CMD_RETURN_NORMAL;
+    };
+    cmdq_suspend(item_handle, continuation)
+}
+/// Insert the answer's commands after the item with the item's state, inside
+/// the send as tmux's callback does. A prompt closed or freed without any
+/// resumes the item with nothing queued.
+async fn cmd_command_prompt_wait(
+    answered: tiri_rt::oneshot::Receiver<Rc<RefCell<cmd_list>>>,
+    item: Weak<UnsafeCell<cmdq_item>>,
+) {
+    let Some(cmdlist) = answered.await else {
+        return;
+    };
+    unsafe {
+        let item = cmdq_resumed(&item);
+        let new_item_allocation = cmdq_get_command(&cmdlist, (*item.get()).state.as_ref());
+        cmdq_insert_after(&item, new_item_allocation);
     }
-    CMD_RETURN_WAIT
 }
 unsafe fn cmd_command_prompt_callback(
     c_owner: Option<&ClientRef>,
@@ -267,11 +295,6 @@ unsafe fn cmd_command_prompt_callback(
 ) -> prompt_result {
     let mut c: Option<ClientRef> = c_owner.cloned();
     let mut current_block: u64;
-    // A lost waiter keeps the prompt going, but its commands have no queue.
-    let item_owner = cdata.item.upgrade();
-    let item = item_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let new_item_allocation;
     if let Some(s) = s.filter(|_| {
         key as ::core::ffi::c_uint != PROMPT_KEY_MOVE as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -331,19 +354,18 @@ unsafe fn cmd_command_prompt_callback(
                             cmdq_get_error(error.as_deref().expect("command error")),
                         );
                     }
-                    Ok(cmdlist) if !cdata.wait => {
-                        new_item_allocation = cmdq_get_command(&cmdlist, None);
-                        cmdq_append(c_owner, new_item_allocation);
-                        drop(cmdlist);
-                    }
-                    Ok(cmdlist) => {
-                        if let Some(item_owner) = item_owner.as_ref() {
-                            new_item_allocation =
-                                cmdq_get_command(&cmdlist, (*item).state.as_ref());
-                            cmdq_insert_after(item_owner, new_item_allocation);
+                    // A lost waiter keeps the prompt going, but its
+                    // commands have no queue: the send fails.
+                    Ok(cmdlist) => match cdata.resume.take() {
+                        Some(resume) => {
+                            let _ = resume.send(cmdlist);
                         }
-                        drop(cmdlist);
-                    }
+                        None => {
+                            new_item_allocation = cmdq_get_command(&cmdlist, None);
+                            cmdq_append(c_owner, new_item_allocation);
+                            drop(cmdlist);
+                        }
+                    },
                 }
                 if cdata.flags & PROMPT_INCREMENTAL != 0 {
                     return PROMPT_CONTINUE;
@@ -351,12 +373,8 @@ unsafe fn cmd_command_prompt_callback(
             }
         }
     }
-    if cdata.wait {
-        cdata.item = Weak::new();
-        if let Some(item_owner) = item_owner.as_ref() {
-            cmdq_continue(item_owner);
-        }
-    }
+    // Closing without commands resumes the waiting item with nothing.
+    drop(cdata.resume.take());
     PROMPT_CLOSE
 }
 impl cmd_command_prompt_cdata {
@@ -367,39 +385,170 @@ impl cmd_command_prompt_cdata {
     }
 }
 
-impl Drop for cmd_command_prompt_cdata {
-    fn drop(&mut self) {
-        unsafe {
-            if let Some(item) = self.item.upgrade() {
-                cmdq_continue(&item);
-            }
-            self.prompts.clear();
-            drop(self.state.take());
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::src::cmd::queue::{cmdq_get_callback_owned, cmdq_len, cmdq_next};
+    use crate::src::server_client::queue_test_clients as clients;
+    use crate::src::shared::client::CLIENT_DEAD;
+    use std::cell::Cell;
 
-    #[test]
-    fn expired_wait_closes_prompt_without_resuming_queue() {
-        let mut data = cmd_command_prompt_cdata {
-            item: Weak::new(),
-            wait: true,
-            state: None,
+    /// Prompt data for `prompts` prompts whose answers fill `template`.
+    fn cdata(
+        template: &CStr,
+        prompts: usize,
+        resume: Option<tiri_rt::oneshot::Sender<Rc<RefCell<cmd_list>>>>,
+    ) -> Box<cmd_command_prompt_cdata> {
+        let mut state = args_command_state::empty();
+        state.cmd = Some(template.to_owned());
+        state.pi.flags = CMD_PARSE_NOALIAS;
+        Box::new(cmd_command_prompt_cdata {
+            resume,
+            state: Some(Box::new(state)),
             flags: 0,
             prompt_type: PROMPT_TYPE_COMMAND,
             wp: Weak::new(),
-            prompts: Vec::new(),
+            prompts: cmd_command_prompt_rows(
+                vec!["p"; prompts].join(",").as_bytes(),
+                None,
+                false,
+                true,
+            ),
             current: 0,
             argv: Vec::new(),
-        };
-        assert_eq!(
-            unsafe { cmd_command_prompt_callback(None, &mut data, None, PROMPT_KEY_CLOSE) },
-            PROMPT_CLOSE
+        })
+    }
+
+    /// Queue an item on `owner` that waits for a prompt, as
+    /// cmd_command_prompt_exec does; return it with the prompt's sender.
+    unsafe fn append_wait(
+        owner: &ClientRef,
+    ) -> (
+        Weak<UnsafeCell<cmdq_item>>,
+        tiri_rt::oneshot::Sender<Rc<RefCell<cmd_list>>>,
+    ) {
+        let (resume, answered) = tiri_rt::oneshot::channel();
+        let item = cmdq_append(
+            Some(owner),
+            cmdq_get_callback_owned(
+                c"command-prompt",
+                Some(Box::new(move |item| {
+                    cmdq_suspend(item, cmd_command_prompt_wait(answered, Rc::downgrade(item)))
+                })),
+            ),
         );
+        assert_eq!(cmdq_next(Some(owner)), 0, "the item waits");
+        (item, resume)
+    }
+
+    /// Queue a callback that records the length of its queue when it ran.
+    unsafe fn append_flag(owner: &ClientRef) -> Rc<Cell<Option<usize>>> {
+        let ran = Rc::new(Cell::new(None));
+        let flag = ran.clone();
+        let observer = Rc::downgrade(owner);
+        cmdq_append(
+            Some(owner),
+            cmdq_get_callback_owned(
+                c"flag",
+                Some(Box::new(move |_| {
+                    flag.set(Some(cmdq_len(observer.upgrade().as_ref())));
+                    CMD_RETURN_NORMAL
+                })),
+            ),
+        );
+        ran
+    }
+
+    /// Answer the current prompt as Enter does.
+    unsafe fn answer(
+        c: &ClientRef,
+        cdata: &mut cmd_command_prompt_cdata,
+        s: &CStr,
+    ) -> prompt_result {
+        cmd_command_prompt_callback(Some(c), cdata, Some(s), PROMPT_KEY_CLOSE)
+    }
+
+    unsafe fn state_count(item: &Weak<UnsafeCell<cmdq_item>>) -> usize {
+        Rc::strong_count((*item.upgrade().unwrap().get()).state.as_ref().unwrap())
+    }
+
+    #[test]
+    fn the_last_answer_inserts_after_the_item_inside_the_send() {
+        unsafe {
+            let owner = clients::with_queue();
+            let (head, resume) = append_wait(&owner);
+            let ran = append_flag(&owner);
+            let mut cdata = cdata(c"display-message -p '%1-%2'", 2, Some(resume));
+            assert_eq!(state_count(&head), 1);
+            // The first answer only moves to the next prompt.
+            assert_eq!(answer(&owner, &mut cdata, c"a"), PROMPT_CONTINUE);
+            assert!(cdata.resume.is_some());
+            assert_eq!(cmdq_next(Some(&owner)), 0, "the item still waits");
+            assert_eq!(answer(&owner, &mut cdata, c"b"), PROMPT_CLOSE);
+            // The command was inserted with the item's state inside the send;
+            // removal and the rest wait for cmdq_next.
+            assert!(cdata.resume.is_none());
+            assert_eq!(state_count(&head), 2);
+            assert_eq!((cmdq_len(Some(&owner)), ran.get()), (3, None));
+            // The inserted command runs (and fails on the dead client) ahead
+            // of the next item, which then is the only one left.
+            owner.update_flags(CLIENT_DEAD as u64, 0);
+            assert_eq!(cmdq_next(Some(&owner)), 2);
+            assert!(head.upgrade().is_none());
+            assert_eq!(ran.get(), Some(1));
+        }
+    }
+
+    #[test]
+    fn closing_without_commands_resumes_the_item_with_nothing() {
+        unsafe {
+            // A cancel, a parse error (appended to the answering client) and
+            // a prompt freed unanswered (tmux's cmd_command_prompt_free).
+            for (answer, errors) in [(Some(None), 0), (Some(Some(c"x")), 1), (None, 0)] {
+                let owner = clients::with_queue();
+                let answering = clients::with_queue();
+                let (head, resume) = append_wait(&owner);
+                let ran = append_flag(&owner);
+                let mut cdata = cdata(c"nosuch-command %1", 1, Some(resume));
+                match answer {
+                    None => drop(cdata),
+                    Some(s) => assert_eq!(
+                        cmd_command_prompt_callback(
+                            Some(&answering),
+                            &mut cdata,
+                            s,
+                            PROMPT_KEY_CLOSE
+                        ),
+                        PROMPT_CLOSE
+                    ),
+                }
+                assert!(head.upgrade().is_some() && ran.get().is_none());
+                assert_eq!(cmdq_len(Some(&answering)), errors);
+                assert_eq!(cmdq_next(Some(&owner)), 1, "only the next item runs");
+                assert!(head.upgrade().is_none() && ran.get().is_some());
+            }
+        }
+    }
+
+    #[test]
+    fn an_answer_after_the_waiting_client_is_freed_still_appends_parse_errors() {
+        unsafe {
+            for (template, errors) in [(c"display-message %1", 0), (c"nosuch-command", 1)] {
+                let owner = clients::with_queue();
+                let answering = clients::with_queue();
+                let (head, resume) = append_wait(&owner);
+                let mut cdata = cdata(template, 2, Some(resume));
+                owner.update_flags(CLIENT_DEAD as u64, 0);
+                let client = Rc::downgrade(&owner);
+                drop(owner);
+                // Neither the item nor the prompt's data keeps the client (R2).
+                assert!(client.upgrade().is_none() && head.upgrade().is_none());
+                // The orphaned prompt still walks its prompts.
+                assert_eq!(answer(&answering, &mut cdata, c"a"), PROMPT_CONTINUE);
+                assert_eq!(answer(&answering, &mut cdata, c"b"), PROMPT_CLOSE);
+                assert_eq!(cmdq_len(Some(&answering)), errors);
+            }
+        }
     }
 
     #[test]

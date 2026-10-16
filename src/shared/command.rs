@@ -112,8 +112,6 @@ pub const CMD_PARSE_ONEGROUP: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
 pub const CMD_PARSE_MAX_ENVIRON_LEN: ::core::ffi::c_int = 16384 as ::core::ffi::c_int;
 pub const CMDQ_STATE_CONTROL: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const CMDQ_STATE_NOHOOKS: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const CMDQ_FIRED: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const CMDQ_WAITING: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const CMD_BUFFER_USAGE: &std::ffi::CStr = c"[-b buffer-name]";
 pub const CMD_TARGET_WINDOW_USAGE: &std::ffi::CStr = c"[-t target-window]";
 pub const CMD_SOURCE_FILE_DEPTH_LIMIT: ::core::ffi::c_int = 50 as ::core::ffi::c_int;
@@ -285,14 +283,6 @@ impl cmdq_state {
 
 pub type cmdq_cb =
     Option<Box<dyn FnOnce(&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval>>;
-
-pub type cmdq_type = ::core::ffi::c_uint;
-
-#[derive(Clone, Default)]
-#[repr(C)]
-pub struct wait_item {
-    pub item: std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>,
-}
 
 #[derive(Clone, Default)]
 #[repr(C)]

@@ -1,7 +1,7 @@
 use crate::src::arguments::{args_get, args_has, args_make_commands_now};
 use crate::src::cmd::queue::{
-    cmdq_append, cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_command,
-    cmdq_get_target_client, cmdq_insert_after,
+    cmdq_append, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_target_client,
+    cmdq_insert_after, cmdq_resumed, cmdq_suspend,
 };
 use crate::src::cmd::{cmd_get_args_mut, cmd_list_first};
 use crate::src::format::bytes::nullable_cstr;
@@ -19,15 +19,22 @@ use crate::src::shared::command::{
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{prompt_result, PROMPT_CLOSE, PROMPT_SINGLE};
 use crate::src::status::status_prompt_set;
-use std::cell::UnsafeCell;
+use std::cell::{RefCell, UnsafeCell};
 use std::ffi::{CStr, CString};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 pub struct cmd_confirm_before_data {
-    pub item: std::rc::Weak<UnsafeCell<cmdq_item>>,
-    pub cmdlist: Rc<std::cell::RefCell<cmd_list>>,
+    /// Taken by the answer.
+    pub reply: Option<cmd_confirm_before_reply>,
     pub confirm_key: u_char,
     pub default_yes: ::core::ffi::c_int,
+}
+/// Who acts on the answer.
+pub enum cmd_confirm_before_reply {
+    /// The waiting item's continuation, which owns the command list.
+    Wait(tiri_rt::oneshot::Sender<bool>),
+    /// -b: a confirmed command is appended to the answering client's queue.
+    Background(Rc<RefCell<cmd_list>>),
 }
 pub static cmd_confirm_before_entry: cmd_entry = {
     cmd_entry {
@@ -79,14 +86,10 @@ unsafe fn cmd_confirm_before_exec(
         return CMD_RETURN_ERROR;
     };
     let mut cdata = Box::new(cmd_confirm_before_data {
-        item: std::rc::Weak::new(),
-        cmdlist,
+        reply: None,
         confirm_key: 0,
         default_yes: 0,
     });
-    if wait != 0 {
-        cdata.item = std::rc::Rc::downgrade(item_handle);
-    }
     cdata.default_yes = args_has(args, 'y' as i32 as u_char);
     confirm_key =
         args_get(&*(args), 'c' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
@@ -113,7 +116,7 @@ unsafe fn cmd_confirm_before_exec(
         bytes.push(b' ');
         CString::new(bytes).expect("C string prompt contains no interior NUL")
     } else {
-        cmd = cmd_list_first(&cdata.cmdlist.borrow())
+        cmd = cmd_list_first(&cmdlist.borrow())
             .expect("confirmation command")
             .entry
             .name
@@ -124,6 +127,20 @@ unsafe fn cmd_confirm_before_exec(
         bytes.push(cdata.confirm_key);
         bytes.extend_from_slice(b"/n) ");
         CString::new(bytes).expect("C string command and validated key contain no interior NUL")
+    };
+    // The prompt takes the sender; the item's waker is registered only by the
+    // first poll, after exec returns.
+    let continuation = if wait != 0 {
+        let (answer, answered) = tiri_rt::oneshot::channel();
+        cdata.reply = Some(cmd_confirm_before_reply::Wait(answer));
+        Some(cmd_confirm_before_wait(
+            answered,
+            cmdlist,
+            Rc::downgrade(item_handle),
+        ))
+    } else {
+        cdata.reply = Some(cmd_confirm_before_reply::Background(cmdlist));
+        None
     };
     let inputcb = cdata.into_callback();
     status_prompt_set(
@@ -137,58 +154,221 @@ unsafe fn cmd_confirm_before_exec(
         PROMPT_TYPE_COMMAND,
     );
     drop(new_prompt);
-    if wait == 0 {
+    let Some(continuation) = continuation else {
         return CMD_RETURN_NORMAL;
+    };
+    cmdq_suspend(item_handle, continuation)
+}
+/// Act on the answer inside its send, at answer time as tmux does: queue a
+/// confirmed command after the item with the item's state, and report the
+/// answer to a waiting client without a session. A prompt freed unanswered
+/// never resumes the item (tmux's cmd_confirm_before_free): release the
+/// command list and park.
+async fn cmd_confirm_before_wait(
+    answered: tiri_rt::oneshot::Receiver<bool>,
+    cmdlist: Rc<RefCell<cmd_list>>,
+    item: Weak<UnsafeCell<cmdq_item>>,
+) {
+    let Some(confirmed) = answered.await else {
+        drop(cmdlist);
+        return std::future::pending().await;
+    };
+    unsafe {
+        let item = cmdq_resumed(&item);
+        if confirmed {
+            let new_item_allocation = cmdq_get_command(&cmdlist, (*item.get()).state.as_ref());
+            cmdq_insert_after(&item, new_item_allocation);
+        }
+        if let Some(client) = cmdq_get_client(Some(&*item.get())) {
+            if client.attached_session().upgrade().is_none() {
+                client.set_return_value(if confirmed { 0 } else { 1 });
+            }
+        }
     }
-    CMD_RETURN_WAIT
 }
 unsafe fn cmd_confirm_before_callback(
     c_owner: &ClientRef,
-    cdata: &cmd_confirm_before_data,
+    cdata: &mut cmd_confirm_before_data,
     s: Option<&CStr>,
 ) -> prompt_result {
     let mut c: Option<ClientRef> = Some(c_owner.clone());
-    let item_owner = cdata.item.upgrade();
-    // A lost waiter's queue is gone: the confirmed command has nowhere to run.
-    if item_owner.is_none() && !std::rc::Weak::ptr_eq(&cdata.item, &std::rc::Weak::new()) {
-        return PROMPT_CLOSE;
-    }
-    let item: *mut cmdq_item = item_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let new_item_allocation;
-    let mut retcode: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
+    let mut confirmed = false;
     if !(c.as_ref().expect("live client").flags() & CLIENT_DEAD as uint64_t != 0) {
         if let Some(s) = s {
             let bytes = s.to_bytes();
-            let confirmed = bytes.len() == 1
+            confirmed = bytes.len() == 1
                 && (bytes[0] == cdata.confirm_key || (bytes[0] == b'\r' && cdata.default_yes != 0));
-            if confirmed {
-                retcode = 0 as ::core::ffi::c_int;
-                if item.is_null() {
-                    new_item_allocation = cmdq_get_command(&cdata.cmdlist, None);
-                    cmdq_append(c.as_ref(), new_item_allocation);
-                } else if let Some(item_owner) = item_owner.as_ref() {
-                    new_item_allocation = cmdq_get_command(&cdata.cmdlist, (*item).state.as_ref());
-                    cmdq_insert_after(item_owner, new_item_allocation);
-                }
-            }
         }
     }
-    if let Some(item_owner) = item_owner.as_ref() {
-        if let Some(client) = cmdq_get_client((item).as_ref()) {
-            if client.attached_session().upgrade().is_none() {
-                client.set_return_value(retcode);
-            }
+    match cdata.reply.take() {
+        // A dropped item (its client was lost) closes the receiver: nothing
+        // is queued.
+        Some(cmd_confirm_before_reply::Wait(answer)) => {
+            let _ = answer.send(confirmed);
         }
-        cmdq_continue(item_owner);
+        Some(cmd_confirm_before_reply::Background(cmdlist)) if confirmed => {
+            new_item_allocation = cmdq_get_command(&cmdlist, None);
+            cmdq_append(c.as_ref(), new_item_allocation);
+        }
+        _ => {}
     }
     PROMPT_CLOSE
 }
 impl cmd_confirm_before_data {
-    fn into_callback(self: Box<Self>) -> crate::src::shared::status::status_prompt_input_cb {
+    fn into_callback(mut self: Box<Self>) -> crate::src::shared::status::status_prompt_input_cb {
         Some(Box::new(move |client, text, _key| unsafe {
-            cmd_confirm_before_callback(client.expect("live client"), &self, text)
+            cmd_confirm_before_callback(client.expect("live client"), &mut self, text)
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::src::cmd::core::cmd_list_new;
+    use crate::src::cmd::queue::{cmdq_get_callback_owned, cmdq_next};
+    use crate::src::server_client::queue_test_clients as clients;
+    use std::cell::Cell;
+
+    /// Queue an item on `owner` that waits for the answer to a prompt, as
+    /// cmd_confirm_before_exec does; return the item, the prompt's data and
+    /// the command list the continuation owns.
+    unsafe fn append_wait(
+        owner: &ClientRef,
+        default_yes: bool,
+    ) -> (
+        Weak<UnsafeCell<cmdq_item>>,
+        Box<cmd_confirm_before_data>,
+        Weak<RefCell<cmd_list>>,
+    ) {
+        let (answer, answered) = tiri_rt::oneshot::channel();
+        let cmdlist = cmd_list_new();
+        let list = Rc::downgrade(&cmdlist);
+        let item = cmdq_append(
+            Some(owner),
+            cmdq_get_callback_owned(
+                c"confirm-before",
+                Some(Box::new(move |item| {
+                    cmdq_suspend(
+                        item,
+                        cmd_confirm_before_wait(answered, cmdlist, Rc::downgrade(item)),
+                    )
+                })),
+            ),
+        );
+        assert_eq!(cmdq_next(Some(owner)), 0, "the item waits");
+        let cdata = Box::new(cmd_confirm_before_data {
+            reply: Some(cmd_confirm_before_reply::Wait(answer)),
+            confirm_key: b'y',
+            default_yes: default_yes.into(),
+        });
+        (item, cdata, list)
+    }
+
+    /// Queue a callback that records whether it ran.
+    unsafe fn append_flag(owner: &ClientRef) -> Rc<Cell<bool>> {
+        let ran = Rc::new(Cell::new(false));
+        let flag = ran.clone();
+        cmdq_append(
+            Some(owner),
+            cmdq_get_callback_owned(
+                c"flag",
+                Some(Box::new(move |_| {
+                    flag.set(true);
+                    CMD_RETURN_NORMAL
+                })),
+            ),
+        );
+        ran
+    }
+
+    #[test]
+    fn the_answer_acts_inside_the_send() {
+        unsafe {
+            for (default_yes, answer, confirmed) in [
+                (false, Some(c"y"), true),
+                (false, Some(c"n"), false),
+                (false, Some(c"\r"), false),
+                (true, Some(c"\r"), true),
+                (true, None, false),
+            ] {
+                let owner = clients::with_queue();
+                let (head, mut cdata, list) = append_wait(&owner, default_yes);
+                let ran = append_flag(&owner);
+                owner.set_return_value(-1);
+                assert_eq!(
+                    cmd_confirm_before_callback(&owner, &mut cdata, answer),
+                    PROMPT_CLOSE
+                );
+                // The answer status and the command list are settled at the
+                // answer; removal, the confirmed command and the next item
+                // wait for cmdq_next.
+                assert_eq!(clients::return_value(&owner), (!confirmed).into());
+                assert!(list.upgrade().is_none(), "the continuation finished");
+                assert!(head.upgrade().is_some() && !ran.get());
+                assert_eq!(cmdq_next(Some(&owner)), u_int::from(confirmed) + 1);
+                assert!(head.upgrade().is_none() && ran.get());
+                // A later answer to the same data does nothing.
+                cmd_confirm_before_callback(&owner, &mut cdata, Some(c"y"));
+                assert_eq!(cmdq_next(Some(&owner)), 0);
+            }
+        }
+    }
+
+    #[test]
+    fn a_prompt_freed_unanswered_releases_the_data_and_parks() {
+        unsafe {
+            let owner = clients::with_queue();
+            let (head, cdata, list) = append_wait(&owner, false);
+            let ran = append_flag(&owner);
+            owner.set_return_value(-1);
+            drop(cdata);
+            assert!(list.upgrade().is_none(), "the command list is released");
+            // The item never resumes and blocks its queue, as in tmux.
+            assert_eq!(cmdq_next(Some(&owner)), 0);
+            assert!(head.upgrade().is_some() && !ran.get());
+            assert_eq!(clients::return_value(&owner), -1);
+            owner.update_flags(CLIENT_DEAD as u64, 0);
+            drop(owner);
+            assert!(head.upgrade().is_none());
+        }
+    }
+
+    #[test]
+    fn an_answer_after_the_waiting_client_is_freed_queues_nothing() {
+        unsafe {
+            let owner = clients::with_queue();
+            let answering = clients::with_queue();
+            let (head, mut cdata, list) = append_wait(&owner, false);
+            owner.update_flags(CLIENT_DEAD as u64, 0);
+            let client = Rc::downgrade(&owner);
+            drop(owner);
+            // Neither the item nor the prompt's data keeps the client (R2);
+            // the item's drop released the command list unrun.
+            assert!(client.upgrade().is_none());
+            assert!(head.upgrade().is_none() && list.upgrade().is_none());
+            assert_eq!(
+                cmd_confirm_before_callback(&answering, &mut cdata, Some(c"y")),
+                PROMPT_CLOSE
+            );
+            assert_eq!(cmdq_next(Some(&answering)), 0);
+        }
+    }
+
+    #[test]
+    fn a_background_confirmation_is_appended_to_the_answering_client() {
+        unsafe {
+            for (answer, queued) in [(c"n", 0), (c"y", 1)] {
+                let answering = clients::with_queue();
+                let mut cdata = Box::new(cmd_confirm_before_data {
+                    reply: Some(cmd_confirm_before_reply::Background(cmd_list_new())),
+                    confirm_key: b'y',
+                    default_yes: 0,
+                });
+                cmd_confirm_before_callback(&answering, &mut cdata, Some(answer));
+                assert_eq!(cmdq_next(Some(&answering)), queued);
+            }
+        }
     }
 }

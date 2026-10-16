@@ -1,4 +1,4 @@
-use crate::src::cmd::queue::{cmdq_continue, cmdq_get_client};
+use crate::src::cmd::queue::CmdqWaiter;
 use crate::src::format::format_create_defaults;
 use crate::src::grid::grid_default_cell;
 use crate::src::input::{input_init, input_parse_screen};
@@ -25,7 +25,6 @@ use crate::src::shared::client::{
 use crate::src::shared::client::{ClientRef, ClientWeak};
 use crate::src::shared::client::{CLIENT_ALLREDRAWFLAGS, CLIENT_REDRAWOVERLAY};
 use crate::src::shared::colour::*;
-use crate::src::shared::command::cmdq_item;
 use crate::src::shared::display::visible_ranges;
 use crate::src::shared::environment::environ;
 use crate::src::shared::format::format_tree;
@@ -62,9 +61,9 @@ use std::rc::Weak;
 use tiri_buffer::SegmentedBuf;
 
 pub struct popup_data {
-    published: bool,
+    /// The waiting command, stored only once the overlay is published.
+    waiter: Option<CmdqWaiter>,
     pub c: Option<ClientRef>,
-    pub item: Weak<UnsafeCell<cmdq_item>>,
     pub flags: ::core::ffi::c_int,
     pub title: Option<std::ffi::CString>,
     pub style: Option<std::ffi::CString>,
@@ -96,9 +95,8 @@ pub struct popup_data {
 impl popup_data {
     pub fn empty() -> Self {
         Self {
-            published: false,
+            waiter: None,
             c: Default::default(),
-            item: Default::default(),
             flags: Default::default(),
             title: Default::default(),
             style: Default::default(),
@@ -206,18 +204,10 @@ pub const LEFT: C2RustUnnamed_40 = 1;
 impl Drop for popup_data {
     fn drop(&mut self) {
         unsafe {
-            // Startup failure does not resume the command: popup_display's
-            // caller handles that error. Published overlays resume once.
-            if self.published {
-                if let Some(item) = self.item.upgrade() {
-                    let c_owner = cmdq_get_client((item.get()).as_ref());
-                    if let Some(client) = c_owner.as_ref() {
-                        if client.attached_session().upgrade().is_none() {
-                            client.set_return_value(self.status);
-                        }
-                    }
-                    cmdq_continue(&item);
-                }
+            // Startup failure never waits: popup_display's caller handles
+            // that error. A published overlay finishes its waiter once.
+            if let Some(waiter) = self.waiter.take() {
+                waiter.finish(self.status);
             }
             if let Some(client) = self.c.take() {
                 (client).release();
@@ -938,10 +928,12 @@ pub unsafe fn popup_modify(
     c_owner.request_redraw(CLIENT_ALLREDRAWFLAGS as u64);
     0 as ::core::ffi::c_int
 }
-pub unsafe fn popup_display(
+/// Show a popup on `c_owner`. `wait` is called only once the popup is
+/// published, and its waiter is finished with the popup's status when freed.
+pub(crate) unsafe fn popup_display(
     mut flags: ::core::ffi::c_int,
     mut lines: box_lines,
-    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    wait: impl FnOnce() -> CmdqWaiter,
     mut px: u_int,
     mut py: u_int,
     mut sx: u_int,
@@ -1032,7 +1024,6 @@ pub unsafe fn popup_display(
     let handle = PopupHandle(owner.downgrade());
     let popup = handle.upgrade().expect("new popup");
     let pd = popup.as_ptr();
-    (*pd).item = item_handle.map(std::rc::Rc::downgrade).unwrap_or_default();
     (*pd).flags = flags;
     (*pd).c = Some(c_owner.clone());
     (*pd).status = 128 as ::core::ffi::c_int + SIGHUP;
@@ -1130,7 +1121,7 @@ pub unsafe fn popup_display(
         crate::src::shared::input::InputPalette::Popup((*pd).palette.downgrade()),
         (*pd).c.as_ref(),
     ));
-    (*pd).published = true;
+    (*pd).waiter = Some(wait());
     let check_cb = popup_check_callback(PopupHandle(owner.downgrade()));
     let mode = PopupHandle(owner.downgrade());
     let mode_cb: overlay_mode_cb = Some(Box::new(move |_| {
@@ -1158,4 +1149,135 @@ pub unsafe fn popup_display(
         owner, check_cb, mode_cb, draw_cb, key_cb, resize_cb,
     ));
     0 as ::core::ffi::c_int
+}
+
+#[cfg(test)]
+mod waiter_tests {
+    use super::*;
+    use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next, cmdq_wait};
+    use crate::src::server_client::queue_test_clients as clients;
+    use crate::src::session::session_new_for_test;
+    use crate::src::shared::command::{cmdq_item, CMD_RETURN_NORMAL};
+    use std::cell::{Cell, RefCell};
+
+    /// Queue on `owner` a head that waits and an item recording that it ran;
+    /// return the head's waiter once it is suspended.
+    unsafe fn waiting_head(
+        owner: &ClientRef,
+        ran: &Rc<Cell<bool>>,
+    ) -> (CmdqWaiter, Weak<UnsafeCell<cmdq_item>>) {
+        let slot: Rc<RefCell<Option<CmdqWaiter>>> = Default::default();
+        let stored = slot.clone();
+        let head = cmdq_append(
+            Some(owner),
+            cmdq_get_callback_owned(
+                c"popup waiter",
+                Some(Box::new(move |item| {
+                    let (waiter, retval) = cmdq_wait(item);
+                    *stored.borrow_mut() = Some(waiter);
+                    retval
+                })),
+            ),
+        );
+        let ran = ran.clone();
+        cmdq_append(
+            Some(owner),
+            cmdq_get_callback_owned(
+                c"after popup",
+                Some(Box::new(move |_| {
+                    ran.set(true);
+                    CMD_RETURN_NORMAL
+                })),
+            ),
+        );
+        assert_eq!(cmdq_next(Some(owner)), 0);
+        (slot.take().expect("suspended head"), head)
+    }
+
+    fn published(waiter: CmdqWaiter, status: i32) -> popup_data {
+        let mut data = popup_data::empty();
+        data.waiter = Some(waiter);
+        data.status = status;
+        data
+    }
+
+    #[test]
+    fn freeing_a_published_popup_reports_its_status_to_a_sessionless_waiter_only() {
+        unsafe {
+            let owner = clients::with_queue();
+            let ran = Rc::new(Cell::new(false));
+            let (waiter, head) = waiting_head(&owner, &ran);
+            drop(published(waiter, 5));
+            assert_eq!(clients::return_value(&owner), 5);
+            // Resumed inside the free; the queue moves on at its next pass.
+            assert!(!ran.get());
+            assert_eq!(cmdq_next(Some(&owner)), 1);
+            assert!(head.upgrade().is_none());
+            assert!(ran.get());
+
+            // The session is judged at free time.
+            let (waiter, head) = waiting_head(&owner, &ran);
+            let session = session_new_for_test();
+            clients::attach(&owner, Some(&session));
+            ran.set(false);
+            drop(published(waiter, 9));
+            assert_eq!(clients::return_value(&owner), 5);
+            assert_eq!(cmdq_next(Some(&owner)), 1);
+            assert!(head.upgrade().is_none());
+            assert!(ran.get());
+            clients::attach(&owner, None);
+        }
+    }
+
+    #[test]
+    fn freeing_an_unpublished_popup_resumes_nothing() {
+        unsafe {
+            let owner = clients::with_queue();
+            let ran = Rc::new(Cell::new(false));
+            let (waiter, head) = waiting_head(&owner, &ran);
+            let mut data = popup_data::empty();
+            data.status = 5;
+            drop(data);
+            assert_eq!(clients::return_value(&owner), 0);
+            assert_eq!(cmdq_next(Some(&owner)), 0);
+            assert!(head.upgrade().is_some());
+            assert!(!ran.get());
+            drop(waiter);
+        }
+    }
+
+    #[test]
+    fn a_popup_holding_its_waiting_client_frees_it_when_freed() {
+        unsafe {
+            let owner = clients::with_queue();
+            let ran = Rc::new(Cell::new(false));
+            let (waiter, head) = waiting_head(&owner, &ran);
+            let mut data = published(waiter, 3);
+            data.c = Some(owner.clone());
+            let client = Rc::downgrade(&owner);
+            drop(owner);
+            assert!(client.upgrade().is_some());
+            drop(data);
+            assert!(client.upgrade().is_none());
+            assert!(head.upgrade().is_none());
+            assert!(!ran.get());
+        }
+    }
+
+    #[test]
+    fn a_waiting_client_freed_before_its_popup_cancels_the_wait() {
+        unsafe {
+            let owner = clients::with_queue();
+            let ran = Rc::new(Cell::new(false));
+            let (waiter, head) = waiting_head(&owner, &ran);
+            let data = published(waiter, 3);
+            let client = Rc::downgrade(&owner);
+            drop(owner);
+            assert!(client.upgrade().is_none());
+            assert!(head.upgrade().is_none());
+            assert!(data.waiter.as_ref().is_some_and(CmdqWaiter::is_cancelled));
+            drop(data);
+            assert!(!ran.get());
+        }
+    }
 }

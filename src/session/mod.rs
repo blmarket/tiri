@@ -795,6 +795,12 @@ unsafe fn session_update_history(session: &session) {
     }
 }
 
+/// An unregistered session with no windows or options, for tests elsewhere.
+#[cfg(test)]
+pub(crate) fn session_new_for_test() -> SessionRef {
+    session::new()
+}
+
 #[cfg(test)]
 mod session_index_tests {
     use super::*;

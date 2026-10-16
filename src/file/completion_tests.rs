@@ -1,7 +1,9 @@
 use super::*;
-use crate::src::cmd::queue::{cmdq_append, cmdq_continue, cmdq_get_callback_owned, cmdq_next};
+use crate::src::cmd::queue::{
+    cmdq_append, cmdq_continue, cmdq_get_callback_owned, cmdq_is_waiting, cmdq_next,
+};
 use crate::src::reactor::shutdown_runtime;
-use crate::src::shared::command::{CMDQ_WAITING, CMD_RETURN_WAIT};
+use crate::src::shared::command::CMD_RETURN_WAIT;
 use std::cell::Cell;
 
 /// Run a real local read from a queue item, retaining only observers afterward.
@@ -31,7 +33,7 @@ unsafe fn start_read(
     );
     let item = cmdq_append(None, item);
     assert_eq!(cmdq_next(None), 0, "local completion must be deferred");
-    assert_ne!((*item.upgrade().unwrap().get()).flags & CMDQ_WAITING, 0);
+    assert!(cmdq_is_waiting(&*item.upgrade().unwrap().get()));
     (item, file.take())
 }
 

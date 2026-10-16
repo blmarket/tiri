@@ -30,7 +30,7 @@ mod pane_sync;
 use self::input::{input_parse_buffer, input_parse_pane};
 use crate::src::arguments::args_has;
 use crate::src::cmd::cmd_mouse_at;
-use crate::src::cmd::queue::{cmdq_continue, cmdq_get_client};
+use crate::src::cmd::queue::{cmdq_continue, cmdq_get_client, CmdqWaiter};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::events::{events_fire, events_fire_pane};
 use crate::src::events_payload::{
@@ -358,8 +358,7 @@ unsafe fn window_pane_destroy_ready(
         return 0 as ::core::ffi::c_int;
     }
     // Like tmux, a waiter keeps the pane even after its item is dropped.
-    let waited = !std::rc::Weak::ptr_eq(&(*wp).wait_item, &std::rc::Weak::new());
-    if waited && (*wp).exit_status.is_none() {
+    if (*wp).wait_close.is_some() && (*wp).exit_status.is_none() {
         return 0 as ::core::ffi::c_int;
     }
     if (*wp).editor.is_some() && (*wp).exit_status.is_none() {
@@ -629,20 +628,12 @@ unsafe fn window_pane_create(
 
 unsafe fn window_pane_wait_finish(wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
     let wp = wp_owner.get();
-    let item_owner = std::mem::take(&mut (*wp).wait_item).upgrade();
-    let Some(item_owner) = item_owner else { return };
-    let item = item_owner.get();
+    let Some(waiter) = (*wp).wait_close.take() else { return };
     let retval = (*wp)
         .exit_status
         .and_then(|status| status.code().or(status.signal().map(|signal| signal + 128)))
         .unwrap_or(128 + SIGHUP);
-    let c_owner = cmdq_get_client((item).as_ref());
-    if let Some(client) = c_owner.as_ref() {
-        if client.attached_session().upgrade().is_none() {
-            client.set_return_value(retval);
-        }
-    }
-    cmdq_continue(&item_owner);
+    waiter.finish(retval);
 }
 
 unsafe fn window_pane_free_modes(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
@@ -2128,5 +2119,142 @@ mod pane_prompt_data_tests {
             window_pane_prompt_free_callback(&freed)
         }));
         pr
+    }
+}
+
+#[cfg(test)]
+mod wait_close_tests {
+    use super::*;
+    use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next, cmdq_wait};
+    use crate::src::server_client::queue_test_clients as clients;
+    use crate::src::session::session_new_for_test;
+    use crate::src::shared::command::CMD_RETURN_NORMAL;
+    use std::cell::{Cell, RefCell};
+    use std::io::Write;
+    use std::process::ExitStatus;
+
+    /// Queue on `owner` a head that waits and an item recording that it ran;
+    /// return the head's waiter once it is suspended.
+    unsafe fn waiting_head(
+        owner: &ClientRef,
+        ran: &Rc<Cell<bool>>,
+    ) -> (CmdqWaiter, Weak<UnsafeCell<cmdq_item>>) {
+        let slot: Rc<RefCell<Option<CmdqWaiter>>> = Default::default();
+        let stored = slot.clone();
+        let head = cmdq_append(
+            Some(owner),
+            cmdq_get_callback_owned(
+                c"pane waiter",
+                Some(Box::new(move |item| {
+                    let (waiter, retval) = cmdq_wait(item);
+                    *stored.borrow_mut() = Some(waiter);
+                    retval
+                })),
+            ),
+        );
+        let ran = ran.clone();
+        cmdq_append(
+            Some(owner),
+            cmdq_get_callback_owned(
+                c"after pane",
+                Some(Box::new(move |_| {
+                    ran.set(true);
+                    CMD_RETURN_NORMAL
+                })),
+            ),
+        );
+        assert_eq!(cmdq_next(Some(owner)), 0);
+        (slot.take().expect("suspended head"), head)
+    }
+
+    /// A pane running `pid` whose PTY still holds unread output, so its exit
+    /// does not destroy it.
+    unsafe fn draining_pane(pid: pid_t) -> Rc<UnsafeCell<window_pane>> {
+        let pane = window_pane::new();
+        let (output, mut input) = std::io::pipe().unwrap();
+        input.write_all(b"x").unwrap();
+        (*pane.get()).fd = Some(pty::PanePty::new(output.into()));
+        (*pane.get()).pipe_fd = None;
+        (*pane.get()).pid = pid;
+        window_pane_tree::insert(Rc::clone(&pane));
+        pane
+    }
+
+    /// Wait on a new pane for `pid` and reap it with `status`; return what
+    /// the waiting client's return value is then.
+    unsafe fn reap(owner: &ClientRef, pid: pid_t, status: i32) -> i32 {
+        let ran = Rc::new(Cell::new(false));
+        let (waiter, head) = waiting_head(owner, &ran);
+        let pane = draining_pane(pid);
+        pane.wait_until_close(waiter);
+        assert!(pane.process_exited(pid, ExitStatus::from_raw(status)));
+        assert!((*pane.get()).wait_close.is_none());
+        let retval = clients::return_value(owner);
+        // Resumed at the exit; the queue moves on at its next pass.
+        assert!(!ran.get());
+        assert_eq!(cmdq_next(Some(owner)), 1);
+        assert!(head.upgrade().is_none());
+        assert!(ran.get());
+        pane.destroy();
+        retval
+    }
+
+    #[test]
+    fn process_exit_reports_its_status_to_a_sessionless_waiter_and_resumes_it() {
+        unsafe {
+            let owner = clients::with_queue();
+            assert_eq!(reap(&owner, 4242, 5 << 8), 5);
+            assert_eq!(reap(&owner, 4243, libc::SIGTERM), 128 + libc::SIGTERM);
+            // The session is judged at exit.
+            let session = session_new_for_test();
+            clients::attach(&owner, Some(&session));
+            assert_eq!(reap(&owner, 4244, 7 << 8), 128 + libc::SIGTERM);
+            clients::attach(&owner, None);
+        }
+    }
+
+    #[test]
+    fn destroying_a_waited_pane_before_its_exit_reports_sighup() {
+        unsafe {
+            let owner = clients::with_queue();
+            let ran = Rc::new(Cell::new(false));
+            let (waiter, head) = waiting_head(&owner, &ran);
+            let pane = draining_pane(4245);
+            pane.wait_until_close(waiter);
+            pane.destroy();
+            assert_eq!(clients::return_value(&owner), 128 + SIGHUP);
+            assert_eq!(cmdq_next(Some(&owner)), 1);
+            assert!(head.upgrade().is_none());
+            assert!(ran.get());
+        }
+    }
+
+    #[test]
+    fn a_cancelled_waiter_keeps_an_exited_pane_until_its_status_is_ready() {
+        unsafe {
+            let owner = clients::with_queue();
+            let ran = Rc::new(Cell::new(false));
+            let (waiter, head) = waiting_head(&owner, &ran);
+            let pane = window_pane::new();
+            (*pane.get()).fd = None;
+            (*pane.get()).pipe_fd = None;
+            (*pane.get()).flags |= PANE_EXITED;
+            window_pane_tree::insert(Rc::clone(&pane));
+            assert!(pane.destroy_ready());
+            pane.wait_until_close(waiter);
+            assert!(!pane.destroy_ready());
+            // The waiting client is freed with its queue; the pane holds no
+            // reference to either (R2).
+            let client = Rc::downgrade(&owner);
+            drop(owner);
+            assert!(client.upgrade().is_none());
+            assert!(head.upgrade().is_none());
+            assert!((*pane.get()).wait_close.as_ref().is_some_and(CmdqWaiter::is_cancelled));
+            assert!(!pane.destroy_ready());
+            (*pane.get()).exit_status = Some(ExitStatus::from_raw(0));
+            assert!(pane.destroy_ready());
+            pane.destroy();
+            assert!(!ran.get());
+        }
     }
 }

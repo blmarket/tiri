@@ -3,6 +3,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 pub mod mio;
+pub mod oneshot;
 pub mod stream;
 pub mod unix;
 
