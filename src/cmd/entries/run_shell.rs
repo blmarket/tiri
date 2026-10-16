@@ -10,7 +10,9 @@ use crate::src::cmd::queue::{
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
-use crate::src::format::{format_add, format_create_from_target, format_expand_cstring};
+use crate::src::format::{
+    format_add, format_create_from_target, format_expand_cstring, format_single_from_target_cstring,
+};
 use crate::src::job::job_run;
 use crate::src::reactor::{
     evbuffer_add, evbuffer_get_length, evbuffer_new, evbuffer_pullup, evbuffer_readln,
@@ -182,7 +184,8 @@ unsafe fn cmd_run_shell_exec(
         return CMD_RETURN_NORMAL;
     }
     let cwd = if args_has(args, 'c' as i32 as u_char) != 0 {
-        args_get(&*(args), 'c' as i32 as u_char).map(CStr::to_owned)
+        args_get(&*(args), 'c' as i32 as u_char)
+            .map(|cwd| format_single_from_target_cstring(item_handle, cwd.as_ptr()))
     } else {
         ClientRef::working_directory(c.as_ref(), s.as_ref())
     };

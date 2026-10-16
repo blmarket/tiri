@@ -30,6 +30,9 @@ pub const FORMAT_MAX_WIDTH: ::core::ffi::c_int = 10000 as ::core::ffi::c_int;
 
 pub const FORMAT_MAX_REPEAT: ::core::ffi::c_int = 10000 as ::core::ffi::c_int;
 
+/// Maximum repeat result size in bytes.
+pub const FORMAT_MAX_REPEAT_SIZE: usize = 65536;
+
 pub const FORMAT_MAX_PRECISION: ::core::ffi::c_int = 100 as ::core::ffi::c_int;
 
 pub const FORMAT_TIMESTRING: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;

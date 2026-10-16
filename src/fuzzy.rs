@@ -187,13 +187,17 @@ fn fuzzy_column(
     Some(start[a].wrapping_add(fc.offset.wrapping_sub(src[a])))
 }
 
-unsafe fn fuzzy_decode<'a>(mut text: &[u8], out: &'a mut [utf8_data]) -> &'a [utf8_data] {
+/// Decode a UTF-8 term, or `None` if it has more characters than `out` holds.
+unsafe fn fuzzy_decode<'a>(mut text: &[u8], out: &'a mut [utf8_data]) -> Option<&'a [utf8_data]> {
     let mut count = 0;
     while !text.is_empty() {
+        if count == out.len() {
+            return None;
+        }
         text = fuzzy_decode_one(text, &mut out[count]);
         count += 1;
     }
-    &out[..count]
+    Some(&out[..count])
 }
 
 fn fuzzy_score_positions(positions: &[usize], cs: &[fuzzy_char]) -> i32 {
@@ -368,7 +372,9 @@ unsafe fn fuzzy_match_term(
     fold: bool,
     matched: &mut [u8],
 ) -> Option<i32> {
-    let tok = fuzzy_decode(term.text, tok);
+    let Some(tok) = fuzzy_decode(term.text, tok) else {
+        return (term.inverse != 0).then_some(0);
+    };
     let value = if term.exact != 0 {
         fuzzy_match_exact(
             tok,
@@ -454,6 +460,7 @@ pub(crate) unsafe fn fuzzy_match_owned(
     let ncs: u_int = cs.len() as u_int;
     matched = vec![0; ncs.max(1) as usize];
     best = vec![0; ncs.max(1) as usize];
+    // A term with more characters than the text cannot match.
     tok = vec![
         utf8_data {
             data: [0; 32],
@@ -461,7 +468,7 @@ pub(crate) unsafe fn fuzzy_match_owned(
             size: 0,
             width: 0,
         };
-        pattern.len() + 1
+        pattern.len().min(cs.len())
     ];
     for group in pattern.split(|byte| *byte == b'|') {
         matched.fill(0);

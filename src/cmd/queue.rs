@@ -268,10 +268,11 @@ pub(crate) fn cmdq_clear_wait_file(
     }
 }
 
-/// A dead client cannot resume a file read or delayed command. Cancel its
-/// owned work first, then remove the waiting item and its queued suffix.
-/// Other wait families need their own cancellation before they can be drained.
-pub(crate) unsafe fn cmdq_abort_owned_wait(owner: &ClientRef) {
+/// A dead client cannot resume a file-backed waiting command. Cancel its
+/// callback data first, then remove the waiting item and its queued suffix.
+/// Other waits, such as a delayed command, keep their item: like tmux, their
+/// work still runs and only the resume is lost.
+pub(crate) unsafe fn cmdq_abort_file_wait(owner: &ClientRef) {
     let queue = QueueTarget::for_client(Some(owner));
     let Some(first) = queue.with_queue(|queue| queue.first()) else {
         return;
@@ -279,13 +280,10 @@ pub(crate) unsafe fn cmdq_abort_owned_wait(owner: &ClientRef) {
     if (*first.get()).flags & (CMDQ_FIRED | CMDQ_WAITING) != (CMDQ_FIRED | CMDQ_WAITING) {
         return;
     }
-    if let Some(file) = (*first.get()).wait_file.upgrade() {
-        file_cancel_cmdq_wait(&file);
-    } else if (*first.get()).wait_timer.is_some() {
-        cmdq_clear_wait_timer(&mut *first.get());
-    } else {
+    let Some(file) = (*first.get()).wait_file.upgrade() else {
         return;
-    }
+    };
+    file_cancel_cmdq_wait(&file);
     drop(first);
     queue.with_queue(|queue| queue.item = std::rc::Weak::new());
     while let Some(item) = queue.with_queue(|queue| queue.list.pop_front()) {
@@ -838,6 +836,9 @@ unsafe fn cmdq_fire_command(
     };
     let mut flags: ::core::ffi::c_int = 0;
     let mut quiet: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+    if saved_client.as_ref().is_some_and(|c| c.is_dead()) {
+        return CMD_RETURN_ERROR;
+    }
     if cfg_finished != 0 {
         cmdq_add_message(item_handle);
     }

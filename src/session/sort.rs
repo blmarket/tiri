@@ -8,7 +8,7 @@ unsafe fn sort_session_cmp(sa: &session, sb: &session, sort_crit: &sort_criteria
     let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     match sort_crit.order as ::core::ffi::c_uint {
         2 => {
-            result = sa.id.wrapping_sub(sb.id) as ::core::ffi::c_int;
+            result = sa.id.cmp(&sb.id) as ::core::ffi::c_int;
         }
         1 => {
             result = sa.creation_time.cmp(&sb.creation_time) as i32;

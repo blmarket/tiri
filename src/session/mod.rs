@@ -47,7 +47,7 @@ use crate::src::shared::window::{WINLINK_ALERTFLAGS, WINLINK_VISITED};
 use crate::src::tmux::global_options;
 use crate::src::tty::tty_update_window_offset;
 use crate::src::window::{
-    winlink_add, winlink_clear_flags, winlink_find_by_index, winlink_find_by_window,
+    winlink_add, winlink_clear_flags, winlink_count, winlink_find_by_index, winlink_find_by_window,
     winlink_find_by_window_id, winlink_next, winlink_previous, winlink_remove, winlink_set_window,
     winlink_stack_push, winlink_stack_remove, winlinks_minmax, winlinks_next,
 };
@@ -687,7 +687,6 @@ unsafe fn session_renumber_windows(s_owner: &SessionRef) {
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wl1: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wl_new: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut old_wins: winlinks = std::mem::take(&mut (*s).windows);
     let mut old_lastw: winlink_stack;
     let mut new_idx: ::core::ffi::c_int = 0;
     let mut new_curw_idx: ::core::ffi::c_int = 0;
@@ -696,6 +695,12 @@ unsafe fn session_renumber_windows(s_owner: &SessionRef) {
         options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
         c"base-index",
     ) as ::core::ffi::c_int;
+    // Leave the indexes alone if they do not all fit from there.
+    let n = winlink_count(&(*s).windows);
+    if n > (i32::MAX as u_int) - (new_idx as u_int) + 1 {
+        return;
+    }
+    let mut old_wins: winlinks = std::mem::take(&mut (*s).windows);
     new_curw_idx = 0 as ::core::ffi::c_int;
     wl = winlinks_minmax(&old_wins, RB_NEGINF);
     while wl.is_alive() {

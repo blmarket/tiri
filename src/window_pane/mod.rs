@@ -120,7 +120,7 @@ pub use crate::src::shared::window::{
     winlinks,
 };
 use crate::src::shared::window::{WINDOW_MODE_NO_STACK, WINDOW_PANE_NO_MODE};
-use libc::{REG_EXTENDED, REG_ICASE};
+use libc::{REG_EXTENDED, REG_ICASE, SIGHUP};
 
 struct window_pane_input_data {
     item: Weak<UnsafeCell<cmdq_item>>,
@@ -633,7 +633,7 @@ unsafe fn window_pane_wait_finish(wp_owner: &Rc<std::cell::UnsafeCell<window_pan
     let retval = (*wp)
         .exit_status
         .and_then(|status| status.code().or(status.signal().map(|signal| signal + 128)))
-        .unwrap_or(0);
+        .unwrap_or(128 + SIGHUP);
     let c_owner = cmdq_get_client((item).as_ref());
     if let Some(client) = c_owner.as_ref() {
         if client.attached_session().upgrade().is_none() {
@@ -1577,14 +1577,12 @@ unsafe fn window_pane_input_callback(
     let wp = lookup_wp_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if wp.is_null() {
-        client.request_exit(1);
-    }
     let file = cdata.file.upgrade();
-    if let Some(cancelled) = file
-        .as_ref()
-        .filter(|_| !closed && (wp.is_null() || client.is_dead() || error != 0))
-    {
+    // Once the pane is gone, no event of the read continues the command.
+    if let Some(cancelled) = file.as_ref().filter(|_| wp.is_null() || client.is_dead()) {
+        if wp.is_null() {
+            client.request_exit(1);
+        }
         file_cancel(&mut *cancelled.get());
     } else if file.is_none() || closed || error != 0 {
         cmdq_continue(

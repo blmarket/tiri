@@ -284,6 +284,7 @@ pub const TTY_REQUEST_LIMIT: ::core::ffi::c_int = 30 as ::core::ffi::c_int;
 pub const TERM_SIXEL: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
 pub const TTY_BRACKETPASTE: ::core::ffi::c_int = 0x8000 as ::core::ffi::c_int;
 pub const TERM_INVALIDMS: ::core::ffi::c_int = 0x80 as ::core::ffi::c_int;
+pub const TERM_NOREPLACE: ::core::ffi::c_int = 0x100 as ::core::ffi::c_int;
 
 #[cfg(test)]
 mod tests {
@@ -375,6 +376,7 @@ pub struct tty {
     pub mouse_last_y: u_int,
     pub mouse_last_b: u_int,
     pub mouse_drag_flag: ::core::ffi::c_int,
+    pub mouse_drag_status: ::core::ffi::c_int,
     pub mouse_drag_x: u_int,
     pub mouse_drag_y: u_int,
     pub mouse_scrolling_flag: ::core::ffi::c_int,

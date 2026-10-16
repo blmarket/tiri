@@ -157,12 +157,11 @@ unsafe fn cmd_copy_mode_exec(
         window_copy_pagedown(&pane_owner, args_has(args, 'e' as i32 as u_char));
     }
     if args_has(args, 'S' as i32 as u_char) != 0 {
-        let tty_oy = c.as_ref().expect("live client").terminal_view().oy;
-        let slider = c
-            .as_ref()
-            .expect("live client")
-            .borrow_terminal()
-            .mouse_slider_mpos;
+        let Some(c) = c.as_ref() else {
+            return CMD_RETURN_NORMAL;
+        };
+        let tty_oy = c.terminal_view().oy;
+        let slider = c.borrow_terminal().mouse_slider_mpos;
         window_copy_scroll(
             &pane_owner,
             slider,

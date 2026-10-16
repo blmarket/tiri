@@ -36,9 +36,9 @@ pub(super) unsafe fn compare(
         index
     };
     let result = match criteria.order {
-        SORT_ACTIVITY => activity_a.wrapping_sub(activity_b) as i32,
-        SORT_CREATION => id_a.wrapping_sub(id_b) as i32,
-        SORT_SIZE => size_a.wrapping_sub(size_b) as i32,
+        SORT_ACTIVITY => activity_a.cmp(&activity_b) as i32,
+        SORT_CREATION => id_a.cmp(&id_b) as i32,
+        SORT_SIZE => size_a.cmp(&size_b) as i32,
         SORT_INDEX => {
             let ai = order_index(&parent_a, &Rc::downgrade(a));
             let bi = order_index(&parent_b, &Rc::downgrade(b));
@@ -56,12 +56,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn comparison_preserves_wrapping_keys_title_ties_and_reverse() {
+    fn comparison_orders_whole_keys_title_ties_and_reverse() {
         unsafe {
             let a = window_pane::new();
             let b = window_pane::new();
-            (*a.get()).id = u32::MAX;
-            (*b.get()).id = 1;
+            // A difference this large does not fit the sign of an i32.
+            (*a.get()).id = 1;
+            (*b.get()).id = u32::MAX;
             (*a.get()).base.title = CString::new("alpha").unwrap();
             (*b.get()).base.title = CString::new("beta").unwrap();
             for order in [

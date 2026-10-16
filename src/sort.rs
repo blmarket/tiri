@@ -56,7 +56,7 @@ fn sort_buffer_cmp(pa: &paste_buffer, pb: &paste_buffer, sort_crit: &sort_criter
     let order = match sort_crit.order {
         SORT_NAME => pa.name.cmp(&pb.name),
         SORT_CREATION => pb.order.cmp(&pa.order),
-        SORT_SIZE => (pa.size().wrapping_sub(pb.size()) as i32).cmp(&0),
+        SORT_SIZE => pa.size().cmp(&pb.size()),
         _ => Ordering::Equal,
     }
     .then_with(|| pa.name.cmp(&pb.name));
@@ -70,9 +70,7 @@ unsafe fn sort_client_cmp(ca: &ClientRef, cb: &ClientRef, sort_crit: &sort_crite
     let order = match sort_crit.order {
         SORT_SIZE => {
             let (a, b) = (ca.terminal_size(), cb.terminal_size());
-            (a.0.wrapping_sub(b.0) as i32)
-                .cmp(&0)
-                .then_with(|| (a.1.wrapping_sub(b.1) as i32).cmp(&0))
+            a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1))
         }
         SORT_CREATION => {
             let (a, b) = (ca.creation_time(), cb.creation_time());
@@ -116,7 +114,7 @@ unsafe fn sort_winlink_cmp(
         6 => {
             let (ax, ay) = a.size();
             let (bx, by) = b.size();
-            ax.wrapping_mul(ay).wrapping_sub(bx.wrapping_mul(by)) as i32
+            ax.wrapping_mul(ay).cmp(&bx.wrapping_mul(by)) as i32
         }
         _ => 0,
     };
@@ -133,34 +131,37 @@ unsafe fn sort_key_binding_cmp(
     let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     match sort_crit.order as ::core::ffi::c_uint {
         2 => {
-            result = a.key.wrapping_sub(b.key) as ::core::ffi::c_int;
+            result = a.key.cmp(&b.key) as ::core::ffi::c_int;
         }
         3 => {
-            result = (a.key as ::core::ffi::c_ulonglong & KEYC_MASK_MODIFIERS)
-                .wrapping_sub(b.key as ::core::ffi::c_ulonglong & KEYC_MASK_MODIFIERS)
-                as ::core::ffi::c_int;
+            let ak = a.key as ::core::ffi::c_ulonglong & KEYC_MASK_MODIFIERS;
+            let bk = b.key as ::core::ffi::c_ulonglong & KEYC_MASK_MODIFIERS;
+            result = ak.cmp(&bk) as ::core::ffi::c_int;
         }
         4 => {
-            result = (strcasecmp(
+            result = strcasecmp(
                 a.tablename
                     .as_ref()
                     .map_or(::core::ptr::null(), |s| s.as_ptr()),
                 b.tablename
                     .as_ref()
                     .map_or(::core::ptr::null(), |s| s.as_ptr()),
-            ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
+            );
         }
         _ => {}
     }
     if result == 0 as ::core::ffi::c_int {
-        result = (strcasecmp(
+        result = strcasecmp(
             a.tablename
                 .as_ref()
                 .map_or(::core::ptr::null(), |s| s.as_ptr()),
             b.tablename
                 .as_ref()
                 .map_or(::core::ptr::null(), |s| s.as_ptr()),
-        ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
+        );
+    }
+    if result == 0 as ::core::ffi::c_int {
+        result = a.key.cmp(&b.key) as ::core::ffi::c_int;
     }
     sort_ordering(result, sort_crit.reversed)
 }

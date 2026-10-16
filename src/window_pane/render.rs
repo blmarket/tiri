@@ -67,13 +67,14 @@ pub(super) unsafe fn is_obscured(pane: &Rc<UnsafeCell<window_pane>>) -> bool {
 }
 
 pub(super) unsafe fn alternate_screen_changed(pane: &Rc<UnsafeCell<window_pane>>, entered: bool) {
+    let pending = !(*pane.get()).resize_queue.is_empty();
     if entered {
         window_pane_clear_resizes(&mut *pane.get(), std::ptr::null_mut());
         drop((*pane.get()).resize_timer.take());
     }
     let window = pane.window_observer().upgrade().expect("live pane parent");
     window.refit();
-    if entered && !(*pane.get()).resize_queue.is_empty() {
+    if entered && (pending || !(*pane.get()).resize_queue.is_empty()) {
         let (sx, sy, _, _) = pane.geometry();
         window_pane_send_resize(&*pane.get(), sx, sy);
         window_pane_clear_resizes(&mut *pane.get(), std::ptr::null_mut());
@@ -436,8 +437,8 @@ pub(super) unsafe fn draw_prompt(
         tty_draw_line(
             terminal,
             &screen,
-            0 as u_int,
             offset as u_int,
+            0 as u_int,
             width as u_int,
             px as u_int,
             cy as u_int,

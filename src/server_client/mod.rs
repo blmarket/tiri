@@ -17,10 +17,11 @@ pub use client_overlay::Overlay;
 pub use model::client;
 
 use crate::src::cfg::{cfg_client, cfg_finished, start_cfg};
+use crate::src::cmd::entries::wait_for::cmd_wait_for_client_lost;
 use crate::src::cmd::parse::cmd_parse_from_argv;
 use crate::src::cmd::queue::{
-    cmdq_abort_owned_wait, cmdq_append, cmdq_error, cmdq_get_callback_owned, cmdq_get_client,
-    cmdq_get_command, cmdq_get_error, cmdq_insert_after, cmdq_new,
+    cmdq_abort_file_wait, cmdq_append, cmdq_error, cmdq_get_callback_owned, cmdq_get_client,
+    cmdq_get_command, cmdq_get_error, cmdq_insert_after, cmdq_new, cmdq_next,
 };
 use crate::src::cmd::{cmd_list_all_have, cmd_log_argv};
 use crate::src::compat::imsg::imsg_get_fd;
@@ -1207,12 +1208,14 @@ unsafe fn server_client_lost(client_owner: &ClientRef) {
     server_client_clear_overlay(client_owner);
     status_prompt_clear(client_owner);
     status_message_clear(client_owner);
-    cmdq_abort_owned_wait(client_owner);
+    cmdq_abort_file_wait(client_owner);
     let files = client_owner.file_handles();
     crate::src::file::client_files_interrupt(files, EINTR);
     let registry_owner =
         ClientRegistry::remove(&Rc::downgrade(client_owner)).expect("registered client owner");
     log_debug(format_args!("lost client {}", log_pointer(c)));
+    cmd_wait_for_client_lost(client_owner);
+    cmdq_next(Some(client_owner));
     if (*c).flags & CLIENT_ATTACHED as uint64_t != 0 {
         server_client_attached_lost(client_owner);
         events_fire_client(c"client-detached", std::rc::Rc::clone(client_owner));
@@ -1469,11 +1472,16 @@ unsafe fn server_client_check_mouse(
                 if x == (*m).lx && y == (*m).ly {
                     return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                 }
+                if (*c).tty.mouse_drag_status != 0 {
+                    x = (*c).tty.mouse_drag_x;
+                    y = (*c).tty.mouse_drag_y;
+                }
                 log_debug(format_args!("drag update at {},{}", (x) as u32, (y) as u32));
             } else {
                 x = (*m).lx;
                 y = (*m).ly;
                 b = (*m).lb;
+                (*c).tty.mouse_drag_status = 0;
                 log_debug(format_args!("drag start at {},{}", (x) as u32, (y) as u32));
             }
         } else if (*m).b & MOUSE_MASK_BUTTONS as u_int == MOUSE_WHEEL_UP as u_int
@@ -1559,6 +1567,9 @@ unsafe fn server_client_check_mouse(
             && y >= (*m).statusat as u_int
             && y < ((*m).statusat as u_int).wrapping_add((*m).statuslines)
         {
+            if type_0 == KEYC_TYPE_MOUSEDRAG && (*c).tty.mouse_drag_flag == 0 {
+                (*c).tty.mouse_drag_status = 1;
+            }
             if let Some(sr) =
                 status_get_range(client_owner, x, y.wrapping_sub((*m).statusat as u_int))
             {
@@ -1839,12 +1850,18 @@ unsafe fn server_client_check_mouse(
                 key = KEYC_DRAGGING as ::core::ffi::c_ulong as key_code;
             }
             if (*c).tty.mouse_drag_flag == 0 as ::core::ffi::c_int {
-                (*c).tty.mouse_drag_x = px;
-                (*c).tty.mouse_drag_y = py;
+                if (*c).tty.mouse_drag_status != 0 {
+                    (*c).tty.mouse_drag_x = x;
+                    (*c).tty.mouse_drag_y = y;
+                } else {
+                    (*c).tty.mouse_drag_x = px;
+                    (*c).tty.mouse_drag_y = py;
+                }
             }
             (*c).tty.mouse_drag_flag =
                 (b & MOUSE_MASK_BUTTONS as u_int).wrapping_add(1 as u_int) as ::core::ffi::c_int;
-            if last_pane.is_none() {
+            // Change the pane if the drag did not start on status line.
+            if (*c).tty.mouse_drag_status == 0 && last_pane.is_none() {
                 let hit_window_owner = &window_owner;
                 selected_pane = hit_window_owner.pane_at(px, py).upgrade();
                 last_pane = selected_pane.clone();
@@ -2978,11 +2995,7 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
                 let (pane_width, _, pane_x, pane_y) = pane.geometry();
                 let scrollbar = &pane;
                 cursor = 0 as ::core::ffi::c_int;
-                pane_mode = active_owner
-                    .as_ref()
-                    .expect("active pane")
-                    .screen_mode(false)
-                    .mode;
+                pane_mode = s.mode;
                 let tty_window_view { ox, oy, sx, sy, .. } = tty_window_offset(&*tty);
                 if pane_x + s.cx as ::core::ffi::c_int >= ox as ::core::ffi::c_int
                     && pane_x + s.cx as ::core::ffi::c_int

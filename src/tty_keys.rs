@@ -1657,6 +1657,22 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
         (len) as usize,
         log_cstr_n(&bytes[..len as usize])
     ));
+    // If the client has no session, there is nowhere to send input.
+    if terminal_client_owner.attached_session().upgrade().is_none() {
+        log_debug(format_args!(
+            "{}: discard keys with no session",
+            log_cstr(diagnostic_name.as_deref().unwrap_or(c"(null)"))
+        ));
+        let mut terminal = terminal_client_owner.borrow_terminal_mut();
+        drop(terminal.key_timer.take());
+        terminal.flags &= !TTY_TIMER;
+        terminal
+            .in_0
+            .as_deref_mut()
+            .expect("open TTY buffer")
+            .drain(len);
+        return 1 as ::core::ffi::c_int;
+    }
     match tty_keys_clipboard(bytes, &raw mut size, &mut clipboard_reply) {
         0 => {
             key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;

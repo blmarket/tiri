@@ -51,7 +51,7 @@ pub const CLIENT_CONTROL_NOOUTPUT: ::core::ffi::c_int = 0x4000000 as ::core::ffi
 pub const CLIENT_CONTROL_PAUSEAFTER: ::core::ffi::c_ulonglong =
     0x100000000 as ::core::ffi::c_ulonglong;
 pub const CLIENT_CONTROL_DISCARD: ::core::ffi::c_ulonglong =
-    0x1000000000 as ::core::ffi::c_ulonglong;
+    0x10000000000 as ::core::ffi::c_ulonglong;
 pub const CLIENT_UNATTACHEDFLAGS: ::core::ffi::c_int = CLIENT_DEAD | CLIENT_SUSPENDED | CLIENT_EXIT;
 pub const CLIENT_REDRAWOVERLAY: ::core::ffi::c_int = 0x2000000 as ::core::ffi::c_int;
 pub const CLIENT_STATUSOFF: ::core::ffi::c_int = 0x800000 as ::core::ffi::c_int;

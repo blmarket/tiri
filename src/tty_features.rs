@@ -5,7 +5,7 @@ use crate::src::shared::abi::*;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::tty::tty_term;
 use crate::src::shared::tty::{
-    TERM_256COLOURS, TERM_DECFRA, TERM_DECSLRM, TERM_RGBCOLOURS, TERM_SIXEL,
+    TERM_256COLOURS, TERM_DECFRA, TERM_DECSLRM, TERM_NOREPLACE, TERM_RGBCOLOURS, TERM_SIXEL,
 };
 use crate::src::tty_term::{tty_term_apply, tty_term_has_name};
 use libc::{strcasecmp, strcmp, strlen};
@@ -117,7 +117,7 @@ static tty_feature_cstyle_capabilities: &[&CStr] = &[c"Ss=\\E[%p1%d q", c"Se=\\E
 static tty_feature_cstyle: tty_feature = tty_feature {
     name: c"cstyle",
     capabilities: Some(tty_feature_cstyle_capabilities),
-    flags: 0 as ::core::ffi::c_int,
+    flags: TERM_NOREPLACE,
 };
 static tty_feature_ccolour_capabilities: &[&CStr] = &[c"Cs=\\E]12;%p1%s\\a", c"Cr=\\E]112\\a"];
 static tty_feature_ccolour: tty_feature = tty_feature {
@@ -370,10 +370,10 @@ pub unsafe fn tty_apply_features(mut term: *mut tty_term, feat: i32) -> AppliedF
                         "adding capability: {}",
                         crate::src::log::log_bytes(capability.to_bytes())
                     ));
-                    tty_term_apply(term, capability.as_ptr(), 1 as ::core::ffi::c_int);
+                    tty_term_apply(term, capability.as_ptr(), 1 as ::core::ffi::c_int, tf.flags);
                 }
             }
-            (*term).flags |= tf.flags;
+            (*term).flags |= tf.flags & !TERM_NOREPLACE;
             if std::ptr::eq(tf, &tty_feature_utf8) {
                 result.enable_utf8 = true;
             }

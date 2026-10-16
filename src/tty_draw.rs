@@ -6,6 +6,7 @@ use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::{ClientRef, CLIENT_UTF8};
 use crate::src::shared::grid::*;
+use crate::src::shared::limits::UINT_MAX;
 use crate::src::shared::screen::screen;
 use crate::src::shared::tty::tty_style_ctx;
 use crate::src::shared::tty::TTY_NOCURSOR;
@@ -273,6 +274,8 @@ pub unsafe fn tty_draw_line(
         if py != 0 as u_int
             && atx == 0 as u_int
             && terminal_value!(client, cx) >= terminal_value!(client, sx)
+            && terminal_value!(client, cy) != UINT_MAX
+            && terminal_value!(client, cy).wrapping_add(1) == aty
             && nx == terminal_value!(client, sx)
         {
             let gl = grid_get_line(gd, gd.hsize.wrapping_add(py).wrapping_sub(1 as u_int));

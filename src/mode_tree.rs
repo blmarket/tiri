@@ -204,11 +204,24 @@ fn mode_tree_sibling(
 }
 
 fn mode_tree_check_selected(mtd: &mut mode_tree_data) {
-    if mtd.current > mtd.height.wrapping_sub(1 as u_int) {
-        mtd.offset = mtd
-            .current
-            .wrapping_sub(mtd.height)
-            .wrapping_add(1 as u_int);
+    if mtd.height == 0 {
+        return;
+    }
+
+    // If the list has shrunk, do not leave empty lines at the bottom.
+    let line_count = mode_tree_line_count(mtd);
+    if line_count <= mtd.height {
+        mtd.offset = 0;
+    } else if mtd.offset > line_count - mtd.height {
+        mtd.offset = line_count - mtd.height;
+    }
+
+    // If the current line would now be off screen move the offset so it is
+    // visible.
+    if mtd.current < mtd.offset {
+        mtd.offset = mtd.current;
+    } else if mtd.current > mtd.offset + mtd.height - 1 {
+        mtd.offset = mtd.current - mtd.height + 1;
     }
 }
 fn mode_tree_alloc_data() -> std::rc::Rc<std::cell::UnsafeCell<mode_tree_data>> {
@@ -465,14 +478,7 @@ pub unsafe fn mode_tree_expand(tree_owner: &Rc<UnsafeCell<mode_tree_data>>, tag:
 pub fn mode_tree_set_current(mtd: &mut mode_tree_data, mut tag: uint64_t) -> ::core::ffi::c_int {
     if let Some(found) = mode_tree_get_tag(mtd, tag) {
         mtd.current = found;
-        if mtd.current > mtd.height.wrapping_sub(1 as u_int) {
-            mtd.offset = mtd
-                .current
-                .wrapping_sub(mtd.height)
-                .wrapping_add(1 as u_int);
-        } else {
-            mtd.offset = 0 as u_int;
-        }
+        mode_tree_check_selected(mtd);
         return 1 as ::core::ffi::c_int;
     }
     if mtd.current >= mode_tree_line_count(mtd) {
@@ -480,14 +486,7 @@ pub fn mode_tree_set_current(mtd: &mut mode_tree_data, mut tag: uint64_t) -> ::c
             return 0 as ::core::ffi::c_int;
         }
         mtd.current = mode_tree_line_count(mtd).wrapping_sub(1 as u_int);
-        if mtd.current > mtd.height.wrapping_sub(1 as u_int) {
-            mtd.offset = mtd
-                .current
-                .wrapping_sub(mtd.height)
-                .wrapping_add(1 as u_int);
-        } else {
-            mtd.offset = 0 as u_int;
-        }
+        mode_tree_check_selected(mtd);
     }
     0 as ::core::ffi::c_int
 }
@@ -693,7 +692,6 @@ pub unsafe fn mode_tree_build(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
         if !tree.lines.is_empty() && tag.is_none() {
             tag = Some(tree.lines[tree.current as usize].item.borrow().tag);
         }
-        mode_tree_set_current(tree, tag.unwrap_or(UINT64_MAX as uint64_t));
         tree.width = tree.screen.grid().sx;
         if tree.preview == MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int {
             tree.height = tree.screen.grid().sy;
@@ -707,6 +705,7 @@ pub unsafe fn mode_tree_build(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
     }
     let tree = &mut *tree_owner.get();
     if tree.dead == 0 {
+        mode_tree_set_current(tree, tag.unwrap_or(UINT64_MAX as uint64_t));
         mode_tree_check_selected(tree);
     }
 }

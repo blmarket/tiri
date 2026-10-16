@@ -552,6 +552,48 @@ unsafe fn cmd_wait_for_unlock(
     }
     CMD_RETURN_NORMAL
 }
+/// Continue and forget every waiter, locker and event waiter whose item
+/// belongs to a lost client, wherever that item is queued.
+pub unsafe fn cmd_wait_for_client_lost(c: &ClientRef) {
+    let lost = |item: &Weak<UnsafeCell<cmdq_item>>| {
+        item.upgrade().filter(|item| {
+            cmdq_get_client((item.get()).as_ref())
+                .is_some_and(|owner| std::rc::Rc::ptr_eq(&owner, c))
+        })
+    };
+    let mut index = 0;
+    while index < (&raw const wait_event_items).as_ref().unwrap().len() {
+        let item = lost(&(&raw const wait_event_items).as_ref().unwrap()[index].item);
+        let Some(item) = item else {
+            index += 1;
+            continue;
+        };
+        let owner = (&raw mut wait_event_items).as_mut().unwrap().remove(index);
+        cmdq_continue(&item);
+        drop(owner);
+    }
+    let channels = (&raw mut wait_channels)
+        .as_mut()
+        .unwrap()
+        .entries
+        .values_mut()
+        .map(|owner| &raw mut **owner)
+        .collect::<Vec<_>>();
+    for wc in channels {
+        for list in [wait_channel_waiters(wc), wait_channel_lockers(wc)] {
+            let mut index = 0;
+            while index < (*list).len() {
+                if let Some(item) = lost(&(&*list)[index].item) {
+                    cmdq_continue(&item);
+                    drop((&mut *list).remove(index));
+                } else {
+                    index += 1;
+                }
+            }
+        }
+        cmd_wait_for_remove_empty(wc);
+    }
+}
 pub unsafe fn cmd_wait_for_flush() {
     while !(&raw const wait_event_items).as_ref().unwrap().is_empty() {
         let owner = (&raw mut wait_event_items).as_mut().unwrap().remove(0);

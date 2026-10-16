@@ -515,7 +515,7 @@ pub(crate) unsafe fn window_copy_clone_screen(
     let mut dst = Box::new(screen::empty());
     let mut sy = src.grid().hsize.wrapping_add(src.grid().sy);
     if trim {
-        while sy > src.grid().hsize {
+        while sy > src.grid().hsize.wrapping_add(1) {
             let Some(gl) = grid_peek_line(src.grid(), sy.wrapping_sub(1)) else {
                 break;
             };

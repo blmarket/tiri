@@ -499,15 +499,16 @@ impl LayoutNode {
 
 /// Serialize a layout: `tree` over `entries`, the panes in pane order.
 /// `legacy` selects the checksummed text format kept for older control
-/// clients.
+/// clients. A window without panes has no layout; the legacy format still
+/// gives "0000,", as an empty string crashes old iTerm2 versions.
 pub(super) fn layout_string(
-    tree: &LayoutNode,
+    tree: Option<&LayoutNode>,
     entries: &[LayoutEntry],
     legacy: bool,
 ) -> Option<CString> {
-    if entries.is_empty() {
-        return None;
-    }
+    let Some(tree) = tree.filter(|_| !entries.is_empty()) else {
+        return legacy.then(|| c"0000,".to_owned());
+    };
     let mut output = Vec::new();
     if legacy {
         let mut body = Vec::new();
@@ -572,7 +573,7 @@ mod tests {
     fn layout_string_is_a_single_row() {
         let entries = [entry(0, 3, 0, false, Some(0)), entry(40, 5, 1, true, None)];
         assert_eq!(
-            layout_string(&row(2), &entries, false)
+            layout_string(Some(&row(2)), &entries, false)
                 .unwrap()
                 .to_str()
                 .unwrap(),
@@ -584,14 +585,18 @@ mod tests {
         );
         let body = b"79x24,0,0{39x24,0,0,3,39x24,40,0,5}";
         assert_eq!(
-            layout_string(&row(2), &entries, true).unwrap().to_bytes(),
+            layout_string(Some(&row(2)), &entries, true)
+                .unwrap()
+                .to_bytes(),
             [
                 format!("{:04x},", layout_checksum(body)).as_bytes(),
                 &body[..]
             ]
             .concat()
         );
-        assert!(layout_string(&row(0), &[], false).is_none());
+        assert!(layout_string(Some(&row(0)), &[], false).is_none());
+        assert!(layout_string(None, &[], false).is_none());
+        assert_eq!(layout_string(None, &[], true).unwrap().to_bytes(), b"0000,");
     }
 
     #[test]
@@ -599,7 +604,7 @@ mod tests {
         let entries = [entry(0, 7, 1, true, None)];
         let lone = LayoutNode::Pane(0);
         assert_eq!(
-            layout_string(&lone, &entries, false)
+            layout_string(Some(&lone), &entries, false)
                 .unwrap()
                 .to_str()
                 .unwrap(),
@@ -607,7 +612,9 @@ mod tests {
         );
         let body = b"39x24,0,0,7";
         assert_eq!(
-            layout_string(&lone, &entries, true).unwrap().to_bytes(),
+            layout_string(Some(&lone), &entries, true)
+                .unwrap()
+                .to_bytes(),
             [
                 format!("{:04x},", layout_checksum(body)).as_bytes(),
                 &body[..]
@@ -631,10 +638,12 @@ mod tests {
             children: vec![(1, LayoutNode::Pane(0)), (1, LayoutNode::line(false, 1..3))],
         };
         assert_eq!(
-            layout_string(&tree, &entries, true).unwrap().to_bytes()[5..],
+            layout_string(Some(&tree), &entries, true)
+                .unwrap()
+                .to_bytes()[5..],
             b"79x24,0,0{39x24,0,0,1,39x24,40,0[39x12,40,0,2,39x11,40,13,3]}"[..]
         );
-        let json = layout_string(&tree, &entries, false).unwrap();
+        let json = layout_string(Some(&tree), &entries, false).unwrap();
         assert!(json
             .to_str()
             .unwrap()

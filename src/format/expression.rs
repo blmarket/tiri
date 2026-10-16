@@ -71,8 +71,11 @@ pub(crate) unsafe fn format_pretty_time_cstring(mut t: time_t) -> CString {
         now = t;
     }
     age = now - t;
-    localtime_r(&raw mut now, &raw mut now_tm);
-    localtime_r(&raw mut t, &raw mut tm);
+    if localtime_r(&raw mut now, &raw mut now_tm).is_null()
+        || localtime_r(&raw mut t, &raw mut tm).is_null()
+    {
+        return CString::default();
+    }
     if age < (24 as ::core::ffi::c_int * 3600 as ::core::ffi::c_int) as time_t {
         strftime(
             &raw mut s as *mut ::core::ffi::c_char,
@@ -296,7 +299,9 @@ pub(super) unsafe fn format_find(
                 found = Some(format_pretty_time_cstring(t));
             } else {
                 if !time_format.is_null() {
-                    localtime_r(&raw mut t, &raw mut tm);
+                    if localtime_r(&raw mut t, &raw mut tm).is_null() {
+                        return None;
+                    }
                     format_strftime(
                         &raw mut s as *mut ::core::ffi::c_char,
                         ::core::mem::size_of::<[::core::ffi::c_char; 512]>() as size_t,
@@ -304,7 +309,9 @@ pub(super) unsafe fn format_find(
                         &raw mut tm,
                     );
                 } else {
-                    ctime_r(&raw mut t, &raw mut s as *mut ::core::ffi::c_char);
+                    if ctime_r(&raw mut t, &raw mut s as *mut ::core::ffi::c_char).is_null() {
+                        return None;
+                    }
                     s[strcspn(&raw mut s as *mut ::core::ffi::c_char, c"\n".as_ptr()) as usize] =
                         '\0' as i32 as ::core::ffi::c_char;
                 }
@@ -450,6 +457,9 @@ pub(super) unsafe fn format_skip1(
 ) -> *const ::core::ffi::c_char {
     let mut brackets: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut check: u_int = 0 as u_int;
+    if !es.is_null() && format_check_time(es, ::core::ptr::null_mut::<u_int>()) == 0 {
+        return ::core::ptr::null::<::core::ffi::c_char>();
+    }
     while *s as ::core::ffi::c_int != '\0' as i32 {
         if !es.is_null() && format_check_time(es, &raw mut check) == 0 {
             return ::core::ptr::null::<::core::ffi::c_char>();
@@ -1894,7 +1904,6 @@ pub(super) unsafe fn format_replace(
     let mut cycle_count: u_int = 1 as u_int;
     let mut i: u_int = 0;
     let mut nrep: u_int = 0;
-    let mut check: u_int = 0 as u_int;
     let mut loop_flags: *const ::core::ffi::c_char = c"".as_ptr();
     let mut next: format_expand_state = format_expand_state {
         ft: ::core::ptr::null_mut::<format_tree>(),
@@ -2408,21 +2417,20 @@ pub(super) unsafe fn format_replace(
                         FORMAT_MAX_REPEAT as ::core::ffi::c_longlong,
                     );
                     nrep = parsed.unwrap_or(0) as u_int;
+                    let n = left.as_bytes().len();
                     if parsed.is_err() {
                         value = CString::default();
-                        current_block = 1803726662341650892;
+                    } else if n != 0 && nrep as usize > FORMAT_MAX_REPEAT_SIZE / n {
+                        format_log1(es, c"format_replace".as_ptr(), |out| {
+                            out.write_all(b"repeat is too long: ")?;
+                            write_cstr(out, nullable_cstr(copy))
+                        });
+                        value = CString::default();
                     } else {
-                        let mut repeated = Vec::new();
-                        current_block = 1803726662341650892;
-                        for _ in 0..nrep {
-                            if format_check_time(es, &raw mut check) == 0 {
-                                current_block = 6506207624831006569;
-                                break;
-                            }
-                            repeated.extend_from_slice(left.as_bytes());
-                        }
-                        value = CString::new(repeated).expect("repeated C string contains no NUL");
+                        value = CString::new(left.as_bytes().repeat(nrep as usize))
+                            .expect("repeated C string contains no NUL");
                     }
+                    current_block = 1803726662341650892;
                 }
             }
         } else if modifiers & FORMAT_NOT as uint64_t != 0 {
@@ -2943,6 +2951,13 @@ pub(super) unsafe fn format_expand1_cstring(
                             n.wrapping_add(1 as size_t),
                         ));
                         fmt = ptr.offset(1 as ::core::ffi::c_int as isize);
+                        continue;
+                    }
+                    if ch == '#' as i32 {
+                        // Copy every ## pair in the run at once; an odd #
+                        // left over starts the next sequence.
+                        output.resize(output.len() + n / 2, b'#');
+                        fmt = if n % 2 != 0 { ptr.offset(-1) } else { ptr };
                         continue;
                     }
                 }

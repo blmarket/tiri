@@ -306,8 +306,8 @@ impl Window for WindowRef {
             .collect::<Vec<_>>();
         let size = self.size();
         let state = &*self.get();
-        let tree = state.layout.tree(&state.panes.snapshot(), size)?;
-        layout::layout_string(&tree, &entries, legacy)
+        let tree = state.layout.tree(&state.panes.snapshot(), size);
+        layout::layout_string(tree.as_ref(), &entries, legacy)
     }
 
     unsafe fn refresh_fill_cells(&self) {

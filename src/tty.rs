@@ -1362,19 +1362,22 @@ fn tty_clamp_area(
             fatalx(|out| write!(out, "tty_clamp_area: x too big, {} > {}", width, nx));
         }
     }
+    // yoff is in window coordinates; ctx.yoff - ctx.ryoff is the number of
+    // status lines above the window on the terminal.
+    let status = (ctx.yoff - ctx.ryoff) as u_int;
     let (y, height) = if yoff >= ctx.woy && yoff.wrapping_add(ny) <= ctx.woy.wrapping_add(ctx.wsy) {
         (
             (ctx.yoff as u_int).wrapping_add(py).wrapping_sub(ctx.woy),
             ny,
         )
     } else if yoff < ctx.woy && yoff.wrapping_add(ny) > ctx.woy.wrapping_add(ctx.wsy) {
-        (0, ctx.wsy)
+        (status, ctx.wsy)
     } else if yoff < ctx.woy {
-        let skip = ctx.woy.wrapping_sub((ctx.yoff as u_int).wrapping_add(py));
-        (0, ny.wrapping_sub(skip))
+        let skip = ctx.woy.wrapping_sub(yoff);
+        (status, ny.wrapping_sub(skip))
     } else {
         let y = (ctx.yoff as u_int).wrapping_add(py).wrapping_sub(ctx.woy);
-        (y, ctx.wsy.wrapping_sub(y))
+        (y, ctx.woy.wrapping_add(ctx.wsy).wrapping_sub(yoff))
     };
     if height > ny {
         unsafe {
