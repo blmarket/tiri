@@ -9,7 +9,7 @@ use super::key::key_code;
 use super::mouse::mouse_event;
 use super::pane::window_pane;
 use super::terminal::TerminalAttributes;
-use crate::src::shared::client::{ClientRef, ClientWeak};
+use crate::src::shared::client::ClientRef;
 use tiri_buffer::SegmentedBuf;
 pub type tty_code_code = ::core::ffi::c_uint;
 pub const TTYC_XT: tty_code_code = 235;
@@ -333,8 +333,6 @@ pub struct tty_window_view {
 
 #[derive(Default)]
 pub struct tty {
-    /// The client owns its terminal; this backreference must not retain it.
-    pub client: ClientWeak,
     pub start_timer: Option<Timer>,
     pub clipboard_timer: Option<Timer>,
     pub last_requests: time_t,
@@ -401,8 +399,6 @@ impl tty {
 #[repr(C)]
 pub struct tty_term {
     pub name: std::ffi::CString,
-    /// Observes the terminal client without retaining a closed client.
-    pub client: ClientWeak,
     pub applied_features: ::core::ffi::c_int,
     pub acs: [[u8; 2]; 256],
     pub codes: Box<[tty_code]>,

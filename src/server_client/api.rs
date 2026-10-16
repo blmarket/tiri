@@ -438,6 +438,7 @@ impl Client for ClientRef {
     unsafe fn write_terminal(&self, bytes: &[u8]) {
         let state = &mut *self.get();
         crate::src::tty::tty_enqueue_bytes(
+            Rc::downgrade(self),
             &mut state.tty,
             state.name.as_deref(),
             &mut state.written,
@@ -456,12 +457,10 @@ impl Client for ClientRef {
         size
     }
     unsafe fn initialize_terminal(&self) -> i32 {
-        let observer = Rc::downgrade(self);
         let state = &mut *self.get();
         crate::src::tty::tty_initialize_component(
             &mut state.tty,
             state.fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
-            observer,
         )
     }
     unsafe fn parse_terminal_features(&self, features: &CStr, separators: &CStr) {

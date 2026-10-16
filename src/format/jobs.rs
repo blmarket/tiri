@@ -70,11 +70,19 @@ impl JobCache {
         }
     }
 
-    unsafe fn entry(&self, client: Option<&ClientRef>, tag: u_int, command: &CStr) -> JobEntry {
+    /// The client whose status line shows this cache's jobs.
+    fn client(&self) -> Option<ClientRef> {
+        match self {
+            Self::Global => None,
+            Self::Client(observer) => observer.upgrade(),
+        }
+    }
+
+    unsafe fn entry(&self, tag: u_int, command: &CStr) -> JobEntry {
         let key = (tag, command.to_bytes().to_vec());
         let identity = self
             .with_cache(|cache| {
-                let record = format_job_find_or_insert(cache, client, tag, command);
+                let record = format_job_find_or_insert(cache, tag, command);
                 std::rc::Rc::downgrade(&record.identity)
             })
             .expect("format context retains the cache client");
@@ -117,7 +125,7 @@ unsafe fn format_job_update(job: &refbox::Weak<job>, entry: &JobEntry) {
         line
     };
     let Some(line) = line else { return };
-    let Some((client, status, last)) = entry.with_record(|record| {
+    let Some((status, last)) = entry.with_record(|record| {
         record.updated = 1;
         format_job_set_out_from_line(record, &line);
         log_debug(format_args!(
@@ -126,13 +134,13 @@ unsafe fn format_job_update(job: &refbox::Weak<job>, entry: &JobEntry) {
             log_cstr(&record.cmd),
             log_cstr(record.out.as_ref().unwrap()),
         ));
-        (record.client.clone(), record.status, record.last)
+        (record.status, record.last)
     }) else {
         return;
     };
     let now = time(std::ptr::null_mut());
     if status != 0 && last != now {
-        if let Some(client) = client.upgrade() {
+        if let Some(client) = entry.cache.client() {
             server_status_client(&client);
         }
         // Keep publication after the notification, as before. A notification
@@ -166,7 +174,7 @@ unsafe fn format_job_complete(completion: JobCompletion, entry: &JobEntry) {
             .unwrap_or(bytes.len());
         CString::new(&bytes[..visible]).expect("visible job output contains no NUL")
     };
-    let Some((client, status)) = entry.with_record(|record| {
+    let Some(status) = entry.with_record(|record| {
         log_debug(format_args!(
             "format_job_complete: {} {}: {}",
             log_pointer(std::ptr::from_ref(record)),
@@ -176,12 +184,12 @@ unsafe fn format_job_complete(completion: JobCompletion, entry: &JobEntry) {
         if !output.is_empty() || record.updated == 0 {
             format_job_set_out(record, output);
         }
-        (record.client.clone(), record.status)
+        record.status
     }) else {
         return;
     };
     if status != 0 {
-        if let Some(client) = client.upgrade() {
+        if let Some(client) = entry.cache.client() {
             server_status_client(&client);
         }
         entry.with_record(|record| record.status = 0);
@@ -192,7 +200,7 @@ pub(super) unsafe fn format_job_get(es: *mut format_expand_state, command: &CStr
     let ft = (*es).ft;
     let cache = JobCache::for_client((*ft).client.as_ref());
     // Publish the entry before expansion, preserving recursive lookup ordering.
-    let entry = cache.entry((*ft).client.as_ref(), (*ft).tag, command);
+    let entry = cache.entry((*ft).tag, command);
     let mut next = format_expand_state::default();
     format_copy_state(&mut next, es, FORMAT_EXPAND_NOJOBS | FORMAT_EXPAND_NOCYCLE);
     next.flags &= !FORMAT_EXPAND_TIME;
@@ -277,7 +285,6 @@ pub(super) unsafe fn format_job_get(es: *mut format_expand_state, command: &CStr
 // Component-only lookup: callers keep this reference inside their cache borrow.
 fn format_job_find_or_insert<'a>(
     jobs: &'a mut format_job_tree,
-    client: Option<&ClientRef>,
     tag: u_int,
     command: &CStr,
 ) -> &'a mut format_job {
@@ -285,7 +292,6 @@ fn format_job_find_or_insert<'a>(
         .or_insert_with(|| {
             Box::new(format_job {
                 identity: std::rc::Rc::new(()),
-                client: client.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
                 tag,
                 cmd: command.to_owned(),
                 expanded: None,

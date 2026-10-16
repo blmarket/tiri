@@ -1335,7 +1335,6 @@ pub unsafe fn tty_term_create(
     // Register identity before validation; failure and explicit free retire it.
     let mut owner = Box::new(tty_term {
         name: CStr::from_ptr(name).to_owned(),
-        client: std::rc::Rc::downgrade(client_owner),
         applied_features: 0,
         acs: [[0; 2]; 256],
         codes: vec![tty_code::default(); tty_term_ncodes() as usize].into_boxed_slice(),

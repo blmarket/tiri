@@ -55,12 +55,10 @@ pub struct options {
 pub struct options_array_item {
     pub key: CString,
     pub value: options_value,
-    pub owner: *mut options_entry,
 }
 
 #[repr(C)]
 pub struct options_entry {
-    pub owner: *mut options,
     pub name: ::std::ffi::CString,
     pub tableentry: Option<&'static options_table_entry>,
     pub value: options_value,

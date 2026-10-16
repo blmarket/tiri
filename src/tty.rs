@@ -140,11 +140,7 @@ pub unsafe fn tty_init(owner: &ClientRef) -> ::core::ffi::c_int {
 
 // Reset only after descriptor validation. This helper may run under a mapped
 // Client component borrow: it never queries Client or invokes callbacks.
-pub(crate) unsafe fn tty_initialize_component(
-    terminal: &mut tty,
-    fd: i32,
-    observer: ClientWeak,
-) -> i32 {
+pub(crate) unsafe fn tty_initialize_component(terminal: &mut tty, fd: i32) -> i32 {
     if fd < 0
         || tiri_rt::unix::terminal_attributes(std::os::fd::BorrowedFd::borrow_raw(fd)).is_err()
     {
@@ -152,7 +148,6 @@ pub(crate) unsafe fn tty_initialize_component(
     }
     tty_keys_free(terminal);
     *terminal = tty::empty();
-    terminal.client = observer;
     terminal.cstyle = SCREEN_CURSOR_DEFAULT;
     terminal.ccolour = -1;
     terminal.bg = -1;
@@ -377,14 +372,16 @@ unsafe fn tty_write_callback(owner: &ClientRef, result: std::io::Result<usize>) 
                 .expect("open TTY buffer"),
         ) != 0
         {
-            tty_start_write(&mut *terminal.borrow_terminal_mut());
+            tty_start_write(
+                &mut *terminal.borrow_terminal_mut(),
+                std::rc::Rc::downgrade(terminal),
+            );
         }
     })(owner);
 }
 
-fn tty_start_read(terminal: &mut tty) {
+fn tty_start_read(terminal: &mut tty, observer: ClientWeak) {
     let fd = terminal.io_fd.expect("open TTY descriptor");
-    let observer = terminal.client.clone();
     crate::src::reactor::task_start(&mut terminal.read_task, move || {
         // SAFETY: the client owns this TTY descriptor until terminal cleanup.
         let source = reactor::io(unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) })?;
@@ -408,12 +405,11 @@ fn tty_start_read(terminal: &mut tty) {
     .expect("start TTY input");
 }
 
-pub(crate) fn tty_start_write(terminal: &mut tty) {
+pub(crate) fn tty_start_write(terminal: &mut tty, observer: ClientWeak) {
     if terminal.write_task.is_some() {
         return;
     }
     let fd = terminal.io_fd.expect("open TTY descriptor");
-    let observer = terminal.client.clone();
     crate::src::reactor::task_start(&mut terminal.write_task, move || {
         // SAFETY: the client owns this TTY descriptor until terminal cleanup.
         let source = reactor::io(unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) })?;
@@ -525,7 +521,7 @@ pub unsafe fn tty_start_tty(owner: &ClientRef) {
         let mut tio: termios = unsafe { ::core::mem::zeroed() };
         let mut i: u_int = 0;
         setblocking(fd, 0 as ::core::ffi::c_int);
-        tty_start_read(&mut *tty.borrow_terminal_mut());
+        tty_start_read(&mut *tty.borrow_terminal_mut(), std::rc::Rc::downgrade(tty));
         tio = terminal_value!(tty, tio).0;
         tio.c_iflag &= !(IXON | IXOFF | ICRNL | INLCR | IGNCR | IMAXBEL | ISTRIP) as tcflag_t;
         tio.c_iflag |= IGNBRK as tcflag_t;

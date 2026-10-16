@@ -86,6 +86,7 @@ pub(super) unsafe fn tty_add(client: &ClientRef, buf: &[u8]) {
 }
 
 pub(crate) unsafe fn tty_enqueue_bytes(
+    observer: ClientWeak,
     tty: &mut tty,
     name: Option<&CStr>,
     written: &mut usize,
@@ -111,7 +112,7 @@ pub(crate) unsafe fn tty_enqueue_bytes(
         let _ = runtime.block_on(source.write(&[std::io::IoSlice::new(buf)], None));
     }
     if tty.flags & TTY_STARTED != 0 {
-        tty_start_write(tty);
+        tty_start_write(tty, observer);
     }
 }
 

@@ -190,8 +190,6 @@ pub struct format_job {
     /// Allocation-independent identity rejects callbacks for a retired entry
     /// when a replacement uses the same command key. It owns no resources.
     pub(crate) identity: std::rc::Rc<()>,
-    /// The client owns its job cache; callbacks only observe it.
-    pub client: ClientWeak,
     pub tag: u_int,
     pub cmd: std::ffi::CString,
     pub expanded: Option<std::ffi::CString>,

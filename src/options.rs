@@ -213,9 +213,10 @@ impl Drop for options {
         unsafe {
             // Preserve value-before-monitor cleanup and the existing key order.
             let names: Vec<_> = options_iter(self).map(|entry| entry.name.clone()).collect();
+            let oo: *mut options = self;
             for name in names {
-                if let Some(entry) = options_get_only_mut(self, &name) {
-                    options_remove(entry);
+                if let Some(entry) = options_get_only_mut(&mut *oo, &name) {
+                    options_remove(oo, entry);
                 }
             }
         }
@@ -346,10 +347,9 @@ unsafe fn options_add(mut oo: *mut options, name: &CStr) -> *mut options_entry {
     o = crate::src::options::options_get_only_mut(&mut *(oo), &name)
         .map_or(std::ptr::null_mut(), |entry| entry);
     if !o.is_null() {
-        options_remove(o);
+        options_remove(oo, o);
     }
     let mut owned = Box::new(options_entry {
-        owner: oo,
         name,
         tableentry: None,
         value: options_value::Empty,
@@ -363,8 +363,7 @@ unsafe fn options_add(mut oo: *mut options, name: &CStr) -> *mut options_entry {
     (*oo).tree.insert(owned.name.clone(), owned);
     o
 }
-unsafe fn options_remove(mut o: *mut options_entry) {
-    let mut oo: *mut options = (*o).owner;
+unsafe fn options_remove(oo: *mut options, o: *mut options_entry) {
     if (*o)
         .tableentry
         .is_some_and(|entry| entry.flags & OPTIONS_TABLE_IS_ARRAY != 0)
@@ -415,7 +414,6 @@ unsafe fn options_array_new(mut o: *mut options_entry, key: &CStr) -> *mut optio
     let mut owner = Box::new(options_array_item {
         key: key.to_owned(),
         value: options_value::Empty,
-        owner: o,
     });
     let a = &raw mut *owner;
     (*o).value

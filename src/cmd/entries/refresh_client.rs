@@ -198,10 +198,7 @@ unsafe fn cmd_refresh_report(client: &ClientRef, value: &CStr) {
     };
     let (mut fg, mut bg) = pane_owner.control_colours();
     let mut size: size_t = 0;
-    let terminal_owner = { client.borrow_terminal().client.upgrade() };
-    let diagnostic_name = terminal_owner
-        .as_ref()
-        .map(|owner| owner.name().unwrap_or_else(|| c"(null)".to_owned()));
+    let diagnostic_name = client.name();
     let parsed = {
         let mut tty = client.borrow_terminal_mut();
         tty_keys_colours(
