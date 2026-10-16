@@ -241,7 +241,10 @@ unsafe fn file_destroy(cf: &mut client_file) {
     cf.path = Default::default();
 }
 unsafe fn file_fire_done_cb(owner: &Rc<UnsafeCell<client_file>>) {
-    let dead = (*owner.get()).c.as_ref().is_some_and(|owner| owner.is_dead());
+    let dead = (*owner.get())
+        .c
+        .as_ref()
+        .is_some_and(|owner| owner.is_dead());
     let mut callback = (&mut *owner.get()).cb.take();
     let waiter = (&mut *owner.get()).wait.take();
     // A waiter receives the terminal event instead of the read listener.

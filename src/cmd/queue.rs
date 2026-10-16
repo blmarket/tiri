@@ -1145,7 +1145,10 @@ pub(crate) unsafe fn cmdq_labels(owner: Option<&ClientRef>) -> Vec<String> {
             .list
             .iter()
             .map(|item| {
-                let name = (*item.get()).name.as_deref().map_or(&b""[..], CStr::to_bytes);
+                let name = (*item.get())
+                    .name
+                    .as_deref()
+                    .map_or(&b""[..], CStr::to_bytes);
                 let label = name.strip_prefix(b"[").unwrap_or(name);
                 let label = label.split(|&byte| byte == b'/').next().unwrap_or_default();
                 String::from_utf8_lossy(label).into_owned()

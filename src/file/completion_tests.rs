@@ -34,7 +34,11 @@ fn local_completion_can_be_cancelled_after_runtime_shutdown() {
                 })),
             ),
         );
-        assert_eq!(cmdq_next(Some(&owner)), 0, "local completion must be deferred");
+        assert_eq!(
+            cmdq_next(Some(&owner)),
+            0,
+            "local completion must be deferred"
+        );
         let file = file.take();
         assert!(file.upgrade().is_some());
         shutdown_runtime(runtime);
@@ -119,7 +123,10 @@ fn dropping_a_lost_client_cancels_its_local_write() {
         );
         assert_eq!(cmdq_next(Some(&owner)), 0);
         let file = file.take();
-        assert!(file.upgrade().is_some(), "the completion task retains the file");
+        assert!(
+            file.upgrade().is_some(),
+            "the completion task retains the file"
+        );
 
         let client = Rc::downgrade(&owner);
         drop(owner);
@@ -169,7 +176,11 @@ fn a_dead_file_client_leaves_its_command_blocked() {
         runtime.poll(Some(std::time::Duration::ZERO)).unwrap();
         assert!(!observed.get());
         assert_eq!(Rc::strong_count(&client), 1, "the file released its client");
-        assert_eq!(cmdq_next(Some(&owner)), 0, "the parked command blocks its queue");
+        assert_eq!(
+            cmdq_next(Some(&owner)),
+            0,
+            "the parked command blocks its queue"
+        );
         assert!(head.upgrade().is_some());
         drop(owner);
         assert!(head.upgrade().is_none());

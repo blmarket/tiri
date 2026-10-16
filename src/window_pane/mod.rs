@@ -1572,7 +1572,12 @@ unsafe fn window_pane_start_input(
         cdata.into_callback()
     });
     let client = c_owner.as_ref().map_or_else(Weak::new, Rc::downgrade);
-    Ok(Some(window_pane_input_complete(wait, input, client, (*wp).id)))
+    Ok(Some(window_pane_input_complete(
+        wait,
+        input,
+        client,
+        (*wp).id,
+    )))
 }
 
 unsafe fn window_pane_update_used_data(

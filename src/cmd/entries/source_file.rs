@@ -183,7 +183,10 @@ unsafe fn cmd_source_file_done(
     mut read: FileOutcome,
 ) {
     let item = item_owner.get();
-    let path = read.path.as_deref().map_or(::core::ptr::null(), CStr::as_ptr);
+    let path = read
+        .path
+        .as_deref()
+        .map_or(::core::ptr::null(), CStr::as_ptr);
     let error = read.error;
     // Progress does not coalesce the buffer; only complete files are parsed.
     let bdata: &[u8] = evbuffer_pullup(&mut read.buffer, -1).map_or(&[], |bytes| bytes);
@@ -395,7 +398,10 @@ mod tests {
     }
 
     /// Empty server options for parsing, restored on drop.
-    struct Options(*mut crate::src::shared::options::options, Box<crate::src::shared::options::options>);
+    struct Options(
+        *mut crate::src::shared::options::options,
+        Box<crate::src::shared::options::options>,
+    );
     impl Options {
         unsafe fn new() -> Self {
             let previous = crate::src::tmux::global_options;
@@ -440,7 +446,10 @@ mod tests {
                     let mut cdata = cdata;
                     cdata.after = Rc::downgrade(item);
                     let first = first(&cdata);
-                    cmdq_suspend(item, cmd_source_file_chain(first, cdata, Rc::downgrade(item)))
+                    cmdq_suspend(
+                        item,
+                        cmd_source_file_chain(first, cdata, Rc::downgrade(item)),
+                    )
                 })),
             ),
         );
@@ -461,7 +470,11 @@ mod tests {
             let head = append_chain(&owner, data(&[&one, &two]), |cdata| {
                 cmd_source_file_read(cdata)
             });
-            assert_eq!(cmdq_labels(Some(&owner)), ["source"], "local reads are deferred");
+            assert_eq!(
+                cmdq_labels(Some(&owner)),
+                ["source"],
+                "local reads are deferred"
+            );
             // Each read reports in a task, which starts the next read.
             runtime.poll(Some(Duration::ZERO)).unwrap();
             assert_eq!(
@@ -521,7 +534,11 @@ mod tests {
             drop(tx);
             assert_eq!(cmd_source_file_depth, 0, "the data is released");
             assert_eq!(cmdq_next(Some(&owner)), 0);
-            assert_eq!(cmdq_labels(Some(&owner)), ["source"], "the command stays blocked");
+            assert_eq!(
+                cmdq_labels(Some(&owner)),
+                ["source"],
+                "the command stays blocked"
+            );
             drop(owner);
             assert!(head.upgrade().is_none());
         }
