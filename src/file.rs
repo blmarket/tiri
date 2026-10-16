@@ -216,11 +216,7 @@ unsafe fn file_fire_done_cb(owner: &Rc<UnsafeCell<client_file>>) {
         (
             file.c.clone(),
             (!Weak::ptr_eq(&file.wait_client, &Weak::new())).then(|| file.wait_client.upgrade()),
-            file.wait_active
-                && file
-                    .wait_item
-                    .upgrade()
-                    .is_none_or(|item| (*item.get()).is_removed()),
+            file.wait_active && file.wait_item.upgrade().is_none(),
         )
     };
     let dead = expired_wait

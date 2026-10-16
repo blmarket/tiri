@@ -21,7 +21,7 @@ use crate::src::format::{
     format_add, format_add_cstr, format_create_owned, format_merge, format_owner_ptr,
 };
 use crate::src::key_string::key_string_format;
-use crate::src::log::{fatalx, log_cstr, log_debug, log_get_level};
+use crate::src::log::{log_cstr, log_debug, log_get_level};
 use crate::src::reactor::{evbuffer_add_formatted, evbuffer_new};
 use crate::src::server::server_add_message;
 use crate::src::server_client::Client as _;
@@ -62,8 +62,6 @@ pub struct cmdq_item {
     queue: Option<QueueTarget>,
     /// Own the remaining detached chain until enqueue consumes it.
     next: Option<std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
-    /// Runtime destruction marker: only cmdq_remove may set this to true.
-    removed: bool,
     /// Nonowning execution context, which can temporarily differ from the queue owner.
     pub client: ClientWeak,
     client_owner: Option<ClientRef>,
@@ -86,17 +84,24 @@ pub struct cmdq_item {
     wait_file: std::rc::Weak<std::cell::UnsafeCell<client_file>>,
 }
 
+/// Dropping an item cancels its pending work, like dropping a future.
 impl Drop for cmdq_item {
     fn drop(&mut self) {
-        assert!(self.removed, "command item dropped without cmdq_remove");
+        // The item can no longer be upgraded, so the cancel skips clearing it.
+        if let Some(file) = self.wait_file.upgrade() {
+            unsafe { file_cancel_cmdq_wait(&file) };
+        }
+        cmdq_clear_wait_timer(self);
+        if let Some(client) = self.client_owner.take() {
+            (client).release();
+        }
+        drop(self.cmdlist.take());
+        drop(self.state.take());
+        drop(self.cb.take());
     }
 }
 
 impl cmdq_item {
-    pub(crate) fn is_removed(&self) -> bool {
-        self.removed
-    }
-
     /// Observe the command retained by this queue item's command list.
     pub fn command_handle(&self) -> refbox::Weak<cmd> {
         self.cmd.clone()
@@ -107,7 +112,6 @@ impl cmdq_item {
             name: Default::default(),
             queue: Default::default(),
             next: Default::default(),
-            removed: false,
             client: Default::default(),
             client_owner: None,
             target_client: Default::default(),
@@ -325,14 +329,6 @@ pub fn cmdq_new() -> Box<cmdq_list> {
     })
 }
 
-impl Drop for cmdq_list {
-    fn drop(&mut self) {
-        if !self.list.is_empty() {
-            unsafe { fatalx(|out| out.write_all(b"queue not empty")) };
-        }
-    }
-}
-
 pub fn cmdq_get_name(item: &cmdq_item) -> Option<&std::ffi::CStr> {
     item.name.as_deref()
 }
@@ -463,10 +459,7 @@ pub unsafe fn cmdq_append(
     let mut last = std::rc::Weak::new();
     while let Some(owner_item) = remaining {
         let item = owner_item.get();
-        assert!(
-            (*item).queue.is_none() && !(*item).removed,
-            "detached command item"
-        );
+        assert!((*item).queue.is_none(), "detached command item");
         remaining = (*item).next.take();
         (*item).client_owner = owner.cloned();
         (*item).client = owner.map(std::rc::Rc::downgrade).unwrap_or_default();
@@ -488,10 +481,7 @@ pub unsafe fn cmdq_insert_after(
     after: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     item: std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
 ) -> std::rc::Weak<std::cell::UnsafeCell<cmdq_item>> {
-    assert!(
-        !(*after.get()).removed && (*after.get()).queue.is_some(),
-        "queued insertion anchor"
-    );
+    assert!((*after.get()).queue.is_some(), "queued insertion anchor");
     let c_owner = (*after.get()).client.upgrade();
     let queue = (*after.get())
         .queue
@@ -503,10 +493,7 @@ pub unsafe fn cmdq_insert_after(
     let mut last = std::rc::Weak::new();
     while let Some(owner_item) = remaining {
         let item = owner_item.get();
-        assert!(
-            (*item).queue.is_none() && !(*item).removed,
-            "detached command item"
-        );
+        assert!((*item).queue.is_none(), "detached command item");
         remaining = (*item).next.take();
         (*item).client_owner = c_owner.clone();
         (*item).client = c_owner
@@ -616,7 +603,6 @@ pub unsafe fn cmdq_insert_hook(
 }
 pub unsafe fn cmdq_continue(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) {
     let item = item_handle.get();
-    assert!(!(*item).removed, "cannot resume a removed command item");
     (*item).flags &= !CMDQ_WAITING;
 }
 // The caller transfers the queue owner after unlinking it and releasing guards.
@@ -627,27 +613,10 @@ unsafe fn cmdq_remove(item_handle: std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>
         "command item removal requires its sole strong owner"
     );
     let item = item_handle.get();
-    assert!(!(*item).removed, "command item already removed");
-    (*item).removed = true;
-    cmdq_clear_wait_timer(&mut *item);
     assert!(
         std::rc::Weak::ptr_eq(&(*item).wait_file, &std::rc::Weak::new()),
         "file wait must finish or cancel before queue item removal"
     );
-    if let Some(client) = (*item).client_owner.take() {
-        (client).release();
-    }
-    drop((*item).cmdlist.take());
-    drop((*item).state.take());
-    if let Some(queue) = (*item).queue.take() {
-        queue.with_queue(|queue| {
-            if queue.item.ptr_eq(&std::rc::Rc::downgrade(&item_handle)) {
-                queue.item = std::rc::Weak::new();
-            }
-        });
-    }
-    // Release resources explicitly before destroying the item.
-    drop((*item).cb.take());
     drop(item_handle);
 }
 unsafe fn cmdq_remove_group(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) {
@@ -892,10 +861,6 @@ unsafe fn cmdq_fire_command(
             retval = cmdq_find_flag(item_handle, &raw mut (*item).target, &entry.target);
             if !(retval as ::core::ffi::c_int == CMD_RETURN_ERROR as ::core::ffi::c_int) {
                 retval = entry.exec.expect("non-null function pointer")(cmd.clone(), item_handle);
-                assert!(
-                    !(*item).removed,
-                    "executing command item removed during dispatch"
-                );
                 if !(retval as ::core::ffi::c_int == CMD_RETURN_ERROR as ::core::ffi::c_int)
                     && entry.flags & CMD_AFTERHOOK != 0
                 {
@@ -1013,7 +978,6 @@ pub unsafe fn cmdq_next(owner: Option<&ClientRef>) -> u_int {
     while let Some(item_owner) = queue.with_queue(|queue| queue.first()) {
         let item = item_owner.get();
         queue.with_queue(|queue| queue.item = std::rc::Rc::downgrade(&item_owner));
-        assert!(!(*item).removed, "queued command item");
         log_debug(format_args!(
             "cmdq_next {}: {} ({}), flags {:x}",
             crate::src::log::log_bytes(name.as_bytes()),
@@ -1036,11 +1000,6 @@ pub unsafe fn cmdq_next(owner: Option<&ClientRef>) -> u_int {
                 CMDQ_CALLBACK => cmdq_fire_callback(&item_owner),
                 _ => CMD_RETURN_ERROR,
             };
-            // Dispatch may insert items, but cannot remove its own active item.
-            assert!(
-                !(*item).removed,
-                "executing command item removed during dispatch"
-            );
             if retval == CMD_RETURN_ERROR && (*item).type_0 == CMDQ_COMMAND {
                 cmdq_remove_group(&item_owner);
             }
@@ -1066,9 +1025,7 @@ pub unsafe fn cmdq_running() -> std::rc::Weak<std::cell::UnsafeCell<cmdq_item>> 
     let Some(owner) = queue.with_queue(|queue| queue.item.upgrade()) else {
         return std::rc::Weak::new();
     };
-    if (*owner.get()).removed
-        || (*owner.get()).flags & (CMDQ_FIRED | CMDQ_WAITING) == (CMDQ_FIRED | CMDQ_WAITING)
-    {
+    if (*owner.get()).flags & (CMDQ_FIRED | CMDQ_WAITING) == (CMDQ_FIRED | CMDQ_WAITING) {
         return std::rc::Weak::new();
     }
     std::rc::Rc::downgrade(&owner)
@@ -1194,24 +1151,33 @@ mod lifecycle_tests {
     use std::cell::Cell;
     use std::rc::Rc;
 
+    struct SetOnDrop(Rc<Cell<bool>>);
+    impl Drop for SetOnDrop {
+        fn drop(&mut self) {
+            self.0.set(true);
+        }
+    }
+
+    /// A callback item whose callback sets `released` when freed.
+    unsafe fn tracked_item(
+        name: &'static CStr,
+        released: &Rc<Cell<bool>>,
+    ) -> std::rc::Rc<std::cell::UnsafeCell<cmdq_item>> {
+        let capture = SetOnDrop(released.clone());
+        cmdq_get_callback_owned(
+            name,
+            Some(Box::new(move |_| {
+                let _capture = &capture;
+                CMD_RETURN_NORMAL
+            })),
+        )
+    }
+
     #[test]
     fn removal_rejects_an_extra_strong_owner_before_cleanup() {
         unsafe {
-            struct SetOnDrop(Rc<Cell<bool>>);
-            impl Drop for SetOnDrop {
-                fn drop(&mut self) {
-                    self.0.set(true);
-                }
-            }
             let released = Rc::new(Cell::new(false));
-            let capture = SetOnDrop(released.clone());
-            let item = cmdq_get_callback_owned(
-                c"extra owner",
-                Some(Box::new(move |_| {
-                    let _capture = &capture;
-                    CMD_RETURN_NORMAL
-                })),
-            );
+            let item = tracked_item(c"extra owner", &released);
             let observer = Rc::downgrade(&item);
             let guard = item.clone();
             let owner = item;
@@ -1219,7 +1185,6 @@ mod lifecycle_tests {
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| cmdq_remove(owner)));
             assert!(result.is_err());
             assert!(!released.get());
-            assert!(!(*guard.get()).removed);
             cmdq_remove(guard);
             assert!(released.get());
             assert!(observer.upgrade().is_none());
@@ -1227,19 +1192,13 @@ mod lifecycle_tests {
     }
 
     #[test]
-    fn dropping_without_removal_panics() {
+    fn dropping_an_unqueued_item_releases_its_callback() {
         unsafe {
-            let item = cmdq_get_callback_owned(c"unreleased detached item", None);
+            let released = Rc::new(Cell::new(false));
+            let item = tracked_item(c"unqueued item", &released);
             let observer = Rc::downgrade(&item);
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(item)));
-            let panic = result.expect_err("dropping without removal must panic");
-            assert_eq!(
-                panic
-                    .downcast_ref::<String>()
-                    .map(String::as_str)
-                    .or_else(|| panic.downcast_ref::<&str>().copied()),
-                Some("command item dropped without cmdq_remove")
-            );
+            drop(item);
+            assert!(released.get());
             assert!(observer.upgrade().is_none());
         }
     }
