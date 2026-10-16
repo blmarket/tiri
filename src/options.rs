@@ -422,11 +422,7 @@ unsafe fn options_array_new(mut o: *mut options_entry, key: &CStr) -> *mut optio
         .insert(options_array_index(key), owner);
     a
 }
-unsafe fn options_array_free(mut o: *mut options_entry, mut a: *mut options_array_item) {
-    options_value_free(&raw mut (*a).value);
-    let key = options_array_index((*a).key.as_c_str());
-    drop((*o).value.array_storage().entries.remove(&key));
-}
+
 pub unsafe fn options_array_clear(mut o: *mut options_entry) {
     let _a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
     let _a1: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
@@ -436,16 +432,10 @@ pub unsafe fn options_array_clear(mut o: *mut options_entry) {
     {
         return;
     }
-    let keys: Vec<_> = options_array_iter(&*o)
-        .map(|item| item.key.clone())
-        .collect();
-    for key in keys {
-        let item = options_array_item(o, &key);
-        if !item.is_null() {
-            options_array_free(o, item);
-        }
-    }
+
+    (*o).value.array_storage().entries.clear();
 }
+
 pub fn options_array_get<'a>(o: &'a options_entry, key: &CStr) -> Option<&'a options_value> {
     let key = options_array_correct_key(key)?;
     let options_value::Array(array) = &o.value else {
@@ -508,10 +498,10 @@ pub unsafe fn options_array_set(
         return -(1 as ::core::ffi::c_int);
     };
     if value.is_null() {
-        a = options_array_item(o, &new_key);
-        if !a.is_null() {
-            options_array_free(o, a);
-        }
+        let key = options_array_index(&new_key);
+        (*o).value
+            .array_storage()
+            .entries.remove(&key);
         return 0 as ::core::ffi::c_int;
     }
     if (*o)
