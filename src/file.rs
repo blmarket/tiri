@@ -5,7 +5,6 @@ mod stream;
 use model::FileRegistration;
 pub use model::{client_file, client_file_cb, client_file_event, client_files};
 
-use crate::src::cmd::queue::{cmdq_clear_wait_file, cmdq_set_wait_file};
 use crate::src::compat::imsg::imsg;
 use crate::src::compat::imsg::*;
 use crate::src::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE};
@@ -25,7 +24,6 @@ use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::{CLIENT_ATTACHED, CLIENT_CONTROL, CLIENT_DEAD, CLIENT_WRITE_ACK};
-use crate::src::shared::command::cmdq_item;
 use crate::src::shared::errno::{E2BIG, EINVAL, ENOMEM};
 use crate::src::shared::event::*;
 use crate::src::shared::event::{EV_READ, EV_WRITE};
@@ -112,38 +110,70 @@ fn file_set_path(cf: &mut client_file, path: CString) {
     cf.path = Some(path);
 }
 
-unsafe fn file_set_cmdq_wait(
-    file_owner: &Rc<UnsafeCell<client_file>>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-    cancel_cb: Option<Box<dyn FnOnce()>>,
-) {
-    let item = item_handle.get();
-    let owner = &mut *file_owner.get();
-    assert!(!item.is_null());
-    assert!(!owner.wait_active);
-    owner.wait_item = std::rc::Rc::downgrade(item_handle);
-    owner.wait_active = true;
-    owner.wait_client = (*item).client.clone();
-    owner.cancel_data = cancel_cb;
-    cmdq_set_wait_file(&mut *item, file_owner);
+/// A transfer's terminal event, as reported to its waiting command.
+pub(crate) struct FileOutcome {
+    pub(crate) path: Option<CString>,
+    pub(crate) error: i32,
+    pub(crate) buffer: tiri_buffer::SegmentedBuf,
 }
 
-/// Stop a file-backed command wait without delivering its file callback.
-/// The file index retains an active transfer until its terminal completion.
-pub(crate) unsafe fn file_cancel_cmdq_wait(file_owner: &Rc<UnsafeCell<client_file>>) {
-    let owner = &mut *file_owner.get();
-    if !owner.wait_active {
-        return;
+/// A command's wait for a transfer's terminal event. It resolves to `None` when
+/// the file's client is dead by then, as tmux never reports to a dead client.
+/// Dropping it cancels the wait; the transfer still runs to its terminal
+/// completion unobserved.
+pub(crate) struct FileWait {
+    done: tiri_rt::oneshot::Receiver<FileOutcome>,
+    file: Weak<UnsafeCell<client_file>>,
+    /// A local transfer's deferred completion, which retains the file.
+    local: Option<tiri_rt::mio::Task>,
+}
+
+impl std::future::Future for FileWait {
+    type Output = Option<FileOutcome>;
+
+    fn poll(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<FileOutcome>> {
+        std::pin::Pin::new(&mut self.done).poll(cx)
     }
-    owner.wait_active = false;
-    if let Some(item) = std::mem::take(&mut owner.wait_item).upgrade() {
-        cmdq_clear_wait_file(&mut *item.get(), &Rc::downgrade(file_owner));
+}
+
+impl Drop for FileWait {
+    fn drop(&mut self) {
+        if let Some(file) = self.file.upgrade() {
+            let (waiter, listener) = unsafe {
+                let file = &mut *file.get();
+                (file.wait.take(), file.cb.take())
+            };
+            drop(waiter);
+            drop(listener);
+        }
+        drop(self.local.take());
     }
-    owner.wait_client = Weak::new();
-    owner.cb = None;
-    let cancel_cb = owner.cancel_data.take();
-    if let Some(cancel_cb) = cancel_cb {
-        cancel_cb();
+}
+
+/// Wait for `file`, whose transfer has started with `done` as its waiter.
+unsafe fn file_wait(
+    file: Rc<UnsafeCell<client_file>>,
+    done: tiri_rt::oneshot::Receiver<FileOutcome>,
+) -> FileWait {
+    let observer = Rc::downgrade(&file);
+    // A local transfer has already completed. tmux reports it in the next
+    // event loop turn, so the wait owns a task that reports it then.
+    let local = matches!((*file.get()).registration, FileRegistration::Unlinked).then(|| {
+        assert!((*file.get()).completed, "local transfers complete at once");
+        let mut task = None;
+        crate::src::reactor::task_start(&mut task, move || {
+            Ok(async move { unsafe { file_fire_done_cb(&file) } })
+        })
+        .expect("schedule local file completion");
+        task.expect("started task")
+    });
+    FileWait {
+        done,
+        file: observer,
+        local,
     }
 }
 
@@ -211,34 +241,11 @@ unsafe fn file_destroy(cf: &mut client_file) {
     cf.path = Default::default();
 }
 unsafe fn file_fire_done_cb(owner: &Rc<UnsafeCell<client_file>>) {
-    let (client_owner, wait_client, expired_wait) = {
-        let file = &*owner.get();
-        (
-            file.c.clone(),
-            (!Weak::ptr_eq(&file.wait_client, &Weak::new())).then(|| file.wait_client.upgrade()),
-            file.wait_active && file.wait_item.upgrade().is_none(),
-        )
-    };
-    let dead = expired_wait
-        || client_owner.as_ref().is_some_and(|owner| owner.is_dead())
-        || wait_client
-            .as_ref()
-            .is_some_and(|owner| owner.as_ref().is_none_or(|owner| owner.is_dead()));
-    if dead {
-        file_cancel_cmdq_wait(owner);
-    } else {
-        let file = &mut *owner.get();
-        if file.wait_active {
-            file.wait_active = false;
-            if let Some(item) = std::mem::take(&mut file.wait_item).upgrade() {
-                cmdq_clear_wait_file(&mut *item.get(), &Rc::downgrade(owner));
-            }
-            file.wait_client = Weak::new();
-            file.cancel_data = None;
-        }
-    }
+    let dead = (*owner.get()).c.as_ref().is_some_and(|owner| owner.is_dead());
     let mut callback = (&mut *owner.get()).cb.take();
-    if !dead {
+    let waiter = (&mut *owner.get()).wait.take();
+    // A waiter receives the terminal event instead of the read listener.
+    if !dead && waiter.is_none() {
         if let Some(callback) = callback.as_mut() {
             let (path, error, mut buffer) = {
                 let file = &mut *owner.get();
@@ -262,6 +269,21 @@ unsafe fn file_fire_done_cb(owner: &Rc<UnsafeCell<client_file>>) {
     // Completion retires the stream even if a lookup guard still retains its
     // allocation. Final Drop remains an idempotent unlink fallback.
     client_files_remove(&mut *owner.get());
+    // tmux checks only the file's client. Dropping the waiter unsent leaves its
+    // command blocked.
+    if let Some(waiter) = waiter.filter(|_| !dead) {
+        let outcome = {
+            let file = &mut *owner.get();
+            stream::collect_for_callback(file);
+            FileOutcome {
+                path: file.path.clone(),
+                error: file.error,
+                buffer: std::mem::take(&mut file.buffer),
+            }
+        };
+        // The waiting command runs inside the send.
+        let _ = waiter.send(outcome);
+    }
 }
 unsafe fn file_fire_done(owner: &Rc<UnsafeCell<client_file>>) {
     let wake = {
@@ -276,42 +298,28 @@ unsafe fn file_fire_done(owner: &Rc<UnsafeCell<client_file>>) {
     if let Some(wake) = wake {
         wake.wake();
     }
+    // A local transfer completes while its wait is created. The wait reports
+    // it one runtime turn later (file_wait).
     if matches!((*owner.get()).registration, FileRegistration::Unlinked) {
-        // Local reads have no stream index. Their waiting command owns the task,
-        // which retains the file until completion or cancellation.
-        let item = (*owner.get()).wait_item.upgrade().expect("local file wait");
-        let file = owner.clone();
-        let mut task = None;
-        crate::src::reactor::task_start(&mut task, move || {
-            Ok(async move { unsafe { file_fire_done_cb(&file) } })
-        })
-        .expect("schedule local file completion");
-        crate::src::cmd::queue::cmdq_set_file_task(&mut *item.get(), task.unwrap());
-    } else {
-        // The existing stream index owns this file. Its task only observes it.
-        let file = Rc::downgrade(owner);
-        crate::src::reactor::task_start(&mut (*owner.get()).done_task, move || {
-            Ok(async move {
-                if let Some(file) = file.upgrade() {
-                    unsafe {
-                        drop((*file.get()).done_task.take());
-                        file_fire_done_cb(&file);
-                    }
-                }
-            })
-        })
-        .expect("schedule file completion");
+        return;
     }
+    // The existing stream index owns this file. Its task only observes it.
+    let file = Rc::downgrade(owner);
+    crate::src::reactor::task_start(&mut (*owner.get()).done_task, move || {
+        Ok(async move {
+            if let Some(file) = file.upgrade() {
+                unsafe {
+                    drop((*file.get()).done_task.take());
+                    file_fire_done_cb(&file);
+                }
+            }
+        })
+    })
+    .expect("schedule file completion");
 }
 unsafe fn file_fire_read(file_owner: &Rc<UnsafeCell<client_file>>) {
     let cf = &mut *file_owner.get();
-    let client_owner = cf.c.clone();
-    let wait_client =
-        (!Weak::ptr_eq(&cf.wait_client, &Weak::new())).then(|| cf.wait_client.upgrade());
-    let dead = client_owner.as_ref().is_some_and(|owner| owner.is_dead())
-        || wait_client
-            .as_ref()
-            .is_some_and(|owner| owner.as_ref().is_none_or(|owner| owner.is_dead()));
+    let dead = cf.c.as_ref().is_some_and(|owner| owner.is_dead());
     if dead || cf.cb.is_none() {
         return;
     }
@@ -320,7 +328,7 @@ unsafe fn file_fire_read(file_owner: &Rc<UnsafeCell<client_file>>) {
     let mut buffer = std::mem::take(&mut cf.buffer);
     let path = cf.path.clone();
     let error = cf.error;
-    let was_waiting = cf.wait_active;
+    let was_waiting = cf.wait.is_some();
     // The listener may cancel the file. Keep its buffer outside the model so
     // that cancellation does not overlap a mutable borrow of the whole file.
     callback(client_file_event {
@@ -331,7 +339,7 @@ unsafe fn file_fire_read(file_owner: &Rc<UnsafeCell<client_file>>) {
     });
     let cf = &mut *file_owner.get();
     cf.buffer = buffer;
-    if !was_waiting || cf.wait_active {
+    if !was_waiting || cf.wait.is_some() {
         cf.cb = Some(callback);
     }
 }
@@ -449,36 +457,25 @@ pub unsafe fn file_error(
     }
 }
 
-pub(crate) unsafe fn file_write_with_cmdq_wait(
+/// Write `bdata` to `path` for a waiting command.
+pub(crate) unsafe fn file_write_wait(
     client_owner: Option<&ClientRef>,
     path: &CStr,
     flags: ::core::ffi::c_int,
     bdata: &[u8],
-    cb: client_file_cb,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) {
-    let cancel_cb: Option<Box<dyn FnOnce()>> = None;
-    file_write_impl(
-        client_owner,
-        path,
-        flags,
-        bdata,
-        cb,
-        Some((item_handle, cancel_cb)),
-    );
+) -> FileWait {
+    let (waiter, done) = tiri_rt::oneshot::channel();
+    let file = file_write_impl(client_owner, path, flags, bdata, waiter);
+    file_wait(file, done)
 }
-
-/// The queue item a write blocks, plus the callback to run if it is cancelled.
-type FileCmdqWait<'a> = (&'a Rc<UnsafeCell<cmdq_item>>, Option<Box<dyn FnOnce()>>);
 
 unsafe fn file_write_impl(
     client_owner: Option<&ClientRef>,
     path: &CStr,
     mut flags: ::core::ffi::c_int,
     bdata: &[u8],
-    mut cb: client_file_cb,
-    wait: Option<FileCmdqWait<'_>>,
-) {
+    waiter: tiri_rt::oneshot::Sender<FileOutcome>,
+) -> Rc<UnsafeCell<client_file>> {
     let mut current_block: u64;
     let mut msglen: size_t = 0;
     let mut fd: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
@@ -487,10 +484,8 @@ unsafe fn file_write_impl(
     let mut stream: u_int = fresh0 as u_int;
     let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
     let mut mode: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let transfer_owner = file_create_with_client(client_owner, stream as ::core::ffi::c_int, cb);
-    if let Some((item_handle, cancel_cb)) = wait {
-        file_set_cmdq_wait(&transfer_owner, item_handle, cancel_cb);
-    }
+    let transfer_owner = file_create_with_client(client_owner, stream as ::core::ffi::c_int, None);
+    (*transfer_owner.get()).wait = Some(waiter);
     let cf = &mut *transfer_owner.get();
     if strcmp(path.as_ptr(), c"-".as_ptr()) == 0 as ::core::ffi::c_int {
         file_set_path(cf, CString::new("-").unwrap());
@@ -562,32 +557,35 @@ unsafe fn file_write_impl(
             if file_send(cf, MSG_WRITE_OPEN, None, &msg[..msglen]) != 0 as ::core::ffi::c_int {
                 cf.error = EINVAL;
             } else {
-                return;
+                return transfer_owner;
             }
         }
     }
     file_fire_done(&transfer_owner);
+    transfer_owner
 }
 
-pub(crate) unsafe fn file_read_with_cmdq_wait(
+/// Read `path` for a waiting command. `progress` builds the listener for data
+/// as it arrives, after the file is allocated and before any event.
+pub(crate) unsafe fn file_read_wait(
     client_owner: Option<&ClientRef>,
     path: &CStr,
-    cb: client_file_cb,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-    cancel_cb: Option<Box<dyn FnOnce()>>,
-) {
-    file_read_with_cmdq_wait_init(client_owner, path, |_| cb, item_handle, cancel_cb)
+    progress: impl FnOnce(Weak<UnsafeCell<client_file>>) -> client_file_cb,
+) -> FileWait {
+    let (waiter, done) = tiri_rt::oneshot::channel();
+    let file = file_read_impl(client_owner, path, |file| {
+        (*file.get()).wait = Some(waiter);
+        progress(Rc::downgrade(file))
+    });
+    file_wait(file, done)
 }
 
-/// Build the callback after allocating its file, before opening or scheduling
-/// any events. This lets a callback own its state without sharing startup data.
-pub(crate) unsafe fn file_read_with_cmdq_wait_init(
+/// Start a read whose waiter and listener `init` installs on the new file.
+unsafe fn file_read_impl(
     client_owner: Option<&ClientRef>,
     path: &CStr,
-    callback: impl FnOnce(std::rc::Weak<std::cell::UnsafeCell<client_file>>) -> client_file_cb,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-    cancel_cb: Option<Box<dyn FnOnce()>>,
-) {
+    init: impl FnOnce(&Rc<UnsafeCell<client_file>>) -> client_file_cb,
+) -> Rc<UnsafeCell<client_file>> {
     let mut path: *const ::core::ffi::c_char = path.as_ptr();
     let mut current_block: u64;
     let mut fd: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
@@ -600,8 +598,7 @@ pub(crate) unsafe fn file_read_with_cmdq_wait_init(
     let mut buffer: [u8; 8192] = [0; 8192];
     let transfer_owner = file_create_with_client(client_owner, stream as ::core::ffi::c_int, None);
     (*transfer_owner.get()).read.active = true;
-    file_set_cmdq_wait(&transfer_owner, item_handle, cancel_cb);
-    let cb = callback(Rc::downgrade(&transfer_owner));
+    let cb = init(&transfer_owner);
     let cf = &mut *transfer_owner.get();
     cf.cb = cb;
     if strcmp(path, c"-".as_ptr()) == 0 as ::core::ffi::c_int {
@@ -689,12 +686,13 @@ pub(crate) unsafe fn file_read_with_cmdq_wait_init(
             if file_send(cf, MSG_READ_OPEN, None, &msg[..msglen]) != 0 as ::core::ffi::c_int {
                 cf.error = EINVAL;
             } else {
-                return;
+                return transfer_owner;
             }
         }
     }
     drop(file_owner);
     file_fire_done(&transfer_owner);
+    transfer_owner
 }
 pub unsafe fn file_cancel(cf: &mut client_file) {
     let mut msg: msg_read_cancel = msg_read_cancel { stream: 0 };

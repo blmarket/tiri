@@ -1,5 +1,5 @@
 use super::*;
-use crate::src::shared::client::{ClientRef, ClientWeak};
+use crate::src::shared::client::ClientRef;
 use tiri_buffer::SegmentedBuf;
 
 /// The stream index owns active file records until completion unlinks them.
@@ -28,11 +28,8 @@ pub struct client_file {
     pub(super) cb: client_file_cb,
     /// Which existing holder owns the stream; c retains Client registrations.
     pub(super) registration: FileRegistration,
-    pub(super) wait_item:
-        std::rc::Weak<std::cell::UnsafeCell<crate::src::shared::command::cmdq_item>>,
-    pub(super) wait_active: bool,
-    pub(super) wait_client: ClientWeak,
-    pub(super) cancel_data: Option<Box<dyn FnOnce()>>,
+    /// The waiting command's end of a `FileWait`, sent the terminal event.
+    pub(super) wait: Option<tiri_rt::oneshot::Sender<super::FileOutcome>>,
     pub(super) completed: bool,
     pub(super) done_task: Option<tiri_rt::mio::Task>,
     pub(super) push_task: Option<tiri_rt::mio::Task>,
@@ -64,10 +61,7 @@ impl client_file {
             closed: Default::default(),
             cb: Default::default(),
             registration: FileRegistration::Unlinked,
-            wait_item: Default::default(),
-            wait_active: false,
-            wait_client: Default::default(),
-            cancel_data: Default::default(),
+            wait: None,
             completed: Default::default(),
             done_task: Default::default(),
             push_task: Default::default(),

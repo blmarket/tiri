@@ -30,7 +30,7 @@ mod pane_sync;
 use self::input::{input_parse_buffer, input_parse_pane};
 use crate::src::arguments::args_has;
 use crate::src::cmd::cmd_mouse_at;
-use crate::src::cmd::queue::{cmdq_continue, cmdq_get_client, CmdqWaiter};
+use crate::src::cmd::queue::{cmdq_get_client, CmdqWaiter};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::events::{events_fire, events_fire_pane};
 use crate::src::events_payload::{
@@ -38,7 +38,7 @@ use crate::src::events_payload::{
     event_payload_set_target, event_payload_set_uint, event_payload_set_window,
 };
 use crate::src::ffi::regex::RegexStorage;
-use crate::src::file::{file_cancel, file_read_with_cmdq_wait_init};
+use crate::src::file::{file_cancel, file_read_wait, FileOutcome};
 use crate::src::format::bytes::write_cstr;
 use crate::src::grid::grid_cells_look_equal;
 use crate::src::grid::view::grid_view_string_cells_bytes;
@@ -120,7 +120,6 @@ use crate::src::shared::window::{WINDOW_MODE_NO_STACK, WINDOW_PANE_NO_MODE};
 use libc::{REG_EXTENDED, REG_ICASE, SIGHUP};
 
 struct window_pane_input_data {
-    item: Weak<UnsafeCell<cmdq_item>>,
     client: Option<ClientRef>,
     wp: u_int,
     file: Weak<UnsafeCell<client_file>>,
@@ -129,12 +128,7 @@ struct window_pane_input_data {
 impl window_pane_input_data {
     fn into_callback(self: Box<Self>) -> client_file_cb {
         Some(Box::new(move |event| unsafe {
-            window_pane_input_callback(
-                &self,
-                event.error,
-                event.closed,
-                event.buffer.expect("read callback buffer"),
-            );
+            window_pane_input_callback(&self, event.buffer.expect("read callback buffer"));
         }))
     }
 }
@@ -1489,12 +1483,7 @@ unsafe fn window_pane_full_size_offset(
     (xoff, (*wp).yoff, (*wp).sx.wrapping_add(sb_w), (*wp).sy)
 }
 
-unsafe fn window_pane_input_callback(
-    cdata: &window_pane_input_data,
-    error: ::core::ffi::c_int,
-    closed: bool,
-    buffer: &mut SegmentedBuf,
-) {
+unsafe fn window_pane_input_callback(cdata: &window_pane_input_data, buffer: &mut SegmentedBuf) {
     let client = cdata.client.as_ref().expect("pane input client");
     let buf = evbuffer_pullup(buffer, -1).map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr());
     let len = evbuffer_get_length(buffer);
@@ -1503,17 +1492,11 @@ unsafe fn window_pane_input_callback(
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let file = cdata.file.upgrade();
-    // Once the pane is gone, no event of the read continues the command.
     if let Some(cancelled) = file.as_ref().filter(|_| wp.is_null() || client.is_dead()) {
         if wp.is_null() {
             client.request_exit(1);
         }
         file_cancel(&mut *cancelled.get());
-    } else if file.is_none() || closed || error != 0 {
-        // A dropped item cancelled its wait; nothing is left to resume.
-        if let Some(item) = cdata.item.upgrade() {
-            cmdq_continue(&item);
-        }
     } else {
         let bytes: &[u8] = if buf.is_null() {
             &[]
@@ -1525,10 +1508,37 @@ unsafe fn window_pane_input_callback(
     evbuffer_drain(buffer, len);
 }
 
+/// Finish the command once client stdin ends. A dead file client never
+/// reports; input that ends after its pane is gone exits the client with 1 and
+/// never resumes (tmux's window_pane_input_callback).
+async fn window_pane_input_complete(
+    wait: impl std::future::Future<Output = Option<FileOutcome>>,
+    file: Weak<UnsafeCell<client_file>>,
+    client: crate::src::shared::client::ClientWeak,
+    wp: u_int,
+) {
+    if wait.await.is_none() {
+        return std::future::pending().await;
+    }
+    unsafe {
+        if window_pane_find_by_id(wp).is_some() {
+            return;
+        }
+        if let Some(client) = client.upgrade() {
+            client.request_exit(1);
+        }
+        // The transfer lives while its outcome is handled.
+        if let Some(file) = file.upgrade() {
+            file_cancel(&mut *file.get());
+        }
+    }
+    std::future::pending().await
+}
+
 unsafe fn window_pane_start_input(
     wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> Result<::core::ffi::c_int, std::ffi::CString> {
+) -> Result<Option<impl std::future::Future<Output = ()> + 'static>, std::ffi::CString> {
     let item = item_handle.get();
     let mut wp = wp_owner.get();
     let c_owner = cmdq_get_client((item).as_ref());
@@ -1537,7 +1547,7 @@ unsafe fn window_pane_start_input(
         return Err(c"pane is not empty".to_owned());
     }
     if c.as_ref().expect("live client").flags() & (CLIENT_DEAD | CLIENT_EXITED) as uint64_t != 0 {
-        return Ok(1);
+        return Ok(None);
     }
     if !c
         .as_ref()
@@ -1546,27 +1556,23 @@ unsafe fn window_pane_start_input(
         .upgrade()
         .is_none()
     {
-        return Ok(1);
+        return Ok(None);
     }
     // The file initializer publishes its weak identity before dispatch. The
-    // callback then owns the box, including its retained client reference.
+    // listener then owns the box, including its retained client reference.
     let mut cdata = Box::new(window_pane_input_data {
-        item: std::rc::Rc::downgrade(item_handle),
         client: c.clone(),
         wp: (*wp).id,
         file: Weak::new(),
     });
-    file_read_with_cmdq_wait_init(
-        c_owner.as_ref(),
-        c"-",
-        move |file| {
-            cdata.file = file;
-            cdata.into_callback()
-        },
-        item_handle,
-        None,
-    );
-    Ok(0)
+    let mut input = Weak::new();
+    let wait = file_read_wait(c_owner.as_ref(), c"-", |file| {
+        input = file.clone();
+        cdata.file = file;
+        cdata.into_callback()
+    });
+    let client = c_owner.as_ref().map_or_else(Weak::new, Rc::downgrade);
+    Ok(Some(window_pane_input_complete(wait, input, client, (*wp).id)))
 }
 
 unsafe fn window_pane_update_used_data(
@@ -2176,6 +2182,96 @@ mod wait_close_tests {
             assert!(pane.destroy_ready());
             pane.destroy();
             assert!(!ran.get());
+        }
+    }
+}
+
+#[cfg(test)]
+mod input_wait_tests {
+    use super::*;
+    use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next, cmdq_suspend};
+    use crate::src::server_client::queue_test_clients as clients;
+
+    /// Queue on `owner` a head whose stdin for pane `wp` ends with `done`.
+    unsafe fn append_input(
+        owner: &ClientRef,
+        done: tiri_rt::oneshot::Receiver<FileOutcome>,
+        wp: u_int,
+    ) -> Weak<UnsafeCell<cmdq_item>> {
+        let client = Rc::downgrade(owner);
+        let head = cmdq_append(
+            Some(owner),
+            cmdq_get_callback_owned(
+                c"pane input",
+                Some(Box::new(move |item| {
+                    cmdq_suspend(
+                        item,
+                        window_pane_input_complete(done, Weak::new(), client, wp),
+                    )
+                })),
+            ),
+        );
+        assert_eq!(cmdq_next(Some(owner)), 0);
+        head
+    }
+
+    fn eof() -> FileOutcome {
+        FileOutcome {
+            path: Some(c"-".to_owned()),
+            error: 0,
+            buffer: Default::default(),
+        }
+    }
+
+    unsafe fn exiting(owner: &ClientRef) -> bool {
+        owner.flags() & crate::src::shared::client::CLIENT_EXIT as uint64_t != 0
+    }
+
+    #[test]
+    fn input_ending_with_its_pane_resumes_the_command() {
+        unsafe {
+            let owner = clients::with_queue();
+            let pane = window_pane::new();
+            window_pane_tree::insert(Rc::clone(&pane));
+            let (tx, rx) = tiri_rt::oneshot::channel();
+            let head = append_input(&owner, rx, (*pane.get()).id);
+            assert!(tx.send(eof()).is_ok());
+            cmdq_next(Some(&owner));
+            assert!(head.upgrade().is_none());
+            assert!(!exiting(&owner));
+            pane.destroy();
+        }
+    }
+
+    #[test]
+    fn input_ending_after_its_pane_is_gone_exits_the_client_and_parks() {
+        unsafe {
+            let owner = clients::with_queue();
+            let pane = window_pane::new();
+            window_pane_tree::insert(Rc::clone(&pane));
+            let (tx, rx) = tiri_rt::oneshot::channel();
+            let head = append_input(&owner, rx, (*pane.get()).id);
+            pane.destroy();
+            assert!(tx.send(eof()).is_ok());
+            assert!(exiting(&owner));
+            assert_eq!(clients::return_value(&owner), 1);
+            assert_eq!(cmdq_next(Some(&owner)), 0);
+            assert!(head.upgrade().is_some(), "nothing after the input runs");
+        }
+    }
+
+    #[test]
+    fn a_dead_file_client_parks_without_exiting() {
+        unsafe {
+            let owner = clients::with_queue();
+            let (tx, rx) = tiri_rt::oneshot::channel();
+            let head = append_input(&owner, rx, u_int::MAX);
+            drop(tx);
+            assert!(!exiting(&owner));
+            assert_eq!(cmdq_next(Some(&owner)), 0);
+            assert!(head.upgrade().is_some());
+            drop(owner);
+            assert!(head.upgrade().is_none());
         }
     }
 }

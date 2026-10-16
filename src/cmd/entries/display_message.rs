@@ -1,7 +1,9 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string, args_strtonum_result};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::find::cmd_find_best_client;
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_print};
+use crate::src::cmd::queue::{
+    cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_print, cmdq_suspend,
+};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_create_with_client, format_defaults, format_each, format_expand_time_cstring,
@@ -85,9 +87,8 @@ unsafe fn cmd_display_message_exec(
                 cmdq_error(item_handle, |out| write_cstr(out, &*error));
                 return CMD_RETURN_ERROR;
             }
-            Ok(1) => return CMD_RETURN_NORMAL,
-            Ok(0) => return CMD_RETURN_WAIT,
-            _ => {}
+            Ok(None) => return CMD_RETURN_NORMAL,
+            Ok(Some(input)) => return cmdq_suspend(item_handle, input),
         }
     }
     if args_has(args, 'F' as i32 as u_char) != 0 && count != 0 as u_int {

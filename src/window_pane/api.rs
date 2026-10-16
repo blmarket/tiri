@@ -139,8 +139,12 @@ pub trait WindowPane {
     unsafe fn trim_history(&self);
     /// Finish `waiter` with the exit status once this pane closes.
     unsafe fn wait_until_close(&self, waiter: CmdqWaiter);
-    /// Start stdin delivery to an empty pane, retaining command waits in the file callback.
-    unsafe fn start_input(&self, item: &Rc<UnsafeCell<cmdq_item>>) -> Result<i32, CString>;
+    /// Start stdin delivery to an empty pane. The command suspends on the
+    /// returned continuation, or does not wait without one.
+    unsafe fn start_input(
+        &self,
+        item: &Rc<UnsafeCell<cmdq_item>>,
+    ) -> Result<Option<impl std::future::Future<Output = ()> + 'static>, CString>;
     /// Translate a mouse report after copying pane geometry; no pane borrow
     /// survives the coordinate calculation or the caller's following work.
     unsafe fn mouse_position(&self, mouse: &mouse_event, last: bool) -> Option<(u32, u32)>;
@@ -797,7 +801,10 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     unsafe fn wait_until_close(&self, waiter: CmdqWaiter) {
         (*self.get()).wait_close = Some(waiter);
     }
-    unsafe fn start_input(&self, item: &Rc<UnsafeCell<cmdq_item>>) -> Result<i32, CString> {
+    unsafe fn start_input(
+        &self,
+        item: &Rc<UnsafeCell<cmdq_item>>,
+    ) -> Result<Option<impl std::future::Future<Output = ()> + 'static>, CString> {
         window_pane_start_input(self, item)
     }
     unsafe fn apply_layout(

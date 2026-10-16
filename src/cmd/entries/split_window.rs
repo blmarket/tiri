@@ -4,7 +4,7 @@ use crate::src::arguments::{
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_state_owned, cmdq_get_target_client, cmdq_insert_hook, cmdq_print,
-    cmdq_wait,
+    cmdq_suspend, cmdq_wait,
 };
 use crate::src::environ::{environ_create, environ_put};
 use crate::src::events::events_fire;
@@ -373,6 +373,7 @@ unsafe fn cmd_split_window_exec(
                                             );
                                             events_fire(c"pane-title-changed", ep);
                                         }
+                                        let mut pane_input = None;
                                         if input != 0 {
                                             match new_pane.start_input(item_handle) {
                                                 Err(error) => {
@@ -381,11 +382,14 @@ unsafe fn cmd_split_window_exec(
                                                     });
                                                     current_block = 9814746494299271243;
                                                 }
-                                                Ok(1) => {
+                                                Ok(None) => {
                                                     input = 0;
                                                     current_block = 12543410360505780601;
                                                 }
-                                                Ok(_) => current_block = 12543410360505780601,
+                                                Ok(Some(wait)) => {
+                                                    pane_input = Some(wait);
+                                                    current_block = 12543410360505780601;
+                                                }
                                             }
                                         } else {
                                             current_block = 12543410360505780601;
@@ -438,9 +442,9 @@ unsafe fn cmd_split_window_exec(
                                                     |out| out.write_all(b"after-split-window"),
                                                 );
                                                 drop(sc.environ.take());
-                                                if input != 0 {
+                                                if let Some(wait) = pane_input {
                                                     drop(window_owner);
-                                                    return CMD_RETURN_WAIT;
+                                                    return cmdq_suspend(item_handle, wait);
                                                 }
                                                 if args_has(args, 'W' as i32 as u_char) != 0 {
                                                     let (waiter, retval) = cmdq_wait(item_handle);

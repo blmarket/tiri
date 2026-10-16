@@ -312,7 +312,7 @@ impl wait_event_item {
     unsafe fn resume(self) {
         self.waiter.resume();
         // The rest of the entry, its sink included, drops here, after the
-        // resume, as tmux frees it after cmdq_continue.
+        // resume, as tmux frees it after continuing the item.
     }
 }
 /// The entry's event sink, removed when the entry is dropped.

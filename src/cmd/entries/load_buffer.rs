@@ -1,7 +1,9 @@
 use crate::src::arguments::{args_get, args_has, args_string};
 use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::{cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_target_client};
-use crate::src::file::file_read_with_cmdq_wait;
+use crate::src::cmd::queue::{
+    cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_resumed, cmdq_suspend,
+};
+use crate::src::file::{file_read_wait, FileOutcome};
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
@@ -20,12 +22,10 @@ use crate::src::tty::tty_set_selection;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::Weak;
-use tiri_buffer::SegmentedBuf;
 
 #[repr(C)]
 pub struct cmd_load_buffer_data {
     pub client: Option<ClientRef>,
-    pub item: Weak<UnsafeCell<cmdq_item>>,
     pub name: Option<CString>,
 }
 
@@ -68,42 +68,33 @@ pub static cmd_load_buffer_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_load_buffer_done(
-    cdata: &mut cmd_load_buffer_data,
-    path: Option<&CStr>,
-    mut error: ::core::ffi::c_int,
-    mut closed: ::core::ffi::c_int,
-    mut buffer: &mut SegmentedBuf,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    mut cdata: cmd_load_buffer_data,
+    mut outcome: FileOutcome,
 ) {
-    // Progress notifications do not need contiguous storage. Coalesce only
-    // once, after the complete file has arrived.
-    if closed == 0 {
-        return;
-    }
     let tc = cdata.client.as_ref();
-    let item_owner = cdata.item.upgrade();
+    let path = outcome.path.as_deref();
+    let error = outcome.error;
+    let buffer = &mut outcome.buffer;
     let mut bdata: *mut ::core::ffi::c_void = evbuffer_pullup(buffer, -1)
         .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
         as *mut ::core::ffi::c_void;
     let mut bsize: size_t = evbuffer_get_length(&*(buffer));
     let mut cause: Option<CString> = None;
     if error != 0 as ::core::ffi::c_int {
-        if let Some(item_owner) = item_owner.as_ref() {
-            cmdq_error(item_owner, |out| {
-                write_cstr(out, nullable_cstr(strerror(error)))?;
-                out.write_all(b": ")?;
-                write_cstr(out, path)
-            });
-        }
+        cmdq_error(item_handle, |out| {
+            write_cstr(out, nullable_cstr(strerror(error)))?;
+            out.write_all(b": ")?;
+            write_cstr(out, path)
+        });
     } else if bsize != 0 as size_t {
         let owned: Box<[u8]> = std::slice::from_raw_parts(bdata.cast::<u8>(), bsize).into();
         if paste_set_owned(owned, cdata.name.as_deref(), Some(&mut cause))
             != 0 as ::core::ffi::c_int
         {
-            if let Some(item_owner) = item_owner.as_ref() {
-                cmdq_error(item_owner, |out| {
-                    write_cstr(out, (cause.as_ref().unwrap()).as_c_str())
-                });
-            }
+            cmdq_error(item_handle, |out| {
+                write_cstr(out, (cause.as_ref().unwrap()).as_c_str())
+            });
         } else if tc.is_some_and(|client| {
             client.attached_session().upgrade().is_some() && !client.is_dead()
         }) {
@@ -115,9 +106,20 @@ unsafe fn cmd_load_buffer_done(
         }
     }
     cdata.release_client();
-    if let Some(item_owner) = item_owner.as_ref() {
-        cmdq_continue(item_owner);
-    }
+}
+/// Store the file once it is read. A file whose client died never reports
+/// (tmux's file_fire_done_cb): release the data, and the client with it, then
+/// park.
+async fn cmd_load_buffer_complete(
+    done: impl std::future::Future<Output = Option<FileOutcome>>,
+    cdata: cmd_load_buffer_data,
+    item: Weak<UnsafeCell<cmdq_item>>,
+) {
+    let Some(outcome) = done.await else {
+        drop(cdata);
+        return std::future::pending().await;
+    };
+    unsafe { cmd_load_buffer_done(&cmdq_resumed(&item), cdata, outcome) };
 }
 unsafe fn cmd_load_buffer_exec(
     mut self_0: refbox::Weak<cmd>,
@@ -129,11 +131,10 @@ unsafe fn cmd_load_buffer_exec(
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: Option<ClientRef> = tc_owner.clone();
-    let mut cdata = Box::new(cmd_load_buffer_data {
+    let mut cdata = cmd_load_buffer_data {
         client: None,
-        item: std::rc::Rc::downgrade(item_handle),
         name: None,
-    });
+    };
     let mut bufname: *const ::core::ffi::c_char =
         args_get(&*(args), 'b' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !bufname.is_null() {
@@ -146,58 +147,119 @@ unsafe fn cmd_load_buffer_exec(
         item_handle,
         args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
     );
-    file_read_with_cmdq_wait(
-        queue_client.as_ref(),
-        &path,
-        Some(Box::new(move |event| unsafe {
-            cmd_load_buffer_done(
-                &mut cdata,
-                event.path,
-                event.error,
-                event.closed as ::core::ffi::c_int,
-                event.buffer.expect("read callback buffer"),
-            )
-        })),
+    let wait = file_read_wait(queue_client.as_ref(), &path, |_| None);
+    cmdq_suspend(
         item_handle,
-        None,
-    );
-    CMD_RETURN_WAIT
+        cmd_load_buffer_complete(wait, cdata, std::rc::Rc::downgrade(item_handle)),
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tiri_buffer::{Buf, BufMut, Buffer, SegmentedBuf};
+    use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next};
+    use crate::src::paste::{paste_buffer_data, paste_get_name};
+    use crate::src::server_client::queue_test_clients as clients;
+    use std::rc::Rc;
+    use std::time::Duration;
+    use tiri_buffer::SegmentedBuf;
+
+    unsafe fn buffer(name: &CStr) -> Option<Vec<u8>> {
+        let pb = paste_get_name(name)?;
+        let pb = pb.borrow();
+        Some(paste_buffer_data(&pb).unwrap_or_default().to_vec())
+    }
+
+    /// Queue a head on `owner` that suspends until `done` reports the file.
+    unsafe fn append_load(
+        owner: &ClientRef,
+        done: impl std::future::Future<Output = Option<FileOutcome>> + 'static,
+        cdata: cmd_load_buffer_data,
+    ) -> Weak<UnsafeCell<cmdq_item>> {
+        let head = cmdq_append(
+            Some(owner),
+            cmdq_get_callback_owned(
+                c"load",
+                Some(Box::new(move |item| {
+                    cmdq_suspend(
+                        item,
+                        cmd_load_buffer_complete(done, cdata, Rc::downgrade(item)),
+                    )
+                })),
+            ),
+        );
+        assert_eq!(cmdq_next(Some(owner)), 0);
+        head
+    }
 
     #[test]
-    fn file_progress_keeps_segments_until_completion() {
-        let mut data = cmd_load_buffer_data {
-            client: None,
-            item: Weak::new(),
-            name: None,
-        };
-        let mut buffer = SegmentedBuf::default();
-        buffer.put(SegmentedBuf::from(vec![1; 4096]));
-        let first = buffer.chunk().as_ptr();
-        for count in 2..=16 {
-            buffer.put(SegmentedBuf::from(vec![2; 4096]));
-            unsafe {
-                cmd_load_buffer_done(&mut data, Some(c"input"), 0, 0, &mut buffer);
-            }
-            assert_eq!(buffer.chunks().count(), count);
-            assert_eq!(buffer.chunk().as_ptr(), first);
-            assert_eq!(buffer.remaining(), count * 4096);
+    fn a_reported_file_is_stored_inside_the_send() {
+        unsafe {
+            let owner = clients::with_queue();
+            let (tx, rx) = tiri_rt::oneshot::channel();
+            let cdata = cmd_load_buffer_data {
+                client: None,
+                name: Some(c"loaded".to_owned()),
+            };
+            let head = append_load(&owner, rx, cdata);
+            assert!(buffer(c"loaded").is_none());
+            let outcome = FileOutcome {
+                path: Some(c"input".to_owned()),
+                error: 0,
+                buffer: SegmentedBuf::from(b"hello".to_vec()),
+            };
+            assert!(tx.send(outcome).is_ok());
+            assert_eq!(buffer(c"loaded").as_deref(), Some(&b"hello"[..]));
+            cmdq_next(Some(&owner));
+            assert!(head.upgrade().is_none());
         }
     }
 
     #[test]
-    fn expired_wait_ignores_completion_error() {
-        let mut data = cmd_load_buffer_data {
-            client: None,
-            item: Weak::new(),
-            name: None,
-        };
-        let mut buffer = SegmentedBuf::default();
-        unsafe { cmd_load_buffer_done(&mut data, Some(c"input"), 5, 1, &mut buffer) };
+    fn a_local_file_is_stored_one_runtime_turn_later() {
+        use tiri_rt::Runtime as _;
+        let mut runtime = tiri_rt::mio::Runtime::new().unwrap();
+        unsafe {
+            let path = std::env::temp_dir().join(format!("tiri-load-{}", std::process::id()));
+            std::fs::write(&path, b"local").unwrap();
+            let path = CString::new(path.into_os_string().into_encoded_bytes()).unwrap();
+            let owner = clients::with_queue();
+            let cdata = cmd_load_buffer_data {
+                client: None,
+                name: Some(c"local".to_owned()),
+            };
+            let head = append_load(&owner, file_read_wait(None, &path, |_| None), cdata);
+            assert!(buffer(c"local").is_none(), "not in the dispatching pass");
+            runtime.poll(Some(Duration::ZERO)).unwrap();
+            assert_eq!(buffer(c"local").as_deref(), Some(&b"local"[..]));
+            cmdq_next(Some(&owner));
+            assert!(head.upgrade().is_none());
+            std::fs::remove_file(path.to_str().unwrap()).unwrap();
+        }
+        crate::src::reactor::shutdown_runtime(runtime);
+    }
+
+    #[test]
+    fn a_dead_file_client_releases_the_target_client_and_parks() {
+        unsafe {
+            let owner = clients::with_queue();
+            let (tx, rx) = tiri_rt::oneshot::channel();
+            // load-buffer -w retains its own client as the selection target.
+            let cdata = cmd_load_buffer_data {
+                client: Some(owner.clone()),
+                name: Some(c"lost".to_owned()),
+            };
+            let head = append_load(&owner, rx, cdata);
+            // The dead file client drops the waiter unsent.
+            drop(tx);
+            assert_eq!(Rc::strong_count(&owner), 1, "the data is released");
+            assert_eq!(cmdq_next(Some(&owner)), 0);
+            assert!(head.upgrade().is_some(), "the command stays blocked");
+            let client = Rc::downgrade(&owner);
+            drop(owner);
+            assert!(client.upgrade().is_none());
+            assert!(head.upgrade().is_none());
+            assert!(buffer(c"lost").is_none(), "the body does not run");
+        }
     }
 }

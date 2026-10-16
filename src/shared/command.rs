@@ -11,7 +11,6 @@ use crate::src::shared::window::{WindowRef, WindowWeak};
 use std::ffi::{CStr, CString};
 pub type cmd_retval = ::core::ffi::c_int;
 pub const CMD_RETURN_STOP: cmd_retval = 2;
-pub const CMD_RETURN_WAIT: cmd_retval = 1;
 pub const CMD_RETURN_NORMAL: cmd_retval = 0;
 pub const CMD_RETURN_ERROR: cmd_retval = -1;
 
@@ -128,7 +127,6 @@ mod tests {
         assert_eq!(align_of::<cmd_find_type>(), 4);
         assert_eq!(CMD_RETURN_ERROR, -1);
         assert_eq!(CMD_RETURN_NORMAL, 0);
-        assert_eq!(CMD_RETURN_WAIT, 1);
         assert_eq!(CMD_RETURN_STOP, 2);
         assert_eq!(CMD_FIND_PANE, 0);
         assert_eq!(CMD_FIND_WINDOW, 1);

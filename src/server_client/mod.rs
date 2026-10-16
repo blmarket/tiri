@@ -4394,8 +4394,8 @@ pub(crate) mod queue_test_clients {
 #[cfg(test)]
 mod lost_queue_tests {
     use super::*;
-    use crate::src::cmd::queue::{cmdq_continue, cmdq_is_waiting, cmdq_suspend};
-    use crate::src::shared::command::{CMD_RETURN_NORMAL, CMD_RETURN_WAIT};
+    use crate::src::cmd::queue::cmdq_suspend;
+    use crate::src::shared::command::CMD_RETURN_NORMAL;
     use std::cell::Cell;
 
     struct SetOnDrop(Rc<Cell<bool>>);
@@ -4420,51 +4420,6 @@ mod lost_queue_tests {
                 })),
             ),
         );
-    }
-
-    #[test]
-    fn dropping_a_lost_client_cancels_its_waiting_queue() {
-        unsafe {
-            let owner = queue_test_clients::with_queue();
-            let waiter = Rc::new(Cell::new(std::rc::Weak::new()));
-            let observed = waiter.clone();
-            let head = cmdq_append(
-                Some(&owner),
-                cmdq_get_callback_owned(
-                    c"waiting head",
-                    Some(Box::new(move |item| {
-                        observed.set(Rc::downgrade(item));
-                        CMD_RETURN_WAIT
-                    })),
-                ),
-            );
-            let (ran, released) = (Rc::new(Cell::new(false)), Rc::new(Cell::new(false)));
-            append_suffix(&owner, &ran, &released);
-            cmdq_next(Some(&owner));
-            assert!(cmdq_is_waiting(&*head.upgrade().unwrap().get()));
-
-            // Loss marks the client dead and drains; the waiting head blocks the suffix.
-            (*owner.get()).flags |= CLIENT_DEAD as uint64_t;
-            cmdq_next(Some(&owner));
-            assert!(!ran.get());
-
-            let client = Rc::downgrade(&owner);
-            drop(owner);
-            assert!(
-                client.upgrade().is_none(),
-                "queued items must not retain their client"
-            );
-            assert!(head.upgrade().is_none());
-            assert!(released.get());
-            assert!(!ran.get());
-
-            // A waiter resuming after the drop finds nothing to continue.
-            let waiter = waiter.take();
-            assert!(waiter.upgrade().is_none());
-            if let Some(item) = waiter.upgrade() {
-                cmdq_continue(&item);
-            }
-        }
     }
 
     #[test]
@@ -4579,28 +4534,28 @@ mod lost_queue_tests {
         let runtime = tiri_rt::mio::Runtime::new().unwrap();
         unsafe {
             let owner = queue_test_clients::with_queue();
-            let cancelled = Rc::new(Cell::new(0));
-            let observed = cancelled.clone();
+            let cancelled = Rc::new(Cell::new(false));
+            // The read callback's capture observes its release by the cancellation.
+            let mut capture = Some(SetOnDrop(cancelled.clone()));
             let file = Rc::new(Cell::new(std::rc::Weak::new()));
             let observed_file = file.clone();
-            let mut cancel: Option<Box<dyn FnOnce()>> =
-                Some(Box::new(move || observed.set(observed.get() + 1)));
             let head = cmdq_append(
                 Some(&owner),
                 cmdq_get_callback_owned(
                     c"file-backed head",
                     Some(Box::new(move |item| {
-                        crate::src::file::file_read_with_cmdq_wait_init(
-                            None,
-                            c"/dev/null",
-                            move |file| {
-                                observed_file.set(file);
-                                Some(Box::new(|_| panic!("a dropped wait must not complete")))
-                            },
-                            item,
-                            cancel.take(),
-                        );
-                        CMD_RETURN_WAIT
+                        let wait = crate::src::file::file_read_wait(None, c"/dev/null", |file| {
+                            observed_file.set(file);
+                            let capture = capture.take();
+                            Some(Box::new(move |_| {
+                                let _capture = &capture;
+                                panic!("a dropped wait must not deliver progress")
+                            }))
+                        });
+                        cmdq_suspend(item, async move {
+                            let _ = wait.await;
+                            panic!("a dropped wait must not complete")
+                        })
                     })),
                 ),
             );
@@ -4611,13 +4566,13 @@ mod lost_queue_tests {
                 0,
                 "local completion must be deferred"
             );
-            assert!(cmdq_is_waiting(&*head.upgrade().unwrap().get()));
+            assert!(head.upgrade().is_some());
 
             (*owner.get()).flags |= CLIENT_DEAD as uint64_t;
             // server_client_free asserts that the client file index is empty.
             drop(owner);
             assert!(head.upgrade().is_none());
-            assert_eq!(cancelled.get(), 1);
+            assert!(cancelled.get());
             assert!(released.get());
             assert!(!ran.get());
             let file = file.take();

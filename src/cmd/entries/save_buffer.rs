@@ -1,7 +1,9 @@
 use crate::src::arguments::{args_get, args_has, args_string};
-use crate::src::cmd::queue::{cmdq_continue, cmdq_error, cmdq_get_client, cmdq_print_data};
+use crate::src::cmd::queue::{
+    cmdq_error, cmdq_get_client, cmdq_print_data, cmdq_resumed, cmdq_suspend,
+};
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
-use crate::src::file::file_write_with_cmdq_wait;
+use crate::src::file::{file_write_wait, FileOutcome};
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
@@ -70,21 +72,16 @@ pub static cmd_show_buffer_entry: cmd_entry = {
 };
 unsafe fn cmd_save_buffer_done(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-    path: Option<&CStr>,
-    mut error: ::core::ffi::c_int,
-    mut closed: ::core::ffi::c_int,
+    outcome: &FileOutcome,
 ) {
-    if closed == 0 {
-        return;
-    }
+    let error = outcome.error;
     if error != 0 as ::core::ffi::c_int {
         cmdq_error(item_handle, |out| {
             write_cstr(out, nullable_cstr(strerror(error)))?;
             out.write_all(b": ")?;
-            write_cstr(out, path)
+            write_cstr(out, outcome.path.as_deref())
         });
     }
-    cmdq_continue(item_handle);
 }
 unsafe fn cmd_save_buffer_exec(
     mut self_0: refbox::Weak<cmd>,
@@ -156,25 +153,13 @@ unsafe fn cmd_save_buffer_exec(
     }
     let buffer = pb.borrow();
     let bufdata = paste_buffer_data(&buffer).unwrap_or_default();
+    let wait = file_write_wait(queue_client.as_ref(), CStr::from_ptr(path), flags, bufdata);
     let waiting_item = std::rc::Rc::downgrade(item_handle);
-    file_write_with_cmdq_wait(
-        queue_client.as_ref(),
-        CStr::from_ptr(path),
-        flags,
-        bufdata,
-        Some(Box::new(move |event| unsafe {
-            // A dropped item cancelled its wait; nothing is left to resume.
-            let Some(item) = waiting_item.upgrade() else {
-                return;
-            };
-            cmd_save_buffer_done(
-                &item,
-                event.path,
-                event.error,
-                event.closed as ::core::ffi::c_int,
-            )
-        })),
-        item_handle,
-    );
-    CMD_RETURN_WAIT
+    cmdq_suspend(item_handle, async move {
+        // A dead file client never reports; tmux leaves the command blocked.
+        let Some(outcome) = wait.await else {
+            return std::future::pending().await;
+        };
+        cmd_save_buffer_done(&cmdq_resumed(&waiting_item), &outcome);
+    })
 }

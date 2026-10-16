@@ -12,7 +12,7 @@ use crate::src::events_payload::{
     event_payload_create, event_payload_set_identity, event_payload_set_string,
     event_payload_set_target,
 };
-use crate::src::file::{file_cancel_cmdq_wait, file_error};
+use crate::src::file::file_error;
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
@@ -29,7 +29,6 @@ use crate::src::shared::abi::*;
 use crate::src::shared::abi::{__uid_t, uid_t};
 use crate::src::shared::account::passwd;
 use crate::src::shared::arguments::args;
-use crate::src::shared::client::client_file;
 use crate::src::shared::client::{ClientRef, ClientWeak};
 use crate::src::shared::client::{CLIENT_CONTROL, CLIENT_UTF8};
 use crate::src::shared::command::*;
@@ -77,17 +76,11 @@ pub struct cmdq_item {
     cmdlist: Option<std::rc::Rc<std::cell::RefCell<cmd_list>>>,
     pub cmd: refbox::Weak<cmd>,
     work: Work,
-    file_task: Option<tiri_rt::mio::Task>,
-    wait_file: std::rc::Weak<std::cell::UnsafeCell<client_file>>,
 }
 
 /// Dropping an item cancels its pending work, like dropping a future.
 impl Drop for cmdq_item {
     fn drop(&mut self) {
-        // The item can no longer be upgraded, so the cancel skips clearing it.
-        if let Some(file) = self.wait_file.upgrade() {
-            unsafe { file_cancel_cmdq_wait(&file) };
-        }
         drop(self.cmdlist.take());
         drop(self.state.take());
         drop(std::mem::replace(&mut self.work, Work::Fired));
@@ -99,13 +92,8 @@ enum Work {
     /// Dispatch the command's entry.
     Command,
     Callback(Box<dyn FnOnce(&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval>),
-    /// Inside its command or callback. `resumed` records a `cmdq_continue`
-    /// that arrived before the command returned.
-    Executing {
-        resumed: bool,
-    },
-    /// Returned `CMD_RETURN_WAIT`; blocks its queue until `cmdq_continue`.
-    Waiting,
+    /// Inside its command or callback.
+    Executing,
     /// Installed by `cmdq_suspend`; blocks its queue. Each wake of `waker`
     /// polls `future` at once, and dropping it cancels the wait.
     Suspended {
@@ -126,8 +114,7 @@ impl Work {
         match self {
             Self::Command => "command",
             Self::Callback(_) => "callback",
-            Self::Executing { .. } => "executing",
-            Self::Waiting => "waiting",
+            Self::Executing => "executing",
             Self::Suspended { .. } => "suspended",
             Self::Polling { .. } => "polling",
             Self::Fired => "fired",
@@ -135,9 +122,8 @@ impl Work {
     }
 }
 
-/// Returned only through `cmdq_suspend`. It equals `CMD_RETURN_WAIT` while the
-/// legacy wait remains.
-const SUSPENDED: cmd_retval = CMD_RETURN_WAIT;
+/// Returned only through `cmdq_suspend`; no other `cmd_retval` has this value.
+const SUSPENDED: cmd_retval = 1;
 
 /// Polls a suspended item on wake. It never touches the runtime, so a wait may
 /// end after runtime shutdown.
@@ -186,8 +172,6 @@ impl cmdq_item {
             cmdlist: Default::default(),
             cmd: Default::default(),
             work: Work::Command,
-            file_task: None,
-            wait_file: Default::default(),
         }
     }
 }
@@ -261,37 +245,6 @@ pub(crate) unsafe fn cmdq_background(
 pub(crate) unsafe fn cmdq_cancel_background() {
     let background = QueueTarget::Global.with_queue(|queue| std::mem::take(&mut queue.background));
     drop(background);
-}
-
-/// Remote files are owned by their stream index. Local completion work is
-/// retained by file_task while this command waits.
-pub(crate) fn cmdq_set_wait_file(
-    item: &mut cmdq_item,
-    file: &std::rc::Rc<std::cell::UnsafeCell<client_file>>,
-) {
-    assert!(
-        std::rc::Weak::ptr_eq(&item.wait_file, &std::rc::Weak::new()),
-        "queue item already has a file wait"
-    );
-    item.wait_file = std::rc::Rc::downgrade(file);
-}
-
-pub(crate) fn cmdq_set_file_task(item: &mut cmdq_item, task: tiri_rt::mio::Task) {
-    assert!(
-        item.file_task.is_none(),
-        "queue item already has a file task"
-    );
-    item.file_task = Some(task);
-}
-
-pub(crate) fn cmdq_clear_wait_file(
-    item: &mut cmdq_item,
-    file: &std::rc::Weak<std::cell::UnsafeCell<client_file>>,
-) {
-    if item.wait_file.ptr_eq(file) {
-        item.wait_file = std::rc::Weak::new();
-        drop(item.file_task.take());
-    }
 }
 
 /// The execution context of an item may change during dispatch; its queue
@@ -620,14 +573,6 @@ pub unsafe fn cmdq_insert_hook(
     }
     events_fire(&name, ep);
 }
-pub unsafe fn cmdq_continue(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) {
-    let item = item_handle.get();
-    match &mut (*item).work {
-        Work::Executing { resumed } => *resumed = true,
-        work @ Work::Waiting => *work = Work::Fired,
-        _ => {}
-    }
-}
 /// Install the executing item's continuation and return the value its command
 /// or callback must return. Each wake polls the continuation at once; dropping
 /// the item drops it, which cancels the wait.
@@ -638,7 +583,7 @@ pub(crate) unsafe fn cmdq_suspend(
 ) -> cmd_retval {
     let item = item_handle.get();
     assert!(
-        matches!((*item).work, Work::Executing { .. }),
+        matches!((*item).work, Work::Executing),
         "only an executing command item can suspend"
     );
     let waker = std::task::LocalWaker::from(std::rc::Rc::new(ItemWake(std::rc::Rc::downgrade(
@@ -759,11 +704,6 @@ unsafe fn cmdq_remove(item_handle: std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>
         std::rc::Rc::strong_count(&item_handle),
         1,
         "command item removal requires its sole strong owner"
-    );
-    let item = item_handle.get();
-    assert!(
-        std::rc::Weak::ptr_eq(&(*item).wait_file, &std::rc::Weak::new()),
-        "file wait must finish or cancel before queue item removal"
     );
     drop(item_handle);
 }
@@ -1130,22 +1070,14 @@ pub unsafe fn cmdq_next(owner: Option<&ClientRef>) -> u_int {
         ));
         match (*item).work {
             // Re-entered from inside a dispatch or a poll, or blocked on a wait.
-            Work::Executing { .. }
-            | Work::Polling { .. }
-            | Work::Waiting
-            | Work::Suspended { .. } => return items,
+            Work::Executing | Work::Polling { .. } | Work::Suspended { .. } => return items,
             Work::Fired => {}
             Work::Command | Work::Callback(_) => {
                 (*item).time = time(std::ptr::null_mut());
                 number = number.wrapping_add(1);
                 (*item).number = number;
-                // Executing before dispatch: a synchronously completed operation
-                // can call cmdq_continue before its command returns CMD_RETURN_WAIT.
                 let command = matches!((*item).work, Work::Command);
-                let retval = match std::mem::replace(
-                    &mut (*item).work,
-                    Work::Executing { resumed: false },
-                ) {
+                let retval = match std::mem::replace(&mut (*item).work, Work::Executing) {
                     Work::Command => cmdq_fire_command(&item_owner),
                     Work::Callback(cb) => cb(&item_owner),
                     _ => unreachable!(),
@@ -1154,12 +1086,10 @@ pub unsafe fn cmdq_next(owner: Option<&ClientRef>) -> u_int {
                     cmdq_remove_group(&item_owner);
                 }
                 match std::mem::replace(&mut (*item).work, Work::Fired) {
-                    Work::Executing { resumed } => {
-                        if retval == CMD_RETURN_WAIT && !resumed {
-                            (*item).work = Work::Waiting;
-                            return items;
-                        }
-                    }
+                    Work::Executing => assert_ne!(
+                        retval, SUSPENDED,
+                        "only a command suspended by cmdq_suspend returns its result"
+                    ),
                     work @ Work::Suspended { .. } => {
                         assert_eq!(
                             retval, SUSPENDED,
@@ -1189,27 +1119,39 @@ pub unsafe fn cmdq_next(owner: Option<&ClientRef>) -> u_int {
 }
 
 /// The global queue's current item while its command or callback runs, or
-/// after it was continued or completed until it is removed. None while it
-/// waits, including while its continuation runs (tmux's `CMDQ_WAITING`).
+/// after it completed until it is removed. None while it is suspended,
+/// including while its continuation runs, as tmux hides a waiting item.
 pub unsafe fn cmdq_running() -> std::rc::Weak<std::cell::UnsafeCell<cmdq_item>> {
     let queue = QueueTarget::Global;
     let Some(owner) = queue.with_queue(|queue| queue.item.upgrade()) else {
         return std::rc::Weak::new();
     };
-    if let Work::Waiting | Work::Suspended { .. } | Work::Polling { .. } = (*owner.get()).work {
+    if let Work::Suspended { .. } | Work::Polling { .. } = (*owner.get()).work {
         return std::rc::Weak::new();
     }
     std::rc::Rc::downgrade(&owner)
 }
 
-#[cfg(test)]
-pub(crate) fn cmdq_is_waiting(item: &cmdq_item) -> bool {
-    matches!(item.work, Work::Waiting)
-}
 /// The number of items in a queue, without running them.
 #[cfg(test)]
 pub(crate) unsafe fn cmdq_len(owner: Option<&ClientRef>) -> usize {
     QueueTarget::for_client(owner).with_queue(|queue| queue.list.len())
+}
+/// The labels of a queue's items in order: a command's name, or a callback's.
+#[cfg(test)]
+pub(crate) unsafe fn cmdq_labels(owner: Option<&ClientRef>) -> Vec<String> {
+    QueueTarget::for_client(owner).with_queue(|queue| {
+        queue
+            .list
+            .iter()
+            .map(|item| {
+                let name = (*item.get()).name.as_deref().map_or(&b""[..], CStr::to_bytes);
+                let label = name.strip_prefix(b"[").unwrap_or(name);
+                let label = label.split(|&byte| byte == b'/').next().unwrap_or_default();
+                String::from_utf8_lossy(label).into_owned()
+            })
+            .collect()
+    })
 }
 pub unsafe fn cmdq_guard(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
@@ -1407,24 +1349,6 @@ mod lifecycle_tests {
         }
     }
 
-    #[test]
-    fn waiting_item_is_hidden_until_continued_then_visible_until_removed() {
-        unsafe {
-            let item = cmdq_append(
-                None,
-                cmdq_get_callback_owned(c"waiting callback", Some(Box::new(|_| CMD_RETURN_WAIT))),
-            );
-            assert_eq!(cmdq_next(None), 0);
-            assert!(item.upgrade().is_some());
-            assert!(cmdq_running().upgrade().is_none());
-            cmdq_continue(&item.upgrade().unwrap());
-            assert!(cmdq_running().ptr_eq(&item));
-            assert_eq!(cmdq_next(None), 0);
-            assert!(item.upgrade().is_none());
-            assert!(cmdq_running().upgrade().is_none());
-        }
-    }
-
     /// Append a global callback item that records `tag` when it runs.
     pub(super) unsafe fn append_recording(
         name: &'static CStr,
@@ -1443,49 +1367,6 @@ mod lifecycle_tests {
                 })),
             ),
         )
-    }
-
-    #[test]
-    fn continued_wait_is_removed_on_the_next_pass_before_the_next_item_runs() {
-        unsafe {
-            let trace = Rc::new(std::cell::RefCell::new(Vec::new()));
-            let head = append_recording(c"waiting head", &trace, "head", CMD_RETURN_WAIT);
-            let next = append_recording(c"next item", &trace, "next", CMD_RETURN_NORMAL);
-            assert_eq!(cmdq_next(None), 0);
-            assert!(cmdq_is_waiting(&*head.upgrade().unwrap().get()));
-            assert_eq!(cmdq_next(None), 0, "a waiting head blocks its queue");
-            assert_eq!(*trace.borrow(), ["head"]);
-            cmdq_continue(&head.upgrade().unwrap());
-            assert!(!cmdq_is_waiting(&*head.upgrade().unwrap().get()));
-            assert_eq!(cmdq_next(None), 1);
-            assert!(head.upgrade().is_none());
-            assert!(next.upgrade().is_none());
-            assert_eq!(*trace.borrow(), ["head", "next"]);
-        }
-    }
-
-    #[test]
-    fn continue_during_exec_completes_in_the_same_pass() {
-        unsafe {
-            let trace = Rc::new(std::cell::RefCell::new(Vec::new()));
-            let head = cmdq_append(
-                None,
-                cmdq_get_callback_owned(
-                    c"continued during exec",
-                    Some(Box::new(|item| {
-                        cmdq_continue(item);
-                        // Still running after the continue.
-                        assert!(cmdq_running().ptr_eq(&Rc::downgrade(item)));
-                        CMD_RETURN_WAIT
-                    })),
-                ),
-            );
-            let next = append_recording(c"next item", &trace, "next", CMD_RETURN_NORMAL);
-            assert_eq!(cmdq_next(None), 2);
-            assert!(head.upgrade().is_none());
-            assert!(next.upgrade().is_none());
-            assert_eq!(*trace.borrow(), ["next"]);
-        }
     }
 
     #[test]
@@ -1607,7 +1488,7 @@ mod suspend_tests {
                     c"woken outside suspension",
                     Some(Box::new(move |item| {
                         LocalWaker::from(Rc::new(ItemWake(Rc::downgrade(item)))).wake();
-                        assert!(matches!((*item.get()).work, Work::Executing { .. }));
+                        assert!(matches!((*item.get()).work, Work::Executing));
                         cmdq_suspend(
                             item,
                             std::future::poll_fn(move |cx| {
@@ -1744,6 +1625,18 @@ mod suspend_tests {
                         CMD_RETURN_NORMAL
                     })),
                 ),
+            );
+            cmdq_next(None);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "only a command suspended by cmdq_suspend returns its result")]
+    fn returning_suspended_without_suspending_panics() {
+        unsafe {
+            cmdq_append(
+                None,
+                cmdq_get_callback_owned(c"unsuspended", Some(Box::new(|_| SUSPENDED))),
             );
             cmdq_next(None);
         }
