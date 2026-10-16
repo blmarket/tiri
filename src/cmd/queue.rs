@@ -80,7 +80,6 @@ pub struct cmdq_item {
     cmdlist: Option<std::rc::Rc<std::cell::RefCell<cmd_list>>>,
     pub cmd: refbox::Weak<cmd>,
     pub cb: cmdq_cb,
-    cancel_data: Option<Box<dyn FnOnce()>>,
     /// A foreground command owns its delayed work until dispatch or removal.
     wait_timer: Option<crate::src::reactor::Timer>,
     file_task: Option<tiri_rt::mio::Task>,
@@ -123,7 +122,6 @@ impl cmdq_item {
             cmdlist: Default::default(),
             cmd: Default::default(),
             cb: Default::default(),
-            cancel_data: Default::default(),
             wait_timer: None,
             file_task: None,
             wait_file: Default::default(),
@@ -179,16 +177,6 @@ unsafe fn cmdq_new_named_item(
     owner
 }
 
-/// Register cleanup to run when an unfired callback item is removed.
-pub(crate) fn cmdq_set_cancel_callback(item: &mut cmdq_item, cancel: Box<dyn FnOnce()>) {
-    assert_eq!(item.type_0, CMDQ_CALLBACK);
-    assert!(
-        item.cancel_data.is_none(),
-        "callback cancel hook already set"
-    );
-    item.cancel_data = Some(cancel);
-}
-
 pub(crate) fn cmdq_set_wait_timer(item: &mut cmdq_item, timer: crate::src::reactor::Timer) {
     assert!(
         item.wait_timer.is_none(),
@@ -225,16 +213,6 @@ pub(crate) unsafe fn cmdq_background(
 pub(crate) unsafe fn cmdq_cancel_background() {
     let background = QueueTarget::Global.with_queue(|queue| std::mem::take(&mut queue.background));
     drop(background);
-}
-
-unsafe fn cmdq_cancel_unfired_data(owner: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) {
-    let item = owner.get();
-    if (*item).flags & CMDQ_FIRED != 0 {
-        return;
-    }
-    if let Some(cancel) = (*item).cancel_data.take() {
-        cancel();
-    }
 }
 
 /// Remote files are owned by their stream index. Local completion work is
@@ -656,7 +634,6 @@ unsafe fn cmdq_remove(item_handle: std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>
         std::rc::Weak::ptr_eq(&(*item).wait_file, &std::rc::Weak::new()),
         "file wait must finish or cancel before queue item removal"
     );
-    cmdq_cancel_unfired_data(&item_handle);
     if let Some(client) = (*item).client_owner.take() {
         (client).release();
     }
@@ -671,7 +648,6 @@ unsafe fn cmdq_remove(item_handle: std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>
     }
     // Release resources explicitly before destroying the item.
     drop((*item).cb.take());
-    drop((*item).cancel_data.take());
     drop(item_handle);
 }
 unsafe fn cmdq_remove_group(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) {
@@ -1221,32 +1197,40 @@ mod lifecycle_tests {
     #[test]
     fn removal_rejects_an_extra_strong_owner_before_cleanup() {
         unsafe {
-            let item = cmdq_get_callback_owned(c"extra owner", None);
+            struct SetOnDrop(Rc<Cell<bool>>);
+            impl Drop for SetOnDrop {
+                fn drop(&mut self) {
+                    self.0.set(true);
+                }
+            }
+            let released = Rc::new(Cell::new(false));
+            let capture = SetOnDrop(released.clone());
+            let item = cmdq_get_callback_owned(
+                c"extra owner",
+                Some(Box::new(move |_| {
+                    let _capture = &capture;
+                    CMD_RETURN_NORMAL
+                })),
+            );
             let observer = Rc::downgrade(&item);
             let guard = item.clone();
-            let cancelled = Rc::new(Cell::new(false));
-            let called = cancelled.clone();
-            cmdq_set_cancel_callback(&mut *item.get(), Box::new(move || called.set(true)));
             let owner = item;
             let result =
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| cmdq_remove(owner)));
             assert!(result.is_err());
-            assert!(!cancelled.get());
+            assert!(!released.get());
             assert!(!(*guard.get()).removed);
             cmdq_remove(guard);
-            assert!(cancelled.get());
+            assert!(released.get());
             assert!(observer.upgrade().is_none());
         }
     }
 
     #[test]
-    fn dropping_without_removal_panics_and_does_not_run_cancellation() {
+    fn dropping_without_removal_panics() {
         unsafe {
             let item = cmdq_get_callback_owned(c"unreleased detached item", None);
             let observer = Rc::downgrade(&item);
-            let cancelled = Rc::new(Cell::new(false));
-            let called = cancelled.clone();
-            cmdq_set_cancel_callback(&mut *item.get(), Box::new(move || called.set(true)));
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(item)));
             let panic = result.expect_err("dropping without removal must panic");
             assert_eq!(
@@ -1257,7 +1241,6 @@ mod lifecycle_tests {
                 Some("command item dropped without cmdq_remove")
             );
             assert!(observer.upgrade().is_none());
-            assert!(!cancelled.get());
         }
     }
 }
