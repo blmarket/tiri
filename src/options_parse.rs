@@ -99,31 +99,22 @@ pub enum OptionNameMatch {
 /// Errors produced while resolving a name against the built-in option table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OptionNameMatchError {
-    Invalid(OptionNameError),
     NotFound,
     Ambiguous,
 }
 
-/// Parse and resolve an option name against canonical table names.
+/// Resolve a parsed, canonical option name against canonical table names.
 ///
-/// `aliases` contains exact spelling replacements applied before prefix
-/// matching. `BuiltIn` contains the index of the matching canonical name in
+/// `BuiltIn` contains the index of the matching canonical name in
 /// `candidates`, allowing a C-facing adapter to retain the original table
 /// pointer and allocation rules.
 pub fn match_option_name(
-    input: &[u8],
-    aliases: &[(&[u8], &[u8])],
+    lookup_name: &[u8],
     candidates: &[&[u8]],
 ) -> Result<OptionNameMatch, OptionNameMatchError> {
-    let parsed = parse_option_name(input).map_err(OptionNameMatchError::Invalid)?;
-    if parsed.name.first() == Some(&b'@') {
+    if lookup_name.first() == Some(&b'@') {
         return Ok(OptionNameMatch::User);
     }
-
-    let lookup_name = aliases
-        .iter()
-        .find_map(|(from, to)| (*from == parsed.name).then_some(*to))
-        .unwrap_or(parsed.name);
 
     let mut found = None;
     for (index, candidate) in candidates.iter().enumerate() {
@@ -237,24 +228,18 @@ mod tests {
     #[test]
     fn option_name_matching_cases() {
         let candidates = [b"status".as_slice(), b"status-bg", b"prefix", b"prefix2"];
-        let aliases: &[(&[u8], &[u8])] = &[(b"status-colour".as_slice(), b"status".as_slice())];
         let cases = [
             (b"status".as_slice(), Ok(OptionNameMatch::BuiltIn(0))),
             (b"status-b".as_slice(), Ok(OptionNameMatch::BuiltIn(1))),
-            (b"status-colour".as_slice(), Ok(OptionNameMatch::BuiltIn(0))),
             (b"@user".as_slice(), Ok(OptionNameMatch::User)),
-            (b"[key]".as_slice(), Err(OptionNameMatchError::Ambiguous)),
+            (b"".as_slice(), Err(OptionNameMatchError::Ambiguous)),
             (b"prefix".as_slice(), Ok(OptionNameMatch::BuiltIn(2))),
             (b"pre".as_slice(), Err(OptionNameMatchError::Ambiguous)),
             (b"missing".as_slice(), Err(OptionNameMatchError::NotFound)),
-            (
-                b"status[]".as_slice(),
-                Err(OptionNameMatchError::Invalid(OptionNameError::EmptyIndex)),
-            ),
         ];
         for (input, expected) in cases {
             assert_eq!(
-                match_option_name(input, aliases, &candidates),
+                match_option_name(input, &candidates),
                 expected,
                 "input={input:?}"
             );

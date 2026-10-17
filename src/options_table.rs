@@ -5,7 +5,6 @@ use crate::src::shared::key::*;
 use crate::src::shared::key::{MODEKEY_EMACS, MODEKEY_VI};
 use crate::src::shared::layout::*;
 use crate::src::shared::limits::{INT_MAX, SHRT_MAX, UINT_MAX, USHRT_MAX};
-use crate::src::shared::options::options_name_map;
 use crate::src::shared::options::options_table_entry;
 use crate::src::shared::options::*;
 use crate::src::shared::options::{
@@ -76,36 +75,21 @@ static options_table_status_format_default: [&std::ffi::CStr; 3] = [
     OPTIONS_TABLE_STATUS_FORMAT2,
     OPTIONS_TABLE_STATUS_FORMAT3,
 ];
-pub static options_other_names: [options_name_map; 8] = [
-    options_name_map {
-        from: c"display-panes-color",
-        to: c"display-panes-colour",
-    },
-    options_name_map {
-        from: c"display-panes-active-color",
-        to: c"display-panes-active-colour",
-    },
-    options_name_map {
-        from: c"clock-mode-color",
-        to: c"clock-mode-colour",
-    },
-    options_name_map {
-        from: c"cursor-color",
-        to: c"cursor-colour",
-    },
-    options_name_map {
-        from: c"prompt-cursor-color",
-        to: c"prompt-cursor-colour",
-    },
-    options_name_map {
-        from: c"prompt-command-cursor-color",
-        to: c"prompt-command-cursor-colour",
-    },
-    options_name_map {
-        from: c"pane-colors",
-        to: c"pane-colours",
-    },
-    options_name_map { from: c"", to: c"" },
+/// Alternative spellings of built-in option names, mapped to canonical names.
+pub static options_other_names: [(&std::ffi::CStr, &std::ffi::CStr); 7] = [
+    (c"display-panes-color", c"display-panes-colour"),
+    (
+        c"display-panes-active-color",
+        c"display-panes-active-colour",
+    ),
+    (c"clock-mode-color", c"clock-mode-colour"),
+    (c"cursor-color", c"cursor-colour"),
+    (c"prompt-cursor-color", c"prompt-cursor-colour"),
+    (
+        c"prompt-command-cursor-color",
+        c"prompt-command-cursor-colour",
+    ),
+    (c"pane-colors", c"pane-colours"),
 ];
 pub const TMUX_LOCK_CMD: &std::ffi::CStr = c"lock -np";
 pub const TMUX_TERM: &std::ffi::CStr = c"tmux-256color";

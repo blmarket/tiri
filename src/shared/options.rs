@@ -157,13 +157,6 @@ pub struct options_array_storage {
     pub(crate) entries: BTreeMap<OptionsArrayKey, Box<options_array_item>>,
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct options_name_map {
-    pub from: &'static ::std::ffi::CStr,
-    pub to: &'static ::std::ffi::CStr,
-}
-
 impl options_entry {
     pub fn tableentry_ptr(&self) -> Option<&'static options_table_entry> {
         self.tableentry

@@ -130,13 +130,6 @@ pub(crate) fn options_array_index(key: &CStr) -> OptionsArrayKey {
     }
 }
 
-fn options_map_name(name: &CStr) -> &CStr {
-    options_other_names
-        .iter()
-        .take_while(|mapping| !mapping.from.to_bytes().is_empty())
-        .find(|mapping| mapping.from == name)
-        .map_or(name, |mapping| mapping.to)
-}
 unsafe fn options_parent_table_entry(
     oo: *mut options,
     name: &CStr,
@@ -223,20 +216,10 @@ pub fn options_iter(oo: &options) -> impl DoubleEndedIterator<Item = &options_en
     oo.tree.values().map(Box::as_ref)
 }
 pub fn options_get_only<'a>(oo: &'a options, name: &CStr) -> Option<&'a options_entry> {
-    let key = if oo.tree.contains_key(name) {
-        name
-    } else {
-        options_map_name(name)
-    };
-    oo.tree.get(key).map(Box::as_ref)
+    oo.tree.get(name).map(Box::as_ref)
 }
 pub fn options_get_only_mut<'a>(oo: &'a mut options, name: &CStr) -> Option<&'a mut options_entry> {
-    let key = if oo.tree.contains_key(name) {
-        name
-    } else {
-        options_map_name(name)
-    };
-    oo.tree.get_mut(key).map(Box::as_mut)
+    oo.tree.get_mut(name).map(Box::as_mut)
 }
 /// Read an entry synchronously, copying the result before an inherited table's
 /// guard is returned. The visitor must not reenter models or return observers.
@@ -697,8 +680,12 @@ pub fn options_parse_owned(input: &CStr) -> Option<OwnedOptionName> {
         }
         None => None,
     };
+    let name = options_other_names
+        .iter()
+        .find_map(|(from, to)| (from.to_bytes() == parsed.name).then_some(to.to_bytes()))
+        .unwrap_or(parsed.name);
     Some(OwnedOptionName {
-        name: CString::new(parsed.name).expect("C string option name has no interior NUL"),
+        name: CString::new(name).expect("C string option name has no interior NUL"),
         array_key,
     })
 }
@@ -725,29 +712,14 @@ pub unsafe fn options_match_owned(s: &CStr) -> Result<OwnedOptionName, OptionMat
         candidate_count += 1;
     }
 
-    let mut aliases: [(&[u8], &[u8]); 8] = [(&[], &[]); 8];
-    let mut alias_count = 0usize;
-    let mut map = &raw const options_other_names as *const options_name_map;
-    while alias_count < aliases.len() && !(*map).from.to_bytes().is_empty() {
-        aliases[alias_count] = ((*map).from.to_bytes(), (*map).to.to_bytes());
-        alias_count += 1;
-        map = map.offset(1);
-    }
-
-    match match_option_name(
-        s.to_bytes(),
-        &aliases[..alias_count],
-        &candidates[..candidate_count],
-    ) {
+    match match_option_name(parsed.name.to_bytes(), &candidates[..candidate_count]) {
         Ok(OptionNameMatch::User) => Ok(parsed),
         Ok(OptionNameMatch::BuiltIn(index)) => {
             parsed.name = CString::new(candidates[index]).expect("option name has no NUL");
             Ok(parsed)
         }
         Err(OptionNameMatchError::Ambiguous) => Err(OptionMatchFailure::Ambiguous),
-        Err(OptionNameMatchError::Invalid(_) | OptionNameMatchError::NotFound) => {
-            Err(OptionMatchFailure::Invalid)
-        }
+        Err(OptionNameMatchError::NotFound) => Err(OptionMatchFailure::Invalid),
     }
 }
 /// Copy an initialized string; no pointer into an inherited model escapes.
