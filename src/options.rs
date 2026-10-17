@@ -45,7 +45,7 @@ use std::ffi::{CStr, CString};
 
 mod mutation;
 mod scope;
-pub use scope::OptionsScope;
+pub use scope::{OptionsBorrow, OptionsScope};
 
 macro_rules! store_options_cause {
     ($cause:expr, $message:expr) => {{
@@ -236,7 +236,7 @@ pub unsafe fn options_read_entry<R>(
     }
     let parent = table.parent.as_ref()?;
     let source = parent.resolve(name, false)?;
-    source.entry(name).map(|entry| read(entry))
+    source.entry(name).as_deref_mut().map(|entry| read(entry))
 }
 pub fn options_empty<'a>(
     oo: &'a mut options,

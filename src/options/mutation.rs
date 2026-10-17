@@ -45,7 +45,7 @@ impl OptionsScope {
                 return Err(c"bad option name".to_owned());
             }
             let value = value.ok_or_else(|| c"empty value".to_owned())?;
-            options_set_string(self.local(), name, append as i32, |out| {
+            options_set_string(&mut self.local(), name, append as i32, |out| {
                 write_cstr(out, &*value)
             });
             return Ok(());
@@ -54,7 +54,7 @@ impl OptionsScope {
         if definition.type_0 != OPTIONS_TABLE_COMMAND {
             let mut cause = None;
             let result = options_from_string(
-                self.local(),
+                &mut self.local(),
                 definition,
                 name,
                 value,
@@ -73,6 +73,7 @@ impl OptionsScope {
             self.reset_default_with_parser(definition, parse);
         }
         self.entry(name)
+            .as_deref_mut()
             .map(|entry| {
                 entry.value = options_value::Command(OptionCommand(commands));
             })
@@ -85,13 +86,13 @@ impl OptionsScope {
         assert!(definition.flags & OPTIONS_TABLE_IS_ARRAY != 0);
         let name = definition.name.expect("named array definition");
         if self.entry(name).is_none() {
-            options_empty(self.local(), definition);
+            options_empty(&mut self.local(), definition);
         }
     }
 
     pub unsafe fn clear_array(&self, name: &CStr) {
-        if let Some(entry) = self.entry(name) {
-            options_array_clear(entry);
+        if let Some(mut entry) = self.entry(name) {
+            options_array_clear(&mut entry);
         }
     }
 
@@ -117,6 +118,7 @@ impl OptionsScope {
     ) -> Result<(), CString> {
         let (identity, definition) = self
             .entry(name)
+            .as_deref_mut()
             .map(|entry| (entry.id(), entry.tableentry))
             .expect("local array option");
         let Some(definition) =
@@ -130,6 +132,7 @@ impl OptionsScope {
         if let Some(value) = value.filter(|_| definition.type_0 == OPTIONS_TABLE_COMMAND) {
             let commands = parse_commands(value, parse)?;
             self.entry(name)
+                .as_deref_mut()
                 .map(|entry| {
                     assert_eq!(entry.id(), identity, "array option replaced while parsing");
                     let ov = match options_array_get_mut(entry, &key) {
@@ -147,6 +150,7 @@ impl OptionsScope {
         let mut cause = None;
         let result = self
             .entry(name)
+            .as_deref_mut()
             .map(|entry| {
                 assert_eq!(entry.id(), identity, "array option identity");
                 options_array_set(entry, &key, value, append as i32, &mut cause)
@@ -173,6 +177,7 @@ impl OptionsScope {
     ) -> Result<(), CString> {
         let (identity, separator) = self
             .entry(name)
+            .as_deref_mut()
             .map(|entry| {
                 (
                     entry.id(),
@@ -200,6 +205,7 @@ impl OptionsScope {
         for value in values {
             let index = self
                 .entry(name)
+                .as_deref_mut()
                 .map(|entry| {
                     assert_eq!(
                         entry.id(),
@@ -229,7 +235,11 @@ impl OptionsScope {
         name: &CStr,
         key: Option<&CStr>,
     ) -> Result<bool, CString> {
-        let Some(definition) = self.entry(name).map(|entry| entry.tableentry) else {
+        let Some(definition) = self
+            .entry(name)
+            .as_deref_mut()
+            .map(|entry| entry.tableentry)
+        else {
             return Ok(false);
         };
         if let Some(key) = key {
@@ -253,7 +263,7 @@ impl OptionsScope {
         name: &CStr,
         cleanup: impl FnOnce(Option<Box<crate::src::hooks::hooks_monitor>>),
     ) -> bool {
-        let Some((identity, monitor)) = self.entry(name).map(|entry| {
+        let Some((identity, monitor)) = self.entry(name).as_deref_mut().map(|entry| {
             options_array_clear(entry);
             options_value_free(&mut entry.value);
             (entry.id(), entry.monitor_data.take())
@@ -261,7 +271,7 @@ impl OptionsScope {
             return false;
         };
         cleanup(monitor);
-        let removed = match options_local_entry(self.local(), name) {
+        let removed = match options_local_entry(&mut self.local(), name) {
             btree_map::Entry::Occupied(entry) if entry.get().id() == identity => {
                 Some(entry.remove())
             }
@@ -278,7 +288,7 @@ impl OptionsScope {
     ) {
         let name = definition.name.expect("named option definition");
         while self.remove_entry(name) {}
-        let identity = options_empty(self.local(), definition).id();
+        let identity = options_empty(&mut self.local(), definition).id();
         if definition.flags & OPTIONS_TABLE_IS_ARRAY != 0 {
             if let Some(values) = definition.default_arr {
                 for (index, value) in values.iter().enumerate() {
@@ -308,6 +318,7 @@ impl OptionsScope {
             _ => options_value::Number(definition.default_num),
         };
         self.entry(name)
+            .as_deref_mut()
             .map(|entry| {
                 assert_eq!(
                     entry.id(),

@@ -406,6 +406,7 @@ unsafe fn cmd_set_option_exec(
     if args_has(args, b'u') == 0 && args_has(args, b'o') != 0 {
         let already = selected
             .entry(name)
+            .as_deref_mut()
             .map(|entry| array_key.is_none_or(|key| options_array_get(entry, key).is_some()))
             .unwrap_or(false);
         if already {

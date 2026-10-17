@@ -175,6 +175,7 @@ unsafe fn hooks_insert(
     };
     source
         .entry(name)
+        .as_deref_mut()
         .map(|entry| options_hook_fired(entry))
         .expect("resolved hook");
     let mut event = item_handle.map(|item| cmdq_get_event(&*item.get()));
@@ -187,6 +188,7 @@ unsafe fn hooks_insert(
     if name.to_bytes().starts_with(b"@") {
         let value = source
             .entry(name)
+            .as_deref_mut()
             .map(|entry| entry.value.string_ptr().expect("hook string").to_owned())
             .expect("resolved hook");
         let pr = hooks_parse(hd, &fs, &value);
@@ -204,6 +206,7 @@ unsafe fn hooks_insert(
     } else {
         let keys = source
             .entry(name)
+            .as_deref_mut()
             .map(|entry| {
                 crate::src::options::options_array_iter(entry)
                     .map(|item| item.key.clone())
@@ -214,6 +217,7 @@ unsafe fn hooks_insert(
             if (*hd).expand != 0 {
                 let value = source
                     .entry(name)
+                    .as_deref_mut()
                     .and_then(|entry| crate::src::options::options_array_get(entry, &key))
                     .map(|value| value.string_ptr().expect("expanded hook string").to_owned());
                 let Some(value) = value else {
@@ -241,6 +245,7 @@ unsafe fn hooks_insert(
             } else {
                 let commands = source
                     .entry(name)
+                    .as_deref_mut()
                     .and_then(|entry| crate::src::options::options_array_get(entry, &key))
                     .map(|value| value.commands().cloned());
                 let Some(commands) = commands else {
@@ -386,6 +391,7 @@ impl Drop for hooks_monitor {
 pub unsafe fn hooks_monitor_remove(scope: &OptionsScope, name: &CStr) {
     let old = scope
         .entry(name)
+        .as_deref_mut()
         .and_then(|entry| entry.monitor_data.take());
     drop(old);
 }
@@ -400,7 +406,7 @@ unsafe fn hooks_monitor_hook_cb(
     {
         return;
     }
-    if scope.entry(name).map(|entry| {
+    if scope.entry(name).as_deref_mut().map(|entry| {
         entry
             .monitor_data
             .as_ref()
@@ -519,7 +525,7 @@ pub unsafe fn hooks_monitor_add(
     static NEXT_MONITOR: AtomicUsize = AtomicUsize::new(1);
     hooks_monitor_remove(scope, name);
     if scope.entry(name).is_none() {
-        options_set_string(scope.local(), name, 0, |out| out.write_all(b""));
+        options_set_string(&mut scope.local(), name, 0, |out| out.write_all(b""));
     }
     let generation = NEXT_MONITOR
         .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
@@ -546,11 +552,13 @@ pub unsafe fn hooks_monitor_add(
     );
     let previous = scope
         .entry(name)
+        .as_deref_mut()
         .map(|entry| entry.monitor_data.replace(owner))
         .expect("monitor option");
     drop(previous);
     let set = scope
         .entry(name)
+        .as_deref_mut()
         .map(|entry| {
             entry
                 .monitor_data
