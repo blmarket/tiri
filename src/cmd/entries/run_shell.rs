@@ -7,9 +7,9 @@ use crate::src::cmd::queue::{
     cmdq_append, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_target_client,
     cmdq_insert_after, cmdq_resumed, cmdq_suspend,
 };
+use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
-use crate::src::format::bytes::xformat;
 use crate::src::format::{
     format_add, format_create_from_target, format_expand_cstring, format_single_from_target_cstring,
 };
@@ -167,7 +167,6 @@ unsafe fn cmd_run_shell_exec(
     let mut d: ::core::ffi::c_double = 0.;
     let mut tv = Duration::ZERO;
     let mut end: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut key: [u8; 16] = [0; 16];
     let mut i: u_int = 0;
     let mut wait: ::core::ffi::c_int =
         (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
@@ -208,20 +207,16 @@ unsafe fn cmd_run_shell_exec(
             ft = &raw mut *ft_owner;
             i = 1 as u_int;
             while i < args_count(args) {
-                xformat(&mut key, format_args!("{}", i as u32));
-                format_add(
-                    ft,
-                    CStr::from_bytes_until_nul(&key).expect("xformat output is terminated"),
-                    |out| {
-                        write_cstr(
-                            out,
-                            nullable_cstr(
-                                args_string(&mut *(args), i)
-                                    .map_or(std::ptr::null(), |value| value.as_ptr()),
-                            ),
-                        )
-                    },
-                );
+                let key = format_message_with(|out| write!(out, "{}", i));
+                format_add(ft, &key, |out| {
+                    write_cstr(
+                        out,
+                        nullable_cstr(
+                            args_string(&mut *(args), i)
+                                .map_or(std::ptr::null(), |value| value.as_ptr()),
+                        ),
+                    )
+                });
                 i = i.wrapping_add(1);
             }
             cdata.cmd = Some(format_expand_cstring(ft, cmd));

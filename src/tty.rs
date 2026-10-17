@@ -23,7 +23,7 @@ mod output;
 pub use output::*;
 
 use crate::src::ffi::resolv::b64_ntop;
-use crate::src::format::bytes::{format_cstring, xformat};
+use crate::src::format::bytes::{format_cstring, format_message_with};
 use crate::src::grid::{grid_cells_equal, grid_default_cell};
 use crate::src::hyperlinks::hyperlinks_get;
 use crate::src::log::{fatalx, log_cstr, log_cstr_n, log_debug, log_get_level};
@@ -114,18 +114,10 @@ static mut tty_default_style_ctx: tty_style_ctx = {
     }
 };
 pub unsafe fn tty_create_log() {
-    let mut name: [u8; 64] = [0; 64];
-    xformat(
-        &mut name,
-        format_args!("tmux-out-{}.log", getpid() as ::core::ffi::c_long),
-    );
+    let name = format_message_with(|out| write!(out, "tmux-out-{}.log", getpid()));
     use tiri_rt::Runtime as _;
     tty_log = (|| -> std::io::Result<_> {
-        let file = tiri_rt::unix::open(
-            CStr::from_bytes_until_nul(&name).expect("xformat output is terminated"),
-            O_WRONLY | O_CREAT | O_TRUNC,
-            0o644,
-        )?;
+        let file = tiri_rt::unix::open(&name, O_WRONLY | O_CREAT | O_TRUNC, 0o644)?;
         let runtime = tiri_rt::mio::Runtime::new()?;
         let source = runtime.enter(|| tiri_rt::mio::Io::new(file))?;
         Ok((runtime, source))
@@ -1384,7 +1376,6 @@ unsafe fn tty_clear_area(
     }
     let defaults = &ctx.style_ctx.defaults;
     let complete = (|tty: &ClientRef| {
-        let mut tmp: [u8; 64] = [0; 64];
         if !tty.clips_terminal_output() && tty_fake_bce(tty.borrow_terminal(), defaults, bg) == 0 {
             if px == 0 as u_int
                 && px.wrapping_add(nx) >= terminal_value!(tty, sx)
@@ -1398,21 +1389,17 @@ unsafe fn tty_clear_area(
             if terminal_term(tty).flags & TERM_DECFRA != 0
                 && !(bg == 8 as u_int || bg == 9 as u_int)
             {
-                xformat(
-                    &mut tmp,
-                    format_args!(
+                let sequence = format_message_with(|out| {
+                    write!(
+                        out,
                         "\x1B[32;{};{};{};{}$x",
                         { py.wrapping_add(1 as u_int) },
                         { px.wrapping_add(1 as u_int) },
                         { py.wrapping_add(ny) },
                         { px.wrapping_add(nx) }
-                    ),
-                );
-                tty_puts(
-                    tty,
-                    std::ffi::CStr::from_bytes_until_nul(&tmp)
-                        .expect("xformat output is terminated"),
-                );
+                    )
+                });
+                tty_puts(tty, &sequence);
                 return true;
             }
             if px == 0 as u_int

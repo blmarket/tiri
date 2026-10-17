@@ -1,7 +1,7 @@
 use crate::src::compat::stdio::CFile;
 use crate::src::environ::environ_create;
 use crate::src::ffi::libc::__errno_location;
-use crate::src::format::bytes::xformat;
+use crate::src::format::bytes::format_message_with;
 use crate::src::log::{log_cstr, log_debug, log_hex};
 use crate::src::names::default_window_name_cstring;
 use crate::src::options::options_get_string;
@@ -69,38 +69,23 @@ pub(crate) unsafe fn spawn_log(from: &CStr, mut sc: *mut spawn_context) {
     let mut wl: refbox::Weak<winlink> = (*sc).winlink_handle();
     let wp0_owner = (*sc).wp0.upgrade();
     let name = (*sc).name.as_deref().unwrap_or(c"none");
-    let mut tmp: [u8; 128] = [0; 128];
     log_debug(format_args!(
         "{}: name={}, flags={}",
         log_cstr(from),
         log_cstr(name),
         log_hex((((*sc).flags) as u32) as u64)
     ));
-    match (wl.is_alive(), wp0_owner.as_ref()) {
-        (true, Some(wp0)) => {
-            xformat(
-                &mut tmp,
-                format_args!("wl={} wp0=%{}", { wl.get_unchecked().idx }, wp0.id()),
-            );
-        }
-        (true, None) => {
-            xformat(
-                &mut tmp,
-                format_args!("wl={} wp0=none", { wl.get_unchecked().idx }),
-            );
-        }
-        (false, Some(wp0)) => {
-            xformat(&mut tmp, format_args!("wl=none wp0=%{}", wp0.id()));
-        }
-        (false, None) => {
-            xformat(&mut tmp, format_args!("wl=none wp0=none"));
-        }
-    }
+    let tmp = format_message_with(|out| match (wl.is_alive(), wp0_owner.as_ref()) {
+        (true, Some(wp0)) => write!(out, "wl={} wp0=%{}", { wl.get_unchecked().idx }, wp0.id()),
+        (true, None) => write!(out, "wl={} wp0=none", { wl.get_unchecked().idx }),
+        (false, Some(wp0)) => write!(out, "wl=none wp0=%{}", wp0.id()),
+        (false, None) => out.write_all(b"wl=none wp0=none"),
+    });
     log_debug(format_args!(
         "{}: s=${} {} idx={}",
         log_cstr(from),
         session_owner.id(),
-        log_cstr(CStr::from_bytes_until_nul(&tmp).expect("xformat output is terminated")),
+        log_cstr(&tmp),
         { (*sc).idx }
     ));
 }

@@ -4,7 +4,7 @@ use crate::src::compat::vis::strnvis;
 use crate::src::ffi::ncurses::{
     cur_term, del_curterm, setupterm, tigetflag, tigetnum, tigetstr, tiparm_s,
 };
-use crate::src::format::bytes::{format_message_with, xformat};
+use crate::src::format::bytes::format_message_with;
 use crate::src::log::{fatalx, log_cstr, log_debug};
 use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
@@ -1503,7 +1503,7 @@ pub(crate) unsafe fn tty_term_read_list(name: &CStr) -> Result<Vec<CString>, CSt
     let mut n: ::core::ffi::c_int = 0;
     let mut i: u_int = 0;
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut tmp: [u8; 11] = [0; 11];
+    let mut number = CString::default();
     let mut caps = Vec::new();
     if setupterm(name.as_ptr().cast_mut(), fd, &raw mut error) != OK {
         let (message, with_name): (&[u8], bool) = match error {
@@ -1542,8 +1542,8 @@ pub(crate) unsafe fn tty_term_read_list(name: &CStr) -> Result<Vec<CString>, CSt
                 if n == -(1 as ::core::ffi::c_int) || n == -(2 as ::core::ffi::c_int) {
                     current_block_23 = 1856101646708284338;
                 } else {
-                    xformat(&mut tmp, format_args!("{}", n as i32));
-                    s = &raw mut tmp as *mut ::core::ffi::c_char;
+                    number = format_message_with(|out| write!(out, "{}", n));
+                    s = number.as_ptr();
                     current_block_23 = 14763689060501151050;
                 }
             }

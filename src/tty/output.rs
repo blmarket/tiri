@@ -1175,7 +1175,6 @@ pub(super) unsafe fn tty_check_us(
 }
 
 pub(super) unsafe fn tty_colours_fg(client: &ClientRef, gc: &grid_cell) {
-    let mut s: [u8; 32] = [0; 32];
     if terminal_value!(client, cell.fg) >= 90 as ::core::ffi::c_int
         && terminal_value!(client, cell.fg) <= 97 as ::core::ffi::c_int
         && (gc.fg < 90 as ::core::ffi::c_int || gc.fg > 97 as ::core::ffi::c_int)
@@ -1188,11 +1187,8 @@ pub(super) unsafe fn tty_colours_fg(client: &ClientRef, gc: &grid_cell) {
         }
     } else if gc.fg >= 90 as ::core::ffi::c_int && gc.fg <= 97 as ::core::ffi::c_int {
         if terminal_term(client).flags & TERM_256COLOURS != 0 {
-            xformat(&mut s, format_args!("\x1B[{}m", { gc.fg }));
-            tty_puts(
-                client,
-                std::ffi::CStr::from_bytes_until_nul(&s).expect("xformat output is terminated"),
-            );
+            let s = format_message_with(|out| write!(out, "\x1B[{}m", { gc.fg }));
+            tty_puts(client, &s);
         } else {
             tty_putcode_i(
                 client,
@@ -1207,21 +1203,16 @@ pub(super) unsafe fn tty_colours_fg(client: &ClientRef, gc: &grid_cell) {
 }
 
 pub(super) unsafe fn tty_colours_bg(client: &ClientRef, gc: &grid_cell) {
-    let mut s: [u8; 32] = [0; 32];
     if gc.bg & COLOUR_FLAG_RGB != 0 || gc.bg & COLOUR_FLAG_256 != 0 {
         if !(tty_try_colour(client, gc.bg, false) == 0 as ::core::ffi::c_int) {
             return;
         }
     } else if gc.bg >= 90 as ::core::ffi::c_int && gc.bg <= 97 as ::core::ffi::c_int {
         if terminal_term(client).flags & TERM_256COLOURS != 0 {
-            xformat(
-                &mut s,
-                format_args!("\x1B[{}m", { gc.bg + 10 as ::core::ffi::c_int }),
-            );
-            tty_puts(
-                client,
-                std::ffi::CStr::from_bytes_until_nul(&s).expect("xformat output is terminated"),
-            );
+            let s = format_message_with(|out| {
+                write!(out, "\x1B[{}m", { gc.bg + 10 as ::core::ffi::c_int })
+            });
+            tty_puts(client, &s);
         } else {
             tty_putcode_i(
                 client,

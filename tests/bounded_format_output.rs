@@ -43,16 +43,11 @@ fn sgr_mouse_output_counts_the_final_character_as_one_byte() {
             sgr_b: 4,
             ..Default::default()
         };
-        let mut buf = [0; 40];
         unsafe {
-            let len = input_key_get_mouse(&mut screen, &mouse, 9, 19, &mut buf).unwrap();
+            let buf = input_key_get_mouse(&mut screen, &mouse, 9, 19).unwrap();
             let mut expected = b"\x1b[<4;10;20".to_vec();
             expected.push(byte);
-            assert_eq!(
-                std::slice::from_raw_parts(buf.as_ptr().cast::<u8>(), len),
-                expected
-            );
-            assert_eq!(buf[len], 0);
+            assert_eq!(buf, expected);
         }
     }
 }

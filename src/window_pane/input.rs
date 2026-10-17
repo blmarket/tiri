@@ -13,10 +13,10 @@ use crate::src::events_payload::{
 };
 use crate::src::ffi::libc::strsep;
 use crate::src::ffi::resolv::{b64_ntop, b64_pton};
+use crate::src::format::bytes::format_bytes;
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
-use crate::src::format::bytes::xformat;
 use crate::src::grid::{
     grid_cells_look_equal, grid_default_cell, grid_get_cell, grid_get_line_mut, grid_set_tab,
 };
@@ -5645,7 +5645,6 @@ unsafe fn input_add_request(
     let mut c: Option<ClientRef> = None;
     let mut loop_0: Option<ClientRef> = None;
     let mut ir: *mut input_request = ::core::ptr::null_mut::<input_request>();
-    let mut s: [u8; 64] = [0; 64];
     if wp.is_null() {
         return -(1 as ::core::ffi::c_int);
     }
@@ -5701,12 +5700,9 @@ unsafe fn input_add_request(
         .observe_input_request(&mut *ir);
     match type_0 as ::core::ffi::c_uint {
         0 => {
-            xformat(&mut s, format_args!("\x1B]4;{};?\x1B\\", { idx }));
-            c.as_ref().expect("live client").write_terminal(
-                std::ffi::CStr::from_bytes_until_nul(&s)
-                    .expect("xformat output is terminated")
-                    .to_bytes(),
-            );
+            c.as_ref()
+                .expect("live client")
+                .write_terminal(&format_bytes(format_args!("\x1B]4;{};?\x1B\\", { idx })));
         }
         1 => {
             let client = c.as_ref().expect("live client");

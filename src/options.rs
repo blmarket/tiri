@@ -7,7 +7,6 @@ use crate::src::ffi::libc::strsep;
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
-use crate::src::format::bytes::xformat;
 use crate::src::grid::grid_default_cell;
 use crate::src::input::input_set_buffer_size;
 use crate::src::key_string::{key_string_format, key_string_parse_cstr};
@@ -250,7 +249,6 @@ pub unsafe fn options_default<'a>(
     oo: &'a mut options,
     oe: &'static options_table_entry,
 ) -> &'a mut options_entry {
-    let mut key: [u8; 32] = [0; 32];
     let mut pr: cmd_parse_result = cmd_parse_result::empty();
     let o = options_empty(oo, oe);
     if oe.flags & OPTIONS_TABLE_IS_ARRAY != 0 {
@@ -260,14 +258,8 @@ pub unsafe fn options_default<'a>(
             return o;
         }
         for (i, value) in oe.default_arr.expect("array defaults").iter().enumerate() {
-            xformat(&mut key, format_args!("{}", i as u32));
-            options_array_set(
-                o,
-                CStr::from_ptr(&raw mut key as *mut ::core::ffi::c_char),
-                Some(*value),
-                false,
-            )
-            .expect("valid array option default");
+            let key = format_message_with(|out| write!(out, "{}", i as u32));
+            options_array_set(o, &key, Some(*value), false).expect("valid array option default");
         }
         return o;
     }
@@ -493,7 +485,6 @@ pub unsafe fn options_array_assign(o: &mut options_entry, s: &CStr) -> Result<()
     let s: *const ::core::ffi::c_char = s.as_ptr();
     let mut separator: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut key: [u8; 32] = [0; 32];
     let mut i: u_int = 0;
     separator = o
         .tableentry
@@ -517,13 +508,8 @@ pub unsafe fn options_array_assign(o: &mut options_entry, s: &CStr) -> Result<()
             }
             i = i.wrapping_add(1);
         }
-        xformat(&mut key, format_args!("{}", i as u32));
-        return options_array_set(
-            o,
-            CStr::from_ptr(&raw mut key as *mut ::core::ffi::c_char),
-            nullable_cstr(s),
-            false,
-        );
+        let key = format_message_with(|out| write!(out, "{}", i));
+        return options_array_set(o, &key, nullable_cstr(s), false);
     }
     if *s as ::core::ffi::c_int == '\0' as i32 {
         return Ok(());
@@ -551,13 +537,8 @@ pub unsafe fn options_array_assign(o: &mut options_entry, s: &CStr) -> Result<()
         if i == UINT_MAX {
             break;
         }
-        xformat(&mut key, format_args!("{}", i as u32));
-        options_array_set(
-            o,
-            CStr::from_ptr(&raw mut key as *mut ::core::ffi::c_char),
-            nullable_cstr(next),
-            false,
-        )?;
+        let key = format_message_with(|out| write!(out, "{}", i));
+        options_array_set(o, &key, nullable_cstr(next), false)?;
     }
     Ok(())
 }

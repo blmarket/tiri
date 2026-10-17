@@ -1,6 +1,6 @@
+use crate::src::format::bytes::format_bytes;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
-use crate::src::format::bytes::xformat;
 use crate::src::options::OptionsScope;
 use crate::src::session::Session;
 use crate::src::shared::client::ClientRef;
@@ -661,7 +661,6 @@ unsafe fn window_customize_draw_waiting(mode_owner: &Rc<UnsafeCell<window_custom
         us: 0,
         link: 0,
     };
-    let mut text: [u8; 128] = [0; 128];
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     let mut box_w: u_int = 0;
@@ -680,15 +679,12 @@ unsafe fn window_customize_draw_waiting(mode_owner: &Rc<UnsafeCell<window_custom
         return;
     }
     pid = editor.pid();
-    if pid == -(1 as ::core::ffi::c_int) {
-        xformat(&mut text, format_args!("WAITING FOR EDITOR"));
+    let text = if pid == -(1 as ::core::ffi::c_int) {
+        b"WAITING FOR EDITOR".to_vec()
     } else {
-        xformat(
-            &mut text,
-            format_args!("WAITING FOR EDITOR (PID {})", pid as ::core::ffi::c_long),
-        );
-    }
-    textlen = strlen(&raw mut text as *mut ::core::ffi::c_char);
+        format_bytes(format_args!("WAITING FOR EDITOR (PID {})", pid))
+    };
+    textlen = text.len();
     box_w = textlen.wrapping_add(4 as size_t) as u_int;
     box_h = 3 as u_int;
     if sx < box_w || sy < box_h {
@@ -727,7 +723,7 @@ unsafe fn window_customize_draw_waiting(mode_owner: &Rc<UnsafeCell<window_custom
         &mut ctx,
         box_w.wrapping_sub(2 as u_int) as ssize_t,
         &gc,
-        |out| write_cstr(out, CStr::from_ptr(text.as_ptr().cast())),
+        |out| out.write_all(&text),
     );
     screen_write_stop(&mut ctx);
 }
@@ -1799,7 +1795,6 @@ unsafe fn window_customize_draw_option(
     let mut unit: *const ::core::ffi::c_char = c"".as_ptr();
     let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut value_owner: Option<CString> = None;
-    let mut label: [u8; 64] = [0; 64];
     let mut default_value: Option<CString> = None;
     let mut choices: [::core::ffi::c_char; 256] = ::core::mem::transmute::<
         [u8; 256],
@@ -2434,13 +2429,13 @@ write_cstr(out, nullable_cstr(unit))
                                                                                                         if let Some(parent_value) = parent_value {
                                                                                                             value_owner = Some(parent_value);
                                                                                                             value = value_owner.as_ref().unwrap().as_ptr().cast_mut();
-                                                                                                            xformat(&mut label, format_args!("Window value (from window {}): " , ((fs.winlink_handle()).get_unchecked().idx) as u32));
+                                                                                                            let label = format_message_with(|out| write!(out, "Window value (from window {}): ", (fs.winlink_handle()).get_unchecked().idx));
                                                                                                             if window_customize_write_value(ctx,
 (*s).cx,
 sx,
 sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
 0 as ::core::ffi::c_int,
-CStr::from_ptr(&raw mut label as *mut ::core::ffi::c_char),
+&label,
 |out| {
 write_cstr(out, nullable_cstr(value))?;
 write_cstr(out, nullable_cstr(space))?;

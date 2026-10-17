@@ -18,37 +18,32 @@ fn mouse_encodings_preserve_tmux_bytes_and_independent_results() {
             sgr_type: b'M' as u32,
             ..Default::default()
         };
-        let mut first = [0; 40];
-        let len = input_key_get_mouse(&mut screen, &mouse, 9, 19, &mut first).unwrap();
-        let first_bytes = std::slice::from_raw_parts(first.as_ptr().cast::<u8>(), len);
+        let first_bytes = input_key_get_mouse(&mut screen, &mouse, 9, 19).unwrap();
         assert_eq!(first_bytes, b"\x1b[<0;10;20M");
 
         mouse.sgr_type = b' ' as u32;
         mouse.b = 3;
-        let mut second = [0; 40];
-        let len = input_key_get_mouse(&mut screen, &mouse, 222, 1000, &mut second).unwrap();
         assert_eq!(
-            std::slice::from_raw_parts(second.as_ptr().cast::<u8>(), len),
+            input_key_get_mouse(&mut screen, &mouse, 222, 1000).unwrap(),
             b"\x1b[M#\xff\xff"
         );
         assert_eq!(first_bytes, b"\x1b[<0;10;20M");
 
         screen.mode |= MODE_MOUSE_UTF8;
-        let len = input_key_get_mouse(&mut screen, &mouse, 95, 2014, &mut second).unwrap();
         assert_eq!(
-            std::slice::from_raw_parts(second.as_ptr().cast::<u8>(), len),
+            input_key_get_mouse(&mut screen, &mouse, 95, 2014).unwrap(),
             b"\x1b[M#\xc2\x80\xdf\xbf"
         );
-        assert!(input_key_get_mouse(&mut screen, &mouse, 2015, 0, &mut second).is_none());
+        assert!(input_key_get_mouse(&mut screen, &mouse, 2015, 0).is_none());
 
         screen.mode = MODE_MOUSE_BUTTON;
         mouse.b = 35;
         mouse.lb = 3;
-        assert!(input_key_get_mouse(&mut screen, &mouse, 0, 0, &mut second).is_none());
+        assert!(input_key_get_mouse(&mut screen, &mouse, 0, 0).is_none());
         screen.mode = MODE_MOUSE_ALL;
-        assert!(input_key_get_mouse(&mut screen, &mouse, 0, 0, &mut second).is_some());
+        assert!(input_key_get_mouse(&mut screen, &mouse, 0, 0).is_some());
         screen.mode = 0;
-        assert!(input_key_get_mouse(&mut screen, &mouse, 0, 0, &mut second).is_none());
+        assert!(input_key_get_mouse(&mut screen, &mouse, 0, 0).is_none());
         assert_eq!(first_bytes, b"\x1b[<0;10;20M");
     }
 }

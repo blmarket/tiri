@@ -1,4 +1,4 @@
-use crate::src::format::bytes::{xformat, xformat_with};
+use crate::src::format::bytes::{format_bytes, format_message_with};
 use crate::src::key_string::key_string_format;
 use crate::src::log::{log_cstr, log_cstr_n, log_debug};
 use crate::src::options::options_get_number;
@@ -438,16 +438,13 @@ static input_key_modifiers: [key_code; 9] = [
     KEYC_META | KEYC_IMPLIED_META | KEYC_CTRL,
     KEYC_SHIFT | KEYC_META | KEYC_IMPLIED_META | KEYC_CTRL,
 ];
-unsafe fn input_key_split2(mut c: u_int, mut dst: *mut u_char) -> size_t {
+fn input_key_split2(c: u_int, dst: &mut Vec<u8>) {
     if c > 0x7f as u_int {
-        *dst.offset(0 as ::core::ffi::c_int as isize) =
-            (c >> 6 as ::core::ffi::c_int | 0xc0 as u_int) as u_char;
-        *dst.offset(1 as ::core::ffi::c_int as isize) =
-            (c & 0x3f as u_int | 0x80 as u_int) as u_char;
-        return 2 as size_t;
+        dst.push((c >> 6 as ::core::ffi::c_int | 0xc0 as u_int) as u_char);
+        dst.push((c & 0x3f as u_int | 0x80 as u_int) as u_char);
+    } else {
+        dst.push(c as u_char);
     }
-    *dst.offset(0 as ::core::ffi::c_int as isize) = c as u_char;
-    1 as size_t
 }
 pub unsafe fn input_key_build() {
     for entry in &input_key_defaults {
@@ -485,7 +482,6 @@ unsafe fn input_key_write(from: &CStr, bev: *mut bufferevent, data: &[u8]) {
     bufferevent_write(bev, data);
 }
 unsafe fn input_key_extended(mut bev: *mut bufferevent, mut key: key_code) -> ::core::ffi::c_int {
-    let mut tmp: [u8; 64] = [0; 64];
     let mut modifier: ::core::ffi::c_char = 0;
     let mut ud: utf8_data = utf8_data {
         data: [0; 32],
@@ -537,27 +533,22 @@ unsafe fn input_key_extended(mut bev: *mut bufferevent, mut key: key_code) -> ::
     } else {
         key &= KEYC_MASK_KEY;
     }
+    let tmp;
     if options_get_number(global_options(), c"extended-keys-format") == 1 as ::core::ffi::c_longlong
     {
-        xformat_with(&mut tmp, |out| {
+        tmp = format_message_with(|out| {
             out.write_all(b"\x1B[27;")?;
             out.write_all(&[modifier as u8])?;
             write!(out, ";{}~", key)
         });
     } else {
-        xformat_with(&mut tmp, |out| {
+        tmp = format_message_with(|out| {
             write!(out, "\x1B[{};", key)?;
             out.write_all(&[modifier as u8])?;
             out.write_all(b"u")
         });
     }
-    input_key_write(
-        c"input_key_extended",
-        bev,
-        CStr::from_bytes_until_nul(&tmp)
-            .expect("terminated sequence")
-            .to_bytes(),
-    );
+    input_key_write(c"input_key_extended", bev, tmp.to_bytes());
     0 as ::core::ffi::c_int
 }
 unsafe fn input_key_vt10x(mut bev: *mut bufferevent, mut key: key_code) -> ::core::ffi::c_int {
@@ -797,15 +788,12 @@ pub unsafe fn input_key(
         _ => input_key_vt10x(bev, key),
     }
 }
-/// Encode into caller-owned storage. Only the returned byte count is sent.
 pub unsafe fn input_key_get_mouse(
     mut s: *mut screen,
     m: &mouse_event,
     mut x: u_int,
     mut y: u_int,
-    buf: &mut [u8; 40],
-) -> Option<size_t> {
-    let mut len: size_t = 0;
+) -> Option<Vec<u8>> {
     if m.b & MOUSE_MASK_DRAG as u_int != 0
         && (*s).mode & MOTION_MOUSE_MODES == 0 as ::core::ffi::c_int
     {
@@ -828,17 +816,15 @@ pub unsafe fn input_key_get_mouse(
     {
         return None;
     }
+    let mut buf;
     if m.sgr_type != ' ' as i32 as u_int && (*s).mode & MODE_MOUSE_SGR != 0 {
-        len = xformat_with(buf, |out| {
-            write!(
-                out,
-                "\x1B[<{};{};{}",
-                { m.sgr_b },
-                { x.wrapping_add(1 as u_int) },
-                { y.wrapping_add(1 as u_int) }
-            )?;
-            out.write_all(&[(m.sgr_type) as u8])
-        }) as size_t;
+        buf = format_bytes(format_args!(
+            "\x1B[<{};{};{}",
+            { m.sgr_b },
+            { x.wrapping_add(1 as u_int) },
+            { y.wrapping_add(1 as u_int) }
+        ));
+        buf.push((m.sgr_type) as u8);
     } else if (*s).mode & MODE_MOUSE_UTF8 != 0 {
         if m.b > (MOUSE_PARAM_UTF8_MAX - MOUSE_PARAM_BTN_OFF) as u_int
             || x > (MOUSE_PARAM_UTF8_MAX - MOUSE_PARAM_POS_OFF) as u_int
@@ -846,47 +832,28 @@ pub unsafe fn input_key_get_mouse(
         {
             return None;
         }
-        len = xformat(buf, format_args!("\x1B[M")) as size_t;
-        len = len.wrapping_add(input_key_split2(
-            m.b.wrapping_add(MOUSE_PARAM_BTN_OFF as u_int),
-            buf.as_mut_ptr().add(len),
-        ));
-        len = len.wrapping_add(input_key_split2(
-            x.wrapping_add(MOUSE_PARAM_POS_OFF as u_int),
-            buf.as_mut_ptr().add(len),
-        ));
-        len = len.wrapping_add(input_key_split2(
-            y.wrapping_add(MOUSE_PARAM_POS_OFF as u_int),
-            buf.as_mut_ptr().add(len),
-        ));
+        buf = b"\x1B[M".to_vec();
+        input_key_split2(m.b.wrapping_add(MOUSE_PARAM_BTN_OFF as u_int), &mut buf);
+        input_key_split2(x.wrapping_add(MOUSE_PARAM_POS_OFF as u_int), &mut buf);
+        input_key_split2(y.wrapping_add(MOUSE_PARAM_POS_OFF as u_int), &mut buf);
     } else {
         if m.b.wrapping_add(MOUSE_PARAM_BTN_OFF as u_int) > MOUSE_PARAM_MAX as u_int {
             return None;
         }
-        len = xformat(buf, format_args!("\x1B[M")) as size_t;
-        let fresh0 = len;
-        len = len.wrapping_add(1);
-        buf[fresh0 as usize] = m.b.wrapping_add(MOUSE_PARAM_BTN_OFF as u_int) as u8;
+        buf = b"\x1B[M".to_vec();
+        buf.push(m.b.wrapping_add(MOUSE_PARAM_BTN_OFF as u_int) as u8);
         if x.wrapping_add(MOUSE_PARAM_POS_OFF as u_int) > MOUSE_PARAM_MAX as u_int {
-            let fresh1 = len;
-            len = len.wrapping_add(1);
-            buf[fresh1 as usize] = MOUSE_PARAM_MAX as u8;
+            buf.push(MOUSE_PARAM_MAX as u8);
         } else {
-            let fresh2 = len;
-            len = len.wrapping_add(1);
-            buf[fresh2 as usize] = x.wrapping_add(MOUSE_PARAM_POS_OFF as u_int) as u8;
+            buf.push(x.wrapping_add(MOUSE_PARAM_POS_OFF as u_int) as u8);
         }
         if y.wrapping_add(MOUSE_PARAM_POS_OFF as u_int) > MOUSE_PARAM_MAX as u_int {
-            let fresh3 = len;
-            len = len.wrapping_add(1);
-            buf[fresh3 as usize] = MOUSE_PARAM_MAX as u8;
+            buf.push(MOUSE_PARAM_MAX as u8);
         } else {
-            let fresh4 = len;
-            len = len.wrapping_add(1);
-            buf[fresh4 as usize] = y.wrapping_add(MOUSE_PARAM_POS_OFF as u_int) as u8;
+            buf.push(y.wrapping_add(MOUSE_PARAM_POS_OFF as u_int) as u8);
         }
     }
-    Some(len)
+    Some(buf)
 }
 
 #[cfg(test)]

@@ -16,7 +16,6 @@ use crate::src::file::file_error;
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
-use crate::src::format::bytes::{xformat, xformat_with};
 use crate::src::format::{
     format_add, format_add_cstr, format_create_owned, format_merge, format_owner_ptr,
 };
@@ -494,7 +493,6 @@ pub unsafe fn cmdq_insert_hook(
     let mut cmd: refbox::Weak<cmd> = (*item).command_handle();
     let mut args_0: *mut args =
         cmd_get_args_mut(cmd.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut tmp: [u8; 32] = [0; 32];
     let mut i: u_int = 0;
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if cmdq_get_state(&*item).expect("command queue state").flags & CMDQ_STATE_NOHOOKS != 0 {
@@ -516,54 +514,37 @@ pub unsafe fn cmdq_insert_hook(
     event_payload_set_string(&mut ep, c"arguments", |out| write_cstr(out, &*arguments));
     i = 0 as u_int;
     while i < args_count(args_0) {
-        xformat(&mut tmp, format_args!("argument_{}", i as u32));
-        event_payload_set_string(
-            &mut ep,
-            CStr::from_ptr(&raw mut tmp as *mut ::core::ffi::c_char),
-            |out| {
-                write_cstr(
-                    out,
-                    nullable_cstr(
-                        args_string(&mut *(args_0), i)
-                            .map_or(std::ptr::null(), |value| value.as_ptr()),
-                    ),
-                )
-            },
-        );
+        let key = format_message_with(|out| write!(out, "argument_{}", i));
+        event_payload_set_string(&mut ep, &key, |out| {
+            write_cstr(
+                out,
+                nullable_cstr(
+                    args_string(&mut *(args_0), i).map_or(std::ptr::null(), |value| value.as_ptr()),
+                ),
+            )
+        });
         i = i.wrapping_add(1);
     }
     for flag in args_flags(&*args_0) {
         value =
             args_get(&*(args_0), flag as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-        xformat_with(&mut tmp, |out| {
+        let key = format_message_with(|out| {
             out.write_all(b"flag_")?;
             out.write_all(&[flag])
         });
         if value.is_null() {
-            event_payload_set_string(
-                &mut ep,
-                CStr::from_ptr(&raw mut tmp as *mut ::core::ffi::c_char),
-                |out| out.write_all(b"1"),
-            );
+            event_payload_set_string(&mut ep, &key, |out| out.write_all(b"1"));
         } else {
-            event_payload_set_string(
-                &mut ep,
-                CStr::from_ptr(&raw mut tmp as *mut ::core::ffi::c_char),
-                |out| write_cstr(out, nullable_cstr(value)),
-            );
+            event_payload_set_string(&mut ep, &key, |out| write_cstr(out, nullable_cstr(value)));
         }
         i = 0 as u_int;
         for av in args_flag_values(&*args_0, flag as u_char) {
-            xformat_with(&mut tmp, |out| {
+            let key = format_message_with(|out| {
                 out.write_all(b"flag_")?;
                 out.write_all(&[flag])?;
                 write!(out, "_{}", i)
             });
-            event_payload_set_string(
-                &mut ep,
-                CStr::from_ptr(&raw mut tmp as *mut ::core::ffi::c_char),
-                |out| write_cstr(out, av.as_string()),
-            );
+            event_payload_set_string(&mut ep, &key, |out| write_cstr(out, av.as_string()));
             i = i.wrapping_add(1);
         }
     }

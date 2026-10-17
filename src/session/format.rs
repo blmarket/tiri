@@ -1,7 +1,6 @@
 //! Session-owned lazy formatting. Returned values own their bytes or timestamp.
 use super::*;
-use crate::src::ffi::libc::strlcat;
-use crate::src::format::bytes::xformat;
+use crate::src::format::bytes::format_bytes;
 use crate::src::format::FORMAT_TYPE_SESSION;
 use crate::src::format::{format_tree, FormatValue};
 use crate::src::server::server_check_marked;
@@ -11,6 +10,7 @@ use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::{WINLINK_ACTIVITY, WINLINK_BELL, WINLINK_SILENCE};
 use crate::src::window::winlink_count;
+use std::io::Write as _;
 
 pub(super) unsafe fn format_value(
     owner: &SessionRef,
@@ -119,43 +119,30 @@ unsafe fn format_cb_session_alert(mut ft: *mut format_tree) -> Option<CString> {
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s: *mut session = format_session;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut alerts: [::core::ffi::c_char; 1024] = [0; 1024];
+    let mut alerts = Vec::<u8>::new();
     let mut alerted: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if s.is_null() {
         return None;
     }
-    *(&raw mut alerts as *mut ::core::ffi::c_char) = '\0' as i32 as ::core::ffi::c_char;
     wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
     while wl.is_alive() {
         if !(wl.get_unchecked().flags & WINLINK_ALERTFLAGS == 0 as ::core::ffi::c_int) {
             if !alerted & wl.get_unchecked().flags & WINLINK_ACTIVITY != 0 {
-                strlcat(
-                    &raw mut alerts as *mut ::core::ffi::c_char,
-                    c"#".as_ptr(),
-                    ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
-                );
+                alerts.push(b'#');
                 alerted |= WINLINK_ACTIVITY;
             }
             if !alerted & wl.get_unchecked().flags & WINLINK_BELL != 0 {
-                strlcat(
-                    &raw mut alerts as *mut ::core::ffi::c_char,
-                    c"!".as_ptr(),
-                    ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
-                );
+                alerts.push(b'!');
                 alerted |= WINLINK_BELL;
             }
             if !alerted & wl.get_unchecked().flags & WINLINK_SILENCE != 0 {
-                strlcat(
-                    &raw mut alerts as *mut ::core::ffi::c_char,
-                    c"~".as_ptr(),
-                    ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
-                );
+                alerts.push(b'~');
                 alerted |= WINLINK_SILENCE;
             }
         }
         wl = winlinks_next(wl.get_unchecked());
     }
-    Some(CStr::from_ptr(&raw mut alerts as *mut ::core::ffi::c_char).to_owned())
+    Some(CString::new(alerts).expect("callback bytes contain no NUL"))
 }
 
 unsafe fn format_cb_session_alerts(mut ft: *mut format_tree) -> Option<CString> {
@@ -165,56 +152,30 @@ unsafe fn format_cb_session_alerts(mut ft: *mut format_tree) -> Option<CString> 
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s: *mut session = format_session;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut alerts: [::core::ffi::c_char; 1024] = [0; 1024];
-    let mut tmp: [u8; 16] = [0; 16];
+    let mut alerts = Vec::<u8>::new();
     if s.is_null() {
         return None;
     }
-    *(&raw mut alerts as *mut ::core::ffi::c_char) = '\0' as i32 as ::core::ffi::c_char;
     wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
     while wl.is_alive() {
         if !(wl.get_unchecked().flags & WINLINK_ALERTFLAGS == 0 as ::core::ffi::c_int) {
-            xformat(
-                &mut tmp,
-                format_args!("{}", (wl.get_unchecked().idx) as u32),
-            );
-            if *(&raw mut alerts as *mut ::core::ffi::c_char) as ::core::ffi::c_int != '\0' as i32 {
-                strlcat(
-                    &raw mut alerts as *mut ::core::ffi::c_char,
-                    c",".as_ptr(),
-                    ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
-                );
+            if !alerts.is_empty() {
+                alerts.push(b',');
             }
-            strlcat(
-                &raw mut alerts as *mut ::core::ffi::c_char,
-                &raw mut tmp as *mut ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
-            );
+            write!(alerts, "{}", (wl.get_unchecked().idx) as u32).expect("write to Vec");
             if wl.get_unchecked().flags & WINLINK_ACTIVITY != 0 {
-                strlcat(
-                    &raw mut alerts as *mut ::core::ffi::c_char,
-                    c"#".as_ptr(),
-                    ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
-                );
+                alerts.push(b'#');
             }
             if wl.get_unchecked().flags & WINLINK_BELL != 0 {
-                strlcat(
-                    &raw mut alerts as *mut ::core::ffi::c_char,
-                    c"!".as_ptr(),
-                    ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
-                );
+                alerts.push(b'!');
             }
             if wl.get_unchecked().flags & WINLINK_SILENCE != 0 {
-                strlcat(
-                    &raw mut alerts as *mut ::core::ffi::c_char,
-                    c"~".as_ptr(),
-                    ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
-                );
+                alerts.push(b'~');
             }
         }
         wl = winlinks_next(wl.get_unchecked());
     }
-    Some(CStr::from_ptr(&raw mut alerts as *mut ::core::ffi::c_char).to_owned())
+    Some(CString::new(alerts).expect("callback bytes contain no NUL"))
 }
 
 unsafe fn format_cb_session_stack(mut ft: *mut format_tree) -> Option<CString> {
@@ -224,40 +185,19 @@ unsafe fn format_cb_session_stack(mut ft: *mut format_tree) -> Option<CString> {
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s: *mut session = format_session;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut result: [u8; 1024] = [0; 1024];
-    let mut tmp: [u8; 16] = [0; 16];
     if s.is_null() {
         return None;
     }
-    xformat(
-        &mut result,
-        format_args!("{}", (((*s).current_winlink()).get_unchecked().idx) as u32),
-    );
+    let mut result = format_bytes(format_args!(
+        "{}",
+        (((*s).current_winlink()).get_unchecked().idx) as u32
+    ));
     wl = crate::src::window::winlink_stack_first(&(*s).lastw);
     while wl.is_alive() {
-        xformat(
-            &mut tmp,
-            format_args!("{}", (wl.get_unchecked().idx) as u32),
-        );
-        if *(&raw mut result as *mut ::core::ffi::c_char) as ::core::ffi::c_int != '\0' as i32 {
-            strlcat(
-                &raw mut result as *mut ::core::ffi::c_char,
-                c",".as_ptr(),
-                ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
-            );
-        }
-        strlcat(
-            &raw mut result as *mut ::core::ffi::c_char,
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
-        );
+        write!(result, ",{}", (wl.get_unchecked().idx) as u32).expect("write to Vec");
         wl = crate::src::window::winlink_stack_next(&(*s).lastw, wl.clone());
     }
-    Some(
-        CStr::from_bytes_until_nul(&result)
-            .expect("stack list is terminated")
-            .to_owned(),
-    )
+    Some(CString::new(result).expect("callback bytes contain no NUL"))
 }
 
 unsafe fn format_cb_session_group_list(mut ft: *mut format_tree) -> Option<CString> {

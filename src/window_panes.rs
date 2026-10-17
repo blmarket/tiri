@@ -5,8 +5,8 @@ use crate::src::cmd::cmd_mouse_at;
 use crate::src::cmd::queue::{
     cmdq_append, cmdq_error, cmdq_get_cmd, cmdq_get_command, cmdq_get_error,
 };
+use crate::src::format::bytes::format_bytes;
 use crate::src::format::bytes::write_cstr;
-use crate::src::format::bytes::{xformat, xformat_with};
 use crate::src::format::{format_create_defaults, format_single_cstring};
 use crate::src::format_draw::format_draw;
 use crate::src::grid::grid_default_cell;
@@ -506,9 +506,6 @@ unsafe fn window_panes_draw_number(
     };
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut buf: [u8; 16] = [0; 16];
-    let mut lbuf: [u8; 16] = [0; 16];
-    let mut ptr: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut len: size_t = 0;
     let mut llen: size_t = 0 as size_t;
     let mut width: size_t = 0;
@@ -520,14 +517,13 @@ unsafe fn window_panes_draw_number(
     let mut i: u_int = 0;
     let mut j: u_int = 0;
     let mut format: u_int = 0;
-    len = xformat(&mut buf, format_args!("{}", { pane })) as size_t;
+    let buf = format_bytes(format_args!("{}", pane));
+    len = buf.len();
+    let mut lbuf = Vec::new();
     if pane > 9 as u_int && pane < 35 as u_int {
-        llen = xformat_with(&mut lbuf, |out| {
-            out.write_all(&[
-                (('a' as i32 as u_int).wrapping_add(pane.wrapping_sub(10 as u_int))) as u8,
-            ])
-        }) as size_t;
+        lbuf.push(b'a' + (pane - 10) as u8);
     }
+    llen = lbuf.len();
     if (sx as size_t) < len {
         if let Some(owner) = session_owner {
             drop(owner);
@@ -600,13 +596,11 @@ unsafe fn window_panes_draw_number(
             cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_puts(&mut *ctx, &fgc, |out| {
-            write_cstr(out, std::ffi::CStr::from_ptr(buf.as_ptr().cast()))
-        });
+        screen_write_puts(&mut *ctx, &fgc, |out| out.write_all(&buf));
         if width > len {
             screen_write_puts(&mut *ctx, &fgc, |out| {
                 out.write_all(b" ")?;
-                write_cstr(out, std::ffi::CStr::from_ptr(lbuf.as_ptr().cast()))
+                out.write_all(&lbuf)
             });
         }
         if format != 0 && sy > 1 as u_int {
@@ -622,10 +616,9 @@ unsafe fn window_panes_draw_number(
     }
     px = (sx as size_t).wrapping_sub(width).wrapping_div(2 as size_t) as u_int;
     py = sy.wrapping_sub(5 as u_int).wrapping_div(2 as u_int);
-    ptr = &raw mut buf as *mut ::core::ffi::c_char;
-    while *ptr as ::core::ffi::c_int != '\0' as i32 {
-        if !((*ptr as ::core::ffi::c_int) < '0' as i32 || *ptr as ::core::ffi::c_int > '9' as i32) {
-            idx = (*ptr as ::core::ffi::c_int - '0' as i32) as u_int;
+    for &digit in &buf {
+        if digit.is_ascii_digit() {
+            idx = (digit - b'0') as u_int;
             j = 0 as u_int;
             while j < 5 as u_int {
                 i = 0 as u_int;
@@ -645,7 +638,6 @@ unsafe fn window_panes_draw_number(
             }
             px = px.wrapping_add(6 as u_int);
         }
-        ptr = ptr.offset(1);
     }
     if sy <= 6 as u_int {
         if let Some(owner) = session_owner {
@@ -668,9 +660,7 @@ unsafe fn window_panes_draw_number(
             cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_puts(&mut *ctx, &fgc, |out| {
-            write_cstr(out, std::ffi::CStr::from_ptr(lbuf.as_ptr().cast()))
-        });
+        screen_write_puts(&mut *ctx, &fgc, |out| out.write_all(&lbuf));
     }
     if let Some(owner) = session_owner {
         drop(owner);

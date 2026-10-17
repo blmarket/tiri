@@ -1,5 +1,5 @@
 use super::window_pane;
-use crate::src::format::bytes::{write_cstr, xformat};
+use crate::src::format::bytes::format_bytes;
 use crate::src::grid::grid_default_cell;
 use crate::src::screen_write::{
     screen_write_box, screen_write_clearcharacter, screen_write_cursormove, screen_write_nputs,
@@ -9,7 +9,6 @@ use crate::src::shared::abi::{pid_t, size_t, ssize_t, u_int};
 use crate::src::shared::layout::BOX_LINES_DEFAULT;
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
-use libc::strlen;
 use std::{cell::UnsafeCell, rc::Rc};
 
 pub(super) unsafe fn draw_editor_waiting(owner: &Rc<UnsafeCell<window_pane>>, pid: pid_t) {
@@ -24,7 +23,6 @@ pub(super) unsafe fn draw_editor_waiting(owner: &Rc<UnsafeCell<window_pane>>, pi
     };
     let mut s: *mut screen = (*owner.get()).screen_ptr();
     let mut gc = grid_default_cell;
-    let mut text: [u8; 128] = [0; 128];
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     let mut box_w: u_int = 0;
@@ -38,15 +36,12 @@ pub(super) unsafe fn draw_editor_waiting(owner: &Rc<UnsafeCell<window_pane>>, pi
     if sx == 0 as u_int || sy == 0 as u_int {
         return;
     }
-    if pid == -(1 as ::core::ffi::c_int) {
-        xformat(&mut text, format_args!("WAITING FOR EDITOR"));
+    let text = if pid == -(1 as ::core::ffi::c_int) {
+        b"WAITING FOR EDITOR".to_vec()
     } else {
-        xformat(
-            &mut text,
-            format_args!("WAITING FOR EDITOR (PID {})", pid as ::core::ffi::c_long),
-        );
-    }
-    textlen = strlen(&raw mut text as *mut ::core::ffi::c_char);
+        format_bytes(format_args!("WAITING FOR EDITOR (PID {})", pid))
+    };
+    textlen = text.len();
     box_w = textlen.wrapping_add(4 as size_t) as u_int;
     box_h = 3 as u_int;
     if sx < box_w || sy < box_h {
@@ -84,7 +79,7 @@ pub(super) unsafe fn draw_editor_waiting(owner: &Rc<UnsafeCell<window_pane>>, pi
         &mut ctx,
         box_w.wrapping_sub(2 as u_int) as ssize_t,
         &gc,
-        |out| write_cstr(out, std::ffi::CStr::from_ptr(text.as_ptr().cast())),
+        |out| out.write_all(&text),
     );
     screen_write_stop(&mut ctx);
 }

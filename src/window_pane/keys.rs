@@ -59,18 +59,14 @@ unsafe fn write_mouse(pane: &Rc<UnsafeCell<window_pane>>, mouse: &mouse_event) {
     let Some((x, y)) = pane.mouse_position(mouse, false) else {
         return;
     };
-    let mut bytes = [0; 40];
-    let Some(count) = input_key_get_mouse(screen, mouse, x, y, &mut bytes) else {
+    let Some(bytes) = input_key_get_mouse(screen, mouse, x, y) else {
         return;
     };
     log_debug(format_args!(
         "writing mouse {} to %{}",
-        log_cstr_n(&bytes[..count]),
+        log_cstr_n(&bytes),
         pane.id(),
     ));
-    log_debug(format_args!(
-        "input_key_mouse: {}",
-        log_cstr_n(&bytes[..count]),
-    ));
-    let _ = stream.write(&bytes[..count]);
+    log_debug(format_args!("input_key_mouse: {}", log_cstr_n(&bytes),));
+    let _ = stream.write(&bytes);
 }

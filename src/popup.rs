@@ -755,11 +755,10 @@ unsafe fn popup_key(c_owner: &ClientRef, popup: &PopupGuard, event: *mut key_eve
                 px = (*m).x.wrapping_sub((*pd).px).wrapping_sub(1 as u_int);
                 py = (*m).y.wrapping_sub((*pd).py).wrapping_sub(1 as u_int);
             }
-            let mut buf = [0; 40];
-            let Some(len) = input_key_get_mouse(&raw mut (*pd).s, &*m, px, py, &mut buf) else {
+            let Some(buf) = input_key_get_mouse(&raw mut (*pd).s, &*m, px, py) else {
                 return 0 as ::core::ffi::c_int;
             };
-            bufferevent_write(job_get_event(&(*pd).job), &buf[..len]);
+            bufferevent_write(job_get_event(&(*pd).job), &buf);
             return 0 as ::core::ffi::c_int;
         }
         input_key(&raw mut (*pd).s, job_get_event(&(*pd).job), (*event).key);

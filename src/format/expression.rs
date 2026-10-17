@@ -2,7 +2,6 @@ use super::bytes::format_cstring;
 use super::*;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
-use crate::src::format::bytes::xformat;
 use crate::src::options::options_is_array;
 use crate::src::options::options_parse_owned;
 use crate::src::options::options_to_cstring;
@@ -124,7 +123,6 @@ pub(super) unsafe fn format_relative_time(mut t: time_t) -> Option<CString> {
     let mut h: u_int = 0;
     let mut m: u_int = 0;
     let mut s: u_int = 0;
-    let mut out: [u8; 32] = [0; 32];
     time(&raw mut now);
     if t > now {
         return None;
@@ -137,32 +135,29 @@ pub(super) unsafe fn format_relative_time(mut t: time_t) -> Option<CString> {
     h = (age % 86400 as time_t / 3600 as time_t) as u_int;
     m = (age % 3600 as time_t / 60 as time_t) as u_int;
     s = (age % 60 as time_t) as u_int;
-    if d != 0 as u_int {
-        if h != 0 as u_int {
-            xformat(&mut out, format_args!("{}d{}h", d as u32, h as u32));
+    Some(format_message_with(|out| {
+        if d != 0 as u_int {
+            if h != 0 as u_int {
+                write!(out, "{}d{}h", d, h)
+            } else {
+                write!(out, "{}d", d)
+            }
+        } else if h != 0 as u_int {
+            if m != 0 as u_int {
+                write!(out, "{}h{}m", h, m)
+            } else {
+                write!(out, "{}h", h)
+            }
+        } else if m != 0 as u_int {
+            if s != 0 as u_int {
+                write!(out, "{}m{}s", m, s)
+            } else {
+                write!(out, "{}m", m)
+            }
         } else {
-            xformat(&mut out, format_args!("{}d", d as u32));
+            write!(out, "{}s", s)
         }
-    } else if h != 0 as u_int {
-        if m != 0 as u_int {
-            xformat(&mut out, format_args!("{}h{}m", h as u32, m as u32));
-        } else {
-            xformat(&mut out, format_args!("{}h", h as u32));
-        }
-    } else if m != 0 as u_int {
-        if s != 0 as u_int {
-            xformat(&mut out, format_args!("{}m{}s", m as u32, s as u32));
-        } else {
-            xformat(&mut out, format_args!("{}m", m as u32));
-        }
-    } else {
-        xformat(&mut out, format_args!("{}s", s as u32));
-    }
-    Some(
-        CStr::from_bytes_until_nul(&out)
-            .expect("xformat output is terminated")
-            .to_owned(),
-    )
+    }))
 }
 unsafe fn format_time_difference(t: time_t) -> CString {
     CString::new((time(std::ptr::null_mut()) - t).to_string())
