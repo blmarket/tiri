@@ -405,12 +405,8 @@ pub unsafe fn proc_remove_peer(peer: *mut tmuxpeer) {
     proc_free_peer(owned_peer);
 }
 
-unsafe fn proc_free_peer(mut owned_peer: Box<tmuxpeer>) {
-    let peer = &raw mut *owned_peer;
-    log_debug(format_args!("remove peer {}", log_pointer(peer)));
-    drop((*peer).io_task.take());
-    imsgbuf_clear(&mut (*peer).ibuf);
-    drop(owned_peer);
+fn proc_free_peer(owned_peer: Box<tmuxpeer>) {
+    log_debug(format_args!("remove peer {}", log_pointer(&*owned_peer)));
 }
 pub unsafe fn proc_kill_peer(mut peer: *mut tmuxpeer) {
     (*peer).flags |= PEER_BAD;

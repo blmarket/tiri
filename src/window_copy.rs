@@ -386,7 +386,7 @@ pub static window_copy_mode: window_mode = {
                     *mut args,
                 ) -> *mut screen,
         ),
-        free: Some(window_copy_free as unsafe fn(refbox::Weak<window_mode_entry>) -> ()),
+        free: None,
         resize: Some(
             window_copy_resize as unsafe fn(refbox::Weak<window_mode_entry>, u_int, u_int) -> (),
         ),
@@ -433,7 +433,7 @@ pub static window_view_mode: window_mode = {
                     *mut args,
                 ) -> *mut screen,
         ),
-        free: Some(window_copy_free as unsafe fn(refbox::Weak<window_mode_entry>) -> ()),
+        free: None,
         resize: Some(
             window_copy_resize as unsafe fn(refbox::Weak<window_mode_entry>, u_int, u_int) -> (),
         ),
@@ -793,18 +793,6 @@ unsafe fn window_copy_view_init(
         .wrapping_sub((*data).oy);
     (*data).showmark = 0 as ::core::ffi::c_int;
     &raw mut (*data).screen
-}
-unsafe fn window_copy_free(mut wme: refbox::Weak<window_mode_entry>) {
-    let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
-    drop((*data).dragtimer.take());
-    drop((*data).refresh_timer.take());
-    window_copy_clear_searchmark(&mut *data);
-    if let Some(ictx) = (*data).ictx.take() {
-        drop(ictx);
-    }
-    (*data).clear_backing();
-    drop(std::mem::take(&mut (*data).screen));
-    drop(wme.get_mut_unchecked().boxed_data.take());
 }
 pub unsafe fn window_copy_add(
     pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,

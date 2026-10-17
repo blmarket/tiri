@@ -295,14 +295,12 @@ pub unsafe fn bufferevent_free(stream: *mut bufferevent) {
     let s = (*stream).state.take();
     if let Some(s) = s {
         s.live.set(false);
-        let task = s.task.borrow_mut().take();
-        drop(task);
+        drop(s.task.take());
         if s.fd != -1 && s.pid == std::process::id() && !s.was_nonblocking {
             let _ =
                 tiri_rt::unix::set_nonblocking(std::os::fd::BorrowedFd::borrow_raw(s.fd), false);
         }
-        let owner = s.stream.borrow_mut().take();
-        drop(owner);
+        drop(s.stream.take());
     }
 }
 

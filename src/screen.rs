@@ -1,7 +1,7 @@
 use crate::src::grid::view::{grid_view_clear, grid_view_delete_lines};
 use crate::src::grid::{
-    grid_adjust_lines, grid_check_is_clear, grid_clear_lines, grid_create, grid_duplicate_lines,
-    grid_empty_line, grid_reflow, grid_unwrap_position, grid_wrap_position,
+    grid_adjust_lines, grid_clear_lines, grid_create, grid_duplicate_lines, grid_empty_line,
+    grid_reflow, grid_unwrap_position, grid_wrap_position,
 };
 use crate::src::hyperlinks::{hyperlinks_init, hyperlinks_reset};
 use crate::src::log::{fatal, fatalx, log_debug};
@@ -46,9 +46,9 @@ pub unsafe fn screen_init(s: &mut screen, mut sx: u_int, mut sy: u_int, mut hlim
     s.sel = None;
     s.write_list = None;
     s.hyperlinks = None;
-    screen_reinit(s, 1 as ::core::ffi::c_int);
+    screen_reinit(s);
 }
-pub unsafe fn screen_reinit(s: &mut screen, mut check: ::core::ffi::c_int) {
+pub unsafe fn screen_reinit(s: &mut screen) {
     s.cx = 0 as u_int;
     s.cy = 0 as u_int;
     s.rupper = 0 as u_int;
@@ -63,9 +63,6 @@ pub unsafe fn screen_reinit(s: &mut screen, mut check: ::core::ffi::c_int) {
     s.saved_cx = UINT_MAX as u_int;
     s.saved_cy = UINT_MAX as u_int;
     screen_reset_tabs(s);
-    if check != 0 {
-        grid_check_is_clear();
-    }
     let hsize = s.grid().hsize;
     let sy = s.grid().sy;
     grid_clear_lines(s.grid_mut(), hsize, sy, 8);
@@ -83,18 +80,9 @@ pub fn screen_reset_hyperlinks(s: &mut screen) {
 }
 impl Drop for screen {
     fn drop(&mut self) {
-        let s = self;
-        drop(s.sel.take());
-        s.tabs = Vec::new();
-        s.path = None;
-        s.title = CString::default();
-        if s.write_list.is_some() {
-            unsafe { screen_write_free_list(s) };
+        if self.write_list.is_some() {
+            unsafe { screen_write_free_list(self) };
         }
-        drop(s.saved_grid.take());
-        drop(s.grid.take());
-        drop(s.hyperlinks.take());
-        screen_free_titles(s);
     }
 }
 pub unsafe fn screen_reset_tabs(s: &mut screen) {

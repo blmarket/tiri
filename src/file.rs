@@ -231,13 +231,6 @@ unsafe fn file_create_with_client(
     }
     owner
 }
-unsafe fn file_destroy(cf: &mut client_file) {
-    client_files_remove(&mut *cf);
-    if let Some(client) = cf.c.take() {
-        (client).release();
-    }
-    cf.path = Default::default();
-}
 unsafe fn file_fire_done_cb(owner: &Rc<UnsafeCell<client_file>>) {
     let dead = (*owner.get())
         .c
@@ -1370,6 +1363,6 @@ pub fn client_files_iter(
 
 impl Drop for client_file {
     fn drop(&mut self) {
-        unsafe { file_destroy(self) }
+        client_files_remove(self);
     }
 }

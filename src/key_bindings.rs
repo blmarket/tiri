@@ -164,7 +164,6 @@ pub unsafe fn key_bindings_remove(name: &CStr, key: key_code) {
         log_hex(bd.key),
         crate::src::log::log_bytes(key_string.as_bytes())
     ));
-    drop(bd);
     if table.key_bindings.storage.is_empty() && table.default_key_bindings.storage.is_empty() {
         drop(table);
         drop(key_tables::remove(&owner));

@@ -314,7 +314,7 @@ pub(super) unsafe fn spawn_pane(
             std::mem::take(&mut (*source_pane).event).free();
             drop((*source_pane).fd.take());
             window_pane_reset_mode_all(source_pane_owner.as_ref().expect("respawn source pane"));
-            screen_reinit(&mut (*source_pane).base, 0 as ::core::ffi::c_int);
+            screen_reinit(&mut (*source_pane).base);
             if let Some(ictx) = (*source_pane).ictx.take() {
                 drop(ictx);
             }

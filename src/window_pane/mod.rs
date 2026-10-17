@@ -133,14 +133,6 @@ impl window_pane_input_data {
     }
 }
 
-impl Drop for window_pane_input_data {
-    fn drop(&mut self) {
-        if let Some(client) = self.client.take() {
-            (client).release();
-        }
-    }
-}
-
 thread_local! {
     static WINDOW_PANES: std::cell::RefCell<window_pane_tree> = const {
         std::cell::RefCell::new(window_pane_tree {
@@ -561,10 +553,9 @@ unsafe fn window_pane_free_modes(pane_owner: &Rc<std::cell::UnsafeCell<window_pa
         } else {
             PaneScreenSource::Mode((*wp).active_mode_entry())
         };
-        wme.get_unchecked()
-            .mode
-            .free
-            .expect("non-null function pointer")(wme);
+        if let Some(free) = wme.get_unchecked().mode.free {
+            free(wme);
+        }
         drop(entry);
     }
     (*wp).screen_source = PaneScreenSource::Base;
@@ -897,10 +888,9 @@ unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::UnsafeCell<window_pa
     } else {
         PaneScreenSource::Mode((*wp).active_mode_entry())
     };
-    wme.get_unchecked()
-        .mode
-        .free
-        .expect("non-null function pointer")(wme);
+    if let Some(free) = wme.get_unchecked().mode.free {
+        free(wme);
+    }
     drop(entry);
     next = (*wp).active_mode_entry();
     (*wp).screen_source = if !next.is_alive() {

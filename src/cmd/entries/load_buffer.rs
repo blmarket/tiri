@@ -29,19 +29,6 @@ pub struct cmd_load_buffer_data {
     pub name: Option<CString>,
 }
 
-impl cmd_load_buffer_data {
-    unsafe fn release_client(&mut self) {
-        if let Some(client) = self.client.take() {
-            (client).release();
-        }
-    }
-}
-
-impl Drop for cmd_load_buffer_data {
-    fn drop(&mut self) {
-        unsafe { self.release_client() }
-    }
-}
 pub static cmd_load_buffer_entry: cmd_entry = {
     cmd_entry {
         name: c"load-buffer",
@@ -105,7 +92,6 @@ unsafe fn cmd_load_buffer_done(
             );
         }
     }
-    cdata.release_client();
 }
 /// Store the file once it is read. A file whose client died never reports
 /// (tmux's file_fire_done_cb): release the data, and the client with it, then

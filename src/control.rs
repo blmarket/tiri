@@ -1140,13 +1140,7 @@ pub unsafe fn control_discard_all(c: &ClientRef) {
     control_discard(c);
     let mut state = c.borrow_control_mut().expect("control client state");
     let cs = &mut *state;
-    loop {
-        let cb = control_first_block(cs);
-        if !cb.is_alive() {
-            break;
-        }
-        control_free_block(cs, &cb);
-    }
+    cs.all_blocks.clear();
     cs.queued_reply_bytes = 0 as size_t;
     let _ = cs.write_event.with_ptr(|stream| unsafe {
         bufferevent_disable(stream, EV_WRITE as ::core::ffi::c_short)
@@ -1156,16 +1150,6 @@ pub unsafe fn control_stop(owner: &ClientRef) {
     owner.stop_control();
 }
 
-pub(crate) unsafe fn control_clear_remaining(cs: &mut control_state) {
-    cs.windows.clear();
-    loop {
-        let block = control_first_block(cs);
-        if !block.is_alive() {
-            break;
-        }
-        control_free_block(cs, &block);
-    }
-}
 
 pub unsafe fn control_add_sub(
     c_owner: &ClientRef,

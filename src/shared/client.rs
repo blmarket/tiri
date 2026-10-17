@@ -96,8 +96,6 @@ pub use crate::src::file::{client_file, client_file_cb, client_files};
 
 pub type overlay_resize_cb = Option<Box<dyn FnMut(&ClientRef)>>;
 
-pub type overlay_free_cb = Option<Box<dyn FnOnce(&ClientRef)>>;
-
 pub type overlay_key_cb = Option<Box<dyn FnMut(&ClientRef, &mut key_event) -> i32>>;
 
 pub type overlay_draw_cb = Option<Box<dyn FnMut(&ClientRef)>>;

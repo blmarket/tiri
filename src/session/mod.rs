@@ -41,8 +41,8 @@ use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::terminal::*;
 use crate::src::shared::tree::{RB_INF, RB_NEGINF};
 use crate::src::shared::window::WindowRef;
+use crate::src::shared::window::WINLINK_ALERTFLAGS;
 use crate::src::shared::window::{winlink, winlink_stack, winlinks};
-use crate::src::shared::window::{WINLINK_ALERTFLAGS, WINLINK_VISITED};
 use crate::src::tmux::global_options;
 use crate::src::tty::tty_update_window_offset;
 use crate::src::window::{
@@ -252,12 +252,10 @@ unsafe fn session_free(s: &mut session) {
     ));
     drop(s.environ.take());
     drop(s.options.take());
-    crate::src::window::winlink_stack_clear(&mut s.lastw);
 }
 unsafe fn session_destroy(s_owner: &SessionRef, mut notify: ::core::ffi::c_int, from: &CStr) {
     let s = s_owner.get();
 
-    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     log_debug(format_args!(
         "session {} destroyed ({})",
         log_bytes((*s).name.as_bytes()),
@@ -272,16 +270,11 @@ unsafe fn session_destroy(s_owner: &SessionRef, mut notify: ::core::ffi::c_int, 
         events_fire_session(c"session-closed", std::rc::Rc::clone(s_owner));
     }
     (*s).tio = None;
-    (*s).tio = None;
     drop((*s).lock_timer.take());
     session_group_remove(s_owner);
-    while crate::src::window::winlink_stack_first(&(*s).lastw).is_alive() {
-        let first = crate::src::window::winlink_stack_first(&(*s).lastw);
-        winlink_stack_remove(&raw mut (*s).lastw, (first).clone());
-    }
-    crate::src::window::winlink_stack_clear(&mut (*s).lastw);
+    (*s).lastw.clear();
     while !crate::src::window::winlinks_is_empty(&(*s).windows) {
-        wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
+        let wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
         events_fire_winlink(c"window-unlinked", wl.clone());
         winlink_remove(&raw mut (*s).windows, wl.clone());
     }
@@ -645,7 +638,6 @@ unsafe fn session_synchronize_windows(source: &SessionRef, destination: &Session
             crate::src::window::winlink_stack_append(&mut (*destination.get()).lastw, replacement);
         }
     }
-    crate::src::window::winlink_stack_clear(&mut old_history);
     while !crate::src::window::winlinks_is_empty(&old_windows) {
         let old = winlinks_minmax(&old_windows, RB_NEGINF);
         let id = old
@@ -707,7 +699,6 @@ unsafe fn session_renumber_windows(s_owner: &SessionRef) {
         if !wl.is_alive() {
             continue;
         }
-        wl.get_mut_unchecked().flags &= !WINLINK_VISITED;
         wl_new = winlink_find_by_window(
             &(*s).windows,
             &WindowRef::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
@@ -716,7 +707,6 @@ unsafe fn session_renumber_windows(s_owner: &SessionRef) {
             crate::src::window::winlink_stack_append(&mut (*s).lastw, (wl_new).clone());
         }
     }
-    crate::src::window::winlink_stack_clear(&mut old_lastw);
     if marked_idx != -(1 as ::core::ffi::c_int) {
         marked_pane.set_wl((winlink_find_by_index(&(*s).windows, marked_idx)).clone());
         if !marked_pane.winlink_handle().is_alive() {

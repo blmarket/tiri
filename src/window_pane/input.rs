@@ -2095,7 +2095,6 @@ impl Drop for input_ctx {
     fn drop(&mut self) {
         unsafe {
             let ictx = self as *mut input_ctx;
-            input_clear_params(&mut *ictx);
             loop {
                 let ir = input_ctx_requests(ictx)
                     .front_mut()
@@ -2105,8 +2104,6 @@ impl Drop for input_ctx {
                 };
                 input_free_request(ir);
             }
-            drop((*ictx).request_timer.take());
-            drop((*ictx).ground_timer.take());
             if let Some(pane) = self.wp.upgrade() {
                 pane.stop_sync();
             }

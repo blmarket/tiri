@@ -1974,7 +1974,7 @@ unsafe fn window_tree_get_screen(wme: refbox::Weak<window_mode_entry>) -> *mut s
         .map_or(std::ptr::null_mut(), |tree| &raw mut (*tree.get()).screen)
 }
 
-unsafe fn window_tree_free(mut wme: refbox::Weak<window_mode_entry>) {
+unsafe fn window_tree_free(wme: refbox::Weak<window_mode_entry>) {
     let Some(mode_owner) = wme
         .get_unchecked()
         .retained_data::<UnsafeCell<window_tree_modedata>>()
@@ -1984,7 +1984,6 @@ unsafe fn window_tree_free(mut wme: refbox::Weak<window_mode_entry>) {
     let data = mode_owner.get();
     (*data).dead = 1 as ::core::ffi::c_int;
     mode_tree_free((*data).data.take().expect("mode tree owner"));
-    drop(wme.get_mut_unchecked().data_owner.take());
 }
 unsafe fn window_tree_resize(
     mut wme: refbox::Weak<window_mode_entry>,

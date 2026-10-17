@@ -165,7 +165,6 @@ static grid_cleared_entry: grid_cell_entry = grid_cell_entry {
     },
     flags: GRID_FLAG_CLEARED as u_char,
 };
-pub unsafe fn grid_check_is_clear() {}
 fn grid_store_cell(entry: &mut grid_cell_entry, cell: &grid_cell, byte: u_char) {
     entry.flags = (cell.flags as i32 & !GRID_FLAG_CLEARED) as u_char;
     if cell.fg & COLOUR_FLAG_256 != 0 {
@@ -357,7 +356,6 @@ pub unsafe fn grid_create(sx: u_int, sy: u_int, hlimit: u_int) -> Box<grid> {
     }
     owner.hlimit = hlimit;
     owner.linedata.resize_with(sy as usize, grid_line::default);
-    grid_check_is_clear();
     owner
 }
 pub unsafe fn grid_compare(ga: &grid, gb: &grid) -> i32 {
@@ -605,7 +603,6 @@ pub unsafe fn grid_clear_lines(gd: &mut grid, py: u_int, ny: u_int, bg: u_int) {
         return;
     }
     for row in py..py.wrapping_add(ny) {
-        grid_free_line(gd, row);
         grid_empty_line(gd, row, bg);
     }
     if py != 0 {
@@ -626,11 +623,6 @@ pub unsafe fn grid_move_lines(gd: &mut grid, dy: u_int, py: u_int, ny: u_int, bg
     ] {
         if grid_check_y(gd, "grid_move_lines", row) != 0 {
             return;
-        }
-    }
-    for row in dy..destination_end {
-        if row < py || row >= source_end {
-            grid_free_line(gd, row);
         }
     }
     if dy != 0 {
@@ -993,7 +985,6 @@ pub fn grid_duplicate_lines(dst: &mut grid, dy: u_int, src: &grid, sy: u_int, mu
     if sy.wrapping_add(ny) > src.hsize.wrapping_add(src.sy) {
         ny = src.hsize.wrapping_add(src.sy).wrapping_sub(sy);
     }
-    grid_free_lines(dst, dy, ny);
     for offset in 0..ny {
         dst.linedata[dy.wrapping_add(offset) as usize] =
             src.linedata[sy.wrapping_add(offset) as usize].clone();

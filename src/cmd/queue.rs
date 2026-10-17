@@ -698,7 +698,6 @@ unsafe fn cmdq_remove(item_handle: std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>
         1,
         "command item removal requires its sole strong owner"
     );
-    drop(item_handle);
 }
 unsafe fn cmdq_remove_group(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) {
     let item = item_handle.get();

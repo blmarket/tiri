@@ -99,7 +99,7 @@ impl Drop for cmd_source_file_data {
         self.decrement_depth();
         drop(std::mem::take(&mut self.files));
         if let Some(client) = self.client.take() {
-            (client).release();
+            drop(client);
         }
     }
 }

@@ -171,7 +171,7 @@ impl Drop for format_tree {
                 drop(entry);
             }
             if let Some(client) = (*ft).client.take() {
-                (client).release();
+                drop(client);
             }
         }
     }

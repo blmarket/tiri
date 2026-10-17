@@ -291,7 +291,6 @@ pub(crate) unsafe fn server_start(
     crate::src::cmd::queue::cmdq_cancel_background();
     job_kill_all();
     prompt_save_history();
-    server_clear_messages();
     drop(process_owner);
     server_proc = std::ptr::null_mut();
     exit(0 as ::core::ffi::c_int);

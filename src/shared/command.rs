@@ -316,11 +316,3 @@ impl cmd_parse_result {
         }
     }
 }
-
-impl Drop for cmdq_state {
-    fn drop(&mut self) {
-        if let Some(formats) = self.formats.get_mut().take() {
-            drop(formats);
-        }
-    }
-}

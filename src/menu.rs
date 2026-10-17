@@ -230,18 +230,12 @@ pub unsafe fn menu_update(md: &mut menu_data) {
 fn menu_free_data(owner: refbox::RefBox<crate::src::shared::menu::menu_data>) {
     let callback = {
         let mut md = owner.try_borrow_mut().expect("live unborrowed menu");
-        if md.closed {
-            return;
-        }
         md.closed = true;
         md.cb.take()
     };
     if let Some(callback) = callback {
         callback(MenuSelection::Cancelled);
     }
-    drop(std::mem::take(
-        &mut owner.try_borrow_mut().expect("live unborrowed menu").s,
-    ));
 }
 
 pub unsafe fn menu_close(

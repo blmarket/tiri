@@ -84,7 +84,7 @@ impl windows {
     /// Remove the matching observer without retaining or releasing the window.
     pub fn remove(window: &WindowRef) {
         let id = unsafe { (*window.get()).id };
-        let removed = WINDOWS.with_borrow_mut(|index| {
+        WINDOWS.with_borrow_mut(|index| {
             if index
                 .storage
                 .get(&id)
@@ -95,7 +95,6 @@ impl windows {
                 None
             }
         });
-        drop(removed);
     }
 
     pub fn first() -> Option<WindowRef> {
@@ -315,9 +314,6 @@ unsafe fn window_destroy(w_owner: &WindowRef) {
     windows::remove(w_owner);
     menu_destroy((*w).menu.take());
     window_destroy_panes(w_owner);
-    drop((*w).name_event.take());
-    drop((*w).alerts_timer.take());
-    drop((*w).offset_timer.take());
     drop((*w).options.take());
 }
 

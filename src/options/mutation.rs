@@ -136,10 +136,7 @@ impl OptionsScope {
                 .map(|entry| {
                     assert_eq!(entry.id(), identity, "array option replaced while parsing");
                     let ov = match options_array_get_mut(entry, &key) {
-                        Some(ov) => {
-                            options_value_free(ov);
-                            ov
-                        }
+                        Some(ov) => ov,
                         None => options_array_new(entry, &key),
                     };
                     *ov = options_value::Command(OptionCommand(commands));
@@ -264,8 +261,7 @@ impl OptionsScope {
         cleanup: impl FnOnce(Option<Box<crate::src::hooks::hooks_monitor>>),
     ) -> bool {
         let Some((identity, monitor)) = self.entry(name).as_deref_mut().map(|entry| {
-            options_array_clear(entry);
-            options_value_free(&mut entry.value);
+            entry.value = options_value::Empty;
             (entry.id(), entry.monitor_data.take())
         }) else {
             return false;

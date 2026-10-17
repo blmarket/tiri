@@ -968,14 +968,12 @@ unsafe fn window_panes_get_screen(wme: refbox::Weak<window_mode_entry>) -> *mut 
     data.map_or(std::ptr::null_mut(), |data| &raw mut (*data).screen)
 }
 
-unsafe fn window_panes_free(mut wme: refbox::Weak<window_mode_entry>) {
+unsafe fn window_panes_free(wme: refbox::Weak<window_mode_entry>) {
     let mode_pane_owner = wme
         .get_unchecked()
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
-    let mut data: *mut window_panes_modedata = window_panes_data(wme.clone());
-    drop((*data).timer.take());
     server_redraw_window(
         &mode_pane_owner
             .window_observer()
@@ -994,13 +992,6 @@ unsafe fn window_panes_free(mut wme: refbox::Weak<window_mode_entry>) {
             .upgrade()
             .expect("live pane parent"),
     );
-    drop((*data).state.take());
-    window_panes_free_areas(data);
-    if let Some(mut preview) = (*data).preview.take() {
-        drop(preview);
-    }
-    drop(std::mem::take(&mut (*data).screen));
-    drop(wme.get_mut_unchecked().boxed_data.take());
 }
 unsafe fn window_panes_resize(
     mut wme: refbox::Weak<window_mode_entry>,

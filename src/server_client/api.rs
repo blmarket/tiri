@@ -50,11 +50,6 @@ pub trait Client {
     unsafe fn forget_pane(pane: &Rc<UnsafeCell<window_pane>>)
     where
         Self: Sized;
-    /// Release this owner synchronously. Call at the
-    /// same logical release points required by client teardown callbacks.
-    fn release(self)
-    where
-        Self: Sized;
     unsafe fn open_terminal(&self) -> Result<(), CString>;
     unsafe fn parse_flags(&self, flags: &CStr);
     unsafe fn update_theme_colours(&self);
@@ -341,10 +336,6 @@ impl Client for ClientRef {
 
     unsafe fn forget_pane(pane: &Rc<UnsafeCell<window_pane>>) {
         server_client_remove_pane(pane);
-    }
-
-    fn release(self) {
-        server_client_unref_owned(self);
     }
 
     unsafe fn open_terminal(&self) -> Result<(), CString> {
@@ -667,11 +658,6 @@ impl Client for ClientRef {
             )
         };
         input.free();
-        crate::src::control::control_reset_offsets(self);
-        {
-            let mut state = self.borrow_control_mut().expect("control client state");
-            crate::src::control::control_clear_remaining(state);
-        }
         drop((*self.get()).control_state.take());
     }
     unsafe fn accept_control_reply(&self, added: usize) -> bool {

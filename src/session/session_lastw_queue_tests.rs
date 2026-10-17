@@ -1,7 +1,7 @@
 use crate::src::shared::session::session;
 use crate::src::window::{
-    winlink_add, winlink_remove, winlink_stack_clear, winlink_stack_first, winlink_stack_indices,
-    winlink_stack_next, winlink_stack_push, winlink_stack_remove, winlinks_reindex,
+    winlink_add, winlink_remove, winlink_stack_first, winlink_stack_indices, winlink_stack_next,
+    winlink_stack_push, winlink_stack_remove, winlinks_reindex,
 };
 use refbox::BorrowError;
 
@@ -34,7 +34,6 @@ fn visit_order_uses_weak_links_and_survives_index_change() {
 
         winlink_stack_remove(&raw mut stack, (first).clone());
         winlink_remove(&raw mut links, (first).clone());
-        winlink_stack_clear(&mut stack);
         assert!(crate::src::window::winlinks_is_empty(&links));
     }
 }
@@ -51,7 +50,6 @@ fn history_entry_is_removed_before_its_owner() {
 
         assert!(!winlink_stack_first(&stack).is_alive());
         assert!(winlink_stack_indices(&stack).is_empty());
-        winlink_stack_clear(&mut stack);
     }
 }
 
@@ -68,7 +66,6 @@ fn boxed_session_drops_its_winlink_owner() {
             .unwrap()
             .downgrade();
         winlink_stack_push(&raw mut owner.lastw, link.clone());
-        winlink_stack_clear(&mut owner.lastw);
         drop(owner);
         assert_eq!(weak.try_borrow_mut().err(), Some(BorrowError::Dropped));
     }

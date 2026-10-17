@@ -202,7 +202,7 @@ impl Drop for popup_data {
                 waiter.finish(self.status);
             }
             if let Some(client) = self.c.take() {
-                (client).release();
+                drop(client);
             }
             if !self.job.is_empty() {
                 job_free(&self.job);

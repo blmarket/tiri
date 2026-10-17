@@ -10,8 +10,8 @@ use crate::src::server_fn::server_status_session;
 use crate::src::shared::abi::*;
 use crate::src::shared::limits::INT_MAX;
 use crate::src::shared::tree::{RB_INF, RB_NEGINF};
+use crate::src::shared::window::WINLINK_ALERTFLAGS;
 pub use crate::src::shared::window::{winlink, winlink_stack, winlinks};
-use crate::src::shared::window::{WINLINK_ALERTFLAGS, WINLINK_VISITED};
 
 pub fn winlinks_minmax(head: &winlinks, direction: ::core::ffi::c_int) -> refbox::Weak<winlink> {
     let owner = head;
@@ -175,8 +175,7 @@ pub unsafe fn winlink_add(
 unsafe fn winlink_release_window(mut wl: refbox::Weak<winlink>) {
     let field = &raw mut wl.get_mut_unchecked().window_owner;
     assert!((*field).is_some(), "winlink window reference");
-    std::ptr::drop_in_place(field);
-    std::ptr::write(field, None);
+    *field = None;
 }
 
 pub unsafe fn winlink_set_window(mut wl: refbox::Weak<winlink>, w_owner: &WindowRef) {
@@ -207,9 +206,7 @@ pub unsafe fn winlink_remove(mut wwl: *mut winlinks, mut wl: refbox::Weak<winlin
             Some(wl.clone()),
             "removed winlink must belong to this index"
         );
-        let owner = map.remove(&idx).expect("winlink must have an owner");
-        wl.get_mut_unchecked().owner = refbox::Weak::new();
-        owner
+        map.remove(&idx).expect("winlink must have an owner")
     };
     drop(owner);
 }
@@ -305,33 +302,26 @@ pub unsafe fn winlinks_reindex(head: *mut winlinks, wl: refbox::Weak<winlink>, i
     map.insert(idx, owner);
 }
 
-pub unsafe fn winlink_stack_push(stack: *mut winlink_stack, mut wl: refbox::Weak<winlink>) {
+pub unsafe fn winlink_stack_push(stack: *mut winlink_stack, wl: refbox::Weak<winlink>) {
     if !wl.is_alive() {
         return;
     }
     winlink_stack_remove(stack, wl.clone());
     let weak = winlink_weak(wl.clone());
     (*stack).push_front(weak);
-    wl.get_mut_unchecked().flags |= WINLINK_VISITED;
 }
 
-pub unsafe fn winlink_stack_remove(stack: *mut winlink_stack, mut wl: refbox::Weak<winlink>) {
+pub unsafe fn winlink_stack_remove(stack: *mut winlink_stack, wl: refbox::Weak<winlink>) {
     if !wl.is_alive() {
         return;
     }
     (*stack).retain(|link| *link != wl);
-    wl.get_mut_unchecked().flags &= !WINLINK_VISITED;
 }
 
 /// Append while rebuilding a session's saved visit order.
-pub unsafe fn winlink_stack_append(stack: &mut winlink_stack, mut wl: refbox::Weak<winlink>) {
+pub unsafe fn winlink_stack_append(stack: &mut winlink_stack, wl: refbox::Weak<winlink>) {
     let weak = winlink_weak(wl.clone());
     stack.push_back(weak);
-    wl.get_mut_unchecked().flags |= WINLINK_VISITED;
-}
-
-pub fn winlink_stack_clear(stack: &mut winlink_stack) {
-    *stack = Default::default();
 }
 
 pub fn winlink_stack_indices(stack: &winlink_stack) -> Vec<::core::ffi::c_int> {

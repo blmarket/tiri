@@ -8,7 +8,7 @@ use crate::src::format_draw::format_draw;
 use crate::src::fuzzy::fuzzy_match_owned;
 use crate::src::grid::{grid_default_cell, grid_get_cell};
 use crate::src::prompt::{
-    prompt_create, prompt_draw, prompt_free, prompt_incremental_start, prompt_key, prompt_mouse,
+    prompt_create, prompt_draw, prompt_incremental_start, prompt_key, prompt_mouse,
     prompt_set_options, prompt_update,
 };
 use crate::src::screen::{screen_init, screen_resize};
@@ -94,7 +94,7 @@ pub static window_switch_mode: window_mode = {
                     *mut args,
                 ) -> *mut screen,
         ),
-        free: Some(window_switch_free as unsafe fn(refbox::Weak<window_mode_entry>) -> ()),
+        free: None,
         resize: Some(
             window_switch_resize as unsafe fn(refbox::Weak<window_mode_entry>, u_int, u_int) -> (),
         ),
@@ -515,16 +515,6 @@ unsafe fn window_switch_get_screen(wme: refbox::Weak<window_mode_entry>) -> *mut
     data.map_or(std::ptr::null_mut(), |data| &raw mut (*data).screen)
 }
 
-unsafe fn window_switch_free(mut wme: refbox::Weak<window_mode_entry>) {
-    let mut data: *mut window_switch_modedata = window_switch_data(wme.clone());
-    (*data).matches.clear();
-    (*data).item_list.clear();
-    if let Some(prompt) = (*data).prompt.take() {
-        prompt_free(&prompt.downgrade());
-    }
-    drop(std::mem::take(&mut (*data).screen));
-    drop(wme.get_mut_unchecked().boxed_data.take());
-}
 unsafe fn window_switch_resize(
     mut wme: refbox::Weak<window_mode_entry>,
     mut sx: u_int,

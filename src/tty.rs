@@ -142,7 +142,6 @@ pub(crate) unsafe fn tty_initialize_component(terminal: &mut tty, fd: i32) -> i3
     {
         return -1;
     }
-    tty_keys_free(terminal);
     *terminal = tty::empty();
     terminal.cstyle = SCREEN_CURSOR_DEFAULT;
     terminal.ccolour = -1;
@@ -812,10 +811,6 @@ pub unsafe fn tty_close(owner: &ClientRef) {
     let mut terminal = owner.borrow_terminal_mut();
     tty_keys_free(&mut *terminal);
     terminal.flags &= !TTY_OPENED;
-}
-pub unsafe fn tty_free(owner: &ClientRef) {
-    tty_close(owner);
-    owner.borrow_terminal_mut().r.clear();
 }
 pub unsafe fn tty_update_features(owner: &ClientRef) {
     let features = owner.terminal_feature_mask();

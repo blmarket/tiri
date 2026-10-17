@@ -8,7 +8,6 @@ use crate::src::compat::strtonum::strtonum;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::log::{fatalx, log_byte, log_bytes, log_cstr, log_debug};
-use crate::src::server_client::Client as _;
 
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args_command_state;
@@ -662,7 +661,7 @@ impl Drop for args_command_state {
     fn drop(&mut self) {
         drop(self.cmdlist.take());
         if let Some(client) = self.client.take() {
-            (client).release();
+            drop(client);
         }
     }
 }

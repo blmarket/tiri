@@ -48,7 +48,7 @@ pub static window_clock_mode: window_mode = {
                     *mut args,
                 ) -> *mut screen,
         ),
-        free: Some(window_clock_free as unsafe fn(refbox::Weak<window_mode_entry>) -> ()),
+        free: None,
         resize: Some(
             window_clock_resize as unsafe fn(refbox::Weak<window_mode_entry>, u_int, u_int) -> (),
         ),
@@ -675,12 +675,6 @@ unsafe fn window_clock_get_screen(wme: refbox::Weak<window_mode_entry>) -> *mut 
     data.map_or(std::ptr::null_mut(), |data| &raw mut (*data).screen)
 }
 
-unsafe fn window_clock_free(mut wme: refbox::Weak<window_mode_entry>) {
-    let mut data: *mut window_clock_mode_data = window_clock_data(wme.clone());
-    drop((*data).timer.take());
-    drop(std::mem::take(&mut (*data).screen));
-    drop(wme.get_mut_unchecked().boxed_data.take());
-}
 unsafe fn window_clock_resize(
     mut wme: refbox::Weak<window_mode_entry>,
     mut sx: u_int,

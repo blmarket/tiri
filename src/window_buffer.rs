@@ -515,7 +515,7 @@ unsafe fn window_buffer_get_screen(wme: refbox::Weak<window_mode_entry>) -> *mut
         .map_or(std::ptr::null_mut(), |tree| &raw mut (*tree.get()).screen)
 }
 
-unsafe fn window_buffer_free(mut wme: refbox::Weak<window_mode_entry>) {
+unsafe fn window_buffer_free(wme: refbox::Weak<window_mode_entry>) {
     let Some(data) = wme
         .get_unchecked()
         .boxed_data_ptr::<window_buffer_modedata>()
@@ -526,8 +526,6 @@ unsafe fn window_buffer_free(mut wme: refbox::Weak<window_mode_entry>) {
         editor.cancel();
     }
     mode_tree_free((*data).data.take().expect("mode tree owner"));
-    window_buffer_clear_items(&mut (*data).item_list);
-    drop(wme.get_mut_unchecked().boxed_data.take());
 }
 unsafe fn window_buffer_resize(
     mut wme: refbox::Weak<window_mode_entry>,

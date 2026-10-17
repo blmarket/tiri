@@ -14,8 +14,9 @@ pub type peer_dispatch_cb = Box<dyn for<'a> FnMut(PeerMessage<'a>)>;
 /// Owned by the parent process's peer list until `proc_remove_peer`.
 pub struct tmuxpeer {
     pub parent: *mut tmuxproc,
-    pub(crate) ibuf: imsgbuf,
+    /// Declared before `ibuf` so the task is cancelled before the socket closes.
     pub io_task: Option<tiri_rt::mio::Task>,
+    pub(crate) ibuf: imsgbuf,
     pub io_writable: bool,
     pub uid: uid_t,
     pub gid: gid_t,

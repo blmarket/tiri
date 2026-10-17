@@ -53,7 +53,7 @@ impl Drop for event_payload_item {
         );
         unsafe {
             match value {
-                EventPayloadValue::Client(client) => client.release(),
+                EventPayloadValue::Client(client) => drop(client),
                 EventPayloadValue::Session(session) => session.release(c"event_payload_free_value"),
                 EventPayloadValue::Window(window) => drop(window),
                 EventPayloadValue::Pane(pane) => drop(pane),
@@ -87,9 +87,7 @@ pub fn event_payload_create() -> Box<event_payload> {
 
 impl Drop for event_payload {
     fn drop(&mut self) {
-        while let Some((_, item)) = self.items.pop_first() {
-            drop(item);
-        }
+        drop(std::mem::take(&mut self.items));
         unsafe { event_payload_free_target(self) };
     }
 }

@@ -149,9 +149,6 @@ unsafe fn options_parent_table_entry(
     });
     source.entry(name)?.tableentry
 }
-fn options_value_free(ov: &mut options_value) {
-    *ov = options_value::Empty;
-}
 unsafe fn options_value_to_cstring(
     o: &options_entry,
     ov: &options_value,
@@ -458,10 +455,7 @@ pub unsafe fn options_array_set(
             return -(1 as ::core::ffi::c_int);
         }
         let ov = match options_array_get_mut(o, &new_key) {
-            Some(ov) => {
-                options_value_free(ov);
-                ov
-            }
+            Some(ov) => ov,
             None => options_array_new(o, &new_key),
         };
         *ov = options_value::Command(OptionCommand(pr.cmdlist.take()));
@@ -498,10 +492,7 @@ pub unsafe fn options_array_set(
             return -(1 as ::core::ffi::c_int);
         }
         let ov = match options_array_get_mut(o, &new_key) {
-            Some(ov) => {
-                options_value_free(ov);
-                ov
-            }
+            Some(ov) => ov,
             None => options_array_new(o, &new_key),
         };
         *ov = options_value::Number(number);

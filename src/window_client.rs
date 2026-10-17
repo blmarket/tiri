@@ -69,45 +69,22 @@ impl window_client_modedata {
     }
 }
 
+#[derive(Clone)]
 pub struct window_client_itemdata {
     c: Option<ClientRef>,
-    retained_client_reference: bool,
     pub ttyname: CString,
-}
-
-impl Clone for window_client_itemdata {
-    fn clone(&self) -> Self {
-        Self {
-            c: self.c.clone(),
-            retained_client_reference: false,
-            ttyname: self.ttyname.clone(),
-        }
-    }
 }
 
 impl window_client_itemdata {
     fn new(c: &ClientRef, ttyname: &CStr) -> Self {
         Self {
             c: Some(Rc::clone(c)),
-            retained_client_reference: true,
             ttyname: ttyname.to_owned(),
         }
     }
 
     fn client(&self) -> &ClientRef {
         self.c.as_ref().expect("live client row retains its client")
-    }
-}
-
-impl Drop for window_client_itemdata {
-    fn drop(&mut self) {
-        if let Some(client) = self.c.take() {
-            if self.retained_client_reference {
-                (client).release();
-            } else {
-                drop(client);
-            }
-        }
     }
 }
 
@@ -732,7 +709,7 @@ unsafe fn window_client_get_screen(wme: refbox::Weak<window_mode_entry>) -> *mut
         .map_or(std::ptr::null_mut(), |tree| &raw mut (*tree.get()).screen)
 }
 
-unsafe fn window_client_free(mut wme: refbox::Weak<window_mode_entry>) {
+unsafe fn window_client_free(wme: refbox::Weak<window_mode_entry>) {
     let Some(data) = wme
         .get_unchecked()
         .boxed_data_ptr::<window_client_modedata>()
@@ -740,8 +717,6 @@ unsafe fn window_client_free(mut wme: refbox::Weak<window_mode_entry>) {
         return;
     };
     mode_tree_free((*data).data.take().expect("mode tree owner"));
-    (*data).items.clear();
-    drop(wme.get_mut_unchecked().boxed_data.take());
 }
 unsafe fn window_client_resize(
     mut wme: refbox::Weak<window_mode_entry>,

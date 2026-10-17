@@ -439,12 +439,9 @@ pub unsafe fn job_free(handle: &Weak<job>) {
             .expect("unborrowed job after cleanup callback");
         if job.pid != -1 {
             kill(job.pid as __pid_t, SIGTERM);
-            job.pid = -1;
         }
         std::mem::take(&mut job.event).free();
-        drop(job.fd.take());
     }
-    drop(owner);
 }
 
 pub unsafe fn job_resize(handle: &Weak<job>, sx: u_int, sy: u_int) {

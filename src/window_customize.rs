@@ -2816,7 +2816,7 @@ unsafe fn window_customize_get_screen(wme: refbox::Weak<window_mode_entry>) -> *
         .map_or(std::ptr::null_mut(), |tree| &raw mut (*tree.get()).screen)
 }
 
-unsafe fn window_customize_free(mut wme: refbox::Weak<window_mode_entry>) {
+unsafe fn window_customize_free(wme: refbox::Weak<window_mode_entry>) {
     let Some(mode_owner) = wme
         .get_unchecked()
         .retained_data::<UnsafeCell<window_customize_modedata>>()
@@ -2829,7 +2829,6 @@ unsafe fn window_customize_free(mut wme: refbox::Weak<window_mode_entry>) {
         editor.cancel();
     }
     mode_tree_free((*data).data.take().expect("mode tree owner"));
-    drop(wme.get_mut_unchecked().data_owner.take());
 }
 unsafe fn window_customize_resize(
     mut wme: refbox::Weak<window_mode_entry>,

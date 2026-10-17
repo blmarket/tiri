@@ -472,7 +472,7 @@ impl Drop for cmd_run_shell_data {
                 (session).release(c"cmd_run_shell_data::drop");
             }
             if let Some(client) = self.client.take() {
-                (client).release();
+                drop(client);
             }
             drop(self.state.take());
         }

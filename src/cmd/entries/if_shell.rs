@@ -253,7 +253,7 @@ impl Drop for cmd_if_shell_data {
     fn drop(&mut self) {
         {
             if let Some(client) = self.client.take() {
-                (client).release();
+                drop(client);
             }
             drop(self.cmd_else.take());
             drop(self.cmd_if.take());

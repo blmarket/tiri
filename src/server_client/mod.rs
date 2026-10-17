@@ -78,8 +78,8 @@ use crate::src::style::colour::{
 use crate::src::text::utf8::{utf8_sanitize_cstring, utf8_stravisx_bytes};
 use crate::src::tmux::{checkshell, find_home_cstr, global_options, global_s_options, setblocking};
 use crate::src::tty::{
-    tty_close, tty_cursor, tty_free, tty_init, tty_invalidate, tty_margin_off, tty_open,
-    tty_region_off, tty_repeat_requests, tty_reset, tty_resize, tty_send_requests, tty_set_path,
+    tty_close, tty_cursor, tty_init, tty_invalidate, tty_margin_off, tty_open, tty_region_off,
+    tty_repeat_requests, tty_reset, tty_resize, tty_send_requests, tty_set_path,
     tty_set_progress_bar, tty_set_title, tty_start_tty, tty_stop_tty, tty_sync_end,
     tty_update_client_offset, tty_update_mode, tty_window_offset,
 };
@@ -696,7 +696,7 @@ unsafe fn server_client_clear_overlay(c_owner: &ClientRef) {
         .checked_add(1)
         .expect("overlay generation exhausted");
     let generation = (*c).overlay_generation;
-    overlay.free(c_owner);
+    drop(overlay);
     if (*c).overlay_generation == generation {
         (*c).tty.flags &= !(TTY_FREEZE | TTY_NOCURSOR);
     }
@@ -1179,7 +1179,7 @@ unsafe fn server_client_lost(client_owner: &ClientRef) {
         control_stop(client_owner);
     }
     if (*c).flags & CLIENT_TERMINAL as uint64_t != 0 {
-        tty_free(client_owner);
+        tty_close(client_owner);
     }
     server_client_set_ttyname(&mut *c, None);
     server_client_set_term_name(&mut *c, None);
@@ -1208,26 +1208,11 @@ unsafe fn server_client_lost(client_owner: &ClientRef) {
     (*c).peer = ::core::ptr::null_mut::<tmuxpeer>();
     drop((*c).out_fd.take());
     drop((*c).fd.take());
-    server_client_unref_owned(registry_owner);
+    drop(registry_owner);
     server_add_accept(0 as ::core::ffi::c_int);
     recalculate_sizes();
     server_check_unattached();
     server_update_socket();
-}
-/// Release one client owner after its caller has finished using it.
-fn server_client_unref_owned(c: ClientRef) {
-    log_debug(format_args!("unref client {}", log_pointer(c.get())));
-    drop(c);
-}
-unsafe fn server_client_free(c_value: &mut client) {
-    let c: *mut client = c_value as *mut _;
-    log_debug(format_args!("free client {}", log_pointer(c)));
-    drop((*c).redraw_scene.take());
-    drop((*c).queue.take());
-    assert!(
-        crate::src::file::client_files_is_empty(&(*c).files),
-        "client file index still contains live records at client teardown"
-    );
 }
 unsafe fn server_client_suspend(c_owner: &ClientRef) {
     let mut c = c_owner.get();
@@ -2487,14 +2472,6 @@ unsafe fn server_client_key_callback(
 }
 
 struct QueuedKeyEvent(Box<key_event>, Option<ClientRef>);
-
-impl Drop for QueuedKeyEvent {
-    fn drop(&mut self) {
-        if let Some(client) = self.1.take() {
-            server_client_unref_owned(client);
-        }
-    }
-}
 
 unsafe fn server_client_handle_menu_key(
     owner: &ClientRef,
@@ -4339,7 +4316,12 @@ mod key_event_owner_tests {
 
 impl Drop for client {
     fn drop(&mut self) {
-        unsafe { server_client_free(self) }
+        log_debug(format_args!("free client {}", log_pointer(self)));
+        drop(self.queue.take());
+        assert!(
+            crate::src::file::client_files_is_empty(&self.files),
+            "client file index still contains live records at client teardown"
+        );
     }
 }
 
