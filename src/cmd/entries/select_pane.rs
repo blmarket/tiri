@@ -247,17 +247,17 @@ unsafe fn cmd_select_pane_exec(
             return cmd_select_pane_marked_pane(marked_command.clone(), item_handle);
         }
         if let Some(style) = args_get(arguments, b'P') {
-            original_pane.with_options_mut(|options| {
+            {
+                let options = original_pane.borrow_options_mut();
                 options_set_string(options, c"window-style", 0, |out| write_cstr(out, &*style));
                 options_set_string(options, c"window-active-style", 0, |out| {
                     write_cstr(out, &*style)
                 });
-            });
+            }
             original_pane.invalidate_style();
         }
         if args_has(arguments, b'g') != 0 {
-            let style = original_pane
-                .with_options_mut(|options| options_get_string(options, c"window-style"));
+            let style = options_get_string(original_pane.borrow_options_mut(), c"window-style");
             cmdq_print(item_handle, |out| write_cstr(out, &*style));
             return CMD_RETURN_NORMAL;
         }

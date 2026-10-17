@@ -64,9 +64,7 @@ unsafe fn cmd_rename_window_exec(
         .expect("target window")
         .clone();
     window.rename(&name, false);
-    window.with_options_mut(|options| {
-        options_set_number(options, c"automatic-rename", 0);
-    });
+    options_set_number(window.borrow_options_mut(), c"automatic-rename", 0);
     server_redraw_window_borders(
         (wl.get_unchecked().window_handle().as_ref()).expect("live window"),
     );

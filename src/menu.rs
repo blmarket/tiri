@@ -183,7 +183,7 @@ unsafe fn menu_reapply_styles(md: &mut menu_data) {
     ] {
         *cell = grid_default_cell;
         style_apply_with_options(cell, option, Some(&mut *ft), |visit| {
-            window.with_options_mut(visit);
+            visit(window.borrow_options_mut());
         });
         if let Some(override_style) = override_style {
             style_set(&mut parsed, &grid_default_cell);
@@ -629,8 +629,7 @@ pub unsafe fn menu_display(
     let sy = menu.count().wrapping_add(2);
     (px, py) = setup_window.place_menu((px, py), (sx, sy));
     if lines == BOX_LINES_DEFAULT {
-        lines = setup_window
-            .with_options_mut(|options| options_get_number(options, c"menu-border-lines"))
+        lines = options_get_number(setup_window.borrow_options_mut(), c"menu-border-lines")
             as box_lines;
     }
     let owner = refbox::RefBox::new(menu_data {

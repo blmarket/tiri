@@ -389,10 +389,12 @@ unsafe fn window_client_draw_info(
     if sx > 14 as u_int && i < sy {
         gc = grid_default_cell;
         style_apply_with_options(&mut gc, c"tree-mode-border-style", None, |visit| {
-            options_window
-                .upgrade()
-                .expect("live client-preview window")
-                .with_options_mut(visit)
+            visit(
+                options_window
+                    .upgrade()
+                    .expect("live client-preview window")
+                    .borrow_options_mut(),
+            )
         });
         screen_write_cursormove(
             &mut *ctx,
@@ -511,10 +513,12 @@ unsafe fn window_client_draw(
     }
     gc = grid_default_cell;
     style_apply_with_options(&mut gc, c"tree-mode-border-style", None, |visit| {
-        options_window
-            .upgrade()
-            .expect("live client-preview window")
-            .with_options_mut(visit)
+        visit(
+            options_window
+                .upgrade()
+                .expect("live client-preview window")
+                .borrow_options_mut(),
+        )
     });
     screen_write_hline(
         &mut *ctx,

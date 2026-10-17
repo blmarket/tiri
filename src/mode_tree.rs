@@ -902,17 +902,21 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
     gc0 = grid_default_cell;
     gc = grid_default_cell;
     style_apply_with_options(&mut gc, c"tree-mode-selection-style", None, |visit| {
-        options_window
-            .upgrade()
-            .expect("live tree-mode window")
-            .with_options_mut(visit)
+        visit(
+            options_window
+                .upgrade()
+                .expect("live tree-mode window")
+                .borrow_options_mut(),
+        )
     });
     box_gc = grid_default_cell;
     style_apply_with_options(&mut box_gc, c"tree-mode-border-style", None, |visit| {
-        options_window
-            .upgrade()
-            .expect("live tree-mode window")
-            .with_options_mut(visit)
+        visit(
+            options_window
+                .upgrade()
+                .expect("live tree-mode window")
+                .borrow_options_mut(),
+        )
     });
     dfg = gc.fg;
     dfg0 = gc0.fg;
@@ -1418,7 +1422,7 @@ pub unsafe fn mode_tree_set_prompt(
         freecb,
     });
     let position = if let Some(session) = session_owner.as_ref() {
-        session.with_options_mut(|options| options_get_number(options, c"status-position"))
+        options_get_number(session.borrow_options_mut(), c"status-position")
     } else {
         options_get_number(&*global_s_options, c"status-position")
     };
@@ -1854,10 +1858,12 @@ unsafe fn mode_tree_draw_help(
     y = sy.wrapping_sub(box_h).wrapping_div(2 as u_int);
     box_gc = grid_default_cell;
     style_apply_with_options(&mut box_gc, c"tree-mode-border-style", None, |visit| {
-        options_window
-            .upgrade()
-            .expect("live tree-mode window")
-            .with_options_mut(visit)
+        visit(
+            options_window
+                .upgrade()
+                .expect("live tree-mode window")
+                .borrow_options_mut(),
+        )
     });
     gc = grid_default_cell;
     let mut ft_owner = format_create_defaults(

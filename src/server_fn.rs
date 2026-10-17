@@ -172,11 +172,14 @@ pub unsafe fn server_lock_client(client_owner: &ClientRef) {
     if client_owner.flags() & (CLIENT_CONTROL | CLIENT_SUSPENDED) as u64 != 0 {
         return;
     }
-    let command = client_owner
-        .attached_session()
-        .upgrade()
-        .expect("live session")
-        .with_options_mut(|options| options_get_string(options, c"lock-command"));
+    let command = options_get_string(
+        client_owner
+            .attached_session()
+            .upgrade()
+            .expect("live session")
+            .borrow_options_mut(),
+        c"lock-command",
+    );
     client_owner.lock(&command);
 }
 
@@ -220,10 +223,10 @@ pub unsafe fn server_kill_window(owner: WindowRef, mut renumber: ::core::ffi::c_
 pub unsafe fn server_renumber_session(s_owner: &SessionRef) {
     let s = Some(s_owner.clone());
     let mut sg = crate::src::shared::session::SessionGroupWeak::new();
-    if s.as_ref()
-        .expect("live session")
-        .with_options_mut(|options| options_get_number(options, c"renumber-windows"))
-        != 0
+    if options_get_number(
+        s.as_ref().expect("live session").borrow_options_mut(),
+        c"renumber-windows",
+    ) != 0
     {
         sg = crate::src::session::session_groups::for_session(
             &s.as_ref()
@@ -294,11 +297,10 @@ pub unsafe fn server_link_window(
     }
     if dstidx == -(1 as ::core::ffi::c_int) {
         dstidx = (-(1 as ::core::ffi::c_int) as ::core::ffi::c_longlong
-            - dst
-                .as_ref()
-                .expect("live session")
-                .with_options_mut(|options| options_get_number(options, c"base-index")))
-            as ::core::ffi::c_int;
+            - options_get_number(
+                dst.as_ref().expect("live session").borrow_options_mut(),
+                c"base-index",
+            )) as ::core::ffi::c_int;
     }
     let window_owner = srcwl
         .get_unchecked()
@@ -387,11 +389,10 @@ pub unsafe fn server_destroy_session(source: &SessionRef) {
         order_seq: &[],
     };
     let mut detach_on_destroy: ::core::ffi::c_int = 0;
-    detach_on_destroy = s
-        .as_ref()
-        .expect("live session")
-        .with_options_mut(|options| options_get_number(options, c"detach-on-destroy"))
-        as ::core::ffi::c_int;
+    detach_on_destroy = options_get_number(
+        s.as_ref().expect("live session").borrow_options_mut(),
+        c"detach-on-destroy",
+    ) as ::core::ffi::c_int;
     let mut replacement = match detach_on_destroy {
         0 => server_find_session(s.as_ref().expect("live session"), |a, b| {
             server_newer_session(a, b)
@@ -454,11 +455,10 @@ pub unsafe fn server_check_unattached() {
     while !s.is_none() {
         let name = s.as_ref().expect("live session").name();
         if !(s.as_ref().expect("live session").is_attached()) {
-            match s
-                .as_ref()
-                .expect("live session")
-                .with_options_mut(|options| options_get_number(options, c"destroy-unattached"))
-            {
+            match options_get_number(
+                s.as_ref().expect("live session").borrow_options_mut(),
+                c"destroy-unattached",
+            ) {
                 0 => {}
                 2 => {
                     current_block_4 = 6116987625208566775;

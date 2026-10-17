@@ -208,11 +208,10 @@ unsafe fn cmd_display_menu_get_popup_pos(
         } else {
             top = 0 as ::core::ffi::c_int;
         }
-        position = s
-            .as_ref()
-            .expect("live session")
-            .with_options_mut(|options| options_get_number(options, c"status-position"))
-            as u_int;
+        position = options_get_number(
+            s.as_ref().expect("live session").borrow_options_mut(),
+            c"status-position",
+        ) as u_int;
         let index = wl.get_unchecked().idx as u_int;
         if let Some((line, start)) =
             cmd_display_menu_status_position(tc.as_ref().expect("live client"), lines, index)
@@ -561,11 +560,10 @@ unsafe fn cmd_display_menu_get_menu_pos(
         write!(out, "{}", { window.last_menu_position().1.wrapping_add(h) })
     });
     lines = status_line_size(tc.as_ref().expect("live client"));
-    position = s
-        .as_ref()
-        .expect("live session")
-        .with_options_mut(|options| options_get_number(options, c"status-position"))
-        as u_int;
+    position = options_get_number(
+        s.as_ref().expect("live session").borrow_options_mut(),
+        c"status-position",
+    ) as u_int;
     if status_at_line(tc.as_ref().expect("live client")) != -(1 as ::core::ffi::c_int)
         && lines != 0 as u_int
     {
@@ -1055,10 +1053,10 @@ unsafe fn cmd_display_popup_exec(
                                     .as_ptr();
                             }
                             if count == 0 as u_int {
-                                shellcmd_session_value =
-                                    Some(s.as_ref().expect("live session").with_options_mut(
-                                        |options| options_get_string(options, c"default-command"),
-                                    ));
+                                shellcmd_session_value = Some(options_get_string(
+                                    s.as_ref().expect("live session").borrow_options_mut(),
+                                    c"default-command",
+                                ));
                                 shellcmd = shellcmd_session_value
                                     .as_ref()
                                     .expect("option snapshot")
@@ -1072,10 +1070,10 @@ unsafe fn cmd_display_popup_exec(
                                     || *shellcmd as ::core::ffi::c_int == '\0' as i32)
                             {
                                 shellcmd = ::core::ptr::null::<::core::ffi::c_char>();
-                                shell_session_value =
-                                    Some(s.as_ref().expect("live session").with_options_mut(
-                                        |options| options_get_string(options, c"default-shell"),
-                                    ));
+                                shell_session_value = Some(options_get_string(
+                                    s.as_ref().expect("live session").borrow_options_mut(),
+                                    c"default-shell",
+                                ));
                                 shell = shell_session_value
                                     .as_ref()
                                     .expect("option snapshot")

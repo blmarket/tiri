@@ -1164,12 +1164,13 @@ impl Client for ClientRef {
             out.write_all(message.as_bytes())
         });
         if delay == -1 {
-            delay = self
-                .attached_session()
-                .upgrade()
-                .expect("live session")
-                .with_options_mut(|options| options_get_number(options, c"display-time"))
-                as i32;
+            delay = options_get_number(
+                self.attached_session()
+                    .upgrade()
+                    .expect("live session")
+                    .borrow_options_mut(),
+                c"display-time",
+            ) as i32;
         }
         let observer = Rc::downgrade(self);
         let state = &mut *self.get();

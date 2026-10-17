@@ -4595,7 +4595,7 @@ unsafe fn input_exit_rename(ictx: *mut input_ctx) {
     if (*ictx).flags & INPUT_DISCARD != 0 {
         return;
     }
-    if pane.with_options_mut(|options| options_get_number(options, c"allow-rename")) == 0 {
+    if options_get_number(pane.borrow_options_mut(), c"allow-rename") == 0 {
         return;
     }
     log_debug(format_args!(
@@ -4614,15 +4614,12 @@ unsafe fn input_exit_rename(ictx: *mut input_ctx) {
         scope
             .remove_or_default(c"automatic-rename", None)
             .expect("remove local automatic-rename option");
-        let automatic = window
-            .with_options_mut(|options| options_get_number(options, c"automatic-rename") != 0);
+        let automatic = options_get_number(window.borrow_options_mut(), c"automatic-rename") != 0;
         if !automatic {
             window.rename(c"", true);
         }
     } else {
-        window.with_options_mut(|options| {
-            options_set_number(options, c"automatic-rename", 0);
-        });
+        options_set_number(window.borrow_options_mut(), c"automatic-rename", 0);
         window.rename(&name, true);
     }
     server_redraw_window_borders(&window);

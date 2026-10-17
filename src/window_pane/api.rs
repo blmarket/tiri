@@ -288,7 +288,10 @@ pub trait WindowPane {
     unsafe fn advance_output(&self, offset: &mut window_pane_offset, count: usize);
     /// Run once after all clients have consumed the current event-loop cycle.
     unsafe fn finish_cycle(&self);
-    unsafe fn with_options_mut<R>(&self, edit: impl FnOnce(&mut options) -> R) -> R;
+    type OptionsMut<'a>: std::ops::DerefMut<Target = options>
+    where
+        Self: 'a;
+    unsafe fn borrow_options_mut(&self) -> Self::OptionsMut<'_>;
     unsafe fn format_value(
         &self,
         key: &CStr,
@@ -417,7 +420,8 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         {
             return false;
         }
-        let close = self.with_options_mut(|options| {
+        let close = {
+            let options = self.borrow_options_mut();
             let remain = options_get_number(options, c"remain-on-exit");
             if remain == 3 || remain == 4 {
                 crate::src::options::options_set_number(options, c"remain-on-exit", 0);
@@ -425,7 +429,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
             } else {
                 false
             }
-        });
+        };
         if close {
             self.finish_process(0);
         }
@@ -624,7 +628,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         (*self.get()).flags & (PANE_REDRAW | PANE_DROP) != 0
     }
     unsafe fn alternate_screen_allowed(&self) -> bool {
-        self.with_options_mut(|options| options_get_number(options, c"alternate-screen")) != 0
+        options_get_number(self.borrow_options_mut(), c"alternate-screen") != 0
     }
     unsafe fn alternate_screen_changed(&self, entered: bool) {
         super::render::alternate_screen_changed(self, entered);
@@ -1249,13 +1253,12 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         (*self.get()).flags &= !(PANE_REDRAW | PANE_REDRAWSCROLLBAR | PANE_ACTIVITY);
     }
 
-    unsafe fn with_options_mut<R>(&self, edit: impl FnOnce(&mut options) -> R) -> R {
-        edit(
-            (*self.get())
-                .options
-                .as_deref_mut()
-                .expect("live pane options"),
-        )
+    type OptionsMut<'a> = &'a mut options;
+    unsafe fn borrow_options_mut(&self) -> Self::OptionsMut<'_> {
+        (*self.get())
+            .options
+            .as_deref_mut()
+            .expect("live pane options")
     }
 
     unsafe fn format_value(

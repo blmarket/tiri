@@ -295,10 +295,12 @@ unsafe fn window_panes_get_border_cell(
         c"display-panes-border-style",
         Some(&mut *ft),
         |visit| {
-            options_window
-                .upgrade()
-                .expect("live display-panes window")
-                .with_options_mut(visit)
+            visit(
+                options_window
+                    .upgrade()
+                    .expect("live display-panes window")
+                    .borrow_options_mut(),
+            )
         },
     );
     drop(ft_owner);
@@ -397,11 +399,14 @@ unsafe fn window_panes_draw_format(
         }
         return;
     }
-    let format = mode_pane_owner
-        .window_observer()
-        .upgrade()
-        .expect("live display-panes window")
-        .with_options_mut(|options| options_get_string(options, c"display-panes-format"));
+    let format = options_get_string(
+        mode_pane_owner
+            .window_observer()
+            .upgrade()
+            .expect("live display-panes window")
+            .borrow_options_mut(),
+        c"display-panes-format",
+    );
     if format.as_bytes().is_empty() {
         if let Some(owner) = session_owner {
             drop(owner);
@@ -553,24 +558,22 @@ unsafe fn window_panes_draw_number(
         std::ffi::CStr::from_ptr(name),
         Some(&mut *ft),
         |visit| {
-            options_window
-                .upgrade()
-                .expect("live display-panes window")
-                .with_options_mut(visit)
+            visit(
+                options_window
+                    .upgrade()
+                    .expect("live display-panes window")
+                    .borrow_options_mut(),
+            )
         },
     );
     drop(ft_owner);
     bgc = grid_default_cell;
     bgc.bg = fgc.fg;
     format = 0 as u_int;
-    if options_window
-        .upgrade()
-        .expect("live display-panes window")
-        .with_options_mut(|options| {
-            !options_get_string(options, c"display-panes-format")
-                .as_bytes()
-                .is_empty()
-        })
+    let window = options_window.upgrade().expect("live display-panes window");
+    if !options_get_string(window.borrow_options_mut(), c"display-panes-format")
+        .as_bytes()
+        .is_empty()
     {
         format = 1;
     }
@@ -875,11 +878,13 @@ unsafe fn window_panes_init(
     target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     s = (*target).session_handle();
     if args_has(args, 'd' as i32 as u_char) == 0 {
-        delay = original_window
-            .upgrade()
-            .expect("live display-panes window")
-            .with_options_mut(|options| options_get_number(options, c"display-panes-time"))
-            as u_int;
+        delay = options_get_number(
+            original_window
+                .upgrade()
+                .expect("live display-panes window")
+                .borrow_options_mut(),
+            c"display-panes-time",
+        ) as u_int;
     } else {
         delay = match args_strtonum_result(
             args,

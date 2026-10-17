@@ -1265,10 +1265,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
         let mut window_cursor = windows::first();
         while let Some(window_owner) = window_cursor.take() {
             if let Some(active) = window_owner.active_pane().upgrade() {
-                if window_owner
-                    .with_options_mut(|options| options_get_number(options, c"automatic-rename"))
-                    != 0
-                {
+                if options_get_number(window_owner.borrow_options_mut(), c"automatic-rename") != 0 {
                     active.mark_changed();
                 }
             }

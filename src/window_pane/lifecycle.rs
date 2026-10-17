@@ -175,8 +175,8 @@ pub(super) unsafe fn finish_process(
             if notify != 0 {
                 server_fire_pane_exit(c"pane-died", pane_owner);
             }
-            let format = pane_owner
-                .with_options_mut(|options| options_get_string(options, c"remain-on-exit-format"));
+            let format =
+                options_get_string(pane_owner.borrow_options_mut(), c"remain-on-exit-format");
             s = format.as_ptr();
             if *s as ::core::ffi::c_int != '\0' as i32 {
                 screen_write_start_pane(&mut ctx, pane_owner, &raw mut (*wp).base);

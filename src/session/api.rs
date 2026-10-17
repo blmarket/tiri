@@ -106,9 +106,7 @@ pub trait Session {
     unsafe fn on_attached(&self);
     unsafe fn theme_changed(&self);
     unsafe fn status_layout(&self) -> (i32, u32);
-    /// Scopes cannot reenter model code, run callbacks, change component parents,
-    /// free components, or allow references/pointers to escape.
-    unsafe fn with_options_mut<R>(&self, edit: impl FnOnce(&mut options) -> R) -> R;
+    unsafe fn borrow_options_mut(&self) -> &mut options;
     unsafe fn with_environment_mut<R>(&self, edit: impl FnOnce(&mut environ) -> R) -> R;
     unsafe fn set_cwd(&self, cwd: Option<CString>);
     unsafe fn cwd(&self) -> Option<CString>;
@@ -358,13 +356,11 @@ impl Session for SessionRef {
     unsafe fn status_layout(&self) -> (i32, u32) {
         ((*self.get()).statusat, (*self.get()).statuslines)
     }
-    unsafe fn with_options_mut<R>(&self, edit: impl FnOnce(&mut options) -> R) -> R {
-        edit(
-            (*self.get())
-                .options
-                .as_deref_mut()
-                .expect("session options"),
-        )
+    unsafe fn borrow_options_mut(&self) -> &mut options {
+        (*self.get())
+            .options
+            .as_deref_mut()
+            .expect("session options")
     }
     unsafe fn with_environment_mut<R>(&self, edit: impl FnOnce(&mut environ) -> R) -> R {
         let mut environment = self.borrow_environment_mut().expect("session environment");
@@ -423,9 +419,10 @@ mod tests {
             (*session.get()).options = Some(options);
             status_update_cache(&mut *session.get());
             let before = session.status_layout();
-            session.with_options_mut(|options| {
+            {
+                let options = session.borrow_options_mut();
                 crate::src::options::options_set_number(options, c"status", 0);
-            });
+            }
             assert_eq!(
                 session.status_layout(),
                 before,

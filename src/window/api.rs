@@ -180,7 +180,7 @@ pub trait Window {
     /// first, in inside/outside order as observed by format callbacks.
     unsafe fn refresh_fill_cells(&self);
     unsafe fn fill_cell(&self, inside: bool) -> grid_cell;
-    unsafe fn with_options_mut<R>(&self, edit: impl FnOnce(&mut options) -> R) -> R;
+    unsafe fn borrow_options_mut(&self) -> &mut options;
     unsafe fn format_value(
         &self,
         key: &CStr,
@@ -438,9 +438,10 @@ impl Window for WindowRef {
     unsafe fn initialize_name(&self, name: CString, explicit: bool) {
         drop(window_replace_name(self, name));
         if explicit {
-            self.with_options_mut(|options| {
+            {
+                let options = self.borrow_options_mut();
                 crate::src::options::options_set_number(options, c"automatic-rename", 0);
-            });
+            }
         }
     }
     unsafe fn name(&self) -> CString {
@@ -681,13 +682,11 @@ impl Window for WindowRef {
         }
         false
     }
-    unsafe fn with_options_mut<R>(&self, edit: impl FnOnce(&mut options) -> R) -> R {
-        edit(
-            (*self.get())
-                .options
-                .as_deref_mut()
-                .expect("live window options"),
-        )
+    unsafe fn borrow_options_mut(&self) -> &mut options {
+        (*self.get())
+            .options
+            .as_deref_mut()
+            .expect("live window options")
     }
     unsafe fn format_value(
         &self,
@@ -781,11 +780,12 @@ mod tests {
                 .unwrap();
             crate::src::options::options_default(&mut *options, entry);
             (*owner.get()).options = Some(options);
-            owner.with_options_mut(|options| {
+            {
+                let options = owner.borrow_options_mut();
                 crate::src::options::options_set_string(options, c"fill-character", 0, |out| {
                     out.write_all(b"#[fg=red]#{?is_inside,I,O}")
                 });
-            });
+            }
             owner.refresh_fill_cells();
             let original = owner.fill_cell(true);
             assert_eq!(original.data.data[0], b'I');
@@ -805,11 +805,12 @@ mod tests {
                 border.attr & crate::src::shared::grid::GRID_ATTR_UNDERSCORE as u16,
                 0
             );
-            owner.with_options_mut(|options| {
+            {
+                let options = owner.borrow_options_mut();
                 crate::src::options::options_set_string(options, c"fill-character", 0, |out| {
                     out.write_all(b"#{?is_outside,X,Y}")
                 });
-            });
+            }
             owner.refresh_fill_cells();
             assert_eq!(owner.fill_cell(true).data.data[0], b'Y');
             assert_eq!(owner.fill_cell(false).data.data[0], b'X');

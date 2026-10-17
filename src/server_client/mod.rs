@@ -852,7 +852,7 @@ unsafe fn server_client_get_key_table(c: &client) -> std::ffi::CString {
     let Some(session) = c.session_handle() else {
         return c"root".to_owned();
     };
-    let name = session.with_options_mut(|options| options_get_string(options, c"key-table"));
+    let name = options_get_string(session.borrow_options_mut(), c"key-table");
     if name.as_bytes().is_empty() {
         c"root".to_owned()
     } else {
@@ -1264,8 +1264,10 @@ unsafe fn server_client_exec(c_owner: &ClientRef, cmd: &CStr) {
         return;
     }
     if let Some(s_value) = s.as_ref() {
-        shell_session_value =
-            Some(s_value.with_options_mut(|options| options_get_string(options, c"default-shell")));
+        shell_session_value = Some(options_get_string(
+            s_value.borrow_options_mut(),
+            c"default-shell",
+        ));
         shell = shell_session_value
             .as_ref()
             .expect("option snapshot")
@@ -1780,12 +1782,10 @@ unsafe fn server_client_check_mouse(
                 !window_owner
                     .active_pane()
                     .ptr_eq(&Rc::downgrade(pane_owner))
-                    && s.as_ref()
-                        .expect("live session")
-                        .with_options_mut(|options| {
-                            options_get_number(options, c"focus-follows-mouse")
-                        })
-                        != 0
+                    && options_get_number(
+                        s.as_ref().expect("live session").borrow_options_mut(),
+                        c"focus-follows-mouse",
+                    ) != 0
             }) {
                 WindowRef::clone(&(window_owner)).redraw_active_switch(selected_pane.as_ref());
                 WindowRef::clone(&(window_owner)).select_pane(pane_owner, true);
@@ -1954,11 +1954,10 @@ unsafe fn server_client_is_assume_paste(c: &mut client) -> ::core::ffi::c_int {
     if c.flags as ::core::ffi::c_ulonglong & CLIENT_BRACKETPASTING != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    t = s
-        .as_ref()
-        .expect("live session")
-        .with_options_mut(|options| options_get_number(options, c"assume-paste-time"))
-        as ::core::ffi::c_int;
+    t = options_get_number(
+        s.as_ref().expect("live session").borrow_options_mut(),
+        c"assume-paste-time",
+    ) as ::core::ffi::c_int;
     if t == 0 as ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
@@ -2010,9 +2009,8 @@ unsafe fn server_client_update_latest(c_owner: &ClientRef) {
         drop(window);
         return;
     }
-    let use_latest = window.with_options_mut(|options| {
-        options_get_number(options, c"window-size") == WINDOW_SIZE_LATEST as i64
-    });
+    let use_latest = options_get_number(window.borrow_options_mut(), c"window-size")
+        == WINDOW_SIZE_LATEST as i64;
     if use_latest {
         recalculate_size(&window, 0);
     }
@@ -2027,20 +2025,18 @@ unsafe fn server_client_repeat_time(c: &client, bd: &KeyBindingCommand) -> u_int
     if !bd.flags & KEY_BINDING_REPEAT != 0 {
         return 0 as u_int;
     }
-    repeat = s
-        .as_ref()
-        .expect("live session")
-        .with_options_mut(|options| options_get_number(options, c"repeat-time"))
-        as u_int;
+    repeat = options_get_number(
+        s.as_ref().expect("live session").borrow_options_mut(),
+        c"repeat-time",
+    ) as u_int;
     if repeat == 0 as u_int {
         return 0 as u_int;
     }
     if !c.flags & CLIENT_REPEAT as uint64_t != 0 || bd.key != c.last_key {
-        initial = s
-            .as_ref()
-            .expect("live session")
-            .with_options_mut(|options| options_get_number(options, c"initial-repeat-time"))
-            as u_int;
+        initial = options_get_number(
+            s.as_ref().expect("live session").borrow_options_mut(),
+            c"initial-repeat-time",
+        ) as u_int;
         if initial != 0 as u_int {
             repeat = initial;
         }
@@ -2162,8 +2158,7 @@ unsafe fn server_client_key_callback(
                             <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int
                                 as ::core::ffi::c_ulonglong)
                                 << 32 as ::core::ffi::c_int)
-                    && session.with_options_mut(|options| options_get_number(options, c"mouse"))
-                        == 0
+                    && options_get_number(session.borrow_options_mut(), c"mouse") == 0
                 {
                     current_block = 15469183920764600035;
                 } else {
@@ -2215,11 +2210,9 @@ unsafe fn server_client_key_callback(
                         table = table_owner.as_ref().expect("key table").clone();
                         first = table.clone();
                         '_table_changed: loop {
-                            prefix = session
-                                .with_options_mut(|options| options_get_number(options, c"prefix"))
+                            prefix = options_get_number(session.borrow_options_mut(), c"prefix")
                                 as key_code;
-                            prefix2 = session
-                                .with_options_mut(|options| options_get_number(options, c"prefix2"))
+                            prefix2 = options_get_number(session.borrow_options_mut(), c"prefix2")
                                 as key_code;
                             key0 = (key as ::core::ffi::c_ulonglong
                                 & (KEYC_MASK_KEY | KEYC_MASK_MODIFIERS))
@@ -3007,7 +3000,7 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
             mode |= (*tty).mode & CURSOR_MODES;
             s = None;
         }
-        if session_owner.with_options_mut(|options| options_get_number(options, c"mouse")) != 0 {
+        if options_get_number(session_owner.borrow_options_mut(), c"mouse") != 0 {
             if !(*c)
                 .overlay
                 .as_ref()
@@ -3025,9 +3018,7 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
                     }
                 }
             }
-            if session_owner
-                .with_options_mut(|options| options_get_number(options, c"focus-follows-mouse"))
-                != 0
+            if options_get_number(session_owner.borrow_options_mut(), c"focus-follows-mouse") != 0
                 || (window_owner).scrollbar_mode() == PANE_SCROLLBARS_MODAL
                 || (window_owner).scrollbar_mode() == PANE_SCROLLBARS_AUTOHIDE
             {
@@ -3365,10 +3356,10 @@ unsafe fn server_client_check_redraw(client_owner: &ClientRef) {
             }
         }
         if (*c).flags & CLIENT_ALLREDRAWFLAGS as uint64_t != 0 {
-            if s.as_ref()
-                .expect("live session")
-                .with_options_mut(|options| options_get_number(options, c"set-titles"))
-                != 0
+            if options_get_number(
+                s.as_ref().expect("live session").borrow_options_mut(),
+                c"set-titles",
+            ) != 0
             {
                 server_client_set_title(client_owner);
                 server_client_set_path(client_owner);
@@ -3405,11 +3396,10 @@ unsafe fn server_client_set_title(client_owner: &ClientRef) {
     let s = Some(session_owner.clone());
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    template_session_value = Some(
-        s.as_ref()
-            .expect("live session")
-            .with_options_mut(|options| options_get_string(options, c"set-titles-string")),
-    );
+    template_session_value = Some(options_get_string(
+        s.as_ref().expect("live session").borrow_options_mut(),
+        c"set-titles-string",
+    ));
     template = template_session_value
         .as_ref()
         .expect("option snapshot")

@@ -758,18 +758,22 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
     );
     ft = &raw mut *ft_owner;
     style_apply_with_options(&mut gc, c"clock-mode-colour", Some(&mut *ft), |visit| {
-        options_window
-            .upgrade()
-            .expect("live clock window")
-            .with_options_mut(visit)
+        visit(
+            options_window
+                .upgrade()
+                .expect("live clock window")
+                .borrow_options_mut(),
+        )
     });
     drop(ft_owner);
     colour = gc.fg;
-    style = options_window
-        .upgrade()
-        .expect("live clock window")
-        .with_options_mut(|options| options_get_number(options, c"clock-mode-style"))
-        as ::core::ffi::c_int;
+    style = options_get_number(
+        options_window
+            .upgrade()
+            .expect("live clock window")
+            .borrow_options_mut(),
+        c"clock-mode-style",
+    ) as ::core::ffi::c_int;
     screen_write_start(&mut ctx, s);
     t = time(::core::ptr::null_mut::<time_t>());
     tm = localtime(&raw mut t);

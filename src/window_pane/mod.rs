@@ -1640,9 +1640,10 @@ unsafe fn window_pane_scrollbar_start_timer(pane_owner: &Rc<std::cell::UnsafeCel
     if window_pane_scrollbar_auto_hide(&*wp) == 0 || (*wp).sb_auto_visible == 0 {
         return;
     }
-    delay = (((*wp).window_handle().as_ref()).expect("live window"))
-        .with_options_mut(|options| options_get_number(options, c"pane-scrollbars-timeout"))
-        as u_int;
+    delay = options_get_number(
+        (((*wp).window_handle().as_ref()).expect("live window")).borrow_options_mut(),
+        c"pane-scrollbars-timeout",
+    ) as u_int;
     let timeout = Duration::from_millis(delay as u64);
     drop((*wp).sb_auto_timer.take());
     let observer = std::rc::Rc::downgrade(pane_owner);

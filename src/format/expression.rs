@@ -200,12 +200,12 @@ pub(super) unsafe fn format_find(
             if found.is_none() {
                 found = format_pane_owner
                     .as_ref()
-                    .and_then(|pane| pane.with_options_mut(lookup));
+                    .and_then(|pane| lookup(pane.borrow_options_mut()));
             }
             if found.is_none() {
                 found = format_window_owner
                     .as_ref()
-                    .and_then(|window| window.with_options_mut(lookup));
+                    .and_then(|window| lookup(window.borrow_options_mut()));
             }
             if found.is_none() {
                 found = global_w_options.as_mut().and_then(lookup);
@@ -213,7 +213,7 @@ pub(super) unsafe fn format_find(
             if found.is_none() {
                 found = format_session_owner
                     .as_ref()
-                    .and_then(|session| session.with_options_mut(lookup));
+                    .and_then(|session| lookup(session.borrow_options_mut()));
             }
             if found.is_none() {
                 found = global_s_options.as_mut().and_then(lookup);
@@ -1007,19 +1007,18 @@ pub(super) unsafe fn format_add_window_neighbour(
             (wl == s_owner.current_winlink()) as ::core::ffi::c_int
         })
     });
-    let entries = wl
-        .get_unchecked()
-        .window_handle()
-        .expect("neighbour window")
-        .with_options_mut(|root| {
-            crate::src::options::options_iter(root)
-                .filter(|(name, _)| name.to_bytes().first() == Some(&b'@'))
-                .map(|(name, entry)| {
-                    let value = options_to_cstring(entry, nullable_cstr(std::ptr::null()), 1);
-                    (name.to_owned(), value)
-                })
-                .collect::<Vec<_>>()
-        });
+    let entries = crate::src::options::options_iter(
+        wl.get_unchecked()
+            .window_handle()
+            .expect("neighbour window")
+            .borrow_options_mut(),
+    )
+    .filter(|(name, _)| name.to_bytes().first() == Some(&b'@'))
+    .map(|(name, entry)| {
+        let value = options_to_cstring(entry, nullable_cstr(std::ptr::null()), 1);
+        (name.to_owned(), value)
+    })
+    .collect::<Vec<_>>();
     for (name, value) in entries {
         let prefixed =
             CString::new([prefix, b"_", name.to_bytes()].concat()).expect("C string key");
@@ -1348,7 +1347,7 @@ pub(super) unsafe fn format_loop_options(
                     read(options);
                 }
             } else if let Some(window) = window.as_ref() {
-                window.with_options_mut(read);
+                read(window.borrow_options_mut());
             }
         } else if has(b's') {
             if global {
@@ -1356,12 +1355,12 @@ pub(super) unsafe fn format_loop_options(
                     read(options);
                 }
             } else if let Some(session) = session.as_ref() {
-                session.with_options_mut(read);
+                read(session.borrow_options_mut());
             }
         } else if has(b'p') {
             if !global {
                 if let Some(pane) = pane.as_ref() {
-                    pane.with_options_mut(read);
+                    read(pane.borrow_options_mut());
                 }
             }
         } else if global {

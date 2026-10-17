@@ -324,17 +324,15 @@ unsafe fn cmd_send_keys_exec(
         &cmd_send_prefix_entry,
     ) {
         if args_has(args, '2' as i32 as u_char) != 0 {
-            key = s
-                .as_ref()
-                .expect("live session")
-                .with_options_mut(|options| options_get_number(options, c"prefix2"))
-                as key_code;
+            key = options_get_number(
+                s.as_ref().expect("live session").borrow_options_mut(),
+                c"prefix2",
+            ) as key_code;
         } else {
-            key = s
-                .as_ref()
-                .expect("live session")
-                .with_options_mut(|options| options_get_number(options, c"prefix"))
-                as key_code;
+            key = options_get_number(
+                s.as_ref().expect("live session").borrow_options_mut(),
+                c"prefix",
+            ) as key_code;
         }
         cmd_send_keys_inject_key(item_handle, Some(item_handle), args, key);
         return CMD_RETURN_NORMAL;

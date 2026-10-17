@@ -273,7 +273,7 @@ unsafe fn popup_reapply_styles(popup: &PopupGuard) {
         &mut (*pd).defaults,
         c"popup-style",
         Some(&mut *ft),
-        |read| window.with_options_mut(read),
+        |read| read(window.borrow_options_mut()),
     );
     if !(*pd).style.is_none() {
         style_set(&raw mut sytmp, &grid_default_cell);
@@ -297,7 +297,7 @@ unsafe fn popup_reapply_styles(popup: &PopupGuard) {
         &mut (*pd).border_cell,
         c"popup-border-style",
         Some(&mut *ft),
-        |read| window.with_options_mut(read),
+        |read| read(window.borrow_options_mut()),
     );
     if !(*pd).border_style.is_none() {
         style_set(&raw mut sytmp, &grid_default_cell);
@@ -982,9 +982,7 @@ pub(crate) unsafe fn popup_display(
         .cloned()
         .expect("popup window");
     if lines == BOX_LINES_DEFAULT {
-        lines = window
-            .with_options_mut(|options| options_get_number(options, c"popup-border-lines"))
-            as box_lines;
+        lines = options_get_number(window.borrow_options_mut(), c"popup-border-lines") as box_lines;
     }
     if lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
         if sx < 1 as u_int || sy < 1 as u_int {
@@ -1029,7 +1027,7 @@ pub(crate) unsafe fn popup_display(
         &mut (*pd).border_cell,
         c"popup-border-style",
         None,
-        |read| window.with_options_mut(read),
+        |read| read(window.borrow_options_mut()),
     );
     if !border_style.is_null() {
         style_set(&raw mut sytmp, &grid_default_cell);
@@ -1057,7 +1055,7 @@ pub(crate) unsafe fn popup_display(
         ::core::mem::size_of::<grid_cell>() as size_t,
     );
     style_apply_with_options(&mut (*pd).defaults, c"popup-style", None, |read| {
-        window.with_options_mut(read)
+        read(window.borrow_options_mut())
     });
     drop(window);
     if !style.is_null() {

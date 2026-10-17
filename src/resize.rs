@@ -313,13 +313,14 @@ pub unsafe fn default_window_size(
             ypixel,
         ) == 0
         {
-            s_owner.with_options_mut(|options| {
+            {
+                let options = s_owner.borrow_options_mut();
                 let value = options_get_string(options, c"default-size");
                 if sscanf(value.as_ptr(), c"%ux%u".as_ptr(), sx, sy) != 2 {
                     *sx = 80;
                     *sy = 24;
                 }
-            });
+            }
             log_debug(format_args!(
                 "{}: using {}x{} from default-size",
                 "default_window_size",
@@ -365,12 +366,13 @@ pub unsafe fn recalculate_size(w_owner: &WindowRef, mut now: ::core::ffi::c_int)
         { (w_owner).size().0 },
         { (w_owner).size().1 }
     ));
-    (type_0, current) = w_owner.with_options_mut(|options| {
+    (type_0, current) = {
+        let options = w_owner.borrow_options_mut();
         (
             options_get_number(options, c"window-size") as i32,
             options_get_number(options, c"aggressive-resize") as i32,
         )
-    });
+    };
     changed = clients_calculate_size(
         type_0,
         None,

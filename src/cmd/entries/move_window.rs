@@ -161,11 +161,10 @@ unsafe fn cmd_move_window_exec(
         server_unlink_window(src.as_ref().expect("live session"), wl.clone());
     }
     if sflag == 0
-        && src
-            .as_ref()
-            .expect("live session")
-            .with_options_mut(|options| options_get_number(options, c"renumber-windows"))
-            != 0
+        && options_get_number(
+            src.as_ref().expect("live session").borrow_options_mut(),
+            c"renumber-windows",
+        ) != 0
     {
         (src.as_ref().expect("live session")).renumber_windows();
     }

@@ -68,17 +68,17 @@ impl OptionsScope {
             ),
             Self::Session(observer) => {
                 let owner = observer.upgrade().expect("live option session");
-                let table = owner.with_options_mut(|table| NonNull::from(table));
+                let table = NonNull::from(owner.borrow_options_mut());
                 (table, ScopeOwner::Session(owner))
             }
             Self::Window(observer) => {
                 let owner = observer.upgrade().expect("live option window");
-                let table = owner.with_options_mut(|table| NonNull::from(table));
+                let table = NonNull::from(owner.borrow_options_mut());
                 (table, ScopeOwner::Window(owner))
             }
             Self::Pane(observer) => {
                 let owner = observer.upgrade().expect("live option pane");
-                let table = owner.with_options_mut(|table| NonNull::from(table));
+                let table = NonNull::from(owner.borrow_options_mut());
                 (table, ScopeOwner::Pane(owner))
             }
         };

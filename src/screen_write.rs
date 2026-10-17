@@ -1801,10 +1801,10 @@ pub unsafe fn screen_write_clearendofscreen(ctx: &mut screen_write_ctx, mut bg: 
         && (*s).cy == 0 as u_int
         && (*s).grid().flags & GRID_HISTORY != 0
         && write_pane.is_some()
-        && write_pane
-            .expect("write pane")
-            .with_options_mut(|options| options_get_number(options, c"scroll-on-clear"))
-            != 0
+        && options_get_number(
+            write_pane.expect("write pane").borrow_options_mut(),
+            c"scroll-on-clear",
+        ) != 0
     {
         grid_view_clear_history((*s).grid_mut(), bg);
     } else {
@@ -2010,10 +2010,10 @@ pub unsafe fn screen_write_clearscreen(ctx: &mut screen_write_ctx, mut bg: u_int
     ttyctx.bg = bg;
     if (*s).grid().flags & GRID_HISTORY != 0
         && write_pane.is_some()
-        && write_pane
-            .expect("write pane")
-            .with_options_mut(|options| options_get_number(options, c"scroll-on-clear"))
-            != 0
+        && options_get_number(
+            write_pane.expect("write pane").borrow_options_mut(),
+            c"scroll-on-clear",
+        ) != 0
     {
         grid_view_clear_history((*s).grid_mut(), bg);
     } else {

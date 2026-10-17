@@ -18,7 +18,7 @@ use crate::src::window_copy::window_copy_get_current_offset;
 
 pub(super) unsafe fn refresh_scrollbar_style(pane: &Rc<UnsafeCell<window_pane>>) {
     let mut updated = (*pane.get()).scrollbar_style;
-    pane.with_options_mut(|options| style_set_scrollbar_style_from_option(&mut updated, options));
+    style_set_scrollbar_style_from_option(&mut updated, pane.borrow_options_mut());
     (*pane.get()).scrollbar_style = updated;
 }
 
@@ -123,7 +123,7 @@ pub(super) unsafe fn default_colours(pane: &Rc<UnsafeCell<window_pane>>) -> (gri
             }
             let parsed =
                 crate::src::style::style_resolve_with_options(key, Some(&mut context), |visit| {
-                    pane.with_options_mut(|options| visit(options));
+                    visit(pane.borrow_options_mut());
                 })
                 .unwrap_or_else(|| {
                     let mut style = style::default();

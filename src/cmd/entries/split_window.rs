@@ -211,57 +211,56 @@ unsafe fn cmd_split_window_exec(
             }
             Some(new_pane) => {
                 if let Some(style) = args_get(&*(args), b's') {
-                    new_pane.with_options_mut(|options| {
+                    {
+                        let options = new_pane.borrow_options_mut();
                         options_set_string(options, c"window-style", 0, |out| {
                             write_cstr(out, style)
                         });
                         options_set_string(options, c"window-active-style", 0, |out| {
                             write_cstr(out, style)
                         });
-                    });
+                    }
                     new_pane.invalidate_style();
                 }
                 if let Some(style) = args_get(&*(args), b'S') {
-                    new_pane.with_options_mut(|options| {
-                        options_set_string(options, c"pane-active-border-style", 0, |out| {
-                            write_cstr(out, style)
-                        });
-                    });
+                    options_set_string(
+                        new_pane.borrow_options_mut(),
+                        c"pane-active-border-style",
+                        0,
+                        |out| write_cstr(out, style),
+                    );
                 }
                 if let Some(style) = args_get(&*(args), b'R') {
-                    new_pane.with_options_mut(|options| {
-                        options_set_string(options, c"pane-border-style", 0, |out| {
-                            write_cstr(out, style)
-                        });
-                    });
+                    options_set_string(
+                        new_pane.borrow_options_mut(),
+                        c"pane-border-style",
+                        0,
+                        |out| write_cstr(out, style),
+                    );
                 }
                 if args_has(args, 'k' as i32 as u_char) != 0
                     || args_has(args, 'm' as i32 as u_char) != 0
                 {
-                    new_pane.with_options_mut(|options| {
-                        options_set_number(
-                            options,
-                            c"remain-on-exit",
-                            3 as ::core::ffi::c_longlong,
-                        );
-                    });
+                    options_set_number(
+                        new_pane.borrow_options_mut(),
+                        c"remain-on-exit",
+                        3 as ::core::ffi::c_longlong,
+                    );
                     if args_has(args, 'm' as i32 as u_char) != 0 {
-                        new_pane.with_options_mut(|options| {
-                            options_set_string(
-                                options,
-                                c"remain-on-exit-format",
-                                0 as ::core::ffi::c_int,
-                                |out| {
-                                    write_cstr(
-                                        out,
-                                        nullable_cstr(
-                                            args_get(&*(args), 'm' as i32 as u_char)
-                                                .map_or(std::ptr::null(), |value| value.as_ptr()),
-                                        ),
-                                    )
-                                },
-                            );
-                        });
+                        options_set_string(
+                            new_pane.borrow_options_mut(),
+                            c"remain-on-exit-format",
+                            0 as ::core::ffi::c_int,
+                            |out| {
+                                write_cstr(
+                                    out,
+                                    nullable_cstr(
+                                        args_get(&*(args), 'm' as i32 as u_char)
+                                            .map_or(std::ptr::null(), |value| value.as_ptr()),
+                                    ),
+                                )
+                            },
+                        );
                     }
                 }
                 if args_has(args, 'T' as i32 as u_char) != 0 {

@@ -148,7 +148,7 @@ pub unsafe fn job_run(
         shell = _PATH_BSHELL.as_ptr();
     } else {
         shell_value = Some(if let Some(session) = s_owner {
-            session.with_options_mut(|options| options_get_string(options, c"default-shell"))
+            options_get_string(session.borrow_options_mut(), c"default-shell")
         } else {
             options_get_string(&*global_s_options, c"default-shell")
         });

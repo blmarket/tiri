@@ -28,7 +28,7 @@ pub unsafe fn check_window_name(owner: &WindowRef) {
     if owner.active_pane().upgrade().is_none() {
         return;
     }
-    if owner.with_options_mut(|options| options_get_number(options, c"automatic-rename")) == 0 {
+    if options_get_number(owner.borrow_options_mut(), c"automatic-rename") == 0 {
         return;
     }
     let pane = owner.active_pane().upgrade().expect("active pane");
@@ -77,9 +77,10 @@ unsafe fn format_window_name(owner: &WindowRef) -> CString {
         &mut *context,
         &owner.active_pane().upgrade().expect("active pane"),
     );
-    let format = owner.with_options_mut(|options| {
-        crate::src::options::options_get_string_optional(options, c"automatic-rename-format")
-    });
+    let format = crate::src::options::options_get_string_optional(
+        owner.borrow_options_mut(),
+        c"automatic-rename-format",
+    );
     let name = format_expand_cstring(
         &mut *context,
         format.as_deref().map_or(std::ptr::null(), CStr::as_ptr),

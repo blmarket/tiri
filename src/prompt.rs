@@ -101,21 +101,21 @@ pub unsafe fn prompt_set_options(pd: &mut prompt_create_data<'_>, session: Optio
     use crate::src::session::Session;
     let mut access = |visit: &mut dyn FnMut(&mut options)| {
         if let Some(session) = session {
-            session.with_options_mut(visit);
+            visit(session.borrow_options_mut());
         } else {
             visit(&mut *global_s_options);
         }
     };
     let read_string = |key: &CStr| {
         if let Some(session) = session {
-            session.with_options_mut(|options| options_get_string(options, key))
+            options_get_string(session.borrow_options_mut(), key)
         } else {
             options_get_string(&*global_s_options, key)
         }
     };
     let read_number = |key: &'static CStr| {
         if let Some(session) = session {
-            session.with_options_mut(|options| options_get_number(options, key))
+            options_get_number(session.borrow_options_mut(), key)
         } else {
             options_get_number(&*global_s_options, key)
         }

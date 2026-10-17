@@ -51,7 +51,7 @@ unsafe fn alerts_check_bell(w_owner: &WindowRef) -> ::core::ffi::c_int {
     if !w_owner.pending_alerts() & WINDOW_BELL != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    if w_owner.with_options_mut(|options| options_get_number(options, c"monitor-bell")) == 0 {
+    if options_get_number(w_owner.borrow_options_mut(), c"monitor-bell") == 0 {
         return 0 as ::core::ffi::c_int;
     }
     wl = w_owner.next_winlink(None);
@@ -90,7 +90,7 @@ unsafe fn alerts_check_activity(w_owner: &WindowRef) -> ::core::ffi::c_int {
     if !w_owner.pending_alerts() & WINDOW_ACTIVITY != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    if w_owner.with_options_mut(|options| options_get_number(options, c"monitor-activity")) == 0 {
+    if options_get_number(w_owner.borrow_options_mut(), c"monitor-activity") == 0 {
         return 0 as ::core::ffi::c_int;
     }
     wl = w_owner.next_winlink(None);
@@ -131,7 +131,7 @@ unsafe fn alerts_check_silence(w_owner: &WindowRef) -> ::core::ffi::c_int {
     if !w_owner.pending_alerts() & WINDOW_SILENCE != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    if w_owner.with_options_mut(|options| options_get_number(options, c"monitor-silence"))
+    if options_get_number(w_owner.borrow_options_mut(), c"monitor-silence")
         == 0 as ::core::ffi::c_longlong
     {
         return 0 as ::core::ffi::c_int;

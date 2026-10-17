@@ -910,10 +910,12 @@ unsafe fn window_tree_draw_session(
     window_tree_border_cell(
         &raw mut gc,
         |visit| {
-            border_window
-                .upgrade()
-                .expect("live tree-mode window")
-                .with_options_mut(visit)
+            visit(
+                border_window
+                    .upgrade()
+                    .expect("live tree-mode window")
+                    .borrow_options_mut(),
+            )
         },
         std::ptr::null_mut(),
     );
@@ -984,13 +986,13 @@ unsafe fn window_tree_draw_session(
             );
             ft = &raw mut *ft_owner;
             format_defaults(ft, None, s.as_ref(), wl.clone(), None);
-            window_tree_border_cell(&raw mut gc, |visit| window.with_options_mut(visit), ft);
+            window_tree_border_cell(&raw mut gc, |visit| visit(window.borrow_options_mut()), ft);
             label_gc = grid_default_cell;
             style_apply_with_options(
                 &mut label_gc,
                 c"tree-mode-preview-style",
                 Some(&mut *ft),
-                |visit| window.with_options_mut(visit),
+                |visit| visit(window.borrow_options_mut()),
             );
             label_gc.bg = gc.bg;
             if left != 0 {
@@ -1012,9 +1014,8 @@ unsafe fn window_tree_draw_session(
             let preview_pane = window.active_pane().upgrade().expect("active preview pane");
             window_tree_preview(&preview_pane, &mut *ctx, width, sy);
             drop(preview_pane);
-            let format = window.with_options_mut(|options| {
-                options_get_string(options, c"tree-mode-preview-format")
-            });
+            let format =
+                options_get_string(window.borrow_options_mut(), c"tree-mode-preview-format");
             if !format.as_bytes().is_empty() {
                 let label = format_expand_cstring(ft, format.as_ptr());
                 if !label.as_bytes().is_empty() {
@@ -1189,10 +1190,12 @@ unsafe fn window_tree_draw_window(
         window_tree_border_cell(
             &raw mut gc,
             |visit| {
-                border_window
-                    .upgrade()
-                    .expect("live tree-mode window")
-                    .with_options_mut(visit)
+                visit(
+                    border_window
+                        .upgrade()
+                        .expect("live tree-mode window")
+                        .borrow_options_mut(),
+                )
             },
             std::ptr::null_mut(),
         );
@@ -1263,10 +1266,12 @@ unsafe fn window_tree_draw_window(
                     window_tree_border_cell(
                         &raw mut gc,
                         |visit| {
-                            options_pane
-                                .upgrade()
-                                .expect("live preview pane")
-                                .with_options_mut(visit)
+                            visit(
+                                options_pane
+                                    .upgrade()
+                                    .expect("live preview pane")
+                                    .borrow_options_mut(),
+                            )
                         },
                         ft,
                     );
@@ -1276,10 +1281,12 @@ unsafe fn window_tree_draw_window(
                         c"tree-mode-preview-style",
                         Some(&mut *ft),
                         |visit| {
-                            options_pane
-                                .upgrade()
-                                .expect("live preview pane")
-                                .with_options_mut(visit)
+                            visit(
+                                options_pane
+                                    .upgrade()
+                                    .expect("live preview pane")
+                                    .borrow_options_mut(),
+                            )
                         },
                     );
                     label_gc.bg = gc.bg;
@@ -1300,12 +1307,13 @@ unsafe fn window_tree_draw_window(
                         0 as ::core::ffi::c_int,
                     );
                     window_tree_preview(&pane_owner, &mut *ctx, width, sy);
-                    let format = options_pane
-                        .upgrade()
-                        .expect("live preview pane")
-                        .with_options_mut(|options| {
-                            options_get_string(options, c"tree-mode-preview-format")
-                        });
+                    let format = options_get_string(
+                        options_pane
+                            .upgrade()
+                            .expect("live preview pane")
+                            .borrow_options_mut(),
+                        c"tree-mode-preview-format",
+                    );
                     if !format.as_bytes().is_empty() {
                         let label = format_expand_cstring(ft, format.as_ptr());
                         if !label.as_bytes().is_empty() {
@@ -1417,10 +1425,12 @@ unsafe fn window_tree_draw_info(
             window_tree_border_cell(
                 &raw mut gc,
                 |visit| {
-                    border_window
-                        .upgrade()
-                        .expect("live tree-mode window")
-                        .with_options_mut(visit)
+                    visit(
+                        border_window
+                            .upgrade()
+                            .expect("live tree-mode window")
+                            .borrow_options_mut(),
+                    )
                 },
                 std::ptr::null_mut(),
             );
@@ -1483,10 +1493,12 @@ unsafe fn window_tree_draw_info(
         window_tree_border_cell(
             &raw mut gc,
             |visit| {
-                border_window
-                    .upgrade()
-                    .expect("live tree-mode window")
-                    .with_options_mut(visit)
+                visit(
+                    border_window
+                        .upgrade()
+                        .expect("live tree-mode window")
+                        .borrow_options_mut(),
+                )
             },
             std::ptr::null_mut(),
         );
