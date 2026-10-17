@@ -332,8 +332,7 @@ unsafe fn options_add(mut oo: *mut options, name: &CStr) -> *mut options_entry {
         name,
         tableentry: None,
         value: options_value::Empty,
-        cached: 0,
-        style: Default::default(),
+        style: None,
         monitor_data: None,
         fire_count: 0,
         fire_time: 0,
@@ -859,7 +858,7 @@ pub unsafe fn options_set_string(
         });
     }
     set_scalar_string(&mut *o, value);
-    (*o).cached = 0 as ::core::ffi::c_int;
+    (*o).style = None;
     o
 }
 pub unsafe fn options_set_number(

@@ -62,8 +62,8 @@ pub struct options_entry {
     pub name: ::std::ffi::CString,
     pub tableentry: Option<&'static options_table_entry>,
     pub value: options_value,
-    pub cached: ::core::ffi::c_int,
-    pub style: style,
+    /// Parsed style of a string value without `#{`; cleared when the value changes.
+    pub style: Option<style>,
     pub monitor_data: Option<Box<crate::src::hooks::hooks_monitor>>,
     pub fire_count: u_int,
     pub fire_time: time_t,

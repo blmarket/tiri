@@ -3,7 +3,7 @@
 
 use crate::src::format::{format_create, format_expand_cstring};
 use crate::src::grid::grid_default_cell;
-use crate::src::options::{options_get_only_mut, options_is_string, OptionsScope};
+use crate::src::options::{options_get_only_mut, options_is_string};
 use crate::src::shared::format::{format_tree, FORMAT_NOJOBS};
 use crate::src::shared::grid::grid_cell;
 use crate::src::shared::options::{options, options_entry, OPTIONS_TABLE_IS_COLOUR};
@@ -54,17 +54,10 @@ pub unsafe fn style_resolve_with_options(
     context: Option<&mut format_tree>,
     mut access: impl FnMut(&mut dyn FnMut(&mut options)),
 ) -> Option<style> {
-    enum Source {
-        Local,
-        Inherited(OptionsScope),
-    }
-
-    let mut source = None;
     let mut resolved = None;
     let mut parent = None;
     access(&mut |root| {
         if let Some(entry) = options_get_only_mut(root, key) {
-            source = Some(Source::Local);
             resolved = style_snapshot(entry);
         } else {
             parent = root.parent.clone();
@@ -75,69 +68,60 @@ pub unsafe fn style_resolve_with_options(
             resolved = owner
                 .with_entry(key, |entry| style_snapshot(entry))
                 .expect("resolved style entry remains live");
-            source = Some(Source::Inherited(owner));
         }
     }
-    let parsed = match resolved {
-        None => None,
-        Some(Ok(style)) => Some(style),
-        Some(Err((value, colour, expand))) => {
-            let text = if let Some(context) = context.filter(|_| expand) {
+    match resolved? {
+        Ok(parsed) => parsed,
+        Err((value, colour)) => {
+            let text = if let Some(context) = context {
                 format_expand_cstring(context, value.as_ptr())
             } else {
                 value
             };
-            let mut parsed = None;
-            let mut parse = |entry: &mut options_entry| {
-                let failed = if colour {
-                    style_parse_colour(&mut entry.style, &grid_default_cell, &text)
-                } else {
-                    style_parse(&mut entry.style, &grid_default_cell, &text)
-                };
-                if failed == 0 {
-                    parsed = Some(entry.style);
-                }
-            };
-            match source.expect("resolved style has an owner") {
-                Source::Local => access(&mut |root| {
-                    parse(options_get_only_mut(root, key).expect("style entry remains live"));
-                }),
-                Source::Inherited(owner) => {
-                    owner
-                        .with_entry(key, parse)
-                        .expect("style entry remains live");
-                }
-            }
-            parsed
+            style_parse_text(&text, colour)
         }
-    };
-    parsed
+    }
 }
 
+/// Literal values are parsed and cached in place; values containing `#{` are
+/// returned for expansion once option access is released.
 unsafe fn style_snapshot(
     entry: &mut options_entry,
-) -> Option<Result<style, (CString, bool, bool)>> {
+) -> Option<Result<Option<style>, (CString, bool)>> {
     if options_is_string(entry) == 0 {
         return None;
     }
-    if entry.cached != 0 {
-        return Some(Ok(entry.style));
+    if let Some(style) = entry.style {
+        return Some(Ok(Some(style)));
     }
-    let value = entry.value.string_ptr().expect("string option").to_owned();
+    let value = entry.value.string_ptr().expect("string option");
     let colour = entry
         .tableentry_ptr()
         .is_some_and(|table| table.flags & OPTIONS_TABLE_IS_COLOUR != 0);
-    let expand = value.as_bytes().windows(2).any(|bytes| bytes == b"#{");
-    style_set(&mut entry.style, &grid_default_cell);
-    entry.cached = (!expand) as i32;
-    Some(Err((value, colour, expand)))
+    if value.to_bytes().windows(2).any(|bytes| bytes == b"#{") {
+        return Some(Err((value.to_owned(), colour)));
+    }
+    let parsed = style_parse_text(value, colour);
+    entry.style = parsed;
+    Some(Ok(parsed))
+}
+
+unsafe fn style_parse_text(text: &CStr, colour: bool) -> Option<style> {
+    let mut sy = style::default();
+    style_set(&mut sy, &grid_default_cell);
+    let failed = if colour {
+        style_parse_colour(&mut sy, &grid_default_cell, text)
+    } else {
+        style_parse(&mut sy, &grid_default_cell, text)
+    };
+    (failed == 0).then_some(sy)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::src::format::format_add_owned_cb;
-    use crate::src::options::{options_create, options_set_string};
+    use crate::src::options::{options_create, options_set_string, OptionsScope};
     use crate::src::tmux::{global_options, global_s_options, global_w_options};
     use std::cell::{Cell, RefCell};
     use std::ptr::NonNull;
@@ -156,11 +140,7 @@ mod tests {
         EVALUATING.with(|slot| unsafe {
             let (parent, child, _) = slot.get();
             let entry = options_get_only_mut(&mut *parent, c"@style").unwrap();
-            assert_eq!(entry.cached, 0);
-            assert_eq!(
-                entry.style.gc.fg, grid_default_cell.fg,
-                "cache resets before evaluating dynamic style text"
-            );
+            assert!(entry.style.is_none(), "dynamic style text is never cached");
             options_set_string(child, c"@style", 0, |out| out.write_all(b"fg=blue"));
             (*child).parent = Some(OptionsScope::GlobalSession);
             slot.set((parent, child, true));
@@ -178,21 +158,11 @@ mod tests {
             options_set_string(&mut *globals, c"@style", 0, |out| {
                 out.write_all(b"fg=green")
             });
-            options_get_only_mut(&mut globals, c"@style")
-                .unwrap()
-                .style
-                .gc
-                .fg = 321;
             let mut parent = options_create(None);
             global_w_options = &mut *parent;
             options_set_string(&mut *parent, c"@style", 0, |out| {
                 out.write_all(b"fg=#{zz_scoped_style}")
             });
-            options_get_only_mut(&mut parent, c"@style")
-                .unwrap()
-                .style
-                .gc
-                .fg = 123;
             let mut child = options_create(Some(OptionsScope::GlobalWindow));
             let child_pointer = &mut *child as *mut options;
             EVALUATING.with(|slot| slot.set((&mut *parent, child_pointer, false)));
@@ -207,23 +177,19 @@ mod tests {
             });
             assert!(EVALUATING.with(|slot| slot.get().2));
             assert_eq!(cell.fg, 1, "the in-flight inherited style resolves red");
-            assert_eq!(
+            assert!(
                 options_get_only_mut(&mut parent, c"@style")
                     .unwrap()
                     .style
-                    .gc
-                    .fg,
-                1,
-                "write parsed cache back to the originally resolved parent"
+                    .is_none(),
+                "the expanded result is not cached on the resolved parent"
             );
-            assert_eq!(
+            assert!(
                 options_get_only_mut(&mut globals, c"@style")
                     .unwrap()
                     .style
-                    .gc
-                    .fg,
-                321,
-                "reparenting cannot redirect the in-flight cache update"
+                    .is_none(),
+                "reparenting during expansion does not touch the new parent"
             );
             style_apply_with_options(&mut cell, c"@style", Some(&mut context), |visit| {
                 MODEL_BORROW.with(|model| {
@@ -236,8 +202,11 @@ mod tests {
                 "the next evaluation uses the new local override"
             );
             assert_eq!(
-                options_get_only_mut(&mut child, c"@style").unwrap().cached,
-                1
+                options_get_only_mut(&mut child, c"@style")
+                    .unwrap()
+                    .style
+                    .map(|style| style.gc.fg),
+                Some(4)
             );
             drop(context);
             EVALUATING.with(|slot| slot.set((std::ptr::null_mut(), std::ptr::null_mut(), false)));
