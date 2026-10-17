@@ -124,17 +124,22 @@ fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
         let strings: *mut options_entry = options_empty(&mut *oo, definition);
         let mut input = b"  ONE,\xff TWO,,\0ignored".to_vec();
         assert_eq!(
-            options_array_assign(&mut *strings, CStr::from_bytes_until_nul(&input).unwrap()),
+            (*strings)
+                .value
+                .array_mut()
+                .unwrap()
+                .assign(definition, CStr::from_bytes_until_nul(&input).unwrap()),
             Ok(())
         );
         input.fill(b'x');
         for (index, expected) in [b"ONE".as_slice(), b"\xff", b"TWO"].iter().enumerate() {
             let key = CString::new(index.to_string()).unwrap();
-            let value = tiri::src::options::options_array_get_mut(
-                &mut *(strings),
-                std::ffi::CStr::from_ptr(key.as_ptr()),
-            )
-            .map_or(std::ptr::null_mut(), |value| value);
+            let value = (*strings)
+                .value
+                .array_mut()
+                .unwrap()
+                .get_mut(std::ffi::CStr::from_ptr(key.as_ptr()))
+                .map_or(std::ptr::null_mut(), |value| value);
             assert!(!value.is_null());
             assert_eq!(
                 CStr::from_ptr(
@@ -146,31 +151,39 @@ fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
                 *expected
             );
         }
-        assert!(tiri::src::options::options_array_get_mut(
-            &mut *(strings),
-            std::ffi::CStr::from_ptr(c"3".as_ptr())
-        )
-        .map_or(std::ptr::null_mut(), |value| value)
-        .is_null());
+        assert!((*strings)
+            .value
+            .array_mut()
+            .unwrap()
+            .get_mut(std::ffi::CStr::from_ptr(c"3".as_ptr()))
+            .map_or(std::ptr::null_mut(), |value| value)
+            .is_null());
 
         let colour_definition = (*table)
             .iter()
             .find(|oe| oe.name == Some(c"pane-colours"))
             .unwrap();
         let colours: *mut options_entry = options_empty(&mut *oo, colour_definition);
-        let cause = options_array_assign(&mut *colours, c"red,,invalid-colour").unwrap_err();
-        assert!(!tiri::src::options::options_array_get_mut(
-            &mut *(colours),
-            std::ffi::CStr::from_ptr(c"0".as_ptr())
-        )
-        .map_or(std::ptr::null_mut(), |value| value)
-        .is_null());
-        assert!(tiri::src::options::options_array_get_mut(
-            &mut *(colours),
-            std::ffi::CStr::from_ptr(c"1".as_ptr())
-        )
-        .map_or(std::ptr::null_mut(), |value| value)
-        .is_null());
+        let cause = (*colours)
+            .value
+            .array_mut()
+            .unwrap()
+            .assign(colour_definition, c"red,,invalid-colour")
+            .unwrap_err();
+        assert!(!(*colours)
+            .value
+            .array_mut()
+            .unwrap()
+            .get_mut(std::ffi::CStr::from_ptr(c"0".as_ptr()))
+            .map_or(std::ptr::null_mut(), |value| value)
+            .is_null());
+        assert!((*colours)
+            .value
+            .array_mut()
+            .unwrap()
+            .get_mut(std::ffi::CStr::from_ptr(c"1".as_ptr()))
+            .map_or(std::ptr::null_mut(), |value| value)
+            .is_null());
         assert_eq!(cause.as_c_str(), c"bad colour: invalid-colour");
         drop(oo_owner);
     }
@@ -188,10 +201,16 @@ fn command_arrays_parse_items_and_assign_unseparated_values() {
     unsafe {
         let mut oo_owner = options_create(None);
         let oo = &raw mut *oo_owner;
-        let hook: *mut options_entry = options_empty(&mut *oo, table_entry(c"after-new-window"));
+        let definition = table_entry(c"after-new-window");
+        let hook: *mut options_entry = options_empty(&mut *oo, definition);
 
         assert_eq!(
-            options_array_set(&mut *hook, c"3", Some(c"display-message first"), false),
+            (*hook).value.array_mut().unwrap().set(
+                definition,
+                c"3",
+                Some(c"display-message first"),
+                false
+            ),
             Ok(())
         );
         assert_eq!(
@@ -199,31 +218,47 @@ fn command_arrays_parse_items_and_assign_unseparated_values() {
             b"display-message first"
         );
         assert_eq!(
-            options_array_set(&mut *hook, c"3", Some(c"display-message second"), false),
+            (*hook).value.array_mut().unwrap().set(
+                definition,
+                c"3",
+                Some(c"display-message second"),
+                false
+            ),
             Ok(())
         );
         assert_eq!(
             options_to_cstring(&*hook, Some(c"3"), 0).as_bytes(),
             b"display-message second"
         );
-        assert_eq!(options_array_iter(&*hook).count(), 1);
+        assert_eq!((*hook).value.array().unwrap().iter().count(), 1);
 
-        let cause =
-            options_array_set(&mut *hook, c"4", Some(c"no-such-command"), false).unwrap_err();
+        let cause = (*hook)
+            .value
+            .array_mut()
+            .unwrap()
+            .set(definition, c"4", Some(c"no-such-command"), false)
+            .unwrap_err();
         assert_eq!(cause.to_bytes(), b"unknown command: no-such-command");
-        assert!(options_array_get(&*hook, c"4").is_none());
+        assert!((*hook).value.array().unwrap().get(c"4").is_none());
 
         assert_eq!(
-            options_array_assign(&mut *hook, c"display-message a ; display-message b"),
+            (*hook)
+                .value
+                .array_mut()
+                .unwrap()
+                .assign(definition, c"display-message a ; display-message b"),
             Ok(())
         );
         assert_eq!(
             options_to_cstring(&*hook, Some(c"0"), 0).as_bytes(),
             b"display-message a ; display-message b"
         );
-        assert_eq!(options_array_iter(&*hook).count(), 2);
-        assert_eq!(options_array_assign(&mut *hook, c""), Ok(()));
-        assert_eq!(options_array_iter(&*hook).count(), 2);
+        assert_eq!((*hook).value.array().unwrap().iter().count(), 2);
+        assert_eq!(
+            (*hook).value.array_mut().unwrap().assign(definition, c""),
+            Ok(())
+        );
+        assert_eq!((*hook).value.array().unwrap().iter().count(), 2);
         drop(oo_owner);
     }
 }

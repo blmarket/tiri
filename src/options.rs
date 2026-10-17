@@ -84,8 +84,8 @@ use crate::src::shared::key::*;
 use crate::src::shared::limits::UINT_MAX;
 use crate::src::shared::options::*;
 use crate::src::shared::options::{
-    options, options_array_item, options_array_storage, options_entry, options_table_entry,
-    options_value, OptionCommand, OptionsArrayKey,
+    options, options_array, options_array_item, options_entry, options_table_entry, options_value,
+    OptionCommand, OptionsArrayKey,
 };
 use crate::src::shared::options::{
     OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_IS_COLOUR, OPTIONS_TABLE_IS_STYLE, OPTIONS_TABLE_PANE,
@@ -102,21 +102,13 @@ fn set_array_string(ov: &mut options_value, value: CString) {
     *ov = options_value::String(value);
 }
 
-fn options_array_correct_key(key: &CStr) -> Option<CString> {
-    match parse_array_index(key.to_bytes()) {
-        Ok(ArrayIndex::Numeric(number)) => {
-            Some(CString::new(number.to_string()).expect("numeric key has no NUL"))
+impl OptionsArrayKey {
+    /// Parse a key already normalized by `options_array::correct_key`.
+    pub(crate) fn parse(key: &CStr) -> Self {
+        match parse_array_index(key.to_bytes()).expect("validated array key") {
+            ArrayIndex::Numeric(number) => Self::Numeric(number),
+            ArrayIndex::Text(bytes) => Self::Text(bytes.to_vec()),
         }
-        Ok(ArrayIndex::Text(bytes)) => {
-            Some(CString::new(bytes).expect("C string key has no interior NUL"))
-        }
-        Err(ArrayIndexError::Empty | ArrayIndexError::NumericOverflow) => None,
-    }
-}
-pub(crate) fn options_array_index(key: &CStr) -> OptionsArrayKey {
-    match parse_array_index(key.to_bytes()).expect("validated array key") {
-        ArrayIndex::Numeric(number) => OptionsArrayKey::Numeric(number),
-        ArrayIndex::Text(bytes) => OptionsArrayKey::Text(bytes.to_vec()),
     }
 }
 
@@ -226,7 +218,7 @@ pub fn options_empty<'a>(
     let o = options_add(oo, definition.name.expect("named option definition"));
     o.tableentry = Some(definition);
     if definition.flags & OPTIONS_TABLE_IS_ARRAY != 0 {
-        o.value = options_value::Array(options_array_storage::default());
+        o.value = options_value::Array(options_array::default());
     }
     o
 }
@@ -237,14 +229,18 @@ pub unsafe fn options_default<'a>(
     let mut pr: cmd_parse_result = cmd_parse_result::empty();
     let o = options_empty(oo, oe);
     if oe.flags & OPTIONS_TABLE_IS_ARRAY != 0 {
+        let array = o.value.array_mut().expect("empty array option");
         if oe.default_arr.is_none() {
-            options_array_assign(o, oe.default_str.expect("array option default"))
+            array
+                .assign(oe, oe.default_str.expect("array option default"))
                 .expect("valid array option default");
             return o;
         }
         for (i, value) in oe.default_arr.expect("array defaults").iter().enumerate() {
             let key = format_message_with(|out| write!(out, "{}", i as u32));
-            options_array_set(o, &key, Some(*value), false).expect("valid array option default");
+            array
+                .set(oe, &key, Some(*value), false)
+                .expect("valid array option default");
         }
         return o;
     }
@@ -323,178 +319,147 @@ pub fn options_get_fire_time(o: &options_entry) -> time_t {
 pub fn options_table_entry(o: &options_entry) -> Option<&'static options_table_entry> {
     o.tableentry
 }
-fn options_array_new<'a>(o: &'a mut options_entry, key: &CStr) -> &'a mut options_value {
-    let item = o
-        .value
-        .array_storage()
-        .entries
-        .entry(options_array_index(key))
-        .insert_entry(Box::new(options_array_item {
-            key: key.to_owned(),
-            value: options_value::Empty,
-        }))
-        .into_mut();
-    &mut item.value
-}
-
-pub fn options_array_clear(o: &mut options_entry) {
-    if !o
-        .tableentry
-        .is_some_and(|entry| entry.flags & OPTIONS_TABLE_IS_ARRAY != 0)
-    {
-        return;
-    }
-
-    o.value.array_storage().entries.clear();
-}
-
-pub fn options_array_get<'a>(o: &'a options_entry, key: &CStr) -> Option<&'a options_value> {
-    let key = options_array_correct_key(key)?;
-    let options_value::Array(array) = &o.value else {
-        return None;
-    };
-    array
-        .entries
-        .get(&options_array_index(&key))
-        .map(|item| &item.value)
-}
-pub fn options_array_get_mut<'a>(
-    o: &'a mut options_entry,
-    key: &CStr,
-) -> Option<&'a mut options_value> {
-    let key = options_array_correct_key(key)?;
-    let options_value::Array(array) = &mut o.value else {
-        return None;
-    };
-    array
-        .entries
-        .get_mut(&options_array_index(&key))
-        .map(|item| &mut item.value)
-}
-/// Look up an array value by its decimal numeric index.
-pub fn options_array_get_index(o: &options_entry, index: u_int) -> Option<&options_value> {
-    let key = CString::new(index.to_string()).expect("decimal index contains no NUL");
-    options_array_get(o, &key)
-}
-pub fn options_array_get_index_mut(
-    o: &mut options_entry,
-    index: u_int,
-) -> Option<&mut options_value> {
-    let key = CString::new(index.to_string()).expect("decimal index contains no NUL");
-    options_array_get_mut(o, &key)
-}
-pub unsafe fn options_array_set(
-    o: &mut options_entry,
-    key: &CStr,
-    value: Option<&CStr>,
-    append: bool,
-) -> Result<(), CString> {
-    if !(o
-        .tableentry
-        .is_some_and(|entry| entry.flags & OPTIONS_TABLE_IS_ARRAY != 0))
-    {
-        return Err(c"not an array".to_owned());
-    }
-    let Some(new_key) = options_array_correct_key(key) else {
-        return Err(options_string_cause(c"bad array key: %s", &[key]));
-    };
-    let Some(value) = value else {
-        let key = options_array_index(&new_key);
-        o.value.array_storage().entries.remove(&key);
-        return Ok(());
-    };
-    if o.tableentry
-        .is_some_and(|entry| entry.type_0 == OPTIONS_TABLE_COMMAND)
-    {
-        let mut pr = cmd_parse_from_string(value, ::core::ptr::null_mut::<cmd_parse_input>());
-        if pr.status as ::core::ffi::c_uint == 0 {
-            return Err(pr.error.expect("command parse error"));
+impl options_array {
+    pub(crate) fn correct_key(key: &CStr) -> Option<CString> {
+        match parse_array_index(key.to_bytes()) {
+            Ok(ArrayIndex::Numeric(number)) => {
+                Some(CString::new(number.to_string()).expect("numeric key has no NUL"))
+            }
+            Ok(ArrayIndex::Text(bytes)) => {
+                Some(CString::new(bytes).expect("C string key has no interior NUL"))
+            }
+            Err(ArrayIndexError::Empty | ArrayIndexError::NumericOverflow) => None,
         }
-        let ov = match options_array_get_mut(o, &new_key) {
-            Some(ov) => ov,
-            None => options_array_new(o, &new_key),
-        };
-        *ov = options_value::Command(OptionCommand(pr.cmdlist.take()));
-        return Ok(());
     }
-    if o.tableentry
-        .is_none_or(|entry| entry.type_0 == OPTIONS_TABLE_STRING)
-    {
-        let ov = options_array_get_mut(o, &new_key);
-        let owned_value = if let Some(ov) = ov.as_ref().filter(|_| append) {
-            let previous = ov.string_ptr().expect("string option").to_bytes();
-            let suffix = value.to_bytes();
-            let mut bytes = Vec::with_capacity(previous.len() + suffix.len());
-            bytes.extend_from_slice(previous);
-            bytes.extend_from_slice(suffix);
-            CString::new(bytes).expect("C string parts contain no NUL")
-        } else {
-            value.to_owned()
-        };
-        let ov = match ov {
-            Some(ov) => ov,
-            None => options_array_new(o, &new_key),
-        };
-        set_array_string(ov, owned_value);
-        return Ok(());
+
+    pub fn get(&self, key: &CStr) -> Option<&options_value> {
+        let key = Self::correct_key(key)?;
+        self.entries
+            .get(&OptionsArrayKey::parse(&key))
+            .map(|item| &item.value)
     }
-    if o.tableentry.expect("table option").type_0 == OPTIONS_TABLE_COLOUR {
-        let Some(number) = colour_parse_cstr(value) else {
-            return Err(options_string_cause(c"bad colour: %s", &[value]));
+
+    pub fn get_mut(&mut self, key: &CStr) -> Option<&mut options_value> {
+        let key = Self::correct_key(key)?;
+        self.entries
+            .get_mut(&OptionsArrayKey::parse(&key))
+            .map(|item| &mut item.value)
+    }
+
+    /// Look up a value by its decimal numeric index.
+    pub fn get_index(&self, index: u_int) -> Option<&options_value> {
+        let key = CString::new(index.to_string()).expect("decimal index contains no NUL");
+        self.get(&key)
+    }
+
+    pub fn get_index_mut(&mut self, index: u_int) -> Option<&mut options_value> {
+        let key = CString::new(index.to_string()).expect("decimal index contains no NUL");
+        self.get_mut(&key)
+    }
+
+    /// The item at a normalized key, inserting an empty one if absent.
+    fn get_or_insert(&mut self, key: &CStr) -> &mut options_value {
+        &mut self
+            .entries
+            .entry(OptionsArrayKey::parse(key))
+            .or_insert_with(|| {
+                Box::new(options_array_item {
+                    key: key.to_owned(),
+                    value: options_value::Empty,
+                })
+            })
+            .value
+    }
+
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = &options_array_item> {
+        self.entries.values().map(Box::as_ref)
+    }
+
+    /// The lowest unused numeric index, or UINT_MAX when every index is used.
+    fn next_free(&self) -> u_int {
+        (0..UINT_MAX)
+            .find(|&i| self.get_index(i).is_none())
+            .unwrap_or(UINT_MAX)
+    }
+
+    /// Set or, with no value, remove one item of an array defined by `oe`.
+    pub unsafe fn set(
+        &mut self,
+        oe: &options_table_entry,
+        key: &CStr,
+        value: Option<&CStr>,
+        append: bool,
+    ) -> Result<(), CString> {
+        let Some(new_key) = Self::correct_key(key) else {
+            return Err(options_string_cause(c"bad array key: %s", &[key]));
         };
-        let ov = match options_array_get_mut(o, &new_key) {
-            Some(ov) => ov,
-            None => options_array_new(o, &new_key),
+        let Some(value) = value else {
+            self.entries.remove(&OptionsArrayKey::parse(&new_key));
+            return Ok(());
         };
-        *ov = options_value::Number(number as ::core::ffi::c_longlong);
-        return Ok(());
-    }
-    Err(c"wrong array type".to_owned())
-}
-fn options_array_next_free(o: &options_entry) -> u_int {
-    (0..UINT_MAX)
-        .find(|&i| options_array_get_index(o, i).is_none())
-        .unwrap_or(UINT_MAX)
-}
-pub unsafe fn options_array_assign(o: &mut options_entry, s: &CStr) -> Result<(), CString> {
-    let separator = o
-        .tableentry
-        .expect("table option")
-        .separator
-        .unwrap_or(c" ,")
-        .to_bytes();
-    if s.is_empty() {
-        return Ok(());
-    }
-    if separator.is_empty() {
-        let key = format_message_with(|out| write!(out, "{}", options_array_next_free(o)));
-        return options_array_set(o, &key, Some(s), false);
-    }
-    for token in s
-        .to_bytes()
-        .split(|b| separator.contains(b))
-        .filter(|token| !token.is_empty())
-    {
-        let i = options_array_next_free(o);
-        if i == UINT_MAX {
-            break;
+        if oe.type_0 == OPTIONS_TABLE_COMMAND {
+            let mut pr = cmd_parse_from_string(value, ::core::ptr::null_mut::<cmd_parse_input>());
+            if pr.status as ::core::ffi::c_uint == 0 {
+                return Err(pr.error.expect("command parse error"));
+            }
+            *self.get_or_insert(&new_key) =
+                options_value::Command(OptionCommand(pr.cmdlist.take()));
+            return Ok(());
         }
-        let key = format_message_with(|out| write!(out, "{}", i));
-        let token = CString::new(token).expect("substring of CStr contains no NUL");
-        options_array_set(o, &key, Some(&token), false)?;
+        if oe.type_0 == OPTIONS_TABLE_STRING {
+            let owned_value = if let Some(ov) = self.get(&new_key).filter(|_| append) {
+                let previous = ov.string_ptr().expect("string option").to_bytes();
+                let suffix = value.to_bytes();
+                let mut bytes = Vec::with_capacity(previous.len() + suffix.len());
+                bytes.extend_from_slice(previous);
+                bytes.extend_from_slice(suffix);
+                CString::new(bytes).expect("C string parts contain no NUL")
+            } else {
+                value.to_owned()
+            };
+            set_array_string(self.get_or_insert(&new_key), owned_value);
+            return Ok(());
+        }
+        if oe.type_0 == OPTIONS_TABLE_COLOUR {
+            let Some(number) = colour_parse_cstr(value) else {
+                return Err(options_string_cause(c"bad colour: %s", &[value]));
+            };
+            *self.get_or_insert(&new_key) =
+                options_value::Number(number as ::core::ffi::c_longlong);
+            return Ok(());
+        }
+        Err(c"wrong array type".to_owned())
     }
-    Ok(())
-}
-pub fn options_array_iter(
-    o: &options_entry,
-) -> impl DoubleEndedIterator<Item = &options_array_item> {
-    let entries = match &o.value {
-        options_value::Array(array) => Some(&array.entries),
-        _ => None,
-    };
-    entries
-        .into_iter()
-        .flat_map(|entries| entries.values().map(Box::as_ref))
+
+    /// Append `s`, split by the separator of `oe`, at the next free indices.
+    pub unsafe fn assign(&mut self, oe: &options_table_entry, s: &CStr) -> Result<(), CString> {
+        let separator = oe.separator.unwrap_or(c" ,").to_bytes();
+        if s.is_empty() {
+            return Ok(());
+        }
+        if separator.is_empty() {
+            let key = format_message_with(|out| write!(out, "{}", self.next_free()));
+            return self.set(oe, &key, Some(s), false);
+        }
+        for token in s
+            .to_bytes()
+            .split(|b| separator.contains(b))
+            .filter(|token| !token.is_empty())
+        {
+            let i = self.next_free();
+            if i == UINT_MAX {
+                break;
+            }
+            let key = format_message_with(|out| write!(out, "{}", i));
+            let token = CString::new(token).expect("substring of CStr contains no NUL");
+            self.set(oe, &key, Some(&token), false)?;
+        }
+        Ok(())
+    }
 }
 pub fn options_is_array(o: &options_entry) -> ::core::ffi::c_int {
     (o.tableentry
@@ -516,7 +481,11 @@ pub unsafe fn options_to_cstring(
         .is_some_and(|table| table.flags & OPTIONS_TABLE_IS_ARRAY != 0)
     {
         if key.is_null() {
-            let values = options_array_iter(entry)
+            let values = entry
+                .value
+                .array()
+                .into_iter()
+                .flat_map(options_array::iter)
                 .map(|item| options_value_to_cstring(entry, &item.value, numeric));
             let mut bytes = Vec::new();
             for (index, value) in values.enumerate() {
@@ -527,10 +496,14 @@ pub unsafe fn options_to_cstring(
             }
             return CString::new(bytes).expect("option values have no NUL");
         }
-        return options_array_get(entry, CStr::from_ptr(key)).map_or_else(
-            || c"".to_owned(),
-            |value| options_value_to_cstring(entry, value, numeric),
-        );
+        return entry
+            .value
+            .array()
+            .and_then(|array| array.get(CStr::from_ptr(key)))
+            .map_or_else(
+                || c"".to_owned(),
+                |value| options_value_to_cstring(entry, value, numeric),
+            );
     }
     options_value_to_cstring(entry, &entry.value, numeric)
 }

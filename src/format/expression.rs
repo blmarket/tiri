@@ -1237,16 +1237,25 @@ unsafe fn format_option_loop_values(
     let key = array_key.unwrap_or(c"");
     let first = match array_key {
         None => is_array,
-        Some(key) => crate::src::options::options_array_iter(option)
+        Some(key) => option
+            .value
+            .array()
+            .into_iter()
+            .flat_map(|array| array.iter())
             .next()
             .is_some_and(|item| item.key.as_c_str() == key),
     };
     let array_last = match array_key {
         None => is_array,
-        Some(key) => !crate::src::options::options_array_iter(option).any(|item| {
-            crate::src::options::options_array_index(&item.key)
-                > crate::src::options::options_array_index(key)
-        }),
+        Some(key) => !option
+            .value
+            .array()
+            .into_iter()
+            .flat_map(|array| array.iter())
+            .any(|item| {
+                crate::src::shared::options::OptionsArrayKey::parse(&item.key)
+                    > crate::src::shared::options::OptionsArrayKey::parse(key)
+            }),
     };
     let number = |value: u_int| CString::new(value.to_string()).expect("integer format");
     vec![
@@ -1370,7 +1379,11 @@ pub(super) unsafe fn format_loop_options(
             {
                 let entry = &mut **entry.get_mut();
                 keys = Some(if options_is_array(entry) != 0 {
-                    crate::src::options::options_array_iter(entry)
+                    entry
+                        .value
+                        .array()
+                        .into_iter()
+                        .flat_map(|array| array.iter())
                         .map(|item| item.key.clone())
                         .collect::<Vec<_>>()
                 } else {
@@ -1410,7 +1423,13 @@ pub(super) unsafe fn format_loop_options(
                     if let btree_map::Entry::Occupied(occupied) =
                         crate::src::options::options_local_entry(options, &name)
                     {
-                        if crate::src::options::options_array_get(occupied.get(), &key).is_some() {
+                        if occupied
+                            .get()
+                            .value
+                            .array()
+                            .and_then(|array| array.get(&key))
+                            .is_some()
+                        {
                             values = Some(format_option_loop_values(
                                 occupied,
                                 Some(&key),

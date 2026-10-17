@@ -12,10 +12,9 @@ use crate::src::hooks::{
 };
 use crate::src::options::options_table_entry;
 use crate::src::options::{
-    options_array_get, options_array_iter, options_get_fire_count, options_get_fire_time,
-    options_get_monitor_data, options_is_array, options_is_string, options_iter,
-    options_match_owned, options_scope_from_flags, options_scope_from_name, options_to_cstring,
-    OptionMatchFailure, OptionsScope,
+    options_get_fire_count, options_get_fire_time, options_get_monitor_data, options_is_array,
+    options_is_string, options_iter, options_match_owned, options_scope_from_flags,
+    options_scope_from_name, options_to_cstring, OptionMatchFailure, OptionsScope,
 };
 use crate::src::options_table::options_table;
 use crate::src::shared::abi::*;
@@ -241,7 +240,11 @@ unsafe fn cmd_show_options_print(
             (options_is_array(entry) != 0).then(|| {
                 (
                     entry.id(),
-                    options_array_iter(entry)
+                    entry
+                        .value
+                        .array()
+                        .into_iter()
+                        .flat_map(|array| array.iter())
                         .map(|item| item.key.clone())
                         .collect::<Vec<_>>(),
                 )
@@ -255,7 +258,11 @@ unsafe fn cmd_show_options_print(
                     let present = scope.entry(name).as_deref_mut().map(|entry| {
                         entry.id() == identity
                             && options_is_array(entry) != 0
-                            && options_array_get(entry, &key).is_some()
+                            && entry
+                                .value
+                                .array()
+                                .and_then(|array| array.get(&key))
+                                .is_some()
                     });
                     if present != Some(true) {
                         break;

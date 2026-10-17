@@ -322,7 +322,10 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
                 .entry(c"status-format")
                 .as_deref_mut()
                 .map(|entry| {
-                    crate::src::options::options_array_get_index_mut(entry, i)
+                    entry
+                        .value
+                        .array_mut()
+                        .and_then(|array| array.get_index_mut(i))
                         .map(|value| value.string_ptr().map(|text| text.to_owned()))
                 })
                 .expect("status format stays live during expansion");

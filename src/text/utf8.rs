@@ -44,7 +44,11 @@ pub unsafe fn utf8_update_width_cache() {
         .reset_defaults();
     let values =
         crate::src::options::options_read_entry(global_options(), c"codepoint-widths", |entry| {
-            crate::src::options::options_array_iter(entry)
+            entry
+                .value
+                .array()
+                .into_iter()
+                .flat_map(|array| array.iter())
                 .map(|item| item.value.string_ptr().expect("width override").to_owned())
                 .collect::<Vec<_>>()
         })

@@ -3653,11 +3653,16 @@ pub unsafe fn colour_palette_from_option(p: Option<&mut colour_palette>, oo: &op
         return;
     };
     let values = crate::src::options::options_read_entry(oo, c"pane-colours", |entry| {
-        crate::src::options::options_array_iter(entry).next()?;
+        entry
+            .value
+            .array()
+            .into_iter()
+            .flat_map(|array| array.iter())
+            .next()?;
         let mut palette = [-1; 256];
         for (index, colour) in palette.iter_mut().enumerate() {
             let key = std::ffi::CString::new(index.to_string()).unwrap();
-            if let Some(value) = crate::src::options::options_array_get(entry, &key) {
+            if let Some(value) = entry.value.array().and_then(|array| array.get(&key)) {
                 *colour = value.number() as i32;
             }
         }

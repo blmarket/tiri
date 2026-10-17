@@ -42,9 +42,9 @@ use crate::src::mode_tree::{
     mode_tree_resize, mode_tree_set_prompt, mode_tree_start, mode_tree_up,
 };
 use crate::src::options::{
-    options_array_get, options_array_get_index, options_create, options_default,
-    options_default_to_cstring, options_get_fire_count, options_get_fire_time, options_get_number,
-    options_match_owned, options_push_changes, options_set_number, options_to_cstring,
+    options_create, options_default, options_default_to_cstring, options_get_fire_count,
+    options_get_fire_time, options_get_number, options_match_owned, options_push_changes,
+    options_set_number, options_to_cstring,
 };
 use crate::src::screen_write::{
     screen_write_box, screen_write_clearcharacter, screen_write_cursormove, screen_write_nputs,
@@ -743,30 +743,34 @@ unsafe fn window_customize_set_option_value(
         return -1;
     };
     let value = (!value.is_null()).then(|| CStr::from_ptr(value));
-    let result = if tableentry
-        .is_some_and(|definition| definition.flags & OPTIONS_TABLE_IS_ARRAY != 0)
-    {
-        let key = if let Some(key) = &item.array_key {
-            key.clone()
+    let result =
+        if tableentry.is_some_and(|definition| definition.flags & OPTIONS_TABLE_IS_ARRAY != 0) {
+            let key = if let Some(key) = &item.array_key {
+                key.clone()
+            } else {
+                let index = owner
+                    .entry(name)
+                    .as_deref_mut()
+                    .map(|entry| {
+                        let mut index = 0_u32;
+                        while index < INT_MAX as u32
+                            && entry
+                                .value
+                                .array()
+                                .and_then(|array| array.get_index(index))
+                                .is_some()
+                        {
+                            index += 1;
+                        }
+                        index
+                    })
+                    .expect("array entry remains live");
+                CString::new(index.to_string()).expect("decimal array index")
+            };
+            owner.set_array_item(name, &key, value, false)
         } else {
-            let index = owner
-                .entry(name)
-                .as_deref_mut()
-                .map(|entry| {
-                    let mut index = 0_u32;
-                    while index < INT_MAX as u32 && options_array_get_index(entry, index).is_some()
-                    {
-                        index += 1;
-                    }
-                    index
-                })
-                .expect("array entry remains live");
-            CString::new(index.to_string()).expect("decimal array index")
+            scope.set_from_string(tableentry, name, value, false)
         };
-        owner.set_array_item(name, &key, value, false)
-    } else {
-        scope.set_from_string(tableentry, name, value, false)
-    };
     if let Err(error) = result {
         if !cause.is_null() {
             *cause = Some(error);
@@ -881,8 +885,20 @@ unsafe fn window_customize_option_is_changed(
     if definition.flags & OPTIONS_TABLE_IS_ARRAY != 0 {
         let mut defaults_owner = options_create(None);
         let defaults = options_default(&mut *defaults_owner, definition);
-        let present = key.is_none_or(|key| options_array_get(option, key).is_some());
-        let present_default = key.is_none_or(|key| options_array_get(&*defaults, key).is_some());
+        let present = key.is_none_or(|key| {
+            option
+                .value
+                .array()
+                .and_then(|array| array.get(key))
+                .is_some()
+        });
+        let present_default = key.is_none_or(|key| {
+            defaults
+                .value
+                .array()
+                .and_then(|array| array.get(key))
+                .is_some()
+        });
         let result = if !present || !present_default {
             present != present_default
         } else {
@@ -916,7 +932,11 @@ unsafe fn window_customize_build_array(
 ) -> u_int {
     let data = mode_owner.get();
     let Some(keys) = owner.entry(option_name).as_deref_mut().map(|entry| {
-        crate::src::options::options_array_iter(entry)
+        entry
+            .value
+            .array()
+            .into_iter()
+            .flat_map(|array| array.iter())
             .map(|item| item.key.clone())
             .collect::<Vec<_>>()
     }) else {
@@ -925,8 +945,12 @@ unsafe fn window_customize_build_array(
     let mut count = 0_u32;
     for key in keys {
         let Some(found) = owner.entry(option_name).as_deref_mut().and_then(|entry| {
-            let item =
-                crate::src::options::options_array_iter(entry).find(|item| item.key == key)?;
+            let item = entry
+                .value
+                .array()
+                .into_iter()
+                .flat_map(|array| array.iter())
+                .find(|item| item.key == key)?;
             if (*data).hide_default != 0
                 && window_customize_option_is_changed(option_name, entry, Some(&key)) == 0
             {
@@ -3709,7 +3733,10 @@ unsafe fn window_customize_set_array_key_callback(
     let name = item.name.as_deref().expect("option name");
     let Some((owner, Some(value))) =
         window_customize_find_option(item.oo.as_ref().expect("option scope"), name, |option| {
-            options_array_get(option, new_key)
+            option
+                .value
+                .array()
+                .and_then(|array| array.get(new_key))
                 .is_none()
                 .then(|| options_to_cstring(option, Some(old_key), 0))
         })

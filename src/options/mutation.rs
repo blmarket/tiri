@@ -91,8 +91,12 @@ impl OptionsScope {
     }
 
     pub unsafe fn clear_array(&self, name: &CStr) {
-        if let Some(mut entry) = self.entry(name) {
-            options_array_clear(&mut entry);
+        if let Some(array) = self
+            .entry(name)
+            .as_deref_mut()
+            .and_then(|entry| entry.value.array_mut())
+        {
+            array.clear();
         }
     }
 
@@ -126,7 +130,7 @@ impl OptionsScope {
         else {
             return Err(c"not an array".to_owned());
         };
-        let Some(key) = options_array_correct_key(key) else {
+        let Some(key) = options_array::correct_key(key) else {
             return Err(options_string_cause(c"bad array key: %s", &[key]));
         };
         if let Some(value) = value.filter(|_| definition.type_0 == OPTIONS_TABLE_COMMAND) {
@@ -135,11 +139,11 @@ impl OptionsScope {
                 .as_deref_mut()
                 .map(|entry| {
                     assert_eq!(entry.id(), identity, "array option replaced while parsing");
-                    let ov = match options_array_get_mut(entry, &key) {
-                        Some(ov) => ov,
-                        None => options_array_new(entry, &key),
-                    };
-                    *ov = options_value::Command(OptionCommand(commands));
+                    *entry
+                        .value
+                        .array_mut()
+                        .expect("array option value")
+                        .get_or_insert(&key) = options_value::Command(OptionCommand(commands));
                 })
                 .expect("array option remains installed while parsing");
             return Ok(());
@@ -148,7 +152,11 @@ impl OptionsScope {
             .as_deref_mut()
             .map(|entry| {
                 assert_eq!(entry.id(), identity, "array option identity");
-                options_array_set(entry, &key, value, append)
+                entry
+                    .value
+                    .array_mut()
+                    .expect("array option value")
+                    .set(definition, &key, value, append)
             })
             .expect("local array option")
     }
@@ -202,11 +210,7 @@ impl OptionsScope {
                         identity,
                         "array assignment keeps its original entry"
                     );
-                    let mut index = 0;
-                    while index < UINT_MAX && options_array_get_index(entry, index).is_some() {
-                        index += 1;
-                    }
-                    index
+                    entry.value.array().map_or(0, options_array::next_free)
                 })
                 .expect("array option remains installed during assignment");
             if index == UINT_MAX && !separator.to_bytes().is_empty() {

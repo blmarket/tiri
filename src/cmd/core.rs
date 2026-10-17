@@ -268,12 +268,17 @@ pub unsafe fn cmd_get_parse_flags(mut cmd: refbox::Weak<cmd>) -> ::core::ffi::c_
 }
 pub unsafe fn cmd_get_alias(name: &CStr) -> Option<CString> {
     crate::src::options::options_read_entry(global_options(), c"command-alias", |entry| {
-        crate::src::options::options_array_iter(entry).find_map(|item| {
-            let value = item.value.string_ptr()?.to_bytes();
-            let (alias, command) = value.split_at(value.iter().position(|&byte| byte == b'=')?);
-            (alias == name.to_bytes())
-                .then(|| CString::new(&command[1..]).expect("alias command contains no NUL"))
-        })
+        entry
+            .value
+            .array()
+            .into_iter()
+            .flat_map(|array| array.iter())
+            .find_map(|item| {
+                let value = item.value.string_ptr()?.to_bytes();
+                let (alias, command) = value.split_at(value.iter().position(|&byte| byte == b'=')?);
+                (alias == name.to_bytes())
+                    .then(|| CString::new(&command[1..]).expect("alias command contains no NUL"))
+            })
     })
     .flatten()
 }

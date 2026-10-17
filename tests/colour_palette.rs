@@ -76,15 +76,25 @@ fn option_reload_replaces_defaults_without_changing_overrides() {
         colour_palette_from_option(Some(&mut p), &oo);
         assert!(p.default_palette.is_none());
         assert_eq!(
-            options_array_set(pane_colours(&mut oo), c"1", Some(c"red"), false),
+            pane_colours(&mut oo).value.array_mut().unwrap().set(
+                definition,
+                c"1",
+                Some(c"red"),
+                false
+            ),
             Ok(())
         );
         colour_palette_from_option(Some(&mut p), &oo);
         assert_eq!(colour_palette_get(Some(&p), 1), 1);
         colour_palette_set(Some(&mut p), 1, 4);
-        options_array_clear(pane_colours(&mut oo));
+        pane_colours(&mut oo).value.array_mut().unwrap().clear();
         assert_eq!(
-            options_array_set(pane_colours(&mut oo), c"255", Some(c"green"), false),
+            pane_colours(&mut oo).value.array_mut().unwrap().set(
+                definition,
+                c"255",
+                Some(c"green"),
+                false
+            ),
             Ok(())
         );
         colour_palette_from_option(Some(&mut p), &oo);
@@ -92,7 +102,7 @@ fn option_reload_replaces_defaults_without_changing_overrides() {
         colour_palette_set(Some(&mut p), 1, -1);
         assert_eq!(colour_palette_get(Some(&p), 1), -1);
         assert_eq!(colour_palette_get(Some(&p), COLOUR_FLAG_256 | 255), 2);
-        options_array_clear(pane_colours(&mut oo));
+        pane_colours(&mut oo).value.array_mut().unwrap().clear();
         colour_palette_from_option(Some(&mut p), &oo);
         assert!(p.default_palette.is_none());
         assert_eq!(colour_palette_get(Some(&p), COLOUR_FLAG_256 | 255), -1);

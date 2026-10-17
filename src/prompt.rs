@@ -1595,7 +1595,11 @@ unsafe fn prompt_complete_commands(s: &CStr) -> Vec<CString> {
     }
     let aliases =
         crate::src::options::options_read_entry(global_options(), c"command-alias", |entry| {
-            crate::src::options::options_array_iter(entry)
+            entry
+                .value
+                .array()
+                .into_iter()
+                .flat_map(|array| array.iter())
                 .map(|item| item.value.string_ptr().expect("string option").to_owned())
                 .collect::<Vec<_>>()
         })

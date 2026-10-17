@@ -11,8 +11,8 @@ use crate::src::format::format_single_from_target_cstring;
 use crate::src::hooks::{hooks_add_event, hooks_monitor_add, hooks_monitor_remove, hooks_run};
 use crate::src::monitor::monitor_parse_owned;
 use crate::src::options::{
-    options_array_get, options_match_owned, options_push_changes, options_scope_from_name,
-    OptionMatchFailure, OptionsScope,
+    options_match_owned, options_push_changes, options_scope_from_name, OptionMatchFailure,
+    OptionsScope,
 };
 use crate::src::session::sessions;
 use crate::src::session::Session;
@@ -389,7 +389,15 @@ unsafe fn cmd_set_option_exec(
         let already = selected
             .entry(name)
             .as_deref_mut()
-            .map(|entry| array_key.is_none_or(|key| options_array_get(entry, key).is_some()))
+            .map(|entry| {
+                array_key.is_none_or(|key| {
+                    entry
+                        .value
+                        .array()
+                        .and_then(|array| array.get(key))
+                        .is_some()
+                })
+            })
             .unwrap_or(false);
         if already {
             if args_has(args, b'q') != 0 {

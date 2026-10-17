@@ -1338,7 +1338,10 @@ pub unsafe fn tty_keys_build(mut tty: *mut tty) {
         (0..=KEYC_NUSER as u_int)
             .filter_map(|index| {
                 let key = std::ffi::CString::new(index.to_string()).unwrap();
-                crate::src::options::options_array_get(entry, &key)
+                entry
+                    .value
+                    .array()
+                    .and_then(|array| array.get(&key))
                     .and_then(|value| value.string_ptr())
                     .map(|value| (index, value.to_owned()))
             })

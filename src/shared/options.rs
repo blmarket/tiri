@@ -48,7 +48,7 @@ pub struct options {
     pub parent: Option<crate::src::options::OptionsScope>,
 }
 
-/// Box-owned by options_array_new; returned key and value pointers expire when
+/// Box-owned by options_array; returned key and value pointers expire when
 /// the item is removed.
 #[repr(C)]
 pub struct options_array_item {
@@ -86,7 +86,7 @@ pub enum options_value {
     Empty,
     String(CString),
     Number(::core::ffi::c_longlong),
-    Array(options_array_storage),
+    Array(options_array),
     Command(OptionCommand),
 }
 
@@ -114,10 +114,19 @@ impl options_value {
         }
     }
 
-    pub fn array_storage(&mut self) -> &mut options_array_storage {
+    /// None while the value is not an array, including an array entry
+    /// emptied during removal.
+    pub fn array(&self) -> Option<&options_array> {
         match self {
-            Self::Array(value) => value,
-            _ => panic!("option value is not an array"),
+            Self::Array(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub fn array_mut(&mut self) -> Option<&mut options_array> {
+        match self {
+            Self::Array(value) => Some(value),
+            _ => None,
         }
     }
 }
@@ -150,7 +159,7 @@ pub enum OptionsArrayKey {
 }
 
 #[derive(Default)]
-pub struct options_array_storage {
+pub struct options_array {
     pub(crate) entries: BTreeMap<OptionsArrayKey, Box<options_array_item>>,
 }
 

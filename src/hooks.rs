@@ -208,7 +208,11 @@ unsafe fn hooks_insert(
             .entry(name)
             .as_deref_mut()
             .map(|entry| {
-                crate::src::options::options_array_iter(entry)
+                entry
+                    .value
+                    .array()
+                    .into_iter()
+                    .flat_map(|array| array.iter())
                     .map(|item| item.key.clone())
                     .collect::<Vec<_>>()
             })
@@ -218,7 +222,7 @@ unsafe fn hooks_insert(
                 let value = source
                     .entry(name)
                     .as_deref_mut()
-                    .and_then(|entry| crate::src::options::options_array_get(entry, &key))
+                    .and_then(|entry| entry.value.array().and_then(|array| array.get(&key)))
                     .map(|value| value.string_ptr().expect("expanded hook string").to_owned());
                 let Some(value) = value else {
                     break;
@@ -246,7 +250,7 @@ unsafe fn hooks_insert(
                 let commands = source
                     .entry(name)
                     .as_deref_mut()
-                    .and_then(|entry| crate::src::options::options_array_get(entry, &key))
+                    .and_then(|entry| entry.value.array().and_then(|array| array.get(&key)))
                     .map(|value| value.commands().cloned());
                 let Some(commands) = commands else {
                     break;

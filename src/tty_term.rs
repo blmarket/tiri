@@ -1201,7 +1201,11 @@ pub unsafe fn tty_term_apply(
 /// apply terminal changes which may read options again.
 unsafe fn global_array_strings(name: &CStr) -> Vec<CString> {
     crate::src::options::options_read_entry(global_options(), name, |entry| {
-        crate::src::options::options_array_iter(entry)
+        entry
+            .value
+            .array()
+            .into_iter()
+            .flat_map(|array| array.iter())
             .filter_map(|item| item.value.string_ptr().map(CStr::to_owned))
             .collect()
     })

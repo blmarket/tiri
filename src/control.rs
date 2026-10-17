@@ -1150,7 +1150,6 @@ pub unsafe fn control_stop(owner: &ClientRef) {
     owner.stop_control();
 }
 
-
 pub unsafe fn control_add_sub(
     c_owner: &ClientRef,
     name: &CStr,
