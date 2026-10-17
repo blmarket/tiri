@@ -1227,8 +1227,7 @@ unsafe fn window_pane_copy_paste(
             && (*loop_0).fd.is_some()
             && !(*loop_0).flags & PANE_INPUTOFF != 0
             && options_get_number(
-                options_owner_ptr(&mut (*loop_0).options)
-                    .map_or(std::ptr::null_mut(), |options| options),
+                (*loop_0).options.as_deref().expect("pane options"),
                 c"synchronize-panes",
             ) != 0
         {
@@ -1262,8 +1261,7 @@ unsafe fn window_pane_copy_key(
             && (*loop_0).fd.is_some()
             && !(*loop_0).flags & PANE_INPUTOFF != 0
             && options_get_number(
-                options_owner_ptr(&mut (*loop_0).options)
-                    .map_or(std::ptr::null_mut(), |options| options),
+                (*loop_0).options.as_deref().expect("pane options"),
                 c"synchronize-panes",
             ) != 0
         {
@@ -1305,7 +1303,7 @@ unsafe fn window_pane_paste(
         bufferevent_write(event, bytes);
     });
     if options_get_number(
-        options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
+        (*wp).options.as_deref().expect("pane options"),
         c"synchronize-panes",
     ) != 0
     {
@@ -1366,7 +1364,7 @@ unsafe fn window_pane_key(
         return 0 as ::core::ffi::c_int;
     }
     if options_get_number(
-        options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
+        (*wp).options.as_deref().expect("pane options"),
         c"synchronize-panes",
     ) != 0
     {

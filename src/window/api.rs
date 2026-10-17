@@ -439,7 +439,7 @@ impl Window for WindowRef {
         drop(window_replace_name(self, name));
         if explicit {
             self.with_options_mut(|options| {
-                crate::src::options::options_set_number(options, c"automatic-rename", 0)
+                crate::src::options::options_set_number(options, c"automatic-rename", 0);
             });
         }
     }

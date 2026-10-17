@@ -247,22 +247,11 @@ unsafe fn cmd_select_pane_exec(
             return cmd_select_pane_marked_pane(marked_command.clone(), item_handle);
         }
         if let Some(style) = args_get(arguments, b'P') {
-            let invalid = original_pane.with_options_mut(|options| {
-                options_set_string(options, c"window-style", 0, |out| write_cstr(out, &*style))
-                    .is_null()
-            });
-            if invalid {
-                cmdq_error(item_handle, |out| {
-                    out.write_all(b"bad style: ")?;
-                    write_cstr(out, &*style)
-                });
-                return CMD_RETURN_ERROR;
-            }
             original_pane.with_options_mut(|options| {
+                options_set_string(options, c"window-style", 0, |out| write_cstr(out, &*style));
                 options_set_string(options, c"window-active-style", 0, |out| {
                     write_cstr(out, &*style)
-                })
-                .is_null()
+                });
             });
             original_pane.invalidate_style();
         }

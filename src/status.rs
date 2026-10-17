@@ -124,7 +124,7 @@ pub unsafe fn status_line_size(c: &ClientRef) -> u_int {
     }
     match c.attached_session().upgrade() {
         Some(session) => session.status_layout().1,
-        None => options_get_number(global_s_options, c"status") as u_int,
+        None => options_get_number(&*global_s_options, c"status") as u_int,
     }
 }
 pub unsafe fn status_prompt_line_at(c: &ClientRef) -> u_int {

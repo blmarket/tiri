@@ -965,7 +965,7 @@ pub unsafe fn style_add(
     } else {
         owned_context.insert(format_create(None, None, 0, FORMAT_NOJOBS))
     };
-    let parsed = options_string_to_style(oo, name, context).unwrap_or(style_default);
+    let parsed = options_string_to_style(&mut *oo, name, context).unwrap_or(style_default);
     if parsed.gc.fg != 8 {
         (*gc).fg = parsed.gc.fg;
     }
@@ -1052,7 +1052,7 @@ pub unsafe fn style_set_scrollbar_style_from_option(
     if style_parse(sb_style, &grid_default_cell, &style) != 0 as ::core::ffi::c_int {
         fatalx(|out| out.write_all(b"bad pane-scrollbars-style default"));
     }
-    let value = crate::src::options::options_get_string_optional(oo, c"pane-scrollbars-style");
+    let value = crate::src::options::options_get_string_optional(&*oo, c"pane-scrollbars-style");
     if let Some(value) = value {
         let expanded = format_single_cstring(
             None,

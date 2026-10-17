@@ -26,8 +26,7 @@ use crate::src::events_payload::{
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::log_debug;
 use crate::src::menu::{menu_destroy, menu_resize};
-use crate::src::options::options_owner_ptr;
-use crate::src::options::{options_get_number, options_get_number_ref};
+use crate::src::options::options_get_number;
 use libc::strcasecmp;
 
 use crate::src::server::{marked_pane, server_check_marked, server_clear_marked};
@@ -286,11 +285,11 @@ pub unsafe fn window_create(
         crate::src::options::OptionsScope::GlobalWindow,
     )));
     (*w).sb = options_get_number(
-        options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
+        (*w).options.as_deref().expect("window options"),
         c"pane-scrollbars",
     ) as ::core::ffi::c_int;
     (*w).sb_pos = options_get_number(
-        options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
+        (*w).options.as_deref().expect("window options"),
         c"pane-scrollbars-position",
     ) as ::core::ffi::c_int;
     (*w).winlinks = Default::default();
@@ -420,7 +419,7 @@ unsafe fn window_set_active_pane(
         client = ClientRegistry::next(&current);
     }
     pane.on_selected(true);
-    if options_get_number(global_options, c"focus-events") != 0 {
+    if options_get_number(&*global_options, c"focus-events") != 0 {
         if let Some(previous) = previous.as_ref() {
             previous.update_focus(false);
         }
@@ -746,14 +745,14 @@ fn window_pane_first(w: Option<&window>) -> Option<Rc<std::cell::UnsafeCell<wind
 }
 
 unsafe fn window_get_pane_status(w: &window) -> ::core::ffi::c_int {
-    options_get_number_ref(
+    options_get_number(
         w.options.as_deref().expect("window options"),
         c"pane-border-status",
     ) as ::core::ffi::c_int
 }
 
 unsafe fn window_get_pane_lines(w: &window) -> pane_lines {
-    options_get_number_ref(
+    options_get_number(
         w.options.as_deref().expect("window options"),
         c"pane-border-lines",
     ) as pane_lines

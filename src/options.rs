@@ -132,10 +132,10 @@ pub(crate) fn options_array_index(key: &CStr) -> OptionsArrayKey {
 }
 
 unsafe fn options_parent_table_entry(
-    oo: *mut options,
+    oo: &options,
     name: &CStr,
 ) -> Option<&'static options_table_entry> {
-    let parent = (*oo).parent.clone().unwrap_or_else(|| {
+    let parent = oo.parent.clone().unwrap_or_else(|| {
         fatalx(|out| {
             out.write_all(b"no parent options for ")?;
             write_cstr(out, &*name)
@@ -149,7 +149,7 @@ unsafe fn options_parent_table_entry(
     });
     source.with_entry(name, |entry| entry.tableentry).flatten()
 }
-unsafe fn options_value_free(ov: *mut options_value) {
+fn options_value_free(ov: &mut options_value) {
     *ov = options_value::Empty;
 }
 unsafe fn options_value_to_cstring(
@@ -238,27 +238,24 @@ pub unsafe fn options_read_entry<R>(
     let source = parent.resolve(name, false)?;
     source.with_entry(name, |entry| read(entry))
 }
-pub unsafe fn options_empty(
-    oo: *mut options,
+pub fn options_empty<'a>(
+    oo: &'a mut options,
     definition: &'static options_table_entry,
-) -> *mut options_entry {
+) -> &'a mut options_entry {
     let o = options_add(oo, definition.name.expect("named option definition"));
-    (*o).tableentry = Some(definition);
+    o.tableentry = Some(definition);
     if definition.flags & OPTIONS_TABLE_IS_ARRAY != 0 {
-        (*o).value = options_value::Array(options_array_storage::default());
+        o.value = options_value::Array(options_array_storage::default());
     }
     o
 }
-pub unsafe fn options_default(
-    mut oo: *mut options,
+pub unsafe fn options_default<'a>(
+    oo: &'a mut options,
     oe: &'static options_table_entry,
-) -> *mut options_entry {
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
+) -> &'a mut options_entry {
     let mut key: [u8; 32] = [0; 32];
     let mut pr: cmd_parse_result = cmd_parse_result::empty();
-    o = options_empty(oo, oe);
-    ov = &raw mut (*o).value;
+    let o = options_empty(oo, oe);
     if oe.flags & OPTIONS_TABLE_IS_ARRAY != 0 {
         if oe.default_arr.is_none() {
             options_array_assign(
@@ -282,10 +279,7 @@ pub unsafe fn options_default(
     }
     match oe.type_0 as ::core::ffi::c_uint {
         0 => {
-            set_scalar_string(
-                &mut *o,
-                oe.default_str.expect("string option default").to_owned(),
-            );
+            set_scalar_string(o, oe.default_str.expect("string option default").to_owned());
         }
         6 => {
             pr = cmd_parse_from_string(
@@ -295,13 +289,13 @@ pub unsafe fn options_default(
             match pr.status as ::core::ffi::c_uint {
                 0 => {}
                 1 => {
-                    (*ov) = options_value::Command(OptionCommand(pr.cmdlist.take()));
+                    o.value = options_value::Command(OptionCommand(pr.cmdlist.take()));
                 }
                 _ => {}
             }
         }
         _ => {
-            (*ov) = options_value::Number(oe.default_num);
+            o.value = options_value::Number(oe.default_num);
         }
     }
     o
@@ -322,7 +316,7 @@ pub(crate) unsafe fn options_default_to_cstring(oe: &options_table_entry) -> CSt
         }
     }
 }
-unsafe fn options_add(oo: *mut options, name: &CStr) -> *mut options_entry {
+fn options_add<'a>(oo: &'a mut options, name: &CStr) -> &'a mut options_entry {
     let owned = Box::new(options_entry {
         tableentry: None,
         value: options_value::Empty,
@@ -331,7 +325,7 @@ unsafe fn options_add(oo: *mut options, name: &CStr) -> *mut options_entry {
         fire_count: 0,
         fire_time: 0,
     });
-    match (*oo).tree.entry(name.to_owned()) {
+    match oo.tree.entry(name.to_owned()) {
         btree_map::Entry::Vacant(slot) => &mut **slot.insert(owned),
         btree_map::Entry::Occupied(mut slot) => {
             drop(slot.insert(owned));
@@ -347,15 +341,15 @@ pub fn options_get_monitor_data(
 ) -> Option<&mut crate::src::hooks::hooks_monitor> {
     o.monitor_data.as_deref_mut()
 }
-pub unsafe fn options_hook_fired(mut o: *mut options_entry) {
-    (*o).fire_count = (*o).fire_count.wrapping_add(1);
-    (*o).fire_time = current_time;
+pub unsafe fn options_hook_fired(o: &mut options_entry) {
+    o.fire_count = o.fire_count.wrapping_add(1);
+    o.fire_time = current_time;
 }
-pub unsafe fn options_get_fire_count(mut o: *mut options_entry) -> u_int {
-    (*o).fire_count
+pub fn options_get_fire_count(o: &options_entry) -> u_int {
+    o.fire_count
 }
-pub unsafe fn options_get_fire_time(mut o: *mut options_entry) -> time_t {
-    (*o).fire_time
+pub fn options_get_fire_time(o: &options_entry) -> time_t {
+    o.fire_time
 }
 pub fn options_table_entry(o: &options_entry) -> Option<&'static options_table_entry> {
     o.tableentry
@@ -374,17 +368,15 @@ fn options_array_new<'a>(o: &'a mut options_entry, key: &CStr) -> &'a mut option
     &mut item.value
 }
 
-pub unsafe fn options_array_clear(mut o: *mut options_entry) {
-    let _a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    let _a1: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    if !((*o)
+pub fn options_array_clear(o: &mut options_entry) {
+    if !o
         .tableentry
-        .is_some_and(|entry| entry.flags & OPTIONS_TABLE_IS_ARRAY != 0))
+        .is_some_and(|entry| entry.flags & OPTIONS_TABLE_IS_ARRAY != 0)
     {
         return;
     }
 
-    (*o).value.array_storage().entries.clear();
+    o.value.array_storage().entries.clear();
 }
 
 pub fn options_array_get<'a>(o: &'a options_entry, key: &CStr) -> Option<&'a options_value> {
@@ -423,7 +415,7 @@ pub fn options_array_get_index_mut(
     options_array_get_mut(o, &key)
 }
 pub unsafe fn options_array_set(
-    mut o: *mut options_entry,
+    o: &mut options_entry,
     key: &CStr,
     value: Option<&CStr>,
     mut append: ::core::ffi::c_int,
@@ -432,7 +424,7 @@ pub unsafe fn options_array_set(
     let mut value: *const ::core::ffi::c_char = value.map_or(std::ptr::null(), CStr::as_ptr);
     let mut pr: cmd_parse_result = cmd_parse_result::empty();
     let mut number: ::core::ffi::c_longlong = 0;
-    if !((*o)
+    if !(o
         .tableentry
         .is_some_and(|entry| entry.flags & OPTIONS_TABLE_IS_ARRAY != 0))
     {
@@ -449,11 +441,10 @@ pub unsafe fn options_array_set(
     };
     if value.is_null() {
         let key = options_array_index(&new_key);
-        (*o).value.array_storage().entries.remove(&key);
+        o.value.array_storage().entries.remove(&key);
         return 0 as ::core::ffi::c_int;
     }
-    if (*o)
-        .tableentry
+    if o.tableentry
         .is_some_and(|entry| entry.type_0 == OPTIONS_TABLE_COMMAND)
     {
         pr = cmd_parse_from_string(
@@ -466,21 +457,20 @@ pub unsafe fn options_array_set(
             }
             return -(1 as ::core::ffi::c_int);
         }
-        let ov = match options_array_get_mut(&mut *o, &new_key) {
+        let ov = match options_array_get_mut(o, &new_key) {
             Some(ov) => {
                 options_value_free(ov);
                 ov
             }
-            None => options_array_new(&mut *o, &new_key),
+            None => options_array_new(o, &new_key),
         };
         *ov = options_value::Command(OptionCommand(pr.cmdlist.take()));
         return 0 as ::core::ffi::c_int;
     }
-    if (*o)
-        .tableentry
+    if o.tableentry
         .is_none_or(|entry| entry.type_0 == OPTIONS_TABLE_STRING)
     {
-        let ov = options_array_get_mut(&mut *o, &new_key);
+        let ov = options_array_get_mut(o, &new_key);
         let owned_value = if let Some(ov) = ov.as_ref().filter(|_| append != 0) {
             let previous = ov.string_ptr().expect("string option").to_bytes();
             let suffix = CStr::from_ptr(value).to_bytes();
@@ -493,12 +483,12 @@ pub unsafe fn options_array_set(
         };
         let ov = match ov {
             Some(ov) => ov,
-            None => options_array_new(&mut *o, &new_key),
+            None => options_array_new(o, &new_key),
         };
         set_array_string(ov, owned_value);
         return 0 as ::core::ffi::c_int;
     }
-    if (*o).tableentry.expect("table option").type_0 as ::core::ffi::c_uint
+    if o.tableentry.expect("table option").type_0 as ::core::ffi::c_uint
         == OPTIONS_TABLE_COLOUR as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         number = colour_parse_cstr(std::ffi::CStr::from_ptr(value)).unwrap_or(-1)
@@ -507,12 +497,12 @@ pub unsafe fn options_array_set(
             format_options_cause!(cause, c"bad colour: %s", CStr::from_ptr(value),);
             return -(1 as ::core::ffi::c_int);
         }
-        let ov = match options_array_get_mut(&mut *o, &new_key) {
+        let ov = match options_array_get_mut(o, &new_key) {
             Some(ov) => {
                 options_value_free(ov);
                 ov
             }
-            None => options_array_new(&mut *o, &new_key),
+            None => options_array_new(o, &new_key),
         };
         *ov = options_value::Number(number);
         return 0 as ::core::ffi::c_int;
@@ -523,7 +513,7 @@ pub unsafe fn options_array_set(
     -(1 as ::core::ffi::c_int)
 }
 pub unsafe fn options_array_assign(
-    mut o: *mut options_entry,
+    o: &mut options_entry,
     s: &CStr,
     mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
@@ -532,7 +522,7 @@ pub unsafe fn options_array_assign(
     let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut key: [u8; 32] = [0; 32];
     let mut i: u_int = 0;
-    separator = (*o)
+    separator = o
         .tableentry
         .expect("table option")
         .separator
@@ -546,7 +536,7 @@ pub unsafe fn options_array_assign(
         }
         i = 0 as u_int;
         while i < UINT_MAX {
-            if crate::src::options::options_array_get_index_mut(&mut *(o), i)
+            if crate::src::options::options_array_get_index_mut(o, i)
                 .map_or(std::ptr::null_mut(), |value| value)
                 .is_null()
             {
@@ -578,7 +568,7 @@ pub unsafe fn options_array_assign(
         }
         i = 0 as u_int;
         while i < UINT_MAX {
-            if crate::src::options::options_array_get_index_mut(&mut *(o), i)
+            if crate::src::options::options_array_get_index_mut(o, i)
                 .map_or(std::ptr::null_mut(), |value| value)
                 .is_null()
             {
@@ -614,14 +604,12 @@ pub fn options_array_iter(
         .into_iter()
         .flat_map(|entries| entries.values().map(Box::as_ref))
 }
-pub unsafe fn options_is_array(mut o: *mut options_entry) -> ::core::ffi::c_int {
-    ((*o)
-        .tableentry
+pub fn options_is_array(o: &options_entry) -> ::core::ffi::c_int {
+    (o.tableentry
         .is_some_and(|entry| entry.flags & OPTIONS_TABLE_IS_ARRAY != 0)) as ::core::ffi::c_int
 }
-pub unsafe fn options_is_string(mut o: *mut options_entry) -> ::core::ffi::c_int {
-    ((*o)
-        .tableentry
+pub fn options_is_string(o: &options_entry) -> ::core::ffi::c_int {
+    (o.tableentry
         .is_none_or(|entry| entry.type_0 == OPTIONS_TABLE_STRING)) as ::core::ffi::c_int
 }
 
@@ -715,12 +703,12 @@ pub unsafe fn options_match_owned(s: &CStr) -> Result<OwnedOptionName, OptionMat
     }
 }
 /// Copy an initialized string; no pointer into an inherited model escapes.
-pub unsafe fn options_get_string(oo: *mut options, name: &CStr) -> CString {
+pub unsafe fn options_get_string(oo: &options, name: &CStr) -> CString {
     options_get_string_optional(oo, name).expect("initialized string option")
 }
 /// Preserve the Empty value used while publishing a new option.
-pub unsafe fn options_get_string_optional(oo: *mut options, name: &CStr) -> Option<CString> {
-    options_read_entry(&*oo, name, |entry| {
+pub unsafe fn options_get_string_optional(oo: &options, name: &CStr) -> Option<CString> {
+    options_read_entry(oo, name, |entry| {
         if entry
             .tableentry
             .is_some_and(|table| table.type_0 != OPTIONS_TABLE_STRING)
@@ -743,7 +731,7 @@ pub unsafe fn options_get_string_optional(oo: *mut options, name: &CStr) -> Opti
 /// Read a numeric option without borrowing the option tree mutably.
 ///
 /// Parent models are accessed through their trait and only copied values escape.
-pub unsafe fn options_get_number_ref(table: &options, name: &CStr) -> ::core::ffi::c_longlong {
+pub unsafe fn options_get_number(table: &options, name: &CStr) -> ::core::ffi::c_longlong {
     options_read_entry(table, name, |entry| {
         if !entry.tableentry.is_some_and(|table| {
             matches!(
@@ -771,12 +759,9 @@ pub unsafe fn options_get_number_ref(table: &options, name: &CStr) -> ::core::ff
     })
 }
 
-pub unsafe fn options_get_number(oo: *mut options, name: &'static CStr) -> ::core::ffi::c_longlong {
-    options_get_number_ref(&*oo, name)
-}
-pub unsafe fn options_get_command(oo: *mut options) -> std::rc::Rc<std::cell::RefCell<cmd_list>> {
+pub unsafe fn options_get_command(oo: &options) -> std::rc::Rc<std::cell::RefCell<cmd_list>> {
     let name = c"default-client-command";
-    options_read_entry(&*oo, name, |entry| {
+    options_read_entry(oo, name, |entry| {
         if !entry
             .tableentry
             .is_some_and(|table| table.type_0 == OPTIONS_TABLE_COMMAND)
@@ -791,60 +776,54 @@ pub unsafe fn options_get_command(oo: *mut options) -> std::rc::Rc<std::cell::Re
     })
     .unwrap_or_else(|| fatalx(|out| out.write_all(b"missing option default-client-command")))
 }
-pub unsafe fn options_set_string(
-    mut oo: *mut options,
-    name: &CStr,
-    mut append: ::core::ffi::c_int,
-    write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
-) -> *mut options_entry {
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut separator: &'static CStr = c"";
-    let formatted = format_message_with(write);
-    o = match crate::src::options::options_local_entry(&mut *(oo), name) {
-        btree_map::Entry::Occupied(entry) => &mut **entry.into_mut(),
-        btree_map::Entry::Vacant(_) => std::ptr::null_mut(),
-    };
-    let value = if !o.is_null()
-        && append != 0
-        && ((*o)
-            .tableentry
-            .is_none_or(|entry| entry.type_0 == OPTIONS_TABLE_STRING))
-    {
-        if !name.to_bytes().starts_with(b"@") {
-            separator = (*o)
-                .tableentry
-                .expect("table option")
-                .separator
-                .unwrap_or(c"");
-        }
-        let previous = (*o)
-            .value
-            .string_ptr()
-            .map_or(b"(null)".as_slice(), CStr::to_bytes);
-        let separator = separator.to_bytes();
-        let mut bytes =
-            Vec::with_capacity(previous.len() + separator.len() + formatted.as_bytes().len());
-        bytes.extend_from_slice(previous);
-        bytes.extend_from_slice(separator);
-        bytes.extend_from_slice(formatted.as_bytes());
-        CString::new(bytes).expect("C-string fragments contain no NUL")
-    } else {
-        formatted
-    };
-    if o.is_null() && name.to_bytes().starts_with(b"@") {
-        o = options_add(oo, name);
-    } else if o.is_null() {
-        o = options_default(
-            oo,
-            options_parent_table_entry(oo, name).expect("static option definition"),
-        );
-        if o.is_null() {
-            return ::core::ptr::null_mut::<options_entry>();
-        }
+/// Find the local entry, publishing a user option or the inherited built-in
+/// default when the table has none yet.
+unsafe fn options_local_or_default<'a>(oo: &'a mut options, name: &CStr) -> &'a mut options_entry {
+    if oo.tree.contains_key(name) {
+        return oo.tree.get_mut(name).expect("local option entry");
     }
-    if !((*o)
+    if name.to_bytes().starts_with(b"@") {
+        return options_add(oo, name);
+    }
+    let definition = options_parent_table_entry(oo, name).expect("static option definition");
+    options_default(oo, definition)
+}
+pub unsafe fn options_set_string<'a>(
+    oo: &'a mut options,
+    name: &CStr,
+    append: ::core::ffi::c_int,
+    write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
+) -> &'a mut options_entry {
+    let formatted = format_message_with(write);
+    let value = match oo.tree.get(name) {
+        Some(o)
+            if append != 0
+                && o.tableentry
+                    .is_none_or(|entry| entry.type_0 == OPTIONS_TABLE_STRING) =>
+        {
+            let separator = if name.to_bytes().starts_with(b"@") {
+                c""
+            } else {
+                o.tableentry.expect("table option").separator.unwrap_or(c"")
+            };
+            let previous = o
+                .value
+                .string_ptr()
+                .map_or(b"(null)".as_slice(), CStr::to_bytes);
+            let separator = separator.to_bytes();
+            let mut bytes =
+                Vec::with_capacity(previous.len() + separator.len() + formatted.as_bytes().len());
+            bytes.extend_from_slice(previous);
+            bytes.extend_from_slice(separator);
+            bytes.extend_from_slice(formatted.as_bytes());
+            CString::new(bytes).expect("C-string fragments contain no NUL")
+        }
+        _ => formatted,
+    };
+    let o = options_local_or_default(oo, name);
+    if !o
         .tableentry
-        .is_none_or(|entry| entry.type_0 == OPTIONS_TABLE_STRING))
+        .is_none_or(|entry| entry.type_0 == OPTIONS_TABLE_STRING)
     {
         fatalx(|out| {
             out.write_all(b"option ")?;
@@ -852,16 +831,15 @@ pub unsafe fn options_set_string(
             out.write_all(b" is not a string")
         });
     }
-    set_scalar_string(&mut *o, value);
-    (*o).style = None;
+    set_scalar_string(o, value);
+    o.style = None;
     o
 }
-pub unsafe fn options_set_number(
-    mut oo: *mut options,
+pub unsafe fn options_set_number<'a>(
+    oo: &'a mut options,
     name: &CStr,
-    mut value: ::core::ffi::c_longlong,
-) -> *mut options_entry {
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
+    value: ::core::ffi::c_longlong,
+) -> &'a mut options_entry {
     if name.to_bytes().starts_with(b"@") {
         fatalx(|out| {
             out.write_all(b"user option ")?;
@@ -869,20 +847,8 @@ pub unsafe fn options_set_number(
             out.write_all(b" must be a string")
         });
     }
-    o = match crate::src::options::options_local_entry(&mut *(oo), name) {
-        btree_map::Entry::Occupied(entry) => &mut **entry.into_mut(),
-        btree_map::Entry::Vacant(_) => std::ptr::null_mut(),
-    };
-    if o.is_null() {
-        o = options_default(
-            oo,
-            options_parent_table_entry(oo, name).expect("static option definition"),
-        );
-        if o.is_null() {
-            return ::core::ptr::null_mut::<options_entry>();
-        }
-    }
-    if !(*o).tableentry.is_some_and(|entry| {
+    let o = options_local_or_default(oo, name);
+    if !o.tableentry.is_some_and(|entry| {
         matches!(
             entry.type_0,
             OPTIONS_TABLE_NUMBER
@@ -898,15 +864,14 @@ pub unsafe fn options_set_number(
             out.write_all(b" is not a number")
         });
     }
-    (*o).value = options_value::Number(value);
+    o.value = options_value::Number(value);
     o
 }
-pub unsafe fn options_set_command(
-    mut oo: *mut options,
+pub unsafe fn options_set_command<'a>(
+    oo: &'a mut options,
     name: &CStr,
     value: Option<std::rc::Rc<std::cell::RefCell<cmd_list>>>,
-) -> *mut options_entry {
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
+) -> &'a mut options_entry {
     if name.to_bytes().starts_with(b"@") {
         fatalx(|out| {
             out.write_all(b"user option ")?;
@@ -914,22 +879,10 @@ pub unsafe fn options_set_command(
             out.write_all(b" must be a string")
         });
     }
-    o = match crate::src::options::options_local_entry(&mut *(oo), name) {
-        btree_map::Entry::Occupied(entry) => &mut **entry.into_mut(),
-        btree_map::Entry::Vacant(_) => std::ptr::null_mut(),
-    };
-    if o.is_null() {
-        o = options_default(
-            oo,
-            options_parent_table_entry(oo, name).expect("static option definition"),
-        );
-        if o.is_null() {
-            return ::core::ptr::null_mut::<options_entry>();
-        }
-    }
-    if !((*o)
+    let o = options_local_or_default(oo, name);
+    if !o
         .tableentry
-        .is_some_and(|entry| entry.type_0 == OPTIONS_TABLE_COMMAND))
+        .is_some_and(|entry| entry.type_0 == OPTIONS_TABLE_COMMAND)
     {
         fatalx(|out| {
             out.write_all(b"option ")?;
@@ -937,7 +890,7 @@ pub unsafe fn options_set_command(
             out.write_all(b" is not a command")
         });
     }
-    (*o).value = options_value::Command(OptionCommand(value));
+    o.value = options_value::Command(OptionCommand(value));
     o
 }
 pub unsafe fn options_scope_from_name(
@@ -1043,11 +996,11 @@ unsafe fn options_select_scope(
 /// Legacy detached/global-table adapter. Model callers must use the scoped
 /// evaluator so no component borrow is held through format expansion.
 pub unsafe fn options_string_to_style(
-    oo: *mut options,
+    oo: &mut options,
     name: &CStr,
     ft: *mut format_tree,
 ) -> Option<style> {
-    crate::src::style::style_resolve_with_options(name, ft.as_mut(), |visit| visit(&mut *oo))
+    crate::src::style::style_resolve_with_options(name, ft.as_mut(), |visit| visit(oo))
 }
 unsafe fn options_from_string_check(
     oe: &options_table_entry,
@@ -1111,7 +1064,7 @@ unsafe fn options_from_string_check(
     0 as ::core::ffi::c_int
 }
 unsafe fn options_from_string_flag(
-    mut oo: *mut options,
+    oo: &mut options,
     name: &CStr,
     value: Option<&CStr>,
     mut cause: *mut Option<CString>,
@@ -1119,7 +1072,7 @@ unsafe fn options_from_string_flag(
     let value: *const ::core::ffi::c_char = value.map_or(std::ptr::null(), CStr::as_ptr);
     let mut flag: ::core::ffi::c_int = 0;
     if value.is_null() || *value as ::core::ffi::c_int == '\0' as i32 {
-        flag = (options_get_number_ref(&*oo, name) == 0) as ::core::ffi::c_int;
+        flag = (options_get_number(oo, name) == 0) as ::core::ffi::c_int;
     } else if strcmp(value, c"1".as_ptr()) == 0 as ::core::ffi::c_int
         || strcasecmp(value, c"on".as_ptr()) == 0 as ::core::ffi::c_int
         || strcasecmp(value, c"yes".as_ptr()) == 0 as ::core::ffi::c_int
@@ -1156,7 +1109,7 @@ pub unsafe fn options_find_choice(
 }
 unsafe fn options_from_string_choice(
     oe: &options_table_entry,
-    mut oo: *mut options,
+    oo: &mut options,
     name: &CStr,
     value: Option<&CStr>,
     mut cause: *mut Option<CString>,
@@ -1164,7 +1117,7 @@ unsafe fn options_from_string_choice(
     let value: *const ::core::ffi::c_char = value.map_or(std::ptr::null(), CStr::as_ptr);
     let mut choice: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     if value.is_null() {
-        choice = options_get_number_ref(&*oo, name) as ::core::ffi::c_int;
+        choice = options_get_number(oo, name) as ::core::ffi::c_int;
         if choice < 2 as ::core::ffi::c_int {
             choice = (choice == 0) as ::core::ffi::c_int;
         }
@@ -1178,7 +1131,7 @@ unsafe fn options_from_string_choice(
     0 as ::core::ffi::c_int
 }
 pub unsafe fn options_from_string(
-    mut oo: *mut options,
+    oo: &mut options,
     oe: &options_table_entry,
     name: &CStr,
     value: Option<&CStr>,
@@ -1446,7 +1399,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
         utf8_update_width_cache();
     }
     if strcmp(name, c"input-buffer-size".as_ptr()) == 0 as ::core::ffi::c_int {
-        input_set_buffer_size(options_get_number(global_options, c"input-buffer-size") as size_t);
+        input_set_buffer_size(options_get_number(&*global_options, c"input-buffer-size") as size_t);
     }
     if strcmp(name, c"history-limit".as_ptr()) == 0 as ::core::ffi::c_int {
         let mut s_owner = sessions::first();

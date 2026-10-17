@@ -23,10 +23,8 @@ unsafe fn alerts_action_applies(
     };
     let s = session_owner.get();
     let mut action: ::core::ffi::c_int = 0;
-    action = options_get_number(
-        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
-        name,
-    ) as ::core::ffi::c_int;
+    action = options_get_number((*s).options.as_deref().expect("session options"), name)
+        as ::core::ffi::c_int;
     if action == ALERT_ANY {
         return 1 as ::core::ffi::c_int;
     }
@@ -175,10 +173,8 @@ unsafe fn alerts_set_message(mut wl: refbox::Weak<winlink>, type_0: &CStr, optio
         return;
     };
     let s = session_owner.get();
-    let visual = options_get_number(
-        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
-        option,
-    ) as i32;
+    let visual =
+        options_get_number((*s).options.as_deref().expect("session options"), option) as i32;
     let mut cursor = ClientRegistry::first();
     while let Some(client) = cursor {
         if client

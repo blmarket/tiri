@@ -26,7 +26,6 @@ use crate::src::events_payload::{
 };
 use crate::src::log::{log_bytes, log_cstr, log_debug};
 use crate::src::options::options_get_number;
-use crate::src::options::options_owner_ptr;
 use crate::src::resize::recalculate_sizes;
 use crate::src::server::{marked_pane, server_clear_marked};
 use crate::src::server_fn::server_lock_session;
@@ -323,7 +322,7 @@ unsafe fn session_update_activity(owner: &SessionRef, from: Option<SystemTime>) 
     drop(session.lock_timer.take());
     if session.attached != 0 {
         let timeout = Duration::from_secs(
-            (crate::src::options::options_get_number_ref(
+            (crate::src::options::options_get_number(
                 session.options.as_deref().expect("session options"),
                 c"lock-after-time",
             )) as u64,
@@ -559,7 +558,7 @@ unsafe fn session_set_current(
     winlink_stack_remove(&raw mut (*s).lastw, wl.clone());
     winlink_stack_push(&raw mut (*s).lastw, ((*s).current_winlink()).clone());
     (*s).set_curw(wl.clone());
-    if options_get_number(global_options, c"focus-events") != 0 {
+    if options_get_number(&*global_options, c"focus-events") != 0 {
         if old.is_alive() {
             if let Some(window) = old.get_unchecked().window_handle().cloned() {
                 window.update_focus();
@@ -673,7 +672,7 @@ unsafe fn session_renumber_windows(s_owner: &SessionRef) {
     let mut new_curw_idx: ::core::ffi::c_int = 0;
     let mut marked_idx: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     new_idx = options_get_number(
-        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
+        (*s).options.as_deref().expect("session options"),
         c"base-index",
     ) as ::core::ffi::c_int;
     let n = winlink_count(&(*s).windows);
@@ -754,7 +753,7 @@ unsafe fn session_theme_changed(session: Option<&session>) {
     }
 }
 unsafe fn session_update_history(session: &session) {
-    let limit = crate::src::options::options_get_number_ref(
+    let limit = crate::src::options::options_get_number(
         session.options.as_deref().expect("session options"),
         c"history-limit",
     ) as u_int;

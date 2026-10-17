@@ -241,7 +241,7 @@ fn window_copy_separators(data: &window_copy_mode_data) -> Option<&CStr> {
 }
 
 unsafe fn window_copy_snapshot_separators(so: *mut options) -> Option<CString> {
-    crate::src::options::options_get_string_optional(so, c"word-separators")
+    crate::src::options::options_get_string_optional(&*so, c"word-separators")
 }
 
 #[cfg(test)]
@@ -259,11 +259,13 @@ mod separator_snapshot_tests {
                 .iter()
                 .find(|entry| entry.name == Some(c"word-separators"))
                 .unwrap();
-            options_default(so, definition);
-            options_set_string(so, c"word-separators", 0, |out| out.write_all(b"original"));
+            options_default(&mut *so, definition);
+            options_set_string(&mut *so, c"word-separators", 0, |out| {
+                out.write_all(b"original")
+            });
             let mut data = window_copy_mode_data::default();
             data.separators = window_copy_snapshot_separators(so);
-            options_set_string(so, c"word-separators", 0, |out| {
+            options_set_string(&mut *so, c"word-separators", 0, |out| {
                 out.write_all(b"replacement")
             });
             assert_eq!(window_copy_separators(&data), Some(c"original"));
@@ -8257,7 +8259,7 @@ unsafe fn window_copy_copy_buffer(
     };
     let mut redraw: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if set_clip != 0
-        && options_get_number(global_options, c"set-clipboard") != 0 as ::core::ffi::c_longlong
+        && options_get_number(&*global_options, c"set-clipboard") != 0 as ::core::ffi::c_longlong
     {
         if window_copy_line_numbers_active(wme.clone()) != 0 && mode_pane_owner.needs_redraw(false)
         {
@@ -8291,7 +8293,7 @@ unsafe fn window_copy_pipe_run(
     let command_value;
     if cmd.is_null() || *cmd as ::core::ffi::c_int == '\0' as i32 {
         command_value =
-            crate::src::options::options_get_string_optional(global_options, c"copy-command");
+            crate::src::options::options_get_string_optional(&*global_options, c"copy-command");
         cmd = command_value
             .as_deref()
             .map_or(std::ptr::null(), CStr::as_ptr);
@@ -8366,7 +8368,7 @@ unsafe fn window_copy_append_selection(mut wme: refbox::Weak<window_mode_entry>)
         Some(buf) => buf,
         None => return,
     };
-    if options_get_number(global_options, c"set-clipboard") != 0 as ::core::ffi::c_longlong {
+    if options_get_number(&*global_options, c"set-clipboard") != 0 as ::core::ffi::c_longlong {
         screen_write_start_pane(
             &mut ctx,
             &mode_pane_owner,
@@ -10019,7 +10021,7 @@ mod backing_owner_tests {
                 .iter()
                 .find(|entry| entry.name == Some(c"extended-keys"))
                 .unwrap();
-            options_default(global_options, entry);
+            options_default(&mut *global_options, entry);
             Self(previous, Some(global_options_owner))
         }
     }

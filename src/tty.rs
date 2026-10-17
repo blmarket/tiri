@@ -525,7 +525,7 @@ pub unsafe fn tty_start_tty(owner: &ClientRef) {
             let _ =
                 tiri_rt::unix::discard_terminal(std::os::fd::BorrowedFd::borrow_raw(fd), TCOFLUSH);
         }
-        if options_get_number(global_options, c"clear-on-attach") != 0 {
+        if options_get_number(&*global_options, c"clear-on-attach") != 0 {
             tty_putcode(tty, TTYC_SMCUP);
             tty_putcode(tty, TTYC_CLEAR);
         } else {
@@ -709,7 +709,7 @@ pub unsafe fn tty_stop_tty(owner: &ClientRef) {
             fd,
             CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_RMKX).as_ptr()),
         );
-        if options_get_number(global_options, c"clear-on-attach") != 0 {
+        if options_get_number(&*global_options, c"clear-on-attach") != 0 {
             tty_raw(
                 fd,
                 CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_CLEAR).as_ptr()),
@@ -771,7 +771,7 @@ pub unsafe fn tty_stop_tty(owner: &ClientRef) {
                 CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_DSMG).as_ptr()),
             );
         }
-        if options_get_number(global_options, c"clear-on-attach") != 0 {
+        if options_get_number(&*global_options, c"clear-on-attach") != 0 {
             tty_raw(
                 fd,
                 CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_RMCUP).as_ptr()),
@@ -843,10 +843,10 @@ pub unsafe fn tty_update_features(owner: &ClientRef) {
         if terminal_term(tty).flags & TERM_DECSLRM != 0 {
             tty_putcode(tty, TTYC_ENMG);
         }
-        if options_get_number(global_options, c"extended-keys") != 0 {
+        if options_get_number(&*global_options, c"extended-keys") != 0 {
             tty_puts(tty, tty_term_string(terminal_term(tty), TTYC_ENEKS));
         }
-        if options_get_number(global_options, c"focus-events") != 0 {
+        if options_get_number(&*global_options, c"focus-events") != 0 {
             tty_puts(tty, tty_term_string(terminal_term(tty), TTYC_ENFCS));
         }
         tty_puts(tty, tty_term_string(terminal_term(tty), TTYC_ENESC));

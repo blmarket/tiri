@@ -129,7 +129,7 @@ unsafe fn cmd_break_pane_exec(
             if !name.is_null() {
                 source_window.rename(CStr::from_ptr(name), false);
                 source_window.with_options_mut(|options| {
-                    options_set_number(options, c"automatic-rename", 0)
+                    options_set_number(options, c"automatic-rename", 0);
                 });
             }
             server_unlink_window(src_s.as_ref().expect("live session"), wl.clone());

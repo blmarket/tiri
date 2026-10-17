@@ -43,9 +43,8 @@ use crate::src::mode_tree::{
 };
 use crate::src::options::{
     options_array_get, options_array_get_index, options_create, options_default,
-    options_default_to_cstring, options_get_fire_count, options_get_fire_time,
-    options_get_number_ref, options_match_owned, options_push_changes, options_set_number,
-    options_to_cstring,
+    options_default_to_cstring, options_get_fire_count, options_get_fire_time, options_get_number,
+    options_match_owned, options_push_changes, options_set_number, options_to_cstring,
 };
 use crate::src::screen_write::{
     screen_write_box, screen_write_clearcharacter, screen_write_cursormove, screen_write_nputs,
@@ -2263,8 +2262,11 @@ unsafe fn window_customize_draw_option(
                                                                             .as_ref()
                                                                             .expect("option scope")
                                                                             .with_local(|table| {
-                                                                                options_get_number_ref(
-                                                                                    table, CStr::from_ptr(name),
+                                                                                options_get_number(
+                                                                                    table,
+                                                                                    CStr::from_ptr(
+                                                                                        name,
+                                                                                    ),
                                                                                 )
                                                                             })
                                                                             as ::core::ffi::c_int;
@@ -3600,7 +3602,7 @@ unsafe fn window_customize_set_option(
         && (*oe).type_0 as ::core::ffi::c_uint
             == OPTIONS_TABLE_FLAG as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        flag = oo.with_local(|table| options_get_number_ref(table, CStr::from_ptr(name)))
+        flag = oo.with_local(|table| options_get_number(table, CStr::from_ptr(name)))
             as ::core::ffi::c_int;
         oo.with_local(|table| {
             options_set_number(table, CStr::from_ptr(name), (flag == 0) as i64);
@@ -3609,8 +3611,7 @@ unsafe fn window_customize_set_option(
         && (*oe).type_0 as ::core::ffi::c_uint
             == OPTIONS_TABLE_CHOICE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        choice =
-            oo.with_local(|table| options_get_number_ref(table, CStr::from_ptr(name))) as u_int;
+        choice = oo.with_local(|table| options_get_number(table, CStr::from_ptr(name))) as u_int;
         let choices = &(*oe).choices;
         if choice as usize + 1 >= choices.len() {
             choice = 0 as u_int;

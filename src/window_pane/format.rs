@@ -1546,8 +1546,7 @@ unsafe fn format_cb_pane_synchronized(mut ft: *mut format_tree) -> Option<CStrin
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     if !format_pane.is_null() {
         if options_get_number(
-            options_owner_ptr(&mut (*format_pane).options)
-                .map_or(std::ptr::null_mut(), |options| options),
+            (*format_pane).options.as_deref().expect("pane options"),
             c"synchronize-panes",
         ) != 0
         {

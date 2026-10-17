@@ -110,14 +110,14 @@ pub unsafe fn prompt_set_options(pd: &mut prompt_create_data<'_>, session: Optio
         if let Some(session) = session {
             session.with_options_mut(|options| options_get_string(options, key))
         } else {
-            options_get_string(global_s_options, key)
+            options_get_string(&*global_s_options, key)
         }
     };
     let read_number = |key: &'static CStr| {
         if let Some(session) = session {
             session.with_options_mut(|options| options_get_number(options, key))
         } else {
-            options_get_number(global_s_options, key)
+            options_get_number(&*global_s_options, key)
         }
     };
     use crate::src::style::style_apply_with_options;

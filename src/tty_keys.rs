@@ -2201,7 +2201,7 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                     }
                 } else {
                     delay =
-                        options_get_number(global_options, c"escape-time") as ::core::ffi::c_int;
+                        options_get_number(&*global_options, c"escape-time") as ::core::ffi::c_int;
                     if delay == 0 as ::core::ffi::c_int {
                         delay = 1 as ::core::ffi::c_int;
                     }

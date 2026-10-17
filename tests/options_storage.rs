@@ -3,22 +3,24 @@ use std::ffi::{CStr, CString};
 use std::ptr::null_mut;
 use tiri::src::format::bytes::write_cstr;
 use tiri::src::options::*;
+use tiri::src::shared::options::options_entry;
 
 #[test]
 fn scalar_string_replacement_append_and_default_keep_stable_entry() {
     unsafe {
         let mut oo_owner = options_create(None);
         let oo = &raw mut *oo_owner;
-        let entry = options_set_string(oo, c"@bytes", 0, |out| write_cstr(out, c"\xff"));
+        let entry: *mut options_entry =
+            options_set_string(&mut *oo, c"@bytes", 0, |out| write_cstr(out, c"\xff"));
         let name = c"@bytes";
         let previous = (*entry)
             .value
             .string_ptr()
             .map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut());
         assert_eq!(
-            options_set_string(oo, name, 1, |out| {
+            options_set_string(&mut *oo, name, 1, |out| {
                 write_cstr(out, CStr::from_ptr(previous))
-            }),
+            }) as *mut options_entry,
             entry
         );
         assert_eq!(
@@ -36,9 +38,9 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
             .string_ptr()
             .map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut());
         assert_eq!(
-            options_set_string(oo, name, 0, |out| {
+            options_set_string(&mut *oo, name, 0, |out| {
                 write_cstr(out, CStr::from_ptr(previous))
-            }),
+            }) as *mut options_entry,
             entry
         );
         assert_eq!(
@@ -51,7 +53,7 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
             .to_bytes(),
             b"\xff\xff"
         );
-        options_set_string(oo, name, 0, |out| out.write_all(b""));
+        options_set_string(&mut *oo, name, 0, |out| out.write_all(b""));
         assert_eq!(
             CStr::from_ptr(
                 (*entry)
@@ -67,7 +69,7 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
             .iter()
             .find(|oe| oe.name == Some(c"status-left"))
             .unwrap();
-        let default = options_default(oo, definition);
+        let default: *mut options_entry = options_default(&mut *oo, definition);
         assert_eq!(
             CStr::from_ptr(
                 (*default)
@@ -88,13 +90,13 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
             .iter()
             .find(|oe| oe.name == Some(c"status-right"))
             .unwrap();
-        let empty = options_empty(oo, empty_definition);
+        let empty: *mut options_entry = options_empty(&mut *oo, empty_definition);
         assert!((*empty)
             .value
             .string_ptr()
             .map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut())
             .is_null());
-        options_set_string(oo, empty_definition.name.unwrap(), 1, |out| {
+        options_set_string(&mut *oo, empty_definition.name.unwrap(), 1, |out| {
             write_cstr(out, c"tail")
         });
         assert_eq!(
@@ -120,11 +122,11 @@ fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
             .iter()
             .find(|oe| oe.name == Some(c"update-environment"))
             .unwrap();
-        let strings = options_empty(oo, definition);
+        let strings: *mut options_entry = options_empty(&mut *oo, definition);
         let mut input = b"  ONE,\xff TWO,,\0ignored".to_vec();
         assert_eq!(
             options_array_assign(
-                strings,
+                &mut *strings,
                 CStr::from_bytes_until_nul(&input).unwrap(),
                 null_mut()
             ),
@@ -160,10 +162,10 @@ fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
             .iter()
             .find(|oe| oe.name == Some(c"pane-colours"))
             .unwrap();
-        let colours = options_empty(oo, colour_definition);
+        let colours: *mut options_entry = options_empty(&mut *oo, colour_definition);
         let mut cause: Option<CString> = None;
         assert_eq!(
-            options_array_assign(colours, c"red,,invalid-colour", &mut cause),
+            options_array_assign(&mut *colours, c"red,,invalid-colour", &mut cause),
             -1
         );
         assert!(!tiri::src::options::options_array_get_mut(
@@ -212,10 +214,17 @@ fn command_arrays_parse_items_and_assign_unseparated_values() {
         with_global_options(|_| {
             let mut oo_owner = options_create(None);
             let oo = &raw mut *oo_owner;
-            let hook = options_empty(oo, table_entry(c"after-new-window"));
+            let hook: *mut options_entry =
+                options_empty(&mut *oo, table_entry(c"after-new-window"));
 
             assert_eq!(
-                options_array_set(hook, c"3", Some(c"display-message first"), 0, null_mut()),
+                options_array_set(
+                    &mut *hook,
+                    c"3",
+                    Some(c"display-message first"),
+                    0,
+                    null_mut()
+                ),
                 0
             );
             assert_eq!(
@@ -223,7 +232,13 @@ fn command_arrays_parse_items_and_assign_unseparated_values() {
                 b"display-message first"
             );
             assert_eq!(
-                options_array_set(hook, c"3", Some(c"display-message second"), 0, null_mut()),
+                options_array_set(
+                    &mut *hook,
+                    c"3",
+                    Some(c"display-message second"),
+                    0,
+                    null_mut()
+                ),
                 0
             );
             assert_eq!(
@@ -234,7 +249,7 @@ fn command_arrays_parse_items_and_assign_unseparated_values() {
 
             let mut cause: Option<CString> = None;
             assert_eq!(
-                options_array_set(hook, c"4", Some(c"no-such-command"), 0, &mut cause),
+                options_array_set(&mut *hook, c"4", Some(c"no-such-command"), 0, &mut cause),
                 -1
             );
             assert_eq!(
@@ -244,7 +259,11 @@ fn command_arrays_parse_items_and_assign_unseparated_values() {
             assert!(options_array_get(&*hook, c"4").is_none());
 
             assert_eq!(
-                options_array_assign(hook, c"display-message a ; display-message b", null_mut()),
+                options_array_assign(
+                    &mut *hook,
+                    c"display-message a ; display-message b",
+                    null_mut()
+                ),
                 0
             );
             assert_eq!(
@@ -252,7 +271,7 @@ fn command_arrays_parse_items_and_assign_unseparated_values() {
                 b"display-message a ; display-message b"
             );
             assert_eq!(options_array_iter(&*hook).count(), 2);
-            assert_eq!(options_array_assign(hook, c"", null_mut()), 0);
+            assert_eq!(options_array_assign(&mut *hook, c"", null_mut()), 0);
             assert_eq!(options_array_iter(&*hook).count(), 2);
             drop(oo_owner);
         });

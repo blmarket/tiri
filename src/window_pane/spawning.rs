@@ -543,7 +543,7 @@ pub(super) unsafe fn spawn_pane(
                 if let Some(terminal) = session_owner.termios() {
                     now.c_cc = terminal.c_cc;
                 }
-                key = options_get_number(global_options, c"backspace") as key_code;
+                key = options_get_number(&*global_options, c"backspace") as key_code;
                 if key >= 0x7f as key_code {
                     now.c_cc[VERASE] = '\u{7f}' as i32 as cc_t;
                 } else {

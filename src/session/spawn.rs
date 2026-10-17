@@ -51,7 +51,7 @@ pub(super) unsafe fn spawn_window(
         if index == -1 {
             index = (-1i64
                 - options_get_number(
-                    options_owner_ptr(&mut (*s).options).expect("session options"),
+                    (*s).options.as_deref().expect("session options"),
                     c"base-index",
                 )) as i32;
         }

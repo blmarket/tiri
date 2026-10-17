@@ -9,7 +9,6 @@ use crate::src::format::format_single_cstring;
 use crate::src::format_draw::format_draw;
 use crate::src::grid::grid_default_cell;
 use crate::src::log::log_debug;
-use crate::src::options::options_owner_ptr;
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::reactor::BufferEvent;
 use crate::src::resize::recalculate_sizes;
@@ -145,7 +144,7 @@ pub(super) unsafe fn finish_process(
         return;
     };
     remain_on_exit = options_get_number(
-        options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
+        (*wp).options.as_deref().expect("pane options"),
         c"remain-on-exit",
     ) as ::core::ffi::c_int;
     let mut current_block_37: u64;

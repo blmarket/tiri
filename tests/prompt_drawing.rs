@@ -38,7 +38,7 @@ fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {
             .iter()
             .find(|entry| entry.name == Some(c"extended-keys"))
             .unwrap();
-        options_default(server, definition);
+        options_default(&mut *server, definition);
 
         for (label, input, index, width, style, flags, completion, expected, cursor) in [
             (c"L:", c"abc", 3, 10, c"align=left", 0, None, "   L:abc", 8),

@@ -519,7 +519,7 @@ pub(crate) unsafe fn format_grid_word_cstring(
     let mut end: u_int = 0;
     let mut found: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut s = None;
-    let separators = options_get_string(global_s_options, c"word-separators");
+    let separators = options_get_string(&*global_s_options, c"word-separators");
     let ws = separators.as_c_str();
     loop {
         grid_get_cell(gd, x, y, &mut gc);

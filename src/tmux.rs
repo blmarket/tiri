@@ -557,17 +557,17 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
         .take_while(|entry| entry.name.is_some())
     {
         if oe.scope & OPTIONS_TABLE_SERVER != 0 {
-            options_default(global_options, oe);
+            options_default(&mut *global_options, oe);
         }
         if oe.scope & OPTIONS_TABLE_SESSION != 0 {
-            options_default(global_s_options, oe);
+            options_default(&mut *global_s_options, oe);
         }
         if oe.scope & OPTIONS_TABLE_WINDOW != 0 {
-            options_default(global_w_options, oe);
+            options_default(&mut *global_w_options, oe);
         }
     }
     options_set_string(
-        global_s_options,
+        &mut *global_s_options,
         c"default-shell",
         0 as ::core::ffi::c_int,
         |out| out.write_all(getshell().as_bytes()),
@@ -577,9 +577,12 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
         s = getenv(c"EDITOR".as_ptr());
         !s.is_null()
     } {
-        options_set_string(global_options, c"editor", 0 as ::core::ffi::c_int, |out| {
-            write_cstr(out, nullable_cstr(s))
-        });
+        options_set_string(
+            &mut *global_options,
+            c"editor",
+            0 as ::core::ffi::c_int,
+            |out| write_cstr(out, nullable_cstr(s)),
+        );
         if !strrchr(s, '/' as i32).is_null() {
             s = strrchr(s, '/' as i32).offset(1 as ::core::ffi::c_int as isize);
         }
@@ -589,12 +592,12 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
             keys = MODEKEY_EMACS;
         }
         options_set_number(
-            global_s_options,
+            &mut *global_s_options,
             c"status-keys",
             keys as ::core::ffi::c_longlong,
         );
         options_set_number(
-            global_w_options,
+            &mut *global_w_options,
             c"mode-keys",
             keys as ::core::ffi::c_longlong,
         );

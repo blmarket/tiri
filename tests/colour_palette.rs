@@ -65,7 +65,7 @@ fn option_reload_replaces_defaults_without_changing_overrides() {
             .iter()
             .find(|oe| oe.name == Some(c"pane-colours"))
             .unwrap();
-        let array = options_empty(oo, definition);
+        let array = options_empty(&mut *oo, definition);
         let mut p = colour_palette::default();
         colour_palette_from_option(Some(&mut p), oo);
         assert!(p.default_palette.is_none());

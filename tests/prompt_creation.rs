@@ -53,7 +53,7 @@ fn creation_preserves_input_expansion_incremental_state_and_owned_resources() {
                 .iter()
                 .find(|entry| entry.name == Some(name))
                 .unwrap();
-            options_default(session, definition);
+            options_default(&mut *session, definition);
         }
         let events = Rc::new(RefCell::new(Vec::new()));
         let state = cmd_find_state {

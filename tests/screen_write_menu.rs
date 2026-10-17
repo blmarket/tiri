@@ -27,7 +27,7 @@ fn menu_rendering_preserves_selection_disabled_rows_and_borrowed_inputs() {
             .iter()
             .find(|entry| entry.name == Some(c"extended-keys"))
             .unwrap();
-        options_default(global_options, definition);
+        options_default(&mut *global_options, definition);
         let menu = menu {
             title: c"Title".to_owned(),
             width: 6,

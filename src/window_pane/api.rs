@@ -547,7 +547,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         let pane = &mut *self.get();
         let Some(pty) = pane.fd.as_mut() else { return };
         if pane.flags & (PANE_EMPTY | PANE_EXITED) == 0
-            && options_get_number(global_options, c"utmp") != 0
+            && options_get_number(&*global_options, c"utmp") != 0
         {
             pty.utmp_add(pane.id);
         } else {

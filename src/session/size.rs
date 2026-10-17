@@ -28,14 +28,12 @@ pub(super) unsafe fn recalculate_size_state() {
 
 pub(super) unsafe fn status_update_cache(s_value: &mut session) {
     let s: *mut session = s_value as *mut _;
-    (*s).statuslines = options_get_number(
-        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
-        c"status",
-    ) as u_int;
+    (*s).statuslines =
+        options_get_number((*s).options.as_deref().expect("session options"), c"status") as u_int;
     if (*s).statuslines == 0 as u_int {
         (*s).statusat = -(1 as ::core::ffi::c_int);
     } else if options_get_number(
-        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
+        (*s).options.as_deref().expect("session options"),
         c"status-position",
     ) == 0 as ::core::ffi::c_longlong
     {
