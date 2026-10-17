@@ -10,7 +10,6 @@ use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::{ClientRef, ClientWeak};
 use crate::src::shared::limits::INT_MAX;
-use crate::src::shared::options::{options_entry, options_value};
 use crate::src::shared::posix_io::STDIN_FILENO;
 use crate::src::shared::tty::*;
 use crate::src::shared::tty::{tty_code, tty_code_type, tty_term};
@@ -22,7 +21,6 @@ use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::tmux::global_options;
 use crate::src::tty_features::{tty_apply_features, tty_parse_client_features};
 use libc::{fnmatch, strchr, strcmp, strcspn, strlen, strncmp};
-use std::collections::btree_map;
 use std::ffi::{CStr, CString};
 
 pub const TTYCODE_FLAG: tty_code_type = 3;
@@ -1199,31 +1197,22 @@ pub unsafe fn tty_term_apply(
         }
     }
 }
+/// Copy out a global array option's string values; the loops that use them
+/// apply terminal changes which may read options again.
+unsafe fn global_array_strings(name: &CStr) -> Vec<CString> {
+    crate::src::options::options_read_entry(global_options(), name, |entry| {
+        crate::src::options::options_array_iter(entry)
+            .filter_map(|item| item.value.string_ptr().map(CStr::to_owned))
+            .collect()
+    })
+    .unwrap_or_default()
+}
 pub unsafe fn tty_term_apply_overrides(mut term: *mut tty_term) {
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut ov: *const options_value = ::core::ptr::null::<options_value>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut offset: size_t = 0;
-    o = match crate::src::options::options_local_entry(
-        global_options(),
-        std::ffi::CStr::from_ptr(c"terminal-overrides".as_ptr()),
-    ) {
-        btree_map::Entry::Occupied(entry) => &mut **entry.into_mut(),
-        btree_map::Entry::Vacant(_) => std::ptr::null_mut(),
-    };
-    let a_root = o;
-    let mut a_keys = crate::src::options::options_array_iter(&*a_root)
-        .map(|item| item.key.clone())
-        .collect::<Vec<_>>()
-        .into_iter();
-    while let Some(value) = a_keys
-        .next()
-        .and_then(|key| crate::src::options::options_array_get(&*a_root, &key))
-    {
-        ov = value as *const options_value;
-        s = (*ov)
-            .string_ptr()
-            .map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut());
+    let values = global_array_strings(c"terminal-overrides");
+    for value in &values {
+        s = value.as_ptr();
         offset = 0 as size_t;
         let first = tty_term_override_next(s, &raw mut offset);
         if first.as_ref().is_some_and(|first| {
@@ -1307,8 +1296,6 @@ pub unsafe fn tty_term_create(
     mut ncaps: u_int,
 ) -> Result<Box<tty_term>, CString> {
     let mut term: *mut tty_term = ::core::ptr::null_mut::<tty_term>();
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut ov: *const options_value = ::core::ptr::null::<options_value>();
     let mut i: u_int = 0;
     let mut j: u_int = 0;
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -1387,26 +1374,9 @@ pub unsafe fn tty_term_create(
         }
         i = i.wrapping_add(1);
     }
-    o = match crate::src::options::options_local_entry(
-        global_options(),
-        std::ffi::CStr::from_ptr(c"terminal-features".as_ptr()),
-    ) {
-        btree_map::Entry::Occupied(entry) => &mut **entry.into_mut(),
-        btree_map::Entry::Vacant(_) => std::ptr::null_mut(),
-    };
-    let a_root = o;
-    let mut a_keys = crate::src::options::options_array_iter(&*a_root)
-        .map(|item| item.key.clone())
-        .collect::<Vec<_>>()
-        .into_iter();
-    while let Some(value) = a_keys
-        .next()
-        .and_then(|key| crate::src::options::options_array_get(&*a_root, &key))
-    {
-        ov = value as *const options_value;
-        s = (*ov)
-            .string_ptr()
-            .map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut());
+    let values = global_array_strings(c"terminal-features");
+    for value in &values {
+        s = value.as_ptr();
         offset = 0 as size_t;
         let first = tty_term_override_next(s, &raw mut offset);
         if first.as_ref().is_some_and(|first| {

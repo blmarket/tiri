@@ -1,6 +1,7 @@
-use std::ptr::null_mut;
+use std::collections::btree_map;
 use tiri::src::options::*;
 use tiri::src::shared::colour::{colour_palette, COLOUR_FLAG_256};
+use tiri::src::shared::options::{options, options_entry};
 use tiri::src::style::colour::*;
 
 #[test]
@@ -51,42 +52,49 @@ fn indices_are_normalized_and_invalid_indices_are_rejected() {
         assert_eq!(colour_palette_get(None, 0), -1);
         assert_eq!(colour_palette_set(None, 0, 1), 0);
         colour_palette_clear(None);
-        colour_palette_from_option(None, null_mut());
+        colour_palette_from_option(None, &options_create(None));
+    }
+}
+
+fn pane_colours(oo: &mut options) -> &mut options_entry {
+    match options_local_entry(oo, c"pane-colours") {
+        btree_map::Entry::Occupied(entry) => entry.into_mut(),
+        btree_map::Entry::Vacant(_) => panic!("pane-colours is set"),
     }
 }
 
 #[test]
 fn option_reload_replaces_defaults_without_changing_overrides() {
     unsafe {
-        let mut oo_owner = options_create(None);
-        let oo = &raw mut *oo_owner;
-        let table = &raw const tiri::src::options_table::options_table;
-        let definition = (*table)
+        let mut oo = options_create(None);
+        let definition = tiri::src::options_table::options_table
             .iter()
             .find(|oe| oe.name == Some(c"pane-colours"))
             .unwrap();
-        let array = options_empty(&mut *oo, definition);
+        options_empty(&mut oo, definition);
         let mut p = colour_palette::default();
-        colour_palette_from_option(Some(&mut p), oo);
+        colour_palette_from_option(Some(&mut p), &oo);
         assert!(p.default_palette.is_none());
-        assert_eq!(options_array_set(array, c"1", Some(c"red"), false), Ok(()));
-        colour_palette_from_option(Some(&mut p), oo);
-        assert_eq!(colour_palette_get(Some(&p), 1), 1);
-        colour_palette_set(Some(&mut p), 1, 4);
-        options_array_clear(array);
         assert_eq!(
-            options_array_set(array, c"255", Some(c"green"), false),
+            options_array_set(pane_colours(&mut oo), c"1", Some(c"red"), false),
             Ok(())
         );
-        colour_palette_from_option(Some(&mut p), oo);
+        colour_palette_from_option(Some(&mut p), &oo);
+        assert_eq!(colour_palette_get(Some(&p), 1), 1);
+        colour_palette_set(Some(&mut p), 1, 4);
+        options_array_clear(pane_colours(&mut oo));
+        assert_eq!(
+            options_array_set(pane_colours(&mut oo), c"255", Some(c"green"), false),
+            Ok(())
+        );
+        colour_palette_from_option(Some(&mut p), &oo);
         assert_eq!(colour_palette_get(Some(&p), 1), 4);
         colour_palette_set(Some(&mut p), 1, -1);
         assert_eq!(colour_palette_get(Some(&p), 1), -1);
         assert_eq!(colour_palette_get(Some(&p), COLOUR_FLAG_256 | 255), 2);
-        options_array_clear(array);
-        colour_palette_from_option(Some(&mut p), oo);
+        options_array_clear(pane_colours(&mut oo));
+        colour_palette_from_option(Some(&mut p), &oo);
         assert!(p.default_palette.is_none());
         assert_eq!(colour_palette_get(Some(&p), COLOUR_FLAG_256 | 255), -1);
-        drop(oo_owner);
     }
 }

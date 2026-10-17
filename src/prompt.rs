@@ -21,7 +21,7 @@ use crate::src::shared::format::format_tree;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::MODEKEY_VI;
 use crate::src::shared::key::*;
-use crate::src::shared::options::{options, options_entry};
+use crate::src::shared::options::options;
 use crate::src::shared::prompt::prompt;
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
@@ -41,7 +41,6 @@ use crate::src::text::utf8::{
     utf8_strwidth, utf8_to_data, utf8_tocstr_cstring,
 };
 use crate::src::tmux::{global_options, global_s_options};
-use std::collections::btree_map;
 use std::ffi::{CStr, CString};
 #[cfg(test)]
 use std::{cell::RefCell, rc::Rc};
@@ -1588,34 +1587,25 @@ fn prompt_complete_add(list: &mut Vec<CString>, s: &CStr) {
 unsafe fn prompt_complete_commands(s: &CStr) -> Vec<CString> {
     let mut list = Vec::new();
     let prefix = s.to_bytes();
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     for &entry in &cmd_table {
         let name = entry.name;
         if name.to_bytes().starts_with(prefix) {
             prompt_complete_add(&mut list, name);
         }
     }
-    o = match crate::src::options::options_local_entry(global_options(), c"command-alias") {
-        btree_map::Entry::Occupied(entry) => &mut **entry.into_mut(),
-        btree_map::Entry::Vacant(_) => std::ptr::null_mut(),
-    };
-    if !o.is_null() {
-        let a_root = o;
-        let mut a_keys = crate::src::options::options_array_iter(&*a_root)
-            .map(|item| item.key.clone())
-            .collect::<Vec<_>>()
-            .into_iter();
-        while let Some(value) = a_keys
-            .next()
-            .and_then(|key| crate::src::options::options_array_get(&*a_root, &key))
-        {
-            let value = value.string_ptr().expect("string option");
-            if let Some(separator) = value.to_bytes().iter().position(|&byte| byte == b'=') {
-                if prefix.len() <= separator && &value.to_bytes()[..prefix.len()] == prefix {
-                    let alias = CString::new(&value.to_bytes()[..separator])
-                        .expect("alias prefix contains no NUL");
-                    prompt_complete_add(&mut list, alias.as_c_str());
-                }
+    let aliases =
+        crate::src::options::options_read_entry(global_options(), c"command-alias", |entry| {
+            crate::src::options::options_array_iter(entry)
+                .map(|item| item.value.string_ptr().expect("string option").to_owned())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    for value in aliases {
+        if let Some(separator) = value.to_bytes().iter().position(|&byte| byte == b'=') {
+            if prefix.len() <= separator && &value.to_bytes()[..prefix.len()] == prefix {
+                let alias = CString::new(&value.to_bytes()[..separator])
+                    .expect("alias prefix contains no NUL");
+                prompt_complete_add(&mut list, alias.as_c_str());
             }
         }
     }

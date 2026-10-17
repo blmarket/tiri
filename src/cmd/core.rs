@@ -79,7 +79,6 @@ use crate::src::cmd::entries::wait_for::cmd_wait_for_entry;
 use crate::src::ffi::libc::strlcpy;
 use crate::src::log::{fatalx, log_bytes, log_debug};
 use crate::src::window::Window as _;
-use libc::{strchr, strncmp};
 
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
@@ -90,14 +89,12 @@ pub use crate::src::shared::command::{cmd, cmd_entry, cmd_list};
 pub use crate::src::shared::command::{CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS};
 use crate::src::shared::command::{CMD_READONLY, CMD_STARTSERVER};
 pub use crate::src::shared::mouse::mouse_event;
-pub use crate::src::shared::options::{options_entry, options_value};
 pub use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::SessionRef;
 pub use crate::src::shared::window::winlink;
 use crate::src::tmux::global_options;
 use crate::src::window::winlink_find_by_window;
 use crate::src::window_pane::WindowPane as _;
-use std::collections::btree_map;
 use std::ffi::{CStr, CString};
 
 pub const DQ: C2RustUnnamed_38 = 2;
@@ -270,60 +267,15 @@ pub unsafe fn cmd_get_parse_flags(mut cmd: refbox::Weak<cmd>) -> ::core::ffi::c_
     cmd.get_unchecked().parse_flags
 }
 pub unsafe fn cmd_get_alias(name: &CStr) -> Option<CString> {
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut ov: *const options_value = ::core::ptr::null::<options_value>();
-    let mut wanted: size_t = 0;
-    let mut n: size_t = 0;
-    let mut equals: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    o = match crate::src::options::options_local_entry(
-        global_options(),
-        std::ffi::CStr::from_ptr(c"command-alias".as_ptr()),
-    ) {
-        btree_map::Entry::Occupied(entry) => &mut **entry.into_mut(),
-        btree_map::Entry::Vacant(_) => std::ptr::null_mut(),
-    };
-    if o.is_null() {
-        return None;
-    }
-    wanted = name.to_bytes().len();
-    let a_root = o;
-    let mut a_keys = crate::src::options::options_array_iter(&*a_root)
-        .map(|item| item.key.clone())
-        .collect::<Vec<_>>()
-        .into_iter();
-    while let Some(value) = a_keys
-        .next()
-        .and_then(|key| crate::src::options::options_array_get(&*a_root, &key))
-    {
-        ov = value as *const options_value;
-        equals = strchr(
-            (*ov)
-                .string_ptr()
-                .map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            '=' as i32,
-        );
-        if !equals.is_null() {
-            n = equals.offset_from(
-                (*ov)
-                    .string_ptr()
-                    .map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            ) as ::core::ffi::c_long as size_t;
-            if n == wanted
-                && strncmp(
-                    name.as_ptr(),
-                    (*ov)
-                        .string_ptr()
-                        .map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                    n,
-                ) == 0 as ::core::ffi::c_int
-            {
-                return Some(
-                    CStr::from_ptr(equals.offset(1 as ::core::ffi::c_int as isize)).to_owned(),
-                );
-            }
-        }
-    }
-    None
+    crate::src::options::options_read_entry(global_options(), c"command-alias", |entry| {
+        crate::src::options::options_array_iter(entry).find_map(|item| {
+            let value = item.value.string_ptr()?.to_bytes();
+            let (alias, command) = value.split_at(value.iter().position(|&byte| byte == b'=')?);
+            (alias == name.to_bytes())
+                .then(|| CString::new(&command[1..]).expect("alias command contains no NUL"))
+        })
+    })
+    .flatten()
 }
 pub fn cmd_find(name: &CStr) -> Result<&'static cmd_entry, CString> {
     let mut found = None;

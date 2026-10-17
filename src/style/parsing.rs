@@ -12,8 +12,7 @@ pub use crate::src::shared::format::FORMAT_NOJOBS;
 use crate::src::shared::grid::*;
 use crate::src::shared::hyperlinks::hyperlinks_uri;
 pub use crate::src::shared::limits::UINT_MAX;
-pub use crate::src::shared::options::options_table_entry;
-pub use crate::src::shared::options::{options, options_entry};
+pub use crate::src::shared::options::options;
 pub use crate::src::shared::pane::{
     PANE_SCROLLBARS_CHARACTER, PANE_SCROLLBARS_DEFAULT_PADDING, PANE_SCROLLBARS_DEFAULT_WIDTH,
 };
@@ -1000,22 +999,16 @@ pub unsafe fn style_copy(mut dst: *mut style, mut src: *mut style) {
         ::core::mem::size_of::<style>() as size_t,
     );
 }
-pub unsafe fn style_set_scrollbar_style_from_option(
-    mut sb_style: *mut style,
-    oo: &options,
-) {
-    let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
-    let _o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let _s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+pub unsafe fn style_set_scrollbar_style_from_option(mut sb_style: *mut style, oo: &options) {
     style_set(sb_style, &grid_default_cell);
-    oe = crate::src::options::options_read_entry(oo, c"pane-scrollbars-style", |entry| {
+    let oe = crate::src::options::options_read_entry(oo, c"pane-scrollbars-style", |entry| {
         entry.tableentry
     })
     .flatten()
     .unwrap_or_else(|| fatalx(|out| out.write_all(b"missing pane-scrollbars-style")));
     let style = format_single_cstring(
         None,
-        (*oe).default_str.map_or(std::ptr::null(), CStr::as_ptr),
+        oe.default_str.map_or(std::ptr::null(), CStr::as_ptr),
         None,
         None,
         (refbox::Weak::new()).clone(),

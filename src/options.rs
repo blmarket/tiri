@@ -308,10 +308,8 @@ fn options_add<'a>(oo: &'a mut options, name: &CStr) -> &'a mut options_entry {
 fn options_remove(entry: btree_map::OccupiedEntry<'_, CString, Box<options_entry>>) {
     drop(entry.remove());
 }
-pub fn options_get_monitor_data(
-    o: &mut options_entry,
-) -> Option<&mut crate::src::hooks::hooks_monitor> {
-    o.monitor_data.as_deref_mut()
+pub fn options_get_monitor_data(o: &options_entry) -> Option<&crate::src::hooks::hooks_monitor> {
+    o.monitor_data.as_deref()
 }
 pub unsafe fn options_hook_fired(o: &mut options_entry) {
     o.fire_count = o.fire_count.wrapping_add(1);

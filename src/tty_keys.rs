@@ -27,7 +27,6 @@ use crate::src::shared::mouse::{
     mouse_event, MOUSE_MASK_BUTTONS, MOUSE_PARAM_BTN_OFF, MOUSE_PARAM_POS_OFF, MOUSE_WHEEL_DOWN,
     MOUSE_WHEEL_UP,
 };
-use crate::src::shared::options::{options_entry, options_value};
 use crate::src::shared::posix_terminal::VERASE;
 use crate::src::shared::tty::*;
 use crate::src::shared::tty::{tty, tty_key};
@@ -1276,8 +1275,6 @@ pub unsafe fn tty_keys_build(mut tty: *mut tty) {
     let mut i: u_int = 0;
     let mut j: u_int = 0;
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let _o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let _ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
     let mut copy: [::core::ffi::c_char; 16] = [0; 16];
     let mut key: key_code = 0;
     tty_keys_free(tty);

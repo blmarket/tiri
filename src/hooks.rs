@@ -572,12 +572,9 @@ pub unsafe fn hooks_monitor_add(
         .expect("monitor option");
     monitor_add(&set, name, type_0, id, format, flags);
 }
-pub(crate) unsafe fn hooks_monitor_to_cstring(
-    name: &CStr,
-    o: *mut options_entry,
-) -> Option<CString> {
+pub(crate) unsafe fn hooks_monitor_to_cstring(name: &CStr, o: &options_entry) -> Option<CString> {
     let mut bytes = name.to_bytes().to_vec();
-    let hm = options_get_monitor_data(&mut *o)?;
+    let hm = options_get_monitor_data(o)?;
     let target = match hm.type_0 {
         0 => b"::".as_slice(),
         1 => b":%".as_slice(),
@@ -594,14 +591,14 @@ pub(crate) unsafe fn hooks_monitor_to_cstring(
     bytes.extend_from_slice(hm.format.as_bytes());
     Some(CString::new(bytes).expect("C string parts contain no NUL"))
 }
-pub unsafe fn hooks_monitor_get_fire_count(name: &CStr, o: *mut options_entry) -> u_int {
-    let Some(hm) = options_get_monitor_data(&mut *o) else {
+pub unsafe fn hooks_monitor_get_fire_count(name: &CStr, o: &options_entry) -> u_int {
+    let Some(hm) = options_get_monitor_data(o) else {
         return 0 as u_int;
     };
     monitor_get_fire_count(&hm.set.as_ref().expect("hook monitor").downgrade(), name)
 }
-pub unsafe fn hooks_monitor_get_fire_time(name: &CStr, o: *mut options_entry) -> time_t {
-    let Some(hm) = options_get_monitor_data(&mut *o) else {
+pub unsafe fn hooks_monitor_get_fire_time(name: &CStr, o: &options_entry) -> time_t {
+    let Some(hm) = options_get_monitor_data(o) else {
         return 0 as time_t;
     };
     monitor_get_fire_time(&hm.set.as_ref().expect("hook monitor").downgrade(), name)

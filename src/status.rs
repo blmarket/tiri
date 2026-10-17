@@ -41,7 +41,6 @@ use crate::src::shared::format::{FORMAT_FORCE, FORMAT_NONE, FORMAT_STATUS};
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
-use crate::src::shared::options::{options_entry, options_value};
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{prompt_free_cb, PROMPT_ACCEPT, PROMPT_SINGLE};
 use crate::src::shared::screen::screen;
@@ -254,8 +253,6 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
     let mut changed: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut fg: ::core::ffi::c_int = 0;
     let mut bg: ::core::ffi::c_int = 0;
-    let _o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let _ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     log_debug(format_args!("{} enter", "status_redraw"));
     if c_owner.borrow_status().active.is_some() {
