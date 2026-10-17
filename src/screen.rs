@@ -5,6 +5,7 @@ use crate::src::grid::{
 };
 use crate::src::hyperlinks::{hyperlinks_init, hyperlinks_reset};
 use crate::src::log::{fatal, fatalx, log_debug};
+use crate::src::options::options;
 use crate::src::options::options_get_number;
 use crate::src::screen_write::{screen_write_free_list, screen_write_make_list};
 use crate::src::shared::abi::*;
@@ -13,7 +14,6 @@ use crate::src::shared::format::format_tree;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::MODEKEY_EMACS;
 use crate::src::shared::limits::UINT_MAX;
-use crate::src::shared::options::options;
 pub use crate::src::shared::screen::{
     screen, screen_sel, ALL_MODES, EXTENDED_KEY_MODES, MODE_BRACKETPASTE, MODE_CRLF, MODE_CURSOR,
     MODE_CURSOR_BLINKING, MODE_CURSOR_BLINKING_SET, MODE_CURSOR_VERY_VISIBLE, MODE_FOCUSON,

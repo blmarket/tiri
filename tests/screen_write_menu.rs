@@ -2,7 +2,7 @@ use std::ffi::CStr;
 use tiri::src::grid::view::grid_view_get_cell;
 use tiri::src::grid::{grid_cells_equal, grid_create, grid_default_cell};
 use tiri::src::options::options_default;
-use tiri::src::options_table::options_table;
+use tiri::src::options::options_table;
 use tiri::src::screen_write::{screen_write_menu, screen_write_start, screen_write_stop};
 use tiri::src::shared::grid::{grid_cell, GRID_ATTR_DIM};
 use tiri::src::shared::menu::{menu, MenuRow};

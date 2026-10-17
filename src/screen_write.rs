@@ -11,6 +11,7 @@ use crate::src::grid::{
     grid_get_line_mut,
 };
 use crate::src::log::{fatalx, log_bytes, log_debug, log_get_level};
+use crate::src::options::options;
 use crate::src::options::options_get_number;
 use crate::src::screen::{
     screen_alternate_off, screen_alternate_on, screen_check_selection, screen_mode_display,
@@ -27,7 +28,6 @@ use crate::src::shared::grid::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::limits::UINT_MAX;
 use crate::src::shared::menu::menu;
-use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::screen::{
     screen, EXTENDED_KEY_MODES, MODE_CURSOR, MODE_INSERT, MODE_KEYS_EXTENDED, MODE_ORIGIN,

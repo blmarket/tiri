@@ -1217,11 +1217,7 @@ pub(super) unsafe fn format_loop_panes(
 }
 
 unsafe fn format_option_loop_values(
-    mut occupied: btree_map::OccupiedEntry<
-        '_,
-        CString,
-        Box<crate::src::shared::options::options_entry>,
-    >,
+    mut occupied: btree_map::OccupiedEntry<'_, CString, Box<crate::src::options::options_entry>>,
     array_key: Option<&CStr>,
     count: u_int,
     index: u_int,
@@ -1253,8 +1249,8 @@ unsafe fn format_option_loop_values(
             .into_iter()
             .flat_map(|array| array.iter())
             .any(|item| {
-                crate::src::shared::options::OptionsArrayKey::parse(&item.key)
-                    > crate::src::shared::options::OptionsArrayKey::parse(key)
+                crate::src::options::OptionsArrayKey::parse(&item.key)
+                    > crate::src::options::OptionsArrayKey::parse(key)
             }),
     };
     let number = |value: u_int| CString::new(value.to_string()).expect("integer format");

@@ -1,6 +1,16 @@
 //! Option edits whose parsing and cleanup may reenter model operations.
 //! Only bounded publication/removal steps borrow the owning model.
-use super::*;
+use super::diagnostic::options_string_cause;
+use super::from_string::options_from_string;
+use super::scope::OptionsScope;
+use super::store::*;
+use super::types::*;
+use crate::src::cmd::parse::cmd_parse_from_string;
+use crate::src::format::bytes::write_cstr;
+use crate::src::shared::command::{cmd_list, cmd_parse_result};
+use crate::src::shared::limits::UINT_MAX;
+use std::collections::btree_map;
+use std::ffi::{CStr, CString};
 
 fn command_parser(value: &CStr) -> cmd_parse_result {
     unsafe { cmd_parse_from_string(value, std::ptr::null_mut()) }

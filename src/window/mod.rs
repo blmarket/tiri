@@ -38,6 +38,7 @@ use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
 
+use crate::src::options::options;
 use crate::src::shared::abi::*;
 use crate::src::shared::command::cmd_find_state;
 use crate::src::shared::event::*;
@@ -45,7 +46,6 @@ use crate::src::shared::grid::*;
 use crate::src::shared::layout::layout_geometry;
 use crate::src::shared::layout::*;
 use crate::src::shared::limits::UINT_MAX;
-use crate::src::shared::options::options;
 use crate::src::shared::pane::{window_panes, PaneHistory};
 use crate::src::shared::pane::{PANE_STATUS_BOTTOM, PANE_STATUS_TOP};
 pub use crate::src::shared::window::{windows, winlink};

@@ -81,6 +81,7 @@ use std::os::unix::process::ExitStatusExt;
 use std::rc::{Rc, Weak};
 use tiri_buffer::SegmentedBuf;
 
+use crate::src::options::options;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
 use crate::src::shared::client::{client_file, client_file_cb};
@@ -97,7 +98,6 @@ use crate::src::shared::layout::layout_geometry;
 use crate::src::shared::layout::*;
 use crate::src::shared::limits::UINT_MAX;
 use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
-use crate::src::shared::options::options;
 use crate::src::shared::pane::{
     pane_output_data, window_pane_offset, window_pane_resize, window_pane_resizes, PANE_CHANGED,
     PANE_DESTROYED, PANE_EMPTY, PANE_EXITED, PANE_FOCUSED, PANE_INPUTOFF, PANE_REDRAW,

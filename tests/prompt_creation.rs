@@ -1,7 +1,7 @@
 use std::{cell::RefCell, ffi::CString, rc::Rc};
 use tiri::src::environ::environ_create;
 use tiri::src::options::options_default;
-use tiri::src::options_table::options_table;
+use tiri::src::options::options_table;
 use tiri::src::prompt::{
     prompt_create, prompt_free, prompt_incremental_start, prompt_set_options, prompt_update,
 };

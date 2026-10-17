@@ -5,6 +5,7 @@ use crate::src::format::{format_create, format_single_cstring};
 use crate::src::grid::grid_default_cell;
 use crate::src::hyperlinks::{hyperlinks_get, hyperlinks_put, HyperlinksRef};
 use crate::src::log::{fatalx, log_cstr, log_debug};
+pub use crate::src::options::options;
 use crate::src::options::options_string_to_style;
 use crate::src::shared::abi::*;
 pub use crate::src::shared::format::format_tree;
@@ -12,7 +13,6 @@ pub use crate::src::shared::format::FORMAT_NOJOBS;
 use crate::src::shared::grid::*;
 use crate::src::shared::hyperlinks::hyperlinks_uri;
 pub use crate::src::shared::limits::UINT_MAX;
-pub use crate::src::shared::options::options;
 pub use crate::src::shared::pane::{
     PANE_SCROLLBARS_CHARACTER, PANE_SCROLLBARS_DEFAULT_PADDING, PANE_SCROLLBARS_DEFAULT_WIDTH,
 };

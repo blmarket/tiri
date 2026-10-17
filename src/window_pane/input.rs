@@ -73,6 +73,7 @@ use std::ffi::{CStr, CString};
 use std::time::Duration;
 use tiri_buffer::SegmentedBuf;
 
+use crate::src::options::options;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::CLIENT_UNATTACHEDFLAGS;
 use crate::src::shared::colour::COLOUR_FLAG_256;
@@ -88,7 +89,6 @@ use crate::src::shared::input::{
     INPUT_BUF_DEFAULT_SIZE, INPUT_REQUEST_CLIPBOARD, INPUT_REQUEST_PALETTE, INPUT_REQUEST_QUEUE,
 };
 use crate::src::shared::limits::INT_MAX;
-use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::{
     PANE_ACTIVITY, PANE_CHANGED, PANE_CMDRUNNING, PANE_STYLECHANGED, PANE_THEMECHANGED,

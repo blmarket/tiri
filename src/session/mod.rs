@@ -25,6 +25,7 @@ use crate::src::events_payload::{
     event_payload_set_string, event_payload_set_target, event_payload_set_window,
 };
 use crate::src::log::{log_bytes, log_cstr, log_debug};
+use crate::src::options::options;
 use crate::src::options::options_get_number;
 use crate::src::resize::recalculate_sizes;
 use crate::src::server::{marked_pane, server_clear_marked};
@@ -34,7 +35,6 @@ use crate::src::shared::command::cmd_find_state;
 use crate::src::shared::environment::environ;
 use crate::src::shared::event::*;
 use crate::src::shared::limits::UINT_MAX;
-use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::{SessionRef, SessionWeak};
 use crate::src::shared::sort::sort_criteria;

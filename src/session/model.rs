@@ -1,8 +1,8 @@
 //! Session state is private to its implementation. Other models use Session.
+use crate::src::options::options;
 use crate::src::shared::abi::u_int;
 use crate::src::shared::environment::environ;
 use crate::src::shared::event::Timer;
-use crate::src::shared::options::options;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::terminal::termios;
 use crate::src::shared::window::{winlink, winlink_stack, winlinks};

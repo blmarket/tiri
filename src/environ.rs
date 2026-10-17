@@ -74,10 +74,10 @@ pub fn environ_iter(env: &environ) -> impl Iterator<Item = &environ_entry> {
     env.entries()
 }
 
+use crate::src::options::options;
 use crate::src::shared::abi::*;
 pub use crate::src::shared::environment::ENVIRON_HIDDEN;
 pub use crate::src::shared::environment::{environ, environ_entry};
-use crate::src::shared::options::options;
 
 pub fn environ_create() -> Box<environ> {
     Box::default()

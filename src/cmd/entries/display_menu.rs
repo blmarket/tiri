@@ -864,7 +864,7 @@ unsafe fn cmd_display_menu_exec(
     if !value.is_null() {
         let mut cause = None;
         lines = options_find_choice(
-            crate::src::options_table::options_table
+            crate::src::options::options_table
                 .iter()
                 .find(|entry| entry.name == Some(c"menu-border-lines"))
                 .expect("built-in border choice"),
@@ -1112,7 +1112,7 @@ unsafe fn cmd_display_popup_exec(
             current_block = 8151474771948790331;
         } else if !value.is_null() {
             lines = options_find_choice(
-                crate::src::options_table::options_table
+                crate::src::options::options_table
                     .iter()
                     .find(|entry| entry.name == Some(c"popup-border-lines"))
                     .expect("built-in border choice"),

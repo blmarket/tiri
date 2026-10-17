@@ -21,10 +21,12 @@ use crate::src::log::{log_cstr, log_debug, log_get_level};
 use crate::src::monitor::{
     monitor_add, monitor_create_session_owned, monitor_get_fire_count, monitor_get_fire_time,
 };
+use crate::src::options::options_entry;
+use crate::src::options::options_table;
+use crate::src::options::OPTIONS_TABLE_IS_HOOK;
 use crate::src::options::{
     options_get_monitor_data, options_hook_fired, options_search, options_set_string, OptionsScope,
 };
-use crate::src::options_table::options_table;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::ClientWeak;
 use crate::src::shared::command::CMDQ_STATE_NOHOOKS;
@@ -35,8 +37,6 @@ use crate::src::shared::format::format_tree;
 use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
 use crate::src::shared::monitor::monitor_type;
 use crate::src::shared::monitor::{monitor_callback, monitor_change, monitor_set};
-use crate::src::shared::options::options_entry;
-use crate::src::shared::options::OPTIONS_TABLE_IS_HOOK;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::{WindowRef, WindowWeak};

@@ -15,6 +15,7 @@ use crate::src::options::{options_get_number, options_get_string, options_set_st
 use crate::src::server_client::Client as _;
 use libc::{sscanf, strcmp};
 
+use crate::src::options::options;
 use crate::src::session::Session;
 use crate::src::session::{session_group_add, session_group_synchronize_to, session_groups};
 use crate::src::shared::abi::*;
@@ -28,7 +29,6 @@ use crate::src::shared::command::{
 };
 use crate::src::shared::environment::environ;
 use crate::src::shared::limits::USHRT_MAX;
-use crate::src::shared::options::options;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::spawn::spawn_context;
 use crate::src::shared::terminal::*;

@@ -410,7 +410,7 @@ mod tests {
             let session = session::new();
             let mut options = crate::src::options::options_create(None);
             for key in [c"status", c"status-position"] {
-                let definition = crate::src::options_table::options_table
+                let definition = crate::src::options::options_table
                     .iter()
                     .find(|definition| definition.name == Some(key))
                     .unwrap();

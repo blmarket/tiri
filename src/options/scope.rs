@@ -1,6 +1,6 @@
 //! Persistent option identities. Model component borrows retain their model.
+use super::types::{options, options_entry};
 use crate::src::session::Session;
-use crate::src::shared::options::{options, options_entry};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::{SessionRef, SessionWeak};
 use crate::src::shared::window::{WindowRef, WindowWeak};

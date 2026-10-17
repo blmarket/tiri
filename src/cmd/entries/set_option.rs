@@ -14,6 +14,7 @@ use crate::src::options::{
     options_match_owned, options_push_changes, options_scope_from_name, OptionMatchFailure,
     OptionsScope,
 };
+use crate::src::options::{OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_WINDOW};
 use crate::src::session::sessions;
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
@@ -24,7 +25,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
 use crate::src::shared::monitor::{MONITOR_NOTIFY_TRUE, MONITOR_SESSION};
-use crate::src::shared::options::{OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_WINDOW};
 use crate::src::shared::window::WindowRef;
 use crate::src::window::{Window, WindowPane};
 use std::ffi::{CStr, CString};

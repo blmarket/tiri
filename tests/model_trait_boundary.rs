@@ -225,7 +225,10 @@ fn migrated_consumers_do_not_project_model_storage() {
         "src/shared/screen_write.rs",
         "src/window_border.rs",
         "src/window_visible.rs",
-        "src/options.rs",
+        "src/options/store.rs",
+        "src/options/select.rs",
+        "src/options/from_string.rs",
+        "src/options/changes.rs",
         "src/format/jobs.rs",
     ] {
         let source =
@@ -937,7 +940,7 @@ fn option_inheritance_retains_owner_identity_without_component_pointers() {
     assert!(audit.findings.is_empty(), "{:?}", audit.findings);
 
     let shared =
-        syn::parse_file(&std::fs::read_to_string(root.join("src/shared/options.rs")).unwrap())
+        syn::parse_file(&std::fs::read_to_string(root.join("src/options/types.rs")).unwrap())
             .unwrap();
     let table = shared
         .items
@@ -958,7 +961,8 @@ fn option_inheritance_retains_owner_identity_without_component_pointers() {
     );
 
     let functions =
-        syn::parse_file(&std::fs::read_to_string(root.join("src/options.rs")).unwrap()).unwrap();
+        syn::parse_file(&std::fs::read_to_string(root.join("src/options/store.rs")).unwrap())
+            .unwrap();
     let constructors = ["options_create", "options_create_owned"];
     let mut checked = 0;
     for item in &functions.items {

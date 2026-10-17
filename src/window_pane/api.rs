@@ -1650,7 +1650,7 @@ mod tests {
     #[test]
     fn copied_screen_and_hyperlinks_survive_source_changes() {
         unsafe {
-            let definition = crate::src::options_table::options_table
+            let definition = crate::src::options::options_table
                 .iter()
                 .find(|entry| entry.name == Some(c"extended-keys"))
                 .unwrap();

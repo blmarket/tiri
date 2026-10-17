@@ -3,10 +3,10 @@
 
 use crate::src::format::{format_create, format_expand_cstring};
 use crate::src::grid::grid_default_cell;
+use crate::src::options::{options, options_entry, OPTIONS_TABLE_IS_COLOUR};
 use crate::src::options::{options_is_string, options_local_entry};
 use crate::src::shared::format::{format_tree, FORMAT_NOJOBS};
 use crate::src::shared::grid::grid_cell;
-use crate::src::shared::options::{options, options_entry, OPTIONS_TABLE_IS_COLOUR};
 use crate::src::shared::style::style;
 use crate::src::style::{style_parse, style_parse_colour, style_set};
 use std::collections::btree_map;

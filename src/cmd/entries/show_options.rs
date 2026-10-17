@@ -10,13 +10,14 @@ use crate::src::hooks::{
     hooks_is_event, hooks_monitor_get_fire_count, hooks_monitor_get_fire_time,
     hooks_monitor_to_cstring,
 };
+use crate::src::options::options_table;
 use crate::src::options::options_table_entry;
+use crate::src::options::OPTIONS_TABLE_IS_HOOK;
 use crate::src::options::{
     options_get_fire_count, options_get_fire_time, options_get_monitor_data, options_is_array,
     options_is_string, options_iter, options_match_owned, options_scope_from_flags,
     options_scope_from_name, options_to_cstring, OptionMatchFailure, OptionsScope,
 };
-use crate::src::options_table::options_table;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args_parse;
 use crate::src::shared::command::*;
@@ -26,7 +27,6 @@ use crate::src::shared::format::format_tree;
 use crate::src::shared::monitor::{
     MONITOR_ALL_PANES, MONITOR_ALL_WINDOWS, MONITOR_PANE, MONITOR_SESSION, MONITOR_WINDOW,
 };
-use crate::src::shared::options::OPTIONS_TABLE_IS_HOOK;
 use std::ffi::{CStr, CString};
 use std::time::{Duration, UNIX_EPOCH};
 

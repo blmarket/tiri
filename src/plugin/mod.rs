@@ -168,7 +168,7 @@ impl Registry {
             if !declared.insert(variable.name)
                 || self.names.contains_key(variable.name)
                 || crate::src::format::format_is_builtin(variable.name)
-                || crate::src::options_table::options_table
+                || crate::src::options::options_table
                     .iter()
                     .any(|entry| entry.name == Some(variable.name))
             {

@@ -32,7 +32,6 @@ pub mod menu;
 pub mod mode_tree;
 pub mod monitor;
 pub mod mouse;
-pub mod options;
 pub mod pane;
 pub mod paste;
 pub mod popup;

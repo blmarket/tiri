@@ -41,10 +41,15 @@ use crate::src::mode_tree::{
     mode_tree_get_current_name, mode_tree_key, mode_tree_no_tag, mode_tree_remove,
     mode_tree_resize, mode_tree_set_prompt, mode_tree_start, mode_tree_up,
 };
+use crate::src::options::*;
 use crate::src::options::{
     options_create, options_default, options_default_to_cstring, options_get_fire_count,
     options_get_fire_time, options_get_number, options_match_owned, options_push_changes,
     options_set_number, options_to_cstring,
+};
+use crate::src::options::{
+    OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_IS_COLOUR, OPTIONS_TABLE_IS_HOOK, OPTIONS_TABLE_IS_STYLE,
+    OPTIONS_TABLE_PANE, OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION, OPTIONS_TABLE_WINDOW,
 };
 use crate::src::screen_write::{
     screen_write_box, screen_write_clearcharacter, screen_write_cursormove, screen_write_nputs,
@@ -72,11 +77,6 @@ use crate::src::shared::mode_tree::{
     ModeTreeItemRef,
 };
 use crate::src::shared::mouse::mouse_event;
-use crate::src::shared::options::*;
-use crate::src::shared::options::{
-    OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_IS_COLOUR, OPTIONS_TABLE_IS_HOOK, OPTIONS_TABLE_IS_STYLE,
-    OPTIONS_TABLE_PANE, OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION, OPTIONS_TABLE_WINDOW,
-};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{
@@ -399,7 +399,7 @@ fn window_customize_option_tag(option: &options_entry) -> u64 {
     let Some(definition) = option.tableentry else {
         return option.id();
     };
-    let index = crate::src::options_table::options_table
+    let index = crate::src::options::options_table
         .iter()
         .position(|candidate| std::ptr::eq(candidate, definition))
         .expect("static option definition");

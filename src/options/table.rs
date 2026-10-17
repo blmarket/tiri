@@ -1,3 +1,4 @@
+use super::types::*;
 use crate::src::shared::abi::*;
 use crate::src::shared::alerts::{ALERT_ANY, ALERT_OTHER, VISUAL_OFF};
 use crate::src::shared::input::INPUT_BUF_DEFAULT_SIZE;
@@ -5,13 +6,6 @@ use crate::src::shared::key::*;
 use crate::src::shared::key::{MODEKEY_EMACS, MODEKEY_VI};
 use crate::src::shared::layout::*;
 use crate::src::shared::limits::{INT_MAX, SHRT_MAX, UINT_MAX, USHRT_MAX};
-use crate::src::shared::options::options_table_entry;
-use crate::src::shared::options::*;
-use crate::src::shared::options::{
-    OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_IS_COLOUR, OPTIONS_TABLE_IS_HOOK, OPTIONS_TABLE_IS_STYLE,
-    OPTIONS_TABLE_PANE, OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION, OPTIONS_TABLE_STATUS_FORMAT1,
-    OPTIONS_TABLE_STATUS_FORMAT2, OPTIONS_TABLE_STATUS_FORMAT3, OPTIONS_TABLE_WINDOW,
-};
 use crate::src::shared::pane::{
     PANE_BORDER_COLOUR, PANE_SCROLLBARS_OFF, PANE_SCROLLBARS_RIGHT, PANE_STATUS_OFF,
 };

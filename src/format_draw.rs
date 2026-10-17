@@ -1829,7 +1829,7 @@ pub(crate) unsafe fn format_trim_right_bytes(expanded: &CStr, mut limit: u_int) 
 mod range_tests {
     use super::*;
     use crate::src::options::options_default;
-    use crate::src::options_table::options_table;
+    use crate::src::options::options_table;
     use crate::src::tmux::global_options;
 
     #[test]

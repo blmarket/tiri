@@ -764,14 +764,14 @@ mod tests {
         unsafe {
             crate::src::options::options_default(
                 crate::src::tmux::global_options(),
-                crate::src::options_table::options_table
+                crate::src::options::options_table
                     .iter()
                     .find(|entry| entry.name == Some(c"extended-keys"))
                     .unwrap(),
             );
             let owner = window::new_ref();
             let mut options = options_create(None);
-            let entry = crate::src::options_table::options_table
+            let entry = crate::src::options::options_table
                 .iter()
                 .find(|entry| entry.name == Some(c"fill-character"))
                 .unwrap();

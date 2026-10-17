@@ -60,6 +60,8 @@ use crate::src::window_pane::WindowPane as _;
 use crate::src::window_tree::window_tree_mode;
 use std::ffi::{CStr, CString};
 
+use crate::src::options::options;
+use crate::src::options::OPTIONS_TABLE_IS_HOOK;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::CLIENT_UNATTACHEDFLAGS;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
@@ -86,8 +88,6 @@ use crate::src::shared::job::JOB_NOWAIT;
 use crate::src::shared::job::{job, job_update_callback, JobCompletion};
 use crate::src::shared::key::key_event;
 use crate::src::shared::mouse::mouse_event;
-use crate::src::shared::options::options;
-use crate::src::shared::options::OPTIONS_TABLE_IS_HOOK;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::paste::PasteBufferRef;
 use crate::src::shared::posix_io::FNM_CASEFOLD;

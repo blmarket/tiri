@@ -3,8 +3,8 @@
 use std::ffi::CString;
 use std::os::unix::ffi::OsStrExt;
 use tiri::src::format::bytes::write_cstr;
+use tiri::src::options::options_table;
 use tiri::src::options::{options_default, options_set_number, options_set_string};
-use tiri::src::options_table::options_table;
 use tiri::src::prompt_history::{
     prompt_add_history, prompt_down_history, prompt_history_clear, prompt_history_get,
     prompt_history_size, prompt_load_history, prompt_save_history, prompt_up_history,

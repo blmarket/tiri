@@ -2,7 +2,7 @@ use std::ffi::CStr;
 use tiri::src::environ::environ_create;
 use tiri::src::grid::{grid_default_cell, grid_get_cell, grid_string_cells_bytes};
 use tiri::src::options::options_default;
-use tiri::src::options_table::options_table;
+use tiri::src::options::options_table;
 use tiri::src::prompt::{prompt_create, prompt_draw, prompt_free};
 use tiri::src::screen::screen_init;
 use tiri::src::screen_write::{screen_write_start, screen_write_stop};

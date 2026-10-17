@@ -14,6 +14,7 @@ use crate::src::mode_tree::{
     mode_tree_run_command, mode_tree_set_current, mode_tree_set_prompt, mode_tree_start,
     mode_tree_view_name,
 };
+use crate::src::options::options;
 use crate::src::options::options_get_string;
 use crate::src::resize::recalculate_sizes;
 use crate::src::screen_write::{
@@ -43,7 +44,6 @@ use crate::src::shared::mode_tree::{
     mode_tree_data, mode_tree_help_info, ModeTreeItemData, ModeTreeItemRef,
 };
 use crate::src::shared::mouse::mouse_event;
-use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{

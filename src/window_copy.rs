@@ -28,6 +28,7 @@ use crate::src::grid::{
 use crate::src::input::{input_init, input_parse_screen};
 use crate::src::job::{job_get_event, job_run};
 use crate::src::log::{fatal, fatalx, log_cstr, log_debug};
+use crate::src::options::options;
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::paste::{paste_add_owned, paste_buffer_data, paste_get_top, paste_set_owned};
 use crate::src::reactor::bufferevent_write;
@@ -60,7 +61,6 @@ use crate::src::shared::limits::{INT_MAX, UCHAR_MAX, UINT_MAX};
 use crate::src::shared::mouse::{
     mouse_event, MOUSE_MASK_BUTTONS, MOUSE_WHEEL_DOWN, MOUSE_WHEEL_UP,
 };
-use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::PANE_REDRAW;
 use crate::src::shared::screen::screen;
@@ -247,8 +247,8 @@ unsafe fn window_copy_snapshot_separators(so: &options) -> Option<CString> {
 #[cfg(test)]
 mod separator_snapshot_tests {
     use super::*;
+    use crate::src::options::options_table;
     use crate::src::options::{options_create_owned, options_default, options_set_string};
-    use crate::src::options_table::options_table;
 
     #[test]
     fn selected_word_separators_survive_option_replacement() {
@@ -10051,7 +10051,7 @@ mod backing_owner_tests {
     use super::*;
     use crate::src::grid::grid_set_cell;
     use crate::src::options::options_default;
-    use crate::src::options_table::options_table;
+    use crate::src::options::options_table;
 
     unsafe fn byte_at(s: &screen, x: u_int, y: u_int) -> u8 {
         let mut cell = grid_default_cell;

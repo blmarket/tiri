@@ -16,8 +16,10 @@ use crate::src::ffi::libc::{__errno_location, environ, err, errx, stderr, stdout
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::{log_add_level, log_cstr, log_debug};
+use crate::src::options::options;
+use crate::src::options::options_table;
 use crate::src::options::{options_default, options_set_number, options_set_string};
-use crate::src::options_table::options_table;
+use crate::src::options::{OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION, OPTIONS_TABLE_WINDOW};
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{__mode_t, uid_t};
 use crate::src::shared::account::passwd;
@@ -27,10 +29,6 @@ use crate::src::shared::client::{
 };
 use crate::src::shared::environment::{environ, environ_entry};
 use crate::src::shared::key::{MODEKEY_EMACS, MODEKEY_VI};
-use crate::src::shared::options::options;
-use crate::src::shared::options::{
-    OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION, OPTIONS_TABLE_WINDOW,
-};
 use crate::src::shared::posix_io::stat;
 use crate::src::shared::posix_io::{S_IRWXU, X_OK};
 use crate::src::shared::time::{timespec, CLOCK_REALTIME};

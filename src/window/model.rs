@@ -1,9 +1,9 @@
 //! Window storage is private to its implementation.
+use crate::src::options::options;
 use crate::src::shared::abi::{u_int, uint64_t};
 use crate::src::shared::client::ClientWeak;
 use crate::src::shared::event::Timer;
 use crate::src::shared::grid::grid_cell;
-use crate::src::shared::options::options;
 use crate::src::shared::pane::{window_pane, window_panes, PaneHistory};
 use crate::src::shared::window::WindowRef;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
