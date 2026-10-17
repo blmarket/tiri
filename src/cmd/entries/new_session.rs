@@ -462,7 +462,7 @@ unsafe fn cmd_new_session_exec(
                                                             .1;
                                                         if sy > 0 as u_int
                                                             && options_get_number(
-                                                                &*global_s_options,
+                                                                global_s_options(),
                                                                 c"status",
                                                             ) != 0
                                                         {
@@ -470,7 +470,7 @@ unsafe fn cmd_new_session_exec(
                                                         }
                                                     } else {
                                                         let default_size = options_get_string(
-                                                            &*global_s_options,
+                                                            global_s_options(),
                                                             c"default-size",
                                                         );
                                                         tmp = default_size.as_ptr();
@@ -540,7 +540,7 @@ unsafe fn cmd_new_session_exec(
                                                                     .clone()
                                                             });
                                                         environ_update(
-                                                            global_s_options,
+                                                            global_s_options(),
                                                             &client_environment,
                                                             env.as_deref_mut()
                                                                 .expect("new environment"),

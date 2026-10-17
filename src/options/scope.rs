@@ -54,18 +54,9 @@ impl OptionsScope {
     /// the same table).
     pub unsafe fn local(&self) -> OptionsBorrow<options> {
         let (table, owner) = match self {
-            Self::GlobalServer => (
-                NonNull::new(global_options).expect("server options"),
-                ScopeOwner::Global,
-            ),
-            Self::GlobalSession => (
-                NonNull::new(global_s_options).expect("global session options"),
-                ScopeOwner::Global,
-            ),
-            Self::GlobalWindow => (
-                NonNull::new(global_w_options).expect("global window options"),
-                ScopeOwner::Global,
-            ),
+            Self::GlobalServer => (NonNull::from(global_options()), ScopeOwner::Global),
+            Self::GlobalSession => (NonNull::from(global_s_options()), ScopeOwner::Global),
+            Self::GlobalWindow => (NonNull::from(global_w_options()), ScopeOwner::Global),
             Self::Session(observer) => {
                 let owner = observer.upgrade().expect("live option session");
                 let table = NonNull::from(owner.borrow_options_mut());

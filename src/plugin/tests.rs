@@ -147,18 +147,11 @@ fn selection_matches_tiri_environment_semantics() {
 #[test]
 fn publishing_does_not_override_context_entries_or_user_options() {
     use crate::src::format::{format_add_cstr, format_create, format_expand_cstring};
-    use crate::src::options::{options_create, options_set_string};
-    use crate::src::tmux::{global_options, global_s_options, global_w_options};
+    use crate::src::options::options_set_string;
+    use crate::src::tmux::global_s_options;
     unsafe {
         shutdown();
-        let mut server = options_create(None);
-        let mut session = options_create(None);
-        let mut window = options_create(None);
-        let previous = (global_options, global_s_options, global_w_options);
-        global_options = &mut *server;
-        global_s_options = &mut *session;
-        global_w_options = &mut *window;
-        options_set_string(&mut *global_s_options, c"@test_state", 0, |out| {
+        options_set_string(global_s_options(), c"@test_state", 0, |out| {
             out.write_all(b"user")
         });
         REGISTRY.with(|registry| add(&mut registry.borrow_mut(), "fake", VARIABLES).unwrap());
@@ -172,9 +165,6 @@ fn publishing_does_not_override_context_entries_or_user_options() {
         }
         assert_eq!(enumerated.len(), 2);
         drop(tree);
-        global_options = previous.0;
-        global_s_options = previous.1;
-        global_w_options = previous.2;
         shutdown();
     }
 }

@@ -323,7 +323,7 @@ pub unsafe fn screen_write_reset(ctx: &mut screen_write_ctx) {
     screen_reset_tabs(&mut *s);
     screen_write_scrollregion(ctx, 0 as u_int, (*s).grid().sy.wrapping_sub(1 as u_int));
     (*s).mode = MODE_CURSOR | MODE_WRAP;
-    if options_get_number(&*global_options, c"extended-keys") == 2 as ::core::ffi::c_longlong {
+    if options_get_number(global_options(), c"extended-keys") == 2 as ::core::ffi::c_longlong {
         (*s).mode = (*s).mode & !EXTENDED_KEY_MODES | MODE_KEYS_EXTENDED;
     }
     screen_write_clearscreen(ctx, 8 as u_int);
@@ -2916,7 +2916,7 @@ unsafe fn screen_write_combine(ctx: &mut screen_write_ctx, gc: &grid_cell) -> ::
     let mut s: *mut screen = ctx.screen_ptr();
     let wp = write_pane;
     let ud = &gc.data;
-    let mut oo: *mut options = global_options;
+    let mut oo: *mut options = global_options();
     let mut i: u_int = 0;
     let mut n: u_int = 0;
     let mut cx: u_int = (*s).cx;

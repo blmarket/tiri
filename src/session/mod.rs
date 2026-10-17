@@ -558,7 +558,7 @@ unsafe fn session_set_current(
     winlink_stack_remove(&raw mut (*s).lastw, wl.clone());
     winlink_stack_push(&raw mut (*s).lastw, ((*s).current_winlink()).clone());
     (*s).set_curw(wl.clone());
-    if options_get_number(&*global_options, c"focus-events") != 0 {
+    if options_get_number(global_options(), c"focus-events") != 0 {
         if old.is_alive() {
             if let Some(window) = old.get_unchecked().window_handle().cloned() {
                 window.update_focus();

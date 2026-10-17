@@ -547,7 +547,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         let pane = &mut *self.get();
         let Some(pty) = pane.fd.as_mut() else { return };
         if pane.flags & (PANE_EMPTY | PANE_EXITED) == 0
-            && options_get_number(&*global_options, c"utmp") != 0
+            && options_get_number(global_options(), c"utmp") != 0
         {
             pty.utmp_add(pane.id);
         } else {
@@ -1650,14 +1650,11 @@ mod tests {
     #[test]
     fn copied_screen_and_hyperlinks_survive_source_changes() {
         unsafe {
-            let mut options = crate::src::options::options_create_owned(None);
             let definition = crate::src::options_table::options_table
                 .iter()
                 .find(|entry| entry.name == Some(c"extended-keys"))
                 .unwrap();
-            crate::src::options::options_default(&mut *options, definition);
-            let previous_options = global_options;
-            global_options = &mut *options;
+            crate::src::options::options_default(global_options(), definition);
             let pane = window_pane::new();
             (*pane.get()).fd = None;
             (*pane.get()).pipe_fd = None;
@@ -1697,8 +1694,6 @@ mod tests {
                 c"https://example.test/pane"
             );
             drop(copied);
-            global_options = previous_options;
-            drop(options);
         }
     }
 

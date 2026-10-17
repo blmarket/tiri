@@ -1396,7 +1396,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
         utf8_update_width_cache();
     }
     if strcmp(name, c"input-buffer-size".as_ptr()) == 0 as ::core::ffi::c_int {
-        input_set_buffer_size(options_get_number(&*global_options, c"input-buffer-size") as size_t);
+        input_set_buffer_size(options_get_number(global_options(), c"input-buffer-size") as size_t);
     }
     if strcmp(name, c"history-limit".as_ptr()) == 0 as ::core::ffi::c_int {
         let mut s_owner = sessions::first();

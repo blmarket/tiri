@@ -1,13 +1,13 @@
 use std::{cell::RefCell, ffi::CString, rc::Rc};
 use tiri::src::environ::environ_create;
-use tiri::src::options::{options_create, options_default};
+use tiri::src::options::options_default;
 use tiri::src::options_table::options_table;
 use tiri::src::prompt::{
     prompt_create, prompt_free, prompt_incremental_start, prompt_set_options, prompt_update,
 };
 use tiri::src::shared::command::cmd_find_state;
 use tiri::src::shared::prompt::*;
-use tiri::src::tmux::{global_environ, global_options, global_s_options, global_w_options};
+use tiri::src::tmux::{global_environ, global_s_options};
 
 fn input_bytes(prompt: &prompt) -> Vec<u8> {
     prompt
@@ -21,23 +21,9 @@ fn input_bytes(prompt: &prompt) -> Vec<u8> {
 #[test]
 fn creation_preserves_input_expansion_incremental_state_and_owned_resources() {
     unsafe {
-        let saved = (
-            std::ptr::replace(&raw mut global_environ, None),
-            global_options,
-            global_s_options,
-            global_w_options,
-        );
+        let saved = std::ptr::replace(&raw mut global_environ, None);
         let environment = environ_create();
         global_environ = Some(environment);
-        let mut server_owner = options_create(None);
-        let server = &raw mut *server_owner;
-        let mut session_owner = options_create(None);
-        let session = &raw mut *session_owner;
-        let mut window_owner = options_create(None);
-        let window = &raw mut *window_owner;
-        global_options = server;
-        global_s_options = session;
-        global_w_options = window;
         for name in [
             c"message-style",
             c"message-command-style",
@@ -53,7 +39,7 @@ fn creation_preserves_input_expansion_incremental_state_and_owned_resources() {
                 .iter()
                 .find(|entry| entry.name == Some(name))
                 .unwrap();
-            options_default(&mut *session, definition);
+            options_default(global_s_options(), definition);
         }
         let events = Rc::new(RefCell::new(Vec::new()));
         let state = cmd_find_state {
@@ -237,14 +223,6 @@ fn creation_preserves_input_expansion_incremental_state_and_owned_resources() {
             b""
         );
         prompt_free(&prompt.downgrade());
-        (
-            global_environ,
-            global_options,
-            global_s_options,
-            global_w_options,
-        ) = saved;
-        drop(server_owner);
-        drop(session_owner);
-        drop(window_owner);
+        global_environ = saved;
     }
 }

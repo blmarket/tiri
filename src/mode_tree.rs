@@ -1424,7 +1424,7 @@ pub unsafe fn mode_tree_set_prompt(
     let position = if let Some(session) = session_owner.as_ref() {
         options_get_number(session.borrow_options_mut(), c"status-position")
     } else {
-        options_get_number(&*global_s_options, c"status-position")
+        options_get_number(global_s_options(), c"status-position")
     };
     (*mtd).prompt_top = (position == 0) as i32;
     prompt_set_options(&mut pd, session_owner.as_ref());

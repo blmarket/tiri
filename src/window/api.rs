@@ -762,16 +762,13 @@ mod tests {
     #[test]
     fn fill_rendering_keeps_inside_outside_formats_and_composes_border_style() {
         unsafe {
-            let mut server_options = options_create(None);
             crate::src::options::options_default(
-                &mut *server_options,
+                crate::src::tmux::global_options(),
                 crate::src::options_table::options_table
                     .iter()
                     .find(|entry| entry.name == Some(c"extended-keys"))
                     .unwrap(),
             );
-            let previous_server_options =
-                std::mem::replace(&mut crate::src::tmux::global_options, &mut *server_options);
             let owner = window::new_ref();
             let mut options = options_create(None);
             let entry = crate::src::options_table::options_table
@@ -819,8 +816,6 @@ mod tests {
                 "fill snapshots survive refresh"
             );
             drop(owner);
-            crate::src::tmux::global_options = previous_server_options;
-            drop(server_options);
         }
     }
 }

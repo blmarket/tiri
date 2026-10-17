@@ -103,21 +103,21 @@ pub unsafe fn prompt_set_options(pd: &mut prompt_create_data<'_>, session: Optio
         if let Some(session) = session {
             visit(session.borrow_options_mut());
         } else {
-            visit(&mut *global_s_options);
+            visit(global_s_options());
         }
     };
     let read_string = |key: &CStr| {
         if let Some(session) = session {
             options_get_string(session.borrow_options_mut(), key)
         } else {
-            options_get_string(&*global_s_options, key)
+            options_get_string(global_s_options(), key)
         }
     };
     let read_number = |key: &'static CStr| {
         if let Some(session) = session {
             options_get_number(session.borrow_options_mut(), key)
         } else {
-            options_get_number(&*global_s_options, key)
+            options_get_number(global_s_options(), key)
         }
     };
     use crate::src::style::style_apply_with_options;
@@ -1595,7 +1595,7 @@ unsafe fn prompt_complete_commands(s: &CStr) -> Vec<CString> {
             prompt_complete_add(&mut list, name);
         }
     }
-    o = match crate::src::options::options_local_entry(&mut *(global_options), c"command-alias") {
+    o = match crate::src::options::options_local_entry(global_options(), c"command-alias") {
         btree_map::Entry::Occupied(entry) => &mut **entry.into_mut(),
         btree_map::Entry::Vacant(_) => std::ptr::null_mut(),
     };

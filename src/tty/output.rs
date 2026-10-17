@@ -191,7 +191,7 @@ pub unsafe fn tty_putn(client: &ClientRef, buf: &[u8], mut width: u_int) {
 pub(super) unsafe fn tty_set_italics(client: &ClientRef) {
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if tty_term_has(terminal_term(client), TTYC_SITM) != 0 {
-        let terminal = options_get_string(&*global_options, c"default-terminal");
+        let terminal = options_get_string(global_options(), c"default-terminal");
         s = terminal.as_ptr();
         if strcmp(s, c"screen".as_ptr()) != 0 as ::core::ffi::c_int
             && strncmp(s, c"screen-".as_ptr(), 7 as size_t) != 0 as ::core::ffi::c_int

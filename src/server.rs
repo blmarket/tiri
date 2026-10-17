@@ -259,7 +259,7 @@ pub(crate) unsafe fn server_start(
         c = Some(owner.clone());
     } else {
         options_set_number(
-            &mut *global_options,
+            global_options(),
             c"exit-empty",
             0 as ::core::ffi::c_longlong,
         );
@@ -317,10 +317,10 @@ unsafe fn server_loop() -> ::core::ffi::c_int {
         }
     }
     ClientRef::run_cycle();
-    if options_get_number(&*global_options, c"exit-empty") == 0 && server_exit == 0 {
+    if options_get_number(global_options(), c"exit-empty") == 0 && server_exit == 0 {
         return 0 as ::core::ffi::c_int;
     }
-    if options_get_number(&*global_options, c"exit-unattached") == 0 && !sessions::is_empty() {
+    if options_get_number(global_options(), c"exit-unattached") == 0 && !sessions::is_empty() {
         return 0 as ::core::ffi::c_int;
     }
     let mut registry_c_owner = ClientRegistry::first();
@@ -559,6 +559,6 @@ pub unsafe fn server_add_message(
     message_next = message_next.wrapping_add(1);
     let msg_time = SystemTime::now();
     message_log.push_back(s, fresh0, msg_time);
-    limit = options_get_number(&*global_options, c"message-limit") as u_int;
+    limit = options_get_number(global_options(), c"message-limit") as u_int;
     message_log.trim(message_next, limit);
 }

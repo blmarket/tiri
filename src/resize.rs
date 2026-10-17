@@ -268,7 +268,7 @@ pub unsafe fn default_window_size(
     let mut c: Option<ClientRef> = c_owner.cloned();
     let s = Some(s_owner.clone());
     if type_0 == -(1 as ::core::ffi::c_int) {
-        type_0 = options_get_number(&*global_w_options, c"window-size") as ::core::ffi::c_int;
+        type_0 = options_get_number(global_w_options(), c"window-size") as ::core::ffi::c_int;
     }
     if let Some(sizing_client) = c_owner
         .filter(|client| type_0 == WINDOW_SIZE_LATEST && client.participates_in_window_sizing())

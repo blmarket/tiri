@@ -419,7 +419,7 @@ unsafe fn window_set_active_pane(
         client = ClientRegistry::next(&current);
     }
     pane.on_selected(true);
-    if options_get_number(&*global_options, c"focus-events") != 0 {
+    if options_get_number(global_options(), c"focus-events") != 0 {
         if let Some(previous) = previous.as_ref() {
             previous.update_focus(false);
         }

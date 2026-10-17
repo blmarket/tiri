@@ -196,7 +196,7 @@ pub(super) unsafe fn format_find(
                     options_to_cstring(entry, nullable_cstr(array_key), 1)
                 })
             };
-            found = global_options.as_mut().and_then(lookup);
+            found = lookup(global_options());
             if found.is_none() {
                 found = format_pane_owner
                     .as_ref()
@@ -208,7 +208,7 @@ pub(super) unsafe fn format_find(
                     .and_then(|window| lookup(window.borrow_options_mut()));
             }
             if found.is_none() {
-                found = global_w_options.as_mut().and_then(lookup);
+                found = lookup(global_w_options());
             }
             if found.is_none() {
                 found = format_session_owner
@@ -216,7 +216,7 @@ pub(super) unsafe fn format_find(
                     .and_then(|session| lookup(session.borrow_options_mut()));
             }
             if found.is_none() {
-                found = global_s_options.as_mut().and_then(lookup);
+                found = lookup(global_s_options());
             }
         }
         if found.is_none() {
@@ -1338,22 +1338,16 @@ pub(super) unsafe fn format_loop_options(
     let global = has(b'g');
     let mut access = |read: &mut dyn FnMut(&mut options)| {
         if has(b'v') {
-            if let Some(options) = global_options.as_mut() {
-                read(options);
-            }
+            read(global_options());
         } else if has(b'w') {
             if global {
-                if let Some(options) = global_w_options.as_mut() {
-                    read(options);
-                }
+                read(global_w_options());
             } else if let Some(window) = window.as_ref() {
                 read(window.borrow_options_mut());
             }
         } else if has(b's') {
             if global {
-                if let Some(options) = global_s_options.as_mut() {
-                    read(options);
-                }
+                read(global_s_options());
             } else if let Some(session) = session.as_ref() {
                 read(session.borrow_options_mut());
             }
@@ -1364,9 +1358,7 @@ pub(super) unsafe fn format_loop_options(
                 }
             }
         } else if global {
-            if let Some(options) = global_s_options.as_mut() {
-                read(options);
-            }
+            read(global_s_options());
         }
     };
     let mut names = Vec::new();

@@ -1,7 +1,7 @@
 use std::ffi::CStr;
 use tiri::src::environ::environ_create;
 use tiri::src::grid::{grid_default_cell, grid_get_cell, grid_string_cells_bytes};
-use tiri::src::options::{options_create, options_default};
+use tiri::src::options::options_default;
 use tiri::src::options_table::options_table;
 use tiri::src::prompt::{prompt_create, prompt_draw, prompt_free};
 use tiri::src::screen::screen_init;
@@ -11,34 +11,20 @@ use tiri::src::shared::grid::{GRID_ATTR_UNDERSCORE, GRID_STRING_TRIM_SPACES};
 use tiri::src::shared::prompt::*;
 use tiri::src::shared::screen::{screen, MODE_CURSOR, MODE_CURSOR_BLINKING};
 use tiri::src::shared::screen_write::screen_write_ctx;
-use tiri::src::tmux::{global_environ, global_options, global_s_options, global_w_options};
+use tiri::src::tmux::{global_environ, global_options};
 
 #[test]
 fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {
     unsafe {
         assert!(!libc::setlocale(libc::LC_CTYPE, c"C.UTF-8".as_ptr()).is_null());
-        let saved = (
-            std::ptr::replace(&raw mut global_environ, None),
-            global_options,
-            global_s_options,
-            global_w_options,
-        );
+        let saved = std::ptr::replace(&raw mut global_environ, None);
         let environment = environ_create();
-        let mut server_owner = options_create(None);
-        let server = &raw mut *server_owner;
-        let mut session_owner = options_create(None);
-        let session = &raw mut *session_owner;
-        let mut window_owner = options_create(None);
-        let window = &raw mut *window_owner;
         global_environ = Some(environment);
-        global_options = server;
-        global_s_options = session;
-        global_w_options = window;
         let definition = options_table
             .iter()
             .find(|entry| entry.name == Some(c"extended-keys"))
             .unwrap();
-        options_default(&mut *server, definition);
+        options_default(global_options(), definition);
 
         for (label, input, index, width, style, flags, completion, expected, cursor) in [
             (c"L:", c"abc", 3, 10, c"align=left", 0, None, "   L:abc", 8),
@@ -234,14 +220,6 @@ fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {
             drop(s);
             prompt_free(&prompt.downgrade());
         }
-        (
-            global_environ,
-            global_options,
-            global_s_options,
-            global_w_options,
-        ) = saved;
-        drop(server_owner);
-        drop(session_owner);
-        drop(window_owner);
+        global_environ = saved;
     }
 }

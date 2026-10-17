@@ -1043,11 +1043,11 @@ pub(crate) unsafe fn popup_display(
     }
     (*pd).border_cell.attr = 0 as u_short;
     screen_init(&mut (*pd).s, jx, jy, 0 as u_int);
-    screen_set_default_cursor(&mut (*pd).s, global_w_options);
+    screen_set_default_cursor(&mut (*pd).s, global_w_options());
     {
         let mut palette = (*pd).palette.try_borrow_mut().expect("new popup palette");
         colour_palette_init(&mut palette);
-        colour_palette_from_option(Some(&mut palette), global_w_options);
+        colour_palette_from_option(Some(&mut palette), global_w_options());
     }
     memcpy(
         &raw mut (*pd).defaults as *mut ::core::ffi::c_void,

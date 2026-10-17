@@ -393,25 +393,6 @@ mod tests {
         }
     }
 
-    /// Empty server options for parsing, restored on drop.
-    struct Options(
-        *mut crate::src::shared::options::options,
-        Box<crate::src::shared::options::options>,
-    );
-    impl Options {
-        unsafe fn new() -> Self {
-            let previous = crate::src::tmux::global_options;
-            let mut owner = crate::src::options::options_create(None);
-            crate::src::tmux::global_options = &raw mut *owner;
-            Self(previous, owner)
-        }
-    }
-    impl Drop for Options {
-        fn drop(&mut self) {
-            unsafe { crate::src::tmux::global_options = self.0 };
-        }
-    }
-
     /// Source data for a clientless chain that has entered one nesting level.
     unsafe fn data(files: &[&TempFile]) -> Box<cmd_source_file_data> {
         cfg_finished = 1;
@@ -457,7 +438,6 @@ mod tests {
     fn a_chain_inserts_each_file_after_the_previous_one() {
         let mut runtime = tiri_rt::mio::Runtime::new().unwrap();
         unsafe {
-            let _options = Options::new();
             let (one, two) = (
                 TempFile::new("one", "set -g @a 1\n"),
                 TempFile::new("two", "setw -g @b 2\n"),
@@ -493,7 +473,6 @@ mod tests {
     fn dropping_the_chain_between_reads_leaves_the_depth() {
         let mut runtime = tiri_rt::mio::Runtime::new().unwrap();
         unsafe {
-            let _options = Options::new();
             let (one, two) = (
                 TempFile::new("one", "set -g @a 1\n"),
                 TempFile::new("two", "setw -g @b 2\n"),

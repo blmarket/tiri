@@ -1828,13 +1828,20 @@ pub(crate) unsafe fn format_trim_right_bytes(expanded: &CStr, mut limit: u_int) 
 #[cfg(test)]
 mod range_tests {
     use super::*;
-    use crate::src::options::{options_create_owned, options_default};
+    use crate::src::options::options_default;
     use crate::src::options_table::options_table;
     use crate::src::tmux::global_options;
 
     #[test]
     fn rendered_ranges_follow_their_alignment_and_clipping() {
         unsafe {
+            options_default(
+                global_options(),
+                options_table
+                    .iter()
+                    .find(|entry| entry.name == Some(c"extended-keys"))
+                    .unwrap(),
+            );
             for (width, expected) in [
                 (
                     20,
@@ -1842,16 +1849,6 @@ mod range_tests {
                 ),
                 (3, vec![("left", 0, 2), ("right", 2, 3)]),
             ] {
-                let saved_options = global_options;
-                let mut options = options_create_owned(None);
-                options_default(
-                    &mut *options,
-                    options_table
-                        .iter()
-                        .find(|entry| entry.name == Some(c"extended-keys"))
-                        .unwrap(),
-                );
-                global_options = &mut *options;
                 let mut output = screen::default();
                 screen_init(&mut output, width, 1, 0);
                 let mut ctx = screen_write_ctx::default();
@@ -1877,7 +1874,6 @@ mod range_tests {
                     })
                     .collect();
                 drop(output);
-                global_options = saved_options;
                 assert_eq!(actual, expected, "available width {width}");
             }
         }

@@ -680,7 +680,7 @@ unsafe fn window_copy_common_init(
     (*data).jumptype = WINDOW_COPY_OFF as ::core::ffi::c_int;
     (*data).line_numbers = 1 as ::core::ffi::c_int;
     screen_init(&mut (*data).screen, sx, sy, 0 as u_int);
-    screen_set_default_cursor(&mut (*data).screen, global_w_options);
+    screen_set_default_cursor(&mut (*data).screen, global_w_options());
     (*data).modekeys = options_get_number(
         mode_pane_owner
             .window_observer()
@@ -8299,7 +8299,7 @@ unsafe fn window_copy_copy_buffer(
     };
     let mut redraw: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if set_clip != 0
-        && options_get_number(&*global_options, c"set-clipboard") != 0 as ::core::ffi::c_longlong
+        && options_get_number(global_options(), c"set-clipboard") != 0 as ::core::ffi::c_longlong
     {
         if window_copy_line_numbers_active(wme.clone()) != 0 && mode_pane_owner.needs_redraw(false)
         {
@@ -8333,7 +8333,7 @@ unsafe fn window_copy_pipe_run(
     let command_value;
     if cmd.is_null() || *cmd as ::core::ffi::c_int == '\0' as i32 {
         command_value =
-            crate::src::options::options_get_string_optional(&*global_options, c"copy-command");
+            crate::src::options::options_get_string_optional(global_options(), c"copy-command");
         cmd = command_value
             .as_deref()
             .map_or(std::ptr::null(), CStr::as_ptr);
@@ -8408,7 +8408,7 @@ unsafe fn window_copy_append_selection(mut wme: refbox::Weak<window_mode_entry>)
         Some(buf) => buf,
         None => return,
     };
-    if options_get_number(&*global_options, c"set-clipboard") != 0 as ::core::ffi::c_longlong {
+    if options_get_number(global_options(), c"set-clipboard") != 0 as ::core::ffi::c_longlong {
         screen_write_start_pane(
             &mut ctx,
             &mode_pane_owner,
@@ -10063,33 +10063,8 @@ mod regex_cell_tests {
 mod backing_owner_tests {
     use super::*;
     use crate::src::grid::grid_set_cell;
-    use crate::src::options::{options_create, options_default};
+    use crate::src::options::options_default;
     use crate::src::options_table::options_table;
-
-    struct ScreenOptions(*mut options, Option<Box<options>>);
-
-    impl ScreenOptions {
-        unsafe fn new() -> Self {
-            let previous = global_options;
-            let mut global_options_owner = options_create(None);
-            global_options = &raw mut *global_options_owner;
-            let entry = options_table
-                .iter()
-                .find(|entry| entry.name == Some(c"extended-keys"))
-                .unwrap();
-            options_default(&mut *global_options, entry);
-            Self(previous, Some(global_options_owner))
-        }
-    }
-
-    impl Drop for ScreenOptions {
-        fn drop(&mut self) {
-            unsafe {
-                drop(self.1.take().expect("test options owner"));
-                global_options = self.0;
-            }
-        }
-    }
 
     unsafe fn byte_at(s: &screen, x: u_int, y: u_int) -> u8 {
         let mut cell = grid_default_cell;
@@ -10100,7 +10075,13 @@ mod backing_owner_tests {
     #[test]
     fn reflowed_snapshot_owns_cells_independently_of_the_source() {
         unsafe {
-            let _options = ScreenOptions::new();
+            options_default(
+                global_options(),
+                options_table
+                    .iter()
+                    .find(|entry| entry.name == Some(c"extended-keys"))
+                    .unwrap(),
+            );
             let mut source = screen::empty();
             let mut hint = screen::empty();
             screen_init(&mut source, 8, 3, 10);

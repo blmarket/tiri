@@ -276,7 +276,7 @@ pub unsafe fn cmd_get_alias(name: &CStr) -> Option<CString> {
     let mut n: size_t = 0;
     let mut equals: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     o = match crate::src::options::options_local_entry(
-        &mut *(global_options),
+        global_options(),
         std::ffi::CStr::from_ptr(c"command-alias".as_ptr()),
     ) {
         btree_map::Entry::Occupied(entry) => &mut **entry.into_mut(),

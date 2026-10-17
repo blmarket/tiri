@@ -1205,7 +1205,7 @@ pub unsafe fn tty_term_apply_overrides(mut term: *mut tty_term) {
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut offset: size_t = 0;
     o = match crate::src::options::options_local_entry(
-        &mut *(global_options),
+        global_options(),
         std::ffi::CStr::from_ptr(c"terminal-overrides".as_ptr()),
     ) {
         btree_map::Entry::Occupied(entry) => &mut **entry.into_mut(),
@@ -1388,7 +1388,7 @@ pub unsafe fn tty_term_create(
         i = i.wrapping_add(1);
     }
     o = match crate::src::options::options_local_entry(
-        &mut *(global_options),
+        global_options(),
         std::ffi::CStr::from_ptr(c"terminal-features".as_ptr()),
     ) {
         btree_map::Entry::Occupied(entry) => &mut **entry.into_mut(),

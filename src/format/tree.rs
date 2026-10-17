@@ -429,15 +429,7 @@ mod tests {
 
     #[test]
     fn expansion_resolves_the_entry_again_after_a_callback_removes_it() {
-        use crate::src::options::options_create;
         unsafe {
-            let saved = (global_options, global_w_options, global_s_options);
-            let mut global_options_owner = options_create(None);
-            global_options = &raw mut *global_options_owner;
-            let mut global_w_options_owner = options_create(None);
-            global_w_options = &raw mut *global_w_options_owner;
-            let mut global_s_options_owner = options_create(None);
-            global_s_options = &raw mut *global_s_options_owner;
             let mut ft_owner = tree();
             let ft = &raw mut *ft_owner;
             format_add_owned_cb(ft, c"custom_removed_entry", |ft| {
@@ -450,10 +442,6 @@ mod tests {
                 c"beforeafter"
             );
             drop(ft_owner);
-            drop(global_options_owner);
-            drop(global_w_options_owner);
-            drop(global_s_options_owner);
-            (global_options, global_w_options, global_s_options) = saved;
         }
     }
 

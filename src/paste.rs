@@ -276,7 +276,7 @@ pub(crate) unsafe fn paste_add_owned(prefix: Option<CString>, data: Box<[u8]>) {
     let prefix_bytes = prefix
         .as_ref()
         .map_or(b"buffer".as_slice(), CString::as_bytes);
-    let limit = options_get_number(&*global_options, c"buffer-limit") as u_int;
+    let limit = options_get_number(global_options(), c"buffer-limit") as u_int;
     let mut next = paste_time_tree_minmax_local(RB_INF);
     while let Some(pb) = next {
         if paste_automatic_count() < limit {

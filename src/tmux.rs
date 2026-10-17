@@ -16,9 +16,7 @@ use crate::src::ffi::libc::{__errno_location, environ, err, errx, stderr, stdout
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::{log_add_level, log_cstr, log_debug};
-use crate::src::options::{
-    options_create, options_default, options_set_number, options_set_string,
-};
+use crate::src::options::{options_default, options_set_number, options_set_string};
 use crate::src::options_table::options_table;
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{__mode_t, uid_t};
@@ -45,6 +43,8 @@ use libc::{
     nl_langinfo, printf, realpath, setlocale, strcasecmp, strcasestr, strcmp, strerror, strrchr,
     strstr,
 };
+use std::cell::UnsafeCell;
+use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
 use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -54,28 +54,41 @@ pub use ::libc::{CLOCK_MONOTONIC, CODESET, EEXIST, LC_CTYPE, LC_TIME};
 pub use ::libc::{S_IFDIR, S_IFMT};
 
 pub const TMUX_SOCK_PERM: ::core::ffi::c_int = 7 as ::core::ffi::c_int;
-static mut global_options_owner: Option<Box<options>> = None;
-static mut global_s_options_owner: Option<Box<options>> = None;
-static mut global_w_options_owner: Option<Box<options>> = None;
-
-pub(crate) unsafe fn free_global_options() {
-    if let Some(owner) = global_options_owner.take() {
-        drop(owner);
-        global_options = std::ptr::null_mut();
-    }
-    if let Some(owner) = global_s_options_owner.take() {
-        drop(owner);
-        global_s_options = std::ptr::null_mut();
-    }
-    if let Some(owner) = global_w_options_owner.take() {
-        drop(owner);
-        global_w_options = std::ptr::null_mut();
-    }
+thread_local! {
+    static GLOBAL_OPTIONS: UnsafeCell<options> = const {
+        UnsafeCell::new(options { tree: BTreeMap::new(), parent: None })
+    };
+    static GLOBAL_S_OPTIONS: UnsafeCell<options> = const {
+        UnsafeCell::new(options { tree: BTreeMap::new(), parent: None })
+    };
+    static GLOBAL_W_OPTIONS: UnsafeCell<options> = const {
+        UnsafeCell::new(options { tree: BTreeMap::new(), parent: None })
+    };
 }
 
-pub static mut global_options: *mut options = ::core::ptr::null::<options>() as *mut options;
-pub static mut global_s_options: *mut options = ::core::ptr::null::<options>() as *mut options;
-pub static mut global_w_options: *mut options = ::core::ptr::null::<options>() as *mut options;
+/// Global server options of this thread.
+///
+/// The caller must not let the returned reference alias another live
+/// reference to the same table: do not hold it across code that may borrow
+/// the table again (hooks, format expansion, `OptionsScope::local`).
+pub unsafe fn global_options() -> &'static mut options {
+    &mut *GLOBAL_OPTIONS.with(UnsafeCell::get)
+}
+/// Global session options of this thread. Same contract as `global_options`.
+pub unsafe fn global_s_options() -> &'static mut options {
+    &mut *GLOBAL_S_OPTIONS.with(UnsafeCell::get)
+}
+/// Global window options of this thread. Same contract as `global_options`.
+pub unsafe fn global_w_options() -> &'static mut options {
+    &mut *GLOBAL_W_OPTIONS.with(UnsafeCell::get)
+}
+
+pub(crate) unsafe fn free_global_options() {
+    drop(std::mem::take(&mut global_options().tree));
+    drop(std::mem::take(&mut global_s_options().tree));
+    drop(std::mem::take(&mut global_w_options().tree));
+}
+
 pub static mut global_environ: Option<Box<environ>> = None;
 pub static mut start_time: SystemTime = UNIX_EPOCH;
 pub static mut socket_path: Option<CString> = None;
@@ -546,28 +559,22 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
             flags |= CLIENT_UTF8 as uint64_t;
         }
     }
-    global_options_owner = Some(options_create(None));
-    global_options = global_options_owner.as_deref_mut().unwrap();
-    global_s_options_owner = Some(options_create(None));
-    global_s_options = global_s_options_owner.as_deref_mut().unwrap();
-    global_w_options_owner = Some(options_create(None));
-    global_w_options = global_w_options_owner.as_deref_mut().unwrap();
     for oe in options_table
         .iter()
         .take_while(|entry| entry.name.is_some())
     {
         if oe.scope & OPTIONS_TABLE_SERVER != 0 {
-            options_default(&mut *global_options, oe);
+            options_default(global_options(), oe);
         }
         if oe.scope & OPTIONS_TABLE_SESSION != 0 {
-            options_default(&mut *global_s_options, oe);
+            options_default(global_s_options(), oe);
         }
         if oe.scope & OPTIONS_TABLE_WINDOW != 0 {
-            options_default(&mut *global_w_options, oe);
+            options_default(global_w_options(), oe);
         }
     }
     options_set_string(
-        &mut *global_s_options,
+        global_s_options(),
         c"default-shell",
         0 as ::core::ffi::c_int,
         |out| out.write_all(getshell().as_bytes()),
@@ -578,7 +585,7 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
         !s.is_null()
     } {
         options_set_string(
-            &mut *global_options,
+            global_options(),
             c"editor",
             0 as ::core::ffi::c_int,
             |out| write_cstr(out, nullable_cstr(s)),
@@ -592,12 +599,12 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
             keys = MODEKEY_EMACS;
         }
         options_set_number(
-            &mut *global_s_options,
+            global_s_options(),
             c"status-keys",
             keys as ::core::ffi::c_longlong,
         );
         options_set_number(
-            &mut *global_w_options,
+            global_w_options(),
             c"mode-keys",
             keys as ::core::ffi::c_longlong,
         );

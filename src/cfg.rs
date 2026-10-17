@@ -338,38 +338,32 @@ pub unsafe fn cfg_show_causes(s_owner: Option<&SessionRef>) {
 mod cfg_wait_tests {
     use super::*;
     use crate::src::cmd::queue::{cmdq_len, cmdq_next};
-    use crate::src::options::{options_create, options_default};
+    use crate::src::options::options_default;
     use crate::src::options_table::options_table;
     use crate::src::server_client::queue_test_clients as clients;
     use crate::src::shared::client::CLIENT_DEAD;
-    use crate::src::shared::options::options;
     use crate::src::tmux::global_options;
     use std::cell::{Cell, UnsafeCell};
     use std::rc::{Rc, Weak};
 
     /// An unfinished config, and server options with no history file for
     /// `cfg_done`.
-    struct Options(*mut options, Option<Box<options>>);
+    struct Options;
     impl Options {
         unsafe fn new() -> Self {
-            let previous = global_options;
-            let mut owner = options_create(None);
-            global_options = &raw mut *owner;
             let entry = options_table
                 .iter()
                 .find(|entry| entry.name == Some(c"history-file"))
                 .unwrap();
-            options_default(&mut *global_options, entry);
+            options_default(global_options(), entry);
             cfg_finished = 0;
-            Self(previous, Some(owner))
+            Self
         }
     }
     impl Drop for Options {
         fn drop(&mut self) {
             unsafe {
                 drop(CFG_WAITER.take());
-                drop(self.1.take());
-                global_options = self.0;
             }
         }
     }

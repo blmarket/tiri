@@ -1,7 +1,7 @@
 use std::ffi::CStr;
 use tiri::src::grid::view::grid_view_get_cell;
 use tiri::src::grid::{grid_cells_equal, grid_create, grid_default_cell};
-use tiri::src::options::{options_create, options_default};
+use tiri::src::options::options_default;
 use tiri::src::options_table::options_table;
 use tiri::src::screen_write::{screen_write_menu, screen_write_start, screen_write_stop};
 use tiri::src::shared::grid::{grid_cell, GRID_ATTR_DIM};
@@ -19,15 +19,12 @@ unsafe fn cell_at(s: &screen, x: u32, y: u32) -> grid_cell {
 #[test]
 fn menu_rendering_preserves_selection_disabled_rows_and_borrowed_inputs() {
     unsafe {
-        let previous = global_options;
-        let mut global_options_owner = options_create(None);
-        global_options = &raw mut *global_options_owner;
         let table = &options_table;
         let definition = table
             .iter()
             .find(|entry| entry.name == Some(c"extended-keys"))
             .unwrap();
-        options_default(&mut *global_options, definition);
+        options_default(global_options(), definition);
         let menu = menu {
             title: c"Title".to_owned(),
             width: 6,
@@ -99,7 +96,5 @@ fn menu_rendering_preserves_selection_disabled_rows_and_borrowed_inputs() {
             assert_eq!(menu.items[2].name.as_deref(), Some(c"-Off"));
             assert_eq!(menu.title.as_c_str(), c"Title");
         }
-        drop(global_options_owner);
-        global_options = previous;
     }
 }

@@ -188,19 +188,6 @@ fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
     }
 }
 
-/// Run `body` with `global_options` pointing at a fresh, empty table so command
-/// parsing (which consults `command-alias`) and parent fallback have a server
-/// table to read, restoring the previous pointer afterwards.
-unsafe fn with_global_options(body: impl FnOnce(*mut tiri::src::shared::options::options)) {
-    let mut global_owner = options_create(None);
-    let global = &raw mut *global_owner;
-    let saved = tiri::src::tmux::global_options;
-    tiri::src::tmux::global_options = global;
-    body(global);
-    tiri::src::tmux::global_options = saved;
-    drop(global_owner);
-}
-
 fn table_entry(name: &CStr) -> &'static tiri::src::shared::options::options_table_entry {
     tiri::src::options_table::options_table
         .iter()
@@ -211,69 +198,66 @@ fn table_entry(name: &CStr) -> &'static tiri::src::shared::options::options_tabl
 #[test]
 fn command_arrays_parse_items_and_assign_unseparated_values() {
     unsafe {
-        with_global_options(|_| {
-            let mut oo_owner = options_create(None);
-            let oo = &raw mut *oo_owner;
-            let hook: *mut options_entry =
-                options_empty(&mut *oo, table_entry(c"after-new-window"));
+        let mut oo_owner = options_create(None);
+        let oo = &raw mut *oo_owner;
+        let hook: *mut options_entry = options_empty(&mut *oo, table_entry(c"after-new-window"));
 
-            assert_eq!(
-                options_array_set(
-                    &mut *hook,
-                    c"3",
-                    Some(c"display-message first"),
-                    0,
-                    null_mut()
-                ),
-                0
-            );
-            assert_eq!(
-                options_to_cstring(&*hook, Some(c"3"), 0).as_bytes(),
-                b"display-message first"
-            );
-            assert_eq!(
-                options_array_set(
-                    &mut *hook,
-                    c"3",
-                    Some(c"display-message second"),
-                    0,
-                    null_mut()
-                ),
-                0
-            );
-            assert_eq!(
-                options_to_cstring(&*hook, Some(c"3"), 0).as_bytes(),
-                b"display-message second"
-            );
-            assert_eq!(options_array_iter(&*hook).count(), 1);
+        assert_eq!(
+            options_array_set(
+                &mut *hook,
+                c"3",
+                Some(c"display-message first"),
+                0,
+                null_mut()
+            ),
+            0
+        );
+        assert_eq!(
+            options_to_cstring(&*hook, Some(c"3"), 0).as_bytes(),
+            b"display-message first"
+        );
+        assert_eq!(
+            options_array_set(
+                &mut *hook,
+                c"3",
+                Some(c"display-message second"),
+                0,
+                null_mut()
+            ),
+            0
+        );
+        assert_eq!(
+            options_to_cstring(&*hook, Some(c"3"), 0).as_bytes(),
+            b"display-message second"
+        );
+        assert_eq!(options_array_iter(&*hook).count(), 1);
 
-            let mut cause: Option<CString> = None;
-            assert_eq!(
-                options_array_set(&mut *hook, c"4", Some(c"no-such-command"), 0, &mut cause),
-                -1
-            );
-            assert_eq!(
-                cause.as_deref().unwrap().to_bytes(),
-                b"unknown command: no-such-command"
-            );
-            assert!(options_array_get(&*hook, c"4").is_none());
+        let mut cause: Option<CString> = None;
+        assert_eq!(
+            options_array_set(&mut *hook, c"4", Some(c"no-such-command"), 0, &mut cause),
+            -1
+        );
+        assert_eq!(
+            cause.as_deref().unwrap().to_bytes(),
+            b"unknown command: no-such-command"
+        );
+        assert!(options_array_get(&*hook, c"4").is_none());
 
-            assert_eq!(
-                options_array_assign(
-                    &mut *hook,
-                    c"display-message a ; display-message b",
-                    null_mut()
-                ),
-                0
-            );
-            assert_eq!(
-                options_to_cstring(&*hook, Some(c"0"), 0).as_bytes(),
-                b"display-message a ; display-message b"
-            );
-            assert_eq!(options_array_iter(&*hook).count(), 2);
-            assert_eq!(options_array_assign(&mut *hook, c"", null_mut()), 0);
-            assert_eq!(options_array_iter(&*hook).count(), 2);
-            drop(oo_owner);
-        });
+        assert_eq!(
+            options_array_assign(
+                &mut *hook,
+                c"display-message a ; display-message b",
+                null_mut()
+            ),
+            0
+        );
+        assert_eq!(
+            options_to_cstring(&*hook, Some(c"0"), 0).as_bytes(),
+            b"display-message a ; display-message b"
+        );
+        assert_eq!(options_array_iter(&*hook).count(), 2);
+        assert_eq!(options_array_assign(&mut *hook, c"", null_mut()), 0);
+        assert_eq!(options_array_iter(&*hook).count(), 2);
+        drop(oo_owner);
     }
 }
