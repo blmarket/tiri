@@ -1,6 +1,5 @@
 //! Behavior of the Rust-owned option-name index through the existing API.
 use std::ffi::{CStr, CString};
-use std::ptr::null_mut;
 use tiri::src::format::bytes::write_cstr;
 use tiri::src::options::*;
 use tiri::src::shared::options::options_entry;
@@ -125,12 +124,8 @@ fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
         let strings: *mut options_entry = options_empty(&mut *oo, definition);
         let mut input = b"  ONE,\xff TWO,,\0ignored".to_vec();
         assert_eq!(
-            options_array_assign(
-                &mut *strings,
-                CStr::from_bytes_until_nul(&input).unwrap(),
-                null_mut()
-            ),
-            0
+            options_array_assign(&mut *strings, CStr::from_bytes_until_nul(&input).unwrap()),
+            Ok(())
         );
         input.fill(b'x');
         for (index, expected) in [b"ONE".as_slice(), b"\xff", b"TWO"].iter().enumerate() {
@@ -163,11 +158,7 @@ fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
             .find(|oe| oe.name == Some(c"pane-colours"))
             .unwrap();
         let colours: *mut options_entry = options_empty(&mut *oo, colour_definition);
-        let mut cause: Option<CString> = None;
-        assert_eq!(
-            options_array_assign(&mut *colours, c"red,,invalid-colour", &mut cause),
-            -1
-        );
+        let cause = options_array_assign(&mut *colours, c"red,,invalid-colour").unwrap_err();
         assert!(!tiri::src::options::options_array_get_mut(
             &mut *(colours),
             std::ffi::CStr::from_ptr(c"0".as_ptr())
@@ -180,10 +171,7 @@ fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
         )
         .map_or(std::ptr::null_mut(), |value| value)
         .is_null());
-        assert_eq!(
-            CStr::from_ptr(cause.as_ref().unwrap().as_ptr()),
-            c"bad colour: invalid-colour"
-        );
+        assert_eq!(cause.as_c_str(), c"bad colour: invalid-colour");
         drop(oo_owner);
     }
 }
@@ -203,28 +191,16 @@ fn command_arrays_parse_items_and_assign_unseparated_values() {
         let hook: *mut options_entry = options_empty(&mut *oo, table_entry(c"after-new-window"));
 
         assert_eq!(
-            options_array_set(
-                &mut *hook,
-                c"3",
-                Some(c"display-message first"),
-                0,
-                null_mut()
-            ),
-            0
+            options_array_set(&mut *hook, c"3", Some(c"display-message first"), false),
+            Ok(())
         );
         assert_eq!(
             options_to_cstring(&*hook, Some(c"3"), 0).as_bytes(),
             b"display-message first"
         );
         assert_eq!(
-            options_array_set(
-                &mut *hook,
-                c"3",
-                Some(c"display-message second"),
-                0,
-                null_mut()
-            ),
-            0
+            options_array_set(&mut *hook, c"3", Some(c"display-message second"), false),
+            Ok(())
         );
         assert_eq!(
             options_to_cstring(&*hook, Some(c"3"), 0).as_bytes(),
@@ -232,31 +208,21 @@ fn command_arrays_parse_items_and_assign_unseparated_values() {
         );
         assert_eq!(options_array_iter(&*hook).count(), 1);
 
-        let mut cause: Option<CString> = None;
-        assert_eq!(
-            options_array_set(&mut *hook, c"4", Some(c"no-such-command"), 0, &mut cause),
-            -1
-        );
-        assert_eq!(
-            cause.as_deref().unwrap().to_bytes(),
-            b"unknown command: no-such-command"
-        );
+        let cause =
+            options_array_set(&mut *hook, c"4", Some(c"no-such-command"), false).unwrap_err();
+        assert_eq!(cause.to_bytes(), b"unknown command: no-such-command");
         assert!(options_array_get(&*hook, c"4").is_none());
 
         assert_eq!(
-            options_array_assign(
-                &mut *hook,
-                c"display-message a ; display-message b",
-                null_mut()
-            ),
-            0
+            options_array_assign(&mut *hook, c"display-message a ; display-message b"),
+            Ok(())
         );
         assert_eq!(
             options_to_cstring(&*hook, Some(c"0"), 0).as_bytes(),
             b"display-message a ; display-message b"
         );
         assert_eq!(options_array_iter(&*hook).count(), 2);
-        assert_eq!(options_array_assign(&mut *hook, c"", null_mut()), 0);
+        assert_eq!(options_array_assign(&mut *hook, c""), Ok(()));
         assert_eq!(options_array_iter(&*hook).count(), 2);
         drop(oo_owner);
     }

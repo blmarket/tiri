@@ -255,11 +255,8 @@ pub unsafe fn options_default<'a>(
     let o = options_empty(oo, oe);
     if oe.flags & OPTIONS_TABLE_IS_ARRAY != 0 {
         if oe.default_arr.is_none() {
-            options_array_assign(
-                o,
-                oe.default_str.expect("array option default"),
-                ::core::ptr::null_mut::<Option<CString>>(),
-            );
+            options_array_assign(o, oe.default_str.expect("array option default"))
+                .expect("valid array option default");
             return o;
         }
         for (i, value) in oe.default_arr.expect("array defaults").iter().enumerate() {
@@ -268,9 +265,9 @@ pub unsafe fn options_default<'a>(
                 o,
                 CStr::from_ptr(&raw mut key as *mut ::core::ffi::c_char),
                 Some(*value),
-                0 as ::core::ffi::c_int,
-                ::core::ptr::null_mut::<Option<CString>>(),
-            );
+                false,
+            )
+            .expect("valid array option default");
         }
         return o;
     }
@@ -415,9 +412,8 @@ pub unsafe fn options_array_set(
     o: &mut options_entry,
     key: &CStr,
     value: Option<&CStr>,
-    mut append: ::core::ffi::c_int,
-    mut cause: *mut Option<CString>,
-) -> ::core::ffi::c_int {
+    append: bool,
+) -> Result<(), CString> {
     let mut value: *const ::core::ffi::c_char = value.map_or(std::ptr::null(), CStr::as_ptr);
     let mut pr: cmd_parse_result = cmd_parse_result::empty();
     let mut number: ::core::ffi::c_longlong = 0;
@@ -425,21 +421,15 @@ pub unsafe fn options_array_set(
         .tableentry
         .is_some_and(|entry| entry.flags & OPTIONS_TABLE_IS_ARRAY != 0))
     {
-        if !cause.is_null() {
-            store_options_cause!(cause, CString::new(b"not an array".to_vec()).unwrap());
-        }
-        return -(1 as ::core::ffi::c_int);
+        return Err(c"not an array".to_owned());
     }
     let Some(new_key) = options_array_correct_key(key) else {
-        if !cause.is_null() {
-            format_options_cause!(cause, c"bad array key: %s", key,);
-        }
-        return -(1 as ::core::ffi::c_int);
+        return Err(options_string_cause(c"bad array key: %s", &[key]));
     };
     if value.is_null() {
         let key = options_array_index(&new_key);
         o.value.array_storage().entries.remove(&key);
-        return 0 as ::core::ffi::c_int;
+        return Ok(());
     }
     if o.tableentry
         .is_some_and(|entry| entry.type_0 == OPTIONS_TABLE_COMMAND)
@@ -449,23 +439,20 @@ pub unsafe fn options_array_set(
             ::core::ptr::null_mut::<cmd_parse_input>(),
         );
         if pr.status as ::core::ffi::c_uint == 0 {
-            if !cause.is_null() {
-                *cause = pr.error;
-            }
-            return -(1 as ::core::ffi::c_int);
+            return Err(pr.error.expect("command parse error"));
         }
         let ov = match options_array_get_mut(o, &new_key) {
             Some(ov) => ov,
             None => options_array_new(o, &new_key),
         };
         *ov = options_value::Command(OptionCommand(pr.cmdlist.take()));
-        return 0 as ::core::ffi::c_int;
+        return Ok(());
     }
     if o.tableentry
         .is_none_or(|entry| entry.type_0 == OPTIONS_TABLE_STRING)
     {
         let ov = options_array_get_mut(o, &new_key);
-        let owned_value = if let Some(ov) = ov.as_ref().filter(|_| append != 0) {
+        let owned_value = if let Some(ov) = ov.as_ref().filter(|_| append) {
             let previous = ov.string_ptr().expect("string option").to_bytes();
             let suffix = CStr::from_ptr(value).to_bytes();
             let mut bytes = Vec::with_capacity(previous.len() + suffix.len());
@@ -480,7 +467,7 @@ pub unsafe fn options_array_set(
             None => options_array_new(o, &new_key),
         };
         set_array_string(ov, owned_value);
-        return 0 as ::core::ffi::c_int;
+        return Ok(());
     }
     if o.tableentry.expect("table option").type_0 as ::core::ffi::c_uint
         == OPTIONS_TABLE_COLOUR as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -488,26 +475,21 @@ pub unsafe fn options_array_set(
         number = colour_parse_cstr(std::ffi::CStr::from_ptr(value)).unwrap_or(-1)
             as ::core::ffi::c_longlong;
         if number == -(1 as ::core::ffi::c_int) as ::core::ffi::c_longlong {
-            format_options_cause!(cause, c"bad colour: %s", CStr::from_ptr(value),);
-            return -(1 as ::core::ffi::c_int);
+            return Err(options_string_cause(
+                c"bad colour: %s",
+                &[CStr::from_ptr(value)],
+            ));
         }
         let ov = match options_array_get_mut(o, &new_key) {
             Some(ov) => ov,
             None => options_array_new(o, &new_key),
         };
         *ov = options_value::Number(number);
-        return 0 as ::core::ffi::c_int;
+        return Ok(());
     }
-    if !cause.is_null() {
-        store_options_cause!(cause, CString::new(b"wrong array type".to_vec()).unwrap());
-    }
-    -(1 as ::core::ffi::c_int)
+    Err(c"wrong array type".to_owned())
 }
-pub unsafe fn options_array_assign(
-    o: &mut options_entry,
-    s: &CStr,
-    mut cause: *mut Option<CString>,
-) -> ::core::ffi::c_int {
+pub unsafe fn options_array_assign(o: &mut options_entry, s: &CStr) -> Result<(), CString> {
     let s: *const ::core::ffi::c_char = s.as_ptr();
     let mut separator: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
@@ -523,7 +505,7 @@ pub unsafe fn options_array_assign(
     }
     if *separator as ::core::ffi::c_int == '\0' as i32 {
         if *s as ::core::ffi::c_int == '\0' as i32 {
-            return 0 as ::core::ffi::c_int;
+            return Ok(());
         }
         i = 0 as u_int;
         while i < UINT_MAX {
@@ -540,12 +522,11 @@ pub unsafe fn options_array_assign(
             o,
             CStr::from_ptr(&raw mut key as *mut ::core::ffi::c_char),
             nullable_cstr(s),
-            0 as ::core::ffi::c_int,
-            cause,
+            false,
         );
     }
     if *s as ::core::ffi::c_int == '\0' as i32 {
-        return 0 as ::core::ffi::c_int;
+        return Ok(());
     }
     let mut copy = CStr::from_ptr(s).to_bytes_with_nul().to_vec();
     let mut string = copy.as_mut_ptr().cast::<::core::ffi::c_char>();
@@ -571,18 +552,14 @@ pub unsafe fn options_array_assign(
             break;
         }
         xformat(&mut key, format_args!("{}", i as u32));
-        if options_array_set(
+        options_array_set(
             o,
             CStr::from_ptr(&raw mut key as *mut ::core::ffi::c_char),
             nullable_cstr(next),
-            0 as ::core::ffi::c_int,
-            cause,
-        ) != 0 as ::core::ffi::c_int
-        {
-            return -(1 as ::core::ffi::c_int);
-        }
+            false,
+        )?;
     }
-    0 as ::core::ffi::c_int
+    Ok(())
 }
 pub fn options_array_iter(
     o: &options_entry,

@@ -144,20 +144,13 @@ impl OptionsScope {
                 .expect("array option remains installed while parsing");
             return Ok(());
         }
-        let mut cause = None;
-        let result = self
-            .entry(name)
+        self.entry(name)
             .as_deref_mut()
             .map(|entry| {
                 assert_eq!(entry.id(), identity, "array option identity");
-                options_array_set(entry, &key, value, append as i32, &mut cause)
+                options_array_set(entry, &key, value, append)
             })
-            .expect("local array option");
-        if result == 0 {
-            Ok(())
-        } else {
-            Err(cause.expect("array option error"))
-        }
+            .expect("local array option")
     }
 
     /// Append split values incrementally. A later parse error preserves every
