@@ -42,7 +42,6 @@ mod tests {
     }
 }
 
-/// Box-owned by options_create; inheritance carries the parent's owner identity.
 #[repr(C)]
 pub struct options {
     pub(crate) tree: BTreeMap<CString, Box<options_entry>>,
@@ -150,7 +149,6 @@ pub enum OptionsArrayKey {
     Text(Vec<u8>),
 }
 
-/// Sole owner of boxed array items and their values.
 #[derive(Default)]
 pub struct options_array_storage {
     pub(crate) entries: BTreeMap<OptionsArrayKey, Box<options_array_item>>,
