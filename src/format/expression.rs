@@ -1380,7 +1380,7 @@ pub(super) unsafe fn format_loop_options(
         let mut keys = None;
         access(&mut |options| {
             if let btree_map::Entry::Occupied(mut entry) =
-                crate::src::options::options_get_only_mut(options, &name)
+                crate::src::options::options_local_entry(options, &name)
             {
                 let entry = &mut **entry.get_mut();
                 keys = Some(if options_is_array(entry) != 0 {
@@ -1400,7 +1400,7 @@ pub(super) unsafe fn format_loop_options(
                 let last_option = !crate::src::options::options_iter(options)
                     .any(|(other, _)| other > name.as_c_str());
                 if let btree_map::Entry::Occupied(occupied) =
-                    crate::src::options::options_get_only_mut(options, &name)
+                    crate::src::options::options_local_entry(options, &name)
                 {
                     values = Some(format_option_loop_values(
                         occupied,
@@ -1422,7 +1422,7 @@ pub(super) unsafe fn format_loop_options(
                     let last_option = !crate::src::options::options_iter(options)
                         .any(|(other, _)| other > name.as_c_str());
                     if let btree_map::Entry::Occupied(occupied) =
-                        crate::src::options::options_get_only_mut(options, &name)
+                        crate::src::options::options_local_entry(options, &name)
                     {
                         if crate::src::options::options_array_get(occupied.get(), &key).is_some() {
                             values = Some(format_option_loop_values(

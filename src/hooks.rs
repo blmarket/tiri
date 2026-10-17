@@ -22,7 +22,7 @@ use crate::src::monitor::{
     monitor_add, monitor_create_session_owned, monitor_get_fire_count, monitor_get_fire_time,
 };
 use crate::src::options::{
-    options_get_monitor_data, options_get_only_mut, options_hook_fired, options_search,
+    options_get_monitor_data, options_hook_fired, options_local_entry, options_search,
     options_set_string, OptionsScope,
 };
 use crate::src::options_table::options_table;
@@ -525,7 +525,7 @@ pub unsafe fn hooks_monitor_add(
     static NEXT_MONITOR: AtomicUsize = AtomicUsize::new(1);
     hooks_monitor_remove(scope, name);
     scope.with_local(|table| {
-        if let Entry::Vacant(_) = options_get_only_mut(table, name) {
+        if let Entry::Vacant(_) = options_local_entry(table, name) {
             options_set_string(table, name, 0, |out| out.write_all(b""));
         }
     });

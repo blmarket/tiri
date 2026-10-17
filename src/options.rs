@@ -203,7 +203,7 @@ impl Drop for options {
     fn drop(&mut self) {
         let names: Vec<_> = self.tree.keys().cloned().collect();
         for name in names {
-            if let btree_map::Entry::Occupied(entry) = options_get_only_mut(self, &name) {
+            if let btree_map::Entry::Occupied(entry) = options_local_entry(self, &name) {
                 options_remove(entry);
             }
         }
@@ -216,7 +216,7 @@ pub fn options_iter(oo: &options) -> impl DoubleEndedIterator<Item = (&CStr, &op
         .map(|(name, entry)| (name.as_c_str(), entry.as_ref()))
 }
 
-pub fn options_get_only_mut<'a>(
+pub fn options_local_entry<'a>(
     oo: &'a mut options,
     name: &CStr,
 ) -> btree_map::Entry<'a, CString, Box<options_entry>> {
@@ -800,7 +800,7 @@ pub unsafe fn options_set_string(
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut separator: &'static CStr = c"";
     let formatted = format_message_with(write);
-    o = match crate::src::options::options_get_only_mut(&mut *(oo), name) {
+    o = match crate::src::options::options_local_entry(&mut *(oo), name) {
         btree_map::Entry::Occupied(entry) => &mut **entry.into_mut(),
         btree_map::Entry::Vacant(_) => std::ptr::null_mut(),
     };
@@ -869,7 +869,7 @@ pub unsafe fn options_set_number(
             out.write_all(b" must be a string")
         });
     }
-    o = match crate::src::options::options_get_only_mut(&mut *(oo), name) {
+    o = match crate::src::options::options_local_entry(&mut *(oo), name) {
         btree_map::Entry::Occupied(entry) => &mut **entry.into_mut(),
         btree_map::Entry::Vacant(_) => std::ptr::null_mut(),
     };
@@ -914,7 +914,7 @@ pub unsafe fn options_set_command(
             out.write_all(b" must be a string")
         });
     }
-    o = match crate::src::options::options_get_only_mut(&mut *(oo), name) {
+    o = match crate::src::options::options_local_entry(&mut *(oo), name) {
         btree_map::Entry::Occupied(entry) => &mut **entry.into_mut(),
         btree_map::Entry::Vacant(_) => std::ptr::null_mut(),
     };

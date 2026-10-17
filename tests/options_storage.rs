@@ -77,7 +77,7 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
             ),
             definition.default_str.unwrap()
         );
-        match tiri::src::options::options_get_only_mut(&mut *(oo), definition.name.unwrap()) {
+        match tiri::src::options::options_local_entry(&mut *(oo), definition.name.unwrap()) {
             std::collections::btree_map::Entry::Occupied(entry) => {
                 assert_eq!(&mut **entry.into_mut() as *mut _, default)
             }

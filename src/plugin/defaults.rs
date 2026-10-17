@@ -1,6 +1,6 @@
 //! Presentation defaults shared with tiri, applied before user configuration.
 use crate::src::format::bytes::nullable_cstr;
-use crate::src::options::{options_get_only_mut, options_set_string, options_to_cstring};
+use crate::src::options::{options_local_entry, options_set_string, options_to_cstring};
 use crate::src::tmux::global_w_options;
 use std::collections::btree_map::Entry;
 use std::ffi::CStr;
@@ -12,7 +12,7 @@ pub(super) unsafe fn apply() {
         return;
     };
     for name in [c"window-status-format", c"window-status-current-format"] {
-        if let Entry::Occupied(e) = options_get_only_mut(options, name) {
+        if let Entry::Occupied(e) = options_local_entry(options, name) {
             if e.get().tableentry.is_some_and(|definition| {
                 options_to_cstring(e.get(), nullable_cstr(std::ptr::null()), 0)
                     == crate::src::options::options_default_to_cstring(definition)

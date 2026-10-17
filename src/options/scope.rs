@@ -1,5 +1,5 @@
 //! Persistent option identities. Model component borrows never outlive a visit.
-use super::options_get_only_mut;
+use super::options_local_entry;
 use crate::src::session::Session;
 use crate::src::shared::options::{options, options_entry};
 use crate::src::shared::pane::window_pane;
@@ -90,7 +90,7 @@ impl OptionsScope {
             let (found, parent) = scope.with_local(|table| {
                 (
                     matches!(
-                        options_get_only_mut(table, name),
+                        options_local_entry(table, name),
                         Entry::<'_, CString, Box<options_entry>>::Occupied(_)
                     ),
                     table.parent.clone(),
@@ -113,7 +113,7 @@ impl OptionsScope {
         name: &CStr,
         visit: impl FnOnce(&mut options_entry) -> R,
     ) -> Option<R> {
-        self.with_local(|table| match options_get_only_mut(table, name) {
+        self.with_local(|table| match options_local_entry(table, name) {
             btree_map::Entry::Occupied(entry) => Some(visit(entry.into_mut())),
             btree_map::Entry::Vacant(_) => None,
         })

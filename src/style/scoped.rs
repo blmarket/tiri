@@ -3,7 +3,7 @@
 
 use crate::src::format::{format_create, format_expand_cstring};
 use crate::src::grid::grid_default_cell;
-use crate::src::options::{options_get_only_mut, options_is_string};
+use crate::src::options::{options_is_string, options_local_entry};
 use crate::src::shared::format::{format_tree, FORMAT_NOJOBS};
 use crate::src::shared::grid::grid_cell;
 use crate::src::shared::options::{options, options_entry, OPTIONS_TABLE_IS_COLOUR};
@@ -58,7 +58,7 @@ pub unsafe fn style_resolve_with_options(
     let mut resolved = None;
     let mut parent = None;
     access(&mut |root| {
-        if let btree_map::Entry::Occupied(mut entry) = options_get_only_mut(root, key) {
+        if let btree_map::Entry::Occupied(mut entry) = options_local_entry(root, key) {
             resolved = style_snapshot(entry.get_mut());
         } else {
             parent = root.parent.clone();

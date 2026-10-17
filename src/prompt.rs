@@ -1595,7 +1595,7 @@ unsafe fn prompt_complete_commands(s: &CStr) -> Vec<CString> {
             prompt_complete_add(&mut list, name);
         }
     }
-    o = match crate::src::options::options_get_only_mut(&mut *(global_options), c"command-alias") {
+    o = match crate::src::options::options_local_entry(&mut *(global_options), c"command-alias") {
         btree_map::Entry::Occupied(entry) => &mut **entry.into_mut(),
         btree_map::Entry::Vacant(_) => std::ptr::null_mut(),
     };
