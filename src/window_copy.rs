@@ -3725,7 +3725,7 @@ unsafe fn window_copy_refresh_timer(wme: refbox::Weak<window_mode_entry>) {
     if mode_pane_owner.mode_entry() != wme || (*data).refresh_active == 0 {
         return;
     }
-    if mode_pane_owner.has_pending_change()
+    if mode_pane_owner.has_unseen_changes()
         && (*data).screen.sel.is_none()
         && (*data).cursordrag as ::core::ffi::c_uint
             == CURSORDRAG_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -3736,7 +3736,7 @@ unsafe fn window_copy_refresh_timer(wme: refbox::Weak<window_mode_entry>) {
         window_copy_do_refresh(wme.clone(), follow);
         window_copy_redraw_screen(wme.clone());
         mode_pane_owner.request_redraw(false);
-        mode_pane_owner.acknowledge_change();
+        mode_pane_owner.acknowledge_unseen_changes();
     }
     window_copy_refresh_arm(wme.clone());
 }
@@ -3771,7 +3771,7 @@ unsafe fn window_copy_cmd_refresh_now(
         && (*data).cy == (*data).screen.grid().sy.wrapping_sub(1 as u_int))
         as ::core::ffi::c_int;
     window_copy_do_refresh(wme.clone(), follow);
-    mode_pane_owner.acknowledge_change();
+    mode_pane_owner.acknowledge_unseen_changes();
     WINDOW_COPY_CMD_REDRAW
 }
 unsafe fn window_copy_cmd_refresh_on(mut cs: *mut window_copy_cmd_state) -> window_copy_cmd_action {

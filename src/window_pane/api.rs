@@ -36,6 +36,10 @@ pub trait WindowPane {
     unsafe fn border_status(&self) -> i32;
     unsafe fn has_pending_change(&self) -> bool;
     unsafe fn acknowledge_change(&self);
+    /// Output copy mode has not yet refreshed from; kept apart from
+    /// [`Self::has_pending_change`], which automatic rename consumes.
+    unsafe fn has_unseen_changes(&self) -> bool;
+    unsafe fn acknowledge_unseen_changes(&self);
     /// Derive an owned default Window name from this pane's command or shell.
     unsafe fn default_window_name(&self) -> CString;
     /// A borrow can become Ref::map on one RefCell containing the whole pane.
@@ -890,6 +894,12 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     }
     unsafe fn acknowledge_change(&self) {
         (*self.get()).flags &= !PANE_CHANGED;
+    }
+    unsafe fn has_unseen_changes(&self) -> bool {
+        (*self.get()).flags & PANE_UNSEENCHANGES != 0
+    }
+    unsafe fn acknowledge_unseen_changes(&self) {
+        (*self.get()).flags &= !PANE_UNSEENCHANGES;
     }
     unsafe fn default_window_name(&self) -> CString {
         let pane = &*self.get();
