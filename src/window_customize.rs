@@ -889,7 +889,7 @@ unsafe fn window_customize_option_is_changed(
             if !present || !present_default {
                 present != present_default
             } else {
-                value != options_to_cstring(defaults, key, 0)
+                value != options_to_cstring(&*defaults, key, 0)
             }
         } else {
             true
@@ -897,7 +897,7 @@ unsafe fn window_customize_option_is_changed(
         drop(defaults_owner);
         return result as i32;
     }
-    let value = options_to_cstring(option, nullable_cstr(std::ptr::null()), 0);
+    let value = options_to_cstring(&*option, nullable_cstr(std::ptr::null()), 0);
     (value != options_default_to_cstring(definition)) as i32
 }
 
@@ -1052,7 +1052,9 @@ unsafe fn window_customize_build_option(
     if (*data).hide_global != 0 && global != 0 {
         return 0 as u_int;
     }
-    if (*data).hide_default != 0 && window_customize_option_is_changed(owner, name_owner, option, None) == 0 {
+    if (*data).hide_default != 0
+        && window_customize_option_is_changed(owner, name_owner, option, None) == 0
+    {
         return 0 as u_int;
     }
     format_add(ft, c"option_name", |out| {
@@ -1088,7 +1090,7 @@ unsafe fn window_customize_build_option(
         format_add(ft, c"option_monitor", |out| write_cstr(out, c""));
     }
     if array == 0 {
-        let value = options_to_cstring(option, nullable_cstr(std::ptr::null()), 0);
+        let value = options_to_cstring(&*option, nullable_cstr(std::ptr::null()), 0);
         format_add(ft, c"option_value", |out| write_cstr(out, &*value));
     }
     if !filter.is_null() {
@@ -2067,7 +2069,7 @@ unsafe fn window_customize_draw_option(
                                     );
                                     if !((*s).cy >= cy.wrapping_add(sy).wrapping_sub(1 as u_int)) {
                                         value_owner = Some(options_to_cstring(
-                                            option,
+                                            &*option,
                                             item.array_key.as_deref(),
                                             0,
                                         ));
@@ -3434,7 +3436,7 @@ unsafe fn window_customize_start_edit(
         ) else {
             return;
         };
-        let option_value = options_to_cstring(option, item.array_key.as_deref(), 0);
+        let option_value = options_to_cstring(&*option, item.array_key.as_deref(), 0);
         value = Cow::Owned(option_value);
         edit_type = WINDOW_CUSTOMIZE_EDIT_OPTION;
     } else if item.type_0 as ::core::ffi::c_uint
@@ -3644,7 +3646,7 @@ unsafe fn window_customize_set_option(
         prompt_bytes.extend_from_slice(b") ");
         let prompt = CString::new(prompt_bytes).expect("option prompt contains no NUL");
         drop(scope_text);
-        let value = options_to_cstring(option, item.array_key.as_deref(), 0);
+        let value = options_to_cstring(&*option, item.array_key.as_deref(), 0);
         let mut new_item = window_customize_new_item();
 
         new_item.type_0 = WINDOW_CUSTOMIZE_ITEM_OPTION;
@@ -3702,7 +3704,7 @@ unsafe fn window_customize_set_array_key_callback(
     if owner.with_entry(name, |entry| options_array_get(entry, new_key).is_some()) != Some(false) {
         return PROMPT_CLOSE;
     }
-    let value = options_to_cstring(option, Some(old_key), 0);
+    let value = options_to_cstring(&*option, Some(old_key), 0);
     if let Err(error) = owner.set_array_item(name, new_key, Some(&value), false) {
         let mut cause = Some(error);
         window_customize_uppercase_cause(&mut cause);

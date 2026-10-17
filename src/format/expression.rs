@@ -3,6 +3,9 @@ use super::*;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
+use crate::src::options::options_is_array;
+use crate::src::options::options_parse_owned;
+use crate::src::options::options_to_cstring;
 use crate::src::server_client::Client;
 use crate::src::session::Session;
 use crate::src::shared::client::ClientRef;
@@ -1220,7 +1223,11 @@ pub(super) unsafe fn format_loop_panes(
 }
 
 unsafe fn format_option_loop_values(
-    mut occupied: btree_map::OccupiedEntry<'_, CString, Box<crate::src::shared::options::options_entry>>,
+    mut occupied: btree_map::OccupiedEntry<
+        '_,
+        CString,
+        Box<crate::src::shared::options::options_entry>,
+    >,
     array_key: Option<&CStr>,
     count: u_int,
     index: u_int,

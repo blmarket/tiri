@@ -216,16 +216,13 @@ pub fn options_iter(oo: &options) -> impl DoubleEndedIterator<Item = (&CStr, &op
         .map(|(name, entry)| (name.as_c_str(), entry.as_ref()))
 }
 
-pub fn options_get_only<'a>(oo: &'a options, name: &CStr) -> Option<&'a options_entry> {
-    oo.tree.get(name).map(Box::as_ref)
-}
-
 pub fn options_get_only_mut<'a>(
     oo: &'a mut options,
     name: &CStr,
 ) -> btree_map::Entry<'a, CString, Box<options_entry>> {
     oo.tree.entry(name.to_owned())
 }
+
 /// Read an entry synchronously, copying the result before an inherited table's
 /// guard is returned. The visitor must not reenter models or return observers.
 /// Prefer OptionsScope::resolve/with_entry for work spanning callbacks.
@@ -234,7 +231,7 @@ pub unsafe fn options_read_entry<R>(
     name: &CStr,
     read: impl FnOnce(&options_entry) -> R,
 ) -> Option<R> {
-    if let Some(entry) = options_get_only(table, name) {
+    if let Some(entry) = table.tree.get(name).map(Box::as_ref) {
         return Some(read(entry));
     }
     let parent = table.parent.as_ref()?;
@@ -629,12 +626,11 @@ pub unsafe fn options_is_string(mut o: *mut options_entry) -> ::core::ffi::c_int
 }
 
 pub unsafe fn options_to_cstring(
-    o: *const options_entry,
+    entry: &options_entry,
     key: Option<&CStr>,
     numeric: i32,
 ) -> CString {
     let key: *const ::core::ffi::c_char = key.map_or(std::ptr::null(), CStr::as_ptr);
-    let entry = &*o;
     if entry
         .tableentry
         .is_some_and(|table| table.flags & OPTIONS_TABLE_IS_ARRAY != 0)

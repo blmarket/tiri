@@ -1,5 +1,5 @@
 //! Persistent option identities. Model component borrows never outlive a visit.
-use super::{options_get_only, options_get_only_mut};
+use super::options_get_only_mut;
 use crate::src::session::Session;
 use crate::src::shared::options::{options, options_entry};
 use crate::src::shared::pane::window_pane;
@@ -8,7 +8,8 @@ use crate::src::shared::window::WindowWeak;
 use crate::src::tmux::{global_options, global_s_options, global_w_options};
 use crate::src::window::Window;
 use crate::src::window_pane::WindowPane;
-use std::collections::btree_map;
+use std::collections::btree_map::{self, Entry};
+use std::ffi::CString;
 use std::{cell::UnsafeCell, ffi::CStr, rc::Weak};
 
 /// A table's identity, independent of how its owning model stores state.
@@ -88,7 +89,10 @@ impl OptionsScope {
         loop {
             let (found, parent) = scope.with_local(|table| {
                 (
-                    options_get_only(table, name).is_some(),
+                    matches!(
+                        options_get_only_mut(table, name),
+                        Entry::<'_, CString, Box<options_entry>>::Occupied(_)
+                    ),
                     table.parent.clone(),
                 )
             });

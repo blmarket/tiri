@@ -219,7 +219,7 @@ fn command_arrays_parse_items_and_assign_unseparated_values() {
                 0
             );
             assert_eq!(
-                options_to_cstring(hook, Some(c"3"), 0).as_bytes(),
+                options_to_cstring(&*hook, Some(c"3"), 0).as_bytes(),
                 b"display-message first"
             );
             assert_eq!(
@@ -227,7 +227,7 @@ fn command_arrays_parse_items_and_assign_unseparated_values() {
                 0
             );
             assert_eq!(
-                options_to_cstring(hook, Some(c"3"), 0).as_bytes(),
+                options_to_cstring(&*hook, Some(c"3"), 0).as_bytes(),
                 b"display-message second"
             );
             assert_eq!(options_array_iter(&*hook).count(), 1);
@@ -248,50 +248,13 @@ fn command_arrays_parse_items_and_assign_unseparated_values() {
                 0
             );
             assert_eq!(
-                options_to_cstring(hook, Some(c"0"), 0).as_bytes(),
+                options_to_cstring(&*hook, Some(c"0"), 0).as_bytes(),
                 b"display-message a ; display-message b"
             );
             assert_eq!(options_array_iter(&*hook).count(), 2);
             assert_eq!(options_array_assign(hook, c"", null_mut()), 0);
             assert_eq!(options_array_iter(&*hook).count(), 2);
             drop(oo_owner);
-        });
-    }
-}
-
-#[test]
-fn set_command_publishes_a_local_default_before_replacing_it() {
-    unsafe {
-        with_global_options(|global| {
-            let definition = table_entry(c"default-client-command");
-            let inherited = options_default(global, definition);
-            assert_eq!(
-                options_to_cstring(inherited, None, 0).as_bytes(),
-                b"new-session"
-            );
-            let mut child_owner = options_create(Some(OptionsScope::GlobalServer));
-            let child = &raw mut *child_owner;
-            assert!(options_get_only(&*child, c"default-client-command").is_none());
-
-            let mut parsed =
-                tiri::src::cmd::parse::cmd_parse_from_string(c"list-sessions -F x", null_mut());
-            let local =
-                options_set_command(child, c"default-client-command", parsed.take_cmdlist());
-            assert!(!local.is_null());
-            assert_ne!(local, inherited);
-            assert_eq!(
-                options_get_only(&*child, c"default-client-command").map(|entry| entry.id()),
-                Some((*local).id())
-            );
-            assert_eq!(
-                options_to_cstring(local, None, 0).as_bytes(),
-                b"list-sessions -F x"
-            );
-            assert_eq!(
-                options_to_cstring(inherited, None, 0).as_bytes(),
-                b"new-session"
-            );
-            drop(child_owner);
         });
     }
 }

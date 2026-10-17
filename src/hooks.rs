@@ -22,8 +22,8 @@ use crate::src::monitor::{
     monitor_add, monitor_create_session_owned, monitor_get_fire_count, monitor_get_fire_time,
 };
 use crate::src::options::{
-    options_get_monitor_data, options_hook_fired, options_search, options_set_string,
-    OptionsScope,
+    options_get_monitor_data, options_get_only_mut, options_hook_fired, options_search,
+    options_set_string, OptionsScope,
 };
 use crate::src::options_table::options_table;
 use crate::src::shared::abi::*;
@@ -42,6 +42,7 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::{WindowRef, WindowWeak};
 use crate::src::window::WindowPane;
+use std::collections::btree_map::Entry;
 use std::ffi::{CStr, CString};
 
 #[derive(Default)]
@@ -524,7 +525,7 @@ pub unsafe fn hooks_monitor_add(
     static NEXT_MONITOR: AtomicUsize = AtomicUsize::new(1);
     hooks_monitor_remove(scope, name);
     scope.with_local(|table| {
-        if crate::src::options::options_get_only(table, name).is_none() {
+        if let Entry::Vacant(_) = options_get_only_mut(table, name) {
             options_set_string(table, name, 0, |out| out.write_all(b""));
         }
     });
@@ -595,17 +596,11 @@ pub unsafe fn hooks_monitor_get_fire_count(name: &CStr, o: *mut options_entry) -
     let Some(hm) = options_get_monitor_data(&mut *o) else {
         return 0 as u_int;
     };
-    monitor_get_fire_count(
-        &hm.set.as_ref().expect("hook monitor").downgrade(),
-        name,
-    )
+    monitor_get_fire_count(&hm.set.as_ref().expect("hook monitor").downgrade(), name)
 }
 pub unsafe fn hooks_monitor_get_fire_time(name: &CStr, o: *mut options_entry) -> time_t {
     let Some(hm) = options_get_monitor_data(&mut *o) else {
         return 0 as time_t;
     };
-    monitor_get_fire_time(
-        &hm.set.as_ref().expect("hook monitor").downgrade(),
-        name,
-    )
+    monitor_get_fire_time(&hm.set.as_ref().expect("hook monitor").downgrade(), name)
 }

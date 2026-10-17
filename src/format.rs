@@ -17,10 +17,7 @@ use crate::src::grid::{grid_get_cell, grid_line_length, grid_peek_line};
 use crate::src::hyperlinks::hyperlinks_get;
 use crate::src::job::{job_free, job_get_event, job_run};
 use crate::src::log::{log_cstr, log_debug, log_get_level};
-use crate::src::options::{
-    options_get_number, options_get_string, options_is_array, options_parse_owned,
-    options_to_cstring,
-};
+use crate::src::options::options_get_string;
 use crate::src::paste::{
     paste_buffer_created, paste_buffer_data, paste_buffer_name, paste_get_top,
     paste_make_sample_cstring,
@@ -89,8 +86,8 @@ use crate::src::shared::job::JOB_NOWAIT;
 use crate::src::shared::job::{job, job_update_callback, JobCompletion};
 use crate::src::shared::key::key_event;
 use crate::src::shared::mouse::mouse_event;
-use crate::src::shared::options::OPTIONS_TABLE_IS_HOOK;
 use crate::src::shared::options::options;
+use crate::src::shared::options::OPTIONS_TABLE_IS_HOOK;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::paste::PasteBufferRef;
 use crate::src::shared::posix_io::FNM_CASEFOLD;
