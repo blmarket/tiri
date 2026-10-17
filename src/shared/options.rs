@@ -59,7 +59,6 @@ pub struct options_array_item {
 
 #[repr(C)]
 pub struct options_entry {
-    pub name: ::std::ffi::CString,
     pub tableentry: Option<&'static options_table_entry>,
     pub value: options_value,
     /// Parsed style of a string value without `#{`; cleared when the value changes.

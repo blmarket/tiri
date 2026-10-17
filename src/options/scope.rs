@@ -108,6 +108,6 @@ impl OptionsScope {
         name: &CStr,
         visit: impl FnOnce(&mut options_entry) -> R,
     ) -> Option<R> {
-        self.with_local(|table| options_get_only_mut(table, name).map(visit))
+        self.with_local(|table| options_get_only_mut(table, name).map(|entry| visit(entry.into_mut())))
     }
 }

@@ -22,7 +22,7 @@ use crate::src::monitor::{
     monitor_add, monitor_create_session_owned, monitor_get_fire_count, monitor_get_fire_time,
 };
 use crate::src::options::{
-    options_get_monitor_data, options_hook_fired, options_name, options_search, options_set_string,
+    options_get_monitor_data, options_hook_fired, options_search, options_set_string,
     OptionsScope,
 };
 use crate::src::options_table::options_table;
@@ -569,8 +569,11 @@ pub unsafe fn hooks_monitor_add(
         .expect("monitor option");
     monitor_add(&set, name, type_0, id, format, flags);
 }
-pub(crate) unsafe fn hooks_monitor_to_cstring(o: *mut options_entry) -> Option<CString> {
-    let mut bytes = options_name(&*o).to_bytes().to_vec();
+pub(crate) unsafe fn hooks_monitor_to_cstring(
+    name: &CStr,
+    o: *mut options_entry,
+) -> Option<CString> {
+    let mut bytes = name.to_bytes().to_vec();
     let hm = options_get_monitor_data(&mut *o)?;
     let target = match hm.type_0 {
         0 => b"::".as_slice(),
@@ -588,23 +591,21 @@ pub(crate) unsafe fn hooks_monitor_to_cstring(o: *mut options_entry) -> Option<C
     bytes.extend_from_slice(hm.format.as_bytes());
     Some(CString::new(bytes).expect("C string parts contain no NUL"))
 }
-pub unsafe fn hooks_monitor_get_fire_count(mut o: *mut options_entry) -> u_int {
-    let name = (*o).name.as_ptr();
+pub unsafe fn hooks_monitor_get_fire_count(name: &CStr, o: *mut options_entry) -> u_int {
     let Some(hm) = options_get_monitor_data(&mut *o) else {
         return 0 as u_int;
     };
     monitor_get_fire_count(
         &hm.set.as_ref().expect("hook monitor").downgrade(),
-        CStr::from_ptr(name),
+        name,
     )
 }
-pub unsafe fn hooks_monitor_get_fire_time(mut o: *mut options_entry) -> time_t {
-    let name = (*o).name.as_ptr();
+pub unsafe fn hooks_monitor_get_fire_time(name: &CStr, o: *mut options_entry) -> time_t {
     let Some(hm) = options_get_monitor_data(&mut *o) else {
         return 0 as time_t;
     };
     monitor_get_fire_time(
         &hm.set.as_ref().expect("hook monitor").downgrade(),
-        CStr::from_ptr(name),
+        name,
     )
 }

@@ -135,7 +135,7 @@ unsafe fn cmd_show_options_exec(
         if monitor {
             let names = selected.with_local(|options| {
                 options_iter(options)
-                    .map(|entry| entry.name.clone())
+                    .map(|(name, _)| name.to_owned())
                     .collect::<Vec<_>>()
             });
             for name in names {
@@ -306,7 +306,7 @@ unsafe fn cmd_show_options_print(
             CString::default()
         };
         let table = options_table_entry(entry);
-        format_add(ft, c"option_name", |out| write_cstr(out, &*entry.name));
+        format_add(ft, c"option_name", |out| write_cstr(out, name));
         format_add(ft, c"option_value", |out| write_cstr(out, &*value));
         for (name, value) in [
             (c"option_value_only", value_only as i32),
@@ -378,7 +378,7 @@ unsafe fn cmd_show_hooks_print_monitor(
     let mut ft_owner = format_create_from_target(item_handle);
     let ft = &raw mut *ft_owner;
     let print = scope.with_entry(name, |entry| {
-        let Some(value) = hooks_monitor_to_cstring(entry) else {
+        let Some(value) = hooks_monitor_to_cstring(name, entry) else {
             return false;
         };
         let Some(monitor) = options_get_monitor_data(entry) else {
@@ -396,7 +396,7 @@ unsafe fn cmd_show_hooks_print_monitor(
         format_add(ft, c"hook_monitor_format", |out| {
             write_cstr(out, &*monitor.format)
         });
-        format_add(ft, c"option_name", |out| write_cstr(out, &*entry.name));
+        format_add(ft, c"option_name", |out| write_cstr(out, name));
         format_add(ft, c"option_value", |out| write_cstr(out, &*value));
         for (name, value) in [
             (c"option_value_only", 0),
@@ -413,8 +413,8 @@ unsafe fn cmd_show_hooks_print_monitor(
         format_add(ft, c"option_array_key", |_| Ok(()));
         show_hook_add_fire_formats(
             ft,
-            hooks_monitor_get_fire_count(entry),
-            hooks_monitor_get_fire_time(entry),
+            hooks_monitor_get_fire_count(name, entry),
+            hooks_monitor_get_fire_time(name, entry),
         );
         true
     });
@@ -440,7 +440,7 @@ unsafe fn cmd_show_options_all(
     let include_parent = args_has(args, b'A') != 0;
     let names = selected.with_local(|options| {
         options_iter(options)
-            .map(|entry| entry.name.clone())
+            .map(|(name, _)| name.to_owned())
             .collect::<Vec<_>>()
     });
     for name in names {

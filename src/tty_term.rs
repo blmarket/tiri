@@ -1207,7 +1207,7 @@ pub unsafe fn tty_term_apply_overrides(mut term: *mut tty_term) {
         &mut *(global_options),
         std::ffi::CStr::from_ptr(c"terminal-overrides".as_ptr()),
     )
-    .map_or(std::ptr::null_mut(), |entry| entry);
+    .map_or(std::ptr::null_mut(), |entry| &mut **entry.into_mut());
     let a_root = o;
     let mut a_keys = crate::src::options::options_array_iter(&*a_root)
         .map(|item| item.key.clone())
@@ -1388,7 +1388,7 @@ pub unsafe fn tty_term_create(
         &mut *(global_options),
         std::ffi::CStr::from_ptr(c"terminal-features".as_ptr()),
     )
-    .map_or(std::ptr::null_mut(), |entry| entry);
+    .map_or(std::ptr::null_mut(), |entry| &mut **entry.into_mut());
     let a_root = o;
     let mut a_keys = crate::src::options::options_array_iter(&*a_root)
         .map(|item| item.key.clone())

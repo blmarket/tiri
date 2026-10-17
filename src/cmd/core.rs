@@ -278,7 +278,7 @@ pub unsafe fn cmd_get_alias(name: &CStr) -> Option<CString> {
         &mut *(global_options),
         std::ffi::CStr::from_ptr(c"command-alias".as_ptr()),
     )
-    .map_or(std::ptr::null_mut(), |entry| entry);
+    .map_or(std::ptr::null_mut(), |entry| &mut **entry.into_mut());
     if o.is_null() {
         return None;
     }

@@ -1008,17 +1008,11 @@ pub(super) unsafe fn format_add_window_neighbour(
         .window_handle()
         .expect("neighbour window")
         .with_options_mut(|root| {
-            let names = crate::src::options::options_iter(root)
-                .filter(|entry| entry.name.to_bytes().first() == Some(&b'@'))
-                .map(|entry| entry.name.clone())
-                .collect::<Vec<_>>();
-            names
-                .into_iter()
-                .map(|name| {
-                    let entry = crate::src::options::options_get_only_mut(root, &name)
-                        .expect("enumerated option");
+            crate::src::options::options_iter(root)
+                .filter(|(name, _)| name.to_bytes().first() == Some(&b'@'))
+                .map(|(name, entry)| {
                     let value = options_to_cstring(entry, nullable_cstr(std::ptr::null()), 1);
-                    (name, value)
+                    (name.to_owned(), value)
                 })
                 .collect::<Vec<_>>()
         });
@@ -1225,12 +1219,14 @@ pub(super) unsafe fn format_loop_panes(
 }
 
 unsafe fn format_option_loop_values(
-    option: &mut options_entry,
+    mut occupied: crate::src::options::options_occupied<'_>,
     array_key: Option<&CStr>,
     count: u_int,
     index: u_int,
     last_option: bool,
 ) -> Vec<(&'static CStr, CString)> {
+    let name = occupied.key().clone();
+    let option = &mut **occupied.get_mut();
     let is_array = options_is_array(option) != 0;
     let is_hook = option
         .tableentry_ptr()
@@ -1252,7 +1248,7 @@ unsafe fn format_option_loop_values(
     };
     let number = |value: u_int| CString::new(value.to_string()).expect("integer format");
     vec![
-        (c"option_name", option.name.clone()),
+        (c"option_name", name),
         (c"option_value", options_to_cstring(option, array_key, 0)),
         (c"option_is_array", number(u32::from(is_array))),
         (c"option_array_key", key.to_owned()),
@@ -1368,14 +1364,15 @@ pub(super) unsafe fn format_loop_options(
     };
     let mut names = Vec::new();
     access(&mut |options| {
-        names.extend(crate::src::options::options_iter(options).map(|entry| entry.name.clone()))
+        names.extend(crate::src::options::options_iter(options).map(|(name, _)| name.to_owned()))
     });
     let mut buffer = Vec::new();
     let mut index: u_int = 0;
     for name in names {
         let mut keys = None;
         access(&mut |options| {
-            if let Some(entry) = crate::src::options::options_get_only_mut(options, &name) {
+            if let Some(mut entry) = crate::src::options::options_get_only_mut(options, &name) {
+                let entry = &mut **entry.get_mut();
                 keys = Some(if options_is_array(entry) != 0 {
                     crate::src::options::options_array_iter(entry)
                         .map(|item| item.key.clone())
@@ -1391,9 +1388,9 @@ pub(super) unsafe fn format_loop_options(
             let mut values = None;
             access(&mut |options| {
                 let last_option = !crate::src::options::options_iter(options)
-                    .any(|entry| entry.name.as_bytes() > name.as_bytes());
+                    .any(|(other, _)| other > name.as_c_str());
                 values = crate::src::options::options_get_only_mut(options, &name)
-                    .map(|entry| format_option_loop_values(entry, None, 0, index, last_option));
+                    .map(|occupied| format_option_loop_values(occupied, None, 0, index, last_option));
             });
             if let Some(values) = values {
                 format_loop_emit_option(es, fmt, &mut buffer, values);
@@ -1404,11 +1401,11 @@ pub(super) unsafe fn format_loop_options(
                 let mut values = None;
                 access(&mut |options| {
                     let last_option = !crate::src::options::options_iter(options)
-                        .any(|entry| entry.name.as_bytes() > name.as_bytes());
-                    if let Some(entry) = crate::src::options::options_get_only_mut(options, &name) {
-                        if crate::src::options::options_array_get(entry, &key).is_some() {
+                        .any(|(other, _)| other > name.as_c_str());
+                    if let Some(occupied) = crate::src::options::options_get_only_mut(options, &name) {
+                        if crate::src::options::options_array_get(occupied.get(), &key).is_some() {
                             values = Some(format_option_loop_values(
-                                entry,
+                                occupied,
                                 Some(&key),
                                 count,
                                 index,

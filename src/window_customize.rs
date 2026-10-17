@@ -515,13 +515,13 @@ unsafe fn window_customize_write_hook_fire(
     mut sx: u_int,
     mut sy: u_int,
     owner: &OptionsScope,
-    option: *mut options_entry,
+    name: &CStr,
 ) -> ::core::ffi::c_int {
-    let Some((fire_count, fire_time)) = owner.with_entry(&(*option).name, |entry| {
+    let Some((fire_count, fire_time)) = owner.with_entry(name, |entry| {
         if entry.monitor_data.is_some() {
             (
-                hooks_monitor_get_fire_count(entry),
-                hooks_monitor_get_fire_time(entry),
+                hooks_monitor_get_fire_count(name, entry),
+                hooks_monitor_get_fire_time(name, entry),
             )
         } else {
             (options_get_fire_count(entry), options_get_fire_time(entry))
@@ -751,7 +751,7 @@ unsafe fn window_customize_set_option_value(
             key.clone()
         } else {
             let index = owner
-                .with_entry(&(*option).name, |entry| {
+                .with_entry(name, |entry| {
                     let mut index = 0_u32;
                     while index < INT_MAX as u32 && options_array_get_index(entry, index).is_some()
                     {
@@ -762,7 +762,7 @@ unsafe fn window_customize_set_option_value(
                 .expect("array entry remains live");
             CString::new(index.to_string()).expect("decimal array index")
         };
-        owner.set_array_item(&(*option).name, &key, value, false)
+        owner.set_array_item(name, &key, value, false)
     } else {
         scope.set_from_string((*option).tableentry, name, value, false)
     };
@@ -865,6 +865,7 @@ unsafe fn window_customize_set_environment_value(item: &window_customize_itemdat
 }
 unsafe fn window_customize_option_is_changed(
     owner: &OptionsScope,
+    name: &CStr,
     option: *mut options_entry,
     key: Option<&CStr>,
 ) -> ::core::ffi::c_int {
@@ -872,15 +873,14 @@ unsafe fn window_customize_option_is_changed(
         return 1;
     };
     if (*option).monitor_data.is_some()
-        || ((*option).name.as_bytes().first() == Some(&b'@')
-            && hooks_is_event(&((*option).name)) != 0)
+        || (name.to_bytes().first() == Some(&b'@') && hooks_is_event(name) != 0)
     {
         return 1;
     }
     if definition.flags & OPTIONS_TABLE_IS_ARRAY != 0 {
         let mut defaults_owner = options_create(None);
         let defaults = options_default(&mut *defaults_owner, definition);
-        let current = owner.with_entry(&(*option).name, |entry| {
+        let current = owner.with_entry(name, |entry| {
             let present = key.is_none_or(|key| options_array_get(entry, key).is_some());
             (present, options_to_cstring(entry, key, 0))
         });
@@ -917,12 +917,11 @@ unsafe fn window_customize_build_array(
     top: &ModeTreeItemRef,
     scope: window_customize_scope,
     owner: &OptionsScope,
-    option: *mut options_entry,
+    option_name: &CStr,
     ft: *mut format_tree,
 ) -> u_int {
     let data = mode_owner.get();
-    let option_name = (*option).name.clone();
-    let Some(keys) = owner.with_entry(&(*option).name, |entry| {
+    let Some(keys) = owner.with_entry(option_name, |entry| {
         crate::src::options::options_array_iter(entry)
             .map(|item| item.key.clone())
             .collect::<Vec<_>>()
@@ -931,28 +930,28 @@ unsafe fn window_customize_build_array(
     };
     let mut count = 0_u32;
     for key in keys {
-        let Some((_, option)) = window_customize_find_option(owner, &option_name) else {
+        let Some((_, option)) = window_customize_find_option(owner, option_name) else {
             break;
         };
-        let exists = owner.with_entry(&(*option).name, |entry| {
+        let exists = owner.with_entry(option_name, |entry| {
             options_array_get(entry, &key).is_some()
         });
         if exists != Some(true) {
             break;
         }
         if (*data).hide_default != 0
-            && window_customize_option_is_changed(owner, option, Some(&key)) == 0
+            && window_customize_option_is_changed(owner, option_name, option, Some(&key)) == 0
         {
             continue;
         }
-        let Some(Some((id, value))) = owner.with_entry(&(*option).name, |entry| {
+        let Some(Some((id, value))) = owner.with_entry(option_name, |entry| {
             crate::src::options::options_array_iter(entry)
                 .find(|item| item.key == key)
                 .map(|item| (item.id(), options_to_cstring(entry, Some(&*key), 0)))
         }) else {
             break;
         };
-        let mut name = (*option).name.as_bytes().to_vec();
+        let mut name = option_name.to_bytes().to_vec();
         name.push(b'[');
         name.extend_from_slice(key.as_bytes());
         name.push(b']');
@@ -973,7 +972,7 @@ unsafe fn window_customize_build_array(
                 },
                 scope,
                 oo: Some(owner.clone()),
-                name: Some((*option).name.clone()),
+                name: Some(option_name.to_owned()),
                 array_key: Some(key),
                 ..window_customize_itemdata::new()
             },
@@ -998,6 +997,7 @@ unsafe fn window_customize_build_option(
     top: &ModeTreeItemRef,
     mut scope: window_customize_scope,
     owner: &OptionsScope,
+    name_owner: &CStr,
     option: *mut options_entry,
     mut ft: *mut format_tree,
     filter: Option<&CStr>,
@@ -1009,7 +1009,6 @@ unsafe fn window_customize_build_option(
     let oe = (*option).tableentry.map_or(std::ptr::null(), |entry| {
         entry as *const options_table_entry
     });
-    let name_owner = (*option).name.clone();
     let name = name_owner.as_ptr();
     let mut global: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut array: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -1053,7 +1052,7 @@ unsafe fn window_customize_build_option(
     if (*data).hide_global != 0 && global != 0 {
         return 0 as u_int;
     }
-    if (*data).hide_default != 0 && window_customize_option_is_changed(owner, option, None) == 0 {
+    if (*data).hide_default != 0 && window_customize_option_is_changed(owner, name_owner, option, None) == 0 {
         return 0 as u_int;
     }
     format_add(ft, c"option_name", |out| {
@@ -1080,7 +1079,7 @@ unsafe fn window_customize_build_option(
         format_add(ft, c"option_unit", |out| write_cstr(out, c""));
     }
     if is_monitor != 0 {
-        if let Some(monitor) = hooks_monitor_to_cstring(option) {
+        if let Some(monitor) = hooks_monitor_to_cstring(name_owner, option) {
             format_add(ft, c"option_monitor", |out| write_cstr(out, &*monitor));
         } else {
             format_add(ft, c"option_monitor", |out| write_cstr(out, c""));
@@ -1098,7 +1097,7 @@ unsafe fn window_customize_build_option(
             return 0 as u_int;
         }
     }
-    let Some((_, option)) = window_customize_find_option(owner, &name_owner) else {
+    let Some((_, option)) = window_customize_find_option(owner, name_owner) else {
         return 0;
     };
     let tag = window_customize_option_tag(&*option);
@@ -1127,13 +1126,13 @@ unsafe fn window_customize_build_option(
         return 1 as u_int;
     }
     (1 as u_int).wrapping_add(window_customize_build_array(
-        mode_owner, &top, scope, owner, option, ft,
+        mode_owner, &top, scope, owner, name_owner, ft,
     ))
 }
 unsafe fn window_customize_find_user_options(scope: &OptionsScope, list: &mut Vec<CString>) {
     let names = scope.with_local(|table| {
         crate::src::options::options_iter(table)
-            .map(|entry| entry.name.clone())
+            .map(|(name, _)| name.to_owned())
             .collect::<Vec<_>>()
     });
     for name in names {
@@ -1205,6 +1204,7 @@ unsafe fn window_customize_build_options(
             &top,
             scope_for(&owner),
             &owner,
+            &name,
             option,
             ft,
             filter,
@@ -1214,7 +1214,7 @@ unsafe fn window_customize_build_options(
     }
     let names = oo0.with_local(|table| {
         crate::src::options::options_iter(table)
-            .map(|entry| entry.name.clone())
+            .map(|(name, _)| name.to_owned())
             .collect::<Vec<_>>()
     });
     for name in names {
@@ -1233,6 +1233,7 @@ unsafe fn window_customize_build_options(
             &top,
             scope_for(&owner),
             &owner,
+            &name,
             option,
             ft,
             filter,
@@ -1960,7 +1961,7 @@ unsafe fn window_customize_draw_option(
             match current_block {
                 4086289836260337793 => {}
                 _ => {
-                    if let Some(monitor) = hooks_monitor_to_cstring(option) {
+                    if let Some(monitor) = hooks_monitor_to_cstring(CStr::from_ptr(name), option) {
                         if window_customize_write_value(
                             ctx,
                             cx,
@@ -2002,7 +2003,7 @@ unsafe fn window_customize_draw_option(
                                                 sx,
                                                 sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
                                                 &owner,
-                                                option,
+                                                CStr::from_ptr(name),
                                             );
                                             current_block = 4086289836260337793;
                                         }
@@ -2099,7 +2100,7 @@ unsafe fn window_customize_draw_option(
                                                     sx,
                                                     sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
                                                     &owner,
-                                                    option,
+                                                    CStr::from_ptr(name),
                                                 ) == 0)
                                             {
                                                 current_block = 4086289836260337793;

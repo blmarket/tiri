@@ -242,21 +242,18 @@ impl OptionsScope {
         name: &CStr,
         cleanup: impl FnOnce(Option<Box<crate::src::hooks::hooks_monitor>>),
     ) -> bool {
-        let Some((identity, canonical_name, monitor)) = self.with_entry(name, |entry| {
+        let Some((identity, monitor)) = self.with_entry(name, |entry| {
             options_array_clear(entry);
             options_value_free(&mut entry.value);
-            (entry.id(), entry.name.clone(), entry.monitor_data.take())
+            (entry.id(), entry.monitor_data.take())
         }) else {
             return false;
         };
         cleanup(monitor);
         let removed = self.with_local(|table| {
-            if options_get_only(table, &canonical_name).is_some_and(|entry| entry.id() == identity)
-            {
-                table.tree.remove(&canonical_name)
-            } else {
-                None
-            }
+            options_get_only_mut(table, name)
+                .filter(|entry| entry.get().id() == identity)
+                .map(|entry| entry.remove())
         });
         drop(removed);
         true

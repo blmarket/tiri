@@ -40,6 +40,7 @@ use crate::src::tty::tty_invalidate;
 use crate::src::tty_keys::tty_keys_build;
 
 use crate::src::window::{windows, Window, WindowPane};
+use std::collections::btree_map;
 use std::ffi::{CStr, CString};
 
 mod mutation;
@@ -200,26 +201,29 @@ pub fn options_create(parent: Option<OptionsScope>) -> Box<options> {
 
 impl Drop for options {
     fn drop(&mut self) {
-        unsafe {
-            let names: Vec<_> = options_iter(self).map(|entry| entry.name.clone()).collect();
-            let oo: *mut options = self;
-            for name in names {
-                if let Some(entry) = options_get_only_mut(&mut *oo, &name) {
-                    options_remove(oo, entry);
-                }
+        let names: Vec<_> = self.tree.keys().cloned().collect();
+        for name in names {
+            if let Some(entry) = options_get_only_mut(self, &name) {
+                options_remove(entry);
             }
         }
     }
 }
 
-pub fn options_iter(oo: &options) -> impl DoubleEndedIterator<Item = &options_entry> {
-    oo.tree.values().map(Box::as_ref)
+/// A present option record together with its name, which the tree key owns.
+pub type options_occupied<'a> = btree_map::OccupiedEntry<'a, CString, Box<options_entry>>;
+
+pub fn options_iter(oo: &options) -> impl DoubleEndedIterator<Item = (&CStr, &options_entry)> {
+    oo.tree.iter().map(|(name, entry)| (name.as_c_str(), entry.as_ref()))
 }
 pub fn options_get_only<'a>(oo: &'a options, name: &CStr) -> Option<&'a options_entry> {
     oo.tree.get(name).map(Box::as_ref)
 }
-pub fn options_get_only_mut<'a>(oo: &'a mut options, name: &CStr) -> Option<&'a mut options_entry> {
-    oo.tree.get_mut(name).map(Box::as_mut)
+pub fn options_get_only_mut<'a>(oo: &'a mut options, name: &CStr) -> Option<options_occupied<'a>> {
+    match oo.tree.entry(name.to_owned()) {
+        btree_map::Entry::Occupied(entry) => Some(entry),
+        btree_map::Entry::Vacant(_) => None,
+    }
 }
 /// Read an entry synchronously, copying the result before an inherited table's
 /// guard is returned. The visitor must not reenter models or return observers.
@@ -320,16 +324,8 @@ pub(crate) unsafe fn options_default_to_cstring(oe: &options_table_entry) -> CSt
         }
     }
 }
-unsafe fn options_add(mut oo: *mut options, name: &CStr) -> *mut options_entry {
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let name = name.to_owned();
-    o = crate::src::options::options_get_only_mut(&mut *(oo), &name)
-        .map_or(std::ptr::null_mut(), |entry| entry);
-    if !o.is_null() {
-        options_remove(oo, o);
-    }
-    let mut owned = Box::new(options_entry {
-        name,
+unsafe fn options_add(oo: *mut options, name: &CStr) -> *mut options_entry {
+    let owned = Box::new(options_entry {
         tableentry: None,
         value: options_value::Empty,
         style: None,
@@ -337,16 +333,16 @@ unsafe fn options_add(mut oo: *mut options, name: &CStr) -> *mut options_entry {
         fire_count: 0,
         fire_time: 0,
     });
-    o = &raw mut *owned;
-    (*oo).tree.insert(owned.name.clone(), owned);
-    o
+    match (*oo).tree.entry(name.to_owned()) {
+        btree_map::Entry::Vacant(slot) => &mut **slot.insert(owned),
+        btree_map::Entry::Occupied(mut slot) => {
+            drop(slot.insert(owned));
+            &mut **slot.into_mut()
+        }
+    }
 }
-unsafe fn options_remove(oo: *mut options, o: *mut options_entry) {
-    let key = (*o).name.clone();
-    drop((*oo).tree.remove(&key));
-}
-pub fn options_name(o: &options_entry) -> &CStr {
-    &o.name
+fn options_remove(entry: options_occupied<'_>) {
+    drop(entry.remove());
 }
 pub fn options_get_monitor_data(
     o: &mut options_entry,
@@ -808,7 +804,7 @@ pub unsafe fn options_set_string(
     let mut separator: &'static CStr = c"";
     let formatted = format_message_with(write);
     o = crate::src::options::options_get_only_mut(&mut *(oo), name)
-        .map_or(std::ptr::null_mut(), |entry| entry);
+        .map_or(std::ptr::null_mut(), |entry| &mut **entry.into_mut());
     let value = if !o.is_null()
         && append != 0
         && ((*o)
@@ -875,7 +871,7 @@ pub unsafe fn options_set_number(
         });
     }
     o = crate::src::options::options_get_only_mut(&mut *(oo), name)
-        .map_or(std::ptr::null_mut(), |entry| entry);
+        .map_or(std::ptr::null_mut(), |entry| &mut **entry.into_mut());
     if o.is_null() {
         o = options_default(
             oo,
@@ -918,7 +914,7 @@ pub unsafe fn options_set_command(
         });
     }
     o = crate::src::options::options_get_only_mut(&mut *(oo), name)
-        .map_or(std::ptr::null_mut(), |entry| entry);
+        .map_or(std::ptr::null_mut(), |entry| &mut **entry.into_mut());
     if o.is_null() {
         o = options_default(
             oo,

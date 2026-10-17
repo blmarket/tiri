@@ -57,8 +57,8 @@ pub unsafe fn style_resolve_with_options(
     let mut resolved = None;
     let mut parent = None;
     access(&mut |root| {
-        if let Some(entry) = options_get_only_mut(root, key) {
-            resolved = style_snapshot(entry);
+        if let Some(mut entry) = options_get_only_mut(root, key) {
+            resolved = style_snapshot(entry.get_mut());
         } else {
             parent = root.parent.clone();
         }
@@ -121,7 +121,7 @@ unsafe fn style_parse_text(text: &CStr, colour: bool) -> Option<style> {
 mod tests {
     use super::*;
     use crate::src::format::format_add_owned_cb;
-    use crate::src::options::{options_create, options_set_string, OptionsScope};
+    use crate::src::options::{options_create, options_get_only, options_set_string, OptionsScope};
     use crate::src::tmux::{global_options, global_s_options, global_w_options};
     use std::cell::{Cell, RefCell};
     use std::ptr::NonNull;
@@ -139,7 +139,7 @@ mod tests {
         });
         EVALUATING.with(|slot| unsafe {
             let (parent, child, _) = slot.get();
-            let entry = options_get_only_mut(&mut *parent, c"@style").unwrap();
+            let entry = options_get_only(&*parent, c"@style").unwrap();
             assert!(entry.style.is_none(), "dynamic style text is never cached");
             options_set_string(child, c"@style", 0, |out| out.write_all(b"fg=blue"));
             (*child).parent = Some(OptionsScope::GlobalSession);
@@ -178,14 +178,14 @@ mod tests {
             assert!(EVALUATING.with(|slot| slot.get().2));
             assert_eq!(cell.fg, 1, "the in-flight inherited style resolves red");
             assert!(
-                options_get_only_mut(&mut parent, c"@style")
+                options_get_only(&parent, c"@style")
                     .unwrap()
                     .style
                     .is_none(),
                 "the expanded result is not cached on the resolved parent"
             );
             assert!(
-                options_get_only_mut(&mut globals, c"@style")
+                options_get_only(&globals, c"@style")
                     .unwrap()
                     .style
                     .is_none(),
@@ -202,7 +202,7 @@ mod tests {
                 "the next evaluation uses the new local override"
             );
             assert_eq!(
-                options_get_only_mut(&mut child, c"@style")
+                options_get_only(&child, c"@style")
                     .unwrap()
                     .style
                     .map(|style| style.gc.fg),

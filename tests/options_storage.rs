@@ -10,7 +10,7 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
         let mut oo_owner = options_create(None);
         let oo = &raw mut *oo_owner;
         let entry = options_set_string(oo, c"@bytes", 0, |out| write_cstr(out, c"\xff"));
-        let name = options_name(&*(entry));
+        let name = c"@bytes";
         let previous = (*entry)
             .value
             .string_ptr()
@@ -79,7 +79,7 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
         );
         assert_eq!(
             tiri::src::options::options_get_only_mut(&mut *(oo), definition.name.unwrap())
-                .map_or(std::ptr::null_mut(), |entry| entry),
+                .map_or(std::ptr::null_mut(), |entry| &mut **entry.into_mut()),
             default
         );
 
