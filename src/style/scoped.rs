@@ -67,7 +67,8 @@ pub unsafe fn style_resolve_with_options(
     if let Some(parent) = parent {
         if let Some(owner) = parent.resolve(key, false) {
             resolved = owner
-                .with_entry(key, |entry| style_snapshot(entry))
+                .entry(key)
+                .map(|entry| style_snapshot(entry))
                 .expect("resolved style entry remains live");
         }
     }

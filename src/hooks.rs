@@ -22,8 +22,7 @@ use crate::src::monitor::{
     monitor_add, monitor_create_session_owned, monitor_get_fire_count, monitor_get_fire_time,
 };
 use crate::src::options::{
-    options_get_monitor_data, options_hook_fired, options_local_entry, options_search,
-    options_set_string, OptionsScope,
+    options_get_monitor_data, options_hook_fired, options_search, options_set_string, OptionsScope,
 };
 use crate::src::options_table::options_table;
 use crate::src::shared::abi::*;
@@ -42,7 +41,6 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::{WindowRef, WindowWeak};
 use crate::src::window::WindowPane;
-use std::collections::btree_map::Entry;
 use std::ffi::{CStr, CString};
 
 #[derive(Default)]
@@ -176,7 +174,8 @@ unsafe fn hooks_insert(
         return;
     };
     source
-        .with_entry(name, |entry| options_hook_fired(entry))
+        .entry(name)
+        .map(|entry| options_hook_fired(entry))
         .expect("resolved hook");
     let mut event = item_handle.map(|item| cmdq_get_event(&*item.get()));
     let state = cmdq_new_state(
@@ -187,9 +186,8 @@ unsafe fn hooks_insert(
     cmdq_add_formats(&state, &mut *(*hd).formats);
     if name.to_bytes().starts_with(b"@") {
         let value = source
-            .with_entry(name, |entry| {
-                entry.value.string_ptr().expect("hook string").to_owned()
-            })
+            .entry(name)
+            .map(|entry| entry.value.string_ptr().expect("hook string").to_owned())
             .expect("resolved hook");
         let pr = hooks_parse(hd, &fs, &value);
         match pr.status {
@@ -205,7 +203,8 @@ unsafe fn hooks_insert(
         }
     } else {
         let keys = source
-            .with_entry(name, |entry| {
+            .entry(name)
+            .map(|entry| {
                 crate::src::options::options_array_iter(entry)
                     .map(|item| item.key.clone())
                     .collect::<Vec<_>>()
@@ -214,12 +213,9 @@ unsafe fn hooks_insert(
         for key in keys {
             if (*hd).expand != 0 {
                 let value = source
-                    .with_entry(name, |entry| {
-                        crate::src::options::options_array_get(entry, &key).map(|value| {
-                            value.string_ptr().expect("expanded hook string").to_owned()
-                        })
-                    })
-                    .flatten();
+                    .entry(name)
+                    .and_then(|entry| crate::src::options::options_array_get(entry, &key))
+                    .map(|value| value.string_ptr().expect("expanded hook string").to_owned());
                 let Some(value) = value else {
                     break;
                 };
@@ -244,11 +240,9 @@ unsafe fn hooks_insert(
                 }
             } else {
                 let commands = source
-                    .with_entry(name, |entry| {
-                        crate::src::options::options_array_get(entry, &key)
-                            .map(|value| value.commands().cloned())
-                    })
-                    .flatten();
+                    .entry(name)
+                    .and_then(|entry| crate::src::options::options_array_get(entry, &key))
+                    .map(|value| value.commands().cloned());
                 let Some(commands) = commands else {
                     break;
                 };
@@ -391,8 +385,8 @@ impl Drop for hooks_monitor {
 }
 pub unsafe fn hooks_monitor_remove(scope: &OptionsScope, name: &CStr) {
     let old = scope
-        .with_entry(name, |entry| entry.monitor_data.take())
-        .flatten();
+        .entry(name)
+        .and_then(|entry| entry.monitor_data.take());
     drop(old);
 }
 unsafe fn hooks_monitor_hook_cb(
@@ -406,7 +400,7 @@ unsafe fn hooks_monitor_hook_cb(
     {
         return;
     }
-    if scope.with_entry(name, |entry| {
+    if scope.entry(name).map(|entry| {
         entry
             .monitor_data
             .as_ref()
@@ -524,11 +518,9 @@ pub unsafe fn hooks_monitor_add(
     use std::sync::atomic::{AtomicUsize, Ordering};
     static NEXT_MONITOR: AtomicUsize = AtomicUsize::new(1);
     hooks_monitor_remove(scope, name);
-    scope.with_local(|table| {
-        if let Entry::Vacant(_) = options_local_entry(table, name) {
-            options_set_string(table, name, 0, |out| out.write_all(b""));
-        }
-    });
+    if scope.entry(name).is_none() {
+        options_set_string(scope.local(), name, 0, |out| out.write_all(b""));
+    }
     let generation = NEXT_MONITOR
         .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
         .expect("hook monitor identity exhausted");
@@ -553,11 +545,13 @@ pub unsafe fn hooks_monitor_add(
         }),
     );
     let previous = scope
-        .with_entry(name, |entry| entry.monitor_data.replace(owner))
+        .entry(name)
+        .map(|entry| entry.monitor_data.replace(owner))
         .expect("monitor option");
     drop(previous);
     let set = scope
-        .with_entry(name, |entry| {
+        .entry(name)
+        .map(|entry| {
             entry
                 .monitor_data
                 .as_ref()

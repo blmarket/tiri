@@ -326,7 +326,8 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
                 ctx.target = Default::default();
             }
             let line_format = format_owner
-                .with_entry(c"status-format", |entry| {
+                .entry(c"status-format")
+                .map(|entry| {
                     crate::src::options::options_array_get_index_mut(entry, i)
                         .map(|value| value.string_ptr().map(|text| text.to_owned()))
                 })

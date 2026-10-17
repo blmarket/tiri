@@ -147,7 +147,7 @@ unsafe fn options_parent_table_entry(
             out.write_all(b" not in parent options")
         })
     });
-    source.with_entry(name, |entry| entry.tableentry).flatten()
+    source.entry(name)?.tableentry
 }
 fn options_value_free(ov: &mut options_value) {
     *ov = options_value::Empty;
@@ -225,7 +225,7 @@ pub fn options_local_entry<'a>(
 
 /// Read an entry synchronously, copying the result before an inherited table's
 /// guard is returned. The visitor must not reenter models or return observers.
-/// Prefer OptionsScope::resolve/with_entry for work spanning callbacks.
+/// Prefer OptionsScope::resolve/entry for work spanning callbacks.
 pub unsafe fn options_read_entry<R>(
     table: &options,
     name: &CStr,
@@ -236,7 +236,7 @@ pub unsafe fn options_read_entry<R>(
     }
     let parent = table.parent.as_ref()?;
     let source = parent.resolve(name, false)?;
-    source.with_entry(name, |entry| read(entry))
+    source.entry(name).map(|entry| read(entry))
 }
 pub fn options_empty<'a>(
     oo: &'a mut options,

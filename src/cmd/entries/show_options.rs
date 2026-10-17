@@ -133,11 +133,9 @@ unsafe fn cmd_show_options_exec(
         }
         let selected = selected.expect("selected option scope");
         if monitor {
-            let names = selected.with_local(|options| {
-                options_iter(options)
-                    .map(|(name, _)| name.to_owned())
-                    .collect::<Vec<_>>()
-            });
+            let names = options_iter(selected.local())
+                .map(|(name, _)| name.to_owned())
+                .collect::<Vec<_>>();
             for name in names {
                 if !cmd_show_hooks_print_monitor(self_0.clone(), item_handle, &selected, &name) {
                     break;
@@ -250,7 +248,7 @@ unsafe fn cmd_show_options_print(
     suppress_empty_parent: bool,
 ) {
     if array_key.is_none() {
-        let Some(array) = scope.with_entry(name, |entry| {
+        let Some(array) = scope.entry(name).map(|entry| {
             (options_is_array(entry) != 0).then(|| {
                 (
                     entry.id(),
@@ -265,7 +263,7 @@ unsafe fn cmd_show_options_print(
         if let Some((identity, keys)) = array {
             if !keys.is_empty() {
                 for key in keys {
-                    let present = scope.with_entry(name, |entry| {
+                    let present = scope.entry(name).map(|entry| {
                         entry.id() == identity
                             && options_is_array(entry) != 0
                             && options_array_get(entry, &key).is_some()
@@ -294,7 +292,7 @@ unsafe fn cmd_show_options_print(
     let show_hooks = std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_show_hooks_entry);
     let mut ft_owner = format_create_from_target(item_handle);
     let ft = &raw mut *ft_owner;
-    let print = scope.with_entry(name, |entry| {
+    let print = scope.entry(name).map(|entry| {
         let is_array = options_is_array(entry);
         let has_value = array_key.is_some() || is_array == 0;
         if !has_value && template.is_none() && value_only != 0 {
@@ -377,7 +375,7 @@ unsafe fn cmd_show_hooks_print_monitor(
         .unwrap_or_else(|| SHOW_HOOKS_MONITOR_TEMPLATE.to_owned());
     let mut ft_owner = format_create_from_target(item_handle);
     let ft = &raw mut *ft_owner;
-    let print = scope.with_entry(name, |entry| {
+    let print = scope.entry(name).map(|entry| {
         let Some(value) = hooks_monitor_to_cstring(name, entry) else {
             return false;
         };
@@ -438,13 +436,11 @@ unsafe fn cmd_show_options_all(
     let args = cmd_get_args_mut(self_0.get_mut_unchecked()).expect("show options arguments");
     let include_hooks = args_has(args, b'H') != 0;
     let include_parent = args_has(args, b'A') != 0;
-    let names = selected.with_local(|options| {
-        options_iter(options)
-            .map(|(name, _)| name.to_owned())
-            .collect::<Vec<_>>()
-    });
+    let names = options_iter(selected.local())
+        .map(|(name, _)| name.to_owned())
+        .collect::<Vec<_>>();
     for name in names {
-        let Some((user, monitor)) = selected.with_entry(&name, |entry| {
+        let Some((user, monitor)) = selected.entry(&name).map(|entry| {
             (
                 options_table_entry(entry).is_none(),
                 options_get_monitor_data(entry).is_some(),
