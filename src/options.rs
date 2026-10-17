@@ -3,7 +3,6 @@ use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_list_print_cstring;
 use crate::src::cmd::parse::cmd_parse_from_string;
 use crate::src::compat::strtonum::strtonum;
-use crate::src::ffi::libc::strsep;
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
@@ -390,9 +389,6 @@ pub unsafe fn options_array_set(
     value: Option<&CStr>,
     append: bool,
 ) -> Result<(), CString> {
-    let mut value: *const ::core::ffi::c_char = value.map_or(std::ptr::null(), CStr::as_ptr);
-    let mut pr: cmd_parse_result = cmd_parse_result::empty();
-    let mut number: ::core::ffi::c_longlong = 0;
     if !(o
         .tableentry
         .is_some_and(|entry| entry.flags & OPTIONS_TABLE_IS_ARRAY != 0))
@@ -402,18 +398,15 @@ pub unsafe fn options_array_set(
     let Some(new_key) = options_array_correct_key(key) else {
         return Err(options_string_cause(c"bad array key: %s", &[key]));
     };
-    if value.is_null() {
+    let Some(value) = value else {
         let key = options_array_index(&new_key);
         o.value.array_storage().entries.remove(&key);
         return Ok(());
-    }
+    };
     if o.tableentry
         .is_some_and(|entry| entry.type_0 == OPTIONS_TABLE_COMMAND)
     {
-        pr = cmd_parse_from_string(
-            CStr::from_ptr(value),
-            ::core::ptr::null_mut::<cmd_parse_input>(),
-        );
+        let mut pr = cmd_parse_from_string(value, ::core::ptr::null_mut::<cmd_parse_input>());
         if pr.status as ::core::ffi::c_uint == 0 {
             return Err(pr.error.expect("command parse error"));
         }
@@ -430,13 +423,13 @@ pub unsafe fn options_array_set(
         let ov = options_array_get_mut(o, &new_key);
         let owned_value = if let Some(ov) = ov.as_ref().filter(|_| append) {
             let previous = ov.string_ptr().expect("string option").to_bytes();
-            let suffix = CStr::from_ptr(value).to_bytes();
+            let suffix = value.to_bytes();
             let mut bytes = Vec::with_capacity(previous.len() + suffix.len());
             bytes.extend_from_slice(previous);
             bytes.extend_from_slice(suffix);
             CString::new(bytes).expect("C string parts contain no NUL")
         } else {
-            CStr::from_ptr(value).to_owned()
+            value.to_owned()
         };
         let ov = match ov {
             Some(ov) => ov,
@@ -445,84 +438,50 @@ pub unsafe fn options_array_set(
         set_array_string(ov, owned_value);
         return Ok(());
     }
-    if o.tableentry.expect("table option").type_0 as ::core::ffi::c_uint
-        == OPTIONS_TABLE_COLOUR as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        number = colour_parse_cstr(std::ffi::CStr::from_ptr(value)).unwrap_or(-1)
-            as ::core::ffi::c_longlong;
-        if number == -(1 as ::core::ffi::c_int) as ::core::ffi::c_longlong {
-            return Err(options_string_cause(
-                c"bad colour: %s",
-                &[CStr::from_ptr(value)],
-            ));
-        }
+    if o.tableentry.expect("table option").type_0 == OPTIONS_TABLE_COLOUR {
+        let Some(number) = colour_parse_cstr(value) else {
+            return Err(options_string_cause(c"bad colour: %s", &[value]));
+        };
         let ov = match options_array_get_mut(o, &new_key) {
             Some(ov) => ov,
             None => options_array_new(o, &new_key),
         };
-        *ov = options_value::Number(number);
+        *ov = options_value::Number(number as ::core::ffi::c_longlong);
         return Ok(());
     }
     Err(c"wrong array type".to_owned())
 }
+fn options_array_next_free(o: &options_entry) -> u_int {
+    (0..UINT_MAX)
+        .find(|&i| options_array_get_index(o, i).is_none())
+        .unwrap_or(UINT_MAX)
+}
 pub unsafe fn options_array_assign(o: &mut options_entry, s: &CStr) -> Result<(), CString> {
-    let s: *const ::core::ffi::c_char = s.as_ptr();
-    let mut separator: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut i: u_int = 0;
-    separator = o
+    let separator = o
         .tableentry
         .expect("table option")
         .separator
-        .map_or(std::ptr::null(), CStr::as_ptr);
-    if separator.is_null() {
-        separator = c" ,".as_ptr();
-    }
-    if *separator as ::core::ffi::c_int == '\0' as i32 {
-        if *s as ::core::ffi::c_int == '\0' as i32 {
-            return Ok(());
-        }
-        i = 0 as u_int;
-        while i < UINT_MAX {
-            if crate::src::options::options_array_get_index_mut(o, i)
-                .map_or(std::ptr::null_mut(), |value| value)
-                .is_null()
-            {
-                break;
-            }
-            i = i.wrapping_add(1);
-        }
-        let key = format_message_with(|out| write!(out, "{}", i));
-        return options_array_set(o, &key, nullable_cstr(s), false);
-    }
-    if *s as ::core::ffi::c_int == '\0' as i32 {
+        .unwrap_or(c" ,")
+        .to_bytes();
+    if s.is_empty() {
         return Ok(());
     }
-    let mut copy = CStr::from_ptr(s).to_bytes_with_nul().to_vec();
-    let mut string = copy.as_mut_ptr().cast::<::core::ffi::c_char>();
-    loop {
-        next = strsep(&raw mut string, separator);
-        if next.is_null() {
-            break;
-        }
-        if *next as ::core::ffi::c_int == '\0' as i32 {
-            continue;
-        }
-        i = 0 as u_int;
-        while i < UINT_MAX {
-            if crate::src::options::options_array_get_index_mut(o, i)
-                .map_or(std::ptr::null_mut(), |value| value)
-                .is_null()
-            {
-                break;
-            }
-            i = i.wrapping_add(1);
-        }
+    if separator.is_empty() {
+        let key = format_message_with(|out| write!(out, "{}", options_array_next_free(o)));
+        return options_array_set(o, &key, Some(s), false);
+    }
+    for token in s
+        .to_bytes()
+        .split(|b| separator.contains(b))
+        .filter(|token| !token.is_empty())
+    {
+        let i = options_array_next_free(o);
         if i == UINT_MAX {
             break;
         }
         let key = format_message_with(|out| write!(out, "{}", i));
-        options_array_set(o, &key, nullable_cstr(next), false)?;
+        let token = CString::new(token).expect("substring of CStr contains no NUL");
+        options_array_set(o, &key, Some(&token), false)?;
     }
     Ok(())
 }
