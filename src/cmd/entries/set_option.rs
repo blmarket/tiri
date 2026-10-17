@@ -24,9 +24,7 @@ use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
 use crate::src::shared::monitor::{MONITOR_NOTIFY_TRUE, MONITOR_SESSION};
-use crate::src::shared::options::{
-    OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_NONE, OPTIONS_TABLE_WINDOW,
-};
+use crate::src::shared::options::{OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_WINDOW};
 use crate::src::shared::window::WindowRef;
 use crate::src::window::{Window, WindowPane};
 use std::ffi::{CStr, CString};
@@ -218,14 +216,10 @@ unsafe fn cmd_set_hook_monitor_exec(
         });
         return CMD_RETURN_ERROR;
     }
-    let mut selected = None;
-    let mut cause = None;
-    if options_scope_from_name(args, window, &name, target, &mut selected, &mut cause)
-        == OPTIONS_TABLE_NONE
-    {
-        return set_option_error(item_handle, cause.as_deref().expect("scope failure"));
-    }
-    let selected = selected.expect("selected monitor scope");
+    let selected = match options_scope_from_name(args, window, &name, &*target) {
+        Ok((_, selected)) => selected,
+        Err(cause) => return set_option_error(item_handle, &cause),
+    };
     let mut fs = cmd_find_state::default();
     fs.copy_from(target);
     if unsubscribe {
@@ -372,23 +366,11 @@ unsafe fn cmd_set_option_exec(
             value = Some(format_single_from_target_cstring(item_handle, old.as_ptr()));
         }
     }
-    let mut selected = None;
-    let mut cause = None;
-    let scope = options_scope_from_name(
-        args,
-        window,
-        &parsed.name,
-        target,
-        &mut selected,
-        &mut cause,
-    );
-    if scope == OPTIONS_TABLE_NONE {
-        if args_has(args, b'q') != 0 {
-            return CMD_RETURN_NORMAL;
-        }
-        return set_option_error(item_handle, cause.as_deref().expect("scope failure"));
-    }
-    let selected = selected.expect("selected option scope");
+    let (scope, selected) = match options_scope_from_name(args, window, &parsed.name, &*target) {
+        Ok(selected) => selected,
+        Err(_) if args_has(args, b'q') != 0 => return CMD_RETURN_NORMAL,
+        Err(cause) => return set_option_error(item_handle, &cause),
+    };
     let name = parsed.name.as_c_str();
     let array_key = parsed.array_key.as_deref();
     let user = name.to_bytes().starts_with(b"@");

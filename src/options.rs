@@ -46,15 +46,6 @@ mod mutation;
 mod scope;
 pub use scope::{OptionsBorrow, OptionsScope};
 
-macro_rules! store_options_cause {
-    ($cause:expr, $message:expr) => {{
-        let cause = $cause;
-        if !cause.is_null() {
-            *cause = Some($message);
-        }
-    }};
-}
-
 macro_rules! format_options_cause {
     ($cause:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {{
         let cause = $cause;
@@ -98,8 +89,8 @@ use crate::src::shared::options::{
     options_value, OptionCommand, OptionsArrayKey,
 };
 use crate::src::shared::options::{
-    OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_IS_COLOUR, OPTIONS_TABLE_IS_STYLE, OPTIONS_TABLE_NONE,
-    OPTIONS_TABLE_PANE, OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION, OPTIONS_TABLE_WINDOW,
+    OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_IS_COLOUR, OPTIONS_TABLE_IS_STYLE, OPTIONS_TABLE_PANE,
+    OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION, OPTIONS_TABLE_WINDOW,
 };
 use crate::src::shared::style::*;
 use crate::src::shared::tty::TTY_OPENED;
@@ -842,22 +833,18 @@ pub unsafe fn options_set_command<'a>(
     o.value = options_value::Command(OptionCommand(value));
     o
 }
+/// Select the options scope for `name`, returning the table kind and scope.
 pub unsafe fn options_scope_from_name(
     args: *mut args,
     window: i32,
     name: &CStr,
-    fs: *mut cmd_find_state,
-    out: *mut Option<OptionsScope>,
-    cause: *mut Option<CString>,
-) -> i32 {
-    let mut name: *const ::core::ffi::c_char = name.as_ptr();
-    let name = CStr::from_ptr(name);
+    fs: &cmd_find_state,
+) -> Result<(i32, OptionsScope), CString> {
     if name.to_bytes().starts_with(b"@") {
-        return options_scope_from_flags(args, window, fs, out, cause);
+        return options_scope_from_flags(args, window, fs);
     }
     let Some(definition) = options_table.iter().find(|entry| entry.name == Some(name)) else {
-        store_options_cause!(cause, options_string_cause(c"unknown option: %s", &[name]));
-        return OPTIONS_TABLE_NONE;
+        return Err(options_string_cause(c"unknown option: %s", &[name]));
     };
     let kind = if definition.scope == OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE {
         if args_has(args, b'p') != 0 {
@@ -868,15 +855,13 @@ pub unsafe fn options_scope_from_name(
     } else {
         definition.scope
     };
-    options_select_scope(args, &*fs, kind, out, cause)
+    options_select_scope(args, fs, kind)
 }
 pub unsafe fn options_scope_from_flags(
     args: *mut args,
     window: i32,
-    fs: *mut cmd_find_state,
-    out: *mut Option<OptionsScope>,
-    cause: *mut Option<CString>,
-) -> i32 {
+    fs: &cmd_find_state,
+) -> Result<(i32, OptionsScope), CString> {
     let kind = if args_has(args, b's') != 0 {
         OPTIONS_TABLE_SERVER
     } else if args_has(args, b'p') != 0 {
@@ -886,15 +871,13 @@ pub unsafe fn options_scope_from_flags(
     } else {
         OPTIONS_TABLE_SESSION
     };
-    options_select_scope(args, &*fs, kind, out, cause)
+    options_select_scope(args, fs, kind)
 }
 unsafe fn options_select_scope(
     args: *mut args,
     fs: &cmd_find_state,
     kind: i32,
-    out: *mut Option<OptionsScope>,
-    cause: *mut Option<CString>,
-) -> i32 {
+) -> Result<(i32, OptionsScope), CString> {
     let global = args_has(args, b'g') != 0;
     let (scope, noun) = match kind {
         OPTIONS_TABLE_SERVER => (Some(OptionsScope::GlobalServer), c"server"),
@@ -921,11 +904,10 @@ unsafe fn options_select_scope(
             (fs.wp.strong_count() != 0).then(|| OptionsScope::Pane(fs.wp.clone())),
             c"pane",
         ),
-        _ => return OPTIONS_TABLE_NONE,
+        _ => unreachable!("unknown option scope kind"),
     };
     if let Some(scope) = scope {
-        *out = Some(scope);
-        return kind;
+        return Ok((kind, scope));
     }
     let target = args_get(&*args, b't');
     let diagnostic = if let Some(target) = target {
@@ -939,8 +921,7 @@ unsafe fn options_select_scope(
         bytes.extend_from_slice(noun.to_bytes());
         CString::new(bytes).unwrap()
     };
-    store_options_cause!(cause, diagnostic);
-    OPTIONS_TABLE_NONE
+    Err(diagnostic)
 }
 /// Legacy detached/global-table adapter. Model callers must use the scoped
 /// evaluator so no component borrow is held through format expansion.

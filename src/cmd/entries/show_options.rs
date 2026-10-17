@@ -27,7 +27,7 @@ use crate::src::shared::format::format_tree;
 use crate::src::shared::monitor::{
     MONITOR_ALL_PANES, MONITOR_ALL_WINDOWS, MONITOR_PANE, MONITOR_SESSION, MONITOR_WINDOW,
 };
-use crate::src::shared::options::{OPTIONS_TABLE_IS_HOOK, OPTIONS_TABLE_NONE};
+use crate::src::shared::options::OPTIONS_TABLE_IS_HOOK;
 use std::ffi::{CStr, CString};
 use std::time::{Duration, UNIX_EPOCH};
 
@@ -124,14 +124,11 @@ unsafe fn cmd_show_options_exec(
     let show_hooks = std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_show_hooks_entry);
     let monitor = show_hooks && args_has(args, b'B') != 0;
     let quiet = args_has(args, b'q') != 0;
-    let mut selected = None;
-    let mut cause = None;
     if args_count(args) == 0 {
-        let scope = options_scope_from_flags(args, window, target, &mut selected, &mut cause);
-        if scope == OPTIONS_TABLE_NONE {
-            return show_options_scope_error(item_handle, quiet, cause.as_deref());
-        }
-        let selected = selected.expect("selected option scope");
+        let (scope, selected) = match options_scope_from_flags(args, window, &*target) {
+            Ok(selected) => selected,
+            Err(cause) => return show_options_scope_error(item_handle, quiet, &cause),
+        };
         if monitor {
             let names = options_iter(&selected.local())
                 .map(|(name, _)| name.to_owned())
@@ -171,18 +168,10 @@ unsafe fn cmd_show_options_exec(
             return CMD_RETURN_ERROR;
         }
     };
-    let scope = options_scope_from_name(
-        args,
-        window,
-        &parsed.name,
-        target,
-        &mut selected,
-        &mut cause,
-    );
-    if scope == OPTIONS_TABLE_NONE {
-        return show_options_scope_error(item_handle, quiet, cause.as_deref());
-    }
-    let selected = selected.expect("selected option scope");
+    let selected = match options_scope_from_name(args, window, &parsed.name, &*target) {
+        Ok((_, selected)) => selected,
+        Err(cause) => return show_options_scope_error(item_handle, quiet, &cause),
+    };
     let resolved = show_options_resolve(&selected, &parsed.name, args_has(args, b'A') != 0);
     let Some((resolved, parent)) = resolved else {
         if parsed.name.as_bytes().first() == Some(&b'@') && !quiet {
@@ -213,12 +202,12 @@ unsafe fn cmd_show_options_exec(
 unsafe fn show_options_scope_error(
     item: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     quiet: bool,
-    cause: Option<&CStr>,
+    cause: &CStr,
 ) -> cmd_retval {
     if quiet {
         return CMD_RETURN_NORMAL;
     }
-    cmdq_error(item, |out| write_cstr(out, cause.expect("scope failure")));
+    cmdq_error(item, |out| write_cstr(out, cause));
     CMD_RETURN_ERROR
 }
 
