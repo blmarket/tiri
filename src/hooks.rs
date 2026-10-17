@@ -75,7 +75,6 @@ pub struct hooks_data<'a> {
 }
 #[repr(C)]
 pub struct hooks_monitor {
-    // Callbacks identify this record by owner, option name and generation.
     pub generation: usize,
     pub set: Option<refbox::RefBox<monitor_set>>,
     pub sink: EventSinkId,
@@ -393,7 +392,6 @@ pub unsafe fn hooks_monitor_remove(scope: &OptionsScope, name: &CStr) {
     let old = scope
         .with_entry(name, |entry| entry.monitor_data.take())
         .flatten();
-    // Monitor destruction can release a Session; no model borrow remains here.
     drop(old);
 }
 unsafe fn hooks_monitor_hook_cb(
@@ -507,7 +505,6 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, fallback: &cmd_find_state, g
             );
         }
     }
-    // Payload construction has finished reading the link. Dispatch may unlink it.
     event_payload_set_target(&mut ep, &fs);
     events_fire(change.name, ep);
     drop(session_owner);
@@ -570,7 +567,6 @@ pub unsafe fn hooks_monitor_add(
                 .downgrade()
         })
         .expect("monitor option");
-    // The option keeps sole ownership; only a weak observer leaves its borrow.
     monitor_add(&set, name, type_0, id, format, flags);
 }
 pub(crate) unsafe fn hooks_monitor_to_cstring(o: *mut options_entry) -> Option<CString> {

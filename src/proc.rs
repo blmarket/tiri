@@ -51,7 +51,6 @@ unsafe fn proc_dispatch(peer: *mut tmuxpeer, message: PeerMessage<'_>) -> bool {
     }
 }
 unsafe fn proc_disconnect(peer: *mut tmuxpeer) {
-    // Cancel observers and release queued FDs before dispatch can remove the peer.
     (*peer).flags |= PEER_BAD;
     drop((*peer).io_task.take());
     imsgbuf_clear(&mut (*peer).ibuf);
@@ -129,9 +128,6 @@ unsafe fn proc_update_io(peer: *mut tmuxpeer) {
                 let mut input = vec![0; 65536];
                 let buffers = [std::io::IoSlice::new(&output)];
                 let completion = {
-                    // SAFETY: only this task drains the queue. Explicit cleanup
-                    // cancels a parked task before closing queued descriptors.
-                    // End this borrow before dispatch or draining the queue.
                     let fd = raw_fd.map(|raw| unsafe { std::os::fd::BorrowedFd::borrow_raw(raw) });
                     let mut reader = pin!(source.read(&mut input));
                     let mut writer = pin!(source.write(&buffers, fd));
@@ -166,8 +162,6 @@ unsafe fn proc_update_io(peer: *mut tmuxpeer) {
                         Completion::Write(Err(error))
                             if error.raw_os_error() == Some(libc::ENOBUFS) =>
                         {
-                            // This resource shortage is transient but not a
-                            // readiness transition. Retry without a busy loop.
                             tiri_rt::mio::Sleep::new(
                                 std::time::Instant::now() + std::time::Duration::from_millis(1),
                             )
@@ -185,8 +179,6 @@ unsafe fn proc_update_io(peer: *mut tmuxpeer) {
                     }
                     proc_update_io(peer);
                 }
-                // Dispatch can remove the peer or replace this task. Cancellation
-                // must take effect before the next access to the model.
                 reactor::yield_now().await;
             }
         })
@@ -288,8 +280,6 @@ impl Drop for tmuxproc {
     fn drop(&mut self) {
         unsafe {
             proc_clear_signals(self, 0);
-            // Remove through the owner, not a peer's parent back-pointer: that
-            // pointer predates this unique borrow and must not mutate it.
             while let Some(peer) = self.peers.pop() {
                 proc_free_peer(peer);
             }
@@ -325,7 +315,6 @@ pub unsafe fn proc_loop(
     reactor::shutdown_runtime(runtime);
 }
 pub unsafe fn proc_exit(tp: *mut tmuxproc) {
-    // The loop continues driving queued writes before returning to teardown.
     (*tp).exit = 1;
 }
 pub unsafe fn proc_set_signals(
@@ -375,8 +364,6 @@ pub unsafe fn proc_clear_signals(mut tp: *mut tmuxproc, mut defaults: ::core::ff
     sigaction(SIGTSTP, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
     drop((*tp).signal_task.take());
     if defaults != 0 {
-        // Pre-exec cleanup may run inside a runtime callback. The runtime
-        // remains borrowed until exec replaces the process. Reset signals here.
         sigaction(SIGINT, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
         sigaction(SIGQUIT, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
         sigaction(SIGHUP, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
@@ -525,7 +512,6 @@ mod ownership_tests {
     #[test]
     fn rejected_messages_close_the_transferred_descriptor() {
         use std::io::Read;
-        // A bad peer, and a message too large to compose.
         for (flags, len) in [(PEER_BAD, 0), (0, MAX_IMSGSIZE as usize)] {
             let mut peer = tmuxpeer {
                 flags,

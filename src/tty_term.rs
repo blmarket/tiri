@@ -41,8 +41,6 @@ struct TerminalRegistration {
     identity: std::rc::Weak<()>,
 }
 
-// Registration order is newest first. These observations never project into a
-// Client component; reporting reacquires that Client's terminal guard instead.
 static mut tty_terms: Vec<TerminalRegistration> = Vec::new();
 
 pub(crate) struct TerminalDescription {
@@ -56,9 +54,6 @@ pub(crate) unsafe fn tty_term_descriptions(
     target: Option<&ClientRef>,
 ) -> impl Iterator<Item = TerminalDescription> {
     let target = target.map(std::rc::Rc::downgrade);
-    // New registrations are always prepended, so the old intrusive traversal
-    // would not visit them after starting either. Removed entries are skipped
-    // as they are reached, and descriptions are copied only at that point.
     tty_terms
         .clone()
         .into_iter()
@@ -1109,8 +1104,6 @@ unsafe fn tty_term_override_value(source: &CStr) -> CString {
     if strunvis(decoded.as_mut_ptr().cast(), source.as_ptr()) == -1 {
         return source.to_owned();
     }
-    // strunvis may decode an escape to NUL. The old C string consumers saw
-    // only the prefix through that byte, including when storing the value.
     decoded.truncate(strlen(decoded.as_ptr().cast()) + 1);
     CString::from_vec_with_nul(decoded).expect("strunvis terminates its output")
 }
@@ -1145,8 +1138,6 @@ pub unsafe fn tty_term_apply(
         } else {
             Some(CString::default())
         };
-        // The pointer only borrows the loop-local owner during logging and
-        // capability updates. Removed capabilities never inspect it.
         let value = value.as_ref().map_or(::core::ptr::null(), |v| v.as_ptr());
         if quiet == 0 {
             if remove != 0 {
@@ -1326,7 +1317,6 @@ pub unsafe fn tty_term_create(
         "adding term {}",
         log_cstr(CStr::from_ptr(name))
     ));
-    // Register identity before validation; failure and explicit free retire it.
     let mut owner = Box::new(tty_term {
         name: CStr::from_ptr(name).to_owned(),
         applied_features: 0,
@@ -1488,8 +1478,6 @@ pub unsafe fn tty_term_create(
 
 impl Drop for tty_term {
     fn drop(&mut self) {
-        // Empty/test terminals are unregistered. Constructor failure follows
-        // the same retirement path as an ordinary drop.
         if !self.registered {
             return;
         }
@@ -1781,7 +1769,6 @@ mod term_string_owner_tests {
             assert_eq!(CStr::from_ptr(first.as_ptr()), c"clear=left:right");
             assert_eq!(CStr::from_ptr(second.as_ptr()), c"bel=\xff");
 
-            // tmux rejects a decoded token at 8191 bytes without advancing.
             for (len, accepted) in [(8190, true), (8191, false), (8192, false)] {
                 let source = CString::new(format!("x:{}:next", "a".repeat(len))).unwrap();
                 let mut offset = 2;

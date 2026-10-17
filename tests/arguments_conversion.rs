@@ -106,7 +106,6 @@ fn positional_command_cache_survives_array_growth_and_copy() {
         count: core::ffi::c_uint,
     ) -> Result<core::ffi::c_uint, tiri::src::shared::arguments::ArgsParseError> {
         if count == 1 {
-            // Populate the positional cache while the value array still grows.
             args_string(args, 0);
         }
         Ok(ARGS_PARSE_COMMANDS)

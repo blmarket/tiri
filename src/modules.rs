@@ -23,7 +23,7 @@ pub mod compat {
     pub mod unvis;
     pub mod utf8proc;
     pub mod vis;
-} // mod compat
+}
 pub mod control;
 pub mod control_notify;
 pub mod environ;

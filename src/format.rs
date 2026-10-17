@@ -186,7 +186,6 @@ pub struct format_expand_state {
 
 impl Default for format_expand_state {
     fn default() -> Self {
-        // SAFETY: every field is an integer or a nullable pointer.
         unsafe { ::core::mem::zeroed() }
     }
 }

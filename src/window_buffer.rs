@@ -309,8 +309,6 @@ fn window_buffer_find(data: &[u8], find: &[u8], icase: bool) -> bool {
     data.windows(find.len()).any(|candidate| {
         if icase {
             candidate.iter().zip(find).all(|(&a, &b)| unsafe {
-                // C tolower follows the active locale; both inputs are
-                // unsigned bytes, including when the buffer is binary.
                 libc::tolower(i32::from(a)) == libc::tolower(i32::from(b))
             })
         } else {
@@ -661,8 +659,6 @@ unsafe fn window_buffer_start_edit(
         return;
     };
     let name = paste_buffer_name(&pb.borrow()).to_owned();
-    // The completion callback owns the record. Cancellation drops its capture;
-    // dispatch supplies editor identity without sharing the startup record.
     let ed = window_buffer_editdata {
         wp_id: mode_pane_owner.id(),
         name: Some(name),

@@ -67,7 +67,6 @@ fn ctrl_a_keys_drive_the_strip() {
     client.send(b"\x01f");
     wait_until("f again", || server.display("#{pane_width}") == "39");
 
-    // Uppercase moves the active pane where lowercase moved the focus.
     client.send(b"\x01H");
     wait_until("H", || ids(&server) == [panes[1].clone(), panes[0].clone()]);
     assert_eq!(server.display("#{pane_id}"), panes[1]);
@@ -75,7 +74,6 @@ fn ctrl_a_keys_drive_the_strip() {
     wait_until("L", || ids(&server) == panes);
     assert_eq!(server.display("#{pane_id}"), panes[1]);
 
-    // Space tiles the window; j and k select below and above.
     let first_width = || {
         server
             .success(&["display", "-p", "-t", &panes[0], "#{pane_width}"])
@@ -92,7 +90,6 @@ fn ctrl_a_keys_drive_the_strip() {
     client.send(b"\x01j");
     wait_until("j", || server.display("#{pane_id}") == below);
     server.success(&["kill-pane", "-t", &below]);
-    // Space steps through every layout back to the strip.
     for _ in 0..5 {
         client.send(b"\x01 ");
     }
@@ -141,7 +138,6 @@ fn ctrl_a_keys_mirror_the_prefix_table() {
     wait_until("Right", || server.display("#{pane_id}") == panes[1]);
 
     client.send(b"seq 100\n");
-    // Match the last output line, not the echoed "seq 100" command.
     wait_until("the output", || {
         server
             .success(&["capture-pane", "-p"])
@@ -188,7 +184,6 @@ fn configuration_overrides_the_ctrl_a_keys() {
     });
     assert_eq!(server.display("#{window_panes}"), "1");
 
-    // Without the root binding C-a is an ordinary key for the pane.
     server.success(&["unbind", "-n", "C-a"]);
     client.send(b"cat -v\n");
     wait_until("cat", || server.display("#{pane_current_command}") == "cat");

@@ -11,7 +11,6 @@ use std::time::Duration;
 use tiri_rt::{AsyncRead as _, AsyncWrite as _, Handle as _, Received, Runtime as _, mio};
 
 fn assert_closed(raw: RawFd) {
-    // SAFETY: F_GETFD only queries the descriptor number.
     assert_eq!(unsafe { libc::fcntl(raw, libc::F_GETFD) }, -1);
     assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::EBADF));
 }
@@ -119,7 +118,6 @@ fn registered_descriptor_closes_on_drop() {
     let source = mio::Io::new(fd.into()).unwrap();
     drop(source);
     assert_eq!(peer.read(&mut [0; 1]).unwrap(), 0);
-    // A deregistration attempted after close would report an error here.
     rt.poll(Some(Duration::ZERO)).unwrap();
 }
 
@@ -176,7 +174,6 @@ fn regular_file_io_preserves_offsets_eof_and_runtime_ownership() {
     let mut observer = file.try_clone().unwrap();
     let raw = file.as_raw_fd();
     let rt = mio::Runtime::new().unwrap();
-    // Regular files do not need O_NONBLOCK, which cannot prevent disk waits.
     let source = mio::Io::new(file.into()).unwrap();
     let mut context = Context::from_waker(Waker::noop());
     let fd = std::fs::File::open("/dev/null").unwrap();

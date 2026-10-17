@@ -18,7 +18,6 @@ pub use timers::Timer;
 
 /// Create a task-owned registration; no raw descriptor lookup survives this call.
 pub(crate) fn io(fd: BorrowedFd<'_>) -> std::io::Result<tiri_rt::mio::Io> {
-    // Retain the open file description through callback cancellation.
     let lease = fd.try_clone_to_owned()?;
     tiri_rt::mio::Io::new(lease)
 }
@@ -39,7 +38,6 @@ pub(crate) fn io_status(result: std::io::Result<()>) -> i32 {
 /// Taking ownership keeps shutdown outside an active runtime poll.
 pub fn shutdown_runtime(runtime: tiri_rt::mio::Runtime) {
     streams::clear();
-    // The runtime clears its current handle after destructors run.
     drop(runtime);
 }
 pub(crate) async fn yield_now() {

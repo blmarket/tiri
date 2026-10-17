@@ -160,7 +160,6 @@ pub(crate) unsafe fn prepare_respawn_window(
             .upgrade()
             .expect("respawn window has a pane");
         (*sc).wp0 = std::rc::Rc::downgrade(&source_pane_owner);
-        // The window keeps only the source pane, and selects it.
         let rest = window
             .pane_snapshot()
             .iter()
@@ -211,8 +210,6 @@ pub(crate) unsafe fn spawn_editor_fdopen(fd_owner: OwnedFd) -> *mut FILE {
     let mode: &CStr = c"w";
     let file = fdopen(fd_owner.as_raw_fd(), mode.as_ptr());
     if file.is_null() {
-        // Keep the fdopen errno available to the caller while the Rust owner
-        // closes the descriptor on this failure path.
         let fdopen_errno = *__errno_location();
         drop(fd_owner);
         *__errno_location() = fdopen_errno;
@@ -281,8 +278,6 @@ pub(crate) unsafe fn spawn_editor(
         drop(stream);
         let mut owner = spawn_editor_state::new(CStr::from_ptr(path.as_ptr()).to_owned(), cb);
         es = &raw mut *owner;
-        // The editor runs in a temporary pane beside the active one; it
-        // closes when the editor exits and selection returns to that pane.
         let source = original_window
             .active_pane()
             .upgrade()
@@ -304,7 +299,6 @@ pub(crate) unsafe fn spawn_editor(
         sc.environ = Some(environ_create());
         sc.idx = -(1 as ::core::ffi::c_int);
         sc.cwd = Some(c"/tmp/".to_owned());
-        // A full strip or a failed spawn drops the owner, removing the file.
         let pane = <std::rc::Rc<std::cell::UnsafeCell<window_pane>> as WindowPane>::spawn_process(
             &mut sc, &mut None,
         )?;

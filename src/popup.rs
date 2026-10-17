@@ -125,8 +125,6 @@ impl popup_data {
     }
 }
 
-// The overlay solely owns popup state. Dispatch borrows through weak handles;
-// removing the owner invalidates observers while an active borrow defers Drop.
 pub(crate) struct PopupState {
     data: UnsafeCell<Box<popup_data>>,
 }
@@ -157,8 +155,6 @@ impl PopupHandle {
 }
 
 impl PopupGuard<'_> {
-    // The parser holds interior screen/input pointers. Project fields without
-    // creating a whole-popup mutable reference over those existing aliases.
     unsafe fn as_ptr(&self) -> *mut popup_data {
         Box::as_mut_ptr(&mut *self.state.data.get())
     }
@@ -202,8 +198,6 @@ pub const LEFT: C2RustUnnamed_40 = 1;
 impl Drop for popup_data {
     fn drop(&mut self) {
         unsafe {
-            // Startup failure never waits: popup_display's caller handles
-            // that error. A published overlay finishes its waiter once.
             if let Some(waiter) = self.waiter.take() {
                 waiter.finish(self.status);
             }
@@ -1207,13 +1201,11 @@ mod waiter_tests {
             let (waiter, head) = waiting_head(&owner, &ran);
             drop(published(waiter, 5));
             assert_eq!(clients::return_value(&owner), 5);
-            // Resumed inside the free; the queue moves on at its next pass.
             assert!(!ran.get());
             assert_eq!(cmdq_next(Some(&owner)), 1);
             assert!(head.upgrade().is_none());
             assert!(ran.get());
 
-            // The session is judged at free time.
             let (waiter, head) = waiting_head(&owner, &ran);
             let session = session_new_for_test();
             clients::attach(&owner, Some(&session));

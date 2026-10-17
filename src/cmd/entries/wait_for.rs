@@ -38,8 +38,6 @@ pub struct wait_channel {
 pub struct wait_channels {
     entries: std::collections::BTreeMap<std::ffi::CString, Box<wait_channel>>,
 }
-// The map owns each channel and its queues through this stable C-shaped
-// prefix. The name stays alive until the channel is removed.
 
 #[repr(C)]
 pub struct wait_event_item {
@@ -85,8 +83,6 @@ thread_local! {
         })
     };
 }
-// Callbacks run while these are iterated may change them, so callers re-read
-// through the pointer instead of holding a reference across a callback.
 fn wait_event_items_ptr() -> *mut Vec<wait_event_item> {
     WAIT_EVENT_ITEMS.with(UnsafeCell::get)
 }
@@ -117,13 +113,10 @@ fn wait_channels_insert(
 }
 
 fn wait_channels_remove(head: &mut wait_channels, elm: &wait_channel) -> Option<Box<wait_channel>> {
-    // elm lives inside the map; copy its name before unlinking it.
     let key = elm.name.clone();
     head.entries.remove(&key)
 }
 
-// Each channel is the first field of its boxed owner, so pointers handed to
-// the translated C routines can still find the Rust-owned queues.
 unsafe fn wait_channel_waiters(wc: *mut wait_channel) -> *mut Vec<CmdqWaiter> {
     &raw mut (*wc).waiters
 }
@@ -132,15 +125,12 @@ unsafe fn wait_channel_lockers(wc: *mut wait_channel) -> *mut Vec<CmdqWaiter> {
     &raw mut (*wc).lockers
 }
 
-// Resume and remove every queued waiter in order, front first.
 unsafe fn wait_items_continue_all(list: *mut Vec<CmdqWaiter>) {
     for waiter in std::mem::take(&mut *list) {
         waiter.resume();
     }
 }
 
-// Each event waiter belongs to exactly one waiting command item, so the item
-// identifies its entry without relying on the entry's address.
 fn wait_event_items_position(
     items: &[wait_event_item],
     item: &Weak<UnsafeCell<cmdq_item>>,
@@ -258,7 +248,6 @@ unsafe fn cmd_wait_for_event_cb(
     key: &Weak<UnsafeCell<cmdq_item>>,
 ) {
     let items = wait_event_items_ptr();
-    // The sink is removed together with its entry, so the entry is present.
     let Some(index) = wait_event_items_position(&*items, key) else {
         return;
     };
@@ -271,9 +260,6 @@ unsafe fn cmd_wait_for_event_cb(
     let queue_client = wei.waiter.client();
     let ep = &*payload;
     if verbose != 0 {
-        // Printing can enter view mode, whose events may re-enter this
-        // callback and resume the entry; neither the item nor the entry is
-        // held across it.
         cmd_wait_for_event_print(queue_client.as_ref(), ep);
         if wait_event_items_position(&*items, key).is_none() {
             return;
@@ -311,8 +297,6 @@ unsafe fn cmd_wait_for_event_cb(
 impl wait_event_item {
     unsafe fn resume(self) {
         self.waiter.resume();
-        // The rest of the entry, its sink included, drops here, after the
-        // resume, as tmux frees it after continuing the item.
     }
 }
 /// The entry's event sink, removed when the entry is dropped.
@@ -379,7 +363,6 @@ unsafe fn cmd_wait_for_event_list(
     name: &CStr,
 ) -> cmd_retval {
     cmd_wait_for_event_prune_expired(&mut *wait_event_items_ptr());
-    // Printing can fire events that change the list, so name them first.
     let names = wait_event_items_ptr()
         .as_ref()
         .unwrap()
@@ -557,7 +540,6 @@ unsafe fn cmd_wait_for_unlock(
     let lockers = wait_channel_lockers(wc);
     cmd_wait_for_prune_expired(wc);
     if !(*lockers).is_empty() {
-        // The lock passes to the first locker; the channel stays locked.
         (&mut *lockers).remove(0).resume();
     } else {
         (*wc).locked = 0 as ::core::ffi::c_int;
@@ -798,7 +780,6 @@ mod tests {
         unsafe {
             let gone = clients::with_queue();
             let gone_item = run_on(&gone, c"c", cmd_wait_for_wait);
-            // Freeing the client drops its queue, the item and its wait.
             drop(gone);
             assert!(gone_item.upgrade().is_none());
             assert!((&(*channel(c"c")).waiters)[0].is_cancelled());
@@ -807,7 +788,6 @@ mod tests {
             assert!(run_on(&other, c"c", signal).upgrade().is_none());
             assert!((*channel(c"c")).waiters.is_empty());
             assert_eq!((*channel(c"c")).woken, 1);
-            // The remembered signal releases the next waiter at once.
             assert!(run_on(&other, c"c", cmd_wait_for_wait).upgrade().is_none());
             assert!(channel(c"c").is_null());
         }
@@ -844,7 +824,6 @@ mod tests {
         unsafe {
             let owner = clients::with_queue();
             let head = run_on(&owner, c"c", cmd_wait_for_wait);
-            // As server_client_lost does.
             owner.update_flags(CLIENT_DEAD as u64, 0);
             cmd_wait_for_client_lost(&owner);
             cmdq_next(Some(&owner));
@@ -955,7 +934,6 @@ mod tests {
             assert_eq!(event_sinks(), [sink]);
             assert!(crate::src::events::events_has_sink(sink));
 
-            // The sink stays for the next event.
             fire(c"@rejected", "y");
             cmdq_next(Some(&owner));
             assert!(head.upgrade().is_none());
@@ -972,7 +950,6 @@ mod tests {
             let [sink] = event_sinks()[..] else {
                 panic!("one event waiter")
             };
-            // Freeing the client drops its queue, the item and its wait.
             drop(owner);
             assert!(head.upgrade().is_none());
             assert!(wait_event_items_ptr().as_ref().unwrap()[0]
@@ -994,7 +971,6 @@ mod tests {
             let [first_sink, second_sink] = event_sinks()[..] else {
                 panic!("two event waiters")
             };
-            // Unnamed clients both match the empty name; the first is woken.
             assert!(wait_event(&waker, c"@wake", &[c"-w", c""])
                 .upgrade()
                 .is_none());
@@ -1057,7 +1033,6 @@ mod tests {
             let [sink] = event_sinks()[..] else {
                 panic!("one event waiter")
             };
-            // As server_client_lost does.
             owner.update_flags(CLIENT_DEAD as u64, 0);
             cmd_wait_for_client_lost(&owner);
             cmdq_next(Some(&owner));

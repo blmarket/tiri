@@ -111,8 +111,6 @@ pub const INPUT_END_BEL: input_end_type = 1;
 pub const INPUT_END_ST: input_end_type = 0;
 
 impl input_ctx {
-    // Only Rust constructs and accesses this record. Callbacks borrow its boxed,
-    // stable address; no foreign consumer depends on the translated C layout.
     fn new() -> Self {
         Self {
             wp: std::rc::Weak::new(),
@@ -275,8 +273,6 @@ mod input_buffer_ownership_tests {
     }
 }
 
-// input_ctx owns each boxed request. Boxes preserve addresses used by client
-// observers as the deque grows; removing a request also drops its reply data.
 impl input_request {
     fn new() -> Box<Self> {
         Box::new(Self {
@@ -2197,12 +2193,10 @@ unsafe fn input_parse(mut ictx: *mut input_ctx, buf: &[u8]) {
 }
 pub(super) unsafe fn input_parse_pane(wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
     let mut wp = wp_owner.get();
-    // Copy the stream observer and offsets before borrowing the input buffer.
     let (stream, base, offset) = {
         let pane = &*wp_owner.get();
         (pane.event.clone(), pane.base_offset, pane.offset)
     };
-    // Parsing fires callbacks; release the input-buffer borrow before dispatch.
     let data = stream
         .with_ptr(|event| unsafe {
             window_pane_get_new_data(&mut (*event).input, base, &offset).to_vec()
@@ -3678,8 +3672,6 @@ unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
     let mut y: u_int = (*s).grid().sy;
     let mut n: ::core::ffi::c_int = 0;
     let mut m: ::core::ffi::c_int = 0;
-    // Keep the original parent identity even if a title notification reparents
-    // the pane. Values are copied before replies; no Window borrow spans them.
     let window_owner = input_pane_owner
         .as_ref()
         .and_then(|pane| pane.window_observer().upgrade());
@@ -3945,7 +3937,6 @@ unsafe fn input_csi_dispatch_sgr_colon(mut ictx: *mut input_ctx, mut i: u_int) {
         n = n.wrapping_add(1);
     }
     n = 0 as u_int;
-    // strsep writes delimiters into this private C-string copy.
     let mut copy = std::ffi::CStr::from_ptr(s).to_bytes_with_nul().to_vec();
     ptr = copy.as_mut_ptr().cast();
     loop {
@@ -4107,15 +4098,14 @@ mod sgr_colon_tests {
         for source in [
             b"38:2:999999999999999:2:3\0".as_slice(),
             b"38:2:abc:2:3\0",
-            b"38:2:1:2:3:4:5:6\0", // eighth populated token
-            b":::::::\0",          // eighth empty token
-            b"38:2:300:2:3\0",     // parsed RGB outside the colour range
-            b"38:2:1:2\0",         // incomplete RGB
+            b"38:2:1:2:3:4:5:6\0",
+            b":::::::\0",
+            b"38:2:300:2:3\0",
+            b"38:2:1:2\0",
         ] {
             let cell = parse(source);
             assert_eq!((cell.fg, cell.bg, cell.us), (11, 12, 13), "{source:?}");
         }
-        // Both the owned CStr copy and the parser stop at the first NUL.
         assert_eq!(parse(b"38:5:196\0:2:1:2:3\0").fg, 196 | COLOUR_FLAG_256);
     }
 }
@@ -4618,7 +4608,6 @@ unsafe fn input_exit_rename(ictx: *mut input_ctx) {
     if !utf8_isvalid(name) {
         return;
     }
-    // Rename notifications can reenter the input path, so own the name first.
     let name = name.to_owned();
     let window = pane.window_observer().upgrade().expect("pane window");
     if (*ictx).input_len == 0 {
@@ -4738,7 +4727,6 @@ unsafe fn input_osc_colour_reply(
     };
 }
 unsafe fn input_osc_4(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
-    // strsep writes NULs into this private copy; the original OSC input stays intact.
     let mut copy = std::ffi::CStr::from_ptr(p).to_bytes_with_nul().to_vec();
     let mut s: *mut ::core::ffi::c_char = copy.as_mut_ptr().cast();
     let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
@@ -5144,8 +5132,6 @@ unsafe fn input_osc_133_exit_status(p: *const ::core::ffi::c_char) -> ::core::ff
         return 0 as ::core::ffi::c_int;
     }
 
-    // The token came from a C string, so it has no interior NUL. strtonum
-    // borrows this terminated copy only for the duration of the call.
     let copy = CString::new(number).expect("OSC 133 status token contains no NUL");
     match strtonum(&copy, 0, 255) {
         Ok(status) => status as ::core::ffi::c_int,
@@ -5420,7 +5406,6 @@ unsafe fn input_osc_52_parse(
         "{}: {} {}",
         "input_osc_52_parse",
         log_cstr_n({
-            // printf's `%.*s` with a negative precision reads to the NUL.
             let len = end.offset_from(p) - 1;
             if len < 0 {
                 CStr::from_ptr(p).to_bytes()
@@ -5592,8 +5577,6 @@ pub unsafe fn input_set_buffer_size(mut buffer_size: size_t) {
 unsafe fn input_request_timer_callback(ictx: *mut input_ctx) {
     let mut t: uint64_t = get_timer();
     for ir in input_ctx_request_handles(ictx) {
-        // Sending a queued reply can reenter input processing. Confirm that
-        // this stable handle still belongs to the owner before dereferencing.
         if !input_ctx_requests(ictx)
             .iter()
             .any(|owner| std::ptr::eq(&**owner, ir))
@@ -5818,8 +5801,6 @@ pub(crate) unsafe fn input_complete_request(
     reply: InputRequestReply<'_>,
 ) {
     let mut complete = 0;
-    // `found` is freed when its reply is handled. Keep the context separately
-    // for later queued replies so the loop never reads through that freed box.
     let ictx = (*found).ictx;
     for ir in input_ctx_request_handles(ictx) {
         if !input_ctx_requests(ictx)

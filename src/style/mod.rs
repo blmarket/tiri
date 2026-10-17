@@ -6,7 +6,6 @@ mod parsing;
 mod scoped;
 pub use scoped::{style_apply_with_options, style_resolve_with_options};
 
-// Preserve the established family API without glob exports.
 pub use self::parsing::{
     style_apply, style_copy, style_link, style_parse, style_parse_colour, style_ranges_clear,
     style_ranges_init, style_set, style_set_scrollbar_style_from_option, style_tostring,

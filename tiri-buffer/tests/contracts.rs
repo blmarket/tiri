@@ -237,7 +237,6 @@ fn generated_operation_sequences_match_flat_storage() {
 #[test]
 fn writable_capacity_commits_only_initialized_bytes_and_resumes_scans() {
     let mut buffer = SegmentedBuf::default();
-    // Reserving a chunk, or abandoning a write, must not publish readable bytes.
     buffer.chunk_mut()[..3].copy_from_slice(b"old");
     assert_eq!(buffer.remaining(), 0);
     assert!(buffer.chunk().is_empty());
@@ -245,19 +244,16 @@ fn writable_capacity_commits_only_initialized_bytes_and_resumes_scans() {
     assert_eq!(buffer.read_line(LineEnding::CrLfStrict), None);
     let capacity = buffer.chunk_mut().len();
     buffer.chunk_mut()[..capacity].copy_from_slice(&vec![b'x'; capacity]);
-    // SAFETY: the entire returned chunk was initialized above.
     unsafe { buffer.advance_mut(capacity) };
     assert_eq!(buffer.remaining(), capacity);
     assert_eq!(buffer.read_line(LineEnding::CrLfStrict), None);
     buffer.chunk_mut()[..2].copy_from_slice(b"\r\n");
-    // SAFETY: exactly these two bytes were initialized above.
     unsafe { buffer.advance_mut(2) };
     assert_eq!(
         buffer.read_line(LineEnding::CrLfStrict),
         Some(vec![b'x'; capacity])
     );
     assert!(!buffer.has_remaining());
-    // Committing zero is valid even without any writable allocation.
     unsafe { SegmentedBuf::default().advance_mut(0) };
     buffer.put_u32(0x01020304);
     assert_eq!(buffer.get_u32(), 0x01020304);

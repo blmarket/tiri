@@ -58,11 +58,6 @@ impl OptionsScope {
             Self::Session(observer) => {
                 let owner = observer.upgrade().expect("live option session");
                 let result = owner.with_options_mut(visit);
-                // This is a temporary view upgrade, not a transferred session
-                // owner. Its visitor cannot destroy the owner or dispatch a
-                // callback. Session destruction/free and its deferred release
-                // remain the responsibility of the existing logical owners;
-                // queueing this extra upgrade would prolong every option read.
                 drop(owner);
                 result
             }

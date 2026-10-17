@@ -244,13 +244,11 @@ mod tests {
         unsafe {
             let owner = clients::with_queue();
             let (tx, rx) = tiri_rt::oneshot::channel();
-            // load-buffer -w retains its own client as the selection target.
             let cdata = cmd_load_buffer_data {
                 client: Some(owner.clone()),
                 name: Some(c"lost".to_owned()),
             };
             let head = append_load(&owner, rx, cdata);
-            // The dead file client drops the waiter unsent.
             drop(tx);
             assert_eq!(Rc::strong_count(&owner), 1, "the data is released");
             assert_eq!(cmdq_next(Some(&owner)), 0);

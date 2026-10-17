@@ -144,9 +144,6 @@ impl format_tree {
     }
 }
 
-// Jobs remain boxed; callbacks observe cache identity and reacquire an entry.
-// Keys own the original command bytes, ordered exactly like tag followed by strcmp.
-
 pub type format_job_tree = std::collections::BTreeMap<(u_int, Vec<u8>), Box<format_job>>;
 
 /// Ordered owners for a format tree's heap-allocated entries.
@@ -169,7 +166,6 @@ pub(crate) enum FormatEntryState {
     Evaluating(u64),
     Cached {
         value: std::ffi::CString,
-        // Keep the capture alive until this entry is replaced or dropped.
         callback: FormatEntryCallback,
     },
 }

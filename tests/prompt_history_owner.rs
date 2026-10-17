@@ -68,8 +68,6 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
             c"four"
         );
 
-        // A duplicate at the limit does not add a row, but reducing the
-        // limit still prunes the oldest rows.
         options_set_number(options, c"prompt-history-limit", 2);
         prompt_add_history(c"four", PROMPT_TYPE_COMMAND);
         assert_eq!(prompt_history_size(PROMPT_TYPE_COMMAND), 2);
@@ -107,7 +105,6 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
             c""
         );
 
-        // Command and search prompts share storage without sharing cursors.
         prompt_add_history(c"search-one", PROMPT_TYPE_SEARCH);
         prompt_add_history(c"search-two", PROMPT_TYPE_SEARCH);
         assert_eq!(
@@ -126,7 +123,6 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         assert_eq!(indexes, [1, 0]);
         prompt_history_clear(PROMPT_TYPE_SEARCH);
 
-        // A retained input stays valid while the registry prunes its entry.
         let oldest = prompt_history_get(PROMPT_TYPE_COMMAND, 0).unwrap();
         prompt_add_history(&oldest, PROMPT_TYPE_COMMAND);
         assert_eq!(oldest.as_c_str(), c"three");
@@ -222,8 +218,6 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
                 .to_bytes(),
             b"a:b"
         );
-        // An active prompt can outlive pruning by another prompt. A stale
-        // cursor must not wrap around or index beyond the remaining entries.
         let mut stale = [u32::MAX, 0];
         assert!(prompt_up_history(&mut stale, PROMPT_TYPE_COMMAND).is_none());
         assert_eq!(stale, [u32::MAX, 0]);

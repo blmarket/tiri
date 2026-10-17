@@ -28,10 +28,6 @@ pub fn parse(
     context: &mut dyn Context,
     tokens: impl IntoIterator<Item = Result<(usize, Token, usize), LexError>>,
 ) -> Result<Vec<ParseCommand>, ParseError> {
-    // LALRPOP fetches lookahead before running reduction actions. Supply a
-    // synthetic boundary after EQUALS so an assignment can be applied before
-    // the application lexer expands the next word. EQUALS used as an argument
-    // consumes the same boundary without assigning anything.
     let tokens = tokens.into_iter().flat_map(|token| {
         let boundary = match &token {
             Ok((_, Token::Equals(_), end)) => Some(Ok((*end, Token::EqualsEnd, *end))),

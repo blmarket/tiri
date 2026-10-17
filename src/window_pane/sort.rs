@@ -60,7 +60,6 @@ mod tests {
         unsafe {
             let a = window_pane::new();
             let b = window_pane::new();
-            // A difference this large does not fit the sign of an i32.
             (*a.get()).id = 1;
             (*b.get()).id = u32::MAX;
             (*a.get()).base.title = CString::new("alpha").unwrap();

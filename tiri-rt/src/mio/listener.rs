@@ -27,8 +27,6 @@ impl crate::AsyncAccept for Listener {
     async fn accept(&self) -> io::Result<OwnedFd> {
         self.source
             .read_with(|| {
-                // SAFETY: the operation validates the owned listener before
-                // calling us. No peer address is requested. Accept never blocks.
                 #[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd"))]
                 let raw = unsafe {
                     libc::accept4(
@@ -53,7 +51,6 @@ impl crate::AsyncAccept for Listener {
                 if raw < 0 {
                     return Err(io::Error::last_os_error());
                 }
-                // SAFETY: accept transferred a new descriptor to this caller.
                 let fd = unsafe { OwnedFd::from_raw_fd(raw) };
                 #[cfg(not(any(
                     target_os = "linux",
@@ -61,7 +58,6 @@ impl crate::AsyncAccept for Listener {
                     target_os = "freebsd"
                 )))]
                 {
-                    // SAFETY: fd is live; these calls only query/set its flags.
                     let flags = unsafe { libc::fcntl(raw, libc::F_GETFL) };
                     if flags < 0
                         || unsafe { libc::fcntl(raw, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0

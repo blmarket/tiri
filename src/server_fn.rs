@@ -189,7 +189,6 @@ pub unsafe fn server_kill_window(owner: WindowRef, mut renumber: ::core::ffi::c_
     let mut s_owner = sessions::first();
     s = s_owner.clone();
     while !s.is_none() {
-        // Destroying a group may remove both s and its next session.
         let name = s.as_ref().expect("live session").name();
         if !(!s.as_ref().expect("live session").contains_window(&owner)) {
             loop {

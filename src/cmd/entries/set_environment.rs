@@ -87,7 +87,6 @@ unsafe fn cmd_set_environment_exec(
         }
         return CMD_RETURN_ERROR;
     }
-    // Preserve -u before -r precedence and report before borrowing Session.
     let unset = args_has(args, b'u') != 0;
     let remove = args_has(args, b'r') != 0;
     let error = if unset && !value.is_null() {

@@ -1,8 +1,6 @@
 use crate::src::reactor::Timer;
 use crate::src::server_client::ClientRegistry;
 use tiri_rt::{AsyncRead as _, AsyncWrite as _};
-// Copy a terminal field and release its component borrow before a nested output
-// operation. Writes evaluate their source before borrowing the destination.
 macro_rules! terminal_value {
     ($owner:expr, $field:ident $(.$member:ident)*) => {{
         let terminal = $owner.borrow_terminal();
@@ -138,8 +136,6 @@ pub unsafe fn tty_init(owner: &ClientRef) -> ::core::ffi::c_int {
     owner.initialize_terminal()
 }
 
-// Reset only after descriptor validation. This helper may run under a mapped
-// Client component borrow: it never queries Client or invokes callbacks.
 pub(crate) unsafe fn tty_initialize_component(terminal: &mut tty, fd: i32) -> i32 {
     if fd < 0
         || tiri_rt::unix::terminal_attributes(std::os::fd::BorrowedFd::borrow_raw(fd)).is_err()
@@ -383,7 +379,6 @@ unsafe fn tty_write_callback(owner: &ClientRef, result: std::io::Result<usize>) 
 fn tty_start_read(terminal: &mut tty, observer: ClientWeak) {
     let fd = terminal.io_fd.expect("open TTY descriptor");
     crate::src::reactor::task_start(&mut terminal.read_task, move || {
-        // SAFETY: the client owns this TTY descriptor until terminal cleanup.
         let source = reactor::io(unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) })?;
         Ok(async move {
             loop {
@@ -397,7 +392,6 @@ fn tty_start_read(terminal: &mut tty, observer: ClientWeak) {
                 };
                 unsafe { tty_read_callback(&owner, result) };
                 drop(owner);
-                // Input handling can close the terminal and cancel this task.
                 reactor::yield_now().await;
             }
         })
@@ -411,12 +405,8 @@ pub(crate) fn tty_start_write(terminal: &mut tty, observer: ClientWeak) {
     }
     let fd = terminal.io_fd.expect("open TTY descriptor");
     crate::src::reactor::task_start(&mut terminal.write_task, move || {
-        // SAFETY: the client owns this TTY descriptor until terminal cleanup.
         let source = reactor::io(unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) })?;
         Ok(async move {
-            // Include output queued before this task runs. Capturing only the
-            // first enqueue leaves an artificial backlog that can trigger TTY
-            // blocking and discard the rest of a redraw on small terminals.
             let bytes = {
                 let Some(owner) = observer.upgrade() else {
                     return;
@@ -427,8 +417,6 @@ pub(crate) fn tty_start_write(terminal: &mut tty, observer: ClientWeak) {
             let buffers = [std::io::IoSlice::new(&bytes)];
             let result = source.write(&buffers, None).await;
             if let Some(owner) = observer.upgrade() {
-                // Complete this write before dispatch: the callback can
-                // schedule another write if bytes remain in the buffer.
                 unsafe {
                     drop(owner.borrow_terminal_mut().write_task.take());
                     tty_write_callback(&owner, result);
@@ -879,8 +867,6 @@ pub(crate) unsafe fn tty_raw(fd: i32, text: &CStr) {
     let Ok(was_nonblocking) = tiri_rt::unix::set_nonblocking(borrowed, true) else {
         return;
     };
-    // Teardown is synchronous and may run inside an application callback. Use
-    // an independent driver so it never reenters the application's runtime.
     let _ = (|| -> std::io::Result<()> {
         let mut runtime = tiri_rt::mio::Runtime::new()?;
         let (source, stop) = runtime.enter(|| -> std::io::Result<_> {
@@ -1012,9 +998,6 @@ unsafe fn tty_window_offset1(owner: &ClientRef) -> tty_window_view {
         return view;
     }
     owner.reset_pan(None);
-    // Rest on a pane's first column, or the top row, that shows the active
-    // pane completely, and never so far right that the view passes the last
-    // pane's right border while panes are left out on the left.
     let previous = tty_window_offset(owner.borrow_terminal());
     let cells = window.pane_cells();
     let strip = cells
@@ -1051,8 +1034,6 @@ unsafe fn tty_window_offset1(owner: &ClientRef) -> tty_window_view {
             cursor.map(|(_, y)| y),
         );
     }
-    // The terminal clips only when the view leaves part of a pane out. A
-    // view at the origin that shows every pane draws them where they are.
     view.bigger = view.ox != 0 || view.oy != 0 || strip > view.sx || sy > view.sy;
     view
 }
@@ -1358,8 +1339,6 @@ fn tty_clamp_area(
             fatalx(|out| write!(out, "tty_clamp_area: x too big, {} > {}", width, nx));
         }
     }
-    // yoff is in window coordinates; ctx.yoff - ctx.ryoff is the number of
-    // status lines above the window on the terminal.
     let status = (ctx.yoff - ctx.ryoff) as u_int;
     let (y, height) = if yoff >= ctx.woy && yoff.wrapping_add(ny) <= ctx.woy.wrapping_add(ctx.wsy) {
         (
@@ -2093,8 +2072,6 @@ pub unsafe fn tty_set_selection(owner: &ClientRef, clip: &CStr, data: &[u8]) {
     }
 }
 
-// Capability expansion reads only the terminal component. The owned sequence
-// must outlive this borrow so output accounting can borrow Client afresh.
 unsafe fn tty_selection_sequence(
     terminal: &mut tty,
     clip: &CStr,
@@ -2219,29 +2196,23 @@ mod clipping_tests {
 
     #[test]
     fn the_view_rests_on_the_nearest_pane_start_that_shows_the_pane() {
-        // Halves of an 80-column window start at 0, 40, 80 and 120.
         let stops = [0, 40, 80, 120];
         let follow = |cell, previous| tty_follow_cell(&stops, cell, 80, 200, previous, None);
-        // A shown pane leaves the view alone, wherever its cursor is.
         assert_eq!(follow((80, 39), 80), 80);
         assert_eq!(follow((80, 39), 40), 40);
         assert_eq!(
             tty_follow_cell(&stops, (80, 39), 80, 200, 80, Some(118)),
             80
         );
-        // From the left it becomes the last pane shown; from the right, the first.
         assert_eq!(follow((80, 39), 0), 40);
         assert_eq!(follow((40, 39), 120), 40);
-        // A pan between starts returns to the nearer one, the left on a tie.
         assert_eq!(follow((40, 39), 25), 40);
         assert_eq!(follow((40, 39), 20), 0);
-        // A view wider than the window stays within the extent.
         assert_eq!(tty_follow_cell(&stops, (120, 39), 120, 200, 0, None), 40);
     }
 
     #[test]
     fn a_view_shorter_than_the_pane_keeps_the_cursor_in_sight() {
-        // A full pane at columns 40 to 119, seen through 40 columns.
         let follow =
             |previous, cursor| tty_follow_cell(&[0, 40, 121], (40, 80), 40, 201, previous, cursor);
         assert_eq!(follow(0, None), 40);
@@ -2249,7 +2220,6 @@ mod clipping_tests {
         assert_eq!(follow(40, Some(111)), 72);
         assert_eq!(follow(72, Some(51)), 51);
         assert_eq!(follow(51, Some(70)), 51);
-        // Rows have one stop at the top; a short view follows the cursor.
         assert_eq!(tty_follow_cell(&[0], (0, 24), 24, 24, 5, Some(23)), 0);
         assert_eq!(tty_follow_cell(&[0], (0, 24), 10, 24, 0, Some(23)), 14);
         assert_eq!(tty_follow_cell(&[0], (0, 24), 10, 24, 14, Some(3)), 3);
@@ -2269,8 +2239,6 @@ mod clipping_tests {
             wsy: 10,
             ..Default::default()
         };
-        // Expected geometry from the pinned tmux tty_clamp_line/area functions.
-        // The source skip when both sides are clipped deliberately follows tmux.
         for (input, line, area) in [
             ((3, 2, 5, 2), Some((0, 1, 0, 5)), Some((1, 0, 5, 2))),
             ((0, 2, 5, 3), Some((2, 0, 0, 3)), Some((0, 0, 3, 3))),

@@ -22,8 +22,6 @@ impl RegexStorage {
         if status != 0 {
             return Err(status);
         }
-        // regcomp initialized the C object. Only the returned owner uses or
-        // frees it; this scratch storage is overwritten on the next compile.
         Ok(CompiledRegex(unsafe { self.0.assume_init() }))
     }
 }

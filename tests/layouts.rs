@@ -58,7 +58,6 @@ fn main_horizontal_lines_the_side_panes_up_below() {
 #[test]
 fn main_centered_puts_side_panes_on_both_sides() {
     let server = laid_out("main-centered", 81, 25, 4);
-    // Two side panes on the right, one on the left.
     assert_eq!(
         rects(&server),
         [
@@ -68,7 +67,6 @@ fn main_centered_puts_side_panes_on_both_sides() {
             (0, 20, 0, 25)
         ]
     );
-    // One side pane goes on the right.
     server.success(&["kill-pane", "-t", &ids(&server)[3]]);
     server.success(&["kill-pane", "-t", &ids(&server)[2]]);
     assert_eq!(rects(&server), [(0, 40, 0, 25), (41, 40, 0, 25)]);
@@ -86,8 +84,6 @@ fn grid_gives_every_pane_an_equal_share() {
             (41, 40, 13, 12)
         ]
     );
-    // A fifth pane makes a third column, the spare column going to the
-    // first; the last row shares its width.
     server.success(&["new-pane", "sleep 60"]);
     assert_eq!(
         rects(&server),
@@ -106,18 +102,15 @@ fn the_pane_order_decides_the_main_pane() {
     let server = laid_out("main-vertical", 81, 25, 3);
     let panes = ids(&server);
     let tiles = rects(&server);
-    // New panes join the order after the active pane; the shape stays.
     server.success(&["select-pane", "-t", &panes[0]]);
     server.success(&["new-pane", "sleep 60"]);
     let added = active(&server);
     assert_eq!(ids(&server)[1], added);
     assert_eq!(rects(&server)[0], tiles[0]);
     server.success(&["kill-pane", "-t", &added]);
-    // Swapping a side pane to the front makes it the main pane.
     server.success(&["swap-pane", "-s", &panes[2], "-t", &panes[0]]);
     assert_eq!(ids(&server)[0], panes[2]);
     assert_eq!(rects(&server), tiles);
-    // Rotation hands the main tile on.
     server.success(&["rotate-window"]);
     assert_eq!(ids(&server)[0], panes[1]);
     assert_eq!(rects(&server), tiles);
@@ -139,7 +132,6 @@ fn directions_cross_the_separators() {
 #[test]
 fn next_steps_through_every_layout() {
     let server = laid_out("scrolling", 81, 25, 2);
-    // The first pane at full width.
     server.success(&["resize-pane", "-Z", "-t", &ids(&server)[0]]);
     let mut seen = Vec::new();
     for _ in 0..6 {
@@ -157,7 +149,6 @@ fn next_steps_through_every_layout() {
             "scrolling"
         ]
     );
-    // The strip is back afresh: switching layouts forgot the widths.
     assert_eq!(rects(&server), [(0, 40, 0, 25), (41, 40, 0, 25)]);
 }
 

@@ -41,7 +41,6 @@ impl<T> Sender<T> {
             return Err(value);
         }
         self.slot.value.set(Some(value));
-        // Drop closes the slot and wakes the receiver.
         Ok(())
     }
 
@@ -54,7 +53,6 @@ impl<T> Sender<T> {
 impl<T> Drop for Sender<T> {
     fn drop(&mut self) {
         self.slot.closed.set(true);
-        // Release the slot borrow before waking; the wake may reenter.
         let waker = self.slot.waker.take();
         if let Some(waker) = waker {
             waker.wake();
@@ -78,7 +76,6 @@ impl<T> Future for Receiver<T> {
         if self.slot.closed.get() {
             return Poll::Ready(None);
         }
-        // Drop the previous waker after releasing the borrow.
         let previous = self.slot.waker.replace(Some(cx.local_waker().clone()));
         drop(previous);
         Poll::Pending
@@ -88,7 +85,6 @@ impl<T> Future for Receiver<T> {
 impl<T> Drop for Receiver<T> {
     fn drop(&mut self) {
         self.slot.closed.set(true);
-        // A registered waker must not outlive its waiter.
         let waker = self.slot.waker.take();
         drop(waker);
     }
@@ -132,8 +128,6 @@ mod tests {
         }
         impl LocalWake for Reenter {
             fn wake(self: Rc<Self>) {
-                // Polling and dropping the receiver both access the slot, so
-                // they would panic if the sender still held its borrow.
                 let mut receiver = self.receiver.take().unwrap();
                 let waker = LocalWaker::from(Rc::new(Count::default()));
                 self.observed.set(Some(poll_with(&mut receiver, &waker)));

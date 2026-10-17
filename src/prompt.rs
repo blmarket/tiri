@@ -154,8 +154,6 @@ pub unsafe fn prompt_create(
     let owner = refbox::RefBox::new(prompt::default());
     let mut pr = owner.try_borrow_mut().expect("live unborrowed prompt");
     let mut ft_owner = if let Some(fs) = pd.fs {
-        // Copy the selected target, matching cmd_find_state::copy_from rather than
-        // inheriting the source's search flags or current-state pointer.
         pr.state = cmd_find_state {
             s: fs.s.clone(),
             wl: fs.wl.clone(),
@@ -287,8 +285,6 @@ fn prompt_fire_callback(
         pr.flags |= PROMPT_CALLBACK_ACTIVE;
         (callback, pr.freecb.take())
     };
-    // Dispatch owns both callbacks until input returns. Removing the sole prompt
-    // owner can drop its state immediately, while cleanup remains deferred.
     let result = callback(text, kind);
     let free_pending = {
         let Some(mut pr) = prompt_borrow_live(owner) else {
@@ -917,7 +913,6 @@ pub unsafe fn prompt_mouse(
     PROMPT_KEY_HANDLED
 }
 fn prompt_in_list(separators: &CStr, cell: &utf8_data) -> ::core::ffi::c_int {
-    // strchr also matches the terminator when the cell contains a literal NUL.
     (cell.size == 1 && cell.width == 1 && separators.to_bytes_with_nul().contains(&cell.data[0]))
         as ::core::ffi::c_int
 }
@@ -1135,7 +1130,6 @@ unsafe fn prompt_replace_complete(
             word[used..used + bytes.len()].copy_from_slice(bytes);
             used += bytes.len();
         }
-        // Quoted control cells may contain NUL, which ends the C completion word.
         let word =
             CStr::from_bytes_until_nul(&word[..used + 1]).expect("terminated completion word");
         prompt_complete(pr, word, first as u_int)
@@ -1565,8 +1559,6 @@ pub unsafe fn prompt_key(
                     );
                     let outcome = prompt_done(pr, Some(&input), redraw);
                     if outcome == PromptCallbackResult::Freed {
-                        // Closing callbacks may replace the owner or destroy it.
-                        // A freed prompt has no changed tail to process.
                         *redraw = 1;
                         return PROMPT_KEY_CLOSE;
                     }
@@ -1576,8 +1568,6 @@ pub unsafe fn prompt_key(
             b'='
         }
     };
-    // Deletions move the sentinel in place. Keep only the visible cells and
-    // that sentinel so subsequent Vec insertions do not retain deleted cells.
     prompt_trim_buffer(&mut pr.try_borrow_mut().expect("live unborrowed prompt"));
     *redraw = 1;
     let callback_input = {
@@ -1750,9 +1740,6 @@ mod prompt_buffer_tests {
 
     #[test]
     fn word_motion_preserves_tmux_separator_classes_and_end_positions() {
-        // Each row is (Emacs forward, vi forward, end of word, backward),
-        // for every cursor position including the sentinel. Golden indices
-        // come from the pinned tmux e880cf63e0a9 helpers.
         type Motion = (usize, usize, usize, usize);
         let cases: &[(&CStr, &CStr, &[Motion])] = &[
             (c"", c",/", &[(0, 0, 0, 0)]),
@@ -1887,8 +1874,6 @@ mod prompt_buffer_tests {
                 assert_eq!(utf8_tocstr_cstring(&pr.buffer).as_c_str(), expected);
                 assert_eq!(pr.index, next);
             }
-            // Explicit replacement (mouse completion) does not use the
-            // 64-byte scratch word needed by command-name lookup.
             let long = CString::new(vec![b'x'; 64]).unwrap();
             let mut pr = make_prompt(&long, 64, None);
             assert_eq!(prompt_replace_complete(&mut pr, Some(c"new ")), 1);
@@ -1900,8 +1885,6 @@ mod prompt_buffer_tests {
     fn vi_translation_preserves_mode_switches_and_multibyte_cursor_edits() {
         let pr = make_prompt_owner(c"é漢Z", 3);
         pr.try_borrow_mut().unwrap().keys = MODEKEY_VI;
-        // Expected text and cursor positions follow the pinned tmux vi
-        // insert/command transitions, including backspace as a movement.
         for (key, expected, index, command) in [
             (27, c"é漢Z", 2, true),
             (KEYC_BSPACE, c"é漢Z", 1, true),
@@ -1936,8 +1919,6 @@ mod prompt_buffer_tests {
             }
         }
 
-        // A translated key must preserve an already pending redraw. Only
-        // changing vi modes requests a new one, including at an empty input.
         let mut redraw = 7;
         let modified_keypad = KEYC_KP_PLUS | KEYC_CTRL;
         assert_eq!(prompt_keypad_key(modified_keypad), modified_keypad);
@@ -2173,7 +2154,6 @@ mod prompt_buffer_tests {
                     pr.try_borrow_mut().unwrap().freecb = Some(Box::new(move || {
                         let pr = free_prompt.clone();
                         free_events.borrow_mut().push("freed");
-                        // Recursive cleanup cannot run this callback twice.
                         prompt_free(&pr);
                     }));
                     let input_prompt = weak.clone();
@@ -2217,8 +2197,6 @@ mod prompt_buffer_tests {
                         .borrow_mut()
                         .push((input.unwrap().to_owned(), kind));
                     if kind == PROMPT_KEY_CLOSE {
-                        // Model a callback updating this prompt for its next
-                        // question while the previous input stays borrowed.
                         pr.try_borrow_mut().unwrap().buffer = utf8_fromcstr_vec(c"é漢");
                         pr.try_borrow_mut().unwrap().index = 2;
                     }
@@ -2396,7 +2374,6 @@ mod prompt_buffer_tests {
             assert_eq!(pr.index, 2);
             assert_eq!(pr.buffer.len(), utf8_strlen(&pr.buffer) + 1);
 
-            // Even an empty copied word takes precedence over the clipboard.
             pr.copied = Some(vec![utf8_data::default()].into_boxed_slice());
             assert_eq!(prompt_paste(&mut pr), 1);
             assert_eq!(pr.index, 2);

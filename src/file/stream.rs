@@ -35,8 +35,6 @@ impl Stream for client_file {
             return Poll::Ready(Some(Err(io::ErrorKind::InvalidInput.into())));
         }
         if read.input.has_remaining() {
-            // Bound each yielded allocation, not total queued input. Keep peer
-            // production and buffering semantics compatible with tmux.
             let count = read.input.remaining().min(8192);
             let mut bytes = vec![0; count];
             read.input.copy_to_slice(&mut bytes);
@@ -80,10 +78,7 @@ pub(super) fn collect_for_callback(file: &mut client_file) {
         if let Ok(bytes) = item {
             file.buffer.put(SegmentedBuf::from(bytes));
         }
-        // Legacy callbacks receive the existing file.error at terminal dispatch.
     }
-    // This adapter is polled synchronously by the existing message/terminal
-    // callbacks. It must not leave a no-op waiter or schedule redundant events.
     file.read.wake = None;
 }
 
@@ -148,7 +143,6 @@ mod tests {
     fn buffered_data_precedes_error_and_terminal_polls_stay_finished() {
         let mut file = read_file();
         let expected = (0..20000).map(|i| (i % 251) as u8).collect::<Vec<_>>();
-        // Producer continues appending while the listener is not polling.
         file.read.input.put_slice(&expected[..10000]);
         file.read.input.put_slice(&expected[10000..]);
         file.error = EIO;

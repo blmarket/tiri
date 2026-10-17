@@ -60,7 +60,6 @@ pub struct window_client_modedata {
     pub command: CString,
     pub hide_preview_this_pane: ::core::ffi::c_int,
     pub preview_is_info: ::core::ffi::c_int,
-    // The mode solely owns records; rows observe them weakly.
     pub items: Vec<refbox::RefBox<window_client_itemdata>>,
 }
 
@@ -71,7 +70,6 @@ impl window_client_modedata {
 }
 
 pub struct window_client_itemdata {
-    // Present until Drop transfers the last item-owned reference to the reactor.
     c: Option<ClientRef>,
     retained_client_reference: bool,
     pub ttyname: CString,
@@ -80,7 +78,6 @@ pub struct window_client_itemdata {
 impl Clone for window_client_itemdata {
     fn clone(&self) -> Self {
         Self {
-            // Action snapshots guard access but do not own another tmux client reference.
             c: self.c.clone(),
             retained_client_reference: false,
             ttyname: self.ttyname.clone(),
@@ -542,8 +539,6 @@ unsafe fn window_client_draw(
             0 as ::core::ffi::c_int,
         );
     }
-    // Rendering can dispatch terminal output back into this client. Copy its
-    // status grid before rendering so no status borrow spans that dispatch.
     let mut preview = window_client_status_snapshot(c, lines);
     screen_write_fast_copy(ctx, &preview, 0, 0, sx, lines);
     drop(preview);
@@ -553,8 +548,6 @@ unsafe fn window_client_status_snapshot(c: &ClientRef, lines: u32) -> screen {
     let source = status.screen.grid();
     let rows = lines.min(source.hsize.wrapping_add(source.sy));
     let mut snapshot = screen::empty();
-    // fast_copy only reads the grid; no timer, hyperlink table or write-list is
-    // needed for this owned source image.
     snapshot.grid = Some(crate::src::grid::grid_create(source.sx, rows, 0));
     crate::src::grid::grid_duplicate_lines(snapshot.grid_mut(), 0, source, 0, rows);
     snapshot

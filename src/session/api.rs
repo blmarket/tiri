@@ -297,7 +297,6 @@ impl Session for SessionRef {
         index
     }
     unsafe fn remove_replaced_window(&self, mut link: refbox::Weak<winlink>) -> bool {
-        // Notification precedes alert/history clearing and explicit window release.
         events_fire_winlink(c"window-unlinked", link.clone());
         link.get_mut_unchecked().flags &= !WINLINK_ALERTFLAGS;
         self.forget_winlink(link.clone());

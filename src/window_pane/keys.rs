@@ -72,6 +72,5 @@ unsafe fn write_mouse(pane: &Rc<UnsafeCell<window_pane>>, mouse: &mouse_event) {
         "input_key_mouse: {}",
         log_cstr_n(&bytes[..count]),
     ));
-    // All screen/pane reads finish before queueing the encoded report.
     let _ = stream.write(&bytes[..count]);
 }

@@ -106,8 +106,6 @@ thread_local! {
     static REDRAW_CELLS: RefCell<Vec<redraw_build_cell>> = const { RefCell::new(Vec::new()) };
 }
 
-// Each scene build owns its scratch cells until it has copied them into spans.
-// Taking the cache leaves an empty slot for a nested scene build.
 struct RedrawCellScratch(Vec<redraw_build_cell>);
 
 impl RedrawCellScratch {
@@ -817,8 +815,6 @@ unsafe fn redraw_make_scene(client_owner: &ClientRef) -> Option<Box<redraw_scene
     if bctx.sy == 0 {
         fatalx(|out| out.write_all(b"xcalloc: zero size"));
     }
-    // Keep row storage fixed for the lifetime of the scene; boxed spans keep
-    // their addresses stable as each collection grows during construction.
     let lines = ::std::iter::repeat_with(redraw_line::default)
         .take(bctx.sy as usize)
         .collect::<Vec<_>>()
@@ -842,7 +838,6 @@ unsafe fn redraw_make_scene(client_owner: &ClientRef) -> Option<Box<redraw_scene
             }
             bc = redraw_get_build_cell(&raw mut bctx, x0, y);
             type_0 = (*bc).data.kind();
-            // The scene owns each stable span until its row collection is dropped.
             line[type_0 as usize].push(Box::new(redraw_span {
                 x: x0,
                 width: x.wrapping_sub(x0),

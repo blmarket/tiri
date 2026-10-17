@@ -78,7 +78,6 @@ fn paste_name_tree_remove(
     head.entries.remove(elm.name.as_c_str())
 }
 
-// Larger orders come first; equal orders remain duplicates as in tmux's tree.
 fn paste_time_key(pb: &paste_buffer) -> std::cmp::Reverse<u_int> {
     std::cmp::Reverse(pb.order)
 }
@@ -204,8 +203,6 @@ unsafe fn paste_fire_event(
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let mut ep = event_payload_create();
-    // Finish reading the buffer before dispatch: listeners may look up,
-    // replace, or rename buffers synchronously.
     event_payload_set_string(&mut ep, c"paste_buffer", write);
     events_fire(name, ep);
 }
@@ -256,7 +253,6 @@ fn paste_is_registered(pb: &PasteBufferRef) -> bool {
         .is_some_and(|buffer| paste_get_name(&buffer.name).is_some_and(|current| current == *pb))
 }
 pub unsafe fn paste_free(pb: &PasteBufferRef) {
-    // A retained reader must never delete a replacement with the same name.
     if !paste_is_registered(pb) {
         return;
     }
@@ -287,8 +283,6 @@ pub(crate) unsafe fn paste_add_owned(prefix: Option<CString>, data: Box<[u8]>) {
             break;
         }
         let Some(buffer) = pb.try_borrow() else {
-            // A deletion listener removed our next candidate. Restart at the
-            // oldest remaining entry, without retaining stale buffer data.
             next = paste_time_tree_minmax_local(RB_INF);
             continue;
         };
@@ -352,7 +346,6 @@ pub unsafe fn paste_rename(
             return 0;
         }
         paste_free(&replaced);
-        // A deletion listener may also have removed or replaced the source.
         if !paste_is_registered(&pb) {
             paste_name_cause(cause, b"no buffer ", oldname);
             return -1;
@@ -658,7 +651,6 @@ mod tests {
                             buffer.is_some(),
                         ));
                         if let Some(buffer) = buffer {
-                            // No owner or index borrow may span dispatch.
                             buffer.borrow_mut().created = 17;
                         }
                         if event == c"paste-buffer-changed" && name == c"root" {

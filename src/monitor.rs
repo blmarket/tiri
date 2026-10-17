@@ -39,8 +39,6 @@ pub struct monitor_set {
     generation: u_int,
 }
 
-// Release this borrow before model queries, formatting, callbacks or Session
-// release. A callback may destroy the sole owner; the next borrow then expires.
 fn monitor_borrow(observer: &refbox::Weak<monitor_set>) -> Option<refbox::Borrow<'_, monitor_set>> {
     match observer.try_borrow_mut() {
         Ok(state) => Some(state),
@@ -84,8 +82,6 @@ fn monitor_next_generation(observer: &refbox::Weak<monitor_set>) -> Option<u32> 
     Some(state.generation)
 }
 
-// Preserve the original one-successor-ahead traversal: additions before the
-// prefetched successor wait for a later pass; later additions can be observed.
 fn monitor_visit(
     monitor: &refbox::Weak<monitor_set>,
     mut visit: impl FnMut(CString, monitor_type),
@@ -152,8 +148,6 @@ unsafe fn monitor_create_formats(
     formats
 }
 
-// No externally callable function lends an item, child record or last-value
-// field. These keys select the destination only during the commit below.
 #[derive(Clone, Copy)]
 enum MonitorValueTarget {
     Session,
@@ -171,8 +165,6 @@ unsafe fn monitor_check_value(
     generation: Option<u32>,
 ) {
     let truth = format_true(value.as_ptr()) != 0;
-    // Formatting may reenter a scan. Preserve the live generation used by the
-    // original record commit, rather than the generation from before expansion.
     let Some(state) = monitor_borrow(monitor) else {
         return;
     };
@@ -324,8 +316,6 @@ unsafe fn monitor_check_pane(monitor: &refbox::Weak<monitor_set>, name: &CStr) {
                 );
             }
         }
-        // A removed link has no valid successor in the old list. The next timer
-        // pass will rescan; never recover one through a freed winlink reference.
         if !link.is_alive() {
             break;
         }
@@ -511,7 +501,6 @@ unsafe fn monitor_check_all_panes(monitor: &refbox::Weak<monitor_set>) {
                 }
             });
             drop(formats);
-            // Keep the legacy live parent lookup after callbacks that may move a pane.
             let next_window = pane.window_observer().upgrade();
             cursor = next_window.as_ref().and_then(|window| {
                 window
@@ -693,7 +682,6 @@ pub unsafe fn monitor_destroy(owner: refbox::RefBox<monitor_set>) {
         }
         (state.session.take(), state.callback.take())
     };
-    // Expire every observer before releasing resources that may reenter.
     drop(owner);
     if let Some(session) = session {
         session.release(c"monitor_clear");
@@ -841,7 +829,6 @@ pub unsafe fn monitor_get_fire_time(monitor: &refbox::Weak<monitor_set>, name: &
         .unwrap_or(0)
 }
 
-// Parent indexes own stable Box records; no independent index allocation.
 unsafe fn monitor_items_find(head: &mut monitor_items, elm: &monitor_item) -> *mut monitor_item {
     let key = elm.name.clone();
     head.get_mut(&key)
@@ -893,7 +880,6 @@ unsafe fn monitor_items_next(head: &mut monitor_items, elm: &monitor_item) -> *m
         .map_or(std::ptr::null_mut(), |(_, node)| &raw mut **node)
 }
 
-// Parent indexes own stable Box records; no independent index allocation.
 unsafe fn monitor_panes_find(head: &mut monitor_panes, pane: u32, idx: u32) -> *mut monitor_pane {
     head.get_mut(&(pane, idx))
         .map_or(std::ptr::null_mut(), |node| &raw mut **node)
@@ -944,7 +930,6 @@ unsafe fn monitor_panes_next(head: &mut monitor_panes, elm: &monitor_pane) -> *m
         .map_or(std::ptr::null_mut(), |(_, node)| &raw mut **node)
 }
 
-// Parent indexes own stable Box records; no independent index allocation.
 unsafe fn monitor_windows_find(
     head: &mut monitor_windows,
     window: u32,
@@ -1019,11 +1004,9 @@ mod ownership_tests {
             monitor_visit(&owner.downgrade(), |name, _| {
                 visited.push(name.to_bytes().to_vec());
                 if name.as_c_str() == c"a" {
-                    // b precedes the already-prefetched c; d is discovered later.
                     for name in [c"b", c"d"] {
                         monitor_add(&owner.downgrade(), name, MONITOR_SESSION, -1, c"", 0);
                     }
-                    // A prefetched name resolves the current entry when visited.
                     monitor_add(&owner.downgrade(), c"c", MONITOR_SESSION, -1, c"new", 0);
                     monitor_remove(&owner.downgrade(), c"a");
                 }

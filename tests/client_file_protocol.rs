@@ -112,7 +112,6 @@ impl Drop for Server {
 }
 
 fn exercise_files(server: &Server, client: &Path) {
-    // Cross several protocol messages and Stream chunks, including NUL bytes.
     let data = (0..100_003).map(|i| (i % 251) as u8).collect::<Vec<_>>();
     let input = server.directory.join("input");
     fs::write(&input, &data).unwrap();

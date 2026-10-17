@@ -165,9 +165,6 @@ unsafe fn cmd_if_shell_exec(
         });
         return CMD_RETURN_ERROR;
     }
-    // job_run does not dispatch callbacks before returning. The job takes the
-    // record only after startup succeeds; dropping the callback also releases
-    // it if the job is freed before completion.
     if wait == 0 {
         job.try_borrow_mut()
             .expect("newly registered job")
@@ -177,7 +174,6 @@ unsafe fn cmd_if_shell_exec(
         return CMD_RETURN_NORMAL;
     }
     let (done, completed) = tiri_rt::oneshot::channel();
-    // A job freed before completion drops the sender unsent.
     job.try_borrow_mut()
         .expect("newly registered job")
         .completecb = Some(Box::new(move |completion| {
@@ -203,7 +199,6 @@ async fn cmd_if_shell_complete(
     };
     unsafe { cmd_if_shell_callback(completion, &mut cdata, Some(&item)) };
 }
-// `item` is the polled item of a foreground if-shell, and None for -b.
 unsafe fn cmd_if_shell_callback(
     completion: JobCompletion,
     cdata: &mut cmd_if_shell_data,
@@ -348,8 +343,6 @@ mod tests {
                 let ran = append_flag(&owner);
                 assert_eq!(Rc::strong_count(&owner), 2, "the data keeps the client");
                 assert!(done.send(exited(code)).is_ok());
-                // The body ran and its data was released at the job's event;
-                // removal and the chosen branch wait for cmdq_next.
                 assert_eq!(Rc::strong_count(&owner), 1);
                 assert!(head.upgrade().is_some() && !ran.get());
                 assert_eq!(cmdq_next(Some(&owner)), branches + 1);
@@ -367,7 +360,6 @@ mod tests {
             owner.update_flags(CLIENT_DEAD as u64, 0);
             let client = Rc::downgrade(&owner);
             drop(owner);
-            // The data keeps the client while the job runs (L7).
             assert!(client.upgrade().is_some());
             assert!(done.send(exited(0)).is_ok());
             assert!(client.upgrade().is_none());
@@ -383,7 +375,6 @@ mod tests {
             let ran = append_flag(&owner);
             drop(done);
             assert_eq!(Rc::strong_count(&owner), 1, "the data is released");
-            // The item never resumes and blocks its queue, as in tmux.
             assert_eq!(cmdq_next(Some(&owner)), 0);
             assert!(head.upgrade().is_some() && !ran.get());
             owner.update_flags(CLIENT_DEAD as u64, 0);

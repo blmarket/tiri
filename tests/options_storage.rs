@@ -211,11 +211,8 @@ fn command_arrays_parse_items_and_assign_unseparated_values() {
         with_global_options(|_| {
             let mut oo_owner = options_create(None);
             let oo = &raw mut *oo_owner;
-            // Hooks are command arrays with an empty separator.
             let hook = options_empty(oo, table_entry(c"after-new-window"));
 
-            // A new key publishes a parsed command list; the same key again
-            // replaces it in place.
             assert_eq!(
                 options_array_set(hook, c"3", Some(c"display-message first"), 0, null_mut()),
                 0
@@ -234,7 +231,6 @@ fn command_arrays_parse_items_and_assign_unseparated_values() {
             );
             assert_eq!(options_array_iter(&*hook).count(), 1);
 
-            // A command that does not parse leaves no item and reports why.
             let mut cause: Option<CString> = None;
             assert_eq!(
                 options_array_set(hook, c"4", Some(c"no-such-command"), 0, &mut cause),
@@ -246,8 +242,6 @@ fn command_arrays_parse_items_and_assign_unseparated_values() {
             );
             assert!(options_array_get(&*hook, c"4").is_none());
 
-            // With no separator the whole value becomes one item at the first
-            // free index, so a command list containing spaces is not split.
             assert_eq!(
                 options_array_assign(hook, c"display-message a ; display-message b", null_mut()),
                 0
@@ -257,7 +251,6 @@ fn command_arrays_parse_items_and_assign_unseparated_values() {
                 b"display-message a ; display-message b"
             );
             assert_eq!(options_array_iter(&*hook).count(), 2);
-            // An empty value assigns nothing.
             assert_eq!(options_array_assign(hook, c"", null_mut()), 0);
             assert_eq!(options_array_iter(&*hook).count(), 2);
             drop(oo_owner);
@@ -293,7 +286,6 @@ fn set_command_publishes_a_local_default_before_replacing_it() {
                 options_to_cstring(local, None, 0).as_bytes(),
                 b"list-sessions -F x"
             );
-            // The parent keeps its own default.
             assert_eq!(
                 options_to_cstring(inherited, None, 0).as_bytes(),
                 b"new-session"

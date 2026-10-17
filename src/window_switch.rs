@@ -58,7 +58,6 @@ pub struct window_switch_modedata {
     pub filter: CString,
     pub prompt: Option<refbox::RefBox<crate::src::shared::prompt::prompt>>,
     pub prompt_cx: u_int,
-    // Match indices are rebuilt whenever the owned row list changes.
     item_list: Vec<window_switch_itemdata>,
     matches: Vec<usize>,
     pub current: u_int,
@@ -191,7 +190,6 @@ fn window_switch_matches(
         item.match_mask = if filter.is_empty() {
             None
         } else {
-            // Both C strings and the score slot are borrowed for this call only.
             unsafe { fuzzy_match_owned(filter, &item.text, width, Some(&mut item.score)) }
         };
         if filter.is_empty() || item.match_mask.is_some() {

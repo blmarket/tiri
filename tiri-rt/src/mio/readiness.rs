@@ -154,7 +154,6 @@ impl IoState {
     }
 
     pub(crate) fn close(&self, normal: bool) {
-        // Retain ownership until deregistration and waiter cleanup are complete.
         let fd = self.fd.borrow_mut().take();
         if fd.is_none() {
             return;
@@ -248,15 +247,12 @@ impl Io {
             ));
         }
         let mut stat = std::mem::MaybeUninit::<libc::stat>::uninit();
-        // SAFETY: fd is owned and stat provides valid output storage.
         if unsafe { libc::fstat(raw, stat.as_mut_ptr()) } < 0 {
             return Err(io::Error::last_os_error());
         }
-        // SAFETY: successful fstat initialized stat.
         let kind = unsafe { stat.assume_init() }.st_mode & libc::S_IFMT;
         let regular = kind == libc::S_IFREG;
         let fd_passing = kind == libc::S_IFSOCK && fd_passing::supported(raw)?;
-        // SAFETY: fcntl only queries flags on a live, owned descriptor.
         let flags = unsafe { libc::fcntl(raw, libc::F_GETFL) };
         if flags < 0 {
             return Err(io::Error::last_os_error());
@@ -283,7 +279,6 @@ impl Io {
                 );
             match result {
                 Ok(()) => true,
-                // The poller rejects immediate-I/O devices such as /dev/null.
                 Err(error) if error.raw_os_error() == Some(UNPOLLABLE_DEVICE) => false,
                 Err(error) => return Err(error),
             }
@@ -312,8 +307,6 @@ impl crate::AsyncRead for Io {
             if self.fd_passing {
                 return fd_passing::read(self.state.raw(), buffer);
             }
-            // SAFETY: readiness validation ensures the descriptor lease is live;
-            // buffer is exclusively borrowed writable storage.
             let count = unsafe {
                 libc::read(
                     self.state.raw(),
@@ -365,8 +358,6 @@ impl crate::AsyncWrite for Io {
             if self.fd_passing {
                 return fd_passing::write(self.state.raw(), &mut iov, fd);
             }
-            // SAFETY: readiness validation ensures the descriptor lease is live;
-            // all buffers remain readable throughout the syscall.
             syscall_result(unsafe { libc::writev(self.state.raw(), iov.as_ptr(), count) })
         })
         .await
@@ -374,10 +365,6 @@ impl crate::AsyncWrite for Io {
 }
 
 impl Io {
-    // Internal adapter hook. The closure performs one bounded operation,
-    // nonblocking except for the temporary regular-file path, and reports
-    // WouldBlock only if no progress was made.
-    // Invoke business callbacks after awaiting, never inside the retry closure.
     pub(crate) fn read_with<T, F>(&self, operation: F) -> impl Future<Output = io::Result<T>>
     where
         F: FnMut() -> io::Result<T>,
@@ -419,7 +406,6 @@ struct Operation<'a, F> {
     operation: F,
 }
 
-// The closure is never structurally pinned or exposed through a pinned reference.
 impl<F> Unpin for Operation<'_, F> {}
 
 impl<T, F: FnMut() -> io::Result<T>> Future for Operation<'_, F> {
@@ -435,7 +421,6 @@ impl<T, F: FnMut() -> io::Result<T>> Future for Operation<'_, F> {
             Poll::Ready(result) => result?.0,
             Poll::Pending => return Poll::Pending,
         };
-        // No runtime/state borrow crosses the caller's syscall closure.
         match (this.operation)() {
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                 if !this.source.state.registered {
@@ -448,8 +433,6 @@ impl<T, F: FnMut() -> io::Result<T>> Future for Operation<'_, F> {
                     )));
                 }
                 this.source.state.clear(this.direction, generation);
-                // Register before returning Pending. A newer event may have
-                // survived the clear; schedule another poll in that case.
                 match this
                     .source
                     .state
@@ -462,7 +445,6 @@ impl<T, F: FnMut() -> io::Result<T>> Future for Operation<'_, F> {
                 Poll::Pending
             }
             Err(error) if error.kind() == io::ErrorKind::Interrupted => {
-                // Bound retries to one operation per poll, retaining readiness.
                 context.local_waker().wake_by_ref();
                 Poll::Pending
             }
@@ -508,7 +490,6 @@ mod tests {
         ));
         drop(operation);
         drop(source);
-        // Bypassed descriptors must never be deregistered from mio.
         tick(&mut runtime);
     }
 
@@ -522,7 +503,6 @@ mod tests {
         runtime.poll(Some(Duration::ZERO)).unwrap();
         let old = source.state.read.generation.get();
         let mut bytes = [0; 16];
-        // SAFETY: source leases the descriptor and bytes is writable storage.
         assert_eq!(
             unsafe { libc::read(source.state.raw(), bytes.as_mut_ptr().cast(), bytes.len()) },
             5

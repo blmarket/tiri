@@ -149,7 +149,5 @@ unsafe fn mouse_location_in(
             return KEYC_MOUSE_LOCATION_PANE;
         }
     }
-    // Anywhere else is the separator beside the pane: every border is
-    // vertical, as tall as the panes.
     KEYC_MOUSE_LOCATION_BORDER
 }

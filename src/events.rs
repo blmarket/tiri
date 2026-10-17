@@ -312,8 +312,6 @@ mod tests {
                     }),
                 )
             };
-            // victim runs first, then first removes it and adds a sink that
-            // this dispatch must skip.
             events_fire(c"test-event", event_payload_create());
             assert_eq!(*calls.borrow(), ["victim", "first"]);
             assert_eq!(EVENTS.with_borrow(|events| events.sinks.len()), 2);

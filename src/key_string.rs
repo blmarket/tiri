@@ -5558,8 +5558,6 @@ fn key_string_cstr_suffix(input: &CStr, offset: usize) -> &CStr {
 fn key_string_search_table(input: &CStr) -> key_code {
     let mut user: u_int = 0;
 
-    // SAFETY: input and table names are NUL-terminated strings by type.
-    // `user` is valid writable storage for sscanf's unsigned integer result.
     unsafe {
         for entry in &key_string_table {
             if strcasecmp(input.as_ptr(), entry.string.as_ptr()) == 0 as ::core::ffi::c_int {
@@ -5595,9 +5593,6 @@ fn key_string_get_modifiers(input: &[u8]) -> Option<(key_code, usize)> {
 }
 
 fn key_string_lowercase_byte(byte: u8) -> key_code {
-    // SAFETY: `byte` is an unsigned byte, which is a valid argument to the
-    // locale-aware C `tolower` operation. Keep this call for its locale
-    // semantics rather than replacing it with Rust ASCII case folding.
     unsafe { tolower(byte as ::core::ffi::c_int) as key_code }
 }
 
@@ -5802,8 +5797,6 @@ fn key_string_format_bytes(saved: key_code, with_flags: bool) -> Vec<u8> {
             }
             output.extend_from_slice(&data.data[..data.size as usize]);
         } else if key > 255 {
-            // The historical snprintf branch replaced the modifier prefix
-            // when it reported an invalid key. Preserve that canonical text.
             output.clear();
             output.extend_from_slice(format!("Invalid#{saved:x}").as_bytes());
         } else if key > 32 && key <= 126 {
@@ -5815,10 +5808,6 @@ fn key_string_format_bytes(saved: key_code, with_flags: bool) -> Vec<u8> {
         }
     }
 
-    // The legacy formatter wrote into a C string buffer. Invalid packed
-    // Unicode can therefore place a NUL in the output and make the visible
-    // result end there; normalize that terminator before the legacy flag
-    // append, which would overwrite it with the suffix.
     if let Some(nul) = output.iter().position(|&byte| byte == 0) {
         output.truncate(nul);
     }

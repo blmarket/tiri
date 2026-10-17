@@ -208,7 +208,6 @@ fn mode_tree_check_selected(mtd: &mut mode_tree_data) {
         return;
     }
 
-    // If the list has shrunk, do not leave empty lines at the bottom.
     let line_count = mode_tree_line_count(mtd);
     if line_count <= mtd.height {
         mtd.offset = 0;
@@ -216,8 +215,6 @@ fn mode_tree_check_selected(mtd: &mut mode_tree_data) {
         mtd.offset = line_count - mtd.height;
     }
 
-    // If the current line would now be off screen move the offset so it is
-    // visible.
     if mtd.current < mtd.offset {
         mtd.offset = mtd.current;
     } else if mtd.current > mtd.offset + mtd.height - 1 {
@@ -798,8 +795,6 @@ pub fn mode_tree_remove(mtd: &mut mode_tree_data, item: &ModeTreeItemRef) {
         let position = mtd.children.position(item);
         mtd.children.items.remove(position);
     }
-    // Removal invalidates weak line observers, including descendants. Builders
-    // usually remove unpublished rows; callback removal may affect visible ones.
     mtd.lines.retain(|line| line.item.is_alive());
     for (index, line) in mtd.lines.iter().enumerate() {
         line.item.borrow_mut().line = index as u_int;
@@ -1390,8 +1385,6 @@ unsafe fn mode_tree_prompt_free_callback(
     if let Some(callback) = callback {
         callback();
     }
-    // Match tmux's reference release after the user cleanup callback. Cached
-    // callback records must not extend the mode tree's lifetime beyond it.
     drop(mtd);
     drop(inputcb);
 }
@@ -1694,7 +1687,6 @@ fn mode_tree_menu_callback(
         let callback = mtd.menucb.take();
         if let Some(mut callback) = callback {
             callback(&client, key);
-            // The handler may close the mode or install another callback.
             let mtd = &mut *tree.get();
             if mtd.dead == 0 && mtd.menucb.is_none() {
                 mtd.menucb = Some(callback);
@@ -1989,7 +1981,6 @@ pub unsafe fn mode_tree_key(
         } else {
             result = prompt_key(&prompt, *key, &mut redraw);
         }
-        // The tree owner spans dispatch, but the prompt can logically destroy it.
         if (*mtd).dead != 0 {
             *key = KEYC_NONE;
             return 0;
@@ -2332,7 +2323,6 @@ pub unsafe fn mode_tree_run_command(
     if command.as_bytes().is_empty() {
         return;
     }
-    // The legacy constructor only reads and copies the supplied find state.
     let state = cmdq_new_state(
         fs.map_or(std::ptr::null_mut(), |fs| std::ptr::from_ref(fs).cast_mut()),
         std::ptr::null_mut(),
@@ -2372,7 +2362,6 @@ mod mode_tree_tests {
             let branch = add(None, 2, c"branch");
             let child = add(Some(&branch), 3, c"match child");
             let tail = add(None, 4, c"match tail");
-            // Force growth while existing row pointers remain live.
             for tag in 5..100 {
                 add(None, tag, c"other");
             }
@@ -2608,7 +2597,6 @@ mod mode_prompt_data_tests {
             let weak_old = old.downgrade();
             let observed = weak_old.clone();
             old.try_borrow_mut().unwrap().freecb = Some(Box::new(move || {
-                // No record borrow may span the user cleanup callback.
                 assert!(observed.try_borrow_mut().unwrap().mtd.is_none());
                 count.set(count.get() + 1);
             }));
@@ -2624,7 +2612,6 @@ mod mode_prompt_data_tests {
             assert!((*mtd).prompt_data.is_empty());
             assert_eq!(Rc::strong_count(&tree), 1);
             drop(tree);
-            // Retaining the closed callback records does not retain the tree.
             assert!(weak_tree.upgrade().is_none());
             drop(old);
             assert!(!weak_old.is_alive());
@@ -2986,8 +2973,6 @@ mod payload_owner_tests {
             let detail = mode_tree_get_current(&*tree);
             assert!(selected.same_identity(&detail));
             let snapshot = selected.as_buffer().unwrap();
-            // Taking a snapshot ends the record borrow immediately, permitting
-            // nested drawing/action access before the owner is removed.
             assert_eq!(detail.as_buffer().unwrap().name.as_c_str(), c"original");
             drop(owner);
             assert!(selected.as_buffer().is_none());

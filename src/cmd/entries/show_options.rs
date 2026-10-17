@@ -139,8 +139,6 @@ unsafe fn cmd_show_options_exec(
                     .collect::<Vec<_>>()
             });
             for name in names {
-                // Preserve the existing snapshot-and-live-lookup traversal: a
-                // removed entry ends the scan, even if later names still exist.
                 if !cmd_show_hooks_print_monitor(self_0.clone(), item_handle, &selected, &name) {
                     break;
                 }
@@ -160,7 +158,6 @@ unsafe fn cmd_show_options_exec(
             if quiet {
                 return CMD_RETURN_NORMAL;
             }
-            // The tmux oracle reports malformed option syntax as ambiguous too.
             let ambiguous = matches!(
                 failure,
                 OptionMatchFailure::Parse | OptionMatchFailure::Ambiguous
@@ -368,7 +365,6 @@ unsafe fn show_hook_add_fire_formats(ft: *mut format_tree, count: u32, time: tim
     }
 }
 
-// Return false only when the entry was removed, ending an all-monitors scan.
 unsafe fn cmd_show_hooks_print_monitor(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,

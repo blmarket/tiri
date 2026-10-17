@@ -191,8 +191,6 @@ impl Registry {
 
     fn find(&self, pane: Option<PaneId>, key: &CStr) -> Option<CString> {
         let &(index, default) = self.names.get(key)?;
-        // A claimed variable remains claimed without pane context; do not fall
-        // through to a same-named environment variable.
         let Some(pane) = pane else {
             return Some(CString::default());
         };
@@ -358,7 +356,6 @@ fn tick() {
         });
         redraw.extend(changed.into_iter().map(|pane| pane.0));
     }
-    // Published values are visible before any redraw can expand their formats.
     for id in redraw {
         host::invalidate(PaneId(id));
     }

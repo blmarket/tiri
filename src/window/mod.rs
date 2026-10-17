@@ -313,7 +313,6 @@ pub unsafe fn window_create(
 unsafe fn window_destroy(w_owner: &WindowRef) {
     let mut w = w_owner.get();
     log_debug(format_args!("window @{} destroyed", { (*w).id }));
-    // The releasing owner keeps weak parent links upgradeable throughout cleanup.
     windows::remove(w_owner);
     menu_destroy((*w).menu.take());
     window_destroy_panes(w_owner);
@@ -326,7 +325,6 @@ unsafe fn window_destroy(w_owner: &WindowRef) {
 unsafe fn window_set_name(w_owner: &WindowRef, new_name: &CStr, mut untrusted: ::core::ffi::c_int) {
     let _w = w_owner.get();
     if let Some(name) = clean_name_cstring(new_name, untrusted) {
-        // Keep the previous owner alive across synchronous rename callbacks.
         let last = window_replace_name(w_owner, name);
         window_fire_renamed(w_owner, &last);
     }
@@ -416,8 +414,6 @@ unsafe fn window_set_active_pane(
         (*w).last_panes.push(Rc::downgrade(previous));
     }
     (*w).active = observer;
-    // Selecting a pane ends explicit panning of this window, so every client
-    // showing it follows the new active pane.
     let mut client = ClientRegistry::first();
     while let Some(current) = client {
         current.reset_pan(Some(window));
@@ -469,8 +465,6 @@ unsafe fn window_get_active_at(
     let mut yoff: ::core::ffi::c_int = 0;
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
-    // A pane owns its rows and the separator column after it, and its status
-    // row above or below it when pane-border-status is on.
     let status = window_get_pane_status(&*w);
     for observer in (*w).panes.storage.clone() {
         let candidate = observer.upgrade().expect("live pane in ordering");
@@ -494,7 +488,6 @@ unsafe fn window_find_string(
     name: &CStr,
 ) -> Weak<std::cell::UnsafeCell<window_pane>> {
     let w = window_owner.get();
-    // Positions are measured across the panes, not the blank extent past them.
     let (wsx, wsy) = (
         layout::content_width(&window_arrangement(window_owner)),
         (*w).sy,
@@ -630,8 +623,6 @@ unsafe fn window_rearrange_panes(
     }
     (*w).invalidate_scene();
     window_arrange(window);
-    // As in tmux, the layout change is announced before the pane that
-    // replaces an active one.
     if !left.is_empty() {
         events_fire_window(c"window-layout-changed", window.clone());
     }
@@ -681,7 +672,6 @@ unsafe fn window_arrange(window: &WindowRef) {
         .zip(window_arrangement(window));
     let mut moved = false;
     for (pane, cell) in cells {
-        // Resize callbacks may remove a later pane; its removal arranges again.
         if window_has_pane(&*window.get(), &Rc::downgrade(&pane)) {
             moved |= pane.apply_layout(cell, window);
         }

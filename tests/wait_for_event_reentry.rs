@@ -21,7 +21,6 @@ fn wait_until(what: &str, mut done: impl FnMut() -> bool) {
 fn a_verbose_event_waiter_re_entered_by_its_own_print_resumes_once() {
     let server = Server::new();
     server.success(&["new-session", "-d", "-s", "s", "sleep 60"]);
-    // A sibling on the same event whose filter never matches.
     let mut sibling = server
         .command()
         .args(["wait-for", "-E", "-F", "#{==:1,0}", "pane-mode-changed"])
@@ -50,15 +49,12 @@ fn a_verbose_event_waiter_re_entered_by_its_own_print_resumes_once() {
         "wait-for -Ev pane-mode-changed ; set -gF @t '#{@t}K'",
     ]);
     let mut client = server.attach_terminal(80, 24);
-    // Typed, so that the binding runs on the attached client's own queue.
     client.send(b"\x1bOP");
     wait_until("the key-bound waiter", || {
         client.drain();
         waiters().len() == 2
     });
 
-    // Copy mode fires the event; the waiter's first payload line enters view
-    // mode, which fires it again before the outer callback returns.
     server.success(&["copy-mode", "-t", "s:0.0"]);
     wait_until("the key-bound waiter to resume", || {
         client.drain();

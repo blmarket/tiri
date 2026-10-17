@@ -83,17 +83,13 @@ fn the_view_rests_on_pane_boundaries_from_both_directions() {
         let ids = ids(&server);
         label(&server, &ids);
         let mut client = server.attach_terminal(sx as u16, 24);
-        // The last pane is active; the view shows it beside its neighbour.
         client.wait_offset(&server, starts[2]);
-        // An already visible pane leaves the view where it is.
         select(&server, &ids[2]);
         assert_eq!(client.offset(&server), starts[2]);
-        // Leftwards, the selected pane becomes the first one shown.
         select(&server, &ids[1]);
         assert_eq!(client.offset(&server), starts[1]);
         select(&server, &ids[0]);
         assert_eq!(client.offset(&server), 0);
-        // Rightwards, it becomes the last one shown.
         select(&server, &ids[2]);
         assert_eq!(client.offset(&server), starts[1]);
         client.wait_screen(|screen| screen.row(0).starts_with("BBBBB"));
@@ -110,14 +106,11 @@ fn the_extent_ends_a_window_width_past_the_last_pane_start() {
     let server = strip(80, 4);
     let client = server.attach_terminal(80, 24);
     client.wait_offset(&server, 80);
-    // Panning stops where the last pane is the first one shown.
     server.success(&["refresh-client", "-t", &client.tty, "-R", "999"]);
     assert_eq!(client.offset(&server), 120);
-    // A lone pane, even a half one, leaves nothing to scroll.
     let lone = strip(80, 1);
     let client = lone.attach_terminal(80, 24);
     assert_eq!(client.display(&lone, "#{window_bigger}"), "0");
-    // A view at the origin that shows every pane does not clip them.
     let pair = strip(80, 2);
     let client = pair.attach_terminal(80, 24);
     assert_eq!(client.display(&pair, "#{window_bigger}"), "0");
@@ -127,8 +120,6 @@ fn the_extent_ends_a_window_width_past_the_last_pane_start() {
 
 #[test]
 fn a_shrinking_strip_brings_the_view_back_over_its_panes() {
-    // Unzooming the right half: both halves fit again, so the view leaves the
-    // blank extent past the right pane's border.
     let pair = strip(80, 2);
     let halves = ids(&pair);
     let client = pair.attach_terminal(80, 24);
@@ -138,14 +129,12 @@ fn a_shrinking_strip_brings_the_view_back_over_its_panes() {
     pair.success(&["resize-pane", "-Z", "-t", &halves[1]]);
     client.wait_offset(&pair, 0);
     assert_eq!(client.display(&pair, "#{window_bigger}"), "0");
-    // Killing the last pane shown leaves its neighbour as the last one.
     let server = strip(80, 4);
     let panes = ids(&server);
     let client = server.attach_terminal(80, 24);
     client.wait_offset(&server, 80);
     server.success(&["kill-pane", "-t", &panes[3]]);
     client.wait_offset(&server, 40);
-    // Panning by hand still reaches the blank extent.
     server.success(&["refresh-client", "-t", &client.tty, "-R", "999"]);
     assert_eq!(client.offset(&server), 80);
 }
@@ -158,7 +147,6 @@ fn cursor_movement_inside_a_visible_pane_does_not_move_the_view() {
     select(&server, &ids[0]);
     select(&server, &ids[2]);
     client.wait_offset(&server, 40);
-    // The cursor visits both edges of the active pane, at the right of the view.
     paint(
         &server,
         &ids[2],
@@ -177,15 +165,12 @@ fn panning_lasts_until_a_pane_is_selected() {
     let client = server.attach_terminal(80, 24);
     select(&server, &ids[0]);
     assert_eq!(client.offset(&server), 0);
-    // A pan may leave the view between pane boundaries.
     server.success(&["refresh-client", "-t", &client.tty, "-R", "25"]);
     assert_eq!(client.offset(&server), 25);
-    // Selecting a pane returns to the boundary nearest the panned view.
     select(&server, &ids[1]);
     assert_eq!(client.offset(&server), 40);
     server.success(&["refresh-client", "-t", &client.tty, "-L", "15"]);
     assert_eq!(client.offset(&server), 25);
-    // Selecting the active pane again changes nothing.
     select(&server, &ids[1]);
     assert_eq!(client.offset(&server), 25);
     server.success(&["refresh-client", "-t", &client.tty, "-c"]);
@@ -204,8 +189,6 @@ fn clients_of_different_widths_keep_their_own_views() {
             .map(|client| client.offset(&server))
             .to_vec()
     };
-    // A client wider than the window shows only the window's width of the
-    // strip, so it follows the panes as a client of that width does.
     assert_eq!(offsets(), [40, 80, 40]);
     select(&server, &ids[0]);
     assert_eq!(offsets(), [0, 0, 0]);
@@ -231,7 +214,6 @@ fn a_client_narrower_than_the_active_pane_follows_its_cursor() {
     let normal = server.attach_terminal(80, 24);
     narrow.wait_offset(&server, 121);
     select(&server, &ids[1]);
-    // The view stays inside the full pane, at the cursor's side.
     assert_eq!(narrow.offset(&server), 40);
     assert_eq!(normal.offset(&server), 40);
     paint(
@@ -243,17 +225,14 @@ fn a_client_narrower_than_the_active_pane_follows_its_cursor() {
         ),
         "!",
     );
-    // The cursor after `!` is strip column 111: the view moves just enough.
     narrow.wait_offset(&server, 72);
     narrow.wait_screen(|screen| screen.cells[0][38].ch == '!' && screen.x == 39);
     server.success(&["send-keys", "-t", &ids[1], "Enter"]);
     narrow.wait_offset(&server, 51);
-    // Cursor movement inside the view does not move it.
     server.success(&["send-keys", "-t", &ids[1], "Enter"]);
     narrow.wait_screen(|screen| (screen.x, screen.y) == (19, 0));
     std::thread::sleep(Duration::from_millis(100));
     assert_eq!(narrow.offset(&server), 51);
-    // A client as wide as the pane never follows the cursor.
     assert_eq!(normal.offset(&server), 40);
 }
 
@@ -266,7 +245,6 @@ fn mouse_clicks_select_the_pane_under_them_after_panning() {
     select(&server, &ids[0]);
     server.success(&["refresh-client", "-t", &client.tty, "-R", "25"]);
     assert_eq!(client.offset(&server), 25);
-    // Screen column 20 is strip column 45, inside the second pane.
     client.click(20, 5);
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     while server.display("#{pane_id}") != ids[1] {
@@ -297,7 +275,6 @@ fn left_and_right_stop_at_the_strip_ends() {
         .success());
     server.success(&["select-pane", "-t", "{right-of}"]);
     assert_eq!(active(), ids[1]);
-    // One row has no pane above or below.
     server.success(&["select-pane", "-U"]);
     server.success(&["select-pane", "-D"]);
     for target in ["{up-of}", "{down-of}"] {
@@ -324,7 +301,6 @@ fn positions_are_measured_across_the_panes() {
     assert_eq!(at("{right}"), ids[2]);
     let at_right = server.success(&["list-panes", "-F", "#{pane_at_right}"]);
     assert_eq!(at_right.lines().collect::<Vec<_>>(), ["0", "0", "1"]);
-    // A lone half pane is at the right of its strip.
     let lone = strip(80, 1);
     assert_eq!(lone.display("#{pane_at_right}"), "1");
     assert_eq!(

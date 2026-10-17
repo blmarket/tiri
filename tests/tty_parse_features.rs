@@ -23,11 +23,9 @@ fn feature_list_separators_removal_and_unknown_feature() {
         assert_eq!(feature_names(enabled), "RGB,sixel");
         assert_eq!(feature_names(disabled), "256");
 
-        // A disabled feature cannot be re-added later in the same list.
         tty_parse_features(c"256:mouse", separators, &mut enabled, &mut disabled);
         assert_eq!(feature_names(enabled), "mouse,RGB,sixel");
 
-        // An unknown feature stops parsing before the later known one.
         tty_parse_features(
             c"title:missing:clipboard",
             separators,
@@ -36,7 +34,6 @@ fn feature_list_separators_removal_and_unknown_feature() {
         );
         assert_eq!(feature_names(enabled), "mouse,RGB,sixel,title");
 
-        // As a C string, bytes after the first NUL are not part of the list.
         tty_parse_features(
             std::ffi::CStr::from_bytes_until_nul(b"osc7\0,clipboard\0").unwrap(),
             separators,

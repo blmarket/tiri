@@ -36,7 +36,6 @@ fn choose_tree_switches_to_the_chosen_session() {
     let (server, mut client) = two_sessions();
     server.success(&["choose-tree", "-s", "-t", "alpha:0.0"]);
     client.wait_screen(|screen| (0..screen.cells.len()).any(|y| screen.find(y, "beta").is_some()));
-    // Sessions sort by name, so beta is the row below the current alpha.
     client.send(b"\x1b[B\r");
     wait_session(&server, &client, "beta");
 }

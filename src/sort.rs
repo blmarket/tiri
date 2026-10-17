@@ -48,7 +48,6 @@ pub(super) fn sort_by_criteria<T>(
         }
         return;
     }
-    // Preserve traversal order for equal keys, as the pinned tmux sort does.
     values.sort_by(|a, b| compare(a, b, sort_crit));
 }
 

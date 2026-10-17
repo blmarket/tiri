@@ -1,17 +1,12 @@
-use crate::src::format::bytes::nullable_cstr;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::session::SessionRef;
-// Private expression parser/evaluator.  The modifier parser, loops,
-// conditionals, escaping, job expansion, and recursive expansion routines
-// remain in their original order. The
-// facade supplies shared types, logging/state helpers, tree CRUD, callbacks,
-// and job-cache lookup.
 use super::bytes::format_cstring;
 use super::*;
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
 use crate::src::server_client::Client;
 use crate::src::session::Session;
+use crate::src::shared::client::ClientRef;
+use crate::src::shared::session::SessionRef;
 use crate::src::window::{Window, WindowPane};
 use std::ffi::{CStr, CString};
 
@@ -179,8 +174,6 @@ pub(super) unsafe fn format_find(
     let format_pane_owner = (*ft).wp.upgrade();
     let format_window_owner = (*ft).w.upgrade();
     let format_session_owner = (*ft).s.upgrade();
-    // Format callbacks can remove the last published Window owner. Keep the
-    // temporary owner through lookup, then run explicit release on every exit.
     let result = (|| {
         let mut current_block: u64;
         let mut found: Option<CString> = None;
@@ -243,8 +236,6 @@ pub(super) unsafe fn format_find(
                     found = Some(value);
                 } else {
                     if !modifiers & FORMAT_TIMESTRING as uint64_t != 0 {
-                        // Distinguish an absent variable from a locally removed
-                        // one: the latter must not fall back to the global value.
                         let entry = format_session_owner
                             .as_ref()
                             .and_then(|session| {
@@ -325,7 +316,6 @@ pub(super) unsafe fn format_find(
             found?
         };
         if modifiers & FORMAT_BASENAME as uint64_t != 0 {
-            // basename/dirname may mutate their input or return a static string.
             let mut scratch = found.into_bytes_with_nul();
             found = CStr::from_ptr(basename(scratch.as_mut_ptr().cast())).to_owned();
         }
@@ -416,8 +406,6 @@ unsafe fn format_unescape_cstring(
         }
         s = s.offset(1);
     }
-    // C callers observe only the bytes before the first NUL, even if a
-    // counted input contains one in the middle.
     if let Some(first_nul) = out.iter().position(|&byte| byte == 0) {
         out.truncate(first_nul);
     }
@@ -508,8 +496,6 @@ unsafe fn format_choose(
         return None;
     }
     let split = cp.offset_from(s) as usize;
-    // Clone both operands before expansion: a format callback may reenter
-    // the formatter or change the storage backing the original input.
     let left0 = CString::new(&CStr::from_ptr(s).to_bytes()[..split]).unwrap();
     let right0 = CStr::from_ptr(cp.add(1)).to_owned();
     let left = format_expand1_cstring(es, left0.as_ptr());
@@ -518,8 +504,6 @@ unsafe fn format_choose(
     Some((left, right))
 }
 
-// The three format loops only borrow the operands while expanding each item.
-// Keep both copies alive across nested expansions, including the no-comma case.
 unsafe fn format_choose_loop(
     es: *mut format_expand_state,
     fmt: *const ::core::ffi::c_char,
@@ -1240,8 +1224,6 @@ pub(super) unsafe fn format_loop_panes(
     Some(CString::new(buffer).expect("format loop output contains no NUL"))
 }
 
-// Copy one option row while its component is borrowed. Recursive formatting
-// below runs only after every entry/value reference has left this scope.
 unsafe fn format_option_loop_values(
     option: &mut options_entry,
     array_key: Option<&CStr>,
@@ -1442,8 +1424,6 @@ pub(super) unsafe fn format_loop_options(
         }
     }
     let result = CString::new(buffer).expect("format loop output contains no NUL");
-    // All option visits and recursive formatting have ended. This upgrade may
-    // now be the last owner after a format callback removed its winlink.
     if let Some(window) = window {
         drop(window);
     }
@@ -1610,7 +1590,6 @@ pub(super) unsafe fn format_loop_clients(
 }
 
 fn format_float(value: f64, precision: ::core::ffi::c_int) -> CString {
-    // Preserve printf's lowercase NaN spelling and sign; Rust prints "NaN".
     if value.is_nan() {
         return if value.is_sign_negative() {
             c"-nan"
@@ -1619,15 +1598,11 @@ fn format_float(value: f64, precision: ::core::ffi::c_int) -> CString {
         }
         .to_owned();
     }
-    // A negative printf precision selects the default of six decimal places.
     let precision = if precision < 0 { 6 } else { precision as usize };
     format_cstring(format_args!("{value:.precision$}")).expect("formatted number contains no NUL")
 }
 
 fn format_expression_integer(value: f64) -> ::core::ffi::c_longlong {
-    // Match the x86-64 tmux build's signed conversion (CVTTSD2SI): invalid
-    // conversions produce LLONG_MIN, whereas Rust saturates or returns zero.
-    // LLONG_MAX rounds up to 2^63 as f64, so the upper bound is exclusive.
     #[cfg(target_arch = "x86_64")]
     if !(i64::MIN as f64..-(i64::MIN as f64)).contains(&value) {
         return i64::MIN;
@@ -1916,15 +1891,12 @@ pub(super) unsafe fn format_replace(
     let _envent: Option<&environ_entry> = None;
     (*sc).order = SORT_ORDER;
     (*sc).reversed = 0 as ::core::ffi::c_int;
-    // Match strndup's bounded scan, including an early NUL.
     let key_end = libc::strnlen(key, keylen);
     let copy0 = CString::new(std::slice::from_raw_parts(key.cast::<u8>(), key_end))
         .expect("format key contains no NUL");
     let mut remaining = copy0.as_c_str();
     list = format_build_modifiers(es, &mut remaining);
     copy = remaining.as_ptr();
-    // No more entries are pushed after parsing. Pointers saved in cmp, search,
-    // sub, and other modifier selections stay valid until cleanup.
     i = 0 as u_int;
     while (i as usize) < list.len() {
         fm = list.as_mut_ptr().add(i as usize);
@@ -2575,8 +2547,6 @@ pub(super) unsafe fn format_replace(
                         value = format_expand1_cstring(es, cp);
                         break;
                     } else {
-                        // The delimiter is inside the NUL-terminated input, so
-                        // this slice contains only the condition's bytes.
                         let condition = CString::new(std::slice::from_raw_parts(
                             cp.cast::<u8>(),
                             cp2.offset_from(cp) as usize,
@@ -2882,7 +2852,6 @@ pub(super) unsafe fn format_expand1_cstring(
                         break;
                     }
                     n = ptr.offset_from(fmt) as ::core::ffi::c_long as size_t;
-                    // The closing ')' is before the terminating NUL in fmt.
                     let name = CString::new(std::slice::from_raw_parts(fmt.cast::<u8>(), n))
                         .expect("format job name contains no NUL");
                     format_log1(es, c"format_expand1".as_ptr(), |out| {
@@ -2954,8 +2923,6 @@ pub(super) unsafe fn format_expand1_cstring(
                         continue;
                     }
                     if ch == '#' as i32 {
-                        // Copy every ## pair in the run at once; an odd #
-                        // left over starts the next sequence.
                         output.resize(output.len() + n / 2, b'#');
                         fmt = if n % 2 != 0 { ptr.offset(-1) } else { ptr };
                         continue;
@@ -3000,7 +2967,6 @@ pub(super) unsafe fn format_expand1_cstring(
             output.push(ch as u8);
         }
     }
-    // Literal bytes stop at NUL and replacements append their C-string view.
     let buf = CString::new(output).expect("format expansion contains no NUL");
     format_log1(es, c"format_expand1".as_ptr(), |out| {
         out.write_all(b"result is: ")?;
@@ -3126,9 +3092,6 @@ mod format_float_tests {
         ];
         for value in values {
             for precision in [-100, -1, 0, 1, 2, 6, 17, 100] {
-                // The application keeps LC_NUMERIC and the rounding mode at
-                // their defaults. Compare with the formatter being replaced,
-                // except for glibc's NaN sign, which other libcs drop.
                 let expected = if value.is_nan() {
                     if value.is_sign_negative() {
                         c"-nan".to_owned()
@@ -3186,7 +3149,6 @@ mod format_choose_tests {
 
             assert_eq!(owned.as_bytes(), b"\xff:#:,:}:tail");
             assert_eq!(timed_owned.as_bytes(), owned.as_bytes());
-            // The independent owner remains valid after the tree is freed.
             assert_eq!(owned.as_bytes(), b"\xff:#:,:}:tail");
         }
     }
@@ -3202,7 +3164,6 @@ mod format_choose_tests {
             assert!(format_expand_cstring(ft, c"".as_ptr())
                 .as_bytes()
                 .is_empty());
-            // The first NUL still terminates the input, including invalid bytes after it.
             assert_eq!(
                 format_expand_cstring(ft, b"first\0\xffignored\0".as_slice().as_ptr().cast())
                     .as_bytes(),

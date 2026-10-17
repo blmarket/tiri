@@ -432,7 +432,6 @@ unsafe fn format_cb_pane_at_top(mut ft: *mut format_tree) -> Option<CString> {
     if wp.is_null() {
         return None;
     }
-    // A top status line takes the window's first row from the top panes.
     let top = i32::from(window_pane_get_pane_status(&*wp) == PANE_STATUS_TOP);
     flag = ((*wp).yoff == top) as ::core::ffi::c_int;
     value =
@@ -1016,7 +1015,6 @@ unsafe fn format_cb_pane_at_left(mut ft: *mut format_tree) -> Option<CString> {
 }
 
 unsafe fn format_cb_pane_at_right(ft: *mut format_tree) -> Option<CString> {
-    // The last pane ends the strip; the extent past it is blank.
     let pane = (*ft).wp.upgrade()?;
     Some(
         if pane

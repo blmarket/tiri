@@ -108,7 +108,6 @@ pub(crate) unsafe fn tty_enqueue_bytes(
     ));
     *written = written.wrapping_add(len);
     if let Some((runtime, source)) = tty_log.as_mut() {
-        // Regular-file writes remain synchronous, through the same I/O API.
         let _ = runtime.block_on(source.write(&[std::io::IoSlice::new(buf)], None));
     }
     if tty.flags & TTY_STARTED != 0 {

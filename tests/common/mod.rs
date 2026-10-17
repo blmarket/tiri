@@ -1,6 +1,6 @@
 //! Server harness shared by integration tests that drive a real tiri server.
 
-#![allow(dead_code)] // Each test binary uses a different subset.
+#![allow(dead_code)]
 
 use std::fs::{self, File};
 use std::io::{ErrorKind, Read as _, Write as _};
@@ -36,8 +36,6 @@ impl Server {
             .env("TERM", "xterm-256color")
             .env("SHELL", "/bin/sh")
             .env("TMUX", "")
-            // An inherited pane id would make the server resolve the current
-            // target from it instead of the attached client.
             .env_remove("TMUX_PANE");
         command
     }
@@ -579,7 +577,6 @@ impl TerminalClient {
                 Ok(0) => return,
                 Ok(n) => self.screen.feed(&bytes[..n]),
                 Err(error) if error.kind() == ErrorKind::WouldBlock => return,
-                // The client side closed after detaching.
                 Err(error) if error.raw_os_error() == Some(libc::EIO) => return,
                 Err(error) => panic!("terminal read: {error}"),
             }

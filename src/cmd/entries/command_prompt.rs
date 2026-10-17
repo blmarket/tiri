@@ -230,8 +230,6 @@ unsafe fn cmd_command_prompt_exec(
     );
     let flags = cdata.flags;
     let prompt_type = cdata.prompt_type;
-    // The prompt takes the sender; the item's waker is registered only by the
-    // first poll, after exec returns.
     let continuation = if wait != 0 {
         let (resume, answered) = tiri_rt::oneshot::channel();
         cdata.resume = Some(resume);
@@ -354,8 +352,6 @@ unsafe fn cmd_command_prompt_callback(
                             cmdq_get_error(error.as_deref().expect("command error")),
                         );
                     }
-                    // A lost waiter keeps the prompt going, but its
-                    // commands have no queue: the send fails.
                     Ok(cmdlist) => match cdata.resume.take() {
                         Some(resume) => {
                             let _ = resume.send(cmdlist);
@@ -373,7 +369,6 @@ unsafe fn cmd_command_prompt_callback(
             }
         }
     }
-    // Closing without commands resumes the waiting item with nothing.
     drop(cdata.resume.take());
     PROMPT_CLOSE
 }
@@ -480,18 +475,13 @@ mod tests {
             let ran = append_flag(&owner);
             let mut cdata = cdata(c"display-message -p '%1-%2'", 2, Some(resume));
             assert_eq!(state_count(&head), 1);
-            // The first answer only moves to the next prompt.
             assert_eq!(answer(&owner, &mut cdata, c"a"), PROMPT_CONTINUE);
             assert!(cdata.resume.is_some());
             assert_eq!(cmdq_next(Some(&owner)), 0, "the item still waits");
             assert_eq!(answer(&owner, &mut cdata, c"b"), PROMPT_CLOSE);
-            // The command was inserted with the item's state inside the send;
-            // removal and the rest wait for cmdq_next.
             assert!(cdata.resume.is_none());
             assert_eq!(state_count(&head), 2);
             assert_eq!((cmdq_len(Some(&owner)), ran.get()), (3, None));
-            // The inserted command runs (and fails on the dead client) ahead
-            // of the next item, which then is the only one left.
             owner.update_flags(CLIENT_DEAD as u64, 0);
             assert_eq!(cmdq_next(Some(&owner)), 2);
             assert!(head.upgrade().is_none());
@@ -502,8 +492,6 @@ mod tests {
     #[test]
     fn closing_without_commands_resumes_the_item_with_nothing() {
         unsafe {
-            // A cancel, a parse error (appended to the answering client) and
-            // a prompt freed unanswered (tmux's cmd_command_prompt_free).
             for (answer, errors) in [(Some(None), 0), (Some(Some(c"x")), 1), (None, 0)] {
                 let owner = clients::with_queue();
                 let answering = clients::with_queue();
@@ -541,9 +529,7 @@ mod tests {
                 owner.update_flags(CLIENT_DEAD as u64, 0);
                 let client = Rc::downgrade(&owner);
                 drop(owner);
-                // Neither the item nor the prompt's data keeps the client (R2).
                 assert!(client.upgrade().is_none() && head.upgrade().is_none());
-                // The orphaned prompt still walks its prompts.
                 assert_eq!(answer(&answering, &mut cdata, c"a"), PROMPT_CONTINUE);
                 assert_eq!(answer(&answering, &mut cdata, c"b"), PROMPT_CLOSE);
                 assert_eq!(cmdq_len(Some(&answering)), errors);

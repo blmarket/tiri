@@ -82,7 +82,6 @@ fn expired_history_observer_is_an_invariant_violation() {
         let mut stack = Default::default();
         let link = winlink_add(&raw mut links, 1);
         winlink_stack_push(&raw mut stack, link.clone());
-        // Deliberately violate teardown order without dereferencing the dead pointer.
         drop(links);
         winlink_stack_indices(&stack);
     }

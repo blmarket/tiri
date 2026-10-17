@@ -128,8 +128,6 @@ unsafe fn style_snapshot(
         .tableentry_ptr()
         .is_some_and(|table| table.flags & OPTIONS_TABLE_IS_COLOUR != 0);
     let expand = value.as_bytes().windows(2).any(|bytes| bytes == b"#{");
-    // Publish the default and cache state before a format callback can
-    // recursively observe this option, just as the old API did.
     style_set(&mut entry.style, &grid_default_cell);
     entry.cached = (!expand) as i32;
     Some(Err((value, colour, expand)))

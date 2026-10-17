@@ -11,8 +11,6 @@ use tiri_buffer::SegmentedBuf;
 #[repr(C)]
 pub struct bufferevent {
     pub(crate) state: Option<std::rc::Rc<crate::src::reactor::StreamState>>,
-    // Keep buffer addresses stable for borrowed pointers. Use the bufferevent
-    // accessors for mutations so the stream task rechecks its I/O interests.
     pub input: Box<SegmentedBuf>,
     pub output: Box<SegmentedBuf>,
     pub wm_read: event_watermark,

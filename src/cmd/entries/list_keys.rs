@@ -133,10 +133,7 @@ unsafe fn cmd_list_keys_format_add_key_binding(
     }
     let key_string = key_string_format(bd.key, false);
     format_add(ft, c"key_prefix", |out| {
-        write_cstr(
-            out, // format_add copies the bytes synchronously; this pointer cannot escape.
-            nullable_cstr(prefix.as_ptr()),
-        )
+        write_cstr(out, nullable_cstr(prefix.as_ptr()))
     });
     format_add(ft, c"key_table", |out| {
         write_cstr(out, bd.tablename.as_deref())

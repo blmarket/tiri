@@ -167,7 +167,6 @@ unsafe fn client_connect(path: &CStr, flags: uint64_t) -> io::Result<OwnedFd> {
             if lockfd.is_some() && unlink(path.as_ptr()) != 0 && *__errno_location() != ENOENT {
                 return Err(io::Error::last_os_error());
             }
-            // After fork each process releases its own copy of the lock.
             let fd = server_start(flags, &mut lockfd, &mut lockfile);
             drop(lockfd);
             setblocking(fd.as_raw_fd(), 0);
@@ -241,14 +240,12 @@ pub unsafe fn client_main(
     }
     let mut process_owner = proc_start(c"client");
     client_proc = &raw mut *process_owner;
-    // All ordinary returns, including startup failures, share explicit cleanup.
     let result = (|| {
         client_flags = (flags as ::core::ffi::c_ulonglong | CLIENT_WRITE_ACK) as uint64_t;
         log_debug(format_args!(
             "flags are {}",
             log_hex(client_flags as ::core::ffi::c_ulonglong)
         ));
-        // Socket activation is only available through systemd.
         #[cfg(target_os = "linux")]
         let activated = systemd_activated() != 0;
         #[cfg(not(target_os = "linux"))]
@@ -278,14 +275,11 @@ pub unsafe fn client_main(
                 return 1;
             }
         };
-        // Connecting may daemonize a new server. Initialize each process's
-        // runtime only after that fork.
         let runtime = tiri_rt::mio::Runtime::new().expect("tiri-rt initialization");
         proc_set_signals(
             client_proc,
             Some(Box::new(|sig| unsafe { client_signal(sig) })),
         );
-        // The daemonization child may have exited before SIGCHLD was installed.
         client_signal(ProcessSignal::Child);
         client_peer = proc_add_peer(
             client_proc,

@@ -46,16 +46,12 @@ impl OptionsScope {
             }
             let value = value.ok_or_else(|| c"empty value".to_owned())?;
             self.with_local(|table| {
-                // Formatting this already-owned value cannot reenter the model;
-                // user string replacement retains its existing monitor.
                 options_set_string(table, name, append as i32, |out| write_cstr(out, &*value));
             });
             return Ok(());
         }
         let definition = definition.unwrap();
         if definition.type_0 != OPTIONS_TABLE_COMMAND {
-            // Scalar strings/numbers/flags do not parse commands. Missing local
-            // defaults have the same non-command type, and validation is pure.
             let mut cause = None;
             let result = self.with_local(|table| {
                 options_from_string(table, definition, name, value, append as i32, &mut cause)
@@ -68,8 +64,6 @@ impl OptionsScope {
         }
         let value = value.ok_or_else(|| c"empty value".to_owned())?;
         let commands = parse_commands(value, parse)?;
-        // Preserve set-command's sequence: parse the requested value first;
-        // if absent, publish and parse its default before installing the value.
         if self.with_entry(name, |_| ()).is_none() {
             self.reset_default_with_parser(definition, parse);
         }
@@ -208,8 +202,6 @@ impl OptionsScope {
                     index
                 })
                 .expect("array option remains installed during assignment");
-            // The no-separator branch historically permits UINT_MAX itself;
-            // separated assignment stops after the last ordinary index is full.
             if index == UINT_MAX && !separator.to_bytes().is_empty() {
                 break;
             }
@@ -276,15 +268,12 @@ impl OptionsScope {
         parse: &mut impl FnMut(&CStr) -> cmd_parse_result,
     ) {
         let name = definition.name.expect("named option definition");
-        // Removal can reenter and replace the name. Finish each replacement's
-        // teardown before publishing the fresh default record.
         while self.remove_entry(name) {}
         let identity = self.with_local(|table| (*options_empty(table, definition)).id());
         if definition.flags & OPTIONS_TABLE_IS_ARRAY != 0 {
             if let Some(values) = definition.default_arr {
                 for (index, value) in values.iter().enumerate() {
                     let key = CString::new(index.to_string()).expect("numeric array key");
-                    // Default loading preserves the legacy ignored-error behavior.
                     let _ = self.set_array_item_with_parser(name, &key, Some(value), false, parse);
                 }
             } else {

@@ -275,7 +275,6 @@ fn vnode_fd_path(pid: u32, fd: libc::c_int) -> Option<PathBuf> {
 }
 
 fn path_from_vnode_info(info: &libc::vnode_info_path) -> Option<PathBuf> {
-    // `vip_path` is a fixed NUL-terminated buffer of `c_char`.
     let path = &info.vip_path;
     let bytes = unsafe {
         std::slice::from_raw_parts(path.as_ptr().cast::<u8>(), std::mem::size_of_val(path))
@@ -339,8 +338,6 @@ mod tests {
 
     #[test]
     fn pane_cwd_absent_for_non_tty() {
-        // A pipe has no controlling terminal, so `tcgetpgrp` fails and no cwd is
-        // reported.
         let mut fds = [0 as RawFd; 2];
         assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
         let read = unsafe { OwnedFd::from_raw_fd(fds[0]) };

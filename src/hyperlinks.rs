@@ -39,7 +39,6 @@ struct HyperlinkHistory {
 }
 
 thread_local! {
-    // Hyperlink operations run on the server event loop, as does style parsing.
     static HYPERLINK_HISTORY: RefCell<HyperlinkHistory> = const {
         RefCell::new(HyperlinkHistory {
             next_external_id: 1,
@@ -114,7 +113,6 @@ pub fn hyperlinks_put(hl: &HyperlinksRef, uri_in: &CStr, internal_id_in: Option<
             table: Rc::downgrade(&hl.0),
             inner,
         });
-        // tmux evicts when the count reaches the limit, leaving 4999 records.
         if history.entries.len() == MAX_HYPERLINKS as usize {
             history.entries.pop_front()
         } else {
@@ -158,8 +156,6 @@ pub fn hyperlinks_reset(hl: &HyperlinksRef) {
 impl Drop for hyperlinks {
     fn drop(&mut self) {
         if !self.by_inner.is_empty() {
-            // The last strong table reference is already gone. Do not access
-            // the history after its thread-local destructor has run.
             let _ = HYPERLINK_HISTORY.try_with(|history| {
                 history
                     .borrow_mut()

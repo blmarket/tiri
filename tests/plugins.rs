@@ -118,8 +118,6 @@ impl Server {
     }
 
     fn repo(&self) -> PathBuf {
-        // The metadata layout needed by the plugin; no git executable/config
-        // or commit identity is required for an unborn branch.
         let repo = self.root.join("project");
         fs::create_dir_all(repo.join(".git/refs/heads")).unwrap();
         fs::write(repo.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
@@ -244,7 +242,6 @@ fn window_status_lists_pane_emojis_in_layout_order() {
     let server = Server::start(None, "");
     let repo = server.repo();
     let shell = server.pane(repo.to_str().unwrap());
-    // Created second but placed first, so creation and layout orders differ.
     let running = server.run(&[
         "new-pane",
         "-b",

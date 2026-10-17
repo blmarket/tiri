@@ -348,7 +348,6 @@ unsafe fn window_pane_destroy_ready(
     if !(*wp).flags & PANE_EXITED != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    // Like tmux, a waiter keeps the pane even after its item is dropped.
     if (*wp).wait_close.is_some() && (*wp).exit_status.is_none() {
         return 0 as ::core::ffi::c_int;
     }
@@ -633,7 +632,6 @@ unsafe fn window_pane_destroy(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>
     window_pane_clear_prompt(&owner);
     window_pane_free_modes(&owner);
     pane_owner.clear_sync_dirty();
-    // Empty panes have stream buffers and an input parser without a PTY.
     std::mem::take(&mut (*wp).event).free();
     drop((*wp).fd.take());
     if let Some(ictx) = (*wp).ictx.take() {
@@ -838,7 +836,6 @@ unsafe fn window_pane_set_mode(
             .display_screen
             .expect("mode display screen getter")(wme.clone());
     } else {
-        // The pane owns the entry; callbacks observe it through its weak identity.
         let entry = refbox::RefBox::new(window_mode_entry {
             wp: std::rc::Rc::downgrade(pane_owner),
             swp: source_owner.map(std::rc::Rc::downgrade).unwrap_or_default(),
@@ -1527,7 +1524,6 @@ async fn window_pane_input_complete(
         if let Some(client) = client.upgrade() {
             client.request_exit(1);
         }
-        // The transfer lives while its outcome is handled.
         if let Some(file) = file.upgrade() {
             file_cancel(&mut *file.get());
         }
@@ -1558,8 +1554,6 @@ unsafe fn window_pane_start_input(
     {
         return Ok(None);
     }
-    // The file initializer publishes its weak identity before dispatch. The
-    // listener then owns the box, including its retained client reference.
     let mut cdata = Box::new(window_pane_input_data {
         client: c.clone(),
         wp: (*wp).id,
@@ -2003,8 +1997,6 @@ unsafe fn window_pane_get_pane_lines(wp: &window_pane) -> pane_lines {
 impl Drop for window_pane {
     fn drop(&mut self) {
         log_debug(format_args!("pane %{} freed", { self.id }));
-        // Logical destroy normally takes the parser first; direct owner
-        // destruction must still drop it before the screens it writes to.
         drop(self.ictx.take());
     }
 }
@@ -2119,7 +2111,6 @@ mod wait_close_tests {
         assert!(pane.process_exited(pid, ExitStatus::from_raw(status)));
         assert!((*pane.get()).wait_close.is_none());
         let retval = clients::return_value(owner);
-        // Resumed at the exit; the queue moves on at its next pass.
         assert!(!ran.get());
         assert_eq!(cmdq_next(Some(owner)), 1);
         assert!(head.upgrade().is_none());
@@ -2134,7 +2125,6 @@ mod wait_close_tests {
             let owner = clients::with_queue();
             assert_eq!(reap(&owner, 4242, 5 << 8), 5);
             assert_eq!(reap(&owner, 4243, libc::SIGTERM), 128 + libc::SIGTERM);
-            // The session is judged at exit.
             let session = session_new_for_test();
             clients::attach(&owner, Some(&session));
             assert_eq!(reap(&owner, 4244, 7 << 8), 128 + libc::SIGTERM);
@@ -2172,8 +2162,6 @@ mod wait_close_tests {
             assert!(pane.destroy_ready());
             pane.wait_until_close(waiter);
             assert!(!pane.destroy_ready());
-            // The waiting client is freed with its queue; the pane holds no
-            // reference to either (R2).
             let client = Rc::downgrade(&owner);
             drop(owner);
             assert!(client.upgrade().is_none());

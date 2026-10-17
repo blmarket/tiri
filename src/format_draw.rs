@@ -1191,8 +1191,6 @@ pub unsafe fn format_draw(
             } else {
                 let style_start = cp.offset(2);
                 let style_len = end.offset_from(style_start) as usize;
-                // The slice lies inside the NUL-terminated expanded string.
-                // style_parse and log_debug read it before this owner drops.
                 let style_text = CString::new(::core::slice::from_raw_parts(
                     style_start as *const u8,
                     style_len,

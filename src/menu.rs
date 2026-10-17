@@ -45,7 +45,6 @@ impl menu {
     fn push_empty(&mut self) -> usize {
         let index = self.items.len();
         self.items.push(MenuRow::default());
-        // Preserve the menu size limit when appending a row.
         self.count();
         index
     }
@@ -86,7 +85,6 @@ pub unsafe fn menu_add_item(
         )
     };
     if expanded.is_empty() {
-        // Construction has not published this menu, so the placeholder is last.
         menu.items.pop();
         return;
     }
@@ -241,7 +239,6 @@ fn menu_free_data(owner: refbox::RefBox<crate::src::shared::menu::menu_data>) {
     if let Some(callback) = callback {
         callback(MenuSelection::Cancelled);
     }
-    // Callbacks may close this menu again or install a replacement.
     drop(std::mem::take(
         &mut owner.try_borrow_mut().expect("live unborrowed menu").s,
     ));
@@ -260,7 +257,6 @@ pub unsafe fn menu_close(
     let Some(menu) = menu else {
         return;
     };
-    // The callback can release the window's final owner and fire its close event.
     menu_free_data(menu);
     if let Some(owner) = window.upgrade() {
         owner.invalidate_scene();
@@ -390,7 +386,6 @@ fn menu_handle_key(md: &mut menu_data, event: &key_event) -> MenuKeyAction {
         if (md.flags & MENU_STAYOPEN == 0 && !movement && release)
             || (md.flags & MENU_STAYOPEN != 0 && !wheel && !drag)
         {
-            // A release selects the previously highlighted row, not its own coordinates.
             return menu_chosen(md);
         }
         md.choice = m.y.wrapping_sub(md.py.wrapping_add(1)) as i32;
@@ -732,7 +727,6 @@ mod tests {
         ]);
         md.choice = -1;
         for (key, choice) in [
-            // With no highlight, Down stops at row zero even if it is a separator.
             (KEYC_DOWN, 0),
             (KEYC_DOWN, 2),
             (KEYC_DOWN, 4),
@@ -740,14 +734,12 @@ mod tests {
             (KEYC_UP, 4),
             (KEYC_HOME, 2),
             (KEYC_END, 4),
-            // Page up lands on row zero even when it is a separator.
             (KEYC_PPAGE, 0),
             (KEYC_NPAGE, 4),
         ] {
             assert_eq!(menu_handle_key(&mut md, &event(key)), MenuKeyAction::Redraw);
             assert_eq!(md.choice, choice);
         }
-        // Flags are ignored for matching, but the callback receives the row's key.
         md.menu.items[2].key = KEYC_UP | KEYC_VI;
         md.menu.items[4].key = KEYC_UP;
         assert_eq!(
@@ -791,13 +783,11 @@ mod tests {
                     key: b'a' as key_code
                 }
             );
-            // Hovering outside clears the highlight and keeps both menu styles open.
             mouse.m.x = 9;
             mouse.m.b = MOUSE_MASK_DRAG as u_int | 3;
             assert_eq!(menu_handle_key(&mut md, &mouse), MenuKeyAction::Redraw);
             assert_eq!(md.choice, -1);
             assert_eq!(menu_handle_key(&mut md, &mouse), MenuKeyAction::Unchanged);
-            // A separator or disabled row never invokes its command.
             mouse.m.x = 12;
             for y in [7, 8] {
                 mouse.m.y = y;

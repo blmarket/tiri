@@ -80,7 +80,6 @@ fn parser_preserves_tmux_json_subset_and_error_context() {
 fn recursive_borrows_preserve_depth_limit_and_restore_depth_for_siblings() {
     for (open, close) in [(r#"{"a":"#, "}"), (r#"{"a":["#, "]}")] {
         for depth in [PARSE_DEPTH_MAX - 1, PARSE_DEPTH_MAX] {
-            // The outer object and innermost empty object count toward depth.
             let nested = format!("{}{{}}{}", open.repeat(depth - 1), close.repeat(depth - 1));
             let input = CString::new(format!(r#"{{"a":{nested},"b":{nested}}}"#)).unwrap();
             let mut cause = None;

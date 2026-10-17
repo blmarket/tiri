@@ -81,7 +81,6 @@ thread_local! {
 impl jobs {
     fn insert(owner: RefBox<job>) -> Weak<job> {
         let observer = owner.downgrade();
-        // Keep the previous newest-first traversal order.
         JOBS.with_borrow_mut(|jobs| jobs.storage.insert(0, owner));
         observer
     }
@@ -135,10 +134,6 @@ pub unsafe fn job_run(
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
     let mut tty: [::core::ffi::c_char; 32] = [0; 32];
     let _oo: *mut options = ::core::ptr::null_mut::<options>();
-    // This environment is forked for the job and never escapes `job_run`.
-    // Keep ownership in a Rust local rather than putting a Drop-bearing value
-    // in the C-managed job record. The child reaches exec/_exit, while the
-    // parent drops the same owner on both success and failure paths.
     let mut env_owner = Some(environ_for_session(
         s_owner,
         (cfg_finished == 0) as ::core::ffi::c_int,
@@ -214,8 +209,6 @@ pub unsafe fn job_run(
                 drop(out_owner.take());
             }
             0 => {
-                // The exec child remaps descriptors onto stdio and uses closefrom.
-                // Transfer ownership before that raw descriptor setup.
                 if let Some(pair) = out_owner.take() {
                     out = pair.map(IntoRawFd::into_raw_fd);
                 }
@@ -246,8 +239,6 @@ pub unsafe fn job_run(
                     }
                 }
                 environ_push(env);
-                // The child has a private copy after fork. The parent
-                // keeps its owner for the parent-side return path.
                 drop(env_owner.take());
                 if !flags & JOB_PTY != 0 {
                     if tiri_rt::unix::redirect(
@@ -429,7 +420,6 @@ unsafe fn job_log(action: &str, job: &job) {
 /// Remove ownership before callbacks, but keep the allocation and resources alive
 /// until the free callback returns. Reentrant cancellation is a no-op.
 pub unsafe fn job_free(handle: &Weak<job>) {
-    // The borrow ends inside remove; teardown below may re-enter the list.
     let Some(owner) = jobs::remove(handle) else {
         return;
     };
@@ -489,7 +479,6 @@ unsafe fn job_read_callback(handle: &Weak<job>) {
     let Some(mut callback) = callback_slot.borrow_mut().take() else {
         return;
     };
-    // No job borrow survives dispatch: an update may cancel this very job.
     callback(handle);
     let mut slot = callback_slot.borrow_mut();
     if slot.is_none() {
@@ -531,7 +520,6 @@ unsafe fn job_finish(handle: &Weak<job>) {
     if let Some((callback, result)) = completion {
         callback(result);
     }
-    // Completion may already have cancelled the job, or its owning popup/cache.
     job_free(handle);
 }
 
@@ -573,7 +561,6 @@ pub unsafe fn job_check_died(pid: pid_t, status: ExitStatus) {
         }
         job_log("died", &job);
         job.status = status;
-        // The child is reaped; cleanup must not signal its old PID.
         job.pid = -1;
         if job.state == JOB_CLOSED {
             true
@@ -682,7 +669,6 @@ mod job_stream_tests {
             let callback_first = first.clone();
             first.try_borrow_mut().unwrap().freecb = Some(Box::new(move || {
                 assert_eq!(jobs::snapshot(), vec![second.clone()]);
-                // Owner and resources remain live, with no outstanding borrow.
                 assert_eq!(
                     callback_first
                         .try_borrow_mut()
@@ -695,7 +681,7 @@ mod job_stream_tests {
                 );
                 assert_eq!(callback_event.ptr(), stream);
                 assert!(::libc::fcntl(fd, ::libc::F_GETFD) >= 0);
-                job_free(&callback_first); // reentrant cancellation is harmless
+                job_free(&callback_first);
                 job_free(&second);
                 let replacement = jobs::insert(RefBox::new(idle_job()));
                 assert_ne!(replacement, callback_first);
@@ -711,7 +697,6 @@ mod job_stream_tests {
             drop(remote);
             assert!(jobs::snapshot().is_empty());
 
-            // Update callbacks can cancel their own registry owner.
             let update = jobs::insert(RefBox::new(idle_job()));
             let observed = calls.clone();
             update.try_borrow_mut().unwrap().updatecb = job_update_callback(move |job| {
@@ -719,7 +704,7 @@ mod job_stream_tests {
                 job_free(job);
             });
             job_read_callback(&update);
-            job_read_callback(&update); // a stale queued event does nothing
+            job_read_callback(&update);
             assert_eq!(calls.get(), 2);
             assert!(update.try_borrow_mut().is_err());
 
@@ -738,7 +723,6 @@ mod job_stream_tests {
                     assert_eq!(completion.status.code(), Some(7));
                     assert_eq!(callback_handle.try_borrow_mut().unwrap().pid, -1);
                     observed.set(observed.get() + 1);
-                    // Completion may cancel itself while the dispatcher runs.
                     job_free(&callback_handle);
                 }));
                 if eof_first {

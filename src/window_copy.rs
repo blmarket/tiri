@@ -5756,9 +5756,8 @@ unsafe fn window_copy_stringify(
     let Some(gl) = window_copy_search_line(gd, py) else {
         return;
     };
-    buf.pop(); // Remove the previous terminator before appending another line.
+    buf.pop();
     for ax in first..last {
-        // Keep interior NUL bytes in the buffer; only the final byte terminates it.
         buf.extend_from_slice(&window_copy_cellstring(gl, ax));
     }
     buf.push(0);
@@ -5808,7 +5807,6 @@ fn window_copy_find_cell_suffix(cells: &[Cow<'_, [u8]>], text: &[u8]) -> usize {
     for first in 0..cells.len() {
         let mut remaining = text;
         let matches = cells[first..].iter().all(|cell| {
-            // tmux rejects an exhausted string even if the next cell is padding.
             if remaining.is_empty() {
                 return false;
             }
@@ -5823,7 +5821,6 @@ fn window_copy_find_cell_suffix(cells: &[Cow<'_, [u8]>], text: &[u8]) -> usize {
             return first;
         }
     }
-    // A missing suffix maps to one cell past the scanned range.
     cells.len()
 }
 unsafe fn window_copy_move_left(
@@ -6497,7 +6494,6 @@ unsafe fn window_copy_search_marks(
     let mut tstart: uint64_t = 0;
     let mut t: uint64_t = 0;
     if ssp.is_null() {
-        // Preserve the previous libc %s rendering for an absent search string.
         width = screen_write_strlen((*data).searchstr.as_deref().unwrap_or(c"(null)")) as u_int;
         screen_init(&mut ss, width, 1 as u_int, 0 as u_int);
         screen_write_start(&mut ctx, &raw mut ss);
@@ -6792,8 +6788,6 @@ unsafe fn window_copy_match_at_cursor_bytes(
 }
 unsafe fn window_copy_match_at_cursor_cstring(data: *mut window_copy_mode_data) -> Option<CString> {
     let mut output = window_copy_match_at_cursor_bytes(data)?;
-    // Format strings use the first-NUL view; copy-selection consumers still
-    // use the full byte result from window_copy_match_at_cursor_bytes.
     if let Some(end) = output.iter().position(|&byte| byte == 0) {
         output.truncate(end);
     }
@@ -8146,7 +8140,6 @@ unsafe fn window_copy_get_selection(mut wme: refbox::Weak<window_mode_entry>) ->
             == LINE_SEL_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return window_copy_match_at_cursor_bytes(data).map(|mut matched| {
-            // This fallback used strlen, so an embedded NUL ends the copied match.
             if let Some(first_nul) = matched.iter().position(|&byte| byte == 0) {
                 matched.truncate(first_nul);
             }
@@ -9969,7 +9962,6 @@ mod regex_cell_tests {
             assert_eq!(window_copy_find_cell_suffix(&cells, text), expected);
         }
         let wide = [Cow::Borrowed("漢".as_bytes()), Cow::Borrowed(&b""[..])];
-        // An exhausted suffix rejects trailing padding, as in tmux.
         assert_eq!(window_copy_find_cell_suffix(&wide, "漢".as_bytes()), 1);
         assert_eq!(window_copy_find_cell_suffix(&wide[..1], &[0xe6]), 0);
         assert_eq!(window_copy_find_cell_suffix(&wide[..1], &[0xff]), 1);
@@ -10075,7 +10067,6 @@ mod backing_owner_tests {
             assert_eq!((source.grid().sx, source.cx, source.cy), (8, 6, 0));
             assert_eq!(byte_at(&source, 4, 0), b'E');
 
-            // The borrowed source can be freed before its independent snapshot.
             drop(source);
             assert_eq!(byte_at(data.backing(), 3, 1), b'H');
             drop(hint);

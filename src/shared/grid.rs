@@ -61,7 +61,6 @@ impl<T> GridArray<T> {
         self.storage().resize_with(len, init);
     }
     pub(crate) fn clear(&mut self) {
-        // Keep the translated explicit release behavior, including capacity.
         self.0 = None;
     }
 }
@@ -120,8 +119,6 @@ pub struct grid_extd_entry {
 
 pub type utf8_char = u_int;
 
-// The C definition contains an anonymous union.  These names describe the
-// verified layout without conflating any unrelated C2RustUnnamed type.
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub union grid_cell_entry_storage {

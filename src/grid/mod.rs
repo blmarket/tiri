@@ -4,7 +4,6 @@ mod core;
 pub mod reader;
 pub mod view;
 
-// Preserve the established family API without glob exports.
 pub use self::core::{
     grid_adjust_lines, grid_cell_attr_display, grid_cell_flags_display, grid_cells_equal,
     grid_cells_look_equal, grid_check_is_clear, grid_clear, grid_clear_history, grid_clear_lines,

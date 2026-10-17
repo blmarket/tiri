@@ -80,7 +80,6 @@ fn nested_runtime_scopes_restore_the_previous_handle_after_unwinding() {
     independent.poll(Some(Duration::ZERO)).unwrap();
     assert!(called.get());
 
-    // The default is restored after leaving the outer scope as well.
     drop(independent);
     called.set(false);
     let observed = called.clone();
@@ -179,7 +178,6 @@ fn current_handle_remains_accessible_during_runtime_cleanup() {
 
     impl Drop for Wake {
         fn drop(&mut self) {
-            // Shutdown has invalidated scheduling, but lookup must still work.
             assert!(mio::Runtime::is_initialized());
             let handle = mio::Handle::current();
             assert!(matches!(

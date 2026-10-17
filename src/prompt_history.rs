@@ -12,8 +12,6 @@ use libc::{fgetc, fopen, fputc, fputs, strerror};
 use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 
-// Keep the bytes through the first newline, including embedded NULs. The
-// history parser below intentionally sees only the first C-string segment.
 unsafe fn read_history_line(stream: &mut CFile, line: &mut Vec<u8>) -> bool {
     line.clear();
     loop {
@@ -27,8 +25,6 @@ unsafe fn read_history_line(stream: &mut CFile, line: &mut Vec<u8>) -> bool {
         line.push(ch as u8);
     }
 }
-// History lives on the server thread and owns its strings. Readers take an
-// independent copy when input or output must outlive a registry borrow.
 thread_local! {
     static PROMPT_HISTORY: RefCell<[Vec<CString>; PROMPT_NTYPES as usize]> =
         const { RefCell::new([Vec::new(), Vec::new()]) };
@@ -164,7 +160,6 @@ pub fn prompt_down_history(
         if *index == 0 {
             return None;
         }
-        // Another prompt may have pruned history since this cursor moved.
         history
             .get(history.len().checked_sub(*index as usize)?)
             .cloned()
@@ -194,7 +189,6 @@ pub unsafe fn prompt_add_history(line: &CStr, kind: prompt_type) {
             history.drain(..free_count);
         }
         if limit == 0 {
-            // Release the list storage as well as its entries, matching tmux.
             *history = Vec::new();
         } else if let Some(added) = added {
             history.push(added);

@@ -138,7 +138,6 @@ mod tests {
     }
 }
 
-// Queue allocation and lifecycle state are defined behind the queue module.
 pub use crate::src::cmd::queue::{cmdq_item, cmdq_list};
 
 /// Saved, nonowning target identities. An empty observer means unspecified;
@@ -253,7 +252,6 @@ pub struct cmd_entry {
     pub source: cmd_entry_flag,
     pub target: cmd_entry_flag,
     pub flags: ::core::ffi::c_int,
-    // The dispatching queue item retains the command-list owner through this call.
     pub exec: Option<cmd_exec_fn>,
 }
 

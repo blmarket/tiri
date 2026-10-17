@@ -55,7 +55,7 @@ impl<'ast> Visit<'ast> for Audit {
                         .is_ok_and(|p| p.is_ident("test"))
             }) && self.consumer
             {
-                return; // Test fixtures may initialize owner state directly.
+                return;
             }
         }
         visit::visit_item(self, item);
@@ -86,7 +86,6 @@ impl<'ast> Visit<'ast> for Audit {
         visit::visit_type_ptr(self, ty);
     }
     fn visit_expr_method_call(&mut self, call: &'ast syn::ExprMethodCall) {
-        // The event payload's own BTreeMap is unrelated to model storage.
         let payload_map = matches!(&*call.receiver, syn::Expr::Field(field)
             if matches!(&*field.base, syn::Expr::Path(base) if base.path.is_ident("ep"))
                 && matches!(&field.member, syn::Member::Named(name) if name == "items"));
@@ -109,8 +108,6 @@ impl<'ast> Visit<'ast> for Audit {
     }
     fn visit_expr_cast(&mut self, cast: &'ast syn::ExprCast) {
         if let Type::Ptr(ty) = &*cast.ty {
-            // `Rc::as_ptr(owner) as *mut Model` also assumes the cell and model
-            // have interchangeable layouts. Follow chains through integer casts.
             struct PointerSource(bool);
             impl<'ast> Visit<'ast> for PointerSource {
                 fn visit_expr_method_call(&mut self, call: &'ast syn::ExprMethodCall) {
@@ -158,7 +155,6 @@ impl<'ast> Visit<'ast> for Audit {
 
 fn audit(source: &str, consumer: bool) -> Vec<String> {
     let syntax = syn::parse_file(source).expect("Rust source");
-    // Collect import aliases before visiting uses, independent of item order.
     let mut aliases = Audit::default();
     aliases.visit_file(&syntax);
     let mut audit = Audit {

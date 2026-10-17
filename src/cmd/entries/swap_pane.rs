@@ -64,7 +64,6 @@ unsafe fn cmd_swap_pane_exec(
             let previous = std::mem::replace(&mut src_window_owner, dst_window_owner.clone());
             drop(previous);
 
-            // The strip does not wrap; the last pane stays in place.
             src_pane_owner = dst_window_owner
                 .step_pane(Some(&Rc::downgrade(&dst_pane_owner)), false)
                 .upgrade()
@@ -73,7 +72,6 @@ unsafe fn cmd_swap_pane_exec(
             let previous = std::mem::replace(&mut src_window_owner, dst_window_owner.clone());
             drop(previous);
 
-            // The strip does not wrap; the first pane stays in place.
             src_pane_owner = dst_window_owner
                 .step_pane(Some(&Rc::downgrade(&dst_pane_owner)), true)
                 .upgrade()
@@ -82,10 +80,8 @@ unsafe fn cmd_swap_pane_exec(
         if !Rc::ptr_eq(&src_pane_owner, &dst_pane_owner) {
             ClientRef::forget_pane(&src_pane_owner);
             ClientRef::forget_pane(&dst_pane_owner);
-            // Options follow the new parents before the strips arrange them.
             src_pane_owner.reparent(&dst_window_owner);
             dst_pane_owner.reparent(&src_window_owner);
-            // Each pane takes the other's place, in one window or across two.
             let swapped = |window: &WindowRef| {
                 window
                     .pane_snapshot()
@@ -119,7 +115,6 @@ unsafe fn cmd_swap_pane_exec(
                     .or_else(|| {
                         let refused = src_window_owner.rearrange_panes(&src_order).err();
                         if refused.is_some() {
-                            // Put the destination back as it was.
                             dst_pane_owner.reparent(&dst_window_owner);
                             dst_window_owner
                                 .rearrange_panes(&dst_before)
@@ -181,7 +176,6 @@ unsafe fn cmd_swap_pane_exec(
                     src_idx,
                 );
             }
-            // Across two windows each rearrange announced its own change.
             if WindowRef::ptr_eq(&src_window_owner, &dst_window_owner) {
                 events_fire_window(
                     c"window-layout-changed",

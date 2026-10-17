@@ -26,9 +26,6 @@ pub fn parse_array_index(input: &[u8]) -> Result<ArrayIndex<'_>, ArrayIndexError
         return Err(ArrayIndexError::Empty);
     }
 
-    // Match the existing C parser's distinction between a numeric key and a
-    // textual key before checking the numeric range. Thus a large string such
-    // as "999999x" remains textual instead of becoming an overflow error.
     if !input.iter().all(u8::is_ascii_digit) {
         return Ok(ArrayIndex::Text(input));
     }

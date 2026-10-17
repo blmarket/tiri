@@ -131,8 +131,6 @@ fn cmd_display_menu_args_parse(
     }
     Ok(type_0)
 }
-// Copy only positioning data. Formatting may revisit Client or replace its
-// status lines, so no style range reference survives this component borrow.
 unsafe fn cmd_display_menu_status_position(
     client: &ClientRef,
     lines: u_int,
@@ -524,8 +522,6 @@ unsafe fn cmd_display_menu_get_menu_pos(
     let mut mouse_x: ::core::ffi::c_long = 0 as ::core::ffi::c_long;
     let mut mouse_y: ::core::ffi::c_long = 0 as ::core::ffi::c_long;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    // The window can be wider than the client's view of it, so positions
-    // are placed and clamped within the view, as tmux does on its terminal.
     let tty_window_view { ox, oy, sx, sy, .. } = tc.as_ref().expect("live client").terminal_view();
     let logical = (ox.wrapping_add(sx), oy.wrapping_add(sy));
     max_x = ox.wrapping_add(sx.saturating_sub(w)) as ::core::ffi::c_long;
@@ -1183,7 +1179,6 @@ unsafe fn cmd_display_popup_exec(
                         flags,
                     );
                 } else {
-                    // A popup that fails to start returns NORMAL without waiting.
                     let mut retval = CMD_RETURN_NORMAL;
                     let wait = || {
                         let (waiter, wait_retval) = cmdq_wait(item_handle);

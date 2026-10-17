@@ -11,7 +11,6 @@ pub mod find;
 pub mod parse;
 pub mod queue;
 
-// Preserve the established family API without glob exports.
 pub use self::core::{
     cmd_find, cmd_get_alias, cmd_get_args_mut, cmd_get_entry, cmd_get_group, cmd_get_parse_flags,
     cmd_get_source, cmd_list_all_have, cmd_list_any_have, cmd_list_append, cmd_list_append_all,

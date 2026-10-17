@@ -241,8 +241,6 @@ unsafe fn cmd_set_hook_monitor_exec(
         }
         let exists = selected.with_entry(&name, |_| ()).is_some();
         if args_has(args, b'o') == 0 || !exists {
-            // User-option append preserves the legacy `(null)` text for a
-            // published empty value and leaves any existing monitor attached.
             selected
                 .set_from_string(None, &name, Some(&value), args_has(args, b'a') != 0)
                 .expect("monitor name is a user string option");
@@ -348,7 +346,6 @@ unsafe fn cmd_set_option_exec(
             if args_has(args, b'q') != 0 {
                 return CMD_RETURN_NORMAL;
             }
-            // Preserve the pinned oracle's parse-failure ambiguity diagnostic.
             let ambiguous = match failure {
                 OptionMatchFailure::Ambiguous => true,
                 OptionMatchFailure::Parse => !sessions::is_empty(),

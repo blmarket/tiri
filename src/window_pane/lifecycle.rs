@@ -54,7 +54,6 @@ unsafe fn server_fire_pane_exit(
         wp: std::rc::Weak::new(),
         idx: 0,
     };
-    // An exit seen before the process is reaped reports success, as before.
     let status = (*wp).exit_status.unwrap_or_default();
     let mut ep = event_payload_create();
     fs = cmd_find_state::find_from_pane(wp_owner, 0 as ::core::ffi::c_int)
@@ -102,7 +101,6 @@ pub(super) unsafe fn finish_process(
     mut notify: ::core::ffi::c_int,
 ) {
     let wp = pane_owner.get();
-    // Keep the original Window identity across exit notifications and pane teardown.
     let window_owner = pane_owner
         .window_observer()
         .upgrade()

@@ -91,6 +91,5 @@ fn option_reload_replaces_defaults_without_changing_overrides() {
         assert!(p.default_palette.is_none());
         assert_eq!(colour_palette_get(Some(&p), COLOUR_FLAG_256 | 255), -1);
         drop(oo_owner);
-        // The arrays are released by normal Rust drop when p leaves scope.
     }
 }

@@ -156,8 +156,6 @@ unsafe fn place_new_pane(
         .iter()
         .filter_map(std::rc::Weak::upgrade)
         .collect::<Vec<_>>();
-    // A new window's first pane has no neighbour; otherwise the pane goes
-    // beside its source.
     let position = if panes.is_empty() {
         0
     } else {
@@ -272,7 +270,6 @@ pub(super) unsafe fn spawn_pane(
                     Some(client) => client.cwd(target_session_owner.as_ref()),
                     None => ClientRef::working_directory(None, target_session_owner.as_ref()),
                 };
-                // Preserve the old formatter's rendering for an absent startup cwd.
                 let base = base_owner
                     .as_deref()
                     .map_or(b"(null)".as_slice(), CStr::to_bytes);
@@ -363,7 +360,6 @@ pub(super) unsafe fn spawn_pane(
         if let Some(cwd) = cwd.take() {
             (*new_wp).cwd = Some(cwd);
         }
-        // Each fork path owns its environment until it has been installed.
         let mut child_owner = Some(environ_for_session(Some(&session_owner), 0));
         let child = child_owner.as_deref_mut().expect("spawn environment");
         if let Some(overrides) = (*sc).environ.as_deref() {
@@ -568,9 +564,6 @@ pub(super) unsafe fn spawn_pane(
                 );
                 log_close();
                 environ_push(child);
-                // After fork this is the child's private copy. Release it after
-                // publishing the process environment; the parent retains its own
-                // owner and drops it when this function returns.
                 drop(child_owner.take());
                 if (*new_wp).argv.len() > 1 {
                     let mut exec_argv: Vec<_> =

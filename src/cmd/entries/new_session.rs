@@ -329,7 +329,6 @@ unsafe fn cmd_new_session_exec(
                             .expect("formatted cwd was just set")
                             .as_ptr();
                     } else {
-                        // session_create copies this borrowed cwd into session.
                         formatted_cwd = ClientRef::working_directory(c.as_ref(), None);
                         cwd = formatted_cwd
                             .as_ref()

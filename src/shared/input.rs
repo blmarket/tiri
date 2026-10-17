@@ -124,8 +124,6 @@ pub struct input_transition {
     pub state: Option<&'static input_state>,
 }
 
-// Rust representation of tmux's tagged parameter union. Each string is owned
-// by its parameter; resetting or dropping the parameter releases it.
 #[derive(Default)]
 pub enum input_param {
     #[default]

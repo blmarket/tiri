@@ -23,7 +23,6 @@ fn mouse_encodings_preserve_tmux_bytes_and_independent_results() {
         let first_bytes = std::slice::from_raw_parts(first.as_ptr().cast::<u8>(), len);
         assert_eq!(first_bytes, b"\x1b[<0;10;20M");
 
-        // A legacy release cannot be converted to SGR, even when SGR is enabled.
         mouse.sgr_type = b' ' as u32;
         mouse.b = 3;
         let mut second = [0; 40];
@@ -42,7 +41,6 @@ fn mouse_encodings_preserve_tmux_bytes_and_independent_results() {
         );
         assert!(input_key_get_mouse(&mut screen, &mouse, 2015, 0, &mut second).is_none());
 
-        // Suppressed motion and disabled mouse reporting produce no packet.
         screen.mode = MODE_MOUSE_BUTTON;
         mouse.b = 35;
         mouse.lb = 3;
@@ -120,7 +118,6 @@ fn capture_attributes_continue_across_lines_but_not_between_captures() {
             grid_string_cells_bytes(&grid, 0, 2, 1, Some(&mut second), flags, None),
             b"\x1b[34mC"
         );
-        // Interleaving a separate capture must not change the first one's state.
         assert_eq!(
             grid_string_cells_bytes(&grid, 0, 1, 1, Some(&mut first), flags, None),
             b"B"

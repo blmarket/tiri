@@ -91,7 +91,6 @@ fn cmd_run_shell_args_parse(
     }
     Ok(ARGS_PARSE_STRING)
 }
-// `item` is the polled item of a foreground run-shell, and None for -b.
 unsafe fn cmd_run_shell_print(
     cdata: &cmd_run_shell_data,
     item: Option<&Weak<UnsafeCell<cmdq_item>>>,
@@ -104,8 +103,6 @@ unsafe fn cmd_run_shell_print(
     };
     if pane.is_none() {
         if let Some(item) = item {
-            // As cmdq_print, without holding the item: printing can enter
-            // view mode, whose hooks may run any sink or resume any waiter.
             let client = cmdq_get_client(Some(&*cmdq_resumed(item).get()));
             let mut evb = evbuffer_new();
             evbuffer_add_formatted(&mut evb, |out| write_cstr(out, msg));
@@ -259,10 +256,6 @@ unsafe fn cmd_run_shell_exec(
     }
     cdata.s = if s.is_none() { None } else { s.clone() };
     if !delay.is_null() {
-        // The pinned tmux build treats negative, nonfinite and out-of-range
-        // delays as expired. Rust's saturating float casts would instead turn
-        // positive infinity into an enormous timer. The upper bound is
-        // exclusive because time_t::MAX rounds up when converted to f64.
         if (0.0..time_t::MAX as f64).contains(&d) {
             tv = Duration::from_secs(d as u64)
                 + Duration::from_micros((d.fract() * 1_000_000.0) as u64);
@@ -270,8 +263,6 @@ unsafe fn cmd_run_shell_exec(
     }
     if wait == 0 {
         crate::src::cmd::queue::cmdq_background(tv, move || unsafe {
-            // Dropping the callback also releases the record if the job is
-            // freed before completion.
             if let Some(job) = cmd_run_shell_timer(&mut cdata, None) {
                 job.try_borrow_mut()
                     .expect("newly registered job")
@@ -294,15 +285,12 @@ unsafe fn cmd_run_shell_wait(
     delay: Duration,
 ) -> cmd_retval {
     let item = Rc::downgrade(item_handle);
-    // Unlike a Sleep, a Timer defers even a zero delay to a runtime turn.
     let (elapsed, delayed) = tiri_rt::oneshot::channel();
     let timer = Timer::new(delay, move || {
         let _ = elapsed.send(());
     })
     .expect("arm run-shell delay");
     cmdq_suspend(item_handle, async move {
-        // The timer owns the sender; it drops unsent only if the runtime
-        // cancels the timer, and then the body never runs (as before).
         if delayed.await.is_none() {
             drop(cdata);
             return std::future::pending().await;
@@ -312,7 +300,6 @@ unsafe fn cmd_run_shell_wait(
             return;
         };
         let (done, completed) = tiri_rt::oneshot::channel();
-        // A job freed before completion drops the sender unsent.
         job.try_borrow_mut()
             .expect("newly registered job")
             .completecb = Some(Box::new(move |completion| {
@@ -569,7 +556,6 @@ mod tests {
     fn a_zero_delay_runs_the_timer_body_one_runtime_turn_later() {
         let mut runtime = tiri_rt::mio::Runtime::new().unwrap();
         unsafe {
-            // No command: the timer body completes the item.
             let head = append(None, |item| {
                 cmd_run_shell_wait(item, data(None, None), Duration::ZERO)
             });
@@ -577,7 +563,6 @@ mod tests {
             assert_eq!(cmdq_next(None), 0, "the delay does not end in its dispatch");
             assert!(cmdq_running().upgrade().is_none(), "the head is suspended");
             runtime.poll(Some(Duration::ZERO)).unwrap();
-            // The body ran in the timer's turn; removal waits for cmdq_next.
             assert!(cmdq_running().ptr_eq(&head));
             assert!(!ran.get());
             assert_eq!(cmdq_next(None), 1);
@@ -626,7 +611,6 @@ mod tests {
             drop(owner);
             assert!(head.upgrade().is_none());
             assert_eq!(Rc::strong_count(&other), 1, "the data is released");
-            // Nothing is left for the runtime to wait for.
             let start = Instant::now();
             runtime.poll(Some(Duration::from_secs(2))).unwrap();
             assert!(start.elapsed() < Duration::from_secs(1));
@@ -643,7 +627,6 @@ mod tests {
             let ran = append_flag(Some(&owner));
             assert!(head.upgrade().is_some());
             assert!(done.send(exited(0)).is_ok());
-            // A sessionless client gets the status at the job's event.
             assert_eq!(clients::return_value(&owner), 0);
             assert!(head.upgrade().is_some() && !ran.get());
             cmdq_next(Some(&owner));
@@ -660,7 +643,6 @@ mod tests {
             owner.update_flags(CLIENT_DEAD as u64, 0);
             let client = Rc::downgrade(&owner);
             drop(owner);
-            // The data keeps the client while the job runs (L7).
             assert!(client.upgrade().is_some());
             assert!(done.send(exited(0)).is_ok());
             assert!(client.upgrade().is_none());
@@ -672,7 +654,6 @@ mod tests {
     fn a_job_freed_unfinished_releases_the_data_and_parks() {
         unsafe {
             let owner = clients::with_queue();
-            // No command: the callback body would panic if it ran.
             let (head, done) = append_job_wait(&owner, data(Some(owner.clone()), None));
             owner.update_flags(CLIENT_DEAD as u64, 0);
             let client = Rc::downgrade(&owner);

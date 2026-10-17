@@ -54,7 +54,6 @@ pub use ::libc::{CLOCK_MONOTONIC, CODESET, EEXIST, LC_CTYPE, LC_TIME};
 pub use ::libc::{S_IFDIR, S_IFMT};
 
 pub const TMUX_SOCK_PERM: ::core::ffi::c_int = 7 as ::core::ffi::c_int;
-// Sole owners; the public pointers below only observe these stable allocations.
 static mut global_options_owner: Option<Box<options>> = None;
 static mut global_s_options_owner: Option<Box<options>> = None;
 static mut global_w_options_owner: Option<Box<options>> = None;
@@ -151,8 +150,6 @@ unsafe fn expand_path(path: &CStr, home: Option<&CStr>) -> Option<CString> {
             CString::new(&path_bytes[1..name_end]).expect("variable name comes from a C string");
         value = environ_find(global_environ.as_deref().expect("environment"), &name);
         value?;
-        // On glibc, the previous `%s` rendered a cleared environment value
-        // as `(null)`. Keep that behavior if this entry has no value.
         let mut expanded = if value.unwrap().value.is_none() {
             b"(null)".to_vec()
         } else {
@@ -175,8 +172,6 @@ unsafe fn expand_paths(s: &CStr, no_realpath: bool) -> Vec<CString> {
     let mut tmp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut resolved: [::core::ffi::c_char; 4096] = [0; 4096];
     let mut paths = Vec::new();
-    // strsep rewrites separators in place; keep its borrowed token pointers
-    // backed by one stable, NUL-terminated allocation for the entire loop.
     let mut copy = s.to_bytes_with_nul().to_vec();
     tmp = copy.as_mut_ptr().cast();
     loop {
@@ -390,7 +385,6 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
     argv_view.push(::core::ptr::null_mut());
     let mut argv = argv_view.as_mut_ptr();
     let mut path: Option<CString> = None;
-    // BSDoptarg points into argv, which main keeps alive through main_0.
     let mut label: Option<&CStr> = None;
     let mut var: *mut *mut ::core::ffi::c_char =
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
@@ -630,7 +624,6 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
         });
         flags |= CLIENT_DEFAULTSOCKET as uint64_t;
     }
-    // Systemd activation may replace the global separately.
     socket_path = Some(path.expect("socket path was selected"));
     let command_argv: Vec<CString> = (0..argc)
         .map(|i| CStr::from_ptr(*argv.add(i as usize)).to_owned())

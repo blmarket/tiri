@@ -132,8 +132,6 @@ mod tests {
 
     #[test]
     fn spinner_status_reports_working() {
-        // `Loading...` is what agy shows taking a tool result back, and the
-        // spinner cell can be missing on the first frame of either verb.
         for status in [
             "⣷  Generating...",
             "   Generating...",
@@ -154,8 +152,6 @@ mod tests {
 
     #[test]
     fn a_running_background_task_reports_working_despite_the_resting_footer() {
-        // agy returns the composer and the `? for shortcuts` footer while a
-        // tool runs, tracking it in a panel below. The turn is not over.
         let text = screen(&format!(
             "{RULE}\n>\n{RULE}\n  ● [22:37:14] sleep 12 && echo finished running\n{RULE}\n\
              ? for shortcuts                Gemini 3.6 Flash · high · 1 task(s) · /tasks"
@@ -165,10 +161,6 @@ mod tests {
 
     #[test]
     fn a_model_written_progress_title_reports_working() {
-        // Between the fixed verbs agy narrates the turn in the same status
-        // line, and those labels run to several words. Reading only one-word
-        // labels flipped the pane to idle mid-turn, on and off with the
-        // spinner's own wording.
         for status in [
             "⣷  Analyzing Pane Mappings...",
             "⢿  Refining The Approach...",
@@ -183,8 +175,6 @@ mod tests {
 
     #[test]
     fn a_finished_tool_in_the_transcript_does_not_report_working() {
-        // The transcript keeps the tool entry and prose that can end in an
-        // ellipsis; neither is a live status line.
         let text = screen(&format!(
             "● Bash(git status) (ctrl+o to expand)\n  Analyzing the working tree...\n\
              {RULE}\n>\n{RULE}\n? for shortcuts                    Gemini 3.6 Flash · high"
@@ -214,7 +204,6 @@ mod tests {
 
     #[test]
     fn a_footer_only_permission_dialog_reports_blocked() {
-        // Some dialogs leave only their key-hint row and footer on screen.
         let text = screen("↑/↓ Navigate · tab Amend · f full diff\nesc to cancel");
         assert_eq!(detect(&text), Detection::State(AgentState::Blocked));
     }
@@ -230,8 +219,6 @@ mod tests {
 
     #[test]
     fn slash_menu_preserves_previous_state_despite_cancel_footer() {
-        // `esc to cancel` shows while the menu is open, so the footer alone must
-        // not be read as work in progress.
         let text = screen(&format!(
             "/help   Show help\n/model  Switch model\n\
              ↑/↓ Navigate · enter Select · tab Complete\n{RULE}\n> /\n{RULE}\n\
@@ -242,8 +229,6 @@ mod tests {
 
     #[test]
     fn a_screen_no_rule_explains_is_the_idle_fallback() {
-        // No banner and no composer left on screen: the process tree has
-        // already identified agy, so the pane is agy at rest.
         assert_eq!(
             detect("some scrolled output\n                     Gemini 3.6 Flash · high"),
             Detection::State(AgentState::Idle)
@@ -272,7 +257,6 @@ mod tests {
         assert!(agy_headless_invocation(&args(&[
             "agy", "--print", "do work"
         ])));
-        // The interactive seed prompt keeps the TUI, so it is not headless.
         assert!(!agy_headless_invocation(&args(&[
             "agy",
             "--prompt-interactive",
@@ -296,8 +280,6 @@ mod tests {
             session_id_from_conversation_path(&Path::new(base).join("settings.json")),
             None
         );
-        // The same file name outside agy's conversation directory is not a
-        // session of ours.
         assert_eq!(
             session_id_from_conversation_path(Path::new(
                 "/home/me/other/conversations/019f9757-7c53-7898-a7d1-c8c780212888.db"

@@ -25,7 +25,6 @@ pub struct SegmentedBuf {
     segments: VecDeque<Segment>,
     len: usize,
     spare: Vec<u8>,
-    // scan state from last known find_line
     scan: Option<Scan>,
 }
 
@@ -130,9 +129,6 @@ impl Buf for SegmentedBuf {
     }
 }
 
-// SAFETY: chunk_mut exposes only spare capacity, bounded by remaining_mut.
-// advance_mut commits only caller-initialized bytes within that capacity; readable
-// segments and the cached length include only committed bytes.
 unsafe impl BufMut for SegmentedBuf {
     fn put<T: Buf>(&mut self, source: T) {
         source.put_into(self);
@@ -171,12 +167,10 @@ unsafe impl BufMut for SegmentedBuf {
             .filter(|tail| tail.bytes.len() < tail.bytes.capacity())
         {
             assert!(count <= tail.bytes.capacity() - tail.bytes.len());
-            // SAFETY: the caller initialized count bytes of the last chunk_mut.
             unsafe { tail.bytes.advance_mut(count) };
         } else {
             assert!(count <= self.spare.capacity());
             self.segments.reserve(1);
-            // SAFETY: the caller initialized count bytes of the last chunk_mut.
             unsafe { self.spare.advance_mut(count) };
             self.segments.push_back(Segment {
                 bytes: std::mem::take(&mut self.spare),
@@ -187,7 +181,6 @@ unsafe impl BufMut for SegmentedBuf {
     }
 }
 
-// Keep specialization private: all callers use the standard BufMut::put API.
 trait PutInto {
     fn put_into(self, destination: &mut SegmentedBuf);
 }

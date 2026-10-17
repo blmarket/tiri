@@ -83,7 +83,6 @@ unsafe fn cmd_join_pane_exec(
         }
         let before = args_has(args, 'b' as i32 as u_char) != 0;
         let same_window = WindowRef::ptr_eq(src_owner, &dst_window);
-        // The pane's place beside its target, in the destination's list.
         let mut order = dst_window
             .pane_snapshot()
             .iter()
@@ -95,8 +94,6 @@ unsafe fn cmd_join_pane_exec(
             .position(|pane| std::rc::Rc::ptr_eq(pane, &dst_pane_owner))
             .expect("join target belongs to window");
         order.insert(target + usize::from(!before), src_pane_owner.clone());
-        // The destination changes first, so a layout without room refuses
-        // before anything moves.
         if !same_window {
             src_pane_owner.reparent(&dst_window);
         }
@@ -116,7 +113,6 @@ unsafe fn cmd_join_pane_exec(
             src_owner
                 .rearrange_panes(&rest)
                 .expect("a removal is never refused");
-            // The pane follows its new window's options from here.
             dst_window.refit();
         }
         src_pane_owner.refresh_palette();
@@ -145,9 +141,6 @@ unsafe fn cmd_join_pane_exec(
     result
 }
 
-// Consume the retained source at the established notification boundary. In the
-// empty case its close notification and explicit cleanup precede destination
-// layout notification, even when no Session still retains it.
 unsafe fn cmd_join_pane_finish(source: WindowRef, destination: &WindowRef) {
     if source.pane_snapshot().is_empty() {
         server_kill_window(source, 1);

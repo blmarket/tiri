@@ -57,7 +57,6 @@ impl alerts {
 
 fn alerts_pop_front<T>(queue: &mut VecDeque<T>) -> Option<(T, bool)> {
     let item = queue.pop_front()?;
-    // Leave appends made while processing an empty tail for the next callback.
     Some((item, !queue.is_empty()))
 }
 
@@ -66,7 +65,6 @@ unsafe fn alerts_callback() {
         let Some((owner, has_next)) = alerts::pop_front() else {
             break;
         };
-        // Membership remains set throughout callbacks to suppress requeueing.
         let alerts = SessionRef::deliver_window_alerts(&owner);
         log_debug(format_args!(
             "@{} alerts check, alerts {}",

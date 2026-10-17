@@ -70,8 +70,6 @@ pub const SCREEN_WRITE_SYNC: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const SCREEN_WRITE_OBSCURED: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const SCREEN_WRITE_CHECKED_IF_OBSCURED: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 thread_local! {
-    // Screen writing runs on the event-loop thread. Detached boxes preserve
-    // FIFO reuse without owning raw pointers or a static initializer.
     static WRITE_ITEM_POOL: std::cell::RefCell<std::collections::VecDeque<Box<screen_write_citem>>> =
         const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
 }
@@ -83,7 +81,6 @@ fn screen_write_get_citem() -> Box<screen_write_citem> {
     item
 }
 fn screen_write_free_citem(item: Box<screen_write_citem>) {
-    // Screens may drop during thread teardown, after the pool is gone.
     let _ = WRITE_ITEM_POOL.try_with(|pool| pool.borrow_mut().push_back(item));
 }
 fn screen_write_current_item(ctx: &mut screen_write_ctx) -> &mut screen_write_citem {
@@ -261,7 +258,6 @@ pub unsafe fn screen_write_free_list(s: &mut screen) {
 }
 
 pub(crate) unsafe fn screen_write_init(ctx: &mut screen_write_ctx, mut s: *mut screen) {
-    // Callers provide initialized Rust storage and stop an active context before reuse.
     *ctx = screen_write_ctx::default();
     ctx.borrow_screen(s);
     if (*ctx.screen_ptr()).write_list.is_none() {
@@ -2091,7 +2087,6 @@ fn screen_write_collect_trim(
         let csx = ci.x;
         let cex = csx.wrapping_add(ci.used).wrapping_sub(1);
         if cex < sx {
-            // Entirely before the replacement interval.
             index += 1;
         } else if csx > ex {
             return (index, wrapped);
@@ -2860,10 +2855,6 @@ pub unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cell) {
         );
     }
     if (*s).mode & MODE_INSERT != 0 {
-        // tmux's insert path uses the ranges left by the nested flush when
-        // deciding whether to paint this cell. Preserve that observable
-        // behavior explicitly, with caller-owned storage instead of a pane's
-        // shared scratch buffer.
         screen_write_collect_flush_with_ranges(ctx, 0, "screen_write_cell", &mut r);
         ttyctx.data = tty_command_data::Count(width);
         if screen_write_should_draw_line(ctx, (*s).cy) != 0 {
@@ -3156,7 +3147,6 @@ pub unsafe fn screen_write_setselection(ctx: &mut screen_write_ctx, clip: &CStr,
         0 as ::core::ffi::c_int,
     );
     ttyctx.data = tty_command_data::Selection { clip, data };
-    // tty_write consumes the borrowed payload synchronously.
     tty_write(|tty, ctx| tty_cmd_setselection(tty, ctx), &mut ttyctx);
 }
 pub unsafe fn screen_write_rawstring(
@@ -3175,7 +3165,6 @@ pub unsafe fn screen_write_rawstring(
         ttyctx.flags |= TTY_CTX_INVISIBLE_PANES;
     }
     ttyctx.data = tty_command_data::Bytes(data);
-    // tty_write consumes the borrowed payload synchronously.
     tty_write(|tty, ctx| tty_cmd_rawstring(tty, ctx), &mut ttyctx);
 }
 pub unsafe fn screen_write_alternateon(
@@ -3281,7 +3270,6 @@ mod write_ctx_tests {
                 assert!(ctx.item.is_none());
                 assert_eq!(drops.get(), pass);
             }
-            // Restarting without a callback must also release the previous owner.
             screen_write_start(&mut ctx, &mut s);
             assert_eq!(drops.get(), 3);
             assert!(ctx.init_ctx_cb.is_none());
@@ -3483,7 +3471,6 @@ mod write_row_tests {
             screen_write_free_list(&mut s);
             assert!(s.write_list.is_none());
 
-            // Moving and dropping a screen also releases its still-owned rows.
             screen_write_make_list(&mut s);
             s.write_rows_mut()[0].data.resize_with(6, || 1);
             s.write_rows_mut()[0]
@@ -3517,8 +3504,6 @@ mod write_row_tests {
                     assert_eq!(s.write_rows()[y].data.as_ptr(), *pointer);
                 }
             }
-            // Split and trim queued commands without losing ownership or wrap
-            // state, then reuse the detached nodes through the same pool.
             screen_write_recycle_items(&mut s.write_rows_mut()[0].items);
             ctx.item = Some(screen_write_get_citem());
             for (x, used, wrapped) in [(0, 10, 1), (3, 3, 0)] {

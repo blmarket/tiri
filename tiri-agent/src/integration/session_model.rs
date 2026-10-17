@@ -178,7 +178,6 @@ mod tests {
         let source = FileSource::new("/s.jsonl", content);
         let mut scan = ModelScan::new(PathBuf::from("/s.jsonl"));
         assert_eq!(scan.advance(&source).as_deref(), Some(c"claude-fable-5"));
-        // Nothing appended: no new model.
         assert_eq!(scan.advance(&source), None);
     }
 
@@ -201,7 +200,6 @@ mod tests {
 
     #[test]
     fn occurrence_split_across_chunks_is_found_via_the_carry() {
-        // Place the only occurrence so the chunk boundary falls inside it.
         let mut content = vec![b' '; SCAN_CHUNK - 4];
         content.extend_from_slice(br#""model":"claude-opus-5""#);
         let source = FileSource::new("/s.jsonl", &content);
@@ -211,8 +209,6 @@ mod tests {
 
     #[test]
     fn escaped_and_placeholder_occurrences_are_ignored() {
-        // A tool result quoting a model member is escaped on disk; a synthetic
-        // placeholder is not a model. Neither may shadow the real value.
         let content = br#"{"message":{"model":"claude-opus-5"}}
 {"toolResult":"saw \"model\":\"gpt-oops\" in a log"}
 {"message":{"model":"<synthetic>"}}

@@ -111,14 +111,11 @@ mod tests {
 
     #[test]
     fn the_first_split_is_along_the_longer_side_and_the_rest_alternate() {
-        // 80x24 looks wider than tall: side by side.
         assert_eq!(rects(2, (80, 24)), [(40, 24, 0, 0), (39, 24, 41, 0)]);
-        // Then stacked.
         assert_eq!(
             rects(3, (80, 24)),
             [(40, 24, 0, 0), (39, 12, 41, 0), (39, 11, 41, 13)]
         );
-        // Then side by side again.
         assert_eq!(
             rects(4, (80, 24)),
             [
@@ -128,7 +125,6 @@ mod tests {
                 (19, 11, 61, 13)
             ]
         );
-        // 40x60 looks taller than wide: stacked first, then side by side.
         assert_eq!(
             rects(3, (40, 60)),
             [(40, 30, 0, 0), (20, 29, 0, 31), (19, 29, 21, 31)]
@@ -137,8 +133,6 @@ mod tests {
 
     #[test]
     fn a_wide_window_does_not_become_a_row_of_columns() {
-        // The second pane's 99x24 still looks wider than tall, but the split
-        // after a side-by-side one stacks.
         assert_eq!(
             rects(4, (200, 24)),
             [

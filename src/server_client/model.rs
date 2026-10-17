@@ -23,7 +23,6 @@ use crate::src::shared::tty::tty;
 
 use crate::src::shared::client::*;
 pub struct client {
-    // Preserve after removal so a traversal holding this client can continue.
     pub(super) registry_next: ClientWeak,
     pub(super) name: Option<std::ffi::CString>,
     pub(super) peer: *mut tmuxpeer,

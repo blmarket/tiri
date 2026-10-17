@@ -82,7 +82,6 @@ pub(super) unsafe fn spawn_window(
         sc.winlink_handle().get_mut_unchecked().session = Rc::downgrade(&session);
         window.set_latest_client(target_client.as_ref());
         winlink_set_window(sc.winlink_handle(), &window);
-        // The new link owns the window before the constructor owner is released.
         drop(window);
     }
 
@@ -108,8 +107,6 @@ pub(super) unsafe fn spawn_window(
         session_select(&session, sc.winlink_handle().get_unchecked().idx);
     }
     if sc.flags & SPAWN_RESPAWN == 0 {
-        // Pane and selection callbacks can change the link's association. The
-        // creation notification still describes the originally created window.
         let window = created_window
             .upgrade()
             .expect("spawned window remains live");

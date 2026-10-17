@@ -82,8 +82,6 @@ pub(super) unsafe fn capture(
             Ok(Vec::new())
         };
     }
-    // Format expansion may replace modes, screens, or history. Select the current
-    // screen only after both expansions, before borrowing its grid or link table.
     let bounds = (
         parse_bound(arguments, item, b'S'),
         parse_bound(arguments, item, b'E'),

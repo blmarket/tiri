@@ -537,7 +537,6 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     }
 
     unsafe fn refresh_utmp(&self) {
-        // The option exists only when utempter is linked.
         if !cfg!(target_os = "linux") {
             return;
         }
@@ -815,8 +814,6 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         let old_geometry = self.geometry();
         let (mut sx, mut sy) = (geometry.sx, geometry.sy);
         let (mut xoff, mut yoff) = (geometry.xoff, geometry.yoff);
-        // A pane on the window's top (or bottom) edge gives up a row for its
-        // status line; any other pane draws it on the separator row there.
         let status = self.border_status();
         let at_edge = match status {
             PANE_STATUS_TOP => yoff == 0,
@@ -1015,7 +1012,6 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
                 .event
                 .write(if focused { b"\x1b[I" } else { b"\x1b[O" });
         }
-        // Callbacks observe the old focus flag, as in the original operation.
         events_fire_pane(
             CStr::from_ptr(
                 if focused {
@@ -1146,9 +1142,6 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         let source = &*source;
         assert!(x <= source.grid().sx && sx <= source.grid().sx - x);
         assert!(y <= source.grid().sy && sy <= source.grid().sy - y);
-        // Inserting into a hyperlink table may evict an older global-history
-        // entry, including one in the source. Snapshot link text before adding
-        // any destination links, and release each table borrow before insertion.
         let mut cells = Vec::with_capacity(sx as usize * sy as usize);
         let mut links = std::collections::HashMap::new();
         for row in 0..sy {

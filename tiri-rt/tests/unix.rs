@@ -42,7 +42,6 @@ fn borrowed_driver_waits_for_io_and_timers_without_retaining_its_future() {
             .bytes,
         0
     );
-    // No root future remains registered after completion.
     runtime.poll(Some(Duration::ZERO)).unwrap();
 }
 
@@ -74,7 +73,6 @@ fn shutdown_write_preserves_incoming_data_and_close_consumes_ownership() {
     assert_eq!(&reply, b"reply");
     drop(source);
     let raw = socket.into_raw_fd();
-    // SAFETY: the registration was dropped and ownership has been relinquished.
     unsafe { unix::close(raw) }.unwrap();
     assert_eq!(unsafe { libc::fcntl(raw, libc::F_GETFD) }, -1);
 }
@@ -86,7 +84,6 @@ fn redirecting_onto_the_same_descriptor_clears_close_on_exec() {
         unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFD) } & libc::FD_CLOEXEC,
         0
     );
-    // SAFETY: same live descriptor; no other owner is replaced.
     unsafe { unix::redirect(fd.as_fd(), fd.as_raw_fd()) }.unwrap();
     assert_eq!(
         unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFD) } & libc::FD_CLOEXEC,
@@ -113,7 +110,6 @@ fn socket_paths_and_terminal_queries_retain_borrowed_descriptors() {
 
     let (mut master, mut slave) = (-1, -1);
     let mut name = [0; 1024];
-    // SAFETY: openpty initializes both descriptors and its bounded PTY name.
     assert_eq!(
         unsafe {
             libc::openpty(
@@ -126,7 +122,6 @@ fn socket_paths_and_terminal_queries_retain_borrowed_descriptors() {
         },
         0
     );
-    // SAFETY: openpty transferred both descriptors on success.
     let (_master, slave) = unsafe { (OwnedFd::from_raw_fd(master), OwnedFd::from_raw_fd(slave)) };
     let name = unsafe { CStr::from_ptr(name.as_ptr()) };
     let owned = unix::terminal_name(slave.as_fd()).unwrap();

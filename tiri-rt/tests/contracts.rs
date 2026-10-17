@@ -171,7 +171,6 @@ fn cancellation_drops_unpolled_and_parked_futures_without_driving() {
     drop(task);
     assert_eq!(count.get(), 2);
     assert_eq!(writer.read(&mut [0; 1]).unwrap(), 0);
-    // Deregistration errors are reported by the next driver turn.
     tick(&mut runtime);
 }
 
@@ -180,22 +179,15 @@ fn dropping_io_deregisters_before_closing_the_fd() {
     let mut runtime = mio::Runtime::new().unwrap();
     let (mut writer, fd) = pair();
     let raw = fd.as_raw_fd();
-    // Keep the open file description alive so closing the registered fd alone
-    // cannot remove its kernel registration on epoll.
     let retained = fd.try_clone().unwrap();
     let source = mio::Io::new(fd).unwrap();
     drop(source);
-    // SAFETY: F_GETFD only queries the descriptor number.
     assert_eq!(unsafe { libc::fcntl(raw, libc::F_GETFD) }, -1);
     assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::EBADF));
     tick(&mut runtime);
 
-    // Restore the same number and open file description. Registration would
-    // fail with EEXIST on epoll if the previous registration were still present.
-    // SAFETY: retained is live and fcntl creates a new owned descriptor.
     let duplicate = unsafe { libc::fcntl(retained.as_raw_fd(), libc::F_DUPFD_CLOEXEC, raw) };
     assert!(duplicate >= 0, "{}", io::Error::last_os_error());
-    // SAFETY: fcntl returned a new descriptor with no other owner.
     let fd = unsafe { OwnedFd::from_raw_fd(duplicate) };
     assert_eq!(fd.as_raw_fd(), raw);
     let source = mio::Io::new(fd).unwrap();
@@ -390,7 +382,6 @@ fn directional_waiter_conflicts_cancellation_and_wouldblock() {
     writer.write_all(b"x").unwrap();
     tick(&mut runtime);
     assert!(matches!(poll(&mut replacement), Poll::Ready(Ok(bytes)) if bytes == b"x"));
-    // Completed futures release the waiter even before they are dropped.
     let mut next = read_bytes(&source, 1);
     assert!(poll(&mut next).is_pending());
     writer.write_all(b"y").unwrap();

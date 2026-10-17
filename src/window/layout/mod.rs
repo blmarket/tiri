@@ -656,7 +656,6 @@ mod tests {
 
     #[test]
     fn a_tiled_neighbour_shares_the_most_of_the_edge() {
-        // Left pane full height; right column split into top and bottom.
         let cells = [
             rect(40, 24, 0, 0),
             rect(39, 12, 41, 0),
@@ -668,8 +667,6 @@ mod tests {
         assert_eq!(adjacent(&cells, 2, Direction::Up), Some(1));
         assert_eq!(adjacent(&cells, 0, Direction::Left), None);
         assert_eq!(adjacent(&cells, 0, Direction::Up), None);
-        // Strip panes, full height and one separator apart: the previous
-        // and next panes, past the window too, and nothing above or below.
         let row = [
             rect(39, 24, 0, 0),
             rect(80, 24, 40, 0),

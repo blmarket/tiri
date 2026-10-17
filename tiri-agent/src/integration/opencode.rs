@@ -169,7 +169,6 @@ mod tests {
             detect("↑↓ select   enter submit   esc dismiss"),
             Detection::State(AgentState::Blocked)
         );
-        // Transcript text quoting the prompt is not the prompt.
         assert_eq!(
             detect("old output: permission required"),
             Detection::State(AgentState::Idle)

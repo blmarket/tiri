@@ -94,7 +94,6 @@ pub(super) static mut style_default: style = unsafe {
     }
 };
 thread_local! {
-    // Style parsing and the global hyperlink eviction list run on the event loop.
     static STYLE_HYPERLINKS: std::cell::RefCell<Option<HyperlinksRef>> = const { std::cell::RefCell::new(None) };
 }
 fn style_hyperlinks(create: bool) -> Option<HyperlinksRef> {

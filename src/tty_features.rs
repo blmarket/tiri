@@ -232,7 +232,6 @@ pub unsafe fn tty_parse_features(
     let mut i: u_int = 0;
     let mut remove: ::core::ffi::c_int = 0;
     log_debug(format_args!("adding terminal features {}", log_cstr(s)));
-    // strsep and the trailing-@ removal both write into this local copy.
     let mut copy = s.to_bytes_with_nul().to_vec();
     loop_0 = copy.as_mut_ptr().cast();
     loop {

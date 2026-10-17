@@ -264,8 +264,6 @@ unsafe fn session_destroy(s_owner: &SessionRef, mut notify: ::core::ffi::c_int, 
         log_bytes((*s).name.as_bytes()),
         log_cstr(from)
     ));
-    // This field also marks explicit session teardown. An expired observer
-    // still needs the normal destruction path if the index owner remains.
     if (*s).curw.is_empty() {
         return;
     }
@@ -601,8 +599,6 @@ unsafe fn session_synchronize_windows(source: &SessionRef, destination: &Session
         session_next(destination, 0);
     }
 
-    // Retain the old index locally. Window cleanup may reenter either Session,
-    // so it cannot run through a pointer into the destination's model storage.
     let mut old_windows = std::mem::take(&mut (*destination.get()).windows);
     let mut link = source.with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
     while link.is_alive() {
@@ -618,11 +614,8 @@ unsafe fn session_synchronize_windows(source: &SessionRef, destination: &Session
             .expect("source window")
             .clone();
         winlink_set_window(replacement.clone(), &window);
-        // Both source and newly published links retain this window now.
         drop(window);
         events_fire_winlink(c"window-linked", replacement.clone());
-        // Notification may change alerts or add a later source link. Observe
-        // both at the original post-notification point in the live traversal.
         replacement.get_mut_unchecked().flags |= link.get_unchecked().flags & WINLINK_ALERTFLAGS;
         link = winlinks_next(link.get_unchecked());
     }
@@ -683,7 +676,6 @@ unsafe fn session_renumber_windows(s_owner: &SessionRef) {
         options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
         c"base-index",
     ) as ::core::ffi::c_int;
-    // Leave the indexes alone if they do not all fit from there.
     let n = winlink_count(&(*s).windows);
     if n > (i32::MAX as u_int) - (new_idx as u_int) + 1 {
         return;
@@ -707,7 +699,6 @@ unsafe fn session_renumber_windows(s_owner: &SessionRef) {
         }
         wl = winlinks_next(wl.get_unchecked());
         if wl.is_alive() {
-            // The final window may use i32::MAX; no next index is needed.
             new_idx += 1;
         }
     }

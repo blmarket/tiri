@@ -272,8 +272,6 @@ unsafe fn cmd_select_pane_exec(
             cmdq_print(item_handle, |out| write_cstr(out, &*style));
             return CMD_RETURN_NORMAL;
         }
-        // A direction selects the layout's neighbouring pane; there is none
-        // past the edge.
         let direction = [
             (b'L', Direction::Left),
             (b'R', Direction::Right),

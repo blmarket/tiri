@@ -59,12 +59,10 @@ fn rules_apply_gates_priority_and_line_regex() {
         rules.matched_rule(input("match fallback")),
         Some("high_nested_gates")
     );
-    // A matching `not` gate rules out the higher rule; `contains` ignores case.
     assert_eq!(
         rules.matched_rule(input("match win blocked")),
         Some("low_contains")
     );
-    // `line_regex` is anchored to one line, not the whole region.
     assert_eq!(
         rules.matched_rule(input("before\nexact line\nafter")),
         Some("line_regex")
@@ -136,7 +134,6 @@ regex = ['^4;0']
     };
     assert_eq!(rules.detect(busy), Detection::State(AgentState::Working));
     assert_eq!(rules.detect(input("viewer")), Detection::KeepPrevious);
-    // tiri does not capture OSC 9;4 progress, so a progress rule never fires.
     assert_eq!(rules.matched_rule(input("4;0")), None);
 }
 
@@ -205,24 +202,15 @@ contains = ["x"]
 #[test]
 fn validation_rejects_malformed_manifests() {
     let invalid = [
-        // Unknown field.
         "id = \"test\"\n[[rules]]\nid = \"a\"\nstate = \"idle\"\ncontains = [\"x\"]\nbogus = 1\n",
-        // No rules at all.
         "id = \"test\"\n",
-        // Unknown region.
         "id = \"test\"\n[[rules]]\nid = \"a\"\nstate = \"idle\"\nregion = \"middle\"\ncontains = [\"x\"]\n",
-        // Invalid regex.
         "id = \"test\"\n[[rules]]\nid = \"a\"\nstate = \"idle\"\nregex = [\"(\"]\n",
-        // No positive matcher.
         "id = \"test\"\n[[rules]]\nid = \"a\"\nstate = \"idle\"\nnot = [{ contains = [\"x\"] }]\n",
-        // A skip rule must be neutral.
         "id = \"test\"\n[[rules]]\nid = \"a\"\nstate = \"idle\"\nskip_state_update = true\ncontains = [\"x\"]\n",
         "id = \"test\"\n[[rules]]\nid = \"a\"\nstate = \"unknown\"\nskip_state_update = true\nvisible_idle = true\ncontains = [\"x\"]\n",
-        // Duplicate rule ids.
         "id = \"test\"\n[[rules]]\nid = \"a\"\nstate = \"idle\"\ncontains = [\"x\"]\n[[rules]]\nid = \"a\"\nstate = \"idle\"\ncontains = [\"y\"]\n",
-        // An engine newer than this one.
         "id = \"test\"\nmin_engine_version = 4\n[[rules]]\nid = \"a\"\nstate = \"idle\"\ncontains = [\"x\"]\n",
-        // top_non_empty_lines needs engine 3.
         "id = \"test\"\nmin_engine_version = 2\n[[rules]]\nid = \"a\"\nstate = \"idle\"\nregion = \"top_non_empty_lines(1)\"\ncontains = [\"x\"]\n",
     ];
     for manifest in invalid {
@@ -308,7 +296,6 @@ fn regions_extract_structure() {
             "after_last_horizontal_rule",
             "footer\n",
         ),
-        // A labelled rule still counts as a rule.
         (
             "body\n─── esc to cancel\nfooter",
             "after_last_horizontal_rule",

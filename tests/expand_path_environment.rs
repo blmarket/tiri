@@ -23,9 +23,7 @@ impl Server {
             .duration_since(UNIX_EPOCH)
             .expect("clock after epoch")
             .as_nanos();
-        // Keep the socket below the Unix domain path length limit.
         let directory = PathBuf::from("/tmp").join(format!("hxe{:x}{stamp:x}", std::process::id()));
-        // APFS only stores UTF-8 names; elsewhere keep a non-UTF-8 byte.
         let name: &[u8] = if cfg!(target_vendor = "apple") {
             "socket-\u{ff}".as_bytes()
         } else {

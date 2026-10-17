@@ -49,7 +49,6 @@ unsafe fn event_payload_free_target(ep: &mut event_payload) {
 }
 impl Drop for event_payload_item {
     fn drop(&mut self) {
-        // Release retained models while the item's name is still alive.
         let value = std::mem::replace(
             &mut self.value,
             EventPayloadValue::String(Default::default()),
@@ -67,8 +66,6 @@ impl Drop for event_payload_item {
 }
 
 unsafe fn event_payload_set_item(ep: &mut event_payload, name: &CStr, value: EventPayloadValue) {
-    // A legacy caller may borrow the old item's name. Copy it before removing
-    // that owner, and finish removal before releasing references can dispatch.
     let name = name.to_owned();
     let key = name.clone();
     let new = Box::new(event_payload_item { name, value });
@@ -92,8 +89,6 @@ pub fn event_payload_create() -> Box<event_payload> {
 
 impl Drop for event_payload {
     fn drop(&mut self) {
-        // Match tmux: remove each item in key order before releasing its models,
-        // then release the target after all item-triggered dispatch has finished.
         while let Some((_, item)) = self.items.pop_first() {
             drop(item);
         }
@@ -357,7 +352,6 @@ pub unsafe fn event_payload_add_formats(
             name_bytes.extend_from_slice(prefix);
             name_bytes.extend_from_slice(key_bytes);
             let name = CString::new(name_bytes).expect("C string parts contain no NUL");
-            // format_add copies the key into its format entry before returning.
             format_add(ft, &name, |out| {
                 write_cstr(
                     out,

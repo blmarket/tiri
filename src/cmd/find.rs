@@ -252,7 +252,6 @@ impl cmd_find_state {
         if self.flags & CMD_FIND_EXACT_SESSION != 0 {
             return -1;
         }
-        // Prefix matching precedes glob matching; either must be unambiguous.
         for glob in [false, true] {
             let mut matched = None;
             let mut cursor = sessions::first();
@@ -690,8 +689,6 @@ impl cmd_find_state {
         .find(|(token, _)| strcmp(pane, token.as_ptr()) == 0 as ::core::ffi::c_int)
         .map(|(_, direction)| direction)
         {
-            // The layout's neighbour of the active pane; there is none past the
-            // edge.
             let window_owner = self.w.upgrade().expect("target window");
             self.wp = window_owner
                 .active_pane()
@@ -752,8 +749,6 @@ impl cmd_find_state {
         -(1 as ::core::ffi::c_int)
     }
     pub unsafe fn is_valid(&self) -> bool {
-        // Pin the Rc allocations while checking membership. No callbacks run here,
-        // so the existing window owner remains responsible for close notification.
         let (Some(s), Some(w), Some(_wp)) = (self.s.upgrade(), self.w.upgrade(), self.wp.upgrade())
         else {
             return false;
@@ -768,7 +763,6 @@ impl cmd_find_state {
         {
             return false;
         }
-        // Identity matters: a replacement at the same index is a different target.
         let member = s.with_winlinks(|links| winlink_find_by_index(links, wl.idx));
         if member != self.wl {
             return false;

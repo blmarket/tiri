@@ -55,8 +55,6 @@ fn reported_open_files_include_one_we_hold<P: Platform>() {
     path.push(format!("tiri-platform-contract-{}", std::process::id()));
     let file = std::fs::File::create(&path).expect("create a file to hold");
 
-    // The kernel reports resolved paths; macOS's temporary directory lives
-    // under the /tmp -> /private/tmp symlink.
     let resolved = std::fs::canonicalize(&path).expect("resolve the held file");
     let open = P::process_open_files(std::process::id());
     if !open.is_empty() {

@@ -158,18 +158,15 @@ mod tests {
 
     #[test]
     fn panes_are_half_width_and_extend_the_strip() {
-        // Odd width: two halves and their separator fill the window exactly.
         let odd = cells(&HALVES, (81, 24));
         assert!(odd
             .iter()
             .all(|cell| (cell.sx, cell.sy, cell.yoff) == (40, 24, 0)));
         assert_eq!(starts(&odd), [0, 41, 82]);
         assert_eq!(width(&odd[..2]), 81);
-        // Even width: one spare column remains at the right edge.
         let even = cells(&HALVES[..2], (80, 24));
         assert_eq!((even[0].sx, starts(&even)), (39, vec![0, 40]));
         assert_eq!(width(&even), 79);
-        // A lone pane stays half-width.
         assert_eq!(width(&even[..1]), 39);
         assert_eq!(width(&[]), 0);
     }
@@ -179,11 +176,9 @@ mod tests {
         let length = |widths: &[Width], sx| strip_length(widths.iter().copied(), sx);
         assert_eq!(length(&HALVES, 81), 82 + 81);
         assert_eq!(length(&HALVES[..2], 80), 40 + 80);
-        // A lone pane, half or full, scrolls nowhere.
         assert_eq!(length(&HALVES[..1], 80), 80);
         assert_eq!(length(&[Width::Full], 80), 80);
         assert_eq!(length(&[], 80), 80);
-        // Panes raised past a tiny window still reach the last right edge.
         assert_eq!(length(&HALVES[..2], 2), 2 + 2);
     }
 
@@ -198,7 +193,6 @@ mod tests {
         assert_eq!(starts(&mixed), [0, 40, 121]);
         assert_eq!(width(&mixed), 160);
         assert_eq!(strip_length([Half, Full, Half].into_iter(), 80), 201);
-        // A lone full pane fills the window exactly.
         assert_eq!(cells(&[Full], (81, 24))[0].sx, 81);
         assert_eq!(width(&cells(&[Full], (81, 24))), 81);
         assert_eq!(width(&cells(&[Full, Full], (81, 24))), 163);

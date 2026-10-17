@@ -53,7 +53,6 @@ fn firing_with_logging_enabled_records_the_name_and_every_payload_item() {
     use tiri::src::events_payload::{event_payload_set_int, event_payload_set_string};
     use tiri::src::log::{log_add_level, log_get_level, log_open, log_toggle};
 
-    // The server log is written to the working directory; keep it private.
     let directory = std::env::temp_dir().join(format!(
         "tiri-events-log-{}-{}",
         std::process::id(),
@@ -83,7 +82,6 @@ fn firing_with_logging_enabled_records_the_name_and_every_payload_item() {
         events_fire(c"@logged-event", payload);
         events_remove_sink(id);
 
-        // Toggling an enabled log closes it and turns logging off again.
         log_toggle(c"events");
         assert_eq!(log_get_level(), 0);
     }
@@ -93,11 +91,7 @@ fn firing_with_logging_enabled_records_the_name_and_every_payload_item() {
     let log = std::fs::read_to_string(&path).unwrap();
     std::fs::remove_dir_all(&directory).unwrap();
 
-    // Logging does not change delivery.
     assert_eq!(delivered.get(), 1);
-    // The line names the fired event, then lists every item by name, including
-    // the event name the dispatcher adds itself; the logger escapes control
-    // characters.
     let line = log
         .lines()
         .find(|line| line.contains("events_fire: "))

@@ -50,7 +50,6 @@ fn chunks_drain_before_eof_and_wake_after_would_block() {
         *chunks.borrow(),
         vec![Some(b"ab".to_vec()), Some(b"c".to_vec())]
     );
-    // The reader has drained the socket and parked again after WouldBlock.
     writer.write_all(b"de").unwrap();
     drop(writer);
     tick(&mut runtime);
@@ -75,7 +74,6 @@ fn cancelling_a_pending_read_leaves_bytes_for_the_next_read() {
     assert!(poll(pending.as_mut()).is_pending());
     writer.write_all(b"hello").unwrap();
     tick(&mut runtime);
-    // Notification has arrived, but the cancelled future never reads it.
     drop(pending);
     let mut next = Box::pin(reader.read_chunk(8));
     assert!(

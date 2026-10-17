@@ -91,7 +91,6 @@ unsafe fn format_window_name(owner: &WindowRef) -> CString {
 pub unsafe fn parse_window_name_cstring(in_0: &CStr) -> CString {
     let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut ptr: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    // Keep the writable copy alive through basename and name cleaning.
     let mut copy = in_0.to_bytes_with_nul().to_vec();
     name = copy.as_mut_ptr().cast();
     if *name as ::core::ffi::c_int == '"' as i32 {

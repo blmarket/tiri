@@ -52,7 +52,6 @@ fn left_and_right_column() -> (Server, Vec<String>) {
 fn select_layout_switches_between_tiles_and_the_strip() {
     let server = tiled(81, 25, 3);
     assert!(server.display("#{window_layout}").contains("\"t\":\"v\""));
-    // The second pane beside the first, the third below the second.
     assert_eq!(
         rects(&server),
         [(0, 40, 0, 25), (41, 40, 0, 12), (41, 40, 13, 12)]
@@ -70,14 +69,11 @@ fn select_layout_switches_between_tiles_and_the_strip() {
 #[test]
 fn a_new_pane_splits_the_active_pane_the_other_way_from_the_last_split() {
     let (server, ids) = left_and_right_column();
-    // 80 by 24 looks wider than tall, so the second pane went beside the
-    // first; the next split alternates, so the third went below it.
     assert_eq!(
         rects(&server),
         [(0, 40, 0, 24), (41, 39, 0, 12), (41, 39, 13, 11)]
     );
     assert_eq!(active(&server), ids[2]);
-    // Closing a pane gives its share back to its siblings.
     server.success(&["kill-pane", "-t", &ids[1]]);
     assert_eq!(rects(&server), [(0, 40, 0, 24), (41, 39, 0, 24)]);
     server.success(&["kill-pane", "-t", &ids[0]]);
@@ -88,7 +84,6 @@ fn a_new_pane_splits_the_active_pane_the_other_way_from_the_last_split() {
 fn directions_select_the_tile_across_the_separator() {
     let (server, ids) = left_and_right_column();
     server.success(&["select-pane", "-t", &ids[0]]);
-    // The top right tile shares more of the left tile's edge.
     server.success(&["select-pane", "-R"]);
     assert_eq!(active(&server), ids[1]);
     server.success(&["select-pane", "-D"]);
@@ -110,8 +105,6 @@ fn swap_and_rotate_move_panes_between_tiles() {
     let (server, panes) = left_and_right_column();
     let tiles = rects(&server);
     server.success(&["swap-pane", "-s", &panes[0], "-t", &panes[2]]);
-    // The tiles stay; the panes trade them along with their places in the
-    // pane order.
     assert_eq!(
         ids(&server),
         [&panes[2], &panes[1], &panes[0]].map(String::clone)
@@ -169,8 +162,6 @@ fn a_pane_joining_a_tiled_window_takes_its_place_in_the_list() {
     server.success(&["new-window", "sleep 60"]);
     let moved = active(&server);
     server.success(&["join-pane", "-s", &moved, "-t", &panes[0]]);
-    // After its target in the list, the joining pane takes the second tile;
-    // the panes after it each split the one before.
     assert_eq!(
         ids(&server),
         [&panes[0], &moved, &panes[1], &panes[2]].map(String::clone)
@@ -206,7 +197,6 @@ fn horizontal_separators_meet_the_vertical_one_in_a_junction() {
             && shows(screen, 12..13, 40..41, '├')
             && shows(screen, 12..13, 41..80, '─')
     });
-    // Back in the strip every separator is vertical again.
     server.success(&["select-layout", "scrolling"]);
     client.wait_screen(|screen| {
         shows(screen, 0..24, 39..40, '│') && (0..24).all(|y| !screen.row(y).contains('─'))
@@ -229,7 +219,6 @@ fn a_grid_crosses_its_separators() {
 
 #[test]
 fn only_panes_on_the_edge_give_up_a_status_row() {
-    // Left pane full height; the right column split into top and bottom.
     let server = tiled(80, 24, 3);
     let before = rects(&server);
     server.success(&["set", "-w", "pane-border-status", "top"]);
@@ -263,7 +252,6 @@ fn only_panes_on_the_edge_give_up_a_status_row() {
 
 #[test]
 fn a_refused_join_leaves_both_windows_as_they_were() {
-    // A tiled 2 by 2 window: its pane is too small to split either way.
     let server = tiled(2, 2, 1);
     let full = ids(&server);
     let layout = |target: &str| {

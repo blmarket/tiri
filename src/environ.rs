@@ -15,9 +15,6 @@ struct ProcessEnvironmentSeed(*mut *mut ::core::ffi::c_char);
 impl Drop for ProcessEnvironmentSeed {
     fn drop(&mut self) {
         unsafe {
-            // setenv may replace the initially allocated pointer array. If it
-            // did, the seed is no longer the active process environment and
-            // remains ours to free. Otherwise ownership has moved to environ.
             if environ != self.0 {
                 free(self.0 as *mut ::core::ffi::c_void);
             }

@@ -10,7 +10,6 @@ fn uri_limit_applies_after_escaping_without_consuming_ids() {
     assert_ne!(first, 0);
     let too_long = CString::new(vec![b'x'; limit + 1]).unwrap();
     assert_eq!(hyperlinks_put(&table, &too_long, None), 0);
-    // Invalid UTF-8 is escaped as four octal bytes per input byte.
     let escaped_boundary = CString::new(vec![0xff; limit / 4]).unwrap();
     let second = hyperlinks_put(&table, &escaped_boundary, None);
     assert_eq!(second, first + 1);

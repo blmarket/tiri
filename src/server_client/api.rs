@@ -408,8 +408,6 @@ impl Client for ClientRef {
         !(*self.get()).input_requests.is_empty()
     }
     unsafe fn reply_input_request(&self, reply: crate::src::input::InputRequestReply<'_>) {
-        // These are observations of independently boxed input_ctx requests,
-        // not pointers into Client. Only the index is borrowed to snapshot them.
         let requests = (*self.get()).input_requests.clone();
         for request in requests {
             if crate::src::input::input_request_matches(&*request, reply) {
@@ -422,7 +420,6 @@ impl Client for ClientRef {
     unsafe fn cancel_input_requests(&self) {
         let requests = std::mem::take(&mut (*self.get()).input_requests);
         for request in requests {
-            // Detach first, including requests whose Client observer expired.
             (*request).c = Weak::new();
             crate::src::input::input_free_request(request);
         }
@@ -477,7 +474,6 @@ impl Client for ClientRef {
         state.term_features & !state.term_nofeatures
     }
     unsafe fn set_control_size(&self, width: u32, height: u32) {
-        // tty_set_size only updates the component's scalar dimensions.
         crate::src::tty::tty_set_size(&raw mut (*self.get()).tty, width, height, 0, 0);
         (*self.get()).flags |= CLIENT_SIZECHANGED as u64;
     }
@@ -645,8 +641,6 @@ impl Client for ClientRef {
             };
             state.subs.take()
         };
-        // Publish the component until all callback sources and resources have
-        // been retired. Each explicit free runs after releasing the model borrow.
         if let Some(subs) = subs {
             crate::src::monitor::monitor_destroy(subs);
         }
@@ -852,7 +846,6 @@ impl Client for ClientRef {
             crate::src::tty::tty_putcode(self, crate::src::shared::tty::TTYC_BEL);
         }
         if visual != VISUAL_OFF {
-            // No client field reference survives status callbacks.
             crate::src::status::status_message_set(Some(self), -1, 1, 0, 0, |out| {
                 out.write_all(kind.to_bytes())?;
                 if current {
@@ -873,7 +866,6 @@ impl Client for ClientRef {
     }
 
     unsafe fn reattach_after_session_destroy(&self, target: Option<&SessionRef>) {
-        // A normal set_session(None) has observable focus/socket effects here.
         (*self.get()).session = Weak::new();
         (*self.get()).last_session = Weak::new();
         self.set_session(target);
@@ -1126,8 +1118,6 @@ impl Client for ClientRef {
             prompt
         };
         crate::src::status::status_pop_screen(self);
-        // Free can install a replacement. Both the Client borrow and the old
-        // status screen must be released before its callback executes.
         crate::src::prompt::prompt_free(&prompt.downgrade());
     }
     unsafe fn clear_status_message(&self) {
@@ -1243,8 +1233,6 @@ impl Client for ClientRef {
         draw: impl FnOnce() -> R,
     ) -> R {
         let generation = (*self.get()).overlay_generation;
-        // Retire the previous callback before running output, as the popup
-        // implementation did. Its captured values may themselves reenter.
         let displaced = (*self.get())
             .overlay
             .as_mut()
@@ -1305,8 +1293,6 @@ impl Client for ClientRef {
     }
 
     unsafe fn draw_status_line(&self, row: u32, x: u32, width: u32, y: u32) {
-        // Output only updates terminal state. Temporarily move the selected
-        // screen out of its holder so no status/model borrow spans drawing.
         let (source, active) = {
             let mut status = self.borrow_status_mut();
             if let Some(screen) = status.active.as_deref_mut() {
@@ -1485,7 +1471,6 @@ mod tests {
             assert_eq!(owner.enter_source_file(2), Some(1));
             assert_eq!(owner.enter_source_file(2), Some(2));
             assert_eq!(owner.enter_source_file(2), None);
-            // Rejected entry did not acquire a completion duty.
             assert_eq!(owner.leave_source_file(), 1);
             assert_eq!(owner.enter_source_file(2), Some(2));
             assert_eq!(owner.leave_source_file(), 1);

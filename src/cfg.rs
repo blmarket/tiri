@@ -41,8 +41,6 @@ static CFG_CAUSES: Mutex<VecDeque<CString>> = Mutex::new(VecDeque::new());
 /// Resumes the startup client's `cfg_client_done` once the configuration is loaded.
 static mut CFG_WAITER: Option<CmdqWaiter> = None;
 pub static mut cfg_quiet: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-// Startup publishes the list before client_main can start a server. C readers
-// borrow the stable CString storage; the list is never mutated after publication.
 static CFG_FILES: OnceLock<Vec<CString>> = OnceLock::new();
 
 pub(crate) fn cfg_set_files(files: Vec<CString>) {
@@ -58,7 +56,6 @@ pub(crate) fn cfg_files() -> &'static [CString] {
 unsafe fn cfg_client_done(item: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     if cfg_finished == 0 {
         let (waiter, retval) = cmdq_wait(item);
-        // A lost startup client's wait is replaced and never resumes.
         drop(CFG_WAITER.replace(waiter));
         return retval;
     }
@@ -169,7 +166,6 @@ pub unsafe fn load_cfg(
     cmdq_add_format(
         &state,
         c"current_file",
-        // Preserve libc's former %s rendering when the filename is absent.
         pi.file.as_deref().unwrap_or(c"(null)"),
     );
     let new_item0_allocation = cmdq_get_command(
@@ -245,7 +241,6 @@ pub unsafe fn load_cfg_from_buffer(
     cmdq_add_format(
         &state,
         c"current_file",
-        // Preserve libc's former %s rendering when the filename is absent.
         pi.file.as_deref().unwrap_or(c"(null)"),
     );
     let new_item0_allocation = cmdq_get_command(
@@ -271,8 +266,6 @@ pub unsafe fn cfg_add_cause(write: impl FnOnce(&mut dyn std::io::Write) -> std::
 
 fn cfg_drain_causes(mut deliver: impl FnMut(&CStr)) {
     loop {
-        // Release the lock before delivery: output may call cfg_add_cause or
-        // another cause consumer through a callback.
         let cause = CFG_CAUSES.lock().unwrap().pop_front();
         let Some(cause) = cause else { break };
         deliver(&cause);
@@ -431,7 +424,6 @@ mod cfg_wait_tests {
             assert_eq!(cfg_done(), CMD_RETURN_NORMAL);
             assert_eq!(cfg_finished, 1);
             assert!(CFG_WAITER.is_none());
-            // Resumed inside cfg_done; the queue moves on at its next pass.
             assert!(!ran.get());
             assert_eq!(cmdq_next(Some(&owner)), 1);
             assert!(head.upgrade().is_none());
@@ -461,7 +453,6 @@ mod cfg_wait_tests {
             let first_ran = Rc::new(Cell::new(false));
             let first_head = startup_queue(&first, &first_ran, &Rc::new(Cell::new(false)));
             assert_eq!(cmdq_next(Some(&first)), 0);
-            // A later start_cfg's client replaces the wait.
             let second_ran = Rc::new(Cell::new(false));
             startup_queue(&second, &second_ran, &Rc::new(Cell::new(false)));
             assert_eq!(cmdq_next(Some(&second)), 0);
@@ -469,7 +460,6 @@ mod cfg_wait_tests {
             cfg_done();
             assert_eq!(cmdq_next(Some(&second)), 1);
             assert!(second_ran.get());
-            // The first client's head stays blocked.
             assert_eq!(cmdq_next(Some(&first)), 0);
             assert!(first_head.upgrade().is_some());
             assert_eq!(cmdq_len(Some(&first)), 2);
@@ -488,7 +478,6 @@ mod cfg_wait_tests {
             owner.update_flags(CLIENT_DEAD as u64, 0);
             assert_eq!(cmdq_next(Some(&owner)), 0);
 
-            // The stored waiter holds neither the client nor its item (R2).
             let client = Rc::downgrade(&owner);
             drop(owner);
             assert!(client.upgrade().is_none());

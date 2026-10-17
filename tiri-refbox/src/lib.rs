@@ -72,9 +72,6 @@
 //!
 //! [layout_for_ptr]: https://github.com/rust-lang/rust/issues/69835
 
-// The optional "cyclic" feature, which activates the `RefBox::<T>::new_cyclic()`
-// method, requires the Nightly feature "layout_for_ptr", as we need to be able
-// to get the layout of `T` through a raw pointer to deallocate it.
 #![cfg_attr(feature = "cyclic", feature(layout_for_ptr))]
 
 mod internals;
@@ -86,10 +83,6 @@ use core::ptr::NonNull;
 use std::error;
 
 use internals::{RefBoxHeap, RefBoxHeapInner, Status, WeakCount};
-
-///////////////////////////////////////////////////////////////////////////////
-// Helpers
-///////////////////////////////////////////////////////////////////////////////
 
 /// Coerces a `RefBox<T>` into a `RefBox<dyn Trait>` on stable Rust.
 ///
@@ -157,10 +150,6 @@ macro_rules! coerce_weak {
         __out
     }};
 }
-
-///////////////////////////////////////////////////////////////////////////////
-// RefBox
-///////////////////////////////////////////////////////////////////////////////
 
 /// A smart pointer with many reference-counted weak references.
 ///
@@ -267,12 +256,6 @@ impl<T: ?Sized> RefBox<T> {
     /// Returns a read-only reference to the heap part of the `RefBox`.
     #[inline(always)]
     fn heap(&self) -> &RefBoxHeapInner {
-        // SAFETY (1): RefBox guarantees the heap memory stays alive at least
-        // as long as the RefBox is alive.
-        // SAFETY (2): We only ever access this through a shared reference so
-        // we don't have to account for possible mutable references.
-        // SAFETY (3): Because this is a `RefBox` we know the data field
-        // is initialized.
         let ptr = self.ptr.as_ptr();
         unsafe { &(*ptr).inner }
     }
@@ -354,7 +337,6 @@ impl<T: ?Sized> RefBox<T> {
     ///
     /// Ensure there are no mutable references to `T`.
     pub unsafe fn get_unchecked(&self) -> &T {
-        // SAFETY: the caller must uphold the safety requirements
         unsafe { self.ptr.as_ref().data_ref() }
     }
 
@@ -365,7 +347,6 @@ impl<T: ?Sized> RefBox<T> {
     ///
     /// Ensure there are no other references to `T`.
     pub unsafe fn get_mut_unchecked(&mut self) -> &mut T {
-        // SAFETY: the caller must uphold the safety requirements
         unsafe { &mut *self.ptr.as_ref().data.get() }
     }
 
@@ -373,11 +354,6 @@ impl<T: ?Sized> RefBox<T> {
     pub fn as_ptr(&self) -> *const T {
         let ptr = self.ptr.as_ptr();
 
-        // SAFETY (1): ptr is safe to dereference, see Self::heap().
-        // SAFETY (2): UnsafeCell is `#[repr(transparent)]`, which means
-        // a pointer to the cell is also a pointer to its only field.
-        // SAFETY (3): RefBox could be borrowed, so use &raw to ensure no reference is created
-        // while there is a mutable reference.
         unsafe { &raw const (*ptr).data as *const T }
     }
 
@@ -394,7 +370,6 @@ impl<T: ?Sized> RefBox<T> {
     ///
     /// Ensure `ptr` is a valid pointer to a `RefBoxHeap<T>` instance.
     pub unsafe fn from_raw(ptr: *mut RefBoxHeap<T>) -> Self {
-        // SAFETY: the caller must uphold the safety requirements
         Self {
             ptr: unsafe { NonNull::new_unchecked(ptr) },
             _p: PhantomData,
@@ -409,7 +384,6 @@ impl<T: ?Sized> RefBox<T> {
     pub unsafe fn cast<U>(self) -> RefBox<U> {
         let raw_ptr = self.into_raw();
 
-        // SAFETY: the caller must uphold the safety requirements
         unsafe { RefBox::from_raw(raw_ptr as _) }
     }
 
@@ -419,10 +393,6 @@ impl<T: ?Sized> RefBox<T> {
         self.heap().status()
     }
 }
-
-///////////////////////////////////////////////////////////////////////////////
-// Weak
-///////////////////////////////////////////////////////////////////////////////
 
 /// A weak reference-counted reference to a [`RefBox`].
 ///
@@ -446,7 +416,6 @@ pub struct Weak<T: ?Sized> {
 impl<T: ?Sized> Drop for Weak<T> {
     fn drop(&mut self) {
         if !self.is_empty() {
-            // SAFETY: this is an allocated Weak and cannot be used after this point.
             unsafe { internals::drop_weak(self.ptr) };
         }
     }
@@ -511,9 +480,6 @@ impl<T> Weak<T> {
     /// ```
     #[inline]
     pub const fn new() -> Self {
-        // Like std::rc::Weak, reserve usize::MAX. RefBoxHeap contains a u32
-        // counter and therefore has alignment >= 4, so no allocation can
-        // have this address. Never dereference or project fields from it.
         Self {
             ptr: NonNull::without_provenance(core::num::NonZeroUsize::MAX),
         }
@@ -536,12 +502,6 @@ impl<T: ?Sized> Weak<T> {
         if self.is_empty() {
             return None;
         }
-        // SAFETY (1): Weak guarantees the heap memory stays alive at
-        // least as long as the Weak is alive.
-        // SAFETY (2): We only ever access this through a shared reference so
-        // we don't have to account for possible mutable references.
-        // SAFETY (3): We make sure not to create a reference covering the
-        // `data` field of `RefBoxHeap` as it may contain uninitialized data.
         let ptr = self.ptr.as_ptr();
         Some(unsafe { &(*ptr).inner })
     }
@@ -644,7 +604,6 @@ impl<T: ?Sized> Weak<T> {
     #[track_caller]
     pub unsafe fn get_unchecked(&self) -> &T {
         assert!(self.is_alive(), "RefBox Weak access requires a live owner");
-        // SAFETY: the caller must uphold the safety requirements
         unsafe { self.ptr.as_ref().data_ref() }
     }
 
@@ -666,7 +625,6 @@ impl<T: ?Sized> Weak<T> {
     #[track_caller]
     pub unsafe fn get_mut_unchecked(&mut self) -> &mut T {
         assert!(self.is_alive(), "RefBox Weak access requires a live owner");
-        // SAFETY: the caller must uphold the safety requirements
         unsafe { &mut *self.ptr.as_ref().data.get() }
     }
 
@@ -678,14 +636,9 @@ impl<T: ?Sized> Weak<T> {
     pub fn as_ptr(&self) -> *const T {
         let ptr = self.ptr.as_ptr();
         if self.is_empty() {
-            // Preserve metadata for empty trait-object and slice pointers.
             return ptr as *const T;
         }
 
-        // SAFETY (1): ptr is safe to dereference, see Self::heap().
-        // SAFETY (2): UnsafeCell is `#[repr(transparent)]`, which means
-        // a pointer to the cell is also a pointer to its only field.
-        // SAFETY (3): data could be uninitialized, so use &raw to ensure no reference is created
         unsafe { &raw const (*ptr).data as *const T }
     }
 
@@ -708,7 +661,6 @@ impl<T: ?Sized> Weak<T> {
     /// An empty sentinel returned by `into_raw` is also accepted. A null pointer
     /// is not valid.
     pub unsafe fn from_raw(ptr: *mut RefBoxHeap<T>) -> Self {
-        // SAFETY: the caller must uphold the safety requirements
         let ptr = unsafe { NonNull::new_unchecked(ptr) };
         Self { ptr }
     }
@@ -721,7 +673,6 @@ impl<T: ?Sized> Weak<T> {
     pub unsafe fn cast<U>(self) -> Weak<U> {
         let raw_ptr = self.into_raw();
 
-        // SAFETY: the caller must uphold the safety requirements
         unsafe { Weak::from_raw(raw_ptr as _) }
     }
 
@@ -731,10 +682,6 @@ impl<T: ?Sized> Weak<T> {
         self.heap().map_or(Status::Dropped, RefBoxHeapInner::status)
     }
 }
-
-///////////////////////////////////////////////////////////////////////////////
-// Borrow
-///////////////////////////////////////////////////////////////////////////////
 
 /// A mutable borrow as a RAII-guard of a [`RefBox`] or [`Weak`].
 ///
@@ -759,7 +706,6 @@ impl<'ptr, T: ?Sized> Borrow<'ptr, T> {
 
 impl<'ptr, T: ?Sized> Drop for Borrow<'ptr, T> {
     fn drop(&mut self) {
-        // SAFETY: The borrow cannot be used anymore after this point.
         unsafe { internals::drop_borrow(self.heap) };
     }
 }
@@ -768,16 +714,12 @@ impl<'ptr, T: ?Sized> Deref for Borrow<'ptr, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        // SAFETY: There can only ever be one `Borrow` to the same
-        // data, so we're sure there are no mutable references.
         unsafe { self.heap.data_ref() }
     }
 }
 
 impl<'ptr, T: ?Sized> DerefMut for Borrow<'ptr, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        // SAFETY: There can only ever be one `Borrow` to the same
-        // data, so we're sure there are no other references.
         unsafe { &mut *self.heap.data.get() }
     }
 }
@@ -787,10 +729,6 @@ impl<'ptr, T: ?Sized + fmt::Debug> fmt::Debug for Borrow<'ptr, T> {
         f.debug_tuple("Borrow").field(&self.deref()).finish()
     }
 }
-
-///////////////////////////////////////////////////////////////////////////////
-// Errors
-///////////////////////////////////////////////////////////////////////////////
 
 /// An error that may occur during borrowing of [`RefBox`] or [`Weak`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -809,10 +747,6 @@ impl fmt::Display for BorrowError {
 }
 
 impl error::Error for BorrowError {}
-
-///////////////////////////////////////////////////////////////////////////////
-// Tests
-///////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {
@@ -904,7 +838,6 @@ mod tests {
         let ref_box = RefBox::new(val);
         ref_box.heap().set_weak_count(u32::MAX);
 
-        // Use catch unwind and reset weak count, otherwise MIRI will report memory leak.
         let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
             let weak = RefBox::downgrade(&ref_box);
             drop(weak);
@@ -950,7 +883,6 @@ mod tests {
         let weak = RefBox::downgrade(&ref_box);
         weak.heap().unwrap().set_weak_count(u32::MAX);
 
-        // Use catch unwind and reset refcount, otherwise MIRI will report memory leak.
         let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
             let weak2 = weak.clone();
             drop(weak2);
@@ -995,8 +927,6 @@ mod tests {
     fn weak_unchecked_access_requires_live_owner() {
         use std::panic::{AssertUnwindSafe, catch_unwind};
 
-        // Both empty handles and expired allocations must panic before forming
-        // a reference to their payload.
         let owner = RefBox::new(7);
         let expired = owner.downgrade();
         drop(owner);
@@ -1045,7 +975,6 @@ mod tests {
             }))
             .is_err()
         );
-        // The existing guard remains valid until it releases the payload.
         assert_eq!(*borrow, 7);
     }
 

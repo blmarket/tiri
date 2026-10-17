@@ -76,7 +76,6 @@ pub struct window_tree_modedata {
     pub wp: Weak<UnsafeCell<window_pane>>,
     pub dead: ::core::ffi::c_int,
     pub data: Option<std::rc::Rc<std::cell::UnsafeCell<mode_tree_data>>>,
-    // Callback Rc references keep this record alive after mode shutdown.
     pub format: CString,
     pub key_format: CString,
     pub command: CString,
@@ -2176,7 +2175,6 @@ unsafe fn window_tree_kill_each(item: &window_tree_itemdata) {
             }
         }
         WINDOW_TREE_WINDOW => {
-            // Release the winlink borrow before destruction can unlink it.
             let window_owner = match target.winlink.try_borrow_mut() {
                 Ok(link) => link.window_owner.clone(),
                 Err(refbox::BorrowError::Dropped) => None,

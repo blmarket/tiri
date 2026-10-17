@@ -97,7 +97,6 @@ impl cmd_source_file_data {
 impl Drop for cmd_source_file_data {
     fn drop(&mut self) {
         self.decrement_depth();
-        // Preserve cleanup order: depth, path copies, then client release.
         drop(std::mem::take(&mut self.files));
         if let Some(client) = self.client.take() {
             (client).release();
@@ -120,8 +119,6 @@ unsafe fn cmd_source_file_complete(
 ) {
     let c = cdata.client_handle();
     if cfg_finished == 0 {
-        // Startup completion does not decrement nesting depth in tmux.
-        // Cancellation during an active read still decrements it.
         cdata.depth_active = false;
         return;
     }
@@ -188,7 +185,6 @@ unsafe fn cmd_source_file_done(
         .as_deref()
         .map_or(::core::ptr::null(), CStr::as_ptr);
     let error = read.error;
-    // Progress does not coalesce the buffer; only complete files are parsed.
     let bdata: &[u8] = evbuffer_pullup(&mut read.buffer, -1).map_or(&[], |bytes| bytes);
     let bsize = bdata.len();
     let mut new_item = Weak::new();
@@ -475,7 +471,6 @@ mod tests {
                 ["source"],
                 "local reads are deferred"
             );
-            // Each read reports in a task, which starts the next read.
             runtime.poll(Some(Duration::ZERO)).unwrap();
             assert_eq!(
                 cmdq_labels(Some(&owner)),
@@ -511,13 +506,11 @@ mod tests {
                 error: 0,
                 buffer: tiri_buffer::SegmentedBuf::from(b"set -g @a 1\n".to_vec()),
             };
-            // The first file loads inside the send, which starts the second read.
             assert!(tx.send(outcome).is_ok());
             assert_eq!(cmdq_labels(Some(&owner)), ["source", "set-option"]);
             drop(owner);
             assert!(head.upgrade().is_none());
             assert_eq!(cmd_source_file_depth, 0);
-            // The second read was cancelled with the chain.
             runtime.poll(Some(Duration::ZERO)).unwrap();
         }
         crate::src::reactor::shutdown_runtime(runtime);
@@ -530,7 +523,6 @@ mod tests {
             let owner = clients::with_queue();
             let (tx, rx) = tiri_rt::oneshot::channel();
             let head = append_chain(&owner, data(&[&one]), move |_| rx);
-            // The dead file client drops the waiter unsent.
             drop(tx);
             assert_eq!(cmd_source_file_depth, 0, "the data is released");
             assert_eq!(cmdq_next(Some(&owner)), 0);

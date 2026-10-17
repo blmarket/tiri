@@ -27,7 +27,6 @@ fn style_appends_preserve_raw_range_bytes_and_numeric_fields() {
             style_tostring(&mut value).to_bytes(),
             b"list=on,range=user|\xff,align=right,dim=25%,width=75%,pad=2",
         );
-        // Reusing the static buffer must terminate the new, shorter result.
         style_set(&mut value, &grid_default_cell);
         value.width = 3;
         assert_eq!(style_tostring(&mut value).as_c_str(), c"width=3");

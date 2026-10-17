@@ -62,9 +62,6 @@ impl PaneProcessProbe {
     /// group's `argv[0]` and then falls back to the pane's own command line —
     /// the fallback is what answers for a leaderless group.
     pub fn current_command(&self) -> Option<CString> {
-        // tmux's Linux osdep_get_name reads argv[0] from /proc/PID/cmdline.
-        // Keep the executable-name candidates as a fallback for platforms or
-        // processes where the argument vector is unavailable.
         let foreground = self
             .foreground
             .and_then(|pid| {
@@ -328,8 +325,6 @@ pub fn parse_window_name(input: &CStr) -> CString {
     if let Some(space) = name.iter().position(|&byte| byte == b' ') {
         name = &name[..space];
     }
-    // tmux keeps trailing bytes only while they are alphanumeric or
-    // punctuation, which together are exactly the printable ASCII characters.
     let trimmed = name
         .iter()
         .rposition(|byte| byte.is_ascii_graphic())
@@ -359,46 +354,32 @@ mod tests {
 
     #[test]
     fn a_probed_pane_is_classified_by_what_holds_its_terminal() {
-        // The pids are deliberately ones `/proc` cannot answer for, so the
-        // program name comes from the spawn command the way it does for a
-        // leaderless group — and the tty probe reads as "cannot tell", which
-        // is also what every non-Linux platform reports.
         let probe = |foreground, session_leader, command: &str| PaneProcessProbe {
             foreground,
             session_leader,
             fallback_command: Some(CString::new(command).expect("command")),
         };
 
-        // The shell still owns the terminal: nothing runs in front of it.
         assert_eq!(
             PaneClass::classify(Some(&probe(Some(0), Some(0), "bash")), false, false),
             PaneClass::ShellPrompt
         );
-        // A shell started from the pane's own shell holds the terminal in its
-        // place, and is a shell at a prompt just the same.
         assert_eq!(
             PaneClass::classify(Some(&probe(Some(0), Some(1), "zsh")), false, false),
             PaneClass::ShellPrompt
         );
-        // A command took the terminal away from the shell.
         assert_eq!(
             PaneClass::classify(Some(&probe(Some(0), Some(1), "make")), false, false),
             PaneClass::Running
         );
-        // A pane launched straight into a program is its own session leader,
-        // so the group comparison alone would call this a prompt.
         assert_eq!(
             PaneClass::classify(Some(&probe(Some(0), Some(0), "tail -f log")), false, false),
             PaneClass::Running
         );
-        // The alternate screen outranks the rest: a full-screen program is
-        // likewise both leader and foreground group.
         assert_eq!(
             PaneClass::classify(Some(&probe(Some(0), Some(0), "bash")), true, false),
             PaneClass::Tui
         );
-        // A remote client is reported as such, whether its far side is at a
-        // prompt, busy, or on a full-screen program.
         assert_eq!(
             PaneClass::classify(Some(&probe(Some(0), Some(1), "ssh sx")), false, false),
             PaneClass::Remote
@@ -415,7 +396,6 @@ mod tests {
             PaneClass::classify(Some(&probe(Some(0), Some(1), "mosh-client")), false, false),
             PaneClass::Remote
         );
-        // Death outranks everything, including the screen it died on.
         assert_eq!(
             PaneClass::classify(Some(&probe(Some(0), Some(0), "bash")), true, true),
             PaneClass::Dead
@@ -434,20 +414,14 @@ mod tests {
         assert!(!invoked(&["bash", "--norc", "-i"]));
         assert!(!invoked(&["-bash"]));
         assert!(!invoked(&["zsh"]));
-        // A shell given a script to run is running it, whether the operand
-        // stands on its own or behind the `--` that ends the options.
         assert!(invoked(&["sh", "-i", "script.sh"]));
         assert!(invoked(&["sh", "--", "script.sh"]));
-        // Only single-dash arguments bundle short options, so a long option
-        // that merely contains a `c` is not one.
         assert!(!invoked(&["bash", "--noprofile", "--norc"]));
         assert!(invoked(&["bash", "--norc", "-c", "make"]));
     }
 
     #[test]
     fn a_login_shells_argv0_still_reads_as_a_shell() {
-        // A login shell is spelled `-bash`, and an absolute path is common in
-        // `default-shell`; both reduce to the bare program name.
         assert!(is_shell(&parse_window_name(c"-bash")));
         assert!(is_shell(&parse_window_name(c"/usr/bin/zsh")));
         assert!(is_shell(&parse_window_name(c"fish")));
@@ -457,24 +431,16 @@ mod tests {
 
     #[test]
     fn parse_window_name_reduces_a_command_line_to_its_program() {
-        // The plain cases: a bare name survives, an absolute path loses its
-        // directories, and arguments are dropped.
         assert_eq!(parse_window_name(c"bash"), c"bash");
         assert_eq!(parse_window_name(c"/usr/bin/sleep"), c"sleep");
         assert_eq!(parse_window_name(c"sleep 30"), c"sleep");
-        // A relative path keeps its directories; tmux only takes the basename
-        // of a name that starts at the root.
         assert_eq!(parse_window_name(c"bin/sleep"), c"bin/sleep");
-        // A login shell announces itself with a leading dash.
         assert_eq!(parse_window_name(c"-zsh"), c"zsh");
         assert_eq!(parse_window_name(c"exec vim file"), c"vim");
-        // The stringified argv of the leaderless-pipeline fixture.
         assert_eq!(
             parse_window_name(cr#"bash -mc "echo x | sleep 30""#),
             c"bash"
         );
-        // Quotes are resolved before the cut at the first space, so a quoted
-        // argv[0] containing one is still cut there.
         assert_eq!(parse_window_name(cr#""my program" -x"#), c"my");
         assert_eq!(parse_window_name(c"sleep\r\n"), c"sleep");
         assert_eq!(parse_window_name(c""), c"");
@@ -484,7 +450,6 @@ mod tests {
     fn stringify_argv_reduces_to_the_program_the_pane_was_given() {
         let argv = [c"bash", c"-mc", c"echo x | sleep 30"];
         assert_eq!(parse_window_name(&stringify_argv(&argv)), c"bash");
-        // A pane spawned with no command carries just the shell.
         let shell = [c"/bin/zsh"];
         assert_eq!(parse_window_name(&stringify_argv(&shell)), c"zsh");
     }

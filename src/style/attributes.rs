@@ -50,8 +50,6 @@ pub fn attributes_parse(input: &[u8]) -> Option<i32> {
 }
 
 fn equal(a: &[u8], b: &[u8]) -> bool {
-    // Both slices have this many readable bytes; strncasecmp reads at most n.
-    // Keeping libc here preserves locale-sensitive case matching.
     a.len() == b.len()
         && unsafe { libc::strncasecmp(a.as_ptr().cast(), b.as_ptr().cast(), a.len()) == 0 }
 }

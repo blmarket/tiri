@@ -306,8 +306,6 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
             changed = force;
         }
         screen_write_start(&mut ctx, &raw mut (*sl).screen);
-        // Keep pending collection state, but never the borrowed screen pointer,
-        // across option access or format callbacks. Resume under a fresh guard.
         ctx.target = Default::default();
     }
     let format_owner =
@@ -557,8 +555,6 @@ pub unsafe fn status_message_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
         .as_ptr();
     let expanded = format_expand_time_cstring(ft, msgfmt);
     drop(ft_owner);
-    // Formatting above may reenter Client. Only component-only screen drawing
-    // follows; with no pane or init callback it cannot dispatch terminal output.
     let mut status = c_owner.borrow_status_mut();
     let sl: *mut status_line = &mut *status;
     screen_write_start(&mut ctx, (*sl).active_screen());
@@ -761,8 +757,6 @@ pub unsafe fn status_prompt_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
         let mut status = c_owner.borrow_status_mut();
         crate::src::prompt::prompt_draw_cursor_style(&prompt, status.active_screen());
     }
-    // Cursor defaults and the background copy are visible to format callbacks,
-    // but no Client screen pointer or guard survives into expansion.
     let prepared = crate::src::prompt::prompt_prepare_draw(&prompt, ax, aw);
     let mut status = c_owner.borrow_status_mut();
     let sl: *mut status_line = &mut *status;
@@ -827,8 +821,6 @@ pub unsafe fn status_prompt_key(
             .expect("live client")
             .update_flags(CLIENT_REDRAWSTATUS as uint64_t, 0);
     }
-    // Input callbacks can close or replace the prompt. Inspect the currently
-    // installed prompt after dispatch, matching the original close decision.
     let current = c_owner.prompt_observer();
     let closed = current.is_alive()
         && prompt_closed(&current.try_borrow_mut().expect("unborrowed prompt")) != 0;

@@ -148,9 +148,6 @@ mod tests {
 
     #[test]
     fn title_spinner_reports_working() {
-        // The spinner in the title outranks a resting prompt box, whether it is
-        // the half-circle animation current Claude Code draws or the braille one
-        // older releases drew.
         let screen = "───────\n❯ ";
         for title in ["◐ Claude", "◑ Claude", "◒ Claude", "◓ Claude", "⠹ Claude"] {
             assert_eq!(
@@ -163,8 +160,6 @@ mod tests {
 
     #[test]
     fn a_spinner_glyph_alone_is_not_a_working_title() {
-        // The signal is the spinner cell plus its separating space; a title that
-        // merely starts with the glyph is not the animation.
         let screen = "───────\n❯ ";
         assert_eq!(
             detect(screen, Some("◐Claude")),
@@ -180,9 +175,6 @@ mod tests {
 
     #[test]
     fn live_status_line_reports_working_under_a_resting_title() {
-        // Claude Code leaves its composer box up while a turn runs and titles
-        // itself `✳ <task>` throughout, so the status line is the only thing
-        // separating a working pane from a finished one.
         let screen = "\
   ⎿  Running…
 · Leavening… (1m 23s · ↓ 14.7k tokens)
@@ -202,8 +194,6 @@ mod tests {
 
     #[test]
     fn a_finished_turn_line_is_not_a_working_status_line() {
-        // The same marker introduces the turn's closing line; the running
-        // counter is what tells them apart.
         let screen = "\
 ✻ Brewed for 11m 18s · done 9:06 AM
 ─────────────
@@ -218,8 +208,6 @@ mod tests {
 
     #[test]
     fn transcript_content_is_not_a_working_status_line() {
-        // Tool lines end `…)` with no counter, and the indented progress lines
-        // that do carry a parenthesis are not at column zero.
         for line in [
             "● Bash(cd /home/blmarket/proj/h2 && sed -n '51,90p' src/tests/test…)",
             "  Searching for 1 pattern… (ctrl+o to expand)",
@@ -236,9 +224,6 @@ mod tests {
 
     #[test]
     fn scrollback_quoting_a_prompt_hint_does_not_mask_the_state() {
-        // A pane reviewing a diff of these very rules has the hints in its
-        // transcript; only the region the prompt is drawn in speaks for the
-        // pane, so both the working and the idle signal still come through.
         let quoted = "\
   166 -        && !lower.contains(\"enter to select\")
   167 -        && !lower.contains(\"esc to cancel\")
@@ -254,8 +239,6 @@ mod tests {
 
     #[test]
     fn running_background_subagents_report_working_at_the_prompt() {
-        // The main thread waits at the prompt box while its subagents run; the
-        // footer rows with live counters are what say the pane is busy.
         let screen = "\
 ✻ Waiting for 6 background agents to finish
 ─────────────
@@ -275,8 +258,6 @@ mod tests {
 
     #[test]
     fn a_running_dynamic_workflow_reports_working_at_the_prompt() {
-        // A workflow's footer row writes its elapsed time without the space a
-        // subagent's row puts between units.
         let screen = "\
 ✻ Waiting for 1 dynamic workflow to finish
 ─────────────────────────────────── ultracode ─
@@ -294,8 +275,6 @@ mod tests {
 
     #[test]
     fn a_footer_without_subagent_rows_stays_idle() {
-        // Once the last subagent finishes its row is gone, and the leftover
-        // `● main` row and the transcript's waiting line are not work.
         let screen = "\
 ✻ Waiting for 6 background agents to finish
 ─────────────
@@ -313,8 +292,6 @@ mod tests {
 
     #[test]
     fn a_permission_prompt_outranks_a_stale_status_line() {
-        // A turn parked on a question wants a human, so blocked stays above the
-        // working signal whatever the screen still shows above the prompt.
         let screen = "\
 ✢ Slithering… (2m 12s · ↓ 8.6k tokens)
 Edit file src/main.rs?
@@ -327,8 +304,6 @@ Do you want to proceed? · Esc to cancel";
 
     #[test]
     fn running_mcp_tasks_report_working_at_the_prompt() {
-        // The turn has ended and the prompt box is back, but the summary says
-        // MCP tasks are still running, so the pane is still working.
         let screen = "\
 ✻ Crunched for 2m 5s · 1 MCP task still running
 ──────────────────────
@@ -353,8 +328,6 @@ Do you want to proceed? · Esc to cancel";
 
     #[test]
     fn quoted_or_finished_mcp_task_summaries_stay_idle() {
-        // Indented transcript text, a summary with no tasks left, and the
-        // marker standing in for the separator are not the live signal.
         for summary in [
             "  ✻ Crunched for 2m 5s · 1 MCP task still running",
             "✻ Crunched for 2m 5s · 0 MCP tasks still running",
@@ -405,8 +378,6 @@ Esc to cancel"
 
     #[test]
     fn a_quoted_mcp_elicitation_header_stays_idle() {
-        // Without the Accept/Decline controls and the cancel footer, the header
-        // is only transcript text.
         let screen = "\
 MCP server \"github\" requests your input
 ──────────────────────
@@ -494,12 +465,10 @@ Do you want to proceed? · Esc to cancel";
             project_slug(Path::new("/home/hun/srv/tiri")),
             c"-home-hun-srv-tiri"
         );
-        // A leading dot after a separator yields a double dash, matching Claude.
         assert_eq!(
             project_slug(Path::new("/home/hun/.claude")),
             c"-home-hun--claude"
         );
-        // Case is preserved; only non-alphanumerics are rewritten.
         assert_eq!(project_slug(Path::new("/home/hun/AAI")), c"-home-hun-AAI");
     }
 

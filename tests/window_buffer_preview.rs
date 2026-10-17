@@ -139,8 +139,6 @@ impl AttachedClient {
 impl Drop for AttachedClient {
     fn drop(&mut self) {
         unsafe { libc::kill(self.pid, libc::SIGTERM) };
-        // Drain the terminal while the client exits: a full PTY buffer (only
-        // 1KiB on macOS) would block its final writes forever.
         let mut chunk = [0; 8192];
         while unsafe { libc::waitpid(self.pid, std::ptr::null_mut(), libc::WNOHANG) } == 0 {
             let _ = self.master.read(&mut chunk);

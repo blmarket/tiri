@@ -20,7 +20,6 @@ pub struct server_acl_entry {
 }
 #[derive(Default)]
 pub struct server_acl_entries {
-    // The old comparator ordered non-groups before groups, then by id.
     pub(crate) entries: std::collections::BTreeMap<(bool, id_t), server_acl_entry>,
 }
 pub const SERVER_ACL_READONLY: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
@@ -141,7 +140,6 @@ pub unsafe fn server_acl_display(item_handle: &std::rc::Rc<std::cell::UnsafeCell
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut type_0: ::core::ffi::c_char = 0;
     let mut current_block_12: u64;
-    // Printing runs outside the registry borrow.
     for loop_0 in server_acl_entries::snapshot() {
         if !loop_0.flags & SERVER_ACL_IS_GROUP != 0 {
             if loop_0.id == 0 as id_t {

@@ -39,7 +39,6 @@ fn fuzzy_is_boundary(ud: &utf8_data) -> bool {
 
 fn fuzzy_char_equal(a: &utf8_data, b: &utf8_data, fold: bool) -> bool {
     if fold && a.size == 1 && b.size == 1 && a.data[0] < 0x80 && b.data[0] < 0x80 {
-        // Keep tmux's locale-sensitive folding at the scalar C boundary.
         return unsafe { libc::tolower(a.data[0] as i32) == libc::tolower(b.data[0] as i32) };
     }
     a.size == b.size && a.data[..a.size as usize] == b.data[..b.size as usize]
@@ -148,8 +147,6 @@ unsafe fn fuzzy_scan(text: &CStr, widths: &mut [u_int; 5]) -> Vec<fuzzy_char> {
                     fuzzy_add(&mut cs, current, &bracket, widths);
                     remaining = &remaining[hashes + 1..];
                 } else {
-                    // This suffix still belongs to the caller's CStr, including
-                    // its trailing NUL required by the shared style scanner.
                     let style_start = &remaining[hashes + 1..];
                     let start = style_start.as_ptr().cast();
                     let end = format_skip(start);
@@ -460,7 +457,6 @@ pub(crate) unsafe fn fuzzy_match_owned(
     let ncs: u_int = cs.len() as u_int;
     matched = vec![0; ncs.max(1) as usize];
     best = vec![0; ncs.max(1) as usize];
-    // A term with more characters than the text cannot match.
     tok = vec![
         utf8_data {
             data: [0; 32],
@@ -630,7 +626,6 @@ mod tests {
                 (c"  ^ab  cd$ | missing ", c"abcd", Some(0b1111)),
                 (c"missing||^ab$|", c"ab", Some(0b11)),
                 (c"^é$", c"é", Some(1)),
-                // The text scanner skips invalid high bytes.
                 (c"^\xff$", c"\xff", None),
                 (c" | ", c"ab", Some(0)),
             ] {

@@ -154,8 +154,6 @@ unsafe fn cmd_refresh_client_control_client_size(
     recalculate_sizes_now(1 as ::core::ffi::c_int);
     CMD_RETURN_NORMAL
 }
-// The pane prefix needs its own terminator for scanf. The suffix borrows the
-// original argument; neither scanf nor tty_keys_colours retains its pointer.
 fn cmd_refresh_parse_pane(value: &CStr) -> Option<(u_int, &CStr)> {
     let bytes = value.to_bytes();
     if bytes.first() != Some(&b'%') {
@@ -166,7 +164,6 @@ fn cmd_refresh_parse_pane(value: &CStr) -> Option<(u_int, &CStr)> {
     let suffix = CStr::from_bytes_with_nul(&value.to_bytes_with_nul()[colon + 1..])
         .expect("CStr suffix has one trailing NUL");
     let mut pane = 0;
-    // Keep scanf's existing acceptance of signs, whitespace and trailing bytes.
     let matched = unsafe { sscanf(prefix.as_ptr(), c"%%%u".as_ptr(), &mut pane) };
     (matched == 1).then_some((pane, suffix))
 }

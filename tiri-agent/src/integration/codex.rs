@@ -172,8 +172,6 @@ mod tests {
 
     #[test]
     fn title_spinner_reports_working_over_idle_screen() {
-        // Codex sets a braille-spinner title while working even when the screen
-        // tail still shows the resting prompt. The title outranks the screen.
         let screen = "OpenAI Codex\n› ";
         assert_eq!(
             detect(screen, Some("⠹ Working")),
@@ -192,8 +190,6 @@ mod tests {
 
     #[test]
     fn title_outranks_transcript_viewer() {
-        // A working title takes precedence even while the transcript viewer is
-        // open (which would otherwise preserve the previous state).
         let screen = "›\n↑/↓ to scroll · pgup/pgdn to move · home/end to jump · q to quit · esc to edit prev";
         assert_eq!(
             detect(screen, Some("⠹ Working (12s)")),
@@ -203,13 +199,10 @@ mod tests {
 
     #[test]
     fn plain_title_is_a_last_resort_idle_signal() {
-        // No screen evidence at all, but a non-spinner, non-approval title means
-        // Codex is idle at its prompt.
         assert_eq!(
             rules_state("", Some("codex — my-project")),
             Detection::State(AgentState::Idle)
         );
-        // An empty/whitespace title provides nothing.
         assert_eq!(
             rules_state("", Some("   ")),
             Detection::State(AgentState::Unknown)

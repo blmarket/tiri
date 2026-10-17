@@ -54,7 +54,6 @@ impl Utf8WidthCache {
 }
 
 pub(super) struct Utf8ItemCache {
-    // The secondary index holds numeric keys, never aliases to the boxes.
     by_data: BTreeMap<(u8, Vec<u8>), u32>,
     by_index: BTreeMap<u32, Box<[u8; 32]>>,
     next_index: u32,

@@ -376,7 +376,6 @@ pub(crate) fn colour_format_escape_resolved(
             unsafe { colour_find_rgb((colour >> 16) as u8, (colour >> 8) as u8, colour as u8) };
     }
     if !flags & TERM_256COLOURS & (colour & COLOUR_FLAG_256) != 0 {
-        // The conversion masks the index to a byte before reading its fixed table.
         colour = unsafe { colour_256to16(colour) };
     }
     let text = if colour & COLOUR_FLAG_RGB != 0 {
@@ -3674,14 +3673,12 @@ pub unsafe fn colour_palette_from_option(p: Option<&mut colour_palette>, oo: *mu
 
 /// Bounded C string entry point. Locale-sensitive operations remain in libc.
 pub fn colour_parse_cstr(input: &std::ffi::CStr) -> Option<i32> {
-    // The kernel only reads input through its terminating NUL; it retains no pointer.
     let value = unsafe { colour_fromstring_impl(input) };
     (value != -1).then_some(value)
 }
 
 /// Bounded C string entry point. Locale-sensitive operations remain in libc.
 pub fn colour_parse_x11_cstr(input: &std::ffi::CStr) -> Option<i32> {
-    // The kernel only reads input through its terminating NUL; it retains no pointer.
     let value = unsafe { colour_parseX11_impl(input) };
     (value != -1).then_some(value)
 }

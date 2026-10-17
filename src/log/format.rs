@@ -25,8 +25,6 @@ impl fmt::Display for LogBytes<'_> {
 
 fn escaped_byte(byte: u8, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     let mut escaped = [0 as c_char; 5];
-    // With these flags, lookahead only affects NUL. String arguments stop
-    // before NUL, and log_byte handles it separately.
     let end = unsafe {
         vis(
             escaped.as_mut_ptr(),

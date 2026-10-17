@@ -159,8 +159,6 @@ unsafe fn file_wait(
     done: tiri_rt::oneshot::Receiver<FileOutcome>,
 ) -> FileWait {
     let observer = Rc::downgrade(&file);
-    // A local transfer has already completed. tmux reports it in the next
-    // event loop turn, so the wait owns a task that reports it then.
     let local = matches!((*file.get()).registration, FileRegistration::Unlinked).then(|| {
         assert!((*file.get()).completed, "local transfers complete at once");
         let mut task = None;
@@ -247,7 +245,6 @@ unsafe fn file_fire_done_cb(owner: &Rc<UnsafeCell<client_file>>) {
         .is_some_and(|owner| owner.is_dead());
     let mut callback = (&mut *owner.get()).cb.take();
     let waiter = (&mut *owner.get()).wait.take();
-    // A waiter receives the terminal event instead of the read listener.
     if !dead && waiter.is_none() {
         if let Some(callback) = callback.as_mut() {
             let (path, error, mut buffer) = {
@@ -269,11 +266,7 @@ unsafe fn file_fire_done_cb(owner: &Rc<UnsafeCell<client_file>>) {
         }
     }
     drop(callback);
-    // Completion retires the stream even if a lookup guard still retains its
-    // allocation. Final Drop remains an idempotent unlink fallback.
     client_files_remove(&mut *owner.get());
-    // tmux checks only the file's client. Dropping the waiter unsent leaves its
-    // command blocked.
     if let Some(waiter) = waiter.filter(|_| !dead) {
         let outcome = {
             let file = &mut *owner.get();
@@ -284,7 +277,6 @@ unsafe fn file_fire_done_cb(owner: &Rc<UnsafeCell<client_file>>) {
                 buffer: std::mem::take(&mut file.buffer),
             }
         };
-        // The waiting command runs inside the send.
         let _ = waiter.send(outcome);
     }
 }
@@ -301,12 +293,9 @@ unsafe fn file_fire_done(owner: &Rc<UnsafeCell<client_file>>) {
     if let Some(wake) = wake {
         wake.wake();
     }
-    // A local transfer completes while its wait is created. The wait reports
-    // it one runtime turn later (file_wait).
     if matches!((*owner.get()).registration, FileRegistration::Unlinked) {
         return;
     }
-    // The existing stream index owns this file. Its task only observes it.
     let file = Rc::downgrade(owner);
     crate::src::reactor::task_start(&mut (*owner.get()).done_task, move || {
         Ok(async move {
@@ -332,8 +321,6 @@ unsafe fn file_fire_read(file_owner: &Rc<UnsafeCell<client_file>>) {
     let path = cf.path.clone();
     let error = cf.error;
     let was_waiting = cf.wait.is_some();
-    // The listener may cancel the file. Keep its buffer outside the model so
-    // that cancellation does not overlap a mutable borrow of the whole file.
     callback(client_file_event {
         path: path.as_deref(),
         error,
@@ -810,7 +797,6 @@ unsafe fn file_write_finished(owner: &Rc<UnsafeCell<client_file>>) {
     };
     std::mem::take(&mut cf.event).free();
     if let Some(fd) = cf.fd.take() {
-        // Completion must report close errors; consume ownership before closing.
         if let Err(error) = tiri_rt::unix::close(fd.into_raw_fd()) {
             if cf.error == 0 {
                 cf.error = error.raw_os_error().unwrap_or(libc::EIO);

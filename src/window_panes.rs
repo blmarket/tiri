@@ -125,8 +125,6 @@ unsafe fn window_panes_session(data: *mut window_panes_modedata) -> Option<Sessi
     Some(owner)
 }
 
-// Retain the source session through the caller's operation. The window remains
-// owned by its existing relationships; release the lookup owner explicitly.
 unsafe fn window_panes_get_source(
     data: *mut window_panes_modedata,
     wlp: *mut refbox::Weak<winlink>,
@@ -808,7 +806,6 @@ unsafe fn window_panes_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         if window.pane_snapshot().is_empty() {
             return;
         }
-        // Preview the panes, not the blank extent past the rightmost one.
         let strip = window
             .pane_cells()
             .iter()
@@ -1195,7 +1192,6 @@ mod preview_geometry_tests {
             window_panes_scaled_geometry(&g, 80, 24, 40, 12),
             Some((2, 1, 5, 2))
         );
-        // When either axis requires scaling, the original algorithm scales both.
         assert_eq!(
             window_panes_scaled_geometry(&g, 80, 24, 40, 48),
             Some((2, 4, 5, 8))

@@ -88,7 +88,6 @@ pub(super) unsafe fn value(
             2 => c"dark".to_owned(),
             _ => return None,
         },
-        // Width is available before TTY_STARTED, unlike height and pixel size.
         b"client_width" => number(owner.terminal_size().0),
         b"client_height" | b"client_cell_width" | b"client_cell_height" | b"client_colours" => {
             let tty = &(*owner.get()).tty;

@@ -4,8 +4,6 @@ use super::command::cmd_list;
 use super::mouse::mouse_event;
 use crate::src::shared::client::{ClientRef, ClientWeak};
 use std::time::{SystemTime, UNIX_EPOCH};
-// Underlying type of the historical 2,053-value anonymous KEYC enum.
-// Preserve unsigned long independently of key_code (unsigned long long).
 
 pub type key_code = ::core::ffi::c_ulonglong;
 
@@ -26,8 +24,6 @@ pub const KEYC_TYPE_USER: key_code_type = 1;
 pub const KEYC_TYPE_UNICODE: key_code_type = 0;
 pub type key_code_mouse_location = ::core::ffi::c_uint;
 
-// Key values and modifier bits.  Their numeric values are shared by all
-// generated translation units; the C2Rust anonymous enum names are not.
 pub const KEYC_ANY: key_code = 8589934596;
 pub const KEYC_BSPACE: key_code = 8589934599;
 pub const KEYC_BTAB: key_code = 8589934618;

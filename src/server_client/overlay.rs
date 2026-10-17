@@ -172,7 +172,6 @@ unsafe fn key_hint_build(owner: &ClientRef) -> Option<Overlay> {
     if table.name.as_bytes() != KEY_HINT_TABLE {
         return None;
     }
-    // Digit keys whose note ends in the digit ("Select window 3") share a row.
     let mut entries: Vec<(String, String)> = Vec::new();
     let mut digits: Option<(String, char, char)> = None;
     for bd in table.key_bindings.iter() {

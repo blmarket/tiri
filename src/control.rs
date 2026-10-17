@@ -1052,8 +1052,6 @@ unsafe fn control_sub_change(change: &monitor_change) {
     } else {
         None
     };
-    // Output may reenter and unlink this window; only copied location data is
-    // needed by the writer after this point.
     drop(link);
     control_notify_write(&client_owner, |out| {
         out.write_all(b"%subscription-changed ")?;
@@ -1184,7 +1182,6 @@ pub unsafe fn control_add_sub(
             .expect("control subscriptions")
             .downgrade()
     };
-    // The Client owns the monitor; only its weak observer leaves this borrow.
     monitor_add(
         &subscriptions,
         name,
@@ -1264,7 +1261,6 @@ mod control_queue_tests {
         moved.remove(&4);
         assert!(!moved.contains_key(&4));
         assert_eq!(moved.get(&9).unwrap().sx, 9);
-        // Dropping a populated index owns cleanup for all remaining overrides.
         drop(moved);
 
         let mut index = Default::default();

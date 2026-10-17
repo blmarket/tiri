@@ -15,8 +15,6 @@ fn source_files(root: &Path, files: &mut Vec<PathBuf>) {
     }
 }
 
-// A small lexer, rather than line matching: visibility and wrapping must not
-// let a duplicate through. Ignore comments and literals, including raw strings.
 fn tokens(source: &str) -> Vec<String> {
     let b = source.as_bytes();
     let mut result = Vec::new();
@@ -60,12 +58,9 @@ fn tokens(source: &str) -> Vec<String> {
                     i += 1;
                 }
             } else {
-                // A raw identifier (r#name), not a string.
                 i = start + 2;
             }
         } else if b[i] == b'\'' {
-            // A character literal can contain a double quote. Lifetimes have
-            // no closing apostrophe and must not consume the following code.
             let start = i + 1;
             let end = if b.get(start) == Some(&b'\\') {
                 match b.get(start + 1) {
@@ -110,9 +105,6 @@ fn tokens(source: &str) -> Vec<String> {
     result
 }
 
-// These field sets identify candidates for the audited grid-storage roles, not
-// C type identity. Flag candidates even if their types or generated names drift;
-// any new lookalike needs an owning-role audit before it can be an exception.
 fn grid_storage_candidates(source: &str) -> Vec<(String, &'static str)> {
     let words = tokens(source);
     let mut found = Vec::new();
@@ -153,7 +145,7 @@ fn grid_storage_candidates(source: &str) -> Vec<(String, &'static str)> {
 fn grid_storage_roles_have_only_authoritative_definitions() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files = vec![root.join("build.rs")];
-    source_files(&root.join("src"), &mut files); // Includes binary code.
+    source_files(&root.join("src"), &mut files);
     let mut count = 0;
     for path in files {
         for (name, role) in grid_storage_candidates(&fs::read_to_string(&path).unwrap()) {
@@ -192,9 +184,6 @@ fn grid_role_guard_uses_fields_instead_of_generated_names() {
     );
 }
 
-// These are audit candidates, not proof of C identity. The historical key enum
-// used c_ulong; unrelated anonymous enum domains must still be reviewed on their
-// own provenance. Compatibility paths should use `pub use`, never fresh aliases.
 fn anonymous_key_enum_candidates(source: &str) -> Vec<String> {
     let words = tokens(source);
     let mut found = Vec::new();

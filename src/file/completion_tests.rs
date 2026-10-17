@@ -9,7 +9,6 @@ fn local_completion_can_be_cancelled_after_runtime_shutdown() {
     use tiri_rt::Runtime as _;
     let runtime = tiri_rt::mio::Runtime::new().unwrap();
     unsafe {
-        // The listener's capture observes its release by the cancellation.
         let data = Rc::new(());
         let retained = data.clone();
         let file = Rc::new(Cell::new(Weak::new()));
@@ -42,8 +41,6 @@ fn local_completion_can_be_cancelled_after_runtime_shutdown() {
         let file = file.take();
         assert!(file.upgrade().is_some());
         shutdown_runtime(runtime);
-        // Runtime shutdown does not own command cleanup. The command's file
-        // wait remains cancellable after its runtime stops.
         drop(owner);
         assert!(head.upgrade().is_none());
         assert!(file.upgrade().is_none());
@@ -88,7 +85,6 @@ fn a_local_write_reports_one_runtime_turn_later() {
         assert!(item.upgrade().is_some());
         assert_eq!(observed.get(), None, "not in the dispatching pass");
         runtime.poll(Some(std::time::Duration::ZERO)).unwrap();
-        // The body ran inside the completion task's send.
         assert_eq!(observed.get(), Some(0));
         assert!(file.upgrade().is_none());
         cmdq_next(None);
@@ -132,7 +128,6 @@ fn dropping_a_lost_client_cancels_its_local_write() {
         drop(owner);
         assert!(client.upgrade().is_none());
         assert!(head.upgrade().is_none());
-        // Dropping the wait cancelled its task, which released the file.
         assert!(file.upgrade().is_none());
         runtime.poll(Some(std::time::Duration::ZERO)).unwrap();
         assert!(!observed.get(), "the body does not run");
@@ -156,7 +151,6 @@ fn a_dead_file_client_leaves_its_command_blocked() {
             cmdq_get_callback_owned(
                 c"dead file client",
                 Some(Box::new(move |item| {
-                    // A completed transfer whose client died before it reported.
                     let file = client_file::new();
                     let (waiter, done) = tiri_rt::oneshot::channel();
                     (*file.get()).c = Some(file_client);

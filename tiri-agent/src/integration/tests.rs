@@ -25,8 +25,6 @@ use super::status::{AgentStatus, StatusHub};
 use super::*;
 use crate::observability::v1::{PaneProcess, ScreenTail};
 
-// Existing attribution/lifecycle fixtures exercise settled observations. Timing
-// regressions below call super::poll directly with a deterministic clock.
 fn poll(
     observability: &dyn ServerObservability,
     detectors: &[Box<dyn AgentDetector>],
@@ -365,8 +363,6 @@ fn assert_ordered(haystack: &str, needles: &[&str]) {
 /// grandchild and the observer logged only the startup `Unknown`.
 #[test]
 fn claude_below_shell_is_detected_and_transitions_are_logged() {
-    // Pane child (100) is a shell; claude (200) runs beneath it. Only the
-    // parent-pid edges are provided — there is no children list to fall back on.
     let source = FakeProcessSource::new(
         vec![(100, 1), (200, 100)],
         HashMap::from([
@@ -383,11 +379,8 @@ fn claude_below_shell_is_detected_and_transitions_are_logged() {
     let pane = ScriptedPane::new(
         100,
         vec![
-            // A resting prompt box: idle.
             frame(Some("✳ tiri"), "earlier output\n──────────\n❯ "),
-            // Spinner in the title: working.
             frame(Some("◐ tiri"), "running a tool…"),
-            // A permission prompt: blocked.
             frame(
                 None,
                 "Edit file src/main.rs?\n\
@@ -395,7 +388,6 @@ fn claude_below_shell_is_detected_and_transitions_are_logged() {
                  ❯ 1. Yes\n  2. No\n\
                  Do you want to proceed? · Esc to cancel",
             ),
-            // Back to a resting prompt box: idle.
             frame(Some("✳ tiri"), "done\n──────────\n❯ "),
         ],
     );
@@ -411,8 +403,6 @@ fn claude_below_shell_is_detected_and_transitions_are_logged() {
         }
     });
 
-    // The hub mirrors the observer's terminal classification: the pane ends
-    // Idle, attributed to claude, and the revision advanced past its initial 1.
     let snap = hub.snapshot();
     assert_eq!(
         snap.panes.get(&PaneId(0)),
@@ -430,7 +420,6 @@ fn claude_below_shell_is_detected_and_transitions_are_logged() {
         "hub revision should advance on transitions"
     );
 
-    // Every transition is attributed to claude and the full lifecycle is logged.
     assert!(
         logs.contains("agent=Some(\"claude\")"),
         "expected the detected agent to be logged:\n{logs}"
@@ -455,9 +444,6 @@ fn claude_session_id_is_read_from_the_newest_cwd_transcript() {
     let cwd = PathBuf::from("/work/proj");
     let transcript_dir = claude::transcript_dir(&cwd).expect("HOME set in test environment");
 
-    // Pane child (100) is a shell; claude (200) runs beneath it in `cwd`. The
-    // newest transcript in the project directory names the live session; an older
-    // transcript for a previous session sits behind it.
     let source = FakeProcessSource::new(
         vec![(100, 1), (200, 100)],
         HashMap::from([
@@ -480,8 +466,6 @@ fn claude_session_id_is_read_from_the_newest_cwd_transcript() {
     )
     .with_file_content(
         transcript_dir.join(format!("{session_id}.jsonl")),
-        // The transcript names the session's model on its assistant messages;
-        // the newest mention wins (a mid-session `/model` switch).
         br#"{"type":"assistant","message":{"model":"claude-opus-5","role":"assistant"}}
 {"type":"assistant","message":{"model":"claude-fable-5","role":"assistant"}}
 "#,
@@ -495,7 +479,6 @@ fn claude_session_id_is_read_from_the_newest_cwd_transcript() {
     let detectors = default_detectors();
 
     let hub = StatusHub::new();
-    // Route the poll through the calling thread's scoped log capture.
     capture_logs(|| {
         let mut panes = HashMap::new();
         poll(&server, &detectors, &source, Some(&hub), &mut panes);
@@ -530,10 +513,6 @@ fn descendant_environment_stamp_names_the_session_exactly() {
     let mine_path = transcript_dir.join(format!("{mine}.jsonl"));
     let neighbour_path = transcript_dir.join(format!("{neighbour}.jsonl"));
 
-    // Pane child (100) is a shell, claude (200) runs beneath it, and a tool
-    // subprocess (300) runs beneath claude carrying the stamp. The neighbour's
-    // transcript is newer and postdates the agent's start, so nothing but the
-    // stamp can pick the right session here.
     let source = FakeProcessSource::new(
         vec![(100, 1), (200, 100), (300, 200)],
         HashMap::from([
@@ -613,8 +592,6 @@ fn inherited_environment_stamp_from_another_agent_is_ignored() {
     let transcript_dir = claude::transcript_dir(&cwd).expect("HOME set in test environment");
     let mine_path = transcript_dir.join(format!("{mine}.jsonl"));
 
-    // This pane's claude (200) was itself launched by another claude (900), so
-    // both it and its tool subprocess (300) carry session `outer` owned by 900.
     let source = FakeProcessSource::new(
         vec![(100, 1), (200, 100), (300, 200)],
         HashMap::from([
@@ -685,8 +662,6 @@ fn transcript_older_than_the_agent_is_not_adopted() {
     let neighbour_path = transcript_dir.join(format!("{neighbour}.jsonl"));
     let mine_path = transcript_dir.join(format!("{mine}.jsonl"));
 
-    // The neighbour's session last wrote at t=100; this pane's agent started at
-    // t=200 and has not yet written a transcript of its own.
     let mut source = FakeProcessSource::new(
         vec![(100, 1), (200, 100)],
         HashMap::from([
@@ -728,8 +703,6 @@ fn transcript_older_than_the_agent_is_not_adopted() {
             "no session attributed means no model to publish"
         );
 
-        // The first turn completes and the agent's own transcript appears, dated
-        // after the process started.
         source.files.insert(
             transcript_dir.clone(),
             vec![mine_path.clone(), neighbour_path],
@@ -792,7 +765,6 @@ fn same_cwd_sibling_transcript_does_not_steal_attribution() {
 "#,
     );
 
-    // The pane rests at its prompt, then works, then rests again.
     let idle = frame(Some("\u{2733} tiri"), "earlier output\n──────────\n❯ ");
     let working = frame(Some("⠹ tiri"), "some streamed output");
     let mut frames = vec![idle.clone()];
@@ -805,11 +777,7 @@ fn same_cwd_sibling_transcript_does_not_steal_attribution() {
 
     capture_logs(|| {
         let mut panes = HashMap::new();
-        // First poll attributes this pane's own (only) transcript.
         poll(&server, &detectors, &source, Some(&hub), &mut panes);
-        // A sibling pane's session appears newer and streams on every poll
-        // while this pane works; this pane's own transcript also advances with
-        // its turns.
         source.files.insert(
             transcript_dir.clone(),
             vec![sibling_path.clone(), mine_path.clone()],
@@ -892,10 +860,7 @@ fn silent_transcript_yields_to_newer_one_growing_while_pane_works() {
 
     capture_logs(|| {
         let mut panes = HashMap::new();
-        // First poll attributes the old transcript.
         poll(&server, &detectors, &source, Some(&hub), &mut panes);
-        // The agent switches sessions: the old transcript never grows again,
-        // and the new one grows on every poll while the pane works.
         source
             .files
             .insert(transcript_dir.clone(), vec![new_path.clone(), old_path]);
@@ -964,11 +929,7 @@ fn neighbour_streaming_through_a_tool_call_does_not_steal_attribution() {
 
     capture_logs(|| {
         let mut panes = HashMap::new();
-        // First poll attributes this pane's own (only) transcript.
         poll(&server, &detectors, &source, Some(&hub), &mut panes);
-        // The pane starts a tool call: its transcript stops growing while the
-        // spinner keeps it working. Meanwhile a neighbour's newer session
-        // streams into the same directory for most of that gap.
         source.files.insert(
             transcript_dir.clone(),
             vec![neighbour_path.clone(), mine_path.clone()],
@@ -1018,8 +979,6 @@ fn stamped_session_is_not_displaced_by_a_streaming_neighbour() {
     let mine_path = transcript_dir.join(format!("{mine}.jsonl"));
     let neighbour_path = transcript_dir.join(format!("{neighbour}.jsonl"));
 
-    // Pane child (100) is a shell, claude (200) runs beneath it, and a tool
-    // subprocess (300) beneath claude carries the stamp on the first poll only.
     let mut source = FakeProcessSource::new(
         vec![(100, 1), (200, 100), (300, 200)],
         HashMap::from([
@@ -1053,10 +1012,7 @@ fn stamped_session_is_not_displaced_by_a_streaming_neighbour() {
 
     capture_logs(|| {
         let mut panes = HashMap::new();
-        // First poll reads the stamp and attributes the session exactly.
         poll(&server, &detectors, &source, Some(&hub), &mut panes);
-        // The tool subprocess exits, taking the stamp with it, and a neighbour's
-        // newer session streams for far longer than correlation would need.
         source.table.retain(|(pid, _)| *pid != 300);
         source.environ.remove(&300);
         source.files.insert(
@@ -1394,10 +1350,6 @@ fn headless_codex_is_working_for_the_process_lifetime() {
     let hub = StatusHub::new();
     let mut panes = HashMap::new();
 
-    // Run under the serialized scoped subscriber like the other poll-driving
-    // tests: driving `poll` bare emits the observer's `info!` callsite with no
-    // subscriber installed, which can poison `tracing`'s global interest cache
-    // for a parallel log-capturing test.
     capture_logs(|| {
         poll(&server, &detectors, &source, Some(&hub), &mut panes);
         pane.step();
@@ -1457,7 +1409,6 @@ fn no_process_table_static_title_does_not_identify_codex() {
 #[test]
 fn tree_walk_descends_to_grandchild_via_parent_edges() {
     let source = FakeProcessSource::new(
-        // root(10) → shell(11) → node(12) wrapping the claude CLI script.
         vec![(11, 10), (12, 11)],
         HashMap::from([
             (10u32, vec![OsString::from("tiri")]),
@@ -1512,7 +1463,6 @@ fn steady_server_scans_proc_once_per_poll_not_per_pane_or_output() {
     const PANES: u32 = 4;
     const POLLS: usize = 6;
 
-    // Each pane (100, 200, 300, 400) is a shell with a claude process below it.
     let mut table = Vec::new();
     let mut programs = HashMap::new();
     for n in 1..=PANES {
@@ -1526,9 +1476,6 @@ fn steady_server_scans_proc_once_per_poll_not_per_pane_or_output() {
     let source = FakeProcessSource::new(table, programs, HashMap::new(), true);
     let scans = source.scans.clone();
 
-    // Every frame is a working spinner; distinct screen text per frame means the
-    // pane's output revision advances on every poll (output churn) so the
-    // revision guard never short-circuits the inspection.
     let working_frames = (0..POLLS)
         .map(|i| frame(Some("⠹ tiri"), &format!("running tool step {i}…")))
         .collect::<Vec<_>>();
@@ -1541,9 +1488,6 @@ fn steady_server_scans_proc_once_per_poll_not_per_pane_or_output() {
     let detectors = default_detectors();
     let hub = StatusHub::new();
     let mut panes = HashMap::new();
-    // Drive the polling under a scoped subscriber (like the other poll-driving
-    // tests) so the observer's per-poll `info!` churn can't race the global
-    // callsite-interest cache against a parallel log-capturing test.
     capture_logs(|| {
         for _ in 0..POLLS {
             poll(&server, &detectors, &source, Some(&hub), &mut panes);
@@ -1553,7 +1497,6 @@ fn steady_server_scans_proc_once_per_poll_not_per_pane_or_output() {
         }
     });
 
-    // One process-table scan per poll — not one per pane, and not one per output frame.
     assert_eq!(
         scans.get(),
         POLLS,
@@ -1561,8 +1504,6 @@ fn steady_server_scans_proc_once_per_poll_not_per_pane_or_output() {
          independent of pane count and output churn"
     );
 
-    // Sanity: the panes really were classified as working agents the whole time,
-    // i.e. this measured a steady/working server rather than an idle one.
     let snap = hub.snapshot();
     for n in 0..PANES {
         assert_eq!(
@@ -1616,8 +1557,6 @@ fn log_captures_overlap_without_blocking_or_mixing_threads() {
         done_tx.send(logs).unwrap();
     });
     let result = done_rx.recv_timeout(Duration::from_secs(5));
-    // Release the first capture even when the second timed out, so a regression
-    // fails instead of leaving a test thread waiting forever.
     release_tx.send(()).unwrap();
     let first_logs = first.join().unwrap();
     second.join().unwrap();
@@ -1662,8 +1601,6 @@ fn idle_requires_two_seconds_and_active_states_cancel_pending_idle() {
         (3, 2400, AgentState::Working),
         (4, 4300, AgentState::Blocked),
         (5, 4400, AgentState::Blocked),
-        // A screen no rule explains is the attributed agent at rest, so it
-        // continues the pending idle rather than resetting it.
         (6, 6200, AgentState::Blocked),
         (7, 6399, AgentState::Blocked),
         (7, 6400, AgentState::Idle),

@@ -40,8 +40,6 @@ fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {
             .unwrap();
         options_default(server, definition);
 
-        // Geometry checked against prompt_layout in tmux e880cf63e0a9.
-        // All prompts start at column 3 on an 80-column screen.
         for (label, input, index, width, style, flags, completion, expected, cursor) in [
             (c"L:", c"abc", 3, 10, c"align=left", 0, None, "   L:abc", 8),
             (

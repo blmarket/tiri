@@ -57,7 +57,6 @@ impl StreamHandle {
     }
 }
 thread_local! {
-    // Enumeration only: I/O and teardown use the state carried by each object.
     static LIVE_STREAMS: RefCell<Vec<Weak<StreamState>>> = const { RefCell::new(Vec::new()) };
 }
 fn live_states() -> Vec<Rc<StreamState>> {
@@ -103,11 +102,9 @@ pub(super) fn clear() {
 }
 
 fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
-    // Empty panes keep stream buffers and an input parser without a PTY.
     if state.fd == -1 {
         return Ok(());
     }
-    // SAFETY: the stream's model owner keeps this descriptor open through registration.
     let source = io(unsafe { std::os::fd::BorrowedFd::borrow_raw(state.fd) })?;
     let s = state.clone();
     let handle = tiri_rt::mio::Handle::current();
@@ -122,8 +119,6 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
             if !s.live.get() {
                 break;
             }
-            // Task-owned snapshots keep model buffers unborrowed while I/O is
-            // pending. A mutation cancels pending operations before rebuilding.
             let (stream, count, output, write, generation) = {
                 let mut slot = s.stream.borrow_mut();
                 let b = slot.as_deref_mut().expect("live stream");
@@ -162,7 +157,6 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
                     if !s.live.get() || s.generation.get() != generation {
                         return Poll::Ready(Completion::Changed);
                     }
-                    // Alternate priorities so a busy reader cannot starve output.
                     for writing in [prefer_write, !prefer_write] {
                         if writing && write {
                             if let Poll::Ready(result) = writer.as_mut().poll(cx) {
@@ -185,7 +179,6 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
                 let (data, error) = match completion {
                     Completion::Changed => continue,
                     Completion::Read(Ok(received)) if received.bytes > 0 => {
-                        // Plain byte streams discard unsolicited ancillary FDs.
                         input.truncate(received.bytes);
                         (*stream).input.put(SegmentedBuf::from(input));
                         prefer_write = true;
@@ -235,7 +228,6 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
                     }
                 }
             }
-            // A callback can free this stream and cancel the executing task.
             super::yield_now().await;
         }
     })?;
@@ -278,7 +270,6 @@ pub unsafe fn bufferevent_new(
         wake: RefCell::new(None),
         task: RefCell::new(None),
     });
-    // Explicit free breaks this ownership link, including streams without a task.
     (*stream).state = Some(s.clone());
     LIVE_STREAMS.with(|streams| {
         let mut streams = streams.borrow_mut();
@@ -310,8 +301,6 @@ pub unsafe fn bufferevent_free(stream: *mut bufferevent) {
             let _ =
                 tiri_rt::unix::set_nonblocking(std::os::fd::BorrowedFd::borrow_raw(s.fd), false);
         }
-        // Task state may still be retained by the callback that called free.
-        // Detach the allocation now and release the slot borrow before capture Drop.
         let owner = s.stream.borrow_mut().take();
         drop(owner);
     }

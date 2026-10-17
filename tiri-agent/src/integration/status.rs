@@ -140,11 +140,9 @@ mod tests {
             status("claude", AgentState::Working)
         );
 
-        // Re-publishing the identical status is a no-op for the revision.
         hub.publish(PaneId(0), status("claude", AgentState::Working));
         assert_eq!(hub.snapshot().revision, 2);
 
-        // A real change bumps it.
         hub.publish(PaneId(0), status("claude", AgentState::Idle));
         assert_eq!(hub.snapshot().revision, 3);
 
@@ -153,7 +151,6 @@ mod tests {
         assert_eq!(snap.revision, 4);
         assert!(snap.panes.is_empty());
 
-        // Removing an absent pane is a no-op.
         hub.remove(PaneId(0));
         assert_eq!(hub.snapshot().revision, 4);
     }

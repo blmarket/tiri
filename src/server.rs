@@ -94,7 +94,6 @@ pub static mut marked_pane: cmd_find_state = cmd_find_state {
     idx: 0,
 };
 static mut message_next: u_int = 0;
-// Filled through `message_list` methods; the head owns the collection.
 pub static mut message_log: message_list = message_list::new();
 pub static mut current_time: time_t = 0;
 pub unsafe fn server_set_marked(
@@ -139,7 +138,6 @@ pub unsafe fn server_is_marked(
 pub unsafe fn server_check_marked() -> ::core::ffi::c_int {
     marked_pane.is_valid() as ::core::ffi::c_int
 }
-// The compatibility systemd adapter still transfers ownership as a raw fd.
 pub unsafe fn server_create_socket(flags: uint64_t) -> Result<::core::ffi::c_int, CString> {
     server_create_listener(flags).map(IntoRawFd::into_raw_fd)
 }
@@ -240,7 +238,6 @@ pub(crate) unsafe fn server_start(
     crate::src::plugin::init();
     #[cfg(target_os = "linux")]
     let listener = if systemd_activated() != 0 {
-        // SAFETY: the compatibility adapter transfers the activated listening socket.
         systemd_create_socket(flags as ::core::ffi::c_int).map(|fd| UnixListener::from_raw_fd(fd))
     } else {
         server_create_listener(flags)

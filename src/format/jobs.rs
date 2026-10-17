@@ -1,11 +1,7 @@
+use super::*;
 use crate::src::log::{log_cstr, log_pointer};
 use crate::src::server_client::ClientRegistry;
 use crate::src::shared::client::{ClientRef, ClientWeak};
-// Private job-integration implementation.  This module owns the process-wide
-// format-job cache, per-client cache interaction, job callbacks, and tidy
-// lifecycle.  It calls the parent facade for expansion, logging, and allocation.
-// All cache borrows finish before format expansion or process callbacks.
-use super::*;
 use std::ffi::{CStr, CString};
 
 fn format_job_set_expanded(fj: &mut format_job, value: CString) {
@@ -18,7 +14,6 @@ fn format_job_set_out(fj: &mut format_job, value: CString) {
     fj.out = Some(value);
 }
 
-// Match C-string visibility while keeping the line's Rust allocation local.
 fn format_job_set_out_from_line(fj: &mut format_job, value: &[u8]) {
     let visible = value
         .iter()
@@ -37,8 +32,6 @@ fn format_job_message(fj: &format_job, suffix: &[u8]) -> CString {
     CString::new(bytes).expect("C command and literal suffix contain no NUL")
 }
 
-// Cache storage is owned by Client or by the process. Callbacks carry a weak
-// Client and entry identity, never a reference or pointer into either cache.
 thread_local! {
     static FORMAT_JOBS: std::cell::RefCell<format_job_tree> =
         const { std::cell::RefCell::new(format_job_tree::new()) };
@@ -143,8 +136,6 @@ unsafe fn format_job_update(job: &refbox::Weak<job>, entry: &JobEntry) {
         if let Some(client) = entry.cache.client() {
             server_status_client(&client);
         }
-        // Keep publication after the notification, as before. A notification
-        // may have retired this entry, so reacquire and check its identity.
         entry.with_record(|record| record.last = now);
     }
 }
@@ -199,7 +190,6 @@ unsafe fn format_job_complete(completion: JobCompletion, entry: &JobEntry) {
 pub(super) unsafe fn format_job_get(es: *mut format_expand_state, command: &CStr) -> CString {
     let ft = (*es).ft;
     let cache = JobCache::for_client((*ft).client.as_ref());
-    // Publish the entry before expansion, preserving recursive lookup ordering.
     let entry = cache.entry((*ft).tag, command);
     let mut next = format_expand_state::default();
     format_copy_state(&mut next, es, FORMAT_EXPAND_NOJOBS | FORMAT_EXPAND_NOCYCLE);
@@ -256,8 +246,6 @@ pub(super) unsafe fn format_job_get(es: *mut format_expand_state, command: &CStr
             })
             .is_none()
         {
-            // A removed cache cannot own a newly started process. Keep explicit
-            // cancellation outside the borrow even on this reentrant path.
             job_free(&started);
             return CString::default();
         }
@@ -282,7 +270,6 @@ pub(super) unsafe fn format_job_get(es: *mut format_expand_state, command: &CStr
     })
 }
 
-// Component-only lookup: callers keep this reference inside their cache borrow.
 fn format_job_find_or_insert<'a>(
     jobs: &'a mut format_job_tree,
     tag: u_int,
@@ -354,10 +341,7 @@ pub unsafe fn format_tidy_jobs() {
 
 pub unsafe fn format_lost_client(client: &ClientRef) {
     let cache = JobCache::for_client(Some(client));
-    // Keep the cache installed throughout explicit process cancellation.
     format_job_tidy_at(&cache, 1, time(std::ptr::null_mut()));
-    // Cancellation callbacks may have inserted replacements. Detach each batch
-    // before explicit cleanup, so process callbacks never overlap a cache loan.
     loop {
         let removed = std::mem::take(&mut *client.borrow_format_jobs_mut());
         if removed.is_empty() {

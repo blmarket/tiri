@@ -167,8 +167,6 @@ fn publishing_does_not_override_context_entries_or_user_options() {
         let expanded = format_expand_cstring(&mut *tree, c"#{test_state}:#{@test_state}".as_ptr());
         assert_eq!(expanded, c"context:user");
         let mut enumerated = Vec::new();
-        // Builtin enumeration needs initialized global tmux state. Exercise the
-        // plugin snapshot enumeration here; the command test covers format_each.
         for (key, value) in each(None) {
             enumerated.push((key, value));
         }

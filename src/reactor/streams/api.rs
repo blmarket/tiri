@@ -73,7 +73,6 @@ impl BufferEvent for StreamHandle {
     }
 
     fn free(self) {
-        // Release the allocation-slot borrow before freeing, including callbacks.
         let stream = self.ptr();
         unsafe { bufferevent_free(stream) };
     }

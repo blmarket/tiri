@@ -457,8 +457,6 @@ static mut tty_default_raw_keys: [tty_default_key_raw; 102] = [
         string: c"\x1B[O",
         key: KEYC_FOCUS_OUT as ::core::ffi::c_ulong as key_code,
     },
-    // Keep paste boundaries in the key tree so terminal and user-key entries
-    // can override them, with the same prefix/escape-time rules as other keys.
     tty_default_key_raw {
         string: c"\x1B[200~",
         key: KEYC_PASTE_START as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
@@ -1632,8 +1630,6 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
         sgr_type: 0,
         sgr_b: 0,
     };
-    // The decoder never reads, drains, or replaces input until it has finished
-    // using this pointer. Reply and key callbacks run after byte access finishes.
     (buf, len) = {
         let mut terminal = terminal_client_owner.borrow_terminal_mut();
         let bytes = terminal
@@ -1657,7 +1653,6 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
         (len) as usize,
         log_cstr_n(&bytes[..len as usize])
     ));
-    // If the client has no session, there is nowhere to send input.
     if terminal_client_owner.attached_session().upgrade().is_none() {
         log_debug(format_args!(
             "{}: discard keys with no session",
@@ -2123,8 +2118,6 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                     log_cstr_n(&bytes[..size as usize]),
                     log_hex((key) as u64)
                 ));
-                // Finish input-byte access before a reply or focus listener can
-                // replace terminal storage. Key events keep only their payload.
                 let event = if key != KEYC_UNKNOWN as key_code {
                     let bytes = bytes[..size].to_vec();
                     Some(key_event::new(key, m, Some(bytes)))
@@ -2272,8 +2265,6 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
         }
     }
 }
-// Focus notifications may change attachment; obtain the current Window at
-// each call, and release the winlink borrow before updating pane focus.
 unsafe fn tty_keys_update_focus(client: &ClientRef) {
     let window = {
         let session = client.attached_session().upgrade().expect("live session");
@@ -2288,8 +2279,6 @@ unsafe fn tty_keys_update_focus(client: &ClientRef) {
 }
 
 unsafe fn tty_keys_callback(owner: &ClientRef) {
-    // The task is still executing; clear the owner's wait before parsing the
-    // buffered escape sequence so it is recognized as expired.
     drop(owner.borrow_terminal_mut().key_timer.take());
     let timer_active = owner.borrow_terminal().flags & TTY_TIMER != 0;
     if timer_active {
@@ -3468,7 +3457,6 @@ mod key_tree_tests {
             tty_keys_add(&mut terminal, c"a", 3);
             assert_eq!(lookup(&terminal.key_tree, b"a"), (Some(3), 1));
             assert_eq!(lookup(&terminal.key_tree, b"ab"), (Some(2), 2));
-            // Existing lookup stops at a complete leaf even with trailing bytes.
             tty_keys_add(&mut terminal, c"abc", 4);
             assert_eq!(lookup(&terminal.key_tree, b"abc"), (Some(4), 2));
         }

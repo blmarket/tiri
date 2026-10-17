@@ -140,9 +140,7 @@ impl std::task::LocalWake for ItemWake {
         unsafe {
             match (*item_owner.get()).work {
                 Work::Suspended { .. } => cmdq_poll(&item_owner),
-                // The poller polls again after Pending.
                 Work::Polling { ref mut rewoken } => *rewoken = true,
-                // A wake during exec is covered by the first poll.
                 _ => {}
             }
         }
@@ -231,8 +229,6 @@ pub(crate) unsafe fn cmdq_background(
         id
     });
     let timer = crate::src::reactor::Timer::new(delay, move || unsafe {
-        // Release ownership before dispatch, outside the queue borrow: the
-        // callback can schedule or cancel other background commands.
         let timer = QueueTarget::Global.with_queue(|queue| queue.background.remove(&id));
         drop(timer);
         callback();
@@ -623,7 +619,6 @@ unsafe fn cmdq_poll(item_owner: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) 
         .build();
     loop {
         let ready = future.as_mut().poll(&mut context).is_ready();
-        // The queue and the poller, or only the poller once the queue is freed.
         assert!(
             std::rc::Rc::strong_count(item_owner) <= 2,
             "command continuation retained its item across a poll"
@@ -655,7 +650,6 @@ pub(crate) unsafe fn cmdq_wait(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
 ) -> (CmdqWaiter, cmd_retval) {
     let item = item_handle.get();
-    // tmux reads cmdq_get_client lazily, after a lent client is restored.
     let client = if (*item).client_lent {
         std::rc::Weak::new()
     } else {
@@ -698,7 +692,6 @@ impl CmdqWaiter {
         (Self { client, done }, resumed)
     }
 }
-// The caller transfers the queue owner after unlinking it and releasing guards.
 unsafe fn cmdq_remove(item_handle: std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) {
     assert_eq!(
         std::rc::Rc::strong_count(&item_handle),
@@ -868,7 +861,6 @@ unsafe fn cmdq_fire_command(
     };
     let mut flags: ::core::ffi::c_int = 0;
     let mut quiet: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    // A freed client is as dead as one still marked dead.
     let client_freed =
         saved_client.is_none() && !std::rc::Weak::ptr_eq(&saved, &std::rc::Weak::new());
     if client_freed || saved_client.as_ref().is_some_and(|c| c.is_dead()) {
@@ -1069,7 +1061,6 @@ pub unsafe fn cmdq_next(owner: Option<&ClientRef>) -> u_int {
             (*item).work.label()
         ));
         match (*item).work {
-            // Re-entered from inside a dispatch or a poll, or blocked on a wait.
             Work::Executing | Work::Polling { .. } | Work::Suspended { .. } => return items,
             Work::Fired => {}
             Work::Command | Work::Callback(_) => {
@@ -1095,8 +1086,6 @@ pub unsafe fn cmdq_next(owner: Option<&ClientRef>) -> u_int {
                             retval, SUSPENDED,
                             "a suspended command returns cmdq_suspend's result"
                         );
-                        // First poll in the same pass: a wait that already
-                        // ended completes now.
                         (*item).work = work;
                         cmdq_poll(&item_owner);
                         if !matches!((*item).work, Work::Fired) {
@@ -1256,8 +1245,6 @@ pub unsafe fn cmdq_error(
         Some(_) => {
             let mut bytes = msg.into_bytes_with_nul();
             bytes[0] = ::libc::toupper(bytes[0] as ::core::ffi::c_int) as u8;
-            // The bytes came from a CString; toupper maps NUL to NUL and a
-            // non-NUL byte to a non-NUL byte, so the terminator stays at the end.
             msg = CString::from_vec_with_nul_unchecked(bytes);
             status_message_set(
                 c.as_ref(),
@@ -1833,7 +1820,6 @@ mod wait_tests {
             assert_eq!(cmdq_next(None), 0);
             let waiter = slot.take().unwrap();
             assert!(waiter.client().is_none());
-            // The sessionless lent client would take the status if recorded.
             waiter.finish(5);
             assert_eq!(clients::return_value(&lent), 0);
             assert_eq!(cmdq_next(None), 0);
@@ -1868,7 +1854,6 @@ mod wait_tests {
                     c"lent head",
                     Some(Box::new(move |item| {
                         with_lent_client(item, &substitute, || {
-                            // tmux copies after->client.
                             cmdq_insert_after(item, waiting(c"inserted waiter", &inserted));
                             CMD_RETURN_NORMAL
                         })
@@ -1895,13 +1880,11 @@ mod wait_tests {
             let first_item = cmdq_append(Some(&owner), waiting(c"first waiter", &first));
             let second_item = cmdq_append(Some(&owner), waiting(c"second waiter", &second));
             assert_eq!(cmdq_next(Some(&owner)), 0);
-            // Attached when it waited, detached when it finishes.
             clients::attach(&owner, None);
             first.take().unwrap().finish(7);
             assert_eq!(clients::return_value(&owner), 7);
             assert_eq!(cmdq_next(Some(&owner)), 0);
             assert!(first_item.upgrade().is_none());
-            // Detached when it waited, attached when it finishes.
             clients::attach(&owner, Some(&session));
             second.take().unwrap().finish(9);
             assert_eq!(clients::return_value(&owner), 7);
@@ -1928,7 +1911,6 @@ mod wait_tests {
             assert!(next.upgrade().is_some());
             assert!(trace.borrow().is_empty());
 
-            // Dropped during exec: the first poll parks it too.
             let owner = clients::with_queue();
             let head = cmdq_append(
                 Some(&owner),

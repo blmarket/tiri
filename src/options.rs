@@ -105,8 +105,6 @@ use crate::src::shared::style::*;
 use crate::src::shared::tty::TTY_OPENED;
 
 fn set_scalar_string(o: &mut options_entry, value: CString) {
-    // Formatting has completed, so callers may have supplied the old value
-    // as a %s argument. Replace its owner before publishing the new pointer.
     o.value = options_value::String(value);
 }
 
@@ -125,7 +123,6 @@ fn options_array_correct_key(key: &CStr) -> Option<CString> {
         Err(ArrayIndexError::Empty | ArrayIndexError::NumericOverflow) => None,
     }
 }
-// Internal callers pass keys already validated by options_array_correct_key.
 pub(crate) fn options_array_index(key: &CStr) -> OptionsArrayKey {
     match parse_array_index(key.to_bytes()).expect("validated array key") {
         ArrayIndex::Numeric(number) => OptionsArrayKey::Numeric(number),
@@ -211,7 +208,6 @@ pub fn options_create(parent: Option<OptionsScope>) -> Box<options> {
 impl Drop for options {
     fn drop(&mut self) {
         unsafe {
-            // Preserve value-before-monitor cleanup and the existing key order.
             let names: Vec<_> = options_iter(self).map(|entry| entry.name.clone()).collect();
             let oo: *mut options = self;
             for name in names {
@@ -364,17 +360,6 @@ unsafe fn options_add(mut oo: *mut options, name: &CStr) -> *mut options_entry {
     o
 }
 unsafe fn options_remove(oo: *mut options, o: *mut options_entry) {
-    if (*o)
-        .tableentry
-        .is_some_and(|entry| entry.flags & OPTIONS_TABLE_IS_ARRAY != 0)
-    {
-        options_array_clear(o);
-    }
-    // Release the value before the monitor, including array storage after its
-    // items have been cleared.
-    options_value_free(&raw mut (*o).value);
-    drop((*o).monitor_data.take());
-    // Cleanup above must precede unlinking and dropping the boxed entry.
     let key = (*o).name.clone();
     drop((*oo).tree.remove(&key));
 }
@@ -866,8 +851,6 @@ pub unsafe fn options_set_string(
                 .separator
                 .unwrap_or(c"");
         }
-        // glibc printf renders a null %s argument as "(null)". An entry
-        // created by options_empty can reach this append path with no value.
         let previous = (*o)
             .value
             .string_ptr()
@@ -1245,7 +1228,6 @@ pub unsafe fn options_from_string(
     type_0 = oe.type_0;
     match type_0 as ::core::ffi::c_uint {
         0 => {
-            // Snapshot before options_set_string replaces the scalar owner.
             let old = options_get_string(oo, name);
             options_set_string(oo, name, append, |out| {
                 write_cstr(out, nullable_cstr(value))
@@ -1414,7 +1396,6 @@ pub unsafe fn options_push_changes(name: &CStr) {
             {
                 let mut terminal = loop_0.as_ref().expect("live client").borrow_terminal_mut();
                 if terminal.flags & TTY_OPENED != 0 {
-                    // Key construction reads only terminal data and global options.
                     tty_keys_build(&mut *terminal);
                 }
             }

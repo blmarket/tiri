@@ -339,8 +339,6 @@ pub unsafe fn utf8_strvis(dst: &mut [u8], src: &[u8], flag: i32) -> usize {
 /// the result owned by Rust.
 pub(crate) fn utf8_stravis_cstring(src: &CStr, flag: i32) -> CString {
     let source_len = src.to_bytes().len();
-    // `utf8_strvis` writes at most four bytes for each source byte, followed
-    // by one NUL. It initializes the buffer through that final NUL.
     let capacity = source_len
         .checked_mul(4)
         .and_then(|size| size.checked_add(1))
@@ -416,17 +414,12 @@ pub(crate) fn utf8_sanitize_cstring(src: &CStr) -> CString {
             }
             if more as ::core::ffi::c_uint == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                // xreallocarray rejected the old zero-sized request when a
-                // leading zero-width UTF-8 cell had produced no bytes yet.
                 if dst.is_empty() && ud.width == 0 {
                     unsafe { fatalx(|out| out.write_all(b"xreallocarray: zero size")) };
                 }
                 dst.resize(dst.len() + ud.width as usize, b'_');
                 continue;
             } else {
-                // Retry each byte after an invalid or truncated candidate.
-                // Rewinding by `have` could step before the input for a
-                // complete-length invalid sequence.
                 offset = candidate_start;
             }
         }
@@ -454,8 +447,6 @@ pub fn utf8_strwidth(cells: &[utf8_data], n: ssize_t) -> u_int {
         .take(limit)
         .fold(0, |width, cell| width.wrapping_add(cell.width as u_int))
 }
-// Decode into Rust-owned cells while retaining the size-zero terminator used
-// by the existing UTF-8 routines that borrow this array as a C-style view.
 pub(crate) fn utf8_fromcstr_vec(src: &CStr) -> Vec<utf8_data> {
     let bytes = src.to_bytes();
     let mut cells = Vec::new();
@@ -529,7 +520,6 @@ pub fn utf8_cstrwidth(s: &CStr) -> u_int {
             }
             offset = start;
         }
-        // Preserve tmux's native char comparison for invalid byte sequences.
         let byte = bytes[offset] as std::ffi::c_char;
         if byte > 0x1f && byte != 0x7f {
             width = width.wrapping_add(1);
@@ -571,8 +561,6 @@ pub fn utf8_cstrhas(s: &CStr, ud: &utf8_data) -> bool {
                 offset += 1;
             }
             if more != UTF8_DONE {
-                // utf8_fromcstr retries every byte after an incomplete or
-                // invalid candidate, including bytes consumed by utf8_append.
                 offset = start;
             }
         }
@@ -775,7 +763,6 @@ mod tests {
                     assert_eq!(decoded.data, original.data);
                 }
             }
-            // Inline packing includes three bytes even when the cell size is smaller.
             let mut cell = utf8_data {
                 size: 1,
                 width: 1,
@@ -809,7 +796,6 @@ mod tests {
             };
             let mut encoded = 0;
             assert_eq!(utf8_from_data(&cell, &mut encoded), UTF8_DONE);
-            // Match tmux's 5-bit size field, including its size-32 overlap with width.
             assert_eq!(encoded & 0xff000000, 0x60000000);
             let mut decoded = utf8_data::default();
             utf8_to_data((4 << 24) | (3 << 29) | 0xfffffe, &mut decoded);
@@ -825,9 +811,9 @@ mod tests {
             for entry in [
                 &b"U+E010=2\0"[..],
                 &b"U+E011-U+E013=0\0"[..],
-                &b"\xee\x80\xa0=1\0"[..], // U+E020, as a UTF-8 character.
-                &b"U+E040=1\0U+E041=2\0"[..], // Stop at the first NUL.
-                &b"z=2\0"[..],            // A single ASCII cell also uses this path.
+                &b"\xee\x80\xa0=1\0"[..],
+                &b"U+E040=1\0U+E041=2\0"[..],
+                &b"z=2\0"[..],
             ] {
                 utf8_add_to_width_cache(CStr::from_bytes_until_nul(entry).unwrap());
             }
@@ -849,16 +835,16 @@ mod tests {
             }
 
             for entry in [
-                &b"U+E030\0"[..],          // No separator.
-                &b"U+E030=3\0"[..],        // Width out of range.
-                &b"U+E030-U+E02F=1\0"[..], // Reversed range.
-                &b"ab=1\0"[..],            // More than one character.
-                &b"=1\0"[..],              // No character.
-                &b"\xee\x80\xa2z=1\0"[..], // Valid UTF-8 cell followed by ASCII.
-                &b"\xc3(=1\0"[..],         // Invalid continuation retries the first byte.
-                &b"\xe2\x82=1\0"[..],      // Incomplete UTF-8 retries the first byte.
-                &b"\xff=1\0"[..],          // Invalid single byte.
-                &b"\xc0\xaf=1\0"[..],      // Overlong sequence.
+                &b"U+E030\0"[..],
+                &b"U+E030=3\0"[..],
+                &b"U+E030-U+E02F=1\0"[..],
+                &b"ab=1\0"[..],
+                &b"=1\0"[..],
+                &b"\xee\x80\xa2z=1\0"[..],
+                &b"\xc3(=1\0"[..],
+                &b"\xe2\x82=1\0"[..],
+                &b"\xff=1\0"[..],
+                &b"\xc0\xaf=1\0"[..],
             ] {
                 utf8_add_to_width_cache(CStr::from_bytes_until_nul(entry).unwrap());
             }

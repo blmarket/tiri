@@ -7,7 +7,6 @@ use syn::{
 
 fn symbol(attrs: &[Attribute], attr: &str, fallback: &str) -> String {
     for a in attrs {
-        // Both #[export_name = "..."] and #[unsafe(export_name = "...")].
         let meta = if a.path().is_ident("unsafe") {
             a.parse_args::<Meta>().expect("unsafe attribute")
         } else {
@@ -45,7 +44,6 @@ impl<'ast> Visit<'ast> for Symbols {
                     .push(symbol(&s.attrs, "export_name", &s.ident.to_string()))
             }
             Item::ForeignMod(_) => self.blocks += 1,
-            // Fail closed for unparsed syntax in this inventory.
             Item::Verbatim(tokens) => panic!("unparsed item: {tokens}"),
             _ => {}
         }

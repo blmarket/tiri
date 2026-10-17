@@ -22,8 +22,6 @@ pub struct C2RustUnnamed_35 {
     pub cb: unsafe fn(&CStr, &mut event_payload),
 }
 
-// Query eligibility at each visit, then release all state before formatting.
-// Preserve live registry traversal rather than snapshotting recipients.
 unsafe fn recipients(mut visit: impl FnMut(&ClientRef)) {
     let mut cursor = ClientRegistry::first();
     while let Some(client) = cursor {
@@ -65,7 +63,6 @@ unsafe fn control_window_layout_changed_cb(_name: &CStr, payload: &mut event_pay
         }
         let mut format = format_create(Some(client), None, FORMAT_NONE, 0);
         format_defaults(&mut *format, Some(client), Some(&session), link, None);
-        // The protocol keeps its visible-layout field; without zoom it is the layout.
         let message = format_expand_cstring(
             &mut *format,
             c"%layout-change #{window_id} #{window_layout} #{window_layout} #{window_raw_flags}"

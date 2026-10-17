@@ -94,7 +94,6 @@ fn regex_search_and_formats_preserve_multibyte_cells_and_invalid_patterns() {
     }
 
     server.command(&["set-option", "-g", "@regex_text", "zABzAB"]);
-    // Expected values also checked against the pinned tmux revision.
     for (format, expected) in [
         ("#{m/r:^ab$,ab}", "1\n"),
         ("#{m/r:^ab$,aB}", "0\n"),
@@ -130,7 +129,6 @@ fn regex_search_spans_wrapped_lines_in_both_directions() {
     server.command(&[
         "new-session",
         "-d",
-        // A lone pane is half the window: ten columns.
         "-x",
         "21",
         "-y",

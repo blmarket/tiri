@@ -75,7 +75,6 @@ impl session_groups {
                 .map(|(key, _)| key.clone())?;
             groups.storage.remove(&key)
         });
-        // The borrow ended above, so dropping the group cannot re-enter the index.
         removed.is_some()
     }
     pub fn minmax() -> SessionGroupWeak {
@@ -162,7 +161,6 @@ pub(crate) unsafe fn session_group_remove(owner: &SessionRef) {
     if !group.is_alive() {
         return;
     }
-    // Notify while membership is still published, before removing this identity.
     session_group_fire(c"session-removed-from-group", &group, owner);
     let now_empty = access(&group, |group| {
         let members = &mut group.members;

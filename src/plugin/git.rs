@@ -329,8 +329,6 @@ fn read_head(gitdir: &Path) -> (CString, CString) {
     if let Some(reference) = line.strip_prefix(b"ref:") {
         let reference = trim_ascii(reference);
         let branch = reference.strip_prefix(b"refs/heads/").unwrap_or(reference);
-        // What a reftable repository leaves in the file for readers that
-        // predate it; there is no branch name here to be had.
         if branch == b".invalid" {
             return (CString::default(), CString::default());
         }

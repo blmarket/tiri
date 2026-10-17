@@ -132,7 +132,6 @@ pub(super) unsafe fn pipe_pane(
                 ::core::ptr::null_mut::<sigset_t>(),
             );
             drop(parent);
-            // Stdio remapping and closefrom consume the child endpoint.
             let child_fd = child.into_raw_fd();
             if setpgid(0 as __pid_t, 0 as __pid_t) == -(1 as ::core::ffi::c_int) {
                 _exit(1 as ::core::ffi::c_int);
@@ -324,7 +323,6 @@ mod pipe_stream_tests {
             assert!((*pane.get()).pipe_fd.is_none());
             assert!(!observer.is_alive());
             assert_eq!(libc::fcntl(fd, libc::F_GETFD), -1);
-            // A repeated cleanup must not close a subsequently opened descriptor.
             let replacement = std::fs::File::open("/dev/null").unwrap();
             cmd_pipe_pane_error_callback(&pane);
             assert!(libc::fcntl(replacement.as_raw_fd(), libc::F_GETFD) >= 0);

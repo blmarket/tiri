@@ -22,7 +22,6 @@ fn codepoint_prefix(input: &CStr) -> Option<(wchar_t, &CStr)> {
 }
 
 pub(super) fn parse_width_override(input: &CStr) -> Option<WidthOverride> {
-    // Retain the original heap-backed scratch buffer and its two C terminators.
     let mut copy = input.to_bytes_with_nul().to_vec();
     let separator = copy.iter().position(|&byte| byte == b'=')?;
     copy[separator] = 0;
@@ -43,7 +42,6 @@ pub(super) fn parse_width_override(input: &CStr) -> Option<WidthOverride> {
         };
         start..=end
     } else {
-        // Decode exactly one cell without consulting or changing display widths.
         let DecodeResult::Complete {
             codepoint: value,
             len,

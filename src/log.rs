@@ -78,7 +78,6 @@ unsafe fn log_message(
     let Some(s) = try_format_message_with(write) else {
         return;
     };
-    // strvis writes at most four bytes per input byte plus the terminator.
     let Some(capacity) = s
         .as_bytes()
         .len()
@@ -154,7 +153,6 @@ mod tests {
     use std::io::{Read, Seek, SeekFrom};
     use std::os::fd::FromRawFd;
 
-    // Keep the comparison against libc without defining a variadic Rust function.
     macro_rules! legacy_message {
         ($format:expr $(, $arg:expr)* $(,)?) => {{
             let count = snprintf(std::ptr::null_mut(), 0, $format $(, $arg)*);
@@ -207,7 +205,6 @@ mod tests {
     #[test]
     fn bounded_strings_and_padding_match_printf_before_escaping() {
         unsafe {
-            // No NUL terminator: the slice bounds the read like a precision.
             let bytes = [0xffu8, b'\\', b'\n', 0xc3];
             for precision in 0..=bytes.len() as i32 {
                 assert_eq!(
@@ -249,7 +246,6 @@ mod tests {
                 message(format_args!("{}", log_pointer(ptr))),
                 legacy_message!(c"%p".as_ptr(), ptr)
             );
-            // Logs keep glibc's null spelling; other libcs print it differently.
             assert_eq!(
                 message(format_args!(
                     "{}",

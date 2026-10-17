@@ -86,7 +86,6 @@ impl Signals {
                 if *signal <= 0 || signal_hook::consts::FORBIDDEN.contains(signal) {
                     return true;
                 }
-                // SAFETY: querying a signal disposition without changing it.
                 unsafe { libc::sigaction(*signal, std::ptr::null(), std::ptr::null_mut()) != 0 }
             })
         {
@@ -108,7 +107,6 @@ impl Signals {
         {
             let mut claimed = CLAIMED.lock().unwrap_or_else(|poison| poison.into_inner());
             if set.iter().any(|signal| claimed.contains(signal)) {
-                // Resources::drop also locks CLAIMED.
                 drop(claimed);
                 return Err(io::Error::new(
                     io::ErrorKind::AlreadyExists,
@@ -119,8 +117,6 @@ impl Signals {
                 let flag = Arc::new(AtomicBool::new(false));
                 let pending = flag.clone();
                 let output = writer.clone();
-                // SAFETY: callback only stores an atomic flag and performs a
-                // nonblocking, SIGPIPE-suppressed send on its owned socket.
                 let registration = unsafe {
                     signal_hook::low_level::register(number, move || {
                         if pending.swap(true, Ordering::SeqCst) {
@@ -213,7 +209,6 @@ impl Future for Recv<'_> {
                 Poll::Pending => return Poll::Pending,
             };
         let mut bytes = [0u8; 4096];
-        // SAFETY: the resource owns the live fd and bytes is a valid writable buffer.
         let count = unsafe {
             libc::read(
                 resources.io.state.raw(),
@@ -241,7 +236,6 @@ impl Future for Recv<'_> {
                 "signal socket closed",
             )));
         }
-        // At most one read per poll; stale wake bytes cannot monopolize a turn.
         context.local_waker().wake_by_ref();
         Poll::Pending
     }

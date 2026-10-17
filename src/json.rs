@@ -133,7 +133,6 @@ fn json_tokenize_input(
         }
         offset += len;
     }
-    // tmux points EOF at the start of the last scanned token/whitespace.
     tokens.push(json_token {
         type_0: TOK_EOF,
         offset: last,
@@ -172,8 +171,6 @@ fn json_tokenize_value(tokens: &[json_token], input: &[u8]) -> Option<usize> {
             }
         }
         TOK_COLON => input.iter().enumerate().skip(1).find_map(|(index, byte)| {
-            // C isspace also includes vertical tab, which Rust's ASCII
-            // whitespace predicate deliberately omits.
             (matches!(byte, b']' | b'}' | b',' | 0x0b) || byte.is_ascii_whitespace())
                 .then_some(index)
         }),
@@ -189,8 +186,6 @@ fn json_parse_tokens(
     mut tokens: &[json_token],
     pctx: &mut json_parse_ctx<'_, '_>,
 ) -> Option<Box<json_node>> {
-    // Tokenization is complete. Recursive parsers advance this borrowed slice,
-    // leaving the EOF token in place on incomplete input.
     if tokens[0].type_0 != TOK_OPENOBJECT {
         pctx.error(c"expected object", &tokens[0]);
         return None;

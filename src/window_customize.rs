@@ -203,8 +203,6 @@ impl CustomizeEnvironmentBorrow {
         }
     }
 
-    // Formatting, drawing and prompt installation can reenter the target.
-    // A snapshot owns the entry strings throughout those operations.
     unsafe fn get(&self) -> Option<environ> {
         self.read(Clone::clone)
     }
@@ -212,11 +210,7 @@ impl CustomizeEnvironmentBorrow {
     unsafe fn rows(&self) -> Option<Vec<(u64, environ_entry)>> {
         self.read(|env| {
             environ_iter(env)
-                .map(|entry| {
-                    // The low bit separates environment records from static
-                    // option tags, which share the same category bits.
-                    ((2_u64 << 62) | (entry.id() << 1), entry.clone())
-                })
+                .map(|entry| ((2_u64 << 62) | (entry.id() << 1), entry.clone()))
                 .collect()
         })
     }
@@ -232,7 +226,6 @@ impl CustomizeEnvironmentBorrow {
     }
 }
 
-// Detached prompt and editor copies own their strings independently of the rows.
 fn window_customize_set_table(item: &mut window_customize_itemdata, value: Option<&CStr>) {
     item.table = value.map(CStr::to_owned);
 }
@@ -391,8 +384,6 @@ const CUSTOMIZE_WINDOW_HOOKS: u_int = 5;
 const CUSTOMIZE_GLOBAL_ENVIRONMENT: u_int = 6;
 const CUSTOMIZE_SESSION_ENVIRONMENT: u_int = 7;
 
-// Resolve the existing entry for this synchronous operation. Persistent UI rows
-// already store their scope and name and resolve again when acted on.
 unsafe fn window_customize_find_option(
     scope: &OptionsScope,
     name: &CStr,
@@ -887,8 +878,6 @@ unsafe fn window_customize_option_is_changed(
         return 1;
     }
     if definition.flags & OPTIONS_TABLE_IS_ARRAY != 0 {
-        // Default commands may evaluate formats. The scratch tree is detached
-        // and no model table remains borrowed while defaults are parsed.
         let mut defaults_owner = options_create(None);
         let defaults = options_default(&mut *defaults_owner, definition);
         let current = owner.with_entry(&(*option).name, |entry| {
@@ -932,7 +921,6 @@ unsafe fn window_customize_build_array(
     ft: *mut format_tree,
 ) -> u_int {
     let data = mode_owner.get();
-    // Formatting can edit the table; retain its name and resolve each row again.
     let option_name = (*option).name.clone();
     let Some(keys) = owner.with_entry(&(*option).name, |entry| {
         crate::src::options::options_array_iter(entry)
@@ -2873,7 +2861,6 @@ unsafe fn window_customize_update(mut wme: refbox::Weak<window_mode_entry>) {
     window_customize_draw_waiting(&mode_owner);
 }
 
-// Fields drop in declaration order: the detached item before the retained mode.
 struct CustomizePromptItem {
     item: Box<window_customize_itemdata>,
     mode: Rc<UnsafeCell<window_customize_modedata>>,
@@ -2888,11 +2875,8 @@ fn window_customize_prompt_callbacks<T: 'static>(
         let Ok(owner) = weak.try_borrow_mut() else {
             return PROMPT_CLOSE;
         };
-        // Keep the callback's borrowed input alive if it closes its own prompt.
         unsafe { callback(client, &owner, text, key) }
     }));
-    // mode_tree invokes cleanup before releasing its own retained tree. Cached
-    // input callbacks only keep a weak reference and cannot extend this lifetime.
     let freecb: prompt_free_cb = Some(Box::new(move || drop(owner)));
     (inputcb, freecb)
 }
@@ -2914,11 +2898,8 @@ fn window_customize_mode_prompt_callbacks(
         let Some(owner) = (unsafe { window_customize_live_mode(&weak) }) else {
             return PROMPT_CLOSE;
         };
-        // Keep the callback's borrowed input alive if it closes its own prompt.
         unsafe { callback(client, &owner, text, key) }
     }));
-    // mode_tree invokes cleanup before releasing its own retained tree. Cached
-    // input callbacks only keep a weak reference and cannot extend this lifetime.
     let freecb: prompt_free_cb = Some(Box::new(move || drop(owner)));
     (inputcb, freecb)
 }
@@ -3501,8 +3482,6 @@ unsafe fn window_customize_start_edit(
     } else {
         return;
     }
-    // The callback owns the record and receives editor identity at dispatch.
-    // Startup failure and cancellation drop the capture normally.
     let ed = window_customize_editdata {
         wp_id: mode_pane_owner.id(),
         edit_type,
@@ -4056,7 +4035,6 @@ unsafe fn window_customize_add_key_callback(
         );
         return PROMPT_CLOSE;
     }
-    // strcspn stops before the first NUL, so this prefix is a valid C string.
     let keystr = std::ffi::CString::new(std::slice::from_raw_parts(s.cast::<u8>(), keylen))
         .expect("key name contains no NUL");
     key = key_string_parse_cstr(&keystr).unwrap_or(KEYC_UNKNOWN);
@@ -4792,7 +4770,6 @@ mod item_owner_tests {
                 },
             );
             let observer = first_owner.clone();
-            // A key's parent and detail rows share a single immutable record.
             let selected = ModeTreeItemData::Customize(first_owner.clone());
             let detail = selected.clone();
             assert!(selected.same_identity(&detail));
@@ -4844,7 +4821,6 @@ mod item_owner_tests {
                 prompt_observer.try_borrow_mut(),
                 Err(refbox::BorrowError::Dropped)
             ));
-            // Caching the input callback must not keep a closed prompt alive.
             assert_eq!(
                 inputcb.as_mut().unwrap()(None, None, PROMPT_KEY_CLOSE),
                 PROMPT_CLOSE

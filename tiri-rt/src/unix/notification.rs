@@ -20,7 +20,6 @@ impl Notification {
     pub fn new() -> io::Result<Self> {
         #[cfg(target_os = "linux")]
         {
-            // SAFETY: eventfd has no pointer arguments and returns new ownership.
             let raw =
                 super::check(unsafe { libc::eventfd(1, libc::EFD_CLOEXEC | libc::EFD_NONBLOCK) })?;
             Ok(Self {
@@ -30,7 +29,6 @@ impl Notification {
         #[cfg(not(target_os = "linux"))]
         {
             let mut fds = [-1; 2];
-            // SAFETY: pipe initializes both descriptor slots on success.
             super::check(unsafe { libc::pipe(fds.as_mut_ptr()) })?;
             let result = Self {
                 read: unsafe { OwnedFd::from_raw_fd(fds[0]) },
@@ -38,7 +36,6 @@ impl Notification {
             };
             for fd in [&result.read, &result.write] {
                 super::set_nonblocking(fd.as_fd(), true)?;
-                // SAFETY: both endpoints are owned and live.
                 super::check(unsafe {
                     libc::fcntl(fd.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC)
                 })?;
@@ -62,7 +59,6 @@ impl Notify for Notification {
         #[cfg(not(target_os = "linux"))]
         let (fd, bytes) = (self.write.as_raw_fd(), [0u8]);
         loop {
-            // SAFETY: fd is live and bytes remains readable for the syscall.
             let n = unsafe { libc::write(fd, bytes.as_ptr().cast(), bytes.len()) };
             if n == bytes.len() as isize {
                 return Ok(());
@@ -73,7 +69,6 @@ impl Notify for Notification {
             let error = io::Error::last_os_error();
             match error.kind() {
                 io::ErrorKind::Interrupted => continue,
-                // Already signalled; no additional token is needed.
                 io::ErrorKind::WouldBlock => return Ok(()),
                 _ => return Err(error),
             }
@@ -83,7 +78,6 @@ impl Notify for Notification {
     fn clear(&self) -> io::Result<()> {
         let mut bytes = [0u8; 64];
         loop {
-            // SAFETY: the owned, nonblocking endpoint and byte storage are live.
             let n = unsafe {
                 libc::read(
                     self.read.as_raw_fd(),

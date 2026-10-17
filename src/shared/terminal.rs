@@ -11,12 +11,10 @@ pub struct TerminalAttributes(pub termios);
 
 impl Default for TerminalAttributes {
     fn default() -> Self {
-        // SAFETY: termios contains only integers and integer arrays.
         Self(unsafe { ::core::mem::zeroed() })
     }
 }
 
-// These functions retain the errno/return convention until the model is migrated.
 pub(crate) unsafe fn read_attributes(fd: i32, attributes: &mut termios) -> i32 {
     if fd < 0 {
         *__errno_location() = libc::EBADF;

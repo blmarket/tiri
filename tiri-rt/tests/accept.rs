@@ -65,7 +65,6 @@ fn cancelled_accept_preserves_connections_and_accepts_configure_owned_sockets() 
     for (index, peer) in peers.iter_mut().enumerate() {
         peer.write_all(&[index as u8]).unwrap();
         let fd: OwnedFd = complete(&mut runtime, listener.accept()).unwrap();
-        // SAFETY: these calls only query the newly accepted, live descriptor.
         assert_ne!(
             unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFL) } & libc::O_NONBLOCK,
             0
@@ -99,7 +98,6 @@ fn accepts_have_one_waiter_and_runtime_shutdown_closes_the_listener() {
     assert!(matches!(pin!(listener.accept()).poll(&mut cx),
         Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::AlreadyExists));
     drop(runtime);
-    // SAFETY: F_GETFD only queries this descriptor number.
     assert_eq!(unsafe { libc::fcntl(raw, libc::F_GETFD) }, -1);
     assert!(matches!(first.as_mut().poll(&mut cx),
         Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::BrokenPipe));
@@ -112,6 +110,5 @@ fn blocking_listener_is_rejected_and_closed() {
     let raw = socket.as_raw_fd();
     assert!(matches!(mio::Listener::new(socket),
         Err(e) if e.kind() == io::ErrorKind::InvalidInput));
-    // SAFETY: F_GETFD only queries this descriptor number.
     assert_eq!(unsafe { libc::fcntl(raw, libc::F_GETFD) }, -1);
 }

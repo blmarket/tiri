@@ -19,7 +19,6 @@ impl Server {
             .duration_since(UNIX_EPOCH)
             .expect("clock after epoch")
             .as_nanos();
-        // Glob punctuation in the cwd must be quoted; UTF-8 bytes stay literal.
         let directory = std::env::temp_dir().join(format!(
             "tiri-source-pattern-[test]+é-{}-{stamp}",
             std::process::id()

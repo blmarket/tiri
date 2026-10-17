@@ -246,7 +246,6 @@ fn assignments_take_effect_before_lexing_the_next_word() {
         for active in [false, true] {
             let value = Rc::new(RefCell::new(previous.to_owned()));
             let mut host = Environment(value.clone());
-            // Expand the command name lazily, as the application lexer does.
             let mut tokens = vec![
                 Token::If,
                 word(if active { "1" } else { "0" }),

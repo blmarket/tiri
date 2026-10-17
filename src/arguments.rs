@@ -219,7 +219,6 @@ pub unsafe fn args_parse(
     values: &[ArgumentValue<'_>],
 ) -> Result<Box<args>, ArgsParseError> {
     let mut args = args_create();
-    // tmux accepts an empty input before applying positional bounds.
     if values.is_empty() {
         return Ok(args);
     }
@@ -381,7 +380,6 @@ pub(crate) unsafe fn args_print_cstring(args: &args) -> CString {
                 buf.push(b'-');
             }
             for _ in 0..entry.count {
-                // The old C-string formatter omitted a zero flag byte.
                 if entry.flag != 0 {
                     buf.push(entry.flag);
                 }
@@ -442,7 +440,6 @@ pub(crate) unsafe fn args_escape_cstring(s: &CStr) -> CString {
     if quotes == b'"' {
         flags |= VIS_DQ;
     }
-    // utf8_strvis writes at most four bytes per source byte and one terminator.
     let mut escaped = vec![
         0;
         source
@@ -687,7 +684,6 @@ pub(crate) unsafe fn args_make_commands_get_command_cstring(state: &args_command
         .iter()
         .position(|byte| b" ,".contains(byte))
         .unwrap_or(command.len()) as ::core::ffi::c_int;
-    // A negative printf precision leaves the whole string untruncated.
     let prefix = if n < 0 {
         command
     } else {

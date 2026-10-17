@@ -43,7 +43,6 @@ const POLL_INTERVAL: Duration = Duration::from_millis(200);
 /// visible screen, so scrollback is never read; the cap only bounds the cost of
 /// a very tall pane.
 const SCREEN_LINES: usize = 256;
-// Filter transient idle frames during TUI redraws before consumers act on them.
 const IDLE_DELAY: Duration = Duration::from_secs(2);
 
 /// Screen/title-derived lifecycle state reported for an agent pane.
@@ -436,12 +435,6 @@ fn poll(
             return;
         }
     };
-    // Scan the whole process table once per poll and share the cached snapshot
-    // (read-only) with every pane inspected this tick. Rebuilding the parent→child
-    // index requires reading every visible process, which dominates
-    // attribution cost; doing it here — the dedicated poller — rather than inside
-    // each pane's tree walk means a busy server with many streaming agents scans
-    // the process table once per poll cadence instead of once per pane per poll.
     let snapshot = ProcessSnapshot::capture(source);
 
     let current = ids.iter().copied().collect::<HashSet<_>>();
@@ -525,7 +518,6 @@ fn inspect(
     now: Instant,
     idle_delay: Duration,
 ) {
-    // Only successful, consecutive observations may confirm pending idle.
     let pending_idle = tracked.pending_idle.take();
     if pending_idle.is_some() {
         tracked.revision = None;
@@ -561,11 +553,8 @@ fn inspect(
         return;
     }
 
-    // Identify which agent (if any) owns this pane from its process tree.
     let scan = match process.child_pid {
         Some(pid) => find_agent_in_tree(snapshot, pid, detectors),
-        // A process-less fixture pane can't be attributed by process; fall back
-        // to screen-only detection across the whole registry.
         None => TreeScan::NoProcessTable,
     };
 
@@ -582,7 +571,6 @@ fn inspect(
         }
     };
 
-    // The process tree says no known agent runs here: this is not an agent pane.
     if let TreeScan::NotFound = scan {
         tracked.agent = None;
         tracked.agent_pid = None;
@@ -603,8 +591,6 @@ fn inspect(
         return;
     }
 
-    // A newly identified agent or replacement pid forces a re-scan even if output
-    // hasn't advanced.
     let agent_started =
         matches!(scan, TreeScan::Found { detector, .. } if tracked.agent != Some(detector));
     let agent_pid_changed = match scan {
@@ -620,29 +606,17 @@ fn inspect(
             if agent_changed {
                 tracked.forget_session();
             }
-            // Read any bytes the agent appended to its session file since the
-            // last poll; the newest model named there replaces the published
-            // one. No new mention retains the current value. Growth doubles as
-            // the liveness signal for adoption correlation below.
             let session_file_grew = advance_model_scan(tracked, snapshot);
             tracked.silent_polls = if session_file_grew {
                 0
             } else {
                 tracked.silent_polls.saturating_add(1)
             };
-            // An agent that stamps the processes it spawns names its session
-            // outright, so that reading is preferred over every heuristic. It is
-            // only available while a spawned process is alive, so a miss falls
-            // through to the declared source rather than clearing anything.
             if let Some((session_id, session_file)) =
                 find_descendant_env_session(snapshot, pid, detectors[detector].as_ref())
             {
                 adopt_session(tracked, snapshot, session_id, session_file, true);
             } else if let Some(source) = detectors[detector].session_id_source() {
-                // Both sources are rechecked every poll so switching threads or
-                // sessions within one agent process replaces the cached id. Each
-                // only overwrites on a positive read, so a transient inspection
-                // failure retains the last known id rather than clearing it.
                 let resolved = match source {
                     SessionIdSource::ProcessTreeOpenFiles => {
                         find_open_file_session_in_tree(snapshot, pid, detectors[detector].as_ref())
@@ -653,11 +627,7 @@ fn inspect(
                 };
                 if let Some((session_id, session_file)) = resolved {
                     let adopt = match source {
-                        // An open descriptor names its owning process; no
-                        // correlation is needed.
                         SessionIdSource::ProcessTreeOpenFiles => true,
-                        // The newest transcript in a cwd-keyed directory may
-                        // belong to another pane in the same working directory.
                         SessionIdSource::AgentCwdTranscript => should_adopt_transcript(
                             tracked,
                             &session_file,
@@ -712,8 +682,6 @@ fn inspect(
         return;
     }
 
-    // The window title is a strong status channel for some agents, but
-    // best-effort: a read error must not suppress screen-based detection.
     let title = match tracked.pane.title() {
         Ok(title) => title,
         Err(error) => {
@@ -750,11 +718,6 @@ fn inspect(
             Some(detectors[detector].label()),
             Some(pid),
         ),
-        // Process attribution unavailable: run the whole registry and take the
-        // first definite classification. Do not pass the terminal title here:
-        // Codex uses any non-empty OSC title as a last-resort idle signal once
-        // the process tree has already identified Codex, but ordinary shells on
-        // macOS often have a static hostname title.
         TreeScan::NoProcessTable => {
             let (detection, label) = run_all(detectors, &screen_text, None);
             (detection, label, None)
@@ -788,8 +751,6 @@ fn inspect(
                     .map_or(now, |(since, _)| since);
                 if now.duration_since(since) < idle_delay {
                     tracked.pending_idle = Some((since, candidate));
-                    // Keep attribution/model updates flowing while withholding
-                    // idle. A replacement agent must not inherit the old state.
                     state = previous.map_or(AgentState::Unknown, |status| status.state);
                 }
             }
@@ -856,23 +817,17 @@ fn should_adopt_transcript(
         Some(current) => (true, current == candidate),
         None => (false, false),
     };
-    // Nothing attributed yet: first attribution stays best-effort newest.
     if !attributed {
         return true;
     }
-    // The newest transcript is already ours; nothing to correlate.
     if is_current {
         tracked.session_candidate = None;
         return true;
     }
-    // Our session was named by the agent itself; a directory guess cannot
-    // overrule it.
     if tracked.session_stamped {
         tracked.session_candidate = None;
         return false;
     }
-    // Our transcript is still being written: whatever else appeared in the
-    // shared directory belongs to another pane.
     if session_file_grew {
         tracked.session_candidate = None;
         return false;
@@ -893,8 +848,6 @@ fn should_adopt_transcript(
             }
             evidence.correlated_polls >= TRANSCRIPT_ADOPTION_POLLS
         }
-        // A new candidate (or none yet): start gathering evidence from its
-        // current size, so only growth observed from here on counts.
         _ => {
             tracked.session_candidate = Some(SessionCandidate {
                 path: candidate.to_path_buf(),
@@ -970,8 +923,6 @@ fn publish(
         ?state,
         "agent integration state changed"
     );
-    // Mirror the transition into the shared hub for format renderers. Only real
-    // transitions reach here, so this bumps the hub revision once per change.
     if let Some(hub) = hub {
         hub.publish(
             id,
@@ -1242,8 +1193,6 @@ fn find_cwd_transcript_session(
 ) -> Option<(CString, PathBuf)> {
     let cwd = snapshot.source.cwd(pid)?;
     let dir = detector.session_dir_for_cwd(&cwd)?;
-    // Without a readable start time nothing can be dated, so every file stays a
-    // candidate and attribution remains best-effort newest.
     let started = snapshot.source.start_time(pid);
     snapshot
         .source

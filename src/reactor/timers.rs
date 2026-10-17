@@ -13,7 +13,6 @@ impl Timer {
     /// Zero duration defers execution to a runtime turn.
     pub fn new(delay: Duration, callback: impl FnOnce() + 'static) -> io::Result<Self> {
         let now = Instant::now();
-        // Preserve the existing behavior: an overflowing deadline is expired.
         let deadline = now.checked_add(delay).unwrap_or(now);
         let handle = tiri_rt::mio::Handle::current();
         let sleep = tiri_rt::mio::Sleep::new(deadline);

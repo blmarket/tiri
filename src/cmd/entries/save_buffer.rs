@@ -156,7 +156,6 @@ unsafe fn cmd_save_buffer_exec(
     let wait = file_write_wait(queue_client.as_ref(), CStr::from_ptr(path), flags, bufdata);
     let waiting_item = std::rc::Rc::downgrade(item_handle);
     cmdq_suspend(item_handle, async move {
-        // A dead file client never reports; tmux leaves the command blocked.
         let Some(outcome) = wait.await else {
             return std::future::pending().await;
         };

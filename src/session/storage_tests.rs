@@ -28,7 +28,6 @@ fn saved_name_survives_removal_of_current_successor_and_entire_index() {
             &mut *second.get() as *mut _
         );
 
-        // Group destruction removes the current session AND its cached successor.
         sessions::remove(&first);
         sessions::remove(&second);
         drop(first);
@@ -46,7 +45,6 @@ fn saved_name_survives_removal_of_current_successor_and_entire_index() {
         assert!(sessions::is_empty());
         assert!(sessions::after(&last_name).is_none());
 
-        // Resuming reads the head afresh even after its previous map was freed.
         let replacement = node(c"z1");
         sessions::insert(replacement.clone());
         assert_eq!(
@@ -69,7 +67,6 @@ fn previous_session_observer_requires_registration_without_retaining_session() {
     let resolved = sessions::resolve(&observer).expect("registered session");
     assert!(Rc::ptr_eq(&resolved, &previous));
     sessions::remove(&previous);
-    // Queued work may retain the removed session, but it is no longer a target.
     assert!(sessions::resolve(&observer).is_none());
     let replacement = node(c"previous");
     sessions::insert(replacement.clone());

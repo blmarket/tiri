@@ -128,8 +128,6 @@ unsafe fn cmd_confirm_before_exec(
         bytes.extend_from_slice(b"/n) ");
         CString::new(bytes).expect("C string command and validated key contain no interior NUL")
     };
-    // The prompt takes the sender; the item's waker is registered only by the
-    // first poll, after exec returns.
     let continuation = if wait != 0 {
         let (answer, answered) = tiri_rt::oneshot::channel();
         cdata.reply = Some(cmd_confirm_before_reply::Wait(answer));
@@ -202,8 +200,6 @@ unsafe fn cmd_confirm_before_callback(
         }
     }
     match cdata.reply.take() {
-        // A dropped item (its client was lost) closes the receiver: nothing
-        // is queued.
         Some(cmd_confirm_before_reply::Wait(answer)) => {
             let _ = answer.send(confirmed);
         }
@@ -301,15 +297,11 @@ mod tests {
                     cmd_confirm_before_callback(&owner, &mut cdata, answer),
                     PROMPT_CLOSE
                 );
-                // The answer status and the command list are settled at the
-                // answer; removal, the confirmed command and the next item
-                // wait for cmdq_next.
                 assert_eq!(clients::return_value(&owner), (!confirmed).into());
                 assert!(list.upgrade().is_none(), "the continuation finished");
                 assert!(head.upgrade().is_some() && !ran.get());
                 assert_eq!(cmdq_next(Some(&owner)), u_int::from(confirmed) + 1);
                 assert!(head.upgrade().is_none() && ran.get());
-                // A later answer to the same data does nothing.
                 cmd_confirm_before_callback(&owner, &mut cdata, Some(c"y"));
                 assert_eq!(cmdq_next(Some(&owner)), 0);
             }
@@ -325,7 +317,6 @@ mod tests {
             owner.set_return_value(-1);
             drop(cdata);
             assert!(list.upgrade().is_none(), "the command list is released");
-            // The item never resumes and blocks its queue, as in tmux.
             assert_eq!(cmdq_next(Some(&owner)), 0);
             assert!(head.upgrade().is_some() && !ran.get());
             assert_eq!(clients::return_value(&owner), -1);
@@ -344,8 +335,6 @@ mod tests {
             owner.update_flags(CLIENT_DEAD as u64, 0);
             let client = Rc::downgrade(&owner);
             drop(owner);
-            // Neither the item nor the prompt's data keeps the client (R2);
-            // the item's drop released the command list unrun.
             assert!(client.upgrade().is_none());
             assert!(head.upgrade().is_none() && list.upgrade().is_none());
             assert_eq!(

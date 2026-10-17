@@ -180,8 +180,6 @@ pub(super) unsafe fn draw_line(
     } else {
         pane.default_colours()
     };
-    // The selected screen and its grid remain explicitly owned by this operation.
-    // Terminal drawing may inspect the pane palette after pane storage is released.
     let target = if status {
         &raw mut (*pane.get()).status_screen
     } else {

@@ -19,8 +19,6 @@ fn poll<F: Future>(future: Pin<&mut F>) -> Poll<F::Output> {
 
 fn ready<T>(runtime: &mut mio::Runtime, future: impl Future<Output = T>) -> T {
     let timeout = mio::Sleep::new(Instant::now() + Duration::from_secs(5));
-    // PTY delivery can require kernel worker scheduling. Wait for readiness
-    // with a real deadline instead of exhausting a fixed number of busy polls.
     runtime
         .block_on(async {
             let mut future = pin!(future);
@@ -73,7 +71,6 @@ fn vectored_transfer_returns_an_owned_fd_and_eof() {
     let received = ready(&mut runtime, receiver.read(&mut bytes)).unwrap();
     assert_eq!(&bytes[..received.bytes], b"headerpayload");
     let fd = received.fd.unwrap();
-    // SAFETY: F_GETFD queries the live received descriptor.
     assert_ne!(
         unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFD) } & libc::FD_CLOEXEC,
         0
@@ -106,7 +103,6 @@ fn cancelled_read_preserves_fd_and_chunk_reader_returns_it() {
     .unwrap();
     drop(fd);
     tick(&mut runtime);
-    // Notification has arrived but the pending read has not consumed anything.
     drop(pending);
     let (bytes, fd) = ready(&mut runtime, receiver.read_chunk(8))
         .unwrap()
@@ -134,8 +130,6 @@ fn excess_and_truncated_fds_are_rejected_and_closed() {
     }
 
     let mut runtime = mio::Runtime::new().unwrap();
-    // On 64-bit Linux, two FDs fit in the padding for one without MSG_CTRUNC;
-    // three force truncation. Both cases must close every received descriptor.
     for count in [2, 3] {
         let (sender, receiver) = pair();
         let receiver = mio::Io::new(receiver.into()).unwrap();
@@ -148,9 +142,6 @@ fn excess_and_truncated_fds_are_rejected_and_closed() {
             iov_base: (&mut byte as *mut u8).cast(),
             iov_len: 1,
         };
-        // Bypass AsyncWrite to simulate a peer violating its single-FD contract.
-        // SAFETY: zero initializes unused msghdr fields. The initialized iov
-        // and aligned control buffer outlive sendmsg; the FD stays borrowed.
         unsafe {
             let mut msg: libc::msghdr = std::mem::zeroed();
             msg.msg_iov = &mut iov;
@@ -171,7 +162,6 @@ fn excess_and_truncated_fds_are_rejected_and_closed() {
         drop(fd);
         let error = ready(&mut runtime, receiver.read(&mut [0; 8])).unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::InvalidData);
-        // Kernel-discarded and userspace-adopted FDs must all be closed.
         assert_eq!(peer.read(&mut [0]).unwrap(), 0);
     }
 }
@@ -251,7 +241,6 @@ fn disconnected_socket_reports_error_and_shutdown_invalidates_pending_read() {
         .kind(),
         io::ErrorKind::BrokenPipe
     );
-    // The failed write neither closes nor transfers the borrowed FD.
     assert_eq!(
         peer.read(&mut [0]).unwrap_err().kind(),
         io::ErrorKind::WouldBlock
@@ -270,7 +259,6 @@ fn disconnected_socket_reports_error_and_shutdown_invalidates_pending_read() {
 }
 
 fn nonblocking(fd: &OwnedFd) {
-    // SAFETY: fd owns a live descriptor, and fcntl only adjusts status flags.
     let flags = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFL) };
     assert!(flags >= 0);
     assert_eq!(
@@ -281,9 +269,7 @@ fn nonblocking(fd: &OwnedFd) {
 
 fn pipe() -> (OwnedFd, OwnedFd) {
     let mut fds = [-1; 2];
-    // SAFETY: fds is storage for two output descriptors.
     assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
-    // SAFETY: successful pipe returned two newly owned descriptors.
     let (reader, writer) = unsafe { (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])) };
     nonblocking(&reader);
     nonblocking(&writer);
@@ -292,7 +278,6 @@ fn pipe() -> (OwnedFd, OwnedFd) {
 
 fn pty() -> (OwnedFd, OwnedFd) {
     let (mut master, mut slave) = (-1, -1);
-    // SAFETY: valid descriptor outputs; null optional arguments request defaults.
     assert_eq!(
         unsafe {
             libc::openpty(
@@ -305,17 +290,13 @@ fn pty() -> (OwnedFd, OwnedFd) {
         },
         0
     );
-    // SAFETY: openpty returned two newly owned descriptors.
     let (master, slave) = unsafe { (OwnedFd::from_raw_fd(master), OwnedFd::from_raw_fd(slave)) };
     let mut termios = std::mem::MaybeUninit::<libc::termios>::uninit();
-    // SAFETY: slave is live and termios is valid output storage.
     assert_eq!(
         unsafe { libc::tcgetattr(slave.as_raw_fd(), termios.as_mut_ptr()) },
         0
     );
-    // SAFETY: successful tcgetattr initialized termios.
     let mut termios = unsafe { termios.assume_init() };
-    // SAFETY: initialized termios and a live PTY slave.
     unsafe {
         libc::cfmakeraw(&mut termios);
         assert_eq!(
@@ -336,7 +317,6 @@ fn pipes_and_ptys_use_the_same_traits_and_reject_fds_before_writing() {
         let writer = Writer::new(writer).unwrap();
         let reader = Reader::new(reader).unwrap();
         for buffers in [&[][..], &[IoSlice::new(b"rejected")][..]] {
-            // Rejection must not wait for writable readiness either.
             assert!(
                 matches!(poll(pin!(writer.write(buffers, Some(fd.as_fd())))),
                 Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::Unsupported)

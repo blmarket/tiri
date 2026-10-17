@@ -1,14 +1,11 @@
+use super::*;
 use crate::src::server_client::ClientRegistry;
+use crate::src::session::Session;
 use crate::src::shared::client::client_handle;
 use crate::src::shared::client::ClientRef;
+use crate::src::shared::rc::same;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
-// Built-in callbacks return owned bytes or copied timestamps. The sorted
-// immutable table is shared by lookup and enumeration; external user callbacks
-// retain their separate C ABI.
-use super::*;
-use crate::src::session::Session;
-use crate::src::shared::rc::same;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
 
@@ -1555,8 +1552,6 @@ unsafe fn format_cb_uid(_ft: *mut format_tree) -> Option<CString> {
     )
 }
 unsafe fn format_cb_user(_ft: *mut format_tree) -> Option<CString> {
-    // Preserve retry-on-failure and process-lifetime caching without a leaked
-    // libc allocation. No borrow survives the libc lookup or a callback.
     static CACHED: std::sync::OnceLock<CString> = std::sync::OnceLock::new();
     if let Some(name) = CACHED.get() {
         return Some(name.clone());
@@ -1586,8 +1581,6 @@ impl FormatTableEntry {
         use crate::src::server_client::Client;
         use crate::src::session::Session;
         use crate::src::window::{Window, WindowPane};
-        // Preserve each callback's absent-context behavior. Static mode-format
-        // defaults do not belong to a particular holder.
         if model_key(self.key, b"session_") {
             if let Some(owner) = (*ft).s.upgrade() {
                 return owner.format_value(self.key, &mut *ft);
@@ -1621,9 +1614,6 @@ impl FormatTableEntry {
 fn model_key(key: &CStr, prefix: &[u8]) -> bool {
     key.to_bytes().starts_with(prefix) && !key.to_bytes().ends_with(b"_mode_format")
 }
-
-// These adapters preserve lazy builtin evaluation. Callback bodies remain the
-// legacy implementation while their field accesses migrate to entity owners.
 
 pub(crate) unsafe fn window_format_value(
     owner: &WindowRef,

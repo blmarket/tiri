@@ -11,7 +11,6 @@ use std::time::{Duration, Instant};
 use super::readiness::IoState;
 use super::signals::SignalState;
 
-// Bound each turn so a self-waking task cannot monopolize the host thread.
 const MAX_POLLS_PER_TURN: usize = 128;
 
 type TaskFuture = Pin<Box<dyn Future<Output = ()>>>;
@@ -44,9 +43,7 @@ pub(crate) struct Core {
     poisoned: Cell<bool>,
     next_id: Cell<usize>,
     pub(crate) registry: RefCell<Option<mio::Registry>>,
-    // Only a count for idle detection and queue compaction, never task ownership.
     pending_tasks: Cell<usize>,
-    // Task entries observe their owners; the queue never owns task futures.
     ready: RefCell<VecDeque<Ready>>,
     pub(crate) timers: RefCell<BTreeMap<(Instant, usize), LocalWaker>>,
     pub(crate) io: RefCell<HashMap<usize, Weak<IoState>>>,
@@ -133,7 +130,6 @@ impl Core {
         self.registry.borrow_mut().take();
         self.fds.borrow_mut().clear();
         self.timers.borrow_mut().clear();
-        // Release queued wakers without holding the queue borrow during Drop.
         let ready = std::mem::take(&mut *self.ready.borrow_mut());
         drop(ready);
     }
@@ -157,7 +153,6 @@ impl TaskState {
             core.pending_tasks.set(core.pending_tasks.get() - 1);
             core.compact_ready();
         }
-        // Never run a user destructor while borrowing the future slot.
         let future = self.future.borrow_mut().take();
         drop(future);
     }
@@ -530,8 +525,6 @@ impl Core {
 impl Drop for Runtime {
     fn drop(&mut self) {
         self.core.close();
-        // Keep the handle accessible while close releases user-owned wakers.
-        // TLS may already have been destroyed during thread shutdown.
         let _ = HANDLE.try_with(|handle| {
             let mut handle = handle.borrow_mut();
             if handle

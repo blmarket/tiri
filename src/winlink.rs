@@ -140,7 +140,6 @@ pub unsafe fn winlink_add(
 ) -> refbox::Weak<winlink> {
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     if idx < 0 as ::core::ffi::c_int {
-        // Decode -(base_index + 1) without negating INT_MIN first.
         idx = winlink_next_index(wwl, -(idx + 1));
         if idx == -(1 as ::core::ffi::c_int) {
             return refbox::Weak::new();
@@ -173,8 +172,6 @@ pub unsafe fn winlink_add(
     wl
 }
 
-// Drop the reference in place: the field stays published through the close
-// notification, so its callbacks can still inspect the winlink.
 unsafe fn winlink_release_window(mut wl: refbox::Weak<winlink>) {
     let field = &raw mut wl.get_mut_unchecked().window_owner;
     assert!((*field).is_some(), "winlink window reference");
@@ -199,7 +196,6 @@ pub unsafe fn winlink_remove(mut wwl: *mut winlinks, mut wl: refbox::Weak<winlin
         window.remove_winlink(wl.clone());
         winlink_release_window(wl.clone());
     }
-    // Window teardown above may reenter; borrow the owning map only afterward.
     let idx = wl.get_unchecked().idx;
     let owner = {
         let storage = &*wwl;

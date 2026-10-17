@@ -21,8 +21,6 @@ fn legacy_stream_adapter_consumes_an_invalid_candidate_before_recovery() {
         assert_eq!(data.size, 3);
         assert_eq!(data.have, 1);
 
-        // The old byte-at-a-time API keeps collecting the declared sequence
-        // even after a bad continuation, so callers can rewind `have` bytes.
         assert_eq!(utf8_append(&mut data, b'('), UTF8_MORE);
         assert_eq!(data.have, 2);
         assert_eq!(utf8_append(&mut data, 0xa1), UTF8_ERROR);
@@ -111,7 +109,6 @@ fn copied_cells_clear_unused_bytes_and_allow_self_assignment() {
     assert_eq!((cell.have, cell.size, cell.width), (2, 2, 1));
     assert!(original.data[2..].iter().all(|&byte| byte == 0xab));
 
-    // Copying preserves oversized metadata, as the original memcpy helper did.
     let oversized = utf8_data {
         data: [0xcd; 32],
         size: 33,

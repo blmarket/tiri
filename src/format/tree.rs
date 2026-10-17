@@ -1,14 +1,10 @@
 use crate::src::log::log_cstr;
 
+use super::*;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::format::FormatEntryState;
-use std::time::SystemTime;
-// Private tree-storage implementation.  It owns the format-entry tree and
-// format-tree CRUD operations.
-// Shared C-layout types, allocator/FFI helpers, and callback-table symbols
-// remain supplied by the parent facade.
-use super::*;
 use std::ffi::{CStr, CString};
+use std::time::SystemTime;
 
 pub(super) fn format_entry_tree_find<'a>(
     tree: &'a format_entry_tree,
@@ -43,8 +39,6 @@ unsafe fn format_entry_ensure_value(ft: *mut format_tree, key: &CStr) {
     let value =
         callback(std::ptr::NonNull::new(ft).expect("format tree is non-null")).unwrap_or_default();
 
-    // Resolve both the key and evaluation identity after the callback. Even a
-    // removed/reinserted entry at the same address must not receive this result.
     if let Some(entry) = (*ft).tree.get_mut(key) {
         if matches!(entry.state, FormatEntryState::Evaluating(id) if id == evaluation) {
             entry.state = FormatEntryState::Cached { value, callback };
@@ -79,14 +73,10 @@ unsafe fn format_entry_set(ft: *mut format_tree, key: &CStr, state: FormatEntryS
             None
         }
     };
-    // A callback capture may have its own cleanup. Release it only after the
-    // map and entry borrows have ended, just as when invoking a lazy callback.
     drop(old);
 }
 
 pub unsafe fn format_merge(ft: *mut format_tree, from: *mut format_tree) {
-    // Copy before changing the destination: the trees may be identical, and
-    // replacing callback captures may in turn modify the source tree.
     let values: Vec<_> = (*from)
         .tree
         .values()
@@ -177,9 +167,6 @@ impl Drop for format_tree {
     fn drop(&mut self) {
         let ft: *mut format_tree = self;
         unsafe {
-            // Capture destructors may add entries to this same tree. End each map
-            // borrow before dispatch, and never hold a whole-tree reference here.
-            // Entries go before the client: field drop order would release it first.
             while let Some((_, entry)) = (*ft).tree.pop_first() {
                 drop(entry);
             }
@@ -347,7 +334,6 @@ mod tests {
                 format_add_cstr(ft, &key, c"extra");
             }
             let entry = format_entry_tree_find(&(*ft).tree, &key).unwrap();
-            // The writer finishes borrowing the old bytes before replacement.
             format_add(ft, &key, |out| {
                 out.write_all(entry.state.text().unwrap().to_bytes())?;
                 out.write_all(b"-next")
@@ -395,7 +381,6 @@ mod tests {
                 });
                 Some(c"stale".to_owned())
             });
-            // Replacement callbacks run on the next lookup, never as the old callback.
             assert!(text_value(ft, c"owned").is_none());
             assert_eq!(replacement_calls.get(), 0);
             assert_eq!(

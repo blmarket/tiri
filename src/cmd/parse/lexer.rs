@@ -96,9 +96,6 @@ impl<'a, 'input> Lexer<'a, 'input> {
                     return EOF;
                 };
                 self.offset += 1;
-                // tmux reads command buffers through char *, so a raw 0xff
-                // becomes EOF on signed-char platforms. Consume it even though
-                // it ends the token; subsequent reads can continue in the buffer.
                 return i32::from(byte as c_char);
             }
             Source::File(file) => unsafe { getc(file) },
@@ -123,8 +120,6 @@ impl<'a, 'input> Lexer<'a, 'input> {
         }
     }
 
-    // Fold escaped newlines before token/quote processing, including runs of
-    // backslashes. Pending backslashes are returned one at a time.
     fn read(&mut self) -> i32 {
         if self.escapes != 0 {
             self.escapes -= 1;
@@ -349,7 +344,6 @@ impl<'a, 'input> Lexer<'a, 'input> {
             ch = self.read();
         }
         self.unread(ch);
-        // Retain the existing behavior for EOF inside quotes.
         Ok(finish(bytes))
     }
 
@@ -393,7 +387,6 @@ impl<'a, 'input> Lexer<'a, 'input> {
                         .ok_or(LexError::InvalidUnicode(ch as u8))?;
                     value = (value << 4) | digit;
                 }
-                // Keep the existing locale-dependent conversion semantics.
                 let mut encoded = [0 as c_char; 16];
                 let len = unsafe { wctomb(encoded.as_mut_ptr(), value as libc::wchar_t) };
                 if len <= 0 || len as usize > encoded.len() {
@@ -518,8 +511,6 @@ fn text(value: CString) -> TokenText {
 }
 
 fn finish(mut bytes: Vec<u8>) -> CString {
-    // Escaped NUL terminates the argument, but scanning must still consume the
-    // rest of the word and subsequent commands.
     if let Some(nul) = bytes.iter().position(|&b| b == 0) {
         bytes.truncate(nul);
     }

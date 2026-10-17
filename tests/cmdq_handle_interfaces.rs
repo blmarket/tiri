@@ -66,7 +66,6 @@ impl<'ast> Visit<'ast> for Interfaces<'_> {
     }
     fn visit_item_type(&mut self, item: &'ast syn::ItemType) {
         self.check(&item.ty);
-        // Concrete Rc/Weak types must not be hidden behind new model aliases.
         if let syn::Type::Path(ty) = &*item.ty {
             let name = &ty.path.segments.last().unwrap().ident;
             let mut queue_item = ItemType::default();

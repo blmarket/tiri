@@ -14,12 +14,6 @@ pub struct Linux;
 
 impl Platform for Linux {
     fn pane_cwd(pty: BorrowedFd<'_>) -> Option<PathBuf> {
-        // Mirrors tmux's osdep_get_cwd: prefer the foreground process group,
-        // then fall back to the session leader. The group id is only a pid
-        // while the group leader lives; a job whose leader has exited (a shell
-        // pipeline, or a wrapper that exec'd away) leaves a group whose id
-        // names no process, and /proc/<pgrp>/cwd is then unreadable. The
-        // session leader is the pane's own shell, so it still answers.
         let read_cwd = |pid: libc::pid_t| {
             (pid > 0)
                 .then(|| PathBuf::from(format!("/proc/{pid}/cwd")))
@@ -105,8 +99,6 @@ impl Platform for Linux {
             .split(|byte| *byte == 0)
             .filter(|entry| !entry.is_empty())
             .filter_map(|entry| {
-                // Only the first `=` separates name from value; values may
-                // contain any number of them.
                 let split = entry.iter().position(|byte| *byte == b'=')?;
                 Some((
                     OsStr::from_bytes(&entry[..split]).to_owned(),
@@ -117,27 +109,11 @@ impl Platform for Linux {
     }
 
     fn process_waiting_for_tty(pid: u32) -> Option<bool> {
-        // Two readings have to agree, because neither is conclusive alone.
-        //
-        // `/proc/PID/wchan` names the kernel function the task is parked in.
-        // A tty read parks in `wait_woken` — but so does a socket read, so the
-        // symbol only narrows the field to "asleep in a driver read".
-        //
-        // `/proc/PID/syscall` then says which descriptor that read is on: for
-        // the read-family calls a tty read can be sitting in, the first
-        // argument is the file descriptor. Resolving it through `fd/` tells a
-        // terminal apart from a socket, which is what the symbol could not.
-        //
-        // A process waiting on the terminal through `poll`/`select` instead
-        // parks in `poll_schedule_timeout` and passes a pointer rather than a
-        // descriptor, so it reads as running. That is the conservative
-        // direction: a busy pane is never mistaken for one waiting on you.
         let wchan = fs::read_to_string(format!("/proc/{pid}/wchan")).ok()?;
         if !TTY_READ_WCHAN.contains(&wchan.trim()) {
             return Some(false);
         }
         let syscall = fs::read_to_string(format!("/proc/{pid}/syscall")).ok()?;
-        // "running" for a task on a cpu, "-1 ..." when the registers are gone.
         let Some(descriptor) = syscall
             .split_whitespace()
             .nth(1)
@@ -239,8 +215,6 @@ mod tests {
         };
         assert_eq!(opened, 0, "openpty: {}", io::Error::last_os_error());
 
-        // SAFETY: the child branch touches only async-signal-safe libc calls
-        // and terminates in `_exit`, which `body` is required to guarantee.
         let child = unsafe { libc::fork() };
         assert!(child >= 0, "fork: {}", io::Error::last_os_error());
         if child == 0 {
@@ -253,8 +227,6 @@ mod tests {
             }
         }
 
-        // The child has to reach its read (or its loop) before the probe means
-        // anything; a freshly forked task is briefly running either way.
         std::thread::sleep(Duration::from_millis(250));
         let observed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             probe(child as u32);

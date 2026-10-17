@@ -223,7 +223,6 @@ fn server_client_add_term_cap(c: &mut client, data: &CStr) {
 }
 
 fn server_client_clear_term_caps(c: &mut client) {
-    // Release on client loss, even if other references delay client destruction.
     c.term_caps = Vec::new();
 }
 
@@ -670,8 +669,6 @@ unsafe fn server_client_update_overlay_focus(owner: &ClientRef) {
 
 unsafe fn server_client_set_overlay(c_owner: &ClientRef, overlay: Overlay) {
     let c = c_owner.get();
-    // Cleanup can install another overlay. Retire it through the same path
-    // before publishing this caller's replacement, never by overwriting it.
     while (*c).overlay.is_some() {
         server_client_clear_overlay(c_owner);
     }
@@ -706,8 +703,6 @@ unsafe fn server_client_clear_overlay(c_owner: &ClientRef) {
     server_client_update_overlay_focus(c_owner);
     c_owner.request_redraw(CLIENT_ALLREDRAWFLAGS as u64);
 }
-// A callback may clear or replace its overlay. Restore only the generation
-// that was borrowed, and discard results from a retired owner.
 unsafe fn server_client_overlay_draw(c_owner: &ClientRef) {
     let c = c_owner.get();
     let generation = (*c).overlay_generation;
@@ -734,8 +729,6 @@ unsafe fn server_client_overlay_key(c_owner: &ClientRef, event: &mut key_event) 
     let mut callback = (*c).overlay.as_mut()?.key.take()?;
     let result = callback(c_owner, event);
     if (*c).overlay_generation != generation {
-        // This event was handled by the retired overlay. In particular, an
-        // old close request must not close a newly installed overlay.
         return Some(0);
     }
     if let Some(overlay) = (*c).overlay.as_mut() {
@@ -1204,8 +1197,6 @@ unsafe fn server_client_lost(client_owner: &ClientRef) {
     drop((*c).exit_timer.take());
     drop((*c).cycle_timer.take());
     drop((*c).keytable.take());
-    // Callbacks during client loss can set another message after the earlier
-    // clear. Preserve the final release point before cancelling its timer.
     server_client_set_message(&mut *c, None);
     drop((*c).message_timer.take());
     if let Some(prompt) = (*c).prompt.take() {
@@ -1819,7 +1810,6 @@ unsafe fn server_client_check_mouse(
             }
             (*c).tty.mouse_drag_flag =
                 (b & MOUSE_MASK_BUTTONS as u_int).wrapping_add(1 as u_int) as ::core::ffi::c_int;
-            // Change the pane if the drag did not start on status line.
             if (*c).tty.mouse_drag_status == 0 && last_pane.is_none() {
                 let hit_window_owner = &window_owner;
                 selected_pane = hit_window_owner.pane_at(px, py).upgrade();
@@ -2072,7 +2062,6 @@ unsafe fn server_client_key_callback(
 ) -> cmd_retval {
     let item = item_handle.get();
     let mut current_block: u64;
-    // The queued callback owns the event and its bytes until this call returns.
     let mut event: *mut key_event = &raw mut *owned.0;
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut key: key_code = (*event).key;
@@ -2806,8 +2795,6 @@ struct PromptCursor {
     cy: u_int,
 }
 
-// No prompt leaves the caller's cursor unchanged. A clipped prompt still owns
-// the cursor but hides it, retaining the incoming coordinates outside the view.
 unsafe fn server_client_prompt_cursor(
     owner: &ClientRef,
     pane: &Rc<UnsafeCell<window_pane>>,
@@ -4454,7 +4441,6 @@ mod lost_queue_tests {
             assert!(client.upgrade().is_none());
             assert!(head.upgrade().is_none());
             assert!(future_released.get());
-            // The receiver, and the item waker it stored, went with the future.
             assert!(tx.is_closed());
             assert!(tx.send(()).is_err());
             assert!(!body_ran.get());
@@ -4494,7 +4480,6 @@ mod lost_queue_tests {
             let ran = Rc::new(Cell::new(false));
             let body = ran.clone();
             let (client, head) = suspend_holding_client(move |held| {
-                // The client goes only when the completed future is dropped.
                 std::future::poll_fn(move |cx| {
                     let _ = &held;
                     std::future::Future::poll(std::pin::Pin::new(&mut rx), cx)
@@ -4535,7 +4520,6 @@ mod lost_queue_tests {
         unsafe {
             let owner = queue_test_clients::with_queue();
             let cancelled = Rc::new(Cell::new(false));
-            // The read callback's capture observes its release by the cancellation.
             let mut capture = Some(SetOnDrop(cancelled.clone()));
             let file = Rc::new(Cell::new(std::rc::Weak::new()));
             let observed_file = file.clone();
@@ -4569,7 +4553,6 @@ mod lost_queue_tests {
             assert!(head.upgrade().is_some());
 
             (*owner.get()).flags |= CLIENT_DEAD as uint64_t;
-            // server_client_free asserts that the client file index is empty.
             drop(owner);
             assert!(head.upgrade().is_none());
             assert!(cancelled.get());

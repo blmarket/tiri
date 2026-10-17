@@ -81,14 +81,11 @@ fn fill_character_tells_inside_from_outside() {
 fn two_halves_end_in_the_last_border_on_an_even_width() {
     let server = strip(80, 24, 2);
     let mut client = server.attach_terminal(80, 24);
-    // The spare column holds the last pane's right border.
     client.wait_screen(|screen| {
         shows(screen, 0..24, 39..40, BORDER)
             && shows(screen, 0..24, 79..80, BORDER)
             && nowhere(screen, FILL)
     });
-    // On an odd width the two halves fill the view and the last border lies
-    // past it.
     let server = strip(81, 24, 2);
     let mut client = server.attach_terminal(81, 24);
     client.wait_screen(|screen| {
@@ -109,8 +106,6 @@ fn separators_are_never_horizontal() {
             && shows(screen, 10..11, 0..80, FRAME_BOTTOM)
             && shows(screen, 11..24, 0..80, FILL)
     });
-    // Panned to the end, the last pane's border sits beside the blank extent,
-    // which shows the inside fill.
     server.success(&["refresh-client", "-t", &client.tty, "-R", "999"]);
     assert_eq!(client.offset(&server), 80);
     client.wait_screen(|screen| {
@@ -124,8 +119,6 @@ fn separators_are_never_horizontal() {
 
 #[test]
 fn a_window_narrower_than_its_client_shows_only_its_width() {
-    // Half panes of a 40-column window: 0-18, 20-38 and 40-58, with
-    // separators at 19, 39 and 59.
     let server = strip(40, 10, 3);
     let mut client = server.attach_terminal(80, 24);
     client.wait_offset(&server, 20);
@@ -138,8 +131,6 @@ fn a_window_narrower_than_its_client_shows_only_its_width() {
             && shows(screen, 0..11, 41..80, FILL)
             && shows(screen, 11..24, 0..80, FILL)
     });
-    // Panned to the end, the blank extent beside the last pane stays within
-    // the window and shows the inside fill.
     server.success(&["refresh-client", "-t", &client.tty, "-R", "999"]);
     assert_eq!(client.offset(&server), 40);
     client.wait_screen(|screen| {
@@ -159,17 +150,12 @@ fn separators_beside_the_active_pane_take_its_style() {
     server.success(&["set", "-gw", "pane-border-style", "fg=red"]);
     server.success(&["set", "-gw", "pane-active-border-style", "fg=green"]);
     let ids = ids(&server);
-    // Separators at 40 and 81, and the last pane's right border at 122; a
-    // view at 0 shows the first and a view at 42 the other two.
     let mut client = server.attach_terminal(81, 24);
     let colours = |screen: &Screen, x: usize| {
         (0..24)
             .map(|y| (screen.cells[y][x].ch == BORDER).then_some(screen.cells[y][x].fg))
             .collect::<Vec<_>>()
     };
-    // A separator between two panes is split whatever the pane count: the
-    // top half takes the left pane's style and the bottom half the right
-    // pane's. The last pane's right border has one pane beside it.
     let split = |top, bottom| {
         (0..24)
             .map(|y| Some(if y <= 12 { top } else { bottom }))
@@ -189,7 +175,6 @@ fn separators_beside_the_active_pane_take_its_style() {
             colours(screen, 39) == split(second.0, second.1) && colours(screen, 80) == solid(last)
         });
     }
-    // Two panes split their one separator the same way.
     server.success(&["kill-pane", "-t", &ids[2]]);
     server.success(&["select-pane", "-t", &ids[0]]);
     server.success(&["refresh-client", "-t", &client.tty, "-L", "999"]);
@@ -200,8 +185,6 @@ fn separators_beside_the_active_pane_take_its_style() {
 
 #[test]
 fn status_lines_draw_over_the_separator_rows() {
-    // The strip: every pane gives up its top row, and the separator below
-    // joins the status row in a tee.
     let server = strip(80, 24, 2);
     server.success(&["set", "-w", "pane-border-format", "P#{pane_index}"]);
     server.success(&["set", "-w", "pane-border-status", "top"]);
@@ -212,8 +195,6 @@ fn status_lines_draw_over_the_separator_rows() {
             && screen.cells[0][39].ch == '┬'
             && shows(screen, 1..24, 39..40, BORDER)
     });
-    // Tiled: the pane below a horizontal separator draws its status on it,
-    // beside the junction with the vertical one.
     server.success(&["select-layout", "main-vertical"]);
     server.success(&["split-window", "sleep 60"]);
     client.wait_screen(|screen| {

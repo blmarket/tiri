@@ -342,7 +342,6 @@ pub fn cmd_find(name: &CStr) -> Result<&'static cmd_entry, CString> {
         }
     }
     if ambiguous {
-        // Keep the pinned diagnostic's bounded stack buffer and truncation.
         let mut candidates = [0u8; 8192];
         let mut len = 0;
         'entries: for &entry in &cmd_table {
@@ -550,7 +549,6 @@ pub(crate) unsafe fn cmd_list_print_cstring(cmdlist: &cmd_list, flags: i32) -> C
             buf.extend_from_slice(separator);
         }
     }
-    // All fragments came from C strings or nonzero literal bytes.
     CString::new(buf).expect("command list contains no interior NUL")
 }
 

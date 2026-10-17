@@ -224,8 +224,6 @@ impl Window for WindowRef {
         let meta = state
             .layout
             .apply(action, pane.borrow_layout_meta().as_deref())?;
-        // Refused only when it takes a list the layout admits to one it
-        // doesn't; a resize may already have left the list outside it.
         let panes = state.panes.snapshot();
         let admitted = state.layout.admits(&panes, self.size()).is_ok();
         let old = std::mem::replace(&mut *pane.borrow_layout_meta(), meta);
@@ -765,8 +763,6 @@ mod tests {
     #[test]
     fn fill_rendering_keeps_inside_outside_formats_and_composes_border_style() {
         unsafe {
-            // Rendering initializes a temporary screen, whose input-mode setup
-            // reads the server's extended-keys option.
             let mut server_options = options_create(None);
             crate::src::options::options_default(
                 &mut *server_options,

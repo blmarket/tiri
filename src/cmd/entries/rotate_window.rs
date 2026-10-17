@@ -52,7 +52,6 @@ unsafe fn cmd_rotate_window_exec(
             .iter()
             .filter_map(std::rc::Weak::upgrade)
             .collect::<Vec<_>>();
-        // Down moves the last pane to the front; up the first to the end.
         if down {
             order.rotate_right(1);
         } else {
@@ -61,7 +60,6 @@ unsafe fn cmd_rotate_window_exec(
         window_owner
             .rearrange_panes(&order)
             .expect("a reorder is never refused");
-        // Selection follows the active pane's old position in the strip.
         let selected_pane = window_owner
             .step_pane(Some(&window_owner.active_pane()), down)
             .upgrade()

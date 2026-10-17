@@ -121,13 +121,10 @@ mod tests {
 
     #[test]
     fn main_centered_splits_the_side_panes_around_the_main_one() {
-        // One side pane: beside the main pane on the right.
         assert_eq!(
             rects(LayoutKind::MainCentered, 2, 81, 24),
             [(40, 24, 0, 0), (40, 24, 41, 0)]
         );
-        // Three side panes: two on the right, one on the left; the main pane
-        // takes half of the 79 shared columns, the first children the rest.
         assert_eq!(
             rects(LayoutKind::MainCentered, 4, 81, 25),
             [
@@ -150,7 +147,6 @@ mod tests {
                 (40, 12, 41, 13)
             ]
         );
-        // The last row's panes share its whole width.
         assert_eq!(
             rects(LayoutKind::Grid, 3, 81, 25),
             [(40, 12, 0, 0), (40, 12, 41, 0), (81, 12, 0, 13)]

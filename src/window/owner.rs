@@ -53,7 +53,6 @@ impl Drop for WindowRef {
         if Rc::strong_count(&self.0) != 1 {
             return;
         }
-        // Cleanup owners created below are never the last one, so this runs once.
         unsafe {
             crate::src::events::events_fire_window(c"window-closed", self.clone());
             assert_eq!(

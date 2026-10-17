@@ -366,7 +366,6 @@ pub unsafe fn grid_compare(ga: &grid, gb: &grid) -> i32 {
     }
     let mut a = grid_cell::default();
     let mut b = grid_cell::default();
-    // The comparison deliberately starts at line zero, without a history offset.
     for row in 0..ga.sy {
         let a_line = &ga.linedata[row as usize];
         let b_line = &gb.linedata[row as usize];
@@ -977,7 +976,6 @@ pub unsafe fn grid_string_cells_bytes(
         buf.extend_from_slice(data);
     }
     if has_link {
-        // tmux appends the closing hyperlink to the last cell's code buffer.
         grid_string_cells_add_hyperlink(&mut code, c"", c"", flags);
         buf.extend_from_slice(code.as_bytes());
     }
@@ -1049,7 +1047,6 @@ unsafe fn grid_reflow_join(
             lines = lines.wrapping_add(1);
             continue;
         }
-        // Keep the last consumed row if the next row cannot fit even one cell.
         grid_get_cell1(line, 0, &mut cell);
         if width.wrapping_add(cell.data.width as u_int) > sx {
             break;
@@ -1153,7 +1150,6 @@ unsafe fn grid_reflow_split(target: &mut grid, gd: &mut grid, sx: u_int, yy: u_i
     }
 }
 pub unsafe fn grid_reflow(gd: &mut grid, sx: u_int) {
-    // Reflow keeps the temporary grid on the heap and transfers its owned lines.
     let mut target = grid_create(gd.sx, 0, 0);
     let mut cell = grid_cell::default();
     for row in 0..gd.hsize.wrapping_add(gd.sy) {
@@ -1774,7 +1770,6 @@ mod storage_tests {
                 assert_eq!(actual, offset);
                 line.celldata[column].flags = 0;
             }
-            // The spare cell beyond cellsize does not keep the allocation alive.
             grid_compact_line(&mut line);
             assert_eq!(line.extdsize, 0);
             assert!(line.extddata.is_empty());
@@ -2106,7 +2101,6 @@ mod storage_tests {
                 assert_eq!(grid_unwrap_position(&gd, wrapped.0, wrapped.1), end);
             }
             assert_eq!(grid_unwrap_position(&gd, 99, 99), (99, 4));
-            // Seeking to a wrapped empty row advances without consuming a column.
             gd.linedata[2].flags |= GRID_LINE_WRAPPED as u_short;
             assert_eq!(grid_unwrap_position(&gd, 2, 1), (2, 3));
         }
@@ -2268,8 +2262,6 @@ mod storage_tests {
             assert_eq!(labels(&mut owner), b"BAC D");
             grid_collect_history(&mut owner, 0);
             assert_eq!(labels(&mut owner), b"AC D");
-            // Repeated extended-cell updates and history compaction must retain
-            // the active entry while releasing unreachable extended entries.
             let mut cell = grid_default_cell;
             cell.fg = COLOUR_FLAG_RGB | 0x123456;
             cell.data.data[0] = b'X';

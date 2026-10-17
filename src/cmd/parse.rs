@@ -124,8 +124,6 @@ fn cmd_parse_new_commands() -> Box<cmd_parse_commands> {
     Box::new(cmd_parse_commands { items: Vec::new() })
 }
 
-// The lexer remains application-owned: variable and tilde expansion depend on
-// the live environment. Pull one token at a time so assignments affect later words.
 struct ParserContext<'a, 'input>(&'a RefCell<ParseSession<'input>>);
 
 impl tiri_cmdparse::Context for ParserContext<'_, '_> {
