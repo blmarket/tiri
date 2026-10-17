@@ -1,6 +1,5 @@
 //! Options: typed values in scoped tables, defined by the option table.
 
-#[macro_use]
 mod diagnostic;
 mod changes;
 mod from_string;

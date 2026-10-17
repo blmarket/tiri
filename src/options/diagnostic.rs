@@ -1,15 +1,6 @@
 //! Option diagnostics.
 use std::ffi::{CStr, CString};
 
-macro_rules! format_options_cause {
-    ($cause:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {{
-        let cause = $cause;
-        if !cause.is_null() {
-            *cause = Some($crate::src::options::diagnostic::options_string_cause($fmt, &[$($arg),*]));
-        }
-    }};
-}
-
 /// The option diagnostics use only literal text and `%s` substitutions.
 pub(super) fn options_string_cause(fmt: &CStr, args: &[&CStr]) -> CString {
     let fmt = fmt.to_bytes();

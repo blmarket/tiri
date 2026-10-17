@@ -1,19 +1,18 @@
 //! Typed option values parsed from text.
+use super::diagnostic::options_string_cause;
 use super::store::*;
 use super::types::*;
-use crate::src::cmd::parse::cmd_parse_from_string;
 use crate::src::compat::strtonum::strtonum;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::grid::grid_default_cell;
 use crate::src::key_string::key_string_parse_cstr;
-use libc::{fnmatch, strcasecmp, strcmp, strstr};
+use libc::{fnmatch, strstr};
 
 use crate::src::style::colour::colour_parse_cstr;
 use crate::src::style::{style_parse, style_parse_colour};
 use crate::src::tmux::checkshell;
 
-use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
 use crate::src::shared::format::format_tree;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
@@ -29,11 +28,7 @@ pub unsafe fn options_string_to_style(
 ) -> Option<style> {
     crate::src::style::style_resolve_with_options(name, ft.as_mut(), |visit| visit(oo))
 }
-unsafe fn options_from_string_check(
-    oe: &options_table_entry,
-    value: &CStr,
-    mut cause: *mut Option<CString>,
-) -> ::core::ffi::c_int {
+unsafe fn options_from_string_check(oe: &options_table_entry, value: &CStr) -> Result<(), CString> {
     let mut sy: style = style {
         gc: grid_cell {
             data: utf8_data {
@@ -64,188 +59,124 @@ unsafe fn options_from_string_check(
         link: 0,
     };
     if oe.name == Some(c"default-shell") && checkshell(nullable_cstr(value.as_ptr())) == 0 {
-        format_options_cause!(cause, c"not a suitable shell: %s", value,);
-        return -(1 as ::core::ffi::c_int);
+        return Err(options_string_cause(c"not a suitable shell: %s", &[value]));
     }
     if oe.pattern.is_some_and(|pattern| {
         fnmatch(pattern.as_ptr(), value.as_ptr(), 0 as ::core::ffi::c_int)
             != 0 as ::core::ffi::c_int
     }) {
-        format_options_cause!(cause, c"value is invalid: %s", value,);
-        return -(1 as ::core::ffi::c_int);
+        return Err(options_string_cause(c"value is invalid: %s", &[value]));
     }
     if oe.flags & OPTIONS_TABLE_IS_STYLE != 0
         && strstr(value.as_ptr(), c"#{".as_ptr()).is_null()
         && style_parse(&raw mut sy, &grid_default_cell, value) != 0 as ::core::ffi::c_int
     {
-        format_options_cause!(cause, c"invalid style: %s", value,);
-        return -(1 as ::core::ffi::c_int);
+        return Err(options_string_cause(c"invalid style: %s", &[value]));
     }
     if oe.flags & OPTIONS_TABLE_IS_COLOUR != 0
         && strstr(value.as_ptr(), c"#{".as_ptr()).is_null()
         && style_parse_colour(&raw mut sy, &grid_default_cell, value) != 0 as ::core::ffi::c_int
     {
-        format_options_cause!(cause, c"invalid colour: %s", value,);
-        return -(1 as ::core::ffi::c_int);
+        return Err(options_string_cause(c"invalid colour: %s", &[value]));
     }
-    0 as ::core::ffi::c_int
+    Ok(())
 }
 unsafe fn options_from_string_flag(
     oo: &mut options,
     name: &CStr,
     value: Option<&CStr>,
-    mut cause: *mut Option<CString>,
-) -> ::core::ffi::c_int {
-    let value: *const ::core::ffi::c_char = value.map_or(std::ptr::null(), CStr::as_ptr);
-    let mut flag: ::core::ffi::c_int = 0;
-    if value.is_null() || *value as ::core::ffi::c_int == '\0' as i32 {
-        flag = (options_get_number(oo, name) == 0) as ::core::ffi::c_int;
-    } else if strcmp(value, c"1".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcasecmp(value, c"on".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcasecmp(value, c"yes".as_ptr()) == 0 as ::core::ffi::c_int
-    {
-        flag = 1 as ::core::ffi::c_int;
-    } else if strcmp(value, c"0".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcasecmp(value, c"off".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcasecmp(value, c"no".as_ptr()) == 0 as ::core::ffi::c_int
-    {
-        flag = 0 as ::core::ffi::c_int;
-    } else {
-        format_options_cause!(cause, c"bad value: %s", CStr::from_ptr(value),);
-        return -(1 as ::core::ffi::c_int);
-    }
+) -> Result<(), CString> {
+    let flag = match value.map(CStr::to_bytes) {
+        None | Some(b"") => options_get_number(oo, name) == 0,
+        Some(v) if v == b"1" || v.eq_ignore_ascii_case(b"on") || v.eq_ignore_ascii_case(b"yes") => {
+            true
+        }
+        Some(v) if v == b"0" || v.eq_ignore_ascii_case(b"off") || v.eq_ignore_ascii_case(b"no") => {
+            false
+        }
+        Some(_) => return Err(options_string_cause(c"bad value: %s", &[value.unwrap()])),
+    };
     options_set_number(oo, name, flag as ::core::ffi::c_longlong);
-    0 as ::core::ffi::c_int
+    Ok(())
 }
-pub unsafe fn options_find_choice(
+pub fn options_find_choice(
     oe: &options_table_entry,
     value: &CStr,
-    mut cause: *mut Option<CString>,
-) -> ::core::ffi::c_int {
-    let mut choice: ::core::ffi::c_int = -1;
-    for (n, candidate) in oe.choices.iter().enumerate() {
-        if *candidate == value {
-            choice = n as ::core::ffi::c_int;
-        }
-    }
-    if choice == -(1 as ::core::ffi::c_int) {
-        format_options_cause!(cause, c"unknown value: %s", value,);
-        return -(1 as ::core::ffi::c_int);
-    }
-    choice
+) -> Result<::core::ffi::c_int, CString> {
+    oe.choices
+        .iter()
+        .rposition(|candidate| *candidate == value)
+        .map(|n| n as ::core::ffi::c_int)
+        .ok_or_else(|| options_string_cause(c"unknown value: %s", &[value]))
 }
 unsafe fn options_from_string_choice(
     oe: &options_table_entry,
     oo: &mut options,
     name: &CStr,
     value: Option<&CStr>,
-    mut cause: *mut Option<CString>,
-) -> ::core::ffi::c_int {
-    let value: *const ::core::ffi::c_char = value.map_or(std::ptr::null(), CStr::as_ptr);
-    let mut choice: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-    if value.is_null() {
-        choice = options_get_number(oo, name) as ::core::ffi::c_int;
-        if choice < 2 as ::core::ffi::c_int {
-            choice = (choice == 0) as ::core::ffi::c_int;
+) -> Result<(), CString> {
+    let choice = match value {
+        None => {
+            let choice = options_get_number(oo, name) as ::core::ffi::c_int;
+            if choice < 2 {
+                (choice == 0) as ::core::ffi::c_int
+            } else {
+                choice
+            }
         }
-    } else {
-        choice = options_find_choice(oe, CStr::from_ptr(value), cause);
-        if choice < 0 as ::core::ffi::c_int {
-            return -(1 as ::core::ffi::c_int);
-        }
-    }
+        Some(value) => options_find_choice(oe, value)?,
+    };
     options_set_number(oo, name, choice as ::core::ffi::c_longlong);
-    0 as ::core::ffi::c_int
+    Ok(())
 }
+/// Command options are parsed by `OptionsScope`, never through here.
 pub unsafe fn options_from_string(
     oo: &mut options,
     oe: &options_table_entry,
     name: &CStr,
     value: Option<&CStr>,
-    mut append: ::core::ffi::c_int,
-    mut cause: *mut Option<CString>,
-) -> ::core::ffi::c_int {
-    let value: *const ::core::ffi::c_char = value.map_or(std::ptr::null(), CStr::as_ptr);
-    let mut type_0: options_table_type = OPTIONS_TABLE_STRING;
-    let mut number: ::core::ffi::c_longlong = 0;
-    let _new: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut key: key_code = 0;
-    let mut pr: cmd_parse_result = cmd_parse_result::empty();
-    if value.is_null() && oe.type_0 != OPTIONS_TABLE_FLAG && oe.type_0 != OPTIONS_TABLE_CHOICE {
-        format_options_cause!(cause, c"empty value",);
-        return -(1 as ::core::ffi::c_int);
-    }
-    type_0 = oe.type_0;
-    match type_0 as ::core::ffi::c_uint {
-        0 => {
+    append: ::core::ffi::c_int,
+) -> Result<(), CString> {
+    let required = || value.ok_or_else(|| c"empty value".to_owned());
+    match oe.type_0 {
+        OPTIONS_TABLE_STRING => {
+            let value = required()?;
             let old = options_get_string(oo, name);
-            options_set_string(oo, name, append, |out| {
-                write_cstr(out, nullable_cstr(value))
-            });
+            options_set_string(oo, name, append, |out| write_cstr(out, value));
             let new = options_get_string(oo, name);
-            if options_from_string_check(oe, &new, cause) != 0 as ::core::ffi::c_int {
-                options_set_string(oo, name, 0 as ::core::ffi::c_int, |out| {
-                    write_cstr(out, &*old)
-                });
-                return -(1 as ::core::ffi::c_int);
+            if let Err(error) = options_from_string_check(oe, &new) {
+                options_set_string(oo, name, 0, |out| write_cstr(out, &*old));
+                return Err(error);
             }
-            return 0 as ::core::ffi::c_int;
         }
-        1 => {
-            let parsed = strtonum(
-                CStr::from_ptr(value),
+        OPTIONS_TABLE_NUMBER => {
+            let value = required()?;
+            let number = strtonum(
+                value,
                 oe.minimum as ::core::ffi::c_longlong,
                 oe.maximum as ::core::ffi::c_longlong,
-            );
-            number = parsed.unwrap_or(0);
-            if let Err(errstr) = parsed {
-                format_options_cause!(cause, c"value is %s: %s", errstr, CStr::from_ptr(value),);
-                return -(1 as ::core::ffi::c_int);
-            }
+            )
+            .map_err(|errstr| options_string_cause(c"value is %s: %s", &[errstr, value]))?;
             options_set_number(oo, name, number);
-            return 0 as ::core::ffi::c_int;
         }
-        2 => {
-            key = key_string_parse_cstr(std::ffi::CStr::from_ptr(value)).unwrap_or(KEYC_UNKNOWN);
-            if key == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code {
-                format_options_cause!(cause, c"bad key: %s", CStr::from_ptr(value),);
-                return -(1 as ::core::ffi::c_int);
+        OPTIONS_TABLE_KEY => {
+            let value = required()?;
+            let key = key_string_parse_cstr(value).unwrap_or(KEYC_UNKNOWN);
+            if key == KEYC_UNKNOWN {
+                return Err(options_string_cause(c"bad key: %s", &[value]));
             }
             options_set_number(oo, name, key as ::core::ffi::c_longlong);
-            return 0 as ::core::ffi::c_int;
         }
-        3 => {
-            number = colour_parse_cstr(std::ffi::CStr::from_ptr(value)).unwrap_or(-1)
-                as ::core::ffi::c_longlong;
-            if number == -(1 as ::core::ffi::c_int) as ::core::ffi::c_longlong {
-                format_options_cause!(cause, c"bad colour: %s", CStr::from_ptr(value),);
-                return -(1 as ::core::ffi::c_int);
-            }
-            options_set_number(oo, name, number);
-            return 0 as ::core::ffi::c_int;
+        OPTIONS_TABLE_COLOUR => {
+            let value = required()?;
+            let number = colour_parse_cstr(value)
+                .filter(|&colour| colour != -1)
+                .ok_or_else(|| options_string_cause(c"bad colour: %s", &[value]))?;
+            options_set_number(oo, name, number as ::core::ffi::c_longlong);
         }
-        4 => return options_from_string_flag(oo, name, nullable_cstr(value), cause),
-        5 => return options_from_string_choice(oe, oo, name, nullable_cstr(value), cause),
-        6 => {
-            pr = cmd_parse_from_string(
-                CStr::from_ptr(value),
-                ::core::ptr::null_mut::<cmd_parse_input>(),
-            );
-            match pr.status as ::core::ffi::c_uint {
-                0 => {
-                    if !cause.is_null() {
-                        *cause = pr.error;
-                    }
-                    return -(1 as ::core::ffi::c_int);
-                }
-                1 => {
-                    options_set_command(oo, name, pr.take_cmdlist());
-                    return 0 as ::core::ffi::c_int;
-                }
-                _ => {}
-            }
-        }
-        _ => {}
+        OPTIONS_TABLE_FLAG => options_from_string_flag(oo, name, value)?,
+        OPTIONS_TABLE_CHOICE => options_from_string_choice(oe, oo, name, value)?,
+        _ => unreachable!("command options are parsed by OptionsScope"),
     }
-    -(1 as ::core::ffi::c_int)
+    Ok(())
 }

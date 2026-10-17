@@ -62,20 +62,7 @@ impl OptionsScope {
         }
         let definition = definition.unwrap();
         if definition.type_0 != OPTIONS_TABLE_COMMAND {
-            let mut cause = None;
-            let result = options_from_string(
-                &mut self.local(),
-                definition,
-                name,
-                value,
-                append as i32,
-                &mut cause,
-            );
-            return if result == 0 {
-                Ok(())
-            } else {
-                Err(cause.expect("scalar option error"))
-            };
+            return options_from_string(&mut self.local(), definition, name, value, append as i32);
         }
         let value = value.ok_or_else(|| c"empty value".to_owned())?;
         let commands = parse_commands(value, parse)?;

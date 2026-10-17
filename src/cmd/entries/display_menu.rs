@@ -862,21 +862,21 @@ unsafe fn cmd_display_menu_exec(
     let mut lines = BOX_LINES_DEFAULT;
     let value = args_get(&*(args), b'b').map_or(std::ptr::null(), |value| value.as_ptr());
     if !value.is_null() {
-        let mut cause = None;
-        lines = options_find_choice(
+        match options_find_choice(
             crate::src::options::options_table
                 .iter()
                 .find(|entry| entry.name == Some(c"menu-border-lines"))
                 .expect("built-in border choice"),
             std::ffi::CStr::from_ptr(value),
-            &mut cause,
-        ) as box_lines;
-        if lines == -1 {
-            cmdq_error(item_handle, |out| {
-                out.write_all(b"menu-border-lines ")?;
-                write_cstr(out, cause.as_deref())
-            });
-            return CMD_RETURN_ERROR;
+        ) {
+            Ok(choice) => lines = choice as box_lines,
+            Err(cause) => {
+                cmdq_error(item_handle, |out| {
+                    out.write_all(b"menu-border-lines ")?;
+                    write_cstr(out, cause.as_c_str())
+                });
+                return CMD_RETURN_ERROR;
+            }
         }
     }
     let mut flags = 0;
@@ -928,7 +928,6 @@ unsafe fn cmd_display_popup_exec(
     let mut cwd: *const ::core::ffi::c_char = ::core::ptr::null();
     let mut formatted_cwd: Option<std::ffi::CString> = None;
     let mut default_cwd: Option<std::ffi::CString> = None;
-    let mut cause: Option<std::ffi::CString> = None;
     let mut argv_owner = Vec::new();
     let mut title: *const ::core::ffi::c_char = ::core::ptr::null();
     let mut formatted_title: Option<std::ffi::CString> = None;
@@ -1111,22 +1110,24 @@ unsafe fn cmd_display_popup_exec(
             lines = BOX_LINES_NONE;
             current_block = 8151474771948790331;
         } else if !value.is_null() {
-            lines = options_find_choice(
+            match options_find_choice(
                 crate::src::options::options_table
                     .iter()
                     .find(|entry| entry.name == Some(c"popup-border-lines"))
                     .expect("built-in border choice"),
                 std::ffi::CStr::from_ptr(value),
-                &raw mut cause,
-            ) as box_lines;
-            if let Some(cause) = cause.as_ref() {
-                cmdq_error(item_handle, |out| {
-                    out.write_all(b"popup-border-lines ")?;
-                    write_cstr(out, cause.as_c_str())
-                });
-                current_block = 1988999557336856620;
-            } else {
-                current_block = 8151474771948790331;
+            ) {
+                Ok(choice) => {
+                    lines = choice as box_lines;
+                    current_block = 8151474771948790331;
+                }
+                Err(cause) => {
+                    cmdq_error(item_handle, |out| {
+                        out.write_all(b"popup-border-lines ")?;
+                        write_cstr(out, cause.as_c_str())
+                    });
+                    current_block = 1988999557336856620;
+                }
             }
         } else {
             current_block = 8151474771948790331;
