@@ -3648,11 +3648,11 @@ pub fn colour_palette_set(
     palette[n as usize] = c;
     1
 }
-pub unsafe fn colour_palette_from_option(p: Option<&mut colour_palette>, oo: *mut options) {
+pub unsafe fn colour_palette_from_option(p: Option<&mut colour_palette>, oo: &options) {
     let Some(p) = p else {
         return;
     };
-    let values = crate::src::options::options_read_entry(&*oo, c"pane-colours", |entry| {
+    let values = crate::src::options::options_read_entry(oo, c"pane-colours", |entry| {
         crate::src::options::options_array_iter(entry).next()?;
         let mut palette = [-1; 256];
         for (index, colour) in palette.iter_mut().enumerate() {

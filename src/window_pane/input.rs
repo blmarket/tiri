@@ -24,7 +24,6 @@ use crate::src::hyperlinks::hyperlinks_put;
 use crate::src::log::{
     fatalx, log_byte, log_bytes, log_cstr, log_cstr_n, log_cstr_width, log_debug, log_hex,
 };
-use crate::src::options::options_owner_ptr;
 use crate::src::options::{options_get_number, options_set_number};
 use crate::src::paste::{paste_add_owned, paste_buffer_data, paste_get_top};
 use crate::src::reactor::BufferEvent;
@@ -2667,7 +2666,6 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
         .map_or(std::ptr::null_mut(), |pane| pane.get());
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     let mut s: *mut screen = (*sctx).screen_ptr();
-    let mut oo: *mut options = ::core::ptr::null_mut::<options>();
     let mut i: ::core::ffi::c_int = 0;
     let mut n: ::core::ffi::c_int = 0;
     let mut m: ::core::ffi::c_int = 0;
@@ -3036,13 +3034,12 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                             2 as ::core::ffi::c_int
                         };
                     } else {
-                        if !input_pane.is_null() {
-                            oo = options_owner_ptr(&mut (*input_pane).options)
-                                .map_or(std::ptr::null_mut(), |options| options);
+                        let oo: &options = if !input_pane.is_null() {
+                            (*input_pane).options.as_deref().expect("live pane options")
                         } else {
-                            oo = global_w_options();
-                        }
-                        p = options_get_number(&*oo, c"cursor-style") as ::core::ffi::c_int;
+                            global_w_options()
+                        };
+                        p = options_get_number(oo, c"cursor-style") as ::core::ffi::c_int;
                         n = if p == 1 as ::core::ffi::c_int
                             || p == 3 as ::core::ffi::c_int
                             || p == 5 as ::core::ffi::c_int
@@ -4271,7 +4268,6 @@ unsafe fn input_handle_decrqss(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
     let mut wp: *mut window_pane = input_pane;
-    let mut oo: *mut options = ::core::ptr::null_mut::<options>();
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     let mut buf: *mut u_char = (*ictx).input_buf.as_mut_ptr();
     let mut len: size_t = (*ictx).input_len;
@@ -4324,13 +4320,12 @@ unsafe fn input_handle_decrqss(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 }
             }
         } else {
-            if !wp.is_null() {
-                oo = options_owner_ptr(&mut (*wp).options)
-                    .map_or(std::ptr::null_mut(), |options| options);
+            let oo: &options = if !wp.is_null() {
+                (*wp).options.as_deref().expect("live pane options")
             } else {
-                oo = global_w_options();
-            }
-            opt_ps = options_get_number(&*oo, c"cursor-style") as ::core::ffi::c_int;
+                global_w_options()
+            };
+            opt_ps = options_get_number(oo, c"cursor-style") as ::core::ffi::c_int;
             if opt_ps < 0 as ::core::ffi::c_int || opt_ps > 6 as ::core::ffi::c_int {
                 opt_ps = 0 as ::core::ffi::c_int;
             }
@@ -4355,7 +4350,6 @@ unsafe fn input_dcs_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
     let mut wp: *mut window_pane = input_pane;
-    let mut oo: *mut options = ::core::ptr::null_mut::<options>();
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     let mut buf: *mut u_char = (*ictx).input_buf.as_mut_ptr();
     let mut len: size_t = (*ictx).input_len;
@@ -4364,11 +4358,11 @@ unsafe fn input_dcs_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     let prefixlen: u_int = (::core::mem::size_of::<[::core::ffi::c_char; 6]>() as usize)
         .wrapping_sub(1_usize) as u_int;
     let mut allow_passthrough: ::core::ffi::c_longlong = 0 as ::core::ffi::c_longlong;
-    if wp.is_null() {
-        oo = global_w_options();
+    let oo: &options = if wp.is_null() {
+        global_w_options()
     } else {
-        oo = options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options);
-    }
+        (*wp).options.as_deref().expect("live pane options")
+    };
     if (*ictx).flags & INPUT_DISCARD != 0 {
         log_debug(format_args!(
             "{}: {} bytes (discard)",
@@ -4384,7 +4378,7 @@ unsafe fn input_dcs_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     {
         return input_handle_decrqss(ictx);
     }
-    allow_passthrough = options_get_number(&*oo, c"allow-passthrough");
+    allow_passthrough = options_get_number(oo, c"allow-passthrough");
     if allow_passthrough == 0 {
         return 0 as ::core::ffi::c_int;
     }

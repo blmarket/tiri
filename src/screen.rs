@@ -118,7 +118,7 @@ pub(crate) unsafe fn screen_set_tab(s: &mut screen, column: u_int, set: bool) {
 pub(crate) fn screen_clear_tabs(s: &mut screen) {
     s.tabs.fill(0);
 }
-pub unsafe fn screen_set_default_cursor(s: &mut screen, mut oo: *mut options) {
+pub unsafe fn screen_set_default_cursor(s: &mut screen, oo: &mut options) {
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -141,7 +141,7 @@ pub unsafe fn screen_set_default_cursor(s: &mut screen, mut oo: *mut options) {
         ::core::ptr::null_mut::<format_tree>(),
     );
     s.default_ccolour = gc.fg;
-    c = options_get_number(&*oo, c"cursor-style") as ::core::ffi::c_int;
+    c = options_get_number(oo, c"cursor-style") as ::core::ffi::c_int;
     s.default_mode = 0 as ::core::ffi::c_int;
     screen_set_cursor_style(c as u_int, &mut s.default_cstyle, &mut s.default_mode);
 }

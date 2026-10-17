@@ -45,7 +45,6 @@ use crate::src::grid::view::grid_view_string_cells_bytes;
 use crate::src::input_keys::input_key_pane;
 use crate::src::log::{fatal, fatalx, log_bytes, log_cstr_n, log_debug};
 use crate::src::options::options_get_number;
-use crate::src::options::options_owner_ptr;
 use crate::src::prompt::{
     prompt_closed, prompt_create, prompt_free, prompt_incremental_start, prompt_key, prompt_mouse,
     prompt_set_options, prompt_type_string, prompt_update,
@@ -502,12 +501,12 @@ unsafe fn window_pane_create(
     (*wp).control_fg = -(1 as ::core::ffi::c_int);
     style_set_scrollbar_style_from_option(
         &raw mut (*wp).scrollbar_style,
-        options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
+        (*wp).options.as_deref().expect("live pane options"),
     );
     colour_palette_init(&mut (*wp).palette);
     colour_palette_from_option(
         Some(&mut (*wp).palette),
-        options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
+        (*wp).options.as_deref().expect("live pane options"),
     );
     screen_init(&mut (*wp).base, sx, sy, hlimit);
     (*wp).screen_source = PaneScreenSource::Base;
@@ -1572,7 +1571,7 @@ unsafe fn window_pane_default_cursor(wp_owner: &Rc<std::cell::UnsafeCell<window_
     let mut wp = wp_owner.get();
     screen_set_default_cursor(
         &mut *(*wp).screen_ptr(),
-        options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
+        (*wp).options.as_deref_mut().expect("live pane options"),
     );
 }
 

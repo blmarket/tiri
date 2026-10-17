@@ -168,11 +168,6 @@ unsafe fn options_value_to_cstring(
         _ => c"".to_owned(),
     }
 }
-/// Project only the owning field for a legacy raw-pointer call. The result is
-/// an observer, valid only while the box remains installed and live.
-pub fn options_owner_ptr(owner: &mut Option<Box<options>>) -> Option<&mut options> {
-    owner.as_deref_mut()
-}
 
 pub fn options_create_owned(parent: Option<OptionsScope>) -> Box<options> {
     Box::new(options {

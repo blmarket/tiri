@@ -927,7 +927,7 @@ pub fn style_link(sy: &style) -> Option<Box<hyperlinks_uri>> {
 }
 pub unsafe fn style_add(
     gc: *mut grid_cell,
-    oo: *mut options,
+    oo: &mut options,
     name: &CStr,
     ft: *mut format_tree,
 ) -> style {
@@ -937,7 +937,7 @@ pub unsafe fn style_add(
     } else {
         owned_context.insert(format_create(None, None, 0, FORMAT_NOJOBS))
     };
-    let parsed = options_string_to_style(&mut *oo, name, context).unwrap_or(style_default);
+    let parsed = options_string_to_style(oo, name, context).unwrap_or(style_default);
     if parsed.gc.fg != 8 {
         (*gc).fg = parsed.gc.fg;
     }
@@ -955,7 +955,7 @@ pub unsafe fn style_add(
 }
 pub unsafe fn style_apply(
     mut gc: *mut grid_cell,
-    mut oo: *mut options,
+    oo: &mut options,
     name: &CStr,
     mut ft: *mut format_tree,
 ) {
@@ -1002,13 +1002,13 @@ pub unsafe fn style_copy(mut dst: *mut style, mut src: *mut style) {
 }
 pub unsafe fn style_set_scrollbar_style_from_option(
     mut sb_style: *mut style,
-    mut oo: *mut options,
+    oo: &options,
 ) {
     let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
     let _o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let _s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     style_set(sb_style, &grid_default_cell);
-    oe = crate::src::options::options_read_entry(&*oo, c"pane-scrollbars-style", |entry| {
+    oe = crate::src::options::options_read_entry(oo, c"pane-scrollbars-style", |entry| {
         entry.tableentry
     })
     .flatten()
@@ -1024,7 +1024,7 @@ pub unsafe fn style_set_scrollbar_style_from_option(
     if style_parse(sb_style, &grid_default_cell, &style) != 0 as ::core::ffi::c_int {
         fatalx(|out| out.write_all(b"bad pane-scrollbars-style default"));
     }
-    let value = crate::src::options::options_get_string_optional(&*oo, c"pane-scrollbars-style");
+    let value = crate::src::options::options_get_string_optional(oo, c"pane-scrollbars-style");
     if let Some(value) = value {
         let expanded = format_single_cstring(
             None,

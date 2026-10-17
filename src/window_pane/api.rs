@@ -757,7 +757,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         let pane = &mut *self.get();
         crate::src::style::colour::colour_palette_from_option(
             Some(&mut pane.palette),
-            crate::src::options::options_owner_ptr(&mut pane.options).expect("live pane options"),
+            pane.options.as_deref().expect("live pane options"),
         );
     }
     unsafe fn mark_changed(&self) {

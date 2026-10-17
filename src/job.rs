@@ -26,7 +26,6 @@ use crate::src::shared::job::{
 use crate::src::shared::job::{
     JOB_DEFAULTSHELL, JOB_KEEPWRITE, JOB_NOWAIT, JOB_PTY, JOB_SHOWSTDERR,
 };
-use crate::src::shared::options::options;
 use crate::src::shared::posix_io::{
     _PATH_BSHELL, _PATH_DEVNULL, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO,
 };
@@ -133,7 +132,6 @@ pub unsafe fn job_run(
     let mut argvp: *mut *mut ::core::ffi::c_char =
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
     let mut tty: [::core::ffi::c_char; 32] = [0; 32];
-    let _oo: *mut options = ::core::ptr::null_mut::<options>();
     let mut env_owner = Some(environ_for_session(
         s_owner,
         (cfg_finished == 0) as ::core::ffi::c_int,

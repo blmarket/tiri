@@ -240,8 +240,8 @@ fn window_copy_separators(data: &window_copy_mode_data) -> Option<&CStr> {
     data.separators.as_deref()
 }
 
-unsafe fn window_copy_snapshot_separators(so: *mut options) -> Option<CString> {
-    crate::src::options::options_get_string_optional(&*so, c"word-separators")
+unsafe fn window_copy_snapshot_separators(so: &options) -> Option<CString> {
+    crate::src::options::options_get_string_optional(so, c"word-separators")
 }
 
 #[cfg(test)]
@@ -254,18 +254,17 @@ mod separator_snapshot_tests {
     fn selected_word_separators_survive_option_replacement() {
         unsafe {
             let mut options = options_create_owned(None);
-            let so = &mut *options as *mut options;
             let definition = options_table
                 .iter()
                 .find(|entry| entry.name == Some(c"word-separators"))
                 .unwrap();
-            options_default(&mut *so, definition);
-            options_set_string(&mut *so, c"word-separators", 0, |out| {
+            options_default(&mut options, definition);
+            options_set_string(&mut options, c"word-separators", 0, |out| {
                 out.write_all(b"original")
             });
             let mut data = window_copy_mode_data::default();
-            data.separators = window_copy_snapshot_separators(so);
-            options_set_string(&mut *so, c"word-separators", 0, |out| {
+            data.separators = window_copy_snapshot_separators(&options);
+            options_set_string(&mut options, c"word-separators", 0, |out| {
                 out.write_all(b"replacement")
             });
             assert_eq!(window_copy_separators(&data), Some(c"original"));

@@ -120,9 +120,9 @@ pub unsafe fn environ_unset(env: &mut environ, name: &CStr) {
     env.unset_cstr(name);
 }
 
-pub unsafe fn environ_update(oo: *mut options, src: &environ, dst: &mut environ) {
+pub unsafe fn environ_update(oo: &options, src: &environ, dst: &mut environ) {
     let Some(patterns) =
-        crate::src::options::options_read_entry(&*oo, c"update-environment", |entry| {
+        crate::src::options::options_read_entry(oo, c"update-environment", |entry| {
             crate::src::options::options_array_iter(entry)
                 .map(|item| {
                     item.value
