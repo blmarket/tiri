@@ -35,12 +35,8 @@ impl InputPalette {
             Self::None => None,
             Self::Pane(observer) => {
                 let owner = observer.upgrade()?;
-                let result = {
-                    let mut palette = unsafe { owner.borrow_palette_mut() };
-                    access(palette)
-                };
-                unsafe { owner.release(c"input palette") };
-                Some(result)
+                let mut palette = unsafe { owner.borrow_palette_mut() };
+                Some(access(palette))
             }
             Self::Popup(observer) => {
                 let mut palette = match observer.try_borrow_mut() {

@@ -304,7 +304,7 @@ unsafe fn unset_window_panes(
                 drop(parent);
             }
         }
-        pane.release(c"set-option pane traversal");
+        drop(pane);
         result?;
     }
     Ok(())

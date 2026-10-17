@@ -1,6 +1,6 @@
 //! Read-only plugin access stays inside the pane owner. Observations retain
 //! allocation identity weakly and reject logical destruction and ID reuse.
-use super::{window_pane, window_pane_find_by_id, window_pane_upgrade, WindowPane};
+use super::{window_pane, window_pane_find_by_id, window_pane_upgrade};
 use crate::src::grid::grid_string_cells_bytes;
 use crate::src::plugin::PaneActivity;
 use crate::src::shared::display::{
@@ -34,23 +34,16 @@ impl PaneView {
                     "pane was destroyed",
                 ));
             };
-            let current = window_pane_find_by_id(self.id.0);
-            let live = current
-                .as_ref()
-                .is_some_and(|current| Rc::ptr_eq(current, &owner));
-            if let Some(current) = current {
-                current.release(c"plugin observation check");
-            }
-            let result = if live {
+            let live = window_pane_find_by_id(self.id.0)
+                .is_some_and(|current| Rc::ptr_eq(&current, &owner));
+            if live {
                 Ok(read(&*owner.get()))
             } else {
                 Err(io::Error::new(
                     io::ErrorKind::NotFound,
                     "pane is no longer registered",
                 ))
-            };
-            owner.release(c"plugin observation");
-            result
+            }
         }
     }
 }
@@ -58,18 +51,17 @@ impl PaneView {
 pub(crate) unsafe fn resolve(id: PaneId) -> Option<Rc<dyn PaneObservability>> {
     unsafe {
         let owner = window_pane_find_by_id(id.0)?;
-        let pane = Rc::downgrade(&owner);
-        owner.release(c"plugin resolve");
-        Some(Rc::new(PaneView { id, pane }))
+        Some(Rc::new(PaneView {
+            id,
+            pane: Rc::downgrade(&owner),
+        }))
     }
 }
 
 fn read_pane<T>(id: PaneId, read: impl FnOnce(&window_pane) -> T) -> Option<T> {
     unsafe {
         let owner = window_pane_find_by_id(id.0)?;
-        let result = read(&*owner.get());
-        owner.release(c"plugin pane snapshot");
-        Some(result)
+        Some(read(&*owner.get()))
     }
 }
 

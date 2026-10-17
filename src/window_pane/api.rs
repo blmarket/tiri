@@ -65,10 +65,6 @@ pub trait WindowPane {
     unsafe fn from_observer(observer: &std::rc::Weak<UnsafeCell<window_pane>>) -> Option<Self>
     where
         Self: Sized;
-    /// Consume a retained pane through the existing explicit release boundary.
-    unsafe fn release(self, source: &CStr)
-    where
-        Self: Sized;
     unsafe fn tty_name(&self) -> CString;
     unsafe fn control_colours(&self) -> (i32, i32);
     unsafe fn update_control_colours(&self, fg: i32, bg: i32);
@@ -665,9 +661,6 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     }
     unsafe fn from_observer(observer: &std::rc::Weak<UnsafeCell<window_pane>>) -> Option<Self> {
         window_pane_upgrade(observer)
-    }
-    unsafe fn release(self, source: &CStr) {
-        window_pane_remove_ref(self, source);
     }
     unsafe fn tty_name(&self) -> CString {
         CStr::from_ptr((*self.get()).tty.as_ptr()).to_owned()

@@ -42,9 +42,7 @@ unsafe fn event_payload_free_target(ep: &mut event_payload) {
     if let Some(window) = ep.target_window.take() {
         drop(window);
     }
-    if let Some(pane) = ep.target_pane.take() {
-        pane.release(c"event_payload_free_target");
-    }
+    drop(ep.target_pane.take());
     *target = cmd_find_state::clear_state(0 as ::core::ffi::c_int);
 }
 impl Drop for event_payload_item {
@@ -58,7 +56,7 @@ impl Drop for event_payload_item {
                 EventPayloadValue::Client(client) => client.release(),
                 EventPayloadValue::Session(session) => session.release(c"event_payload_free_value"),
                 EventPayloadValue::Window(window) => drop(window),
-                EventPayloadValue::Pane(pane) => pane.release(c"event_payload_free_value"),
+                EventPayloadValue::Pane(pane) => drop(pane),
                 _ => {}
             }
         }

@@ -16,11 +16,7 @@ impl ServerObservability for ServerHost {
         unsafe {
             Ok(window_pane_tree::snapshot()
                 .into_iter()
-                .map(|pane| {
-                    let id = PaneId(pane.id());
-                    pane.release(c"plugin pane list");
-                    id
-                })
+                .map(|pane| PaneId(pane.id()))
                 .collect())
         }
     }
@@ -46,7 +42,7 @@ pub(super) fn invalidate(id: PaneId) {
             return;
         };
         let window = pane.window_observer().upgrade();
-        pane.release(c"plugin redraw");
+        drop(pane);
         if let Some(window) = window {
             crate::src::server_fn::server_status_window(&window);
             drop(window);

@@ -79,7 +79,7 @@ impl OptionsScope {
             Self::Pane(observer) => {
                 let owner = observer.upgrade().expect("live option pane");
                 let table = owner.with_options_mut(|table| NonNull::from(table));
-                (table, ScopeOwner::Pane(Some(owner)))
+                (table, ScopeOwner::Pane(owner))
             }
         };
         OptionsBorrow {
@@ -120,20 +120,7 @@ enum ScopeOwner {
     Global,
     Session(SessionRef),
     Window(WindowRef),
-    Pane(Option<Rc<UnsafeCell<window_pane>>>),
-}
-
-impl Drop for ScopeOwner {
-    fn drop(&mut self) {
-        if let Self::Pane(owner) = self {
-            unsafe {
-                owner
-                    .take()
-                    .expect("retained pane")
-                    .release(c"options scope")
-            };
-        }
-    }
+    Pane(Rc<UnsafeCell<window_pane>>),
 }
 
 /// A borrow of an option table, or a component of one, that retains the

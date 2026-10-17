@@ -43,7 +43,7 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::grid::grid_cells_look_equal;
 use crate::src::grid::view::grid_view_string_cells_bytes;
 use crate::src::input_keys::input_key_pane;
-use crate::src::log::{fatal, fatalx, log_bytes, log_cstr, log_cstr_n, log_debug};
+use crate::src::log::{fatal, fatalx, log_bytes, log_cstr_n, log_debug};
 use crate::src::options::options_get_number;
 use crate::src::options::options_owner_ptr;
 use crate::src::prompt::{
@@ -357,19 +357,6 @@ unsafe fn window_pane_destroy_ready(
     1 as ::core::ffi::c_int
 }
 
-unsafe fn window_pane_remove_ref(
-    owner: std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-    from: &CStr,
-) {
-    let wp = owner.get();
-    log_debug(format_args!(
-        "release pane %{} ({})",
-        { (*wp).id },
-        log_cstr(from)
-    ));
-    drop(owner);
-}
-
 unsafe fn window_pane_send_resize(wp: &window_pane, sx: u_int, sy: u_int) {
     let mut ws: winsize = winsize {
         ws_row: 0,
@@ -645,7 +632,7 @@ unsafe fn window_pane_destroy(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>
     drop((*wp).sync_timer.take());
     drop((*wp).sb_auto_timer.take());
     window_pane_clear_resizes(&mut *wp, ::core::ptr::null_mut::<window_pane_resize>());
-    window_pane_remove_ref(owner, c"window_pane_destroy");
+    drop(owner);
 }
 
 unsafe fn window_pane_read_callback(owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
