@@ -77,11 +77,12 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
             ),
             definition.default_str.unwrap()
         );
-        assert_eq!(
-            tiri::src::options::options_get_only_mut(&mut *(oo), definition.name.unwrap())
-                .map_or(std::ptr::null_mut(), |entry| &mut **entry.into_mut()),
-            default
-        );
+        match tiri::src::options::options_get_only_mut(&mut *(oo), definition.name.unwrap()) {
+            std::collections::btree_map::Entry::Occupied(entry) => {
+                assert_eq!(&mut **entry.into_mut() as *mut _, default)
+            }
+            std::collections::btree_map::Entry::Vacant(_) => panic!("default entry missing"),
+        }
 
         let empty_definition = (*table)
             .iter()

@@ -41,6 +41,7 @@ use crate::src::text::utf8::{
     utf8_strwidth, utf8_to_data, utf8_tocstr_cstring,
 };
 use crate::src::tmux::{global_options, global_s_options};
+use std::collections::btree_map;
 use std::ffi::{CStr, CString};
 #[cfg(test)]
 use std::{cell::RefCell, rc::Rc};
@@ -1594,8 +1595,10 @@ unsafe fn prompt_complete_commands(s: &CStr) -> Vec<CString> {
             prompt_complete_add(&mut list, name);
         }
     }
-    o = crate::src::options::options_get_only_mut(&mut *(global_options), c"command-alias")
-        .map_or(std::ptr::null_mut(), |entry| &mut **entry.into_mut());
+    o = match crate::src::options::options_get_only_mut(&mut *(global_options), c"command-alias") {
+        btree_map::Entry::Occupied(entry) => &mut **entry.into_mut(),
+        btree_map::Entry::Vacant(_) => std::ptr::null_mut(),
+    };
     if !o.is_null() {
         let a_root = o;
         let mut a_keys = crate::src::options::options_array_iter(&*a_root)

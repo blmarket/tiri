@@ -203,27 +203,28 @@ impl Drop for options {
     fn drop(&mut self) {
         let names: Vec<_> = self.tree.keys().cloned().collect();
         for name in names {
-            if let Some(entry) = options_get_only_mut(self, &name) {
+            if let btree_map::Entry::Occupied(entry) = options_get_only_mut(self, &name) {
                 options_remove(entry);
             }
         }
     }
 }
 
-/// A present option record together with its name, which the tree key owns.
-pub type options_occupied<'a> = btree_map::OccupiedEntry<'a, CString, Box<options_entry>>;
-
 pub fn options_iter(oo: &options) -> impl DoubleEndedIterator<Item = (&CStr, &options_entry)> {
-    oo.tree.iter().map(|(name, entry)| (name.as_c_str(), entry.as_ref()))
+    oo.tree
+        .iter()
+        .map(|(name, entry)| (name.as_c_str(), entry.as_ref()))
 }
+
 pub fn options_get_only<'a>(oo: &'a options, name: &CStr) -> Option<&'a options_entry> {
     oo.tree.get(name).map(Box::as_ref)
 }
-pub fn options_get_only_mut<'a>(oo: &'a mut options, name: &CStr) -> Option<options_occupied<'a>> {
-    match oo.tree.entry(name.to_owned()) {
-        btree_map::Entry::Occupied(entry) => Some(entry),
-        btree_map::Entry::Vacant(_) => None,
-    }
+
+pub fn options_get_only_mut<'a>(
+    oo: &'a mut options,
+    name: &CStr,
+) -> btree_map::Entry<'a, CString, Box<options_entry>> {
+    oo.tree.entry(name.to_owned())
 }
 /// Read an entry synchronously, copying the result before an inherited table's
 /// guard is returned. The visitor must not reenter models or return observers.
@@ -341,7 +342,7 @@ unsafe fn options_add(oo: *mut options, name: &CStr) -> *mut options_entry {
         }
     }
 }
-fn options_remove(entry: options_occupied<'_>) {
+fn options_remove(entry: btree_map::OccupiedEntry<'_, CString, Box<options_entry>>) {
     drop(entry.remove());
 }
 pub fn options_get_monitor_data(
@@ -803,8 +804,10 @@ pub unsafe fn options_set_string(
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut separator: &'static CStr = c"";
     let formatted = format_message_with(write);
-    o = crate::src::options::options_get_only_mut(&mut *(oo), name)
-        .map_or(std::ptr::null_mut(), |entry| &mut **entry.into_mut());
+    o = match crate::src::options::options_get_only_mut(&mut *(oo), name) {
+        btree_map::Entry::Occupied(entry) => &mut **entry.into_mut(),
+        btree_map::Entry::Vacant(_) => std::ptr::null_mut(),
+    };
     let value = if !o.is_null()
         && append != 0
         && ((*o)
@@ -870,8 +873,10 @@ pub unsafe fn options_set_number(
             out.write_all(b" must be a string")
         });
     }
-    o = crate::src::options::options_get_only_mut(&mut *(oo), name)
-        .map_or(std::ptr::null_mut(), |entry| &mut **entry.into_mut());
+    o = match crate::src::options::options_get_only_mut(&mut *(oo), name) {
+        btree_map::Entry::Occupied(entry) => &mut **entry.into_mut(),
+        btree_map::Entry::Vacant(_) => std::ptr::null_mut(),
+    };
     if o.is_null() {
         o = options_default(
             oo,
@@ -913,8 +918,10 @@ pub unsafe fn options_set_command(
             out.write_all(b" must be a string")
         });
     }
-    o = crate::src::options::options_get_only_mut(&mut *(oo), name)
-        .map_or(std::ptr::null_mut(), |entry| &mut **entry.into_mut());
+    o = match crate::src::options::options_get_only_mut(&mut *(oo), name) {
+        btree_map::Entry::Occupied(entry) => &mut **entry.into_mut(),
+        btree_map::Entry::Vacant(_) => std::ptr::null_mut(),
+    };
     if o.is_null() {
         o = options_default(
             oo,

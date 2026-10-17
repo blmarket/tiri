@@ -8,6 +8,7 @@ use crate::src::session::Session;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::SessionRef;
 use crate::src::window::{Window, WindowPane};
+use std::collections::btree_map;
 use std::ffi::{CStr, CString};
 
 pub(super) unsafe fn format_strftime(
@@ -1219,7 +1220,7 @@ pub(super) unsafe fn format_loop_panes(
 }
 
 unsafe fn format_option_loop_values(
-    mut occupied: crate::src::options::options_occupied<'_>,
+    mut occupied: btree_map::OccupiedEntry<'_, CString, Box<crate::src::shared::options::options_entry>>,
     array_key: Option<&CStr>,
     count: u_int,
     index: u_int,
@@ -1371,7 +1372,9 @@ pub(super) unsafe fn format_loop_options(
     for name in names {
         let mut keys = None;
         access(&mut |options| {
-            if let Some(mut entry) = crate::src::options::options_get_only_mut(options, &name) {
+            if let btree_map::Entry::Occupied(mut entry) =
+                crate::src::options::options_get_only_mut(options, &name)
+            {
                 let entry = &mut **entry.get_mut();
                 keys = Some(if options_is_array(entry) != 0 {
                     crate::src::options::options_array_iter(entry)
@@ -1389,8 +1392,17 @@ pub(super) unsafe fn format_loop_options(
             access(&mut |options| {
                 let last_option = !crate::src::options::options_iter(options)
                     .any(|(other, _)| other > name.as_c_str());
-                values = crate::src::options::options_get_only_mut(options, &name)
-                    .map(|occupied| format_option_loop_values(occupied, None, 0, index, last_option));
+                if let btree_map::Entry::Occupied(occupied) =
+                    crate::src::options::options_get_only_mut(options, &name)
+                {
+                    values = Some(format_option_loop_values(
+                        occupied,
+                        None,
+                        0,
+                        index,
+                        last_option,
+                    ));
+                }
             });
             if let Some(values) = values {
                 format_loop_emit_option(es, fmt, &mut buffer, values);
@@ -1402,7 +1414,9 @@ pub(super) unsafe fn format_loop_options(
                 access(&mut |options| {
                     let last_option = !crate::src::options::options_iter(options)
                         .any(|(other, _)| other > name.as_c_str());
-                    if let Some(occupied) = crate::src::options::options_get_only_mut(options, &name) {
+                    if let btree_map::Entry::Occupied(occupied) =
+                        crate::src::options::options_get_only_mut(options, &name)
+                    {
                         if crate::src::options::options_array_get(occupied.get(), &key).is_some() {
                             values = Some(format_option_loop_values(
                                 occupied,

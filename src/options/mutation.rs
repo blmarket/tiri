@@ -250,10 +250,11 @@ impl OptionsScope {
             return false;
         };
         cleanup(monitor);
-        let removed = self.with_local(|table| {
-            options_get_only_mut(table, name)
-                .filter(|entry| entry.get().id() == identity)
-                .map(|entry| entry.remove())
+        let removed = self.with_local(|table| match options_get_only_mut(table, name) {
+            btree_map::Entry::Occupied(entry) if entry.get().id() == identity => {
+                Some(entry.remove())
+            }
+            _ => None,
         });
         drop(removed);
         true

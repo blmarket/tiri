@@ -22,6 +22,7 @@ use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::tmux::global_options;
 use crate::src::tty_features::{tty_apply_features, tty_parse_client_features};
 use libc::{fnmatch, strchr, strcmp, strcspn, strlen, strncmp};
+use std::collections::btree_map;
 use std::ffi::{CStr, CString};
 
 pub const TTYCODE_FLAG: tty_code_type = 3;
@@ -1203,11 +1204,13 @@ pub unsafe fn tty_term_apply_overrides(mut term: *mut tty_term) {
     let mut ov: *const options_value = ::core::ptr::null::<options_value>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut offset: size_t = 0;
-    o = crate::src::options::options_get_only_mut(
+    o = match crate::src::options::options_get_only_mut(
         &mut *(global_options),
         std::ffi::CStr::from_ptr(c"terminal-overrides".as_ptr()),
-    )
-    .map_or(std::ptr::null_mut(), |entry| &mut **entry.into_mut());
+    ) {
+        btree_map::Entry::Occupied(entry) => &mut **entry.into_mut(),
+        btree_map::Entry::Vacant(_) => std::ptr::null_mut(),
+    };
     let a_root = o;
     let mut a_keys = crate::src::options::options_array_iter(&*a_root)
         .map(|item| item.key.clone())
@@ -1384,11 +1387,13 @@ pub unsafe fn tty_term_create(
         }
         i = i.wrapping_add(1);
     }
-    o = crate::src::options::options_get_only_mut(
+    o = match crate::src::options::options_get_only_mut(
         &mut *(global_options),
         std::ffi::CStr::from_ptr(c"terminal-features".as_ptr()),
-    )
-    .map_or(std::ptr::null_mut(), |entry| &mut **entry.into_mut());
+    ) {
+        btree_map::Entry::Occupied(entry) => &mut **entry.into_mut(),
+        btree_map::Entry::Vacant(_) => std::ptr::null_mut(),
+    };
     let a_root = o;
     let mut a_keys = crate::src::options::options_array_iter(&*a_root)
         .map(|item| item.key.clone())

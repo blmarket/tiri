@@ -97,6 +97,7 @@ pub use crate::src::shared::window::winlink;
 use crate::src::tmux::global_options;
 use crate::src::window::winlink_find_by_window;
 use crate::src::window_pane::WindowPane as _;
+use std::collections::btree_map;
 use std::ffi::{CStr, CString};
 
 pub const DQ: C2RustUnnamed_38 = 2;
@@ -274,11 +275,13 @@ pub unsafe fn cmd_get_alias(name: &CStr) -> Option<CString> {
     let mut wanted: size_t = 0;
     let mut n: size_t = 0;
     let mut equals: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    o = crate::src::options::options_get_only_mut(
+    o = match crate::src::options::options_get_only_mut(
         &mut *(global_options),
         std::ffi::CStr::from_ptr(c"command-alias".as_ptr()),
-    )
-    .map_or(std::ptr::null_mut(), |entry| &mut **entry.into_mut());
+    ) {
+        btree_map::Entry::Occupied(entry) => &mut **entry.into_mut(),
+        btree_map::Entry::Vacant(_) => std::ptr::null_mut(),
+    };
     if o.is_null() {
         return None;
     }

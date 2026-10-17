@@ -9,6 +9,7 @@ use crate::src::shared::grid::grid_cell;
 use crate::src::shared::options::{options, options_entry, OPTIONS_TABLE_IS_COLOUR};
 use crate::src::shared::style::style;
 use crate::src::style::{style_parse, style_parse_colour, style_set};
+use std::collections::btree_map;
 use std::ffi::{CStr, CString};
 
 /// Apply the same style/cache semantics as `style_apply`, using a model's scoped
@@ -57,7 +58,7 @@ pub unsafe fn style_resolve_with_options(
     let mut resolved = None;
     let mut parent = None;
     access(&mut |root| {
-        if let Some(mut entry) = options_get_only_mut(root, key) {
+        if let btree_map::Entry::Occupied(mut entry) = options_get_only_mut(root, key) {
             resolved = style_snapshot(entry.get_mut());
         } else {
             parent = root.parent.clone();

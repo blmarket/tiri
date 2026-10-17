@@ -8,6 +8,7 @@ use crate::src::shared::window::WindowWeak;
 use crate::src::tmux::{global_options, global_s_options, global_w_options};
 use crate::src::window::Window;
 use crate::src::window_pane::WindowPane;
+use std::collections::btree_map;
 use std::{cell::UnsafeCell, ffi::CStr, rc::Weak};
 
 /// A table's identity, independent of how its owning model stores state.
@@ -108,6 +109,9 @@ impl OptionsScope {
         name: &CStr,
         visit: impl FnOnce(&mut options_entry) -> R,
     ) -> Option<R> {
-        self.with_local(|table| options_get_only_mut(table, name).map(|entry| visit(entry.into_mut())))
+        self.with_local(|table| match options_get_only_mut(table, name) {
+            btree_map::Entry::Occupied(entry) => Some(visit(entry.into_mut())),
+            btree_map::Entry::Vacant(_) => None,
+        })
     }
 }
