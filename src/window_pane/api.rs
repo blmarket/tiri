@@ -2,6 +2,7 @@
 use super::*;
 use crate::src::grid::{grid_get_cell, grid_set_cell};
 use crate::src::hyperlinks::{hyperlinks_get, hyperlinks_put};
+use crate::src::options::OptionsScope;
 use crate::src::reactor::Interests;
 use crate::src::server_client::Client;
 use crate::src::server_client::ClientRegistry;
@@ -13,7 +14,6 @@ use crate::src::shared::pane::{
 };
 use crate::src::shared::screen::MODE_SYNC;
 use crate::src::shared::window::{WindowRef, WindowWeak};
-use crate::src::tmux::with_global_options;
 use std::ffi::CStr;
 use std::os::fd::AsRawFd;
 use std::time::Duration;
@@ -544,7 +544,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         let pane = &mut *self.get();
         let Some(pty) = pane.fd.as_mut() else { return };
         if pane.flags & (PANE_EMPTY | PANE_EXITED) == 0
-            && with_global_options(|oo| options_get_number(oo, c"utmp")) != 0
+            && OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"utmp")) != 0
         {
             pty.utmp_add(pane.id);
         } else {
@@ -1563,7 +1563,6 @@ unsafe fn finish_buffer(owner: &Rc<UnsafeCell<window_pane>>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::src::tmux::with_global_options;
 
     use crate::src::grid::grid_create;
     use crate::src::reactor::{evbuffer_add, StreamHandle};
@@ -1639,9 +1638,7 @@ mod tests {
                 .iter()
                 .find(|entry| entry.name == Some(c"extended-keys"))
                 .unwrap();
-            with_global_options(|oo| {
-                crate::src::options::options_default(oo, definition);
-            });
+            OptionsScope::GlobalServer.reset_default(definition);
             let pane = window_pane::new();
             (*pane.get()).fd = None;
             (*pane.get()).pipe_fd = None;

@@ -38,8 +38,8 @@ pub use crate::src::shared::signal::{
 };
 use crate::src::shared::terminal::*;
 use crate::src::tmux::{
-    find_cwd, find_home_cstr, global_environ, ptm_fd, setblocking, shell_argv0_cstring,
-    shell_command, socket_path_cstr,
+    find_cwd, find_home_cstr, ptm_fd, setblocking, shell_argv0_cstring, shell_command,
+    socket_path_cstr,
 };
 use crate::src::tty::tty_term_read_list;
 use libc::{
@@ -307,8 +307,6 @@ pub unsafe fn client_main(
         if ptm_fd != -(1 as ::core::ffi::c_int) {
             let _ = tiri_rt::unix::close(ptm_fd);
         }
-        crate::src::tmux::free_global_options();
-        drop(global_environ.take());
         if client_flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {
             if crate::src::shared::terminal::read_attributes(STDIN_FILENO, &mut saved_tio)
                 != 0 as ::core::ffi::c_int

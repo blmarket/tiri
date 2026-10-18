@@ -1,4 +1,5 @@
 use crate::src::log::{log_cstr, log_debug};
+use crate::src::options::OptionsScope;
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::server_client::Client as _;
 use crate::src::server_client::ClientRegistry;
@@ -11,7 +12,6 @@ use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::{
     WINDOW_MAXIMUM, WINDOW_MINIMUM, WINDOW_SIZE_LARGEST, WINDOW_SIZE_LATEST, WINDOW_SIZE_MANUAL,
 };
-use crate::src::tmux::with_global_w_options;
 use crate::src::tty::tty_update_window_offset;
 use crate::src::window::windows;
 use crate::src::window::Window as _;
@@ -268,7 +268,7 @@ pub unsafe fn default_window_size(
     let mut c: Option<ClientRef> = c_owner.cloned();
     let s = Some(s_owner.clone());
     if type_0 == -(1 as ::core::ffi::c_int) {
-        type_0 = with_global_w_options(|oo| options_get_number(oo, c"window-size"))
+        type_0 = OptionsScope::GlobalWindow.with_local(|oo| options_get_number(oo, c"window-size"))
             as ::core::ffi::c_int;
     }
     if let Some(sizing_client) = c_owner

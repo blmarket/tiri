@@ -754,19 +754,17 @@ unsafe fn resize_window(
 mod tests {
     use super::*;
     use crate::src::options::options_create;
+    use crate::src::options::OptionsScope;
 
     #[test]
     fn fill_rendering_keeps_inside_outside_formats_and_composes_border_style() {
         unsafe {
-            with_global_options(|oo| {
-                crate::src::options::options_default(
-                    oo,
-                    crate::src::options::options_table
-                        .iter()
-                        .find(|entry| entry.name == Some(c"extended-keys"))
-                        .unwrap(),
-                );
-            });
+            OptionsScope::GlobalServer.reset_default(
+                crate::src::options::options_table
+                    .iter()
+                    .find(|entry| entry.name == Some(c"extended-keys"))
+                    .unwrap(),
+            );
             let owner = window::new_ref();
             let mut options = options_create(None);
             let entry = crate::src::options::options_table

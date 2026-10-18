@@ -2,6 +2,7 @@
 //! access ends before nested output, so no model borrow spans those operations.
 use super::control::{tty_log, tty_start_write};
 use super::model::*;
+use crate::src::options::OptionsScope;
 use tiri_rt::AsyncWrite as _;
 
 use super::acs::{tty_acs_get, tty_acs_needed};
@@ -32,7 +33,6 @@ use crate::src::style::colour::{
     colour_256to16, colour_dim, colour_find_rgb, colour_force_rgb, colour_palette_get,
     colour_split_rgb,
 };
-use crate::src::tmux::with_global_options;
 use crate::src::tty::term::tty_term_owner_ptr;
 use crate::src::tty::term::{
     tty_term_flag, tty_term_has, tty_term_number, tty_term_string, tty_term_string_i,
@@ -237,7 +237,8 @@ pub(super) unsafe fn tty_putn(client: &ClientRef, buf: &[u8], mut width: u_int) 
 pub(super) unsafe fn tty_set_italics(client: &ClientRef) {
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if tty_term_has(terminal_term(client), TTYC_SITM) != 0 {
-        let terminal = with_global_options(|oo| options_get_string(oo, c"default-terminal"));
+        let terminal =
+            OptionsScope::GlobalServer.with_local(|oo| options_get_string(oo, c"default-terminal"));
         s = terminal.as_ptr();
         if strcmp(s, c"screen".as_ptr()) != 0 as ::core::ffi::c_int
             && strncmp(s, c"screen-".as_ptr(), 7 as size_t) != 0 as ::core::ffi::c_int

@@ -1,12 +1,13 @@
 use crate::src::events::events_fire;
 use crate::src::events_payload::{event_payload_create, event_payload_set_string};
 use crate::src::options::options_get_number;
+use crate::src::options::OptionsScope;
 use crate::src::shared::abi::*;
 use crate::src::shared::paste::{paste_buffer, PasteBufferRef};
 use crate::src::shared::tree::{RB_INF, RB_NEGINF};
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::text::utf8::utf8_strvis;
-use crate::src::tmux::{clean_name_cstring, with_global_options};
+use crate::src::tmux::clean_name_cstring;
 use libc::time;
 use refbox::RefBox;
 use std::cell::RefCell;
@@ -276,7 +277,8 @@ pub(crate) unsafe fn paste_add_owned(prefix: Option<CString>, data: Box<[u8]>) {
     let prefix_bytes = prefix
         .as_ref()
         .map_or(b"buffer".as_slice(), CString::as_bytes);
-    let limit = with_global_options(|oo| options_get_number(oo, c"buffer-limit")) as u_int;
+    let limit = OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"buffer-limit"))
+        as u_int;
     let mut next = paste_time_tree_minmax_local(RB_INF);
     while let Some(pb) = next {
         if paste_automatic_count() < limit {

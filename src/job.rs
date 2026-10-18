@@ -8,6 +8,7 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::log::log_bytes;
 use crate::src::log::{fatal, fatalx, log_cstr, log_debug};
 use crate::src::options::options_get_string;
+use crate::src::options::OptionsScope;
 use crate::src::proc::proc_clear_signals;
 use crate::src::reactor::BufferEvent;
 use crate::src::reactor::{
@@ -35,9 +36,7 @@ use crate::src::shared::signal::{
     sigset_t, SIGCONT, SIGTERM, SIGTTIN, SIGTTOU, SIG_BLOCK, SIG_SETMASK,
 };
 use crate::src::shared::terminal::*;
-use crate::src::tmux::{
-    checkshell, find_home_cstr, ptm_fd, setblocking, shell_argv0_cstring, with_global_s_options,
-};
+use crate::src::tmux::{checkshell, find_home_cstr, ptm_fd, setblocking, shell_argv0_cstring};
 use libc::{
     _exit, chdir, execl, execvp, fork, kill, killpg, memset, setenv, sigfillset, sigprocmask,
 };
@@ -147,7 +146,7 @@ pub unsafe fn job_run(
         shell_value = Some(if let Some(session) = s_owner {
             options_get_string(&session.borrow_options_mut(), c"default-shell")
         } else {
-            with_global_s_options(|oo| options_get_string(oo, c"default-shell"))
+            OptionsScope::GlobalSession.with_local(|oo| options_get_string(oo, c"default-shell"))
         });
         let shell = shell_value.as_deref().expect("shell snapshot");
         if checkshell(Some(shell)) == 0 {

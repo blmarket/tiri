@@ -1,6 +1,7 @@
 use super::input::TerminalInput;
 use super::model::*;
 use super::output::*;
+use crate::src::options::OptionsScope;
 use crate::src::reactor::Timer;
 use crate::src::server_client::ClientRegistry;
 use tiri_rt::{AsyncRead as _, AsyncWrite as _};
@@ -40,7 +41,7 @@ use crate::src::shared::utf8::UTF8_SIZE;
 use crate::src::shared::window::WindowRef;
 use crate::src::status::status_line_size;
 use crate::src::text::utf8::utf8_set;
-use crate::src::tmux::{setblocking, with_global_options};
+use crate::src::tmux::setblocking;
 use crate::src::tty::features::tty_apply_features;
 use crate::src::tty::term::tty_term_owner_ptr;
 use crate::src::tty::term::{
@@ -460,7 +461,9 @@ pub unsafe fn tty_start_tty(owner: &ClientRef) {
             let _ =
                 tiri_rt::unix::discard_terminal(std::os::fd::BorrowedFd::borrow_raw(fd), TCOFLUSH);
         }
-        if with_global_options(|oo| options_get_number(oo, c"clear-on-attach")) != 0 {
+        if OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"clear-on-attach"))
+            != 0
+        {
             tty_putcode(tty, TTYC_SMCUP);
             tty_putcode(tty, TTYC_CLEAR);
         } else {
@@ -628,7 +631,9 @@ pub unsafe fn tty_stop_tty(owner: &ClientRef) {
         }
         tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_SGR0));
         tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_RMKX));
-        if with_global_options(|oo| options_get_number(oo, c"clear-on-attach")) != 0 {
+        if OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"clear-on-attach"))
+            != 0
+        {
             tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_CLEAR));
         }
         if terminal_value!(tty, cstyle) as ::core::ffi::c_uint
@@ -660,7 +665,9 @@ pub unsafe fn tty_stop_tty(owner: &ClientRef) {
         if terminal_term(tty).flags & TERM_DECSLRM != 0 {
             tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_DSMG));
         }
-        if with_global_options(|oo| options_get_number(oo, c"clear-on-attach")) != 0 {
+        if OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"clear-on-attach"))
+            != 0
+        {
             tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_RMCUP));
         } else {
             tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_CLEAR));
@@ -722,10 +729,12 @@ pub(super) unsafe fn tty_update_features(owner: &ClientRef) {
         if terminal_term(tty).flags & TERM_DECSLRM != 0 {
             tty_putcode(tty, TTYC_ENMG);
         }
-        if with_global_options(|oo| options_get_number(oo, c"extended-keys")) != 0 {
+        if OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"extended-keys")) != 0
+        {
             tty_puts(tty, tty_term_string(terminal_term(tty), TTYC_ENEKS));
         }
-        if with_global_options(|oo| options_get_number(oo, c"focus-events")) != 0 {
+        if OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"focus-events")) != 0
+        {
             tty_puts(tty, tty_term_string(terminal_term(tty), TTYC_ENFCS));
         }
         tty_puts(tty, tty_term_string(terminal_term(tty), TTYC_ENESC));

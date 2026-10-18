@@ -13,6 +13,7 @@ use crate::src::grid::{
 };
 use crate::src::log::{fatalx, log_bytes, log_debug, log_get_level};
 use crate::src::options::options_get_number;
+use crate::src::options::OptionsScope;
 use crate::src::screen::{
     screen_alternate_off, screen_alternate_on, screen_check_selection, screen_mode_display,
     screen_reset_tabs, screen_select_cell,
@@ -51,7 +52,6 @@ use crate::src::text::utf8_combined::{
     hanguljamo_check_state, utf8_has_zwj, utf8_is_hangul_filler, utf8_is_vs, utf8_is_zwj,
     utf8_should_combine,
 };
-use crate::src::tmux::with_global_options;
 use crate::src::tty::{tty_acs_double_borders, tty_acs_heavy_borders, tty_acs_rounded_borders};
 use crate::src::tty::{tty_write, TtyCmd};
 use crate::src::window::WindowPane;
@@ -317,7 +317,7 @@ pub unsafe fn screen_write_reset(ctx: &mut screen_write_ctx) {
     screen_reset_tabs(&mut *s);
     screen_write_scrollregion(ctx, 0 as u_int, (*s).grid().sy.wrapping_sub(1 as u_int));
     (*s).mode = MODE_CURSOR | MODE_WRAP;
-    if with_global_options(|oo| options_get_number(oo, c"extended-keys"))
+    if OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"extended-keys"))
         == 2 as ::core::ffi::c_longlong
     {
         (*s).mode = (*s).mode & !EXTENDED_KEY_MODES | MODE_KEYS_EXTENDED;
@@ -2930,7 +2930,9 @@ unsafe fn screen_write_combine(ctx: &mut screen_write_ctx, gc: &grid_cell) -> ::
         zero_width = 1 as ::core::ffi::c_int;
     } else if utf8_is_vs(ud) != 0 {
         zero_width = 1 as ::core::ffi::c_int;
-        if with_global_options(|oo| options_get_number(oo, c"variation-selector-always-wide")) != 0
+        if OptionsScope::GlobalServer
+            .with_local(|oo| options_get_number(oo, c"variation-selector-always-wide"))
+            != 0
         {
             force_wide = 1 as ::core::ffi::c_int;
         }

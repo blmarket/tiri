@@ -1,4 +1,5 @@
 use super::*;
+use crate::src::options::OptionsScope;
 
 struct Fake {
     name: &'static str,
@@ -148,10 +149,9 @@ fn selection_matches_tiri_environment_semantics() {
 fn publishing_does_not_override_context_entries_or_user_options() {
     use crate::src::format::{format_add_cstr, format_create, format_expand_cstring};
     use crate::src::options::options_set_string;
-    use crate::src::tmux::with_global_s_options;
     unsafe {
         shutdown();
-        with_global_s_options(|oo| {
+        OptionsScope::GlobalSession.with_local(|oo| {
             options_set_string(oo, c"@test_state", 0, |out| out.write_all(b"user"));
         });
         REGISTRY.with(|registry| add(&mut registry.borrow_mut(), "fake", VARIABLES).unwrap());

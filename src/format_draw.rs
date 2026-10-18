@@ -1828,22 +1828,18 @@ pub(crate) unsafe fn format_trim_right_bytes(expanded: &CStr, mut limit: u_int) 
 #[cfg(test)]
 mod range_tests {
     use super::*;
-    use crate::src::options::options_default;
     use crate::src::options::options_table;
-    use crate::src::tmux::with_global_options;
+    use crate::src::options::OptionsScope;
 
     #[test]
     fn rendered_ranges_follow_their_alignment_and_clipping() {
         unsafe {
-            with_global_options(|oo| {
-                options_default(
-                    oo,
-                    options_table
-                        .iter()
-                        .find(|entry| entry.name == Some(c"extended-keys"))
-                        .unwrap(),
-                );
-            });
+            OptionsScope::GlobalServer.reset_default(
+                options_table
+                    .iter()
+                    .find(|entry| entry.name == Some(c"extended-keys"))
+                    .unwrap(),
+            );
             for (width, expected) in [
                 (
                     20,

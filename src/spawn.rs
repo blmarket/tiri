@@ -5,6 +5,7 @@ use crate::src::format::bytes::format_message_with;
 use crate::src::log::{log_cstr, log_debug, log_hex};
 use crate::src::names::default_window_name_cstring;
 use crate::src::options::options_get_string;
+use crate::src::options::OptionsScope;
 use crate::src::server_client::Client as _;
 use crate::src::window::Window as _;
 use libc::{fdopen, fwrite, mkstemp, unlink};
@@ -13,7 +14,6 @@ use crate::src::session::Session;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::spawn::spawn_context;
 use crate::src::shared::window::WindowRef;
-use crate::src::tmux::with_global_options;
 
 use crate::src::window_pane::WindowPane;
 use std::ffi::{CStr, CString};
@@ -240,7 +240,7 @@ pub(crate) unsafe fn spawn_editor(
         let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
         let mut path: [u8; 19] = *b"/tmp/tmux.XXXXXXXX\0";
         let mut fd: ::core::ffi::c_int = 0;
-        let editor = with_global_options(|oo| options_get_string(oo, c"editor"));
+        let editor = OptionsScope::GlobalServer.with_local(|oo| options_get_string(oo, c"editor"));
         fd = mkstemp(path.as_mut_ptr().cast());
         if fd == -(1 as ::core::ffi::c_int) {
             return None;

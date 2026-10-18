@@ -1,14 +1,13 @@
 use std::ffi::CStr;
 use tiri::src::grid::view::grid_view_get_cell;
 use tiri::src::grid::{grid_cells_equal, grid_create, grid_default_cell};
-use tiri::src::options::options_default;
 use tiri::src::options::options_table;
+use tiri::src::options::OptionsScope;
 use tiri::src::screen_write::{screen_write_menu, screen_write_start, screen_write_stop};
 use tiri::src::shared::grid::{grid_cell, GRID_ATTR_DIM};
 use tiri::src::shared::menu::{menu, MenuRow};
 use tiri::src::shared::screen::{screen, MODE_WRAP};
 use tiri::src::shared::screen_write::screen_write_ctx;
-use tiri::src::tmux::with_global_options;
 
 unsafe fn cell_at(s: &screen, x: u32, y: u32) -> grid_cell {
     let mut cell = grid_default_cell;
@@ -24,9 +23,7 @@ fn menu_rendering_preserves_selection_disabled_rows_and_borrowed_inputs() {
             .iter()
             .find(|entry| entry.name == Some(c"extended-keys"))
             .unwrap();
-        with_global_options(|oo| {
-            options_default(oo, definition);
-        });
+        OptionsScope::GlobalServer.reset_default(definition);
         let menu = menu {
             title: c"Title".to_owned(),
             width: 6,

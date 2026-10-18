@@ -38,7 +38,7 @@ use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::spawn::spawn_window;
 use crate::src::text::utf8::utf8_stravis_cstring;
-use crate::src::tmux::{check_name, clean_name_cstring, with_global_s_options};
+use crate::src::tmux::{check_name, clean_name_cstring};
 use crate::src::window::winlinks_minmax;
 use std::ffi::{CStr, CString};
 
@@ -430,20 +430,26 @@ unsafe fn cmd_new_session_exec(
                                                             .terminal_size()
                                                             .1;
                                                         if sy > 0 as u_int
-                                                            && with_global_s_options(|oo| {
-                                                                options_get_number(oo, c"status")
-                                                            }) != 0
+                                                            && OptionsScope::GlobalSession
+                                                                .with_local(|oo| {
+                                                                    options_get_number(
+                                                                        oo, c"status",
+                                                                    )
+                                                                })
+                                                                != 0
                                                         {
                                                             sy = sy.wrapping_sub(1);
                                                         }
                                                     } else {
                                                         let default_size =
-                                                            with_global_s_options(|oo| {
-                                                                options_get_string(
-                                                                    oo,
-                                                                    c"default-size",
-                                                                )
-                                                            });
+                                                            OptionsScope::GlobalSession.with_local(
+                                                                |oo| {
+                                                                    options_get_string(
+                                                                        oo,
+                                                                        c"default-size",
+                                                                    )
+                                                                },
+                                                            );
                                                         if sscanf(
                                                             default_size.as_ptr(),
                                                             c"%ux%u".as_ptr(),

@@ -16,7 +16,6 @@ use crate::src::ffi::libc::{__errno_location, environ, err, errx, stderr, stdout
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::{log_add_level, log_cstr, log_debug};
-use crate::src::options::options;
 use crate::src::options::options_table;
 use crate::src::options::{options_set_number, options_set_string, OptionsScope};
 use crate::src::options::{OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION, OPTIONS_TABLE_WINDOW};
@@ -41,8 +40,6 @@ use libc::{
     nl_langinfo, printf, realpath, setlocale, strcasecmp, strcasestr, strcmp, strerror, strrchr,
     strstr,
 };
-use std::cell::RefCell;
-use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
 use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -52,41 +49,6 @@ pub use ::libc::{CLOCK_MONOTONIC, CODESET, EEXIST, LC_CTYPE, LC_TIME};
 pub use ::libc::{S_IFDIR, S_IFMT};
 
 pub const TMUX_SOCK_PERM: ::core::ffi::c_int = 7 as ::core::ffi::c_int;
-thread_local! {
-    static GLOBAL_OPTIONS: RefCell<options> = const {
-        RefCell::new(options { tree: BTreeMap::new(), parent: None })
-    };
-    static GLOBAL_S_OPTIONS: RefCell<options> = const {
-        RefCell::new(options { tree: BTreeMap::new(), parent: None })
-    };
-    static GLOBAL_W_OPTIONS: RefCell<options> = const {
-        RefCell::new(options { tree: BTreeMap::new(), parent: None })
-    };
-}
-
-/// Run `f` on the global server options of this thread. Borrowing the table
-/// again from inside `f` panics.
-pub fn with_global_options<R>(f: impl FnOnce(&mut options) -> R) -> R {
-    GLOBAL_OPTIONS.with(|table| f(&mut table.borrow_mut()))
-}
-/// Global session options of this thread. Same contract as `with_global_options`.
-pub fn with_global_s_options<R>(f: impl FnOnce(&mut options) -> R) -> R {
-    GLOBAL_S_OPTIONS.with(|table| f(&mut table.borrow_mut()))
-}
-/// Global window options of this thread. Same contract as `with_global_options`.
-pub fn with_global_w_options<R>(f: impl FnOnce(&mut options) -> R) -> R {
-    GLOBAL_W_OPTIONS.with(|table| f(&mut table.borrow_mut()))
-}
-
-/// Entries are dropped after the table borrow is released, so their cleanup
-/// may read global options.
-pub(crate) fn free_global_options() {
-    let take = |oo: &mut options| std::mem::take(&mut oo.tree);
-    drop(with_global_options(take));
-    drop(with_global_s_options(take));
-    drop(with_global_w_options(take));
-}
-
 pub static mut global_environ: Option<Box<environ>> = None;
 pub static mut start_time: SystemTime = UNIX_EPOCH;
 pub static mut socket_path: Option<CString> = None;
@@ -572,7 +534,7 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
             OptionsScope::GlobalWindow.reset_default(oe);
         }
     }
-    with_global_s_options(|oo| {
+    OptionsScope::GlobalSession.with_local(|oo| {
         options_set_string(oo, c"default-shell", 0 as ::core::ffi::c_int, |out| {
             out.write_all(getshell().as_bytes())
         });
@@ -582,7 +544,7 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
         s = getenv(c"EDITOR".as_ptr());
         !s.is_null()
     } {
-        with_global_options(|oo| {
+        OptionsScope::GlobalServer.with_local(|oo| {
             options_set_string(oo, c"editor", 0 as ::core::ffi::c_int, |out| {
                 write_cstr(out, nullable_cstr(s))
             });
@@ -595,10 +557,10 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
         } else {
             keys = MODEKEY_EMACS;
         }
-        with_global_s_options(|oo| {
+        OptionsScope::GlobalSession.with_local(|oo| {
             options_set_number(oo, c"status-keys", keys as ::core::ffi::c_longlong);
         });
-        with_global_w_options(|oo| {
+        OptionsScope::GlobalWindow.with_local(|oo| {
             options_set_number(oo, c"mode-keys", keys as ::core::ffi::c_longlong);
         });
     }

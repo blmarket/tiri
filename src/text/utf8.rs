@@ -1,5 +1,6 @@
 use crate::src::ffi::vis::{is_alpha, vis_into};
 use crate::src::log::{fatalx, log_bytes, log_debug};
+use crate::src::options::OptionsScope;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
@@ -9,7 +10,6 @@ use crate::src::shared::vis::VIS_DQ;
 use crate::src::text::utf8_cache::{UTF8_ITEMS, UTF8_WIDTHS};
 use crate::src::text::utf8_decode::{decode_utf8, DecodeResult};
 use crate::src::text::utf8_width::parse_width_override;
-use crate::src::tmux::with_global_options;
 use std::ffi::{CStr, CString};
 
 fn utf8_find_in_width_cache(wc: wchar_t) -> Option<u_int> {
@@ -42,8 +42,8 @@ pub fn utf8_update_width_cache() {
         .expect("UTF-8 width cache poisoned")
         .reset_defaults();
     // SAFETY: the visitor only copies strings out and does not reenter options.
-    let values = with_global_options(|oo| unsafe {
-        crate::src::options::options_read_entry(oo, c"codepoint-widths", |entry| {
+    let values = unsafe {
+        OptionsScope::GlobalServer.with_entry(c"codepoint-widths", |entry| {
             entry
                 .value
                 .array()
@@ -52,7 +52,7 @@ pub fn utf8_update_width_cache() {
                 .map(|item| item.value.string_ptr().expect("width override").to_owned())
                 .collect::<Vec<_>>()
         })
-    })
+    }
     .expect("codepoint-widths option");
     for value in values {
         utf8_add_to_width_cache(&value);

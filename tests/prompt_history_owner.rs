@@ -4,13 +4,13 @@ use std::ffi::CString;
 use std::os::unix::ffi::OsStrExt;
 use tiri::src::format::bytes::write_cstr;
 use tiri::src::options::options_table;
-use tiri::src::options::{options_default, options_set_number, options_set_string};
+use tiri::src::options::OptionsScope;
+use tiri::src::options::{options_set_number, options_set_string};
 use tiri::src::prompt_history::{
     prompt_add_history, prompt_down_history, prompt_history_clear, prompt_history_get,
     prompt_history_size, prompt_load_history, prompt_save_history, prompt_up_history,
 };
 use tiri::src::shared::prompt::{PROMPT_TYPE_COMMAND, PROMPT_TYPE_SEARCH};
-use tiri::src::tmux::with_global_options;
 
 #[test]
 fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
@@ -20,9 +20,7 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
                 .iter()
                 .find(|entry| entry.name == Some(name))
                 .unwrap();
-            with_global_options(|oo| {
-                options_default(oo, definition);
-            });
+            OptionsScope::GlobalServer.reset_default(definition);
         }
 
         prompt_history_clear(PROMPT_TYPE_COMMAND);
@@ -31,7 +29,7 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         assert!(prompt_history_get(PROMPT_TYPE_COMMAND, 0).is_none());
         assert!(prompt_history_get(255, 0).is_none());
 
-        with_global_options(|oo| {
+        OptionsScope::GlobalServer.with_local(|oo| {
             options_set_number(oo, c"prompt-history-limit", 200);
         });
         prompt_add_history(c"\xff-first", PROMPT_TYPE_COMMAND);
@@ -49,7 +47,7 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         prompt_history_clear(PROMPT_TYPE_COMMAND);
         assert_eq!(first.to_bytes(), b"\xff-first");
         drop(first);
-        with_global_options(|oo| {
+        OptionsScope::GlobalServer.with_local(|oo| {
             options_set_number(oo, c"prompt-history-limit", 3);
         });
         for text in [c"one", c"two", c"three"] {
@@ -70,7 +68,7 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
             c"four"
         );
 
-        with_global_options(|oo| {
+        OptionsScope::GlobalServer.with_local(|oo| {
             options_set_number(oo, c"prompt-history-limit", 2);
         });
         prompt_add_history(c"four", PROMPT_TYPE_COMMAND);
@@ -145,7 +143,7 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
 
         let path = std::env::temp_dir().join(format!("tiri-prompt-history-{}", std::process::id()));
         let path_string = CString::new(path.as_os_str().as_bytes()).unwrap();
-        with_global_options(|oo| {
+        OptionsScope::GlobalServer.with_local(|oo| {
             options_set_string(oo, c"history-file", 0, |out| write_cstr(out, &*path_string));
         });
         prompt_save_history();
@@ -187,7 +185,7 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
 
         prompt_history_clear(PROMPT_TYPE_COMMAND);
         prompt_history_clear(PROMPT_TYPE_SEARCH);
-        with_global_options(|oo| {
+        OptionsScope::GlobalServer.with_local(|oo| {
             options_set_number(oo, c"prompt-history-limit", 10);
         });
         std::fs::write(
@@ -231,7 +229,7 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         assert_eq!(stale, [u32::MAX - 1, 0]);
         std::fs::remove_file(path).unwrap();
 
-        with_global_options(|oo| {
+        OptionsScope::GlobalServer.with_local(|oo| {
             options_set_number(oo, c"prompt-history-limit", 0);
         });
         prompt_add_history(c"ignored", PROMPT_TYPE_COMMAND);

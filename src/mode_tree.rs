@@ -59,7 +59,6 @@ use libc::{strcasestr, strstr};
 use crate::src::sort::{sort_next_order, sort_order_from_string, sort_order_to_string};
 use crate::src::status::status_message_set;
 use crate::src::style::style_apply_with_options;
-use crate::src::tmux::with_global_s_options;
 use crate::src::window_pane::WindowPane as _;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
@@ -1408,7 +1407,7 @@ pub unsafe fn mode_tree_set_prompt(
     let position = if let Some(session) = session_owner.as_ref() {
         options_get_number(&session.borrow_options_mut(), c"status-position")
     } else {
-        with_global_s_options(|oo| options_get_number(oo, c"status-position"))
+        OptionsScope::GlobalSession.with_local(|oo| options_get_number(oo, c"status-position"))
     };
     (*mtd).prompt_top = (position == 0) as i32;
     prompt_set_options(&mut pd, session_owner.as_ref());

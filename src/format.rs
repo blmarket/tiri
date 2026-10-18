@@ -18,6 +18,7 @@ use crate::src::hyperlinks::hyperlinks_get;
 use crate::src::job::{job_free, job_get_event, job_run};
 use crate::src::log::{log_cstr, log_debug, log_get_level};
 use crate::src::options::options_get_string;
+use crate::src::options::OptionsScope;
 use crate::src::paste::{
     paste_buffer_created, paste_buffer_data, paste_buffer_name, paste_get_top,
     paste_make_sample_cstring,
@@ -47,9 +48,7 @@ use crate::src::style::colour::{
     colour_force_rgb, colour_format_escape_for_client, colour_parse_cstr,
 };
 use crate::src::text::utf8::{utf8_cstrhas, utf8_pad_cstring, utf8_set, utf8_tocstr_cstring};
-use crate::src::tmux::{
-    get_timer, getversion, global_environ, socket_path_cstr, start_time, with_global_s_options,
-};
+use crate::src::tmux::{get_timer, getversion, global_environ, socket_path_cstr, start_time};
 use crate::src::window::{winlink_find_by_window, winlinks_minmax, winlinks_next};
 use crate::src::window_buffer::window_buffer_mode;
 use crate::src::window_client::window_client_mode;
@@ -512,7 +511,8 @@ pub(crate) unsafe fn format_grid_word_cstring(
     let mut end: u_int = 0;
     let mut found: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut s = None;
-    let separators = with_global_s_options(|oo| options_get_string(oo, c"word-separators"));
+    let separators =
+        OptionsScope::GlobalSession.with_local(|oo| options_get_string(oo, c"word-separators"));
     let ws = separators.as_c_str();
     loop {
         grid_get_cell(gd, x, y, &mut gc);

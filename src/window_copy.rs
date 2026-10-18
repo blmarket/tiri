@@ -69,7 +69,7 @@ pub use crate::src::shared::window::{window_mode, window_mode_entry, winlink};
 use crate::src::status::status_message_set;
 use crate::src::style::style_apply_with_options;
 use crate::src::text::utf8::{utf8_copy, utf8_fromcstr_vec, utf8_set, utf8_to_data};
-use crate::src::tmux::{get_timer, with_global_options};
+use crate::src::tmux::get_timer;
 use crate::src::tty::tty_acs_get;
 use crate::src::window::Window as _;
 use crate::src::window_pane::WindowPane as _;
@@ -8176,7 +8176,7 @@ unsafe fn window_copy_copy_buffer(
     };
     let mut redraw: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if set_clip != 0
-        && with_global_options(|oo| options_get_number(oo, c"set-clipboard"))
+        && OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"set-clipboard"))
             != 0 as ::core::ffi::c_longlong
     {
         if window_copy_line_numbers_active(wme.clone()) != 0 && mode_pane_owner.needs_redraw(false)
@@ -8210,9 +8210,8 @@ unsafe fn window_copy_pipe_run(
     let command_value;
     let mut cmd = cmd.filter(|cmd| !cmd.is_empty());
     if cmd.is_none() {
-        command_value = with_global_options(|oo| {
-            crate::src::options::options_get_string_optional(oo, c"copy-command")
-        });
+        command_value = OptionsScope::GlobalServer
+            .with_local(|oo| crate::src::options::options_get_string_optional(oo, c"copy-command"));
         cmd = command_value.as_deref();
     }
     if let Some(cmd) = cmd.filter(|cmd| !cmd.is_empty()) {
@@ -8285,7 +8284,7 @@ unsafe fn window_copy_append_selection(mut wme: refbox::Weak<window_mode_entry>)
         Some(buf) => buf,
         None => return,
     };
-    if with_global_options(|oo| options_get_number(oo, c"set-clipboard"))
+    if OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"set-clipboard"))
         != 0 as ::core::ffi::c_longlong
     {
         screen_write_start_pane(
@@ -9943,7 +9942,6 @@ mod regex_cell_tests {
 mod backing_owner_tests {
     use super::*;
     use crate::src::grid::grid_set_cell;
-    use crate::src::options::options_default;
     use crate::src::options::options_table;
 
     unsafe fn byte_at(s: &screen, x: u_int, y: u_int) -> u8 {
@@ -9955,15 +9953,12 @@ mod backing_owner_tests {
     #[test]
     fn reflowed_snapshot_owns_cells_independently_of_the_source() {
         unsafe {
-            with_global_options(|oo| {
-                options_default(
-                    oo,
-                    options_table
-                        .iter()
-                        .find(|entry| entry.name == Some(c"extended-keys"))
-                        .unwrap(),
-                );
-            });
+            OptionsScope::GlobalServer.reset_default(
+                options_table
+                    .iter()
+                    .find(|entry| entry.name == Some(c"extended-keys"))
+                    .unwrap(),
+            );
             let mut source = screen::empty();
             let mut hint = screen::empty();
             screen_init(&mut source, 8, 3, 10);

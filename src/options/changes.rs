@@ -3,6 +3,7 @@ use super::store::*;
 use crate::src::alerts::alerts_reset_all;
 use crate::src::input::input_set_buffer_size;
 use crate::src::log::{log_cstr, log_debug};
+use crate::src::options::OptionsScope;
 use crate::src::resize::recalculate_sizes;
 use crate::src::screen_redraw::redraw_invalidate_all_scenes;
 use crate::src::server_client::Client as _;
@@ -16,7 +17,6 @@ use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::SessionRef;
 use crate::src::status::status_timer_start_all;
 use crate::src::text::utf8::utf8_update_width_cache;
-use crate::src::tmux::with_global_options;
 use crate::src::tty::tty_invalidate;
 use crate::src::tty::tty_keys_build;
 
@@ -190,7 +190,8 @@ pub unsafe fn options_push_changes(name: &CStr) {
     }
     if name == c"input-buffer-size" {
         input_set_buffer_size(
-            with_global_options(|oo| options_get_number(oo, c"input-buffer-size")) as size_t,
+            OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"input-buffer-size"))
+                as size_t,
         );
     }
     if name == c"history-limit" {

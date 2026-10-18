@@ -1,4 +1,5 @@
 use crate::src::format::bytes::nullable_cstr;
+use crate::src::options::OptionsScope;
 use crate::src::session::Session as _;
 use crate::src::shared::client::{ClientRef, ClientWeak};
 use crate::src::shared::session::SessionRef;
@@ -77,9 +78,7 @@ use crate::src::style::colour::{
     colour_parse_cstr, colour_theme_option, colour_theme_terminal_colour, colour_totheme,
 };
 use crate::src::text::utf8::{utf8_sanitize_cstring, utf8_stravisx_bytes};
-use crate::src::tmux::{
-    checkshell, find_home_cstr, setblocking, with_global_options, with_global_s_options,
-};
+use crate::src::tmux::{checkshell, find_home_cstr, setblocking};
 use crate::src::tty::tty_get_features;
 use crate::src::tty::{
     tty_close, tty_cursor, tty_init, tty_invalidate, tty_margin_off, tty_open, tty_region_off,
@@ -1266,7 +1265,7 @@ unsafe fn server_client_exec(c_owner: &ClientRef, cmd: &CStr) {
     let shell_session_value = if let Some(s_value) = s.as_ref() {
         options_get_string(&s_value.borrow_options_mut(), c"default-shell")
     } else {
-        with_global_s_options(|oo| options_get_string(oo, c"default-shell"))
+        OptionsScope::GlobalSession.with_local(|oo| options_get_string(oo, c"default-shell"))
     };
     let mut shell: &CStr = &shell_session_value;
     if checkshell(Some(shell)) == 0 {
@@ -1877,7 +1876,8 @@ unsafe fn server_client_update_theme_colours(c_owner: Option<&ClientRef>) {
     if c.is_null() {
         return;
     }
-    option = with_global_options(|oo| options_get_number(oo, c"theme")) as ::core::ffi::c_int;
+    option = OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"theme"))
+        as ::core::ffi::c_int;
     if option == 1 as ::core::ffi::c_int {
         i = 0 as u_int;
         while i < COLOUR_THEME_COUNT as u_int {
@@ -1902,7 +1902,7 @@ unsafe fn server_client_update_theme_colours(c_owner: Option<&ClientRef>) {
     while i < COLOUR_THEME_COUNT as u_int {
         (*c).theme_colours[i as usize] = 8 as ::core::ffi::c_int;
         if let Some(name) = colour_theme_option(i, theme) {
-            let value = with_global_options(|oo| options_get_string(oo, name));
+            let value = OptionsScope::GlobalServer.with_local(|oo| options_get_string(oo, name));
             let expanded = format_expand_cstring(ft, value.as_ptr());
             colour = colour_parse_cstr(expanded.as_c_str()).unwrap_or(-1);
             if !(colour == -(1 as ::core::ffi::c_int) || colour & COLOUR_FLAG_THEME != 0) {
@@ -2240,9 +2240,8 @@ unsafe fn server_client_key_callback(
                                     }
                                     bd = key_bindings_get(&table.borrow(), key0)
                                         .map(|bd| bd.command());
-                                    prefix_delay = with_global_options(|oo| {
-                                        options_get_number(oo, c"prefix-timeout")
-                                    })
+                                    prefix_delay = OptionsScope::GlobalServer
+                                        .with_local(|oo| options_get_number(oo, c"prefix-timeout"))
                                         as uint64_t;
                                     if prefix_delay > 0 as uint64_t
                                         && strcmp(
@@ -3617,7 +3616,7 @@ unsafe fn server_client_default_command(
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let new_item_allocation;
-    let cmdlist = with_global_options(|oo| options_get_command(oo));
+    let cmdlist = OptionsScope::GlobalServer.with_local(|oo| options_get_command(oo));
     if (*c).flags & CLIENT_READONLY as uint64_t != 0 && cmd_list_all_have(&cmdlist.borrow()) == 0 {
         new_item_allocation = cmdq_get_callback_owned(
             c"server_client_read_only",
@@ -3973,7 +3972,8 @@ unsafe fn server_client_dispatch_identify(
     0 as ::core::ffi::c_int
 }
 unsafe fn server_client_dispatch_shell(c: &client) -> ::core::ffi::c_int {
-    let shell_value = with_global_s_options(|oo| options_get_string(oo, c"default-shell"));
+    let shell_value =
+        OptionsScope::GlobalSession.with_local(|oo| options_get_string(oo, c"default-shell"));
     let mut shell: &CStr = &shell_value;
     if checkshell(Some(shell)) == 0 {
         shell = _PATH_BSHELL;

@@ -21,7 +21,7 @@ pub use crate::src::shared::screen::{
 };
 use crate::src::style::style_apply_with_options;
 use crate::src::text::utf8::utf8_copy;
-use crate::src::tmux::{clean_name_cstring, with_global_options};
+use crate::src::tmux::clean_name_cstring;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 
@@ -52,7 +52,7 @@ pub unsafe fn screen_reinit(s: &mut screen) {
     s.rupper = 0 as u_int;
     s.rlower = s.grid().sy.wrapping_sub(1 as u_int);
     s.mode = MODE_CURSOR | MODE_WRAP | s.mode & MODE_CRLF;
-    if with_global_options(|oo| options_get_number(oo, c"extended-keys"))
+    if OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"extended-keys"))
         == 2 as ::core::ffi::c_longlong
     {
         s.mode = s.mode & !EXTENDED_KEY_MODES | MODE_KEYS_EXTENDED;

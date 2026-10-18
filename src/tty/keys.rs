@@ -8,6 +8,7 @@ use crate::src::input::{input_request_reply, InputRequestReply};
 use crate::src::key_string::key_string_format;
 use crate::src::log::{log_bytes, log_cstr, log_cstr_n, log_debug, log_get_level, log_hex};
 use crate::src::options::options_get_number;
+use crate::src::options::OptionsScope;
 use crate::src::paste::paste_add_owned;
 use crate::src::reactor::Timer;
 use crate::src::server_client::Client as _;
@@ -36,7 +37,6 @@ use crate::src::shared::utf8::wchar_t;
 use crate::src::shared::utf8::*;
 use crate::src::style::colour::{colour_format, colour_parse_x11_logged};
 use crate::src::text::utf8::{utf8_append, utf8_from_data, utf8_fromwc, utf8_open};
-use crate::src::tmux::with_global_options;
 use crate::src::tty::features::{tty_default_features, tty_parse_client_features};
 use crate::src::tty::term::tty_term_owner_ptr;
 use crate::src::tty::term::tty_term_string;
@@ -1321,8 +1321,8 @@ pub unsafe fn tty_keys_build(mut tty: *mut tty) {
         }
         i = i.wrapping_add(1);
     }
-    let keys = with_global_options(|oo| {
-        crate::src::options::options_read_entry(oo, c"user-keys", |entry| {
+    let keys = OptionsScope::GlobalServer
+        .with_entry(c"user-keys", |entry| {
             (0..=KEYC_NUSER as u_int)
                 .filter_map(|index| {
                     let key = std::ffi::CString::new(index.to_string()).unwrap();
@@ -1335,8 +1335,7 @@ pub unsafe fn tty_keys_build(mut tty: *mut tty) {
                 })
                 .collect::<Vec<_>>()
         })
-    })
-    .unwrap_or_default();
+        .unwrap_or_default();
     for (index, value) in keys {
         tty_keys_add(
             tty,
@@ -2189,7 +2188,8 @@ pub(super) unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core:
                         return 0 as ::core::ffi::c_int;
                     }
                 } else {
-                    delay = with_global_options(|oo| options_get_number(oo, c"escape-time"))
+                    delay = OptionsScope::GlobalServer
+                        .with_local(|oo| options_get_number(oo, c"escape-time"))
                         as ::core::ffi::c_int;
                     if delay == 0 as ::core::ffi::c_int {
                         delay = 1 as ::core::ffi::c_int;

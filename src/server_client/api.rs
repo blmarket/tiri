@@ -1,5 +1,6 @@
 //! Operations on retained clients. Legacy dispatch remains explicitly unsafe:
 //! an Rc keeps storage alive, but does not make reentrant model borrows exclusive.
+use crate::src::options::OptionsScope;
 use crate::src::shared::window::WindowWeak;
 
 use super::*;
@@ -948,7 +949,8 @@ impl Client for ClientRef {
                 } else if let Some(session) = self.attached_session().upgrade() {
                     session.status_layout().1
                 } else {
-                    with_global_s_options(|oo| options_get_number(oo, c"status")) as u32
+                    OptionsScope::GlobalSession.with_local(|oo| options_get_number(oo, c"status"))
+                        as u32
                 };
             (sx, sy) = (*self.get()).tty.size();
             sy = sy.wrapping_sub(status_lines);

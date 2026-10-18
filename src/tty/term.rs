@@ -7,6 +7,7 @@ use crate::src::ffi::ncurses::{
 };
 use crate::src::format::bytes::{cstr_suffix, format_message_with};
 use crate::src::log::{fatalx, log_bytes, log_cstr, log_debug};
+use crate::src::options::OptionsScope;
 use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::{ClientRef, ClientWeak};
@@ -14,7 +15,6 @@ use crate::src::shared::limits::INT_MAX;
 use crate::src::shared::posix_io::STDIN_FILENO;
 use crate::src::shared::tty::*;
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
-use crate::src::tmux::with_global_options;
 use crate::src::tty::features::{tty_apply_features, tty_parse_client_features};
 use libc::{fnmatch, strcmp, strlen};
 use std::ffi::{CStr, CString};
@@ -1186,8 +1186,8 @@ pub(super) unsafe fn tty_term_apply(
 /// Copy out a global array option's string values; the loops that use them
 /// apply terminal changes which may read options again.
 unsafe fn global_array_strings(name: &CStr) -> Vec<CString> {
-    with_global_options(|oo| {
-        crate::src::options::options_read_entry(oo, name, |entry| {
+    OptionsScope::GlobalServer
+        .with_entry(name, |entry| {
             entry
                 .value
                 .array()
@@ -1196,8 +1196,7 @@ unsafe fn global_array_strings(name: &CStr) -> Vec<CString> {
                 .filter_map(|item| item.value.string_ptr().map(CStr::to_owned))
                 .collect()
         })
-    })
-    .unwrap_or_default()
+        .unwrap_or_default()
 }
 pub(super) unsafe fn tty_term_apply_overrides(mut term: *mut tty_term) {
     let values = global_array_strings(c"terminal-overrides");

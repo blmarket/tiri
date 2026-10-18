@@ -40,7 +40,6 @@ use crate::src::text::utf8::{
     utf8_append, utf8_copy, utf8_cstrwidth, utf8_fromcstr_vec, utf8_open, utf8_set, utf8_strlen,
     utf8_strwidth, utf8_to_data, utf8_tocstr_cstring,
 };
-use crate::src::tmux::with_global_options;
 #[cfg(test)]
 use std::cell::RefCell;
 use std::ffi::{CStr, CString};
@@ -1578,8 +1577,8 @@ unsafe fn prompt_complete_commands(s: &CStr) -> Vec<CString> {
             prompt_complete_add(&mut list, name);
         }
     }
-    let aliases = with_global_options(|oo| {
-        crate::src::options::options_read_entry(oo, c"command-alias", |entry| {
+    let aliases = OptionsScope::GlobalServer
+        .with_entry(c"command-alias", |entry| {
             entry
                 .value
                 .array()
@@ -1588,8 +1587,7 @@ unsafe fn prompt_complete_commands(s: &CStr) -> Vec<CString> {
                 .map(|item| item.value.string_ptr().expect("string option").to_owned())
                 .collect::<Vec<_>>()
         })
-    })
-    .unwrap_or_default();
+        .unwrap_or_default();
     for value in aliases {
         if let Some(separator) = value.to_bytes().iter().position(|&byte| byte == b'=') {
             if prefix.len() <= separator && &value.to_bytes()[..prefix.len()] == prefix {

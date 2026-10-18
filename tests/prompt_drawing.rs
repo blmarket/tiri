@@ -1,8 +1,8 @@
 use std::ffi::CStr;
 use tiri::src::environ::environ_create;
 use tiri::src::grid::{grid_default_cell, grid_get_cell, grid_string_cells_bytes};
-use tiri::src::options::options_default;
 use tiri::src::options::options_table;
+use tiri::src::options::OptionsScope;
 use tiri::src::prompt::{prompt_create, prompt_draw, prompt_free};
 use tiri::src::screen::screen_init;
 use tiri::src::screen_write::{screen_write_start, screen_write_stop};
@@ -11,7 +11,7 @@ use tiri::src::shared::grid::{GRID_ATTR_UNDERSCORE, GRID_STRING_TRIM_SPACES};
 use tiri::src::shared::prompt::*;
 use tiri::src::shared::screen::{screen, MODE_CURSOR, MODE_CURSOR_BLINKING};
 use tiri::src::shared::screen_write::screen_write_ctx;
-use tiri::src::tmux::{global_environ, with_global_options};
+use tiri::src::tmux::global_environ;
 
 #[test]
 fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {
@@ -24,9 +24,7 @@ fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {
             .iter()
             .find(|entry| entry.name == Some(c"extended-keys"))
             .unwrap();
-        with_global_options(|oo| {
-            options_default(oo, definition);
-        });
+        OptionsScope::GlobalServer.reset_default(definition);
 
         for (label, input, index, width, style, flags, completion, expected, cursor) in [
             (c"L:", c"abc", 3, 10, c"align=left", 0, None, "   L:abc", 8),

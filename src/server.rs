@@ -11,6 +11,7 @@ use crate::src::input_keys::input_key_build;
 use crate::src::job::{job_check_died, job_kill_all, job_still_running};
 use crate::src::key_bindings::key_bindings_init;
 use crate::src::log::{fatal, log_cstr, log_debug, log_get_level};
+use crate::src::options::OptionsScope;
 use crate::src::options::{options_get_number, options_set_number};
 use crate::src::proc::{
     proc_fork_and_daemon, proc_loop, proc_set_signals, proc_start, proc_toggle_log,
@@ -41,7 +42,7 @@ use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::status::message_list;
 use crate::src::text::utf8::utf8_update_width_cache;
-use crate::src::tmux::{get_timer, socket_path_cstr, start_time, with_global_options};
+use crate::src::tmux::{get_timer, socket_path_cstr, start_time};
 use crate::src::tty::tty_create_log;
 
 use crate::src::window::windows;
@@ -258,7 +259,7 @@ pub(crate) unsafe fn server_start(
     let c: Option<ClientRef> = match fd {
         Some(fd) => Some(ClientRef::create(fd)),
         None => {
-            with_global_options(|oo| {
+            OptionsScope::GlobalServer.with_local(|oo| {
                 options_set_number(oo, c"exit-empty", 0 as ::core::ffi::c_longlong);
             });
             None
@@ -317,10 +318,12 @@ unsafe fn server_loop() -> ::core::ffi::c_int {
         }
     }
     ClientRef::run_cycle();
-    if with_global_options(|oo| options_get_number(oo, c"exit-empty")) == 0 && server_exit == 0 {
+    if OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"exit-empty")) == 0
+        && server_exit == 0
+    {
         return 0 as ::core::ffi::c_int;
     }
-    if with_global_options(|oo| options_get_number(oo, c"exit-unattached")) == 0
+    if OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"exit-unattached")) == 0
         && !sessions::is_empty()
     {
         return 0 as ::core::ffi::c_int;
@@ -559,6 +562,7 @@ pub unsafe fn server_add_message(
     message_next = message_next.wrapping_add(1);
     let msg_time = SystemTime::now();
     message_log.push_back(s, fresh0, msg_time);
-    limit = with_global_options(|oo| options_get_number(oo, c"message-limit")) as u_int;
+    limit = OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"message-limit"))
+        as u_int;
     message_log.trim(message_next, limit);
 }

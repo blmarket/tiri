@@ -3,6 +3,7 @@
 mod changes;
 mod diagnostic;
 mod from_string;
+mod global;
 mod mutation;
 mod parse;
 mod scope;
