@@ -575,7 +575,7 @@ pub unsafe fn control_write_output(client: &ClientRef, wp: &Rc<UnsafeCell<window
 unsafe fn control_error(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     error: Option<CString>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let c_owner = cmdq_get_client((item).as_ref());
     let mut c: Option<ClientRef> = c_owner.clone();
@@ -585,7 +585,7 @@ unsafe fn control_error(
         write_cstr(out, error.as_deref())
     });
     cmdq_guard(item_handle, c"error", 1 as ::core::ffi::c_int);
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }
 unsafe fn control_error_callback(owner: &ClientRef) {
     let mut c: Option<ClientRef> = Some(owner.clone());

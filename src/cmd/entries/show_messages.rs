@@ -78,7 +78,7 @@ unsafe fn cmd_show_messages_terminals(
 unsafe fn cmd_show_messages_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut done: ::core::ffi::c_int = 0;
@@ -95,7 +95,7 @@ unsafe fn cmd_show_messages_exec(
         done = 1 as ::core::ffi::c_int;
     }
     if done != 0 {
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     let mut ft_owner = format_create_from_target(item_handle);
     ft = &raw mut *ft_owner;
@@ -110,5 +110,5 @@ unsafe fn cmd_show_messages_exec(
         cmdq_print(item_handle, |out| write_cstr(out, &*s));
     }
     drop(ft_owner);
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }

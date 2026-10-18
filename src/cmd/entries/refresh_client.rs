@@ -73,7 +73,7 @@ unsafe fn cmd_refresh_client_update_subscription(tc_owner: &ClientRef, value: &C
 unsafe fn cmd_refresh_client_control_client_size(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -100,7 +100,7 @@ unsafe fn cmd_refresh_client_control_client_size(
             cmdq_error(item_handle, |out| {
                 out.write_all(b"size too small or too big")
             });
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
         log_debug(format_args!(
             "{}: client {} window @{}: size {}x{}",
@@ -119,7 +119,7 @@ unsafe fn cmd_refresh_client_control_client_size(
             .expect("live client")
             .update_flags(CLIENT_WINDOWSIZECHANGED as uint64_t, 0);
         recalculate_sizes_now(1 as ::core::ffi::c_int);
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     if sscanf(size, c"@%u:".as_ptr(), &raw mut w) == 1 as ::core::ffi::c_int {
         log_debug(format_args!(
@@ -134,13 +134,13 @@ unsafe fn cmd_refresh_client_control_client_size(
         ));
         control_clear_window_size(tc.as_ref().expect("live client"), w);
         recalculate_sizes_now(1 as ::core::ffi::c_int);
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     if sscanf(size, c"%u,%u".as_ptr(), &raw mut x, &raw mut y) != 2 as ::core::ffi::c_int
         && sscanf(size, c"%ux%u".as_ptr(), &raw mut x, &raw mut y) != 2 as ::core::ffi::c_int
     {
         cmdq_error(item_handle, |out| out.write_all(b"bad size argument"));
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     if x < WINDOW_MINIMUM as u_int
         || x > WINDOW_MAXIMUM as u_int
@@ -150,11 +150,11 @@ unsafe fn cmd_refresh_client_control_client_size(
         cmdq_error(item_handle, |out| {
             out.write_all(b"size too small or too big")
         });
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     tc.as_ref().expect("live client").set_control_size(x, y);
     recalculate_sizes_now(1 as ::core::ffi::c_int);
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }
 fn cmd_refresh_parse_pane(value: &CStr) -> Option<(u_int, &CStr)> {
     let bytes = value.to_bytes();
@@ -216,7 +216,7 @@ unsafe fn cmd_refresh_report(client: &ClientRef, value: &CStr) {
 unsafe fn cmd_refresh_client_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -243,7 +243,7 @@ unsafe fn cmd_refresh_client_exec(
                     out.write_all(b"adjustment ")?;
                     write_cstr(out, errstr)
                 });
-                return CMD_RETURN_ERROR;
+                return CmdOutcome::Error;
             }
         }
         let client = tc.as_ref().expect("live client");
@@ -272,11 +272,11 @@ unsafe fn cmd_refresh_client_exec(
         }
         tty_update_client_offset(&tc.clone().expect("live client"));
         server_redraw_client(tc.as_ref().expect("live client"));
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     if args_has(&*args, 'l' as i32 as u_char) != 0 {
         tty_clipboard_query(tc.as_ref().expect("live client"));
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     if args_has(&*args, 'F' as i32 as u_char) != 0 {
         tc.clone()
@@ -302,7 +302,7 @@ unsafe fn cmd_refresh_client_exec(
                     av.as_string().expect("-A takes a value"),
                 );
             }
-            return CMD_RETURN_NORMAL;
+            return CmdOutcome::Normal;
         }
     } else if args_has(&*args, 'B' as i32 as u_char) != 0 {
         if !(!tc.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0) {
@@ -312,7 +312,7 @@ unsafe fn cmd_refresh_client_exec(
                     av.as_string().expect("-B takes a value"),
                 );
             }
-            return CMD_RETURN_NORMAL;
+            return CmdOutcome::Normal;
         }
     } else if args_has(&*args, 'C' as i32 as u_char) != 0 {
         if !(!tc.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0) {
@@ -330,10 +330,10 @@ unsafe fn cmd_refresh_client_exec(
                 .update_flags(CLIENT_STATUSFORCE as uint64_t, 0);
             server_redraw_client(tc.as_ref().expect("live client"));
         }
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     cmdq_error(item_handle, |out| out.write_all(b"not a control client"));
-    CMD_RETURN_ERROR
+    CmdOutcome::Error
 }
 
 #[cfg(test)]

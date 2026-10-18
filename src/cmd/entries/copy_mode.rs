@@ -70,7 +70,7 @@ pub static cmd_clock_mode_entry: cmd_entry = {
 unsafe fn cmd_copy_mode_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -85,7 +85,7 @@ unsafe fn cmd_copy_mode_exec(
     let mut line_numbers: ::core::ffi::c_int = 0;
     if args_has(&*args, 'q' as i32 as u_char) != 0 {
         pane_owner.reset_all_modes();
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     if args_has(&*args, 'M' as i32 as u_char) != 0 {
         let mut mouse_session_owner = None;
@@ -96,7 +96,7 @@ unsafe fn cmd_copy_mode_exec(
         );
         s = mouse_session_owner.clone();
         let Some(mouse_pane) = mouse_pane_owner else {
-            return CMD_RETURN_NORMAL;
+            return CmdOutcome::Normal;
         };
         pane_owner = mouse_pane;
         if c.is_none()
@@ -109,12 +109,12 @@ unsafe fn cmd_copy_mode_exec(
                 s.as_ref(),
             )
         {
-            return CMD_RETURN_NORMAL;
+            return CmdOutcome::Normal;
         }
     }
     if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_clock_mode_entry) {
         pane_owner.set_mode(None, &window_clock_mode, Some(item_handle), None, None);
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     let source_owner = if args_has(&*args, 's' as i32 as u_char) != 0 {
         (*source).wp.upgrade()
@@ -157,7 +157,7 @@ unsafe fn cmd_copy_mode_exec(
     }
     if args_has(&*args, 'S' as i32 as u_char) != 0 {
         let Some(c) = c.as_ref() else {
-            return CMD_RETURN_NORMAL;
+            return CmdOutcome::Normal;
         };
         let tty_oy = c.terminal_view().oy;
         let slider = c.borrow_terminal().mouse_slider_mpos;
@@ -168,7 +168,7 @@ unsafe fn cmd_copy_mode_exec(
             tty_oy,
             args_has(&*args, 'e' as i32 as u_char),
         );
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }

@@ -65,7 +65,7 @@ pub static cmd_suspend_client_entry: cmd_entry = {
 unsafe fn cmd_detach_client_exec(
     mut command: refbox::Weak<cmd>,
     item: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let suspend = std::ptr::eq(
         cmd_get_entry(command.get_unchecked()),
         &cmd_suspend_client_entry,
@@ -77,7 +77,7 @@ unsafe fn cmd_detach_client_exec(
     let exec = args_get(args, b'E').map(std::ffi::CStr::to_owned);
     if suspend {
         target.suspend();
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     if client.as_ref().expect("command client").is_read_only()
         && (args_has(args, b's') != 0
@@ -85,7 +85,7 @@ unsafe fn cmd_detach_client_exec(
             || !std::rc::Rc::ptr_eq(client.as_ref().unwrap(), &target))
     {
         cmdq_error(item, |out| out.write_all(b"client is read-only"));
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     let message = if args_has(args, b'P') != 0 {
         MSG_DETACHKILL
@@ -101,7 +101,7 @@ unsafe fn cmd_detach_client_exec(
     };
     if args_has(args, b's') != 0 {
         let Some(session) = source.session_handle() else {
-            return CMD_RETURN_NORMAL;
+            return CmdOutcome::Normal;
         };
         let observer = std::rc::Rc::downgrade(&session);
         drop(session);
@@ -112,7 +112,7 @@ unsafe fn cmd_detach_client_exec(
             }
             cursor = ClientRegistry::next(&client);
         }
-        return CMD_RETURN_STOP;
+        return CmdOutcome::Stop;
     }
     if args_has(args, b'a') != 0 {
         let mut cursor = ClientRegistry::first();
@@ -124,8 +124,8 @@ unsafe fn cmd_detach_client_exec(
             }
             cursor = ClientRegistry::next(&client);
         }
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     detach(&target);
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }

@@ -117,7 +117,7 @@ pub static cmd_last_window_entry: cmd_entry = {
 unsafe fn cmd_select_window_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -159,20 +159,20 @@ unsafe fn cmd_select_window_exec(
                 != 0 as ::core::ffi::c_int
             {
                 cmdq_error(item_handle, |out| out.write_all(b"no next window"));
-                return CMD_RETURN_ERROR;
+                return CmdOutcome::Error;
             }
         } else if previous != 0 {
             if (s.as_ref().expect("live session")).select_adjacent_window(true, (activity) != 0)
                 != 0 as ::core::ffi::c_int
             {
                 cmdq_error(item_handle, |out| out.write_all(b"no previous window"));
-                return CMD_RETURN_ERROR;
+                return CmdOutcome::Error;
             }
         } else if (s.as_ref().expect("live session")).select_last_window()
             != 0 as ::core::ffi::c_int
         {
             cmdq_error(item_handle, |out| out.write_all(b"no last window"));
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
         *current.current.borrow_mut() = cmd_find_state::find_from_session(
             s.as_ref().expect("live session"),
@@ -191,7 +191,7 @@ unsafe fn cmd_select_window_exec(
         {
             if (s.as_ref().expect("live session")).select_last_window() != 0 as ::core::ffi::c_int {
                 cmdq_error(item_handle, |out| out.write_all(b"no last window"));
-                return CMD_RETURN_ERROR;
+                return CmdOutcome::Error;
             }
             if crate::src::shared::rc::same(
                 current.current.borrow().session_handle().as_ref(),
@@ -236,5 +236,5 @@ unsafe fn cmd_select_window_exec(
             .set_latest_client(c.as_ref());
     }
     recalculate_sizes();
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }

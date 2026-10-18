@@ -53,17 +53,17 @@ pub(crate) fn cfg_set_files(files: Vec<CString>) {
 pub(crate) fn cfg_files() -> &'static [CString] {
     CFG_FILES.get().map_or(&[], Vec::as_slice)
 }
-unsafe fn cfg_client_done(item: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cfg_client_done(item: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> CmdOutcome {
     if cfg_finished == 0 {
         let (waiter, retval) = cmdq_wait(item);
         drop(CFG_WAITER.replace(waiter));
         return retval;
     }
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }
-unsafe fn cfg_done() -> cmd_retval {
+unsafe fn cfg_done() -> CmdOutcome {
     if cfg_finished != 0 {
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     cfg_finished = 1 as ::core::ffi::c_int;
     cfg_show_causes(None);
@@ -71,7 +71,7 @@ unsafe fn cfg_done() -> cmd_retval {
         waiter.resume();
     }
     prompt_load_history();
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }
 pub unsafe fn start_cfg() {
     let mut c: Option<ClientRef> = None;
@@ -399,7 +399,7 @@ mod cfg_wait_tests {
                 Some(Box::new(move |_| {
                     let _capture = &capture;
                     ran.set(true);
-                    CMD_RETURN_NORMAL
+                    CmdOutcome::Normal
                 })),
             ),
         );
@@ -417,7 +417,7 @@ mod cfg_wait_tests {
             assert!(CFG_WAITER.as_ref().is_some_and(|w| !w.is_cancelled()));
             assert!(!ran.get());
 
-            assert_eq!(cfg_done(), CMD_RETURN_NORMAL);
+            assert!(matches!(cfg_done(), CmdOutcome::Normal));
             assert_eq!(cfg_finished, 1);
             assert!(CFG_WAITER.is_none());
             assert!(!ran.get());
@@ -453,7 +453,7 @@ mod cfg_wait_tests {
             startup_queue(&second, &second_ran, &Rc::new(Cell::new(false)));
             assert_eq!(cmdq_next(Some(&second)), 0);
 
-            cfg_done();
+            let _ = cfg_done();
             assert_eq!(cmdq_next(Some(&second)), 1);
             assert!(second_ran.get());
             assert_eq!(cmdq_next(Some(&first)), 0);
@@ -481,7 +481,7 @@ mod cfg_wait_tests {
             assert!(released.get());
             assert!(CFG_WAITER.as_ref().is_some_and(CmdqWaiter::is_cancelled));
 
-            cfg_done();
+            let _ = cfg_done();
             assert!(CFG_WAITER.is_none());
             assert!(!ran.get());
         }

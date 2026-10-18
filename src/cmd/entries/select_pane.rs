@@ -145,7 +145,7 @@ unsafe fn cmd_select_pane_redraw(w_owner: &WindowRef) {
 unsafe fn cmd_select_pane_marked_pane(
     mut command: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let arguments = cmd_get_args_mut(command.get_mut_unchecked()).expect("select pane arguments");
     let target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
@@ -198,12 +198,12 @@ unsafe fn cmd_select_pane_marked_pane(
         server_status_window(&window);
         drop(window);
     }
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }
 unsafe fn cmd_select_pane_exec(
     mut command: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let entry = cmd_get_entry(command.get_unchecked());
     let marked_command = command.clone();
@@ -226,7 +226,7 @@ unsafe fn cmd_select_pane_exec(
             }
             let Some(last) = last else {
                 cmdq_error(item_handle, |out| out.write_all(b"no last pane"));
-                return CMD_RETURN_ERROR;
+                return CmdOutcome::Error;
             };
             if args_has(arguments, b'e') != 0 || args_has(arguments, b'd') != 0 {
                 last.set_input_enabled(args_has(arguments, b'e') != 0);
@@ -240,7 +240,7 @@ unsafe fn cmd_select_pane_exec(
                     cmd_select_pane_redraw(&window);
                 }
             }
-            return CMD_RETURN_NORMAL;
+            return CmdOutcome::Normal;
         }
         if args_has(arguments, b'm') != 0 || args_has(arguments, b'M') != 0 {
             return cmd_select_pane_marked_pane(marked_command.clone(), item_handle);
@@ -260,7 +260,7 @@ unsafe fn cmd_select_pane_exec(
         if args_has(arguments, b'g') != 0 {
             let style = options_get_string(&original_pane.borrow_options_mut(), c"window-style");
             cmdq_print(item_handle, |out| write_cstr(out, &*style));
-            return CMD_RETURN_NORMAL;
+            return CmdOutcome::Normal;
         }
         let direction = [
             (b'L', Direction::Left),
@@ -276,7 +276,7 @@ unsafe fn cmd_select_pane_exec(
                 .pane_in_direction(&original_pane, direction)
                 .upgrade()
             else {
-                return CMD_RETURN_NORMAL;
+                return CmdOutcome::Normal;
             };
             selected
         } else {
@@ -286,7 +286,7 @@ unsafe fn cmd_select_pane_exec(
             pane.set_input_enabled(args_has(arguments, b'e') != 0);
             server_redraw_window_borders(&window);
             server_status_window(&window);
-            return CMD_RETURN_NORMAL;
+            return CmdOutcome::Normal;
         }
         if args_has(arguments, b'T') != 0 {
             let title = format_single_from_target_cstring(
@@ -308,10 +308,10 @@ unsafe fn cmd_select_pane_exec(
                 server_redraw_window_borders(&window);
                 server_status_window(&window);
             }
-            return CMD_RETURN_NORMAL;
+            return CmdOutcome::Normal;
         }
         if window.active_pane().ptr_eq(&std::rc::Rc::downgrade(&pane)) {
-            return CMD_RETURN_NORMAL;
+            return CmdOutcome::Normal;
         }
         window.redraw_active_switch(Some(&pane));
         if window.select_pane(&pane, true) != 0 {
@@ -325,7 +325,7 @@ unsafe fn cmd_select_pane_exec(
             |out| out.write_all(b"after-select-pane"),
         );
         cmd_select_pane_redraw(&window);
-        CMD_RETURN_NORMAL
+        CmdOutcome::Normal
     })();
     drop(window);
     result

@@ -56,7 +56,8 @@ use crate::src::proc::{
 };
 use crate::src::prompt::prompt_free;
 use crate::src::reactor::{
-    bufferevent_enable, evbuffer_add, evbuffer_get_length, evbuffer_pullup, evbuffer_readln,
+    bufferevent_enable, defer, evbuffer_add, evbuffer_get_length, evbuffer_pullup,
+    evbuffer_readln,
 };
 use crate::src::resize::{recalculate_size, recalculate_sizes};
 use crate::src::screen::screen_mode_display;
@@ -1213,11 +1214,27 @@ unsafe fn server_client_lost(client_owner: &ClientRef) {
     (*c).peer = ::core::ptr::null_mut::<tmuxpeer>();
     drop((*c).out_fd.take());
     drop((*c).fd.take());
-    drop(registry_owner);
+    server_client_retire(registry_owner);
     server_add_accept(0 as ::core::ffi::c_int);
     recalculate_sizes();
     server_check_unattached();
     server_update_socket();
+}
+/// Like tmux's server_client_unref, free the client one loop turn later, so no
+/// event callback on the stack can see its memory or queue go away. Remaining
+/// holders, like tmux references, free it when they let go.
+fn server_client_retire(registry_owner: ClientRef) {
+    defer(move || {
+        let holders = Rc::strong_count(&registry_owner) - 1;
+        if holders != 0 {
+            log_debug(format_args!(
+                "client {} retained by {} references",
+                log_pointer(registry_owner.get()),
+                holders
+            ));
+        }
+        drop(registry_owner);
+    });
 }
 unsafe fn server_client_suspend(c_owner: &ClientRef) {
     let mut c = c_owner.get();
@@ -2028,7 +2045,7 @@ unsafe fn server_client_handle_dead_key(
 unsafe fn server_client_key_callback(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut owned: QueuedKeyEvent,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut current_block: u64;
     let mut event: *mut key_event = &raw mut *owned.0;
@@ -2059,7 +2076,7 @@ unsafe fn server_client_key_callback(
     let mut prefix2: key_code = 0;
     let c_owner = (*event).resolve_client(|| cmdq_get_client((item).as_ref()));
     let Some(c_owner) = c_owner else {
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     };
     c = c_owner.get();
     s = (*c).session_handle();
@@ -2460,7 +2477,7 @@ unsafe fn server_client_key_callback(
     if !s.is_none() && key != KEYC_FOCUS_OUT as ::core::ffi::c_ulong as key_code {
         server_client_update_latest(&c_owner);
     }
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }
 
 struct QueuedKeyEvent(Box<key_event>, Option<ClientRef>);
@@ -3603,13 +3620,13 @@ unsafe fn server_client_dispatch(
 }
 unsafe fn server_client_read_only(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     cmdq_error(item_handle, |out| out.write_all(b"client is read-only"));
-    CMD_RETURN_ERROR
+    CmdOutcome::Error
 }
 unsafe fn server_client_default_command(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let c_owner = cmdq_get_client((item).as_ref());
     let mut c: *mut client = c_owner
@@ -3626,11 +3643,11 @@ unsafe fn server_client_default_command(
         new_item_allocation = cmdq_get_command(&cmdlist, None);
     }
     cmdq_insert_after(item_handle, new_item_allocation);
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }
 unsafe fn server_client_command_done(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let c_owner = cmdq_get_client((item).as_ref());
     let mut c: *mut client = c_owner
@@ -3647,7 +3664,7 @@ unsafe fn server_client_command_done(
             tty_send_requests(terminal)
         };
     }
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }
 unsafe fn server_client_dispatch_command(owner: &ClientRef, imsg: &mut imsg) -> ::core::ffi::c_int {
     let c = owner.get();
@@ -4300,8 +4317,7 @@ pub(crate) mod queue_test_clients {
 #[cfg(test)]
 mod lost_queue_tests {
     use super::*;
-    use crate::src::cmd::queue::cmdq_suspend;
-    use crate::src::shared::command::CMD_RETURN_NORMAL;
+        use crate::src::shared::command::CmdOutcome;
     use std::cell::Cell;
 
     struct SetOnDrop(Rc<Cell<bool>>);
@@ -4322,7 +4338,7 @@ mod lost_queue_tests {
                 Some(Box::new(move |_| {
                     let _capture = &capture;
                     ran.set(true);
-                    CMD_RETURN_NORMAL
+                    CmdOutcome::Normal
                 })),
             ),
         );
@@ -4340,12 +4356,12 @@ mod lost_queue_tests {
                 Some(&owner),
                 cmdq_get_callback_owned(
                     c"suspended head",
-                    Some(Box::new(move |item| {
-                        cmdq_suspend(item, async move {
+                    Some(Box::new(move |_| {
+                        CmdOutcome::Suspend(Box::pin(async move {
                             let _guard = guard;
                             let _ = rx.await;
                             body.set(true);
-                        })
+                        }))
                     })),
                 ),
             );
@@ -4382,7 +4398,7 @@ mod lost_queue_tests {
             Some(&owner),
             cmdq_get_callback_owned(
                 c"client-holding head",
-                Some(Box::new(move |item| cmdq_suspend(item, future(held)))),
+                Some(Box::new(move |_| CmdOutcome::Suspend(Box::pin(future(held))))),
             ),
         );
         assert_eq!(cmdq_next(Some(&owner)), 0);
@@ -4446,7 +4462,7 @@ mod lost_queue_tests {
                 Some(&owner),
                 cmdq_get_callback_owned(
                     c"file-backed head",
-                    Some(Box::new(move |item| {
+                    Some(Box::new(move |_| {
                         let wait = crate::src::file::file_read_wait(None, c"/dev/null", |file| {
                             observed_file.set(file);
                             let capture = capture.take();
@@ -4455,10 +4471,10 @@ mod lost_queue_tests {
                                 panic!("a dropped wait must not deliver progress")
                             }))
                         });
-                        cmdq_suspend(item, async move {
+                        CmdOutcome::Suspend(Box::pin(async move {
                             let _ = wait.await;
                             panic!("a dropped wait must not complete")
-                        })
+                        }))
                     })),
                 ),
             );
@@ -4480,6 +4496,88 @@ mod lost_queue_tests {
             let file = file.take();
             crate::src::reactor::shutdown_runtime(runtime);
             assert!(file.upgrade().is_none());
+        }
+    }
+
+    /// Queue a suspended head whose future records its release, then mark the
+    /// client lost the way `server_client_lost` does before retiring it.
+    unsafe fn lose_with_suspended_head(
+        owner: &ClientRef,
+    ) -> (std::rc::Weak<UnsafeCell<cmdq_item>>, Rc<Cell<bool>>) {
+        let released = Rc::new(Cell::new(false));
+        let guard = SetOnDrop(released.clone());
+        let head = cmdq_append(
+            Some(owner),
+            cmdq_get_callback_owned(
+                c"suspended head",
+                Some(Box::new(move |_| {
+                    CmdOutcome::Suspend(Box::pin(async move {
+                        let _guard = guard;
+                        std::future::pending::<()>().await;
+                    }))
+                })),
+            ),
+        );
+        assert_eq!(cmdq_next(Some(owner)), 0);
+        (*owner.get()).flags |= CLIENT_DEAD as uint64_t;
+        assert_eq!(cmdq_next(Some(owner)), 0);
+        (head, released)
+    }
+
+    #[test]
+    fn a_client_retired_inside_a_callback_is_freed_from_dispatch() {
+        use tiri_rt::{Handle as _, Runtime as _};
+        let mut runtime = tiri_rt::mio::Runtime::new().unwrap();
+        let owner = unsafe { queue_test_clients::with_queue() };
+        let client = Rc::downgrade(&owner);
+        let inside = client.clone();
+        let returned = Rc::new(Cell::new(false));
+        let mark = returned.clone();
+        let _task = runtime
+            .handle()
+            .spawn(async move {
+                server_client_retire(owner);
+                assert!(inside.upgrade().is_some(), "freed inside the callback");
+                mark.set(true);
+            })
+            .unwrap();
+        runtime.poll(Some(std::time::Duration::ZERO)).unwrap();
+        assert!(returned.get());
+        assert!(client.upgrade().is_none());
+    }
+
+    #[test]
+    fn retiring_a_lost_client_cancels_its_suspended_item_from_dispatch() {
+        use tiri_rt::Runtime as _;
+        let mut runtime = tiri_rt::mio::Runtime::new().unwrap();
+        unsafe {
+            let owner = queue_test_clients::with_queue();
+            let (head, released) = lose_with_suspended_head(&owner);
+            let client = Rc::downgrade(&owner);
+            server_client_retire(owner);
+            assert!(client.upgrade().is_some());
+            assert!(head.upgrade().is_some());
+            assert!(!released.get(), "cancelled inline");
+            runtime.poll(Some(std::time::Duration::ZERO)).unwrap();
+            assert!(client.upgrade().is_none());
+            assert!(head.upgrade().is_none());
+            assert!(released.get());
+        }
+    }
+
+    #[test]
+    fn runtime_shutdown_releases_a_pending_retirement() {
+        use tiri_rt::Runtime as _;
+        let runtime = tiri_rt::mio::Runtime::new().unwrap();
+        unsafe {
+            let owner = queue_test_clients::with_queue();
+            let (head, released) = lose_with_suspended_head(&owner);
+            let client = Rc::downgrade(&owner);
+            server_client_retire(owner);
+            crate::src::reactor::shutdown_runtime(runtime);
+            assert!(client.upgrade().is_none());
+            assert!(head.upgrade().is_none());
+            assert!(released.get());
         }
     }
 }

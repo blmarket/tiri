@@ -142,6 +142,92 @@ fn tasks_can_spawn_owned_work_while_runtime_is_borrowed() {
 }
 
 #[test]
+fn deferred_callbacks_run_or_release_captures_on_runtime_shutdown() {
+    let mut runtime = mio::Runtime::new().unwrap();
+    let count = Rc::new(Cell::new(0));
+    let spy = Dropped(count.clone());
+    runtime.handle().defer(move || drop(spy)).unwrap();
+    assert_eq!(count.get(), 0);
+    tick(&mut runtime);
+    assert_eq!(count.get(), 1);
+
+    let spy = Dropped(count.clone());
+    runtime
+        .handle()
+        .defer(move || {
+            let _spy = spy;
+            panic!("shutdown must not dispatch callbacks");
+        })
+        .unwrap();
+    drop(runtime);
+    assert_eq!(count.get(), 2);
+}
+
+#[test]
+fn runtime_drop_releases_callbacks_queued_by_capture_destructors() {
+    struct EnqueueOnDrop {
+        handle: mio::Handle,
+        dropped: Rc<Cell<usize>>,
+    }
+    impl Drop for EnqueueOnDrop {
+        fn drop(&mut self) {
+            let spy = Dropped(self.dropped.clone());
+            let _ = self.handle.defer(move || {
+                let _spy = spy;
+                panic!("cleanup must not dispatch queued work");
+            });
+        }
+    }
+
+    let runtime = mio::Runtime::new().unwrap();
+    let handle = runtime.handle();
+    let count = Rc::new(Cell::new(0));
+    let enqueue = EnqueueOnDrop {
+        handle: handle.clone(),
+        dropped: count.clone(),
+    };
+    handle
+        .defer(move || {
+            let _enqueue = enqueue;
+            panic!("shutdown must not dispatch callbacks");
+        })
+        .unwrap();
+    drop(runtime);
+    assert_eq!(count.get(), 1);
+    let spy = Dropped(count.clone());
+    assert!(handle.defer(move || drop(spy)).is_err());
+    assert_eq!(count.get(), 2);
+}
+
+#[test]
+fn ready_queue_orders_tasks_and_deferred_callbacks_without_inline_dispatch() {
+    let mut runtime = mio::Runtime::new().unwrap();
+    let handle = runtime.handle();
+    let order = Rc::new(RefCell::new(Vec::new()));
+    let observed = order.clone();
+    handle.defer(move || observed.borrow_mut().push(1)).unwrap();
+    let observed = order.clone();
+    let _task = handle
+        .spawn(async move {
+            observed.borrow_mut().push(2);
+        })
+        .unwrap();
+    let observed = order.clone();
+    let nested = handle.clone();
+    handle
+        .defer(move || {
+            observed.borrow_mut().push(3);
+            let last = observed.clone();
+            nested.defer(move || last.borrow_mut().push(5)).unwrap();
+            observed.borrow_mut().push(4);
+        })
+        .unwrap();
+    assert!(order.borrow().is_empty());
+    tick(&mut runtime);
+    assert_eq!(*order.borrow(), [1, 2, 3, 4, 5]);
+}
+
+#[test]
 fn cancellation_drops_unpolled_and_parked_futures_without_driving() {
     let mut runtime = mio::Runtime::new().unwrap();
     let handle = runtime.handle();

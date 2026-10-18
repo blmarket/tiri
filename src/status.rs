@@ -584,7 +584,7 @@ pub unsafe fn status_message_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
     drop(old_screen);
     i32::from(changed)
 }
-unsafe fn status_prompt_accept(c_owner: &ClientRef) -> cmd_retval {
+unsafe fn status_prompt_accept(c_owner: &ClientRef) -> CmdOutcome {
     let _c: Option<ClientRef> = Some(c_owner.clone());
     if c_owner.prompt_observer().is_alive() {
         status_prompt_key(
@@ -593,7 +593,7 @@ unsafe fn status_prompt_accept(c_owner: &ClientRef) -> cmd_retval {
             ::core::ptr::null_mut::<mouse_event>(),
         );
     }
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }
 pub unsafe fn status_prompt_set(
     c_owner: &ClientRef,
@@ -647,7 +647,7 @@ pub unsafe fn status_prompt_set(
                     move |_| unsafe {
                         observer
                             .upgrade()
-                            .map_or(CMD_RETURN_NORMAL, |owner| status_prompt_accept(&owner))
+                            .map_or(CmdOutcome::Normal, |owner| status_prompt_accept(&owner))
                     }
                 })),
             ),

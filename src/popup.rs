@@ -1150,7 +1150,7 @@ mod waiter_tests {
     use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next, cmdq_wait};
     use crate::src::server_client::queue_test_clients as clients;
     use crate::src::session::session_new_for_test;
-    use crate::src::shared::command::{cmdq_item, CMD_RETURN_NORMAL};
+    use crate::src::shared::command::{cmdq_item, CmdOutcome};
     use std::cell::{Cell, RefCell};
 
     /// Queue on `owner` a head that waits and an item recording that it ran;
@@ -1179,7 +1179,7 @@ mod waiter_tests {
                 c"after popup",
                 Some(Box::new(move |_| {
                     ran.set(true);
-                    CMD_RETURN_NORMAL
+                    CmdOutcome::Normal
                 })),
             ),
         );

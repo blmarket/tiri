@@ -60,7 +60,7 @@ pub static cmd_break_pane_entry: cmd_entry = {
 unsafe fn cmd_break_pane_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -90,7 +90,7 @@ unsafe fn cmd_break_pane_exec(
                 out.write_all(b"invalid window name: ")?;
                 write_cstr(out, name)
             });
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
         before = args_has(&*args, 'b' as i32 as u_char);
         if args_has(&*args, 'a' as i32 as u_char) != 0 || before != 0 {
@@ -108,7 +108,7 @@ unsafe fn cmd_break_pane_exec(
                 );
             }
             if idx == -(1 as ::core::ffi::c_int) {
-                return CMD_RETURN_ERROR;
+                return CmdOutcome::Error;
             }
         }
         if source_window.pane_snapshot().len() == 1 {
@@ -121,7 +121,7 @@ unsafe fn cmd_break_pane_exec(
                 (args_has(&*args, 'd' as i32 as u_char) == 0) as ::core::ffi::c_int,
             ) {
                 cmdq_error(item_handle, |out| write_cstr(out, &*link_error));
-                return CMD_RETURN_ERROR;
+                return CmdOutcome::Error;
             }
             if let Some(name) = name {
                 source_window.rename(name, false);
@@ -137,7 +137,7 @@ unsafe fn cmd_break_pane_exec(
                 .expect("live session")
                 .with_winlinks(|links| winlink_find_by_window(links, &source_window));
             if !wl.is_alive() {
-                return CMD_RETURN_ERROR;
+                return CmdOutcome::Error;
             }
             pane_owner.notify_moved(
                 &source_window,
@@ -156,7 +156,7 @@ unsafe fn cmd_break_pane_exec(
                 cmdq_error(item_handle, |out| {
                     write!(out, "index in use: {}", (idx) as i32)
                 });
-                return CMD_RETURN_ERROR;
+                return CmdOutcome::Error;
             }
             ClientRef::forget_pane(&pane_owner);
             let rest = source_window
@@ -204,7 +204,7 @@ unsafe fn cmd_break_pane_exec(
                 Err(error) => {
                     cmdq_error(item_handle, |out| write_cstr(out, &*error));
                     drop(window);
-                    return CMD_RETURN_ERROR;
+                    return CmdOutcome::Error;
                 }
             };
             pane_owner.mark_changed();
@@ -252,7 +252,7 @@ unsafe fn cmd_break_pane_exec(
             );
             cmdq_print(item_handle, |out| write_cstr(out, &*cp));
         }
-        CMD_RETURN_NORMAL
+        CmdOutcome::Normal
     })();
     drop(source_window);
     result

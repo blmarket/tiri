@@ -49,7 +49,7 @@ unsafe fn cmd_server_access_deny(
     mut flags: ::core::ffi::c_int,
     type_0: &CStr,
     name: &CStr,
-) -> cmd_retval {
+) -> CmdOutcome {
     if server_acl_find(id, flags) == 0 {
         cmdq_error(item_handle, |out| {
             write_cstr(out, nullable_cstr(type_0.as_ptr()))?;
@@ -57,15 +57,15 @@ unsafe fn cmd_server_access_deny(
             write_cstr(out, nullable_cstr(name.as_ptr()))?;
             out.write_all(b" not found")
         });
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     server_acl_deny(id, flags);
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }
 unsafe fn cmd_server_access_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -79,13 +79,13 @@ unsafe fn cmd_server_access_exec(
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if args_has(&*args, 'l' as i32 as u_char) != 0 {
         server_acl_display(item_handle);
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     if args_count(&*args) == 0 as u_int {
         cmdq_error(item_handle, |out| {
             out.write_all(b"missing user or group argument")
         });
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     let arg = format_single_cstring(
         Some(item_handle),
@@ -118,26 +118,26 @@ unsafe fn cmd_server_access_exec(
             out.write_all(b": ")?;
             write_cstr(out, &*arg)
         });
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     if !flags & SERVER_ACL_IS_GROUP != 0 && (id == 0 as id_t || id == getuid()) {
         cmdq_error(item_handle, |out| {
             write_cstr(out, nullable_cstr(name))?;
             out.write_all(b" owns the server, can't change access")
         });
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     if args_has(&*args, 'a' as i32 as u_char) != 0 && args_has(&*args, 'd' as i32 as u_char) != 0 {
         cmdq_error(item_handle, |out| {
             out.write_all(b"-a and -d cannot be used together")
         });
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     if args_has(&*args, 'w' as i32 as u_char) != 0 && args_has(&*args, 'r' as i32 as u_char) != 0 {
         cmdq_error(item_handle, |out| {
             out.write_all(b"-r and -w cannot be used together")
         });
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     if args_has(&*args, 'd' as i32 as u_char) != 0 {
         return cmd_server_access_deny(item_handle, id, flags, type_0, CStr::from_ptr(name));
@@ -150,7 +150,7 @@ unsafe fn cmd_server_access_exec(
                 write_cstr(out, nullable_cstr(name))?;
                 out.write_all(b" is already added")
             });
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
         server_acl_allow(id, flags);
     } else if (args_has(&*args, 'r' as i32 as u_char) != 0
@@ -167,10 +167,10 @@ unsafe fn cmd_server_access_exec(
                 write_cstr(out, nullable_cstr(name))?;
                 out.write_all(b" not found")
             });
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
         server_acl_allow_write(id, flags);
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     if args_has(&*args, 'r' as i32 as u_char) != 0 {
         if server_acl_find(id, flags) == 0 {
@@ -180,10 +180,10 @@ unsafe fn cmd_server_access_exec(
                 write_cstr(out, nullable_cstr(name))?;
                 out.write_all(b" not found")
             });
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
         server_acl_deny_write(id, flags);
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }

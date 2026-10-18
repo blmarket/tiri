@@ -191,7 +191,7 @@ unsafe fn cmd_wait_for_prune_expired(wc: *mut wait_channel) {
 unsafe fn cmd_wait_for_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut name: &CStr = args_string(&mut *(args), 0 as u_int).expect("argument is present");
@@ -304,7 +304,7 @@ unsafe fn cmd_wait_for_event(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     name: &CStr,
     mut args: *mut args,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut filter: Option<&CStr> = args_get(&*(args), 'F' as i32 as u_char);
     if hooks_valid_event_name(name) == 0 {
@@ -312,7 +312,7 @@ unsafe fn cmd_wait_for_event(
             out.write_all(b"invalid event: ")?;
             write_cstr(out, name)
         });
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     if args_has(&*args, 'l' as i32 as u_char) != 0 {
         return cmd_wait_for_event_list(item_handle, name);
@@ -322,7 +322,7 @@ unsafe fn cmd_wait_for_event(
     }
     if cmdq_get_client((item).as_ref()).is_none() {
         cmdq_error(item_handle, |out| out.write_all(b"not able to wait"));
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     let key = std::rc::Rc::downgrade(item_handle);
     let sink = wait_event_sink(events_add_sink(name, {
@@ -346,7 +346,7 @@ unsafe fn cmd_wait_for_event(
 unsafe fn cmd_wait_for_event_list(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     name: &CStr,
-) -> cmd_retval {
+) -> CmdOutcome {
     cmd_wait_for_event_prune_expired(&mut *wait_event_items_ptr());
     let names = wait_event_items_ptr()
         .as_ref()
@@ -358,13 +358,13 @@ unsafe fn cmd_wait_for_event_list(
     for owner in names {
         cmdq_print(item_handle, |out| write_cstr(out, owner.as_c_str()));
     }
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }
 unsafe fn cmd_wait_for_event_wake(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     name: &CStr,
     mut args: *mut args,
-) -> cmd_retval {
+) -> CmdOutcome {
     cmd_wait_for_event_prune_expired(&mut *wait_event_items_ptr());
     let mut client_name: &CStr = args_get(&*(args), 'w' as i32 as u_char).expect("-w has a value");
     let mut index = 0;
@@ -378,7 +378,7 @@ unsafe fn cmd_wait_for_event_wake(
                 .unwrap()
                 .remove(index)
                 .resume();
-            return CMD_RETURN_NORMAL;
+            return CmdOutcome::Normal;
         }
         index += 1;
     }
@@ -387,14 +387,14 @@ unsafe fn cmd_wait_for_event_wake(
         write_cstr(out, client_name)?;
         out.write_all(b" not found")
     });
-    CMD_RETURN_ERROR
+    CmdOutcome::Error
 }
 unsafe fn cmd_wait_for_list(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut wc: *mut wait_channel,
-) -> cmd_retval {
+) -> CmdOutcome {
     if wc.is_null() {
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     cmd_wait_for_prune_expired(wc);
     for wi in &*wait_channel_waiters(wc) {
@@ -407,9 +407,9 @@ unsafe fn cmd_wait_for_list(
             write_cstr(out, &*(cmd_wait_for_waiter_client_name(wi)))
         });
     }
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }
-unsafe fn cmd_wait_for_wake(mut args: *mut args, mut wc: *mut wait_channel) -> cmd_retval {
+unsafe fn cmd_wait_for_wake(mut args: *mut args, mut wc: *mut wait_channel) -> CmdOutcome {
     let mut client_name: &CStr = args_get(&*(args), 'w' as i32 as u_char).expect("-w has a value");
     if !wc.is_null() {
         cmd_wait_for_prune_expired(wc);
@@ -422,14 +422,14 @@ unsafe fn cmd_wait_for_wake(mut args: *mut args, mut wc: *mut wait_channel) -> c
                 } else {
                     (&mut *list).remove(index).resume();
                     cmd_wait_for_remove_empty(wc);
-                    return CMD_RETURN_NORMAL;
+                    return CmdOutcome::Normal;
                 }
             }
         }
     }
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }
-unsafe fn cmd_wait_for_signal(name: &CStr, mut wc: *mut wait_channel) -> cmd_retval {
+unsafe fn cmd_wait_for_signal(name: &CStr, mut wc: *mut wait_channel) -> CmdOutcome {
     if wc.is_null() {
         wc = cmd_wait_for_add(name);
     }
@@ -440,7 +440,7 @@ unsafe fn cmd_wait_for_signal(name: &CStr, mut wc: *mut wait_channel) -> cmd_ret
             log_cstr(&(*wc).name)
         ));
         (*wc).woken = 1 as ::core::ffi::c_int;
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     log_debug(format_args!(
         "signal wait channel {}, with waiters",
@@ -448,19 +448,19 @@ unsafe fn cmd_wait_for_signal(name: &CStr, mut wc: *mut wait_channel) -> cmd_ret
     ));
     wait_items_continue_all(wait_channel_waiters(wc));
     cmd_wait_for_remove(wc);
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }
 unsafe fn cmd_wait_for_wait(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     name: &CStr,
     mut wc: *mut wait_channel,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let c_owner = cmdq_get_client((item).as_ref());
     let mut c: Option<ClientRef> = c_owner.clone();
     if c.is_none() {
         cmdq_error(item_handle, |out| out.write_all(b"not able to wait"));
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     if wc.is_null() {
         wc = cmd_wait_for_add(name);
@@ -472,7 +472,7 @@ unsafe fn cmd_wait_for_wait(
             log_pointer(std::rc::Rc::as_ptr(c.as_ref().expect("waiting client")))
         ));
         cmd_wait_for_remove(wc);
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     log_debug(format_args!(
         "wait channel {} not woken ({})",
@@ -487,11 +487,11 @@ unsafe fn cmd_wait_for_lock(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     name: &CStr,
     mut wc: *mut wait_channel,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     if cmdq_get_client((item).as_ref()).is_none() {
         cmdq_error(item_handle, |out| out.write_all(b"not able to lock"));
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     if wc.is_null() {
         wc = cmd_wait_for_add(name);
@@ -502,20 +502,20 @@ unsafe fn cmd_wait_for_lock(
         return retval;
     }
     (*wc).locked = 1 as ::core::ffi::c_int;
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }
 unsafe fn cmd_wait_for_unlock(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     name: &CStr,
     mut wc: *mut wait_channel,
-) -> cmd_retval {
+) -> CmdOutcome {
     if wc.is_null() || (*wc).locked == 0 {
         cmdq_error(item_handle, |out| {
             out.write_all(b"channel ")?;
             write_cstr(out, name)?;
             out.write_all(b" not locked")
         });
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     let lockers = wait_channel_lockers(wc);
     cmd_wait_for_prune_expired(wc);
@@ -525,7 +525,7 @@ unsafe fn cmd_wait_for_unlock(
         (*wc).locked = 0 as ::core::ffi::c_int;
         cmd_wait_for_remove(wc);
     }
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }
 /// Continue and forget every waiter, locker and event waiter whose item
 /// belongs to a lost client, wherever that item is queued.
@@ -684,7 +684,7 @@ mod tests {
     unsafe fn run_on(
         owner: &ClientRef,
         name: &'static CStr,
-        exec: unsafe fn(&Rc<UnsafeCell<cmdq_item>>, &CStr, *mut wait_channel) -> cmd_retval,
+        exec: unsafe fn(&Rc<UnsafeCell<cmdq_item>>, &CStr, *mut wait_channel) -> CmdOutcome,
     ) -> Weak<UnsafeCell<cmdq_item>> {
         let item = cmdq_append(
             Some(owner),
@@ -701,7 +701,7 @@ mod tests {
         _: &Rc<UnsafeCell<cmdq_item>>,
         name: &CStr,
         wc: *mut wait_channel,
-    ) -> cmd_retval {
+    ) -> CmdOutcome {
         cmd_wait_for_signal(name, wc)
     }
 
@@ -714,7 +714,10 @@ mod tests {
             let wc = cmd_wait_for_add(c"fifo");
             (*wc).waiters.extend(waiters);
             (*wc).lockers.extend(lockers);
-            assert_eq!(cmd_wait_for_signal(c"fifo", wc), CMD_RETURN_NORMAL);
+            assert!(matches!(
+                cmd_wait_for_signal(c"fifo", wc),
+                CmdOutcome::Normal
+            ));
             assert_eq!(*trace.borrow(), (0..128).collect::<Vec<_>>());
             assert!((*wc).waiters.is_empty());
             assert_eq!((*wc).woken, 0);
@@ -870,7 +873,7 @@ mod tests {
                 c"after",
                 Some(Box::new(move |_| {
                     flag.set(true);
-                    CMD_RETURN_NORMAL
+                    CmdOutcome::Normal
                 })),
             ),
         );

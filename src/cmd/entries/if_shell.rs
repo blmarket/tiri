@@ -7,7 +7,7 @@ use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::parse::cmd_parse_error_uppercase_first;
 use crate::src::cmd::queue::{
     cmdq_append, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_target_client,
-    cmdq_insert_after, cmdq_resumed, cmdq_suspend,
+    cmdq_insert_after, cmdq_resumed,
 };
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
@@ -68,7 +68,7 @@ fn cmd_if_shell_args_parse(
 unsafe fn cmd_if_shell_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let queue_client = cmdq_get_client((item).as_ref());
     let mut queue_client_ptr: Option<ClientRef> = queue_client.clone();
@@ -104,15 +104,15 @@ unsafe fn cmd_if_shell_exec(
                 0 as ::core::ffi::c_int,
             )
         } else {
-            return CMD_RETURN_NORMAL;
+            return CmdOutcome::Normal;
         };
         let Some(cmdlist) = cmdlist else {
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         };
         new_item_allocation = cmdq_get_command(&cmdlist, (*item).state.as_ref());
         cmdq_insert_after(item_handle, new_item_allocation);
         drop(cmdlist);
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     let mut cdata = Box::new(cmd_if_shell_data {
         cmd_if: None,
@@ -161,7 +161,7 @@ unsafe fn cmd_if_shell_exec(
             out.write_all(b"failed to run command: ")?;
             write_cstr(out, &*shellcmd)
         });
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     if wait == 0 {
         job.try_borrow_mut()
@@ -169,7 +169,7 @@ unsafe fn cmd_if_shell_exec(
             .completecb = Some(Box::new(move |completion| unsafe {
             cmd_if_shell_callback(completion, &mut cdata, None);
         }));
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     let (done, completed) = tiri_rt::oneshot::channel();
     job.try_borrow_mut()
@@ -177,10 +177,11 @@ unsafe fn cmd_if_shell_exec(
         .completecb = Some(Box::new(move |completion| {
         let _ = done.send(completion);
     }));
-    cmdq_suspend(
-        item_handle,
-        cmd_if_shell_complete(completed, cdata, Rc::downgrade(item_handle)),
-    )
+    CmdOutcome::Suspend(Box::pin(cmd_if_shell_complete(
+        completed,
+        cdata,
+        Rc::downgrade(item_handle),
+    )))
 }
 /// Run the callback body inside the job's completion, where tmux runs it. The
 /// continuation owns the data, and with it the client (tmux's cdata). A job

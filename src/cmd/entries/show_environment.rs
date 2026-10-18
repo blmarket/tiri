@@ -98,7 +98,7 @@ unsafe fn cmd_show_environment_print(
 unsafe fn cmd_show_environment_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -114,7 +114,7 @@ unsafe fn cmd_show_environment_exec(
             out.write_all(b"no such session: ")?;
             write_cstr(out, nullable_cstr(tflag))
         });
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     let env: environ = if args_has(&*args, 'g' as i32 as u_char) != 0 {
         global_environ.as_deref().expect("environment").clone()
@@ -130,7 +130,7 @@ unsafe fn cmd_show_environment_exec(
             } else {
                 cmdq_error(item_handle, |out| out.write_all(b"no current session"));
             }
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
         let session = (*target).session_handle().expect("target session");
         session.borrow_environment().expect("environment").clone()
@@ -142,16 +142,16 @@ unsafe fn cmd_show_environment_exec(
                 out.write_all(b"unknown variable: ")?;
                 write_cstr(out, name)
             });
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
         cmd_show_environment_print(self_0.clone(), item_handle, envent.unwrap());
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     for entry in environ_iter(&env) {
         let envent = entry;
         cmd_show_environment_print(self_0.clone(), item_handle, envent);
     }
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }
 
 #[cfg(test)]

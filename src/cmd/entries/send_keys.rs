@@ -227,7 +227,7 @@ unsafe fn cmd_send_keys_inject_string(
 unsafe fn cmd_send_keys_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mouse_pane_owner;
     let mut args: *mut args =
@@ -252,7 +252,7 @@ unsafe fn cmd_send_keys_exec(
         && args_has(&*args, 'X' as i32 as u_char) == 0
     {
         cmdq_error(item_handle, |out| out.write_all(b"client is read-only"));
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     if args_has(&*args, 'N' as i32 as u_char) != 0 {
         np = match args_strtonum_and_expand_result(
@@ -268,14 +268,14 @@ unsafe fn cmd_send_keys_exec(
                     out.write_all(b"repeat count ")?;
                     write_cstr(out, error.message())
                 });
-                return CMD_RETURN_ERROR;
+                return CmdOutcome::Error;
             }
         };
         if !!wme.is_alive() && (args_has(&*args, 'X' as i32 as u_char) != 0 || count == 0 as u_int)
         {
             if wme.get_unchecked().mode.command.is_none() {
                 cmdq_error(item_handle, |out| out.write_all(b"not in a mode"));
-                return CMD_RETURN_ERROR;
+                return CmdOutcome::Error;
             }
             wme.get_mut_unchecked().prefix = np;
         }
@@ -283,7 +283,7 @@ unsafe fn cmd_send_keys_exec(
     if args_has(&*args, 'X' as i32 as u_char) != 0 {
         if !wme.is_alive() || wme.get_unchecked().mode.command.is_none() {
             cmdq_error(item_handle, |out| out.write_all(b"not in a mode"));
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
         if (*m).valid == 0 {
             m = ::core::ptr::null_mut::<mouse_event>();
@@ -299,7 +299,7 @@ unsafe fn cmd_send_keys_exec(
             args,
             m,
         );
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     if args_has(&*args, 'M' as i32 as u_char) != 0 {
         let mut mouse_session_owner = None;
@@ -311,7 +311,7 @@ unsafe fn cmd_send_keys_exec(
         s = mouse_session_owner.clone();
         if mouse_pane_owner.is_none() {
             cmdq_error(item_handle, |out| out.write_all(b"no mouse target"));
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
         mouse_pane_owner.as_ref().expect("mouse target pane").key(
             tc_owner.as_ref(),
@@ -319,7 +319,7 @@ unsafe fn cmd_send_keys_exec(
             (*m).key,
             m.as_mut(),
         );
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     if std::ptr::eq(
         cmd_get_entry(self_0.get_unchecked()),
@@ -337,7 +337,7 @@ unsafe fn cmd_send_keys_exec(
             ) as key_code;
         }
         cmd_send_keys_inject_key(item_handle, Some(item_handle), args, key);
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     if args_has(&*args, 'R' as i32 as u_char) != 0 {
         pane.reset_input();
@@ -346,7 +346,7 @@ unsafe fn cmd_send_keys_exec(
         if args_has(&*args, 'N' as i32 as u_char) != 0
             || args_has(&*args, 'R' as i32 as u_char) != 0
         {
-            return CMD_RETURN_NORMAL;
+            return CmdOutcome::Normal;
         }
         after = if args_has(&*args, 'K' as i32 as u_char) != 0 {
             std::rc::Rc::downgrade(item_handle)
@@ -358,7 +358,7 @@ unsafe fn cmd_send_keys_exec(
                 cmd_send_keys_inject_key(item_handle, after.upgrade().as_ref(), args, (*event).key);
             np = np.wrapping_sub(1);
         }
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     while np != 0 as u_int {
         i = 0 as u_int;
@@ -373,5 +373,5 @@ unsafe fn cmd_send_keys_exec(
         }
         np = np.wrapping_sub(1);
     }
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }

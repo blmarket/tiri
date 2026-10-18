@@ -41,7 +41,7 @@ pub static cmd_set_environment_entry: cmd_entry = {
 unsafe fn cmd_set_environment_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -52,13 +52,13 @@ unsafe fn cmd_set_environment_exec(
     let mut expanded: Option<std::ffi::CString> = None;
     if name.is_empty() {
         cmdq_error(item_handle, |out| out.write_all(b"empty variable name"));
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     if name.to_bytes().contains(&b'=') {
         cmdq_error(item_handle, |out| {
             out.write_all(b"variable name contains =")
         });
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     if args_count(&*args) < 2 as u_int {
         value = None;
@@ -83,7 +83,7 @@ unsafe fn cmd_set_environment_exec(
         } else {
             cmdq_error(item_handle, |out| out.write_all(b"no current session"));
         }
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     let unset = args_has(&*args, b'u') != 0;
     let remove = args_has(&*args, b'r') != 0;
@@ -98,7 +98,7 @@ unsafe fn cmd_set_environment_exec(
     };
     if let Some(error) = error {
         cmdq_error(item_handle, |out| out.write_all(error));
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     let hidden = if args_has(&*args, b'h') != 0 {
         ENVIRON_HIDDEN
@@ -122,5 +122,5 @@ unsafe fn cmd_set_environment_exec(
             .expect("target session")
             .with_environment_mut(edit);
     }
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }

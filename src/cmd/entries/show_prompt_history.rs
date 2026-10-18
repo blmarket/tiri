@@ -64,7 +64,7 @@ pub static cmd_clear_prompt_history_entry: cmd_entry = {
 unsafe fn cmd_show_prompt_history_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let typestr: Option<&CStr> = args_get(&*(args), 'T' as i32 as u_char);
@@ -84,7 +84,7 @@ unsafe fn cmd_show_prompt_history_exec(
                     out.write_all(b"invalid type: ")?;
                     write_cstr(out, typestr)
                 });
-                return CMD_RETURN_ERROR;
+                return CmdOutcome::Error;
             }
             prompt_history_clear(type_0);
         } else {
@@ -94,7 +94,7 @@ unsafe fn cmd_show_prompt_history_exec(
                 t = t.wrapping_add(1);
             }
         }
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     match typestr {
         None => {
@@ -129,7 +129,7 @@ unsafe fn cmd_show_prompt_history_exec(
                     out.write_all(b"invalid type: ")?;
                     write_cstr(out, typestr)
                 });
-                return CMD_RETURN_ERROR;
+                return CmdOutcome::Error;
             }
             cmdq_print(item_handle, |out| {
                 out.write_all(b"History for ")?;
@@ -148,5 +148,5 @@ unsafe fn cmd_show_prompt_history_exec(
             cmdq_print(item_handle, |out| write_cstr(out, c""));
         }
     }
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }

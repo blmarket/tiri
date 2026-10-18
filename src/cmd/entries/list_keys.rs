@@ -147,7 +147,7 @@ unsafe fn cmd_list_keys_format_add_key_binding(
 unsafe fn cmd_list_keys_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let queue_client = cmdq_get_client((item).as_ref());
     let mut args: *mut args =
@@ -175,7 +175,7 @@ unsafe fn cmd_list_keys_exec(
                 out.write_all(b"invalid key: ")?;
                 write_cstr(out, keystr)
             });
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
         only &= KEYC_MASK_KEY | KEYC_MASK_MODIFIERS;
     }
@@ -187,7 +187,7 @@ unsafe fn cmd_list_keys_exec(
         && args_has(&*args, 'O' as i32 as u_char) != 0
     {
         cmdq_error(item_handle, |out| out.write_all(b"invalid sort order"));
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     sort_crit.reversed = args_has(&*args, 'r' as i32 as u_char);
     if let Some(tablename) = args_get(&*(args), 'T' as i32 as u_char) {
@@ -198,7 +198,7 @@ unsafe fn cmd_list_keys_exec(
                 write_cstr(out, tablename)?;
                 out.write_all(b" doesn't exist")
             });
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
     }
     let prefix = cmd_list_keys_get_prefix(args);
@@ -230,7 +230,7 @@ unsafe fn cmd_list_keys_exec(
             out.write_all(b"unknown key: ")?;
             write_cstr(out, keystr)
         });
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     if single != 0 {
         bindings.truncate(1);
@@ -278,5 +278,5 @@ unsafe fn cmd_list_keys_exec(
         }
     }
     drop(ft_owner);
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }

@@ -32,7 +32,7 @@ pub static cmd_rename_session_entry: cmd_entry = {
 unsafe fn cmd_rename_session_exec(
     mut command: refbox::Weak<cmd>,
     item: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     use crate::src::session::Session;
     let arguments = cmd_get_args_mut(command.get_mut_unchecked()).expect("command arguments");
     let name = args_string(arguments, 0).expect("rename-session argument");
@@ -40,10 +40,10 @@ unsafe fn cmd_rename_session_exec(
     let target = crate::src::cmd::queue::cmdq_get_target(&*item.get());
     let owner = (*target).session_handle().expect("rename-session target");
     match owner.rename(&expanded) {
-        Ok(()) => CMD_RETURN_NORMAL,
+        Ok(()) => CmdOutcome::Normal,
         Err(cause) => {
             cmdq_error(item, |out| out.write_all(cause.as_bytes()));
-            CMD_RETURN_ERROR
+            CmdOutcome::Error
         }
     }
 }

@@ -192,7 +192,6 @@ pub(crate) unsafe fn server_start(
     let mut fd = None;
     let mut set: sigset_t = unsafe { ::core::mem::zeroed() };
     let mut oldset: sigset_t = unsafe { ::core::mem::zeroed() };
-    let mut c: Option<ClientRef> = None;
     let mut cause: Option<CString> = None;
     let tv = Duration::from_secs(3600);
     sigfillset(&raw mut set);
@@ -254,14 +253,17 @@ pub(crate) unsafe fn server_start(
             cause = Some(error);
         }
     }
-    if let Some(fd) = fd {
-        let owner = ClientRef::create(fd);
-        c = Some(owner.clone());
-    } else {
-        with_global_options(|oo| {
-            options_set_number(oo, c"exit-empty", 0 as ::core::ffi::c_longlong);
-        });
-    }
+    // The registry owns the client; this reference only reports a startup
+    // cause and is released before the loop, so it never outlives a loss.
+    let c: Option<ClientRef> = match fd {
+        Some(fd) => Some(ClientRef::create(fd)),
+        None => {
+            with_global_options(|oo| {
+                options_set_number(oo, c"exit-empty", 0 as ::core::ffi::c_longlong);
+            });
+            None
+        }
+    };
     if lockfd.is_some() {
         if let Some(path) = lockfile.take() {
             unlink(path.as_ptr());
@@ -280,6 +282,7 @@ pub(crate) unsafe fn server_start(
             exit(1 as ::core::ffi::c_int);
         }
     }
+    drop(c);
     server_ev_tidy = Some(Timer::new(tv, || unsafe { server_tidy_event() }).expect("arm timer"));
     server_acl_init();
     server_add_accept(0 as ::core::ffi::c_int);

@@ -86,7 +86,7 @@ pub static cmd_lock_client_entry: cmd_entry = {
 unsafe fn cmd_lock_server_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let tc_owner = cmdq_get_target_client((item).as_ref());
@@ -104,5 +104,5 @@ unsafe fn cmd_lock_server_exec(
         server_lock_client(tc_owner.as_ref().expect("lock target client"));
     }
     recalculate_sizes();
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }

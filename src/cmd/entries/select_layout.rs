@@ -37,7 +37,7 @@ pub static cmd_select_layout_entry: cmd_entry = {
 unsafe fn cmd_select_layout_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -54,7 +54,7 @@ unsafe fn cmd_select_layout_exec(
     let result = match kind {
         Some(kind) => {
             window_owner.set_layout(kind);
-            CMD_RETURN_NORMAL
+            CmdOutcome::Normal
         }
         None => {
             let name = args_string(&mut *args, 0 as u_int).expect("named layout");
@@ -62,7 +62,7 @@ unsafe fn cmd_select_layout_exec(
                 out.write_all(b"unknown layout: ")?;
                 write_cstr(out, &*name)
             });
-            CMD_RETURN_ERROR
+            CmdOutcome::Error
         }
     };
     drop(window_owner);

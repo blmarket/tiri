@@ -13,7 +13,7 @@ mod timers;
 pub use buffer::*;
 use std::os::fd::BorrowedFd;
 pub use streams::*;
-pub use tasks::task_start;
+pub use tasks::{defer, task_start};
 pub use timers::Timer;
 
 /// Create a task-owned registration; no raw descriptor lookup survives this call.

@@ -16,3 +16,9 @@ where
     *task = Some(tiri_rt::mio::Handle::current().spawn(initialize()?)?);
     Ok(())
 }
+
+/// Run release-only work on a later loop turn, outside the current callback.
+/// After runtime shutdown the callback is dropped unrun, releasing its captures.
+pub fn defer(callback: impl FnOnce() + 'static) {
+    let _ = tiri_rt::mio::Handle::current().defer(callback);
+}

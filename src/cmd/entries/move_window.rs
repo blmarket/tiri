@@ -68,7 +68,7 @@ pub static cmd_link_window_entry: cmd_entry = {
 unsafe fn cmd_move_window_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -99,7 +99,7 @@ unsafe fn cmd_move_window_exec(
             CMD_FIND_QUIET,
         ) != 0 as ::core::ffi::c_int
         {
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
         target
             .session_handle()
@@ -107,7 +107,7 @@ unsafe fn cmd_move_window_exec(
             .renumber_windows();
         recalculate_sizes();
         server_status_session(&target.session_handle().expect("live session"));
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     if target.find_target(
         Some(item_handle),
@@ -116,7 +116,7 @@ unsafe fn cmd_move_window_exec(
         CMD_FIND_WINDOW_INDEX,
     ) != 0 as ::core::ffi::c_int
     {
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     dst = target.session_handle();
     idx = target.idx;
@@ -139,7 +139,7 @@ unsafe fn cmd_move_window_exec(
             );
         }
         if idx == -(1 as ::core::ffi::c_int) {
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
     }
     if let Err(cause) = server_link_window(
@@ -151,7 +151,7 @@ unsafe fn cmd_move_window_exec(
         (dflag == 0) as ::core::ffi::c_int,
     ) {
         cmdq_error(item_handle, |out| write_cstr(out, &*cause));
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     if std::ptr::eq(
         cmd_get_entry(self_0.get_unchecked()),
@@ -168,5 +168,5 @@ unsafe fn cmd_move_window_exec(
         (src.as_ref().expect("live session")).renumber_windows();
     }
     recalculate_sizes();
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }

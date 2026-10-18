@@ -42,7 +42,7 @@ pub static cmd_swap_window_entry: cmd_entry = {
 unsafe fn cmd_swap_window_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -70,13 +70,13 @@ unsafe fn cmd_swap_window_exec(
         cmdq_error(item_handle, |out| {
             out.write_all(b"can't move window, sessions are grouped")
         });
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     if crate::src::shared::rc::same(
         wl_dst.get_unchecked().window_handle(),
         wl_src.get_unchecked().window_handle(),
     ) {
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     wl_dst
         .get_unchecked()
@@ -120,5 +120,5 @@ unsafe fn cmd_swap_window_exec(
         server_redraw_session_group(dst.as_ref().expect("live session"));
     }
     recalculate_sizes();
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }

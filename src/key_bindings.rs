@@ -209,7 +209,7 @@ pub unsafe fn key_bindings_remove_table(name: &CStr) {
 }
 
 /// Snapshot startup defaults with their own command-list reference and note.
-unsafe fn key_bindings_init_done() -> cmd_retval {
+unsafe fn key_bindings_init_done() -> CmdOutcome {
     for owner in key_tables::snapshot() {
         let mut table = owner.borrow_mut();
         let table_ref = &mut *table;
@@ -223,7 +223,7 @@ unsafe fn key_bindings_init_done() -> cmd_retval {
             }));
         }
     }
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }
 
 pub unsafe fn key_bindings_init() {
@@ -552,9 +552,9 @@ pub unsafe fn key_bindings_init() {
 }
 unsafe fn key_bindings_read_only(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     cmdq_error(item_handle, |out| out.write_all(b"client is read-only"));
-    CMD_RETURN_ERROR
+    CmdOutcome::Error
 }
 pub unsafe fn key_bindings_dispatch(
     bd: KeyBindingCommand,
@@ -680,7 +680,7 @@ mod ownership_tests {
             let original_lifetime = std::rc::Rc::downgrade(&original);
             key_bindings_add(name, 65, Some(c"original"), 1, Some(original));
             let table_owner = key_bindings_get_table(name, 0).unwrap();
-            key_bindings_init_done();
+            let _ = key_bindings_init_done();
             assert_eq!(original_lifetime.strong_count(), 2);
             let replacement = cmd_list_new();
             let replacement_lifetime = std::rc::Rc::downgrade(&replacement);

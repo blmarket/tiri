@@ -1,7 +1,7 @@
 use super::*;
-use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next, cmdq_suspend};
+use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next};
 use crate::src::reactor::shutdown_runtime;
-use crate::src::shared::command::cmdq_item;
+use crate::src::shared::command::{cmdq_item, CmdOutcome};
 use std::cell::Cell;
 
 #[test]
@@ -18,7 +18,7 @@ fn local_completion_can_be_cancelled_after_runtime_shutdown() {
             Some(&owner),
             cmdq_get_callback_owned(
                 c"local read",
-                Some(Box::new(move |item| {
+                Some(Box::new(move |_| {
                     let wait = file_read_wait(None, c"/dev/null", move |file| {
                         observed.set(file);
                         Some(Box::new(move |_| {
@@ -26,10 +26,10 @@ fn local_completion_can_be_cancelled_after_runtime_shutdown() {
                             panic!("shutdown must not deliver progress");
                         }))
                     });
-                    cmdq_suspend(item, async move {
+                    CmdOutcome::Suspend(Box::pin(async move {
                         let _ = wait.await;
                         panic!("shutdown must not deliver completion");
-                    })
+                    }))
                 })),
             ),
         );
@@ -61,14 +61,14 @@ unsafe fn start_write() -> (
     let observed_file = file.clone();
     let item = cmdq_get_callback_owned(
         c"local write",
-        Some(Box::new(move |item| {
+        Some(Box::new(move |_| {
             let wait = file_write_wait(None, c"/dev/null", 0, b"data");
             observed_file.set(wait.file.clone());
-            cmdq_suspend(item, async move {
+            CmdOutcome::Suspend(Box::pin(async move {
                 if let Some(outcome) = wait.await {
                     body.set(Some(outcome.error));
                 }
-            })
+            }))
         })),
     );
     let item = cmdq_append(None, item);
@@ -107,13 +107,13 @@ fn dropping_a_lost_client_cancels_its_local_write() {
             Some(&owner),
             cmdq_get_callback_owned(
                 c"local write",
-                Some(Box::new(move |item| {
+                Some(Box::new(move |_| {
                     let wait = file_write_wait(None, c"/dev/null", 0, b"data");
                     observed_file.set(wait.file.clone());
-                    cmdq_suspend(item, async move {
+                    CmdOutcome::Suspend(Box::pin(async move {
                         let _ = wait.await;
                         body.set(true);
-                    })
+                    }))
                 })),
             ),
         );
@@ -150,19 +150,19 @@ fn a_dead_file_client_leaves_its_command_blocked() {
             Some(&owner),
             cmdq_get_callback_owned(
                 c"dead file client",
-                Some(Box::new(move |item| {
+                Some(Box::new(move |_| {
                     let file = client_file::new();
                     let (waiter, done) = tiri_rt::oneshot::channel();
                     (*file.get()).c = Some(file_client);
                     (*file.get()).wait = Some(waiter);
                     (*file.get()).completed = true;
                     let wait = file_wait(file, done);
-                    cmdq_suspend(item, async move {
+                    CmdOutcome::Suspend(Box::pin(async move {
                         if wait.await.is_none() {
                             return std::future::pending().await;
                         }
                         body.set(true);
-                    })
+                    }))
                 })),
             ),
         );

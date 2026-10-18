@@ -48,7 +48,7 @@ pub static cmd_kill_pane_entry: cmd_entry = {
 unsafe fn cmd_kill_pane_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -57,22 +57,22 @@ unsafe fn cmd_kill_pane_exec(
     let mut filter: Option<&CStr> = args_get(&*(args), 'f' as i32 as u_char);
     if filter.is_some() && args_has(&*args, 'a' as i32 as u_char) == 0 {
         cmdq_error(item_handle, |out| out.write_all(b"-f only valid with -a"));
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     if args_has(&*args, 'a' as i32 as u_char) != 0 {
         return cmd_kill_pane_all(item_handle, filter);
     }
     let Some(pane_owner) = pane_owner else {
         cmdq_error(item_handle, |out| out.write_all(b"no active pane to kill"));
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     };
     server_kill_pane(&pane_owner);
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }
 unsafe fn cmd_kill_pane_all(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     filter: Option<&CStr>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut s: Option<SessionRef> = (*target).session_handle();
@@ -99,7 +99,7 @@ unsafe fn cmd_kill_pane_all(
         }
     }
     server_redraw_window((wl.get_unchecked().window_handle().as_ref()).expect("live window"));
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }
 unsafe fn cmd_kill_pane_filter(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,

@@ -48,7 +48,7 @@ pub static cmd_kill_session_entry: cmd_entry = {
 unsafe fn cmd_kill_session_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -62,7 +62,7 @@ unsafe fn cmd_kill_session_exec(
             || args_has(&*args, 'C' as i32 as u_char) != 0)
     {
         cmdq_error(item_handle, |out| out.write_all(b"-f only valid with -a"));
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     if args_has(&*args, 'C' as i32 as u_char) != 0 {
         wl = source.with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
@@ -89,12 +89,12 @@ unsafe fn cmd_kill_session_exec(
         server_destroy_session(&source);
         source.destroy((1 as ::core::ffi::c_int) != 0, c"cmd_kill_session_exec");
     }
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }
 unsafe fn cmd_kill_session_all(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     filter: Option<&CStr>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut s: Option<SessionRef> =
         (*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item)).session_handle();
@@ -117,7 +117,7 @@ unsafe fn cmd_kill_session_all(
         sloop_owner = sessions::after(&name);
         sloop = sloop_owner.clone();
     }
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }
 unsafe fn cmd_kill_session_filter(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,

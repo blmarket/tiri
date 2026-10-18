@@ -94,7 +94,7 @@ pub static cmd_has_session_entry: cmd_entry = {
 unsafe fn cmd_new_session_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let queue_client = cmdq_get_client((item).as_ref());
     let mut queue_client_ptr: Option<ClientRef> = queue_client.clone();
@@ -142,7 +142,7 @@ unsafe fn cmd_new_session_exec(
         flags: 0,
     };
     let mut argv_owner = Vec::new();
-    let mut retval: cmd_retval = CMD_RETURN_NORMAL;
+    let mut retval: CmdOutcome = CmdOutcome::Normal;
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -155,7 +155,7 @@ unsafe fn cmd_new_session_exec(
         cmd_get_entry(self_0.get_unchecked()),
         &cmd_has_session_entry,
     ) {
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     if args_has(&*args, 't' as i32 as u_char) != 0
         && (count != 0 as u_int || args_has(&*args, 'n' as i32 as u_char) != 0)
@@ -163,7 +163,7 @@ unsafe fn cmd_new_session_exec(
         cmdq_error(item_handle, |out| {
             out.write_all(b"command or window name given with target")
         });
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     if let Some(tmp) = args_get(&*(args), 'n' as i32 as u_char) {
         let ename = format_single_cstring(
@@ -179,7 +179,7 @@ unsafe fn cmd_new_session_exec(
                 out.write_all(b"invalid window name: ")?;
                 out.write_all(ename.as_bytes())
             });
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
         wname_owned = Some(
             clean_name_cstring(ename.as_c_str(), 0).expect("check_name validated the window name"),
@@ -712,7 +712,7 @@ unsafe fn cmd_new_session_exec(
                                                         if cfg_finished != 0 {
                                                             cfg_show_causes(s.as_ref());
                                                         }
-                                                        return CMD_RETURN_NORMAL;
+                                                        return CmdOutcome::Normal;
                                                     }
                                                 }
                                             }
@@ -726,5 +726,5 @@ unsafe fn cmd_new_session_exec(
             }
         }
     }
-    CMD_RETURN_ERROR
+    CmdOutcome::Error
 }

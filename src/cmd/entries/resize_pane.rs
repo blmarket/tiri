@@ -37,7 +37,7 @@ pub static cmd_resize_pane_entry: cmd_entry = {
 unsafe fn cmd_resize_pane_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -49,11 +49,11 @@ unsafe fn cmd_resize_pane_exec(
         drop(window_owner);
         if let Err(cause) = toggled {
             cmdq_error(item_handle, |out| out.write_all(cause.to_bytes()));
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
     }
     if args_has(&*args, b'T') != 0 {
         pane_owner.trim_history();
     }
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }

@@ -110,7 +110,7 @@ pub static cmd_show_hooks_entry: cmd_entry = {
 unsafe fn cmd_show_options_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -138,7 +138,7 @@ unsafe fn cmd_show_options_exec(
                     break;
                 }
             }
-            return CMD_RETURN_NORMAL;
+            return CmdOutcome::Normal;
         }
         return cmd_show_options_all(self_0, item_handle, scope, &selected);
     }
@@ -151,7 +151,7 @@ unsafe fn cmd_show_options_exec(
         Ok(parsed) => parsed,
         Err(failure) => {
             if quiet {
-                return CMD_RETURN_NORMAL;
+                return CmdOutcome::Normal;
             }
             let ambiguous = matches!(
                 failure,
@@ -165,7 +165,7 @@ unsafe fn cmd_show_options_exec(
                 })?;
                 write_cstr(out, &*argument)
             });
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
     };
     let selected = match options_scope_from_name(args, window, &parsed.name, &*target) {
@@ -179,9 +179,9 @@ unsafe fn cmd_show_options_exec(
                 out.write_all(b"invalid option: ")?;
                 write_cstr(out, &*argument)
             });
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     };
     if monitor {
         cmd_show_hooks_print_monitor(self_0, item_handle, &resolved, &parsed.name);
@@ -196,19 +196,19 @@ unsafe fn cmd_show_options_exec(
             true,
         );
     }
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }
 
 unsafe fn show_options_scope_error(
     item: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     quiet: bool,
     cause: &CStr,
-) -> cmd_retval {
+) -> CmdOutcome {
     if quiet {
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     cmdq_error(item, |out| write_cstr(out, cause));
-    CMD_RETURN_ERROR
+    CmdOutcome::Error
 }
 
 /// Capture the defining scope once. A later local override must not redirect an
@@ -428,7 +428,7 @@ unsafe fn cmd_show_options_all(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     scope: i32,
     selected: &OptionsScope,
-) -> cmd_retval {
+) -> CmdOutcome {
     let show_hooks = std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_show_hooks_entry);
     let args = cmd_get_args_mut(self_0.get_mut_unchecked()).expect("show options arguments");
     let include_hooks = args_has(args, b'H') != 0;
@@ -480,5 +480,5 @@ unsafe fn cmd_show_options_all(
             );
         }
     }
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }

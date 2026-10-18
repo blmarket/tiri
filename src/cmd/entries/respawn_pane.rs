@@ -43,7 +43,7 @@ pub static cmd_respawn_pane_entry: cmd_entry = {
 unsafe fn cmd_respawn_pane_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -100,7 +100,7 @@ unsafe fn cmd_respawn_pane_exec(
             write_cstr(out, cause.as_deref())
         });
         drop(sc.environ.take());
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     wp.as_ref().expect("respawn pane").request_redraw(false);
     let window = wp
@@ -112,5 +112,5 @@ unsafe fn cmd_respawn_pane_exec(
     server_redraw_window_borders(&window);
     server_status_window(&window);
     drop(window);
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }

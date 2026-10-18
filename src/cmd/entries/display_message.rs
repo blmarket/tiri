@@ -3,9 +3,7 @@ use crate::src::arguments::{
 };
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::find::cmd_find_best_client;
-use crate::src::cmd::queue::{
-    cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_print, cmdq_suspend,
-};
+use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_print};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_create_with_client, format_defaults, format_each, format_expand_time_cstring,
@@ -59,7 +57,7 @@ pub static cmd_display_message_entry: cmd_entry = {
 unsafe fn cmd_display_message_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let queue_client = cmdq_get_client((item).as_ref());
     let mut args: *mut args =
@@ -80,22 +78,22 @@ unsafe fn cmd_display_message_exec(
     let mut count: u_int = args_count(&*args);
     if args_has(&*args, 'I' as i32 as u_char) != 0 && args_has(&*args, 'j' as i32 as u_char) == 0 {
         if wp.is_none() {
-            return CMD_RETURN_NORMAL;
+            return CmdOutcome::Normal;
         }
         match wp.as_ref().expect("target pane").start_input(item_handle) {
             Err(error) => {
                 cmdq_error(item_handle, |out| write_cstr(out, &*error));
-                return CMD_RETURN_ERROR;
+                return CmdOutcome::Error;
             }
-            Ok(None) => return CMD_RETURN_NORMAL,
-            Ok(Some(input)) => return cmdq_suspend(item_handle, input),
+            Ok(None) => return CmdOutcome::Normal,
+            Ok(Some(input)) => return CmdOutcome::Suspend(Box::pin(input)),
         }
     }
     if args_has(&*args, 'F' as i32 as u_char) != 0 && count != 0 as u_int {
         cmdq_error(item_handle, |out| {
             out.write_all(b"only one of -F or argument must be given")
         });
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     if args_has(&*args, 'd' as i32 as u_char) != 0 {
         delay = match args_strtonum_result(
@@ -110,7 +108,7 @@ unsafe fn cmd_display_message_exec(
                     out.write_all(b"delay ")?;
                     write_cstr(out, error.message())
                 });
-                return CMD_RETURN_ERROR;
+                return CmdOutcome::Error;
             }
         };
     }
@@ -160,7 +158,7 @@ unsafe fn cmd_display_message_exec(
             });
         });
         drop(ft_owner);
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     let mut msg = if args_has(&*args, 'l' as i32 as u_char) != 0 {
         template.to_owned()
@@ -172,7 +170,7 @@ unsafe fn cmd_display_message_exec(
             cmdq_error(item_handle, |out| write_cstr(out, cause.as_deref()));
             drop(msg);
             drop(ft_owner);
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         };
         msg = json_to_string(&jn);
     }
@@ -201,5 +199,5 @@ unsafe fn cmd_display_message_exec(
     }
     drop(msg);
     drop(ft_owner);
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }

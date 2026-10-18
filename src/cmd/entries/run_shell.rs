@@ -7,7 +7,7 @@ use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::parse::cmd_parse_error_uppercase_first;
 use crate::src::cmd::queue::{
     cmdq_append, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_target_client,
-    cmdq_insert_after, cmdq_resumed, cmdq_suspend,
+    cmdq_insert_after, cmdq_resumed,
 };
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::nullable_cstr;
@@ -149,7 +149,7 @@ fn cmd_run_shell_status_message(cmd: &CStr, suffix: &[u8], code: ::core::ffi::c_
 unsafe fn cmd_run_shell_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -178,10 +178,10 @@ unsafe fn cmd_run_shell_exec(
                 out.write_all(b"invalid delay time: ")?;
                 write_cstr(out, nullable_cstr(delay))
             });
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
     } else if args_count(&*args) == 0 as u_int {
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     let cwd = if args_has(&*args, 'c' as i32 as u_char) != 0 {
         args_get(&*(args), 'c' as i32 as u_char)
@@ -266,7 +266,7 @@ unsafe fn cmd_run_shell_exec(
             }
         })
         .expect("arm background run-shell delay");
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     cmd_run_shell_wait(item_handle, cdata, tv)
 }
@@ -277,14 +277,14 @@ unsafe fn cmd_run_shell_wait(
     item_handle: &Rc<UnsafeCell<cmdq_item>>,
     mut cdata: Box<cmd_run_shell_data>,
     delay: Duration,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = Rc::downgrade(item_handle);
     let (elapsed, delayed) = tiri_rt::oneshot::channel();
     let timer = Timer::new(delay, move || {
         let _ = elapsed.send(());
     })
     .expect("arm run-shell delay");
-    cmdq_suspend(item_handle, async move {
+    CmdOutcome::Suspend(Box::pin(async move {
         if delayed.await.is_none() {
             drop(cdata);
             return std::future::pending().await;
@@ -301,7 +301,7 @@ unsafe fn cmd_run_shell_wait(
         }));
         drop(job);
         cmd_run_shell_complete(completed, cdata, item).await
-    })
+    }))
 }
 /// Run the callback body once the job completes. A job freed without
 /// completing never resumes the item (tmux's cmd_run_shell_free): release the
@@ -508,7 +508,7 @@ mod tests {
     /// Queue an item that suspends on `suspend`, after `owner`'s other items.
     unsafe fn append(
         owner: Option<&ClientRef>,
-        suspend: impl FnOnce(&Rc<UnsafeCell<cmdq_item>>) -> cmd_retval + 'static,
+        suspend: impl FnOnce(&Rc<UnsafeCell<cmdq_item>>) -> CmdOutcome + 'static,
     ) -> Weak<UnsafeCell<cmdq_item>> {
         cmdq_append(
             owner,
@@ -522,7 +522,7 @@ mod tests {
         let flag = ran.clone();
         append(owner, move |_| {
             flag.set(true);
-            CMD_RETURN_NORMAL
+            CmdOutcome::Normal
         });
         ran
     }
@@ -538,10 +538,11 @@ mod tests {
     ) {
         let (done, completed) = tiri_rt::oneshot::channel();
         let item = append(Some(owner), move |item| {
-            cmdq_suspend(
-                item,
-                cmd_run_shell_complete(completed, cdata, Rc::downgrade(item)),
-            )
+            CmdOutcome::Suspend(Box::pin(cmd_run_shell_complete(
+                completed,
+                cdata,
+                Rc::downgrade(item),
+            )))
         });
         cmdq_next(Some(owner));
         (item, done)

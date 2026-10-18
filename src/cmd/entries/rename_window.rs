@@ -40,7 +40,7 @@ pub static cmd_rename_window_entry: cmd_entry = {
 unsafe fn cmd_rename_window_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -55,7 +55,7 @@ unsafe fn cmd_rename_window_exec(
             out.write_all(b"invalid window name: ")?;
             write_cstr(out, &*name)
         });
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     let window = wl
         .get_unchecked()
@@ -69,5 +69,5 @@ unsafe fn cmd_rename_window_exec(
     );
     server_status_window((wl.get_unchecked().window_handle().as_ref()).expect("live window"));
     drop(window);
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }

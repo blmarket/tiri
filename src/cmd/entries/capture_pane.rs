@@ -66,7 +66,7 @@ pub static cmd_clear_history_entry: cmd_entry = {
 unsafe fn cmd_capture_pane_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -90,13 +90,13 @@ unsafe fn cmd_capture_pane_exec(
             .expect("clear-history pane window");
         server_redraw_window(&window);
         drop(window);
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     buf = match pane_owner.capture(&mut *args, item_handle) {
         Ok(bytes) => bytes,
         Err(cause) => {
             cmdq_error(item_handle, |out| write_cstr(out, &*cause));
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
     };
     if args_has(&*args, 'p' as i32 as u_char) != 0 {
@@ -112,7 +112,7 @@ unsafe fn cmd_capture_pane_exec(
         } else {
             if file_can_print(c.as_ref()) == 0 {
                 cmdq_error(item_handle, |out| out.write_all(b"can't write to client"));
-                return CMD_RETURN_ERROR;
+                return CmdOutcome::Error;
             }
             file_print_buffer(c_owner.as_ref(), &buf[..len]);
             file_print(c_owner.as_ref(), |out| out.write_all(b"\n"));
@@ -128,8 +128,8 @@ unsafe fn cmd_capture_pane_exec(
             cmdq_error(item_handle, |out| {
                 write_cstr(out, (cause.as_ref().unwrap()).as_c_str())
             });
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
     }
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }

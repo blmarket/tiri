@@ -63,7 +63,7 @@ pub unsafe fn cmd_attach_session(
     cflag: Option<&CStr>,
     mut Eflag: ::core::ffi::c_int,
     fflag: Option<&CStr>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let tflag: *const ::core::ffi::c_char = tflag.map_or(std::ptr::null(), CStr::as_ptr);
     let item = item_handle.get();
     let current = cmdq_get_state_owned(&*(item));
@@ -87,16 +87,16 @@ pub unsafe fn cmd_attach_session(
     let mut uid: uid_t = 0;
     if !!sessions::is_empty() {
         cmdq_error(item_handle, |out| out.write_all(b"no sessions"));
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     if c.is_none() {
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     if c.as_ref().expect("live client").is_nested() {
         cmdq_error(item_handle, |out| {
             out.write_all(b"sessions should be nested with care, unset $TMUX to force")
         });
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     if !tflag.is_null()
         && *tflag.offset(strcspn(tflag, c":.".as_ptr()) as isize) as ::core::ffi::c_int
@@ -111,7 +111,7 @@ pub unsafe fn cmd_attach_session(
     if target.find_target(Some(item_handle), nullable_cstr(tflag), type_0, flags)
         != 0 as ::core::ffi::c_int
     {
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     s = target.session_handle();
     wl = target.winlink_handle();
@@ -157,7 +157,7 @@ pub unsafe fn cmd_attach_session(
             uid = c.as_ref().expect("live client").peer_uid();
             if uid != getuid() {
                 cmdq_error(item_handle, |out| out.write_all(b"client is read-only"));
-                return CMD_RETURN_ERROR;
+                return CmdOutcome::Error;
             }
         }
         c.as_ref()
@@ -221,7 +221,7 @@ pub unsafe fn cmd_attach_session(
                 out.write_all(b"open terminal failed: ")?;
                 write_cstr(out, &*cause)
             });
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
         if dflag != 0 || xflag != 0 {
             if xflag != 0 {
@@ -275,12 +275,12 @@ pub unsafe fn cmd_attach_session(
     if cfg_finished != 0 {
         cfg_show_causes(s.as_ref());
     }
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }
 unsafe fn cmd_attach_session_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     cmd_attach_session(

@@ -36,7 +36,7 @@ pub static cmd_find_window_entry: cmd_entry = {
 unsafe fn cmd_find_window_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -78,7 +78,7 @@ unsafe fn cmd_find_window_exec(
         Some(&mut *new_args),
     );
     drop(new_args);
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }
 
 fn append_find_window_c_match(out: &mut Vec<u8>, suffix: &[u8], pattern: &[u8]) {

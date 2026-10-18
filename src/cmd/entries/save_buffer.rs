@@ -1,7 +1,5 @@
 use crate::src::arguments::{args, args_get, args_has, args_parse, args_string};
-use crate::src::cmd::queue::{
-    cmdq_error, cmdq_get_client, cmdq_print_data, cmdq_resumed, cmdq_suspend,
-};
+use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print_data, cmdq_resumed};
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::file::{file_write_wait, FileOutcome};
 use crate::src::format::bytes::nullable_cstr;
@@ -85,7 +83,7 @@ unsafe fn cmd_save_buffer_done(
 unsafe fn cmd_save_buffer_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let queue_client = cmdq_get_client((item).as_ref());
     let mut args: *mut args =
@@ -101,13 +99,13 @@ unsafe fn cmd_save_buffer_exec(
                 out.write_all(b"no buffer ")?;
                 write_cstr(out, bufname)
             });
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
     } else {
         pb = paste_get_top(None);
         if pb.is_none() {
             cmdq_error(item_handle, |out| out.write_all(b"no buffers"));
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
     }
     let pb = pb.expect("buffer lookup checked above");
@@ -131,7 +129,7 @@ unsafe fn cmd_save_buffer_exec(
             evbuffer_add(&mut evb, bufdata);
         }
         cmdq_print_data(item_handle, &mut evb);
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     let expanded_path = (!show_buffer).then(|| {
         format_single_from_target_cstring(
@@ -150,10 +148,10 @@ unsafe fn cmd_save_buffer_exec(
     let bufdata = paste_buffer_data(&buffer).unwrap_or_default();
     let wait = file_write_wait(queue_client.as_ref(), path, flags, bufdata);
     let waiting_item = std::rc::Rc::downgrade(item_handle);
-    cmdq_suspend(item_handle, async move {
+    CmdOutcome::Suspend(Box::pin(async move {
         let Some(outcome) = wait.await else {
             return std::future::pending().await;
         };
         cmd_save_buffer_done(&cmdq_resumed(&waiting_item), &outcome);
-    })
+    }))
 }

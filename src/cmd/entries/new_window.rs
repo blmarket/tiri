@@ -63,7 +63,7 @@ pub static cmd_new_window_entry: cmd_entry = {
 unsafe fn cmd_new_window_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -117,7 +117,7 @@ unsafe fn cmd_new_window_exec(
         cmdq_error(item_handle, |out| {
             out.write_all(b"command cannot be given for empty pane")
         });
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     name =
         args_get(&*(args), 'n' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
@@ -135,7 +135,7 @@ unsafe fn cmd_new_window_exec(
                 out.write_all(b"invalid window name: ")?;
                 out.write_all(expanded.as_bytes())
             });
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
         wname_owned = Some(
             clean_name_cstring(expanded.as_c_str(), 0)
@@ -178,7 +178,7 @@ unsafe fn cmd_new_window_exec(
                             out.write_all(b"multiple windows named ")?;
                             write_cstr(out, wname)
                         });
-                        return CMD_RETURN_ERROR;
+                        return CmdOutcome::Error;
                     }
                 }
                 wl = winlinks_next(wl.get_unchecked());
@@ -187,7 +187,7 @@ unsafe fn cmd_new_window_exec(
     }
     if new_wl.is_alive() {
         if args_has(&*args, 'd' as i32 as u_char) != 0 {
-            return CMD_RETURN_NORMAL;
+            return CmdOutcome::Normal;
         }
         if (s.as_ref().expect("live session")).select_winlink((new_wl).clone())
             == 0 as ::core::ffi::c_int
@@ -211,7 +211,7 @@ unsafe fn cmd_new_window_exec(
                 .set_latest_client(c.as_ref());
         }
         recalculate_sizes();
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     before = args_has(&*args, 'b' as i32 as u_char);
     if args_has(&*args, 'a' as i32 as u_char) != 0 || before != 0 {
@@ -261,7 +261,7 @@ unsafe fn cmd_new_window_exec(
             write_cstr(out, cause.as_deref())
         });
         drop(sc.environ.take());
-        CMD_RETURN_ERROR
+        CmdOutcome::Error
     } else {
         if args_has(&*args, 'd' as i32 as u_char) == 0
             || new_wl == s.as_ref().expect("live session").current_winlink()
@@ -296,6 +296,6 @@ unsafe fn cmd_new_window_exec(
             out.write_all(b"after-new-window")
         });
         drop(sc.environ.take());
-        CMD_RETURN_NORMAL
+        CmdOutcome::Normal
     }
 }

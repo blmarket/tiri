@@ -36,7 +36,7 @@ pub static cmd_rotate_window_entry: cmd_entry = {
 unsafe fn cmd_rotate_window_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -71,7 +71,7 @@ unsafe fn cmd_rotate_window_exec(
             0 as ::core::ffi::c_int,
         );
         server_redraw_window(&(window_owner));
-        CMD_RETURN_NORMAL
+        CmdOutcome::Normal
     };
     drop(window_owner);
     result

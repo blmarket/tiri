@@ -1338,7 +1338,7 @@ fn mode_tree_prompt_accept(tree: Rc<UnsafeCell<mode_tree_data>>) -> cmdq_cb {
                 std::ptr::null_mut(),
             );
         }
-        CMD_RETURN_NORMAL
+        CmdOutcome::Normal
     }))
 }
 fn mode_tree_prompt_input_callback(

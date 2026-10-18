@@ -49,7 +49,7 @@ fn cmd_bind_key_args_parse(
 unsafe fn cmd_bind_key_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut key: key_code = 0;
@@ -68,7 +68,7 @@ unsafe fn cmd_bind_key_exec(
             out.write_all(b"unknown key: ")?;
             write_cstr(out, args_string(&mut *(args), 0 as u_int))
         });
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     if args_has(&*args, 'T' as i32 as u_char) != 0 {
         tablename = args_get(&*(args), 'T' as i32 as u_char).expect("-T has a value");
@@ -80,12 +80,12 @@ unsafe fn cmd_bind_key_exec(
     repeat = args_has(&*args, 'r' as i32 as u_char);
     if count == 1 as u_int {
         key_bindings_add(tablename, key, note, repeat, None);
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     if count == 2 {
         if let Some(commands) = (&(*args).values)[1].as_commands() {
             key_bindings_add(tablename, key, note, repeat, Some(commands.clone()));
-            return CMD_RETURN_NORMAL;
+            return CmdOutcome::Normal;
         }
     }
     if count == 2 as u_int {
@@ -101,8 +101,8 @@ unsafe fn cmd_bind_key_exec(
     }
     if pr.status as ::core::ffi::c_uint == 0 {
         cmdq_error(item_handle, |out| write_cstr(out, pr.error.as_deref()));
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     key_bindings_add(tablename, key, note, repeat, pr.take_cmdlist());
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }

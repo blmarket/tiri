@@ -40,7 +40,7 @@ pub static cmd_unbind_key_entry: cmd_entry = {
 unsafe fn cmd_unbind_key_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut key: key_code = 0;
@@ -52,7 +52,7 @@ unsafe fn cmd_unbind_key_exec(
             if quiet == 0 {
                 cmdq_error(item_handle, |out| out.write_all(b"key given with -a"));
             }
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
         tablename = match args_get(&*(args), 'T' as i32 as u_char) {
             Some(tablename) => tablename,
@@ -67,16 +67,16 @@ unsafe fn cmd_unbind_key_exec(
                     out.write_all(b" doesn't exist")
                 });
             }
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
         key_bindings_remove_table(tablename);
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     let Some(keystr) = keystr else {
         if quiet == 0 {
             cmdq_error(item_handle, |out| out.write_all(b"missing key"));
         }
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     };
     key = key_string_parse_cstr(keystr).unwrap_or(KEYC_UNKNOWN);
     if key == KEYC_NONE as ::core::ffi::c_ulong as key_code
@@ -88,7 +88,7 @@ unsafe fn cmd_unbind_key_exec(
                 write_cstr(out, keystr)
             });
         }
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     if args_has(&*args, 'T' as i32 as u_char) != 0 {
         tablename = args_get(&*(args), 'T' as i32 as u_char).expect("-T has a value");
@@ -100,7 +100,7 @@ unsafe fn cmd_unbind_key_exec(
                     out.write_all(b" doesn't exist")
                 });
             }
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
     } else if args_has(&*args, 'n' as i32 as u_char) != 0 {
         tablename = c"root";
@@ -108,5 +108,5 @@ unsafe fn cmd_unbind_key_exec(
         tablename = c"prefix";
     }
     key_bindings_remove(tablename, key);
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }

@@ -65,7 +65,7 @@ pub static cmd_delete_buffer_entry: cmd_entry = {
 unsafe fn cmd_set_buffer_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -85,17 +85,17 @@ unsafe fn cmd_set_buffer_exec(
                     out.write_all(b"unknown buffer: ")?;
                     out.write_all(name.as_bytes())
                 });
-                return CMD_RETURN_ERROR;
+                return CmdOutcome::Error;
             }
             pb = paste_get_top(Some(&mut bufname));
         }
         let Some(pb) = pb else {
             cmdq_error(item_handle, |out| out.write_all(b"no buffer"));
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         };
         if deleting {
             paste_free(&pb);
-            return CMD_RETURN_NORMAL;
+            return CmdOutcome::Normal;
         }
         if paste_rename(
             bufname.as_deref(),
@@ -106,19 +106,19 @@ unsafe fn cmd_set_buffer_exec(
             cmdq_error(item_handle, |out| {
                 out.write_all(cause.as_ref().unwrap().as_bytes())
             });
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     if args_count(&*args) != 1 {
         cmdq_error(item_handle, |out| out.write_all(b"no data specified"));
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     let new_data = args_string(&mut *(args), 0)
         .expect("argument is present")
         .to_bytes();
     if new_data.is_empty() {
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     let mut bufdata = Vec::new();
     if args_has(&*args, b'a') != 0 {
@@ -137,10 +137,10 @@ unsafe fn cmd_set_buffer_exec(
         cmdq_error(item_handle, |out| {
             out.write_all(cause.as_ref().unwrap().as_bytes())
         });
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     if let Some(selection_data) = selection_data.as_ref() {
         tty_set_selection(tc.as_ref().expect("selection client"), c"", selection_data);
     }
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }

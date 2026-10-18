@@ -2096,13 +2096,13 @@ fn window_tree_command_done(mode: Rc<UnsafeCell<window_tree_modedata>>) -> cmdq_
         if (*data).dead == 0 {
             let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*data).wp)
             else {
-                return CMD_RETURN_NORMAL;
+                return CmdOutcome::Normal;
             };
             mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
             mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
             mode_pane_owner.request_redraw(false);
         }
-        CMD_RETURN_NORMAL
+        CmdOutcome::Normal
     }))
 }
 unsafe fn window_tree_enqueue_command_done(

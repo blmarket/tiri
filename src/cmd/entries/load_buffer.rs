@@ -1,8 +1,6 @@
 use crate::src::arguments::{args, args_get, args_has, args_parse, args_string};
 use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::{
-    cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_resumed, cmdq_suspend,
-};
+use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_resumed};
 use crate::src::file::{file_read_wait, FileOutcome};
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
@@ -109,7 +107,7 @@ async fn cmd_load_buffer_complete(
 unsafe fn cmd_load_buffer_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let queue_client = cmdq_get_client((item).as_ref());
     let mut args: *mut args =
@@ -129,10 +127,11 @@ unsafe fn cmd_load_buffer_exec(
         args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
     );
     let wait = file_read_wait(queue_client.as_ref(), &path, |_| None);
-    cmdq_suspend(
-        item_handle,
-        cmd_load_buffer_complete(wait, cdata, std::rc::Rc::downgrade(item_handle)),
-    )
+    CmdOutcome::Suspend(Box::pin(cmd_load_buffer_complete(
+        wait,
+        cdata,
+        std::rc::Rc::downgrade(item_handle),
+    )))
 }
 
 #[cfg(test)]
@@ -162,10 +161,11 @@ mod tests {
             cmdq_get_callback_owned(
                 c"load",
                 Some(Box::new(move |item| {
-                    cmdq_suspend(
-                        item,
-                        cmd_load_buffer_complete(done, cdata, Rc::downgrade(item)),
-                    )
+                    CmdOutcome::Suspend(Box::pin(cmd_load_buffer_complete(
+                        done,
+                        cdata,
+                        Rc::downgrade(item),
+                    )))
                 })),
             ),
         );

@@ -63,7 +63,7 @@ unsafe fn cmd_list_single_command(
 unsafe fn cmd_list_commands(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let queue_client = cmdq_get_client((item).as_ref());
     let mut args: *mut args =
@@ -87,7 +87,7 @@ unsafe fn cmd_list_commands(
             Err(cause) => {
                 cmdq_error(item_handle, |out| write_cstr(out, &*cause));
                 drop(ft_owner);
-                return CMD_RETURN_ERROR;
+                return CmdOutcome::Error;
             }
         }
     } else {
@@ -96,5 +96,5 @@ unsafe fn cmd_list_commands(
         }
     }
     drop(ft_owner);
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }

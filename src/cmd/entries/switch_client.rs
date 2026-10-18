@@ -53,7 +53,7 @@ pub static cmd_switch_client_entry: cmd_entry = {
 unsafe fn cmd_switch_client_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -98,7 +98,7 @@ unsafe fn cmd_switch_client_exec(
     if target.find_target(Some(item_handle), nullable_cstr(tflag), type_0, flags)
         != 0 as ::core::ffi::c_int
     {
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     selected_session = target.session_handle();
     s = selected_session.clone();
@@ -109,7 +109,7 @@ unsafe fn cmd_switch_client_exec(
             uid = c.as_ref().expect("live client").peer_uid();
             if uid != getuid() {
                 cmdq_error(item_handle, |out| out.write_all(b"client is read-only"));
-                return CMD_RETURN_ERROR;
+                return CmdOutcome::Error;
             }
         }
         if tc.as_ref().expect("live client").flags() & CLIENT_READONLY as uint64_t != 0 {
@@ -129,10 +129,10 @@ unsafe fn cmd_switch_client_exec(
                 write_cstr(out, tablename)?;
                 out.write_all(b" doesn't exist")
             });
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         };
         tc.as_ref().expect("target client").select_key_table(table);
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     sort_crit.order = sort_order_from_string(nullable_cstr(
         args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
@@ -142,7 +142,7 @@ unsafe fn cmd_switch_client_exec(
         && args_has(&*args, 'O' as i32 as u_char) != 0
     {
         cmdq_error(item_handle, |out| out.write_all(b"invalid sort order"));
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     sort_crit.reversed = args_has(&*args, 'r' as i32 as u_char);
     if args_has(&*args, 'n' as i32 as u_char) != 0 {
@@ -156,7 +156,7 @@ unsafe fn cmd_switch_client_exec(
         s = selected_session.clone();
         if s.is_none() {
             cmdq_error(item_handle, |out| out.write_all(b"can't find next session"));
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
     } else if args_has(&*args, 'p' as i32 as u_char) != 0 {
         selected_session = (tc
@@ -171,7 +171,7 @@ unsafe fn cmd_switch_client_exec(
             cmdq_error(item_handle, |out| {
                 out.write_all(b"can't find previous session")
             });
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
     } else if args_has(&*args, 'l' as i32 as u_char) != 0 {
         selected_session = crate::src::session::sessions::resolve(
@@ -180,11 +180,11 @@ unsafe fn cmd_switch_client_exec(
         s = selected_session.clone();
         if s.is_none() {
             cmdq_error(item_handle, |out| out.write_all(b"can't find last session"));
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
     } else {
         if cmdq_get_client((item).as_ref()).is_none() {
-            return CMD_RETURN_NORMAL;
+            return CmdOutcome::Normal;
         }
         if let Some(pane) = wp.as_ref().filter(|pane| {
             wl.is_alive()
@@ -226,5 +226,5 @@ unsafe fn cmd_switch_client_exec(
     if !cmdq_get_flags(&*(item)) & CMDQ_STATE_REPEAT != 0 {
         tc.clone().expect("live client").set_key_table(None);
     }
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }

@@ -48,7 +48,7 @@ pub static cmd_list_windows_entry: cmd_entry = {
 unsafe fn cmd_list_windows_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let queue_client = cmdq_get_client((item).as_ref());
     let mut args: *mut args =
@@ -81,7 +81,7 @@ unsafe fn cmd_list_windows_exec(
         && args_has(&*args, 'O' as i32 as u_char) != 0
     {
         cmdq_error(item_handle, |out| out.write_all(b"invalid sort order"));
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     sort_crit.reversed = args_has(&*args, 'r' as i32 as u_char);
     let winlinks = if args_has(&*args, 'a' as i32 as u_char) != 0 {
@@ -131,5 +131,5 @@ unsafe fn cmd_list_windows_exec(
         drop(ft_owner);
         i = i.wrapping_add(1);
     }
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }

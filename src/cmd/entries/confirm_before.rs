@@ -4,7 +4,7 @@ use crate::src::arguments::{
 };
 use crate::src::cmd::queue::{
     cmdq_append, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_target_client,
-    cmdq_insert_after, cmdq_resumed, cmdq_suspend,
+    cmdq_insert_after, cmdq_resumed,
 };
 use crate::src::cmd::{cmd_get_args_mut, cmd_list_first};
 use crate::src::format::bytes::nullable_cstr;
@@ -71,7 +71,7 @@ fn cmd_confirm_before_args_parse(
 unsafe fn cmd_confirm_before_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -82,7 +82,7 @@ unsafe fn cmd_confirm_before_exec(
     let mut wait: ::core::ffi::c_int =
         (args_has(&*args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
     let Some(cmdlist) = args_make_commands_now(self_0.clone(), item_handle, 0, 1) else {
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     };
     let mut cdata = Box::new(cmd_confirm_before_data {
         reply: None,
@@ -103,7 +103,7 @@ unsafe fn cmd_confirm_before_exec(
             cdata.confirm_key = *confirm_key.offset(0 as ::core::ffi::c_int as isize) as u_char;
         } else {
             cmdq_error(item_handle, |out| out.write_all(b"invalid confirm key"));
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
     } else {
         cdata.confirm_key = 'y' as i32 as u_char;
@@ -149,9 +149,9 @@ unsafe fn cmd_confirm_before_exec(
     );
     drop(new_prompt);
     let Some(continuation) = continuation else {
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     };
-    cmdq_suspend(item_handle, continuation)
+    CmdOutcome::Suspend(Box::pin(continuation))
 }
 /// Act on the answer inside its send, at answer time as tmux does: queue a
 /// confirmed command after the item with the item's state, and report the
@@ -242,10 +242,11 @@ mod tests {
             cmdq_get_callback_owned(
                 c"confirm-before",
                 Some(Box::new(move |item| {
-                    cmdq_suspend(
-                        item,
-                        cmd_confirm_before_wait(answered, cmdlist, Rc::downgrade(item)),
-                    )
+                    CmdOutcome::Suspend(Box::pin(cmd_confirm_before_wait(
+                        answered,
+                        cmdlist,
+                        Rc::downgrade(item),
+                    )))
                 })),
             ),
         );
@@ -268,7 +269,7 @@ mod tests {
                 c"flag",
                 Some(Box::new(move |_| {
                     flag.set(true);
-                    CMD_RETURN_NORMAL
+                    CmdOutcome::Normal
                 })),
             ),
         );

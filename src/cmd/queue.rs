@@ -73,73 +73,105 @@ pub struct cmdq_item {
     pub target: cmd_find_state,
     cmdlist: Option<std::rc::Rc<std::cell::RefCell<cmd_list>>>,
     pub cmd: refbox::Weak<cmd>,
-    work: Work,
+    /// Runs the item when it reaches the head: `cmdq_fire_command` for a
+    /// command, the queued callback otherwise. Taken when the item starts.
+    start: cmdq_cb,
 }
 
-/// Dropping an item cancels its pending work, like dropping a future.
 impl Drop for cmdq_item {
     fn drop(&mut self) {
         drop(self.cmdlist.take());
         drop(self.state.take());
-        drop(std::mem::replace(&mut self.work, Work::Fired));
+        drop(self.start.take());
     }
 }
 
-/// What the queue does with an item when it reaches the head.
-enum Work {
-    /// Dispatch the command's entry.
-    Command,
-    Callback(Box<dyn FnOnce(&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval>),
-    /// Inside its command or callback.
-    Executing,
-    /// Installed by `cmdq_suspend`; blocks its queue. Each wake of `waker`
-    /// polls `future` at once, and dropping it cancels the wait.
-    Suspended {
-        future: std::pin::Pin<Box<dyn std::future::Future<Output = ()>>>,
-        waker: std::task::LocalWaker,
-    },
-    /// The future is moved out while it is polled. `rewoken` records a wake
-    /// that arrived during the poll.
+/// A queue's dispatch: one future that starts each head in turn and awaits a
+/// suspended head's continuation. It never completes.
+type Drain = std::pin::Pin<Box<dyn std::future::Future<Output = ()>>>;
+
+/// Where a queue's drain is. It is moved out while it is polled, so polling
+/// never holds a queue borrow.
+enum DrainSlot {
+    /// Not polled yet; the first `cmdq_next` creates it.
+    Unstarted,
+    Parked(Drain),
+    /// Being polled. `rewoken` records a wake that arrived during the poll.
     Polling {
         rewoken: bool,
     },
-    /// Finished; the next `cmdq_next` pass removes it.
-    Fired,
 }
 
-impl Work {
-    fn label(&self) -> &'static str {
-        match self {
-            Self::Command => "command",
-            Self::Callback(_) => "callback",
-            Self::Executing => "executing",
-            Self::Suspended { .. } => "suspended",
-            Self::Polling { .. } => "polling",
-            Self::Fired => "fired",
-        }
+/// What the queue's head is doing, for `cmdq_running` and wakes.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum HeadState {
+    /// No head has started, or the last one was removed.
+    Idle,
+    /// Inside its command or callback, or finished until `cmdq_next` removes it.
+    Running,
+    /// Blocks its queue on a continuation, including while it is polled.
+    Suspended,
+}
+
+thread_local! {
+    /// Open while `cmdq_next` polls a drain, closed while a wake does: only
+    /// `cmdq_next` moves a queue past its head (tmux runs a continuation's
+    /// completion before the next item only on a later `cmdq_next`).
+    static CMDQ_LOOP: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Set the loop gate for one poll, restoring it when the poll returns or unwinds.
+struct LoopGate(bool);
+
+impl LoopGate {
+    fn enter(open: bool) -> Self {
+        Self(CMDQ_LOOP.replace(open))
     }
 }
 
-/// Returned only through `cmdq_suspend`; no other `cmd_retval` has this value.
-const SUSPENDED: cmd_retval = 1;
+impl Drop for LoopGate {
+    fn drop(&mut self) {
+        CMDQ_LOOP.set(self.0);
+    }
+}
 
-/// Polls a suspended item on wake. It never touches the runtime, so a wait may
-/// end after runtime shutdown.
-struct ItemWake(std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>);
+/// Pending until a `cmdq_next` polls the drain. `server_loop` polls every
+/// queue on each pass, so the gate needs no waker.
+fn loop_turn() -> impl std::future::Future<Output = ()> {
+    std::future::poll_fn(|_| {
+        if CMDQ_LOOP.get() {
+            std::task::Poll::Ready(())
+        } else {
+            std::task::Poll::Pending
+        }
+    })
+}
 
-impl std::task::LocalWake for ItemWake {
+/// Polls a queue's suspended head on wake. It never touches the runtime, so a
+/// wait may end after runtime shutdown.
+struct QueueWake(QueueTarget);
+
+impl std::task::LocalWake for QueueWake {
     fn wake(self: std::rc::Rc<Self>) {
         self.wake_by_ref();
     }
     fn wake_by_ref(self: &std::rc::Rc<Self>) {
-        let Some(item_owner) = self.0.upgrade() else {
-            return;
-        };
         unsafe {
-            match (*item_owner.get()).work {
-                Work::Suspended { .. } => cmdq_poll(&item_owner),
-                Work::Polling { ref mut rewoken } => *rewoken = true,
-                _ => {}
+            let drain = self.0.try_with_queue(|queue| {
+                if queue.head != HeadState::Suspended {
+                    return None;
+                }
+                match std::mem::replace(&mut queue.drain, DrainSlot::Polling { rewoken: false }) {
+                    DrainSlot::Parked(drain) => Some(drain),
+                    DrainSlot::Polling { .. } => {
+                        queue.drain = DrainSlot::Polling { rewoken: true };
+                        None
+                    }
+                    DrainSlot::Unstarted => unreachable!("a suspended head has a drain"),
+                }
+            });
+            if let Some(Some(drain)) = drain {
+                cmdq_poll(&self.0, drain, false);
             }
         }
     }
@@ -167,14 +199,15 @@ impl cmdq_item {
             target: Default::default(),
             cmdlist: Default::default(),
             cmd: Default::default(),
-            work: Work::Command,
+            start: Some(Box::new(|item| unsafe { cmdq_fire_command(item) })),
         }
     }
 }
 
 #[repr(C)]
 /// Box-owned by a client until client destruction; the lazy global queue lives for
-/// the process. The private deque owns stable command item allocations.
+/// the process. The private deque owns stable command item allocations, and
+/// the drain owns a suspended head's continuation.
 ///
 /// ```compile_fail
 /// use tiri::src::cmd::queue::cmdq_new;
@@ -182,6 +215,11 @@ impl cmdq_item {
 /// queue.list.pop_front();
 /// ```
 pub struct cmdq_list {
+    /// Dropped first, so pending continuations are cancelled before items go.
+    drain: DrainSlot,
+    head: HeadState,
+    /// Items finished inside `cmdq_next`, read and reset by it.
+    ran: u_int,
     /// Current execution position, observed without retaining the item.
     item: std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>,
     list: std::collections::VecDeque<std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
@@ -260,16 +298,22 @@ impl QueueTarget {
     /// dispatch and explicit item removal (which can invoke cancellation) must
     /// happen after it returns. Results must own their data.
     unsafe fn with_queue<R>(&self, operation: impl FnOnce(&mut cmdq_list) -> R) -> R {
+        self.try_with_queue(operation)
+            .expect("live command queue owner")
+    }
+
+    /// As `with_queue`, but `None` once a client queue has been freed.
+    unsafe fn try_with_queue<R>(&self, operation: impl FnOnce(&mut cmdq_list) -> R) -> Option<R> {
         thread_local! {
             static GLOBAL_QUEUE: std::cell::RefCell<Box<cmdq_list>> =
                 std::cell::RefCell::new(cmdq_new());
         }
         match self {
-            Self::Global => GLOBAL_QUEUE.with_borrow_mut(|queue| operation(queue)),
+            Self::Global => Some(GLOBAL_QUEUE.with_borrow_mut(|queue| operation(queue))),
             Self::Client(observer) => {
-                let owner = observer.upgrade().expect("live command queue owner");
+                let owner = observer.upgrade()?;
                 let mut queue = owner.borrow_queue_mut();
-                operation(queue)
+                Some(operation(queue))
             }
         }
     }
@@ -291,8 +335,18 @@ unsafe fn cmdq_name(c: Option<&ClientRef>) -> CString {
     })
 }
 
+unsafe fn cmdq_queue_name(queue: &QueueTarget) -> CString {
+    match queue {
+        QueueTarget::Global => cmdq_name(None),
+        QueueTarget::Client(observer) => cmdq_name(observer.upgrade().as_ref()),
+    }
+}
+
 pub fn cmdq_new() -> Box<cmdq_list> {
     Box::new(cmdq_list {
+        drain: DrainSlot::Unstarted,
+        head: HeadState::Idle,
+        ran: 0,
         item: std::rc::Weak::new(),
         list: std::collections::VecDeque::new(),
         background: std::collections::BTreeMap::new(),
@@ -549,73 +603,136 @@ pub unsafe fn cmdq_insert_hook(
     }
     events_fire(&name, ep);
 }
-/// Install the executing item's continuation and return the value its command
-/// or callback must return. Each wake polls the continuation at once; dropping
-/// the item drops it, which cancels the wait.
-#[must_use = "return the suspension from the command"]
-pub(crate) unsafe fn cmdq_suspend(
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-    future: impl std::future::Future<Output = ()> + 'static,
-) -> cmd_retval {
-    let item = item_handle.get();
-    assert!(
-        matches!((*item).work, Work::Executing),
-        "only an executing command item can suspend"
-    );
-    let waker = std::task::LocalWaker::from(std::rc::Rc::new(ItemWake(std::rc::Rc::downgrade(
-        item_handle,
-    ))));
-    (*item).work = Work::Suspended {
-        future: Box::pin(future),
-        waker,
-    };
-    SUSPENDED
-}
 /// Retain the item from inside its continuation. Only valid while it is
 /// polled; drop the handle before the next `.await`.
 pub(crate) unsafe fn cmdq_resumed(
     item: &std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>,
 ) -> std::rc::Rc<std::cell::UnsafeCell<cmdq_item>> {
     let owner = item.upgrade().expect("polled command item");
-    assert!(
-        matches!((*owner.get()).work, Work::Polling { .. }),
-        "command item resumed outside its poll"
-    );
+    let queue = (*owner.get()).queue.clone().expect("queued command item");
+    let polled = queue.with_queue(|queue| {
+        queue.head == HeadState::Suspended
+            && matches!(queue.drain, DrainSlot::Polling { .. })
+            && queue.item.ptr_eq(item)
+    });
+    assert!(polled, "command item resumed outside its poll");
     owner
 }
-/// Poll a suspended item's continuation outside any queue borrow, again while
-/// it is woken during the poll. A completed item is Fired before its future is
-/// dropped; that drop can free the item's own queue, so nothing here touches
-/// the queue. The caller's strong owner keeps the item alive.
-unsafe fn cmdq_poll(item_owner: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) {
-    let item = item_owner.get();
-    let Work::Suspended { mut future, waker } =
-        std::mem::replace(&mut (*item).work, Work::Polling { rewoken: false })
-    else {
-        panic!("only a suspended command item is polled");
-    };
+/// The head once a `cmdq_next` polls the drain; new items start only there.
+async unsafe fn cmdq_next_head(
+    queue: &QueueTarget,
+) -> std::rc::Rc<std::cell::UnsafeCell<cmdq_item>> {
+    std::future::poll_fn(|_| {
+        if !CMDQ_LOOP.get() {
+            return std::task::Poll::Pending;
+        }
+        match queue.try_with_queue(|queue| queue.first()) {
+            Some(Some(item)) => std::task::Poll::Ready(item),
+            _ => std::task::Poll::Pending,
+        }
+    })
+    .await
+}
+/// Start each head in turn. A suspended head's continuation is awaited here,
+/// so a wake polls it at once; its completion waits for a `cmdq_next` before
+/// the item is removed. No strong item handle is held across an `.await`.
+async unsafe fn cmdq_drain(queue: QueueTarget) {
+    static mut number: u_int = 0;
+    loop {
+        let item_owner = cmdq_next_head(&queue).await;
+        let item = item_owner.get();
+        log_debug(format_args!(
+            "cmdq_next {}: {}",
+            crate::src::log::log_bytes(cmdq_queue_name(&queue).as_bytes()),
+            crate::src::log::log_bytes((*item).name.as_deref().unwrap_or(c"(null)").to_bytes()),
+        ));
+        let start = (*item).start.take().expect("queue head starts once");
+        queue.with_queue(|queue| {
+            queue.item = std::rc::Rc::downgrade(&item_owner);
+            queue.head = HeadState::Running;
+        });
+        (*item).time = time(std::ptr::null_mut());
+        number = number.wrapping_add(1);
+        (*item).number = number;
+        let counted = match start(&item_owner) {
+            CmdOutcome::Suspend(continuation) => {
+                queue.with_queue(|queue| queue.head = HeadState::Suspended);
+                drop(item_owner);
+                continuation.await;
+                // Only a completion inside `cmdq_next` counts toward its result.
+                let counted = CMDQ_LOOP.get();
+                if queue
+                    .try_with_queue(|queue| queue.head = HeadState::Running)
+                    .is_none()
+                {
+                    return std::future::pending().await;
+                }
+                loop_turn().await;
+                counted
+            }
+            outcome => {
+                if matches!(outcome, CmdOutcome::Error) {
+                    cmdq_remove_group(&item_owner);
+                }
+                drop(item_owner);
+                true
+            }
+        };
+        let owner = queue
+            .with_queue(|queue| {
+                queue.head = HeadState::Idle;
+                queue.item = std::rc::Weak::new();
+                if counted {
+                    queue.ran += 1;
+                }
+                queue.list.pop_front()
+            })
+            .expect("executed queue item");
+        cmdq_remove(owner);
+    }
+}
+/// Poll `queue`'s drain outside any queue borrow, again while it is woken
+/// during the poll, then park it. `open` opens the loop gate (`cmdq_next`).
+/// A continuation may free its own client queue; the drain is then dropped.
+unsafe fn cmdq_poll(queue: &QueueTarget, mut drain: Drain, open: bool) {
+    let _gate = LoopGate::enter(open);
+    let waker = std::task::LocalWaker::from(std::rc::Rc::new(QueueWake(queue.clone())));
     let mut context = std::task::ContextBuilder::from_waker(std::task::Waker::noop())
         .local_waker(&waker)
         .build();
     loop {
-        let ready = future.as_mut().poll(&mut context).is_ready();
         assert!(
-            std::rc::Rc::strong_count(item_owner) <= 2,
-            "command continuation retained its item across a poll"
+            drain.as_mut().poll(&mut context).is_pending(),
+            "a queue drain never completes"
         );
-        let Work::Polling { rewoken } = std::mem::replace(&mut (*item).work, Work::Fired) else {
-            panic!("a polled command item stays polling until the poll returns");
-        };
-        if ready {
-            drop(future);
+        let polled = queue.try_with_queue(|queue| {
+            let head = (queue.head == HeadState::Suspended)
+                .then(|| queue.item.clone())
+                .unwrap_or_default();
+            let DrainSlot::Polling { rewoken } =
+                std::mem::replace(&mut queue.drain, DrainSlot::Polling { rewoken: false })
+            else {
+                panic!("a polled drain stays out until its poll returns");
+            };
+            (head, rewoken)
+        });
+        let Some((head, rewoken)) = polled else {
+            drop(drain);
             return;
+        };
+        if let Some(head) = head.upgrade() {
+            assert!(
+                std::rc::Rc::strong_count(&head) <= 2,
+                "command continuation retained its item across a poll"
+            );
         }
         if !rewoken {
-            (*item).work = Work::Suspended { future, waker };
-            return;
+            break;
         }
-        (*item).work = Work::Polling { rewoken: false };
     }
+    let mut drain = Some(drain);
+    queue.try_with_queue(|queue| queue.drain = DrainSlot::Parked(drain.take().unwrap()));
+    drop(drain);
 }
 /// The resuming end of a plain wait. Dropping it never resumes the item.
 pub struct CmdqWaiter {
@@ -624,11 +741,11 @@ pub struct CmdqWaiter {
     done: tiri_rt::oneshot::Sender<()>,
 }
 /// Suspend the executing item until its waiter resumes it, and return the
-/// waiter with the value its command or callback must return.
+/// waiter with the outcome its command or callback must return.
 #[must_use = "return the suspension from the command"]
 pub(crate) unsafe fn cmdq_wait(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> (CmdqWaiter, cmd_retval) {
+) -> (CmdqWaiter, CmdOutcome) {
     let item = item_handle.get();
     let client = if (*item).client_lent {
         std::rc::Weak::new()
@@ -636,12 +753,12 @@ pub(crate) unsafe fn cmdq_wait(
         (*item).client.clone()
     };
     let (done, resumed) = tiri_rt::oneshot::channel();
-    let retval = cmdq_suspend(item_handle, async move {
+    let outcome = CmdOutcome::Suspend(Box::pin(async move {
         if resumed.await.is_none() {
             std::future::pending::<()>().await;
         }
-    });
-    (CmdqWaiter { client, done }, retval)
+    }));
+    (CmdqWaiter { client, done }, outcome)
 }
 impl CmdqWaiter {
     pub(crate) fn client(&self) -> Option<ClientRef> {
@@ -711,7 +828,7 @@ pub unsafe fn cmdq_get_command(
     if cmdlist.list.is_empty() {
         return cmdq_get_callback_owned(
             c"cmdq_empty_command",
-            Some(Box::new(|_| CMD_RETURN_NORMAL)),
+            Some(Box::new(|_| CmdOutcome::Normal)),
         );
     }
     let state = state
@@ -735,14 +852,14 @@ unsafe fn cmdq_find_flag(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut fs: *mut cmd_find_state,
     flag: &cmd_entry_flag,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if flag.flag as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
         let target_client = cmdq_get_target_client((item).as_ref());
         *fs = cmd_find_state::find_from_client(target_client.as_ref(), 0 as ::core::ffi::c_int)
             .unwrap_or_else(|| cmd_find_state::clear_state(0 as ::core::ffi::c_int));
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     value = args_get(
         &*(cmd_get_args_mut(((*item).command_handle()).get_mut_unchecked())
@@ -758,9 +875,9 @@ unsafe fn cmdq_find_flag(
     ) != 0 as ::core::ffi::c_int
     {
         *fs = cmd_find_state::clear_state(0 as ::core::ffi::c_int);
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }
 unsafe fn cmdq_add_message(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) {
     let item = item_handle.get();
@@ -816,7 +933,7 @@ unsafe fn cmdq_add_message(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_
 }
 unsafe fn cmdq_fire_command(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut current_block: u64;
     let saved_client = cmdq_get_client((item).as_ref());
@@ -828,7 +945,7 @@ unsafe fn cmdq_fire_command(
     let entry = cmd_get_entry(cmd.get_unchecked());
     let mut tc = None;
     let saved = (*item).client.clone();
-    let mut retval: cmd_retval = CMD_RETURN_NORMAL;
+    let mut retval: CmdOutcome = CmdOutcome::Normal;
     let mut fsp: *mut cmd_find_state = ::core::ptr::null_mut::<cmd_find_state>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -843,7 +960,7 @@ unsafe fn cmdq_fire_command(
     let client_freed =
         saved_client.is_none() && !std::rc::Weak::ptr_eq(&saved, &std::rc::Weak::new());
     if client_freed || saved_client.as_ref().is_some_and(|c| c.is_dead()) {
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     if cfg_finished != 0 {
         cmdq_add_message(item_handle);
@@ -885,7 +1002,7 @@ unsafe fn cmdq_fire_command(
             quiet,
         );
         if tc.is_none() && quiet == 0 {
-            retval = CMD_RETURN_ERROR;
+            retval = CmdOutcome::Error;
             current_block = 7379054416801212160;
         } else {
             current_block = 18317007320854588510;
@@ -900,7 +1017,7 @@ unsafe fn cmdq_fire_command(
             quiet,
         );
         if tc.is_none() && quiet == 0 {
-            retval = CMD_RETURN_ERROR;
+            retval = CmdOutcome::Error;
             current_block = 7379054416801212160;
         } else {
             current_block = 18317007320854588510;
@@ -919,13 +1036,11 @@ unsafe fn cmdq_fire_command(
             .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
         let _target_client = cmdq_get_target_client((item).as_ref());
         retval = cmdq_find_flag(item_handle, &raw mut (*item).source, &entry.source);
-        if !(retval as ::core::ffi::c_int == CMD_RETURN_ERROR as ::core::ffi::c_int) {
+        if !matches!(retval, CmdOutcome::Error) {
             retval = cmdq_find_flag(item_handle, &raw mut (*item).target, &entry.target);
-            if !(retval as ::core::ffi::c_int == CMD_RETURN_ERROR as ::core::ffi::c_int) {
+            if !matches!(retval, CmdOutcome::Error) {
                 retval = entry.exec.expect("non-null function pointer")(cmd.clone(), item_handle);
-                if !(retval as ::core::ffi::c_int == CMD_RETURN_ERROR as ::core::ffi::c_int)
-                    && entry.flags & CMD_AFTERHOOK != 0
-                {
+                if !matches!(retval, CmdOutcome::Error) && entry.flags & CMD_AFTERHOOK != 0 {
                     if (*item).target.is_valid() {
                         fsp = &raw mut (*item).target;
                         current_block = 8704759739624374314;
@@ -963,7 +1078,7 @@ unsafe fn cmdq_fire_command(
     }
     (*item).client = saved;
     (*item).client_lent = false;
-    if retval as ::core::ffi::c_int == CMD_RETURN_ERROR as ::core::ffi::c_int {
+    if matches!(retval, CmdOutcome::Error) {
         fsp = ::core::ptr::null_mut::<cmd_find_state>();
         if (*item).target.is_valid() {
             fsp = &raw mut (*item).target;
@@ -1006,7 +1121,7 @@ pub unsafe fn cmdq_get_callback_owned(
         ::core::ptr::null_mut::<key_event>(),
         0 as ::core::ffi::c_int,
     ));
-    (*item).work = Work::Callback(cb.expect("non-null queue callback"));
+    (*item).start = Some(cb.expect("non-null queue callback"));
     owner
 }
 
@@ -1017,87 +1132,51 @@ pub unsafe fn cmdq_get_error(error: &CStr) -> std::rc::Rc<std::cell::UnsafeCell<
         c"cmdq_error_callback",
         Some(Box::new(move |item| unsafe {
             cmdq_error(item, |out| write_cstr(out, &*error));
-            CMD_RETURN_NORMAL
+            CmdOutcome::Normal
         })),
     )
 }
+/// Run the queue until it is empty or its head suspends, and return how many
+/// items finished. Re-entered while its drain is polled, it runs nothing.
 pub unsafe fn cmdq_next(owner: Option<&ClientRef>) -> u_int {
     let queue = QueueTarget::for_client(owner);
-    let name = cmdq_name(owner);
-    let mut items = 0;
     log_debug(format_args!(
         "cmdq_next {}: enter",
-        crate::src::log::log_bytes(name.as_bytes())
+        crate::src::log::log_bytes(cmdq_name(owner).as_bytes())
     ));
-    static mut number: u_int = 0;
-    while let Some(item_owner) = queue.with_queue(|queue| queue.first()) {
-        let item = item_owner.get();
-        queue.with_queue(|queue| queue.item = std::rc::Rc::downgrade(&item_owner));
-        log_debug(format_args!(
-            "cmdq_next {}: {} ({})",
-            crate::src::log::log_bytes(name.as_bytes()),
-            crate::src::log::log_bytes((*item).name.as_deref().unwrap_or(c"(null)").to_bytes()),
-            (*item).work.label()
-        ));
-        match (*item).work {
-            Work::Executing | Work::Polling { .. } | Work::Suspended { .. } => return items,
-            Work::Fired => {}
-            Work::Command | Work::Callback(_) => {
-                (*item).time = time(std::ptr::null_mut());
-                number = number.wrapping_add(1);
-                (*item).number = number;
-                let command = matches!((*item).work, Work::Command);
-                let retval = match std::mem::replace(&mut (*item).work, Work::Executing) {
-                    Work::Command => cmdq_fire_command(&item_owner),
-                    Work::Callback(cb) => cb(&item_owner),
-                    _ => unreachable!(),
-                };
-                if retval == CMD_RETURN_ERROR && command {
-                    cmdq_remove_group(&item_owner);
-                }
-                match std::mem::replace(&mut (*item).work, Work::Fired) {
-                    Work::Executing => assert_ne!(
-                        retval, SUSPENDED,
-                        "only a command suspended by cmdq_suspend returns its result"
-                    ),
-                    work @ Work::Suspended { .. } => {
-                        assert_eq!(
-                            retval, SUSPENDED,
-                            "a suspended command returns cmdq_suspend's result"
-                        );
-                        (*item).work = work;
-                        cmdq_poll(&item_owner);
-                        if !matches!((*item).work, Work::Fired) {
-                            return items;
-                        }
-                    }
-                    _ => panic!("a dispatched queue item stays executing until it returns"),
-                }
-                items += 1;
+    let drain = queue.with_queue(|queue| {
+        match std::mem::replace(&mut queue.drain, DrainSlot::Polling { rewoken: false }) {
+            DrainSlot::Unstarted => {
+                Some(Box::pin(cmdq_drain(QueueTarget::for_client(owner))) as Drain)
+            }
+            DrainSlot::Parked(drain) => Some(drain),
+            polling @ DrainSlot::Polling { .. } => {
+                queue.drain = polling;
+                None
             }
         }
-        drop(item_owner);
-        let owner = queue
-            .with_queue(|queue| queue.list.pop_front())
-            .expect("executed queue item");
-        cmdq_remove(owner);
-    }
-    queue.with_queue(|queue| queue.item = std::rc::Weak::new());
-    items
+    });
+    let Some(drain) = drain else {
+        return 0;
+    };
+    cmdq_poll(&queue, drain, true);
+    queue.with_queue(|queue| std::mem::take(&mut queue.ran))
 }
 
 /// The global queue's current item while its command or callback runs, or
 /// after it completed until it is removed. None while it is suspended,
 /// including while its continuation runs, as tmux hides a waiting item.
 pub unsafe fn cmdq_running() -> std::rc::Weak<std::cell::UnsafeCell<cmdq_item>> {
-    let queue = QueueTarget::Global;
-    let Some(owner) = queue.with_queue(|queue| queue.item.upgrade()) else {
-        return std::rc::Weak::new();
-    };
-    if let Work::Suspended { .. } | Work::Polling { .. } = (*owner.get()).work {
-        return std::rc::Weak::new();
-    }
-    std::rc::Rc::downgrade(&owner)
+    QueueTarget::Global.with_queue(|queue| match queue.head {
+        HeadState::Suspended => std::rc::Weak::new(),
+        HeadState::Idle | HeadState::Running => queue.item.clone(),
+    })
+}
+
+/// What a queue's head is doing.
+#[cfg(test)]
+unsafe fn cmdq_head(owner: Option<&ClientRef>) -> HeadState {
+    QueueTarget::for_client(owner).with_queue(|queue| queue.head)
 }
 
 /// The number of items in a queue, without running them.
@@ -1260,7 +1339,7 @@ mod lifecycle_tests {
             name,
             Some(Box::new(move |_| {
                 let _capture = &capture;
-                CMD_RETURN_NORMAL
+                CmdOutcome::Normal
             })),
         )
     }
@@ -1307,7 +1386,7 @@ mod lifecycle_tests {
                     Some(Box::new(move |item| {
                         assert!(cmdq_running().ptr_eq(&Rc::downgrade(item)));
                         observed.set(true);
-                        CMD_RETURN_NORMAL
+                        CmdOutcome::Normal
                     })),
                 ),
             );
@@ -1323,7 +1402,7 @@ mod lifecycle_tests {
         name: &'static CStr,
         trace: &Rc<std::cell::RefCell<Vec<&'static str>>>,
         tag: &'static str,
-        retval: cmd_retval,
+        retval: CmdOutcome,
     ) -> std::rc::Weak<std::cell::UnsafeCell<cmdq_item>> {
         let trace = trace.clone();
         cmdq_append(
@@ -1353,11 +1432,11 @@ mod lifecycle_tests {
                         observed.set(Some(cmdq_next(None)));
                         assert!(inner_trace.borrow().is_empty());
                         assert!(cmdq_running().ptr_eq(&Rc::downgrade(item)));
-                        CMD_RETURN_NORMAL
+                        CmdOutcome::Normal
                     })),
                 ),
             );
-            let next = append_recording(c"next item", &trace, "next", CMD_RETURN_NORMAL);
+            let next = append_recording(c"next item", &trace, "next", CmdOutcome::Normal);
             assert_eq!(cmdq_next(None), 2);
             assert_eq!(reentered.get(), Some(0));
             assert!(head.upgrade().is_none());
@@ -1386,7 +1465,10 @@ mod suspend_tests {
     ) -> Weak<std::cell::UnsafeCell<cmdq_item>> {
         cmdq_append(
             None,
-            cmdq_get_callback_owned(name, Some(Box::new(move |item| cmdq_suspend(item, future)))),
+            cmdq_get_callback_owned(
+                name,
+                Some(Box::new(move |_| CmdOutcome::Suspend(Box::pin(future)))),
+            ),
         )
     }
 
@@ -1400,7 +1482,7 @@ mod suspend_tests {
                 assert_eq!(rx.await, Some(()));
                 body.borrow_mut().push("body");
             });
-            let next = append_recording(c"next item", &trace, "next", CMD_RETURN_NORMAL);
+            let next = append_recording(c"next item", &trace, "next", CmdOutcome::Normal);
             assert_eq!(cmdq_next(None), 0, "the first poll is pending");
             assert_eq!(cmdq_next(None), 0, "a suspended head blocks its queue");
             assert!(trace.borrow().is_empty());
@@ -1423,20 +1505,20 @@ mod suspend_tests {
                 None,
                 cmdq_get_callback_owned(
                     c"sent during exec",
-                    Some(Box::new(move |item| {
+                    Some(Box::new(move |_| {
                         let (tx, rx) = channel::<()>();
                         let inner = body.clone();
-                        let retval = cmdq_suspend(item, async move {
+                        let retval = CmdOutcome::Suspend(Box::pin(async move {
                             assert_eq!(rx.await, Some(()));
                             inner.borrow_mut().push("body");
-                        });
+                        }));
                         tx.send(()).unwrap();
                         assert!(body.borrow().is_empty(), "the first poll follows exec");
                         retval
                     })),
                 ),
             );
-            let next = append_recording(c"next item", &trace, "next", CMD_RETURN_NORMAL);
+            let next = append_recording(c"next item", &trace, "next", CmdOutcome::Normal);
             assert_eq!(cmdq_next(None), 2);
             assert!(head.upgrade().is_none());
             assert!(next.upgrade().is_none());
@@ -1455,20 +1537,17 @@ mod suspend_tests {
                 None,
                 cmdq_get_callback_owned(
                     c"woken outside suspension",
-                    Some(Box::new(move |item| {
-                        LocalWaker::from(Rc::new(ItemWake(Rc::downgrade(item)))).wake();
-                        assert!(matches!((*item.get()).work, Work::Executing));
-                        cmdq_suspend(
-                            item,
-                            std::future::poll_fn(move |cx| {
-                                counted.set(counted.get() + 1);
-                                if done.get() {
-                                    return Poll::Ready(());
-                                }
-                                *stored.borrow_mut() = Some(cx.local_waker().clone());
-                                Poll::Pending
-                            }),
-                        )
+                    Some(Box::new(move |_| {
+                        LocalWaker::from(Rc::new(QueueWake(QueueTarget::Global))).wake();
+                        assert!(cmdq_head(None) == HeadState::Running);
+                        CmdOutcome::Suspend(Box::pin(std::future::poll_fn(move |cx| {
+                            counted.set(counted.get() + 1);
+                            if done.get() {
+                                return Poll::Ready(());
+                            }
+                            *stored.borrow_mut() = Some(cx.local_waker().clone());
+                            Poll::Pending
+                        })))
                     })),
                 ),
             );
@@ -1478,9 +1557,8 @@ mod suspend_tests {
             ready.set(true);
             waker.wake_by_ref();
             assert_eq!(polls.get(), 2);
-            let owner = head.upgrade().unwrap();
-            assert!(matches!((*owner.get()).work, Work::Fired));
-            drop(owner);
+            assert!(head.upgrade().is_some(), "removal waits for cmdq_next");
+            assert!(cmdq_head(None) == HeadState::Running);
             waker.wake_by_ref();
             assert_eq!(polls.get(), 2, "a fired item is not polled again");
             assert_eq!(cmdq_next(None), 0);
@@ -1509,8 +1587,8 @@ mod suspend_tests {
             );
             assert_eq!(cmdq_next(None), 0);
             assert_eq!(polls.get(), 3);
-            let owner = head.upgrade().unwrap();
-            assert!(matches!((*owner.get()).work, Work::Suspended { .. }));
+            assert!(head.upgrade().is_some());
+            assert!(cmdq_head(None) == HeadState::Suspended);
         }
     }
 
@@ -1526,7 +1604,7 @@ mod suspend_tests {
                     c"observed body",
                     Some(Box::new(move |item| {
                         let observer = Rc::downgrade(item);
-                        cmdq_suspend(item, async move {
+                        CmdOutcome::Suspend(Box::pin(async move {
                             assert!(cmdq_running().upgrade().is_none(), "first poll");
                             assert_eq!(rx.await, Some(()));
                             let item = cmdq_resumed(&observer);
@@ -1534,7 +1612,7 @@ mod suspend_tests {
                             assert!(cmdq_get_state(&*item.get()).is_some());
                             drop(item);
                             body.set(true);
-                        })
+                        }))
                     })),
                 ),
             );
@@ -1559,11 +1637,11 @@ mod suspend_tests {
                     c"retaining body",
                     Some(Box::new(move |item| {
                         let observer = Rc::downgrade(item);
-                        cmdq_suspend(item, async move {
+                        CmdOutcome::Suspend(Box::pin(async move {
                             let item = cmdq_resumed(&observer);
                             let _ = rx.await;
                             drop(item);
-                        })
+                        }))
                     })),
                 ),
             );
@@ -1582,45 +1660,6 @@ mod suspend_tests {
     }
 
     #[test]
-    #[should_panic(expected = "a suspended command returns cmdq_suspend's result")]
-    fn suspending_then_returning_normal_panics() {
-        unsafe {
-            cmdq_append(
-                None,
-                cmdq_get_callback_owned(
-                    c"mismatched return",
-                    Some(Box::new(|item| {
-                        let _ = cmdq_suspend(item, async {});
-                        CMD_RETURN_NORMAL
-                    })),
-                ),
-            );
-            cmdq_next(None);
-        }
-    }
-
-    #[test]
-    #[should_panic(expected = "only a command suspended by cmdq_suspend returns its result")]
-    fn returning_suspended_without_suspending_panics() {
-        unsafe {
-            cmdq_append(
-                None,
-                cmdq_get_callback_owned(c"unsuspended", Some(Box::new(|_| SUSPENDED))),
-            );
-            cmdq_next(None);
-        }
-    }
-
-    #[test]
-    #[should_panic(expected = "only an executing command item can suspend")]
-    fn suspending_outside_exec_panics() {
-        unsafe {
-            let item = cmdq_get_callback_owned(c"idle", Some(Box::new(|_| CMD_RETURN_NORMAL)));
-            let _ = cmdq_suspend(&item, async {});
-        }
-    }
-
-    #[test]
     #[should_panic(expected = "command item resumed outside its poll")]
     fn resuming_outside_a_poll_panics() {
         unsafe {
@@ -1630,7 +1669,7 @@ mod suspend_tests {
                     c"resumed during exec",
                     Some(Box::new(|item| {
                         drop(cmdq_resumed(&Rc::downgrade(item)));
-                        CMD_RETURN_NORMAL
+                        CmdOutcome::Normal
                     })),
                 ),
             );
@@ -1652,7 +1691,7 @@ mod suspend_tests {
                 let items = cmdq_next(None);
                 observed.borrow_mut().push(items);
             });
-            let next = append_recording(c"next item", &trace, "next", CMD_RETURN_NORMAL);
+            let next = append_recording(c"next item", &trace, "next", CmdOutcome::Normal);
             assert_eq!(cmdq_next(None), 0);
             tx.send(()).unwrap();
             assert_eq!(*reentered.borrow(), [0, 0]);
@@ -1675,7 +1714,7 @@ mod suspend_tests {
                 assert_eq!(rx.await, Some(()));
                 body.borrow_mut().push("body");
             });
-            let next = append_recording(c"global next", &trace, "next", CMD_RETURN_NORMAL);
+            let next = append_recording(c"global next", &trace, "next", CmdOutcome::Normal);
             assert_eq!(cmdq_next(None), 0);
             let owner = crate::src::server_client::queue_test_clients::with_queue();
             let exec = trace.clone();
@@ -1686,7 +1725,7 @@ mod suspend_tests {
                     Some(Box::new(move |_| {
                         tx.send(()).unwrap();
                         exec.borrow_mut().push("sent");
-                        CMD_RETURN_NORMAL
+                        CmdOutcome::Normal
                     })),
                 ),
             );
@@ -1719,7 +1758,7 @@ mod suspend_tests {
                 assert_eq!(rx.await, Some(()));
                 body.borrow_mut().push("body");
             });
-            let next = append_recording(c"next item", &trace, "next", CMD_RETURN_NORMAL);
+            let next = append_recording(c"next item", &trace, "next", CmdOutcome::Normal);
             assert_eq!(cmdq_next(None), 0);
             crate::src::reactor::shutdown_runtime(runtime);
             tx.send(()).unwrap();
@@ -1765,8 +1804,8 @@ mod wait_tests {
     unsafe fn with_lent_client(
         item: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
         lent: &ClientRef,
-        exec: impl FnOnce() -> cmd_retval,
-    ) -> cmd_retval {
+        exec: impl FnOnce() -> CmdOutcome,
+    ) -> CmdOutcome {
         let saved = std::mem::replace(&mut (*item.get()).client, Rc::downgrade(lent));
         (*item.get()).client_lent = true;
         let retval = exec();
@@ -1834,7 +1873,7 @@ mod wait_tests {
                     Some(Box::new(move |item| {
                         with_lent_client(item, &substitute, || {
                             cmdq_insert_after(item, waiting(c"inserted waiter", &inserted));
-                            CMD_RETURN_NORMAL
+                            CmdOutcome::Normal
                         })
                     })),
                 ),
@@ -1879,13 +1918,11 @@ mod wait_tests {
             let trace = Rc::new(RefCell::new(Vec::new()));
             let slot: Slot = Default::default();
             let head = cmdq_append(None, waiting(c"abandoned waiter", &slot));
-            let next = append_recording(c"next item", &trace, "next", CMD_RETURN_NORMAL);
+            let next = append_recording(c"next item", &trace, "next", CmdOutcome::Normal);
             assert_eq!(cmdq_next(None), 0);
             drop(slot.take().unwrap());
-            assert!(matches!(
-                (*head.upgrade().unwrap().get()).work,
-                Work::Suspended { .. }
-            ));
+            assert!(head.upgrade().is_some());
+            assert!(cmdq_head(None) == HeadState::Suspended);
             assert_eq!(cmdq_next(None), 0);
             assert!(next.upgrade().is_some());
             assert!(trace.borrow().is_empty());
@@ -1903,10 +1940,8 @@ mod wait_tests {
                 ),
             );
             assert_eq!(cmdq_next(Some(&owner)), 0);
-            assert!(matches!(
-                (*head.upgrade().unwrap().get()).work,
-                Work::Suspended { .. }
-            ));
+            assert!(head.upgrade().is_some());
+            assert!(cmdq_head(Some(&owner)) == HeadState::Suspended);
         }
     }
 

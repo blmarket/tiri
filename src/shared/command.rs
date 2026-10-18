@@ -9,10 +9,17 @@ use crate::src::shared::client::ClientWeak;
 use crate::src::shared::session::{SessionRef, SessionWeak};
 use crate::src::shared::window::{WindowRef, WindowWeak};
 use std::ffi::{CStr, CString};
-pub type cmd_retval = ::core::ffi::c_int;
-pub const CMD_RETURN_STOP: cmd_retval = 2;
-pub const CMD_RETURN_NORMAL: cmd_retval = 0;
-pub const CMD_RETURN_ERROR: cmd_retval = -1;
+/// What a command or queue callback did. `Suspend` hands the queue the item's
+/// continuation; the item blocks its queue until the continuation completes,
+/// and dropping the queue drops the continuation, which cancels the wait. A
+/// continuation's own result is not an outcome: it never removes a group.
+#[must_use = "return the outcome from the command"]
+pub enum CmdOutcome {
+    Normal,
+    Error,
+    Stop,
+    Suspend(std::pin::Pin<Box<dyn std::future::Future<Output = ()>>>),
+}
 
 pub type cmd_find_type = ::core::ffi::c_uint;
 pub const CMD_FIND_SESSION: cmd_find_type = 2;
@@ -121,13 +128,8 @@ mod tests {
 
     #[test]
     fn command_domains_match_translated_c_baseline() {
-        assert_eq!(size_of::<cmd_retval>(), 4);
-        assert_eq!(align_of::<cmd_retval>(), 4);
         assert_eq!(size_of::<cmd_find_type>(), 4);
         assert_eq!(align_of::<cmd_find_type>(), 4);
-        assert_eq!(CMD_RETURN_ERROR, -1);
-        assert_eq!(CMD_RETURN_NORMAL, 0);
-        assert_eq!(CMD_RETURN_STOP, 2);
         assert_eq!(CMD_FIND_PANE, 0);
         assert_eq!(CMD_FIND_WINDOW, 1);
         assert_eq!(CMD_FIND_SESSION, 2);
@@ -258,7 +260,7 @@ pub struct cmd_entry {
 /// Command entry point; the dispatching queue item retains the command-list
 /// owner for the duration of the call.
 pub type cmd_exec_fn =
-    unsafe fn(refbox::Weak<cmd>, &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval;
+    unsafe fn(refbox::Weak<cmd>, &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> CmdOutcome;
 
 #[repr(C)]
 /// Queue items and callers share ownership through ordinary Rc handles.
@@ -277,7 +279,7 @@ impl cmdq_state {
 }
 
 pub type cmdq_cb =
-    Option<Box<dyn FnOnce(&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval>>;
+    Option<Box<dyn FnOnce(&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> CmdOutcome>>;
 
 #[derive(Clone, Default)]
 #[repr(C)]

@@ -4,7 +4,7 @@ use crate::src::arguments::{
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_state_owned, cmdq_get_target_client, cmdq_insert_hook, cmdq_print,
-    cmdq_suspend, cmdq_wait,
+    cmdq_wait,
 };
 use crate::src::environ::{environ_create, environ_put};
 use crate::src::events::events_fire;
@@ -87,7 +87,7 @@ pub static cmd_split_window_entry: cmd_entry = {
 unsafe fn cmd_split_window_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -162,7 +162,7 @@ unsafe fn cmd_split_window_exec(
             cmdq_error(item_handle, |out| {
                 out.write_all(b"command cannot be given for empty pane")
             });
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
         if empty != 0 {
             flags |= SPAWN_EMPTY;
@@ -201,7 +201,7 @@ unsafe fn cmd_split_window_exec(
                     write_cstr(out, cause.as_deref())
                 });
                 drop(window_owner);
-                return CMD_RETURN_ERROR;
+                return CmdOutcome::Error;
             }
         };
         match spawned_pane.as_ref() {
@@ -343,7 +343,7 @@ unsafe fn cmd_split_window_exec(
                         drop(sc.environ.take());
                         if let Some(wait) = pane_input {
                             drop(window_owner);
-                            return cmdq_suspend(item_handle, wait);
+                            return CmdOutcome::Suspend(Box::pin(wait));
                         }
                         if args_has(&*args, 'W' as i32 as u_char) != 0 {
                             let (waiter, retval) = cmdq_wait(item_handle);
@@ -352,7 +352,7 @@ unsafe fn cmd_split_window_exec(
                             return retval;
                         }
                         drop(window_owner);
-                        return CMD_RETURN_NORMAL;
+                        return CmdOutcome::Normal;
                     }
                 }
             }
@@ -363,7 +363,7 @@ unsafe fn cmd_split_window_exec(
         }
         drop(sc.environ.take());
         drop(window_owner);
-        CMD_RETURN_ERROR
+        CmdOutcome::Error
     })();
     drop(original_window);
     result

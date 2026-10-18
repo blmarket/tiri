@@ -188,7 +188,7 @@ fn cmd_choose_tree_args_parse(
 unsafe fn cmd_choose_tree_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -203,14 +203,14 @@ unsafe fn cmd_choose_tree_exec(
         && args_has(&*args, 'O' as i32 as u_char) != 0
     {
         cmdq_error(item_handle, |out| out.write_all(b"invalid sort order"));
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     let mode: &'static window_mode = if std::ptr::eq(
         cmd_get_entry(self_0.get_unchecked()),
         &cmd_choose_buffer_entry,
     ) {
         if paste_is_empty() != 0 {
-            return CMD_RETURN_NORMAL;
+            return CmdOutcome::Normal;
         }
         &window_buffer_mode
     } else if std::ptr::eq(
@@ -218,7 +218,7 @@ unsafe fn cmd_choose_tree_exec(
         &cmd_choose_client_entry,
     ) {
         if ClientRef::attached_count() == 0 as u_int {
-            return CMD_RETURN_NORMAL;
+            return CmdOutcome::Normal;
         }
         &window_client_mode
     } else if std::ptr::eq(
@@ -246,5 +246,5 @@ unsafe fn cmd_choose_tree_exec(
         Some(&mut *target),
         Some(&mut *args),
     );
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }

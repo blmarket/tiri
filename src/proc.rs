@@ -202,10 +202,11 @@ pub unsafe fn proc_send(
     fd: Option<OwnedFd>,
     data: &[u8],
 ) -> ::core::ffi::c_int {
-    let imsgbuf = &mut (*peer).ibuf;
-    if (*peer).flags & PEER_BAD != 0 {
+    // A lost client's peer is null until the client is freed.
+    if peer.is_null() || (*peer).flags & PEER_BAD != 0 {
         return -(1 as ::core::ffi::c_int);
     }
+    let imsgbuf = &mut (*peer).ibuf;
     log_debug(format_args!(
         "sending message {} to peer {} ({} bytes)",
         (type_0 as ::core::ffi::c_uint) as i32,

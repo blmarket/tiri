@@ -18,13 +18,14 @@ type TaskFuture = Pin<Box<dyn Future<Output = ()>>>;
 enum Ready {
     Task(Weak<TaskState>),
     Wake(LocalWaker),
+    Callback(Box<dyn FnOnce()>),
 }
 
 impl Ready {
     fn is_runnable(&self) -> bool {
         match self {
             Self::Task(task) => task.upgrade().is_some_and(|task| !task.cancelled.get()),
-            Self::Wake(_) => true,
+            Self::Wake(_) | Self::Callback(_) => true,
         }
     }
 }
@@ -248,6 +249,15 @@ impl crate::Handle for Handle {
         self.core.pending_tasks.set(pending);
         state.enqueue();
         Ok(Task { state })
+    }
+
+    fn defer(&self, callback: impl FnOnce() + 'static) -> io::Result<()> {
+        self.core.check()?;
+        self.core
+            .ready
+            .borrow_mut()
+            .push_back(Ready::Callback(Box::new(callback)));
+        Ok(())
     }
 }
 
@@ -478,6 +488,16 @@ impl Core {
                 Ready::Wake(wake) => {
                     polled += 1;
                     wake.wake();
+                    continue;
+                }
+                Ready::Callback(callback) => {
+                    polled += 1;
+                    if let Err(panic) =
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(callback))
+                    {
+                        self.poisoned.set(true);
+                        std::panic::resume_unwind(panic);
+                    }
                     continue;
                 }
             };

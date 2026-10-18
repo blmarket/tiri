@@ -51,7 +51,7 @@ pub static cmd_list_panes_entry: cmd_entry = {
 unsafe fn cmd_list_panes_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -66,7 +66,7 @@ unsafe fn cmd_list_panes_exec(
         && args_has(&*args, 'O' as i32 as u_char) != 0
     {
         cmdq_error(item_handle, |out| out.write_all(b"invalid sort order"));
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     if args_has(&*args, 'a' as i32 as u_char) != 0 {
         cmd_list_panes_server(self_0.clone(), item_handle);
@@ -86,7 +86,7 @@ unsafe fn cmd_list_panes_exec(
             0 as ::core::ffi::c_int,
         );
     }
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }
 unsafe fn cmd_list_panes_server(
     mut self_0: refbox::Weak<cmd>,

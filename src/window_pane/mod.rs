@@ -946,7 +946,11 @@ fn window_pane_prompt_input_callback(
         let Ok(mut state) = data.try_borrow_mut() else {
             return PROMPT_CLOSE;
         };
-        (state.c.upgrade(), state.inputcb.take())
+        // A lost client stays upgradable until its deferred free.
+        (
+            state.c.upgrade().filter(|c| unsafe { !c.is_dead() }),
+            state.inputcb.take(),
+        )
     };
     let Some(mut callback) = callback else {
         return PROMPT_CLOSE;
@@ -1987,7 +1991,7 @@ mod wait_close_tests {
     use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next, cmdq_wait};
     use crate::src::server_client::queue_test_clients as clients;
     use crate::src::session::session_new_for_test;
-    use crate::src::shared::command::CMD_RETURN_NORMAL;
+    use crate::src::shared::command::CmdOutcome;
     use std::cell::{Cell, RefCell};
     use std::io::Write;
     use std::process::ExitStatus;
@@ -2018,7 +2022,7 @@ mod wait_close_tests {
                 c"after pane",
                 Some(Box::new(move |_| {
                     ran.set(true);
-                    CMD_RETURN_NORMAL
+                    CmdOutcome::Normal
                 })),
             ),
         );
@@ -2120,8 +2124,9 @@ mod wait_close_tests {
 #[cfg(test)]
 mod input_wait_tests {
     use super::*;
-    use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next, cmdq_suspend};
+    use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next};
     use crate::src::server_client::queue_test_clients as clients;
+    use crate::src::shared::command::CmdOutcome;
 
     /// Queue on `owner` a head whose stdin for pane `wp` ends with `done`.
     unsafe fn append_input(
@@ -2134,11 +2139,13 @@ mod input_wait_tests {
             Some(owner),
             cmdq_get_callback_owned(
                 c"pane input",
-                Some(Box::new(move |item| {
-                    cmdq_suspend(
-                        item,
-                        window_pane_input_complete(done, Weak::new(), client, wp),
-                    )
+                Some(Box::new(move |_| {
+                    CmdOutcome::Suspend(Box::pin(window_pane_input_complete(
+                        done,
+                        Weak::new(),
+                        client,
+                        wp,
+                    )))
                 })),
             ),
         );

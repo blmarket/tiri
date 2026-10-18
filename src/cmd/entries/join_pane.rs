@@ -48,7 +48,7 @@ pub static cmd_join_pane_entry: cmd_entry = {
 unsafe fn cmd_join_pane_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -78,7 +78,7 @@ unsafe fn cmd_join_pane_exec(
             cmdq_error(item_handle, |out| {
                 out.write_all(b"source and target panes must be different")
             });
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
         let before = args_has(&*args, 'b' as i32 as u_char) != 0;
         let same_window = WindowRef::ptr_eq(src_owner, &dst_window);
@@ -99,7 +99,7 @@ unsafe fn cmd_join_pane_exec(
         if let Err(reason) = dst_window.rearrange_panes(&order) {
             src_pane_owner.reparent(src_owner);
             cmdq_error(item_handle, |out| out.write_all(reason.to_bytes()));
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
         ClientRef::forget_pane(&src_pane_owner);
         if !same_window {
@@ -131,7 +131,7 @@ unsafe fn cmd_join_pane_exec(
         }
         src_pane_owner.notify_moved(src_owner, src_wl.get_unchecked().idx, &dst_window, dst_idx);
         cmd_join_pane_finish(src_window.take().expect("live source window"), &dst_window);
-        CMD_RETURN_NORMAL
+        CmdOutcome::Normal
     })();
     if let Some(window) = src_window {
         drop(window);

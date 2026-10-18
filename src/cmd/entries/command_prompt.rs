@@ -5,7 +5,7 @@ use crate::src::arguments::{
 };
 use crate::src::cmd::queue::{
     cmdq_append, cmdq_error, cmdq_get_command, cmdq_get_error, cmdq_get_target_client,
-    cmdq_insert_after, cmdq_resumed, cmdq_suspend,
+    cmdq_insert_after, cmdq_resumed,
 };
 use crate::src::cmd::{cmd_append_argv, cmd_get_args_mut};
 use crate::src::format::bytes::write_cstr;
@@ -112,7 +112,7 @@ fn cmd_command_prompt_args_parse(
 unsafe fn cmd_command_prompt_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -128,7 +128,7 @@ unsafe fn cmd_command_prompt_exec(
     let mut pane: ::core::ffi::c_int = args_has(&*args, 'P' as i32 as u_char);
     if pane != 0 {
         if wp.is_none() || wp.as_ref().is_some_and(|pane| pane.has_prompt()) {
-            return CMD_RETURN_NORMAL;
+            return CmdOutcome::Normal;
         }
     } else if tc
         .as_ref()
@@ -136,7 +136,7 @@ unsafe fn cmd_command_prompt_exec(
         .prompt_observer()
         .is_alive()
     {
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     if args_has(&*args, 'i' as i32 as u_char) != 0 {
         wait = 0 as ::core::ffi::c_int;
@@ -189,7 +189,7 @@ unsafe fn cmd_command_prompt_exec(
                 out.write_all(b"unknown type: ")?;
                 write_cstr(out, type_0)
             });
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
     } else {
         cdata.prompt_type = PROMPT_TYPE_COMMAND;
@@ -252,9 +252,9 @@ unsafe fn cmd_command_prompt_exec(
         );
     }
     let Some(continuation) = continuation else {
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     };
-    cmdq_suspend(item_handle, continuation)
+    CmdOutcome::Suspend(Box::pin(continuation))
 }
 /// Insert the answer's commands after the item with the item's state, inside
 /// the send as tmux's callback does. A prompt closed or freed without any

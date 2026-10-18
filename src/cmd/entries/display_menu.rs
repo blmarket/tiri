@@ -749,7 +749,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
 unsafe fn cmd_display_menu_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -773,7 +773,7 @@ unsafe fn cmd_display_menu_exec(
                         out.write_all(b"starting choice ")?;
                         write_cstr(out, error.message())
                     });
-                    return CMD_RETURN_ERROR;
+                    return CmdOutcome::Error;
                 }
             }
         }
@@ -807,7 +807,7 @@ unsafe fn cmd_display_menu_exec(
         }
         if count - i < 2 {
             cmdq_error(item_handle, |out| out.write_all(b"not enough arguments"));
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
         let key = key_string_parse_cstr(args_string(&mut *(args), i).expect("argument is present"))
             .unwrap_or(KEYC_UNKNOWN);
@@ -839,7 +839,7 @@ unsafe fn cmd_display_menu_exec(
             menu.count().wrapping_add(2),
         ) == 0
     {
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     let mut lines = BOX_LINES_DEFAULT;
     if let Some(value) = args_get(&*(args), b'b') {
@@ -856,7 +856,7 @@ unsafe fn cmd_display_menu_exec(
                     out.write_all(b"menu-border-lines ")?;
                     write_cstr(out, cause.as_c_str())
                 });
-                return CMD_RETURN_ERROR;
+                return CmdOutcome::Error;
             }
         }
     }
@@ -882,12 +882,12 @@ unsafe fn cmd_display_menu_exec(
         target,
         None,
     );
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }
 unsafe fn cmd_display_popup_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let mut shellcmd_session_value: Option<std::ffi::CString> = None;
     let mut shell_session_value: Option<std::ffi::CString> = None;
 
@@ -920,13 +920,13 @@ unsafe fn cmd_display_popup_exec(
     let mut env: Option<Box<environ>> = None;
     if args_has(&*args, 'C' as i32 as u_char) != 0 {
         tc.as_ref().expect("live client").clear_overlay();
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     if tc.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0 {
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     if modify == 0 && tc.as_ref().expect("live client").has_overlay() {
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     if modify == 0 {
         h = tc
@@ -1138,7 +1138,7 @@ unsafe fn cmd_display_popup_exec(
                         flags,
                     );
                 } else {
-                    let mut retval = CMD_RETURN_NORMAL;
+                    let mut retval = CmdOutcome::Normal;
                     let wait = || {
                         let (waiter, wait_retval) = cmdq_wait(item_handle);
                         retval = wait_retval;
@@ -1174,11 +1174,11 @@ unsafe fn cmd_display_popup_exec(
     match current_block {
         1988999557336856620 => {
             drop(env.take());
-            CMD_RETURN_ERROR
+            CmdOutcome::Error
         }
         _ => {
             drop(env.take());
-            CMD_RETURN_NORMAL
+            CmdOutcome::Normal
         }
     }
 }

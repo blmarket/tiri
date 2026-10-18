@@ -7,7 +7,7 @@ use crate::src::server_client::Client;
 use crate::src::server_client::ClientRegistry;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::colour::colour_palette;
-use crate::src::shared::command::{cmd, cmd_retval};
+use crate::src::shared::command::{cmd, CmdOutcome};
 use crate::src::shared::pane::{
     PANE_ACTIVITY, PANE_DROP, PANE_MINIMUM, PANE_NEWSTATUS, PANE_STATUS_BOTTOM, PANE_STATUS_TOP,
 };
@@ -299,7 +299,7 @@ pub trait WindowPane {
         &self,
         command: refbox::Weak<cmd>,
         item: &Rc<UnsafeCell<cmdq_item>>,
-    ) -> cmd_retval;
+    ) -> CmdOutcome;
     unsafe fn process_id(&self) -> pid_t;
     /// Record an exit before finishing waits/editors; false means a different process.
     unsafe fn process_exited(&self, pid: pid_t, status: std::process::ExitStatus) -> bool;
@@ -1259,7 +1259,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         &self,
         command: refbox::Weak<cmd>,
         item: &Rc<UnsafeCell<cmdq_item>>,
-    ) -> cmd_retval {
+    ) -> CmdOutcome {
         process::pipe_pane(self, command, item)
     }
     unsafe fn process_id(&self) -> pid_t {

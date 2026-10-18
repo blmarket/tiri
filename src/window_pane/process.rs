@@ -39,7 +39,7 @@ pub(super) unsafe fn pipe_pane(
     pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let queue_client = cmdq_get_client((item).as_ref());
     let mut args: *mut args =
@@ -60,14 +60,14 @@ pub(super) unsafe fn pipe_pane(
     let mut oldset: sigset_t = unsafe { ::core::mem::zeroed() };
     if window_pane_exited(&*wp) != 0 {
         cmdq_error(item_handle, |out| out.write_all(b"target pane has exited"));
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     if (*wp).pipe_fd.is_some() {
         std::mem::take(&mut (*wp).pipe_event).free();
         drop((*wp).pipe_fd.take());
         if window_pane_destroy_ready(pane_owner) != 0 {
             server_destroy_pane(pane_owner, 1);
-            return CMD_RETURN_NORMAL;
+            return CmdOutcome::Normal;
         }
     }
     if args_count(&*args) == 0 as u_int
@@ -75,10 +75,10 @@ pub(super) unsafe fn pipe_pane(
             as ::core::ffi::c_int
             == '\0' as i32
     {
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     if args_has(&*args, 'o' as i32 as u_char) != 0 && had_pipe {
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     if args_has(&*args, 'I' as i32 as u_char) != 0 {
         in_0 = 1 as ::core::ffi::c_int;
@@ -91,7 +91,7 @@ pub(super) unsafe fn pipe_pane(
         Ok(pair) => pair,
         Err(error) => {
             cmdq_error(item_handle, |out| write!(out, "socketpair error: {error}"));
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
     };
     let mut ft_owner = format_create_with_client(
@@ -121,7 +121,7 @@ pub(super) unsafe fn pipe_pane(
                 out.write_all(b"fork error: ")?;
                 write_cstr(out, nullable_cstr(strerror(*__errno_location())))
             });
-            CMD_RETURN_ERROR
+            CmdOutcome::Error
         }
         0 => {
             proc_clear_signals(server_proc, 1 as ::core::ffi::c_int);
@@ -243,7 +243,7 @@ pub(super) unsafe fn pipe_pane(
                     bufferevent_enable(event, EV_READ as ::core::ffi::c_short);
                 });
             }
-            CMD_RETURN_NORMAL
+            CmdOutcome::Normal
         }
     }
 }

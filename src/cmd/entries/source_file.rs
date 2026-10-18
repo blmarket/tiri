@@ -2,7 +2,6 @@ use crate::src::arguments::{args, args_count, args_has, args_parse, args_string}
 use crate::src::cfg::{cfg_finished, cfg_print_causes, load_cfg_from_buffer};
 use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_callback_owned, cmdq_get_client, cmdq_insert_after, cmdq_resumed,
-    cmdq_suspend,
 };
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_parse_flags};
 use crate::src::compat::glob::GlobResult;
@@ -35,7 +34,7 @@ pub struct cmd_source_file_data {
     depth_active: bool,
     pub flags: ::core::ffi::c_int,
     pub after: Weak<UnsafeCell<cmdq_item>>,
-    pub retval: cmd_retval,
+    pub failed: bool,
     pub current: u_int,
     pub files: Vec<CString>,
 }
@@ -106,10 +105,10 @@ impl Drop for cmd_source_file_data {
 unsafe fn cmd_source_file_complete_cb(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut cdata: cmd_source_file_data,
-) -> cmd_retval {
+) -> CmdOutcome {
     cdata.decrement_depth();
     cfg_print_causes(item_handle);
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }
 
 unsafe fn cmd_source_file_complete(
@@ -121,7 +120,7 @@ unsafe fn cmd_source_file_complete(
         cdata.depth_active = false;
         return;
     }
-    if cdata.retval == CMD_RETURN_ERROR {
+    if cdata.failed {
         if let Some(client) = c {
             if client.attached_session().upgrade().is_none() {
                 client.set_return_value(1);
@@ -206,7 +205,7 @@ unsafe fn cmd_source_file_done(
             Some(&mut new_item),
         ) < 0
         {
-            cdata.retval = CMD_RETURN_ERROR;
+            cdata.failed = true;
         } else if new_item.strong_count() != 0 {
             cdata.after = new_item;
         }
@@ -233,13 +232,13 @@ unsafe fn cmd_source_file_quote_for_glob(path: &CStr) -> CString {
 unsafe fn cmd_source_file_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let c_owner = cmdq_get_client((item).as_ref());
     let mut c: Option<ClientRef> = c_owner.clone();
-    let mut retval: cmd_retval = CMD_RETURN_NORMAL;
+    let mut failed = false;
     let mut error: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut parse_flags: ::core::ffi::c_int = 0;
     let mut i: u_int = 0;
@@ -248,7 +247,7 @@ unsafe fn cmd_source_file_exec(
         None => {
             if cmd_source_file_depth >= CMD_SOURCE_FILE_DEPTH_LIMIT as u_int {
                 cmdq_error(item_handle, |out| out.write_all(b"too many nested files"));
-                return CMD_RETURN_ERROR;
+                return CmdOutcome::Error;
             }
             cmd_source_file_depth = cmd_source_file_depth.wrapping_add(1);
             log_debug(format_args!("{}: depth now {}", "cmd_source_file_exec", {
@@ -258,7 +257,7 @@ unsafe fn cmd_source_file_exec(
         Some(client) => {
             let Some(depth) = client.enter_source_file(CMD_SOURCE_FILE_DEPTH_LIMIT as u32) else {
                 cmdq_error(item_handle, |out| out.write_all(b"too many nested files"));
-                return CMD_RETURN_ERROR;
+                return CmdOutcome::Error;
             };
             log_debug(format_args!(
                 "{}: depth now {}",
@@ -271,7 +270,7 @@ unsafe fn cmd_source_file_exec(
         depth_active: true,
         flags: 0,
         after: Weak::new(),
-        retval: CMD_RETURN_NORMAL,
+        failed: false,
         current: 0,
         files: Vec::new(),
     });
@@ -338,7 +337,7 @@ unsafe fn cmd_source_file_exec(
                         out.write_all(b": ")?;
                         write_cstr(out, path)
                     });
-                    retval = CMD_RETURN_ERROR;
+                    failed = true;
                 }
                 drop(pattern);
             } else {
@@ -353,18 +352,21 @@ unsafe fn cmd_source_file_exec(
         i = i.wrapping_add(1);
     }
     cdata.after = std::rc::Rc::downgrade(item_handle);
-    cdata.retval = retval;
+    cdata.failed = failed;
     if !cdata.files.is_empty() {
         let first = cmd_source_file_read(&cdata);
-        retval = cmdq_suspend(
-            item_handle,
-            cmd_source_file_chain(first, cdata, std::rc::Rc::downgrade(item_handle)),
-        );
-    } else {
-        cmd_source_file_complete(cdata, item_handle);
+        return CmdOutcome::Suspend(Box::pin(cmd_source_file_chain(
+            first,
+            cdata,
+            std::rc::Rc::downgrade(item_handle),
+        )));
     }
-    drop(cwd);
-    retval
+    cmd_source_file_complete(cdata, item_handle);
+    if failed {
+        CmdOutcome::Error
+    } else {
+        CmdOutcome::Normal
+    }
 }
 
 #[cfg(test)]
@@ -400,7 +402,7 @@ mod tests {
             depth_active: true,
             flags: 0,
             after: Weak::new(),
-            retval: CMD_RETURN_NORMAL,
+            failed: false,
             current: 0,
             files: files.iter().map(|file| file.0.clone()).collect(),
         })
@@ -421,10 +423,11 @@ mod tests {
                     let mut cdata = cdata;
                     cdata.after = Rc::downgrade(item);
                     let first = first(&cdata);
-                    cmdq_suspend(
-                        item,
-                        cmd_source_file_chain(first, cdata, Rc::downgrade(item)),
-                    )
+                    CmdOutcome::Suspend(Box::pin(cmd_source_file_chain(
+                        first,
+                        cdata,
+                        Rc::downgrade(item),
+                    )))
                 })),
             ),
         );

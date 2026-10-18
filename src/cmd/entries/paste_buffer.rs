@@ -37,7 +37,7 @@ pub static cmd_paste_buffer_entry: cmd_entry = {
 unsafe fn cmd_paste_buffer_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -48,7 +48,7 @@ unsafe fn cmd_paste_buffer_exec(
     let mut bracket: ::core::ffi::c_int = args_has(&*args, 'p' as i32 as u_char);
     if !pane_owner.has_tty() || pane_owner.has_exited() {
         cmdq_error(item_handle, |out| out.write_all(b"target pane has exited"));
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     bufname = None;
     if args_has(&*args, 'b' as i32 as u_char) != 0 {
@@ -61,13 +61,13 @@ unsafe fn cmd_paste_buffer_exec(
                 out.write_all(b"no buffer ")?;
                 write_cstr(out, bufname)
             });
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
     } else {
         pb = paste_get_top(None);
     }
     let Some(pb) = pb else {
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     };
     let separator = args_get(&*args, b's')
         .unwrap_or(if args_has(&*args, b'r') != 0 {
@@ -84,5 +84,5 @@ unsafe fn cmd_paste_buffer_exec(
     if args_has(&*args, 'd' as i32 as u_char) != 0 {
         paste_free(&pb);
     }
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }

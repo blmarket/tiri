@@ -43,6 +43,13 @@ pub trait Handle: Clone + 'static {
     fn spawn<F>(&self, future: F) -> io::Result<Self::Task>
     where
         F: Future<Output = ()> + 'static;
+
+    /// Run `callback` once on a later turn, never inline, in ready-queue order
+    /// with spawned tasks. If the runtime closes first, the callback is dropped
+    /// without running, releasing its captures, just as pending tasks are.
+    /// Fails (and releases the captures before returning) once the runtime is
+    /// closed, poisoned, or in a forked child.
+    fn defer(&self, callback: impl FnOnce() + 'static) -> io::Result<()>;
 }
 
 /// A listener whose operations return owned, nonblocking, close-on-exec sockets.

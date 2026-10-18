@@ -45,7 +45,7 @@ pub static cmd_resize_window_entry: cmd_entry = {
 unsafe fn cmd_resize_window_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -77,7 +77,7 @@ unsafe fn cmd_resize_window_exec(
                     out.write_all(b"adjustment ")?;
                     write_cstr(out, errstr)
                 });
-                return CMD_RETURN_ERROR;
+                return CmdOutcome::Error;
             }
         }
         sx = window_owner.size().0;
@@ -95,7 +95,7 @@ unsafe fn cmd_resize_window_exec(
                         out.write_all(b"width ")?;
                         write_cstr(out, error.message())
                     });
-                    return CMD_RETURN_ERROR;
+                    return CmdOutcome::Error;
                 }
             };
         }
@@ -112,7 +112,7 @@ unsafe fn cmd_resize_window_exec(
                         out.write_all(b"height ")?;
                         write_cstr(out, error.message())
                     });
-                    return CMD_RETURN_ERROR;
+                    return CmdOutcome::Error;
                 }
             };
         }
@@ -154,7 +154,7 @@ unsafe fn cmd_resize_window_exec(
         }
         window_owner.set_manual_size(sx, sy);
         recalculate_size(&window_owner, 1 as ::core::ffi::c_int);
-        CMD_RETURN_NORMAL
+        CmdOutcome::Normal
     })();
     drop(window_owner);
     result

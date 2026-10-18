@@ -119,7 +119,7 @@ fn cmd_set_option_args_parse(
 unsafe fn cmd_set_hook_event_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -127,11 +127,11 @@ unsafe fn cmd_set_hook_event_exec(
     let mut c: Option<ClientRef> = None;
     if args_count(&*args) == 0 as u_int {
         cmdq_error(item_handle, |out| out.write_all(b"missing argument"));
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     if args_count(&*args) != 1 as u_int {
         cmdq_error(item_handle, |out| out.write_all(b"too many arguments"));
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     let argument = format_single_from_target_cstring(
         item_handle,
@@ -141,7 +141,7 @@ unsafe fn cmd_set_hook_event_exec(
         cmdq_error(item_handle, |out| {
             out.write_all(b"event name must start with @")
         });
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     let mut ep = event_payload_create();
     event_payload_set_target(&mut ep, &*target);
@@ -181,17 +181,17 @@ unsafe fn cmd_set_hook_event_exec(
         );
     }
     events_fire(&argument, ep);
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }
 unsafe fn cmd_set_hook_monitor_exec(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     args: *mut args,
     window: i32,
-) -> cmd_retval {
+) -> CmdOutcome {
     let target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item_handle.get());
     if args_count(&*args) > 1 {
         cmdq_error(item_handle, |out| out.write_all(b"too many arguments"));
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     let argument = args_get(&*args, b'B').expect("monitor argument").to_owned();
     let unsubscribe = args_has(&*args, b'u') != 0;
@@ -207,7 +207,7 @@ unsafe fn cmd_set_hook_monitor_exec(
                 out.write_all(b"invalid subscription: ")?;
                 write_cstr(out, &*argument)
             });
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         };
         (parsed.name, parsed.type_0, parsed.id, Some(parsed.format))
     };
@@ -215,7 +215,7 @@ unsafe fn cmd_set_hook_monitor_exec(
         cmdq_error(item_handle, |out| {
             out.write_all(b"monitor hook name must start with @")
         });
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     let selected = match options_scope_from_name(args, window, &name, &*target) {
         Ok((_, selected)) => selected,
@@ -225,7 +225,7 @@ unsafe fn cmd_set_hook_monitor_exec(
     fs.copy_from(target);
     if unsubscribe {
         hooks_monitor_remove(&selected, &name);
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     if args_count(&*args) != 0 {
         let mut value = args_string(&mut *args, 0)
@@ -265,15 +265,15 @@ unsafe fn cmd_set_hook_monitor_exec(
     if let Some(session) = session {
         (session).release(c"set-hook monitor");
     }
-    CMD_RETURN_NORMAL
+    CmdOutcome::Normal
 }
 
 unsafe fn set_option_error(
     item: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     cause: &CStr,
-) -> cmd_retval {
+) -> CmdOutcome {
     cmdq_error(item, |out| write_cstr(out, &*cause));
-    CMD_RETURN_ERROR
+    CmdOutcome::Error
 }
 
 /// Pane traversal remains live between removals; a monitor teardown may change
@@ -308,7 +308,7 @@ unsafe fn unset_window_panes(
 unsafe fn cmd_set_option_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
+) -> CmdOutcome {
     let item = item_handle.get();
     let args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -333,13 +333,13 @@ unsafe fn cmd_set_option_exec(
     );
     if set_hook && args_has(&*args, b'R') != 0 {
         hooks_run(Some(item_handle), &argument);
-        return CMD_RETURN_NORMAL;
+        return CmdOutcome::Normal;
     }
     let parsed = match options_match_owned(&argument) {
         Ok(parsed) => parsed,
         Err(failure) => {
             if args_has(&*args, b'q') != 0 {
-                return CMD_RETURN_NORMAL;
+                return CmdOutcome::Normal;
             }
             let ambiguous = match failure {
                 OptionMatchFailure::Ambiguous => true,
@@ -354,7 +354,7 @@ unsafe fn cmd_set_option_exec(
                 })?;
                 write_cstr(out, &*argument)
             });
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
     };
     let mut value = if args_count(&*args) < 2 {
@@ -369,7 +369,7 @@ unsafe fn cmd_set_option_exec(
     }
     let (scope, selected) = match options_scope_from_name(args, window, &parsed.name, &*target) {
         Ok(selected) => selected,
-        Err(_) if args_has(&*args, b'q') != 0 => return CMD_RETURN_NORMAL,
+        Err(_) if args_has(&*args, b'q') != 0 => return CmdOutcome::Normal,
         Err(cause) => return set_option_error(item_handle, &cause),
     };
     let name = parsed.name.as_c_str();
@@ -384,7 +384,7 @@ unsafe fn cmd_set_option_exec(
             out.write_all(b"not an array: ")?;
             write_cstr(out, &*argument)
         });
-        return CMD_RETURN_ERROR;
+        return CmdOutcome::Error;
     }
     if args_has(&*args, b'u') == 0 && args_has(&*args, b'o') != 0 {
         let already = selected
@@ -400,13 +400,13 @@ unsafe fn cmd_set_option_exec(
             .unwrap_or(false);
         if already {
             if args_has(&*args, b'q') != 0 {
-                return CMD_RETURN_NORMAL;
+                return CmdOutcome::Normal;
             }
             cmdq_error(item_handle, |out| {
                 out.write_all(b"already set: ")?;
                 write_cstr(out, &*argument)
             });
-            return CMD_RETURN_ERROR;
+            return CmdOutcome::Error;
         }
     }
     if args_has(&*args, b'U') != 0 && scope == OPTIONS_TABLE_WINDOW {
@@ -453,10 +453,10 @@ unsafe fn cmd_set_option_exec(
     };
     match result {
         Err(cause) => set_option_error(item_handle, &cause),
-        Ok(false) => CMD_RETURN_NORMAL,
+        Ok(false) => CmdOutcome::Normal,
         Ok(true) => {
             options_push_changes(name);
-            CMD_RETURN_NORMAL
+            CmdOutcome::Normal
         }
     }
 }
