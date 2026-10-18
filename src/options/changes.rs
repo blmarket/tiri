@@ -130,9 +130,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
             loop_0 = registry_loop_0_owner.clone();
         }
     }
-    if name == c"status"
-        || name == c"status-interval"
-    {
+    if name == c"status" || name == c"status-interval" {
         status_timer_start_all();
     }
     if name == c"status"
@@ -150,9 +148,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
     if name == c"monitor-silence" {
         alerts_reset_all();
     }
-    if name == c"window-style"
-        || name == c"window-active-style"
-    {
+    if name == c"window-style" || name == c"window-active-style" {
         for pane_owner in crate::src::shared::pane::window_pane_tree::snapshot() {
             pane_owner.mark_style_changed(true);
         }

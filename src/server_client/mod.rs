@@ -56,8 +56,7 @@ use crate::src::proc::{
 };
 use crate::src::prompt::prompt_free;
 use crate::src::reactor::{
-    bufferevent_enable, defer, evbuffer_add, evbuffer_get_length, evbuffer_pullup,
-    evbuffer_readln,
+    bufferevent_enable, defer, evbuffer_add, evbuffer_get_length, evbuffer_pullup, evbuffer_readln,
 };
 use crate::src::resize::{recalculate_size, recalculate_sizes};
 use crate::src::screen::screen_mode_display;
@@ -4317,7 +4316,7 @@ pub(crate) mod queue_test_clients {
 #[cfg(test)]
 mod lost_queue_tests {
     use super::*;
-        use crate::src::shared::command::CmdOutcome;
+    use crate::src::shared::command::CmdOutcome;
     use std::cell::Cell;
 
     struct SetOnDrop(Rc<Cell<bool>>);
@@ -4398,7 +4397,9 @@ mod lost_queue_tests {
             Some(&owner),
             cmdq_get_callback_owned(
                 c"client-holding head",
-                Some(Box::new(move |_| CmdOutcome::Suspend(Box::pin(future(held))))),
+                Some(Box::new(move |_| {
+                    CmdOutcome::Suspend(Box::pin(future(held)))
+                })),
             ),
         );
         assert_eq!(cmdq_next(Some(&owner)), 0);

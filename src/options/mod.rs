@@ -1,7 +1,7 @@
 //! Options: typed values in scoped tables, defined by the option table.
 
-mod diagnostic;
 mod changes;
+mod diagnostic;
 mod from_string;
 mod mutation;
 mod parse;
