@@ -1,4 +1,3 @@
-use crate::src::ffi::libc::__errno_location;
 use crate::src::shared::errno::{EINVAL, ERANGE};
 use crate::src::shared::limits::__LONG_LONG_MAX__;
 use libc::strtoll;
@@ -17,25 +16,25 @@ pub unsafe fn strtonum(
     let mut ll: ::core::ffi::c_longlong = 0 as ::core::ffi::c_longlong;
     let mut ep: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut error: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let saved_errno = *__errno_location();
-    *__errno_location() = 0 as ::core::ffi::c_int;
+    let saved_errno = errno::errno();
+    errno::set_errno(errno::Errno(0));
     if minval > maxval {
         error = INVALID;
     } else {
         ll = strtoll(numstr.as_ptr(), &raw mut ep, 10 as ::core::ffi::c_int);
         if std::ptr::eq(numstr.as_ptr(), ep) || *ep as ::core::ffi::c_int != '\0' as i32 {
             error = INVALID;
-        } else if ll == LLONG_MIN && *__errno_location() == ERANGE || ll < minval {
+        } else if ll == LLONG_MIN && errno::errno().0 == ERANGE || ll < minval {
             error = TOOSMALL;
-        } else if ll == LLONG_MAX && *__errno_location() == ERANGE || ll > maxval {
+        } else if ll == LLONG_MAX && errno::errno().0 == ERANGE || ll > maxval {
             error = TOOLARGE;
         }
     }
-    *__errno_location() = match error {
-        INVALID => EINVAL,
-        TOOSMALL | TOOLARGE => ERANGE,
+    errno::set_errno(match error {
+        INVALID => errno::Errno(EINVAL),
+        TOOSMALL | TOOLARGE => errno::Errno(ERANGE),
         _ => saved_errno,
-    };
+    });
     match error {
         INVALID => Err(c"invalid"),
         TOOSMALL => Err(c"too small"),

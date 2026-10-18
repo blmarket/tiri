@@ -17,7 +17,7 @@ pub unsafe fn getpeereid(
     mut gid: *mut gid_t,
 ) -> ::core::ffi::c_int {
     if s < 0 {
-        *crate::src::ffi::libc::__errno_location() = libc::EBADF;
+        errno::set_errno(errno::Errno(libc::EBADF));
         return -1;
     }
     crate::src::reactor::io_status(

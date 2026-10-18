@@ -4,10 +4,6 @@
 use crate::src::shared::abi::size_t;
 use crate::src::shared::stdio::FILE;
 use crate::src::shared::utf8::wchar_t;
-#[cfg(target_os = "linux")]
-pub use ::libc::__errno_location;
-#[cfg(target_vendor = "apple")]
-pub use ::libc::__error as __errno_location;
 
 #[cfg(target_os = "linux")]
 extern "C" {

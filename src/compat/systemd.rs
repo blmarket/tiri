@@ -1,4 +1,3 @@
-use crate::src::ffi::libc::__errno_location;
 use crate::src::ffi::systemd::{
     sd_bus, sd_bus_error, sd_bus_message, sd_bus_slot, sd_id128, sd_id128_t,
 };
@@ -9,13 +8,14 @@ use crate::src::ffi::systemd::{
     sd_bus_slot_unref, sd_bus_unref, sd_bus_wait, sd_id128_randomize, sd_is_socket_unix,
     sd_listen_fds, sd_pid_get_unit, sd_pid_get_user_slice, sd_pid_get_user_unit,
 };
+use crate::src::format::bytes::{format_message_with, write_cstr};
 use crate::src::server::server_create_socket;
 use crate::src::shared::abi::uint32_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::errno::E2BIG;
 use crate::src::shared::socket::SOCK_STREAM;
 use crate::src::tmux::socket_path;
-use libc::{free, getpid, getppid, strcmp, strerror};
+use libc::{free, getpid, getppid, strcmp};
 use std::ffi::{CStr, CString};
 use std::time::Instant;
 
@@ -33,57 +33,10 @@ impl Drop for ForeignCString {
     }
 }
 
-fn systemd_message(
-    format: *const ::core::ffi::c_char,
-    reason: Option<*const ::core::ffi::c_char>,
-) -> CString {
-    let template = unsafe { CStr::from_ptr(format) }.to_bytes();
-    let mut message = Vec::with_capacity(template.len());
-    if let Some(reason) = reason {
-        let marker = template
-            .windows(2)
-            .position(|part| part == b"%s")
-            .expect("systemd diagnostic must have a %s marker");
-        message.extend_from_slice(&template[..marker]);
-        if reason.is_null() {
-            message.extend_from_slice(b"(null)");
-        } else {
-            message.extend_from_slice(unsafe { CStr::from_ptr(reason) }.to_bytes());
-        }
-        message.extend_from_slice(&template[marker + 2..]);
-    } else {
-        message.extend_from_slice(template);
-    }
-    CString::new(message).expect("systemd diagnostics contain no NUL")
-}
-
 macro_rules! set_systemd_error {
-    ($destination:ident, $format:expr, $reason:expr $(,)?) => {
-        $destination = Some(systemd_message($format, Some($reason)))
+    ($destination:ident, $($arg:tt)*) => {
+        $destination = Some(format_message_with(|out| write!(out, $($arg)*)))
     };
-    ($destination:ident, $format:expr $(,)?) => {
-        $destination = Some(systemd_message($format, None))
-    };
-}
-
-#[cfg(test)]
-mod systemd_message_tests {
-    use super::systemd_message;
-    use std::ffi::CString;
-
-    #[test]
-    fn preserves_reason_bytes_and_null_rendering() {
-        let format = c"systemd: %s";
-        let reason = CString::new(b"unit-\xff".to_vec()).unwrap();
-        assert_eq!(
-            systemd_message(format.as_ptr(), Some(reason.as_ptr())).as_bytes(),
-            b"systemd: unit-\xff"
-        );
-        assert_eq!(
-            systemd_message(format.as_ptr(), Some(::core::ptr::null())).as_bytes(),
-            b"systemd: (null)"
-        );
-    }
 }
 
 #[derive(Clone)]
@@ -129,8 +82,8 @@ pub unsafe fn systemd_create_socket(
     let mut fds: ::core::ffi::c_int = 0;
     let mut fd: ::core::ffi::c_int = 0;
     fds = sd_listen_fds(0 as ::core::ffi::c_int);
-    if fds > 1 as ::core::ffi::c_int {
-        *__errno_location() = E2BIG;
+    let error = if fds > 1 as ::core::ffi::c_int {
+        E2BIG
     } else if fds == 1 as ::core::ffi::c_int {
         fd = SD_LISTEN_FDS_START;
         if sd_is_socket_unix(
@@ -141,25 +94,22 @@ pub unsafe fn systemd_create_socket(
             0 as size_t,
         ) == 0
         {
-            *__errno_location() = EPFNOSUPPORT;
+            EPFNOSUPPORT
         } else {
             match tiri_rt::unix::socket_path(std::os::fd::BorrowedFd::borrow_raw(fd)) {
                 Ok(path) => {
                     socket_path = Some(path.unwrap_or_default());
                     return Ok(fd);
                 }
-                Err(error) => *__errno_location() = error.raw_os_error().unwrap_or(libc::EIO),
+                Err(error) => error.raw_os_error().unwrap_or(libc::EIO),
             }
         }
     } else {
         return server_create_socket(flags as uint64_t);
-    }
-    let saved_errno = *__errno_location();
-    let reason = CStr::from_ptr(strerror(saved_errno)).to_bytes();
-    let mut message = b"systemd socket error (".to_vec();
-    message.extend_from_slice(reason);
-    message.push(b')');
-    Err(CString::new(message).expect("strerror returns a C string"))
+    };
+    Err(format_message_with(|out| {
+        write!(out, "systemd socket error ({})", errno::Errno(error))
+    }))
 }
 unsafe extern "C" fn job_removed_handler(
     mut m: *mut sd_bus_message,
@@ -213,8 +163,8 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
     if r < 0 as ::core::ffi::c_int {
         set_systemd_error!(
             cause,
-            c"failed to connect to session bus: %s".as_ptr(),
-            strerror(-r),
+            "failed to connect to session bus: {}",
+            errno::Errno(-r)
         );
     } else {
         r = sd_bus_match_signal(
@@ -235,11 +185,7 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
             &raw mut watch as *mut ::core::ffi::c_void,
         );
         if r < 0 as ::core::ffi::c_int {
-            set_systemd_error!(
-                cause,
-                c"failed to create match signal: %s".as_ptr(),
-                strerror(-r),
-            );
+            set_systemd_error!(cause, "failed to create match signal: {}", errno::Errno(-r));
         } else {
             r = sd_bus_message_new_method_call(
                 bus,
@@ -250,19 +196,11 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                 c"StartTransientUnit".as_ptr(),
             );
             if r < 0 as ::core::ffi::c_int {
-                set_systemd_error!(
-                    cause,
-                    c"failed to create bus message: %s".as_ptr(),
-                    strerror(-r),
-                );
+                set_systemd_error!(cause, "failed to create bus message: {}", errno::Errno(-r));
             } else {
                 r = sd_id128_randomize(&raw mut uuid);
                 if r < 0 as ::core::ffi::c_int {
-                    set_systemd_error!(
-                        cause,
-                        c"failed to generate uuid: %s".as_ptr(),
-                        strerror(-r),
-                    );
+                    set_systemd_error!(cause, "failed to generate uuid: {}", errno::Errno(-r));
                 } else {
                     let hex = b"0123456789abcdef";
                     let mut scope = Vec::with_capacity(b"tmux-spawn-".len() + 36 + b".scope".len());
@@ -280,16 +218,16 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                     if r < 0 as ::core::ffi::c_int {
                         set_systemd_error!(
                             cause,
-                            c"failed to append to bus message: %s".as_ptr(),
-                            strerror(-r),
+                            "failed to append to bus message: {}",
+                            errno::Errno(-r)
                         );
                     } else {
                         r = sd_bus_message_append(m, c"s".as_ptr(), c"fail".as_ptr());
                         if r < 0 as ::core::ffi::c_int {
                             set_systemd_error!(
                                 cause,
-                                c"failed to append to bus message: %s".as_ptr(),
-                                strerror(-r),
+                                "failed to append to bus message: {}",
+                                errno::Errno(-r)
                             );
                         } else {
                             r = sd_bus_message_open_container(
@@ -300,8 +238,8 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                             if r < 0 as ::core::ffi::c_int {
                                 set_systemd_error!(
                                     cause,
-                                    c"failed to start properties array: %s".as_ptr(),
-                                    strerror(-r),
+                                    "failed to start properties array: {}",
+                                    errno::Errno(-r)
                                 );
                             } else {
                                 pid = getpid() as pid_t;
@@ -321,8 +259,8 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                                 if r < 0 as ::core::ffi::c_int {
                                     set_systemd_error!(
                                         cause,
-                                        c"failed to append to properties: %s".as_ptr(),
-                                        strerror(-r),
+                                        "failed to append to properties: {}",
+                                        errno::Errno(-r)
                                     );
                                 } else {
                                     r = sd_bus_message_append(
@@ -335,8 +273,8 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                                     if r < 0 as ::core::ffi::c_int {
                                         set_systemd_error!(
                                             cause,
-                                            c"failed to append to properties: %s".as_ptr(),
-                                            strerror(-r),
+                                            "failed to append to properties: {}",
+                                            errno::Errno(-r)
                                         );
                                     } else {
                                         r = sd_pid_get_user_slice(parent_pid, &raw mut slice);
@@ -361,8 +299,8 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                                         if r < 0 as ::core::ffi::c_int {
                                             set_systemd_error!(
                                                 cause,
-                                                c"failed to append to properties: %s".as_ptr(),
-                                                strerror(-r),
+                                                "failed to append to properties: {}",
+                                                errno::Errno(-r)
                                             );
                                         } else {
                                             r = sd_bus_message_append(
@@ -376,8 +314,8 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                                             if r < 0 as ::core::ffi::c_int {
                                                 set_systemd_error!(
                                                     cause,
-                                                    c"failed to append to properties: %s".as_ptr(),
-                                                    strerror(-r),
+                                                    "failed to append to properties: {}",
+                                                    errno::Errno(-r)
                                                 );
                                             } else {
                                                 r = sd_bus_message_append(
@@ -390,9 +328,8 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                                                 if r < 0 as ::core::ffi::c_int {
                                                     set_systemd_error!(
                                                         cause,
-                                                        c"failed to append to properties: %s"
-                                                            .as_ptr(),
-                                                        strerror(-r),
+                                                        "failed to append to properties: {}",
+                                                        errno::Errno(-r)
                                                     );
                                                 } else {
                                                     let mut unit = ::core::ptr::null_mut::<
@@ -434,11 +371,7 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                                                         }
                                                         drop(unit_owner);
                                                         if r < 0 as ::core::ffi::c_int {
-                                                            set_systemd_error!(
-                                                                cause,
-                                                                c"failed to append to properties: %s".as_ptr(),
-                                                                strerror(-r),
-                                                            );
+                                                            set_systemd_error!(cause, "failed to append to properties: {}", errno::Errno(-r));
                                                             current_block = 3315597219737674933;
                                                         } else {
                                                             current_block = 1423531122933789233;
@@ -451,11 +384,7 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                                                         _ => {
                                                             r = sd_bus_message_close_container(m);
                                                             if r < 0 as ::core::ffi::c_int {
-                                                                set_systemd_error!(
-                                                                    cause,
-                                                                    c"failed to end properties array: %s".as_ptr(),
-                                                                    strerror(-r),
-                                                                );
+                                                                set_systemd_error!(cause, "failed to end properties array: {}", errno::Errno(-r));
                                                             } else {
                                                                 r = sd_bus_message_append(
                                                                     m,
@@ -463,11 +392,7 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                                                                     0 as ::core::ffi::c_int,
                                                                 );
                                                                 if r < 0 as ::core::ffi::c_int {
-                                                                    set_systemd_error!(
-                                                                        cause,
-                                                                        c"failed to append to bus message: %s".as_ptr(),
-                                                                        strerror(-r),
-                                                                    );
+                                                                    set_systemd_error!(cause, "failed to append to bus message: {}", errno::Errno(-r));
                                                                 } else {
                                                                     r = sd_bus_call(
                                                                         bus,
@@ -479,17 +404,16 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                                                                     if r < 0 as ::core::ffi::c_int {
                                                                         if !error.message.is_null()
                                                                         {
-                                                                            set_systemd_error!(
-                                                                                cause,
-                                                                                c"StartTransientUnit call failed: %s".as_ptr(),
-                                                                                error.message,
+                                                                            cause = Some(
+                                                                                format_message_with(
+                                                                                    |out| {
+                                                                                        out.write_all(b"StartTransientUnit call failed: ")?;
+                                                                                        write_cstr(out, CStr::from_ptr(error.message))
+                                                                                    },
+                                                                                ),
                                                                             );
                                                                         } else {
-                                                                            set_systemd_error!(
-                                                                                cause,
-                                                                                c"StartTransientUnit call failed: %s".as_ptr(),
-                                                                                strerror(-r),
-                                                                            );
+                                                                            set_systemd_error!(cause, "StartTransientUnit call failed: {}", errno::Errno(-r));
                                                                         }
                                                                     } else {
                                                                         r = sd_bus_message_read(
@@ -500,11 +424,7 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                                                                         if r < 0
                                                                             as ::core::ffi::c_int
                                                                         {
-                                                                            set_systemd_error!(
-                                                                                cause,
-                                                                                c"failed to parse method reply: %s".as_ptr(),
-                                                                                strerror(-r),
-                                                                            );
+                                                                            set_systemd_error!(cause, "failed to parse method reply: {}", errno::Errno(-r));
                                                                         } else {
                                                                             if !job_path.is_null() {
                                                                                 watch.path = Some(
@@ -520,11 +440,7 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                                                                                     ::core::ptr::null_mut::<*mut sd_bus_message>(),
                                                                                 );
                                                                                 if r < 0 as ::core::ffi::c_int {
-                                                                                    set_systemd_error!(
-                                                                                        cause,
-                                                                                        c"failed waiting for cgroup allocation: %s".as_ptr(),
-                                                                                        strerror(-r),
-                                                                                    );
+                                                                                    set_systemd_error!(cause, "failed waiting for cgroup allocation: {}", errno::Errno(-r));
                                                                                     break;
                                                                                 } else {
                                                                                     if r > 0 as ::core::ffi::c_int {
@@ -532,10 +448,7 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                                                                                     }
                                                                                     elapsed_usec = start.elapsed().as_micros().min(u64::MAX as u128) as u64;
                                                                                     if elapsed_usec >= 1000000 as uint64_t {
-                                                                                        set_systemd_error!(
-                                                                                            cause,
-                                                                                            c"timeout waiting for cgroup allocation".as_ptr(),
-                                                                                        );
+                                                                                        set_systemd_error!(cause, "timeout waiting for cgroup allocation");
                                                                                         break;
                                                                                     } else {
                                                                                         r = sd_bus_wait(
@@ -545,11 +458,7 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                                                                                         if !(r < 0 as ::core::ffi::c_int) {
                                                                                             continue;
                                                                                         }
-                                                                                        set_systemd_error!(
-                                                                                            cause,
-                                                                                            c"failed waiting for cgroup allocation: %s".as_ptr(),
-                                                                                            strerror(-r),
-                                                                                        );
+                                                                                        set_systemd_error!(cause, "failed waiting for cgroup allocation: {}", errno::Errno(-r));
                                                                                         break;
                                                                                     }
                                                                                 }
