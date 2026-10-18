@@ -478,7 +478,7 @@ mod tests {
     #[test]
     fn unregistered_operation_cannot_wait_and_releases_its_waiter() {
         let mut runtime = super::super::Runtime::new().unwrap();
-        let file = std::fs::File::open(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml")).unwrap();
+        let file = std::fs::File::open(std::env::current_exe().unwrap()).unwrap();
         let source = super::Io::new(file.into()).unwrap();
         let mut operation = source.read_with(|| Err::<(), _>(io::ErrorKind::WouldBlock.into()));
         assert!(
