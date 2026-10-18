@@ -111,7 +111,7 @@ pub unsafe fn window_get_fill_cell(
 
 /// Set `gc` to a separator glyph in the `pane_lines` style. Every separator is
 /// vertical; `index` is the pane's number for the number style.
-pub unsafe fn window_get_border_cell(
+pub fn window_get_border_cell(
     index: Option<u32>,
     mut pane_lines: pane_lines,
     cell_type: ::core::ffi::c_int,

@@ -83,7 +83,7 @@ pub fn screen_reset_hyperlinks(s: &mut screen) {
 impl Drop for screen {
     fn drop(&mut self) {
         if self.write_list.is_some() {
-            unsafe { screen_write_free_list(self) };
+            screen_write_free_list(self);
         }
     }
 }
@@ -205,7 +205,7 @@ pub fn screen_set_path(s: &mut screen, path: &CStr) -> ::core::ffi::c_int {
     s.path = Some(new_path);
     1 as ::core::ffi::c_int
 }
-pub unsafe fn screen_push_title(s: &mut screen) {
+pub fn screen_push_title(s: &mut screen) {
     log_debug(format_args!(
         "{}: {}",
         "screen_push_title",
@@ -218,7 +218,7 @@ pub unsafe fn screen_push_title(s: &mut screen) {
     }
     s.titles.push_front(s.title.clone());
 }
-pub unsafe fn screen_pop_title(s: &mut screen) {
+pub fn screen_pop_title(s: &mut screen) {
     if s.titles.is_empty() {
         return;
     }

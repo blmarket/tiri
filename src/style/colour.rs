@@ -95,7 +95,7 @@ pub fn colour_theme_option(n: u_int, theme: client_theme) -> Option<&'static std
         entry.dark_option
     })
 }
-pub unsafe fn colour_theme_terminal_colour(mut n: u_int) -> ::core::ffi::c_int {
+pub fn colour_theme_terminal_colour(mut n: u_int) -> ::core::ffi::c_int {
     if n as usize
         >= (::core::mem::size_of::<[C2RustUnnamed_36; 10]>() as usize)
             .wrapping_div(::core::mem::size_of::<C2RustUnnamed_36>() as usize)
@@ -104,7 +104,7 @@ pub unsafe fn colour_theme_terminal_colour(mut n: u_int) -> ::core::ffi::c_int {
     }
     colour_theme_table[n as usize].terminal_colour
 }
-unsafe fn colour_dist_sq(
+fn colour_dist_sq(
     mut R: ::core::ffi::c_int,
     mut G: ::core::ffi::c_int,
     mut B: ::core::ffi::c_int,
@@ -114,7 +114,7 @@ unsafe fn colour_dist_sq(
 ) -> ::core::ffi::c_int {
     (R - r) * (R - r) + (G - g) * (G - g) + (B - b) * (B - b)
 }
-unsafe fn colour_to_6cube(mut v: ::core::ffi::c_int) -> ::core::ffi::c_int {
+fn colour_to_6cube(mut v: ::core::ffi::c_int) -> ::core::ffi::c_int {
     if v < 48 as ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
@@ -193,7 +193,7 @@ pub unsafe fn colour_find_rgb(mut r: u_char, mut g: u_char, mut b: u_char) -> ::
     }
     idx | COLOUR_FLAG_256
 }
-pub unsafe fn colour_join_rgb(mut r: u_char, mut g: u_char, mut b: u_char) -> ::core::ffi::c_int {
+pub fn colour_join_rgb(mut r: u_char, mut g: u_char, mut b: u_char) -> ::core::ffi::c_int {
     (r as ::core::ffi::c_int & 0xff as ::core::ffi::c_int) << 16 as ::core::ffi::c_int
         | (g as ::core::ffi::c_int & 0xff as ::core::ffi::c_int) << 8 as ::core::ffi::c_int
         | b as ::core::ffi::c_int & 0xff as ::core::ffi::c_int
@@ -377,7 +377,7 @@ pub(crate) fn colour_format_escape_resolved(
             unsafe { colour_find_rgb((colour >> 16) as u8, (colour >> 8) as u8, colour as u8) };
     }
     if !flags & TERM_256COLOURS & (colour & COLOUR_FLAG_256) != 0 {
-        colour = unsafe { colour_256to16(colour) };
+        colour = colour_256to16(colour);
     }
     let text = if colour & COLOUR_FLAG_RGB != 0 {
         format!(
@@ -611,7 +611,7 @@ unsafe fn colour_fromstring_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
     }
     colour_byname_impl(input)
 }
-pub unsafe fn colour_256toRGB(mut c: ::core::ffi::c_int) -> ::core::ffi::c_int {
+pub fn colour_256toRGB(mut c: ::core::ffi::c_int) -> ::core::ffi::c_int {
     const RGB_TABLE: [::core::ffi::c_int; 256] = [
         0 as ::core::ffi::c_int,
         0x800000 as ::core::ffi::c_int,
@@ -872,7 +872,7 @@ pub unsafe fn colour_256toRGB(mut c: ::core::ffi::c_int) -> ::core::ffi::c_int {
     ];
     RGB_TABLE[(c & 0xff as ::core::ffi::c_int) as usize] | COLOUR_FLAG_RGB
 }
-pub unsafe fn colour_256to16(mut c: ::core::ffi::c_int) -> ::core::ffi::c_int {
+pub fn colour_256to16(mut c: ::core::ffi::c_int) -> ::core::ffi::c_int {
     const ANSI_TABLE: [::core::ffi::c_char; 256] = [
         0 as ::core::ffi::c_int as ::core::ffi::c_char,
         1 as ::core::ffi::c_int as ::core::ffi::c_char,
@@ -3684,9 +3684,8 @@ pub fn colour_parse_x11_cstr(input: &std::ffi::CStr) -> Option<i32> {
 }
 
 /// Application logging adapter; the bounded parser itself has no logging side effects.
-/// # Safety
 /// Call on the application thread, where the global debug log is managed.
-pub unsafe fn colour_parse_x11_logged(input: &std::ffi::CStr) -> Option<i32> {
+pub fn colour_parse_x11_logged(input: &std::ffi::CStr) -> Option<i32> {
     let value = colour_parse_x11_cstr(input);
     let formatted = colour_format(value.unwrap_or(-1));
     crate::src::log::log_debug(format_args!(

@@ -467,7 +467,7 @@ pub const WINDOW_COPY_SEARCH_ALL_TIMEOUT: ::core::ffi::c_int = 200 as ::core::ff
 pub const WINDOW_COPY_SEARCH_MAX_LINE: ::core::ffi::c_int = 2000 as ::core::ffi::c_int;
 pub const WINDOW_COPY_DRAG_REPEAT_TIME: ::core::ffi::c_int = 50000 as ::core::ffi::c_int;
 pub const WINDOW_COPY_REFRESH_INTERVAL: ::core::ffi::c_int = 50000 as ::core::ffi::c_int;
-unsafe fn window_copy_timer(
+fn window_copy_timer(
     observer: refbox::Weak<window_mode_entry>,
     delay: Duration,
     callback: unsafe fn(refbox::Weak<window_mode_entry>),
@@ -1594,7 +1594,7 @@ unsafe fn window_copy_cmd_bottom_line(
     );
     WINDOW_COPY_CMD_REDRAW
 }
-unsafe fn window_copy_cmd_cancel(_cs: *mut window_copy_cmd_state) -> window_copy_cmd_action {
+fn window_copy_cmd_cancel(_cs: *mut window_copy_cmd_state) -> window_copy_cmd_action {
     WINDOW_COPY_CMD_CANCEL
 }
 unsafe fn window_copy_cmd_clear_selection(
@@ -5709,7 +5709,7 @@ unsafe fn window_copy_last_regex(
         0 as ::core::ffi::c_int
     }
 }
-unsafe fn window_copy_search_line(gd: &grid, py: u_int) -> Option<&grid_line> {
+fn window_copy_search_line(gd: &grid, py: u_int) -> Option<&grid_line> {
     if py >= gd.hsize.wrapping_add(gd.sy) {
         log_debug(format_args!("grid_peek_line: y out of range: {}", py));
         return None;
@@ -6332,12 +6332,7 @@ unsafe fn window_copy_search_mark_at(
         .wrapping_add(px);
     0 as ::core::ffi::c_int
 }
-unsafe fn window_copy_clip_width(
-    mut width: u_int,
-    mut b: u_int,
-    mut sx: u_int,
-    mut sy: u_int,
-) -> u_int {
+fn window_copy_clip_width(mut width: u_int, mut b: u_int, mut sx: u_int, mut sy: u_int) -> u_int {
     if b.wrapping_add(width) > sx.wrapping_mul(sy) {
         sx.wrapping_mul(sy).wrapping_sub(b)
     } else {

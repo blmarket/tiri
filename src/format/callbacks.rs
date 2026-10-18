@@ -671,7 +671,7 @@ unsafe fn format_cb_client_theme(ft: *mut format_tree) -> Option<CString> {
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_config_files(_ft: *mut format_tree) -> Option<CString> {
+fn format_cb_config_files(_ft: *mut format_tree) -> Option<CString> {
     let mut paths = Vec::<u8>::new();
     for (index, path) in cfg_files().iter().enumerate() {
         if index != 0 {
@@ -802,7 +802,7 @@ unsafe fn format_cb_mouse_y(ft: *mut format_tree) -> Option<CString> {
     }
     None
 }
-unsafe fn format_cb_next_session_id(_ft: *mut format_tree) -> Option<CString> {
+fn format_cb_next_session_id(_ft: *mut format_tree) -> Option<CString> {
     Some(
         CString::new(format!("${}", crate::src::session::sessions::next_id()))
             .expect("formatted numbers contain no NUL"),
@@ -1129,10 +1129,10 @@ unsafe fn format_cb_session_windows(ft: *mut format_tree) -> Option<CString> {
 unsafe fn format_cb_socket_path(_ft: *mut format_tree) -> Option<CString> {
     Some(socket_path_cstr().to_owned())
 }
-unsafe fn format_cb_version(_ft: *mut format_tree) -> Option<CString> {
+fn format_cb_version(_ft: *mut format_tree) -> Option<CString> {
     Some(getversion().to_owned())
 }
-unsafe fn format_cb_sixel_support(_ft: *mut format_tree) -> Option<CString> {
+fn format_cb_sixel_support(_ft: *mut format_tree) -> Option<CString> {
     Some(c"0".to_owned())
 }
 unsafe fn format_cb_active_window_index(ft: *mut format_tree) -> Option<CString> {
@@ -1516,7 +1516,7 @@ unsafe fn format_cb_window_activity(ft: *mut format_tree) -> Option<time_t> {
     Some(value)
 }
 
-unsafe fn format_cb_buffer_mode_format(_ft: *mut format_tree) -> Option<CString> {
+fn format_cb_buffer_mode_format(_ft: *mut format_tree) -> Option<CString> {
     Some(
         window_buffer_mode
             .default_format
@@ -1524,7 +1524,7 @@ unsafe fn format_cb_buffer_mode_format(_ft: *mut format_tree) -> Option<CString>
             .to_owned(),
     )
 }
-unsafe fn format_cb_client_mode_format(_ft: *mut format_tree) -> Option<CString> {
+fn format_cb_client_mode_format(_ft: *mut format_tree) -> Option<CString> {
     Some(
         window_client_mode
             .default_format
@@ -1532,7 +1532,7 @@ unsafe fn format_cb_client_mode_format(_ft: *mut format_tree) -> Option<CString>
             .to_owned(),
     )
 }
-unsafe fn format_cb_tree_mode_format(_ft: *mut format_tree) -> Option<CString> {
+fn format_cb_tree_mode_format(_ft: *mut format_tree) -> Option<CString> {
     Some(
         window_tree_mode
             .default_format

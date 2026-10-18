@@ -878,8 +878,7 @@ mod tests {
         let callback_observer = observer.clone();
         let calls = Rc::new(Cell::new(0));
         let callback_calls = Rc::clone(&calls);
-        owner.try_borrow_mut().unwrap().s.grid =
-            Some(unsafe { crate::src::grid::grid_create(24, 3, 0) });
+        owner.try_borrow_mut().unwrap().s.grid = Some(crate::src::grid::grid_create(24, 3, 0));
         owner.try_borrow_mut().unwrap().cb = Some(Box::new(move |selection| {
             assert_eq!(selection, MenuSelection::Cancelled);
             callback_calls.set(callback_calls.get() + 1);

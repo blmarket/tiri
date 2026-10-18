@@ -99,7 +99,7 @@ fn monitor_visit(
     }
 }
 
-unsafe fn monitor_has_client(monitor: &refbox::Weak<monitor_set>) -> bool {
+fn monitor_has_client(monitor: &refbox::Weak<monitor_set>) -> bool {
     monitor_borrow(monitor).is_some_and(|state| !state.client.ptr_eq(&Weak::new()))
 }
 unsafe fn monitor_client(monitor: &refbox::Weak<monitor_set>) -> Option<ClientRef> {
@@ -624,7 +624,7 @@ fn monitor_create(callback: monitor_cb) -> refbox::RefBox<monitor_set> {
         generation: 0,
     })
 }
-pub unsafe fn monitor_create_client(
+pub fn monitor_create_client(
     client: Option<&ClientRef>,
     callback: monitor_cb,
 ) -> refbox::RefBox<monitor_set> {
@@ -633,7 +633,7 @@ pub unsafe fn monitor_create_client(
         client.map_or_else(Weak::new, Rc::downgrade);
     owner
 }
-pub unsafe fn monitor_create_session(
+pub fn monitor_create_session(
     session: Option<&SessionRef>,
     callback: monitor_cb,
 ) -> refbox::RefBox<monitor_set> {
@@ -754,7 +754,7 @@ pub unsafe fn monitor_add(
         }
     }
 }
-pub unsafe fn monitor_remove(monitor: &refbox::Weak<monitor_set>, name: &CStr) {
+pub fn monitor_remove(monitor: &refbox::Weak<monitor_set>, name: &CStr) {
     {
         let Some(mut state) = monitor_borrow(monitor) else {
             return;
@@ -765,18 +765,18 @@ pub unsafe fn monitor_remove(monitor: &refbox::Weak<monitor_set>, name: &CStr) {
         }
     }
 }
-pub unsafe fn monitor_get_fire_count(monitor: &refbox::Weak<monitor_set>, name: &CStr) -> u_int {
+pub fn monitor_get_fire_count(monitor: &refbox::Weak<monitor_set>, name: &CStr) -> u_int {
     monitor_borrow(monitor)
         .and_then(|state| state.items.get(name).map(|item| item.fire_count))
         .unwrap_or(0)
 }
-pub unsafe fn monitor_get_fire_time(monitor: &refbox::Weak<monitor_set>, name: &CStr) -> time_t {
+pub fn monitor_get_fire_time(monitor: &refbox::Weak<monitor_set>, name: &CStr) -> time_t {
     monitor_borrow(monitor)
         .and_then(|state| state.items.get(name).map(|item| item.fire_time))
         .unwrap_or(0)
 }
 
-unsafe fn monitor_items_insert(
+fn monitor_items_insert(
     head: &mut monitor_items,
     elm: Box<monitor_item>,
 ) -> Result<(), (*mut monitor_item, Box<monitor_item>)> {
@@ -792,11 +792,11 @@ unsafe fn monitor_items_insert(
     }
 }
 
-unsafe fn monitor_panes_find(head: &mut monitor_panes, pane: u32, idx: u32) -> *mut monitor_pane {
+fn monitor_panes_find(head: &mut monitor_panes, pane: u32, idx: u32) -> *mut monitor_pane {
     head.get_mut(&(pane, idx))
         .map_or(std::ptr::null_mut(), |node| &raw mut **node)
 }
-unsafe fn monitor_panes_insert(
+fn monitor_panes_insert(
     head: &mut monitor_panes,
     elm: Box<monitor_pane>,
 ) -> Result<(), (*mut monitor_pane, Box<monitor_pane>)> {
@@ -812,15 +812,11 @@ unsafe fn monitor_panes_insert(
     }
 }
 
-unsafe fn monitor_windows_find(
-    head: &mut monitor_windows,
-    window: u32,
-    idx: u32,
-) -> *mut monitor_window {
+fn monitor_windows_find(head: &mut monitor_windows, window: u32, idx: u32) -> *mut monitor_window {
     head.get_mut(&(window, idx))
         .map_or(std::ptr::null_mut(), |node| &raw mut **node)
 }
-unsafe fn monitor_windows_insert(
+fn monitor_windows_insert(
     head: &mut monitor_windows,
     elm: Box<monitor_window>,
 ) -> Result<(), (*mut monitor_window, Box<monitor_window>)> {
@@ -1006,21 +1002,19 @@ mod ownership_tests {
 
     #[test]
     fn monitor_item_insert_returns_duplicate_to_caller() {
-        unsafe {
-            fn item(name: &str) -> Box<monitor_item> {
-                let mut item = Box::new(monitor_item::empty());
-                item.name = CString::new(name).unwrap();
-                item
-            }
-
-            let mut head = monitor_items::new();
-            let mut first_owner = item("alpha");
-            let first = &raw mut *first_owner;
-            assert!(monitor_items_insert(&mut head, first_owner).is_ok());
-            assert!(monitor_items_insert(&mut head, item("beta")).is_ok());
-            let (existing, _duplicate) = monitor_items_insert(&mut head, item("alpha"))
-                .expect_err("duplicate returned to caller");
-            assert_eq!(existing, first);
+        fn item(name: &str) -> Box<monitor_item> {
+            let mut item = Box::new(monitor_item::empty());
+            item.name = CString::new(name).unwrap();
+            item
         }
+
+        let mut head = monitor_items::new();
+        let mut first_owner = item("alpha");
+        let first = &raw mut *first_owner;
+        assert!(monitor_items_insert(&mut head, first_owner).is_ok());
+        assert!(monitor_items_insert(&mut head, item("beta")).is_ok());
+        let (existing, _duplicate) = monitor_items_insert(&mut head, item("alpha"))
+            .expect_err("duplicate returned to caller");
+        assert_eq!(existing, first);
     }
 }

@@ -237,7 +237,7 @@ pub(crate) unsafe fn screen_write_initctx(
         ctx.flags |= SCREEN_WRITE_SYNC;
     }
 }
-pub unsafe fn screen_write_make_list(s: &mut screen) {
+pub fn screen_write_make_list(s: &mut screen) {
     if s.grid().sy == 0 {
         fatalx(|out| out.write_all(b"xcalloc: zero size"));
     }
@@ -247,7 +247,7 @@ pub unsafe fn screen_write_make_list(s: &mut screen) {
         .into_boxed_slice();
     s.write_list = Some(rows);
 }
-pub unsafe fn screen_write_free_list(s: &mut screen) {
+pub fn screen_write_free_list(s: &mut screen) {
     let mut rows = s
         .write_list
         .take()
@@ -337,7 +337,7 @@ pub unsafe fn screen_write_putc(ctx: &mut screen_write_ctx, gcp: &grid_cell, ch:
     screen_write_cell(ctx, &gc);
 }
 /// Measure literal C-string bytes using the screen's display-width rules.
-pub unsafe fn screen_write_strlen(msg: &CStr) -> size_t {
+pub fn screen_write_strlen(msg: &CStr) -> size_t {
     let bytes = msg.to_bytes();
     let mut offset = 0;
     let mut size: size_t = 0;

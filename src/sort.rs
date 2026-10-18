@@ -328,7 +328,7 @@ pub unsafe fn sort_get_winlinks_session(
     });
     l
 }
-pub unsafe fn sort_get_key_bindings<'a>(
+pub fn sort_get_key_bindings<'a>(
     tables: &'a [std::cell::Ref<'_, key_table>],
     sort_crit: &sort_criteria,
 ) -> Vec<&'a key_binding> {
@@ -342,7 +342,7 @@ pub unsafe fn sort_get_key_bindings<'a>(
     bindings
 }
 
-pub unsafe fn sort_get_key_bindings_table<'a>(
+pub fn sort_get_key_bindings_table<'a>(
     table: Option<&'a key_table>,
     sort_crit: &sort_criteria,
 ) -> Vec<&'a key_binding> {

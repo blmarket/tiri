@@ -145,10 +145,7 @@ pub unsafe fn grid_reader_cursor_up(gr: &mut grid_reader<'_>) {
         gr.cx = gr.cx.wrapping_sub(1);
     }
 }
-pub unsafe fn grid_reader_cursor_start_of_line(
-    gr: &mut grid_reader<'_>,
-    mut wrap: ::core::ffi::c_int,
-) {
+pub fn grid_reader_cursor_start_of_line(gr: &mut grid_reader<'_>, mut wrap: ::core::ffi::c_int) {
     if wrap != 0 {
         while gr.cy > 0 as u_int
             && gr.gd.linedata[(gr.cy.wrapping_sub(1 as u_int)) as usize].flags as ::core::ffi::c_int

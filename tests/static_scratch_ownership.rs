@@ -63,29 +63,27 @@ fn character(text: &str, width: u8) -> grid_cell {
 
 #[test]
 fn codeset_conversion_preserves_cells_and_independent_results() {
-    unsafe {
-        let wide = character("漢", 2);
-        let first = tty_check_codeset(false, &wide);
-        assert_eq!(&first.data.data[..first.data.size as usize], b"__");
-        assert_eq!((first.fg, first.bg, first.link), (1, 4, 7));
+    let wide = character("漢", 2);
+    let first = tty_check_codeset(false, &wide);
+    assert_eq!(&first.data.data[..first.data.size as usize], b"__");
+    assert_eq!((first.fg, first.bg, first.link), (1, 4, 7));
 
-        let border = character("─", 1);
-        let second = tty_check_codeset(false, &border);
-        assert_eq!(&second.data.data[..second.data.size as usize], b"q");
-        assert_ne!(second.attr as i32 & GRID_ATTR_CHARSET, 0);
-        assert_eq!(&first.data.data[..first.data.size as usize], b"__");
-        assert_eq!(&wide.data.data[..wide.data.size as usize], "漢".as_bytes());
+    let border = character("─", 1);
+    let second = tty_check_codeset(false, &border);
+    assert_eq!(&second.data.data[..second.data.size as usize], b"q");
+    assert_ne!(second.attr as i32 & GRID_ATTR_CHARSET, 0);
+    assert_eq!(&first.data.data[..first.data.size as usize], b"__");
+    assert_eq!(&wide.data.data[..wide.data.size as usize], "漢".as_bytes());
 
-        let utf8 = tty_check_codeset(true, &wide);
-        assert_eq!(&utf8.data.data[..utf8.data.size as usize], "漢".as_bytes());
-        let mut tab = wide;
-        tab.flags = GRID_FLAG_TAB as u8;
-        let tab = tty_check_codeset(false, &tab);
-        assert_eq!(tab.data.size, wide.data.size);
-        assert_eq!(tab.data.data, wide.data.data);
-        let ascii = tty_check_codeset(false, &character("A", 1));
-        assert_eq!(&ascii.data.data[..ascii.data.size as usize], b"A");
-    }
+    let utf8 = tty_check_codeset(true, &wide);
+    assert_eq!(&utf8.data.data[..utf8.data.size as usize], "漢".as_bytes());
+    let mut tab = wide;
+    tab.flags = GRID_FLAG_TAB as u8;
+    let tab = tty_check_codeset(false, &tab);
+    assert_eq!(tab.data.size, wide.data.size);
+    assert_eq!(tab.data.data, wide.data.data);
+    let ascii = tty_check_codeset(false, &character("A", 1));
+    assert_eq!(&ascii.data.data[..ascii.data.size as usize], b"A");
 }
 
 #[test]

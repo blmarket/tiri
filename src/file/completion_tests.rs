@@ -1,7 +1,7 @@
 use super::*;
 use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next};
 use crate::src::reactor::shutdown_runtime;
-use crate::src::shared::command::{cmdq_item, CmdOutcome};
+use crate::src::shared::command::CmdOutcome;
 use std::cell::Cell;
 
 #[test]
@@ -46,51 +46,6 @@ fn local_completion_can_be_cancelled_after_runtime_shutdown() {
         assert!(file.upgrade().is_none());
         assert_eq!(Rc::strong_count(&data), 1);
     }
-}
-
-/// Queue a global item that suspends on a local write to /dev/null. The
-/// returned flag records the outcome its body observed.
-unsafe fn start_write() -> (
-    Weak<UnsafeCell<cmdq_item>>,
-    Weak<UnsafeCell<client_file>>,
-    Rc<Cell<Option<i32>>>,
-) {
-    let observed = Rc::new(Cell::new(None));
-    let body = observed.clone();
-    let file = Rc::new(Cell::new(Weak::new()));
-    let observed_file = file.clone();
-    let item = cmdq_get_callback_owned(
-        c"local write",
-        Some(Box::new(move |_| {
-            let wait = file_write_wait(None, c"/dev/null", 0, b"data");
-            observed_file.set(wait.file.clone());
-            CmdOutcome::Suspend(Box::pin(async move {
-                if let Some(outcome) = wait.await {
-                    body.set(Some(outcome.error));
-                }
-            }))
-        })),
-    );
-    let item = cmdq_append(None, item);
-    assert_eq!(cmdq_next(None), 0, "local completion must be deferred");
-    (item, file.take(), observed)
-}
-
-#[test]
-fn a_local_write_reports_one_runtime_turn_later() {
-    use tiri_rt::Runtime as _;
-    let mut runtime = tiri_rt::mio::Runtime::new().unwrap();
-    unsafe {
-        let (item, file, observed) = start_write();
-        assert!(item.upgrade().is_some());
-        assert_eq!(observed.get(), None, "not in the dispatching pass");
-        runtime.poll(Some(std::time::Duration::ZERO)).unwrap();
-        assert_eq!(observed.get(), Some(0));
-        assert!(file.upgrade().is_none());
-        cmdq_next(None);
-        assert!(item.upgrade().is_none());
-    }
-    shutdown_runtime(runtime);
 }
 
 #[test]

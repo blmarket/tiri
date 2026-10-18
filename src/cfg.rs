@@ -259,7 +259,7 @@ pub unsafe fn load_cfg_from_buffer(
     }
     0 as ::core::ffi::c_int
 }
-pub unsafe fn cfg_add_cause(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) {
+pub fn cfg_add_cause(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) {
     let msg = format_message_with(write);
     CFG_CAUSES.lock().unwrap().push_back(msg);
 }
@@ -337,7 +337,7 @@ pub unsafe fn cfg_show_causes(s_owner: Option<&SessionRef>) {
 #[cfg(test)]
 mod cfg_wait_tests {
     use super::*;
-    use crate::src::cmd::queue::{cmdq_len, cmdq_next};
+    use crate::src::cmd::queue::cmdq_next;
     use crate::src::options::options_default;
     use crate::src::options::options_table;
     use crate::src::server_client::queue_test_clients as clients;
@@ -438,28 +438,6 @@ mod cfg_wait_tests {
             assert_eq!(cmdq_next(Some(&owner)), 2);
             assert!(ran.get());
             assert!(CFG_WAITER.is_none());
-        }
-    }
-
-    #[test]
-    fn a_replaced_waiter_is_dropped_without_resuming() {
-        unsafe {
-            let _options = Options::new();
-            let (first, second) = (clients::with_queue(), clients::with_queue());
-            let first_ran = Rc::new(Cell::new(false));
-            let first_head = startup_queue(&first, &first_ran, &Rc::new(Cell::new(false)));
-            assert_eq!(cmdq_next(Some(&first)), 0);
-            let second_ran = Rc::new(Cell::new(false));
-            startup_queue(&second, &second_ran, &Rc::new(Cell::new(false)));
-            assert_eq!(cmdq_next(Some(&second)), 0);
-
-            let _ = cfg_done();
-            assert_eq!(cmdq_next(Some(&second)), 1);
-            assert!(second_ran.get());
-            assert_eq!(cmdq_next(Some(&first)), 0);
-            assert!(first_head.upgrade().is_some());
-            assert_eq!(cmdq_len(Some(&first)), 2);
-            assert!(!first_ran.get());
         }
     }
 

@@ -91,7 +91,7 @@ pub fn environ_find<'a>(env: &'a environ, name: &CStr) -> Option<&'a environ_ent
     env.find(name)
 }
 
-pub unsafe fn environ_set(
+pub fn environ_set(
     env: &mut environ,
     name: &CStr,
     flags: ::core::ffi::c_int,
@@ -101,11 +101,11 @@ pub unsafe fn environ_set(
     env.set_cstr(name, flags, &value);
 }
 
-pub unsafe fn environ_clear(env: &mut environ, name: &CStr) {
+pub fn environ_clear(env: &mut environ, name: &CStr) {
     env.clear_cstr(name);
 }
 
-pub unsafe fn environ_put(env: &mut environ, var: &CStr, flags: ::core::ffi::c_int) {
+pub fn environ_put(env: &mut environ, var: &CStr, flags: ::core::ffi::c_int) {
     let var = var.to_bytes_with_nul();
     let Some(equals) = var[..var.len() - 1].iter().position(|&byte| byte == b'=') else {
         return;
@@ -116,7 +116,7 @@ pub unsafe fn environ_put(env: &mut environ, var: &CStr, flags: ::core::ffi::c_i
     env.set_cstr(&name, flags, value);
 }
 
-pub unsafe fn environ_unset(env: &mut environ, name: &CStr) {
+pub fn environ_unset(env: &mut environ, name: &CStr) {
     env.unset_cstr(name);
 }
 

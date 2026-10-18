@@ -224,11 +224,9 @@ thread_local! {
 
 /// Register a compiled-in provider. Registration is atomic: any conflicting
 /// name rejects the whole provider. No plugin code runs with a registry borrow.
-///
-/// # Safety
 /// Call on the initialized server thread, after the daemon fork. Provider
 /// observations require exclusive access to tmux's process-global model state.
-pub unsafe fn register(plugin: Box<dyn Plugin>) -> io::Result<()> {
+pub fn register(plugin: Box<dyn Plugin>) -> io::Result<()> {
     let mut prepared = Some(Slot::new(plugin)?);
     REGISTRY.with(|registry| registry.borrow_mut().insert(&mut prepared))?;
     arm_next();

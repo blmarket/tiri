@@ -131,7 +131,7 @@ pub unsafe fn server_acl_init() {
     }
     server_acl_allow(getuid() as id_t, 0 as ::core::ffi::c_int);
 }
-pub unsafe fn server_acl_find(mut id: id_t, mut flags: ::core::ffi::c_int) -> ::core::ffi::c_int {
+pub fn server_acl_find(mut id: id_t, mut flags: ::core::ffi::c_int) -> ::core::ffi::c_int {
     server_acl_entries::find(id, flags).is_some() as ::core::ffi::c_int
 }
 pub unsafe fn server_acl_display(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) {
@@ -183,7 +183,7 @@ pub unsafe fn server_acl_display(item_handle: &std::rc::Rc<std::cell::UnsafeCell
         }
     }
 }
-pub unsafe fn server_acl_allow(mut id: id_t, mut flags: ::core::ffi::c_int) {
+pub fn server_acl_allow(mut id: id_t, mut flags: ::core::ffi::c_int) {
     server_acl_entries::insert(server_acl_entry {
         id,
         flags: flags & SERVER_ACL_IS_GROUP,

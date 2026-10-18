@@ -246,7 +246,7 @@ unsafe fn session_remove_ref(s: SessionRef, from: &CStr) {
     ));
     drop(s);
 }
-unsafe fn session_free(s: &mut session) {
+fn session_free(s: &mut session) {
     log_debug(format_args!(
         "session {} freed",
         log_bytes(s.name.as_bytes())
@@ -789,7 +789,7 @@ mod session_index_tests {
 
 impl Drop for session {
     fn drop(&mut self) {
-        unsafe { session_free(self) }
+        session_free(self)
     }
 }
 

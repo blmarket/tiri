@@ -22,7 +22,7 @@ impl ServerObservability for ServerHost {
     }
 
     fn resolve_pane(&self, id: PaneId) -> io::Result<Option<Rc<dyn PaneObservability>>> {
-        unsafe { Ok(observability::resolve(id)) }
+        Ok(observability::resolve(id))
     }
 }
 
@@ -32,7 +32,7 @@ impl Host for ServerHost {
     }
 
     fn pane_activity(&self, pane: PaneId) -> Option<PaneActivity> {
-        unsafe { observability::activity(pane) }
+        observability::activity(pane)
     }
 }
 

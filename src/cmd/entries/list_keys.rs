@@ -72,7 +72,7 @@ unsafe fn cmd_list_keys_get_prefix(args: *mut args) -> CString {
     }
     key_string_format(prefix, false)
 }
-unsafe fn cmd_list_keys_get_width(bindings: &[&key_binding]) -> u_int {
+fn cmd_list_keys_get_width(bindings: &[&key_binding]) -> u_int {
     bindings
         .iter()
         .map(|&bd| {
@@ -82,7 +82,7 @@ unsafe fn cmd_list_keys_get_width(bindings: &[&key_binding]) -> u_int {
         .max()
         .unwrap_or(0)
 }
-unsafe fn cmd_list_keys_get_table_width(bindings: &[&key_binding]) -> u_int {
+fn cmd_list_keys_get_table_width(bindings: &[&key_binding]) -> u_int {
     bindings
         .iter()
         .map(|&bd| bd.tablename.as_ref().map_or(0, |s| utf8_cstrwidth(s)))
@@ -103,7 +103,7 @@ unsafe fn cmd_list_keys_get_root_and_prefix<'a>(
     }
     bindings
 }
-unsafe fn cmd_list_keys_filter_key_list(
+fn cmd_list_keys_filter_key_list(
     filter_notes: ::core::ffi::c_int,
     filter_key: ::core::ffi::c_int,
     only: key_code,

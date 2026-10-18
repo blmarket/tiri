@@ -446,7 +446,7 @@ fn input_key_split2(c: u_int, dst: &mut Vec<u8>) {
         dst.push(c as u_char);
     }
 }
-pub unsafe fn input_key_build() {
+pub fn input_key_build() {
     for entry in &input_key_defaults {
         if entry.key & KEYC_BUILD_MODIFIERS == 0 {
             input_key_tree::insert(entry.clone());

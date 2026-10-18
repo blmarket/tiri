@@ -423,7 +423,7 @@ fn window_customize_top_tag(group: u_int) -> uint64_t {
 fn window_customize_key_tag(ptr: *const ::core::ffi::c_void, field: u_int) -> uint64_t {
     ptr as uint64_t | field as uint64_t
 }
-unsafe fn window_customize_get_tree(
+fn window_customize_get_tree(
     scope: window_customize_scope,
     fs: &cmd_find_state,
 ) -> Option<OptionsScope> {
@@ -438,7 +438,7 @@ unsafe fn window_customize_get_tree(
     }
 }
 
-unsafe fn window_customize_get_environment(
+fn window_customize_get_environment(
     scope: window_customize_scope,
     fs: &cmd_find_state,
 ) -> Option<CustomizeEnvironment> {
@@ -906,7 +906,7 @@ unsafe fn window_customize_option_is_changed(
     (value != options_default_to_cstring(definition)) as i32
 }
 
-unsafe fn window_customize_key_is_changed(kt: &key_table, bd: &key_binding) -> ::core::ffi::c_int {
+fn window_customize_key_is_changed(kt: &key_table, bd: &key_binding) -> ::core::ffi::c_int {
     let Some(default_bd) = key_bindings_get_default(kt, bd.key) else {
         return 1;
     };
@@ -2707,7 +2707,7 @@ unsafe fn window_customize_menu(
         ::core::ptr::null_mut::<mouse_event>(),
     );
 }
-unsafe fn window_customize_height() -> u_int {
+fn window_customize_height() -> u_int {
     12 as u_int
 }
 static window_customize_help_lines: &[&CStr] = &[

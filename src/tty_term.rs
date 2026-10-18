@@ -1030,7 +1030,7 @@ static mut tty_term_codes: [tty_term_code_entry; 236] = [
         name: c"XT",
     },
 ];
-pub unsafe fn tty_term_ncodes() -> u_int {
+pub fn tty_term_ncodes() -> u_int {
     (::core::mem::size_of::<[tty_term_code_entry; 236]>() as usize)
         .wrapping_div(::core::mem::size_of::<tty_term_code_entry>() as usize) as u_int
 }
@@ -1533,7 +1533,7 @@ pub fn tty_term_owner_ptr(owner: &Option<Box<tty_term>>) -> Option<&tty_term> {
     owner.as_deref()
 }
 
-pub unsafe fn tty_term_has(term: &tty_term, mut code: tty_code_code) -> ::core::ffi::c_int {
+pub fn tty_term_has(term: &tty_term, mut code: tty_code_code) -> ::core::ffi::c_int {
     (!matches!((&term.codes)[code as usize], tty_code::None)) as ::core::ffi::c_int
 }
 pub unsafe fn tty_term_has_name(term: &tty_term, name: &CStr) -> ::core::ffi::c_int {
@@ -1549,7 +1549,7 @@ pub unsafe fn tty_term_has_name(term: &tty_term, name: &CStr) -> ::core::ffi::c_
     }
     0 as ::core::ffi::c_int
 }
-pub unsafe fn tty_term_string(term: &tty_term, code: tty_code_code) -> &std::ffi::CStr {
+pub fn tty_term_string(term: &tty_term, code: tty_code_code) -> &std::ffi::CStr {
     match &term.codes[code as usize] {
         tty_code::None => c"",
         tty_code::String(value) => value.as_c_str(),
@@ -1631,14 +1631,14 @@ pub unsafe fn tty_term_string_ss(
     );
     tty_term_expanded(code, s)
 }
-pub unsafe fn tty_term_number(term: &tty_term, code: tty_code_code) -> ::core::ffi::c_int {
+pub fn tty_term_number(term: &tty_term, code: tty_code_code) -> ::core::ffi::c_int {
     match &(&term.codes)[code as usize] {
         tty_code::None => 0,
         tty_code::Number(value) => *value,
         _ => fatalx(|out| write!(out, "not a number: {}", (code) as i32)),
     }
 }
-pub unsafe fn tty_term_flag(term: &tty_term, code: tty_code_code) -> ::core::ffi::c_int {
+pub fn tty_term_flag(term: &tty_term, code: tty_code_code) -> ::core::ffi::c_int {
     match &(&term.codes)[code as usize] {
         tty_code::None => 0,
         tty_code::Flag(value) => *value,

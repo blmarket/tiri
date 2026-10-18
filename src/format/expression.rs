@@ -492,7 +492,7 @@ pub unsafe fn format_true(mut s: *const ::core::ffi::c_char) -> ::core::ffi::c_i
     }
     0 as ::core::ffi::c_int
 }
-pub(super) unsafe fn format_is_end(mut c: ::core::ffi::c_char) -> ::core::ffi::c_int {
+pub(super) fn format_is_end(mut c: ::core::ffi::c_char) -> ::core::ffi::c_int {
     (c as ::core::ffi::c_int == ';' as i32 || c as ::core::ffi::c_int == ':' as i32)
         as ::core::ffi::c_int
 }

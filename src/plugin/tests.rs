@@ -191,9 +191,7 @@ fn failed_registration_drops_plugin_outside_registry_borrows() {
             Ok(())
         }
     }
-    unsafe {
-        assert!(register(Box::new(Reenter)).is_err());
-    }
+    assert!(register(Box::new(Reenter)).is_err());
 }
 
 #[test]
@@ -245,13 +243,11 @@ fn refresh_reads_previous_snapshot_and_errors_do_not_publish_partial_values() {
     let runtime = tiri_rt::mio::Runtime::new().unwrap();
     let calls = Rc::new(Cell::new(0));
     let dropped = Rc::new(Cell::new(false));
-    unsafe {
-        register(Box::new(Refresh {
-            calls: calls.clone(),
-            dropped: dropped.clone(),
-        }))
-        .unwrap();
-    }
+    register(Box::new(Refresh {
+        calls: calls.clone(),
+        dropped: dropped.clone(),
+    }))
+    .unwrap();
     tick();
     assert_eq!(
         find(Some(PaneId(99)), c"test_state").as_deref(),

@@ -53,7 +53,7 @@ fn utf8_regional_count(ud: &utf8_data) -> u_int {
         .filter(|part| part[..3] == *b"\xf0\x9f\x87" && (0xa6..=0xbf).contains(&part[3]))
         .count() as u_int
 }
-pub unsafe fn utf8_should_combine(with: &utf8_data, add: &utf8_data) -> ::core::ffi::c_int {
+pub fn utf8_should_combine(with: &utf8_data, add: &utf8_data) -> ::core::ffi::c_int {
     let mut w: wchar_t = 0;
     let mut a: wchar_t = 0;
     if utf8_towc(with, &mut w) as ::core::ffi::c_uint
@@ -271,17 +271,15 @@ mod tests {
 
     #[test]
     fn combination_preserves_flag_pairing_and_skin_tone_direction() {
-        unsafe {
-            assert_eq!(utf8_should_combine(&cell("🇦"), &cell("🇧")), 1);
-            assert_eq!(utf8_should_combine(&cell("🇦🇧"), &cell("🇨")), 0);
-            assert_eq!(utf8_should_combine(&cell("🇦"), &cell("🇧🇨")), 0);
-            assert_eq!(utf8_should_combine(&cell("🏻"), &cell("👋")), 1);
-            assert_eq!(utf8_should_combine(&cell("👋"), &cell("🏻")), 0);
-            assert_eq!(utf8_should_combine(&cell("🏻"), &cell("a")), 0);
-            let mut invalid = cell("a");
-            invalid.data[0] = 0xff;
-            assert_eq!(utf8_should_combine(&invalid, &cell("🇦")), 0);
-        }
+        assert_eq!(utf8_should_combine(&cell("🇦"), &cell("🇧")), 1);
+        assert_eq!(utf8_should_combine(&cell("🇦🇧"), &cell("🇨")), 0);
+        assert_eq!(utf8_should_combine(&cell("🇦"), &cell("🇧🇨")), 0);
+        assert_eq!(utf8_should_combine(&cell("🏻"), &cell("👋")), 1);
+        assert_eq!(utf8_should_combine(&cell("👋"), &cell("🏻")), 0);
+        assert_eq!(utf8_should_combine(&cell("🏻"), &cell("a")), 0);
+        let mut invalid = cell("a");
+        invalid.data[0] = 0xff;
+        assert_eq!(utf8_should_combine(&invalid, &cell("🇦")), 0);
     }
 
     #[test]

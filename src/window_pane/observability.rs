@@ -48,14 +48,12 @@ impl PaneView {
     }
 }
 
-pub(crate) unsafe fn resolve(id: PaneId) -> Option<Rc<dyn PaneObservability>> {
-    unsafe {
-        let owner = window_pane_find_by_id(id.0)?;
-        Some(Rc::new(PaneView {
-            id,
-            pane: Rc::downgrade(&owner),
-        }))
-    }
+pub(crate) fn resolve(id: PaneId) -> Option<Rc<dyn PaneObservability>> {
+    let owner = window_pane_find_by_id(id.0)?;
+    Some(Rc::new(PaneView {
+        id,
+        pane: Rc::downgrade(&owner),
+    }))
 }
 
 fn read_pane<T>(id: PaneId, read: impl FnOnce(&window_pane) -> T) -> Option<T> {
@@ -65,7 +63,7 @@ fn read_pane<T>(id: PaneId, read: impl FnOnce(&window_pane) -> T) -> Option<T> {
     }
 }
 
-pub(crate) unsafe fn activity(id: PaneId) -> Option<PaneActivity> {
+pub(crate) fn activity(id: PaneId) -> Option<PaneActivity> {
     read_pane(id, |pane| {
         let (foreground, session_leader) = process_groups(pane);
         PaneActivity {

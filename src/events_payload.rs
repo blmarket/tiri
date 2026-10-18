@@ -62,7 +62,7 @@ impl Drop for event_payload_item {
     }
 }
 
-unsafe fn event_payload_set_item(ep: &mut event_payload, name: &CStr, value: EventPayloadValue) {
+fn event_payload_set_item(ep: &mut event_payload, name: &CStr, value: EventPayloadValue) {
     let name = name.to_owned();
     let key = name.clone();
     let new = Box::new(event_payload_item { name, value });

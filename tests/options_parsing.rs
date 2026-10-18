@@ -118,19 +118,17 @@ fn options_match_owned_cases() {
 
 #[test]
 fn options_match_owned_reports_parse_ambiguity_and_invalidity() {
-    unsafe {
-        assert!(matches!(
-            options_match_owned(c""),
-            Err(OptionMatchFailure::Parse)
-        ));
-        assert!(matches!(
-            options_match_owned(c"status-"),
-            Err(OptionMatchFailure::Ambiguous)
-        ));
-        assert!(matches!(
-            options_match_owned(c"not-an-option"),
-            Err(OptionMatchFailure::Invalid)
-        ));
-    }
+    assert!(matches!(
+        options_match_owned(c""),
+        Err(OptionMatchFailure::Parse)
+    ));
+    assert!(matches!(
+        options_match_owned(c"status-"),
+        Err(OptionMatchFailure::Ambiguous)
+    ));
+    assert!(matches!(
+        options_match_owned(c"not-an-option"),
+        Err(OptionMatchFailure::Invalid)
+    ));
     assert!(options_parse_owned(c"status[]").is_none());
 }

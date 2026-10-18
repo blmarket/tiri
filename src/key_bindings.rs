@@ -86,7 +86,7 @@ pub(crate) fn key_bindings_set_note(bd: &mut key_binding, note: Option<&CStr>) {
     bd.note = note.map(CStr::to_owned);
 }
 
-pub unsafe fn key_bindings_get_table(
+pub fn key_bindings_get_table(
     name: &CStr,
     create: i32,
 ) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
@@ -209,7 +209,7 @@ pub unsafe fn key_bindings_remove_table(name: &CStr) {
 }
 
 /// Snapshot startup defaults with their own command-list reference and note.
-unsafe fn key_bindings_init_done() -> CmdOutcome {
+fn key_bindings_init_done() -> CmdOutcome {
     for owner in key_tables::snapshot() {
         let mut table = owner.borrow_mut();
         let table_ref = &mut *table;
@@ -546,7 +546,7 @@ pub unsafe fn key_bindings_init() {
         None,
         cmdq_get_callback_owned(
             c"key_bindings_init_done",
-            Some(Box::new(|_| unsafe { key_bindings_init_done() })),
+            Some(Box::new(|_| key_bindings_init_done())),
         ),
     );
 }

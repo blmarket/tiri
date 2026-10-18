@@ -415,7 +415,7 @@ unsafe fn window_pane_find_by_id_str(s: &CStr) -> Option<Rc<std::cell::UnsafeCel
     window_pane_find_by_id(id)
 }
 
-unsafe fn window_pane_find_by_id(id: u_int) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
+fn window_pane_find_by_id(id: u_int) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
     window_pane_tree::find(id)
 }
 
@@ -432,7 +432,7 @@ unsafe fn window_pane_upgrade(
     Some(owner)
 }
 
-unsafe fn window_pane_mode_push(
+fn window_pane_mode_push(
     wp: &mut window_pane,
     entry: refbox::RefBox<window_mode_entry>,
 ) -> refbox::Weak<window_mode_entry> {
@@ -1542,7 +1542,7 @@ unsafe fn window_pane_default_cursor(wp_owner: &Rc<std::cell::UnsafeCell<window_
     screen_set_default_cursor(&mut *(*wp).screen_ptr(), &mut (*wp).borrow_options_mut());
 }
 
-unsafe fn window_pane_mode(wp: &window_pane) -> ::core::ffi::c_int {
+fn window_pane_mode(wp: &window_pane) -> ::core::ffi::c_int {
     if let Some(active) = wp.active_mode() {
         if std::ptr::eq(active, &window_copy_mode) {
             return 1 as ::core::ffi::c_int;

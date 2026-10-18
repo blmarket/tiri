@@ -241,7 +241,7 @@ pub unsafe fn cmd_pack_argv(
     0 as ::core::ffi::c_int
 }
 
-pub(crate) unsafe fn cmd_stringify_argv_cstring(argv: &[CString]) -> Option<CString> {
+pub(crate) fn cmd_stringify_argv_cstring(argv: &[CString]) -> Option<CString> {
     let mut bytes = Vec::new();
     for (i, argument) in argv.iter().enumerate() {
         let escaped = args_escape_cstring(argument);
@@ -350,7 +350,7 @@ fn cmd_new_owned(entry: &'static cmd_entry, file: Option<&CStr>) -> refbox::RefB
     })
 }
 
-pub unsafe fn cmd_parse(
+pub fn cmd_parse(
     values: &[ArgumentValue<'_>],
     file: Option<&CStr>,
     line: u_int,
@@ -526,7 +526,7 @@ pub fn cmd_list_first(cmdlist: &cmd_list) -> Option<refbox::Borrow<'_, cmd>> {
         .first()
         .map(|owner| owner.try_borrow_mut().expect("command is not borrowed"))
 }
-pub unsafe fn cmd_list_all_have(cmdlist: &cmd_list) -> ::core::ffi::c_int {
+pub fn cmd_list_all_have(cmdlist: &cmd_list) -> ::core::ffi::c_int {
     let mut flag: ::core::ffi::c_int = CMD_READONLY;
     for owner in &cmdlist.list {
         let cmd = owner.try_borrow_mut().expect("command is not borrowed");
@@ -536,7 +536,7 @@ pub unsafe fn cmd_list_all_have(cmdlist: &cmd_list) -> ::core::ffi::c_int {
     }
     1 as ::core::ffi::c_int
 }
-pub unsafe fn cmd_list_any_have(cmdlist: &cmd_list) -> ::core::ffi::c_int {
+pub fn cmd_list_any_have(cmdlist: &cmd_list) -> ::core::ffi::c_int {
     let mut flag: ::core::ffi::c_int = CMD_STARTSERVER;
     for owner in &cmdlist.list {
         let cmd = owner.try_borrow_mut().expect("command is not borrowed");

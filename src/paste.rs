@@ -426,7 +426,7 @@ pub(crate) unsafe fn paste_replace_owned(pb: &PasteBufferRef, data: Box<[u8]>) {
     });
 }
 
-pub(crate) unsafe fn paste_make_sample_cstring(pb: &paste_buffer) -> CString {
+pub(crate) fn paste_make_sample_cstring(pb: &paste_buffer) -> CString {
     let flags = VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL;
     let width = 200;
     let data = pb.data.as_deref().unwrap_or(&[]);

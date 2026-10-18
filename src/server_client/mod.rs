@@ -840,7 +840,7 @@ unsafe fn server_client_set_key_table(c_owner: &ClientRef, name: Option<&CStr>) 
         .borrow_mut()
         .activity_time = SystemTime::now();
 }
-unsafe fn server_client_key_table_activity_diff(c: &client) -> uint64_t {
+fn server_client_key_table_activity_diff(c: &client) -> uint64_t {
     c.activity_time
         .duration_since(
             c.keytable
@@ -870,7 +870,7 @@ unsafe fn server_client_is_default_key_table(c: &client, table: &key_table) -> :
         server_client_get_key_table(c).as_ptr(),
     ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int
 }
-unsafe fn server_client_timer(
+fn server_client_timer(
     client: &ClientRef,
     delay: Duration,
     callback: unsafe fn(&ClientRef),
@@ -3143,7 +3143,7 @@ unsafe fn server_client_check_exit(client_owner: &ClientRef, force: ::core::ffi:
         _ => {}
     };
 }
-unsafe fn server_client_redraw_timer() {
+fn server_client_redraw_timer() {
     log_debug(format_args!("redraw timer fired"));
 }
 unsafe fn server_client_check_modes(client_owner: &ClientRef) {
@@ -4085,7 +4085,7 @@ unsafe fn server_client_set_flags(c_owner: &ClientRef, flags: &CStr) {
     }
     proc_send((*c).peer, MSG_FLAGS, None, bytes_of(&(*c).flags));
 }
-unsafe fn server_client_get_flags(c: &client) -> CString {
+fn server_client_get_flags(c: &client) -> CString {
     let mut s: Vec<u8> = Vec::new();
     if c.flags & CLIENT_ATTACHED as uint64_t != 0 {
         s.extend_from_slice(b"attached,");

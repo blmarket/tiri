@@ -26,7 +26,7 @@ pub fn winlinks_minmax(head: &winlinks, direction: ::core::ffi::c_int) -> refbox
     pair.map_or(refbox::Weak::new(), |(_, owner)| owner.downgrade())
 }
 
-pub unsafe fn winlinks_next(elm: &winlink) -> refbox::Weak<winlink> {
+pub fn winlinks_next(elm: &winlink) -> refbox::Weak<winlink> {
     let owner = &elm.owner;
     let map = match owner.try_borrow_mut() {
         Ok(map) => map,
@@ -39,7 +39,7 @@ pub unsafe fn winlinks_next(elm: &winlink) -> refbox::Weak<winlink> {
         .map_or(refbox::Weak::new(), |(_, owner)| owner.downgrade())
 }
 
-pub unsafe fn winlinks_prev(elm: &winlink) -> refbox::Weak<winlink> {
+pub fn winlinks_prev(elm: &winlink) -> refbox::Weak<winlink> {
     let owner = &elm.owner;
     let map = match owner.try_borrow_mut() {
         Ok(map) => map,
@@ -68,10 +68,7 @@ pub unsafe fn winlink_find_by_window(wwl: &winlinks, w_owner: &WindowRef) -> ref
     refbox::Weak::new()
 }
 
-pub unsafe fn winlink_find_by_index(
-    wwl: &winlinks,
-    idx: ::core::ffi::c_int,
-) -> refbox::Weak<winlink> {
+pub fn winlink_find_by_index(wwl: &winlinks, idx: ::core::ffi::c_int) -> refbox::Weak<winlink> {
     if idx < 0 as ::core::ffi::c_int {
         fatalx(|out| out.write_all(b"bad index"));
     }

@@ -266,7 +266,7 @@ pub unsafe fn tty_parse_features(
         }
     }
 }
-pub unsafe fn tty_get_features(feat: ::core::ffi::c_int) -> CString {
+pub fn tty_get_features(feat: ::core::ffi::c_int) -> CString {
     let mut names = Vec::new();
     for (i, feature) in tty_features.iter().enumerate() {
         if feat & (1 << i) != 0 {

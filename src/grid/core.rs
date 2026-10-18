@@ -310,7 +310,7 @@ unsafe fn grid_clear_cell(line: &mut grid_line, px: u_int, bg: u_int, moved: boo
         }
     }
 }
-unsafe fn grid_check_y(gd: &grid, from: &str, py: u_int) -> i32 {
+fn grid_check_y(gd: &grid, from: &str, py: u_int) -> i32 {
     if py >= gd.hsize.wrapping_add(gd.sy) {
         log_debug(format_args!("{}: y out of range: {}", from, py));
         return -1;
@@ -347,7 +347,7 @@ pub fn grid_free_lines(gd: &mut grid, py: u_int, ny: u_int) {
         grid_free_line(gd, row);
     }
 }
-pub unsafe fn grid_create(sx: u_int, sy: u_int, hlimit: u_int) -> Box<grid> {
+pub fn grid_create(sx: u_int, sy: u_int, hlimit: u_int) -> Box<grid> {
     let mut owner = Box::new(grid::default());
     owner.sx = sx;
     owner.sy = sy;
@@ -2059,42 +2059,40 @@ mod storage_tests {
 
     #[test]
     fn wrapped_positions_keep_line_ends_empty_rows_and_history_coordinates() {
-        unsafe {
-            let mut gd = grid_create(8, 5, 10);
-            gd.sy = 3;
-            gd.hsize = 2;
-            for (row, (used, wrapped)) in [(3, true), (2, false), (0, false), (4, true), (1, false)]
-                .into_iter()
-                .enumerate()
-            {
-                gd.linedata[row].cellused = used;
-                if wrapped {
-                    gd.linedata[row].flags |= GRID_LINE_WRAPPED as u_short;
-                }
+        let mut gd = grid_create(8, 5, 10);
+        gd.sy = 3;
+        gd.hsize = 2;
+        for (row, (used, wrapped)) in [(3, true), (2, false), (0, false), (4, true), (1, false)]
+            .into_iter()
+            .enumerate()
+        {
+            gd.linedata[row].cellused = used;
+            if wrapped {
+                gd.linedata[row].flags |= GRID_LINE_WRAPPED as u_short;
             }
-            for (position, wrapped) in [
-                ((2, 0), (2, 0)),
-                ((0, 1), (3, 0)),
-                ((1, 1), (4, 0)),
-                ((2, 3), (2, 2)),
-                ((0, 4), (4, 2)),
-            ] {
-                assert_eq!(grid_wrap_position(&gd, position.0, position.1), wrapped);
-                assert_eq!(grid_unwrap_position(&gd, wrapped.0, wrapped.1), position);
-            }
-            for (position, wrapped, end) in [
-                ((3, 0), (UINT_MAX, 0), (2, 1)),
-                ((99, 1), (UINT_MAX, 0), (2, 1)),
-                ((0, 2), (UINT_MAX, 1), (0, 2)),
-                ((4, 3), (UINT_MAX, 2), (1, 4)),
-            ] {
-                assert_eq!(grid_wrap_position(&gd, position.0, position.1), wrapped);
-                assert_eq!(grid_unwrap_position(&gd, wrapped.0, wrapped.1), end);
-            }
-            assert_eq!(grid_unwrap_position(&gd, 99, 99), (99, 4));
-            gd.linedata[2].flags |= GRID_LINE_WRAPPED as u_short;
-            assert_eq!(grid_unwrap_position(&gd, 2, 1), (2, 3));
         }
+        for (position, wrapped) in [
+            ((2, 0), (2, 0)),
+            ((0, 1), (3, 0)),
+            ((1, 1), (4, 0)),
+            ((2, 3), (2, 2)),
+            ((0, 4), (4, 2)),
+        ] {
+            assert_eq!(grid_wrap_position(&gd, position.0, position.1), wrapped);
+            assert_eq!(grid_unwrap_position(&gd, wrapped.0, wrapped.1), position);
+        }
+        for (position, wrapped, end) in [
+            ((3, 0), (UINT_MAX, 0), (2, 1)),
+            ((99, 1), (UINT_MAX, 0), (2, 1)),
+            ((0, 2), (UINT_MAX, 1), (0, 2)),
+            ((4, 3), (UINT_MAX, 2), (1, 4)),
+        ] {
+            assert_eq!(grid_wrap_position(&gd, position.0, position.1), wrapped);
+            assert_eq!(grid_unwrap_position(&gd, wrapped.0, wrapped.1), end);
+        }
+        assert_eq!(grid_unwrap_position(&gd, 99, 99), (99, 4));
+        gd.linedata[2].flags |= GRID_LINE_WRAPPED as u_short;
+        assert_eq!(grid_unwrap_position(&gd, 2, 1), (2, 3));
     }
 
     #[test]

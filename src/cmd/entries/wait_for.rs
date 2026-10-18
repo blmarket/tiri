@@ -293,7 +293,7 @@ impl wait_event_item {
 struct wait_event_sink(EventSinkId);
 impl Drop for wait_event_sink {
     fn drop(&mut self) {
-        unsafe { events_remove_sink(self.0) };
+        events_remove_sink(self.0);
     }
 }
 

@@ -112,10 +112,10 @@ impl events {
     }
 }
 
-pub unsafe fn events_add_sink(name: &CStr, cb: events_cb) -> EventSinkId {
+pub fn events_add_sink(name: &CStr, cb: events_cb) -> EventSinkId {
     events::add_sink(name, cb)
 }
-pub unsafe fn events_remove_sink(id: EventSinkId) {
+pub fn events_remove_sink(id: EventSinkId) {
     if id == EventSinkId::default() {
         return;
     }

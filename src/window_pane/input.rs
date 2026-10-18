@@ -159,7 +159,7 @@ impl input_ctx {
     }
 }
 
-unsafe fn input_clear_params(ictx: &mut input_ctx) {
+fn input_clear_params(ictx: &mut input_ctx) {
     for param in &mut ictx.param_list[..ictx.param_list_len as usize] {
         *param = input_param::Missing;
     }
@@ -676,7 +676,7 @@ static input_csi_table: [input_table_entry; 43] = [
         type_0: INPUT_CSI_RCP as ::core::ffi::c_int,
     },
 ];
-unsafe fn input_table_find<'a>(
+fn input_table_find<'a>(
     table: &'a [input_table_entry],
     ictx: &input_ctx,
 ) -> Option<&'a input_table_entry> {
@@ -3658,7 +3658,7 @@ unsafe fn input_csi_dispatch_sm_private(mut ictx: *mut input_ctx) {
         i = i.wrapping_add(1);
     }
 }
-unsafe fn input_csi_dispatch_sm_graphics() {}
+fn input_csi_dispatch_sm_graphics() {}
 unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
     let input_pane_owner = (*ictx).wp.upgrade();
     let input_pane = input_pane_owner
@@ -4072,16 +4072,10 @@ mod sgr_colon_tests {
 
     #[test]
     fn parses_rgb_indexed_and_underline_colon_parameters() {
-        assert_eq!(parse(b"38:2:1:2:3\0").fg, unsafe {
-            colour_join_rgb(1, 2, 3)
-        });
-        assert_eq!(parse(b"38:2::1:2:3\0").fg, unsafe {
-            colour_join_rgb(1, 2, 3)
-        });
+        assert_eq!(parse(b"38:2:1:2:3\0").fg, colour_join_rgb(1, 2, 3));
+        assert_eq!(parse(b"38:2::1:2:3\0").fg, colour_join_rgb(1, 2, 3));
         assert_eq!(parse(b"48:5:196\0").bg, 196 | COLOUR_FLAG_256);
-        assert_eq!(parse(b"58:2:5:6:7\0").us, unsafe {
-            colour_join_rgb(5, 6, 7)
-        });
+        assert_eq!(parse(b"58:2:5:6:7\0").us, colour_join_rgb(5, 6, 7));
         assert_eq!(parse(b"4:3\0").attr as i32, GRID_ATTR_UNDERSCORE_3);
     }
 

@@ -110,7 +110,7 @@ unsafe fn control_free_block(cs: &mut control_state, cb: &refbox::Weak<control_b
     control_release_block(&mut cs.all_blocks, &mut cs.queued_reply_bytes, cb);
 }
 
-unsafe fn control_release_block(
+fn control_release_block(
     blocks: &mut VecDeque<refbox::RefBox<control_block>>,
     queued_reply_bytes: &mut size_t,
     cb: &refbox::Weak<control_block>,
@@ -217,7 +217,7 @@ pub unsafe fn control_reset_offsets(c: &ClientRef) {
     }
     cs.pending_panes.clear();
 }
-pub unsafe fn control_pane_offset<'a>(
+pub fn control_pane_offset<'a>(
     cs: &'a mut control_state,
     client_flags: uint64_t,
     pane: u_int,
@@ -654,7 +654,7 @@ pub unsafe fn control_all_done(c: &ClientRef) -> ::core::ffi::c_int {
         .unwrap_or(0)
         == 0 as size_t) as ::core::ffi::c_int
 }
-pub unsafe fn control_wait_exit() {
+pub fn control_wait_exit() {
     use std::os::fd::AsFd;
     use tiri_rt::{AsyncRead as _, Runtime as _};
     let stdin = std::io::stdin();

@@ -1453,7 +1453,7 @@ pub unsafe fn tty_cmd_redrawline(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
         };
     }
 }
-pub unsafe fn tty_check_codeset(utf8: bool, gc: &grid_cell) -> grid_cell {
+pub fn tty_check_codeset(utf8: bool, gc: &grid_cell) -> grid_cell {
     if gc.data.size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
         && (gc.data.data[0] as ::core::ffi::c_int) < 0x7f as ::core::ffi::c_int
     {

@@ -61,7 +61,7 @@ unsafe fn options_parent_table_entry(
     });
     source.with_entry(name, |entry| entry.tableentry)?
 }
-unsafe fn options_value_to_cstring(
+fn options_value_to_cstring(
     o: &options_entry,
     ov: &options_value,
     numeric: ::core::ffi::c_int,
@@ -200,7 +200,7 @@ pub unsafe fn options_default<'a>(
 }
 /// Format a built-in default for Rust callers. The exported C API keeps its
 /// libc-owned return value below.
-pub(crate) unsafe fn options_default_to_cstring(oe: &options_table_entry) -> CString {
+pub(crate) fn options_default_to_cstring(oe: &options_table_entry) -> CString {
     match oe.type_0 as ::core::ffi::c_uint {
         0 | 6 => oe.default_str.expect("string option default").to_owned(),
         1 => CString::new(oe.default_num.to_string())
@@ -474,7 +474,7 @@ pub enum OptionMatchFailure {
     Invalid,
 }
 
-pub unsafe fn options_match_owned(s: &CStr) -> Result<OwnedOptionName, OptionMatchFailure> {
+pub fn options_match_owned(s: &CStr) -> Result<OwnedOptionName, OptionMatchFailure> {
     let mut parsed = options_parse_owned(s).ok_or(OptionMatchFailure::Parse)?;
 
     let mut candidates: [&[u8]; 274] = [&[]; 274];

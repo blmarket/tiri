@@ -307,13 +307,13 @@ unsafe fn window_panes_get_border_cell(
         drop(owner);
     }
 }
-unsafe fn window_panes_map_x(mut x: u_int, mut osx: u_int, mut dsx: u_int) -> ::core::ffi::c_int {
+fn window_panes_map_x(mut x: u_int, mut osx: u_int, mut dsx: u_int) -> ::core::ffi::c_int {
     if osx <= dsx {
         return x as ::core::ffi::c_int;
     }
     x.wrapping_mul(dsx).wrapping_div(osx) as ::core::ffi::c_int
 }
-unsafe fn window_panes_map_y(mut y: u_int, mut osy: u_int, mut dsy: u_int) -> ::core::ffi::c_int {
+fn window_panes_map_y(mut y: u_int, mut osy: u_int, mut dsy: u_int) -> ::core::ffi::c_int {
     if osy <= dsy {
         return y as ::core::ffi::c_int;
     }

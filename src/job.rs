@@ -51,7 +51,7 @@ pub const JOB_CLOSED: job_state = 2;
 pub const JOB_DEAD: job_state = 1;
 pub const JOB_RUNNING: job_state = 0;
 
-unsafe fn job_completion(job: &job) -> JobCompletion {
+fn job_completion(job: &job) -> JobCompletion {
     let output = job
         .event
         .with_ptr(|stream| unsafe {
@@ -367,7 +367,7 @@ pub unsafe fn job_run(
                 let error_job = job.clone();
                 let stream = bufferevent_new(
                     fd,
-                    bufferevent_data_callback(move |_| unsafe { job_read_callback(&read_job) }),
+                    bufferevent_data_callback(move |_| job_read_callback(&read_job)),
                     bufferevent_data_callback(move |_| unsafe { job_write_callback(&write_job) }),
                     bufferevent_event_callback(move |_, _| unsafe {
                         job_error_callback(&error_job)
@@ -407,7 +407,7 @@ fn job_borrow_live(handle: &Weak<job>) -> Option<refbox::Borrow<'_, job>> {
     }
 }
 
-unsafe fn job_log(action: &str, job: &job) {
+fn job_log(action: &str, job: &job) {
     log_debug(format_args!(
         "{} job: {}, pid {}",
         action,
@@ -462,7 +462,7 @@ pub unsafe fn job_resize(handle: &Weak<job>, sx: u_int, sy: u_int) {
     }
 }
 
-unsafe fn job_read_callback(handle: &Weak<job>) {
+fn job_read_callback(handle: &Weak<job>) {
     let callback_slot = {
         let Some(job) = job_borrow_live(handle) else {
             return;
@@ -570,7 +570,7 @@ pub unsafe fn job_check_died(pid: pid_t, status: ExitStatus) {
     }
 }
 
-pub unsafe fn job_get_event(handle: &Weak<job>) -> *mut bufferevent {
+pub fn job_get_event(handle: &Weak<job>) -> *mut bufferevent {
     handle
         .try_borrow_mut()
         .expect("live job stream")
@@ -587,7 +587,7 @@ pub unsafe fn job_kill_all() {
     }
 }
 
-pub unsafe fn job_still_running() -> ::core::ffi::c_int {
+pub fn job_still_running() -> ::core::ffi::c_int {
     jobs::snapshot().iter().any(|handle| {
         let job = handle.try_borrow_mut().expect("registered job");
         job.flags & JOB_NOWAIT == 0 && job.state == JOB_RUNNING

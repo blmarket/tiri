@@ -1041,7 +1041,7 @@ fn prompt_save_copied(pr: &mut prompt, idx: size_t) {
     pr.copied = Some(copied.into_boxed_slice());
 }
 
-unsafe fn prompt_decode_paste(data: &[u8]) -> Vec<utf8_data> {
+fn prompt_decode_paste(data: &[u8]) -> Vec<utf8_data> {
     let mut cells = vec![utf8_data::default(); data.len().wrapping_add(1)];
     let mut count = 0;
     let mut i: u_int = 0;
@@ -1435,7 +1435,7 @@ fn prompt_unicode_key(key: key_code) -> bool {
     key & KEYC_MASK_TYPE == (KEYC_TYPE_UNICODE as key_code) << 32 && key & KEYC_MASK_KEY > 0x7f
 }
 
-unsafe fn prompt_append_key(pr: &mut prompt, key: key_code) -> bool {
+fn prompt_append_key(pr: &mut prompt, key: key_code) -> bool {
     let mut cell = utf8_data::default();
     if key <= 0x7f {
         utf8_set(&mut cell, key as u8);

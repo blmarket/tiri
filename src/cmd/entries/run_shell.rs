@@ -273,7 +273,7 @@ unsafe fn cmd_run_shell_exec(
 /// Suspend a foreground run-shell on a continuation that owns its data, and
 /// with it the client (tmux's cdata). The timer body runs inside the delay's
 /// wake and the callback body inside the job's, where tmux runs them.
-unsafe fn cmd_run_shell_wait(
+fn cmd_run_shell_wait(
     item_handle: &Rc<UnsafeCell<cmdq_item>>,
     mut cdata: Box<cmd_run_shell_data>,
     delay: Duration,

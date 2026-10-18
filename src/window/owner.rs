@@ -93,19 +93,17 @@ mod tests {
     fn last_owner_fires_window_closed_once() {
         let closed = Rc::new(Cell::new(0));
         let observed = closed.clone();
-        unsafe {
-            let sink = events_add_sink(
-                c"window-closed",
-                Rc::new(move |_, _| observed.set(observed.get() + 1)),
-            );
-            let owner = window::new_ref();
-            let weak = WindowRef::downgrade(&owner);
-            drop(owner.clone());
-            assert_eq!(closed.get(), 0);
-            drop(owner);
-            assert_eq!(closed.get(), 1);
-            assert!(weak.upgrade().is_none());
-            events_remove_sink(sink);
-        }
+        let sink = events_add_sink(
+            c"window-closed",
+            Rc::new(move |_, _| observed.set(observed.get() + 1)),
+        );
+        let owner = window::new_ref();
+        let weak = WindowRef::downgrade(&owner);
+        drop(owner.clone());
+        assert_eq!(closed.get(), 0);
+        drop(owner);
+        assert_eq!(closed.get(), 1);
+        assert!(weak.upgrade().is_none());
+        events_remove_sink(sink);
     }
 }

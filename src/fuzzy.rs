@@ -61,7 +61,7 @@ fn fuzzy_add(cs: &mut Vec<fuzzy_char>, a: style_align, ud: &utf8_data, widths: &
     });
     widths[a as usize] = widths[a as usize].wrapping_add(ud.width as u_int);
 }
-unsafe fn fuzzy_decode_one<'a>(input: &'a [u8], ud: &mut utf8_data) -> &'a [u8] {
+fn fuzzy_decode_one<'a>(input: &'a [u8], ud: &mut utf8_data) -> &'a [u8] {
     let mut more = utf8_open(ud, input[0]);
     if more == UTF8_MORE {
         let mut consumed = 1;

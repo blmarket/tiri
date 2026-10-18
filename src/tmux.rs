@@ -287,7 +287,7 @@ unsafe fn make_label(label: Option<&CStr>) -> Result<CString, CString> {
         Ok(CString::new(path).expect("socket label path contains no NUL"))
     }
 }
-pub(crate) unsafe fn shell_argv0_cstring(shell: &CStr, is_login: bool) -> CString {
+pub(crate) fn shell_argv0_cstring(shell: &CStr, is_login: bool) -> CString {
     let shell = shell.to_bytes();
     let name = match shell.iter().rposition(|&byte| byte == b'/') {
         Some(slash) if slash + 1 < shell.len() => &shell[slash + 1..],

@@ -31,10 +31,10 @@ fn log_write(message: &[u8], prefix: &[u8]) {
         }
     });
 }
-pub unsafe fn log_add_level() {
+pub fn log_add_level() {
     LOG_LEVEL.set(LOG_LEVEL.get() + 1);
 }
-pub unsafe fn log_get_level() -> ::core::ffi::c_int {
+pub fn log_get_level() -> ::core::ffi::c_int {
     LOG_LEVEL.get()
 }
 pub unsafe fn log_open(name: &CStr) {
@@ -65,7 +65,7 @@ pub unsafe fn log_toggle(name: &CStr) {
         log_close();
     };
 }
-pub unsafe fn log_close() {
+pub fn log_close() {
     LOG_FILE.set(None);
 }
 fn log_message(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>, prefix: &CStr) {
@@ -278,14 +278,12 @@ mod tests {
                 panic!("disabled logger formatted an argument")
             }
         }
-        unsafe {
-            let _restore = RestoreLog(LOG_FILE.replace(None));
-            log_debug(format_args!("{}", MustNotFormat));
-            log_message(
-                |_| panic!("disabled logger invoked the message writer"),
-                c"fatal: ",
-            );
-        }
+        let _restore = RestoreLog(LOG_FILE.replace(None));
+        log_debug(format_args!("{}", MustNotFormat));
+        log_message(
+            |_| panic!("disabled logger invoked the message writer"),
+            c"fatal: ",
+        );
     }
 
     #[test]

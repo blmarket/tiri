@@ -566,7 +566,7 @@ pub unsafe fn hooks_monitor_add(
         .expect("monitor option");
     monitor_add(&set, name, type_0, id, format, flags);
 }
-pub(crate) unsafe fn hooks_monitor_to_cstring(name: &CStr, o: &options_entry) -> Option<CString> {
+pub(crate) fn hooks_monitor_to_cstring(name: &CStr, o: &options_entry) -> Option<CString> {
     let mut bytes = name.to_bytes().to_vec();
     let hm = options_get_monitor_data(o)?;
     let target = match hm.type_0 {
