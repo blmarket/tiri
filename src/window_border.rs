@@ -15,7 +15,7 @@ use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::style::style_ranges;
 use crate::src::shared::window::WindowRef;
 use crate::src::text::utf8::{utf8_copy, utf8_set};
-use crate::src::tty_acs::{tty_acs_double_borders, tty_acs_heavy_borders, tty_acs_rounded_borders};
+use crate::src::tty::{tty_acs_double_borders, tty_acs_heavy_borders, tty_acs_rounded_borders};
 use crate::src::window::Window as _;
 
 /// Render `fill-character` into the cell that fills whatever no pane, scrollbar

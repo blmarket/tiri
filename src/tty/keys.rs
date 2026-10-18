@@ -14,6 +14,9 @@ use crate::src::server_client::Client as _;
 use crate::src::window::Window as _;
 use libc::{sscanf, strncmp, strtol, strtoul};
 
+use super::control::tty_update_features;
+use super::model::*;
+use super::output::tty_invalidate;
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::ClientRef;
@@ -29,39 +32,33 @@ use crate::src::shared::mouse::{
 };
 use crate::src::shared::posix_terminal::VERASE;
 use crate::src::shared::tty::*;
-use crate::src::shared::tty::{tty, tty_key};
-use crate::src::shared::tty::{
-    TTY_ALL_REQUEST_FLAGS, TTY_BRACKETPASTE, TTY_HAVEDA, TTY_HAVEDA2, TTY_HAVESYNC, TTY_HAVEXDA,
-    TTY_OSC52QUERY, TTY_TIMER, TTY_WAITBG, TTY_WAITFG, TTY_WINSIZEQUERY,
-};
 use crate::src::shared::utf8::wchar_t;
 use crate::src::shared::utf8::*;
 use crate::src::style::colour::{colour_format, colour_parse_x11_logged};
 use crate::src::text::utf8::{utf8_append, utf8_from_data, utf8_fromwc, utf8_open};
 use crate::src::tmux::with_global_options;
-use crate::src::tty::{tty_invalidate, tty_update_features};
-use crate::src::tty_features::{tty_default_features, tty_parse_client_features};
-use crate::src::tty_term::tty_term_owner_ptr;
-use crate::src::tty_term::tty_term_string;
+use crate::src::tty::features::{tty_default_features, tty_parse_client_features};
+use crate::src::tty::term::tty_term_owner_ptr;
+use crate::src::tty::term::tty_term_string;
 
 use std::ffi::CStr;
 use std::time::Duration;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct tty_default_key_code {
+pub(super) struct tty_default_key_code {
     pub code: tty_code_code,
     pub key: key_code,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct tty_default_key_raw {
+pub(super) struct tty_default_key_raw {
     pub string: &'static ::std::ffi::CStr,
     pub key: key_code,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct tty_default_key_xterm {
+pub(super) struct tty_default_key_xterm {
     pub template: &'static ::std::ffi::CStr,
     pub key: key_code,
 }
@@ -1349,7 +1346,7 @@ pub unsafe fn tty_keys_build(mut tty: *mut tty) {
         );
     }
 }
-pub unsafe fn tty_keys_free(tty: *mut tty) {
+pub(super) unsafe fn tty_keys_free(tty: *mut tty) {
     (*tty).key_tree = None;
 }
 
@@ -1587,7 +1584,7 @@ unsafe fn tty_keys_winsz(
     ));
     -(1 as ::core::ffi::c_int)
 }
-pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c_int {
+pub(super) unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c_int {
     let mut current_block: u64;
     let diagnostic_name = terminal_client_owner.name();
     let mut buf: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -2242,7 +2239,7 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                         terminal.key_timer = Some(
                             Timer::new(
                                 timeout,
-                                crate::src::tty::tty_client_timer_callback(
+                                super::control::tty_client_timer_callback(
                                     terminal_client_owner,
                                     tty_keys_callback,
                                 ),
@@ -3182,7 +3179,7 @@ unsafe fn tty_keys_extended_device_attributes(
     terminal_client_owner.borrow_terminal_mut().flags |= TTY_HAVEXDA;
     0 as ::core::ffi::c_int
 }
-pub unsafe fn tty_keys_colours(
+pub(super) unsafe fn tty_keys_colours(
     flags: &mut i32,
     diagnostic_name: Option<&std::ffi::CStr>,
     bytes: &[u8],

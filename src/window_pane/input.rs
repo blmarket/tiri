@@ -64,7 +64,7 @@ use crate::src::style::colour::{
 };
 use crate::src::text::utf8::{utf8_append, utf8_copy, utf8_isvalid, utf8_open, utf8_set};
 use crate::src::tmux::{get_timer, getversion, with_global_options, with_global_w_options};
-use crate::src::tty::{tty_default_colours, tty_set_selection};
+use crate::src::tty::tty_set_selection;
 use crate::src::window::Window as _;
 use crate::src::window::WindowPane;
 use libc::{strncmp, strtol, time};
@@ -101,7 +101,6 @@ use crate::src::shared::screen::{
     MODE_ORIGIN, MODE_SYNC, MODE_THEME_UPDATES, MODE_WRAP,
 };
 use crate::src::shared::screen_write::{screen_write_ctx, screen_write_init_ctx_cb};
-use crate::src::shared::tty::*;
 use crate::src::shared::utf8::*;
 use crate::src::shared::window::WINDOW_BELL;
 
@@ -4887,7 +4886,11 @@ unsafe fn input_osc_10(mut ictx: *mut input_ctx, p: &CStr) {
         }
         c = window_pane_get_fg_control_client(input_pane_owner.as_ref().expect("live pane"));
         if c == -(1 as ::core::ffi::c_int) {
-            defaults = tty_default_colours(input_pane_owner.as_ref().expect("live pane")).0;
+            defaults = input_pane_owner
+                .as_ref()
+                .expect("live pane")
+                .default_colours()
+                .0;
             if defaults.fg == 8 as ::core::ffi::c_int || defaults.fg == 9 as ::core::ffi::c_int {
                 c = window_pane_get_fg(input_pane_owner.as_ref().expect("live pane"));
             } else {
@@ -5594,19 +5597,7 @@ unsafe fn input_add_request(
                 .write_terminal(&format_bytes(format_args!("\x1B]4;{};?\x1B\\", { idx })));
         }
         1 => {
-            let client = c.as_ref().expect("live client");
-            let query = {
-                let terminal = client.borrow_terminal();
-                crate::src::tty_term::tty_term_string_ss(
-                    terminal.term.as_deref().expect("open terminal"),
-                    TTYC_MS,
-                    c"",
-                    c"?",
-                )
-            };
-            if !query.is_empty() {
-                client.write_terminal(query.to_bytes());
-            }
+            crate::src::tty::tty_request_clipboard(c.as_ref().expect("live client"));
         }
         _ => {}
     }

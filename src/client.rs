@@ -41,7 +41,7 @@ use crate::src::tmux::{
     find_cwd, find_home_cstr, global_environ, ptm_fd, setblocking, shell_argv0_cstring,
     shell_command, socket_path_cstr,
 };
-use crate::src::tty_term::tty_term_read_list;
+use crate::src::tty::tty_term_read_list;
 use libc::{
     cfgetispeed, cfgetospeed, cfmakeraw, cfsetispeed, cfsetospeed, execl, fflush, fprintf, getenv,
     getpid, getppid, kill, memset, printf, setenv, sigaction, sigemptyset, strerror, strlen,

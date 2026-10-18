@@ -2179,7 +2179,7 @@ pub(super) unsafe fn format_replace(
         || modifiers & FORMAT_CLIENT_ENVIRON as uint64_t != 0
     {
         let ready = format_client.as_ref().is_some_and(|client| {
-            let terminal_present = { client.borrow_terminal().term.is_some() };
+            let terminal_present = client.borrow_terminal().is_opened();
             terminal_present && client.flags() & CLIENT_UNATTACHEDFLAGS as u64 == 0
         });
         if !ready {
@@ -2187,12 +2187,7 @@ pub(super) unsafe fn format_replace(
         } else {
             let client = format_client.as_ref().expect("live client");
             if modifiers & FORMAT_CLIENT_TERMCAP as u64 != 0 {
-                let terminal = client.borrow_terminal();
-                value = if tty_term_has_name(
-                    terminal.term.as_deref().expect("terminal description"),
-                    copy,
-                ) != 0
-                {
+                value = if client.borrow_terminal().has_capability_name(copy) {
                     c"1".to_owned()
                 } else {
                     c"0".to_owned()
@@ -2200,13 +2195,7 @@ pub(super) unsafe fn format_replace(
             }
             if modifiers & FORMAT_CLIENT_TERMFEAT as u64 != 0 {
                 let utf8 = client.flags() & crate::src::shared::client::CLIENT_UTF8 as u64 != 0;
-                let terminal = client.borrow_terminal();
-                value = if tty_feature_present(
-                    terminal.term.as_deref().expect("terminal description"),
-                    copy,
-                    utf8,
-                ) != 0
-                {
+                value = if client.borrow_terminal().has_feature(copy, utf8) {
                     c"1".to_owned()
                 } else {
                     c"0".to_owned()

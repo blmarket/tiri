@@ -1,13 +1,70 @@
 //! Terminal output operates on the retained client holder. Each terminal
 //! access ends before nested output, so no model borrow spans those operations.
-use super::*;
+use super::control::{tty_log, tty_start_write};
+use super::model::*;
+use tiri_rt::AsyncWrite as _;
+
+use super::acs::{tty_acs_get, tty_acs_needed};
+use crate::src::format::bytes::{format_cstring, format_message_with};
+use crate::src::grid::{grid_cells_equal, grid_default_cell};
+use crate::src::hyperlinks::hyperlinks_get;
+use crate::src::log::{log_cstr, log_cstr_n, log_debug, log_get_level};
+use crate::src::options::options_get_string;
+use crate::src::reactor::evbuffer_add;
+use crate::src::screen::screen_mode_display;
+use crate::src::server_client::Client as _;
+use crate::src::shared::abi::*;
+use crate::src::shared::client::CLIENT_UTF8;
+use crate::src::shared::client::{ClientRef, ClientWeak};
+use crate::src::shared::colour::*;
+use crate::src::shared::colour::{COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME};
+use crate::src::shared::display::*;
+use crate::src::shared::grid::*;
+use crate::src::shared::limits::UINT_MAX;
+use crate::src::shared::screen::{
+    ScreenMode, ALL_MODES, ALL_MOUSE_MODES, CURSOR_MODES, MODE_CURSOR, MODE_CURSOR_BLINKING,
+    MODE_CURSOR_BLINKING_SET, MODE_CURSOR_VERY_VISIBLE, MODE_MOUSE_ALL, MODE_MOUSE_BUTTON,
+    MODE_MOUSE_STANDARD,
+};
+use crate::src::shared::tty::TTY_CTX_WRAPPED;
+use crate::src::shared::tty::*;
+use crate::src::style::colour::{
+    colour_256to16, colour_dim, colour_find_rgb, colour_force_rgb, colour_palette_get,
+    colour_split_rgb,
+};
+use crate::src::tmux::with_global_options;
+use crate::src::tty::term::tty_term_owner_ptr;
+use crate::src::tty::term::{
+    tty_term_flag, tty_term_has, tty_term_number, tty_term_string, tty_term_string_i,
+    tty_term_string_ii, tty_term_string_iii, tty_term_string_s, tty_term_string_ss,
+};
+use libc::{abs, strcmp, strncmp};
+
 use std::ffi::CStr;
 
-pub unsafe fn tty_putcode(client: &ClientRef, mut code: tty_code_code) {
+/// Output retains its client holder and cannot run callbacks or replace
+/// terminfo. The existing terminfo owner therefore stays alive after this
+/// immediate component borrow has ended.
+pub(super) unsafe fn terminal_term(owner: &ClientRef) -> &tty_term {
+    let terminal = owner.borrow_terminal();
+    let term = tty_term_owner_ptr(&terminal.term).expect("client has a terminal");
+    std::ptr::NonNull::from(term).as_ref()
+}
+
+static mut tty_default_style_ctx: tty_style_ctx = {
+    tty_style_ctx {
+        defaults: grid_default_cell,
+        palette: crate::src::shared::tty::PaletteSource::None,
+        dim: 0 as u_int,
+        hyperlinks: None,
+    }
+};
+
+pub(super) unsafe fn tty_putcode(client: &ClientRef, mut code: tty_code_code) {
     tty_puts(client, tty_term_string(terminal_term(client), code));
 }
 
-pub unsafe fn tty_putcode_i(
+pub(super) unsafe fn tty_putcode_i(
     client: &ClientRef,
     mut code: tty_code_code,
     mut a: ::core::ffi::c_int,
@@ -18,7 +75,7 @@ pub unsafe fn tty_putcode_i(
     tty_puts(client, &tty_term_string_i(terminal_term(client), code, a));
 }
 
-pub unsafe fn tty_putcode_ii(
+pub(super) unsafe fn tty_putcode_ii(
     client: &ClientRef,
     mut code: tty_code_code,
     mut a: ::core::ffi::c_int,
@@ -33,7 +90,7 @@ pub unsafe fn tty_putcode_ii(
     );
 }
 
-pub unsafe fn tty_putcode_iii(
+pub(super) unsafe fn tty_putcode_iii(
     client: &ClientRef,
     mut code: tty_code_code,
     mut a: ::core::ffi::c_int,
@@ -49,14 +106,14 @@ pub unsafe fn tty_putcode_iii(
     );
 }
 
-pub unsafe fn tty_putcode_s(client: &ClientRef, a: Option<&CStr>) {
+pub(super) unsafe fn tty_putcode_s(client: &ClientRef, a: Option<&CStr>) {
     let mut code: tty_code_code = TTYC_CS;
     if let Some(a) = a {
         tty_puts(client, &tty_term_string_s(terminal_term(client), code, a));
     }
 }
 
-pub unsafe fn tty_putcode_ss(
+pub(super) unsafe fn tty_putcode_ss(
     client: &ClientRef,
     mut code: tty_code_code,
     a: Option<&CStr>,
@@ -110,7 +167,7 @@ pub unsafe fn tty_puts(client: &ClientRef, text: &CStr) {
     }
 }
 
-pub unsafe fn tty_putc(client: &ClientRef, mut ch: u_char) {
+pub(super) unsafe fn tty_putc(client: &ClientRef, mut ch: u_char) {
     if terminal_term(client).flags & TERM_NOAM != 0
         && ch as ::core::ffi::c_int >= 0x20 as ::core::ffi::c_int
         && ch as ::core::ffi::c_int != 0x7f as ::core::ffi::c_int
@@ -152,7 +209,7 @@ pub unsafe fn tty_putc(client: &ClientRef, mut ch: u_char) {
     }
 }
 
-pub unsafe fn tty_putn(client: &ClientRef, buf: &[u8], mut width: u_int) {
+pub(super) unsafe fn tty_putn(client: &ClientRef, buf: &[u8], mut width: u_int) {
     let mut len = buf.len();
     if terminal_term(client).flags & TERM_NOAM != 0
         && terminal_value!(client, cy) == terminal_value!(client, sy).wrapping_sub(1 as u_int)
@@ -399,7 +456,7 @@ pub(super) unsafe fn tty_emulate_repeat(
     };
 }
 
-pub unsafe fn tty_repeat_space(client: &ClientRef, mut n: u_int) {
+pub(super) unsafe fn tty_repeat_space(client: &ClientRef, mut n: u_int) {
     const SPACES: [u8; 500] = [b' '; 500];
     while n as usize > SPACES.len() {
         tty_putn(client, &SPACES, SPACES.len() as u_int);
@@ -839,7 +896,7 @@ pub(super) unsafe fn tty_dim_default_colour(
     c
 }
 
-pub unsafe fn tty_attributes(
+pub(super) unsafe fn tty_attributes(
     client: &ClientRef,
     gc: &grid_cell,
     style_ctx: Option<&tty_style_ctx>,
@@ -1290,7 +1347,7 @@ pub(super) unsafe fn tty_try_colour(
     -(1 as ::core::ffi::c_int)
 }
 
-pub unsafe fn tty_default_attributes(
+pub(super) unsafe fn tty_default_attributes(
     client: &ClientRef,
     bg: u_int,
     style_ctx: Option<&tty_style_ctx>,

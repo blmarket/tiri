@@ -160,7 +160,7 @@ unsafe fn cmd_copy_mode_exec(
             return CmdOutcome::Normal;
         };
         let tty_oy = c.terminal_view().oy;
-        let slider = c.borrow_terminal().mouse_slider_mpos;
+        let slider = c.mouse_slider_position();
         window_copy_scroll(
             &pane_owner,
             slider,

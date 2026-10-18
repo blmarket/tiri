@@ -38,13 +38,11 @@ use crate::src::status::{
 };
 use crate::src::style::style_apply_with_options;
 use crate::src::text::utf8::utf8_set;
+use crate::src::tty::tty_draw_line;
 use crate::src::tty::{
     tty_cell, tty_check_overlay_range, tty_cursor, tty_puts, tty_reset, tty_sync_start,
     tty_update_mode,
 };
-use crate::src::tty_draw::tty_draw_line;
-use crate::src::tty_term::tty_term_has;
-use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::window::windows;
 use crate::src::window::Window as _;
 
@@ -1398,11 +1396,7 @@ unsafe fn redraw_set_draw_context(scene: &redraw_scene) -> Option<redraw_draw_ct
         dctx.flags |= REDRAW_STATUS_TOP;
     }
     if c.as_ref().expect("live client").flags() & CLIENT_UTF8 as uint64_t != 0 && {
-        let terminal = client_owner.borrow_terminal();
-        tty_term_has(
-            tty_term_owner_ptr(&terminal.term).expect("client has a terminal"),
-            TTYC_BIDI,
-        ) != 0
+        client_owner.borrow_terminal().has(TTYC_BIDI)
     } {
         dctx.flags |= REDRAW_ISOLATES;
     }
@@ -1562,10 +1556,7 @@ unsafe fn redraw_draw_scene(
         tty_sync_start(terminal);
         tty_update_mode(
             terminal,
-            {
-                let tty_state = terminal.borrow_terminal();
-                tty_state.mode
-            } & !CURSOR_MODES,
+            terminal.borrow_terminal().mode() & !CURSOR_MODES,
             None,
         );
     };

@@ -4,7 +4,7 @@ use crate::src::reactor::evbuffer_pullup;
 use tiri_buffer::{Buf, BufMut, SegmentedBuf};
 
 #[derive(Default)]
-pub struct TerminalInput {
+pub(super) struct TerminalInput {
     buffer: SegmentedBuf,
 }
 

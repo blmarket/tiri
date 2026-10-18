@@ -1,16 +1,10 @@
 //! Authoritative terminal capability-code values.
 
-use super::abi::{size_t, time_t, u_int};
+use super::abi::u_int;
 use super::colour::colour_palette;
-use super::display::{screen_cursor_style, visible_ranges};
-use super::event::Timer;
 use super::grid::grid_cell;
-use super::key::key_code;
-use super::mouse::mouse_event;
 use super::pane::window_pane;
-use super::terminal::TerminalAttributes;
 use crate::src::shared::client::ClientRef;
-use tiri_buffer::SegmentedBuf;
 pub type tty_code_code = ::core::ffi::c_uint;
 pub const TTYC_XT: tty_code_code = 235;
 pub const TTYC_VPA: tty_code_code = 234;
@@ -247,10 +241,6 @@ pub const TTYC_AX: tty_code_code = 2;
 pub const TTYC_AM: tty_code_code = 1;
 pub const TTYC_ACSC: tty_code_code = 0;
 
-pub const TERM_256COLOURS: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const TERM_RGBCOLOURS: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
-pub const TTY_OPENED: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
-pub const TTY_STARTED: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
 pub const TTY_CTX_WINDOW_BIGGER: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub const TTY_CTX_WRAPPED: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const TTY_CTX_INVISIBLE_PANES: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
@@ -258,33 +248,6 @@ pub const TTY_CTX_SYNC: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
 pub const TTY_CTX_OVERLAY_SYNC: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
 pub const TTY_CTX_CELL_INVALIDATE: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
 pub const TTY_CTX_PANE_OBSCURED: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
-pub const TTY_NOCURSOR: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const TTY_FREEZE: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const TTY_BLOCK: ::core::ffi::c_int = 0x80 as ::core::ffi::c_int;
-pub const TERM_NOAM: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const TERM_DECSLRM: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const TERM_DECFRA: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const TERM_VT100LIKE: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
-pub const TTY_TIMER: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const TTY_NOBLOCK: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const TTY_OSC52QUERY: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
-pub const TTY_HAVEDA: ::core::ffi::c_int = 0x100 as ::core::ffi::c_int;
-pub const TTY_HAVEXDA: ::core::ffi::c_int = 0x200 as ::core::ffi::c_int;
-pub const TTY_SYNCING: ::core::ffi::c_int = 0x400 as ::core::ffi::c_int;
-pub const TTY_HAVEDA2: ::core::ffi::c_int = 0x800 as ::core::ffi::c_int;
-pub const TTY_WINSIZEQUERY: ::core::ffi::c_int = 0x1000 as ::core::ffi::c_int;
-pub const TTY_WAITFG: ::core::ffi::c_int = 0x2000 as ::core::ffi::c_int;
-pub const TTY_WAITBG: ::core::ffi::c_int = 0x4000 as ::core::ffi::c_int;
-pub const TTY_HAVESYNC: ::core::ffi::c_int = 0x10000 as ::core::ffi::c_int;
-pub const TTY_ALL_REQUEST_FLAGS: ::core::ffi::c_int =
-    TTY_HAVEDA | TTY_HAVEDA2 | TTY_HAVEXDA | TTY_HAVESYNC;
-pub const TTY_BLOCK_INTERVAL: ::core::ffi::c_int = 100000 as ::core::ffi::c_int;
-pub const TTY_QUERY_TIMEOUT: ::core::ffi::c_int = 5 as ::core::ffi::c_int;
-pub const TTY_REQUEST_LIMIT: ::core::ffi::c_int = 30 as ::core::ffi::c_int;
-pub const TERM_SIXEL: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
-pub const TTY_BRACKETPASTE: ::core::ffi::c_int = 0x8000 as ::core::ffi::c_int;
-pub const TERM_INVALIDMS: ::core::ffi::c_int = 0x80 as ::core::ffi::c_int;
-pub const TERM_NOREPLACE: ::core::ffi::c_int = 0x100 as ::core::ffi::c_int;
 
 #[cfg(test)]
 mod tests {
@@ -301,26 +264,6 @@ mod tests {
     }
 }
 
-/// A ternary search tree node with exclusively owned children.
-#[repr(C)]
-pub struct tty_key {
-    pub ch: ::core::ffi::c_char,
-    pub key: key_code,
-    pub left: Option<Box<tty_key>>,
-    pub right: Option<Box<tty_key>>,
-    pub next: Option<Box<tty_key>>,
-}
-
-/// A terminal capability owns its payload, including any string allocation.
-#[derive(Clone, Default)]
-pub enum tty_code {
-    #[default]
-    None,
-    String(std::ffi::CString),
-    Number(::core::ffi::c_int),
-    Flag(::core::ffi::c_int),
-}
-
 /// Cached window coordinates and the size visible through a terminal.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct tty_window_view {
@@ -329,82 +272,6 @@ pub struct tty_window_view {
     pub oy: u_int,
     pub sx: u_int,
     pub sy: u_int,
-}
-
-#[derive(Default)]
-pub struct tty {
-    pub start_timer: Option<Timer>,
-    pub clipboard_timer: Option<Timer>,
-    pub last_requests: time_t,
-    pub sx: u_int,
-    pub sy: u_int,
-    pub xpixel: u_int,
-    pub ypixel: u_int,
-    pub cx: u_int,
-    pub cy: u_int,
-    pub cstyle: screen_cursor_style,
-    pub ccolour: ::core::ffi::c_int,
-    pub oflag: ::core::ffi::c_int,
-    pub oox: u_int,
-    pub ooy: u_int,
-    pub osx: u_int,
-    pub osy: u_int,
-    pub mode: ::core::ffi::c_int,
-    pub fg: ::core::ffi::c_int,
-    pub bg: ::core::ffi::c_int,
-    pub rlower: u_int,
-    pub rupper: u_int,
-    pub rleft: u_int,
-    pub rright: u_int,
-    pub read_task: Option<tiri_rt::mio::Task>,
-    pub in_0: Option<Box<crate::src::tty::TerminalInput>>,
-    pub write_task: Option<tiri_rt::mio::Task>,
-    pub io_fd: Option<i32>,
-    pub out: Option<Box<SegmentedBuf>>,
-    pub timer: Option<Timer>,
-    pub discarded: size_t,
-    pub tio: TerminalAttributes,
-    pub r: visible_ranges,
-    pub cell: grid_cell,
-    pub last_cell: grid_cell,
-    pub flags: ::core::ffi::c_int,
-    /// Box-owned terminal record while TTY_OPENED is set; invalidated by tty_close.
-    pub term: Option<Box<tty_term>>,
-    pub mouse_last_x: u_int,
-    pub mouse_last_y: u_int,
-    pub mouse_last_b: u_int,
-    pub mouse_drag_flag: ::core::ffi::c_int,
-    pub mouse_drag_status: ::core::ffi::c_int,
-    pub mouse_drag_x: u_int,
-    pub mouse_drag_y: u_int,
-    pub mouse_scrolling_flag: ::core::ffi::c_int,
-    pub mouse_slider_mpos: ::core::ffi::c_int,
-    pub mouse_last_pane: ::core::ffi::c_int,
-    pub mouse_drag_update: mouse_drag_update_cb,
-    pub mouse_drag_release: mouse_drag_release_cb,
-    pub key_timer: Option<Timer>,
-    /// Exclusively owned terminal key tree; cleared on rebuild or tty_close.
-    pub key_tree: Option<Box<tty_key>>,
-}
-
-pub type mouse_drag_update_cb = Option<Box<dyn FnMut(&mut mouse_event)>>;
-pub type mouse_drag_release_cb = Option<Box<dyn FnOnce(&mut mouse_event)>>;
-
-impl tty {
-    pub fn empty() -> Self {
-        Self::default()
-    }
-}
-
-#[repr(C)]
-pub struct tty_term {
-    pub name: std::ffi::CString,
-    pub applied_features: ::core::ffi::c_int,
-    pub acs: [[u8; 2]; 256],
-    pub codes: Box<[tty_code]>,
-    pub flags: ::core::ffi::c_int,
-    pub(crate) identity: std::rc::Rc<()>,
-    pub(crate) registered: bool,
 }
 
 /// Command metadata; screen and cell borrows are supplied only at dispatch.
@@ -515,5 +382,3 @@ impl<'a> tty_command_data<'a> {
 pub type tty_ctx_set_client_cb = Option<Box<dyn FnMut(&mut tty_ctx, &ClientRef) -> i32>>;
 
 pub type tty_ctx_redraw_cb = Option<Box<dyn Fn(&tty_ctx)>>;
-
-pub type tty_code_type = ::core::ffi::c_uint;

@@ -1,25 +1,23 @@
+use super::model::tty_term;
+use super::model::*;
 use crate::src::log::{log_bytes, log_cstr, log_debug};
 use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::ClientRef;
-use crate::src::shared::tty::tty_term;
-use crate::src::shared::tty::{
-    TERM_256COLOURS, TERM_DECFRA, TERM_DECSLRM, TERM_NOREPLACE, TERM_RGBCOLOURS, TERM_SIXEL,
-};
-use crate::src::tty_term::{tty_term_apply, tty_term_has_name};
+use crate::src::tty::term::{tty_term_apply, tty_term_has_name};
 use libc::strcmp;
 use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct tty_feature {
+pub(super) struct tty_feature {
     pub name: &'static CStr,
     pub capabilities: Option<&'static [&'static CStr]>,
     pub flags: ::core::ffi::c_int,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct C2RustUnnamed_35 {
+pub(super) struct C2RustUnnamed_35 {
     pub name: &'static CStr,
     pub version: u_int,
     pub features: &'static CStr,
@@ -217,7 +215,11 @@ static tty_features: [&tty_feature; 23] = {
         &tty_feature_utf8,
     ]
 };
-pub unsafe fn tty_parse_client_features(owner: &ClientRef, features: &CStr, separators: &CStr) {
+pub(super) unsafe fn tty_parse_client_features(
+    owner: &ClientRef,
+    features: &CStr,
+    separators: &CStr,
+) {
     owner.parse_terminal_features(features, separators);
 }
 pub unsafe fn tty_parse_features(
@@ -278,7 +280,11 @@ pub fn tty_get_features(feat: ::core::ffi::c_int) -> CString {
     }
     CString::new(names).expect("feature names contain no NUL")
 }
-pub unsafe fn tty_feature_present(term: &tty_term, name: &CStr, utf8: bool) -> ::core::ffi::c_int {
+pub(super) unsafe fn tty_feature_present(
+    term: &tty_term,
+    name: &CStr,
+    utf8: bool,
+) -> ::core::ffi::c_int {
     let mut tf: Option<&tty_feature> = None;
     let mut i: u_int = 0;
     if strcmp(name.as_ptr(), c"utf8".as_ptr()) == 0 as ::core::ffi::c_int {
@@ -327,12 +333,12 @@ pub unsafe fn tty_feature_present(term: &tty_term, name: &CStr, utf8: bool) -> :
 /// Applying capability strings is component-only; Client flag publication is
 /// left to the caller after releasing its terminal component guard.
 #[derive(Default)]
-pub struct AppliedFeatures {
+pub(super) struct AppliedFeatures {
     pub changed: bool,
     pub enable_utf8: bool,
 }
 
-pub unsafe fn tty_apply_features(mut term: *mut tty_term, feat: i32) -> AppliedFeatures {
+pub(super) unsafe fn tty_apply_features(mut term: *mut tty_term, feat: i32) -> AppliedFeatures {
     let mut result = AppliedFeatures::default();
     let mut i: u_int = 0;
     if feat == 0 as ::core::ffi::c_int {
@@ -376,7 +382,7 @@ pub unsafe fn tty_apply_features(mut term: *mut tty_term, feat: i32) -> AppliedF
     result
 }
 
-pub unsafe fn tty_default_features(owner: &ClientRef, name: &CStr) {
+pub(super) unsafe fn tty_default_features(owner: &ClientRef, name: &CStr) {
     static table: [C2RustUnnamed_35; 9] = [
         C2RustUnnamed_35 {
             name: c"mintty",

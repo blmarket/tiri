@@ -12,7 +12,7 @@ use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_TFLAG};
 use crate::src::shared::format::format_tree;
-use crate::src::tty_term::tty_term_descriptions;
+use crate::src::tty::tty_term_descriptions;
 
 pub const SHOW_MESSAGES_TEMPLATE: &std::ffi::CStr = c"#{t/p:message_time}: #{message_text}";
 pub static cmd_show_messages_entry: cmd_entry = {

@@ -1,3 +1,9 @@
+use super::control::{tty_check_codeset, tty_fake_bce};
+use super::model::*;
+use super::output::{
+    terminal_term, tty_attributes, tty_cursor, tty_default_attributes, tty_margin_off, tty_putc,
+    tty_putcode, tty_putcode_i, tty_putn, tty_region_off, tty_repeat_space, tty_update_mode,
+};
 use crate::src::grid::view::grid_view_get_cell;
 use crate::src::grid::{grid_cells_look_equal, grid_default_cell, grid_get_line};
 use crate::src::log::{fatalx, log_debug, log_get_level};
@@ -9,23 +15,17 @@ use crate::src::shared::grid::*;
 use crate::src::shared::limits::UINT_MAX;
 use crate::src::shared::screen::screen;
 use crate::src::shared::tty::tty_style_ctx;
-use crate::src::shared::tty::TTY_NOCURSOR;
 use crate::src::shared::tty::*;
-use crate::src::tty::{
-    terminal_set, terminal_term, terminal_value, tty_attributes, tty_check_codeset, tty_cursor,
-    tty_default_attributes, tty_fake_bce, tty_margin_off, tty_putc, tty_putcode, tty_putcode_i,
-    tty_putn, tty_region_off, tty_repeat_space, tty_update_mode,
-};
-use crate::src::tty_term::tty_term_has;
+use crate::src::tty::term::tty_term_has;
 
-pub type tty_draw_line_state = ::core::ffi::c_uint;
-pub const TTY_DRAW_LINE_DONE: tty_draw_line_state = 6;
-pub const TTY_DRAW_LINE_SAME: tty_draw_line_state = 5;
-pub const TTY_DRAW_LINE_EMPTY: tty_draw_line_state = 4;
-pub const TTY_DRAW_LINE_NEW2: tty_draw_line_state = 3;
-pub const TTY_DRAW_LINE_NEW1: tty_draw_line_state = 2;
-pub const TTY_DRAW_LINE_FLUSH: tty_draw_line_state = 1;
-pub const TTY_DRAW_LINE_FIRST: tty_draw_line_state = 0;
+pub(super) type tty_draw_line_state = ::core::ffi::c_uint;
+pub(super) const TTY_DRAW_LINE_DONE: tty_draw_line_state = 6;
+pub(super) const TTY_DRAW_LINE_SAME: tty_draw_line_state = 5;
+pub(super) const TTY_DRAW_LINE_EMPTY: tty_draw_line_state = 4;
+pub(super) const TTY_DRAW_LINE_NEW2: tty_draw_line_state = 3;
+pub(super) const TTY_DRAW_LINE_NEW1: tty_draw_line_state = 2;
+pub(super) const TTY_DRAW_LINE_FLUSH: tty_draw_line_state = 1;
+pub(super) const TTY_DRAW_LINE_FIRST: tty_draw_line_state = 0;
 const TTY_DRAW_LINE_STATES: [&str; 7] = ["FIRST", "FLUSH", "NEW1", "NEW2", "EMPTY", "SAME", "DONE"];
 
 unsafe fn tty_draw_line_clear(

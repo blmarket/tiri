@@ -87,9 +87,15 @@ pub trait Client {
     /// Some(0) completes the redraw write; backpressure starts on a later write.
     unsafe fn acknowledge_terminal_redraw(&self, bytes: usize) -> Option<usize>;
     unsafe fn terminal_theme_colour(&self, index: usize) -> i32;
-    unsafe fn initialize_terminal(&self) -> i32;
-    /// Read bytes through the owned descriptor without exposing it or the buffer.
-    unsafe fn append_terminal_input(&self, bytes: Vec<u8>) -> usize;
+    /// Forget any drag in progress and its callbacks.
+    unsafe fn reset_mouse_drag(&self);
+    unsafe fn mouse_drag_active(&self) -> bool;
+    unsafe fn mouse_slider_position(&self) -> i32;
+    unsafe fn set_mouse_drag_callbacks(
+        &self,
+        update: Box<dyn FnMut(&mut mouse_event)>,
+        release: Box<dyn FnOnce(&mut mouse_event)>,
+    );
     /// Terminfo construction may query Client; copy its source before starting.
     unsafe fn terminal_description_source(&self) -> (Option<CString>, Vec<CString>);
     unsafe fn parse_terminal_features(&self, features: &CStr, separators: &CStr);
@@ -369,6 +375,33 @@ impl Client for ClientRef {
         *redraw = redraw.saturating_sub(bytes);
         Some(*redraw)
     }
+    unsafe fn reset_mouse_drag(&self) {
+        let (update, release) = {
+            let state = &mut *self.get();
+            state.mouse_drag_flag = 0;
+            (
+                state.mouse_drag_update.take(),
+                state.mouse_drag_release.take(),
+            )
+        };
+        drop(update);
+        drop(release);
+    }
+    unsafe fn mouse_drag_active(&self) -> bool {
+        (*self.get()).mouse_drag_flag != 0
+    }
+    unsafe fn mouse_slider_position(&self) -> i32 {
+        (*self.get()).mouse_slider_mpos
+    }
+    unsafe fn set_mouse_drag_callbacks(
+        &self,
+        update: Box<dyn FnMut(&mut mouse_event)>,
+        release: Box<dyn FnOnce(&mut mouse_event)>,
+    ) {
+        let state = &mut *self.get();
+        state.mouse_drag_update = Some(update);
+        state.mouse_drag_release = Some(release);
+    }
     unsafe fn terminal_theme_colour(&self, index: usize) -> i32 {
         (*self.get())
             .theme_colours
@@ -437,23 +470,9 @@ impl Client for ClientRef {
         let state = &*self.get();
         (state.term_name.clone(), state.term_caps.clone())
     }
-    unsafe fn append_terminal_input(&self, bytes: Vec<u8>) -> usize {
-        let state = &mut *self.get();
-        let input = state.tty.in_0.as_deref_mut().expect("open TTY buffer");
-        let size = input.len();
-        input.append(bytes);
-        size
-    }
-    unsafe fn initialize_terminal(&self) -> i32 {
-        let state = &mut *self.get();
-        crate::src::tty::tty_initialize_component(
-            &mut state.tty,
-            state.fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
-        )
-    }
     unsafe fn parse_terminal_features(&self, features: &CStr, separators: &CStr) {
         let state = &mut *self.get();
-        crate::src::tty_features::tty_parse_features(
+        crate::src::tty::tty_parse_features(
             features,
             separators,
             &mut state.term_features,
@@ -501,23 +520,25 @@ impl Client for ClientRef {
         let state = &mut *self.get();
         if !state.pan_window.ptr_eq(&observer) {
             state.pan_window = observer;
-            state.pan_ox = state.tty.oox;
-            state.pan_oy = state.tty.ooy;
+            let view = tty_window_offset(&state.tty);
+            state.pan_ox = view.ox;
+            state.pan_oy = view.oy;
         }
+        let view = tty_window_offset(&state.tty);
         match direction {
             Direction::Left => state.pan_ox = state.pan_ox.saturating_sub(amount),
             Direction::Right => {
                 state.pan_ox = state
                     .pan_ox
                     .wrapping_add(amount)
-                    .min(width.wrapping_sub(state.tty.osx));
+                    .min(width.wrapping_sub(view.sx));
             }
             Direction::Up => state.pan_oy = state.pan_oy.saturating_sub(amount),
             Direction::Down => {
                 state.pan_oy = state
                     .pan_oy
                     .wrapping_add(amount)
-                    .min(height.wrapping_sub(state.tty.osy));
+                    .min(height.wrapping_sub(view.sy));
             }
         }
     }
@@ -556,7 +577,7 @@ impl Client for ClientRef {
         &mut (*self.get()).status
     }
     unsafe fn terminal_started(&self) -> bool {
-        (*self.get()).tty.flags & TTY_STARTED != 0
+        (*self.get()).tty.is_started()
     }
     unsafe fn terminal_view(&self) -> crate::src::shared::tty::tty_window_view {
         tty_window_offset(&(*self.get()).tty)
@@ -721,7 +742,6 @@ impl Client for ClientRef {
     }
     unsafe fn colour_escape(&self, mut colour: i32, background: bool) -> Option<CString> {
         use crate::src::shared::colour::{COLOUR_FLAG_THEME, COLOUR_THEME_COUNT};
-        use crate::src::shared::tty::{TERM_256COLOURS, TERM_RGBCOLOURS};
         let flags = {
             let state = &*self.get();
             if colour & COLOUR_FLAG_THEME != 0 {
@@ -732,12 +752,7 @@ impl Client for ClientRef {
                     colour_theme_terminal_colour(index as u32)
                 };
             }
-            if state.tty.flags & TTY_OPENED != 0 {
-                state.tty.term.as_deref().map(|term| term.flags)
-            } else {
-                None
-            }
-            .unwrap_or(TERM_256COLOURS | TERM_RGBCOLOURS)
+            state.tty.colour_flags()
         };
         crate::src::style::colour::colour_format_escape_resolved(colour, background, flags)
     }
@@ -829,7 +844,7 @@ impl Client for ClientRef {
     unsafe fn alert(&self, kind: &CStr, visual: i32, current: bool, index: i32) {
         use crate::src::shared::alerts::{VISUAL_BOTH, VISUAL_OFF};
         if visual == VISUAL_OFF || visual == VISUAL_BOTH {
-            crate::src::tty::tty_putcode(self, crate::src::shared::tty::TTYC_BEL);
+            crate::src::tty::tty_bell(self);
         }
         if visual != VISUAL_OFF {
             crate::src::status::status_message_set(Some(self), -1, 1, 0, 0, |out| {
@@ -935,10 +950,11 @@ impl Client for ClientRef {
                 } else {
                     with_global_s_options(|oo| options_get_number(oo, c"status")) as u32
                 };
-            sx = (*self.get()).tty.sx;
-            sy = (*self.get()).tty.sy.wrapping_sub(status_lines);
+            (sx, sy) = (*self.get()).tty.size();
+            sy = sy.wrapping_sub(status_lines);
         }
-        (sx, sy, (*self.get()).tty.xpixel, (*self.get()).tty.ypixel)
+        let (xpixel, ypixel) = (*self.get()).tty.pixel_size();
+        (sx, sy, xpixel, ypixel)
     }
 
     unsafe fn constrain_window_size(&self, window: &WindowRef, sx: &mut u32, sy: &mut u32) {
@@ -1089,7 +1105,7 @@ impl Client for ClientRef {
         let state = &mut *self.get();
         state.prompt = Some(prompt);
         if flags & (PROMPT_INCREMENTAL | PROMPT_NOFREEZE) == 0 {
-            state.tty.flags |= TTY_FREEZE;
+            state.tty.set_frozen(true);
         }
         state.flags |= CLIENT_REDRAWSTATUS as u64;
     }
@@ -1099,7 +1115,8 @@ impl Client for ClientRef {
             let Some(prompt) = state.prompt.take() else {
                 return;
             };
-            state.tty.flags &= !(TTY_NOCURSOR | TTY_FREEZE);
+            state.tty.set_frozen(false);
+            state.tty.set_cursor_hidden(false);
             state.flags |= CLIENT_ALLREDRAWFLAGS as u64;
             prompt
         };
@@ -1113,7 +1130,8 @@ impl Client for ClientRef {
                 return;
             }
             if state.prompt.is_none() {
-                state.tty.flags &= !(TTY_NOCURSOR | TTY_FREEZE);
+                state.tty.set_frozen(false);
+                state.tty.set_cursor_hidden(false);
             }
             state.flags |= CLIENT_ALLREDRAWFLAGS as u64;
         }
@@ -1178,9 +1196,9 @@ impl Client for ClientRef {
         }
         state.message_ignore_styles = ignore_styles;
         if no_freeze == 0 {
-            state.tty.flags |= TTY_FREEZE;
+            state.tty.set_frozen(true);
         }
-        state.tty.flags |= TTY_NOCURSOR;
+        state.tty.set_cursor_hidden(true);
         state.flags |= CLIENT_REDRAWSTATUS as u64;
     }
 
@@ -1236,7 +1254,7 @@ impl Client for ClientRef {
     }
 
     unsafe fn terminal_size(&self) -> (u32, u32) {
-        ((*self.get()).tty.sx, (*self.get()).tty.sy)
+        (*self.get()).tty.size()
     }
 
     unsafe fn query_terminal_size(&self) -> Option<crate::src::shared::posix_terminal::winsize> {
@@ -1267,7 +1285,7 @@ impl Client for ClientRef {
         style: &tty_style_ctx,
     ) {
         for row in 0..sy {
-            crate::src::tty_draw::tty_draw_line(
+            crate::src::tty::tty_draw_line(
                 self,
                 source,
                 0,
@@ -1289,7 +1307,7 @@ impl Client for ClientRef {
                 (std::mem::take(&mut status.screen), false)
             }
         };
-        crate::src::tty_draw::tty_draw_line(self, &source, x, row, width, x, y, None);
+        crate::src::tty::tty_draw_line(self, &source, x, row, width, x, y, None);
         let mut status = self.borrow_status_mut();
         if active {
             *status.active.as_deref_mut().expect("active status screen") = source;
@@ -1400,18 +1418,7 @@ impl Client for ClientRef {
         {
             return;
         }
-        tty_stop_tty(self);
-        for code in [TTYC_SMCUP, TTYC_CLEAR, TTYC_E3] {
-            let output = crate::src::tty_term::tty_term_string(
-                tty_term_owner_ptr(&(*self.get()).tty.term).expect("terminal description"),
-                code,
-            )
-            .to_owned();
-            crate::src::tty::tty_raw(
-                (*self.get()).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
-                &output,
-            );
-        }
+        crate::src::tty::tty_lock(self);
         self.update_flags(CLIENT_SUSPENDED as u64, 0);
         let peer = (*self.get()).peer;
         proc_send(peer, MSG_LOCK, None, command.to_bytes_with_nul());

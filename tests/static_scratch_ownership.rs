@@ -2,11 +2,10 @@ use tiri::src::{
     grid::{grid_create, grid_default_cell, grid_set_cell, grid_string_cells_bytes},
     input_keys::input_key_get_mouse,
     shared::{
-        grid::{grid_cell, GRID_ATTR_CHARSET, GRID_FLAG_TAB, GRID_STRING_WITH_SEQUENCES},
+        grid::GRID_STRING_WITH_SEQUENCES,
         mouse::mouse_event,
         screen::{screen, MODE_MOUSE_ALL, MODE_MOUSE_BUTTON, MODE_MOUSE_SGR, MODE_MOUSE_UTF8},
     },
-    tty::tty_check_codeset,
 };
 
 #[test]
@@ -46,44 +45,6 @@ fn mouse_encodings_preserve_tmux_bytes_and_independent_results() {
         assert!(input_key_get_mouse(&mut screen, &mouse, 0, 0).is_none());
         assert_eq!(first_bytes, b"\x1b[<0;10;20M");
     }
-}
-
-fn character(text: &str, width: u8) -> grid_cell {
-    let mut cell = grid_default_cell;
-    cell.data.data = [0; 32];
-    cell.data.data[..text.len()].copy_from_slice(text.as_bytes());
-    cell.data.size = text.len() as u8;
-    cell.data.have = text.len() as u8;
-    cell.data.width = width;
-    cell.fg = 1;
-    cell.bg = 4;
-    cell.link = 7;
-    cell
-}
-
-#[test]
-fn codeset_conversion_preserves_cells_and_independent_results() {
-    let wide = character("漢", 2);
-    let first = tty_check_codeset(false, &wide);
-    assert_eq!(&first.data.data[..first.data.size as usize], b"__");
-    assert_eq!((first.fg, first.bg, first.link), (1, 4, 7));
-
-    let border = character("─", 1);
-    let second = tty_check_codeset(false, &border);
-    assert_eq!(&second.data.data[..second.data.size as usize], b"q");
-    assert_ne!(second.attr as i32 & GRID_ATTR_CHARSET, 0);
-    assert_eq!(&first.data.data[..first.data.size as usize], b"__");
-    assert_eq!(&wide.data.data[..wide.data.size as usize], "漢".as_bytes());
-
-    let utf8 = tty_check_codeset(true, &wide);
-    assert_eq!(&utf8.data.data[..utf8.data.size as usize], "漢".as_bytes());
-    let mut tab = wide;
-    tab.flags = GRID_FLAG_TAB as u8;
-    let tab = tty_check_codeset(false, &tab);
-    assert_eq!(tab.data.size, wide.data.size);
-    assert_eq!(tab.data.data, wide.data.data);
-    let ascii = tty_check_codeset(false, &character("A", 1));
-    assert_eq!(&ascii.data.data[..ascii.data.size as usize], b"A");
 }
 
 #[test]

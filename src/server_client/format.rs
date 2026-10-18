@@ -3,8 +3,6 @@ use super::*;
 use crate::src::format::FormatValue;
 use crate::src::session::sessions;
 use crate::src::shared::client::ClientRef;
-use crate::src::shared::tty::{TERM_256COLOURS, TERM_RGBCOLOURS};
-use crate::src::tty_term::{tty_term_number, tty_term_owner_ptr};
 use std::rc::Rc;
 
 pub(super) unsafe fn value(
@@ -89,28 +87,14 @@ pub(super) unsafe fn value(
         b"client_width" => number(owner.terminal_size().0),
         b"client_height" | b"client_cell_width" | b"client_cell_height" | b"client_colours" => {
             let tty = &(*owner.get()).tty;
-            if tty.flags & TTY_STARTED == 0 {
+            if !tty.is_started() {
                 return None;
             }
             match key.to_bytes() {
-                b"client_height" => number(tty.sy),
-                b"client_cell_width" => number(tty.xpixel),
-                b"client_cell_height" => number(tty.ypixel),
-                _ => {
-                    let term = tty_term_owner_ptr(&tty.term).expect("terminal description");
-                    let colours = if term.flags & TERM_RGBCOLOURS != 0 {
-                        16777216
-                    } else if term.flags & TERM_256COLOURS != 0 {
-                        256
-                    } else {
-                        match tty_term_number(term, TTYC_COLORS) as u32 {
-                            0..=7 => 2,
-                            8..=15 => 8,
-                            _ => 16,
-                        }
-                    };
-                    number(colours)
-                }
+                b"client_height" => number(tty.size().1),
+                b"client_cell_width" => number(tty.pixel_size().0),
+                b"client_cell_height" => number(tty.pixel_size().1),
+                _ => number(tty.colour_count()),
             }
         }
         _ => return None,
@@ -139,8 +123,7 @@ mod tests {
         unsafe {
             let owner = client::new();
             (*owner.get()).name = Some(CString::new(b"client-\xff".to_vec()).unwrap());
-            (*owner.get()).tty.sx = 91;
-            (*owner.get()).tty.sy = 27;
+            crate::src::tty::tty_set_size(&mut (*owner.get()).tty, 91, 27, 0, 0);
             let mut context = format_create(None, None, 0, 0);
             context.c = Rc::downgrade(&owner);
             let Some(FormatValue::String(name)) = owner.format_value(c"client_name", &mut context)
@@ -154,14 +137,14 @@ mod tests {
             };
             assert_eq!(width.as_c_str(), c"91");
             assert!(owner.format_value(c"client_height", &mut context).is_none());
-            (*owner.get()).tty.flags |= TTY_STARTED;
+            (*owner.get()).tty.set_started_for_test(true);
             let Some(FormatValue::String(height)) =
                 owner.format_value(c"client_height", &mut context)
             else {
                 panic!("started terminal height");
             };
             assert_eq!(height.as_c_str(), c"27");
-            (*owner.get()).tty.flags &= !TTY_STARTED;
+            (*owner.get()).tty.set_started_for_test(false);
             (*owner.get()).name = Some(c"renamed".to_owned());
             assert_eq!(name.as_bytes(), b"client-\xff");
             context.c = std::rc::Weak::new();

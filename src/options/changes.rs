@@ -18,10 +18,9 @@ use crate::src::status::status_timer_start_all;
 use crate::src::text::utf8::utf8_update_width_cache;
 use crate::src::tmux::with_global_options;
 use crate::src::tty::tty_invalidate;
-use crate::src::tty_keys::tty_keys_build;
+use crate::src::tty::tty_keys_build;
 
 use crate::src::shared::abi::*;
-use crate::src::shared::tty::TTY_OPENED;
 use crate::src::window::{windows, Window, WindowPane};
 use std::ffi::CStr;
 
@@ -45,12 +44,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
             };
             {
                 let terminal = &(loop_0.as_ref().expect("live client"));
-                if {
-                    let tty_state = terminal.borrow_terminal();
-                    tty_state.flags
-                } & TTY_OPENED
-                    != 0
-                {
+                if terminal.borrow_terminal().is_opened() {
                     tty_invalidate(terminal);
                 }
             };
@@ -118,7 +112,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
         while !loop_0.is_none() {
             {
                 let mut terminal = loop_0.as_ref().expect("live client").borrow_terminal_mut();
-                if terminal.flags & TTY_OPENED != 0 {
+                if terminal.is_opened() {
                     tty_keys_build(&mut *terminal);
                 }
             }

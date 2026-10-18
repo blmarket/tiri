@@ -70,7 +70,7 @@ use crate::src::status::status_message_set;
 use crate::src::style::style_apply_with_options;
 use crate::src::text::utf8::{utf8_copy, utf8_fromcstr_vec, utf8_set, utf8_to_data};
 use crate::src::tmux::{get_timer, with_global_options, with_global_w_options};
-use crate::src::tty_acs::tty_acs_get;
+use crate::src::tty::tty_acs_get;
 use crate::src::window::Window as _;
 use crate::src::window_pane::WindowPane as _;
 use libc::{abs, memcmp, strcasecmp, strchr, strcmp, strncmp};
@@ -1990,7 +1990,7 @@ unsafe fn window_copy_cmd_scroll_to_mouse(
     let mut scroll_exit: ::core::ffi::c_int = args_has((*cs).parsed_args(), 'e' as i32 as u_char);
     let client = c.expect("live client");
     let tty_oy = client.terminal_view().oy;
-    let slider_position = { client.borrow_terminal().mouse_slider_mpos };
+    let slider_position = client.mouse_slider_position();
     let mouse = (*cs).m.expect("scroll-to-mouse requires a mouse event");
     window_copy_scroll(
         &mode_pane_owner,
@@ -2926,10 +2926,7 @@ unsafe fn window_copy_cmd_scroll_down(
         }
         return WINDOW_COPY_CMD_NOTHING;
     }
-    dragging = (*cs)
-        .c
-        .is_some_and(|owner| owner.borrow_terminal().mouse_drag_flag != 0)
-        as ::core::ffi::c_int;
+    dragging = (*cs).c.is_some_and(|owner| owner.mouse_drag_active()) as ::core::ffi::c_int;
     if !(*data).screen.sel.is_none() && dragging == 0 {
         (*data).cursordrag = CURSORDRAG_NONE;
         (*data).lineflag = LINE_SEL_NONE;
@@ -2952,10 +2949,7 @@ unsafe fn window_copy_cmd_scroll_down_and_cancel(
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
     let mut np: u_int = wme.get_unchecked().prefix;
     let mut dragging: ::core::ffi::c_int = 0;
-    dragging = (*cs)
-        .c
-        .is_some_and(|owner| owner.borrow_terminal().mouse_drag_flag != 0)
-        as ::core::ffi::c_int;
+    dragging = (*cs).c.is_some_and(|owner| owner.mouse_drag_active()) as ::core::ffi::c_int;
     if !(*data).screen.sel.is_none() && dragging == 0 {
         (*data).cursordrag = CURSORDRAG_NONE;
         (*data).lineflag = LINE_SEL_NONE;
@@ -2979,10 +2973,7 @@ unsafe fn window_copy_cmd_scroll_up(mut cs: *mut window_copy_cmd_state) -> windo
     if (*data).oy == (*data).backing().grid().hsize {
         return WINDOW_COPY_CMD_NOTHING;
     }
-    dragging = (*cs)
-        .c
-        .is_some_and(|owner| owner.borrow_terminal().mouse_drag_flag != 0)
-        as ::core::ffi::c_int;
+    dragging = (*cs).c.is_some_and(|owner| owner.mouse_drag_active()) as ::core::ffi::c_int;
     if !(*data).screen.sel.is_none() && dragging == 0 {
         (*data).cursordrag = CURSORDRAG_NONE;
         (*data).lineflag = LINE_SEL_NONE;
@@ -9654,17 +9645,18 @@ unsafe fn window_copy_move_mouse(mut m: *mut mouse_event) {
 unsafe fn window_copy_install_drag_callbacks(client_owner: &ClientRef) {
     let _c: Option<ClientRef> = Some(client_owner.clone());
     let drag_client = std::rc::Rc::downgrade(client_owner);
-    client_owner.borrow_terminal_mut().mouse_drag_update = Some(Box::new(move |m| {
+    let update = Box::new(move |m: &mut mouse_event| {
         if let Some(owner) = drag_client.upgrade() {
             unsafe { window_copy_drag_update(&owner, m) }
         }
-    }));
+    });
     let drag_client = std::rc::Rc::downgrade(client_owner);
-    client_owner.borrow_terminal_mut().mouse_drag_release = Some(Box::new(move |m| {
+    let release = Box::new(move |m: &mut mouse_event| {
         if let Some(owner) = drag_client.upgrade() {
             unsafe { window_copy_drag_release(&owner, m) }
         }
-    }));
+    });
+    client_owner.set_mouse_drag_callbacks(update, release);
 }
 
 pub unsafe fn window_copy_start_drag(client_owner: Option<&ClientRef>, mut m: *mut mouse_event) {

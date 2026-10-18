@@ -34,7 +34,7 @@ use crate::src::shared::posix_io::{S_IRWXU, X_OK};
 use crate::src::shared::time::{timespec, CLOCK_REALTIME};
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::text::utf8::{utf8_isvalid, utf8_stravis_cstring};
-use crate::src::tty_features::tty_parse_features;
+use crate::src::tty::tty_parse_features;
 use ::libc::nl_item;
 use libc::{
     access, clock_gettime, exit, fprintf, getcwd, getenv, getpwuid, getuid, lstat, mkdir,

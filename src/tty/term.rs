@@ -1,3 +1,4 @@
+use super::model::*;
 use crate::src::compat::strtonum::strtonum;
 use crate::src::compat::unvis::strunvis;
 use crate::src::compat::vis::strnvis;
@@ -12,28 +13,23 @@ use crate::src::shared::client::{ClientRef, ClientWeak};
 use crate::src::shared::limits::INT_MAX;
 use crate::src::shared::posix_io::STDIN_FILENO;
 use crate::src::shared::tty::*;
-use crate::src::shared::tty::{tty_code, tty_code_type, tty_term};
-use crate::src::shared::tty::{
-    TERM_DECFRA, TERM_DECSLRM, TERM_INVALIDMS, TERM_NOAM, TERM_RGBCOLOURS, TERM_SIXEL,
-    TERM_VT100LIKE,
-};
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::tmux::with_global_options;
-use crate::src::tty_features::{tty_apply_features, tty_parse_client_features};
+use crate::src::tty::features::{tty_apply_features, tty_parse_client_features};
 use libc::{fnmatch, strcmp, strlen};
 use std::ffi::{CStr, CString};
 
-pub const TTYCODE_FLAG: tty_code_type = 3;
-pub const TTYCODE_NUMBER: tty_code_type = 2;
-pub const TTYCODE_STRING: tty_code_type = 1;
+pub(super) const TTYCODE_FLAG: tty_code_type = 3;
+pub(super) const TTYCODE_NUMBER: tty_code_type = 2;
+pub(super) const TTYCODE_STRING: tty_code_type = 1;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct tty_term_code_entry {
+pub(super) struct tty_term_code_entry {
     pub type_0: tty_code_type,
     pub name: &'static ::std::ffi::CStr,
 }
-pub const OK: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+pub(super) const OK: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
 #[derive(Clone)]
 struct TerminalRegistration {
     client: ClientWeak,
@@ -1030,7 +1026,7 @@ static mut tty_term_codes: [tty_term_code_entry; 236] = [
         name: c"XT",
     },
 ];
-pub fn tty_term_ncodes() -> u_int {
+pub(super) fn tty_term_ncodes() -> u_int {
     (::core::mem::size_of::<[tty_term_code_entry; 236]>() as usize)
         .wrapping_div(::core::mem::size_of::<tty_term_code_entry>() as usize) as u_int
 }
@@ -1105,7 +1101,7 @@ unsafe fn tty_term_override_value(source: &CStr) -> CString {
     decoded.truncate(strlen(decoded.as_ptr().cast()) + 1);
     CString::from_vec_with_nul(decoded).expect("strunvis terminates its output")
 }
-pub unsafe fn tty_term_apply(
+pub(super) unsafe fn tty_term_apply(
     mut term: *mut tty_term,
     mut capabilities: *const ::core::ffi::c_char,
     mut quiet: ::core::ffi::c_int,
@@ -1203,7 +1199,7 @@ unsafe fn global_array_strings(name: &CStr) -> Vec<CString> {
     })
     .unwrap_or_default()
 }
-pub unsafe fn tty_term_apply_overrides(mut term: *mut tty_term) {
+pub(super) unsafe fn tty_term_apply_overrides(mut term: *mut tty_term) {
     let values = global_array_strings(c"terminal-overrides");
     for value in &values {
         let mut offset: size_t = 0;
@@ -1287,7 +1283,7 @@ unsafe fn tty_term_validate(mut term: *mut tty_term) {
     (*term).flags |= TERM_INVALIDMS;
     (&mut (*term).codes)[TTYC_MS as usize] = tty_code::None;
 }
-pub unsafe fn tty_term_create(
+pub(super) unsafe fn tty_term_create(
     client_owner: &ClientRef,
     name: &CStr,
     caps: &[CString],
@@ -1529,14 +1525,14 @@ pub(crate) unsafe fn tty_term_read_list(name: &CStr) -> Result<Vec<CString>, CSt
 }
 
 /// Read-only legacy projection; ownership stays with the TTY.
-pub fn tty_term_owner_ptr(owner: &Option<Box<tty_term>>) -> Option<&tty_term> {
+pub(super) fn tty_term_owner_ptr(owner: &Option<Box<tty_term>>) -> Option<&tty_term> {
     owner.as_deref()
 }
 
-pub fn tty_term_has(term: &tty_term, mut code: tty_code_code) -> ::core::ffi::c_int {
+pub(super) fn tty_term_has(term: &tty_term, mut code: tty_code_code) -> ::core::ffi::c_int {
     (!matches!((&term.codes)[code as usize], tty_code::None)) as ::core::ffi::c_int
 }
-pub unsafe fn tty_term_has_name(term: &tty_term, name: &CStr) -> ::core::ffi::c_int {
+pub(super) unsafe fn tty_term_has_name(term: &tty_term, name: &CStr) -> ::core::ffi::c_int {
     let mut i: u_int = 0;
     i = 0 as u_int;
     while i < tty_term_ncodes() {
@@ -1549,7 +1545,7 @@ pub unsafe fn tty_term_has_name(term: &tty_term, name: &CStr) -> ::core::ffi::c_
     }
     0 as ::core::ffi::c_int
 }
-pub fn tty_term_string(term: &tty_term, code: tty_code_code) -> &std::ffi::CStr {
+pub(super) fn tty_term_string(term: &tty_term, code: tty_code_code) -> &std::ffi::CStr {
     match &term.codes[code as usize] {
         tty_code::None => c"",
         tty_code::String(value) => value.as_c_str(),
@@ -1566,7 +1562,7 @@ unsafe fn tty_term_expanded(code: tty_code_code, s: *const ::core::ffi::c_char) 
     }
     CStr::from_ptr(s).to_owned()
 }
-pub unsafe fn tty_term_string_i(
+pub(super) unsafe fn tty_term_string_i(
     term: &tty_term,
     mut code: tty_code_code,
     mut a: ::core::ffi::c_int,
@@ -1576,7 +1572,7 @@ pub unsafe fn tty_term_string_i(
     s = tiparm_s(1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int, x, a);
     tty_term_expanded(code, s)
 }
-pub unsafe fn tty_term_string_ii(
+pub(super) unsafe fn tty_term_string_ii(
     term: &tty_term,
     mut code: tty_code_code,
     mut a: ::core::ffi::c_int,
@@ -1587,7 +1583,7 @@ pub unsafe fn tty_term_string_ii(
     s = tiparm_s(2 as ::core::ffi::c_int, 0 as ::core::ffi::c_int, x, a, b);
     tty_term_expanded(code, s)
 }
-pub unsafe fn tty_term_string_iii(
+pub(super) unsafe fn tty_term_string_iii(
     term: &tty_term,
     mut code: tty_code_code,
     mut a: ::core::ffi::c_int,
@@ -1599,7 +1595,7 @@ pub unsafe fn tty_term_string_iii(
     s = tiparm_s(3 as ::core::ffi::c_int, 0 as ::core::ffi::c_int, x, a, b, c);
     tty_term_expanded(code, s)
 }
-pub unsafe fn tty_term_string_s(
+pub(super) unsafe fn tty_term_string_s(
     term: &tty_term,
     mut code: tty_code_code,
     a: &CStr,
@@ -1614,7 +1610,7 @@ pub unsafe fn tty_term_string_s(
     );
     tty_term_expanded(code, s)
 }
-pub unsafe fn tty_term_string_ss(
+pub(super) unsafe fn tty_term_string_ss(
     term: &tty_term,
     mut code: tty_code_code,
     a: &CStr,
@@ -1631,21 +1627,21 @@ pub unsafe fn tty_term_string_ss(
     );
     tty_term_expanded(code, s)
 }
-pub fn tty_term_number(term: &tty_term, code: tty_code_code) -> ::core::ffi::c_int {
+pub(super) fn tty_term_number(term: &tty_term, code: tty_code_code) -> ::core::ffi::c_int {
     match &(&term.codes)[code as usize] {
         tty_code::None => 0,
         tty_code::Number(value) => *value,
         _ => fatalx(|out| write!(out, "not a number: {}", (code) as i32)),
     }
 }
-pub fn tty_term_flag(term: &tty_term, code: tty_code_code) -> ::core::ffi::c_int {
+pub(super) fn tty_term_flag(term: &tty_term, code: tty_code_code) -> ::core::ffi::c_int {
     match &(&term.codes)[code as usize] {
         tty_code::None => 0,
         tty_code::Flag(value) => *value,
         _ => fatalx(|out| write!(out, "not a flag: {}", (code) as i32)),
     }
 }
-pub unsafe fn tty_term_describe(term: &tty_term, code: tty_code_code) -> CString {
+pub(super) unsafe fn tty_term_describe(term: &tty_term, code: tty_code_code) -> CString {
     let mut escaped: [::core::ffi::c_char; 128] = [0; 128];
     match &(&term.codes)[code as usize] {
         tty_code::None => format_message_with(|out| {

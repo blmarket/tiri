@@ -212,14 +212,14 @@ fn migrated_consumers_do_not_project_model_storage() {
         "src/names.rs",
         "src/resize.rs",
         "src/status.rs",
-        "src/tty_acs.rs",
-        "src/tty_features.rs",
-        "src/tty_term.rs",
+        "src/tty/acs.rs",
+        "src/tty/features.rs",
+        "src/tty/term.rs",
         "src/tty/output.rs",
         "src/tty/input.rs",
-        "src/tty_draw.rs",
-        "src/tty_keys.rs",
-        "src/tty.rs",
+        "src/tty/draw.rs",
+        "src/tty/keys.rs",
+        "src/tty/control.rs",
         "src/screen_redraw.rs",
         "src/screen_write.rs",
         "src/shared/screen_write.rs",
@@ -290,7 +290,7 @@ fn screen_mode_snapshot_owns_only_copied_scalar_state() {
 
 #[test]
 fn migrated_terminal_helpers_do_not_reach_through_client_storage() {
-    let syntax = syn::parse_file(&std::fs::read_to_string("src/tty.rs").unwrap()).unwrap();
+    let syntax = syn::parse_file(&std::fs::read_to_string("src/tty/control.rs").unwrap()).unwrap();
     for item in &syntax.items {
         let Item::Fn(function) = item else { continue };
         let mut check = Audit {
@@ -307,7 +307,7 @@ fn migrated_terminal_helpers_do_not_reach_through_client_storage() {
     }
     for (path, expected) in [
         (
-            "src/tty.rs",
+            "src/tty/control.rs",
             vec![
                 "tty_init",
                 "tty_initialize_component",
@@ -320,7 +320,7 @@ fn migrated_terminal_helpers_do_not_reach_through_client_storage() {
             ],
         ),
         (
-            "src/tty_keys.rs",
+            "src/tty/keys.rs",
             vec![
                 "tty_keys_next1",
                 "tty_keys_extended_key",
@@ -845,7 +845,7 @@ fn terminal_registry_results_do_not_retain_component_pointers() {
             visit::visit_type_path(self, ty);
         }
     }
-    let syntax = syn::parse_file(&std::fs::read_to_string("src/tty_term.rs").unwrap()).unwrap();
+    let syntax = syn::parse_file(&std::fs::read_to_string("src/tty/term.rs").unwrap()).unwrap();
     let mut checked = 0;
     for item in &syntax.items {
         if let Item::Struct(item) = item {

@@ -51,8 +51,6 @@ use crate::src::tmux::{
     get_timer, getversion, global_environ, socket_path_cstr, start_time, with_global_options,
     with_global_s_options, with_global_w_options,
 };
-use crate::src::tty_features::tty_feature_present;
-use crate::src::tty_term::tty_term_has_name;
 use crate::src::window::{winlink_find_by_window, winlinks_minmax, winlinks_next};
 use crate::src::window_buffer::window_buffer_mode;
 use crate::src::window_client::window_client_mode;

@@ -370,7 +370,11 @@ unsafe fn format_cb_pane_fg(mut ft: *mut format_tree) -> Option<CString> {
     if wp.is_null() {
         return None;
     }
-    gc = tty_default_colours(format_pane_owner.as_ref().expect("live pane")).0;
+    gc = format_pane_owner
+        .as_ref()
+        .expect("live pane")
+        .default_colours()
+        .0;
     Some(colour_format(gc.fg))
 }
 
@@ -410,7 +414,11 @@ unsafe fn format_cb_pane_bg(mut ft: *mut format_tree) -> Option<CString> {
     if wp.is_null() {
         return None;
     }
-    gc = tty_default_colours(format_pane_owner.as_ref().expect("live pane")).0;
+    gc = format_pane_owner
+        .as_ref()
+        .expect("live pane")
+        .default_colours()
+        .0;
     Some(colour_format(gc.bg))
 }
 

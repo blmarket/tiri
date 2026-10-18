@@ -80,15 +80,13 @@ use crate::src::text::utf8::{utf8_sanitize_cstring, utf8_stravisx_bytes};
 use crate::src::tmux::{
     checkshell, find_home_cstr, setblocking, with_global_options, with_global_s_options,
 };
+use crate::src::tty::tty_get_features;
 use crate::src::tty::{
     tty_close, tty_cursor, tty_init, tty_invalidate, tty_margin_off, tty_open, tty_region_off,
     tty_repeat_requests, tty_reset, tty_resize, tty_send_requests, tty_set_path,
-    tty_set_progress_bar, tty_set_title, tty_start_tty, tty_stop_tty, tty_sync_end,
+    tty_set_progress_bar, tty_set_size, tty_set_title, tty_start_tty, tty_stop_tty, tty_sync_end,
     tty_update_client_offset, tty_update_mode, tty_window_offset,
 };
-use crate::src::tty_features::tty_get_features;
-use crate::src::tty_term::tty_term_has;
-use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::window::windows;
 use crate::src::window::winlink_find_by_index;
 use crate::src::window_copy::{window_copy_add, window_view_mode};
@@ -628,12 +626,11 @@ use crate::src::shared::screen::{
     ScreenMode, ALL_MOUSE_MODES, CURSOR_MODES, MODE_BRACKETPASTE, MODE_CURSOR, MODE_MOUSE_ALL,
     MODE_MOUSE_BUTTON, MODE_SYNC,
 };
-use crate::src::shared::tty::tty;
 use crate::src::shared::tty::*;
-use crate::src::shared::tty::{TTY_BLOCK, TTY_FREEZE, TTY_NOCURSOR, TTY_OPENED};
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NOSLASH, VIS_OCTAL};
 use crate::src::shared::window::WINDOW_SIZE_LATEST;
 use crate::src::shared::window::{window_mode_entry, winlink};
+use crate::src::tty::tty;
 
 pub const _PATH_TTY: &std::ffi::CStr = c"/dev/tty";
 unsafe fn server_client_how_many() -> u_int {
@@ -680,10 +677,10 @@ unsafe fn server_client_set_overlay(c_owner: &ClientRef, overlay: Overlay) {
         .checked_add(1)
         .expect("overlay generation exhausted");
     if overlay.check.is_none() {
-        (*c).tty.flags |= TTY_FREEZE;
+        (*c).tty.set_frozen(true);
     }
     if overlay.mode.is_none() {
-        (*c).tty.flags |= TTY_NOCURSOR;
+        (*c).tty.set_cursor_hidden(true);
     }
     (*c).overlay = Some(overlay);
     server_client_update_overlay_focus(c_owner);
@@ -701,7 +698,8 @@ unsafe fn server_client_clear_overlay(c_owner: &ClientRef) {
     let generation = (*c).overlay_generation;
     drop(overlay);
     if (*c).overlay_generation == generation {
-        (*c).tty.flags &= !(TTY_FREEZE | TTY_NOCURSOR);
+        (*c).tty.set_frozen(false);
+        (*c).tty.set_cursor_hidden(false);
     }
     server_client_update_overlay_focus(c_owner);
     c_owner.request_redraw(CLIENT_ALLREDRAWFLAGS as u64);
@@ -905,15 +903,14 @@ unsafe fn server_client_create(fd: OwnedFd) -> ClientRef {
     (*c).fd = None;
     (*c).out_fd = None;
     (*c).queue = Some(cmdq_new());
-    (*c).tty.sx = 80 as u_int;
-    (*c).tty.sy = 24 as u_int;
+    tty_set_size(&mut (*c).tty, 80, 24, 0, 0);
     i = 0 as u_int;
     while i < COLOUR_THEME_COUNT as u_int {
         (*c).theme_colours[i as usize] = 8 as ::core::ffi::c_int;
         i = i.wrapping_add(1);
     }
     (*c).theme = THEME_UNKNOWN;
-    status_init(&mut (*c).status, (*c).tty.sx);
+    status_init(&mut (*c).status, (*c).tty.size().0);
     (*c).flags |= CLIENT_FOCUSED as uint64_t;
     (*c).keytable = key_bindings_get_table(c"root", 1);
     (*c).click_wp = -(1 as ::core::ffi::c_int);
@@ -1094,8 +1091,9 @@ unsafe fn server_client_fire_resized(c_owner: &ClientRef, mut old_sx: u_int, mut
             fs.pane_handle().expect("event target pane"),
         );
     }
-    event_payload_set_uint(&mut ep, c"width", (*c).tty.sx);
-    event_payload_set_uint(&mut ep, c"height", (*c).tty.sy);
+    let (width, height) = (*c).tty.size();
+    event_payload_set_uint(&mut ep, c"width", width);
+    event_payload_set_uint(&mut ep, c"height", height);
     event_payload_set_uint(&mut ep, c"old_width", old_sx);
     event_payload_set_uint(&mut ep, c"old_height", old_sy);
     events_fire(c"client-resized", ep);
@@ -1370,11 +1368,10 @@ unsafe fn server_client_check_mouse(
             { (*m).y },
             { (*m).lx },
             { (*m).ly },
-            { (*c).tty.mouse_drag_flag }
+            { (*c).mouse_drag_flag }
         ));
-        if (*c).tty.mouse_last_pane != -(1 as ::core::ffi::c_int) {
-            last_pane =
-                Rc::<UnsafeCell<window_pane>>::find_by_id((*c).tty.mouse_last_pane as u_int);
+        if (*c).mouse_last_pane != -(1 as ::core::ffi::c_int) {
+            last_pane = Rc::<UnsafeCell<window_pane>>::find_by_id((*c).mouse_last_pane as u_int);
             if let Some(pane) = last_pane.as_ref() {
                 log_debug(format_args!(
                     "{} mouse last pane %{}",
@@ -1409,23 +1406,23 @@ unsafe fn server_client_check_mouse(
             log_debug(format_args!("move at {},{}", (x) as u32, (y) as u32));
         } else if (*m).b & MOUSE_MASK_DRAG as u_int != 0 {
             type_0 = KEYC_TYPE_MOUSEDRAG;
-            if (*c).tty.mouse_drag_flag != 0 {
+            if (*c).mouse_drag_flag != 0 {
                 x = (*m).x;
                 y = (*m).y;
                 b = (*m).b;
                 if x == (*m).lx && y == (*m).ly {
                     return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                 }
-                if (*c).tty.mouse_drag_status != 0 {
-                    x = (*c).tty.mouse_drag_x;
-                    y = (*c).tty.mouse_drag_y;
+                if (*c).mouse_drag_status != 0 {
+                    x = (*c).mouse_drag_x;
+                    y = (*c).mouse_drag_y;
                 }
                 log_debug(format_args!("drag update at {},{}", (x) as u32, (y) as u32));
             } else {
                 x = (*m).lx;
                 y = (*m).ly;
                 b = (*m).lb;
-                (*c).tty.mouse_drag_status = 0;
+                (*c).mouse_drag_status = 0;
                 log_debug(format_args!("drag start at {},{}", (x) as u32, (y) as u32));
             }
         } else if (*m).b & MOUSE_MASK_BUTTONS as u_int == MOUSE_WHEEL_UP as u_int
@@ -1511,8 +1508,8 @@ unsafe fn server_client_check_mouse(
             && y >= (*m).statusat as u_int
             && y < ((*m).statusat as u_int).wrapping_add((*m).statuslines)
         {
-            if type_0 == KEYC_TYPE_MOUSEDRAG && (*c).tty.mouse_drag_flag == 0 {
-                (*c).tty.mouse_drag_status = 1;
+            if type_0 == KEYC_TYPE_MOUSEDRAG && (*c).mouse_drag_flag == 0 {
+                (*c).mouse_drag_status = 1;
             }
             if let Some(sr) =
                 status_get_range(client_owner, x, y.wrapping_sub((*m).statusat as u_int))
@@ -1575,7 +1572,7 @@ unsafe fn server_client_check_mouse(
         }
         if loc as ::core::ffi::c_uint
             == KEYC_MOUSE_LOCATION_NOWHERE as ::core::ffi::c_int as ::core::ffi::c_uint
-            && (*c).tty.mouse_scrolling_flag != 0
+            && (*c).mouse_scrolling_flag != 0
         {
             if let Some(pane) = last_pane.as_ref() {
                 loc = KEYC_MOUSE_LOCATION_SCROLLBAR_SLIDER;
@@ -1751,18 +1748,18 @@ unsafe fn server_client_check_mouse(
                 != KEYC_TYPE_DOUBLECLICK as ::core::ffi::c_int as ::core::ffi::c_uint
             && type_0 as ::core::ffi::c_uint
                 != KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int as ::core::ffi::c_uint
-            && (*c).tty.mouse_drag_flag != 0 as ::core::ffi::c_int
+            && (*c).mouse_drag_flag != 0 as ::core::ffi::c_int
         {
-            if let Some(release) = (*c).tty.mouse_drag_release.take() {
+            if let Some(release) = (*c).mouse_drag_release.take() {
                 release(&mut *m);
             }
-            (*c).tty.mouse_drag_update = None;
-            (*c).tty.mouse_drag_release = None;
-            (*c).tty.mouse_scrolling_flag = 0 as ::core::ffi::c_int;
+            (*c).mouse_drag_update = None;
+            (*c).mouse_drag_release = None;
+            (*c).mouse_scrolling_flag = 0 as ::core::ffi::c_int;
             type_0 = KEYC_TYPE_MOUSEDRAGEND;
-            (*c).tty.mouse_drag_flag = 0 as ::core::ffi::c_int;
-            (*c).tty.mouse_slider_mpos = -(1 as ::core::ffi::c_int);
-            (*c).tty.mouse_last_pane = -(1 as ::core::ffi::c_int);
+            (*c).mouse_drag_flag = 0 as ::core::ffi::c_int;
+            (*c).mouse_slider_mpos = -(1 as ::core::ffi::c_int);
+            (*c).mouse_last_pane = -(1 as ::core::ffi::c_int);
         }
         if type_0 as ::core::ffi::c_uint
             == KEYC_TYPE_MOUSEMOVE as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -1788,39 +1785,39 @@ unsafe fn server_client_check_mouse(
         if type_0 as ::core::ffi::c_uint
             == KEYC_TYPE_MOUSEDRAG as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            if (*c).tty.mouse_drag_update.is_some() {
+            if (*c).mouse_drag_update.is_some() {
                 key = KEYC_DRAGGING as ::core::ffi::c_ulong as key_code;
             }
-            if (*c).tty.mouse_drag_flag == 0 as ::core::ffi::c_int {
-                if (*c).tty.mouse_drag_status != 0 {
-                    (*c).tty.mouse_drag_x = x;
-                    (*c).tty.mouse_drag_y = y;
+            if (*c).mouse_drag_flag == 0 as ::core::ffi::c_int {
+                if (*c).mouse_drag_status != 0 {
+                    (*c).mouse_drag_x = x;
+                    (*c).mouse_drag_y = y;
                 } else {
-                    (*c).tty.mouse_drag_x = px;
-                    (*c).tty.mouse_drag_y = py;
+                    (*c).mouse_drag_x = px;
+                    (*c).mouse_drag_y = py;
                 }
             }
-            (*c).tty.mouse_drag_flag =
+            (*c).mouse_drag_flag =
                 (b & MOUSE_MASK_BUTTONS as u_int).wrapping_add(1 as u_int) as ::core::ffi::c_int;
-            if (*c).tty.mouse_drag_status == 0 && last_pane.is_none() {
+            if (*c).mouse_drag_status == 0 && last_pane.is_none() {
                 let hit_window_owner = &window_owner;
                 selected_pane = hit_window_owner.pane_at(px, py).upgrade();
                 last_pane = selected_pane.clone();
                 if let Some(selected_pane_value) = selected_pane.as_ref() {
-                    (*c).tty.mouse_last_pane = selected_pane_value.id() as ::core::ffi::c_int;
+                    (*c).mouse_last_pane = selected_pane_value.id() as ::core::ffi::c_int;
                 }
             }
-            if (*c).tty.mouse_scrolling_flag == 0 as ::core::ffi::c_int
+            if (*c).mouse_scrolling_flag == 0 as ::core::ffi::c_int
                 && loc as ::core::ffi::c_uint
                     == KEYC_MOUSE_LOCATION_SCROLLBAR_SLIDER as ::core::ffi::c_int
                         as ::core::ffi::c_uint
             {
-                (*c).tty.mouse_scrolling_flag = 1 as ::core::ffi::c_int;
+                (*c).mouse_scrolling_flag = 1 as ::core::ffi::c_int;
                 if (*m).statusat == 0 as ::core::ffi::c_int {
-                    (*c).tty.mouse_slider_mpos =
+                    (*c).mouse_slider_mpos =
                         sl_mpos.wrapping_add((*m).statuslines) as ::core::ffi::c_int;
                 } else {
-                    (*c).tty.mouse_slider_mpos = sl_mpos as ::core::ffi::c_int;
+                    (*c).mouse_slider_mpos = sl_mpos as ::core::ffi::c_int;
                 }
             }
         }
@@ -1894,7 +1891,7 @@ unsafe fn server_client_update_theme_colours(c_owner: Option<&ClientRef>) {
     format_defaults(ft, c_owner, None, (refbox::Weak::new()).clone(), None);
     theme = (*c).theme;
     if theme as ::core::ffi::c_uint == THEME_UNKNOWN as ::core::ffi::c_int as ::core::ffi::c_uint {
-        theme = colour_totheme((*c).tty.bg);
+        theme = colour_totheme((*c).tty.reported_colours().1);
     }
     if option == 2 as ::core::ffi::c_int {
         theme = THEME_LIGHT;
@@ -1953,11 +1950,7 @@ unsafe fn server_client_is_assume_paste(c: &mut client) -> ::core::ffi::c_int {
     if t == 0 as ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
-    if tty_term_has(
-        tty_term_owner_ptr(&c.tty.term).expect("client has a terminal"),
-        TTYC_ENBP,
-    ) != 0
-    {
+    if c.tty.has(TTYC_ENBP) {
         return 0 as ::core::ffi::c_int;
     }
     let elapsed = c.activity_time.duration_since(c.last_activity_time);
@@ -2103,10 +2096,10 @@ unsafe fn server_client_key_callback(
                     if key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
                         == KEYC_DRAGGING as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
                     {
-                        if let Some(mut update) = (*c).tty.mouse_drag_update.take() {
+                        if let Some(mut update) = (*c).mouse_drag_update.take() {
                             update(&mut *m);
-                            if (*c).tty.mouse_drag_update.is_none() {
-                                (*c).tty.mouse_drag_update = Some(update);
+                            if (*c).mouse_drag_update.is_none() {
+                                (*c).mouse_drag_update = Some(update);
                             }
                         }
                         current_block = 1578459965781631232;
@@ -2827,7 +2820,6 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
 
         let mut mode: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
         let mut cursor: ::core::ffi::c_int = 0;
-        let mut flags: ::core::ffi::c_int = 0;
         let mut pane_mode: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
         let mut cx: u_int = 0 as u_int;
         let mut cy: u_int = 0 as u_int;
@@ -2836,8 +2828,7 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
         if (*c).flags & (CLIENT_CONTROL | CLIENT_SUSPENDED) as uint64_t != 0 {
             return;
         }
-        flags = (*tty).flags & TTY_BLOCK;
-        (*tty).flags &= !TTY_BLOCK;
+        let blocked = (*tty).suspend_block();
         let menu_owner = window_owner.menu_observer();
         if (*c)
             .overlay
@@ -2982,7 +2973,7 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
             };
         } else {
             mode &= !CURSOR_MODES;
-            mode |= (*tty).mode & CURSOR_MODES;
+            mode |= (*tty).mode() & CURSOR_MODES;
             s = None;
         }
         if options_get_number(&session_owner.borrow_options_mut(), c"mouse") != 0 {
@@ -3026,7 +3017,7 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
             tty_reset(terminal);
             tty_sync_end(terminal);
         };
-        (*tty).flags |= flags;
+        (*tty).resume_block(blocked);
     })();
     drop(window_owner);
 }
@@ -3218,8 +3209,7 @@ unsafe fn server_client_check_redraw(client_owner: &ClientRef) {
         let s = Some(session_owner.clone());
         let mut tty: *mut tty = &raw mut (*c).tty;
         let mut needed: ::core::ffi::c_int = 0;
-        let mut tflags: ::core::ffi::c_int = 0;
-        let mut mode: ::core::ffi::c_int = (*tty).mode;
+        let mut mode: ::core::ffi::c_int = (*tty).mode();
         let timeout = Duration::from_micros(1000);
         static mut ev: Option<Timer> = None;
         let mut n: size_t = 0;
@@ -3269,8 +3259,8 @@ unsafe fn server_client_check_redraw(client_owner: &ClientRef) {
             (*c).flags &= !CLIENT_STATUSFORCE as uint64_t;
             return;
         }
-        n = evbuffer_get_length((*tty).out.as_deref().expect("open TTY buffer"));
-        if n != 0 as size_t || (*tty).flags & TTY_BLOCK != 0 {
+        n = (*tty).pending_output();
+        if n != 0 as size_t || (*tty).is_blocked() {
             if n != 0 as size_t {
                 log_debug(format_args!(
                     "{}: redraw deferred ({} left)",
@@ -3313,8 +3303,7 @@ unsafe fn server_client_check_redraw(client_owner: &ClientRef) {
             "{}: redraw needed",
             log_cstr((*c).name.as_deref().unwrap_or(c"(null)"))
         ));
-        tflags = (*tty).flags & (TTY_BLOCK | TTY_FREEZE | TTY_NOCURSOR);
-        (*tty).flags = (*tty).flags & !(TTY_BLOCK | TTY_FREEZE) | TTY_NOCURSOR;
+        let saved = (*tty).begin_redraw();
         if !(*c).flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
             for pane_owner in window_owner
                 .pane_snapshot()
@@ -3352,17 +3341,17 @@ unsafe fn server_client_check_redraw(client_owner: &ClientRef) {
             server_client_set_progress_bar(client_owner);
             redraw_screen(client_owner);
         }
-        (*tty).flags = (*tty).flags & !TTY_NOCURSOR | tflags & TTY_NOCURSOR;
+        (*tty).restore_redraw_cursor(&saved);
         {
             let terminal = &(client_owner);
             tty_update_mode(terminal, mode, None)
         };
-        (*tty).flags = (*tty).flags & !(TTY_BLOCK | TTY_FREEZE | TTY_NOCURSOR) | tflags;
+        (*tty).end_redraw(saved);
         (*c).flags = ((*c).flags as ::core::ffi::c_ulonglong
             & !(CLIENT_ALLREDRAWFLAGS as ::core::ffi::c_ulonglong
                 | CLIENT_REDRAWSCROLLBARS
                 | CLIENT_STATUSFORCE as ::core::ffi::c_ulonglong)) as uint64_t;
-        (*c).redraw = evbuffer_get_length((*tty).out.as_deref().expect("open TTY buffer"));
+        (*c).redraw = (*tty).pending_output();
         log_debug(format_args!(
             "{}: redraw added {} bytes",
             log_cstr((*c).name.as_deref().unwrap_or(c"(null)")),
@@ -3511,8 +3500,7 @@ unsafe fn server_client_dispatch(
                 current_block = 14945149239039849694;
             } else {
                 server_client_update_latest(owner);
-                old_sx = (*c).tty.sx;
-                old_sy = (*c).tty.sy;
+                (old_sx, old_sy) = (*c).tty.size();
                 tty_resize(owner);
                 {
                     let terminal = &(owner);
@@ -3961,7 +3949,6 @@ unsafe fn server_client_dispatch_identify(
         if tty_init(owner) != 0 as ::core::ffi::c_int {
             drop((*c).fd.take());
         } else {
-            (*c).tty.r.ensure(1);
             tty_resize(owner);
             (*c).flags |= CLIENT_TERMINAL as uint64_t;
         }
@@ -4137,10 +4124,10 @@ unsafe fn server_client_remove_pane(wp_owner: &std::rc::Rc<std::cell::UnsafeCell
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
-        if (*c).tty.mouse_last_pane == pane_id as ::core::ffi::c_int {
-            (*c).tty.mouse_last_pane = -(1 as ::core::ffi::c_int);
-            (*c).tty.mouse_drag_update = None;
-            (*c).tty.mouse_scrolling_flag = 0 as ::core::ffi::c_int;
+        if (*c).mouse_last_pane == pane_id as ::core::ffi::c_int {
+            (*c).mouse_last_pane = -(1 as ::core::ffi::c_int);
+            (*c).mouse_drag_update = None;
+            (*c).mouse_scrolling_flag = 0 as ::core::ffi::c_int;
         }
         registry_c_owner =
             ClientRegistry::next(registry_c_owner.as_ref().expect("current registry client"));
@@ -4248,12 +4235,7 @@ unsafe fn server_client_report_theme(c_owner: &ClientRef, mut theme: client_them
         server_client_update_theme_colours(Some(c_owner));
         {
             let terminal = &(c_owner);
-            if {
-                let tty_state = terminal.borrow_terminal();
-                tty_state.flags
-            } & TTY_OPENED
-                != 0
-            {
+            if terminal.borrow_terminal().is_opened() {
                 tty_invalidate(terminal);
             }
         };

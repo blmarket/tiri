@@ -1,20 +1,20 @@
+use super::model::tty;
 use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
-use crate::src::shared::tty::tty;
 use crate::src::shared::tty::*;
-use crate::src::tty_term::tty_term_owner_ptr;
-use crate::src::tty_term::{tty_term_has, tty_term_number};
+use crate::src::tty::term::tty_term_owner_ptr;
+use crate::src::tty::term::{tty_term_has, tty_term_number};
 use std::ffi::CStr;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct tty_acs_entry {
+pub(super) struct tty_acs_entry {
     pub key: u_char,
     pub string: &'static ::std::ffi::CStr,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct tty_acs_reverse_entry {
+pub(super) struct tty_acs_reverse_entry {
     pub string: &'static ::std::ffi::CStr,
     pub key: u_char,
 }
@@ -554,7 +554,7 @@ pub fn tty_acs_heavy_borders(cell_type: ::core::ffi::c_int) -> &'static utf8_dat
 pub fn tty_acs_rounded_borders(cell_type: ::core::ffi::c_int) -> &'static utf8_data {
     &tty_acs_rounded_borders_list[cell_type as usize]
 }
-pub unsafe fn tty_acs_needed(terminal: Option<&tty>, utf8: bool) -> ::core::ffi::c_int {
+pub(super) unsafe fn tty_acs_needed(terminal: Option<&tty>, utf8: bool) -> ::core::ffi::c_int {
     let Some(terminal) = terminal else {
         return 0;
     };
@@ -592,7 +592,7 @@ pub unsafe fn tty_acs_get(terminal: Option<&tty>, utf8: bool, ch: u_char) -> Opt
         .map(|index| tty_acs_table[index].string)
 }
 
-pub fn tty_acs_reverse_get(s: &CStr, slen: usize) -> Option<u_char> {
+pub(super) fn tty_acs_reverse_get(s: &CStr, slen: usize) -> Option<u_char> {
     let table = match slen {
         2 => &tty_acs_reverse2[..],
         3 => &tty_acs_reverse3[..],
@@ -602,4 +602,29 @@ pub fn tty_acs_reverse_get(s: &CStr, slen: usize) -> Option<u_char> {
         .binary_search_by(|entry| entry.string.to_bytes().cmp(s.to_bytes()))
         .ok()
         .map(|index| table[index].key)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::src::shared::borders::{CELL_LR, CELL_RD};
+
+    #[test]
+    fn border_lookup_and_reverse_translation_preserve_table_selection() {
+        for (cell, expected) in [
+            (tty_acs_double_borders(CELL_LR), "═"),
+            (tty_acs_heavy_borders(CELL_LR), "━"),
+            (tty_acs_rounded_borders(CELL_RD), "╭"),
+        ] {
+            assert_eq!(&cell.data[..cell.size as usize], expected.as_bytes());
+            assert_eq!(cell.width, 1);
+        }
+        assert_eq!(tty_acs_reverse_get(c"─", 3), Some(b'q'));
+        assert_eq!(tty_acs_reverse_get(c"│", 3), Some(b'x'));
+        assert_eq!(tty_acs_reverse_get(c"·", 2), Some(b'~'));
+        assert_eq!(tty_acs_reverse_get(c"─", 2), None);
+        assert_eq!(tty_acs_reverse_get(c"─", 4), None);
+        assert_eq!(tty_acs_reverse_get(c"─x", 3), None);
+        assert_eq!(tty_acs_reverse_get(c"漢", 3), None);
+    }
 }

@@ -28,8 +28,8 @@ use crate::src::shared::layout::Direction;
 use crate::src::shared::limits::INT_MAX;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::window::{WINDOW_MAXIMUM, WINDOW_MINIMUM};
-use crate::src::tty::{tty_clipboard_query, tty_update_client_offset};
-use crate::src::tty_keys::tty_keys_colours;
+
+use crate::src::tty::{tty_clipboard_query, tty_parse_colour_report, tty_update_client_offset};
 use crate::src::window_pane::WindowPane as _;
 use std::ffi::{CStr, CString};
 pub static cmd_refresh_client_entry: cmd_entry = {
@@ -195,19 +195,7 @@ unsafe fn cmd_refresh_report(client: &ClientRef, value: &CStr) {
         return;
     };
     let (mut fg, mut bg) = pane_owner.control_colours();
-    let mut size: size_t = 0;
-    let diagnostic_name = client.name();
-    let parsed = {
-        let mut tty = client.borrow_terminal_mut();
-        tty_keys_colours(
-            &mut tty.flags,
-            diagnostic_name.as_deref(),
-            report.to_bytes(),
-            &mut size,
-            &mut fg,
-            &mut bg,
-        )
-    };
+    let parsed = tty_parse_colour_report(client, report.to_bytes(), &mut fg, &mut bg);
     if parsed == 0 {
         pane_owner.update_control_colours(fg, bg);
     }

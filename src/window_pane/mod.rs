@@ -73,7 +73,6 @@ use crate::src::style::colour::{
 };
 use crate::src::style::{style_ranges_init, style_set_scrollbar_style_from_option};
 use crate::src::tmux::setblocking;
-use crate::src::tty::tty_default_colours;
 use crate::src::window_copy::{window_copy_mode, window_view_mode};
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
@@ -1665,7 +1664,7 @@ unsafe fn window_pane_get_bg(
     };
     c = window_pane_get_bg_control_client(wp_owner);
     if c == -(1 as ::core::ffi::c_int) {
-        defaults = tty_default_colours(wp_owner).0;
+        defaults = wp_owner.default_colours().0;
         if defaults.bg == 8 as ::core::ffi::c_int || defaults.bg == 9 as ::core::ffi::c_int {
             c = window_get_bg_client(wp_owner);
         } else {
@@ -1701,10 +1700,20 @@ unsafe fn window_get_bg_client(
                         ((*wp).window_handle().as_ref()).expect("live window"),
                     )) as i32)
                     == 0)
-            && !(loop_0.as_ref().expect("live client").borrow_terminal().bg
+            && !(loop_0
+                .as_ref()
+                .expect("live client")
+                .borrow_terminal()
+                .reported_colours()
+                .1
                 == -(1 as ::core::ffi::c_int))
         {
-            return loop_0.as_ref().expect("live client").borrow_terminal().bg;
+            return loop_0
+                .as_ref()
+                .expect("live client")
+                .borrow_terminal()
+                .reported_colours()
+                .1;
         }
         registry_loop_0_owner = ClientRegistry::next(
             registry_loop_0_owner
@@ -1759,10 +1768,20 @@ unsafe fn window_pane_get_fg(
                         ((*wp).window_handle().as_ref()).expect("live window"),
                     )) as i32)
                     == 0)
-            && !(loop_0.as_ref().expect("live client").borrow_terminal().fg
+            && !(loop_0
+                .as_ref()
+                .expect("live client")
+                .borrow_terminal()
+                .reported_colours()
+                .0
                 == -(1 as ::core::ffi::c_int))
         {
-            return loop_0.as_ref().expect("live client").borrow_terminal().fg;
+            return loop_0
+                .as_ref()
+                .expect("live client")
+                .borrow_terminal()
+                .reported_colours()
+                .0;
         }
         registry_loop_0_owner = ClientRegistry::next(
             registry_loop_0_owner

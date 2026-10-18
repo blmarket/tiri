@@ -38,7 +38,6 @@ use crate::src::shared::session::SessionRef;
 use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;
 use crate::src::shared::style::*;
-use crate::src::shared::tty::TERM_INVALIDMS;
 use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::{window_mode, window_mode_entry, winlink};
 use crate::src::sort::sort_get_clients;
@@ -322,14 +321,7 @@ unsafe fn window_client_draw_info(
     let mut ft_owner =
         format_create_defaults(None, Some(c), None, (refbox::Weak::new()).clone(), None);
     ft = &raw mut *ft_owner;
-    if c.borrow_terminal()
-        .term
-        .as_deref()
-        .expect("terminal description")
-        .flags
-        & TERM_INVALIDMS
-        != 0
-    {
+    if c.borrow_terminal().clipboard_invalid() {
         format_add(ft, c"clipboard_invalid", |out| out.write_all(b"1"));
     } else {
         format_add(ft, c"clipboard_invalid", |out| out.write_all(b"0"));

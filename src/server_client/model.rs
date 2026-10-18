@@ -19,7 +19,7 @@ use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::process::tmuxpeer;
 use crate::src::shared::redraw::redraw_scene;
 use crate::src::shared::status::status_line;
-use crate::src::shared::tty::tty;
+use crate::src::tty::tty;
 
 use crate::src::shared::client::*;
 pub struct client {
@@ -51,6 +51,15 @@ pub struct client {
     pub(super) term_caps: Vec<std::ffi::CString>,
     pub(super) ttyname: Option<std::ffi::CString>,
     pub(super) tty: tty,
+    pub(super) mouse_drag_flag: ::core::ffi::c_int,
+    pub(super) mouse_drag_status: ::core::ffi::c_int,
+    pub(super) mouse_drag_x: u_int,
+    pub(super) mouse_drag_y: u_int,
+    pub(super) mouse_scrolling_flag: ::core::ffi::c_int,
+    pub(super) mouse_slider_mpos: ::core::ffi::c_int,
+    pub(super) mouse_last_pane: ::core::ffi::c_int,
+    pub(super) mouse_drag_update: Option<Box<dyn FnMut(&mut mouse_event)>>,
+    pub(super) mouse_drag_release: Option<Box<dyn FnOnce(&mut mouse_event)>>,
     pub(super) written: size_t,
     pub(super) discarded: size_t,
     pub(super) redraw: size_t,
@@ -141,6 +150,15 @@ impl client {
             term_caps: Vec::new(),
             ttyname: Default::default(),
             tty: tty::empty(),
+            mouse_drag_flag: 0,
+            mouse_drag_status: 0,
+            mouse_drag_x: 0,
+            mouse_drag_y: 0,
+            mouse_scrolling_flag: 0,
+            mouse_slider_mpos: 0,
+            mouse_last_pane: -1,
+            mouse_drag_update: None,
+            mouse_drag_release: None,
             written: Default::default(),
             discarded: Default::default(),
             redraw: Default::default(),
