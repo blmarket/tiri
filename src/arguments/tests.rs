@@ -1,6 +1,13 @@
+use super::number::parse_number;
+use super::parse::{ARGS_PARSE_COMMANDS, ARGS_PARSE_INVALID};
+use super::store::args_last_string;
+use super::value::{args_type, ARGS_NONE};
 use super::*;
 use crate::src::cmd::cmd_list_new;
+use crate::src::shared::command::cmd_list;
 use ::core::mem::{align_of, size_of};
+use std::ffi::{CStr, CString};
+use std::rc::Rc;
 
 #[test]
 fn parser_slices_preserve_optional_values_and_flag_boundaries() {
