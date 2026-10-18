@@ -11,6 +11,7 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_create_defaults, format_single_cstring};
 use crate::src::format_draw::format_draw;
 use crate::src::grid::grid_default_cell;
+use crate::src::options::OptionsScope;
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::screen::{screen_init, screen_resize};
 use crate::src::screen_write::{
@@ -293,14 +294,7 @@ unsafe fn window_panes_get_border_cell(
         &mut *gc,
         c"display-panes-border-style",
         Some(&mut *ft),
-        |visit| {
-            visit(
-                &mut options_window
-                    .upgrade()
-                    .expect("live display-panes window")
-                    .borrow_options_mut(),
-            )
-        },
+        &OptionsScope::Window(options_window.clone()),
     );
     drop(ft_owner);
     if let Some(owner) = session_owner {
@@ -547,14 +541,12 @@ unsafe fn window_panes_draw_number(
     };
     let mut ft_owner = format_create_defaults(None, None, s.as_ref(), wl.clone(), Some(wp_owner));
     ft = &raw mut *ft_owner;
-    style_apply_with_options(&mut fgc, name, Some(&mut *ft), |visit| {
-        visit(
-            &mut options_window
-                .upgrade()
-                .expect("live display-panes window")
-                .borrow_options_mut(),
-        )
-    });
+    style_apply_with_options(
+        &mut fgc,
+        name,
+        Some(&mut *ft),
+        &OptionsScope::Window(options_window.clone()),
+    );
     drop(ft_owner);
     bgc = grid_default_cell;
     bgc.bg = fgc.fg;

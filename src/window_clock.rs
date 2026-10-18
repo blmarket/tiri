@@ -4,6 +4,7 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_create_defaults;
 use crate::src::grid::grid_default_cell;
 use crate::src::options::options_get_number;
+use crate::src::options::OptionsScope;
 use crate::src::screen::{screen_init, screen_resize};
 use crate::src::screen_write::{
     screen_write_clearscreen, screen_write_cursormove, screen_write_putc, screen_write_puts,
@@ -751,14 +752,12 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         Some(&mode_pane_owner),
     );
     ft = &raw mut *ft_owner;
-    style_apply_with_options(&mut gc, c"clock-mode-colour", Some(&mut *ft), |visit| {
-        visit(
-            &mut options_window
-                .upgrade()
-                .expect("live clock window")
-                .borrow_options_mut(),
-        )
-    });
+    style_apply_with_options(
+        &mut gc,
+        c"clock-mode-colour",
+        Some(&mut *ft),
+        &OptionsScope::Window(options_window.clone()),
+    );
     drop(ft_owner);
     colour = gc.fg;
     style = options_get_number(

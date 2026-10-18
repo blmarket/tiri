@@ -28,6 +28,7 @@ use crate::src::shared::session::SessionRef;
 use crate::src::style::{style_ranges_clear, style_ranges_init};
 use crate::src::tmux::with_global_s_options;
 use std::ffi::{CStr, CString};
+use std::rc::Rc;
 use std::time::Duration;
 
 use crate::src::shared::abi::*;
@@ -269,9 +270,12 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
     let mut ft_owner = format_create(Some(c_owner), None, FORMAT_NONE, flags);
     ft = &raw mut *ft_owner;
     format_defaults(ft, Some(c_owner), None, (refbox::Weak::new()).clone(), None);
-    crate::src::style::style_apply_with_options(&mut gc, c"status-style", ft.as_mut(), |visit| {
-        visit(&mut s.as_ref().expect("live session").borrow_options_mut())
-    });
+    crate::src::style::style_apply_with_options(
+        &mut gc,
+        c"status-style",
+        ft.as_mut(),
+        &OptionsScope::Session(Rc::downgrade(s.as_ref().expect("live session"))),
+    );
     fg = options_get_number(
         &s.as_ref().expect("live session").borrow_options_mut(),
         c"status-fg",
@@ -437,15 +441,11 @@ pub unsafe fn status_message_clear(client: &ClientRef) {
 
 unsafe fn status_message_area(c: &ClientRef) -> (u_int, u_int) {
     let (terminal_width, _) = c.terminal_size();
-    let sy = crate::src::style::style_resolve_with_options(c"message-style", None, |visit| {
-        visit(
-            &mut c
-                .attached_session()
-                .upgrade()
-                .expect("live session")
-                .borrow_options_mut(),
-        )
-    });
+    let sy = crate::src::style::style_resolve_with_options(
+        c"message-style",
+        None,
+        &OptionsScope::Session(c.attached_session()),
+    );
     let mut width = match sy.filter(|style| style.width >= 0) {
         Some(style) if style.width_percentage != 0 => {
             terminal_width.wrapping_mul(style.width as u_int) / 100
@@ -530,9 +530,12 @@ pub unsafe fn status_message_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
         None,
     );
     ft = &raw mut *ft_owner;
-    crate::src::style::style_apply_with_options(&mut gc, c"message-style", ft.as_mut(), |visit| {
-        visit(&mut s.as_ref().expect("live session").borrow_options_mut())
-    });
+    crate::src::style::style_apply_with_options(
+        &mut gc,
+        c"message-style",
+        ft.as_mut(),
+        &OptionsScope::Session(Rc::downgrade(s.as_ref().expect("live session"))),
+    );
     let (message, ignore_styles) = c_owner.status_message_text();
     if ignore_styles {
         let msg = status_message_escape(message.as_deref().unwrap_or(c""));

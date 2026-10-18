@@ -12,21 +12,11 @@ use crate::src::style::colour::colour_parse_cstr;
 use crate::src::style::{style_parse, style_parse_colour};
 use crate::src::tmux::checkshell;
 
-use crate::src::shared::format::format_tree;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
 use std::ffi::{CStr, CString};
 
-/// Legacy detached/global-table adapter. Model callers must use the scoped
-/// evaluator so no component borrow is held through format expansion.
-pub unsafe fn options_string_to_style(
-    oo: &mut options,
-    name: &CStr,
-    ft: *mut format_tree,
-) -> Option<style> {
-    crate::src::style::style_resolve_with_options(name, ft.as_mut(), |visit| visit(oo))
-}
 unsafe fn options_from_string_check(oe: &options_table_entry, value: &CStr) -> Result<(), CString> {
     let mut sy: style = style {
         gc: grid_cell {

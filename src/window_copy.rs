@@ -28,6 +28,7 @@ use crate::src::input::{input_init, input_parse_screen};
 use crate::src::job::{job_get_event, job_run};
 use crate::src::log::{fatal, fatalx, log_cstr, log_debug};
 use crate::src::options::options;
+use crate::src::options::OptionsScope;
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::paste::{paste_add_owned, paste_buffer_data, paste_get_top, paste_set_owned};
 use crate::src::reactor::bufferevent_write;
@@ -69,7 +70,7 @@ pub use crate::src::shared::window::{window_mode, window_mode_entry, winlink};
 use crate::src::status::status_message_set;
 use crate::src::style::style_apply_with_options;
 use crate::src::text::utf8::{utf8_copy, utf8_fromcstr_vec, utf8_set, utf8_to_data};
-use crate::src::tmux::{get_timer, with_global_options, with_global_w_options};
+use crate::src::tmux::{get_timer, with_global_options};
 use crate::src::tty::tty_acs_get;
 use crate::src::window::Window as _;
 use crate::src::window_pane::WindowPane as _;
@@ -676,9 +677,7 @@ unsafe fn window_copy_common_init(
     (*data).jumptype = WINDOW_COPY_OFF as ::core::ffi::c_int;
     (*data).line_numbers = 1 as ::core::ffi::c_int;
     screen_init(&mut (*data).screen, sx, sy, 0 as u_int);
-    with_global_w_options(|oo| {
-        screen_set_default_cursor(&mut (*data).screen, oo);
-    });
+    screen_set_default_cursor(&mut (*data).screen, &OptionsScope::GlobalWindow);
     (*data).modekeys = options_get_number(
         &mode_pane_owner
             .window_observer()
@@ -7272,70 +7271,35 @@ unsafe fn window_copy_write_line(
         &mut gc,
         c"copy-mode-position-style",
         Some(&mut *ft),
-        |visit| {
-            visit(
-                &mut options_window
-                    .upgrade()
-                    .expect("live copy-mode window")
-                    .borrow_options_mut(),
-            )
-        },
+        &OptionsScope::Window(options_window.clone()),
     );
     gc.flags = (gc.flags as ::core::ffi::c_int | GRID_FLAG_NOPALETTE) as u_char;
     style_apply_with_options(
         &mut mgc,
         c"copy-mode-match-style",
         Some(&mut *ft),
-        |visit| {
-            visit(
-                &mut options_window
-                    .upgrade()
-                    .expect("live copy-mode window")
-                    .borrow_options_mut(),
-            )
-        },
+        &OptionsScope::Window(options_window.clone()),
     );
     mgc.flags = (mgc.flags as ::core::ffi::c_int | GRID_FLAG_NOPALETTE) as u_char;
     style_apply_with_options(
         &mut cgc,
         c"copy-mode-current-match-style",
         Some(&mut *ft),
-        |visit| {
-            visit(
-                &mut options_window
-                    .upgrade()
-                    .expect("live copy-mode window")
-                    .borrow_options_mut(),
-            )
-        },
+        &OptionsScope::Window(options_window.clone()),
     );
     cgc.flags = (cgc.flags as ::core::ffi::c_int | GRID_FLAG_NOPALETTE) as u_char;
     style_apply_with_options(
         &mut mkgc,
         c"copy-mode-mark-style",
         Some(&mut *ft),
-        |visit| {
-            visit(
-                &mut options_window
-                    .upgrade()
-                    .expect("live copy-mode window")
-                    .borrow_options_mut(),
-            )
-        },
+        &OptionsScope::Window(options_window.clone()),
     );
     mkgc.flags = (mkgc.flags as ::core::ffi::c_int | GRID_FLAG_NOPALETTE) as u_char;
     style_apply_with_options(
         &mut clgc,
         c"copy-mode-current-line-style",
         Some(&mut *ft),
-        |visit| {
-            visit(
-                &mut options_window
-                    .upgrade()
-                    .expect("live copy-mode window")
-                    .borrow_options_mut(),
-            )
-        },
+        &OptionsScope::Window(options_window.clone()),
     );
     clgc.flags = (clgc.flags as ::core::ffi::c_int | GRID_FLAG_NOPALETTE) as u_char;
     if width != 0 as u_int {
@@ -7343,28 +7307,14 @@ unsafe fn window_copy_write_line(
             &mut ln_gc,
             c"copy-mode-line-number-style",
             Some(&mut *ft),
-            |visit| {
-                visit(
-                    &mut options_window
-                        .upgrade()
-                        .expect("live copy-mode window")
-                        .borrow_options_mut(),
-                )
-            },
+            &OptionsScope::Window(options_window.clone()),
         );
         ln_gc.flags = (ln_gc.flags as ::core::ffi::c_int | GRID_FLAG_NOPALETTE) as u_char;
         style_apply_with_options(
             &mut cur_ln_gc,
             c"copy-mode-current-line-number-style",
             Some(&mut *ft),
-            |visit| {
-                visit(
-                    &mut options_window
-                        .upgrade()
-                        .expect("live copy-mode window")
-                        .borrow_options_mut(),
-                )
-            },
+            &OptionsScope::Window(options_window.clone()),
         );
         cur_ln_gc.flags = (cur_ln_gc.flags as ::core::ffi::c_int | GRID_FLAG_NOPALETTE) as u_char;
         current = (py == (*data).cy) as ::core::ffi::c_int;
@@ -8030,14 +7980,7 @@ unsafe fn window_copy_set_selection(
         &mut gc,
         c"copy-mode-selection-style",
         Some(&mut *ft),
-        |visit| {
-            visit(
-                &mut options_window
-                    .upgrade()
-                    .expect("live copy-mode window")
-                    .borrow_options_mut(),
-            )
-        },
+        &OptionsScope::Window(options_window.clone()),
     );
     gc.flags = (gc.flags as ::core::ffi::c_int | GRID_FLAG_NOPALETTE) as u_char;
     drop(ft_owner);

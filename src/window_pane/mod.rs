@@ -1,5 +1,6 @@
 //! Pane implementation. Window state is accessed through the Window trait.
 use crate::src::format::bytes::nullable_cstr;
+use crate::src::options::OptionsScope;
 use crate::src::server_client::ClientRegistry;
 use crate::src::session::Session;
 use crate::src::shared::client::ClientRef;
@@ -1537,8 +1538,11 @@ unsafe fn window_pane_update_used_data(
 }
 
 unsafe fn window_pane_default_cursor(wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
-    let mut wp = wp_owner.get();
-    screen_set_default_cursor(&mut *(*wp).screen_ptr(), &mut (*wp).borrow_options_mut());
+    let wp = wp_owner.get();
+    screen_set_default_cursor(
+        &mut *(*wp).screen_ptr(),
+        &OptionsScope::Pane(Rc::downgrade(wp_owner)),
+    );
 }
 
 fn window_pane_mode(wp: &window_pane) -> ::core::ffi::c_int {

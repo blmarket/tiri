@@ -1,16 +1,14 @@
 use crate::src::grid::view::{grid_view_clear, grid_view_delete_lines};
 use crate::src::grid::{
-    grid_adjust_lines, grid_clear_lines, grid_create, grid_duplicate_lines, grid_empty_line,
-    grid_reflow, grid_unwrap_position, grid_wrap_position,
+    grid_adjust_lines, grid_clear_lines, grid_create, grid_default_cell, grid_duplicate_lines,
+    grid_empty_line, grid_reflow, grid_unwrap_position, grid_wrap_position,
 };
 use crate::src::hyperlinks::{hyperlinks_init, hyperlinks_reset};
 use crate::src::log::{fatal, fatalx, log_debug};
-use crate::src::options::options;
-use crate::src::options::options_get_number;
+use crate::src::options::{options_get_number, OptionsScope};
 use crate::src::screen_write::{screen_write_free_list, screen_write_make_list};
 use crate::src::shared::abi::*;
 use crate::src::shared::display::*;
-use crate::src::shared::format::format_tree;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::MODEKEY_EMACS;
 use crate::src::shared::limits::UINT_MAX;
@@ -21,7 +19,7 @@ pub use crate::src::shared::screen::{
     MODE_MOUSE_ALL, MODE_MOUSE_BUTTON, MODE_MOUSE_SGR, MODE_MOUSE_STANDARD, MODE_MOUSE_UTF8,
     MODE_ORIGIN, MODE_SYNC, MODE_THEME_UPDATES, MODE_WRAP,
 };
-use crate::src::style::style_apply;
+use crate::src::style::style_apply_with_options;
 use crate::src::text::utf8::utf8_copy;
 use crate::src::tmux::{clean_name_cstring, with_global_options};
 use std::collections::VecDeque;
@@ -120,30 +118,11 @@ pub(crate) unsafe fn screen_set_tab(s: &mut screen, column: u_int, set: bool) {
 pub(crate) fn screen_clear_tabs(s: &mut screen) {
     s.tabs.fill(0);
 }
-pub unsafe fn screen_set_default_cursor(s: &mut screen, oo: &mut options) {
-    let mut gc: grid_cell = grid_cell {
-        data: utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        },
-        attr: 0,
-        flags: 0,
-        fg: 0,
-        bg: 0,
-        us: 0,
-        link: 0,
-    };
-    let mut c: ::core::ffi::c_int = 0;
-    style_apply(
-        &raw mut gc,
-        oo,
-        c"cursor-colour",
-        ::core::ptr::null_mut::<format_tree>(),
-    );
+pub unsafe fn screen_set_default_cursor(s: &mut screen, scope: &OptionsScope) {
+    let mut gc = grid_default_cell;
+    style_apply_with_options(&mut gc, c"cursor-colour", None, scope);
     s.default_ccolour = gc.fg;
-    c = options_get_number(oo, c"cursor-style") as ::core::ffi::c_int;
+    let c = scope.with_local(|oo| options_get_number(oo, c"cursor-style")) as ::core::ffi::c_int;
     s.default_mode = 0 as ::core::ffi::c_int;
     screen_set_cursor_style(c as u_int, &mut s.default_cstyle, &mut s.default_mode);
 }

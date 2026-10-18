@@ -3,6 +3,7 @@ use crate::src::format::format_create_defaults;
 use crate::src::log::{fatalx, log_cstr, log_debug, log_get_level};
 use crate::src::menu::{menu_height, menu_screen, menu_update, menu_width, menu_x, menu_y};
 use crate::src::options::options_get_number;
+use crate::src::options::OptionsScope;
 use crate::src::server::{marked_pane, server_is_marked};
 use crate::src::server_client::Client as _;
 use crate::src::session::Session;
@@ -965,9 +966,12 @@ unsafe fn redraw_get_default_border_style(
             None,
         );
         ft = &raw mut *ft_owner;
-        style_apply_with_options(&mut *dgc, c"pane-border-style", Some(&mut *ft), |visit| {
-            visit(&mut window_owner.borrow_options_mut())
-        });
+        style_apply_with_options(
+            &mut *dgc,
+            c"pane-border-style",
+            Some(&mut *ft),
+            &OptionsScope::Window(WindowRef::downgrade(&window_owner)),
+        );
         drop(ft_owner);
         dctx.pane_lines = window_owner.pane_border_lines();
         dctx.flags |= REDRAW_DEFAULT_SET;

@@ -7,6 +7,7 @@ use crate::src::format::{format_create, format_defaults, format_expand_cstring};
 use crate::src::format_draw::format_draw;
 use crate::src::fuzzy::fuzzy_match_owned;
 use crate::src::grid::{grid_default_cell, grid_get_cell};
+use crate::src::options::OptionsScope;
 use crate::src::prompt::{
     prompt_create, prompt_draw, prompt_incremental_start, prompt_key, prompt_mouse,
     prompt_set_options, prompt_update,
@@ -17,6 +18,7 @@ use crate::src::screen_write::{
     screen_write_cursormove, screen_write_start, screen_write_stop,
 };
 use crate::src::session::Session;
+use std::rc::Rc;
 
 use crate::src::shared::abi::*;
 use crate::src::shared::client::ClientRef;
@@ -343,12 +345,18 @@ unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         screen_write_stop(&mut ctx);
         return;
     }
-    style_apply_with_options(&mut mgc, c"switch-mode-match-style", None, |visit| {
-        visit(&mut mode_pane_owner.borrow_options_mut())
-    });
-    style_apply_with_options(&mut sgc, c"mode-style", None, |visit| {
-        visit(&mut mode_pane_owner.borrow_options_mut())
-    });
+    style_apply_with_options(
+        &mut mgc,
+        c"switch-mode-match-style",
+        None,
+        &OptionsScope::Pane(Rc::downgrade(&mode_pane_owner)),
+    );
+    style_apply_with_options(
+        &mut sgc,
+        c"mode-style",
+        None,
+        &OptionsScope::Pane(Rc::downgrade(&mode_pane_owner)),
+    );
     visible = window_switch_visible(data);
     i = 0 as u_int;
     while i < visible {

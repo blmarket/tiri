@@ -2326,7 +2326,7 @@ out.write_all(b"This is a colour option: ")
                                                                             {
                                                                                 current_block = 4086289836260337793;
                                                                             } else {
-                                                                                crate::src::style::style_apply_with_options(&mut gc, name, ft.as_mut(), |visit| item.oo.as_ref().expect("option scope").with_local(visit));
+                                                                                crate::src::style::style_apply_with_options(&mut gc, name, ft.as_mut(), item.oo.as_ref().expect("option scope"));
                                                                                 if screen_write_text(&mut *ctx,
 cx,
 sx,
@@ -2364,7 +2364,7 @@ out.write_all(b"This is a style option: ")
                                                                                     {
                                                                                         current_block = 4086289836260337793;
                                                                                     } else {
-                                                                                        crate::src::style::style_apply_with_options(&mut gc, name, ft.as_mut(), |visit| item.oo.as_ref().expect("option scope").with_local(visit));
+                                                                                        crate::src::style::style_apply_with_options(&mut gc, name, ft.as_mut(), item.oo.as_ref().expect("option scope"));
                                                                                         if screen_write_text(&mut *ctx,
 cx,
 sx,

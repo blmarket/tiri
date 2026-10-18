@@ -1,15 +1,12 @@
 use crate::src::compat::strtonum::strtonum;
 use crate::src::ffi::libc::strlcpy;
 use crate::src::format::bytes::{format_bytes, format_message_with};
-use crate::src::format::{format_create, format_single_cstring};
+use crate::src::format::format_single_cstring;
 use crate::src::grid::grid_default_cell;
 use crate::src::hyperlinks::{hyperlinks_get, hyperlinks_put, HyperlinksRef};
 use crate::src::log::{fatalx, log_bytes, log_debug};
 pub use crate::src::options::options;
-use crate::src::options::options_string_to_style;
 use crate::src::shared::abi::*;
-pub use crate::src::shared::format::format_tree;
-pub use crate::src::shared::format::FORMAT_NOJOBS;
 use crate::src::shared::grid::*;
 use crate::src::shared::hyperlinks::hyperlinks_uri;
 pub use crate::src::shared::limits::UINT_MAX;
@@ -597,43 +594,6 @@ pub fn style_link(sy: &style) -> Option<Box<hyperlinks_uri>> {
     let table = style_hyperlinks(false)?;
     let entry = hyperlinks_get(&table, sy.link)?;
     Some(Box::new(entry.clone()))
-}
-pub unsafe fn style_add(
-    gc: *mut grid_cell,
-    oo: &mut options,
-    name: &CStr,
-    ft: *mut format_tree,
-) -> style {
-    let mut owned_context = None;
-    let context = if let Some(context) = ft.as_mut() {
-        context
-    } else {
-        owned_context.insert(format_create(None, None, 0, FORMAT_NOJOBS))
-    };
-    let parsed = options_string_to_style(oo, name, context).unwrap_or(style_default);
-    if parsed.gc.fg != 8 {
-        (*gc).fg = parsed.gc.fg;
-    }
-    if parsed.gc.bg != 8 {
-        (*gc).bg = parsed.gc.bg;
-    }
-    if parsed.gc.us != 8 {
-        (*gc).us = parsed.gc.us;
-    }
-    (*gc).attr |= parsed.gc.attr;
-    if let Some(context) = owned_context {
-        drop(context);
-    }
-    parsed
-}
-pub unsafe fn style_apply(
-    mut gc: *mut grid_cell,
-    oo: &mut options,
-    name: &CStr,
-    mut ft: *mut format_tree,
-) {
-    *gc = grid_default_cell;
-    style_add(gc, oo, name, ft);
 }
 pub unsafe fn style_parse_colour(
     mut sy: *mut style,

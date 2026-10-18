@@ -7,7 +7,7 @@ use crate::src::format_draw::{format_draw, format_width};
 use crate::src::grid::grid_default_cell;
 use crate::src::key_string::key_string_format;
 use crate::src::log::{log_cstr, log_debug};
-use crate::src::options::options;
+use crate::src::options::OptionsScope;
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::paste::{paste_buffer_data, paste_get_top};
 use crate::src::prompt_history::{prompt_add_history, prompt_down_history, prompt_up_history};
@@ -41,9 +41,10 @@ use crate::src::text::utf8::{
     utf8_strwidth, utf8_to_data, utf8_tocstr_cstring,
 };
 use crate::src::tmux::{with_global_options, with_global_s_options};
-use std::ffi::{CStr, CString};
 #[cfg(test)]
-use std::{cell::RefCell, rc::Rc};
+use std::cell::RefCell;
+use std::ffi::{CStr, CString};
+use std::rc::Rc;
 
 const PROMPT_CALLBACK_ACTIVE: ::core::ffi::c_int = 0x2000;
 const PROMPT_FREE_PENDING: ::core::ffi::c_int = 0x4000;
@@ -98,12 +99,9 @@ fn prompt_write_flags(
 }
 pub unsafe fn prompt_set_options(pd: &mut prompt_create_data<'_>, session: Option<&SessionRef>) {
     use crate::src::session::Session;
-    let mut access = |visit: &mut dyn FnMut(&mut options)| {
-        if let Some(session) = session {
-            visit(&mut session.borrow_options_mut());
-        } else {
-            with_global_s_options(|oo| visit(oo));
-        }
+    let scope = match session {
+        Some(session) => OptionsScope::Session(Rc::downgrade(session)),
+        None => OptionsScope::GlobalSession,
     };
     let read_string = |key: &CStr| {
         if let Some(session) = session {
@@ -120,12 +118,12 @@ pub unsafe fn prompt_set_options(pd: &mut prompt_create_data<'_>, session: Optio
         }
     };
     use crate::src::style::style_apply_with_options;
-    style_apply_with_options(&mut pd.style, c"message-style", None, &mut access);
+    style_apply_with_options(&mut pd.style, c"message-style", None, &scope);
     style_apply_with_options(
         &mut pd.command_style,
         c"message-command-style",
         None,
-        &mut access,
+        &scope,
     );
     pd.style_str = read_string(c"message-style");
     pd.command_style_str = read_string(c"message-command-style");
@@ -140,9 +138,9 @@ pub unsafe fn prompt_set_options(pd: &mut prompt_create_data<'_>, session: Optio
         &mut pd.command_cmode,
     );
     let mut gc = grid_cell::default();
-    style_apply_with_options(&mut gc, c"prompt-cursor-colour", None, &mut access);
+    style_apply_with_options(&mut gc, c"prompt-cursor-colour", None, &scope);
     pd.ccolour = gc.fg;
-    style_apply_with_options(&mut gc, c"prompt-command-cursor-colour", None, &mut access);
+    style_apply_with_options(&mut gc, c"prompt-command-cursor-colour", None, &scope);
     pd.command_ccolour = gc.fg;
     pd.message_format = read_string(c"message-format");
     pd.keys = read_number(c"status-keys") as i32;

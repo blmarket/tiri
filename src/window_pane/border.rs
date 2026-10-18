@@ -6,6 +6,7 @@ use crate::src::format::{
 use crate::src::format_draw::format_draw;
 use crate::src::grid::{grid_compare, grid_default_cell};
 use crate::src::options::options_get_string;
+use crate::src::options::OptionsScope;
 use crate::src::screen_redraw::redraw_get_status_border_cell_type;
 use crate::src::screen_write::{
     screen_write_cell, screen_write_cursormove, screen_write_start, screen_write_stop,
@@ -61,9 +62,12 @@ pub(super) unsafe fn border_style(
     } else {
         c"pane-border-style"
     };
-    style_apply_with_options(&mut cell, key, Some(&mut context), |visit| {
-        visit(&mut pane.borrow_options_mut());
-    });
+    style_apply_with_options(
+        &mut cell,
+        key,
+        Some(&mut context),
+        &OptionsScope::Pane(Rc::downgrade(pane)),
+    );
     drop(context);
     let state = &mut *pane.get();
     if active {

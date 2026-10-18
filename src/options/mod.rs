@@ -12,7 +12,7 @@ mod table;
 mod types;
 
 pub use changes::options_push_changes;
-pub use from_string::{options_find_choice, options_string_to_style};
+pub use from_string::options_find_choice;
 pub use scope::OptionsScope;
 pub use select::{options_scope_from_flags, options_scope_from_name};
 pub(crate) use store::options_default_to_cstring;

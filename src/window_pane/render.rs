@@ -2,6 +2,7 @@
 use super::*;
 use crate::src::format::{format_create, format_defaults};
 use crate::src::grid::grid_default_cell;
+use crate::src::options::OptionsScope;
 use crate::src::prompt::prompt_draw;
 use crate::src::screen_redraw::{redraw_draw_ctx, REDRAW_SCROLLBAR_LEFT, REDRAW_STATUS_TOP};
 use crate::src::screen_write::{screen_write_init, screen_write_start, screen_write_stop};
@@ -121,15 +122,16 @@ pub(super) unsafe fn default_colours(pane: &Rc<UnsafeCell<window_pane>>) -> (gri
                     state.cached_gc = cell;
                 }
             }
-            let parsed =
-                crate::src::style::style_resolve_with_options(key, Some(&mut context), |visit| {
-                    visit(&mut pane.borrow_options_mut());
-                })
-                .unwrap_or_else(|| {
-                    let mut style = style::default();
-                    crate::src::style::style_set(&mut style, &grid_default_cell);
-                    style
-                });
+            let parsed = crate::src::style::style_resolve_with_options(
+                key,
+                Some(&mut context),
+                &OptionsScope::Pane(Rc::downgrade(pane)),
+            )
+            .unwrap_or_else(|| {
+                let mut style = style::default();
+                crate::src::style::style_set(&mut style, &grid_default_cell);
+                style
+            });
             apply_style(&mut cell, parsed);
             let state = &mut *pane.get();
             if active {

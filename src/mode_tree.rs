@@ -13,6 +13,7 @@ use crate::src::key_string::key_string_format;
 use crate::src::log::{log_bytes, log_debug};
 use crate::src::menu::{menu_add_items, menu_create, menu_display};
 use crate::src::options::options_get_number;
+use crate::src::options::OptionsScope;
 use crate::src::prompt::{
     prompt_closed, prompt_create, prompt_draw, prompt_free, prompt_key, prompt_mouse,
     prompt_set_options,
@@ -59,7 +60,6 @@ use crate::src::sort::{sort_next_order, sort_order_from_string, sort_order_to_st
 use crate::src::status::status_message_set;
 use crate::src::style::style_apply_with_options;
 use crate::src::tmux::with_global_s_options;
-use crate::src::window::Window as _;
 use crate::src::window_pane::WindowPane as _;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
@@ -898,23 +898,19 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
     }
     gc0 = grid_default_cell;
     gc = grid_default_cell;
-    style_apply_with_options(&mut gc, c"tree-mode-selection-style", None, |visit| {
-        visit(
-            &mut options_window
-                .upgrade()
-                .expect("live tree-mode window")
-                .borrow_options_mut(),
-        )
-    });
+    style_apply_with_options(
+        &mut gc,
+        c"tree-mode-selection-style",
+        None,
+        &OptionsScope::Window(options_window.clone()),
+    );
     box_gc = grid_default_cell;
-    style_apply_with_options(&mut box_gc, c"tree-mode-border-style", None, |visit| {
-        visit(
-            &mut options_window
-                .upgrade()
-                .expect("live tree-mode window")
-                .borrow_options_mut(),
-        )
-    });
+    style_apply_with_options(
+        &mut box_gc,
+        c"tree-mode-border-style",
+        None,
+        &OptionsScope::Window(options_window.clone()),
+    );
     dfg = gc.fg;
     dfg0 = gc0.fg;
     screen_write_start(&mut ctx, s);
@@ -1845,14 +1841,12 @@ unsafe fn mode_tree_draw_help(
     x = sx.wrapping_sub(box_w).wrapping_div(2 as u_int);
     y = sy.wrapping_sub(box_h).wrapping_div(2 as u_int);
     box_gc = grid_default_cell;
-    style_apply_with_options(&mut box_gc, c"tree-mode-border-style", None, |visit| {
-        visit(
-            &mut options_window
-                .upgrade()
-                .expect("live tree-mode window")
-                .borrow_options_mut(),
-        )
-    });
+    style_apply_with_options(
+        &mut box_gc,
+        c"tree-mode-border-style",
+        None,
+        &OptionsScope::Window(options_window.clone()),
+    );
     gc = grid_default_cell;
     let mut ft_owner = format_create_defaults(
         None,

@@ -7,6 +7,7 @@ use crate::src::format_draw::{format_trim_right_bytes, format_width};
 use crate::src::grid::grid_default_cell;
 use crate::src::key_string::key_string_format;
 use crate::src::options::options_get_number;
+use crate::src::options::OptionsScope;
 use crate::src::screen::screen_init;
 use crate::src::screen_write::{
     screen_write_box, screen_write_clearscreen, screen_write_menu, screen_write_start,
@@ -35,6 +36,7 @@ use crate::src::shared::style::*;
 use crate::src::shared::window::WindowWeak;
 use crate::src::style::{style_apply_with_options, style_parse, style_set};
 use crate::src::window::Window as _;
+use crate::src::window::WindowRef;
 use std::ffi::{CStr, CString};
 
 impl menu {
@@ -182,9 +184,12 @@ unsafe fn menu_reapply_styles(md: &mut menu_data) {
         ),
     ] {
         *cell = grid_default_cell;
-        style_apply_with_options(cell, option, Some(&mut *ft), |visit| {
-            visit(&mut window.borrow_options_mut());
-        });
+        style_apply_with_options(
+            cell,
+            option,
+            Some(&mut *ft),
+            &OptionsScope::Window(WindowRef::downgrade(&window)),
+        );
         if let Some(override_style) = override_style {
             style_set(&mut parsed, &grid_default_cell);
             if style_parse(&mut parsed, cell, override_style) == 0 {

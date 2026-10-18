@@ -12,6 +12,7 @@ use crate::src::mode_tree::{
     mode_tree_free, mode_tree_get_current, mode_tree_key, mode_tree_resize, mode_tree_run_command,
     mode_tree_start, mode_tree_view_name,
 };
+use crate::src::options::OptionsScope;
 use crate::src::screen_write::{
     screen_write_cursormove, screen_write_fast_copy, screen_write_hline, screen_write_preview,
     screen_write_vline,
@@ -356,14 +357,12 @@ unsafe fn window_client_draw_info(
     }
     if sx > 14 as u_int && i < sy {
         gc = grid_default_cell;
-        style_apply_with_options(&mut gc, c"tree-mode-border-style", None, |visit| {
-            visit(
-                &mut options_window
-                    .upgrade()
-                    .expect("live client-preview window")
-                    .borrow_options_mut(),
-            )
-        });
+        style_apply_with_options(
+            &mut gc,
+            c"tree-mode-border-style",
+            None,
+            &OptionsScope::Window(options_window.clone()),
+        );
         screen_write_cursormove(
             &mut *ctx,
             cx.wrapping_add(14 as u_int) as ::core::ffi::c_int,
@@ -480,14 +479,12 @@ unsafe fn window_client_draw(
         );
     }
     gc = grid_default_cell;
-    style_apply_with_options(&mut gc, c"tree-mode-border-style", None, |visit| {
-        visit(
-            &mut options_window
-                .upgrade()
-                .expect("live client-preview window")
-                .borrow_options_mut(),
-        )
-    });
+    style_apply_with_options(
+        &mut gc,
+        c"tree-mode-border-style",
+        None,
+        &OptionsScope::Window(options_window.clone()),
+    );
     screen_write_hline(
         &mut *ctx,
         sx,

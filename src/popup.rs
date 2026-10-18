@@ -5,6 +5,7 @@ use crate::src::input::{input_init, input_parse_screen};
 use crate::src::input_keys::{input_key, input_key_get_mouse};
 use crate::src::job::{job_free, job_get_event, job_resize, job_run};
 use crate::src::options::options_get_number;
+use crate::src::options::OptionsScope;
 use crate::src::reactor::{
     bufferevent_get_input, bufferevent_write, evbuffer_drain, evbuffer_get_length, evbuffer_pullup,
 };
@@ -14,6 +15,7 @@ use crate::src::screen_write::{
     screen_write_box, screen_write_clearscreen, screen_write_cursormove, screen_write_fast_copy,
     screen_write_start, screen_write_stop,
 };
+use crate::src::window::WindowRef;
 use libc::memcpy;
 
 use crate::src::server_client::{Client, Overlay};
@@ -273,7 +275,7 @@ unsafe fn popup_reapply_styles(popup: &PopupGuard) {
         &mut (*pd).defaults,
         c"popup-style",
         Some(&mut *ft),
-        |read| read(&mut window.borrow_options_mut()),
+        &OptionsScope::Window(WindowRef::downgrade(&window)),
     );
     if !(*pd).style.is_none() {
         style_set(&raw mut sytmp, &grid_default_cell);
@@ -297,7 +299,7 @@ unsafe fn popup_reapply_styles(popup: &PopupGuard) {
         &mut (*pd).border_cell,
         c"popup-border-style",
         Some(&mut *ft),
-        |read| read(&mut window.borrow_options_mut()),
+        &OptionsScope::Window(WindowRef::downgrade(&window)),
     );
     if !(*pd).border_style.is_none() {
         style_set(&raw mut sytmp, &grid_default_cell);
@@ -1026,7 +1028,7 @@ pub(crate) unsafe fn popup_display(
         &mut (*pd).border_cell,
         c"popup-border-style",
         None,
-        |read| read(&mut window.borrow_options_mut()),
+        &OptionsScope::Window(WindowRef::downgrade(&window)),
     );
     if border_style.is_some() {
         style_set(&raw mut sytmp, &grid_default_cell);
@@ -1042,9 +1044,7 @@ pub(crate) unsafe fn popup_display(
     }
     (*pd).border_cell.attr = 0 as u_short;
     screen_init(&mut (*pd).s, jx, jy, 0 as u_int);
-    with_global_w_options(|oo| {
-        screen_set_default_cursor(&mut (*pd).s, oo);
-    });
+    screen_set_default_cursor(&mut (*pd).s, &OptionsScope::GlobalWindow);
     {
         let mut palette = (*pd).palette.try_borrow_mut().expect("new popup palette");
         colour_palette_init(&mut palette);
@@ -1057,9 +1057,12 @@ pub(crate) unsafe fn popup_display(
         &raw const grid_default_cell as *const ::core::ffi::c_void,
         ::core::mem::size_of::<grid_cell>() as size_t,
     );
-    style_apply_with_options(&mut (*pd).defaults, c"popup-style", None, |read| {
-        read(&mut window.borrow_options_mut())
-    });
+    style_apply_with_options(
+        &mut (*pd).defaults,
+        c"popup-style",
+        None,
+        &OptionsScope::Window(WindowRef::downgrade(&window)),
+    );
     drop(window);
     if style.is_some() {
         style_set(&raw mut sytmp, &grid_default_cell);
