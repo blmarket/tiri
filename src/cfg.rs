@@ -1,7 +1,7 @@
 use crate::src::cmd::parse::{cmd_parse_from_buffer, cmd_parse_from_file};
 use crate::src::cmd::queue::{
     cmdq_add_format, cmdq_append, cmdq_copy_state, cmdq_get_callback_owned, cmdq_get_client,
-    cmdq_get_command, cmdq_get_state, cmdq_insert_after, cmdq_new_state, cmdq_print, cmdq_wait,
+    cmdq_get_command, cmdq_get_state_owned, cmdq_insert_after, cmdq_new_state, cmdq_print, cmdq_wait,
     CmdqWaiter,
 };
 use crate::src::compat::stdio::CFile;
@@ -53,7 +53,7 @@ pub(crate) fn cfg_set_files(files: Vec<CString>) {
 pub(crate) fn cfg_files() -> &'static [CString] {
     CFG_FILES.get().map_or(&[], Vec::as_slice)
 }
-unsafe fn cfg_client_done(item: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> CmdOutcome {
+unsafe fn cfg_client_done(item: &std::rc::Rc<std::cell::RefCell<cmdq_item>>) -> CmdOutcome {
     if cfg_finished == 0 {
         let (waiter, retval) = cmdq_wait(item);
         drop(CFG_WAITER.replace(waiter));
@@ -183,12 +183,11 @@ pub unsafe fn load_cfg_from_buffer(
     buf: &[u8],
     path: &CStr,
     c: Option<&ClientRef>,
-    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     mut current: *mut cmd_find_state,
     mut flags: ::core::ffi::c_int,
-    mut new_item: Option<&mut std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>>,
+    mut new_item: Option<&mut std::rc::Weak<std::cell::RefCell<cmdq_item>>>,
 ) -> ::core::ffi::c_int {
-    let item = item_handle.map_or(std::ptr::null_mut(), |item| item.get());
     let mut pi: cmd_parse_input = cmd_parse_input {
         flags: 0,
         file: None,
@@ -226,11 +225,8 @@ pub unsafe fn load_cfg_from_buffer(
         drop(pr.cmdlist.take());
         return 0 as ::core::ffi::c_int;
     }
-    let state = if !item.is_null() {
-        cmdq_copy_state(
-            cmdq_get_state(&*item).expect("command queue state"),
-            current,
-        )
+    let state = if let Some(item) = item_handle {
+        cmdq_copy_state(&cmdq_get_state_owned(&item.borrow()), current)
     } else {
         cmdq_new_state(
             ::core::ptr::null_mut::<cmd_find_state>(),
@@ -272,9 +268,9 @@ fn cfg_drain_causes(mut deliver: impl FnMut(&CStr)) {
     }
 }
 
-pub unsafe fn cfg_print_causes(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) {
-    let item = item_handle.get();
-    let c_owner = cmdq_get_client((item).as_ref());
+pub unsafe fn cfg_print_causes(item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>) {
+    let item = item_handle.borrow();
+    let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     cfg_drain_causes(|cause| {
         if !c.is_none()
@@ -343,7 +339,7 @@ mod cfg_wait_tests {
     use crate::src::server_client::queue_test_clients as clients;
     use crate::src::shared::client::CLIENT_DEAD;
     use crate::src::tmux::with_global_options;
-    use std::cell::{Cell, UnsafeCell};
+    use std::cell::Cell;
     use std::rc::{Rc, Weak};
 
     /// An unfinished config, and server options with no history file for
@@ -383,7 +379,7 @@ mod cfg_wait_tests {
         owner: &ClientRef,
         ran: &Rc<Cell<bool>>,
         released: &Rc<Cell<bool>>,
-    ) -> Weak<UnsafeCell<cmdq_item>> {
+    ) -> Weak<std::cell::RefCell<cmdq_item>> {
         let head = cmdq_append(
             Some(owner),
             cmdq_get_callback_owned(

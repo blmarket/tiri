@@ -79,15 +79,16 @@ pub static cmd_send_prefix_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_send_keys_inject_key(
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-    after_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
+    after_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     mut args: *mut args,
     mut key: key_code,
-) -> std::rc::Weak<std::cell::UnsafeCell<cmdq_item>> {
+) -> std::rc::Weak<std::cell::RefCell<cmdq_item>> {
     let mut after = after_handle.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-    let item = item_handle.get();
-    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let tc_owner = cmdq_get_target_client((item).as_ref());
+    let item = item_handle.borrow();
+    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target: *mut cmd_find_state = &mut target_state;
+    let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut _s: Option<SessionRef> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
@@ -156,13 +157,12 @@ unsafe fn cmd_send_keys_inject_key(
     after
 }
 unsafe fn cmd_send_keys_inject_string(
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-    after_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
+    after_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     mut args: *mut args,
     mut i: ::core::ffi::c_int,
-) -> std::rc::Weak<std::cell::UnsafeCell<cmdq_item>> {
+) -> std::rc::Weak<std::cell::RefCell<cmdq_item>> {
     let mut after = after_handle.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-    let _item = item_handle.get();
     let mut s: &std::ffi::CStr =
         args_string(&mut *(args), i as u_int).expect("argument is present");
     let mut uc: utf8_char = 0;
@@ -226,14 +226,15 @@ unsafe fn cmd_send_keys_inject_string(
 }
 unsafe fn cmd_send_keys_exec(
     mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let item = item_handle.get();
+    let item = item_handle.borrow();
     let mouse_pane_owner;
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let tc_owner = cmdq_get_target_client((item).as_ref());
+    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target: *mut cmd_find_state = &mut target_state;
+    let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut s: Option<SessionRef> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();

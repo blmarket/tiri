@@ -52,9 +52,9 @@ pub static cmd_switch_client_entry: cmd_entry = {
 };
 unsafe fn cmd_switch_client_exec(
     mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let item = item_handle.get();
+    let item = item_handle.borrow();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let current = cmdq_get_state_owned(&*(item));
@@ -70,9 +70,9 @@ unsafe fn cmd_switch_client_exec(
         args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut type_0: cmd_find_type = CMD_FIND_PANE;
     let mut flags: ::core::ffi::c_int = 0;
-    let c_owner = cmdq_get_client((item).as_ref());
+    let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
-    let tc_owner = cmdq_get_target_client((item).as_ref());
+    let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut selected_session;
     let mut s: Option<SessionRef> = None;
@@ -183,7 +183,7 @@ unsafe fn cmd_switch_client_exec(
             return CmdOutcome::Error;
         }
     } else {
-        if cmdq_get_client((item).as_ref()).is_none() {
+        if cmdq_get_client(Some(&*item)).is_none() {
             return CmdOutcome::Normal;
         }
         if let Some(pane) = wp.as_ref().filter(|pane| {

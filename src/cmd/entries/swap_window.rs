@@ -41,13 +41,15 @@ pub static cmd_swap_window_entry: cmd_entry = {
 };
 unsafe fn cmd_swap_window_exec(
     mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let item = item_handle.get();
+    let item = item_handle.borrow();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
-    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
+    let mut source_state = crate::src::cmd::queue::cmdq_get_source(&item).clone();
+    let mut source: *mut cmd_find_state = &mut source_state;
+    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target: *mut cmd_find_state = &mut target_state;
     let mut src: Option<SessionRef> = (*source).session_handle();
     let mut dst: Option<SessionRef> = (*target).session_handle();
     let mut sg_src = crate::src::shared::session::SessionGroupWeak::new();

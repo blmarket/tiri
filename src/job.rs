@@ -595,7 +595,7 @@ pub fn job_still_running() -> ::core::ffi::c_int {
 }
 
 pub unsafe fn job_print_summary(
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     mut blank: ::core::ffi::c_int,
 ) {
     for (n, handle) in jobs::snapshot().into_iter().enumerate() {

@@ -62,12 +62,12 @@ pub static cmd_new_window_entry: cmd_entry = {
 };
 unsafe fn cmd_new_window_exec(
     mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let item = item_handle.get();
+    let item = item_handle.borrow();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let c_owner = cmdq_get_client((item).as_ref());
+    let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     let current = cmdq_get_state_owned(&*(item));
     let target = cmdq_get_target(&*item).clone();
@@ -85,7 +85,7 @@ unsafe fn cmd_new_window_exec(
         flags: 0,
     };
     let mut argv_owner = Vec::new();
-    let tc_owner = cmdq_get_target_client((item).as_ref());
+    let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut _tc: Option<ClientRef> = tc_owner.clone();
     let session_owner = target.session_handle().expect("new-window target session");
     let s = Some(session_owner.clone());

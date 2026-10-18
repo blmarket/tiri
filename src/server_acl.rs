@@ -134,7 +134,7 @@ pub unsafe fn server_acl_init() {
 pub fn server_acl_find(mut id: id_t, mut flags: ::core::ffi::c_int) -> ::core::ffi::c_int {
     server_acl_entries::find(id, flags).is_some() as ::core::ffi::c_int
 }
-pub unsafe fn server_acl_display(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) {
+pub unsafe fn server_acl_display(item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>) {
     let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
     let mut gr: *mut group = ::core::ptr::null_mut::<group>();
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();

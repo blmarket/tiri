@@ -44,7 +44,7 @@ pub static cmd_server_access_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_server_access_deny(
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     mut id: id_t,
     mut flags: ::core::ffi::c_int,
     type_0: &CStr,
@@ -64,12 +64,12 @@ unsafe fn cmd_server_access_deny(
 }
 unsafe fn cmd_server_access_exec(
     mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let item = item_handle.get();
+    let item = item_handle.borrow();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let c_owner = cmdq_get_target_client((item).as_ref());
+    let c_owner = cmdq_get_target_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut type_0: &CStr = c"";

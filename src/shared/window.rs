@@ -95,7 +95,7 @@ impl window_mode_entry {
 /// the screen the mode draws to.
 pub type window_mode_init_cb = unsafe fn(
     refbox::Weak<window_mode_entry>,
-    Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     *mut cmd_find_state,
     *mut args,
 ) -> *mut screen;

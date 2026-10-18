@@ -87,7 +87,7 @@ pub static window_panes_mode: window_mode = {
             window_panes_init
                 as unsafe fn(
                     refbox::Weak<window_mode_entry>,
-                    Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+                    Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
                     *mut cmd_find_state,
                     *mut args,
                 ) -> *mut screen,
@@ -832,11 +832,10 @@ unsafe fn window_panes_timer_callback(wme: refbox::Weak<window_mode_entry>) {
 }
 unsafe fn window_panes_init(
     mut wme: refbox::Weak<window_mode_entry>,
-    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     _fs: *mut cmd_find_state,
     mut args: *mut args,
 ) -> *mut screen {
-    let item = item_handle.map_or(std::ptr::null_mut(), |item| item.get());
     let mode_pane_owner = wme
         .get_unchecked()
         .wp
@@ -850,15 +849,22 @@ unsafe fn window_panes_init(
     let mut s: Option<SessionRef> = None;
     let (sx, sy) = mode_pane_owner.screen_size(false);
     let mut delay: u_int = 0;
-    if item.is_null() {
+    let Some(item_owner) = item_handle else {
         return ::core::ptr::null_mut::<screen>();
-    }
-    self_0 = cmdq_get_cmd(&*(item));
+    };
+    let (mut source_state, mut target_state) = {
+        let item = item_owner.borrow();
+        self_0 = cmdq_get_cmd(&item);
+        (
+            crate::src::cmd::queue::cmdq_get_source(&item).clone(),
+            crate::src::cmd::queue::cmdq_get_target(&item).clone(),
+        )
+    };
     if !self_0.is_alive() {
         return ::core::ptr::null_mut::<screen>();
     }
-    source = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
-    target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
+    source = &raw mut source_state;
+    target = &raw mut target_state;
     s = (*target).session_handle();
     if args_has(&*args, 'd' as i32 as u_char) == 0 {
         delay = options_get_number(

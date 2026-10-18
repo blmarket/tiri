@@ -2969,7 +2969,7 @@ pub unsafe fn format_expand_cstring(
     format_expand1_cstring(&raw mut es, fmt)
 }
 pub(crate) unsafe fn format_single_cstring(
-    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     mut fmt: *const ::core::ffi::c_char,
     c_owner: Option<&ClientRef>,
     s_owner: Option<&SessionRef>,
@@ -2983,7 +2983,7 @@ pub(crate) unsafe fn format_single_cstring(
     expanded
 }
 pub(crate) unsafe fn format_single_from_state_cstring(
-    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     fmt: *const ::core::ffi::c_char,
     c_owner: Option<&ClientRef>,
     fs: *mut cmd_find_state,
@@ -2998,18 +2998,14 @@ pub(crate) unsafe fn format_single_from_state_cstring(
     )
 }
 pub(crate) unsafe fn format_single_from_target_cstring(
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     fmt: *const ::core::ffi::c_char,
 ) -> CString {
-    let item = item_handle.get();
-    let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: Option<ClientRef> = tc_owner.clone();
-    format_single_from_state_cstring(
-        Some(item_handle),
-        fmt,
-        tc.as_ref(),
-        crate::src::cmd::queue::cmdq_get_target_mut(&mut *item),
-    )
+    let (tc, mut target) = {
+        let item = item_handle.borrow();
+        (cmdq_get_target_client(Some(&*item)), crate::src::cmd::queue::cmdq_get_target(&item).clone())
+    };
+    format_single_from_state_cstring(Some(item_handle), fmt, tc.as_ref(), &mut target)
 }
 
 #[cfg(test)]

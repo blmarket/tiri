@@ -132,7 +132,7 @@ pub unsafe fn args_strtonum_and_expand_result(
     flag: u_char,
     minval: ::core::ffi::c_longlong,
     maxval: ::core::ffi::c_longlong,
-    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
 ) -> Result<i64, ArgumentValueError> {
     let value = args_last_string(args, flag).ok_or(ArgumentValueError::Missing)?;
     let formatted = format_single_from_target_cstring(

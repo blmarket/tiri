@@ -47,12 +47,13 @@ pub static cmd_kill_session_entry: cmd_entry = {
 };
 unsafe fn cmd_kill_session_exec(
     mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let item = item_handle.get();
+    let item = item_handle.borrow();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
+    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target: *mut cmd_find_state = &mut target_state;
     let source = (*target).s.upgrade().expect("live target session");
     let mut sg = crate::src::shared::session::SessionGroupWeak::new();
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
@@ -92,12 +93,11 @@ unsafe fn cmd_kill_session_exec(
     CmdOutcome::Normal
 }
 unsafe fn cmd_kill_session_all(
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     filter: Option<&CStr>,
 ) -> CmdOutcome {
-    let item = item_handle.get();
-    let mut s: Option<SessionRef> =
-        (*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item)).session_handle();
+    let item = item_handle.borrow();
+    let mut s: Option<SessionRef> = crate::src::cmd::queue::cmdq_get_target(&item).session_handle();
     let mut sloop: Option<SessionRef> = None;
     let mut sloop_owner = sessions::first();
     sloop = sloop_owner.clone();
@@ -120,14 +120,14 @@ unsafe fn cmd_kill_session_all(
     CmdOutcome::Normal
 }
 unsafe fn cmd_kill_session_filter(
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     s_owner: &SessionRef,
     filter: Option<&CStr>,
 ) -> ::core::ffi::c_int {
     let filter: *const ::core::ffi::c_char = filter.map_or(std::ptr::null(), CStr::as_ptr);
-    let item = item_handle.get();
+    let item = item_handle.borrow();
 
-    let queue_client = cmdq_get_client((item).as_ref());
+    let queue_client = cmdq_get_client(Some(&*item));
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut flag: ::core::ffi::c_int = 0;
     if filter.is_null() {

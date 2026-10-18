@@ -198,7 +198,7 @@ pub static window_tree_mode: window_mode = {
             window_tree_init
                 as unsafe fn(
                     refbox::Weak<window_mode_entry>,
-                    Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+                    Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
                     *mut cmd_find_state,
                     *mut args,
                 ) -> *mut screen,
@@ -1838,7 +1838,7 @@ fn window_tree_help() -> mode_tree_help_info {
 }
 unsafe fn window_tree_init(
     mut wme: refbox::Weak<window_mode_entry>,
-    _item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    _item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     mut fs: *mut cmd_find_state,
     mut args: *mut args,
 ) -> *mut screen {

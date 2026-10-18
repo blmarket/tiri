@@ -129,7 +129,7 @@ pub struct format_tree {
     pub wp: std::rc::Weak<UnsafeCell<window_pane>>,
     pub pb: Option<PasteBufferRef>,
     /// Queue item used for verbose output, observed without retaining it.
-    pub item: std::rc::Weak<UnsafeCell<cmdq_item>>,
+    pub item: std::rc::Weak<std::cell::RefCell<cmdq_item>>,
     pub client: Option<ClientRef>,
     pub flags: ::core::ffi::c_int,
     pub tag: u_int,

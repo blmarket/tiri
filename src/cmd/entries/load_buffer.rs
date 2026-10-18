@@ -16,7 +16,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_TFLAG};
 use crate::src::tty::tty_set_selection;
-use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::Weak;
 
@@ -52,7 +51,7 @@ pub static cmd_load_buffer_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_load_buffer_done(
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     mut cdata: cmd_load_buffer_data,
     mut outcome: FileOutcome,
 ) {
@@ -96,7 +95,7 @@ unsafe fn cmd_load_buffer_done(
 async fn cmd_load_buffer_complete(
     done: impl std::future::Future<Output = Option<FileOutcome>>,
     cdata: cmd_load_buffer_data,
-    item: Weak<UnsafeCell<cmdq_item>>,
+    item: Weak<std::cell::RefCell<cmdq_item>>,
 ) {
     let Some(outcome) = done.await else {
         drop(cdata);
@@ -106,13 +105,13 @@ async fn cmd_load_buffer_complete(
 }
 unsafe fn cmd_load_buffer_exec(
     mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let item = item_handle.get();
-    let queue_client = cmdq_get_client((item).as_ref());
+    let item = item_handle.borrow();
+    let queue_client = cmdq_get_client(Some(&*item));
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let tc_owner = cmdq_get_target_client((item).as_ref());
+    let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut cdata = cmd_load_buffer_data {
         client: None,
@@ -155,7 +154,7 @@ mod tests {
         owner: &ClientRef,
         done: impl std::future::Future<Output = Option<FileOutcome>> + 'static,
         cdata: cmd_load_buffer_data,
-    ) -> Weak<UnsafeCell<cmdq_item>> {
+    ) -> Weak<std::cell::RefCell<cmdq_item>> {
         let head = cmdq_append(
             Some(owner),
             cmdq_get_callback_owned(

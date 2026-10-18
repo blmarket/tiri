@@ -49,7 +49,7 @@ use std::ffi::{CStr, CString};
 use crate::src::shared::abi::__off_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::CLIENT_CONTROL;
-use crate::src::shared::command::{cmd_find_state, cmdq_item};
+use crate::src::shared::command::cmd_find_state;
 use crate::src::shared::key::*;
 use crate::src::shared::limits::SIZE_MAX;
 use crate::src::shared::pane::window_pane;
@@ -195,9 +195,6 @@ pub(super) unsafe fn spawn_pane(
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let item_owner = (*sc).item.upgrade();
-    let mut item: *mut cmdq_item = item_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut c: Option<ClientRef> = None;
     let mut loop_0: Option<ClientRef> = None;
     let session_owner = (*sc).s.upgrade().expect("spawn context session");
@@ -242,10 +239,10 @@ pub(super) unsafe fn spawn_pane(
         let mut oldset: sigset_t = unsafe { ::core::mem::zeroed() };
         let mut key: key_code = 0;
         let c_owner;
-        if !item.is_null() {
-            target_session_owner =
-                (*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item)).session_handle();
-            c_owner = cmdq_get_client((item).as_ref());
+        if let Some(item_owner) = item_owner.as_ref() {
+            let item = item_owner.borrow();
+            target_session_owner = crate::src::cmd::queue::cmdq_get_target(&item).session_handle();
+            c_owner = cmdq_get_client(Some(&*item));
             c = c_owner.clone();
         } else {
             target_session_owner = Some(session_owner.clone());
@@ -254,7 +251,7 @@ pub(super) unsafe fn spawn_pane(
         }
         spawn_log(c"spawn_pane", sc);
         if let Some(requested_cwd) = (*sc).cwd.as_ref() {
-            if !item.is_null() {
+            if item_owner.is_some() {
                 cwd = Some(format_single_cstring(
                     item_owner.as_ref(),
                     requested_cwd.as_ptr(),

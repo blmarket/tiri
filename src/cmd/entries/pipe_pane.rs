@@ -29,9 +29,9 @@ pub static cmd_pipe_pane_entry: cmd_entry = {
 };
 unsafe fn cmd_pipe_pane_exec(
     command: refbox::Weak<cmd>,
-    item: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let target = crate::src::cmd::queue::cmdq_get_target(&*item.get());
+    let target = crate::src::cmd::queue::cmdq_get_target(&item.borrow()).clone();
     let pane = target.wp.upgrade().expect("live pipe target pane");
     pane.pipe(command, item)
 }

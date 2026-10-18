@@ -167,7 +167,7 @@ pub static window_client_mode: window_mode = {
             window_client_init
                 as unsafe fn(
                     refbox::Weak<window_mode_entry>,
-                    Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+                    Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
                     *mut cmd_find_state,
                     *mut args,
                 ) -> *mut screen,
@@ -607,7 +607,7 @@ unsafe fn window_client_data(wme: refbox::Weak<window_mode_entry>) -> *mut windo
 
 unsafe fn window_client_init(
     mut wme: refbox::Weak<window_mode_entry>,
-    _item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    _item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     _fs: *mut cmd_find_state,
     mut args: *mut args,
 ) -> *mut screen {

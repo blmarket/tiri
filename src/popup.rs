@@ -1158,7 +1158,7 @@ mod waiter_tests {
     unsafe fn waiting_head(
         owner: &ClientRef,
         ran: &Rc<Cell<bool>>,
-    ) -> (CmdqWaiter, Weak<UnsafeCell<cmdq_item>>) {
+    ) -> (CmdqWaiter, Weak<std::cell::RefCell<cmdq_item>>) {
         let slot: Rc<RefCell<Option<CmdqWaiter>>> = Default::default();
         let stored = slot.clone();
         let head = cmdq_append(

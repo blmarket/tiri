@@ -43,7 +43,7 @@ pub static window_clock_mode: window_mode = {
             window_clock_init
                 as unsafe fn(
                     refbox::Weak<window_mode_entry>,
-                    Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+                    Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
                     *mut cmd_find_state,
                     *mut args,
                 ) -> *mut screen,
@@ -641,7 +641,7 @@ unsafe fn window_clock_timer_callback(wme: refbox::Weak<window_mode_entry>) {
 }
 unsafe fn window_clock_init(
     mut wme: refbox::Weak<window_mode_entry>,
-    _item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    _item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     _fs: *mut cmd_find_state,
     _args: *mut args,
 ) -> *mut screen {

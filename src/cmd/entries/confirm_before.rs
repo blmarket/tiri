@@ -20,7 +20,7 @@ use crate::src::shared::command::{
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{prompt_result, PROMPT_CLOSE, PROMPT_SINGLE};
 use crate::src::status::status_prompt_set;
-use std::cell::{RefCell, UnsafeCell};
+use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
 
@@ -70,14 +70,15 @@ fn cmd_confirm_before_args_parse(
 }
 unsafe fn cmd_confirm_before_exec(
     mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let item = item_handle.get();
+    let item = item_handle.borrow();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let tc_owner = cmdq_get_target_client((item).as_ref());
+    let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
-    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
+    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target: *mut cmd_find_state = &mut target_state;
     let mut confirm_key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut wait: ::core::ffi::c_int =
         (args_has(&*args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
@@ -161,7 +162,7 @@ unsafe fn cmd_confirm_before_exec(
 async fn cmd_confirm_before_wait(
     answered: tiri_rt::oneshot::Receiver<bool>,
     cmdlist: Rc<RefCell<cmd_list>>,
-    item: Weak<UnsafeCell<cmdq_item>>,
+    item: Weak<std::cell::RefCell<cmdq_item>>,
 ) {
     let Some(confirmed) = answered.await else {
         drop(cmdlist);
@@ -170,10 +171,11 @@ async fn cmd_confirm_before_wait(
     unsafe {
         let item = cmdq_resumed(&item);
         if confirmed {
-            let new_item_allocation = cmdq_get_command(&cmdlist, (*item.get()).state.as_ref());
+            let new_item_allocation = cmdq_get_command(&cmdlist, item.borrow().state.as_ref());
             cmdq_insert_after(&item, new_item_allocation);
         }
-        if let Some(client) = cmdq_get_client(Some(&*item.get())) {
+        let client = cmdq_get_client(Some(&item.borrow()));
+        if let Some(client) = client {
             if client.attached_session().upgrade().is_none() {
                 client.set_return_value(if confirmed { 0 } else { 1 });
             }
@@ -230,7 +232,7 @@ mod tests {
         owner: &ClientRef,
         default_yes: bool,
     ) -> (
-        Weak<UnsafeCell<cmdq_item>>,
+        Weak<std::cell::RefCell<cmdq_item>>,
         Box<cmd_confirm_before_data>,
         Weak<RefCell<cmd_list>>,
     ) {

@@ -32,7 +32,7 @@ enum CaptureBound {
 }
 unsafe fn parse_bound(
     arguments: &mut args,
-    item: &Rc<UnsafeCell<cmdq_item>>,
+    item: &Rc<std::cell::RefCell<cmdq_item>>,
     flag: u8,
 ) -> CaptureBound {
     if args_get(arguments, flag).is_some_and(|value| value == c"-") {
@@ -66,7 +66,7 @@ fn resolve_bound(bound: CaptureBound, history: u32, height: u32, end: bool) -> u
 pub(super) unsafe fn capture(
     owner: &Rc<UnsafeCell<window_pane>>,
     arguments: &mut args,
-    item: &Rc<UnsafeCell<cmdq_item>>,
+    item: &Rc<std::cell::RefCell<cmdq_item>>,
 ) -> Result<Vec<u8>, CString> {
     if args_has(arguments, b'R') != 0 {
         return Ok(cmd_capture_pane_grid(&*owner.get()));

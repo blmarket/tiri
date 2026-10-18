@@ -86,7 +86,7 @@ pub trait WindowPane {
     unsafe fn capture(
         &self,
         arguments: &mut args,
-        item: &Rc<UnsafeCell<cmdq_item>>,
+        item: &Rc<std::cell::RefCell<cmdq_item>>,
     ) -> Result<Vec<u8>, CString>;
     /// Clear complete history after retiring modes; optionally reset link identities.
     unsafe fn clear_history(&self, reset_links: bool);
@@ -143,7 +143,7 @@ pub trait WindowPane {
     /// returned continuation, or does not wait without one.
     unsafe fn start_input(
         &self,
-        item: &Rc<UnsafeCell<cmdq_item>>,
+        item: &Rc<std::cell::RefCell<cmdq_item>>,
     ) -> Result<Option<impl std::future::Future<Output = ()> + 'static>, CString>;
     /// Translate a mouse report after copying pane geometry; no pane borrow
     /// survives the coordinate calculation or the caller's following work.
@@ -263,7 +263,7 @@ pub trait WindowPane {
         &self,
         source: Option<&Rc<UnsafeCell<window_pane>>>,
         mode: &'static window_mode,
-        item: Option<&Rc<UnsafeCell<cmdq_item>>>,
+        item: Option<&Rc<std::cell::RefCell<cmdq_item>>>,
         find: Option<&mut cmd_find_state>,
         arguments: Option<&mut args>,
     ) -> i32;
@@ -298,7 +298,7 @@ pub trait WindowPane {
     unsafe fn pipe(
         &self,
         command: refbox::Weak<cmd>,
-        item: &Rc<UnsafeCell<cmdq_item>>,
+        item: &Rc<std::cell::RefCell<cmdq_item>>,
     ) -> CmdOutcome;
     unsafe fn process_id(&self) -> pid_t;
     /// Record an exit before finishing waits/editors; false means a different process.
@@ -743,7 +743,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     unsafe fn capture(
         &self,
         arguments: &mut args,
-        item: &Rc<UnsafeCell<cmdq_item>>,
+        item: &Rc<std::cell::RefCell<cmdq_item>>,
     ) -> Result<Vec<u8>, CString> {
         super::capture::capture(self, arguments, item)
     }
@@ -800,7 +800,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     }
     unsafe fn start_input(
         &self,
-        item: &Rc<UnsafeCell<cmdq_item>>,
+        item: &Rc<std::cell::RefCell<cmdq_item>>,
     ) -> Result<Option<impl std::future::Future<Output = ()> + 'static>, CString> {
         window_pane_start_input(self, item)
     }
@@ -1095,7 +1095,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         &self,
         source: Option<&Rc<UnsafeCell<window_pane>>>,
         mode: &'static window_mode,
-        item: Option<&Rc<UnsafeCell<cmdq_item>>>,
+        item: Option<&Rc<std::cell::RefCell<cmdq_item>>>,
         find: Option<&mut cmd_find_state>,
         arguments: Option<&mut args>,
     ) -> i32 {
@@ -1258,7 +1258,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     unsafe fn pipe(
         &self,
         command: refbox::Weak<cmd>,
-        item: &Rc<UnsafeCell<cmdq_item>>,
+        item: &Rc<std::cell::RefCell<cmdq_item>>,
     ) -> CmdOutcome {
         process::pipe_pane(self, command, item)
     }

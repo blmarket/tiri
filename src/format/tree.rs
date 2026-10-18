@@ -98,9 +98,9 @@ pub fn format_get_pane(
 }
 pub(super) unsafe fn format_create_add_item(
     mut ft: *mut format_tree,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) {
-    let item = item_handle.get();
+    let item = item_handle.borrow();
     let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
     let mut m: *mut mouse_event = &raw mut (*event).m;
@@ -114,26 +114,25 @@ pub(super) unsafe fn format_create_add_item(
 /// Construct the sole owner; callers may project pointers for legacy readers.
 unsafe fn format_create_box(
     c: Option<ClientRef>,
-    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     tag: ::core::ffi::c_int,
     flags: ::core::ffi::c_int,
 ) -> Box<format_tree> {
-    let item = item_handle.map_or(std::ptr::null_mut(), |item| item.get());
     let mut owner = Box::new(format_tree::default());
     let ft = &raw mut *owner;
     (*ft).client = c;
     (*ft).item = item_handle.map(std::rc::Rc::downgrade).unwrap_or_default();
     (*ft).tag = tag as u_int;
     (*ft).flags = flags;
-    if !item.is_null() {
-        format_create_add_item(ft, (item_handle).expect("command queue item"));
+    if let Some(item_handle) = item_handle {
+        format_create_add_item(ft, item_handle);
     }
     owner
 }
 
 pub unsafe fn format_create(
     c_owner: Option<&ClientRef>,
-    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     tag: ::core::ffi::c_int,
     flags: ::core::ffi::c_int,
 ) -> Box<format_tree> {
@@ -147,7 +146,7 @@ pub unsafe fn format_create(
 /// A non-null `item` must point to a live command-queue item.
 pub unsafe fn format_create_with_client(
     c: Option<&ClientRef>,
-    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     tag: ::core::ffi::c_int,
     flags: ::core::ffi::c_int,
 ) -> Box<format_tree> {
@@ -156,7 +155,7 @@ pub unsafe fn format_create_with_client(
 
 pub unsafe fn format_create_owned(
     c: Option<&ClientRef>,
-    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     tag: ::core::ffi::c_int,
     flags: ::core::ffi::c_int,
 ) -> Box<format_tree> {

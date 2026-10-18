@@ -148,7 +148,7 @@ pub static window_buffer_mode: window_mode = {
             window_buffer_init
                 as unsafe fn(
                     refbox::Weak<window_mode_entry>,
-                    Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+                    Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
                     *mut cmd_find_state,
                     *mut args,
                 ) -> *mut screen,
@@ -421,7 +421,7 @@ unsafe fn window_buffer_data(wme: refbox::Weak<window_mode_entry>) -> *mut windo
 
 unsafe fn window_buffer_init(
     mut wme: refbox::Weak<window_mode_entry>,
-    _item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    _item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     mut fs: *mut cmd_find_state,
     mut args: *mut args,
 ) -> *mut screen {

@@ -23,7 +23,6 @@ use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state
 use crate::src::shared::job::JobCompletion;
 use crate::src::shared::session::SessionRef;
 use crate::src::status::status_message_set;
-use std::cell::UnsafeCell;
 use std::rc::{Rc, Weak};
 
 pub struct cmd_if_shell_data {
@@ -67,16 +66,17 @@ fn cmd_if_shell_args_parse(
 }
 unsafe fn cmd_if_shell_exec(
     mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let item = item_handle.get();
-    let queue_client = cmdq_get_client((item).as_ref());
+    let item = item_handle.borrow();
+    let queue_client = cmdq_get_client(Some(&*item));
     let mut queue_client_ptr: Option<ClientRef> = queue_client.clone();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
+    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target: *mut cmd_find_state = &mut target_state;
     let new_item_allocation;
-    let tc_owner = cmdq_get_target_client((item).as_ref());
+    let tc_owner = cmdq_get_target_client(Some(&*item));
     let _tc: Option<ClientRef> = tc_owner.clone();
     let mut s: Option<SessionRef> = (*target).session_handle();
     let mut count: u_int = args_count(&*args);
@@ -138,7 +138,7 @@ unsafe fn cmd_if_shell_exec(
         ));
     }
     if wait != 0 {
-        cdata.client = cmdq_get_client((item).as_ref());
+        cdata.client = cmdq_get_client(Some(&*item));
     } else {
         cdata.client = tc_owner.clone();
     }
@@ -190,7 +190,7 @@ unsafe fn cmd_if_shell_exec(
 async fn cmd_if_shell_complete(
     completed: tiri_rt::oneshot::Receiver<JobCompletion>,
     mut cdata: Box<cmd_if_shell_data>,
-    item: Weak<UnsafeCell<cmdq_item>>,
+    item: Weak<std::cell::RefCell<cmdq_item>>,
 ) {
     let Some(completion) = completed.await else {
         drop(cdata);
@@ -201,7 +201,7 @@ async fn cmd_if_shell_complete(
 unsafe fn cmd_if_shell_callback(
     completion: JobCompletion,
     cdata: &mut cmd_if_shell_data,
-    item: Option<&Weak<UnsafeCell<cmdq_item>>>,
+    item: Option<&Weak<std::cell::RefCell<cmdq_item>>>,
 ) {
     let c = cdata.client.as_ref();
     let new_item_allocation;
@@ -237,7 +237,7 @@ unsafe fn cmd_if_shell_callback(
             Ok(commands) => {
                 if let Some(item) = item {
                     let item = cmdq_resumed(item);
-                    new_item_allocation = cmdq_get_command(&commands, (*item.get()).state.as_ref());
+                    new_item_allocation = cmdq_get_command(&commands, item.borrow().state.as_ref());
                     cmdq_insert_after(&item, new_item_allocation);
                 } else {
                     new_item_allocation = cmdq_get_command(&commands, None);

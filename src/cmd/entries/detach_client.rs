@@ -64,16 +64,16 @@ pub static cmd_suspend_client_entry: cmd_entry = {
 };
 unsafe fn cmd_detach_client_exec(
     mut command: refbox::Weak<cmd>,
-    item: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let suspend = std::ptr::eq(
         cmd_get_entry(command.get_unchecked()),
         &cmd_suspend_client_entry,
     );
     let args = cmd_get_args_mut(command.get_mut_unchecked()).expect("command arguments");
-    let source = cmdq_get_source(&*item.get());
-    let client = cmdq_get_client(Some(&*item.get()));
-    let target = cmdq_get_target_client(Some(&*item.get())).expect("target client");
+    let source = cmdq_get_source(&item.borrow()).clone();
+    let client = cmdq_get_client(Some(&item.borrow()));
+    let target = cmdq_get_target_client(Some(&item.borrow())).expect("target client");
     let exec = args_get(args, b'E').map(std::ffi::CStr::to_owned);
     if suspend {
         target.suspend();

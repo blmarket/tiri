@@ -206,8 +206,8 @@ pub trait Client {
     unsafe fn handle_key_after(
         &self,
         event: Box<key_event>,
-        after: Option<&Rc<UnsafeCell<cmdq_item>>>,
-        next: Option<&mut Weak<UnsafeCell<cmdq_item>>>,
+        after: Option<&Rc<std::cell::RefCell<cmdq_item>>>,
+        next: Option<&mut Weak<std::cell::RefCell<cmdq_item>>>,
     ) -> i32;
     unsafe fn control_write_output(&self, pane: &Rc<UnsafeCell<window_pane>>);
     /// Scoped access to this control client's consumer offset. Call only for an
@@ -994,8 +994,8 @@ impl Client for ClientRef {
     unsafe fn handle_key_after(
         &self,
         event: Box<key_event>,
-        after: Option<&Rc<UnsafeCell<cmdq_item>>>,
-        next: Option<&mut Weak<UnsafeCell<cmdq_item>>>,
+        after: Option<&Rc<std::cell::RefCell<cmdq_item>>>,
+        next: Option<&mut Weak<std::cell::RefCell<cmdq_item>>>,
     ) -> i32 {
         server_client_handle_key_after(self, event, after, next)
     }

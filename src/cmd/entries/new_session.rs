@@ -93,17 +93,18 @@ pub static cmd_has_session_entry: cmd_entry = {
 };
 unsafe fn cmd_new_session_exec(
     mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let item = item_handle.get();
-    let queue_client = cmdq_get_client((item).as_ref());
+    let item = item_handle.borrow();
+    let queue_client = cmdq_get_client(Some(&*item));
     let mut queue_client_ptr: Option<ClientRef> = queue_client.clone();
     let mut current_block: u64;
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let current = cmdq_get_state_owned(&*(item));
-    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let c_owner = cmdq_get_client((item).as_ref());
+    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target: *mut cmd_find_state = &mut target_state;
+    let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut s: Option<SessionRef> = None;
     let mut as_0: Option<SessionRef> = None;

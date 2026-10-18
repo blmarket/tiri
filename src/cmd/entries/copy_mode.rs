@@ -69,16 +69,18 @@ pub static cmd_clock_mode_entry: cmd_entry = {
 };
 unsafe fn cmd_copy_mode_exec(
     mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let item = item_handle.get();
+    let item = item_handle.borrow();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
-    let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
-    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let c_owner = cmdq_get_client((item).as_ref());
+    let mut source_state = crate::src::cmd::queue::cmdq_get_source(&item).clone();
+    let mut source: *mut cmd_find_state = &mut source_state;
+    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target: *mut cmd_find_state = &mut target_state;
+    let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut s: Option<SessionRef> = None;
     let mut pane_owner = (*target).wp.upgrade().expect("copy-mode target pane");

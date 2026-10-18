@@ -39,7 +39,6 @@ use crate::src::status::status_message_set;
 use crate::src::window::Window as _;
 use crate::src::window_copy::{window_copy_add, window_view_mode};
 use crate::src::window_pane::WindowPane as _;
-use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::os::unix::process::ExitStatusExt;
 use std::rc::{Rc, Weak};
@@ -92,7 +91,7 @@ fn cmd_run_shell_args_parse(
 }
 unsafe fn cmd_run_shell_print(
     cdata: &cmd_run_shell_data,
-    item: Option<&Weak<UnsafeCell<cmdq_item>>>,
+    item: Option<&Weak<std::cell::RefCell<cmdq_item>>>,
     msg: &CStr,
 ) {
     let mut pane = if cdata.wp_id != -1 {
@@ -102,7 +101,7 @@ unsafe fn cmd_run_shell_print(
     };
     if pane.is_none() {
         if let Some(item) = item {
-            let client = cmdq_get_client(Some(&*cmdq_resumed(item).get()));
+            let client = cmdq_get_client(Some(&cmdq_resumed(item).borrow()));
             let mut evb = evbuffer_new();
             evbuffer_add_formatted(&mut evb, |out| write_cstr(out, msg));
             ClientRef::print_to(client.as_ref(), true, &mut evb);
@@ -148,15 +147,16 @@ fn cmd_run_shell_status_message(cmd: &CStr, suffix: &[u8], code: ::core::ffi::c_
 
 unsafe fn cmd_run_shell_exec(
     mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let item = item_handle.get();
+    let item = item_handle.borrow();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let c_owner = cmdq_get_client((item).as_ref());
+    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target: *mut cmd_find_state = &mut target_state;
+    let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
-    let tc_owner = cmdq_get_target_client((item).as_ref());
+    let tc_owner = cmdq_get_target_client(Some(&*item));
     let _tc: Option<ClientRef> = tc_owner.clone();
     let mut s: Option<SessionRef> = (*target).session_handle();
     let pane_owner = (*target).pane_handle();
@@ -274,7 +274,7 @@ unsafe fn cmd_run_shell_exec(
 /// with it the client (tmux's cdata). The timer body runs inside the delay's
 /// wake and the callback body inside the job's, where tmux runs them.
 fn cmd_run_shell_wait(
-    item_handle: &Rc<UnsafeCell<cmdq_item>>,
+    item_handle: &Rc<std::cell::RefCell<cmdq_item>>,
     mut cdata: Box<cmd_run_shell_data>,
     delay: Duration,
 ) -> CmdOutcome {
@@ -309,7 +309,7 @@ fn cmd_run_shell_wait(
 async fn cmd_run_shell_complete(
     completed: tiri_rt::oneshot::Receiver<JobCompletion>,
     cdata: Box<cmd_run_shell_data>,
-    item: Weak<UnsafeCell<cmdq_item>>,
+    item: Weak<std::cell::RefCell<cmdq_item>>,
 ) {
     let Some(completion) = completed.await else {
         drop(cdata);
@@ -322,7 +322,7 @@ async fn cmd_run_shell_complete(
 /// before returning.
 unsafe fn cmd_run_shell_timer(
     cdata: &mut cmd_run_shell_data,
-    item: Option<&Weak<UnsafeCell<cmdq_item>>>,
+    item: Option<&Weak<std::cell::RefCell<cmdq_item>>>,
 ) -> Option<refbox::Weak<job>> {
     let c = cdata.client.as_ref();
     let cmd = cdata.cmd.as_deref();
@@ -396,7 +396,7 @@ unsafe fn cmd_run_shell_timer(
         Ok(commands) => {
             if let Some(item) = item {
                 let item = cmdq_resumed(item);
-                new_item_allocation = cmdq_get_command(&commands, (*item.get()).state.as_ref());
+                new_item_allocation = cmdq_get_command(&commands, item.borrow().state.as_ref());
                 cmdq_insert_after(&item, new_item_allocation);
             } else {
                 new_item_allocation = cmdq_get_command(&commands, None);
@@ -410,7 +410,7 @@ unsafe fn cmd_run_shell_timer(
 unsafe fn cmd_run_shell_callback(
     completion: JobCompletion,
     cdata: &cmd_run_shell_data,
-    item: Option<&Weak<UnsafeCell<cmdq_item>>>,
+    item: Option<&Weak<std::cell::RefCell<cmdq_item>>>,
 ) {
     let mut event = evbuffer_new();
     if !completion.output.is_empty() {
@@ -459,7 +459,7 @@ unsafe fn cmd_run_shell_callback(
         cmd_run_shell_print(cdata, item, msg);
     }
     if let Some(item) = item {
-        let client = cmdq_get_client(Some(&*cmdq_resumed(item).get()));
+        let client = cmdq_get_client(Some(&cmdq_resumed(item).borrow()));
         if let Some(client) = client {
             if client.attached_session().upgrade().is_none() {
                 client.set_return_value(retcode);
@@ -508,8 +508,8 @@ mod tests {
     /// Queue an item that suspends on `suspend`, after `owner`'s other items.
     unsafe fn append(
         owner: Option<&ClientRef>,
-        suspend: impl FnOnce(&Rc<UnsafeCell<cmdq_item>>) -> CmdOutcome + 'static,
-    ) -> Weak<UnsafeCell<cmdq_item>> {
+        suspend: impl FnOnce(&Rc<std::cell::RefCell<cmdq_item>>) -> CmdOutcome + 'static,
+    ) -> Weak<std::cell::RefCell<cmdq_item>> {
         cmdq_append(
             owner,
             cmdq_get_callback_owned(c"run-shell", Some(Box::new(suspend))),
@@ -533,7 +533,7 @@ mod tests {
         owner: &ClientRef,
         cdata: Box<cmd_run_shell_data>,
     ) -> (
-        Weak<UnsafeCell<cmdq_item>>,
+        Weak<std::cell::RefCell<cmdq_item>>,
         tiri_rt::oneshot::Sender<JobCompletion>,
     ) {
         let (done, completed) = tiri_rt::oneshot::channel();

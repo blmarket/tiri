@@ -61,7 +61,7 @@ pub unsafe fn menu_add_items(
 pub unsafe fn menu_add_item(
     menu: &mut menu,
     item: Option<&menu_item<'_>>,
-    qitem_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    qitem_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     client_owner: Option<&ClientRef>,
     fs: *mut cmd_find_state,
 ) {

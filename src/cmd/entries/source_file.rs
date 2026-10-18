@@ -25,7 +25,6 @@ use crate::src::shared::command::{
     CMD_SOURCE_FILE_DEPTH_LIMIT,
 };
 use crate::src::shared::errno::{EINVAL, ENOENT, ENOMEM};
-use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
 
@@ -33,7 +32,7 @@ pub struct cmd_source_file_data {
     pub client: Option<ClientRef>,
     depth_active: bool,
     pub flags: ::core::ffi::c_int,
-    pub after: Weak<UnsafeCell<cmdq_item>>,
+    pub after: Weak<std::cell::RefCell<cmdq_item>>,
     pub failed: bool,
     pub current: u_int,
     pub files: Vec<CString>,
@@ -103,7 +102,7 @@ impl Drop for cmd_source_file_data {
 }
 
 unsafe fn cmd_source_file_complete_cb(
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     mut cdata: cmd_source_file_data,
 ) -> CmdOutcome {
     cdata.decrement_depth();
@@ -113,7 +112,7 @@ unsafe fn cmd_source_file_complete_cb(
 
 unsafe fn cmd_source_file_complete(
     mut cdata: Box<cmd_source_file_data>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) {
     let c = cdata.client_handle();
     if cfg_finished == 0 {
@@ -152,7 +151,7 @@ unsafe fn cmd_source_file_read(cdata: &cmd_source_file_data) -> FileWait {
 async fn cmd_source_file_chain(
     first: impl std::future::Future<Output = Option<FileOutcome>>,
     mut cdata: Box<cmd_source_file_data>,
-    item: Weak<UnsafeCell<cmdq_item>>,
+    item: Weak<std::cell::RefCell<cmdq_item>>,
 ) {
     let mut outcome = first.await;
     loop {
@@ -174,16 +173,17 @@ async fn cmd_source_file_chain(
 
 unsafe fn cmd_source_file_done(
     cdata: &mut cmd_source_file_data,
-    item_owner: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_owner: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     mut read: FileOutcome,
 ) {
-    let item = item_owner.get();
+    let item = item_owner.borrow();
     let path = read.path.as_deref();
     let error = read.error;
     let bdata: &[u8] = evbuffer_pullup(&mut read.buffer, -1).map_or(&[], |bytes| bytes);
     let bsize = bdata.len();
     let mut new_item = Weak::new();
-    let target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
+    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let target = &mut target_state;
     if error != 0 {
         cmdq_error(item_owner, |out| {
             write_cstr(out, nullable_cstr(strerror(error)))?;
@@ -231,12 +231,12 @@ unsafe fn cmd_source_file_quote_for_glob(path: &CStr) -> CString {
 }
 unsafe fn cmd_source_file_exec(
     mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let item = item_handle.get();
+    let item = item_handle.borrow();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let c_owner = cmdq_get_client((item).as_ref());
+    let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut failed = false;
     let mut error: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();

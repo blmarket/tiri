@@ -39,7 +39,7 @@ pub struct wait_channels {
 #[repr(C)]
 pub struct wait_event_item {
     /// Read at event time only, to expand the filter; also the entry's key.
-    pub item: Weak<UnsafeCell<cmdq_item>>,
+    pub item: Weak<std::cell::RefCell<cmdq_item>>,
     waiter: CmdqWaiter,
     sink: wait_event_sink,
     pub name: std::ffi::CString,
@@ -130,7 +130,7 @@ unsafe fn wait_items_continue_all(list: *mut Vec<CmdqWaiter>) {
 
 fn wait_event_items_position(
     items: &[wait_event_item],
-    item: &Weak<UnsafeCell<cmdq_item>>,
+    item: &Weak<std::cell::RefCell<cmdq_item>>,
 ) -> Option<usize> {
     items
         .iter()
@@ -190,7 +190,7 @@ unsafe fn cmd_wait_for_prune_expired(wc: *mut wait_channel) {
 }
 unsafe fn cmd_wait_for_exec(
     mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -239,7 +239,7 @@ unsafe fn cmd_wait_for_event_print(client: Option<&ClientRef>, ep: &event_payloa
 unsafe fn cmd_wait_for_event_cb(
     _name: &CStr,
     payload: &mut event_payload,
-    key: &Weak<UnsafeCell<cmdq_item>>,
+    key: &Weak<std::cell::RefCell<cmdq_item>>,
 ) {
     let items = wait_event_items_ptr();
     let Some(index) = wait_event_items_position(&*items, key) else {
@@ -301,11 +301,11 @@ fn cmd_wait_for_event_prune_expired(items: &mut Vec<wait_event_item>) {
     items.retain(|owner| !owner.waiter.is_cancelled());
 }
 unsafe fn cmd_wait_for_event(
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     name: &CStr,
     mut args: *mut args,
 ) -> CmdOutcome {
-    let item = item_handle.get();
+    let item = item_handle.borrow();
     let mut filter: Option<&CStr> = args_get(&*(args), 'F' as i32 as u_char);
     if hooks_valid_event_name(name) == 0 {
         cmdq_error(item_handle, |out| {
@@ -320,7 +320,7 @@ unsafe fn cmd_wait_for_event(
     if args_has(&*args, 'w' as i32 as u_char) != 0 {
         return cmd_wait_for_event_wake(item_handle, name, args);
     }
-    if cmdq_get_client((item).as_ref()).is_none() {
+    if cmdq_get_client(Some(&*item)).is_none() {
         cmdq_error(item_handle, |out| out.write_all(b"not able to wait"));
         return CmdOutcome::Error;
     }
@@ -344,7 +344,7 @@ unsafe fn cmd_wait_for_event(
     retval
 }
 unsafe fn cmd_wait_for_event_list(
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     name: &CStr,
 ) -> CmdOutcome {
     cmd_wait_for_event_prune_expired(&mut *wait_event_items_ptr());
@@ -361,7 +361,7 @@ unsafe fn cmd_wait_for_event_list(
     CmdOutcome::Normal
 }
 unsafe fn cmd_wait_for_event_wake(
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     name: &CStr,
     mut args: *mut args,
 ) -> CmdOutcome {
@@ -390,7 +390,7 @@ unsafe fn cmd_wait_for_event_wake(
     CmdOutcome::Error
 }
 unsafe fn cmd_wait_for_list(
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     mut wc: *mut wait_channel,
 ) -> CmdOutcome {
     if wc.is_null() {
@@ -451,12 +451,12 @@ unsafe fn cmd_wait_for_signal(name: &CStr, mut wc: *mut wait_channel) -> CmdOutc
     CmdOutcome::Normal
 }
 unsafe fn cmd_wait_for_wait(
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     name: &CStr,
     mut wc: *mut wait_channel,
 ) -> CmdOutcome {
-    let item = item_handle.get();
-    let c_owner = cmdq_get_client((item).as_ref());
+    let item = item_handle.borrow();
+    let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     if c.is_none() {
         cmdq_error(item_handle, |out| out.write_all(b"not able to wait"));
@@ -484,12 +484,12 @@ unsafe fn cmd_wait_for_wait(
     retval
 }
 unsafe fn cmd_wait_for_lock(
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     name: &CStr,
     mut wc: *mut wait_channel,
 ) -> CmdOutcome {
-    let item = item_handle.get();
-    if cmdq_get_client((item).as_ref()).is_none() {
+    let item = item_handle.borrow();
+    if cmdq_get_client(Some(&*item)).is_none() {
         cmdq_error(item_handle, |out| out.write_all(b"not able to lock"));
         return CmdOutcome::Error;
     }
@@ -505,7 +505,7 @@ unsafe fn cmd_wait_for_lock(
     CmdOutcome::Normal
 }
 unsafe fn cmd_wait_for_unlock(
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     name: &CStr,
     mut wc: *mut wait_channel,
 ) -> CmdOutcome {
@@ -684,8 +684,8 @@ mod tests {
     unsafe fn run_on(
         owner: &ClientRef,
         name: &'static CStr,
-        exec: unsafe fn(&Rc<UnsafeCell<cmdq_item>>, &CStr, *mut wait_channel) -> CmdOutcome,
-    ) -> Weak<UnsafeCell<cmdq_item>> {
+        exec: unsafe fn(&Rc<std::cell::RefCell<cmdq_item>>, &CStr, *mut wait_channel) -> CmdOutcome,
+    ) -> Weak<std::cell::RefCell<cmdq_item>> {
         let item = cmdq_append(
             Some(owner),
             cmdq_get_callback_owned(
@@ -698,7 +698,7 @@ mod tests {
     }
 
     unsafe fn signal(
-        _: &Rc<UnsafeCell<cmdq_item>>,
+        _: &Rc<std::cell::RefCell<cmdq_item>>,
         name: &CStr,
         wc: *mut wait_channel,
     ) -> CmdOutcome {
@@ -824,7 +824,7 @@ mod tests {
         owner: &ClientRef,
         name: &'static CStr,
         flags: &[&CStr],
-    ) -> Weak<UnsafeCell<cmdq_item>> {
+    ) -> Weak<std::cell::RefCell<cmdq_item>> {
         let values = [c"wait-for", c"-E"]
             .into_iter()
             .chain(flags.iter().copied())

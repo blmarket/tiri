@@ -59,15 +59,17 @@ pub static cmd_break_pane_entry: cmd_entry = {
 };
 unsafe fn cmd_break_pane_exec(
     mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let item = item_handle.get();
+    let item = item_handle.borrow();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let current = cmdq_get_state_owned(&*(item));
-    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
-    let tc_owner = cmdq_get_target_client((item).as_ref());
+    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target: *mut cmd_find_state = &mut target_state;
+    let mut source_state = crate::src::cmd::queue::cmdq_get_source(&item).clone();
+    let mut source: *mut cmd_find_state = &mut source_state;
+    let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut wl: refbox::Weak<winlink> = (*source).winlink_handle();
     let mut src_s: Option<SessionRef> = (*source).session_handle();

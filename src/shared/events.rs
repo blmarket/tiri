@@ -134,7 +134,7 @@ impl EventPayloadValue {
 }
 
 pub enum EventPayloadIdentity {
-    QueueItem(std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>),
+    QueueItem(std::rc::Weak<std::cell::RefCell<cmdq_item>>),
     HookMonitor(usize),
 }
 

@@ -573,11 +573,11 @@ pub unsafe fn control_write_output(client: &ClientRef, wp: &Rc<UnsafeCell<window
     cp.queued = queued;
 }
 unsafe fn control_error(
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     error: Option<CString>,
 ) -> CmdOutcome {
-    let item = item_handle.get();
-    let c_owner = cmdq_get_client((item).as_ref());
+    let item = item_handle.borrow();
+    let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     cmdq_guard(item_handle, c"begin", 1 as ::core::ffi::c_int);
     control_write(&c.clone().expect("live client"), |out| {

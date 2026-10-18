@@ -315,16 +315,15 @@ unsafe fn format_copy_state(
     (*to).start_time = (*from).start_time;
 }
 pub unsafe fn format_create_defaults(
-    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     c_owner: Option<&ClientRef>,
     s_owner: Option<&SessionRef>,
     mut wl: refbox::Weak<winlink>,
     wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
 ) -> Box<format_tree> {
-    let item = item_handle.map_or(std::ptr::null_mut(), |item| item.get());
-    let queue_client = cmdq_get_client((item).as_ref());
+    let queue_client = cmdq_get_client(item_handle.map(|item| item.borrow()).as_deref());
     let mut owner;
-    if !item.is_null() {
+    if item_handle.is_some() {
         owner = format_create_with_client(
             queue_client.as_ref(),
             item_handle,
@@ -339,7 +338,7 @@ pub unsafe fn format_create_defaults(
     owner
 }
 pub unsafe fn format_create_from_state(
-    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     c_owner: Option<&ClientRef>,
     fs: &cmd_find_state,
 ) -> Box<format_tree> {
@@ -352,16 +351,13 @@ pub unsafe fn format_create_from_state(
     )
 }
 pub unsafe fn format_create_from_target(
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> Box<format_tree> {
-    let item = item_handle.get();
-    let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: Option<ClientRef> = tc_owner.clone();
-    format_create_from_state(
-        Some(item_handle),
-        tc.as_ref(),
-        &*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item),
-    )
+    let (tc, target) = {
+        let item = item_handle.borrow();
+        (cmdq_get_target_client(Some(&*item)), crate::src::cmd::queue::cmdq_get_target(&item).clone())
+    };
+    format_create_from_state(Some(item_handle), tc.as_ref(), &target)
 }
 pub unsafe fn format_defaults(
     mut ft: *mut format_tree,

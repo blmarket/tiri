@@ -260,7 +260,7 @@ pub struct cmd_entry {
 /// Command entry point; the dispatching queue item retains the command-list
 /// owner for the duration of the call.
 pub type cmd_exec_fn =
-    unsafe fn(refbox::Weak<cmd>, &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> CmdOutcome;
+    unsafe fn(refbox::Weak<cmd>, &std::rc::Rc<std::cell::RefCell<cmdq_item>>) -> CmdOutcome;
 
 #[repr(C)]
 /// Queue items and callers share ownership through ordinary Rc handles.
@@ -279,7 +279,7 @@ impl cmdq_state {
 }
 
 pub type cmdq_cb =
-    Option<Box<dyn FnOnce(&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> CmdOutcome>>;
+    Option<Box<dyn FnOnce(&std::rc::Rc<std::cell::RefCell<cmdq_item>>) -> CmdOutcome>>;
 
 #[derive(Clone, Default)]
 #[repr(C)]
@@ -287,14 +287,14 @@ pub struct cmd_parse_input {
     pub flags: ::core::ffi::c_int,
     pub file: Option<::std::ffi::CString>,
     pub line: u_int,
-    pub item: std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>,
+    pub item: std::rc::Weak<std::cell::RefCell<cmdq_item>>,
     /// Parser context observes the client; prepared commands own it separately.
     pub c: ClientWeak,
     pub fs: cmd_find_state,
 }
 
 impl cmd_parse_input {
-    pub fn set_item(&mut self, item: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>) {
+    pub fn set_item(&mut self, item: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>) {
         self.item = item.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     }
 }

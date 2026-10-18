@@ -377,7 +377,7 @@ pub static window_copy_mode: window_mode = {
             window_copy_init
                 as unsafe fn(
                     refbox::Weak<window_mode_entry>,
-                    Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+                    Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
                     *mut cmd_find_state,
                     *mut args,
                 ) -> *mut screen,
@@ -424,7 +424,7 @@ pub static window_view_mode: window_mode = {
             window_copy_view_init
                 as unsafe fn(
                     refbox::Weak<window_mode_entry>,
-                    Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+                    Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
                     *mut cmd_find_state,
                     *mut args,
                 ) -> *mut screen,
@@ -691,7 +691,7 @@ unsafe fn window_copy_common_init(
 }
 unsafe fn window_copy_init(
     mut wme: refbox::Weak<window_mode_entry>,
-    _item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    _item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     _fs: *mut cmd_find_state,
     mut args: *mut args,
 ) -> *mut screen {
@@ -760,7 +760,7 @@ unsafe fn window_copy_init(
 }
 unsafe fn window_copy_view_init(
     mut wme: refbox::Weak<window_mode_entry>,
-    _item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    _item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     _fs: *mut cmd_find_state,
     _args: *mut args,
 ) -> *mut screen {

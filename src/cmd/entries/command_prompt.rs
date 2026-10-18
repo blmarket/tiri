@@ -111,14 +111,15 @@ fn cmd_command_prompt_args_parse(
 }
 unsafe fn cmd_command_prompt_exec(
     mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let item = item_handle.get();
+    let item = item_handle.borrow();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let tc_owner = cmdq_get_target_client((item).as_ref());
+    let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
-    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
+    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target: *mut cmd_find_state = &mut target_state;
     let mut prompt_bytes = Vec::<u8>::new();
     let wp = (*target).pane_handle();
     let mut count: u_int = args_count(&*args);
@@ -261,14 +262,14 @@ unsafe fn cmd_command_prompt_exec(
 /// resumes the item with nothing queued.
 async fn cmd_command_prompt_wait(
     answered: tiri_rt::oneshot::Receiver<Rc<RefCell<cmd_list>>>,
-    item: Weak<UnsafeCell<cmdq_item>>,
+    item: Weak<std::cell::RefCell<cmdq_item>>,
 ) {
     let Some(cmdlist) = answered.await else {
         return;
     };
     unsafe {
         let item = cmdq_resumed(&item);
-        let new_item_allocation = cmdq_get_command(&cmdlist, (*item.get()).state.as_ref());
+        let new_item_allocation = cmdq_get_command(&cmdlist, item.borrow().state.as_ref());
         cmdq_insert_after(&item, new_item_allocation);
     }
 }

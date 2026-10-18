@@ -118,12 +118,13 @@ fn cmd_set_option_args_parse(
 }
 unsafe fn cmd_set_hook_event_exec(
     mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let item = item_handle.get();
+    let item = item_handle.borrow();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
+    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target: *mut cmd_find_state = &mut target_state;
     let mut c: Option<ClientRef> = None;
     if args_count(&*args) == 0 as u_int {
         cmdq_error(item_handle, |out| out.write_all(b"missing argument"));
@@ -145,7 +146,7 @@ unsafe fn cmd_set_hook_event_exec(
     }
     let mut ep = event_payload_create();
     event_payload_set_target(&mut ep, &*target);
-    let c_owner = cmdq_get_client((item).as_ref());
+    let c_owner = cmdq_get_client(Some(&*item));
     c = c_owner.clone();
     if !c.is_none() {
         event_payload_set_client(&mut ep, c.clone().expect("live client"));
@@ -184,11 +185,12 @@ unsafe fn cmd_set_hook_event_exec(
     CmdOutcome::Normal
 }
 unsafe fn cmd_set_hook_monitor_exec(
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     args: *mut args,
     window: i32,
 ) -> CmdOutcome {
-    let target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item_handle.get());
+    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item_handle.borrow()).clone();
+    let target = &mut target_state;
     if args_count(&*args) > 1 {
         cmdq_error(item_handle, |out| out.write_all(b"too many arguments"));
         return CmdOutcome::Error;
@@ -269,7 +271,7 @@ unsafe fn cmd_set_hook_monitor_exec(
 }
 
 unsafe fn set_option_error(
-    item: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     cause: &CStr,
 ) -> CmdOutcome {
     cmdq_error(item, |out| write_cstr(out, &*cause));
@@ -307,12 +309,13 @@ unsafe fn unset_window_panes(
 
 unsafe fn cmd_set_option_exec(
     mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let item = item_handle.get();
+    let item = item_handle.borrow();
     let args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
+    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let target = &mut target_state;
     let window = std::ptr::eq(
         cmd_get_entry(self_0.get_unchecked()),
         &cmd_set_window_option_entry,

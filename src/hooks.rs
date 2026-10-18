@@ -84,11 +84,11 @@ pub struct hooks_monitor {
 
 static mut CStrings: HooksEvents = HooksEvents { events: Vec::new() };
 unsafe fn hooks_insert_one(
-    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     mut hd: *mut hooks_data,
     commands: Option<&std::rc::Rc<std::cell::RefCell<cmd_list>>>,
     state: &std::rc::Rc<cmdq_state>,
-) -> std::rc::Weak<std::cell::UnsafeCell<cmdq_item>> {
+) -> std::rc::Weak<std::cell::RefCell<cmdq_item>> {
     let Some(commands) = commands else {
         return item_handle.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     };
@@ -132,7 +132,7 @@ unsafe fn hooks_parse(hd: *mut hooks_data, fs: &cmd_find_state, value: &CStr) ->
     pr
 }
 unsafe fn hooks_insert(
-    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     hd: *mut hooks_data,
 ) {
     let mut after = item_handle.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
@@ -176,7 +176,7 @@ unsafe fn hooks_insert(
     source
         .with_entry(name, |entry| options_hook_fired(entry))
         .expect("resolved hook");
-    let mut event = item_handle.map(|item| cmdq_get_event(&*item.get()));
+    let mut event = item_handle.map(|item| cmdq_get_event(&item.borrow()));
     let state = cmdq_new_state(
         &mut fs,
         event.as_mut().map_or(std::ptr::null_mut(), |event| event),
@@ -267,14 +267,13 @@ unsafe fn hooks_insert(
     }
 }
 unsafe fn hooks_insert_event(
-    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     name: &CStr,
     ep: &event_payload,
     oo: Option<OptionsScope>,
     expand: ::core::ffi::c_int,
 ) {
-    let item = item_handle.map_or(std::ptr::null_mut(), |item| item.get());
-    if !item.is_null() && cmdq_get_flags(&*(item)) & CMDQ_STATE_NOHOOKS != 0 {
+    if item_handle.is_some_and(|item| cmdq_get_flags(&item.borrow()) & CMDQ_STATE_NOHOOKS != 0) {
         return;
     }
     let c = event_payload_get_client(ep);
@@ -315,7 +314,7 @@ unsafe fn CString_cb(name: &CStr, payload: &mut event_payload) {
     let running = cmdq_running().upgrade();
     if running
         .as_ref()
-        .is_none_or(|item| cmdq_get_flags(&*item.get()) & CMDQ_STATE_NOHOOKS == 0)
+        .is_none_or(|item| cmdq_get_flags(&item.borrow()) & CMDQ_STATE_NOHOOKS == 0)
     {
         hooks_insert_event(None, name, ep, None, 0 as ::core::ffi::c_int);
     }
@@ -356,17 +355,20 @@ pub unsafe fn hooks_build_events() {
     }
 }
 pub unsafe fn hooks_run(
-    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     name: &CStr,
 ) {
-    let item = item_handle.map_or(std::ptr::null_mut(), |item| item.get());
-    let target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
+    let (mut target_state, client) = {
+        let item = item_handle.expect("command queue item").borrow();
+        (crate::src::cmd::queue::cmdq_get_target(&item).clone(), item.client.clone())
+    };
+    let target = &mut target_state;
     let mut hd = hooks_data {
         name,
         fs: cmd_find_state::default(),
         formats: format_create_owned(None, None, 0, FORMAT_NOJOBS),
         oo: None,
-        client: (*item).client.clone(),
+        client,
         expand: 0,
     };
     hd.fs.copy_from(target);

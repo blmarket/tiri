@@ -55,7 +55,7 @@ pub static cmd_attach_session_entry: cmd_entry = {
     }
 };
 pub unsafe fn cmd_attach_session(
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     tflag: Option<&CStr>,
     mut dflag: ::core::ffi::c_int,
     mut xflag: ::core::ffi::c_int,
@@ -65,7 +65,7 @@ pub unsafe fn cmd_attach_session(
     fflag: Option<&CStr>,
 ) -> CmdOutcome {
     let tflag: *const ::core::ffi::c_char = tflag.map_or(std::ptr::null(), CStr::as_ptr);
-    let item = item_handle.get();
+    let item = item_handle.borrow();
     let current = cmdq_get_state_owned(&*(item));
     let mut target: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -77,7 +77,7 @@ pub unsafe fn cmd_attach_session(
     };
     let mut type_0: cmd_find_type = CMD_FIND_PANE;
     let mut flags: ::core::ffi::c_int = 0;
-    let c_owner = cmdq_get_client((item).as_ref());
+    let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut c_loop: Option<ClientRef> = None;
     let mut s: Option<SessionRef> = None;
@@ -279,7 +279,7 @@ pub unsafe fn cmd_attach_session(
 }
 unsafe fn cmd_attach_session_exec(
     mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);

@@ -56,14 +56,15 @@ pub static cmd_display_message_entry: cmd_entry = {
 };
 unsafe fn cmd_display_message_exec(
     mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let item = item_handle.get();
-    let queue_client = cmdq_get_client((item).as_ref());
+    let item = item_handle.borrow();
+    let queue_client = cmdq_get_client(Some(&*item));
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let tc_owner = cmdq_get_target_client((item).as_ref());
+    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target: *mut cmd_find_state = &mut target_state;
+    let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut c: Option<ClientRef> = None;
     let s = (*target).session_handle();
@@ -174,7 +175,7 @@ unsafe fn cmd_display_message_exec(
         };
         msg = json_to_string(&jn);
     }
-    if cmdq_get_client((item).as_ref()).is_none() {
+    if cmdq_get_client(Some(&*item)).is_none() {
         cmdq_error(item_handle, |out| write_cstr(out, &*msg));
     } else if args_has(&*args, 'p' as i32 as u_char) != 0 {
         cmdq_print(item_handle, |out| write_cstr(out, &*msg));

@@ -764,7 +764,7 @@ unsafe fn window_pane_set_mode(
     pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     source_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
     mode: &'static window_mode,
-    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     mut fs: *mut cmd_find_state,
     mut args: *mut args,
 ) -> ::core::ffi::c_int {
@@ -1476,11 +1476,11 @@ async fn window_pane_input_complete(
 
 unsafe fn window_pane_start_input(
     wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> Result<Option<impl std::future::Future<Output = ()> + 'static>, std::ffi::CString> {
-    let item = item_handle.get();
+    let item = item_handle.borrow();
     let mut wp = wp_owner.get();
-    let c_owner = cmdq_get_client((item).as_ref());
+    let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     if (*wp).flags & PANE_EMPTY == 0 {
         return Err(c"pane is not empty".to_owned());
@@ -2020,7 +2020,7 @@ mod wait_close_tests {
     unsafe fn waiting_head(
         owner: &ClientRef,
         ran: &Rc<Cell<bool>>,
-    ) -> (CmdqWaiter, Weak<UnsafeCell<cmdq_item>>) {
+    ) -> (CmdqWaiter, Weak<std::cell::RefCell<cmdq_item>>) {
         let slot: Rc<RefCell<Option<CmdqWaiter>>> = Default::default();
         let stored = slot.clone();
         let head = cmdq_append(
@@ -2152,7 +2152,7 @@ mod input_wait_tests {
         owner: &ClientRef,
         done: tiri_rt::oneshot::Receiver<FileOutcome>,
         wp: u_int,
-    ) -> Weak<UnsafeCell<cmdq_item>> {
+    ) -> Weak<std::cell::RefCell<cmdq_item>> {
         let client = Rc::downgrade(owner);
         let head = cmdq_append(
             Some(owner),

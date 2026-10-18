@@ -85,11 +85,12 @@ pub static cmd_lock_client_entry: cmd_entry = {
 };
 unsafe fn cmd_lock_server_exec(
     mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let item = item_handle.get();
-    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let tc_owner = cmdq_get_target_client((item).as_ref());
+    let item = item_handle.borrow();
+    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target: *mut cmd_find_state = &mut target_state;
+    let tc_owner = cmdq_get_target_client(Some(&*item));
     if std::ptr::eq(
         cmd_get_entry(self_0.get_unchecked()),
         &cmd_lock_server_entry,

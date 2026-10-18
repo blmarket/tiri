@@ -50,12 +50,13 @@ pub static cmd_list_panes_entry: cmd_entry = {
 };
 unsafe fn cmd_list_panes_exec(
     mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let item = item_handle.get();
+    let item = item_handle.borrow();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
+    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target: *mut cmd_find_state = &mut target_state;
     let mut s: Option<SessionRef> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut order: sort_order = SORT_ACTIVITY;
@@ -90,7 +91,7 @@ unsafe fn cmd_list_panes_exec(
 }
 unsafe fn cmd_list_panes_server(
     mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) {
     let mut s: Option<SessionRef> = None;
     let mut s_owner = sessions::first();
@@ -109,7 +110,7 @@ unsafe fn cmd_list_panes_server(
 unsafe fn cmd_list_panes_session(
     mut self_0: refbox::Weak<cmd>,
     s_owner: &SessionRef,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     mut type_0: ::core::ffi::c_int,
 ) {
     let s = Some(s_owner.clone());
@@ -127,15 +128,15 @@ unsafe fn cmd_list_panes_window(
     mut self_0: refbox::Weak<cmd>,
     s_owner: &SessionRef,
     mut wl: refbox::Weak<winlink>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     mut type_0: ::core::ffi::c_int,
 ) {
-    let item = item_handle.get();
+    let item = item_handle.borrow();
 
-    let queue_client = cmdq_get_client((item).as_ref());
+    let queue_client = cmdq_get_client(Some(&*item));
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let c_owner = cmdq_get_client((item).as_ref());
+    let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut i: u_int = 0;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();

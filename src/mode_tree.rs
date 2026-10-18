@@ -1326,7 +1326,7 @@ pub unsafe fn mode_tree_clear_prompt(tree_owner: &Rc<UnsafeCell<mode_tree_data>>
 fn mode_tree_prompt_accept(tree: Rc<UnsafeCell<mode_tree_data>>) -> cmdq_cb {
     Some(Box::new(move |item| unsafe {
         let mtd = crate::src::shared::rc::as_ptr(&tree);
-        let c_owner = cmdq_get_client(Some(&*item.get()));
+        let c_owner = cmdq_get_client(Some(&item.borrow()));
         let mut key = b'y' as key_code;
         if (*mtd).prompt.is_some() && c_owner.is_some() {
             mode_tree_key(

@@ -966,14 +966,14 @@ impl cmd_find_state {
     }
     pub unsafe fn find_target(
         &mut self,
-        item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+        item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
         target: Option<&CStr>,
         mut type_0: cmd_find_type,
         mut flags: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int {
-        let item = item_handle.map_or(std::ptr::null_mut(), |item| item.get());
+        let item = item_handle.map(|item| item.borrow());
         let mouse_pane_owner;
-        let queue_client = cmdq_get_client((item).as_ref());
+        let queue_client = cmdq_get_client(item.as_deref());
         let mut queue_client_ptr: Option<ClientRef> = queue_client.clone();
         let mut current_block: u64;
         let mut m: *mut mouse_event = ::core::ptr::null_mut::<mouse_event>();
@@ -1021,11 +1021,13 @@ impl cmd_find_state {
             "cmd_find_target",
             log_cstr(target.unwrap_or(c"none")),
             log_cstr(s),
-            log_pointer(item),
+            log_pointer(item_handle.map_or(std::ptr::null(), |item| item.as_ptr())),
             log_bytes(&tmp)
         ));
-        let queue_current = cmdq_get_state_owned(&*(item)).current_snapshot();
-        let mut queue_event = cmdq_get_event(&*(item));
+        let item = item.expect("command queue item");
+        let queue_current = cmdq_get_state_owned(&item).current_snapshot();
+        let mut queue_event = cmdq_get_event(&item);
+        drop(item);
         let mut current_context: Option<cmd_find_state> = None;
         *self = Self::clear_state(flags);
         if server_check_marked() != 0 && flags & CMD_FIND_DEFAULT_MARKED != 0 {
@@ -1437,10 +1439,9 @@ impl cmd_find_state {
     }
 }
 unsafe fn cmd_find_current_client(
-    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     mut quiet: ::core::ffi::c_int,
 ) -> Option<ClientRef> {
-    let item = item_handle.map_or(std::ptr::null_mut(), |item| item.get());
     let inside_pane_owner;
     let mut c: Option<ClientRef> = None;
     let mut found = None;
@@ -1453,8 +1454,8 @@ unsafe fn cmd_find_current_client(
         idx: 0,
     };
     let mut c_owner = None;
-    if !item.is_null() {
-        c_owner = cmdq_get_client((item).as_ref());
+    if let Some(item) = item_handle {
+        c_owner = cmdq_get_client(Some(&item.borrow()));
         c = c_owner.clone();
     }
     if !c.is_none()
@@ -1488,7 +1489,7 @@ unsafe fn cmd_find_current_client(
             found = cmd_find_best_client(&session_owner);
         }
     }
-    if found.is_none() && !item.is_null() && quiet == 0 {
+    if found.is_none() && item_handle.is_some() && quiet == 0 {
         cmdq_error(item_handle.expect("command queue item"), |out| {
             out.write_all(b"no current client")
         });
@@ -1501,7 +1502,7 @@ unsafe fn cmd_find_current_client(
     found
 }
 pub unsafe fn cmd_find_client(
-    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     target: Option<&CStr>,
     mut quiet: ::core::ffi::c_int,
 ) -> Option<ClientRef> {

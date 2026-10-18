@@ -39,7 +39,7 @@ impl args_command_state {
 
 pub unsafe fn args_make_commands_now(
     self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     idx: u_int,
     expand: ::core::ffi::c_int,
 ) -> Option<Rc<std::cell::RefCell<cmd_list>>> {
@@ -54,17 +54,18 @@ pub unsafe fn args_make_commands_now(
 }
 pub unsafe fn args_make_commands_prepare(
     mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     mut idx: u_int,
     default_command: Option<&'static CStr>,
     mut wait: ::core::ffi::c_int,
     mut expand: ::core::ffi::c_int,
 ) -> Box<args_command_state> {
-    let item = item_handle.get();
+    let item = item_handle.borrow();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let tc_owner = cmdq_get_target_client((item).as_ref());
+    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target: *mut cmd_find_state = &mut target_state;
+    let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut state = Box::new(args_command_state::empty());
     let values = &(*args).values;
     let command = if let Some(value) = values.get(idx as usize) {

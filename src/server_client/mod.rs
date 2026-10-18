@@ -2035,10 +2035,10 @@ unsafe fn server_client_handle_dead_key(
     pane.is_some_and(|pane| pane.close_after_key(key)) as i32
 }
 unsafe fn server_client_key_callback(
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     mut owned: QueuedKeyEvent,
 ) -> CmdOutcome {
-    let item = item_handle.get();
+    let item = item_handle.borrow();
     let mut current_block: u64;
     let mut event: *mut key_event = &raw mut *owned.0;
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
@@ -2066,7 +2066,7 @@ unsafe fn server_client_key_callback(
     let mut key0: key_code = 0;
     let mut prefix: key_code = 0;
     let mut prefix2: key_code = 0;
-    let c_owner = (*event).resolve_client(|| cmdq_get_client((item).as_ref()));
+    let c_owner = (*event).resolve_client(|| cmdq_get_client(Some(&*item)));
     let Some(c_owner) = c_owner else {
         return CmdOutcome::Normal;
     };
@@ -2532,15 +2532,13 @@ unsafe fn server_client_handle_menu_key(
 unsafe fn server_client_handle_key0(
     owner: &ClientRef,
     mut owned: Box<key_event>,
-    after_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
-    next: Option<&mut std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>>,
+    after_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
+    next: Option<&mut std::rc::Weak<std::cell::RefCell<cmdq_item>>>,
 ) -> ::core::ffi::c_int {
-    let after = after_handle.map_or(std::ptr::null_mut(), |_item| _item.get());
     let c = owner.get();
     let event: *mut key_event = &raw mut *owned;
     let mut s: Option<SessionRef> = (*c).session_handle();
     let item_allocation;
-    let mut _item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     if s.is_none() || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0 {
         return 0 as ::core::ffi::c_int;
     }
@@ -2632,7 +2630,7 @@ unsafe fn server_client_handle_key0(
             }
         }
     }
-    let client_owner = if after.is_null() {
+    let client_owner = if after_handle.is_none() {
         None
     } else {
         (*event).client = std::rc::Rc::downgrade(owner);
@@ -2645,7 +2643,6 @@ unsafe fn server_client_handle_key0(
             server_client_key_callback(_item, queued_event)
         })),
     );
-    _item = item_allocation.get();
     if let Some(after) = after_handle {
         let inserted = cmdq_insert_after(after, item_allocation);
         if let Some(next) = next {
@@ -2662,8 +2659,8 @@ unsafe fn server_client_handle_key(owner: &ClientRef, event: Box<key_event>) -> 
 unsafe fn server_client_handle_key_after(
     owner: &ClientRef,
     event: Box<key_event>,
-    after_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
-    next: Option<&mut std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>>,
+    after_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
+    next: Option<&mut std::rc::Weak<std::cell::RefCell<cmdq_item>>>,
 ) -> ::core::ffi::c_int {
     server_client_handle_key0(owner, event, after_handle, next)
 }
@@ -3606,16 +3603,16 @@ unsafe fn server_client_dispatch(
     }
 }
 unsafe fn server_client_read_only(
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     cmdq_error(item_handle, |out| out.write_all(b"client is read-only"));
     CmdOutcome::Error
 }
 unsafe fn server_client_default_command(
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let item = item_handle.get();
-    let c_owner = cmdq_get_client((item).as_ref());
+    let item = item_handle.borrow();
+    let c_owner = cmdq_get_client(Some(&*item));
     let mut c: *mut client = c_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -3633,10 +3630,10 @@ unsafe fn server_client_default_command(
     CmdOutcome::Normal
 }
 unsafe fn server_client_command_done(
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let item = item_handle.get();
-    let c_owner = cmdq_get_client((item).as_ref());
+    let item = item_handle.borrow();
+    let c_owner = cmdq_get_client(Some(&*item));
     let mut c: *mut client = c_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -4371,7 +4368,7 @@ mod lost_queue_tests {
         future: impl FnOnce(ClientRef) -> F + 'static,
     ) -> (
         std::rc::Weak<UnsafeCell<client>>,
-        std::rc::Weak<UnsafeCell<cmdq_item>>,
+        std::rc::Weak<std::cell::RefCell<cmdq_item>>,
     ) {
         let owner = queue_test_clients::with_queue();
         let held = owner.clone();
@@ -4486,7 +4483,7 @@ mod lost_queue_tests {
     /// client lost the way `server_client_lost` does before retiring it.
     unsafe fn lose_with_suspended_head(
         owner: &ClientRef,
-    ) -> (std::rc::Weak<UnsafeCell<cmdq_item>>, Rc<Cell<bool>>) {
+    ) -> (std::rc::Weak<std::cell::RefCell<cmdq_item>>, Rc<Cell<bool>>) {
         let released = Rc::new(Cell::new(false));
         let guard = SetOnDrop(released.clone());
         let head = cmdq_append(

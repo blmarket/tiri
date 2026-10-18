@@ -109,12 +109,13 @@ pub static cmd_show_hooks_entry: cmd_entry = {
 };
 unsafe fn cmd_show_options_exec(
     mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let item = item_handle.get();
+    let item = item_handle.borrow();
     let args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
+    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let target = &mut target_state;
     let window = std::ptr::eq(
         cmd_get_entry(self_0.get_unchecked()),
         &cmd_show_window_options_entry,
@@ -200,7 +201,7 @@ unsafe fn cmd_show_options_exec(
 }
 
 unsafe fn show_options_scope_error(
-    item: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     quiet: bool,
     cause: &CStr,
 ) -> CmdOutcome {
@@ -229,7 +230,7 @@ unsafe fn show_options_resolve(
 
 unsafe fn cmd_show_options_print(
     mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     scope: &OptionsScope,
     name: &CStr,
     array_key: Option<&CStr>,
@@ -362,7 +363,7 @@ unsafe fn show_hook_add_fire_formats(ft: *mut format_tree, count: u32, time: tim
 
 unsafe fn cmd_show_hooks_print_monitor(
     mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     scope: &OptionsScope,
     name: &CStr,
 ) -> bool {
@@ -425,7 +426,7 @@ unsafe fn cmd_show_hooks_print_monitor(
 
 unsafe fn cmd_show_options_all(
     mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     scope: i32,
     selected: &OptionsScope,
 ) -> CmdOutcome {

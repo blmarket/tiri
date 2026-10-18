@@ -551,18 +551,18 @@ pub unsafe fn key_bindings_init() {
     );
 }
 unsafe fn key_bindings_read_only(
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     cmdq_error(item_handle, |out| out.write_all(b"client is read-only"));
     CmdOutcome::Error
 }
 pub unsafe fn key_bindings_dispatch(
     bd: KeyBindingCommand,
-    item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     c_owner: Option<&ClientRef>,
     mut event: *mut key_event,
     mut fs: *mut cmd_find_state,
-) -> std::rc::Weak<std::cell::UnsafeCell<cmdq_item>> {
+) -> std::rc::Weak<std::cell::RefCell<cmdq_item>> {
     let mut c: Option<ClientRef> = c_owner.cloned();
     let new_item_allocation;
     let new_state;

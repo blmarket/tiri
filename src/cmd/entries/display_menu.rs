@@ -148,16 +148,17 @@ unsafe fn cmd_display_menu_status_position(
 
 unsafe fn cmd_display_menu_get_popup_pos(
     tc_owner: &ClientRef,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     mut args: *mut args,
     mut px: *mut u_int,
     mut py: *mut u_int,
     mut w: u_int,
     mut h: u_int,
 ) -> ::core::ffi::c_int {
-    let item = item_handle.get();
+    let item = item_handle.borrow();
     let mut tc: Option<ClientRef> = Some(tc_owner.clone());
-    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
+    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target: *mut cmd_find_state = &mut target_state;
     let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
     let mut s: Option<SessionRef> = tc
@@ -480,16 +481,17 @@ unsafe fn cmd_display_menu_get_popup_pos(
 }
 unsafe fn cmd_display_menu_get_menu_pos(
     tc_owner: &ClientRef,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     mut args: *mut args,
     mut px: *mut u_int,
     mut py: *mut u_int,
     mut w: u_int,
     mut h: u_int,
 ) -> ::core::ffi::c_int {
-    let item = item_handle.get();
+    let item = item_handle.borrow();
     let mut tc: Option<ClientRef> = Some(tc_owner.clone());
-    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
+    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target: *mut cmd_find_state = &mut target_state;
     let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
     let mut s: Option<SessionRef> = tc
@@ -748,15 +750,16 @@ unsafe fn cmd_display_menu_get_menu_pos(
 }
 unsafe fn cmd_display_menu_exec(
     mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let item = item_handle.get();
+    let item = item_handle.borrow();
     let args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
+    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let target = &mut target_state;
     let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
-    let tc_owner = cmdq_get_target_client((item).as_ref());
+    let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let style = args_get(&*(args), b's');
     let border_style = args_get(&*(args), b'S');
@@ -886,18 +889,19 @@ unsafe fn cmd_display_menu_exec(
 }
 unsafe fn cmd_display_popup_exec(
     mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let mut shellcmd_session_value: Option<std::ffi::CString> = None;
     let mut shell_session_value: Option<std::ffi::CString> = None;
 
-    let item = item_handle.get();
+    let item = item_handle.borrow();
     let mut current_block: u64;
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
+    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target: *mut cmd_find_state = &mut target_state;
     let mut s: Option<SessionRef> = (*target).session_handle();
-    let tc_owner = cmdq_get_target_client((item).as_ref());
+    let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut value: Option<&CStr> = None;
     let mut shellcmd: Option<&CStr> = None;

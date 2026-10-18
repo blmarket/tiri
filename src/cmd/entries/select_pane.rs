@@ -144,11 +144,12 @@ unsafe fn cmd_select_pane_redraw(w_owner: &WindowRef) {
 }
 unsafe fn cmd_select_pane_marked_pane(
     mut command: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let item = item_handle.get();
+    let item = item_handle.borrow();
     let arguments = cmd_get_args_mut(command.get_mut_unchecked()).expect("select pane arguments");
-    let target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
+    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let target = &mut target_state;
     let pane = target.pane_handle().expect("marked target pane");
     let link = target.winlink_handle();
     let session = target.session_handle();
@@ -202,14 +203,15 @@ unsafe fn cmd_select_pane_marked_pane(
 }
 unsafe fn cmd_select_pane_exec(
     mut command: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let item = item_handle.get();
+    let item = item_handle.borrow();
     let entry = cmd_get_entry(command.get_unchecked());
     let marked_command = command.clone();
     let arguments = cmd_get_args_mut(command.get_mut_unchecked()).expect("select pane arguments");
     let current = cmdq_get_state_owned(&*item);
-    let target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
+    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let target = &mut target_state;
     let link = target.winlink_handle();
     let session = target.session_handle();
     let original_pane = target.pane_handle().expect("select target pane");
