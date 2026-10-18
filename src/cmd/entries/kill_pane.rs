@@ -1,4 +1,4 @@
-use crate::src::arguments::{args_get, args_has};
+use crate::src::arguments::{args, args_get, args_has, args_parse};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client};
 use crate::src::format::{
@@ -11,7 +11,6 @@ use std::ffi::CStr;
 
 use crate::src::server_fn::{server_kill_pane, server_redraw_window};
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::command::CMD_AFTERHOOK;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};

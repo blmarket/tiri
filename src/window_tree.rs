@@ -1,4 +1,4 @@
-use crate::src::arguments::{args_count, args_get, args_has, args_string};
+use crate::src::arguments::{args, args_count, args_get, args_has, args_string};
 use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned};
 use crate::src::format::{
     format_add, format_create, format_defaults, format_expand_cstring, format_single_cstring,
@@ -30,7 +30,6 @@ use crate::src::session::session_group_synchronize_from;
 use crate::src::session::Session;
 use crate::src::shared::abi::__int32_t;
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::args;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};

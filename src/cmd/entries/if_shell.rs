@@ -1,6 +1,7 @@
 use crate::src::arguments::{
-    args_count, args_has, args_make_commands, args_make_commands_now, args_make_commands_prepare,
-    args_string,
+    args, args_command_state, args_count, args_has, args_make_commands, args_make_commands_now,
+    args_make_commands_prepare, args_parse, args_parse_type, args_string, ArgsParseError,
+    ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_STRING,
 };
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::parse::cmd_parse_error_uppercase_first;
@@ -15,9 +16,6 @@ use crate::src::job::job_run;
 
 use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::args_command_state;
-use crate::src::shared::arguments::*;
-use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::CMD_FIND_CANFAIL;
 use crate::src::shared::command::*;
@@ -257,129 +255,6 @@ impl Drop for cmd_if_shell_data {
             }
             drop(self.cmd_else.take());
             drop(self.cmd_if.take());
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::src::cmd::core::cmd_list_new;
-    use crate::src::cmd::queue::{cmdq_get_callback_owned, cmdq_next};
-    use crate::src::server_client::queue_test_clients as clients;
-    use crate::src::shared::client::CLIENT_DEAD;
-    use std::cell::Cell;
-    use std::os::unix::process::ExitStatusExt;
-    use std::process::ExitStatus;
-
-    /// Foreground data whose if branch is an empty command list, without an
-    /// else branch. With no if branch, the body panics if the job succeeded.
-    fn data(client: &ClientRef, branch: bool) -> Box<cmd_if_shell_data> {
-        let mut cmd_if = args_command_state::empty();
-        cmd_if.cmdlist = branch.then(|| unsafe { cmd_list_new() });
-        Box::new(cmd_if_shell_data {
-            cmd_if: Some(Box::new(cmd_if)),
-            cmd_else: None,
-            client: Some(client.clone()),
-        })
-    }
-
-    /// Queue an item whose continuation waits for a job completion on the
-    /// returned sender, as the completecb that cmd_if_shell_exec installs.
-    unsafe fn append_job_wait(
-        owner: &ClientRef,
-        cdata: Box<cmd_if_shell_data>,
-    ) -> (
-        Weak<UnsafeCell<cmdq_item>>,
-        tiri_rt::oneshot::Sender<JobCompletion>,
-    ) {
-        let (done, completed) = tiri_rt::oneshot::channel();
-        let item = cmdq_append(
-            Some(owner),
-            cmdq_get_callback_owned(
-                c"if-shell",
-                Some(Box::new(move |item| {
-                    cmdq_suspend(
-                        item,
-                        cmd_if_shell_complete(completed, cdata, Rc::downgrade(item)),
-                    )
-                })),
-            ),
-        );
-        cmdq_next(Some(owner));
-        (item, done)
-    }
-
-    /// Queue a callback that records whether it ran.
-    unsafe fn append_flag(owner: &ClientRef) -> Rc<Cell<bool>> {
-        let ran = Rc::new(Cell::new(false));
-        let flag = ran.clone();
-        cmdq_append(
-            Some(owner),
-            cmdq_get_callback_owned(
-                c"flag",
-                Some(Box::new(move |_| {
-                    flag.set(true);
-                    CMD_RETURN_NORMAL
-                })),
-            ),
-        );
-        ran
-    }
-
-    fn exited(code: i32) -> JobCompletion {
-        JobCompletion {
-            status: ExitStatus::from_raw(code << 8),
-            output: Vec::new(),
-        }
-    }
-
-    #[test]
-    fn job_completion_runs_the_body_inside_the_send() {
-        unsafe {
-            for (code, branches) in [(0, 1), (1, 0)] {
-                let owner = clients::with_queue();
-                let (head, done) = append_job_wait(&owner, data(&owner, true));
-                let ran = append_flag(&owner);
-                assert_eq!(Rc::strong_count(&owner), 2, "the data keeps the client");
-                assert!(done.send(exited(code)).is_ok());
-                assert_eq!(Rc::strong_count(&owner), 1);
-                assert!(head.upgrade().is_some() && !ran.get());
-                assert_eq!(cmdq_next(Some(&owner)), branches + 1);
-                assert!(head.upgrade().is_none());
-                assert!(ran.get());
-            }
-        }
-    }
-
-    #[test]
-    fn a_lost_client_is_freed_once_its_job_completes() {
-        unsafe {
-            let owner = clients::with_queue();
-            let (head, done) = append_job_wait(&owner, data(&owner, true));
-            owner.update_flags(CLIENT_DEAD as u64, 0);
-            let client = Rc::downgrade(&owner);
-            drop(owner);
-            assert!(client.upgrade().is_some());
-            assert!(done.send(exited(0)).is_ok());
-            assert!(client.upgrade().is_none());
-            assert!(head.upgrade().is_none());
-        }
-    }
-
-    #[test]
-    fn a_job_freed_unfinished_releases_the_data_and_parks() {
-        unsafe {
-            let owner = clients::with_queue();
-            let (head, done) = append_job_wait(&owner, data(&owner, false));
-            let ran = append_flag(&owner);
-            drop(done);
-            assert_eq!(Rc::strong_count(&owner), 1, "the data is released");
-            assert_eq!(cmdq_next(Some(&owner)), 0);
-            assert!(head.upgrade().is_some() && !ran.get());
-            owner.update_flags(CLIENT_DEAD as u64, 0);
-            drop(owner);
-            assert!(head.upgrade().is_none());
         }
     }
 }

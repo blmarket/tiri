@@ -1,4 +1,4 @@
-use crate::src::arguments::{args_get, args_has};
+use crate::src::arguments::{args, args_get, args_has, args_parse};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client};
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::control::control_write;
@@ -8,7 +8,6 @@ use crate::src::paste::paste_set_owned;
 use crate::src::server_client::Client as _;
 use crate::src::server_fn::server_redraw_window;
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::{ClientRef, CLIENT_CONTROL};
 use crate::src::shared::command::*;
 use crate::src::window_pane::WindowPane as _;

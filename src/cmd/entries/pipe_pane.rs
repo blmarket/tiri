@@ -1,4 +1,4 @@
-use crate::src::shared::arguments::args_parse;
+use crate::src::arguments::args_parse;
 use crate::src::shared::command::*;
 use crate::src::window_pane::WindowPane;
 

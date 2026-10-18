@@ -1,4 +1,6 @@
-use crate::src::arguments::{args_count, args_get, args_has, args_string, args_strtonum_result};
+use crate::src::arguments::{
+    args, args_count, args_get, args_has, args_parse, args_string, args_strtonum_result,
+};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::find::cmd_find_best_client;
 use crate::src::cmd::queue::{
@@ -13,7 +15,6 @@ use crate::src::reactor::{evbuffer_add_formatted, evbuffer_new};
 
 use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::CLIENT_CONTROL;
 use crate::src::shared::command::*;

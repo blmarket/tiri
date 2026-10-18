@@ -1,4 +1,4 @@
-use crate::src::arguments::{args_get, args_has, args_string};
+use crate::src::arguments::{args, args_get, args_has, args_parse, args_string};
 use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_client, cmdq_print_data, cmdq_resumed, cmdq_suspend,
 };
@@ -11,7 +11,6 @@ use crate::src::paste::{paste_buffer_data, paste_get_name, paste_get_top};
 use crate::src::reactor::{evbuffer_add, evbuffer_new};
 use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::CLIENT_CONTROL;
 use crate::src::shared::command::*;

@@ -3,10 +3,9 @@ use super::diagnostic::options_string_cause;
 use super::scope::OptionsScope;
 use super::table::options_table;
 use super::types::*;
-use crate::src::arguments::{args_get, args_has};
+use crate::src::arguments::{args, args_get, args_has};
 use crate::src::shared::window::WindowRef;
 
-use crate::src::shared::arguments::args;
 use crate::src::shared::command::cmd_find_state;
 use std::ffi::{CStr, CString};
 

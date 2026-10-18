@@ -1,4 +1,4 @@
-use crate::src::arguments::args_get;
+use crate::src::arguments::{args, args_get, args_parse};
 use crate::src::cmd::queue::{cmdq_error, cmdq_print};
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::format::bytes::nullable_cstr;
@@ -6,7 +6,6 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::prompt::{prompt_type, prompt_type_string};
 use crate::src::prompt_history::{prompt_history_clear, prompt_history_get, prompt_history_size};
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::command::CMD_AFTERHOOK;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};

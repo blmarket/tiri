@@ -7,7 +7,6 @@
 pub mod abi;
 pub mod account;
 pub mod alerts;
-pub mod arguments;
 pub mod borders;
 pub mod client;
 pub mod colour;

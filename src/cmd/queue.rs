@@ -1,5 +1,5 @@
 use crate::src::arguments::{
-    args_count, args_flag_values, args_flags, args_get, args_print_cstring, args_string,
+    args, args_count, args_flag_values, args_flags, args_get, args_print_cstring, args_string,
 };
 use crate::src::cfg::{cfg_add_cause, cfg_finished};
 use crate::src::cmd::find::cmd_find_client;
@@ -27,7 +27,6 @@ use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{__uid_t, uid_t};
 use crate::src::shared::account::passwd;
-use crate::src::shared::arguments::args;
 use crate::src::shared::client::{ClientRef, ClientWeak};
 use crate::src::shared::client::{CLIENT_CONTROL, CLIENT_UTF8};
 use crate::src::shared::command::*;

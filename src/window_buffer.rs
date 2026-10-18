@@ -1,4 +1,4 @@
-use crate::src::arguments::{args_count, args_get, args_has, args_string};
+use crate::src::arguments::{args, args_count, args_get, args_has, args_string};
 use crate::src::format::{
     format_add, format_create, format_defaults, format_defaults_paste_buffer,
     format_expand_cstring, format_true,
@@ -17,7 +17,6 @@ use crate::src::paste::{
 use crate::src::screen_write::{screen_write_cursormove, screen_write_nputs};
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::args;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
 use crate::src::shared::format::format_tree;

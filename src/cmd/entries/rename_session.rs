@@ -1,8 +1,7 @@
-use crate::src::arguments::args_string;
+use crate::src::arguments::{args_parse, args_string};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::cmdq_error;
 use crate::src::format::format_single_from_target_cstring;
-use crate::src::shared::arguments::args_parse;
 use crate::src::shared::command::*;
 
 pub static cmd_rename_session_entry: cmd_entry = {

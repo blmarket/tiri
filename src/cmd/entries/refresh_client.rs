@@ -1,4 +1,6 @@
-use crate::src::arguments::{args_count, args_flag_values, args_get, args_has, args_string};
+use crate::src::arguments::{
+    args, args_count, args_flag_values, args_get, args_has, args_parse, args_string,
+};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target_client};
 use crate::src::compat::strtonum::strtonum;
@@ -16,7 +18,6 @@ use crate::src::server_client::Client as _;
 use crate::src::server_fn::{server_redraw_client, server_status_client};
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::{CLIENT_CONTROL, CLIENT_STATUSFORCE, CLIENT_WINDOWSIZECHANGED};
 use crate::src::shared::command::*;

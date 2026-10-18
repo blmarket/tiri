@@ -1,4 +1,4 @@
-use crate::src::arguments::{args_get, args_has, args_string};
+use crate::src::arguments::{args, args_get, args_has, args_parse, args_string};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print, cmdq_wait, CmdqWaiter};
 use crate::src::events::{events_add_sink, events_remove_sink};
@@ -14,7 +14,6 @@ use crate::src::log::{log_cstr, log_debug, log_pointer};
 use crate::src::reactor::{evbuffer_add_formatted, evbuffer_new};
 use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
@@ -846,7 +845,7 @@ mod tests {
             .into_iter()
             .chain(flags.iter().copied())
             .chain([name])
-            .map(|value| crate::src::shared::arguments::args_value::string(value.to_owned()))
+            .map(|value| crate::src::arguments::args_value::string(value.to_owned()))
             .collect::<Vec<_>>();
         let mut args =
             crate::src::arguments::args_parse(&cmd_wait_for_entry.args, &values).unwrap();

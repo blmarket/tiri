@@ -1,10 +1,10 @@
 //! Authoritative command objects, queues, parsing records, and scalar domains.
 
 use super::abi::u_int;
-use super::arguments::{args, args_parse};
 use super::key::key_event;
 use super::pane::window_pane;
 use super::window::winlink;
+use crate::src::arguments::{args, args_parse};
 use crate::src::shared::client::ClientWeak;
 use crate::src::shared::session::{SessionRef, SessionWeak};
 use crate::src::shared::window::{WindowRef, WindowWeak};

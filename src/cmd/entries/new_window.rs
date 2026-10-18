@@ -1,5 +1,5 @@
 use crate::src::arguments::{
-    args_count, args_flag_values, args_get, args_has, args_string, args_to_vector,
+    args, args_count, args_flag_values, args_get, args_has, args_parse, args_string, args_to_vector,
 };
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{
@@ -19,7 +19,6 @@ use libc::strcmp;
 
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::CMD_FIND_WINDOW_INDEX;
 use crate::src::shared::command::*;

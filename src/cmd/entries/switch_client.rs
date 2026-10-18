@@ -1,4 +1,4 @@
-use crate::src::arguments::{args_get, args_has};
+use crate::src::arguments::{args, args_get, args_has, args_parse};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_client, cmdq_get_flags, cmdq_get_state_owned, cmdq_get_target_client,
@@ -11,7 +11,6 @@ use libc::{getuid, strcmp, strcspn};
 
 use crate::src::shared::abi::uid_t;
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::{CLIENT_IGNORESIZE, CLIENT_READONLY};
 use crate::src::shared::command::*;

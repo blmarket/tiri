@@ -1,4 +1,4 @@
-use crate::src::arguments::args_has;
+use crate::src::arguments::{args, args_has, args_parse};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_state_owned, cmdq_insert_hook};
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::resize::recalculate_sizes;
@@ -7,7 +7,6 @@ use crate::src::server_fn::server_redraw_session;
 use crate::src::session::Session;
 
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::CMD_TARGET_SESSION_USAGE;
 use crate::src::shared::command::*;

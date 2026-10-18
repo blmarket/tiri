@@ -1,6 +1,6 @@
 //! Pane-owned process and pipe lifecycle operations.
 use super::{window_pane_destroy_ready, window_pane_exited};
-use crate::src::arguments::{args_count, args_has, args_string};
+use crate::src::arguments::{args, args_count, args_has, args_string};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client};
 use crate::src::ffi::libc::__errno_location;
@@ -17,7 +17,6 @@ use crate::src::reactor::{
 use crate::src::server::server_proc;
 use crate::src::server_fn::server_destroy_pane;
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::args;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_find_state, cmdq_item};

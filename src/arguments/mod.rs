@@ -1,3 +1,5 @@
+//! Command argument storage, parsing, printing and value conversion.
+
 use crate::src::cmd::parse::cmd_parse_from_string;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target_client};
 use crate::src::cmd::{
@@ -10,17 +12,166 @@ use crate::src::format::format_single_from_target_cstring;
 use crate::src::log::{fatalx, log_byte, log_bytes, log_cstr, log_debug};
 
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::args_command_state;
-use crate::src::shared::arguments::*;
-pub use crate::src::shared::arguments::{args, args_entry, args_parse, args_value};
-use crate::src::shared::command::{cmd, cmd_find_state, cmd_list, cmdq_item};
+use crate::src::shared::client::ClientRef;
+use crate::src::shared::command::{cmd, cmd_find_state, cmd_list, cmd_parse_input, cmdq_item};
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_DQ, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::text::utf8::utf8_strvis;
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
 
-pub const ARGS_ENTRY_OPTIONAL_VALUE: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
+type args_type = ::core::ffi::c_uint;
+pub const ARGS_COMMANDS: args_type = 2;
+pub const ARGS_STRING: args_type = 1;
+const ARGS_NONE: args_type = 0;
+
+pub type args_parse_type = ::core::ffi::c_uint;
+const ARGS_PARSE_COMMANDS: args_parse_type = 3;
+pub const ARGS_PARSE_COMMANDS_OR_STRING: args_parse_type = 2;
+pub const ARGS_PARSE_STRING: args_parse_type = 1;
+const ARGS_PARSE_INVALID: args_parse_type = 0;
+
+#[derive(Debug)]
+pub enum ArgsParseError {
+    Usage,
+    Message(std::ffi::CString),
+}
+
+#[repr(C)]
+pub struct args {
+    tree: args_tree,
+    pub values: Vec<args_value>,
+}
+
+enum ArgsPayload<'a> {
+    None,
+    String(CString),
+    Command(Rc<std::cell::RefCell<cmd_list>>),
+    BorrowedString(&'a CStr),
+    BorrowedCommand(&'a Rc<std::cell::RefCell<cmd_list>>),
+}
+
+/// Parser inputs can borrow payloads; stored arguments contain owned copies.
+pub struct ArgumentValue<'a> {
+    payload: ArgsPayload<'a>,
+    cached: Option<CString>,
+}
+
+pub type args_value = ArgumentValue<'static>;
+
+impl<'a> ArgumentValue<'a> {
+    fn new(payload: ArgsPayload<'a>) -> Self {
+        Self {
+            payload,
+            cached: None,
+        }
+    }
+
+    pub fn empty() -> Self {
+        Self::new(ArgsPayload::None)
+    }
+
+    pub fn string(value: CString) -> Self {
+        Self::new(ArgsPayload::String(value))
+    }
+
+    pub fn commands(value: Rc<std::cell::RefCell<cmd_list>>) -> Self {
+        Self::new(ArgsPayload::Command(value))
+    }
+
+    pub fn borrowed_string(value: &'a CStr) -> Self {
+        Self::new(ArgsPayload::BorrowedString(value))
+    }
+
+    pub fn borrowed_commands(value: &'a Rc<std::cell::RefCell<cmd_list>>) -> Self {
+        Self::new(ArgsPayload::BorrowedCommand(value))
+    }
+
+    pub fn type_0(&self) -> args_type {
+        match self.payload {
+            ArgsPayload::None => ARGS_NONE,
+            ArgsPayload::String(_) | ArgsPayload::BorrowedString(_) => ARGS_STRING,
+            ArgsPayload::Command(_) | ArgsPayload::BorrowedCommand(_) => ARGS_COMMANDS,
+        }
+    }
+
+    pub fn as_string(&self) -> Option<&CStr> {
+        match &self.payload {
+            ArgsPayload::String(value) => Some(value),
+            ArgsPayload::BorrowedString(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub fn as_commands(&self) -> Option<&Rc<std::cell::RefCell<cmd_list>>> {
+        match &self.payload {
+            ArgsPayload::Command(value) => Some(value),
+            ArgsPayload::BorrowedCommand(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    /// Copy into stored arguments without carrying any parser-input borrow or cache.
+    fn to_owned(&self) -> args_value {
+        if let Some(text) = self.as_string() {
+            args_value::string(text.to_owned())
+        } else if let Some(commands) = self.as_commands() {
+            args_value::commands(Rc::clone(commands))
+        } else {
+            args_value::empty()
+        }
+    }
+}
+
+type args_tree = BTreeMap<u_char, Box<args_entry>>;
+
+#[repr(C)]
+/// Box-owned by the enclosing args tree; dropping it also drops its values.
+struct args_entry {
+    flag: u_char,
+    values: args_values,
+    count: u_int,
+    flags: ::core::ffi::c_int,
+}
+
+const ARGS_ENTRY_OPTIONAL_VALUE: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
+
+/// Owns flag-value storage directly. Iteration borrows
+/// the boxed records and cannot outlive the containing argument set.
+type args_values = Vec<Box<args_value>>;
+
+type args_parse_cb = Option<fn(&mut args, u_int) -> Result<args_parse_type, ArgsParseError>>;
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct args_parse {
+    pub template: &'static CStr,
+    pub lower: ::core::ffi::c_int,
+    pub upper: ::core::ffi::c_int,
+    pub cb: args_parse_cb,
+}
+
+/// Box-owned prepared command; retained model references have typed owners.
+pub struct args_command_state {
+    cmdlist: Option<Rc<std::cell::RefCell<cmd_list>>>,
+    client: Option<ClientRef>,
+    cmd: Option<std::ffi::CString>,
+    pi: cmd_parse_input,
+    file: Option<std::ffi::CString>,
+}
+
+impl args_command_state {
+    fn empty() -> Self {
+        Self {
+            cmdlist: None,
+            client: None,
+            cmd: Default::default(),
+            pi: Default::default(),
+            file: Default::default(),
+        }
+    }
+}
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ArgumentValueError {
@@ -30,8 +181,6 @@ pub enum ArgumentValueError {
     TooSmall,
     TooLarge,
 }
-
-pub use crate::src::shared::arguments::ArgsParseError;
 
 fn parse_flag_error(prefix: &[u8], flag: u_char, suffix: &[u8]) -> CString {
     let mut bytes = Vec::with_capacity(prefix.len() + 1 + suffix.len());
@@ -506,7 +655,7 @@ pub unsafe fn args_set_owned_string(args: *mut args, value: CString) {
 }
 
 /// Add an occurrence of a flag that has no associated value.
-pub unsafe fn args_set_flag(args: *mut args, flag: u_char, flags: ::core::ffi::c_int) {
+unsafe fn args_set_flag(args: *mut args, flag: u_char, flags: ::core::ffi::c_int) {
     args_set_value(&mut *args, flag, None, flags);
 }
 
@@ -700,7 +849,7 @@ fn strtonum_error(errstr: &CStr) -> ArgumentValueError {
     }
 }
 
-pub fn parse_number(value: &CStr, minval: i64, maxval: i64) -> Result<i64, ArgumentValueError> {
+fn parse_number(value: &CStr, minval: i64, maxval: i64) -> Result<i64, ArgumentValueError> {
     unsafe { strtonum(value, minval, maxval) }.map_err(strtonum_error)
 }
 
@@ -720,7 +869,7 @@ fn percentage_share(
     Ok(value as i64)
 }
 
-pub fn parse_percentage(
+fn parse_percentage(
     value: &CStr,
     minval: i64,
     maxval: i64,
@@ -802,72 +951,4 @@ pub unsafe fn args_percentage_result(
 }
 
 #[cfg(test)]
-mod ownership_tests {
-    use super::*;
-
-    #[test]
-    fn parser_slices_preserve_optional_values_and_flag_boundaries() {
-        unsafe {
-            let spec = args_parse {
-                template: c"ao::r:",
-                lower: 0,
-                upper: -1,
-                cb: None,
-            };
-            /// (argv, -o value, whether -a is set, remaining positional arguments)
-            type ParseCase<'a> = (&'a [&'a [u8]], Option<&'a [u8]>, bool, &'a [&'a [u8]]);
-            let cases: &[ParseCase] = &[
-                (&[b"-o"], None, false, &[]),
-                (&[b"-o", b"-a"], None, true, &[]),
-                (&[b"-o", b"--", b"-a"], None, false, &[b"-a"]),
-                (&[b"-o", b"-7"], Some(b"-7"), false, &[]),
-                (&[b"-o", b"-"], Some(b"-"), false, &[]),
-                (&[b"-o", b""], Some(b""), false, &[]),
-                (
-                    &[b"-aoRAW\xff", b"tail"],
-                    Some(b"RAW\xff"),
-                    true,
-                    &[b"tail"],
-                ),
-                (&[b"", b"-a"], None, false, &[b"", b"-a"]),
-                (&[b"-", b"-a"], None, false, &[b"-", b"-a"]),
-            ];
-            for &(input, optional, has_a, positional) in cases {
-                let values: Vec<_> = std::iter::once(b"test".as_slice())
-                    .chain(input.iter().copied())
-                    .map(|bytes| args_value::string(CString::new(bytes).unwrap()))
-                    .collect();
-                let parsed = args_parse(&spec, &values).unwrap();
-                assert_eq!(
-                    args_last_string(&parsed, b'o').map(CStr::to_bytes),
-                    optional,
-                    "{input:?}"
-                );
-                assert_eq!(
-                    args_flags(&parsed).any(|flag| flag == b'a'),
-                    has_a,
-                    "{input:?}"
-                );
-                let actual: Vec<_> = parsed
-                    .values
-                    .iter()
-                    .map(|value| value.as_string().expect("string argument").to_bytes())
-                    .collect();
-                assert_eq!(actual, positional, "{input:?}");
-            }
-            let values = [
-                args_value::string(c"test".to_owned()),
-                args_value::string(c"-a".to_owned()),
-                args_value::string(c"-?".to_owned()),
-            ];
-            assert!(args_parse(&spec, &values[..2]).is_ok());
-            assert!(matches!(
-                args_parse(&spec, &values),
-                Err(ArgsParseError::Usage)
-            ));
-            let required = args_parse { lower: 1, ..spec };
-            assert!(args_parse(&required, &[]).is_ok());
-            assert!(args_parse(&required, &values[..1]).is_err());
-        }
-    }
-}
+mod tests;

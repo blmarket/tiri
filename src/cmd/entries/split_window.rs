@@ -1,5 +1,5 @@
 use crate::src::arguments::{
-    args_count, args_flag_values, args_get, args_has, args_string, args_to_vector,
+    args, args_count, args_flag_values, args_get, args_has, args_parse, args_string, args_to_vector,
 };
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{
@@ -20,7 +20,6 @@ use crate::src::options::{options_set_number, options_set_string};
 use crate::src::server_client::Client as _;
 use crate::src::server_fn::{server_redraw_session, server_redraw_window};
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};

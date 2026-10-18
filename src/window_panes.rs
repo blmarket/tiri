@@ -1,5 +1,6 @@
 use crate::src::arguments::{
-    args_has, args_make_commands, args_make_commands_prepare, args_strtonum_result,
+    args, args_command_state, args_has, args_make_commands, args_make_commands_prepare,
+    args_strtonum_result,
 };
 use crate::src::cmd::cmd_mouse_at;
 use crate::src::cmd::queue::{
@@ -24,8 +25,6 @@ use crate::src::session::Session;
 use crate::src::window::Window as _;
 
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::args;
-use crate::src::shared::arguments::args_command_state;
 use crate::src::shared::borders::{CELL_BORDERS, CELL_LR, CELL_UD};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::{cmd, cmd_find_state, cmdq_item};

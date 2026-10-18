@@ -1,5 +1,4 @@
-use crate::src::arguments::args_parse;
-use crate::src::arguments::{args_count, args_has, args_string};
+use crate::src::arguments::{args, args_count, args_has, args_parse, args_string};
 use crate::src::cmd::{cmd_mouse_at, cmd_mouse_pane};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::events::events_fire_pane;
@@ -46,7 +45,6 @@ use crate::src::server_client::Client as _;
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{__int32_t, ssize_t};
-use crate::src::shared::arguments::args;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::CLIENT_READONLY;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};

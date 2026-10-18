@@ -15,7 +15,7 @@ use std::ffi::{CStr, CString};
 use std::ptr::NonNull;
 use std::rc::{Rc, Weak};
 
-use crate::src::arguments::{args_get, args_has};
+use crate::src::arguments::{args, args_get, args_has};
 use crate::src::cmd::cmd_list_print_cstring;
 use crate::src::cmd::parse::{cmd_parse_error_uppercase_first, cmd_parse_from_string};
 use crate::src::environ::{environ_clear, environ_find, environ_iter, environ_set, environ_unset};
@@ -57,7 +57,6 @@ use crate::src::screen_write::{
 };
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{__int32_t, ssize_t};
-use crate::src::shared::arguments::args;
 use crate::src::shared::colour::{COLOUR_FLAG_THEME, COLOUR_THEME_LIGHT_GREY};
 use crate::src::shared::command::cmd_parse_input;
 use crate::src::shared::command::*;

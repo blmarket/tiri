@@ -1,10 +1,9 @@
-use crate::src::arguments::{args_count, args_get, args_has, args_string};
+use crate::src::arguments::{args_count, args_get, args_has, args_parse, args_string};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target_client};
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::paste::{
     paste_buffer_data, paste_free, paste_get_name, paste_get_top, paste_rename, paste_set_owned,
 };
-use crate::src::shared::arguments::args_parse;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};

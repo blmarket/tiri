@@ -28,7 +28,7 @@ pub(crate) use format::format_without_pane;
 pub use model::window_pane;
 mod pane_sync;
 use self::input::{input_parse_buffer, input_parse_pane};
-use crate::src::arguments::args_has;
+use crate::src::arguments::{args, args_has};
 use crate::src::cmd::cmd_mouse_at;
 use crate::src::cmd::queue::{cmdq_get_client, CmdqWaiter};
 use crate::src::compat::strtonum::strtonum;
@@ -83,7 +83,6 @@ use tiri_buffer::SegmentedBuf;
 
 use crate::src::options::options;
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::args;
 use crate::src::shared::client::{client_file, client_file_cb};
 use crate::src::shared::client::{CLIENT_DEAD, CLIENT_EXITED, CLIENT_UNATTACHEDFLAGS};
 use crate::src::shared::colour::*;

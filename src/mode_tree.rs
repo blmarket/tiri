@@ -1,4 +1,4 @@
-use crate::src::arguments::{args_get, args_has};
+use crate::src::arguments::{args, args_get, args_has};
 use crate::src::cmd::parse::{cmd_parse_and_append, cmd_parse_error_uppercase_first};
 use crate::src::cmd::queue::{
     cmdq_append, cmdq_get_callback_owned, cmdq_get_client, cmdq_new_state,
@@ -27,7 +27,6 @@ use crate::src::server_client::Client as _;
 use crate::src::session::Session as _;
 use crate::src::shared::abi::__int32_t;
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::args;
 use crate::src::shared::client::{ClientRef, ClientWeak};
 use crate::src::shared::colour::{COLOUR_FLAG_THEME, COLOUR_THEME_CYAN};
 use crate::src::shared::command::cmd_find_state;

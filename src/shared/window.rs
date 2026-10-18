@@ -2,13 +2,13 @@
 pub use crate::src::window::{WindowRef, WindowWeak};
 
 use super::abi::u_int;
-use super::arguments::args;
 use super::command::{cmd_find_state, cmdq_item};
 use super::format::format_tree;
 use super::key::key_code;
 use super::mouse::mouse_event;
 use super::pane::{window_pane, PANE_MINIMUM};
 use super::screen::screen;
+use crate::src::arguments::args;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::{SessionRef, SessionWeak};
 

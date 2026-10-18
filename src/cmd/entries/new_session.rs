@@ -1,4 +1,6 @@
-use crate::src::arguments::{args_count, args_flag_values, args_get, args_has, args_to_vector};
+use crate::src::arguments::{
+    args, args_count, args_flag_values, args_get, args_has, args_parse, args_to_vector,
+};
 use crate::src::cfg::{cfg_finished, cfg_show_causes};
 use crate::src::cmd::entries::attach_session::cmd_attach_session;
 use crate::src::cmd::queue::{
@@ -19,7 +21,6 @@ use crate::src::options::options;
 use crate::src::session::Session;
 use crate::src::session::{session_group_add, session_group_synchronize_to, session_groups};
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::{CLIENT_ATTACHED, CLIENT_CONTROL};
 use crate::src::shared::command::*;

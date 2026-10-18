@@ -1,4 +1,4 @@
-use crate::src::arguments::args_has;
+use crate::src::arguments::{args, args_has, args_parse};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_state_owned};
 use crate::src::events::events_fire_window;
@@ -11,7 +11,6 @@ use crate::src::window::Window as _;
 
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::CMD_FIND_DEFAULT_MARKED;
 use crate::src::shared::command::*;

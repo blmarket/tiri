@@ -1,4 +1,4 @@
-use crate::src::arguments::{args_count, args_get, args_has, args_string};
+use crate::src::arguments::{args, args_count, args_get, args_has, args_string};
 use crate::src::cmd::parse::{cmd_parse_and_append, cmd_parse_error_uppercase_first};
 use crate::src::cmd::queue::cmdq_new_state;
 use crate::src::cmd::{cmd_mouse_at, cmd_template_replace_cstring};
@@ -19,7 +19,6 @@ use crate::src::screen_write::{
 use crate::src::session::Session;
 
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::args;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
 use crate::src::shared::format::format_tree;

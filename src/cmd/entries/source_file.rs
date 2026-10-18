@@ -1,4 +1,4 @@
-use crate::src::arguments::{args_count, args_has, args_string};
+use crate::src::arguments::{args, args_count, args_has, args_parse, args_string};
 use crate::src::cfg::{cfg_finished, cfg_print_causes, load_cfg_from_buffer};
 use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_callback_owned, cmdq_get_client, cmdq_insert_after, cmdq_resumed,
@@ -17,7 +17,6 @@ use libc::{strcmp, strerror};
 
 use crate::src::shared::abi::__size_t;
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::CLIENT_CONTROL;
 use crate::src::shared::command::*;

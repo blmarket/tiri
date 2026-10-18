@@ -1,3 +1,4 @@
+use crate::src::arguments::args;
 use crate::src::ffi::libc::strlcat;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_create_defaults;
@@ -9,7 +10,6 @@ use crate::src::screen_write::{
     screen_write_start, screen_write_stop,
 };
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::args;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
 use crate::src::shared::event::*;

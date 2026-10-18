@@ -1,5 +1,5 @@
 use super::WindowPane;
-use crate::src::arguments::{args_get, args_has, args_strtonum_and_expand_result};
+use crate::src::arguments::{args, args_get, args_has, args_strtonum_and_expand_result};
 use crate::src::grid::{
     grid_cell_attr_display, grid_cell_flags_display, grid_clear_history, grid_default_cell,
     grid_get_cell, grid_get_line, grid_line_flags_display, grid_line_time, grid_peek_line,
@@ -10,7 +10,6 @@ use crate::src::input::input_pending;
 use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
 use crate::src::screen::screen_reset_hyperlinks;
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::args;
 use crate::src::shared::colour::COLOUR_FLAG_256;
 use crate::src::shared::command::cmdq_item;
 use crate::src::shared::grid::*;

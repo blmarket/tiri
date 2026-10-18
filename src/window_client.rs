@@ -1,4 +1,4 @@
-use crate::src::arguments::{args_count, args_get, args_has, args_string};
+use crate::src::arguments::{args, args_count, args_get, args_has, args_string};
 use crate::src::compat::imsg::*;
 use crate::src::format::{
     format_add, format_create, format_create_defaults, format_defaults, format_expand_cstring,
@@ -19,7 +19,6 @@ use crate::src::screen_write::{
 use crate::src::server_client::Client as _;
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::args;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::CLIENT_UNATTACHEDFLAGS;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};

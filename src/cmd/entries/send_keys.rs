@@ -1,4 +1,6 @@
-use crate::src::arguments::{args_count, args_has, args_string, args_strtonum_and_expand_result};
+use crate::src::arguments::{
+    args, args_count, args_has, args_parse, args_string, args_strtonum_and_expand_result,
+};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_event, cmdq_get_target_client};
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry, cmd_mouse_pane};
 use crate::src::format::bytes::write_cstr;
@@ -8,7 +10,6 @@ use crate::src::options::options_get_number;
 use crate::src::server_client::Client;
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::CLIENT_READONLY;
 use crate::src::shared::command::*;

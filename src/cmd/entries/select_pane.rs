@@ -1,4 +1,4 @@
-use crate::src::arguments::{args_get, args_has};
+use crate::src::arguments::{args_get, args_has, args_parse};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_state_owned, cmdq_insert_hook, cmdq_print};
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::events::events_fire;
@@ -27,7 +27,6 @@ use crate::src::window::Window as _;
 use crate::src::window_pane::WindowPane as _;
 
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::args_parse;
 use crate::src::shared::client::{CLIENT_CONTROL, CLIENT_REDRAWBORDERS, CLIENT_REDRAWSTATUS};
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
