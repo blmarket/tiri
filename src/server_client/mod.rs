@@ -76,7 +76,9 @@ use crate::src::style::colour::{
     colour_parse_cstr, colour_theme_option, colour_theme_terminal_colour, colour_totheme,
 };
 use crate::src::text::utf8::{utf8_sanitize_cstring, utf8_stravisx_bytes};
-use crate::src::tmux::{checkshell, find_home_cstr, global_options, global_s_options, setblocking};
+use crate::src::tmux::{
+    checkshell, find_home_cstr, setblocking, with_global_options, with_global_s_options,
+};
 use crate::src::tty::{
     tty_close, tty_cursor, tty_init, tty_invalidate, tty_margin_off, tty_open, tty_region_off,
     tty_repeat_requests, tty_reset, tty_resize, tty_send_requests, tty_set_path,
@@ -1258,7 +1260,9 @@ unsafe fn server_client_exec(c_owner: &ClientRef, cmd: &CStr) {
             .expect("option snapshot")
             .as_ptr();
     } else {
-        shell_session_value = Some(options_get_string(&global_s_options(), c"default-shell"));
+        shell_session_value = Some(with_global_s_options(|oo| {
+            options_get_string(oo, c"default-shell")
+        }));
         shell = shell_session_value
             .as_ref()
             .expect("option snapshot")
@@ -1873,7 +1877,7 @@ unsafe fn server_client_update_theme_colours(c_owner: Option<&ClientRef>) {
     if c.is_null() {
         return;
     }
-    option = options_get_number(&global_options(), c"theme") as ::core::ffi::c_int;
+    option = with_global_options(|oo| options_get_number(oo, c"theme")) as ::core::ffi::c_int;
     if option == 1 as ::core::ffi::c_int {
         i = 0 as u_int;
         while i < COLOUR_THEME_COUNT as u_int {
@@ -1898,7 +1902,7 @@ unsafe fn server_client_update_theme_colours(c_owner: Option<&ClientRef>) {
     while i < COLOUR_THEME_COUNT as u_int {
         (*c).theme_colours[i as usize] = 8 as ::core::ffi::c_int;
         if let Some(name) = colour_theme_option(i, theme) {
-            let value = options_get_string(&global_options(), name);
+            let value = with_global_options(|oo| options_get_string(oo, name));
             let expanded = format_expand_cstring(ft, value.as_ptr());
             colour = colour_parse_cstr(expanded.as_c_str()).unwrap_or(-1);
             if !(colour == -(1 as ::core::ffi::c_int) || colour & COLOUR_FLAG_THEME != 0) {
@@ -2240,9 +2244,10 @@ unsafe fn server_client_key_callback(
                                     }
                                     bd = key_bindings_get(&table.borrow(), key0)
                                         .map(|bd| bd.command());
-                                    prefix_delay =
-                                        options_get_number(&global_options(), c"prefix-timeout")
-                                            as uint64_t;
+                                    prefix_delay = with_global_options(|oo| {
+                                        options_get_number(oo, c"prefix-timeout")
+                                    })
+                                        as uint64_t;
                                     if prefix_delay > 0 as uint64_t
                                         && strcmp(
                                             (table.borrow().name).as_ptr().cast_mut(),
@@ -3624,7 +3629,7 @@ unsafe fn server_client_default_command(
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let new_item_allocation;
-    let cmdlist = options_get_command(&global_options());
+    let cmdlist = with_global_options(|oo| options_get_command(oo));
     if (*c).flags & CLIENT_READONLY as uint64_t != 0 && cmd_list_all_have(&cmdlist.borrow()) == 0 {
         new_item_allocation = cmdq_get_callback_owned(
             c"server_client_read_only",
@@ -3992,7 +3997,7 @@ unsafe fn server_client_dispatch_identify(
 }
 unsafe fn server_client_dispatch_shell(c: &client) -> ::core::ffi::c_int {
     let mut shell: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let shell_value = options_get_string(&global_s_options(), c"default-shell");
+    let shell_value = with_global_s_options(|oo| options_get_string(oo, c"default-shell"));
     shell = shell_value.as_ptr();
     if checkshell(nullable_cstr(shell)) == 0 {
         shell = _PATH_BSHELL.as_ptr();

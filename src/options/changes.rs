@@ -7,7 +7,6 @@ use crate::src::resize::recalculate_sizes;
 use crate::src::screen_redraw::redraw_invalidate_all_scenes;
 use crate::src::server_client::Client as _;
 use crate::src::server_client::ClientRegistry;
-use libc::{strcmp, strncmp};
 
 use crate::src::server_fn::server_redraw_client;
 use crate::src::session::sessions;
@@ -17,7 +16,7 @@ use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::SessionRef;
 use crate::src::status::status_timer_start_all;
 use crate::src::text::utf8::utf8_update_width_cache;
-use crate::src::tmux::global_options;
+use crate::src::tmux::with_global_options;
 use crate::src::tty::tty_invalidate;
 use crate::src::tty_keys::tty_keys_build;
 
@@ -27,17 +26,16 @@ use crate::src::window::{windows, Window, WindowPane};
 use std::ffi::CStr;
 
 pub unsafe fn options_push_changes(name: &CStr) {
-    let name: *const ::core::ffi::c_char = name.as_ptr();
     let mut loop_0: Option<ClientRef> = None;
     let mut s: Option<SessionRef> = None;
     log_debug(format_args!(
         "{}: {}",
         "options_push_changes",
-        log_cstr(CStr::from_ptr(name))
+        log_cstr(name)
     ));
-    if strcmp(name, c"theme".as_ptr()) == 0 as ::core::ffi::c_int
-        || strncmp(name, c"dark-theme-".as_ptr(), 11 as size_t) == 0 as ::core::ffi::c_int
-        || strncmp(name, c"light-theme-".as_ptr(), 12 as size_t) == 0 as ::core::ffi::c_int
+    if name == c"theme"
+        || name.to_bytes().starts_with(b"dark-theme-")
+        || name.to_bytes().starts_with(b"light-theme-")
     {
         let mut registry_loop_0_owner = ClientRegistry::first();
         loop_0 = registry_loop_0_owner.clone();
@@ -65,7 +63,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
             loop_0 = registry_loop_0_owner.clone();
         }
     }
-    if strcmp(name, c"automatic-rename".as_ptr()) == 0 as ::core::ffi::c_int {
+    if name == c"automatic-rename" {
         let mut window_cursor = windows::first();
         while let Some(window_owner) = window_cursor.take() {
             if let Some(active) = window_owner.active_pane().upgrade() {
@@ -78,17 +76,17 @@ pub unsafe fn options_push_changes(name: &CStr) {
             drop(window_owner);
         }
     }
-    if strcmp(name, c"cursor-colour".as_ptr()) == 0 as ::core::ffi::c_int {
+    if name == c"cursor-colour" {
         for pane_owner in crate::src::shared::pane::window_pane_tree::snapshot() {
             pane_owner.reset_default_cursor();
         }
     }
-    if strcmp(name, c"cursor-style".as_ptr()) == 0 as ::core::ffi::c_int {
+    if name == c"cursor-style" {
         for pane_owner in crate::src::shared::pane::window_pane_tree::snapshot() {
             pane_owner.reset_default_cursor();
         }
     }
-    if strcmp(name, c"fill-character".as_ptr()) == 0 as ::core::ffi::c_int {
+    if name == c"fill-character" {
         let mut window_cursor = windows::first();
         while let Some(window_owner) = window_cursor.take() {
             window_owner.refresh_fill_cells();
@@ -96,7 +94,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
             drop(window_owner);
         }
     }
-    if strcmp(name, c"key-table".as_ptr()) == 0 as ::core::ffi::c_int {
+    if name == c"key-table" {
         let mut registry_loop_0_owner = ClientRegistry::first();
         loop_0 = registry_loop_0_owner.clone();
         while !loop_0.is_none() {
@@ -109,12 +107,12 @@ pub unsafe fn options_push_changes(name: &CStr) {
             loop_0 = registry_loop_0_owner.clone();
         }
     }
-    if strcmp(name, c"utmp".as_ptr()) == 0 as ::core::ffi::c_int {
+    if name == c"utmp" {
         for pane_owner in crate::src::shared::pane::window_pane_tree::snapshot() {
             pane_owner.refresh_utmp();
         }
     }
-    if strcmp(name, c"user-keys".as_ptr()) == 0 as ::core::ffi::c_int {
+    if name == c"user-keys" {
         let mut registry_loop_0_owner = ClientRegistry::first();
         loop_0 = registry_loop_0_owner.clone();
         while !loop_0.is_none() {
@@ -132,46 +130,46 @@ pub unsafe fn options_push_changes(name: &CStr) {
             loop_0 = registry_loop_0_owner.clone();
         }
     }
-    if strcmp(name, c"status".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcmp(name, c"status-interval".as_ptr()) == 0 as ::core::ffi::c_int
+    if name == c"status"
+        || name == c"status-interval"
     {
         status_timer_start_all();
     }
-    if strcmp(name, c"status".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcmp(name, c"status-position".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcmp(name, c"pane-border-indicators".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcmp(name, c"pane-border-lines".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcmp(name, c"pane-border-status".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcmp(name, c"pane-scrollbars".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcmp(name, c"pane-scrollbars-timeout".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcmp(name, c"pane-scrollbars-position".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcmp(name, c"pane-scrollbars-style".as_ptr()) == 0 as ::core::ffi::c_int
+    if name == c"status"
+        || name == c"status-position"
+        || name == c"pane-border-indicators"
+        || name == c"pane-border-lines"
+        || name == c"pane-border-status"
+        || name == c"pane-scrollbars"
+        || name == c"pane-scrollbars-timeout"
+        || name == c"pane-scrollbars-position"
+        || name == c"pane-scrollbars-style"
     {
         redraw_invalidate_all_scenes();
     }
-    if strcmp(name, c"monitor-silence".as_ptr()) == 0 as ::core::ffi::c_int {
+    if name == c"monitor-silence" {
         alerts_reset_all();
     }
-    if strcmp(name, c"window-style".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcmp(name, c"window-active-style".as_ptr()) == 0 as ::core::ffi::c_int
+    if name == c"window-style"
+        || name == c"window-active-style"
     {
         for pane_owner in crate::src::shared::pane::window_pane_tree::snapshot() {
             pane_owner.mark_style_changed(true);
         }
     }
-    if *name as ::core::ffi::c_int == '@' as i32 {
+    if name.to_bytes().starts_with(b"@") {
         for pane_owner in crate::src::shared::pane::window_pane_tree::snapshot() {
             pane_owner.mark_style_changed(false);
         }
     }
-    if strcmp(name, c"pane-colours".as_ptr()) == 0 as ::core::ffi::c_int {
+    if name == c"pane-colours" {
         for pane_owner in crate::src::shared::pane::window_pane_tree::snapshot() {
             pane_owner.refresh_palette();
         }
     }
-    if strcmp(name, c"pane-border-status".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcmp(name, c"pane-scrollbars".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcmp(name, c"pane-scrollbars-position".as_ptr()) == 0 as ::core::ffi::c_int
+    if name == c"pane-border-status"
+        || name == c"pane-scrollbars"
+        || name == c"pane-scrollbars-position"
     {
         let mut window_cursor = windows::first();
         while let Some(window_owner) = window_cursor.take() {
@@ -181,12 +179,12 @@ pub unsafe fn options_push_changes(name: &CStr) {
             drop(window_owner);
         }
     }
-    if strcmp(name, c"pane-scrollbars".as_ptr()) == 0 as ::core::ffi::c_int {
+    if name == c"pane-scrollbars" {
         for pane_owner in crate::src::shared::pane::window_pane_tree::snapshot() {
             pane_owner.hide_scrollbar();
         }
     }
-    if strcmp(name, c"pane-scrollbars-style".as_ptr()) == 0 as ::core::ffi::c_int {
+    if name == c"pane-scrollbars-style" {
         for pane_owner in crate::src::shared::pane::window_pane_tree::snapshot() {
             pane_owner.refresh_scrollbar_style();
         }
@@ -197,13 +195,15 @@ pub unsafe fn options_push_changes(name: &CStr) {
             drop(window_owner);
         }
     }
-    if strcmp(name, c"codepoint-widths".as_ptr()) == 0 as ::core::ffi::c_int {
+    if name == c"codepoint-widths" {
         utf8_update_width_cache();
     }
-    if strcmp(name, c"input-buffer-size".as_ptr()) == 0 as ::core::ffi::c_int {
-        input_set_buffer_size(options_get_number(&global_options(), c"input-buffer-size") as size_t);
+    if name == c"input-buffer-size" {
+        input_set_buffer_size(
+            with_global_options(|oo| options_get_number(oo, c"input-buffer-size")) as size_t,
+        );
     }
-    if strcmp(name, c"history-limit".as_ptr()) == 0 as ::core::ffi::c_int {
+    if name == c"history-limit" {
         let mut s_owner = sessions::first();
         s = s_owner.clone();
         while !s.is_none() {

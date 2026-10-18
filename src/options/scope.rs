@@ -4,7 +4,7 @@ use crate::src::session::Session;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::SessionWeak;
 use crate::src::shared::window::WindowWeak;
-use crate::src::tmux::{global_options, global_s_options, global_w_options};
+use crate::src::tmux::{with_global_options, with_global_s_options, with_global_w_options};
 use crate::src::window::Window;
 use crate::src::window_pane::WindowPane;
 use std::rc::Weak;
@@ -51,9 +51,9 @@ impl OptionsScope {
     /// Unsafe only for model access: no `&mut` to the owning model may be live.
     pub unsafe fn with_local<R>(&self, visit: impl FnOnce(&mut options) -> R) -> R {
         match self {
-            Self::GlobalServer => visit(&mut global_options()),
-            Self::GlobalSession => visit(&mut global_s_options()),
-            Self::GlobalWindow => visit(&mut global_w_options()),
+            Self::GlobalServer => with_global_options(|oo| visit(oo)),
+            Self::GlobalSession => with_global_s_options(|oo| visit(oo)),
+            Self::GlobalWindow => with_global_w_options(|oo| visit(oo)),
             Self::Session(observer) => {
                 let owner = observer.upgrade().expect("live option session");
                 let mut table = owner.borrow_options_mut();

@@ -8,7 +8,7 @@ use tiri::src::shared::grid::{grid_cell, GRID_ATTR_DIM};
 use tiri::src::shared::menu::{menu, MenuRow};
 use tiri::src::shared::screen::{screen, MODE_WRAP};
 use tiri::src::shared::screen_write::screen_write_ctx;
-use tiri::src::tmux::global_options;
+use tiri::src::tmux::with_global_options;
 
 unsafe fn cell_at(s: &screen, x: u32, y: u32) -> grid_cell {
     let mut cell = grid_default_cell;
@@ -24,7 +24,9 @@ fn menu_rendering_preserves_selection_disabled_rows_and_borrowed_inputs() {
             .iter()
             .find(|entry| entry.name == Some(c"extended-keys"))
             .unwrap();
-        options_default(&mut global_options(), definition);
+        with_global_options(|oo| {
+            options_default(oo, definition);
+        });
         let menu = menu {
             title: c"Title".to_owned(),
             width: 6,

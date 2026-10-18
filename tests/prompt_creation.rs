@@ -7,7 +7,7 @@ use tiri::src::prompt::{
 };
 use tiri::src::shared::command::cmd_find_state;
 use tiri::src::shared::prompt::*;
-use tiri::src::tmux::{global_environ, global_s_options};
+use tiri::src::tmux::{global_environ, with_global_s_options};
 
 fn input_bytes(prompt: &prompt) -> Vec<u8> {
     prompt
@@ -39,7 +39,9 @@ fn creation_preserves_input_expansion_incremental_state_and_owned_resources() {
                 .iter()
                 .find(|entry| entry.name == Some(name))
                 .unwrap();
-            options_default(&mut global_s_options(), definition);
+            with_global_s_options(|oo| {
+                options_default(oo, definition);
+            });
         }
         let events = Rc::new(RefCell::new(Vec::new()));
         let state = cmd_find_state {

@@ -10,7 +10,7 @@ use tiri::src::prompt_history::{
     prompt_history_size, prompt_load_history, prompt_save_history, prompt_up_history,
 };
 use tiri::src::shared::prompt::{PROMPT_TYPE_COMMAND, PROMPT_TYPE_SEARCH};
-use tiri::src::tmux::global_options;
+use tiri::src::tmux::with_global_options;
 
 #[test]
 fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
@@ -20,7 +20,9 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
                 .iter()
                 .find(|entry| entry.name == Some(name))
                 .unwrap();
-            options_default(&mut global_options(), definition);
+            with_global_options(|oo| {
+                options_default(oo, definition);
+            });
         }
 
         prompt_history_clear(PROMPT_TYPE_COMMAND);
@@ -29,7 +31,9 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         assert!(prompt_history_get(PROMPT_TYPE_COMMAND, 0).is_none());
         assert!(prompt_history_get(255, 0).is_none());
 
-        options_set_number(&mut global_options(), c"prompt-history-limit", 200);
+        with_global_options(|oo| {
+            options_set_number(oo, c"prompt-history-limit", 200);
+        });
         prompt_add_history(c"\xff-first", PROMPT_TYPE_COMMAND);
         let first = prompt_history_get(PROMPT_TYPE_COMMAND, 0).unwrap();
         for n in 0..128 {
@@ -45,7 +49,9 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         prompt_history_clear(PROMPT_TYPE_COMMAND);
         assert_eq!(first.to_bytes(), b"\xff-first");
         drop(first);
-        options_set_number(&mut global_options(), c"prompt-history-limit", 3);
+        with_global_options(|oo| {
+            options_set_number(oo, c"prompt-history-limit", 3);
+        });
         for text in [c"one", c"two", c"three"] {
             prompt_add_history(text, PROMPT_TYPE_COMMAND);
         }
@@ -64,7 +70,9 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
             c"four"
         );
 
-        options_set_number(&mut global_options(), c"prompt-history-limit", 2);
+        with_global_options(|oo| {
+            options_set_number(oo, c"prompt-history-limit", 2);
+        });
         prompt_add_history(c"four", PROMPT_TYPE_COMMAND);
         assert_eq!(prompt_history_size(PROMPT_TYPE_COMMAND), 2);
         assert_eq!(
@@ -137,8 +145,8 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
 
         let path = std::env::temp_dir().join(format!("tiri-prompt-history-{}", std::process::id()));
         let path_string = CString::new(path.as_os_str().as_bytes()).unwrap();
-        options_set_string(&mut global_options(), c"history-file", 0, |out| {
-            write_cstr(out, &*path_string)
+        with_global_options(|oo| {
+            options_set_string(oo, c"history-file", 0, |out| write_cstr(out, &*path_string));
         });
         prompt_save_history();
         assert_eq!(
@@ -179,7 +187,9 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
 
         prompt_history_clear(PROMPT_TYPE_COMMAND);
         prompt_history_clear(PROMPT_TYPE_SEARCH);
-        options_set_number(&mut global_options(), c"prompt-history-limit", 10);
+        with_global_options(|oo| {
+            options_set_number(oo, c"prompt-history-limit", 10);
+        });
         std::fs::write(
             &path,
             b"plain\nunknown:value\n:empty-prefix\ncommand:\nsearch:a:b\ncommand:first:second\n",
@@ -221,7 +231,9 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         assert_eq!(stale, [u32::MAX - 1, 0]);
         std::fs::remove_file(path).unwrap();
 
-        options_set_number(&mut global_options(), c"prompt-history-limit", 0);
+        with_global_options(|oo| {
+            options_set_number(oo, c"prompt-history-limit", 0);
+        });
         prompt_add_history(c"ignored", PROMPT_TYPE_COMMAND);
         assert_eq!(prompt_history_size(PROMPT_TYPE_COMMAND), 0);
         prompt_add_history(c"search", PROMPT_TYPE_SEARCH);

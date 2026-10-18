@@ -31,7 +31,7 @@ use crate::src::sort::{
 };
 use crate::src::status::status_message_set;
 use crate::src::text::utf8::utf8_cstrwidth;
-use crate::src::tmux::global_s_options;
+use crate::src::tmux::with_global_s_options;
 use std::ffi::{CStr, CString};
 
 pub const LIST_KEYS_TEMPLATE: &std::ffi::CStr = c"#{?notes_only,#{key_prefix} #{p|#{key_string_width}:key_string} #{?key_note,#{key_note},#{key_command}},bind-key #{?key_has_repeat,#{?key_repeat,-r,  },} -T #{p|#{key_table_width}:key_table} #{p|#{key_string_width}:#{q|a:key_string}} #{key_command}}";
@@ -67,7 +67,7 @@ unsafe fn cmd_list_keys_get_prefix(args: *mut args) -> CString {
             .expect("argument is present")
             .to_owned();
     }
-    prefix = options_get_number(&global_s_options(), c"prefix") as key_code;
+    prefix = with_global_s_options(|oo| options_get_number(oo, c"prefix")) as key_code;
     if prefix == KEYC_NONE as ::core::ffi::c_ulong as key_code {
         return CString::default();
     }

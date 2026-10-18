@@ -92,7 +92,7 @@ pub use crate::src::shared::mouse::mouse_event;
 pub use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::SessionRef;
 pub use crate::src::shared::window::winlink;
-use crate::src::tmux::global_options;
+use crate::src::tmux::with_global_options;
 use crate::src::window::winlink_find_by_window;
 use crate::src::window_pane::WindowPane as _;
 use std::ffi::{CStr, CString};
@@ -267,18 +267,22 @@ pub unsafe fn cmd_get_parse_flags(mut cmd: refbox::Weak<cmd>) -> ::core::ffi::c_
     cmd.get_unchecked().parse_flags
 }
 pub unsafe fn cmd_get_alias(name: &CStr) -> Option<CString> {
-    crate::src::options::options_read_entry(&global_options(), c"command-alias", |entry| {
-        entry
-            .value
-            .array()
-            .into_iter()
-            .flat_map(|array| array.iter())
-            .find_map(|item| {
-                let value = item.value.string_ptr()?.to_bytes();
-                let (alias, command) = value.split_at(value.iter().position(|&byte| byte == b'=')?);
-                (alias == name.to_bytes())
-                    .then(|| CString::new(&command[1..]).expect("alias command contains no NUL"))
-            })
+    with_global_options(|oo| {
+        crate::src::options::options_read_entry(oo, c"command-alias", |entry| {
+            entry
+                .value
+                .array()
+                .into_iter()
+                .flat_map(|array| array.iter())
+                .find_map(|item| {
+                    let value = item.value.string_ptr()?.to_bytes();
+                    let (alias, command) =
+                        value.split_at(value.iter().position(|&byte| byte == b'=')?);
+                    (alias == name.to_bytes()).then(|| {
+                        CString::new(&command[1..]).expect("alias command contains no NUL")
+                    })
+                })
+        })
     })
     .flatten()
 }

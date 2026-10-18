@@ -73,7 +73,7 @@ use crate::src::style::colour::{
     colour_split_rgb,
 };
 use crate::src::text::utf8::utf8_set;
-use crate::src::tmux::{global_options, setblocking};
+use crate::src::tmux::{setblocking, with_global_options};
 use crate::src::tty_acs::{tty_acs_get, tty_acs_needed, tty_acs_reverse_get};
 use crate::src::tty_draw::tty_draw_line;
 use crate::src::tty_features::tty_apply_features;
@@ -516,7 +516,7 @@ pub unsafe fn tty_start_tty(owner: &ClientRef) {
             let _ =
                 tiri_rt::unix::discard_terminal(std::os::fd::BorrowedFd::borrow_raw(fd), TCOFLUSH);
         }
-        if options_get_number(&global_options(), c"clear-on-attach") != 0 {
+        if with_global_options(|oo| options_get_number(oo, c"clear-on-attach")) != 0 {
             tty_putcode(tty, TTYC_SMCUP);
             tty_putcode(tty, TTYC_CLEAR);
         } else {
@@ -700,7 +700,7 @@ pub unsafe fn tty_stop_tty(owner: &ClientRef) {
             fd,
             CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_RMKX).as_ptr()),
         );
-        if options_get_number(&global_options(), c"clear-on-attach") != 0 {
+        if with_global_options(|oo| options_get_number(oo, c"clear-on-attach")) != 0 {
             tty_raw(
                 fd,
                 CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_CLEAR).as_ptr()),
@@ -762,7 +762,7 @@ pub unsafe fn tty_stop_tty(owner: &ClientRef) {
                 CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_DSMG).as_ptr()),
             );
         }
-        if options_get_number(&global_options(), c"clear-on-attach") != 0 {
+        if with_global_options(|oo| options_get_number(oo, c"clear-on-attach")) != 0 {
             tty_raw(
                 fd,
                 CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_RMCUP).as_ptr()),
@@ -830,10 +830,10 @@ pub unsafe fn tty_update_features(owner: &ClientRef) {
         if terminal_term(tty).flags & TERM_DECSLRM != 0 {
             tty_putcode(tty, TTYC_ENMG);
         }
-        if options_get_number(&global_options(), c"extended-keys") != 0 {
+        if with_global_options(|oo| options_get_number(oo, c"extended-keys")) != 0 {
             tty_puts(tty, tty_term_string(terminal_term(tty), TTYC_ENEKS));
         }
-        if options_get_number(&global_options(), c"focus-events") != 0 {
+        if with_global_options(|oo| options_get_number(oo, c"focus-events")) != 0 {
             tty_puts(tty, tty_term_string(terminal_term(tty), TTYC_ENFCS));
         }
         tty_puts(tty, tty_term_string(terminal_term(tty), TTYC_ENESC));

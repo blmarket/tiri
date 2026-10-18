@@ -3,11 +3,10 @@ use super::diagnostic::options_string_cause;
 use super::store::*;
 use super::types::*;
 use crate::src::compat::strtonum::strtonum;
-use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::grid::grid_default_cell;
 use crate::src::key_string::key_string_parse_cstr;
-use libc::{fnmatch, strstr};
+use libc::fnmatch;
 
 use crate::src::style::colour::colour_parse_cstr;
 use crate::src::style::{style_parse, style_parse_colour};
@@ -58,7 +57,7 @@ unsafe fn options_from_string_check(oe: &options_table_entry, value: &CStr) -> R
         default_type: STYLE_DEFAULT_BASE,
         link: 0,
     };
-    if oe.name == Some(c"default-shell") && checkshell(nullable_cstr(value.as_ptr())) == 0 {
+    if oe.name == Some(c"default-shell") && checkshell(Some(value)) == 0 {
         return Err(options_string_cause(c"not a suitable shell: %s", &[value]));
     }
     if oe.pattern.is_some_and(|pattern| {
@@ -68,13 +67,13 @@ unsafe fn options_from_string_check(oe: &options_table_entry, value: &CStr) -> R
         return Err(options_string_cause(c"value is invalid: %s", &[value]));
     }
     if oe.flags & OPTIONS_TABLE_IS_STYLE != 0
-        && strstr(value.as_ptr(), c"#{".as_ptr()).is_null()
+        && !value.to_bytes().windows(2).any(|bytes| bytes == b"#{")
         && style_parse(&raw mut sy, &grid_default_cell, value) != 0 as ::core::ffi::c_int
     {
         return Err(options_string_cause(c"invalid style: %s", &[value]));
     }
     if oe.flags & OPTIONS_TABLE_IS_COLOUR != 0
-        && strstr(value.as_ptr(), c"#{".as_ptr()).is_null()
+        && !value.to_bytes().windows(2).any(|bytes| bytes == b"#{")
         && style_parse_colour(&raw mut sy, &grid_default_cell, value) != 0 as ::core::ffi::c_int
     {
         return Err(options_string_cause(c"invalid colour: %s", &[value]));

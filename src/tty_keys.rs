@@ -38,7 +38,7 @@ use crate::src::shared::utf8::wchar_t;
 use crate::src::shared::utf8::*;
 use crate::src::style::colour::{colour_format, colour_parse_x11_logged};
 use crate::src::text::utf8::{utf8_append, utf8_from_data, utf8_fromwc, utf8_open};
-use crate::src::tmux::global_options;
+use crate::src::tmux::with_global_options;
 use crate::src::tty::{tty_invalidate, tty_update_features};
 use crate::src::tty_features::{tty_default_features, tty_parse_client_features};
 use crate::src::tty_term::tty_term_owner_ptr;
@@ -1334,18 +1334,20 @@ pub unsafe fn tty_keys_build(mut tty: *mut tty) {
         }
         i = i.wrapping_add(1);
     }
-    let keys = crate::src::options::options_read_entry(&global_options(), c"user-keys", |entry| {
-        (0..=KEYC_NUSER as u_int)
-            .filter_map(|index| {
-                let key = std::ffi::CString::new(index.to_string()).unwrap();
-                entry
-                    .value
-                    .array()
-                    .and_then(|array| array.get(&key))
-                    .and_then(|value| value.string_ptr())
-                    .map(|value| (index, value.to_owned()))
-            })
-            .collect::<Vec<_>>()
+    let keys = with_global_options(|oo| {
+        crate::src::options::options_read_entry(oo, c"user-keys", |entry| {
+            (0..=KEYC_NUSER as u_int)
+                .filter_map(|index| {
+                    let key = std::ffi::CString::new(index.to_string()).unwrap();
+                    entry
+                        .value
+                        .array()
+                        .and_then(|array| array.get(&key))
+                        .and_then(|value| value.string_ptr())
+                        .map(|value| (index, value.to_owned()))
+                })
+                .collect::<Vec<_>>()
+        })
     })
     .unwrap_or_default();
     for (index, value) in keys {
@@ -2200,8 +2202,8 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                         return 0 as ::core::ffi::c_int;
                     }
                 } else {
-                    delay =
-                        options_get_number(&global_options(), c"escape-time") as ::core::ffi::c_int;
+                    delay = with_global_options(|oo| options_get_number(oo, c"escape-time"))
+                        as ::core::ffi::c_int;
                     if delay == 0 as ::core::ffi::c_int {
                         delay = 1 as ::core::ffi::c_int;
                     }

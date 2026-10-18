@@ -18,7 +18,7 @@ use crate::src::shared::tty::{
     TERM_VT100LIKE,
 };
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
-use crate::src::tmux::global_options;
+use crate::src::tmux::with_global_options;
 use crate::src::tty_features::{tty_apply_features, tty_parse_client_features};
 use libc::{fnmatch, strchr, strcmp, strcspn, strlen, strncmp};
 use std::ffi::{CStr, CString};
@@ -1200,14 +1200,16 @@ pub unsafe fn tty_term_apply(
 /// Copy out a global array option's string values; the loops that use them
 /// apply terminal changes which may read options again.
 unsafe fn global_array_strings(name: &CStr) -> Vec<CString> {
-    crate::src::options::options_read_entry(&global_options(), name, |entry| {
-        entry
-            .value
-            .array()
-            .into_iter()
-            .flat_map(|array| array.iter())
-            .filter_map(|item| item.value.string_ptr().map(CStr::to_owned))
-            .collect()
+    with_global_options(|oo| {
+        crate::src::options::options_read_entry(oo, name, |entry| {
+            entry
+                .value
+                .array()
+                .into_iter()
+                .flat_map(|array| array.iter())
+                .filter_map(|item| item.value.string_ptr().map(CStr::to_owned))
+                .collect()
+        })
     })
     .unwrap_or_default()
 }

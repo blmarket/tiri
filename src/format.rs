@@ -48,8 +48,8 @@ use crate::src::style::colour::{
 };
 use crate::src::text::utf8::{utf8_cstrhas, utf8_pad_cstring, utf8_set, utf8_tocstr_cstring};
 use crate::src::tmux::{
-    get_timer, getversion, global_environ, global_options, global_s_options, global_w_options,
-    socket_path_cstr, start_time,
+    get_timer, getversion, global_environ, socket_path_cstr, start_time, with_global_options,
+    with_global_s_options, with_global_w_options,
 };
 use crate::src::tty_features::tty_feature_present;
 use crate::src::tty_term::tty_term_has_name;
@@ -517,7 +517,7 @@ pub(crate) unsafe fn format_grid_word_cstring(
     let mut end: u_int = 0;
     let mut found: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut s = None;
-    let separators = options_get_string(&global_s_options(), c"word-separators");
+    let separators = with_global_s_options(|oo| options_get_string(oo, c"word-separators"));
     let ws = separators.as_c_str();
     loop {
         grid_get_cell(gd, x, y, &mut gc);

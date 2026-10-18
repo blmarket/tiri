@@ -11,7 +11,7 @@ use tiri::src::shared::grid::{GRID_ATTR_UNDERSCORE, GRID_STRING_TRIM_SPACES};
 use tiri::src::shared::prompt::*;
 use tiri::src::shared::screen::{screen, MODE_CURSOR, MODE_CURSOR_BLINKING};
 use tiri::src::shared::screen_write::screen_write_ctx;
-use tiri::src::tmux::{global_environ, global_options};
+use tiri::src::tmux::{global_environ, with_global_options};
 
 #[test]
 fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {
@@ -24,7 +24,9 @@ fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {
             .iter()
             .find(|entry| entry.name == Some(c"extended-keys"))
             .unwrap();
-        options_default(&mut global_options(), definition);
+        with_global_options(|oo| {
+            options_default(oo, definition);
+        });
 
         for (label, input, index, width, style, flags, completion, expected, cursor) in [
             (c"L:", c"abc", 3, 10, c"align=left", 0, None, "   L:abc", 8),

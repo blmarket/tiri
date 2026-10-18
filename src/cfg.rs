@@ -342,7 +342,7 @@ mod cfg_wait_tests {
     use crate::src::options::options_table;
     use crate::src::server_client::queue_test_clients as clients;
     use crate::src::shared::client::CLIENT_DEAD;
-    use crate::src::tmux::global_options;
+    use crate::src::tmux::with_global_options;
     use std::cell::{Cell, UnsafeCell};
     use std::rc::{Rc, Weak};
 
@@ -355,7 +355,9 @@ mod cfg_wait_tests {
                 .iter()
                 .find(|entry| entry.name == Some(c"history-file"))
                 .unwrap();
-            options_default(&mut global_options(), entry);
+            with_global_options(|oo| {
+                options_default(oo, entry);
+            });
             cfg_finished = 0;
             Self
         }

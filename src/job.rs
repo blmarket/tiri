@@ -36,7 +36,7 @@ use crate::src::shared::signal::{
 };
 use crate::src::shared::terminal::*;
 use crate::src::tmux::{
-    checkshell, find_home_cstr, global_s_options, ptm_fd, setblocking, shell_argv0_cstring,
+    checkshell, find_home_cstr, ptm_fd, setblocking, shell_argv0_cstring, with_global_s_options,
 };
 use libc::{
     _exit, chdir, execl, execvp, fork, kill, killpg, memset, setenv, sigfillset, sigprocmask,
@@ -148,7 +148,7 @@ pub unsafe fn job_run(
         shell_value = Some(if let Some(session) = s_owner {
             options_get_string(&session.borrow_options_mut(), c"default-shell")
         } else {
-            options_get_string(&global_s_options(), c"default-shell")
+            with_global_s_options(|oo| options_get_string(oo, c"default-shell"))
         });
         shell = shell_value.as_ref().expect("shell snapshot").as_ptr();
         if checkshell(nullable_cstr(shell)) == 0 {

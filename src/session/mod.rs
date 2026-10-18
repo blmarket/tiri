@@ -43,7 +43,7 @@ use crate::src::shared::tree::{RB_INF, RB_NEGINF};
 use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::WINLINK_ALERTFLAGS;
 use crate::src::shared::window::{winlink, winlink_stack, winlinks};
-use crate::src::tmux::global_options;
+use crate::src::tmux::with_global_options;
 use crate::src::tty::tty_update_window_offset;
 use crate::src::window::{
     winlink_add, winlink_clear_flags, winlink_count, winlink_find_by_index, winlink_find_by_window,
@@ -551,7 +551,7 @@ unsafe fn session_set_current(
     winlink_stack_remove(&raw mut (*s).lastw, wl.clone());
     winlink_stack_push(&raw mut (*s).lastw, ((*s).current_winlink()).clone());
     (*s).set_curw(wl.clone());
-    if options_get_number(&global_options(), c"focus-events") != 0 {
+    if with_global_options(|oo| options_get_number(oo, c"focus-events")) != 0 {
         if old.is_alive() {
             if let Some(window) = old.get_unchecked().window_handle().cloned() {
                 window.update_focus();

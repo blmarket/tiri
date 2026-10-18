@@ -50,7 +50,7 @@ use crate::src::text::utf8_combined::{
     hanguljamo_check_state, utf8_has_zwj, utf8_is_hangul_filler, utf8_is_vs, utf8_is_zwj,
     utf8_should_combine,
 };
-use crate::src::tmux::global_options;
+use crate::src::tmux::with_global_options;
 use crate::src::tty::{
     tty_cmd_alignmenttest, tty_cmd_cell, tty_cmd_cells, tty_cmd_clearcharacter,
     tty_cmd_clearendofscreen, tty_cmd_clearscreen, tty_cmd_clearstartofscreen,
@@ -322,7 +322,9 @@ pub unsafe fn screen_write_reset(ctx: &mut screen_write_ctx) {
     screen_reset_tabs(&mut *s);
     screen_write_scrollregion(ctx, 0 as u_int, (*s).grid().sy.wrapping_sub(1 as u_int));
     (*s).mode = MODE_CURSOR | MODE_WRAP;
-    if options_get_number(&global_options(), c"extended-keys") == 2 as ::core::ffi::c_longlong {
+    if with_global_options(|oo| options_get_number(oo, c"extended-keys"))
+        == 2 as ::core::ffi::c_longlong
+    {
         (*s).mode = (*s).mode & !EXTENDED_KEY_MODES | MODE_KEYS_EXTENDED;
     }
     screen_write_clearscreen(ctx, 8 as u_int);
@@ -2946,7 +2948,8 @@ unsafe fn screen_write_combine(ctx: &mut screen_write_ctx, gc: &grid_cell) -> ::
         zero_width = 1 as ::core::ffi::c_int;
     } else if utf8_is_vs(ud) != 0 {
         zero_width = 1 as ::core::ffi::c_int;
-        if options_get_number(&global_options(), c"variation-selector-always-wide") != 0 {
+        if with_global_options(|oo| options_get_number(oo, c"variation-selector-always-wide")) != 0
+        {
             force_wide = 1 as ::core::ffi::c_int;
         }
     } else if ud.width as ::core::ffi::c_int == 0 as ::core::ffi::c_int {

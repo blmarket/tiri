@@ -32,7 +32,7 @@ use libc::strcasecmp;
 use crate::src::server::{marked_pane, server_check_marked, server_clear_marked};
 use crate::src::server_client::Client;
 use crate::src::server_fn::server_redraw_window;
-use crate::src::tmux::{clean_name_cstring, global_options};
+use crate::src::tmux::{clean_name_cstring, with_global_options};
 use crate::src::tty::tty_update_window_offset;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
@@ -412,7 +412,7 @@ unsafe fn window_set_active_pane(
         client = ClientRegistry::next(&current);
     }
     pane.on_selected(true);
-    if options_get_number(&global_options(), c"focus-events") != 0 {
+    if with_global_options(|oo| options_get_number(oo, c"focus-events")) != 0 {
         if let Some(previous) = previous.as_ref() {
             previous.update_focus(false);
         }

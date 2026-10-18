@@ -5,7 +5,7 @@ use crate::src::log::{log_cstr, log_debug};
 use crate::src::options::options_get_string;
 use crate::src::session::Session;
 use crate::src::shared::session::SessionRef;
-use crate::src::tmux::{getversion, global_environ, global_options, socket_path_cstr};
+use crate::src::tmux::{getversion, global_environ, socket_path_cstr, with_global_options};
 use crate::src::xmalloc::xcalloc;
 use libc::{fnmatch, free, getpid, setenv};
 use std::ffi::{CStr, CString};
@@ -206,7 +206,7 @@ pub unsafe fn environ_for_session(
         session.with_environment_mut(|source| environ_copy(source, &mut env));
     }
     if no_TERM == 0 {
-        let terminal = options_get_string(&global_options(), c"default-terminal");
+        let terminal = with_global_options(|oo| options_get_string(oo, c"default-terminal"));
         environ_set(&mut env, c"TERM", 0 as ::core::ffi::c_int, |out| {
             write_cstr(out, &*terminal)
         });

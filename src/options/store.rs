@@ -406,12 +406,11 @@ pub unsafe fn options_to_cstring(
     key: Option<&CStr>,
     numeric: i32,
 ) -> CString {
-    let key: *const ::core::ffi::c_char = key.map_or(std::ptr::null(), CStr::as_ptr);
     if entry
         .tableentry
         .is_some_and(|table| table.flags & OPTIONS_TABLE_IS_ARRAY != 0)
     {
-        if key.is_null() {
+        let Some(key) = key else {
             let values = entry
                 .value
                 .array()
@@ -426,11 +425,11 @@ pub unsafe fn options_to_cstring(
                 bytes.extend_from_slice(value.as_bytes());
             }
             return CString::new(bytes).expect("option values have no NUL");
-        }
+        };
         return entry
             .value
             .array()
-            .and_then(|array| array.get(CStr::from_ptr(key)))
+            .and_then(|array| array.get(key))
             .map_or_else(
                 || c"".to_owned(),
                 |value| options_value_to_cstring(entry, value, numeric),

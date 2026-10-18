@@ -26,7 +26,7 @@ use crate::src::shared::client::ClientRef;
 use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
 use crate::src::shared::session::SessionRef;
 use crate::src::style::{style_ranges_clear, style_ranges_init};
-use crate::src::tmux::global_s_options;
+use crate::src::tmux::with_global_s_options;
 use std::ffi::{CStr, CString};
 use std::time::Duration;
 
@@ -122,7 +122,7 @@ pub unsafe fn status_line_size(c: &ClientRef) -> u_int {
     }
     match c.attached_session().upgrade() {
         Some(session) => session.status_layout().1,
-        None => options_get_number(&global_s_options(), c"status") as u_int,
+        None => with_global_s_options(|oo| options_get_number(oo, c"status")) as u_int,
     }
 }
 pub unsafe fn status_prompt_line_at(c: &ClientRef) -> u_int {

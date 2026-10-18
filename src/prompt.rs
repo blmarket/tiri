@@ -40,7 +40,7 @@ use crate::src::text::utf8::{
     utf8_append, utf8_copy, utf8_cstrwidth, utf8_fromcstr_vec, utf8_open, utf8_set, utf8_strlen,
     utf8_strwidth, utf8_to_data, utf8_tocstr_cstring,
 };
-use crate::src::tmux::{global_options, global_s_options};
+use crate::src::tmux::{with_global_options, with_global_s_options};
 use std::ffi::{CStr, CString};
 #[cfg(test)]
 use std::{cell::RefCell, rc::Rc};
@@ -102,21 +102,21 @@ pub unsafe fn prompt_set_options(pd: &mut prompt_create_data<'_>, session: Optio
         if let Some(session) = session {
             visit(&mut session.borrow_options_mut());
         } else {
-            visit(&mut global_s_options());
+            with_global_s_options(|oo| visit(oo));
         }
     };
     let read_string = |key: &CStr| {
         if let Some(session) = session {
             options_get_string(&session.borrow_options_mut(), key)
         } else {
-            options_get_string(&global_s_options(), key)
+            with_global_s_options(|oo| options_get_string(oo, key))
         }
     };
     let read_number = |key: &'static CStr| {
         if let Some(session) = session {
             options_get_number(&session.borrow_options_mut(), key)
         } else {
-            options_get_number(&global_s_options(), key)
+            with_global_s_options(|oo| options_get_number(oo, key))
         }
     };
     use crate::src::style::style_apply_with_options;
@@ -1593,8 +1593,8 @@ unsafe fn prompt_complete_commands(s: &CStr) -> Vec<CString> {
             prompt_complete_add(&mut list, name);
         }
     }
-    let aliases =
-        crate::src::options::options_read_entry(&global_options(), c"command-alias", |entry| {
+    let aliases = with_global_options(|oo| {
+        crate::src::options::options_read_entry(oo, c"command-alias", |entry| {
             entry
                 .value
                 .array()
@@ -1603,7 +1603,8 @@ unsafe fn prompt_complete_commands(s: &CStr) -> Vec<CString> {
                 .map(|item| item.value.string_ptr().expect("string option").to_owned())
                 .collect::<Vec<_>>()
         })
-        .unwrap_or_default();
+    })
+    .unwrap_or_default();
     for value in aliases {
         if let Some(separator) = value.to_bytes().iter().position(|&byte| byte == b'=') {
             if prefix.len() <= separator && &value.to_bytes()[..prefix.len()] == prefix {

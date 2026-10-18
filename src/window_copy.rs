@@ -72,7 +72,7 @@ pub use crate::src::shared::window::{window_mode, window_mode_entry, winlink};
 use crate::src::status::status_message_set;
 use crate::src::style::style_apply_with_options;
 use crate::src::text::utf8::{utf8_copy, utf8_fromcstr_vec, utf8_set, utf8_to_data};
-use crate::src::tmux::{get_timer, global_options, global_w_options};
+use crate::src::tmux::{get_timer, with_global_options, with_global_w_options};
 use crate::src::tty_acs::tty_acs_get;
 use crate::src::window::Window as _;
 use crate::src::window_pane::WindowPane as _;
@@ -679,7 +679,9 @@ unsafe fn window_copy_common_init(
     (*data).jumptype = WINDOW_COPY_OFF as ::core::ffi::c_int;
     (*data).line_numbers = 1 as ::core::ffi::c_int;
     screen_init(&mut (*data).screen, sx, sy, 0 as u_int);
-    screen_set_default_cursor(&mut (*data).screen, &mut global_w_options());
+    with_global_w_options(|oo| {
+        screen_set_default_cursor(&mut (*data).screen, oo);
+    });
     (*data).modekeys = options_get_number(
         &mode_pane_owner
             .window_observer()
@@ -8289,7 +8291,8 @@ unsafe fn window_copy_copy_buffer(
     };
     let mut redraw: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if set_clip != 0
-        && options_get_number(&global_options(), c"set-clipboard") != 0 as ::core::ffi::c_longlong
+        && with_global_options(|oo| options_get_number(oo, c"set-clipboard"))
+            != 0 as ::core::ffi::c_longlong
     {
         if window_copy_line_numbers_active(wme.clone()) != 0 && mode_pane_owner.needs_redraw(false)
         {
@@ -8322,8 +8325,9 @@ unsafe fn window_copy_pipe_run(
     let buf = window_copy_get_selection(wme.clone());
     let command_value;
     if cmd.is_null() || *cmd as ::core::ffi::c_int == '\0' as i32 {
-        command_value =
-            crate::src::options::options_get_string_optional(&global_options(), c"copy-command");
+        command_value = with_global_options(|oo| {
+            crate::src::options::options_get_string_optional(oo, c"copy-command")
+        });
         cmd = command_value
             .as_deref()
             .map_or(std::ptr::null(), CStr::as_ptr);
@@ -8398,7 +8402,9 @@ unsafe fn window_copy_append_selection(mut wme: refbox::Weak<window_mode_entry>)
         Some(buf) => buf,
         None => return,
     };
-    if options_get_number(&global_options(), c"set-clipboard") != 0 as ::core::ffi::c_longlong {
+    if with_global_options(|oo| options_get_number(oo, c"set-clipboard"))
+        != 0 as ::core::ffi::c_longlong
+    {
         screen_write_start_pane(
             &mut ctx,
             &mode_pane_owner,
@@ -10065,13 +10071,15 @@ mod backing_owner_tests {
     #[test]
     fn reflowed_snapshot_owns_cells_independently_of_the_source() {
         unsafe {
-            options_default(
-                &mut global_options(),
-                options_table
-                    .iter()
-                    .find(|entry| entry.name == Some(c"extended-keys"))
-                    .unwrap(),
-            );
+            with_global_options(|oo| {
+                options_default(
+                    oo,
+                    options_table
+                        .iter()
+                        .find(|entry| entry.name == Some(c"extended-keys"))
+                        .unwrap(),
+                );
+            });
             let mut source = screen::empty();
             let mut hint = screen::empty();
             screen_init(&mut source, 8, 3, 10);

@@ -41,7 +41,7 @@ use libc::{
     nl_langinfo, printf, realpath, setlocale, strcasecmp, strcasestr, strcmp, strerror, strrchr,
     strstr,
 };
-use std::cell::{RefCell, RefMut};
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
 use std::sync::OnceLock;
@@ -53,41 +53,38 @@ pub use ::libc::{S_IFDIR, S_IFMT};
 
 pub const TMUX_SOCK_PERM: ::core::ffi::c_int = 7 as ::core::ffi::c_int;
 thread_local! {
-    static GLOBAL_OPTIONS: &'static RefCell<options> = global_table();
-    static GLOBAL_S_OPTIONS: &'static RefCell<options> = global_table();
-    static GLOBAL_W_OPTIONS: &'static RefCell<options> = global_table();
+    static GLOBAL_OPTIONS: RefCell<options> = const {
+        RefCell::new(options { tree: BTreeMap::new(), parent: None })
+    };
+    static GLOBAL_S_OPTIONS: RefCell<options> = const {
+        RefCell::new(options { tree: BTreeMap::new(), parent: None })
+    };
+    static GLOBAL_W_OPTIONS: RefCell<options> = const {
+        RefCell::new(options { tree: BTreeMap::new(), parent: None })
+    };
 }
 
-/// Global tables live for the whole process; entries are released by
-/// `free_global_options`.
-fn global_table() -> &'static RefCell<options> {
-    Box::leak(Box::new(RefCell::new(options {
-        tree: BTreeMap::new(),
-        parent: None,
-    })))
+/// Run `f` on the global server options of this thread. Borrowing the table
+/// again from inside `f` panics.
+pub fn with_global_options<R>(f: impl FnOnce(&mut options) -> R) -> R {
+    GLOBAL_OPTIONS.with(|table| f(&mut table.borrow_mut()))
+}
+/// Global session options of this thread. Same contract as `with_global_options`.
+pub fn with_global_s_options<R>(f: impl FnOnce(&mut options) -> R) -> R {
+    GLOBAL_S_OPTIONS.with(|table| f(&mut table.borrow_mut()))
+}
+/// Global window options of this thread. Same contract as `with_global_options`.
+pub fn with_global_w_options<R>(f: impl FnOnce(&mut options) -> R) -> R {
+    GLOBAL_W_OPTIONS.with(|table| f(&mut table.borrow_mut()))
 }
 
-/// Global server options of this thread. Borrowing the table again while the
-/// returned guard is held panics.
-pub fn global_options() -> RefMut<'static, options> {
-    GLOBAL_OPTIONS.with(|table| table.borrow_mut())
-}
-/// Global session options of this thread. Same contract as `global_options`.
-pub fn global_s_options() -> RefMut<'static, options> {
-    GLOBAL_S_OPTIONS.with(|table| table.borrow_mut())
-}
-/// Global window options of this thread. Same contract as `global_options`.
-pub fn global_w_options() -> RefMut<'static, options> {
-    GLOBAL_W_OPTIONS.with(|table| table.borrow_mut())
-}
-
-/// Entries are dropped after the table guard is released, so their cleanup
+/// Entries are dropped after the table borrow is released, so their cleanup
 /// may read global options.
 pub(crate) fn free_global_options() {
-    for table in [global_options, global_s_options, global_w_options] {
-        let tree = std::mem::take(&mut table().tree);
-        drop(tree);
-    }
+    let take = |oo: &mut options| std::mem::take(&mut oo.tree);
+    drop(with_global_options(take));
+    drop(with_global_s_options(take));
+    drop(with_global_w_options(take));
 }
 
 pub static mut global_environ: Option<Box<environ>> = None;
@@ -574,23 +571,21 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
             OptionsScope::GlobalWindow.reset_default(oe);
         }
     }
-    options_set_string(
-        &mut global_s_options(),
-        c"default-shell",
-        0 as ::core::ffi::c_int,
-        |out| out.write_all(getshell().as_bytes()),
-    );
+    with_global_s_options(|oo| {
+        options_set_string(oo, c"default-shell", 0 as ::core::ffi::c_int, |out| {
+            out.write_all(getshell().as_bytes())
+        });
+    });
     s = getenv(c"VISUAL".as_ptr());
     if !s.is_null() || {
         s = getenv(c"EDITOR".as_ptr());
         !s.is_null()
     } {
-        options_set_string(
-            &mut global_options(),
-            c"editor",
-            0 as ::core::ffi::c_int,
-            |out| write_cstr(out, nullable_cstr(s)),
-        );
+        with_global_options(|oo| {
+            options_set_string(oo, c"editor", 0 as ::core::ffi::c_int, |out| {
+                write_cstr(out, nullable_cstr(s))
+            });
+        });
         if !strrchr(s, '/' as i32).is_null() {
             s = strrchr(s, '/' as i32).offset(1 as ::core::ffi::c_int as isize);
         }
@@ -599,16 +594,12 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
         } else {
             keys = MODEKEY_EMACS;
         }
-        options_set_number(
-            &mut global_s_options(),
-            c"status-keys",
-            keys as ::core::ffi::c_longlong,
-        );
-        options_set_number(
-            &mut global_w_options(),
-            c"mode-keys",
-            keys as ::core::ffi::c_longlong,
-        );
+        with_global_s_options(|oo| {
+            options_set_number(oo, c"status-keys", keys as ::core::ffi::c_longlong);
+        });
+        with_global_w_options(|oo| {
+            options_set_number(oo, c"mode-keys", keys as ::core::ffi::c_longlong);
+        });
     }
     if path.is_none() && label.is_none() {
         s = getenv(c"TMUX".as_ptr());

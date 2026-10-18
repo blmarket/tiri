@@ -191,7 +191,7 @@ pub(super) unsafe fn format_find(
                     options_to_cstring(entry, nullable_cstr(array_key), 1)
                 })
             };
-            found = lookup(&mut global_options());
+            found = with_global_options(|oo| lookup(oo));
             if found.is_none() {
                 found = format_pane_owner
                     .as_ref()
@@ -203,7 +203,7 @@ pub(super) unsafe fn format_find(
                     .and_then(|window| lookup(&mut window.borrow_options_mut()));
             }
             if found.is_none() {
-                found = lookup(&mut global_w_options());
+                found = with_global_w_options(|oo| lookup(oo));
             }
             if found.is_none() {
                 found = format_session_owner
@@ -211,7 +211,7 @@ pub(super) unsafe fn format_find(
                     .and_then(|session| lookup(&mut session.borrow_options_mut()));
             }
             if found.is_none() {
-                found = lookup(&mut global_s_options());
+                found = with_global_s_options(|oo| lookup(oo));
             }
         }
         if found.is_none() {
@@ -1338,16 +1338,16 @@ pub(super) unsafe fn format_loop_options(
     let global = has(b'g');
     let mut access = |read: &mut dyn FnMut(&mut options)| {
         if has(b'v') {
-            read(&mut global_options());
+            with_global_options(|oo| read(oo));
         } else if has(b'w') {
             if global {
-                read(&mut global_w_options());
+                with_global_w_options(|oo| read(oo));
             } else if let Some(window) = window.as_ref() {
                 read(&mut window.borrow_options_mut());
             }
         } else if has(b's') {
             if global {
-                read(&mut global_s_options());
+                with_global_s_options(|oo| read(oo));
             } else if let Some(session) = session.as_ref() {
                 read(&mut session.borrow_options_mut());
             }
@@ -1358,7 +1358,7 @@ pub(super) unsafe fn format_loop_options(
                 }
             }
         } else if global {
-            read(&mut global_s_options());
+            with_global_s_options(|oo| read(oo));
         }
     };
     let mut names = Vec::new();

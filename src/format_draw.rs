@@ -1830,18 +1830,20 @@ mod range_tests {
     use super::*;
     use crate::src::options::options_default;
     use crate::src::options::options_table;
-    use crate::src::tmux::global_options;
+    use crate::src::tmux::with_global_options;
 
     #[test]
     fn rendered_ranges_follow_their_alignment_and_clipping() {
         unsafe {
-            options_default(
-                &mut global_options(),
-                options_table
-                    .iter()
-                    .find(|entry| entry.name == Some(c"extended-keys"))
-                    .unwrap(),
-            );
+            with_global_options(|oo| {
+                options_default(
+                    oo,
+                    options_table
+                        .iter()
+                        .find(|entry| entry.name == Some(c"extended-keys"))
+                        .unwrap(),
+                );
+            });
             for (width, expected) in [
                 (
                     20,

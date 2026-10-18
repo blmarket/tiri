@@ -36,7 +36,7 @@ use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::spawn::spawn_window;
 use crate::src::text::utf8::utf8_stravis_cstring;
-use crate::src::tmux::{check_name, clean_name_cstring, global_s_options};
+use crate::src::tmux::{check_name, clean_name_cstring, with_global_s_options};
 use crate::src::window::winlinks_minmax;
 use std::ffi::{CStr, CString};
 
@@ -461,18 +461,20 @@ unsafe fn cmd_new_session_exec(
                                                             .terminal_size()
                                                             .1;
                                                         if sy > 0 as u_int
-                                                            && options_get_number(
-                                                                &global_s_options(),
-                                                                c"status",
-                                                            ) != 0
+                                                            && with_global_s_options(|oo| {
+                                                                options_get_number(oo, c"status")
+                                                            }) != 0
                                                         {
                                                             sy = sy.wrapping_sub(1);
                                                         }
                                                     } else {
-                                                        let default_size = options_get_string(
-                                                            &global_s_options(),
-                                                            c"default-size",
-                                                        );
+                                                        let default_size =
+                                                            with_global_s_options(|oo| {
+                                                                options_get_string(
+                                                                    oo,
+                                                                    c"default-size",
+                                                                )
+                                                            });
                                                         tmp = default_size.as_ptr();
                                                         if sscanf(
                                                             tmp,
@@ -539,12 +541,14 @@ unsafe fn cmd_new_session_exec(
                                                                 env.expect("client environment")
                                                                     .clone()
                                                             });
-                                                        environ_update(
-                                                            &global_s_options(),
-                                                            &client_environment,
-                                                            env.as_deref_mut()
-                                                                .expect("new environment"),
-                                                        );
+                                                        with_global_s_options(|oo| {
+                                                            environ_update(
+                                                                oo,
+                                                                &client_environment,
+                                                                env.as_deref_mut()
+                                                                    .expect("new environment"),
+                                                            );
+                                                        });
                                                     }
                                                     for av in args_flag_values(
                                                         &*args,

@@ -41,7 +41,7 @@ use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::status::message_list;
 use crate::src::text::utf8::utf8_update_width_cache;
-use crate::src::tmux::{get_timer, global_options, socket_path_cstr, start_time};
+use crate::src::tmux::{get_timer, socket_path_cstr, start_time, with_global_options};
 use crate::src::tty::tty_create_log;
 
 use crate::src::window::windows;
@@ -258,11 +258,9 @@ pub(crate) unsafe fn server_start(
         let owner = ClientRef::create(fd);
         c = Some(owner.clone());
     } else {
-        options_set_number(
-            &mut global_options(),
-            c"exit-empty",
-            0 as ::core::ffi::c_longlong,
-        );
+        with_global_options(|oo| {
+            options_set_number(oo, c"exit-empty", 0 as ::core::ffi::c_longlong);
+        });
     }
     if lockfd.is_some() {
         if let Some(path) = lockfile.take() {
@@ -316,10 +314,12 @@ unsafe fn server_loop() -> ::core::ffi::c_int {
         }
     }
     ClientRef::run_cycle();
-    if options_get_number(&global_options(), c"exit-empty") == 0 && server_exit == 0 {
+    if with_global_options(|oo| options_get_number(oo, c"exit-empty")) == 0 && server_exit == 0 {
         return 0 as ::core::ffi::c_int;
     }
-    if options_get_number(&global_options(), c"exit-unattached") == 0 && !sessions::is_empty() {
+    if with_global_options(|oo| options_get_number(oo, c"exit-unattached")) == 0
+        && !sessions::is_empty()
+    {
         return 0 as ::core::ffi::c_int;
     }
     let mut registry_c_owner = ClientRegistry::first();
@@ -558,6 +558,6 @@ pub unsafe fn server_add_message(
     message_next = message_next.wrapping_add(1);
     let msg_time = SystemTime::now();
     message_log.push_back(s, fresh0, msg_time);
-    limit = options_get_number(&global_options(), c"message-limit") as u_int;
+    limit = with_global_options(|oo| options_get_number(oo, c"message-limit")) as u_int;
     message_log.trim(message_next, limit);
 }

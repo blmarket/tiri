@@ -40,7 +40,7 @@ use crate::src::session::Session;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::spawn::spawn_context;
 use crate::src::shared::window::WindowRef;
-use crate::src::tmux::{checkshell, find_home_cstr, global_options, ptm_fd};
+use crate::src::tmux::{checkshell, find_home_cstr, ptm_fd, with_global_options};
 
 use crate::src::window_pane::WindowPane as _;
 use std::ffi::{CStr, CString};
@@ -546,7 +546,7 @@ pub(super) unsafe fn spawn_pane(
                 if let Some(terminal) = session_owner.termios() {
                     now.c_cc = terminal.c_cc;
                 }
-                key = options_get_number(&global_options(), c"backspace") as key_code;
+                key = with_global_options(|oo| options_get_number(oo, c"backspace")) as key_code;
                 if key >= 0x7f as key_code {
                     now.c_cc[VERASE] = '\u{7f}' as i32 as cc_t;
                 } else {

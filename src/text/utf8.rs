@@ -10,7 +10,7 @@ use crate::src::shared::vis::VIS_DQ;
 use crate::src::text::utf8_cache::{UTF8_ITEMS, UTF8_WIDTHS};
 use crate::src::text::utf8_decode::{decode_utf8, DecodeResult};
 use crate::src::text::utf8_width::parse_width_override;
-use crate::src::tmux::global_options;
+use crate::src::tmux::with_global_options;
 use std::ffi::{CStr, CString};
 
 fn utf8_find_in_width_cache(wc: wchar_t) -> Option<u_int> {
@@ -42,8 +42,8 @@ pub unsafe fn utf8_update_width_cache() {
         .lock()
         .expect("UTF-8 width cache poisoned")
         .reset_defaults();
-    let values =
-        crate::src::options::options_read_entry(&global_options(), c"codepoint-widths", |entry| {
+    let values = with_global_options(|oo| {
+        crate::src::options::options_read_entry(oo, c"codepoint-widths", |entry| {
             entry
                 .value
                 .array()
@@ -52,7 +52,8 @@ pub unsafe fn utf8_update_width_cache() {
                 .map(|item| item.value.string_ptr().expect("width override").to_owned())
                 .collect::<Vec<_>>()
         })
-        .expect("codepoint-widths option");
+    })
+    .expect("codepoint-widths option");
     for value in values {
         utf8_add_to_width_cache(&value);
     }

@@ -21,7 +21,7 @@ use crate::src::shared::screen::{
 use crate::src::shared::utf8::wchar_t;
 use crate::src::shared::utf8::*;
 use crate::src::text::utf8::{utf8_to_data, utf8_towc};
-use crate::src::tmux::global_options;
+use crate::src::tmux::with_global_options;
 use crate::src::window_pane::WindowPane;
 use std::borrow::Cow;
 use std::ffi::{CStr, CString};
@@ -534,7 +534,7 @@ unsafe fn input_key_extended(mut bev: *mut bufferevent, mut key: key_code) -> ::
         key &= KEYC_MASK_KEY;
     }
     let tmp;
-    if options_get_number(&global_options(), c"extended-keys-format")
+    if with_global_options(|oo| options_get_number(oo, c"extended-keys-format"))
         == 1 as ::core::ffi::c_longlong
     {
         tmp = format_message_with(|out| {
@@ -648,7 +648,7 @@ pub unsafe fn input_key(
     if key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
         == KEYC_BSPACE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
     {
-        newkey = options_get_number(&global_options(), c"backspace") as key_code;
+        newkey = with_global_options(|oo| options_get_number(oo, c"backspace")) as key_code;
         log_debug(format_args!(
             "{}: key 0x{:x} is backspace -> 0x{:x}",
             "input_key",

@@ -49,7 +49,7 @@ use crate::src::shared::tty::TTY_CTX_WINDOW_BIGGER;
 pub use crate::src::shared::tty::{tty_ctx, tty_style_ctx};
 use crate::src::style::colour::{colour_palette_from_option, colour_palette_init};
 use crate::src::style::{style_apply_with_options, style_parse, style_set};
-use crate::src::tmux::global_w_options;
+use crate::src::tmux::with_global_w_options;
 use crate::src::window::Window;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
@@ -1043,11 +1043,15 @@ pub(crate) unsafe fn popup_display(
     }
     (*pd).border_cell.attr = 0 as u_short;
     screen_init(&mut (*pd).s, jx, jy, 0 as u_int);
-    screen_set_default_cursor(&mut (*pd).s, &mut global_w_options());
+    with_global_w_options(|oo| {
+        screen_set_default_cursor(&mut (*pd).s, oo);
+    });
     {
         let mut palette = (*pd).palette.try_borrow_mut().expect("new popup palette");
         colour_palette_init(&mut palette);
-        colour_palette_from_option(Some(&mut palette), &global_w_options());
+        with_global_w_options(|oo| {
+            colour_palette_from_option(Some(&mut palette), oo);
+        });
     }
     memcpy(
         &raw mut (*pd).defaults as *mut ::core::ffi::c_void,

@@ -7,7 +7,7 @@ use crate::src::shared::abi::*;
 use crate::src::shared::prompt::PROMPT_NTYPES;
 use crate::src::shared::prompt::*;
 use crate::src::shared::stdio::FILE;
-use crate::src::tmux::{find_home_cstr, global_options};
+use crate::src::tmux::{find_home_cstr, with_global_options};
 use libc::{fgetc, fopen, fputc, fputs, strerror};
 use std::cell::RefCell;
 use std::ffi::{CStr, CString};
@@ -31,7 +31,7 @@ thread_local! {
 }
 
 unsafe fn prompt_find_history_file() -> Option<CString> {
-    let history_file = options_get_string(&global_options(), c"history-file");
+    let history_file = with_global_options(|oo| options_get_string(oo, c"history-file"));
     if history_file.as_bytes().is_empty() {
         return None;
     }
@@ -170,7 +170,7 @@ pub unsafe fn prompt_add_history(line: &CStr, kind: prompt_type) {
     if kind >= PROMPT_NTYPES as prompt_type {
         return;
     }
-    let limit = options_get_number(&global_options(), c"prompt-history-limit") as u_int;
+    let limit = with_global_options(|oo| options_get_number(oo, c"prompt-history-limit")) as u_int;
     PROMPT_HISTORY.with_borrow_mut(|histories| {
         let history = &mut histories[kind as usize];
         let old_size = history.len() as u_int;
