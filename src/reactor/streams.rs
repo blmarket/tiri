@@ -190,8 +190,9 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
                     Completion::Read(result) => {
                         (*stream).enabled &= !2;
                         let flags = if let Err(error) = result {
-                            *crate::src::ffi::libc::__errno_location() =
-                                error.raw_os_error().unwrap_or(libc::EIO);
+                            errno::set_errno(errno::Errno(
+                                error.raw_os_error().unwrap_or(libc::EIO),
+                            ));
                             1 | 0x20
                         } else {
                             1 | 0x10
@@ -209,10 +210,12 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
                     }
                     Completion::Write(result) => {
                         (*stream).enabled &= !4;
-                        *crate::src::ffi::libc::__errno_location() = result
-                            .err()
-                            .and_then(|error| error.raw_os_error())
-                            .unwrap_or(libc::EIO);
+                        errno::set_errno(errno::Errno(
+                            result
+                                .err()
+                                .and_then(|error| error.raw_os_error())
+                                .unwrap_or(libc::EIO),
+                        ));
                         (None, Some(2 | 0x20))
                     }
                 };
@@ -278,12 +281,13 @@ pub unsafe fn bufferevent_new(
     });
     if let Err(error) = start(&s) {
         bufferevent_free(stream);
-        *crate::src::ffi::libc::__errno_location() =
+        errno::set_errno(errno::Errno(
             if error.kind() == std::io::ErrorKind::Unsupported {
                 libc::EOPNOTSUPP
             } else {
                 error.raw_os_error().unwrap_or(libc::EIO)
-            };
+            },
+        ));
         return std::ptr::null_mut();
     }
     stream

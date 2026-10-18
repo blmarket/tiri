@@ -1,6 +1,5 @@
 //! Borrowed string interfaces to the existing C numeric conversions.
 
-use super::libc::__errno_location;
 use crate::src::compat::strtonum::strtonum;
 use crate::src::format::bytes::cstr_suffix;
 use libc::strtoull;
@@ -17,9 +16,9 @@ pub(crate) fn hexadecimal_prefix(input: &CStr) -> Option<(u64, &CStr)> {
     let value;
     let consumed;
     unsafe {
-        *__errno_location() = 0;
+        errno::set_errno(errno::Errno(0));
         value = strtoull(input.as_ptr(), &mut end, 16);
-        if value == u64::MAX && *__errno_location() == libc::ERANGE {
+        if value == u64::MAX && errno::errno().0 == libc::ERANGE {
             return None;
         }
         consumed = end.offset_from(input.as_ptr()) as usize;

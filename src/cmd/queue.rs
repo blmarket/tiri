@@ -241,9 +241,7 @@ impl cmdq_list {
     }
 }
 
-unsafe fn cmdq_new_named_item(
-    label: &'static CStr,
-) -> std::rc::Rc<std::cell::RefCell<cmdq_item>> {
+unsafe fn cmdq_new_named_item(label: &'static CStr) -> std::rc::Rc<std::cell::RefCell<cmdq_item>> {
     let owner = std::rc::Rc::new(std::cell::RefCell::new(cmdq_item::empty()));
     let address = owner.as_ptr();
     owner.borrow_mut().name = Some(format_message_with(|out| {
@@ -620,9 +618,7 @@ pub(crate) unsafe fn cmdq_resumed(
     owner
 }
 /// The head once a `cmdq_next` polls the drain; new items start only there.
-async unsafe fn cmdq_next_head(
-    queue: &QueueTarget,
-) -> std::rc::Rc<std::cell::RefCell<cmdq_item>> {
+async unsafe fn cmdq_next_head(queue: &QueueTarget) -> std::rc::Rc<std::cell::RefCell<cmdq_item>> {
     std::future::poll_fn(|_| {
         if !CMDQ_LOOP.get() {
             return std::task::Poll::Pending;
@@ -905,7 +901,11 @@ unsafe fn cmdq_find_flag(
 unsafe fn cmdq_add_message(item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>) {
     let (c_owner, state, command) = {
         let item = item_handle.borrow();
-        (cmdq_get_client(Some(&item)), cmdq_get_state_owned(&item), item.command_handle())
+        (
+            cmdq_get_client(Some(&item)),
+            cmdq_get_state_owned(&item),
+            item.command_handle(),
+        )
     };
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut uid: uid_t = 0;

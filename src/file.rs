@@ -9,7 +9,6 @@ use crate::src::compat::imsg::imsg;
 use crate::src::compat::imsg::*;
 use crate::src::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE};
 use crate::src::compat::stdio::CFile;
-use crate::src::ffi::libc::__errno_location;
 use crate::src::log::{fatalx, log_cstr, log_debug};
 use crate::src::proc::{bytes_of, proc_send};
 use crate::src::reactor::BufferEvent;
@@ -496,7 +495,7 @@ unsafe fn file_write_impl(
                 mode,
             );
             if f.is_null() {
-                cf.error = *__errno_location();
+                cf.error = errno::errno().0;
             } else {
                 let file = CFile::from_raw(f).expect("fopen returned a non-null stream");
                 let write_failed = fwrite(
@@ -604,7 +603,7 @@ unsafe fn file_read_impl(
                 c"rb".as_ptr(),
             );
             if f.is_null() {
-                cf.error = *__errno_location();
+                cf.error = errno::errno().0;
             } else {
                 file_owner = CFile::from_raw(f);
                 let file = file_owner
@@ -618,7 +617,7 @@ unsafe fn file_read_impl(
                         file.as_ptr(),
                     ) as size_t;
                     if ferror(file.as_ptr()) != 0 {
-                        cf.error = *__errno_location();
+                        cf.error = errno::errno().0;
                         current_block = 17369485759464587280;
                         break;
                     } else if evbuffer_add(&mut cf.read.input, &buffer[..size])
@@ -815,7 +814,7 @@ unsafe fn file_write_error_callback(
     let cf = &mut *owner.get();
     let mut error: ::core::ffi::c_int = 0;
     if what as ::core::ffi::c_int & EVBUFFER_ERROR != 0 {
-        error = *__errno_location();
+        error = errno::errno().0;
     } else {
         error = EIO;
     }
@@ -931,7 +930,7 @@ pub unsafe fn file_write_open(
                         }),
                     );
                     if stream.is_null() {
-                        error = *__errno_location();
+                        error = errno::errno().0;
                         drop(cf.fd.take());
                         client_files_remove(cf);
                     } else {
@@ -1119,7 +1118,7 @@ pub unsafe fn file_read_open(
                         }),
                     );
                     if stream.is_null() {
-                        error = *__errno_location();
+                        error = errno::errno().0;
                         drop(cf.fd.take());
                         client_files_remove(&mut *cf);
                     } else {

@@ -1,12 +1,11 @@
 use crate::src::cmd::parse::{cmd_parse_from_buffer, cmd_parse_from_file};
 use crate::src::cmd::queue::{
     cmdq_add_format, cmdq_append, cmdq_copy_state, cmdq_get_callback_owned, cmdq_get_client,
-    cmdq_get_command, cmdq_get_state_owned, cmdq_insert_after, cmdq_new_state, cmdq_print, cmdq_wait,
-    CmdqWaiter,
+    cmdq_get_command, cmdq_get_state_owned, cmdq_insert_after, cmdq_new_state, cmdq_print,
+    cmdq_wait, CmdqWaiter,
 };
 use crate::src::compat::stdio::CFile;
 use crate::src::control::control_notify_write;
-use crate::src::ffi::libc::__errno_location;
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
@@ -15,7 +14,7 @@ use crate::src::prompt_history::prompt_load_history;
 use crate::src::server_client::Client as _;
 use crate::src::server_client::ClientRegistry;
 use crate::src::session::sessions;
-use libc::{fopen, strerror};
+use libc::fopen;
 
 use crate::src::session::Session as _;
 use crate::src::shared::abi::*;
@@ -128,13 +127,13 @@ pub unsafe fn load_cfg(
     log_debug(format_args!("loading {}", log_cstr(path)));
     f = fopen(path.as_ptr(), c"rb".as_ptr());
     if f.is_null() {
-        if *__errno_location() == ENOENT && flags & CMD_PARSE_QUIET != 0 {
+        if errno::errno().0 == ENOENT && flags & CMD_PARSE_QUIET != 0 {
             return 0 as ::core::ffi::c_int;
         }
         cfg_add_cause(|out| {
             write_cstr(out, nullable_cstr(path.as_ptr()))?;
             out.write_all(b": ")?;
-            write_cstr(out, nullable_cstr(strerror(*__errno_location())))
+            write!(out, "{}", errno::errno())
         });
         return -(1 as ::core::ffi::c_int);
     }

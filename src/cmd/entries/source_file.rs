@@ -6,13 +6,11 @@ use crate::src::cmd::queue::{
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_parse_flags};
 use crate::src::compat::glob::GlobResult;
 use crate::src::file::{file_read_wait, FileOutcome, FileWait};
-use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::reactor::evbuffer_pullup;
 use crate::src::server_client::Client as _;
-use libc::strerror;
 
 use crate::src::shared::abi::__size_t;
 use crate::src::shared::abi::*;
@@ -186,7 +184,7 @@ unsafe fn cmd_source_file_done(
     let target = &mut target_state;
     if error != 0 {
         cmdq_error(item_owner, |out| {
-            write_cstr(out, nullable_cstr(strerror(error)))?;
+            write!(out, "{}", errno::Errno(error))?;
             out.write_all(b": ")?;
             write_cstr(out, path)
         });
@@ -239,7 +237,6 @@ unsafe fn cmd_source_file_exec(
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut failed = false;
-    let mut error: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut parse_flags: ::core::ffi::c_int = 0;
     let mut i: u_int = 0;
     let mut j: u_int = 0;
@@ -325,15 +322,15 @@ unsafe fn cmd_source_file_exec(
             let (matches, result) = GlobResult::run(pattern.as_c_str());
             if result != 0 as ::core::ffi::c_int {
                 if result != GLOB_NOMATCH || !cdata.flags & CMD_PARSE_QUIET != 0 {
-                    if result == GLOB_NOMATCH {
-                        error = strerror(ENOENT);
+                    let error = if result == GLOB_NOMATCH {
+                        ENOENT
                     } else if result == GLOB_NOSPACE {
-                        error = strerror(ENOMEM);
+                        ENOMEM
                     } else {
-                        error = strerror(EINVAL);
-                    }
+                        EINVAL
+                    };
                     cmdq_error(item_handle, |out| {
-                        write_cstr(out, nullable_cstr(error))?;
+                        write!(out, "{}", errno::Errno(error))?;
                         out.write_all(b": ")?;
                         write_cstr(out, path)
                     });

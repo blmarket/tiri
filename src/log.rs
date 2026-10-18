@@ -1,12 +1,10 @@
 use crate::src::compat::vis::strvis;
-use crate::src::ffi::libc::__errno_location;
 use crate::src::format::bytes::format_bytes;
 use crate::src::format::bytes::try_format_message_with;
-use crate::src::shared::abi::*;
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
-use libc::{exit, getpid, snprintf, strerror};
+use libc::{exit, getpid};
 use std::cell::{Cell, RefCell};
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 use std::fmt;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -127,20 +125,9 @@ pub fn log_debug(args: fmt::Arguments<'_>) {
 }
 
 pub unsafe fn fatal(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) -> ! {
-    let mut tmp: [::core::ffi::c_char; 256] = [0; 256];
-    if snprintf(
-        &raw mut tmp as *mut ::core::ffi::c_char,
-        ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-        c"fatal: %s: ".as_ptr(),
-        strerror(*__errno_location()),
-    ) < 0 as ::core::ffi::c_int
-    {
-        exit(1 as ::core::ffi::c_int);
-    }
-    log_message(
-        write,
-        CStr::from_ptr(&raw mut tmp as *mut ::core::ffi::c_char),
-    );
+    let prefix = CString::new(format!("fatal: {}: ", errno::errno()))
+        .expect("strerror text contains no NUL");
+    log_message(write, &prefix);
     exit(1 as ::core::ffi::c_int);
 }
 pub fn fatalx(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) -> ! {
@@ -151,6 +138,7 @@ pub fn fatalx(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use libc::snprintf;
     use std::io::{Read, Seek, SeekFrom};
     use std::os::fd::FromRawFd;
 

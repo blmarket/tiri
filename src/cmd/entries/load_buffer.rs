@@ -2,12 +2,10 @@ use crate::src::arguments::{args, args_get, args_has, args_parse, args_string};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_resumed};
 use crate::src::file::{file_read_wait, FileOutcome};
-use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::paste::paste_set_owned;
 use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
-use libc::strerror;
 
 use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
@@ -66,7 +64,7 @@ unsafe fn cmd_load_buffer_done(
     let mut cause: Option<CString> = None;
     if error != 0 as ::core::ffi::c_int {
         cmdq_error(item_handle, |out| {
-            write_cstr(out, nullable_cstr(strerror(error)))?;
+            write!(out, "{}", errno::Errno(error))?;
             out.write_all(b": ")?;
             write_cstr(out, path)
         });

@@ -10,8 +10,6 @@ which does not align with Rust safety semantics. Specificaly,
    we migrate everything to drop function. Also while such manual Drop exists,
    we should not rely on Drop for resource management.
 
-Do not touch ./src/compat/ unless explicitly asked.
-
 ## General software design
 
 Generally these are preferrable design, but in some cases we should

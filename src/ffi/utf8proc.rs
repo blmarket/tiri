@@ -36,7 +36,7 @@ pub(crate) fn encode_cell(
         crate::src::compat::utf8proc::utf8proc_wctomb(output.as_mut_ptr().cast(), codepoint)
     };
     if size < 0 {
-        Err(unsafe { *super::libc::__errno_location() })
+        Err(errno::errno().0)
     } else {
         Ok(size as usize)
     }

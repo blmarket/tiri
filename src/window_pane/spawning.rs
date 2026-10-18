@@ -18,7 +18,6 @@ use crate::src::events_payload::{
     event_payload_create, event_payload_set_int, event_payload_set_pane, event_payload_set_session,
     event_payload_set_string, event_payload_set_target, event_payload_set_window,
 };
-use crate::src::ffi::libc::__errno_location;
 use crate::src::format::bytes::cstr_suffix;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
@@ -35,7 +34,7 @@ use crate::src::server_client::ClientRegistry;
 use crate::src::window::Window as _;
 use libc::{
     _exit, chdir, execl, execvp, fopen, fread, fseeko, ftello, getcwd, memset, sigfillset,
-    sigprocmask, strerror,
+    sigprocmask,
 };
 
 use crate::src::session::Session;
@@ -483,13 +482,8 @@ pub(super) unsafe fn spawn_pane(
                 &raw mut ws,
             );
             if (*new_wp).pid == -(1 as ::core::ffi::c_int) {
-                set_spawn_cause(
-                    cause.as_mut(),
-                    &[
-                        b"fork failed: ",
-                        CStr::from_ptr(strerror(*__errno_location())).to_bytes(),
-                    ],
-                );
+                let error = errno::errno().to_string();
+                set_spawn_cause(cause.as_mut(), &[b"fork failed: ", error.as_bytes()]);
                 (*new_wp).fd = None;
                 if !(*sc).flags & SPAWN_RESPAWN != 0 {
                     ClientRef::forget_pane(&new_pane_owner);
@@ -814,11 +808,7 @@ mod tests {
     unsafe fn create_temp_file() -> (OwnedFd, std::ffi::CString) {
         let mut template = b"/tmp/tiri-editor-owner-XXXXXX\0".to_vec();
         let fd = mkstemp(template.as_mut_ptr() as *mut ::core::ffi::c_char);
-        assert!(
-            fd >= 0,
-            "mkstemp failed: {}",
-            *strerror(*__errno_location())
-        );
+        assert!(fd >= 0, "mkstemp failed: {}", errno::errno());
         (
             OwnedFd::from_raw_fd(fd),
             CStr::from_ptr(template.as_ptr() as *const ::core::ffi::c_char).to_owned(),

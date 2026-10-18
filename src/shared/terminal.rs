@@ -1,7 +1,5 @@
 //! Authoritative terminal ABI declarations.
 
-use crate::src::ffi::libc::__errno_location;
-
 pub use ::libc::termios;
 
 /// Terminal attributes owned by a model record. libc's termios has no
@@ -17,7 +15,7 @@ impl Default for TerminalAttributes {
 
 pub(crate) unsafe fn read_attributes(fd: i32, attributes: &mut termios) -> i32 {
     if fd < 0 {
-        *__errno_location() = libc::EBADF;
+        errno::set_errno(errno::Errno(libc::EBADF));
         return -1;
     }
     crate::src::reactor::io_status(
@@ -28,7 +26,7 @@ pub(crate) unsafe fn read_attributes(fd: i32, attributes: &mut termios) -> i32 {
 
 pub(crate) unsafe fn set_attributes(fd: i32, action: i32, attributes: &termios) -> i32 {
     if fd < 0 {
-        *__errno_location() = libc::EBADF;
+        errno::set_errno(errno::Errno(libc::EBADF));
         return -1;
     }
     crate::src::reactor::io_status(tiri_rt::unix::set_terminal_attributes(
@@ -40,7 +38,7 @@ pub(crate) unsafe fn set_attributes(fd: i32, action: i32, attributes: &termios) 
 
 pub(crate) unsafe fn read_size(fd: i32, size: &mut super::posix_terminal::winsize) -> i32 {
     if fd < 0 {
-        *__errno_location() = libc::EBADF;
+        errno::set_errno(errno::Errno(libc::EBADF));
         return -1;
     }
     crate::src::reactor::io_status(
@@ -51,7 +49,7 @@ pub(crate) unsafe fn read_size(fd: i32, size: &mut super::posix_terminal::winsiz
 
 pub(crate) unsafe fn set_size(fd: i32, size: &super::posix_terminal::winsize) -> i32 {
     if fd < 0 {
-        *__errno_location() = libc::EBADF;
+        errno::set_errno(errno::Errno(libc::EBADF));
         return -1;
     }
     crate::src::reactor::io_status(tiri_rt::unix::set_terminal_size(

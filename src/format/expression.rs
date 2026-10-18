@@ -3010,7 +3010,10 @@ pub(crate) unsafe fn format_single_from_target_cstring(
 ) -> CString {
     let (tc, mut target) = {
         let item = item_handle.borrow();
-        (cmdq_get_target_client(Some(&*item)), crate::src::cmd::queue::cmdq_get_target(&item).clone())
+        (
+            cmdq_get_target_client(Some(&*item)),
+            crate::src::cmd::queue::cmdq_get_target(&item).clone(),
+        )
     };
     format_single_from_state_cstring(Some(item_handle), fmt, tc.as_ref(), &mut target)
 }

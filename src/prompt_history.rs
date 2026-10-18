@@ -1,7 +1,6 @@
 use crate::src::compat::stdio::CFile;
-use crate::src::ffi::libc::__errno_location;
 use crate::src::format::bytes::cstr_suffix;
-use crate::src::log::{log_bytes, log_cstr, log_debug};
+use crate::src::log::{log_bytes, log_debug};
 use crate::src::options::OptionsScope;
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::prompt::prompt_type_string;
@@ -10,7 +9,7 @@ use crate::src::shared::prompt::PROMPT_NTYPES;
 use crate::src::shared::prompt::*;
 use crate::src::shared::stdio::FILE;
 use crate::src::tmux::find_home_cstr;
-use libc::{fgetc, fopen, fputc, fputs, strerror};
+use libc::{fgetc, fopen, fputc, fputs};
 use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 
@@ -84,7 +83,7 @@ pub unsafe fn prompt_load_history() {
         log_debug(format_args!(
             "{}: {}",
             log_bytes(history_file.as_bytes()),
-            log_cstr(CStr::from_ptr(strerror(*__errno_location())))
+            errno::errno()
         ));
         return;
     }
@@ -111,7 +110,7 @@ pub unsafe fn prompt_save_history() {
         log_debug(format_args!(
             "{}: {}",
             log_bytes(history_file.as_bytes()),
-            log_cstr(CStr::from_ptr(strerror(*__errno_location())))
+            errno::errno()
         ));
         return;
     }

@@ -1,6 +1,5 @@
 use crate::src::compat::stdio::CFile;
 use crate::src::environ::environ_create;
-use crate::src::ffi::libc::__errno_location;
 use crate::src::format::bytes::format_message_with;
 use crate::src::log::{log_cstr, log_debug, log_hex};
 use crate::src::names::default_window_name_cstring;
@@ -195,9 +194,9 @@ pub(crate) unsafe fn spawn_editor_fdopen(fd_owner: OwnedFd) -> *mut FILE {
     let mode: &CStr = c"w";
     let file = fdopen(fd_owner.as_raw_fd(), mode.as_ptr());
     if file.is_null() {
-        let fdopen_errno = *__errno_location();
+        let fdopen_errno = errno::errno();
         drop(fd_owner);
-        *__errno_location() = fdopen_errno;
+        errno::set_errno(fdopen_errno);
         return ::core::ptr::null_mut::<FILE>();
     }
     let _fd_owned_by_file = fd_owner.into_raw_fd();

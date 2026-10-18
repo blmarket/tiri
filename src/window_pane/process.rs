@@ -3,9 +3,6 @@ use super::{window_pane_destroy_ready, window_pane_exited};
 use crate::src::arguments::{args, args_count, args_has, args_string};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client};
-use crate::src::ffi::libc::__errno_location;
-use crate::src::format::bytes::nullable_cstr;
-use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_create_with_client, format_defaults, format_expand_time_cstring};
 use crate::src::log::{fatalx, log_debug};
 use crate::src::proc::proc_clear_signals;
@@ -33,7 +30,7 @@ use crate::src::shared::session::SessionRef;
 use crate::src::shared::signal::{sigset_t, SIG_BLOCK, SIG_SETMASK};
 use crate::src::shared::window::winlink;
 use crate::src::tmux::setblocking;
-use libc::{_exit, execl, fork, memcpy, setpgid, sigfillset, sigprocmask, strerror};
+use libc::{_exit, execl, fork, memcpy, setpgid, sigfillset, sigprocmask};
 use std::os::fd::{AsRawFd, IntoRawFd};
 pub(super) unsafe fn pipe_pane(
     pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
@@ -120,7 +117,7 @@ pub(super) unsafe fn pipe_pane(
             );
             cmdq_error(item_handle, |out| {
                 out.write_all(b"fork error: ")?;
-                write_cstr(out, nullable_cstr(strerror(*__errno_location())))
+                write!(out, "{}", errno::errno())
             });
             CmdOutcome::Error
         }

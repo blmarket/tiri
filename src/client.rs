@@ -7,7 +7,7 @@ use crate::src::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE, PROTOCOL_VERSION}
 #[cfg(target_os = "linux")]
 use crate::src::compat::systemd::systemd_activated;
 use crate::src::control::control_wait_exit;
-use crate::src::ffi::libc::{__errno_location, environ, stderr, stdout};
+use crate::src::ffi::libc::{environ, stderr, stdout};
 use crate::src::file::{
     file_read_cancel, file_read_open, file_write_close, file_write_data, file_write_left,
     file_write_open,
@@ -44,8 +44,8 @@ use crate::src::tmux::{
 use crate::src::tty::tty_term_read_list;
 use libc::{
     cfgetispeed, cfgetospeed, cfmakeraw, cfsetispeed, cfsetospeed, execl, fflush, fprintf, getenv,
-    getpid, getppid, kill, memset, printf, setenv, sigaction, sigemptyset, strerror, strlen,
-    strsignal, system, unlink, waitpid,
+    getpid, getppid, kill, memset, printf, setenv, sigaction, sigemptyset, strlen, strsignal,
+    system, unlink, waitpid,
 };
 use std::ffi::{CStr, CString, OsStr};
 use std::io;
@@ -105,10 +105,7 @@ unsafe fn client_get_lock(lockfile: &CStr) -> ClientLock {
         }
     };
     if let Err(error) = tiri_rt::unix::lock(lock.as_fd(), LOCK_EX | LOCK_NB) {
-        log_debug(format_args!(
-            "flock failed: {}",
-            log_cstr(CStr::from_ptr(strerror(*__errno_location())))
-        ));
+        log_debug(format_args!("flock failed: {}", errno::errno()));
         if error.raw_os_error() != Some(EAGAIN) {
             return ClientLock::Acquired(lock);
         }
@@ -165,7 +162,7 @@ unsafe fn client_connect(path: &CStr, flags: uint64_t) -> io::Result<OwnedFd> {
             ));
             locked = true;
         } else {
-            if lockfd.is_some() && unlink(path.as_ptr()) != 0 && *__errno_location() != ENOENT {
+            if lockfd.is_some() && unlink(path.as_ptr()) != 0 && errno::errno().0 != ENOENT {
                 return Err(io::Error::last_os_error());
             }
             let fd = server_start(flags, &mut lockfd, &mut lockfile);
@@ -263,11 +260,15 @@ pub unsafe fn client_main(
                         socket_path_cstr().as_ptr(),
                     );
                 } else {
+                    let reason = CString::new(
+                        errno::Errno(error.raw_os_error().unwrap_or(::libc::EINVAL)).to_string(),
+                    )
+                    .expect("strerror text contains no NUL");
                     fprintf(
                         stderr,
                         c"error connecting to %s (%s)\n".as_ptr(),
                         socket_path_cstr().as_ptr(),
-                        strerror(error.raw_os_error().unwrap_or(::libc::EINVAL)),
+                        reason.as_ptr(),
                     );
                 }
                 return 1;
@@ -311,11 +312,9 @@ pub unsafe fn client_main(
             if crate::src::shared::terminal::read_attributes(STDIN_FILENO, &mut saved_tio)
                 != 0 as ::core::ffi::c_int
             {
-                fprintf(
-                    stderr,
-                    c"tcgetattr failed: %s\n".as_ptr(),
-                    strerror(*__errno_location()),
-                );
+                let reason = CString::new(errno::errno().to_string())
+                    .expect("strerror text contains no NUL");
+                fprintf(stderr, c"tcgetattr failed: %s\n".as_ptr(), reason.as_ptr());
                 return 1 as ::core::ffi::c_int;
             }
             cfmakeraw(&mut tio);
@@ -535,13 +534,10 @@ unsafe fn client_signal(sig: ProcessSignal) {
             if !(pid == -(1 as ::core::ffi::c_int)) {
                 continue;
             }
-            if *__errno_location() == ECHILD {
+            if errno::errno().0 == ECHILD {
                 break;
             }
-            log_debug(format_args!(
-                "waitpid failed: {}",
-                log_cstr(CStr::from_ptr(strerror(*__errno_location())))
-            ));
+            log_debug(format_args!("waitpid failed: {}", errno::errno()));
         }
     } else if client_attached == 0 {
         if sig == ProcessSignal::Terminate || sig == ProcessSignal::Hangup {

@@ -31,6 +31,7 @@ tiri-cmdparse = { path = "tiri-cmdparse" }
 tiri-rt = { path = "tiri-rt" }
 tiri-buffer = { path = "tiri-buffer" }
 libc = "0.2"
+errno = "0.3"
 refbox = { package = "tiri-refbox", path = "tiri-refbox" }
 
 [dev-dependencies]

@@ -359,7 +359,10 @@ pub unsafe fn hooks_run(
 ) {
     let (mut target_state, client) = {
         let item = item_handle.expect("command queue item").borrow();
-        (crate::src::cmd::queue::cmdq_get_target(&item).clone(), item.client.clone())
+        (
+            crate::src::cmd::queue::cmdq_get_target(&item).clone(),
+            item.client.clone(),
+        )
     };
     let target = &mut target_state;
     let mut hd = hooks_data {

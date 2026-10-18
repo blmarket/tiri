@@ -73,10 +73,7 @@ unsafe fn cmd_capture_pane_exec(
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
-    let pane_owner = &mut target_state
-        .wp
-        .upgrade()
-        .expect("capture target pane");
+    let pane_owner = &mut target_state.wp.upgrade().expect("capture target pane");
     let mut buf: Vec<u8>;
     let mut cause: Option<CString> = None;
     let mut bufname: Option<&CStr> = None;

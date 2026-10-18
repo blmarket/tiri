@@ -570,6 +570,7 @@ dependencies = [
 name = "tiri"
 version = "0.0.0"
 dependencies = [
+ "errno",
  "futures-core",
  "libc",
  "quote",

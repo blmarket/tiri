@@ -12,7 +12,7 @@ use crate::src::compat::fdforkpty::getptmfd;
 use crate::src::compat::getopt_long::{BSDgetopt, BSDoptarg, BSDoptind};
 use crate::src::compat::getprogname::getprogname;
 use crate::src::environ::{environ_create, environ_find, environ_put, environ_set};
-use crate::src::ffi::libc::{__errno_location, environ, err, errx, stderr, stdout, tzset};
+use crate::src::ffi::libc::{environ, err, errx, stderr, stdout, tzset};
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::{log_add_level, log_cstr, log_debug};
@@ -37,8 +37,7 @@ use crate::src::tty::tty_parse_features;
 use ::libc::nl_item;
 use libc::{
     access, clock_gettime, exit, fprintf, getcwd, getenv, getpwuid, getuid, lstat, mkdir,
-    nl_langinfo, printf, realpath, setlocale, strcasecmp, strcasestr, strcmp, strerror, strrchr,
-    strstr,
+    nl_langinfo, printf, realpath, setlocale, strcasecmp, strcasestr, strcmp, strrchr, strstr,
 };
 use std::ffi::{CStr, CString};
 use std::sync::OnceLock;
@@ -160,7 +159,7 @@ unsafe fn expand_paths(s: &CStr, no_realpath: bool) -> Vec<CString> {
                         "{}: realpath(\"{}\") failed: {}",
                         "expand_paths",
                         log_cstr(&expanded),
-                        log_cstr(CStr::from_ptr(strerror(*__errno_location())))
+                        errno::errno()
                     ));
                     None
                 } else {
@@ -215,23 +214,23 @@ unsafe fn make_label(label: Option<&CStr>) -> Result<CString, CString> {
     base_bytes.extend_from_slice((uid as ::core::ffi::c_long).to_string().as_bytes());
     let base = CString::new(base_bytes).expect("socket base contains no NUL");
     if mkdir(base.as_ptr(), S_IRWXU as __mode_t) != 0 as ::core::ffi::c_int
-        && *__errno_location() != EEXIST
+        && errno::errno().0 != EEXIST
     {
-        let error = CStr::from_ptr(strerror(*__errno_location()));
+        let error = errno::errno().to_string();
         Err(make_label_cause(&[
             b"couldn't create directory ",
             base.to_bytes(),
             b" (",
-            error.to_bytes(),
+            error.as_bytes(),
             b")",
         ]))
     } else if lstat(base.as_ptr(), &raw mut sb) != 0 as ::core::ffi::c_int {
-        let error = CStr::from_ptr(strerror(*__errno_location()));
+        let error = errno::errno().to_string();
         Err(make_label_cause(&[
             b"couldn't read directory ",
             base.to_bytes(),
             b" (",
-            error.to_bytes(),
+            error.as_bytes(),
             b")",
         ]))
     } else if sb.st_mode & S_IFMT != S_IFDIR {

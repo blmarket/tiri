@@ -26,10 +26,7 @@ pub(crate) fn io_status(result: std::io::Result<()>) -> i32 {
     match result {
         Ok(()) => 0,
         Err(error) => {
-            unsafe {
-                *crate::src::ffi::libc::__errno_location() =
-                    error.raw_os_error().unwrap_or(libc::EIO);
-            }
+            errno::set_errno(errno::Errno(error.raw_os_error().unwrap_or(libc::EIO)));
             -1
         }
     }

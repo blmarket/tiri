@@ -2,7 +2,6 @@ use crate::src::arguments::{args, args_get, args_has, args_parse, args_string};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print_data, cmdq_resumed};
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::file::{file_write_wait, FileOutcome};
-use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::paste::{paste_buffer_data, paste_get_name, paste_get_top};
@@ -15,7 +14,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::command::{CMD_AFTERHOOK, CMD_BUFFER_USAGE};
 use crate::src::shared::posix_io::{O_APPEND, O_TRUNC};
-use libc::strerror;
 use std::ffi::CStr;
 pub static cmd_save_buffer_entry: cmd_entry = {
     cmd_entry {
@@ -74,7 +72,7 @@ unsafe fn cmd_save_buffer_done(
     let error = outcome.error;
     if error != 0 as ::core::ffi::c_int {
         cmdq_error(item_handle, |out| {
-            write_cstr(out, nullable_cstr(strerror(error)))?;
+            write!(out, "{}", errno::Errno(error))?;
             out.write_all(b": ")?;
             write_cstr(out, outcome.path.as_deref())
         });

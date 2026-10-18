@@ -3,7 +3,7 @@ use crate::src::cmd::queue::cmdq_next;
 #[cfg(target_os = "linux")]
 use crate::src::compat::systemd::{systemd_activated, systemd_create_socket};
 use crate::src::control_notify::control_build_events;
-use crate::src::ffi::libc::{__errno_location, stderr};
+use crate::src::ffi::libc::stderr;
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::format_tidy_jobs;
 use crate::src::hooks::hooks_build_events;
@@ -24,8 +24,8 @@ use crate::src::server_client::ClientRegistry;
 use crate::src::shared::window::WindowWeak;
 use crate::src::window::Window as _;
 use libc::{
-    chmod, exit, fprintf, kill, killpg, sigfillset, sigprocmask, stat, strerror, strsignal, time,
-    umask, unlink, waitpid,
+    chmod, exit, fprintf, kill, killpg, sigfillset, sigprocmask, stat, strsignal, time, umask,
+    unlink, waitpid,
 };
 #[cfg(target_os = "linux")]
 use std::os::fd::FromRawFd;
@@ -161,8 +161,8 @@ unsafe fn server_create_listener(flags: uint64_t) -> Result<UnixListener, CStrin
         Ok(listener)
     })();
     result.map_err(|error: io::Error| {
-        let reason =
-            CStr::from_ptr(strerror(error.raw_os_error().unwrap_or(::libc::EINVAL))).to_bytes();
+        let reason = errno::Errno(error.raw_os_error().unwrap_or(::libc::EINVAL)).to_string();
+        let reason = reason.as_bytes();
         let mut message = Vec::with_capacity(17 + path.len() + reason.len());
         message.extend_from_slice(b"error creating ");
         message.extend_from_slice(path);
@@ -499,7 +499,7 @@ unsafe fn server_child_signal() {
         pid = waitpid(WAIT_ANY, &raw mut status, WNOHANG | WUNTRACED) as pid_t;
         match pid {
             -1 => {
-                if *__errno_location() == ECHILD {
+                if errno::errno().0 == ECHILD {
                     return;
                 }
                 fatal(|out| out.write_all(b"waitpid failed"));
