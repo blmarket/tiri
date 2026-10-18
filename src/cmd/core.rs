@@ -192,7 +192,17 @@ pub static cmd_table: [&cmd_entry; 89] = {
         &cmd_wait_for_entry,
     ]
 };
-static mut cmd_list_next_group: u_int = 1 as u_int;
+thread_local! {
+    static CMD_LIST_NEXT_GROUP: std::cell::Cell<u_int> = const { std::cell::Cell::new(1) };
+}
+
+fn cmd_list_next_group() -> u_int {
+    CMD_LIST_NEXT_GROUP.with(|next| {
+        let group = next.get();
+        next.set(group.wrapping_add(1));
+        group
+    })
+}
 pub unsafe fn cmd_log_argv(argv: &[CString], prefix: &CStr) {
     for (i, arg) in argv.iter().enumerate() {
         log_debug(format_args!(
@@ -411,8 +421,7 @@ pub(crate) unsafe fn cmd_print_cstring(cmd: &cmd) -> CString {
     CString::new(buf).expect("command print contains no interior NUL")
 }
 pub unsafe fn cmd_list_new() -> std::rc::Rc<std::cell::RefCell<cmd_list>> {
-    let group = cmd_list_next_group;
-    cmd_list_next_group = cmd_list_next_group.wrapping_add(1);
+    let group = cmd_list_next_group();
     std::rc::Rc::new(std::cell::RefCell::new(cmd_list {
         group,
         ..cmd_list::default()
@@ -455,8 +464,7 @@ pub unsafe fn cmd_list_move(
     if !std::rc::Rc::ptr_eq(cmdlist, from) {
         destination.list.append(&mut from.borrow_mut().list);
     }
-    let group = cmd_list_next_group;
-    cmd_list_next_group = cmd_list_next_group.wrapping_add(1);
+    let group = cmd_list_next_group();
     destination.group = group;
 }
 pub unsafe fn cmd_list_copy(
@@ -475,9 +483,7 @@ pub unsafe fn cmd_list_copy(
     for command in &cmdlist.list {
         let cmd = command.try_borrow_mut().expect("command is not borrowed");
         if cmd.group != group {
-            let fresh7 = cmd_list_next_group;
-            cmd_list_next_group = cmd_list_next_group.wrapping_add(1);
-            owner.borrow_mut().group = fresh7;
+            owner.borrow_mut().group = cmd_list_next_group();
             group = cmd.group;
         }
         let new_cmd = cmd_copy(&cmd, argv);
