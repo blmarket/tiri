@@ -413,7 +413,7 @@ fn migrated_name_and_window_notification_helpers_use_holders() {
             &["cmd_join_pane_finish"][..],
         ),
         ("src/session/mod.rs", &["session_is_linked"][..]),
-        ("src/monitor.rs", &["monitor_check_window"][..]),
+        ("src/monitor/set.rs", &["monitor_check_window"][..]),
         (
             "src/cmd/entries/select_pane.rs",
             &["cmd_select_pane_redraw"][..],

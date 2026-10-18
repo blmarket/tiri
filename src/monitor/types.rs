@@ -1,10 +1,10 @@
 //! Authoritative monitor declarations, shared by the C translation units.
 
-use super::abi::{time_t, u_int};
-use super::pane::window_pane;
-use super::window::winlink;
+use crate::src::shared::abi::{time_t, u_int};
 use crate::src::shared::client::ClientWeak;
+use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::SessionWeak;
+use crate::src::shared::window::winlink;
 use std::cell::UnsafeCell;
 use std::rc::Weak;
 pub type monitor_type = ::core::ffi::c_uint;
@@ -15,8 +15,6 @@ pub const MONITOR_PANE: monitor_type = 1;
 pub const MONITOR_SESSION: monitor_type = 0;
 pub const MONITOR_NOTIFY_TRUE: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const MONITOR_NOTIFY_INITIAL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-
-pub use crate::src::monitor::monitor_set;
 
 #[derive(Clone)]
 #[repr(C)]

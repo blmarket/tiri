@@ -19,7 +19,8 @@ use crate::src::format::{
 };
 use crate::src::log::{log_cstr, log_debug, log_get_level};
 use crate::src::monitor::{
-    monitor_add, monitor_create_session_owned, monitor_get_fire_count, monitor_get_fire_time,
+    monitor_add, monitor_callback, monitor_change, monitor_create_session_owned,
+    monitor_get_fire_count, monitor_get_fire_time, monitor_set, monitor_type,
 };
 use crate::src::options::options_entry;
 use crate::src::options::options_table;
@@ -35,8 +36,6 @@ use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
 use crate::src::shared::events::{event_payload, events_callback, EventSinkId};
 use crate::src::shared::format::format_tree;
 use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
-use crate::src::shared::monitor::monitor_type;
-use crate::src::shared::monitor::{monitor_callback, monitor_change, monitor_set};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::{WindowRef, WindowWeak};

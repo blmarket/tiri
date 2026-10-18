@@ -12,7 +12,7 @@ use crate::src::events_payload::{
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::hooks::{hooks_add_event, hooks_monitor_add, hooks_monitor_remove, hooks_run};
-use crate::src::monitor::monitor_parse_owned;
+use crate::src::monitor::{monitor_parse_owned, MONITOR_NOTIFY_TRUE, MONITOR_SESSION};
 use crate::src::options::{
     options_match_owned, options_push_changes, options_scope_from_name, OptionMatchFailure,
     OptionsScope,
@@ -25,7 +25,6 @@ use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
-use crate::src::shared::monitor::{MONITOR_NOTIFY_TRUE, MONITOR_SESSION};
 use crate::src::shared::window::WindowRef;
 use crate::src::window::{Window, WindowPane};
 use std::ffi::{CStr, CString};

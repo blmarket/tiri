@@ -1,3 +1,8 @@
+use super::types::{
+    monitor_cb, monitor_change, monitor_item, monitor_items, monitor_pane, monitor_panes,
+    monitor_type, monitor_window, monitor_windows, MONITOR_ALL_PANES, MONITOR_ALL_WINDOWS,
+    MONITOR_NOTIFY_INITIAL, MONITOR_NOTIFY_TRUE, MONITOR_PANE, MONITOR_SESSION, MONITOR_WINDOW,
+};
 use crate::src::format::{format_create, format_defaults, format_expand_cstring, format_true};
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::reactor::Timer;
@@ -7,14 +12,6 @@ use crate::src::session::{sessions, Session as _};
 use crate::src::shared::abi::*;
 use crate::src::shared::client::{ClientRef, ClientWeak};
 use crate::src::shared::format::{format_tree, FORMAT_NOJOBS};
-use crate::src::shared::monitor::{
-    monitor_cb, monitor_change, monitor_item, monitor_items, monitor_pane, monitor_panes,
-    monitor_window, monitor_windows,
-};
-pub use crate::src::shared::monitor::{
-    monitor_type, MONITOR_ALL_PANES, MONITOR_ALL_WINDOWS, MONITOR_NOTIFY_INITIAL,
-    MONITOR_NOTIFY_TRUE, MONITOR_PANE, MONITOR_SESSION, MONITOR_WINDOW,
-};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::tree::RB_NEGINF;
@@ -937,7 +934,7 @@ mod ownership_tests {
             let callback_capture = capture.clone();
             let set_owner = monitor_create_client(
                 None,
-                crate::src::shared::monitor::monitor_callback(move |change| {
+                crate::src::monitor::monitor_callback(move |change| {
                     let mut capture = callback_capture.borrow_mut();
                     capture.value = change.value.to_bytes().to_vec();
                     capture.last = change.last.expect("previous value").to_bytes().to_vec();

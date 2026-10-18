@@ -5,7 +5,10 @@ use crate::src::cmd::queue::{
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::{fatalx, log_bytes, log_cstr, log_cstr_n, log_debug};
-use crate::src::monitor::{monitor_add, monitor_create_client_owned, monitor_remove};
+use crate::src::monitor::{
+    monitor_add, monitor_callback, monitor_change, monitor_create_client_owned, monitor_remove,
+    monitor_type, MONITOR_NOTIFY_INITIAL,
+};
 use crate::src::reactor::{
     bufferevent_disable, bufferevent_enable, bufferevent_get_input, bufferevent_write,
     bufferevent_write_buffer, evbuffer_add, evbuffer_add_formatted, evbuffer_get_length,
@@ -27,8 +30,6 @@ use crate::src::shared::control::{
 use crate::src::shared::event::*;
 use crate::src::shared::event::{EV_READ, EV_WRITE};
 use crate::src::shared::key::key_event;
-use crate::src::shared::monitor::{monitor_callback, monitor_change};
-use crate::src::shared::monitor::{monitor_type, MONITOR_NOTIFY_INITIAL};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::window_pane_offset;
 use crate::src::shared::session::SessionRef;
@@ -1103,7 +1104,7 @@ pub unsafe fn control_start(owner: &ClientRef) {
 
 pub(crate) unsafe fn control_subscriptions(
     owner: &ClientRef,
-) -> refbox::RefBox<crate::src::shared::monitor::monitor_set> {
+) -> refbox::RefBox<crate::src::monitor::monitor_set> {
     monitor_create_client_owned(
         Some(owner),
         monitor_callback(|change| unsafe { control_sub_change(change) }),
