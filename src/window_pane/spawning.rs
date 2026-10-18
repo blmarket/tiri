@@ -512,15 +512,13 @@ pub(super) unsafe fn spawn_pane(
             } else {
                 #[cfg(target_os = "linux")]
                 {
-                    let (systemd_status, systemd_error) = systemd_move_to_new_cgroup();
-                    if systemd_status < 0 as ::core::ffi::c_int {
+                    if let Err(systemd_error) = systemd_move_to_new_cgroup() {
                         log_debug(format_args!(
                             "{}: moving pane to new cgroup failed: {}",
                             "spawn_pane",
-                            log_cstr(systemd_error.as_deref().unwrap_or(c"(null)"))
+                            log_cstr(&systemd_error)
                         ));
                     }
-                    drop(systemd_error);
                 }
                 if !actual_cwd.is_null() {
                     environ_set(child, c"PWD", 0 as ::core::ffi::c_int, |out| {

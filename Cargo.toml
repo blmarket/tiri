@@ -5,6 +5,7 @@ members = [
     "tiri-cmdparse",
     "tiri-rt",
     "tiri-refbox",
+    "tiri-sdbus",
 ]
 
 [package]
@@ -33,6 +34,10 @@ tiri-buffer = { path = "tiri-buffer" }
 libc = "0.2"
 errno = "0.3"
 refbox = { package = "tiri-refbox", path = "tiri-refbox" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+systemd = { version = "0.10", default-features = false }
+tiri-sdbus = { path = "tiri-sdbus" }
 
 [dev-dependencies]
 syn = { version = "2", features = ["full", "visit"] }

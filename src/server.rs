@@ -235,7 +235,7 @@ pub(crate) unsafe fn server_start(
     start_time = SystemTime::now();
     crate::plugin::init();
     #[cfg(target_os = "linux")]
-    let listener = if systemd_activated() != 0 {
+    let listener = if systemd_activated() {
         systemd_create_socket(flags as ::core::ffi::c_int).map(|fd| UnixListener::from_raw_fd(fd))
     } else {
         server_create_listener(flags)

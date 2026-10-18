@@ -236,7 +236,7 @@ pub unsafe fn client_main(
             log_hex(client_flags as ::core::ffi::c_ulonglong)
         ));
         #[cfg(target_os = "linux")]
-        let activated = systemd_activated() != 0;
+        let activated = systemd_activated();
         #[cfg(not(target_os = "linux"))]
         let activated = false;
         let connection = if activated {

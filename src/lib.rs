@@ -9,7 +9,6 @@
 #![allow(clippy::eq_op)]
 #![allow(clippy::self_assignment)]
 #![allow(clippy::while_immutable_condition)]
-#![cfg_attr(target_os = "linux", feature(extern_types))]
 
 extern crate libc;
 

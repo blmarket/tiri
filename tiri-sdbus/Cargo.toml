@@ -1,0 +1,11 @@
+[package]
+name = "tiri-sdbus"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "GPL-3.0-only"
+description = "Minimal owned sd-bus client wrappers for tiri"
+
+[dependencies]
+libc = "0.2"
+libsystemd-sys = { version = "0.9", default-features = false, features = ["bus"] }

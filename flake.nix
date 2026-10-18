@@ -49,6 +49,7 @@
               pkgs.libutempter
               pkgs.systemd
             ];
+            nativeBuildInputs = [ pkgs.pkg-config ];
 
             # The unit tests reach into the server's process-wide state and
             # need a process each; `make unit-c2rs` is where they run.
