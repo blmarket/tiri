@@ -29,7 +29,7 @@ use crate::shared::display::*;
 use crate::shared::grid::*;
 use crate::shared::limits::UINT_MAX;
 use crate::shared::posix_io::{O_CREAT, O_TRUNC, O_WRONLY};
-use crate::shared::posix_terminal::{winsize, ICRNL, ONLCR, OPOST, TCSANOW, VMIN, VTIME};
+use crate::shared::posix_terminal::{ICRNL, ONLCR, OPOST, TCSANOW, VMIN, VTIME};
 use crate::shared::screen::screen;
 use crate::shared::terminal::*;
 use crate::shared::tty::*;
@@ -87,9 +87,10 @@ unsafe fn tty_initialize_component(terminal: &mut tty, fd: i32) -> i32 {
     terminal.ccolour = -1;
     terminal.bg = -1;
     terminal.fg = terminal.bg;
-    if crate::shared::terminal::read_attributes(fd, &mut terminal.tio.0) != 0 {
+    let Ok(attributes) = crate::shared::terminal::read_attributes(fd) else {
         return -1;
-    }
+    };
+    terminal.tio.0 = attributes;
     terminal.r.ensure(1);
     0
 }
@@ -455,7 +456,7 @@ pub unsafe fn tty_start_tty(owner: &ClientRef) {
                 as tcflag_t;
         tio.c_cc[VMIN] = 1 as cc_t;
         tio.c_cc[VTIME] = 0 as cc_t;
-        if crate::shared::terminal::set_attributes(fd, TCSANOW, &tio) == 0 as ::core::ffi::c_int {
+        if crate::shared::terminal::set_attributes(fd, TCSANOW, &tio).is_ok() {
             let _ =
                 tiri_rt::unix::discard_terminal(std::os::fd::BorrowedFd::borrow_raw(fd), TCOFLUSH);
         }
@@ -589,12 +590,6 @@ pub unsafe fn tty_stop_tty(owner: &ClientRef) {
             return;
         }
 
-        let mut ws: winsize = winsize {
-            ws_row: 0,
-            ws_col: 0,
-            ws_xpixel: 0,
-            ws_ypixel: 0,
-        };
         terminal_set!(tty, flags, &=, !TTY_STARTED);
         drop(tty.borrow_terminal_mut().start_timer.take());
         drop(tty.borrow_terminal_mut().clipboard_timer.take());
@@ -602,13 +597,11 @@ pub unsafe fn tty_stop_tty(owner: &ClientRef) {
         terminal_set!(tty, flags, &=, !TTY_BLOCK);
         drop(tty.borrow_terminal_mut().read_task.take());
         drop(tty.borrow_terminal_mut().write_task.take());
-        if crate::shared::terminal::read_size(fd, &mut ws) == -(1 as ::core::ffi::c_int) {
+        let Ok(ws) = crate::shared::terminal::read_size(fd) else {
             return;
-        }
+        };
         let saved_termios = terminal_value!(tty, tio).0;
-        if crate::shared::terminal::set_attributes(fd, TCSANOW, &saved_termios)
-            == -(1 as ::core::ffi::c_int)
-        {
+        if crate::shared::terminal::set_attributes(fd, TCSANOW, &saved_termios).is_err() {
             return;
         }
         tty_raw(

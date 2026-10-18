@@ -29,7 +29,7 @@ use crate::shared::client::{
 };
 use crate::shared::command::cmd_parse_result;
 use crate::shared::command::*;
-use crate::shared::errno::{EAGAIN, ECHILD, ENAMETOOLONG, ENOENT};
+use crate::shared::errno::{ErrorText, EAGAIN, ECHILD, ENAMETOOLONG, ENOENT};
 use crate::shared::posix_io::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, WAIT_ANY, WNOHANG};
 use crate::shared::posix_terminal::{ICRNL, ONLCR, OPOST, TCSANOW, VMIN, VTIME};
 use crate::shared::process::{tmuxpeer, tmuxproc};
@@ -99,7 +99,7 @@ unsafe fn client_get_lock(lockfile: &CStr) -> ClientLock {
         }
     };
     if let Err(error) = tiri_rt::unix::lock(lock.as_fd(), LOCK_EX | LOCK_NB) {
-        log_debug(format_args!("flock failed: {}", errno::errno()));
+        log_debug(format_args!("flock failed: {}", ErrorText(&error)));
         if error.raw_os_error() != Some(EAGAIN) {
             return ClientLock::Acquired(lock);
         }
@@ -156,8 +156,11 @@ unsafe fn client_connect(path: &CStr, flags: uint64_t) -> io::Result<OwnedFd> {
             ));
             locked = true;
         } else {
-            if lockfd.is_some() && unlink(path.as_ptr()) != 0 && errno::errno().0 != ENOENT {
-                return Err(io::Error::last_os_error());
+            if lockfd.is_some() && unlink(path.as_ptr()) != 0 {
+                let error = io::Error::last_os_error();
+                if error.raw_os_error() != Some(ENOENT) {
+                    return Err(error);
+                }
             }
             let fd = server_start(flags, &mut lockfd, &mut lockfile);
             drop(lockfd);
@@ -254,10 +257,8 @@ pub unsafe fn client_main(
                         socket_path_cstr().as_ptr(),
                     );
                 } else {
-                    let reason = CString::new(
-                        errno::Errno(error.raw_os_error().unwrap_or(::libc::EINVAL)).to_string(),
-                    )
-                    .expect("strerror text contains no NUL");
+                    let reason = CString::new(ErrorText(&error).to_string())
+                        .expect("strerror text contains no NUL");
                     fprintf(
                         stderr,
                         c"error connecting to %s (%s)\n".as_ptr(),
@@ -285,7 +286,9 @@ pub unsafe fn client_main(
                 .unwrap_or_default();
         let termname = nullable_cstr(getenv(c"TERM".as_ptr())).unwrap_or(c"");
         if 0 as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
-            fatal(|out| out.write_all(b"pledge failed"));
+            fatal(&std::io::Error::last_os_error(), |out| {
+                out.write_all(b"pledge failed")
+            });
         }
         if tiri_rt::unix::terminal_attributes(std::os::fd::BorrowedFd::borrow_raw(STDIN_FILENO))
             .is_ok()
@@ -303,14 +306,15 @@ pub unsafe fn client_main(
             let _ = tiri_rt::unix::close(ptm_fd);
         }
         if client_flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {
-            if crate::shared::terminal::read_attributes(STDIN_FILENO, &mut saved_tio)
-                != 0 as ::core::ffi::c_int
-            {
-                let reason = CString::new(errno::errno().to_string())
-                    .expect("strerror text contains no NUL");
-                fprintf(stderr, c"tcgetattr failed: %s\n".as_ptr(), reason.as_ptr());
-                return 1 as ::core::ffi::c_int;
-            }
+            saved_tio = match crate::shared::terminal::read_attributes(STDIN_FILENO) {
+                Ok(attributes) => attributes,
+                Err(error) => {
+                    let reason = CString::new(ErrorText(&error).to_string())
+                        .expect("strerror text contains no NUL");
+                    fprintf(stderr, c"tcgetattr failed: %s\n".as_ptr(), reason.as_ptr());
+                    return 1 as ::core::ffi::c_int;
+                }
+            };
             cfmakeraw(&mut tio);
             tio.c_iflag = (ICRNL | IXANY) as tcflag_t;
             tio.c_oflag = (OPOST | ONLCR) as tcflag_t;
@@ -319,7 +323,7 @@ pub unsafe fn client_main(
             tio.c_cc[VTIME] = 0 as cc_t;
             cfsetispeed(&mut tio, cfgetispeed(&saved_tio));
             cfsetospeed(&mut tio, cfgetospeed(&saved_tio));
-            crate::shared::terminal::set_attributes(STDIN_FILENO, TCSANOW, &tio);
+            let _ = crate::shared::terminal::set_attributes(STDIN_FILENO, TCSANOW, &tio);
         }
         client_send_identify(&ttynam, termname, &caps, &cwd, feat);
         if msg as ::core::ffi::c_uint == MSG_COMMAND as ::core::ffi::c_int as ::core::ffi::c_uint {
@@ -367,7 +371,8 @@ pub unsafe fn client_main(
             == MSG_EXEC as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             if client_flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {
-                crate::shared::terminal::set_attributes(STDOUT_FILENO, TCSAFLUSH, &saved_tio);
+                let _ =
+                    crate::shared::terminal::set_attributes(STDOUT_FILENO, TCSAFLUSH, &saved_tio);
             }
             let (shell, command) = client_exec_payload
                 .as_ref()
@@ -402,7 +407,8 @@ pub unsafe fn client_main(
             if client_flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {
                 printf(c"\x1B\\".as_ptr());
                 fflush(stdout);
-                crate::shared::terminal::set_attributes(STDOUT_FILENO, TCSAFLUSH, &saved_tio);
+                let _ =
+                    crate::shared::terminal::set_attributes(STDOUT_FILENO, TCSAFLUSH, &saved_tio);
             }
         } else if client_exitreason as ::core::ffi::c_uint
             != CLIENT_EXIT_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -464,12 +470,12 @@ unsafe fn client_send_identify(
     let fd = io::stdin()
         .as_fd()
         .try_clone_to_owned()
-        .unwrap_or_else(|_| fatal(|out| out.write_all(b"dup failed")));
+        .unwrap_or_else(|error| fatal(&error, |out| out.write_all(b"dup failed")));
     proc_send(client_peer, MSG_IDENTIFY_STDIN, Some(fd), &[]);
     let fd = io::stdout()
         .as_fd()
         .try_clone_to_owned()
-        .unwrap_or_else(|_| fatal(|out| out.write_all(b"dup failed")));
+        .unwrap_or_else(|error| fatal(&error, |out| out.write_all(b"dup failed")));
     proc_send(client_peer, MSG_IDENTIFY_STDOUT, Some(fd), &[]);
     pid = getpid() as pid_t;
     proc_send(client_peer, MSG_IDENTIFY_CLIENTPID, None, bytes_of(&pid));
@@ -508,7 +514,9 @@ unsafe fn client_exec(shell: &CStr, shellcmd: &CStr) -> ! {
         shellcmd.as_ptr(),
         NULL as *mut ::core::ffi::c_char,
     );
-    fatal(|out| out.write_all(b"execl failed"));
+    fatal(&std::io::Error::last_os_error(), |out| {
+        out.write_all(b"execl failed")
+    });
 }
 unsafe fn client_signal(sig: ProcessSignal) {
     let mut sigact: sigaction = unsafe { ::core::mem::zeroed() };
@@ -528,10 +536,11 @@ unsafe fn client_signal(sig: ProcessSignal) {
             if !(pid == -(1 as ::core::ffi::c_int)) {
                 continue;
             }
-            if errno::errno().0 == ECHILD {
+            let error = io::Error::last_os_error();
+            if error.raw_os_error() == Some(ECHILD) {
                 break;
             }
-            log_debug(format_args!("waitpid failed: {}", errno::errno()));
+            log_debug(format_args!("waitpid failed: {}", ErrorText(&error)));
         }
     } else if client_attached == 0 {
         if sig == ProcessSignal::Terminate || sig == ProcessSignal::Hangup {
@@ -569,7 +578,9 @@ unsafe fn client_signal(sig: ProcessSignal) {
                     ::core::ptr::null_mut::<sigaction>(),
                 ) != 0 as ::core::ffi::c_int
                 {
-                    fatal(|out| out.write_all(b"sigaction failed"));
+                    fatal(&std::io::Error::last_os_error(), |out| {
+                        out.write_all(b"sigaction failed")
+                    });
                 }
                 proc_send(client_peer, MSG_WAKEUP, None, &[]);
                 client_suspended = 0 as ::core::ffi::c_int;
@@ -628,7 +639,9 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
     static mut pledge_applied: ::core::ffi::c_int = 0;
     if pledge_applied == 0 {
         if 0 as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
-            fatal(|out| out.write_all(b"pledge failed"));
+            fatal(&std::io::Error::last_os_error(), |out| {
+                out.write_all(b"pledge failed")
+            });
         }
         pledge_applied = 1 as ::core::ffi::c_int;
     }
@@ -802,7 +815,9 @@ unsafe fn client_dispatch_attached(imsg: &mut imsg) {
                 ::core::ptr::null_mut::<sigaction>(),
             ) != 0 as ::core::ffi::c_int
             {
-                fatal(|out| out.write_all(b"sigaction failed"));
+                fatal(&std::io::Error::last_os_error(), |out| {
+                    out.write_all(b"sigaction failed")
+                });
             }
             client_suspended = 1 as ::core::ffi::c_int;
             kill(getpid(), SIGTSTP);

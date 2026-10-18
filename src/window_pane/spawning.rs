@@ -29,6 +29,7 @@ use crate::screen::screen_reinit;
 use crate::server::server_proc;
 use crate::server_client::Client;
 use crate::server_client::ClientRegistry;
+use crate::shared::errno::ErrorText;
 use crate::window::Window as _;
 use libc::{
     _exit, chdir, execl, execvp, fopen, fread, fseeko, ftello, getcwd, memset, sigfillset,
@@ -226,7 +227,6 @@ pub(super) unsafe fn spawn_pane(
             find_home_cstr().map_or(::core::ptr::null(), CStr::as_ptr);
         let mut actual_cwd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         let mut idx: u_int = 0;
-        let mut now: termios = unsafe { ::core::mem::zeroed() };
         let mut ws: winsize = winsize {
             ws_row: 0,
             ws_col: 0,
@@ -480,7 +480,7 @@ pub(super) unsafe fn spawn_pane(
                 &raw mut ws,
             );
             if (*new_wp).pid == -(1 as ::core::ffi::c_int) {
-                let error = errno::errno().to_string();
+                let error = ErrorText(&std::io::Error::last_os_error()).to_string();
                 set_spawn_cause(cause.as_mut(), &[b"fork failed: ", error.as_bytes()]);
                 (*new_wp).fd = None;
                 if !(*sc).flags & SPAWN_RESPAWN != 0 {
@@ -525,11 +525,9 @@ pub(super) unsafe fn spawn_pane(
                         write_cstr(out, nullable_cstr(actual_cwd))
                     });
                 }
-                if crate::shared::terminal::read_attributes(STDIN_FILENO, &mut now)
-                    != 0 as ::core::ffi::c_int
-                {
+                let Ok(mut now) = crate::shared::terminal::read_attributes(STDIN_FILENO) else {
                     _exit(1 as ::core::ffi::c_int);
-                }
+                };
                 if let Some(terminal) = session_owner.termios() {
                     now.c_cc = terminal.c_cc;
                 }
@@ -542,9 +540,7 @@ pub(super) unsafe fn spawn_pane(
                     now.c_cc[VERASE] = key as cc_t;
                 }
                 now.c_iflag |= IUTF8 as tcflag_t;
-                if crate::shared::terminal::set_attributes(STDIN_FILENO, TCSANOW, &now)
-                    != 0 as ::core::ffi::c_int
-                {
+                if crate::shared::terminal::set_attributes(STDIN_FILENO, TCSANOW, &now).is_err() {
                     _exit(1 as ::core::ffi::c_int);
                 }
                 proc_clear_signals(server_proc, 1 as ::core::ffi::c_int);
@@ -803,7 +799,11 @@ mod tests {
     unsafe fn create_temp_file() -> (OwnedFd, std::ffi::CString) {
         let mut template = b"/tmp/tiri-editor-owner-XXXXXX\0".to_vec();
         let fd = mkstemp(template.as_mut_ptr() as *mut ::core::ffi::c_char);
-        assert!(fd >= 0, "mkstemp failed: {}", errno::errno());
+        assert!(
+            fd >= 0,
+            "mkstemp failed: {}",
+            std::io::Error::last_os_error()
+        );
         (
             OwnedFd::from_raw_fd(fd),
             CStr::from_ptr(template.as_ptr() as *const ::core::ffi::c_char).to_owned(),
@@ -826,8 +826,7 @@ mod tests {
                 assert!(flags >= 0);
                 assert_eq!(flags & ::libc::O_ACCMODE, ::libc::O_RDWR);
                 assert!(std::path::Path::new(path.to_str().unwrap()).exists());
-                let file = spawn_editor_fdopen(fd_owner);
-                assert!(!file.is_null());
+                let file = spawn_editor_fdopen(fd_owner).unwrap();
                 assert_eq!(::libc::fcntl(fd, ::libc::F_GETFL), flags);
                 assert!(::libc::fcntl(fd, ::libc::F_GETFD) >= 0);
                 let original = b"created through fdopen";

@@ -13,6 +13,7 @@ use crate::shared::client::CLIENT_CONTROL;
 use crate::shared::command::*;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::command::{CMD_AFTERHOOK, CMD_BUFFER_USAGE};
+use crate::shared::errno::ErrorText;
 use crate::shared::posix_io::{O_APPEND, O_TRUNC};
 use std::ffi::CStr;
 pub static cmd_save_buffer_entry: cmd_entry = {
@@ -72,7 +73,11 @@ unsafe fn cmd_save_buffer_done(
     let error = outcome.error;
     if error != 0 as ::core::ffi::c_int {
         cmdq_error(item_handle, |out| {
-            write!(out, "{}", errno::Errno(error))?;
+            write!(
+                out,
+                "{}",
+                ErrorText(&std::io::Error::from_raw_os_error(error))
+            )?;
             out.write_all(b": ")?;
             write_cstr(out, outcome.path.as_deref())
         });

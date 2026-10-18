@@ -239,7 +239,11 @@ pub fn utf8_fromwc(wc: wchar_t, ud: &mut utf8_data) -> utf8_state {
     let size = match crate::ffi::utf8proc::encode_cell(wc, &mut ud.data) {
         Ok(size) => size,
         Err(error) => {
-            log_debug(format_args!("UTF-8 {}, wctomb() {}", wc, error));
+            log_debug(format_args!(
+                "UTF-8 {}, wctomb() {}",
+                wc,
+                error.raw_os_error().unwrap_or(0)
+            ));
             crate::ffi::utf8proc::reset_wctomb();
             return UTF8_ERROR;
         }

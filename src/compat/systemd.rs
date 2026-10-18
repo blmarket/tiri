@@ -1,7 +1,7 @@
 use crate::format::bytes::{format_message_with, write_cstr};
 use crate::server::server_create_socket;
 use crate::shared::abi::uint64_t;
-use crate::shared::errno::E2BIG;
+use crate::shared::errno::{ErrorText, E2BIG};
 use crate::tmux::socket_path;
 use ::systemd::daemon::{self, Listening, SocketType};
 use ::systemd::id128::Id128;
@@ -17,10 +17,6 @@ pub const EPFNOSUPPORT: ::core::ffi::c_int = 96 as ::core::ffi::c_int;
 pub const SD_LISTEN_FDS_START: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 
 const SYSTEMD_TIMEOUT: Duration = Duration::from_secs(1);
-
-fn errno_of(error: &io::Error) -> errno::Errno {
-    errno::Errno(error.raw_os_error().unwrap_or(libc::EIO))
-}
 
 macro_rules! systemd_error {
     ($($arg:tt)*) => {
@@ -63,7 +59,7 @@ pub unsafe fn systemd_create_socket(
     };
     Err(systemd_error!(
         "systemd socket error ({})",
-        errno::Errno(error)
+        ErrorText(&io::Error::from_raw_os_error(error))
     ))
 }
 
@@ -96,7 +92,7 @@ pub fn systemd_move_to_new_cgroup() -> Result<(), CString> {
     let done = Cell::new(false);
 
     let bus = Bus::default_user()
-        .map_err(|e| systemd_error!("failed to connect to session bus: {}", errno_of(&e)))?;
+        .map_err(|e| systemd_error!("failed to connect to session bus: {}", ErrorText(&e)))?;
     bus.with_match(
         JOB_REMOVED_MATCH,
         |m| {
@@ -117,16 +113,16 @@ pub fn systemd_move_to_new_cgroup() -> Result<(), CString> {
                     c"org.freedesktop.systemd1.Manager",
                     c"StartTransientUnit",
                 )
-                .map_err(|e| systemd_error!("failed to create bus message: {}", errno_of(&e)))?;
+                .map_err(|e| systemd_error!("failed to create bus message: {}", ErrorText(&e)))?;
             let uuid = Id128::from_random()
-                .map_err(|e| systemd_error!("failed to generate uuid: {}", errno_of(&e)))?;
+                .map_err(|e| systemd_error!("failed to generate uuid: {}", ErrorText(&e)))?;
             let append_error =
-                |e: io::Error| systemd_error!("failed to append to bus message: {}", errno_of(&e));
+                |e: io::Error| systemd_error!("failed to append to bus message: {}", ErrorText(&e));
             m.append_str(&scope_name(uuid.as_bytes()))
                 .map_err(append_error)?;
             m.append_str(c"fail").map_err(append_error)?;
             m.open_container(b'a', c"(sv)").map_err(|e| {
-                systemd_error!("failed to start properties array: {}", errno_of(&e))
+                systemd_error!("failed to start properties array: {}", ErrorText(&e))
             })?;
 
             let pid = unsafe { getpid() };
@@ -144,7 +140,7 @@ pub fn systemd_move_to_new_cgroup() -> Result<(), CString> {
             let units = unit.as_deref().map(|unit| [unit]);
 
             let property_error =
-                |e: io::Error| systemd_error!("failed to append to properties: {}", errno_of(&e));
+                |e: io::Error| systemd_error!("failed to append to properties: {}", ErrorText(&e));
             m.append_property(c"Description", Variant::Str(&description))
                 .map_err(property_error)?;
             m.append_property(c"SendSIGHUP", Variant::Bool(true))
@@ -162,7 +158,7 @@ pub fn systemd_move_to_new_cgroup() -> Result<(), CString> {
                     .map_err(property_error)?;
             }
             m.close_container()
-                .map_err(|e| systemd_error!("failed to end properties array: {}", errno_of(&e)))?;
+                .map_err(|e| systemd_error!("failed to end properties array: {}", ErrorText(&e)))?;
             m.open_container(b'a', c"(sa(sv))")
                 .and_then(|()| m.close_container())
                 .map_err(append_error)?;
@@ -172,16 +168,16 @@ pub fn systemd_move_to_new_cgroup() -> Result<(), CString> {
                     out.write_all(b"StartTransientUnit call failed: ")?;
                     write_cstr(out, message.as_c_str())
                 }),
-                None => systemd_error!("StartTransientUnit call failed: {}", errno_of(&e.error)),
+                None => systemd_error!("StartTransientUnit call failed: {}", ErrorText(&e.error)),
             })?;
             let job_path = reply
                 .read_object_path()
-                .map_err(|e| systemd_error!("failed to parse method reply: {}", errno_of(&e)))?
+                .map_err(|e| systemd_error!("failed to parse method reply: {}", ErrorText(&e)))?
                 .to_owned();
             job.set(job_path).expect("job path is set once");
 
             let wait_error = |e: io::Error| {
-                systemd_error!("failed waiting for cgroup allocation: {}", errno_of(&e))
+                systemd_error!("failed waiting for cgroup allocation: {}", ErrorText(&e))
             };
             while !done.get() {
                 if bus.process().map_err(wait_error)? {
@@ -196,5 +192,5 @@ pub fn systemd_move_to_new_cgroup() -> Result<(), CString> {
             Ok(())
         },
     )
-    .map_err(|e| systemd_error!("failed to create match signal: {}", errno_of(&e)))?
+    .map_err(|e| systemd_error!("failed to create match signal: {}", ErrorText(&e)))?
 }

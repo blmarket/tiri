@@ -21,16 +21,6 @@ pub(crate) fn io(fd: BorrowedFd<'_>) -> std::io::Result<tiri_rt::mio::Io> {
     let lease = fd.try_clone_to_owned()?;
     tiri_rt::mio::Io::new(lease)
 }
-/// Translate an owned I/O error at the remaining C-style callback boundary.
-pub(crate) fn io_status(result: std::io::Result<()>) -> i32 {
-    match result {
-        Ok(()) => 0,
-        Err(error) => {
-            errno::set_errno(errno::Errno(error.raw_os_error().unwrap_or(libc::EIO)));
-            -1
-        }
-    }
-}
 /// Free compatibility streams before dropping the runtime that drives them.
 /// Taking ownership keeps shutdown outside an active runtime poll.
 pub fn shutdown_runtime(runtime: tiri_rt::mio::Runtime) {

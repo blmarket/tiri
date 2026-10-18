@@ -81,7 +81,9 @@ pub(super) unsafe fn should_draw_rows(
         let bytes = (height.wrapping_add(7) >> 3) as usize;
         let mut dirty = Vec::<bitstr_t>::new();
         if dirty.try_reserve_exact(bytes).is_err() {
-            fatal(|out| out.write_all(b"bit_alloc failed"));
+            fatal(&std::io::Error::from_raw_os_error(libc::ENOMEM), |out| {
+                out.write_all(b"bit_alloc failed")
+            });
         }
         dirty.resize(bytes, 0);
         state.sync_dirty = Some(dirty.into_boxed_slice());

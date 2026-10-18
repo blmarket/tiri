@@ -7,7 +7,6 @@ license = "GPL-3.0-only"
 description = "Single-threaded local-waker async runtime for tiri"
 
 [dependencies]
-errno = "0.3"
 libc = "0.2"
 mio = { version = "1.2", features = ["os-ext", "os-poll"] }
 signal-hook = { version = "0.4", default-features = false }

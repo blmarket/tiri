@@ -27,6 +27,7 @@ use crate::shared::client::{
     CLIENT_NOSTARTSERVER, CLIENT_UTF8,
 };
 use crate::shared::environment::{environ, environ_entry};
+use crate::shared::errno::ErrorText;
 use crate::shared::key::{MODEKEY_EMACS, MODEKEY_VI};
 use crate::shared::posix_io::stat;
 use crate::shared::posix_io::{S_IRWXU, X_OK};
@@ -159,7 +160,7 @@ unsafe fn expand_paths(s: &CStr, no_realpath: bool) -> Vec<CString> {
                         "{}: realpath(\"{}\") failed: {}",
                         "expand_paths",
                         log_cstr(&expanded),
-                        errno::errno()
+                        ErrorText(&std::io::Error::last_os_error())
                     ));
                     None
                 } else {
@@ -213,10 +214,11 @@ unsafe fn make_label(label: Option<&CStr>) -> Result<CString, CString> {
     base_bytes.extend_from_slice(b"/tmux-");
     base_bytes.extend_from_slice((uid as ::core::ffi::c_long).to_string().as_bytes());
     let base = CString::new(base_bytes).expect("socket base contains no NUL");
-    if mkdir(base.as_ptr(), S_IRWXU as __mode_t) != 0 as ::core::ffi::c_int
-        && errno::errno().0 != EEXIST
-    {
-        let error = errno::errno().to_string();
+    let mkdir_error = (mkdir(base.as_ptr(), S_IRWXU as __mode_t) != 0 as ::core::ffi::c_int)
+        .then(std::io::Error::last_os_error)
+        .filter(|error| error.raw_os_error() != Some(EEXIST));
+    if let Some(error) = &mkdir_error {
+        let error = ErrorText(error).to_string();
         Err(make_label_cause(&[
             b"couldn't create directory ",
             base.to_bytes(),
@@ -225,7 +227,7 @@ unsafe fn make_label(label: Option<&CStr>) -> Result<CString, CString> {
             b")",
         ]))
     } else if lstat(base.as_ptr(), &raw mut sb) != 0 as ::core::ffi::c_int {
-        let error = errno::errno().to_string();
+        let error = ErrorText(&std::io::Error::last_os_error()).to_string();
         Err(make_label_cause(&[
             b"couldn't read directory ",
             base.to_bytes(),

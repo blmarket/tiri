@@ -5,6 +5,7 @@ use crate::options::OptionsScope;
 use crate::options::{options_get_number, options_get_string};
 use crate::prompt::prompt_type_string;
 use crate::shared::abi::*;
+use crate::shared::errno::ErrorText;
 use crate::shared::prompt::PROMPT_NTYPES;
 use crate::shared::prompt::*;
 use crate::shared::stdio::FILE;
@@ -83,7 +84,7 @@ pub unsafe fn prompt_load_history() {
         log_debug(format_args!(
             "{}: {}",
             log_bytes(history_file.as_bytes()),
-            errno::errno()
+            ErrorText(&std::io::Error::last_os_error())
         ));
         return;
     }
@@ -110,7 +111,7 @@ pub unsafe fn prompt_save_history() {
         log_debug(format_args!(
             "{}: {}",
             log_bytes(history_file.as_bytes()),
-            errno::errno()
+            ErrorText(&std::io::Error::last_os_error())
         ));
         return;
     }

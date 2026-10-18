@@ -189,15 +189,11 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
                     }
                     Completion::Read(result) => {
                         (*stream).enabled &= !2;
-                        let flags = if let Err(error) = result {
-                            errno::set_errno(errno::Errno(
-                                error.raw_os_error().unwrap_or(libc::EIO),
-                            ));
-                            1 | 0x20
-                        } else {
-                            1 | 0x10
+                        let event = match result {
+                            Err(error) => (1 | 0x20, Some(error)),
+                            Ok(_) => (1 | 0x10, None),
                         };
-                        (None, Some(flags))
+                        (None, Some(event))
                     }
                     Completion::Write(Ok(n)) if n > 0 || output.is_empty() => {
                         (*stream).output.advance(n);
@@ -210,23 +206,21 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
                     }
                     Completion::Write(result) => {
                         (*stream).enabled &= !4;
-                        errno::set_errno(errno::Errno(
-                            result
-                                .err()
-                                .and_then(|error| error.raw_os_error())
-                                .unwrap_or(libc::EIO),
-                        ));
-                        (None, Some(2 | 0x20))
+                        let error = result
+                            .err()
+                            .unwrap_or_else(|| std::io::Error::from_raw_os_error(libc::EIO));
+                        (None, Some((2 | 0x20, Some(error))))
                     }
                 };
                 if let Some(cb) = data {
                     (*cb.borrow_mut())(std::ptr::NonNull::new(stream).expect("live stream"));
-                } else if let Some(flags) = error {
+                } else if let Some((flags, error)) = error {
                     let cb = (*stream).errorcb.clone();
                     if let Some(cb) = cb {
                         (*cb.borrow_mut())(
                             std::ptr::NonNull::new(stream).expect("live stream"),
                             flags,
+                            error.as_ref(),
                         );
                     }
                 }
@@ -242,17 +236,11 @@ pub unsafe fn bufferevent_new(
     readcb: bufferevent_data_cb,
     writecb: bufferevent_data_cb,
     errorcb: bufferevent_event_cb,
-) -> *mut bufferevent {
+) -> std::io::Result<*mut bufferevent> {
     let was_nonblocking = if fd == -1 {
         true
     } else {
-        match tiri_rt::unix::set_nonblocking(std::os::fd::BorrowedFd::borrow_raw(fd), true) {
-            Ok(previous) => previous,
-            Err(error) => {
-                super::io_status(Err(error));
-                return std::ptr::null_mut();
-            }
-        }
+        tiri_rt::unix::set_nonblocking(std::os::fd::BorrowedFd::borrow_raw(fd), true)?
     };
     let mut owner = Box::new(bufferevent {
         readcb,
@@ -281,16 +269,14 @@ pub unsafe fn bufferevent_new(
     });
     if let Err(error) = start(&s) {
         bufferevent_free(stream);
-        errno::set_errno(errno::Errno(
-            if error.kind() == std::io::ErrorKind::Unsupported {
-                libc::EOPNOTSUPP
-            } else {
-                error.raw_os_error().unwrap_or(libc::EIO)
-            },
-        ));
-        return std::ptr::null_mut();
+        // File peers receive the raw errno; report an unsupported
+        // descriptor as EOPNOTSUPP.
+        if error.kind() == std::io::ErrorKind::Unsupported {
+            return Err(std::io::Error::from_raw_os_error(libc::EOPNOTSUPP));
+        }
+        return Err(error);
     }
-    stream
+    Ok(stream)
 }
 pub unsafe fn bufferevent_free(stream: *mut bufferevent) {
     if stream.is_null() {
@@ -371,7 +357,7 @@ mod tests {
     #[test]
     fn stream_buffer_access_wakes_and_explicit_free_invalidates_handles() {
         unsafe {
-            let stream = bufferevent_new(-1, None, None, None);
+            let stream = bufferevent_new(-1, None, None, None).unwrap();
             let mut handle = StreamHandle::from_ptr(stream);
             let observer = handle.clone();
             let state = state(&*stream);
@@ -396,8 +382,8 @@ mod tests {
     #[test]
     fn runtime_clear_frees_streams_without_tasks() {
         unsafe {
-            let first = StreamHandle::from_ptr(bufferevent_new(-1, None, None, None));
-            let second = StreamHandle::from_ptr(bufferevent_new(-1, None, None, None));
+            let first = StreamHandle::from_ptr(bufferevent_new(-1, None, None, None).unwrap());
+            let second = StreamHandle::from_ptr(bufferevent_new(-1, None, None, None).unwrap());
             assert!(first.is_alive());
             assert!(second.is_alive());
             clear();

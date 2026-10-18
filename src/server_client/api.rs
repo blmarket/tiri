@@ -619,10 +619,8 @@ impl Client for ClientRef {
             .expect("control client state")
             .subs = Some(subs);
         let (read, write, error) = crate::control::control_stream_callbacks(self);
-        let input = bufferevent_new(fd, read, write.clone(), error.clone());
-        if input.is_null() {
-            crate::log::fatalx(|out| out.write_all(b"out of memory"));
-        }
+        let input = bufferevent_new(fd, read, write.clone(), error.clone())
+            .unwrap_or_else(|_| crate::log::fatalx(|out| out.write_all(b"out of memory")));
         let input = StreamHandle::from_ptr(input);
         self.borrow_control_mut()
             .expect("control client state")
@@ -630,10 +628,8 @@ impl Client for ClientRef {
         let output = if control_control {
             input
         } else {
-            let output = bufferevent_new(out_fd, None, write, error);
-            if output.is_null() {
-                crate::log::fatalx(|out| out.write_all(b"out of memory"));
-            }
+            let output = bufferevent_new(out_fd, None, write, error)
+                .unwrap_or_else(|_| crate::log::fatalx(|out| out.write_all(b"out of memory")));
             StreamHandle::from_ptr(output)
         };
         self.borrow_control_mut()
@@ -823,15 +819,10 @@ impl Client for ClientRef {
         *depth
     }
     unsafe fn capture_termios(&self) -> termios {
-        let mut result: termios = ::core::mem::zeroed();
-        if crate::shared::terminal::read_attributes(
+        crate::shared::terminal::read_attributes(
             (*self.get()).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
-            &mut result,
-        ) != 0
-        {
-            fatal(|out| out.write_all(b"tcgetattr failed"));
-        }
-        result
+        )
+        .unwrap_or_else(|error| fatal(&error, |out| out.write_all(b"tcgetattr failed")))
     }
     unsafe fn name(&self) -> Option<CString> {
         (*self.get()).name.clone()
@@ -1257,17 +1248,8 @@ impl Client for ClientRef {
     }
 
     unsafe fn query_terminal_size(&self) -> Option<crate::shared::posix_terminal::winsize> {
-        let mut size = crate::shared::posix_terminal::winsize {
-            ws_row: 0,
-            ws_col: 0,
-            ws_xpixel: 0,
-            ws_ypixel: 0,
-        };
-        (crate::shared::terminal::read_size(
-            (*self.get()).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
-            &mut size,
-        ) != -1)
-            .then_some(size)
+        crate::shared::terminal::read_size((*self.get()).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd))
+            .ok()
     }
 
     unsafe fn refresh_terminal_size(&self) {

@@ -274,7 +274,7 @@ pub unsafe fn job_run(
                     } else {
                         nullfd = match tiri_rt::unix::open(_PATH_DEVNULL, O_RDWR, 0) {
                             Ok(fd) => fd.into_raw_fd(),
-                            Err(error) => crate::reactor::io_status(Err(error)),
+                            Err(_) => -1,
                         };
                         if nullfd == -(1 as ::core::ffi::c_int) {
                             _exit(1 as ::core::ffi::c_int);
@@ -364,13 +364,11 @@ pub unsafe fn job_run(
                     fd,
                     bufferevent_data_callback(move |_| job_read_callback(&read_job)),
                     bufferevent_data_callback(move |_| unsafe { job_write_callback(&write_job) }),
-                    bufferevent_event_callback(move |_, _| unsafe {
+                    bufferevent_event_callback(move |_, _, _| unsafe {
                         job_error_callback(&error_job)
                     }),
-                );
-                if stream.is_null() {
-                    fatalx(|out| out.write_all(b"out of memory"));
-                }
+                )
+                .unwrap_or_else(|_| fatalx(|out| out.write_all(b"out of memory")));
                 job.try_borrow_mut().expect("registered job").event =
                     crate::reactor::StreamHandle::from_ptr(stream);
                 bufferevent_enable(stream, (EV_READ | EV_WRITE) as ::core::ffi::c_short);
@@ -450,8 +448,10 @@ pub unsafe fn job_resize(handle: &Weak<job>, sx: u_int, sy: u_int) {
         ws_xpixel: 0,
         ws_ypixel: 0,
     };
-    if crate::shared::terminal::set_size(job.fd.as_ref().expect("job PTY").as_raw_fd(), &ws) == -1 {
-        fatal(|out| out.write_all(b"ioctl failed"));
+    if let Err(error) =
+        crate::shared::terminal::set_size(job.fd.as_ref().expect("job PTY").as_raw_fd(), &ws)
+    {
+        fatal(&error, |out| out.write_all(b"ioctl failed"));
     }
 }
 
@@ -646,7 +646,7 @@ mod job_stream_tests {
             let second_observer = second.clone();
             let (socket, remote) = UnixStream::pair().unwrap();
             let fd = socket.as_raw_fd();
-            let stream = bufferevent_new(fd, None, None, None);
+            let stream = bufferevent_new(fd, None, None, None).unwrap();
             let first = jobs::insert(RefBox::new(job {
                 fd: Some(socket.into()),
                 event: crate::reactor::StreamHandle::from_ptr(stream),
@@ -698,7 +698,7 @@ mod job_stream_tests {
             assert!(update.try_borrow_mut().is_err());
 
             for eof_first in [false, true] {
-                let stream = bufferevent_new(-1, None, None, None);
+                let stream = bufferevent_new(-1, None, None, None).unwrap();
                 crate::reactor::evbuffer_add(&mut (*stream).input, b"remaining");
                 let handle = jobs::insert(RefBox::new(job {
                     pid: 1234567,
@@ -736,7 +736,7 @@ mod job_stream_tests {
     #[test]
     fn completion_reads_a_live_stream_and_skips_one_after_free() {
         unsafe {
-            let stream = bufferevent_new(-1, None, None, None);
+            let stream = bufferevent_new(-1, None, None, None).unwrap();
             let owner = RefBox::new(job {
                 event: crate::reactor::StreamHandle::from_ptr(stream),
                 ..idle_job()

@@ -22,7 +22,7 @@ use crate::shared::command::{
     CMD_FIND_CANFAIL, CMD_PARSE_PARSEONLY, CMD_PARSE_QUIET, CMD_PARSE_VERBOSE,
     CMD_SOURCE_FILE_DEPTH_LIMIT,
 };
-use crate::shared::errno::{EINVAL, ENOENT, ENOMEM};
+use crate::shared::errno::{ErrorText, EINVAL, ENOENT, ENOMEM};
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
 
@@ -184,7 +184,11 @@ unsafe fn cmd_source_file_done(
     let target = &mut target_state;
     if error != 0 {
         cmdq_error(item_owner, |out| {
-            write!(out, "{}", errno::Errno(error))?;
+            write!(
+                out,
+                "{}",
+                ErrorText(&std::io::Error::from_raw_os_error(error))
+            )?;
             out.write_all(b": ")?;
             write_cstr(out, path)
         });
@@ -330,7 +334,11 @@ unsafe fn cmd_source_file_exec(
                         EINVAL
                     };
                     cmdq_error(item_handle, |out| {
-                        write!(out, "{}", errno::Errno(error))?;
+                        write!(
+                            out,
+                            "{}",
+                            ErrorText(&std::io::Error::from_raw_os_error(error))
+                        )?;
                         out.write_all(b": ")?;
                         write_cstr(out, path)
                     });

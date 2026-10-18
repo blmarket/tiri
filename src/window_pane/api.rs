@@ -1571,7 +1571,7 @@ mod tests {
         let pane = window_pane::new();
         (*pane.get()).fd = None;
         (*pane.get()).pipe_fd = None;
-        let stream = bufferevent_new(-1, None, None, None);
+        let stream = bufferevent_new(-1, None, None, None).unwrap();
         (*pane.get()).event = StreamHandle::from_ptr(stream);
         evbuffer_add(&mut (*stream).input, bytes);
         pane

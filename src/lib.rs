@@ -23,7 +23,6 @@ pub mod ffi;
 pub mod compat {
     pub mod fdforkpty;
     pub mod getopt_long;
-    pub mod getpeereid;
     pub mod getprogname;
     pub mod glob;
     pub mod imsg;

@@ -1,4 +1,3 @@
-use crate::compat::getpeereid::getpeereid;
 use crate::compat::imsg::imsg;
 use crate::compat::imsg::PROTOCOL_VERSION;
 use crate::compat::imsg::*;
@@ -394,10 +393,11 @@ pub unsafe fn proc_add_peer(
     (*peer).dispatchcb = Some(dispatchcb);
     let fd = socket.as_raw_fd();
     imsgbuf_init(&mut (*peer).ibuf, socket);
-    if getpeereid(fd, &raw mut (*peer).uid, &raw mut (*peer).gid) != 0 as ::core::ffi::c_int {
-        (*peer).uid = -(1 as ::core::ffi::c_int) as uid_t;
-        (*peer).gid = -(1 as ::core::ffi::c_int) as gid_t;
-    }
+    ((*peer).uid, (*peer).gid) =
+        tiri_rt::unix::peer_credentials(std::os::fd::BorrowedFd::borrow_raw(fd)).unwrap_or((
+            -(1 as ::core::ffi::c_int) as uid_t,
+            -(1 as ::core::ffi::c_int) as gid_t,
+        ));
     log_debug(format_args!("add peer {}: {}", log_pointer(peer), { fd }));
     (*tp).peers.push(owned_peer);
     proc_update_io(peer);
@@ -428,16 +428,20 @@ pub unsafe fn proc_fork_and_daemon() -> (pid_t, OwnedFd) {
         "daemonize before initializing the runtime"
     );
     let (parent, child) = tiri_rt::unix::socket_pair()
-        .unwrap_or_else(|_| fatal(|out| out.write_all(b"socketpair failed")));
+        .unwrap_or_else(|error| fatal(&error, |out| out.write_all(b"socketpair failed")));
     let pid = fork() as pid_t;
     match pid {
         -1 => {
-            fatal(|out| out.write_all(b"fork failed"));
+            fatal(&std::io::Error::last_os_error(), |out| {
+                out.write_all(b"fork failed")
+            });
         }
         0 => {
             drop(parent);
             if daemon(1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int) != 0 as ::core::ffi::c_int {
-                fatal(|out| out.write_all(b"daemon failed"));
+                fatal(&std::io::Error::last_os_error(), |out| {
+                    out.write_all(b"daemon failed")
+                });
             }
             (0, child)
         }
@@ -479,8 +483,7 @@ mod ownership_tests {
             unsafe {
                 let fd = socket.as_raw_fd();
                 let flags = libc::fcntl(fd, libc::F_GETFL);
-                let stream = reactor::bufferevent_new(fd, None, None, None);
-                assert!(!stream.is_null());
+                let stream = reactor::bufferevent_new(fd, None, None, None).unwrap();
                 let observer = StreamHandle::from_ptr(stream);
                 let task = handle
                     .spawn(async move {

@@ -89,7 +89,9 @@ pub unsafe fn screen_reset_tabs(s: &mut screen) {
     let bytes = (s.grid().sx as usize).div_ceil(8);
     s.tabs.clear();
     if s.tabs.try_reserve_exact(bytes).is_err() {
-        fatal(|out| out.write_all(b"bit_alloc failed"));
+        fatal(&std::io::Error::from_raw_os_error(libc::ENOMEM), |out| {
+            out.write_all(b"bit_alloc failed")
+        });
     }
     s.tabs.resize(bytes, 0);
     let mut i: u_int = 8;

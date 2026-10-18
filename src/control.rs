@@ -1090,7 +1090,7 @@ pub(crate) fn control_stream_callbacks(
                 unsafe { control_write_callback(&owner) };
             }
         }),
-        bufferevent_event_callback(move |_, _| {
+        bufferevent_event_callback(move |_, _, _| {
             if let Some(owner) = error.upgrade() {
                 unsafe { control_error_callback(&owner) };
             }

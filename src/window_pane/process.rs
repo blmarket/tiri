@@ -17,6 +17,7 @@ use crate::shared::abi::*;
 use crate::shared::client::ClientRef;
 use crate::shared::command::*;
 use crate::shared::command::{cmd, cmd_find_state, cmdq_item};
+use crate::shared::errno::ErrorText;
 use crate::shared::event::*;
 use crate::shared::event::{EV_READ, EV_WRITE};
 use crate::shared::format::format_tree;
@@ -117,7 +118,7 @@ pub(super) unsafe fn pipe_pane(
             );
             cmdq_error(item_handle, |out| {
                 out.write_all(b"fork error: ")?;
-                write!(out, "{}", errno::errno())
+                write!(out, "{}", ErrorText(&std::io::Error::last_os_error()))
             });
             CmdOutcome::Error
         }
@@ -135,7 +136,7 @@ pub(super) unsafe fn pipe_pane(
             }
             null_fd = match tiri_rt::unix::open(_PATH_DEVNULL, O_WRONLY, 0) {
                 Ok(fd) => fd.into_raw_fd(),
-                Err(error) => crate::reactor::io_status(Err(error)),
+                Err(_) => -1,
             };
             if out != 0 {
                 if tiri_rt::unix::redirect(
@@ -221,15 +222,13 @@ pub(super) unsafe fn pipe_pane(
                         cmd_pipe_pane_write_callback(&owner);
                     }
                 }),
-                bufferevent_event_callback(move |_, _| unsafe {
+                bufferevent_event_callback(move |_, _, _| unsafe {
                     if let Some(owner) = error_observer.upgrade() {
                         cmd_pipe_pane_error_callback(&owner);
                     }
                 }),
-            );
-            if stream.is_null() {
-                fatalx(|out| out.write_all(b"out of memory"));
-            }
+            )
+            .unwrap_or_else(|_| fatalx(|out| out.write_all(b"out of memory")));
             (*wp).pipe_event = crate::reactor::StreamHandle::from_ptr(stream);
             if out != 0 {
                 let _ = (*wp).pipe_event.with_ptr(|event| unsafe {
@@ -311,7 +310,7 @@ mod pipe_stream_tests {
             let (socket, _receiver) = UnixStream::pair().unwrap();
             let fd = socket.as_raw_fd();
             (*pane.get()).pipe_fd = Some(socket.into());
-            let stream = bufferevent_new(fd, None, None, None);
+            let stream = bufferevent_new(fd, None, None, None).unwrap();
             (*pane.get()).pipe_event = crate::reactor::StreamHandle::from_ptr(stream);
             let observer = (*pane.get()).pipe_event.clone();
 
@@ -334,9 +333,9 @@ mod pipe_stream_tests {
             let wp = pane_owner.get();
             (*wp).fd = None;
             (*wp).pipe_fd = None;
-            let main = bufferevent_new(-1, None, None, None);
+            let main = bufferevent_new(-1, None, None, None).unwrap();
             (*wp).event = crate::reactor::StreamHandle::from_ptr(main);
-            let pipe = bufferevent_new(-1, None, None, None);
+            let pipe = bufferevent_new(-1, None, None, None).unwrap();
             (*wp).pipe_event = crate::reactor::StreamHandle::from_ptr(pipe);
             let stale = (*wp).pipe_event.clone();
             let bytes = b"pipe output";

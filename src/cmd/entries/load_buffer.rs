@@ -6,6 +6,7 @@ use crate::format::bytes::write_cstr;
 use crate::format::format_single_from_target_cstring;
 use crate::paste::paste_set_owned;
 use crate::reactor::{evbuffer_get_length, evbuffer_pullup};
+use crate::shared::errno::ErrorText;
 
 use crate::server_client::Client as _;
 use crate::shared::abi::*;
@@ -64,7 +65,11 @@ unsafe fn cmd_load_buffer_done(
     let mut cause: Option<CString> = None;
     if error != 0 as ::core::ffi::c_int {
         cmdq_error(item_handle, |out| {
-            write!(out, "{}", errno::Errno(error))?;
+            write!(
+                out,
+                "{}",
+                ErrorText(&std::io::Error::from_raw_os_error(error))
+            )?;
             out.write_all(b": ")?;
             write_cstr(out, path)
         });

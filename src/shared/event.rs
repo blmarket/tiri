@@ -21,9 +21,19 @@ pub struct bufferevent {
     pub enabled: ::core::ffi::c_short,
 }
 
+/// Stream event callback; the error is present exactly when the flags carry
+/// the error bit.
 pub type bufferevent_event_cb = Option<
     std::rc::Rc<
-        std::cell::RefCell<Box<dyn FnMut(std::ptr::NonNull<bufferevent>, ::core::ffi::c_short)>>,
+        std::cell::RefCell<
+            Box<
+                dyn FnMut(
+                    std::ptr::NonNull<bufferevent>,
+                    ::core::ffi::c_short,
+                    Option<&std::io::Error>,
+                ),
+            >,
+        >,
     >,
 >;
 pub type bufferevent_data_cb =
@@ -38,7 +48,8 @@ pub fn bufferevent_data_callback(
 }
 
 pub fn bufferevent_event_callback(
-    callback: impl FnMut(std::ptr::NonNull<bufferevent>, ::core::ffi::c_short) + 'static,
+    callback: impl FnMut(std::ptr::NonNull<bufferevent>, ::core::ffi::c_short, Option<&std::io::Error>)
+        + 'static,
 ) -> bufferevent_event_cb {
     Some(std::rc::Rc::new(std::cell::RefCell::new(Box::new(
         callback,

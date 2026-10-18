@@ -646,7 +646,6 @@ dependencies = [
 name = "tiri"
 version = "0.0.0"
 dependencies = [
- "errno",
  "futures-core",
  "libc",
  "quote",
@@ -696,7 +695,6 @@ version = "0.4.1"
 name = "tiri-rt"
 version = "0.1.0"
 dependencies = [
- "errno",
  "libc",
  "mio",
  "signal-hook",

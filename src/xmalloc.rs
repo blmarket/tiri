@@ -7,7 +7,9 @@ pub unsafe fn xcalloc(size: size_t) -> *mut ::core::ffi::c_void {
     }
     let ptr = calloc(1, size);
     if ptr.is_null() {
-        fatal(|out| write!(out, "xcalloc: allocating {} bytes", { size }));
+        fatal(&std::io::Error::last_os_error(), |out| {
+            write!(out, "xcalloc: allocating {} bytes", { size })
+        });
     }
     ptr
 }

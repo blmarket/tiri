@@ -188,19 +188,17 @@ pub unsafe fn spawn_editor_finish(wp_owner: &std::rc::Rc<std::cell::UnsafeCell<w
 ///
 /// `fd_owner` owns the live descriptor returned by `mkstemp`. On `fdopen`
 /// failure, `FILE` never owns the descriptor and `OwnedFd::drop` closes it
-/// exactly once. On success, `into_raw_fd` relinquishes the Rust owner before
-/// the caller can `fclose` the stream, making `FILE` the sole closer.
-pub(crate) unsafe fn spawn_editor_fdopen(fd_owner: OwnedFd) -> *mut FILE {
+/// exactly once, after the `fdopen` error is captured. On success,
+/// `into_raw_fd` relinquishes the Rust owner before the caller can `fclose`
+/// the stream, making `FILE` the sole closer.
+pub(crate) unsafe fn spawn_editor_fdopen(fd_owner: OwnedFd) -> std::io::Result<*mut FILE> {
     let mode: &CStr = c"w";
     let file = fdopen(fd_owner.as_raw_fd(), mode.as_ptr());
     if file.is_null() {
-        let fdopen_errno = errno::errno();
-        drop(fd_owner);
-        errno::set_errno(fdopen_errno);
-        return ::core::ptr::null_mut::<FILE>();
+        return Err(std::io::Error::last_os_error());
     }
     let _fd_owned_by_file = fd_owner.into_raw_fd();
-    file
+    Ok(file)
 }
 
 /// Write the existing bytes before editor pane creation can dispatch events.
@@ -236,7 +234,6 @@ pub(crate) unsafe fn spawn_editor(
         .cloned()
         .expect("editor window");
     let result = (|| {
-        let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
         let mut path: [u8; 19] = *b"/tmp/tmux.XXXXXXXX\0";
         let mut fd: ::core::ffi::c_int = 0;
         let editor = OptionsScope::GlobalServer.with_local(|oo| options_get_string(oo, c"editor"));
@@ -245,11 +242,10 @@ pub(crate) unsafe fn spawn_editor(
             return None;
         }
         let fd_owner = OwnedFd::from_raw_fd(fd);
-        f = spawn_editor_fdopen(fd_owner);
-        if f.is_null() {
+        let Ok(f) = spawn_editor_fdopen(fd_owner) else {
             unlink(path.as_ptr().cast());
             return None;
-        }
+        };
         let stream = CFile::from_raw(f).expect("fdopen returned a non-null stream");
         if !write(&stream) {
             drop(stream);

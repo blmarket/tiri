@@ -24,7 +24,7 @@ use crate::shared::command::*;
 use crate::shared::command::{cmd_find_state, cmdq_item};
 use crate::shared::command::{cmd_parse_input, cmd_parse_result};
 use crate::shared::command::{CMD_PARSE_PARSEONLY, CMD_PARSE_QUIET};
-use crate::shared::errno::ENOENT;
+use crate::shared::errno::{ErrorText, ENOENT};
 use crate::shared::key::key_event;
 use crate::shared::session::SessionRef;
 use crate::shared::stdio::FILE;
@@ -127,13 +127,14 @@ pub unsafe fn load_cfg(
     log_debug(format_args!("loading {}", log_cstr(path)));
     f = fopen(path.as_ptr(), c"rb".as_ptr());
     if f.is_null() {
-        if errno::errno().0 == ENOENT && flags & CMD_PARSE_QUIET != 0 {
+        let error = std::io::Error::last_os_error();
+        if error.raw_os_error() == Some(ENOENT) && flags & CMD_PARSE_QUIET != 0 {
             return 0 as ::core::ffi::c_int;
         }
         cfg_add_cause(|out| {
             write_cstr(out, nullable_cstr(path.as_ptr()))?;
             out.write_all(b": ")?;
-            write!(out, "{}", errno::errno())
+            write!(out, "{}", ErrorText(&error))
         });
         return -(1 as ::core::ffi::c_int);
     }

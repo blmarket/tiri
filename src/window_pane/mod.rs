@@ -376,10 +376,10 @@ unsafe fn window_pane_send_resize(wp: &window_pane, sx: u_int, sy: u_int) {
     drop(parent);
     ws.ws_xpixel = xpixel.wrapping_mul(ws.ws_col as u_int) as ::core::ffi::c_ushort;
     ws.ws_ypixel = ypixel.wrapping_mul(ws.ws_row as u_int) as ::core::ffi::c_ushort;
-    if crate::shared::terminal::set_size(wp.fd.as_ref().map_or(-1, AsRawFd::as_raw_fd), &ws)
-        == -(1 as ::core::ffi::c_int)
+    if let Err(error) =
+        crate::shared::terminal::set_size(wp.fd.as_ref().map_or(-1, AsRawFd::as_raw_fd), &ws)
     {
-        fatal(|out| out.write_all(b"ioctl failed"));
+        fatal(&error, |out| out.write_all(b"ioctl failed"));
     }
 }
 
@@ -672,15 +672,13 @@ unsafe fn window_pane_set_event(wp_owner: &Rc<std::cell::UnsafeCell<window_pane>
             }
         }),
         None,
-        bufferevent_event_callback(move |_, _| unsafe {
+        bufferevent_event_callback(move |_, _, _| unsafe {
             if let Some(owner) = error_observer.upgrade() {
                 window_pane_error_callback(&owner);
             }
         }),
-    );
-    if stream.is_null() {
-        fatalx(|out| out.write_all(b"out of memory"));
-    }
+    )
+    .unwrap_or_else(|_| fatalx(|out| out.write_all(b"out of memory")));
     (*wp).event = crate::reactor::StreamHandle::from_ptr(stream);
     (*wp).ictx = Some(input_init(
         Some(wp_owner),

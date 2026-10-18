@@ -6391,7 +6391,9 @@ unsafe fn window_copy_replace_searchmark(data: &mut window_copy_mode_data, sx: u
     };
     let marks = &mut data.searchmark;
     if marks.try_reserve_exact(len).is_err() {
-        fatal(|out| write!(out, "xcalloc: allocating {} bytes", { len as size_t }));
+        fatal(&std::io::Error::from_raw_os_error(libc::ENOMEM), |out| {
+            write!(out, "xcalloc: allocating {} bytes", { len as size_t })
+        });
     }
     marks.resize(len, 0);
 }

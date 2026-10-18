@@ -1,44 +1,30 @@
-use crate::shared::errno::{EINVAL, ERANGE};
-use crate::shared::limits::__LONG_LONG_MAX__;
-use libc::strtoll;
+use crate::ffi::numbers::integer_prefix;
 use std::ffi::CStr;
 
-pub const LLONG_MAX: ::core::ffi::c_longlong = __LONG_LONG_MAX__;
-pub const LLONG_MIN: ::core::ffi::c_longlong = -__LONG_LONG_MAX__ - 1 as ::core::ffi::c_longlong;
-pub const INVALID: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const TOOSMALL: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
-pub const TOOLARGE: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
-pub unsafe fn strtonum(
-    numstr: &CStr,
-    minval: ::core::ffi::c_longlong,
-    maxval: ::core::ffi::c_longlong,
-) -> Result<i64, &'static CStr> {
-    let mut ll: ::core::ffi::c_longlong = 0 as ::core::ffi::c_longlong;
-    let mut ep: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut error: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let saved_errno = errno::errno();
-    errno::set_errno(errno::Errno(0));
+/// OpenBSD strtonum(3): the whole string must be one decimal integer within
+/// `minval..=maxval`.
+pub fn strtonum(numstr: &CStr, minval: i64, maxval: i64) -> Result<i64, &'static CStr> {
     if minval > maxval {
-        error = INVALID;
-    } else {
-        ll = strtoll(numstr.as_ptr(), &raw mut ep, 10 as ::core::ffi::c_int);
-        if std::ptr::eq(numstr.as_ptr(), ep) || *ep as ::core::ffi::c_int != '\0' as i32 {
-            error = INVALID;
-        } else if ll == LLONG_MIN && errno::errno().0 == ERANGE || ll < minval {
-            error = TOOSMALL;
-        } else if ll == LLONG_MAX && errno::errno().0 == ERANGE || ll > maxval {
-            error = TOOLARGE;
-        }
+        return Err(c"invalid");
     }
-    errno::set_errno(match error {
-        INVALID => errno::Errno(EINVAL),
-        TOOSMALL | TOOLARGE => errno::Errno(ERANGE),
-        _ => saved_errno,
-    });
-    match error {
-        INVALID => Err(c"invalid"),
-        TOOSMALL => Err(c"too small"),
-        TOOLARGE => Err(c"too large"),
-        _ => Ok(ll),
+    let bytes = numstr.to_bytes();
+    let prefix = integer_prefix(bytes, 10);
+    if prefix.consumed == 0 || prefix.consumed != bytes.len() {
+        return Err(c"invalid");
+    }
+    let value = match (prefix.negative, prefix.magnitude) {
+        (true, Some(magnitude)) if magnitude <= i64::MIN.unsigned_abs() => {
+            0i64.wrapping_sub_unsigned(magnitude)
+        }
+        (true, _) => return Err(c"too small"),
+        (false, Some(magnitude)) if magnitude <= i64::MAX as u64 => magnitude as i64,
+        (false, _) => return Err(c"too large"),
+    };
+    if value < minval {
+        Err(c"too small")
+    } else if value > maxval {
+        Err(c"too large")
+    } else {
+        Ok(value)
     }
 }

@@ -59,7 +59,7 @@ use crate::shared::abi::__mode_t;
 use crate::shared::abi::*;
 use crate::shared::client::{CLIENT_DEFAULTSOCKET, CLIENT_IDENTIFIED, CLIENT_NOFORK};
 use crate::shared::command::cmd_find_state;
-use crate::shared::errno::{EAGAIN, ECHILD, EINTR, ENAMETOOLONG};
+use crate::shared::errno::{ErrorText, EAGAIN, ECHILD, EINTR, ENAMETOOLONG};
 use crate::shared::event::*;
 use crate::shared::pane::window_pane;
 use crate::shared::posix_io::{S_IRWXU, WAIT_ANY, WNOHANG};
@@ -159,7 +159,7 @@ unsafe fn server_create_listener(flags: uint64_t) -> Result<UnixListener, CStrin
         Ok(listener)
     })();
     result.map_err(|error: io::Error| {
-        let reason = errno::Errno(error.raw_os_error().unwrap_or(::libc::EINVAL)).to_string();
+        let reason = ErrorText(&error).to_string();
         let reason = reason.as_bytes();
         let mut message = Vec::with_capacity(17 + path.len() + reason.len());
         message.extend_from_slice(b"error creating ");
@@ -224,7 +224,9 @@ pub(crate) unsafe fn server_start(
         tty_create_log();
     }
     if 0 as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
-        fatal(|out| out.write_all(b"pledge failed"));
+        fatal(&std::io::Error::last_os_error(), |out| {
+            out.write_all(b"pledge failed")
+        });
     }
     input_key_build();
     utf8_update_width_cache();
@@ -420,7 +422,7 @@ unsafe fn server_accept(result: io::Result<OwnedFd>) {
                 server_add_accept(1);
                 return;
             }
-            _ => fatal(|out| write!(out, "accept failed: {error}")),
+            _ => fatal(&error, |out| out.write_all(b"accept failed")),
         },
     };
     if server_exit != 0 {
@@ -497,10 +499,11 @@ unsafe fn server_child_signal() {
         pid = waitpid(WAIT_ANY, &raw mut status, WNOHANG | WUNTRACED) as pid_t;
         match pid {
             -1 => {
-                if errno::errno().0 == ECHILD {
+                let error = io::Error::last_os_error();
+                if error.raw_os_error() == Some(ECHILD) {
                     return;
                 }
-                fatal(|out| out.write_all(b"waitpid failed"));
+                fatal(&error, |out| out.write_all(b"waitpid failed"));
             }
             0 => return,
             _ => {}

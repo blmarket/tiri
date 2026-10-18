@@ -31,11 +31,11 @@ extern "C" {
 pub(crate) fn encode_cell(
     codepoint: crate::shared::utf8::wchar_t,
     output: &mut [u8; 32],
-) -> Result<usize, i32> {
+) -> Result<usize, std::io::Error> {
     let size =
         unsafe { crate::compat::utf8proc::utf8proc_wctomb(output.as_mut_ptr().cast(), codepoint) };
     if size < 0 {
-        Err(errno::errno().0)
+        Err(std::io::Error::last_os_error())
     } else {
         Ok(size as usize)
     }

@@ -129,7 +129,9 @@ impl Signals {
                                 1,
                                 libc::MSG_DONTWAIT | libc::MSG_NOSIGNAL,
                             );
-                            if sent >= 0 || errno::errno().0 != libc::EINTR {
+                            if sent >= 0
+                                || io::Error::last_os_error().kind() != io::ErrorKind::Interrupted
+                            {
                                 break;
                             }
                         }
