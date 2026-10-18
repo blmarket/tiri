@@ -192,7 +192,7 @@ unsafe fn session_create(
     name: Option<&CStr>,
     cwd: &CStr,
     env: Box<environ>,
-    oo: Option<Box<options>>,
+    oo: Option<options>,
     tio: Option<&termios>,
 ) -> SessionRef {
     let owner = session::new();

@@ -963,7 +963,7 @@ fn option_inheritance_retains_owner_identity_without_component_pointers() {
     let functions =
         syn::parse_file(&std::fs::read_to_string(root.join("src/options/store.rs")).unwrap())
             .unwrap();
-    let constructors = ["options_create", "options_create_owned"];
+    let constructors = ["options_create"];
     let mut checked = 0;
     for item in &functions.items {
         let Item::Fn(function) = item else { continue };

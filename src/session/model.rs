@@ -29,7 +29,7 @@ pub struct session {
     pub(super) windows: winlinks,
     pub(super) statusat: ::core::ffi::c_int,
     pub(super) statuslines: u_int,
-    pub(super) options: std::cell::RefCell<Option<Box<options>>>,
+    pub(super) options: std::cell::RefCell<Option<options>>,
     pub(super) flags: ::core::ffi::c_int,
     pub(super) attached: u_int,
     pub(super) tio: Option<Box<termios>>,
@@ -40,7 +40,7 @@ impl session {
     /// Borrow the option table. Borrowing it again while held panics.
     pub(super) fn borrow_options_mut(&self) -> std::cell::RefMut<'_, options> {
         std::cell::RefMut::map(self.options.borrow_mut(), |table| {
-            table.as_deref_mut().expect("live session options")
+            table.as_mut().expect("live session options")
         })
     }
     /// Observe the current session-index winlink.

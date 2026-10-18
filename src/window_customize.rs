@@ -879,7 +879,7 @@ unsafe fn window_customize_option_is_changed(
     }
     if definition.flags & OPTIONS_TABLE_IS_ARRAY != 0 {
         let mut defaults_owner = options_create(None);
-        let defaults = options_default(&mut *defaults_owner, definition);
+        let defaults = options_default(&mut defaults_owner, definition);
         let present = key.is_none_or(|key| {
             option
                 .value

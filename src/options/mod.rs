@@ -17,10 +17,10 @@ pub use scope::OptionsScope;
 pub use select::{options_scope_from_flags, options_scope_from_name};
 pub(crate) use store::options_default_to_cstring;
 pub use store::{
-    options_create, options_create_owned, options_default, options_empty, options_get_command,
-    options_get_fire_count, options_get_fire_time, options_get_monitor_data, options_get_number,
-    options_get_string, options_get_string_optional, options_hook_fired, options_is_array,
-    options_is_string, options_iter, options_local_entry, options_match_owned, options_parse_owned,
+    options_create, options_default, options_empty, options_get_command, options_get_fire_count,
+    options_get_fire_time, options_get_monitor_data, options_get_number, options_get_string,
+    options_get_string_optional, options_hook_fired, options_is_array, options_is_string,
+    options_iter, options_local_entry, options_match_owned, options_parse_owned,
     options_read_entry, options_search, options_set_number, options_set_string,
     options_table_entry, options_to_cstring, OptionMatchFailure, OwnedOptionName,
 };

@@ -111,7 +111,7 @@ unsafe fn cmd_new_session_exec(
     let mut groupwith: Option<SessionRef> = None;
     let mut groupwith_owner = None;
     let mut env: Option<Box<environ>> = None;
-    let mut oo: Option<Box<options>> = None;
+    let mut oo: Option<options> = None;
     let mut tio: termios = unsafe { ::core::mem::zeroed() };
     let mut tiop: *mut termios = ::core::ptr::null_mut::<termios>();
     let mut sg = crate::src::shared::session::SessionGroupWeak::new();
@@ -474,7 +474,7 @@ unsafe fn cmd_new_session_exec(
                                                     if sy == 0 as u_int {
                                                         sy = 1 as u_int;
                                                     }
-                                                    oo = Some(crate::src::options::options_create_owned(Some(crate::src::options::OptionsScope::GlobalSession)));
+                                                    oo = Some(crate::src::options::options_create(Some(crate::src::options::OptionsScope::GlobalSession)));
                                                     if args_has(&*args, 'x' as i32 as u_char) != 0
                                                         || args_has(&*args, 'y' as i32 as u_char)
                                                             != 0
@@ -490,8 +490,7 @@ unsafe fn cmd_new_session_exec(
                                                             dsy = sy;
                                                         }
                                                         options_set_string(
-                                                            &mut **oo
-                                                                .as_mut()
+                                                            oo.as_mut()
                                                                 .expect("new session options"),
                                                             c"default-size",
                                                             0 as ::core::ffi::c_int,

@@ -91,16 +91,12 @@ fn options_value_to_cstring(
     }
 }
 
-pub fn options_create_owned(parent: Option<OptionsScope>) -> Box<options> {
-    Box::new(options {
+/// Return the sole owner for explicit cleanup or transfer to a model.
+pub fn options_create(parent: Option<OptionsScope>) -> options {
+    options {
         tree: Default::default(),
         parent,
-    })
-}
-
-/// Return the sole owner for explicit cleanup or transfer to a model.
-pub fn options_create(parent: Option<OptionsScope>) -> Box<options> {
-    options_create_owned(parent)
+    }
 }
 
 impl Drop for options {

@@ -773,7 +773,7 @@ mod tests {
                 .iter()
                 .find(|entry| entry.name == Some(c"fill-character"))
                 .unwrap();
-            crate::src::options::options_default(&mut *options, entry);
+            crate::src::options::options_default(&mut options, entry);
             (*owner.get()).options.replace(Some(options));
             {
                 let mut options = owner.borrow_options_mut();

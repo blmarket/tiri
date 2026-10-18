@@ -478,7 +478,7 @@ unsafe fn window_pane_create(
     (*wp).window = WindowRef::downgrade(w_owner).clone();
     (*wp)
         .options
-        .replace(Some(crate::src::options::options_create_owned(Some(
+        .replace(Some(crate::src::options::options_create(Some(
             crate::src::options::OptionsScope::Window(WindowRef::downgrade(w_owner)),
         ))));
     (*wp).flags = PANE_STYLECHANGED;

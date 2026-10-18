@@ -281,7 +281,7 @@ pub unsafe fn window_create(
     (*w).xpixel = xpixel;
     (*w).ypixel = ypixel;
     (*w).options
-        .replace(Some(crate::src::options::options_create_owned(Some(
+        .replace(Some(crate::src::options::options_create(Some(
             crate::src::options::OptionsScope::GlobalWindow,
         ))));
     (*w).sb =

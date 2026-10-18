@@ -21,7 +21,7 @@ pub trait Session {
         name: Option<&CStr>,
         cwd: &CStr,
         environment: Box<environ>,
-        options: Option<Box<options>>,
+        options: Option<options>,
         termios: Option<&termios>,
     ) -> Self
     where
@@ -132,7 +132,7 @@ impl Session for SessionRef {
         name: Option<&CStr>,
         cwd: &CStr,
         environment: Box<environ>,
-        options: Option<Box<options>>,
+        options: Option<options>,
         termios: Option<&termios>,
     ) -> Self {
         session_create(prefix, name, cwd, environment, options, termios)
@@ -413,7 +413,7 @@ mod tests {
                     .iter()
                     .find(|definition| definition.name == Some(key))
                     .unwrap();
-                crate::src::options::options_default(&mut *options, definition);
+                crate::src::options::options_default(&mut options, definition);
             }
             (*session.get()).options.replace(Some(options));
             status_update_cache(&mut *session.get());

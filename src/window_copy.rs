@@ -245,12 +245,12 @@ unsafe fn window_copy_snapshot_separators(so: &options) -> Option<CString> {
 mod separator_snapshot_tests {
     use super::*;
     use crate::src::options::options_table;
-    use crate::src::options::{options_create_owned, options_default, options_set_string};
+    use crate::src::options::{options_create, options_default, options_set_string};
 
     #[test]
     fn selected_word_separators_survive_option_replacement() {
         unsafe {
-            let mut options = options_create_owned(None);
+            let mut options = options_create(None);
             let definition = options_table
                 .iter()
                 .find(|entry| entry.name == Some(c"word-separators"))

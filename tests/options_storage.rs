@@ -8,7 +8,7 @@ use tiri::src::options::*;
 fn scalar_string_replacement_append_and_default_keep_stable_entry() {
     unsafe {
         let mut oo_owner = options_create(None);
-        let oo = &raw mut *oo_owner;
+        let oo = &raw mut oo_owner;
         let entry: *mut options_entry =
             options_set_string(&mut *oo, c"@bytes", 0, |out| write_cstr(out, c"\xff"));
         let name = c"@bytes";
@@ -115,7 +115,7 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
 fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
     unsafe {
         let mut oo_owner = options_create(None);
-        let oo = &raw mut *oo_owner;
+        let oo = &raw mut oo_owner;
         let table = &raw const tiri::src::options::options_table;
         let definition = (*table)
             .iter()
@@ -200,7 +200,7 @@ fn table_entry(name: &CStr) -> &'static tiri::src::options::options_table_entry 
 fn command_arrays_parse_items_and_assign_unseparated_values() {
     unsafe {
         let mut oo_owner = options_create(None);
-        let oo = &raw mut *oo_owner;
+        let oo = &raw mut oo_owner;
         let definition = table_entry(c"after-new-window");
         let hook: *mut options_entry = options_empty(&mut *oo, definition);
 
