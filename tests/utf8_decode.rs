@@ -16,17 +16,15 @@ fn empty_data() -> utf8_data {
 #[test]
 fn legacy_stream_adapter_consumes_an_invalid_candidate_before_recovery() {
     let mut data = empty_data();
-    unsafe {
-        assert_eq!(utf8_open(&mut data, 0xe2), UTF8_MORE);
-        assert_eq!(data.size, 3);
-        assert_eq!(data.have, 1);
+    assert_eq!(utf8_open(&mut data, 0xe2), UTF8_MORE);
+    assert_eq!(data.size, 3);
+    assert_eq!(data.have, 1);
 
-        assert_eq!(utf8_append(&mut data, b'('), UTF8_MORE);
-        assert_eq!(data.have, 2);
-        assert_eq!(utf8_append(&mut data, 0xa1), UTF8_ERROR);
-        assert_eq!(data.have, 3);
-        assert_eq!(&data.data[..3], &[0xe2, b'(', 0xa1]);
-    }
+    assert_eq!(utf8_append(&mut data, b'('), UTF8_MORE);
+    assert_eq!(data.have, 2);
+    assert_eq!(utf8_append(&mut data, 0xa1), UTF8_ERROR);
+    assert_eq!(data.have, 3);
+    assert_eq!(&data.data[..3], &[0xe2, b'(', 0xa1]);
 }
 
 #[test]
@@ -61,9 +59,7 @@ fn legacy_codepoint_conversion_accepts_an_embedded_nul_cell() {
     data.size = 1;
     let mut codepoint = -1i32 as libc::wchar_t;
 
-    unsafe {
-        assert_eq!(utf8_towc(&data, &mut codepoint), UTF8_DONE);
-    }
+    assert_eq!(utf8_towc(&data, &mut codepoint), UTF8_DONE);
     assert_eq!(codepoint, 0);
 }
 
@@ -75,9 +71,7 @@ fn legacy_codepoint_conversion_keeps_combined_cell_first_codepoint_behavior() {
     data.size = 2;
     let mut codepoint = -1i32 as libc::wchar_t;
 
-    unsafe {
-        assert_eq!(utf8_towc(&data, &mut codepoint), UTF8_DONE);
-    }
+    assert_eq!(utf8_towc(&data, &mut codepoint), UTF8_DONE);
     assert_eq!(codepoint, b'a' as libc::wchar_t);
 }
 
@@ -124,44 +118,42 @@ fn copied_cells_clear_unused_bytes_and_allow_self_assignment() {
 #[test]
 fn codepoint_encoding_preserves_failure_outputs_and_unused_bytes() {
     use tiri::src::text::utf8::utf8_fromwc;
-    unsafe {
-        for codepoint in [-1i32 as libc::wchar_t, 0xd800, 0x110000] {
-            let mut cell = utf8_data {
-                data: [0xaa; 32],
-                have: 7,
-                size: 8,
-                width: 9,
-            };
-            assert_eq!(utf8_fromwc(codepoint, &mut cell), UTF8_ERROR);
-            assert_eq!(cell.data, [0xaa; 32]);
-            assert_eq!((cell.have, cell.size, cell.width), (7, 8, 9));
-        }
-        for (codepoint, bytes, width) in [
-            (0, &b"\0"[..], 0),
-            (0xe9, "é".as_bytes(), 1),
-            (0x6f22, "漢".as_bytes(), 2),
-            (0x1f600, "😀".as_bytes(), 2),
-        ] {
-            let mut cell = utf8_data {
-                data: [0xaa; 32],
-                ..empty_data()
-            };
-            assert_eq!(utf8_fromwc(codepoint, &mut cell), UTF8_DONE);
-            assert_eq!(&cell.data[..bytes.len()], bytes);
-            assert!(cell.data[bytes.len()..].iter().all(|&byte| byte == 0xaa));
-            assert_eq!(
-                (cell.have, cell.size, cell.width),
-                (bytes.len() as u8, bytes.len() as u8, width)
-            );
-        }
-        for bytes in [&b"\xe2\x82"[..], &b"\xff"[..]] {
-            let mut cell = empty_data();
-            cell.data[..bytes.len()].copy_from_slice(bytes);
-            cell.size = bytes.len() as u8;
-            let mut codepoint = 123;
-            assert_eq!(utf8_towc(&cell, &mut codepoint), UTF8_ERROR);
-            assert_eq!(codepoint, 123);
-        }
+    for codepoint in [-1i32 as libc::wchar_t, 0xd800, 0x110000] {
+        let mut cell = utf8_data {
+            data: [0xaa; 32],
+            have: 7,
+            size: 8,
+            width: 9,
+        };
+        assert_eq!(utf8_fromwc(codepoint, &mut cell), UTF8_ERROR);
+        assert_eq!(cell.data, [0xaa; 32]);
+        assert_eq!((cell.have, cell.size, cell.width), (7, 8, 9));
+    }
+    for (codepoint, bytes, width) in [
+        (0, &b"\0"[..], 0),
+        (0xe9, "é".as_bytes(), 1),
+        (0x6f22, "漢".as_bytes(), 2),
+        (0x1f600, "😀".as_bytes(), 2),
+    ] {
+        let mut cell = utf8_data {
+            data: [0xaa; 32],
+            ..empty_data()
+        };
+        assert_eq!(utf8_fromwc(codepoint, &mut cell), UTF8_DONE);
+        assert_eq!(&cell.data[..bytes.len()], bytes);
+        assert!(cell.data[bytes.len()..].iter().all(|&byte| byte == 0xaa));
+        assert_eq!(
+            (cell.have, cell.size, cell.width),
+            (bytes.len() as u8, bytes.len() as u8, width)
+        );
+    }
+    for bytes in [&b"\xe2\x82"[..], &b"\xff"[..]] {
+        let mut cell = empty_data();
+        cell.data[..bytes.len()].copy_from_slice(bytes);
+        cell.size = bytes.len() as u8;
+        let mut codepoint = 123;
+        assert_eq!(utf8_towc(&cell, &mut codepoint), UTF8_ERROR);
+        assert_eq!(codepoint, 123);
     }
 }
 

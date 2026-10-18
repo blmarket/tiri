@@ -1,4 +1,3 @@
-use crate::src::compat::utf8proc::utf8proc_wcwidth;
 use crate::src::ffi::vis::{is_alpha, vis_into};
 use crate::src::log::{fatalx, log_bytes, log_debug};
 use crate::src::shared::abi::ssize_t;
@@ -20,7 +19,7 @@ fn utf8_find_in_width_cache(wc: wchar_t) -> Option<u_int> {
         .find(wc)
 }
 
-unsafe fn utf8_insert_width_cache(wc: wchar_t, width: u_int) {
+fn utf8_insert_width_cache(wc: wchar_t, width: u_int) {
     log_debug(format_args!(
         "Unicode width cache: {:08X}={}",
         wc as u_int, width
@@ -30,19 +29,20 @@ unsafe fn utf8_insert_width_cache(wc: wchar_t, width: u_int) {
         .expect("UTF-8 width cache poisoned")
         .insert(wc, width);
 }
-unsafe fn utf8_add_to_width_cache(input: &CStr) {
+fn utf8_add_to_width_cache(input: &CStr) {
     if let Some(parsed) = parse_width_override(input) {
         for codepoint in parsed.codepoints {
             utf8_insert_width_cache(codepoint, parsed.width);
         }
     }
 }
-pub unsafe fn utf8_update_width_cache() {
+pub fn utf8_update_width_cache() {
     UTF8_WIDTHS
         .lock()
         .expect("UTF-8 width cache poisoned")
         .reset_defaults();
-    let values = with_global_options(|oo| {
+    // SAFETY: the visitor only copies strings out and does not reenter options.
+    let values = with_global_options(|oo| unsafe {
         crate::src::options::options_read_entry(oo, c"codepoint-widths", |entry| {
             entry
                 .value
@@ -58,7 +58,7 @@ pub unsafe fn utf8_update_width_cache() {
         utf8_add_to_width_cache(&value);
     }
 }
-unsafe fn utf8_put_item(data: &[u8]) -> Option<u_int> {
+fn utf8_put_item(data: &[u8]) -> Option<u_int> {
     let (index, inserted) = UTF8_ITEMS
         .lock()
         .expect("UTF-8 item cache poisoned")
@@ -72,7 +72,7 @@ unsafe fn utf8_put_item(data: &[u8]) -> Option<u_int> {
     Some(index)
 }
 
-pub unsafe fn utf8_from_data(ud: &utf8_data, uc: &mut utf8_char) -> utf8_state {
+pub fn utf8_from_data(ud: &utf8_data, uc: &mut utf8_char) -> utf8_state {
     if ud.width > 2 {
         fatalx(|out| write!(out, "invalid UTF-8 width: {}", ud.width));
     }
@@ -102,7 +102,7 @@ pub unsafe fn utf8_from_data(ud: &utf8_data, uc: &mut utf8_char) -> utf8_state {
     UTF8_ERROR
 }
 
-pub unsafe fn utf8_to_data(uc: utf8_char, ud: &mut utf8_data) {
+pub fn utf8_to_data(uc: utf8_char, ud: &mut utf8_data) {
     *ud = utf8_data::default();
     ud.have = ((uc >> 24) & 0x1f) as u_char;
     ud.size = ud.have;
@@ -128,7 +128,7 @@ pub unsafe fn utf8_to_data(uc: utf8_char, ud: &mut utf8_data) {
         log_bytes(&ud.data[..ud.size as usize]),
     ));
 }
-pub unsafe fn utf8_build_one(mut ch: u_char) -> utf8_char {
+pub fn utf8_build_one(mut ch: u_char) -> utf8_char {
     (1 as ::core::ffi::c_int as utf8_char) << 24 as ::core::ffi::c_int
         | (1 as ::core::ffi::c_int as utf8_char).wrapping_add(1 as utf8_char)
             << 29 as ::core::ffi::c_int
@@ -152,7 +152,7 @@ pub fn utf8_copy(from: &utf8_data) -> utf8_data {
     copied
 }
 
-unsafe fn utf8_width(ud: &utf8_data) -> Option<i32> {
+fn utf8_width(ud: &utf8_data) -> Option<i32> {
     let mut wc = 0;
     if utf8_towc(ud, &mut wc) != UTF8_DONE {
         return None;
@@ -164,7 +164,7 @@ unsafe fn utf8_width(ud: &utf8_data) -> Option<i32> {
         ));
         return Some(cached as i32);
     }
-    let width = utf8proc_wcwidth(wc);
+    let width = crate::src::ffi::utf8proc::codepoint_width(wc);
     log_debug(format_args!(
         "utf8proc_wcwidth({:05X}) returned {}",
         wc as u_int, width
@@ -172,7 +172,7 @@ unsafe fn utf8_width(ud: &utf8_data) -> Option<i32> {
     (0..=0xff).contains(&width).then_some(width)
 }
 
-pub unsafe fn utf8_towc(ud: &utf8_data, wc: &mut wchar_t) -> utf8_state {
+pub fn utf8_towc(ud: &utf8_data, wc: &mut wchar_t) -> utf8_state {
     let Some(bytes) = ud.data.get(..ud.size as usize) else {
         return UTF8_ERROR;
     };
@@ -235,7 +235,7 @@ pub fn utf8_has_whitespace(ud: &utf8_data) -> ::core::ffi::c_int {
     0
 }
 
-pub unsafe fn utf8_fromwc(wc: wchar_t, ud: &mut utf8_data) -> utf8_state {
+pub fn utf8_fromwc(wc: wchar_t, ud: &mut utf8_data) -> utf8_state {
     let size = match crate::src::ffi::utf8proc::encode_cell(wc, &mut ud.data) {
         Ok(size) => size,
         Err(error) => {
@@ -257,7 +257,7 @@ pub unsafe fn utf8_fromwc(wc: wchar_t, ud: &mut utf8_data) -> utf8_state {
     }
 }
 
-pub unsafe fn utf8_open(ud: &mut utf8_data, ch: u_char) -> utf8_state {
+pub fn utf8_open(ud: &mut utf8_data, ch: u_char) -> utf8_state {
     *ud = utf8_data::default();
     let DecodeResult::Incomplete { expected } = decode_utf8(&[ch]) else {
         return UTF8_ERROR;
@@ -270,7 +270,7 @@ pub unsafe fn utf8_open(ud: &mut utf8_data, ch: u_char) -> utf8_state {
     UTF8_MORE
 }
 
-pub unsafe fn utf8_append(ud: &mut utf8_data, ch: u_char) -> utf8_state {
+pub fn utf8_append(ud: &mut utf8_data, ch: u_char) -> utf8_state {
     if ud.have >= ud.size {
         fatalx(|out| out.write_all(b"UTF-8 character overflow"));
     }
@@ -297,7 +297,7 @@ pub unsafe fn utf8_append(ud: &mut utf8_data, ch: u_char) -> utf8_state {
         _ => UTF8_MORE,
     }
 }
-pub unsafe fn utf8_strvis(dst: &mut [u8], src: &[u8], flag: i32) -> usize {
+pub fn utf8_strvis(dst: &mut [u8], src: &[u8], flag: i32) -> usize {
     let capacity = src
         .len()
         .checked_mul(4)
@@ -349,7 +349,7 @@ pub(crate) fn utf8_stravis_cstring(src: &CStr, flag: i32) -> CString {
         .and_then(|size| size.checked_add(1))
         .expect("escaped UTF-8 string is too large");
     let mut buffer = vec![0u8; capacity];
-    let escaped_len = unsafe { utf8_strvis(&mut buffer, src.to_bytes(), flag) };
+    let escaped_len = utf8_strvis(&mut buffer, src.to_bytes(), flag);
     buffer.truncate(escaped_len + 1);
     CString::from_vec_with_nul(buffer).expect("utf8_strvis output has no interior NUL")
 }
@@ -365,7 +365,7 @@ pub(crate) fn utf8_stravisx_bytes(src: &[u8], flag: ::core::ffi::c_int) -> Vec<u
         .and_then(|size| size.checked_add(1))
         .expect("escaped UTF-8 bytes are too large");
     let mut buffer = vec![0u8; capacity];
-    let escaped_len = unsafe { utf8_strvis(&mut buffer, src, flag) };
+    let escaped_len = utf8_strvis(&mut buffer, src, flag);
     buffer.truncate(escaped_len);
     buffer
 }
@@ -374,11 +374,11 @@ pub fn utf8_isvalid(s: &CStr) -> bool {
     let mut cell = utf8_data::default();
     let mut offset = 0;
     while offset < bytes.len() {
-        let mut more = unsafe { utf8_open(&mut cell, bytes[offset]) };
+        let mut more = utf8_open(&mut cell, bytes[offset]);
         if more == UTF8_MORE {
             offset += 1;
             while offset < bytes.len() && more == UTF8_MORE {
-                more = unsafe { utf8_append(&mut cell, bytes[offset]) };
+                more = utf8_append(&mut cell, bytes[offset]);
                 offset += 1;
             }
             if more != UTF8_DONE {
@@ -408,14 +408,14 @@ pub(crate) fn utf8_sanitize_cstring(src: &CStr) -> CString {
     let mut offset = 0;
     while offset < source.len() {
         let candidate_start = offset;
-        more = unsafe { utf8_open(&mut ud, source[offset]) };
+        more = utf8_open(&mut ud, source[offset]);
         if more as ::core::ffi::c_uint == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint {
             loop {
                 offset += 1;
                 if offset >= source.len() || more != UTF8_MORE {
                     break;
                 }
-                more = unsafe { utf8_append(&mut ud, source[offset]) };
+                more = utf8_append(&mut ud, source[offset]);
             }
             if more as ::core::ffi::c_uint == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
@@ -463,14 +463,14 @@ pub(crate) fn utf8_fromcstr_vec(src: &CStr) -> Vec<utf8_data> {
             size: 0,
             width: 0,
         };
-        let mut more = unsafe { utf8_open(&mut cell, bytes[index] as u_char) };
+        let mut more = utf8_open(&mut cell, bytes[index] as u_char);
         if more == UTF8_MORE {
             loop {
                 index += 1;
                 if index == bytes.len() || more != UTF8_MORE {
                     break;
                 }
-                more = unsafe { utf8_append(&mut cell, bytes[index] as u_char) };
+                more = utf8_append(&mut cell, bytes[index] as u_char);
             }
             if more == UTF8_DONE {
                 cells.push(cell);
@@ -512,11 +512,11 @@ pub fn utf8_cstrwidth(s: &CStr) -> u_int {
     let mut offset = 0;
     while offset < bytes.len() {
         let start = offset;
-        let mut more = unsafe { utf8_open(&mut cell, bytes[offset]) };
+        let mut more = utf8_open(&mut cell, bytes[offset]);
         if more == UTF8_MORE {
             offset += 1;
             while offset < bytes.len() && more == UTF8_MORE {
-                more = unsafe { utf8_append(&mut cell, bytes[offset]) };
+                more = utf8_append(&mut cell, bytes[offset]);
                 offset += 1;
             }
             if more == UTF8_DONE {
@@ -557,12 +557,12 @@ pub fn utf8_cstrhas(s: &CStr, ud: &utf8_data) -> bool {
             size: 0,
             width: 0,
         };
-        let mut more = unsafe { utf8_open(&mut cell, bytes[offset]) };
+        let mut more = utf8_open(&mut cell, bytes[offset]);
         if more == UTF8_MORE {
             let start = offset;
             offset += 1;
             while offset < bytes.len() && more == UTF8_MORE {
-                more = unsafe { utf8_append(&mut cell, bytes[offset]) };
+                more = utf8_append(&mut cell, bytes[offset]);
                 offset += 1;
             }
             if more != UTF8_DONE {
@@ -729,155 +729,147 @@ mod tests {
     fn escaping_terminates_reused_and_exact_capacity_buffers() {
         use crate::src::shared::vis::VIS_OCTAL;
 
-        unsafe {
-            let mut output = [0x55; 9];
-            assert_eq!(utf8_strvis(&mut output, &[0xff, 0xff], VIS_OCTAL), 8);
-            assert_eq!(&output, b"\\377\\377\0");
-            assert_eq!(utf8_strvis(&mut output, b"a", VIS_OCTAL), 1);
-            assert_eq!(CStr::from_bytes_until_nul(&output).unwrap(), c"a");
-            assert_eq!(utf8_strvis(&mut output[..1], &[], VIS_OCTAL), 0);
-            assert_eq!(output[0], 0);
-        }
+        let mut output = [0x55; 9];
+        assert_eq!(utf8_strvis(&mut output, &[0xff, 0xff], VIS_OCTAL), 8);
+        assert_eq!(&output, b"\\377\\377\0");
+        assert_eq!(utf8_strvis(&mut output, b"a", VIS_OCTAL), 1);
+        assert_eq!(CStr::from_bytes_until_nul(&output).unwrap(), c"a");
+        assert_eq!(utf8_strvis(&mut output[..1], &[], VIS_OCTAL), 0);
+        assert_eq!(output[0], 0);
     }
 
     #[test]
     fn packed_cells_preserve_inline_and_cached_bytes() {
-        unsafe {
-            for width in 0..=2 {
-                for size in 0..=31 {
-                    let mut original = utf8_data {
-                        have: size,
-                        size,
-                        width,
-                        ..utf8_data::default()
-                    };
-                    for (index, byte) in original.data[..size as usize].iter_mut().enumerate() {
-                        *byte = (index as u8).wrapping_mul(31).wrapping_add(0x80);
-                    }
-                    let mut encoded = 0;
-                    assert_eq!(utf8_from_data(&original, &mut encoded), UTF8_DONE);
-                    let mut repeated = 0;
-                    assert_eq!(utf8_from_data(&original, &mut repeated), UTF8_DONE);
-                    assert_eq!(encoded, repeated);
-                    let mut decoded = utf8_data::default();
-                    utf8_to_data(encoded, &mut decoded);
-                    assert_eq!(
-                        (decoded.have, decoded.size, decoded.width),
-                        (size, size, width)
-                    );
-                    assert_eq!(decoded.data, original.data);
+        for width in 0..=2 {
+            for size in 0..=31 {
+                let mut original = utf8_data {
+                    have: size,
+                    size,
+                    width,
+                    ..utf8_data::default()
+                };
+                for (index, byte) in original.data[..size as usize].iter_mut().enumerate() {
+                    *byte = (index as u8).wrapping_mul(31).wrapping_add(0x80);
                 }
+                let mut encoded = 0;
+                assert_eq!(utf8_from_data(&original, &mut encoded), UTF8_DONE);
+                let mut repeated = 0;
+                assert_eq!(utf8_from_data(&original, &mut repeated), UTF8_DONE);
+                assert_eq!(encoded, repeated);
+                let mut decoded = utf8_data::default();
+                utf8_to_data(encoded, &mut decoded);
+                assert_eq!(
+                    (decoded.have, decoded.size, decoded.width),
+                    (size, size, width)
+                );
+                assert_eq!(decoded.data, original.data);
             }
-            let mut cell = utf8_data {
-                size: 1,
-                width: 1,
-                ..utf8_data::default()
-            };
-            cell.data[..3].copy_from_slice(b"abc");
-            let mut encoded = 0;
-            assert_eq!(utf8_from_data(&cell, &mut encoded), UTF8_DONE);
-            assert_eq!(encoded, (1 << 24) | (2 << 29) | 0x636261);
         }
+        let mut cell = utf8_data {
+            size: 1,
+            width: 1,
+            ..utf8_data::default()
+        };
+        cell.data[..3].copy_from_slice(b"abc");
+        let mut encoded = 0;
+        assert_eq!(utf8_from_data(&cell, &mut encoded), UTF8_DONE);
+        assert_eq!(encoded, (1 << 24) | (2 << 29) | 0x636261);
     }
 
     #[test]
     fn packed_cells_preserve_fallback_and_size_boundary() {
-        unsafe {
-            for (width, expected) in [(0, 1 << 29), (1, 0x41000020), (2, 0x41002020)] {
-                let cell = utf8_data {
-                    size: 33,
-                    width,
-                    ..utf8_data::default()
-                };
-                let mut encoded = 0;
-                assert_eq!(utf8_from_data(&cell, &mut encoded), UTF8_ERROR);
-                assert_eq!(encoded, expected);
-            }
+        for (width, expected) in [(0, 1 << 29), (1, 0x41000020), (2, 0x41002020)] {
             let cell = utf8_data {
-                data: [0xab; 32],
-                size: 32,
-                width: 1,
+                size: 33,
+                width,
                 ..utf8_data::default()
             };
             let mut encoded = 0;
-            assert_eq!(utf8_from_data(&cell, &mut encoded), UTF8_DONE);
-            assert_eq!(encoded & 0xff000000, 0x60000000);
-            let mut decoded = utf8_data::default();
-            utf8_to_data((4 << 24) | (3 << 29) | 0xfffffe, &mut decoded);
-            assert_eq!((decoded.have, decoded.size, decoded.width), (4, 4, 2));
-            assert_eq!(&decoded.data[..4], b"    ");
-            assert!(decoded.data[4..].iter().all(|&byte| byte == 0));
+            assert_eq!(utf8_from_data(&cell, &mut encoded), UTF8_ERROR);
+            assert_eq!(encoded, expected);
         }
+        let cell = utf8_data {
+            data: [0xab; 32],
+            size: 32,
+            width: 1,
+            ..utf8_data::default()
+        };
+        let mut encoded = 0;
+        assert_eq!(utf8_from_data(&cell, &mut encoded), UTF8_DONE);
+        assert_eq!(encoded & 0xff000000, 0x60000000);
+        let mut decoded = utf8_data::default();
+        utf8_to_data((4 << 24) | (3 << 29) | 0xfffffe, &mut decoded);
+        assert_eq!((decoded.have, decoded.size, decoded.width), (4, 4, 2));
+        assert_eq!(&decoded.data[..4], b"    ");
+        assert!(decoded.data[4..].iter().all(|&byte| byte == 0));
     }
 
     #[test]
     fn utf8_width_cache_parses_entries_and_ignores_invalid_ones() {
-        unsafe {
-            for entry in [
-                &b"U+E010=2\0"[..],
-                &b"U+E011-U+E013=0\0"[..],
-                &b"\xee\x80\xa0=1\0"[..],
-                &b"U+E040=1\0U+E041=2\0"[..],
-                &b"z=2\0"[..],
-            ] {
-                utf8_add_to_width_cache(CStr::from_bytes_until_nul(entry).unwrap());
-            }
+        for entry in [
+            &b"U+E010=2\0"[..],
+            &b"U+E011-U+E013=0\0"[..],
+            &b"\xee\x80\xa0=1\0"[..],
+            &b"U+E040=1\0U+E041=2\0"[..],
+            &b"z=2\0"[..],
+        ] {
+            utf8_add_to_width_cache(CStr::from_bytes_until_nul(entry).unwrap());
+        }
 
-            for (codepoint, expected) in [
-                (0xE010, 2),
-                (0xE011, 0),
-                (0xE012, 0),
-                (0xE013, 0),
-                (0xE020, 1),
-                (0xE040, 1),
-                ('z' as wchar_t, 2),
-            ] {
-                assert_eq!(
-                    utf8_find_in_width_cache(codepoint),
-                    Some(expected),
-                    "wrong width for U+{codepoint:04X}"
-                );
-            }
+        for (codepoint, expected) in [
+            (0xE010, 2),
+            (0xE011, 0),
+            (0xE012, 0),
+            (0xE013, 0),
+            (0xE020, 1),
+            (0xE040, 1),
+            ('z' as wchar_t, 2),
+        ] {
+            assert_eq!(
+                utf8_find_in_width_cache(codepoint),
+                Some(expected),
+                "wrong width for U+{codepoint:04X}"
+            );
+        }
 
-            for entry in [
-                &b"U+E030\0"[..],
-                &b"U+E030=3\0"[..],
-                &b"U+E030-U+E02F=1\0"[..],
-                &b"ab=1\0"[..],
-                &b"=1\0"[..],
-                &b"\xee\x80\xa2z=1\0"[..],
-                &b"\xc3(=1\0"[..],
-                &b"\xe2\x82=1\0"[..],
-                &b"\xff=1\0"[..],
-                &b"\xc0\xaf=1\0"[..],
-            ] {
-                utf8_add_to_width_cache(CStr::from_bytes_until_nul(entry).unwrap());
-            }
-            for codepoint in [
-                0xE030,
-                0xE041,
-                0xE022,
-                'a' as wchar_t,
-                'b' as wchar_t,
-                '(' as wchar_t,
-            ] {
-                assert!(
-                    utf8_find_in_width_cache(codepoint).is_none(),
-                    "unexpected U+{codepoint:04X}"
-                );
-            }
+        for entry in [
+            &b"U+E030\0"[..],
+            &b"U+E030=3\0"[..],
+            &b"U+E030-U+E02F=1\0"[..],
+            &b"ab=1\0"[..],
+            &b"=1\0"[..],
+            &b"\xee\x80\xa2z=1\0"[..],
+            &b"\xc3(=1\0"[..],
+            &b"\xe2\x82=1\0"[..],
+            &b"\xff=1\0"[..],
+            &b"\xc0\xaf=1\0"[..],
+        ] {
+            utf8_add_to_width_cache(CStr::from_bytes_until_nul(entry).unwrap());
+        }
+        for codepoint in [
+            0xE030,
+            0xE041,
+            0xE022,
+            'a' as wchar_t,
+            'b' as wchar_t,
+            '(' as wchar_t,
+        ] {
+            assert!(
+                utf8_find_in_width_cache(codepoint).is_none(),
+                "unexpected U+{codepoint:04X}"
+            );
+        }
 
-            for codepoint in [
-                0xE010,
-                0xE011,
-                0xE012,
-                0xE013,
-                0xE020,
-                0xE040,
-                'z' as wchar_t,
-            ] {
-                UTF8_WIDTHS.lock().unwrap().remove(codepoint);
-            }
+        for codepoint in [
+            0xE010,
+            0xE011,
+            0xE012,
+            0xE013,
+            0xE020,
+            0xE040,
+            'z' as wchar_t,
+        ] {
+            UTF8_WIDTHS.lock().unwrap().remove(codepoint);
         }
     }
 }

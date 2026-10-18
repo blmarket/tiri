@@ -42,6 +42,11 @@ pub(crate) fn encode_cell(
     }
 }
 
+/// Terminal width of a codepoint; utf8proc only looks it up in static tables.
+pub(crate) fn codepoint_width(codepoint: crate::src::shared::utf8::wchar_t) -> i32 {
+    unsafe { crate::src::compat::utf8proc::utf8proc_wcwidth(codepoint) }
+}
+
 pub(crate) fn reset_wctomb() {
     unsafe {
         super::libc::wctomb(std::ptr::null_mut(), 0);

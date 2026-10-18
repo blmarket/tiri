@@ -163,7 +163,7 @@ impl Drop for args_command_state {
     }
 }
 
-pub(crate) unsafe fn args_make_commands_get_command_cstring(state: &args_command_state) -> CString {
+pub(crate) fn args_make_commands_get_command_cstring(state: &args_command_state) -> CString {
     if let Some(commands) = state.cmdlist.as_ref() {
         let commands = commands.borrow();
         let Some(first) = cmd_list_first(&commands) else {

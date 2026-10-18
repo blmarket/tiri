@@ -5621,12 +5621,10 @@ fn key_string_parse_numeric(input: &CStr) -> Option<key_code> {
 
     let decoded = unsafe { utf8_fromcstr_vec(CStr::from_ptr(multibyte.as_ptr())) };
     let mut codepoint: utf8_char = 0;
-    let valid = unsafe {
-        decoded[0].size as ::core::ffi::c_int != 0 as ::core::ffi::c_int
-            && decoded[1].size as ::core::ffi::c_int == 0 as ::core::ffi::c_int
-            && utf8_from_data(&decoded[0], &mut codepoint) as ::core::ffi::c_uint
-                == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
-    };
+    let valid = decoded[0].size as ::core::ffi::c_int != 0 as ::core::ffi::c_int
+        && decoded[1].size as ::core::ffi::c_int == 0 as ::core::ffi::c_int
+        && utf8_from_data(&decoded[0], &mut codepoint) as ::core::ffi::c_uint
+            == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint;
 
     valid.then_some(codepoint as key_code)
 }
@@ -5682,18 +5680,18 @@ fn key_string_lookup_string_bytes(input: &CStr) -> key_code {
         width: 0,
     };
     let mut codepoint: utf8_char = 0;
-    let mut more = unsafe { utf8_open(&mut data, remaining[0]) };
+    let mut more = utf8_open(&mut data, remaining[0]);
     if more as ::core::ffi::c_uint == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint {
         if remaining.len() != data.size as usize {
             return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
         }
         for &byte in &remaining[1..] {
-            more = unsafe { utf8_append(&mut data, byte) };
+            more = utf8_append(&mut data, byte);
         }
         if more as ::core::ffi::c_uint != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint {
             return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
         }
-        if unsafe { utf8_from_data(&data, &mut codepoint) } as ::core::ffi::c_uint
+        if utf8_from_data(&data, &mut codepoint) as ::core::ffi::c_uint
             != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
@@ -5792,9 +5790,7 @@ fn key_string_format_bytes(saved: key_code, with_flags: bool) -> Vec<u8> {
                 size: 0,
                 width: 0,
             };
-            unsafe {
-                utf8_to_data(key as utf8_char, &mut data);
-            }
+            utf8_to_data(key as utf8_char, &mut data);
             output.extend_from_slice(&data.data[..data.size as usize]);
         } else if key > 255 {
             output.clear();
