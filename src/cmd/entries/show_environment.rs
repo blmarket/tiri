@@ -56,13 +56,13 @@ unsafe fn cmd_show_environment_print(
 ) {
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    if args_has(args, 'h' as i32 as u_char) == 0 && envent.flags & ENVIRON_HIDDEN != 0 {
+    if args_has(&*args, 'h' as i32 as u_char) == 0 && envent.flags & ENVIRON_HIDDEN != 0 {
         return;
     }
-    if args_has(args, 'h' as i32 as u_char) != 0 && !envent.flags & ENVIRON_HIDDEN != 0 {
+    if args_has(&*args, 'h' as i32 as u_char) != 0 && !envent.flags & ENVIRON_HIDDEN != 0 {
         return;
     }
-    if args_has(args, 's' as i32 as u_char) == 0 {
+    if args_has(&*args, 's' as i32 as u_char) == 0 {
         if let Some(value) = envent.value.as_deref() {
             cmdq_print(item_handle, |out| {
                 out.write_all(envent.name.as_bytes())?;
@@ -117,7 +117,7 @@ unsafe fn cmd_show_environment_exec(
         });
         return CMD_RETURN_ERROR;
     }
-    let env: environ = if args_has(args, 'g' as i32 as u_char) != 0 {
+    let env: environ = if args_has(&*args, 'g' as i32 as u_char) != 0 {
         global_environ.as_deref().expect("environment").clone()
     } else {
         if (*target).session_handle().is_none() {

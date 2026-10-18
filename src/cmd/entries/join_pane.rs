@@ -80,7 +80,7 @@ unsafe fn cmd_join_pane_exec(
             });
             return CMD_RETURN_ERROR;
         }
-        let before = args_has(args, 'b' as i32 as u_char) != 0;
+        let before = args_has(&*args, 'b' as i32 as u_char) != 0;
         let same_window = WindowRef::ptr_eq(src_owner, &dst_window);
         let mut order = dst_window
             .pane_snapshot()
@@ -118,7 +118,7 @@ unsafe fn cmd_join_pane_exec(
         recalculate_sizes();
         server_redraw_window(src_owner);
         server_redraw_window(&dst_window);
-        if args_has(args, 'd' as i32 as u_char) == 0 {
+        if args_has(&*args, 'd' as i32 as u_char) == 0 {
             dst_window.select_pane(&src_pane_owner, true);
             (dst_s.as_ref().expect("live session")).select_index(dst_idx);
             *current.current.borrow_mut() = cmd_find_state::find_from_session(

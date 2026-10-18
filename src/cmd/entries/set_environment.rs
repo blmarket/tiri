@@ -63,17 +63,17 @@ unsafe fn cmd_set_environment_exec(
         });
         return CMD_RETURN_ERROR;
     }
-    if args_count(args) < 2 as u_int {
+    if args_count(&*args) < 2 as u_int {
         value = ::core::ptr::null::<::core::ffi::c_char>();
     } else {
         value =
             args_string(&mut *(args), 1 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
     }
-    if !value.is_null() && args_has(args, 'F' as i32 as u_char) != 0 {
+    if !value.is_null() && args_has(&*args, 'F' as i32 as u_char) != 0 {
         expanded = Some(format_single_from_target_cstring(item_handle, value));
         value = expanded.as_ref().expect("expanded value was set").as_ptr();
     }
-    let global = args_has(args, b'g') != 0;
+    let global = args_has(&*args, b'g') != 0;
     let session = (*target).session_handle();
     if !global && session.is_none() {
         if let Some(target) = args_get(&*args, b't') {
@@ -86,8 +86,8 @@ unsafe fn cmd_set_environment_exec(
         }
         return CMD_RETURN_ERROR;
     }
-    let unset = args_has(args, b'u') != 0;
-    let remove = args_has(args, b'r') != 0;
+    let unset = args_has(&*args, b'u') != 0;
+    let remove = args_has(&*args, b'r') != 0;
     let error = if unset && !value.is_null() {
         Some(b"can't specify a value with -u".as_slice())
     } else if !unset && remove && !value.is_null() {
@@ -101,7 +101,7 @@ unsafe fn cmd_set_environment_exec(
         cmdq_error(item_handle, |out| out.write_all(error));
         return CMD_RETURN_ERROR;
     }
-    let hidden = if args_has(args, b'h') != 0 {
+    let hidden = if args_has(&*args, b'h') != 0 {
         ENVIRON_HIDDEN
     } else {
         0

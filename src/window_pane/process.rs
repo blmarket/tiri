@@ -70,19 +70,19 @@ pub(super) unsafe fn pipe_pane(
             return CMD_RETURN_NORMAL;
         }
     }
-    if args_count(args) == 0 as u_int
+    if args_count(&*args) == 0 as u_int
         || *args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())
             as ::core::ffi::c_int
             == '\0' as i32
     {
         return CMD_RETURN_NORMAL;
     }
-    if args_has(args, 'o' as i32 as u_char) != 0 && had_pipe {
+    if args_has(&*args, 'o' as i32 as u_char) != 0 && had_pipe {
         return CMD_RETURN_NORMAL;
     }
-    if args_has(args, 'I' as i32 as u_char) != 0 {
+    if args_has(&*args, 'I' as i32 as u_char) != 0 {
         in_0 = 1 as ::core::ffi::c_int;
-        out = args_has(args, 'O' as i32 as u_char);
+        out = args_has(&*args, 'O' as i32 as u_char);
     } else {
         in_0 = 0 as ::core::ffi::c_int;
         out = 1 as ::core::ffi::c_int;

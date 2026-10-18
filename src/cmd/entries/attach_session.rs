@@ -293,14 +293,14 @@ unsafe fn cmd_attach_session_exec(
             args_get(&*(args), 't' as i32 as u_char)
                 .map_or(std::ptr::null(), |value| value.as_ptr()),
         ),
-        args_has(args, 'd' as i32 as u_char),
-        args_has(args, 'x' as i32 as u_char),
-        args_has(args, 'r' as i32 as u_char),
+        args_has(&*args, 'd' as i32 as u_char),
+        args_has(&*args, 'x' as i32 as u_char),
+        args_has(&*args, 'r' as i32 as u_char),
         nullable_cstr(
             args_get(&*(args), 'c' as i32 as u_char)
                 .map_or(std::ptr::null(), |value| value.as_ptr()),
         ),
-        args_has(args, 'E' as i32 as u_char),
+        args_has(&*args, 'E' as i32 as u_char),
         nullable_cstr(
             args_get(&*(args), 'f' as i32 as u_char)
                 .map_or(std::ptr::null(), |value| value.as_ptr()),

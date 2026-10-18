@@ -107,7 +107,7 @@ unsafe fn cmd_swap_window_exec(
     if marked_pane.winlink_handle() == wl_src {
         marked_pane.set_wl((wl_dst).clone());
     }
-    if args_has(args, 'd' as i32 as u_char) != 0 {
+    if args_has(&*args, 'd' as i32 as u_char) != 0 {
         (dst.as_ref().expect("live session")).select_index(wl_dst.get_unchecked().idx);
         if !crate::src::shared::rc::same(src.as_ref(), dst.as_ref()) {
             (src.as_ref().expect("live session")).select_index(wl_src.get_unchecked().idx);

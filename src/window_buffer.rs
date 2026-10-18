@@ -432,21 +432,21 @@ unsafe fn window_buffer_init(
         .expect("mode belongs to a live pane");
     let mut data: *mut window_buffer_modedata = ::core::ptr::null_mut::<window_buffer_modedata>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
-    let format = if args.is_null() || args_has(args, 'F' as i32 as u_char) == 0 {
+    let format = if args.is_null() || args_has(&*args, 'F' as i32 as u_char) == 0 {
         WINDOW_BUFFER_DEFAULT_FORMAT.to_owned()
     } else {
         args_get(&*(args), 'F' as i32 as u_char)
             .expect("argument is present")
             .to_owned()
     };
-    let key_format = if args.is_null() || args_has(args, 'K' as i32 as u_char) == 0 {
+    let key_format = if args.is_null() || args_has(&*args, 'K' as i32 as u_char) == 0 {
         WINDOW_BUFFER_DEFAULT_KEY_FORMAT.to_owned()
     } else {
         args_get(&*(args), 'K' as i32 as u_char)
             .expect("argument is present")
             .to_owned()
     };
-    let command = if args.is_null() || args_count(args) == 0 as u_int {
+    let command = if args.is_null() || args_count(&*args) == 0 as u_int {
         WINDOW_BUFFER_DEFAULT_COMMAND.to_owned()
     } else {
         args_string(&mut *(args), 0 as u_int)

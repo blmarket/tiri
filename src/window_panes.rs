@@ -866,7 +866,7 @@ unsafe fn window_panes_init(
     source = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
     target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     s = (*target).session_handle();
-    if args_has(args, 'd' as i32 as u_char) == 0 {
+    if args_has(&*args, 'd' as i32 as u_char) == 0 {
         delay = options_get_number(
             &original_window
                 .upgrade()
@@ -876,7 +876,7 @@ unsafe fn window_panes_init(
         ) as u_int;
     } else {
         delay = match args_strtonum_result(
-            args,
+            &*args,
             'd' as i32 as u_char,
             0 as ::core::ffi::c_longlong,
             UINT_MAX as ::core::ffi::c_longlong,
@@ -918,7 +918,7 @@ unsafe fn window_panes_init(
         0 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     ));
-    if args_has(args, 's' as i32 as u_char) != 0 {
+    if args_has(&*args, 's' as i32 as u_char) != 0 {
         (*data).source_session = (*source).session_handle().expect("live session").id();
         (*data).source_window = (((*source).window_handle().as_ref()).expect("live window")).id();
     } else {
@@ -926,7 +926,7 @@ unsafe fn window_panes_init(
         (*data).source_window = (((*target).window_handle().as_ref()).expect("live window")).id();
     }
     (*data).delay = delay;
-    (*data).ignore_keys = args_has(args, 'N' as i32 as u_char);
+    (*data).ignore_keys = args_has(&*args, 'N' as i32 as u_char);
     window_panes_set_preview(data);
     if (*data).delay != 0 as u_int {
         let timeout = Duration::from_millis((*data).delay as u64);

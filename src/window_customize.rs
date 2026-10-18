@@ -2772,7 +2772,7 @@ unsafe fn window_customize_init(
     let mut data: *mut window_customize_modedata =
         ::core::ptr::null_mut::<window_customize_modedata>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
-    let format = if args.is_null() || args_has(args, 'F' as i32 as u_char) == 0 {
+    let format = if args.is_null() || args_has(&*args, 'F' as i32 as u_char) == 0 {
         WINDOW_CUSTOMIZE_DEFAULT_FORMAT.to_owned()
     } else {
         args_get(&*(args), 'F' as i32 as u_char)
@@ -2797,7 +2797,7 @@ unsafe fn window_customize_init(
     wme.get_mut_unchecked().data_owner = Some(owner);
     let draw_mode = build_mode.clone();
     let menu_mode = build_mode.clone();
-    if args_has(args, 'y' as i32 as u_char) != 0 {
+    if args_has(&*args, 'y' as i32 as u_char) != 0 {
         (*data).prompt_flags = PROMPT_ACCEPT;
     }
     (*data).data = Some(mode_tree_start(

@@ -59,7 +59,7 @@ unsafe fn cmd_swap_pane_exec(
         let mut src_pane_owner = (*source).wp.upgrade().expect("live swap source pane");
 
         src_idx = ((*source).winlink_handle()).get_unchecked().idx;
-        if args_has(args, 'D' as i32 as u_char) != 0 {
+        if args_has(&*args, 'D' as i32 as u_char) != 0 {
             let previous = std::mem::replace(&mut src_window_owner, dst_window_owner.clone());
             drop(previous);
 
@@ -67,7 +67,7 @@ unsafe fn cmd_swap_pane_exec(
                 .step_pane(Some(&Rc::downgrade(&dst_pane_owner)), false)
                 .upgrade()
                 .unwrap_or_else(|| dst_pane_owner.clone());
-        } else if args_has(args, 'U' as i32 as u_char) != 0 {
+        } else if args_has(&*args, 'U' as i32 as u_char) != 0 {
             let previous = std::mem::replace(&mut src_window_owner, dst_window_owner.clone());
             drop(previous);
 
@@ -128,7 +128,7 @@ unsafe fn cmd_swap_pane_exec(
                     return CMD_RETURN_ERROR;
                 }
             }
-            if args_has(args, 'd' as i32 as u_char) == 0 {
+            if args_has(&*args, 'd' as i32 as u_char) == 0 {
                 if !WindowRef::ptr_eq(&src_window_owner, &dst_window_owner) {
                     src_window_owner.select_pane(&dst_pane_owner, true);
                     WindowRef::clone(&(dst_window_owner)).select_pane(&src_pane_owner, true);

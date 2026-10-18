@@ -47,8 +47,8 @@ unsafe fn cmd_unbind_key_exec(
     let mut tablename: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut keystr: *const ::core::ffi::c_char =
         args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
-    let mut quiet: ::core::ffi::c_int = args_has(args, 'q' as i32 as u_char);
-    if args_has(args, 'a' as i32 as u_char) != 0 {
+    let mut quiet: ::core::ffi::c_int = args_has(&*args, 'q' as i32 as u_char);
+    if args_has(&*args, 'a' as i32 as u_char) != 0 {
         if !keystr.is_null() {
             if quiet == 0 {
                 cmdq_error(item_handle, |out| out.write_all(b"key given with -a"));
@@ -58,7 +58,7 @@ unsafe fn cmd_unbind_key_exec(
         tablename = args_get(&*(args), 'T' as i32 as u_char)
             .map_or(std::ptr::null(), |value| value.as_ptr());
         if tablename.is_null() {
-            if args_has(args, 'n' as i32 as u_char) != 0 {
+            if args_has(&*args, 'n' as i32 as u_char) != 0 {
                 tablename = c"root".as_ptr();
             } else {
                 tablename = c"prefix".as_ptr();
@@ -97,7 +97,7 @@ unsafe fn cmd_unbind_key_exec(
         }
         return CMD_RETURN_ERROR;
     }
-    if args_has(args, 'T' as i32 as u_char) != 0 {
+    if args_has(&*args, 'T' as i32 as u_char) != 0 {
         tablename = args_get(&*(args), 'T' as i32 as u_char)
             .map_or(std::ptr::null(), |value| value.as_ptr());
         if key_bindings_get_table(std::ffi::CStr::from_ptr(tablename), 0 as ::core::ffi::c_int)
@@ -112,7 +112,7 @@ unsafe fn cmd_unbind_key_exec(
             }
             return CMD_RETURN_ERROR;
         }
-    } else if args_has(args, 'n' as i32 as u_char) != 0 {
+    } else if args_has(&*args, 'n' as i32 as u_char) != 0 {
         tablename = c"root".as_ptr();
     } else {
         tablename = c"prefix".as_ptr();

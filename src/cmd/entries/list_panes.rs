@@ -63,14 +63,14 @@ unsafe fn cmd_list_panes_exec(
         args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
     ));
     if order as ::core::ffi::c_uint == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
-        && args_has(args, 'O' as i32 as u_char) != 0
+        && args_has(&*args, 'O' as i32 as u_char) != 0
     {
         cmdq_error(item_handle, |out| out.write_all(b"invalid sort order"));
         return CMD_RETURN_ERROR;
     }
-    if args_has(args, 'a' as i32 as u_char) != 0 {
+    if args_has(&*args, 'a' as i32 as u_char) != 0 {
         cmd_list_panes_server(self_0.clone(), item_handle);
-    } else if args_has(args, 's' as i32 as u_char) != 0 {
+    } else if args_has(&*args, 's' as i32 as u_char) != 0 {
         cmd_list_panes_session(
             self_0.clone(),
             s.as_ref().expect("live session"),
@@ -168,7 +168,7 @@ unsafe fn cmd_list_panes_window(
     sort_crit.order = sort_order_from_string(nullable_cstr(
         args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
     ));
-    sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
+    sort_crit.reversed = args_has(&*args, 'r' as i32 as u_char);
     let l = sort_get_panes_window(
         wl.get_unchecked().window_handle().expect("linked window"),
         &sort_crit,

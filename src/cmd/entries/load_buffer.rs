@@ -125,7 +125,7 @@ unsafe fn cmd_load_buffer_exec(
     if !bufname.is_null() {
         cdata.name = Some(CStr::from_ptr(bufname).to_owned());
     }
-    if args_has(args, 'w' as i32 as u_char) != 0 && !tc.is_none() {
+    if args_has(&*args, 'w' as i32 as u_char) != 0 && !tc.is_none() {
         cdata.client = tc_owner.clone();
     }
     let path = format_single_from_target_cstring(

@@ -1853,17 +1853,17 @@ unsafe fn window_tree_init(
         .expect("mode belongs to a live pane");
     let mut data: *mut window_tree_modedata = ::core::ptr::null_mut::<window_tree_modedata>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
-    let format = if args.is_null() || args_has(args, 'F' as i32 as u_char) == 0 {
+    let format = if args.is_null() || args_has(&*args, 'F' as i32 as u_char) == 0 {
         WINDOW_TREE_DEFAULT_FORMAT.as_ptr()
     } else {
         args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr())
     };
-    let key_format = if args.is_null() || args_has(args, 'K' as i32 as u_char) == 0 {
+    let key_format = if args.is_null() || args_has(&*args, 'K' as i32 as u_char) == 0 {
         WINDOW_TREE_DEFAULT_KEY_FORMAT.as_ptr()
     } else {
         args_get(&*(args), 'K' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr())
     };
-    let command = if args.is_null() || args_count(args) == 0 as u_int {
+    let command = if args.is_null() || args_count(&*args) == 0 as u_int {
         WINDOW_TREE_DEFAULT_COMMAND.as_ptr()
     } else {
         args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())
@@ -1894,17 +1894,17 @@ unsafe fn window_tree_init(
     let build_mode = Rc::downgrade(&owner);
     wme.get_mut_unchecked().data_owner = Some(owner);
     (*data).wp = std::rc::Rc::downgrade(&mode_pane_owner);
-    if args_has(args, 's' as i32 as u_char) != 0 {
+    if args_has(&*args, 's' as i32 as u_char) != 0 {
         (*data).type_0 = WINDOW_TREE_SESSION;
-    } else if args_has(args, 'w' as i32 as u_char) != 0 {
+    } else if args_has(&*args, 'w' as i32 as u_char) != 0 {
         (*data).type_0 = WINDOW_TREE_WINDOW;
     } else {
         (*data).type_0 = WINDOW_TREE_PANE;
     }
     (*data).fs = (*fs).clone();
-    (*data).squash_groups = (args_has(args, 'G' as i32 as u_char) == 0) as ::core::ffi::c_int;
-    (*data).hide_preview_this_pane = args_has(args, 'h' as i32 as u_char);
-    if args_has(args, 'y' as i32 as u_char) != 0 {
+    (*data).squash_groups = (args_has(&*args, 'G' as i32 as u_char) == 0) as ::core::ffi::c_int;
+    (*data).hide_preview_this_pane = args_has(&*args, 'h' as i32 as u_char);
+    if args_has(&*args, 'y' as i32 as u_char) != 0 {
         (*data).prompt_flags = PROMPT_ACCEPT;
     }
     let draw_mode = build_mode.clone();

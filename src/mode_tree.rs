@@ -538,9 +538,9 @@ pub unsafe fn mode_tree_start(
     mtd.menu = menu;
     if drawcb.is_none() {
         mtd.preview = MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int;
-    } else if args_has(args, 'N' as i32 as u_char) > 1 as ::core::ffi::c_int {
+    } else if args_has(&*args, 'N' as i32 as u_char) > 1 as ::core::ffi::c_int {
         mtd.preview = MODE_TREE_PREVIEW_BIG as ::core::ffi::c_int;
-    } else if args_has(args, 'N' as i32 as u_char) != 0 {
+    } else if args_has(&*args, 'N' as i32 as u_char) != 0 {
         mtd.preview = MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int;
     } else {
         mtd.preview = MODE_TREE_PREVIEW_NORMAL as ::core::ffi::c_int;
@@ -548,8 +548,8 @@ pub unsafe fn mode_tree_start(
     mtd.sort_crit.order = sort_order_from_string(nullable_cstr(
         args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
     ));
-    mtd.sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
-    if args_has(args, 'f' as i32 as u_char) != 0 {
+    mtd.sort_crit.reversed = args_has(&*args, 'r' as i32 as u_char);
+    if args_has(&*args, 'f' as i32 as u_char) != 0 {
         mtd.filter = Some(
             args_get(&*(args), 'f' as i32 as u_char)
                 .expect("argument is present")

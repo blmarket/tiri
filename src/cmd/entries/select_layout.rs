@@ -44,7 +44,7 @@ unsafe fn cmd_select_layout_exec(
     let target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let window_owner = (*target).w.upgrade().expect("live layout window");
     let current = window_owner.layout();
-    let kind = if args_has(args, b'n') != 0 {
+    let kind = if args_has(&*args, b'n') != 0 {
         Some(current.next())
     } else if let Some(name) = args_string(&mut *args, 0 as u_int) {
         LayoutKind::from_name(name)

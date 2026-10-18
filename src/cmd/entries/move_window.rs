@@ -91,7 +91,7 @@ unsafe fn cmd_move_window_exec(
     let mut dflag: ::core::ffi::c_int = 0;
     let mut sflag: ::core::ffi::c_int = 0;
     let mut before: ::core::ffi::c_int = 0;
-    if args_has(args, 'r' as i32 as u_char) != 0 {
+    if args_has(&*args, 'r' as i32 as u_char) != 0 {
         if target.find_target(
             Some(item_handle),
             nullable_cstr(tflag),
@@ -120,11 +120,11 @@ unsafe fn cmd_move_window_exec(
     }
     dst = target.session_handle();
     idx = target.idx;
-    kflag = args_has(args, 'k' as i32 as u_char);
-    dflag = args_has(args, 'd' as i32 as u_char);
-    sflag = args_has(args, 's' as i32 as u_char);
-    before = args_has(args, 'b' as i32 as u_char);
-    if args_has(args, 'a' as i32 as u_char) != 0 || before != 0 {
+    kflag = args_has(&*args, 'k' as i32 as u_char);
+    dflag = args_has(&*args, 'd' as i32 as u_char);
+    sflag = args_has(&*args, 's' as i32 as u_char);
+    before = args_has(&*args, 'b' as i32 as u_char);
+    if args_has(&*args, 'a' as i32 as u_char) != 0 || before != 0 {
         if target.winlink_handle().is_alive() {
             idx = winlink_shuffle_up(
                 dst.as_ref().expect("live session"),

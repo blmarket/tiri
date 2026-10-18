@@ -83,7 +83,7 @@ unsafe fn cmd_capture_pane_exec(
         cmd_get_entry(self_0.get_unchecked()),
         &cmd_clear_history_entry,
     ) {
-        pane_owner.clear_history(args_has(args, b'H') != 0);
+        pane_owner.clear_history(args_has(&*args, b'H') != 0);
         let window = pane_owner
             .window_observer()
             .upgrade()
@@ -99,7 +99,7 @@ unsafe fn cmd_capture_pane_exec(
             return CMD_RETURN_ERROR;
         }
     };
-    if args_has(args, 'p' as i32 as u_char) != 0 {
+    if args_has(&*args, 'p' as i32 as u_char) != 0 {
         let len = if buf.last() == Some(&b'\n') {
             buf.len() - 1
         } else {
@@ -119,7 +119,7 @@ unsafe fn cmd_capture_pane_exec(
         }
     } else {
         bufname = ::core::ptr::null::<::core::ffi::c_char>();
-        if args_has(args, 'b' as i32 as u_char) != 0 {
+        if args_has(&*args, 'b' as i32 as u_char) != 0 {
             bufname = args_get(&*(args), 'b' as i32 as u_char)
                 .map_or(std::ptr::null(), |value| value.as_ptr());
         }

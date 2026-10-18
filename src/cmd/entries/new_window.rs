@@ -94,7 +94,7 @@ unsafe fn cmd_new_window_exec(
     let mut new_wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut idx: ::core::ffi::c_int = target.idx;
     let mut before: ::core::ffi::c_int = 0;
-    let mut count: ::core::ffi::c_int = args_count(args) as ::core::ffi::c_int;
+    let mut count: ::core::ffi::c_int = args_count(&*args) as ::core::ffi::c_int;
     let mut cause: Option<std::ffi::CString> = None;
     let mut wname: *const ::core::ffi::c_char = ::core::ptr::null();
     let mut wname_owned: Option<CString> = None;
@@ -108,7 +108,7 @@ unsafe fn cmd_new_window_exec(
         wp: Default::default(),
         idx: 0,
     };
-    if args_has(args, 'E' as i32 as u_char) != 0
+    if args_has(&*args, 'E' as i32 as u_char) != 0
         && count != 0 as ::core::ffi::c_int
         && (count != 1 as ::core::ffi::c_int
             || *args_string(&mut *(args), 0 as u_int)
@@ -148,7 +148,7 @@ unsafe fn cmd_new_window_exec(
             .expect("window name was cleaned")
             .as_ptr();
     }
-    if args_has(args, 'S' as i32 as u_char) != 0 {
+    if args_has(&*args, 'S' as i32 as u_char) != 0 {
         if idx != -(1 as ::core::ffi::c_int) {
             new_wl = s
                 .as_ref()
@@ -192,7 +192,7 @@ unsafe fn cmd_new_window_exec(
         }
     }
     if new_wl.is_alive() {
-        if args_has(args, 'd' as i32 as u_char) != 0 {
+        if args_has(&*args, 'd' as i32 as u_char) != 0 {
             return CMD_RETURN_NORMAL;
         }
         if (s.as_ref().expect("live session")).select_winlink((new_wl).clone())
@@ -219,8 +219,8 @@ unsafe fn cmd_new_window_exec(
         recalculate_sizes();
         return CMD_RETURN_NORMAL;
     }
-    before = args_has(args, 'b' as i32 as u_char);
-    if args_has(args, 'a' as i32 as u_char) != 0 || before != 0 {
+    before = args_has(&*args, 'b' as i32 as u_char);
+    if args_has(&*args, 'a' as i32 as u_char) != 0 || before != 0 {
         idx = winlink_shuffle_up(&session_owner, wl.clone(), before);
         if idx == -(1 as ::core::ffi::c_int) {
             idx = target.idx;
@@ -245,7 +245,7 @@ unsafe fn cmd_new_window_exec(
     sc.idx = idx;
     sc.cwd = args_get(&*(args), 'c' as i32 as u_char).map(CStr::to_owned);
     sc.flags = 0 as ::core::ffi::c_int;
-    if args_has(args, 'E' as i32 as u_char) != 0
+    if args_has(&*args, 'E' as i32 as u_char) != 0
         || count == 1 as ::core::ffi::c_int
             && *args_string(&mut *(args), 0 as u_int)
                 .map_or(std::ptr::null(), |value| value.as_ptr())
@@ -254,10 +254,10 @@ unsafe fn cmd_new_window_exec(
     {
         sc.flags |= SPAWN_EMPTY;
     }
-    if args_has(args, 'd' as i32 as u_char) != 0 {
+    if args_has(&*args, 'd' as i32 as u_char) != 0 {
         sc.flags |= SPAWN_DETACHED;
     }
-    if args_has(args, 'k' as i32 as u_char) != 0 {
+    if args_has(&*args, 'k' as i32 as u_char) != 0 {
         sc.flags |= SPAWN_KILL;
     }
     new_wl = spawn_window(&mut sc, &mut cause);
@@ -269,7 +269,7 @@ unsafe fn cmd_new_window_exec(
         drop(sc.environ.take());
         CMD_RETURN_ERROR
     } else {
-        if args_has(args, 'd' as i32 as u_char) == 0
+        if args_has(&*args, 'd' as i32 as u_char) == 0
             || new_wl == s.as_ref().expect("live session").current_winlink()
         {
             *current.current.borrow_mut() =
@@ -278,7 +278,7 @@ unsafe fn cmd_new_window_exec(
         } else {
             server_status_session_group(s.as_ref().expect("live session"));
         }
-        if args_has(args, 'P' as i32 as u_char) != 0 {
+        if args_has(&*args, 'P' as i32 as u_char) != 0 {
             template = args_get(&*(args), 'F' as i32 as u_char)
                 .map_or(std::ptr::null(), |value| value.as_ptr());
             if template.is_null() {

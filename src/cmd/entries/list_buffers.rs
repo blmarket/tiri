@@ -72,12 +72,12 @@ unsafe fn cmd_list_buffers_exec(
     ));
     if sort_crit.order as ::core::ffi::c_uint
         == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
-        && args_has(args, 'O' as i32 as u_char) != 0
+        && args_has(&*args, 'O' as i32 as u_char) != 0
     {
         cmdq_error(item_handle, |out| out.write_all(b"invalid sort order"));
         return CMD_RETURN_ERROR;
     }
-    sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
+    sort_crit.reversed = args_has(&*args, 'r' as i32 as u_char);
     let buffers = sort_get_buffers(&sort_crit);
     for pb in buffers {
         let mut ft_owner = format_create_with_client(

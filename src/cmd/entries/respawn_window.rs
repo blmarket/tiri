@@ -86,10 +86,10 @@ unsafe fn cmd_respawn_window_exec(
     sc.idx = -(1 as ::core::ffi::c_int);
     sc.cwd = args_get(&*(args), 'c' as i32 as u_char).map(|value| value.to_owned());
     sc.flags = SPAWN_RESPAWN;
-    if args_has(args, 'E' as i32 as u_char) != 0 {
+    if args_has(&*args, 'E' as i32 as u_char) != 0 {
         sc.flags |= SPAWN_EMPTY;
     }
-    if args_has(args, 'k' as i32 as u_char) != 0 {
+    if args_has(&*args, 'k' as i32 as u_char) != 0 {
         sc.flags |= SPAWN_KILL;
     }
     if !spawn_window(&mut sc, &mut cause).is_alive() {

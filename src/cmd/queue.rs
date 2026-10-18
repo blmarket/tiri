@@ -512,7 +512,7 @@ pub unsafe fn cmdq_insert_hook(
     let arguments = args_print_cstring(&*args_0);
     event_payload_set_string(&mut ep, c"arguments", |out| write_cstr(out, &*arguments));
     i = 0 as u_int;
-    while i < args_count(args_0) {
+    while i < args_count(&*args_0) {
         let key = format_message_with(|out| write!(out, "argument_{}", i));
         event_payload_set_string(&mut ep, &key, |out| {
             write_cstr(

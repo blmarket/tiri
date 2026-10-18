@@ -78,13 +78,13 @@ unsafe fn cmd_list_windows_exec(
     ));
     if sort_crit.order as ::core::ffi::c_uint
         == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
-        && args_has(args, 'O' as i32 as u_char) != 0
+        && args_has(&*args, 'O' as i32 as u_char) != 0
     {
         cmdq_error(item_handle, |out| out.write_all(b"invalid sort order"));
         return CMD_RETURN_ERROR;
     }
-    sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
-    let winlinks = if args_has(args, 'a' as i32 as u_char) != 0 {
+    sort_crit.reversed = args_has(&*args, 'r' as i32 as u_char);
+    let winlinks = if args_has(&*args, 'a' as i32 as u_char) != 0 {
         let links = sort_get_winlinks(&raw mut sort_crit);
         if template.is_null() {
             template = LIST_WINDOWS_WITH_SESSION_TEMPLATE.as_ptr();

@@ -450,12 +450,12 @@ unsafe fn window_switch_init(
     let mut data: *mut window_switch_modedata = ::core::ptr::null_mut::<window_switch_modedata>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
     let mut pd = prompt_create_data::default();
-    let format = if args.is_null() || args_has(args, 'F' as i32 as u_char) == 0 {
+    let format = if args.is_null() || args_has(&*args, 'F' as i32 as u_char) == 0 {
         WINDOW_SWITCH_DEFAULT_FORMAT.as_ptr()
     } else {
         args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr())
     };
-    let command = if args.is_null() || args_count(args) == 0 as u_int {
+    let command = if args.is_null() || args_count(&*args) == 0 as u_int {
         WINDOW_SWITCH_DEFAULT_COMMAND.as_ptr()
     } else {
         args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())
@@ -475,7 +475,7 @@ unsafe fn window_switch_init(
     }));
     data = owner.get();
     wme.get_mut_unchecked().boxed_data = Some(owner);
-    if args_has(args, 'w' as i32 as u_char) != 0 {
+    if args_has(&*args, 'w' as i32 as u_char) != 0 {
         (*data).type_0 = WINDOW_SWITCH_TYPE_WINDOW;
     } else {
         (*data).type_0 = WINDOW_SWITCH_TYPE_SESSION;

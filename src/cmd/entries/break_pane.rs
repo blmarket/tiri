@@ -94,8 +94,8 @@ unsafe fn cmd_break_pane_exec(
             });
             return CMD_RETURN_ERROR;
         }
-        before = args_has(args, 'b' as i32 as u_char);
-        if args_has(args, 'a' as i32 as u_char) != 0 || before != 0 {
+        before = args_has(&*args, 'b' as i32 as u_char);
+        if args_has(&*args, 'a' as i32 as u_char) != 0 || before != 0 {
             if (*target).winlink_handle().is_alive() {
                 idx = winlink_shuffle_up(
                     dst_s.as_ref().expect("live session"),
@@ -120,7 +120,7 @@ unsafe fn cmd_break_pane_exec(
                 dst_s.as_ref().expect("live session"),
                 idx,
                 0 as ::core::ffi::c_int,
-                (args_has(args, 'd' as i32 as u_char) == 0) as ::core::ffi::c_int,
+                (args_has(&*args, 'd' as i32 as u_char) == 0) as ::core::ffi::c_int,
             ) {
                 cmdq_error(item_handle, |out| write_cstr(out, &*link_error));
                 return CMD_RETURN_ERROR;
@@ -222,7 +222,7 @@ unsafe fn cmd_break_pane_exec(
                 &destination.upgrade().expect("live destination window"),
                 wl.get_unchecked().idx,
             );
-            if args_has(args, 'd' as i32 as u_char) == 0 {
+            if args_has(&*args, 'd' as i32 as u_char) == 0 {
                 (dst_s.as_ref().expect("live session")).select_index(wl.get_unchecked().idx);
                 *current.current.borrow_mut() = cmd_find_state::find_from_session(
                     dst_s.as_ref().expect("live session"),
@@ -238,7 +238,7 @@ unsafe fn cmd_break_pane_exec(
                 server_status_session_group(dst_s.as_ref().expect("live session"));
             }
         }
-        if args_has(args, 'P' as i32 as u_char) != 0 {
+        if args_has(&*args, 'P' as i32 as u_char) != 0 {
             template = args_get(&*(args), 'F' as i32 as u_char)
                 .map_or(std::ptr::null(), |value| value.as_ptr());
             if template.is_null() {

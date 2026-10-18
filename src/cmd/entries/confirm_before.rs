@@ -82,7 +82,7 @@ unsafe fn cmd_confirm_before_exec(
     let mut prompt: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut wait: ::core::ffi::c_int =
-        (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
+        (args_has(&*args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
     let Some(cmdlist) = args_make_commands_now(self_0.clone(), item_handle, 0, 1) else {
         return CMD_RETURN_ERROR;
     };
@@ -91,7 +91,7 @@ unsafe fn cmd_confirm_before_exec(
         confirm_key: 0,
         default_yes: 0,
     });
-    cdata.default_yes = args_has(args, 'y' as i32 as u_char);
+    cdata.default_yes = args_has(&*args, 'y' as i32 as u_char);
     confirm_key =
         args_get(&*(args), 'c' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !confirm_key.is_null() {

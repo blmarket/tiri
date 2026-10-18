@@ -79,7 +79,7 @@ unsafe fn cmd_set_buffer_exec(
         cmd_get_entry(self_0.get_unchecked()),
         &cmd_delete_buffer_entry,
     );
-    if deleting || args_has(args, b'n') != 0 {
+    if deleting || args_has(&*args, b'n') != 0 {
         if pb.is_none() {
             if let Some(name) = bufname.as_ref() {
                 cmdq_error(item_handle, |out| {
@@ -111,7 +111,7 @@ unsafe fn cmd_set_buffer_exec(
         }
         return CMD_RETURN_NORMAL;
     }
-    if args_count(args) != 1 {
+    if args_count(&*args) != 1 {
         cmdq_error(item_handle, |out| out.write_all(b"no data specified"));
         return CMD_RETURN_ERROR;
     }
@@ -122,13 +122,13 @@ unsafe fn cmd_set_buffer_exec(
         return CMD_RETURN_NORMAL;
     }
     let mut bufdata = Vec::new();
-    if args_has(args, b'a') != 0 {
+    if args_has(&*args, b'a') != 0 {
         if let Some(pb) = pb {
             bufdata.extend_from_slice(paste_buffer_data(&pb.borrow()).unwrap_or_default());
         }
     }
     bufdata.extend_from_slice(new_data);
-    let selection_data = (args_has(args, b'w') != 0 && !tc.is_none()).then(|| bufdata.clone());
+    let selection_data = (args_has(&*args, b'w') != 0 && !tc.is_none()).then(|| bufdata.clone());
     if paste_set_owned(
         bufdata.into_boxed_slice(),
         bufname.as_deref(),

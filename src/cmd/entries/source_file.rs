@@ -279,15 +279,15 @@ unsafe fn cmd_source_file_exec(
         current: 0,
         files: Vec::new(),
     });
-    if args_has(args, 'q' as i32 as u_char) != 0 {
+    if args_has(&*args, 'q' as i32 as u_char) != 0 {
         cdata.flags |= CMD_PARSE_QUIET;
     }
-    if args_has(args, 'n' as i32 as u_char) != 0 {
+    if args_has(&*args, 'n' as i32 as u_char) != 0 {
         cdata.flags |= CMD_PARSE_PARSEONLY;
     }
     if c.is_none() || !c.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0 {
         parse_flags = cmd_get_parse_flags(self_0.clone());
-        if args_has(args, 'v' as i32 as u_char) != 0 || parse_flags & CMD_PARSE_VERBOSE != 0 {
+        if args_has(&*args, 'v' as i32 as u_char) != 0 || parse_flags & CMD_PARSE_VERBOSE != 0 {
             cdata.flags |= CMD_PARSE_VERBOSE;
         }
     }
@@ -295,9 +295,9 @@ unsafe fn cmd_source_file_exec(
         ClientRef::working_directory(c.as_ref(), None).expect("source working directory");
     let cwd = cmd_source_file_quote_for_glob(&cwd_owner);
     i = 0 as u_int;
-    while i < args_count(args) {
+    while i < args_count(&*args) {
         path = args_string(&mut *(args), i).map_or(std::ptr::null(), |value| value.as_ptr());
-        let expanded = if args_has(args, 'F' as i32 as u_char) != 0 {
+        let expanded = if args_has(&*args, 'F' as i32 as u_char) != 0 {
             Some(format_single_from_target_cstring(item_handle, path))
         } else {
             None

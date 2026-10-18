@@ -50,17 +50,17 @@ unsafe fn cmd_find_window_exec(
     let mut C: ::core::ffi::c_int = 0;
     let mut N: ::core::ffi::c_int = 0;
     let mut T: ::core::ffi::c_int = 0;
-    C = args_has(args, 'C' as i32 as u_char);
-    N = args_has(args, 'N' as i32 as u_char);
-    T = args_has(args, 'T' as i32 as u_char);
-    if args_has(args, 'r' as i32 as u_char) != 0 {
+    C = args_has(&*args, 'C' as i32 as u_char);
+    N = args_has(&*args, 'N' as i32 as u_char);
+    T = args_has(&*args, 'T' as i32 as u_char);
+    if args_has(&*args, 'r' as i32 as u_char) != 0 {
         star = c"".as_ptr();
     }
-    if args_has(args, 'r' as i32 as u_char) != 0 && args_has(args, 'i' as i32 as u_char) != 0 {
+    if args_has(&*args, 'r' as i32 as u_char) != 0 && args_has(&*args, 'i' as i32 as u_char) != 0 {
         suffix = c"/ri".as_ptr();
-    } else if args_has(args, 'r' as i32 as u_char) != 0 {
+    } else if args_has(&*args, 'r' as i32 as u_char) != 0 {
         suffix = c"/r".as_ptr();
-    } else if args_has(args, 'i' as i32 as u_char) != 0 {
+    } else if args_has(&*args, 'i' as i32 as u_char) != 0 {
         suffix = c"/i".as_ptr();
     }
     if C == 0 && N == 0 && T == 0 {

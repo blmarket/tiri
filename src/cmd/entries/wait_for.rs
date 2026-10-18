@@ -200,23 +200,23 @@ unsafe fn cmd_wait_for_exec(
     let mut name: *const ::core::ffi::c_char =
         args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut wc: *mut wait_channel = ::core::ptr::null_mut::<wait_channel>();
-    if args_has(args, 'E' as i32 as u_char) != 0 {
+    if args_has(&*args, 'E' as i32 as u_char) != 0 {
         return cmd_wait_for_event(item_handle, CStr::from_ptr(name), args);
     }
     wc = wait_channels_find(&mut *wait_channels_ptr(), CStr::from_ptr(name));
-    if args_has(args, 'l' as i32 as u_char) != 0 {
+    if args_has(&*args, 'l' as i32 as u_char) != 0 {
         return cmd_wait_for_list(item_handle, wc);
     }
-    if args_has(args, 'w' as i32 as u_char) != 0 {
+    if args_has(&*args, 'w' as i32 as u_char) != 0 {
         return cmd_wait_for_wake(args, wc);
     }
-    if args_has(args, 'S' as i32 as u_char) != 0 {
+    if args_has(&*args, 'S' as i32 as u_char) != 0 {
         return cmd_wait_for_signal(CStr::from_ptr(name), wc);
     }
-    if args_has(args, 'L' as i32 as u_char) != 0 {
+    if args_has(&*args, 'L' as i32 as u_char) != 0 {
         return cmd_wait_for_lock(item_handle, CStr::from_ptr(name), wc);
     }
-    if args_has(args, 'U' as i32 as u_char) != 0 {
+    if args_has(&*args, 'U' as i32 as u_char) != 0 {
         return cmd_wait_for_unlock(item_handle, CStr::from_ptr(name), wc);
     }
     cmd_wait_for_wait(item_handle, CStr::from_ptr(name), wc)
@@ -324,10 +324,10 @@ unsafe fn cmd_wait_for_event(
         });
         return CMD_RETURN_ERROR;
     }
-    if args_has(args, 'l' as i32 as u_char) != 0 {
+    if args_has(&*args, 'l' as i32 as u_char) != 0 {
         return cmd_wait_for_event_list(item_handle, name);
     }
-    if args_has(args, 'w' as i32 as u_char) != 0 {
+    if args_has(&*args, 'w' as i32 as u_char) != 0 {
         return cmd_wait_for_event_wake(item_handle, name, args);
     }
     if cmdq_get_client((item).as_ref()).is_none() {
@@ -353,7 +353,7 @@ unsafe fn cmd_wait_for_event(
             } else {
                 Some(CStr::from_ptr(filter).to_owned())
             },
-            verbose: args_has(args, 'v' as i32 as u_char),
+            verbose: args_has(&*args, 'v' as i32 as u_char),
         });
     retval
 }

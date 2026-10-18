@@ -135,25 +135,25 @@ unsafe fn cmd_select_window_exec(
         cmd_get_entry(self_0.get_unchecked()),
         &cmd_next_window_entry,
     )) as ::core::ffi::c_int;
-    if args_has(args, 'n' as i32 as u_char) != 0 {
+    if args_has(&*args, 'n' as i32 as u_char) != 0 {
         next = 1 as ::core::ffi::c_int;
     }
     previous = (std::ptr::eq(
         cmd_get_entry(self_0.get_unchecked()),
         &cmd_previous_window_entry,
     )) as ::core::ffi::c_int;
-    if args_has(args, 'p' as i32 as u_char) != 0 {
+    if args_has(&*args, 'p' as i32 as u_char) != 0 {
         previous = 1 as ::core::ffi::c_int;
     }
     last = (std::ptr::eq(
         cmd_get_entry(self_0.get_unchecked()),
         &cmd_last_window_entry,
     )) as ::core::ffi::c_int;
-    if args_has(args, 'l' as i32 as u_char) != 0 {
+    if args_has(&*args, 'l' as i32 as u_char) != 0 {
         last = 1 as ::core::ffi::c_int;
     }
     if next != 0 || previous != 0 || last != 0 {
-        activity = args_has(args, 'a' as i32 as u_char);
+        activity = args_has(&*args, 'a' as i32 as u_char);
         if next != 0 {
             if (s.as_ref().expect("live session")).select_adjacent_window(false, (activity) != 0)
                 != 0 as ::core::ffi::c_int
@@ -186,7 +186,7 @@ unsafe fn cmd_select_window_exec(
             |out| out.write_all(b"after-select-window"),
         );
     } else {
-        if args_has(args, 'T' as i32 as u_char) != 0
+        if args_has(&*args, 'T' as i32 as u_char) != 0
             && wl == s.as_ref().expect("live session").current_winlink()
         {
             if (s.as_ref().expect("live session")).select_last_window() != 0 as ::core::ffi::c_int {

@@ -132,14 +132,14 @@ unsafe fn cmd_split_window_exec(
         let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
         let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         let mut cause: Option<std::ffi::CString> = None;
-        let mut count: u_int = args_count(args);
-        if args_has(args, 'b' as i32 as u_char) != 0 {
+        let mut count: u_int = args_count(&*args);
+        if args_has(&*args, 'b' as i32 as u_char) != 0 {
             flags |= SPAWN_BEFORE;
         }
-        if args_has(args, 'd' as i32 as u_char) != 0 {
+        if args_has(&*args, 'd' as i32 as u_char) != 0 {
             flags |= SPAWN_DETACHED;
         }
-        input = args_has(args, 'I' as i32 as u_char);
+        input = args_has(&*args, 'I' as i32 as u_char);
         if input != 0
             || count == 1 as u_int
                 && *args_string(&mut *(args), 0 as u_int)
@@ -149,7 +149,7 @@ unsafe fn cmd_split_window_exec(
         {
             empty = 1 as ::core::ffi::c_int;
         } else {
-            empty = args_has(args, 'E' as i32 as u_char);
+            empty = args_has(&*args, 'E' as i32 as u_char);
         }
         if empty != 0
             && count != 0 as u_int
@@ -237,15 +237,15 @@ unsafe fn cmd_split_window_exec(
                         |out| write_cstr(out, style),
                     );
                 }
-                if args_has(args, 'k' as i32 as u_char) != 0
-                    || args_has(args, 'm' as i32 as u_char) != 0
+                if args_has(&*args, 'k' as i32 as u_char) != 0
+                    || args_has(&*args, 'm' as i32 as u_char) != 0
                 {
                     options_set_number(
                         &mut new_pane.borrow_options_mut(),
                         c"remain-on-exit",
                         3 as ::core::ffi::c_longlong,
                     );
-                    if args_has(args, 'm' as i32 as u_char) != 0 {
+                    if args_has(&*args, 'm' as i32 as u_char) != 0 {
                         options_set_string(
                             &mut new_pane.borrow_options_mut(),
                             c"remain-on-exit-format",
@@ -262,7 +262,7 @@ unsafe fn cmd_split_window_exec(
                         );
                     }
                 }
-                if args_has(args, 'T' as i32 as u_char) != 0 {
+                if args_has(&*args, 'T' as i32 as u_char) != 0 {
                     let title = format_single_from_target_cstring(
                         item_handle,
                         args_get(&*(args), 'T' as i32 as u_char)
@@ -316,7 +316,7 @@ unsafe fn cmd_split_window_exec(
                         }
                         server_redraw_window(&original_window);
                         server_redraw_session(s.as_ref().expect("live session"));
-                        if args_has(args, 'P' as i32 as u_char) != 0 {
+                        if args_has(&*args, 'P' as i32 as u_char) != 0 {
                             template = args_get(&*(args), 'F' as i32 as u_char)
                                 .map_or(std::ptr::null(), |value| value.as_ptr());
                             if template.is_null() {
@@ -345,7 +345,7 @@ unsafe fn cmd_split_window_exec(
                             drop(window_owner);
                             return cmdq_suspend(item_handle, wait);
                         }
-                        if args_has(args, 'W' as i32 as u_char) != 0 {
+                        if args_has(&*args, 'W' as i32 as u_char) != 0 {
                             let (waiter, retval) = cmdq_wait(item_handle);
                             new_pane.wait_until_close(waiter);
                             drop(window_owner);

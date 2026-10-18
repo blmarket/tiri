@@ -727,8 +727,8 @@ unsafe fn window_copy_init(
         (*data).cy = cy.wrapping_sub((*data).backing().grid().hsize);
         (*data).oy = 0 as u_int;
     }
-    (*data).scroll_exit = args_has(args, 'e' as i32 as u_char);
-    (*data).hide_position = args_has(args, 'H' as i32 as u_char);
+    (*data).scroll_exit = args_has(&*args, 'e' as i32 as u_char);
+    (*data).hide_position = args_has(&*args, 'H' as i32 as u_char);
     source_owner.share_screen_hyperlinks(&mut (*data).screen);
     (*data).screen.cx =
         window_copy_cursor_offset(wme.clone(), (*data).cx, (*data).screen.grid().sx);
@@ -5126,7 +5126,7 @@ unsafe fn window_copy_command_with_session(
     let mut clear: window_copy_cmd_clear = WINDOW_COPY_CMD_CLEAR_NEVER;
     let mut command: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut i: u_int = 0;
-    let mut count: u_int = args_count(args);
+    let mut count: u_int = args_count(&*args);
     let mut keys: ::core::ffi::c_int = 0;
     let mut flags: ::core::ffi::c_int = 0;
     if count == 0 as u_int {
@@ -5142,7 +5142,7 @@ unsafe fn window_copy_command_with_session(
         window_copy_move_mouse(m);
     }
     cs.wme = wme.clone();
-    cs.format_search = args_has(args, 'F' as i32 as u_char) != 0;
+    cs.format_search = args_has(&*args, 'F' as i32 as u_char) != 0;
     cs.wargs = None;
     cs.m = m.as_ref().copied();
     cs.c = client_owner;

@@ -49,7 +49,7 @@ unsafe fn cmd_show_messages_terminals(
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let target = if args_has(args, b't') != 0 {
+    let target = if args_has(&*args, b't') != 0 {
         tc_owner.as_ref()
     } else {
         None
@@ -86,11 +86,11 @@ unsafe fn cmd_show_messages_exec(
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     blank = 0 as ::core::ffi::c_int;
     done = blank;
-    if args_has(args, 'T' as i32 as u_char) != 0 {
+    if args_has(&*args, 'T' as i32 as u_char) != 0 {
         blank = cmd_show_messages_terminals(self_0.clone(), item_handle, blank);
         done = 1 as ::core::ffi::c_int;
     }
-    if args_has(args, 'J' as i32 as u_char) != 0 {
+    if args_has(&*args, 'J' as i32 as u_char) != 0 {
         job_print_summary(item_handle, blank);
         done = 1 as ::core::ffi::c_int;
     }

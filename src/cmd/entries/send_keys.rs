@@ -94,7 +94,7 @@ unsafe fn cmd_send_keys_inject_key(
     let pane = (*target).pane_handle().expect("key target pane");
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
     let mut new_after = after.clone();
-    if args_has(args, 'K' as i32 as u_char) != 0 {
+    if args_has(&*args, 'K' as i32 as u_char) != 0 {
         if tc.is_none() {
             return std::rc::Rc::downgrade(item_handle);
         }
@@ -170,7 +170,7 @@ unsafe fn cmd_send_keys_inject_string(
     let mut endptr: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut n: ::core::ffi::c_long = 0;
     let mut literal: ::core::ffi::c_int = 0;
-    if args_has(args, 'H' as i32 as u_char) != 0 {
+    if args_has(&*args, 'H' as i32 as u_char) != 0 {
         n = strtol(s, &raw mut endptr, 16 as ::core::ffi::c_int);
         if *s as ::core::ffi::c_int == '\0' as i32
             || n < 0 as ::core::ffi::c_long
@@ -186,7 +186,7 @@ unsafe fn cmd_send_keys_inject_string(
             KEYC_LITERAL | n as key_code,
         );
     }
-    literal = args_has(args, 'l' as i32 as u_char);
+    literal = args_has(&*args, 'l' as i32 as u_char);
     if literal == 0 {
         key = key_string_parse_cstr(std::ffi::CStr::from_ptr(s)).unwrap_or(KEYC_UNKNOWN);
         if key != KEYC_NONE as ::core::ffi::c_ulong as key_code
@@ -246,17 +246,17 @@ unsafe fn cmd_send_keys_exec(
     let mut key: key_code = 0;
     let mut i: u_int = 0;
     let mut np: u_int = 1 as u_int;
-    let mut count: u_int = args_count(args);
+    let mut count: u_int = args_count(&*args);
     if !tc.is_none()
         && tc.as_ref().expect("live client").flags() & CLIENT_READONLY as uint64_t != 0
-        && args_has(args, 'X' as i32 as u_char) == 0
+        && args_has(&*args, 'X' as i32 as u_char) == 0
     {
         cmdq_error(item_handle, |out| out.write_all(b"client is read-only"));
         return CMD_RETURN_ERROR;
     }
-    if args_has(args, 'N' as i32 as u_char) != 0 {
+    if args_has(&*args, 'N' as i32 as u_char) != 0 {
         np = match args_strtonum_and_expand_result(
-            args,
+            &*args,
             'N' as i32 as u_char,
             1 as ::core::ffi::c_longlong,
             UINT_MAX as ::core::ffi::c_longlong,
@@ -271,7 +271,8 @@ unsafe fn cmd_send_keys_exec(
                 return CMD_RETURN_ERROR;
             }
         };
-        if !!wme.is_alive() && (args_has(args, 'X' as i32 as u_char) != 0 || count == 0 as u_int) {
+        if !!wme.is_alive() && (args_has(&*args, 'X' as i32 as u_char) != 0 || count == 0 as u_int)
+        {
             if wme.get_unchecked().mode.command.is_none() {
                 cmdq_error(item_handle, |out| out.write_all(b"not in a mode"));
                 return CMD_RETURN_ERROR;
@@ -279,7 +280,7 @@ unsafe fn cmd_send_keys_exec(
             wme.get_mut_unchecked().prefix = np;
         }
     }
-    if args_has(args, 'X' as i32 as u_char) != 0 {
+    if args_has(&*args, 'X' as i32 as u_char) != 0 {
         if !wme.is_alive() || wme.get_unchecked().mode.command.is_none() {
             cmdq_error(item_handle, |out| out.write_all(b"not in a mode"));
             return CMD_RETURN_ERROR;
@@ -300,7 +301,7 @@ unsafe fn cmd_send_keys_exec(
         );
         return CMD_RETURN_NORMAL;
     }
-    if args_has(args, 'M' as i32 as u_char) != 0 {
+    if args_has(&*args, 'M' as i32 as u_char) != 0 {
         let mut mouse_session_owner = None;
         mouse_pane_owner = cmd_mouse_pane(
             m,
@@ -324,7 +325,7 @@ unsafe fn cmd_send_keys_exec(
         cmd_get_entry(self_0.get_unchecked()),
         &cmd_send_prefix_entry,
     ) {
-        if args_has(args, '2' as i32 as u_char) != 0 {
+        if args_has(&*args, '2' as i32 as u_char) != 0 {
             key = options_get_number(
                 &s.as_ref().expect("live session").borrow_options_mut(),
                 c"prefix2",
@@ -338,14 +339,16 @@ unsafe fn cmd_send_keys_exec(
         cmd_send_keys_inject_key(item_handle, Some(item_handle), args, key);
         return CMD_RETURN_NORMAL;
     }
-    if args_has(args, 'R' as i32 as u_char) != 0 {
+    if args_has(&*args, 'R' as i32 as u_char) != 0 {
         pane.reset_input();
     }
     if count == 0 as u_int {
-        if args_has(args, 'N' as i32 as u_char) != 0 || args_has(args, 'R' as i32 as u_char) != 0 {
+        if args_has(&*args, 'N' as i32 as u_char) != 0
+            || args_has(&*args, 'R' as i32 as u_char) != 0
+        {
             return CMD_RETURN_NORMAL;
         }
-        after = if args_has(args, 'K' as i32 as u_char) != 0 {
+        after = if args_has(&*args, 'K' as i32 as u_char) != 0 {
             std::rc::Rc::downgrade(item_handle)
         } else {
             std::rc::Weak::new()

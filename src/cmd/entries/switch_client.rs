@@ -105,7 +105,7 @@ unsafe fn cmd_switch_client_exec(
     s = selected_session.clone();
     wl = target.winlink_handle();
     wp = target.pane_handle();
-    if args_has(args, 'r' as i32 as u_char) != 0 {
+    if args_has(&*args, 'r' as i32 as u_char) != 0 {
         if tc.as_ref().expect("live client").flags() & CLIENT_READONLY as uint64_t != 0 {
             uid = c.as_ref().expect("live client").peer_uid();
             if uid != getuid() {
@@ -142,13 +142,13 @@ unsafe fn cmd_switch_client_exec(
     ));
     if sort_crit.order as ::core::ffi::c_uint
         == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
-        && args_has(args, 'O' as i32 as u_char) != 0
+        && args_has(&*args, 'O' as i32 as u_char) != 0
     {
         cmdq_error(item_handle, |out| out.write_all(b"invalid sort order"));
         return CMD_RETURN_ERROR;
     }
-    sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
-    if args_has(args, 'n' as i32 as u_char) != 0 {
+    sort_crit.reversed = args_has(&*args, 'r' as i32 as u_char);
+    if args_has(&*args, 'n' as i32 as u_char) != 0 {
         selected_session = (tc
             .as_ref()
             .expect("live client")
@@ -161,7 +161,7 @@ unsafe fn cmd_switch_client_exec(
             cmdq_error(item_handle, |out| out.write_all(b"can't find next session"));
             return CMD_RETURN_ERROR;
         }
-    } else if args_has(args, 'p' as i32 as u_char) != 0 {
+    } else if args_has(&*args, 'p' as i32 as u_char) != 0 {
         selected_session = (tc
             .as_ref()
             .expect("live client")
@@ -176,7 +176,7 @@ unsafe fn cmd_switch_client_exec(
             });
             return CMD_RETURN_ERROR;
         }
-    } else if args_has(args, 'l' as i32 as u_char) != 0 {
+    } else if args_has(&*args, 'l' as i32 as u_char) != 0 {
         selected_session = crate::src::session::sessions::resolve(
             &tc.as_ref().expect("live client").previous_session(),
         );
@@ -215,7 +215,7 @@ unsafe fn cmd_switch_client_exec(
             );
         }
     }
-    if args_has(args, 'E' as i32 as u_char) == 0 {
+    if args_has(&*args, 'E' as i32 as u_char) == 0 {
         let source = tc_owner
             .as_ref()
             .expect("target client")

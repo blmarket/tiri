@@ -83,11 +83,11 @@ unsafe fn cmd_copy_mode_exec(
     let mut s: Option<SessionRef> = None;
     let mut pane_owner = (*target).wp.upgrade().expect("copy-mode target pane");
     let mut line_numbers: ::core::ffi::c_int = 0;
-    if args_has(args, 'q' as i32 as u_char) != 0 {
+    if args_has(&*args, 'q' as i32 as u_char) != 0 {
         pane_owner.reset_all_modes();
         return CMD_RETURN_NORMAL;
     }
-    if args_has(args, 'M' as i32 as u_char) != 0 {
+    if args_has(&*args, 'M' as i32 as u_char) != 0 {
         let mut mouse_session_owner = None;
         let mouse_pane_owner = cmd_mouse_pane(
             &raw mut (*event).m,
@@ -116,7 +116,7 @@ unsafe fn cmd_copy_mode_exec(
         pane_owner.set_mode(None, &window_clock_mode, Some(item_handle), None, None);
         return CMD_RETURN_NORMAL;
     }
-    let source_owner = if args_has(args, 's' as i32 as u_char) != 0 {
+    let source_owner = if args_has(&*args, 's' as i32 as u_char) != 0 {
         (*source).wp.upgrade()
     } else {
         Some(pane_owner.clone())
@@ -143,19 +143,19 @@ unsafe fn cmd_copy_mode_exec(
     ) == 0
     {
         window_copy_set_line_numbers(&pane_owner, line_numbers);
-        if args_has(args, 'M' as i32 as u_char) != 0 {
+        if args_has(&*args, 'M' as i32 as u_char) != 0 {
             window_copy_start_drag(c_owner.as_ref(), &raw mut (*event).m);
         }
     } else {
         window_copy_set_line_numbers(&pane_owner, line_numbers);
     }
-    if args_has(args, 'u' as i32 as u_char) != 0 {
+    if args_has(&*args, 'u' as i32 as u_char) != 0 {
         window_copy_pageup(&pane_owner);
     }
-    if args_has(args, 'd' as i32 as u_char) != 0 {
-        window_copy_pagedown(&pane_owner, args_has(args, 'e' as i32 as u_char));
+    if args_has(&*args, 'd' as i32 as u_char) != 0 {
+        window_copy_pagedown(&pane_owner, args_has(&*args, 'e' as i32 as u_char));
     }
-    if args_has(args, 'S' as i32 as u_char) != 0 {
+    if args_has(&*args, 'S' as i32 as u_char) != 0 {
         let Some(c) = c.as_ref() else {
             return CMD_RETURN_NORMAL;
         };
@@ -166,7 +166,7 @@ unsafe fn cmd_copy_mode_exec(
             slider,
             (*event).m.y,
             tty_oy,
-            args_has(args, 'e' as i32 as u_char),
+            args_has(&*args, 'e' as i32 as u_char),
         );
         return CMD_RETURN_NORMAL;
     }

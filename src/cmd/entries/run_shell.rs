@@ -85,7 +85,7 @@ fn cmd_run_shell_args_parse(
     args: &mut args,
     _idx: u_int,
 ) -> Result<args_parse_type, ArgsParseError> {
-    if unsafe { args_has(args as *mut args, 'C' as i32 as u_char) } != 0 {
+    if args_has(args, 'C' as i32 as u_char) != 0 {
         return Ok(ARGS_PARSE_COMMANDS_OR_STRING);
     }
     Ok(ARGS_PARSE_STRING)
@@ -168,7 +168,7 @@ unsafe fn cmd_run_shell_exec(
     let mut end: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut i: u_int = 0;
     let mut wait: ::core::ffi::c_int =
-        (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
+        (args_has(&*args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
     delay =
         args_get(&*(args), 'd' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !delay.is_null() {
@@ -180,10 +180,10 @@ unsafe fn cmd_run_shell_exec(
             });
             return CMD_RETURN_ERROR;
         }
-    } else if args_count(args) == 0 as u_int {
+    } else if args_count(&*args) == 0 as u_int {
         return CMD_RETURN_NORMAL;
     }
-    let cwd = if args_has(args, 'c' as i32 as u_char) != 0 {
+    let cwd = if args_has(&*args, 'c' as i32 as u_char) != 0 {
         args_get(&*(args), 'c' as i32 as u_char)
             .map(|cwd| format_single_from_target_cstring(item_handle, cwd.as_ptr()))
     } else {
@@ -198,14 +198,14 @@ unsafe fn cmd_run_shell_exec(
         wp_id: 0,
         flags: 0,
     });
-    if args_has(args, 'C' as i32 as u_char) == 0 {
+    if args_has(&*args, 'C' as i32 as u_char) == 0 {
         cmd =
             args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
         if !cmd.is_null() {
             let mut ft_owner = format_create_from_target(item_handle);
             ft = &raw mut *ft_owner;
             i = 1 as u_int;
-            while i < args_count(args) {
+            while i < args_count(&*args) {
                 let key = format_message_with(|out| write!(out, "{}", i));
                 format_add(ft, &key, |out| {
                     write_cstr(
@@ -233,7 +233,7 @@ unsafe fn cmd_run_shell_exec(
     }
     if let Some(pane) = pane_owner
         .as_ref()
-        .filter(|_| args_has(args, 't' as i32 as u_char) != 0)
+        .filter(|_| args_has(&*args, 't' as i32 as u_char) != 0)
     {
         cdata.wp_id = pane.id() as ::core::ffi::c_int;
     } else {
@@ -245,7 +245,7 @@ unsafe fn cmd_run_shell_exec(
         cdata.client = tc_owner.clone();
         cdata.flags |= JOB_NOWAIT;
     }
-    if args_has(args, 'E' as i32 as u_char) != 0 {
+    if args_has(&*args, 'E' as i32 as u_char) != 0 {
         cdata.flags |= JOB_SHOWSTDERR;
     }
     cdata.s = if s.is_none() { None } else { s.clone() };

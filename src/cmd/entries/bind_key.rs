@@ -59,7 +59,7 @@ unsafe fn cmd_bind_key_exec(
         args_get(&*(args), 'N' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut pr: cmd_parse_result = cmd_parse_result::empty();
     let mut repeat: ::core::ffi::c_int = 0;
-    let mut count: u_int = args_count(args);
+    let mut count: u_int = args_count(&*args);
     key =
         key_string_parse_cstr(args_string(&mut *(args), 0 as u_int).expect("argument is present"))
             .unwrap_or(KEYC_UNKNOWN);
@@ -78,15 +78,15 @@ unsafe fn cmd_bind_key_exec(
         });
         return CMD_RETURN_ERROR;
     }
-    if args_has(args, 'T' as i32 as u_char) != 0 {
+    if args_has(&*args, 'T' as i32 as u_char) != 0 {
         tablename = args_get(&*(args), 'T' as i32 as u_char)
             .map_or(std::ptr::null(), |value| value.as_ptr());
-    } else if args_has(args, 'n' as i32 as u_char) != 0 {
+    } else if args_has(&*args, 'n' as i32 as u_char) != 0 {
         tablename = c"root".as_ptr();
     } else {
         tablename = c"prefix".as_ptr();
     }
-    repeat = args_has(args, 'r' as i32 as u_char);
+    repeat = args_has(&*args, 'r' as i32 as u_char);
     if count == 1 as u_int {
         key_bindings_add(
             CStr::from_ptr(tablename),

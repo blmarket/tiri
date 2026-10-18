@@ -17,7 +17,7 @@ pub(super) fn args_type_to_string(kind: args_type) -> &'static CStr {
         _ => c"INVALID",
     }
 }
-pub(super) unsafe fn args_value_for_log<'a>(value: &'a ArgumentValue<'_>) -> Cow<'a, CStr> {
+pub(super) fn args_value_for_log<'a>(value: &'a ArgumentValue<'_>) -> Cow<'a, CStr> {
     match value.type_0() as ::core::ffi::c_uint {
         0 => Cow::Borrowed(c""),
         1 => Cow::Borrowed(value.as_string().expect("string argument")),
@@ -29,7 +29,7 @@ pub(super) unsafe fn args_value_for_log<'a>(value: &'a ArgumentValue<'_>) -> Cow
     }
 }
 
-unsafe fn args_print_add_value(buf: &mut Vec<u8>, value: &args_value) {
+fn args_print_add_value(buf: &mut Vec<u8>, value: &args_value) {
     if !buf.is_empty() {
         buf.push(b' ');
     }
@@ -49,7 +49,7 @@ unsafe fn args_print_add_value(buf: &mut Vec<u8>, value: &args_value) {
     }
 }
 
-pub(crate) unsafe fn args_print_cstring(args: &args) -> CString {
+pub(crate) fn args_print_cstring(args: &args) -> CString {
     let mut buf = Vec::new();
     for entry in args.tree.values() {
         if entry.flags & ARGS_ENTRY_OPTIONAL_VALUE == 0 && entry.values.is_empty() {
@@ -96,7 +96,7 @@ pub(crate) unsafe fn args_print_cstring(args: &args) -> CString {
     }
     CString::new(buf).expect("printed arguments contain no interior NUL")
 }
-pub(crate) unsafe fn args_escape_cstring(s: &CStr) -> CString {
+pub(crate) fn args_escape_cstring(s: &CStr) -> CString {
     let source = s.to_bytes();
     if source.is_empty() {
         return CString::new(b"''".to_vec()).expect("literal has no NUL");

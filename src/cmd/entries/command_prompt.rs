@@ -124,11 +124,11 @@ unsafe fn cmd_command_prompt_exec(
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut prompt_bytes = Vec::<u8>::new();
     let wp = (*target).pane_handle();
-    let mut count: u_int = args_count(args);
+    let mut count: u_int = args_count(&*args);
     let mut wait: ::core::ffi::c_int =
-        (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
+        (args_has(&*args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
     let mut space: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-    let mut pane: ::core::ffi::c_int = args_has(args, 'P' as i32 as u_char);
+    let mut pane: ::core::ffi::c_int = args_has(&*args, 'P' as i32 as u_char);
     if pane != 0 {
         if wp.is_none() || wp.as_ref().is_some_and(|pane| pane.has_prompt()) {
             return CMD_RETURN_NORMAL;
@@ -141,7 +141,7 @@ unsafe fn cmd_command_prompt_exec(
     {
         return CMD_RETURN_NORMAL;
     }
-    if args_has(args, 'i' as i32 as u_char) != 0 {
+    if args_has(&*args, 'i' as i32 as u_char) != 0 {
         wait = 0 as ::core::ffi::c_int;
     }
     let mut cdata = Box::new(cmd_command_prompt_cdata {
@@ -163,9 +163,9 @@ unsafe fn cmd_command_prompt_exec(
         0 as u_int,
         Some(c"%1"),
         wait,
-        args_has(args, 'F' as i32 as u_char),
+        args_has(&*args, 'F' as i32 as u_char),
     ));
-    let literal = args_has(args, 'l' as i32 as u_char) != 0;
+    let literal = args_has(&*args, 'l' as i32 as u_char) != 0;
     s = args_get(&*(args), 'p' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if s.is_null() {
         if count != 0 as u_int {
@@ -205,18 +205,18 @@ unsafe fn cmd_command_prompt_exec(
     } else {
         cdata.prompt_type = PROMPT_TYPE_COMMAND;
     }
-    if args_has(args, '1' as i32 as u_char) != 0 {
+    if args_has(&*args, '1' as i32 as u_char) != 0 {
         cdata.flags |= PROMPT_SINGLE;
-    } else if args_has(args, 'N' as i32 as u_char) != 0 {
+    } else if args_has(&*args, 'N' as i32 as u_char) != 0 {
         cdata.flags |= PROMPT_NUMERIC;
-    } else if args_has(args, 'i' as i32 as u_char) != 0 {
+    } else if args_has(&*args, 'i' as i32 as u_char) != 0 {
         cdata.flags |= PROMPT_INCREMENTAL;
-    } else if args_has(args, 'k' as i32 as u_char) != 0 {
+    } else if args_has(&*args, 'k' as i32 as u_char) != 0 {
         cdata.flags |= PROMPT_KEY;
-    } else if args_has(args, 'e' as i32 as u_char) != 0 {
+    } else if args_has(&*args, 'e' as i32 as u_char) != 0 {
         cdata.flags |= PROMPT_BSPACE_EXIT;
     }
-    if args_has(args, 'C' as i32 as u_char) != 0 {
+    if args_has(&*args, 'C' as i32 as u_char) != 0 {
         cdata.flags |= PROMPT_NOFREEZE;
     }
     if pane != 0 {

@@ -47,13 +47,13 @@ unsafe fn cmd_paste_buffer_exec(
     let pb;
     let mut sepstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut bufname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut bracket: ::core::ffi::c_int = args_has(args, 'p' as i32 as u_char);
+    let mut bracket: ::core::ffi::c_int = args_has(&*args, 'p' as i32 as u_char);
     if !pane_owner.has_tty() || pane_owner.has_exited() {
         cmdq_error(item_handle, |out| out.write_all(b"target pane has exited"));
         return CMD_RETURN_ERROR;
     }
     bufname = ::core::ptr::null::<::core::ffi::c_char>();
-    if args_has(args, 'b' as i32 as u_char) != 0 {
+    if args_has(&*args, 'b' as i32 as u_char) != 0 {
         bufname = args_get(&*(args), 'b' as i32 as u_char)
             .map_or(std::ptr::null(), |value| value.as_ptr());
     }
@@ -74,7 +74,7 @@ unsafe fn cmd_paste_buffer_exec(
     };
     sepstr = args_get(&*args, b's').map_or(std::ptr::null(), CStr::as_ptr);
     if sepstr.is_null() {
-        sepstr = if args_has(args, b'r') != 0 {
+        sepstr = if args_has(&*args, b'r') != 0 {
             c"\n".as_ptr()
         } else {
             c"\r".as_ptr()
@@ -85,8 +85,8 @@ unsafe fn cmd_paste_buffer_exec(
         let buffer = pb.borrow();
         paste_buffer_data(&buffer).unwrap_or_default().to_vec()
     };
-    pane_owner.paste_buffer(&bytes, separator, bracket != 0, args_has(args, b'S') != 0);
-    if args_has(args, 'd' as i32 as u_char) != 0 {
+    pane_owner.paste_buffer(&bytes, separator, bracket != 0, args_has(&*args, b'S') != 0);
+    if args_has(&*args, 'd' as i32 as u_char) != 0 {
         paste_free(&pb);
     }
     CMD_RETURN_NORMAL

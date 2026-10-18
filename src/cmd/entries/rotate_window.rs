@@ -45,7 +45,7 @@ unsafe fn cmd_rotate_window_exec(
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let window_owner = (*target).w.upgrade().expect("live rotation window");
     let result = {
-        let down = args_has(args, b'D') != 0;
+        let down = args_has(&*args, b'D') != 0;
         let mut order = window_owner
             .pane_snapshot()
             .iter()

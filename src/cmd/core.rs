@@ -203,7 +203,7 @@ fn cmd_list_next_group() -> u_int {
         group
     })
 }
-pub unsafe fn cmd_log_argv(argv: &[CString], prefix: &CStr) {
+pub fn cmd_log_argv(argv: &[CString], prefix: &CStr) {
     for (i, arg) in argv.iter().enumerate() {
         log_debug(format_args!(
             "{}: argv[{}]={}",
@@ -386,7 +386,7 @@ pub unsafe fn cmd_parse(
     }
     Ok(cmd)
 }
-pub unsafe fn cmd_copy(cmd: &cmd, argv: &Vec<CString>) -> refbox::RefBox<cmd> {
+pub fn cmd_copy(cmd: &cmd, argv: &Vec<CString>) -> refbox::RefBox<cmd> {
     let new_cmd = cmd_new_owned(cmd.entry, cmd.file.as_deref());
     {
         let mut copy = new_cmd
@@ -401,7 +401,7 @@ pub unsafe fn cmd_copy(cmd: &cmd, argv: &Vec<CString>) -> refbox::RefBox<cmd> {
     new_cmd
 }
 
-pub(crate) unsafe fn cmd_print_cstring(cmd: &cmd) -> CString {
+pub(crate) fn cmd_print_cstring(cmd: &cmd) -> CString {
     let args = args_print_cstring(cmd.args.as_deref().expect("parsed command arguments"));
     let arguments = args.as_bytes();
     let name = cmd.entry.name.to_bytes();
@@ -420,7 +420,7 @@ pub(crate) unsafe fn cmd_print_cstring(cmd: &cmd) -> CString {
     }
     CString::new(buf).expect("command print contains no interior NUL")
 }
-pub unsafe fn cmd_list_new() -> std::rc::Rc<std::cell::RefCell<cmd_list>> {
+pub fn cmd_list_new() -> std::rc::Rc<std::cell::RefCell<cmd_list>> {
     let group = cmd_list_next_group();
     std::rc::Rc::new(std::cell::RefCell::new(cmd_list {
         group,
@@ -456,7 +456,7 @@ pub fn cmd_list_append_all(
     }
     cmdlist.list.append(&mut from.list);
 }
-pub unsafe fn cmd_list_move(
+pub fn cmd_list_move(
     cmdlist: &std::rc::Rc<std::cell::RefCell<cmd_list>>,
     from: &std::rc::Rc<std::cell::RefCell<cmd_list>>,
 ) {
@@ -467,7 +467,7 @@ pub unsafe fn cmd_list_move(
     let group = cmd_list_next_group();
     destination.group = group;
 }
-pub unsafe fn cmd_list_copy(
+pub fn cmd_list_copy(
     cmdlist: &cmd_list,
     argv: &Vec<CString>,
 ) -> std::rc::Rc<std::cell::RefCell<cmd_list>> {
@@ -497,7 +497,7 @@ pub unsafe fn cmd_list_copy(
     ));
     owner
 }
-pub(crate) unsafe fn cmd_list_print_cstring(cmdlist: &cmd_list, flags: i32) -> CString {
+pub(crate) fn cmd_list_print_cstring(cmdlist: &cmd_list, flags: i32) -> CString {
     let mut buf = Vec::new();
     let commands = &cmdlist.list;
     for (index, owner) in commands.iter().enumerate() {
@@ -622,7 +622,7 @@ pub unsafe fn cmd_mouse_pane(
     pane
 }
 
-pub(crate) unsafe fn cmd_template_replace_cstring(
+pub(crate) fn cmd_template_replace_cstring(
     template: &CStr,
     s: &CStr,
     idx: ::core::ffi::c_int,

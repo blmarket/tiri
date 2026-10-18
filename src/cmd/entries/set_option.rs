@@ -108,7 +108,7 @@ fn cmd_set_option_args_parse(
     args: &mut args,
     idx: u_int,
 ) -> Result<args_parse_type, ArgsParseError> {
-    if unsafe { args_has(args as *mut args, 'B' as i32 as u_char) } != 0 {
+    if args_has(args, 'B' as i32 as u_char) != 0 {
         return Ok(ARGS_PARSE_COMMANDS_OR_STRING);
     }
     if idx == 1 as u_int {
@@ -125,11 +125,11 @@ unsafe fn cmd_set_hook_event_exec(
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut c: Option<ClientRef> = None;
-    if args_count(args) == 0 as u_int {
+    if args_count(&*args) == 0 as u_int {
         cmdq_error(item_handle, |out| out.write_all(b"missing argument"));
         return CMD_RETURN_ERROR;
     }
-    if args_count(args) != 1 as u_int {
+    if args_count(&*args) != 1 as u_int {
         cmdq_error(item_handle, |out| out.write_all(b"too many arguments"));
         return CMD_RETURN_ERROR;
     }
@@ -189,12 +189,12 @@ unsafe fn cmd_set_hook_monitor_exec(
     window: i32,
 ) -> cmd_retval {
     let target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item_handle.get());
-    if args_count(args) > 1 {
+    if args_count(&*args) > 1 {
         cmdq_error(item_handle, |out| out.write_all(b"too many arguments"));
         return CMD_RETURN_ERROR;
     }
     let argument = args_get(&*args, b'B').expect("monitor argument").to_owned();
-    let unsubscribe = args_has(args, b'u') != 0;
+    let unsubscribe = args_has(&*args, b'u') != 0;
     let parsed = monitor_parse_owned(&argument);
     let (name, kind, id, format) = if unsubscribe {
         match parsed {
@@ -227,17 +227,17 @@ unsafe fn cmd_set_hook_monitor_exec(
         hooks_monitor_remove(&selected, &name);
         return CMD_RETURN_NORMAL;
     }
-    if args_count(args) != 0 {
+    if args_count(&*args) != 0 {
         let mut value = args_string(&mut *args, 0)
             .expect("monitor command")
             .to_owned();
-        if args_has(args, b'F') != 0 {
+        if args_has(&*args, b'F') != 0 {
             value = format_single_from_target_cstring(item_handle, value.as_ptr());
         }
         let exists = selected.with_entry(&name, |_| ()).is_some();
-        if args_has(args, b'o') == 0 || !exists {
+        if args_has(&*args, b'o') == 0 || !exists {
             selected
-                .set_from_string(None, &name, Some(&value), args_has(args, b'a') != 0)
+                .set_from_string(None, &name, Some(&value), args_has(&*args, b'a') != 0)
                 .expect("monitor name is a user string option");
             options_push_changes(&name);
         }
@@ -247,7 +247,7 @@ unsafe fn cmd_set_hook_monitor_exec(
     } else {
         (*target).session_handle()
     };
-    let flags = if args_has(args, b'T') != 0 {
+    let flags = if args_has(&*args, b'T') != 0 {
         MONITOR_NOTIFY_TRUE
     } else {
         0
@@ -318,27 +318,27 @@ unsafe fn cmd_set_option_exec(
         &cmd_set_window_option_entry,
     ) as i32;
     let set_hook = std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_set_hook_entry);
-    if set_hook && args_has(args, b'E') != 0 {
+    if set_hook && args_has(&*args, b'E') != 0 {
         return cmd_set_hook_event_exec(self_0, item_handle);
     }
-    if set_hook && args_has(args, b'B') != 0 {
+    if set_hook && args_has(&*args, b'B') != 0 {
         return cmd_set_hook_monitor_exec(item_handle, args, window);
     }
-    if args_count(args) == 0 {
+    if args_count(&*args) == 0 {
         return set_option_error(item_handle, c"missing argument");
     }
     let argument = format_single_from_target_cstring(
         item_handle,
         args_string(&mut *args, 0).map_or(std::ptr::null(), CStr::as_ptr),
     );
-    if set_hook && args_has(args, b'R') != 0 {
+    if set_hook && args_has(&*args, b'R') != 0 {
         hooks_run(Some(item_handle), &argument);
         return CMD_RETURN_NORMAL;
     }
     let parsed = match options_match_owned(&argument) {
         Ok(parsed) => parsed,
         Err(failure) => {
-            if args_has(args, b'q') != 0 {
+            if args_has(&*args, b'q') != 0 {
                 return CMD_RETURN_NORMAL;
             }
             let ambiguous = match failure {
@@ -357,19 +357,19 @@ unsafe fn cmd_set_option_exec(
             return CMD_RETURN_ERROR;
         }
     };
-    let mut value = if args_count(args) < 2 {
+    let mut value = if args_count(&*args) < 2 {
         None
     } else {
         args_string(&mut *args, 1).map(CStr::to_owned)
     };
-    if args_has(args, b'F') != 0 {
+    if args_has(&*args, b'F') != 0 {
         if let Some(old) = value.as_ref() {
             value = Some(format_single_from_target_cstring(item_handle, old.as_ptr()));
         }
     }
     let (scope, selected) = match options_scope_from_name(args, window, &parsed.name, &*target) {
         Ok(selected) => selected,
-        Err(_) if args_has(args, b'q') != 0 => return CMD_RETURN_NORMAL,
+        Err(_) if args_has(&*args, b'q') != 0 => return CMD_RETURN_NORMAL,
         Err(cause) => return set_option_error(item_handle, &cause),
     };
     let name = parsed.name.as_c_str();
@@ -386,7 +386,7 @@ unsafe fn cmd_set_option_exec(
         });
         return CMD_RETURN_ERROR;
     }
-    if args_has(args, b'u') == 0 && args_has(args, b'o') != 0 {
+    if args_has(&*args, b'u') == 0 && args_has(&*args, b'o') != 0 {
         let already = selected
             .with_entry(name, |entry| {
                 array_key.is_none_or(|key| {
@@ -399,7 +399,7 @@ unsafe fn cmd_set_option_exec(
             })
             .unwrap_or(false);
         if already {
-            if args_has(args, b'q') != 0 {
+            if args_has(&*args, b'q') != 0 {
                 return CMD_RETURN_NORMAL;
             }
             cmdq_error(item_handle, |out| {
@@ -409,13 +409,13 @@ unsafe fn cmd_set_option_exec(
             return CMD_RETURN_ERROR;
         }
     }
-    if args_has(args, b'U') != 0 && scope == OPTIONS_TABLE_WINDOW {
+    if args_has(&*args, b'U') != 0 && scope == OPTIONS_TABLE_WINDOW {
         if let Err(cause) = unset_window_panes(&*target, name, array_key) {
             return set_option_error(item_handle, &cause);
         }
     }
-    let append = args_has(args, b'a') != 0;
-    let result = if args_has(args, b'u') != 0 || args_has(args, b'U') != 0 {
+    let append = args_has(&*args, b'a') != 0;
+    let result = if args_has(&*args, b'u') != 0 || args_has(&*args, b'U') != 0 {
         selected.remove_or_default(name, array_key)
     } else if user {
         selected

@@ -133,7 +133,7 @@ unsafe fn cmd_new_session_exec(
     let mut sy: u_int = 0;
     let mut dsx: u_int = 0;
     let mut dsy: u_int = 0;
-    let mut count: u_int = args_count(args);
+    let mut count: u_int = args_count(&*args);
     let mut sc: spawn_context = spawn_context {
         item: std::rc::Weak::new(),
         s: std::rc::Weak::new(),
@@ -163,8 +163,8 @@ unsafe fn cmd_new_session_exec(
     ) {
         return CMD_RETURN_NORMAL;
     }
-    if args_has(args, 't' as i32 as u_char) != 0
-        && (count != 0 as u_int || args_has(args, 'n' as i32 as u_char) != 0)
+    if args_has(&*args, 't' as i32 as u_char) != 0
+        && (count != 0 as u_int || args_has(&*args, 'n' as i32 as u_char) != 0)
     {
         cmdq_error(item_handle, |out| {
             out.write_all(b"command or window name given with target")
@@ -227,7 +227,7 @@ unsafe fn cmd_new_session_exec(
         current_block = 10043043949733653460;
     }
     if current_block == 10043043949733653460 {
-        if args_has(args, 'A' as i32 as u_char) != 0 {
+        if args_has(&*args, 'A' as i32 as u_char) != 0 {
             if !sname.is_null() {
                 as_0 = crate::src::session::sessions::find(std::ffi::CStr::from_ptr(sname));
             } else {
@@ -237,14 +237,14 @@ unsafe fn cmd_new_session_exec(
                 retval = cmd_attach_session(
                     item_handle,
                     Some(&*(as_0_value.name())),
-                    args_has(args, 'D' as i32 as u_char),
-                    args_has(args, 'X' as i32 as u_char),
+                    args_has(&*args, 'D' as i32 as u_char),
+                    args_has(&*args, 'X' as i32 as u_char),
                     0 as ::core::ffi::c_int,
                     nullable_cstr(
                         args_get(&*(args), 'c' as i32 as u_char)
                             .map_or(std::ptr::null(), |value| value.as_ptr()),
                     ),
-                    args_has(args, 'E' as i32 as u_char),
+                    args_has(&*args, 'E' as i32 as u_char),
                     nullable_cstr(
                         args_get(&*(args), 'f' as i32 as u_char)
                             .map_or(std::ptr::null(), |value| value.as_ptr()),
@@ -300,7 +300,7 @@ unsafe fn cmd_new_session_exec(
             match current_block {
                 5193972633326621385 => {}
                 _ => {
-                    detached = args_has(args, 'd' as i32 as u_char);
+                    detached = args_has(&*args, 'd' as i32 as u_char);
                     match &c {
                         None => detached = 1 as ::core::ffi::c_int,
                         Some(client) if client.flags() & CLIENT_CONTROL as uint64_t != 0 => {
@@ -378,7 +378,7 @@ unsafe fn cmd_new_session_exec(
                             match current_block {
                                 5193972633326621385 => {}
                                 _ => {
-                                    if args_has(args, 'x' as i32 as u_char) != 0 {
+                                    if args_has(&*args, 'x' as i32 as u_char) != 0 {
                                         tmp = args_get(&*(args), 'x' as i32 as u_char)
                                             .map_or(std::ptr::null(), |value| value.as_ptr());
                                         if strcmp(tmp, c"-".as_ptr()) == 0 as ::core::ffi::c_int {
@@ -412,7 +412,7 @@ unsafe fn cmd_new_session_exec(
                                     match current_block {
                                         5193972633326621385 => {}
                                         _ => {
-                                            if args_has(args, 'y' as i32 as u_char) != 0 {
+                                            if args_has(&*args, 'y' as i32 as u_char) != 0 {
                                                 tmp = args_get(&*(args), 'y' as i32 as u_char)
                                                     .map_or(std::ptr::null(), |value| {
                                                         value.as_ptr()
@@ -487,13 +487,17 @@ unsafe fn cmd_new_session_exec(
                                                             sx = dsx;
                                                             sy = dsy;
                                                         } else {
-                                                            if args_has(args, 'x' as i32 as u_char)
-                                                                != 0
+                                                            if args_has(
+                                                                &*args,
+                                                                'x' as i32 as u_char,
+                                                            ) != 0
                                                             {
                                                                 sx = dsx;
                                                             }
-                                                            if args_has(args, 'y' as i32 as u_char)
-                                                                != 0
+                                                            if args_has(
+                                                                &*args,
+                                                                'y' as i32 as u_char,
+                                                            ) != 0
                                                             {
                                                                 sy = dsy;
                                                             }
@@ -506,14 +510,17 @@ unsafe fn cmd_new_session_exec(
                                                         sy = 1 as u_int;
                                                     }
                                                     oo = Some(crate::src::options::options_create_owned(Some(crate::src::options::OptionsScope::GlobalSession)));
-                                                    if args_has(args, 'x' as i32 as u_char) != 0
-                                                        || args_has(args, 'y' as i32 as u_char) != 0
+                                                    if args_has(&*args, 'x' as i32 as u_char) != 0
+                                                        || args_has(&*args, 'y' as i32 as u_char)
+                                                            != 0
                                                     {
-                                                        if args_has(args, 'x' as i32 as u_char) == 0
+                                                        if args_has(&*args, 'x' as i32 as u_char)
+                                                            == 0
                                                         {
                                                             dsx = sx;
                                                         }
-                                                        if args_has(args, 'y' as i32 as u_char) == 0
+                                                        if args_has(&*args, 'y' as i32 as u_char)
+                                                            == 0
                                                         {
                                                             dsy = sy;
                                                         }
@@ -535,7 +542,7 @@ unsafe fn cmd_new_session_exec(
                                                     }
                                                     env = Some(environ_create());
                                                     if let Some(client) = c.as_ref().filter(|_| {
-                                                        args_has(args, 'E' as i32 as u_char) == 0
+                                                        args_has(&*args, 'E' as i32 as u_char) == 0
                                                     }) {
                                                         let client_environment = client
                                                             .with_environment(|env| {
@@ -644,8 +651,10 @@ unsafe fn cmd_new_session_exec(
                                                             s.clone().expect("live session"),
                                                         );
                                                         if detached == 0 {
-                                                            if args_has(args, 'f' as i32 as u_char)
-                                                                != 0
+                                                            if args_has(
+                                                                &*args,
+                                                                'f' as i32 as u_char,
+                                                            ) != 0
                                                             {
                                                                 c.clone()
                                                                     .expect("live client")
@@ -700,7 +709,8 @@ unsafe fn cmd_new_session_exec(
                                                                     .set_key_table(None);
                                                             }
                                                         }
-                                                        if args_has(args, 'P' as i32 as u_char) != 0
+                                                        if args_has(&*args, 'P' as i32 as u_char)
+                                                            != 0
                                                         {
                                                             template = args_get(
                                                                 &*(args),
@@ -736,7 +746,8 @@ unsafe fn cmd_new_session_exec(
                                                                     0,
                                                                 );
                                                         }
-                                                        if args_has(args, 'd' as i32 as u_char) == 0
+                                                        if args_has(&*args, 'd' as i32 as u_char)
+                                                            == 0
                                                         {
                                                             *current.current.borrow_mut() =
                                                                 cmd_find_state::find_from_session(

@@ -145,7 +145,7 @@ unsafe fn cmd_save_buffer_exec(
     let path: *const ::core::ffi::c_char = expanded_path
         .as_ref()
         .map_or(dash_path.as_ptr(), |path| path.as_ptr());
-    if args_has(args, 'a' as i32 as u_char) != 0 {
+    if args_has(&*args, 'a' as i32 as u_char) != 0 {
         flags = O_APPEND;
     } else {
         flags = O_TRUNC;

@@ -75,12 +75,12 @@ unsafe fn cmd_list_sessions_exec(
     ));
     if sort_crit.order as ::core::ffi::c_uint
         == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
-        && args_has(args, 'O' as i32 as u_char) != 0
+        && args_has(&*args, 'O' as i32 as u_char) != 0
     {
         cmdq_error(item_handle, |out| out.write_all(b"invalid sort order"));
         return CMD_RETURN_ERROR;
     }
-    sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
+    sort_crit.reversed = args_has(&*args, 'r' as i32 as u_char);
     let l = sort_get_sessions(&sort_crit);
     let n = u_int::try_from(l.len()).expect("too many sessions to list");
     i = 0 as u_int;

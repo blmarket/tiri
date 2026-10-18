@@ -79,14 +79,14 @@ unsafe fn cmd_if_shell_exec(
     let tc_owner = cmdq_get_target_client((item).as_ref());
     let _tc: Option<ClientRef> = tc_owner.clone();
     let mut s: Option<SessionRef> = (*target).session_handle();
-    let mut count: u_int = args_count(args);
+    let mut count: u_int = args_count(&*args);
     let mut wait: ::core::ffi::c_int =
-        (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
+        (args_has(&*args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
     let shellcmd = format_single_from_target_cstring(
         item_handle,
         args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
     );
-    if args_has(args, 'F' as i32 as u_char) != 0 {
+    if args_has(&*args, 'F' as i32 as u_char) != 0 {
         let cmdlist = if *shellcmd.as_ptr() as ::core::ffi::c_int != '0' as i32
             && *shellcmd.as_ptr() as ::core::ffi::c_int != '\0' as i32
         {

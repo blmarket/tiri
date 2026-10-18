@@ -59,12 +59,13 @@ unsafe fn cmd_kill_session_exec(
     let mut filter: *const ::core::ffi::c_char =
         args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !filter.is_null()
-        && (args_has(args, 'a' as i32 as u_char) == 0 || args_has(args, 'C' as i32 as u_char) != 0)
+        && (args_has(&*args, 'a' as i32 as u_char) == 0
+            || args_has(&*args, 'C' as i32 as u_char) != 0)
     {
         cmdq_error(item_handle, |out| out.write_all(b"-f only valid with -a"));
         return CMD_RETURN_ERROR;
     }
-    if args_has(args, 'C' as i32 as u_char) != 0 {
+    if args_has(&*args, 'C' as i32 as u_char) != 0 {
         wl = source.with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
         while wl.is_alive() {
             wl.get_unchecked()
@@ -75,10 +76,10 @@ unsafe fn cmd_kill_session_exec(
             wl = winlinks_next(wl.get_unchecked());
         }
         server_redraw_session(&source);
-    } else if args_has(args, 'a' as i32 as u_char) != 0 {
+    } else if args_has(&*args, 'a' as i32 as u_char) != 0 {
         let filter = (!filter.is_null()).then(|| CStr::from_ptr(filter));
         return cmd_kill_session_all(item_handle, filter);
-    } else if args_has(args, 'g' as i32 as u_char) != 0 && {
+    } else if args_has(&*args, 'g' as i32 as u_char) != 0 && {
         sg = crate::src::session::session_groups::for_session(&std::rc::Rc::downgrade(&source));
         sg.is_alive()
     } {

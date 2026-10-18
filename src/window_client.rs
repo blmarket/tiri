@@ -626,17 +626,17 @@ unsafe fn window_client_init(
         .expect("mode belongs to a live pane");
     let mut data: *mut window_client_modedata = ::core::ptr::null_mut::<window_client_modedata>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
-    let format = if args.is_null() || args_has(args, 'F' as i32 as u_char) == 0 {
+    let format = if args.is_null() || args_has(&*args, 'F' as i32 as u_char) == 0 {
         WINDOW_CLIENT_DEFAULT_FORMAT.as_ptr()
     } else {
         args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr())
     };
-    let key_format = if args.is_null() || args_has(args, 'K' as i32 as u_char) == 0 {
+    let key_format = if args.is_null() || args_has(&*args, 'K' as i32 as u_char) == 0 {
         WINDOW_CLIENT_DEFAULT_KEY_FORMAT.as_ptr()
     } else {
         args_get(&*(args), 'K' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr())
     };
-    let command = if args.is_null() || args_count(args) == 0 as u_int {
+    let command = if args.is_null() || args_count(&*args) == 0 as u_int {
         WINDOW_CLIENT_DEFAULT_COMMAND.as_ptr()
     } else {
         args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())
@@ -656,9 +656,9 @@ unsafe fn window_client_init(
     let data_handle = std::ptr::NonNull::new(data).expect("live client mode data");
     (*data).wp = std::rc::Rc::downgrade(&mode_pane_owner);
     (*data).hide_preview_this_pane =
-        (!args.is_null() && args_has(args, 'h' as i32 as u_char) != 0) as ::core::ffi::c_int;
+        (!args.is_null() && args_has(&*args, 'h' as i32 as u_char) != 0) as ::core::ffi::c_int;
     (*data).preview_is_info =
-        (!args.is_null() && args_has(args, 'i' as i32 as u_char) != 0) as ::core::ffi::c_int;
+        (!args.is_null() && args_has(&*args, 'i' as i32 as u_char) != 0) as ::core::ffi::c_int;
     (*data).data = Some(mode_tree_start(
         &mode_pane_owner,
         args,

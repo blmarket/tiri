@@ -62,7 +62,7 @@ pub(super) fn args_push_positional_owned(args: &mut args, value: args_value) {
     args.values.push(value);
 }
 
-unsafe fn args_copy_copy_value(from: &args_value, argv: &Vec<CString>) -> args_value {
+fn args_copy_copy_value(from: &args_value, argv: &Vec<CString>) -> args_value {
     match from.type_0() as ::core::ffi::c_uint {
         1 => {
             let source = from.as_string().expect("string argument");
@@ -86,13 +86,13 @@ unsafe fn args_copy_copy_value(from: &args_value, argv: &Vec<CString>) -> args_v
         _ => args_value::empty(),
     }
 }
-pub unsafe fn args_copy(args: &args, argv: &Vec<CString>) -> Box<args> {
+pub fn args_copy(args: &args, argv: &Vec<CString>) -> Box<args> {
     cmd_log_argv(argv, c"args_copy");
     let mut new_args = args_create();
     for entry in args.tree.values() {
         if entry.values.is_empty() {
             for _ in 0..entry.count {
-                args_set_flag(&mut *new_args, entry.flag, 0);
+                args_set_flag(&mut new_args, entry.flag, 0);
             }
         } else {
             for value in &entry.values {
@@ -110,7 +110,7 @@ pub unsafe fn args_copy(args: &args, argv: &Vec<CString>) -> Box<args> {
     }
     new_args
 }
-pub unsafe fn args_to_vector(args: &args) -> Vec<CString> {
+pub fn args_to_vector(args: &args) -> Vec<CString> {
     let mut argv = Vec::new();
     for value in args.values.iter() {
         match value.type_0() as ::core::ffi::c_uint {
@@ -130,9 +130,8 @@ pub unsafe fn args_to_vector(args: &args) -> Vec<CString> {
     argv
 }
 
-pub unsafe fn args_has(args: *mut args, flag: u_char) -> ::core::ffi::c_int {
-    (&*args)
-        .tree
+pub fn args_has(args: &args, flag: u_char) -> ::core::ffi::c_int {
+    args.tree
         .get(&flag)
         .map_or(0, |entry| entry.count as ::core::ffi::c_int)
 }
@@ -158,23 +157,23 @@ pub(super) fn args_set_value(
     }
 }
 
-pub unsafe fn args_set_owned_string(args: *mut args, value: CString) {
+pub fn args_set_owned_string(args: &mut args, value: CString) {
     let flag: u_char = 'f' as i32 as u_char;
     let flags: ::core::ffi::c_int = 0;
-    args_set_value(&mut *args, flag, Some(args_value::string(value)), flags);
+    args_set_value(args, flag, Some(args_value::string(value)), flags);
 }
 
 /// Add an occurrence of a flag that has no associated value.
-unsafe fn args_set_flag(args: *mut args, flag: u_char, flags: ::core::ffi::c_int) {
-    args_set_value(&mut *args, flag, None, flags);
+fn args_set_flag(args: &mut args, flag: u_char, flags: ::core::ffi::c_int) {
+    args_set_value(args, flag, None, flags);
 }
 
 pub fn args_get(args: &args, flag: u_char) -> Option<&CStr> {
     args_last_value(args, flag).and_then(args_value::as_string)
 }
 
-pub unsafe fn args_count(mut args: *mut args) -> u_int {
-    (*args).values.len() as u_int
+pub fn args_count(args: &args) -> u_int {
+    args.values.len() as u_int
 }
 pub fn args_string(args: &mut args, idx: u_int) -> Option<&CStr> {
     if idx >= (args.values.len() as u_int) {
@@ -186,12 +185,10 @@ pub fn args_string(args: &mut args, idx: u_int) -> Option<&CStr> {
         ARGS_STRING => value.as_string(),
         ARGS_COMMANDS => {
             if value.cached.is_none() {
-                let printed = unsafe {
-                    cmd_list_print_cstring(
-                        &value.as_commands().expect("command argument").borrow(),
-                        0,
-                    )
-                };
+                let printed = cmd_list_print_cstring(
+                    &value.as_commands().expect("command argument").borrow(),
+                    0,
+                );
                 value.cached = Some(printed);
             }
             value.cached.as_deref()

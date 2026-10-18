@@ -2,7 +2,6 @@
 
 use super::store::{args, args_last_string, args_last_value};
 use super::value::ARGS_STRING;
-use crate::src::compat::strtonum::strtonum;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::shared::abi::*;
 use crate::src::shared::command::cmdq_item;
@@ -19,33 +18,64 @@ pub enum ArgumentValueError {
 
 impl ArgumentValueError {
     pub fn message(self) -> &'static CStr {
-        unsafe {
-            CStr::from_bytes_with_nul_unchecked(match self {
-                Self::Missing => b"missing\0",
-                Self::Empty => b"empty\0",
-                Self::Invalid => b"invalid\0",
-                Self::TooSmall => b"too small\0",
-                Self::TooLarge => b"too large\0",
-            })
+        match self {
+            Self::Missing => c"missing",
+            Self::Empty => c"empty",
+            Self::Invalid => c"invalid",
+            Self::TooSmall => c"too small",
+            Self::TooLarge => c"too large",
         }
     }
 }
 
-fn strtonum_error(errstr: &CStr) -> ArgumentValueError {
-    match errstr.to_bytes() {
-        b"invalid" => ArgumentValueError::Invalid,
-        b"too small" => ArgumentValueError::TooSmall,
-        b"too large" => ArgumentValueError::TooLarge,
-        _ => ArgumentValueError::Invalid,
-    }
-}
-
+/// Parse a decimal integer with `strtonum` semantics: leading C whitespace and
+/// one sign are accepted, anything after the digits is invalid.
 pub(super) fn parse_number(
     value: &CStr,
     minval: i64,
     maxval: i64,
 ) -> Result<i64, ArgumentValueError> {
-    unsafe { strtonum(value, minval, maxval) }.map_err(strtonum_error)
+    if minval > maxval {
+        return Err(ArgumentValueError::Invalid);
+    }
+    let bytes = value.to_bytes();
+    let start = bytes
+        .iter()
+        .position(|byte| !matches!(byte, b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r'))
+        .unwrap_or(bytes.len());
+    let (negative, digits) = match bytes[start..].split_first() {
+        Some((b'-', rest)) => (true, rest),
+        Some((b'+', rest)) => (false, rest),
+        _ => (false, &bytes[start..]),
+    };
+    if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
+        return Err(ArgumentValueError::Invalid);
+    }
+    let mut number: i64 = 0;
+    for digit in digits {
+        let digit = i64::from(digit - b'0');
+        number = number
+            .checked_mul(10)
+            .and_then(|number| {
+                if negative {
+                    number.checked_sub(digit)
+                } else {
+                    number.checked_add(digit)
+                }
+            })
+            .ok_or(if negative {
+                ArgumentValueError::TooSmall
+            } else {
+                ArgumentValueError::TooLarge
+            })?;
+    }
+    if number < minval {
+        return Err(ArgumentValueError::TooSmall);
+    }
+    if number > maxval {
+        return Err(ArgumentValueError::TooLarge);
+    }
+    Ok(number)
 }
 
 fn percentage_share(
@@ -83,32 +113,28 @@ fn parse_percentage(
 }
 
 /// Converts the last string value stored for `flag` to a bounded integer.
-///
-/// # Safety
-/// `args` must point to a valid argument store.
-pub unsafe fn args_strtonum_result(
-    args: *mut args,
+pub fn args_strtonum_result(
+    args: &args,
     flag: u_char,
     minval: ::core::ffi::c_longlong,
     maxval: ::core::ffi::c_longlong,
 ) -> Result<i64, ArgumentValueError> {
-    let value = args_last_string(&*args, flag).ok_or(ArgumentValueError::Missing)?;
+    let value = args_last_string(args, flag).ok_or(ArgumentValueError::Missing)?;
     parse_number(value, minval, maxval)
 }
 
 /// Converts the last string value after format expansion to a bounded integer.
 ///
 /// # Safety
-/// `args` must point to a valid argument store and `item` must be valid for
-/// format expansion.
+/// `item` must be valid for format expansion.
 pub unsafe fn args_strtonum_and_expand_result(
-    args: *mut args,
+    args: &args,
     flag: u_char,
     minval: ::core::ffi::c_longlong,
     maxval: ::core::ffi::c_longlong,
     item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
 ) -> Result<i64, ArgumentValueError> {
-    let value = args_last_string(&*args, flag).ok_or(ArgumentValueError::Missing)?;
+    let value = args_last_string(args, flag).ok_or(ArgumentValueError::Missing)?;
     let formatted = format_single_from_target_cstring(
         (item_handle).expect("command queue item"),
         value.as_ptr(),
@@ -117,20 +143,17 @@ pub unsafe fn args_strtonum_and_expand_result(
 }
 
 /// Converts the last stored string as an integer or percentage.
-///
-/// # Safety
-/// `args` must point to a valid argument store.
-pub unsafe fn args_percentage_result(
-    args: *mut args,
+pub fn args_percentage_result(
+    args: &args,
     flag: u_char,
     minval: ::core::ffi::c_longlong,
     maxval: ::core::ffi::c_longlong,
     curval: ::core::ffi::c_longlong,
 ) -> Result<i64, ArgumentValueError> {
-    if !(&*args).tree.contains_key(&flag) {
+    if !args.tree.contains_key(&flag) {
         return Err(ArgumentValueError::Missing);
     }
-    let value = args_last_value(&*args, flag).ok_or(ArgumentValueError::Empty)?;
+    let value = args_last_value(args, flag).ok_or(ArgumentValueError::Empty)?;
     if value.type_0() as ::core::ffi::c_uint
         != ARGS_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
         || value.as_string().is_none()

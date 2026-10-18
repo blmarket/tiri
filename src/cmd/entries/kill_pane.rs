@@ -56,11 +56,11 @@ unsafe fn cmd_kill_pane_exec(
     let pane_owner = (*target).wp.upgrade();
     let mut filter: *const ::core::ffi::c_char =
         args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if !filter.is_null() && args_has(args, 'a' as i32 as u_char) == 0 {
+    if !filter.is_null() && args_has(&*args, 'a' as i32 as u_char) == 0 {
         cmdq_error(item_handle, |out| out.write_all(b"-f only valid with -a"));
         return CMD_RETURN_ERROR;
     }
-    if args_has(args, 'a' as i32 as u_char) != 0 {
+    if args_has(&*args, 'a' as i32 as u_char) != 0 {
         let filter = (!filter.is_null()).then(|| CStr::from_ptr(filter));
         return cmd_kill_pane_all(item_handle, filter);
     }

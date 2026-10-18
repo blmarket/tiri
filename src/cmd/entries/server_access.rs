@@ -77,11 +77,11 @@ unsafe fn cmd_server_access_exec(
     let mut gr: *mut group = ::core::ptr::null_mut::<group>();
     let mut id: id_t = 0;
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if args_has(args, 'l' as i32 as u_char) != 0 {
+    if args_has(&*args, 'l' as i32 as u_char) != 0 {
         server_acl_display(item_handle);
         return CMD_RETURN_NORMAL;
     }
-    if args_count(args) == 0 as u_int {
+    if args_count(&*args) == 0 as u_int {
         cmdq_error(item_handle, |out| {
             out.write_all(b"missing user or group argument")
         });
@@ -95,7 +95,7 @@ unsafe fn cmd_server_access_exec(
         (refbox::Weak::new()).clone(),
         None,
     );
-    if args_has(args, 'g' as i32 as u_char) != 0 {
+    if args_has(&*args, 'g' as i32 as u_char) != 0 {
         type_0 = c"group".as_ptr();
         gr = getgrnam(arg.as_ptr());
         if !gr.is_null() {
@@ -127,19 +127,19 @@ unsafe fn cmd_server_access_exec(
         });
         return CMD_RETURN_ERROR;
     }
-    if args_has(args, 'a' as i32 as u_char) != 0 && args_has(args, 'd' as i32 as u_char) != 0 {
+    if args_has(&*args, 'a' as i32 as u_char) != 0 && args_has(&*args, 'd' as i32 as u_char) != 0 {
         cmdq_error(item_handle, |out| {
             out.write_all(b"-a and -d cannot be used together")
         });
         return CMD_RETURN_ERROR;
     }
-    if args_has(args, 'w' as i32 as u_char) != 0 && args_has(args, 'r' as i32 as u_char) != 0 {
+    if args_has(&*args, 'w' as i32 as u_char) != 0 && args_has(&*args, 'r' as i32 as u_char) != 0 {
         cmdq_error(item_handle, |out| {
             out.write_all(b"-r and -w cannot be used together")
         });
         return CMD_RETURN_ERROR;
     }
-    if args_has(args, 'd' as i32 as u_char) != 0 {
+    if args_has(&*args, 'd' as i32 as u_char) != 0 {
         return cmd_server_access_deny(
             item_handle,
             id,
@@ -148,7 +148,7 @@ unsafe fn cmd_server_access_exec(
             CStr::from_ptr(name),
         );
     }
-    if args_has(args, 'a' as i32 as u_char) != 0 {
+    if args_has(&*args, 'a' as i32 as u_char) != 0 {
         if server_acl_find(id, flags) != 0 {
             cmdq_error(item_handle, |out| {
                 write_cstr(out, nullable_cstr(type_0))?;
@@ -159,13 +159,13 @@ unsafe fn cmd_server_access_exec(
             return CMD_RETURN_ERROR;
         }
         server_acl_allow(id, flags);
-    } else if (args_has(args, 'r' as i32 as u_char) != 0
-        || args_has(args, 'w' as i32 as u_char) != 0)
+    } else if (args_has(&*args, 'r' as i32 as u_char) != 0
+        || args_has(&*args, 'w' as i32 as u_char) != 0)
         && server_acl_find(id, flags) == 0
     {
         server_acl_allow(id, flags);
     }
-    if args_has(args, 'w' as i32 as u_char) != 0 {
+    if args_has(&*args, 'w' as i32 as u_char) != 0 {
         if server_acl_find(id, flags) == 0 {
             cmdq_error(item_handle, |out| {
                 write_cstr(out, nullable_cstr(type_0))?;
@@ -178,7 +178,7 @@ unsafe fn cmd_server_access_exec(
         server_acl_allow_write(id, flags);
         return CMD_RETURN_NORMAL;
     }
-    if args_has(args, 'r' as i32 as u_char) != 0 {
+    if args_has(&*args, 'r' as i32 as u_char) != 0 {
         if server_acl_find(id, flags) == 0 {
             cmdq_error(item_handle, |out| {
                 write_cstr(out, nullable_cstr(type_0))?;

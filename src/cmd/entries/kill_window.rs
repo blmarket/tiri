@@ -80,7 +80,7 @@ unsafe fn cmd_kill_window_exec(
     let mut s: Option<SessionRef> = (*target).session_handle();
     let mut filter: *const ::core::ffi::c_char =
         args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if !filter.is_null() && args_has(args, 'a' as i32 as u_char) == 0 {
+    if !filter.is_null() && args_has(&*args, 'a' as i32 as u_char) == 0 {
         cmdq_error(item_handle, |out| out.write_all(b"-f only valid with -a"));
         return CMD_RETURN_ERROR;
     }
@@ -88,7 +88,7 @@ unsafe fn cmd_kill_window_exec(
         cmd_get_entry(self_0.get_unchecked()),
         &cmd_unlink_window_entry,
     ) {
-        if args_has(args, 'k' as i32 as u_char) == 0
+        if args_has(&*args, 'k' as i32 as u_char) == 0
             && (crate::src::shared::session::SessionRef::window_linked_outside_group(
                 s.as_ref(),
                 wl.get_unchecked().window_handle().expect("live window"),
@@ -104,7 +104,7 @@ unsafe fn cmd_kill_window_exec(
         recalculate_sizes();
         return CMD_RETURN_NORMAL;
     }
-    if args_has(args, 'a' as i32 as u_char) != 0 {
+    if args_has(&*args, 'a' as i32 as u_char) != 0 {
         let filter = (!filter.is_null()).then(|| CStr::from_ptr(filter));
         return cmd_kill_window_all(item_handle, filter);
     }

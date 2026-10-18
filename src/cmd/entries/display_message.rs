@@ -75,11 +75,11 @@ unsafe fn cmd_display_message_exec(
     let mut cause: Option<CString> = None;
     let mut delay: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     let mut flags: ::core::ffi::c_int = 0;
-    let mut Nflag: ::core::ffi::c_int = args_has(args, 'N' as i32 as u_char);
-    let mut Cflag: ::core::ffi::c_int = args_has(args, 'C' as i32 as u_char);
+    let mut Nflag: ::core::ffi::c_int = args_has(&*args, 'N' as i32 as u_char);
+    let mut Cflag: ::core::ffi::c_int = args_has(&*args, 'C' as i32 as u_char);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut count: u_int = args_count(args);
-    if args_has(args, 'I' as i32 as u_char) != 0 && args_has(args, 'j' as i32 as u_char) == 0 {
+    let mut count: u_int = args_count(&*args);
+    if args_has(&*args, 'I' as i32 as u_char) != 0 && args_has(&*args, 'j' as i32 as u_char) == 0 {
         if wp.is_none() {
             return CMD_RETURN_NORMAL;
         }
@@ -92,15 +92,15 @@ unsafe fn cmd_display_message_exec(
             Ok(Some(input)) => return cmdq_suspend(item_handle, input),
         }
     }
-    if args_has(args, 'F' as i32 as u_char) != 0 && count != 0 as u_int {
+    if args_has(&*args, 'F' as i32 as u_char) != 0 && count != 0 as u_int {
         cmdq_error(item_handle, |out| {
             out.write_all(b"only one of -F or argument must be given")
         });
         return CMD_RETURN_ERROR;
     }
-    if args_has(args, 'd' as i32 as u_char) != 0 {
+    if args_has(&*args, 'd' as i32 as u_char) != 0 {
         delay = match args_strtonum_result(
-            args,
+            &*args,
             'd' as i32 as u_char,
             0 as ::core::ffi::c_longlong,
             UINT_MAX as ::core::ffi::c_longlong,
@@ -122,7 +122,7 @@ unsafe fn cmd_display_message_exec(
         template = args_get(&*(args), 'F' as i32 as u_char)
             .map_or(std::ptr::null(), |value| value.as_ptr());
     }
-    if args_has(args, 'j' as i32 as u_char) != 0 && template.is_null() {
+    if args_has(&*args, 'j' as i32 as u_char) != 0 && template.is_null() {
         template = c"".as_ptr();
     } else if template.is_null() {
         template = DISPLAY_MESSAGE_TEMPLATE.as_ptr();
@@ -145,7 +145,7 @@ unsafe fn cmd_display_message_exec(
     } else {
         c = None;
     }
-    if args_has(args, 'v' as i32 as u_char) != 0 {
+    if args_has(&*args, 'v' as i32 as u_char) != 0 {
         flags = FORMAT_VERBOSE;
     } else {
         flags = 0 as ::core::ffi::c_int;
@@ -154,7 +154,7 @@ unsafe fn cmd_display_message_exec(
         format_create_with_client(queue_client.as_ref(), Some(item_handle), FORMAT_NONE, flags);
     ft = &raw mut *ft_owner;
     format_defaults(ft, c.as_ref(), s.as_ref(), wl.clone(), wp.as_ref());
-    if args_has(args, 'a' as i32 as u_char) != 0 && args_has(args, 'j' as i32 as u_char) == 0 {
+    if args_has(&*args, 'a' as i32 as u_char) != 0 && args_has(&*args, 'j' as i32 as u_char) == 0 {
         format_each(ft, |key, value| unsafe {
             cmdq_print(item_handle, |out| {
                 write_cstr(out, &*key)?;
@@ -165,12 +165,12 @@ unsafe fn cmd_display_message_exec(
         drop(ft_owner);
         return CMD_RETURN_NORMAL;
     }
-    let mut msg = if args_has(args, 'l' as i32 as u_char) != 0 {
+    let mut msg = if args_has(&*args, 'l' as i32 as u_char) != 0 {
         CStr::from_ptr(template).to_owned()
     } else {
         format_expand_time_cstring(ft, template)
     };
-    if args_has(args, 'j' as i32 as u_char) != 0 {
+    if args_has(&*args, 'j' as i32 as u_char) != 0 {
         let Some(jn) = json_parse(&msg, Some(&mut cause)) else {
             cmdq_error(item_handle, |out| write_cstr(out, cause.as_deref()));
             drop(msg);
@@ -181,7 +181,7 @@ unsafe fn cmd_display_message_exec(
     }
     if cmdq_get_client((item).as_ref()).is_none() {
         cmdq_error(item_handle, |out| write_cstr(out, &*msg));
-    } else if args_has(args, 'p' as i32 as u_char) != 0 {
+    } else if args_has(&*args, 'p' as i32 as u_char) != 0 {
         cmdq_print(item_handle, |out| write_cstr(out, &*msg));
     } else if !tc.is_none()
         && tc.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0

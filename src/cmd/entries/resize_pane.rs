@@ -43,7 +43,7 @@ unsafe fn cmd_resize_pane_exec(
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let pane_owner = (*target).wp.upgrade().expect("live resize target pane");
-    if args_has(args, b'Z') != 0 {
+    if args_has(&*args, b'Z') != 0 {
         let window_owner = (*target).w.upgrade().expect("live resize target window");
         let toggled = window_owner.layout_action(&pane_owner, LayoutAction::ToggleZoom);
         drop(window_owner);
@@ -52,7 +52,7 @@ unsafe fn cmd_resize_pane_exec(
             return CMD_RETURN_ERROR;
         }
     }
-    if args_has(args, b'T') != 0 {
+    if args_has(&*args, b'T') != 0 {
         pane_owner.trim_history();
     }
     CMD_RETURN_NORMAL

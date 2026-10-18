@@ -61,7 +61,7 @@ pub static cmd_list_keys_entry: cmd_entry = {
 };
 unsafe fn cmd_list_keys_get_prefix(args: *mut args) -> CString {
     let mut prefix: key_code = 0;
-    if args_has(args, 'P' as i32 as u_char) != 0 {
+    if args_has(&*args, 'P' as i32 as u_char) != 0 {
         return args_get(&*(args), 'P' as i32 as u_char)
             .expect("argument is present")
             .to_owned();
@@ -186,12 +186,12 @@ unsafe fn cmd_list_keys_exec(
     ));
     if sort_crit.order as ::core::ffi::c_uint
         == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
-        && args_has(args, 'O' as i32 as u_char) != 0
+        && args_has(&*args, 'O' as i32 as u_char) != 0
     {
         cmdq_error(item_handle, |out| out.write_all(b"invalid sort order"));
         return CMD_RETURN_ERROR;
     }
-    sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
+    sort_crit.reversed = args_has(&*args, 'r' as i32 as u_char);
     tablename =
         args_get(&*(args), 'T' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !tablename.is_null() {
@@ -207,8 +207,8 @@ unsafe fn cmd_list_keys_exec(
         }
     }
     let prefix = cmd_list_keys_get_prefix(args);
-    single = args_has(args, '1' as i32 as u_char);
-    notes_only = args_has(args, 'N' as i32 as u_char);
+    single = args_has(&*args, '1' as i32 as u_char);
+    notes_only = args_has(&*args, 'N' as i32 as u_char);
     template =
         args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if template.is_null() {
@@ -225,7 +225,7 @@ unsafe fn cmd_list_keys_exec(
         sort_get_key_bindings(&tables, &sort_crit)
     };
     filter_notes =
-        (notes_only != 0 && args_has(args, 'a' as i32 as u_char) == 0) as ::core::ffi::c_int;
+        (notes_only != 0 && args_has(&*args, 'a' as i32 as u_char) == 0) as ::core::ffi::c_int;
     filter_key = (only != KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code) as ::core::ffi::c_int;
     if filter_notes != 0 || filter_key != 0 {
         cmd_list_keys_filter_key_list(filter_notes, filter_key, only, &mut bindings);

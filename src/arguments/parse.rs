@@ -48,7 +48,7 @@ fn args_copy_value(from: &ArgumentValue<'_>) -> args_value {
     from.to_owned()
 }
 
-unsafe fn args_parse_flag_argument(
+fn args_parse_flag_argument(
     values: &[ArgumentValue<'_>],
     args: &mut args,
     i: &mut usize,
@@ -67,9 +67,9 @@ unsafe fn args_parse_flag_argument(
             && argument.is_none_or(|value| {
                 let bytes = value.as_string().expect("string argument").to_bytes();
                 bytes.first() == Some(&b'-')
-                    && bytes.get(1).is_some_and(|next| {
-                        *next == b'-' || ::libc::isalpha(*next as ::core::ffi::c_int) != 0
-                    })
+                    && bytes
+                        .get(1)
+                        .is_some_and(|next| *next == b'-' || next.is_ascii_alphabetic())
             });
         if skip_optional {
             log_debug(format_args!(
@@ -95,7 +95,7 @@ unsafe fn args_parse_flag_argument(
 }
 
 /// Return true when flags end, leaving the first positional value unconsumed.
-unsafe fn args_parse_flags(
+fn args_parse_flags(
     parse: &args_parse,
     values: &[ArgumentValue<'_>],
     args: &mut args,
@@ -119,7 +119,7 @@ unsafe fn args_parse_flags(
         if flag == b'?' {
             return Err(ArgsParseError::Usage);
         }
-        if ::libc::isalnum(flag as ::core::ffi::c_int) == 0 {
+        if !flag.is_ascii_alphanumeric() {
             return Err(ArgsParseError::Message(parse_flag_error(
                 b"invalid flag -",
                 flag,
@@ -151,7 +151,7 @@ unsafe fn args_parse_flags(
     Ok(false)
 }
 
-pub unsafe fn args_parse(
+pub fn args_parse(
     parse: &args_parse,
     values: &[ArgumentValue<'_>],
 ) -> Result<Box<args>, ArgsParseError> {

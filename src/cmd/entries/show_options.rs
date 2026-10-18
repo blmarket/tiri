@@ -120,9 +120,9 @@ unsafe fn cmd_show_options_exec(
         &cmd_show_window_options_entry,
     ) as i32;
     let show_hooks = std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_show_hooks_entry);
-    let monitor = show_hooks && args_has(args, b'B') != 0;
-    let quiet = args_has(args, b'q') != 0;
-    if args_count(args) == 0 {
+    let monitor = show_hooks && args_has(&*args, b'B') != 0;
+    let quiet = args_has(&*args, b'q') != 0;
+    if args_count(&*args) == 0 {
         let (scope, selected) = match options_scope_from_flags(args, window, &*target) {
             Ok(selected) => selected,
             Err(cause) => return show_options_scope_error(item_handle, quiet, &cause),
@@ -172,7 +172,7 @@ unsafe fn cmd_show_options_exec(
         Ok((_, selected)) => selected,
         Err(cause) => return show_options_scope_error(item_handle, quiet, &cause),
     };
-    let resolved = show_options_resolve(&selected, &parsed.name, args_has(args, b'A') != 0);
+    let resolved = show_options_resolve(&selected, &parsed.name, args_has(&*args, b'A') != 0);
     let Some((resolved, parent)) = resolved else {
         if parsed.name.as_bytes().first() == Some(&b'@') && !quiet {
             cmdq_error(item_handle, |out| {

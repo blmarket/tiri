@@ -779,11 +779,11 @@ unsafe fn cmd_display_menu_exec(
     let border_style = args_get(&*(args), b'S').map_or(std::ptr::null(), |value| value.as_ptr());
     let selected_style = args_get(&*(args), b'H').map_or(std::ptr::null(), |value| value.as_ptr());
     let mut starting_choice = 0;
-    if args_has(args, b'C') != 0 {
+    if args_has(&*args, b'C') != 0 {
         if args_get(&*(args), b'C').expect("argument is present") == c"-" {
             starting_choice = -1;
         } else {
-            match args_strtonum_result(args, b'C', 0, UINT_MAX as i64) {
+            match args_strtonum_result(&*args, b'C', 0, UINT_MAX as i64) {
                 Ok(value) => starting_choice = value as i32,
                 Err(error) => {
                     cmdq_error(item_handle, |out| {
@@ -795,7 +795,7 @@ unsafe fn cmd_display_menu_exec(
             }
         }
     }
-    let title = if args_has(args, b'T') != 0 {
+    let title = if args_has(&*args, b'T') != 0 {
         Some(format_single_from_target_cstring(
             item_handle,
             args_get(&*(args), b'T').map_or(std::ptr::null(), |value| value.as_ptr()),
@@ -805,7 +805,7 @@ unsafe fn cmd_display_menu_exec(
     };
     let mut menu = menu_create(title.as_deref().unwrap_or(c""));
     drop(title);
-    let count = args_count(args);
+    let count = args_count(&*args);
     let mut i = 0;
     while i != count {
         let name = args_string(&mut *(args), i)
@@ -879,10 +879,10 @@ unsafe fn cmd_display_menu_exec(
         }
     }
     let mut flags = 0;
-    if args_has(args, b'O') != 0 {
+    if args_has(&*args, b'O') != 0 {
         flags |= MENU_STAYOPEN;
     }
-    if (*event).m.valid == 0 && args_has(args, b'M') == 0 {
+    if (*event).m.valid == 0 && args_has(&*args, b'M') == 0 {
         flags |= MENU_NOMOUSE;
     }
     menu_display(
@@ -937,9 +937,9 @@ unsafe fn cmd_display_popup_exec(
     let mut py: u_int = 0;
     let mut w: u_int = 0;
     let mut h: u_int = 0;
-    let mut count: u_int = args_count(args);
+    let mut count: u_int = args_count(&*args);
     let mut env: Option<Box<environ>> = None;
-    if args_has(args, 'C' as i32 as u_char) != 0 {
+    if args_has(&*args, 'C' as i32 as u_char) != 0 {
         tc.as_ref().expect("live client").clear_overlay();
         return CMD_RETURN_NORMAL;
     }
@@ -956,9 +956,9 @@ unsafe fn cmd_display_popup_exec(
             .terminal_size()
             .1
             .wrapping_div(2 as u_int);
-        if args_has(args, 'h' as i32 as u_char) != 0 {
+        if args_has(&*args, 'h' as i32 as u_char) != 0 {
             match args_percentage_result(
-                args,
+                &*args,
                 'h' as i32 as u_char,
                 1 as ::core::ffi::c_longlong,
                 tc.as_ref().expect("live client").terminal_size().1 as ::core::ffi::c_longlong,
@@ -988,9 +988,9 @@ unsafe fn cmd_display_popup_exec(
                     .terminal_size()
                     .0
                     .wrapping_div(2 as u_int);
-                if args_has(args, 'w' as i32 as u_char) != 0 {
+                if args_has(&*args, 'w' as i32 as u_char) != 0 {
                     match args_percentage_result(
-                        args,
+                        &*args,
                         'w' as i32 as u_char,
                         1 as ::core::ffi::c_longlong,
                         tc.as_ref().expect("live client").terminal_size().0
@@ -1083,7 +1083,7 @@ unsafe fn cmd_display_popup_exec(
                             } else {
                                 argv_owner = args_to_vector(&*args);
                             }
-                            if args_has(args, 'e' as i32 as u_char) >= 1 as ::core::ffi::c_int {
+                            if args_has(&*args, 'e' as i32 as u_char) >= 1 as ::core::ffi::c_int {
                                 env = Some(environ_create());
                                 for av in args_flag_values(&*args, 'e' as i32 as u_char) {
                                     environ_put(
@@ -1105,7 +1105,7 @@ unsafe fn cmd_display_popup_exec(
     if current_block == 1345366029464561491 {
         value = args_get(&*(args), 'b' as i32 as u_char)
             .map_or(std::ptr::null(), |value| value.as_ptr());
-        if args_has(args, 'B' as i32 as u_char) != 0 {
+        if args_has(&*args, 'B' as i32 as u_char) != 0 {
             lines = BOX_LINES_NONE;
             current_block = 8151474771948790331;
         } else if !value.is_null() {
@@ -1134,7 +1134,7 @@ unsafe fn cmd_display_popup_exec(
         match current_block {
             1988999557336856620 => {}
             _ => {
-                if args_has(args, 'T' as i32 as u_char) != 0 {
+                if args_has(&*args, 'T' as i32 as u_char) != 0 {
                     formatted_title = Some(format_single_from_target_cstring(
                         item_handle,
                         args_get(&*(args), 'T' as i32 as u_char)
@@ -1147,21 +1147,21 @@ unsafe fn cmd_display_popup_exec(
                 } else {
                     title = c"".as_ptr();
                 }
-                if args_has(args, 'N' as i32 as u_char) != 0 || modify == 0 {
+                if args_has(&*args, 'N' as i32 as u_char) != 0 || modify == 0 {
                     flags = 0 as ::core::ffi::c_int;
                 }
-                if args_has(args, 'E' as i32 as u_char) > 1 as ::core::ffi::c_int {
+                if args_has(&*args, 'E' as i32 as u_char) > 1 as ::core::ffi::c_int {
                     if flags == -(1 as ::core::ffi::c_int) {
                         flags = 0 as ::core::ffi::c_int;
                     }
                     flags |= POPUP_CLOSEEXITZERO;
-                } else if args_has(args, 'E' as i32 as u_char) != 0 {
+                } else if args_has(&*args, 'E' as i32 as u_char) != 0 {
                     if flags == -(1 as ::core::ffi::c_int) {
                         flags = 0 as ::core::ffi::c_int;
                     }
                     flags |= POPUP_CLOSEEXIT;
                 }
-                if args_has(args, 'k' as i32 as u_char) != 0 {
+                if args_has(&*args, 'k' as i32 as u_char) != 0 {
                     if flags == -(1 as ::core::ffi::c_int) {
                         flags = 0 as ::core::ffi::c_int;
                     }

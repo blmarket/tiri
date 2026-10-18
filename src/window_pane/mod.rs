@@ -835,7 +835,7 @@ unsafe fn window_pane_set_mode(
         }
     }
     wme.get_mut_unchecked().kill = if !args.is_null() {
-        args_has(args, 'k' as i32 as u_char)
+        args_has(&*args, 'k' as i32 as u_char)
     } else {
         0 as ::core::ffi::c_int
     };
