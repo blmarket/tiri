@@ -1,31 +1,29 @@
-use crate::src::arguments::{
+use crate::arguments::{
     args, args_command_state, args_count, args_get, args_has, args_make_commands,
     args_make_commands_get_command_cstring, args_make_commands_prepare, args_parse,
     args_parse_type, ArgsParseError, ARGS_PARSE_COMMANDS_OR_STRING,
 };
-use crate::src::cmd::queue::{
+use crate::cmd::queue::{
     cmdq_append, cmdq_error, cmdq_get_command, cmdq_get_error, cmdq_get_target_client,
     cmdq_insert_after, cmdq_resumed,
 };
-use crate::src::cmd::{cmd_append_argv, cmd_get_args_mut};
-use crate::src::format::bytes::write_cstr;
-use crate::src::prompt::prompt_type;
-use crate::src::server_client::Client as _;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::command::CMD_CLIENT_TFLAG;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{
-    cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmd_list, cmdq_item,
-};
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::prompt::*;
-use crate::src::shared::prompt::{
+use crate::cmd::{cmd_append_argv, cmd_get_args_mut};
+use crate::format::bytes::write_cstr;
+use crate::prompt::prompt_type;
+use crate::server_client::Client as _;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::command::CMD_CLIENT_TFLAG;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmd_list, cmdq_item};
+use crate::shared::pane::window_pane;
+use crate::shared::prompt::*;
+use crate::shared::prompt::{
     prompt_result, PROMPT_BSPACE_EXIT, PROMPT_CLOSE, PROMPT_CONTINUE, PROMPT_INCREMENTAL,
     PROMPT_ISPANE, PROMPT_KEY, PROMPT_NOFREEZE, PROMPT_NUMERIC, PROMPT_SINGLE,
 };
-use crate::src::status::{status_prompt_set, status_prompt_update};
-use crate::src::window_pane::WindowPane as _;
+use crate::status::{status_prompt_set, status_prompt_update};
+use crate::window_pane::WindowPane as _;
 use std::cell::{RefCell, UnsafeCell};
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
@@ -118,7 +116,7 @@ unsafe fn cmd_command_prompt_exec(
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let mut prompt_bytes = Vec::<u8>::new();
     let wp = (*target).pane_handle();
@@ -361,7 +359,7 @@ unsafe fn cmd_command_prompt_callback(
     PROMPT_CLOSE
 }
 impl cmd_command_prompt_cdata {
-    fn into_callback(mut self: Box<Self>) -> crate::src::shared::status::status_prompt_input_cb {
+    fn into_callback(mut self: Box<Self>) -> crate::shared::status::status_prompt_input_cb {
         Some(Box::new(move |client, text, key| unsafe {
             cmd_command_prompt_callback(client, &mut self, text, key)
         }))

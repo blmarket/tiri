@@ -1,16 +1,16 @@
-use crate::src::arguments::{args, args_get, args_parse, args_string};
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print};
-use crate::src::cmd::{cmd_find, cmd_get_args_mut, cmd_table};
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::{
+use crate::arguments::{args, args_get, args_parse, args_string};
+use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print};
+use crate::cmd::{cmd_find, cmd_get_args_mut, cmd_table};
+use crate::format::bytes::write_cstr;
+use crate::format::{
     format_add, format_create_with_client, format_defaults, format_expand_cstring,
 };
-use crate::src::shared::abi::*;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
-use crate::src::shared::command::{CMD_AFTERHOOK, CMD_STARTSERVER};
-use crate::src::shared::format::format_tree;
-use crate::src::shared::format::FORMAT_NONE;
+use crate::shared::abi::*;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
+use crate::shared::command::{CMD_AFTERHOOK, CMD_STARTSERVER};
+use crate::shared::format::format_tree;
+use crate::shared::format::FORMAT_NONE;
 use std::ffi::CStr;
 
 pub const LIST_COMMANDS_TEMPLATE: &std::ffi::CStr =

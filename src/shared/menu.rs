@@ -7,7 +7,7 @@ use super::key::key_code;
 use super::layout::box_lines;
 use super::mouse::mouse_event;
 use super::screen::screen;
-use crate::src::shared::window::WindowWeak;
+use crate::shared::window::WindowWeak;
 use std::ffi::CStr;
 
 /// Windows own menus; redraw scenes only observe them.

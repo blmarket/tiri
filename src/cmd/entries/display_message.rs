@@ -1,31 +1,31 @@
-use crate::src::arguments::{
+use crate::arguments::{
     args, args_count, args_get, args_has, args_parse, args_string, args_strtonum_result,
 };
-use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::find::cmd_find_best_client;
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_print};
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::{
+use crate::cmd::cmd_get_args_mut;
+use crate::cmd::find::cmd_find_best_client;
+use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_print};
+use crate::format::bytes::write_cstr;
+use crate::format::{
     format_create_with_client, format_defaults, format_each, format_expand_time_cstring,
 };
-use crate::src::json::{json_parse, json_to_string};
-use crate::src::reactor::{evbuffer_add_formatted, evbuffer_new};
+use crate::json::{json_parse, json_to_string};
+use crate::reactor::{evbuffer_add_formatted, evbuffer_new};
 
-use crate::src::server_client::Client as _;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::client::CLIENT_CONTROL;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::command::{
+use crate::server_client::Client as _;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::client::CLIENT_CONTROL;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{
     CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_CFLAG, CMD_FIND_CANFAIL,
 };
-use crate::src::shared::format::format_tree;
-use crate::src::shared::format::{FORMAT_NONE, FORMAT_VERBOSE};
-use crate::src::shared::limits::UINT_MAX;
-use crate::src::shared::window::winlink;
-use crate::src::status::status_message_set;
-use crate::src::window_pane::WindowPane as _;
+use crate::shared::format::format_tree;
+use crate::shared::format::{FORMAT_NONE, FORMAT_VERBOSE};
+use crate::shared::limits::UINT_MAX;
+use crate::shared::window::winlink;
+use crate::status::status_message_set;
+use crate::window_pane::WindowPane as _;
 use std::ffi::{CStr, CString};
 
 pub const DISPLAY_MESSAGE_TEMPLATE: &std::ffi::CStr = c"[#{session_name}] #{window_index}:#{window_name}, current pane #{pane_index} - (%H:%M %d-%b-%y)";
@@ -62,7 +62,7 @@ unsafe fn cmd_display_message_exec(
     let queue_client = cmdq_get_client(Some(&*item));
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();

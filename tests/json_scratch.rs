@@ -1,5 +1,5 @@
 use std::ffi::CString;
-use tiri::src::json::{json_find, json_parse};
+use tiri::json::{json_find, json_parse};
 
 #[test]
 fn object_key_errors_destroy_partial_objects() {

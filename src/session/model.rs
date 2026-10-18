@@ -1,11 +1,11 @@
 //! Session state is private to its implementation. Other models use Session.
-use crate::src::options::options;
-use crate::src::shared::abi::u_int;
-use crate::src::shared::environment::environ;
-use crate::src::shared::event::Timer;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::terminal::termios;
-use crate::src::shared::window::{winlink, winlink_stack, winlinks};
+use crate::options::options;
+use crate::shared::abi::u_int;
+use crate::shared::environment::environ;
+use crate::shared::event::Timer;
+use crate::shared::session::SessionRef;
+use crate::shared::terminal::termios;
+use crate::shared::window::{winlink, winlink_stack, winlinks};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Default)]
@@ -84,11 +84,11 @@ impl session {
 #[cfg(test)]
 mod retained_session_tests {
     use super::*;
-    use crate::src::shared::session::session_group;
+    use crate::shared::session::session_group;
 
     #[test]
     fn group_membership_is_weak_but_traversal_retains_live_sessions() {
-        use crate::src::session::{
+        use crate::session::{
             session_group_attached_count, session_group_count, session_group_members,
         };
         use std::rc::Rc;
@@ -137,7 +137,7 @@ mod retained_session_tests {
         unsafe {
             let owner = session::new();
             let observer = Rc::downgrade(&owner);
-            crate::src::session::session_remove_ref(owner.clone(), c"typed-owner-test");
+            crate::session::session_remove_ref(owner.clone(), c"typed-owner-test");
             assert_eq!(Rc::strong_count(&owner), 1);
             drop(owner);
             assert!(observer.upgrade().is_none());
@@ -150,7 +150,7 @@ mod retained_session_tests {
         unsafe {
             let owner = session::new();
             let observer = Rc::downgrade(&owner);
-            crate::src::session::session_remove_ref(owner, c"owner-test");
+            crate::session::session_remove_ref(owner, c"owner-test");
             assert!(observer.upgrade().is_none());
         }
     }

@@ -7,21 +7,21 @@ use super::parse::{
 use super::scope::OptionsScope;
 use super::table::{options_other_names, options_table};
 use super::types::*;
-use crate::src::cmd::cmd_list_print_cstring;
-use crate::src::cmd::parse::cmd_parse_from_string;
-use crate::src::format::bytes::format_message_with;
-use crate::src::format::bytes::write_cstr;
-use crate::src::key_string::key_string_format;
-use crate::src::log::fatalx;
-use crate::src::server::current_time;
+use crate::cmd::cmd_list_print_cstring;
+use crate::cmd::parse::cmd_parse_from_string;
+use crate::format::bytes::format_message_with;
+use crate::format::bytes::write_cstr;
+use crate::key_string::key_string_format;
+use crate::log::fatalx;
+use crate::server::current_time;
 
-use crate::src::style::colour::{colour_format, colour_parse_cstr};
+use crate::style::colour::{colour_format, colour_parse_cstr};
 
-use crate::src::shared::abi::*;
-use crate::src::shared::command::cmd_list;
-use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
-use crate::src::shared::key::*;
-use crate::src::shared::limits::UINT_MAX;
+use crate::shared::abi::*;
+use crate::shared::command::cmd_list;
+use crate::shared::command::{cmd_parse_input, cmd_parse_result};
+use crate::shared::key::*;
+use crate::shared::limits::UINT_MAX;
 use std::collections::btree_map;
 use std::ffi::{CStr, CString};
 
@@ -230,7 +230,7 @@ fn options_add<'a>(oo: &'a mut options, name: &CStr) -> &'a mut options_entry {
 fn options_remove(entry: btree_map::OccupiedEntry<'_, CString, Box<options_entry>>) {
     drop(entry.remove());
 }
-pub fn options_get_monitor_data(o: &options_entry) -> Option<&crate::src::hooks::hooks_monitor> {
+pub fn options_get_monitor_data(o: &options_entry) -> Option<&crate::hooks::hooks_monitor> {
     o.monitor_data.as_deref()
 }
 pub unsafe fn options_hook_fired(o: &mut options_entry) {

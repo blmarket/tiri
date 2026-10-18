@@ -1,4 +1,4 @@
-use crate::src::shared::posix_io::glob_t;
+use crate::shared::posix_io::glob_t;
 use libc::{glob, globfree};
 use std::ffi::{c_char, c_int, CStr};
 

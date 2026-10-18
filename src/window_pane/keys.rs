@@ -1,13 +1,13 @@
 //! Encode pane process input without lending pane storage to consumers.
 use super::WindowPane;
-use crate::src::input_keys::{input_key, input_key_get_mouse};
-use crate::src::key_string::key_string_format;
-use crate::src::log::{log_cstr, log_cstr_n, log_debug, log_get_level};
-use crate::src::reactor::BufferEvent;
-use crate::src::shared::key::*;
-use crate::src::shared::mouse::mouse_event;
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::screen::ALL_MOUSE_MODES;
+use crate::input_keys::{input_key, input_key_get_mouse};
+use crate::key_string::key_string_format;
+use crate::log::{log_cstr, log_cstr_n, log_debug, log_get_level};
+use crate::reactor::BufferEvent;
+use crate::shared::key::*;
+use crate::shared::mouse::mouse_event;
+use crate::shared::pane::window_pane;
+use crate::shared::screen::ALL_MOUSE_MODES;
 
 use std::cell::UnsafeCell;
 use std::rc::Rc;

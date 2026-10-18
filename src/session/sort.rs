@@ -1,7 +1,7 @@
 //! Session registry ordering; comparison keys stay inside the Session owner.
 use super::*;
-use crate::src::shared::session::SessionRef;
-use crate::src::sort::{sort_by_criteria, sort_ordering};
+use crate::shared::session::SessionRef;
+use crate::sort::{sort_by_criteria, sort_ordering};
 use std::cmp::Ordering;
 
 unsafe fn sort_session_cmp(sa: &session, sb: &session, sort_crit: &sort_criteria) -> Ordering {

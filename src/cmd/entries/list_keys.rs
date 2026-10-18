@@ -1,36 +1,34 @@
-use crate::src::arguments::{args, args_get, args_has, args_parse, args_string};
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_print};
-use crate::src::cmd::{cmd_get_args_mut, cmd_list_print_cstring};
-use crate::src::format::bytes::nullable_cstr;
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::{
+use crate::arguments::{args, args_get, args_has, args_parse, args_string};
+use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_print};
+use crate::cmd::{cmd_get_args_mut, cmd_list_print_cstring};
+use crate::format::bytes::nullable_cstr;
+use crate::format::bytes::write_cstr;
+use crate::format::{
     format_add, format_create_with_client, format_defaults, format_expand_cstring,
 };
-use crate::src::key_bindings::{key_bindings_get_table, key_bindings_has_repeat, key_tables};
-use crate::src::key_string::{key_string_format, key_string_parse_cstr};
-use crate::src::options::options_get_number;
-use crate::src::options::OptionsScope;
-use crate::src::server_client::Client as _;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::client::CLIENT_CONTROL;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
-use crate::src::shared::command::{
+use crate::key_bindings::{key_bindings_get_table, key_bindings_has_repeat, key_tables};
+use crate::key_string::{key_string_format, key_string_parse_cstr};
+use crate::options::options_get_number;
+use crate::options::OptionsScope;
+use crate::server_client::Client as _;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::client::CLIENT_CONTROL;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
+use crate::shared::command::{
     CMD_AFTERHOOK, CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS, CMD_STARTSERVER,
 };
-use crate::src::shared::format::format_tree;
-use crate::src::shared::format::FORMAT_NONE;
-use crate::src::shared::key::KEY_BINDING_REPEAT;
-use crate::src::shared::key::*;
-use crate::src::shared::key::{key_binding, key_table};
-use crate::src::shared::sort::sort_criteria;
-use crate::src::shared::sort::*;
-use crate::src::sort::{
-    sort_get_key_bindings, sort_get_key_bindings_table, sort_order_from_string,
-};
-use crate::src::status::status_message_set;
-use crate::src::text::utf8::utf8_cstrwidth;
+use crate::shared::format::format_tree;
+use crate::shared::format::FORMAT_NONE;
+use crate::shared::key::KEY_BINDING_REPEAT;
+use crate::shared::key::*;
+use crate::shared::key::{key_binding, key_table};
+use crate::shared::sort::sort_criteria;
+use crate::shared::sort::*;
+use crate::sort::{sort_get_key_bindings, sort_get_key_bindings_table, sort_order_from_string};
+use crate::status::status_message_set;
+use crate::text::utf8::utf8_cstrwidth;
 use std::ffi::{CStr, CString};
 
 pub const LIST_KEYS_TEMPLATE: &std::ffi::CStr = c"#{?notes_only,#{key_prefix} #{p|#{key_string_width}:key_string} #{?key_note,#{key_note},#{key_command}},bind-key #{?key_has_repeat,#{?key_repeat,-r,  },} -T #{p|#{key_table_width}:key_table} #{p|#{key_string_width}:#{q|a:key_string}} #{key_command}}";

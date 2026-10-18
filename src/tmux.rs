@@ -6,34 +6,34 @@
     unused_assignments,
     unused_mut
 )]
-use crate::src::cfg::{cfg_quiet, cfg_set_files};
-use crate::src::client::client_main;
-use crate::src::compat::fdforkpty::getptmfd;
-use crate::src::compat::getopt_long::{BSDgetopt, BSDoptarg, BSDoptind};
-use crate::src::compat::getprogname::getprogname;
-use crate::src::environ::{environ_create, environ_find, environ_put, environ_set};
-use crate::src::ffi::libc::{environ, err, errx, stderr, stdout, tzset};
-use crate::src::format::bytes::nullable_cstr;
-use crate::src::format::bytes::write_cstr;
-use crate::src::log::{log_add_level, log_cstr, log_debug};
-use crate::src::options::options_table;
-use crate::src::options::{options_set_number, options_set_string, OptionsScope};
-use crate::src::options::{OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION, OPTIONS_TABLE_WINDOW};
-use crate::src::shared::abi::*;
-use crate::src::shared::abi::{__mode_t, uid_t};
-use crate::src::shared::account::passwd;
-use crate::src::shared::client::{
+use crate::cfg::{cfg_quiet, cfg_set_files};
+use crate::client::client_main;
+use crate::compat::fdforkpty::getptmfd;
+use crate::compat::getopt_long::{BSDgetopt, BSDoptarg, BSDoptind};
+use crate::compat::getprogname::getprogname;
+use crate::environ::{environ_create, environ_find, environ_put, environ_set};
+use crate::ffi::libc::{environ, err, errx, stderr, stdout, tzset};
+use crate::format::bytes::nullable_cstr;
+use crate::format::bytes::write_cstr;
+use crate::log::{log_add_level, log_cstr, log_debug};
+use crate::options::options_table;
+use crate::options::{options_set_number, options_set_string, OptionsScope};
+use crate::options::{OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION, OPTIONS_TABLE_WINDOW};
+use crate::shared::abi::*;
+use crate::shared::abi::{__mode_t, uid_t};
+use crate::shared::account::passwd;
+use crate::shared::client::{
     CLIENT_CONTROL, CLIENT_CONTROLCONTROL, CLIENT_DEFAULTSOCKET, CLIENT_LOGIN, CLIENT_NOFORK,
     CLIENT_NOSTARTSERVER, CLIENT_UTF8,
 };
-use crate::src::shared::environment::{environ, environ_entry};
-use crate::src::shared::key::{MODEKEY_EMACS, MODEKEY_VI};
-use crate::src::shared::posix_io::stat;
-use crate::src::shared::posix_io::{S_IRWXU, X_OK};
-use crate::src::shared::time::{timespec, CLOCK_REALTIME};
-use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
-use crate::src::text::utf8::{utf8_isvalid, utf8_stravis_cstring};
-use crate::src::tty::tty_parse_features;
+use crate::shared::environment::{environ, environ_entry};
+use crate::shared::key::{MODEKEY_EMACS, MODEKEY_VI};
+use crate::shared::posix_io::stat;
+use crate::shared::posix_io::{S_IRWXU, X_OK};
+use crate::shared::time::{timespec, CLOCK_REALTIME};
+use crate::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
+use crate::text::utf8::{utf8_isvalid, utf8_stravis_cstring};
+use crate::tty::tty_parse_features;
 use ::libc::nl_item;
 use libc::{
     access, clock_gettime, exit, fprintf, getcwd, getenv, getpwuid, getuid, lstat, mkdir,

@@ -1,7 +1,7 @@
 //! Rust formatting into owned bytes and C strings
 //!
 //! ```
-//! use tiri::src::format::bytes::format_bytes;
+//! use tiri::format::bytes::format_bytes;
 //! use std::ffi::CString;
 //! use std::io::Write;
 //!
@@ -73,9 +73,8 @@ pub fn try_format_message_with(
 }
 
 pub fn format_message_with(write: impl FnOnce(&mut dyn Write) -> io::Result<()>) -> CString {
-    try_format_message_with(write).unwrap_or_else(|| {
-        crate::src::log::fatalx(|out| out.write_all(b"message formatting failed"))
-    })
+    try_format_message_with(write)
+        .unwrap_or_else(|| crate::log::fatalx(|out| out.write_all(b"message formatting failed")))
 }
 
 /// Write an unescaped C string. A missing string keeps the legacy `(null)` text.

@@ -1,10 +1,10 @@
 //! Flag and positional argument storage.
 
 use super::value::{args_value, ARGS_COMMANDS, ARGS_NONE, ARGS_STRING};
-use crate::src::cmd::{
+use crate::cmd::{
     cmd_list_copy, cmd_list_print_cstring, cmd_log_argv, cmd_template_replace_cstring,
 };
-use crate::src::shared::abi::*;
+use crate::shared::abi::*;
 use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
 

@@ -1,34 +1,32 @@
-use crate::src::arguments::{args, args_get, args_has, args_parse};
-use crate::src::cfg::{cfg_finished, cfg_show_causes};
-use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_flags, cmdq_get_state_owned};
-use crate::src::compat::imsg::*;
-use crate::src::events::events_fire_client;
-use crate::src::format::bytes::nullable_cstr;
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::format_single_cstring;
-use crate::src::server_client::ClientRegistry;
-use crate::src::window::Window as _;
+use crate::arguments::{args, args_get, args_has, args_parse};
+use crate::cfg::{cfg_finished, cfg_show_causes};
+use crate::cmd::cmd_get_args_mut;
+use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_flags, cmdq_get_state_owned};
+use crate::compat::imsg::*;
+use crate::events::events_fire_client;
+use crate::format::bytes::nullable_cstr;
+use crate::format::bytes::write_cstr;
+use crate::format::format_single_cstring;
+use crate::server_client::ClientRegistry;
+use crate::window::Window as _;
 use libc::{getuid, strcspn};
 use std::ffi::CStr;
 
-use crate::src::session::sessions;
-use crate::src::shared::abi::uid_t;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::client::{
-    CLIENT_ATTACHED, CLIENT_CONTROL, CLIENT_IGNORESIZE, CLIENT_READONLY,
-};
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::command::{
+use crate::session::sessions;
+use crate::shared::abi::uid_t;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::client::{CLIENT_ATTACHED, CLIENT_CONTROL, CLIENT_IGNORESIZE, CLIENT_READONLY};
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{
     CMDQ_STATE_REPEAT, CMD_FIND_PREFER_UNATTACHED, CMD_READONLY, CMD_STARTSERVER,
 };
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::window::winlink;
+use crate::shared::session::SessionRef;
+use crate::shared::window::winlink;
 
-use crate::src::window_pane::WindowPane as _;
-use crate::src::{server_client::Client, session::Session};
+use crate::window_pane::WindowPane as _;
+use crate::{server_client::Client, session::Session};
 pub static cmd_attach_session_entry: cmd_entry = {
     cmd_entry {
         name: c"attach-session",
@@ -181,7 +179,7 @@ pub unsafe fn cmd_attach_session(
             let mut registry_c_loop_owner = ClientRegistry::first();
             c_loop = registry_c_loop_owner.clone();
             while !c_loop.is_none() {
-                if !(!crate::src::shared::rc::same(
+                if !(!crate::shared::rc::same(
                     c_loop
                         .as_ref()
                         .expect("live client")
@@ -189,7 +187,7 @@ pub unsafe fn cmd_attach_session(
                         .upgrade()
                         .as_ref(),
                     s.as_ref(),
-                ) || crate::src::shared::rc::same(c.as_ref(), c_loop.as_ref()))
+                ) || crate::shared::rc::same(c.as_ref(), c_loop.as_ref()))
                 {
                     c_loop.clone().expect("live client").detach(msgtype);
                 }
@@ -232,7 +230,7 @@ pub unsafe fn cmd_attach_session(
             let mut registry_c_loop_owner = ClientRegistry::first();
             c_loop = registry_c_loop_owner.clone();
             while !c_loop.is_none() {
-                if !(!crate::src::shared::rc::same(
+                if !(!crate::shared::rc::same(
                     c_loop
                         .as_ref()
                         .expect("live client")
@@ -240,7 +238,7 @@ pub unsafe fn cmd_attach_session(
                         .upgrade()
                         .as_ref(),
                     s.as_ref(),
-                ) || crate::src::shared::rc::same(c.as_ref(), c_loop.as_ref()))
+                ) || crate::shared::rc::same(c.as_ref(), c_loop.as_ref()))
                 {
                     c_loop.clone().expect("live client").detach(msgtype);
                 }

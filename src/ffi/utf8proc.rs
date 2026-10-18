@@ -1,6 +1,6 @@
 //! Foreign declarations supplied by utf8proc.
 
-use crate::src::shared::abi::{__int32_t, uint8_t};
+use crate::shared::abi::{__int32_t, uint8_t};
 pub type int32_t = __int32_t;
 
 pub type ptrdiff_t = isize;
@@ -29,12 +29,11 @@ extern "C" {
 /// Encode into the fixed storage used by a terminal cell. utf8proc writes at
 /// most four bytes, and leaves the buffer untouched for invalid codepoints.
 pub(crate) fn encode_cell(
-    codepoint: crate::src::shared::utf8::wchar_t,
+    codepoint: crate::shared::utf8::wchar_t,
     output: &mut [u8; 32],
 ) -> Result<usize, i32> {
-    let size = unsafe {
-        crate::src::compat::utf8proc::utf8proc_wctomb(output.as_mut_ptr().cast(), codepoint)
-    };
+    let size =
+        unsafe { crate::compat::utf8proc::utf8proc_wctomb(output.as_mut_ptr().cast(), codepoint) };
     if size < 0 {
         Err(errno::errno().0)
     } else {
@@ -43,8 +42,8 @@ pub(crate) fn encode_cell(
 }
 
 /// Terminal width of a codepoint; utf8proc only looks it up in static tables.
-pub(crate) fn codepoint_width(codepoint: crate::src::shared::utf8::wchar_t) -> i32 {
-    unsafe { crate::src::compat::utf8proc::utf8proc_wcwidth(codepoint) }
+pub(crate) fn codepoint_width(codepoint: crate::shared::utf8::wchar_t) -> i32 {
+    unsafe { crate::compat::utf8proc::utf8proc_wcwidth(codepoint) }
 }
 
 pub(crate) fn reset_wctomb() {

@@ -1,52 +1,52 @@
-use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned};
-use crate::src::format::bytes::format_message_with;
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::{
+use crate::cmd::queue::{cmdq_append, cmdq_get_callback_owned};
+use crate::format::bytes::format_message_with;
+use crate::format::bytes::write_cstr;
+use crate::format::{
     format_add, format_create, format_create_defaults, format_defaults, format_expand_time_cstring,
 };
-use crate::src::format_draw::format_draw;
-use crate::src::grid::{grid_cells_equal, grid_compare};
-use crate::src::log::{fatalx, log_cstr, log_debug, log_pointer};
-use crate::src::options::{options_get_number, options_get_string, OptionsScope};
-use crate::src::prompt::{
+use crate::format_draw::format_draw;
+use crate::grid::{grid_cells_equal, grid_compare};
+use crate::log::{fatalx, log_cstr, log_debug, log_pointer};
+use crate::options::{options_get_number, options_get_string, OptionsScope};
+use crate::prompt::{
     prompt_closed, prompt_create, prompt_incremental_start, prompt_key, prompt_mouse,
     prompt_set_options, prompt_update,
 };
-use crate::src::reactor::Timer;
-use crate::src::screen::{screen_init, screen_resize};
-use crate::src::screen_write::{
+use crate::reactor::Timer;
+use crate::screen::{screen_init, screen_resize};
+use crate::screen_write::{
     screen_write_cursormove, screen_write_fast_copy, screen_write_putc, screen_write_start,
     screen_write_stop,
 };
-use crate::src::server::server_add_message;
-use crate::src::server_client::Client as _;
-use crate::src::server_client::ClientRegistry;
-use crate::src::session::Session as _;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
-use crate::src::shared::session::SessionRef;
-use crate::src::style::{style_ranges_clear, style_ranges_init};
+use crate::server::server_add_message;
+use crate::server_client::Client as _;
+use crate::server_client::ClientRegistry;
+use crate::session::Session as _;
+use crate::shared::client::ClientRef;
+use crate::shared::prompt::{prompt_create_data, prompt_draw_data};
+use crate::shared::session::SessionRef;
+use crate::style::{style_ranges_clear, style_ranges_init};
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
 use std::time::Duration;
 
-use crate::src::shared::abi::*;
-use crate::src::shared::client::{
+use crate::shared::abi::*;
+use crate::shared::client::{
     CLIENT_CONTROL, CLIENT_REDRAWSTATUS, CLIENT_STATUSFORCE, CLIENT_STATUSOFF,
 };
-use crate::src::shared::command::cmd_find_state;
-use crate::src::shared::command::*;
-use crate::src::shared::format::format_tree;
-use crate::src::shared::format::{FORMAT_FORCE, FORMAT_NONE, FORMAT_STATUS};
-use crate::src::shared::grid::*;
-use crate::src::shared::key::*;
-use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
-use crate::src::shared::prompt::*;
-use crate::src::shared::prompt::{prompt_free_cb, PROMPT_ACCEPT, PROMPT_SINGLE};
-use crate::src::shared::screen::screen;
-use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::status::{status_line, status_prompt_input_cb};
-use crate::src::shared::style::*;
+use crate::shared::command::cmd_find_state;
+use crate::shared::command::*;
+use crate::shared::format::format_tree;
+use crate::shared::format::{FORMAT_FORCE, FORMAT_NONE, FORMAT_STATUS};
+use crate::shared::grid::*;
+use crate::shared::key::*;
+use crate::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
+use crate::shared::prompt::*;
+use crate::shared::prompt::{prompt_free_cb, PROMPT_ACCEPT, PROMPT_SINGLE};
+use crate::shared::screen::screen;
+use crate::shared::screen_write::screen_write_ctx;
+use crate::shared::status::{status_line, status_prompt_input_cb};
+use crate::shared::style::*;
 
 unsafe fn status_timer_callback(client: &ClientRef) {
     let session = client.attached_session().upgrade();
@@ -101,7 +101,7 @@ pub unsafe fn status_timer_start_all() {
     }
 }
 pub unsafe fn status_at_line(c: &ClientRef) -> ::core::ffi::c_int {
-    use crate::src::session::Session;
+    use crate::session::Session;
     if c.flags() & (CLIENT_STATUSOFF | CLIENT_CONTROL) as uint64_t != 0 {
         return -1;
     }
@@ -116,7 +116,7 @@ pub unsafe fn status_at_line(c: &ClientRef) -> ::core::ffi::c_int {
     c.terminal_size().1.wrapping_sub(status_line_size(c)) as ::core::ffi::c_int
 }
 pub unsafe fn status_line_size(c: &ClientRef) -> u_int {
-    use crate::src::session::Session;
+    use crate::session::Session;
     if c.flags() & (CLIENT_STATUSOFF | CLIENT_CONTROL) as uint64_t != 0 {
         return 0;
     }
@@ -272,7 +272,7 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
     ft = &raw mut *ft_owner;
     format_defaults(ft, Some(c_owner), None, (refbox::Weak::new()).clone(), None);
     let scope = OptionsScope::Session(Rc::downgrade(s.as_ref().expect("live session")));
-    crate::src::style::style_apply_with_options(&mut gc, c"status-style", ft.as_mut(), &scope);
+    crate::style::style_apply_with_options(&mut gc, c"status-style", ft.as_mut(), &scope);
     fg = scope.with_local(|oo| options_get_number(oo, c"status-fg")) as ::core::ffi::c_int;
     if !(fg == 8 as ::core::ffi::c_int || fg == 9 as ::core::ffi::c_int) {
         gc.fg = fg;
@@ -430,7 +430,7 @@ pub unsafe fn status_message_clear(client: &ClientRef) {
 
 unsafe fn status_message_area(c: &ClientRef) -> (u_int, u_int) {
     let (terminal_width, _) = c.terminal_size();
-    let sy = crate::src::style::style_resolve_with_options(
+    let sy = crate::style::style_resolve_with_options(
         c"message-style",
         None,
         &OptionsScope::Session(c.attached_session()),
@@ -519,7 +519,7 @@ pub unsafe fn status_message_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
         None,
     );
     ft = &raw mut *ft_owner;
-    crate::src::style::style_apply_with_options(
+    crate::style::style_apply_with_options(
         &mut gc,
         c"message-style",
         ft.as_mut(),
@@ -741,13 +741,13 @@ pub unsafe fn status_prompt_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
     let prompt = prompt.try_borrow_mut().expect("unborrowed active prompt");
     {
         let mut status = c_owner.borrow_status_mut();
-        crate::src::prompt::prompt_draw_cursor_style(&prompt, status.active_screen());
+        crate::prompt::prompt_draw_cursor_style(&prompt, status.active_screen());
     }
-    let prepared = crate::src::prompt::prompt_prepare_draw(&prompt, ax, aw);
+    let prepared = crate::prompt::prompt_prepare_draw(&prompt, ax, aw);
     let mut status = c_owner.borrow_status_mut();
     let sl: *mut status_line = &mut *status;
     ctx.borrow_screen((*sl).active_screen());
-    (*sl).prompt_cx = crate::src::prompt::prompt_draw_prepared(&prompt, &mut ctx, pdd, prepared);
+    (*sl).prompt_cx = crate::prompt::prompt_draw_prepared(&prompt, &mut ctx, pdd, prepared);
     drop(prompt);
     screen_write_stop(&mut ctx);
     let changed = grid_compare((*sl).active_screen().grid(), old_screen.grid()) != 0;

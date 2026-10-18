@@ -1,13 +1,13 @@
 use std::ffi::CStr;
-use tiri::src::grid::view::grid_view_get_cell;
-use tiri::src::grid::{grid_cells_equal, grid_create, grid_default_cell};
-use tiri::src::options::options_table;
-use tiri::src::options::OptionsScope;
-use tiri::src::screen_write::{screen_write_menu, screen_write_start, screen_write_stop};
-use tiri::src::shared::grid::{grid_cell, GRID_ATTR_DIM};
-use tiri::src::shared::menu::{menu, MenuRow};
-use tiri::src::shared::screen::{screen, MODE_WRAP};
-use tiri::src::shared::screen_write::screen_write_ctx;
+use tiri::grid::view::grid_view_get_cell;
+use tiri::grid::{grid_cells_equal, grid_create, grid_default_cell};
+use tiri::options::options_table;
+use tiri::options::OptionsScope;
+use tiri::screen_write::{screen_write_menu, screen_write_start, screen_write_stop};
+use tiri::shared::grid::{grid_cell, GRID_ATTR_DIM};
+use tiri::shared::menu::{menu, MenuRow};
+use tiri::shared::screen::{screen, MODE_WRAP};
+use tiri::shared::screen_write::screen_write_ctx;
 
 unsafe fn cell_at(s: &screen, x: u32, y: u32) -> grid_cell {
     let mut cell = grid_default_cell;

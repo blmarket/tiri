@@ -1,7 +1,7 @@
 //! Authoritative input declarations.
-use crate::src::window_pane::WindowPane as _;
+use crate::window_pane::WindowPane as _;
 
-use crate::src::shared::client::ClientWeak;
+use crate::shared::client::ClientWeak;
 use std::collections::VecDeque;
 use std::ffi::CString;
 use tiri_buffer::SegmentedBuf;
@@ -56,7 +56,7 @@ pub type input_request_type = ::core::ffi::c_uint;
 pub struct input_ctx {
     /// Pane lifetime is owned by the pane index and retained event handlers.
     pub wp: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-    pub event: crate::src::reactor::StreamHandle,
+    pub event: crate::reactor::StreamHandle,
     pub ctx: screen_write_ctx,
     pub palette: InputPalette,
     /// Client observation; request/context ownership does not retain the client.

@@ -1,6 +1,6 @@
 //! Function assignments check argument types, return types, and the C ABI.
 use std::ffi::{c_int, c_void};
-use tiri::src::shared::{abi::__compar_fn_t, prompt::*};
+use tiri::shared::{abi::__compar_fn_t, prompt::*};
 
 unsafe extern "C" fn compare(left: *const c_void, right: *const c_void) -> c_int {
     assert!(left.is_null());

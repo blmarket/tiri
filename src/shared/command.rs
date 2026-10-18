@@ -4,10 +4,10 @@ use super::abi::u_int;
 use super::key::key_event;
 use super::pane::window_pane;
 use super::window::winlink;
-use crate::src::arguments::{args, args_parse};
-use crate::src::shared::client::ClientWeak;
-use crate::src::shared::session::{SessionRef, SessionWeak};
-use crate::src::shared::window::{WindowRef, WindowWeak};
+use crate::arguments::{args, args_parse};
+use crate::shared::client::ClientWeak;
+use crate::shared::session::{SessionRef, SessionWeak};
+use crate::shared::window::{WindowRef, WindowWeak};
 use std::ffi::{CStr, CString};
 /// What a command or queue callback did. `Suspend` hands the queue the item's
 /// continuation; the item blocks its queue until the continuation completes,
@@ -140,7 +140,7 @@ mod tests {
     }
 }
 
-pub use crate::src::cmd::queue::{cmdq_item, cmdq_list};
+pub use crate::cmd::queue::{cmdq_item, cmdq_list};
 
 /// Saved, nonowning target identities. An empty observer means unspecified;
 /// an expired observer still identifies a target that has disappeared.

@@ -1,10 +1,10 @@
-use crate::src::grid::{
+use crate::grid::{
     grid_clear, grid_collect_history, grid_get_cell, grid_move_cells, grid_move_lines,
     grid_scroll_history, grid_scroll_history_region, grid_set_cell, grid_set_cells,
     grid_set_padding, grid_string_cells_bytes,
 };
-use crate::src::shared::abi::*;
-use crate::src::shared::grid::*;
+use crate::shared::abi::*;
+use crate::shared::grid::*;
 pub unsafe fn grid_view_get_cell(gd: &grid, px: u_int, py: u_int, gc: &mut grid_cell) {
     grid_get_cell(gd, px, gd.hsize.wrapping_add(py), gc);
 }
@@ -196,8 +196,8 @@ pub unsafe fn grid_view_string_cells_bytes(gd: &grid, py: u_int, nx: u_int) -> V
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::src::grid::core::{grid_create, grid_default_cell};
-    use crate::src::shared::colour::COLOUR_FLAG_RGB;
+    use crate::grid::core::{grid_create, grid_default_cell};
+    use crate::shared::colour::COLOUR_FLAG_RGB;
 
     unsafe fn row_labels(gd: &grid) -> Vec<u8> {
         (0..gd.hsize + gd.sy)

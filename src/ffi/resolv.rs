@@ -1,6 +1,6 @@
 //! Foreign declarations supplied by resolv.
 
-use crate::src::shared::abi::size_t;
+use crate::shared::abi::size_t;
 
 extern "C" {
     #[cfg_attr(target_os = "linux", link_name = "__b64_ntop")]

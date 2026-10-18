@@ -3,73 +3,71 @@ use super::pty::PanePty;
 use super::{
     window_pane_create, window_pane_index, window_pane_reset_mode_all, window_pane_set_event,
 };
-use crate::src::cmd::queue::cmdq_get_client;
-use crate::src::cmd::{cmd_log_argv, cmd_stringify_argv_cstring};
-use crate::src::compat::fdforkpty::fdforkpty;
-use crate::src::compat::stdio::CFile;
+use crate::cmd::queue::cmdq_get_client;
+use crate::cmd::{cmd_log_argv, cmd_stringify_argv_cstring};
+use crate::compat::fdforkpty::fdforkpty;
+use crate::compat::stdio::CFile;
 #[cfg(target_os = "linux")]
-use crate::src::compat::systemd::systemd_move_to_new_cgroup;
-use crate::src::control::control_reset_pane;
-use crate::src::environ::{
-    environ_copy, environ_for_session, environ_log, environ_push, environ_set,
-};
-use crate::src::events::{events_fire, events_fire_window};
-use crate::src::events_payload::{
+use crate::compat::systemd::systemd_move_to_new_cgroup;
+use crate::control::control_reset_pane;
+use crate::environ::{environ_copy, environ_for_session, environ_log, environ_push, environ_set};
+use crate::events::{events_fire, events_fire_window};
+use crate::events_payload::{
     event_payload_create, event_payload_set_int, event_payload_set_pane, event_payload_set_session,
     event_payload_set_string, event_payload_set_target, event_payload_set_window,
 };
-use crate::src::format::bytes::cstr_suffix;
-use crate::src::format::bytes::nullable_cstr;
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::format_single_cstring;
-use crate::src::log::{log_close, log_cstr, log_debug};
-use crate::src::options::OptionsScope;
-use crate::src::options::{options_get_number, options_get_string, options_set_number};
-use crate::src::proc::proc_clear_signals;
-use crate::src::reactor::BufferEvent;
-use crate::src::screen::screen_reinit;
-use crate::src::server::server_proc;
-use crate::src::server_client::Client;
-use crate::src::server_client::ClientRegistry;
-use crate::src::window::Window as _;
+use crate::format::bytes::cstr_suffix;
+use crate::format::bytes::nullable_cstr;
+use crate::format::bytes::write_cstr;
+use crate::format::format_single_cstring;
+use crate::log::{log_close, log_cstr, log_debug};
+use crate::options::OptionsScope;
+use crate::options::{options_get_number, options_get_string, options_set_number};
+use crate::proc::proc_clear_signals;
+use crate::reactor::BufferEvent;
+use crate::screen::screen_reinit;
+use crate::server::server_proc;
+use crate::server_client::Client;
+use crate::server_client::ClientRegistry;
+use crate::window::Window as _;
 use libc::{
     _exit, chdir, execl, execvp, fopen, fread, fseeko, ftello, getcwd, memset, sigfillset,
     sigprocmask,
 };
 
-use crate::src::session::Session;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::spawn::spawn_context;
-use crate::src::shared::window::WindowRef;
-use crate::src::tmux::{checkshell, find_home_cstr, ptm_fd};
+use crate::session::Session;
+use crate::shared::client::ClientRef;
+use crate::shared::spawn::spawn_context;
+use crate::shared::window::WindowRef;
+use crate::tmux::{checkshell, find_home_cstr, ptm_fd};
 
-use crate::src::window_pane::WindowPane as _;
+use crate::window_pane::WindowPane as _;
 use std::ffi::{CStr, CString};
 
-use crate::src::shared::abi::__off_t;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::CLIENT_CONTROL;
-use crate::src::shared::command::cmd_find_state;
-use crate::src::shared::key::*;
-use crate::src::shared::limits::SIZE_MAX;
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::{PANE_EMPTY, PANE_EXITED, PANE_STATUSDRAWN};
-use crate::src::shared::posix_io::{_PATH_BSHELL, STDERR_FILENO, STDIN_FILENO};
-use crate::src::shared::posix_terminal::{winsize, TCSANOW, VERASE};
-use crate::src::shared::screen::{MODE_CRLF, MODE_CURSOR};
-use crate::src::shared::signal::{sigset_t, SIGHUP, SIG_BLOCK, SIG_SETMASK};
-use crate::src::shared::spawn::spawn_editor_state;
-use crate::src::shared::spawn::{
+use crate::shared::abi::__off_t;
+use crate::shared::abi::*;
+use crate::shared::client::CLIENT_CONTROL;
+use crate::shared::command::cmd_find_state;
+use crate::shared::key::*;
+use crate::shared::limits::SIZE_MAX;
+use crate::shared::pane::window_pane;
+use crate::shared::pane::{PANE_EMPTY, PANE_EXITED, PANE_STATUSDRAWN};
+use crate::shared::posix_io::{_PATH_BSHELL, STDERR_FILENO, STDIN_FILENO};
+use crate::shared::posix_terminal::{winsize, TCSANOW, VERASE};
+use crate::shared::screen::{MODE_CRLF, MODE_CURSOR};
+use crate::shared::signal::{sigset_t, SIGHUP, SIG_BLOCK, SIG_SETMASK};
+use crate::shared::spawn::spawn_editor_state;
+use crate::shared::spawn::{
     SPAWN_BEFORE, SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_KILL, SPAWN_NONOTIFY, SPAWN_RESPAWN,
 };
-use crate::src::shared::stdio::FILE;
-use crate::src::shared::terminal::*;
+use crate::shared::stdio::FILE;
+use crate::shared::terminal::*;
 
 use std::os::fd::{FromRawFd, OwnedFd};
 use std::os::unix::process::ExitStatusExt;
 
-use crate::src::shared::spawn::EditorHandle;
-use crate::src::spawn::{
+use crate::shared::spawn::EditorHandle;
+use crate::spawn::{
     off_t, set_spawn_cause, spawn_log, uintmax_t, _PATH_DEFPATH, IUTF8, SEEK_END, SEEK_SET,
 };
 unsafe fn spawn_fire_pane_created(
@@ -241,7 +239,7 @@ pub(super) unsafe fn spawn_pane(
         let c_owner;
         if let Some(item_owner) = item_owner.as_ref() {
             let item = item_owner.borrow();
-            target_session_owner = crate::src::cmd::queue::cmdq_get_target(&item).session_handle();
+            target_session_owner = crate::cmd::queue::cmdq_get_target(&item).session_handle();
             c_owner = cmdq_get_client(Some(&*item));
             c = c_owner.clone();
         } else {
@@ -344,7 +342,7 @@ pub(super) unsafe fn spawn_pane(
         }
         if (*sc).argv.is_empty() {
             if (*sc).flags & SPAWN_RESPAWN == 0 {
-                let command = crate::src::options::options_get_string_optional(
+                let command = crate::options::options_get_string_optional(
                     &session_owner.borrow_options_mut(),
                     c"default-command",
                 );
@@ -529,7 +527,7 @@ pub(super) unsafe fn spawn_pane(
                         write_cstr(out, nullable_cstr(actual_cwd))
                     });
                 }
-                if crate::src::shared::terminal::read_attributes(STDIN_FILENO, &mut now)
+                if crate::shared::terminal::read_attributes(STDIN_FILENO, &mut now)
                     != 0 as ::core::ffi::c_int
                 {
                     _exit(1 as ::core::ffi::c_int);
@@ -546,7 +544,7 @@ pub(super) unsafe fn spawn_pane(
                     now.c_cc[VERASE] = key as cc_t;
                 }
                 now.c_iflag |= IUTF8 as tcflag_t;
-                if crate::src::shared::terminal::set_attributes(STDIN_FILENO, TCSANOW, &now)
+                if crate::shared::terminal::set_attributes(STDIN_FILENO, TCSANOW, &now)
                     != 0 as ::core::ffi::c_int
                 {
                     _exit(1 as ::core::ffi::c_int);
@@ -733,9 +731,9 @@ pub(super) unsafe fn install_editor(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::src::shared::spawn::spawn_finish_edit_cb;
-    use crate::src::shared::spawn::EditorHandle;
-    use crate::src::spawn::{spawn_editor_fdopen, spawn_editor_finish};
+    use crate::shared::spawn::spawn_finish_edit_cb;
+    use crate::shared::spawn::EditorHandle;
+    use crate::spawn::{spawn_editor_fdopen, spawn_editor_finish};
     use libc::fclose;
     use libc::{fwrite, mkstemp};
     use std::ffi::CStr;
@@ -778,8 +776,7 @@ mod tests {
 
     const CHILD_CASE: &str = "TIRI_EDITOR_FD_OWNER_CASE";
     const SUCCESS_CASE: &str = "success";
-    const SUCCESS_TEST: &str =
-        "src::window_pane::spawning::tests::editor_completion_reads_and_unlinks";
+    const SUCCESS_TEST: &str = "window_pane::spawning::tests::editor_completion_reads_and_unlinks";
 
     fn run_isolated(test_name: &str, case: &str) {
         let test_exe = std::env::current_exe().expect("test executable");

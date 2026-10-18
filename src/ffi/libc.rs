@@ -1,9 +1,9 @@
 //! Foreign declarations supplied by libc.
 //! Only what the libc crate lacks is declared here; use the libc crate for the rest.
 
-use crate::src::shared::abi::size_t;
-use crate::src::shared::stdio::FILE;
-use crate::src::shared::utf8::wchar_t;
+use crate::shared::abi::size_t;
+use crate::shared::stdio::FILE;
+use crate::shared::utf8::wchar_t;
 
 #[cfg(target_os = "linux")]
 extern "C" {

@@ -3,40 +3,40 @@ use super::{
     window_pane_get_bg, window_pane_get_fg, window_pane_get_fg_control_client,
     window_pane_get_theme, window_pane_update_used_data,
 };
-use crate::src::alerts::alerts_queue;
-use crate::src::compat::strtonum::strtonum;
-use crate::src::events::{events_fire, events_fire_pane};
-use crate::src::events_payload::{
+use crate::alerts::alerts_queue;
+use crate::compat::strtonum::strtonum;
+use crate::events::{events_fire, events_fire_pane};
+use crate::events_payload::{
     event_payload_create, event_payload_set_int, event_payload_set_pane, event_payload_set_session,
     event_payload_set_string, event_payload_set_target, event_payload_set_time,
     event_payload_set_uint, event_payload_set_window,
 };
-use crate::src::ffi::resolv::{b64_ntop, b64_pton};
-use crate::src::format::bytes::cstr_suffix;
-use crate::src::format::bytes::format_bytes;
-use crate::src::format::bytes::format_message_with;
-use crate::src::format::bytes::nullable_cstr;
-use crate::src::format::bytes::write_cstr;
-use crate::src::grid::{
+use crate::ffi::resolv::{b64_ntop, b64_pton};
+use crate::format::bytes::cstr_suffix;
+use crate::format::bytes::format_bytes;
+use crate::format::bytes::format_message_with;
+use crate::format::bytes::nullable_cstr;
+use crate::format::bytes::write_cstr;
+use crate::grid::{
     grid_cells_look_equal, grid_default_cell, grid_get_cell, grid_get_line_mut, grid_set_tab,
 };
-use crate::src::hyperlinks::hyperlinks_put;
-use crate::src::log::{
+use crate::hyperlinks::hyperlinks_put;
+use crate::log::{
     fatalx, log_byte, log_bytes, log_cstr, log_cstr_n, log_cstr_width, log_debug, log_hex,
 };
-use crate::src::options::OptionsScope;
-use crate::src::options::{options_get_number, options_set_number};
-use crate::src::paste::{paste_add_owned, paste_buffer_data, paste_get_top};
-use crate::src::reactor::BufferEvent;
-use crate::src::reactor::{
+use crate::options::OptionsScope;
+use crate::options::{options_get_number, options_set_number};
+use crate::paste::{paste_add_owned, paste_buffer_data, paste_get_top};
+use crate::reactor::BufferEvent;
+use crate::reactor::{
     bufferevent_write, evbuffer_add, evbuffer_drain, evbuffer_get_length, evbuffer_new,
 };
-use crate::src::screen::{screen_clear_tabs, screen_has_tab, screen_set_tab};
-use crate::src::screen::{
+use crate::screen::{screen_clear_tabs, screen_has_tab, screen_set_tab};
+use crate::screen::{
     screen_pop_title, screen_push_title, screen_set_cursor_colour, screen_set_cursor_style,
     screen_set_path, screen_set_progress_bar, screen_set_title,
 };
-use crate::src::screen_write::{
+use crate::screen_write::{
     screen_write_alignmenttest, screen_write_alternateoff, screen_write_alternateon,
     screen_write_backspace, screen_write_carriagereturn, screen_write_clearcharacter,
     screen_write_clearendofline, screen_write_clearendofscreen, screen_write_clearhistory,
@@ -51,59 +51,59 @@ use crate::src::screen_write::{
     screen_write_scrollup, screen_write_setselection, screen_write_start,
     screen_write_start_callback, screen_write_start_pane, screen_write_stop,
 };
-use crate::src::server_client::Client as _;
-use crate::src::server_client::ClientRegistry;
-use crate::src::server_fn::{server_redraw_window_borders, server_status_window};
-use crate::src::session::Session as _;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::input::{input_request_clipboard_data, input_request_palette_data};
-use crate::src::shared::pane::pane_output_data as window_pane_get_new_data;
-use crate::src::shared::window::WindowRef;
-use crate::src::style::colour::{
+use crate::server_client::Client as _;
+use crate::server_client::ClientRegistry;
+use crate::server_fn::{server_redraw_window_borders, server_status_window};
+use crate::session::Session as _;
+use crate::shared::client::ClientRef;
+use crate::shared::input::{input_request_clipboard_data, input_request_palette_data};
+use crate::shared::pane::pane_output_data as window_pane_get_new_data;
+use crate::shared::window::WindowRef;
+use crate::style::colour::{
     colour_force_rgb, colour_join_rgb, colour_palette_clear, colour_palette_get,
     colour_palette_set, colour_parse_x11_logged, colour_split_rgb,
 };
-use crate::src::text::utf8::{utf8_append, utf8_copy, utf8_isvalid, utf8_open, utf8_set};
-use crate::src::tmux::{get_timer, getversion};
-use crate::src::tty::tty_set_selection;
-use crate::src::window::Window as _;
-use crate::src::window::WindowPane;
+use crate::text::utf8::{utf8_append, utf8_copy, utf8_isvalid, utf8_open, utf8_set};
+use crate::tmux::{get_timer, getversion};
+use crate::tty::tty_set_selection;
+use crate::window::Window as _;
+use crate::window::WindowPane;
 use libc::{strncmp, strtol, time};
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 use std::time::Duration;
 use tiri_buffer::SegmentedBuf;
 
-use crate::src::shared::abi::*;
-use crate::src::shared::client::CLIENT_UNATTACHEDFLAGS;
-use crate::src::shared::colour::COLOUR_FLAG_256;
-use crate::src::shared::command::cmd_find_state;
-use crate::src::shared::display::*;
-use crate::src::shared::event::*;
-use crate::src::shared::grid::*;
-use crate::src::shared::input::input_request_type;
-use crate::src::shared::input::{
+use crate::shared::abi::*;
+use crate::shared::client::CLIENT_UNATTACHEDFLAGS;
+use crate::shared::colour::COLOUR_FLAG_256;
+use crate::shared::command::cmd_find_state;
+use crate::shared::display::*;
+use crate::shared::event::*;
+use crate::shared::grid::*;
+use crate::shared::input::input_request_type;
+use crate::shared::input::{
     input_ctx, input_end_type, input_param, input_request, input_state, input_transition,
 };
-use crate::src::shared::input::{
+use crate::shared::input::{
     INPUT_BUF_DEFAULT_SIZE, INPUT_REQUEST_CLIPBOARD, INPUT_REQUEST_PALETTE, INPUT_REQUEST_QUEUE,
 };
-use crate::src::shared::limits::INT_MAX;
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::{
+use crate::shared::limits::INT_MAX;
+use crate::shared::pane::window_pane;
+use crate::shared::pane::{
     PANE_ACTIVITY, PANE_CHANGED, PANE_CMDRUNNING, PANE_STYLECHANGED, PANE_THEMECHANGED,
     PANE_UNSEENCHANGES,
 };
-use crate::src::shared::screen::{
+use crate::shared::screen::{
     screen, ALL_MOUSE_MODES, EXTENDED_KEY_MODES, MODE_BRACKETPASTE, MODE_CRLF, MODE_CURSOR,
     MODE_CURSOR_BLINKING, MODE_CURSOR_BLINKING_SET, MODE_CURSOR_VERY_VISIBLE, MODE_FOCUSON,
     MODE_INSERT, MODE_KCURSOR, MODE_KEYS_EXTENDED, MODE_KEYS_EXTENDED_2, MODE_KKEYPAD,
     MODE_MOUSE_ALL, MODE_MOUSE_BUTTON, MODE_MOUSE_SGR, MODE_MOUSE_STANDARD, MODE_MOUSE_UTF8,
     MODE_ORIGIN, MODE_SYNC, MODE_THEME_UPDATES, MODE_WRAP,
 };
-use crate::src::shared::screen_write::{screen_write_ctx, screen_write_init_ctx_cb};
-use crate::src::shared::utf8::*;
-use crate::src::shared::window::WINDOW_BELL;
+use crate::shared::screen_write::{screen_write_ctx, screen_write_init_ctx_cb};
+use crate::shared::utf8::*;
+use crate::shared::window::WINDOW_BELL;
 
 pub const INPUT_END_BEL: input_end_type = 1;
 pub const INPUT_END_ST: input_end_type = 0;
@@ -168,11 +168,11 @@ fn input_clear_params(ictx: &mut input_ctx) {
 #[cfg(test)]
 mod input_buffer_ownership_tests {
     use super::*;
-    use crate::src::reactor::{bufferevent_free, bufferevent_new};
+    use crate::reactor::{bufferevent_free, bufferevent_new};
 
     #[test]
     fn palette_source_observes_pane_or_popup_owner() {
-        use crate::src::shared::input::InputPalette;
+        use crate::shared::input::InputPalette;
         let pane = window_pane::new();
         let pane_source = InputPalette::Pane(std::rc::Rc::downgrade(&pane));
         pane_source.with_mut(|palette| palette.fg = 17);
@@ -180,7 +180,7 @@ mod input_buffer_ownership_tests {
         drop(pane);
         assert!(pane_source.with_mut(|palette| palette.fg).is_none());
 
-        let popup = refbox::RefBox::new(crate::src::shared::colour::colour_palette::default());
+        let popup = refbox::RefBox::new(crate::shared::colour::colour_palette::default());
         let popup_source = InputPalette::Popup(popup.downgrade());
         popup_source.with_mut(|palette| palette.bg = 23);
         assert_eq!(popup.try_borrow_mut().unwrap().bg, 23);
@@ -2031,7 +2031,7 @@ unsafe fn input_ground_timer_callback(ictx: *mut input_ctx) {
     log_debug(format_args!(
         "{}: {} expired",
         "input_ground_timer_callback",
-        crate::src::log::log_bytes((*ictx).state.name.to_bytes())
+        crate::log::log_bytes((*ictx).state.name.to_bytes())
     ));
     input_reset(ictx, 0 as ::core::ffi::c_int);
 }
@@ -2077,13 +2077,13 @@ unsafe fn input_restore_state(mut ictx: *mut input_ctx) {
 pub unsafe fn input_init(
     wp: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
     mut bev: *mut bufferevent,
-    palette: crate::src::shared::input::InputPalette,
+    palette: crate::shared::input::InputPalette,
     c: Option<&ClientRef>,
 ) -> Box<input_ctx> {
     let mut owner = Box::new(input_ctx::new());
     let ictx = &raw mut *owner;
     (*ictx).wp = wp.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-    (*ictx).event = crate::src::reactor::StreamHandle::from_ptr(bev);
+    (*ictx).event = crate::reactor::StreamHandle::from_ptr(bev);
     (*ictx).palette = palette;
     (*ictx).c = c.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     input_reset(ictx, 0 as ::core::ffi::c_int);
@@ -2236,7 +2236,7 @@ pub(super) unsafe fn input_parse_buffer(
         "{}: %{} {}, {} bytes: {}",
         "input_parse_buffer",
         { (*wp).id },
-        crate::src::log::log_bytes((*ictx).state.name.to_bytes()),
+        crate::log::log_bytes((*ictx).state.name.to_bytes()),
         buf.len(),
         log_cstr_n(buf)
     ));
@@ -4573,7 +4573,7 @@ unsafe fn input_exit_rename(ictx: *mut input_ctx) {
     let name = name.to_owned();
     let window = pane.window_observer().upgrade().expect("pane window");
     if (*ictx).input_len == 0 {
-        let scope = crate::src::options::OptionsScope::Window(WindowRef::downgrade(&window));
+        let scope = crate::options::OptionsScope::Window(WindowRef::downgrade(&window));
         scope
             .remove_or_default(c"automatic-rename", None)
             .expect("remove local automatic-rename option");
@@ -5601,7 +5601,7 @@ unsafe fn input_add_request(
                 .write_terminal(&format_bytes(format_args!("\x1B]4;{};?\x1B\\", { idx })));
         }
         1 => {
-            crate::src::tty::tty_request_clipboard(c.as_ref().expect("live client"));
+            crate::tty::tty_request_clipboard(c.as_ref().expect("live client"));
         }
         _ => {}
     }

@@ -1,25 +1,25 @@
-use crate::src::arguments::{args, args_get, args_has, args_parse};
-use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_client};
-use crate::src::format::{
+use crate::arguments::{args, args_get, args_has, args_parse};
+use crate::cmd::cmd_get_args_mut;
+use crate::cmd::queue::{cmdq_error, cmdq_get_client};
+use crate::format::{
     format_create_with_client, format_defaults, format_expand_cstring, format_true,
 };
-use crate::src::server_fn::{server_destroy_session, server_redraw_session};
-use crate::src::session::sessions;
-use crate::src::session::Session;
+use crate::server_fn::{server_destroy_session, server_redraw_session};
+use crate::session::sessions;
+use crate::session::Session;
 use std::ffi::CStr;
 
-use crate::src::shared::abi::*;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::format::format_tree;
-use crate::src::shared::format::FORMAT_NONE;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::tree::RB_NEGINF;
-use crate::src::shared::window::winlink;
-use crate::src::shared::window::WINLINK_ALERTFLAGS;
-use crate::src::window::Window as _;
-use crate::src::window::{winlinks_minmax, winlinks_next};
+use crate::shared::abi::*;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::format::format_tree;
+use crate::shared::format::FORMAT_NONE;
+use crate::shared::session::SessionRef;
+use crate::shared::tree::RB_NEGINF;
+use crate::shared::window::winlink;
+use crate::shared::window::WINLINK_ALERTFLAGS;
+use crate::window::Window as _;
+use crate::window::{winlinks_minmax, winlinks_next};
 pub static cmd_kill_session_entry: cmd_entry = {
     cmd_entry {
         name: c"kill-session",
@@ -52,10 +52,10 @@ unsafe fn cmd_kill_session_exec(
     let item = item_handle.borrow();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let source = (*target).s.upgrade().expect("live target session");
-    let mut sg = crate::src::shared::session::SessionGroupWeak::new();
+    let mut sg = crate::shared::session::SessionGroupWeak::new();
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut filter: Option<&CStr> = args_get(&*(args), 'f' as i32 as u_char);
     if filter.is_some()
@@ -79,10 +79,10 @@ unsafe fn cmd_kill_session_exec(
     } else if args_has(&*args, 'a' as i32 as u_char) != 0 {
         return cmd_kill_session_all(item_handle, filter);
     } else if args_has(&*args, 'g' as i32 as u_char) != 0 && {
-        sg = crate::src::session::session_groups::for_session(&std::rc::Rc::downgrade(&source));
+        sg = crate::session::session_groups::for_session(&std::rc::Rc::downgrade(&source));
         sg.is_alive()
     } {
-        for session_owner in crate::src::session::session_group_members(&sg) {
+        for session_owner in crate::session::session_group_members(&sg) {
             server_destroy_session(&session_owner);
             session_owner.destroy((1 as ::core::ffi::c_int) != 0, c"cmd_kill_session_exec");
         }
@@ -97,13 +97,13 @@ unsafe fn cmd_kill_session_all(
     filter: Option<&CStr>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let mut s: Option<SessionRef> = crate::src::cmd::queue::cmdq_get_target(&item).session_handle();
+    let mut s: Option<SessionRef> = crate::cmd::queue::cmdq_get_target(&item).session_handle();
     let mut sloop: Option<SessionRef> = None;
     let mut sloop_owner = sessions::first();
     sloop = sloop_owner.clone();
     while !sloop.is_none() {
         let name = sloop.as_ref().expect("live session").name();
-        if !(crate::src::shared::rc::same(sloop.as_ref(), s.as_ref()))
+        if !(crate::shared::rc::same(sloop.as_ref(), s.as_ref()))
             && !(cmd_kill_session_filter(
                 item_handle,
                 sloop.as_ref().expect("live session"),

@@ -1,28 +1,28 @@
-use crate::src::arguments::{
+use crate::arguments::{
     args, args_command_state, args_count, args_has, args_make_commands, args_make_commands_now,
     args_make_commands_prepare, args_parse, args_parse_type, args_string, ArgsParseError,
     ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_STRING,
 };
-use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::parse::cmd_parse_error_uppercase_first;
-use crate::src::cmd::queue::{
+use crate::cmd::cmd_get_args_mut;
+use crate::cmd::parse::cmd_parse_error_uppercase_first;
+use crate::cmd::queue::{
     cmdq_append, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_target_client,
     cmdq_insert_after, cmdq_resumed,
 };
-use crate::src::format::bytes::nullable_cstr;
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::format_single_from_target_cstring;
-use crate::src::job::job_run;
+use crate::format::bytes::nullable_cstr;
+use crate::format::bytes::write_cstr;
+use crate::format::format_single_from_target_cstring;
+use crate::job::job_run;
 
-use crate::src::server_client::Client as _;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::command::CMD_FIND_CANFAIL;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::job::JobCompletion;
-use crate::src::shared::session::SessionRef;
-use crate::src::status::status_message_set;
+use crate::server_client::Client as _;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::command::CMD_FIND_CANFAIL;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::job::JobCompletion;
+use crate::shared::session::SessionRef;
+use crate::status::status_message_set;
 use std::rc::{Rc, Weak};
 
 pub struct cmd_if_shell_data {
@@ -73,7 +73,7 @@ unsafe fn cmd_if_shell_exec(
     let mut queue_client_ptr: Option<ClientRef> = queue_client.clone();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let new_item_allocation;
     let tc_owner = cmdq_get_target_client(Some(&*item));

@@ -1,24 +1,22 @@
-use crate::src::format::bytes::format_message_with;
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::format_add;
-use crate::src::log::{log_cstr, log_cstr_n, log_debug};
-use crate::src::reactor::{
-    evbuffer_add_formatted, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
-};
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::command::cmd_find_state;
-use crate::src::shared::events::{
+use crate::format::bytes::format_message_with;
+use crate::format::bytes::write_cstr;
+use crate::format::format_add;
+use crate::log::{log_cstr, log_cstr_n, log_debug};
+use crate::reactor::{evbuffer_add_formatted, evbuffer_get_length, evbuffer_new, evbuffer_pullup};
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::command::cmd_find_state;
+use crate::shared::events::{
     event_payload, event_payload_item, event_payload_tree, event_payload_type,
     EventPayloadIdentity, EventPayloadValue,
 };
-use crate::src::shared::format::format_tree;
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::window::WindowRef;
-use crate::src::shared::window::WindowWeak;
-use crate::src::window::{winlink_find_by_index, Window};
-use crate::src::{server_client::Client, session::Session, window::WindowPane};
+use crate::shared::format::format_tree;
+use crate::shared::pane::window_pane;
+use crate::shared::session::SessionRef;
+use crate::shared::window::WindowRef;
+use crate::shared::window::WindowWeak;
+use crate::window::{winlink_find_by_index, Window};
+use crate::{server_client::Client, session::Session, window::WindowPane};
 use std::ffi::{CStr, CString};
 use tiri_buffer::SegmentedBuf;
 

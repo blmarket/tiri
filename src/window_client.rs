@@ -1,51 +1,51 @@
-use crate::src::arguments::{args, args_count, args_get, args_has, args_string};
-use crate::src::compat::imsg::*;
-use crate::src::format::{
+use crate::arguments::{args, args_count, args_get, args_has, args_string};
+use crate::compat::imsg::*;
+use crate::format::{
     format_add, format_create, format_create_defaults, format_defaults, format_expand_cstring,
     format_single_cstring, format_true,
 };
-use crate::src::format_draw::format_draw;
-use crate::src::grid::grid_default_cell;
-use crate::src::key_string::key_string_parse_cstr;
-use crate::src::mode_tree::{
+use crate::format_draw::format_draw;
+use crate::grid::grid_default_cell;
+use crate::key_string::key_string_parse_cstr;
+use crate::mode_tree::{
     mode_tree_add, mode_tree_build, mode_tree_down, mode_tree_draw, mode_tree_each_tagged,
     mode_tree_free, mode_tree_get_current, mode_tree_key, mode_tree_resize, mode_tree_run_command,
     mode_tree_start, mode_tree_view_name,
 };
-use crate::src::options::OptionsScope;
-use crate::src::screen_write::{
+use crate::options::OptionsScope;
+use crate::screen_write::{
     screen_write_cursormove, screen_write_fast_copy, screen_write_hline, screen_write_preview,
     screen_write_vline,
 };
-use crate::src::server_client::Client as _;
-use crate::src::session::Session;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::client::CLIENT_UNATTACHEDFLAGS;
-use crate::src::shared::command::{cmd_find_state, cmdq_item};
-use crate::src::shared::format::format_tree;
-use crate::src::shared::format::FORMAT_NONE;
-use crate::src::shared::grid::*;
-use crate::src::shared::key::*;
-use crate::src::shared::layout::*;
-use crate::src::shared::menu::menu_item;
-use crate::src::shared::mode_tree::ModeTreeItemSnapshot;
-use crate::src::shared::mode_tree::{mode_tree_data, mode_tree_help_info, ModeTreeItemData};
-use crate::src::shared::mouse::mouse_event;
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::screen::screen;
-use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::sort::sort_criteria;
-use crate::src::shared::sort::*;
-use crate::src::shared::style::*;
-use crate::src::shared::window::WindowRef;
-use crate::src::shared::window::{window_mode, window_mode_entry, winlink};
-use crate::src::sort::sort_get_clients;
-use crate::src::status::{status_at_line, status_line_size};
-use crate::src::style::style_apply_with_options;
-use crate::src::window::Window as _;
-use crate::src::window_pane::WindowPane as _;
+use crate::server_client::Client as _;
+use crate::session::Session;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::client::CLIENT_UNATTACHEDFLAGS;
+use crate::shared::command::{cmd_find_state, cmdq_item};
+use crate::shared::format::format_tree;
+use crate::shared::format::FORMAT_NONE;
+use crate::shared::grid::*;
+use crate::shared::key::*;
+use crate::shared::layout::*;
+use crate::shared::menu::menu_item;
+use crate::shared::mode_tree::ModeTreeItemSnapshot;
+use crate::shared::mode_tree::{mode_tree_data, mode_tree_help_info, ModeTreeItemData};
+use crate::shared::mouse::mouse_event;
+use crate::shared::pane::window_pane;
+use crate::shared::screen::screen;
+use crate::shared::screen_write::screen_write_ctx;
+use crate::shared::session::SessionRef;
+use crate::shared::sort::sort_criteria;
+use crate::shared::sort::*;
+use crate::shared::style::*;
+use crate::shared::window::WindowRef;
+use crate::shared::window::{window_mode, window_mode_entry, winlink};
+use crate::sort::sort_get_clients;
+use crate::status::{status_at_line, status_line_size};
+use crate::style::style_apply_with_options;
+use crate::window::Window as _;
+use crate::window_pane::WindowPane as _;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
@@ -517,8 +517,8 @@ unsafe fn window_client_status_snapshot(c: &ClientRef, lines: u32) -> screen {
     let source = status.screen.grid();
     let rows = lines.min(source.hsize.wrapping_add(source.sy));
     let mut snapshot = screen::empty();
-    snapshot.grid = Some(crate::src::grid::grid_create(source.sx, rows, 0));
-    crate::src::grid::grid_duplicate_lines(snapshot.grid_mut(), 0, source, 0, rows);
+    snapshot.grid = Some(crate::grid::grid_create(source.sx, rows, 0));
+    crate::grid::grid_duplicate_lines(snapshot.grid_mut(), 0, source, 0, rows);
     snapshot
 }
 

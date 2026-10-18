@@ -1,20 +1,20 @@
-use crate::src::ffi::systemd::{
+use crate::ffi::systemd::{
     sd_bus, sd_bus_error, sd_bus_message, sd_bus_slot, sd_id128, sd_id128_t,
 };
-use crate::src::ffi::systemd::{
+use crate::ffi::systemd::{
     sd_bus_call, sd_bus_default_user, sd_bus_error_free, sd_bus_match_signal,
     sd_bus_message_append, sd_bus_message_close_container, sd_bus_message_new_method_call,
     sd_bus_message_open_container, sd_bus_message_read, sd_bus_message_unref, sd_bus_process,
     sd_bus_slot_unref, sd_bus_unref, sd_bus_wait, sd_id128_randomize, sd_is_socket_unix,
     sd_listen_fds, sd_pid_get_unit, sd_pid_get_user_slice, sd_pid_get_user_unit,
 };
-use crate::src::format::bytes::{format_message_with, write_cstr};
-use crate::src::server::server_create_socket;
-use crate::src::shared::abi::uint32_t;
-use crate::src::shared::abi::*;
-use crate::src::shared::errno::E2BIG;
-use crate::src::shared::socket::SOCK_STREAM;
-use crate::src::tmux::socket_path;
+use crate::format::bytes::{format_message_with, write_cstr};
+use crate::server::server_create_socket;
+use crate::shared::abi::uint32_t;
+use crate::shared::abi::*;
+use crate::shared::errno::E2BIG;
+use crate::shared::socket::SOCK_STREAM;
+use crate::tmux::socket_path;
 use libc::{free, getpid, getppid, strcmp};
 use std::ffi::{CStr, CString};
 use std::time::Instant;

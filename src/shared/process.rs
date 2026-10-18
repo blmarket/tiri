@@ -1,7 +1,7 @@
 //! Authoritative process model declarations.
 
 use super::abi::{gid_t, uid_t};
-use crate::src::compat::imsg::{imsg, imsgbuf};
+use crate::compat::imsg::{imsg, imsgbuf};
 
 pub enum PeerMessage<'a> {
     Disconnected,

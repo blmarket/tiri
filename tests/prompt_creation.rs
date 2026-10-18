@@ -1,13 +1,13 @@
 use std::{cell::RefCell, ffi::CString, rc::Rc};
-use tiri::src::environ::environ_create;
-use tiri::src::options::options_table;
-use tiri::src::options::OptionsScope;
-use tiri::src::prompt::{
+use tiri::environ::environ_create;
+use tiri::options::options_table;
+use tiri::options::OptionsScope;
+use tiri::prompt::{
     prompt_create, prompt_free, prompt_incremental_start, prompt_set_options, prompt_update,
 };
-use tiri::src::shared::command::cmd_find_state;
-use tiri::src::shared::prompt::*;
-use tiri::src::tmux::global_environ;
+use tiri::shared::command::cmd_find_state;
+use tiri::shared::prompt::*;
+use tiri::tmux::global_environ;
 
 fn input_bytes(prompt: &prompt) -> Vec<u8> {
     prompt

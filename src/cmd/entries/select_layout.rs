@@ -1,11 +1,11 @@
-use crate::src::arguments::{args, args_has, args_parse, args_string};
-use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::cmdq_error;
-use crate::src::format::bytes::write_cstr;
-use crate::src::shared::abi::*;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::window::{LayoutKind, Window as _};
+use crate::arguments::{args, args_has, args_parse, args_string};
+use crate::cmd::cmd_get_args_mut;
+use crate::cmd::queue::cmdq_error;
+use crate::format::bytes::write_cstr;
+use crate::shared::abi::*;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::window::{LayoutKind, Window as _};
 pub static cmd_select_layout_entry: cmd_entry = {
     cmd_entry {
         name: c"select-layout",
@@ -41,7 +41,7 @@ unsafe fn cmd_select_layout_exec(
     let item = item_handle.borrow();
     let args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let target: *mut cmd_find_state = &mut target_state;
     let window_owner = (*target).w.upgrade().expect("live layout window");
     let current = window_owner.layout();

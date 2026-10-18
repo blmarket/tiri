@@ -1,12 +1,12 @@
 //! Persistent option identities. Table access retains the owning model.
 use super::global::{with_global_options, with_global_s_options, with_global_w_options};
 use super::types::{options, options_entry};
-use crate::src::session::Session;
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::session::SessionWeak;
-use crate::src::shared::window::WindowWeak;
-use crate::src::window::Window;
-use crate::src::window_pane::WindowPane;
+use crate::session::Session;
+use crate::shared::pane::window_pane;
+use crate::shared::session::SessionWeak;
+use crate::shared::window::WindowWeak;
+use crate::window::Window;
+use crate::window_pane::WindowPane;
 use std::rc::Weak;
 use std::{cell::UnsafeCell, ffi::CStr};
 

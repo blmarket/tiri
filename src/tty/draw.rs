@@ -4,19 +4,19 @@ use super::output::{
     terminal_term, tty_attributes, tty_cursor, tty_default_attributes, tty_margin_off, tty_putc,
     tty_putcode, tty_putcode_i, tty_putn, tty_region_off, tty_repeat_space, tty_update_mode,
 };
-use crate::src::grid::view::grid_view_get_cell;
-use crate::src::grid::{grid_cells_look_equal, grid_default_cell, grid_get_line};
-use crate::src::log::{fatalx, log_debug, log_get_level};
-use crate::src::screen::screen_select_cell;
-use crate::src::server_client::Client as _;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::{ClientRef, CLIENT_UTF8};
-use crate::src::shared::grid::*;
-use crate::src::shared::limits::UINT_MAX;
-use crate::src::shared::screen::screen;
-use crate::src::shared::tty::tty_style_ctx;
-use crate::src::shared::tty::*;
-use crate::src::tty::term::tty_term_has;
+use crate::grid::view::grid_view_get_cell;
+use crate::grid::{grid_cells_look_equal, grid_default_cell, grid_get_line};
+use crate::log::{fatalx, log_debug, log_get_level};
+use crate::screen::screen_select_cell;
+use crate::server_client::Client as _;
+use crate::shared::abi::*;
+use crate::shared::client::{ClientRef, CLIENT_UTF8};
+use crate::shared::grid::*;
+use crate::shared::limits::UINT_MAX;
+use crate::shared::screen::screen;
+use crate::shared::tty::tty_style_ctx;
+use crate::shared::tty::*;
+use crate::tty::term::tty_term_has;
 
 pub(super) type tty_draw_line_state = ::core::ffi::c_uint;
 pub(super) const TTY_DRAW_LINE_DONE: tty_draw_line_state = 6;

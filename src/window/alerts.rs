@@ -1,7 +1,7 @@
 //! Window-owned alert flags, queue membership and silence timer.
 use super::*;
-use crate::src::shared::window::WindowRef;
-use crate::src::shared::window::{WINDOW_ACTIVITY, WINDOW_ALERTFLAGS, WINDOW_BELL, WINDOW_SILENCE};
+use crate::shared::window::WindowRef;
+use crate::shared::window::{WINDOW_ACTIVITY, WINDOW_ALERTFLAGS, WINDOW_BELL, WINDOW_SILENCE};
 use std::time::Duration;
 
 pub(super) unsafe fn reset_timer(owner: &WindowRef) {
@@ -22,7 +22,7 @@ pub(super) unsafe fn reset_timer(owner: &WindowRef) {
             Timer::new(timeout, move || {
                 if let Some(owner) = observer.upgrade() {
                     log_debug(format_args!("@{} alerts timer expired", owner.id()));
-                    crate::src::alerts::alerts_queue(&owner, WINDOW_SILENCE);
+                    crate::alerts::alerts_queue(&owner, WINDOW_SILENCE);
                 }
             })
             .expect("arm timer"),
@@ -39,7 +39,7 @@ pub(super) unsafe fn queue(owner: &WindowRef, flags: i32) -> Option<bool> {
         log_debug(format_args!(
             "@{} alerts flags added {}",
             owner.id(),
-            crate::src::log::log_hex(flags as u32 as u64)
+            crate::log::log_hex(flags as u32 as u64)
         ));
     }
     let enabled = [

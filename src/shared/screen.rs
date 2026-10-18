@@ -46,7 +46,7 @@ pub struct screen {
     pub tabs: Vec<bitstr_t>,
     pub sel: Option<Box<screen_sel>>,
     pub write_list: Option<Box<[screen_write_cline]>>,
-    pub hyperlinks: Option<crate::src::hyperlinks::HyperlinksRef>,
+    pub hyperlinks: Option<crate::hyperlinks::HyperlinksRef>,
     pub progress_bar: progress_bar,
 }
 

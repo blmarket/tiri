@@ -1,28 +1,28 @@
-use crate::src::arguments::{ArgumentValue, ARGS_COMMANDS, ARGS_STRING};
-use crate::src::cmd::queue::{cmdq_append, cmdq_get_command, cmdq_print};
-use crate::src::cmd::{
+use crate::arguments::{ArgumentValue, ARGS_COMMANDS, ARGS_STRING};
+use crate::cmd::queue::{cmdq_append, cmdq_get_command, cmdq_print};
+use crate::cmd::{
     cmd_get_alias, cmd_list_append, cmd_list_append_all, cmd_list_move, cmd_list_new,
     cmd_list_print_cstring, cmd_parse,
 };
-use crate::src::environ::environ_put;
-use crate::src::format::{
+use crate::environ::environ_put;
+use crate::format::{
     format_create_with_client, format_defaults, format_expand_cstring, format_true,
 };
-use crate::src::log::{fatalx, log_bytes, log_debug};
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_state};
-use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
-use crate::src::shared::command::{
+use crate::log::{fatalx, log_bytes, log_debug};
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::command::*;
+use crate::shared::command::{cmd_find_state, cmd_list, cmdq_state};
+use crate::shared::command::{cmd_parse_input, cmd_parse_result};
+use crate::shared::command::{
     CMD_PARSE_MAX_ENVIRON_LEN, CMD_PARSE_NOALIAS, CMD_PARSE_ONEGROUP, CMD_PARSE_PARSEONLY,
     CMD_PARSE_VERBOSE,
 };
-use crate::src::shared::environment::ENVIRON_HIDDEN;
-use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
-use crate::src::shared::limits::UINT_MAX;
-use crate::src::shared::stdio::FILE;
-use crate::src::tmux::global_environ;
+use crate::shared::environment::ENVIRON_HIDDEN;
+use crate::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
+use crate::shared::limits::UINT_MAX;
+use crate::shared::stdio::FILE;
+use crate::tmux::global_environ;
 use libc;
 use std::cell::RefCell;
 use std::collections::VecDeque;

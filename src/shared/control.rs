@@ -2,7 +2,7 @@
 
 use super::abi::{size_t, u_int, uint64_t};
 use super::pane::window_pane_offset;
-use crate::src::monitor::monitor_set;
+use crate::monitor::monitor_set;
 use std::collections::VecDeque;
 
 #[repr(C)]
@@ -10,8 +10,8 @@ pub struct control_state {
     pub panes: control_panes,
     pub windows: control_windows,
     pub queued_reply_bytes: size_t,
-    pub read_event: crate::src::reactor::StreamHandle,
-    pub write_event: crate::src::reactor::StreamHandle,
+    pub read_event: crate::reactor::StreamHandle,
+    pub write_event: crate::reactor::StreamHandle,
     pub subs: Option<refbox::RefBox<monitor_set>>,
     pub guard_depth: ::core::ffi::c_int,
     pub(crate) deferred: VecDeque<std::ffi::CString>,

@@ -1,8 +1,8 @@
 //! Operations on retained session holders. Cleanup remains explicit.
 use super::*;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::spawn::spawn_context;
-use crate::src::shared::window::WindowRef;
+use crate::shared::session::SessionRef;
+use crate::shared::spawn::spawn_context;
+use crate::shared::window::WindowRef;
 use std::time::SystemTime;
 
 /// The caller must preserve the legacy single-threaded borrow and logical
@@ -115,8 +115,8 @@ pub trait Session {
     unsafe fn format_value(
         &self,
         key: &CStr,
-        context: &mut crate::src::shared::format::format_tree,
-    ) -> Option<crate::src::format::FormatValue>;
+        context: &mut crate::shared::format::format_tree,
+    ) -> Option<crate::format::FormatValue>;
     unsafe fn destroy(&self, notify: bool, from: &CStr);
 }
 
@@ -177,8 +177,8 @@ impl Session for SessionRef {
     }
 
     unsafe fn update_environment(&self, source: &environ) {
-        crate::src::environ::environ_update(
-            &crate::src::options::OptionsScope::Session(Rc::downgrade(self)),
+        crate::environ::environ_update(
+            &crate::options::OptionsScope::Session(Rc::downgrade(self)),
             source,
             (*self.get())
                 .environ
@@ -191,7 +191,7 @@ impl Session for SessionRef {
         sessions::resolve(&Rc::downgrade(self)).is_some()
     }
     unsafe fn contains_window(&self, window: &WindowRef) -> bool {
-        use crate::src::window::Window;
+        use crate::window::Window;
         let observer = Rc::downgrade(self);
         let mut link = window.next_winlink(None);
         while link.is_alive() {
@@ -210,7 +210,7 @@ impl Session for SessionRef {
     }
 
     unsafe fn rename(&self, name: &CStr) -> Result<(), CString> {
-        use crate::src::tmux::{check_name, clean_name_cstring};
+        use crate::tmux::{check_name, clean_name_cstring};
         if !check_name(name) {
             let mut message = b"invalid session name: ".to_vec();
             message.extend_from_slice(name.to_bytes());
@@ -247,7 +247,7 @@ impl Session for SessionRef {
         let owner = sessions::remove(self).expect("registered session owner");
         drop(session_replace_name(&mut *self.get(), new_name));
         sessions::insert(owner);
-        crate::src::server_fn::server_status_session(self);
+        crate::server_fn::server_status_session(self);
         events_fire(c"session-renamed", payload);
         Ok(())
     }
@@ -291,7 +291,7 @@ impl Session for SessionRef {
         }
         while last > index {
             let link = winlink_find_by_index(&state.windows, last - 1);
-            crate::src::window::winlinks_reindex(&mut state.windows, link, last);
+            crate::window::winlinks_reindex(&mut state.windows, link, last);
             last -= 1;
         }
         index
@@ -353,7 +353,7 @@ impl Session for SessionRef {
         session_theme_changed(Some(&*self.get()));
         (*self.get()).last_attached_time = SystemTime::now();
         self.current_winlink().get_mut_unchecked().flags &= !WINLINK_ALERTFLAGS;
-        crate::src::alerts::alerts_check_session(self);
+        crate::alerts::alerts_check_session(self);
     }
     unsafe fn status_layout(&self) -> (i32, u32) {
         ((*self.get()).statusat, (*self.get()).statuslines)
@@ -377,8 +377,8 @@ impl Session for SessionRef {
     unsafe fn format_value(
         &self,
         key: &CStr,
-        context: &mut crate::src::shared::format::format_tree,
-    ) -> Option<crate::src::format::FormatValue> {
+        context: &mut crate::shared::format::format_tree,
+    ) -> Option<crate::format::FormatValue> {
         super::format::format_value(self, key, context)
     }
     unsafe fn destroy(&self, notify: bool, from: &CStr) {
@@ -407,20 +407,20 @@ mod tests {
     fn status_layout_is_cached_until_the_sizing_pass_publishes_it() {
         unsafe {
             let session = session::new();
-            let mut options = crate::src::options::options_create(None);
+            let mut options = crate::options::options_create(None);
             for key in [c"status", c"status-position"] {
-                let definition = crate::src::options::options_table
+                let definition = crate::options::options_table
                     .iter()
                     .find(|definition| definition.name == Some(key))
                     .unwrap();
-                crate::src::options::options_default(&mut options, definition);
+                crate::options::options_default(&mut options, definition);
             }
             (*session.get()).options.replace(Some(options));
             status_update_cache(&mut *session.get());
             let before = session.status_layout();
             {
                 let mut options = session.borrow_options_mut();
-                crate::src::options::options_set_number(&mut options, c"status", 0);
+                crate::options::options_set_number(&mut options, c"status", 0);
             }
             assert_eq!(
                 session.status_layout(),

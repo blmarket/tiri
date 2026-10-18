@@ -1,19 +1,19 @@
-use crate::src::arguments::{args, args_has, args_parse};
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_state_owned, cmdq_insert_hook};
-use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
-use crate::src::resize::recalculate_sizes;
-use crate::src::server_client::Client as _;
-use crate::src::server_fn::server_redraw_session;
-use crate::src::session::Session;
+use crate::arguments::{args, args_has, args_parse};
+use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_state_owned, cmdq_insert_hook};
+use crate::cmd::{cmd_get_args_mut, cmd_get_entry};
+use crate::resize::recalculate_sizes;
+use crate::server_client::Client as _;
+use crate::server_fn::server_redraw_session;
+use crate::session::Session;
 
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::command::CMD_TARGET_SESSION_USAGE;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::window::winlink;
-use crate::src::window::Window as _;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::command::CMD_TARGET_SESSION_USAGE;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::session::SessionRef;
+use crate::shared::window::winlink;
+use crate::window::Window as _;
 pub static cmd_select_window_entry: cmd_entry = {
     cmd_entry {
         name: c"select-window",
@@ -124,7 +124,7 @@ unsafe fn cmd_select_window_exec(
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     let current = cmdq_get_state_owned(&*(item));
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut s: Option<SessionRef> = (*target).session_handle();
@@ -194,7 +194,7 @@ unsafe fn cmd_select_window_exec(
                 cmdq_error(item_handle, |out| out.write_all(b"no last window"));
                 return CmdOutcome::Error;
             }
-            if crate::src::shared::rc::same(
+            if crate::shared::rc::same(
                 current.current.borrow().session_handle().as_ref(),
                 s.as_ref(),
             ) {

@@ -1,20 +1,20 @@
-use crate::src::events_payload::{
+use crate::events_payload::{
     event_payload_create, event_payload_log, event_payload_set_client, event_payload_set_int,
     event_payload_set_pane, event_payload_set_session, event_payload_set_string,
     event_payload_set_target, event_payload_set_window,
 };
-use crate::src::format::bytes::write_cstr;
-use crate::src::log::log_get_level;
-use crate::src::session::Session as _;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::command::cmd_find_state;
-use crate::src::shared::events::{event_payload, events_cb, events_sink, EventSinkId};
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::window::winlink;
-use crate::src::shared::window::WindowRef;
-use crate::src::window_pane::WindowPane as _;
+use crate::format::bytes::write_cstr;
+use crate::log::log_get_level;
+use crate::session::Session as _;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::command::cmd_find_state;
+use crate::shared::events::{event_payload, events_cb, events_sink, EventSinkId};
+use crate::shared::pane::window_pane;
+use crate::shared::session::SessionRef;
+use crate::shared::window::winlink;
+use crate::shared::window::WindowRef;
+use crate::window_pane::WindowPane as _;
 use std::ffi::CStr;
 
 /// The sink registry. Callbacks may add or remove sinks while an event is
@@ -278,7 +278,7 @@ pub unsafe fn events_fire_winlink(name: &CStr, mut wl: refbox::Weak<winlink>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::src::shared::events::events_callback;
+    use crate::shared::events::events_callback;
     use std::cell::{Cell, RefCell};
     use std::rc::Rc;
 

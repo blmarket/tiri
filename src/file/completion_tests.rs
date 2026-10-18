@@ -1,7 +1,7 @@
 use super::*;
-use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next};
-use crate::src::reactor::shutdown_runtime;
-use crate::src::shared::command::CmdOutcome;
+use crate::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next};
+use crate::reactor::shutdown_runtime;
+use crate::shared::command::CmdOutcome;
 use std::cell::Cell;
 
 #[test]
@@ -13,7 +13,7 @@ fn local_completion_can_be_cancelled_after_runtime_shutdown() {
         let retained = data.clone();
         let file = Rc::new(Cell::new(Weak::new()));
         let observed = file.clone();
-        let owner = crate::src::server_client::queue_test_clients::with_queue();
+        let owner = crate::server_client::queue_test_clients::with_queue();
         let head = cmdq_append(
             Some(&owner),
             cmdq_get_callback_owned(
@@ -53,7 +53,7 @@ fn dropping_a_lost_client_cancels_its_local_write() {
     use tiri_rt::Runtime as _;
     let mut runtime = tiri_rt::mio::Runtime::new().unwrap();
     unsafe {
-        let owner = crate::src::server_client::queue_test_clients::with_queue();
+        let owner = crate::server_client::queue_test_clients::with_queue();
         let observed = Rc::new(Cell::new(false));
         let body = observed.clone();
         let file = Rc::new(Cell::new(Weak::new()));
@@ -95,8 +95,8 @@ fn a_dead_file_client_leaves_its_command_blocked() {
     use tiri_rt::Runtime as _;
     let mut runtime = tiri_rt::mio::Runtime::new().unwrap();
     unsafe {
-        let owner = crate::src::server_client::queue_test_clients::with_queue();
-        let client = crate::src::server_client::queue_test_clients::with_queue();
+        let owner = crate::server_client::queue_test_clients::with_queue();
+        let client = crate::server_client::queue_test_clients::with_queue();
         client.update_flags(CLIENT_DEAD as uint64_t, 0);
         let file_client = client.clone();
         let observed = Rc::new(Cell::new(false));

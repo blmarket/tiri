@@ -1,28 +1,28 @@
-use crate::src::arguments::{args, args_get, args_has, args_parse};
-use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print};
-use crate::src::format::bytes::nullable_cstr;
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::{
+use crate::arguments::{args, args_get, args_has, args_parse};
+use crate::cmd::cmd_get_args_mut;
+use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print};
+use crate::format::bytes::nullable_cstr;
+use crate::format::bytes::write_cstr;
+use crate::format::{
     format_add, format_create_with_client, format_defaults, format_expand_cstring, format_true,
 };
-use crate::src::session::sessions;
+use crate::session::sessions;
 
-use crate::src::session::Session;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::command::CMD_AFTERHOOK;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::format::format_tree;
-use crate::src::shared::format::FORMAT_NONE;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::sort::sort_criteria;
-use crate::src::shared::sort::*;
-use crate::src::shared::tree::RB_NEGINF;
-use crate::src::shared::window::winlink;
-use crate::src::sort::{sort_get_panes_window, sort_order_from_string};
-use crate::src::window::{winlinks_minmax, winlinks_next};
+use crate::session::Session;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::command::CMD_AFTERHOOK;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::format::format_tree;
+use crate::shared::format::FORMAT_NONE;
+use crate::shared::session::SessionRef;
+use crate::shared::sort::sort_criteria;
+use crate::shared::sort::*;
+use crate::shared::tree::RB_NEGINF;
+use crate::shared::window::winlink;
+use crate::sort::{sort_get_panes_window, sort_order_from_string};
+use crate::window::{winlinks_minmax, winlinks_next};
 pub static cmd_list_panes_entry: cmd_entry = {
     cmd_entry {
         name: c"list-panes",
@@ -55,7 +55,7 @@ unsafe fn cmd_list_panes_exec(
     let item = item_handle.borrow();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let mut s: Option<SessionRef> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();

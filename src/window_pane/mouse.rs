@@ -1,6 +1,6 @@
 //! Pane mouse hit testing uses copied geometry across Window operations.
 use super::*;
-use crate::src::shared::pane::PANE_SCROLLBARS_RIGHT;
+use crate::shared::pane::PANE_SCROLLBARS_RIGHT;
 
 pub(super) unsafe fn in_scrollbar_area(
     pane: &Rc<UnsafeCell<window_pane>>,

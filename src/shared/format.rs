@@ -1,7 +1,7 @@
 //! Authoritative format declarations.
-use crate::src::shared::client::{ClientRef, ClientWeak};
-use crate::src::shared::session::SessionWeak;
-use crate::src::shared::window::WindowWeak;
+use crate::shared::client::{ClientRef, ClientWeak};
+use crate::shared::session::SessionWeak;
+use crate::shared::window::WindowWeak;
 use std::cell::UnsafeCell;
 
 use super::abi::{time_t, u_int};

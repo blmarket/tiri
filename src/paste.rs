@@ -1,13 +1,13 @@
-use crate::src::events::events_fire;
-use crate::src::events_payload::{event_payload_create, event_payload_set_string};
-use crate::src::options::options_get_number;
-use crate::src::options::OptionsScope;
-use crate::src::shared::abi::*;
-use crate::src::shared::paste::{paste_buffer, PasteBufferRef};
-use crate::src::shared::tree::{RB_INF, RB_NEGINF};
-use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
-use crate::src::text::utf8::utf8_strvis;
-use crate::src::tmux::clean_name_cstring;
+use crate::events::events_fire;
+use crate::events_payload::{event_payload_create, event_payload_set_string};
+use crate::options::options_get_number;
+use crate::options::OptionsScope;
+use crate::shared::abi::*;
+use crate::shared::paste::{paste_buffer, PasteBufferRef};
+use crate::shared::tree::{RB_INF, RB_NEGINF};
+use crate::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
+use crate::text::utf8::utf8_strvis;
+use crate::tmux::clean_name_cstring;
 use libc::time;
 use refbox::RefBox;
 use std::cell::RefCell;
@@ -635,8 +635,8 @@ mod tests {
 
     #[test]
     fn paste_events_release_borrows_and_preserve_registry_visibility() {
-        use crate::src::events::{events_add_sink, events_remove_sink};
-        use crate::src::events_payload::event_payload_get_string;
+        use crate::events::{events_add_sink, events_remove_sink};
+        use crate::events_payload::event_payload_get_string;
         let seen = Rc::new(RefCell::new(Vec::new()));
         unsafe {
             let mut sinks = Vec::new();

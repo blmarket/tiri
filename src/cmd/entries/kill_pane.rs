@@ -1,25 +1,25 @@
-use crate::src::arguments::{args, args_get, args_has, args_parse};
-use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_client};
-use crate::src::format::{
+use crate::arguments::{args, args_get, args_has, args_parse};
+use crate::cmd::cmd_get_args_mut;
+use crate::cmd::queue::{cmdq_error, cmdq_get_client};
+use crate::format::{
     format_create_with_client, format_defaults, format_expand_cstring, format_true,
 };
-use crate::src::server_client::Client as _;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::window::WindowRef;
+use crate::server_client::Client as _;
+use crate::shared::client::ClientRef;
+use crate::shared::window::WindowRef;
 use std::ffi::CStr;
 
-use crate::src::server_fn::{server_kill_pane, server_redraw_window};
-use crate::src::shared::abi::*;
-use crate::src::shared::command::CMD_AFTERHOOK;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::format::format_tree;
-use crate::src::shared::format::FORMAT_NONE;
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::window::winlink;
-use crate::src::window::Window;
+use crate::server_fn::{server_kill_pane, server_redraw_window};
+use crate::shared::abi::*;
+use crate::shared::command::CMD_AFTERHOOK;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::format::format_tree;
+use crate::shared::format::FORMAT_NONE;
+use crate::shared::pane::window_pane;
+use crate::shared::session::SessionRef;
+use crate::shared::window::winlink;
+use crate::window::Window;
 pub static cmd_kill_pane_entry: cmd_entry = {
     cmd_entry {
         name: c"kill-pane",
@@ -52,7 +52,7 @@ unsafe fn cmd_kill_pane_exec(
     let item = item_handle.borrow();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let pane_owner = (*target).wp.upgrade();
     let mut filter: Option<&CStr> = args_get(&*(args), 'f' as i32 as u_char);
@@ -75,7 +75,7 @@ unsafe fn cmd_kill_pane_all(
     filter: Option<&CStr>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let mut s: Option<SessionRef> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();

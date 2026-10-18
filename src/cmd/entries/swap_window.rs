@@ -1,18 +1,18 @@
-use crate::src::arguments::{args, args_has, args_parse};
-use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::cmdq_error;
-use crate::src::resize::recalculate_sizes;
-use crate::src::server::marked_pane;
-use crate::src::server_fn::server_redraw_session_group;
-use crate::src::session::session_group_synchronize_from;
-use crate::src::session::Session;
-use crate::src::shared::abi::*;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::command::{CMD_AFTERHOOK, CMD_FIND_DEFAULT_MARKED};
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::window::winlink;
-use crate::src::window::Window as _;
+use crate::arguments::{args, args_has, args_parse};
+use crate::cmd::cmd_get_args_mut;
+use crate::cmd::queue::cmdq_error;
+use crate::resize::recalculate_sizes;
+use crate::server::marked_pane;
+use crate::server_fn::server_redraw_session_group;
+use crate::session::session_group_synchronize_from;
+use crate::session::Session;
+use crate::shared::abi::*;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{CMD_AFTERHOOK, CMD_FIND_DEFAULT_MARKED};
+use crate::shared::session::SessionRef;
+use crate::shared::window::winlink;
+use crate::window::Window as _;
 
 pub static cmd_swap_window_entry: cmd_entry = {
     cmd_entry {
@@ -46,25 +46,25 @@ unsafe fn cmd_swap_window_exec(
     let item = item_handle.borrow();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut source_state = crate::src::cmd::queue::cmdq_get_source(&item).clone();
+    let mut source_state = crate::cmd::queue::cmdq_get_source(&item).clone();
     let mut source: *mut cmd_find_state = &mut source_state;
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let mut src: Option<SessionRef> = (*source).session_handle();
     let mut dst: Option<SessionRef> = (*target).session_handle();
-    let mut sg_src = crate::src::shared::session::SessionGroupWeak::new();
-    let mut sg_dst = crate::src::shared::session::SessionGroupWeak::new();
+    let mut sg_src = crate::shared::session::SessionGroupWeak::new();
+    let mut sg_dst = crate::shared::session::SessionGroupWeak::new();
     let mut wl_src: refbox::Weak<winlink> = (*source).winlink_handle();
     let mut wl_dst: refbox::Weak<winlink> = (*target).winlink_handle();
-    sg_src = crate::src::session::session_groups::for_session(
+    sg_src = crate::session::session_groups::for_session(
         &src.as_ref()
             .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
     );
-    sg_dst = crate::src::session::session_groups::for_session(
+    sg_dst = crate::session::session_groups::for_session(
         &dst.as_ref()
             .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
     );
-    if !crate::src::shared::rc::same(src.as_ref(), dst.as_ref())
+    if !crate::shared::rc::same(src.as_ref(), dst.as_ref())
         && sg_src.is_alive()
         && sg_dst.is_alive()
         && sg_src == sg_dst
@@ -74,7 +74,7 @@ unsafe fn cmd_swap_window_exec(
         });
         return CmdOutcome::Error;
     }
-    if crate::src::shared::rc::same(
+    if crate::shared::rc::same(
         wl_dst.get_unchecked().window_handle(),
         wl_src.get_unchecked().window_handle(),
     ) {
@@ -111,13 +111,13 @@ unsafe fn cmd_swap_window_exec(
     }
     if args_has(&*args, 'd' as i32 as u_char) != 0 {
         (dst.as_ref().expect("live session")).select_index(wl_dst.get_unchecked().idx);
-        if !crate::src::shared::rc::same(src.as_ref(), dst.as_ref()) {
+        if !crate::shared::rc::same(src.as_ref(), dst.as_ref()) {
             (src.as_ref().expect("live session")).select_index(wl_src.get_unchecked().idx);
         }
     }
     session_group_synchronize_from(src.as_ref().expect("live session"));
     server_redraw_session_group(src.as_ref().expect("live session"));
-    if !crate::src::shared::rc::same(src.as_ref(), dst.as_ref()) {
+    if !crate::shared::rc::same(src.as_ref(), dst.as_ref()) {
         session_group_synchronize_from(dst.as_ref().expect("live session"));
         server_redraw_session_group(dst.as_ref().expect("live session"));
     }

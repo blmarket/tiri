@@ -1,11 +1,11 @@
-use crate::src::ffi::utf8proc::{
+use crate::ffi::utf8proc::{
     utf8proc_category, utf8proc_charwidth, utf8proc_codepoint_valid, utf8proc_encode_char,
 };
-use crate::src::ffi::utf8proc::{
+use crate::ffi::utf8proc::{
     utf8proc_category_t, utf8proc_int32_t, utf8proc_ssize_t, utf8proc_uint8_t,
 };
-use crate::src::shared::abi::*;
-use crate::src::shared::utf8::wchar_t;
+use crate::shared::abi::*;
+use crate::shared::utf8::wchar_t;
 
 pub const UTF8PROC_CATEGORY_CO: utf8proc_category_t = 29;
 pub unsafe fn utf8proc_wcwidth(mut wc: wchar_t) -> ::core::ffi::c_int {

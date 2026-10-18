@@ -1,5 +1,5 @@
-use crate::src::log::{fatal, fatalx};
-use crate::src::shared::abi::*;
+use crate::log::{fatal, fatalx};
+use crate::shared::abi::*;
 use libc::calloc;
 pub unsafe fn xcalloc(size: size_t) -> *mut ::core::ffi::c_void {
     if size == 0 {

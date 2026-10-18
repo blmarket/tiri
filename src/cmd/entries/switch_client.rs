@@ -1,30 +1,30 @@
-use crate::src::arguments::{args, args_get, args_has, args_parse};
-use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::{
+use crate::arguments::{args, args_get, args_has, args_parse};
+use crate::cmd::cmd_get_args_mut;
+use crate::cmd::queue::{
     cmdq_error, cmdq_get_client, cmdq_get_flags, cmdq_get_state_owned, cmdq_get_target_client,
 };
-use crate::src::format::bytes::nullable_cstr;
-use crate::src::format::bytes::write_cstr;
-use crate::src::key_bindings::key_bindings_get_table;
-use crate::src::window::Window as _;
+use crate::format::bytes::nullable_cstr;
+use crate::format::bytes::write_cstr;
+use crate::key_bindings::key_bindings_get_table;
+use crate::window::Window as _;
 use libc::{getuid, strcmp, strcspn};
 
-use crate::src::shared::abi::uid_t;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::client::{CLIENT_IGNORESIZE, CLIENT_READONLY};
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::command::{
+use crate::shared::abi::uid_t;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::client::{CLIENT_IGNORESIZE, CLIENT_READONLY};
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{
     CMDQ_STATE_REPEAT, CMD_CLIENT_CFLAG, CMD_FIND_PREFER_UNATTACHED, CMD_READONLY,
 };
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::sort::sort_criteria;
-use crate::src::shared::sort::*;
-use crate::src::shared::window::winlink;
-use crate::src::sort::sort_order_from_string;
+use crate::shared::session::SessionRef;
+use crate::shared::sort::sort_criteria;
+use crate::shared::sort::*;
+use crate::shared::window::winlink;
+use crate::sort::sort_order_from_string;
 
-use crate::src::{server_client::Client, session::Session};
+use crate::{server_client::Client, session::Session};
 pub static cmd_switch_client_entry: cmd_entry = {
     cmd_entry {
         name: c"switch-client",
@@ -174,7 +174,7 @@ unsafe fn cmd_switch_client_exec(
             return CmdOutcome::Error;
         }
     } else if args_has(&*args, 'l' as i32 as u_char) != 0 {
-        selected_session = crate::src::session::sessions::resolve(
+        selected_session = crate::session::sessions::resolve(
             &tc.as_ref().expect("live client").previous_session(),
         );
         s = selected_session.clone();

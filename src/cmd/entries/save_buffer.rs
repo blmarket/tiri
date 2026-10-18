@@ -1,19 +1,19 @@
-use crate::src::arguments::{args, args_get, args_has, args_parse, args_string};
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print_data, cmdq_resumed};
-use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
-use crate::src::file::{file_write_wait, FileOutcome};
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::format_single_from_target_cstring;
-use crate::src::paste::{paste_buffer_data, paste_get_name, paste_get_top};
-use crate::src::reactor::{evbuffer_add, evbuffer_new};
-use crate::src::server_client::Client as _;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::client::CLIENT_CONTROL;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
-use crate::src::shared::command::{CMD_AFTERHOOK, CMD_BUFFER_USAGE};
-use crate::src::shared::posix_io::{O_APPEND, O_TRUNC};
+use crate::arguments::{args, args_get, args_has, args_parse, args_string};
+use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print_data, cmdq_resumed};
+use crate::cmd::{cmd_get_args_mut, cmd_get_entry};
+use crate::file::{file_write_wait, FileOutcome};
+use crate::format::bytes::write_cstr;
+use crate::format::format_single_from_target_cstring;
+use crate::paste::{paste_buffer_data, paste_get_name, paste_get_top};
+use crate::reactor::{evbuffer_add, evbuffer_new};
+use crate::server_client::Client as _;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::client::CLIENT_CONTROL;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
+use crate::shared::command::{CMD_AFTERHOOK, CMD_BUFFER_USAGE};
+use crate::shared::posix_io::{O_APPEND, O_TRUNC};
 use std::ffi::CStr;
 pub static cmd_save_buffer_entry: cmd_entry = {
     cmd_entry {

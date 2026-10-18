@@ -1,29 +1,29 @@
-use crate::src::paste::paste_walk;
-use crate::src::server_client::Client as _;
-use crate::src::server_client::ClientRegistry;
-use crate::src::session::sessions;
+use crate::paste::paste_walk;
+use crate::server_client::Client as _;
+use crate::server_client::ClientRegistry;
+use crate::session::sessions;
 use libc::{strcasecmp, strcmp};
 use std::ffi::CStr;
 
-use crate::src::session::Session;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::client::{CLIENT_ATTACHED, CLIENT_UNATTACHEDFLAGS};
-use crate::src::shared::key::*;
-use crate::src::shared::key::{key_binding, key_table};
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::paste::{paste_buffer, PasteBufferRef};
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::sort::sort_criteria;
-use crate::src::shared::sort::*;
-use crate::src::shared::tree::RB_NEGINF;
-use crate::src::shared::window::winlink;
-use crate::src::shared::window::WindowRef;
-use crate::src::window::Window as _;
-use crate::src::window_pane::WindowPane as _;
+use crate::session::Session;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::client::{CLIENT_ATTACHED, CLIENT_UNATTACHEDFLAGS};
+use crate::shared::key::*;
+use crate::shared::key::{key_binding, key_table};
+use crate::shared::pane::window_pane;
+use crate::shared::paste::{paste_buffer, PasteBufferRef};
+use crate::shared::session::SessionRef;
+use crate::shared::sort::sort_criteria;
+use crate::shared::sort::*;
+use crate::shared::tree::RB_NEGINF;
+use crate::shared::window::winlink;
+use crate::shared::window::WindowRef;
+use crate::window::Window as _;
+use crate::window_pane::WindowPane as _;
 use std::cmp::Ordering;
 
-use crate::src::window::{winlinks_minmax, winlinks_next};
+use crate::window::{winlinks_minmax, winlinks_next};
 
 pub(super) fn sort_ordering(result: ::core::ffi::c_int, reversed: ::core::ffi::c_int) -> Ordering {
     let ordering = result.cmp(&0);

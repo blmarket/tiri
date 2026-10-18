@@ -1,8 +1,8 @@
 use std::collections::btree_map;
-use tiri::src::options::*;
-use tiri::src::options::{options, options_entry};
-use tiri::src::shared::colour::{colour_palette, COLOUR_FLAG_256};
-use tiri::src::style::colour::*;
+use tiri::options::*;
+use tiri::options::{options, options_entry};
+use tiri::shared::colour::{colour_palette, COLOUR_FLAG_256};
+use tiri::style::colour::*;
 
 #[test]
 fn overrides_fall_back_to_defaults_and_clear_preserves_defaults() {
@@ -67,7 +67,7 @@ fn pane_colours(oo: &mut options) -> &mut options_entry {
 fn option_reload_replaces_defaults_without_changing_overrides() {
     unsafe {
         let scope = OptionsScope::GlobalWindow;
-        let definition = tiri::src::options::options_table
+        let definition = tiri::options::options_table
             .iter()
             .find(|oe| oe.name == Some(c"pane-colours"))
             .unwrap();

@@ -1,17 +1,17 @@
-use crate::src::arguments::{args, args_parse, args_string};
-use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::cmdq_error;
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::format_single_from_target_cstring;
-use crate::src::options::options_set_number;
-use crate::src::server_fn::{server_redraw_window_borders, server_status_window};
-use crate::src::shared::abi::*;
-use crate::src::shared::command::CMD_AFTERHOOK;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::window::winlink;
-use crate::src::tmux::check_name;
-use crate::src::window::Window;
+use crate::arguments::{args, args_parse, args_string};
+use crate::cmd::cmd_get_args_mut;
+use crate::cmd::queue::cmdq_error;
+use crate::format::bytes::write_cstr;
+use crate::format::format_single_from_target_cstring;
+use crate::options::options_set_number;
+use crate::server_fn::{server_redraw_window_borders, server_status_window};
+use crate::shared::abi::*;
+use crate::shared::command::CMD_AFTERHOOK;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::window::winlink;
+use crate::tmux::check_name;
+use crate::window::Window;
 pub static cmd_rename_window_entry: cmd_entry = {
     cmd_entry {
         name: c"rename-window",
@@ -44,7 +44,7 @@ unsafe fn cmd_rename_window_exec(
     let item = item_handle.borrow();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let name = format_single_from_target_cstring(

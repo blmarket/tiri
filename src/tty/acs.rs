@@ -1,9 +1,9 @@
 use super::model::tty;
-use crate::src::shared::abi::*;
-use crate::src::shared::grid::*;
-use crate::src::shared::tty::*;
-use crate::src::tty::term::tty_term_owner_ptr;
-use crate::src::tty::term::{tty_term_has, tty_term_number};
+use crate::shared::abi::*;
+use crate::shared::grid::*;
+use crate::shared::tty::*;
+use crate::tty::term::tty_term_owner_ptr;
+use crate::tty::term::{tty_term_has, tty_term_number};
 use std::ffi::CStr;
 
 #[derive(Copy, Clone)]
@@ -607,7 +607,7 @@ pub(super) fn tty_acs_reverse_get(s: &CStr, slen: usize) -> Option<u_char> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::src::shared::borders::{CELL_LR, CELL_RD};
+    use crate::shared::borders::{CELL_LR, CELL_RD};
 
     #[test]
     fn border_lookup_and_reverse_translation_preserve_table_selection() {

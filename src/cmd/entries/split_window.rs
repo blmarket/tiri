@@ -1,35 +1,35 @@
-use crate::src::arguments::{
+use crate::arguments::{
     args, args_count, args_flag_values, args_get, args_has, args_parse, args_string, args_to_vector,
 };
-use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::{
+use crate::cmd::cmd_get_args_mut;
+use crate::cmd::queue::{
     cmdq_error, cmdq_get_state_owned, cmdq_get_target_client, cmdq_insert_hook, cmdq_print,
     cmdq_wait,
 };
-use crate::src::environ::{environ_create, environ_put};
-use crate::src::events::events_fire;
-use crate::src::events_payload::{
+use crate::environ::{environ_create, environ_put};
+use crate::events::events_fire;
+use crate::events_payload::{
     event_payload_create, event_payload_set_pane, event_payload_set_string,
     event_payload_set_target, event_payload_set_window,
 };
-use crate::src::format::bytes::nullable_cstr;
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::{format_single_cstring, format_single_from_target_cstring};
-use crate::src::options::{options_set_number, options_set_string};
+use crate::format::bytes::nullable_cstr;
+use crate::format::bytes::write_cstr;
+use crate::format::{format_single_cstring, format_single_from_target_cstring};
+use crate::options::{options_set_number, options_set_string};
 
-use crate::src::server_client::Client as _;
-use crate::src::server_fn::{server_redraw_session, server_redraw_window};
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::spawn::spawn_context;
-use crate::src::shared::spawn::{SPAWN_BEFORE, SPAWN_DETACHED, SPAWN_EMPTY};
-use crate::src::shared::window::winlink;
-use crate::src::window::Window;
+use crate::server_client::Client as _;
+use crate::server_fn::{server_redraw_session, server_redraw_window};
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::session::SessionRef;
+use crate::shared::spawn::spawn_context;
+use crate::shared::spawn::{SPAWN_BEFORE, SPAWN_DETACHED, SPAWN_EMPTY};
+use crate::shared::window::winlink;
+use crate::window::Window;
 
-use crate::src::window_pane::WindowPane as _;
+use crate::window_pane::WindowPane as _;
 
 pub const SPLIT_WINDOW_TEMPLATE: &std::ffi::CStr = c"#{session_name}:#{window_index}.#{pane_index}";
 pub static cmd_new_pane_entry: cmd_entry = {
@@ -92,7 +92,7 @@ unsafe fn cmd_split_window_exec(
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let current = cmdq_get_state_owned(&*(item));
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let mut sc: spawn_context = spawn_context {
         item: std::rc::Weak::new(),
@@ -191,8 +191,8 @@ unsafe fn cmd_split_window_exec(
             .expect("target window")
             .clone();
         let spawned_pane = match <std::rc::Rc<
-            std::cell::UnsafeCell<crate::src::shared::pane::window_pane>,
-        > as crate::src::window_pane::WindowPane>::spawn_process(
+            std::cell::UnsafeCell<crate::shared::pane::window_pane>,
+        > as crate::window_pane::WindowPane>::spawn_process(
             &mut sc, &mut cause
         ) {
             Some(pane) => Some(pane),

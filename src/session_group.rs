@@ -1,15 +1,15 @@
 //! Group indexes and membership are independently owned. Session state is
 //! accessed through its trait; no Session model storage belongs to this module.
-use crate::src::events::events_fire;
-use crate::src::events_payload::{
+use crate::events::events_fire;
+use crate::events_payload::{
     event_payload_create, event_payload_set_session, event_payload_set_string,
     event_payload_set_target, event_payload_set_uint,
 };
-use crate::src::format::bytes::write_cstr;
-use crate::src::session::Session;
-use crate::src::shared::abi::u_int;
-use crate::src::shared::command::cmd_find_state;
-use crate::src::shared::session::{
+use crate::format::bytes::write_cstr;
+use crate::session::Session;
+use crate::shared::abi::u_int;
+use crate::shared::command::cmd_find_state;
+use crate::shared::session::{
     session_group, session_groups, SessionGroupWeak, SessionRef, SessionWeak,
 };
 use std::ffi::CStr;

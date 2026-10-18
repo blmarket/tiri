@@ -7,12 +7,8 @@ pub(crate) fn vis_into(output: &mut [u8], byte: u8, flags: i32, next: u8) -> usi
     assert!(output.len() >= 5, "vis needs four bytes plus a terminator");
     unsafe {
         let start = output.as_mut_ptr().cast::<c_char>();
-        let end = crate::src::compat::vis::vis(
-            start,
-            byte as c_char as i32,
-            flags,
-            next as c_char as i32,
-        );
+        let end =
+            crate::compat::vis::vis(start, byte as c_char as i32, flags, next as c_char as i32);
         end.offset_from(start) as usize
     }
 }

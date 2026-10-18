@@ -1,17 +1,17 @@
-use crate::src::arguments::{args, args_get, args_has, args_parse, args_string};
-use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::{cmdq_error, cmdq_print};
-use crate::src::environ::{environ_find, environ_iter};
-use crate::src::format::bytes::nullable_cstr;
-use crate::src::format::bytes::write_cstr;
-use crate::src::session::Session;
-use crate::src::shared::abi::*;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
-use crate::src::shared::environment::ENVIRON_HIDDEN;
-use crate::src::shared::environment::{environ, environ_entry};
-use crate::src::tmux::global_environ;
+use crate::arguments::{args, args_get, args_has, args_parse, args_string};
+use crate::cmd::cmd_get_args_mut;
+use crate::cmd::queue::{cmdq_error, cmdq_print};
+use crate::environ::{environ_find, environ_iter};
+use crate::format::bytes::nullable_cstr;
+use crate::format::bytes::write_cstr;
+use crate::session::Session;
+use crate::shared::abi::*;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
+use crate::shared::environment::ENVIRON_HIDDEN;
+use crate::shared::environment::{environ, environ_entry};
+use crate::tmux::global_environ;
 use std::ffi::{CStr, CString};
 pub static cmd_show_environment_entry: cmd_entry = {
     cmd_entry {
@@ -102,7 +102,7 @@ unsafe fn cmd_show_environment_exec(
     let item = item_handle.borrow();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
 
     let mut envent: Option<&environ_entry> = None;
@@ -162,7 +162,7 @@ mod tests {
     #[test]
     fn escape_preserves_non_utf8_bytes_and_stops_at_first_nul() {
         let mut value = b"\xff$`\"\\\0ignored".to_vec();
-        let mut env = crate::src::environ::environ_create();
+        let mut env = crate::environ::environ_create();
         env.set_cstr(
             c"",
             0,

@@ -1,5 +1,5 @@
 //! Byte-oriented attribute text APIs. Case matching follows the active C locale.
-use crate::src::shared::grid::*;
+use crate::shared::grid::*;
 use std::ffi::{CStr, CString};
 
 const NAMES: &[(&[u8], i32)] = &[

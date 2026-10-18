@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use crate::src::ffi::regex::{RegexMatch, RegexStorage};
+use crate::ffi::regex::{RegexMatch, RegexStorage};
 use std::ffi::{CStr, CString};
 
 fn regsub_copy(buf: &mut Vec<u8>, text: &[u8], start: usize, end: usize) {

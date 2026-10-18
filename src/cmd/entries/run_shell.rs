@@ -1,44 +1,44 @@
-use crate::src::arguments::{
+use crate::arguments::{
     args, args_command_state, args_count, args_get, args_has, args_make_commands,
     args_make_commands_prepare, args_parse, args_parse_type, args_string, ArgsParseError,
     ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_STRING,
 };
-use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::parse::cmd_parse_error_uppercase_first;
-use crate::src::cmd::queue::{
+use crate::cmd::cmd_get_args_mut;
+use crate::cmd::parse::cmd_parse_error_uppercase_first;
+use crate::cmd::queue::{
     cmdq_append, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_target_client,
     cmdq_insert_after, cmdq_resumed,
 };
-use crate::src::format::bytes::format_message_with;
-use crate::src::format::bytes::nullable_cstr;
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::{
+use crate::format::bytes::format_message_with;
+use crate::format::bytes::nullable_cstr;
+use crate::format::bytes::write_cstr;
+use crate::format::{
     format_add, format_create_from_target, format_expand_cstring, format_single_from_target_cstring,
 };
-use crate::src::job::job_run;
-use crate::src::reactor::{
+use crate::job::job_run;
+use crate::reactor::{
     evbuffer_add, evbuffer_add_formatted, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
     evbuffer_readln,
 };
 use libc::strtod;
 
-use crate::src::server_client::Client as _;
+use crate::server_client::Client as _;
 
-use crate::src::session::Session;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::command::CMD_FIND_CANFAIL;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::event::*;
-use crate::src::shared::format::format_tree;
-use crate::src::shared::job::{job, JobCompletion, JOB_NOWAIT, JOB_SHOWSTDERR};
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::session::SessionRef;
-use crate::src::status::status_message_set;
-use crate::src::window::Window as _;
-use crate::src::window_copy::{window_copy_add, window_view_mode};
-use crate::src::window_pane::WindowPane as _;
+use crate::session::Session;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::command::CMD_FIND_CANFAIL;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::event::*;
+use crate::shared::format::format_tree;
+use crate::shared::job::{job, JobCompletion, JOB_NOWAIT, JOB_SHOWSTDERR};
+use crate::shared::pane::window_pane;
+use crate::shared::session::SessionRef;
+use crate::status::status_message_set;
+use crate::window::Window as _;
+use crate::window_copy::{window_copy_add, window_view_mode};
+use crate::window_pane::WindowPane as _;
 use std::ffi::{CStr, CString};
 use std::os::unix::process::ExitStatusExt;
 use std::rc::{Rc, Weak};
@@ -152,7 +152,7 @@ unsafe fn cmd_run_shell_exec(
     let item = item_handle.borrow();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
@@ -256,7 +256,7 @@ unsafe fn cmd_run_shell_exec(
         }
     }
     if wait == 0 {
-        crate::src::cmd::queue::cmdq_background(tv, move || unsafe {
+        crate::cmd::queue::cmdq_background(tv, move || unsafe {
             if let Some(job) = cmd_run_shell_timer(&mut cdata, None) {
                 job.try_borrow_mut()
                     .expect("newly registered job")
@@ -484,9 +484,9 @@ impl Drop for cmd_run_shell_data {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next, cmdq_running};
-    use crate::src::server_client::queue_test_clients as clients;
-    use crate::src::shared::client::CLIENT_DEAD;
+    use crate::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next, cmdq_running};
+    use crate::server_client::queue_test_clients as clients;
+    use crate::shared::client::CLIENT_DEAD;
     use std::cell::Cell;
     use std::process::ExitStatus;
     use std::time::Instant;
@@ -572,7 +572,7 @@ mod tests {
             assert!(head.upgrade().is_none());
             assert!(ran.get());
         }
-        crate::src::reactor::shutdown_runtime(runtime);
+        crate::reactor::shutdown_runtime(runtime);
     }
 
     #[test]
@@ -596,7 +596,7 @@ mod tests {
             cmdq_next(None);
             assert!(head.upgrade().is_none());
         }
-        crate::src::reactor::shutdown_runtime(runtime);
+        crate::reactor::shutdown_runtime(runtime);
     }
 
     #[test]
@@ -618,7 +618,7 @@ mod tests {
             runtime.poll(Some(Duration::from_secs(2))).unwrap();
             assert!(start.elapsed() < Duration::from_secs(1));
         }
-        crate::src::reactor::shutdown_runtime(runtime);
+        crate::reactor::shutdown_runtime(runtime);
     }
 
     #[test]

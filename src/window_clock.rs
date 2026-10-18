@@ -1,32 +1,32 @@
-use crate::src::arguments::args;
-use crate::src::ffi::libc::strlcat;
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::format_create_defaults;
-use crate::src::grid::grid_default_cell;
-use crate::src::options::options_get_number;
-use crate::src::options::OptionsScope;
-use crate::src::screen::{screen_init, screen_resize};
-use crate::src::screen_write::{
+use crate::arguments::args;
+use crate::ffi::libc::strlcat;
+use crate::format::bytes::write_cstr;
+use crate::format::format_create_defaults;
+use crate::grid::grid_default_cell;
+use crate::options::options_get_number;
+use crate::options::OptionsScope;
+use crate::screen::{screen_init, screen_resize};
+use crate::screen_write::{
     screen_write_clearscreen, screen_write_cursormove, screen_write_putc, screen_write_puts,
     screen_write_start, screen_write_stop,
 };
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::command::{cmd_find_state, cmdq_item};
-use crate::src::shared::event::*;
-use crate::src::shared::format::format_tree;
-use crate::src::shared::grid::*;
-use crate::src::shared::key::*;
-use crate::src::shared::mouse::mouse_event;
-use crate::src::shared::screen::{screen, MODE_CURSOR};
-use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::time::tm;
-use crate::src::shared::window::{window_mode, window_mode_entry, winlink};
-use crate::src::style::style_apply_with_options;
-use crate::src::window::Window as _;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::command::{cmd_find_state, cmdq_item};
+use crate::shared::event::*;
+use crate::shared::format::format_tree;
+use crate::shared::grid::*;
+use crate::shared::key::*;
+use crate::shared::mouse::mouse_event;
+use crate::shared::screen::{screen, MODE_CURSOR};
+use crate::shared::screen_write::screen_write_ctx;
+use crate::shared::time::tm;
+use crate::shared::window::{window_mode, window_mode_entry, winlink};
+use crate::style::style_apply_with_options;
+use crate::window::Window as _;
 use libc::{gmtime_r, localtime, strftime, strlen, time};
 
-use crate::src::window_pane::WindowPane as _;
+use crate::window_pane::WindowPane as _;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[repr(C)]

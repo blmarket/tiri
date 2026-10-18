@@ -1,20 +1,18 @@
-use crate::src::arguments::{
-    args, args_count, args_has, args_parse, args_string, args_strtonum_result,
-};
-use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::cmdq_error;
-use crate::src::compat::strtonum::strtonum;
-use crate::src::format::bytes::write_cstr;
-use crate::src::resize::{default_window_size, recalculate_size};
-use crate::src::shared::abi::*;
-use crate::src::shared::command::CMD_AFTERHOOK;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::limits::INT_MAX;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::window::winlink;
-use crate::src::shared::window::{WINDOW_MAXIMUM, WINDOW_MINIMUM, WINDOW_SIZE_LARGEST};
-use crate::src::window::Window as _;
+use crate::arguments::{args, args_count, args_has, args_parse, args_string, args_strtonum_result};
+use crate::cmd::cmd_get_args_mut;
+use crate::cmd::queue::cmdq_error;
+use crate::compat::strtonum::strtonum;
+use crate::format::bytes::write_cstr;
+use crate::resize::{default_window_size, recalculate_size};
+use crate::shared::abi::*;
+use crate::shared::command::CMD_AFTERHOOK;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::limits::INT_MAX;
+use crate::shared::session::SessionRef;
+use crate::shared::window::winlink;
+use crate::shared::window::{WINDOW_MAXIMUM, WINDOW_MINIMUM, WINDOW_SIZE_LARGEST};
+use crate::window::Window as _;
 
 pub const WINDOW_SIZE_SMALLEST: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub static cmd_resize_window_entry: cmd_entry = {
@@ -49,7 +47,7 @@ unsafe fn cmd_resize_window_exec(
     let item = item_handle.borrow();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let window_owner = wl

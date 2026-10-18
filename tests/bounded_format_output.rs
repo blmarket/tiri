@@ -1,5 +1,5 @@
 use std::ffi::c_char;
-use tiri::src::{
+use tiri::{
     grid::grid_default_cell,
     input_keys::input_key_get_mouse,
     shared::{

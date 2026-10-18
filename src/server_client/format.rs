@@ -1,8 +1,8 @@
 //! Owned, lazy builtin values. Cross-model lookups never retain a Client borrow.
 use super::*;
-use crate::src::format::FormatValue;
-use crate::src::session::sessions;
-use crate::src::shared::client::ClientRef;
+use crate::format::FormatValue;
+use crate::session::sessions;
+use crate::shared::client::ClientRef;
 use std::rc::Rc;
 
 pub(super) unsafe fn value(
@@ -15,12 +15,12 @@ pub(super) unsafe fn value(
     }
     let text = match key.to_bytes() {
         b"client_activity" => {
-            return Some(FormatValue::Time(crate::src::shared::time::unix_seconds(
+            return Some(FormatValue::Time(crate::shared::time::unix_seconds(
                 owner.activity_time(),
             )))
         }
         b"client_created" => {
-            return Some(FormatValue::Time(crate::src::shared::time::unix_seconds(
+            return Some(FormatValue::Time(crate::shared::time::unix_seconds(
                 owner.creation_time(),
             )))
         }
@@ -123,7 +123,7 @@ mod tests {
         unsafe {
             let owner = client::new();
             (*owner.get()).name = Some(CString::new(b"client-\xff".to_vec()).unwrap());
-            crate::src::tty::tty_set_size(&mut (*owner.get()).tty, 91, 27, 0, 0);
+            crate::tty::tty_set_size(&mut (*owner.get()).tty, 91, 27, 0, 0);
             let mut context = format_create(None, None, 0, 0);
             context.c = Rc::downgrade(&owner);
             let Some(FormatValue::String(name)) = owner.format_value(c"client_name", &mut context)

@@ -1,5 +1,5 @@
 #[cfg(target_os = "linux")]
-use crate::src::ffi::utempter::{utempter_add_record, utempter_remove_record};
+use crate::ffi::utempter::{utempter_add_record, utempter_remove_record};
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
 
 /// utempter looks the record up by the master descriptor, so the record is

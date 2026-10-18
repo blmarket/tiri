@@ -1,45 +1,43 @@
-use crate::src::arguments::{
+use crate::arguments::{
     args, args_count, args_flag_values, args_get, args_has, args_parse, args_to_vector,
 };
-use crate::src::cfg::{cfg_finished, cfg_show_causes};
-use crate::src::cmd::entries::attach_session::cmd_attach_session;
-use crate::src::cmd::queue::{
+use crate::cfg::{cfg_finished, cfg_show_causes};
+use crate::cmd::entries::attach_session::cmd_attach_session;
+use crate::cmd::queue::{
     cmdq_error, cmdq_get_client, cmdq_get_flags, cmdq_get_state_owned, cmdq_insert_hook, cmdq_print,
 };
-use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
-use crate::src::compat::strtonum::strtonum;
-use crate::src::environ::{environ_create, environ_put, environ_update};
-use crate::src::events::events_fire_session;
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::format_single_cstring;
-use crate::src::options::{
-    options_get_number, options_get_string, options_set_string, OptionsScope,
-};
-use crate::src::server_client::Client as _;
+use crate::cmd::{cmd_get_args_mut, cmd_get_entry};
+use crate::compat::strtonum::strtonum;
+use crate::environ::{environ_create, environ_put, environ_update};
+use crate::events::events_fire_session;
+use crate::format::bytes::write_cstr;
+use crate::format::format_single_cstring;
+use crate::options::{options_get_number, options_get_string, options_set_string, OptionsScope};
+use crate::server_client::Client as _;
 use libc::sscanf;
 
-use crate::src::options::options;
-use crate::src::session::Session;
-use crate::src::session::{session_group_add, session_group_synchronize_to, session_groups};
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::client::{CLIENT_ATTACHED, CLIENT_CONTROL};
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::command::{
+use crate::options::options;
+use crate::session::Session;
+use crate::session::{session_group_add, session_group_synchronize_to, session_groups};
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::client::{CLIENT_ATTACHED, CLIENT_CONTROL};
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{
     CMDQ_STATE_REPEAT, CMD_FIND_CANFAIL, CMD_STARTSERVER, CMD_TARGET_SESSION_USAGE,
 };
-use crate::src::shared::environment::environ;
-use crate::src::shared::limits::USHRT_MAX;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::spawn::spawn_context;
-use crate::src::shared::terminal::*;
-use crate::src::shared::tree::RB_NEGINF;
-use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
-use crate::src::spawn::spawn_window;
-use crate::src::text::utf8::utf8_stravis_cstring;
-use crate::src::tmux::{check_name, clean_name_cstring};
-use crate::src::window::winlinks_minmax;
+use crate::shared::environment::environ;
+use crate::shared::limits::USHRT_MAX;
+use crate::shared::session::SessionRef;
+use crate::shared::spawn::spawn_context;
+use crate::shared::terminal::*;
+use crate::shared::tree::RB_NEGINF;
+use crate::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
+use crate::spawn::spawn_window;
+use crate::text::utf8::utf8_stravis_cstring;
+use crate::tmux::{check_name, clean_name_cstring};
+use crate::window::winlinks_minmax;
 use std::ffi::{CStr, CString};
 
 pub const NEW_SESSION_TEMPLATE: &std::ffi::CStr = c"#{session_name}:";
@@ -104,7 +102,7 @@ unsafe fn cmd_new_session_exec(
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let current = cmdq_get_state_owned(&*(item));
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
@@ -116,7 +114,7 @@ unsafe fn cmd_new_session_exec(
     let mut oo: Option<options> = None;
     let mut tio: termios = unsafe { ::core::mem::zeroed() };
     let mut tiop: *mut termios = ::core::ptr::null_mut::<termios>();
-    let mut sg = crate::src::shared::session::SessionGroupWeak::new();
+    let mut sg = crate::shared::session::SessionGroupWeak::new();
     let mut group: Option<&CStr> = None;
     let mut cause: Option<std::ffi::CString> = None;
     let mut cwd: Option<CString> = None;
@@ -216,7 +214,7 @@ unsafe fn cmd_new_session_exec(
     if current_block == 10043043949733653460 {
         if args_has(&*args, 'A' as i32 as u_char) != 0 {
             if let Some(sname) = sname_owned.as_deref() {
-                as_0 = crate::src::session::sessions::find(sname);
+                as_0 = crate::session::sessions::find(sname);
             } else {
                 as_0 = (*target).session_handle();
             }
@@ -236,7 +234,7 @@ unsafe fn cmd_new_session_exec(
         }
         if sname_owned
             .as_deref()
-            .is_some_and(|sname| crate::src::session::sessions::find(sname).is_some())
+            .is_some_and(|sname| crate::session::sessions::find(sname).is_some())
         {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"duplicate session: ")?;
@@ -250,14 +248,14 @@ unsafe fn cmd_new_session_exec(
                 if groupwith.is_none() {
                     sg = session_groups::find(group);
                 } else {
-                    sg = crate::src::session::session_groups::for_session(
+                    sg = crate::session::session_groups::for_session(
                         &groupwith
                             .as_ref()
                             .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
                     );
                 }
                 if sg.is_alive() {
-                    prefix = Some(crate::src::session::session_group_name(&sg));
+                    prefix = Some(crate::session::session_group_name(&sg));
                     current_block = 6717214610478484138;
                 } else if let Some(groupwith_value) = groupwith.as_ref() {
                     prefix = Some(groupwith_value.name().clone());
@@ -482,7 +480,7 @@ unsafe fn cmd_new_session_exec(
                                                     if sy == 0 as u_int {
                                                         sy = 1 as u_int;
                                                     }
-                                                    oo = Some(crate::src::options::options_create(Some(crate::src::options::OptionsScope::GlobalSession)));
+                                                    oo = Some(crate::options::options_create(Some(crate::options::OptionsScope::GlobalSession)));
                                                     if args_has(&*args, 'x' as i32 as u_char) != 0
                                                         || args_has(&*args, 'y' as i32 as u_char)
                                                             != 0
@@ -540,7 +538,7 @@ unsafe fn cmd_new_session_exec(
                                                             0 as ::core::ffi::c_int,
                                                         );
                                                     }
-                                                    let session_owner = crate::src::shared::session::SessionRef::create(prefix.as_deref(), sname_owned.as_deref(), cwd.as_deref().expect("client working directory is set at identify"), env.take()
+                                                    let session_owner = crate::shared::session::SessionRef::create(prefix.as_deref(), sname_owned.as_deref(), cwd.as_deref().expect("client working directory is set at identify"), env.take()
                                                             .expect("new session environment"), oo.take(), tiop.as_ref());
                                                     s = Some(session_owner.clone());
                                                     sc.item = std::rc::Rc::downgrade(item_handle);

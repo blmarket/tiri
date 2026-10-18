@@ -8,11 +8,11 @@ use super::prompt::{prompt_free_cb, prompt_key_result, prompt_result};
 use super::screen::screen;
 use super::screen_write::screen_write_ctx;
 use super::sort::sort_criteria;
-use crate::src::shared::client::{ClientRef, ClientWeak};
-use crate::src::window_buffer::window_buffer_itemdata;
-use crate::src::window_client::window_client_itemdata;
-use crate::src::window_customize::window_customize_itemdata;
-use crate::src::window_tree::window_tree_itemdata;
+use crate::shared::client::{ClientRef, ClientWeak};
+use crate::window_buffer::window_buffer_itemdata;
+use crate::window_client::window_client_itemdata;
+use crate::window_customize::window_customize_itemdata;
+use crate::window_tree::window_tree_itemdata;
 use std::cell::UnsafeCell;
 use std::rc::{Rc, Weak};
 
@@ -48,8 +48,8 @@ pub struct mode_tree_data {
     pub offset: u_int,
     pub current: u_int,
     pub screen: screen,
-    pub prompt: Option<refbox::RefBox<crate::src::shared::prompt::prompt>>,
-    pub prompt_data: refbox::Weak<crate::src::shared::mode_tree::mode_tree_prompt>,
+    pub prompt: Option<refbox::RefBox<crate::shared::prompt::prompt>>,
+    pub prompt_data: refbox::Weak<crate::shared::mode_tree::mode_tree_prompt>,
     pub prompt_cx: u_int,
     pub prompt_top: ::core::ffi::c_int,
     pub preview: ::core::ffi::c_int,

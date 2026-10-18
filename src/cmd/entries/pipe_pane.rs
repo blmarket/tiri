@@ -1,6 +1,6 @@
-use crate::src::arguments::args_parse;
-use crate::src::shared::command::*;
-use crate::src::window_pane::WindowPane;
+use crate::arguments::args_parse;
+use crate::shared::command::*;
+use crate::window_pane::WindowPane;
 
 pub static cmd_pipe_pane_entry: cmd_entry = {
     cmd_entry {
@@ -31,7 +31,7 @@ unsafe fn cmd_pipe_pane_exec(
     command: refbox::Weak<cmd>,
     item: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let target = crate::src::cmd::queue::cmdq_get_target(&item.borrow()).clone();
+    let target = crate::cmd::queue::cmdq_get_target(&item.borrow()).clone();
     let pane = target.wp.upgrade().expect("live pipe target pane");
     pane.pipe(command, item)
 }

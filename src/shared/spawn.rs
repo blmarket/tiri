@@ -1,13 +1,13 @@
 //! Authoritative spawn declarations, shared by the C translation units.
-use crate::src::window_pane::WindowPane as _;
+use crate::window_pane::WindowPane as _;
 
 use super::abi::pid_t;
 use super::command::cmdq_item;
 use super::environment::environ;
 use super::pane::window_pane;
 use super::window::winlink;
-use crate::src::shared::client::ClientWeak;
-use crate::src::shared::session::SessionWeak;
+use crate::shared::client::ClientWeak;
+use crate::shared::session::SessionWeak;
 pub const SPAWN_BEFORE: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
 pub const SPAWN_KILL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const SPAWN_DETACHED: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;

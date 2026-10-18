@@ -1,70 +1,70 @@
-use crate::src::arguments::{args, args_count, args_get, args_has, args_string};
-use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned};
-use crate::src::format::{
+use crate::arguments::{args, args_count, args_get, args_has, args_string};
+use crate::cmd::queue::{cmdq_append, cmdq_get_callback_owned};
+use crate::format::{
     format_add, format_create, format_defaults, format_expand_cstring, format_single_cstring,
     format_true,
 };
-use crate::src::format_draw::{format_draw, format_trim_left_bytes, format_width};
-use crate::src::grid::grid_default_cell;
-use crate::src::key_string::key_string_parse_cstr;
-use crate::src::mode_tree::{
+use crate::format_draw::{format_draw, format_trim_left_bytes, format_width};
+use crate::grid::grid_default_cell;
+use crate::key_string::key_string_parse_cstr;
+use crate::mode_tree::{
     mode_tree_add, mode_tree_align, mode_tree_build, mode_tree_count_tagged, mode_tree_draw,
     mode_tree_each_tagged, mode_tree_expand, mode_tree_expand_current, mode_tree_free,
     mode_tree_get_current, mode_tree_key, mode_tree_remove, mode_tree_resize,
     mode_tree_run_command, mode_tree_set_current, mode_tree_set_prompt, mode_tree_start,
     mode_tree_view_name,
 };
-use crate::src::options::options_get_string;
-use crate::src::options::OptionsScope;
-use crate::src::resize::recalculate_sizes;
-use crate::src::screen_write::{
+use crate::options::options_get_string;
+use crate::options::OptionsScope;
+use crate::resize::recalculate_sizes;
+use crate::screen_write::{
     screen_write_box, screen_write_clearcharacter, screen_write_cursormove, screen_write_hline,
     screen_write_preview, screen_write_putc, screen_write_puts, screen_write_vline,
 };
-use crate::src::server::{server_clear_marked, server_set_marked};
-use crate::src::server_fn::{
+use crate::server::{server_clear_marked, server_set_marked};
+use crate::server_fn::{
     server_destroy_session, server_kill_pane, server_kill_window, server_redraw_session_group,
     server_renumber_all,
 };
-use crate::src::session::session_group_synchronize_from;
-use crate::src::session::Session;
-use crate::src::shared::abi::__int32_t;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd_find_state, cmdq_item};
-use crate::src::shared::format::format_tree;
-use crate::src::shared::format::{FORMAT_NONE, FORMAT_PANE, FORMAT_WINDOW};
-use crate::src::shared::grid::*;
-use crate::src::shared::key::*;
-use crate::src::shared::layout::*;
-use crate::src::shared::menu::menu_item;
-use crate::src::shared::mode_tree::{
+use crate::session::session_group_synchronize_from;
+use crate::session::Session;
+use crate::shared::abi::__int32_t;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::command::*;
+use crate::shared::command::{cmd_find_state, cmdq_item};
+use crate::shared::format::format_tree;
+use crate::shared::format::{FORMAT_NONE, FORMAT_PANE, FORMAT_WINDOW};
+use crate::shared::grid::*;
+use crate::shared::key::*;
+use crate::shared::layout::*;
+use crate::shared::menu::menu_item;
+use crate::shared::mode_tree::{
     mode_tree_data, mode_tree_help_info, ModeTreeItemData, ModeTreeItemRef,
 };
-use crate::src::shared::mouse::mouse_event;
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::prompt::*;
-use crate::src::shared::prompt::{
+use crate::shared::mouse::mouse_event;
+use crate::shared::pane::window_pane;
+use crate::shared::prompt::*;
+use crate::shared::prompt::{
     prompt_result, PROMPT_ACCEPT, PROMPT_CLOSE, PROMPT_NOFORMAT, PROMPT_SINGLE,
 };
-use crate::src::shared::screen::screen;
-use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::sort::sort_criteria;
-use crate::src::shared::sort::*;
-use crate::src::shared::style::*;
-use crate::src::shared::tree::RB_NEGINF;
-use crate::src::shared::window::WindowRef;
-use crate::src::shared::window::{window_mode, window_mode_entry, winlink};
-use crate::src::sort::{
+use crate::shared::screen::screen;
+use crate::shared::screen_write::screen_write_ctx;
+use crate::shared::session::SessionRef;
+use crate::shared::sort::sort_criteria;
+use crate::shared::sort::*;
+use crate::shared::style::*;
+use crate::shared::tree::RB_NEGINF;
+use crate::shared::window::WindowRef;
+use crate::shared::window::{window_mode, window_mode_entry, winlink};
+use crate::sort::{
     sort_get_panes_window, sort_get_sessions, sort_get_winlinks_session,
     sort_would_window_tree_swap,
 };
-use crate::src::style::style_apply_with_options;
-use crate::src::window::Window;
-use crate::src::window::WindowPane;
-use crate::src::window::{winlink_count, winlink_find_by_index, winlinks_minmax, winlinks_next};
+use crate::style::style_apply_with_options;
+use crate::window::Window;
+use crate::window::WindowPane;
+use crate::window::{winlink_count, winlink_find_by_index, winlinks_minmax, winlinks_next};
 use libc::{strcasestr, strstr};
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
@@ -265,7 +265,7 @@ struct WindowTreeTarget {
 }
 
 unsafe fn window_tree_pull_item(item: &window_tree_itemdata) -> WindowTreeTarget {
-    let Some(session) = crate::src::session::sessions::find_by_id(item.session as u_int) else {
+    let Some(session) = crate::session::sessions::find_by_id(item.session as u_int) else {
         return WindowTreeTarget::default();
     };
     let s = Some(session.clone());
@@ -619,10 +619,10 @@ unsafe fn window_tree_build(
     let data = mode_owner.get();
     let mut squash_groups: ::core::ffi::c_int = (*data).squash_groups;
     let mut s: Option<SessionRef> = None;
-    let mut sg = crate::src::shared::session::SessionGroupWeak::new();
-    let mut current = crate::src::shared::session::SessionGroupWeak::new();
+    let mut sg = crate::shared::session::SessionGroupWeak::new();
+    let mut current = crate::shared::session::SessionGroupWeak::new();
     let mut i: u_int = 0;
-    current = crate::src::session::session_groups::for_session(&(*data).fs.s);
+    current = crate::session::session_groups::for_session(&(*data).fs.s);
     (*data).item_list.clear();
     let l = sort_get_sessions(&*sort_crit);
     let n = u_int::try_from(l.len()).expect("too many sessions for window tree");
@@ -634,18 +634,18 @@ unsafe fn window_tree_build(
     while i < n {
         s = Some(l[i as usize].clone());
         if squash_groups != 0 && {
-            sg = crate::src::session::session_groups::for_session(
+            sg = crate::session::session_groups::for_session(
                 &s.as_ref()
                     .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
             );
             sg.is_alive()
         } {
             if sg == current
-                && !crate::src::shared::rc::same(s.as_ref(), (*data).fs.session_handle().as_ref())
+                && !crate::shared::rc::same(s.as_ref(), (*data).fs.session_handle().as_ref())
                 || sg != current
-                    && !crate::src::shared::rc::same(
+                    && !crate::shared::rc::same(
                         s.as_ref(),
-                        crate::src::session::session_group_members(&sg).first(),
+                        crate::session::session_group_members(&sg).first(),
                     )
             {
                 current_block_12 = 3640593987805443782;
@@ -1706,7 +1706,7 @@ unsafe fn window_tree_swap(
     if other_session.is_none() || !other_winlink.is_alive() {
         return 0 as ::core::ffi::c_int;
     }
-    if !crate::src::shared::rc::same(cur_session.as_ref(), other_session.as_ref()) {
+    if !crate::shared::rc::same(cur_session.as_ref(), other_session.as_ref()) {
         return 0 as ::core::ffi::c_int;
     }
     if sort_would_window_tree_swap(sort_crit, (cur_winlink).clone(), (other_winlink).clone()) != 0 {
@@ -1840,7 +1840,7 @@ unsafe fn window_tree_init(
         end: 0,
         each: 0,
     }));
-    data = crate::src::shared::rc::as_ptr(&owner);
+    data = crate::shared::rc::as_ptr(&owner);
     let build_mode = Rc::downgrade(&owner);
     wme.get_mut_unchecked().data_owner = Some(owner);
     (*data).wp = std::rc::Rc::downgrade(&mode_pane_owner);
@@ -2046,7 +2046,7 @@ unsafe fn window_tree_command_each(
 }
 fn window_tree_command_done(mode: Rc<UnsafeCell<window_tree_modedata>>) -> cmdq_cb {
     Some(Box::new(move |_| unsafe {
-        let data = crate::src::shared::rc::as_ptr(&mode);
+        let data = crate::shared::rc::as_ptr(&mode);
         if (*data).dead == 0 {
             let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*data).wp)
             else {
@@ -2081,11 +2081,11 @@ fn window_tree_prompt_callbacks(
     mode: Rc<UnsafeCell<window_tree_modedata>>,
     callback: window_tree_prompt_fn,
 ) -> (
-    crate::src::shared::mode_tree::mode_tree_prompt_input_cb,
-    crate::src::shared::prompt::prompt_free_cb,
+    crate::shared::mode_tree::mode_tree_prompt_input_cb,
+    crate::shared::prompt::prompt_free_cb,
 ) {
     let observer = Rc::downgrade(&mode);
-    let input: crate::src::shared::mode_tree::mode_tree_prompt_input_cb =
+    let input: crate::shared::mode_tree::mode_tree_prompt_input_cb =
         Some(Box::new(move |client, text, key| unsafe {
             let Some(owner) = window_tree_live_mode(&observer) else {
                 return PROMPT_CLOSE;

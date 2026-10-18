@@ -1,7 +1,7 @@
-use crate::src::format::bytes::cstr_suffix;
-use crate::src::options::OptionsScope;
-use crate::src::shared::window::WindowWeak;
-use crate::src::window::Window as _;
+use crate::format::bytes::cstr_suffix;
+use crate::options::OptionsScope;
+use crate::shared::window::WindowWeak;
+use crate::window::Window as _;
 mod alerts;
 mod api;
 use alerts::alerts_check_all;
@@ -11,47 +11,47 @@ mod sort;
 mod spawn;
 pub use model::{session, sessions};
 mod format;
-use crate::src::session_group::session_group_remove;
-pub use crate::src::session_group::{
+use crate::session_group::session_group_remove;
+pub use crate::session_group::{
     session_group_add, session_group_attached_count, session_group_count, session_group_members,
     session_group_name, session_group_synchronize_from, session_group_synchronize_to,
 };
-pub use crate::src::shared::session::session_groups;
+pub use crate::shared::session::session_groups;
 pub use api::Session;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use crate::src::compat::strtonum::strtonum;
-use crate::src::events::{events_fire, events_fire_session, events_fire_winlink};
-use crate::src::events_payload::{
+use crate::compat::strtonum::strtonum;
+use crate::events::{events_fire, events_fire_session, events_fire_winlink};
+use crate::events_payload::{
     event_payload_create, event_payload_set_int, event_payload_set_session,
     event_payload_set_string, event_payload_set_target, event_payload_set_window,
 };
-use crate::src::log::{log_bytes, log_cstr, log_debug};
-use crate::src::options::options;
-use crate::src::options::options_get_number;
-use crate::src::resize::recalculate_sizes;
-use crate::src::server::{marked_pane, server_clear_marked};
-use crate::src::server_fn::server_lock_session;
-use crate::src::shared::abi::*;
-use crate::src::shared::command::cmd_find_state;
-use crate::src::shared::environment::environ;
-use crate::src::shared::event::*;
-use crate::src::shared::limits::UINT_MAX;
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::session::{SessionRef, SessionWeak};
-use crate::src::shared::sort::sort_criteria;
-use crate::src::shared::terminal::*;
-use crate::src::shared::tree::{RB_INF, RB_NEGINF};
-use crate::src::shared::window::WindowRef;
-use crate::src::shared::window::WINLINK_ALERTFLAGS;
-use crate::src::shared::window::{winlink, winlink_stack, winlinks};
-use crate::src::tty::tty_update_window_offset;
-use crate::src::window::{
+use crate::log::{log_bytes, log_cstr, log_debug};
+use crate::options::options;
+use crate::options::options_get_number;
+use crate::resize::recalculate_sizes;
+use crate::server::{marked_pane, server_clear_marked};
+use crate::server_fn::server_lock_session;
+use crate::shared::abi::*;
+use crate::shared::command::cmd_find_state;
+use crate::shared::environment::environ;
+use crate::shared::event::*;
+use crate::shared::limits::UINT_MAX;
+use crate::shared::pane::window_pane;
+use crate::shared::session::{SessionRef, SessionWeak};
+use crate::shared::sort::sort_criteria;
+use crate::shared::terminal::*;
+use crate::shared::tree::{RB_INF, RB_NEGINF};
+use crate::shared::window::WindowRef;
+use crate::shared::window::WINLINK_ALERTFLAGS;
+use crate::shared::window::{winlink, winlink_stack, winlinks};
+use crate::tty::tty_update_window_offset;
+use crate::window::{
     winlink_add, winlink_clear_flags, winlink_count, winlink_find_by_index, winlink_find_by_window,
     winlink_find_by_window_id, winlink_next, winlink_previous, winlink_remove, winlink_set_window,
     winlink_stack_push, winlink_stack_remove, winlinks_minmax, winlinks_next,
 };
-use crate::src::window_pane::WindowPane as _;
+use crate::window_pane::WindowPane as _;
 use libc::strcmp;
 use size::recalculate_size_state;
 use size::status_update_cache;
@@ -274,7 +274,7 @@ unsafe fn session_destroy(s_owner: &SessionRef, mut notify: ::core::ffi::c_int, 
     drop((*s).lock_timer.take());
     session_group_remove(s_owner);
     (*s).lastw.clear();
-    while !crate::src::window::winlinks_is_empty(&(*s).windows) {
+    while !crate::window::winlinks_is_empty(&(*s).windows) {
         let wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
         events_fire_winlink(c"window-unlinked", wl.clone());
         winlink_remove(&raw mut (*s).windows, wl.clone());
@@ -290,7 +290,7 @@ unsafe fn session_lock_timer(owner: &SessionRef) {
     log_debug(format_args!(
         "session {} locked, activity time {}",
         log_bytes(session.name.as_bytes()),
-        crate::src::shared::time::unix_seconds(session.activity_time) as ::core::ffi::c_longlong
+        crate::shared::time::unix_seconds(session.activity_time) as ::core::ffi::c_longlong
     ));
     server_lock_session(owner);
     recalculate_sizes();
@@ -306,7 +306,7 @@ unsafe fn session_update_activity(owner: &SessionRef, from: Option<SystemTime>) 
         "session ${} {} activity {}.{:06}",
         session.id,
         log_bytes(session.name.as_bytes()),
-        crate::src::shared::time::unix_seconds(session.activity_time) as ::core::ffi::c_longlong,
+        crate::shared::time::unix_seconds(session.activity_time) as ::core::ffi::c_longlong,
         session
             .activity_time
             .duration_since(UNIX_EPOCH)
@@ -316,10 +316,8 @@ unsafe fn session_update_activity(owner: &SessionRef, from: Option<SystemTime>) 
     drop(session.lock_timer.take());
     if session.attached != 0 {
         let timeout = Duration::from_secs(
-            (crate::src::options::options_get_number(
-                &session.borrow_options_mut(),
-                c"lock-after-time",
-            )) as u64,
+            (crate::options::options_get_number(&session.borrow_options_mut(), c"lock-after-time"))
+                as u64,
         );
         if timeout.as_secs() != 0 {
             let observer = Rc::downgrade(owner);
@@ -405,7 +403,7 @@ unsafe fn session_is_linked(s: Option<&SessionRef>, w: &WindowRef) -> bool {
         next = w.next_winlink(Some(next));
     }
 
-    let group = crate::src::session::session_groups::for_session(
+    let group = crate::session::session_groups::for_session(
         &s.map_or_else(std::rc::Weak::new, Rc::downgrade),
     );
     if !group.is_alive() {
@@ -578,7 +576,7 @@ unsafe fn session_synchronize_windows(source: &SessionRef, destination: &Session
         !Rc::ptr_eq(source, destination),
         "synchronized sessions must be distinct"
     );
-    if source.with_winlinks(crate::src::window::winlinks_is_empty) {
+    if source.with_winlinks(crate::window::winlinks_is_empty) {
         return;
     }
     let current = destination.current_winlink();
@@ -633,13 +631,13 @@ unsafe fn session_synchronize_windows(source: &SessionRef, destination: &Session
     }
 
     let mut old_history = std::mem::take(&mut (*destination.get()).lastw);
-    for index in crate::src::window::winlink_stack_indices(&old_history) {
+    for index in crate::window::winlink_stack_indices(&old_history) {
         let replacement = destination.with_winlinks(|links| winlink_find_by_index(links, index));
         if replacement.is_alive() {
-            crate::src::window::winlink_stack_append(&mut (*destination.get()).lastw, replacement);
+            crate::window::winlink_stack_append(&mut (*destination.get()).lastw, replacement);
         }
     }
-    while !crate::src::window::winlinks_is_empty(&old_windows) {
+    while !crate::window::winlinks_is_empty(&old_windows) {
         let old = winlinks_minmax(&old_windows, RB_NEGINF);
         let id = old
             .get_unchecked()
@@ -692,7 +690,7 @@ unsafe fn session_renumber_windows(s_owner: &SessionRef) {
         }
     }
     old_lastw = std::ptr::replace(&raw mut (*s).lastw, Default::default());
-    for old_idx in crate::src::window::winlink_stack_indices(&old_lastw) {
+    for old_idx in crate::window::winlink_stack_indices(&old_lastw) {
         wl = winlink_find_by_index(&old_wins, old_idx);
         if !wl.is_alive() {
             continue;
@@ -702,7 +700,7 @@ unsafe fn session_renumber_windows(s_owner: &SessionRef) {
             &WindowRef::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
         );
         if wl_new.is_alive() {
-            crate::src::window::winlink_stack_append(&mut (*s).lastw, (wl_new).clone());
+            crate::window::winlink_stack_append(&mut (*s).lastw, (wl_new).clone());
         }
     }
     if marked_idx != -(1 as ::core::ffi::c_int) {
@@ -741,9 +739,8 @@ unsafe fn session_theme_changed(session: Option<&session>) {
     }
 }
 unsafe fn session_update_history(session: &session) {
-    let limit =
-        crate::src::options::options_get_number(&session.borrow_options_mut(), c"history-limit")
-            as u_int;
+    let limit = crate::options::options_get_number(&session.borrow_options_mut(), c"history-limit")
+        as u_int;
     let mut link = winlinks_minmax(&session.windows, RB_NEGINF);
     while link.is_alive() {
         let wl = link.get_unchecked();

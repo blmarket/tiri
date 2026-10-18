@@ -1,21 +1,21 @@
-use crate::src::ffi::libc::strlcpy;
-use crate::src::format::format_skip;
-use crate::src::grid::grid_default_cell;
-use crate::src::hyperlinks::hyperlinks_put;
-use crate::src::log::{log_cstr, log_debug};
-use crate::src::screen::screen_init;
-use crate::src::screen_write::{
+use crate::ffi::libc::strlcpy;
+use crate::format::format_skip;
+use crate::grid::grid_default_cell;
+use crate::hyperlinks::hyperlinks_put;
+use crate::log::{log_cstr, log_debug};
+use crate::screen::screen_init;
+use crate::screen_write::{
     screen_write_cell, screen_write_clearendofline, screen_write_cursormove,
     screen_write_fast_copy, screen_write_putc, screen_write_start, screen_write_stop,
 };
-use crate::src::shared::abi::*;
-use crate::src::shared::grid::*;
-use crate::src::shared::screen::screen;
-use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::style::*;
-use crate::src::shared::utf8::*;
-use crate::src::style::{style_copy, style_link, style_parse, style_set, style_tostring};
-use crate::src::text::utf8::{utf8_append, utf8_open, utf8_set};
+use crate::shared::abi::*;
+use crate::shared::grid::*;
+use crate::shared::screen::screen;
+use crate::shared::screen_write::screen_write_ctx;
+use crate::shared::style::*;
+use crate::shared::utf8::*;
+use crate::style::{style_copy, style_link, style_parse, style_set, style_tostring};
+use crate::text::utf8::{utf8_append, utf8_open, utf8_set};
 use libc::{strcmp, strlen};
 use std::ffi::{CStr, CString};
 
@@ -934,7 +934,7 @@ pub unsafe fn format_draw(
     let mut ctx: [screen_write_ctx; 8] = [const {
         screen_write_ctx {
             wp: std::rc::Weak::new(),
-            target: crate::src::shared::screen_write::ScreenWriteTarget::none(),
+            target: crate::shared::screen_write::ScreenWriteTarget::none(),
             flags: 0,
             init_ctx_cb: None,
             item: None,
@@ -1203,7 +1203,7 @@ pub unsafe fn format_draw(
                     log_debug(format_args!(
                         "{}: invalid style '{}'",
                         "format_draw",
-                        crate::src::log::log_bytes(style_text.as_bytes())
+                        crate::log::log_bytes(style_text.as_bytes())
                     ));
                     drop(style_text);
                     cp = end.offset(1 as ::core::ffi::c_int as isize);
@@ -1211,7 +1211,7 @@ pub unsafe fn format_draw(
                     log_debug(format_args!(
                         "{}: style '{}' -> '{}'",
                         "format_draw",
-                        crate::src::log::log_bytes(style_text.as_bytes()),
+                        crate::log::log_bytes(style_text.as_bytes()),
                         log_cstr(&style_tostring(&raw mut sy))
                     ));
                     drop(style_text);
@@ -1828,8 +1828,8 @@ pub(crate) unsafe fn format_trim_right_bytes(expanded: &CStr, mut limit: u_int) 
 #[cfg(test)]
 mod range_tests {
     use super::*;
-    use crate::src::options::options_table;
-    use crate::src::options::OptionsScope;
+    use crate::options::options_table;
+    use crate::options::OptionsScope;
 
     #[test]
     fn rendered_ranges_follow_their_alignment_and_clipping() {

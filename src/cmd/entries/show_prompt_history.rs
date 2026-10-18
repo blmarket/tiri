@@ -1,15 +1,15 @@
-use crate::src::arguments::{args, args_get, args_parse};
-use crate::src::cmd::queue::{cmdq_error, cmdq_print};
-use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
-use crate::src::format::bytes::write_cstr;
-use crate::src::prompt::{prompt_type, prompt_type_string};
-use crate::src::prompt_history::{prompt_history_clear, prompt_history_get, prompt_history_size};
-use crate::src::shared::abi::*;
-use crate::src::shared::command::CMD_AFTERHOOK;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
-use crate::src::shared::prompt::PROMPT_NTYPES;
-use crate::src::shared::prompt::*;
+use crate::arguments::{args, args_get, args_parse};
+use crate::cmd::queue::{cmdq_error, cmdq_print};
+use crate::cmd::{cmd_get_args_mut, cmd_get_entry};
+use crate::format::bytes::write_cstr;
+use crate::prompt::{prompt_type, prompt_type_string};
+use crate::prompt_history::{prompt_history_clear, prompt_history_get, prompt_history_size};
+use crate::shared::abi::*;
+use crate::shared::command::CMD_AFTERHOOK;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
+use crate::shared::prompt::PROMPT_NTYPES;
+use crate::shared::prompt::*;
 use std::ffi::CStr;
 pub static cmd_show_prompt_history_entry: cmd_entry = {
     cmd_entry {

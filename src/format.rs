@@ -1,71 +1,69 @@
-use crate::src::arguments::args_escape_cstring;
-use crate::src::cfg::cfg_files;
-use crate::src::cmd::cmd_mouse_pane;
-use crate::src::cmd::queue::{
+use crate::arguments::args_escape_cstring;
+use crate::cfg::cfg_files;
+use crate::cmd::cmd_mouse_pane;
+use crate::cmd::queue::{
     cmdq_get_client, cmdq_get_event, cmdq_get_target_client, cmdq_merge_formats, cmdq_print,
 };
-use crate::src::compat::strtonum::strtonum;
-use crate::src::environ::{environ_find, environ_iter};
-use crate::src::ffi::libc::basename;
-use crate::src::ffi::libm::{fabs, fmod};
-use crate::src::ffi::regex::RegexStorage;
-use crate::src::format::bytes::format_message_with;
-use crate::src::format::bytes::write_cstr;
-use crate::src::format_draw::{format_trim_left_bytes, format_trim_right_bytes, format_width};
-use crate::src::fuzzy::fuzzy_match_owned;
-use crate::src::grid::{grid_get_cell, grid_line_length, grid_peek_line};
-use crate::src::hyperlinks::hyperlinks_get;
-use crate::src::job::{job_free, job_get_event, job_run};
-use crate::src::log::{log_cstr, log_debug, log_get_level};
-use crate::src::options::options_get_string;
-use crate::src::options::OptionsScope;
-use crate::src::paste::{
+use crate::compat::strtonum::strtonum;
+use crate::environ::{environ_find, environ_iter};
+use crate::ffi::libc::basename;
+use crate::ffi::libm::{fabs, fmod};
+use crate::ffi::regex::RegexStorage;
+use crate::format::bytes::format_message_with;
+use crate::format::bytes::write_cstr;
+use crate::format_draw::{format_trim_left_bytes, format_trim_right_bytes, format_width};
+use crate::fuzzy::fuzzy_match_owned;
+use crate::grid::{grid_get_cell, grid_line_length, grid_peek_line};
+use crate::hyperlinks::hyperlinks_get;
+use crate::job::{job_free, job_get_event, job_run};
+use crate::log::{log_cstr, log_debug, log_get_level};
+use crate::options::options_get_string;
+use crate::options::OptionsScope;
+use crate::paste::{
     paste_buffer_created, paste_buffer_data, paste_buffer_name, paste_get_top,
     paste_make_sample_cstring,
 };
-use crate::src::reactor::{evbuffer_add, evbuffer_new, evbuffer_pullup, evbuffer_readline};
-use crate::src::regsub::regsub_cstring;
-use crate::src::server::{marked_pane, server_check_marked};
-use crate::src::shared::window::WindowWeak;
-use crate::src::window::Window as _;
+use crate::reactor::{evbuffer_add, evbuffer_new, evbuffer_pullup, evbuffer_readline};
+use crate::regsub::regsub_cstring;
+use crate::server::{marked_pane, server_check_marked};
+use crate::shared::window::WindowWeak;
+use crate::window::Window as _;
 use libc::{
     ctime_r, dirname, fnmatch, gethostname, getpid, getpwuid, getuid, localtime_r, memcmp, memcpy,
     memset, strcasecmp, strchr, strcmp, strcspn, strftime, strlen, strstr, strtod, time,
 };
 
-use crate::src::server_client::Client as _;
-use crate::src::server_fn::server_status_client;
-use crate::src::session::session_groups;
-use crate::src::session::{sessions, Session};
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::window::WindowRef;
-use crate::src::sort::{
+use crate::server_client::Client as _;
+use crate::server_fn::server_status_client;
+use crate::session::session_groups;
+use crate::session::{sessions, Session};
+use crate::shared::client::ClientRef;
+use crate::shared::session::SessionRef;
+use crate::shared::window::WindowRef;
+use crate::sort::{
     sort_get_clients, sort_get_panes_window, sort_get_sessions, sort_get_winlinks_session,
 };
-use crate::src::status::status_get_range;
-use crate::src::style::colour::{
-    colour_force_rgb, colour_format_escape_for_client, colour_parse_cstr,
-};
-use crate::src::text::utf8::{utf8_cstrhas, utf8_pad_cstring, utf8_set, utf8_tocstr_cstring};
-use crate::src::tmux::{get_timer, getversion, global_environ, socket_path_cstr, start_time};
-use crate::src::window::{winlink_find_by_window, winlinks_minmax, winlinks_next};
-use crate::src::window_buffer::window_buffer_mode;
-use crate::src::window_client::window_client_mode;
-use crate::src::window_pane::WindowPane as _;
-use crate::src::window_tree::window_tree_mode;
+use crate::status::status_get_range;
+use crate::style::colour::{colour_force_rgb, colour_format_escape_for_client, colour_parse_cstr};
+use crate::text::utf8::{utf8_cstrhas, utf8_pad_cstring, utf8_set, utf8_tocstr_cstring};
+use crate::tmux::{get_timer, getversion, global_environ, socket_path_cstr, start_time};
+use crate::window::{winlink_find_by_window, winlinks_minmax, winlinks_next};
+use crate::window_buffer::window_buffer_mode;
+use crate::window_client::window_client_mode;
+use crate::window_pane::WindowPane as _;
+use crate::window_tree::window_tree_mode;
 use std::ffi::{CStr, CString};
 
-use crate::src::options::OPTIONS_TABLE_IS_HOOK;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::CLIENT_UNATTACHEDFLAGS;
-use crate::src::shared::command::{cmd_find_state, cmdq_item};
-use crate::src::shared::environment::ENVIRON_HIDDEN;
-use crate::src::shared::environment::{environ, environ_entry};
-pub use crate::src::shared::format::{
+use crate::options::OPTIONS_TABLE_IS_HOOK;
+use crate::shared::abi::*;
+use crate::shared::client::CLIENT_UNATTACHEDFLAGS;
+use crate::shared::command::{cmd_find_state, cmdq_item};
+use crate::shared::environment::ENVIRON_HIDDEN;
+use crate::shared::environment::{environ, environ_entry};
+pub use crate::shared::format::{
     format_entry, format_entry_tree, format_job, format_job_tree, format_tree, format_type,
 };
-use crate::src::shared::format::{
+use crate::shared::format::{
     FORMAT_BASENAME, FORMAT_CHARACTER, FORMAT_CLIENTS, FORMAT_CLIENT_ENVIRON,
     FORMAT_CLIENT_TERMCAP, FORMAT_CLIENT_TERMFEAT, FORMAT_COLOUR, FORMAT_COLOUR_ESC_BG,
     FORMAT_COLOUR_ESC_FG, FORMAT_CYCLE, FORMAT_CYCLE_PERIOD, FORMAT_DIFFERENCE, FORMAT_DIRNAME,
@@ -78,29 +76,27 @@ use crate::src::shared::format::{
     FORMAT_STATUS, FORMAT_TIMESTRING, FORMAT_TIME_LIMIT, FORMAT_TIME_LOOP_CHECK, FORMAT_VERBOSE,
     FORMAT_WIDTH, FORMAT_WINDOW, FORMAT_WINDOWS, FORMAT_WINDOW_NAME,
 };
-use crate::src::shared::grid::*;
-use crate::src::shared::job::JOB_NOWAIT;
-use crate::src::shared::job::{job, job_update_callback, JobCompletion};
-use crate::src::shared::key::key_event;
-use crate::src::shared::mouse::mouse_event;
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::paste::PasteBufferRef;
-use crate::src::shared::posix_io::FNM_CASEFOLD;
-use crate::src::shared::screen::screen;
-use crate::src::shared::sort::sort_criteria;
-use crate::src::shared::sort::*;
-use crate::src::shared::time::tm;
-use crate::src::shared::tree::{RB_INF, RB_NEGINF};
-use crate::src::shared::window::winlink;
-use crate::src::shared::window::{
-    WINDOW_SIZE_MANUAL, WINLINK_ACTIVITY, WINLINK_BELL, WINLINK_SILENCE,
-};
+use crate::shared::grid::*;
+use crate::shared::job::JOB_NOWAIT;
+use crate::shared::job::{job, job_update_callback, JobCompletion};
+use crate::shared::key::key_event;
+use crate::shared::mouse::mouse_event;
+use crate::shared::pane::window_pane;
+use crate::shared::paste::PasteBufferRef;
+use crate::shared::posix_io::FNM_CASEFOLD;
+use crate::shared::screen::screen;
+use crate::shared::sort::sort_criteria;
+use crate::shared::sort::*;
+use crate::shared::time::tm;
+use crate::shared::tree::{RB_INF, RB_NEGINF};
+use crate::shared::window::winlink;
+use crate::shared::window::{WINDOW_SIZE_MANUAL, WINLINK_ACTIVITY, WINLINK_BELL, WINLINK_SILENCE};
 use libc::{REG_EXTENDED, REG_ICASE};
 
 /*
  * This module is the stable facade for format handling.  The private
  * implementation modules below keep the translated C ABI and the existing
- * `crate::src::format::*` paths in one place while separating responsibilities:
+ * `crate::format::*` paths in one place while separating responsibilities:
  * tree stores the red-black trees and format-tree CRUD, jobs owns the shared
  * format-job cache and its callbacks, callbacks owns the default callback
  * table, and expression owns parsing and evaluation.  The facade remains the
@@ -128,11 +124,9 @@ pub(crate) fn format_is_builtin(key: &CStr) -> bool {
     format_table_get(key).is_some()
 }
 
-pub(super) unsafe fn format_plugin_pane(
-    ft: *mut format_tree,
-) -> Option<crate::src::plugin::PaneId> {
+pub(super) unsafe fn format_plugin_pane(ft: *mut format_tree) -> Option<crate::plugin::PaneId> {
     let pane = <std::rc::Rc<std::cell::UnsafeCell<window_pane>>>::from_observer(&(*ft).wp)?;
-    Some(crate::src::plugin::PaneId(pane.id()))
+    Some(crate::plugin::PaneId(pane.id()))
 }
 mod expression;
 pub use expression::format_expand_cstring;
@@ -354,7 +348,7 @@ pub unsafe fn format_create_from_target(
         let item = item_handle.borrow();
         (
             cmdq_get_target_client(Some(&*item)),
-            crate::src::cmd::queue::cmdq_get_target(&item).clone(),
+            crate::cmd::queue::cmdq_get_target(&item).clone(),
         )
     };
     format_create_from_state(Some(item_handle), tc.as_ref(), &target)
@@ -393,7 +387,7 @@ pub unsafe fn format_defaults(
     }
     if !c.is_none()
         && s_owner.is_some()
-        && !crate::src::shared::rc::same(
+        && !crate::shared::rc::same(
             c.as_ref()
                 .expect("live client")
                 .attached_session()

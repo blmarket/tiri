@@ -1,53 +1,53 @@
-use crate::src::arguments::{args, args_count, args_get, args_has, args_string};
-use crate::src::cmd::parse::{cmd_parse_and_append, cmd_parse_error_uppercase_first};
-use crate::src::cmd::queue::cmdq_new_state;
-use crate::src::cmd::{cmd_mouse_at, cmd_template_replace_cstring};
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::{format_create, format_defaults, format_expand_cstring};
-use crate::src::format_draw::format_draw;
-use crate::src::fuzzy::fuzzy_match_owned;
-use crate::src::grid::{grid_default_cell, grid_get_cell};
-use crate::src::options::OptionsScope;
-use crate::src::prompt::{
+use crate::arguments::{args, args_count, args_get, args_has, args_string};
+use crate::cmd::parse::{cmd_parse_and_append, cmd_parse_error_uppercase_first};
+use crate::cmd::queue::cmdq_new_state;
+use crate::cmd::{cmd_mouse_at, cmd_template_replace_cstring};
+use crate::format::bytes::write_cstr;
+use crate::format::{format_create, format_defaults, format_expand_cstring};
+use crate::format_draw::format_draw;
+use crate::fuzzy::fuzzy_match_owned;
+use crate::grid::{grid_default_cell, grid_get_cell};
+use crate::options::OptionsScope;
+use crate::prompt::{
     prompt_create, prompt_draw, prompt_incremental_start, prompt_key, prompt_mouse,
     prompt_set_options, prompt_update,
 };
-use crate::src::screen::{screen_init, screen_resize};
-use crate::src::screen_write::{
+use crate::screen::{screen_init, screen_resize};
+use crate::screen_write::{
     screen_write_cell, screen_write_clearendofline, screen_write_clearscreen,
     screen_write_cursormove, screen_write_start, screen_write_stop,
 };
-use crate::src::session::Session;
+use crate::session::Session;
 use std::rc::Rc;
 
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::command::{cmd_find_state, cmdq_item};
-use crate::src::shared::format::format_tree;
-use crate::src::shared::format::FORMAT_NONE;
-use crate::src::shared::grid::*;
-use crate::src::shared::key::key_event;
-use crate::src::shared::key::*;
-use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
-use crate::src::shared::prompt::*;
-use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
-use crate::src::shared::prompt::{
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::command::{cmd_find_state, cmdq_item};
+use crate::shared::format::format_tree;
+use crate::shared::format::FORMAT_NONE;
+use crate::shared::grid::*;
+use crate::shared::key::key_event;
+use crate::shared::key::*;
+use crate::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
+use crate::shared::prompt::*;
+use crate::shared::prompt::{prompt_create_data, prompt_draw_data};
+use crate::shared::prompt::{
     prompt_result, PROMPT_CONTINUE, PROMPT_EDITARROWS, PROMPT_INCREMENTAL, PROMPT_ISMODE,
     PROMPT_NOFORMAT,
 };
-use crate::src::shared::screen::{screen, MODE_CURSOR};
-use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::sort::sort_criteria;
-use crate::src::shared::sort::*;
-use crate::src::shared::style::*;
+use crate::shared::screen::{screen, MODE_CURSOR};
+use crate::shared::screen_write::screen_write_ctx;
+use crate::shared::session::SessionRef;
+use crate::shared::sort::sort_criteria;
+use crate::shared::sort::*;
+use crate::shared::style::*;
 
-use crate::src::shared::window::{window_mode, window_mode_entry, winlink};
-use crate::src::sort::{sort_get_sessions, sort_get_winlinks};
-use crate::src::status::status_message_set;
-use crate::src::style::style_apply_with_options;
-use crate::src::window::winlink_find_by_index;
-use crate::src::window_pane::WindowPane as _;
+use crate::shared::window::{window_mode, window_mode_entry, winlink};
+use crate::sort::{sort_get_sessions, sort_get_winlinks};
+use crate::status::status_message_set;
+use crate::style::style_apply_with_options;
+use crate::window::winlink_find_by_index;
+use crate::window_pane::WindowPane as _;
 use std::ffi::{CStr, CString};
 
 #[repr(C)]
@@ -57,7 +57,7 @@ pub struct window_switch_modedata {
     pub command: CString,
     pub type_0: window_switch_type,
     pub filter: CString,
-    pub prompt: Option<refbox::RefBox<crate::src::shared::prompt::prompt>>,
+    pub prompt: Option<refbox::RefBox<crate::shared::prompt::prompt>>,
     pub prompt_cx: u_int,
     item_list: Vec<window_switch_itemdata>,
     matches: Vec<usize>,
@@ -559,7 +559,7 @@ unsafe fn window_switch_run_command(
     fs = cmd_find_state::clear_state(0 as ::core::ffi::c_int);
     match (*item).type_0 as ::core::ffi::c_uint {
         0 => {
-            s = crate::src::session::sessions::find_by_id((*item).session as u_int);
+            s = crate::session::sessions::find_by_id((*item).session as u_int);
             if let Some(s_value) = s.as_ref() {
                 let mut bytes = Vec::from(b"=".as_slice());
                 bytes.extend_from_slice(s_value.name().as_bytes());
@@ -569,7 +569,7 @@ unsafe fn window_switch_run_command(
             }
         }
         1 => {
-            s = crate::src::session::sessions::find_by_id((*item).session as u_int);
+            s = crate::session::sessions::find_by_id((*item).session as u_int);
             if let Some(s_value) = s.as_ref() {
                 wl = s_value.with_winlinks(|links| winlink_find_by_index(links, (*item).winlink));
                 if !s.is_none() && wl.is_alive() {

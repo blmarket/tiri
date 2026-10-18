@@ -1,32 +1,30 @@
-use crate::src::arguments::{
+use crate::arguments::{
     args, args_count, args_has, args_parse, args_string, args_strtonum_and_expand_result,
 };
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_event, cmdq_get_target_client};
-use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry, cmd_mouse_pane};
-use crate::src::format::bytes::write_cstr;
-use crate::src::key_bindings::{key_bindings_dispatch, key_bindings_get, key_bindings_get_table};
-use crate::src::key_string::key_string_parse_cstr;
-use crate::src::options::options_get_number;
-use crate::src::server_client::Client;
-use crate::src::session::Session;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::client::CLIENT_READONLY;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::command::{
-    CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_CFLAG, CMD_READONLY,
-};
-use crate::src::shared::grid::*;
-use crate::src::shared::key::key_event;
-use crate::src::shared::key::*;
-use crate::src::shared::limits::UINT_MAX;
-use crate::src::shared::mouse::mouse_event;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::utf8::*;
-use crate::src::shared::window::{window_mode_entry, winlink};
-use crate::src::text::utf8::{utf8_from_data, utf8_fromcstr_vec};
-use crate::src::window::WindowPane;
+use crate::cmd::queue::{cmdq_error, cmdq_get_event, cmdq_get_target_client};
+use crate::cmd::{cmd_get_args_mut, cmd_get_entry, cmd_mouse_pane};
+use crate::format::bytes::write_cstr;
+use crate::key_bindings::{key_bindings_dispatch, key_bindings_get, key_bindings_get_table};
+use crate::key_string::key_string_parse_cstr;
+use crate::options::options_get_number;
+use crate::server_client::Client;
+use crate::session::Session;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::client::CLIENT_READONLY;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_CFLAG, CMD_READONLY};
+use crate::shared::grid::*;
+use crate::shared::key::key_event;
+use crate::shared::key::*;
+use crate::shared::limits::UINT_MAX;
+use crate::shared::mouse::mouse_event;
+use crate::shared::session::SessionRef;
+use crate::shared::utf8::*;
+use crate::shared::window::{window_mode_entry, winlink};
+use crate::text::utf8::{utf8_from_data, utf8_fromcstr_vec};
+use crate::window::WindowPane;
 use libc::strtol;
 pub static cmd_send_keys_entry: cmd_entry = {
     cmd_entry {
@@ -86,7 +84,7 @@ unsafe fn cmd_send_keys_inject_key(
 ) -> std::rc::Weak<std::cell::RefCell<cmdq_item>> {
     let mut after = after_handle.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     let item = item_handle.borrow();
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
@@ -232,7 +230,7 @@ unsafe fn cmd_send_keys_exec(
     let mouse_pane_owner;
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();

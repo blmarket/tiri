@@ -1,11 +1,11 @@
-use crate::src::format::bytes::nullable_cstr;
-use crate::src::options::OptionsScope;
-use crate::src::session::Session as _;
-use crate::src::shared::client::{ClientRef, ClientWeak};
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::window::WindowRef;
-use crate::src::window::Window as _;
-use crate::src::window_pane::WindowPane as _;
+use crate::format::bytes::nullable_cstr;
+use crate::options::OptionsScope;
+use crate::session::Session as _;
+use crate::shared::client::{ClientRef, ClientWeak};
+use crate::shared::session::SessionRef;
+use crate::shared::window::WindowRef;
+use crate::window::Window as _;
+use crate::window_pane::WindowPane as _;
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::time::{Duration, SystemTime};
 use std::{cell::UnsafeCell, rc::Rc};
@@ -17,86 +17,84 @@ pub use api::Client;
 pub use client_overlay::Overlay;
 pub use model::client;
 
-use crate::src::cfg::{cfg_client, cfg_finished, start_cfg};
-use crate::src::cmd::entries::wait_for::cmd_wait_for_client_lost;
-use crate::src::cmd::parse::cmd_parse_from_argv;
-use crate::src::cmd::queue::{
+use crate::cfg::{cfg_client, cfg_finished, start_cfg};
+use crate::cmd::entries::wait_for::cmd_wait_for_client_lost;
+use crate::cmd::parse::cmd_parse_from_argv;
+use crate::cmd::queue::{
     cmdq_append, cmdq_error, cmdq_get_callback_owned, cmdq_get_client, cmdq_get_command,
     cmdq_get_error, cmdq_insert_after, cmdq_new, cmdq_next,
 };
-use crate::src::cmd::{cmd_list_all_have, cmd_log_argv};
-use crate::src::compat::imsg::imsg_get_fd;
-use crate::src::compat::imsg::msg_command;
-use crate::src::control::{
+use crate::cmd::{cmd_list_all_have, cmd_log_argv};
+use crate::compat::imsg::imsg_get_fd;
+use crate::compat::imsg::msg_command;
+use crate::control::{
     control_all_done, control_discard, control_discard_all, control_pane_offset, control_ready,
     control_reset_offsets, control_start, control_stop, control_write,
 };
-use crate::src::environ::{environ_create, environ_find, environ_put};
-use crate::src::events::{events_fire, events_fire_client};
-use crate::src::events_payload::{
+use crate::environ::{environ_create, environ_find, environ_put};
+use crate::events::{events_fire, events_fire_client};
+use crate::events_payload::{
     event_payload_create, event_payload_set_client, event_payload_set_int, event_payload_set_pane,
     event_payload_set_session, event_payload_set_target, event_payload_set_uint,
     event_payload_set_window,
 };
-use crate::src::file::{
-    file_print, file_read_data, file_read_done, file_write_done, file_write_ready,
-};
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::{
+use crate::file::{file_print, file_read_data, file_read_done, file_write_done, file_write_ready};
+use crate::format::bytes::write_cstr;
+use crate::format::{
     format_create, format_defaults, format_expand_cstring, format_expand_time_cstring,
     format_lost_client,
 };
-use crate::src::key_bindings::{key_bindings_dispatch, key_bindings_get, key_bindings_get_table};
-use crate::src::key_string::key_string_format;
-use crate::src::log::{fatal, log_cstr, log_debug, log_get_level, log_hex, log_pointer};
-use crate::src::menu::{menu_close, menu_get_cursor, menu_key, menu_screen};
-use crate::src::names::check_window_name;
-use crate::src::options::{options_get_command, options_get_number, options_get_string};
-use crate::src::proc::{
+use crate::key_bindings::{key_bindings_dispatch, key_bindings_get, key_bindings_get_table};
+use crate::key_string::key_string_format;
+use crate::log::{fatal, log_cstr, log_debug, log_get_level, log_hex, log_pointer};
+use crate::menu::{menu_close, menu_get_cursor, menu_key, menu_screen};
+use crate::names::check_window_name;
+use crate::options::{options_get_command, options_get_number, options_get_string};
+use crate::proc::{
     bytes_of, imsg_string, proc_add_peer, proc_kill_peer, proc_remove_peer, proc_send,
 };
-use crate::src::prompt::prompt_free;
-use crate::src::reactor::{
+use crate::prompt::prompt_free;
+use crate::reactor::{
     bufferevent_enable, defer, evbuffer_add, evbuffer_get_length, evbuffer_pullup, evbuffer_readln,
 };
-use crate::src::resize::{recalculate_size, recalculate_sizes};
-use crate::src::screen::screen_mode_display;
-use crate::src::screen_redraw::{redraw_pane, redraw_pane_scrollbar, redraw_screen};
-use crate::src::server::{current_time, server_add_accept, server_proc, server_update_socket};
-use crate::src::server_fn::{
+use crate::resize::{recalculate_size, recalculate_sizes};
+use crate::screen::screen_mode_display;
+use crate::screen_redraw::{redraw_pane, redraw_pane_scrollbar, redraw_screen};
+use crate::server::{current_time, server_add_accept, server_proc, server_update_socket};
+use crate::server_fn::{
     server_check_unattached, server_redraw_window_borders, server_status_window,
 };
 use libc::{access, memcpy, sscanf, strcmp};
 
-use crate::src::shared::command::unpack_argv;
-use crate::src::status::{
+use crate::shared::command::unpack_argv;
+use crate::status::{
     status_at_line, status_free, status_get_range, status_init, status_line_size,
     status_message_clear, status_prompt_clear, status_prompt_cursor, status_prompt_key,
     status_timer_start,
 };
-use crate::src::style::colour::{
+use crate::style::colour::{
     colour_parse_cstr, colour_theme_option, colour_theme_terminal_colour, colour_totheme,
 };
-use crate::src::text::utf8::{utf8_sanitize_cstring, utf8_stravisx_bytes};
-use crate::src::tmux::{checkshell, find_home_cstr, setblocking};
-use crate::src::tty::tty_get_features;
-use crate::src::tty::{
+use crate::text::utf8::{utf8_sanitize_cstring, utf8_stravisx_bytes};
+use crate::tmux::{checkshell, find_home_cstr, setblocking};
+use crate::tty::tty_get_features;
+use crate::tty::{
     tty_close, tty_cursor, tty_init, tty_invalidate, tty_margin_off, tty_open, tty_region_off,
     tty_repeat_requests, tty_reset, tty_resize, tty_send_requests, tty_set_path,
     tty_set_progress_bar, tty_set_size, tty_set_title, tty_start_tty, tty_stop_tty, tty_sync_end,
     tty_update_client_offset, tty_update_mode, tty_window_offset,
 };
-use crate::src::window::windows;
-use crate::src::window::winlink_find_by_index;
-use crate::src::window_copy::{window_copy_add, window_view_mode};
-use crate::src::window_visible::{window_position_is_visible, window_visible_ranges};
+use crate::window::windows;
+use crate::window::winlink_find_by_index;
+use crate::window_copy::{window_copy_add, window_view_mode};
+use crate::window_visible::{window_position_is_visible, window_visible_ranges};
 use std::ffi::{CStr, CString};
 use tiri_buffer::SegmentedBuf;
 
-use crate::src::shared::abi::ssize_t;
-use crate::src::shared::abi::*;
-pub use crate::src::shared::client::overlay_check_cb;
-use crate::src::shared::client::*;
+use crate::shared::abi::ssize_t;
+use crate::shared::abi::*;
+pub use crate::shared::client::overlay_check_cb;
+use crate::shared::client::*;
 
 impl client {
     /// Allocate a client on the server thread.
@@ -581,9 +579,9 @@ mod client_message_owner_tests {
         }
     }
 }
-use crate::src::compat::imsg::imsg;
-use crate::src::compat::imsg::*;
-use crate::src::shared::client::{
+use crate::compat::imsg::imsg;
+use crate::compat::imsg::*;
+use crate::shared::client::{
     CLIENT_ALLREDRAWFLAGS, CLIENT_ASSUMEPASTING, CLIENT_ATTACHED, CLIENT_BRACKETPASTING,
     CLIENT_CONTROL, CLIENT_CONTROL_NEWLAYOUTS, CLIENT_CONTROL_NOOUTPUT, CLIENT_CONTROL_PAUSEAFTER,
     CLIENT_CONTROL_WAITEXIT, CLIENT_DEAD, CLIENT_DOUBLECLICK, CLIENT_EXIT, CLIENT_EXITED,
@@ -593,43 +591,41 @@ use crate::src::shared::client::{
     CLIENT_REDRAWWINDOW, CLIENT_REPEAT, CLIENT_STATUSFORCE, CLIENT_SUSPENDED, CLIENT_TERMINAL,
     CLIENT_TRIPLECLICK, CLIENT_UNATTACHEDFLAGS, CLIENT_UTF8,
 };
-use crate::src::shared::colour::*;
-use crate::src::shared::colour::{COLOUR_FLAG_THEME, COLOUR_THEME_COUNT};
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd_find_state, cmdq_item};
-use crate::src::shared::display::visible_ranges;
-use crate::src::shared::environment::environ_entry;
-use crate::src::shared::errno::EINTR;
-use crate::src::shared::event::*;
-use crate::src::shared::format::format_tree;
-use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
-use crate::src::shared::key::KEY_BINDING_REPEAT;
-use crate::src::shared::key::*;
-use crate::src::shared::key::{key_event, key_table, KeyBindingCommand};
-use crate::src::shared::limits::UINT_MAX;
-use crate::src::shared::mouse::{
+use crate::shared::colour::*;
+use crate::shared::colour::{COLOUR_FLAG_THEME, COLOUR_THEME_COUNT};
+use crate::shared::command::*;
+use crate::shared::command::{cmd_find_state, cmdq_item};
+use crate::shared::display::visible_ranges;
+use crate::shared::environment::environ_entry;
+use crate::shared::errno::EINTR;
+use crate::shared::event::*;
+use crate::shared::format::format_tree;
+use crate::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
+use crate::shared::key::KEY_BINDING_REPEAT;
+use crate::shared::key::*;
+use crate::shared::key::{key_event, key_table, KeyBindingCommand};
+use crate::shared::limits::UINT_MAX;
+use crate::shared::mouse::{
     mouse_event, MOUSE_BUTTON_1, MOUSE_BUTTON_10, MOUSE_BUTTON_11, MOUSE_BUTTON_2, MOUSE_BUTTON_3,
     MOUSE_BUTTON_6, MOUSE_BUTTON_7, MOUSE_BUTTON_8, MOUSE_BUTTON_9, MOUSE_MASK_BUTTONS,
     MOUSE_MASK_CTRL, MOUSE_MASK_DRAG, MOUSE_MASK_META, MOUSE_MASK_SHIFT, MOUSE_WHEEL_DOWN,
     MOUSE_WHEEL_UP,
 };
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::{
+use crate::shared::pane::window_pane;
+use crate::shared::pane::{
     window_pane_offset, PANE_SCROLLBARS_AUTOHIDE, PANE_SCROLLBARS_LEFT, PANE_SCROLLBARS_MODAL,
 };
-use crate::src::shared::posix_io::{
-    _PATH_BSHELL, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, X_OK,
-};
-use crate::src::shared::process::tmuxpeer;
-use crate::src::shared::screen::{
+use crate::shared::posix_io::{_PATH_BSHELL, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, X_OK};
+use crate::shared::process::tmuxpeer;
+use crate::shared::screen::{
     ScreenMode, ALL_MOUSE_MODES, CURSOR_MODES, MODE_BRACKETPASTE, MODE_CURSOR, MODE_MOUSE_ALL,
     MODE_MOUSE_BUTTON, MODE_SYNC,
 };
-use crate::src::shared::tty::*;
-use crate::src::shared::vis::{VIS_CSTYLE, VIS_NOSLASH, VIS_OCTAL};
-use crate::src::shared::window::WINDOW_SIZE_LATEST;
-use crate::src::shared::window::{window_mode_entry, winlink};
-use crate::src::tty::tty;
+use crate::shared::tty::*;
+use crate::shared::vis::{VIS_CSTYLE, VIS_NOSLASH, VIS_OCTAL};
+use crate::shared::window::WINDOW_SIZE_LATEST;
+use crate::shared::window::{window_mode_entry, winlink};
+use crate::tty::tty;
 
 pub const _PATH_TTY: &std::ffi::CStr = c"/dev/tty";
 unsafe fn server_client_how_many() -> u_int {
@@ -654,8 +650,8 @@ unsafe fn server_client_how_many() -> u_int {
     n
 }
 unsafe fn server_client_update_overlay_focus(owner: &ClientRef) {
-    use crate::src::session::Session;
-    use crate::src::window::Window;
+    use crate::session::Session;
+    use crate::window::Window;
     let Some(session) = owner.attached_session().upgrade() else {
         return;
     };
@@ -811,7 +807,7 @@ unsafe fn server_client_check_nested(c: &client) -> ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
     let ttyname = c.ttyname.as_deref().expect("client tty name");
-    if crate::src::shared::pane::window_pane_tree::snapshot()
+    if crate::shared::pane::window_pane_tree::snapshot()
         .iter()
         .any(|pane| pane.matches_terminal_name(ttyname))
     {
@@ -1098,8 +1094,8 @@ unsafe fn server_client_fire_resized(c_owner: &ClientRef, mut old_sx: u_int, mut
     events_fire(c"client-resized", ep);
 }
 unsafe fn server_client_set_session(c_owner: &ClientRef, s_owner: Option<&SessionRef>) {
-    use crate::src::session::Session;
-    use crate::src::window::Window;
+    use crate::session::Session;
+    use crate::window::Window;
 
     let old = c_owner.attached_session().upgrade();
     let c = c_owner.get();
@@ -1164,7 +1160,7 @@ unsafe fn server_client_lost(client_owner: &ClientRef) {
     status_prompt_clear(client_owner);
     status_message_clear(client_owner);
     let files = client_owner.file_handles();
-    crate::src::file::client_files_interrupt(files, EINTR);
+    crate::file::client_files_interrupt(files, EINTR);
     let registry_owner =
         ClientRegistry::remove(&Rc::downgrade(client_owner)).expect("registered client owner");
     log_debug(format_args!("lost client {}", log_pointer(c)));
@@ -1545,7 +1541,7 @@ unsafe fn server_client_check_mouse(
                         loc = KEYC_MOUSE_LOCATION_STATUS;
                     }
                     5 => {
-                        if crate::src::session::sessions::find_by_id(sr.argument).is_none() {
+                        if crate::session::sessions::find_by_id(sr.argument).is_none() {
                             return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                         }
                         (*m).s = sr.argument as ::core::ffi::c_int;
@@ -1978,8 +1974,8 @@ unsafe fn server_client_is_assume_paste(c: &mut client) -> ::core::ffi::c_int {
     0 as ::core::ffi::c_int
 }
 unsafe fn server_client_update_latest(c_owner: &ClientRef) {
-    use crate::src::session::Session;
-    use crate::src::window::Window;
+    use crate::session::Session;
+    use crate::window::Window;
 
     let Some(session) = c_owner.attached_session().upgrade() else {
         return;
@@ -2488,7 +2484,7 @@ unsafe fn server_client_handle_menu_key(
             .cloned()
             .expect("current window");
         (
-            crate::src::shared::window::WindowRef::downgrade(&retained),
+            crate::shared::window::WindowRef::downgrade(&retained),
             retained.menu_observer(),
         )
     };
@@ -3093,7 +3089,7 @@ unsafe fn server_client_check_exit(client_owner: &ClientRef, force: ::core::ffi:
             }
         }
     }
-    if force == 0 && crate::src::file::client_files_has_pending_data(&(*c).files) {
+    if force == 0 && crate::file::client_files_has_pending_data(&(*c).files) {
         server_client_start_exit_timer(client_owner);
         return;
     }
@@ -3374,7 +3370,7 @@ unsafe fn server_client_set_title(client_owner: &ClientRef) {
         .as_ref()
         .expect("option snapshot")
         .as_ptr();
-    let mut ft_owner = crate::src::format::format_create_with_client(
+    let mut ft_owner = crate::format::format_create_with_client(
         Some(client_owner),
         None,
         FORMAT_NONE,
@@ -3444,7 +3440,7 @@ unsafe fn server_client_set_progress_bar(owner: &ClientRef) {
 
 unsafe fn server_client_dispatch(
     owner: &ClientRef,
-    message: crate::src::shared::process::PeerMessage<'_>,
+    message: crate::shared::process::PeerMessage<'_>,
 ) {
     let c = owner.get();
     let mut current_block: u64;
@@ -3456,11 +3452,11 @@ unsafe fn server_client_dispatch(
         return;
     }
     let imsg = match message {
-        crate::src::shared::process::PeerMessage::Disconnected => {
+        crate::shared::process::PeerMessage::Disconnected => {
             server_client_lost(owner);
             return;
         }
-        crate::src::shared::process::PeerMessage::Message(imsg) => imsg,
+        crate::shared::process::PeerMessage::Message(imsg) => imsg,
     };
     datalen = imsg.data.len() as ssize_t;
     match imsg.hdr.type_0 {
@@ -3984,7 +3980,7 @@ unsafe fn server_client_dispatch_shell(c: &client) -> ::core::ffi::c_int {
 }
 /// Copy the selected directory while any observed startup client is retained.
 unsafe fn server_client_get_cwd(c: Option<&ClientRef>, s: Option<&SessionRef>) -> Option<CString> {
-    use crate::src::session::Session;
+    use crate::session::Session;
     if let Some(client) = c {
         return client.cwd(s);
     }
@@ -4264,7 +4260,7 @@ impl Drop for client {
         log_debug(format_args!("free client {}", log_pointer(self)));
         drop(self.queue.take());
         assert!(
-            crate::src::file::client_files_is_empty(&self.files),
+            crate::file::client_files_is_empty(&self.files),
             "client file index still contains live records at client teardown"
         );
     }
@@ -4295,7 +4291,7 @@ pub(crate) mod queue_test_clients {
 #[cfg(test)]
 mod lost_queue_tests {
     use super::*;
-    use crate::src::shared::command::CmdOutcome;
+    use crate::shared::command::CmdOutcome;
     use std::cell::Cell;
 
     struct SetOnDrop(Rc<Cell<bool>>);
@@ -4443,7 +4439,7 @@ mod lost_queue_tests {
                 cmdq_get_callback_owned(
                     c"file-backed head",
                     Some(Box::new(move |_| {
-                        let wait = crate::src::file::file_read_wait(None, c"/dev/null", |file| {
+                        let wait = crate::file::file_read_wait(None, c"/dev/null", |file| {
                             observed_file.set(file);
                             let capture = capture.take();
                             Some(Box::new(move |_| {
@@ -4474,7 +4470,7 @@ mod lost_queue_tests {
             assert!(released.get());
             assert!(!ran.get());
             let file = file.take();
-            crate::src::reactor::shutdown_runtime(runtime);
+            crate::reactor::shutdown_runtime(runtime);
             assert!(file.upgrade().is_none());
         }
     }
@@ -4554,7 +4550,7 @@ mod lost_queue_tests {
             let (head, released) = lose_with_suspended_head(&owner);
             let client = Rc::downgrade(&owner);
             server_client_retire(owner);
-            crate::src::reactor::shutdown_runtime(runtime);
+            crate::reactor::shutdown_runtime(runtime);
             assert!(client.upgrade().is_none());
             assert!(head.upgrade().is_none());
             assert!(released.get());

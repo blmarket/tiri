@@ -1,6 +1,6 @@
 //! Foreign declarations supplied by ncurses.
 
-use crate::src::shared::terminal::term;
+use crate::shared::terminal::term;
 pub type TERMINAL = term;
 
 extern "C" {

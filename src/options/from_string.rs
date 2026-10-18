@@ -2,19 +2,19 @@
 use super::diagnostic::options_string_cause;
 use super::store::*;
 use super::types::*;
-use crate::src::compat::strtonum::strtonum;
-use crate::src::format::bytes::write_cstr;
-use crate::src::grid::grid_default_cell;
-use crate::src::key_string::key_string_parse_cstr;
+use crate::compat::strtonum::strtonum;
+use crate::format::bytes::write_cstr;
+use crate::grid::grid_default_cell;
+use crate::key_string::key_string_parse_cstr;
 use libc::fnmatch;
 
-use crate::src::style::colour::colour_parse_cstr;
-use crate::src::style::{style_parse, style_parse_colour};
-use crate::src::tmux::checkshell;
+use crate::style::colour::colour_parse_cstr;
+use crate::style::{style_parse, style_parse_colour};
+use crate::tmux::checkshell;
 
-use crate::src::shared::grid::*;
-use crate::src::shared::key::*;
-use crate::src::shared::style::*;
+use crate::shared::grid::*;
+use crate::shared::key::*;
+use crate::shared::style::*;
 use std::ffi::{CStr, CString};
 
 unsafe fn options_from_string_check(oe: &options_table_entry, value: &CStr) -> Result<(), CString> {

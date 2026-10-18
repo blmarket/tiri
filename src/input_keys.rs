@@ -1,28 +1,28 @@
-use crate::src::format::bytes::{format_bytes, format_message_with};
-use crate::src::key_string::key_string_format;
-use crate::src::log::{log_cstr, log_cstr_n, log_debug};
-use crate::src::options::options_get_number;
-use crate::src::options::OptionsScope;
-use crate::src::reactor::bufferevent_write;
-use crate::src::shared::abi::*;
-use crate::src::shared::control_character::{C0_CR, C0_ESC, C0_HT};
-use crate::src::shared::event::*;
-use crate::src::shared::grid::*;
-use crate::src::shared::key::*;
-use crate::src::shared::mouse::{
+use crate::format::bytes::{format_bytes, format_message_with};
+use crate::key_string::key_string_format;
+use crate::log::{log_cstr, log_cstr_n, log_debug};
+use crate::options::options_get_number;
+use crate::options::OptionsScope;
+use crate::reactor::bufferevent_write;
+use crate::shared::abi::*;
+use crate::shared::control_character::{C0_CR, C0_ESC, C0_HT};
+use crate::shared::event::*;
+use crate::shared::grid::*;
+use crate::shared::key::*;
+use crate::shared::mouse::{
     mouse_event, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG, MOUSE_PARAM_BTN_OFF, MOUSE_PARAM_MAX,
     MOUSE_PARAM_POS_OFF, MOUSE_PARAM_UTF8_MAX,
 };
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::screen::{
+use crate::shared::pane::window_pane;
+use crate::shared::screen::{
     screen, ALL_MOUSE_MODES, EXTENDED_KEY_MODES, MODE_BRACKETPASTE, MODE_KCURSOR,
     MODE_KEYS_EXTENDED, MODE_KEYS_EXTENDED_2, MODE_KKEYPAD, MODE_MOUSE_ALL, MODE_MOUSE_BUTTON,
     MODE_MOUSE_SGR, MODE_MOUSE_UTF8,
 };
-use crate::src::shared::utf8::wchar_t;
-use crate::src::shared::utf8::*;
-use crate::src::text::utf8::{utf8_to_data, utf8_towc};
-use crate::src::window_pane::WindowPane;
+use crate::shared::utf8::wchar_t;
+use crate::shared::utf8::*;
+use crate::text::utf8::{utf8_to_data, utf8_towc};
+use crate::window_pane::WindowPane;
 use std::borrow::Cow;
 use std::ffi::{CStr, CString};
 

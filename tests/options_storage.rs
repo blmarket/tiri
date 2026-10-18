@@ -1,8 +1,8 @@
 //! Behavior of the Rust-owned option-name index through the existing API.
 use std::ffi::{CStr, CString};
-use tiri::src::format::bytes::write_cstr;
-use tiri::src::options::options_entry;
-use tiri::src::options::*;
+use tiri::format::bytes::write_cstr;
+use tiri::options::options_entry;
+use tiri::options::*;
 
 #[test]
 fn scalar_string_replacement_append_and_default_keep_stable_entry() {
@@ -63,7 +63,7 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
             c""
         );
 
-        let table = &raw const tiri::src::options::options_table;
+        let table = &raw const tiri::options::options_table;
         let definition = (*table)
             .iter()
             .find(|oe| oe.name == Some(c"status-left"))
@@ -78,7 +78,7 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
             ),
             definition.default_str.unwrap()
         );
-        match tiri::src::options::options_local_entry(&mut *(oo), definition.name.unwrap()) {
+        match tiri::options::options_local_entry(&mut *(oo), definition.name.unwrap()) {
             std::collections::btree_map::Entry::Occupied(entry) => {
                 assert_eq!(&mut **entry.into_mut() as *mut _, default)
             }
@@ -116,7 +116,7 @@ fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
     unsafe {
         let mut oo_owner = options_create(None);
         let oo = &raw mut oo_owner;
-        let table = &raw const tiri::src::options::options_table;
+        let table = &raw const tiri::options::options_table;
         let definition = (*table)
             .iter()
             .find(|oe| oe.name == Some(c"update-environment"))
@@ -189,8 +189,8 @@ fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
     }
 }
 
-fn table_entry(name: &CStr) -> &'static tiri::src::options::options_table_entry {
-    tiri::src::options::options_table
+fn table_entry(name: &CStr) -> &'static tiri::options::options_table_entry {
+    tiri::options::options_table
         .iter()
         .find(|oe| oe.name == Some(name))
         .unwrap()

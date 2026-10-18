@@ -1,15 +1,13 @@
 //! Style evaluation over scoped option access, without holding a component
 //! borrow across format callbacks.
 
-use crate::src::format::{format_create, format_expand_cstring};
-use crate::src::grid::grid_default_cell;
-use crate::src::options::{
-    options_entry, options_is_string, OptionsScope, OPTIONS_TABLE_IS_COLOUR,
-};
-use crate::src::shared::format::{format_tree, FORMAT_NOJOBS};
-use crate::src::shared::grid::grid_cell;
-use crate::src::shared::style::style;
-use crate::src::style::{style_parse, style_parse_colour, style_set};
+use crate::format::{format_create, format_expand_cstring};
+use crate::grid::grid_default_cell;
+use crate::options::{options_entry, options_is_string, OptionsScope, OPTIONS_TABLE_IS_COLOUR};
+use crate::shared::format::{format_tree, FORMAT_NOJOBS};
+use crate::shared::grid::grid_cell;
+use crate::shared::style::style;
+use crate::style::{style_parse, style_parse_colour, style_set};
 use std::ffi::{CStr, CString};
 
 /// Apply a style option to a cell: fg/bg/us replace the cell's colours unless
@@ -33,7 +31,7 @@ pub unsafe fn style_apply_with_options(
         None => owned_context.insert(format_create(None, None, 0, FORMAT_NOJOBS)),
     };
     let parsed = style_resolve_with_options(key, Some(context), scope)
-        .unwrap_or(crate::src::style::parsing::style_default);
+        .unwrap_or(crate::style::parsing::style_default);
     if parsed.gc.fg != 8 {
         cell.fg = parsed.gc.fg;
     }

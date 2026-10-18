@@ -1,5 +1,5 @@
-use crate::src::compat::getprogname::getprogname;
-use crate::src::shared::abi::*;
+use crate::compat::getprogname::getprogname;
+use crate::shared::abi::*;
 use libc::{snprintf, strrchr};
 
 #[cfg(target_os = "linux")]
@@ -8,7 +8,7 @@ pub unsafe fn setproctitle(write: impl FnOnce(&mut dyn std::io::Write) -> std::i
     let mut name: [::core::ffi::c_char; 16] = [0; 16];
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut used: ::core::ffi::c_int = 0;
-    let formatted = crate::src::format::bytes::format_message_with(write);
+    let formatted = crate::format::bytes::format_message_with(write);
     for (dst, &byte) in title[..15].iter_mut().zip(formatted.as_bytes()) {
         *dst = byte as ::core::ffi::c_char;
     }

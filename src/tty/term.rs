@@ -1,21 +1,21 @@
 use super::model::*;
-use crate::src::compat::strtonum::strtonum;
-use crate::src::compat::unvis::strunvis;
-use crate::src::compat::vis::strnvis;
-use crate::src::ffi::ncurses::{
+use crate::compat::strtonum::strtonum;
+use crate::compat::unvis::strunvis;
+use crate::compat::vis::strnvis;
+use crate::ffi::ncurses::{
     cur_term, del_curterm, setupterm, tigetflag, tigetnum, tigetstr, tiparm_s,
 };
-use crate::src::format::bytes::{cstr_suffix, format_message_with};
-use crate::src::log::{fatalx, log_bytes, log_cstr, log_debug};
-use crate::src::options::OptionsScope;
-use crate::src::server_client::Client as _;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::{ClientRef, ClientWeak};
-use crate::src::shared::limits::INT_MAX;
-use crate::src::shared::posix_io::STDIN_FILENO;
-use crate::src::shared::tty::*;
-use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
-use crate::src::tty::features::{tty_apply_features, tty_parse_client_features};
+use crate::format::bytes::{cstr_suffix, format_message_with};
+use crate::log::{fatalx, log_bytes, log_cstr, log_debug};
+use crate::options::OptionsScope;
+use crate::server_client::Client as _;
+use crate::shared::abi::*;
+use crate::shared::client::{ClientRef, ClientWeak};
+use crate::shared::limits::INT_MAX;
+use crate::shared::posix_io::STDIN_FILENO;
+use crate::shared::tty::*;
+use crate::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
+use crate::tty::features::{tty_apply_features, tty_parse_client_features};
 use libc::{fnmatch, strcmp, strlen};
 use std::ffi::{CStr, CString};
 
@@ -1335,7 +1335,7 @@ pub(super) unsafe fn tty_term_create(
                     Ok(n) => (&mut (*term).codes)[j] = tty_code::Number(n as ::core::ffi::c_int),
                     Err(errstr) => log_debug(format_args!(
                         "{}: {}",
-                        crate::src::log::log_bytes(ent.name.to_bytes()),
+                        crate::log::log_bytes(ent.name.to_bytes()),
                         log_cstr(errstr)
                     )),
                 },
@@ -1405,7 +1405,7 @@ pub(super) unsafe fn tty_term_create(
         }
         let applied = tty_apply_features(term, client_owner.terminal_feature_mask());
         if applied.enable_utf8 {
-            client_owner.update_flags(crate::src::shared::client::CLIENT_UTF8 as u64, 0);
+            client_owner.update_flags(crate::shared::client::CLIENT_UTF8 as u64, 0);
         }
         if applied.changed {
             tty_term_apply_overrides(term);
@@ -1433,7 +1433,7 @@ impl Drop for tty_term {
         unsafe {
             log_debug(format_args!(
                 "removing term {}",
-                crate::src::log::log_bytes(self.name.as_bytes())
+                crate::log::log_bytes(self.name.as_bytes())
             ));
             let identity = std::rc::Rc::downgrade(&self.identity);
             tty_terms.retain(|entry| !entry.identity.ptr_eq(&identity));

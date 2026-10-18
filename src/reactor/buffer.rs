@@ -1,6 +1,6 @@
 //! Legacy buffer helpers over plain segmented byte storage.
 //! Stream scheduling belongs to bufferevent, not these storage operations.
-use crate::src::shared::abi::{size_t, ssize_t};
+use crate::shared::abi::{size_t, ssize_t};
 use std::ffi::c_int;
 use tiri_buffer::{Buf, BufMut, Buffer, LineEnding, SegmentedBuf};
 
@@ -78,7 +78,7 @@ pub fn evbuffer_add_formatted(
 fn format_buffer(
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) -> Option<SegmentedBuf> {
-    let mut bytes = crate::src::format::bytes::format_bytes_with(write).ok()?;
+    let mut bytes = crate::format::bytes::format_bytes_with(write).ok()?;
     if bytes.len() > c_int::MAX as usize {
         return None;
     }
@@ -91,7 +91,7 @@ fn format_buffer(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::src::format::bytes::write_cstr;
+    use crate::format::bytes::write_cstr;
     use std::ffi::CString;
 
     #[test]

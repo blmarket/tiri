@@ -1,45 +1,45 @@
-use crate::src::bracketed_paste::{
+use crate::bracketed_paste::{
     match_bracketed_paste_boundary, BracketedPasteBoundary, BracketedPasteBoundaryMatch,
 };
-use crate::src::events::events_fire_client;
-use crate::src::ffi::libc::strsep;
-use crate::src::ffi::resolv::b64_pton;
-use crate::src::input::{input_request_reply, InputRequestReply};
-use crate::src::key_string::key_string_format;
-use crate::src::log::{log_bytes, log_cstr, log_cstr_n, log_debug, log_get_level, log_hex};
-use crate::src::options::options_get_number;
-use crate::src::options::OptionsScope;
-use crate::src::paste::paste_add_owned;
-use crate::src::reactor::Timer;
-use crate::src::server_client::Client as _;
-use crate::src::window::Window as _;
+use crate::events::events_fire_client;
+use crate::ffi::libc::strsep;
+use crate::ffi::resolv::b64_pton;
+use crate::input::{input_request_reply, InputRequestReply};
+use crate::key_string::key_string_format;
+use crate::log::{log_bytes, log_cstr, log_cstr_n, log_debug, log_get_level, log_hex};
+use crate::options::options_get_number;
+use crate::options::OptionsScope;
+use crate::paste::paste_add_owned;
+use crate::reactor::Timer;
+use crate::server_client::Client as _;
+use crate::window::Window as _;
 use libc::{sscanf, strncmp, strtol, strtoul};
 
 use super::control::tty_update_features;
 use super::model::*;
 use super::output::tty_invalidate;
-use crate::src::session::Session;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::client::CLIENT_FOCUSED;
-use crate::src::shared::control_character::{C0_CR, C0_ESC, C0_HT, C0_NUL};
-use crate::src::shared::grid::*;
-use crate::src::shared::input::{input_request_clipboard_data, input_request_palette_data};
-use crate::src::shared::key::key_event;
-use crate::src::shared::key::*;
-use crate::src::shared::mouse::{
+use crate::session::Session;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::client::CLIENT_FOCUSED;
+use crate::shared::control_character::{C0_CR, C0_ESC, C0_HT, C0_NUL};
+use crate::shared::grid::*;
+use crate::shared::input::{input_request_clipboard_data, input_request_palette_data};
+use crate::shared::key::key_event;
+use crate::shared::key::*;
+use crate::shared::mouse::{
     mouse_event, MOUSE_MASK_BUTTONS, MOUSE_PARAM_BTN_OFF, MOUSE_PARAM_POS_OFF, MOUSE_WHEEL_DOWN,
     MOUSE_WHEEL_UP,
 };
-use crate::src::shared::posix_terminal::VERASE;
-use crate::src::shared::tty::*;
-use crate::src::shared::utf8::wchar_t;
-use crate::src::shared::utf8::*;
-use crate::src::style::colour::{colour_format, colour_parse_x11_logged};
-use crate::src::text::utf8::{utf8_append, utf8_from_data, utf8_fromwc, utf8_open};
-use crate::src::tty::features::{tty_default_features, tty_parse_client_features};
-use crate::src::tty::term::tty_term_owner_ptr;
-use crate::src::tty::term::tty_term_string;
+use crate::shared::posix_terminal::VERASE;
+use crate::shared::tty::*;
+use crate::shared::utf8::wchar_t;
+use crate::shared::utf8::*;
+use crate::style::colour::{colour_format, colour_parse_x11_logged};
+use crate::text::utf8::{utf8_append, utf8_from_data, utf8_fromwc, utf8_open};
+use crate::tty::features::{tty_default_features, tty_parse_client_features};
+use crate::tty::term::tty_term_owner_ptr;
+use crate::tty::term::tty_term_string;
 
 use std::ffi::CStr;
 use std::time::Duration;
@@ -1231,7 +1231,7 @@ unsafe fn tty_keys_add(tty: *mut tty, bytes: &[u8], key: key_code) {
             "replacing key {}: 0x{:x} ({})",
             log_bytes(bytes),
             { key },
-            crate::src::log::log_bytes(key_string.as_bytes())
+            crate::log::log_bytes(key_string.as_bytes())
         ));
         tk.key = key;
     } else {
@@ -1239,7 +1239,7 @@ unsafe fn tty_keys_add(tty: *mut tty, bytes: &[u8], key: key_code) {
             "new key {}: 0x{:x} ({})",
             log_bytes(bytes),
             { key },
-            crate::src::log::log_bytes(key_string.as_bytes())
+            crate::log::log_bytes(key_string.as_bytes())
         ));
         tty_keys_add1(&mut (*tty).key_tree, bytes, key);
     }
@@ -2414,7 +2414,7 @@ unsafe fn tty_keys_extended_key(
             log_cstr(diagnostic_name.unwrap_or(c"(null)")),
             log_cstr_n(&bytes[..*size]),
             (nkey) as u64,
-            crate::src::log::log_bytes(key_string.as_bytes())
+            crate::log::log_bytes(key_string.as_bytes())
         ));
     }
     *key = nkey;
@@ -3273,12 +3273,12 @@ pub(super) unsafe fn tty_keys_colours(
             log_debug(format_args!(
                 "{} fg is {}",
                 log_cstr(name),
-                crate::src::log::log_bytes(colour_format(n).as_bytes())
+                crate::log::log_bytes(colour_format(n).as_bytes())
             ));
         } else {
             log_debug(format_args!(
                 "fg is {}",
-                crate::src::log::log_bytes(colour_format(n).as_bytes())
+                crate::log::log_bytes(colour_format(n).as_bytes())
             ));
         }
         *fg = n;
@@ -3288,12 +3288,12 @@ pub(super) unsafe fn tty_keys_colours(
             log_debug(format_args!(
                 "{} bg is {}",
                 log_cstr(name),
-                crate::src::log::log_bytes(colour_format(n).as_bytes())
+                crate::log::log_bytes(colour_format(n).as_bytes())
             ));
         } else {
             log_debug(format_args!(
                 "bg is {}",
-                crate::src::log::log_bytes(colour_format(n).as_bytes())
+                crate::log::log_bytes(colour_format(n).as_bytes())
             ));
         }
         *bg = n;

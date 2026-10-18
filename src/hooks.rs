@@ -1,45 +1,45 @@
-use crate::src::cmd::cmd_list_print_cstring;
-use crate::src::cmd::parse::cmd_parse_from_string;
-use crate::src::cmd::queue::{
+use crate::cmd::cmd_list_print_cstring;
+use crate::cmd::parse::cmd_parse_from_string;
+use crate::cmd::queue::{
     cmdq_add_formats, cmdq_append, cmdq_error, cmdq_get_command, cmdq_get_event, cmdq_get_flags,
     cmdq_insert_after, cmdq_new_state, cmdq_running,
 };
-use crate::src::events::{events_add_sink, events_fire, events_remove_sink};
-use crate::src::events_payload::{
+use crate::events::{events_add_sink, events_fire, events_remove_sink};
+use crate::events_payload::{
     event_payload_add_formats, event_payload_create, event_payload_get_client,
     event_payload_get_identity, event_payload_get_target, event_payload_set_client,
     event_payload_set_identity, event_payload_set_int, event_payload_set_pane,
     event_payload_set_session, event_payload_set_string, event_payload_set_target,
     event_payload_set_window,
 };
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::{
+use crate::format::bytes::write_cstr;
+use crate::format::{
     format_add, format_create_defaults, format_create_owned, format_expand_cstring,
     format_log_debug, format_merge,
 };
-use crate::src::log::{log_cstr, log_debug, log_get_level};
-use crate::src::monitor::{
+use crate::log::{log_cstr, log_debug, log_get_level};
+use crate::monitor::{
     monitor_add, monitor_callback, monitor_change, monitor_create_session_owned,
     monitor_get_fire_count, monitor_get_fire_time, monitor_set, monitor_type,
 };
-use crate::src::options::options_entry;
-use crate::src::options::options_table;
-use crate::src::options::OPTIONS_TABLE_IS_HOOK;
-use crate::src::options::{
+use crate::options::options_entry;
+use crate::options::options_table;
+use crate::options::OPTIONS_TABLE_IS_HOOK;
+use crate::options::{
     options_get_monitor_data, options_hook_fired, options_search, options_set_string, OptionsScope,
 };
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientWeak;
-use crate::src::shared::command::CMDQ_STATE_NOHOOKS;
-use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_state};
-use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
-use crate::src::shared::events::{event_payload, events_callback, EventSinkId};
-use crate::src::shared::format::format_tree;
-use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::window::{WindowRef, WindowWeak};
-use crate::src::window::WindowPane;
+use crate::shared::abi::*;
+use crate::shared::client::ClientWeak;
+use crate::shared::command::CMDQ_STATE_NOHOOKS;
+use crate::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_state};
+use crate::shared::command::{cmd_parse_input, cmd_parse_result};
+use crate::shared::events::{event_payload, events_callback, EventSinkId};
+use crate::shared::format::format_tree;
+use crate::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
+use crate::shared::pane::window_pane;
+use crate::shared::session::SessionRef;
+use crate::shared::window::{WindowRef, WindowWeak};
+use crate::window::WindowPane;
 use std::ffi::{CStr, CString};
 
 #[derive(Default)]
@@ -96,7 +96,7 @@ unsafe fn hooks_insert_one(
         log_debug(format_args!(
             "{}: hook {} is: {}",
             "hooks_insert_one",
-            crate::src::log::log_bytes((*hd).name.to_bytes()),
+            crate::log::log_bytes((*hd).name.to_bytes()),
             log_cstr(&s)
         ));
     }
@@ -138,7 +138,7 @@ unsafe fn hooks_insert(
     let mut fs = cmd_find_state::default();
     log_debug(format_args!(
         "hooks_insert: inserting hook {}",
-        crate::src::log::log_bytes((*hd).name.to_bytes())
+        crate::log::log_bytes((*hd).name.to_bytes())
     ));
     if (*hd).fs.is_empty() || !(*hd).fs.is_valid() {
         fs = cmd_find_state::find_from_nothing(0).unwrap_or_else(|| cmd_find_state::clear_state(0));
@@ -168,7 +168,7 @@ unsafe fn hooks_insert(
     let Some(source) = source else {
         log_debug(format_args!(
             "hooks_insert: hook {} not found",
-            crate::src::log::log_bytes(name.to_bytes())
+            crate::log::log_bytes(name.to_bytes())
         ));
         return;
     };
@@ -192,7 +192,7 @@ unsafe fn hooks_insert(
         match pr.status {
             0 => log_debug(format_args!(
                 "hooks_insert: can't parse hook {}: {}",
-                crate::src::log::log_bytes(name.to_bytes()),
+                crate::log::log_bytes(name.to_bytes()),
                 log_cstr(pr.error.as_deref().unwrap_or(c"(null)"))
             )),
             1 => {
@@ -297,11 +297,11 @@ unsafe fn CString_cb(name: &CStr, payload: &mut event_payload) {
     let ep = &*payload;
     if matches!(
         event_payload_get_identity(ep, c"_hooks_monitor"),
-        Some(crate::src::shared::events::EventPayloadIdentity::HookMonitor(_))
+        Some(crate::shared::events::EventPayloadIdentity::HookMonitor(_))
     ) {
         return;
     }
-    if let Some(crate::src::shared::events::EventPayloadIdentity::QueueItem(observer)) =
+    if let Some(crate::shared::events::EventPayloadIdentity::QueueItem(observer)) =
         event_payload_get_identity(ep, c"_cmdq_item")
     {
         let Some(item_owner) = observer.upgrade() else {
@@ -360,7 +360,7 @@ pub unsafe fn hooks_run(
     let (mut target_state, client) = {
         let item = item_handle.expect("command queue item").borrow();
         (
-            crate::src::cmd::queue::cmdq_get_target(&item).clone(),
+            crate::cmd::queue::cmdq_get_target(&item).clone(),
             item.client.clone(),
         )
     };
@@ -384,7 +384,7 @@ impl Drop for hooks_monitor {
         unsafe {
             events_remove_sink(self.sink);
             if let Some(set) = self.set.take() {
-                crate::src::monitor::monitor_destroy(set);
+                crate::monitor::monitor_destroy(set);
             }
         }
     }
@@ -402,7 +402,7 @@ unsafe fn hooks_monitor_hook_cb(
     generation: usize,
 ) {
     if !matches!(event_payload_get_identity(payload, c"_hooks_monitor"),
-        Some(crate::src::shared::events::EventPayloadIdentity::HookMonitor(id)) if *id == generation)
+        Some(crate::shared::events::EventPayloadIdentity::HookMonitor(id)) if *id == generation)
     {
         return;
     }
@@ -441,7 +441,7 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, fallback: &cmd_find_state, g
     event_payload_set_identity(
         &mut ep,
         c"_hooks_monitor",
-        crate::src::shared::events::EventPayloadIdentity::HookMonitor(generation),
+        crate::shared::events::EventPayloadIdentity::HookMonitor(generation),
     );
     fs = cmd_find_state::clear_state(0 as ::core::ffi::c_int);
     if let Some(pane) = pane_owner.as_ref().filter(|pane| {

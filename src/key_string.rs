@@ -1,18 +1,16 @@
-use crate::src::ffi::libc::wctomb;
-use crate::src::format::bytes::cstr_suffix;
-use crate::src::shared::abi::*;
-use crate::src::shared::control_character::{
+use crate::ffi::libc::wctomb;
+use crate::format::bytes::cstr_suffix;
+use crate::shared::abi::*;
+use crate::shared::control_character::{
     C0_ASC, C0_BEL, C0_BS, C0_CAN, C0_CR, C0_DC1, C0_DC2, C0_DC3, C0_DC4, C0_DLE, C0_EM, C0_ENQ,
     C0_EOT, C0_ESC, C0_ETB, C0_ETX, C0_FF, C0_FS, C0_GS, C0_HT, C0_LF, C0_NAK, C0_NUL, C0_RS,
     C0_SI, C0_SO, C0_SOH, C0_STX, C0_SUB, C0_SYN, C0_US, C0_VT,
 };
-use crate::src::shared::grid::*;
-use crate::src::shared::key::*;
-use crate::src::shared::utf8::wchar_t;
-use crate::src::shared::utf8::*;
-use crate::src::text::utf8::{
-    utf8_append, utf8_from_data, utf8_fromcstr_vec, utf8_open, utf8_to_data,
-};
+use crate::shared::grid::*;
+use crate::shared::key::*;
+use crate::shared::utf8::wchar_t;
+use crate::shared::utf8::*;
+use crate::text::utf8::{utf8_append, utf8_from_data, utf8_fromcstr_vec, utf8_open, utf8_to_data};
 use libc::{sscanf, strcasecmp};
 use std::ffi::{CStr, CString};
 

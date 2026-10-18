@@ -1,16 +1,16 @@
-use crate::src::ffi::libc::basename;
-use crate::src::format::{
+use crate::ffi::libc::basename;
+use crate::format::{
     format_create, format_defaults_pane, format_defaults_window, format_expand_cstring,
 };
-use crate::src::log::log_debug;
-use crate::src::options::options_get_number;
-use crate::src::server_fn::{server_redraw_window_borders, server_status_window};
-use crate::src::shared::abi::*;
-use crate::src::shared::format::FORMAT_WINDOW;
-use crate::src::shared::window::WindowRef;
-use crate::src::tmux::clean_name_cstring;
-use crate::src::window::Window as _;
-use crate::src::window::WindowPane as _;
+use crate::log::log_debug;
+use crate::options::options_get_number;
+use crate::server_fn::{server_redraw_window_borders, server_status_window};
+use crate::shared::abi::*;
+use crate::shared::format::FORMAT_WINDOW;
+use crate::shared::window::WindowRef;
+use crate::tmux::clean_name_cstring;
+use crate::window::Window as _;
+use crate::window::WindowPane as _;
 use libc::{strchr, strcspn, strlen, strncmp};
 use std::ffi::{CStr, CString};
 use std::time::{Duration, Instant};
@@ -49,8 +49,8 @@ pub unsafe fn check_window_name(owner: &WindowRef) {
         log_debug(format_args!(
             "@{} new name {} (was {})",
             owner.id(),
-            crate::src::log::log_bytes(name.as_bytes()),
-            crate::src::log::log_bytes(previous.as_bytes())
+            crate::log::log_bytes(name.as_bytes()),
+            crate::log::log_bytes(previous.as_bytes())
         ));
         owner.rename(&name, true);
         server_redraw_window_borders(owner);
@@ -59,7 +59,7 @@ pub unsafe fn check_window_name(owner: &WindowRef) {
         log_debug(format_args!(
             "@{} name not changed (still {})",
             owner.id(),
-            crate::src::log::log_bytes(previous.as_bytes())
+            crate::log::log_bytes(previous.as_bytes())
         ));
     }
 }
@@ -77,7 +77,7 @@ unsafe fn format_window_name(owner: &WindowRef) -> CString {
         &mut *context,
         &owner.active_pane().upgrade().expect("active pane"),
     );
-    let format = crate::src::options::options_get_string_optional(
+    let format = crate::options::options_get_string_optional(
         &owner.borrow_options_mut(),
         c"automatic-rename-format",
     );

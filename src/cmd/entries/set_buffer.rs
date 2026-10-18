@@ -1,16 +1,16 @@
-use crate::src::arguments::{args_count, args_get, args_has, args_parse, args_string};
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_target_client};
-use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
-use crate::src::paste::{
+use crate::arguments::{args_count, args_get, args_has, args_parse, args_string};
+use crate::cmd::queue::{cmdq_error, cmdq_get_target_client};
+use crate::cmd::{cmd_get_args_mut, cmd_get_entry};
+use crate::paste::{
     paste_buffer_data, paste_free, paste_get_name, paste_get_top, paste_rename, paste_set_owned,
 };
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
-use crate::src::shared::command::{
+use crate::shared::client::ClientRef;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
+use crate::shared::command::{
     CMD_AFTERHOOK, CMD_BUFFER_USAGE, CMD_CLIENT_CANFAIL, CMD_CLIENT_TFLAG,
 };
-use crate::src::tty::tty_set_selection;
+use crate::tty::tty_set_selection;
 use std::ffi::CStr;
 pub static cmd_set_buffer_entry: cmd_entry = {
     cmd_entry {

@@ -1,24 +1,24 @@
-use crate::src::arguments::{args, args_get, args_has, args_parse, args_string};
-use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print, cmdq_wait, CmdqWaiter};
-use crate::src::events::{events_add_sink, events_remove_sink};
-use crate::src::events_payload::{
+use crate::arguments::{args, args_get, args_has, args_parse, args_string};
+use crate::cmd::cmd_get_args_mut;
+use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print, cmdq_wait, CmdqWaiter};
+use crate::events::{events_add_sink, events_remove_sink};
+use crate::events_payload::{
     event_payload_add_formats, event_payload_item_name, event_payload_item_print_owned,
     event_payload_items,
 };
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::{format_create_with_client, format_expand_cstring, format_true};
-use crate::src::hooks::hooks_valid_event_name;
-use crate::src::log::{log_cstr, log_debug, log_pointer};
-use crate::src::reactor::{evbuffer_add_formatted, evbuffer_new};
-use crate::src::server_client::Client as _;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
-use crate::src::shared::events::{event_payload, events_callback, EventSinkId};
-use crate::src::shared::format::format_tree;
-use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
+use crate::format::bytes::write_cstr;
+use crate::format::{format_create_with_client, format_expand_cstring, format_true};
+use crate::hooks::hooks_valid_event_name;
+use crate::log::{log_cstr, log_debug, log_pointer};
+use crate::reactor::{evbuffer_add_formatted, evbuffer_new};
+use crate::server_client::Client as _;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
+use crate::shared::events::{event_payload, events_callback, EventSinkId};
+use crate::shared::format::format_tree;
+use crate::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::Weak;
@@ -590,9 +590,9 @@ pub unsafe fn cmd_wait_for_flush() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next};
-    use crate::src::server_client::queue_test_clients as clients;
-    use crate::src::shared::client::CLIENT_DEAD;
+    use crate::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next};
+    use crate::server_client::queue_test_clients as clients;
+    use crate::shared::client::CLIENT_DEAD;
     use std::cell::RefCell;
     use std::ffi::CString;
     use std::future::Future;
@@ -829,10 +829,9 @@ mod tests {
             .into_iter()
             .chain(flags.iter().copied())
             .chain([name])
-            .map(|value| crate::src::arguments::args_value::string(value.to_owned()))
+            .map(|value| crate::arguments::args_value::string(value.to_owned()))
             .collect::<Vec<_>>();
-        let mut args =
-            crate::src::arguments::args_parse(&cmd_wait_for_entry.args, &values).unwrap();
+        let mut args = crate::arguments::args_parse(&cmd_wait_for_entry.args, &values).unwrap();
         let item = cmdq_append(
             Some(owner),
             cmdq_get_callback_owned(
@@ -847,11 +846,11 @@ mod tests {
     }
 
     unsafe fn fire(name: &CStr, value: &str) {
-        let mut ep = crate::src::events_payload::event_payload_create();
-        crate::src::events_payload::event_payload_set_string(&mut ep, c"value", |out| {
+        let mut ep = crate::events_payload::event_payload_create();
+        crate::events_payload::event_payload_set_string(&mut ep, c"value", |out| {
             out.write_all(value.as_bytes())
         });
-        crate::src::events::events_fire(name, ep);
+        crate::events::events_fire(name, ep);
     }
 
     unsafe fn event_sinks() -> Vec<EventSinkId> {
@@ -893,7 +892,7 @@ mod tests {
 
             fire(c"@accepted", "y");
             assert!(event_sinks().is_empty());
-            assert!(!crate::src::events::events_has_sink(sink));
+            assert!(!crate::events::events_has_sink(sink));
             cmdq_next(Some(&owner));
             assert!(head.upgrade().is_none());
             assert!(ran.get());
@@ -915,13 +914,13 @@ mod tests {
             assert!(head.upgrade().is_some());
             assert!(!ran.get());
             assert_eq!(event_sinks(), [sink]);
-            assert!(crate::src::events::events_has_sink(sink));
+            assert!(crate::events::events_has_sink(sink));
 
             fire(c"@rejected", "y");
             cmdq_next(Some(&owner));
             assert!(head.upgrade().is_none());
             assert!(ran.get());
-            assert!(!crate::src::events::events_has_sink(sink));
+            assert!(!crate::events::events_has_sink(sink));
         }
     }
 
@@ -941,7 +940,7 @@ mod tests {
 
             fire(c"@dropped", "");
             assert!(event_sinks().is_empty());
-            assert!(!crate::src::events::events_has_sink(sink));
+            assert!(!crate::events::events_has_sink(sink));
         }
     }
 
@@ -961,7 +960,7 @@ mod tests {
             cmdq_next(Some(&second));
             assert!(first_item.upgrade().is_none());
             assert!(second_item.upgrade().is_some());
-            assert!(!crate::src::events::events_has_sink(first_sink));
+            assert!(!crate::events::events_has_sink(first_sink));
             assert_eq!(event_sinks(), [second_sink]);
         }
     }
@@ -981,7 +980,7 @@ mod tests {
             cmdq_next(Some(&kept));
             assert!(lost_item.upgrade().is_none());
             assert!(kept_item.upgrade().is_some());
-            assert!(!crate::src::events::events_has_sink(lost_sink));
+            assert!(!crate::events::events_has_sink(lost_sink));
             assert_eq!(event_sinks(), [kept_sink]);
         }
     }
@@ -1000,7 +999,7 @@ mod tests {
             cmd_wait_for_flush();
             assert!(event_sinks().is_empty());
             for sink in sinks {
-                assert!(!crate::src::events::events_has_sink(sink));
+                assert!(!crate::events::events_has_sink(sink));
             }
             cmdq_next(Some(&first));
             cmdq_next(Some(&second));
@@ -1021,7 +1020,7 @@ mod tests {
             cmdq_next(Some(&owner));
             assert!(head.upgrade().is_none());
             assert!(event_sinks().is_empty());
-            assert!(!crate::src::events::events_has_sink(sink));
+            assert!(!crate::events::events_has_sink(sink));
             let client = Rc::downgrade(&owner);
             drop(owner);
             assert!(client.upgrade().is_none());

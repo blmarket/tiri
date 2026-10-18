@@ -3,10 +3,10 @@ use super::diagnostic::options_string_cause;
 use super::scope::OptionsScope;
 use super::table::options_table;
 use super::types::*;
-use crate::src::arguments::{args, args_get, args_has};
-use crate::src::shared::window::WindowRef;
+use crate::arguments::{args, args_get, args_has};
+use crate::shared::window::WindowRef;
 
-use crate::src::shared::command::cmd_find_state;
+use crate::shared::command::cmd_find_state;
 use std::ffi::{CStr, CString};
 
 /// Select the options scope for `name`, returning the table kind and scope.

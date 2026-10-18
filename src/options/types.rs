@@ -3,9 +3,9 @@
 use std::collections::BTreeMap;
 use std::ffi::CString;
 
-use crate::src::shared::abi::{time_t, u_int};
-use crate::src::shared::command::cmd_list;
-use crate::src::shared::style::style;
+use crate::shared::abi::{time_t, u_int};
+use crate::shared::command::cmd_list;
+use crate::shared::style::style;
 pub type options_table_type = ::core::ffi::c_uint;
 pub const OPTIONS_TABLE_NUMBER: options_table_type = 1;
 pub const OPTIONS_TABLE_KEY: options_table_type = 2;
@@ -45,7 +45,7 @@ mod tests {
 #[repr(C)]
 pub struct options {
     pub(crate) tree: BTreeMap<CString, Box<options_entry>>,
-    pub parent: Option<crate::src::options::OptionsScope>,
+    pub parent: Option<crate::options::OptionsScope>,
 }
 
 /// Box-owned by options_array; returned key and value pointers expire when
@@ -62,7 +62,7 @@ pub struct options_entry {
     pub value: options_value,
     /// Parsed style of a string value without `#{`; cleared when the value changes.
     pub style: Option<style>,
-    pub monitor_data: Option<Box<crate::src::hooks::hooks_monitor>>,
+    pub monitor_data: Option<Box<crate::hooks::hooks_monitor>>,
     pub fire_count: u_int,
     pub fire_time: time_t,
 }

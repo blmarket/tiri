@@ -1,17 +1,17 @@
-use crate::src::arguments::{args, args_count, args_get, args_has, args_parse, args_string};
-use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::cmdq_error;
-use crate::src::environ::{environ_clear, environ_set, environ_unset};
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::format_single_from_target_cstring;
-use crate::src::session::Session;
-use crate::src::shared::abi::*;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
-use crate::src::shared::environment::environ;
-use crate::src::shared::environment::ENVIRON_HIDDEN;
-use crate::src::tmux::global_environ;
+use crate::arguments::{args, args_count, args_get, args_has, args_parse, args_string};
+use crate::cmd::cmd_get_args_mut;
+use crate::cmd::queue::cmdq_error;
+use crate::environ::{environ_clear, environ_set, environ_unset};
+use crate::format::bytes::write_cstr;
+use crate::format::format_single_from_target_cstring;
+use crate::session::Session;
+use crate::shared::abi::*;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
+use crate::shared::environment::environ;
+use crate::shared::environment::ENVIRON_HIDDEN;
+use crate::tmux::global_environ;
 use std::ffi::CStr;
 pub static cmd_set_environment_entry: cmd_entry = {
     cmd_entry {
@@ -45,7 +45,7 @@ unsafe fn cmd_set_environment_exec(
     let item = item_handle.borrow();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
 
     let mut name: &CStr = args_string(&mut *(args), 0 as u_int).expect("argument is present");

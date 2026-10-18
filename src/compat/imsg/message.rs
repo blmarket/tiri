@@ -1,6 +1,6 @@
 //! Authoritative client/server message identifiers.
 
-use crate::src::shared::abi::{pid_t, size_t, uint32_t};
+use crate::shared::abi::{pid_t, size_t, uint32_t};
 use std::collections::VecDeque;
 use std::os::fd::OwnedFd;
 pub type msgtype = ::core::ffi::c_uint;

@@ -1,11 +1,11 @@
-use crate::src::format::format_skip;
-use crate::src::grid::grid_default_cell;
-use crate::src::shared::abi::*;
-use crate::src::shared::grid::*;
-use crate::src::shared::style::*;
-use crate::src::shared::utf8::*;
-use crate::src::style::{style_parse, style_set};
-use crate::src::text::utf8::{utf8_append, utf8_open, utf8_set};
+use crate::format::format_skip;
+use crate::grid::grid_default_cell;
+use crate::shared::abi::*;
+use crate::shared::grid::*;
+use crate::shared::style::*;
+use crate::shared::utf8::*;
+use crate::style::{style_parse, style_set};
+use crate::text::utf8::{utf8_append, utf8_open, utf8_set};
 use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone)]

@@ -1,12 +1,12 @@
-use crate::src::arguments::{
+use crate::arguments::{
     args, args_create, args_has, args_parse, args_set_owned_string, args_string,
 };
-use crate::src::cmd::cmd_get_args_mut;
-use crate::src::shared::abi::*;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::window_pane::WindowPane as _;
-use crate::src::window_tree::window_tree_mode;
+use crate::cmd::cmd_get_args_mut;
+use crate::shared::abi::*;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::window_pane::WindowPane as _;
+use crate::window_tree::window_tree_mode;
 use std::ffi::{CStr, CString};
 pub static cmd_find_window_entry: cmd_entry = {
     cmd_entry {
@@ -40,7 +40,7 @@ unsafe fn cmd_find_window_exec(
     let item = item_handle.borrow();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let wp = (*target).pane_handle();
     let mut s: &CStr = args_string(&mut *(args), 0 as u_int).expect("argument is present");

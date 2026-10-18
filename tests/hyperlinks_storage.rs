@@ -1,5 +1,5 @@
 use std::ffi::CString;
-use tiri::src::hyperlinks::*;
+use tiri::hyperlinks::*;
 
 #[test]
 fn uri_limit_applies_after_escaping_without_consuming_ids() {

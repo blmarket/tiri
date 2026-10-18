@@ -1,17 +1,17 @@
 use std::ffi::CStr;
-use tiri::src::environ::environ_create;
-use tiri::src::grid::{grid_default_cell, grid_get_cell, grid_string_cells_bytes};
-use tiri::src::options::options_table;
-use tiri::src::options::OptionsScope;
-use tiri::src::prompt::{prompt_create, prompt_draw, prompt_free};
-use tiri::src::screen::screen_init;
-use tiri::src::screen_write::{screen_write_start, screen_write_stop};
-use tiri::src::shared::display::{SCREEN_CURSOR_BLOCK, SCREEN_CURSOR_UNDERLINE};
-use tiri::src::shared::grid::{GRID_ATTR_UNDERSCORE, GRID_STRING_TRIM_SPACES};
-use tiri::src::shared::prompt::*;
-use tiri::src::shared::screen::{screen, MODE_CURSOR, MODE_CURSOR_BLINKING};
-use tiri::src::shared::screen_write::screen_write_ctx;
-use tiri::src::tmux::global_environ;
+use tiri::environ::environ_create;
+use tiri::grid::{grid_default_cell, grid_get_cell, grid_string_cells_bytes};
+use tiri::options::options_table;
+use tiri::options::OptionsScope;
+use tiri::prompt::{prompt_create, prompt_draw, prompt_free};
+use tiri::screen::screen_init;
+use tiri::screen_write::{screen_write_start, screen_write_stop};
+use tiri::shared::display::{SCREEN_CURSOR_BLOCK, SCREEN_CURSOR_UNDERLINE};
+use tiri::shared::grid::{GRID_ATTR_UNDERSCORE, GRID_STRING_TRIM_SPACES};
+use tiri::shared::prompt::*;
+use tiri::shared::screen::{screen, MODE_CURSOR, MODE_CURSOR_BLINKING};
+use tiri::shared::screen_write::screen_write_ctx;
+use tiri::tmux::global_environ;
 
 #[test]
 fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {

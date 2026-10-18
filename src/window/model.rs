@@ -1,14 +1,14 @@
 //! Window storage is private to its implementation.
-use crate::src::options::options;
-use crate::src::shared::abi::{u_int, uint64_t};
-use crate::src::shared::client::ClientWeak;
-use crate::src::shared::event::Timer;
-use crate::src::shared::grid::grid_cell;
-use crate::src::shared::pane::{window_pane, window_panes, PaneHistory};
-use crate::src::shared::window::WindowRef;
+use crate::options::options;
+use crate::shared::abi::{u_int, uint64_t};
+use crate::shared::client::ClientWeak;
+use crate::shared::event::Timer;
+use crate::shared::grid::grid_cell;
+use crate::shared::pane::{window_pane, window_panes, PaneHistory};
+use crate::shared::window::WindowRef;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use crate::src::shared::window::window_winlinks;
+use crate::shared::window::window_winlinks;
 #[repr(C)]
 /// Window record owned through `WindowRef`; dropping the last owner closes it.
 pub struct window {
@@ -41,7 +41,7 @@ pub struct window {
     pub(super) new_xpixel: u_int,
     pub(super) new_ypixel: u_int,
     pub(super) redraw_scene_generation: uint64_t,
-    pub(super) menu: Option<refbox::RefBox<crate::src::shared::menu::menu_data>>,
+    pub(super) menu: Option<refbox::RefBox<crate::shared::menu::menu_data>>,
     pub(super) menu_last_px: u_int,
     pub(super) menu_last_py: u_int,
     pub(super) sb: ::core::ffi::c_int,

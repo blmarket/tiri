@@ -3,9 +3,9 @@
 use super::abi::{time_t, u_int};
 use super::command::{cmd_find_state, cmdq_item};
 use super::pane::window_pane;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::window::WindowRef;
+use crate::shared::client::ClientRef;
+use crate::shared::session::SessionRef;
+use crate::shared::window::WindowRef;
 use std::collections::BTreeMap;
 
 /// Box-owned until `events_fire` consumes it. Sinks borrow the payload during

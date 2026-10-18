@@ -1,47 +1,45 @@
-use crate::src::cmd::parse::cmd_parse_from_argv;
-use crate::src::cmd::{cmd_list_any_have, cmd_pack_argv};
-use crate::src::compat::imsg::imsg;
-use crate::src::compat::imsg::msg_command;
-use crate::src::compat::imsg::*;
-use crate::src::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE, PROTOCOL_VERSION};
+use crate::cmd::parse::cmd_parse_from_argv;
+use crate::cmd::{cmd_list_any_have, cmd_pack_argv};
+use crate::compat::imsg::imsg;
+use crate::compat::imsg::msg_command;
+use crate::compat::imsg::*;
+use crate::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE, PROTOCOL_VERSION};
 #[cfg(target_os = "linux")]
-use crate::src::compat::systemd::systemd_activated;
-use crate::src::control::control_wait_exit;
-use crate::src::ffi::libc::{environ, stderr, stdout};
-use crate::src::file::{
+use crate::compat::systemd::systemd_activated;
+use crate::control::control_wait_exit;
+use crate::ffi::libc::{environ, stderr, stdout};
+use crate::file::{
     file_read_cancel, file_read_open, file_write_close, file_write_data, file_write_left,
     file_write_open,
 };
-use crate::src::format::bytes::nullable_cstr;
-use crate::src::log::{fatal, fatalx, log_cstr, log_debug, log_hex};
-use crate::src::proc::{
+use crate::format::bytes::nullable_cstr;
+use crate::log::{fatal, fatalx, log_cstr, log_debug, log_hex};
+use crate::proc::{
     bytes_of, imsg_string, proc_add_peer, proc_clear_signals, proc_exit, proc_loop, proc_send,
     proc_set_signals, proc_start,
 };
-use crate::src::server::server_start;
-use crate::src::shared::abi::*;
-use crate::src::shared::abi::{ssize_t, uint32_t};
-pub use crate::src::shared::client::client_files;
-use crate::src::shared::client::*;
-use crate::src::shared::client::{
+use crate::server::server_start;
+use crate::shared::abi::*;
+use crate::shared::abi::{ssize_t, uint32_t};
+pub use crate::shared::client::client_files;
+use crate::shared::client::*;
+use crate::shared::client::{
     CLIENT_CONTROL, CLIENT_CONTROLCONTROL, CLIENT_CONTROL_WAITEXIT, CLIENT_LOGIN,
     CLIENT_NOSTARTSERVER, CLIENT_STARTSERVER, CLIENT_WRITE_ACK,
 };
-use crate::src::shared::command::cmd_parse_result;
-use crate::src::shared::command::*;
-use crate::src::shared::errno::{EAGAIN, ECHILD, ENAMETOOLONG, ENOENT};
-use crate::src::shared::posix_io::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, WAIT_ANY, WNOHANG};
-use crate::src::shared::posix_terminal::{ICRNL, ONLCR, OPOST, TCSANOW, VMIN, VTIME};
-use crate::src::shared::process::{tmuxpeer, tmuxproc};
-pub use crate::src::shared::signal::{
-    ProcessSignal, SA_RESTART, SIGHUP, SIGTSTP, SIG_DFL, SIG_IGN,
-};
-use crate::src::shared::terminal::*;
-use crate::src::tmux::{
+use crate::shared::command::cmd_parse_result;
+use crate::shared::command::*;
+use crate::shared::errno::{EAGAIN, ECHILD, ENAMETOOLONG, ENOENT};
+use crate::shared::posix_io::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, WAIT_ANY, WNOHANG};
+use crate::shared::posix_terminal::{ICRNL, ONLCR, OPOST, TCSANOW, VMIN, VTIME};
+use crate::shared::process::{tmuxpeer, tmuxproc};
+pub use crate::shared::signal::{ProcessSignal, SA_RESTART, SIGHUP, SIGTSTP, SIG_DFL, SIG_IGN};
+use crate::shared::terminal::*;
+use crate::tmux::{
     find_cwd, find_home_cstr, ptm_fd, setblocking, shell_argv0_cstring, shell_command,
     socket_path_cstr,
 };
-use crate::src::tty::tty_term_read_list;
+use crate::tty::tty_term_read_list;
 use libc::{
     cfgetispeed, cfgetospeed, cfmakeraw, cfsetispeed, cfsetospeed, execl, fflush, fprintf, getenv,
     getpid, getppid, kill, memset, printf, setenv, sigaction, sigemptyset, strlen, strsignal,
@@ -71,22 +69,18 @@ static mut client_files: client_files = client_files::new();
 
 pub(crate) unsafe fn client_find_file(
     stream: i32,
-) -> Option<std::rc::Rc<std::cell::UnsafeCell<crate::src::file::client_file>>> {
-    crate::src::file::client_files_find_stream(&client_files, stream)
+) -> Option<std::rc::Rc<std::cell::UnsafeCell<crate::file::client_file>>> {
+    crate::file::client_files_find_stream(&client_files, stream)
 }
 
 pub(crate) unsafe fn client_register_file(
-    file: &std::rc::Rc<std::cell::UnsafeCell<crate::src::file::client_file>>,
+    file: &std::rc::Rc<std::cell::UnsafeCell<crate::file::client_file>>,
 ) {
-    crate::src::file::client_files_insert(&mut client_files, file.clone());
+    crate::file::client_files_insert(&mut client_files, file.clone());
 }
 
-pub(crate) unsafe fn client_remove_file(
-    stream: i32,
-    identity: *const crate::src::file::client_file,
-) {
-    let removed =
-        crate::src::file::client_files_remove_identity(&mut client_files, stream, identity);
+pub(crate) unsafe fn client_remove_file(stream: i32, identity: *const crate::file::client_file) {
+    let removed = crate::file::client_files_remove_identity(&mut client_files, stream, identity);
     drop(removed);
 }
 enum ClientLock {
@@ -309,7 +303,7 @@ pub unsafe fn client_main(
             let _ = tiri_rt::unix::close(ptm_fd);
         }
         if client_flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {
-            if crate::src::shared::terminal::read_attributes(STDIN_FILENO, &mut saved_tio)
+            if crate::shared::terminal::read_attributes(STDIN_FILENO, &mut saved_tio)
                 != 0 as ::core::ffi::c_int
             {
                 let reason = CString::new(errno::errno().to_string())
@@ -325,7 +319,7 @@ pub unsafe fn client_main(
             tio.c_cc[VTIME] = 0 as cc_t;
             cfsetispeed(&mut tio, cfgetispeed(&saved_tio));
             cfsetospeed(&mut tio, cfgetospeed(&saved_tio));
-            crate::src::shared::terminal::set_attributes(STDIN_FILENO, TCSANOW, &tio);
+            crate::shared::terminal::set_attributes(STDIN_FILENO, TCSANOW, &tio);
         }
         client_send_identify(&ttynam, termname, &caps, &cwd, feat);
         if msg as ::core::ffi::c_uint == MSG_COMMAND as ::core::ffi::c_int as ::core::ffi::c_uint {
@@ -373,7 +367,7 @@ pub unsafe fn client_main(
             == MSG_EXEC as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             if client_flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {
-                crate::src::shared::terminal::set_attributes(STDOUT_FILENO, TCSAFLUSH, &saved_tio);
+                crate::shared::terminal::set_attributes(STDOUT_FILENO, TCSAFLUSH, &saved_tio);
             }
             let (shell, command) = client_exec_payload
                 .as_ref()
@@ -408,7 +402,7 @@ pub unsafe fn client_main(
             if client_flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {
                 printf(c"\x1B\\".as_ptr());
                 fflush(stdout);
-                crate::src::shared::terminal::set_attributes(STDOUT_FILENO, TCSAFLUSH, &saved_tio);
+                crate::shared::terminal::set_attributes(STDOUT_FILENO, TCSAFLUSH, &saved_tio);
             }
         } else if client_exitreason as ::core::ffi::c_uint
             != CLIENT_EXIT_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -589,9 +583,9 @@ unsafe fn client_file_check_cb() {
         client_exit();
     }
 }
-unsafe fn client_dispatch(message: crate::src::shared::process::PeerMessage<'_>) {
+unsafe fn client_dispatch(message: crate::shared::process::PeerMessage<'_>) {
     let imsg = match message {
-        crate::src::shared::process::PeerMessage::Disconnected => {
+        crate::shared::process::PeerMessage::Disconnected => {
             if client_exitflag == 0 {
                 client_exitreason = CLIENT_EXIT_LOST_SERVER;
                 client_exitval = 1 as ::core::ffi::c_int;
@@ -599,7 +593,7 @@ unsafe fn client_dispatch(message: crate::src::shared::process::PeerMessage<'_>)
             proc_exit(client_proc);
             return;
         }
-        crate::src::shared::process::PeerMessage::Message(imsg) => imsg,
+        crate::shared::process::PeerMessage::Message(imsg) => imsg,
     };
     if client_attached != 0 {
         client_dispatch_attached(imsg);

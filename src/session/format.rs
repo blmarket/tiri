@@ -1,15 +1,15 @@
 //! Session-owned lazy formatting. Returned values own their bytes or timestamp.
 use super::*;
-use crate::src::format::bytes::format_bytes;
-use crate::src::format::FORMAT_TYPE_SESSION;
-use crate::src::format::{format_tree, FormatValue};
-use crate::src::server::server_check_marked;
-use crate::src::server_client::Client as _;
-use crate::src::server_client::ClientRegistry;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::window::{WINLINK_ACTIVITY, WINLINK_BELL, WINLINK_SILENCE};
-use crate::src::window::winlink_count;
+use crate::format::bytes::format_bytes;
+use crate::format::FORMAT_TYPE_SESSION;
+use crate::format::{format_tree, FormatValue};
+use crate::server::server_check_marked;
+use crate::server_client::Client as _;
+use crate::server_client::ClientRegistry;
+use crate::shared::client::ClientRef;
+use crate::shared::session::SessionRef;
+use crate::shared::window::{WINLINK_ACTIVITY, WINLINK_BELL, WINLINK_SILENCE};
+use crate::window::winlink_count;
 use std::io::Write as _;
 
 pub(super) unsafe fn format_value(
@@ -192,10 +192,10 @@ unsafe fn format_cb_session_stack(mut ft: *mut format_tree) -> Option<CString> {
         "{}",
         (((*s).current_winlink()).get_unchecked().idx) as u32
     ));
-    wl = crate::src::window::winlink_stack_first(&(*s).lastw);
+    wl = crate::window::winlink_stack_first(&(*s).lastw);
     while wl.is_alive() {
         write!(result, ",{}", (wl.get_unchecked().idx) as u32).expect("write to Vec");
-        wl = crate::src::window::winlink_stack_next(&(*s).lastw, wl.clone());
+        wl = crate::window::winlink_stack_next(&(*s).lastw, wl.clone());
     }
     Some(CString::new(result).expect("callback bytes contain no NUL"))
 }
@@ -206,7 +206,7 @@ unsafe fn format_cb_session_group_list(mut ft: *mut format_tree) -> Option<CStri
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s: *mut session = format_session;
-    let mut sg = crate::src::shared::session::SessionGroupWeak::new();
+    let mut sg = crate::shared::session::SessionGroupWeak::new();
     if s.is_null() {
         return None;
     }
@@ -215,7 +215,7 @@ unsafe fn format_cb_session_group_list(mut ft: *mut format_tree) -> Option<CStri
         return None;
     }
     let mut names = Vec::<u8>::new();
-    for loop_0 in crate::src::session::session_group_members(&sg) {
+    for loop_0 in crate::session::session_group_members(&sg) {
         if !names.is_empty() {
             names.push(b',');
         }
@@ -235,7 +235,7 @@ unsafe fn format_cb_session_group_attached_list(mut ft: *mut format_tree) -> Opt
     let mut s: *mut session = format_session;
     let mut client_session: *mut session = ::core::ptr::null_mut::<session>();
     let _session_loop: *mut session = ::core::ptr::null_mut::<session>();
-    let mut sg = crate::src::shared::session::SessionGroupWeak::new();
+    let mut sg = crate::shared::session::SessionGroupWeak::new();
     let mut loop_0: Option<ClientRef> = None;
     if s.is_null() {
         return None;
@@ -256,7 +256,7 @@ unsafe fn format_cb_session_group_attached_list(mut ft: *mut format_tree) -> Opt
             .as_ref()
             .map_or(std::ptr::null_mut(), |owner| owner.get());
         if !client_session.is_null() {
-            for session_loop in crate::src::session::session_group_members(&sg) {
+            for session_loop in crate::session::session_group_members(&sg) {
                 if session_loop.get() == client_session {
                     if !names.is_empty() {
                         names.push(b',');
@@ -368,12 +368,12 @@ unsafe fn format_cb_session_group(mut ft: *mut format_tree) -> Option<CString> {
     let format_session = format_session_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut sg = crate::src::shared::session::SessionGroupWeak::new();
+    let mut sg = crate::shared::session::SessionGroupWeak::new();
     if !format_session.is_null() && {
         sg = session_groups::for_session(&(*ft).s);
         sg.is_alive()
     } {
-        return Some(crate::src::session::session_group_name(&sg));
+        return Some(crate::session::session_group_name(&sg));
     }
     None
 }
@@ -383,7 +383,7 @@ unsafe fn format_cb_session_group_attached(mut ft: *mut format_tree) -> Option<C
     let format_session = format_session_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut sg = crate::src::shared::session::SessionGroupWeak::new();
+    let mut sg = crate::shared::session::SessionGroupWeak::new();
     if !format_session.is_null() && {
         sg = session_groups::for_session(&(*ft).s);
         sg.is_alive()
@@ -401,7 +401,7 @@ unsafe fn format_cb_session_group_many_attached(mut ft: *mut format_tree) -> Opt
     let format_session = format_session_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut sg = crate::src::shared::session::SessionGroupWeak::new();
+    let mut sg = crate::shared::session::SessionGroupWeak::new();
     if !format_session.is_null() && {
         sg = session_groups::for_session(&(*ft).s);
         sg.is_alive()
@@ -419,7 +419,7 @@ unsafe fn format_cb_session_group_size(mut ft: *mut format_tree) -> Option<CStri
     let format_session = format_session_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut sg = crate::src::shared::session::SessionGroupWeak::new();
+    let mut sg = crate::shared::session::SessionGroupWeak::new();
     if !format_session.is_null() && {
         sg = session_groups::for_session(&(*ft).s);
         sg.is_alive()
@@ -544,7 +544,7 @@ unsafe fn format_cb_session_activity(mut ft: *mut format_tree) -> Option<time_t>
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     if !format_session.is_null() {
-        return Some(crate::src::shared::time::unix_seconds(
+        return Some(crate::shared::time::unix_seconds(
             (*format_session).activity_time,
         ));
     }
@@ -557,7 +557,7 @@ unsafe fn format_cb_session_created(mut ft: *mut format_tree) -> Option<time_t> 
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     if !format_session.is_null() {
-        return Some(crate::src::shared::time::unix_seconds(
+        return Some(crate::shared::time::unix_seconds(
             (*format_session).creation_time,
         ));
     }
@@ -570,7 +570,7 @@ unsafe fn format_cb_session_last_attached(mut ft: *mut format_tree) -> Option<ti
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     if !format_session.is_null() {
-        return Some(crate::src::shared::time::unix_seconds(
+        return Some(crate::shared::time::unix_seconds(
             (*format_session).last_attached_time,
         ));
     }
@@ -621,13 +621,13 @@ unsafe fn format_cb_window_stack_index(mut ft: *mut format_tree) -> Option<CStri
     let session_owner = (*ft).s.upgrade()?;
     s = session_owner.get();
     idx = 0 as u_int;
-    wl = crate::src::window::winlink_stack_first(&(*s).lastw);
+    wl = crate::window::winlink_stack_first(&(*s).lastw);
     while wl.is_alive() {
         idx = idx.wrapping_add(1);
         if wl == (*ft).winlink_handle() {
             break;
         }
-        wl = crate::src::window::winlink_stack_next(&(*s).lastw, wl.clone());
+        wl = crate::window::winlink_stack_next(&(*s).lastw, wl.clone());
     }
     if !wl.is_alive() {
         return Some(c"0".to_owned());
@@ -640,7 +640,7 @@ unsafe fn format_cb_window_stack_index(mut ft: *mut format_tree) -> Option<CStri
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::src::format::format_create;
+    use crate::format::format_create;
 
     #[test]
     fn session_formats_observe_context_session_without_retaining_it() {
@@ -669,21 +669,19 @@ mod tests {
         unsafe {
             let owner = session::new();
             let session = owner.get();
-            let link = crate::src::window::winlink_add(&raw mut (*session).windows, 7);
+            let link = crate::window::winlink_add(&raw mut (*session).windows, 7);
             let mut ft_owner = format_create(None, None, 0, 0);
             let ft = &raw mut *ft_owner;
             (*ft).wl = link.clone();
             assert_eq!((*ft).winlink_handle(), link);
             assert_eq!(
-                crate::src::format::format_expand_cstring(ft, c"#{window_index}".as_ptr())
-                    .as_c_str(),
+                crate::format::format_expand_cstring(ft, c"#{window_index}".as_ptr()).as_c_str(),
                 c"7"
             );
-            crate::src::window::winlink_remove(&raw mut (*session).windows, link.clone());
+            crate::window::winlink_remove(&raw mut (*session).windows, link.clone());
             assert!(!(*ft).winlink_handle().is_alive());
             assert_eq!(
-                crate::src::format::format_expand_cstring(ft, c"#{window_index}".as_ptr())
-                    .as_c_str(),
+                crate::format::format_expand_cstring(ft, c"#{window_index}".as_ptr()).as_c_str(),
                 c""
             );
             drop(ft_owner);
@@ -692,13 +690,13 @@ mod tests {
 
     #[test]
     fn model_format_dispatch_checks_target_identity_and_preserves_typed_times() {
-        use crate::src::session::Session;
+        use crate::session::Session;
         unsafe {
             let session = session::new();
             let other = session::new();
             (*session.get())
                 .options
-                .replace(Some(crate::src::options::options_create(None)));
+                .replace(Some(crate::options::options_create(None)));
             (*session.get()).creation_time = UNIX_EPOCH + Duration::from_secs(123);
             let mut context = format_tree::default();
             context.s = Rc::downgrade(&session);
@@ -707,11 +705,8 @@ mod tests {
                 Some(FormatValue::Time(123))
             ));
             assert_eq!(
-                crate::src::format::format_expand_cstring(
-                    &mut context,
-                    c"#{session_created}".as_ptr()
-                )
-                .as_c_str(),
+                crate::format::format_expand_cstring(&mut context, c"#{session_created}".as_ptr())
+                    .as_c_str(),
                 c"123"
             );
             assert!(other
@@ -732,7 +727,7 @@ mod tests {
             let other = session::new();
             (*other.get())
                 .options
-                .replace(Some(crate::src::options::options_create(None)));
+                .replace(Some(crate::options::options_create(None)));
             let mut link = winlink_add(&raw mut (*owner.get()).windows, 7);
             link.get_mut_unchecked().session = Rc::downgrade(&owner);
             winlink_stack_push(&raw mut (*owner.get()).lastw, link.clone());
@@ -741,7 +736,7 @@ mod tests {
             context.wl = link.clone();
 
             assert_eq!(
-                crate::src::format::format_expand_cstring(
+                crate::format::format_expand_cstring(
                     &mut context,
                     c"#{window_stack_index}".as_ptr(),
                 )

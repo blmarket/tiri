@@ -1,8 +1,6 @@
-use crate::src::shared::abi::*;
-use crate::src::shared::limits::UCHAR_MAX;
-use crate::src::shared::vis::{
-    VIS_CSTYLE, VIS_DQ, VIS_NL, VIS_NOSLASH, VIS_OCTAL, VIS_SAFE, VIS_TAB,
-};
+use crate::shared::abi::*;
+use crate::shared::limits::UCHAR_MAX;
+use crate::shared::vis::{VIS_CSTYLE, VIS_DQ, VIS_NL, VIS_NOSLASH, VIS_OCTAL, VIS_SAFE, VIS_TAB};
 use libc::memcpy;
 
 pub const VIS_SP: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;

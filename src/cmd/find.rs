@@ -1,43 +1,43 @@
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_event, cmdq_get_state_owned};
-use crate::src::cmd::{cmd_mouse_pane, cmd_mouse_window};
-use crate::src::compat::strtonum::strtonum;
-use crate::src::environ::environ_find;
-use crate::src::format::bytes::cstr_suffix;
-use crate::src::format::bytes::write_cstr;
-use crate::src::log::{fatalx, log_bytes, log_cstr, log_debug, log_pointer};
-use crate::src::server::{marked_pane, server_check_marked};
-use crate::src::server_client::Client;
-use crate::src::server_client::ClientRegistry;
-use crate::src::session::sessions;
-use crate::src::session::Session;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::layout::Direction;
-use crate::src::shared::rc::same;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::window::WindowRef;
-use crate::src::shared::window::WindowWeak;
-use crate::src::window::Window;
-use crate::src::window::{
+use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_event, cmdq_get_state_owned};
+use crate::cmd::{cmd_mouse_pane, cmd_mouse_window};
+use crate::compat::strtonum::strtonum;
+use crate::environ::environ_find;
+use crate::format::bytes::cstr_suffix;
+use crate::format::bytes::write_cstr;
+use crate::log::{fatalx, log_bytes, log_cstr, log_debug, log_pointer};
+use crate::server::{marked_pane, server_check_marked};
+use crate::server_client::Client;
+use crate::server_client::ClientRegistry;
+use crate::session::sessions;
+use crate::session::Session;
+use crate::shared::client::ClientRef;
+use crate::shared::layout::Direction;
+use crate::shared::rc::same;
+use crate::shared::session::SessionRef;
+use crate::shared::window::WindowRef;
+use crate::shared::window::WindowWeak;
+use crate::window::Window;
+use crate::window::{
     winlink_find_by_index, winlink_next_by_number, winlink_previous_by_number, winlinks_minmax,
     winlinks_next,
 };
-use crate::src::window_pane::WindowPane as _;
+use crate::window_pane::WindowPane as _;
 use libc::fnmatch;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
 
-use crate::src::shared::abi::*;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd_find_state, cmdq_item};
-use crate::src::shared::command::{
+use crate::shared::abi::*;
+use crate::shared::command::*;
+use crate::shared::command::{cmd_find_state, cmdq_item};
+use crate::shared::command::{
     CMD_FIND_CANFAIL, CMD_FIND_DEFAULT_MARKED, CMD_FIND_EXACT_SESSION, CMD_FIND_EXACT_WINDOW,
     CMD_FIND_PREFER_UNATTACHED, CMD_FIND_QUIET, CMD_FIND_WINDOW_INDEX,
 };
-use crate::src::shared::limits::INT_MAX;
-use crate::src::shared::mouse::mouse_event;
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::tree::{RB_INF, RB_NEGINF};
-use crate::src::shared::window::winlink;
+use crate::shared::limits::INT_MAX;
+use crate::shared::mouse::mouse_event;
+use crate::shared::pane::window_pane;
+use crate::shared::tree::{RB_INF, RB_NEGINF};
+use crate::shared::window::winlink;
 
 pub const _PATH_DEV: &std::ffi::CStr = c"/dev/";
 const cmd_find_window_table: &[(&CStr, &CStr)] = &[
@@ -70,7 +70,7 @@ unsafe fn cmd_find_inside_pane(
     let client = client?;
     let terminal = client.tty_name();
     let indexed = terminal.as_deref().and_then(|name| {
-        crate::src::shared::pane::window_pane_tree::snapshot()
+        crate::shared::pane::window_pane_tree::snapshot()
             .into_iter()
             .find(|pane| pane.has_tty() && pane.matches_terminal_name(name))
     });
@@ -229,14 +229,14 @@ impl cmd_find_state {
     unsafe fn get_session(&mut self, target: &CStr) -> i32 {
         log_debug(format_args!("cmd_find_get_session: {}", log_cstr(target)));
         if target.to_bytes().first() == Some(&b'$') {
-            self.set_s(crate::src::shared::session::SessionRef::find_by_id_str(target).as_ref());
+            self.set_s(crate::shared::session::SessionRef::find_by_id_str(target).as_ref());
             return if self.session_handle().is_some() {
                 0
             } else {
                 -1
             };
         }
-        self.set_s(crate::src::session::sessions::find(target).as_ref());
+        self.set_s(crate::session::sessions::find(target).as_ref());
         if self.session_handle().is_some() {
             return 0;
         }
@@ -285,7 +285,7 @@ impl cmd_find_state {
             log_cstr(window)
         ));
         if window.to_bytes().first() == Some(&b'@') {
-            let window_owner = crate::src::window::window_find_by_id_str(window);
+            let window_owner = crate::window::window_find_by_id_str(window);
             let result = (|| {
                 self.set_w(window_owner.as_ref());
                 if self.window_handle().is_none() {
@@ -339,7 +339,7 @@ impl cmd_find_state {
         self.set_w((self.winlink_handle()).get_unchecked().window_handle());
         let first = window.to_bytes().first().copied();
         if first == Some(b'@') {
-            let window_owner = crate::src::window::window_find_by_id_str(window);
+            let window_owner = crate::window::window_find_by_id_str(window);
             let result = (|| {
                 self.set_w(window_owner.as_ref());
                 if self.window_handle().is_none()
@@ -402,7 +402,7 @@ impl cmd_find_state {
         if exact == 0 {
             if window == c"!" {
                 let session = self.session_handle().expect("window target session");
-                self.set_wl(crate::src::session::Session::last_winlink(&session));
+                self.set_wl(crate::session::Session::last_winlink(&session));
                 if !self.winlink_handle().is_alive() {
                     return -(1 as ::core::ffi::c_int);
                 }
@@ -766,7 +766,7 @@ impl cmd_find_state {
                     self.window_handle().as_ref(),
                 ) as ::core::ffi::c_int,
                 { ((self.window_handle().as_ref()).expect("live window")).id() },
-                crate::src::log::log_bytes(
+                crate::log::log_bytes(
                     self.window_handle()
                         .expect("target window")
                         .name()

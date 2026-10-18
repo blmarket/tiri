@@ -1,57 +1,57 @@
-use crate::src::cmd::queue::CmdqWaiter;
-use crate::src::format::format_create_defaults;
-use crate::src::grid::grid_default_cell;
-use crate::src::input::{input_init, input_parse_screen};
-use crate::src::input_keys::{input_key, input_key_get_mouse};
-use crate::src::job::{job_free, job_get_event, job_resize, job_run};
-use crate::src::options::options_get_number;
-use crate::src::options::OptionsScope;
-use crate::src::reactor::{
+use crate::cmd::queue::CmdqWaiter;
+use crate::format::format_create_defaults;
+use crate::grid::grid_default_cell;
+use crate::input::{input_init, input_parse_screen};
+use crate::input_keys::{input_key, input_key_get_mouse};
+use crate::job::{job_free, job_get_event, job_resize, job_run};
+use crate::options::options_get_number;
+use crate::options::OptionsScope;
+use crate::reactor::{
     bufferevent_get_input, bufferevent_write, evbuffer_drain, evbuffer_get_length, evbuffer_pullup,
 };
-use crate::src::screen::screen_share_hyperlinks;
-use crate::src::screen::{screen_init, screen_resize, screen_set_default_cursor};
-use crate::src::screen_write::{
+use crate::screen::screen_share_hyperlinks;
+use crate::screen::{screen_init, screen_resize, screen_set_default_cursor};
+use crate::screen_write::{
     screen_write_box, screen_write_clearscreen, screen_write_cursormove, screen_write_fast_copy,
     screen_write_start, screen_write_stop,
 };
-use crate::src::window::WindowRef;
+use crate::window::WindowRef;
 use libc::memcpy;
 
-use crate::src::server_client::{Client, Overlay};
-use crate::src::session::Session;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::{
+use crate::server_client::{Client, Overlay};
+use crate::session::Session;
+use crate::shared::abi::*;
+use crate::shared::client::{
     overlay_check_cb, overlay_draw_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
-use crate::src::shared::client::{ClientRef, ClientWeak};
-use crate::src::shared::client::{CLIENT_ALLREDRAWFLAGS, CLIENT_REDRAWOVERLAY};
-use crate::src::shared::colour::*;
-use crate::src::shared::display::visible_ranges;
-use crate::src::shared::environment::environ;
-use crate::src::shared::format::format_tree;
-use crate::src::shared::grid::*;
-use crate::src::shared::input::input_ctx;
-use crate::src::shared::job::{job, job_update_callback, JobCompletion};
-use crate::src::shared::job::{JOB_DEFAULTSHELL, JOB_KEEPWRITE, JOB_NOWAIT, JOB_PTY};
-use crate::src::shared::key::key_event;
-use crate::src::shared::key::*;
-use crate::src::shared::layout::*;
-use crate::src::shared::mouse::{
+use crate::shared::client::{ClientRef, ClientWeak};
+use crate::shared::client::{CLIENT_ALLREDRAWFLAGS, CLIENT_REDRAWOVERLAY};
+use crate::shared::colour::*;
+use crate::shared::display::visible_ranges;
+use crate::shared::environment::environ;
+use crate::shared::format::format_tree;
+use crate::shared::grid::*;
+use crate::shared::input::input_ctx;
+use crate::shared::job::{job, job_update_callback, JobCompletion};
+use crate::shared::job::{JOB_DEFAULTSHELL, JOB_KEEPWRITE, JOB_NOWAIT, JOB_PTY};
+use crate::shared::key::key_event;
+use crate::shared::key::*;
+use crate::shared::layout::*;
+use crate::shared::mouse::{
     mouse_event, MOUSE_BUTTON_1, MOUSE_BUTTON_3, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG,
     MOUSE_MASK_META, MOUSE_MASK_MODIFIERS,
 };
-use crate::src::shared::popup::{POPUP_CLOSEANYKEY, POPUP_CLOSEEXIT, POPUP_CLOSEEXITZERO};
-use crate::src::shared::screen::{screen, ScreenMode};
-use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::signal::SIGHUP;
-use crate::src::shared::style::*;
-use crate::src::shared::tty::TTY_CTX_WINDOW_BIGGER;
-pub use crate::src::shared::tty::{tty_ctx, tty_style_ctx};
-use crate::src::style::colour::{colour_palette_from_option, colour_palette_init};
-use crate::src::style::{style_apply_with_options, style_parse, style_set};
-use crate::src::window::Window;
+use crate::shared::popup::{POPUP_CLOSEANYKEY, POPUP_CLOSEEXIT, POPUP_CLOSEEXITZERO};
+use crate::shared::screen::{screen, ScreenMode};
+use crate::shared::screen_write::screen_write_ctx;
+use crate::shared::session::SessionRef;
+use crate::shared::signal::SIGHUP;
+use crate::shared::style::*;
+use crate::shared::tty::TTY_CTX_WINDOW_BIGGER;
+pub use crate::shared::tty::{tty_ctx, tty_style_ctx};
+use crate::style::colour::{colour_palette_from_option, colour_palette_init};
+use crate::style::{style_apply_with_options, style_parse, style_set};
+use crate::window::Window;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::os::unix::process::ExitStatusExt;
@@ -357,7 +357,7 @@ impl PopupRenderSnapshot {
             Err(refbox::BorrowError::Borrowed) => panic!("popup palette already borrowed"),
         };
         ttyctx.style_ctx.palette =
-            crate::src::shared::tty::PaletteSource::Snapshot(Box::new(palette.clone()));
+            crate::shared::tty::PaletteSource::Snapshot(Box::new(palette.clone()));
         ttyctx.style_ctx.defaults = self.defaults;
         ttyctx.flags &= !TTY_CTX_WINDOW_BIGGER;
         let redraw = self.clone();
@@ -439,7 +439,7 @@ unsafe fn popup_draw(c_owner: &ClientRef, popup: &PopupGuard) {
     };
     let mut style_ctx: tty_style_ctx = tty_style_ctx {
         defaults: grid_cell::default(),
-        palette: crate::src::shared::tty::PaletteSource::None,
+        palette: crate::shared::tty::PaletteSource::None,
         dim: 0,
         hyperlinks: None,
     };
@@ -506,7 +506,7 @@ unsafe fn popup_draw(c_owner: &ClientRef, popup: &PopupGuard) {
         defaults.bg = palette.bg;
     }
     style_ctx.defaults = defaults;
-    style_ctx.palette = crate::src::shared::tty::PaletteSource::Popup((*pd).palette.downgrade());
+    style_ctx.palette = crate::shared::tty::PaletteSource::Popup((*pd).palette.downgrade());
     drop(palette);
     style_ctx.dim = 0 as u_int;
     style_ctx.hyperlinks = s.hyperlinks.clone();
@@ -1111,7 +1111,7 @@ pub(crate) unsafe fn popup_display(
     (*pd).ictx = Some(input_init(
         None,
         job_get_event(&(*pd).job),
-        crate::src::shared::input::InputPalette::Popup((*pd).palette.downgrade()),
+        crate::shared::input::InputPalette::Popup((*pd).palette.downgrade()),
         (*pd).c.as_ref(),
     ));
     (*pd).waiter = Some(wait());
@@ -1147,10 +1147,10 @@ pub(crate) unsafe fn popup_display(
 #[cfg(test)]
 mod waiter_tests {
     use super::*;
-    use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next, cmdq_wait};
-    use crate::src::server_client::queue_test_clients as clients;
-    use crate::src::session::session_new_for_test;
-    use crate::src::shared::command::{cmdq_item, CmdOutcome};
+    use crate::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next, cmdq_wait};
+    use crate::server_client::queue_test_clients as clients;
+    use crate::session::session_new_for_test;
+    use crate::shared::command::{cmdq_item, CmdOutcome};
     use std::cell::{Cell, RefCell};
 
     /// Queue on `owner` a head that waits and an item recording that it ran;

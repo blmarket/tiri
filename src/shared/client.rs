@@ -84,7 +84,7 @@ pub const CLIENT_ALLREDRAWFLAGS: ::core::ffi::c_int = CLIENT_REDRAWWINDOW
     | CLIENT_REDRAWMENU;
 pub const CLIENT_NODETACHFLAGS: ::core::ffi::c_int = CLIENT_DEAD | CLIENT_EXIT;
 
-pub use crate::src::server_client::client;
+pub use crate::server_client::client;
 
 /// Retained Client identity. Consumers use Client operations and bounded
 /// component borrows; the cell representation is selected here.
@@ -92,7 +92,7 @@ pub type ClientRef = Rc<UnsafeCell<client>>;
 /// Nonowning Client identity retained by callbacks and back references.
 pub type ClientWeak = std::rc::Weak<UnsafeCell<client>>;
 
-pub use crate::src::file::{client_file, client_file_cb, client_files};
+pub use crate::file::{client_file, client_file_cb, client_files};
 
 pub type overlay_resize_cb = Option<Box<dyn FnMut(&ClientRef)>>;
 

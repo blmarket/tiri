@@ -1,6 +1,6 @@
 //! Foreign declarations supplied by systemd.
 
-use crate::src::shared::abi::{pid_t, size_t, uint64_t, uint8_t};
+use crate::shared::abi::{pid_t, size_t, uint64_t, uint8_t};
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct sd_bus_error {

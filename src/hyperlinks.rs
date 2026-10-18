@@ -1,7 +1,7 @@
-use crate::src::shared::abi::u_int;
-use crate::src::shared::hyperlinks::{hyperlinks, hyperlinks_uri, HyperlinkKey};
-use crate::src::shared::vis::{VIS_CSTYLE, VIS_OCTAL};
-use crate::src::text::utf8::utf8_stravis_cstring;
+use crate::shared::abi::u_int;
+use crate::shared::hyperlinks::{hyperlinks, hyperlinks_uri, HyperlinkKey};
+use crate::shared::vis::{VIS_CSTYLE, VIS_OCTAL};
+use crate::text::utf8::utf8_stravis_cstring;
 use std::{
     cell::{Ref, RefCell},
     collections::VecDeque,

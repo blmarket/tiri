@@ -1,6 +1,6 @@
-use crate::src::shared::abi::*;
-use crate::src::shared::display::visible_range;
-use crate::src::shared::pane::window_pane;
+use crate::shared::abi::*;
+use crate::shared::display::visible_range;
+use crate::shared::pane::window_pane;
 
 pub fn window_position_is_visible(ranges: &[visible_range], px: u_int) -> bool {
     ranges
@@ -18,7 +18,7 @@ pub unsafe fn window_visible_ranges(
     width: u32,
     ranges: &mut Vec<visible_range>,
 ) {
-    use crate::src::window::WindowPane;
+    use crate::window::WindowPane;
     <std::rc::Rc<std::cell::UnsafeCell<window_pane>> as WindowPane>::visible_ranges(
         pane, x, y, width, ranges,
     );

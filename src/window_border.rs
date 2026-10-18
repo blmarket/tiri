@@ -1,22 +1,22 @@
-use crate::src::format::{format_add, format_create, format_defaults, format_expand_cstring};
-use crate::src::format_draw::format_draw;
-use crate::src::grid::grid_default_cell;
-use crate::src::grid::view::grid_view_get_cell;
-use crate::src::options::options_get_string;
-use crate::src::screen::screen_init;
-use crate::src::screen_write::{screen_write_start, screen_write_stop};
-use crate::src::shared::abi::*;
-use crate::src::shared::borders::{CELL_BORDERS, SIMPLE_BORDERS};
-use crate::src::shared::format::{format_tree, FORMAT_NOJOBS, FORMAT_WINDOW};
-use crate::src::shared::grid::*;
-use crate::src::shared::layout::*;
-use crate::src::shared::screen::screen;
-use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::style::style_ranges;
-use crate::src::shared::window::WindowRef;
-use crate::src::text::utf8::{utf8_copy, utf8_set};
-use crate::src::tty::{tty_acs_double_borders, tty_acs_heavy_borders, tty_acs_rounded_borders};
-use crate::src::window::Window as _;
+use crate::format::{format_add, format_create, format_defaults, format_expand_cstring};
+use crate::format_draw::format_draw;
+use crate::grid::grid_default_cell;
+use crate::grid::view::grid_view_get_cell;
+use crate::options::options_get_string;
+use crate::screen::screen_init;
+use crate::screen_write::{screen_write_start, screen_write_stop};
+use crate::shared::abi::*;
+use crate::shared::borders::{CELL_BORDERS, SIMPLE_BORDERS};
+use crate::shared::format::{format_tree, FORMAT_NOJOBS, FORMAT_WINDOW};
+use crate::shared::grid::*;
+use crate::shared::layout::*;
+use crate::shared::screen::screen;
+use crate::shared::screen_write::screen_write_ctx;
+use crate::shared::style::style_ranges;
+use crate::shared::window::WindowRef;
+use crate::text::utf8::{utf8_copy, utf8_set};
+use crate::tty::{tty_acs_double_borders, tty_acs_heavy_borders, tty_acs_rounded_borders};
+use crate::window::Window as _;
 
 /// Render `fill-character` into the cell that fills whatever no pane, scrollbar
 /// or separator covers, inside the window's extent or outside it.

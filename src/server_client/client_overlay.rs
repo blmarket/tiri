@@ -1,8 +1,8 @@
 //! Typed overlay ownership and callback state. Dispatch takes only the active
 //! callback, so closing an overlay can still retire its owner during that call.
 
-use crate::src::popup::{PopupHandle, PopupState};
-use crate::src::shared::client::{
+use crate::popup::{PopupHandle, PopupState};
+use crate::shared::client::{
     overlay_check_cb, overlay_draw_cb, overlay_key_cb, overlay_mode_cb, overlay_resize_cb,
 };
 

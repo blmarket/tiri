@@ -1,78 +1,76 @@
-use crate::src::arguments::{args, args_count, args_has, args_parse, args_string};
-use crate::src::cmd::{cmd_mouse_at, cmd_mouse_pane};
-use crate::src::compat::strtonum::strtonum;
-use crate::src::events::events_fire_pane;
-use crate::src::ffi::libc::llabs;
-use crate::src::ffi::regex::{CompiledRegex, RegexMatch, RegexStorage};
-use crate::src::format::bytes::cstr_suffix;
-use crate::src::format::bytes::format_message_with;
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::{
+use crate::arguments::{args, args_count, args_has, args_parse, args_string};
+use crate::cmd::{cmd_mouse_at, cmd_mouse_pane};
+use crate::compat::strtonum::strtonum;
+use crate::events::events_fire_pane;
+use crate::ffi::libc::llabs;
+use crate::ffi::regex::{CompiledRegex, RegexMatch, RegexStorage};
+use crate::format::bytes::cstr_suffix;
+use crate::format::bytes::format_message_with;
+use crate::format::bytes::write_cstr;
+use crate::format::{
     format_add, format_add_owned_cb, format_create_defaults, format_expand_cstring,
     format_get_pane, format_grid_hyperlink_cstring, format_single_cstring,
 };
-use crate::src::format_draw::format_draw;
-use crate::src::grid::reader::{
+use crate::format_draw::format_draw;
+use crate::grid::reader::{
     grid_reader_cursor_back_to_indentation, grid_reader_cursor_end_of_line,
     grid_reader_cursor_jump, grid_reader_cursor_jump_back, grid_reader_cursor_left,
     grid_reader_cursor_next_word, grid_reader_cursor_next_word_end,
     grid_reader_cursor_previous_word, grid_reader_cursor_right, grid_reader_cursor_start_of_line,
     grid_reader_get_cursor, grid_reader_in_set, grid_reader_start,
 };
-use crate::src::grid::{
+use crate::grid::{
     grid_default_cell, grid_duplicate_lines, grid_free_lines, grid_get_cell, grid_get_line,
     grid_in_set, grid_line_length, grid_line_limit, grid_line_time, grid_peek_line,
     grid_unwrap_position, grid_wrap_position,
 };
-use crate::src::input::{input_init, input_parse_screen};
-use crate::src::job::{job_get_event, job_run};
-use crate::src::log::{fatal, fatalx, log_cstr, log_debug};
-use crate::src::options::OptionsScope;
-use crate::src::options::{options_get_number, options_get_string};
-use crate::src::paste::{paste_add_owned, paste_buffer_data, paste_get_top, paste_set_owned};
-use crate::src::reactor::bufferevent_write;
-use crate::src::screen::{
+use crate::input::{input_init, input_parse_screen};
+use crate::job::{job_get_event, job_run};
+use crate::log::{fatal, fatalx, log_cstr, log_debug};
+use crate::options::OptionsScope;
+use crate::options::{options_get_number, options_get_string};
+use crate::paste::{paste_add_owned, paste_buffer_data, paste_get_top, paste_set_owned};
+use crate::reactor::bufferevent_write;
+use crate::screen::{
     screen_check_selection, screen_clear_selection, screen_hide_selection, screen_init,
     screen_resize, screen_resize_cursor, screen_set_default_cursor, screen_set_selection,
 };
-use crate::src::screen_write::{
+use crate::screen_write::{
     screen_write_carriagereturn, screen_write_cell, screen_write_cursormove,
     screen_write_deleteline, screen_write_insertline, screen_write_linefeed, screen_write_nputs,
     screen_write_putc, screen_write_setselection, screen_write_start, screen_write_start_pane,
     screen_write_stop, screen_write_strlen,
 };
-use crate::src::server_client::Client as _;
-use crate::src::session::Session;
-use crate::src::shared::abi::*;
-use crate::src::shared::abi::{__int32_t, ssize_t};
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::client::CLIENT_READONLY;
-use crate::src::shared::command::{cmd_find_state, cmdq_item};
-use crate::src::shared::event::*;
-use crate::src::shared::format::format_tree;
-use crate::src::shared::grid::*;
-use crate::src::shared::input::input_ctx;
-use crate::src::shared::job::JOB_NOWAIT;
-use crate::src::shared::key::{MODEKEY_EMACS, MODEKEY_VI};
-use crate::src::shared::limits::{INT_MAX, UCHAR_MAX, UINT_MAX};
-use crate::src::shared::mouse::{
-    mouse_event, MOUSE_MASK_BUTTONS, MOUSE_WHEEL_DOWN, MOUSE_WHEEL_UP,
-};
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::PANE_REDRAW;
-use crate::src::shared::screen::screen;
-use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::style::*;
-use crate::src::shared::window::WindowRef;
-pub use crate::src::shared::window::{window_mode, window_mode_entry, winlink};
-use crate::src::status::status_message_set;
-use crate::src::style::style_apply_with_options;
-use crate::src::text::utf8::{utf8_copy, utf8_fromcstr_vec, utf8_set, utf8_to_data};
-use crate::src::tmux::get_timer;
-use crate::src::tty::tty_acs_get;
-use crate::src::window::Window as _;
-use crate::src::window_pane::WindowPane as _;
+use crate::server_client::Client as _;
+use crate::session::Session;
+use crate::shared::abi::*;
+use crate::shared::abi::{__int32_t, ssize_t};
+use crate::shared::client::ClientRef;
+use crate::shared::client::CLIENT_READONLY;
+use crate::shared::command::{cmd_find_state, cmdq_item};
+use crate::shared::event::*;
+use crate::shared::format::format_tree;
+use crate::shared::grid::*;
+use crate::shared::input::input_ctx;
+use crate::shared::job::JOB_NOWAIT;
+use crate::shared::key::{MODEKEY_EMACS, MODEKEY_VI};
+use crate::shared::limits::{INT_MAX, UCHAR_MAX, UINT_MAX};
+use crate::shared::mouse::{mouse_event, MOUSE_MASK_BUTTONS, MOUSE_WHEEL_DOWN, MOUSE_WHEEL_UP};
+use crate::shared::pane::window_pane;
+use crate::shared::pane::PANE_REDRAW;
+use crate::shared::screen::screen;
+use crate::shared::screen_write::screen_write_ctx;
+use crate::shared::session::SessionRef;
+use crate::shared::style::*;
+use crate::shared::window::WindowRef;
+pub use crate::shared::window::{window_mode, window_mode_entry, winlink};
+use crate::status::status_message_set;
+use crate::style::style_apply_with_options;
+use crate::text::utf8::{utf8_copy, utf8_fromcstr_vec, utf8_set, utf8_to_data};
+use crate::tmux::get_timer;
+use crate::tty::tty_acs_get;
+use crate::window::Window as _;
+use crate::window_pane::WindowPane as _;
 use libc::{abs, memcmp, strcasecmp, strchr, strcmp, strncmp};
 use libc::{REG_EXTENDED, REG_ICASE};
 use std::borrow::Cow;
@@ -238,14 +236,14 @@ fn window_copy_separators(data: &window_copy_mode_data) -> Option<&CStr> {
 }
 
 unsafe fn window_copy_snapshot_separators(scope: &OptionsScope) -> Option<CString> {
-    scope.with_local(|oo| crate::src::options::options_get_string_optional(oo, c"word-separators"))
+    scope.with_local(|oo| crate::options::options_get_string_optional(oo, c"word-separators"))
 }
 
 #[cfg(test)]
 mod separator_snapshot_tests {
     use super::*;
-    use crate::src::options::options_table;
-    use crate::src::options::{options_default, options_set_string};
+    use crate::options::options_table;
+    use crate::options::{options_default, options_set_string};
 
     #[test]
     fn selected_word_separators_survive_option_replacement() {
@@ -1215,7 +1213,7 @@ pub(crate) unsafe fn window_copy_get_word_cstring(
     let mut wme: refbox::Weak<window_mode_entry> = wp_owner.mode_entry();
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
     let mut gd: *mut grid = (*data).backing_mut().grid_mut();
-    crate::src::format::format_grid_word_cstring(
+    crate::format::format_grid_word_cstring(
         &*gd,
         x,
         (*gd).hsize.wrapping_add(y).wrapping_sub((*data).oy),
@@ -1228,7 +1226,7 @@ pub(crate) unsafe fn window_copy_get_line_cstring(
     let mut wme: refbox::Weak<window_mode_entry> = wp_owner.mode_entry();
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
     let mut gd: *mut grid = (*data).backing_mut().grid_mut();
-    crate::src::format::format_grid_line_cstring(
+    crate::format::format_grid_line_cstring(
         &*gd,
         (*gd).hsize.wrapping_add(y).wrapping_sub((*data).oy),
     )
@@ -8211,7 +8209,7 @@ unsafe fn window_copy_pipe_run(
     let mut cmd = cmd.filter(|cmd| !cmd.is_empty());
     if cmd.is_none() {
         command_value = OptionsScope::GlobalServer
-            .with_local(|oo| crate::src::options::options_get_string_optional(oo, c"copy-command"));
+            .with_local(|oo| crate::options::options_get_string_optional(oo, c"copy-command"));
         cmd = command_value.as_deref();
     }
     if let Some(cmd) = cmd.filter(|cmd| !cmd.is_empty()) {
@@ -9916,8 +9914,8 @@ mod regex_cell_tests {
             line.cellsize = 3;
             line.celldata.resize_with(3, grid_cell_entry::default);
             for (cell, &byte) in line.celldata.iter_mut().zip(bytes) {
-                cell.c2rust_unnamed = crate::src::shared::grid::grid_cell_entry_storage {
-                    data: crate::src::shared::grid::grid_cell_entry_data {
+                cell.c2rust_unnamed = crate::shared::grid::grid_cell_entry_storage {
+                    data: crate::shared::grid::grid_cell_entry_data {
                         attr: 0,
                         fg: 0,
                         bg: 0,
@@ -9941,8 +9939,8 @@ mod regex_cell_tests {
 #[cfg(test)]
 mod backing_owner_tests {
     use super::*;
-    use crate::src::grid::grid_set_cell;
-    use crate::src::options::options_table;
+    use crate::grid::grid_set_cell;
+    use crate::options::options_table;
 
     unsafe fn byte_at(s: &screen, x: u_int, y: u_int) -> u8 {
         let mut cell = grid_default_cell;

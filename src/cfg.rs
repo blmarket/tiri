@@ -1,36 +1,36 @@
-use crate::src::cmd::parse::{cmd_parse_from_buffer, cmd_parse_from_file};
-use crate::src::cmd::queue::{
+use crate::cmd::parse::{cmd_parse_from_buffer, cmd_parse_from_file};
+use crate::cmd::queue::{
     cmdq_add_format, cmdq_append, cmdq_copy_state, cmdq_get_callback_owned, cmdq_get_client,
     cmdq_get_command, cmdq_get_state_owned, cmdq_insert_after, cmdq_new_state, cmdq_print,
     cmdq_wait, CmdqWaiter,
 };
-use crate::src::compat::stdio::CFile;
-use crate::src::control::control_notify_write;
-use crate::src::format::bytes::format_message_with;
-use crate::src::format::bytes::nullable_cstr;
-use crate::src::format::bytes::write_cstr;
-use crate::src::log::{log_cstr, log_debug};
-use crate::src::prompt_history::prompt_load_history;
-use crate::src::server_client::Client as _;
-use crate::src::server_client::ClientRegistry;
-use crate::src::session::sessions;
+use crate::compat::stdio::CFile;
+use crate::control::control_notify_write;
+use crate::format::bytes::format_message_with;
+use crate::format::bytes::nullable_cstr;
+use crate::format::bytes::write_cstr;
+use crate::log::{log_cstr, log_debug};
+use crate::prompt_history::prompt_load_history;
+use crate::server_client::Client as _;
+use crate::server_client::ClientRegistry;
+use crate::session::sessions;
 use libc::fopen;
 
-use crate::src::session::Session as _;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::CLIENT_CONTROL;
-use crate::src::shared::client::{ClientRef, ClientWeak};
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd_find_state, cmdq_item};
-use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
-use crate::src::shared::command::{CMD_PARSE_PARSEONLY, CMD_PARSE_QUIET};
-use crate::src::shared::errno::ENOENT;
-use crate::src::shared::key::key_event;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::stdio::FILE;
-use crate::src::window::Window as _;
-use crate::src::window_copy::{window_copy_add, window_view_mode};
-use crate::src::window_pane::WindowPane as _;
+use crate::session::Session as _;
+use crate::shared::abi::*;
+use crate::shared::client::CLIENT_CONTROL;
+use crate::shared::client::{ClientRef, ClientWeak};
+use crate::shared::command::*;
+use crate::shared::command::{cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd_parse_input, cmd_parse_result};
+use crate::shared::command::{CMD_PARSE_PARSEONLY, CMD_PARSE_QUIET};
+use crate::shared::errno::ENOENT;
+use crate::shared::key::key_event;
+use crate::shared::session::SessionRef;
+use crate::shared::stdio::FILE;
+use crate::window::Window as _;
+use crate::window_copy::{window_copy_add, window_view_mode};
+use crate::window_pane::WindowPane as _;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 use std::sync::{Mutex, OnceLock};
@@ -332,11 +332,11 @@ pub unsafe fn cfg_show_causes(s_owner: Option<&SessionRef>) {
 #[cfg(test)]
 mod cfg_wait_tests {
     use super::*;
-    use crate::src::cmd::queue::cmdq_next;
-    use crate::src::options::options_table;
-    use crate::src::options::OptionsScope;
-    use crate::src::server_client::queue_test_clients as clients;
-    use crate::src::shared::client::CLIENT_DEAD;
+    use crate::cmd::queue::cmdq_next;
+    use crate::options::options_table;
+    use crate::options::OptionsScope;
+    use crate::server_client::queue_test_clients as clients;
+    use crate::shared::client::CLIENT_DEAD;
     use std::cell::Cell;
     use std::rc::{Rc, Weak};
 

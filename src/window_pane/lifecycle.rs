@@ -1,44 +1,44 @@
 //! Pane process exit and explicit teardown transactions.
 use super::window_pane_wait_finish;
-use crate::src::events::events_fire;
-use crate::src::events_payload::{
+use crate::events::events_fire;
+use crate::events_payload::{
     event_payload_create, event_payload_set_int, event_payload_set_pane, event_payload_set_string,
     event_payload_set_target, event_payload_set_window,
 };
-use crate::src::format::format_single_cstring;
-use crate::src::format_draw::format_draw;
-use crate::src::grid::grid_default_cell;
-use crate::src::log::log_debug;
-use crate::src::options::{options_get_number, options_get_string};
-use crate::src::reactor::BufferEvent;
-use crate::src::resize::recalculate_sizes;
-use crate::src::screen_write::{
+use crate::format::format_single_cstring;
+use crate::format_draw::format_draw;
+use crate::grid::grid_default_cell;
+use crate::log::log_debug;
+use crate::options::{options_get_number, options_get_string};
+use crate::reactor::BufferEvent;
+use crate::resize::recalculate_sizes;
+use crate::screen_write::{
     screen_write_cursormove, screen_write_linefeed, screen_write_scrollregion,
     screen_write_start_pane, screen_write_stop,
 };
-use crate::src::server_client::Client;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::window::{WindowRef, WindowWeak};
-use crate::src::tmux::sig2name;
-use crate::src::window::Window as _;
-use crate::src::window_pane::WindowPane as _;
+use crate::server_client::Client;
+use crate::shared::client::ClientRef;
+use crate::shared::window::{WindowRef, WindowWeak};
+use crate::tmux::sig2name;
+use crate::window::Window as _;
+use crate::window_pane::WindowPane as _;
 use std::ffi::CStr;
 use std::os::unix::process::ExitStatusExt;
 use std::process::ExitStatus;
 use std::time::SystemTime;
 
-use crate::src::shared::abi::*;
-use crate::src::shared::command::cmd_find_state;
-use crate::src::shared::grid::*;
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::{PANE_REDRAW, PANE_STATUSDRAWN};
-use crate::src::shared::screen::MODE_CURSOR;
-use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::style::*;
+use crate::shared::abi::*;
+use crate::shared::command::cmd_find_state;
+use crate::shared::grid::*;
+use crate::shared::pane::window_pane;
+use crate::shared::pane::{PANE_REDRAW, PANE_STATUSDRAWN};
+use crate::shared::screen::MODE_CURSOR;
+use crate::shared::screen_write::screen_write_ctx;
+use crate::shared::style::*;
 
-use crate::src::server_fn::{server_kill_window, server_redraw_window};
-use crate::src::shared::pane::PANE_EXITED;
-use crate::src::spawn::spawn_editor_finish;
+use crate::server_fn::{server_kill_window, server_redraw_window};
+use crate::shared::pane::PANE_EXITED;
+use crate::spawn::spawn_editor_finish;
 
 unsafe fn server_fire_pane_exit(
     name: &CStr,

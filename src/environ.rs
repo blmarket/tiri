@@ -1,12 +1,12 @@
-use crate::src::ffi::libc::environ;
-use crate::src::format::bytes::format_message_with;
-use crate::src::format::bytes::write_cstr;
-use crate::src::log::{log_cstr, log_debug};
-use crate::src::options::{options_get_string, OptionsScope};
-use crate::src::session::Session;
-use crate::src::shared::session::SessionRef;
-use crate::src::tmux::{getversion, global_environ, socket_path_cstr};
-use crate::src::xmalloc::xcalloc;
+use crate::ffi::libc::environ;
+use crate::format::bytes::format_message_with;
+use crate::format::bytes::write_cstr;
+use crate::log::{log_cstr, log_debug};
+use crate::options::{options_get_string, OptionsScope};
+use crate::session::Session;
+use crate::shared::session::SessionRef;
+use crate::tmux::{getversion, global_environ, socket_path_cstr};
+use crate::xmalloc::xcalloc;
 use libc::{fnmatch, free, getpid, setenv};
 use std::ffi::{CStr, CString};
 
@@ -74,9 +74,9 @@ pub fn environ_iter(env: &environ) -> impl Iterator<Item = &environ_entry> {
     env.entries()
 }
 
-use crate::src::shared::abi::*;
-pub use crate::src::shared::environment::ENVIRON_HIDDEN;
-pub use crate::src::shared::environment::{environ, environ_entry};
+use crate::shared::abi::*;
+pub use crate::shared::environment::ENVIRON_HIDDEN;
+pub use crate::shared::environment::{environ, environ_entry};
 
 pub fn environ_create() -> Box<environ> {
     Box::default()
@@ -121,7 +121,7 @@ pub fn environ_unset(env: &mut environ, name: &CStr) {
 
 pub unsafe fn environ_update(scope: &OptionsScope, src: &environ, dst: &mut environ) {
     let Some(patterns) = scope.with_local(|oo| {
-        crate::src::options::options_read_entry(oo, c"update-environment", |entry| {
+        crate::options::options_read_entry(oo, c"update-environment", |entry| {
             entry
                 .value
                 .array()

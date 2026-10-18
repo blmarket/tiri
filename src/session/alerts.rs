@@ -1,15 +1,15 @@
 //! Session alert delivery preserves association order and per-cycle deduplication.
 use super::*;
-use crate::src::events::events_fire_winlink;
-use crate::src::server_client::Client;
-use crate::src::server_client::ClientRegistry;
-use crate::src::server_fn::server_status_session;
-use crate::src::shared::alerts::{ALERT_ANY, ALERT_CURRENT, ALERT_OTHER};
-use crate::src::shared::window::WindowRef;
-use crate::src::shared::window::{
+use crate::events::events_fire_winlink;
+use crate::server_client::Client;
+use crate::server_client::ClientRegistry;
+use crate::server_fn::server_status_session;
+use crate::shared::alerts::{ALERT_ANY, ALERT_CURRENT, ALERT_OTHER};
+use crate::shared::window::WindowRef;
+use crate::shared::window::{
     WINDOW_ACTIVITY, WINDOW_BELL, WINDOW_SILENCE, WINLINK_ACTIVITY, WINLINK_BELL, WINLINK_SILENCE,
 };
-use crate::src::window::Window;
+use crate::window::Window;
 use std::ffi::CStr;
 
 const SESSION_ALERTED: ::core::ffi::c_int = 0x1;

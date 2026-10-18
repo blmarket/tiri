@@ -1,22 +1,22 @@
-use crate::src::arguments::{args, args_get, args_has, args_parse};
-use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print};
-use crate::src::format::bytes::nullable_cstr;
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::{
+use crate::arguments::{args, args_get, args_has, args_parse};
+use crate::cmd::cmd_get_args_mut;
+use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print};
+use crate::format::bytes::nullable_cstr;
+use crate::format::bytes::write_cstr;
+use crate::format::{
     format_add, format_create_with_client, format_defaults, format_expand_cstring, format_true,
 };
-use crate::src::server_client::Client as _;
-use crate::src::shared::abi::*;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::command::{CMD_AFTERHOOK, CMD_READONLY};
-use crate::src::shared::format::format_tree;
-use crate::src::shared::format::FORMAT_NONE;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::sort::sort_criteria;
-use crate::src::shared::sort::*;
-use crate::src::sort::{sort_get_clients, sort_order_from_string};
+use crate::server_client::Client as _;
+use crate::shared::abi::*;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{CMD_AFTERHOOK, CMD_READONLY};
+use crate::shared::format::format_tree;
+use crate::shared::format::FORMAT_NONE;
+use crate::shared::session::SessionRef;
+use crate::shared::sort::sort_criteria;
+use crate::shared::sort::*;
+use crate::sort::{sort_get_clients, sort_order_from_string};
 
 pub const LIST_CLIENTS_TEMPLATE: &std::ffi::CStr = c"#{client_name}: #{session_name} [#{client_width}x#{client_height} #{client_termname}] #{?#{!=:#{client_uid},#{uid}},[user #{?client_user,#{client_user},#{client_uid},}] ,}#{?client_flags,(,}#{client_flags}#{?client_flags,),}";
 pub static cmd_list_clients_entry: cmd_entry = {
@@ -52,7 +52,7 @@ unsafe fn cmd_list_clients_exec(
     let queue_client = cmdq_get_client(Some(&*item));
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let mut s: Option<SessionRef> = None;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
@@ -94,7 +94,7 @@ unsafe fn cmd_list_clients_exec(
         let c = &clients_sorted[i as usize];
         let attached = c.attached_session().upgrade();
         if !(attached.is_none()
-            || !s.is_none() && !crate::src::shared::rc::same(s.as_ref(), attached.as_ref()))
+            || !s.is_none() && !crate::shared::rc::same(s.as_ref(), attached.as_ref()))
         {
             let mut ft_owner = format_create_with_client(
                 queue_client.as_ref(),

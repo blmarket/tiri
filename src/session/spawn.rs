@@ -1,17 +1,15 @@
 //! Session-owned window creation/replacement transaction. Link index, current
 //! selection, MRU removal, and group synchronization remain inside Session.
-use crate::src::shared::window::{WindowRef, WindowWeak};
+use crate::shared::window::{WindowRef, WindowWeak};
 
 use super::*;
-use crate::src::events::events_fire_window;
-use crate::src::resize::default_window_size;
-use crate::src::shared::spawn::{
+use crate::events::events_fire_window;
+use crate::resize::default_window_size;
+use crate::shared::spawn::{
     spawn_context, SPAWN_DETACHED, SPAWN_KILL, SPAWN_NONOTIFY, SPAWN_RESPAWN,
 };
-use crate::src::spawn::{
-    initialize_spawned_window, prepare_respawn_window, set_spawn_cause, spawn_log,
-};
-use crate::src::window::Window;
+use crate::spawn::{initialize_spawned_window, prepare_respawn_window, set_spawn_cause, spawn_log};
+use crate::window::Window;
 
 pub(super) unsafe fn spawn_window(
     sc: &mut spawn_context,
@@ -70,7 +68,7 @@ pub(super) unsafe fn spawn_window(
             &mut ypixel,
             -1,
         );
-        let window = crate::src::window::window_create(sx, sy, xpixel, ypixel);
+        let window = crate::window::window_create(sx, sy, xpixel, ypixel);
         created_window = WindowRef::downgrade(&window);
         if !(*s).curw.is_alive() {
             (*s).curw = sc.winlink_handle();
@@ -83,7 +81,7 @@ pub(super) unsafe fn spawn_window(
 
     sc.flags |= SPAWN_NONOTIFY;
     let pane =
-        <Rc<std::cell::UnsafeCell<window_pane>> as crate::src::window_pane::WindowPane>::spawn_process(
+        <Rc<std::cell::UnsafeCell<window_pane>> as crate::window_pane::WindowPane>::spawn_process(
             sc, cause,
         );
     if pane.is_none() {

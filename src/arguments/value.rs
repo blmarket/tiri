@@ -1,6 +1,6 @@
 //! Argument values: owned or borrowed strings and command lists.
 
-use crate::src::shared::command::cmd_list;
+use crate::shared::command::cmd_list;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
 

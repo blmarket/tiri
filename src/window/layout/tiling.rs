@@ -6,8 +6,8 @@
 //! window does not end up as one row of narrow columns.
 
 use super::{fits, window_geometry, Layout, LayoutNode};
-use crate::src::shared::layout::layout_geometry;
-use crate::src::shared::pane::window_pane;
+use crate::shared::layout::layout_geometry;
+use crate::shared::pane::window_pane;
 use std::cell::UnsafeCell;
 use std::ffi::CStr;
 use std::rc::Rc;
@@ -86,7 +86,7 @@ fn second_half(g: layout_geometry, across: bool) -> layout_geometry {
 #[cfg(test)]
 mod tests {
     use super::super::LayoutKind;
-    use crate::src::shared::pane::window_pane;
+    use crate::shared::pane::window_pane;
     use std::cell::UnsafeCell;
     use std::rc::Rc;
 

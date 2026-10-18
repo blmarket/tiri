@@ -1,21 +1,21 @@
-use crate::src::arguments::{args, args_count, args_has, args_parse, args_string};
-use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_target_client};
-use crate::src::format::bytes::nullable_cstr;
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::format_single_cstring;
-use crate::src::server_acl::{
+use crate::arguments::{args, args_count, args_has, args_parse, args_string};
+use crate::cmd::cmd_get_args_mut;
+use crate::cmd::queue::{cmdq_error, cmdq_get_target_client};
+use crate::format::bytes::nullable_cstr;
+use crate::format::bytes::write_cstr;
+use crate::format::format_single_cstring;
+use crate::server_acl::{
     server_acl_allow, server_acl_allow_write, server_acl_deny, server_acl_deny_write,
     server_acl_display, server_acl_find,
 };
-use crate::src::shared::abi::id_t;
-use crate::src::shared::abi::*;
-use crate::src::shared::account::{group, passwd};
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::command::CMD_CLIENT_CANFAIL;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
-use crate::src::shared::server_acl::SERVER_ACL_IS_GROUP;
+use crate::shared::abi::id_t;
+use crate::shared::abi::*;
+use crate::shared::account::{group, passwd};
+use crate::shared::client::ClientRef;
+use crate::shared::command::CMD_CLIENT_CANFAIL;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
+use crate::shared::server_acl::SERVER_ACL_IS_GROUP;
 use libc::{getgrnam, getpwnam, getuid};
 use std::ffi::CStr;
 pub static cmd_server_access_entry: cmd_entry = {

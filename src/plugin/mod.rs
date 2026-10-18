@@ -2,7 +2,7 @@
 //! user options. A refresh publishes a complete snapshot; format lookup only
 //! reads that snapshot and does not call a plugin or inspect the filesystem.
 
-use crate::src::reactor::Timer;
+use crate::reactor::Timer;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::{CStr, CString, OsStr};
@@ -167,8 +167,8 @@ impl Registry {
             }
             if !declared.insert(variable.name)
                 || self.names.contains_key(variable.name)
-                || crate::src::format::format_is_builtin(variable.name)
-                || crate::src::options::options_table
+                || crate::format::format_is_builtin(variable.name)
+                || crate::options::options_table
                     .iter()
                     .any(|entry| entry.name == Some(variable.name))
             {
@@ -339,7 +339,7 @@ fn tick() {
         let mut values = PaneValues::new(variables);
         let result = plugin.refresh(&host, &mut values);
         if let Err(error) = &result {
-            crate::src::log::log_debug(format_args!("plugin {}: {error}", plugin.name()));
+            crate::log::log_debug(format_args!("plugin {}: {error}", plugin.name()));
         }
         let changed = REGISTRY.with(|registry| {
             let mut registry = registry.borrow_mut();

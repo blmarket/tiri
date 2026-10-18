@@ -1,5 +1,5 @@
-use crate::src::shared::errno::{EINVAL, ERANGE};
-use crate::src::shared::limits::__LONG_LONG_MAX__;
+use crate::shared::errno::{EINVAL, ERANGE};
+use crate::shared::limits::__LONG_LONG_MAX__;
 use libc::strtoll;
 use std::ffi::CStr;
 

@@ -1,8 +1,8 @@
-use crate::src::log::log_cstr;
+use crate::log::log_cstr;
 
 use super::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::format::FormatEntryState;
+use crate::shared::client::ClientRef;
+use crate::shared::format::FormatEntryState;
 use std::ffi::{CStr, CString};
 use std::time::SystemTime;
 
@@ -206,7 +206,7 @@ pub unsafe fn format_each(ft: *mut format_tree, mut cb: impl FnMut(&CStr, &CStr)
         };
         cb(entry.key, value.as_c_str());
     }
-    for (key, value) in crate::src::plugin::each(format_plugin_pane(ft)) {
+    for (key, value) in crate::plugin::each(format_plugin_pane(ft)) {
         if format_entry_tree_find(&(*ft).tree, &key).is_none() {
             cb(&key, &value);
         }
@@ -251,7 +251,7 @@ pub unsafe fn format_add_time(ft: *mut format_tree, key: &CStr, time: SystemTime
     format_entry_set(
         ft,
         key,
-        FormatEntryState::Time(crate::src::shared::time::unix_seconds(time)),
+        FormatEntryState::Time(crate::shared::time::unix_seconds(time)),
     );
 }
 

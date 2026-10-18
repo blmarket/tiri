@@ -1,54 +1,50 @@
-use crate::src::arguments::{
+use crate::arguments::{
     args, args_command_state, args_has, args_make_commands, args_make_commands_prepare,
     args_strtonum_result,
 };
-use crate::src::cmd::cmd_mouse_at;
-use crate::src::cmd::queue::{
-    cmdq_append, cmdq_error, cmdq_get_cmd, cmdq_get_command, cmdq_get_error,
-};
-use crate::src::format::bytes::format_bytes;
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::{format_create_defaults, format_single_cstring};
-use crate::src::format_draw::format_draw;
-use crate::src::grid::grid_default_cell;
-use crate::src::options::OptionsScope;
-use crate::src::options::{options_get_number, options_get_string};
-use crate::src::screen::{screen_init, screen_resize};
-use crate::src::screen_write::{
+use crate::cmd::cmd_mouse_at;
+use crate::cmd::queue::{cmdq_append, cmdq_error, cmdq_get_cmd, cmdq_get_command, cmdq_get_error};
+use crate::format::bytes::format_bytes;
+use crate::format::bytes::write_cstr;
+use crate::format::{format_create_defaults, format_single_cstring};
+use crate::format_draw::format_draw;
+use crate::grid::grid_default_cell;
+use crate::options::OptionsScope;
+use crate::options::{options_get_number, options_get_string};
+use crate::screen::{screen_init, screen_resize};
+use crate::screen_write::{
     screen_write_cell, screen_write_clearscreen, screen_write_cursormove, screen_write_fast_copy,
     screen_write_preview, screen_write_putc, screen_write_puts, screen_write_start,
     screen_write_stop,
 };
-use crate::src::server_fn::{
-    server_redraw_window, server_redraw_window_borders, server_status_window,
-};
-use crate::src::session::Session;
-use crate::src::window::Window as _;
+use crate::server_fn::{server_redraw_window, server_redraw_window_borders, server_status_window};
+use crate::session::Session;
+use crate::window::Window as _;
 
-use crate::src::shared::abi::*;
-use crate::src::shared::borders::{CELL_BORDERS, CELL_LR, CELL_UD};
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::command::{cmd, cmd_find_state, cmdq_item};
-use crate::src::shared::event::*;
-use crate::src::shared::format::format_tree;
-use crate::src::shared::grid::*;
-use crate::src::shared::key::*;
-use crate::src::shared::layout::*;
-use crate::src::shared::limits::UINT_MAX;
-use crate::src::shared::mouse::mouse_event;
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::screen::{screen, MODE_CURSOR};
-use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::session::{SessionRef, SessionWeak};
-use crate::src::shared::style::*;
-use crate::src::shared::window::WINDOW_MODE_NO_STACK;
-use crate::src::shared::window::{window_mode, window_mode_entry, winlink};
-use crate::src::shared::window::{WindowRef, WindowWeak};
-use crate::src::style::style_apply_with_options;
-use crate::src::text::utf8::utf8_set;
-use crate::src::window::winlink_find_by_window;
-use crate::src::window::WindowPane;
-use crate::src::window_clock::window_clock_table;
+use crate::shared::abi::*;
+use crate::shared::borders::{CELL_BORDERS, CELL_LR, CELL_UD};
+use crate::shared::client::ClientRef;
+use crate::shared::command::{cmd, cmd_find_state, cmdq_item};
+use crate::shared::event::*;
+use crate::shared::format::format_tree;
+use crate::shared::grid::*;
+use crate::shared::key::*;
+use crate::shared::layout::*;
+use crate::shared::limits::UINT_MAX;
+use crate::shared::mouse::mouse_event;
+use crate::shared::pane::window_pane;
+use crate::shared::screen::{screen, MODE_CURSOR};
+use crate::shared::screen_write::screen_write_ctx;
+use crate::shared::session::{SessionRef, SessionWeak};
+use crate::shared::style::*;
+use crate::shared::window::WINDOW_MODE_NO_STACK;
+use crate::shared::window::{window_mode, window_mode_entry, winlink};
+use crate::shared::window::{WindowRef, WindowWeak};
+use crate::style::style_apply_with_options;
+use crate::text::utf8::utf8_set;
+use crate::window::winlink_find_by_window;
+use crate::window::WindowPane;
+use crate::window_clock::window_clock_table;
 use std::cell::UnsafeCell;
 use std::ffi::CString;
 use std::rc::{Rc, Weak};
@@ -130,9 +126,9 @@ unsafe fn window_panes_get_source(
     wlp: *mut refbox::Weak<winlink>,
     session_owner: &mut Option<SessionRef>,
 ) -> Option<WindowWeak> {
-    let window_owner = crate::src::window::windows::resolve((*data).source_window)?;
+    let window_owner = crate::window::windows::resolve((*data).source_window)?;
     let mut link = refbox::Weak::new();
-    *session_owner = crate::src::session::sessions::find_by_id((*data).source_session);
+    *session_owner = crate::session::sessions::find_by_id((*data).source_session);
     if let Some(session) = session_owner.as_ref() {
         link = session.with_winlinks(|links| winlink_find_by_window(links, &window_owner));
     }
@@ -848,8 +844,8 @@ unsafe fn window_panes_init(
         let item = item_owner.borrow();
         self_0 = cmdq_get_cmd(&item);
         (
-            crate::src::cmd::queue::cmdq_get_source(&item).clone(),
-            crate::src::cmd::queue::cmdq_get_target(&item).clone(),
+            crate::cmd::queue::cmdq_get_source(&item).clone(),
+            crate::cmd::queue::cmdq_get_target(&item).clone(),
         )
     };
     if !self_0.is_alive() {

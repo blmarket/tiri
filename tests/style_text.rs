@@ -1,6 +1,6 @@
 //! Compatibility observations recorded before replacing the text APIs.
-use tiri::src::shared::colour::COLOUR_FLAG_256;
-use tiri::src::{shared::grid::*, style::attributes::*, style::colour::*};
+use tiri::shared::colour::COLOUR_FLAG_256;
+use tiri::{shared::grid::*, style::attributes::*, style::colour::*};
 
 #[test]
 fn safe_formatting_is_independent_across_threads() {

@@ -1,35 +1,33 @@
-use crate::src::arguments::{args_get, args_has, args_parse};
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_state_owned, cmdq_insert_hook, cmdq_print};
-use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
-use crate::src::events::events_fire;
-use crate::src::events_payload::{
+use crate::arguments::{args_get, args_has, args_parse};
+use crate::cmd::queue::{cmdq_error, cmdq_get_state_owned, cmdq_insert_hook, cmdq_print};
+use crate::cmd::{cmd_get_args_mut, cmd_get_entry};
+use crate::events::events_fire;
+use crate::events_payload::{
     event_payload_create, event_payload_set_int, event_payload_set_pane, event_payload_set_string,
     event_payload_set_target, event_payload_set_window,
 };
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::format_single_from_target_cstring;
-use crate::src::options::{options_get_string, options_set_string};
-use crate::src::server::{
+use crate::format::bytes::write_cstr;
+use crate::format::format_single_from_target_cstring;
+use crate::options::{options_get_string, options_set_string};
+use crate::server::{
     marked_pane, server_check_marked, server_clear_marked, server_is_marked, server_set_marked,
 };
-use crate::src::server_client::Client as _;
-use crate::src::server_client::ClientRegistry;
-use crate::src::server_fn::{
-    server_redraw_client, server_redraw_window_borders, server_status_window,
-};
-use crate::src::session::Session;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::layout::Direction;
-use crate::src::shared::window::WindowRef;
-use crate::src::tty::tty_window_bigger;
-use crate::src::window::Window as _;
+use crate::server_client::Client as _;
+use crate::server_client::ClientRegistry;
+use crate::server_fn::{server_redraw_client, server_redraw_window_borders, server_status_window};
+use crate::session::Session;
+use crate::shared::client::ClientRef;
+use crate::shared::layout::Direction;
+use crate::shared::window::WindowRef;
+use crate::tty::tty_window_bigger;
+use crate::window::Window as _;
 
-use crate::src::window_pane::WindowPane as _;
+use crate::window_pane::WindowPane as _;
 
-use crate::src::shared::abi::*;
-use crate::src::shared::client::{CLIENT_CONTROL, CLIENT_REDRAWBORDERS, CLIENT_REDRAWSTATUS};
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::abi::*;
+use crate::shared::client::{CLIENT_CONTROL, CLIENT_REDRAWBORDERS, CLIENT_REDRAWSTATUS};
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 pub static cmd_select_pane_entry: cmd_entry = {
     cmd_entry {
         name: c"select-pane",
@@ -148,7 +146,7 @@ unsafe fn cmd_select_pane_marked_pane(
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let arguments = cmd_get_args_mut(command.get_mut_unchecked()).expect("select pane arguments");
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let target = &mut target_state;
     let pane = target.pane_handle().expect("marked target pane");
     let link = target.winlink_handle();
@@ -210,7 +208,7 @@ unsafe fn cmd_select_pane_exec(
     let marked_command = command.clone();
     let arguments = cmd_get_args_mut(command.get_mut_unchecked()).expect("select pane arguments");
     let current = cmdq_get_state_owned(&*item);
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let target = &mut target_state;
     let link = target.winlink_handle();
     let session = target.session_handle();

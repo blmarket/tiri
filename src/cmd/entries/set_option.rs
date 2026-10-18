@@ -1,32 +1,32 @@
-use crate::src::arguments::{
+use crate::arguments::{
     args, args_count, args_get, args_has, args_parse, args_parse_type, args_string, ArgsParseError,
     ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_STRING,
 };
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_client};
-use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
-use crate::src::events::events_fire;
-use crate::src::events_payload::{
+use crate::cmd::queue::{cmdq_error, cmdq_get_client};
+use crate::cmd::{cmd_get_args_mut, cmd_get_entry};
+use crate::events::events_fire;
+use crate::events_payload::{
     event_payload_create, event_payload_set_client, event_payload_set_int, event_payload_set_pane,
     event_payload_set_session, event_payload_set_target, event_payload_set_window,
 };
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::format_single_from_target_cstring;
-use crate::src::hooks::{hooks_add_event, hooks_monitor_add, hooks_monitor_remove, hooks_run};
-use crate::src::monitor::{monitor_parse_owned, MONITOR_NOTIFY_TRUE, MONITOR_SESSION};
-use crate::src::options::{
+use crate::format::bytes::write_cstr;
+use crate::format::format_single_from_target_cstring;
+use crate::hooks::{hooks_add_event, hooks_monitor_add, hooks_monitor_remove, hooks_run};
+use crate::monitor::{monitor_parse_owned, MONITOR_NOTIFY_TRUE, MONITOR_SESSION};
+use crate::options::{
     options_match_owned, options_push_changes, options_scope_from_name, OptionMatchFailure,
     OptionsScope,
 };
-use crate::src::options::{OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_WINDOW};
-use crate::src::session::sessions;
-use crate::src::session::Session;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
-use crate::src::shared::window::WindowRef;
-use crate::src::window::{Window, WindowPane};
+use crate::options::{OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_WINDOW};
+use crate::session::sessions;
+use crate::session::Session;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
+use crate::shared::window::WindowRef;
+use crate::window::{Window, WindowPane};
 use std::ffi::{CStr, CString};
 pub static cmd_set_option_entry: cmd_entry = {
     cmd_entry {
@@ -122,7 +122,7 @@ unsafe fn cmd_set_hook_event_exec(
     let item = item_handle.borrow();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let mut c: Option<ClientRef> = None;
     if args_count(&*args) == 0 as u_int {
@@ -188,7 +188,7 @@ unsafe fn cmd_set_hook_monitor_exec(
     args: *mut args,
     window: i32,
 ) -> CmdOutcome {
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item_handle.borrow()).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item_handle.borrow()).clone();
     let target = &mut target_state;
     if args_count(&*args) > 1 {
         cmdq_error(item_handle, |out| out.write_all(b"too many arguments"));
@@ -313,7 +313,7 @@ unsafe fn cmd_set_option_exec(
     let item = item_handle.borrow();
     let args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let target = &mut target_state;
     let window = std::ptr::eq(
         cmd_get_entry(self_0.get_unchecked()),

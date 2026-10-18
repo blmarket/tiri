@@ -1,17 +1,17 @@
 use super::bytes::format_cstring;
 use super::*;
-use crate::src::format::bytes::cstr_suffix;
-use crate::src::format::bytes::nullable_cstr;
-use crate::src::format::bytes::write_cstr;
-use crate::src::options::options_is_array;
-use crate::src::options::options_parse_owned;
-use crate::src::options::options_to_cstring;
-use crate::src::options::OptionsScope;
-use crate::src::server_client::Client;
-use crate::src::session::Session;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::session::SessionRef;
-use crate::src::window::{Window, WindowPane, WindowRef};
+use crate::format::bytes::cstr_suffix;
+use crate::format::bytes::nullable_cstr;
+use crate::format::bytes::write_cstr;
+use crate::options::options_is_array;
+use crate::options::options_parse_owned;
+use crate::options::options_to_cstring;
+use crate::options::OptionsScope;
+use crate::server_client::Client;
+use crate::session::Session;
+use crate::shared::client::ClientRef;
+use crate::shared::session::SessionRef;
+use crate::window::{Window, WindowPane, WindowRef};
 use std::collections::btree_map;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
@@ -178,7 +178,7 @@ pub(super) unsafe fn format_find(
             ];
             found = scopes.iter().flatten().find_map(|scope| {
                 scope.with_local(|oo| {
-                    crate::src::options::options_read_entry(oo, &parsed.name, |entry| {
+                    crate::options::options_read_entry(oo, &parsed.name, |entry| {
                         options_to_cstring(entry, parsed.array_key.as_deref(), 1)
                     })
                 })
@@ -199,8 +199,7 @@ pub(super) unsafe fn format_find(
                         Some(FormatValue::Time(value)) => t = value,
                         None => {}
                     }
-                } else if let Some(value) =
-                    crate::src::plugin::find(format_plugin_pane(ft), &entry_key)
+                } else if let Some(value) = crate::plugin::find(format_plugin_pane(ft), &entry_key)
                 {
                     found = Some(value);
                 } else {
@@ -822,7 +821,7 @@ pub(super) unsafe fn format_session_name(
     fmt: *const ::core::ffi::c_char,
 ) -> CString {
     let name = format_expand1_cstring(es, fmt);
-    if crate::src::session::sessions::find(&name).is_some() {
+    if crate::session::sessions::find(&name).is_some() {
         c"1".to_owned()
     } else {
         c"0".to_owned()
@@ -951,7 +950,7 @@ pub(super) unsafe fn format_add_window_neighbour(
             (wl == s_owner.current_winlink()) as ::core::ffi::c_int
         })
     });
-    let entries = crate::src::options::options_iter(
+    let entries = crate::options::options_iter(
         &wl.get_unchecked()
             .window_handle()
             .expect("neighbour window")
@@ -1166,7 +1165,7 @@ pub(super) unsafe fn format_loop_panes(
 }
 
 unsafe fn format_option_loop_values(
-    mut occupied: btree_map::OccupiedEntry<'_, CString, Box<crate::src::options::options_entry>>,
+    mut occupied: btree_map::OccupiedEntry<'_, CString, Box<crate::options::options_entry>>,
     array_key: Option<&CStr>,
     count: u_int,
     index: u_int,
@@ -1198,8 +1197,8 @@ unsafe fn format_option_loop_values(
             .into_iter()
             .flat_map(|array| array.iter())
             .any(|item| {
-                crate::src::options::OptionsArrayKey::parse(&item.key)
-                    > crate::src::options::OptionsArrayKey::parse(key)
+                crate::options::OptionsArrayKey::parse(&item.key)
+                    > crate::options::OptionsArrayKey::parse(key)
             }),
     };
     let number = |value: u_int| CString::new(value.to_string()).expect("integer format");
@@ -1317,7 +1316,7 @@ pub(super) unsafe fn format_loop_options(
         return CString::default();
     };
     let names = scope.with_local(|options| {
-        crate::src::options::options_iter(options)
+        crate::options::options_iter(options)
             .map(|(name, _)| name.to_owned())
             .collect::<Vec<_>>()
     });
@@ -1327,7 +1326,7 @@ pub(super) unsafe fn format_loop_options(
         let mut keys = None;
         scope.with_local(|options| {
             if let btree_map::Entry::Occupied(mut entry) =
-                crate::src::options::options_local_entry(options, &name)
+                crate::options::options_local_entry(options, &name)
             {
                 let entry = &mut **entry.get_mut();
                 keys = Some(if options_is_array(entry) != 0 {
@@ -1348,10 +1347,10 @@ pub(super) unsafe fn format_loop_options(
         if keys.is_empty() {
             let mut values = None;
             scope.with_local(|options| {
-                let last_option = !crate::src::options::options_iter(options)
+                let last_option = !crate::options::options_iter(options)
                     .any(|(other, _)| other > name.as_c_str());
                 if let btree_map::Entry::Occupied(occupied) =
-                    crate::src::options::options_local_entry(options, &name)
+                    crate::options::options_local_entry(options, &name)
                 {
                     values = Some(format_option_loop_values(
                         occupied,
@@ -1370,10 +1369,10 @@ pub(super) unsafe fn format_loop_options(
             for key in keys {
                 let mut values = None;
                 scope.with_local(|options| {
-                    let last_option = !crate::src::options::options_iter(options)
+                    let last_option = !crate::options::options_iter(options)
                         .any(|(other, _)| other > name.as_c_str());
                     if let btree_map::Entry::Occupied(occupied) =
-                        crate::src::options::options_local_entry(options, &name)
+                        crate::options::options_local_entry(options, &name)
                     {
                         if occupied
                             .get()
@@ -2201,7 +2200,7 @@ pub(super) unsafe fn format_replace(
                 };
             }
             if modifiers & FORMAT_CLIENT_TERMFEAT as u64 != 0 {
-                let utf8 = client.flags() & crate::src::shared::client::CLIENT_UTF8 as u64 != 0;
+                let utf8 = client.flags() & crate::shared::client::CLIENT_UTF8 as u64 != 0;
                 value = if client.borrow_terminal().has_feature(copy, utf8) {
                     c"1".to_owned()
                 } else {
@@ -3012,7 +3011,7 @@ pub(crate) unsafe fn format_single_from_target_cstring(
         let item = item_handle.borrow();
         (
             cmdq_get_target_client(Some(&*item)),
-            crate::src::cmd::queue::cmdq_get_target(&item).clone(),
+            crate::cmd::queue::cmdq_get_target(&item).clone(),
         )
     };
     format_single_from_state_cstring(Some(item_handle), fmt, tc.as_ref(), &mut target)

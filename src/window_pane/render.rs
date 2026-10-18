@@ -1,21 +1,21 @@
 //! Pane rendering operations. Model access ends before terminal or format callbacks.
 use super::*;
-use crate::src::format::{format_create, format_defaults};
-use crate::src::grid::grid_default_cell;
-use crate::src::options::OptionsScope;
-use crate::src::prompt::prompt_draw;
-use crate::src::screen_redraw::{redraw_draw_ctx, REDRAW_SCROLLBAR_LEFT, REDRAW_STATUS_TOP};
-use crate::src::screen_write::{screen_write_init, screen_write_start, screen_write_stop};
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_PANE};
-use crate::src::shared::prompt::prompt_draw_data;
-use crate::src::shared::redraw::redraw_span;
-use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::style::style;
-use crate::src::shared::tty::tty_style_ctx;
-use crate::src::tty::tty_draw_line;
-use crate::src::tty::{tty_cell, tty_cursor};
-use crate::src::window_copy::window_copy_get_current_offset;
+use crate::format::{format_create, format_defaults};
+use crate::grid::grid_default_cell;
+use crate::options::OptionsScope;
+use crate::prompt::prompt_draw;
+use crate::screen_redraw::{redraw_draw_ctx, REDRAW_SCROLLBAR_LEFT, REDRAW_STATUS_TOP};
+use crate::screen_write::{screen_write_init, screen_write_start, screen_write_stop};
+use crate::shared::client::ClientRef;
+use crate::shared::format::{FORMAT_NOJOBS, FORMAT_PANE};
+use crate::shared::prompt::prompt_draw_data;
+use crate::shared::redraw::redraw_span;
+use crate::shared::screen_write::screen_write_ctx;
+use crate::shared::style::style;
+use crate::shared::tty::tty_style_ctx;
+use crate::tty::tty_draw_line;
+use crate::tty::{tty_cell, tty_cursor};
+use crate::window_copy::window_copy_get_current_offset;
 
 pub(super) unsafe fn refresh_scrollbar_style(pane: &Rc<UnsafeCell<window_pane>>) {
     let mut updated = (*pane.get()).scrollbar_style;
@@ -122,14 +122,14 @@ pub(super) unsafe fn default_colours(pane: &Rc<UnsafeCell<window_pane>>) -> (gri
                     state.cached_gc = cell;
                 }
             }
-            let parsed = crate::src::style::style_resolve_with_options(
+            let parsed = crate::style::style_resolve_with_options(
                 key,
                 Some(&mut context),
                 &OptionsScope::Pane(Rc::downgrade(pane)),
             )
             .unwrap_or_else(|| {
                 let mut style = style::default();
-                crate::src::style::style_set(&mut style, &grid_default_cell);
+                crate::style::style_set(&mut style, &grid_default_cell);
                 style
             });
             apply_style(&mut cell, parsed);
@@ -191,7 +191,7 @@ pub(super) unsafe fn draw_line(
     let context = tty_style_ctx {
         defaults,
         dim,
-        palette: crate::src::shared::tty::PaletteSource::Pane(Rc::downgrade(pane)),
+        palette: crate::shared::tty::PaletteSource::Pane(Rc::downgrade(pane)),
         hyperlinks: selected.hyperlinks.clone(),
     };
     let (px, py) = source;

@@ -1,8 +1,8 @@
 use std::cell::Cell;
 use std::rc::Rc;
-use tiri::src::events::{events_add_sink, events_fire, events_remove_sink};
-use tiri::src::events_payload::event_payload_create;
-use tiri::src::shared::events::{events_callback, EventSinkId};
+use tiri::events::{events_add_sink, events_fire, events_remove_sink};
+use tiri::events_payload::event_payload_create;
+use tiri::shared::events::{events_callback, EventSinkId};
 
 #[test]
 fn sink_ids_survive_self_removal_and_do_not_remove_replacements() {
@@ -50,8 +50,8 @@ fn sink_ids_survive_self_removal_and_do_not_remove_replacements() {
 
 #[test]
 fn firing_with_logging_enabled_records_the_name_and_every_payload_item() {
-    use tiri::src::events_payload::{event_payload_set_int, event_payload_set_string};
-    use tiri::src::log::{log_add_level, log_get_level, log_open, log_toggle};
+    use tiri::events_payload::{event_payload_set_int, event_payload_set_string};
+    use tiri::log::{log_add_level, log_get_level, log_open, log_toggle};
 
     let directory = std::env::temp_dir().join(format!(
         "tiri-events-log-{}-{}",

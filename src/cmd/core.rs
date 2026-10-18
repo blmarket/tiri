@@ -1,98 +1,98 @@
-use crate::src::arguments::{
+use crate::arguments::{
     args, args_copy, args_escape_cstring, args_parse, args_print_cstring, ArgsParseError,
     ArgumentValue, ARGS_STRING,
 };
-use crate::src::cmd::entries::attach_session::cmd_attach_session_entry;
-use crate::src::cmd::entries::bind_key::cmd_bind_key_entry;
-use crate::src::cmd::entries::break_pane::cmd_break_pane_entry;
-use crate::src::cmd::entries::capture_pane::{cmd_capture_pane_entry, cmd_clear_history_entry};
-use crate::src::cmd::entries::choose_tree::{
+use crate::cmd::entries::attach_session::cmd_attach_session_entry;
+use crate::cmd::entries::bind_key::cmd_bind_key_entry;
+use crate::cmd::entries::break_pane::cmd_break_pane_entry;
+use crate::cmd::entries::capture_pane::{cmd_capture_pane_entry, cmd_clear_history_entry};
+use crate::cmd::entries::choose_tree::{
     cmd_choose_buffer_entry, cmd_choose_client_entry, cmd_choose_tree_entry,
     cmd_customize_mode_entry, cmd_display_panes_entry, cmd_switch_mode_entry,
 };
-use crate::src::cmd::entries::command_prompt::cmd_command_prompt_entry;
-use crate::src::cmd::entries::confirm_before::cmd_confirm_before_entry;
-use crate::src::cmd::entries::copy_mode::{cmd_clock_mode_entry, cmd_copy_mode_entry};
-use crate::src::cmd::entries::detach_client::{cmd_detach_client_entry, cmd_suspend_client_entry};
-use crate::src::cmd::entries::display_menu::{cmd_display_menu_entry, cmd_display_popup_entry};
-use crate::src::cmd::entries::display_message::cmd_display_message_entry;
-use crate::src::cmd::entries::find_window::cmd_find_window_entry;
-use crate::src::cmd::entries::if_shell::cmd_if_shell_entry;
-use crate::src::cmd::entries::join_pane::cmd_join_pane_entry;
-use crate::src::cmd::entries::kill_pane::cmd_kill_pane_entry;
-use crate::src::cmd::entries::kill_server::{cmd_kill_server_entry, cmd_start_server_entry};
-use crate::src::cmd::entries::kill_session::cmd_kill_session_entry;
-use crate::src::cmd::entries::kill_window::{cmd_kill_window_entry, cmd_unlink_window_entry};
-use crate::src::cmd::entries::list_buffers::cmd_list_buffers_entry;
-use crate::src::cmd::entries::list_clients::cmd_list_clients_entry;
-use crate::src::cmd::entries::list_commands::cmd_list_commands_entry;
-use crate::src::cmd::entries::list_keys::cmd_list_keys_entry;
-use crate::src::cmd::entries::list_panes::cmd_list_panes_entry;
-use crate::src::cmd::entries::list_sessions::cmd_list_sessions_entry;
-use crate::src::cmd::entries::list_windows::cmd_list_windows_entry;
-use crate::src::cmd::entries::load_buffer::cmd_load_buffer_entry;
-use crate::src::cmd::entries::lock_server::{
+use crate::cmd::entries::command_prompt::cmd_command_prompt_entry;
+use crate::cmd::entries::confirm_before::cmd_confirm_before_entry;
+use crate::cmd::entries::copy_mode::{cmd_clock_mode_entry, cmd_copy_mode_entry};
+use crate::cmd::entries::detach_client::{cmd_detach_client_entry, cmd_suspend_client_entry};
+use crate::cmd::entries::display_menu::{cmd_display_menu_entry, cmd_display_popup_entry};
+use crate::cmd::entries::display_message::cmd_display_message_entry;
+use crate::cmd::entries::find_window::cmd_find_window_entry;
+use crate::cmd::entries::if_shell::cmd_if_shell_entry;
+use crate::cmd::entries::join_pane::cmd_join_pane_entry;
+use crate::cmd::entries::kill_pane::cmd_kill_pane_entry;
+use crate::cmd::entries::kill_server::{cmd_kill_server_entry, cmd_start_server_entry};
+use crate::cmd::entries::kill_session::cmd_kill_session_entry;
+use crate::cmd::entries::kill_window::{cmd_kill_window_entry, cmd_unlink_window_entry};
+use crate::cmd::entries::list_buffers::cmd_list_buffers_entry;
+use crate::cmd::entries::list_clients::cmd_list_clients_entry;
+use crate::cmd::entries::list_commands::cmd_list_commands_entry;
+use crate::cmd::entries::list_keys::cmd_list_keys_entry;
+use crate::cmd::entries::list_panes::cmd_list_panes_entry;
+use crate::cmd::entries::list_sessions::cmd_list_sessions_entry;
+use crate::cmd::entries::list_windows::cmd_list_windows_entry;
+use crate::cmd::entries::load_buffer::cmd_load_buffer_entry;
+use crate::cmd::entries::lock_server::{
     cmd_lock_client_entry, cmd_lock_server_entry, cmd_lock_session_entry,
 };
-use crate::src::cmd::entries::move_window::{cmd_link_window_entry, cmd_move_window_entry};
-use crate::src::cmd::entries::new_session::{cmd_has_session_entry, cmd_new_session_entry};
-use crate::src::cmd::entries::new_window::cmd_new_window_entry;
-use crate::src::cmd::entries::paste_buffer::cmd_paste_buffer_entry;
-use crate::src::cmd::entries::pipe_pane::cmd_pipe_pane_entry;
-use crate::src::cmd::entries::refresh_client::cmd_refresh_client_entry;
-use crate::src::cmd::entries::rename_session::cmd_rename_session_entry;
-use crate::src::cmd::entries::rename_window::cmd_rename_window_entry;
-use crate::src::cmd::entries::resize_pane::cmd_resize_pane_entry;
-use crate::src::cmd::entries::resize_window::cmd_resize_window_entry;
-use crate::src::cmd::entries::respawn_pane::cmd_respawn_pane_entry;
-use crate::src::cmd::entries::respawn_window::cmd_respawn_window_entry;
-use crate::src::cmd::entries::rotate_window::cmd_rotate_window_entry;
-use crate::src::cmd::entries::run_shell::cmd_run_shell_entry;
-use crate::src::cmd::entries::save_buffer::{cmd_save_buffer_entry, cmd_show_buffer_entry};
-use crate::src::cmd::entries::select_layout::cmd_select_layout_entry;
-use crate::src::cmd::entries::select_pane::{cmd_last_pane_entry, cmd_select_pane_entry};
-use crate::src::cmd::entries::select_window::{
+use crate::cmd::entries::move_window::{cmd_link_window_entry, cmd_move_window_entry};
+use crate::cmd::entries::new_session::{cmd_has_session_entry, cmd_new_session_entry};
+use crate::cmd::entries::new_window::cmd_new_window_entry;
+use crate::cmd::entries::paste_buffer::cmd_paste_buffer_entry;
+use crate::cmd::entries::pipe_pane::cmd_pipe_pane_entry;
+use crate::cmd::entries::refresh_client::cmd_refresh_client_entry;
+use crate::cmd::entries::rename_session::cmd_rename_session_entry;
+use crate::cmd::entries::rename_window::cmd_rename_window_entry;
+use crate::cmd::entries::resize_pane::cmd_resize_pane_entry;
+use crate::cmd::entries::resize_window::cmd_resize_window_entry;
+use crate::cmd::entries::respawn_pane::cmd_respawn_pane_entry;
+use crate::cmd::entries::respawn_window::cmd_respawn_window_entry;
+use crate::cmd::entries::rotate_window::cmd_rotate_window_entry;
+use crate::cmd::entries::run_shell::cmd_run_shell_entry;
+use crate::cmd::entries::save_buffer::{cmd_save_buffer_entry, cmd_show_buffer_entry};
+use crate::cmd::entries::select_layout::cmd_select_layout_entry;
+use crate::cmd::entries::select_pane::{cmd_last_pane_entry, cmd_select_pane_entry};
+use crate::cmd::entries::select_window::{
     cmd_last_window_entry, cmd_next_window_entry, cmd_previous_window_entry,
     cmd_select_window_entry,
 };
-use crate::src::cmd::entries::send_keys::{cmd_send_keys_entry, cmd_send_prefix_entry};
-use crate::src::cmd::entries::server_access::cmd_server_access_entry;
-use crate::src::cmd::entries::set_buffer::{cmd_delete_buffer_entry, cmd_set_buffer_entry};
-use crate::src::cmd::entries::set_environment::cmd_set_environment_entry;
-use crate::src::cmd::entries::set_option::{
+use crate::cmd::entries::send_keys::{cmd_send_keys_entry, cmd_send_prefix_entry};
+use crate::cmd::entries::server_access::cmd_server_access_entry;
+use crate::cmd::entries::set_buffer::{cmd_delete_buffer_entry, cmd_set_buffer_entry};
+use crate::cmd::entries::set_environment::cmd_set_environment_entry;
+use crate::cmd::entries::set_option::{
     cmd_set_hook_entry, cmd_set_option_entry, cmd_set_window_option_entry,
 };
-use crate::src::cmd::entries::show_environment::cmd_show_environment_entry;
-use crate::src::cmd::entries::show_messages::cmd_show_messages_entry;
-use crate::src::cmd::entries::show_options::{
+use crate::cmd::entries::show_environment::cmd_show_environment_entry;
+use crate::cmd::entries::show_messages::cmd_show_messages_entry;
+use crate::cmd::entries::show_options::{
     cmd_show_hooks_entry, cmd_show_options_entry, cmd_show_window_options_entry,
 };
-use crate::src::cmd::entries::show_prompt_history::{
+use crate::cmd::entries::show_prompt_history::{
     cmd_clear_prompt_history_entry, cmd_show_prompt_history_entry,
 };
-use crate::src::cmd::entries::source_file::cmd_source_file_entry;
-use crate::src::cmd::entries::split_window::{cmd_new_pane_entry, cmd_split_window_entry};
-use crate::src::cmd::entries::swap_pane::cmd_swap_pane_entry;
-use crate::src::cmd::entries::swap_window::cmd_swap_window_entry;
-use crate::src::cmd::entries::switch_client::cmd_switch_client_entry;
-use crate::src::cmd::entries::unbind_key::cmd_unbind_key_entry;
-use crate::src::cmd::entries::wait_for::cmd_wait_for_entry;
-use crate::src::ffi::libc::strlcpy;
-use crate::src::log::{fatalx, log_bytes, log_debug};
-use crate::src::options::OptionsScope;
-use crate::src::window::Window as _;
+use crate::cmd::entries::source_file::cmd_source_file_entry;
+use crate::cmd::entries::split_window::{cmd_new_pane_entry, cmd_split_window_entry};
+use crate::cmd::entries::swap_pane::cmd_swap_pane_entry;
+use crate::cmd::entries::swap_window::cmd_swap_window_entry;
+use crate::cmd::entries::switch_client::cmd_switch_client_entry;
+use crate::cmd::entries::unbind_key::cmd_unbind_key_entry;
+use crate::cmd::entries::wait_for::cmd_wait_for_entry;
+use crate::ffi::libc::strlcpy;
+use crate::log::{fatalx, log_bytes, log_debug};
+use crate::options::OptionsScope;
+use crate::window::Window as _;
 
-use crate::src::session::Session;
-use crate::src::shared::abi::*;
-pub use crate::src::shared::command::{cmd, cmd_entry, cmd_list};
-pub use crate::src::shared::command::{CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS};
-use crate::src::shared::command::{CMD_READONLY, CMD_STARTSERVER};
-pub use crate::src::shared::mouse::mouse_event;
-pub use crate::src::shared::pane::window_pane;
-use crate::src::shared::session::SessionRef;
-pub use crate::src::shared::window::winlink;
-use crate::src::window::winlink_find_by_window;
-use crate::src::window_pane::WindowPane as _;
+use crate::session::Session;
+use crate::shared::abi::*;
+pub use crate::shared::command::{cmd, cmd_entry, cmd_list};
+pub use crate::shared::command::{CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS};
+use crate::shared::command::{CMD_READONLY, CMD_STARTSERVER};
+pub use crate::shared::mouse::mouse_event;
+pub use crate::shared::pane::window_pane;
+use crate::shared::session::SessionRef;
+pub use crate::shared::window::winlink;
+use crate::window::winlink_find_by_window;
+use crate::window_pane::WindowPane as _;
 use std::ffi::{CStr, CString};
 
 pub const DQ: C2RustUnnamed_38 = 2;
@@ -575,14 +575,14 @@ pub unsafe fn cmd_mouse_window(
     if (*m).s == -1 {
         return refbox::Weak::new();
     }
-    let Some(session_owner) = crate::src::session::sessions::find_by_id((*m).s as u_int) else {
+    let Some(session_owner) = crate::session::sessions::find_by_id((*m).s as u_int) else {
         return refbox::Weak::new();
     };
     s = Some(session_owner.clone());
     if (*m).w == -(1 as ::core::ffi::c_int) {
         wl = s.as_ref().expect("live session").current_winlink();
     } else {
-        let Some(window) = crate::src::window::windows::resolve((*m).w as u_int) else {
+        let Some(window) = crate::window::windows::resolve((*m).w as u_int) else {
             return refbox::Weak::new();
         };
         wl = s

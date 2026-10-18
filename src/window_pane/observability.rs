@@ -1,15 +1,11 @@
 //! Read-only plugin access stays inside the pane owner. Observations retain
 //! allocation identity weakly and reject logical destruction and ID reuse.
 use super::{window_pane, window_pane_find_by_id, window_pane_upgrade};
-use crate::src::grid::grid_string_cells_bytes;
-use crate::src::plugin::PaneActivity;
-use crate::src::shared::display::{
-    SCREEN_CURSOR_BAR, SCREEN_CURSOR_BLOCK, SCREEN_CURSOR_UNDERLINE,
-};
-use crate::src::shared::grid::{grid, GRID_STRING_EMPTY_CELLS, GRID_STRING_TRIM_SPACES};
-use crate::src::shared::screen::{
-    screen, MODE_CURSOR, MODE_CURSOR_BLINKING, MODE_CURSOR_BLINKING_SET,
-};
+use crate::grid::grid_string_cells_bytes;
+use crate::plugin::PaneActivity;
+use crate::shared::display::{SCREEN_CURSOR_BAR, SCREEN_CURSOR_BLOCK, SCREEN_CURSOR_UNDERLINE};
+use crate::shared::grid::{grid, GRID_STRING_EMPTY_CELLS, GRID_STRING_TRIM_SPACES};
+use crate::shared::screen::{screen, MODE_CURSOR, MODE_CURSOR_BLINKING, MODE_CURSOR_BLINKING_SET};
 use std::cell::UnsafeCell;
 use std::ffi::CString;
 use std::io;

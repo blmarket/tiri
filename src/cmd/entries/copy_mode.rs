@@ -1,19 +1,19 @@
-use crate::src::arguments::{args, args_has, args_parse};
-use crate::src::cmd::queue::{cmdq_get_client, cmdq_get_event};
-use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry, cmd_mouse_pane};
-use crate::src::server_client::Client as _;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::command::{CMD_AFTERHOOK, CMD_READONLY, CMD_TARGET_PANE_USAGE};
-use crate::src::shared::key::key_event;
-use crate::src::shared::key::*;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::window::winlink;
-use crate::src::window::WindowPane;
-use crate::src::window_clock::window_clock_mode;
-use crate::src::window_copy::{
+use crate::arguments::{args, args_has, args_parse};
+use crate::cmd::queue::{cmdq_get_client, cmdq_get_event};
+use crate::cmd::{cmd_get_args_mut, cmd_get_entry, cmd_mouse_pane};
+use crate::server_client::Client as _;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{CMD_AFTERHOOK, CMD_READONLY, CMD_TARGET_PANE_USAGE};
+use crate::shared::key::key_event;
+use crate::shared::key::*;
+use crate::shared::session::SessionRef;
+use crate::shared::window::winlink;
+use crate::window::WindowPane;
+use crate::window_clock::window_clock_mode;
+use crate::window_copy::{
     window_copy_mode, window_copy_pagedown, window_copy_pageup, window_copy_scroll,
     window_copy_set_line_numbers, window_copy_start_drag,
 };
@@ -76,9 +76,9 @@ unsafe fn cmd_copy_mode_exec(
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
-    let mut source_state = crate::src::cmd::queue::cmdq_get_source(&item).clone();
+    let mut source_state = crate::cmd::queue::cmdq_get_source(&item).clone();
     let mut source: *mut cmd_find_state = &mut source_state;
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
@@ -102,7 +102,7 @@ unsafe fn cmd_copy_mode_exec(
         };
         pane_owner = mouse_pane;
         if c.is_none()
-            || !crate::src::shared::rc::same(
+            || !crate::shared::rc::same(
                 c.as_ref()
                     .expect("live client")
                     .attached_session()

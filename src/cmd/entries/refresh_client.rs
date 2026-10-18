@@ -1,36 +1,36 @@
-use crate::src::arguments::{
+use crate::arguments::{
     args, args_count, args_flag_values, args_get, args_has, args_parse, args_string,
 };
-use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_target_client};
-use crate::src::compat::strtonum::strtonum;
-use crate::src::control::{
+use crate::cmd::cmd_get_args_mut;
+use crate::cmd::queue::{cmdq_error, cmdq_get_target_client};
+use crate::compat::strtonum::strtonum;
+use crate::control::{
     control_add_sub, control_clear_window_size, control_continue_pane, control_pause_pane,
     control_remove_sub, control_set_pane_off, control_set_pane_on, control_set_window_size,
 };
-use crate::src::format::bytes::cstr_suffix;
-use crate::src::format::bytes::write_cstr;
-use crate::src::log::{log_cstr, log_debug};
-use crate::src::monitor::monitor_parse_owned;
-use crate::src::resize::recalculate_sizes_now;
+use crate::format::bytes::cstr_suffix;
+use crate::format::bytes::write_cstr;
+use crate::log::{log_cstr, log_debug};
+use crate::monitor::monitor_parse_owned;
+use crate::resize::recalculate_sizes_now;
 use libc::sscanf;
 
-use crate::src::server_client::Client as _;
-use crate::src::server_fn::{server_redraw_client, server_status_client};
-use crate::src::session::Session;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::client::{CLIENT_CONTROL, CLIENT_STATUSFORCE, CLIENT_WINDOWSIZECHANGED};
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
-use crate::src::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_TFLAG};
-use crate::src::shared::layout::Direction;
-use crate::src::shared::limits::INT_MAX;
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::window::{WINDOW_MAXIMUM, WINDOW_MINIMUM};
+use crate::server_client::Client as _;
+use crate::server_fn::{server_redraw_client, server_status_client};
+use crate::session::Session;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::client::{CLIENT_CONTROL, CLIENT_STATUSFORCE, CLIENT_WINDOWSIZECHANGED};
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
+use crate::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_TFLAG};
+use crate::shared::layout::Direction;
+use crate::shared::limits::INT_MAX;
+use crate::shared::pane::window_pane;
+use crate::shared::window::{WINDOW_MAXIMUM, WINDOW_MINIMUM};
 
-use crate::src::tty::{tty_clipboard_query, tty_parse_colour_report, tty_update_client_offset};
-use crate::src::window_pane::WindowPane as _;
+use crate::tty::{tty_clipboard_query, tty_parse_colour_report, tty_update_client_offset};
+use crate::window_pane::WindowPane as _;
 use std::ffi::{CStr, CString};
 pub static cmd_refresh_client_entry: cmd_entry = {
     cmd_entry {

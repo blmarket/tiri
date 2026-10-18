@@ -1,18 +1,18 @@
-use crate::src::arguments::{args, args_has, args_parse};
-use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::{cmdq_get_target_client, cmdq_print};
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::{
+use crate::arguments::{args, args_has, args_parse};
+use crate::cmd::cmd_get_args_mut;
+use crate::cmd::queue::{cmdq_get_target_client, cmdq_print};
+use crate::format::bytes::write_cstr;
+use crate::format::{
     format_add, format_add_time, format_create_from_target, format_expand_cstring,
 };
-use crate::src::job::job_print_summary;
-use crate::src::server::message_log;
-use crate::src::shared::abi::*;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
-use crate::src::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_TFLAG};
-use crate::src::shared::format::format_tree;
-use crate::src::tty::tty_term_descriptions;
+use crate::job::job_print_summary;
+use crate::server::message_log;
+use crate::shared::abi::*;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
+use crate::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_TFLAG};
+use crate::shared::format::format_tree;
+use crate::tty::tty_term_descriptions;
 
 pub const SHOW_MESSAGES_TEMPLATE: &std::ffi::CStr = c"#{t/p:message_time}: #{message_text}";
 pub static cmd_show_messages_entry: cmd_entry = {

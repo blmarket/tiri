@@ -6,7 +6,7 @@ use super::grid::grid_cell;
 use super::prompt::{prompt_key_result, prompt_result};
 use super::screen::screen;
 use super::style::style_line_entry;
-use crate::src::shared::client::ClientRef;
+use crate::shared::client::ClientRef;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 use std::time::SystemTime;

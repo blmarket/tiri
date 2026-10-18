@@ -1,10 +1,10 @@
 //! Authoritative monitor declarations, shared by the C translation units.
 
-use crate::src::shared::abi::{time_t, u_int};
-use crate::src::shared::client::ClientWeak;
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::session::SessionWeak;
-use crate::src::shared::window::winlink;
+use crate::shared::abi::{time_t, u_int};
+use crate::shared::client::ClientWeak;
+use crate::shared::pane::window_pane;
+use crate::shared::session::SessionWeak;
+use crate::shared::window::winlink;
 use std::cell::UnsafeCell;
 use std::rc::Weak;
 pub type monitor_type = ::core::ffi::c_uint;

@@ -10,8 +10,8 @@ mod presets;
 mod scrolling;
 mod tiling;
 
-use crate::src::shared::layout::{layout_geometry, Direction};
-use crate::src::shared::pane::{window_pane, PANE_MINIMUM};
+use crate::shared::layout::{layout_geometry, Direction};
+use crate::shared::pane::{window_pane, PANE_MINIMUM};
 use std::any::Any;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};

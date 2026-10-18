@@ -1,14 +1,14 @@
-use crate::src::compat::strtonum::strtonum;
-use crate::src::ffi::libm::round;
-use crate::src::format::bytes::cstr_suffix;
-use crate::src::log::log_cstr;
-use crate::src::options::OptionsScope;
-use crate::src::server_client::Client;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::colour::*;
-use crate::src::shared::colour::{COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME};
-use crate::src::tty::{TERM_256COLOURS, TERM_RGBCOLOURS};
+use crate::compat::strtonum::strtonum;
+use crate::ffi::libm::round;
+use crate::format::bytes::cstr_suffix;
+use crate::log::log_cstr;
+use crate::options::OptionsScope;
+use crate::server_client::Client;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::colour::*;
+use crate::shared::colour::{COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME};
+use crate::tty::{TERM_256COLOURS, TERM_RGBCOLOURS};
 use libc::{sscanf, strcasecmp, strcmp, strlen, strncasecmp};
 
 #[derive(Copy, Clone)]
@@ -3649,7 +3649,7 @@ pub unsafe fn colour_palette_from_option(p: Option<&mut colour_palette>, scope: 
     };
     let values = scope
         .with_local(|oo| {
-            crate::src::options::options_read_entry(oo, c"pane-colours", |entry| {
+            crate::options::options_read_entry(oo, c"pane-colours", |entry| {
                 entry
                     .value
                     .array()
@@ -3691,7 +3691,7 @@ pub fn colour_parse_x11_cstr(input: &std::ffi::CStr) -> Option<i32> {
 pub fn colour_parse_x11_logged(input: &std::ffi::CStr) -> Option<i32> {
     let value = colour_parse_x11_cstr(input);
     let formatted = colour_format(value.unwrap_or(-1));
-    crate::src::log::log_debug(format_args!(
+    crate::log::log_debug(format_args!(
         "{}: {} = {}",
         "colour_parseX11",
         log_cstr(input),

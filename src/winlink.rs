@@ -1,17 +1,17 @@
 //! Session-owned links and their Window associations.
-use crate::src::log::fatalx;
-use crate::src::session::Session;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::window::WindowRef;
-use crate::src::window::*;
+use crate::log::fatalx;
+use crate::session::Session;
+use crate::shared::session::SessionRef;
+use crate::shared::window::WindowRef;
+use crate::window::*;
 
-use crate::src::server_fn::server_status_session;
+use crate::server_fn::server_status_session;
 
-use crate::src::shared::abi::*;
-use crate::src::shared::limits::INT_MAX;
-use crate::src::shared::tree::{RB_INF, RB_NEGINF};
-use crate::src::shared::window::WINLINK_ALERTFLAGS;
-pub use crate::src::shared::window::{winlink, winlink_stack, winlinks};
+use crate::shared::abi::*;
+use crate::shared::limits::INT_MAX;
+use crate::shared::tree::{RB_INF, RB_NEGINF};
+use crate::shared::window::WINLINK_ALERTFLAGS;
+pub use crate::shared::window::{winlink, winlink_stack, winlinks};
 
 pub fn winlinks_minmax(head: &winlinks, direction: ::core::ffi::c_int) -> refbox::Weak<winlink> {
     let owner = head;

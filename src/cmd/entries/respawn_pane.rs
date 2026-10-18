@@ -1,20 +1,18 @@
-use crate::src::arguments::{
-    args, args_flag_values, args_get, args_has, args_parse, args_to_vector,
-};
-use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::cmdq_error;
-use crate::src::environ::{environ_create, environ_put};
-use crate::src::format::bytes::write_cstr;
-use crate::src::server_fn::{server_redraw_window_borders, server_status_window};
-use crate::src::shared::abi::*;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::spawn::spawn_context;
-use crate::src::shared::spawn::{SPAWN_EMPTY, SPAWN_KILL, SPAWN_RESPAWN};
-use crate::src::shared::window::winlink;
-use crate::src::window_pane::WindowPane;
+use crate::arguments::{args, args_flag_values, args_get, args_has, args_parse, args_to_vector};
+use crate::cmd::cmd_get_args_mut;
+use crate::cmd::queue::cmdq_error;
+use crate::environ::{environ_create, environ_put};
+use crate::format::bytes::write_cstr;
+use crate::server_fn::{server_redraw_window_borders, server_status_window};
+use crate::shared::abi::*;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::pane::window_pane;
+use crate::shared::session::SessionRef;
+use crate::shared::spawn::spawn_context;
+use crate::shared::spawn::{SPAWN_EMPTY, SPAWN_KILL, SPAWN_RESPAWN};
+use crate::shared::window::winlink;
+use crate::window_pane::WindowPane;
 pub static cmd_respawn_pane_entry: cmd_entry = {
     cmd_entry {
         name: c"respawn-pane",
@@ -47,7 +45,7 @@ unsafe fn cmd_respawn_pane_exec(
     let item = item_handle.borrow();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let mut sc: spawn_context = spawn_context {
         item: std::rc::Weak::new(),

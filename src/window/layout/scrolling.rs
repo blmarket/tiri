@@ -3,11 +3,11 @@
 //! its metadata says, and the full height.
 
 use super::{Layout, LayoutAction, LayoutNode};
-use crate::src::shared::layout::layout_geometry;
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::PANE_MINIMUM;
-use crate::src::shared::window::WINDOW_MAXIMUM;
-use crate::src::window_pane::WindowPane as _;
+use crate::shared::layout::layout_geometry;
+use crate::shared::pane::window_pane;
+use crate::shared::pane::PANE_MINIMUM;
+use crate::shared::window::WINDOW_MAXIMUM;
+use crate::window_pane::WindowPane as _;
 use std::any::Any;
 use std::cell::UnsafeCell;
 use std::ffi::CStr;

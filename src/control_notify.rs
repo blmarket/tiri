@@ -1,19 +1,19 @@
-use crate::src::events::events_add_sink;
-use crate::src::events_payload::{
+use crate::events::events_add_sink;
+use crate::events_payload::{
     event_payload_get_client, event_payload_get_pane, event_payload_get_session,
     event_payload_get_string, event_payload_get_window, event_payload_print_owned,
 };
-use crate::src::format::bytes::nullable_cstr;
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::{format_create, format_defaults, format_expand_cstring};
-use crate::src::server_client::Client;
-use crate::src::server_client::ClientRegistry;
-use crate::src::session::Session;
-use crate::src::shared::abi::u_int;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::events::{event_payload, events_callback};
-use crate::src::shared::format::FORMAT_NONE;
-use crate::src::window::{winlink_find_by_window_id, Window, WindowPane};
+use crate::format::bytes::nullable_cstr;
+use crate::format::bytes::write_cstr;
+use crate::format::{format_create, format_defaults, format_expand_cstring};
+use crate::server_client::Client;
+use crate::server_client::ClientRegistry;
+use crate::session::Session;
+use crate::shared::abi::u_int;
+use crate::shared::client::ClientRef;
+use crate::shared::events::{event_payload, events_callback};
+use crate::shared::format::FORMAT_NONE;
+use crate::window::{winlink_find_by_window_id, Window, WindowPane};
 use std::{ffi::CStr, rc::Rc};
 
 #[derive(Copy, Clone)]

@@ -4,7 +4,7 @@ use super::abi::u_int;
 use super::colour::colour_palette;
 use super::grid::grid_cell;
 use super::pane::window_pane;
-use crate::src::shared::client::ClientRef;
+use crate::shared::client::ClientRef;
 pub type tty_code_code = ::core::ffi::c_uint;
 pub const TTYC_XT: tty_code_code = 235;
 pub const TTYC_VPA: tty_code_code = 234;
@@ -305,7 +305,7 @@ pub struct tty_style_ctx {
     pub defaults: grid_cell,
     pub palette: PaletteSource,
     pub dim: u_int,
-    pub hyperlinks: Option<crate::src::hyperlinks::HyperlinksRef>,
+    pub hyperlinks: Option<crate::hyperlinks::HyperlinksRef>,
 }
 
 #[derive(Clone, Default)]
@@ -321,7 +321,7 @@ impl PaletteSource {
     /// The callback must not reenter the pane, dispatch model callbacks, or
     /// retain any pointer/reference into the palette after returning.
     pub unsafe fn with_palette<R>(&self, read: impl FnOnce(Option<&colour_palette>) -> R) -> R {
-        use crate::src::window::WindowPane;
+        use crate::window::WindowPane;
         match self {
             Self::None => read(None),
             Self::Pane(observer) => {

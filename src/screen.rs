@@ -1,27 +1,27 @@
-use crate::src::grid::view::{grid_view_clear, grid_view_delete_lines};
-use crate::src::grid::{
+use crate::grid::view::{grid_view_clear, grid_view_delete_lines};
+use crate::grid::{
     grid_adjust_lines, grid_clear_lines, grid_create, grid_default_cell, grid_duplicate_lines,
     grid_empty_line, grid_reflow, grid_unwrap_position, grid_wrap_position,
 };
-use crate::src::hyperlinks::{hyperlinks_init, hyperlinks_reset};
-use crate::src::log::{fatal, fatalx, log_debug};
-use crate::src::options::{options_get_number, OptionsScope};
-use crate::src::screen_write::{screen_write_free_list, screen_write_make_list};
-use crate::src::shared::abi::*;
-use crate::src::shared::display::*;
-use crate::src::shared::grid::*;
-use crate::src::shared::key::MODEKEY_EMACS;
-use crate::src::shared::limits::UINT_MAX;
-pub use crate::src::shared::screen::{
+use crate::hyperlinks::{hyperlinks_init, hyperlinks_reset};
+use crate::log::{fatal, fatalx, log_debug};
+use crate::options::{options_get_number, OptionsScope};
+use crate::screen_write::{screen_write_free_list, screen_write_make_list};
+use crate::shared::abi::*;
+use crate::shared::display::*;
+use crate::shared::grid::*;
+use crate::shared::key::MODEKEY_EMACS;
+use crate::shared::limits::UINT_MAX;
+pub use crate::shared::screen::{
     screen, screen_sel, ALL_MODES, EXTENDED_KEY_MODES, MODE_BRACKETPASTE, MODE_CRLF, MODE_CURSOR,
     MODE_CURSOR_BLINKING, MODE_CURSOR_BLINKING_SET, MODE_CURSOR_VERY_VISIBLE, MODE_FOCUSON,
     MODE_INSERT, MODE_KCURSOR, MODE_KEYS_EXTENDED, MODE_KEYS_EXTENDED_2, MODE_KKEYPAD,
     MODE_MOUSE_ALL, MODE_MOUSE_BUTTON, MODE_MOUSE_SGR, MODE_MOUSE_STANDARD, MODE_MOUSE_UTF8,
     MODE_ORIGIN, MODE_SYNC, MODE_THEME_UPDATES, MODE_WRAP,
 };
-use crate::src::style::style_apply_with_options;
-use crate::src::text::utf8::utf8_copy;
-use crate::src::tmux::clean_name_cstring;
+use crate::style::style_apply_with_options;
+use crate::text::utf8::utf8_copy;
+use crate::tmux::clean_name_cstring;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 

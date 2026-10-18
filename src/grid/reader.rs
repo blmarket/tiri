@@ -1,7 +1,7 @@
-use crate::src::grid::{grid_get_cell, grid_in_set, grid_line_length, grid_line_limit};
-use crate::src::shared::abi::*;
-use crate::src::shared::grid::grid_reader;
-use crate::src::shared::grid::*;
+use crate::grid::{grid_get_cell, grid_in_set, grid_line_length, grid_line_limit};
+use crate::shared::abi::*;
+use crate::shared::grid::grid_reader;
+use crate::shared::grid::*;
 use std::ffi::CStr;
 pub fn grid_reader_start(gd: &grid, cx: u_int, cy: u_int) -> grid_reader<'_> {
     grid_reader { gd, cx, cy }
@@ -512,10 +512,10 @@ pub unsafe fn grid_reader_cursor_back_to_indentation(gr: &mut grid_reader<'_>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::src::grid::{
+    use crate::grid::{
         grid_create, grid_default_cell, grid_set_cell, grid_set_padding, grid_set_tab,
     };
-    use crate::src::text::utf8::utf8_fromcstr_vec;
+    use crate::text::utf8::utf8_fromcstr_vec;
 
     unsafe fn sample_grid() -> Box<grid> {
         let mut owner = grid_create(8, 4, 0);

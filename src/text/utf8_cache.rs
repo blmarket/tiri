@@ -1,7 +1,7 @@
 //! Owned Unicode caches. Defaults remain static and dynamic items stay boxed.
 #![forbid(unsafe_code)]
 
-use crate::src::shared::utf8::wchar_t;
+use crate::shared::utf8::wchar_t;
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 

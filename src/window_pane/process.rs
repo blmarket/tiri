@@ -1,35 +1,35 @@
 //! Pane-owned process and pipe lifecycle operations.
 use super::{window_pane_destroy_ready, window_pane_exited};
-use crate::src::arguments::{args, args_count, args_has, args_string};
-use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client};
-use crate::src::format::{format_create_with_client, format_defaults, format_expand_time_cstring};
-use crate::src::log::{fatalx, log_debug};
-use crate::src::proc::proc_clear_signals;
-use crate::src::reactor::BufferEvent;
-use crate::src::reactor::{
+use crate::arguments::{args, args_count, args_has, args_string};
+use crate::cmd::cmd_get_args_mut;
+use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client};
+use crate::format::{format_create_with_client, format_defaults, format_expand_time_cstring};
+use crate::log::{fatalx, log_debug};
+use crate::proc::proc_clear_signals;
+use crate::reactor::BufferEvent;
+use crate::reactor::{
     bufferevent_enable, bufferevent_get_input, bufferevent_new, bufferevent_write, evbuffer_drain,
     evbuffer_get_length, evbuffer_pullup,
 };
-use crate::src::server::server_proc;
-use crate::src::server_fn::server_destroy_pane;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_find_state, cmdq_item};
-use crate::src::shared::event::*;
-use crate::src::shared::event::{EV_READ, EV_WRITE};
-use crate::src::shared::format::format_tree;
-use crate::src::shared::format::FORMAT_NONE;
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::window_pane_offset;
-use crate::src::shared::posix_io::{
+use crate::server::server_proc;
+use crate::server_fn::server_destroy_pane;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_find_state, cmdq_item};
+use crate::shared::event::*;
+use crate::shared::event::{EV_READ, EV_WRITE};
+use crate::shared::format::format_tree;
+use crate::shared::format::FORMAT_NONE;
+use crate::shared::pane::window_pane;
+use crate::shared::pane::window_pane_offset;
+use crate::shared::posix_io::{
     _PATH_BSHELL, _PATH_DEVNULL, O_WRONLY, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO,
 };
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::signal::{sigset_t, SIG_BLOCK, SIG_SETMASK};
-use crate::src::shared::window::winlink;
-use crate::src::tmux::setblocking;
+use crate::shared::session::SessionRef;
+use crate::shared::signal::{sigset_t, SIG_BLOCK, SIG_SETMASK};
+use crate::shared::window::winlink;
+use crate::tmux::setblocking;
 use libc::{_exit, execl, fork, memcpy, setpgid, sigfillset, sigprocmask};
 use std::os::fd::{AsRawFd, IntoRawFd};
 pub(super) unsafe fn pipe_pane(
@@ -41,7 +41,7 @@ pub(super) unsafe fn pipe_pane(
     let queue_client = cmdq_get_client(Some(&*item));
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
@@ -135,7 +135,7 @@ pub(super) unsafe fn pipe_pane(
             }
             null_fd = match tiri_rt::unix::open(_PATH_DEVNULL, O_WRONLY, 0) {
                 Ok(fd) => fd.into_raw_fd(),
-                Err(error) => crate::src::reactor::io_status(Err(error)),
+                Err(error) => crate::reactor::io_status(Err(error)),
             };
             if out != 0 {
                 if tiri_rt::unix::redirect(
@@ -230,7 +230,7 @@ pub(super) unsafe fn pipe_pane(
             if stream.is_null() {
                 fatalx(|out| out.write_all(b"out of memory"));
             }
-            (*wp).pipe_event = crate::src::reactor::StreamHandle::from_ptr(stream);
+            (*wp).pipe_event = crate::reactor::StreamHandle::from_ptr(stream);
             if out != 0 {
                 let _ = (*wp).pipe_event.with_ptr(|event| unsafe {
                     bufferevent_enable(event, EV_WRITE as ::core::ffi::c_short);
@@ -298,7 +298,7 @@ unsafe fn cmd_pipe_pane_error_callback(
 #[cfg(test)]
 mod pipe_stream_tests {
     use super::*;
-    use crate::src::reactor::{evbuffer_add, shutdown_runtime};
+    use crate::reactor::{evbuffer_add, shutdown_runtime};
 
     #[test]
     fn pipe_error_closes_descriptor_while_pane_remains_alive() {
@@ -312,7 +312,7 @@ mod pipe_stream_tests {
             let fd = socket.as_raw_fd();
             (*pane.get()).pipe_fd = Some(socket.into());
             let stream = bufferevent_new(fd, None, None, None);
-            (*pane.get()).pipe_event = crate::src::reactor::StreamHandle::from_ptr(stream);
+            (*pane.get()).pipe_event = crate::reactor::StreamHandle::from_ptr(stream);
             let observer = (*pane.get()).pipe_event.clone();
 
             cmd_pipe_pane_error_callback(&pane);
@@ -335,9 +335,9 @@ mod pipe_stream_tests {
             (*wp).fd = None;
             (*wp).pipe_fd = None;
             let main = bufferevent_new(-1, None, None, None);
-            (*wp).event = crate::src::reactor::StreamHandle::from_ptr(main);
+            (*wp).event = crate::reactor::StreamHandle::from_ptr(main);
             let pipe = bufferevent_new(-1, None, None, None);
-            (*wp).pipe_event = crate::src::reactor::StreamHandle::from_ptr(pipe);
+            (*wp).pipe_event = crate::reactor::StreamHandle::from_ptr(pipe);
             let stale = (*wp).pipe_event.clone();
             let bytes = b"pipe output";
             evbuffer_add(&mut (*pipe).input, bytes);

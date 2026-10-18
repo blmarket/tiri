@@ -1,27 +1,27 @@
 //! Side effects of option changes.
 use super::store::*;
-use crate::src::alerts::alerts_reset_all;
-use crate::src::input::input_set_buffer_size;
-use crate::src::log::{log_cstr, log_debug};
-use crate::src::options::OptionsScope;
-use crate::src::resize::recalculate_sizes;
-use crate::src::screen_redraw::redraw_invalidate_all_scenes;
-use crate::src::server_client::Client as _;
-use crate::src::server_client::ClientRegistry;
+use crate::alerts::alerts_reset_all;
+use crate::input::input_set_buffer_size;
+use crate::log::{log_cstr, log_debug};
+use crate::options::OptionsScope;
+use crate::resize::recalculate_sizes;
+use crate::screen_redraw::redraw_invalidate_all_scenes;
+use crate::server_client::Client as _;
+use crate::server_client::ClientRegistry;
 
-use crate::src::server_fn::server_redraw_client;
-use crate::src::session::sessions;
+use crate::server_fn::server_redraw_client;
+use crate::session::sessions;
 
-use crate::src::session::Session;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::session::SessionRef;
-use crate::src::status::status_timer_start_all;
-use crate::src::text::utf8::utf8_update_width_cache;
-use crate::src::tty::tty_invalidate;
-use crate::src::tty::tty_keys_build;
+use crate::session::Session;
+use crate::shared::client::ClientRef;
+use crate::shared::session::SessionRef;
+use crate::status::status_timer_start_all;
+use crate::text::utf8::utf8_update_width_cache;
+use crate::tty::tty_invalidate;
+use crate::tty::tty_keys_build;
 
-use crate::src::shared::abi::*;
-use crate::src::window::{windows, Window, WindowPane};
+use crate::shared::abi::*;
+use crate::window::{windows, Window, WindowPane};
 use std::ffi::CStr;
 
 pub unsafe fn options_push_changes(name: &CStr) {
@@ -71,12 +71,12 @@ pub unsafe fn options_push_changes(name: &CStr) {
         }
     }
     if name == c"cursor-colour" {
-        for pane_owner in crate::src::shared::pane::window_pane_tree::snapshot() {
+        for pane_owner in crate::shared::pane::window_pane_tree::snapshot() {
             pane_owner.reset_default_cursor();
         }
     }
     if name == c"cursor-style" {
-        for pane_owner in crate::src::shared::pane::window_pane_tree::snapshot() {
+        for pane_owner in crate::shared::pane::window_pane_tree::snapshot() {
             pane_owner.reset_default_cursor();
         }
     }
@@ -102,7 +102,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
         }
     }
     if name == c"utmp" {
-        for pane_owner in crate::src::shared::pane::window_pane_tree::snapshot() {
+        for pane_owner in crate::shared::pane::window_pane_tree::snapshot() {
             pane_owner.refresh_utmp();
         }
     }
@@ -143,17 +143,17 @@ pub unsafe fn options_push_changes(name: &CStr) {
         alerts_reset_all();
     }
     if name == c"window-style" || name == c"window-active-style" {
-        for pane_owner in crate::src::shared::pane::window_pane_tree::snapshot() {
+        for pane_owner in crate::shared::pane::window_pane_tree::snapshot() {
             pane_owner.mark_style_changed(true);
         }
     }
     if name.to_bytes().starts_with(b"@") {
-        for pane_owner in crate::src::shared::pane::window_pane_tree::snapshot() {
+        for pane_owner in crate::shared::pane::window_pane_tree::snapshot() {
             pane_owner.mark_style_changed(false);
         }
     }
     if name == c"pane-colours" {
-        for pane_owner in crate::src::shared::pane::window_pane_tree::snapshot() {
+        for pane_owner in crate::shared::pane::window_pane_tree::snapshot() {
             pane_owner.refresh_palette();
         }
     }
@@ -170,12 +170,12 @@ pub unsafe fn options_push_changes(name: &CStr) {
         }
     }
     if name == c"pane-scrollbars" {
-        for pane_owner in crate::src::shared::pane::window_pane_tree::snapshot() {
+        for pane_owner in crate::shared::pane::window_pane_tree::snapshot() {
             pane_owner.hide_scrollbar();
         }
     }
     if name == c"pane-scrollbars-style" {
-        for pane_owner in crate::src::shared::pane::window_pane_tree::snapshot() {
+        for pane_owner in crate::shared::pane::window_pane_tree::snapshot() {
             pane_owner.refresh_scrollbar_style();
         }
         let mut window_cursor = windows::first();

@@ -4,13 +4,13 @@
 //! Timer handles schedule monotonic waits; application tasks await I/O and signals.
 //! Streams own their buffers; these layouts are independent of libevent.
 use super::abi::*;
-pub use crate::src::reactor::Timer;
+pub use crate::reactor::Timer;
 use tiri_buffer::SegmentedBuf;
 
 #[derive(Default)]
 #[repr(C)]
 pub struct bufferevent {
-    pub(crate) state: Option<std::rc::Rc<crate::src::reactor::StreamState>>,
+    pub(crate) state: Option<std::rc::Rc<crate::reactor::StreamState>>,
     pub input: Box<SegmentedBuf>,
     pub output: Box<SegmentedBuf>,
     pub wm_read: event_watermark,

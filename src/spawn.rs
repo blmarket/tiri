@@ -1,20 +1,20 @@
-use crate::src::compat::stdio::CFile;
-use crate::src::environ::environ_create;
-use crate::src::format::bytes::format_message_with;
-use crate::src::log::{log_cstr, log_debug, log_hex};
-use crate::src::names::default_window_name_cstring;
-use crate::src::options::options_get_string;
-use crate::src::options::OptionsScope;
-use crate::src::server_client::Client as _;
-use crate::src::window::Window as _;
+use crate::compat::stdio::CFile;
+use crate::environ::environ_create;
+use crate::format::bytes::format_message_with;
+use crate::log::{log_cstr, log_debug, log_hex};
+use crate::names::default_window_name_cstring;
+use crate::options::options_get_string;
+use crate::options::OptionsScope;
+use crate::server_client::Client as _;
+use crate::window::Window as _;
 use libc::{fdopen, fwrite, mkstemp, unlink};
 
-use crate::src::session::Session;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::spawn::spawn_context;
-use crate::src::shared::window::WindowRef;
+use crate::session::Session;
+use crate::shared::client::ClientRef;
+use crate::shared::spawn::spawn_context;
+use crate::shared::window::WindowRef;
 
-use crate::src::window_pane::WindowPane;
+use crate::window_pane::WindowPane;
 use std::ffi::{CStr, CString};
 
 pub(crate) fn set_spawn_cause(cause: Option<&mut Option<CString>>, parts: &[&[u8]]) {
@@ -28,12 +28,12 @@ pub(crate) fn set_spawn_cause(cause: Option<&mut Option<CString>>, parts: &[&[u8
     *cause = Some(CString::new(bytes).expect("spawn diagnostic contains no NUL"));
 }
 
-use crate::src::shared::abi::__off_t;
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::spawn::SPAWN_KILL;
-use crate::src::shared::spawn::{spawn_editor_state, spawn_finish_edit_cb};
-use crate::src::shared::stdio::FILE;
-use crate::src::shared::window::winlink;
+use crate::shared::abi::__off_t;
+use crate::shared::pane::window_pane;
+use crate::shared::spawn::SPAWN_KILL;
+use crate::shared::spawn::{spawn_editor_state, spawn_finish_edit_cb};
+use crate::shared::stdio::FILE;
+use crate::shared::window::winlink;
 
 use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
 
@@ -49,7 +49,7 @@ impl spawn_editor_state {
             .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
             .expect("editor identity exhausted");
         Box::new(spawn_editor_state {
-            id: crate::src::shared::spawn::EditorId(id),
+            id: crate::shared::spawn::EditorId(id),
             path,
             pid: 0,
             cb,
@@ -213,7 +213,7 @@ pub(crate) unsafe fn spawn_editor(
     client_owner: &ClientRef,
     write: impl FnOnce(&CFile) -> bool,
     mut cb: spawn_finish_edit_cb,
-) -> Option<crate::src::shared::spawn::EditorHandle> {
+) -> Option<crate::shared::spawn::EditorHandle> {
     let session_owner = client_owner.attached_session().upgrade()?;
     let mut es: *mut spawn_editor_state = ::core::ptr::null_mut::<spawn_editor_state>();
     let mut sc: spawn_context = spawn_context {

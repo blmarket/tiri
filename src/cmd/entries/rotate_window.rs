@@ -1,12 +1,12 @@
-use crate::src::arguments::{args, args_has, args_parse};
-use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::cmdq_get_state_owned;
-use crate::src::server_fn::server_redraw_window;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::window::winlink;
-use crate::src::shared::window::WindowRef;
-use crate::src::window::Window as _;
+use crate::arguments::{args, args_has, args_parse};
+use crate::cmd::cmd_get_args_mut;
+use crate::cmd::queue::cmdq_get_state_owned;
+use crate::server_fn::server_redraw_window;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::window::winlink;
+use crate::shared::window::WindowRef;
+use crate::window::Window as _;
 pub static cmd_rotate_window_entry: cmd_entry = {
     cmd_entry {
         name: c"rotate-window",
@@ -41,7 +41,7 @@ unsafe fn cmd_rotate_window_exec(
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let current = cmdq_get_state_owned(&*(item));
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let window_owner = (*target).w.upgrade().expect("live rotation window");

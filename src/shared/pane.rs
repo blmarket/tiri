@@ -1,7 +1,7 @@
 //! Pane identities and shared ordering, mode and resize components.
-pub use crate::src::window_pane::window_pane;
+pub use crate::window_pane::window_pane;
 
-use crate::src::shared::client::ClientWeak;
+use crate::shared::client::ClientWeak;
 use std::cell::UnsafeCell;
 use std::collections::VecDeque;
 use std::rc::Weak;
@@ -24,7 +24,7 @@ pub fn pane_output_data<'a>(
     offset: &window_pane_offset,
 ) -> &'a [u8] {
     let used = offset.used.wrapping_sub(base_offset);
-    let data = crate::src::reactor::evbuffer_pullup(input, -1).unwrap_or_default();
+    let data = crate::reactor::evbuffer_pullup(input, -1).unwrap_or_default();
     data.get(used..)
         .expect("pane offset is within input buffer")
 }

@@ -1,17 +1,17 @@
 //! Pane-owned lazy formatting. Values leave the pane as owned bytes or timestamps.
 use super::*;
-use crate::src::cmd::cmd_stringify_argv_cstring;
-use crate::src::format::format_quote_shell_single;
-use crate::src::format::C2RustUnnamed_43;
-use crate::src::format::{format_tree, FormatValue, FORMAT_TYPE_PANE};
-use crate::src::grid::grid_get_line;
-use crate::src::grid::view::grid_view_get_cell;
-use crate::src::names::parse_window_name_cstring;
-use crate::src::osdep::{osdep_get_cwd, osdep_get_name_cstring};
-use crate::src::shared::pane::{PANE_CMDRUNNING, PANE_STATUSDRAWN};
-use crate::src::shared::screen::*;
-use crate::src::style::colour::colour_format;
-use crate::src::tmux::sig2name;
+use crate::cmd::cmd_stringify_argv_cstring;
+use crate::format::format_quote_shell_single;
+use crate::format::C2RustUnnamed_43;
+use crate::format::{format_tree, FormatValue, FORMAT_TYPE_PANE};
+use crate::grid::grid_get_line;
+use crate::grid::view::grid_view_get_cell;
+use crate::names::parse_window_name_cstring;
+use crate::osdep::{osdep_get_cwd, osdep_get_name_cstring};
+use crate::shared::pane::{PANE_CMDRUNNING, PANE_STATUSDRAWN};
+use crate::shared::screen::*;
+use crate::style::colour::colour_format;
+use crate::tmux::sig2name;
 use libc::time;
 use std::fmt::Write as _;
 use std::os::fd::AsRawFd;
@@ -333,7 +333,7 @@ unsafe fn format_cb_pane_tabs(mut ft: *mut format_tree) -> Option<CString> {
     let mut tabs = String::new();
     i = 0 as u_int;
     while i < (*wp).base.grid().sx {
-        if crate::src::screen::screen_has_tab(&(*wp).base, i) {
+        if crate::screen::screen_has_tab(&(*wp).base, i) {
             if !tabs.is_empty() {
                 tabs.push(',');
             }
@@ -1111,7 +1111,7 @@ unsafe fn format_cb_pane_dead_time(mut ft: *mut format_tree) -> Option<time_t> {
     let mut wp: *mut window_pane = format_pane;
     if !wp.is_null() {
         if (*wp).flags & PANE_STATUSDRAWN != 0 {
-            return Some(crate::src::shared::time::unix_seconds((*wp).dead_time));
+            return Some(crate::shared::time::unix_seconds((*wp).dead_time));
         }
         return None;
     }
@@ -1693,11 +1693,11 @@ unsafe fn mouse_value(
             return None;
         }
         return match key.to_bytes() {
-            b"mouse_word" => crate::src::window_copy::window_copy_get_word_cstring(owner, x, y),
+            b"mouse_word" => crate::window_copy::window_copy_get_word_cstring(owner, x, y),
             b"mouse_hyperlink" => {
-                crate::src::window_copy::window_copy_get_hyperlink_cstring(owner, x, y)
+                crate::window_copy::window_copy_get_hyperlink_cstring(owner, x, y)
             }
-            b"mouse_line" => crate::src::window_copy::window_copy_get_line_cstring(owner, y),
+            b"mouse_line" => crate::window_copy::window_copy_get_line_cstring(owner, y),
             _ => None,
         };
     }
@@ -1705,11 +1705,11 @@ unsafe fn mouse_value(
     let grid = pane.base.grid();
     let row = grid.hsize.wrapping_add(y);
     match key.to_bytes() {
-        b"mouse_word" => crate::src::format::format_grid_word_cstring(grid, x, row),
+        b"mouse_word" => crate::format::format_grid_word_cstring(grid, x, row),
         b"mouse_hyperlink" => {
-            crate::src::format::format_grid_hyperlink_cstring(grid, x, row, &*pane.screen_ptr())
+            crate::format::format_grid_hyperlink_cstring(grid, x, row, &*pane.screen_ptr())
         }
-        b"mouse_line" => crate::src::format::format_grid_line_cstring(grid, row),
+        b"mouse_line" => crate::format::format_grid_line_cstring(grid, row),
         _ => None,
     }
 }

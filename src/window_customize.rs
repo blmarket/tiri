@@ -1,14 +1,14 @@
-use crate::src::format::bytes::cstr_suffix;
-use crate::src::format::bytes::format_bytes;
-use crate::src::format::bytes::nullable_cstr;
-use crate::src::format::bytes::write_cstr;
-use crate::src::options::OptionsScope;
-use crate::src::session::Session;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::mode_tree::ModeTreeItemSnapshot;
-use crate::src::shared::session::{SessionRef, SessionWeak};
-use crate::src::window::Window as _;
-use crate::src::window_pane::WindowPane as _;
+use crate::format::bytes::cstr_suffix;
+use crate::format::bytes::format_bytes;
+use crate::format::bytes::nullable_cstr;
+use crate::format::bytes::write_cstr;
+use crate::options::OptionsScope;
+use crate::session::Session;
+use crate::shared::client::ClientRef;
+use crate::shared::mode_tree::ModeTreeItemSnapshot;
+use crate::shared::session::{SessionRef, SessionWeak};
+use crate::window::Window as _;
+use crate::window_pane::WindowPane as _;
 use refbox::RefBox;
 use std::borrow::Cow;
 use std::cell::UnsafeCell;
@@ -16,79 +16,79 @@ use std::ffi::{CStr, CString};
 use std::ptr::NonNull;
 use std::rc::{Rc, Weak};
 
-use crate::src::arguments::{args, args_get, args_has};
-use crate::src::cmd::cmd_list_print_cstring;
-use crate::src::cmd::parse::{cmd_parse_error_uppercase_first, cmd_parse_from_string};
-use crate::src::environ::{environ_clear, environ_find, environ_iter, environ_set, environ_unset};
-use crate::src::ffi::libc::strlcat;
-use crate::src::format::bytes::format_message_with;
-use crate::src::format::{
+use crate::arguments::{args, args_get, args_has};
+use crate::cmd::cmd_list_print_cstring;
+use crate::cmd::parse::{cmd_parse_error_uppercase_first, cmd_parse_from_string};
+use crate::environ::{environ_clear, environ_find, environ_iter, environ_set, environ_unset};
+use crate::ffi::libc::strlcat;
+use crate::format::bytes::format_message_with;
+use crate::format::{
     format_add, format_create_from_state, format_expand_cstring, format_pretty_time_cstring,
     format_true,
 };
-use crate::src::grid::grid_default_cell;
-use crate::src::hooks::{
+use crate::grid::grid_default_cell;
+use crate::hooks::{
     hooks_add_event, hooks_is_event, hooks_monitor_get_fire_count, hooks_monitor_get_fire_time,
     hooks_monitor_to_cstring,
 };
-use crate::src::key_bindings::{
+use crate::key_bindings::{
     key_bindings_add, key_bindings_get, key_bindings_get_default, key_bindings_remove,
     key_bindings_reset, key_bindings_set_note, key_tables,
 };
-use crate::src::key_string::{key_string_format, key_string_parse_cstr};
-use crate::src::mode_tree::{
+use crate::key_string::{key_string_format, key_string_parse_cstr};
+use crate::mode_tree::{
     mode_tree_add, mode_tree_build, mode_tree_count_tagged, mode_tree_draw,
     mode_tree_draw_as_parent, mode_tree_each_tagged, mode_tree_free, mode_tree_get_current,
     mode_tree_get_current_name, mode_tree_key, mode_tree_no_tag, mode_tree_remove,
     mode_tree_resize, mode_tree_set_prompt, mode_tree_start, mode_tree_up,
 };
-use crate::src::options::*;
-use crate::src::options::{
+use crate::options::*;
+use crate::options::{
     options_create, options_default, options_default_to_cstring, options_get_fire_count,
     options_get_fire_time, options_get_number, options_match_owned, options_push_changes,
     options_set_number, options_to_cstring,
 };
-use crate::src::options::{
+use crate::options::{
     OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_IS_COLOUR, OPTIONS_TABLE_IS_HOOK, OPTIONS_TABLE_IS_STYLE,
     OPTIONS_TABLE_PANE, OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION, OPTIONS_TABLE_WINDOW,
 };
-use crate::src::screen_write::{
+use crate::screen_write::{
     screen_write_box, screen_write_clearcharacter, screen_write_cursormove, screen_write_nputs,
     screen_write_start, screen_write_stop, screen_write_text,
 };
-use crate::src::shared::abi::*;
-use crate::src::shared::abi::{__int32_t, ssize_t};
-use crate::src::shared::colour::{COLOUR_FLAG_THEME, COLOUR_THEME_LIGHT_GREY};
-use crate::src::shared::command::cmd_parse_input;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd_find_state, cmdq_item};
-use crate::src::shared::environment::ENVIRON_HIDDEN;
-use crate::src::shared::environment::{environ, environ_entry};
-use crate::src::shared::format::format_tree;
-use crate::src::shared::grid::*;
-use crate::src::shared::key::KEY_BINDING_REPEAT;
-use crate::src::shared::key::*;
-use crate::src::shared::key::{key_binding, key_table};
-use crate::src::shared::layout::*;
-use crate::src::shared::limits::INT_MAX;
-use crate::src::shared::menu::menu_item;
-use crate::src::shared::mode_tree::{
+use crate::shared::abi::*;
+use crate::shared::abi::{__int32_t, ssize_t};
+use crate::shared::colour::{COLOUR_FLAG_THEME, COLOUR_THEME_LIGHT_GREY};
+use crate::shared::command::cmd_parse_input;
+use crate::shared::command::*;
+use crate::shared::command::{cmd_find_state, cmdq_item};
+use crate::shared::environment::ENVIRON_HIDDEN;
+use crate::shared::environment::{environ, environ_entry};
+use crate::shared::format::format_tree;
+use crate::shared::grid::*;
+use crate::shared::key::KEY_BINDING_REPEAT;
+use crate::shared::key::*;
+use crate::shared::key::{key_binding, key_table};
+use crate::shared::layout::*;
+use crate::shared::limits::INT_MAX;
+use crate::shared::menu::menu_item;
+use crate::shared::mode_tree::{
     mode_tree_data, mode_tree_help_info, mode_tree_prompt_input_cb, ModeTreeItemData,
     ModeTreeItemRef,
 };
-use crate::src::shared::mouse::mouse_event;
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::prompt::*;
-use crate::src::shared::prompt::{
+use crate::shared::mouse::mouse_event;
+use crate::shared::pane::window_pane;
+use crate::shared::prompt::*;
+use crate::shared::prompt::{
     prompt_free_cb, prompt_result, PROMPT_ACCEPT, PROMPT_CLOSE, PROMPT_NOFORMAT, PROMPT_SINGLE,
 };
-use crate::src::shared::screen::screen;
-use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::spawn::{spawn_editor_state, EditorHandle};
-use crate::src::shared::window::{window_mode, window_mode_entry, winlink};
-use crate::src::spawn::{spawn_editor, spawn_editor_write};
-use crate::src::status::status_message_set;
-use crate::src::tmux::global_environ;
+use crate::shared::screen::screen;
+use crate::shared::screen_write::screen_write_ctx;
+use crate::shared::spawn::{spawn_editor_state, EditorHandle};
+use crate::shared::window::{window_mode, window_mode_entry, winlink};
+use crate::spawn::{spawn_editor, spawn_editor_write};
+use crate::status::status_message_set;
+use crate::tmux::global_environ;
 use libc::{strcmp, strlen};
 
 fn window_customize_uppercase_cause(cause: &mut Option<CString>) {
@@ -399,7 +399,7 @@ fn window_customize_option_tag(option: &options_entry) -> u64 {
     let Some(definition) = option.tableentry else {
         return option.id();
     };
-    let index = crate::src::options::options_table
+    let index = crate::options::options_table
         .iter()
         .position(|candidate| std::ptr::eq(candidate, definition))
         .expect("static option definition");
@@ -479,7 +479,7 @@ unsafe fn window_customize_check_item(
 unsafe fn window_customize_get_key_table(
     item: &window_customize_itemdata,
 ) -> Option<Rc<std::cell::RefCell<key_table>>> {
-    let table = crate::src::key_bindings::key_bindings_get_table(item.table.as_deref()?, 0)?;
+    let table = crate::key_bindings::key_bindings_get_table(item.table.as_deref()?, 0)?;
     key_bindings_get(&table.borrow(), item.key)?;
     Some(table)
 }
@@ -1158,7 +1158,7 @@ unsafe fn window_customize_build_option(
 }
 unsafe fn window_customize_find_user_options(scope: &OptionsScope, list: &mut Vec<CString>) {
     let names = scope.with_local(|table| {
-        crate::src::options::options_iter(table)
+        crate::options::options_iter(table)
             .map(|(name, _)| name.to_owned())
             .collect::<Vec<_>>()
     });
@@ -1236,7 +1236,7 @@ unsafe fn window_customize_build_options(
         ));
     }
     let names = oo0.with_local(|table| {
-        crate::src::options::options_iter(table)
+        crate::options::options_iter(table)
             .map(|(name, _)| name.to_owned())
             .collect::<Vec<_>>()
     });
@@ -2326,7 +2326,7 @@ out.write_all(b"This is a colour option: ")
                                                                             {
                                                                                 current_block = 4086289836260337793;
                                                                             } else {
-                                                                                crate::src::style::style_apply_with_options(&mut gc, name, ft.as_mut(), item.oo.as_ref().expect("option scope"));
+                                                                                crate::style::style_apply_with_options(&mut gc, name, ft.as_mut(), item.oo.as_ref().expect("option scope"));
                                                                                 if screen_write_text(&mut *ctx,
 cx,
 sx,
@@ -2364,7 +2364,7 @@ out.write_all(b"This is a style option: ")
                                                                                     {
                                                                                         current_block = 4086289836260337793;
                                                                                     } else {
-                                                                                        crate::src::style::style_apply_with_options(&mut gc, name, ft.as_mut(), item.oo.as_ref().expect("option scope"));
+                                                                                        crate::style::style_apply_with_options(&mut gc, name, ft.as_mut(), item.oo.as_ref().expect("option scope"));
                                                                                         if screen_write_text(&mut *ctx,
 cx,
 sx,
@@ -2765,7 +2765,7 @@ unsafe fn window_customize_init(
         fs: (*fs).clone(),
         change: WINDOW_CUSTOMIZE_UNSET,
     }));
-    data = crate::src::shared::rc::as_ptr(&owner);
+    data = crate::shared::rc::as_ptr(&owner);
     let build_mode = Rc::downgrade(&owner);
     wme.get_mut_unchecked().data_owner = Some(owner);
     let draw_mode = build_mode.clone();
@@ -2968,7 +2968,7 @@ unsafe fn window_customize_set_environment_callback(
     if environment.read(|_| ()).is_none() {
         return PROMPT_CLOSE;
     }
-    let data = crate::src::shared::rc::as_ptr(&owner.mode);
+    let data = crate::shared::rc::as_ptr(&owner.mode);
     let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*data).wp) else {
         return PROMPT_CLOSE;
     };
@@ -3085,7 +3085,7 @@ unsafe fn window_customize_add_option_callback(
     _key: prompt_key_result,
 ) -> prompt_result {
     let item = &*owner.item;
-    let data = crate::src::shared::rc::as_ptr(&owner.mode);
+    let data = crate::shared::rc::as_ptr(&owner.mode);
     let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*data).wp) else {
         return PROMPT_CLOSE;
     };
@@ -3222,7 +3222,7 @@ unsafe fn window_customize_add_environment_callback(
     if environment.read(|_| ()).is_none() {
         return PROMPT_CLOSE;
     }
-    let data = crate::src::shared::rc::as_ptr(&owner.mode);
+    let data = crate::shared::rc::as_ptr(&owner.mode);
     let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*data).wp) else {
         return PROMPT_CLOSE;
     };
@@ -3828,7 +3828,7 @@ unsafe fn window_customize_set_command_callback(
     _key: prompt_key_result,
 ) -> prompt_result {
     let item = &*owner.item;
-    let data = crate::src::shared::rc::as_ptr(&owner.mode);
+    let data = crate::shared::rc::as_ptr(&owner.mode);
     let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*data).wp) else {
         return PROMPT_CLOSE;
     };
@@ -3877,7 +3877,7 @@ unsafe fn window_customize_set_note_callback(
     _key: prompt_key_result,
 ) -> prompt_result {
     let item = &*owner.item;
-    let data = crate::src::shared::rc::as_ptr(&owner.mode);
+    let data = crate::shared::rc::as_ptr(&owner.mode);
     let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*data).wp) else {
         return PROMPT_CLOSE;
     };
@@ -3985,7 +3985,7 @@ unsafe fn window_customize_add_key_callback(
     _key0: prompt_key_result,
 ) -> prompt_result {
     let item = &*owner.item;
-    let data = crate::src::shared::rc::as_ptr(&owner.mode);
+    let data = crate::shared::rc::as_ptr(&owner.mode);
     let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*data).wp) else {
         return PROMPT_CLOSE;
     };
@@ -4743,7 +4743,7 @@ mod item_owner_tests {
                 },
                 change: WINDOW_CUSTOMIZE_UNSET,
             }));
-            let data = crate::src::shared::rc::as_ptr(&owner);
+            let data = crate::shared::rc::as_ptr(&owner);
             let first_owner = window_customize_add_item(
                 &mut (*data).item_list,
                 window_customize_itemdata {

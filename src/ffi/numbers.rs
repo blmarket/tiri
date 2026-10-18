@@ -1,7 +1,7 @@
 //! Borrowed string interfaces to the existing C numeric conversions.
 
-use crate::src::compat::strtonum::strtonum;
-use crate::src::format::bytes::cstr_suffix;
+use crate::compat::strtonum::strtonum;
+use crate::format::bytes::cstr_suffix;
 use libc::strtoull;
 use std::ffi::CStr;
 

@@ -1,11 +1,11 @@
 //! Pane-owned synchronized output. Release state before invoking the renderer.
 use super::*;
-use crate::src::screen_write::{
+use crate::screen_write::{
     screen_write_initctx, screen_write_redraw_line, screen_write_start_pane, screen_write_stop,
 };
-use crate::src::shared::screen::MODE_SYNC;
-use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::tty::tty_ctx;
+use crate::shared::screen::MODE_SYNC;
+use crate::shared::screen_write::screen_write_ctx;
+use crate::shared::tty::tty_ctx;
 use std::time::Duration;
 
 pub(super) unsafe fn start(pane: &Rc<UnsafeCell<window_pane>>) {
@@ -62,7 +62,7 @@ pub(super) unsafe fn should_draw_rows(
     mut count: u32,
     height: u32,
 ) -> bool {
-    if state.flags & (PANE_REDRAW | crate::src::shared::pane::PANE_DROP) != 0 {
+    if state.flags & (PANE_REDRAW | crate::shared::pane::PANE_DROP) != 0 {
         return false;
     }
     if !synchronized {
@@ -146,7 +146,7 @@ unsafe fn flush_dirty(pane: &Rc<UnsafeCell<window_pane>>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::src::reactor::shutdown_runtime;
+    use crate::reactor::shutdown_runtime;
 
     #[test]
     fn stopping_and_destroying_sync_cancel_the_timer_without_retaining_the_pane() {
@@ -154,7 +154,7 @@ mod tests {
         let runtime = tiri_rt::mio::Runtime::new().unwrap();
         unsafe {
             let pane = window_pane::new();
-            (*pane.get()).base.grid = Some(crate::src::grid::grid_create(8, 2, 0));
+            (*pane.get()).base.grid = Some(crate::grid::grid_create(8, 2, 0));
             (*pane.get()).fd = None;
             (*pane.get()).pipe_fd = None;
             let observer = Rc::downgrade(&pane);

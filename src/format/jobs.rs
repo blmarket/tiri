@@ -1,7 +1,7 @@
 use super::*;
-use crate::src::log::{log_cstr, log_pointer};
-use crate::src::server_client::ClientRegistry;
-use crate::src::shared::client::{ClientRef, ClientWeak};
+use crate::log::{log_cstr, log_pointer};
+use crate::server_client::ClientRegistry;
+use crate::shared::client::{ClientRef, ClientWeak};
 use std::ffi::{CStr, CString};
 
 fn format_job_set_expanded(fj: &mut format_job, value: CString) {
@@ -110,7 +110,7 @@ impl JobEntry {
 
 unsafe fn format_job_update(job: &refbox::Weak<job>, entry: &JobEntry) {
     let line = {
-        let buffer = crate::src::reactor::bufferevent_get_input(&mut *job_get_event(job));
+        let buffer = crate::reactor::bufferevent_get_input(&mut *job_get_event(job));
         let mut line = None;
         while let Some(next) = evbuffer_readline(buffer) {
             line = Some(next);

@@ -1,24 +1,24 @@
-use crate::src::log::{log_cstr, log_debug};
-use crate::src::options::OptionsScope;
-use crate::src::options::{options_get_number, options_get_string};
-use crate::src::server_client::Client as _;
-use crate::src::server_client::ClientRegistry;
-use crate::src::session::Session as _;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::{ClientRef, CLIENT_CONTROL, CLIENT_STATUSOFF};
-use crate::src::shared::limits::UINT_MAX;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::window::WindowRef;
-use crate::src::shared::window::{
+use crate::log::{log_cstr, log_debug};
+use crate::options::OptionsScope;
+use crate::options::{options_get_number, options_get_string};
+use crate::server_client::Client as _;
+use crate::server_client::ClientRegistry;
+use crate::session::Session as _;
+use crate::shared::abi::*;
+use crate::shared::client::{ClientRef, CLIENT_CONTROL, CLIENT_STATUSOFF};
+use crate::shared::limits::UINT_MAX;
+use crate::shared::session::SessionRef;
+use crate::shared::window::WindowRef;
+use crate::shared::window::{
     WINDOW_MAXIMUM, WINDOW_MINIMUM, WINDOW_SIZE_LARGEST, WINDOW_SIZE_LATEST, WINDOW_SIZE_MANUAL,
 };
-use crate::src::tty::tty_update_window_offset;
-use crate::src::window::windows;
-use crate::src::window::Window as _;
+use crate::tty::tty_update_window_offset;
+use crate::window::windows;
+use crate::window::Window as _;
 use libc::sscanf;
 
 pub unsafe fn resize_window(window: &WindowRef, sx: u_int, sy: u_int, xpixel: i32, ypixel: i32) {
-    use crate::src::window::Window;
+    use crate::window::Window;
     window.resize(sx, sy, xpixel, ypixel);
 }
 unsafe fn clients_with_window(w_owner: &WindowRef) -> u_int {
@@ -93,7 +93,7 @@ unsafe fn clients_calculate_size(
         let mut registry_loop_0_owner = ClientRegistry::first();
         loop_0 = registry_loop_0_owner.clone();
         while !loop_0.is_none() {
-            if !crate::src::shared::rc::same(loop_0.as_ref(), c.as_ref())
+            if !crate::shared::rc::same(loop_0.as_ref(), c.as_ref())
                 && !registry_loop_0_owner
                     .as_ref()
                     .expect("current registry client")
@@ -108,7 +108,7 @@ unsafe fn clients_calculate_size(
                             .unwrap_or(c"(null)")
                     )
                 ));
-            } else if !crate::src::shared::rc::same(loop_0.as_ref(), c.as_ref())
+            } else if !crate::shared::rc::same(loop_0.as_ref(), c.as_ref())
                 && skip_client(loop_0.as_ref().expect("live client"))
             {
                 log_debug(format_args!(
@@ -200,12 +200,12 @@ unsafe fn clients_calculate_size(
         let mut registry_loop_0_owner = ClientRegistry::first();
         loop_0 = registry_loop_0_owner.clone();
         while !loop_0.is_none() {
-            if !(!crate::src::shared::rc::same(loop_0.as_ref(), c.as_ref())
+            if !(!crate::shared::rc::same(loop_0.as_ref(), c.as_ref())
                 && !registry_loop_0_owner
                     .as_ref()
                     .expect("current registry client")
                     .participates_in_window_sizing())
-                && !(!crate::src::shared::rc::same(loop_0.as_ref(), c.as_ref())
+                && !(!crate::shared::rc::same(loop_0.as_ref(), c.as_ref())
                     && skip_client(loop_0.as_ref().expect("live client")))
             {
                 registry_loop_0_owner
@@ -303,7 +303,7 @@ pub unsafe fn default_window_size(
                         as i32)
                         == 0)
                     || (w_owner.is_none()
-                        && !crate::src::shared::rc::same(
+                        && !crate::shared::rc::same(
                             candidate.attached_session().upgrade().as_ref(),
                             s.as_ref(),
                         ))
@@ -442,7 +442,7 @@ pub unsafe fn recalculate_sizes() {
 pub unsafe fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
     let mut _s: Option<SessionRef> = None;
     let mut c: Option<ClientRef> = None;
-    crate::src::shared::session::SessionRef::recalculate_attachment_status();
+    crate::shared::session::SessionRef::recalculate_attachment_status();
     let mut registry_c_owner = ClientRegistry::first();
     c = registry_c_owner.clone();
     while !c.is_none() {

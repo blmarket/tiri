@@ -1,9 +1,9 @@
 //! Pane comparison reads owned display state before querying parent order.
 use super::*;
-use crate::src::shared::sort::{
+use crate::shared::sort::{
     sort_criteria, SORT_ACTIVITY, SORT_CREATION, SORT_INDEX, SORT_NAME, SORT_SIZE,
 };
-use crate::src::shared::window::WindowWeak;
+use crate::shared::window::WindowWeak;
 use std::cmp::Ordering;
 
 pub(super) unsafe fn compare(
@@ -48,7 +48,7 @@ pub(super) unsafe fn compare(
         _ => 0,
     };
     let result = if result == 0 { title_order } else { result };
-    crate::src::sort::sort_ordering(result, criteria.reversed)
+    crate::sort::sort_ordering(result, criteria.reversed)
 }
 
 #[cfg(test)]

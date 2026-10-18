@@ -1,23 +1,23 @@
-use crate::src::arguments::{args, args_get, args_has, args_parse};
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_client};
-use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
-use crate::src::format::{
+use crate::arguments::{args, args_get, args_has, args_parse};
+use crate::cmd::queue::{cmdq_error, cmdq_get_client};
+use crate::cmd::{cmd_get_args_mut, cmd_get_entry};
+use crate::format::{
     format_create_with_client, format_defaults, format_expand_cstring, format_true,
 };
-use crate::src::resize::recalculate_sizes;
-use crate::src::server_fn::{server_kill_window, server_renumber_all, server_unlink_window};
+use crate::resize::recalculate_sizes;
+use crate::server_fn::{server_kill_window, server_renumber_all, server_unlink_window};
 use std::ffi::CStr;
 
-use crate::src::session::Session;
-use crate::src::shared::abi::*;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::format::format_tree;
-use crate::src::shared::format::FORMAT_NONE;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::tree::RB_NEGINF;
-use crate::src::shared::window::winlink;
-use crate::src::window::{winlinks_minmax, winlinks_next, winlinks_prev};
+use crate::session::Session;
+use crate::shared::abi::*;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::format::format_tree;
+use crate::shared::format::FORMAT_NONE;
+use crate::shared::session::SessionRef;
+use crate::shared::tree::RB_NEGINF;
+use crate::shared::window::winlink;
+use crate::window::{winlinks_minmax, winlinks_next, winlinks_prev};
 pub static cmd_kill_window_entry: cmd_entry = {
     cmd_entry {
         name: c"kill-window",
@@ -75,7 +75,7 @@ unsafe fn cmd_kill_window_exec(
     let item = item_handle.borrow();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut s: Option<SessionRef> = (*target).session_handle();
@@ -89,7 +89,7 @@ unsafe fn cmd_kill_window_exec(
         &cmd_unlink_window_entry,
     ) {
         if args_has(&*args, 'k' as i32 as u_char) == 0
-            && (crate::src::shared::session::SessionRef::window_linked_outside_group(
+            && (crate::shared::session::SessionRef::window_linked_outside_group(
                 s.as_ref(),
                 wl.get_unchecked().window_handle().expect("live window"),
             ) as i32)
@@ -122,7 +122,7 @@ unsafe fn cmd_kill_window_all(
     filter: Option<&CStr>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let mut s: Option<SessionRef> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
@@ -141,7 +141,7 @@ unsafe fn cmd_kill_window_all(
             .expect("live session")
             .with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
         while loop_0.is_alive() {
-            if !crate::src::shared::rc::same(
+            if !crate::shared::rc::same(
                 loop_0.get_unchecked().window_handle(),
                 wl.get_unchecked().window_handle(),
             ) && cmd_kill_window_filter(
@@ -177,7 +177,7 @@ unsafe fn cmd_kill_window_all(
         .expect("live session")
         .with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
     while loop_0.is_alive() {
-        if crate::src::shared::rc::same(
+        if crate::shared::rc::same(
             loop_0.get_unchecked().window_handle(),
             wl.get_unchecked().window_handle(),
         ) {

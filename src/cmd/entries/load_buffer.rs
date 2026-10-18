@@ -1,19 +1,19 @@
-use crate::src::arguments::{args, args_get, args_has, args_parse, args_string};
-use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_resumed};
-use crate::src::file::{file_read_wait, FileOutcome};
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::format_single_from_target_cstring;
-use crate::src::paste::paste_set_owned;
-use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
+use crate::arguments::{args, args_get, args_has, args_parse, args_string};
+use crate::cmd::cmd_get_args_mut;
+use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_resumed};
+use crate::file::{file_read_wait, FileOutcome};
+use crate::format::bytes::write_cstr;
+use crate::format::format_single_from_target_cstring;
+use crate::paste::paste_set_owned;
+use crate::reactor::{evbuffer_get_length, evbuffer_pullup};
 
-use crate::src::server_client::Client as _;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
-use crate::src::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_TFLAG};
-use crate::src::tty::tty_set_selection;
+use crate::server_client::Client as _;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
+use crate::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_TFLAG};
+use crate::tty::tty_set_selection;
 use std::ffi::{CStr, CString};
 use std::rc::Weak;
 
@@ -134,9 +134,9 @@ unsafe fn cmd_load_buffer_exec(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next};
-    use crate::src::paste::{paste_buffer_data, paste_get_name};
-    use crate::src::server_client::queue_test_clients as clients;
+    use crate::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next};
+    use crate::paste::{paste_buffer_data, paste_get_name};
+    use crate::server_client::queue_test_clients as clients;
     use std::rc::Rc;
     use std::time::Duration;
     use tiri_buffer::SegmentedBuf;
@@ -214,7 +214,7 @@ mod tests {
             assert!(head.upgrade().is_none());
             std::fs::remove_file(path.to_str().unwrap()).unwrap();
         }
-        crate::src::reactor::shutdown_runtime(runtime);
+        crate::reactor::shutdown_runtime(runtime);
     }
 
     #[test]

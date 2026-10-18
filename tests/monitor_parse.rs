@@ -1,5 +1,5 @@
 use std::ffi::CString;
-use tiri::src::monitor::{
+use tiri::monitor::{
     monitor_parse_owned, MONITOR_ALL_PANES, MONITOR_ALL_WINDOWS, MONITOR_PANE, MONITOR_SESSION,
     MONITOR_WINDOW,
 };

@@ -1,16 +1,16 @@
-use crate::src::arguments::{args, args_get, args_has, args_parse};
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_client};
-use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
-use crate::src::control::control_write;
-use crate::src::file::{file_can_print, file_print, file_print_buffer};
-use crate::src::format::bytes::write_cstr;
-use crate::src::paste::paste_set_owned;
-use crate::src::server_client::Client as _;
-use crate::src::server_fn::server_redraw_window;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::{ClientRef, CLIENT_CONTROL};
-use crate::src::shared::command::*;
-use crate::src::window_pane::WindowPane as _;
+use crate::arguments::{args, args_get, args_has, args_parse};
+use crate::cmd::queue::{cmdq_error, cmdq_get_client};
+use crate::cmd::{cmd_get_args_mut, cmd_get_entry};
+use crate::control::control_write;
+use crate::file::{file_can_print, file_print, file_print_buffer};
+use crate::format::bytes::write_cstr;
+use crate::paste::paste_set_owned;
+use crate::server_client::Client as _;
+use crate::server_fn::server_redraw_window;
+use crate::shared::abi::*;
+use crate::shared::client::{ClientRef, CLIENT_CONTROL};
+use crate::shared::command::*;
+use crate::window_pane::WindowPane as _;
 use std::ffi::{CStr, CString};
 pub static cmd_capture_pane_entry: cmd_entry = {
     cmd_entry {
@@ -72,7 +72,7 @@ unsafe fn cmd_capture_pane_exec(
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let pane_owner = &mut target_state.wp.upgrade().expect("capture target pane");
     let mut buf: Vec<u8>;
     let mut cause: Option<CString> = None;

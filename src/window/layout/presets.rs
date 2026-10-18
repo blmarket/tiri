@@ -74,7 +74,7 @@ impl Layout for Grid {
 #[cfg(test)]
 mod tests {
     use super::super::{adjacent, Direction, LayoutKind};
-    use crate::src::shared::pane::window_pane;
+    use crate::shared::pane::window_pane;
     use std::cell::UnsafeCell;
     use std::rc::Rc;
 

@@ -5,33 +5,31 @@ mod stream;
 use model::FileRegistration;
 pub use model::{client_file, client_file_cb, client_file_event, client_files};
 
-use crate::src::compat::imsg::imsg;
-use crate::src::compat::imsg::*;
-use crate::src::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE};
-use crate::src::compat::stdio::CFile;
-use crate::src::log::{fatalx, log_cstr, log_debug};
-use crate::src::proc::{bytes_of, proc_send};
-use crate::src::reactor::BufferEvent;
-use crate::src::reactor::{
+use crate::compat::imsg::imsg;
+use crate::compat::imsg::*;
+use crate::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE};
+use crate::compat::stdio::CFile;
+use crate::log::{fatalx, log_cstr, log_debug};
+use crate::proc::{bytes_of, proc_send};
+use crate::reactor::BufferEvent;
+use crate::reactor::{
     bufferevent_enable, bufferevent_get_input, bufferevent_new, bufferevent_write, evbuffer_add,
     evbuffer_add_formatted, evbuffer_drain, evbuffer_get_length, evbuffer_pullup,
 };
 use libc::{ferror, fopen, fread, fwrite, memcpy, strcmp, strlen};
 
-use crate::src::server_client::Client as _;
-use crate::src::shared::abi::ssize_t;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::client::{CLIENT_ATTACHED, CLIENT_CONTROL, CLIENT_DEAD, CLIENT_WRITE_ACK};
-use crate::src::shared::errno::{E2BIG, EINVAL, ENOMEM};
-use crate::src::shared::event::*;
-use crate::src::shared::event::{EV_READ, EV_WRITE};
-use crate::src::shared::posix_io::{
-    O_APPEND, O_NONBLOCK, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO,
-};
-use crate::src::shared::process::tmuxpeer;
-use crate::src::shared::stdio::FILE;
-use crate::src::tmux::find_home_cstr;
+use crate::server_client::Client as _;
+use crate::shared::abi::ssize_t;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::client::{CLIENT_ATTACHED, CLIENT_CONTROL, CLIENT_DEAD, CLIENT_WRITE_ACK};
+use crate::shared::errno::{E2BIG, EINVAL, ENOMEM};
+use crate::shared::event::*;
+use crate::shared::event::{EV_READ, EV_WRITE};
+use crate::shared::posix_io::{O_APPEND, O_NONBLOCK, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO};
+use crate::shared::process::tmuxpeer;
+use crate::shared::stdio::FILE;
+use crate::tmux::find_home_cstr;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::io;
@@ -161,7 +159,7 @@ unsafe fn file_wait(
     let local = matches!((*file.get()).registration, FileRegistration::Unlinked).then(|| {
         assert!((*file.get()).completed, "local transfers complete at once");
         let mut task = None;
-        crate::src::reactor::task_start(&mut task, move || {
+        crate::reactor::task_start(&mut task, move || {
             Ok(async move { unsafe { file_fire_done_cb(&file) } })
         })
         .expect("schedule local file completion");
@@ -210,7 +208,7 @@ unsafe fn file_create_with_peer(
     cf.stream = stream;
     cf.cb = cb;
     cf.peer = peer;
-    crate::src::client::client_register_file(&owner);
+    crate::client::client_register_file(&owner);
     owner
 }
 unsafe fn file_create_with_client(
@@ -289,7 +287,7 @@ unsafe fn file_fire_done(owner: &Rc<UnsafeCell<client_file>>) {
         return;
     }
     let file = Rc::downgrade(owner);
-    crate::src::reactor::task_start(&mut (*owner.get()).done_task, move || {
+    crate::reactor::task_start(&mut (*owner.get()).done_task, move || {
         Ok(async move {
             if let Some(file) = file.upgrade() {
                 unsafe {
@@ -738,7 +736,7 @@ unsafe fn file_push(file_owner: &Rc<UnsafeCell<client_file>>) {
     }
     if left != 0 as size_t {
         let observer = Rc::downgrade(file_owner);
-        crate::src::reactor::task_start(&mut cf.push_task, move || {
+        crate::reactor::task_start(&mut cf.push_task, move || {
             Ok(async move {
                 if let Some(owner) = observer.upgrade() {
                     unsafe { file_push_cb(&owner) };
@@ -884,7 +882,7 @@ pub unsafe fn file_write_open(
         log_cstr(path)
     ));
     find.stream = msg.stream;
-    if crate::src::client::client_find_file(find.stream).is_some() {
+    if crate::client::client_find_file(find.stream).is_some() {
         error = EBADF;
     } else {
         transfer_owner = file_create_with_peer(peer, msg.stream, cb);
@@ -934,7 +932,7 @@ pub unsafe fn file_write_open(
                         drop(cf.fd.take());
                         client_files_remove(cf);
                     } else {
-                        cf.event = crate::src::reactor::StreamHandle::from_ptr(stream);
+                        cf.event = crate::reactor::StreamHandle::from_ptr(stream);
                         bufferevent_enable(stream, EV_WRITE as ::core::ffi::c_short);
                     }
                 }
@@ -954,7 +952,7 @@ pub unsafe fn file_write_data(imsg: &imsg) {
     let mut find: client_file = client_file::empty();
     let size = msglen - ::core::mem::size_of::<msg_write_data>();
     find.stream = msg.stream;
-    let Some(file_owner) = crate::src::client::client_find_file(find.stream) else {
+    let Some(file_owner) = crate::client::client_find_file(find.stream) else {
         fatalx(|out| out.write_all(b"unknown stream number"));
     };
     let cf = &*file_owner.get();
@@ -976,7 +974,7 @@ pub unsafe fn file_write_close(imsg: &imsg) {
     let msg = read_imsg_payload::<msg_write_close>(imsg).unwrap();
     let mut find: client_file = client_file::empty();
     find.stream = msg.stream;
-    let Some(file_owner) = crate::src::client::client_find_file(find.stream) else {
+    let Some(file_owner) = crate::client::client_find_file(find.stream) else {
         fatalx(|out| out.write_all(b"unknown stream number"));
     };
     let cf = &mut *file_owner.get();
@@ -1077,7 +1075,7 @@ pub unsafe fn file_read_open(
         log_cstr(path)
     ));
     find.stream = msg.stream;
-    if crate::src::client::client_find_file(find.stream).is_some() {
+    if crate::client::client_find_file(find.stream).is_some() {
         error = EBADF;
     } else {
         transfer_owner = file_create_with_peer(peer, msg.stream, cb);
@@ -1122,7 +1120,7 @@ pub unsafe fn file_read_open(
                         drop(cf.fd.take());
                         client_files_remove(&mut *cf);
                     } else {
-                        cf.event = crate::src::reactor::StreamHandle::from_ptr(stream);
+                        cf.event = crate::reactor::StreamHandle::from_ptr(stream);
                         bufferevent_enable(stream, EV_READ as ::core::ffi::c_short);
                         return;
                     }
@@ -1142,7 +1140,7 @@ pub unsafe fn file_read_cancel(imsg: &imsg) {
     let msg = read_imsg_payload::<msg_read_cancel>(imsg).unwrap();
     let mut find: client_file = client_file::empty();
     find.stream = msg.stream;
-    let Some(file_owner) = crate::src::client::client_find_file(find.stream) else {
+    let Some(file_owner) = crate::client::client_find_file(find.stream) else {
         fatalx(|out| out.write_all(b"unknown stream number"));
     };
     let cf = &*file_owner.get();
@@ -1285,7 +1283,7 @@ fn client_files_remove(elm: &mut client_file) {
                 .as_ref()
                 .expect("registered client file retains its client")
                 .unregister_file(stream, identity),
-            FileRegistration::Peer => crate::src::client::client_remove_file(stream, identity),
+            FileRegistration::Peer => crate::client::client_remove_file(stream, identity),
         }
     }
 }
@@ -1348,7 +1346,7 @@ pub fn client_files_iter(
                     .c
                     .as_ref()
                     .is_some_and(|client| client.find_file(file.stream).ptr_eq(entry)),
-                FileRegistration::Peer => crate::src::client::client_find_file(file.stream)
+                FileRegistration::Peer => crate::client::client_find_file(file.stream)
                     .is_some_and(|indexed| Rc::ptr_eq(&indexed, &owner)),
             }
         }

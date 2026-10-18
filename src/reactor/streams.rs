@@ -1,7 +1,7 @@
 mod api;
 use super::io;
-use crate::src::control::CONTROL_BUFFER_LOW;
-use crate::src::shared::event::{bufferevent, bufferevent_data_cb, bufferevent_event_cb};
+use crate::control::CONTROL_BUFFER_LOW;
+use crate::shared::event::{bufferevent, bufferevent_data_cb, bufferevent_event_cb};
 pub use api::*;
 use std::cell::{Cell, RefCell};
 use std::ffi::{c_int, c_short};

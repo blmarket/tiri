@@ -1,8 +1,8 @@
-use crate::src::arguments::{args_parse, args_string};
-use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::cmdq_error;
-use crate::src::format::format_single_from_target_cstring;
-use crate::src::shared::command::*;
+use crate::arguments::{args_parse, args_string};
+use crate::cmd::cmd_get_args_mut;
+use crate::cmd::queue::cmdq_error;
+use crate::format::format_single_from_target_cstring;
+use crate::shared::command::*;
 
 pub static cmd_rename_session_entry: cmd_entry = {
     cmd_entry {
@@ -33,11 +33,11 @@ unsafe fn cmd_rename_session_exec(
     mut command: refbox::Weak<cmd>,
     item: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    use crate::src::session::Session;
+    use crate::session::Session;
     let arguments = cmd_get_args_mut(command.get_mut_unchecked()).expect("command arguments");
     let name = args_string(arguments, 0).expect("rename-session argument");
     let expanded = format_single_from_target_cstring(item, name.as_ptr());
-    let target = crate::src::cmd::queue::cmdq_get_target(&item.borrow()).clone();
+    let target = crate::cmd::queue::cmdq_get_target(&item.borrow()).clone();
     let owner = target.session_handle().expect("rename-session target");
     match owner.rename(&expanded) {
         Ok(()) => CmdOutcome::Normal,

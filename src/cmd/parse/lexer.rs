@@ -1,10 +1,10 @@
 //! Byte-oriented command lexer. Expansion happens as each token is requested,
 //! after any preceding grammar actions have updated the application environment.
 use super::{ParseSession, RefCell};
-use crate::src::environ::environ_find;
-use crate::src::ffi::libc::{getc, wctomb};
-use crate::src::shared::stdio::{EOF, FILE};
-use crate::src::tmux::global_environ;
+use crate::environ::environ_find;
+use crate::ffi::libc::{getc, wctomb};
+use crate::shared::stdio::{EOF, FILE};
+use crate::tmux::global_environ;
 use libc::{getpwnam, getpwuid, getuid, ungetc};
 use std::ffi::{c_char, CStr, CString};
 use tiri_cmdparse::{Token, TokenText};
@@ -530,7 +530,7 @@ fn is_variable(byte: u8, first: bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::src::shared::command::cmd_parse_input;
+    use crate::shared::command::cmd_parse_input;
 
     fn label(token: Token) -> (String, Vec<u8>) {
         match token {

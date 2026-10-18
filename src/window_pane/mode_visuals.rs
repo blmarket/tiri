@@ -1,14 +1,14 @@
 use super::window_pane;
-use crate::src::format::bytes::format_bytes;
-use crate::src::grid::grid_default_cell;
-use crate::src::screen_write::{
+use crate::format::bytes::format_bytes;
+use crate::grid::grid_default_cell;
+use crate::screen_write::{
     screen_write_box, screen_write_clearcharacter, screen_write_cursormove, screen_write_nputs,
     screen_write_start, screen_write_stop,
 };
-use crate::src::shared::abi::{pid_t, size_t, ssize_t, u_int};
-use crate::src::shared::layout::BOX_LINES_DEFAULT;
-use crate::src::shared::screen::screen;
-use crate::src::shared::screen_write::screen_write_ctx;
+use crate::shared::abi::{pid_t, size_t, ssize_t, u_int};
+use crate::shared::layout::BOX_LINES_DEFAULT;
+use crate::shared::screen::screen;
+use crate::shared::screen_write::screen_write_ctx;
 use std::{cell::UnsafeCell, rc::Rc};
 
 pub(super) unsafe fn draw_editor_waiting(owner: &Rc<UnsafeCell<window_pane>>, pid: pid_t) {

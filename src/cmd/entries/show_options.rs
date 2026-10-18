@@ -1,31 +1,31 @@
-use crate::src::arguments::{args_count, args_get, args_has, args_parse, args_string};
-use crate::src::cmd::queue::{cmdq_error, cmdq_print};
-use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::{
+use crate::arguments::{args_count, args_get, args_has, args_parse, args_string};
+use crate::cmd::queue::{cmdq_error, cmdq_print};
+use crate::cmd::{cmd_get_args_mut, cmd_get_entry};
+use crate::format::bytes::write_cstr;
+use crate::format::{
     format_add, format_add_time, format_create_from_target, format_expand_cstring,
     format_single_from_target_cstring,
 };
-use crate::src::hooks::{
+use crate::hooks::{
     hooks_is_event, hooks_monitor_get_fire_count, hooks_monitor_get_fire_time,
     hooks_monitor_to_cstring,
 };
-use crate::src::monitor::{
+use crate::monitor::{
     MONITOR_ALL_PANES, MONITOR_ALL_WINDOWS, MONITOR_PANE, MONITOR_SESSION, MONITOR_WINDOW,
 };
-use crate::src::options::options_table;
-use crate::src::options::options_table_entry;
-use crate::src::options::OPTIONS_TABLE_IS_HOOK;
-use crate::src::options::{
+use crate::options::options_table;
+use crate::options::options_table_entry;
+use crate::options::OPTIONS_TABLE_IS_HOOK;
+use crate::options::{
     options_get_fire_count, options_get_fire_time, options_get_monitor_data, options_is_array,
     options_is_string, options_iter, options_match_owned, options_scope_from_flags,
     options_scope_from_name, options_to_cstring, OptionMatchFailure, OptionsScope,
 };
-use crate::src::shared::abi::*;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
-use crate::src::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
-use crate::src::shared::format::format_tree;
+use crate::shared::abi::*;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
+use crate::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
+use crate::shared::format::format_tree;
 use std::ffi::{CStr, CString};
 use std::time::{Duration, UNIX_EPOCH};
 
@@ -114,7 +114,7 @@ unsafe fn cmd_show_options_exec(
     let item = item_handle.borrow();
     let args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let target = &mut target_state;
     let window = std::ptr::eq(
         cmd_get_entry(self_0.get_unchecked()),

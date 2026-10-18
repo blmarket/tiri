@@ -1,42 +1,42 @@
-use crate::src::cmd::cmd_table;
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::{
+use crate::cmd::cmd_table;
+use crate::format::bytes::write_cstr;
+use crate::format::{
     format_add, format_create_defaults, format_create_from_state, format_expand_time_cstring,
 };
-use crate::src::format_draw::{format_draw, format_width};
-use crate::src::grid::grid_default_cell;
-use crate::src::key_string::key_string_format;
-use crate::src::log::{log_cstr, log_debug};
-use crate::src::options::OptionsScope;
-use crate::src::options::{options_get_number, options_get_string};
-use crate::src::paste::{paste_buffer_data, paste_get_top};
-use crate::src::prompt_history::{prompt_add_history, prompt_down_history, prompt_up_history};
-use crate::src::screen::screen_set_cursor_style;
-use crate::src::screen_write::{
+use crate::format_draw::{format_draw, format_width};
+use crate::grid::grid_default_cell;
+use crate::key_string::key_string_format;
+use crate::log::{log_cstr, log_debug};
+use crate::options::OptionsScope;
+use crate::options::{options_get_number, options_get_string};
+use crate::paste::{paste_buffer_data, paste_get_top};
+use crate::prompt_history::{prompt_add_history, prompt_down_history, prompt_up_history};
+use crate::screen::screen_set_cursor_style;
+use crate::screen_write::{
     screen_write_cell, screen_write_clearcharacter, screen_write_cursormove,
 };
-use crate::src::shared::abi::ssize_t;
-use crate::src::shared::abi::*;
-use crate::src::shared::command::cmd_find_state;
-use crate::src::shared::format::format_tree;
-use crate::src::shared::grid::*;
-use crate::src::shared::key::MODEKEY_VI;
-use crate::src::shared::key::*;
-use crate::src::shared::prompt::prompt;
-use crate::src::shared::prompt::*;
-use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
-use crate::src::shared::prompt::{
+use crate::shared::abi::ssize_t;
+use crate::shared::abi::*;
+use crate::shared::command::cmd_find_state;
+use crate::shared::format::format_tree;
+use crate::shared::grid::*;
+use crate::shared::key::MODEKEY_VI;
+use crate::shared::key::*;
+use crate::shared::prompt::prompt;
+use crate::shared::prompt::*;
+use crate::shared::prompt::{prompt_create_data, prompt_draw_data};
+use crate::shared::prompt::{
     PROMPT_ACCEPT, PROMPT_BSPACE_EXIT, PROMPT_CLOSE, PROMPT_COMMANDMODE, PROMPT_EDITARROWS,
     PROMPT_INCREMENTAL, PROMPT_ISMODE, PROMPT_ISPANE, PROMPT_KEY, PROMPT_NOFORMAT, PROMPT_NOFREEZE,
     PROMPT_NUMERIC, PROMPT_QUOTENEXT, PROMPT_SINGLE,
 };
-use crate::src::shared::screen::screen;
-use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::style::*;
-use crate::src::shared::utf8::*;
-use crate::src::style::{style_parse, style_set};
-use crate::src::text::utf8::{
+use crate::shared::screen::screen;
+use crate::shared::screen_write::screen_write_ctx;
+use crate::shared::session::SessionRef;
+use crate::shared::style::*;
+use crate::shared::utf8::*;
+use crate::style::{style_parse, style_set};
+use crate::text::utf8::{
     utf8_append, utf8_copy, utf8_cstrwidth, utf8_fromcstr_vec, utf8_open, utf8_set, utf8_strlen,
     utf8_strwidth, utf8_to_data, utf8_tocstr_cstring,
 };
@@ -103,7 +103,7 @@ pub unsafe fn prompt_set_options(pd: &mut prompt_create_data<'_>, session: Optio
     };
     let read_string = |key: &CStr| scope.with_local(|oo| options_get_string(oo, key));
     let read_number = |key: &CStr| scope.with_local(|oo| options_get_number(oo, key));
-    use crate::src::style::style_apply_with_options;
+    use crate::style::style_apply_with_options;
     style_apply_with_options(&mut pd.style, c"message-style", None, &scope);
     style_apply_with_options(
         &mut pd.command_style,
@@ -134,7 +134,7 @@ pub unsafe fn prompt_set_options(pd: &mut prompt_create_data<'_>, session: Optio
 }
 pub unsafe fn prompt_create(
     pd: prompt_create_data<'_>,
-) -> refbox::RefBox<crate::src::shared::prompt::prompt> {
+) -> refbox::RefBox<crate::shared::prompt::prompt> {
     let owner = refbox::RefBox::new(prompt::default());
     let mut pr = owner.try_borrow_mut().expect("live unborrowed prompt");
     let mut ft_owner = if let Some(fs) = pd.fs {
@@ -194,7 +194,7 @@ pub unsafe fn prompt_create(
     owner
 }
 fn prompt_borrow_live(
-    owner: &refbox::Weak<crate::src::shared::prompt::prompt>,
+    owner: &refbox::Weak<crate::shared::prompt::prompt>,
 ) -> Option<refbox::Borrow<'_, prompt>> {
     match owner.try_borrow_mut() {
         Ok(prompt) => Some(prompt),
@@ -202,7 +202,7 @@ fn prompt_borrow_live(
         Err(refbox::BorrowError::Borrowed) => panic!("prompt already borrowed"),
     }
 }
-pub fn prompt_free(owner: &refbox::Weak<crate::src::shared::prompt::prompt>) {
+pub fn prompt_free(owner: &refbox::Weak<crate::shared::prompt::prompt>) {
     let callback = {
         let Some(mut pr) = prompt_borrow_live(owner) else {
             return;
@@ -253,7 +253,7 @@ impl PromptCallbackResult {
 }
 
 fn prompt_fire_callback(
-    owner: &refbox::Weak<crate::src::shared::prompt::prompt>,
+    owner: &refbox::Weak<crate::shared::prompt::prompt>,
     text: Option<&CStr>,
     kind: prompt_key_result,
     redraw: Option<&mut ::core::ffi::c_int>,
@@ -299,7 +299,7 @@ fn prompt_fire_callback(
     PromptCallbackResult::Continue
 }
 
-pub fn prompt_incremental_start(owner: &refbox::Weak<crate::src::shared::prompt::prompt>) {
+pub fn prompt_incremental_start(owner: &refbox::Weak<crate::shared::prompt::prompt>) {
     let callback_input = {
         let Some(pr) = prompt_borrow_live(owner) else {
             return;
@@ -1220,14 +1220,14 @@ fn prompt_backward_word(pr: &prompt, separators: &CStr) -> usize {
     index
 }
 fn prompt_done(
-    pr: &refbox::Weak<crate::src::shared::prompt::prompt>,
+    pr: &refbox::Weak<crate::shared::prompt::prompt>,
     text: Option<&CStr>,
     redraw: &mut ::core::ffi::c_int,
 ) -> PromptCallbackResult {
     prompt_fire_callback(pr, text, PROMPT_KEY_CLOSE, Some(redraw))
 }
 unsafe fn prompt_done_with_history(
-    pr: &refbox::Weak<crate::src::shared::prompt::prompt>,
+    pr: &refbox::Weak<crate::shared::prompt::prompt>,
     redraw: &mut ::core::ffi::c_int,
 ) -> prompt_key_result {
     let (input, kind) = {
@@ -1240,7 +1240,7 @@ unsafe fn prompt_done_with_history(
     prompt_done(pr, Some(&input), redraw).key_result()
 }
 fn prompt_check_move(
-    owner: &refbox::Weak<crate::src::shared::prompt::prompt>,
+    owner: &refbox::Weak<crate::shared::prompt::prompt>,
     key: key_code,
 ) -> prompt_key_result {
     let input = {
@@ -1440,7 +1440,7 @@ fn prompt_append_key(pr: &mut prompt, key: key_code) -> bool {
 }
 
 pub unsafe fn prompt_key(
-    pr: &refbox::Weak<crate::src::shared::prompt::prompt>,
+    pr: &refbox::Weak<crate::shared::prompt::prompt>,
     mut key: key_code,
     redraw: &mut ::core::ffi::c_int,
 ) -> prompt_key_result {
@@ -1700,7 +1700,7 @@ mod prompt_buffer_tests {
     fn make_prompt_owner(
         input: &CStr,
         index: usize,
-    ) -> refbox::RefBox<crate::src::shared::prompt::prompt> {
+    ) -> refbox::RefBox<crate::shared::prompt::prompt> {
         refbox::RefBox::new(prompt {
             buffer: utf8_fromcstr_vec(input),
             index,
@@ -2229,7 +2229,7 @@ mod prompt_buffer_tests {
         ] {
             let events = Rc::new(RefCell::new(Vec::new()));
             let slot = Rc::new(RefCell::new(
-                None::<refbox::RefBox<crate::src::shared::prompt::prompt>>,
+                None::<refbox::RefBox<crate::shared::prompt::prompt>>,
             ));
             let prompt = make_prompt_owner(c"", 0);
             let observer = prompt.downgrade();
@@ -2268,7 +2268,7 @@ mod prompt_buffer_tests {
     #[test]
     fn cleanup_callback_can_drop_the_only_owner() {
         let slot = Rc::new(RefCell::new(
-            None::<refbox::RefBox<crate::src::shared::prompt::prompt>>,
+            None::<refbox::RefBox<crate::shared::prompt::prompt>>,
         ));
         let prompt = make_prompt_owner(c"", 0);
         let observer = prompt.downgrade();
@@ -2286,7 +2286,7 @@ mod prompt_buffer_tests {
     fn callbacks_replace_owners_without_retaining_closed_prompts() {
         let events = Rc::new(RefCell::new(Vec::new()));
         let owner = Rc::new(RefCell::new(
-            None::<refbox::RefBox<crate::src::shared::prompt::prompt>>,
+            None::<refbox::RefBox<crate::shared::prompt::prompt>>,
         ));
         let pr = make_prompt_owner(c"", 0);
         pr.try_borrow_mut().unwrap().flags = PROMPT_SINGLE;

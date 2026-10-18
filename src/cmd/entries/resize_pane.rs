@@ -1,11 +1,11 @@
-use crate::src::arguments::{args, args_has, args_parse};
-use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::cmdq_error;
-use crate::src::shared::command::CMD_AFTERHOOK;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::window::{LayoutAction, Window as _};
-use crate::src::window_pane::WindowPane as _;
+use crate::arguments::{args, args_has, args_parse};
+use crate::cmd::cmd_get_args_mut;
+use crate::cmd::queue::cmdq_error;
+use crate::shared::command::CMD_AFTERHOOK;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::window::{LayoutAction, Window as _};
+use crate::window_pane::WindowPane as _;
 
 /// Panes take their size from the layout; -Z asks it to give a pane the whole
 /// window (in the strip, full width) or take it back, and -T trims history.
@@ -41,7 +41,7 @@ unsafe fn cmd_resize_pane_exec(
     let item = item_handle.borrow();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let pane_owner = (*target).wp.upgrade().expect("live resize target pane");
     if args_has(&*args, b'Z') != 0 {

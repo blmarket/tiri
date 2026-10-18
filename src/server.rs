@@ -1,28 +1,26 @@
-use crate::src::cmd::entries::wait_for::cmd_wait_for_flush;
-use crate::src::cmd::queue::cmdq_next;
+use crate::cmd::entries::wait_for::cmd_wait_for_flush;
+use crate::cmd::queue::cmdq_next;
 #[cfg(target_os = "linux")]
-use crate::src::compat::systemd::{systemd_activated, systemd_create_socket};
-use crate::src::control_notify::control_build_events;
-use crate::src::ffi::libc::stderr;
-use crate::src::format::bytes::format_message_with;
-use crate::src::format::format_tidy_jobs;
-use crate::src::hooks::hooks_build_events;
-use crate::src::input_keys::input_key_build;
-use crate::src::job::{job_check_died, job_kill_all, job_still_running};
-use crate::src::key_bindings::key_bindings_init;
-use crate::src::log::{fatal, log_cstr, log_debug, log_get_level};
-use crate::src::options::OptionsScope;
-use crate::src::options::{options_get_number, options_set_number};
-use crate::src::proc::{
-    proc_fork_and_daemon, proc_loop, proc_set_signals, proc_start, proc_toggle_log,
-};
-use crate::src::prompt_history::prompt_save_history;
-use crate::src::reactor;
-use crate::src::server_acl::{server_acl_init, server_acl_join};
-use crate::src::server_client::Client as _;
-use crate::src::server_client::ClientRegistry;
-use crate::src::shared::window::WindowWeak;
-use crate::src::window::Window as _;
+use crate::compat::systemd::{systemd_activated, systemd_create_socket};
+use crate::control_notify::control_build_events;
+use crate::ffi::libc::stderr;
+use crate::format::bytes::format_message_with;
+use crate::format::format_tidy_jobs;
+use crate::hooks::hooks_build_events;
+use crate::input_keys::input_key_build;
+use crate::job::{job_check_died, job_kill_all, job_still_running};
+use crate::key_bindings::key_bindings_init;
+use crate::log::{fatal, log_cstr, log_debug, log_get_level};
+use crate::options::OptionsScope;
+use crate::options::{options_get_number, options_set_number};
+use crate::proc::{proc_fork_and_daemon, proc_loop, proc_set_signals, proc_start, proc_toggle_log};
+use crate::prompt_history::prompt_save_history;
+use crate::reactor;
+use crate::server_acl::{server_acl_init, server_acl_join};
+use crate::server_client::Client as _;
+use crate::server_client::ClientRegistry;
+use crate::shared::window::WindowWeak;
+use crate::window::Window as _;
 use libc::{
     chmod, exit, fprintf, kill, killpg, sigfillset, sigprocmask, stat, strsignal, time, umask,
     unlink, waitpid,
@@ -35,18 +33,18 @@ use std::os::unix::net::UnixListener;
 use std::os::unix::process::ExitStatusExt;
 use std::process::ExitStatus;
 
-use crate::src::session::sessions;
-use crate::src::session::Session;
+use crate::session::sessions;
+use crate::session::Session;
 
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::status::message_list;
-use crate::src::text::utf8::utf8_update_width_cache;
-use crate::src::tmux::{get_timer, socket_path_cstr, start_time};
-use crate::src::tty::tty_create_log;
+use crate::shared::client::ClientRef;
+use crate::shared::session::SessionRef;
+use crate::shared::status::message_list;
+use crate::text::utf8::utf8_update_width_cache;
+use crate::tmux::{get_timer, socket_path_cstr, start_time};
+use crate::tty::tty_create_log;
 
-use crate::src::window::windows;
-use crate::src::window_pane::WindowPane as _;
+use crate::window::windows;
+use crate::window_pane::WindowPane as _;
 use std::time::{Duration, SystemTime};
 use tiri_rt::{AsyncAccept as _, Runtime as _};
 
@@ -57,19 +55,19 @@ unsafe fn server_clear_messages() {
     message_log.clear();
 }
 
-use crate::src::shared::abi::__mode_t;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::{CLIENT_DEFAULTSOCKET, CLIENT_IDENTIFIED, CLIENT_NOFORK};
-use crate::src::shared::command::cmd_find_state;
-use crate::src::shared::errno::{EAGAIN, ECHILD, EINTR, ENAMETOOLONG};
-use crate::src::shared::event::*;
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::posix_io::{S_IRWXU, WAIT_ANY, WNOHANG};
-use crate::src::shared::process::tmuxproc;
-use crate::src::shared::signal::{
+use crate::shared::abi::__mode_t;
+use crate::shared::abi::*;
+use crate::shared::client::{CLIENT_DEFAULTSOCKET, CLIENT_IDENTIFIED, CLIENT_NOFORK};
+use crate::shared::command::cmd_find_state;
+use crate::shared::errno::{EAGAIN, ECHILD, EINTR, ENAMETOOLONG};
+use crate::shared::event::*;
+use crate::shared::pane::window_pane;
+use crate::shared::posix_io::{S_IRWXU, WAIT_ANY, WNOHANG};
+use crate::shared::process::tmuxproc;
+use crate::shared::signal::{
     sigset_t, ProcessSignal, SIGCONT, SIGTTIN, SIGTTOU, SIG_BLOCK, SIG_SETMASK,
 };
-use crate::src::shared::window::winlink;
+use crate::shared::window::winlink;
 
 pub type mode_t = __mode_t;
 
@@ -235,7 +233,7 @@ pub(crate) unsafe fn server_start(
     hooks_build_events();
     server_clear_messages();
     start_time = SystemTime::now();
-    crate::src::plugin::init();
+    crate::plugin::init();
     #[cfg(target_os = "linux")]
     let listener = if systemd_activated() != 0 {
         systemd_create_socket(flags as ::core::ffi::c_int).map(|fd| UnixListener::from_raw_fd(fd))
@@ -278,7 +276,7 @@ pub(crate) unsafe fn server_start(
             fprintf(stderr, c"%s\n".as_ptr(), cause.as_ptr());
             drop(process_owner);
             server_proc = std::ptr::null_mut();
-            crate::src::plugin::shutdown();
+            crate::plugin::shutdown();
             reactor::shutdown_runtime(runtime);
             exit(1 as ::core::ffi::c_int);
         }
@@ -289,8 +287,8 @@ pub(crate) unsafe fn server_start(
     server_add_accept(0 as ::core::ffi::c_int);
     let mut loop_callback = || unsafe { server_loop() == 0 };
     proc_loop(server_proc, runtime, Some(&mut loop_callback));
-    crate::src::plugin::shutdown();
-    crate::src::cmd::queue::cmdq_cancel_background();
+    crate::plugin::shutdown();
+    crate::cmd::queue::cmdq_cancel_background();
     job_kill_all();
     prompt_save_history();
     drop(process_owner);
@@ -442,7 +440,7 @@ pub unsafe fn server_add_accept(mut timeout: ::core::ffi::c_int) {
         return;
     };
     if timeout == 0 as ::core::ffi::c_int {
-        crate::src::reactor::task_start(&mut server_accept_task, move || {
+        crate::reactor::task_start(&mut server_accept_task, move || {
             let source = tiri_rt::mio::Listener::new(socket.try_clone()?)?;
             Ok(async move {
                 let accepted = source.accept().await;
@@ -453,7 +451,7 @@ pub unsafe fn server_add_accept(mut timeout: ::core::ffi::c_int) {
     } else {
         let now = std::time::Instant::now();
         let deadline = now.checked_add(tv).unwrap_or(now);
-        crate::src::reactor::task_start(&mut server_accept_task, move || {
+        crate::reactor::task_start(&mut server_accept_task, move || {
             let wait = tiri_rt::mio::Sleep::new(deadline);
             Ok(async move {
                 wait.await.expect("accept backoff wait");

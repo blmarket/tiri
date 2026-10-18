@@ -1,27 +1,27 @@
 //! Authoritative client objects, file transfers, overlays, and scalar domains.
-use crate::src::shared::client::ClientWeak;
-use crate::src::shared::session::{SessionRef, SessionWeak};
-use crate::src::shared::window::WindowWeak;
+use crate::shared::client::ClientWeak;
+use crate::shared::session::{SessionRef, SessionWeak};
+use crate::shared::window::WindowWeak;
 use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::src::compat::imsg::msgtype;
-use crate::src::shared::abi::{pid_t, size_t, time_t, u_int, uint64_t};
-use crate::src::shared::colour::client_theme;
-use crate::src::shared::command::cmdq_list;
-use crate::src::shared::control::control_state;
-use crate::src::shared::display::progress_bar;
-use crate::src::shared::environment::environ;
-use crate::src::shared::event::Timer;
-use crate::src::shared::format::format_job_tree;
-use crate::src::shared::key::{key_code, key_table};
-use crate::src::shared::mouse::mouse_event;
-use crate::src::shared::process::tmuxpeer;
-use crate::src::shared::redraw::redraw_scene;
-use crate::src::shared::status::status_line;
-use crate::src::tty::tty;
+use crate::compat::imsg::msgtype;
+use crate::shared::abi::{pid_t, size_t, time_t, u_int, uint64_t};
+use crate::shared::colour::client_theme;
+use crate::shared::command::cmdq_list;
+use crate::shared::control::control_state;
+use crate::shared::display::progress_bar;
+use crate::shared::environment::environ;
+use crate::shared::event::Timer;
+use crate::shared::format::format_job_tree;
+use crate::shared::key::{key_code, key_table};
+use crate::shared::mouse::mouse_event;
+use crate::shared::process::tmuxpeer;
+use crate::shared::redraw::redraw_scene;
+use crate::shared::status::status_line;
+use crate::tty::tty;
 
-use crate::src::shared::client::*;
+use crate::shared::client::*;
 pub struct client {
     pub(super) registry_next: ClientWeak,
     pub(super) name: Option<std::ffi::CString>,
@@ -74,7 +74,7 @@ pub struct client {
     pub(super) status: status_line,
     pub(super) cycle_timer: Option<Timer>,
     pub(super) theme: client_theme,
-    pub(super) input_requests: Vec<*mut crate::src::shared::input::input_request>,
+    pub(super) input_requests: Vec<*mut crate::shared::input::input_request>,
     pub(super) flags: uint64_t,
     pub(super) exit_type: client_exit_type,
     pub(super) exit_msgtype: msgtype,
@@ -87,7 +87,7 @@ pub struct client {
     pub(super) message_ignore_styles: ::core::ffi::c_int,
     pub(super) message_string: Option<std::ffi::CString>,
     pub(super) message_timer: Option<Timer>,
-    pub(super) prompt: Option<refbox::RefBox<crate::src::shared::prompt::prompt>>,
+    pub(super) prompt: Option<refbox::RefBox<crate::shared::prompt::prompt>>,
     /// Attached session identity; the session index owns the Rc allocation.
     pub(super) session: SessionWeak,
     /// Previous session observer; this link never keeps a session alive.
@@ -212,7 +212,7 @@ impl client {
         let owner = Self::with_session_for_test(session);
         (*owner.get()).name = name.map(ToOwned::to_owned);
         (*owner.get()).control_state =
-            Some(Box::new(crate::src::shared::control::control_state::empty()));
+            Some(Box::new(crate::shared::control::control_state::empty()));
         owner
     }
 }

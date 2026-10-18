@@ -2,10 +2,10 @@
 
 use super::store::{args, ARGS_ENTRY_OPTIONAL_VALUE};
 use super::value::{args_type, args_value, ArgumentValue, ARGS_COMMANDS, ARGS_NONE, ARGS_STRING};
-use crate::src::cmd::cmd_list_print_cstring;
-use crate::src::log::fatalx;
-use crate::src::shared::vis::{VIS_CSTYLE, VIS_DQ, VIS_NL, VIS_OCTAL, VIS_TAB};
-use crate::src::text::utf8::utf8_strvis;
+use crate::cmd::cmd_list_print_cstring;
+use crate::log::fatalx;
+use crate::shared::vis::{VIS_CSTYLE, VIS_DQ, VIS_NL, VIS_OCTAL, VIS_TAB};
+use crate::text::utf8::utf8_strvis;
 use std::borrow::Cow;
 use std::ffi::{CStr, CString};
 

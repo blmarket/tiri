@@ -1,5 +1,5 @@
-use crate::src::ffi::libc::warnx;
-use crate::src::shared::abi::*;
+use crate::ffi::libc::warnx;
+use crate::shared::abi::*;
 use libc::{getenv, strchr, strlen, strncmp};
 
 #[derive(Copy, Clone)]

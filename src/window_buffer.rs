@@ -1,45 +1,45 @@
-use crate::src::arguments::{args, args_count, args_get, args_has, args_string};
-use crate::src::format::{
+use crate::arguments::{args, args_count, args_get, args_has, args_string};
+use crate::format::{
     format_add, format_create, format_defaults, format_defaults_paste_buffer,
     format_expand_cstring, format_true,
 };
-use crate::src::grid::grid_default_cell;
-use crate::src::key_string::key_string_parse_cstr;
-use crate::src::mode_tree::{
+use crate::grid::grid_default_cell;
+use crate::key_string::key_string_parse_cstr;
+use crate::mode_tree::{
     mode_tree_add, mode_tree_build, mode_tree_down, mode_tree_draw, mode_tree_each_tagged,
     mode_tree_free, mode_tree_get_current, mode_tree_key, mode_tree_resize, mode_tree_run_command,
     mode_tree_start, mode_tree_up,
 };
-use crate::src::paste::{
+use crate::paste::{
     paste_buffer_data, paste_buffer_name, paste_buffer_order, paste_free, paste_get_name,
     paste_is_empty, paste_replace_owned,
 };
-use crate::src::screen_write::{screen_write_cursormove, screen_write_nputs};
-use crate::src::shared::abi::ssize_t;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::command::{cmd_find_state, cmdq_item};
-use crate::src::shared::format::format_tree;
-use crate::src::shared::format::FORMAT_NONE;
-use crate::src::shared::key::*;
-use crate::src::shared::menu::menu_item;
-use crate::src::shared::mode_tree::ModeTreeItemSnapshot;
-use crate::src::shared::mode_tree::{mode_tree_data, mode_tree_help_info, ModeTreeItemData};
-use crate::src::shared::mouse::mouse_event;
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::paste::PasteBufferRef;
-use crate::src::shared::screen::screen;
-use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::sort::sort_criteria;
-use crate::src::shared::sort::*;
-use crate::src::shared::spawn::{spawn_editor_state, EditorHandle};
-use crate::src::shared::vis::{VIS_CSTYLE, VIS_OCTAL, VIS_TAB};
-use crate::src::shared::window::{window_mode, window_mode_entry, winlink};
-use crate::src::sort::sort_get_buffers;
-use crate::src::spawn::{spawn_editor, spawn_editor_write};
-use crate::src::text::utf8::utf8_strvis;
-use crate::src::window_pane::WindowPane as _;
+use crate::screen_write::{screen_write_cursormove, screen_write_nputs};
+use crate::shared::abi::ssize_t;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::command::{cmd_find_state, cmdq_item};
+use crate::shared::format::format_tree;
+use crate::shared::format::FORMAT_NONE;
+use crate::shared::key::*;
+use crate::shared::menu::menu_item;
+use crate::shared::mode_tree::ModeTreeItemSnapshot;
+use crate::shared::mode_tree::{mode_tree_data, mode_tree_help_info, ModeTreeItemData};
+use crate::shared::mouse::mouse_event;
+use crate::shared::pane::window_pane;
+use crate::shared::paste::PasteBufferRef;
+use crate::shared::screen::screen;
+use crate::shared::screen_write::screen_write_ctx;
+use crate::shared::session::SessionRef;
+use crate::shared::sort::sort_criteria;
+use crate::shared::sort::*;
+use crate::shared::spawn::{spawn_editor_state, EditorHandle};
+use crate::shared::vis::{VIS_CSTYLE, VIS_OCTAL, VIS_TAB};
+use crate::shared::window::{window_mode, window_mode_entry, winlink};
+use crate::sort::sort_get_buffers;
+use crate::spawn::{spawn_editor, spawn_editor_write};
+use crate::text::utf8::utf8_strvis;
+use crate::window_pane::WindowPane as _;
 use libc::{strcasestr, strstr};
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};

@@ -1,24 +1,24 @@
 use super::WindowPane;
-use crate::src::arguments::{args, args_get, args_has, args_strtonum_and_expand_result};
-use crate::src::grid::{
+use crate::arguments::{args, args_get, args_has, args_strtonum_and_expand_result};
+use crate::grid::{
     grid_cell_attr_display, grid_cell_flags_display, grid_clear_history, grid_default_cell,
     grid_get_cell, grid_get_line, grid_line_flags_display, grid_line_time, grid_peek_line,
     grid_string_cells_bytes,
 };
-use crate::src::hyperlinks::hyperlinks_get;
-use crate::src::input::input_pending;
-use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
-use crate::src::screen::screen_reset_hyperlinks;
-use crate::src::shared::abi::*;
-use crate::src::shared::colour::COLOUR_FLAG_256;
-use crate::src::shared::command::cmdq_item;
-use crate::src::shared::grid::*;
-use crate::src::shared::limits::{INT_MIN, SHRT_MAX};
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::screen::screen;
-use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
-use crate::src::style::colour::colour_format;
-use crate::src::text::utf8::utf8_strvis;
+use crate::hyperlinks::hyperlinks_get;
+use crate::input::input_pending;
+use crate::reactor::{evbuffer_get_length, evbuffer_pullup};
+use crate::screen::screen_reset_hyperlinks;
+use crate::shared::abi::*;
+use crate::shared::colour::COLOUR_FLAG_256;
+use crate::shared::command::cmdq_item;
+use crate::shared::grid::*;
+use crate::shared::limits::{INT_MIN, SHRT_MAX};
+use crate::shared::pane::window_pane;
+use crate::shared::screen::screen;
+use crate::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
+use crate::style::colour::colour_format;
+use crate::text::utf8::utf8_strvis;
 use libc::snprintf;
 use std::ffi::CString;
 use std::io::Write;

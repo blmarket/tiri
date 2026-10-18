@@ -1,21 +1,21 @@
 //! Pane border cache and status rendering.
 use super::*;
-use crate::src::format::{
+use crate::format::{
     format_create, format_create_defaults, format_defaults, format_expand_time_cstring,
 };
-use crate::src::format_draw::format_draw;
-use crate::src::grid::{grid_compare, grid_default_cell};
-use crate::src::options::options_get_string;
-use crate::src::options::OptionsScope;
-use crate::src::screen_redraw::redraw_get_status_border_cell_type;
-use crate::src::screen_write::{
+use crate::format_draw::format_draw;
+use crate::grid::{grid_compare, grid_default_cell};
+use crate::options::options_get_string;
+use crate::options::OptionsScope;
+use crate::screen_redraw::redraw_get_status_border_cell_type;
+use crate::screen_write::{
     screen_write_cell, screen_write_cursormove, screen_write_start, screen_write_stop,
 };
-use crate::src::shared::format::{FORMAT_PANE, FORMAT_STATUS};
-use crate::src::shared::redraw::redraw_spans;
-use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::style::{style_apply_with_options, style_ranges_clear};
-use crate::src::window_border::window_get_border_cell;
+use crate::shared::format::{FORMAT_PANE, FORMAT_STATUS};
+use crate::shared::redraw::redraw_spans;
+use crate::shared::screen_write::screen_write_ctx;
+use crate::style::{style_apply_with_options, style_ranges_clear};
+use crate::window_border::window_get_border_cell;
 
 pub(super) unsafe fn cell(
     pane: &Rc<UnsafeCell<window_pane>>,

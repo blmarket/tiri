@@ -1,28 +1,28 @@
-use crate::src::arguments::{args, args_count, args_has, args_parse, args_string};
-use crate::src::cfg::{cfg_finished, cfg_print_causes, load_cfg_from_buffer};
-use crate::src::cmd::queue::{
+use crate::arguments::{args, args_count, args_has, args_parse, args_string};
+use crate::cfg::{cfg_finished, cfg_print_causes, load_cfg_from_buffer};
+use crate::cmd::queue::{
     cmdq_error, cmdq_get_callback_owned, cmdq_get_client, cmdq_insert_after, cmdq_resumed,
 };
-use crate::src::cmd::{cmd_get_args_mut, cmd_get_parse_flags};
-use crate::src::compat::glob::GlobResult;
-use crate::src::file::{file_read_wait, FileOutcome, FileWait};
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::format_single_from_target_cstring;
-use crate::src::log::{log_cstr, log_debug};
-use crate::src::reactor::evbuffer_pullup;
-use crate::src::server_client::Client as _;
+use crate::cmd::{cmd_get_args_mut, cmd_get_parse_flags};
+use crate::compat::glob::GlobResult;
+use crate::file::{file_read_wait, FileOutcome, FileWait};
+use crate::format::bytes::write_cstr;
+use crate::format::format_single_from_target_cstring;
+use crate::log::{log_cstr, log_debug};
+use crate::reactor::evbuffer_pullup;
+use crate::server_client::Client as _;
 
-use crate::src::shared::abi::__size_t;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::client::CLIENT_CONTROL;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
-use crate::src::shared::command::{
+use crate::shared::abi::__size_t;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::client::CLIENT_CONTROL;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
+use crate::shared::command::{
     CMD_FIND_CANFAIL, CMD_PARSE_PARSEONLY, CMD_PARSE_QUIET, CMD_PARSE_VERBOSE,
     CMD_SOURCE_FILE_DEPTH_LIMIT,
 };
-use crate::src::shared::errno::{EINVAL, ENOENT, ENOMEM};
+use crate::shared::errno::{EINVAL, ENOENT, ENOMEM};
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
 
@@ -180,7 +180,7 @@ unsafe fn cmd_source_file_done(
     let bdata: &[u8] = evbuffer_pullup(&mut read.buffer, -1).map_or(&[], |bytes| bytes);
     let bsize = bdata.len();
     let mut new_item = Weak::new();
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let target = &mut target_state;
     if error != 0 {
         cmdq_error(item_owner, |out| {

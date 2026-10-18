@@ -1,6 +1,6 @@
 //! Input storage stays in the terminal while decoding uses its contiguous bytes.
 //! Decoded events own their payload before callbacks can replace that storage.
-use crate::src::reactor::evbuffer_pullup;
+use crate::reactor::evbuffer_pullup;
 use tiri_buffer::{Buf, BufMut, SegmentedBuf};
 
 #[derive(Default)]

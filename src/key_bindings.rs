@@ -1,24 +1,24 @@
-use crate::src::cmd::parse::cmd_parse_from_string;
-use crate::src::cmd::queue::{
+use crate::cmd::parse::cmd_parse_from_string;
+use crate::cmd::queue::{
     cmdq_append, cmdq_error, cmdq_get_callback_owned, cmdq_get_command, cmdq_insert_after,
     cmdq_new_state,
 };
-use crate::src::cmd::{cmd_list_all_have, cmd_list_print_cstring};
-use crate::src::key_string::key_string_format;
-use crate::src::log::{fatalx, log_cstr, log_debug, log_hex};
-use crate::src::server_client::ClientRegistry;
+use crate::cmd::{cmd_list_all_have, cmd_list_print_cstring};
+use crate::key_string::key_string_format;
+use crate::log::{fatalx, log_cstr, log_debug, log_hex};
+use crate::server_client::ClientRegistry;
 
-use crate::src::server_client::Client as _;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::client::CLIENT_READONLY;
-use crate::src::shared::command::CMDQ_STATE_REPEAT;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item};
-use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
-use crate::src::shared::key::KEY_BINDING_REPEAT;
-use crate::src::shared::key::*;
-use crate::src::shared::key::{key_binding, key_event, key_table};
+use crate::server_client::Client as _;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::client::CLIENT_READONLY;
+use crate::shared::command::CMDQ_STATE_REPEAT;
+use crate::shared::command::*;
+use crate::shared::command::{cmd_find_state, cmd_list, cmdq_item};
+use crate::shared::command::{cmd_parse_input, cmd_parse_result};
+use crate::shared::key::KEY_BINDING_REPEAT;
+use crate::shared::key::*;
+use crate::shared::key::{key_binding, key_event, key_table};
 use std::ffi::CStr;
 
 /// Key tables indexed by name.
@@ -145,8 +145,8 @@ pub unsafe fn key_bindings_add(
     log_debug(format_args!(
         "key_bindings_add: {} {} = {}",
         log_hex(key),
-        crate::src::log::log_bytes(key_string.as_bytes()),
-        crate::src::log::log_bytes(s.as_bytes())
+        crate::log::log_bytes(key_string.as_bytes()),
+        crate::log::log_bytes(s.as_bytes())
     ));
 }
 
@@ -162,7 +162,7 @@ pub unsafe fn key_bindings_remove(name: &CStr, key: key_code) {
     log_debug(format_args!(
         "key_bindings_remove: {} {}",
         log_hex(bd.key),
-        crate::src::log::log_bytes(key_string.as_bytes())
+        crate::log::log_bytes(key_string.as_bytes())
     ));
     if table.key_bindings.storage.is_empty() && table.default_key_bindings.storage.is_empty() {
         drop(table);
@@ -599,7 +599,7 @@ pub fn key_bindings_has_repeat(bindings: &[&key_binding]) -> bool {
 #[cfg(test)]
 mod ownership_tests {
     use super::*;
-    use crate::src::cmd::cmd_list_new;
+    use crate::cmd::cmd_list_new;
 
     use std::rc::Rc;
 

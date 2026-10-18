@@ -1,16 +1,16 @@
-use crate::src::hyperlinks::hyperlinks_get;
-use crate::src::log::{fatalx, log_debug};
-use crate::src::server::current_time;
-use crate::src::shared::abi::*;
-pub use crate::src::shared::colour::{COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME};
-use crate::src::shared::grid::*;
-pub use crate::src::shared::limits::UINT_MAX;
-pub use crate::src::shared::screen::screen;
-use crate::src::style::colour::{colour_split_rgb, colour_theme_terminal_colour};
-use crate::src::text::utf8::{
+use crate::hyperlinks::hyperlinks_get;
+use crate::log::{fatalx, log_debug};
+use crate::server::current_time;
+use crate::shared::abi::*;
+pub use crate::shared::colour::{COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME};
+use crate::shared::grid::*;
+pub use crate::shared::limits::UINT_MAX;
+pub use crate::shared::screen::screen;
+use crate::style::colour::{colour_split_rgb, colour_theme_terminal_colour};
+use crate::text::utf8::{
     utf8_build_one, utf8_cstrhas, utf8_from_data, utf8_has_whitespace, utf8_set, utf8_to_data,
 };
-use crate::src::tmux::start_time;
+use crate::tmux::start_time;
 use std::ffi::CStr;
 
 pub static grid_default_cell: grid_cell = grid_cell {
@@ -272,13 +272,13 @@ pub unsafe fn grid_line_time(gl: &grid_line) -> time_t {
     if gl.time == 0 {
         return 0;
     }
-    crate::src::shared::time::unix_seconds(start_time) + gl.time as time_t - 1
+    crate::shared::time::unix_seconds(start_time) + gl.time as time_t - 1
 }
 unsafe fn grid_line_set_time(gl: &mut grid_line) {
     gl.time = if current_time == 0 {
         0
     } else {
-        (current_time as __time_t - crate::src::shared::time::unix_seconds(start_time) + 1) as u_int
+        (current_time as __time_t - crate::shared::time::unix_seconds(start_time) + 1) as u_int
     };
 }
 pub fn grid_adjust_lines(gd: &mut grid, lines: u_int) {
@@ -1501,8 +1501,8 @@ mod storage_tests {
     #[test]
     fn captures_preserve_last_code_when_closing_hyperlinks() {
         unsafe {
-            let table = crate::src::hyperlinks::HyperlinksRef::new();
-            let link = crate::src::hyperlinks::hyperlinks_put(&table, c"uri", Some(c"id"));
+            let table = crate::hyperlinks::HyperlinksRef::new();
+            let link = crate::hyperlinks::hyperlinks_put(&table, c"uri", Some(c"id"));
             let mut screen = screen::empty();
             screen.hyperlinks = Some(table.clone());
             let mut gd = grid_create(2, 1, 0);
@@ -1823,12 +1823,12 @@ mod storage_tests {
             assert_eq!(history.time, 1);
             assert_eq!(
                 grid_line_time(history),
-                crate::src::shared::time::unix_seconds(start_time)
+                crate::shared::time::unix_seconds(start_time)
             );
             let visible = grid_peek_line(&owner, 1).unwrap();
             assert_eq!(
                 grid_line_time(visible),
-                crate::src::shared::time::unix_seconds(start_time) + 8
+                crate::shared::time::unix_seconds(start_time) + 8
             );
             assert_eq!(grid_line_time(grid_peek_line(&owner, 2).unwrap()), 0);
             assert!(grid_peek_line(&owner, 3).is_none());
@@ -1941,7 +1941,7 @@ mod storage_tests {
             assert_same_cell(&actual, &compact);
 
             let mut extended = default;
-            extended.data = crate::src::text::utf8::utf8_fromcstr_vec(c"🦀")[0];
+            extended.data = crate::text::utf8::utf8_fromcstr_vec(c"🦀")[0];
             extended.fg = COLOUR_FLAG_RGB | 0xabcdef;
             extended.us = COLOUR_FLAG_RGB | 0x123456;
             extended.link = 7;
@@ -1979,7 +1979,7 @@ mod storage_tests {
             }
 
             cell = grid_default_cell;
-            cell.data = crate::src::text::utf8::utf8_fromcstr_vec(c"　")[0];
+            cell.data = crate::text::utf8::utf8_fromcstr_vec(c"　")[0];
             grid_set_cell(&mut owner, 5, 0, &cell);
             grid_set_padding(&mut owner, 6, 0, 8);
             assert_eq!(grid_line_length(&owner, 0), 7);
@@ -2163,7 +2163,7 @@ mod storage_tests {
         unsafe {
             let mut gd = grid_create(3, 2, 10);
             let mut cell = grid_default_cell;
-            cell.data = crate::src::text::utf8::utf8_fromcstr_vec(c"漢")[0];
+            cell.data = crate::text::utf8::utf8_fromcstr_vec(c"漢")[0];
             cell.link = 7;
             grid_set_cell(&mut gd, 0, 0, &cell);
             grid_set_padding(&mut gd, 1, 0, COLOUR_FLAG_RGB | 0x123456);

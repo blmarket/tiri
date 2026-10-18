@@ -1,5 +1,5 @@
 //! Window identities and shared link/mode component declarations.
-pub use crate::src::window::{WindowRef, WindowWeak};
+pub use crate::window::{WindowRef, WindowWeak};
 
 use super::abi::u_int;
 use super::command::{cmd_find_state, cmdq_item};
@@ -8,9 +8,9 @@ use super::key::key_code;
 use super::mouse::mouse_event;
 use super::pane::{window_pane, PANE_MINIMUM};
 use super::screen::screen;
-use crate::src::arguments::args;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::session::{SessionRef, SessionWeak};
+use crate::arguments::args;
+use crate::shared::client::ClientRef;
+use crate::shared::session::{SessionRef, SessionWeak};
 
 pub const WINDOW_BELL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const WINDOW_ACTIVITY: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;

@@ -1,18 +1,18 @@
 //! Building command lists from command arguments.
 
 use super::store::args;
-use crate::src::cmd::parse::cmd_parse_from_string;
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_target_client};
-use crate::src::cmd::{
+use crate::cmd::parse::cmd_parse_from_string;
+use crate::cmd::queue::{cmdq_error, cmdq_get_target_client};
+use crate::cmd::{
     cmd_get_args_mut, cmd_get_source, cmd_list_copy, cmd_list_first, cmd_log_argv,
     cmd_template_replace_cstring,
 };
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::format_single_from_target_cstring;
-use crate::src::log::{fatalx, log_bytes, log_cstr, log_debug};
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::command::{cmd, cmd_find_state, cmd_list, cmd_parse_input, cmdq_item};
+use crate::format::bytes::write_cstr;
+use crate::format::format_single_from_target_cstring;
+use crate::log::{fatalx, log_bytes, log_cstr, log_debug};
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::command::{cmd, cmd_find_state, cmd_list, cmd_parse_input, cmdq_item};
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
 
@@ -63,7 +63,7 @@ pub unsafe fn args_make_commands_prepare(
     let item = item_handle.borrow();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut state = Box::new(args_command_state::empty());

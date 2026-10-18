@@ -1,49 +1,47 @@
-use crate::src::arguments::{
+use crate::arguments::{
     args, args_count, args_flag_values, args_flags, args_get, args_print_cstring, args_string,
 };
-use crate::src::cfg::{cfg_add_cause, cfg_finished};
-use crate::src::cmd::find::cmd_find_client;
-use crate::src::cmd::{
+use crate::cfg::{cfg_add_cause, cfg_finished};
+use crate::cmd::find::cmd_find_client;
+use crate::cmd::{
     cmd_get_args_mut, cmd_get_entry, cmd_get_group, cmd_get_source, cmd_print_cstring,
 };
-use crate::src::control::{control_write, control_write_guard};
-use crate::src::events::events_fire;
-use crate::src::events_payload::{
+use crate::control::{control_write, control_write_guard};
+use crate::events::events_fire;
+use crate::events_payload::{
     event_payload_create, event_payload_set_identity, event_payload_set_string,
     event_payload_set_target,
 };
-use crate::src::file::file_error;
-use crate::src::format::bytes::format_message_with;
-use crate::src::format::bytes::nullable_cstr;
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::{
+use crate::file::file_error;
+use crate::format::bytes::format_message_with;
+use crate::format::bytes::nullable_cstr;
+use crate::format::bytes::write_cstr;
+use crate::format::{
     format_add, format_add_cstr, format_create_owned, format_merge, format_owner_ptr,
 };
-use crate::src::key_string::key_string_format;
-use crate::src::log::{log_cstr, log_debug, log_get_level};
-use crate::src::reactor::{evbuffer_add_formatted, evbuffer_new};
-use crate::src::server::server_add_message;
-use crate::src::server_client::Client as _;
-use crate::src::shared::abi::*;
-use crate::src::shared::abi::{__uid_t, uid_t};
-use crate::src::shared::account::passwd;
-use crate::src::shared::client::{ClientRef, ClientWeak};
-use crate::src::shared::client::{CLIENT_CONTROL, CLIENT_UTF8};
-use crate::src::shared::command::*;
-use crate::src::shared::command::{
-    cmd, cmd_entry_flag, cmd_find_state, cmd_list, cmdq_cb, cmdq_state,
-};
-use crate::src::shared::command::{
+use crate::key_string::key_string_format;
+use crate::log::{log_cstr, log_debug, log_get_level};
+use crate::reactor::{evbuffer_add_formatted, evbuffer_new};
+use crate::server::server_add_message;
+use crate::server_client::Client as _;
+use crate::shared::abi::*;
+use crate::shared::abi::{__uid_t, uid_t};
+use crate::shared::account::passwd;
+use crate::shared::client::{ClientRef, ClientWeak};
+use crate::shared::client::{CLIENT_CONTROL, CLIENT_UTF8};
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry_flag, cmd_find_state, cmd_list, cmdq_cb, cmdq_state};
+use crate::shared::command::{
     CMDQ_STATE_CONTROL, CMDQ_STATE_NOHOOKS, CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_CFLAG,
     CMD_CLIENT_TFLAG,
 };
-use crate::src::shared::format::format_tree;
-use crate::src::shared::format::FORMAT_NONE;
-use crate::src::shared::key::key_event;
-use crate::src::shared::key::*;
-use crate::src::shared::session::SessionRef;
-use crate::src::status::status_message_set;
-use crate::src::text::utf8::utf8_sanitize_cstring;
+use crate::shared::format::format_tree;
+use crate::shared::format::FORMAT_NONE;
+use crate::shared::key::key_event;
+use crate::shared::key::*;
+use crate::shared::session::SessionRef;
+use crate::status::status_message_set;
+use crate::text::utf8::utf8_sanitize_cstring;
 use libc::{getpwuid, getuid, time};
 use std::ffi::{CStr, CString};
 use tiri_buffer::SegmentedBuf;
@@ -51,7 +49,7 @@ use tiri_buffer::SegmentedBuf;
 /// Queue-created command state. Only this module may construct or remove it.
 ///
 /// ```compile_fail
-/// use tiri::src::shared::command::cmdq_item;
+/// use tiri::shared::command::cmdq_item;
 /// let item = cmdq_item::empty();
 /// ```
 pub struct cmdq_item {
@@ -210,7 +208,7 @@ impl cmdq_item {
 /// the drain owns a suspended head's continuation.
 ///
 /// ```compile_fail
-/// use tiri::src::cmd::queue::cmdq_new;
+/// use tiri::cmd::queue::cmdq_new;
 /// let mut queue = cmdq_new();
 /// queue.list.pop_front();
 /// ```
@@ -224,7 +222,7 @@ pub struct cmdq_list {
     item: std::rc::Weak<std::cell::RefCell<cmdq_item>>,
     list: std::collections::VecDeque<std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     /// Detached commands belong to the server's global queue, not a client.
-    background: std::collections::BTreeMap<u64, crate::src::reactor::Timer>,
+    background: std::collections::BTreeMap<u64, crate::reactor::Timer>,
     next_background_id: u64,
 }
 
@@ -262,7 +260,7 @@ pub(crate) unsafe fn cmdq_background(
         queue.next_background_id = id.checked_add(1).expect("background command ID overflow");
         id
     });
-    let timer = crate::src::reactor::Timer::new(delay, move || unsafe {
+    let timer = crate::reactor::Timer::new(delay, move || unsafe {
         let timer = QueueTarget::Global.with_queue(|queue| queue.background.remove(&id));
         drop(timer);
         callback();
@@ -487,7 +485,7 @@ pub unsafe fn cmdq_append(
         log_debug(format_args!(
             "{} {}: {}",
             "cmdq_append",
-            crate::src::log::log_bytes(cmdq_name(owner).as_bytes()),
+            crate::log::log_bytes(cmdq_name(owner).as_bytes()),
             log_cstr(name.as_deref().unwrap_or(c"(null)"))
         ));
     }
@@ -525,7 +523,7 @@ pub unsafe fn cmdq_insert_after(
         log_debug(format_args!(
             "{} {}: {} after {}",
             "cmdq_insert_after",
-            crate::src::log::log_bytes(cmdq_name(c_owner.as_ref()).as_bytes()),
+            crate::log::log_bytes(cmdq_name(c_owner.as_ref()).as_bytes()),
             log_cstr(name.as_deref().unwrap_or(c"(null)")),
             log_cstr(previous.as_deref().unwrap_or(c"(null)"))
         ));
@@ -558,9 +556,7 @@ pub unsafe fn cmdq_insert_hook(
     event_payload_set_identity(
         &mut ep,
         c"_cmdq_item",
-        crate::src::shared::events::EventPayloadIdentity::QueueItem(std::rc::Rc::downgrade(
-            item_handle,
-        )),
+        crate::shared::events::EventPayloadIdentity::QueueItem(std::rc::Rc::downgrade(item_handle)),
     );
     let arguments = args_print_cstring(&*args_0);
     event_payload_set_string(&mut ep, c"arguments", |out| write_cstr(out, &*arguments));
@@ -641,8 +637,8 @@ async unsafe fn cmdq_drain(queue: QueueTarget) {
             let mut item = item_owner.borrow_mut();
             log_debug(format_args!(
                 "cmdq_next {}: {}",
-                crate::src::log::log_bytes(cmdq_queue_name(&queue).as_bytes()),
-                crate::src::log::log_bytes(item.name.as_deref().unwrap_or(c"(null)").to_bytes()),
+                crate::log::log_bytes(cmdq_queue_name(&queue).as_bytes()),
+                crate::log::log_bytes(item.name.as_deref().unwrap_or(c"(null)").to_bytes()),
             ));
             item.start.take().expect("queue head starts once")
         };
@@ -999,9 +995,9 @@ unsafe fn cmdq_fire_command(
         log_debug(format_args!(
             "{} {}: ({}) {}",
             "cmdq_fire_command",
-            crate::src::log::log_bytes(name.as_bytes()),
+            crate::log::log_bytes(name.as_bytes()),
             group,
-            crate::src::log::log_bytes(tmp.as_bytes())
+            crate::log::log_bytes(tmp.as_bytes())
         ));
     }
     flags = (state.flags & CMDQ_STATE_CONTROL != 0) as ::core::ffi::c_int;
@@ -1180,7 +1176,7 @@ pub unsafe fn cmdq_next(owner: Option<&ClientRef>) -> u_int {
     let queue = QueueTarget::for_client(owner);
     log_debug(format_args!(
         "cmdq_next {}: enter",
-        crate::src::log::log_bytes(cmdq_name(owner).as_bytes())
+        crate::log::log_bytes(cmdq_name(owner).as_bytes())
     ));
     let drain = queue.with_queue(|queue| {
         match std::mem::replace(&mut queue.drain, DrainSlot::Polling { rewoken: false }) {
@@ -1255,7 +1251,7 @@ pub unsafe fn cmdq_error(
     log_debug(format_args!(
         "{}: {}",
         "cmdq_error",
-        crate::src::log::log_bytes(msg.as_bytes())
+        crate::log::log_bytes(msg.as_bytes())
     ));
     match c.as_ref() {
         None => {
@@ -1658,7 +1654,7 @@ mod suspend_tests {
             });
             let next = append_recording(c"global next", &trace, "next", CmdOutcome::Normal);
             assert_eq!(cmdq_next(None), 0);
-            let owner = crate::src::server_client::queue_test_clients::with_queue();
+            let owner = crate::server_client::queue_test_clients::with_queue();
             let exec = trace.clone();
             let sender = cmdq_append(
                 Some(&owner),
@@ -1702,7 +1698,7 @@ mod suspend_tests {
             });
             let next = append_recording(c"next item", &trace, "next", CmdOutcome::Normal);
             assert_eq!(cmdq_next(None), 0);
-            crate::src::reactor::shutdown_runtime(runtime);
+            crate::reactor::shutdown_runtime(runtime);
             tx.send(()).unwrap();
             assert_eq!(*trace.borrow(), ["body"]);
             assert!(released.get());
@@ -1717,8 +1713,8 @@ mod suspend_tests {
 #[cfg(test)]
 mod wait_tests {
     use super::*;
-    use crate::src::server_client::queue_test_clients as clients;
-    use crate::src::session::session_new_for_test;
+    use crate::server_client::queue_test_clients as clients;
+    use crate::session::session_new_for_test;
     use std::cell::RefCell;
     use std::rc::Rc;
 

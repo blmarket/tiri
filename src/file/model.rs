@@ -1,5 +1,5 @@
 use super::*;
-use crate::src::shared::client::ClientRef;
+use crate::shared::client::ClientRef;
 use tiri_buffer::SegmentedBuf;
 
 /// The stream index owns active file records until completion unlinks them.
@@ -21,7 +21,7 @@ pub struct client_file {
     pub(super) stream: ::core::ffi::c_int,
     pub(super) path: Option<std::ffi::CString>,
     pub(super) buffer: SegmentedBuf,
-    pub(super) event: crate::src::reactor::StreamHandle,
+    pub(super) event: crate::reactor::StreamHandle,
     pub(super) fd: Option<OwnedFd>,
     pub(super) error: ::core::ffi::c_int,
     pub(super) closed: ::core::ffi::c_int,

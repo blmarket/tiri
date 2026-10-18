@@ -1,48 +1,48 @@
-use crate::src::arguments::{
+use crate::arguments::{
     args, args_count, args_flag_values, args_get, args_has, args_parse, args_parse_type,
     args_percentage_result, args_string, args_strtonum_result, args_to_vector, ArgsParseError,
     ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_STRING,
 };
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_event, cmdq_get_target_client, cmdq_wait};
-use crate::src::cmd::{cmd_append_argv, cmd_get_args_mut};
-use crate::src::environ::{environ_create, environ_put};
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::{
+use crate::cmd::queue::{cmdq_error, cmdq_get_event, cmdq_get_target_client, cmdq_wait};
+use crate::cmd::{cmd_append_argv, cmd_get_args_mut};
+use crate::environ::{environ_create, environ_put};
+use crate::format::bytes::write_cstr;
+use crate::format::{
     format_add, format_create_from_target, format_expand_cstring, format_single_from_target_cstring,
 };
-use crate::src::key_string::key_string_parse_cstr;
-use crate::src::log::{log_cstr, log_debug};
-use crate::src::menu::{menu_add_item, menu_create, menu_display};
-use crate::src::options::{options_find_choice, options_get_number, options_get_string};
-use crate::src::popup::{popup_display, popup_modify, popup_present};
+use crate::key_string::key_string_parse_cstr;
+use crate::log::{log_cstr, log_debug};
+use crate::menu::{menu_add_item, menu_create, menu_display};
+use crate::options::{options_find_choice, options_get_number, options_get_string};
+use crate::popup::{popup_display, popup_modify, popup_present};
 use libc::strtol;
 use std::ffi::CStr;
 
-use crate::src::server_client::Client as _;
-use crate::src::session::Session;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::client::CLIENT_CONTROL;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CFLAG};
-use crate::src::shared::environment::environ;
-use crate::src::shared::format::format_tree;
-use crate::src::shared::key::key_event;
-use crate::src::shared::key::*;
-use crate::src::shared::layout::*;
-use crate::src::shared::limits::UINT_MAX;
-use crate::src::shared::menu::{menu_item, MENU_NOMOUSE, MENU_STAYOPEN};
-use crate::src::shared::popup::{POPUP_CLOSEANYKEY, POPUP_CLOSEEXIT, POPUP_CLOSEEXITZERO};
-use crate::src::shared::posix_io::_PATH_BSHELL;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::style::*;
-use crate::src::shared::tty::tty_window_view;
-use crate::src::shared::window::winlink;
-use crate::src::status::{status_at_line, status_line_size};
-use crate::src::tmux::checkshell;
-use crate::src::window::Window as _;
-use crate::src::window_pane::WindowPane as _;
+use crate::server_client::Client as _;
+use crate::session::Session;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::client::CLIENT_CONTROL;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CFLAG};
+use crate::shared::environment::environ;
+use crate::shared::format::format_tree;
+use crate::shared::key::key_event;
+use crate::shared::key::*;
+use crate::shared::layout::*;
+use crate::shared::limits::UINT_MAX;
+use crate::shared::menu::{menu_item, MENU_NOMOUSE, MENU_STAYOPEN};
+use crate::shared::popup::{POPUP_CLOSEANYKEY, POPUP_CLOSEEXIT, POPUP_CLOSEEXITZERO};
+use crate::shared::posix_io::_PATH_BSHELL;
+use crate::shared::session::SessionRef;
+use crate::shared::style::*;
+use crate::shared::tty::tty_window_view;
+use crate::shared::window::winlink;
+use crate::status::{status_at_line, status_line_size};
+use crate::tmux::checkshell;
+use crate::window::Window as _;
+use crate::window_pane::WindowPane as _;
 pub static cmd_display_menu_entry: cmd_entry = {
     cmd_entry {
         name: c"display-menu",
@@ -157,7 +157,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
 ) -> ::core::ffi::c_int {
     let item = item_handle.borrow();
     let mut tc: Option<ClientRef> = Some(tc_owner.clone());
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
@@ -490,7 +490,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
 ) -> ::core::ffi::c_int {
     let item = item_handle.borrow();
     let mut tc: Option<ClientRef> = Some(tc_owner.clone());
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
@@ -755,7 +755,7 @@ unsafe fn cmd_display_menu_exec(
     let item = item_handle.borrow();
     let args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let target = &mut target_state;
     let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
@@ -847,7 +847,7 @@ unsafe fn cmd_display_menu_exec(
     let mut lines = BOX_LINES_DEFAULT;
     if let Some(value) = args_get(&*(args), b'b') {
         match options_find_choice(
-            crate::src::options::options_table
+            crate::options::options_table
                 .iter()
                 .find(|entry| entry.name == Some(c"menu-border-lines"))
                 .expect("built-in border choice"),
@@ -898,7 +898,7 @@ unsafe fn cmd_display_popup_exec(
     let mut current_block: u64;
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let mut s: Option<SessionRef> = (*target).session_handle();
     let tc_owner = cmdq_get_target_client(Some(&*item));
@@ -1078,7 +1078,7 @@ unsafe fn cmd_display_popup_exec(
             current_block = 8151474771948790331;
         } else if let Some(value) = value {
             match options_find_choice(
-                crate::src::options::options_table
+                crate::options::options_table
                     .iter()
                     .find(|entry| entry.name == Some(c"popup-border-lines"))
                     .expect("built-in border choice"),

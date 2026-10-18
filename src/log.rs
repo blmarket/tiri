@@ -1,7 +1,7 @@
-use crate::src::compat::vis::strvis;
-use crate::src::format::bytes::format_bytes;
-use crate::src::format::bytes::try_format_message_with;
-use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
+use crate::compat::vis::strvis;
+use crate::format::bytes::format_bytes;
+use crate::format::bytes::try_format_message_with;
+use crate::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use libc::{exit, getpid};
 use std::cell::{Cell, RefCell};
 use std::ffi::{CStr, CString};

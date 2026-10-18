@@ -1,5 +1,5 @@
-use crate::src::shared::session::session;
-use crate::src::window::{
+use crate::shared::session::session;
+use crate::window::{
     winlink_add, winlink_remove, winlink_stack_first, winlink_stack_indices, winlink_stack_next,
     winlink_stack_push, winlink_stack_remove, winlinks_reindex,
 };
@@ -34,7 +34,7 @@ fn visit_order_uses_weak_links_and_survives_index_change() {
 
         winlink_stack_remove(&raw mut stack, (first).clone());
         winlink_remove(&raw mut links, (first).clone());
-        assert!(crate::src::window::winlinks_is_empty(&links));
+        assert!(crate::window::winlinks_is_empty(&links));
     }
 }
 

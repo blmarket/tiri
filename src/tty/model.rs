@@ -1,10 +1,10 @@
 //! Terminal state owned by a client; only the tty module sees its fields.
-use crate::src::shared::abi::{size_t, time_t, u_int};
-use crate::src::shared::display::{screen_cursor_style, visible_ranges};
-use crate::src::shared::event::Timer;
-use crate::src::shared::grid::grid_cell;
-use crate::src::shared::key::key_code;
-use crate::src::shared::terminal::TerminalAttributes;
+use crate::shared::abi::{size_t, time_t, u_int};
+use crate::shared::display::{screen_cursor_style, visible_ranges};
+use crate::shared::event::Timer;
+use crate::shared::grid::grid_cell;
+use crate::shared::key::key_code;
+use crate::shared::terminal::TerminalAttributes;
 use tiri_buffer::{Buf as _, SegmentedBuf};
 
 pub const TERM_256COLOURS: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;

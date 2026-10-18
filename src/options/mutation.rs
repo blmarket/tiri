@@ -5,10 +5,10 @@ use super::from_string::options_from_string;
 use super::scope::OptionsScope;
 use super::store::*;
 use super::types::*;
-use crate::src::cmd::parse::cmd_parse_from_string;
-use crate::src::format::bytes::write_cstr;
-use crate::src::shared::command::{cmd_list, cmd_parse_result};
-use crate::src::shared::limits::UINT_MAX;
+use crate::cmd::parse::cmd_parse_from_string;
+use crate::format::bytes::write_cstr;
+use crate::shared::command::{cmd_list, cmd_parse_result};
+use crate::shared::limits::UINT_MAX;
 use std::collections::btree_map;
 use std::ffi::{CStr, CString};
 
@@ -21,7 +21,7 @@ fn parse_commands(
     parse: &mut impl FnMut(&CStr) -> cmd_parse_result,
 ) -> Result<Option<std::rc::Rc<std::cell::RefCell<cmd_list>>>, CString> {
     let mut parsed = parse(value);
-    if parsed.status != crate::src::shared::command::CMD_PARSE_SUCCESS {
+    if parsed.status != crate::shared::command::CMD_PARSE_SUCCESS {
         return Err(parsed
             .error
             .take()
@@ -242,7 +242,7 @@ impl OptionsScope {
     unsafe fn remove_entry_with_cleanup(
         &self,
         name: &CStr,
-        cleanup: impl FnOnce(Option<Box<crate::src::hooks::hooks_monitor>>),
+        cleanup: impl FnOnce(Option<Box<crate::hooks::hooks_monitor>>),
     ) -> bool {
         let Some((identity, monitor)) = self.with_entry(name, |entry| {
             entry.value = options_value::Empty;
@@ -290,7 +290,7 @@ impl OptionsScope {
             ),
             OPTIONS_TABLE_COMMAND => {
                 let mut parsed = parse(definition.default_str.expect("string option default"));
-                if parsed.status != crate::src::shared::command::CMD_PARSE_SUCCESS {
+                if parsed.status != crate::shared::command::CMD_PARSE_SUCCESS {
                     return;
                 }
                 options_value::Command(OptionCommand(parsed.take_cmdlist()))

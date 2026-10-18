@@ -1,8 +1,8 @@
-use crate::src::format::bytes::cstr_suffix;
-use crate::src::format::bytes::nullable_cstr;
-use crate::src::options::OptionsScope;
-use crate::src::server_client::ClientRegistry;
-use crate::src::session::Session;
+use crate::format::bytes::cstr_suffix;
+use crate::format::bytes::nullable_cstr;
+use crate::options::OptionsScope;
+use crate::server_client::ClientRegistry;
+use crate::session::Session;
 use std::collections::BTreeMap;
 use std::time::SystemTime;
 mod alerts;
@@ -11,49 +11,47 @@ pub use api::Window;
 
 mod layout;
 mod model;
-pub use crate::src::window_pane::*;
-pub use crate::src::winlink::*;
+pub use crate::window_pane::*;
+pub use crate::winlink::*;
 pub use layout::{LayoutAction, LayoutKind};
 pub use model::window;
 mod owner;
 pub use owner::{WindowRef, WindowWeak};
 
-use crate::src::alerts::alerts_queue;
-use crate::src::compat::strtonum::strtonum;
-use crate::src::events::{events_fire, events_fire_window};
-use crate::src::events_payload::{
+use crate::alerts::alerts_queue;
+use crate::compat::strtonum::strtonum;
+use crate::events::{events_fire, events_fire_window};
+use crate::events_payload::{
     event_payload_create, event_payload_set_pane, event_payload_set_string,
     event_payload_set_target, event_payload_set_uint, event_payload_set_window,
 };
-use crate::src::format::bytes::write_cstr;
-use crate::src::log::log_debug;
-use crate::src::menu::{menu_destroy, menu_resize};
-use crate::src::options::options_get_number;
+use crate::format::bytes::write_cstr;
+use crate::log::log_debug;
+use crate::menu::{menu_destroy, menu_resize};
+use crate::options::options_get_number;
 use libc::strcasecmp;
 
-use crate::src::server::{marked_pane, server_check_marked, server_clear_marked};
-use crate::src::server_client::Client;
-use crate::src::server_fn::server_redraw_window;
-use crate::src::tmux::clean_name_cstring;
-use crate::src::tty::tty_update_window_offset;
+use crate::server::{marked_pane, server_check_marked, server_clear_marked};
+use crate::server_client::Client;
+use crate::server_fn::server_redraw_window;
+use crate::tmux::clean_name_cstring;
+use crate::tty::tty_update_window_offset;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
 
-use crate::src::options::options;
-use crate::src::shared::abi::*;
-use crate::src::shared::command::cmd_find_state;
-use crate::src::shared::event::*;
-use crate::src::shared::grid::*;
-use crate::src::shared::layout::layout_geometry;
-use crate::src::shared::layout::*;
-use crate::src::shared::limits::UINT_MAX;
-use crate::src::shared::pane::{window_panes, PaneHistory};
-use crate::src::shared::pane::{PANE_STATUS_BOTTOM, PANE_STATUS_TOP};
-pub use crate::src::shared::window::{windows, winlink};
-use crate::src::shared::window::{
-    WINDOW_ACTIVITY, WINLINK_ACTIVITY, WINLINK_BELL, WINLINK_SILENCE,
-};
+use crate::options::options;
+use crate::shared::abi::*;
+use crate::shared::command::cmd_find_state;
+use crate::shared::event::*;
+use crate::shared::grid::*;
+use crate::shared::layout::layout_geometry;
+use crate::shared::layout::*;
+use crate::shared::limits::UINT_MAX;
+use crate::shared::pane::{window_panes, PaneHistory};
+use crate::shared::pane::{PANE_STATUS_BOTTOM, PANE_STATUS_TOP};
+pub use crate::shared::window::{windows, winlink};
+use crate::shared::window::{WINDOW_ACTIVITY, WINLINK_ACTIVITY, WINLINK_BELL, WINLINK_SILENCE};
 
 pub const DEFAULT_XPIXEL: ::core::ffi::c_int = 16 as ::core::ffi::c_int;
 pub const DEFAULT_YPIXEL: ::core::ffi::c_int = 32 as ::core::ffi::c_int;
@@ -282,8 +280,8 @@ pub unsafe fn window_create(
     (*w).xpixel = xpixel;
     (*w).ypixel = ypixel;
     (*w).options
-        .replace(Some(crate::src::options::options_create(Some(
-            crate::src::options::OptionsScope::GlobalWindow,
+        .replace(Some(crate::options::options_create(Some(
+            crate::options::OptionsScope::GlobalWindow,
         ))));
     (*w).sb =
         options_get_number(&(*w).borrow_options_mut(), c"pane-scrollbars") as ::core::ffi::c_int;

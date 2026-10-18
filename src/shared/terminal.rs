@@ -18,7 +18,7 @@ pub(crate) unsafe fn read_attributes(fd: i32, attributes: &mut termios) -> i32 {
         errno::set_errno(errno::Errno(libc::EBADF));
         return -1;
     }
-    crate::src::reactor::io_status(
+    crate::reactor::io_status(
         tiri_rt::unix::terminal_attributes(std::os::fd::BorrowedFd::borrow_raw(fd))
             .map(|native| *attributes = native),
     )
@@ -29,7 +29,7 @@ pub(crate) unsafe fn set_attributes(fd: i32, action: i32, attributes: &termios) 
         errno::set_errno(errno::Errno(libc::EBADF));
         return -1;
     }
-    crate::src::reactor::io_status(tiri_rt::unix::set_terminal_attributes(
+    crate::reactor::io_status(tiri_rt::unix::set_terminal_attributes(
         std::os::fd::BorrowedFd::borrow_raw(fd),
         action,
         attributes,
@@ -41,7 +41,7 @@ pub(crate) unsafe fn read_size(fd: i32, size: &mut super::posix_terminal::winsiz
         errno::set_errno(errno::Errno(libc::EBADF));
         return -1;
     }
-    crate::src::reactor::io_status(
+    crate::reactor::io_status(
         tiri_rt::unix::terminal_size(std::os::fd::BorrowedFd::borrow_raw(fd))
             .map(|native| *size = native),
     )
@@ -52,7 +52,7 @@ pub(crate) unsafe fn set_size(fd: i32, size: &super::posix_terminal::winsize) ->
         errno::set_errno(errno::Errno(libc::EBADF));
         return -1;
     }
-    crate::src::reactor::io_status(tiri_rt::unix::set_terminal_size(
+    crate::reactor::io_status(tiri_rt::unix::set_terminal_size(
         std::os::fd::BorrowedFd::borrow_raw(fd),
         size,
     ))

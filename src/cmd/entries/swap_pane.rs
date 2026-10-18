@@ -1,18 +1,18 @@
-use crate::src::arguments::{args, args_has, args_parse};
-use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::cmdq_error;
-use crate::src::events::events_fire_window;
-use crate::src::server_client::Client as _;
-use crate::src::shared::client::ClientRef;
-use crate::src::window::Window as _;
+use crate::arguments::{args, args_has, args_parse};
+use crate::cmd::cmd_get_args_mut;
+use crate::cmd::queue::cmdq_error;
+use crate::events::events_fire_window;
+use crate::server_client::Client as _;
+use crate::shared::client::ClientRef;
+use crate::window::Window as _;
 
-use crate::src::server_fn::server_redraw_window;
-use crate::src::shared::abi::*;
-use crate::src::shared::command::CMD_FIND_DEFAULT_MARKED;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::window::WindowRef;
-use crate::src::window_pane::WindowPane as _;
+use crate::server_fn::server_redraw_window;
+use crate::shared::abi::*;
+use crate::shared::command::CMD_FIND_DEFAULT_MARKED;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::window::WindowRef;
+use crate::window_pane::WindowPane as _;
 use std::rc::Rc;
 pub static cmd_swap_pane_entry: cmd_entry = {
     cmd_entry {
@@ -46,9 +46,9 @@ unsafe fn cmd_swap_pane_exec(
     let item = item_handle.borrow();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut source_state = crate::src::cmd::queue::cmdq_get_source(&item).clone();
+    let mut source_state = crate::cmd::queue::cmdq_get_source(&item).clone();
     let mut source: *mut cmd_find_state = &mut source_state;
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let mut src_idx: ::core::ffi::c_int = 0;
     let mut dst_idx: ::core::ffi::c_int = 0;

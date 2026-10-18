@@ -1,7 +1,7 @@
 //! The small adapter between plugin observations and pane ownership.
 use super::{Host, PaneActivity, PaneId};
-use crate::src::shared::pane::{window_pane, window_pane_tree};
-use crate::src::window_pane::{observability, WindowPane};
+use crate::shared::pane::{window_pane, window_pane_tree};
+use crate::window_pane::{observability, WindowPane};
 use std::cell::UnsafeCell;
 use std::io;
 use std::path::PathBuf;
@@ -44,7 +44,7 @@ pub(super) fn invalidate(id: PaneId) {
         let window = pane.window_observer().upgrade();
         drop(pane);
         if let Some(window) = window {
-            crate::src::server_fn::server_status_window(&window);
+            crate::server_fn::server_status_window(&window);
             drop(window);
         }
     }

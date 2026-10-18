@@ -1,65 +1,63 @@
-use crate::src::arguments::{args, args_get, args_has};
-use crate::src::cmd::parse::{cmd_parse_and_append, cmd_parse_error_uppercase_first};
-use crate::src::cmd::queue::{
-    cmdq_append, cmdq_get_callback_owned, cmdq_get_client, cmdq_new_state,
-};
-use crate::src::cmd::{cmd_mouse_at, cmd_template_replace_cstring};
-use crate::src::format::bytes::nullable_cstr;
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::{format_add, format_create_defaults, format_expand_cstring};
-use crate::src::format_draw::{format_draw, format_width};
-use crate::src::grid::grid_default_cell;
-use crate::src::key_string::key_string_format;
-use crate::src::log::{log_bytes, log_debug};
-use crate::src::menu::{menu_add_items, menu_create, menu_display};
-use crate::src::options::options_get_number;
-use crate::src::options::OptionsScope;
-use crate::src::prompt::{
+use crate::arguments::{args, args_get, args_has};
+use crate::cmd::parse::{cmd_parse_and_append, cmd_parse_error_uppercase_first};
+use crate::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_get_client, cmdq_new_state};
+use crate::cmd::{cmd_mouse_at, cmd_template_replace_cstring};
+use crate::format::bytes::nullable_cstr;
+use crate::format::bytes::write_cstr;
+use crate::format::{format_add, format_create_defaults, format_expand_cstring};
+use crate::format_draw::{format_draw, format_width};
+use crate::grid::grid_default_cell;
+use crate::key_string::key_string_format;
+use crate::log::{log_bytes, log_debug};
+use crate::menu::{menu_add_items, menu_create, menu_display};
+use crate::options::options_get_number;
+use crate::options::OptionsScope;
+use crate::prompt::{
     prompt_closed, prompt_create, prompt_draw, prompt_free, prompt_key, prompt_mouse,
     prompt_set_options,
 };
-use crate::src::screen::{screen_init, screen_resize};
-use crate::src::screen_write::{
+use crate::screen::{screen_init, screen_resize};
+use crate::screen_write::{
     screen_write_box, screen_write_clearcharacter, screen_write_clearendofline,
     screen_write_clearscreen, screen_write_cursormove, screen_write_puts, screen_write_start,
     screen_write_stop,
 };
-use crate::src::server_client::Client as _;
-use crate::src::session::Session as _;
-use crate::src::shared::abi::__int32_t;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::{ClientRef, ClientWeak};
-use crate::src::shared::colour::{COLOUR_FLAG_THEME, COLOUR_THEME_CYAN};
-use crate::src::shared::command::cmd_find_state;
-use crate::src::shared::command::*;
-use crate::src::shared::format::format_tree;
-use crate::src::shared::grid::*;
-use crate::src::shared::key::*;
-use crate::src::shared::layout::*;
-use crate::src::shared::menu::{menu_choice_cb, menu_item, MenuSelection};
-use crate::src::shared::mode_tree::{
+use crate::server_client::Client as _;
+use crate::session::Session as _;
+use crate::shared::abi::__int32_t;
+use crate::shared::abi::*;
+use crate::shared::client::{ClientRef, ClientWeak};
+use crate::shared::colour::{COLOUR_FLAG_THEME, COLOUR_THEME_CYAN};
+use crate::shared::command::cmd_find_state;
+use crate::shared::command::*;
+use crate::shared::format::format_tree;
+use crate::shared::grid::*;
+use crate::shared::key::*;
+use crate::shared::layout::*;
+use crate::shared::menu::{menu_choice_cb, menu_item, MenuSelection};
+use crate::shared::mode_tree::{
     mode_tree_build_cb, mode_tree_data, mode_tree_draw_cb, mode_tree_height_cb, mode_tree_help_cb,
     mode_tree_item, mode_tree_key_cb, mode_tree_line, mode_tree_list, mode_tree_menu_cb,
     mode_tree_prompt, mode_tree_prompt_input_cb, mode_tree_search_cb, mode_tree_search_dir,
     mode_tree_sort_cb, mode_tree_swap_cb, ModeTreeItemData, ModeTreeItemRef,
 };
-use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::prompt::*;
-use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
-use crate::src::shared::prompt::{
+use crate::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
+use crate::shared::pane::window_pane;
+use crate::shared::prompt::*;
+use crate::shared::prompt::{prompt_create_data, prompt_draw_data};
+use crate::shared::prompt::{
     prompt_free_cb, prompt_result, PROMPT_ACCEPT, PROMPT_CLOSE, PROMPT_CONTINUE, PROMPT_ISMODE,
     PROMPT_NOFORMAT, PROMPT_SINGLE,
 };
-use crate::src::shared::screen::{screen, MODE_CURSOR};
-use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::style::*;
+use crate::shared::screen::{screen, MODE_CURSOR};
+use crate::shared::screen_write::screen_write_ctx;
+use crate::shared::style::*;
 use libc::{strcasestr, strstr};
 
-use crate::src::sort::{sort_next_order, sort_order_from_string, sort_order_to_string};
-use crate::src::status::status_message_set;
-use crate::src::style::style_apply_with_options;
-use crate::src::window_pane::WindowPane as _;
+use crate::sort::{sort_next_order, sort_order_from_string, sort_order_to_string};
+use crate::status::status_message_set;
+use crate::style::style_apply_with_options;
+use crate::window_pane::WindowPane as _;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
@@ -1320,7 +1318,7 @@ pub unsafe fn mode_tree_clear_prompt(tree_owner: &Rc<UnsafeCell<mode_tree_data>>
 }
 fn mode_tree_prompt_accept(tree: Rc<UnsafeCell<mode_tree_data>>) -> cmdq_cb {
     Some(Box::new(move |item| unsafe {
-        let mtd = crate::src::shared::rc::as_ptr(&tree);
+        let mtd = crate::shared::rc::as_ptr(&tree);
         let c_owner = cmdq_get_client(Some(&item.borrow()));
         let mut key = b'y' as key_code;
         if (*mtd).prompt.is_some() && c_owner.is_some() {
@@ -1357,14 +1355,14 @@ fn mode_tree_prompt_input_callback(
     result
 }
 unsafe fn mode_tree_prompt_free_callback(
-    data: &refbox::RefBox<crate::src::shared::mode_tree::mode_tree_prompt>,
+    data: &refbox::RefBox<crate::shared::mode_tree::mode_tree_prompt>,
 ) {
     let (mtd, callback, inputcb) = {
         let mut state = data.try_borrow_mut().expect("prompt cleanup record");
         (state.mtd.take(), state.freecb.take(), state.inputcb.take())
     };
     if let Some(mtd) = &mtd {
-        let mtd = crate::src::shared::rc::as_ptr(mtd);
+        let mtd = crate::shared::rc::as_ptr(mtd);
         if (*mtd).prompt_data.is(data) {
             (*mtd).prompt_data = refbox::Weak::new();
         }
@@ -1385,7 +1383,7 @@ pub unsafe fn mode_tree_set_prompt(
     mut inputcb: mode_tree_prompt_input_cb,
     mut freecb: prompt_free_cb,
 ) {
-    let mtd = crate::src::shared::rc::as_ptr(&tree);
+    let mtd = crate::shared::rc::as_ptr(&tree);
     let Some(mode_pane_owner) =
         std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&(*mtd).wp)
     else {
@@ -1898,7 +1896,7 @@ pub unsafe fn mode_tree_key(
     mut xp: *mut u_int,
     mut yp: *mut u_int,
 ) -> ::core::ffi::c_int {
-    let mtd = crate::src::shared::rc::as_ptr(&tree);
+    let mtd = crate::shared::rc::as_ptr(&tree);
     let Some(mode_pane_owner) =
         std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&(*mtd).wp)
     else {
@@ -2333,7 +2331,7 @@ mod mode_tree_tests {
     fn child_owners_preserve_search_order_and_survive_removal() {
         unsafe {
             let mtd_owner = mode_tree_alloc_data();
-            let mtd = crate::src::shared::rc::as_ptr(&mtd_owner);
+            let mtd = crate::shared::rc::as_ptr(&mtd_owner);
             let add = move |parent, tag, name: &CStr| {
                 mode_tree_add(
                     &mut *mtd,
@@ -2386,7 +2384,7 @@ mod mode_tree_tests {
     fn item_key_label_tracks_repeated_line_builds() {
         unsafe {
             let mtd_owner = mode_tree_alloc_data();
-            let mtd = crate::src::shared::rc::as_ptr(&mtd_owner);
+            let mtd = crate::shared::rc::as_ptr(&mtd_owner);
             let mut key = b'x' as key_code;
             let key_ptr = &raw const key;
             (*mtd).keycb = Some(Box::new(move |_, _| *key_ptr));
@@ -2445,7 +2443,7 @@ mod mode_tree_tests {
     fn nested_lines_survive_growth_and_clear_on_empty_rebuild() {
         unsafe {
             let mtd_owner = mode_tree_alloc_data();
-            let mtd = crate::src::shared::rc::as_ptr(&mtd_owner);
+            let mtd = crate::shared::rc::as_ptr(&mtd_owner);
             (*mtd).preview = MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int;
             let empty = Rc::new(std::cell::Cell::new(false));
             let callback_empty = empty.clone();
@@ -2457,7 +2455,7 @@ mod mode_tree_tests {
                 nested_build(&tree, callback_empty.get());
                 None
             }));
-            (*mtd).screen.grid = Some(crate::src::grid::grid_create(80, 24, 0));
+            (*mtd).screen.grid = Some(crate::grid::grid_create(80, 24, 0));
 
             mode_tree_build(&mtd_owner);
             assert_eq!((*mtd).lines.len(), 65);
@@ -2514,7 +2512,7 @@ mod mode_tree_tests {
     fn numeric_tags_restore_saved_row_state() {
         unsafe {
             let mtd_owner = mode_tree_alloc_data();
-            let mtd = crate::src::shared::rc::as_ptr(&mtd_owner);
+            let mtd = crate::shared::rc::as_ptr(&mtd_owner);
             let prior = mode_tree_add(&mut *mtd, None, ModeTreeItemData::None, 7, c"row", None, 1);
             prior.borrow_mut().tagged = 1;
             prior.borrow_mut().expanded = 0;
@@ -2556,12 +2554,12 @@ mod mode_tree_tests {
 #[cfg(test)]
 mod mode_prompt_data_tests {
     use super::*;
-    use crate::src::shared::rc;
+    use crate::shared::rc;
     use std::cell::{Cell, UnsafeCell};
 
     fn data(
         tree: &Rc<UnsafeCell<mode_tree_data>>,
-    ) -> refbox::RefBox<crate::src::shared::mode_tree::mode_tree_prompt> {
+    ) -> refbox::RefBox<crate::shared::mode_tree::mode_tree_prompt> {
         refbox::RefBox::new(mode_tree_prompt {
             mtd: Some(tree.clone()),
             c: Weak::new(),
@@ -2646,13 +2644,13 @@ mod queued_prompt_accept_tests {
 #[cfg(test)]
 mod row_owner_tests {
     use super::*;
-    use crate::src::shared::rc;
+    use crate::shared::rc;
 
     #[test]
     fn row_observers_expire_and_borrowed_data_and_names_survive_teardown() {
         unsafe {
             let tree_owner = mode_tree_alloc_data();
-            let tree = crate::src::shared::rc::as_ptr(&tree_owner);
+            let tree = crate::shared::rc::as_ptr(&tree_owner);
             let observer = Rc::downgrade(&tree_owner);
             let parent = mode_tree_add(
                 &mut *tree,
@@ -2781,7 +2779,7 @@ mod row_owner_tests {
     fn tagged_callback_can_destroy_the_tree_and_stop_dispatch() {
         unsafe {
             let tree_owner = mode_tree_alloc_data();
-            let tree = crate::src::shared::rc::as_ptr(&tree_owner);
+            let tree = crate::shared::rc::as_ptr(&tree_owner);
             let observer = Rc::downgrade(&tree_owner);
             let first = mode_tree_add(
                 &mut *tree,
@@ -2836,7 +2834,7 @@ mod row_owner_tests {
     fn height_callback_can_close_tree_without_accessing_freed_screen() {
         unsafe {
             let tree = mode_tree_alloc_data();
-            (*tree.get()).screen.grid = Some(crate::src::grid::grid_create(80, 24, 0));
+            (*tree.get()).screen.grid = Some(crate::grid::grid_create(80, 24, 0));
             let observer = Rc::downgrade(&tree);
             (*tree.get()).heightcb = Some(Box::new(move |height| {
                 assert_eq!(height, 24);
@@ -2855,7 +2853,7 @@ mod row_owner_tests {
     fn height_callback_preserves_replacement_callback() {
         unsafe {
             let tree = mode_tree_alloc_data();
-            (*tree.get()).screen.grid = Some(crate::src::grid::grid_create(80, 24, 0));
+            (*tree.get()).screen.grid = Some(crate::grid::grid_create(80, 24, 0));
             let observer = Rc::downgrade(&tree);
             (*tree.get()).heightcb = Some(Box::new(move |_| {
                 (*observer.upgrade().unwrap().get()).heightcb = Some(Box::new(|_| 7));
@@ -2926,8 +2924,8 @@ mod row_owner_tests {
 #[cfg(test)]
 mod payload_owner_tests {
     use super::*;
-    use crate::src::shared::rc;
-    use crate::src::window_buffer::window_buffer_itemdata;
+    use crate::shared::rc;
+    use crate::window_buffer::window_buffer_itemdata;
 
     fn payload(name: &CStr) -> refbox::RefBox<window_buffer_itemdata> {
         refbox::RefBox::new(window_buffer_itemdata {
@@ -2941,7 +2939,7 @@ mod payload_owner_tests {
     fn row_payloads_expire_on_list_replacement_but_action_snapshots_survive() {
         unsafe {
             let tree_owner = mode_tree_alloc_data();
-            let tree = crate::src::shared::rc::as_ptr(&tree_owner);
+            let tree = crate::shared::rc::as_ptr(&tree_owner);
             let owner = payload(c"original");
             let original = ModeTreeItemData::Buffer(owner.downgrade());
             let row = mode_tree_add(&mut *tree, None, original.clone(), 1, c"row", None, 1);

@@ -211,10 +211,10 @@ fn key_enum_guard_handles_wrapping_and_unrelated_generated_domains() {
         const TEXT: &str = "type C2RustUnnamedIgnored = c_ulong;";
         pub(crate) type
             C2RustUnnamed_999 = ::core::ffi::c_ulong;
-        type C2RustUnnamed_998 = crate::src::shared::key::key_code_enum;
+        type C2RustUnnamed_998 = crate::shared::key::key_code_enum;
         type C2RustUnnamed_35 = ::core::ffi::c_uint;
         struct C2RustUnnamed_38 { mask: u32, code: u32 }
-        pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_997;
+        pub use crate::shared::key::key_code_enum as C2RustUnnamed_997;
     "#
         ),
         ["C2RustUnnamed_999", "C2RustUnnamed_998"]

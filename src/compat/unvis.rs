@@ -1,5 +1,5 @@
-use crate::src::shared::abi::ssize_t;
-use crate::src::shared::abi::*;
+use crate::shared::abi::ssize_t;
+use crate::shared::abi::*;
 pub const UNVIS_VALID: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const UNVIS_VALIDPUSH: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
 pub const UNVIS_NOCHAR: ::core::ffi::c_int = 3 as ::core::ffi::c_int;

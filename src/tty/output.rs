@@ -2,39 +2,39 @@
 //! access ends before nested output, so no model borrow spans those operations.
 use super::control::{tty_log, tty_start_write};
 use super::model::*;
-use crate::src::options::OptionsScope;
+use crate::options::OptionsScope;
 use tiri_rt::AsyncWrite as _;
 
 use super::acs::{tty_acs_get, tty_acs_needed};
-use crate::src::format::bytes::{format_cstring, format_message_with};
-use crate::src::grid::{grid_cells_equal, grid_default_cell};
-use crate::src::hyperlinks::hyperlinks_get;
-use crate::src::log::{log_cstr, log_cstr_n, log_debug, log_get_level};
-use crate::src::options::options_get_string;
-use crate::src::reactor::evbuffer_add;
-use crate::src::screen::screen_mode_display;
-use crate::src::server_client::Client as _;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::CLIENT_UTF8;
-use crate::src::shared::client::{ClientRef, ClientWeak};
-use crate::src::shared::colour::*;
-use crate::src::shared::colour::{COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME};
-use crate::src::shared::display::*;
-use crate::src::shared::grid::*;
-use crate::src::shared::limits::UINT_MAX;
-use crate::src::shared::screen::{
+use crate::format::bytes::{format_cstring, format_message_with};
+use crate::grid::{grid_cells_equal, grid_default_cell};
+use crate::hyperlinks::hyperlinks_get;
+use crate::log::{log_cstr, log_cstr_n, log_debug, log_get_level};
+use crate::options::options_get_string;
+use crate::reactor::evbuffer_add;
+use crate::screen::screen_mode_display;
+use crate::server_client::Client as _;
+use crate::shared::abi::*;
+use crate::shared::client::CLIENT_UTF8;
+use crate::shared::client::{ClientRef, ClientWeak};
+use crate::shared::colour::*;
+use crate::shared::colour::{COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME};
+use crate::shared::display::*;
+use crate::shared::grid::*;
+use crate::shared::limits::UINT_MAX;
+use crate::shared::screen::{
     ScreenMode, ALL_MODES, ALL_MOUSE_MODES, CURSOR_MODES, MODE_CURSOR, MODE_CURSOR_BLINKING,
     MODE_CURSOR_BLINKING_SET, MODE_CURSOR_VERY_VISIBLE, MODE_MOUSE_ALL, MODE_MOUSE_BUTTON,
     MODE_MOUSE_STANDARD,
 };
-use crate::src::shared::tty::TTY_CTX_WRAPPED;
-use crate::src::shared::tty::*;
-use crate::src::style::colour::{
+use crate::shared::tty::TTY_CTX_WRAPPED;
+use crate::shared::tty::*;
+use crate::style::colour::{
     colour_256to16, colour_dim, colour_find_rgb, colour_force_rgb, colour_palette_get,
     colour_split_rgb,
 };
-use crate::src::tty::term::tty_term_owner_ptr;
-use crate::src::tty::term::{
+use crate::tty::term::tty_term_owner_ptr;
+use crate::tty::term::{
     tty_term_flag, tty_term_has, tty_term_number, tty_term_string, tty_term_string_i,
     tty_term_string_ii, tty_term_string_iii, tty_term_string_s, tty_term_string_ss,
 };
@@ -54,7 +54,7 @@ pub(super) unsafe fn terminal_term(owner: &ClientRef) -> &tty_term {
 static mut tty_default_style_ctx: tty_style_ctx = {
     tty_style_ctx {
         defaults: grid_default_cell,
-        palette: crate::src::shared::tty::PaletteSource::None,
+        palette: crate::shared::tty::PaletteSource::None,
         dim: 0 as u_int,
         hyperlinks: None,
     }
@@ -843,7 +843,7 @@ pub unsafe fn tty_cursor(client: &ClientRef, mut cx: u_int, mut cy: u_int) {
 pub(super) unsafe fn tty_hyperlink(
     client: &ClientRef,
     gc: &grid_cell,
-    hl: Option<&crate::src::hyperlinks::HyperlinksRef>,
+    hl: Option<&crate::hyperlinks::HyperlinksRef>,
 ) {
     if gc.link == terminal_value!(client, cell.link) {
         return;
@@ -1086,7 +1086,7 @@ pub(super) unsafe fn tty_map_theme_colour(client: &ClientRef, colour: i32) -> i3
 
 pub(super) unsafe fn tty_check_fg(
     client: &ClientRef,
-    palette: &crate::src::shared::tty::PaletteSource,
+    palette: &crate::shared::tty::PaletteSource,
     gc: &mut grid_cell,
 ) {
     let mut r: u_char = 0;
@@ -1149,7 +1149,7 @@ pub(super) unsafe fn tty_check_fg(
 
 pub(super) unsafe fn tty_check_bg(
     client: &ClientRef,
-    palette: &crate::src::shared::tty::PaletteSource,
+    palette: &crate::shared::tty::PaletteSource,
     gc: &mut grid_cell,
 ) {
     let mut r: u_char = 0;
@@ -1200,7 +1200,7 @@ pub(super) unsafe fn tty_check_bg(
 
 pub(super) unsafe fn tty_check_us(
     client: &ClientRef,
-    palette: &crate::src::shared::tty::PaletteSource,
+    palette: &crate::shared::tty::PaletteSource,
     gc: &mut grid_cell,
 ) {
     let mut c: ::core::ffi::c_int = 0;

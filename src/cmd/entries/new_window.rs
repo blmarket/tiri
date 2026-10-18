@@ -1,37 +1,35 @@
-use crate::src::arguments::{
+use crate::arguments::{
     args, args_count, args_flag_values, args_get, args_has, args_parse, args_string, args_to_vector,
 };
-use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::{
+use crate::cmd::cmd_get_args_mut;
+use crate::cmd::queue::{
     cmdq_error, cmdq_get_client, cmdq_get_state_owned, cmdq_get_target, cmdq_get_target_client,
     cmdq_insert_hook, cmdq_print,
 };
-use crate::src::environ::{environ_create, environ_put};
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::format_single_cstring;
-use crate::src::resize::recalculate_sizes;
-use crate::src::server_client::Client as _;
-use crate::src::server_fn::{
+use crate::environ::{environ_create, environ_put};
+use crate::format::bytes::write_cstr;
+use crate::format::format_single_cstring;
+use crate::resize::recalculate_sizes;
+use crate::server_client::Client as _;
+use crate::server_fn::{
     server_redraw_session, server_redraw_session_group, server_status_session_group,
 };
 use libc::strcmp;
 
-use crate::src::session::Session;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::command::CMD_FIND_WINDOW_INDEX;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::spawn::spawn_context;
-use crate::src::shared::spawn::{SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_KILL};
-use crate::src::shared::tree::RB_NEGINF;
-use crate::src::shared::window::winlink;
-use crate::src::spawn::spawn_window;
-use crate::src::tmux::{check_name, clean_name_cstring};
-use crate::src::window::Window as _;
-use crate::src::window::{
-    winlink_find_by_index, winlink_shuffle_up, winlinks_minmax, winlinks_next,
-};
+use crate::session::Session;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::command::CMD_FIND_WINDOW_INDEX;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::spawn::spawn_context;
+use crate::shared::spawn::{SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_KILL};
+use crate::shared::tree::RB_NEGINF;
+use crate::shared::window::winlink;
+use crate::spawn::spawn_window;
+use crate::tmux::{check_name, clean_name_cstring};
+use crate::window::Window as _;
+use crate::window::{winlink_find_by_index, winlink_shuffle_up, winlinks_minmax, winlinks_next};
 use std::ffi::{CStr, CString};
 
 pub const NEW_WINDOW_TEMPLATE: &std::ffi::CStr = c"#{session_name}:#{window_index}.#{pane_index}";

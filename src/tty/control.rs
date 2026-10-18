@@ -1,54 +1,54 @@
 use super::input::TerminalInput;
 use super::model::*;
 use super::output::*;
-use crate::src::options::OptionsScope;
-use crate::src::reactor::Timer;
-use crate::src::server_client::ClientRegistry;
+use crate::options::OptionsScope;
+use crate::reactor::Timer;
+use crate::server_client::ClientRegistry;
 use tiri_rt::{AsyncRead as _, AsyncWrite as _};
 
 use super::acs::{tty_acs_needed, tty_acs_reverse_get};
 use super::draw::tty_draw_line;
 use super::keys::{tty_keys_build, tty_keys_free, tty_keys_next};
-use crate::src::ffi::resolv::b64_ntop;
-use crate::src::format::bytes::format_message_with;
-use crate::src::grid::grid_default_cell;
-use crate::src::log::{fatalx, log_cstr, log_debug};
-use crate::src::options::options_get_number;
-use crate::src::reactor;
-use crate::src::reactor::{evbuffer_drain, evbuffer_get_length, evbuffer_new};
-use crate::src::server_client::Client as _;
-use crate::src::server_fn::server_redraw_client;
-use crate::src::session::Session;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::{ClientRef, ClientWeak};
-use crate::src::shared::client::{
+use crate::ffi::resolv::b64_ntop;
+use crate::format::bytes::format_message_with;
+use crate::grid::grid_default_cell;
+use crate::log::{fatalx, log_cstr, log_debug};
+use crate::options::options_get_number;
+use crate::reactor;
+use crate::reactor::{evbuffer_drain, evbuffer_get_length, evbuffer_new};
+use crate::server_client::Client as _;
+use crate::server_fn::server_redraw_client;
+use crate::session::Session;
+use crate::shared::abi::*;
+use crate::shared::client::{ClientRef, ClientWeak};
+use crate::shared::client::{
     CLIENT_ALLREDRAWFLAGS, CLIENT_REDRAWSTATUS, CLIENT_REDRAWWINDOW, CLIENT_SUSPENDED,
     CLIENT_TERMINAL, CLIENT_UTF8,
 };
-use crate::src::shared::display::*;
-use crate::src::shared::grid::*;
-use crate::src::shared::limits::UINT_MAX;
-use crate::src::shared::posix_io::{O_CREAT, O_TRUNC, O_WRONLY};
-use crate::src::shared::posix_terminal::{winsize, ICRNL, ONLCR, OPOST, TCSANOW, VMIN, VTIME};
-use crate::src::shared::screen::screen;
-use crate::src::shared::terminal::*;
-use crate::src::shared::tty::*;
-use crate::src::shared::tty::{
+use crate::shared::display::*;
+use crate::shared::grid::*;
+use crate::shared::limits::UINT_MAX;
+use crate::shared::posix_io::{O_CREAT, O_TRUNC, O_WRONLY};
+use crate::shared::posix_terminal::{winsize, ICRNL, ONLCR, OPOST, TCSANOW, VMIN, VTIME};
+use crate::shared::screen::screen;
+use crate::shared::terminal::*;
+use crate::shared::tty::*;
+use crate::shared::tty::{
     TTY_CTX_CELL_INVALIDATE, TTY_CTX_INVISIBLE_PANES, TTY_CTX_OVERLAY_SYNC, TTY_CTX_PANE_OBSCURED,
     TTY_CTX_SYNC, TTY_CTX_WINDOW_BIGGER, TTY_CTX_WRAPPED,
 };
-use crate::src::shared::utf8::UTF8_SIZE;
-use crate::src::shared::window::WindowRef;
-use crate::src::status::status_line_size;
-use crate::src::text::utf8::utf8_set;
-use crate::src::tmux::setblocking;
-use crate::src::tty::features::tty_apply_features;
-use crate::src::tty::term::tty_term_owner_ptr;
-use crate::src::tty::term::{
+use crate::shared::utf8::UTF8_SIZE;
+use crate::shared::window::WindowRef;
+use crate::status::status_line_size;
+use crate::text::utf8::utf8_set;
+use crate::tmux::setblocking;
+use crate::tty::features::tty_apply_features;
+use crate::tty::term::tty_term_owner_ptr;
+use crate::tty::term::{
     tty_term_apply_overrides, tty_term_create, tty_term_flag, tty_term_has, tty_term_number,
     tty_term_string, tty_term_string_i, tty_term_string_ii, tty_term_string_ss,
 };
-use crate::src::window::{Window, WindowPane};
+use crate::window::{Window, WindowPane};
 use libc::{getpid, time};
 use std::time::Duration;
 
@@ -87,7 +87,7 @@ unsafe fn tty_initialize_component(terminal: &mut tty, fd: i32) -> i32 {
     terminal.ccolour = -1;
     terminal.bg = -1;
     terminal.fg = terminal.bg;
-    if crate::src::shared::terminal::read_attributes(fd, &mut terminal.tio.0) != 0 {
+    if crate::shared::terminal::read_attributes(fd, &mut terminal.tio.0) != 0 {
         return -1;
     }
     terminal.r.ensure(1);
@@ -323,7 +323,7 @@ unsafe fn tty_write_callback(owner: &ClientRef, result: std::io::Result<usize>) 
 
 fn tty_start_read(terminal: &mut tty, observer: ClientWeak) {
     let fd = terminal.io_fd.expect("open TTY descriptor");
-    crate::src::reactor::task_start(&mut terminal.read_task, move || {
+    crate::reactor::task_start(&mut terminal.read_task, move || {
         let source = reactor::io(unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) })?;
         Ok(async move {
             loop {
@@ -349,7 +349,7 @@ pub(super) fn tty_start_write(terminal: &mut tty, observer: ClientWeak) {
         return;
     }
     let fd = terminal.io_fd.expect("open TTY descriptor");
-    crate::src::reactor::task_start(&mut terminal.write_task, move || {
+    crate::reactor::task_start(&mut terminal.write_task, move || {
         let source = reactor::io(unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) })?;
         Ok(async move {
             let bytes = {
@@ -455,9 +455,7 @@ pub unsafe fn tty_start_tty(owner: &ClientRef) {
                 as tcflag_t;
         tio.c_cc[VMIN] = 1 as cc_t;
         tio.c_cc[VTIME] = 0 as cc_t;
-        if crate::src::shared::terminal::set_attributes(fd, TCSANOW, &tio)
-            == 0 as ::core::ffi::c_int
-        {
+        if crate::shared::terminal::set_attributes(fd, TCSANOW, &tio) == 0 as ::core::ffi::c_int {
             let _ =
                 tiri_rt::unix::discard_terminal(std::os::fd::BorrowedFd::borrow_raw(fd), TCOFLUSH);
         }
@@ -604,11 +602,11 @@ pub unsafe fn tty_stop_tty(owner: &ClientRef) {
         terminal_set!(tty, flags, &=, !TTY_BLOCK);
         drop(tty.borrow_terminal_mut().read_task.take());
         drop(tty.borrow_terminal_mut().write_task.take());
-        if crate::src::shared::terminal::read_size(fd, &mut ws) == -(1 as ::core::ffi::c_int) {
+        if crate::shared::terminal::read_size(fd, &mut ws) == -(1 as ::core::ffi::c_int) {
             return;
         }
         let saved_termios = terminal_value!(tty, tio).0;
-        if crate::src::shared::terminal::set_attributes(fd, TCSANOW, &saved_termios)
+        if crate::shared::terminal::set_attributes(fd, TCSANOW, &saved_termios)
             == -(1 as ::core::ffi::c_int)
         {
             return;

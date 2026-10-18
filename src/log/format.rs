@@ -2,8 +2,8 @@
 //!
 //! Escape byte inputs here, before interpolation. The debug sink must not run
 //! `strvis` again: doing so would double the backslashes in these arguments.
-use crate::src::compat::vis::vis;
-use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
+use crate::compat::vis::vis;
+use crate::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use std::ffi::{c_char, c_int, CStr};
 use std::fmt;
 

@@ -1,10 +1,10 @@
 //! Alert dispatch owns queued references; Window owns flags and its timer.
-use crate::src::log::{log_debug, log_hex};
-use crate::src::session::Session;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::tree::RB_NEGINF;
-use crate::src::shared::window::WindowRef;
-use crate::src::window::{windows, winlinks_minmax, winlinks_next, Window};
+use crate::log::{log_debug, log_hex};
+use crate::session::Session;
+use crate::shared::session::SessionRef;
+use crate::shared::tree::RB_NEGINF;
+use crate::shared::window::WindowRef;
+use crate::window::{windows, winlinks_minmax, winlinks_next, Window};
 use std::collections::VecDeque;
 
 /// Windows waiting for alert delivery and the task that drains them.
@@ -102,14 +102,14 @@ unsafe fn schedule(id: u32) {
     if !alerts::is_scheduled() {
         log_debug(format_args!("alerts check queued (by @{})", id));
         let mut task = None;
-        crate::src::reactor::task_start(&mut task, || {
+        crate::reactor::task_start(&mut task, || {
             Ok(async {
                 loop {
                     alerts_callback();
                     if alerts::finish_if_idle() {
                         break;
                     }
-                    crate::src::reactor::yield_now().await;
+                    crate::reactor::yield_now().await;
                 }
             })
         })

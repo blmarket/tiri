@@ -1,13 +1,13 @@
-use crate::src::arguments::{args, args_get, args_has, args_parse};
-use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::cmdq_error;
-use crate::src::format::bytes::write_cstr;
-use crate::src::paste::{paste_buffer_data, paste_free, paste_get_name, paste_get_top};
-use crate::src::shared::abi::*;
-use crate::src::shared::command::CMD_AFTERHOOK;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::window_pane::WindowPane as _;
+use crate::arguments::{args, args_get, args_has, args_parse};
+use crate::cmd::cmd_get_args_mut;
+use crate::cmd::queue::cmdq_error;
+use crate::format::bytes::write_cstr;
+use crate::paste::{paste_buffer_data, paste_free, paste_get_name, paste_get_top};
+use crate::shared::abi::*;
+use crate::shared::command::CMD_AFTERHOOK;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::window_pane::WindowPane as _;
 use std::ffi::CStr;
 pub static cmd_paste_buffer_entry: cmd_entry = {
     cmd_entry {
@@ -41,7 +41,7 @@ unsafe fn cmd_paste_buffer_exec(
     let item = item_handle.borrow();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let pane_owner = (*target).pane_handle().expect("paste target pane");
     let pb;

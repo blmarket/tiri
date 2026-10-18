@@ -1,42 +1,42 @@
-use crate::src::cmd::parse::cmd_parse_and_append;
-use crate::src::cmd::queue::{cmdq_append, cmdq_get_error, cmdq_new_state};
-use crate::src::format::{
+use crate::cmd::parse::cmd_parse_and_append;
+use crate::cmd::queue::{cmdq_append, cmdq_get_error, cmdq_new_state};
+use crate::format::{
     format_create_defaults, format_single_cstring, format_single_from_state_cstring,
 };
-use crate::src::format_draw::{format_trim_right_bytes, format_width};
-use crate::src::grid::grid_default_cell;
-use crate::src::key_string::key_string_format;
-use crate::src::options::options_get_number;
-use crate::src::options::OptionsScope;
-use crate::src::screen::screen_init;
-use crate::src::screen_write::{
+use crate::format_draw::{format_trim_right_bytes, format_width};
+use crate::grid::grid_default_cell;
+use crate::key_string::key_string_format;
+use crate::options::options_get_number;
+use crate::options::OptionsScope;
+use crate::screen::screen_init;
+use crate::screen_write::{
     screen_write_box, screen_write_clearscreen, screen_write_menu, screen_write_start,
     screen_write_stop,
 };
-use crate::src::server_client::Client as _;
-use crate::src::server_fn::{server_redraw_window, server_redraw_window_menu};
-use crate::src::session::Session as _;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::command::{cmd_find_state, cmdq_item};
-use crate::src::shared::key::key_event;
-use crate::src::shared::key::*;
-use crate::src::shared::layout::*;
-use crate::src::shared::menu::{
+use crate::server_client::Client as _;
+use crate::server_fn::{server_redraw_window, server_redraw_window_menu};
+use crate::session::Session as _;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::command::{cmd_find_state, cmdq_item};
+use crate::shared::key::key_event;
+use crate::shared::key::*;
+use crate::shared::layout::*;
+use crate::shared::menu::{
     menu, menu_item, MenuRow, MenuSelection, MENU_NOMOUSE, MENU_STAYOPEN, MENU_TAB,
 };
-use crate::src::shared::menu::{menu_choice_cb, menu_data};
-use crate::src::shared::mouse::{
+use crate::shared::menu::{menu_choice_cb, menu_data};
+use crate::shared::mouse::{
     mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG, MOUSE_WHEEL_DOWN,
     MOUSE_WHEEL_UP,
 };
-use crate::src::shared::screen::{screen, MODE_CURSOR, MODE_MOUSE_ALL, MODE_MOUSE_BUTTON};
-use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::style::*;
-use crate::src::shared::window::WindowWeak;
-use crate::src::style::{style_apply_with_options, style_parse, style_set};
-use crate::src::window::Window as _;
-use crate::src::window::WindowRef;
+use crate::shared::screen::{screen, MODE_CURSOR, MODE_MOUSE_ALL, MODE_MOUSE_BUTTON};
+use crate::shared::screen_write::screen_write_ctx;
+use crate::shared::style::*;
+use crate::shared::window::WindowWeak;
+use crate::style::{style_apply_with_options, style_parse, style_set};
+use crate::window::Window as _;
+use crate::window::WindowRef;
 use std::ffi::{CStr, CString};
 
 impl menu {
@@ -232,7 +232,7 @@ pub unsafe fn menu_update(md: &mut menu_data) {
     );
     screen_write_stop(&mut ctx);
 }
-fn menu_free_data(owner: refbox::RefBox<crate::src::shared::menu::menu_data>) {
+fn menu_free_data(owner: refbox::RefBox<crate::shared::menu::menu_data>) {
     let callback = {
         let mut md = owner.try_borrow_mut().expect("live unborrowed menu");
         md.closed = true;
@@ -245,7 +245,7 @@ fn menu_free_data(owner: refbox::RefBox<crate::src::shared::menu::menu_data>) {
 
 pub unsafe fn menu_close(
     window: &WindowWeak,
-    expected: Option<&refbox::Weak<crate::src::shared::menu::menu_data>>,
+    expected: Option<&refbox::Weak<crate::shared::menu::menu_data>>,
 ) {
     let menu = {
         let Some(owner) = window.upgrade() else {
@@ -264,7 +264,7 @@ pub unsafe fn menu_close(
         drop(owner);
     }
 }
-pub fn menu_destroy(menu: Option<refbox::RefBox<crate::src::shared::menu::menu_data>>) {
+pub fn menu_destroy(menu: Option<refbox::RefBox<crate::shared::menu::menu_data>>) {
     if let Some(menu) = menu {
         menu_free_data(menu);
     }
@@ -500,7 +500,7 @@ fn menu_handle_key(md: &mut menu_data, event: &key_event) -> MenuKeyAction {
 
 pub unsafe fn menu_key(
     client_owner: Option<&ClientRef>,
-    owner: &refbox::Weak<crate::src::shared::menu::menu_data>,
+    owner: &refbox::Weak<crate::shared::menu::menu_data>,
     event: &key_event,
 ) -> ::core::ffi::c_int {
     let action = {
@@ -623,7 +623,7 @@ pub unsafe fn menu_display(
     } else {
         (*fs).w.upgrade().expect("live menu target window")
     };
-    let window = crate::src::shared::window::WindowRef::downgrade(&setup_window);
+    let window = crate::shared::window::WindowRef::downgrade(&setup_window);
     let sx = menu.width.wrapping_add(4);
     let sy = menu.count().wrapping_add(2);
     (px, py) = setup_window.place_menu((px, py), (sx, sy));
@@ -843,7 +843,7 @@ mod tests {
     #[test]
     fn selected_callback_can_close_and_release_its_menu() {
         let slot = Rc::new(RefCell::new(
-            None::<refbox::RefBox<crate::src::shared::menu::menu_data>>,
+            None::<refbox::RefBox<crate::shared::menu::menu_data>>,
         ));
         let callback_slot = Rc::clone(&slot);
         let called = Rc::new(Cell::new(false));
@@ -883,7 +883,7 @@ mod tests {
         let callback_observer = observer.clone();
         let calls = Rc::new(Cell::new(0));
         let callback_calls = Rc::clone(&calls);
-        owner.try_borrow_mut().unwrap().s.grid = Some(crate::src::grid::grid_create(24, 3, 0));
+        owner.try_borrow_mut().unwrap().s.grid = Some(crate::grid::grid_create(24, 3, 0));
         owner.try_borrow_mut().unwrap().cb = Some(Box::new(move |selection| {
             assert_eq!(selection, MenuSelection::Cancelled);
             callback_calls.set(callback_calls.get() + 1);

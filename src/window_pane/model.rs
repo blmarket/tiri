@@ -1,6 +1,6 @@
 //! Pane storage belongs to the pane implementation.
 use super::*;
-use crate::src::shared::window::WindowWeak;
+use crate::shared::window::WindowWeak;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[repr(C)]
@@ -41,7 +41,7 @@ pub struct window_pane {
     pub(super) cmd_status: ::core::ffi::c_int,
     pub(super) fd: Option<super::pty::PanePty>,
     /// Observes the runtime-owned pane stream, including empty pane buffers.
-    pub(super) event: crate::src::reactor::StreamHandle,
+    pub(super) event: crate::reactor::StreamHandle,
     pub(super) offset: window_pane_offset,
     pub(super) base_offset: size_t,
     pub(super) resize_queue: window_pane_resizes,
@@ -58,7 +58,7 @@ pub struct window_pane {
     pub(super) pipe_fd: Option<std::os::fd::OwnedFd>,
     pub(super) pipe_pid: pid_t,
     /// Observes the runtime-owned pipe stream; pipe_fd controls its lifetime.
-    pub(super) pipe_event: crate::src::reactor::StreamHandle,
+    pub(super) pipe_event: crate::reactor::StreamHandle,
     pub(super) pipe_offset: window_pane_offset,
     pub(super) screen_source: PaneScreenSource,
     pub(super) base: screen,
@@ -70,9 +70,9 @@ pub struct window_pane {
     pub(super) modes: window_pane_modes,
     pub(super) searchstr: Option<CString>,
     pub(super) searchregex: ::core::ffi::c_int,
-    pub(super) prompt: Option<refbox::RefBox<crate::src::shared::prompt::prompt>>,
+    pub(super) prompt: Option<refbox::RefBox<crate::shared::prompt::prompt>>,
     /// Callback-owned data; this observer cannot keep a closed prompt alive.
-    pub(super) prompt_data: refbox::Weak<crate::src::shared::pane::window_pane_prompt>,
+    pub(super) prompt_data: refbox::Weak<crate::shared::pane::window_pane_prompt>,
     pub(super) prompt_cx: u_int,
     pub(super) border_gc_set: ::core::ffi::c_int,
     pub(super) border_gc: grid_cell,

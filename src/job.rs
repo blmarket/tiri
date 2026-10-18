@@ -1,42 +1,38 @@
-use crate::src::cfg::cfg_finished;
-use crate::src::cmd::queue::cmdq_print;
-use crate::src::cmd::{cmd_log_argv, cmd_stringify_argv_cstring};
-use crate::src::compat::fdforkpty::fdforkpty;
-use crate::src::environ::{environ_copy, environ_for_session, environ_push, environ_set};
-use crate::src::format::bytes::nullable_cstr;
-use crate::src::format::bytes::write_cstr;
-use crate::src::log::log_bytes;
-use crate::src::log::{fatal, fatalx, log_cstr, log_debug};
-use crate::src::options::options_get_string;
-use crate::src::options::OptionsScope;
-use crate::src::proc::proc_clear_signals;
-use crate::src::reactor::BufferEvent;
-use crate::src::reactor::{
+use crate::cfg::cfg_finished;
+use crate::cmd::queue::cmdq_print;
+use crate::cmd::{cmd_log_argv, cmd_stringify_argv_cstring};
+use crate::compat::fdforkpty::fdforkpty;
+use crate::environ::{environ_copy, environ_for_session, environ_push, environ_set};
+use crate::format::bytes::nullable_cstr;
+use crate::format::bytes::write_cstr;
+use crate::log::log_bytes;
+use crate::log::{fatal, fatalx, log_cstr, log_debug};
+use crate::options::options_get_string;
+use crate::options::OptionsScope;
+use crate::proc::proc_clear_signals;
+use crate::reactor::BufferEvent;
+use crate::reactor::{
     bufferevent_disable, bufferevent_enable, bufferevent_new, evbuffer_get_length, evbuffer_pullup,
 };
-use crate::src::server::server_proc;
-use crate::src::session::Session as _;
-use crate::src::shared::abi::*;
-use crate::src::shared::command::cmdq_item;
-use crate::src::shared::environment::environ;
-use crate::src::shared::event::*;
-use crate::src::shared::event::{EV_READ, EV_WRITE};
-use crate::src::shared::job::{
+use crate::server::server_proc;
+use crate::session::Session as _;
+use crate::shared::abi::*;
+use crate::shared::command::cmdq_item;
+use crate::shared::environment::environ;
+use crate::shared::event::*;
+use crate::shared::event::{EV_READ, EV_WRITE};
+use crate::shared::job::{
     job, job_complete_cb, job_free_cb, job_state, job_update_cb, jobs, JobCompletion,
 };
-use crate::src::shared::job::{
-    JOB_DEFAULTSHELL, JOB_KEEPWRITE, JOB_NOWAIT, JOB_PTY, JOB_SHOWSTDERR,
-};
-use crate::src::shared::posix_io::{
+use crate::shared::job::{JOB_DEFAULTSHELL, JOB_KEEPWRITE, JOB_NOWAIT, JOB_PTY, JOB_SHOWSTDERR};
+use crate::shared::posix_io::{
     _PATH_BSHELL, _PATH_DEVNULL, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO,
 };
-use crate::src::shared::posix_terminal::winsize;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::signal::{
-    sigset_t, SIGCONT, SIGTERM, SIGTTIN, SIGTTOU, SIG_BLOCK, SIG_SETMASK,
-};
-use crate::src::shared::terminal::*;
-use crate::src::tmux::{checkshell, find_home_cstr, ptm_fd, setblocking, shell_argv0_cstring};
+use crate::shared::posix_terminal::winsize;
+use crate::shared::session::SessionRef;
+use crate::shared::signal::{sigset_t, SIGCONT, SIGTERM, SIGTTIN, SIGTTOU, SIG_BLOCK, SIG_SETMASK};
+use crate::shared::terminal::*;
+use crate::tmux::{checkshell, find_home_cstr, ptm_fd, setblocking, shell_argv0_cstring};
 use libc::{
     _exit, chdir, execl, execvp, fork, kill, killpg, memset, setenv, sigfillset, sigprocmask,
 };
@@ -278,7 +274,7 @@ pub unsafe fn job_run(
                     } else {
                         nullfd = match tiri_rt::unix::open(_PATH_DEVNULL, O_RDWR, 0) {
                             Ok(fd) => fd.into_raw_fd(),
-                            Err(error) => crate::src::reactor::io_status(Err(error)),
+                            Err(error) => crate::reactor::io_status(Err(error)),
                         };
                         if nullfd == -(1 as ::core::ffi::c_int) {
                             _exit(1 as ::core::ffi::c_int);
@@ -376,7 +372,7 @@ pub unsafe fn job_run(
                     fatalx(|out| out.write_all(b"out of memory"));
                 }
                 job.try_borrow_mut().expect("registered job").event =
-                    crate::src::reactor::StreamHandle::from_ptr(stream);
+                    crate::reactor::StreamHandle::from_ptr(stream);
                 bufferevent_enable(stream, (EV_READ | EV_WRITE) as ::core::ffi::c_short);
                 {
                     let value = job.try_borrow_mut().expect("registered job");
@@ -454,9 +450,7 @@ pub unsafe fn job_resize(handle: &Weak<job>, sx: u_int, sy: u_int) {
         ws_xpixel: 0,
         ws_ypixel: 0,
     };
-    if crate::src::shared::terminal::set_size(job.fd.as_ref().expect("job PTY").as_raw_fd(), &ws)
-        == -1
-    {
+    if crate::shared::terminal::set_size(job.fd.as_ref().expect("job PTY").as_raw_fd(), &ws) == -1 {
         fatal(|out| out.write_all(b"ioctl failed"));
     }
 }
@@ -628,7 +622,7 @@ pub unsafe fn job_print_summary(
 #[cfg(test)]
 mod job_stream_tests {
     use super::*;
-    use crate::src::shared::job::job_update_callback;
+    use crate::shared::job::job_update_callback;
     use std::cell::Cell;
     use std::os::unix::net::UnixStream;
     use std::rc::Rc;
@@ -655,7 +649,7 @@ mod job_stream_tests {
             let stream = bufferevent_new(fd, None, None, None);
             let first = jobs::insert(RefBox::new(job {
                 fd: Some(socket.into()),
-                event: crate::src::reactor::StreamHandle::from_ptr(stream),
+                event: crate::reactor::StreamHandle::from_ptr(stream),
                 ..idle_job()
             }));
             let event = first.try_borrow_mut().unwrap().event.clone();
@@ -705,10 +699,10 @@ mod job_stream_tests {
 
             for eof_first in [false, true] {
                 let stream = bufferevent_new(-1, None, None, None);
-                crate::src::reactor::evbuffer_add(&mut (*stream).input, b"remaining");
+                crate::reactor::evbuffer_add(&mut (*stream).input, b"remaining");
                 let handle = jobs::insert(RefBox::new(job {
                     pid: 1234567,
-                    event: crate::src::reactor::StreamHandle::from_ptr(stream),
+                    event: crate::reactor::StreamHandle::from_ptr(stream),
                     ..idle_job()
                 }));
                 let callback_handle = handle.clone();
@@ -735,7 +729,7 @@ mod job_stream_tests {
             }
             assert_eq!(calls.get(), 4);
             assert!(jobs::snapshot().is_empty());
-            crate::src::reactor::shutdown_runtime(runtime);
+            crate::reactor::shutdown_runtime(runtime);
         }
     }
 
@@ -744,12 +738,12 @@ mod job_stream_tests {
         unsafe {
             let stream = bufferevent_new(-1, None, None, None);
             let owner = RefBox::new(job {
-                event: crate::src::reactor::StreamHandle::from_ptr(stream),
+                event: crate::reactor::StreamHandle::from_ptr(stream),
                 ..idle_job()
             });
             let handle = owner.downgrade();
             assert_eq!(job_get_event(&handle), stream);
-            crate::src::reactor::evbuffer_add(&mut (*stream).input, b"output");
+            crate::reactor::evbuffer_add(&mut (*stream).input, b"output");
             assert_eq!(
                 job_completion(&owner.try_borrow_mut().unwrap()).output,
                 b"output"

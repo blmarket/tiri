@@ -1,12 +1,12 @@
 use super::*;
-use crate::src::options::options_get_number;
-use crate::src::server_client::ClientRegistry;
-use crate::src::session::Session;
-use crate::src::shared::client::client_handle;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::rc::same;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::window::WindowRef;
+use crate::options::options_get_number;
+use crate::server_client::ClientRegistry;
+use crate::session::Session;
+use crate::shared::client::client_handle;
+use crate::shared::client::ClientRef;
+use crate::shared::rc::same;
+use crate::shared::session::SessionRef;
+use crate::shared::window::WindowRef;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
 
@@ -232,7 +232,7 @@ unsafe fn format_cb_window_layout_name(ft: *mut format_tree) -> Option<CString> 
 unsafe fn pane_format_value(key: &CStr, context: &mut format_tree) -> Option<FormatValue> {
     match context.wp.upgrade() {
         Some(pane) => pane.format_value(key, context),
-        None => crate::src::window_pane::format_without_pane(key, context),
+        None => crate::window_pane::format_without_pane(key, context),
     }
 }
 
@@ -804,7 +804,7 @@ unsafe fn format_cb_mouse_y(ft: *mut format_tree) -> Option<CString> {
 }
 fn format_cb_next_session_id(_ft: *mut format_tree) -> Option<CString> {
     Some(
-        CString::new(format!("${}", crate::src::session::sessions::next_id()))
+        CString::new(format!("${}", crate::session::sessions::next_id()))
             .expect("formatted numbers contain no NUL"),
     )
 }
@@ -1220,7 +1220,7 @@ unsafe fn format_cb_window_end_flag(mut ft: *mut format_tree) -> Option<CString>
 }
 unsafe fn format_cb_window_flags(mut ft: *mut format_tree) -> Option<CString> {
     if (*ft).winlink_handle().is_alive() {
-        return Some(crate::src::window::window_printable_flags(
+        return Some(crate::window::window_printable_flags(
             ((*ft).winlink_handle()).clone(),
             true,
         ));
@@ -1315,7 +1315,7 @@ unsafe fn format_cb_window_linked(mut ft: *mut format_tree) -> Option<CString> {
     None
 }
 unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<CString> {
-    let mut sg = crate::src::shared::session::SessionGroupWeak::new();
+    let mut sg = crate::shared::session::SessionGroupWeak::new();
     let mut s: Option<SessionRef> = None;
     let mut n: u_int = 0 as u_int;
     if !(*ft).winlink_handle().is_alive() {
@@ -1329,7 +1329,7 @@ unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<C
         .clone();
     sg = session_groups::minmax();
     while sg.is_alive() {
-        let group_members = crate::src::session::session_group_members(&sg);
+        let group_members = crate::session::session_group_members(&sg);
         s = group_members.first().cloned();
         if group_members.first().is_some_and(|session| {
             session.with_winlinks(|links| winlink_find_by_window(links, &window).is_alive())
@@ -1341,7 +1341,7 @@ unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<C
     let mut s_owner = sessions::first();
     s = s_owner.clone();
     while !s.is_none() {
-        if !crate::src::session::session_groups::for_session(&Rc::downgrade(
+        if !crate::session::session_groups::for_session(&Rc::downgrade(
             s_owner.as_ref().expect("registered session"),
         ))
         .is_alive()
@@ -1401,7 +1401,7 @@ unsafe fn format_cb_window_panes(ft: *mut format_tree) -> Option<CString> {
 
 unsafe fn format_cb_window_raw_flags(mut ft: *mut format_tree) -> Option<CString> {
     if (*ft).winlink_handle().is_alive() {
-        return Some(crate::src::window::window_printable_flags(
+        return Some(crate::window::window_printable_flags(
             ((*ft).winlink_handle()).clone(),
             false,
         ));
@@ -1507,11 +1507,11 @@ unsafe fn format_cb_session_last_attached(ft: *mut format_tree) -> Option<time_t
     }
 }
 unsafe fn format_cb_start_time(_ft: *mut format_tree) -> Option<time_t> {
-    Some(crate::src::shared::time::unix_seconds(start_time))
+    Some(crate::shared::time::unix_seconds(start_time))
 }
 unsafe fn format_cb_window_activity(ft: *mut format_tree) -> Option<time_t> {
     let window = (*ft).w.upgrade()?;
-    let value = crate::src::shared::time::unix_seconds(window.activity_time());
+    let value = crate::shared::time::unix_seconds(window.activity_time());
     drop(window);
     Some(value)
 }
@@ -1576,9 +1576,9 @@ pub(super) struct FormatTableEntry {
 }
 impl FormatTableEntry {
     pub unsafe fn get(&self, ft: *mut format_tree) -> Option<FormatValue> {
-        use crate::src::server_client::Client;
-        use crate::src::session::Session;
-        use crate::src::window::{Window, WindowPane};
+        use crate::server_client::Client;
+        use crate::session::Session;
+        use crate::window::{Window, WindowPane};
         if model_key(self.key, b"session_") {
             if let Some(owner) = (*ft).s.upgrade() {
                 return owner.format_value(self.key, &mut *ft);
@@ -2463,8 +2463,8 @@ mod owned_callback_tests {
 
     #[test]
     fn buffer_formats_preserve_missing_empty_and_logical_binary_lengths() {
-        let owner = refbox::RefBox::new(crate::src::shared::paste::paste_buffer::empty());
-        let buffer = crate::src::shared::paste::PasteBufferRef::observe(&owner);
+        let owner = refbox::RefBox::new(crate::shared::paste::paste_buffer::empty());
+        let buffer = crate::shared::paste::PasteBufferRef::observe(&owner);
         unsafe {
             let mut ft_owner = format_create(None, None, 0, 0);
             let ft = &raw mut *ft_owner;

@@ -1,10 +1,10 @@
 use super::model::tty_term;
 use super::model::*;
-use crate::src::log::{log_bytes, log_cstr, log_debug};
-use crate::src::server_client::Client as _;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::tty::term::{tty_term_apply, tty_term_has_name};
+use crate::log::{log_bytes, log_cstr, log_debug};
+use crate::server_client::Client as _;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::tty::term::{tty_term_apply, tty_term_has_name};
 use libc::strcmp;
 use std::ffi::{CStr, CString};
 
@@ -356,13 +356,13 @@ pub(super) unsafe fn tty_apply_features(mut term: *mut tty_term, feat: i32) -> A
             let tf = tty_features[i as usize];
             log_debug(format_args!(
                 "applying terminal feature: {}",
-                crate::src::log::log_bytes(tty_features[i as usize].name.to_bytes())
+                crate::log::log_bytes(tty_features[i as usize].name.to_bytes())
             ));
             if let Some(capabilities) = tf.capabilities {
                 for capability in capabilities {
                     log_debug(format_args!(
                         "adding capability: {}",
-                        crate::src::log::log_bytes(capability.to_bytes())
+                        crate::log::log_bytes(capability.to_bytes())
                     ));
                     tty_term_apply(term, capability.as_ptr(), 1 as ::core::ffi::c_int, tf.flags);
                 }

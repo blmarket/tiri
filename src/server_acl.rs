@@ -1,15 +1,15 @@
-use crate::src::cmd::queue::cmdq_print;
-use crate::src::format::bytes::nullable_cstr;
-use crate::src::format::bytes::write_cstr;
-use crate::src::server_client::Client as _;
-use crate::src::server_client::ClientRegistry;
-use crate::src::shared::abi::*;
-use crate::src::shared::abi::{__gid_t, __uid_t, gid_t, id_t, uid_t};
-use crate::src::shared::account::{group, passwd};
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::client::CLIENT_READONLY;
-use crate::src::shared::command::cmdq_item;
-use crate::src::shared::server_acl::SERVER_ACL_IS_GROUP;
+use crate::cmd::queue::cmdq_print;
+use crate::format::bytes::nullable_cstr;
+use crate::format::bytes::write_cstr;
+use crate::server_client::Client as _;
+use crate::server_client::ClientRegistry;
+use crate::shared::abi::*;
+use crate::shared::abi::{__gid_t, __uid_t, gid_t, id_t, uid_t};
+use crate::shared::account::{group, passwd};
+use crate::shared::client::ClientRef;
+use crate::shared::client::CLIENT_READONLY;
+use crate::shared::command::cmdq_item;
+use crate::shared::server_acl::SERVER_ACL_IS_GROUP;
 use libc::{getgrgid, getpwuid, getuid};
 
 #[repr(C)]

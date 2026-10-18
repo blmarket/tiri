@@ -1,21 +1,21 @@
-use crate::src::compat::strtonum::strtonum;
-use crate::src::ffi::libc::strlcpy;
-use crate::src::format::bytes::{format_bytes, format_message_with};
-use crate::src::format::format_single_cstring;
-use crate::src::grid::grid_default_cell;
-use crate::src::hyperlinks::{hyperlinks_get, hyperlinks_put, HyperlinksRef};
-use crate::src::log::{fatalx, log_bytes, log_debug};
-use crate::src::shared::abi::*;
-use crate::src::shared::grid::*;
-use crate::src::shared::hyperlinks::hyperlinks_uri;
-pub use crate::src::shared::limits::UINT_MAX;
-pub use crate::src::shared::pane::{
+use crate::compat::strtonum::strtonum;
+use crate::ffi::libc::strlcpy;
+use crate::format::bytes::{format_bytes, format_message_with};
+use crate::format::format_single_cstring;
+use crate::grid::grid_default_cell;
+use crate::hyperlinks::{hyperlinks_get, hyperlinks_put, HyperlinksRef};
+use crate::log::{fatalx, log_bytes, log_debug};
+use crate::shared::abi::*;
+use crate::shared::grid::*;
+use crate::shared::hyperlinks::hyperlinks_uri;
+pub use crate::shared::limits::UINT_MAX;
+pub use crate::shared::pane::{
     PANE_SCROLLBARS_CHARACTER, PANE_SCROLLBARS_DEFAULT_PADDING, PANE_SCROLLBARS_DEFAULT_WIDTH,
 };
-use crate::src::shared::style::*;
-use crate::src::style::attributes::{attributes_format, attributes_parse};
-use crate::src::style::colour::{colour_format, colour_parse_cstr};
-use crate::src::text::utf8::utf8_set;
+use crate::shared::style::*;
+use crate::style::attributes::{attributes_format, attributes_parse};
+use crate::style::colour::{colour_format, colour_parse_cstr};
+use crate::text::utf8::utf8_set;
 use libc::memcpy;
 use std::ffi::{CStr, CString};
 
@@ -633,15 +633,15 @@ pub unsafe fn style_copy(mut dst: *mut style, mut src: *mut style) {
 }
 pub unsafe fn style_set_scrollbar_style_from_option(
     mut sb_style: *mut style,
-    scope: &crate::src::options::OptionsScope,
+    scope: &crate::options::OptionsScope,
 ) {
     style_set(sb_style, &grid_default_cell);
     let (oe, value) = scope.with_local(|oo| {
-        let oe = crate::src::options::options_read_entry(oo, c"pane-scrollbars-style", |entry| {
+        let oe = crate::options::options_read_entry(oo, c"pane-scrollbars-style", |entry| {
             entry.tableentry
         })
         .flatten();
-        let value = crate::src::options::options_get_string_optional(oo, c"pane-scrollbars-style");
+        let value = crate::options::options_get_string_optional(oo, c"pane-scrollbars-style");
         (oe, value)
     });
     let oe = oe.unwrap_or_else(|| fatalx(|out| out.write_all(b"missing pane-scrollbars-style")));
@@ -695,7 +695,7 @@ pub unsafe fn style_ranges_clear(mut srs: *mut style_ranges) {
 #[cfg(test)]
 mod style_ranges_tests {
     use super::{style_range, style_ranges, STYLE_RANGE_LEFT};
-    use crate::src::shared::abi::u_int;
+    use crate::shared::abi::u_int;
 
     fn range(start: u_int, end: u_int) -> Box<style_range> {
         Box::new(style_range {

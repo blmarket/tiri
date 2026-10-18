@@ -1,61 +1,59 @@
-use crate::src::format::bytes::cstr_suffix;
-use crate::src::format::bytes::format_message_with;
-use crate::src::format_draw::format_draw;
-use crate::src::grid::view::{
+use crate::format::bytes::cstr_suffix;
+use crate::format::bytes::format_message_with;
+use crate::format_draw::format_draw;
+use crate::grid::view::{
     grid_view_clear, grid_view_clear_history, grid_view_delete_cells, grid_view_delete_lines,
     grid_view_delete_lines_region, grid_view_get_cell, grid_view_insert_cells,
     grid_view_insert_lines, grid_view_insert_lines_region, grid_view_scroll_region_down,
     grid_view_scroll_region_up, grid_view_set_cell, grid_view_set_cells, grid_view_set_padding,
 };
-use crate::src::grid::{
+use crate::grid::{
     grid_cells_equal, grid_clear_history, grid_default_cell, grid_get_cell, grid_get_line,
     grid_get_line_mut,
 };
-use crate::src::log::{fatalx, log_bytes, log_debug, log_get_level};
-use crate::src::options::options_get_number;
-use crate::src::options::OptionsScope;
-use crate::src::screen::{
+use crate::log::{fatalx, log_bytes, log_debug, log_get_level};
+use crate::options::options_get_number;
+use crate::options::OptionsScope;
+use crate::screen::{
     screen_alternate_off, screen_alternate_on, screen_check_selection, screen_mode_display,
     screen_reset_tabs, screen_select_cell,
 };
-use crate::src::shared::abi::ssize_t;
-use crate::src::shared::abi::*;
-use crate::src::shared::borders::{
+use crate::shared::abi::ssize_t;
+use crate::shared::abi::*;
+use crate::shared::borders::{
     CELL_BORDERS, CELL_LD, CELL_LR, CELL_LU, CELL_RD, CELL_RU, CELL_UD, CELL_ULD, CELL_URD,
     SIMPLE_BORDERS,
 };
-use crate::src::shared::display::visible_range;
-use crate::src::shared::grid::*;
-use crate::src::shared::layout::*;
-use crate::src::shared::limits::UINT_MAX;
-use crate::src::shared::menu::menu;
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::screen::{
+use crate::shared::display::visible_range;
+use crate::shared::grid::*;
+use crate::shared::layout::*;
+use crate::shared::limits::UINT_MAX;
+use crate::shared::menu::menu;
+use crate::shared::pane::window_pane;
+use crate::shared::screen::{
     screen, EXTENDED_KEY_MODES, MODE_CURSOR, MODE_INSERT, MODE_KEYS_EXTENDED, MODE_ORIGIN,
     MODE_SYNC, MODE_WRAP,
 };
-use crate::src::shared::screen_write::{
+use crate::shared::screen_write::{
     screen_write_citem, screen_write_cline, screen_write_items, CLEAR,
 };
-use crate::src::shared::screen_write::{screen_write_ctx, screen_write_init_ctx_cb};
-use crate::src::shared::style::*;
-use crate::src::shared::tty::{
-    tty_command_data, tty_ctx, tty_ctx_redraw_cb, tty_ctx_set_client_cb,
-};
-use crate::src::shared::tty::{
+use crate::shared::screen_write::{screen_write_ctx, screen_write_init_ctx_cb};
+use crate::shared::style::*;
+use crate::shared::tty::{tty_command_data, tty_ctx, tty_ctx_redraw_cb, tty_ctx_set_client_cb};
+use crate::shared::tty::{
     TTY_CTX_CELL_INVALIDATE, TTY_CTX_INVISIBLE_PANES, TTY_CTX_OVERLAY_SYNC, TTY_CTX_PANE_OBSCURED,
     TTY_CTX_SYNC, TTY_CTX_WRAPPED,
 };
-use crate::src::shared::utf8::*;
-use crate::src::text::utf8::{utf8_append, utf8_copy, utf8_fromcstr_vec, utf8_open, utf8_set};
-use crate::src::text::utf8_combined::{
+use crate::shared::utf8::*;
+use crate::text::utf8::{utf8_append, utf8_copy, utf8_fromcstr_vec, utf8_open, utf8_set};
+use crate::text::utf8_combined::{
     hanguljamo_check_state, utf8_has_zwj, utf8_is_hangul_filler, utf8_is_vs, utf8_is_zwj,
     utf8_should_combine,
 };
-use crate::src::tty::{tty_acs_double_borders, tty_acs_heavy_borders, tty_acs_rounded_borders};
-use crate::src::tty::{tty_write, TtyCmd};
-use crate::src::window::WindowPane;
-use crate::src::window_visible::window_position_is_visible;
+use crate::tty::{tty_acs_double_borders, tty_acs_heavy_borders, tty_acs_rounded_borders};
+use crate::tty::{tty_write, TtyCmd};
+use crate::window::WindowPane;
+use crate::window_visible::window_position_is_visible;
 use std::ffi::CStr;
 
 pub const PADDED_BORDERS: [::core::ffi::c_char; 14] =
@@ -126,7 +124,7 @@ fn screen_write_redraw_cb(
     let observer = observer.clone();
     Some(Box::new(move |_| unsafe {
         if let Some(owner) = observer.upgrade() {
-            use crate::src::window::WindowPane;
+            use crate::window::WindowPane;
             owner.request_redraw(false);
         }
     }))
@@ -134,7 +132,7 @@ fn screen_write_redraw_cb(
 fn screen_write_set_client_cb(
     observer: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
 ) -> tty_ctx_set_client_cb {
-    use crate::src::server_client::Client;
+    use crate::server_client::Client;
     let observer = observer.clone();
     Some(Box::new(move |ttyctx, client| unsafe {
         let Some(pane) = observer.upgrade() else {
@@ -210,9 +208,8 @@ pub(crate) unsafe fn screen_write_initctx(
         ttyctx.redraw_cb = screen_write_redraw_cb(&ctx.wp);
         if let Some(write_pane_value) = write_pane {
             (ttyctx.style_ctx.defaults, ttyctx.style_ctx.dim) = write_pane_value.default_colours();
-            ttyctx.style_ctx.palette = crate::src::shared::tty::PaletteSource::Pane(
-                std::rc::Rc::downgrade(write_pane_value),
-            );
+            ttyctx.style_ctx.palette =
+                crate::shared::tty::PaletteSource::Pane(std::rc::Rc::downgrade(write_pane_value));
             ttyctx.set_client_cb = screen_write_set_client_cb(&ctx.wp);
         }
     }
@@ -3220,7 +3217,7 @@ pub unsafe fn screen_write_alternateoff(
 #[cfg(test)]
 mod write_ctx_tests {
     use super::*;
-    use crate::src::shared::colour::colour_palette;
+    use crate::shared::colour::colour_palette;
     use std::{cell::Cell, rc::Rc};
 
     struct DropCounter(Rc<Cell<usize>>);
@@ -3235,7 +3232,7 @@ mod write_ctx_tests {
     fn restarting_a_stopped_context_releases_its_previous_callback() {
         unsafe {
             let mut s = screen::empty();
-            s.grid = Some(crate::src::grid::grid_create(8, 2, 0));
+            s.grid = Some(crate::grid::grid_create(8, 2, 0));
             let mut ctx = screen_write_ctx::default();
             let drops = Rc::new(Cell::new(0));
             for pass in 0..3 {
@@ -3267,7 +3264,7 @@ mod write_ctx_tests {
     fn callback_defaults_and_palette_fallback_share_the_owned_style_cell() {
         unsafe {
             let mut s = screen::empty();
-            s.grid = Some(crate::src::grid::grid_create(8, 2, 0));
+            s.grid = Some(crate::grid::grid_create(8, 2, 0));
             let palette = refbox::RefBox::new(colour_palette {
                 fg: 3,
                 bg: 4,
@@ -3279,7 +3276,7 @@ mod write_ctx_tests {
                 init_ctx_cb: Some(Box::new(move |ttyctx| {
                     ttyctx.style_ctx.defaults.fg = 7;
                     ttyctx.style_ctx.palette =
-                        crate::src::shared::tty::PaletteSource::Popup(palette_observer.clone());
+                        crate::shared::tty::PaletteSource::Popup(palette_observer.clone());
                 })),
                 ..Default::default()
             };
@@ -3312,7 +3309,7 @@ mod write_ctx_tests {
     fn resetting_a_terminal_context_drops_both_owned_callbacks() {
         unsafe {
             let mut s = screen::empty();
-            s.grid = Some(crate::src::grid::grid_create(8, 2, 0));
+            s.grid = Some(crate::grid::grid_create(8, 2, 0));
             s.cx = 3;
             s.cy = 1;
             s.rlower = 1;
@@ -3349,7 +3346,7 @@ mod write_ctx_tests {
 #[cfg(test)]
 mod write_cell_tests {
     use super::*;
-    use crate::src::grid::grid_create;
+    use crate::grid::grid_create;
 
     #[test]
     fn overwriting_wide_cells_clears_surrounding_padding_and_preserves_backgrounds() {
@@ -3414,7 +3411,7 @@ mod write_row_tests {
     fn scrolling_a_region_moves_rows_and_resize_rebuilds_the_owned_slice() {
         unsafe {
             let mut s = screen::empty();
-            s.grid = Some(crate::src::grid::grid_create(4, 5, 0));
+            s.grid = Some(crate::grid::grid_create(4, 5, 0));
             s.rupper = 1;
             s.rlower = 3;
             screen_write_make_list(&mut s);
@@ -3447,7 +3444,7 @@ mod write_row_tests {
             assert_eq!(s.write_rows()[2].data.as_ptr(), allocations[2]);
             assert_eq!(s.write_rows()[2].items.front().unwrap().bg, 100);
 
-            crate::src::screen::screen_resize(&mut s, 6, 3, 0);
+            crate::screen::screen_resize(&mut s, 6, 3, 0);
             assert_eq!(s.write_rows().len(), 3);
             assert!(s
                 .write_rows()
@@ -3470,7 +3467,7 @@ mod write_row_tests {
     fn scroll_moves_text_owners_and_tears_down_rows() {
         unsafe {
             let mut s: screen = screen::empty();
-            s.grid = Some(crate::src::grid::grid_create(4, 3, 0));
+            s.grid = Some(crate::grid::grid_create(4, 3, 0));
             s.rupper = 0;
             s.rlower = 2;
             screen_write_make_list(&mut s);

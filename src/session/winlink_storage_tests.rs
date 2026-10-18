@@ -1,5 +1,5 @@
-use crate::src::shared::session::session;
-use crate::src::window::*;
+use crate::shared::session::session;
+use crate::window::*;
 use refbox::BorrowError;
 
 #[test]
@@ -23,14 +23,14 @@ fn moved_map_and_reindexed_owner_keep_identity_through_growth() {
             winlink_find_by_index(&old, 6)
         );
         assert!(!winlinks_next(replacement.get_unchecked()).is_alive());
-        while !crate::src::window::winlinks_is_empty(&old) {
+        while !crate::window::winlinks_is_empty(&old) {
             let node = winlinks_minmax(&old, -1);
             winlink_remove(&mut old, (node).clone());
         }
         assert_eq!(weak.try_borrow_mut().err(), Some(BorrowError::Dropped));
         assert_eq!(winlink_count(&head), 1);
         winlink_remove(&mut head, (replacement).clone());
-        assert!(crate::src::window::winlinks_is_empty(&head));
+        assert!(crate::window::winlinks_is_empty(&head));
     }
 }
 
@@ -66,7 +66,7 @@ fn shuffle_moves_owners_without_losing_history_and_removal_clears_observers() {
         }
         assert!(winlink_stack_indices(&session.lastw).is_empty());
         assert_eq!(weak.try_borrow_mut().err(), Some(BorrowError::Dropped));
-        assert!(crate::src::window::winlinks_is_empty(&session.windows));
+        assert!(crate::window::winlinks_is_empty(&session.windows));
     }
 }
 
@@ -85,6 +85,6 @@ fn detached_winlink_does_not_keep_session_alive_and_can_be_removed_after_expiry(
         drop(owner);
         assert!(link.get_unchecked().session.upgrade().is_none());
         winlink_remove(&mut links, link.clone());
-        assert!(crate::src::window::winlinks_is_empty(&links));
+        assert!(crate::window::winlinks_is_empty(&links));
     }
 }

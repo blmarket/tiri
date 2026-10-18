@@ -1,7 +1,7 @@
 //! Session-owned cache publication used by creation and the sizing pass.
 use super::*;
-use crate::src::server_client::Client;
-use crate::src::server_client::ClientRegistry;
+use crate::server_client::Client;
+use crate::server_client::ClientRegistry;
 
 /// Publish the Session-owned state used by the subsequent client/window sizing
 /// passes. A removed Session can still be retained by a closing client: preserve

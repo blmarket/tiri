@@ -2,7 +2,7 @@
 
 use super::command::cmd_list;
 use super::mouse::mouse_event;
-use crate::src::shared::client::{ClientRef, ClientWeak};
+use crate::shared::client::{ClientRef, ClientWeak};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub type key_code = ::core::ffi::c_ulonglong;

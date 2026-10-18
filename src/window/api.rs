@@ -6,11 +6,11 @@
 //! let references or pointers escape.
 
 use super::*;
-use crate::src::server_client::ClientRegistry;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::menu::menu_data;
-use crate::src::shared::window::{WindowRef, WindowWeak};
-use crate::src::shared::window::{WINDOW_MAXIMUM, WINDOW_MINIMUM, WINDOW_RESIZE};
+use crate::server_client::ClientRegistry;
+use crate::shared::client::ClientRef;
+use crate::shared::menu::menu_data;
+use crate::shared::window::{WindowRef, WindowWeak};
+use crate::shared::window::{WINDOW_MAXIMUM, WINDOW_MINIMUM, WINDOW_RESIZE};
 use std::time::{Duration, Instant, SystemTime};
 
 pub trait Window {
@@ -184,8 +184,8 @@ pub trait Window {
     unsafe fn format_value(
         &self,
         key: &CStr,
-        context: &mut crate::src::shared::format::format_tree,
-    ) -> Option<crate::src::format::FormatValue>;
+        context: &mut crate::shared::format::format_tree,
+    ) -> Option<crate::format::FormatValue>;
 }
 
 impl Window for WindowRef {
@@ -310,12 +310,12 @@ impl Window for WindowRef {
 
     unsafe fn refresh_fill_cells(&self) {
         for inside in [true, false] {
-            let mut fallback = crate::src::grid::grid_default_cell;
-            fallback.attr |= crate::src::shared::grid::GRID_ATTR_CHARSET as u16;
-            crate::src::text::utf8::utf8_set(
+            let mut fallback = crate::grid::grid_default_cell;
+            fallback.attr |= crate::shared::grid::GRID_ATTR_CHARSET as u16;
+            crate::text::utf8::utf8_set(
                 &mut fallback.data,
-                crate::src::shared::borders::CELL_BORDERS
-                    [crate::src::shared::borders::CELL_NONE as usize] as u8,
+                crate::shared::borders::CELL_BORDERS[crate::shared::borders::CELL_NONE as usize]
+                    as u8,
             );
             {
                 let state = &mut *self.get();
@@ -325,8 +325,7 @@ impl Window for WindowRef {
                     state.outside_cell = fallback;
                 }
             }
-            if let Some(rendered) = crate::src::window_border::window_render_fill_cell(self, inside)
-            {
+            if let Some(rendered) = crate::window_border::window_render_fill_cell(self, inside) {
                 let state = &mut *self.get();
                 if inside {
                     state.inside_cell = rendered;
@@ -416,7 +415,7 @@ impl Window for WindowRef {
         window_has_pane(&*self.get(), pane)
     }
     unsafe fn pending_alerts(&self) -> i32 {
-        (*self.get()).flags & crate::src::shared::window::WINDOW_ALERTFLAGS
+        (*self.get()).flags & crate::shared::window::WINDOW_ALERTFLAGS
     }
     unsafe fn reset_alert_timer(&self) {
         super::alerts::reset_timer(self);
@@ -426,10 +425,10 @@ impl Window for WindowRef {
     }
     unsafe fn finish_alerts(&self) {
         (*self.get()).alerts_queued = 0;
-        (*self.get()).flags &= !crate::src::shared::window::WINDOW_ALERTFLAGS;
+        (*self.get()).flags &= !crate::shared::window::WINDOW_ALERTFLAGS;
     }
     unsafe fn clear_alert_flags(&self) {
-        (*self.get()).flags &= !crate::src::shared::window::WINDOW_ALERTFLAGS;
+        (*self.get()).flags &= !crate::shared::window::WINDOW_ALERTFLAGS;
     }
 
     unsafe fn id(&self) -> u32 {
@@ -440,7 +439,7 @@ impl Window for WindowRef {
         if explicit {
             {
                 let mut options = self.borrow_options_mut();
-                crate::src::options::options_set_number(&mut options, c"automatic-rename", 0);
+                crate::options::options_set_number(&mut options, c"automatic-rename", 0);
             }
         }
     }
@@ -452,7 +451,7 @@ impl Window for WindowRef {
     }
     unsafe fn begin_name_check(&self, now: Instant) -> bool {
         let state = &mut *self.get();
-        let left = crate::src::names::name_time_left(state.name_time, now);
+        let left = crate::names::name_time_left(state.name_time, now);
         if !left.is_zero() {
             if state.name_event.is_none() {
                 log_debug(format_args!(
@@ -492,7 +491,7 @@ impl Window for WindowRef {
                 Timer::new(delay, move || {
                     if let Some(window) = observer.upgrade() {
                         drop((*window.get()).offset_timer.take());
-                        crate::src::tty::tty_update_window_offset(&window);
+                        crate::tty::tty_update_window_offset(&window);
                         drop(window);
                     }
                 })
@@ -613,10 +612,10 @@ impl Window for WindowRef {
     }
     unsafe fn set_manual_size(&self, sx: u32, sy: u32) {
         let state = &mut *self.get();
-        crate::src::options::options_set_number(
+        crate::options::options_set_number(
             &mut state.borrow_options_mut(),
             c"window-size",
-            crate::src::shared::window::WINDOW_SIZE_MANUAL as _,
+            crate::shared::window::WINDOW_SIZE_MANUAL as _,
         );
         state.manual_sx = sx;
         state.manual_sy = sy;
@@ -668,7 +667,7 @@ impl Window for WindowRef {
         (*self.get()).latest.ptr_eq(&Rc::downgrade(client))
     }
     unsafe fn pane_is_focused(&self, pane: &Rc<UnsafeCell<window_pane>>) -> bool {
-        use crate::src::server_client::Client;
+        use crate::server_client::Client;
         if (*self.get()).menu.is_some() || !self.active_pane().ptr_eq(&Rc::downgrade(pane)) {
             return false;
         }
@@ -687,9 +686,9 @@ impl Window for WindowRef {
     unsafe fn format_value(
         &self,
         key: &CStr,
-        context: &mut crate::src::shared::format::format_tree,
-    ) -> Option<crate::src::format::FormatValue> {
-        crate::src::format::window_format_value(self, key, context)
+        context: &mut crate::shared::format::format_tree,
+    ) -> Option<crate::format::FormatValue> {
+        crate::format::window_format_value(self, key, context)
     }
 }
 
@@ -753,44 +752,41 @@ unsafe fn resize_window(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::src::options::options_create;
-    use crate::src::options::OptionsScope;
+    use crate::options::options_create;
+    use crate::options::OptionsScope;
 
     #[test]
     fn fill_rendering_keeps_inside_outside_formats_and_composes_border_style() {
         unsafe {
             OptionsScope::GlobalServer.reset_default(
-                crate::src::options::options_table
+                crate::options::options_table
                     .iter()
                     .find(|entry| entry.name == Some(c"extended-keys"))
                     .unwrap(),
             );
             let owner = window::new_ref();
             let mut options = options_create(None);
-            let entry = crate::src::options::options_table
+            let entry = crate::options::options_table
                 .iter()
                 .find(|entry| entry.name == Some(c"fill-character"))
                 .unwrap();
-            crate::src::options::options_default(&mut options, entry);
+            crate::options::options_default(&mut options, entry);
             (*owner.get()).options.replace(Some(options));
             {
                 let mut options = owner.borrow_options_mut();
-                crate::src::options::options_set_string(
-                    &mut options,
-                    c"fill-character",
-                    0,
-                    |out| out.write_all(b"#[fg=red]#{?is_inside,I,O}"),
-                );
+                crate::options::options_set_string(&mut options, c"fill-character", 0, |out| {
+                    out.write_all(b"#[fg=red]#{?is_inside,I,O}")
+                });
             }
             owner.refresh_fill_cells();
             let original = owner.fill_cell(true);
             assert_eq!(original.data.data[0], b'I');
             assert_eq!(owner.fill_cell(false).data.data[0], b'O');
-            let mut border = crate::src::grid::grid_default_cell;
+            let mut border = crate::grid::grid_default_cell;
             border.fg = 4;
             border.bg = 3;
-            border.attr = crate::src::shared::grid::GRID_ATTR_UNDERSCORE as u16;
-            crate::src::window_border::window_get_fill_cell(&owner, 1, &mut border);
+            border.attr = crate::shared::grid::GRID_ATTR_UNDERSCORE as u16;
+            crate::window_border::window_get_fill_cell(&owner, 1, &mut border);
             assert_eq!(border.data.data[0], b'I');
             assert_eq!(border.fg, 1, "fill overrides an explicit foreground");
             assert_eq!(
@@ -798,17 +794,14 @@ mod tests {
                 "default fill background preserves border style"
             );
             assert_ne!(
-                border.attr & crate::src::shared::grid::GRID_ATTR_UNDERSCORE as u16,
+                border.attr & crate::shared::grid::GRID_ATTR_UNDERSCORE as u16,
                 0
             );
             {
                 let mut options = owner.borrow_options_mut();
-                crate::src::options::options_set_string(
-                    &mut options,
-                    c"fill-character",
-                    0,
-                    |out| out.write_all(b"#{?is_outside,X,Y}"),
-                );
+                crate::options::options_set_string(&mut options, c"fill-character", 0, |out| {
+                    out.write_all(b"#{?is_outside,X,Y}")
+                });
             }
             owner.refresh_fill_cells();
             assert_eq!(owner.fill_cell(true).data.data[0], b'Y');

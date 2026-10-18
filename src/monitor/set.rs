@@ -3,22 +3,22 @@ use super::types::{
     monitor_type, monitor_window, monitor_windows, MONITOR_ALL_PANES, MONITOR_ALL_WINDOWS,
     MONITOR_NOTIFY_INITIAL, MONITOR_NOTIFY_TRUE, MONITOR_PANE, MONITOR_SESSION, MONITOR_WINDOW,
 };
-use crate::src::format::{format_create, format_defaults, format_expand_cstring, format_true};
-use crate::src::log::{log_cstr, log_debug};
-use crate::src::reactor::Timer;
-use crate::src::server::current_time;
-use crate::src::server_client::Client as _;
-use crate::src::session::{sessions, Session as _};
-use crate::src::shared::abi::*;
-use crate::src::shared::client::{ClientRef, ClientWeak};
-use crate::src::shared::format::{format_tree, FORMAT_NOJOBS};
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::tree::RB_NEGINF;
-use crate::src::shared::window::winlink;
-use crate::src::window::Window as _;
-use crate::src::window::{winlinks_minmax, winlinks_next};
-use crate::src::window_pane::WindowPane as _;
+use crate::format::{format_create, format_defaults, format_expand_cstring, format_true};
+use crate::log::{log_cstr, log_debug};
+use crate::reactor::Timer;
+use crate::server::current_time;
+use crate::server_client::Client as _;
+use crate::session::{sessions, Session as _};
+use crate::shared::abi::*;
+use crate::shared::client::{ClientRef, ClientWeak};
+use crate::shared::format::{format_tree, FORMAT_NOJOBS};
+use crate::shared::pane::window_pane;
+use crate::shared::session::SessionRef;
+use crate::shared::tree::RB_NEGINF;
+use crate::shared::window::winlink;
+use crate::window::Window as _;
+use crate::window::{winlinks_minmax, winlinks_next};
+use crate::window_pane::WindowPane as _;
 use libc::sscanf;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
@@ -118,7 +118,7 @@ unsafe fn monitor_get_session(
     let Some(session) = session else {
         return sessions::first();
     };
-    let indexed = crate::src::session::sessions::find_by_id(session.id())?;
+    let indexed = crate::session::sessions::find_by_id(session.id())?;
     Rc::ptr_eq(&session, &indexed).then_some(indexed)
 }
 unsafe fn monitor_context(
@@ -327,7 +327,7 @@ unsafe fn monitor_check_window(monitor: &refbox::Weak<monitor_set>, name: &CStr)
     let Some((client, session)) = monitor_context(monitor) else {
         return;
     };
-    let Some(window) = crate::src::window::windows::resolve(target) else {
+    let Some(window) = crate::window::windows::resolve(target) else {
         return;
     };
     let mut link = window.next_winlink(None);
@@ -934,7 +934,7 @@ mod ownership_tests {
             let callback_capture = capture.clone();
             let set_owner = monitor_create_client(
                 None,
-                crate::src::monitor::monitor_callback(move |change| {
+                crate::monitor::monitor_callback(move |change| {
                     let mut capture = callback_capture.borrow_mut();
                     capture.value = change.value.to_bytes().to_vec();
                     capture.last = change.last.expect("previous value").to_bytes().to_vec();

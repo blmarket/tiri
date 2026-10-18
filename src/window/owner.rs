@@ -29,7 +29,7 @@ impl WindowRef {
     }
 }
 
-impl crate::src::shared::rc::SameAllocation for WindowRef {
+impl crate::shared::rc::SameAllocation for WindowRef {
     fn same_allocation(a: &Self, b: &Self) -> bool {
         Self::ptr_eq(a, b)
     }
@@ -54,7 +54,7 @@ impl Drop for WindowRef {
             return;
         }
         unsafe {
-            crate::src::events::events_fire_window(c"window-closed", self.clone());
+            crate::events::events_fire_window(c"window-closed", self.clone());
             assert_eq!(
                 Rc::strong_count(&self.0),
                 1,
@@ -86,7 +86,7 @@ impl WindowWeak {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::src::events::{events_add_sink, events_remove_sink};
+    use crate::events::{events_add_sink, events_remove_sink};
     use std::cell::Cell;
 
     #[test]

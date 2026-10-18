@@ -1,12 +1,12 @@
 //! Pane implementation. Window state is accessed through the Window trait.
-use crate::src::format::bytes::nullable_cstr;
-use crate::src::options::OptionsScope;
-use crate::src::server_client::ClientRegistry;
-use crate::src::session::Session;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::window::WindowRef;
-use crate::src::shared::window::WindowWeak;
-use crate::src::window::*;
+use crate::format::bytes::nullable_cstr;
+use crate::options::OptionsScope;
+use crate::server_client::ClientRegistry;
+use crate::session::Session;
+use crate::shared::client::ClientRef;
+use crate::shared::window::WindowRef;
+use crate::shared::window::WindowWeak;
+use crate::window::*;
 use std::os::fd::AsRawFd;
 use std::time::Duration;
 mod api;
@@ -29,92 +29,92 @@ pub(crate) use format::format_without_pane;
 pub use model::window_pane;
 mod pane_sync;
 use self::input::{input_parse_buffer, input_parse_pane};
-use crate::src::arguments::{args, args_has};
-use crate::src::cmd::cmd_mouse_at;
-use crate::src::cmd::queue::{cmdq_get_client, CmdqWaiter};
-use crate::src::compat::strtonum::strtonum;
-use crate::src::events::{events_fire, events_fire_pane};
-use crate::src::events_payload::{
+use crate::arguments::{args, args_has};
+use crate::cmd::cmd_mouse_at;
+use crate::cmd::queue::{cmdq_get_client, CmdqWaiter};
+use crate::compat::strtonum::strtonum;
+use crate::events::{events_fire, events_fire_pane};
+use crate::events_payload::{
     event_payload_create, event_payload_set_int, event_payload_set_pane, event_payload_set_string,
     event_payload_set_target, event_payload_set_uint, event_payload_set_window,
 };
-use crate::src::ffi::regex::RegexStorage;
-use crate::src::file::{file_cancel, file_read_wait, FileOutcome};
-use crate::src::format::bytes::write_cstr;
-use crate::src::grid::grid_cells_look_equal;
-use crate::src::grid::view::grid_view_string_cells_bytes;
-use crate::src::input_keys::input_key_pane;
-use crate::src::log::{fatal, fatalx, log_bytes, log_cstr_n, log_debug};
-use crate::src::options::options_get_number;
-use crate::src::prompt::{
+use crate::ffi::regex::RegexStorage;
+use crate::file::{file_cancel, file_read_wait, FileOutcome};
+use crate::format::bytes::write_cstr;
+use crate::grid::grid_cells_look_equal;
+use crate::grid::view::grid_view_string_cells_bytes;
+use crate::input_keys::input_key_pane;
+use crate::log::{fatal, fatalx, log_bytes, log_cstr_n, log_debug};
+use crate::options::options_get_number;
+use crate::prompt::{
     prompt_closed, prompt_create, prompt_free, prompt_incremental_start, prompt_key, prompt_mouse,
     prompt_set_options, prompt_type_string, prompt_update,
 };
-use crate::src::reactor::BufferEvent;
-use crate::src::reactor::{
+use crate::reactor::BufferEvent;
+use crate::reactor::{
     bufferevent_disable, bufferevent_enable, bufferevent_new, bufferevent_write, evbuffer_drain,
     evbuffer_get_length, evbuffer_pullup,
 };
-use crate::src::screen::{screen_init, screen_resize, screen_set_default_cursor, screen_set_title};
+use crate::screen::{screen_init, screen_resize, screen_set_default_cursor, screen_set_title};
 pub use api::WindowPane;
 use libc::{fnmatch, gethostname, memset};
 
-use crate::src::server::{marked_pane, server_check_marked};
-use crate::src::server_client::Client;
-use crate::src::server_fn::{
+use crate::server::{marked_pane, server_check_marked};
+use crate::server_client::Client;
+use crate::server_fn::{
     server_destroy_pane, server_kill_pane, server_redraw_window, server_redraw_window_borders,
     server_status_window,
 };
-use crate::src::shared::pane::window_pane_tree;
-use crate::src::shared::prompt::prompt_create_data;
-use crate::src::spawn::spawn_editor_finish;
-use crate::src::status::status_at_line;
-use crate::src::style::colour::{
+use crate::shared::pane::window_pane_tree;
+use crate::shared::prompt::prompt_create_data;
+use crate::spawn::spawn_editor_finish;
+use crate::status::status_at_line;
+use crate::style::colour::{
     colour_palette_from_option, colour_palette_get, colour_palette_init, colour_totheme,
 };
-use crate::src::style::{style_ranges_init, style_set_scrollbar_style_from_option};
-use crate::src::tmux::setblocking;
-use crate::src::window_copy::{window_copy_mode, window_view_mode};
+use crate::style::{style_ranges_init, style_set_scrollbar_style_from_option};
+use crate::tmux::setblocking;
+use crate::window_copy::{window_copy_mode, window_view_mode};
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::os::unix::process::ExitStatusExt;
 use std::rc::{Rc, Weak};
 use tiri_buffer::SegmentedBuf;
 
-use crate::src::options::options;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::{client_file, client_file_cb};
-use crate::src::shared::client::{CLIENT_DEAD, CLIENT_EXITED, CLIENT_UNATTACHEDFLAGS};
-use crate::src::shared::colour::*;
-use crate::src::shared::command::{cmd_find_state, cmdq_item};
-use crate::src::shared::display::*;
-use crate::src::shared::event::*;
-use crate::src::shared::event::{EV_READ, EV_WRITE};
-use crate::src::shared::grid::*;
-use crate::src::shared::input::input_ctx;
-use crate::src::shared::key::*;
-use crate::src::shared::layout::layout_geometry;
-use crate::src::shared::layout::*;
-use crate::src::shared::limits::UINT_MAX;
-use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
-use crate::src::shared::pane::{
+use crate::options::options;
+use crate::shared::abi::*;
+use crate::shared::client::{client_file, client_file_cb};
+use crate::shared::client::{CLIENT_DEAD, CLIENT_EXITED, CLIENT_UNATTACHEDFLAGS};
+use crate::shared::colour::*;
+use crate::shared::command::{cmd_find_state, cmdq_item};
+use crate::shared::display::*;
+use crate::shared::event::*;
+use crate::shared::event::{EV_READ, EV_WRITE};
+use crate::shared::grid::*;
+use crate::shared::input::input_ctx;
+use crate::shared::key::*;
+use crate::shared::layout::layout_geometry;
+use crate::shared::layout::*;
+use crate::shared::limits::UINT_MAX;
+use crate::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
+use crate::shared::pane::{
     pane_output_data, window_pane_offset, window_pane_resize, window_pane_resizes, PANE_CHANGED,
     PANE_DESTROYED, PANE_EMPTY, PANE_EXITED, PANE_FOCUSED, PANE_INPUTOFF, PANE_REDRAW,
     PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_ALWAYS, PANE_SCROLLBARS_AUTOHIDE, PANE_SCROLLBARS_LEFT,
     PANE_SCROLLBARS_MODAL, PANE_STATUS_BOTTOM, PANE_STATUS_OFF, PANE_STATUS_TOP, PANE_STYLECHANGED,
     PANE_THEMECHANGED, PANE_UNSEENCHANGES,
 };
-use crate::src::shared::pane::{window_pane_modes, window_pane_prompt, PaneScreenSource};
-use crate::src::shared::posix_io::FNM_CASEFOLD;
-use crate::src::shared::posix_terminal::winsize;
-use crate::src::shared::prompt::*;
-use crate::src::shared::prompt::{prompt_free_cb, prompt_result, PROMPT_CLOSE};
-use crate::src::shared::screen::{screen, MODE_BRACKETPASTE, MODE_FOCUSON, MODE_THEME_UPDATES};
-use crate::src::shared::spawn::spawn_editor_state;
-use crate::src::shared::status::status_prompt_input_cb;
-use crate::src::shared::style::*;
-pub use crate::src::shared::window::{window_mode, window_mode_entry, winlink};
-use crate::src::shared::window::{WINDOW_MODE_NO_STACK, WINDOW_PANE_NO_MODE};
+use crate::shared::pane::{window_pane_modes, window_pane_prompt, PaneScreenSource};
+use crate::shared::posix_io::FNM_CASEFOLD;
+use crate::shared::posix_terminal::winsize;
+use crate::shared::prompt::*;
+use crate::shared::prompt::{prompt_free_cb, prompt_result, PROMPT_CLOSE};
+use crate::shared::screen::{screen, MODE_BRACKETPASTE, MODE_FOCUSON, MODE_THEME_UPDATES};
+use crate::shared::spawn::spawn_editor_state;
+use crate::shared::status::status_prompt_input_cb;
+use crate::shared::style::*;
+pub use crate::shared::window::{window_mode, window_mode_entry, winlink};
+use crate::shared::window::{WINDOW_MODE_NO_STACK, WINDOW_PANE_NO_MODE};
 use libc::{REG_EXTENDED, REG_ICASE, SIGHUP};
 
 struct window_pane_input_data {
@@ -376,7 +376,7 @@ unsafe fn window_pane_send_resize(wp: &window_pane, sx: u_int, sy: u_int) {
     drop(parent);
     ws.ws_xpixel = xpixel.wrapping_mul(ws.ws_col as u_int) as ::core::ffi::c_ushort;
     ws.ws_ypixel = ypixel.wrapping_mul(ws.ws_row as u_int) as ::core::ffi::c_ushort;
-    if crate::src::shared::terminal::set_size(wp.fd.as_ref().map_or(-1, AsRawFd::as_raw_fd), &ws)
+    if crate::shared::terminal::set_size(wp.fd.as_ref().map_or(-1, AsRawFd::as_raw_fd), &ws)
         == -(1 as ::core::ffi::c_int)
     {
         fatal(|out| out.write_all(b"ioctl failed"));
@@ -479,8 +479,8 @@ unsafe fn window_pane_create(
     (*wp).window = WindowRef::downgrade(w_owner).clone();
     (*wp)
         .options
-        .replace(Some(crate::src::options::options_create(Some(
-            crate::src::options::OptionsScope::Window(WindowRef::downgrade(w_owner)),
+        .replace(Some(crate::options::options_create(Some(
+            crate::options::OptionsScope::Window(WindowRef::downgrade(w_owner)),
         ))));
     (*wp).flags = PANE_STYLECHANGED;
     (*wp).cmd_status = -(1 as ::core::ffi::c_int);
@@ -681,11 +681,11 @@ unsafe fn window_pane_set_event(wp_owner: &Rc<std::cell::UnsafeCell<window_pane>
     if stream.is_null() {
         fatalx(|out| out.write_all(b"out of memory"));
     }
-    (*wp).event = crate::src::reactor::StreamHandle::from_ptr(stream);
+    (*wp).event = crate::reactor::StreamHandle::from_ptr(stream);
     (*wp).ictx = Some(input_init(
         Some(wp_owner),
         stream,
-        crate::src::shared::input::InputPalette::Pane(std::rc::Rc::downgrade(wp_owner)),
+        crate::shared::input::InputPalette::Pane(std::rc::Rc::downgrade(wp_owner)),
         None,
     ));
     let _ = (*wp).event.with_ptr(|event| unsafe {
@@ -888,7 +888,7 @@ unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::UnsafeCell<window_pa
         log_debug(format_args!(
             "{}: next mode is {}",
             "window_pane_reset_mode",
-            crate::src::log::log_bytes(next.get_unchecked().mode.name.to_bytes())
+            crate::log::log_bytes(next.get_unchecked().mode.name.to_bytes())
         ));
         assert!(!(*wp).screen_ptr().is_null(), "restored mode has a screen");
         if next.get_unchecked().mode.resize.is_some() {
@@ -961,7 +961,7 @@ fn window_pane_prompt_input_callback(
 }
 
 unsafe fn window_pane_prompt_free_callback(
-    data: &refbox::RefBox<crate::src::shared::pane::window_pane_prompt>,
+    data: &refbox::RefBox<crate::shared::pane::window_pane_prompt>,
 ) {
     let (wp_id, callback, inputcb) = {
         let mut state = data.try_borrow_mut().expect("prompt cleanup record");
@@ -1453,7 +1453,7 @@ unsafe fn window_pane_input_callback(cdata: &window_pane_input_data, buffer: &mu
 async fn window_pane_input_complete(
     wait: impl std::future::Future<Output = Option<FileOutcome>>,
     file: Weak<UnsafeCell<client_file>>,
-    client: crate::src::shared::client::ClientWeak,
+    client: crate::shared::client::ClientWeak,
     wp: u_int,
 ) {
     if wait.await.is_none() {
@@ -1974,9 +1974,9 @@ pub use input::{
 mod pane_prompt_data_tests {
     use super::*;
 
-    use crate::src::text::utf8::utf8_fromcstr_vec;
+    use crate::text::utf8::utf8_fromcstr_vec;
 
-    fn data(wp_id: u_int) -> refbox::RefBox<crate::src::shared::pane::window_pane_prompt> {
+    fn data(wp_id: u_int) -> refbox::RefBox<crate::shared::pane::window_pane_prompt> {
         refbox::RefBox::new(window_pane_prompt {
             wp_id,
             c: Weak::new(),
@@ -1987,8 +1987,8 @@ mod pane_prompt_data_tests {
     }
 
     fn attach(
-        data: refbox::RefBox<crate::src::shared::pane::window_pane_prompt>,
-    ) -> refbox::RefBox<crate::src::shared::prompt::prompt> {
+        data: refbox::RefBox<crate::shared::pane::window_pane_prompt>,
+    ) -> refbox::RefBox<crate::shared::prompt::prompt> {
         let pr = refbox::RefBox::new(prompt {
             flags: PROMPT_SINGLE,
             buffer: utf8_fromcstr_vec(c""),
@@ -2009,10 +2009,10 @@ mod pane_prompt_data_tests {
 #[cfg(test)]
 mod wait_close_tests {
     use super::*;
-    use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next, cmdq_wait};
-    use crate::src::server_client::queue_test_clients as clients;
-    use crate::src::session::session_new_for_test;
-    use crate::src::shared::command::CmdOutcome;
+    use crate::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next, cmdq_wait};
+    use crate::server_client::queue_test_clients as clients;
+    use crate::session::session_new_for_test;
+    use crate::shared::command::CmdOutcome;
     use std::cell::{Cell, RefCell};
     use std::io::Write;
     use std::process::ExitStatus;
@@ -2145,9 +2145,9 @@ mod wait_close_tests {
 #[cfg(test)]
 mod input_wait_tests {
     use super::*;
-    use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next};
-    use crate::src::server_client::queue_test_clients as clients;
-    use crate::src::shared::command::CmdOutcome;
+    use crate::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_next};
+    use crate::server_client::queue_test_clients as clients;
+    use crate::shared::command::CmdOutcome;
 
     /// Queue on `owner` a head whose stdin for pane `wp` ends with `done`.
     unsafe fn append_input(
@@ -2183,7 +2183,7 @@ mod input_wait_tests {
     }
 
     unsafe fn exiting(owner: &ClientRef) -> bool {
-        owner.flags() & crate::src::shared::client::CLIENT_EXIT as uint64_t != 0
+        owner.flags() & crate::shared::client::CLIENT_EXIT as uint64_t != 0
     }
 
     #[test]

@@ -1,25 +1,23 @@
-use crate::src::arguments::{
+use crate::arguments::{
     args, args_get, args_has, args_make_commands_now, args_parse, args_parse_type, ArgsParseError,
     ARGS_PARSE_COMMANDS_OR_STRING,
 };
-use crate::src::cmd::queue::{
+use crate::cmd::queue::{
     cmdq_append, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_target_client,
     cmdq_insert_after, cmdq_resumed,
 };
-use crate::src::cmd::{cmd_get_args_mut, cmd_list_first};
-use crate::src::format::bytes::nullable_cstr;
-use crate::src::server_client::Client as _;
-use crate::src::shared::abi::*;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::client::CLIENT_DEAD;
-use crate::src::shared::command::CMD_CLIENT_TFLAG;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{
-    cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmd_list, cmdq_item,
-};
-use crate::src::shared::prompt::*;
-use crate::src::shared::prompt::{prompt_result, PROMPT_CLOSE, PROMPT_SINGLE};
-use crate::src::status::status_prompt_set;
+use crate::cmd::{cmd_get_args_mut, cmd_list_first};
+use crate::format::bytes::nullable_cstr;
+use crate::server_client::Client as _;
+use crate::shared::abi::*;
+use crate::shared::client::ClientRef;
+use crate::shared::client::CLIENT_DEAD;
+use crate::shared::command::CMD_CLIENT_TFLAG;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmd_list, cmdq_item};
+use crate::shared::prompt::*;
+use crate::shared::prompt::{prompt_result, PROMPT_CLOSE, PROMPT_SINGLE};
+use crate::status::status_prompt_set;
 use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
@@ -77,7 +75,7 @@ unsafe fn cmd_confirm_before_exec(
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let mut confirm_key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut wait: ::core::ffi::c_int =
@@ -210,7 +208,7 @@ unsafe fn cmd_confirm_before_callback(
     PROMPT_CLOSE
 }
 impl cmd_confirm_before_data {
-    fn into_callback(mut self: Box<Self>) -> crate::src::shared::status::status_prompt_input_cb {
+    fn into_callback(mut self: Box<Self>) -> crate::shared::status::status_prompt_input_cb {
         Some(Box::new(move |client, text, _key| unsafe {
             cmd_confirm_before_callback(client.expect("live client"), &mut self, text)
         }))
@@ -220,9 +218,9 @@ impl cmd_confirm_before_data {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::src::cmd::core::cmd_list_new;
-    use crate::src::cmd::queue::{cmdq_get_callback_owned, cmdq_next};
-    use crate::src::server_client::queue_test_clients as clients;
+    use crate::cmd::core::cmd_list_new;
+    use crate::cmd::queue::{cmdq_get_callback_owned, cmdq_next};
+    use crate::server_client::queue_test_clients as clients;
     use std::cell::Cell;
 
     /// Queue an item on `owner` that waits for the answer to a prompt, as

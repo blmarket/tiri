@@ -1,28 +1,28 @@
-use crate::src::arguments::{
+use crate::arguments::{
     args, args_get, args_has, args_parse, args_parse_type, ArgsParseError,
     ARGS_PARSE_COMMANDS_OR_STRING,
 };
-use crate::src::cmd::queue::cmdq_error;
-use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
-use crate::src::format::bytes::nullable_cstr;
-use crate::src::paste::paste_is_empty;
-use crate::src::server_client::Client as _;
-use crate::src::shared::client::ClientRef;
+use crate::cmd::queue::cmdq_error;
+use crate::cmd::{cmd_get_args_mut, cmd_get_entry};
+use crate::format::bytes::nullable_cstr;
+use crate::paste::paste_is_empty;
+use crate::server_client::Client as _;
+use crate::shared::client::ClientRef;
 
-use crate::src::shared::abi::*;
-use crate::src::shared::command::CMD_AFTERHOOK;
-use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::sort::*;
-use crate::src::shared::window::window_mode;
-use crate::src::sort::sort_order_from_string;
-use crate::src::window_buffer::window_buffer_mode;
-use crate::src::window_client::window_client_mode;
-use crate::src::window_customize::window_customize_mode;
-use crate::src::window_pane::WindowPane as _;
-use crate::src::window_panes::window_panes_mode;
-use crate::src::window_switch::window_switch_mode;
-use crate::src::window_tree::window_tree_mode;
+use crate::shared::abi::*;
+use crate::shared::command::CMD_AFTERHOOK;
+use crate::shared::command::*;
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::sort::*;
+use crate::shared::window::window_mode;
+use crate::sort::sort_order_from_string;
+use crate::window_buffer::window_buffer_mode;
+use crate::window_client::window_client_mode;
+use crate::window_customize::window_customize_mode;
+use crate::window_pane::WindowPane as _;
+use crate::window_panes::window_panes_mode;
+use crate::window_switch::window_switch_mode;
+use crate::window_tree::window_tree_mode;
 pub static cmd_choose_tree_entry: cmd_entry = {
     cmd_entry {
         name: c"choose-tree",
@@ -192,7 +192,7 @@ unsafe fn cmd_choose_tree_exec(
     let item = item_handle.borrow();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target_state = crate::src::cmd::queue::cmdq_get_target(&item).clone();
+    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let wp = (*target).pane_handle();
 

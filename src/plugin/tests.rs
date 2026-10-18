@@ -1,5 +1,5 @@
 use super::*;
-use crate::src::options::OptionsScope;
+use crate::options::OptionsScope;
 
 struct Fake {
     name: &'static str,
@@ -147,8 +147,8 @@ fn selection_matches_tiri_environment_semantics() {
 
 #[test]
 fn publishing_does_not_override_context_entries_or_user_options() {
-    use crate::src::format::{format_add_cstr, format_create, format_expand_cstring};
-    use crate::src::options::options_set_string;
+    use crate::format::{format_add_cstr, format_create, format_expand_cstring};
+    use crate::options::options_set_string;
     unsafe {
         shutdown();
         OptionsScope::GlobalSession.with_local(|oo| {
@@ -263,6 +263,6 @@ fn refresh_reads_previous_snapshot_and_errors_do_not_publish_partial_values() {
     shutdown();
     assert!(dropped.get());
     REGISTRY.with(|registry| assert!(registry.borrow().timer.is_none()));
-    crate::src::reactor::shutdown_runtime(runtime);
+    crate::reactor::shutdown_runtime(runtime);
     assert_eq!(calls.get(), 2);
 }

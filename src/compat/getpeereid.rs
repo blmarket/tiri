@@ -1,6 +1,6 @@
-use crate::src::shared::abi::*;
-use crate::src::shared::abi::{gid_t, socklen_t, uid_t};
-use crate::src::shared::socket::SOL_SOCKET;
+use crate::shared::abi::*;
+use crate::shared::abi::{gid_t, socklen_t, uid_t};
+use crate::shared::socket::SOL_SOCKET;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -20,7 +20,7 @@ pub unsafe fn getpeereid(
         errno::set_errno(errno::Errno(libc::EBADF));
         return -1;
     }
-    crate::src::reactor::io_status(
+    crate::reactor::io_status(
         tiri_rt::unix::peer_credentials(std::os::fd::BorrowedFd::borrow_raw(s)).map(
             |(user, group)| {
                 *uid = user;

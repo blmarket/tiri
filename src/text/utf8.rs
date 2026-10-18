@@ -1,15 +1,15 @@
-use crate::src::ffi::vis::{is_alpha, vis_into};
-use crate::src::log::{fatalx, log_bytes, log_debug};
-use crate::src::options::OptionsScope;
-use crate::src::shared::abi::ssize_t;
-use crate::src::shared::abi::*;
-use crate::src::shared::grid::*;
-use crate::src::shared::utf8::wchar_t;
-use crate::src::shared::utf8::*;
-use crate::src::shared::vis::VIS_DQ;
-use crate::src::text::utf8_cache::{UTF8_ITEMS, UTF8_WIDTHS};
-use crate::src::text::utf8_decode::{decode_utf8, DecodeResult};
-use crate::src::text::utf8_width::parse_width_override;
+use crate::ffi::vis::{is_alpha, vis_into};
+use crate::log::{fatalx, log_bytes, log_debug};
+use crate::options::OptionsScope;
+use crate::shared::abi::ssize_t;
+use crate::shared::abi::*;
+use crate::shared::grid::*;
+use crate::shared::utf8::wchar_t;
+use crate::shared::utf8::*;
+use crate::shared::vis::VIS_DQ;
+use crate::text::utf8_cache::{UTF8_ITEMS, UTF8_WIDTHS};
+use crate::text::utf8_decode::{decode_utf8, DecodeResult};
+use crate::text::utf8_width::parse_width_override;
 use std::ffi::{CStr, CString};
 
 fn utf8_find_in_width_cache(wc: wchar_t) -> Option<u_int> {
@@ -164,7 +164,7 @@ fn utf8_width(ud: &utf8_data) -> Option<i32> {
         ));
         return Some(cached as i32);
     }
-    let width = crate::src::ffi::utf8proc::codepoint_width(wc);
+    let width = crate::ffi::utf8proc::codepoint_width(wc);
     log_debug(format_args!(
         "utf8proc_wcwidth({:05X}) returned {}",
         wc as u_int, width
@@ -236,11 +236,11 @@ pub fn utf8_has_whitespace(ud: &utf8_data) -> ::core::ffi::c_int {
 }
 
 pub fn utf8_fromwc(wc: wchar_t, ud: &mut utf8_data) -> utf8_state {
-    let size = match crate::src::ffi::utf8proc::encode_cell(wc, &mut ud.data) {
+    let size = match crate::ffi::utf8proc::encode_cell(wc, &mut ud.data) {
         Ok(size) => size,
         Err(error) => {
             log_debug(format_args!("UTF-8 {}, wctomb() {}", wc, error));
-            crate::src::ffi::utf8proc::reset_wctomb();
+            crate::ffi::utf8proc::reset_wctomb();
             return UTF8_ERROR;
         }
     };
@@ -696,19 +696,18 @@ mod tests {
     fn owned_vis_helpers_preserve_multibyte_and_explicit_length_bytes() {
         {
             let input = CString::new(&b"a\xc3\xa9\xff"[..]).unwrap();
-            let escaped =
-                utf8_stravis_cstring(input.as_c_str(), crate::src::shared::vis::VIS_OCTAL);
+            let escaped = utf8_stravis_cstring(input.as_c_str(), crate::shared::vis::VIS_OCTAL);
             assert_eq!(escaped.as_bytes(), b"a\xc3\xa9\\377");
 
-            let bytes = utf8_stravisx_bytes(b"a\0b", crate::src::shared::vis::VIS_OCTAL);
+            let bytes = utf8_stravisx_bytes(b"a\0b", crate::shared::vis::VIS_OCTAL);
             assert_eq!(bytes, b"a\\000b");
         }
     }
 
     #[test]
     fn escaping_preserves_lookahead_and_retries_invalid_utf8_bytes() {
-        use crate::src::compat::vis::VIS_ALL;
-        use crate::src::shared::vis::{VIS_CSTYLE, VIS_OCTAL};
+        use crate::compat::vis::VIS_ALL;
+        use crate::shared::vis::{VIS_CSTYLE, VIS_OCTAL};
 
         for (source, flags, expected) in [
             (
@@ -727,7 +726,7 @@ mod tests {
 
     #[test]
     fn escaping_terminates_reused_and_exact_capacity_buffers() {
-        use crate::src::shared::vis::VIS_OCTAL;
+        use crate::shared::vis::VIS_OCTAL;
 
         let mut output = [0x55; 9];
         assert_eq!(utf8_strvis(&mut output, &[0xff, 0xff], VIS_OCTAL), 8);

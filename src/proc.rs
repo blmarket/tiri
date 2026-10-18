@@ -1,26 +1,26 @@
-use crate::src::compat::getpeereid::getpeereid;
-use crate::src::compat::imsg::imsg;
-use crate::src::compat::imsg::PROTOCOL_VERSION;
-use crate::src::compat::imsg::*;
-use crate::src::compat::imsg::{
+use crate::compat::getpeereid::getpeereid;
+use crate::compat::imsg::imsg;
+use crate::compat::imsg::PROTOCOL_VERSION;
+use crate::compat::imsg::*;
+use crate::compat::imsg::{
     imsg_compose, imsgbuf_clear, imsgbuf_get, imsgbuf_init, imsgbuf_output, imsgbuf_queuelen,
     imsgbuf_receive, imsgbuf_written,
 };
-use crate::src::compat::setproctitle::setproctitle;
-use crate::src::ffi::utf8proc::utf8proc_version;
-use crate::src::format::bytes::write_cstr;
-use crate::src::log::{fatal, log_cstr, log_debug, log_open, log_pointer, log_toggle};
-use crate::src::reactor;
-use crate::src::shared::abi::*;
-use crate::src::shared::abi::{gid_t, uid_t, uint32_t};
-use crate::src::shared::process::PeerMessage;
-use crate::src::shared::process::{tmuxpeer, tmuxproc};
-use crate::src::shared::signal::ProcessSignal;
-pub use crate::src::shared::signal::{
+use crate::compat::setproctitle::setproctitle;
+use crate::ffi::utf8proc::utf8proc_version;
+use crate::format::bytes::write_cstr;
+use crate::log::{fatal, log_cstr, log_debug, log_open, log_pointer, log_toggle};
+use crate::reactor;
+use crate::shared::abi::*;
+use crate::shared::abi::{gid_t, uid_t, uint32_t};
+use crate::shared::process::PeerMessage;
+use crate::shared::process::{tmuxpeer, tmuxproc};
+use crate::shared::signal::ProcessSignal;
+pub use crate::shared::signal::{
     SA_RESTART, SIGCHLD, SIGCONT, SIGHUP, SIGINT, SIGTERM, SIGTSTP, SIGTTIN, SIGTTOU, SIGUSR1,
     SIGUSR2, SIGWINCH, SIG_DFL, SIG_IGN,
 };
-use crate::src::tmux::{getversion, socket_path_cstr};
+use crate::tmux::{getversion, socket_path_cstr};
 use libc::utsname;
 use libc::{daemon, fork, getpid, memset, sigaction, sigemptyset, uname};
 use std::ffi::CStr;
@@ -303,7 +303,7 @@ pub unsafe fn proc_loop(
 ) {
     log_debug(format_args!(
         "{} loop enter",
-        crate::src::log::log_bytes((*tp).name.as_bytes())
+        crate::log::log_bytes((*tp).name.as_bytes())
     ));
     loop {
         runtime.poll(None).expect("tiri-rt poll");
@@ -318,7 +318,7 @@ pub unsafe fn proc_loop(
     }
     log_debug(format_args!(
         "{} loop exit",
-        crate::src::log::log_bytes((*tp).name.as_bytes())
+        crate::log::log_bytes((*tp).name.as_bytes())
     ));
     reactor::shutdown_runtime(runtime);
 }
@@ -344,7 +344,7 @@ pub unsafe fn proc_set_signals(
     sigaction(SIGTTIN, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
     sigaction(SIGTTOU, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
     sigaction(SIGQUIT, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
-    crate::src::reactor::task_start(&mut (*tp).signal_task, move || {
+    crate::reactor::task_start(&mut (*tp).signal_task, move || {
         let mut signals = tiri_rt::mio::Signals::new(&[
             SIGINT, SIGHUP, SIGCHLD, SIGCONT, SIGTERM, SIGUSR1, SIGUSR2, SIGWINCH,
         ])?;
@@ -461,7 +461,7 @@ mod ownership_tests {
 
     #[test]
     fn loop_exit_releases_streams_and_runtime_for_both_exit_paths() {
-        use crate::src::reactor::{BufferEvent as _, StreamHandle};
+        use crate::reactor::{BufferEvent as _, StreamHandle};
         use tiri_rt::Handle as _;
 
         for callback_exit in [false, true] {
