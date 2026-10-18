@@ -120,7 +120,6 @@ pub unsafe fn job_run(
     let mut master: ::core::ffi::c_int = 0;
     let mut do_close: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
     let mut home: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut shell: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut set: sigset_t = unsafe { ::core::mem::zeroed() };
     let mut oldset: sigset_t = unsafe { ::core::mem::zeroed() };
     let mut ws: winsize = winsize {
@@ -142,20 +141,22 @@ pub unsafe fn job_run(
     if let Some(e) = e {
         environ_copy(e, env);
     }
-    if !flags & JOB_DEFAULTSHELL != 0 {
-        shell = _PATH_BSHELL.as_ptr();
+    let shell: &CStr = if !flags & JOB_DEFAULTSHELL != 0 {
+        _PATH_BSHELL
     } else {
         shell_value = Some(if let Some(session) = s_owner {
             options_get_string(&session.borrow_options_mut(), c"default-shell")
         } else {
             with_global_s_options(|oo| options_get_string(oo, c"default-shell"))
         });
-        shell = shell_value.as_ref().expect("shell snapshot").as_ptr();
-        if checkshell(nullable_cstr(shell)) == 0 {
-            shell = _PATH_BSHELL.as_ptr();
+        let shell = shell_value.as_deref().expect("shell snapshot");
+        if checkshell(Some(shell)) == 0 {
+            _PATH_BSHELL
+        } else {
+            shell
         }
-    }
-    let argv0 = shell_argv0_cstring(CStr::from_ptr(shell), false);
+    };
+    let argv0 = shell_argv0_cstring(shell, false);
     sigfillset(&raw mut set);
     sigprocmask(SIG_BLOCK, &raw mut set, &raw mut oldset);
     if flags & JOB_PTY != 0 {
@@ -189,7 +190,7 @@ pub unsafe fn job_run(
                     "{}: cwd={}, shell={}",
                     "job_run",
                     log_cstr(cwd.unwrap_or(c"")),
-                    log_cstr(CStr::from_ptr(shell))
+                    log_cstr(shell)
                 ));
             }
             Some(cmd) => {
@@ -198,7 +199,7 @@ pub unsafe fn job_run(
                     "job_run",
                     log_cstr(cmd),
                     log_cstr(cwd.unwrap_or(c"")),
-                    log_cstr(CStr::from_ptr(shell))
+                    log_cstr(shell)
                 ));
             }
         }
@@ -303,10 +304,10 @@ pub unsafe fn job_run(
                 tiri_rt::unix::close_from(STDERR_FILENO + 1 as ::core::ffi::c_int);
                 if let Some(cmd) = cmd {
                     if flags & JOB_DEFAULTSHELL != 0 {
-                        setenv(c"SHELL".as_ptr(), shell, 1 as ::core::ffi::c_int);
+                        setenv(c"SHELL".as_ptr(), shell.as_ptr(), 1 as ::core::ffi::c_int);
                     }
                     execl(
-                        shell,
+                        shell.as_ptr(),
                         argv0.as_ptr(),
                         c"-c".as_ptr(),
                         cmd.as_ptr(),

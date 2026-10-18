@@ -42,10 +42,9 @@ unsafe fn cmd_find_window_exec(
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let wp = (*target).pane_handle();
-    let mut s: *const ::core::ffi::c_char =
-        args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
-    let mut suffix: *const ::core::ffi::c_char = c"".as_ptr();
-    let mut star: *const ::core::ffi::c_char = c"*".as_ptr();
+    let mut s: &CStr = args_string(&mut *(args), 0 as u_int).expect("argument is present");
+    let mut suffix: &CStr = c"";
+    let mut star: &CStr = c"*";
 
     let mut C: ::core::ffi::c_int = 0;
     let mut N: ::core::ffi::c_int = 0;
@@ -54,28 +53,21 @@ unsafe fn cmd_find_window_exec(
     N = args_has(&*args, 'N' as i32 as u_char);
     T = args_has(&*args, 'T' as i32 as u_char);
     if args_has(&*args, 'r' as i32 as u_char) != 0 {
-        star = c"".as_ptr();
+        star = c"";
     }
     if args_has(&*args, 'r' as i32 as u_char) != 0 && args_has(&*args, 'i' as i32 as u_char) != 0 {
-        suffix = c"/ri".as_ptr();
+        suffix = c"/ri";
     } else if args_has(&*args, 'r' as i32 as u_char) != 0 {
-        suffix = c"/r".as_ptr();
+        suffix = c"/r";
     } else if args_has(&*args, 'i' as i32 as u_char) != 0 {
-        suffix = c"/i".as_ptr();
+        suffix = c"/i";
     }
     if C == 0 && N == 0 && T == 0 {
         T = 1 as ::core::ffi::c_int;
         N = T;
         C = N;
     }
-    let filter_value: CString = find_window_filter(
-        CStr::from_ptr(s),
-        CStr::from_ptr(suffix),
-        CStr::from_ptr(star),
-        C != 0,
-        N != 0,
-        T != 0,
-    );
+    let filter_value: CString = find_window_filter(s, suffix, star, C != 0, N != 0, T != 0);
     let mut new_args = args_create();
     args_set_owned_string(&mut *new_args, filter_value);
     wp.as_ref().expect("mode target pane").set_mode(

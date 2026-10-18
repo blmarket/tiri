@@ -83,6 +83,14 @@ pub fn write_cstr<'a>(out: &mut dyn Write, value: impl Into<Option<&'a CStr>>) -
     out.write_all(value.into().map_or(b"(null)".as_slice(), CStr::to_bytes))
 }
 
+/// Borrow the tail of a C string starting at byte `offset`.
+///
+/// Panics if `offset` is past the terminating NUL.
+pub fn cstr_suffix(s: &CStr, offset: usize) -> &CStr {
+    CStr::from_bytes_with_nul(&s.to_bytes_with_nul()[offset..])
+        .expect("a suffix of a C string is NUL-terminated")
+}
+
 /// Borrow a C string pointer from code that has not moved to `&CStr` yet.
 ///
 /// # Safety

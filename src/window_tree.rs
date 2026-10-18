@@ -704,29 +704,25 @@ unsafe fn window_tree_draw_label(
     label_gc: &grid_cell,
     label: &CStr,
 ) {
-    let mut label: *const ::core::ffi::c_char = label.as_ptr();
     let mut width: u_int = 0;
     let mut ox: u_int = 0;
     let mut oy: u_int = 0;
     if sx < 5 as u_int || sy < 3 as u_int {
         return;
     }
-    width = format_width(label);
+    width = format_width(label.as_ptr());
     let trimmed_label = if width > sx.wrapping_sub(4 as u_int) {
         Some(
-            CString::new(format_trim_left_bytes(
-                CStr::from_ptr(label),
-                sx.wrapping_sub(4 as u_int),
-            ))
-            .expect("trimmed preview label contains no NUL"),
+            CString::new(format_trim_left_bytes(label, sx.wrapping_sub(4 as u_int)))
+                .expect("trimmed preview label contains no NUL"),
         )
     } else {
         None
     };
     if let Some(trimmed_label) = trimmed_label.as_ref() {
-        label = trimmed_label.as_ptr();
-        width = format_width(label);
+        width = format_width(trimmed_label.as_ptr());
     }
+    let label = trimmed_label.as_deref().unwrap_or(label);
     if width == 0 as u_int {
         return;
     }
@@ -770,7 +766,7 @@ unsafe fn window_tree_draw_label(
         ctx,
         label_gc,
         width,
-        label,
+        label.as_ptr(),
         ::core::ptr::null_mut::<style_ranges>(),
         0 as ::core::ffi::c_int,
     );
@@ -1854,27 +1850,27 @@ unsafe fn window_tree_init(
     let mut data: *mut window_tree_modedata = ::core::ptr::null_mut::<window_tree_modedata>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
     let format = if args.is_null() || args_has(&*args, 'F' as i32 as u_char) == 0 {
-        WINDOW_TREE_DEFAULT_FORMAT.as_ptr()
+        WINDOW_TREE_DEFAULT_FORMAT
     } else {
-        args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr())
+        args_get(&*(args), 'F' as i32 as u_char).expect("-F takes a value")
     };
     let key_format = if args.is_null() || args_has(&*args, 'K' as i32 as u_char) == 0 {
-        WINDOW_TREE_DEFAULT_KEY_FORMAT.as_ptr()
+        WINDOW_TREE_DEFAULT_KEY_FORMAT
     } else {
-        args_get(&*(args), 'K' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr())
+        args_get(&*(args), 'K' as i32 as u_char).expect("-K takes a value")
     };
     let command = if args.is_null() || args_count(&*args) == 0 as u_int {
-        WINDOW_TREE_DEFAULT_COMMAND.as_ptr()
+        WINDOW_TREE_DEFAULT_COMMAND
     } else {
-        args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())
+        args_string(&mut *(args), 0 as u_int).expect("argument 0 exists")
     };
     let owner = Rc::new(UnsafeCell::new(window_tree_modedata {
         wp: Weak::new(),
         dead: 0,
         data: None,
-        format: CStr::from_ptr(format).to_owned(),
-        key_format: CStr::from_ptr(key_format).to_owned(),
-        command: CStr::from_ptr(command).to_owned(),
+        format: format.to_owned(),
+        key_format: key_format.to_owned(),
+        command: command.to_owned(),
         squash_groups: 0,
         hide_preview_this_pane: 0,
         preview_is_info: 0,
@@ -2182,10 +2178,7 @@ unsafe fn window_tree_kill_each(item: &window_tree_itemdata) {
         WINDOW_TREE_SESSION => {
             if let Some(session_owner) = target.session.as_ref() {
                 server_destroy_session(session_owner);
-                session_owner.destroy(
-                    (1) != 0,
-                    std::ffi::CStr::from_ptr(c"window_tree_kill_each".as_ptr()),
-                );
+                session_owner.destroy((1) != 0, c"window_tree_kill_each");
             }
         }
         WINDOW_TREE_WINDOW => {

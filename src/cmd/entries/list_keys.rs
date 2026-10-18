@@ -158,8 +158,6 @@ unsafe fn cmd_list_keys_exec(
     let mut table = None;
     let mut only: key_code = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut tablename: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut keystr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut single: ::core::ffi::c_int = 0;
     let mut notes_only: ::core::ffi::c_int = 0;
     let mut filter_notes: ::core::ffi::c_int = 0;
@@ -169,13 +167,13 @@ unsafe fn cmd_list_keys_exec(
         reversed: 0,
         order_seq: &[],
     };
-    keystr = args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
-    if !keystr.is_null() {
-        only = key_string_parse_cstr(std::ffi::CStr::from_ptr(keystr)).unwrap_or(KEYC_UNKNOWN);
+    let keystr: Option<&CStr> = args_string(&mut *(args), 0 as u_int);
+    if let Some(keystr) = keystr {
+        only = key_string_parse_cstr(keystr).unwrap_or(KEYC_UNKNOWN);
         if only == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"invalid key: ")?;
-                write_cstr(out, nullable_cstr(keystr))
+                write_cstr(out, keystr)
             });
             return CMD_RETURN_ERROR;
         }
@@ -192,15 +190,12 @@ unsafe fn cmd_list_keys_exec(
         return CMD_RETURN_ERROR;
     }
     sort_crit.reversed = args_has(&*args, 'r' as i32 as u_char);
-    tablename =
-        args_get(&*(args), 'T' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if !tablename.is_null() {
-        table =
-            key_bindings_get_table(std::ffi::CStr::from_ptr(tablename), 0 as ::core::ffi::c_int);
+    if let Some(tablename) = args_get(&*(args), 'T' as i32 as u_char) {
+        table = key_bindings_get_table(tablename, 0 as ::core::ffi::c_int);
         if table.is_none() {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"table ")?;
-                write_cstr(out, nullable_cstr(tablename))?;
+                write_cstr(out, tablename)?;
                 out.write_all(b" doesn't exist")
             });
             return CMD_RETURN_ERROR;
@@ -233,7 +228,7 @@ unsafe fn cmd_list_keys_exec(
     if filter_key != 0 && bindings.is_empty() {
         cmdq_error(item_handle, |out| {
             out.write_all(b"unknown key: ")?;
-            write_cstr(out, nullable_cstr(keystr))
+            write_cstr(out, keystr)
         });
         return CMD_RETURN_ERROR;
     }

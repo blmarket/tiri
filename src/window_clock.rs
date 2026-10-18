@@ -734,7 +734,7 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         link: 0,
     };
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut tim: [::core::ffi::c_char; 64] = [0; 64];
+    let mut tim: [u8; 64] = [0; 64];
     let mut ptr: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut t: time_t = 0;
     let mut tm: *mut tm = ::core::ptr::null_mut::<tm>();
@@ -837,7 +837,10 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
             gc.flags = (gc.flags as ::core::ffi::c_int | GRID_FLAG_NOPALETTE) as u_char;
             gc.fg = colour;
             screen_write_puts(&mut ctx, &gc, |out| {
-                write_cstr(out, std::ffi::CStr::from_ptr(tim.as_ptr().cast()))
+                write_cstr(
+                    out,
+                    std::ffi::CStr::from_bytes_until_nul(&tim).expect("clock text is terminated"),
+                )
             });
         }
         screen_write_stop(&mut ctx);

@@ -1,10 +1,10 @@
 use crate::src::compat::strtonum::strtonum;
 use crate::src::ffi::libc::strlcpy;
-use crate::src::format::bytes::format_message_with;
+use crate::src::format::bytes::{format_bytes, format_message_with};
 use crate::src::format::{format_create, format_single_cstring};
 use crate::src::grid::grid_default_cell;
 use crate::src::hyperlinks::{hyperlinks_get, hyperlinks_put, HyperlinksRef};
-use crate::src::log::{fatalx, log_cstr, log_debug};
+use crate::src::log::{fatalx, log_bytes, log_debug};
 pub use crate::src::options::options;
 use crate::src::options::options_string_to_style;
 use crate::src::shared::abi::*;
@@ -17,10 +17,10 @@ pub use crate::src::shared::pane::{
     PANE_SCROLLBARS_CHARACTER, PANE_SCROLLBARS_DEFAULT_PADDING, PANE_SCROLLBARS_DEFAULT_WIDTH,
 };
 use crate::src::shared::style::*;
-use crate::src::style::attributes::{attributes_format, attributes_parse_cstr};
+use crate::src::style::attributes::{attributes_format, attributes_parse};
 use crate::src::style::colour::{colour_format, colour_parse_cstr};
 use crate::src::text::utf8::utf8_set;
-use libc::{memcpy, snprintf, strcasecmp, strchr, strcmp, strcspn, strncasecmp, strspn};
+use libc::memcpy;
 use std::ffi::{CStr, CString};
 
 pub const STYLE_WIDTH_DEFAULT: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
@@ -111,9 +111,247 @@ unsafe fn style_set_range_string(mut sy: *mut style, s: &CStr) {
         ::core::mem::size_of::<[::core::ffi::c_char; 16]>() as size_t,
     );
 }
+const STYLE_TOKEN_MAX: usize = 255;
+fn style_strip_prefix<'a>(token: &'a [u8], prefix: &[u8]) -> Option<&'a [u8]> {
+    if token.len() >= prefix.len() && token[..prefix.len()].eq_ignore_ascii_case(prefix) {
+        Some(&token[prefix.len()..])
+    } else {
+        None
+    }
+}
+fn style_cstring(bytes: &[u8]) -> CString {
+    CString::new(bytes).expect("style tokens come from a C string")
+}
+unsafe fn style_parse_number(
+    bytes: &[u8],
+    minval: ::core::ffi::c_longlong,
+    maxval: ::core::ffi::c_longlong,
+) -> Option<u_int> {
+    strtonum(&style_cstring(bytes), minval, maxval)
+        .ok()
+        .map(|n| n as u_int)
+}
+unsafe fn style_parse_token(sy: *mut style, base: &grid_cell, tmp: &[u8]) -> bool {
+    if tmp.eq_ignore_ascii_case(b"default") {
+        (*sy).gc.fg = base.fg;
+        (*sy).gc.bg = base.bg;
+        (*sy).gc.us = base.us;
+        (*sy).gc.attr = base.attr;
+        (*sy).gc.flags = base.flags;
+        (*sy).link = 0 as u_int;
+    } else if tmp.eq_ignore_ascii_case(b"ignore") {
+        (*sy).ignore = 1 as ::core::ffi::c_int;
+    } else if tmp.eq_ignore_ascii_case(b"noignore") {
+        (*sy).ignore = 0 as ::core::ffi::c_int;
+    } else if tmp.eq_ignore_ascii_case(b"push-default") {
+        (*sy).default_type = STYLE_DEFAULT_PUSH;
+    } else if tmp.eq_ignore_ascii_case(b"pop-default") {
+        (*sy).default_type = STYLE_DEFAULT_POP;
+    } else if tmp.eq_ignore_ascii_case(b"set-default") {
+        (*sy).default_type = STYLE_DEFAULT_SET;
+    } else if tmp.eq_ignore_ascii_case(b"nolist") {
+        (*sy).list = STYLE_LIST_OFF;
+    } else if let Some(value) = style_strip_prefix(tmp, b"list=") {
+        if value.eq_ignore_ascii_case(b"on") {
+            (*sy).list = STYLE_LIST_ON;
+        } else if value.eq_ignore_ascii_case(b"focus") {
+            (*sy).list = STYLE_LIST_FOCUS;
+        } else if value.eq_ignore_ascii_case(b"left-marker") {
+            (*sy).list = STYLE_LIST_LEFT_MARKER;
+        } else if value.eq_ignore_ascii_case(b"right-marker") {
+            (*sy).list = STYLE_LIST_RIGHT_MARKER;
+        } else {
+            return false;
+        }
+    } else if tmp.eq_ignore_ascii_case(b"norange") {
+        (*sy).range_type = style_default.range_type;
+        (*sy).range_argument = style_default.range_type as u_int;
+        strlcpy(
+            &raw mut (*sy).range_string as *mut ::core::ffi::c_char,
+            &raw mut style_default.range_string as *mut ::core::ffi::c_char,
+            ::core::mem::size_of::<[::core::ffi::c_char; 16]>() as size_t,
+        );
+    } else if let Some(value) = style_strip_prefix(tmp, b"range=").filter(|v| !v.is_empty()) {
+        let (name, found) = match value.iter().position(|&b| b == b'|') {
+            Some(i) => (&value[..i], Some(&value[i + 1..])),
+            None => (value, None),
+        };
+        if found.is_some_and(|found| found.is_empty()) {
+            return false;
+        }
+        if name.eq_ignore_ascii_case(b"left") {
+            if found.is_some() {
+                return false;
+            }
+            (*sy).range_type = STYLE_RANGE_LEFT;
+            (*sy).range_argument = 0 as u_int;
+            style_set_range_string(sy, c"");
+        } else if name.eq_ignore_ascii_case(b"right") {
+            if found.is_some() {
+                return false;
+            }
+            (*sy).range_type = STYLE_RANGE_RIGHT;
+            (*sy).range_argument = 0 as u_int;
+            style_set_range_string(sy, c"");
+        } else if name.eq_ignore_ascii_case(b"control") {
+            let Some(n) = found.and_then(|found| style_parse_number(found, 0, 9)) else {
+                return false;
+            };
+            (*sy).range_type = STYLE_RANGE_CONTROL;
+            (*sy).range_argument = n;
+            style_set_range_string(sy, c"");
+        } else if name.eq_ignore_ascii_case(b"pane") {
+            let Some(n) = found
+                .and_then(|found| found.strip_prefix(b"%"))
+                .filter(|found| !found.is_empty())
+                .and_then(|found| {
+                    style_parse_number(found, 0, UINT_MAX as ::core::ffi::c_longlong)
+                })
+            else {
+                return false;
+            };
+            (*sy).range_type = STYLE_RANGE_PANE;
+            (*sy).range_argument = n;
+            style_set_range_string(sy, c"");
+        } else if name.eq_ignore_ascii_case(b"window") {
+            let Some(n) = found.and_then(|found| {
+                style_parse_number(found, 0, UINT_MAX as ::core::ffi::c_longlong)
+            }) else {
+                return false;
+            };
+            (*sy).range_type = STYLE_RANGE_WINDOW;
+            (*sy).range_argument = n;
+            style_set_range_string(sy, c"");
+        } else if name.eq_ignore_ascii_case(b"session") {
+            let Some(n) = found
+                .and_then(|found| found.strip_prefix(b"$"))
+                .filter(|found| !found.is_empty())
+                .and_then(|found| {
+                    style_parse_number(found, 0, UINT_MAX as ::core::ffi::c_longlong)
+                })
+            else {
+                return false;
+            };
+            (*sy).range_type = STYLE_RANGE_SESSION;
+            (*sy).range_argument = n;
+            style_set_range_string(sy, c"");
+        } else if name.eq_ignore_ascii_case(b"user") {
+            let Some(found) = found else {
+                return false;
+            };
+            (*sy).range_type = STYLE_RANGE_USER;
+            (*sy).range_argument = 0 as u_int;
+            style_set_range_string(sy, &style_cstring(found));
+        }
+    } else if tmp.eq_ignore_ascii_case(b"noalign") {
+        (*sy).align = style_default.align;
+    } else if let Some(value) = style_strip_prefix(tmp, b"align=").filter(|v| !v.is_empty()) {
+        if value.eq_ignore_ascii_case(b"left") {
+            (*sy).align = STYLE_ALIGN_LEFT;
+        } else if value.eq_ignore_ascii_case(b"centre") {
+            (*sy).align = STYLE_ALIGN_CENTRE;
+        } else if value.eq_ignore_ascii_case(b"right") {
+            (*sy).align = STYLE_ALIGN_RIGHT;
+        } else if value.eq_ignore_ascii_case(b"absolute-centre") {
+            (*sy).align = STYLE_ALIGN_ABSOLUTE_CENTRE;
+        } else {
+            return false;
+        }
+    } else if let Some(value) = style_strip_prefix(tmp, b"fill=").filter(|v| !v.is_empty()) {
+        let Some(value) = colour_parse_cstr(&style_cstring(value)) else {
+            return false;
+        };
+        (*sy).fill = value;
+    } else if let Some(value) = style_strip_prefix(tmp, b"dim=").filter(|v| !v.is_empty()) {
+        let value = value.strip_suffix(b"%").unwrap_or(value);
+        let Some(n) = style_parse_number(value, 0, 100) else {
+            return false;
+        };
+        (*sy).dim = n as ::core::ffi::c_int;
+    } else if let Some(value) = tmp
+        .get(1..)
+        .and_then(|rest| style_strip_prefix(rest, b"g="))
+        .filter(|v| !v.is_empty())
+    {
+        let Some(value) = colour_parse_cstr(&style_cstring(value)) else {
+            return false;
+        };
+        if tmp[0] == b'f' || tmp[0] == b'F' {
+            if value != 8 as ::core::ffi::c_int {
+                (*sy).gc.fg = value;
+            } else {
+                (*sy).gc.fg = base.fg;
+            }
+        } else {
+            if !(tmp[0] == b'b' || tmp[0] == b'B') {
+                return false;
+            }
+            if value != 8 as ::core::ffi::c_int {
+                (*sy).gc.bg = value;
+            } else {
+                (*sy).gc.bg = base.bg;
+            }
+        }
+    } else if let Some(value) = style_strip_prefix(tmp, b"us=").filter(|v| !v.is_empty()) {
+        let Some(value) = colour_parse_cstr(&style_cstring(value)) else {
+            return false;
+        };
+        if value != 8 as ::core::ffi::c_int {
+            (*sy).gc.us = value;
+        } else {
+            (*sy).gc.us = base.us;
+        }
+    } else if tmp.eq_ignore_ascii_case(b"none") {
+        (*sy).gc.attr = 0 as u_short;
+    } else if let Some(value) = style_strip_prefix(tmp, b"no").filter(|v| !v.is_empty()) {
+        if value == b"link" {
+            (*sy).link = 0 as u_int;
+        } else if value == b"attr" {
+            (*sy).gc.attr = ((*sy).gc.attr as ::core::ffi::c_int | GRID_ATTR_NOATTR) as u_short;
+        } else {
+            let Some(value) = attributes_parse(value) else {
+                return false;
+            };
+            (*sy).gc.attr = ((*sy).gc.attr as ::core::ffi::c_int & !value) as u_short;
+        }
+    } else if let Some(value) = style_strip_prefix(tmp, b"width=").filter(|v| !v.is_empty()) {
+        if let Some(value) = value.strip_suffix(b"%").filter(|v| !v.is_empty()) {
+            let Some(n) = style_parse_number(value, 0, 100) else {
+                return false;
+            };
+            (*sy).width = n as ::core::ffi::c_int;
+            (*sy).width_percentage = 1 as ::core::ffi::c_int;
+        } else {
+            let Some(n) = style_parse_number(value, 0, UINT_MAX as ::core::ffi::c_longlong) else {
+                return false;
+            };
+            (*sy).width = n as ::core::ffi::c_int;
+            (*sy).width_percentage = 0 as ::core::ffi::c_int;
+        }
+    } else if let Some(value) = style_strip_prefix(tmp, b"pad=").filter(|v| !v.is_empty()) {
+        let Some(n) = style_parse_number(value, 0, UINT_MAX as ::core::ffi::c_longlong) else {
+            return false;
+        };
+        (*sy).pad = n as ::core::ffi::c_int;
+    } else if let Some(value) = style_strip_prefix(tmp, b"link=") {
+        if value.is_empty() {
+            (*sy).link = 0 as u_int;
+        } else {
+            let table = style_hyperlinks(true).expect("style hyperlink table");
+            let uri = style_cstring(value);
+            (*sy).link = hyperlinks_put(&table, &uri, Some(&uri));
+        }
+    } else {
+        let Some(value) = attributes_parse(tmp) else {
+            return false;
+        };
+        (*sy).gc.attr = ((*sy).gc.attr as ::core::ffi::c_int | value) as u_short;
+    }
+    true
+}
 pub unsafe fn style_parse(mut sy: *mut style, base: &grid_cell, in_0: &CStr) -> ::core::ffi::c_int {
-    let mut in_0: *const ::core::ffi::c_char = in_0.as_ptr();
-    let mut current_block: u64;
+    const DELIMITERS: &[u8] = b" ,\n";
+    let mut in_0 = in_0.to_bytes();
     let mut saved: style = style {
         gc: grid_cell {
             data: utf8_data {
@@ -143,613 +381,67 @@ pub unsafe fn style_parse(mut sy: *mut style, base: &grid_cell, in_0: &CStr) -> 
         default_type: STYLE_DEFAULT_BASE,
         link: 0,
     };
-    let delimiters: [::core::ffi::c_char; 4] =
-        ::core::mem::transmute::<[u8; 4], [::core::ffi::c_char; 4]>(*b" ,\n\0");
-    let mut tmp: [::core::ffi::c_char; 256] = [0; 256];
-    let mut found: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut value: ::core::ffi::c_int = 0;
-    let mut end: size_t = 0;
-    let mut n: u_int = 0;
-    if *in_0 as ::core::ffi::c_int == '\0' as i32 {
+    if in_0.is_empty() {
         return 0 as ::core::ffi::c_int;
     }
     style_copy(&raw mut saved, sy);
-    log_debug(format_args!(
-        "{}: {}",
-        "style_parse",
-        log_cstr(CStr::from_ptr(in_0))
-    ));
+    log_debug(format_args!("{}: {}", "style_parse", log_bytes(in_0)));
     loop {
-        while *in_0 as ::core::ffi::c_int != '\0' as i32
-            && !strchr(
-                &raw const delimiters as *const ::core::ffi::c_char,
-                *in_0 as ::core::ffi::c_int,
-            )
-            .is_null()
-        {
-            in_0 = in_0.offset(1);
+        let start = in_0
+            .iter()
+            .position(|b| !DELIMITERS.contains(b))
+            .unwrap_or(in_0.len());
+        in_0 = &in_0[start..];
+        if in_0.is_empty() {
+            return 0 as ::core::ffi::c_int;
         }
-        if *in_0 as ::core::ffi::c_int == '\0' as i32 {
-            current_block = 5832582820025303349;
+        let end = in_0
+            .iter()
+            .position(|b| DELIMITERS.contains(b))
+            .unwrap_or(in_0.len());
+        if end > STYLE_TOKEN_MAX {
             break;
         }
-        end = strcspn(in_0, &raw const delimiters as *const ::core::ffi::c_char) as size_t;
-        if end
-            > (::core::mem::size_of::<[::core::ffi::c_char; 256]>() as usize).wrapping_sub(1_usize)
-        {
-            current_block = 6605876559004397942;
+        let tmp = &in_0[..end];
+        log_debug(format_args!("{}: {}", "style_parse", log_bytes(tmp)));
+        if !style_parse_token(sy, base, tmp) {
             break;
         }
-        memcpy(
-            &raw mut tmp as *mut ::core::ffi::c_char as *mut ::core::ffi::c_void,
-            in_0 as *const ::core::ffi::c_void,
-            end,
-        );
-        tmp[end as usize] = '\0' as i32 as ::core::ffi::c_char;
-        log_debug(format_args!(
-            "{}: {}",
-            "style_parse",
-            log_cstr(CStr::from_ptr(&raw mut tmp as *mut ::core::ffi::c_char))
-        ));
-        if strcasecmp(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            c"default".as_ptr(),
-        ) == 0 as ::core::ffi::c_int
-        {
-            (*sy).gc.fg = base.fg;
-            (*sy).gc.bg = base.bg;
-            (*sy).gc.us = base.us;
-            (*sy).gc.attr = base.attr;
-            (*sy).gc.flags = base.flags;
-            (*sy).link = 0 as u_int;
-        } else if strcasecmp(&raw mut tmp as *mut ::core::ffi::c_char, c"ignore".as_ptr())
-            == 0 as ::core::ffi::c_int
-        {
-            (*sy).ignore = 1 as ::core::ffi::c_int;
-        } else if strcasecmp(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            c"noignore".as_ptr(),
-        ) == 0 as ::core::ffi::c_int
-        {
-            (*sy).ignore = 0 as ::core::ffi::c_int;
-        } else if strcasecmp(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            c"push-default".as_ptr(),
-        ) == 0 as ::core::ffi::c_int
-        {
-            (*sy).default_type = STYLE_DEFAULT_PUSH;
-        } else if strcasecmp(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            c"pop-default".as_ptr(),
-        ) == 0 as ::core::ffi::c_int
-        {
-            (*sy).default_type = STYLE_DEFAULT_POP;
-        } else if strcasecmp(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            c"set-default".as_ptr(),
-        ) == 0 as ::core::ffi::c_int
-        {
-            (*sy).default_type = STYLE_DEFAULT_SET;
-        } else if strcasecmp(&raw mut tmp as *mut ::core::ffi::c_char, c"nolist".as_ptr())
-            == 0 as ::core::ffi::c_int
-        {
-            (*sy).list = STYLE_LIST_OFF;
-        } else if strncasecmp(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            c"list=".as_ptr(),
-            5 as size_t,
-        ) == 0 as ::core::ffi::c_int
-        {
-            if strcasecmp(
-                (&raw mut tmp as *mut ::core::ffi::c_char).offset(5 as ::core::ffi::c_int as isize),
-                c"on".as_ptr(),
-            ) == 0 as ::core::ffi::c_int
-            {
-                (*sy).list = STYLE_LIST_ON;
-            } else if strcasecmp(
-                (&raw mut tmp as *mut ::core::ffi::c_char).offset(5 as ::core::ffi::c_int as isize),
-                c"focus".as_ptr(),
-            ) == 0 as ::core::ffi::c_int
-            {
-                (*sy).list = STYLE_LIST_FOCUS;
-            } else if strcasecmp(
-                (&raw mut tmp as *mut ::core::ffi::c_char).offset(5 as ::core::ffi::c_int as isize),
-                c"left-marker".as_ptr(),
-            ) == 0 as ::core::ffi::c_int
-            {
-                (*sy).list = STYLE_LIST_LEFT_MARKER;
-            } else {
-                if !(strcasecmp(
-                    (&raw mut tmp as *mut ::core::ffi::c_char)
-                        .offset(5 as ::core::ffi::c_int as isize),
-                    c"right-marker".as_ptr(),
-                ) == 0 as ::core::ffi::c_int)
-                {
-                    current_block = 6605876559004397942;
-                    break;
-                }
-                (*sy).list = STYLE_LIST_RIGHT_MARKER;
-            }
-        } else if strcasecmp(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            c"norange".as_ptr(),
-        ) == 0 as ::core::ffi::c_int
-        {
-            (*sy).range_type = style_default.range_type;
-            (*sy).range_argument = style_default.range_type as u_int;
-            strlcpy(
-                &raw mut (*sy).range_string as *mut ::core::ffi::c_char,
-                &raw mut style_default.range_string as *mut ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 16]>() as size_t,
-            );
-        } else if end > 6 as size_t
-            && strncasecmp(
-                &raw mut tmp as *mut ::core::ffi::c_char,
-                c"range=".as_ptr(),
-                6 as size_t,
-            ) == 0 as ::core::ffi::c_int
-        {
-            found = strchr(
-                (&raw mut tmp as *mut ::core::ffi::c_char).offset(6 as ::core::ffi::c_int as isize),
-                '|' as i32,
-            );
-            if !found.is_null() {
-                let fresh0 = found;
-                found = found.offset(1);
-                *fresh0 = '\0' as i32 as ::core::ffi::c_char;
-                if *found as ::core::ffi::c_int == '\0' as i32 {
-                    current_block = 6605876559004397942;
-                    break;
-                }
-            }
-            if strcasecmp(
-                (&raw mut tmp as *mut ::core::ffi::c_char).offset(6 as ::core::ffi::c_int as isize),
-                c"left".as_ptr(),
-            ) == 0 as ::core::ffi::c_int
-            {
-                if !found.is_null() {
-                    current_block = 6605876559004397942;
-                    break;
-                }
-                (*sy).range_type = STYLE_RANGE_LEFT;
-                (*sy).range_argument = 0 as u_int;
-                style_set_range_string(sy, c"");
-            } else if strcasecmp(
-                (&raw mut tmp as *mut ::core::ffi::c_char).offset(6 as ::core::ffi::c_int as isize),
-                c"right".as_ptr(),
-            ) == 0 as ::core::ffi::c_int
-            {
-                if !found.is_null() {
-                    current_block = 6605876559004397942;
-                    break;
-                }
-                (*sy).range_type = STYLE_RANGE_RIGHT;
-                (*sy).range_argument = 0 as u_int;
-                style_set_range_string(sy, c"");
-            } else if strcasecmp(
-                (&raw mut tmp as *mut ::core::ffi::c_char).offset(6 as ::core::ffi::c_int as isize),
-                c"control".as_ptr(),
-            ) == 0 as ::core::ffi::c_int
-            {
-                if found.is_null() {
-                    current_block = 6605876559004397942;
-                    break;
-                }
-                let parsed = strtonum(
-                    CStr::from_ptr(found),
-                    0 as ::core::ffi::c_longlong,
-                    9 as ::core::ffi::c_longlong,
-                );
-                n = parsed.unwrap_or(0) as u_int;
-                if parsed.is_err() {
-                    current_block = 6605876559004397942;
-                    break;
-                }
-                (*sy).range_type = STYLE_RANGE_CONTROL;
-                (*sy).range_argument = n;
-                style_set_range_string(sy, c"");
-            } else if strcasecmp(
-                (&raw mut tmp as *mut ::core::ffi::c_char).offset(6 as ::core::ffi::c_int as isize),
-                c"pane".as_ptr(),
-            ) == 0 as ::core::ffi::c_int
-            {
-                if found.is_null() {
-                    current_block = 6605876559004397942;
-                    break;
-                }
-                if *found as ::core::ffi::c_int != '%' as i32
-                    || *found.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
-                        == '\0' as i32
-                {
-                    current_block = 6605876559004397942;
-                    break;
-                }
-                let parsed = strtonum(
-                    CStr::from_ptr(found.offset(1 as ::core::ffi::c_int as isize)),
-                    0 as ::core::ffi::c_longlong,
-                    UINT_MAX as ::core::ffi::c_longlong,
-                );
-                n = parsed.unwrap_or(0) as u_int;
-                if parsed.is_err() {
-                    current_block = 6605876559004397942;
-                    break;
-                }
-                (*sy).range_type = STYLE_RANGE_PANE;
-                (*sy).range_argument = n;
-                style_set_range_string(sy, c"");
-            } else if strcasecmp(
-                (&raw mut tmp as *mut ::core::ffi::c_char).offset(6 as ::core::ffi::c_int as isize),
-                c"window".as_ptr(),
-            ) == 0 as ::core::ffi::c_int
-            {
-                if found.is_null() {
-                    current_block = 6605876559004397942;
-                    break;
-                }
-                let parsed = strtonum(
-                    CStr::from_ptr(found),
-                    0 as ::core::ffi::c_longlong,
-                    UINT_MAX as ::core::ffi::c_longlong,
-                );
-                n = parsed.unwrap_or(0) as u_int;
-                if parsed.is_err() {
-                    current_block = 6605876559004397942;
-                    break;
-                }
-                (*sy).range_type = STYLE_RANGE_WINDOW;
-                (*sy).range_argument = n;
-                style_set_range_string(sy, c"");
-            } else if strcasecmp(
-                (&raw mut tmp as *mut ::core::ffi::c_char).offset(6 as ::core::ffi::c_int as isize),
-                c"session".as_ptr(),
-            ) == 0 as ::core::ffi::c_int
-            {
-                if found.is_null() {
-                    current_block = 6605876559004397942;
-                    break;
-                }
-                if *found as ::core::ffi::c_int != '$' as i32
-                    || *found.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
-                        == '\0' as i32
-                {
-                    current_block = 6605876559004397942;
-                    break;
-                }
-                let parsed = strtonum(
-                    CStr::from_ptr(found.offset(1 as ::core::ffi::c_int as isize)),
-                    0 as ::core::ffi::c_longlong,
-                    UINT_MAX as ::core::ffi::c_longlong,
-                );
-                n = parsed.unwrap_or(0) as u_int;
-                if parsed.is_err() {
-                    current_block = 6605876559004397942;
-                    break;
-                }
-                (*sy).range_type = STYLE_RANGE_SESSION;
-                (*sy).range_argument = n;
-                style_set_range_string(sy, c"");
-            } else if strcasecmp(
-                (&raw mut tmp as *mut ::core::ffi::c_char).offset(6 as ::core::ffi::c_int as isize),
-                c"user".as_ptr(),
-            ) == 0 as ::core::ffi::c_int
-            {
-                if found.is_null() {
-                    current_block = 6605876559004397942;
-                    break;
-                }
-                (*sy).range_type = STYLE_RANGE_USER;
-                (*sy).range_argument = 0 as u_int;
-                style_set_range_string(sy, CStr::from_ptr(found));
-            }
-        } else if strcasecmp(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            c"noalign".as_ptr(),
-        ) == 0 as ::core::ffi::c_int
-        {
-            (*sy).align = style_default.align;
-        } else if end > 6 as size_t
-            && strncasecmp(
-                &raw mut tmp as *mut ::core::ffi::c_char,
-                c"align=".as_ptr(),
-                6 as size_t,
-            ) == 0 as ::core::ffi::c_int
-        {
-            if strcasecmp(
-                (&raw mut tmp as *mut ::core::ffi::c_char).offset(6 as ::core::ffi::c_int as isize),
-                c"left".as_ptr(),
-            ) == 0 as ::core::ffi::c_int
-            {
-                (*sy).align = STYLE_ALIGN_LEFT;
-            } else if strcasecmp(
-                (&raw mut tmp as *mut ::core::ffi::c_char).offset(6 as ::core::ffi::c_int as isize),
-                c"centre".as_ptr(),
-            ) == 0 as ::core::ffi::c_int
-            {
-                (*sy).align = STYLE_ALIGN_CENTRE;
-            } else if strcasecmp(
-                (&raw mut tmp as *mut ::core::ffi::c_char).offset(6 as ::core::ffi::c_int as isize),
-                c"right".as_ptr(),
-            ) == 0 as ::core::ffi::c_int
-            {
-                (*sy).align = STYLE_ALIGN_RIGHT;
-            } else {
-                if !(strcasecmp(
-                    (&raw mut tmp as *mut ::core::ffi::c_char)
-                        .offset(6 as ::core::ffi::c_int as isize),
-                    c"absolute-centre".as_ptr(),
-                ) == 0 as ::core::ffi::c_int)
-                {
-                    current_block = 6605876559004397942;
-                    break;
-                }
-                (*sy).align = STYLE_ALIGN_ABSOLUTE_CENTRE;
-            }
-        } else if end > 5 as size_t
-            && strncasecmp(
-                &raw mut tmp as *mut ::core::ffi::c_char,
-                c"fill=".as_ptr(),
-                5 as size_t,
-            ) == 0 as ::core::ffi::c_int
-        {
-            value = colour_parse_cstr(std::ffi::CStr::from_ptr(
-                (&raw mut tmp as *mut ::core::ffi::c_char).offset(5 as ::core::ffi::c_int as isize),
-            ))
-            .unwrap_or(-1);
-            if value == -(1 as ::core::ffi::c_int) {
-                current_block = 6605876559004397942;
-                break;
-            }
-            (*sy).fill = value;
-        } else if end > 4 as size_t
-            && strncasecmp(
-                &raw mut tmp as *mut ::core::ffi::c_char,
-                c"dim=".as_ptr(),
-                4 as size_t,
-            ) == 0 as ::core::ffi::c_int
-        {
-            if tmp[end.wrapping_sub(1 as size_t) as usize] as ::core::ffi::c_int == '%' as i32 {
-                tmp[end.wrapping_sub(1 as size_t) as usize] = '\0' as i32 as ::core::ffi::c_char;
-            }
-            let parsed = strtonum(
-                CStr::from_ptr(
-                    (&raw mut tmp as *mut ::core::ffi::c_char)
-                        .offset(4 as ::core::ffi::c_int as isize),
-                ),
-                0 as ::core::ffi::c_longlong,
-                100 as ::core::ffi::c_longlong,
-            );
-            n = parsed.unwrap_or(0) as u_int;
-            if parsed.is_err() {
-                current_block = 6605876559004397942;
-                break;
-            }
-            (*sy).dim = n as ::core::ffi::c_int;
-        } else if end > 3 as size_t
-            && strncasecmp(
-                (&raw mut tmp as *mut ::core::ffi::c_char).offset(1 as ::core::ffi::c_int as isize),
-                c"g=".as_ptr(),
-                2 as size_t,
-            ) == 0 as ::core::ffi::c_int
-        {
-            value = colour_parse_cstr(std::ffi::CStr::from_ptr(
-                (&raw mut tmp as *mut ::core::ffi::c_char).offset(3 as ::core::ffi::c_int as isize),
-            ))
-            .unwrap_or(-1);
-            if value == -(1 as ::core::ffi::c_int) {
-                current_block = 6605876559004397942;
-                break;
-            }
-            if *in_0 as ::core::ffi::c_int == 'f' as i32
-                || *in_0 as ::core::ffi::c_int == 'F' as i32
-            {
-                if value != 8 as ::core::ffi::c_int {
-                    (*sy).gc.fg = value;
-                } else {
-                    (*sy).gc.fg = base.fg;
-                }
-            } else {
-                if !(*in_0 as ::core::ffi::c_int == 'b' as i32
-                    || *in_0 as ::core::ffi::c_int == 'B' as i32)
-                {
-                    current_block = 6605876559004397942;
-                    break;
-                }
-                if value != 8 as ::core::ffi::c_int {
-                    (*sy).gc.bg = value;
-                } else {
-                    (*sy).gc.bg = base.bg;
-                }
-            }
-        } else if end > 3 as size_t
-            && strncasecmp(
-                &raw mut tmp as *mut ::core::ffi::c_char,
-                c"us=".as_ptr(),
-                3 as size_t,
-            ) == 0 as ::core::ffi::c_int
-        {
-            value = colour_parse_cstr(std::ffi::CStr::from_ptr(
-                (&raw mut tmp as *mut ::core::ffi::c_char).offset(3 as ::core::ffi::c_int as isize),
-            ))
-            .unwrap_or(-1);
-            if value == -(1 as ::core::ffi::c_int) {
-                current_block = 6605876559004397942;
-                break;
-            }
-            if value != 8 as ::core::ffi::c_int {
-                (*sy).gc.us = value;
-            } else {
-                (*sy).gc.us = base.us;
-            }
-        } else if strcasecmp(&raw mut tmp as *mut ::core::ffi::c_char, c"none".as_ptr())
-            == 0 as ::core::ffi::c_int
-        {
-            (*sy).gc.attr = 0 as u_short;
-        } else if end > 2 as size_t
-            && strncasecmp(
-                &raw mut tmp as *mut ::core::ffi::c_char,
-                c"no".as_ptr(),
-                2 as size_t,
-            ) == 0 as ::core::ffi::c_int
-        {
-            if strcmp(
-                (&raw mut tmp as *mut ::core::ffi::c_char).offset(2 as ::core::ffi::c_int as isize),
-                c"link".as_ptr(),
-            ) == 0 as ::core::ffi::c_int
-            {
-                (*sy).link = 0 as u_int;
-            } else if strcmp(
-                (&raw mut tmp as *mut ::core::ffi::c_char).offset(2 as ::core::ffi::c_int as isize),
-                c"attr".as_ptr(),
-            ) == 0 as ::core::ffi::c_int
-            {
-                (*sy).gc.attr = ((*sy).gc.attr as ::core::ffi::c_int | GRID_ATTR_NOATTR) as u_short;
-            } else {
-                value = attributes_parse_cstr(std::ffi::CStr::from_ptr(
-                    (&raw mut tmp as *mut ::core::ffi::c_char)
-                        .offset(2 as ::core::ffi::c_int as isize),
-                ))
-                .unwrap_or(-1);
-                if value == -(1 as ::core::ffi::c_int) {
-                    current_block = 6605876559004397942;
-                    break;
-                }
-                (*sy).gc.attr = ((*sy).gc.attr as ::core::ffi::c_int & !value) as u_short;
-            }
-        } else if end > 6 as size_t
-            && strncasecmp(
-                &raw mut tmp as *mut ::core::ffi::c_char,
-                c"width=".as_ptr(),
-                6 as size_t,
-            ) == 0 as ::core::ffi::c_int
-        {
-            if end > 7 as size_t
-                && tmp[end.wrapping_sub(1 as size_t) as usize] as ::core::ffi::c_int == '%' as i32
-            {
-                tmp[end.wrapping_sub(1 as size_t) as usize] = '\0' as i32 as ::core::ffi::c_char;
-                let parsed = strtonum(
-                    CStr::from_ptr(
-                        (&raw mut tmp as *mut ::core::ffi::c_char)
-                            .offset(6 as ::core::ffi::c_int as isize),
-                    ),
-                    0 as ::core::ffi::c_longlong,
-                    100 as ::core::ffi::c_longlong,
-                );
-                n = parsed.unwrap_or(0) as u_int;
-                if parsed.is_err() {
-                    current_block = 6605876559004397942;
-                    break;
-                }
-                (*sy).width = n as ::core::ffi::c_int;
-                (*sy).width_percentage = 1 as ::core::ffi::c_int;
-            } else {
-                let parsed = strtonum(
-                    CStr::from_ptr(
-                        (&raw mut tmp as *mut ::core::ffi::c_char)
-                            .offset(6 as ::core::ffi::c_int as isize),
-                    ),
-                    0 as ::core::ffi::c_longlong,
-                    UINT_MAX as ::core::ffi::c_longlong,
-                );
-                n = parsed.unwrap_or(0) as u_int;
-                if parsed.is_err() {
-                    current_block = 6605876559004397942;
-                    break;
-                }
-                (*sy).width = n as ::core::ffi::c_int;
-                (*sy).width_percentage = 0 as ::core::ffi::c_int;
-            }
-        } else if end > 4 as size_t
-            && strncasecmp(
-                &raw mut tmp as *mut ::core::ffi::c_char,
-                c"pad=".as_ptr(),
-                4 as size_t,
-            ) == 0 as ::core::ffi::c_int
-        {
-            let parsed = strtonum(
-                CStr::from_ptr(
-                    (&raw mut tmp as *mut ::core::ffi::c_char)
-                        .offset(4 as ::core::ffi::c_int as isize),
-                ),
-                0 as ::core::ffi::c_longlong,
-                UINT_MAX as ::core::ffi::c_longlong,
-            );
-            n = parsed.unwrap_or(0) as u_int;
-            if parsed.is_err() {
-                current_block = 6605876559004397942;
-                break;
-            }
-            (*sy).pad = n as ::core::ffi::c_int;
-        } else if strncasecmp(
-            &raw mut tmp as *mut ::core::ffi::c_char,
-            c"link=".as_ptr(),
-            5 as size_t,
-        ) == 0 as ::core::ffi::c_int
-        {
-            if tmp[5 as ::core::ffi::c_int as usize] as ::core::ffi::c_int == '\0' as i32 {
-                (*sy).link = 0 as u_int;
-            } else {
-                let table = style_hyperlinks(true).expect("style hyperlink table");
-                let uri = std::ffi::CStr::from_ptr(tmp.as_ptr().add(5));
-                (*sy).link = hyperlinks_put(&table, uri, Some(uri));
-            }
-        } else {
-            value = attributes_parse_cstr(std::ffi::CStr::from_ptr(
-                &raw mut tmp as *mut ::core::ffi::c_char,
-            ))
-            .unwrap_or(-1);
-            if value == -(1 as ::core::ffi::c_int) {
-                current_block = 6605876559004397942;
-                break;
-            }
-            (*sy).gc.attr = ((*sy).gc.attr as ::core::ffi::c_int | value) as u_short;
-        }
-        in_0 = in_0.add(end.wrapping_add(strspn(
-            in_0.add(end),
-            &raw const delimiters as *const ::core::ffi::c_char,
-        ) as size_t));
-        if !(*in_0 as ::core::ffi::c_int != '\0' as i32) {
-            current_block = 5832582820025303349;
-            break;
-        }
+        in_0 = &in_0[end..];
     }
-    match current_block {
-        5832582820025303349 => 0 as ::core::ffi::c_int,
-        _ => {
-            style_copy(sy, &raw mut saved);
-            -(1 as ::core::ffi::c_int)
-        }
-    }
+    style_copy(sy, &raw mut saved);
+    -(1 as ::core::ffi::c_int)
 }
 pub unsafe fn style_tostring(mut sy: *mut style) -> CString {
     let mut gc: *mut grid_cell = &raw mut (*sy).gc;
-    let mut comma: *const ::core::ffi::c_char = c"".as_ptr();
-    let mut tmp: *const ::core::ffi::c_char = c"".as_ptr();
-    let mut b: [::core::ffi::c_char; 21] = [0; 21];
     let s = format_message_with(|out| {
+        let b: Vec<u8>;
+        let mut comma: &[u8] = b"";
+        let mut tmp: &[u8] = b"";
         if (*sy).list as ::core::ffi::c_uint
             != STYLE_LIST_OFF as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             if (*sy).list as ::core::ffi::c_uint
                 == STYLE_LIST_ON as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                tmp = c"on".as_ptr();
+                tmp = b"on";
             } else if (*sy).list as ::core::ffi::c_uint
                 == STYLE_LIST_FOCUS as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                tmp = c"focus".as_ptr();
+                tmp = b"focus";
             } else if (*sy).list as ::core::ffi::c_uint
                 == STYLE_LIST_LEFT_MARKER as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                tmp = c"left-marker".as_ptr();
+                tmp = b"left-marker";
             } else if (*sy).list as ::core::ffi::c_uint
                 == STYLE_LIST_RIGHT_MARKER as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                tmp = c"right-marker".as_ptr();
+                tmp = b"right-marker";
             }
-            out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
+            out.write_all(comma)?;
             out.write_all(b"list=")?;
-            out.write_all(std::ffi::CStr::from_ptr(tmp).to_bytes())?;
-            comma = c",".as_ptr();
+            out.write_all(tmp)?;
+            comma = b",";
         }
         if (*sy).range_type as ::core::ffi::c_uint
             != STYLE_RANGE_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -757,56 +449,39 @@ pub unsafe fn style_tostring(mut sy: *mut style) -> CString {
             if (*sy).range_type as ::core::ffi::c_uint
                 == STYLE_RANGE_LEFT as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                tmp = c"left".as_ptr();
+                tmp = b"left";
             } else if (*sy).range_type as ::core::ffi::c_uint
                 == STYLE_RANGE_RIGHT as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                tmp = c"right".as_ptr();
+                tmp = b"right";
             } else if (*sy).range_type as ::core::ffi::c_uint
                 == STYLE_RANGE_PANE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                snprintf(
-                    &raw mut b as *mut ::core::ffi::c_char,
-                    ::core::mem::size_of::<[::core::ffi::c_char; 21]>() as size_t,
-                    c"pane|%%%u".as_ptr(),
-                    (*sy).range_argument,
-                );
-                tmp = &raw mut b as *mut ::core::ffi::c_char;
+                b = format_bytes(format_args!("pane|%{}", (*sy).range_argument));
+                tmp = &b;
             } else if (*sy).range_type as ::core::ffi::c_uint
                 == STYLE_RANGE_WINDOW as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                snprintf(
-                    &raw mut b as *mut ::core::ffi::c_char,
-                    ::core::mem::size_of::<[::core::ffi::c_char; 21]>() as size_t,
-                    c"window|%u".as_ptr(),
-                    (*sy).range_argument,
-                );
-                tmp = &raw mut b as *mut ::core::ffi::c_char;
+                b = format_bytes(format_args!("window|{}", (*sy).range_argument));
+                tmp = &b;
             } else if (*sy).range_type as ::core::ffi::c_uint
                 == STYLE_RANGE_SESSION as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                snprintf(
-                    &raw mut b as *mut ::core::ffi::c_char,
-                    ::core::mem::size_of::<[::core::ffi::c_char; 21]>() as size_t,
-                    c"session|$%u".as_ptr(),
-                    (*sy).range_argument,
-                );
-                tmp = &raw mut b as *mut ::core::ffi::c_char;
+                b = format_bytes(format_args!("session|${}", (*sy).range_argument));
+                tmp = &b;
             } else if (*sy).range_type as ::core::ffi::c_uint
                 == STYLE_RANGE_USER as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                snprintf(
-                    &raw mut b as *mut ::core::ffi::c_char,
-                    ::core::mem::size_of::<[::core::ffi::c_char; 21]>() as size_t,
-                    c"user|%s".as_ptr(),
-                    &raw mut (*sy).range_string as *mut ::core::ffi::c_char,
-                );
-                tmp = &raw mut b as *mut ::core::ffi::c_char;
+                let range_string = (*sy).range_string.map(|c| c as u8);
+                let range_string = CStr::from_bytes_until_nul(&range_string)
+                    .expect("range string is NUL-terminated");
+                b = [b"user|", range_string.to_bytes()].concat();
+                tmp = &b;
             }
-            out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
+            out.write_all(comma)?;
             out.write_all(b"range=")?;
-            out.write_all(std::ffi::CStr::from_ptr(tmp).to_bytes())?;
-            comma = c",".as_ptr();
+            out.write_all(tmp)?;
+            comma = b",";
         }
         if (*sy).align as ::core::ffi::c_uint
             != STYLE_ALIGN_DEFAULT as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -814,24 +489,24 @@ pub unsafe fn style_tostring(mut sy: *mut style) -> CString {
             if (*sy).align as ::core::ffi::c_uint
                 == STYLE_ALIGN_LEFT as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                tmp = c"left".as_ptr();
+                tmp = b"left";
             } else if (*sy).align as ::core::ffi::c_uint
                 == STYLE_ALIGN_CENTRE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                tmp = c"centre".as_ptr();
+                tmp = b"centre";
             } else if (*sy).align as ::core::ffi::c_uint
                 == STYLE_ALIGN_RIGHT as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                tmp = c"right".as_ptr();
+                tmp = b"right";
             } else if (*sy).align as ::core::ffi::c_uint
                 == STYLE_ALIGN_ABSOLUTE_CENTRE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                tmp = c"absolute-centre".as_ptr();
+                tmp = b"absolute-centre";
             }
-            out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
+            out.write_all(comma)?;
             out.write_all(b"align=")?;
-            out.write_all(std::ffi::CStr::from_ptr(tmp).to_bytes())?;
-            comma = c",".as_ptr();
+            out.write_all(tmp)?;
+            comma = b",";
         }
         if (*sy).default_type as ::core::ffi::c_uint
             != STYLE_DEFAULT_BASE as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -839,74 +514,73 @@ pub unsafe fn style_tostring(mut sy: *mut style) -> CString {
             if (*sy).default_type as ::core::ffi::c_uint
                 == STYLE_DEFAULT_PUSH as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                tmp = c"push-default".as_ptr();
+                tmp = b"push-default";
             } else if (*sy).default_type as ::core::ffi::c_uint
                 == STYLE_DEFAULT_POP as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                tmp = c"pop-default".as_ptr();
+                tmp = b"pop-default";
             } else if (*sy).default_type as ::core::ffi::c_uint
                 == STYLE_DEFAULT_SET as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                tmp = c"set-default".as_ptr();
+                tmp = b"set-default";
             }
-            out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
-            out.write_all(std::ffi::CStr::from_ptr(tmp).to_bytes())?;
-            comma = c",".as_ptr();
+            out.write_all(comma)?;
+            out.write_all(tmp)?;
+            comma = b",";
         }
         if (*sy).fill != 8 as ::core::ffi::c_int {
-            out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
+            out.write_all(comma)?;
             out.write_all(b"fill=")?;
             out.write_all(colour_format((*sy).fill).to_bytes())?;
-            comma = c",".as_ptr();
+            comma = b",";
         }
         if (*sy).dim != 0 as ::core::ffi::c_int {
-            out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
+            out.write_all(comma)?;
             write!(out, "dim={}%", { (*sy).dim })?;
-            comma = c",".as_ptr();
+            comma = b",";
         }
         if (*gc).fg != 8 as ::core::ffi::c_int {
-            out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
+            out.write_all(comma)?;
             out.write_all(b"fg=")?;
             out.write_all(colour_format((*gc).fg).to_bytes())?;
-            comma = c",".as_ptr();
+            comma = b",";
         }
         if (*gc).bg != 8 as ::core::ffi::c_int {
-            out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
+            out.write_all(comma)?;
             out.write_all(b"bg=")?;
             out.write_all(colour_format((*gc).bg).to_bytes())?;
-            comma = c",".as_ptr();
+            comma = b",";
         }
         if (*gc).us != 8 as ::core::ffi::c_int {
-            out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
+            out.write_all(comma)?;
             out.write_all(b"us=")?;
             out.write_all(colour_format((*gc).us).to_bytes())?;
-            comma = c",".as_ptr();
+            comma = b",";
         }
         if (*gc).attr as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
-            out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
+            out.write_all(comma)?;
             out.write_all(attributes_format((*gc).attr as ::core::ffi::c_int).to_bytes())?;
-            comma = c",".as_ptr();
+            comma = b",";
         }
         if (*sy).width >= 0 as ::core::ffi::c_int {
             if (*sy).width_percentage != 0 {
-                out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
+                out.write_all(comma)?;
                 write!(out, "width={}%", ((*sy).width) as u32)?;
             } else {
-                out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
+                out.write_all(comma)?;
                 write!(out, "width={}", ((*sy).width) as u32)?;
             }
-            comma = c",".as_ptr();
+            comma = b",";
         }
         if (*sy).pad >= 0 as ::core::ffi::c_int {
-            out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
+            out.write_all(comma)?;
             write!(out, "pad={}", ((*sy).pad) as u32)?;
-            comma = c",".as_ptr();
+            comma = b",";
         }
         if let Some(uri) = style_link(&*sy) {
-            out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
+            out.write_all(comma)?;
             out.write_all(b"link=")?;
             out.write_all(uri.uri.as_bytes())?;
-            comma = c",".as_ptr();
         }
         Ok(())
     });
@@ -966,14 +640,13 @@ pub unsafe fn style_parse_colour(
     base: &grid_cell,
     s: &CStr,
 ) -> ::core::ffi::c_int {
-    let s: *const ::core::ffi::c_char = s.as_ptr();
     let mut c: ::core::ffi::c_int = 0;
     style_set(sy, base);
-    if *s as ::core::ffi::c_int == '\0' as i32 {
+    if s.is_empty() {
         (*sy).gc.fg = -(1 as ::core::ffi::c_int);
         return 0 as ::core::ffi::c_int;
     }
-    c = colour_parse_cstr(std::ffi::CStr::from_ptr(s)).unwrap_or(-1);
+    c = colour_parse_cstr(s).unwrap_or(-1);
     if c == -(1 as ::core::ffi::c_int) {
         return -(1 as ::core::ffi::c_int);
     }

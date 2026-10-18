@@ -1,5 +1,4 @@
 use crate::src::format::bytes::format_message_with;
-use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_add;
 use crate::src::log::{log_cstr, log_cstr_n, log_debug};
@@ -340,10 +339,9 @@ pub unsafe fn event_payload_add_formats(
 ) {
     let prefix = prefix.unwrap_or(c"").to_bytes();
     for epi in event_payload_items(ep) {
-        let key = epi.name.as_ptr();
-        if !(*key as ::core::ffi::c_int == '_' as i32) {
+        let key_bytes = epi.name.to_bytes();
+        if key_bytes.first() != Some(&b'_') {
             let value = event_payload_item_print_owned(epi);
-            let key_bytes = CStr::from_ptr(key).to_bytes();
             let mut name_bytes = Vec::with_capacity(prefix.len() + key_bytes.len());
             name_bytes.extend_from_slice(prefix);
             name_bytes.extend_from_slice(key_bytes);
@@ -351,7 +349,7 @@ pub unsafe fn event_payload_add_formats(
             format_add(ft, &name, |out| {
                 write_cstr(
                     out,
-                    nullable_cstr(value.as_ptr().cast::<::core::ffi::c_char>()),
+                    CStr::from_bytes_until_nul(&value).expect("printed payload is terminated"),
                 )
             });
             let named = if epi.type_0() as ::core::ffi::c_uint

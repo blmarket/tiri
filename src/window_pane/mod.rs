@@ -394,20 +394,14 @@ unsafe fn window_pane_printable_flags(
 ) -> std::ffi::CString {
     let mut wp = wp_owner.get();
     let window = (*wp).window_handle().expect("live window");
-    let mut flags: [::core::ffi::c_char; 32] = [0; 32];
-    let mut pos: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+    let mut flags = Vec::new();
     if window.active_pane().ptr_eq(&Rc::downgrade(wp_owner)) {
-        let fresh12 = pos;
-        pos += 1;
-        flags[fresh12 as usize] = '*' as i32 as ::core::ffi::c_char;
+        flags.push(b'*');
     }
     if window.last_active_pane().ptr_eq(&Rc::downgrade(wp_owner)) {
-        let fresh13 = pos;
-        pos += 1;
-        flags[fresh13 as usize] = '-' as i32 as ::core::ffi::c_char;
+        flags.push(b'-');
     }
-    flags[pos as usize] = '\0' as i32 as ::core::ffi::c_char;
-    std::ffi::CStr::from_ptr(flags.as_ptr()).to_owned()
+    std::ffi::CString::new(flags).expect("pane flags contain no NUL")
 }
 
 unsafe fn window_pane_find_by_id_str(s: &CStr) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
@@ -479,7 +473,7 @@ unsafe fn window_pane_create(
     mut hlimit: u_int,
 ) -> Rc<std::cell::UnsafeCell<window_pane>> {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut host: [::core::ffi::c_char; 65] = [0; 65];
+    let mut host: [u8; 65] = [0; 65];
     let owner = window_pane::new();
     wp = owner.get();
     (*wp).window = WindowRef::downgrade(w_owner).clone();
@@ -511,16 +505,10 @@ unsafe fn window_pane_create(
     window_pane_default_cursor(&owner);
     screen_init(&mut (*wp).status_screen, 1 as u_int, 1 as u_int, 0 as u_int);
     style_ranges_init(&raw mut (*wp).border_status_line.ranges);
-    if gethostname(
-        &raw mut host as *mut ::core::ffi::c_char,
-        ::core::mem::size_of::<[::core::ffi::c_char; 65]>() as size_t,
-    ) == 0 as ::core::ffi::c_int
-    {
-        screen_set_title(
-            &mut (*wp).base,
-            CStr::from_ptr(host.as_ptr()),
-            0 as ::core::ffi::c_int,
-        );
+    if gethostname(host.as_mut_ptr().cast(), host.len()) == 0 as ::core::ffi::c_int {
+        if let Ok(host) = CStr::from_bytes_until_nul(&host) {
+            screen_set_title(&mut (*wp).base, host, 0 as ::core::ffi::c_int);
+        }
     }
     owner
 }
@@ -1001,7 +989,6 @@ unsafe fn window_pane_set_prompt(
     mut flags: ::core::ffi::c_int,
     mut type_0: prompt_type,
 ) {
-    let mut input: *const ::core::ffi::c_char = input.map_or(std::ptr::null(), CStr::as_ptr);
     let wp = pane_owner.get();
     let session_owner = client_owner.and_then(|owner| owner.attached_session().upgrade());
     let mut pd = prompt_create_data::default();
@@ -1016,11 +1003,7 @@ unsafe fn window_pane_set_prompt(
     prompt_set_options(&mut pd, session_owner.as_ref());
     pd.fs = fs.as_ref();
     pd.prompt = msg;
-    pd.input = if input.is_null() {
-        None
-    } else {
-        Some(CStr::from_ptr(input))
-    };
+    pd.input = input;
     pd.type_0 = type_0;
     pd.flags = flags;
     let input_data = wpp.downgrade();
@@ -1071,7 +1054,6 @@ unsafe fn window_pane_update_prompt(
     msg: &CStr,
     input: Option<&CStr>,
 ) {
-    let input: *const ::core::ffi::c_char = input.map_or(std::ptr::null(), CStr::as_ptr);
     let wp = pane_owner.get();
     if (*wp).prompt.is_some() {
         prompt_update(
@@ -1082,7 +1064,7 @@ unsafe fn window_pane_update_prompt(
                 .try_borrow_mut()
                 .expect("unborrowed prompt"),
             msg,
-            (!input.is_null()).then(|| CStr::from_ptr(input)),
+            input,
         );
         (*wp).flags |= PANE_REDRAW;
     }

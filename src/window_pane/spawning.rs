@@ -19,6 +19,7 @@ use crate::src::events_payload::{
     event_payload_set_string, event_payload_set_target, event_payload_set_window,
 };
 use crate::src::ffi::libc::__errno_location;
+use crate::src::format::bytes::cstr_suffix;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
@@ -33,7 +34,7 @@ use crate::src::server_client::ClientRegistry;
 use crate::src::window::Window as _;
 use libc::{
     _exit, chdir, execl, execvp, fopen, fread, fseeko, ftello, getcwd, memset, sigfillset,
-    sigprocmask, strerror, strrchr,
+    sigprocmask, strerror,
 };
 
 use crate::src::session::Session;
@@ -221,13 +222,11 @@ pub(super) unsafe fn spawn_pane(
         let target_session_owner;
         let new_pane_owner;
         let mut new_wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-        let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
         let mut argvp: *mut *mut ::core::ffi::c_char =
             ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
         let mut cwd: Option<CString> = None;
         let mut path: [::core::ffi::c_char; 4096] = [0; 4096];
         let _cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-        let mut tmp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         let mut home: *const ::core::ffi::c_char =
             find_home_cstr().map_or(::core::ptr::null(), CStr::as_ptr);
         let mut actual_cwd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -391,11 +390,11 @@ pub(super) unsafe fn spawn_pane(
         }
         if !(*sc).flags & SPAWN_RESPAWN != 0 {
             let shell = options_get_string(&session_owner.borrow_options_mut(), c"default-shell");
-            tmp = shell.as_ptr();
-            if checkshell(nullable_cstr(tmp)) == 0 {
-                tmp = _PATH_BSHELL.as_ptr();
-            }
-            (*new_wp).shell = Some(CStr::from_ptr(tmp).to_owned());
+            (*new_wp).shell = Some(if checkshell(Some(&shell)) == 0 {
+                _PATH_BSHELL.to_owned()
+            } else {
+                shell
+            });
         }
         environ_set(child, c"SHELL", 0 as ::core::ffi::c_int, |out| {
             write_cstr(out, (*new_wp).shell.as_deref())
@@ -481,7 +480,7 @@ pub(super) unsafe fn spawn_pane(
             (*new_wp).pid = fdforkpty(
                 ptm_fd,
                 &raw mut master,
-                &raw mut (*new_wp).tty as *mut ::core::ffi::c_char,
+                (*new_wp).tty.as_mut_ptr().cast(),
                 ::core::ptr::null_mut::<termios>(),
                 &raw mut ws,
             );
@@ -579,44 +578,26 @@ pub(super) unsafe fn spawn_pane(
                     );
                     _exit(1 as ::core::ffi::c_int);
                 }
-                cp = strrchr(
-                    (*new_wp)
-                        .shell
-                        .as_ref()
-                        .map_or(::core::ptr::null(), |value| value.as_ptr()),
-                    '/' as i32,
-                );
-                let shell_name = if !cp.is_null() && *cp.add(1) != 0 {
-                    cp.add(1)
-                } else {
-                    (*new_wp)
-                        .shell
-                        .as_ref()
-                        .map_or(::core::ptr::null(), |value| value.as_ptr())
+                let shell = (*new_wp).shell.as_deref().expect("pane shell");
+                let shell_name = match shell.to_bytes().iter().rposition(|&byte| byte == b'/') {
+                    Some(slash) if slash + 1 < shell.count_bytes() => cstr_suffix(shell, slash + 1),
+                    _ => shell,
                 };
                 if (*new_wp).argv.len() == 1 {
-                    tmp = (&(*new_wp).argv)[0].as_ptr();
-                    let argv0 = CStr::from_ptr(shell_name).to_owned();
                     execl(
-                        (*new_wp)
-                            .shell
-                            .as_ref()
-                            .map_or(::core::ptr::null(), |value| value.as_ptr()),
-                        argv0.as_ptr(),
+                        shell.as_ptr(),
+                        shell_name.as_ptr(),
                         c"-c".as_ptr(),
-                        tmp,
+                        (&(*new_wp).argv)[0].as_ptr(),
                         NULL as *mut ::core::ffi::c_char,
                     );
                     _exit(1 as ::core::ffi::c_int);
                 }
                 let mut login_name = vec![b'-'];
-                login_name.extend_from_slice(CStr::from_ptr(shell_name).to_bytes());
+                login_name.extend_from_slice(shell_name.to_bytes());
                 let argv0 = CString::new(login_name).expect("shell name contains no NUL");
                 execl(
-                    (*new_wp)
-                        .shell
-                        .as_ref()
-                        .map_or(::core::ptr::null(), |value| value.as_ptr()),
+                    shell.as_ptr(),
                     argv0.as_ptr(),
                     NULL as *mut ::core::ffi::c_char,
                 );

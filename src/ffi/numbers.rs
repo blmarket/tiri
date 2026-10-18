@@ -2,6 +2,7 @@
 
 use super::libc::__errno_location;
 use crate::src::compat::strtonum::strtonum;
+use crate::src::format::bytes::cstr_suffix;
 use libc::strtoull;
 use std::ffi::CStr;
 
@@ -23,7 +24,6 @@ pub(crate) fn hexadecimal_prefix(input: &CStr) -> Option<(u64, &CStr)> {
         }
         consumed = end.offset_from(input.as_ptr()) as usize;
     }
-    let suffix = CStr::from_bytes_with_nul(&input.to_bytes_with_nul()[consumed..])
-        .expect("strtoull stops within its input");
+    let suffix = cstr_suffix(input, consumed);
     Some((value, suffix))
 }

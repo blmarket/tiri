@@ -257,7 +257,7 @@ unsafe fn cmd_set_hook_monitor_exec(
         &name,
         kind,
         id,
-        CStr::from_ptr(format.as_deref().expect("monitor format").as_ptr()),
+        format.as_deref().expect("monitor format"),
         flags,
         &mut fs,
         session.as_ref(),

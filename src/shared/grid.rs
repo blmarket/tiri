@@ -207,8 +207,7 @@ pub struct grid_reader<'a> {
     pub cy: u_int,
 }
 
-pub const WHITESPACE: [::core::ffi::c_char; 3] =
-    unsafe { ::core::mem::transmute::<[u8; 3], [::core::ffi::c_char; 3]>(*b"\t \0") };
+pub const WHITESPACE: &std::ffi::CStr = c"\t ";
 
 #[cfg(test)]
 mod tests {

@@ -882,8 +882,6 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
     let mut text_width: u_int = 0;
     let mut prefix_width: u_int = 0;
     let mut left: u_int = 0;
-    let mut tag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut separator: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut n: size_t = 0;
     let mut keylen: ::core::ffi::c_int = 0;
     let vla = (*mtd).maxdepth.wrapping_add(1 as u_int) as usize;
@@ -1030,26 +1028,17 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
             if prefix_width > w {
                 prefix_width = w;
             }
-            if mti.tagged != 0 {
-                tag = c"*".as_ptr();
+            let tag: &[u8] = if mti.tagged != 0 { b"*" } else { b"" };
+            let separator: &[u8] = if !mti.text.is_none() {
+                b"#[fg=themelightgrey]: #[default]"
             } else {
-                tag = c"".as_ptr();
-            }
-            if !mti.text.is_none() {
-                separator = c"#[fg=themelightgrey]: #[default]".as_ptr();
-            } else {
-                separator = c"".as_ptr();
-            }
+                b""
+            };
             let field_width = mti.align * *alignlen.as_mut_ptr().offset(line.depth as isize);
             let mut name = Vec::new();
             mode_tree_append_printf_string(&mut name, Some(mti.name.as_c_str()));
             let padding = (field_width.unsigned_abs() as usize).saturating_sub(name.len());
-            let mut row = Vec::with_capacity(
-                name.len()
-                    + padding
-                    + CStr::from_ptr(tag).to_bytes().len()
-                    + CStr::from_ptr(separator).to_bytes().len(),
-            );
+            let mut row = Vec::with_capacity(name.len() + padding + tag.len() + separator.len());
             if field_width >= 0 {
                 row.extend(std::iter::repeat_n(b' ', padding));
             }
@@ -1057,8 +1046,8 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
             if field_width < 0 {
                 row.extend(std::iter::repeat_n(b' ', padding));
             }
-            row.extend_from_slice(CStr::from_ptr(tag).to_bytes());
-            row.extend_from_slice(CStr::from_ptr(separator).to_bytes());
+            row.extend_from_slice(tag);
+            row.extend_from_slice(separator);
             let text = CString::new(row).expect("mode-tree row contains no NUL");
             text_width = format_width(text.as_ptr());
             left = if prefix_width < w {

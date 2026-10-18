@@ -451,19 +451,19 @@ unsafe fn window_switch_init(
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
     let mut pd = prompt_create_data::default();
     let format = if args.is_null() || args_has(&*args, 'F' as i32 as u_char) == 0 {
-        WINDOW_SWITCH_DEFAULT_FORMAT.as_ptr()
+        WINDOW_SWITCH_DEFAULT_FORMAT
     } else {
-        args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr())
+        args_get(&*(args), 'F' as i32 as u_char).expect("-F takes a value")
     };
     let command = if args.is_null() || args_count(&*args) == 0 as u_int {
-        WINDOW_SWITCH_DEFAULT_COMMAND.as_ptr()
+        WINDOW_SWITCH_DEFAULT_COMMAND
     } else {
-        args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())
+        args_string(&mut *(args), 0 as u_int).expect("argument 0 exists")
     };
     let owner = Box::new(std::cell::UnsafeCell::new(window_switch_modedata {
         screen: screen::empty(),
-        format: CStr::from_ptr(format).to_owned(),
-        command: CStr::from_ptr(command).to_owned(),
+        format: format.to_owned(),
+        command: command.to_owned(),
         type_0: WINDOW_SWITCH_TYPE_SESSION,
         filter: CString::default(),
         prompt: None,

@@ -12,10 +12,11 @@ use crate::src::file::{
     file_read_cancel, file_read_open, file_write_close, file_write_data, file_write_left,
     file_write_open,
 };
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::log::{fatal, fatalx, log_cstr, log_debug, log_hex};
 use crate::src::proc::{
-    bytes_of, proc_add_peer, proc_clear_signals, proc_exit, proc_loop, proc_send, proc_set_signals,
-    proc_start,
+    bytes_of, imsg_string, proc_add_peer, proc_clear_signals, proc_exit, proc_loop, proc_send,
+    proc_set_signals, proc_start,
 };
 use crate::src::server::server_start;
 use crate::src::shared::abi::*;
@@ -211,9 +212,6 @@ pub unsafe fn client_main(
 ) -> ::core::ffi::c_int {
     let mut pr: cmd_parse_result = cmd_parse_result::empty();
     let mut i: ::core::ffi::c_int = 0;
-    let mut termname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut cwd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut cwd_owner: Option<CString> = None;
     let mut ppid: pid_t = 0;
     let mut msg: msgtype = 0 as msgtype;
     let mut tio: termios = unsafe { ::core::mem::zeroed() };
@@ -286,24 +284,19 @@ pub unsafe fn client_main(
             fd,
             Box::new(|message| unsafe { client_dispatch(message) }),
         );
-        cwd = cwd_owner
-            .insert(find_cwd().unwrap_or_else(|| find_home_cstr().unwrap_or(c"/").to_owned()))
-            .as_ptr();
+        let cwd = find_cwd().unwrap_or_else(|| find_home_cstr().unwrap_or(c"/").to_owned());
         let ttynam =
             tiri_rt::unix::terminal_name(std::os::fd::BorrowedFd::borrow_raw(STDIN_FILENO))
                 .unwrap_or_default();
-        termname = getenv(c"TERM".as_ptr());
-        if termname.is_null() {
-            termname = c"".as_ptr();
-        }
+        let termname = nullable_cstr(getenv(c"TERM".as_ptr())).unwrap_or(c"");
         if 0 as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
             fatal(|out| out.write_all(b"pledge failed"));
         }
         if tiri_rt::unix::terminal_attributes(std::os::fd::BorrowedFd::borrow_raw(STDIN_FILENO))
             .is_ok()
-            && *termname as ::core::ffi::c_int != '\0' as i32
+            && !termname.is_empty()
         {
-            match tty_term_read_list(CStr::from_ptr(termname)) {
+            match tty_term_read_list(termname) {
                 Ok(read_caps) => caps = read_caps,
                 Err(cause) => {
                     fprintf(stderr, c"%s\n".as_ptr(), cause.as_ptr());
@@ -337,13 +330,7 @@ pub unsafe fn client_main(
             cfsetospeed(&mut tio, cfgetospeed(&saved_tio));
             crate::src::shared::terminal::set_attributes(STDIN_FILENO, TCSANOW, &tio);
         }
-        client_send_identify(
-            &ttynam,
-            CStr::from_ptr(termname),
-            &caps,
-            CStr::from_ptr(cwd),
-            feat,
-        );
+        client_send_identify(&ttynam, termname, &caps, &cwd, feat);
         if msg as ::core::ffi::c_uint == MSG_COMMAND as ::core::ffi::c_int as ::core::ffi::c_uint {
             size = 0 as size_t;
             i = 0 as ::core::ffi::c_int;
@@ -394,7 +381,7 @@ pub unsafe fn client_main(
             let (shell, command) = client_exec_payload
                 .as_ref()
                 .expect("MSG_EXEC requires a stored shell and command");
-            client_exec(shell, Some(command));
+            client_exec(shell, command);
         }
         if client_attached != 0 {
             if client_exitreason as ::core::ffi::c_uint
@@ -510,13 +497,11 @@ unsafe fn client_send_identify(
     }
     proc_send(client_peer, MSG_IDENTIFY_DONE, None, &[]);
 }
-unsafe fn client_exec(shell: &CStr, shellcmd: Option<&CStr>) -> ! {
+unsafe fn client_exec(shell: &CStr, shellcmd: &CStr) -> ! {
     log_debug(format_args!(
         "shell {}, command {}",
         log_cstr(shell),
-        log_cstr(CStr::from_ptr(
-            shellcmd.map_or(std::ptr::null(), std::ffi::CStr::as_ptr)
-        ))
+        log_cstr(shellcmd)
     ));
     let argv0 = shell_argv0_cstring(shell, client_flags & CLIENT_LOGIN as uint64_t != 0);
     setenv(c"SHELL".as_ptr(), shell.as_ptr(), 1 as ::core::ffi::c_int);
@@ -529,7 +514,7 @@ unsafe fn client_exec(shell: &CStr, shellcmd: Option<&CStr>) -> ! {
         shell.as_ptr(),
         argv0.as_ptr(),
         c"-c".as_ptr(),
-        shellcmd.map_or(std::ptr::null(), std::ffi::CStr::as_ptr),
+        shellcmd.as_ptr(),
         NULL as *mut ::core::ffi::c_char,
     );
     fatal(|out| out.write_all(b"execl failed"));
@@ -698,13 +683,13 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
             ));
         }
         MSG_SHELL => {
-            if datalen == 0 as ssize_t
-                || *data.offset((datalen - 1 as ssize_t) as isize) as ::core::ffi::c_int
-                    != '\0' as i32
-            {
+            let Some(shell) = imsg_string(imsg) else {
                 fatalx(|out| out.write_all(b"bad MSG_SHELL string"));
-            }
-            client_exec(CStr::from_ptr(data), shell_command.as_deref());
+            };
+            let Some(command) = shell_command.as_deref() else {
+                fatalx(|out| out.write_all(b"unexpected MSG_SHELL"));
+            };
+            client_exec(shell, command);
         }
         MSG_DETACH | MSG_DETACHKILL => {
             proc_send(client_peer, MSG_EXITING, None, &[]);
@@ -764,13 +749,10 @@ unsafe fn client_dispatch_attached(imsg: &mut imsg) {
             ));
         }
         MSG_DETACH | MSG_DETACHKILL => {
-            if datalen == 0 as ssize_t
-                || *data.offset((datalen - 1 as ssize_t) as isize) as ::core::ffi::c_int
-                    != '\0' as i32
-            {
+            let Some(session) = imsg_string(imsg) else {
                 fatalx(|out| out.write_all(b"bad MSG_DETACH string"));
-            }
-            client_exitsession = Some(std::ffi::CStr::from_ptr(data).to_owned());
+            };
+            client_exitsession = Some(session.to_owned());
             client_exittype = imsg.hdr.type_0;
             if imsg.hdr.type_0 == MSG_DETACHKILL {
                 client_exitreason = CLIENT_EXIT_DETACHED_HUP;
@@ -780,16 +762,14 @@ unsafe fn client_dispatch_attached(imsg: &mut imsg) {
             proc_send(client_peer, MSG_EXITING, None, &[]);
         }
         MSG_EXEC => {
-            if datalen == 0 as ssize_t
-                || *data.offset((datalen - 1 as ssize_t) as isize) as ::core::ffi::c_int
-                    != '\0' as i32
-                || strlen(data).wrapping_add(1 as size_t) == datalen as size_t
-            {
+            let Some(command) = imsg_string(imsg)
+                .filter(|command| command.to_bytes_with_nul().len() != imsg.data.len())
+            else {
                 fatalx(|out| out.write_all(b"bad MSG_EXEC string"));
-            }
-            let command = std::ffi::CStr::from_ptr(data).to_owned();
-            let shell = std::ffi::CStr::from_ptr(data.add(strlen(data) + 1)).to_owned();
-            client_exec_payload = Some((shell, command));
+            };
+            let shell = CStr::from_bytes_until_nul(&imsg.data[command.to_bytes_with_nul().len()..])
+                .expect("the payload ends in a NUL");
+            client_exec_payload = Some((shell.to_owned(), command.to_owned()));
             client_exittype = imsg.hdr.type_0;
             proc_send(client_peer, MSG_EXITING, None, &[]);
         }

@@ -813,9 +813,9 @@ pub unsafe fn popup_present(client: &ClientRef) -> i32 {
 }
 pub unsafe fn popup_modify(
     c_owner: &ClientRef,
-    mut title: *const ::core::ffi::c_char,
-    mut style: *const ::core::ffi::c_char,
-    mut border_style: *const ::core::ffi::c_char,
+    title: Option<&CStr>,
+    style: Option<&CStr>,
+    border_style: Option<&CStr>,
     mut lines: box_lines,
     mut flags: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
@@ -855,12 +855,12 @@ pub unsafe fn popup_modify(
         default_type: STYLE_DEFAULT_BASE,
         link: 0,
     };
-    if !title.is_null() {
-        let updated = popup_optional_string(Some(CStr::from_ptr(title)));
+    if title.is_some() {
+        let updated = popup_optional_string(title);
         (*pd).title = updated;
     }
-    if !border_style.is_null() {
-        let updated = popup_optional_string(Some(CStr::from_ptr(border_style)));
+    if border_style.is_some() {
+        let updated = popup_optional_string(border_style);
         (*pd).border_style = updated;
 
         style_set(&raw mut sytmp, &(*pd).border_cell);
@@ -874,8 +874,8 @@ pub unsafe fn popup_modify(
             (*pd).border_cell.bg = sytmp.gc.bg;
         }
     }
-    if !style.is_null() {
-        let updated = popup_optional_string(Some(CStr::from_ptr(style)));
+    if style.is_some() {
+        let updated = popup_optional_string(style);
         (*pd).style = updated;
 
         style_set(&raw mut sytmp, &(*pd).defaults);
@@ -930,14 +930,14 @@ pub(crate) unsafe fn popup_display(
     mut sx: u_int,
     mut sy: u_int,
     env: Option<&environ>,
-    mut shellcmd: *const ::core::ffi::c_char,
+    shellcmd: Option<&CStr>,
     argv: &[CString],
-    mut cwd: *const ::core::ffi::c_char,
-    mut title: *const ::core::ffi::c_char,
+    cwd: Option<&CStr>,
+    title: Option<&CStr>,
     c_owner: &ClientRef,
     s_owner: Option<&SessionRef>,
-    mut style: *const ::core::ffi::c_char,
-    mut border_style: *const ::core::ffi::c_char,
+    style: Option<&CStr>,
+    border_style: Option<&CStr>,
 ) -> ::core::ffi::c_int {
     let mut jx: u_int = 0;
     let mut jy: u_int = 0;
@@ -1004,10 +1004,9 @@ pub(crate) unsafe fn popup_display(
         return -(1 as ::core::ffi::c_int);
     }
     let mut data = Box::new(popup_data::empty());
-    data.title = popup_optional_string((!title.is_null()).then(|| CStr::from_ptr(title)));
-    data.style = popup_optional_string((!style.is_null()).then(|| CStr::from_ptr(style)));
-    data.border_style =
-        popup_optional_string((!border_style.is_null()).then(|| CStr::from_ptr(border_style)));
+    data.title = popup_optional_string(title);
+    data.style = popup_optional_string(style);
+    data.border_style = popup_optional_string(border_style);
     let owner = refbox::RefBox::new(PopupState {
         data: UnsafeCell::new(data),
     });
@@ -1029,7 +1028,7 @@ pub(crate) unsafe fn popup_display(
         None,
         |read| read(&mut window.borrow_options_mut()),
     );
-    if !border_style.is_null() {
+    if border_style.is_some() {
         style_set(&raw mut sytmp, &grid_default_cell);
         if style_parse(
             &raw mut sytmp,
@@ -1062,7 +1061,7 @@ pub(crate) unsafe fn popup_display(
         read(&mut window.borrow_options_mut())
     });
     drop(window);
-    if !style.is_null() {
+    if style.is_some() {
         style_set(&raw mut sytmp, &grid_default_cell);
         if style_parse(
             &raw mut sytmp,
@@ -1086,11 +1085,11 @@ pub(crate) unsafe fn popup_display(
     let update = PopupHandle(owner.downgrade());
     let complete = PopupHandle(owner.downgrade());
     (*pd).job = job_run(
-        (!shellcmd.is_null()).then(|| CStr::from_ptr(shellcmd)),
+        shellcmd,
         argv,
         env,
         s_owner,
-        (!cwd.is_null()).then(|| CStr::from_ptr(cwd)),
+        cwd,
         job_update_callback(move |job| unsafe {
             if let Some(popup) = update.upgrade() {
                 popup_job_update_cb(job, &popup);

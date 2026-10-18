@@ -6,7 +6,6 @@ use crate::src::events_payload::{
     event_payload_add_formats, event_payload_item_name, event_payload_item_print_owned,
     event_payload_items,
 };
-use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_create_with_client, format_expand_cstring, format_true};
 use crate::src::hooks::hooks_valid_event_name;
@@ -20,7 +19,6 @@ use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::events::{event_payload, events_callback, EventSinkId};
 use crate::src::shared::format::format_tree;
 use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
-use libc::strcmp;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::Weak;
@@ -140,8 +138,7 @@ fn wait_event_items_position(
 }
 
 unsafe fn cmd_wait_for_add(name: &CStr) -> *mut wait_channel {
-    let mut name: *const ::core::ffi::c_char = name.as_ptr();
-    let name = CStr::from_ptr(name).to_owned();
+    let name = name.to_owned();
     let mut owner = Box::new(wait_channel {
         name,
         locked: 0,
@@ -197,13 +194,12 @@ unsafe fn cmd_wait_for_exec(
 ) -> cmd_retval {
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut name: *const ::core::ffi::c_char =
-        args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
+    let mut name: &CStr = args_string(&mut *(args), 0 as u_int).expect("argument is present");
     let mut wc: *mut wait_channel = ::core::ptr::null_mut::<wait_channel>();
     if args_has(&*args, 'E' as i32 as u_char) != 0 {
-        return cmd_wait_for_event(item_handle, CStr::from_ptr(name), args);
+        return cmd_wait_for_event(item_handle, name, args);
     }
-    wc = wait_channels_find(&mut *wait_channels_ptr(), CStr::from_ptr(name));
+    wc = wait_channels_find(&mut *wait_channels_ptr(), name);
     if args_has(&*args, 'l' as i32 as u_char) != 0 {
         return cmd_wait_for_list(item_handle, wc);
     }
@@ -211,30 +207,29 @@ unsafe fn cmd_wait_for_exec(
         return cmd_wait_for_wake(args, wc);
     }
     if args_has(&*args, 'S' as i32 as u_char) != 0 {
-        return cmd_wait_for_signal(CStr::from_ptr(name), wc);
+        return cmd_wait_for_signal(name, wc);
     }
     if args_has(&*args, 'L' as i32 as u_char) != 0 {
-        return cmd_wait_for_lock(item_handle, CStr::from_ptr(name), wc);
+        return cmd_wait_for_lock(item_handle, name, wc);
     }
     if args_has(&*args, 'U' as i32 as u_char) != 0 {
-        return cmd_wait_for_unlock(item_handle, CStr::from_ptr(name), wc);
+        return cmd_wait_for_unlock(item_handle, name, wc);
     }
-    cmd_wait_for_wait(item_handle, CStr::from_ptr(name), wc)
+    cmd_wait_for_wait(item_handle, name, wc)
 }
 /// Print the payload to the waiting item's client, as cmdq_print would.
 unsafe fn cmd_wait_for_event_print(client: Option<&ClientRef>, ep: &event_payload) {
-    let mut key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     for epi in event_payload_items(ep) {
-        key = event_payload_item_name(epi).as_ptr();
-        if *key as ::core::ffi::c_int != '_' as i32 {
+        let key = event_payload_item_name(epi);
+        if key.to_bytes().first() != Some(&b'_') {
             let value = event_payload_item_print_owned(epi);
             let mut evb = evbuffer_new();
             evbuffer_add_formatted(&mut evb, |out| {
-                write_cstr(out, nullable_cstr(key))?;
+                write_cstr(out, key)?;
                 out.write_all(b"=")?;
                 write_cstr(
                     out,
-                    nullable_cstr(value.as_ptr().cast::<::core::ffi::c_char>()),
+                    CStr::from_bytes_until_nul(&value).expect("payload value is NUL terminated"),
                 )
             });
             ClientRef::print_to(client, true, &mut evb);
@@ -276,11 +271,7 @@ unsafe fn cmd_wait_for_event_cb(
         );
         drop(item_owner);
         let ft: *mut format_tree = &raw mut *ft_owner;
-        event_payload_add_formats(
-            ep,
-            ft,
-            nullable_cstr(::core::ptr::null::<::core::ffi::c_char>()),
-        );
+        event_payload_add_formats(ep, ft, None);
         let expanded = format_expand_cstring(ft, filter.as_ptr().cast_mut());
         let flag = format_true(expanded.as_ptr());
         drop(ft_owner);
@@ -315,12 +306,11 @@ unsafe fn cmd_wait_for_event(
     mut args: *mut args,
 ) -> cmd_retval {
     let item = item_handle.get();
-    let mut filter: *const ::core::ffi::c_char =
-        args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    let mut filter: Option<&CStr> = args_get(&*(args), 'F' as i32 as u_char);
     if hooks_valid_event_name(name) == 0 {
         cmdq_error(item_handle, |out| {
             out.write_all(b"invalid event: ")?;
-            write_cstr(out, nullable_cstr(name.as_ptr()))
+            write_cstr(out, name)
         });
         return CMD_RETURN_ERROR;
     }
@@ -348,11 +338,7 @@ unsafe fn cmd_wait_for_event(
             waiter,
             sink,
             name: name.to_owned(),
-            filter: if filter.is_null() {
-                None
-            } else {
-                Some(CStr::from_ptr(filter).to_owned())
-            },
+            filter: filter.map(CStr::to_owned),
             verbose: args_has(&*args, 'v' as i32 as u_char),
         });
     retval
@@ -380,16 +366,12 @@ unsafe fn cmd_wait_for_event_wake(
     mut args: *mut args,
 ) -> cmd_retval {
     cmd_wait_for_event_prune_expired(&mut *wait_event_items_ptr());
-    let mut client_name: *const ::core::ffi::c_char =
-        args_get(&*(args), 'w' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    let mut client_name: &CStr = args_get(&*(args), 'w' as i32 as u_char).expect("-w has a value");
     let mut index = 0;
     while index < wait_event_items_ptr().as_ref().unwrap().len() {
         let wei = &wait_event_items_ptr().as_ref().unwrap()[index];
-        if !(strcmp((wei.name).as_ptr().cast_mut(), name.as_ptr()) != 0 as ::core::ffi::c_int)
-            && !(strcmp(
-                cmd_wait_for_waiter_client_name(&wei.waiter).as_ptr(),
-                client_name,
-            ) != 0 as ::core::ffi::c_int)
+        if wei.name.as_c_str() == name
+            && cmd_wait_for_waiter_client_name(&wei.waiter).as_c_str() == client_name
         {
             wait_event_items_ptr()
                 .as_mut()
@@ -402,7 +384,7 @@ unsafe fn cmd_wait_for_event_wake(
     }
     cmdq_error(item_handle, |out| {
         out.write_all(b"waiter ")?;
-        write_cstr(out, nullable_cstr(client_name))?;
+        write_cstr(out, client_name)?;
         out.write_all(b" not found")
     });
     CMD_RETURN_ERROR
@@ -428,15 +410,14 @@ unsafe fn cmd_wait_for_list(
     CMD_RETURN_NORMAL
 }
 unsafe fn cmd_wait_for_wake(mut args: *mut args, mut wc: *mut wait_channel) -> cmd_retval {
-    let mut client_name: *const ::core::ffi::c_char =
-        args_get(&*(args), 'w' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    let mut client_name: &CStr = args_get(&*(args), 'w' as i32 as u_char).expect("-w has a value");
     if !wc.is_null() {
         cmd_wait_for_prune_expired(wc);
         for list in [wait_channel_waiters(wc), wait_channel_lockers(wc)] {
             let mut index = 0;
             while index < (*list).len() {
                 let name = cmd_wait_for_waiter_client_name(&(&*list)[index]);
-                if strcmp(name.as_ptr(), client_name) != 0 as ::core::ffi::c_int {
+                if name.as_c_str() != client_name {
                     index += 1;
                 } else {
                     (&mut *list).remove(index).resume();
@@ -531,7 +512,7 @@ unsafe fn cmd_wait_for_unlock(
     if wc.is_null() || (*wc).locked == 0 {
         cmdq_error(item_handle, |out| {
             out.write_all(b"channel ")?;
-            write_cstr(out, nullable_cstr(name.as_ptr()))?;
+            write_cstr(out, name)?;
             out.write_all(b" not locked")
         });
         return CMD_RETURN_ERROR;

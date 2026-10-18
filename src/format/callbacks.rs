@@ -11,31 +11,26 @@ use std::ffi::{CStr, CString};
 use std::rc::Rc;
 
 unsafe fn format_cb_host(_ft: *mut format_tree) -> Option<CString> {
-    let mut host: [::core::ffi::c_char; 65] = [0; 65];
-    if gethostname(
-        &raw mut host as *mut ::core::ffi::c_char,
-        ::core::mem::size_of::<[::core::ffi::c_char; 65]>() as size_t,
-    ) != 0 as ::core::ffi::c_int
-    {
+    let mut host: [u8; 65] = [0; 65];
+    if gethostname(host.as_mut_ptr().cast(), host.len()) != 0 as ::core::ffi::c_int {
         return Some(c"".to_owned());
     }
-    Some(CStr::from_ptr(&raw mut host as *mut ::core::ffi::c_char).to_owned())
+    Some(
+        CStr::from_bytes_until_nul(&host)
+            .expect("hostname is terminated")
+            .to_owned(),
+    )
 }
 unsafe fn format_cb_host_short(_ft: *mut format_tree) -> Option<CString> {
-    let mut host: [::core::ffi::c_char; 65] = [0; 65];
-    let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    if gethostname(
-        &raw mut host as *mut ::core::ffi::c_char,
-        ::core::mem::size_of::<[::core::ffi::c_char; 65]>() as size_t,
-    ) != 0 as ::core::ffi::c_int
-    {
+    let mut host: [u8; 65] = [0; 65];
+    if gethostname(host.as_mut_ptr().cast(), host.len()) != 0 as ::core::ffi::c_int {
         return Some(c"".to_owned());
     }
-    cp = strchr(&raw mut host as *mut ::core::ffi::c_char, '.' as i32);
-    if !cp.is_null() {
-        *cp = '\0' as i32 as ::core::ffi::c_char;
-    }
-    Some(CStr::from_ptr(&raw mut host as *mut ::core::ffi::c_char).to_owned())
+    let host = CStr::from_bytes_until_nul(&host)
+        .expect("hostname is terminated")
+        .to_bytes();
+    let short = host.split(|&byte| byte == b'.').next().unwrap_or(host);
+    Some(CString::new(short).expect("hostname contains no NUL"))
 }
 unsafe fn format_cb_pid(_ft: *mut format_tree) -> Option<CString> {
     let mut value = None;
@@ -426,7 +421,11 @@ unsafe fn format_cb_mouse_status_range(mut ft: *mut format_tree) -> Option<CStri
             return Some(c"session".to_owned());
         }
         6 => {
-            return Some(CStr::from_ptr(sr.string.as_ptr()).to_owned());
+            return Some(
+                CStr::from_bytes_until_nul(&sr.string.map(|c| c as u8))
+                    .expect("range string is terminated")
+                    .to_owned(),
+            );
         }
         7 => {
             return Some(c"control".to_owned());

@@ -5,7 +5,6 @@ use crate::src::arguments::{
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::parse::{cmd_parse_from_arguments, cmd_parse_from_string};
 use crate::src::cmd::queue::cmdq_error;
-use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::key_bindings::key_bindings_add;
 use crate::src::key_string::key_string_parse_cstr;
@@ -54,9 +53,8 @@ unsafe fn cmd_bind_key_exec(
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut key: key_code = 0;
-    let mut tablename: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut note: *const ::core::ffi::c_char =
-        args_get(&*(args), 'N' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    let mut tablename: &CStr = c"";
+    let mut note: Option<&CStr> = args_get(&*(args), 'N' as i32 as u_char);
     let mut pr: cmd_parse_result = cmd_parse_result::empty();
     let mut repeat: ::core::ffi::c_int = 0;
     let mut count: u_int = args_count(&*args);
@@ -68,50 +66,25 @@ unsafe fn cmd_bind_key_exec(
     {
         cmdq_error(item_handle, |out| {
             out.write_all(b"unknown key: ")?;
-            write_cstr(
-                out,
-                nullable_cstr(
-                    args_string(&mut *(args), 0 as u_int)
-                        .map_or(std::ptr::null(), |value| value.as_ptr()),
-                ),
-            )
+            write_cstr(out, args_string(&mut *(args), 0 as u_int))
         });
         return CMD_RETURN_ERROR;
     }
     if args_has(&*args, 'T' as i32 as u_char) != 0 {
-        tablename = args_get(&*(args), 'T' as i32 as u_char)
-            .map_or(std::ptr::null(), |value| value.as_ptr());
+        tablename = args_get(&*(args), 'T' as i32 as u_char).expect("-T has a value");
     } else if args_has(&*args, 'n' as i32 as u_char) != 0 {
-        tablename = c"root".as_ptr();
+        tablename = c"root";
     } else {
-        tablename = c"prefix".as_ptr();
+        tablename = c"prefix";
     }
     repeat = args_has(&*args, 'r' as i32 as u_char);
     if count == 1 as u_int {
-        key_bindings_add(
-            CStr::from_ptr(tablename),
-            key,
-            {
-                let note: *const ::core::ffi::c_char = note;
-                (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note))
-            },
-            repeat,
-            None,
-        );
+        key_bindings_add(tablename, key, note, repeat, None);
         return CMD_RETURN_NORMAL;
     }
     if count == 2 {
         if let Some(commands) = (&(*args).values)[1].as_commands() {
-            key_bindings_add(
-                CStr::from_ptr(tablename),
-                key,
-                {
-                    let note: *const ::core::ffi::c_char = note;
-                    (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note))
-                },
-                repeat,
-                Some(commands.clone()),
-            );
+            key_bindings_add(tablename, key, note, repeat, Some(commands.clone()));
             return CMD_RETURN_NORMAL;
         }
     }
@@ -130,15 +103,6 @@ unsafe fn cmd_bind_key_exec(
         cmdq_error(item_handle, |out| write_cstr(out, pr.error.as_deref()));
         return CMD_RETURN_ERROR;
     }
-    key_bindings_add(
-        CStr::from_ptr(tablename),
-        key,
-        {
-            let note: *const ::core::ffi::c_char = note;
-            (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note))
-        },
-        repeat,
-        pr.take_cmdlist(),
-    );
+    key_bindings_add(tablename, key, note, repeat, pr.take_cmdlist());
     CMD_RETURN_NORMAL
 }

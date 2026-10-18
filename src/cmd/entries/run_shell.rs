@@ -425,13 +425,21 @@ unsafe fn cmd_run_shell_callback(
     let mut size: size_t = 0;
     let mut retcode: ::core::ffi::c_int = 0;
     while let Some(line) = evbuffer_readln(&mut event) {
-        cmd_run_shell_print(cdata, item, CStr::from_ptr(line.as_ptr().cast()));
+        cmd_run_shell_print(
+            cdata,
+            item,
+            CStr::from_bytes_until_nul(&line).expect("read line is NUL terminated"),
+        );
     }
     size = evbuffer_get_length(&event);
     if size != 0 as size_t {
         let mut partial_line = evbuffer_pullup(&mut event, -1).unwrap_or_default().to_vec();
         partial_line.push(0);
-        cmd_run_shell_print(cdata, item, CStr::from_ptr(partial_line.as_ptr().cast()));
+        cmd_run_shell_print(
+            cdata,
+            item,
+            CStr::from_bytes_until_nul(&partial_line).expect("partial line is NUL terminated"),
+        );
     }
     if let Some(code) = completion.status.code() {
         retcode = code;

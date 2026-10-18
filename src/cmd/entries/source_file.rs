@@ -13,7 +13,7 @@ use crate::src::format::format_single_from_target_cstring;
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::reactor::evbuffer_pullup;
 use crate::src::server_client::Client as _;
-use libc::{strcmp, strerror};
+use libc::strerror;
 
 use crate::src::shared::abi::__size_t;
 use crate::src::shared::abi::*;
@@ -179,10 +179,7 @@ unsafe fn cmd_source_file_done(
     mut read: FileOutcome,
 ) {
     let item = item_owner.get();
-    let path = read
-        .path
-        .as_deref()
-        .map_or(::core::ptr::null(), CStr::as_ptr);
+    let path = read.path.as_deref();
     let error = read.error;
     let bdata: &[u8] = evbuffer_pullup(&mut read.buffer, -1).map_or(&[], |bytes| bytes);
     let bsize = bdata.len();
@@ -192,7 +189,7 @@ unsafe fn cmd_source_file_done(
         cmdq_error(item_owner, |out| {
             write_cstr(out, nullable_cstr(strerror(error)))?;
             out.write_all(b": ")?;
-            write_cstr(out, nullable_cstr(path))
+            write_cstr(out, path)
         });
     } else if bsize != 0 {
         let after_owner = cdata
@@ -201,7 +198,7 @@ unsafe fn cmd_source_file_done(
             .unwrap_or_else(|| Rc::clone(item_owner));
         if load_cfg_from_buffer(
             bdata,
-            CStr::from_ptr(path),
+            path.expect("file read sets the path"),
             cdata.client.as_ref(),
             Some(&after_owner),
             target,
@@ -243,7 +240,6 @@ unsafe fn cmd_source_file_exec(
     let c_owner = cmdq_get_client((item).as_ref());
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut retval: cmd_retval = CMD_RETURN_NORMAL;
-    let mut path: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut error: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut parse_flags: ::core::ffi::c_int = 0;
     let mut i: u_int = 0;
@@ -296,23 +292,26 @@ unsafe fn cmd_source_file_exec(
     let cwd = cmd_source_file_quote_for_glob(&cwd_owner);
     i = 0 as u_int;
     while i < args_count(&*args) {
-        path = args_string(&mut *(args), i).map_or(std::ptr::null(), |value| value.as_ptr());
+        let mut path: &CStr = args_string(&mut *(args), i).expect("argument is present");
         let expanded = if args_has(&*args, 'F' as i32 as u_char) != 0 {
-            Some(format_single_from_target_cstring(item_handle, path))
+            Some(format_single_from_target_cstring(
+                item_handle,
+                path.as_ptr(),
+            ))
         } else {
             None
         };
-        if let Some(expanded) = expanded.as_ref() {
-            path = expanded.as_ptr();
+        if let Some(expanded) = expanded.as_deref() {
+            path = expanded;
         }
-        if strcmp(path, c"-".as_ptr()) == 0 as ::core::ffi::c_int {
+        if path == c"-" {
             cmd_source_file_add(&mut cdata, c"-");
         } else {
-            let pattern = if *path as ::core::ffi::c_int == '/' as i32 {
-                CStr::from_ptr(path).to_owned()
+            let pattern = if path.to_bytes().first() == Some(&b'/') {
+                path.to_owned()
             } else {
                 let cwd_bytes = cwd.to_bytes();
-                let path_bytes = CStr::from_ptr(path).to_bytes();
+                let path_bytes = path.to_bytes();
                 let mut bytes = Vec::with_capacity(cwd_bytes.len() + 1 + path_bytes.len());
                 bytes.extend_from_slice(cwd_bytes);
                 bytes.push(b'/');
@@ -337,7 +336,7 @@ unsafe fn cmd_source_file_exec(
                     cmdq_error(item_handle, |out| {
                         write_cstr(out, nullable_cstr(error))?;
                         out.write_all(b": ")?;
-                        write_cstr(out, nullable_cstr(path))
+                        write_cstr(out, path)
                     });
                     retval = CMD_RETURN_ERROR;
                 }

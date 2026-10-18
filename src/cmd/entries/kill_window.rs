@@ -78,9 +78,8 @@ unsafe fn cmd_kill_window_exec(
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut s: Option<SessionRef> = (*target).session_handle();
-    let mut filter: *const ::core::ffi::c_char =
-        args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if !filter.is_null() && args_has(&*args, 'a' as i32 as u_char) == 0 {
+    let mut filter: Option<&CStr> = args_get(&*(args), 'f' as i32 as u_char);
+    if filter.is_some() && args_has(&*args, 'a' as i32 as u_char) == 0 {
         cmdq_error(item_handle, |out| out.write_all(b"-f only valid with -a"));
         return CMD_RETURN_ERROR;
     }
@@ -105,7 +104,6 @@ unsafe fn cmd_kill_window_exec(
         return CMD_RETURN_NORMAL;
     }
     if args_has(&*args, 'a' as i32 as u_char) != 0 {
-        let filter = (!filter.is_null()).then(|| CStr::from_ptr(filter));
         return cmd_kill_window_all(item_handle, filter);
     }
     server_kill_window(

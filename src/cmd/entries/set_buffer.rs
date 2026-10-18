@@ -71,8 +71,7 @@ unsafe fn cmd_set_buffer_exec(
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: Option<ClientRef> = tc_owner.clone();
-    let name = args_get(&*(args), b'b').map_or(std::ptr::null(), |value| value.as_ptr());
-    let mut bufname = (!name.is_null()).then(|| CStr::from_ptr(name).to_owned());
+    let mut bufname = args_get(&*(args), b'b').map(CStr::to_owned);
     let mut pb = bufname.as_deref().and_then(paste_get_name);
     let mut cause = None;
     let deleting = std::ptr::eq(

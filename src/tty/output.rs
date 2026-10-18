@@ -50,13 +50,9 @@ pub unsafe fn tty_putcode_iii(
 }
 
 pub unsafe fn tty_putcode_s(client: &ClientRef, a: Option<&CStr>) {
-    let a: *const ::core::ffi::c_char = a.map_or(std::ptr::null(), CStr::as_ptr);
     let mut code: tty_code_code = TTYC_CS;
-    if !a.is_null() {
-        tty_puts(
-            client,
-            &tty_term_string_s(terminal_term(client), code, CStr::from_ptr(a)),
-        );
+    if let Some(a) = a {
+        tty_puts(client, &tty_term_string_s(terminal_term(client), code, a));
     }
 }
 
@@ -66,17 +62,10 @@ pub unsafe fn tty_putcode_ss(
     a: Option<&CStr>,
     b: Option<&CStr>,
 ) {
-    let b: *const ::core::ffi::c_char = b.map_or(std::ptr::null(), CStr::as_ptr);
-    let a: *const ::core::ffi::c_char = a.map_or(std::ptr::null(), CStr::as_ptr);
-    if !a.is_null() && !b.is_null() {
+    if let (Some(a), Some(b)) = (a, b) {
         tty_puts(
             client,
-            &tty_term_string_ss(
-                terminal_term(client),
-                code,
-                CStr::from_ptr(a),
-                CStr::from_ptr(b),
-            ),
+            &tty_term_string_ss(terminal_term(client), code, a, b),
         );
     }
 }

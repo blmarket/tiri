@@ -10,12 +10,11 @@ use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::environ::{environ_create, environ_put, environ_update};
 use crate::src::events::events_fire_session;
-use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
 use crate::src::options::{options_get_number, options_get_string, options_set_string};
 use crate::src::server_client::Client as _;
-use libc::{sscanf, strcmp};
+use libc::sscanf;
 
 use crate::src::options::options;
 use crate::src::session::Session;
@@ -115,14 +114,9 @@ unsafe fn cmd_new_session_exec(
     let mut tio: termios = unsafe { ::core::mem::zeroed() };
     let mut tiop: *mut termios = ::core::ptr::null_mut::<termios>();
     let mut sg = crate::src::shared::session::SessionGroupWeak::new();
-    let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut group: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut tmp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let mut group: Option<&CStr> = None;
     let mut cause: Option<std::ffi::CString> = None;
-    let mut cwd: *const ::core::ffi::c_char = ::core::ptr::null();
-    let mut formatted_cwd: Option<CString> = None;
-    let mut wname: *const ::core::ffi::c_char = ::core::ptr::null();
-    let mut sname: *const ::core::ffi::c_char = ::core::ptr::null();
+    let mut cwd: Option<CString> = None;
     let mut wname_owned: Option<CString> = None;
     let mut sname_owned: Option<CString> = None;
     let mut prefix: Option<CString> = None;
@@ -171,11 +165,10 @@ unsafe fn cmd_new_session_exec(
         });
         return CMD_RETURN_ERROR;
     }
-    tmp = args_get(&*(args), 'n' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if !tmp.is_null() {
+    if let Some(tmp) = args_get(&*(args), 'n' as i32 as u_char) {
         let ename = format_single_cstring(
             Some(item_handle),
-            tmp,
+            tmp.as_ptr(),
             c.as_ref(),
             None,
             (refbox::Weak::new()).clone(),
@@ -191,16 +184,11 @@ unsafe fn cmd_new_session_exec(
         wname_owned = Some(
             clean_name_cstring(ename.as_c_str(), 0).expect("check_name validated the window name"),
         );
-        wname = wname_owned
-            .as_ref()
-            .expect("window name was cleaned")
-            .as_ptr();
     }
-    tmp = args_get(&*(args), 's' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if !tmp.is_null() {
+    if let Some(tmp) = args_get(&*(args), 's' as i32 as u_char) {
         let ename = format_single_cstring(
             Some(item_handle),
-            tmp,
+            tmp.as_ptr(),
             c.as_ref(),
             None,
             (refbox::Weak::new()).clone(),
@@ -217,10 +205,6 @@ unsafe fn cmd_new_session_exec(
                 clean_name_cstring(ename.as_c_str(), 0)
                     .expect("check_name validated the session name"),
             );
-            sname = sname_owned
-                .as_ref()
-                .expect("session name was cleaned")
-                .as_ptr();
             current_block = 10043043949733653460;
         }
     } else {
@@ -228,8 +212,8 @@ unsafe fn cmd_new_session_exec(
     }
     if current_block == 10043043949733653460 {
         if args_has(&*args, 'A' as i32 as u_char) != 0 {
-            if !sname.is_null() {
-                as_0 = crate::src::session::sessions::find(std::ffi::CStr::from_ptr(sname));
+            if let Some(sname) = sname_owned.as_deref() {
+                as_0 = crate::src::session::sessions::find(sname);
             } else {
                 as_0 = (*target).session_handle();
             }
@@ -240,34 +224,28 @@ unsafe fn cmd_new_session_exec(
                     args_has(&*args, 'D' as i32 as u_char),
                     args_has(&*args, 'X' as i32 as u_char),
                     0 as ::core::ffi::c_int,
-                    nullable_cstr(
-                        args_get(&*(args), 'c' as i32 as u_char)
-                            .map_or(std::ptr::null(), |value| value.as_ptr()),
-                    ),
+                    args_get(&*(args), 'c' as i32 as u_char),
                     args_has(&*args, 'E' as i32 as u_char),
-                    nullable_cstr(
-                        args_get(&*(args), 'f' as i32 as u_char)
-                            .map_or(std::ptr::null(), |value| value.as_ptr()),
-                    ),
+                    args_get(&*(args), 'f' as i32 as u_char),
                 );
                 return retval;
             }
         }
-        if !sname.is_null()
-            && crate::src::session::sessions::find(std::ffi::CStr::from_ptr(sname)).is_some()
+        if sname_owned
+            .as_deref()
+            .is_some_and(|sname| crate::src::session::sessions::find(sname).is_some())
         {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"duplicate session: ")?;
-                write_cstr(out, nullable_cstr(sname))
+                write_cstr(out, sname_owned.as_deref())
             });
         } else {
-            group = args_get(&*(args), 't' as i32 as u_char)
-                .map_or(std::ptr::null(), |value| value.as_ptr());
-            if !group.is_null() {
+            group = args_get(&*(args), 't' as i32 as u_char);
+            if let Some(group) = group {
                 groupwith_owner = (*target).s.upgrade();
                 groupwith = groupwith_owner.clone();
                 if groupwith.is_none() {
-                    sg = session_groups::find(CStr::from_ptr(group));
+                    sg = session_groups::find(group);
                 } else {
                     sg = crate::src::session::session_groups::for_session(
                         &groupwith
@@ -281,15 +259,15 @@ unsafe fn cmd_new_session_exec(
                 } else if let Some(groupwith_value) = groupwith.as_ref() {
                     prefix = Some(groupwith_value.name().clone());
                     current_block = 6717214610478484138;
-                } else if !check_name(CStr::from_ptr(group)) {
+                } else if !check_name(group) {
                     cmdq_error(item_handle, |out| {
                         out.write_all(b"invalid session group name: ")?;
-                        write_cstr(out, nullable_cstr(group))
+                        write_cstr(out, group)
                     });
                     current_block = 5193972633326621385;
                 } else {
                     prefix = Some(utf8_stravis_cstring(
-                        CStr::from_ptr(group),
+                        group,
                         VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL,
                     ));
                     current_block = 6717214610478484138;
@@ -314,26 +292,17 @@ unsafe fn cmd_new_session_exec(
                     {
                         already_attached = 1 as ::core::ffi::c_int;
                     }
-                    tmp = args_get(&*(args), 'c' as i32 as u_char)
-                        .map_or(std::ptr::null(), |value| value.as_ptr());
-                    if !tmp.is_null() {
-                        formatted_cwd = Some(format_single_cstring(
+                    if let Some(tmp) = args_get(&*(args), 'c' as i32 as u_char) {
+                        cwd = Some(format_single_cstring(
                             Some(item_handle),
-                            tmp,
+                            tmp.as_ptr(),
                             c.as_ref(),
                             None,
                             (refbox::Weak::new()).clone(),
                             None,
                         ));
-                        cwd = formatted_cwd
-                            .as_ref()
-                            .expect("formatted cwd was just set")
-                            .as_ptr();
                     } else {
-                        formatted_cwd = ClientRef::working_directory(c.as_ref(), None);
-                        cwd = formatted_cwd
-                            .as_ref()
-                            .map_or(std::ptr::null(), |value| value.as_ptr());
+                        cwd = ClientRef::working_directory(c.as_ref(), None);
                     }
                     if detached == 0
                         && already_attached == 0
@@ -379,9 +348,9 @@ unsafe fn cmd_new_session_exec(
                                 5193972633326621385 => {}
                                 _ => {
                                     if args_has(&*args, 'x' as i32 as u_char) != 0 {
-                                        tmp = args_get(&*(args), 'x' as i32 as u_char)
-                                            .map_or(std::ptr::null(), |value| value.as_ptr());
-                                        if strcmp(tmp, c"-".as_ptr()) == 0 as ::core::ffi::c_int {
+                                        let tmp = args_get(&*(args), 'x' as i32 as u_char)
+                                            .expect("-x has a value");
+                                        if tmp == c"-" {
                                             if let Some(c_value) = c.as_ref() {
                                                 dsx = c_value.terminal_size().0;
                                             } else {
@@ -390,7 +359,7 @@ unsafe fn cmd_new_session_exec(
                                             current_block = 5873035170358615968;
                                         } else {
                                             let parsed = strtonum(
-                                                CStr::from_ptr(tmp),
+                                                tmp,
                                                 1 as ::core::ffi::c_longlong,
                                                 USHRT_MAX as ::core::ffi::c_longlong,
                                             );
@@ -413,13 +382,9 @@ unsafe fn cmd_new_session_exec(
                                         5193972633326621385 => {}
                                         _ => {
                                             if args_has(&*args, 'y' as i32 as u_char) != 0 {
-                                                tmp = args_get(&*(args), 'y' as i32 as u_char)
-                                                    .map_or(std::ptr::null(), |value| {
-                                                        value.as_ptr()
-                                                    });
-                                                if strcmp(tmp, c"-".as_ptr())
-                                                    == 0 as ::core::ffi::c_int
-                                                {
+                                                let tmp = args_get(&*(args), 'y' as i32 as u_char)
+                                                    .expect("-y has a value");
+                                                if tmp == c"-" {
                                                     if let Some(c_value) = c.as_ref() {
                                                         dsy = c_value.terminal_size().1;
                                                     } else {
@@ -428,7 +393,7 @@ unsafe fn cmd_new_session_exec(
                                                     current_block = 15855550149339537395;
                                                 } else {
                                                     let parsed = strtonum(
-                                                        CStr::from_ptr(tmp),
+                                                        tmp,
                                                         1 as ::core::ffi::c_longlong,
                                                         USHRT_MAX as ::core::ffi::c_longlong,
                                                     );
@@ -476,9 +441,8 @@ unsafe fn cmd_new_session_exec(
                                                                     c"default-size",
                                                                 )
                                                             });
-                                                        tmp = default_size.as_ptr();
                                                         if sscanf(
-                                                            tmp,
+                                                            default_size.as_ptr(),
                                                             c"%ux%u".as_ptr(),
                                                             &raw mut sx,
                                                             &raw mut sy,
@@ -570,8 +534,7 @@ unsafe fn cmd_new_session_exec(
                                                             0 as ::core::ffi::c_int,
                                                         );
                                                     }
-                                                    let session_owner = crate::src::shared::session::SessionRef::create(prefix.as_deref(), (!sname.is_null())
-                                                            .then(|| CStr::from_ptr(sname)), CStr::from_ptr(cwd), env.take()
+                                                    let session_owner = crate::src::shared::session::SessionRef::create(prefix.as_deref(), sname_owned.as_deref(), cwd.as_deref().expect("client working directory is set at identify"), env.take()
                                                             .expect("new session environment"), oo.take(), tiop.as_ref());
                                                     s = Some(session_owner.clone());
                                                     sc.item = std::rc::Rc::downgrade(item_handle);
@@ -582,8 +545,7 @@ unsafe fn cmd_new_session_exec(
                                                             std::rc::Rc::downgrade,
                                                         );
                                                     }
-                                                    sc.name = (!wname.is_null())
-                                                        .then(|| CStr::from_ptr(wname).to_owned());
+                                                    sc.name = wname_owned.clone();
                                                     argv_owner = args_to_vector(&*args);
                                                     sc.argv = argv_owner;
                                                     sc.idx = -(1 as ::core::ffi::c_int);
@@ -595,9 +557,7 @@ unsafe fn cmd_new_session_exec(
                                                     {
                                                         s.clone().expect("live session").destroy(
                                                             (0 as ::core::ffi::c_int) != 0,
-                                                            std::ffi::CStr::from_ptr(
-                                                                c"cmd_new_session_exec".as_ptr(),
-                                                            ),
+                                                            c"cmd_new_session_exec",
                                                         );
                                                         cmdq_error(item_handle, |out| {
                                                             out.write_all(
@@ -606,25 +566,20 @@ unsafe fn cmd_new_session_exec(
                                                             write_cstr(out, cause.as_deref())
                                                         });
                                                     } else {
-                                                        if !group.is_null() {
+                                                        if let Some(group) = group {
                                                             if !sg.is_alive() {
                                                                 if let Some(groupwith_value) =
                                                                     groupwith.as_ref()
                                                                 {
                                                                     sg = session_groups::find_or_create(
-                                                                        CStr::from_ptr(
-                                                                            (groupwith_value
-                                                                                .name())
-                                                                            .as_ptr()
-                                                                            .cast_mut(),
-                                                                        ),
+                                                                        groupwith_value.name().as_c_str(),
                                                                     );
                                                                     session_group_add(
                                                                         &sg, groupwith_owner.as_ref().expect("retained group session"),
                                                                     );
                                                                 } else {
                                                                     sg = session_groups::find_or_create(
-                                                                        CStr::from_ptr(group),
+                                                                        group,
                                                                     );
                                                                 }
                                                             }
@@ -659,19 +614,11 @@ unsafe fn cmd_new_session_exec(
                                                                 c.clone()
                                                                     .expect("live client")
                                                                     .parse_flags(
-                                                                        std::ffi::CStr::from_ptr(
-                                                                            args_get(
-                                                                                &*(args),
-                                                                                'f' as i32
-                                                                                    as u_char,
-                                                                            )
-                                                                            .map_or(
-                                                                                std::ptr::null(),
-                                                                                |value| {
-                                                                                    value.as_ptr()
-                                                                                },
-                                                                            ),
-                                                                        ),
+                                                                        args_get(
+                                                                            &*(args),
+                                                                            'f' as i32 as u_char,
+                                                                        )
+                                                                        .expect("-f has a value"),
                                                                     );
                                                             }
                                                             if already_attached == 0 {
@@ -712,20 +659,14 @@ unsafe fn cmd_new_session_exec(
                                                         if args_has(&*args, 'P' as i32 as u_char)
                                                             != 0
                                                         {
-                                                            template = args_get(
+                                                            let template = args_get(
                                                                 &*(args),
                                                                 'F' as i32 as u_char,
                                                             )
-                                                            .map_or(std::ptr::null(), |value| {
-                                                                value.as_ptr()
-                                                            });
-                                                            if template.is_null() {
-                                                                template =
-                                                                    NEW_SESSION_TEMPLATE.as_ptr();
-                                                            }
+                                                            .unwrap_or(NEW_SESSION_TEMPLATE);
                                                             let cp = format_single_cstring(
                                                                 Some(item_handle),
-                                                                template,
+                                                                template.as_ptr(),
                                                                 c.as_ref(),
                                                                 s.as_ref(),
                                                                 (s.as_ref()

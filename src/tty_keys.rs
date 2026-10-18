@@ -2,17 +2,17 @@ use crate::src::bracketed_paste::{
     match_bracketed_paste_boundary, BracketedPasteBoundary, BracketedPasteBoundaryMatch,
 };
 use crate::src::events::events_fire_client;
-use crate::src::ffi::libc::{strlcpy, strsep};
+use crate::src::ffi::libc::strsep;
 use crate::src::ffi::resolv::b64_pton;
 use crate::src::input::{input_request_reply, InputRequestReply};
 use crate::src::key_string::key_string_format;
-use crate::src::log::{log_cstr, log_cstr_n, log_debug, log_get_level, log_hex};
+use crate::src::log::{log_bytes, log_cstr, log_cstr_n, log_debug, log_get_level, log_hex};
 use crate::src::options::options_get_number;
 use crate::src::paste::paste_add_owned;
 use crate::src::reactor::Timer;
 use crate::src::server_client::Client as _;
 use crate::src::window::Window as _;
-use libc::{sscanf, strcspn, strncmp, strtol, strtoul};
+use libc::{sscanf, strncmp, strtol, strtoul};
 
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
@@ -1226,14 +1226,13 @@ static mut tty_default_code_keys: [tty_default_key_code; 136] = [
             | KEYC_CTRL,
     },
 ];
-unsafe fn tty_keys_add(tty: *mut tty, s: &CStr, key: key_code) {
-    let bytes = s.to_bytes();
+unsafe fn tty_keys_add(tty: *mut tty, bytes: &[u8], key: key_code) {
     let key_string = key_string_format(key, true);
     let mut size = 0;
     if let Some(tk) = tty_keys_find_mut((*tty).key_tree.as_deref_mut(), bytes, &mut size) {
         log_debug(format_args!(
             "replacing key {}: 0x{:x} ({})",
-            log_cstr(s),
+            log_bytes(bytes),
             { key },
             crate::src::log::log_bytes(key_string.as_bytes())
         ));
@@ -1241,7 +1240,7 @@ unsafe fn tty_keys_add(tty: *mut tty, s: &CStr, key: key_code) {
     } else {
         log_debug(format_args!(
             "new key {}: 0x{:x} ({})",
-            log_cstr(s),
+            log_bytes(bytes),
             { key },
             crate::src::log::log_bytes(key_string.as_bytes())
         ));
@@ -1274,8 +1273,6 @@ fn tty_keys_add1(tree: &mut Option<Box<tty_key>>, bytes: &[u8], key: key_code) {
 pub unsafe fn tty_keys_build(mut tty: *mut tty) {
     let mut i: u_int = 0;
     let mut j: u_int = 0;
-    let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut copy: [::core::ffi::c_char; 16] = [0; 16];
     let mut key: key_code = 0;
     tty_keys_free(tty);
     i = 0 as u_int;
@@ -1289,19 +1286,14 @@ pub unsafe fn tty_keys_build(mut tty: *mut tty) {
             < (::core::mem::size_of::<[key_code; 10]>() as usize)
                 .wrapping_div(::core::mem::size_of::<key_code>() as usize)
         {
-            strlcpy(
-                &raw mut copy as *mut ::core::ffi::c_char,
-                tdkx.template.as_ptr(),
-                ::core::mem::size_of::<[::core::ffi::c_char; 16]>() as size_t,
-            );
-            copy[strcspn(&raw mut copy as *mut ::core::ffi::c_char, c"_".as_ptr()) as usize] =
-                ('0' as i32 as u_int).wrapping_add(j) as ::core::ffi::c_char;
+            let mut copy = tdkx.template.to_bytes().to_vec();
+            let modifier = copy
+                .iter_mut()
+                .find(|byte| **byte == b'_')
+                .expect("xterm key templates have a modifier placeholder");
+            *modifier = (b'0' as u_int).wrapping_add(j) as u8;
             key = tdkx.key | tty_default_xterm_modifiers[j as usize];
-            tty_keys_add(
-                tty,
-                CStr::from_ptr(&raw mut copy as *mut ::core::ffi::c_char),
-                key,
-            );
+            tty_keys_add(tty, &copy, key);
             j = j.wrapping_add(1);
         }
         i = i.wrapping_add(1);
@@ -1312,9 +1304,8 @@ pub unsafe fn tty_keys_build(mut tty: *mut tty) {
             .wrapping_div(::core::mem::size_of::<tty_default_key_raw>() as usize)
     {
         let tdkr = &tty_default_raw_keys[i as usize];
-        s = tdkr.string.as_ptr();
-        if *s as ::core::ffi::c_int != '\0' as i32 {
-            tty_keys_add(tty, CStr::from_ptr(s), tdkr.key);
+        if !tdkr.string.is_empty() {
+            tty_keys_add(tty, tdkr.string.to_bytes(), tdkr.key);
         }
         i = i.wrapping_add(1);
     }
@@ -1324,13 +1315,12 @@ pub unsafe fn tty_keys_build(mut tty: *mut tty) {
             .wrapping_div(::core::mem::size_of::<tty_default_key_code>() as usize)
     {
         let tdkc = &tty_default_code_keys[i as usize];
-        s = tty_term_string(
+        let s = tty_term_string(
             tty_term_owner_ptr(&(*tty).term).expect("client has a terminal"),
             tdkc.code,
-        )
-        .as_ptr();
-        if *s as ::core::ffi::c_int != '\0' as i32 {
-            tty_keys_add(tty, CStr::from_ptr(s), tdkc.key);
+        );
+        if !s.is_empty() {
+            tty_keys_add(tty, s.to_bytes(), tdkc.key);
         }
         i = i.wrapping_add(1);
     }
@@ -1353,7 +1343,7 @@ pub unsafe fn tty_keys_build(mut tty: *mut tty) {
     for (index, value) in keys {
         tty_keys_add(
             tty,
-            &value,
+            value.to_bytes(),
             (KEYC_USER as ::core::ffi::c_ulong).wrapping_add(index as ::core::ffi::c_ulong)
                 as key_code,
         );
@@ -1593,7 +1583,7 @@ unsafe fn tty_keys_winsz(
                 .as_deref()
                 .unwrap_or(c"(null)")
         ),
-        log_cstr(CStr::from_ptr(&raw mut tmp as *mut ::core::ffi::c_char))
+        log_bytes(&bytes[2..end])
     ));
     -(1 as ::core::ffi::c_int)
 }
@@ -3185,7 +3175,9 @@ unsafe fn tty_keys_extended_device_attributes(
         ),
         log_cstr_n(&bytes[..*size])
     ));
-    terminal_client_owner.record_terminal_type(CStr::from_ptr(tmp.as_ptr()));
+    terminal_client_owner.record_terminal_type(
+        CStr::from_bytes_until_nul(&tmp.map(|c| c as u8)).expect("terminal type is terminated"),
+    );
     tty_update_features(terminal_client_owner);
     terminal_client_owner.borrow_terminal_mut().flags |= TTY_HAVEXDA;
     0 as ::core::ffi::c_int
@@ -3273,9 +3265,9 @@ pub unsafe fn tty_keys_colours(
     } else {
         tmp[i as usize] = '\0' as i32 as ::core::ffi::c_char;
     }
-    n = colour_parse_x11_logged(std::ffi::CStr::from_ptr(
-        &raw mut tmp as *mut ::core::ffi::c_char,
-    ))
+    n = colour_parse_x11_logged(
+        CStr::from_bytes_until_nul(&tmp.map(|c| c as u8)).expect("colour reply is terminated"),
+    )
     .unwrap_or(-1);
     if n != -(1 as ::core::ffi::c_int)
         && *buf.offset(3 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '0' as i32
@@ -3397,9 +3389,11 @@ unsafe fn tty_keys_palette(
     if idx < 0 as ::core::ffi::c_int || idx > 255 as ::core::ffi::c_int {
         return -(1 as ::core::ffi::c_int);
     }
-    pd.c = colour_parse_x11_logged(std::ffi::CStr::from_ptr(
-        endptr.offset(1 as ::core::ffi::c_int as isize),
-    ))
+    let value = endptr.offset_from(tmp.as_ptr()) as usize + 1;
+    pd.c = colour_parse_x11_logged(
+        CStr::from_bytes_until_nul(&tmp.map(|c| c as u8)[value..])
+            .expect("palette reply is terminated"),
+    )
     .unwrap_or(-1);
     if pd.c == -(1 as ::core::ffi::c_int) {
         return 0 as ::core::ffi::c_int;
@@ -3453,13 +3447,13 @@ mod key_tree_tests {
     fn replacing_keys_preserves_existing_prefix_behavior() {
         let mut terminal = tty::default();
         unsafe {
-            tty_keys_add(&mut terminal, c"ab", 1);
-            tty_keys_add(&mut terminal, c"ab", 2);
+            tty_keys_add(&mut terminal, b"ab", 1);
+            tty_keys_add(&mut terminal, b"ab", 2);
             assert_eq!(lookup(&terminal.key_tree, b"ab"), (Some(2), 2));
-            tty_keys_add(&mut terminal, c"a", 3);
+            tty_keys_add(&mut terminal, b"a", 3);
             assert_eq!(lookup(&terminal.key_tree, b"a"), (Some(3), 1));
             assert_eq!(lookup(&terminal.key_tree, b"ab"), (Some(2), 2));
-            tty_keys_add(&mut terminal, c"abc", 4);
+            tty_keys_add(&mut terminal, b"abc", 4);
             assert_eq!(lookup(&terminal.key_tree, b"abc"), (Some(4), 2));
         }
     }
@@ -3516,11 +3510,11 @@ mod key_tree_tests {
         let mut terminal = tty::default();
         unsafe {
             tty_keys_free(&mut terminal);
-            tty_keys_add(&mut terminal, c"old", 1);
+            tty_keys_add(&mut terminal, b"old", 1);
             tty_keys_free(&mut terminal);
             assert!(terminal.key_tree.is_none());
             tty_keys_free(&mut terminal);
-            tty_keys_add(&mut terminal, c"new", 2);
+            tty_keys_add(&mut terminal, b"new", 2);
             assert_eq!(lookup(&terminal.key_tree, b"new"), (Some(2), 3));
             assert_eq!(lookup(&terminal.key_tree, b"old"), (None, 0));
         }

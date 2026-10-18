@@ -296,7 +296,6 @@ unsafe fn hooks_insert_event(
     drop(hd.formats);
 }
 unsafe fn CString_cb(name: &CStr, payload: &mut event_payload) {
-    let name = name.as_ptr();
     let ep = &*payload;
     if matches!(
         event_payload_get_identity(ep, c"_hooks_monitor"),
@@ -310,13 +309,7 @@ unsafe fn CString_cb(name: &CStr, payload: &mut event_payload) {
         let Some(item_owner) = observer.upgrade() else {
             return;
         };
-        hooks_insert_event(
-            Some(&item_owner),
-            CStr::from_ptr(name),
-            ep,
-            None,
-            0 as ::core::ffi::c_int,
-        );
+        hooks_insert_event(Some(&item_owner), name, ep, None, 0 as ::core::ffi::c_int);
         return;
     }
     let running = cmdq_running().upgrade();
@@ -324,13 +317,7 @@ unsafe fn CString_cb(name: &CStr, payload: &mut event_payload) {
         .as_ref()
         .is_none_or(|item| cmdq_get_flags(&*item.get()) & CMDQ_STATE_NOHOOKS == 0)
     {
-        hooks_insert_event(
-            None,
-            CStr::from_ptr(name),
-            ep,
-            None,
-            0 as ::core::ffi::c_int,
-        );
+        hooks_insert_event(None, name, ep, None, 0 as ::core::ffi::c_int);
     }
 }
 pub unsafe fn hooks_add_event(name: &CStr) {

@@ -4,8 +4,8 @@ use crate::src::compat::strtonum::strtonum;
 use crate::src::events::events_fire_pane;
 use crate::src::ffi::libc::llabs;
 use crate::src::ffi::regex::{CompiledRegex, RegexMatch, RegexStorage};
+use crate::src::format::bytes::cstr_suffix;
 use crate::src::format::bytes::format_message_with;
-use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_add, format_add_owned_cb, format_create_defaults, format_expand_cstring,
@@ -50,7 +50,6 @@ use crate::src::shared::client::CLIENT_READONLY;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
 use crate::src::shared::event::*;
 use crate::src::shared::format::format_tree;
-use crate::src::shared::grid::WHITESPACE;
 use crate::src::shared::grid::*;
 use crate::src::shared::input::input_ctx;
 use crate::src::shared::job::JOB_NOWAIT;
@@ -74,7 +73,7 @@ use crate::src::tmux::{get_timer, with_global_options, with_global_w_options};
 use crate::src::tty_acs::tty_acs_get;
 use crate::src::window::Window as _;
 use crate::src::window_pane::WindowPane as _;
-use libc::{abs, memcmp, strcasecmp, strchr, strcmp, strcspn, strncmp};
+use libc::{abs, memcmp, strcasecmp, strchr, strcmp, strncmp};
 use libc::{REG_EXTENDED, REG_ICASE};
 use std::borrow::Cow;
 use std::ffi::{CStr, CString};
@@ -1506,15 +1505,14 @@ unsafe fn window_copy_expand_search_string(
         .upgrade()
         .expect("mode belongs to a live pane");
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
-    let mut ss: *const ::core::ffi::c_char = args_string(&mut *((*cs).parsed_args()), 0 as u_int)
-        .map_or(std::ptr::null(), |value| value.as_ptr());
-    if ss.is_null() || *ss as ::core::ffi::c_int == '\0' as i32 {
+    let Some(ss) = args_string(&mut *((*cs).parsed_args()), 0 as u_int).filter(|ss| !ss.is_empty())
+    else {
         return 0 as ::core::ffi::c_int;
-    }
+    };
     if (*cs).format_search {
         let expanded = format_single_cstring(
             None,
-            ss,
+            ss.as_ptr(),
             None,
             None,
             (refbox::Weak::new()).clone(),
@@ -1525,7 +1523,7 @@ unsafe fn window_copy_expand_search_string(
         }
         (*data).searchstr = Some(expanded);
     } else {
-        (*data).searchstr = Some(CStr::from_ptr(ss).to_owned());
+        (*data).searchstr = Some(ss.to_owned());
     }
     1 as ::core::ffi::c_int
 }
@@ -2365,11 +2363,7 @@ unsafe fn window_copy_cmd_previous_matching_bracket(
                     px = px.wrapping_sub(1);
                     tried = 1 as ::core::ffi::c_char;
                 } else {
-                    window_copy_cursor_previous_word(
-                        wme.clone(),
-                        &raw mut close as *mut ::core::ffi::c_char,
-                        1 as ::core::ffi::c_int,
-                    );
+                    window_copy_cursor_previous_word(wme.clone(), c"}])", 1 as ::core::ffi::c_int);
                     break;
                 }
             } else {
@@ -2536,7 +2530,7 @@ unsafe fn window_copy_cmd_next_matching_bracket(
                     } else {
                         window_copy_cursor_next_word_end(
                             wme.clone(),
-                            &raw mut open as *mut ::core::ffi::c_char,
+                            c"{[(",
                             0 as ::core::ffi::c_int,
                         );
                         break;
@@ -2619,7 +2613,7 @@ unsafe fn window_copy_cmd_next_space(mut cs: *mut window_copy_cmd_state) -> wind
     let mut wme: refbox::Weak<window_mode_entry> = (*cs).mode_handle();
     let mut np: u_int = wme.get_unchecked().prefix;
     while np != 0 as u_int {
-        window_copy_cursor_next_word(wme.clone(), c"".as_ptr());
+        window_copy_cursor_next_word(wme.clone(), c"");
         np = np.wrapping_sub(1);
     }
     WINDOW_COPY_CMD_MOVE
@@ -2630,30 +2624,23 @@ unsafe fn window_copy_cmd_next_space_end(
     let mut wme: refbox::Weak<window_mode_entry> = (*cs).mode_handle();
     let mut np: u_int = wme.get_unchecked().prefix;
     while np != 0 as u_int {
-        window_copy_cursor_next_word_end(wme.clone(), c"".as_ptr(), 0 as ::core::ffi::c_int);
+        window_copy_cursor_next_word_end(wme.clone(), c"", 0 as ::core::ffi::c_int);
         np = np.wrapping_sub(1);
     }
     WINDOW_COPY_CMD_MOVE
 }
 unsafe fn window_copy_cmd_next_word(mut cs: *mut window_copy_cmd_state) -> window_copy_cmd_action {
-    let mut separators_session_value: Option<std::ffi::CString> = None;
-
     let mut wme: refbox::Weak<window_mode_entry> = (*cs).mode_handle();
     let mut np: u_int = wme.get_unchecked().prefix;
-    let mut separators: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    separators_session_value = Some(options_get_string(
+    let separators = options_get_string(
         &(*cs)
             .session_handle()
             .expect("live session")
             .borrow_options_mut(),
         c"word-separators",
-    ));
-    separators = separators_session_value
-        .as_ref()
-        .expect("option snapshot")
-        .as_ptr();
+    );
     while np != 0 as u_int {
-        window_copy_cursor_next_word(wme.clone(), separators);
+        window_copy_cursor_next_word(wme.clone(), &separators);
         np = np.wrapping_sub(1);
     }
     WINDOW_COPY_CMD_MOVE
@@ -2661,24 +2648,17 @@ unsafe fn window_copy_cmd_next_word(mut cs: *mut window_copy_cmd_state) -> windo
 unsafe fn window_copy_cmd_next_word_end(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
-    let mut separators_session_value: Option<std::ffi::CString> = None;
-
     let mut wme: refbox::Weak<window_mode_entry> = (*cs).mode_handle();
     let mut np: u_int = wme.get_unchecked().prefix;
-    let mut separators: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    separators_session_value = Some(options_get_string(
+    let separators = options_get_string(
         &(*cs)
             .session_handle()
             .expect("live session")
             .borrow_options_mut(),
         c"word-separators",
-    ));
-    separators = separators_session_value
-        .as_ref()
-        .expect("option snapshot")
-        .as_ptr();
+    );
     while np != 0 as u_int {
-        window_copy_cursor_next_word_end(wme.clone(), separators, 0 as ::core::ffi::c_int);
+        window_copy_cursor_next_word_end(wme.clone(), &separators, 0 as ::core::ffi::c_int);
         np = np.wrapping_sub(1);
     }
     WINDOW_COPY_CMD_MOVE
@@ -2862,7 +2842,7 @@ unsafe fn window_copy_cmd_previous_space(
     let mut wme: refbox::Weak<window_mode_entry> = (*cs).mode_handle();
     let mut np: u_int = wme.get_unchecked().prefix;
     while np != 0 as u_int {
-        window_copy_cursor_previous_word(wme.clone(), c"".as_ptr(), 1 as ::core::ffi::c_int);
+        window_copy_cursor_previous_word(wme.clone(), c"", 1 as ::core::ffi::c_int);
         np = np.wrapping_sub(1);
     }
     WINDOW_COPY_CMD_MOVE
@@ -2870,24 +2850,17 @@ unsafe fn window_copy_cmd_previous_space(
 unsafe fn window_copy_cmd_previous_word(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
-    let mut separators_session_value: Option<std::ffi::CString> = None;
-
     let mut wme: refbox::Weak<window_mode_entry> = (*cs).mode_handle();
     let mut np: u_int = wme.get_unchecked().prefix;
-    let mut separators: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    separators_session_value = Some(options_get_string(
+    let separators = options_get_string(
         &(*cs)
             .session_handle()
             .expect("live session")
             .borrow_options_mut(),
         c"word-separators",
-    ));
-    separators = separators_session_value
-        .as_ref()
-        .expect("option snapshot")
-        .as_ptr();
+    );
     while np != 0 as u_int {
-        window_copy_cursor_previous_word(wme.clone(), separators, 1 as ::core::ffi::c_int);
+        window_copy_cursor_previous_word(wme.clone(), &separators, 1 as ::core::ffi::c_int);
         np = np.wrapping_sub(1);
     }
     WINDOW_COPY_CMD_MOVE
@@ -3129,7 +3102,7 @@ unsafe fn window_copy_cmd_select_word(
     );
     window_copy_cursor_previous_word(
         wme.clone(),
-        window_copy_separators(&*data).map_or(std::ptr::null(), std::ffi::CStr::as_ptr),
+        window_copy_separators(&*data).expect("word separators"),
         0 as ::core::ffi::c_int,
     );
     px = (*data).cx;
@@ -3153,11 +3126,11 @@ unsafe fn window_copy_cmd_select_word(
         nexty = nexty.wrapping_add(1);
     }
     if px >= window_copy_find_length(wme.clone(), py)
-        || window_copy_in_set(wme.clone(), nextx, nexty, WHITESPACE.as_ptr()) == 0
+        || window_copy_in_set(wme.clone(), nextx, nexty, WHITESPACE) == 0
     {
         window_copy_cursor_next_word_end(
             wme.clone(),
-            window_copy_separators(&*data).map_or(std::ptr::null(), std::ffi::CStr::as_ptr),
+            window_copy_separators(&*data).expect("word separators"),
             1 as ::core::ffi::c_int,
         );
     } else {
@@ -3327,10 +3300,10 @@ unsafe fn window_copy_cmd_pipe_and_cancel(
 }
 unsafe fn window_copy_cmd_goto_line(mut cs: *mut window_copy_cmd_state) -> window_copy_cmd_action {
     let mut wme: refbox::Weak<window_mode_entry> = (*cs).mode_handle();
-    let mut arg0: *const ::core::ffi::c_char = args_string(&mut *((*cs).parsed_args()), 0 as u_int)
-        .map_or(std::ptr::null(), |value| value.as_ptr());
-    if *arg0 as ::core::ffi::c_int != '\0' as i32 {
-        window_copy_goto_line(wme.clone(), CStr::from_ptr(arg0));
+    let arg0 =
+        args_string(&mut *((*cs).parsed_args()), 0 as u_int).expect("goto-line takes an argument");
+    if !arg0.is_empty() {
+        window_copy_goto_line(wme.clone(), arg0);
     }
     WINDOW_COPY_CMD_MOVE
 }
@@ -3340,11 +3313,11 @@ unsafe fn window_copy_cmd_jump_backward(
     let mut wme: refbox::Weak<window_mode_entry> = (*cs).mode_handle();
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
     let mut np: u_int = wme.get_unchecked().prefix;
-    let mut arg0: *const ::core::ffi::c_char = args_string(&mut *((*cs).parsed_args()), 0 as u_int)
-        .map_or(std::ptr::null(), |value| value.as_ptr());
-    if *arg0 as ::core::ffi::c_int != '\0' as i32 {
+    let arg0 = args_string(&mut *((*cs).parsed_args()), 0 as u_int)
+        .expect("jump-backward takes an argument");
+    if !arg0.is_empty() {
         (*data).jumptype = WINDOW_COPY_JUMPBACKWARD as ::core::ffi::c_int;
-        (*data).jumpchar = utf8_fromcstr_vec(CStr::from_ptr(arg0));
+        (*data).jumpchar = utf8_fromcstr_vec(arg0);
         while np != 0 as u_int {
             window_copy_cursor_jump_back(wme.clone());
             np = np.wrapping_sub(1);
@@ -3358,11 +3331,11 @@ unsafe fn window_copy_cmd_jump_forward(
     let mut wme: refbox::Weak<window_mode_entry> = (*cs).mode_handle();
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
     let mut np: u_int = wme.get_unchecked().prefix;
-    let mut arg0: *const ::core::ffi::c_char = args_string(&mut *((*cs).parsed_args()), 0 as u_int)
-        .map_or(std::ptr::null(), |value| value.as_ptr());
-    if *arg0 as ::core::ffi::c_int != '\0' as i32 {
+    let arg0 = args_string(&mut *((*cs).parsed_args()), 0 as u_int)
+        .expect("jump-forward takes an argument");
+    if !arg0.is_empty() {
         (*data).jumptype = WINDOW_COPY_JUMPFORWARD as ::core::ffi::c_int;
-        (*data).jumpchar = utf8_fromcstr_vec(CStr::from_ptr(arg0));
+        (*data).jumpchar = utf8_fromcstr_vec(arg0);
         while np != 0 as u_int {
             window_copy_cursor_jump(wme.clone());
             np = np.wrapping_sub(1);
@@ -3376,11 +3349,11 @@ unsafe fn window_copy_cmd_jump_to_backward(
     let mut wme: refbox::Weak<window_mode_entry> = (*cs).mode_handle();
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
     let mut np: u_int = wme.get_unchecked().prefix;
-    let mut arg0: *const ::core::ffi::c_char = args_string(&mut *((*cs).parsed_args()), 0 as u_int)
-        .map_or(std::ptr::null(), |value| value.as_ptr());
-    if *arg0 as ::core::ffi::c_int != '\0' as i32 {
+    let arg0 = args_string(&mut *((*cs).parsed_args()), 0 as u_int)
+        .expect("jump-to-backward takes an argument");
+    if !arg0.is_empty() {
         (*data).jumptype = WINDOW_COPY_JUMPTOBACKWARD as ::core::ffi::c_int;
-        (*data).jumpchar = utf8_fromcstr_vec(CStr::from_ptr(arg0));
+        (*data).jumpchar = utf8_fromcstr_vec(arg0);
         while np != 0 as u_int {
             window_copy_cursor_jump_to_back(wme.clone());
             np = np.wrapping_sub(1);
@@ -3394,11 +3367,11 @@ unsafe fn window_copy_cmd_jump_to_forward(
     let mut wme: refbox::Weak<window_mode_entry> = (*cs).mode_handle();
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
     let mut np: u_int = wme.get_unchecked().prefix;
-    let mut arg0: *const ::core::ffi::c_char = args_string(&mut *((*cs).parsed_args()), 0 as u_int)
-        .map_or(std::ptr::null(), |value| value.as_ptr());
-    if *arg0 as ::core::ffi::c_int != '\0' as i32 {
+    let arg0 = args_string(&mut *((*cs).parsed_args()), 0 as u_int)
+        .expect("jump-to-forward takes an argument");
+    if !arg0.is_empty() {
         (*data).jumptype = WINDOW_COPY_JUMPTOFORWARD as ::core::ffi::c_int;
-        (*data).jumpchar = utf8_fromcstr_vec(CStr::from_ptr(arg0));
+        (*data).jumpchar = utf8_fromcstr_vec(arg0);
         while np != 0 as u_int {
             window_copy_cursor_jump_to(wme.clone());
             np = np.wrapping_sub(1);
@@ -3520,28 +3493,26 @@ unsafe fn window_copy_cmd_search_backward_incremental(
 ) -> window_copy_cmd_action {
     let mut wme: refbox::Weak<window_mode_entry> = (*cs).mode_handle();
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
-    let mut arg0: *const ::core::ffi::c_char = args_string(&mut *((*cs).parsed_args()), 0 as u_int)
-        .map_or(std::ptr::null(), |value| value.as_ptr());
-    let mut ss: *const ::core::ffi::c_char =
-        window_copy_searchstr(&*data).map_or(std::ptr::null(), std::ffi::CStr::as_ptr);
-    let mut prefix: ::core::ffi::c_char = 0;
+    let arg = args_string(&mut *((*cs).parsed_args()), 0 as u_int)
+        .expect("search-backward-incremental takes an argument");
     let mut action: window_copy_cmd_action = WINDOW_COPY_CMD_MOVE;
     (*data).timeout = 0 as ::core::ffi::c_int;
     log_debug(format_args!(
         "{}: {}",
         "window_copy_cmd_search_backward_incremental",
-        log_cstr(CStr::from_ptr(arg0))
+        log_cstr(arg)
     ));
-    let fresh3 = arg0;
-    arg0 = arg0.offset(1);
-    prefix = *fresh3;
+    let (prefix, arg0) = match arg.to_bytes().first() {
+        Some(&prefix) => (prefix, cstr_suffix(arg, 1)),
+        None => (0, arg),
+    };
     if (*data).searchx == -(1 as ::core::ffi::c_int)
         || (*data).searchy == -(1 as ::core::ffi::c_int)
     {
         (*data).searchx = (*data).cx as ::core::ffi::c_int;
         (*data).searchy = (*data).cy as ::core::ffi::c_int;
         (*data).searcho = (*data).oy as ::core::ffi::c_int;
-    } else if !ss.is_null() && strcmp(arg0, ss) != 0 as ::core::ffi::c_int {
+    } else if window_copy_searchstr(&*data).is_some_and(|ss| ss != arg0) {
         (*data).cx = (*data).searchx as u_int;
         (*data).cy = (*data).searchy as u_int;
         (*data).oy = (*data).searcho as u_int;
@@ -3557,24 +3528,24 @@ unsafe fn window_copy_cmd_search_backward_incremental(
         );
         action = WINDOW_COPY_CMD_REDRAW;
     }
-    if *arg0 as ::core::ffi::c_int == '\0' as i32 {
+    if arg0.is_empty() {
         window_copy_clear_marks(wme.clone());
         return WINDOW_COPY_CMD_REDRAW;
     }
-    match prefix as ::core::ffi::c_int {
-        61 | 45 => {
+    match prefix {
+        b'=' | b'-' => {
             (*data).searchtype = WINDOW_COPY_SEARCHUP as ::core::ffi::c_int;
             (*data).searchregex = 0 as ::core::ffi::c_int;
-            (*data).searchstr = Some(CStr::from_ptr(arg0).to_owned());
+            (*data).searchstr = Some(arg0.to_owned());
             if window_copy_search_up(wme.clone(), 0 as ::core::ffi::c_int) == 0 {
                 window_copy_clear_marks(wme.clone());
                 return WINDOW_COPY_CMD_REDRAW;
             }
         }
-        43 => {
+        b'+' => {
             (*data).searchtype = WINDOW_COPY_SEARCHDOWN as ::core::ffi::c_int;
             (*data).searchregex = 0 as ::core::ffi::c_int;
-            (*data).searchstr = Some(CStr::from_ptr(arg0).to_owned());
+            (*data).searchstr = Some(arg0.to_owned());
             if window_copy_search_down(wme.clone(), 0 as ::core::ffi::c_int) == 0 {
                 window_copy_clear_marks(wme.clone());
                 return WINDOW_COPY_CMD_REDRAW;
@@ -3589,28 +3560,26 @@ unsafe fn window_copy_cmd_search_forward_incremental(
 ) -> window_copy_cmd_action {
     let mut wme: refbox::Weak<window_mode_entry> = (*cs).mode_handle();
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
-    let mut arg0: *const ::core::ffi::c_char = args_string(&mut *((*cs).parsed_args()), 0 as u_int)
-        .map_or(std::ptr::null(), |value| value.as_ptr());
-    let mut ss: *const ::core::ffi::c_char =
-        window_copy_searchstr(&*data).map_or(std::ptr::null(), std::ffi::CStr::as_ptr);
-    let mut prefix: ::core::ffi::c_char = 0;
+    let arg = args_string(&mut *((*cs).parsed_args()), 0 as u_int)
+        .expect("search-forward-incremental takes an argument");
     let mut action: window_copy_cmd_action = WINDOW_COPY_CMD_MOVE;
     (*data).timeout = 0 as ::core::ffi::c_int;
     log_debug(format_args!(
         "{}: {}",
         "window_copy_cmd_search_forward_incremental",
-        log_cstr(CStr::from_ptr(arg0))
+        log_cstr(arg)
     ));
-    let fresh2 = arg0;
-    arg0 = arg0.offset(1);
-    prefix = *fresh2;
+    let (prefix, arg0) = match arg.to_bytes().first() {
+        Some(&prefix) => (prefix, cstr_suffix(arg, 1)),
+        None => (0, arg),
+    };
     if (*data).searchx == -(1 as ::core::ffi::c_int)
         || (*data).searchy == -(1 as ::core::ffi::c_int)
     {
         (*data).searchx = (*data).cx as ::core::ffi::c_int;
         (*data).searchy = (*data).cy as ::core::ffi::c_int;
         (*data).searcho = (*data).oy as ::core::ffi::c_int;
-    } else if !ss.is_null() && strcmp(arg0, ss) != 0 as ::core::ffi::c_int {
+    } else if window_copy_searchstr(&*data).is_some_and(|ss| ss != arg0) {
         (*data).cx = (*data).searchx as u_int;
         (*data).cy = (*data).searchy as u_int;
         (*data).oy = (*data).searcho as u_int;
@@ -3626,24 +3595,24 @@ unsafe fn window_copy_cmd_search_forward_incremental(
         );
         action = WINDOW_COPY_CMD_REDRAW;
     }
-    if *arg0 as ::core::ffi::c_int == '\0' as i32 {
+    if arg0.is_empty() {
         window_copy_clear_marks(wme.clone());
         return WINDOW_COPY_CMD_REDRAW;
     }
-    match prefix as ::core::ffi::c_int {
-        61 | 43 => {
+    match prefix {
+        b'=' | b'+' => {
             (*data).searchtype = WINDOW_COPY_SEARCHDOWN as ::core::ffi::c_int;
             (*data).searchregex = 0 as ::core::ffi::c_int;
-            (*data).searchstr = Some(CStr::from_ptr(arg0).to_owned());
+            (*data).searchstr = Some(arg0.to_owned());
             if window_copy_search_down(wme.clone(), 0 as ::core::ffi::c_int) == 0 {
                 window_copy_clear_marks(wme.clone());
                 return WINDOW_COPY_CMD_REDRAW;
             }
         }
-        45 => {
+        b'-' => {
             (*data).searchtype = WINDOW_COPY_SEARCHUP as ::core::ffi::c_int;
             (*data).searchregex = 0 as ::core::ffi::c_int;
-            (*data).searchstr = Some(CStr::from_ptr(arg0).to_owned());
+            (*data).searchstr = Some(arg0.to_owned());
             if window_copy_search_up(wme.clone(), 0 as ::core::ffi::c_int) == 0 {
                 window_copy_clear_marks(wme.clone());
                 return WINDOW_COPY_CMD_REDRAW;
@@ -6151,8 +6120,10 @@ unsafe fn window_copy_search(
         bg: 0,
     };
     let mut gd: *mut grid = (*s).grid_mut();
-    let mut str: *const ::core::ffi::c_char =
-        window_copy_searchstr(&*data).map_or(std::ptr::null(), std::ffi::CStr::as_ptr);
+    let searchstr = window_copy_searchstr(&*data)
+        .expect("search has a string")
+        .to_owned();
+    let str = searchstr.as_c_str();
     let mut at: u_int = 0;
     let mut endline: u_int = 0;
     let mut fx: u_int = 0;
@@ -6165,8 +6136,10 @@ unsafe fn window_copy_search(
     let mut visible_only: ::core::ffi::c_int = 0;
     let mut wrapflag: ::core::ffi::c_int = 0;
     if regex != 0
-        && *str.offset(strcspn(str, c"^$*+()?[].\\".as_ptr()) as isize) as ::core::ffi::c_int
-            == '\0' as i32
+        && !str
+            .to_bytes()
+            .iter()
+            .any(|byte| b"^$*+()?[].\\".contains(byte))
     {
         regex = 0 as ::core::ffi::c_int;
     }
@@ -6179,17 +6152,12 @@ unsafe fn window_copy_search(
         visible_only = 0 as ::core::ffi::c_int;
         (*data).searchall = 0 as ::core::ffi::c_int;
     } else {
-        visible_only = (strcmp(
-            saved_search
-                .as_ref()
-                .map_or(::core::ptr::null(), |value| value.as_ptr()),
-            str,
-        ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
+        visible_only = (saved_search.as_deref() == Some(str)) as ::core::ffi::c_int;
     }
     if visible_only == 0 as ::core::ffi::c_int && !(*data).searchmark.is_empty() {
         window_copy_clear_marks(wme.clone());
     }
-    mode_pane_owner.save_search(CStr::from_ptr(str).to_owned(), regex);
+    mode_pane_owner.save_search(searchstr.clone(), regex);
     fx = (*data).cx;
     fy = (*data)
         .backing()
@@ -6197,7 +6165,7 @@ unsafe fn window_copy_search(
         .hsize
         .wrapping_sub((*data).oy)
         .wrapping_add((*data).cy);
-    ssx = screen_write_strlen(CStr::from_ptr(str)) as u_int;
+    ssx = screen_write_strlen(str) as u_int;
     if ssx == 0 as u_int {
         return 0 as ::core::ffi::c_int;
     }
@@ -6207,7 +6175,7 @@ unsafe fn window_copy_search(
         &mut ctx,
         -(1 as ::core::ffi::c_int) as ssize_t,
         &grid_default_cell,
-        |out| write_cstr(out, nullable_cstr(str)),
+        |out| write_cstr(out, str),
     );
     screen_write_stop(&mut ctx);
     wrapflag = options_get_number(
@@ -6218,7 +6186,7 @@ unsafe fn window_copy_search(
             .borrow_options_mut(),
         c"wrap-search",
     ) as ::core::ffi::c_int;
-    cis = window_copy_is_lowercase(str);
+    cis = window_copy_is_lowercase(str.as_ptr());
     keys = options_get_number(
         &mode_pane_owner
             .window_observer()
@@ -7665,8 +7633,7 @@ unsafe fn window_copy_synchronize_cursor_end(
                 if (*data).dy > yy || (*data).dy == yy && (*data).dx > xx {
                     window_copy_cursor_previous_word_pos(
                         wme.clone(),
-                        window_copy_separators(&*data)
-                            .map_or(std::ptr::null(), std::ffi::CStr::as_ptr),
+                        window_copy_separators(&*data).expect("word separators"),
                         &raw mut xx,
                         &raw mut yy,
                     );
@@ -7679,13 +7646,12 @@ unsafe fn window_copy_synchronize_cursor_end(
                             wme.clone(),
                             xx.wrapping_add(1 as u_int),
                             yy,
-                            WHITESPACE.as_ptr(),
+                            WHITESPACE,
                         ) == 0
                     {
                         window_copy_cursor_next_word_end_pos(
                             wme.clone(),
-                            window_copy_separators(&*data)
-                                .map_or(std::ptr::null(), std::ffi::CStr::as_ptr),
+                            window_copy_separators(&*data).expect("word separators"),
                             &raw mut xx,
                             &raw mut yy,
                         );
@@ -8267,17 +8233,14 @@ unsafe fn window_copy_copy_buffer(
     mut set_paste: ::core::ffi::c_int,
     mut set_clip: ::core::ffi::c_int,
 ) {
-    let mut prefix: *const ::core::ffi::c_char = prefix.map_or(std::ptr::null(), CStr::as_ptr);
     let mode_pane_owner = wme
         .get_unchecked()
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
-    let prefix = if set_paste != 0 && !buf.is_empty() && !prefix.is_null() {
-        Some(CStr::from_ptr(prefix).to_owned())
-    } else {
-        None
-    };
+    let prefix = prefix
+        .filter(|_| set_paste != 0 && !buf.is_empty())
+        .map(CStr::to_owned);
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
         target: Default::default(),
@@ -8318,21 +8281,19 @@ unsafe fn window_copy_pipe_run(
     s_owner: Option<&SessionRef>,
     cmd: Option<&CStr>,
 ) -> Option<Vec<u8>> {
-    let mut cmd: *const ::core::ffi::c_char = cmd.map_or(std::ptr::null(), CStr::as_ptr);
     let mut job = refbox::Weak::new();
     let buf = window_copy_get_selection(wme.clone());
     let command_value;
-    if cmd.is_null() || *cmd as ::core::ffi::c_int == '\0' as i32 {
+    let mut cmd = cmd.filter(|cmd| !cmd.is_empty());
+    if cmd.is_none() {
         command_value = with_global_options(|oo| {
             crate::src::options::options_get_string_optional(oo, c"copy-command")
         });
-        cmd = command_value
-            .as_deref()
-            .map_or(std::ptr::null(), CStr::as_ptr);
+        cmd = command_value.as_deref();
     }
-    if !cmd.is_null() && *cmd as ::core::ffi::c_int != '\0' as i32 {
+    if let Some(cmd) = cmd.filter(|cmd| !cmd.is_empty()) {
         job = job_run(
-            Some(CStr::from_ptr(cmd)),
+            Some(cmd),
             &Vec::new(),
             None,
             s_owner,
@@ -8524,10 +8485,10 @@ unsafe fn window_copy_in_set(
     mut wme: refbox::Weak<window_mode_entry>,
     mut px: u_int,
     mut py: u_int,
-    mut set: *const ::core::ffi::c_char,
+    set: &CStr,
 ) -> ::core::ffi::c_int {
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
-    grid_in_set((*data).backing().grid(), px, py, CStr::from_ptr(set))
+    grid_in_set((*data).backing().grid(), px, py, set)
 }
 unsafe fn window_copy_find_length(
     mut wme: refbox::Weak<window_mode_entry>,
@@ -9143,7 +9104,7 @@ unsafe fn window_copy_cursor_jump_to_back(mut wme: refbox::Weak<window_mode_entr
 }
 unsafe fn window_copy_cursor_next_word(
     mut wme: refbox::Weak<window_mode_entry>,
-    mut separators: *const ::core::ffi::c_char,
+    separators: &CStr,
 ) {
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
     let back_s = (*data).backing();
@@ -9156,7 +9117,7 @@ unsafe fn window_copy_cursor_next_word(
     py = hsize.wrapping_add((*data).cy).wrapping_sub((*data).oy);
     oldy = (*data).cy;
     let mut gr = grid_reader_start((*back_s).grid(), px, py);
-    grid_reader_cursor_next_word(&mut gr, CStr::from_ptr(separators));
+    grid_reader_cursor_next_word(&mut gr, separators);
     (px, py) = grid_reader_get_cursor(&gr);
     window_copy_acquire_cursor_down(
         wme.clone(),
@@ -9171,7 +9132,7 @@ unsafe fn window_copy_cursor_next_word(
 }
 unsafe fn window_copy_cursor_next_word_end_pos(
     mut wme: refbox::Weak<window_mode_entry>,
-    mut separators: *const ::core::ffi::c_char,
+    separators: &CStr,
     mut ppx: *mut u_int,
     mut ppy: *mut u_int,
 ) {
@@ -9206,10 +9167,10 @@ unsafe fn window_copy_cursor_next_word_end_pos(
                 0 as ::core::ffi::c_int,
             );
         }
-        grid_reader_cursor_next_word_end(&mut gr, CStr::from_ptr(separators));
+        grid_reader_cursor_next_word_end(&mut gr, separators);
         grid_reader_cursor_left(&mut gr, 1 as ::core::ffi::c_int);
     } else {
-        grid_reader_cursor_next_word_end(&mut gr, CStr::from_ptr(separators));
+        grid_reader_cursor_next_word_end(&mut gr, separators);
     }
     (px, py) = grid_reader_get_cursor(&gr);
     *ppx = px;
@@ -9217,7 +9178,7 @@ unsafe fn window_copy_cursor_next_word_end_pos(
 }
 unsafe fn window_copy_cursor_next_word_end(
     mut wme: refbox::Weak<window_mode_entry>,
-    mut separators: *const ::core::ffi::c_char,
+    separators: &CStr,
     mut no_reset: ::core::ffi::c_int,
 ) {
     let mode_pane_owner = wme
@@ -9253,10 +9214,10 @@ unsafe fn window_copy_cursor_next_word_end(
                 0 as ::core::ffi::c_int,
             );
         }
-        grid_reader_cursor_next_word_end(&mut gr, CStr::from_ptr(separators));
+        grid_reader_cursor_next_word_end(&mut gr, separators);
         grid_reader_cursor_left(&mut gr, 1 as ::core::ffi::c_int);
     } else {
-        grid_reader_cursor_next_word_end(&mut gr, CStr::from_ptr(separators));
+        grid_reader_cursor_next_word_end(&mut gr, separators);
     }
     (px, py) = grid_reader_get_cursor(&gr);
     window_copy_acquire_cursor_down(
@@ -9272,7 +9233,7 @@ unsafe fn window_copy_cursor_next_word_end(
 }
 unsafe fn window_copy_cursor_previous_word_pos(
     mut wme: refbox::Weak<window_mode_entry>,
-    mut separators: *const ::core::ffi::c_char,
+    separators: &CStr,
     mut ppx: *mut u_int,
     mut ppy: *mut u_int,
 ) {
@@ -9287,7 +9248,7 @@ unsafe fn window_copy_cursor_previous_word_pos(
     let mut gr = grid_reader_start((*back_s).grid(), px, py);
     grid_reader_cursor_previous_word(
         &mut gr,
-        CStr::from_ptr(separators),
+        separators,
         0 as ::core::ffi::c_int,
         1 as ::core::ffi::c_int,
     );
@@ -9297,7 +9258,7 @@ unsafe fn window_copy_cursor_previous_word_pos(
 }
 unsafe fn window_copy_cursor_previous_word(
     mut wme: refbox::Weak<window_mode_entry>,
-    mut separators: *const ::core::ffi::c_char,
+    separators: &CStr,
     mut already: ::core::ffi::c_int,
 ) {
     let mode_pane_owner = wme
@@ -9330,7 +9291,7 @@ unsafe fn window_copy_cursor_previous_word(
     py = hsize.wrapping_add((*data).cy).wrapping_sub((*data).oy);
     oldy = (*data).cy;
     let mut gr = grid_reader_start((*back_s).grid(), px, py);
-    grid_reader_cursor_previous_word(&mut gr, CStr::from_ptr(separators), already, stop_at_eol);
+    grid_reader_cursor_previous_word(&mut gr, separators, already, stop_at_eol);
     (px, py) = grid_reader_get_cursor(&gr);
     window_copy_acquire_cursor_up(wme.clone(), hsize, (*data).oy, oldy, px, py);
 }
@@ -9776,7 +9737,7 @@ pub unsafe fn window_copy_start_drag(client_owner: Option<&ClientRef>, mut m: *m
                 window_copy_update_cursor(wme.clone(), x, y);
                 window_copy_cursor_previous_word_pos(
                     wme.clone(),
-                    window_copy_separators(&*data).map_or(std::ptr::null(), std::ffi::CStr::as_ptr),
+                    window_copy_separators(&*data).expect("word separators"),
                     &raw mut x,
                     &raw mut y,
                 );

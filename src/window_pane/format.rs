@@ -1584,9 +1584,7 @@ unsafe fn format_cb_pane_tty(mut ft: *mut format_tree) -> Option<CString> {
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     if !format_pane.is_null() {
-        return Some(
-            CStr::from_ptr(&raw mut (*format_pane).tty as *mut ::core::ffi::c_char).to_owned(),
-        );
+        return Some((*format_pane).tty().to_owned());
     }
     None
 }

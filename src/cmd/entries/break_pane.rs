@@ -4,7 +4,6 @@ use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_state_owned, cmdq_get_target_client, cmdq_print,
 };
 use crate::src::events::events_fire_window;
-use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
 use crate::src::names::default_window_name_cstring;
@@ -85,12 +84,11 @@ unsafe fn cmd_break_pane_exec(
         let mut before: ::core::ffi::c_int = 0;
         let mut old_idx: ::core::ffi::c_int = wl.get_unchecked().idx;
         let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-        let mut name: *const ::core::ffi::c_char = args_get(&*(args), 'n' as i32 as u_char)
-            .map_or(std::ptr::null(), |value| value.as_ptr());
-        if !name.is_null() && !check_name(CStr::from_ptr(name)) {
+        let mut name: Option<&CStr> = args_get(&*(args), 'n' as i32 as u_char);
+        if name.is_some_and(|name| !check_name(name)) {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"invalid window name: ")?;
-                write_cstr(out, nullable_cstr(name))
+                write_cstr(out, name)
             });
             return CMD_RETURN_ERROR;
         }
@@ -125,8 +123,8 @@ unsafe fn cmd_break_pane_exec(
                 cmdq_error(item_handle, |out| write_cstr(out, &*link_error));
                 return CMD_RETURN_ERROR;
             }
-            if !name.is_null() {
-                source_window.rename(CStr::from_ptr(name), false);
+            if let Some(name) = name {
+                source_window.rename(name, false);
                 options_set_number(
                     &mut source_window.borrow_options_mut(),
                     c"automatic-rename",
@@ -179,12 +177,12 @@ unsafe fn cmd_break_pane_exec(
             window
                 .rearrange_panes(std::slice::from_ref(&pane_owner))
                 .expect("a first pane always fits");
-            if name.is_null() {
-                window.initialize_name(default_window_name_cstring(&window), false);
-            } else {
-                let cleaned = clean_name_cstring(std::ffi::CStr::from_ptr(name), 0)
+            if let Some(name) = name {
+                let cleaned = clean_name_cstring(name, 0)
                     .expect("check_name validated the explicit window name");
                 window.initialize_name(cleaned, true);
+            } else {
+                window.initialize_name(default_window_name_cstring(&window), false);
             }
             window.refresh_fill_cells();
             if idx == -(1 as ::core::ffi::c_int) {

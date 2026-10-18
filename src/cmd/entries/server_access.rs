@@ -72,7 +72,7 @@ unsafe fn cmd_server_access_exec(
     let c_owner = cmdq_get_target_client((item).as_ref());
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut type_0: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let mut type_0: &CStr = c"";
     let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
     let mut gr: *mut group = ::core::ptr::null_mut::<group>();
     let mut id: id_t = 0;
@@ -96,7 +96,7 @@ unsafe fn cmd_server_access_exec(
         None,
     );
     if args_has(&*args, 'g' as i32 as u_char) != 0 {
-        type_0 = c"group".as_ptr();
+        type_0 = c"group";
         gr = getgrnam(arg.as_ptr());
         if !gr.is_null() {
             id = (*gr).gr_gid as id_t;
@@ -104,7 +104,7 @@ unsafe fn cmd_server_access_exec(
             flags |= SERVER_ACL_IS_GROUP;
         }
     } else {
-        type_0 = c"user".as_ptr();
+        type_0 = c"user";
         pw = getpwnam(arg.as_ptr());
         if !pw.is_null() {
             id = (*pw).pw_uid as id_t;
@@ -114,7 +114,7 @@ unsafe fn cmd_server_access_exec(
     if name.is_null() {
         cmdq_error(item_handle, |out| {
             out.write_all(b"unknown ")?;
-            write_cstr(out, nullable_cstr(type_0))?;
+            write_cstr(out, type_0)?;
             out.write_all(b": ")?;
             write_cstr(out, &*arg)
         });
@@ -140,18 +140,12 @@ unsafe fn cmd_server_access_exec(
         return CMD_RETURN_ERROR;
     }
     if args_has(&*args, 'd' as i32 as u_char) != 0 {
-        return cmd_server_access_deny(
-            item_handle,
-            id,
-            flags,
-            CStr::from_ptr(type_0),
-            CStr::from_ptr(name),
-        );
+        return cmd_server_access_deny(item_handle, id, flags, type_0, CStr::from_ptr(name));
     }
     if args_has(&*args, 'a' as i32 as u_char) != 0 {
         if server_acl_find(id, flags) != 0 {
             cmdq_error(item_handle, |out| {
-                write_cstr(out, nullable_cstr(type_0))?;
+                write_cstr(out, type_0)?;
                 out.write_all(b" ")?;
                 write_cstr(out, nullable_cstr(name))?;
                 out.write_all(b" is already added")
@@ -168,7 +162,7 @@ unsafe fn cmd_server_access_exec(
     if args_has(&*args, 'w' as i32 as u_char) != 0 {
         if server_acl_find(id, flags) == 0 {
             cmdq_error(item_handle, |out| {
-                write_cstr(out, nullable_cstr(type_0))?;
+                write_cstr(out, type_0)?;
                 out.write_all(b" ")?;
                 write_cstr(out, nullable_cstr(name))?;
                 out.write_all(b" not found")
@@ -181,7 +175,7 @@ unsafe fn cmd_server_access_exec(
     if args_has(&*args, 'r' as i32 as u_char) != 0 {
         if server_acl_find(id, flags) == 0 {
             cmdq_error(item_handle, |out| {
-                write_cstr(out, nullable_cstr(type_0))?;
+                write_cstr(out, type_0)?;
                 out.write_all(b" ")?;
                 write_cstr(out, nullable_cstr(name))?;
                 out.write_all(b" not found")

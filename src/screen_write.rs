@@ -1,3 +1,4 @@
+use crate::src::format::bytes::cstr_suffix;
 use crate::src::format::bytes::format_message_with;
 use crate::src::format_draw::format_draw;
 use crate::src::grid::view::{
@@ -771,8 +772,7 @@ pub unsafe fn screen_write_menu(
         );
         if disabled {
             default_gc.attr |= GRID_ATTR_DIM as u_short;
-            let name = CStr::from_bytes_with_nul(&name.to_bytes_with_nul()[1..])
-                .expect("removing the disabled marker preserves the terminator");
+            let name = cstr_suffix(name, 1);
             format_draw(
                 ctx,
                 &default_gc,

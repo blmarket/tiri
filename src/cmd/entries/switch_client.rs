@@ -78,7 +78,6 @@ unsafe fn cmd_switch_client_exec(
     let mut s: Option<SessionRef> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wp = None;
-    let mut tablename: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut sort_crit: sort_criteria = sort_criteria {
         order: SORT_ACTIVITY,
         reversed: 0,
@@ -123,13 +122,11 @@ unsafe fn cmd_switch_client_exec(
                 .update_flags((CLIENT_READONLY | CLIENT_IGNORESIZE) as uint64_t, 0);
         }
     }
-    tablename =
-        args_get(&*(args), 'T' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if !tablename.is_null() {
-        let Some(table) = key_bindings_get_table(std::ffi::CStr::from_ptr(tablename), 0) else {
+    if let Some(tablename) = args_get(&*(args), 'T' as i32 as u_char) {
+        let Some(table) = key_bindings_get_table(tablename, 0) else {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"table ")?;
-                write_cstr(out, nullable_cstr(tablename))?;
+                write_cstr(out, tablename)?;
                 out.write_all(b" doesn't exist")
             });
             return CMD_RETURN_ERROR;

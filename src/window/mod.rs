@@ -1,3 +1,4 @@
+use crate::src::format::bytes::cstr_suffix;
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::server_client::ClientRegistry;
 use crate::src::session::Session;
@@ -227,13 +228,12 @@ unsafe fn window_fire_pane_changed(
 }
 
 pub unsafe fn window_find_by_id_str(s: &CStr) -> Option<WindowRef> {
-    let s: *const ::core::ffi::c_char = s.as_ptr();
     let mut id: u_int = 0;
-    if *s as ::core::ffi::c_int != '@' as i32 {
+    if s.to_bytes().first() != Some(&b'@') {
         return None;
     }
     let parsed = strtonum(
-        CStr::from_ptr(s.offset(1 as ::core::ffi::c_int as isize)),
+        cstr_suffix(s, 1),
         0 as ::core::ffi::c_longlong,
         UINT_MAX as ::core::ffi::c_longlong,
     );
@@ -686,51 +686,35 @@ pub unsafe fn window_printable_flags(
     escape: bool,
 ) -> std::ffi::CString {
     let session_owner = wl.get_unchecked().session.upgrade();
-    let mut flags: [::core::ffi::c_char; 32] = [0; 32];
-    let mut pos: u_int = 0 as u_int;
+    let mut flags = Vec::new();
     if wl.get_unchecked().flags & WINLINK_ACTIVITY != 0 {
-        let fresh3 = pos;
-        pos = pos.wrapping_add(1);
-        flags[fresh3 as usize] = '#' as i32 as ::core::ffi::c_char;
+        flags.push(b'#');
         if escape {
-            let fresh4 = pos;
-            pos = pos.wrapping_add(1);
-            flags[fresh4 as usize] = '#' as i32 as ::core::ffi::c_char;
+            flags.push(b'#');
         }
     }
     if wl.get_unchecked().flags & WINLINK_BELL != 0 {
-        let fresh5 = pos;
-        pos = pos.wrapping_add(1);
-        flags[fresh5 as usize] = '!' as i32 as ::core::ffi::c_char;
+        flags.push(b'!');
     }
     if wl.get_unchecked().flags & WINLINK_SILENCE != 0 {
-        let fresh6 = pos;
-        pos = pos.wrapping_add(1);
-        flags[fresh6 as usize] = '~' as i32 as ::core::ffi::c_char;
+        flags.push(b'~');
     }
     if session_owner
         .as_ref()
         .is_some_and(|owner| wl == owner.current_winlink())
     {
-        let fresh7 = pos;
-        pos = pos.wrapping_add(1);
-        flags[fresh7 as usize] = '*' as i32 as ::core::ffi::c_char;
+        flags.push(b'*');
     }
     if session_owner
         .as_ref()
         .is_some_and(|owner| wl == owner.last_winlink())
     {
-        let fresh8 = pos;
-        pos = pos.wrapping_add(1);
-        flags[fresh8 as usize] = '-' as i32 as ::core::ffi::c_char;
+        flags.push(b'-');
     }
     if server_check_marked() != 0 && wl == marked_pane.winlink_handle() {
-        let fresh9 = pos;
-        pos = pos.wrapping_add(1);
-        flags[fresh9 as usize] = 'M' as i32 as ::core::ffi::c_char;
+        flags.push(b'M');
     }
-    flags[pos as usize] = '\0' as i32 as ::core::ffi::c_char;
-    std::ffi::CStr::from_ptr(flags.as_ptr()).to_owned()
+    std::ffi::CString::new(flags).expect("window flags contain no NUL")
 }
 
 fn window_pane_first(w: Option<&window>) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {

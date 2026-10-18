@@ -431,18 +431,9 @@ pub(crate) fn tty_client_timer_callback(
 }
 
 pub unsafe fn tty_open(owner: &ClientRef) -> Result<(), std::ffi::CString> {
-    let (name, capabilities) = owner.terminal_description_source();
-    let mut caps: Vec<_> = capabilities
-        .iter()
-        .map(|cap| cap.as_ptr().cast_mut())
-        .collect();
-    let term = match tty_term_create(
-        owner,
-        name.as_deref()
-            .map_or(std::ptr::null_mut(), |name| name.as_ptr().cast_mut()),
-        caps.as_mut_ptr(),
-        caps.len() as u_int,
-    ) {
+    let (name, caps) = owner.terminal_description_source();
+    let name = name.expect("terminal name is set during identify");
+    let term = match tty_term_create(owner, &name, &caps) {
         Ok(term) => term,
         Err(error) => {
             tty_close(owner);
@@ -672,14 +663,11 @@ pub unsafe fn tty_stop_tty(owner: &ClientRef) {
         }
         tty_raw(
             fd,
-            CStr::from_ptr(
-                tty_term_string_ii(
-                    terminal_term(tty),
-                    TTYC_CSR,
-                    0 as ::core::ffi::c_int,
-                    ws.ws_row as ::core::ffi::c_int - 1 as ::core::ffi::c_int,
-                )
-                .as_ptr(),
+            &tty_term_string_ii(
+                terminal_term(tty),
+                TTYC_CSR,
+                0 as ::core::ffi::c_int,
+                ws.ws_row as ::core::ffi::c_int - 1 as ::core::ffi::c_int,
             ),
         );
         if {
@@ -687,91 +675,46 @@ pub unsafe fn tty_stop_tty(owner: &ClientRef) {
             tty_acs_needed(Some(tty.borrow_terminal()), utf8)
         } != 0
         {
-            tty_raw(
-                fd,
-                CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_RMACS).as_ptr()),
-            );
+            tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_RMACS));
         }
-        tty_raw(
-            fd,
-            CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_SGR0).as_ptr()),
-        );
-        tty_raw(
-            fd,
-            CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_RMKX).as_ptr()),
-        );
+        tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_SGR0));
+        tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_RMKX));
         if with_global_options(|oo| options_get_number(oo, c"clear-on-attach")) != 0 {
-            tty_raw(
-                fd,
-                CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_CLEAR).as_ptr()),
-            );
+            tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_CLEAR));
         }
         if terminal_value!(tty, cstyle) as ::core::ffi::c_uint
             != SCREEN_CURSOR_DEFAULT as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             if tty_term_has(terminal_term(tty), TTYC_SE) != 0 {
-                tty_raw(
-                    fd,
-                    CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_SE).as_ptr()),
-                );
+                tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_SE));
             } else if tty_term_has(terminal_term(tty), TTYC_SS) != 0 {
                 tty_raw(
                     fd,
-                    CStr::from_ptr(
-                        tty_term_string_i(terminal_term(tty), TTYC_SS, 0 as ::core::ffi::c_int)
-                            .as_ptr(),
-                    ),
+                    &tty_term_string_i(terminal_term(tty), TTYC_SS, 0 as ::core::ffi::c_int),
                 );
             }
         }
         if terminal_value!(tty, ccolour) != -(1 as ::core::ffi::c_int) {
-            tty_raw(
-                fd,
-                CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_CR).as_ptr()),
-            );
+            tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_CR));
         }
-        tty_raw(
-            fd,
-            CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_CNORM).as_ptr()),
-        );
+        tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_CNORM));
         if tty_term_has(terminal_term(tty), TTYC_KMOUS) != 0 {
             tty_raw(fd, c"\x1B[?1000l\x1B[?1002l\x1B[?1003l");
             tty_raw(fd, c"\x1B[?1006l\x1B[?1005l");
         }
         if tty_term_has(terminal_term(tty), TTYC_DSBP) != 0 {
-            tty_raw(
-                fd,
-                CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_DSBP).as_ptr()),
-            );
+            tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_DSBP));
         }
-        tty_raw(
-            fd,
-            CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_DSESC).as_ptr()),
-        );
-        tty_raw(
-            fd,
-            CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_DSFCS).as_ptr()),
-        );
-        tty_raw(
-            fd,
-            CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_DSEKS).as_ptr()),
-        );
+        tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_DSESC));
+        tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_DSFCS));
+        tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_DSEKS));
         if terminal_term(tty).flags & TERM_DECSLRM != 0 {
-            tty_raw(
-                fd,
-                CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_DSMG).as_ptr()),
-            );
+            tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_DSMG));
         }
         if with_global_options(|oo| options_get_number(oo, c"clear-on-attach")) != 0 {
-            tty_raw(
-                fd,
-                CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_RMCUP).as_ptr()),
-            );
+            tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_RMCUP));
         } else {
-            tty_raw(
-                fd,
-                CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_CLEAR).as_ptr()),
-            );
+            tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_CLEAR));
         }
         if terminal_term(tty).flags & TERM_VT100LIKE != 0 {
             tty_raw(fd, c"\x1B[?2031l");
@@ -2063,14 +2006,14 @@ unsafe fn tty_selection_sequence(
     let size = 4usize
         .wrapping_mul(data.len().wrapping_add(2) / 3)
         .wrapping_add(1);
-    let mut encoded = vec![0; size];
+    let mut encoded = vec![0u8; size];
     b64_ntop(data.as_ptr(), data.len(), encoded.as_mut_ptr().cast(), size);
     terminal.flags |= TTY_NOBLOCK;
     Some(tty_term_string_ss(
         term,
         TTYC_MS,
         clip,
-        CStr::from_ptr(encoded.as_ptr().cast()),
+        CStr::from_bytes_until_nul(&encoded).expect("b64_ntop leaves a NUL"),
     ))
 }
 pub unsafe fn tty_cmd_rawstring(owner: &ClientRef, ctx: &tty_ctx) {

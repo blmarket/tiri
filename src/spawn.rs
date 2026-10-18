@@ -238,44 +238,35 @@ pub(crate) unsafe fn spawn_editor(
         .expect("editor window");
     let result = (|| {
         let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
-        let mut path: [::core::ffi::c_char; 19] =
-            ::core::mem::transmute::<[u8; 19], [::core::ffi::c_char; 19]>(*b"/tmp/tmux.XXXXXXXX\0");
-        let mut editor: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+        let mut path: [u8; 19] = *b"/tmp/tmux.XXXXXXXX\0";
         let mut fd: ::core::ffi::c_int = 0;
-        let editor_value = with_global_options(|oo| options_get_string(oo, c"editor"));
-        editor = editor_value.as_ptr();
-        fd = mkstemp(&raw mut path as *mut ::core::ffi::c_char);
+        let editor = with_global_options(|oo| options_get_string(oo, c"editor"));
+        fd = mkstemp(path.as_mut_ptr().cast());
         if fd == -(1 as ::core::ffi::c_int) {
             return None;
         }
         let fd_owner = OwnedFd::from_raw_fd(fd);
         f = spawn_editor_fdopen(fd_owner);
         if f.is_null() {
-            unlink(&raw mut path as *mut ::core::ffi::c_char);
+            unlink(path.as_ptr().cast());
             return None;
         }
         let stream = CFile::from_raw(f).expect("fdopen returned a non-null stream");
         if !write(&stream) {
             drop(stream);
-            unlink(&raw mut path as *mut ::core::ffi::c_char);
+            unlink(path.as_ptr().cast());
             return None;
         }
         drop(stream);
-        let mut owner = spawn_editor_state::new(CStr::from_ptr(path.as_ptr()).to_owned(), cb);
+        let path = CStr::from_bytes_with_nul(&path).expect("temporary path is terminated");
+        let mut owner = spawn_editor_state::new(path.to_owned(), cb);
         es = &raw mut *owner;
         let source = original_window
             .active_pane()
             .upgrade()
             .expect("editor source pane");
-        let cmd = CString::new(
-            [
-                CStr::from_ptr(editor).to_bytes(),
-                b" ",
-                CStr::from_ptr(path.as_ptr()).to_bytes(),
-            ]
-            .concat(),
-        )
-        .expect("editor command components contain no NUL");
+        let cmd = CString::new([editor.as_bytes(), b" ", path.to_bytes()].concat())
+            .expect("editor command components contain no NUL");
         sc.s = std::rc::Rc::downgrade(&session_owner);
         sc.set_wl(wl.clone());
         sc.tc = std::rc::Rc::downgrade(client_owner);

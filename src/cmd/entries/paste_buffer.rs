@@ -1,7 +1,6 @@
 use crate::src::arguments::{args, args_get, args_has, args_parse};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::cmdq_error;
-use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::paste::{paste_buffer_data, paste_free, paste_get_name, paste_get_top};
 use crate::src::shared::abi::*;
@@ -45,42 +44,38 @@ unsafe fn cmd_paste_buffer_exec(
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let pane_owner = (*target).pane_handle().expect("paste target pane");
     let pb;
-    let mut sepstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut bufname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let mut bufname: Option<&CStr> = None;
     let mut bracket: ::core::ffi::c_int = args_has(&*args, 'p' as i32 as u_char);
     if !pane_owner.has_tty() || pane_owner.has_exited() {
         cmdq_error(item_handle, |out| out.write_all(b"target pane has exited"));
         return CMD_RETURN_ERROR;
     }
-    bufname = ::core::ptr::null::<::core::ffi::c_char>();
+    bufname = None;
     if args_has(&*args, 'b' as i32 as u_char) != 0 {
-        bufname = args_get(&*(args), 'b' as i32 as u_char)
-            .map_or(std::ptr::null(), |value| value.as_ptr());
+        bufname = args_get(&*(args), 'b' as i32 as u_char);
     }
-    if bufname.is_null() {
-        pb = paste_get_top(None);
-    } else {
-        pb = paste_get_name(CStr::from_ptr(bufname));
+    if let Some(bufname) = bufname {
+        pb = paste_get_name(bufname);
         if pb.is_none() {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"no buffer ")?;
-                write_cstr(out, nullable_cstr(bufname))
+                write_cstr(out, bufname)
             });
             return CMD_RETURN_ERROR;
         }
+    } else {
+        pb = paste_get_top(None);
     }
     let Some(pb) = pb else {
         return CMD_RETURN_NORMAL;
     };
-    sepstr = args_get(&*args, b's').map_or(std::ptr::null(), CStr::as_ptr);
-    if sepstr.is_null() {
-        sepstr = if args_has(&*args, b'r') != 0 {
-            c"\n".as_ptr()
+    let separator = args_get(&*args, b's')
+        .unwrap_or(if args_has(&*args, b'r') != 0 {
+            c"\n"
         } else {
-            c"\r".as_ptr()
-        };
-    }
-    let separator = CStr::from_ptr(sepstr).to_bytes();
+            c"\r"
+        })
+        .to_bytes();
     let bytes = {
         let buffer = pb.borrow();
         paste_buffer_data(&buffer).unwrap_or_default().to_vec()

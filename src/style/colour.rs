@@ -1,5 +1,6 @@
 use crate::src::compat::strtonum::strtonum;
 use crate::src::ffi::libm::round;
+use crate::src::format::bytes::cstr_suffix;
 use crate::src::log::log_cstr;
 use crate::src::options::options;
 use crate::src::server_client::Client;
@@ -485,10 +486,7 @@ unsafe fn colour_fromstring_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
     ) == 0 as ::core::ffi::c_int
     {
         let parsed = strtonum(
-            std::ffi::CStr::from_ptr(
-                s.add(::core::mem::size_of::<[::core::ffi::c_char; 7]>() as usize)
-                    .offset(-(1 as ::core::ffi::c_int as isize)),
-            ),
+            cstr_suffix(input, 6),
             0 as ::core::ffi::c_longlong,
             255 as ::core::ffi::c_longlong,
         );
@@ -505,10 +503,7 @@ unsafe fn colour_fromstring_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
     ) == 0 as ::core::ffi::c_int
     {
         let parsed = strtonum(
-            std::ffi::CStr::from_ptr(
-                s.add(::core::mem::size_of::<[::core::ffi::c_char; 6]>() as usize)
-                    .offset(-(1 as ::core::ffi::c_int as isize)),
-            ),
+            cstr_suffix(input, 5),
             0 as ::core::ffi::c_longlong,
             255 as ::core::ffi::c_longlong,
         );
@@ -1138,8 +1133,8 @@ pub unsafe fn colour_256to16(mut c: ::core::ffi::c_int) -> ::core::ffi::c_int {
     ];
     ANSI_TABLE[(c & 0xff as ::core::ffi::c_int) as usize] as ::core::ffi::c_int
 }
-unsafe fn colour_byname_impl(name: &std::ffi::CStr) -> ::core::ffi::c_int {
-    let name = name.as_ptr();
+unsafe fn colour_byname_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
+    let name = input.as_ptr();
     const colours: [C2RustUnnamed_37; 578] = [
         C2RustUnnamed_37 {
             name: c"AliceBlue",
@@ -3463,7 +3458,7 @@ unsafe fn colour_byname_impl(name: &std::ffi::CStr) -> ::core::ffi::c_int {
             return 0xbebebe as ::core::ffi::c_int | COLOUR_FLAG_RGB;
         }
         let parsed = strtonum(
-            std::ffi::CStr::from_ptr(name.offset(4 as ::core::ffi::c_int as isize)),
+            cstr_suffix(input, 4),
             0 as ::core::ffi::c_longlong,
             100 as ::core::ffi::c_longlong,
         );

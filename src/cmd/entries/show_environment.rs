@@ -106,8 +106,7 @@ unsafe fn cmd_show_environment_exec(
 
     let mut envent: Option<&environ_entry> = None;
     let mut tflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut name: *const ::core::ffi::c_char =
-        args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
+    let mut name: Option<&CStr> = args_string(&mut *(args), 0 as u_int);
     tflag =
         args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !tflag.is_null() && (*target).session_handle().is_none() {
@@ -136,12 +135,12 @@ unsafe fn cmd_show_environment_exec(
         let session = (*target).session_handle().expect("target session");
         session.borrow_environment().expect("environment").clone()
     };
-    if !name.is_null() {
-        envent = environ_find(&env, CStr::from_ptr(name));
+    if let Some(name) = name {
+        envent = environ_find(&env, name);
         if envent.is_none() {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"unknown variable: ")?;
-                write_cstr(out, nullable_cstr(name))
+                write_cstr(out, name)
             });
             return CMD_RETURN_ERROR;
         }

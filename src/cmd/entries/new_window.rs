@@ -7,7 +7,6 @@ use crate::src::cmd::queue::{
     cmdq_insert_hook, cmdq_print,
 };
 use crate::src::environ::{environ_create, environ_put};
-use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
 use crate::src::resize::recalculate_sizes;
@@ -96,7 +95,6 @@ unsafe fn cmd_new_window_exec(
     let mut before: ::core::ffi::c_int = 0;
     let mut count: ::core::ffi::c_int = args_count(&*args) as ::core::ffi::c_int;
     let mut cause: Option<std::ffi::CString> = None;
-    let mut wname: *const ::core::ffi::c_char = ::core::ptr::null();
     let mut wname_owned: Option<CString> = None;
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -143,10 +141,6 @@ unsafe fn cmd_new_window_exec(
             clean_name_cstring(expanded.as_c_str(), 0)
                 .expect("check_name validated the window name"),
         );
-        wname = wname_owned
-            .as_ref()
-            .expect("window name was cleaned")
-            .as_ptr();
     }
     if args_has(&*args, 'S' as i32 as u_char) != 0 {
         if idx != -(1 as ::core::ffi::c_int) {
@@ -154,10 +148,10 @@ unsafe fn cmd_new_window_exec(
                 .as_ref()
                 .expect("live session")
                 .with_winlinks(|links| winlink_find_by_index(links, idx));
-        } else if !wname.is_null() {
+        } else if let Some(wname) = wname_owned.as_deref() {
             let expanded = format_single_cstring(
                 Some(item_handle),
-                wname,
+                wname.as_ptr(),
                 c_owner.as_ref(),
                 Some(&session_owner),
                 (refbox::Weak::new()).clone(),
@@ -182,7 +176,7 @@ unsafe fn cmd_new_window_exec(
                     } else {
                         cmdq_error(item_handle, |out| {
                             out.write_all(b"multiple windows named ")?;
-                            write_cstr(out, nullable_cstr(wname))
+                            write_cstr(out, wname)
                         });
                         return CMD_RETURN_ERROR;
                     }
@@ -231,7 +225,7 @@ unsafe fn cmd_new_window_exec(
     sc.tc = tc_owner
         .as_ref()
         .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-    sc.name = (!wname.is_null()).then(|| CStr::from_ptr(wname).to_owned());
+    sc.name = wname_owned.clone();
     argv_owner = args_to_vector(&*args);
     sc.argv = argv_owner;
     sc.environ = Some(environ_create());

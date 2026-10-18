@@ -569,7 +569,6 @@ unsafe fn file_read_impl(
     path: &CStr,
     init: impl FnOnce(&Rc<UnsafeCell<client_file>>) -> client_file_cb,
 ) -> Rc<UnsafeCell<client_file>> {
-    let mut path: *const ::core::ffi::c_char = path.as_ptr();
     let mut current_block: u64;
     let mut fd: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     let fresh1 = file_next_stream;
@@ -584,7 +583,7 @@ unsafe fn file_read_impl(
     let cb = init(&transfer_owner);
     let cf = &mut *transfer_owner.get();
     cf.cb = cb;
-    if strcmp(path, c"-".as_ptr()) == 0 as ::core::ffi::c_int {
+    if path == c"-" {
         file_set_path(cf, CString::new("-").unwrap());
         fd = STDIN_FILENO;
         if client_owner
@@ -596,7 +595,7 @@ unsafe fn file_read_impl(
             current_block = 17710118112003399050;
         }
     } else {
-        file_set_path(cf, file_get_path(client_owner, CStr::from_ptr(path)));
+        file_set_path(cf, file_get_path(client_owner, path));
         if client_owner.is_none_or(|owner| owner.flags() & CLIENT_ATTACHED as uint64_t != 0) {
             f = fopen(
                 cf.path
@@ -868,24 +867,22 @@ pub unsafe fn file_write_open(
         fatalx(|out| out.write_all(b"bad MSG_WRITE_OPEN size"));
     }
     let msg = read_imsg_payload::<msg_write_open>(imsg).unwrap();
-    let mut path: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut reply: msg_write_ready = msg_write_ready {
         stream: 0,
         error: 0,
     };
     let mut find: client_file = client_file::empty();
     let mut error: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if msglen == ::core::mem::size_of::<msg_write_open>() as usize {
-        path = c"-".as_ptr();
+    let path = if msglen == ::core::mem::size_of::<msg_write_open>() {
+        c"-"
     } else {
-        path = imsg.data[::core::mem::size_of::<msg_write_open>()..]
-            .as_ptr()
-            .cast::<::core::ffi::c_char>();
-    }
+        CStr::from_bytes_until_nul(&imsg.data[::core::mem::size_of::<msg_write_open>()..])
+            .unwrap_or_else(|_| fatalx(|out| out.write_all(b"bad MSG_WRITE_OPEN path")))
+    };
     log_debug(format_args!(
         "open write file {} {}",
         { msg.stream },
-        log_cstr(CStr::from_ptr(path))
+        log_cstr(path)
     ));
     find.stream = msg.stream;
     if crate::src::client::client_find_file(find.stream).is_some() {
@@ -898,7 +895,7 @@ pub unsafe fn file_write_open(
         } else {
             let fd = if msg.fd == -1 {
                 tiri_rt::unix::open(
-                    CStr::from_ptr(path),
+                    path,
                     libc::O_WRONLY | libc::O_CREAT | msg.flags | O_NONBLOCK,
                     0o644,
                 )
@@ -1063,24 +1060,22 @@ pub unsafe fn file_read_open(
         fatalx(|out| out.write_all(b"bad MSG_READ_OPEN size"));
     }
     let msg = read_imsg_payload::<msg_read_open>(imsg).unwrap();
-    let mut path: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut reply: msg_read_done = msg_read_done {
         stream: 0,
         error: 0,
     };
     let mut find: client_file = client_file::empty();
     let mut error: ::core::ffi::c_int = 0;
-    if msglen == ::core::mem::size_of::<msg_read_open>() as usize {
-        path = c"-".as_ptr();
+    let path = if msglen == ::core::mem::size_of::<msg_read_open>() {
+        c"-"
     } else {
-        path = imsg.data[::core::mem::size_of::<msg_read_open>()..]
-            .as_ptr()
-            .cast::<::core::ffi::c_char>();
-    }
+        CStr::from_bytes_until_nul(&imsg.data[::core::mem::size_of::<msg_read_open>()..])
+            .unwrap_or_else(|_| fatalx(|out| out.write_all(b"bad MSG_READ_OPEN path")))
+    };
     log_debug(format_args!(
         "open read file {} {}",
         { msg.stream },
-        log_cstr(CStr::from_ptr(path))
+        log_cstr(path)
     ));
     find.stream = msg.stream;
     if crate::src::client::client_find_file(find.stream).is_some() {
@@ -1092,7 +1087,7 @@ pub unsafe fn file_read_open(
             error = EBADF;
         } else {
             let fd = if msg.fd == -1 {
-                tiri_rt::unix::open(CStr::from_ptr(path), libc::O_RDONLY | O_NONBLOCK, 0)
+                tiri_rt::unix::open(path, libc::O_RDONLY | O_NONBLOCK, 0)
             } else {
                 let duplicate = match msg.fd {
                     STDIN_FILENO => io::stdin().as_fd().try_clone_to_owned(),

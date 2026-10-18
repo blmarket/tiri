@@ -404,7 +404,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         sort::compare(self, other, criteria)
     }
     unsafe fn matches_terminal_name(&self, name: &CStr) -> bool {
-        CStr::from_ptr((*self.get()).tty.as_ptr()) == name
+        (*self.get()).tty() == name
     }
     unsafe fn close_after_key(&self, key: key_code) -> bool {
         if !self.has_exited()
@@ -664,7 +664,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         window_pane_upgrade(observer)
     }
     unsafe fn tty_name(&self) -> CString {
-        CStr::from_ptr((*self.get()).tty.as_ptr()).to_owned()
+        (*self.get()).tty().to_owned()
     }
     unsafe fn control_colours(&self) -> (i32, i32) {
         ((*self.get()).control_fg, (*self.get()).control_bg)
@@ -1013,14 +1013,11 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
                 .write(if focused { b"\x1b[I" } else { b"\x1b[O" });
         }
         events_fire_pane(
-            CStr::from_ptr(
-                if focused {
-                    c"pane-focus-in"
-                } else {
-                    c"pane-focus-out"
-                }
-                .as_ptr(),
-            ),
+            if focused {
+                c"pane-focus-in"
+            } else {
+                c"pane-focus-out"
+            },
             Rc::clone(self),
         );
         if focused {

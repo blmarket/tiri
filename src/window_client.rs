@@ -627,26 +627,26 @@ unsafe fn window_client_init(
     let mut data: *mut window_client_modedata = ::core::ptr::null_mut::<window_client_modedata>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
     let format = if args.is_null() || args_has(&*args, 'F' as i32 as u_char) == 0 {
-        WINDOW_CLIENT_DEFAULT_FORMAT.as_ptr()
+        WINDOW_CLIENT_DEFAULT_FORMAT
     } else {
-        args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr())
+        args_get(&*(args), 'F' as i32 as u_char).expect("-F takes a value")
     };
     let key_format = if args.is_null() || args_has(&*args, 'K' as i32 as u_char) == 0 {
-        WINDOW_CLIENT_DEFAULT_KEY_FORMAT.as_ptr()
+        WINDOW_CLIENT_DEFAULT_KEY_FORMAT
     } else {
-        args_get(&*(args), 'K' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr())
+        args_get(&*(args), 'K' as i32 as u_char).expect("-K takes a value")
     };
     let command = if args.is_null() || args_count(&*args) == 0 as u_int {
-        WINDOW_CLIENT_DEFAULT_COMMAND.as_ptr()
+        WINDOW_CLIENT_DEFAULT_COMMAND
     } else {
-        args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())
+        args_string(&mut *(args), 0 as u_int).expect("argument 0 exists")
     };
     let owner = Box::new(std::cell::UnsafeCell::new(window_client_modedata {
         wp: Weak::new(),
         data: None,
-        format: CStr::from_ptr(format).to_owned(),
-        key_format: CStr::from_ptr(key_format).to_owned(),
-        command: CStr::from_ptr(command).to_owned(),
+        format: format.to_owned(),
+        key_format: key_format.to_owned(),
+        command: command.to_owned(),
         hide_preview_this_pane: 0,
         preview_is_info: 0,
         items: Vec::new(),

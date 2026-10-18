@@ -630,7 +630,7 @@ unsafe fn control_read_callback(owner: &ClientRef) {
                 CMDQ_STATE_CONTROL,
             );
             if let Err(error) = cmd_parse_and_append(
-                CStr::from_ptr(line.as_ptr().cast::<::core::ffi::c_char>()),
+                CStr::from_bytes_until_nul(&line).expect("control line is terminated"),
                 Some(owner),
                 Some(&state),
             ) {

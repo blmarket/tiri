@@ -94,21 +94,19 @@ unsafe fn cmd_save_buffer_exec(
     let mut c: Option<ClientRef> = c_owner.clone();
     let pb;
     let mut flags: ::core::ffi::c_int = 0;
-    let mut bufname: *const ::core::ffi::c_char =
-        args_get(&*(args), 'b' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if bufname.is_null() {
-        pb = paste_get_top(None);
-        if pb.is_none() {
-            cmdq_error(item_handle, |out| out.write_all(b"no buffers"));
-            return CMD_RETURN_ERROR;
-        }
-    } else {
-        pb = paste_get_name(CStr::from_ptr(bufname));
+    if let Some(bufname) = args_get(&*(args), 'b' as i32 as u_char) {
+        pb = paste_get_name(bufname);
         if pb.is_none() {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"no buffer ")?;
-                write_cstr(out, nullable_cstr(bufname))
+                write_cstr(out, bufname)
             });
+            return CMD_RETURN_ERROR;
+        }
+    } else {
+        pb = paste_get_top(None);
+        if pb.is_none() {
+            cmdq_error(item_handle, |out| out.write_all(b"no buffers"));
             return CMD_RETURN_ERROR;
         }
     }
@@ -142,9 +140,7 @@ unsafe fn cmd_save_buffer_exec(
         )
     });
     let dash_path = c"-";
-    let path: *const ::core::ffi::c_char = expanded_path
-        .as_ref()
-        .map_or(dash_path.as_ptr(), |path| path.as_ptr());
+    let path: &CStr = expanded_path.as_deref().unwrap_or(dash_path);
     if args_has(&*args, 'a' as i32 as u_char) != 0 {
         flags = O_APPEND;
     } else {
@@ -152,7 +148,7 @@ unsafe fn cmd_save_buffer_exec(
     }
     let buffer = pb.borrow();
     let bufdata = paste_buffer_data(&buffer).unwrap_or_default();
-    let wait = file_write_wait(queue_client.as_ref(), CStr::from_ptr(path), flags, bufdata);
+    let wait = file_write_wait(queue_client.as_ref(), path, flags, bufdata);
     let waiting_item = std::rc::Rc::downgrade(item_handle);
     cmdq_suspend(item_handle, async move {
         let Some(outcome) = wait.await else {

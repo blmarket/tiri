@@ -79,8 +79,6 @@ unsafe fn cmd_confirm_before_exec(
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut confirm_key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut prompt: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut wait: ::core::ffi::c_int =
         (args_has(&*args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
     let Some(cmdlist) = args_make_commands_now(self_0.clone(), item_handle, 0, 1) else {
@@ -110,20 +108,17 @@ unsafe fn cmd_confirm_before_exec(
     } else {
         cdata.confirm_key = 'y' as i32 as u_char;
     }
-    prompt =
-        args_get(&*(args), 'p' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    let new_prompt = if !prompt.is_null() {
-        let mut bytes = CStr::from_ptr(prompt).to_bytes().to_vec();
+    let new_prompt = if let Some(prompt) = args_get(&*(args), 'p' as i32 as u_char) {
+        let mut bytes = prompt.to_bytes().to_vec();
         bytes.push(b' ');
         CString::new(bytes).expect("C string prompt contains no interior NUL")
     } else {
-        cmd = cmd_list_first(&cmdlist.borrow())
+        let cmd = cmd_list_first(&cmdlist.borrow())
             .expect("confirmation command")
             .entry
-            .name
-            .as_ptr();
+            .name;
         let mut bytes = b"Confirm '".to_vec();
-        bytes.extend_from_slice(CStr::from_ptr(cmd).to_bytes());
+        bytes.extend_from_slice(cmd.to_bytes());
         bytes.extend_from_slice(b"'? (");
         bytes.push(cdata.confirm_key);
         bytes.extend_from_slice(b"/n) ");

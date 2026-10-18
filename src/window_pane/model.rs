@@ -26,7 +26,7 @@ pub struct window_pane {
     pub(super) shell: Option<CString>,
     pub(super) cwd: Option<CString>,
     pub(super) pid: pid_t,
-    pub(super) tty: [::core::ffi::c_char; 32],
+    pub(super) tty: [u8; 32],
     /// Set once the process is reaped; cleared on respawn.
     pub(super) exit_status: Option<std::process::ExitStatus>,
     pub(super) dead_time: SystemTime,
@@ -161,6 +161,10 @@ impl window_pane {
         std::cell::RefMut::map(self.options.borrow_mut(), |table| {
             table.as_deref_mut().expect("live pane options")
         })
+    }
+    /// The pane's terminal name, filled in by forkpty; empty before spawning.
+    pub(super) fn tty(&self) -> &CStr {
+        CStr::from_bytes_until_nul(&self.tty).unwrap_or(c"")
     }
     /// Retain the parent for the current operation.
     pub(super) fn window_handle(&self) -> Option<WindowRef> {

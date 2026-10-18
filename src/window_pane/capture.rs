@@ -20,7 +20,7 @@ use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::style::colour::colour_format;
 use crate::src::text::utf8::utf8_strvis;
 use libc::snprintf;
-use std::ffi::{CStr, CString};
+use std::ffi::CString;
 use std::io::Write;
 use std::{cell::UnsafeCell, rc::Rc};
 
@@ -198,7 +198,6 @@ unsafe fn cmd_capture_pane_grid(wp: &window_pane) -> Vec<u8> {
     let s = &wp.base;
     let gd = s.grid();
     let mut buf = Vec::new();
-    let mut p: [::core::ffi::c_char; 11] = [0; 11];
     let mut yy: u_int = 0;
     let mut xx: u_int = 0;
     let mut total: u_int = gd.hsize.wrapping_add(gd.sy);
@@ -207,24 +206,15 @@ unsafe fn cmd_capture_pane_grid(wp: &window_pane) -> Vec<u8> {
     yy = 0 as u_int;
     while yy < total {
         let gl = grid_get_line(gd, yy);
-        if yy < gd.hsize {
-            snprintf(
-                &raw mut p as *mut ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 11]>() as size_t,
-                c"-".as_ptr(),
-            );
-        } else {
-            snprintf(
-                &raw mut p as *mut ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 11]>() as size_t,
-                c"%u".as_ptr(),
-                yy.wrapping_sub(gd.hsize),
-            );
-        }
         let od = &gl.osc133_data;
         let mut row = Vec::new();
         write!(&mut row, "\tL {} (", yy).expect("writing to a byte vector succeeds");
-        row.extend_from_slice(CStr::from_ptr(p.as_ptr()).to_bytes());
+        if yy < gd.hsize {
+            row.push(b'-');
+        } else {
+            write!(&mut row, "{}", yy.wrapping_sub(gd.hsize))
+                .expect("writing to a byte vector succeeds");
+        }
         write!(
             &mut row,
             ") flags={}",
@@ -264,7 +254,6 @@ unsafe fn cmd_capture_pane_grid(wp: &window_pane) -> Vec<u8> {
 unsafe fn cmd_capture_pane_pending(args: *mut args, wp: &mut window_pane) -> Vec<u8> {
     let mut buf = Vec::new();
     let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut tmp: [::core::ffi::c_char; 5] = [0; 5];
     let mut linelen: size_t = 0;
     let mut i: u_int = 0;
     let pending = input_pending(wp.ictx.as_deref_mut().expect("pane input context"));
@@ -277,17 +266,11 @@ unsafe fn cmd_capture_pane_pending(args: *mut args, wp: &mut window_pane) -> Vec
             if *line.offset(i as isize) as ::core::ffi::c_int >= ' ' as i32
                 && *line.offset(i as isize) as ::core::ffi::c_int != '\\' as i32
             {
-                tmp[0 as ::core::ffi::c_int as usize] = *line.offset(i as isize);
-                tmp[1 as ::core::ffi::c_int as usize] = '\0' as i32 as ::core::ffi::c_char;
+                buf.push(*line.offset(i as isize) as u8);
             } else {
-                snprintf(
-                    &raw mut tmp as *mut ::core::ffi::c_char,
-                    ::core::mem::size_of::<[::core::ffi::c_char; 5]>() as size_t,
-                    c"\\%03hho".as_ptr(),
-                    *line.offset(i as isize) as ::core::ffi::c_int,
-                );
+                write!(&mut buf, "\\{:03o}", *line.offset(i as isize) as u8)
+                    .expect("writing to a byte vector succeeds");
             }
-            cmd_capture_pane_append(&mut buf, CStr::from_ptr(tmp.as_ptr()).to_bytes());
             i = i.wrapping_add(1);
         }
     } else {
@@ -367,7 +350,6 @@ unsafe fn cmd_capture_pane_history(
     let mut tmp: u_int = 0;
     let mut buf = Vec::new();
     let mut b: [::core::ffi::c_char; 64] = [0; 64];
-    let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let _Sflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let _Eflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     sx = wp.base.grid().sx;
@@ -458,48 +440,30 @@ unsafe fn cmd_capture_pane_history(
                 }
             }
             if show_flags != 0 {
-                cp = &raw mut b as *mut ::core::ffi::c_char;
-                *cp = '\0' as i32 as ::core::ffi::c_char;
+                let mut line_flags = Vec::new();
                 if gl.flags as ::core::ffi::c_int & GRID_LINE_DEAD != 0 {
-                    let fresh0 = cp;
-                    cp = cp.offset(1);
-                    *fresh0 = 'D' as i32 as ::core::ffi::c_char;
+                    line_flags.push(b'D');
                 }
                 if gl.flags as ::core::ffi::c_int & GRID_LINE_HYPERLINK != 0 {
-                    let fresh1 = cp;
-                    cp = cp.offset(1);
-                    *fresh1 = 'H' as i32 as ::core::ffi::c_char;
+                    line_flags.push(b'H');
                 }
                 if gl.flags as ::core::ffi::c_int & GRID_LINE_START_OUTPUT != 0 {
-                    let fresh2 = cp;
-                    cp = cp.offset(1);
-                    *fresh2 = 'O' as i32 as ::core::ffi::c_char;
+                    line_flags.push(b'O');
                 }
                 if gl.flags as ::core::ffi::c_int & GRID_LINE_START_PROMPT != 0 {
-                    let fresh3 = cp;
-                    cp = cp.offset(1);
-                    *fresh3 = 'P' as i32 as ::core::ffi::c_char;
+                    line_flags.push(b'P');
                 }
                 if gl.flags as ::core::ffi::c_int & GRID_LINE_WRAPPED != 0 {
-                    let fresh4 = cp;
-                    cp = cp.offset(1);
-                    *fresh4 = 'W' as i32 as ::core::ffi::c_char;
+                    line_flags.push(b'W');
                 }
                 if gl.flags as ::core::ffi::c_int & GRID_LINE_EXTENDED != 0 {
-                    let fresh5 = cp;
-                    cp = cp.offset(1);
-                    *fresh5 = 'X' as i32 as ::core::ffi::c_char;
+                    line_flags.push(b'X');
                 }
-                if &raw mut b as *mut ::core::ffi::c_char == cp {
-                    let fresh6 = cp;
-                    cp = cp.offset(1);
-                    *fresh6 = '-' as i32 as ::core::ffi::c_char;
+                if line_flags.is_empty() {
+                    line_flags.push(b'-');
                 }
-                let fresh7 = cp;
-                cp = cp.offset(1);
-                *fresh7 = ' ' as i32 as ::core::ffi::c_char;
-                *cp = '\0' as i32 as ::core::ffi::c_char;
-                cmd_capture_pane_append(&mut buf, CStr::from_ptr(b.as_ptr()).to_bytes());
+                line_flags.push(b' ');
+                cmd_capture_pane_append(&mut buf, &line_flags);
             }
             cmd_capture_pane_append(&mut buf, &line);
             if join_lines == 0 || gl.flags as ::core::ffi::c_int & GRID_LINE_WRAPPED == 0 {

@@ -163,16 +163,16 @@ unsafe fn cmd_send_keys_inject_string(
 ) -> std::rc::Weak<std::cell::UnsafeCell<cmdq_item>> {
     let mut after = after_handle.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     let _item = item_handle.get();
-    let mut s: *const ::core::ffi::c_char =
-        args_string(&mut *(args), i as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
+    let mut s: &std::ffi::CStr =
+        args_string(&mut *(args), i as u_int).expect("argument is present");
     let mut uc: utf8_char = 0;
     let mut key: key_code = 0;
     let mut endptr: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut n: ::core::ffi::c_long = 0;
     let mut literal: ::core::ffi::c_int = 0;
     if args_has(&*args, 'H' as i32 as u_char) != 0 {
-        n = strtol(s, &raw mut endptr, 16 as ::core::ffi::c_int);
-        if *s as ::core::ffi::c_int == '\0' as i32
+        n = strtol(s.as_ptr(), &raw mut endptr, 16 as ::core::ffi::c_int);
+        if s.is_empty()
             || n < 0 as ::core::ffi::c_long
             || n > 0xff as ::core::ffi::c_long
             || *endptr as ::core::ffi::c_int != '\0' as i32
@@ -188,7 +188,7 @@ unsafe fn cmd_send_keys_inject_string(
     }
     literal = args_has(&*args, 'l' as i32 as u_char);
     if literal == 0 {
-        key = key_string_parse_cstr(std::ffi::CStr::from_ptr(s)).unwrap_or(KEYC_UNKNOWN);
+        key = key_string_parse_cstr(s).unwrap_or(KEYC_UNKNOWN);
         if key != KEYC_NONE as ::core::ffi::c_ulong as key_code
             && key != KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code
         {
@@ -200,7 +200,7 @@ unsafe fn cmd_send_keys_inject_string(
         literal = 1 as ::core::ffi::c_int;
     }
     if literal != 0 {
-        let cells = utf8_fromcstr_vec(std::ffi::CStr::from_ptr(s));
+        let cells = utf8_fromcstr_vec(s);
         let mut current_block_20: u64;
         for cell in cells.iter().take_while(|cell| cell.size != 0) {
             if cell.size as ::core::ffi::c_int == 1 as ::core::ffi::c_int

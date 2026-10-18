@@ -1,5 +1,4 @@
-use crate::src::ffi::libc::strsep;
-use crate::src::log::{log_cstr, log_debug};
+use crate::src::log::{log_bytes, log_cstr, log_debug};
 use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::ClientRef;
@@ -8,7 +7,7 @@ use crate::src::shared::tty::{
     TERM_256COLOURS, TERM_DECFRA, TERM_DECSLRM, TERM_NOREPLACE, TERM_RGBCOLOURS, TERM_SIXEL,
 };
 use crate::src::tty_term::{tty_term_apply, tty_term_has_name};
-use libc::{strcasecmp, strcmp, strlen};
+use libc::strcmp;
 use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone)]
@@ -227,41 +226,27 @@ pub unsafe fn tty_parse_features(
     mut enabled: *mut ::core::ffi::c_int,
     mut disabled: *mut ::core::ffi::c_int,
 ) {
-    let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut loop_0: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut i: u_int = 0;
-    let mut remove: ::core::ffi::c_int = 0;
     log_debug(format_args!("adding terminal features {}", log_cstr(s)));
-    let mut copy = s.to_bytes_with_nul().to_vec();
-    loop_0 = copy.as_mut_ptr().cast();
-    loop {
-        next = strsep(&raw mut loop_0, sep.as_ptr());
-        if next.is_null() {
-            break;
-        }
-        remove = (*next as ::core::ffi::c_int != '\0' as i32
-            && *next.add(strlen(next).wrapping_sub(1 as size_t)) as ::core::ffi::c_int
-                == '@' as i32) as ::core::ffi::c_int;
-        if remove != 0 {
-            *next.add(strlen(next).wrapping_sub(1 as size_t)) = '\0' as i32 as ::core::ffi::c_char;
-        }
-        i = 0 as u_int;
-        while (i as usize) < tty_features.len() {
-            if strcasecmp(tty_features[i as usize].name.as_ptr(), next) == 0 as ::core::ffi::c_int {
-                break;
-            }
-            i = i.wrapping_add(1);
-        }
-        if i as usize == tty_features.len() {
+    let sep = sep.to_bytes();
+    for next in s.to_bytes().split(|byte| sep.contains(byte)) {
+        let (next, remove) = match next.strip_suffix(b"@") {
+            Some(next) => (next, true),
+            None => (next, false),
+        };
+        let Some(i) = tty_features
+            .iter()
+            .position(|feature| feature.name.to_bytes().eq_ignore_ascii_case(next))
+        else {
             log_debug(format_args!(
                 "unknown terminal feature: {}",
-                log_cstr(CStr::from_ptr(next))
+                log_bytes(next)
             ));
             break;
-        } else if remove != 0 {
+        };
+        if remove {
             log_debug(format_args!(
                 "removing terminal feature: {}",
-                crate::src::log::log_bytes(tty_features[i as usize].name.to_bytes())
+                log_bytes(tty_features[i].name.to_bytes())
             ));
             *enabled &= !((1 as ::core::ffi::c_int) << i);
             if !disabled.is_null() {
@@ -274,7 +259,7 @@ pub unsafe fn tty_parse_features(
             if !*enabled & (1 as ::core::ffi::c_int) << i != 0 {
                 log_debug(format_args!(
                     "adding terminal feature: {}",
-                    crate::src::log::log_bytes(tty_features[i as usize].name.to_bytes())
+                    log_bytes(tty_features[i].name.to_bytes())
                 ));
                 *enabled |= (1 as ::core::ffi::c_int) << i;
             }
@@ -329,7 +314,11 @@ pub unsafe fn tty_feature_present(term: &tty_term, name: &CStr, utf8: bool) -> :
         if let Some(equal) = copy.iter().position(|&byte| byte == b'=') {
             copy[equal] = 0;
         }
-        if tty_term_has_name(term, CStr::from_ptr(copy.as_ptr().cast())) == 0 {
+        if tty_term_has_name(
+            term,
+            CStr::from_bytes_until_nul(&copy).expect("capability is NUL-terminated"),
+        ) == 0
+        {
             return 0 as ::core::ffi::c_int;
         }
     }
@@ -442,11 +431,7 @@ pub unsafe fn tty_default_features(owner: &ClientRef, name: &CStr) {
             .wrapping_div(::core::mem::size_of::<C2RustUnnamed_35>() as usize)
     {
         if !(strcmp(table[i as usize].name.as_ptr(), name.as_ptr()) != 0 as ::core::ffi::c_int) {
-            tty_parse_client_features(
-                owner,
-                CStr::from_ptr(table[i as usize].features.as_ptr()),
-                c",",
-            );
+            tty_parse_client_features(owner, table[i as usize].features, c",");
         }
         i = i.wrapping_add(1);
     }

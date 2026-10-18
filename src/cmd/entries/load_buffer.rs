@@ -120,11 +120,7 @@ unsafe fn cmd_load_buffer_exec(
         client: None,
         name: None,
     };
-    let mut bufname: *const ::core::ffi::c_char =
-        args_get(&*(args), 'b' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if !bufname.is_null() {
-        cdata.name = Some(CStr::from_ptr(bufname).to_owned());
-    }
+    cdata.name = args_get(&*(args), 'b' as i32 as u_char).map(CStr::to_owned);
     if args_has(&*args, 'w' as i32 as u_char) != 0 && !tc.is_none() {
         cdata.client = tc_owner.clone();
     }

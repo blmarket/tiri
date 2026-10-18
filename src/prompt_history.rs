@@ -1,5 +1,6 @@
 use crate::src::compat::stdio::CFile;
 use crate::src::ffi::libc::__errno_location;
+use crate::src::format::bytes::cstr_suffix;
 use crate::src::log::{log_bytes, log_cstr, log_debug};
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::prompt::prompt_type_string;
@@ -58,8 +59,7 @@ unsafe fn prompt_add_typed_history(line: &CStr) {
             None
         };
         if let Some(history_type) = history_type {
-            let content = CStr::from_bytes_with_nul(&line.to_bytes_with_nul()[colon + 1..])
-                .expect("history content is a C string suffix");
+            let content = cstr_suffix(line, colon + 1);
             prompt_add_history(content, history_type);
             return;
         }

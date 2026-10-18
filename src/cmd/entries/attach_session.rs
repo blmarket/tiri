@@ -64,8 +64,6 @@ pub unsafe fn cmd_attach_session(
     mut Eflag: ::core::ffi::c_int,
     fflag: Option<&CStr>,
 ) -> cmd_retval {
-    let fflag: *const ::core::ffi::c_char = fflag.map_or(std::ptr::null(), CStr::as_ptr);
-    let cflag: *const ::core::ffi::c_char = cflag.map_or(std::ptr::null(), CStr::as_ptr);
     let tflag: *const ::core::ffi::c_char = tflag.map_or(std::ptr::null(), CStr::as_ptr);
     let item = item_handle.get();
     let current = cmdq_get_state_owned(&*(item));
@@ -139,22 +137,20 @@ pub unsafe fn cmd_attach_session(
                 cmd_find_state::find_from_winlink(wl.clone(), 0 as ::core::ffi::c_int);
         }
     }
-    if !cflag.is_null() {
+    if let Some(cflag) = cflag {
         s.as_ref()
             .expect("target session")
             .set_cwd(Some(format_single_cstring(
                 Some(item_handle),
-                cflag,
+                cflag.as_ptr(),
                 c.as_ref(),
                 s.as_ref(),
                 wl.clone(),
                 wp.as_ref(),
             )));
     }
-    if !fflag.is_null() {
-        c.clone()
-            .expect("live client")
-            .parse_flags(std::ffi::CStr::from_ptr(fflag));
+    if let Some(fflag) = fflag {
+        c.clone().expect("live client").parse_flags(fflag);
     }
     if rflag != 0 {
         if c.as_ref().expect("live client").flags() & CLIENT_READONLY as uint64_t != 0 {

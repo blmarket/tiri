@@ -1,4 +1,5 @@
 use crate::src::ffi::libc::wctomb;
+use crate::src::format::bytes::cstr_suffix;
 use crate::src::shared::abi::*;
 use crate::src::shared::control_character::{
     C0_ASC, C0_BEL, C0_BS, C0_CAN, C0_CR, C0_DC1, C0_DC2, C0_DC3, C0_DC4, C0_DLE, C0_EM, C0_ENQ,
@@ -5548,11 +5549,6 @@ static key_string_table: [C2RustUnnamed_1; 1379] = [
         key: KEYC_TRIPLECLICK11_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
 ];
-fn key_string_cstr_suffix(input: &CStr, offset: usize) -> &CStr {
-    debug_assert!(offset <= input.to_bytes().len());
-    CStr::from_bytes_with_nul(&input.to_bytes_with_nul()[offset..])
-        .expect("a suffix of a NUL-terminated key name remains NUL-terminated")
-}
 
 /// Search the static key names using libc's case-insensitive comparison.
 fn key_string_search_table(input: &CStr) -> key_code {
@@ -5600,7 +5596,7 @@ fn key_string_parse_numeric(input: &CStr) -> Option<key_code> {
     let mut value: u_int = 0;
     let parsed = unsafe {
         sscanf(
-            key_string_cstr_suffix(input, 2).as_ptr(),
+            cstr_suffix(input, 2).as_ptr(),
             c"%x".as_ptr(),
             &raw mut value,
         )
@@ -5612,14 +5608,15 @@ fn key_string_parse_numeric(input: &CStr) -> Option<key_code> {
         return Some(value as key_code);
     }
 
-    let mut multibyte = [0 as ::core::ffi::c_char; 17];
-    let length = unsafe { wctomb(multibyte.as_mut_ptr(), value as wchar_t) };
+    let mut multibyte = [0u8; 17];
+    let length = unsafe { wctomb(multibyte.as_mut_ptr().cast(), value as wchar_t) };
     if length <= 0 as ::core::ffi::c_int || length > MB_LEN_MAX {
         return None;
     }
-    multibyte[length as usize] = '\0' as ::core::ffi::c_char;
+    multibyte[length as usize] = 0;
 
-    let decoded = unsafe { utf8_fromcstr_vec(CStr::from_ptr(multibyte.as_ptr())) };
+    let decoded =
+        utf8_fromcstr_vec(CStr::from_bytes_until_nul(&multibyte).expect("terminated above"));
     let mut codepoint: utf8_char = 0;
     let valid = decoded[0].size as ::core::ffi::c_int != 0 as ::core::ffi::c_int
         && decoded[1].size as ::core::ffi::c_int == 0 as ::core::ffi::c_int
@@ -5672,7 +5669,7 @@ fn key_string_lookup_string_bytes(input: &CStr) -> key_code {
         return key | modifiers;
     }
 
-    let remaining_cstr = key_string_cstr_suffix(input, offset);
+    let remaining_cstr = cstr_suffix(input, offset);
     let mut data = utf8_data {
         data: [0; 32],
         have: 0,

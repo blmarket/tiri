@@ -605,7 +605,6 @@ pub unsafe fn status_prompt_set(
     mut flags: ::core::ffi::c_int,
     mut prompt_type: prompt_type,
 ) {
-    let mut input: *const ::core::ffi::c_char = input.map_or(std::ptr::null(), CStr::as_ptr);
     let mut c: Option<ClientRef> = Some(c_owner.clone());
     let mut pd = prompt_create_data::default();
     c_owner.clear_overlay();
@@ -622,11 +621,7 @@ pub unsafe fn status_prompt_set(
     );
     pd.fs = fs;
     pd.prompt = msg;
-    pd.input = if input.is_null() {
-        None
-    } else {
-        Some(CStr::from_ptr(input))
-    };
+    pd.input = input;
     pd.type_0 = prompt_type;
     pd.flags = flags;
     if let Some(mut inputcb) = inputcb.take() {
@@ -664,7 +659,6 @@ pub unsafe fn status_prompt_clear(c_owner: &ClientRef) {
 }
 
 pub unsafe fn status_prompt_update(c_owner: &ClientRef, msg: &CStr, input: Option<&CStr>) {
-    let input: *const ::core::ffi::c_char = input.map_or(std::ptr::null(), CStr::as_ptr);
     let mut c: Option<ClientRef> = Some(c_owner.clone());
     let prompt = c_owner.prompt_observer();
     if !prompt.is_alive() {
@@ -673,7 +667,7 @@ pub unsafe fn status_prompt_update(c_owner: &ClientRef, msg: &CStr, input: Optio
     prompt_update(
         &mut prompt.try_borrow_mut().expect("unborrowed prompt"),
         msg,
-        (!input.is_null()).then(|| CStr::from_ptr(input)),
+        input,
     );
     c.as_ref()
         .expect("live client")

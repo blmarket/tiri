@@ -1,3 +1,4 @@
+use crate::src::format::bytes::cstr_suffix;
 use crate::src::shared::window::WindowWeak;
 use crate::src::window::Window as _;
 mod alerts;
@@ -176,7 +177,7 @@ unsafe fn session_find_by_id_str(s: &CStr) -> Option<SessionRef> {
         return None;
     }
     let parsed = strtonum(
-        CStr::from_ptr(s.as_ptr().add(1)),
+        cstr_suffix(s, 1),
         0 as ::core::ffi::c_longlong,
         UINT_MAX as ::core::ffi::c_longlong,
     );

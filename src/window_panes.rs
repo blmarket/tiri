@@ -504,7 +504,6 @@ unsafe fn window_panes_draw_number(
         link: 0,
     };
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut len: size_t = 0;
     let mut llen: size_t = 0 as size_t;
     let mut width: size_t = 0;
@@ -541,26 +540,21 @@ unsafe fn window_panes_draw_number(
         .expect("live pane parent");
     let active = window.active_pane().ptr_eq(&Rc::downgrade(wp_owner));
     drop(window);
-    if active {
-        name = c"display-panes-active-colour".as_ptr();
+    let name = if active {
+        c"display-panes-active-colour"
     } else {
-        name = c"display-panes-colour".as_ptr();
-    }
+        c"display-panes-colour"
+    };
     let mut ft_owner = format_create_defaults(None, None, s.as_ref(), wl.clone(), Some(wp_owner));
     ft = &raw mut *ft_owner;
-    style_apply_with_options(
-        &mut fgc,
-        std::ffi::CStr::from_ptr(name),
-        Some(&mut *ft),
-        |visit| {
-            visit(
-                &mut options_window
-                    .upgrade()
-                    .expect("live display-panes window")
-                    .borrow_options_mut(),
-            )
-        },
-    );
+    style_apply_with_options(&mut fgc, name, Some(&mut *ft), |visit| {
+        visit(
+            &mut options_window
+                .upgrade()
+                .expect("live display-panes window")
+                .borrow_options_mut(),
+        )
+    });
     drop(ft_owner);
     bgc = grid_default_cell;
     bgc.bg = fgc.fg;

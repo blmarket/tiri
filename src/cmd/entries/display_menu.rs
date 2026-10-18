@@ -15,7 +15,8 @@ use crate::src::log::{log_cstr, log_debug};
 use crate::src::menu::{menu_add_item, menu_create, menu_display};
 use crate::src::options::{options_find_choice, options_get_number, options_get_string};
 use crate::src::popup::{popup_display, popup_modify, popup_present};
-use libc::{strcmp, strtol};
+use libc::strtol;
+use std::ffi::CStr;
 
 use crate::src::server_client::Client as _;
 use crate::src::session::Session;
@@ -107,11 +108,9 @@ fn cmd_display_menu_args_parse(
         }
         let fresh0 = i;
         i = i.wrapping_add(1);
-        if unsafe {
-            *args_string(&mut *(args as *mut args), fresh0)
-                .map_or(std::ptr::null(), |value| value.as_ptr())
-        } as ::core::ffi::c_int
-            == '\0' as i32
+        if args_string(args, fresh0)
+            .expect("argument is present")
+            .is_empty()
         {
             continue;
         }
@@ -168,8 +167,8 @@ unsafe fn cmd_display_menu_get_popup_pos(
         .upgrade();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let pane = (*target).pane_handle().expect("menu target pane");
-    let mut xp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut yp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let mut xp: &CStr = c"";
+    let mut yp: &CStr = c"";
     let mut top: ::core::ffi::c_int = 0;
     let _line: u_int = 0;
     let mut lines: u_int = 0;
@@ -397,21 +396,17 @@ unsafe fn cmd_display_menu_get_popup_pos(
             write!(out, "{}", (n) as ::core::ffi::c_long)
         });
     }
-    xp = args_get(&*(args), 'x' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if xp.is_null() || strcmp(xp, c"C".as_ptr()) == 0 as ::core::ffi::c_int {
-        xp = c"#{popup_centre_x}".as_ptr();
-    } else if strcmp(xp, c"R".as_ptr()) == 0 as ::core::ffi::c_int {
-        xp = c"#{popup_pane_right}".as_ptr();
-    } else if strcmp(xp, c"P".as_ptr()) == 0 as ::core::ffi::c_int {
-        xp = c"#{popup_pane_left}".as_ptr();
-    } else if strcmp(xp, c"M".as_ptr()) == 0 as ::core::ffi::c_int {
-        xp = c"#{popup_mouse_centre_x}".as_ptr();
-    } else if strcmp(xp, c"L".as_ptr()) == 0 as ::core::ffi::c_int {
-        xp = c"#{popup_last_x}".as_ptr();
-    } else if strcmp(xp, c"W".as_ptr()) == 0 as ::core::ffi::c_int {
-        xp = c"#{popup_window_status_line_x}".as_ptr();
-    }
-    let p = format_expand_cstring(ft, xp);
+    xp = args_get(&*(args), 'x' as i32 as u_char).unwrap_or(c"C");
+    xp = match xp.to_bytes() {
+        b"C" => c"#{popup_centre_x}",
+        b"R" => c"#{popup_pane_right}",
+        b"P" => c"#{popup_pane_left}",
+        b"M" => c"#{popup_mouse_centre_x}",
+        b"L" => c"#{popup_last_x}",
+        b"W" => c"#{popup_window_status_line_x}",
+        _ => xp,
+    };
+    let p = format_expand_cstring(ft, xp.as_ptr());
     n = strtol(
         p.as_ptr(),
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
@@ -433,26 +428,22 @@ unsafe fn cmd_display_menu_get_popup_pos(
     log_debug(format_args!(
         "{}: -x: {} = {} = {} (-w {})",
         "cmd_display_menu_get_popup_pos",
-        log_cstr(std::ffi::CStr::from_ptr(xp)),
+        log_cstr(xp),
         log_cstr(&p),
         { *px },
         { w }
     ));
-    yp = args_get(&*(args), 'y' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if yp.is_null() || strcmp(yp, c"C".as_ptr()) == 0 as ::core::ffi::c_int {
-        yp = c"#{popup_centre_y}".as_ptr();
-    } else if strcmp(yp, c"P".as_ptr()) == 0 as ::core::ffi::c_int {
-        yp = c"#{popup_pane_bottom}".as_ptr();
-    } else if strcmp(yp, c"M".as_ptr()) == 0 as ::core::ffi::c_int {
-        yp = c"#{popup_mouse_top}".as_ptr();
-    } else if strcmp(yp, c"L".as_ptr()) == 0 as ::core::ffi::c_int {
-        yp = c"#{popup_last_y}".as_ptr();
-    } else if strcmp(yp, c"S".as_ptr()) == 0 as ::core::ffi::c_int {
-        yp = c"#{popup_status_line_y}".as_ptr();
-    } else if strcmp(yp, c"W".as_ptr()) == 0 as ::core::ffi::c_int {
-        yp = c"#{popup_window_status_line_y}".as_ptr();
-    }
-    let p = format_expand_cstring(ft, yp);
+    yp = args_get(&*(args), 'y' as i32 as u_char).unwrap_or(c"C");
+    yp = match yp.to_bytes() {
+        b"C" => c"#{popup_centre_y}",
+        b"P" => c"#{popup_pane_bottom}",
+        b"M" => c"#{popup_mouse_top}",
+        b"L" => c"#{popup_last_y}",
+        b"S" => c"#{popup_status_line_y}",
+        b"W" => c"#{popup_window_status_line_y}",
+        _ => yp,
+    };
+    let p = format_expand_cstring(ft, yp.as_ptr());
     n = strtol(
         p.as_ptr(),
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
@@ -479,7 +470,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
     log_debug(format_args!(
         "{}: -y: {} = {} = {} (-h {})",
         "cmd_display_menu_get_popup_pos",
-        log_cstr(std::ffi::CStr::from_ptr(yp)),
+        log_cstr(yp),
         log_cstr(&p),
         { *py },
         { h }
@@ -509,8 +500,8 @@ unsafe fn cmd_display_menu_get_menu_pos(
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let window = (*target).window_handle().expect("menu target window");
     let pane = (*target).pane_handle().expect("menu target pane");
-    let mut xp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut yp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let mut xp: &CStr = c"";
+    let mut yp: &CStr = c"";
     let _line: u_int = 0;
     let mut lines: u_int = 0;
     let mut position: u_int = 0;
@@ -684,21 +675,17 @@ unsafe fn cmd_display_menu_get_menu_pos(
             write!(out, "{}", (n) as ::core::ffi::c_long)
         });
     }
-    xp = args_get(&*(args), 'x' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if xp.is_null() || strcmp(xp, c"C".as_ptr()) == 0 as ::core::ffi::c_int {
-        xp = c"#{popup_centre_x}".as_ptr();
-    } else if strcmp(xp, c"R".as_ptr()) == 0 as ::core::ffi::c_int {
-        xp = c"#{popup_pane_right}".as_ptr();
-    } else if strcmp(xp, c"P".as_ptr()) == 0 as ::core::ffi::c_int {
-        xp = c"#{popup_pane_left}".as_ptr();
-    } else if strcmp(xp, c"M".as_ptr()) == 0 as ::core::ffi::c_int {
-        xp = c"#{popup_mouse_centre_x}".as_ptr();
-    } else if strcmp(xp, c"L".as_ptr()) == 0 as ::core::ffi::c_int {
-        xp = c"#{popup_last_x}".as_ptr();
-    } else if strcmp(xp, c"W".as_ptr()) == 0 as ::core::ffi::c_int {
-        xp = c"#{popup_window_status_line_x}".as_ptr();
-    }
-    let p = format_expand_cstring(ft, xp);
+    xp = args_get(&*(args), 'x' as i32 as u_char).unwrap_or(c"C");
+    xp = match xp.to_bytes() {
+        b"C" => c"#{popup_centre_x}",
+        b"R" => c"#{popup_pane_right}",
+        b"P" => c"#{popup_pane_left}",
+        b"M" => c"#{popup_mouse_centre_x}",
+        b"L" => c"#{popup_last_x}",
+        b"W" => c"#{popup_window_status_line_x}",
+        _ => xp,
+    };
+    let p = format_expand_cstring(ft, xp.as_ptr());
     n = strtol(
         p.as_ptr(),
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
@@ -714,26 +701,22 @@ unsafe fn cmd_display_menu_get_menu_pos(
     log_debug(format_args!(
         "{}: -x: {} = {} = {} (-w {})",
         "cmd_display_menu_get_menu_pos",
-        log_cstr(std::ffi::CStr::from_ptr(xp)),
+        log_cstr(xp),
         log_cstr(&p),
         { *px },
         { w }
     ));
-    yp = args_get(&*(args), 'y' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if yp.is_null() || strcmp(yp, c"C".as_ptr()) == 0 as ::core::ffi::c_int {
-        yp = c"#{popup_centre_y}".as_ptr();
-    } else if strcmp(yp, c"P".as_ptr()) == 0 as ::core::ffi::c_int {
-        yp = c"#{popup_pane_bottom}".as_ptr();
-    } else if strcmp(yp, c"M".as_ptr()) == 0 as ::core::ffi::c_int {
-        yp = c"#{popup_mouse_top}".as_ptr();
-    } else if strcmp(yp, c"L".as_ptr()) == 0 as ::core::ffi::c_int {
-        yp = c"#{popup_last_y}".as_ptr();
-    } else if strcmp(yp, c"S".as_ptr()) == 0 as ::core::ffi::c_int {
-        yp = c"#{popup_status_line_y}".as_ptr();
-    } else if strcmp(yp, c"W".as_ptr()) == 0 as ::core::ffi::c_int {
-        yp = c"#{popup_window_status_line_y}".as_ptr();
-    }
-    let p = format_expand_cstring(ft, yp);
+    yp = args_get(&*(args), 'y' as i32 as u_char).unwrap_or(c"C");
+    yp = match yp.to_bytes() {
+        b"C" => c"#{popup_centre_y}",
+        b"P" => c"#{popup_pane_bottom}",
+        b"M" => c"#{popup_mouse_top}",
+        b"L" => c"#{popup_last_y}",
+        b"S" => c"#{popup_status_line_y}",
+        b"W" => c"#{popup_window_status_line_y}",
+        _ => yp,
+    };
+    let p = format_expand_cstring(ft, yp.as_ptr());
     n = strtol(
         p.as_ptr(),
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
@@ -754,7 +737,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
     log_debug(format_args!(
         "{}: -y: {} = {} = {} (-h {})",
         "cmd_display_menu_get_menu_pos",
-        log_cstr(std::ffi::CStr::from_ptr(yp)),
+        log_cstr(yp),
         log_cstr(&p),
         { *py },
         { h }
@@ -775,9 +758,9 @@ unsafe fn cmd_display_menu_exec(
     let event: *mut key_event = &mut event_snapshot;
     let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: Option<ClientRef> = tc_owner.clone();
-    let style = args_get(&*(args), b's').map_or(std::ptr::null(), |value| value.as_ptr());
-    let border_style = args_get(&*(args), b'S').map_or(std::ptr::null(), |value| value.as_ptr());
-    let selected_style = args_get(&*(args), b'H').map_or(std::ptr::null(), |value| value.as_ptr());
+    let style = args_get(&*(args), b's');
+    let border_style = args_get(&*(args), b'S');
+    let selected_style = args_get(&*(args), b'H');
     let mut starting_choice = 0;
     if args_has(&*args, b'C') != 0 {
         if args_get(&*(args), b'C').expect("argument is present") == c"-" {
@@ -859,14 +842,13 @@ unsafe fn cmd_display_menu_exec(
         return CMD_RETURN_NORMAL;
     }
     let mut lines = BOX_LINES_DEFAULT;
-    let value = args_get(&*(args), b'b').map_or(std::ptr::null(), |value| value.as_ptr());
-    if !value.is_null() {
+    if let Some(value) = args_get(&*(args), b'b') {
         match options_find_choice(
             crate::src::options::options_table
                 .iter()
                 .find(|entry| entry.name == Some(c"menu-border-lines"))
                 .expect("built-in border choice"),
-            std::ffi::CStr::from_ptr(value),
+            value,
         ) {
             Ok(choice) => lines = choice as box_lines,
             Err(cause) => {
@@ -894,9 +876,9 @@ unsafe fn cmd_display_menu_exec(
         py,
         tc_owner.as_ref(),
         lines,
-        (!style.is_null()).then(|| std::ffi::CStr::from_ptr(style)),
-        (!selected_style.is_null()).then(|| std::ffi::CStr::from_ptr(selected_style)),
-        (!border_style.is_null()).then(|| std::ffi::CStr::from_ptr(border_style)),
+        style,
+        selected_style,
+        border_style,
         target,
         None,
     );
@@ -917,18 +899,15 @@ unsafe fn cmd_display_popup_exec(
     let mut s: Option<SessionRef> = (*target).session_handle();
     let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: Option<ClientRef> = tc_owner.clone();
-    let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut shell: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut shellcmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut style: *const ::core::ffi::c_char =
-        args_get(&*(args), 's' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    let mut border_style: *const ::core::ffi::c_char =
-        args_get(&*(args), 'S' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    let mut cwd: *const ::core::ffi::c_char = ::core::ptr::null();
+    let mut value: Option<&CStr> = None;
+    let mut shellcmd: Option<&CStr> = None;
+    let style = args_get(&*(args), 's' as i32 as u_char);
+    let border_style = args_get(&*(args), 'S' as i32 as u_char);
+    let mut cwd: Option<&CStr> = None;
     let mut formatted_cwd: Option<std::ffi::CString> = None;
     let mut default_cwd: Option<std::ffi::CString> = None;
     let mut argv_owner = Vec::new();
-    let mut title: *const ::core::ffi::c_char = ::core::ptr::null();
+    let title: &CStr;
     let mut formatted_title: Option<std::ffi::CString> = None;
     let mut modify: ::core::ffi::c_int = popup_present(&tc.clone().expect("live client"));
     let mut flags: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
@@ -1034,52 +1013,38 @@ unsafe fn cmd_display_popup_exec(
                         {
                             current_block = 6589043366517631393;
                         } else {
-                            value = args_get(&*(args), 'd' as i32 as u_char)
-                                .map_or(std::ptr::null(), |value| value.as_ptr());
-                            if !value.is_null() {
-                                formatted_cwd =
-                                    Some(format_single_from_target_cstring(item_handle, value));
-                                cwd = formatted_cwd
-                                    .as_ref()
-                                    .expect("formatted cwd was set")
-                                    .as_ptr();
+                            value = args_get(&*(args), 'd' as i32 as u_char);
+                            if let Some(value) = value {
+                                formatted_cwd = Some(format_single_from_target_cstring(
+                                    item_handle,
+                                    value.as_ptr(),
+                                ));
+                                cwd = formatted_cwd.as_deref();
                             } else {
                                 default_cwd = ClientRef::working_directory(tc.as_ref(), s.as_ref());
-                                cwd = default_cwd
-                                    .as_ref()
-                                    .expect("default cwd was copied")
-                                    .as_ptr();
+                                cwd = Some(default_cwd.as_deref().expect("default cwd was copied"));
                             }
                             if count == 0 as u_int {
                                 shellcmd_session_value = Some(options_get_string(
                                     &s.as_ref().expect("live session").borrow_options_mut(),
                                     c"default-command",
                                 ));
-                                shellcmd = shellcmd_session_value
-                                    .as_ref()
-                                    .expect("option snapshot")
-                                    .as_ptr();
+                                shellcmd = shellcmd_session_value.as_deref();
                             } else if count == 1 as u_int {
-                                shellcmd = args_string(&mut *(args), 0 as u_int)
-                                    .map_or(std::ptr::null(), |value| value.as_ptr());
+                                shellcmd = args_string(&mut *(args), 0 as u_int);
                             }
-                            if count <= 1 as u_int
-                                && (shellcmd.is_null()
-                                    || *shellcmd as ::core::ffi::c_int == '\0' as i32)
-                            {
-                                shellcmd = ::core::ptr::null::<::core::ffi::c_char>();
+                            if count <= 1 as u_int && shellcmd.is_none_or(CStr::is_empty) {
+                                shellcmd = None;
                                 shell_session_value = Some(options_get_string(
                                     &s.as_ref().expect("live session").borrow_options_mut(),
                                     c"default-shell",
                                 ));
-                                shell = shell_session_value
-                                    .as_ref()
-                                    .expect("option snapshot")
-                                    .as_ptr();
-                                if checkshell(Some(std::ffi::CStr::from_ptr(shell))) == 0 {
-                                    shell = _PATH_BSHELL.as_ptr();
+                                let mut shell: &CStr =
+                                    shell_session_value.as_deref().expect("option snapshot");
+                                if checkshell(Some(shell)) == 0 {
+                                    shell = _PATH_BSHELL;
                                 }
-                                cmd_append_argv(&mut argv_owner, std::ffi::CStr::from_ptr(shell));
+                                cmd_append_argv(&mut argv_owner, shell);
                             } else {
                                 argv_owner = args_to_vector(&*args);
                             }
@@ -1103,18 +1068,17 @@ unsafe fn cmd_display_popup_exec(
         current_block = 1345366029464561491;
     }
     if current_block == 1345366029464561491 {
-        value = args_get(&*(args), 'b' as i32 as u_char)
-            .map_or(std::ptr::null(), |value| value.as_ptr());
+        value = args_get(&*(args), 'b' as i32 as u_char);
         if args_has(&*args, 'B' as i32 as u_char) != 0 {
             lines = BOX_LINES_NONE;
             current_block = 8151474771948790331;
-        } else if !value.is_null() {
+        } else if let Some(value) = value {
             match options_find_choice(
                 crate::src::options::options_table
                     .iter()
                     .find(|entry| entry.name == Some(c"popup-border-lines"))
                     .expect("built-in border choice"),
-                std::ffi::CStr::from_ptr(value),
+                value,
             ) {
                 Ok(choice) => {
                     lines = choice as box_lines;
@@ -1140,12 +1104,9 @@ unsafe fn cmd_display_popup_exec(
                         args_get(&*(args), 'T' as i32 as u_char)
                             .map_or(std::ptr::null(), |value| value.as_ptr()),
                     ));
-                    title = formatted_title
-                        .as_ref()
-                        .expect("formatted title was set")
-                        .as_ptr();
+                    title = formatted_title.as_deref().expect("formatted title was set");
                 } else {
-                    title = c"".as_ptr();
+                    title = c"";
                 }
                 if args_has(&*args, 'N' as i32 as u_char) != 0 || modify == 0 {
                     flags = 0 as ::core::ffi::c_int;
@@ -1170,7 +1131,7 @@ unsafe fn cmd_display_popup_exec(
                 if modify != 0 {
                     popup_modify(
                         &tc.clone().expect("live client"),
-                        title,
+                        Some(title),
                         style,
                         border_style,
                         lines,
@@ -1195,7 +1156,7 @@ unsafe fn cmd_display_popup_exec(
                         shellcmd,
                         &argv_owner,
                         cwd,
-                        title,
+                        Some(title),
                         &tc.clone().expect("live client"),
                         s.as_ref(),
                         style,

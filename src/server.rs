@@ -360,10 +360,8 @@ unsafe fn server_send_exit() {
     s = s_owner.clone();
     while !s.is_none() {
         let name = s.as_ref().expect("live session").name();
-        (s_owner.as_ref().expect("registered session")).destroy(
-            (1 as ::core::ffi::c_int) != 0,
-            std::ffi::CStr::from_ptr(c"server_send_exit".as_ptr()),
-        );
+        (s_owner.as_ref().expect("registered session"))
+            .destroy((1 as ::core::ffi::c_int) != 0, c"server_send_exit");
         s_owner = sessions::after(&name);
         s = s_owner.clone();
     }

@@ -8,6 +8,7 @@ use crate::src::control::{
     control_add_sub, control_clear_window_size, control_continue_pane, control_pause_pane,
     control_remove_sub, control_set_pane_off, control_set_pane_on, control_set_window_size,
 };
+use crate::src::format::bytes::cstr_suffix;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::monitor::monitor_parse_owned;
@@ -162,8 +163,7 @@ fn cmd_refresh_parse_pane(value: &CStr) -> Option<(u_int, &CStr)> {
     }
     let colon = bytes.iter().position(|&byte| byte == b':')?;
     let prefix = CString::new(&bytes[..colon]).expect("CStr prefix contains no NUL");
-    let suffix = CStr::from_bytes_with_nul(&value.to_bytes_with_nul()[colon + 1..])
-        .expect("CStr suffix has one trailing NUL");
+    let suffix = cstr_suffix(value, colon + 1);
     let mut pane = 0;
     let matched = unsafe { sscanf(prefix.as_ptr(), c"%%%u".as_ptr(), &mut pane) };
     (matched == 1).then_some((pane, suffix))
@@ -281,18 +281,12 @@ unsafe fn cmd_refresh_client_exec(
     if args_has(&*args, 'F' as i32 as u_char) != 0 {
         tc.clone()
             .expect("live client")
-            .parse_flags(std::ffi::CStr::from_ptr(
-                args_get(&*(args), 'F' as i32 as u_char)
-                    .map_or(std::ptr::null(), |value| value.as_ptr()),
-            ));
+            .parse_flags(args_get(&*(args), 'F' as i32 as u_char).expect("-F has a value"));
     }
     if args_has(&*args, 'f' as i32 as u_char) != 0 {
         tc.clone()
             .expect("live client")
-            .parse_flags(std::ffi::CStr::from_ptr(
-                args_get(&*(args), 'f' as i32 as u_char)
-                    .map_or(std::ptr::null(), |value| value.as_ptr()),
-            ));
+            .parse_flags(args_get(&*(args), 'f' as i32 as u_char).expect("-f has a value"));
     }
     if args_has(&*args, 'r' as i32 as u_char) != 0 {
         cmd_refresh_report(

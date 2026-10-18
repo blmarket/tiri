@@ -78,7 +78,7 @@ unsafe fn cmd_capture_pane_exec(
         .expect("capture target pane");
     let mut buf: Vec<u8>;
     let mut cause: Option<CString> = None;
-    let mut bufname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let mut bufname: Option<&CStr> = None;
     if std::ptr::eq(
         cmd_get_entry(self_0.get_unchecked()),
         &cmd_clear_history_entry,
@@ -118,16 +118,12 @@ unsafe fn cmd_capture_pane_exec(
             file_print(c_owner.as_ref(), |out| out.write_all(b"\n"));
         }
     } else {
-        bufname = ::core::ptr::null::<::core::ffi::c_char>();
+        bufname = None;
         if args_has(&*args, 'b' as i32 as u_char) != 0 {
-            bufname = args_get(&*(args), 'b' as i32 as u_char)
-                .map_or(std::ptr::null(), |value| value.as_ptr());
+            bufname = args_get(&*(args), 'b' as i32 as u_char);
         }
-        if paste_set_owned(
-            buf.into_boxed_slice(),
-            (!bufname.is_null()).then(|| CStr::from_ptr(bufname)),
-            Some(&mut cause),
-        ) != 0 as ::core::ffi::c_int
+        if paste_set_owned(buf.into_boxed_slice(), bufname, Some(&mut cause))
+            != 0 as ::core::ffi::c_int
         {
             cmdq_error(item_handle, |out| {
                 write_cstr(out, (cause.as_ref().unwrap()).as_c_str())

@@ -56,9 +56,8 @@ unsafe fn cmd_kill_session_exec(
     let source = (*target).s.upgrade().expect("live target session");
     let mut sg = crate::src::shared::session::SessionGroupWeak::new();
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut filter: *const ::core::ffi::c_char =
-        args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if !filter.is_null()
+    let mut filter: Option<&CStr> = args_get(&*(args), 'f' as i32 as u_char);
+    if filter.is_some()
         && (args_has(&*args, 'a' as i32 as u_char) == 0
             || args_has(&*args, 'C' as i32 as u_char) != 0)
     {
@@ -77,7 +76,6 @@ unsafe fn cmd_kill_session_exec(
         }
         server_redraw_session(&source);
     } else if args_has(&*args, 'a' as i32 as u_char) != 0 {
-        let filter = (!filter.is_null()).then(|| CStr::from_ptr(filter));
         return cmd_kill_session_all(item_handle, filter);
     } else if args_has(&*args, 'g' as i32 as u_char) != 0 && {
         sg = crate::src::session::session_groups::for_session(&std::rc::Rc::downgrade(&source));
@@ -85,17 +83,11 @@ unsafe fn cmd_kill_session_exec(
     } {
         for session_owner in crate::src::session::session_group_members(&sg) {
             server_destroy_session(&session_owner);
-            session_owner.destroy(
-                (1 as ::core::ffi::c_int) != 0,
-                std::ffi::CStr::from_ptr(c"cmd_kill_session_exec".as_ptr()),
-            );
+            session_owner.destroy((1 as ::core::ffi::c_int) != 0, c"cmd_kill_session_exec");
         }
     } else {
         server_destroy_session(&source);
-        source.destroy(
-            (1 as ::core::ffi::c_int) != 0,
-            std::ffi::CStr::from_ptr(c"cmd_kill_session_exec".as_ptr()),
-        );
+        source.destroy((1 as ::core::ffi::c_int) != 0, c"cmd_kill_session_exec");
     }
     CMD_RETURN_NORMAL
 }
@@ -119,10 +111,8 @@ unsafe fn cmd_kill_session_all(
             ) == 0)
         {
             server_destroy_session(sloop_owner.as_ref().expect("registered session"));
-            (sloop_owner.as_ref().expect("registered session")).destroy(
-                (1 as ::core::ffi::c_int) != 0,
-                std::ffi::CStr::from_ptr(c"cmd_kill_session_all".as_ptr()),
-            );
+            (sloop_owner.as_ref().expect("registered session"))
+                .destroy((1 as ::core::ffi::c_int) != 0, c"cmd_kill_session_all");
         }
         sloop_owner = sessions::after(&name);
         sloop = sloop_owner.clone();

@@ -346,14 +346,14 @@ unsafe fn server_destroy_session_group(s_owner: &SessionRef) {
         server_destroy_session(&source);
         (&source).destroy(
             (1 as ::core::ffi::c_int) != 0,
-            std::ffi::CStr::from_ptr(c"server_destroy_session_group".as_ptr()),
+            c"server_destroy_session_group",
         );
     } else {
         for session_owner in crate::src::session::session_group_members(&sg) {
             server_destroy_session(&session_owner);
             (&session_owner).destroy(
                 (1 as ::core::ffi::c_int) != 0,
-                std::ffi::CStr::from_ptr(c"server_destroy_session_group".as_ptr()),
+                c"server_destroy_session_group",
             );
         }
     };
@@ -494,7 +494,7 @@ pub unsafe fn server_check_unattached() {
                             server_destroy_session(s_owner.as_ref().expect("registered session"));
                             (s_owner.as_ref().expect("registered session")).destroy(
                                 (1 as ::core::ffi::c_int) != 0,
-                                std::ffi::CStr::from_ptr(c"server_check_unattached".as_ptr()),
+                                c"server_check_unattached",
                             );
                         }
                     }
@@ -532,7 +532,7 @@ pub unsafe fn server_check_unattached() {
                             server_destroy_session(s_owner.as_ref().expect("registered session"));
                             (s_owner.as_ref().expect("registered session")).destroy(
                                 (1 as ::core::ffi::c_int) != 0,
-                                std::ffi::CStr::from_ptr(c"server_check_unattached".as_ptr()),
+                                c"server_check_unattached",
                             );
                         }
                     }
@@ -570,7 +570,7 @@ pub unsafe fn server_check_unattached() {
                             server_destroy_session(s_owner.as_ref().expect("registered session"));
                             (s_owner.as_ref().expect("registered session")).destroy(
                                 (1 as ::core::ffi::c_int) != 0,
-                                std::ffi::CStr::from_ptr(c"server_check_unattached".as_ptr()),
+                                c"server_check_unattached",
                             );
                         }
                     }

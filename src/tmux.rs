@@ -12,7 +12,7 @@ use crate::src::compat::fdforkpty::getptmfd;
 use crate::src::compat::getopt_long::{BSDgetopt, BSDoptarg, BSDoptind};
 use crate::src::compat::getprogname::getprogname;
 use crate::src::environ::{environ_create, environ_find, environ_put, environ_set};
-use crate::src::ffi::libc::{__errno_location, environ, err, errx, stderr, stdout, strsep, tzset};
+use crate::src::ffi::libc::{__errno_location, environ, err, errx, stderr, stdout, tzset};
 use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::{log_add_level, log_cstr, log_debug};
@@ -105,25 +105,31 @@ unsafe fn usage(mut status: ::core::ffi::c_int) -> ! {
     exit(status);
 }
 unsafe fn getshell() -> CString {
-    let shell = getenv(c"SHELL".as_ptr());
-    if checkshell(nullable_cstr(shell)) != 0 {
-        return CStr::from_ptr(shell).to_owned();
+    let shell = nullable_cstr(getenv(c"SHELL".as_ptr()));
+    if let Some(shell) = shell.filter(|shell| checkshell(Some(shell)) != 0) {
+        return shell.to_owned();
     }
     let pw = getpwuid(getuid());
-    if !pw.is_null() && checkshell(nullable_cstr((*pw).pw_shell)) != 0 {
-        return CStr::from_ptr((*pw).pw_shell).to_owned();
+    if !pw.is_null() {
+        if let Some(shell) =
+            nullable_cstr((*pw).pw_shell).filter(|shell| checkshell(Some(shell)) != 0)
+        {
+            return shell.to_owned();
+        }
     }
     c"/bin/sh".to_owned()
 }
 pub unsafe fn checkshell(shell: Option<&CStr>) -> ::core::ffi::c_int {
-    let shell: *const ::core::ffi::c_char = shell.map_or(std::ptr::null(), CStr::as_ptr);
-    if shell.is_null() || *shell as ::core::ffi::c_int != '/' as i32 {
+    let Some(shell) = shell else {
+        return 0 as ::core::ffi::c_int;
+    };
+    if shell.to_bytes().first() != Some(&b'/') {
         return 0 as ::core::ffi::c_int;
     }
-    if areshell(CStr::from_ptr(shell)) != 0 {
+    if areshell(shell) != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    if access(shell, X_OK) != 0 as ::core::ffi::c_int {
+    if access(shell.as_ptr(), X_OK) != 0 as ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
     1 as ::core::ffi::c_int
@@ -179,27 +185,15 @@ unsafe fn expand_path(path: &CStr, home: Option<&CStr>) -> Option<CString> {
 }
 unsafe fn expand_paths(s: &CStr, no_realpath: bool) -> Vec<CString> {
     let home = find_home_cstr();
-    let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut tmp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut resolved: [::core::ffi::c_char; 4096] = [0; 4096];
+    let mut resolved = [0u8; 4096];
     let mut paths = Vec::new();
-    let mut copy = s.to_bytes_with_nul().to_vec();
-    tmp = copy.as_mut_ptr().cast();
-    loop {
-        next = strsep(&raw mut tmp, c":".as_ptr());
-        if next.is_null() {
-            break;
-        }
-        if let Some(expanded) = expand_path(CStr::from_ptr(next), home) {
+    for next in s.to_bytes().split(|&b| b == b':') {
+        let next = CString::new(next).expect("a path from a C string contains no NUL");
+        if let Some(expanded) = expand_path(&next, home) {
             let path = if no_realpath {
                 Some(expanded)
             } else {
-                let path = if realpath(
-                    expanded.as_ptr(),
-                    &raw mut resolved as *mut ::core::ffi::c_char,
-                )
-                .is_null()
-                {
+                let path = if realpath(expanded.as_ptr(), resolved.as_mut_ptr().cast()).is_null() {
                     log_debug(format_args!(
                         "{}: realpath(\"{}\") failed: {}",
                         "expand_paths",
@@ -208,7 +202,11 @@ unsafe fn expand_paths(s: &CStr, no_realpath: bool) -> Vec<CString> {
                     ));
                     None
                 } else {
-                    Some(CStr::from_ptr(resolved.as_ptr()).to_owned())
+                    Some(
+                        CStr::from_bytes_until_nul(&resolved)
+                            .expect("realpath NUL-terminates")
+                            .to_owned(),
+                    )
                 };
                 drop(expanded);
                 path
@@ -228,7 +226,7 @@ unsafe fn expand_paths(s: &CStr, no_realpath: bool) -> Vec<CString> {
             log_debug(format_args!(
                 "{}: invalid path: {}",
                 "expand_paths",
-                log_cstr(CStr::from_ptr(next))
+                log_cstr(&next)
             ));
         }
     }
@@ -349,21 +347,24 @@ pub fn sig2name(signo: ::core::ffi::c_int) -> CString {
 pub unsafe fn find_cwd() -> Option<CString> {
     let mut resolved1: [::core::ffi::c_char; 4096] = [0; 4096];
     let mut resolved2: [::core::ffi::c_char; 4096] = [0; 4096];
-    let mut buffer: [::core::ffi::c_char; 4096] = [0; 4096];
-    if getcwd(buffer.as_mut_ptr(), buffer.len() as size_t).is_null() {
+    let mut buffer = [0u8; 4096];
+    if getcwd(buffer.as_mut_ptr().cast(), buffer.len() as size_t).is_null() {
         return None;
     }
-    let cwd = CStr::from_ptr(buffer.as_ptr()).to_owned();
-    let pwd = getenv(c"PWD".as_ptr());
-    if pwd.is_null()
-        || *pwd as ::core::ffi::c_int == '\0' as i32
-        || realpath(pwd, resolved1.as_mut_ptr()).is_null()
+    let cwd = CStr::from_bytes_until_nul(&buffer)
+        .expect("getcwd NUL-terminates")
+        .to_owned();
+    let Some(pwd) = nullable_cstr(getenv(c"PWD".as_ptr())) else {
+        return Some(cwd);
+    };
+    if pwd.is_empty()
+        || realpath(pwd.as_ptr(), resolved1.as_mut_ptr()).is_null()
         || realpath(cwd.as_ptr(), resolved2.as_mut_ptr()).is_null()
         || strcmp(resolved1.as_ptr(), resolved2.as_ptr()) != 0 as ::core::ffi::c_int
     {
         return Some(cwd);
     }
-    Some(CStr::from_ptr(pwd).to_owned())
+    Some(pwd.to_owned())
 }
 /// Return the cached home directory as a borrowed C string. A missing result
 /// is retried on the next call, matching the old null-sentinel cache behavior.

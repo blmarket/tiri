@@ -185,6 +185,13 @@ unsafe fn proc_update_io(peer: *mut tmuxpeer) {
     })
     .expect("start peer I/O");
 }
+/// The string payload of a message, which must end in a NUL.
+pub fn imsg_string(imsg: &imsg) -> Option<&CStr> {
+    if imsg.data.last() != Some(&0) {
+        return None;
+    }
+    CStr::from_bytes_until_nul(&imsg.data).ok()
+}
 /// The bytes of a plain message struct, as sent on the wire.
 pub fn bytes_of<T: Copy>(value: &T) -> &[u8] {
     unsafe { std::slice::from_raw_parts((value as *const T).cast::<u8>(), size_of::<T>()) }

@@ -69,13 +69,8 @@ unsafe fn cmd_list_commands(
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut command: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    template =
-        args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if template.is_null() {
-        template = LIST_COMMANDS_TEMPLATE.as_ptr();
-    }
+    let template: &CStr =
+        args_get(&*(args), 'F' as i32 as u_char).unwrap_or(LIST_COMMANDS_TEMPLATE);
     let mut ft_owner = format_create_with_client(
         queue_client.as_ref(),
         Some(item_handle),
@@ -84,22 +79,20 @@ unsafe fn cmd_list_commands(
     );
     ft = &raw mut *ft_owner;
     format_defaults(ft, None, None, (refbox::Weak::new()).clone(), None);
-    command =
-        args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
-    if command.is_null() {
-        for &entry in &cmd_table {
-            cmd_list_single_command(entry, ft, CStr::from_ptr(template), item_handle);
-        }
-    } else {
-        match cmd_find(CStr::from_ptr(command)) {
+    if let Some(command) = args_string(&mut *(args), 0 as u_int) {
+        match cmd_find(command) {
             Ok(found) => {
-                cmd_list_single_command(found, ft, CStr::from_ptr(template), item_handle);
+                cmd_list_single_command(found, ft, template, item_handle);
             }
             Err(cause) => {
                 cmdq_error(item_handle, |out| write_cstr(out, &*cause));
                 drop(ft_owner);
                 return CMD_RETURN_ERROR;
             }
+        }
+    } else {
+        for &entry in &cmd_table {
+            cmd_list_single_command(entry, ft, template, item_handle);
         }
     }
     drop(ft_owner);

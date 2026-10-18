@@ -71,7 +71,6 @@ unsafe fn cmd_display_message_exec(
     let s = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let wp = (*target).pane_handle();
-    let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut cause: Option<CString> = None;
     let mut delay: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     let mut flags: ::core::ffi::c_int = 0;
@@ -115,18 +114,16 @@ unsafe fn cmd_display_message_exec(
             }
         };
     }
-    if count != 0 as u_int {
-        template =
-            args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
+    let template = if count != 0 as u_int {
+        args_string(&mut *(args), 0 as u_int)
     } else {
-        template = args_get(&*(args), 'F' as i32 as u_char)
-            .map_or(std::ptr::null(), |value| value.as_ptr());
-    }
-    if args_has(&*args, 'j' as i32 as u_char) != 0 && template.is_null() {
-        template = c"".as_ptr();
-    } else if template.is_null() {
-        template = DISPLAY_MESSAGE_TEMPLATE.as_ptr();
-    }
+        args_get(&*(args), 'F' as i32 as u_char)
+    };
+    let template: &CStr = match template {
+        Some(template) => template,
+        None if args_has(&*args, 'j' as i32 as u_char) != 0 => c"",
+        None => DISPLAY_MESSAGE_TEMPLATE,
+    };
     let best_client_owner;
     if !tc.is_none()
         && tc
@@ -166,9 +163,9 @@ unsafe fn cmd_display_message_exec(
         return CMD_RETURN_NORMAL;
     }
     let mut msg = if args_has(&*args, 'l' as i32 as u_char) != 0 {
-        CStr::from_ptr(template).to_owned()
+        template.to_owned()
     } else {
-        format_expand_time_cstring(ft, template)
+        format_expand_time_cstring(ft, template.as_ptr())
     };
     if args_has(&*args, 'j' as i32 as u_char) != 0 {
         let Some(jn) = json_parse(&msg, Some(&mut cause)) else {
