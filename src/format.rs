@@ -48,8 +48,7 @@ use crate::src::style::colour::{
 };
 use crate::src::text::utf8::{utf8_cstrhas, utf8_pad_cstring, utf8_set, utf8_tocstr_cstring};
 use crate::src::tmux::{
-    get_timer, getversion, global_environ, socket_path_cstr, start_time, with_global_options,
-    with_global_s_options, with_global_w_options,
+    get_timer, getversion, global_environ, socket_path_cstr, start_time, with_global_s_options,
 };
 use crate::src::window::{winlink_find_by_window, winlinks_minmax, winlinks_next};
 use crate::src::window_buffer::window_buffer_mode;
@@ -58,7 +57,6 @@ use crate::src::window_pane::WindowPane as _;
 use crate::src::window_tree::window_tree_mode;
 use std::ffi::{CStr, CString};
 
-use crate::src::options::options;
 use crate::src::options::OPTIONS_TABLE_IS_HOOK;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::CLIENT_UNATTACHEDFLAGS;
@@ -355,7 +353,10 @@ pub unsafe fn format_create_from_target(
 ) -> Box<format_tree> {
     let (tc, target) = {
         let item = item_handle.borrow();
-        (cmdq_get_target_client(Some(&*item)), crate::src::cmd::queue::cmdq_get_target(&item).clone())
+        (
+            cmdq_get_target_client(Some(&*item)),
+            crate::src::cmd::queue::cmdq_get_target(&item).clone(),
+        )
     };
     format_create_from_state(Some(item_handle), tc.as_ref(), &target)
 }

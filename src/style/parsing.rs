@@ -5,7 +5,6 @@ use crate::src::format::format_single_cstring;
 use crate::src::grid::grid_default_cell;
 use crate::src::hyperlinks::{hyperlinks_get, hyperlinks_put, HyperlinksRef};
 use crate::src::log::{fatalx, log_bytes, log_debug};
-pub use crate::src::options::options;
 use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::hyperlinks::hyperlinks_uri;
@@ -632,13 +631,20 @@ pub unsafe fn style_copy(mut dst: *mut style, mut src: *mut style) {
         ::core::mem::size_of::<style>() as size_t,
     );
 }
-pub unsafe fn style_set_scrollbar_style_from_option(mut sb_style: *mut style, oo: &options) {
+pub unsafe fn style_set_scrollbar_style_from_option(
+    mut sb_style: *mut style,
+    scope: &crate::src::options::OptionsScope,
+) {
     style_set(sb_style, &grid_default_cell);
-    let oe = crate::src::options::options_read_entry(oo, c"pane-scrollbars-style", |entry| {
-        entry.tableentry
-    })
-    .flatten()
-    .unwrap_or_else(|| fatalx(|out| out.write_all(b"missing pane-scrollbars-style")));
+    let (oe, value) = scope.with_local(|oo| {
+        let oe = crate::src::options::options_read_entry(oo, c"pane-scrollbars-style", |entry| {
+            entry.tableentry
+        })
+        .flatten();
+        let value = crate::src::options::options_get_string_optional(oo, c"pane-scrollbars-style");
+        (oe, value)
+    });
+    let oe = oe.unwrap_or_else(|| fatalx(|out| out.write_all(b"missing pane-scrollbars-style")));
     let style = format_single_cstring(
         None,
         oe.default_str.map_or(std::ptr::null(), CStr::as_ptr),
@@ -650,7 +656,6 @@ pub unsafe fn style_set_scrollbar_style_from_option(mut sb_style: *mut style, oo
     if style_parse(sb_style, &grid_default_cell, &style) != 0 as ::core::ffi::c_int {
         fatalx(|out| out.write_all(b"bad pane-scrollbars-style default"));
     }
-    let value = crate::src::options::options_get_string_optional(oo, c"pane-scrollbars-style");
     if let Some(value) = value {
         let expanded = format_single_cstring(
             None,

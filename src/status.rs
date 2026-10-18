@@ -270,23 +270,13 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
     let mut ft_owner = format_create(Some(c_owner), None, FORMAT_NONE, flags);
     ft = &raw mut *ft_owner;
     format_defaults(ft, Some(c_owner), None, (refbox::Weak::new()).clone(), None);
-    crate::src::style::style_apply_with_options(
-        &mut gc,
-        c"status-style",
-        ft.as_mut(),
-        &OptionsScope::Session(Rc::downgrade(s.as_ref().expect("live session"))),
-    );
-    fg = options_get_number(
-        &s.as_ref().expect("live session").borrow_options_mut(),
-        c"status-fg",
-    ) as ::core::ffi::c_int;
+    let scope = OptionsScope::Session(Rc::downgrade(s.as_ref().expect("live session")));
+    crate::src::style::style_apply_with_options(&mut gc, c"status-style", ft.as_mut(), &scope);
+    fg = scope.with_local(|oo| options_get_number(oo, c"status-fg")) as ::core::ffi::c_int;
     if !(fg == 8 as ::core::ffi::c_int || fg == 9 as ::core::ffi::c_int) {
         gc.fg = fg;
     }
-    bg = options_get_number(
-        &s.as_ref().expect("live session").borrow_options_mut(),
-        c"status-bg",
-    ) as ::core::ffi::c_int;
+    bg = scope.with_local(|oo| options_get_number(oo, c"status-bg")) as ::core::ffi::c_int;
     if !(bg == 8 as ::core::ffi::c_int || bg == 9 as ::core::ffi::c_int) {
         gc.bg = bg;
     }
@@ -305,9 +295,7 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
         screen_write_start(&mut ctx, &raw mut (*sl).screen);
         ctx.target = Default::default();
     }
-    let format_owner =
-        OptionsScope::Session(std::rc::Rc::downgrade(s.as_ref().expect("live session")))
-            .resolve(c"status-format", false);
+    let format_owner = scope.resolve(c"status-format", false);
     if let Some(format_owner) = &format_owner {
         i = 0 as u_int;
         while i < lines {

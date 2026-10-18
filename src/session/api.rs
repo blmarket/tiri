@@ -178,7 +178,7 @@ impl Session for SessionRef {
 
     unsafe fn update_environment(&self, source: &environ) {
         crate::src::environ::environ_update(
-            &(*self.get()).borrow_options_mut(),
+            &crate::src::options::OptionsScope::Session(Rc::downgrade(self)),
             source,
             (*self.get())
                 .environ

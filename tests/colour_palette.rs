@@ -52,7 +52,7 @@ fn indices_are_normalized_and_invalid_indices_are_rejected() {
         assert_eq!(colour_palette_get(None, 0), -1);
         assert_eq!(colour_palette_set(None, 0, 1), 0);
         colour_palette_clear(None);
-        colour_palette_from_option(None, &options_create(None));
+        colour_palette_from_option(None, &OptionsScope::GlobalWindow);
     }
 }
 
@@ -66,44 +66,46 @@ fn pane_colours(oo: &mut options) -> &mut options_entry {
 #[test]
 fn option_reload_replaces_defaults_without_changing_overrides() {
     unsafe {
-        let mut oo = options_create(None);
+        let scope = OptionsScope::GlobalWindow;
         let definition = tiri::src::options::options_table
             .iter()
             .find(|oe| oe.name == Some(c"pane-colours"))
             .unwrap();
-        options_empty(&mut oo, definition);
+        scope.with_local(|oo| {
+            options_empty(oo, definition);
+        });
         let mut p = colour_palette::default();
-        colour_palette_from_option(Some(&mut p), &oo);
+        colour_palette_from_option(Some(&mut p), &scope);
         assert!(p.default_palette.is_none());
         assert_eq!(
-            pane_colours(&mut oo).value.array_mut().unwrap().set(
+            scope.with_local(|oo| pane_colours(oo).value.array_mut().unwrap().set(
                 definition,
                 c"1",
                 Some(c"red"),
                 false
-            ),
+            )),
             Ok(())
         );
-        colour_palette_from_option(Some(&mut p), &oo);
+        colour_palette_from_option(Some(&mut p), &scope);
         assert_eq!(colour_palette_get(Some(&p), 1), 1);
         colour_palette_set(Some(&mut p), 1, 4);
-        pane_colours(&mut oo).value.array_mut().unwrap().clear();
+        scope.with_local(|oo| pane_colours(oo).value.array_mut().unwrap().clear());
         assert_eq!(
-            pane_colours(&mut oo).value.array_mut().unwrap().set(
+            scope.with_local(|oo| pane_colours(oo).value.array_mut().unwrap().set(
                 definition,
                 c"255",
                 Some(c"green"),
                 false
-            ),
+            )),
             Ok(())
         );
-        colour_palette_from_option(Some(&mut p), &oo);
+        colour_palette_from_option(Some(&mut p), &scope);
         assert_eq!(colour_palette_get(Some(&p), 1), 4);
         colour_palette_set(Some(&mut p), 1, -1);
         assert_eq!(colour_palette_get(Some(&p), 1), -1);
         assert_eq!(colour_palette_get(Some(&p), COLOUR_FLAG_256 | 255), 2);
-        pane_colours(&mut oo).value.array_mut().unwrap().clear();
-        colour_palette_from_option(Some(&mut p), &oo);
+        scope.with_local(|oo| pane_colours(oo).value.array_mut().unwrap().clear());
+        colour_palette_from_option(Some(&mut p), &scope);
         assert!(p.default_palette.is_none());
         assert_eq!(colour_palette_get(Some(&p), COLOUR_FLAG_256 | 255), -1);
     }

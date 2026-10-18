@@ -40,7 +40,7 @@ use crate::src::text::utf8::{
     utf8_append, utf8_copy, utf8_cstrwidth, utf8_fromcstr_vec, utf8_open, utf8_set, utf8_strlen,
     utf8_strwidth, utf8_to_data, utf8_tocstr_cstring,
 };
-use crate::src::tmux::{with_global_options, with_global_s_options};
+use crate::src::tmux::with_global_options;
 #[cfg(test)]
 use std::cell::RefCell;
 use std::ffi::{CStr, CString};
@@ -98,25 +98,12 @@ fn prompt_write_flags(
     Ok(())
 }
 pub unsafe fn prompt_set_options(pd: &mut prompt_create_data<'_>, session: Option<&SessionRef>) {
-    use crate::src::session::Session;
     let scope = match session {
         Some(session) => OptionsScope::Session(Rc::downgrade(session)),
         None => OptionsScope::GlobalSession,
     };
-    let read_string = |key: &CStr| {
-        if let Some(session) = session {
-            options_get_string(&session.borrow_options_mut(), key)
-        } else {
-            with_global_s_options(|oo| options_get_string(oo, key))
-        }
-    };
-    let read_number = |key: &'static CStr| {
-        if let Some(session) = session {
-            options_get_number(&session.borrow_options_mut(), key)
-        } else {
-            with_global_s_options(|oo| options_get_number(oo, key))
-        }
-    };
+    let read_string = |key: &CStr| scope.with_local(|oo| options_get_string(oo, key));
+    let read_number = |key: &CStr| scope.with_local(|oo| options_get_number(oo, key));
     use crate::src::style::style_apply_with_options;
     style_apply_with_options(&mut pd.style, c"message-style", None, &scope);
     style_apply_with_options(

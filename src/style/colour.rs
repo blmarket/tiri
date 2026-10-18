@@ -2,7 +2,7 @@ use crate::src::compat::strtonum::strtonum;
 use crate::src::ffi::libm::round;
 use crate::src::format::bytes::cstr_suffix;
 use crate::src::log::log_cstr;
-use crate::src::options::options;
+use crate::src::options::OptionsScope;
 use crate::src::server_client::Client;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::ClientRef;
@@ -3643,27 +3643,30 @@ pub fn colour_palette_set(
     palette[n as usize] = c;
     1
 }
-pub unsafe fn colour_palette_from_option(p: Option<&mut colour_palette>, oo: &options) {
+pub unsafe fn colour_palette_from_option(p: Option<&mut colour_palette>, scope: &OptionsScope) {
     let Some(p) = p else {
         return;
     };
-    let values = crate::src::options::options_read_entry(oo, c"pane-colours", |entry| {
-        entry
-            .value
-            .array()
-            .into_iter()
-            .flat_map(|array| array.iter())
-            .next()?;
-        let mut palette = [-1; 256];
-        for (index, colour) in palette.iter_mut().enumerate() {
-            let key = std::ffi::CString::new(index.to_string()).unwrap();
-            if let Some(value) = entry.value.array().and_then(|array| array.get(&key)) {
-                *colour = value.number() as i32;
-            }
-        }
-        Some(palette)
-    })
-    .expect("pane-colours option");
+    let values = scope
+        .with_local(|oo| {
+            crate::src::options::options_read_entry(oo, c"pane-colours", |entry| {
+                entry
+                    .value
+                    .array()
+                    .into_iter()
+                    .flat_map(|array| array.iter())
+                    .next()?;
+                let mut palette = [-1; 256];
+                for (index, colour) in palette.iter_mut().enumerate() {
+                    let key = std::ffi::CString::new(index.to_string()).unwrap();
+                    if let Some(value) = entry.value.array().and_then(|array| array.get(&key)) {
+                        *colour = value.number() as i32;
+                    }
+                }
+                Some(palette)
+            })
+        })
+        .expect("pane-colours option");
     if let Some(values) = values {
         **p.default_palette.get_or_insert_with(|| Box::new([-1; 256])) = values;
     } else {

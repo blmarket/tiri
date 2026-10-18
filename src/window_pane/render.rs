@@ -19,7 +19,7 @@ use crate::src::window_copy::window_copy_get_current_offset;
 
 pub(super) unsafe fn refresh_scrollbar_style(pane: &Rc<UnsafeCell<window_pane>>) {
     let mut updated = (*pane.get()).scrollbar_style;
-    style_set_scrollbar_style_from_option(&mut updated, &pane.borrow_options_mut());
+    style_set_scrollbar_style_from_option(&mut updated, &OptionsScope::Pane(Rc::downgrade(pane)));
     (*pane.get()).scrollbar_style = updated;
 }
 

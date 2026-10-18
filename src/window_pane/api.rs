@@ -751,10 +751,9 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         super::capture::clear_history(self, reset_links);
     }
     unsafe fn refresh_palette(&self) {
-        let options = (*self.get()).borrow_options_mut();
         crate::src::style::colour::colour_palette_from_option(
             Some(&mut (*self.get()).palette),
-            &options,
+            &OptionsScope::Pane(Rc::downgrade(self)),
         );
     }
     unsafe fn mark_changed(&self) {

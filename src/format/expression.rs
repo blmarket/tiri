@@ -6,13 +6,15 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::options::options_is_array;
 use crate::src::options::options_parse_owned;
 use crate::src::options::options_to_cstring;
+use crate::src::options::OptionsScope;
 use crate::src::server_client::Client;
 use crate::src::session::Session;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::SessionRef;
-use crate::src::window::{Window, WindowPane};
+use crate::src::window::{Window, WindowPane, WindowRef};
 use std::collections::btree_map;
 use std::ffi::{CStr, CString};
+use std::rc::Rc;
 
 pub(super) unsafe fn format_strftime(
     mut s: *mut ::core::ffi::c_char,
@@ -160,33 +162,27 @@ pub(super) unsafe fn format_find(
         let mut tm: tm = unsafe { ::core::mem::zeroed() };
         let parsed_option = options_parse_owned(key);
         if let Some(parsed) = &parsed_option {
-            let lookup = |options: &mut options| {
-                crate::src::options::options_read_entry(options, &parsed.name, |entry| {
-                    options_to_cstring(entry, parsed.array_key.as_deref(), 1)
+            let scopes = [
+                Some(OptionsScope::GlobalServer),
+                format_pane_owner
+                    .as_ref()
+                    .map(|pane| OptionsScope::Pane(Rc::downgrade(pane))),
+                format_window_owner
+                    .as_ref()
+                    .map(|window| OptionsScope::Window(WindowRef::downgrade(window))),
+                Some(OptionsScope::GlobalWindow),
+                format_session_owner
+                    .as_ref()
+                    .map(|session| OptionsScope::Session(Rc::downgrade(session))),
+                Some(OptionsScope::GlobalSession),
+            ];
+            found = scopes.iter().flatten().find_map(|scope| {
+                scope.with_local(|oo| {
+                    crate::src::options::options_read_entry(oo, &parsed.name, |entry| {
+                        options_to_cstring(entry, parsed.array_key.as_deref(), 1)
+                    })
                 })
-            };
-            found = with_global_options(|oo| lookup(oo));
-            if found.is_none() {
-                found = format_pane_owner
-                    .as_ref()
-                    .and_then(|pane| lookup(&mut pane.borrow_options_mut()));
-            }
-            if found.is_none() {
-                found = format_window_owner
-                    .as_ref()
-                    .and_then(|window| lookup(&mut window.borrow_options_mut()));
-            }
-            if found.is_none() {
-                found = with_global_w_options(|oo| lookup(oo));
-            }
-            if found.is_none() {
-                found = format_session_owner
-                    .as_ref()
-                    .and_then(|session| lookup(&mut session.borrow_options_mut()));
-            }
-            if found.is_none() {
-                found = with_global_s_options(|oo| lookup(oo));
-            }
+            });
         }
         if found.is_none() {
             if let Some(entry) = format_table_get(key) {
@@ -1285,40 +1281,51 @@ pub(super) unsafe fn format_loop_options(
     let flags = if flags.is_empty() { c"s" } else { flags };
     let has = |flag| flags.to_bytes().contains(&flag);
     let global = has(b'g');
-    let mut access = |read: &mut dyn FnMut(&mut options)| {
-        if has(b'v') {
-            with_global_options(|oo| read(oo));
-        } else if has(b'w') {
-            if global {
-                with_global_w_options(|oo| read(oo));
-            } else if let Some(window) = window.as_ref() {
-                read(&mut window.borrow_options_mut());
-            }
-        } else if has(b's') {
-            if global {
-                with_global_s_options(|oo| read(oo));
-            } else if let Some(session) = session.as_ref() {
-                read(&mut session.borrow_options_mut());
-            }
-        } else if has(b'p') {
-            if !global {
-                if let Some(pane) = pane.as_ref() {
-                    read(&mut pane.borrow_options_mut());
-                }
-            }
-        } else if global {
-            with_global_s_options(|oo| read(oo));
+    // The upgraded owners stay bound until return, keeping each model alive
+    // while format_loop_emit_option expands nested formats.
+    let scope = if has(b'v') {
+        Some(OptionsScope::GlobalServer)
+    } else if has(b'w') {
+        if global {
+            Some(OptionsScope::GlobalWindow)
+        } else {
+            window
+                .as_ref()
+                .map(|window| OptionsScope::Window(WindowRef::downgrade(window)))
         }
+    } else if has(b's') {
+        if global {
+            Some(OptionsScope::GlobalSession)
+        } else {
+            session
+                .as_ref()
+                .map(|session| OptionsScope::Session(Rc::downgrade(session)))
+        }
+    } else if has(b'p') {
+        if global {
+            None
+        } else {
+            pane.as_ref()
+                .map(|pane| OptionsScope::Pane(Rc::downgrade(pane)))
+        }
+    } else if global {
+        Some(OptionsScope::GlobalSession)
+    } else {
+        None
     };
-    let mut names = Vec::new();
-    access(&mut |options| {
-        names.extend(crate::src::options::options_iter(options).map(|(name, _)| name.to_owned()))
+    let Some(scope) = scope else {
+        return CString::default();
+    };
+    let names = scope.with_local(|options| {
+        crate::src::options::options_iter(options)
+            .map(|(name, _)| name.to_owned())
+            .collect::<Vec<_>>()
     });
     let mut buffer = Vec::new();
     let mut index: u_int = 0;
     for name in names {
         let mut keys = None;
-        access(&mut |options| {
+        scope.with_local(|options| {
             if let btree_map::Entry::Occupied(mut entry) =
                 crate::src::options::options_local_entry(options, &name)
             {
@@ -1340,7 +1347,7 @@ pub(super) unsafe fn format_loop_options(
         let count = u_int::try_from(keys.len()).expect("option array count");
         if keys.is_empty() {
             let mut values = None;
-            access(&mut |options| {
+            scope.with_local(|options| {
                 let last_option = !crate::src::options::options_iter(options)
                     .any(|(other, _)| other > name.as_c_str());
                 if let btree_map::Entry::Occupied(occupied) =
@@ -1362,7 +1369,7 @@ pub(super) unsafe fn format_loop_options(
         } else {
             for key in keys {
                 let mut values = None;
-                access(&mut |options| {
+                scope.with_local(|options| {
                     let last_option = !crate::src::options::options_iter(options)
                         .any(|(other, _)| other > name.as_c_str());
                     if let btree_map::Entry::Occupied(occupied) =

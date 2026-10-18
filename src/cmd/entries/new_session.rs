@@ -12,7 +12,9 @@ use crate::src::environ::{environ_create, environ_put, environ_update};
 use crate::src::events::events_fire_session;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
-use crate::src::options::{options_get_number, options_get_string, options_set_string};
+use crate::src::options::{
+    options_get_number, options_get_string, options_set_string, OptionsScope,
+};
 use crate::src::server_client::Client as _;
 use libc::sscanf;
 
@@ -513,14 +515,12 @@ unsafe fn cmd_new_session_exec(
                                                                 env.expect("client environment")
                                                                     .clone()
                                                             });
-                                                        with_global_s_options(|oo| {
-                                                            environ_update(
-                                                                oo,
-                                                                &client_environment,
-                                                                env.as_deref_mut()
-                                                                    .expect("new environment"),
-                                                            );
-                                                        });
+                                                        environ_update(
+                                                            &OptionsScope::GlobalSession,
+                                                            &client_environment,
+                                                            env.as_deref_mut()
+                                                                .expect("new environment"),
+                                                        );
                                                     }
                                                     for av in args_flag_values(
                                                         &*args,

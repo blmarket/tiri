@@ -2,7 +2,7 @@ use crate::src::ffi::libc::environ;
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::{log_cstr, log_debug};
-use crate::src::options::options_get_string;
+use crate::src::options::{options_get_string, OptionsScope};
 use crate::src::session::Session;
 use crate::src::shared::session::SessionRef;
 use crate::src::tmux::{getversion, global_environ, socket_path_cstr, with_global_options};
@@ -74,7 +74,6 @@ pub fn environ_iter(env: &environ) -> impl Iterator<Item = &environ_entry> {
     env.entries()
 }
 
-use crate::src::options::options;
 use crate::src::shared::abi::*;
 pub use crate::src::shared::environment::ENVIRON_HIDDEN;
 pub use crate::src::shared::environment::{environ, environ_entry};
@@ -120,8 +119,8 @@ pub fn environ_unset(env: &mut environ, name: &CStr) {
     env.unset_cstr(name);
 }
 
-pub unsafe fn environ_update(oo: &options, src: &environ, dst: &mut environ) {
-    let Some(patterns) =
+pub unsafe fn environ_update(scope: &OptionsScope, src: &environ, dst: &mut environ) {
+    let Some(patterns) = scope.with_local(|oo| {
         crate::src::options::options_read_entry(oo, c"update-environment", |entry| {
             entry
                 .value
@@ -136,7 +135,7 @@ pub unsafe fn environ_update(oo: &options, src: &environ, dst: &mut environ) {
                 })
                 .collect::<Vec<_>>()
         })
-    else {
+    }) else {
         return;
     };
     for pattern in patterns {

@@ -494,12 +494,10 @@ unsafe fn window_pane_create(
     (*wp).pipe_fd = None;
     (*wp).control_bg = -(1 as ::core::ffi::c_int);
     (*wp).control_fg = -(1 as ::core::ffi::c_int);
-    style_set_scrollbar_style_from_option(
-        &raw mut (*wp).scrollbar_style,
-        &(*wp).borrow_options_mut(),
-    );
+    let scope = OptionsScope::Pane(Rc::downgrade(&owner));
+    style_set_scrollbar_style_from_option(&raw mut (*wp).scrollbar_style, &scope);
     colour_palette_init(&mut (*wp).palette);
-    colour_palette_from_option(Some(&mut (*wp).palette), &(*wp).borrow_options_mut());
+    colour_palette_from_option(Some(&mut (*wp).palette), &scope);
     screen_init(&mut (*wp).base, sx, sy, hlimit);
     (*wp).screen_source = PaneScreenSource::Base;
     window_pane_default_cursor(&owner);

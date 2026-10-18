@@ -27,7 +27,6 @@ use crate::src::grid::{
 use crate::src::input::{input_init, input_parse_screen};
 use crate::src::job::{job_get_event, job_run};
 use crate::src::log::{fatal, fatalx, log_cstr, log_debug};
-use crate::src::options::options;
 use crate::src::options::OptionsScope;
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::paste::{paste_add_owned, paste_buffer_data, paste_get_top, paste_set_owned};
@@ -238,32 +237,34 @@ fn window_copy_separators(data: &window_copy_mode_data) -> Option<&CStr> {
     data.separators.as_deref()
 }
 
-unsafe fn window_copy_snapshot_separators(so: &options) -> Option<CString> {
-    crate::src::options::options_get_string_optional(so, c"word-separators")
+unsafe fn window_copy_snapshot_separators(scope: &OptionsScope) -> Option<CString> {
+    scope.with_local(|oo| crate::src::options::options_get_string_optional(oo, c"word-separators"))
 }
 
 #[cfg(test)]
 mod separator_snapshot_tests {
     use super::*;
     use crate::src::options::options_table;
-    use crate::src::options::{options_create, options_default, options_set_string};
+    use crate::src::options::{options_default, options_set_string};
 
     #[test]
     fn selected_word_separators_survive_option_replacement() {
         unsafe {
-            let mut options = options_create(None);
+            let scope = OptionsScope::GlobalSession;
             let definition = options_table
                 .iter()
                 .find(|entry| entry.name == Some(c"word-separators"))
                 .unwrap();
-            options_default(&mut options, definition);
-            options_set_string(&mut options, c"word-separators", 0, |out| {
-                out.write_all(b"original")
+            scope.with_local(|oo| {
+                options_default(oo, definition);
+                options_set_string(oo, c"word-separators", 0, |out| out.write_all(b"original"));
             });
             let mut data = window_copy_mode_data::default();
-            data.separators = window_copy_snapshot_separators(&options);
-            options_set_string(&mut options, c"word-separators", 0, |out| {
-                out.write_all(b"replacement")
+            data.separators = window_copy_snapshot_separators(&scope);
+            scope.with_local(|oo| {
+                options_set_string(oo, c"word-separators", 0, |out| {
+                    out.write_all(b"replacement")
+                });
             });
             assert_eq!(window_copy_separators(&data), Some(c"original"));
         }
@@ -2696,12 +2697,9 @@ unsafe fn window_copy_cmd_selection_mode(
     } else if strcasecmp(s, c"word".as_ptr()) == 0 as ::core::ffi::c_int
         || strcasecmp(s, c"w".as_ptr()) == 0 as ::core::ffi::c_int
     {
-        (*data).separators = window_copy_snapshot_separators(
-            &(*cs)
-                .session_handle()
-                .expect("live session")
-                .borrow_options_mut(),
-        );
+        (*data).separators = window_copy_snapshot_separators(&OptionsScope::Session(
+            std::rc::Rc::downgrade(&(*cs).session_handle().expect("live session")),
+        ));
         (*data).selflag = SEL_WORD;
     } else if strcasecmp(s, c"line".as_ptr()) == 0 as ::core::ffi::c_int
         || strcasecmp(s, c"l".as_ptr()) == 0 as ::core::ffi::c_int
@@ -3084,12 +3082,9 @@ unsafe fn window_copy_cmd_select_word(
         .hsize
         .wrapping_add((*data).cy)
         .wrapping_sub((*data).oy);
-    (*data).separators = window_copy_snapshot_separators(
-        &(*cs)
-            .session_handle()
-            .expect("live session")
-            .borrow_options_mut(),
-    );
+    (*data).separators = window_copy_snapshot_separators(&OptionsScope::Session(
+        std::rc::Rc::downgrade(&(*cs).session_handle().expect("live session")),
+    ));
     window_copy_cursor_previous_word(
         wme.clone(),
         window_copy_separators(&*data).expect("word separators"),
