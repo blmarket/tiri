@@ -68,10 +68,7 @@ pub unsafe fn log_toggle(name: &CStr) {
 pub unsafe fn log_close() {
     LOG_FILE.set(None);
 }
-unsafe fn log_message(
-    write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
-    prefix: &CStr,
-) {
+fn log_message(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>, prefix: &CStr) {
     if !log_enabled() {
         return;
     }
@@ -91,11 +88,15 @@ unsafe fn log_message(
         return;
     }
     out.resize(capacity, 0);
-    strvis(
-        out.as_mut_ptr().cast(),
-        s.as_ptr(),
-        VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL,
-    );
+    // SAFETY: `s` is NUL-terminated and `out` holds 4 * (len + 1) bytes,
+    // more than the 4 * len + 1 that strvis can write.
+    unsafe {
+        strvis(
+            out.as_mut_ptr().cast(),
+            s.as_ptr(),
+            VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL,
+        );
+    }
     drop(s);
     let message = CStr::from_bytes_until_nul(&out).unwrap();
     log_write(message.to_bytes(), prefix.to_bytes());
@@ -142,9 +143,9 @@ pub unsafe fn fatal(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Resu
     );
     exit(1 as ::core::ffi::c_int);
 }
-pub unsafe fn fatalx(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) -> ! {
+pub fn fatalx(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) -> ! {
     log_message(write, c"fatal: ");
-    exit(1 as ::core::ffi::c_int);
+    std::process::exit(1);
 }
 
 #[cfg(test)]

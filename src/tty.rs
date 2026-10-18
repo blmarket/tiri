@@ -1192,9 +1192,7 @@ fn tty_clamp_line(ctx: &tty_ctx, px: u_int, py: u_int, nx: u_int) -> Option<tty_
         (0, x, ctx.wsx.wrapping_sub(x))
     };
     if width > nx {
-        unsafe {
-            fatalx(|out| write!(out, "tty_clamp_line: x too big, {} > {}", width, nx));
-        }
+        fatalx(|out| write!(out, "tty_clamp_line: x too big, {} > {}", width, nx));
     }
     Some(tty_clamped_line { skip, x, y, width })
 }
@@ -1322,9 +1320,7 @@ fn tty_clamp_area(
         (x, ctx.wsx.wrapping_sub(x))
     };
     if width > nx {
-        unsafe {
-            fatalx(|out| write!(out, "tty_clamp_area: x too big, {} > {}", width, nx));
-        }
+        fatalx(|out| write!(out, "tty_clamp_area: x too big, {} > {}", width, nx));
     }
     let status = (ctx.yoff - ctx.ryoff) as u_int;
     let (y, height) = if yoff >= ctx.woy && yoff.wrapping_add(ny) <= ctx.woy.wrapping_add(ctx.wsy) {
@@ -1342,9 +1338,7 @@ fn tty_clamp_area(
         (y, ctx.woy.wrapping_add(ctx.wsy).wrapping_sub(yoff))
     };
     if height > ny {
-        unsafe {
-            fatalx(|out| write!(out, "tty_clamp_area: y too big, {} > {}", height, ny));
-        }
+        fatalx(|out| write!(out, "tty_clamp_area: y too big, {} > {}", height, ny));
     }
     Some(tty_clamped_area {
         x,

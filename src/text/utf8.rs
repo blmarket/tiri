@@ -419,7 +419,7 @@ pub(crate) fn utf8_sanitize_cstring(src: &CStr) -> CString {
             if more as ::core::ffi::c_uint == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
                 if dst.is_empty() && ud.width == 0 {
-                    unsafe { fatalx(|out| out.write_all(b"xreallocarray: zero size")) };
+                    fatalx(|out| out.write_all(b"xreallocarray: zero size"));
                 }
                 dst.resize(dst.len() + ud.width as usize, b'_');
                 continue;

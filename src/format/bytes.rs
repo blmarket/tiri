@@ -73,7 +73,7 @@ pub fn try_format_message_with(
 }
 
 pub fn format_message_with(write: impl FnOnce(&mut dyn Write) -> io::Result<()>) -> CString {
-    try_format_message_with(write).unwrap_or_else(|| unsafe {
+    try_format_message_with(write).unwrap_or_else(|| {
         crate::src::log::fatalx(|out| out.write_all(b"message formatting failed"))
     })
 }
