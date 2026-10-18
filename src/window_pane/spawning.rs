@@ -167,7 +167,8 @@ unsafe fn place_new_pane(
         position + usize::from(sc.flags & SPAWN_BEFORE == 0)
     };
     let hlimit = options_get_number(
-        sc.s.upgrade()
+        &sc.s
+            .upgrade()
             .expect("spawn context session")
             .borrow_options_mut(),
         c"history-limit",
@@ -348,7 +349,7 @@ pub(super) unsafe fn spawn_pane(
         if (*sc).argv.is_empty() {
             if (*sc).flags & SPAWN_RESPAWN == 0 {
                 let command = crate::src::options::options_get_string_optional(
-                    session_owner.borrow_options_mut(),
+                    &session_owner.borrow_options_mut(),
                     c"default-command",
                 );
                 if let Some(command) = command.filter(|command| !command.as_bytes().is_empty()) {
@@ -389,7 +390,7 @@ pub(super) unsafe fn spawn_pane(
             });
         }
         if !(*sc).flags & SPAWN_RESPAWN != 0 {
-            let shell = options_get_string(session_owner.borrow_options_mut(), c"default-shell");
+            let shell = options_get_string(&session_owner.borrow_options_mut(), c"default-shell");
             tmp = shell.as_ptr();
             if checkshell(nullable_cstr(tmp)) == 0 {
                 tmp = _PATH_BSHELL.as_ptr();
@@ -545,7 +546,7 @@ pub(super) unsafe fn spawn_pane(
                 if let Some(terminal) = session_owner.termios() {
                     now.c_cc = terminal.c_cc;
                 }
-                key = options_get_number(global_options(), c"backspace") as key_code;
+                key = options_get_number(&global_options(), c"backspace") as key_code;
                 if key >= 0x7f as key_code {
                     now.c_cc[VERASE] = '\u{7f}' as i32 as cc_t;
                 } else {
@@ -745,7 +746,7 @@ pub(super) unsafe fn install_editor(
     pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut editor: Box<spawn_editor_state>,
 ) -> EditorHandle {
-    options_set_number(pane.borrow_options_mut(), c"remain-on-exit", 0);
+    options_set_number(&mut pane.borrow_options_mut(), c"remain-on-exit", 0);
     let pointer = std::ptr::NonNull::from(&mut *editor);
     {
         let state = &mut *pane.get();

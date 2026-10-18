@@ -161,7 +161,7 @@ unsafe fn redraw_set_context(c: &ClientRef, bctx: &mut redraw_build_ctx) {
     bctx.oy = view.oy;
     bctx.sx = view.sx;
     bctx.sy = view.sy;
-    bctx.ind = options_get_number(bctx.w.borrow_options_mut(), c"pane-border-indicators")
+    bctx.ind = options_get_number(&bctx.w.borrow_options_mut(), c"pane-border-indicators")
         as ::core::ffi::c_int;
 }
 unsafe fn redraw_get_build_cell(
@@ -968,7 +968,7 @@ unsafe fn redraw_get_default_border_style(
         );
         ft = &raw mut *ft_owner;
         style_apply_with_options(&mut *dgc, c"pane-border-style", Some(&mut *ft), |visit| {
-            visit(window_owner.borrow_options_mut())
+            visit(&mut window_owner.borrow_options_mut())
         });
         drop(ft_owner);
         dctx.pane_lines = window_owner.pane_border_lines();
@@ -1391,7 +1391,7 @@ unsafe fn redraw_set_draw_context(scene: &redraw_scene) -> Option<redraw_draw_ct
         dctx.marked = marked_pane.wp.clone();
     }
     if options_get_number(
-        s.as_ref().expect("live session").borrow_options_mut(),
+        &s.as_ref().expect("live session").borrow_options_mut(),
         c"status-position",
     ) == 0
     {

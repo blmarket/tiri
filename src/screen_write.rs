@@ -11,7 +11,6 @@ use crate::src::grid::{
     grid_get_line_mut,
 };
 use crate::src::log::{fatalx, log_bytes, log_debug, log_get_level};
-use crate::src::options::options;
 use crate::src::options::options_get_number;
 use crate::src::screen::{
     screen_alternate_off, screen_alternate_on, screen_check_selection, screen_mode_display,
@@ -323,7 +322,7 @@ pub unsafe fn screen_write_reset(ctx: &mut screen_write_ctx) {
     screen_reset_tabs(&mut *s);
     screen_write_scrollregion(ctx, 0 as u_int, (*s).grid().sy.wrapping_sub(1 as u_int));
     (*s).mode = MODE_CURSOR | MODE_WRAP;
-    if options_get_number(global_options(), c"extended-keys") == 2 as ::core::ffi::c_longlong {
+    if options_get_number(&global_options(), c"extended-keys") == 2 as ::core::ffi::c_longlong {
         (*s).mode = (*s).mode & !EXTENDED_KEY_MODES | MODE_KEYS_EXTENDED;
     }
     screen_write_clearscreen(ctx, 8 as u_int);
@@ -1802,7 +1801,7 @@ pub unsafe fn screen_write_clearendofscreen(ctx: &mut screen_write_ctx, mut bg: 
         && (*s).grid().flags & GRID_HISTORY != 0
         && write_pane.is_some()
         && options_get_number(
-            write_pane.expect("write pane").borrow_options_mut(),
+            &write_pane.expect("write pane").borrow_options_mut(),
             c"scroll-on-clear",
         ) != 0
     {
@@ -2011,7 +2010,7 @@ pub unsafe fn screen_write_clearscreen(ctx: &mut screen_write_ctx, mut bg: u_int
     if (*s).grid().flags & GRID_HISTORY != 0
         && write_pane.is_some()
         && options_get_number(
-            write_pane.expect("write pane").borrow_options_mut(),
+            &write_pane.expect("write pane").borrow_options_mut(),
             c"scroll-on-clear",
         ) != 0
     {
@@ -2916,7 +2915,6 @@ unsafe fn screen_write_combine(ctx: &mut screen_write_ctx, gc: &grid_cell) -> ::
     let mut s: *mut screen = ctx.screen_ptr();
     let wp = write_pane;
     let ud = &gc.data;
-    let oo: &options = global_options();
     let mut i: u_int = 0;
     let mut n: u_int = 0;
     let mut cx: u_int = (*s).cx;
@@ -2948,7 +2946,7 @@ unsafe fn screen_write_combine(ctx: &mut screen_write_ctx, gc: &grid_cell) -> ::
         zero_width = 1 as ::core::ffi::c_int;
     } else if utf8_is_vs(ud) != 0 {
         zero_width = 1 as ::core::ffi::c_int;
-        if options_get_number(oo, c"variation-selector-always-wide") != 0 {
+        if options_get_number(&global_options(), c"variation-selector-always-wide") != 0 {
             force_wide = 1 as ::core::ffi::c_int;
         }
     } else if ud.width as ::core::ffi::c_int == 0 as ::core::ffi::c_int {

@@ -212,11 +212,11 @@ unsafe fn cmd_split_window_exec(
             Some(new_pane) => {
                 if let Some(style) = args_get(&*(args), b's') {
                     {
-                        let options = new_pane.borrow_options_mut();
-                        options_set_string(options, c"window-style", 0, |out| {
+                        let mut options = new_pane.borrow_options_mut();
+                        options_set_string(&mut options, c"window-style", 0, |out| {
                             write_cstr(out, style)
                         });
-                        options_set_string(options, c"window-active-style", 0, |out| {
+                        options_set_string(&mut options, c"window-active-style", 0, |out| {
                             write_cstr(out, style)
                         });
                     }
@@ -224,7 +224,7 @@ unsafe fn cmd_split_window_exec(
                 }
                 if let Some(style) = args_get(&*(args), b'S') {
                     options_set_string(
-                        new_pane.borrow_options_mut(),
+                        &mut new_pane.borrow_options_mut(),
                         c"pane-active-border-style",
                         0,
                         |out| write_cstr(out, style),
@@ -232,7 +232,7 @@ unsafe fn cmd_split_window_exec(
                 }
                 if let Some(style) = args_get(&*(args), b'R') {
                     options_set_string(
-                        new_pane.borrow_options_mut(),
+                        &mut new_pane.borrow_options_mut(),
                         c"pane-border-style",
                         0,
                         |out| write_cstr(out, style),
@@ -242,13 +242,13 @@ unsafe fn cmd_split_window_exec(
                     || args_has(args, 'm' as i32 as u_char) != 0
                 {
                     options_set_number(
-                        new_pane.borrow_options_mut(),
+                        &mut new_pane.borrow_options_mut(),
                         c"remain-on-exit",
                         3 as ::core::ffi::c_longlong,
                     );
                     if args_has(args, 'm' as i32 as u_char) != 0 {
                         options_set_string(
-                            new_pane.borrow_options_mut(),
+                            &mut new_pane.borrow_options_mut(),
                             c"remain-on-exit-format",
                             0 as ::core::ffi::c_int,
                             |out| {

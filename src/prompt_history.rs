@@ -31,7 +31,7 @@ thread_local! {
 }
 
 unsafe fn prompt_find_history_file() -> Option<CString> {
-    let history_file = options_get_string(global_options(), c"history-file");
+    let history_file = options_get_string(&global_options(), c"history-file");
     if history_file.as_bytes().is_empty() {
         return None;
     }
@@ -170,7 +170,7 @@ pub unsafe fn prompt_add_history(line: &CStr, kind: prompt_type) {
     if kind >= PROMPT_NTYPES as prompt_type {
         return;
     }
-    let limit = options_get_number(global_options(), c"prompt-history-limit") as u_int;
+    let limit = options_get_number(&global_options(), c"prompt-history-limit") as u_int;
     PROMPT_HISTORY.with_borrow_mut(|histories| {
         let history = &mut histories[kind as usize];
         let old_size = history.len() as u_int;

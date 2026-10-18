@@ -248,16 +248,18 @@ unsafe fn cmd_select_pane_exec(
         }
         if let Some(style) = args_get(arguments, b'P') {
             {
-                let options = original_pane.borrow_options_mut();
-                options_set_string(options, c"window-style", 0, |out| write_cstr(out, &*style));
-                options_set_string(options, c"window-active-style", 0, |out| {
+                let mut options = original_pane.borrow_options_mut();
+                options_set_string(&mut options, c"window-style", 0, |out| {
+                    write_cstr(out, &*style)
+                });
+                options_set_string(&mut options, c"window-active-style", 0, |out| {
                     write_cstr(out, &*style)
                 });
             }
             original_pane.invalidate_style();
         }
         if args_has(arguments, b'g') != 0 {
-            let style = options_get_string(original_pane.borrow_options_mut(), c"window-style");
+            let style = options_get_string(&original_pane.borrow_options_mut(), c"window-style");
             cmdq_print(item_handle, |out| write_cstr(out, &*style));
             return CMD_RETURN_NORMAL;
         }

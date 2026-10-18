@@ -44,7 +44,7 @@ pub(super) unsafe fn value(
         b"client_prefix" => {
             let session = owner.attached_session().upgrade();
             let default = session
-                .map(|session| options_get_string(session.borrow_options_mut(), c"key-table"))
+                .map(|session| options_get_string(&session.borrow_options_mut(), c"key-table"))
                 .filter(|name| !name.as_bytes().is_empty())
                 .unwrap_or_else(|| c"root".to_owned());
             let table = (*owner.get()).keytable.clone().expect("key table");

@@ -296,7 +296,7 @@ unsafe fn window_panes_get_border_cell(
         Some(&mut *ft),
         |visit| {
             visit(
-                options_window
+                &mut options_window
                     .upgrade()
                     .expect("live display-panes window")
                     .borrow_options_mut(),
@@ -400,7 +400,7 @@ unsafe fn window_panes_draw_format(
         return;
     }
     let format = options_get_string(
-        mode_pane_owner
+        &mode_pane_owner
             .window_observer()
             .upgrade()
             .expect("live display-panes window")
@@ -555,7 +555,7 @@ unsafe fn window_panes_draw_number(
         Some(&mut *ft),
         |visit| {
             visit(
-                options_window
+                &mut options_window
                     .upgrade()
                     .expect("live display-panes window")
                     .borrow_options_mut(),
@@ -567,7 +567,7 @@ unsafe fn window_panes_draw_number(
     bgc.bg = fgc.fg;
     format = 0 as u_int;
     let window = options_window.upgrade().expect("live display-panes window");
-    if !options_get_string(window.borrow_options_mut(), c"display-panes-format")
+    if !options_get_string(&window.borrow_options_mut(), c"display-panes-format")
         .as_bytes()
         .is_empty()
     {
@@ -869,7 +869,7 @@ unsafe fn window_panes_init(
     s = (*target).session_handle();
     if args_has(args, 'd' as i32 as u_char) == 0 {
         delay = options_get_number(
-            original_window
+            &original_window
                 .upgrade()
                 .expect("live display-panes window")
                 .borrow_options_mut(),

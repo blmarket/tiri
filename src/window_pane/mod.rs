@@ -484,9 +484,11 @@ unsafe fn window_pane_create(
     let owner = window_pane::new();
     wp = owner.get();
     (*wp).window = WindowRef::downgrade(w_owner).clone();
-    (*wp).options = Some(crate::src::options::options_create_owned(Some(
-        crate::src::options::OptionsScope::Window(WindowRef::downgrade(w_owner)),
-    )));
+    (*wp)
+        .options
+        .replace(Some(crate::src::options::options_create_owned(Some(
+            crate::src::options::OptionsScope::Window(WindowRef::downgrade(w_owner)),
+        ))));
     (*wp).flags = PANE_STYLECHANGED;
     (*wp).cmd_status = -(1 as ::core::ffi::c_int);
     (*wp).id = window_pane_tree::alloc_id();
@@ -501,13 +503,10 @@ unsafe fn window_pane_create(
     (*wp).control_fg = -(1 as ::core::ffi::c_int);
     style_set_scrollbar_style_from_option(
         &raw mut (*wp).scrollbar_style,
-        (*wp).options.as_deref().expect("live pane options"),
+        &(*wp).borrow_options_mut(),
     );
     colour_palette_init(&mut (*wp).palette);
-    colour_palette_from_option(
-        Some(&mut (*wp).palette),
-        (*wp).options.as_deref().expect("live pane options"),
-    );
+    colour_palette_from_option(Some(&mut (*wp).palette), &(*wp).borrow_options_mut());
     screen_init(&mut (*wp).base, sx, sy, hlimit);
     (*wp).screen_source = PaneScreenSource::Base;
     window_pane_default_cursor(&owner);
@@ -1202,10 +1201,7 @@ unsafe fn window_pane_copy_paste(
             && (*loop_0).modes.is_empty()
             && (*loop_0).fd.is_some()
             && !(*loop_0).flags & PANE_INPUTOFF != 0
-            && options_get_number(
-                (*loop_0).options.as_deref().expect("pane options"),
-                c"synchronize-panes",
-            ) != 0
+            && options_get_number(&(*loop_0).borrow_options_mut(), c"synchronize-panes") != 0
         {
             log_debug(format_args!(
                 "{}: {}",
@@ -1236,10 +1232,7 @@ unsafe fn window_pane_copy_key(
             && (*loop_0).modes.is_empty()
             && (*loop_0).fd.is_some()
             && !(*loop_0).flags & PANE_INPUTOFF != 0
-            && options_get_number(
-                (*loop_0).options.as_deref().expect("pane options"),
-                c"synchronize-panes",
-            ) != 0
+            && options_get_number(&(*loop_0).borrow_options_mut(), c"synchronize-panes") != 0
         {
             input_key_pane(&pane_owner, key, ::core::ptr::null_mut::<mouse_event>());
         }
@@ -1278,11 +1271,7 @@ unsafe fn window_pane_paste(
     let _ = (*wp).event.with_ptr(|event| unsafe {
         bufferevent_write(event, bytes);
     });
-    if options_get_number(
-        (*wp).options.as_deref().expect("pane options"),
-        c"synchronize-panes",
-    ) != 0
-    {
+    if options_get_number(&(*wp).borrow_options_mut(), c"synchronize-panes") != 0 {
         window_pane_copy_paste(pane_owner, bytes);
     }
 }
@@ -1339,11 +1328,7 @@ unsafe fn window_pane_key(
     {
         return 0 as ::core::ffi::c_int;
     }
-    if options_get_number(
-        (*wp).options.as_deref().expect("pane options"),
-        c"synchronize-panes",
-    ) != 0
-    {
+    if options_get_number(&(*wp).borrow_options_mut(), c"synchronize-panes") != 0 {
         window_pane_copy_key(pane_owner, key);
     }
     0 as ::core::ffi::c_int
@@ -1569,10 +1554,7 @@ unsafe fn window_pane_update_used_data(
 
 unsafe fn window_pane_default_cursor(wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
     let mut wp = wp_owner.get();
-    screen_set_default_cursor(
-        &mut *(*wp).screen_ptr(),
-        (*wp).options.as_deref_mut().expect("live pane options"),
-    );
+    screen_set_default_cursor(&mut *(*wp).screen_ptr(), &mut (*wp).borrow_options_mut());
 }
 
 unsafe fn window_pane_mode(wp: &window_pane) -> ::core::ffi::c_int {
@@ -1630,7 +1612,7 @@ unsafe fn window_pane_scrollbar_start_timer(pane_owner: &Rc<std::cell::UnsafeCel
         return;
     }
     delay = options_get_number(
-        (((*wp).window_handle().as_ref()).expect("live window")).borrow_options_mut(),
+        &(((*wp).window_handle().as_ref()).expect("live window")).borrow_options_mut(),
         c"pane-scrollbars-timeout",
     ) as u_int;
     let timeout = Duration::from_millis(delay as u64);

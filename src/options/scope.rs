@@ -1,15 +1,13 @@
-//! Persistent option identities. Model component borrows retain their model.
+//! Persistent option identities. Table access retains the owning model.
 use super::types::{options, options_entry};
 use crate::src::session::Session;
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::session::{SessionRef, SessionWeak};
-use crate::src::shared::window::{WindowRef, WindowWeak};
+use crate::src::shared::session::SessionWeak;
+use crate::src::shared::window::WindowWeak;
 use crate::src::tmux::{global_options, global_s_options, global_w_options};
 use crate::src::window::Window;
 use crate::src::window_pane::WindowPane;
-use std::ops::{Deref, DerefMut};
-use std::ptr::NonNull;
-use std::rc::{Rc, Weak};
+use std::rc::Weak;
 use std::{cell::UnsafeCell, ffi::CStr};
 
 /// A table's identity, independent of how its owning model stores state.
@@ -47,40 +45,35 @@ impl OptionsScope {
         )
     }
 
-    /// Borrow this table. The guard retains its model, so the table stays
-    /// allocated while it lives; it must still not be held across callbacks,
-    /// format/parse commands or monitor release, and must not alias another
-    /// borrow of the same table (scopes are cloneable and `resolve` can yield
-    /// the same table).
-    pub unsafe fn local(&self) -> OptionsBorrow<options> {
-        let (table, owner) = match self {
-            Self::GlobalServer => (NonNull::from(global_options()), ScopeOwner::Global),
-            Self::GlobalSession => (NonNull::from(global_s_options()), ScopeOwner::Global),
-            Self::GlobalWindow => (NonNull::from(global_w_options()), ScopeOwner::Global),
+    /// Run `visit` on this table, retaining its model until it returns.
+    /// Borrowing the same table again inside `visit` panics, so `visit` must
+    /// not reenter callbacks, format/parse commands or monitor release.
+    /// Unsafe only for model access: no `&mut` to the owning model may be live.
+    pub unsafe fn with_local<R>(&self, visit: impl FnOnce(&mut options) -> R) -> R {
+        match self {
+            Self::GlobalServer => visit(&mut global_options()),
+            Self::GlobalSession => visit(&mut global_s_options()),
+            Self::GlobalWindow => visit(&mut global_w_options()),
             Self::Session(observer) => {
                 let owner = observer.upgrade().expect("live option session");
-                let table = NonNull::from(owner.borrow_options_mut());
-                (table, ScopeOwner::Session(owner))
+                let mut table = owner.borrow_options_mut();
+                visit(&mut table)
             }
             Self::Window(observer) => {
                 let owner = observer.upgrade().expect("live option window");
-                let table = NonNull::from(owner.borrow_options_mut());
-                (table, ScopeOwner::Window(owner))
+                let mut table = owner.borrow_options_mut();
+                visit(&mut table)
             }
             Self::Pane(observer) => {
                 let owner = observer.upgrade().expect("live option pane");
-                let table = NonNull::from(owner.borrow_options_mut());
-                (table, ScopeOwner::Pane(owner))
+                let mut table = owner.borrow_options_mut();
+                visit(&mut table)
             }
-        };
-        OptionsBorrow {
-            value: table,
-            _owner: owner,
         }
     }
 
     pub unsafe fn parent(&self) -> Option<Self> {
-        self.local().parent.clone()
+        self.with_local(|table| table.parent.clone())
     }
 
     /// Resolve once, then retain the resulting identity across callbacks. A new
@@ -88,7 +81,7 @@ impl OptionsScope {
     pub unsafe fn resolve(&self, name: &CStr, local_only: bool) -> Option<Self> {
         let mut scope = self.clone();
         loop {
-            if scope.entry(name).is_some() {
+            if scope.with_entry(name, |_| ()).is_some() {
                 return Some(scope);
             }
             if local_only {
@@ -98,49 +91,13 @@ impl OptionsScope {
         }
     }
 
-    /// Borrow a local entry, without resolving inheritance again. The same
-    /// contract as `local` applies to this borrow.
-    pub unsafe fn entry(&self, name: &CStr) -> Option<OptionsBorrow<options_entry>> {
-        self.local()
-            .map(|table| table.tree.get_mut(name).map(Box::as_mut))
-    }
-}
-
-/// Model retention backing an `OptionsBorrow`.
-enum ScopeOwner {
-    Global,
-    Session(SessionRef),
-    Window(WindowRef),
-    Pane(Rc<UnsafeCell<window_pane>>),
-}
-
-/// A borrow of an option table, or a component of one, that retains the
-/// owning model until dropped. See `OptionsScope::local` for the contract.
-pub struct OptionsBorrow<T> {
-    value: NonNull<T>,
-    _owner: ScopeOwner,
-}
-
-impl<T> OptionsBorrow<T> {
-    /// Narrow the borrow to a component, keeping the same retention.
-    pub fn map<U>(mut self, f: impl FnOnce(&mut T) -> Option<&mut U>) -> Option<OptionsBorrow<U>> {
-        let value = NonNull::from(f(&mut *self)?);
-        Some(OptionsBorrow {
-            value,
-            _owner: self._owner,
-        })
-    }
-}
-
-impl<T> Deref for OptionsBorrow<T> {
-    type Target = T;
-    fn deref(&self) -> &T {
-        unsafe { self.value.as_ref() }
-    }
-}
-
-impl<T> DerefMut for OptionsBorrow<T> {
-    fn deref_mut(&mut self) -> &mut T {
-        unsafe { self.value.as_mut() }
+    /// Run `visit` on a local entry, without resolving inheritance again. The
+    /// same contract as `with_local` applies.
+    pub unsafe fn with_entry<R>(
+        &self,
+        name: &CStr,
+        visit: impl FnOnce(&mut options_entry) -> R,
+    ) -> Option<R> {
+        self.with_local(|table| table.tree.get_mut(name).map(|entry| visit(entry)))
     }
 }

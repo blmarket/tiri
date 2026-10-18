@@ -233,7 +233,7 @@ unsafe fn cmd_set_hook_monitor_exec(
         if args_has(args, b'F') != 0 {
             value = format_single_from_target_cstring(item_handle, value.as_ptr());
         }
-        let exists = selected.entry(&name).is_some();
+        let exists = selected.with_entry(&name, |_| ()).is_some();
         if args_has(args, b'o') == 0 || !exists {
             selected
                 .set_from_string(None, &name, Some(&value), args_has(args, b'a') != 0)
@@ -376,7 +376,7 @@ unsafe fn cmd_set_option_exec(
     let user = name.to_bytes().starts_with(b"@");
     let definition = selected
         .resolve(name, false)
-        .and_then(|source| source.entry(name)?.tableentry);
+        .and_then(|source| source.with_entry(name, |entry| entry.tableentry)?);
     let array = definition.is_some_and(|definition| definition.flags & OPTIONS_TABLE_IS_ARRAY != 0);
     if array_key.is_some() && (user || !array) {
         cmdq_error(item_handle, |out| {
@@ -387,9 +387,7 @@ unsafe fn cmd_set_option_exec(
     }
     if args_has(args, b'u') == 0 && args_has(args, b'o') != 0 {
         let already = selected
-            .entry(name)
-            .as_deref_mut()
-            .map(|entry| {
+            .with_entry(name, |entry| {
                 array_key.is_none_or(|key| {
                     entry
                         .value

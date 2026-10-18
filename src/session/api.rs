@@ -106,7 +106,7 @@ pub trait Session {
     unsafe fn on_attached(&self);
     unsafe fn theme_changed(&self);
     unsafe fn status_layout(&self) -> (i32, u32);
-    unsafe fn borrow_options_mut(&self) -> &mut options;
+    unsafe fn borrow_options_mut(&self) -> std::cell::RefMut<'_, options>;
     unsafe fn with_environment_mut<R>(&self, edit: impl FnOnce(&mut environ) -> R) -> R;
     unsafe fn set_cwd(&self, cwd: Option<CString>);
     unsafe fn cwd(&self) -> Option<CString>;
@@ -177,11 +177,13 @@ impl Session for SessionRef {
     }
 
     unsafe fn update_environment(&self, source: &environ) {
-        let state = &mut *self.get();
         crate::src::environ::environ_update(
-            state.options.as_deref_mut().expect("session options"),
+            &(*self.get()).borrow_options_mut(),
             source,
-            state.environ.as_deref_mut().expect("session environment"),
+            (*self.get())
+                .environ
+                .as_deref_mut()
+                .expect("session environment"),
         );
     }
 
@@ -356,11 +358,8 @@ impl Session for SessionRef {
     unsafe fn status_layout(&self) -> (i32, u32) {
         ((*self.get()).statusat, (*self.get()).statuslines)
     }
-    unsafe fn borrow_options_mut(&self) -> &mut options {
-        (*self.get())
-            .options
-            .as_deref_mut()
-            .expect("session options")
+    unsafe fn borrow_options_mut(&self) -> std::cell::RefMut<'_, options> {
+        (*self.get()).borrow_options_mut()
     }
     unsafe fn with_environment_mut<R>(&self, edit: impl FnOnce(&mut environ) -> R) -> R {
         let mut environment = self.borrow_environment_mut().expect("session environment");
@@ -416,12 +415,12 @@ mod tests {
                     .unwrap();
                 crate::src::options::options_default(&mut *options, definition);
             }
-            (*session.get()).options = Some(options);
+            (*session.get()).options.replace(Some(options));
             status_update_cache(&mut *session.get());
             let before = session.status_layout();
             {
-                let options = session.borrow_options_mut();
-                crate::src::options::options_set_number(options, c"status", 0);
+                let mut options = session.borrow_options_mut();
+                crate::src::options::options_set_number(&mut options, c"status", 0);
             }
             assert_eq!(
                 session.status_layout(),

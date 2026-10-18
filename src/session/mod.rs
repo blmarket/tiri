@@ -202,7 +202,7 @@ unsafe fn session_create(
     (*s).flags = 0 as ::core::ffi::c_int;
     (*s).lastw.clear();
     (*s).environ = Some(env);
-    (*s).options = oo;
+    (*s).options.replace(oo);
     status_update_cache(&mut *(s));
     if let Some(name) = name {
         drop(session_replace_name(&mut *s, name.to_owned()));
@@ -316,7 +316,7 @@ unsafe fn session_update_activity(owner: &SessionRef, from: Option<SystemTime>) 
     if session.attached != 0 {
         let timeout = Duration::from_secs(
             (crate::src::options::options_get_number(
-                session.options.as_deref().expect("session options"),
+                &session.borrow_options_mut(),
                 c"lock-after-time",
             )) as u64,
         );
@@ -551,7 +551,7 @@ unsafe fn session_set_current(
     winlink_stack_remove(&raw mut (*s).lastw, wl.clone());
     winlink_stack_push(&raw mut (*s).lastw, ((*s).current_winlink()).clone());
     (*s).set_curw(wl.clone());
-    if options_get_number(global_options(), c"focus-events") != 0 {
+    if options_get_number(&global_options(), c"focus-events") != 0 {
         if old.is_alive() {
             if let Some(window) = old.get_unchecked().window_handle().cloned() {
                 window.update_focus();
@@ -663,10 +663,7 @@ unsafe fn session_renumber_windows(s_owner: &SessionRef) {
     let mut new_idx: ::core::ffi::c_int = 0;
     let mut new_curw_idx: ::core::ffi::c_int = 0;
     let mut marked_idx: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-    new_idx = options_get_number(
-        (*s).options.as_deref().expect("session options"),
-        c"base-index",
-    ) as ::core::ffi::c_int;
+    new_idx = options_get_number(&(*s).borrow_options_mut(), c"base-index") as ::core::ffi::c_int;
     let n = winlink_count(&(*s).windows);
     if n > (i32::MAX as u_int) - (new_idx as u_int) + 1 {
         return;
@@ -743,10 +740,9 @@ unsafe fn session_theme_changed(session: Option<&session>) {
     }
 }
 unsafe fn session_update_history(session: &session) {
-    let limit = crate::src::options::options_get_number(
-        session.options.as_deref().expect("session options"),
-        c"history-limit",
-    ) as u_int;
+    let limit =
+        crate::src::options::options_get_number(&session.borrow_options_mut(), c"history-limit")
+            as u_int;
     let mut link = winlinks_minmax(&session.windows, RB_NEGINF);
     while link.is_alive() {
         let wl = link.get_unchecked();

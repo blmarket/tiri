@@ -1334,7 +1334,7 @@ pub unsafe fn tty_keys_build(mut tty: *mut tty) {
         }
         i = i.wrapping_add(1);
     }
-    let keys = crate::src::options::options_read_entry(global_options(), c"user-keys", |entry| {
+    let keys = crate::src::options::options_read_entry(&global_options(), c"user-keys", |entry| {
         (0..=KEYC_NUSER as u_int)
             .filter_map(|index| {
                 let key = std::ffi::CString::new(index.to_string()).unwrap();
@@ -2201,7 +2201,7 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                     }
                 } else {
                     delay =
-                        options_get_number(global_options(), c"escape-time") as ::core::ffi::c_int;
+                        options_get_number(&global_options(), c"escape-time") as ::core::ffi::c_int;
                     if delay == 0 as ::core::ffi::c_int {
                         delay = 1 as ::core::ffi::c_int;
                     }

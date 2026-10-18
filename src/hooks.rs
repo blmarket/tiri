@@ -174,9 +174,7 @@ unsafe fn hooks_insert(
         return;
     };
     source
-        .entry(name)
-        .as_deref_mut()
-        .map(|entry| options_hook_fired(entry))
+        .with_entry(name, |entry| options_hook_fired(entry))
         .expect("resolved hook");
     let mut event = item_handle.map(|item| cmdq_get_event(&*item.get()));
     let state = cmdq_new_state(
@@ -187,9 +185,9 @@ unsafe fn hooks_insert(
     cmdq_add_formats(&state, &mut *(*hd).formats);
     if name.to_bytes().starts_with(b"@") {
         let value = source
-            .entry(name)
-            .as_deref_mut()
-            .map(|entry| entry.value.string_ptr().expect("hook string").to_owned())
+            .with_entry(name, |entry| {
+                entry.value.string_ptr().expect("hook string").to_owned()
+            })
             .expect("resolved hook");
         let pr = hooks_parse(hd, &fs, &value);
         match pr.status {
@@ -205,9 +203,7 @@ unsafe fn hooks_insert(
         }
     } else {
         let keys = source
-            .entry(name)
-            .as_deref_mut()
-            .map(|entry| {
+            .with_entry(name, |entry| {
                 entry
                     .value
                     .array()
@@ -220,10 +216,16 @@ unsafe fn hooks_insert(
         for key in keys {
             if (*hd).expand != 0 {
                 let value = source
-                    .entry(name)
-                    .as_deref_mut()
-                    .and_then(|entry| entry.value.array().and_then(|array| array.get(&key)))
-                    .map(|value| value.string_ptr().expect("expanded hook string").to_owned());
+                    .with_entry(name, |entry| {
+                        entry
+                            .value
+                            .array()
+                            .and_then(|array| array.get(&key))
+                            .map(|value| {
+                                value.string_ptr().expect("expanded hook string").to_owned()
+                            })
+                    })
+                    .flatten();
                 let Some(value) = value else {
                     break;
                 };
@@ -248,10 +250,14 @@ unsafe fn hooks_insert(
                 }
             } else {
                 let commands = source
-                    .entry(name)
-                    .as_deref_mut()
-                    .and_then(|entry| entry.value.array().and_then(|array| array.get(&key)))
-                    .map(|value| value.commands().cloned());
+                    .with_entry(name, |entry| {
+                        entry
+                            .value
+                            .array()
+                            .and_then(|array| array.get(&key))
+                            .map(|value| value.commands().cloned())
+                    })
+                    .flatten();
                 let Some(commands) = commands else {
                     break;
                 };
@@ -394,9 +400,8 @@ impl Drop for hooks_monitor {
 }
 pub unsafe fn hooks_monitor_remove(scope: &OptionsScope, name: &CStr) {
     let old = scope
-        .entry(name)
-        .as_deref_mut()
-        .and_then(|entry| entry.monitor_data.take());
+        .with_entry(name, |entry| entry.monitor_data.take())
+        .flatten();
     drop(old);
 }
 unsafe fn hooks_monitor_hook_cb(
@@ -410,7 +415,7 @@ unsafe fn hooks_monitor_hook_cb(
     {
         return;
     }
-    if scope.entry(name).as_deref_mut().map(|entry| {
+    if scope.with_entry(name, |entry| {
         entry
             .monitor_data
             .as_ref()
@@ -528,8 +533,10 @@ pub unsafe fn hooks_monitor_add(
     use std::sync::atomic::{AtomicUsize, Ordering};
     static NEXT_MONITOR: AtomicUsize = AtomicUsize::new(1);
     hooks_monitor_remove(scope, name);
-    if scope.entry(name).is_none() {
-        options_set_string(&mut scope.local(), name, 0, |out| out.write_all(b""));
+    if scope.with_entry(name, |_| ()).is_none() {
+        scope.with_local(|table| {
+            options_set_string(table, name, 0, |out| out.write_all(b""));
+        });
     }
     let generation = NEXT_MONITOR
         .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
@@ -555,15 +562,11 @@ pub unsafe fn hooks_monitor_add(
         }),
     );
     let previous = scope
-        .entry(name)
-        .as_deref_mut()
-        .map(|entry| entry.monitor_data.replace(owner))
+        .with_entry(name, |entry| entry.monitor_data.replace(owner))
         .expect("monitor option");
     drop(previous);
     let set = scope
-        .entry(name)
-        .as_deref_mut()
-        .map(|entry| {
+        .with_entry(name, |entry| {
             entry
                 .monitor_data
                 .as_ref()

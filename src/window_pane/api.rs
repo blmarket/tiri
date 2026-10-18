@@ -288,10 +288,7 @@ pub trait WindowPane {
     unsafe fn advance_output(&self, offset: &mut window_pane_offset, count: usize);
     /// Run once after all clients have consumed the current event-loop cycle.
     unsafe fn finish_cycle(&self);
-    type OptionsMut<'a>: std::ops::DerefMut<Target = options>
-    where
-        Self: 'a;
-    unsafe fn borrow_options_mut(&self) -> Self::OptionsMut<'_>;
+    unsafe fn borrow_options_mut(&self) -> std::cell::RefMut<'_, options>;
     unsafe fn format_value(
         &self,
         key: &CStr,
@@ -421,10 +418,10 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
             return false;
         }
         let close = {
-            let options = self.borrow_options_mut();
-            let remain = options_get_number(options, c"remain-on-exit");
+            let mut options = self.borrow_options_mut();
+            let remain = options_get_number(&options, c"remain-on-exit");
             if remain == 3 || remain == 4 {
-                crate::src::options::options_set_number(options, c"remain-on-exit", 0);
+                crate::src::options::options_set_number(&mut options, c"remain-on-exit", 0);
                 true
             } else {
                 false
@@ -547,7 +544,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         let pane = &mut *self.get();
         let Some(pty) = pane.fd.as_mut() else { return };
         if pane.flags & (PANE_EMPTY | PANE_EXITED) == 0
-            && options_get_number(global_options(), c"utmp") != 0
+            && options_get_number(&global_options(), c"utmp") != 0
         {
             pty.utmp_add(pane.id);
         } else {
@@ -628,7 +625,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         (*self.get()).flags & (PANE_REDRAW | PANE_DROP) != 0
     }
     unsafe fn alternate_screen_allowed(&self) -> bool {
-        options_get_number(self.borrow_options_mut(), c"alternate-screen") != 0
+        options_get_number(&self.borrow_options_mut(), c"alternate-screen") != 0
     }
     unsafe fn alternate_screen_changed(&self, entered: bool) {
         super::render::alternate_screen_changed(self, entered);
@@ -754,10 +751,10 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         super::capture::clear_history(self, reset_links);
     }
     unsafe fn refresh_palette(&self) {
-        let pane = &mut *self.get();
+        let options = (*self.get()).borrow_options_mut();
         crate::src::style::colour::colour_palette_from_option(
-            Some(&mut pane.palette),
-            pane.options.as_deref().expect("live pane options"),
+            Some(&mut (*self.get()).palette),
+            &options,
         );
     }
     unsafe fn mark_changed(&self) {
@@ -942,11 +939,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     unsafe fn reparent(&self, window: &WindowRef) {
         let state = &mut *self.get();
         state.window = WindowRef::downgrade(window);
-        state
-            .options
-            .as_deref_mut()
-            .expect("live pane options")
-            .parent = Some(crate::src::options::OptionsScope::Window(
+        state.borrow_options_mut().parent = Some(crate::src::options::OptionsScope::Window(
             WindowRef::downgrade(window),
         ));
         state.flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
@@ -1253,12 +1246,8 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         (*self.get()).flags &= !(PANE_REDRAW | PANE_REDRAWSCROLLBAR | PANE_ACTIVITY);
     }
 
-    type OptionsMut<'a> = &'a mut options;
-    unsafe fn borrow_options_mut(&self) -> Self::OptionsMut<'_> {
-        (*self.get())
-            .options
-            .as_deref_mut()
-            .expect("live pane options")
+    unsafe fn borrow_options_mut(&self) -> std::cell::RefMut<'_, options> {
+        (*self.get()).borrow_options_mut()
     }
 
     unsafe fn format_value(
@@ -1654,7 +1643,7 @@ mod tests {
                 .iter()
                 .find(|entry| entry.name == Some(c"extended-keys"))
                 .unwrap();
-            crate::src::options::options_default(global_options(), definition);
+            crate::src::options::options_default(&mut global_options(), definition);
             let pane = window_pane::new();
             (*pane.get()).fd = None;
             (*pane.get()).pipe_fd = None;

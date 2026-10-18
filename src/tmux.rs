@@ -18,7 +18,7 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::log::{log_add_level, log_cstr, log_debug};
 use crate::src::options::options;
 use crate::src::options::options_table;
-use crate::src::options::{options_default, options_set_number, options_set_string};
+use crate::src::options::{options_set_number, options_set_string, OptionsScope};
 use crate::src::options::{OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION, OPTIONS_TABLE_WINDOW};
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{__mode_t, uid_t};
@@ -41,7 +41,7 @@ use libc::{
     nl_langinfo, printf, realpath, setlocale, strcasecmp, strcasestr, strcmp, strerror, strrchr,
     strstr,
 };
-use std::cell::UnsafeCell;
+use std::cell::{RefCell, RefMut};
 use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
 use std::sync::OnceLock;
@@ -53,38 +53,41 @@ pub use ::libc::{S_IFDIR, S_IFMT};
 
 pub const TMUX_SOCK_PERM: ::core::ffi::c_int = 7 as ::core::ffi::c_int;
 thread_local! {
-    static GLOBAL_OPTIONS: UnsafeCell<options> = const {
-        UnsafeCell::new(options { tree: BTreeMap::new(), parent: None })
-    };
-    static GLOBAL_S_OPTIONS: UnsafeCell<options> = const {
-        UnsafeCell::new(options { tree: BTreeMap::new(), parent: None })
-    };
-    static GLOBAL_W_OPTIONS: UnsafeCell<options> = const {
-        UnsafeCell::new(options { tree: BTreeMap::new(), parent: None })
-    };
+    static GLOBAL_OPTIONS: &'static RefCell<options> = global_table();
+    static GLOBAL_S_OPTIONS: &'static RefCell<options> = global_table();
+    static GLOBAL_W_OPTIONS: &'static RefCell<options> = global_table();
 }
 
-/// Global server options of this thread.
-///
-/// The caller must not let the returned reference alias another live
-/// reference to the same table: do not hold it across code that may borrow
-/// the table again (hooks, format expansion, `OptionsScope::local`).
-pub unsafe fn global_options() -> &'static mut options {
-    &mut *GLOBAL_OPTIONS.with(UnsafeCell::get)
+/// Global tables live for the whole process; entries are released by
+/// `free_global_options`.
+fn global_table() -> &'static RefCell<options> {
+    Box::leak(Box::new(RefCell::new(options {
+        tree: BTreeMap::new(),
+        parent: None,
+    })))
+}
+
+/// Global server options of this thread. Borrowing the table again while the
+/// returned guard is held panics.
+pub fn global_options() -> RefMut<'static, options> {
+    GLOBAL_OPTIONS.with(|table| table.borrow_mut())
 }
 /// Global session options of this thread. Same contract as `global_options`.
-pub unsafe fn global_s_options() -> &'static mut options {
-    &mut *GLOBAL_S_OPTIONS.with(UnsafeCell::get)
+pub fn global_s_options() -> RefMut<'static, options> {
+    GLOBAL_S_OPTIONS.with(|table| table.borrow_mut())
 }
 /// Global window options of this thread. Same contract as `global_options`.
-pub unsafe fn global_w_options() -> &'static mut options {
-    &mut *GLOBAL_W_OPTIONS.with(UnsafeCell::get)
+pub fn global_w_options() -> RefMut<'static, options> {
+    GLOBAL_W_OPTIONS.with(|table| table.borrow_mut())
 }
 
-pub(crate) unsafe fn free_global_options() {
-    drop(std::mem::take(&mut global_options().tree));
-    drop(std::mem::take(&mut global_s_options().tree));
-    drop(std::mem::take(&mut global_w_options().tree));
+/// Entries are dropped after the table guard is released, so their cleanup
+/// may read global options.
+pub(crate) fn free_global_options() {
+    for table in [global_options, global_s_options, global_w_options] {
+        let tree = std::mem::take(&mut table().tree);
+        drop(tree);
+    }
 }
 
 pub static mut global_environ: Option<Box<environ>> = None;
@@ -562,17 +565,17 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
         .take_while(|entry| entry.name.is_some())
     {
         if oe.scope & OPTIONS_TABLE_SERVER != 0 {
-            options_default(global_options(), oe);
+            OptionsScope::GlobalServer.reset_default(oe);
         }
         if oe.scope & OPTIONS_TABLE_SESSION != 0 {
-            options_default(global_s_options(), oe);
+            OptionsScope::GlobalSession.reset_default(oe);
         }
         if oe.scope & OPTIONS_TABLE_WINDOW != 0 {
-            options_default(global_w_options(), oe);
+            OptionsScope::GlobalWindow.reset_default(oe);
         }
     }
     options_set_string(
-        global_s_options(),
+        &mut global_s_options(),
         c"default-shell",
         0 as ::core::ffi::c_int,
         |out| out.write_all(getshell().as_bytes()),
@@ -583,7 +586,7 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
         !s.is_null()
     } {
         options_set_string(
-            global_options(),
+            &mut global_options(),
             c"editor",
             0 as ::core::ffi::c_int,
             |out| write_cstr(out, nullable_cstr(s)),
@@ -597,12 +600,12 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
             keys = MODEKEY_EMACS;
         }
         options_set_number(
-            global_s_options(),
+            &mut global_s_options(),
             c"status-keys",
             keys as ::core::ffi::c_longlong,
         );
         options_set_number(
-            global_w_options(),
+            &mut global_w_options(),
             c"mode-keys",
             keys as ::core::ffi::c_longlong,
         );

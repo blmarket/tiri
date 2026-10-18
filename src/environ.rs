@@ -206,7 +206,7 @@ pub unsafe fn environ_for_session(
         session.with_environment_mut(|source| environ_copy(source, &mut env));
     }
     if no_TERM == 0 {
-        let terminal = options_get_string(global_options(), c"default-terminal");
+        let terminal = options_get_string(&global_options(), c"default-terminal");
         environ_set(&mut env, c"TERM", 0 as ::core::ffi::c_int, |out| {
             write_cstr(out, &*terminal)
         });

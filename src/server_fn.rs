@@ -173,7 +173,7 @@ pub unsafe fn server_lock_client(client_owner: &ClientRef) {
         return;
     }
     let command = options_get_string(
-        client_owner
+        &client_owner
             .attached_session()
             .upgrade()
             .expect("live session")
@@ -224,7 +224,7 @@ pub unsafe fn server_renumber_session(s_owner: &SessionRef) {
     let s = Some(s_owner.clone());
     let mut sg = crate::src::shared::session::SessionGroupWeak::new();
     if options_get_number(
-        s.as_ref().expect("live session").borrow_options_mut(),
+        &s.as_ref().expect("live session").borrow_options_mut(),
         c"renumber-windows",
     ) != 0
     {
@@ -298,7 +298,7 @@ pub unsafe fn server_link_window(
     if dstidx == -(1 as ::core::ffi::c_int) {
         dstidx = (-(1 as ::core::ffi::c_int) as ::core::ffi::c_longlong
             - options_get_number(
-                dst.as_ref().expect("live session").borrow_options_mut(),
+                &dst.as_ref().expect("live session").borrow_options_mut(),
                 c"base-index",
             )) as ::core::ffi::c_int;
     }
@@ -390,7 +390,7 @@ pub unsafe fn server_destroy_session(source: &SessionRef) {
     };
     let mut detach_on_destroy: ::core::ffi::c_int = 0;
     detach_on_destroy = options_get_number(
-        s.as_ref().expect("live session").borrow_options_mut(),
+        &s.as_ref().expect("live session").borrow_options_mut(),
         c"detach-on-destroy",
     ) as ::core::ffi::c_int;
     let mut replacement = match detach_on_destroy {
@@ -455,10 +455,11 @@ pub unsafe fn server_check_unattached() {
     while !s.is_none() {
         let name = s.as_ref().expect("live session").name();
         if !(s.as_ref().expect("live session").is_attached()) {
-            match options_get_number(
-                s.as_ref().expect("live session").borrow_options_mut(),
+            let destroy_unattached = options_get_number(
+                &s.as_ref().expect("live session").borrow_options_mut(),
                 c"destroy-unattached",
-            ) {
+            );
+            match destroy_unattached {
                 0 => {}
                 2 => {
                     current_block_4 = 6116987625208566775;

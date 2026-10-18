@@ -325,12 +325,12 @@ unsafe fn cmd_send_keys_exec(
     ) {
         if args_has(args, '2' as i32 as u_char) != 0 {
             key = options_get_number(
-                s.as_ref().expect("live session").borrow_options_mut(),
+                &s.as_ref().expect("live session").borrow_options_mut(),
                 c"prefix2",
             ) as key_code;
         } else {
             key = options_get_number(
-                s.as_ref().expect("live session").borrow_options_mut(),
+                &s.as_ref().expect("live session").borrow_options_mut(),
                 c"prefix",
             ) as key_code;
         }

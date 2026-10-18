@@ -1200,7 +1200,7 @@ pub unsafe fn tty_term_apply(
 /// Copy out a global array option's string values; the loops that use them
 /// apply terminal changes which may read options again.
 unsafe fn global_array_strings(name: &CStr) -> Vec<CString> {
-    crate::src::options::options_read_entry(global_options(), name, |entry| {
+    crate::src::options::options_read_entry(&global_options(), name, |entry| {
         entry
             .value
             .array()

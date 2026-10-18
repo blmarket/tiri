@@ -191,27 +191,27 @@ pub(super) unsafe fn format_find(
                     options_to_cstring(entry, nullable_cstr(array_key), 1)
                 })
             };
-            found = lookup(global_options());
+            found = lookup(&mut global_options());
             if found.is_none() {
                 found = format_pane_owner
                     .as_ref()
-                    .and_then(|pane| lookup(pane.borrow_options_mut()));
+                    .and_then(|pane| lookup(&mut pane.borrow_options_mut()));
             }
             if found.is_none() {
                 found = format_window_owner
                     .as_ref()
-                    .and_then(|window| lookup(window.borrow_options_mut()));
+                    .and_then(|window| lookup(&mut window.borrow_options_mut()));
             }
             if found.is_none() {
-                found = lookup(global_w_options());
+                found = lookup(&mut global_w_options());
             }
             if found.is_none() {
                 found = format_session_owner
                     .as_ref()
-                    .and_then(|session| lookup(session.borrow_options_mut()));
+                    .and_then(|session| lookup(&mut session.borrow_options_mut()));
             }
             if found.is_none() {
-                found = lookup(global_s_options());
+                found = lookup(&mut global_s_options());
             }
         }
         if found.is_none() {
@@ -1003,7 +1003,7 @@ pub(super) unsafe fn format_add_window_neighbour(
         })
     });
     let entries = crate::src::options::options_iter(
-        wl.get_unchecked()
+        &wl.get_unchecked()
             .window_handle()
             .expect("neighbour window")
             .borrow_options_mut(),
@@ -1338,27 +1338,27 @@ pub(super) unsafe fn format_loop_options(
     let global = has(b'g');
     let mut access = |read: &mut dyn FnMut(&mut options)| {
         if has(b'v') {
-            read(global_options());
+            read(&mut global_options());
         } else if has(b'w') {
             if global {
-                read(global_w_options());
+                read(&mut global_w_options());
             } else if let Some(window) = window.as_ref() {
-                read(window.borrow_options_mut());
+                read(&mut window.borrow_options_mut());
             }
         } else if has(b's') {
             if global {
-                read(global_s_options());
+                read(&mut global_s_options());
             } else if let Some(session) = session.as_ref() {
-                read(session.borrow_options_mut());
+                read(&mut session.borrow_options_mut());
             }
         } else if has(b'p') {
             if !global {
                 if let Some(pane) = pane.as_ref() {
-                    read(pane.borrow_options_mut());
+                    read(&mut pane.borrow_options_mut());
                 }
             }
         } else if global {
-            read(global_s_options());
+            read(&mut global_s_options());
         }
     };
     let mut names = Vec::new();

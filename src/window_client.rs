@@ -367,7 +367,7 @@ unsafe fn window_client_draw_info(
         gc = grid_default_cell;
         style_apply_with_options(&mut gc, c"tree-mode-border-style", None, |visit| {
             visit(
-                options_window
+                &mut options_window
                     .upgrade()
                     .expect("live client-preview window")
                     .borrow_options_mut(),
@@ -491,7 +491,7 @@ unsafe fn window_client_draw(
     gc = grid_default_cell;
     style_apply_with_options(&mut gc, c"tree-mode-border-style", None, |visit| {
         visit(
-            options_window
+            &mut options_window
                 .upgrade()
                 .expect("live client-preview window")
                 .borrow_options_mut(),

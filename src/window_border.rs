@@ -67,7 +67,7 @@ pub(crate) unsafe fn window_render_fill_cell(
     format_add(ft, c"is_outside", |out| {
         write!(out, "{}", { (!inside) as ::core::ffi::c_int })
     });
-    let value = options_get_string(w_owner.borrow_options_mut(), c"fill-character");
+    let value = options_get_string(&w_owner.borrow_options_mut(), c"fill-character");
     let expanded = format_expand_cstring(ft, value.as_ptr());
     drop(ft_owner);
     screen_init(&mut s, 1 as u_int, 1 as u_int, 0 as u_int);

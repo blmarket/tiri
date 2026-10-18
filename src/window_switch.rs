@@ -345,10 +345,10 @@ unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         return;
     }
     style_apply_with_options(&mut mgc, c"switch-mode-match-style", None, |visit| {
-        visit(mode_pane_owner.borrow_options_mut())
+        visit(&mut mode_pane_owner.borrow_options_mut())
     });
     style_apply_with_options(&mut sgc, c"mode-style", None, |visit| {
-        visit(mode_pane_owner.borrow_options_mut())
+        visit(&mut mode_pane_owner.borrow_options_mut())
     });
     visible = window_switch_visible(data);
     i = 0 as u_int;

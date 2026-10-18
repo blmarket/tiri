@@ -267,7 +267,7 @@ pub unsafe fn cmd_get_parse_flags(mut cmd: refbox::Weak<cmd>) -> ::core::ffi::c_
     cmd.get_unchecked().parse_flags
 }
 pub unsafe fn cmd_get_alias(name: &CStr) -> Option<CString> {
-    crate::src::options::options_read_entry(global_options(), c"command-alias", |entry| {
+    crate::src::options::options_read_entry(&global_options(), c"command-alias", |entry| {
         entry
             .value
             .array()

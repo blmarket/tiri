@@ -903,7 +903,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
     gc = grid_default_cell;
     style_apply_with_options(&mut gc, c"tree-mode-selection-style", None, |visit| {
         visit(
-            options_window
+            &mut options_window
                 .upgrade()
                 .expect("live tree-mode window")
                 .borrow_options_mut(),
@@ -912,7 +912,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
     box_gc = grid_default_cell;
     style_apply_with_options(&mut box_gc, c"tree-mode-border-style", None, |visit| {
         visit(
-            options_window
+            &mut options_window
                 .upgrade()
                 .expect("live tree-mode window")
                 .borrow_options_mut(),
@@ -1422,9 +1422,9 @@ pub unsafe fn mode_tree_set_prompt(
         freecb,
     });
     let position = if let Some(session) = session_owner.as_ref() {
-        options_get_number(session.borrow_options_mut(), c"status-position")
+        options_get_number(&session.borrow_options_mut(), c"status-position")
     } else {
-        options_get_number(global_s_options(), c"status-position")
+        options_get_number(&global_s_options(), c"status-position")
     };
     (*mtd).prompt_top = (position == 0) as i32;
     prompt_set_options(&mut pd, session_owner.as_ref());
@@ -1859,7 +1859,7 @@ unsafe fn mode_tree_draw_help(
     box_gc = grid_default_cell;
     style_apply_with_options(&mut box_gc, c"tree-mode-border-style", None, |visit| {
         visit(
-            options_window
+            &mut options_window
                 .upgrade()
                 .expect("live tree-mode window")
                 .borrow_options_mut(),

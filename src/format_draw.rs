@@ -1836,7 +1836,7 @@ mod range_tests {
     fn rendered_ranges_follow_their_alignment_and_clipping() {
         unsafe {
             options_default(
-                global_options(),
+                &mut global_options(),
                 options_table
                     .iter()
                     .find(|entry| entry.name == Some(c"extended-keys"))

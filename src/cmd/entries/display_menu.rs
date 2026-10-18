@@ -209,7 +209,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
             top = 0 as ::core::ffi::c_int;
         }
         position = options_get_number(
-            s.as_ref().expect("live session").borrow_options_mut(),
+            &s.as_ref().expect("live session").borrow_options_mut(),
             c"status-position",
         ) as u_int;
         let index = wl.get_unchecked().idx as u_int;
@@ -561,7 +561,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
     });
     lines = status_line_size(tc.as_ref().expect("live client"));
     position = options_get_number(
-        s.as_ref().expect("live session").borrow_options_mut(),
+        &s.as_ref().expect("live session").borrow_options_mut(),
         c"status-position",
     ) as u_int;
     if status_at_line(tc.as_ref().expect("live client")) != -(1 as ::core::ffi::c_int)
@@ -1053,7 +1053,7 @@ unsafe fn cmd_display_popup_exec(
                             }
                             if count == 0 as u_int {
                                 shellcmd_session_value = Some(options_get_string(
-                                    s.as_ref().expect("live session").borrow_options_mut(),
+                                    &s.as_ref().expect("live session").borrow_options_mut(),
                                     c"default-command",
                                 ));
                                 shellcmd = shellcmd_session_value
@@ -1070,7 +1070,7 @@ unsafe fn cmd_display_popup_exec(
                             {
                                 shellcmd = ::core::ptr::null::<::core::ffi::c_char>();
                                 shell_session_value = Some(options_get_string(
-                                    s.as_ref().expect("live session").borrow_options_mut(),
+                                    &s.as_ref().expect("live session").borrow_options_mut(),
                                     c"default-shell",
                                 ));
                                 shell = shell_session_value

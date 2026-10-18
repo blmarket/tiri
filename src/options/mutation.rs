@@ -55,26 +55,26 @@ impl OptionsScope {
                 return Err(c"bad option name".to_owned());
             }
             let value = value.ok_or_else(|| c"empty value".to_owned())?;
-            options_set_string(&mut self.local(), name, append as i32, |out| {
-                write_cstr(out, &*value)
+            self.with_local(|table| {
+                options_set_string(table, name, append as i32, |out| write_cstr(out, &*value));
             });
             return Ok(());
         }
         let definition = definition.unwrap();
         if definition.type_0 != OPTIONS_TABLE_COMMAND {
-            return options_from_string(&mut self.local(), definition, name, value, append as i32);
+            return self.with_local(|table| {
+                options_from_string(table, definition, name, value, append as i32)
+            });
         }
         let value = value.ok_or_else(|| c"empty value".to_owned())?;
         let commands = parse_commands(value, parse)?;
-        if self.entry(name).is_none() {
+        if self.with_entry(name, |_| ()).is_none() {
             self.reset_default_with_parser(definition, parse);
         }
-        self.entry(name)
-            .as_deref_mut()
-            .map(|entry| {
-                entry.value = options_value::Command(OptionCommand(commands));
-            })
-            .expect("command option remains installed while parsing");
+        self.with_entry(name, |entry| {
+            entry.value = options_value::Command(OptionCommand(commands));
+        })
+        .expect("command option remains installed while parsing");
         Ok(())
     }
 
@@ -82,19 +82,17 @@ impl OptionsScope {
     pub unsafe fn ensure_array(&self, definition: &'static options_table_entry) {
         assert!(definition.flags & OPTIONS_TABLE_IS_ARRAY != 0);
         let name = definition.name.expect("named array definition");
-        if self.entry(name).is_none() {
-            options_empty(&mut self.local(), definition);
+        if self.with_entry(name, |_| ()).is_none() {
+            self.with_local(|table| {
+                options_empty(table, definition);
+            });
         }
     }
 
     pub unsafe fn clear_array(&self, name: &CStr) {
-        if let Some(array) = self
-            .entry(name)
-            .as_deref_mut()
-            .and_then(|entry| entry.value.array_mut())
-        {
-            array.clear();
-        }
+        self.with_entry(name, |entry| {
+            entry.value.array_mut().map(options_array::clear)
+        });
     }
 
     /// Set/remove one item in an existing local array. A parser may consult any
@@ -118,9 +116,7 @@ impl OptionsScope {
         parse: &mut impl FnMut(&CStr) -> cmd_parse_result,
     ) -> Result<(), CString> {
         let (identity, definition) = self
-            .entry(name)
-            .as_deref_mut()
-            .map(|entry| (entry.id(), entry.tableentry))
+            .with_entry(name, |entry| (entry.id(), entry.tableentry))
             .expect("local array option");
         let Some(definition) =
             definition.filter(|definition| definition.flags & OPTIONS_TABLE_IS_ARRAY != 0)
@@ -132,30 +128,26 @@ impl OptionsScope {
         };
         if let Some(value) = value.filter(|_| definition.type_0 == OPTIONS_TABLE_COMMAND) {
             let commands = parse_commands(value, parse)?;
-            self.entry(name)
-                .as_deref_mut()
-                .map(|entry| {
-                    assert_eq!(entry.id(), identity, "array option replaced while parsing");
-                    *entry
-                        .value
-                        .array_mut()
-                        .expect("array option value")
-                        .get_or_insert(&key) = options_value::Command(OptionCommand(commands));
-                })
-                .expect("array option remains installed while parsing");
-            return Ok(());
-        }
-        self.entry(name)
-            .as_deref_mut()
-            .map(|entry| {
-                assert_eq!(entry.id(), identity, "array option identity");
-                entry
+            self.with_entry(name, |entry| {
+                assert_eq!(entry.id(), identity, "array option replaced while parsing");
+                *entry
                     .value
                     .array_mut()
                     .expect("array option value")
-                    .set(definition, &key, value, append)
+                    .get_or_insert(&key) = options_value::Command(OptionCommand(commands));
             })
-            .expect("local array option")
+            .expect("array option remains installed while parsing");
+            return Ok(());
+        }
+        self.with_entry(name, |entry| {
+            assert_eq!(entry.id(), identity, "array option identity");
+            entry
+                .value
+                .array_mut()
+                .expect("array option value")
+                .set(definition, &key, value, append)
+        })
+        .expect("local array option")
     }
 
     /// Append split values incrementally. A later parse error preserves every
@@ -171,9 +163,7 @@ impl OptionsScope {
         parse: &mut impl FnMut(&CStr) -> cmd_parse_result,
     ) -> Result<(), CString> {
         let (identity, separator) = self
-            .entry(name)
-            .as_deref_mut()
-            .map(|entry| {
+            .with_entry(name, |entry| {
                 (
                     entry.id(),
                     entry
@@ -199,9 +189,7 @@ impl OptionsScope {
         };
         for value in values {
             let index = self
-                .entry(name)
-                .as_deref_mut()
-                .map(|entry| {
+                .with_entry(name, |entry| {
                     assert_eq!(
                         entry.id(),
                         identity,
@@ -226,21 +214,23 @@ impl OptionsScope {
         name: &CStr,
         key: Option<&CStr>,
     ) -> Result<bool, CString> {
-        let Some(definition) = self
-            .entry(name)
-            .as_deref_mut()
-            .map(|entry| entry.tableentry)
-        else {
+        let Some(definition) = self.with_entry(name, |entry| entry.tableentry) else {
             return Ok(false);
         };
         if let Some(key) = key {
             self.set_array_item(name, key, None, false)?;
         } else if let Some(definition) = definition.filter(|_| self.is_global()) {
-            self.reset_default_with_parser(definition, &mut command_parser);
+            self.reset_default(definition);
         } else {
             self.remove_entry(name);
         }
         Ok(true)
+    }
+
+    /// Replace the local entry with the built-in default. A command default is
+    /// parsed without the table borrowed, as parsing reads command aliases.
+    pub unsafe fn reset_default(&self, definition: &'static options_table_entry) {
+        self.reset_default_with_parser(definition, &mut command_parser);
     }
 
     /// Leave the emptied entry published while its monitor is destroyed, then
@@ -254,19 +244,19 @@ impl OptionsScope {
         name: &CStr,
         cleanup: impl FnOnce(Option<Box<crate::src::hooks::hooks_monitor>>),
     ) -> bool {
-        let Some((identity, monitor)) = self.entry(name).as_deref_mut().map(|entry| {
+        let Some((identity, monitor)) = self.with_entry(name, |entry| {
             entry.value = options_value::Empty;
             (entry.id(), entry.monitor_data.take())
         }) else {
             return false;
         };
         cleanup(monitor);
-        let removed = match options_local_entry(&mut self.local(), name) {
+        let removed = self.with_local(|table| match options_local_entry(table, name) {
             btree_map::Entry::Occupied(entry) if entry.get().id() == identity => {
                 Some(entry.remove())
             }
             _ => None,
-        };
+        });
         drop(removed);
         true
     }
@@ -278,7 +268,7 @@ impl OptionsScope {
     ) {
         let name = definition.name.expect("named option definition");
         while self.remove_entry(name) {}
-        let identity = options_empty(&mut self.local(), definition).id();
+        let identity = self.with_local(|table| options_empty(table, definition).id());
         if definition.flags & OPTIONS_TABLE_IS_ARRAY != 0 {
             if let Some(values) = definition.default_arr {
                 for (index, value) in values.iter().enumerate() {
@@ -307,16 +297,14 @@ impl OptionsScope {
             }
             _ => options_value::Number(definition.default_num),
         };
-        self.entry(name)
-            .as_deref_mut()
-            .map(|entry| {
-                assert_eq!(
-                    entry.id(),
-                    identity,
-                    "default option replaced while parsing"
-                );
-                entry.value = value;
-            })
-            .expect("default option remains installed while parsing");
+        self.with_entry(name, |entry| {
+            assert_eq!(
+                entry.id(),
+                identity,
+                "default option replaced while parsing"
+            );
+            entry.value = value;
+        })
+        .expect("default option remains installed while parsing");
     }
 }

@@ -143,10 +143,8 @@ pub(super) unsafe fn finish_process(
         drop(window_owner);
         return;
     };
-    remain_on_exit = options_get_number(
-        (*wp).options.as_deref().expect("pane options"),
-        c"remain-on-exit",
-    ) as ::core::ffi::c_int;
+    remain_on_exit =
+        options_get_number(&(*wp).borrow_options_mut(), c"remain-on-exit") as ::core::ffi::c_int;
     let mut current_block_37: u64;
     match remain_on_exit {
         2 | 4 => {
@@ -176,7 +174,7 @@ pub(super) unsafe fn finish_process(
                 server_fire_pane_exit(c"pane-died", pane_owner);
             }
             let format =
-                options_get_string(pane_owner.borrow_options_mut(), c"remain-on-exit-format");
+                options_get_string(&pane_owner.borrow_options_mut(), c"remain-on-exit-format");
             s = format.as_ptr();
             if *s as ::core::ffi::c_int != '\0' as i32 {
                 screen_write_start_pane(&mut ctx, pane_owner, &raw mut (*wp).base);

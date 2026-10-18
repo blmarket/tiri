@@ -54,7 +54,7 @@ pub unsafe fn screen_reinit(s: &mut screen) {
     s.rupper = 0 as u_int;
     s.rlower = s.grid().sy.wrapping_sub(1 as u_int);
     s.mode = MODE_CURSOR | MODE_WRAP | s.mode & MODE_CRLF;
-    if options_get_number(global_options(), c"extended-keys") == 2 as ::core::ffi::c_longlong {
+    if options_get_number(&global_options(), c"extended-keys") == 2 as ::core::ffi::c_longlong {
         s.mode = s.mode & !EXTENDED_KEY_MODES | MODE_KEYS_EXTENDED;
     }
     if s.saved_grid.is_some() {

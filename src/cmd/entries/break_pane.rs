@@ -128,7 +128,11 @@ unsafe fn cmd_break_pane_exec(
             }
             if !name.is_null() {
                 source_window.rename(CStr::from_ptr(name), false);
-                options_set_number(source_window.borrow_options_mut(), c"automatic-rename", 0);
+                options_set_number(
+                    &mut source_window.borrow_options_mut(),
+                    c"automatic-rename",
+                    0,
+                );
             }
             server_unlink_window(src_s.as_ref().expect("live session"), wl.clone());
             wl = dst_s
@@ -187,7 +191,7 @@ unsafe fn cmd_break_pane_exec(
             if idx == -(1 as ::core::ffi::c_int) {
                 idx = (-(1 as ::core::ffi::c_int) as ::core::ffi::c_longlong
                     - options_get_number(
-                        dst_s.as_ref().expect("live session").borrow_options_mut(),
+                        &dst_s.as_ref().expect("live session").borrow_options_mut(),
                         c"base-index",
                     )) as ::core::ffi::c_int;
             }

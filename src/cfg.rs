@@ -355,7 +355,7 @@ mod cfg_wait_tests {
                 .iter()
                 .find(|entry| entry.name == Some(c"history-file"))
                 .unwrap();
-            options_default(global_options(), entry);
+            options_default(&mut global_options(), entry);
             cfg_finished = 0;
             Self
         }

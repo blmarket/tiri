@@ -534,7 +534,8 @@ unsafe fn input_key_extended(mut bev: *mut bufferevent, mut key: key_code) -> ::
         key &= KEYC_MASK_KEY;
     }
     let tmp;
-    if options_get_number(global_options(), c"extended-keys-format") == 1 as ::core::ffi::c_longlong
+    if options_get_number(&global_options(), c"extended-keys-format")
+        == 1 as ::core::ffi::c_longlong
     {
         tmp = format_message_with(|out| {
             out.write_all(b"\x1B[27;")?;
@@ -647,7 +648,7 @@ pub unsafe fn input_key(
     if key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
         == KEYC_BSPACE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
     {
-        newkey = options_get_number(global_options(), c"backspace") as key_code;
+        newkey = options_get_number(&global_options(), c"backspace") as key_code;
         log_debug(format_args!(
             "{}: key 0x{:x} is backspace -> 0x{:x}",
             "input_key",

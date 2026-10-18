@@ -62,7 +62,7 @@ pub(super) unsafe fn border_style(
         c"pane-border-style"
     };
     style_apply_with_options(&mut cell, key, Some(&mut context), |visit| {
-        visit(pane.borrow_options_mut());
+        visit(&mut pane.borrow_options_mut());
     });
     drop(context);
     let state = &mut *pane.get();
@@ -106,7 +106,7 @@ pub(super) unsafe fn make_status(
         session.current_winlink(),
         Some(pane),
     );
-    let value = options_get_string(pane.borrow_options_mut(), c"pane-border-format");
+    let value = options_get_string(&pane.borrow_options_mut(), c"pane-border-format");
     let expanded = format_expand_time_cstring(&mut *context, value.as_ptr());
     let mut cell = pane.border_style(client);
     let lines = pane.pane_lines();

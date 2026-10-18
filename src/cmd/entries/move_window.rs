@@ -162,7 +162,7 @@ unsafe fn cmd_move_window_exec(
     }
     if sflag == 0
         && options_get_number(
-            src.as_ref().expect("live session").borrow_options_mut(),
+            &src.as_ref().expect("live session").borrow_options_mut(),
             c"renumber-windows",
         ) != 0
     {

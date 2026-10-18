@@ -69,7 +69,8 @@ pub unsafe fn options_push_changes(name: &CStr) {
         let mut window_cursor = windows::first();
         while let Some(window_owner) = window_cursor.take() {
             if let Some(active) = window_owner.active_pane().upgrade() {
-                if options_get_number(window_owner.borrow_options_mut(), c"automatic-rename") != 0 {
+                if options_get_number(&window_owner.borrow_options_mut(), c"automatic-rename") != 0
+                {
                     active.mark_changed();
                 }
             }
@@ -200,7 +201,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
         utf8_update_width_cache();
     }
     if strcmp(name, c"input-buffer-size".as_ptr()) == 0 as ::core::ffi::c_int {
-        input_set_buffer_size(options_get_number(global_options(), c"input-buffer-size") as size_t);
+        input_set_buffer_size(options_get_number(&global_options(), c"input-buffer-size") as size_t);
     }
     if strcmp(name, c"history-limit".as_ptr()) == 0 as ::core::ffi::c_int {
         let mut s_owner = sessions::first();

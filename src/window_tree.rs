@@ -911,7 +911,7 @@ unsafe fn window_tree_draw_session(
         &raw mut gc,
         |visit| {
             visit(
-                border_window
+                &mut border_window
                     .upgrade()
                     .expect("live tree-mode window")
                     .borrow_options_mut(),
@@ -986,13 +986,17 @@ unsafe fn window_tree_draw_session(
             );
             ft = &raw mut *ft_owner;
             format_defaults(ft, None, s.as_ref(), wl.clone(), None);
-            window_tree_border_cell(&raw mut gc, |visit| visit(window.borrow_options_mut()), ft);
+            window_tree_border_cell(
+                &raw mut gc,
+                |visit| visit(&mut window.borrow_options_mut()),
+                ft,
+            );
             label_gc = grid_default_cell;
             style_apply_with_options(
                 &mut label_gc,
                 c"tree-mode-preview-style",
                 Some(&mut *ft),
-                |visit| visit(window.borrow_options_mut()),
+                |visit| visit(&mut window.borrow_options_mut()),
             );
             label_gc.bg = gc.bg;
             if left != 0 {
@@ -1015,7 +1019,7 @@ unsafe fn window_tree_draw_session(
             window_tree_preview(&preview_pane, &mut *ctx, width, sy);
             drop(preview_pane);
             let format =
-                options_get_string(window.borrow_options_mut(), c"tree-mode-preview-format");
+                options_get_string(&window.borrow_options_mut(), c"tree-mode-preview-format");
             if !format.as_bytes().is_empty() {
                 let label = format_expand_cstring(ft, format.as_ptr());
                 if !label.as_bytes().is_empty() {
@@ -1191,7 +1195,7 @@ unsafe fn window_tree_draw_window(
             &raw mut gc,
             |visit| {
                 visit(
-                    border_window
+                    &mut border_window
                         .upgrade()
                         .expect("live tree-mode window")
                         .borrow_options_mut(),
@@ -1267,7 +1271,7 @@ unsafe fn window_tree_draw_window(
                         &raw mut gc,
                         |visit| {
                             visit(
-                                options_pane
+                                &mut options_pane
                                     .upgrade()
                                     .expect("live preview pane")
                                     .borrow_options_mut(),
@@ -1282,7 +1286,7 @@ unsafe fn window_tree_draw_window(
                         Some(&mut *ft),
                         |visit| {
                             visit(
-                                options_pane
+                                &mut options_pane
                                     .upgrade()
                                     .expect("live preview pane")
                                     .borrow_options_mut(),
@@ -1308,7 +1312,7 @@ unsafe fn window_tree_draw_window(
                     );
                     window_tree_preview(&pane_owner, &mut *ctx, width, sy);
                     let format = options_get_string(
-                        options_pane
+                        &options_pane
                             .upgrade()
                             .expect("live preview pane")
                             .borrow_options_mut(),
@@ -1426,7 +1430,7 @@ unsafe fn window_tree_draw_info(
                 &raw mut gc,
                 |visit| {
                     visit(
-                        border_window
+                        &mut border_window
                             .upgrade()
                             .expect("live tree-mode window")
                             .borrow_options_mut(),
@@ -1494,7 +1498,7 @@ unsafe fn window_tree_draw_info(
             &raw mut gc,
             |visit| {
                 visit(
-                    border_window
+                    &mut border_window
                         .upgrade()
                         .expect("live tree-mode window")
                         .borrow_options_mut(),

@@ -280,17 +280,14 @@ pub unsafe fn window_create(
     (*w).manual_sy = sy;
     (*w).xpixel = xpixel;
     (*w).ypixel = ypixel;
-    (*w).options = Some(crate::src::options::options_create_owned(Some(
-        crate::src::options::OptionsScope::GlobalWindow,
-    )));
-    (*w).sb = options_get_number(
-        (*w).options.as_deref().expect("window options"),
-        c"pane-scrollbars",
-    ) as ::core::ffi::c_int;
-    (*w).sb_pos = options_get_number(
-        (*w).options.as_deref().expect("window options"),
-        c"pane-scrollbars-position",
-    ) as ::core::ffi::c_int;
+    (*w).options
+        .replace(Some(crate::src::options::options_create_owned(Some(
+            crate::src::options::OptionsScope::GlobalWindow,
+        ))));
+    (*w).sb =
+        options_get_number(&(*w).borrow_options_mut(), c"pane-scrollbars") as ::core::ffi::c_int;
+    (*w).sb_pos = options_get_number(&(*w).borrow_options_mut(), c"pane-scrollbars-position")
+        as ::core::ffi::c_int;
     (*w).winlinks = Default::default();
     (*w).id = windows::alloc_id();
     windows::insert(&owner);
@@ -415,7 +412,7 @@ unsafe fn window_set_active_pane(
         client = ClientRegistry::next(&current);
     }
     pane.on_selected(true);
-    if options_get_number(global_options(), c"focus-events") != 0 {
+    if options_get_number(&global_options(), c"focus-events") != 0 {
         if let Some(previous) = previous.as_ref() {
             previous.update_focus(false);
         }
@@ -741,15 +738,9 @@ fn window_pane_first(w: Option<&window>) -> Option<Rc<std::cell::UnsafeCell<wind
 }
 
 unsafe fn window_get_pane_status(w: &window) -> ::core::ffi::c_int {
-    options_get_number(
-        w.options.as_deref().expect("window options"),
-        c"pane-border-status",
-    ) as ::core::ffi::c_int
+    options_get_number(&w.borrow_options_mut(), c"pane-border-status") as ::core::ffi::c_int
 }
 
 unsafe fn window_get_pane_lines(w: &window) -> pane_lines {
-    options_get_number(
-        w.options.as_deref().expect("window options"),
-        c"pane-border-lines",
-    ) as pane_lines
+    options_get_number(&w.borrow_options_mut(), c"pane-border-lines") as pane_lines
 }

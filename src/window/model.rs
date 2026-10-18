@@ -50,10 +50,16 @@ pub struct window {
     pub(super) outside_cell: grid_cell,
     pub(super) flags: ::core::ffi::c_int,
     pub(super) alerts_queued: ::core::ffi::c_int,
-    pub(super) options: Option<Box<options>>,
+    pub(super) options: std::cell::RefCell<Option<Box<options>>>,
     pub(super) winlinks: window_winlinks,
 }
 impl window {
+    /// Borrow the option table. Borrowing it again while held panics.
+    pub(super) fn borrow_options_mut(&self) -> std::cell::RefMut<'_, options> {
+        std::cell::RefMut::map(self.options.borrow_mut(), |table| {
+            table.as_deref_mut().expect("live window options")
+        })
+    }
     pub(super) fn invalidate_scene(&mut self) {
         self.redraw_scene_generation = self.redraw_scene_generation.wrapping_add(1);
     }

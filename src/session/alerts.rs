@@ -23,8 +23,7 @@ unsafe fn alerts_action_applies(
     };
     let s = session_owner.get();
     let mut action: ::core::ffi::c_int = 0;
-    action = options_get_number((*s).options.as_deref().expect("session options"), name)
-        as ::core::ffi::c_int;
+    action = options_get_number(&(*s).borrow_options_mut(), name) as ::core::ffi::c_int;
     if action == ALERT_ANY {
         return 1 as ::core::ffi::c_int;
     }
@@ -51,7 +50,7 @@ unsafe fn alerts_check_bell(w_owner: &WindowRef) -> ::core::ffi::c_int {
     if !w_owner.pending_alerts() & WINDOW_BELL != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    if options_get_number(w_owner.borrow_options_mut(), c"monitor-bell") == 0 {
+    if options_get_number(&w_owner.borrow_options_mut(), c"monitor-bell") == 0 {
         return 0 as ::core::ffi::c_int;
     }
     wl = w_owner.next_winlink(None);
@@ -90,7 +89,7 @@ unsafe fn alerts_check_activity(w_owner: &WindowRef) -> ::core::ffi::c_int {
     if !w_owner.pending_alerts() & WINDOW_ACTIVITY != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    if options_get_number(w_owner.borrow_options_mut(), c"monitor-activity") == 0 {
+    if options_get_number(&w_owner.borrow_options_mut(), c"monitor-activity") == 0 {
         return 0 as ::core::ffi::c_int;
     }
     wl = w_owner.next_winlink(None);
@@ -131,7 +130,7 @@ unsafe fn alerts_check_silence(w_owner: &WindowRef) -> ::core::ffi::c_int {
     if !w_owner.pending_alerts() & WINDOW_SILENCE != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    if options_get_number(w_owner.borrow_options_mut(), c"monitor-silence")
+    if options_get_number(&w_owner.borrow_options_mut(), c"monitor-silence")
         == 0 as ::core::ffi::c_longlong
     {
         return 0 as ::core::ffi::c_int;
@@ -173,8 +172,7 @@ unsafe fn alerts_set_message(mut wl: refbox::Weak<winlink>, type_0: &CStr, optio
         return;
     };
     let s = session_owner.get();
-    let visual =
-        options_get_number((*s).options.as_deref().expect("session options"), option) as i32;
+    let visual = options_get_number(&(*s).borrow_options_mut(), option) as i32;
     let mut cursor = ClientRegistry::first();
     while let Some(client) = cursor {
         if client

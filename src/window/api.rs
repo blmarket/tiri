@@ -180,7 +180,7 @@ pub trait Window {
     /// first, in inside/outside order as observed by format callbacks.
     unsafe fn refresh_fill_cells(&self);
     unsafe fn fill_cell(&self, inside: bool) -> grid_cell;
-    unsafe fn borrow_options_mut(&self) -> &mut options;
+    unsafe fn borrow_options_mut(&self) -> std::cell::RefMut<'_, options>;
     unsafe fn format_value(
         &self,
         key: &CStr,
@@ -439,8 +439,8 @@ impl Window for WindowRef {
         drop(window_replace_name(self, name));
         if explicit {
             {
-                let options = self.borrow_options_mut();
-                crate::src::options::options_set_number(options, c"automatic-rename", 0);
+                let mut options = self.borrow_options_mut();
+                crate::src::options::options_set_number(&mut options, c"automatic-rename", 0);
             }
         }
     }
@@ -530,10 +530,15 @@ impl Window for WindowRef {
         (*self.get()).sb_pos
     }
     unsafe fn refresh_scrollbars(&self) {
-        let state = &mut *self.get();
-        let options = state.options.as_deref_mut().expect("live window options");
-        state.sb = options_get_number(options, c"pane-scrollbars") as i32;
-        state.sb_pos = options_get_number(options, c"pane-scrollbars-position") as i32;
+        let (sb, sb_pos) = {
+            let options = (*self.get()).borrow_options_mut();
+            (
+                options_get_number(&options, c"pane-scrollbars") as i32,
+                options_get_number(&options, c"pane-scrollbars-position") as i32,
+            )
+        };
+        (*self.get()).sb = sb;
+        (*self.get()).sb_pos = sb_pos;
     }
     unsafe fn pane_border_status(&self) -> i32 {
         window_get_pane_status(&*self.get())
@@ -543,10 +548,7 @@ impl Window for WindowRef {
     }
     unsafe fn pane_at_index(&self, index: u32) -> Weak<UnsafeCell<window_pane>> {
         let state = &mut *self.get();
-        let base = options_get_number(
-            state.options.as_deref_mut().expect("window options"),
-            c"pane-base-index",
-        ) as u32;
+        let base = options_get_number(&state.borrow_options_mut(), c"pane-base-index") as u32;
         state
             .panes
             .storage
@@ -556,10 +558,7 @@ impl Window for WindowRef {
     }
     unsafe fn pane_index(&self, pane: &Weak<UnsafeCell<window_pane>>) -> Option<u32> {
         let state = &mut *self.get();
-        let base = options_get_number(
-            state.options.as_deref_mut().expect("window options"),
-            c"pane-base-index",
-        ) as u32;
+        let base = options_get_number(&state.borrow_options_mut(), c"pane-base-index") as u32;
         state
             .panes
             .position(pane)
@@ -615,7 +614,7 @@ impl Window for WindowRef {
     unsafe fn set_manual_size(&self, sx: u32, sy: u32) {
         let state = &mut *self.get();
         crate::src::options::options_set_number(
-            state.options.as_deref_mut().expect("live window options"),
+            &mut state.borrow_options_mut(),
             c"window-size",
             crate::src::shared::window::WINDOW_SIZE_MANUAL as _,
         );
@@ -682,11 +681,8 @@ impl Window for WindowRef {
         }
         false
     }
-    unsafe fn borrow_options_mut(&self) -> &mut options {
-        (*self.get())
-            .options
-            .as_deref_mut()
-            .expect("live window options")
+    unsafe fn borrow_options_mut(&self) -> std::cell::RefMut<'_, options> {
+        (*self.get()).borrow_options_mut()
     }
     unsafe fn format_value(
         &self,
@@ -763,7 +759,7 @@ mod tests {
     fn fill_rendering_keeps_inside_outside_formats_and_composes_border_style() {
         unsafe {
             crate::src::options::options_default(
-                crate::src::tmux::global_options(),
+                &mut crate::src::tmux::global_options(),
                 crate::src::options::options_table
                     .iter()
                     .find(|entry| entry.name == Some(c"extended-keys"))
@@ -776,12 +772,15 @@ mod tests {
                 .find(|entry| entry.name == Some(c"fill-character"))
                 .unwrap();
             crate::src::options::options_default(&mut *options, entry);
-            (*owner.get()).options = Some(options);
+            (*owner.get()).options.replace(Some(options));
             {
-                let options = owner.borrow_options_mut();
-                crate::src::options::options_set_string(options, c"fill-character", 0, |out| {
-                    out.write_all(b"#[fg=red]#{?is_inside,I,O}")
-                });
+                let mut options = owner.borrow_options_mut();
+                crate::src::options::options_set_string(
+                    &mut options,
+                    c"fill-character",
+                    0,
+                    |out| out.write_all(b"#[fg=red]#{?is_inside,I,O}"),
+                );
             }
             owner.refresh_fill_cells();
             let original = owner.fill_cell(true);
@@ -803,10 +802,13 @@ mod tests {
                 0
             );
             {
-                let options = owner.borrow_options_mut();
-                crate::src::options::options_set_string(options, c"fill-character", 0, |out| {
-                    out.write_all(b"#{?is_outside,X,Y}")
-                });
+                let mut options = owner.borrow_options_mut();
+                crate::src::options::options_set_string(
+                    &mut options,
+                    c"fill-character",
+                    0,
+                    |out| out.write_all(b"#{?is_outside,X,Y}"),
+                );
             }
             owner.refresh_fill_cells();
             assert_eq!(owner.fill_cell(true).data.data[0], b'Y');

@@ -9,7 +9,7 @@ pub struct window_pane {
     pub(super) active_point: u_int,
     /// Nonowning parent; final window teardown provides a scoped fallback.
     pub(super) window: WindowWeak,
-    pub(super) options: Option<Box<options>>,
+    pub(super) options: std::cell::RefCell<Option<Box<options>>>,
     pub(super) sx: u_int,
     pub(super) sy: u_int,
     pub(super) xoff: ::core::ffi::c_int,
@@ -156,6 +156,12 @@ impl Default for window_pane {
 }
 
 impl window_pane {
+    /// Borrow the option table. Borrowing it again while held panics.
+    pub(super) fn borrow_options_mut(&self) -> std::cell::RefMut<'_, options> {
+        std::cell::RefMut::map(self.options.borrow_mut(), |table| {
+            table.as_deref_mut().expect("live pane options")
+        })
+    }
     /// Retain the parent for the current operation.
     pub(super) fn window_handle(&self) -> Option<WindowRef> {
         self.window.upgrade()

@@ -753,7 +753,7 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
     ft = &raw mut *ft_owner;
     style_apply_with_options(&mut gc, c"clock-mode-colour", Some(&mut *ft), |visit| {
         visit(
-            options_window
+            &mut options_window
                 .upgrade()
                 .expect("live clock window")
                 .borrow_options_mut(),
@@ -762,7 +762,7 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
     drop(ft_owner);
     colour = gc.fg;
     style = options_get_number(
-        options_window
+        &options_window
             .upgrade()
             .expect("live clock window")
             .borrow_options_mut(),

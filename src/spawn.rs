@@ -242,7 +242,7 @@ pub(crate) unsafe fn spawn_editor(
             ::core::mem::transmute::<[u8; 19], [::core::ffi::c_char; 19]>(*b"/tmp/tmux.XXXXXXXX\0");
         let mut editor: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         let mut fd: ::core::ffi::c_int = 0;
-        let editor_value = options_get_string(global_options(), c"editor");
+        let editor_value = options_get_string(&global_options(), c"editor");
         editor = editor_value.as_ptr();
         fd = mkstemp(&raw mut path as *mut ::core::ffi::c_char);
         if fd == -(1 as ::core::ffi::c_int) {

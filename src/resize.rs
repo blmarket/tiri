@@ -268,7 +268,7 @@ pub unsafe fn default_window_size(
     let mut c: Option<ClientRef> = c_owner.cloned();
     let s = Some(s_owner.clone());
     if type_0 == -(1 as ::core::ffi::c_int) {
-        type_0 = options_get_number(global_w_options(), c"window-size") as ::core::ffi::c_int;
+        type_0 = options_get_number(&global_w_options(), c"window-size") as ::core::ffi::c_int;
     }
     if let Some(sizing_client) = c_owner
         .filter(|client| type_0 == WINDOW_SIZE_LATEST && client.participates_in_window_sizing())
@@ -315,7 +315,7 @@ pub unsafe fn default_window_size(
         {
             {
                 let options = s_owner.borrow_options_mut();
-                let value = options_get_string(options, c"default-size");
+                let value = options_get_string(&options, c"default-size");
                 if sscanf(value.as_ptr(), c"%ux%u".as_ptr(), sx, sy) != 2 {
                     *sx = 80;
                     *sy = 24;
@@ -369,8 +369,8 @@ pub unsafe fn recalculate_size(w_owner: &WindowRef, mut now: ::core::ffi::c_int)
     (type_0, current) = {
         let options = w_owner.borrow_options_mut();
         (
-            options_get_number(options, c"window-size") as i32,
-            options_get_number(options, c"aggressive-resize") as i32,
+            options_get_number(&options, c"window-size") as i32,
+            options_get_number(&options, c"aggressive-resize") as i32,
         )
     };
     changed = clients_calculate_size(

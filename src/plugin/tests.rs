@@ -151,7 +151,7 @@ fn publishing_does_not_override_context_entries_or_user_options() {
     use crate::src::tmux::global_s_options;
     unsafe {
         shutdown();
-        options_set_string(global_s_options(), c"@test_state", 0, |out| {
+        options_set_string(&mut global_s_options(), c"@test_state", 0, |out| {
             out.write_all(b"user")
         });
         REGISTRY.with(|registry| add(&mut registry.borrow_mut(), "fake", VARIABLES).unwrap());

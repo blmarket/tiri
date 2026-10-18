@@ -57,7 +57,7 @@ unsafe fn status_timer_callback(client: &ClientRef) {
     let Some(session) = session else { return };
     client.redraw_status_if_unobscured();
     let timeout = Duration::from_secs(
-        (options_get_number(session.borrow_options_mut(), c"status-interval")) as u64,
+        (options_get_number(&session.borrow_options_mut(), c"status-interval")) as u64,
     );
     if timeout.as_secs() != 0 {
         let mut status = client.borrow_status_mut();
@@ -84,7 +84,7 @@ pub unsafe fn status_timer_start(client: &ClientRef) {
         drop(status.timer.take());
     }
     if session
-        .is_some_and(|session| options_get_number(session.borrow_options_mut(), c"status") != 0)
+        .is_some_and(|session| options_get_number(&session.borrow_options_mut(), c"status") != 0)
     {
         status_timer_callback(client);
     }
@@ -122,7 +122,7 @@ pub unsafe fn status_line_size(c: &ClientRef) -> u_int {
     }
     match c.attached_session().upgrade() {
         Some(session) => session.status_layout().1,
-        None => options_get_number(global_s_options(), c"status") as u_int,
+        None => options_get_number(&global_s_options(), c"status") as u_int,
     }
 }
 pub unsafe fn status_prompt_line_at(c: &ClientRef) -> u_int {
@@ -134,7 +134,7 @@ pub unsafe fn status_prompt_line_at(c: &ClientRef) -> u_int {
         return 0 as u_int;
     }
     line = options_get_number(
-        s.as_ref().expect("live session").borrow_options_mut(),
+        &s.as_ref().expect("live session").borrow_options_mut(),
         c"message-line",
     ) as u_int;
     if line >= lines {
@@ -270,17 +270,17 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
     ft = &raw mut *ft_owner;
     format_defaults(ft, Some(c_owner), None, (refbox::Weak::new()).clone(), None);
     crate::src::style::style_apply_with_options(&mut gc, c"status-style", ft.as_mut(), |visit| {
-        visit(s.as_ref().expect("live session").borrow_options_mut())
+        visit(&mut s.as_ref().expect("live session").borrow_options_mut())
     });
     fg = options_get_number(
-        s.as_ref().expect("live session").borrow_options_mut(),
+        &s.as_ref().expect("live session").borrow_options_mut(),
         c"status-fg",
     ) as ::core::ffi::c_int;
     if !(fg == 8 as ::core::ffi::c_int || fg == 9 as ::core::ffi::c_int) {
         gc.fg = fg;
     }
     bg = options_get_number(
-        s.as_ref().expect("live session").borrow_options_mut(),
+        &s.as_ref().expect("live session").borrow_options_mut(),
         c"status-bg",
     ) as ::core::ffi::c_int;
     if !(bg == 8 as ::core::ffi::c_int || bg == 9 as ::core::ffi::c_int) {
@@ -319,9 +319,7 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
                 ctx.target = Default::default();
             }
             let line_format = format_owner
-                .entry(c"status-format")
-                .as_deref_mut()
-                .map(|entry| {
+                .with_entry(c"status-format", |entry| {
                     entry
                         .value
                         .array_mut()
@@ -441,7 +439,8 @@ unsafe fn status_message_area(c: &ClientRef) -> (u_int, u_int) {
     let (terminal_width, _) = c.terminal_size();
     let sy = crate::src::style::style_resolve_with_options(c"message-style", None, |visit| {
         visit(
-            c.attached_session()
+            &mut c
+                .attached_session()
                 .upgrade()
                 .expect("live session")
                 .borrow_options_mut(),
@@ -532,7 +531,7 @@ pub unsafe fn status_message_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
     );
     ft = &raw mut *ft_owner;
     crate::src::style::style_apply_with_options(&mut gc, c"message-style", ft.as_mut(), |visit| {
-        visit(s.as_ref().expect("live session").borrow_options_mut())
+        visit(&mut s.as_ref().expect("live session").borrow_options_mut())
     });
     let (message, ignore_styles) = c_owner.status_message_text();
     if ignore_styles {
@@ -545,7 +544,7 @@ pub unsafe fn status_message_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
         write!(out, "{}", { 0 as ::core::ffi::c_int })
     });
     msgfmt_session_value = Some(options_get_string(
-        s.as_ref().expect("live session").borrow_options_mut(),
+        &s.as_ref().expect("live session").borrow_options_mut(),
         c"message-format",
     ));
     msgfmt = msgfmt_session_value
@@ -684,7 +683,7 @@ unsafe fn status_prompt_screen_line(c: &ClientRef) -> u_int {
     let (_, height) = c.terminal_size();
     let mut n: u_int = 0;
     if options_get_number(
-        c.attached_session()
+        &c.attached_session()
             .upgrade()
             .expect("live session")
             .borrow_options_mut(),

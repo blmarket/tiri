@@ -146,9 +146,9 @@ pub unsafe fn job_run(
         shell = _PATH_BSHELL.as_ptr();
     } else {
         shell_value = Some(if let Some(session) = s_owner {
-            options_get_string(session.borrow_options_mut(), c"default-shell")
+            options_get_string(&session.borrow_options_mut(), c"default-shell")
         } else {
-            options_get_string(global_s_options(), c"default-shell")
+            options_get_string(&global_s_options(), c"default-shell")
         });
         shell = shell_value.as_ref().expect("shell snapshot").as_ptr();
         if checkshell(nullable_cstr(shell)) == 0 {

@@ -49,11 +49,7 @@ pub(super) unsafe fn spawn_window(
     }
     if sc.flags & SPAWN_RESPAWN == 0 {
         if index == -1 {
-            index = (-1i64
-                - options_get_number(
-                    (*s).options.as_deref().expect("session options"),
-                    c"base-index",
-                )) as i32;
+            index = (-1i64 - options_get_number(&(*s).borrow_options_mut(), c"base-index")) as i32;
         }
         sc.set_wl(winlink_add(&mut (*s).windows, index));
         if !sc.winlink_handle().is_alive() {
