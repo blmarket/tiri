@@ -76,11 +76,11 @@ impl window_mode_entry {
             .map(std::cell::UnsafeCell::get)
     }
 
-    pub fn shared_data_ptr<T: std::any::Any>(&self) -> Option<*mut T> {
-        self.data_owner
+    /// Boxed payload behind a RefCell; callers take scoped borrows.
+    pub fn boxed_data_cell<T: std::any::Any>(&self) -> Option<&std::cell::RefCell<T>> {
+        self.boxed_data
             .as_ref()?
-            .downcast_ref::<std::cell::UnsafeCell<T>>()
-            .map(std::cell::UnsafeCell::get)
+            .downcast_ref::<std::cell::RefCell<T>>()
     }
 
     /// Retain an Rc-backed payload across callbacks that may remove this entry.
@@ -88,6 +88,22 @@ impl window_mode_entry {
         self.data_owner
             .as_ref()
             .map(|owner| owner.clone().downcast::<T>().expect("mode payload type"))
+    }
+}
+
+/// Rc-backed mode payload; `dead` lives outside the RefCell so `free` can
+/// mark the mode dead while a caller further up the stack holds a borrow.
+pub struct ModeCell<T> {
+    pub dead: std::cell::Cell<bool>,
+    pub data: std::cell::RefCell<T>,
+}
+
+impl<T> ModeCell<T> {
+    pub fn new(data: T) -> Self {
+        Self {
+            dead: std::cell::Cell::new(false),
+            data: std::cell::RefCell::new(data),
+        }
     }
 }
 
@@ -103,6 +119,20 @@ pub type window_mode_init_cb = unsafe fn(
 /// the payload has one. The borrow ends when the visitor returns.
 pub type window_mode_screen_cb =
     unsafe fn(refbox::Weak<window_mode_entry>, &mut dyn FnMut(&mut screen));
+
+/// Borrow a mode payload for its `get_screen` callback. Sorting and format
+/// expansion reach `get_screen` for the mode's own pane while a build or draw
+/// further up the stack holds the payload; as in `mode_tree_visit_screen`,
+/// that reentrant visit goes through the cell and sees the payload mid-update.
+pub unsafe fn window_mode_screen_payload<T, R>(
+    cell: &std::cell::RefCell<T>,
+    visit: impl FnOnce(&mut T) -> R,
+) -> R {
+    match cell.try_borrow_mut() {
+        Ok(mut data) => visit(&mut data),
+        Err(_) => visit(&mut *cell.as_ptr()),
+    }
+}
 
 /// Run `visit` on the screen `cb` exposes; `None` when the mode has no screen.
 pub unsafe fn window_mode_visit_screen<R>(

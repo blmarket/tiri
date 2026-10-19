@@ -19,7 +19,7 @@ use crate::shared::key::*;
 use crate::shared::mouse::mouse_event;
 use crate::shared::screen::{screen, MODE_CURSOR};
 use crate::shared::time::tm;
-use crate::shared::window::{window_mode, window_mode_entry, winlink};
+use crate::shared::window::{window_mode, window_mode_entry, window_mode_screen_payload, winlink};
 use crate::style::style_apply_with_options;
 use crate::window::Window as _;
 use libc::{gmtime_r, localtime, strftime, strlen};
@@ -590,20 +590,21 @@ pub static mut window_clock_table: [[[::core::ffi::c_char; 5]; 5]; 14] = [
         ],
     ],
 ];
-unsafe fn window_clock_data(wme: refbox::Weak<window_mode_entry>) -> *mut window_clock_mode_data {
+unsafe fn window_clock_data(
+    wme: &refbox::Weak<window_mode_entry>,
+) -> &std::cell::RefCell<window_clock_mode_data> {
     wme.get_unchecked()
-        .boxed_data_ptr::<window_clock_mode_data>()
+        .boxed_data_cell::<window_clock_mode_data>()
         .expect("clock mode payload")
 }
 
 unsafe fn window_clock_start_timer(mut wme: refbox::Weak<window_mode_entry>) {
-    let mut data: *mut window_clock_mode_data = window_clock_data(wme.clone());
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default();
     let delay = Duration::from_micros(1_000_000 - u64::from(now.subsec_micros()));
     let mode_observer = wme.clone();
-    (*data).timer = Some(
+    window_clock_data(&wme).borrow_mut().timer = Some(
         Timer::new(delay, move || unsafe {
             let live = match mode_observer.try_borrow_mut() {
                 Ok(_) => true,
@@ -623,16 +624,20 @@ unsafe fn window_clock_timer_callback(wme: refbox::Weak<window_mode_entry>) {
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
-    let mut data: *mut window_clock_mode_data = window_clock_data(wme.clone());
+    let mut data = window_clock_data(&wme).borrow_mut();
     let mut now: tm = unsafe { ::core::mem::zeroed() };
     let mut then: tm = unsafe { ::core::mem::zeroed() };
     let mut t: time_t = 0;
-    drop((*data).timer.take());
+    drop(data.timer.take());
     t = crate::shared::time::unix_seconds(std::time::SystemTime::now());
     gmtime_r(&raw mut t, &raw mut now);
-    gmtime_r(&raw mut (*data).tim, &raw mut then);
-    if now.tm_sec != then.tm_sec {
-        (*data).tim = t;
+    gmtime_r(&raw mut data.tim, &raw mut then);
+    let changed = now.tm_sec != then.tm_sec;
+    if changed {
+        data.tim = t;
+    }
+    drop(data);
+    if changed {
         window_clock_draw_screen(wme.clone());
         mode_pane_owner.request_redraw(false);
     }
@@ -649,19 +654,19 @@ unsafe fn window_clock_init(
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
-    let mut data: *mut window_clock_mode_data = ::core::ptr::null_mut::<window_clock_mode_data>();
-    let owner = Box::new(std::cell::UnsafeCell::new(window_clock_mode_data {
+    let owner = Box::new(std::cell::RefCell::new(window_clock_mode_data {
         screen: screen::empty(),
-        tim: 0,
+        tim: crate::shared::time::unix_seconds(std::time::SystemTime::now()),
         timer: Default::default(),
     }));
-    data = owner.get();
     wme.get_mut_unchecked().boxed_data = Some(owner);
-    (*data).tim = crate::shared::time::unix_seconds(std::time::SystemTime::now());
     window_clock_start_timer(wme.clone());
     let (pane_sx, pane_sy) = mode_pane_owner.screen_size(false);
-    screen_init(&mut (*data).screen, pane_sx, pane_sy, 0 as u_int);
-    (*data).screen.mode &= !MODE_CURSOR;
+    {
+        let mut data = window_clock_data(&wme).borrow_mut();
+        screen_init(&mut data.screen, pane_sx, pane_sy, 0 as u_int);
+        data.screen.mode &= !MODE_CURSOR;
+    }
     window_clock_draw_screen(wme.clone());
     true
 }
@@ -671,9 +676,9 @@ unsafe fn window_clock_get_screen(
 ) {
     if let Some(data) = wme
         .get_unchecked()
-        .boxed_data_ptr::<window_clock_mode_data>()
+        .boxed_data_cell::<window_clock_mode_data>()
     {
-        visit(&mut (*data).screen);
+        window_mode_screen_payload(data, |data| visit(&mut data.screen));
     }
 }
 
@@ -682,8 +687,12 @@ unsafe fn window_clock_resize(
     mut sx: u_int,
     mut sy: u_int,
 ) {
-    let mut data: *mut window_clock_mode_data = window_clock_data(wme.clone());
-    screen_resize(&mut (*data).screen, sx, sy, 0 as ::core::ffi::c_int);
+    screen_resize(
+        &mut window_clock_data(&wme).borrow_mut().screen,
+        sx,
+        sy,
+        0 as ::core::ffi::c_int,
+    );
     window_clock_draw_screen(wme.clone());
 }
 unsafe fn window_clock_key(
@@ -707,7 +716,6 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         .upgrade()
         .expect("mode belongs to a live pane");
     let options_window = mode_pane_owner.window_observer();
-    let mut data: *mut window_clock_mode_data = window_clock_data(wme.clone());
     let mut colour: ::core::ffi::c_int = 0;
     let mut style: ::core::ffi::c_int = 0;
     let mut gc: grid_cell = grid_cell {
@@ -756,7 +764,8 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
             .borrow_options_mut(),
         c"clock-mode-style",
     ) as ::core::ffi::c_int;
-    let mut ctx = screen_write_start(&mut (*data).screen);
+    let mut data = window_clock_data(&wme).borrow_mut();
+    let mut ctx = screen_write_start(&mut data.screen);
     t = crate::shared::time::unix_seconds(std::time::SystemTime::now());
     tm = localtime(&raw mut t);
     if style == 0 as ::core::ffi::c_int || style == 2 as ::core::ffi::c_int {
@@ -826,10 +835,10 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         screen_write_stop(ctx);
         return;
     }
-    x = ((*data).screen.grid().sx.wrapping_div(2 as u_int) as size_t)
+    x = (ctx.screen.grid().sx.wrapping_div(2 as u_int) as size_t)
         .wrapping_sub((3 as size_t).wrapping_mul(strlen(&raw mut tim as *mut ::core::ffi::c_char)))
         as u_int;
-    y = (*data)
+    y = ctx
         .screen
         .grid()
         .sy

@@ -50,7 +50,9 @@ use crate::shared::sort::sort_criteria;
 use crate::shared::sort::*;
 use crate::shared::tree::RB_NEGINF;
 use crate::shared::window::WindowRef;
-use crate::shared::window::{window_mode, window_mode_entry, winlink};
+use crate::shared::window::{
+    window_mode, window_mode_entry, window_mode_screen_payload, winlink, ModeCell,
+};
 use crate::sort::{
     sort_get_panes_window, sort_get_sessions, sort_get_winlinks_session,
     sort_would_window_tree_swap,
@@ -67,7 +69,6 @@ use std::rc::{Rc, Weak};
 #[repr(C)]
 pub struct window_tree_modedata {
     pub wp: Weak<UnsafeCell<window_pane>>,
-    pub dead: ::core::ffi::c_int,
     pub data: Option<std::rc::Rc<std::cell::RefCell<mode_tree_data>>>,
     pub format: CString,
     pub key_format: CString,
@@ -87,6 +88,9 @@ pub struct window_tree_modedata {
     pub end: u_int,
     pub each: u_int,
 }
+
+/// The mode payload shared with prompt and queued command callbacks.
+type TreeMode = Rc<ModeCell<window_tree_modedata>>;
 
 impl window_tree_modedata {
     fn tree_owner(&self) -> Rc<std::cell::RefCell<mode_tree_data>> {
@@ -328,16 +332,15 @@ unsafe fn window_tree_build_pane(
     session_owner: &SessionRef,
     mut wl: refbox::Weak<winlink>,
     pane_owner: &Rc<UnsafeCell<window_pane>>,
-    mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
+    data: &mut window_tree_modedata,
     parent: &ModeTreeItemRef,
 ) {
     let s = Some(session_owner.clone());
     let tag = Rc::as_ptr(pane_owner) as uint64_t;
-    let data = mode_owner.get();
     let mut idx: u_int = 0;
     idx = window_tree_pane_index(pane_owner).expect("pane belongs to window ordering");
     let item_owner = window_tree_add_item(
-        &mut (*data).item_list,
+        &mut data.item_list,
         window_tree_itemdata {
             type_0: WINDOW_TREE_PANE,
             session: s.as_ref().expect("live session").id() as ::core::ffi::c_int,
@@ -353,10 +356,10 @@ unsafe fn window_tree_build_pane(
     );
     let ft = &mut *ft_owner;
     format_defaults(ft, None, s.as_ref(), wl.clone(), Some(pane_owner));
-    let text = format_expand_cstring(ft, &(*data).format);
+    let text = format_expand_cstring(ft, &data.format);
     let name = CString::new(idx.to_string()).expect("pane index contains NUL");
     drop(ft_owner);
-    let mti = (*data).tree_owner().borrow_mut().add(
+    let mti = data.tree_owner().borrow_mut().add(
         Some(parent),
         ModeTreeItemData::Tree(item_owner.clone()),
         tag,
@@ -388,14 +391,13 @@ unsafe fn window_tree_filter_pane(
 unsafe fn window_tree_build_window(
     session_owner: &SessionRef,
     mut wl: refbox::Weak<winlink>,
-    mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
+    data: &mut window_tree_modedata,
     sort_crit: &sort_criteria,
     parent: &ModeTreeItemRef,
     filter: Option<&CStr>,
 ) -> ::core::ffi::c_int {
     let s = Some(session_owner.clone());
-    let data = mode_owner.get();
-    let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*data).wp) else {
+    let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&data.wp) else {
         return 0;
     };
     let mut i: u_int = 0;
@@ -403,7 +405,7 @@ unsafe fn window_tree_build_window(
     let mut expanded: ::core::ffi::c_int = 0;
     let mut tag: uint64_t = FORMAT_NONE as uint64_t;
     let item_owner = window_tree_add_item(
-        &mut (*data).item_list,
+        &mut data.item_list,
         window_tree_itemdata {
             type_0: WINDOW_TREE_WINDOW,
             session: s.as_ref().expect("live session").id() as ::core::ffi::c_int,
@@ -434,20 +436,20 @@ unsafe fn window_tree_build_window(
     );
     let ft = &mut *ft_owner;
     format_defaults(ft, None, s.as_ref(), wl.clone(), None);
-    let text = format_expand_cstring(ft, &(*data).format);
+    let text = format_expand_cstring(ft, &data.format);
     let name = CString::new((wl.get_unchecked().idx as u_int).to_string())
         .expect("window index contains NUL");
     drop(ft_owner);
-    if (*data).type_0 as ::core::ffi::c_uint
+    if data.type_0 as ::core::ffi::c_uint
         == WINDOW_TREE_SESSION as ::core::ffi::c_int as ::core::ffi::c_uint
-        || (*data).type_0 as ::core::ffi::c_uint
+        || data.type_0 as ::core::ffi::c_uint
             == WINDOW_TREE_WINDOW as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         expanded = 0 as ::core::ffi::c_int;
     } else {
         expanded = 1 as ::core::ffi::c_int;
     }
-    let mti = (*data).tree_owner().borrow_mut().add(
+    let mti = data.tree_owner().borrow_mut().add(
         Some(parent),
         ModeTreeItemData::Tree(item_owner.clone()),
         wl.as_ptr() as uint64_t,
@@ -466,18 +468,18 @@ unsafe fn window_tree_build_window(
     while i < n {
         if !(window_tree_filter_pane(session_owner, wl.clone(), &l[i as usize], filter) == 0) {
             found = found.wrapping_add(1);
-            if !((*data).hide_preview_this_pane != 0
+            if !(data.hide_preview_this_pane != 0
                 && Rc::ptr_eq(&l[i as usize], &mode_pane_owner))
             {
-                window_tree_build_pane(session_owner, wl.clone(), &l[i as usize], mode_owner, &mti);
+                window_tree_build_pane(session_owner, wl.clone(), &l[i as usize], data, &mti);
             }
         }
         i = i.wrapping_add(1);
     }
     if found == 0 as u_int {
-        let tree_owner = (*data).data.as_ref().expect("mode tree owner").clone();
+        let tree_owner = data.tree_owner();
         window_tree_remove_last_item(
-            &mut (*data).item_list,
+            &mut data.item_list,
             &mut tree_owner.borrow_mut(),
             &item_owner,
             &mti,
@@ -488,19 +490,18 @@ unsafe fn window_tree_build_window(
 }
 unsafe fn window_tree_build_session(
     session_owner: &SessionRef,
-    mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
+    data: &mut window_tree_modedata,
     sort_crit: &sort_criteria,
     filter: Option<&CStr>,
 ) {
     let s = Some(session_owner.clone());
-    let data = mode_owner.get();
     let mut wl: refbox::Weak<winlink> = s.as_ref().expect("live session").current_winlink();
     let mut i: u_int = 0;
     let mut empty: u_int = 0;
     let mut expanded: ::core::ffi::c_int = 0;
     let mut tag: uint64_t = FORMAT_NONE as uint64_t;
     let item_owner = window_tree_add_item(
-        &mut (*data).item_list,
+        &mut data.item_list,
         window_tree_itemdata {
             type_0: WINDOW_TREE_SESSION,
             session: s.as_ref().expect("live session").id() as ::core::ffi::c_int,
@@ -532,16 +533,16 @@ unsafe fn window_tree_build_session(
     );
     let ft = &mut *ft_owner;
     format_defaults(ft, None, s.as_ref(), (refbox::Weak::new()).clone(), None);
-    let text = format_expand_cstring(ft, &(*data).format);
+    let text = format_expand_cstring(ft, &data.format);
     drop(ft_owner);
-    if (*data).type_0 as ::core::ffi::c_uint
+    if data.type_0 as ::core::ffi::c_uint
         == WINDOW_TREE_SESSION as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         expanded = 0 as ::core::ffi::c_int;
     } else {
         expanded = 1 as ::core::ffi::c_int;
     }
-    let mti = (*data).tree_owner().borrow_mut().add(
+    let mti = data.tree_owner().borrow_mut().add(
         None,
         ModeTreeItemData::Tree(item_owner.clone()),
         std::rc::Rc::as_ptr(s.as_ref().expect("live session")) as uint64_t,
@@ -557,7 +558,7 @@ unsafe fn window_tree_build_session(
         if window_tree_build_window(
             session_owner,
             (l[i as usize]).clone(),
-            mode_owner,
+            data,
             sort_crit,
             &mti,
             filter,
@@ -568,39 +569,42 @@ unsafe fn window_tree_build_session(
         i = i.wrapping_add(1);
     }
     if empty == n {
-        let tree_owner = (*data).data.as_ref().expect("mode tree owner").clone();
+        let tree_owner = data.tree_owner();
         window_tree_remove_last_item(
-            &mut (*data).item_list,
+            &mut data.item_list,
             &mut tree_owner.borrow_mut(),
             &item_owner,
             &mti,
         );
     }
 }
-unsafe fn window_tree_live_mode(
-    observer: &std::rc::Weak<UnsafeCell<window_tree_modedata>>,
-) -> Option<Rc<UnsafeCell<window_tree_modedata>>> {
-    let owner = observer.upgrade()?;
-    if (*owner.get()).dead != 0 {
-        return None;
-    }
-    Some(owner)
+fn window_tree_live_mode(observer: &std::rc::Weak<ModeCell<window_tree_modedata>>) -> Option<TreeMode> {
+    observer.upgrade().filter(|mode| !mode.dead.get())
+}
+
+fn window_tree_tree(mode: &TreeMode) -> Rc<std::cell::RefCell<mode_tree_data>> {
+    mode.data.borrow().tree_owner()
+}
+
+unsafe fn window_tree_pane(mode: &TreeMode) -> Option<Rc<UnsafeCell<window_pane>>> {
+    Rc::<UnsafeCell<window_pane>>::from_observer(&mode.data.borrow().wp)
 }
 
 unsafe fn window_tree_build(
-    mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
+    mode: &TreeMode,
     sort_crit: &sort_criteria,
-    tag: *mut uint64_t,
+    tag: &mut uint64_t,
     filter: Option<&CStr>,
 ) {
-    let data = mode_owner.get();
-    let mut squash_groups: ::core::ffi::c_int = (*data).squash_groups;
+    let mut guard = mode.data.borrow_mut();
+    let data = &mut *guard;
+    let mut squash_groups: ::core::ffi::c_int = data.squash_groups;
     let mut s: Option<SessionRef> = None;
     let mut sg = crate::shared::session::SessionGroupWeak::new();
     let mut current = crate::shared::session::SessionGroupWeak::new();
     let mut i: u_int = 0;
-    current = crate::session::session_groups::for_session(&(*data).fs.s);
-    (*data).item_list.clear();
+    current = crate::session::session_groups::for_session(&data.fs.s);
+    data.item_list.clear();
     let l = sort_get_sessions(sort_crit);
     let n = u_int::try_from(l.len()).expect("too many sessions for window tree");
     if n == 0 as u_int {
@@ -618,7 +622,7 @@ unsafe fn window_tree_build(
             sg.is_alive()
         } {
             if sg == current
-                && !crate::shared::rc::same(s.as_ref(), (*data).fs.session_handle().as_ref())
+                && !crate::shared::rc::same(s.as_ref(), data.fs.session_handle().as_ref())
                 || sg != current
                     && !crate::shared::rc::same(
                         s.as_ref(),
@@ -633,23 +637,23 @@ unsafe fn window_tree_build(
             current_block_12 = 4166486009154926805;
         }
         if current_block_12 == 4166486009154926805 {
-            window_tree_build_session(&l[i as usize], mode_owner, sort_crit, filter);
+            window_tree_build_session(&l[i as usize], data, sort_crit, filter);
         }
         i = i.wrapping_add(1);
     }
-    match (*data).type_0 as ::core::ffi::c_uint {
+    match data.type_0 as ::core::ffi::c_uint {
         1 => {
-            if let Some(session) = (*data).fs.session_handle() {
+            if let Some(session) = data.fs.session_handle() {
                 *tag = std::rc::Rc::as_ptr(&session) as uint64_t;
             }
         }
         2 => {
-            if !(*data).fs.session_handle().is_none() && (*data).fs.winlink_handle().is_alive() {
-                *tag = (*data).fs.winlink_handle().as_ptr() as uint64_t;
+            if !data.fs.session_handle().is_none() && data.fs.winlink_handle().is_alive() {
+                *tag = data.fs.winlink_handle().as_ptr() as uint64_t;
             }
         }
         3 => {
-            if (*data)
+            if data
                 .fs
                 .winlink_handle()
                 .get_unchecked()
@@ -659,9 +663,9 @@ unsafe fn window_tree_build(
                 .len()
                 == 1
             {
-                *tag = (*data).fs.winlink_handle().as_ptr() as uint64_t;
+                *tag = data.fs.winlink_handle().as_ptr() as uint64_t;
             } else {
-                *tag = (*data)
+                *tag = data
                     .fs
                     .pane_handle()
                     .as_ref()
@@ -745,15 +749,14 @@ unsafe fn window_tree_border_cell(
     style_apply_with_options(gc, c"tree-mode-border-style", ft, scope);
 }
 unsafe fn window_tree_draw_session(
-    mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
+    data: &mut window_tree_modedata,
     session_owner: &SessionRef,
     mut ctx: &mut screen_write_ctx,
     mut sx: u_int,
     mut sy: u_int,
 ) {
-    let data = mode_owner.get();
     let s = Some(session_owner.clone());
-    let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*data).wp) else {
+    let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&data.wp) else {
         return;
     };
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
@@ -834,14 +837,14 @@ unsafe fn window_tree_draw_session(
         start = current.wrapping_sub(visible.wrapping_div(2 as u_int));
         end = start.wrapping_add(visible);
     }
-    if (*data).offset < -(start as ::core::ffi::c_int) {
-        (*data).offset = -(start as ::core::ffi::c_int);
+    if data.offset < -(start as ::core::ffi::c_int) {
+        data.offset = -(start as ::core::ffi::c_int);
     }
-    if (*data).offset > total.wrapping_sub(end) as ::core::ffi::c_int {
-        (*data).offset = total.wrapping_sub(end) as ::core::ffi::c_int;
+    if data.offset > total.wrapping_sub(end) as ::core::ffi::c_int {
+        data.offset = total.wrapping_sub(end) as ::core::ffi::c_int;
     }
-    start = start.wrapping_add((*data).offset as u_int);
-    end = end.wrapping_add((*data).offset as u_int);
+    start = start.wrapping_add(data.offset as u_int);
+    end = end.wrapping_add(data.offset as u_int);
     left = (start != 0 as u_int) as ::core::ffi::c_int;
     right = (end != total) as ::core::ffi::c_int;
     if left != 0 && right != 0 && sx <= 6 as u_int || (left != 0 || right != 0) && sx <= 3 as u_int
@@ -869,7 +872,7 @@ unsafe fn window_tree_draw_session(
     let border_window = mode_pane_owner.window_observer();
     window_tree_border_cell(&mut gc, &OptionsScope::Window(border_window.clone()), None);
     if left != 0 {
-        (*data).left = cx.wrapping_add(2 as u_int) as ::core::ffi::c_int;
+        data.left = cx.wrapping_add(2 as u_int) as ::core::ffi::c_int;
         screen_write_cursormove(
             ctx,
             cx.wrapping_add(2 as u_int) as ::core::ffi::c_int,
@@ -885,10 +888,10 @@ unsafe fn window_tree_draw_session(
         );
         screen_write_puts(ctx, &gc, |out| out.write_all(b"<"));
     } else {
-        (*data).left = -(1 as ::core::ffi::c_int);
+        data.left = -(1 as ::core::ffi::c_int);
     }
     if right != 0 {
-        (*data).right = cx.wrapping_add(sx).wrapping_sub(3 as u_int) as ::core::ffi::c_int;
+        data.right = cx.wrapping_add(sx).wrapping_sub(3 as u_int) as ::core::ffi::c_int;
         screen_write_cursormove(
             ctx,
             cx.wrapping_add(sx).wrapping_sub(3 as u_int) as ::core::ffi::c_int,
@@ -904,11 +907,11 @@ unsafe fn window_tree_draw_session(
         );
         screen_write_puts(ctx, &gc, |out| out.write_all(b">"));
     } else {
-        (*data).right = -(1 as ::core::ffi::c_int);
+        data.right = -(1 as ::core::ffi::c_int);
     }
-    (*data).start = start;
-    (*data).end = end;
-    (*data).each = each;
+    data.start = start;
+    data.end = end;
+    data.each = each;
     loop_0 = 0 as u_int;
     i = loop_0;
     wl = s
@@ -1002,16 +1005,15 @@ unsafe fn window_tree_draw_session(
     }
 }
 unsafe fn window_tree_draw_window(
-    mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
+    data: &mut window_tree_modedata,
     session_owner: &SessionRef,
     mut wl: refbox::Weak<winlink>,
     mut ctx: &mut screen_write_ctx,
     mut sx: u_int,
     mut sy: u_int,
 ) {
-    let data = mode_owner.get();
     let s = Some(session_owner.clone());
-    let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*data).wp) else {
+    let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&data.wp) else {
         return;
     };
     let window = wl
@@ -1064,7 +1066,7 @@ unsafe fn window_tree_draw_window(
         let mut left: ::core::ffi::c_int = 0;
         let mut right: ::core::ffi::c_int = 0;
         total = window.pane_snapshot().len() as u_int;
-        if (*data).hide_preview_this_pane != 0
+        if data.hide_preview_this_pane != 0
             && mode_pane_owner
                 .window_observer()
                 .ptr_eq(&WindowRef::downgrade(&window))
@@ -1088,7 +1090,7 @@ unsafe fn window_tree_draw_window(
             .iter()
             .filter_map(std::rc::Weak::upgrade)
         {
-            if !((*data).hide_preview_this_pane != 0 && Rc::ptr_eq(&pane_owner, &mode_pane_owner)) {
+            if !(data.hide_preview_this_pane != 0 && Rc::ptr_eq(&pane_owner, &mode_pane_owner)) {
                 if window.active_pane().ptr_eq(&Rc::downgrade(&pane_owner)) {
                     break;
                 }
@@ -1105,14 +1107,14 @@ unsafe fn window_tree_draw_window(
             start = current.wrapping_sub(visible.wrapping_div(2 as u_int));
             end = start.wrapping_add(visible);
         }
-        if (*data).offset < -(start as ::core::ffi::c_int) {
-            (*data).offset = -(start as ::core::ffi::c_int);
+        if data.offset < -(start as ::core::ffi::c_int) {
+            data.offset = -(start as ::core::ffi::c_int);
         }
-        if (*data).offset > total.wrapping_sub(end) as ::core::ffi::c_int {
-            (*data).offset = total.wrapping_sub(end) as ::core::ffi::c_int;
+        if data.offset > total.wrapping_sub(end) as ::core::ffi::c_int {
+            data.offset = total.wrapping_sub(end) as ::core::ffi::c_int;
         }
-        start = start.wrapping_add((*data).offset as u_int);
-        end = end.wrapping_add((*data).offset as u_int);
+        start = start.wrapping_add(data.offset as u_int);
+        end = end.wrapping_add(data.offset as u_int);
         left = (start != 0 as u_int) as ::core::ffi::c_int;
         right = (end != total) as ::core::ffi::c_int;
         if left != 0 && right != 0 && sx <= 6 as u_int
@@ -1141,7 +1143,7 @@ unsafe fn window_tree_draw_window(
         let border_window = mode_pane_owner.window_observer();
         window_tree_border_cell(&mut gc, &OptionsScope::Window(border_window.clone()), None);
         if left != 0 {
-            (*data).left = cx.wrapping_add(2 as u_int) as ::core::ffi::c_int;
+            data.left = cx.wrapping_add(2 as u_int) as ::core::ffi::c_int;
             screen_write_cursormove(
                 ctx,
                 cx.wrapping_add(2 as u_int) as ::core::ffi::c_int,
@@ -1157,10 +1159,10 @@ unsafe fn window_tree_draw_window(
             );
             screen_write_puts(ctx, &gc, |out| out.write_all(b"<"));
         } else {
-            (*data).left = -(1 as ::core::ffi::c_int);
+            data.left = -(1 as ::core::ffi::c_int);
         }
         if right != 0 {
-            (*data).right = cx.wrapping_add(sx).wrapping_sub(3 as u_int) as ::core::ffi::c_int;
+            data.right = cx.wrapping_add(sx).wrapping_sub(3 as u_int) as ::core::ffi::c_int;
             screen_write_cursormove(
                 ctx,
                 cx.wrapping_add(sx).wrapping_sub(3 as u_int) as ::core::ffi::c_int,
@@ -1176,11 +1178,11 @@ unsafe fn window_tree_draw_window(
             );
             screen_write_puts(ctx, &gc, |out| out.write_all(b">"));
         } else {
-            (*data).right = -(1 as ::core::ffi::c_int);
+            data.right = -(1 as ::core::ffi::c_int);
         }
-        (*data).start = start;
-        (*data).end = end;
-        (*data).each = each;
+        data.start = start;
+        data.end = end;
+        data.each = each;
         loop_0 = 0 as u_int;
         i = loop_0;
         for pane_owner in window
@@ -1188,7 +1190,7 @@ unsafe fn window_tree_draw_window(
             .iter()
             .filter_map(std::rc::Weak::upgrade)
         {
-            if !((*data).hide_preview_this_pane != 0 && Rc::ptr_eq(&pane_owner, &mode_pane_owner)) {
+            if !(data.hide_preview_this_pane != 0 && Rc::ptr_eq(&pane_owner, &mode_pane_owner)) {
                 if loop_0 == end {
                     break;
                 }
@@ -1275,14 +1277,13 @@ unsafe fn window_tree_draw_window(
     drop(window);
 }
 unsafe fn window_tree_draw_info(
-    mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
+    data: &mut window_tree_modedata,
     item: &window_tree_itemdata,
     ctx: &mut screen_write_ctx,
     mut sx: u_int,
     mut sy: u_int,
 ) {
-    let data = mode_owner.get();
-    let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*data).wp) else {
+    let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&data.wp) else {
         return;
     };
     let mut sp: Option<SessionRef> = None;
@@ -1416,14 +1417,15 @@ unsafe fn window_tree_draw_info(
     drop(ft_owner);
 }
 unsafe fn window_tree_draw(
-    mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
+    mode: &TreeMode,
     item: &window_tree_itemdata,
     ctx: &mut screen_write_ctx,
     mut sx: u_int,
     mut sy: u_int,
 ) {
-    let data = mode_owner.get();
-    let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*data).wp) else {
+    let mut guard = mode.data.borrow_mut();
+    let data = &mut *guard;
+    let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&data.wp) else {
         return;
     };
     let mut _sp: Option<SessionRef> = None;
@@ -1434,14 +1436,14 @@ unsafe fn window_tree_draw(
     if target_owners.pane.is_none() {
         return;
     }
-    if (*data).preview_is_info != 0 {
-        window_tree_draw_info(mode_owner, item, ctx, sx, sy);
+    if data.preview_is_info != 0 {
+        window_tree_draw_info(data, item, ctx, sx, sy);
         return;
     }
     match item.type_0 as ::core::ffi::c_uint {
         1 => {
             window_tree_draw_session(
-                mode_owner,
+                data,
                 target_owners
                     .session
                     .as_ref()
@@ -1453,7 +1455,7 @@ unsafe fn window_tree_draw(
         }
         2 => {
             window_tree_draw_window(
-                mode_owner,
+                data,
                 target_owners
                     .session
                     .as_ref()
@@ -1464,7 +1466,7 @@ unsafe fn window_tree_draw(
                 sy,
             );
         }
-        3 if ((*data).hide_preview_this_pane == 0
+        3 if (data.hide_preview_this_pane == 0
             || target_owners
                 .pane
                 .as_ref()
@@ -1562,33 +1564,28 @@ unsafe fn window_tree_search(
     }
     0 as ::core::ffi::c_int
 }
-unsafe fn window_tree_menu(
-    mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
-    c: &ClientRef,
-    mut key: key_code,
-) {
-    let data = mode_owner.get();
-    let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*data).wp) else {
+unsafe fn window_tree_menu(mode: &TreeMode, c: &ClientRef, mut key: key_code) {
+    let Some(mode_pane_owner) = window_tree_pane(mode) else {
         return;
     };
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
     wme = mode_pane_owner.mode_entry();
     if !wme.is_alive()
-        || wme
+        || !wme
             .get_unchecked()
-            .shared_data_ptr::<window_tree_modedata>()
-            != Some(data)
+            .data_owner
+            .as_ref()
+            .is_some_and(|owner| std::ptr::addr_eq(Rc::as_ptr(owner), Rc::as_ptr(mode)))
     {
         return;
     }
     window_tree_key(wme.clone(), c, (refbox::Weak::new()).clone(), key, None);
 }
 unsafe fn window_tree_get_key(
-    mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
+    data: &window_tree_modedata,
     item: &window_tree_itemdata,
     mut line: u_int,
 ) -> key_code {
-    let data = mode_owner.get();
     let mut s: Option<SessionRef> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut key: key_code = 0;
@@ -1615,7 +1612,7 @@ unsafe fn window_tree_get_key(
         );
     }
     format_add(ft, c"line", |out| write!(out, "{}", { line }));
-    let expanded = format_expand_cstring(ft, &(*data).key_format);
+    let expanded = format_expand_cstring(ft, &data.key_format);
     key = key_string_parse_cstr(expanded.as_c_str()).unwrap_or(KEYC_UNKNOWN);
     drop(ft_owner);
     key
@@ -1744,7 +1741,6 @@ unsafe fn window_tree_init(
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
-    let mut data: *mut window_tree_modedata = ::core::ptr::null_mut::<window_tree_modedata>();
     let format = if let Some(args) = args
         .as_deref()
         .filter(|args| args_has(args, 'F' as i32 as u_char) != 0)
@@ -1769,21 +1765,31 @@ unsafe fn window_tree_init(
         WINDOW_TREE_DEFAULT_COMMAND
     }
     .to_owned();
-    let owner = Rc::new(UnsafeCell::new(window_tree_modedata {
-        wp: Weak::new(),
-        dead: 0,
+    let args = args.expect("mode arguments");
+    let owner = Rc::new(ModeCell::new(window_tree_modedata {
+        wp: std::rc::Rc::downgrade(&mode_pane_owner),
         data: None,
         format,
         key_format,
         command,
-        squash_groups: 0,
-        hide_preview_this_pane: 0,
+        squash_groups: (args_has(args, 'G' as i32 as u_char) == 0) as ::core::ffi::c_int,
+        hide_preview_this_pane: args_has(args, 'h' as i32 as u_char),
         preview_is_info: 0,
-        prompt_flags: 0,
+        prompt_flags: if args_has(args, 'y' as i32 as u_char) != 0 {
+            PROMPT_ACCEPT
+        } else {
+            0
+        },
         item_list: Vec::new(),
         entered: None,
-        fs: Default::default(),
-        type_0: WINDOW_TREE_NONE,
+        fs: fs.expect("mode target").clone(),
+        type_0: if args_has(args, 's' as i32 as u_char) != 0 {
+            WINDOW_TREE_SESSION
+        } else if args_has(args, 'w' as i32 as u_char) != 0 {
+            WINDOW_TREE_WINDOW
+        } else {
+            WINDOW_TREE_PANE
+        },
         offset: 0,
         left: 0,
         right: 0,
@@ -1791,28 +1797,13 @@ unsafe fn window_tree_init(
         end: 0,
         each: 0,
     }));
-    data = crate::shared::rc::as_ptr(&owner);
+    let mode = owner.clone();
     let build_mode = Rc::downgrade(&owner);
     wme.get_mut_unchecked().data_owner = Some(owner);
-    (*data).wp = std::rc::Rc::downgrade(&mode_pane_owner);
-    let args = args.expect("mode arguments");
-    if args_has(args, 's' as i32 as u_char) != 0 {
-        (*data).type_0 = WINDOW_TREE_SESSION;
-    } else if args_has(args, 'w' as i32 as u_char) != 0 {
-        (*data).type_0 = WINDOW_TREE_WINDOW;
-    } else {
-        (*data).type_0 = WINDOW_TREE_PANE;
-    }
-    (*data).fs = fs.expect("mode target").clone();
-    (*data).squash_groups = (args_has(args, 'G' as i32 as u_char) == 0) as ::core::ffi::c_int;
-    (*data).hide_preview_this_pane = args_has(args, 'h' as i32 as u_char);
-    if args_has(args, 'y' as i32 as u_char) != 0 {
-        (*data).prompt_flags = PROMPT_ACCEPT;
-    }
     let draw_mode = build_mode.clone();
     let menu_mode = build_mode.clone();
     let key_mode = build_mode.clone();
-    (*data).data = Some(mode_tree_start(
+    let tree_owner = mode_tree_start(
         &mode_pane_owner,
         args,
         Some(Box::new(move |sort, tag, filter| {
@@ -1846,7 +1837,8 @@ unsafe fn window_tree_init(
                 return KEYC_NONE;
             };
             let item = itemdata.as_tree().expect("tree row payload");
-            window_tree_get_key(&mode, &item, line)
+            let key = window_tree_get_key(&mode.data.borrow(), &item, line);
+            key
         })),
         Some(Box::new(move |current, other, sort| {
             window_tree_swap(
@@ -1858,41 +1850,40 @@ unsafe fn window_tree_init(
         Some(window_tree_sort),
         Some(window_tree_help),
         &window_tree_menu_items,
-    ));
-    (*data)
-        .tree_owner()
-        .borrow_mut()
-        .set_view_name(Some(c"preview"));
-    mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
-    mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
-    (*data).type_0 = WINDOW_TREE_NONE;
+    );
+    mode.data.borrow_mut().data = Some(tree_owner.clone());
+    tree_owner.borrow_mut().set_view_name(Some(c"preview"));
+    mode_tree_build(&tree_owner);
+    mode_tree_draw(&tree_owner);
+    mode.data.borrow_mut().type_0 = WINDOW_TREE_NONE;
     true
 }
 unsafe fn window_tree_get_screen(
     wme: refbox::Weak<window_mode_entry>,
     visit: &mut dyn FnMut(&mut screen),
 ) {
-    let Some(data) = wme
+    let Some(mode) = wme
         .get_unchecked()
-        .shared_data_ptr::<window_tree_modedata>()
+        .retained_data::<ModeCell<window_tree_modedata>>()
     else {
         return;
     };
-    if let Some(tree_owner) = (*data).data.as_ref() {
-        mode_tree_visit_screen(tree_owner, visit);
+    let tree_owner = window_mode_screen_payload(&mode.data, |data| data.data.clone());
+    if let Some(tree_owner) = tree_owner {
+        mode_tree_visit_screen(&tree_owner, visit);
     }
 }
 
 unsafe fn window_tree_free(wme: refbox::Weak<window_mode_entry>) {
     let Some(mode_owner) = wme
         .get_unchecked()
-        .retained_data::<UnsafeCell<window_tree_modedata>>()
+        .retained_data::<ModeCell<window_tree_modedata>>()
     else {
         return;
     };
-    let data = mode_owner.get();
-    (*data).dead = 1 as ::core::ffi::c_int;
-    mode_tree_free((*data).data.take().expect("mode tree owner"));
+    mode_owner.dead.set(true);
+    let tree_owner = mode_owner.data.borrow_mut().data.take();
+    mode_tree_free(tree_owner.expect("mode tree owner"));
 }
 unsafe fn window_tree_resize(
     mut wme: refbox::Weak<window_mode_entry>,
@@ -1901,39 +1892,34 @@ unsafe fn window_tree_resize(
 ) {
     let Some(mode_owner) = wme
         .get_unchecked()
-        .retained_data::<UnsafeCell<window_tree_modedata>>()
+        .retained_data::<ModeCell<window_tree_modedata>>()
     else {
         return;
     };
-    let data = mode_owner.get();
-    if (*data).dead != 0 {
+    if mode_owner.dead.get() {
         return;
     }
-    mode_tree_resize(
-        (*data).data.clone().as_ref().expect("mode tree owner"),
-        sx,
-        sy,
-    );
+    mode_tree_resize(&window_tree_tree(&mode_owner), sx, sy);
 }
 unsafe fn window_tree_update(mut wme: refbox::Weak<window_mode_entry>) {
     let Some(mode_owner) = wme
         .get_unchecked()
-        .retained_data::<UnsafeCell<window_tree_modedata>>()
+        .retained_data::<ModeCell<window_tree_modedata>>()
     else {
         return;
     };
-    let data = mode_owner.get();
-    if (*data).dead != 0 {
+    if mode_owner.dead.get() {
         return;
     }
-    let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*data).wp) else {
+    let Some(mode_pane_owner) = window_tree_pane(&mode_owner) else {
         return;
     };
-    mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
-    if (*data).dead != 0 {
+    let tree_owner = window_tree_tree(&mode_owner);
+    mode_tree_build(&tree_owner);
+    if mode_owner.dead.get() {
         return;
     }
-    mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
+    mode_tree_draw(&tree_owner);
     mode_pane_owner.request_redraw(false);
 }
 unsafe fn window_tree_get_target(
@@ -1978,11 +1964,10 @@ unsafe fn window_tree_get_target(
     target
 }
 unsafe fn window_tree_command_each(
-    mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
+    mode: &TreeMode,
     item: &window_tree_itemdata,
     client_owner: Option<&ClientRef>,
 ) {
-    let data = mode_owner.get();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -1992,24 +1977,24 @@ unsafe fn window_tree_command_each(
         idx: 0,
     };
     if let Some(name) = window_tree_get_target(item, &mut fs) {
+        let entered = mode.data.borrow().entered.clone();
         mode_tree_run_command(
             client_owner,
             Some(&fs),
-            (*data).entered.as_deref().expect("entered tree command"),
+            entered.as_deref().expect("entered tree command"),
             &name,
         );
     }
 }
-fn window_tree_command_done(mode: Rc<UnsafeCell<window_tree_modedata>>) -> cmdq_cb {
+fn window_tree_command_done(mode: TreeMode) -> cmdq_cb {
     Some(Box::new(move |_| unsafe {
-        let data = crate::shared::rc::as_ptr(&mode);
-        if (*data).dead == 0 {
-            let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*data).wp)
-            else {
+        if !mode.dead.get() {
+            let Some(mode_pane_owner) = window_tree_pane(&mode) else {
                 return CmdOutcome::Normal;
             };
-            mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
-            mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
+            let tree_owner = window_tree_tree(&mode);
+            mode_tree_build(&tree_owner);
+            mode_tree_draw(&tree_owner);
             mode_pane_owner.request_redraw(false);
         }
         CmdOutcome::Normal
@@ -2017,7 +2002,7 @@ fn window_tree_command_done(mode: Rc<UnsafeCell<window_tree_modedata>>) -> cmdq_
 }
 unsafe fn window_tree_enqueue_command_done(
     client_owner: Option<&ClientRef>,
-    mode: &Rc<UnsafeCell<window_tree_modedata>>,
+    mode: &TreeMode,
 ) {
     let item_allocation = cmdq_get_callback_owned(
         c"window_tree_command_done",
@@ -2028,13 +2013,13 @@ unsafe fn window_tree_enqueue_command_done(
 /// Prompt input handler that receives the live tree mode owner.
 type window_tree_prompt_fn = unsafe fn(
     Option<&ClientRef>,
-    &Rc<UnsafeCell<window_tree_modedata>>,
+    &TreeMode,
     Option<&CStr>,
     prompt_key_result,
 ) -> prompt_result;
 
 fn window_tree_prompt_callbacks(
-    mode: Rc<UnsafeCell<window_tree_modedata>>,
+    mode: TreeMode,
     callback: window_tree_prompt_fn,
 ) -> (
     crate::mode_tree::mode_tree_prompt_input_cb,
@@ -2053,20 +2038,19 @@ fn window_tree_prompt_callbacks(
 
 unsafe fn window_tree_command_callback(
     client_owner: Option<&ClientRef>,
-    mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
+    mode_owner: &TreeMode,
     s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
-    let data = mode_owner.get();
     let Some(s) = s.filter(|text| !text.to_bytes().is_empty()) else {
         return PROMPT_CLOSE;
     };
-    if (*data).dead != 0 {
+    if mode_owner.dead.get() {
         return PROMPT_CLOSE;
     }
-    (*data).entered = Some(s.to_owned());
+    mode_owner.data.borrow_mut().entered = Some(s.to_owned());
     mode_tree_each_tagged(
-        (*data).data.clone().as_ref().expect("live mode tree"),
+        &window_tree_tree(mode_owner),
         |row, _| unsafe {
             let itemdata = row.borrow().itemdata.clone();
             window_tree_command_each(
@@ -2078,7 +2062,7 @@ unsafe fn window_tree_command_callback(
         KEYC_NONE as ::core::ffi::c_ulong as key_code,
         1 as ::core::ffi::c_int,
     );
-    (*data).entered = None;
+    mode_owner.data.borrow_mut().entered = None;
     window_tree_enqueue_command_done(client_owner, mode_owner);
     PROMPT_CLOSE
 }
@@ -2113,21 +2097,20 @@ unsafe fn window_tree_kill_each(item: &window_tree_itemdata) {
 }
 unsafe fn window_tree_kill_current_callback(
     client_owner: Option<&ClientRef>,
-    mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
+    mode_owner: &TreeMode,
     s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
-    let data = mode_owner.get();
     let Some(s) = s.filter(|text| !text.to_bytes().is_empty()) else {
         return PROMPT_CLOSE;
     };
-    if (*data).dead != 0 {
+    if mode_owner.dead.get() {
         return PROMPT_CLOSE;
     }
     if !s.to_bytes().eq_ignore_ascii_case(b"y") {
         return PROMPT_CLOSE;
     }
-    let tree_owner = (*data).data.as_ref().expect("mode tree owner");
+    let tree_owner = window_tree_tree(mode_owner);
     let item_owner = tree_owner.borrow().get_current();
     if let Some(item) = item_owner.as_tree() {
         window_tree_kill_each(&item);
@@ -2138,22 +2121,21 @@ unsafe fn window_tree_kill_current_callback(
 }
 unsafe fn window_tree_kill_tagged_callback(
     client_owner: Option<&ClientRef>,
-    mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
+    mode_owner: &TreeMode,
     s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
-    let data = mode_owner.get();
     let Some(s) = s.filter(|text| !text.to_bytes().is_empty()) else {
         return PROMPT_CLOSE;
     };
-    if (*data).dead != 0 {
+    if mode_owner.dead.get() {
         return PROMPT_CLOSE;
     }
     if !s.to_bytes().eq_ignore_ascii_case(b"y") {
         return PROMPT_CLOSE;
     }
     mode_tree_each_tagged(
-        (*data).data.clone().as_ref().expect("live mode tree"),
+        &window_tree_tree(mode_owner),
         |row, _| unsafe {
             let itemdata = row.borrow().itemdata.clone();
             window_tree_kill_each(&itemdata.as_tree().expect("tree row payload"))
@@ -2166,32 +2148,35 @@ unsafe fn window_tree_kill_tagged_callback(
     PROMPT_CLOSE
 }
 unsafe fn window_tree_mouse(
-    mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
+    mode_owner: &TreeMode,
     mut key: key_code,
     mut x: u_int,
     item: &window_tree_itemdata,
 ) -> key_code {
-    let data = mode_owner.get();
     if key != KEYC_MOUSEDOWN1_PANE as ::core::ffi::c_ulong as key_code {
         return KEYC_NONE as ::core::ffi::c_ulong as key_code;
     }
-    if (*data).left != -(1 as ::core::ffi::c_int) && x <= (*data).left as u_int {
+    let (left, right, start, end, each) = {
+        let data = mode_owner.data.borrow();
+        (data.left, data.right, data.start, data.end, data.each)
+    };
+    if left != -(1 as ::core::ffi::c_int) && x <= left as u_int {
         return '<' as i32 as key_code;
     }
-    if (*data).right != -(1 as ::core::ffi::c_int) && x >= (*data).right as u_int {
+    if right != -(1 as ::core::ffi::c_int) && x >= right as u_int {
         return '>' as i32 as key_code;
     }
-    if (*data).left != -(1 as ::core::ffi::c_int) {
-        x = x.wrapping_sub((*data).left as u_int);
+    if left != -(1 as ::core::ffi::c_int) {
+        x = x.wrapping_sub(left as u_int);
     } else if x != 0 as u_int {
         x = x.wrapping_sub(1);
     }
-    if x == 0 as u_int || (*data).end == 0 as u_int {
+    if x == 0 as u_int || end == 0 as u_int {
         x = 0 as u_int;
     } else {
-        x = x.wrapping_div((*data).each);
-        if (*data).start.wrapping_add(x) >= (*data).end {
-            x = (*data).end.wrapping_sub(1 as u_int);
+        x = x.wrapping_div(each);
+        if start.wrapping_add(x) >= end {
+            x = end.wrapping_sub(1 as u_int);
         }
     }
     let target = window_tree_pull_item(item);
@@ -2201,22 +2186,21 @@ unsafe fn window_tree_mouse(
         let Some(session_owner) = target.session.as_ref() else {
             return KEYC_NONE;
         };
-        mode_tree_expand_current((*data).data.clone().as_ref().expect("mode tree owner"));
-        if (*data).dead != 0 {
+        mode_tree_expand_current(&window_tree_tree(mode_owner));
+        if mode_owner.dead.get() {
             return KEYC_NONE;
         }
         let mut loop_0 = 0 as u_int;
         let mut wl = session_owner.with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
         while wl.is_alive() {
-            if loop_0 == (*data).start.wrapping_add(x) {
+            if loop_0 == mode_owner.data.borrow().start.wrapping_add(x) {
                 break;
             }
             loop_0 = loop_0.wrapping_add(1);
             wl = winlinks_next(wl.get_unchecked());
         }
         if wl.is_alive() {
-            (*data)
-                .tree_owner()
+            window_tree_tree(mode_owner)
                 .borrow_mut()
                 .set_current(wl.as_ptr() as uint64_t);
         }
@@ -2228,8 +2212,8 @@ unsafe fn window_tree_mouse(
         if !target.winlink.is_alive() {
             return KEYC_NONE;
         }
-        mode_tree_expand_current((*data).data.clone().as_ref().expect("mode tree owner"));
-        if (*data).dead != 0 || !target.winlink.is_alive() {
+        mode_tree_expand_current(&window_tree_tree(mode_owner));
+        if mode_owner.dead.get() || !target.winlink.is_alive() {
             return KEYC_NONE;
         }
         let wl = target.winlink.clone();
@@ -2240,11 +2224,10 @@ unsafe fn window_tree_mouse(
             .clone();
         let pane = window
             .pane_snapshot()
-            .get((*data).start.wrapping_add(x) as usize)
+            .get(mode_owner.data.borrow().start.wrapping_add(x) as usize)
             .and_then(std::rc::Weak::upgrade);
         if let Some(pane_owner) = pane {
-            (*data)
-                .tree_owner()
+            window_tree_tree(mode_owner)
                 .borrow_mut()
                 .set_current(std::rc::Rc::as_ptr(&pane_owner) as uint64_t);
         }
@@ -2267,9 +2250,12 @@ unsafe fn window_tree_key(
         .expect("mode belongs to a live pane");
     let mode_owner = wme
         .get_unchecked()
-        .retained_data::<UnsafeCell<window_tree_modedata>>()
+        .retained_data::<ModeCell<window_tree_modedata>>()
         .expect("live mode payload");
-    let data = mode_owner.get();
+    let (tree_owner, prompt_flags) = {
+        let data = mode_owner.data.borrow();
+        (data.tree_owner(), data.prompt_flags)
+    };
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -2285,9 +2271,9 @@ unsafe fn window_tree_key(
     let mut idx: u_int = 0;
     let mut ns: Option<SessionRef> = None;
     let mut nwl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut selection = (*data).tree_owner().borrow().get_current();
+    let mut selection = tree_owner.borrow().get_current();
     finished = mode_tree_key(
-        (*data).data.as_ref().expect("mode tree owner").clone(),
+        tree_owner.clone(),
         Some(client_owner),
         &mut key,
         m.as_deref_mut()
@@ -2295,16 +2281,16 @@ unsafe fn window_tree_key(
         Some(&mut x),
         Some(&mut y),
     );
-    if (*data).dead != 0 {
+    if mode_owner.dead.get() {
         return;
     }
     loop {
-        let next_selection = (*data).tree_owner().borrow().get_current();
+        let next_selection = tree_owner.borrow().get_current();
         let same_item = selection.same_identity(&next_selection);
         selection = next_selection;
         let item = selection.as_tree();
         if !same_item {
-            (*data).offset = 0;
+            mode_owner.data.borrow_mut().offset = 0;
         }
         if !((key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
             == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
@@ -2321,41 +2307,36 @@ unsafe fn window_tree_key(
         key = item.as_deref().map_or(KEYC_NONE, |item| {
             window_tree_mouse(&mode_owner, key, x, item)
         });
-        if (*data).dead != 0 {
+        if mode_owner.dead.get() {
             return;
         }
     }
     let item = selection.as_tree();
     match key {
         60 => {
-            (*data).offset -= 1;
+            mode_owner.data.borrow_mut().offset -= 1;
         }
         62 => {
-            (*data).offset += 1;
+            mode_owner.data.borrow_mut().offset += 1;
         }
         72 => {
+            let target = mode_owner.data.borrow().fs.clone();
             mode_tree_expand(
-                (*data).data.clone().as_ref().expect("mode tree owner"),
-                (*data)
-                    .fs
+                &tree_owner,
+                target
                     .session_handle()
                     .as_ref()
                     .map_or(0, |owner| std::rc::Rc::as_ptr(owner) as uint64_t),
             );
-            mode_tree_expand(
-                (*data).data.clone().as_ref().expect("mode tree owner"),
-                (*data).fs.winlink_handle().as_ptr() as uint64_t,
-            );
-            if (*data)
-                .tree_owner()
+            mode_tree_expand(&tree_owner, target.winlink_handle().as_ptr() as uint64_t);
+            if tree_owner
                 .borrow_mut()
                 .set_current(Rc::as_ptr(&mode_pane_owner) as uint64_t)
                 == 0
             {
-                (*data)
-                    .tree_owner()
+                tree_owner
                     .borrow_mut()
-                    .set_current((*data).fs.winlink_handle().as_ptr() as uint64_t);
+                    .set_current(target.winlink_handle().as_ptr() as uint64_t);
             }
         }
         109 if item.is_some() => {
@@ -2364,24 +2345,22 @@ unsafe fn window_tree_key(
             ns = _target_owners_10.session;
             nwl = _target_owners_10.winlink.clone();
             server_set_marked(ns.as_ref(), (nwl).clone(), _target_owners_10.pane.as_ref());
-            mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
+            mode_tree_build(&tree_owner);
         }
         77 => {
             server_clear_marked();
-            mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
+            mode_tree_build(&tree_owner);
         }
         105 => {
-            (*data).preview_is_info = ((*data).preview_is_info == 0) as ::core::ffi::c_int;
-            if (*data).preview_is_info != 0 {
-                (*data)
-                    .tree_owner()
-                    .borrow_mut()
-                    .set_view_name(Some(c"info"));
+            let info = {
+                let mut data = mode_owner.data.borrow_mut();
+                data.preview_is_info = (data.preview_is_info == 0) as ::core::ffi::c_int;
+                data.preview_is_info != 0
+            };
+            if info {
+                tree_owner.borrow_mut().set_view_name(Some(c"info"));
             } else {
-                (*data)
-                    .tree_owner()
-                    .borrow_mut()
-                    .set_view_name(Some(c"preview"));
+                tree_owner.borrow_mut().set_view_name(Some(c"preview"));
             }
         }
         120 if item.is_some() => {
@@ -2436,38 +2415,38 @@ unsafe fn window_tree_key(
                 let (inputcb, freecb) =
                     window_tree_prompt_callbacks(mode, window_tree_kill_current_callback);
                 mode_tree_set_prompt(
-                    (*data).data.as_ref().expect("mode tree owner").clone(),
+                    tree_owner.clone(),
                     Some(client_owner),
                     &prompt,
                     Some(c""),
                     PROMPT_TYPE_COMMAND,
-                    PROMPT_SINGLE | PROMPT_NOFORMAT | (*data).prompt_flags,
+                    PROMPT_SINGLE | PROMPT_NOFORMAT | prompt_flags,
                     inputcb,
                     freecb,
                 );
             }
         }
         88 => {
-            tagged = (*data).tree_owner().borrow().count_tagged();
+            tagged = tree_owner.borrow().count_tagged();
             if !(tagged == 0 as u_int) {
                 let prompt = CString::new(format!("Kill {tagged} tagged? ")).unwrap();
                 let mode = mode_owner.clone();
                 let (inputcb, freecb) =
                     window_tree_prompt_callbacks(mode, window_tree_kill_tagged_callback);
                 mode_tree_set_prompt(
-                    (*data).data.as_ref().expect("mode tree owner").clone(),
+                    tree_owner.clone(),
                     Some(client_owner),
                     &prompt,
                     Some(c""),
                     PROMPT_TYPE_COMMAND,
-                    PROMPT_SINGLE | PROMPT_NOFORMAT | (*data).prompt_flags,
+                    PROMPT_SINGLE | PROMPT_NOFORMAT | prompt_flags,
                     inputcb,
                     freecb,
                 );
             }
         }
         58 => {
-            tagged = (*data).tree_owner().borrow().count_tagged();
+            tagged = tree_owner.borrow().count_tagged();
             let prompt = if tagged != 0 as u_int {
                 CString::new(format!("({tagged} tagged) ")).unwrap()
             } else {
@@ -2477,7 +2456,7 @@ unsafe fn window_tree_key(
             let (inputcb, freecb) =
                 window_tree_prompt_callbacks(mode, window_tree_command_callback);
             mode_tree_set_prompt(
-                (*data).data.as_ref().expect("mode tree owner").clone(),
+                tree_owner.clone(),
                 Some(client_owner),
                 &prompt,
                 Some(c""),
@@ -2492,7 +2471,8 @@ unsafe fn window_tree_key(
                 .as_deref()
                 .and_then(|item| window_tree_get_target(item, &mut fs))
             {
-                mode_tree_run_command(Some(client_owner), None, &(*data).command, &name);
+                let command = mode_owner.data.borrow().command.clone();
+                mode_tree_run_command(Some(client_owner), None, &command, &name);
             }
             finished = 1 as ::core::ffi::c_int;
         }
@@ -2501,7 +2481,7 @@ unsafe fn window_tree_key(
     if finished != 0 {
         mode_pane_owner.reset_mode();
     } else {
-        mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
+        mode_tree_draw(&tree_owner);
         mode_pane_owner.request_redraw(false);
     };
 }

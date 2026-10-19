@@ -39,7 +39,7 @@ use crate::shared::session::SessionRef;
 use crate::shared::sort::sort_criteria;
 use crate::shared::sort::*;
 
-use crate::shared::window::{window_mode, window_mode_entry, winlink};
+use crate::shared::window::{window_mode, window_mode_entry, window_mode_screen_payload, winlink};
 use crate::sort::{sort_get_sessions, sort_get_winlinks};
 use crate::status::status_message_set;
 use crate::style::style_apply_with_options;
@@ -116,7 +116,7 @@ pub static window_switch_mode: window_mode = {
     }
 };
 unsafe fn window_switch_add_item(
-    mut data: *mut window_switch_modedata,
+    data: &mut window_switch_modedata,
     type_0: window_switch_type,
     session: ::core::ffi::c_int,
     winlink: ::core::ffi::c_int,
@@ -125,8 +125,8 @@ unsafe fn window_switch_add_item(
 ) {
     let fresh = *order;
     *order = (*order).wrapping_add(1);
-    let text = format_expand_cstring(ft, &(*data).format);
-    (*data).item_list.push(window_switch_itemdata {
+    let text = format_expand_cstring(ft, &data.format);
+    data.item_list.push(window_switch_itemdata {
         type_0,
         session,
         winlink,
@@ -137,7 +137,7 @@ unsafe fn window_switch_add_item(
     });
 }
 unsafe fn window_switch_add_session(
-    mut data: *mut window_switch_modedata,
+    data: &mut window_switch_modedata,
     s_owner: &SessionRef,
     order: &mut u_int,
 ) {
@@ -155,7 +155,7 @@ unsafe fn window_switch_add_session(
     drop(ft_owner);
 }
 unsafe fn window_switch_add_window(
-    mut data: *mut window_switch_modedata,
+    data: &mut window_switch_modedata,
     mut wl: refbox::Weak<winlink>,
     order: &mut u_int,
 ) {
@@ -201,10 +201,10 @@ fn window_switch_matches(
     matches
 }
 
-unsafe fn window_switch_build(mut data: *mut window_switch_modedata) {
+unsafe fn window_switch_build(data: &mut window_switch_modedata) {
     let mut i: u_int = 0;
     let mut order: u_int = 0 as u_int;
-    let mut sx: u_int = (*data).screen.grid().sx;
+    let mut sx: u_int = data.screen.grid().sx;
     let mut sort_crit: sort_criteria = sort_criteria {
         order: SORT_ACTIVITY,
         reversed: 0,
@@ -212,9 +212,9 @@ unsafe fn window_switch_build(mut data: *mut window_switch_modedata) {
     };
     sort_crit.order = SORT_NAME;
     sort_crit.reversed = 0 as ::core::ffi::c_int;
-    (*data).matches.clear();
-    (*data).item_list.clear();
-    match (*data).type_0 as ::core::ffi::c_uint {
+    data.matches.clear();
+    data.item_list.clear();
+    match data.type_0 as ::core::ffi::c_uint {
         0 => {
             let sl = sort_get_sessions(&sort_crit);
             let ns = u_int::try_from(sl.len()).expect("too many sessions for window switch");
@@ -232,38 +232,40 @@ unsafe fn window_switch_build(mut data: *mut window_switch_modedata) {
         }
         _ => {}
     }
-    (*data).matches = window_switch_matches(&mut (*data).item_list, &(*data).filter, sx);
+    data.matches = window_switch_matches(&mut data.item_list, &data.filter, sx);
 }
-unsafe fn window_switch_visible(mut data: *mut window_switch_modedata) -> u_int {
-    let mut sy: u_int = (*data).screen.grid().sy;
+fn window_switch_visible(data: &window_switch_modedata) -> u_int {
+    let mut sy: u_int = data.screen.grid().sy;
     if sy <= 1 as u_int {
         return 0 as u_int;
     }
     sy.wrapping_sub(1 as u_int)
 }
-unsafe fn window_switch_set_current(mut data: *mut window_switch_modedata, mut current: u_int) {
+fn window_switch_set_current(data: &mut window_switch_modedata, mut current: u_int) {
     let mut visible: u_int = window_switch_visible(data);
-    if (*data).matches.is_empty() {
-        (*data).current = 0 as u_int;
-        (*data).offset = 0 as u_int;
+    if data.matches.is_empty() {
+        data.current = 0 as u_int;
+        data.offset = 0 as u_int;
         return;
     }
-    if (current as usize) >= (*data).matches.len() {
-        current = ((*data).matches.len() - 1) as u_int;
+    if (current as usize) >= data.matches.len() {
+        current = (data.matches.len() - 1) as u_int;
     }
-    (*data).current = current;
-    if (*data).current < (*data).offset {
-        (*data).offset = (*data).current;
-    } else if visible != 0 as u_int && (*data).current >= (*data).offset.wrapping_add(visible) {
-        (*data).offset = (*data)
+    data.current = current;
+    if data.current < data.offset {
+        data.offset = data.current;
+    } else if visible != 0 as u_int && data.current >= data.offset.wrapping_add(visible) {
+        data.offset = data
             .current
             .wrapping_sub(visible)
             .wrapping_add(1 as u_int);
     }
 }
-unsafe fn window_switch_data(wme: refbox::Weak<window_mode_entry>) -> *mut window_switch_modedata {
+unsafe fn window_switch_data(
+    wme: &refbox::Weak<window_mode_entry>,
+) -> &std::cell::RefCell<window_switch_modedata> {
     wme.get_unchecked()
-        .boxed_data_ptr::<window_switch_modedata>()
+        .boxed_data_cell::<window_switch_modedata>()
         .expect("switch mode payload")
 }
 
@@ -273,14 +275,14 @@ unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
-    let mut data: *mut window_switch_modedata = window_switch_data(wme.clone());
-    let mut sx: u_int = (*data).screen.grid().sx;
+    let mut guard = window_switch_data(&wme).borrow_mut();
+    let data = &mut *guard;
+    let mut sx: u_int = data.screen.grid().sx;
     let mut i: u_int = 0;
     let mut j: u_int = 0;
-    let mut sy: u_int = (*data).screen.grid().sy;
+    let mut sy: u_int = data.screen.grid().sy;
     let mut visible: u_int = 0;
     let mut idx: u_int = 0;
-    let mut item: *mut window_switch_itemdata = ::core::ptr::null_mut::<window_switch_itemdata>();
     let mut mgc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -324,7 +326,8 @@ unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         link: 0,
     };
     let dgc = &raw const grid_default_cell;
-    let mut ctx = screen_write_start(&mut (*data).screen);
+    visible = window_switch_visible(data);
+    let mut ctx = screen_write_start(&mut data.screen);
     screen_write_clearscreen(&mut ctx, 8 as u_int);
     if sy <= 1 as u_int {
         screen_write_stop(ctx);
@@ -342,27 +345,26 @@ unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         None,
         &OptionsScope::Pane(Rc::downgrade(&mode_pane_owner)),
     );
-    visible = window_switch_visible(data);
     i = 0 as u_int;
     while i < visible {
-        idx = (*data).offset.wrapping_add(i);
-        if (idx as usize) >= (*data).matches.len() {
+        idx = data.offset.wrapping_add(i);
+        if (idx as usize) >= data.matches.len() {
             break;
         }
-        let row = (&(*data).matches)[idx as usize];
-        item = &raw mut (&mut (*data).item_list)[row];
+        let row = data.matches[idx as usize];
+        let item = &data.item_list[row];
         screen_write_cursormove(
             &mut ctx,
             0 as ::core::ffi::c_int,
             i as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        if idx != (*data).current {
+        if idx != data.current {
             format_draw(
                 &mut ctx,
                 &*dgc,
                 sx,
-                &(*item).text,
+                &item.text,
                 None,
                 0 as ::core::ffi::c_int,
             );
@@ -372,12 +374,12 @@ unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
                 &mut ctx,
                 &sgc,
                 sx,
-                &(*item).text,
+                &item.text,
                 None,
                 0 as ::core::ffi::c_int,
             );
         }
-        let match_mask = (*item).match_mask.as_ref().map(|mask| mask.as_ptr());
+        let match_mask = item.match_mask.as_ref().map(|mask| mask.as_ptr());
         if let Some(match_mask) = match_mask {
             j = 0 as u_int;
             while j < sx {
@@ -386,7 +388,7 @@ unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
                     & (1 as ::core::ffi::c_int) << (j & 0x7 as u_int)
                     == 0)
                 {
-                    grid_get_cell((*data).screen.grid(), j, i, &mut gc);
+                    grid_get_cell(ctx.screen.grid(), j, i, &mut gc);
                     gc.attr = mgc.attr;
                     gc.fg = mgc.fg;
                     gc.bg = mgc.bg;
@@ -403,15 +405,15 @@ unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         }
         i = i.wrapping_add(1);
     }
-    if (*data).prompt.is_some() {
+    if data.prompt.is_some() {
         let pdd = prompt_draw_data {
             area_x: 0 as u_int,
             area_width: sx,
             prompt_line: sy.wrapping_sub(1 as u_int),
         };
-        (*data).screen.mode |= MODE_CURSOR;
-        (*data).prompt_cx = prompt_draw(
-            &(*data)
+        ctx.screen.mode |= MODE_CURSOR;
+        data.prompt_cx = prompt_draw(
+            &data
                 .prompt
                 .as_ref()
                 .expect("active prompt")
@@ -422,7 +424,7 @@ unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         );
         screen_write_cursormove(
             &mut ctx,
-            (*data).prompt_cx as ::core::ffi::c_int,
+            data.prompt_cx as ::core::ffi::c_int,
             sy.wrapping_sub(1 as u_int) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
@@ -440,7 +442,6 @@ unsafe fn window_switch_init(
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
-    let mut data: *mut window_switch_modedata = ::core::ptr::null_mut::<window_switch_modedata>();
     let mut pd = prompt_create_data::default();
     let format = if let Some(args) = args
         .as_deref()
@@ -457,11 +458,16 @@ unsafe fn window_switch_init(
         WINDOW_SWITCH_DEFAULT_COMMAND
     }
     .to_owned();
-    let owner = Box::new(std::cell::UnsafeCell::new(window_switch_modedata {
+    let args = args.expect("mode arguments");
+    let owner = Box::new(std::cell::RefCell::new(window_switch_modedata {
         screen: screen::empty(),
         format,
         command,
-        type_0: WINDOW_SWITCH_TYPE_SESSION,
+        type_0: if args_has(args, 'w' as i32 as u_char) != 0 {
+            WINDOW_SWITCH_TYPE_WINDOW
+        } else {
+            WINDOW_SWITCH_TYPE_SESSION
+        },
         filter: CString::default(),
         prompt: None,
         prompt_cx: 0,
@@ -470,14 +476,7 @@ unsafe fn window_switch_init(
         current: 0,
         offset: 0,
     }));
-    data = owner.get();
     wme.get_mut_unchecked().boxed_data = Some(owner);
-    let args = args.expect("mode arguments");
-    if args_has(args, 'w' as i32 as u_char) != 0 {
-        (*data).type_0 = WINDOW_SWITCH_TYPE_WINDOW;
-    } else {
-        (*data).type_0 = WINDOW_SWITCH_TYPE_SESSION;
-    }
     prompt_set_options(&mut pd, fs.expect("mode target").session_handle().as_ref());
     pd.fs = fs;
     pd.prompt = c"(search) ";
@@ -490,17 +489,21 @@ unsafe fn window_switch_init(
     }));
     let prompt = prompt_create(pd);
     let prompt_observer = prompt.downgrade();
-    (*data).prompt = Some(prompt);
-    let prompt = prompt_observer;
-    prompt_update(
-        &mut prompt.try_borrow_mut().expect("live unborrowed prompt"),
-        c"(search) ",
-        Some(&(*data).filter),
-    );
-    let (pane_sx, pane_sy) = mode_pane_owner.screen_size(false);
-    screen_init(&mut (*data).screen, pane_sx, pane_sy, 0 as u_int);
-    window_switch_build(data);
-    prompt_incremental_start(&prompt);
+    {
+        let mut data = window_switch_data(&wme).borrow_mut();
+        data.prompt = Some(prompt);
+        prompt_update(
+            &mut prompt_observer
+                .try_borrow_mut()
+                .expect("live unborrowed prompt"),
+            c"(search) ",
+            Some(&data.filter),
+        );
+        let (pane_sx, pane_sy) = mode_pane_owner.screen_size(false);
+        screen_init(&mut data.screen, pane_sx, pane_sy, 0 as u_int);
+        window_switch_build(&mut data);
+    }
+    prompt_incremental_start(&prompt_observer);
     window_switch_draw_screen(wme.clone());
     true
 }
@@ -510,9 +513,9 @@ unsafe fn window_switch_get_screen(
 ) {
     if let Some(data) = wme
         .get_unchecked()
-        .boxed_data_ptr::<window_switch_modedata>()
+        .boxed_data_cell::<window_switch_modedata>()
     {
-        visit(&mut (*data).screen);
+        window_mode_screen_payload(data, |data| visit(&mut data.screen));
     }
 }
 
@@ -521,17 +524,20 @@ unsafe fn window_switch_resize(
     mut sx: u_int,
     mut sy: u_int,
 ) {
-    let mut data: *mut window_switch_modedata = window_switch_data(wme.clone());
-    screen_resize(&mut (*data).screen, sx, sy, 0 as ::core::ffi::c_int);
-    window_switch_build(data);
-    window_switch_set_current(data, (*data).current);
+    {
+        let mut data = window_switch_data(&wme).borrow_mut();
+        screen_resize(&mut data.screen, sx, sy, 0 as ::core::ffi::c_int);
+        window_switch_build(&mut data);
+        let current = data.current;
+        window_switch_set_current(&mut data, current);
+    }
     window_switch_draw_screen(wme.clone());
 }
 unsafe fn window_switch_run_command(
-    mut data: *mut window_switch_modedata,
+    cell: &std::cell::RefCell<window_switch_modedata>,
     client_owner: Option<&ClientRef>,
 ) -> ::core::ffi::c_int {
-    let mut item: *mut window_switch_itemdata = ::core::ptr::null_mut::<window_switch_itemdata>();
+    let data = cell.borrow();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -544,15 +550,15 @@ unsafe fn window_switch_run_command(
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut target: Option<CString> = None;
     let state;
-    if (*data).matches.is_empty() {
+    if data.matches.is_empty() {
         return 0 as ::core::ffi::c_int;
     }
-    let row = (&(*data).matches)[(*data).current as usize];
-    item = &raw mut (&mut (*data).item_list)[row];
+    let row = data.matches[data.current as usize];
+    let item = &data.item_list[row];
     fs = cmd_find_state::clear_state(0 as ::core::ffi::c_int);
-    match (*item).type_0 as ::core::ffi::c_uint {
+    match item.type_0 as ::core::ffi::c_uint {
         0 => {
-            s = crate::session::sessions::find_by_id((*item).session as u_int);
+            s = crate::session::sessions::find_by_id(item.session as u_int);
             if let Some(s_value) = s.as_ref() {
                 let mut bytes = Vec::from(b"=".as_slice());
                 bytes.extend_from_slice(s_value.name().as_bytes());
@@ -562,9 +568,9 @@ unsafe fn window_switch_run_command(
             }
         }
         1 => {
-            s = crate::session::sessions::find_by_id((*item).session as u_int);
+            s = crate::session::sessions::find_by_id(item.session as u_int);
             if let Some(s_value) = s.as_ref() {
-                wl = s_value.with_winlinks(|links| winlink_find_by_index(links, (*item).winlink));
+                wl = s_value.with_winlinks(|links| winlink_find_by_index(links, item.winlink));
                 if !s.is_none() && wl.is_alive() {
                     let mut bytes = Vec::from(b"=".as_slice());
                     bytes.extend_from_slice(s_value.name().as_bytes());
@@ -582,10 +588,11 @@ unsafe fn window_switch_run_command(
         return 0 as ::core::ffi::c_int;
     };
     let command = cmd_template_replace_cstring(
-        (*data).command.as_c_str(),
+        data.command.as_c_str(),
         target.as_c_str(),
         1 as ::core::ffi::c_int,
     );
+    drop(data);
     if !command.as_bytes().is_empty() {
         state = cmdq_new_state(Some(&fs), None, 0 as ::core::ffi::c_int);
         if let Err(mut error) = cmd_parse_and_append(command.as_c_str(), client_owner, Some(&state))
@@ -623,11 +630,11 @@ unsafe fn window_switch_prompt_callback(
     } else {
         value
     };
-    let data = window_switch_data(mode);
-    (*data).filter = CString::new(value).expect("prompt input contains no NUL");
-    window_switch_build(data);
-    (*data).current = 0 as u_int;
-    (*data).offset = 0 as u_int;
+    let mut data = window_switch_data(&mode).borrow_mut();
+    data.filter = CString::new(value).expect("prompt input contains no NUL");
+    window_switch_build(&mut data);
+    data.current = 0 as u_int;
+    data.offset = 0 as u_int;
     PROMPT_CONTINUE
 }
 unsafe fn window_switch_key(
@@ -643,12 +650,22 @@ unsafe fn window_switch_key(
         .upgrade()
         .expect("mode belongs to a live pane");
     let mut current_block: u64;
-    let mut data: *mut window_switch_modedata = window_switch_data(wme.clone());
+    let cell = window_switch_data(&wme);
+    let (mut current, mut size, offset, sx, sy, prompt) = {
+        let data = cell.borrow();
+        (
+            data.current,
+            data.matches.len() as u_int,
+            data.offset,
+            data.screen.grid().sx,
+            data.screen.grid().sy,
+            data.prompt.as_ref().map(|prompt| prompt.downgrade()),
+        )
+    };
+    let set_current = |current| window_switch_set_current(&mut cell.borrow_mut(), current);
     let mut visible: u_int = 0;
-    let mut current: u_int = (*data).current;
     let mut x: u_int = 0;
     let mut y: u_int = 0;
-    let mut size: u_int = (*data).matches.len() as u_int;
     let mut result: prompt_key_result = PROMPT_KEY_NOT_HANDLED;
     let mut redraw: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
@@ -668,23 +685,18 @@ unsafe fn window_switch_key(
         {
             return;
         }
-        if (*data).prompt.is_some()
-            && (*data).screen.grid().sy != 0 as u_int
-            && y == (*data).screen.grid().sy.wrapping_sub(1 as u_int)
-            && (*m).b & MOUSE_MASK_BUTTONS as u_int == MOUSE_BUTTON_1 as u_int
-            && (*m).b & MOUSE_MASK_DRAG as u_int == 0
-            && !((*m).b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int)
-        {
+        if let Some(prompt) = prompt.as_ref().filter(|_| {
+            sy != 0 as u_int
+                && y == sy.wrapping_sub(1 as u_int)
+                && (*m).b & MOUSE_MASK_BUTTONS as u_int == MOUSE_BUTTON_1 as u_int
+                && (*m).b & MOUSE_MASK_DRAG as u_int == 0
+                && !((*m).b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int)
+        }) {
             result = prompt_mouse(
-                &mut (*data)
-                    .prompt
-                    .as_ref()
-                    .expect("active prompt")
-                    .try_borrow_mut()
-                    .expect("unborrowed prompt"),
+                &mut prompt.try_borrow_mut().expect("unborrowed prompt"),
                 x,
                 0 as u_int,
-                (*data).screen.grid().sx,
+                sx,
                 Some(&mut redraw),
             );
             if redraw != 0
@@ -699,21 +711,21 @@ unsafe fn window_switch_key(
         match key {
             38654705664 => {
                 if size != 0 as u_int && current != 0 as u_int {
-                    window_switch_set_current(data, current.wrapping_sub(1 as u_int));
+                    set_current(current.wrapping_sub(1 as u_int));
                 }
             }
             34359738368 => {
                 if size != 0 as u_int && current != size.wrapping_sub(1 as u_int) {
-                    window_switch_set_current(data, current.wrapping_add(1 as u_int));
+                    set_current(current.wrapping_add(1 as u_int));
                 }
             }
             17179869440 | 47244640512 => {
-                if y >= window_switch_visible(data) || (*data).offset.wrapping_add(y) >= size {
+                if y >= window_switch_visible(&cell.borrow()) || offset.wrapping_add(y) >= size {
                     return;
                 }
-                window_switch_set_current(data, (*data).offset.wrapping_add(y));
+                set_current(offset.wrapping_add(y));
                 if key == KEYC_DOUBLECLICK1_PANE as ::core::ffi::c_ulong as key_code {
-                    if window_switch_run_command(data, Some(client_owner)) != 0 {
+                    if window_switch_run_command(cell, Some(client_owner)) != 0 {
                         mode_pane_owner.reset_mode();
                     }
                     return;
@@ -733,7 +745,7 @@ unsafe fn window_switch_key(
         }
         match key {
             13 => {
-                if window_switch_run_command(data, Some(client_owner)) != 0 {
+                if window_switch_run_command(cell, Some(client_owner)) != 0 {
                     mode_pane_owner.reset_mode();
                 }
                 return;
@@ -744,7 +756,7 @@ unsafe fn window_switch_key(
             }
             _ => {}
         }
-        if let Some(prompt) = (*data).prompt.as_ref().map(|prompt| prompt.downgrade()) {
+        if let Some(prompt) = prompt {
             result = prompt_key(&prompt, key, &mut redraw);
             if redraw != 0 {
                 window_switch_draw_screen(wme.clone());
@@ -757,8 +769,9 @@ unsafe fn window_switch_key(
             {
                 return;
             }
-            current = (*data).current;
-            size = (*data).matches.len() as u_int;
+            let data = cell.borrow();
+            current = data.current;
+            size = data.matches.len() as u_int;
         }
         match key {
             8589934619 => {
@@ -766,39 +779,39 @@ unsafe fn window_switch_key(
                 match current_block {
                     10411635476396469942 => {
                         if size > 0 as u_int {
-                            window_switch_set_current(data, size.wrapping_sub(1 as u_int));
+                            set_current(size.wrapping_sub(1 as u_int));
                         }
                     }
                     6377616723418564240 => {
                         if !(size == 0 as u_int) {
                             if current == size.wrapping_sub(1 as u_int) {
-                                window_switch_set_current(data, 0 as u_int);
+                                set_current(0 as u_int);
                             } else {
-                                window_switch_set_current(data, current.wrapping_add(1 as u_int));
+                                set_current(current.wrapping_add(1 as u_int));
                             }
                         }
                     }
                     10953541916736708013 => {
-                        visible = window_switch_visible(data);
+                        visible = window_switch_visible(&cell.borrow());
                         if current >= visible {
-                            window_switch_set_current(data, current.wrapping_sub(visible));
+                            set_current(current.wrapping_sub(visible));
                         } else {
-                            window_switch_set_current(data, 0 as u_int);
+                            set_current(0 as u_int);
                         }
                     }
                     14247072322348479886 => {
-                        visible = window_switch_visible(data);
-                        window_switch_set_current(data, current.wrapping_add(visible));
+                        visible = window_switch_visible(&cell.borrow());
+                        set_current(current.wrapping_add(visible));
                     }
                     12328944762703010638 => {
-                        window_switch_set_current(data, 0 as u_int);
+                        set_current(0 as u_int);
                     }
                     _ => {
                         if !(size == 0 as u_int) {
                             if current == 0 as u_int {
-                                window_switch_set_current(data, size.wrapping_sub(1 as u_int));
+                                set_current(size.wrapping_sub(1 as u_int));
                             } else {
-                                window_switch_set_current(data, current.wrapping_sub(1 as u_int));
+                                set_current(current.wrapping_sub(1 as u_int));
                             }
                         }
                     }
@@ -809,39 +822,39 @@ unsafe fn window_switch_key(
                 match current_block {
                     10411635476396469942 => {
                         if size > 0 as u_int {
-                            window_switch_set_current(data, size.wrapping_sub(1 as u_int));
+                            set_current(size.wrapping_sub(1 as u_int));
                         }
                     }
                     6377616723418564240 => {
                         if !(size == 0 as u_int) {
                             if current == size.wrapping_sub(1 as u_int) {
-                                window_switch_set_current(data, 0 as u_int);
+                                set_current(0 as u_int);
                             } else {
-                                window_switch_set_current(data, current.wrapping_add(1 as u_int));
+                                set_current(current.wrapping_add(1 as u_int));
                             }
                         }
                     }
                     10953541916736708013 => {
-                        visible = window_switch_visible(data);
+                        visible = window_switch_visible(&cell.borrow());
                         if current >= visible {
-                            window_switch_set_current(data, current.wrapping_sub(visible));
+                            set_current(current.wrapping_sub(visible));
                         } else {
-                            window_switch_set_current(data, 0 as u_int);
+                            set_current(0 as u_int);
                         }
                     }
                     14247072322348479886 => {
-                        visible = window_switch_visible(data);
-                        window_switch_set_current(data, current.wrapping_add(visible));
+                        visible = window_switch_visible(&cell.borrow());
+                        set_current(current.wrapping_add(visible));
                     }
                     12328944762703010638 => {
-                        window_switch_set_current(data, 0 as u_int);
+                        set_current(0 as u_int);
                     }
                     _ => {
                         if !(size == 0 as u_int) {
                             if current == 0 as u_int {
-                                window_switch_set_current(data, size.wrapping_sub(1 as u_int));
+                                set_current(size.wrapping_sub(1 as u_int));
                             } else {
-                                window_switch_set_current(data, current.wrapping_sub(1 as u_int));
+                                set_current(current.wrapping_sub(1 as u_int));
                             }
                         }
                     }
@@ -852,39 +865,39 @@ unsafe fn window_switch_key(
                 match current_block {
                     10411635476396469942 => {
                         if size > 0 as u_int {
-                            window_switch_set_current(data, size.wrapping_sub(1 as u_int));
+                            set_current(size.wrapping_sub(1 as u_int));
                         }
                     }
                     6377616723418564240 => {
                         if !(size == 0 as u_int) {
                             if current == size.wrapping_sub(1 as u_int) {
-                                window_switch_set_current(data, 0 as u_int);
+                                set_current(0 as u_int);
                             } else {
-                                window_switch_set_current(data, current.wrapping_add(1 as u_int));
+                                set_current(current.wrapping_add(1 as u_int));
                             }
                         }
                     }
                     10953541916736708013 => {
-                        visible = window_switch_visible(data);
+                        visible = window_switch_visible(&cell.borrow());
                         if current >= visible {
-                            window_switch_set_current(data, current.wrapping_sub(visible));
+                            set_current(current.wrapping_sub(visible));
                         } else {
-                            window_switch_set_current(data, 0 as u_int);
+                            set_current(0 as u_int);
                         }
                     }
                     14247072322348479886 => {
-                        visible = window_switch_visible(data);
-                        window_switch_set_current(data, current.wrapping_add(visible));
+                        visible = window_switch_visible(&cell.borrow());
+                        set_current(current.wrapping_add(visible));
                     }
                     12328944762703010638 => {
-                        window_switch_set_current(data, 0 as u_int);
+                        set_current(0 as u_int);
                     }
                     _ => {
                         if !(size == 0 as u_int) {
                             if current == 0 as u_int {
-                                window_switch_set_current(data, size.wrapping_sub(1 as u_int));
+                                set_current(size.wrapping_sub(1 as u_int));
                             } else {
-                                window_switch_set_current(data, current.wrapping_sub(1 as u_int));
+                                set_current(current.wrapping_sub(1 as u_int));
                             }
                         }
                     }
@@ -895,39 +908,39 @@ unsafe fn window_switch_key(
                 match current_block {
                     10411635476396469942 => {
                         if size > 0 as u_int {
-                            window_switch_set_current(data, size.wrapping_sub(1 as u_int));
+                            set_current(size.wrapping_sub(1 as u_int));
                         }
                     }
                     6377616723418564240 => {
                         if !(size == 0 as u_int) {
                             if current == size.wrapping_sub(1 as u_int) {
-                                window_switch_set_current(data, 0 as u_int);
+                                set_current(0 as u_int);
                             } else {
-                                window_switch_set_current(data, current.wrapping_add(1 as u_int));
+                                set_current(current.wrapping_add(1 as u_int));
                             }
                         }
                     }
                     10953541916736708013 => {
-                        visible = window_switch_visible(data);
+                        visible = window_switch_visible(&cell.borrow());
                         if current >= visible {
-                            window_switch_set_current(data, current.wrapping_sub(visible));
+                            set_current(current.wrapping_sub(visible));
                         } else {
-                            window_switch_set_current(data, 0 as u_int);
+                            set_current(0 as u_int);
                         }
                     }
                     14247072322348479886 => {
-                        visible = window_switch_visible(data);
-                        window_switch_set_current(data, current.wrapping_add(visible));
+                        visible = window_switch_visible(&cell.borrow());
+                        set_current(current.wrapping_add(visible));
                     }
                     12328944762703010638 => {
-                        window_switch_set_current(data, 0 as u_int);
+                        set_current(0 as u_int);
                     }
                     _ => {
                         if !(size == 0 as u_int) {
                             if current == 0 as u_int {
-                                window_switch_set_current(data, size.wrapping_sub(1 as u_int));
+                                set_current(size.wrapping_sub(1 as u_int));
                             } else {
-                                window_switch_set_current(data, current.wrapping_sub(1 as u_int));
+                                set_current(current.wrapping_sub(1 as u_int));
                             }
                         }
                     }
@@ -938,39 +951,39 @@ unsafe fn window_switch_key(
                 match current_block {
                     10411635476396469942 => {
                         if size > 0 as u_int {
-                            window_switch_set_current(data, size.wrapping_sub(1 as u_int));
+                            set_current(size.wrapping_sub(1 as u_int));
                         }
                     }
                     6377616723418564240 => {
                         if !(size == 0 as u_int) {
                             if current == size.wrapping_sub(1 as u_int) {
-                                window_switch_set_current(data, 0 as u_int);
+                                set_current(0 as u_int);
                             } else {
-                                window_switch_set_current(data, current.wrapping_add(1 as u_int));
+                                set_current(current.wrapping_add(1 as u_int));
                             }
                         }
                     }
                     10953541916736708013 => {
-                        visible = window_switch_visible(data);
+                        visible = window_switch_visible(&cell.borrow());
                         if current >= visible {
-                            window_switch_set_current(data, current.wrapping_sub(visible));
+                            set_current(current.wrapping_sub(visible));
                         } else {
-                            window_switch_set_current(data, 0 as u_int);
+                            set_current(0 as u_int);
                         }
                     }
                     14247072322348479886 => {
-                        visible = window_switch_visible(data);
-                        window_switch_set_current(data, current.wrapping_add(visible));
+                        visible = window_switch_visible(&cell.borrow());
+                        set_current(current.wrapping_add(visible));
                     }
                     12328944762703010638 => {
-                        window_switch_set_current(data, 0 as u_int);
+                        set_current(0 as u_int);
                     }
                     _ => {
                         if !(size == 0 as u_int) {
                             if current == 0 as u_int {
-                                window_switch_set_current(data, size.wrapping_sub(1 as u_int));
+                                set_current(size.wrapping_sub(1 as u_int));
                             } else {
-                                window_switch_set_current(data, current.wrapping_sub(1 as u_int));
+                                set_current(current.wrapping_sub(1 as u_int));
                             }
                         }
                     }
@@ -981,39 +994,39 @@ unsafe fn window_switch_key(
                 match current_block {
                     10411635476396469942 => {
                         if size > 0 as u_int {
-                            window_switch_set_current(data, size.wrapping_sub(1 as u_int));
+                            set_current(size.wrapping_sub(1 as u_int));
                         }
                     }
                     6377616723418564240 => {
                         if !(size == 0 as u_int) {
                             if current == size.wrapping_sub(1 as u_int) {
-                                window_switch_set_current(data, 0 as u_int);
+                                set_current(0 as u_int);
                             } else {
-                                window_switch_set_current(data, current.wrapping_add(1 as u_int));
+                                set_current(current.wrapping_add(1 as u_int));
                             }
                         }
                     }
                     10953541916736708013 => {
-                        visible = window_switch_visible(data);
+                        visible = window_switch_visible(&cell.borrow());
                         if current >= visible {
-                            window_switch_set_current(data, current.wrapping_sub(visible));
+                            set_current(current.wrapping_sub(visible));
                         } else {
-                            window_switch_set_current(data, 0 as u_int);
+                            set_current(0 as u_int);
                         }
                     }
                     14247072322348479886 => {
-                        visible = window_switch_visible(data);
-                        window_switch_set_current(data, current.wrapping_add(visible));
+                        visible = window_switch_visible(&cell.borrow());
+                        set_current(current.wrapping_add(visible));
                     }
                     12328944762703010638 => {
-                        window_switch_set_current(data, 0 as u_int);
+                        set_current(0 as u_int);
                     }
                     _ => {
                         if !(size == 0 as u_int) {
                             if current == 0 as u_int {
-                                window_switch_set_current(data, size.wrapping_sub(1 as u_int));
+                                set_current(size.wrapping_sub(1 as u_int));
                             } else {
-                                window_switch_set_current(data, current.wrapping_sub(1 as u_int));
+                                set_current(current.wrapping_sub(1 as u_int));
                             }
                         }
                     }
