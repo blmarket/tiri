@@ -27,6 +27,7 @@ pub mod compat {
     pub mod glob;
     pub mod imsg;
     pub mod setproctitle;
+    pub mod strtod;
     pub mod strtonum;
     #[cfg(target_os = "linux")]
     pub mod systemd;

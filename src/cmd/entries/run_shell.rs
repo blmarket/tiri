@@ -9,6 +9,7 @@ use crate::cmd::queue::{
     cmdq_append, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_target_client,
     cmdq_insert_after, cmdq_resumed,
 };
+use crate::compat::strtod::strtod;
 use crate::format::bytes::format_message_with;
 use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
@@ -20,7 +21,6 @@ use crate::reactor::{
     evbuffer_add, evbuffer_add_formatted, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
     evbuffer_readln,
 };
-use libc::strtod;
 
 use crate::server_client::Client as _;
 
@@ -154,26 +154,25 @@ unsafe fn cmd_run_shell_exec(
     let _tc: Option<ClientRef> = tc_owner.clone();
     let mut s: Option<SessionRef> = target.session_handle();
     let pane_owner = target.pane_handle();
-    let mut delay: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut d: ::core::ffi::c_double = 0.;
     let mut tv = Duration::ZERO;
-    let mut end: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut i: u_int = 0;
     let mut wait: ::core::ffi::c_int =
         (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
-    delay = args_get(args, 'd' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if !delay.is_null() {
-        d = strtod(delay, &raw mut end);
-        if *end as ::core::ffi::c_int != '\0' as i32 {
-            cmdq_error(item_handle, |out| {
-                out.write_all(b"invalid delay time: ")?;
-                write_cstr(out, nullable_cstr(delay))
-            });
-            return CmdOutcome::Error;
+    let delay = match args_get(args, 'd' as i32 as u_char) {
+        Some(delay) => {
+            let (d, end) = strtod(delay);
+            if !end.is_empty() {
+                cmdq_error(item_handle, |out| {
+                    out.write_all(b"invalid delay time: ")?;
+                    write_cstr(out, delay)
+                });
+                return CmdOutcome::Error;
+            }
+            Some(d)
         }
-    } else if args_count(args) == 0 as u_int {
-        return CmdOutcome::Normal;
-    }
+        None if args_count(args) == 0 as u_int => return CmdOutcome::Normal,
+        None => None,
+    };
     let cwd = if args_has(args, 'c' as i32 as u_char) != 0 {
         args_get(args, 'c' as i32 as u_char)
             .map(|cwd| format_single_from_target_cstring(item_handle, cwd))
@@ -237,7 +236,7 @@ unsafe fn cmd_run_shell_exec(
         cdata.flags |= JOB_SHOWSTDERR;
     }
     cdata.s = if s.is_none() { None } else { s.clone() };
-    if !delay.is_null() {
+    if let Some(d) = delay {
         if (0.0..time_t::MAX as f64).contains(&d) {
             tv = Duration::from_secs(d as u64)
                 + Duration::from_micros((d.fract() * 1_000_000.0) as u64);

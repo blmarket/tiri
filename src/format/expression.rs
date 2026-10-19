@@ -1,6 +1,7 @@
 use super::bytes::cstr_basename;
 use super::bytes::format_cstring;
 use super::*;
+use crate::compat::strtod::strtod;
 use crate::format::bytes::cstr_suffix;
 use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
@@ -1403,129 +1404,6 @@ fn format_expression_integer(value: f64) -> ::core::ffi::c_longlong {
     value as ::core::ffi::c_longlong
 }
 
-/// Parse the longest prefix of `s` that C `strtod` converts and return it with
-/// the bytes after it: leading white space, an optional sign, then a decimal
-/// or hexadecimal number, `inf`, `infinity` or `nan`. With no conversion the
-/// value is zero and the rest is all of `s`, as `strtod` leaves its end
-/// pointer at the start.
-fn format_parse_double(s: &[u8]) -> (f64, &[u8]) {
-    let digits = |s: &[u8], radix: u32| {
-        s.iter()
-            .take_while(|&&byte| (byte as char).is_digit(radix))
-            .count()
-    };
-    let mut i = s
-        .iter()
-        .take_while(|&&byte| matches!(byte, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r'))
-        .count();
-    let negative = s.get(i) == Some(&b'-');
-    if matches!(s.get(i), Some(b'-' | b'+')) {
-        i += 1;
-    }
-    let sign = |value: f64| if negative { -value } else { value };
-    let rest = &s[i..];
-    let starts_with =
-        |word: &[u8]| rest.len() >= word.len() && rest[..word.len()].eq_ignore_ascii_case(word);
-    if starts_with(b"infinity") {
-        return (sign(f64::INFINITY), &rest[8..]);
-    }
-    if starts_with(b"inf") {
-        return (sign(f64::INFINITY), &rest[3..]);
-    }
-    if starts_with(b"nan") {
-        let mut len = 3;
-        if rest.get(3) == Some(&b'(') {
-            let chars = rest[4..]
-                .iter()
-                .take_while(|&&byte| byte.is_ascii_alphanumeric() || byte == b'_')
-                .count();
-            if rest.get(4 + chars) == Some(&b')') {
-                len = 4 + chars + 1;
-            }
-        }
-        return (sign(f64::NAN), &rest[len..]);
-    }
-    if rest.len() >= 2 && rest[0] == b'0' && rest[1].eq_ignore_ascii_case(&b'x') {
-        let hex = &rest[2..];
-        let whole = digits(hex, 16);
-        let fraction = if hex.get(whole) == Some(&b'.') {
-            digits(&hex[whole + 1..], 16)
-        } else {
-            0
-        };
-        if whole + fraction == 0 {
-            return (sign(0.0), &rest[1..]);
-        }
-        let mut value = 0.0;
-        for &byte in &hex[..whole] {
-            value = value * 16.0 + f64::from((byte as char).to_digit(16).expect("hex digit"));
-        }
-        let mut len = whole;
-        if hex.get(whole) == Some(&b'.') {
-            let mut scale = 1.0 / 16.0;
-            for &byte in &hex[whole + 1..whole + 1 + fraction] {
-                value += f64::from((byte as char).to_digit(16).expect("hex digit")) * scale;
-                scale /= 16.0;
-            }
-            len += 1 + fraction;
-        }
-        if matches!(hex.get(len), Some(b'p' | b'P')) {
-            let mut j = len + 1;
-            if matches!(hex.get(j), Some(b'-' | b'+')) {
-                j += 1;
-            }
-            let exponent_digits = digits(&hex[j..], 10);
-            if exponent_digits > 0 {
-                let exponent = std::str::from_utf8(&hex[len + 1..j + exponent_digits])
-                    .expect("exponent digits are ASCII")
-                    .parse::<i32>()
-                    .unwrap_or(if hex[len + 1] == b'-' {
-                        i32::MIN
-                    } else {
-                        i32::MAX
-                    })
-                    .clamp(-2200, 2200);
-                if value != 0.0 {
-                    // Two steps, so a large mantissa can take an exponent
-                    // whose power of two alone would overflow or underflow.
-                    value *= 2f64.powi(exponent / 2);
-                    value *= 2f64.powi(exponent - exponent / 2);
-                }
-                len = j + exponent_digits;
-            }
-        }
-        return (sign(value), &hex[len..]);
-    }
-    let whole = digits(rest, 10);
-    let fraction = if rest.get(whole) == Some(&b'.') {
-        digits(&rest[whole + 1..], 10)
-    } else {
-        0
-    };
-    if whole + fraction == 0 {
-        return (0.0, s);
-    }
-    let mut len = whole;
-    if rest.get(whole) == Some(&b'.') {
-        len += 1 + fraction;
-    }
-    if matches!(rest.get(len), Some(b'e' | b'E')) {
-        let mut j = len + 1;
-        if matches!(rest.get(j), Some(b'-' | b'+')) {
-            j += 1;
-        }
-        let exponent_digits = digits(&rest[j..], 10);
-        if exponent_digits > 0 {
-            len = j + exponent_digits;
-        }
-    }
-    let value = std::str::from_utf8(&rest[..len])
-        .expect("decimal digits are ASCII")
-        .parse::<f64>()
-        .expect("a decimal prefix parses");
-    (sign(value), &rest[len..])
-}
-
 pub(super) unsafe fn format_replace_expression(
     mexp: &format_modifier,
     es: &mut format_expand_state<'_>,
@@ -1617,7 +1495,7 @@ pub(super) unsafe fn format_replace_expression(
                         });
                     }
                     Some((left, right)) => {
-                        let parsed_left = format_parse_double(left.to_bytes());
+                        let parsed_left = strtod(&left);
                         mleft = parsed_left.0;
                         if !parsed_left.1.is_empty() {
                             format_log1(es, c"format_replace_expression".as_ptr(), |out| {
@@ -1625,7 +1503,7 @@ pub(super) unsafe fn format_replace_expression(
                                 write_cstr(out, &*left)
                             });
                         } else {
-                            let parsed_right = format_parse_double(right.to_bytes());
+                            let parsed_right = strtod(&right);
                             mright = parsed_right.0;
                             if !parsed_right.1.is_empty() {
                                 format_log1(es, c"format_replace_expression".as_ptr(), |out| {
@@ -2757,86 +2635,8 @@ pub(crate) unsafe fn format_single_from_target_cstring(
 
 #[cfg(test)]
 mod format_float_tests {
-    use super::{format_float, format_parse_double};
+    use super::format_float;
     use std::ffi::CString;
-
-    /// Check `input` parses to the value and leaves the rest `strtod` does.
-    fn assert_matches_strtod(input: &str) {
-        let owned = CString::new(input).unwrap();
-        let mut end = std::ptr::null_mut();
-        let expected = unsafe { libc::strtod(owned.as_ptr(), &mut end) };
-        let consumed = unsafe { end.offset_from(owned.as_ptr()) } as usize;
-        let (value, rest) = format_parse_double(input.as_bytes());
-        assert_eq!(rest, &input.as_bytes()[consumed..], "{input:?}");
-        if expected.is_nan() {
-            assert!(value.is_nan(), "{input:?}: {value}");
-        } else {
-            assert_eq!(value.to_bits(), expected.to_bits(), "{input:?}: {value}");
-        }
-    }
-
-    #[test]
-    fn parsed_operands_match_strtod() {
-        for input in [
-            "",
-            " ",
-            "-",
-            "+",
-            ".",
-            "2",
-            " 2",
-            "\t-2.5",
-            "1.5x",
-            "1.",
-            ".5",
-            "1e3",
-            "1e",
-            "1e+",
-            "1E-2",
-            "-0",
-            "007",
-            "0x10",
-            "0x",
-            "0x1.8p1",
-            "0X1P-2",
-            "0xg",
-            "0x1p",
-            "inf",
-            "-Infinity",
-            "infx",
-            "nan",
-            "NaN(abc)",
-            "nan(",
-            "1e999",
-            "-1e999",
-            "1e-999",
-            "12345678901234567890",
-            "3.14159265358979323846",
-            "1,5",
-            "2 ",
-        ] {
-            assert_matches_strtod(input);
-        }
-    }
-
-    /// A hexadecimal mantissa wider than a double rounds once, as `strtod`
-    /// rounds it, not once per digit; nor does a long one overflow or
-    /// underflow before its binary exponent scales it back into range.
-    #[test]
-    fn wide_hex_operands_round_like_strtod() {
-        let zeros = "0".repeat(256);
-        let places = "0".repeat(300);
-        for input in [
-            "0x200000000000011".to_owned(),
-            "0x1.000000000000081".to_owned(),
-            "-0x6899e5422e751aa8".to_owned(),
-            "0x.66f78f868fd4e22f69".to_owned(),
-            format!("0x1{zeros}p-1024"),
-            format!("0x0.{places}1p1300"),
-        ] {
-            assert_matches_strtod(&input);
-        }
-    }
 
     #[test]
     fn matches_printf_for_precision_rounding_and_special_values() {
