@@ -318,7 +318,11 @@ pub fn sig2name(signo: ::core::ffi::c_int) -> CString {
     CString::new(signo.to_string()).expect("decimal number has no NUL")
 }
 pub unsafe fn find_cwd() -> Option<CString> {
-    let cwd = std::env::current_dir().ok()?;
+    // tmux reads the directory into a PATH_MAX buffer, so a longer one is
+    // not found at all.
+    let cwd = std::env::current_dir()
+        .ok()
+        .filter(|cwd| cwd.as_os_str().len() < libc::PATH_MAX as usize)?;
     let Some(pwd) = nullable_cstr(getenv(c"PWD".as_ptr())) else {
         return Some(path_cstring(cwd));
     };
