@@ -7,9 +7,8 @@ use crate::grid::grid_default_cell;
 use crate::key_string::key_string_parse_cstr;
 use crate::mode_tree::ModeTreeItemSnapshot;
 use crate::mode_tree::{
-    mode_tree_add, mode_tree_build, mode_tree_down, mode_tree_draw, mode_tree_each_tagged,
-    mode_tree_free, mode_tree_get_current, mode_tree_key, mode_tree_resize, mode_tree_run_command,
-    mode_tree_start, mode_tree_up, mode_tree_visit_screen,
+    mode_tree_build, mode_tree_draw, mode_tree_each_tagged, mode_tree_free, mode_tree_key,
+    mode_tree_resize, mode_tree_run_command, mode_tree_start, mode_tree_visit_screen,
 };
 use crate::mode_tree::{mode_tree_data, mode_tree_help_info, ModeTreeItemData};
 use crate::paste::{
@@ -250,8 +249,7 @@ unsafe fn window_buffer_build(
                 5948590327928692120 => {}
                 _ => {
                     let text = format_expand_cstring(ft, (*data).format.as_ptr());
-                    mode_tree_add(
-                        &mut (*data).tree_owner().borrow_mut(),
+                    (*data).tree_owner().borrow_mut().add(
                         None,
                         ModeTreeItemData::Buffer(item_handle.clone()),
                         item.order as uint64_t,
@@ -549,16 +547,17 @@ unsafe fn window_buffer_do_delete(
     mut data: *mut window_buffer_modedata,
     item: &ModeTreeItemSnapshot<window_buffer_itemdata>,
 ) {
-    if mode_tree_get_current(&(*data).tree_owner().borrow()).is_buffer(item)
-        && mode_tree_down(
-            &mut (*data).tree_owner().borrow_mut(),
-            0 as ::core::ffi::c_int,
-        ) == 0
+    if (*data).tree_owner().borrow().get_current().is_buffer(item)
+        && (*data)
+            .tree_owner()
+            .borrow_mut()
+            .down(0 as ::core::ffi::c_int)
+            == 0
     {
-        mode_tree_up(
-            &mut (*data).tree_owner().borrow_mut(),
-            0 as ::core::ffi::c_int,
-        );
+        (*data)
+            .tree_owner()
+            .borrow_mut()
+            .up(0 as ::core::ffi::c_int);
     }
     if let Some(pb) = paste_get_name(&item.name) {
         paste_free(&pb);
@@ -708,13 +707,13 @@ unsafe fn window_buffer_key(
         );
         match key {
             101 => {
-                let item_owner = mode_tree_get_current(&tree_owner.borrow());
+                let item_owner = tree_owner.borrow().get_current();
                 if let Some(item) = item_owner.as_buffer() {
                     window_buffer_start_edit(data, &item, client_owner);
                 }
             }
             100 => {
-                let item_owner = mode_tree_get_current(&tree_owner.borrow());
+                let item_owner = tree_owner.borrow().get_current();
                 if let Some(item) = item_owner.as_buffer() {
                     window_buffer_do_delete(data, &item);
                 }
@@ -752,7 +751,7 @@ unsafe fn window_buffer_key(
                 finished = 1 as ::core::ffi::c_int;
             }
             112 | 13 => {
-                let item_owner = mode_tree_get_current(&tree_owner.borrow());
+                let item_owner = tree_owner.borrow().get_current();
                 if let Some(item) = item_owner.as_buffer() {
                     window_buffer_do_paste(data, &item, client_owner);
                 }

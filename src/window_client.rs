@@ -9,9 +9,8 @@ use crate::grid::grid_default_cell;
 use crate::key_string::key_string_parse_cstr;
 use crate::mode_tree::ModeTreeItemSnapshot;
 use crate::mode_tree::{
-    mode_tree_add, mode_tree_build, mode_tree_down, mode_tree_draw, mode_tree_each_tagged,
-    mode_tree_free, mode_tree_get_current, mode_tree_key, mode_tree_resize, mode_tree_run_command,
-    mode_tree_start, mode_tree_view_name, mode_tree_visit_screen,
+    mode_tree_build, mode_tree_draw, mode_tree_each_tagged, mode_tree_free, mode_tree_key,
+    mode_tree_resize, mode_tree_run_command, mode_tree_start, mode_tree_visit_screen,
 };
 use crate::mode_tree::{mode_tree_data, mode_tree_help_info, ModeTreeItemData};
 use crate::options::OptionsScope;
@@ -267,8 +266,7 @@ unsafe fn window_client_build(
                 (refbox::Weak::new()).clone(),
                 None,
             );
-            mode_tree_add(
-                &mut (*data).tree_owner().borrow_mut(),
+            (*data).tree_owner().borrow_mut().add(
                 None,
                 ModeTreeItemData::Client(item_handle.clone()),
                 std::rc::Rc::as_ptr(c.as_ref().expect("live client")) as uint64_t,
@@ -672,9 +670,15 @@ unsafe fn window_client_init(
         &window_client_menu_items,
     ));
     if (*data).preview_is_info != 0 {
-        mode_tree_view_name(&mut (*data).tree_owner().borrow_mut(), Some(c"info"));
+        (*data)
+            .tree_owner()
+            .borrow_mut()
+            .set_view_name(Some(c"info"));
     } else {
-        mode_tree_view_name(&mut (*data).tree_owner().borrow_mut(), Some(c"preview"));
+        (*data)
+            .tree_owner()
+            .borrow_mut()
+            .set_view_name(Some(c"preview"));
     }
     mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
     mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
@@ -732,11 +736,11 @@ unsafe fn window_client_do_detach(
     item: &ModeTreeItemSnapshot<window_client_itemdata>,
     mut key: key_code,
 ) {
-    if mode_tree_get_current(&(*data).tree_owner().borrow()).is_client(item) {
-        mode_tree_down(
-            &mut (*data).tree_owner().borrow_mut(),
-            0 as ::core::ffi::c_int,
-        );
+    if (*data).tree_owner().borrow().get_current().is_client(item) {
+        (*data)
+            .tree_owner()
+            .borrow_mut()
+            .down(0 as ::core::ffi::c_int);
     }
     if key == 'd' as i32 as key_code || key == 'D' as i32 as key_code {
         (item.client()).detach(MSG_DETACH);
@@ -771,7 +775,7 @@ unsafe fn window_client_key(
     );
     match key {
         100 | 120 | 122 => {
-            let item_owner = mode_tree_get_current(&tree_owner.borrow());
+            let item_owner = tree_owner.borrow().get_current();
             if let Some(item) = item_owner.as_client() {
                 window_client_do_detach(data, &item, key);
             }
@@ -796,14 +800,14 @@ unsafe fn window_client_key(
         105 => {
             (*data).preview_is_info = ((*data).preview_is_info == 0) as ::core::ffi::c_int;
             if (*data).preview_is_info != 0 {
-                mode_tree_view_name(&mut tree_owner.borrow_mut(), Some(c"info"));
+                tree_owner.borrow_mut().set_view_name(Some(c"info"));
             } else {
-                mode_tree_view_name(&mut tree_owner.borrow_mut(), Some(c"preview"));
+                tree_owner.borrow_mut().set_view_name(Some(c"preview"));
             }
             mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
         }
         13 => {
-            let item_owner = mode_tree_get_current(&tree_owner.borrow());
+            let item_owner = tree_owner.borrow().get_current();
             if let Some(item) = item_owner.as_client() {
                 mode_tree_run_command(Some(client_owner), None, &(*data).command, &item.ttyname);
             }

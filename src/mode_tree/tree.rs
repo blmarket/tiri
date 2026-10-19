@@ -179,44 +179,243 @@ fn mode_tree_free_items(list: &mut mode_tree_list) {
     list.items.clear();
 }
 
-fn mode_tree_sibling(
-    mtd: &mode_tree_data,
-    item: &ModeTreeItemRef,
-    forward: bool,
-) -> Option<ModeTreeItemRef> {
-    let parent = item.borrow().parent.clone();
-    let sibling = |list: &mode_tree_list| {
-        if forward {
-            list.next(item)
+impl mode_tree_data {
+    pub fn add(
+        &mut self,
+        parent: Option<&ModeTreeItemRef>,
+        itemdata: ModeTreeItemData,
+        tag: uint64_t,
+        name: &CStr,
+        text: Option<&CStr>,
+        expanded: i32,
+    ) -> ModeTreeItemRef {
+        log_debug(format_args!(
+            "mode_tree_add: {tag}, {} {}",
+            log_bytes(name.to_bytes()),
+            log_bytes(text.unwrap_or(c"").to_bytes())
+        ));
+        let mut row = mode_tree_item {
+            parent: parent.cloned().unwrap_or_default(),
+            itemdata,
+            tag,
+            name: name.to_owned(),
+            text: text.map(CStr::to_owned),
+            ..mode_tree_item::empty()
+        };
+        if let Some(saved) = mode_tree_find_item(&self.saved, tag) {
+            let saved = saved.borrow();
+            if parent.is_none_or(|parent| parent.borrow().expanded != 0) {
+                row.tagged = saved.tagged;
+            }
+            row.expanded = saved.expanded;
         } else {
-            list.previous(item)
+            row.expanded = if expanded == -1 { 1 } else { expanded };
         }
-    };
-    if !parent.is_empty() {
-        sibling(&parent.borrow().children)
-    } else {
-        sibling(&mtd.children)
+        let owner = refbox::RefBox::new(row);
+        let observer = ModeTreeItemRef::observe(&owner);
+        if let Some(parent) = parent {
+            parent.borrow_mut().children.items.push(owner);
+        } else {
+            self.children.items.push(owner);
+        }
+        observer
+    }
+
+    pub fn remove(&mut self, item: &ModeTreeItemRef) {
+        let parent = item.borrow().parent.clone();
+        if !parent.is_empty() {
+            let mut parent = parent.borrow_mut();
+            let position = parent.children.position(item);
+            parent.children.items.remove(position);
+        } else {
+            let position = self.children.position(item);
+            self.children.items.remove(position);
+        }
+        self.lines.retain(|line| line.item.is_alive());
+        for (index, line) in self.lines.iter().enumerate() {
+            line.item.borrow_mut().line = index as u_int;
+        }
+        self.current = self
+            .current
+            .min(self.lines.len().saturating_sub(1) as u_int);
+        self.offset = self.offset.min(self.current);
+    }
+
+    pub fn set_view_name(&mut self, name: Option<&'static CStr>) {
+        self.view_name = name;
+    }
+
+    pub fn get_current(&self) -> ModeTreeItemData {
+        if self.lines.is_empty() {
+            return ModeTreeItemData::None;
+        }
+        self.lines[self.current as usize]
+            .item
+            .try_borrow()
+            .map_or(ModeTreeItemData::None, |row| row.itemdata.clone())
+    }
+
+    pub fn get_current_name(&self) -> CString {
+        self.lines[self.current as usize]
+            .item
+            .try_borrow()
+            .map_or_else(CString::default, |row| row.name.clone())
+    }
+
+    pub fn set_current(&mut self, mut tag: uint64_t) -> ::core::ffi::c_int {
+        if let Some(found) = self.get_tag(tag) {
+            self.current = found;
+            self.check_selected();
+            return 1 as ::core::ffi::c_int;
+        }
+        if self.current >= self.line_count() {
+            if self.line_count() == 0 as u_int {
+                return 0 as ::core::ffi::c_int;
+            }
+            self.current = self.line_count().wrapping_sub(1 as u_int);
+            self.check_selected();
+        }
+        0 as ::core::ffi::c_int
+    }
+
+    pub fn count_tagged(&self) -> u_int {
+        self.lines
+            .iter()
+            .filter(|line| line.item.try_borrow().is_some_and(|row| row.tagged != 0))
+            .count() as u_int
+    }
+
+    pub fn up(&mut self, mut wrap: ::core::ffi::c_int) {
+        if self.line_count() == 0 as u_int {
+            return;
+        }
+        if self.current == 0 as u_int {
+            if wrap != 0 {
+                self.current = self.line_count().wrapping_sub(1 as u_int);
+                if self.line_count() >= self.height {
+                    self.offset = self.line_count().wrapping_sub(self.height);
+                }
+            }
+        } else {
+            self.current = self.current.wrapping_sub(1);
+            if self.current < self.offset {
+                self.offset = self.offset.wrapping_sub(1);
+            }
+        };
+    }
+
+    pub fn down(&mut self, mut wrap: ::core::ffi::c_int) -> ::core::ffi::c_int {
+        if self.line_count() == 0 as u_int {
+            return 0 as ::core::ffi::c_int;
+        }
+        if self.current == self.line_count().wrapping_sub(1 as u_int) {
+            if wrap != 0 {
+                self.current = 0 as u_int;
+                self.offset = 0 as u_int;
+            } else {
+                return 0 as ::core::ffi::c_int;
+            }
+        } else {
+            self.current = self.current.wrapping_add(1);
+            if self.current
+                > self
+                    .offset
+                    .wrapping_add(self.height)
+                    .wrapping_sub(1 as u_int)
+            {
+                self.offset = self.offset.wrapping_add(1);
+            }
+        }
+        1 as ::core::ffi::c_int
+    }
+
+    #[inline]
+    fn line_count(&self) -> u_int {
+        self.lines.len() as u_int
+    }
+
+    fn clear_lines(&mut self) {
+        self.lines = Vec::new();
+    }
+
+    fn check_selected(&mut self) {
+        if self.height == 0 {
+            return;
+        }
+
+        let line_count = self.line_count();
+        if line_count <= self.height {
+            self.offset = 0;
+        } else if self.offset > line_count - self.height {
+            self.offset = line_count - self.height;
+        }
+
+        if self.current < self.offset {
+            self.offset = self.current;
+        } else if self.current > self.offset + self.height - 1 {
+            self.offset = self.current - self.height + 1;
+        }
+    }
+
+    fn get_tag(&self, tag: uint64_t) -> Option<u_int> {
+        self.lines
+            .iter()
+            .position(|line| line.item.borrow().tag == tag)
+            .map(|index| index as u_int)
+    }
+
+    fn sibling(&self, item: &ModeTreeItemRef, forward: bool) -> Option<ModeTreeItemRef> {
+        let parent = item.borrow().parent.clone();
+        let sibling = |list: &mode_tree_list| {
+            if forward {
+                list.next(item)
+            } else {
+                list.previous(item)
+            }
+        };
+        if !parent.is_empty() {
+            sibling(&parent.borrow().children)
+        } else {
+            sibling(&self.children)
+        }
+    }
+
+    fn search_next(&self, item: &ModeTreeItemRef) -> Option<ModeTreeItemRef> {
+        if let Some(child) = item.borrow().children.first() {
+            return Some(child);
+        }
+        let mut current = item.clone();
+        loop {
+            if let Some(next) = self.sibling(&current, true) {
+                return Some(next);
+            }
+            let parent = current.borrow().parent.clone();
+            if parent.is_empty() {
+                return self.children.first();
+            }
+            current = parent;
+        }
+    }
+
+    fn search_previous(&self, item: &ModeTreeItemRef) -> Option<ModeTreeItemRef> {
+        let parent = item.borrow().parent.clone();
+        let mut previous = if let Some(previous) = self.sibling(item, false) {
+            previous
+        } else if !parent.is_empty() {
+            return Some(parent);
+        } else {
+            self.children.last()?
+        };
+        loop {
+            let last = previous.borrow().children.last();
+            let Some(last) = last else {
+                return Some(previous);
+            };
+            previous = last;
+        }
     }
 }
 
-fn mode_tree_check_selected(mtd: &mut mode_tree_data) {
-    if mtd.height == 0 {
-        return;
-    }
-
-    let line_count = mode_tree_line_count(mtd);
-    if line_count <= mtd.height {
-        mtd.offset = 0;
-    } else if mtd.offset > line_count - mtd.height {
-        mtd.offset = line_count - mtd.height;
-    }
-
-    if mtd.current < mtd.offset {
-        mtd.offset = mtd.current;
-    } else if mtd.current > mtd.offset + mtd.height - 1 {
-        mtd.offset = mtd.current - mtd.height + 1;
-    }
-}
 fn mode_tree_alloc_data() -> std::rc::Rc<std::cell::RefCell<mode_tree_data>> {
     Rc::new(RefCell::new(mode_tree_data::default()))
 }
@@ -236,14 +435,6 @@ pub unsafe fn mode_tree_visit_screen(
     }
 }
 
-#[inline]
-fn mode_tree_line_count(mtd: &mode_tree_data) -> u_int {
-    mtd.lines.len() as u_int
-}
-
-fn mode_tree_clear_lines(mtd: &mut mode_tree_data) {
-    mtd.lines = Vec::new();
-}
 unsafe fn mode_tree_build_lines(
     tree_owner: &Rc<RefCell<mode_tree_data>>,
     items: &[ModeTreeItemRef],
@@ -341,46 +532,6 @@ fn mode_tree_clear_tagged(list: &mode_tree_list) {
         mode_tree_clear_tagged(&row.children);
     }
 }
-pub fn mode_tree_up(mtd: &mut mode_tree_data, mut wrap: ::core::ffi::c_int) {
-    if mode_tree_line_count(mtd) == 0 as u_int {
-        return;
-    }
-    if mtd.current == 0 as u_int {
-        if wrap != 0 {
-            mtd.current = mode_tree_line_count(mtd).wrapping_sub(1 as u_int);
-            if mode_tree_line_count(mtd) >= mtd.height {
-                mtd.offset = mode_tree_line_count(mtd).wrapping_sub(mtd.height);
-            }
-        }
-    } else {
-        mtd.current = mtd.current.wrapping_sub(1);
-        if mtd.current < mtd.offset {
-            mtd.offset = mtd.offset.wrapping_sub(1);
-        }
-    };
-}
-pub fn mode_tree_down(
-    mtd: &mut mode_tree_data,
-    mut wrap: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
-    if mode_tree_line_count(mtd) == 0 as u_int {
-        return 0 as ::core::ffi::c_int;
-    }
-    if mtd.current == mode_tree_line_count(mtd).wrapping_sub(1 as u_int) {
-        if wrap != 0 {
-            mtd.current = 0 as u_int;
-            mtd.offset = 0 as u_int;
-        } else {
-            return 0 as ::core::ffi::c_int;
-        }
-    } else {
-        mtd.current = mtd.current.wrapping_add(1);
-        if mtd.current > mtd.offset.wrapping_add(mtd.height).wrapping_sub(1 as u_int) {
-            mtd.offset = mtd.offset.wrapping_add(1);
-        }
-    }
-    1 as ::core::ffi::c_int
-}
 unsafe fn mode_tree_swap(tree_owner: &Rc<RefCell<mode_tree_data>>, direction: i32) {
     let (mut callback, current, other, mut sort, swap_with) = {
         let mut mtd = tree_owner.borrow_mut();
@@ -394,7 +545,7 @@ unsafe fn mode_tree_swap(tree_owner: &Rc<RefCell<mode_tree_data>>, direction: i3
                 return;
             }
             let next = swap_with.wrapping_add(direction as u_int);
-            if direction > 0 && next >= mode_tree_line_count(&*mtd) {
+            if direction > 0 && next >= mtd.line_count() {
                 return;
             }
             swap_with = next;
@@ -443,21 +594,6 @@ unsafe fn mode_tree_swap(tree_owner: &Rc<RefCell<mode_tree_data>>, direction: i3
         mode_tree_build(tree_owner);
     }
 }
-pub fn mode_tree_get_current(mtd: &mode_tree_data) -> ModeTreeItemData {
-    if mtd.lines.is_empty() {
-        return ModeTreeItemData::None;
-    }
-    mtd.lines[mtd.current as usize]
-        .item
-        .try_borrow()
-        .map_or(ModeTreeItemData::None, |row| row.itemdata.clone())
-}
-pub fn mode_tree_get_current_name(mtd: &mode_tree_data) -> CString {
-    mtd.lines[mtd.current as usize]
-        .item
-        .try_borrow()
-        .map_or_else(CString::default, |row| row.name.clone())
-}
 pub unsafe fn mode_tree_expand_current(tree_owner: &Rc<RefCell<mode_tree_data>>) {
     let item = {
         let mtd = tree_owner.borrow();
@@ -468,16 +604,10 @@ pub unsafe fn mode_tree_expand_current(tree_owner: &Rc<RefCell<mode_tree_data>>)
         mode_tree_build(tree_owner);
     }
 }
-fn mode_tree_get_tag(mtd: &mode_tree_data, tag: uint64_t) -> Option<u_int> {
-    mtd.lines
-        .iter()
-        .position(|line| line.item.borrow().tag == tag)
-        .map(|index| index as u_int)
-}
 pub unsafe fn mode_tree_expand(tree_owner: &Rc<RefCell<mode_tree_data>>, tag: uint64_t) {
     let item = {
         let mtd = tree_owner.borrow();
-        let Some(index) = mode_tree_get_tag(&mtd, tag) else {
+        let Some(index) = mtd.get_tag(tag) else {
             return;
         };
         mtd.lines[index as usize].item.clone()
@@ -486,27 +616,6 @@ pub unsafe fn mode_tree_expand(tree_owner: &Rc<RefCell<mode_tree_data>>, tag: ui
         item.borrow_mut().expanded = 1;
         mode_tree_build(tree_owner);
     }
-}
-pub fn mode_tree_set_current(mtd: &mut mode_tree_data, mut tag: uint64_t) -> ::core::ffi::c_int {
-    if let Some(found) = mode_tree_get_tag(mtd, tag) {
-        mtd.current = found;
-        mode_tree_check_selected(mtd);
-        return 1 as ::core::ffi::c_int;
-    }
-    if mtd.current >= mode_tree_line_count(mtd) {
-        if mode_tree_line_count(mtd) == 0 as u_int {
-            return 0 as ::core::ffi::c_int;
-        }
-        mtd.current = mode_tree_line_count(mtd).wrapping_sub(1 as u_int);
-        mode_tree_check_selected(mtd);
-    }
-    0 as ::core::ffi::c_int
-}
-pub fn mode_tree_count_tagged(mtd: &mode_tree_data) -> u_int {
-    mtd.lines
-        .iter()
-        .filter(|line| line.item.try_borrow().is_some_and(|row| row.tagged != 0))
-        .count() as u_int
 }
 pub unsafe fn mode_tree_each_tagged(
     tree_owner: &std::rc::Rc<std::cell::RefCell<mode_tree_data>>,
@@ -620,7 +729,7 @@ unsafe fn mode_tree_set_height(tree_owner: &Rc<RefCell<mode_tree_data>>) {
                 .sy
                 .wrapping_div(3 as u_int)
                 .wrapping_mul(2 as u_int);
-            if mtd.height > mode_tree_line_count(&mtd) {
+            if mtd.height > mtd.line_count() {
                 mtd.height = mtd.screen.grid().sy.wrapping_div(2 as u_int);
             }
             if mtd.height < 10 as u_int {
@@ -628,8 +737,8 @@ unsafe fn mode_tree_set_height(tree_owner: &Rc<RefCell<mode_tree_data>>) {
             }
         } else if mtd.preview == MODE_TREE_PREVIEW_BIG as ::core::ffi::c_int {
             mtd.height = mtd.screen.grid().sy.wrapping_div(4 as u_int);
-            if mtd.height > mode_tree_line_count(&mtd) {
-                mtd.height = mode_tree_line_count(&mtd);
+            if mtd.height > mtd.line_count() {
+                mtd.height = mtd.line_count();
             }
             if mtd.height < 2 as u_int {
                 mtd.height = 2 as u_int;
@@ -700,7 +809,7 @@ pub unsafe fn mode_tree_build(tree_owner: &Rc<RefCell<mode_tree_data>>) {
             return;
         }
         mode_tree_free_items(&mut tree.saved);
-        mode_tree_clear_lines(&mut tree);
+        tree.clear_lines();
         tree.maxdepth = 0;
         tree.children.snapshot()
     };
@@ -726,8 +835,8 @@ pub unsafe fn mode_tree_build(tree_owner: &Rc<RefCell<mode_tree_data>>) {
     }
     let mut tree = tree_owner.borrow_mut();
     if tree.dead == 0 {
-        mode_tree_set_current(&mut tree, tag.unwrap_or(UINT64_MAX as uint64_t));
-        mode_tree_check_selected(&mut tree);
+        tree.set_current(tag.unwrap_or(UINT64_MAX as uint64_t));
+        tree.check_selected();
     }
 }
 
@@ -735,7 +844,7 @@ pub unsafe fn mode_tree_free(owner: std::rc::Rc<std::cell::RefCell<mode_tree_dat
     mode_tree_clear_prompt(&owner);
     let mut mtd = owner.borrow_mut();
     mode_tree_free_items(&mut mtd.children);
-    mode_tree_clear_lines(&mut mtd);
+    mtd.clear_lines();
     drop(std::mem::take(&mut mtd.screen));
     mtd.search = None;
     mtd.filter = None;
@@ -760,49 +869,6 @@ pub unsafe fn mode_tree_resize(
     mode_tree_draw(tree_owner);
     mode_pane_owner.request_redraw(false);
 }
-pub fn mode_tree_add(
-    mtd: &mut mode_tree_data,
-    parent: Option<&ModeTreeItemRef>,
-    itemdata: ModeTreeItemData,
-    tag: uint64_t,
-    name: &CStr,
-    text: Option<&CStr>,
-    expanded: i32,
-) -> ModeTreeItemRef {
-    log_debug(format_args!(
-        "mode_tree_add: {tag}, {} {}",
-        log_bytes(name.to_bytes()),
-        log_bytes(text.unwrap_or(c"").to_bytes())
-    ));
-    let mut row = mode_tree_item {
-        parent: parent.cloned().unwrap_or_default(),
-        itemdata,
-        tag,
-        name: name.to_owned(),
-        text: text.map(CStr::to_owned),
-        ..mode_tree_item::empty()
-    };
-    if let Some(saved) = mode_tree_find_item(&mtd.saved, tag) {
-        let saved = saved.borrow();
-        if parent.is_none_or(|parent| parent.borrow().expanded != 0) {
-            row.tagged = saved.tagged;
-        }
-        row.expanded = saved.expanded;
-    } else {
-        row.expanded = if expanded == -1 { 1 } else { expanded };
-    }
-    let owner = refbox::RefBox::new(row);
-    let observer = ModeTreeItemRef::observe(&owner);
-    if let Some(parent) = parent {
-        parent.borrow_mut().children.items.push(owner);
-    } else {
-        mtd.children.items.push(owner);
-    }
-    observer
-}
-pub fn mode_tree_view_name(mtd: &mut mode_tree_data, name: Option<&'static CStr>) {
-    mtd.view_name = name;
-}
 pub fn mode_tree_draw_as_parent(item: &ModeTreeItemRef) {
     item.borrow_mut().draw_as_parent = 1;
 }
@@ -811,23 +877,6 @@ pub fn mode_tree_no_tag(item: &ModeTreeItemRef) {
 }
 pub fn mode_tree_align(item: &ModeTreeItemRef) {
     item.borrow_mut().align = 1;
-}
-pub fn mode_tree_remove(mtd: &mut mode_tree_data, item: &ModeTreeItemRef) {
-    let parent = item.borrow().parent.clone();
-    if !parent.is_empty() {
-        let mut parent = parent.borrow_mut();
-        let position = parent.children.position(item);
-        parent.children.items.remove(position);
-    } else {
-        let position = mtd.children.position(item);
-        mtd.children.items.remove(position);
-    }
-    mtd.lines.retain(|line| line.item.is_alive());
-    for (index, line) in mtd.lines.iter().enumerate() {
-        line.item.borrow_mut().line = index as u_int;
-    }
-    mtd.current = mtd.current.min(mtd.lines.len().saturating_sub(1) as u_int);
-    mtd.offset = mtd.offset.min(mtd.current);
 }
 fn mode_tree_append_printf_string(bytes: &mut Vec<u8>, value: Option<&CStr>) {
     if let Some(value) = value {
@@ -1476,44 +1525,6 @@ unsafe fn mode_tree_search_forward(
     mode_tree_search(tree_owner, true)
 }
 
-fn mode_tree_search_next(mtd: &mode_tree_data, item: &ModeTreeItemRef) -> Option<ModeTreeItemRef> {
-    if let Some(child) = item.borrow().children.first() {
-        return Some(child);
-    }
-    let mut current = item.clone();
-    loop {
-        if let Some(next) = mode_tree_sibling(mtd, &current, true) {
-            return Some(next);
-        }
-        let parent = current.borrow().parent.clone();
-        if parent.is_empty() {
-            return mtd.children.first();
-        }
-        current = parent;
-    }
-}
-
-fn mode_tree_search_previous(
-    mtd: &mode_tree_data,
-    item: &ModeTreeItemRef,
-) -> Option<ModeTreeItemRef> {
-    let parent = item.borrow().parent.clone();
-    let mut previous = if let Some(previous) = mode_tree_sibling(mtd, item, false) {
-        previous
-    } else if !parent.is_empty() {
-        return Some(parent);
-    } else {
-        mtd.children.last()?
-    };
-    loop {
-        let last = previous.borrow().children.last();
-        let Some(last) = last else {
-            return Some(previous);
-        };
-        previous = last;
-    }
-}
-
 unsafe fn mode_tree_search(
     tree_owner: &Rc<RefCell<mode_tree_data>>,
     forward: bool,
@@ -1529,9 +1540,9 @@ unsafe fn mode_tree_search(
     let mut item = last.clone();
     loop {
         item = if forward {
-            mode_tree_search_next(&tree_owner.borrow(), &item)?
+            tree_owner.borrow().search_next(&item)?
         } else {
-            mode_tree_search_previous(&tree_owner.borrow(), &item)?
+            tree_owner.borrow().search_previous(&item)?
         };
         if item == last {
             return None;
@@ -1597,7 +1608,7 @@ unsafe fn mode_tree_search_set(tree_owner: &Rc<RefCell<mode_tree_data>>) {
         if mtd.dead != 0 {
             return;
         }
-        mode_tree_set_current(&mut mtd, tag);
+        mtd.set_current(tag);
     }
     mode_tree_draw(tree_owner);
     mode_pane_owner.request_redraw(false);
@@ -1706,7 +1717,7 @@ fn mode_tree_menu_callback(
         };
         let callback = {
             let mut mtd = tree.borrow_mut();
-            if mtd.dead != 0 || key == KEYC_NONE || line >= mode_tree_line_count(&mtd) {
+            if mtd.dead != 0 || key == KEYC_NONE || line >= mtd.line_count() {
                 return;
             }
             let Some(client) = client.upgrade() else {
@@ -1746,7 +1757,7 @@ unsafe fn mode_tree_display_menu(
     };
     let items: &[menu_item<'_>];
     let mut line: u_int = 0;
-    if mtd.offset.wrapping_add(y) > mode_tree_line_count(&mtd).wrapping_sub(1 as u_int) {
+    if mtd.offset.wrapping_add(y) > mtd.line_count().wrapping_sub(1 as u_int) {
         line = mtd.current;
     } else {
         line = mtd.offset.wrapping_add(y);
@@ -1951,7 +1962,7 @@ pub unsafe fn mode_tree_key(
     let mut preview: ::core::ffi::c_int = 0;
     let mut result: prompt_key_result = PROMPT_KEY_NOT_HANDLED;
     let mut redraw: ::core::ffi::c_int = 0;
-    if mode_tree_line_count(&tree.borrow()) == 0 as u_int {
+    if tree.borrow().line_count() == 0 as u_int {
         *key = KEYC_NONE as ::core::ffi::c_ulong as key_code;
         return 1 as ::core::ffi::c_int;
     }
@@ -2102,12 +2113,7 @@ pub unsafe fn mode_tree_key(
         }
         let (width, height, offset, line_count) = {
             let mtd = tree.borrow();
-            (
-                mtd.width,
-                mtd.height,
-                mtd.offset,
-                mode_tree_line_count(&mtd),
-            )
+            (mtd.width, mtd.height, mtd.offset, mtd.line_count())
         };
         if x > width || y > height {
             preview = tree.borrow().preview;
@@ -2144,10 +2150,7 @@ pub unsafe fn mode_tree_key(
     }
     let (line, line_count) = {
         let mtd = tree.borrow();
-        (
-            mtd.lines[mtd.current as usize].clone(),
-            mode_tree_line_count(&mtd),
-        )
+        (mtd.lines[mtd.current as usize].clone(), mtd.line_count())
     };
     let current = &line.item;
     choice = -(1 as ::core::ffi::c_int);
@@ -2175,10 +2178,10 @@ pub unsafe fn mode_tree_key(
             mode_tree_display_help(&tree);
         }
         8589934619 | 107 | 38654705664 | 35184372088944 => {
-            mode_tree_up(&mut tree.borrow_mut(), 1 as ::core::ffi::c_int);
+            tree.borrow_mut().up(1 as ::core::ffi::c_int);
         }
         8589934620 | 106 | 34359738368 | 35184372088942 => {
-            mode_tree_down(&mut tree.borrow_mut(), 1 as ::core::ffi::c_int);
+            tree.borrow_mut().down(1 as ::core::ffi::c_int);
         }
         70377334112283 | 75 => {
             mode_tree_swap(&tree, -(1 as ::core::ffi::c_int));
@@ -2192,7 +2195,7 @@ pub unsafe fn mode_tree_key(
                 if tree.borrow().current == 0 as u_int {
                     break;
                 }
-                mode_tree_up(&mut tree.borrow_mut(), 1 as ::core::ffi::c_int);
+                tree.borrow_mut().up(1 as ::core::ffi::c_int);
                 i = i.wrapping_add(1);
             }
         }
@@ -2202,7 +2205,7 @@ pub unsafe fn mode_tree_key(
                 if tree.borrow().current == line_count.wrapping_sub(1 as u_int) {
                     break;
                 }
-                mode_tree_down(&mut tree.borrow_mut(), 1 as ::core::ffi::c_int);
+                tree.borrow_mut().down(1 as ::core::ffi::c_int);
                 i = i.wrapping_add(1);
             }
         }
@@ -2241,7 +2244,7 @@ pub unsafe fn mode_tree_key(
                 }
                 drop(row);
                 if !m.is_null() {
-                    mode_tree_down(&mut tree.borrow_mut(), 0);
+                    tree.borrow_mut().down(0);
                 }
             }
         }
@@ -2284,12 +2287,12 @@ pub unsafe fn mode_tree_key(
                 drop(row);
                 mode_tree_build(&tree);
             } else {
-                mode_tree_up(&mut tree.borrow_mut(), 0);
+                tree.borrow_mut().up(0);
             }
         }
         8589934622 | 108 | 43 => {
             if line.flat != 0 || current.borrow().expanded != 0 {
-                mode_tree_down(&mut tree.borrow_mut(), 0);
+                tree.borrow_mut().down(0);
             } else {
                 current.borrow_mut().expanded = 1;
                 mode_tree_build(&tree);
@@ -2364,7 +2367,7 @@ pub unsafe fn mode_tree_key(
             mode_tree_build(&tree);
             let mut mtd = tree.borrow_mut();
             if mtd.preview != MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int {
-                mode_tree_check_selected(&mut mtd);
+                mtd.check_selected();
             }
         }
         _ => {}
@@ -2405,15 +2408,9 @@ mod mode_tree_tests {
         unsafe {
             let mtd_owner = mode_tree_alloc_data();
             let add = |parent, tag, name: &CStr| {
-                mode_tree_add(
-                    &mut mtd_owner.borrow_mut(),
-                    parent,
-                    ModeTreeItemData::None,
-                    tag,
-                    name,
-                    None,
-                    1,
-                )
+                mtd_owner
+                    .borrow_mut()
+                    .add(parent, ModeTreeItemData::None, tag, name, None, 1)
             };
             let first = add(None, 1, c"match first");
             let branch = add(None, 2, c"branch");
@@ -2436,16 +2433,16 @@ mod mode_tree_tests {
             assert!(mode_tree_search_forward(&mtd_owner).is_none());
             assert!(mode_tree_search_backward(&mtd_owner).is_none());
 
-            mode_tree_remove(&mut mtd_owner.borrow_mut(), &child);
+            mtd_owner.borrow_mut().remove(&child);
             assert!(branch.borrow().children.items.is_empty());
             add(Some(&branch), 100, c"replacement child");
-            mode_tree_remove(&mut mtd_owner.borrow_mut(), &branch);
-            mode_tree_remove(&mut mtd_owner.borrow_mut(), &first);
+            mtd_owner.borrow_mut().remove(&branch);
+            mtd_owner.borrow_mut().remove(&first);
             let last = mtd_owner.borrow_mut().children.last().unwrap();
-            mode_tree_remove(&mut mtd_owner.borrow_mut(), &last);
+            mtd_owner.borrow_mut().remove(&last);
             assert!(mtd_owner.borrow_mut().children.first().unwrap() == tail);
             assert!(mode_tree_find_item(&mtd_owner.borrow_mut().children, 100).is_none());
-            mode_tree_clear_lines(&mut mtd_owner.borrow_mut());
+            mtd_owner.borrow_mut().clear_lines();
             let children = mtd_owner.borrow().children.snapshot();
             mode_tree_build_lines(&mtd_owner, &children, 0);
             assert_eq!(mtd_owner.borrow_mut().lines.len(), 95);
@@ -2461,22 +2458,16 @@ mod mode_tree_tests {
             let mut key = b'x' as key_code;
             let key_ptr = &raw const key;
             mtd_owner.borrow_mut().keycb = Some(Box::new(move |_, _| *key_ptr));
-            let item = mode_tree_add(
-                &mut mtd_owner.borrow_mut(),
-                None,
-                ModeTreeItemData::None,
-                1,
-                c"row",
-                None,
-                1,
-            );
+            let item = mtd_owner
+                .borrow_mut()
+                .add(None, ModeTreeItemData::None, 1, c"row", None, 1);
             for (next, expected) in [
                 (b'x' as key_code, Some(b"x".as_slice())),
                 (KEYC_NONE, None),
                 (b'y' as key_code, Some(b"y".as_slice())),
             ] {
                 key = next;
-                mode_tree_clear_lines(&mut mtd_owner.borrow_mut());
+                mtd_owner.borrow_mut().clear_lines();
                 let children = mtd_owner.borrow().children.snapshot();
                 mode_tree_build_lines(&mtd_owner, &children, 0);
                 match expected {
@@ -2497,7 +2488,7 @@ mod mode_tree_tests {
                 }
             }
             mode_tree_free_items(&mut mtd_owner.borrow_mut().children);
-            mode_tree_clear_lines(&mut mtd_owner.borrow_mut());
+            mtd_owner.borrow_mut().clear_lines();
             drop(mtd_owner);
         }
     }
@@ -2507,18 +2498,9 @@ mod mode_tree_tests {
             return;
         }
         let mut mtd = tree.borrow_mut();
-        let parent = mode_tree_add(
-            &mut mtd,
-            None,
-            ModeTreeItemData::None,
-            1,
-            c"parent",
-            None,
-            1,
-        );
+        let parent = mtd.add(None, ModeTreeItemData::None, 1, c"parent", None, 1);
         for id in 0..64 {
-            mode_tree_add(
-                &mut mtd,
+            mtd.add(
                 Some(&parent),
                 ModeTreeItemData::None,
                 id as u64 + 2,
@@ -2553,7 +2535,7 @@ mod mode_tree_tests {
                 assert_eq!(mtd_owner.borrow().lines[i].depth, 1);
                 assert_eq!(mtd_owner.borrow().lines[i].item.borrow().line, i as u_int);
             }
-            assert_eq!(mode_tree_set_current(&mut mtd_owner.borrow_mut(), 65), 1);
+            assert_eq!(mtd_owner.borrow_mut().set_current(65), 1);
             assert_eq!(mtd_owner.borrow_mut().current, 64);
 
             empty.set(true);
@@ -2601,15 +2583,9 @@ mod mode_tree_tests {
     #[test]
     fn numeric_tags_restore_saved_row_state() {
         let mtd_owner = mode_tree_alloc_data();
-        let prior = mode_tree_add(
-            &mut mtd_owner.borrow_mut(),
-            None,
-            ModeTreeItemData::None,
-            7,
-            c"row",
-            None,
-            1,
-        );
+        let prior = mtd_owner
+            .borrow_mut()
+            .add(None, ModeTreeItemData::None, 7, c"row", None, 1);
         prior.borrow_mut().tagged = 1;
         prior.borrow_mut().expanded = 0;
         {
@@ -2617,24 +2593,13 @@ mod mode_tree_tests {
             mtd.saved = std::mem::take(&mut mtd.children);
         }
 
-        let restored = mode_tree_add(
-            &mut mtd_owner.borrow_mut(),
-            None,
-            ModeTreeItemData::None,
-            7,
-            c"row",
-            None,
-            1,
-        );
-        let different = mode_tree_add(
-            &mut mtd_owner.borrow_mut(),
-            None,
-            ModeTreeItemData::None,
-            8,
-            c"other",
-            None,
-            1,
-        );
+        let restored = mtd_owner
+            .borrow_mut()
+            .add(None, ModeTreeItemData::None, 7, c"row", None, 1);
+        let different =
+            mtd_owner
+                .borrow_mut()
+                .add(None, ModeTreeItemData::None, 8, c"other", None, 1);
         assert_eq!(
             {
                 let row = restored.borrow();
@@ -2749,19 +2714,13 @@ mod row_owner_tests {
         unsafe {
             let tree_owner = mode_tree_alloc_data();
             let observer = Rc::downgrade(&tree_owner);
-            let parent = mode_tree_add(
-                &mut tree_owner.borrow_mut(),
-                None,
-                ModeTreeItemData::None,
-                1,
-                c"parent",
-                None,
-                1,
-            );
+            let parent =
+                tree_owner
+                    .borrow_mut()
+                    .add(None, ModeTreeItemData::None, 1, c"parent", None, 1);
             let name = CString::new(b"child \xff".to_vec()).unwrap();
             let text = CString::new("description").unwrap();
-            let child = mode_tree_add(
-                &mut tree_owner.borrow_mut(),
+            let child = tree_owner.borrow_mut().add(
                 Some(&parent),
                 ModeTreeItemData::None,
                 2,
@@ -2777,7 +2736,7 @@ mod row_owner_tests {
             mode_tree_build_lines(&tree_owner, &children, 0);
             tree_owner.borrow_mut().current = 1;
             let selected = (&tree_owner.borrow_mut().lines)[1].clone();
-            let name = mode_tree_get_current_name(&tree_owner.borrow());
+            let name = tree_owner.borrow().get_current_name();
             let borrowed = selected.item.borrow();
             drop(parent);
             drop(child);
@@ -2799,24 +2758,13 @@ mod row_owner_tests {
     fn key_callback_can_remove_its_row_and_expire_the_traversal_snapshot() {
         unsafe {
             let owner = mode_tree_alloc_data();
-            let first = mode_tree_add(
-                &mut owner.borrow_mut(),
-                None,
-                ModeTreeItemData::None,
-                1,
-                c"first",
-                None,
-                1,
-            );
-            let second = mode_tree_add(
-                &mut owner.borrow_mut(),
-                None,
-                ModeTreeItemData::None,
-                2,
-                c"second",
-                None,
-                1,
-            );
+            let first = owner
+                .borrow_mut()
+                .add(None, ModeTreeItemData::None, 1, c"first", None, 1);
+            let second =
+                owner
+                    .borrow_mut()
+                    .add(None, ModeTreeItemData::None, 2, c"second", None, 1);
             let removed = first.clone();
             let mut once = false;
             let observer = Rc::downgrade(&owner);
@@ -2824,7 +2772,7 @@ mod row_owner_tests {
                 if !once {
                     once = true;
                     let owner = observer.upgrade().expect("live tree");
-                    mode_tree_remove(&mut owner.borrow_mut(), &removed);
+                    owner.borrow_mut().remove(&removed);
                     assert!(!removed.is_alive());
                 }
                 b'x' as key_code
@@ -2842,24 +2790,13 @@ mod row_owner_tests {
     fn search_callback_cannot_return_a_removed_row() {
         unsafe {
             let owner = mode_tree_alloc_data();
-            mode_tree_add(
-                &mut owner.borrow_mut(),
-                None,
-                ModeTreeItemData::None,
-                1,
-                c"first",
-                None,
-                1,
-            );
-            let second = mode_tree_add(
-                &mut owner.borrow_mut(),
-                None,
-                ModeTreeItemData::None,
-                2,
-                c"second",
-                None,
-                1,
-            );
+            owner
+                .borrow_mut()
+                .add(None, ModeTreeItemData::None, 1, c"first", None, 1);
+            let second =
+                owner
+                    .borrow_mut()
+                    .add(None, ModeTreeItemData::None, 2, c"second", None, 1);
             let children = owner.borrow().children.snapshot();
             mode_tree_build_lines(&owner, &children, 0);
             owner.borrow_mut().search = Some(c"query".to_owned());
@@ -2867,7 +2804,7 @@ mod row_owner_tests {
             let observer = Rc::downgrade(&owner);
             owner.borrow_mut().searchcb = Some(Box::new(move |_, query, _| {
                 let owner = observer.upgrade().expect("live tree");
-                mode_tree_remove(&mut owner.borrow_mut(), &removed);
+                owner.borrow_mut().remove(&removed);
                 owner.borrow_mut().search = None;
                 assert_eq!(query, c"query");
                 true
@@ -2882,15 +2819,10 @@ mod row_owner_tests {
         unsafe {
             let tree_owner = mode_tree_alloc_data();
             let observer = Rc::downgrade(&tree_owner);
-            let first = mode_tree_add(
-                &mut tree_owner.borrow_mut(),
-                None,
-                ModeTreeItemData::None,
-                1,
-                c"first",
-                None,
-                1,
-            );
+            let first =
+                tree_owner
+                    .borrow_mut()
+                    .add(None, ModeTreeItemData::None, 1, c"first", None, 1);
             first.borrow_mut().tagged = 1;
             let children = tree_owner.borrow().children.snapshot();
             mode_tree_build_lines(&tree_owner, &children, 0);
@@ -2973,25 +2905,15 @@ mod row_owner_tests {
         for tagged in [false, true] {
             unsafe {
                 let owner = mode_tree_alloc_data();
-                let first = mode_tree_add(
-                    &mut owner.borrow_mut(),
-                    None,
-                    ModeTreeItemData::None,
-                    1,
-                    c"first",
-                    None,
-                    1,
-                );
+                let first =
+                    owner
+                        .borrow_mut()
+                        .add(None, ModeTreeItemData::None, 1, c"first", None, 1);
                 first.borrow_mut().tagged = tagged as i32;
-                let second = mode_tree_add(
-                    &mut owner.borrow_mut(),
-                    None,
-                    ModeTreeItemData::None,
-                    2,
-                    c"second",
-                    None,
-                    1,
-                );
+                let second =
+                    owner
+                        .borrow_mut()
+                        .add(None, ModeTreeItemData::None, 2, c"second", None, 1);
                 second.borrow_mut().tagged = tagged as i32;
                 let first_observer = first.clone();
                 let second_observer = second.clone();
@@ -3006,7 +2928,7 @@ mod row_owner_tests {
                         calls += 1;
                         row.borrow_mut().tagged = 0;
                         let name = row.borrow().name.clone();
-                        mode_tree_clear_lines(&mut owner.borrow_mut());
+                        owner.borrow_mut().clear_lines();
                         mode_tree_free_items(&mut owner.borrow_mut().children);
                         assert!(!first_observer.is_alive());
                         assert!(!second_observer.is_alive());
@@ -3042,36 +2964,24 @@ mod payload_owner_tests {
             let tree_owner = mode_tree_alloc_data();
             let owner = payload(c"original");
             let original = ModeTreeItemData::Buffer(owner.downgrade());
-            let row = mode_tree_add(
-                &mut tree_owner.borrow_mut(),
-                None,
-                original.clone(),
-                1,
-                c"row",
-                None,
-                1,
-            );
-            mode_tree_add(
-                &mut tree_owner.borrow_mut(),
-                Some(&row),
-                original.clone(),
-                2,
-                c"detail",
-                None,
-                1,
-            );
+            let row = tree_owner
+                .borrow_mut()
+                .add(None, original.clone(), 1, c"row", None, 1);
+            tree_owner
+                .borrow_mut()
+                .add(Some(&row), original.clone(), 2, c"detail", None, 1);
             let children = tree_owner.borrow().children.snapshot();
             mode_tree_build_lines(&tree_owner, &children, 0);
-            let selected = mode_tree_get_current(&tree_owner.borrow());
+            let selected = tree_owner.borrow().get_current();
             tree_owner.borrow_mut().current = 1;
-            let detail = mode_tree_get_current(&tree_owner.borrow());
+            let detail = tree_owner.borrow().get_current();
             assert!(selected.same_identity(&detail));
             let snapshot = selected.as_buffer().unwrap();
             assert_eq!(detail.as_buffer().unwrap().name.as_c_str(), c"original");
             drop(owner);
             assert!(selected.as_buffer().is_none());
             assert!(detail.as_buffer().is_none());
-            mode_tree_clear_lines(&mut tree_owner.borrow_mut());
+            tree_owner.borrow_mut().clear_lines();
             mode_tree_free_items(&mut tree_owner.borrow_mut().children);
             let owner = payload(c"replacement");
             let replacement = ModeTreeItemData::Buffer(owner.downgrade());
@@ -3090,15 +3000,9 @@ mod payload_owner_tests {
             let mut owner = Some(payload(c"callback snapshot"));
             let observer = owner.as_ref().unwrap().downgrade();
             let original = ModeTreeItemData::Buffer(observer.clone());
-            let row = mode_tree_add(
-                &mut tree_owner.borrow_mut(),
-                None,
-                original,
-                1,
-                c"row",
-                None,
-                1,
-            );
+            let row = tree_owner
+                .borrow_mut()
+                .add(None, original, 1, c"row", None, 1);
             let callback_row = row.clone();
             tree_owner.borrow_mut().keycb = Some(Box::new(move |item, _| {
                 let snapshot = item.as_buffer().unwrap();
@@ -3112,7 +3016,7 @@ mod payload_owner_tests {
             mode_tree_build_lines(&tree_owner, &children, 0);
             assert_eq!(row.borrow().key, b'x' as key_code);
             assert!(matches!(
-                mode_tree_get_current(&tree_owner.borrow()),
+                tree_owner.borrow().get_current(),
                 ModeTreeItemData::None
             ));
             assert!(!observer.is_alive());
