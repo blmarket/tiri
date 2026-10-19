@@ -2,10 +2,10 @@ use crate::format::bytes::cstr_suffix;
 use crate::format::bytes::format_bytes;
 use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
+use crate::mode_tree::ModeTreeItemSnapshot;
 use crate::options::OptionsScope;
 use crate::session::Session;
 use crate::shared::client::ClientRef;
-use crate::shared::mode_tree::ModeTreeItemSnapshot;
 use crate::shared::session::{SessionRef, SessionWeak};
 use crate::window::Window as _;
 use crate::window_pane::WindowPane as _;
@@ -42,6 +42,10 @@ use crate::mode_tree::{
     mode_tree_get_current_name, mode_tree_key, mode_tree_no_tag, mode_tree_remove,
     mode_tree_resize, mode_tree_set_prompt, mode_tree_start, mode_tree_up,
 };
+use crate::mode_tree::{
+    mode_tree_data, mode_tree_help_info, mode_tree_prompt_input_cb, ModeTreeItemData,
+    ModeTreeItemRef,
+};
 use crate::options::*;
 use crate::options::{
     options_create, options_default, options_default_to_cstring, options_get_fire_count,
@@ -72,10 +76,6 @@ use crate::shared::key::{key_binding, key_table};
 use crate::shared::layout::*;
 use crate::shared::limits::INT_MAX;
 use crate::shared::menu::menu_item;
-use crate::shared::mode_tree::{
-    mode_tree_data, mode_tree_help_info, mode_tree_prompt_input_cb, ModeTreeItemData,
-    ModeTreeItemRef,
-};
 use crate::shared::mouse::mouse_event;
 use crate::shared::pane::window_pane;
 use crate::shared::prompt::*;

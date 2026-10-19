@@ -1,14 +1,14 @@
 //! Authoritative mode_tree model declarations.
 
-use super::abi::{size_t, u_int, uint64_t};
-use super::key::key_code;
-use super::menu::menu_item;
-use super::pane::window_pane;
-use super::prompt::{prompt_free_cb, prompt_key_result, prompt_result};
-use super::screen::screen;
-use super::screen_write::screen_write_ctx;
-use super::sort::sort_criteria;
+use crate::shared::abi::{size_t, u_int, uint64_t};
 use crate::shared::client::{ClientRef, ClientWeak};
+use crate::shared::key::key_code;
+use crate::shared::menu::menu_item;
+use crate::shared::pane::window_pane;
+use crate::shared::prompt::{prompt_free_cb, prompt_key_result, prompt_result};
+use crate::shared::screen::screen;
+use crate::shared::screen_write::screen_write_ctx;
+use crate::shared::sort::sort_criteria;
 use crate::window_buffer::window_buffer_itemdata;
 use crate::window_client::window_client_itemdata;
 use crate::window_customize::window_customize_itemdata;
@@ -49,7 +49,7 @@ pub struct mode_tree_data {
     pub current: u_int,
     pub screen: screen,
     pub prompt: Option<refbox::RefBox<crate::shared::prompt::prompt>>,
-    pub prompt_data: refbox::Weak<crate::shared::mode_tree::mode_tree_prompt>,
+    pub prompt_data: refbox::Weak<super::types::mode_tree_prompt>,
     pub prompt_cx: u_int,
     pub prompt_top: ::core::ffi::c_int,
     pub preview: ::core::ffi::c_int,

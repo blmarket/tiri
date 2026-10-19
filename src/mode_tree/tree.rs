@@ -1,3 +1,9 @@
+use super::types::{
+    mode_tree_build_cb, mode_tree_data, mode_tree_draw_cb, mode_tree_height_cb, mode_tree_help_cb,
+    mode_tree_item, mode_tree_key_cb, mode_tree_line, mode_tree_list, mode_tree_menu_cb,
+    mode_tree_prompt, mode_tree_prompt_input_cb, mode_tree_search_cb, mode_tree_search_dir,
+    mode_tree_sort_cb, mode_tree_swap_cb, ModeTreeItemData, ModeTreeItemRef,
+};
 use crate::arguments::{args, args_get, args_has};
 use crate::cmd::parse::{cmd_parse_and_append, cmd_parse_error_uppercase_first};
 use crate::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_get_client, cmdq_new_state};
@@ -35,12 +41,6 @@ use crate::shared::grid::*;
 use crate::shared::key::*;
 use crate::shared::layout::*;
 use crate::shared::menu::{menu_choice_cb, menu_item, MenuSelection};
-use crate::shared::mode_tree::{
-    mode_tree_build_cb, mode_tree_data, mode_tree_draw_cb, mode_tree_height_cb, mode_tree_help_cb,
-    mode_tree_item, mode_tree_key_cb, mode_tree_line, mode_tree_list, mode_tree_menu_cb,
-    mode_tree_prompt, mode_tree_prompt_input_cb, mode_tree_search_cb, mode_tree_search_dir,
-    mode_tree_sort_cb, mode_tree_swap_cb, ModeTreeItemData, ModeTreeItemRef,
-};
 use crate::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
 use crate::shared::pane::window_pane;
 use crate::shared::prompt::*;
@@ -1354,9 +1354,7 @@ fn mode_tree_prompt_input_callback(
     }
     result
 }
-unsafe fn mode_tree_prompt_free_callback(
-    data: &refbox::RefBox<crate::shared::mode_tree::mode_tree_prompt>,
-) {
+unsafe fn mode_tree_prompt_free_callback(data: &refbox::RefBox<mode_tree_prompt>) {
     let (mtd, callback, inputcb) = {
         let mut state = data.try_borrow_mut().expect("prompt cleanup record");
         (state.mtd.take(), state.freecb.take(), state.inputcb.take())
@@ -2557,9 +2555,7 @@ mod mode_prompt_data_tests {
     use crate::shared::rc;
     use std::cell::{Cell, UnsafeCell};
 
-    fn data(
-        tree: &Rc<UnsafeCell<mode_tree_data>>,
-    ) -> refbox::RefBox<crate::shared::mode_tree::mode_tree_prompt> {
+    fn data(tree: &Rc<UnsafeCell<mode_tree_data>>) -> refbox::RefBox<mode_tree_prompt> {
         refbox::RefBox::new(mode_tree_prompt {
             mtd: Some(tree.clone()),
             c: Weak::new(),

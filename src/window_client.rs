@@ -7,11 +7,13 @@ use crate::format::{
 use crate::format_draw::format_draw;
 use crate::grid::grid_default_cell;
 use crate::key_string::key_string_parse_cstr;
+use crate::mode_tree::ModeTreeItemSnapshot;
 use crate::mode_tree::{
     mode_tree_add, mode_tree_build, mode_tree_down, mode_tree_draw, mode_tree_each_tagged,
     mode_tree_free, mode_tree_get_current, mode_tree_key, mode_tree_resize, mode_tree_run_command,
     mode_tree_start, mode_tree_view_name,
 };
+use crate::mode_tree::{mode_tree_data, mode_tree_help_info, ModeTreeItemData};
 use crate::options::OptionsScope;
 use crate::screen_write::{
     screen_write_cursormove, screen_write_fast_copy, screen_write_hline, screen_write_preview,
@@ -29,8 +31,6 @@ use crate::shared::grid::*;
 use crate::shared::key::*;
 use crate::shared::layout::*;
 use crate::shared::menu::menu_item;
-use crate::shared::mode_tree::ModeTreeItemSnapshot;
-use crate::shared::mode_tree::{mode_tree_data, mode_tree_help_info, ModeTreeItemData};
 use crate::shared::mouse::mouse_event;
 use crate::shared::pane::window_pane;
 use crate::shared::screen::screen;

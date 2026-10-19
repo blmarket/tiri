@@ -28,7 +28,6 @@ pub mod key;
 pub mod layout;
 pub mod limits;
 pub mod menu;
-pub mod mode_tree;
 pub mod mouse;
 pub mod pane;
 pub mod paste;

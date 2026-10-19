@@ -14,6 +14,7 @@ use crate::mode_tree::{
     mode_tree_run_command, mode_tree_set_current, mode_tree_set_prompt, mode_tree_start,
     mode_tree_view_name,
 };
+use crate::mode_tree::{mode_tree_data, mode_tree_help_info, ModeTreeItemData, ModeTreeItemRef};
 use crate::options::options_get_string;
 use crate::options::OptionsScope;
 use crate::resize::recalculate_sizes;
@@ -39,9 +40,6 @@ use crate::shared::grid::*;
 use crate::shared::key::*;
 use crate::shared::layout::*;
 use crate::shared::menu::menu_item;
-use crate::shared::mode_tree::{
-    mode_tree_data, mode_tree_help_info, ModeTreeItemData, ModeTreeItemRef,
-};
 use crate::shared::mouse::mouse_event;
 use crate::shared::pane::window_pane;
 use crate::shared::prompt::*;
@@ -2081,11 +2079,11 @@ fn window_tree_prompt_callbacks(
     mode: Rc<UnsafeCell<window_tree_modedata>>,
     callback: window_tree_prompt_fn,
 ) -> (
-    crate::shared::mode_tree::mode_tree_prompt_input_cb,
+    crate::mode_tree::mode_tree_prompt_input_cb,
     crate::shared::prompt::prompt_free_cb,
 ) {
     let observer = Rc::downgrade(&mode);
-    let input: crate::shared::mode_tree::mode_tree_prompt_input_cb =
+    let input: crate::mode_tree::mode_tree_prompt_input_cb =
         Some(Box::new(move |client, text, key| unsafe {
             let Some(owner) = window_tree_live_mode(&observer) else {
                 return PROMPT_CLOSE;

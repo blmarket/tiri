@@ -5,11 +5,13 @@ use crate::format::{
 };
 use crate::grid::grid_default_cell;
 use crate::key_string::key_string_parse_cstr;
+use crate::mode_tree::ModeTreeItemSnapshot;
 use crate::mode_tree::{
     mode_tree_add, mode_tree_build, mode_tree_down, mode_tree_draw, mode_tree_each_tagged,
     mode_tree_free, mode_tree_get_current, mode_tree_key, mode_tree_resize, mode_tree_run_command,
     mode_tree_start, mode_tree_up,
 };
+use crate::mode_tree::{mode_tree_data, mode_tree_help_info, ModeTreeItemData};
 use crate::paste::{
     paste_buffer_data, paste_buffer_name, paste_buffer_order, paste_free, paste_get_name,
     paste_is_empty, paste_replace_owned,
@@ -23,8 +25,6 @@ use crate::shared::format::format_tree;
 use crate::shared::format::FORMAT_NONE;
 use crate::shared::key::*;
 use crate::shared::menu::menu_item;
-use crate::shared::mode_tree::ModeTreeItemSnapshot;
-use crate::shared::mode_tree::{mode_tree_data, mode_tree_help_info, ModeTreeItemData};
 use crate::shared::mouse::mouse_event;
 use crate::shared::pane::window_pane;
 use crate::shared::paste::PasteBufferRef;
