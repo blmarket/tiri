@@ -164,13 +164,13 @@ pub trait Client {
         fd: Option<OwnedFd>,
         data: &[u8],
     ) -> i32;
-    unsafe fn register_file(&self, file: &Rc<UnsafeCell<crate::file::client_file>>);
+    unsafe fn register_file(&self, file: &Rc<std::cell::RefCell<crate::file::client_file>>);
     unsafe fn unregister_file(&self, stream: i32, identity: *const crate::file::client_file);
     /// Stream-ordered observations; each yield resolves the current holder.
     unsafe fn file_handles(
         &self,
-    ) -> impl std::iter::FusedIterator<Item = Weak<UnsafeCell<crate::file::client_file>>> + 'static;
-    unsafe fn find_file(&self, stream: i32) -> Weak<UnsafeCell<crate::file::client_file>>;
+    ) -> impl std::iter::FusedIterator<Item = Weak<std::cell::RefCell<crate::file::client_file>>> + 'static;
+    unsafe fn find_file(&self, stream: i32) -> Weak<std::cell::RefCell<crate::file::client_file>>;
     /// Observe a request owned by input_ctx. Its owner must explicitly retire
     /// this observation before freeing the request.
     unsafe fn observe_input_request(&self, request: &mut crate::shared::input::input_request);
@@ -775,7 +775,7 @@ impl Client for ClientRef {
         let peer = (*self.get()).peer;
         proc_send(peer, kind, fd, data)
     }
-    unsafe fn register_file(&self, file: &Rc<UnsafeCell<crate::file::client_file>>) {
+    unsafe fn register_file(&self, file: &Rc<std::cell::RefCell<crate::file::client_file>>) {
         crate::file::client_files_insert(&mut (*self.get()).files, file.clone());
     }
     unsafe fn unregister_file(&self, stream: i32, identity: *const crate::file::client_file) {
@@ -785,11 +785,11 @@ impl Client for ClientRef {
     }
     unsafe fn file_handles(
         &self,
-    ) -> impl std::iter::FusedIterator<Item = Weak<UnsafeCell<crate::file::client_file>>> + 'static
+    ) -> impl std::iter::FusedIterator<Item = Weak<std::cell::RefCell<crate::file::client_file>>> + 'static
     {
         crate::file::client_files_iter(&(*self.get()).files)
     }
-    unsafe fn find_file(&self, stream: i32) -> Weak<UnsafeCell<crate::file::client_file>> {
+    unsafe fn find_file(&self, stream: i32) -> Weak<std::cell::RefCell<crate::file::client_file>> {
         (*self.get())
             .files
             .get(&stream)

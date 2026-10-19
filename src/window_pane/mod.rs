@@ -120,7 +120,7 @@ use libc::{REG_EXTENDED, REG_ICASE, SIGHUP};
 struct window_pane_input_data {
     client: Option<ClientRef>,
     wp: u_int,
-    file: Weak<UnsafeCell<client_file>>,
+    file: Weak<std::cell::RefCell<client_file>>,
 }
 
 impl window_pane_input_data {
@@ -1433,7 +1433,7 @@ unsafe fn window_pane_input_callback(cdata: &window_pane_input_data, buffer: &mu
         if wp.is_null() {
             client.request_exit(1);
         }
-        file_cancel(&mut *cancelled.get());
+        file_cancel(&mut cancelled.borrow_mut());
     } else {
         let bytes: &[u8] = if buf.is_null() {
             &[]
@@ -1450,7 +1450,7 @@ unsafe fn window_pane_input_callback(cdata: &window_pane_input_data, buffer: &mu
 /// never resumes (tmux's window_pane_input_callback).
 async fn window_pane_input_complete(
     wait: impl std::future::Future<Output = Option<FileOutcome>>,
-    file: Weak<UnsafeCell<client_file>>,
+    file: Weak<std::cell::RefCell<client_file>>,
     client: crate::shared::client::ClientWeak,
     wp: u_int,
 ) {
@@ -1465,7 +1465,7 @@ async fn window_pane_input_complete(
             client.request_exit(1);
         }
         if let Some(file) = file.upgrade() {
-            file_cancel(&mut *file.get());
+            file_cancel(&mut file.borrow_mut());
         }
     }
     std::future::pending().await

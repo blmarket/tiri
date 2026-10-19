@@ -20,8 +20,8 @@ pub(super) struct ReadState {
 
 /// Read-side polling on the owning local runtime. Exactly one consumer may poll
 /// a file: either the existing callback adapter or a direct stream consumer.
-/// Callers using Rc<UnsafeCell<_>> must obtain exclusive access for each poll and
-/// release it before invoking listeners. Chunks own their bytes across polls.
+/// Callers using Rc<RefCell<_>> must borrow mutably for each poll and release
+/// the borrow before invoking listeners. Chunks own their bytes across polls.
 impl Stream for client_file {
     type Item = io::Result<Vec<u8>>;
 

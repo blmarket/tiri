@@ -108,9 +108,12 @@ fn a_dead_file_client_leaves_its_command_blocked() {
                 Some(Box::new(move |_| {
                     let file = client_file::new();
                     let (waiter, done) = tiri_rt::oneshot::channel();
-                    (*file.get()).c = Some(file_client);
-                    (*file.get()).wait = Some(waiter);
-                    (*file.get()).completed = true;
+                    {
+                        let mut cf = file.borrow_mut();
+                        cf.c = Some(file_client);
+                        cf.wait = Some(waiter);
+                        cf.completed = true;
+                    }
                     let wait = file_wait(file, done);
                     CmdOutcome::Suspend(Box::pin(async move {
                         if wait.await.is_none() {

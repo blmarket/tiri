@@ -5,7 +5,7 @@ use tiri_buffer::SegmentedBuf;
 /// The stream index owns active file records until completion unlinks them.
 /// Its holder is either the server's ClientRef or the process client singleton.
 pub type client_files =
-    std::collections::BTreeMap<i32, std::rc::Rc<std::cell::UnsafeCell<client_file>>>;
+    std::collections::BTreeMap<i32, std::rc::Rc<std::cell::RefCell<client_file>>>;
 
 #[derive(Clone, Copy, Default)]
 pub(super) enum FileRegistration {
@@ -44,8 +44,8 @@ pub struct client_file_event<'a> {
 }
 
 impl client_file {
-    pub(super) fn new() -> std::rc::Rc<std::cell::UnsafeCell<Self>> {
-        std::rc::Rc::new(std::cell::UnsafeCell::new(Self::empty()))
+    pub(super) fn new() -> std::rc::Rc<std::cell::RefCell<Self>> {
+        std::rc::Rc::new(std::cell::RefCell::new(Self::empty()))
     }
 
     pub(super) fn empty() -> Self {

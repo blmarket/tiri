@@ -70,12 +70,12 @@ static mut client_files: client_files = client_files::new();
 
 pub(crate) unsafe fn client_find_file(
     stream: i32,
-) -> Option<std::rc::Rc<std::cell::UnsafeCell<crate::file::client_file>>> {
+) -> Option<std::rc::Rc<std::cell::RefCell<crate::file::client_file>>> {
     crate::file::client_files_find_stream(&client_files, stream)
 }
 
 pub(crate) unsafe fn client_register_file(
-    file: &std::rc::Rc<std::cell::UnsafeCell<crate::file::client_file>>,
+    file: &std::rc::Rc<std::cell::RefCell<crate::file::client_file>>,
 ) {
     crate::file::client_files_insert(&mut client_files, file.clone());
 }
