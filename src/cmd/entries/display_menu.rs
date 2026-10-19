@@ -401,7 +401,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
         b"W" => c"#{popup_window_status_line_x}",
         _ => xp,
     };
-    let p = format_expand_cstring(ft, xp.as_ptr());
+    let p = format_expand_cstring(ft, xp);
     n = strtol(
         p.as_ptr(),
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
@@ -438,7 +438,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
         b"W" => c"#{popup_window_status_line_y}",
         _ => yp,
     };
-    let p = format_expand_cstring(ft, yp.as_ptr());
+    let p = format_expand_cstring(ft, yp);
     n = strtol(
         p.as_ptr(),
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
@@ -679,7 +679,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
         b"W" => c"#{popup_window_status_line_x}",
         _ => xp,
     };
-    let p = format_expand_cstring(ft, xp.as_ptr());
+    let p = format_expand_cstring(ft, xp);
     n = strtol(
         p.as_ptr(),
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
@@ -710,7 +710,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
         b"W" => c"#{popup_window_status_line_y}",
         _ => yp,
     };
-    let p = format_expand_cstring(ft, yp.as_ptr());
+    let p = format_expand_cstring(ft, yp);
     n = strtol(
         p.as_ptr(),
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
@@ -775,7 +775,7 @@ unsafe fn cmd_display_menu_exec(
     let title = if args_has(args, b'T') != 0 {
         Some(format_single_from_target_cstring(
             item_handle,
-            args_get(args, b'T').map_or(std::ptr::null(), |value| value.as_ptr()),
+            args_get(args, b'T').unwrap_or(c""),
         ))
     } else {
         None
@@ -1008,10 +1008,8 @@ unsafe fn cmd_display_popup_exec(
                         } else {
                             value = args_get(args, 'd' as i32 as u_char);
                             if let Some(value) = value {
-                                formatted_cwd = Some(format_single_from_target_cstring(
-                                    item_handle,
-                                    value.as_ptr(),
-                                ));
+                                formatted_cwd =
+                                    Some(format_single_from_target_cstring(item_handle, value));
                                 cwd = formatted_cwd.as_deref();
                             } else {
                                 default_cwd = ClientRef::working_directory(tc.as_ref(), s.as_ref());
@@ -1094,8 +1092,7 @@ unsafe fn cmd_display_popup_exec(
                 if args_has(args, 'T' as i32 as u_char) != 0 {
                     formatted_title = Some(format_single_from_target_cstring(
                         item_handle,
-                        args_get(args, 'T' as i32 as u_char)
-                            .map_or(std::ptr::null(), |value| value.as_ptr()),
+                        args_get(args, 'T' as i32 as u_char).unwrap_or(c""),
                     ));
                     title = formatted_title.as_deref().expect("formatted title was set");
                 } else {

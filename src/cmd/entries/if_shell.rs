@@ -79,7 +79,7 @@ unsafe fn cmd_if_shell_exec(
         (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
     let shellcmd = format_single_from_target_cstring(
         item_handle,
-        args_string(args, 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
+        args_string(args, 0 as u_int).unwrap_or(c""),
     );
     if args_has(args, 'F' as i32 as u_char) != 0 {
         let cmdlist = if *shellcmd.as_ptr() as ::core::ffi::c_int != '0' as i32

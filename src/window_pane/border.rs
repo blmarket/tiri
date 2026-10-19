@@ -110,7 +110,7 @@ pub(super) unsafe fn make_status(
         Some(pane),
     );
     let value = options_get_string(&pane.borrow_options_mut(), c"pane-border-format");
-    let expanded = format_expand_time_cstring(&mut *context, value.as_ptr());
+    let expanded = format_expand_time_cstring(&mut *context, &value);
     let mut cell = pane.border_style(client);
     let lines = pane.pane_lines();
     let window = pane
@@ -138,7 +138,7 @@ pub(super) unsafe fn make_status(
     cell.attr = (cell.attr as i32 & !GRID_ATTR_CHARSET) as u_short;
     screen_write_cursormove(&mut write, 0, 0, 0);
     style_ranges_clear(&mut ranges);
-    format_draw(&mut write, &cell, width, expanded.as_ptr(), &mut ranges, 0);
+    format_draw(&mut write, &cell, width, &expanded, Some(&mut ranges), 0);
     screen_write_stop(write);
     drop(context);
     let changed = grid_compare(next.grid(), old.grid()) != 0;

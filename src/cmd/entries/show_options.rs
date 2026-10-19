@@ -143,10 +143,8 @@ unsafe fn cmd_show_options_exec(
         return cmd_show_options_all(self_0, item_handle, scope, &selected);
     }
 
-    let argument = format_single_from_target_cstring(
-        item_handle,
-        args_string(args, 0).map_or(std::ptr::null(), |value| value.as_ptr()),
-    );
+    let argument =
+        format_single_from_target_cstring(item_handle, args_string(args, 0).unwrap_or(c""));
     let parsed = match options_match_owned(&argument) {
         Ok(parsed) => parsed,
         Err(failure) => {
@@ -342,7 +340,7 @@ unsafe fn cmd_show_options_print(
         return;
     }
     let template = template.as_deref().unwrap_or(SHOW_OPTIONS_TEMPLATE);
-    let line = format_expand_cstring(ft, template.as_ptr());
+    let line = format_expand_cstring(ft, template);
     drop(ft_owner);
     cmdq_print(item_handle, |out| write_cstr(out, &*line));
 }
@@ -414,7 +412,7 @@ unsafe fn cmd_show_hooks_print_monitor(
         true
     });
     if print == Some(true) {
-        let line = format_expand_cstring(ft, template.as_ptr());
+        let line = format_expand_cstring(ft, &template);
         drop(ft_owner);
         cmdq_print(item_handle, |out| write_cstr(out, &*line));
     } else {

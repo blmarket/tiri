@@ -1,4 +1,3 @@
-use crate::format::bytes::cstr_copy_into;
 use crate::format::format_skip;
 use crate::grid::grid_default_cell;
 use crate::hyperlinks::hyperlinks_put;
@@ -16,7 +15,6 @@ use crate::shared::style::*;
 use crate::shared::utf8::*;
 use crate::style::{style_copy, style_link, style_parse, style_set, style_tostring};
 use crate::text::utf8::{utf8_append, utf8_open, utf8_set};
-use libc::{strcmp, strlen};
 use std::ffi::{CStr, CString};
 
 pub const TOTAL: C2RustUnnamed_39 = 8;
@@ -28,7 +26,7 @@ pub struct format_range {
     pub end: u_int,
     pub type_0: style_range_type,
     pub argument: u_int,
-    pub string: [::core::ffi::c_char; 16],
+    pub string: [u8; 16],
 }
 type format_ranges = Vec<format_range>;
 
@@ -51,8 +49,8 @@ unsafe fn format_is_type(fr: &format_range, sy: &style) -> ::core::ffi::c_int {
             return (fr.argument == sy.range_argument) as ::core::ffi::c_int;
         }
         6 => {
-            return (strcmp(fr.string.as_ptr(), sy.range_string.as_ptr()) == 0 as ::core::ffi::c_int)
-                as ::core::ffi::c_int;
+            let name = |s| CStr::from_bytes_until_nul(s).expect("range string is terminated");
+            return (name(&fr.string) == name(&sy.range_string)) as ::core::ffi::c_int;
         }
         _ => {}
     }
@@ -836,38 +834,23 @@ unsafe fn format_draw_absolute_centre(
         width_after,
     );
 }
-unsafe fn format_leading_hashes(
-    mut cp: *const ::core::ffi::c_char,
-    n: &mut u_int,
-    width: &mut u_int,
-) -> *const ::core::ffi::c_char {
-    *n = 0 as u_int;
-    while *cp.offset(*n as isize) as ::core::ffi::c_int == '#' as i32 {
-        *n = (*n).wrapping_add(1);
+/// Measure the run of `#` at the start of `s`: the bytes it consumes (an odd
+/// run before `[` leaves the `#[` that opens a style), its length and its
+/// drawn width.
+fn format_leading_hashes(s: &[u8]) -> (usize, u_int, u_int) {
+    let n = s.iter().take_while(|&&byte| byte == b'#').count();
+    if n == 0 {
+        return (0, 0, 0);
     }
-    if *n == 0 as u_int {
-        *width = 0 as u_int;
-        return cp;
+    let count = n as u_int;
+    if s.get(n) != Some(&b'[') {
+        return (n, count, count.div_ceil(2));
     }
-    if *cp.offset(*n as isize) as ::core::ffi::c_int != '[' as i32 {
-        if (*n).wrapping_rem(2 as u_int) == 0 as u_int {
-            *width = (*n).wrapping_div(2 as u_int);
-        } else {
-            *width = (*n).wrapping_div(2 as u_int).wrapping_add(1 as u_int);
-        }
-        return cp.offset(*n as isize);
-    }
-    *width = (*n).wrapping_div(2 as u_int);
-    if (*n).wrapping_rem(2 as u_int) == 0 as u_int {
-        return cp.offset(*n as isize);
-    }
-    cp.offset(*n as isize)
-        .offset(-(1 as ::core::ffi::c_int as isize))
+    (if n % 2 == 0 { n } else { n - 1 }, count, count / 2)
 }
 unsafe fn format_draw_many(mut ctx: &mut screen_write_ctx, sy: &mut style, mut n: u_int) {
-    let mut ch: ::core::ffi::c_char = '#' as i32 as ::core::ffi::c_char;
     let mut i: u_int = 0;
-    utf8_set(&mut sy.gc.data, ch as u_char);
+    utf8_set(&mut sy.gc.data, b'#');
     i = 0 as u_int;
     while i < n {
         screen_write_cell(ctx, &sy.gc);
@@ -878,8 +861,8 @@ pub unsafe fn format_draw(
     mut octx: &mut screen_write_ctx,
     base: &grid_cell,
     mut available: u_int,
-    mut expanded: *const ::core::ffi::c_char,
-    mut srs: *mut style_ranges,
+    expanded: &CStr,
+    mut srs: Option<&mut style_ranges>,
     mut default_colours: ::core::ffi::c_int,
 ) {
     let mut current_block: u64;
@@ -895,7 +878,8 @@ pub unsafe fn format_draw(
         c"LIST_RIGHT",
         c"AFTER",
     ];
-    let mut size: size_t = strlen(expanded);
+    let bytes = expanded.to_bytes();
+    let mut size: size_t = bytes.len();
     let mut s: [screen; 8] = std::array::from_fn(|_| screen::empty());
     let hl = octx.screen.hyperlinks.clone();
     let mut ocx: u_int = octx.screen.cx;
@@ -1017,8 +1001,6 @@ pub unsafe fn format_draw(
         link: 0,
     };
     let mut ud: *mut utf8_data = &raw mut sy.gc.data;
-    let mut cp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut more: utf8_state = UTF8_MORE;
     let mut fr: Option<format_range> = None;
     let mut frs: format_ranges = Vec::new();
@@ -1028,7 +1010,7 @@ pub unsafe fn format_draw(
     log_debug(format_args!(
         "{}: {}",
         "format_draw",
-        log_cstr(CStr::from_ptr(expanded))
+        crate::log::log_bytes(bytes)
     ));
     for part in &mut s {
         screen_init(part, size as u_int, 1 as u_int, 0 as u_int);
@@ -1039,23 +1021,21 @@ pub unsafe fn format_draw(
         for part_ctx in &mut ctx {
             screen_write_clearendofline(part_ctx, current_default.bg as u_int);
         }
-        cp = expanded;
+        let at = |i: usize| bytes.get(i).copied().unwrap_or(0);
+        let mut cp = 0;
         loop {
-            if !(*cp as ::core::ffi::c_int != '\0' as i32) {
+            if cp >= bytes.len() {
                 current_block = 1830138855519935310;
                 break;
             }
-            if *cp.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '#' as i32
-                && *cp.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int != '[' as i32
-                && *cp.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int != '\0' as i32
-            {
+            if at(cp) == b'#' && at(cp + 1) != b'[' && at(cp + 1) != 0 {
                 n = 1 as u_int;
-                while *cp.offset(n as isize) as ::core::ffi::c_int == '#' as i32 {
+                while at(cp + n as usize) == b'#' {
                     n = n.wrapping_add(1);
                 }
                 even = (n.wrapping_rem(2 as u_int) == 0 as u_int) as ::core::ffi::c_int;
-                if *cp.offset(n as isize) as ::core::ffi::c_int != '[' as i32 {
-                    cp = cp.offset(n as isize);
+                if at(cp + n as usize) != b'[' {
+                    cp += n as usize;
                     if even != 0 {
                         n = n.wrapping_div(2 as u_int);
                     } else {
@@ -1065,9 +1045,9 @@ pub unsafe fn format_draw(
                     format_draw_many(&mut ctx[current as usize], &mut sy, n);
                 } else {
                     if even != 0 {
-                        cp = cp.offset(n.wrapping_add(1 as u_int) as isize);
+                        cp += n as usize + 1;
                     } else {
-                        cp = cp.offset(n.wrapping_sub(1 as u_int) as isize);
+                        cp += n as usize - 1;
                     }
                     if sy.ignore != 0 {
                         continue;
@@ -1085,66 +1065,57 @@ pub unsafe fn format_draw(
                         width[current as usize] = width[current as usize].wrapping_add(1);
                     }
                 }
-            } else if *cp.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
-                != '#' as i32
-                || *cp.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int != '[' as i32
-                || sy.ignore != 0
-            {
-                more = utf8_open(&mut *ud, *cp as u_char);
+            } else if at(cp) != b'#' || at(cp + 1) != b'[' || sy.ignore != 0 {
+                more = utf8_open(&mut *ud, bytes[cp]);
                 if more as ::core::ffi::c_uint
                     == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint
                 {
                     loop {
-                        cp = cp.offset(1);
-                        if !(*cp as ::core::ffi::c_int != '\0' as i32
+                        cp += 1;
+                        if !(cp < bytes.len()
                             && more as ::core::ffi::c_uint
                                 == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint)
                         {
                             break;
                         }
-                        more = utf8_append(&mut *ud, *cp as u_char);
+                        more = utf8_append(&mut *ud, bytes[cp]);
                     }
                     if more as ::core::ffi::c_uint
                         != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
                     {
-                        cp = cp.offset(-((*ud).have as ::core::ffi::c_int as isize));
+                        cp -= (*ud).have as usize;
                     }
                 }
                 if more as ::core::ffi::c_uint
                     != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
                 {
-                    if (*cp as ::core::ffi::c_int) < 0x20 as ::core::ffi::c_int
-                        || *cp as ::core::ffi::c_int > 0x7e as ::core::ffi::c_int
-                    {
-                        cp = cp.offset(1);
+                    if bytes[cp] < 0x20 || bytes[cp] > 0x7e {
+                        cp += 1;
                         continue;
                     } else {
-                        utf8_set(&mut *ud, *cp as u_char);
-                        cp = cp.offset(1);
+                        utf8_set(&mut *ud, bytes[cp]);
+                        cp += 1;
                     }
                 }
                 screen_write_cell(&mut ctx[current as usize], &sy.gc);
                 width[current as usize] =
                     width[current as usize].wrapping_add((*ud).width as u_int);
             } else {
-                end = format_skip(cp.offset(2 as ::core::ffi::c_int as isize));
-                if end.is_null() {
+                let style_start = cp + 2;
+                let Some(style_len) = format_skip(&bytes[style_start..]) else {
                     log_debug(format_args!(
                         "{}: no terminating ] at '{}'",
                         "format_draw",
-                        log_cstr(CStr::from_ptr(cp.offset(2 as ::core::ffi::c_int as isize)))
+                        crate::log::log_bytes(&bytes[style_start..])
                     ));
                     frs.clear();
                     current_block = 4329038292887906754;
                     break;
-                } else {
-                    let style_start = cp.offset(2);
-                    let style_len = end.offset_from(style_start) as usize;
-                    let style_text = CString::new(::core::slice::from_raw_parts(
-                        style_start as *const u8,
-                        style_len,
-                    ))
-                    .expect("format style contains an interior NUL");
+                };
+                let end = style_start + style_len;
+                {
+                    let style_text = CString::new(&bytes[style_start..end])
+                        .expect("format style contains an interior NUL");
                     style_copy(&mut saved_sy, &sy);
                     if style_parse(&mut sy, &current_default, &style_text)
                         != 0 as ::core::ffi::c_int
@@ -1155,7 +1126,7 @@ pub unsafe fn format_draw(
                             crate::log::log_bytes(style_text.as_bytes())
                         ));
                         drop(style_text);
-                        cp = end.offset(1 as ::core::ffi::c_int as isize);
+                        cp = end + 1;
                     } else {
                         log_debug(format_args!(
                             "{}: style '{}' -> '{}'",
@@ -1278,7 +1249,7 @@ pub unsafe fn format_draw(
                             ));
                             last = current;
                         }
-                        if !srs.is_null() {
+                        if srs.is_some() {
                             if fr
                                 .as_mut()
                                 .is_some_and(|pending| format_is_type(pending, &sy) == 0)
@@ -1293,22 +1264,17 @@ pub unsafe fn format_draw(
                                 && sy.range_type as ::core::ffi::c_uint
                                     != STYLE_RANGE_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
                             {
-                                let mut pending = format_range {
+                                fr = Some(format_range {
                                     index: current as u_int,
                                     start: ctx[current as usize].screen.cx,
                                     end: 0,
                                     type_0: sy.range_type,
                                     argument: sy.range_argument,
-                                    string: [0; 16],
-                                };
-                                cstr_copy_into(
-                                    &mut pending.string,
-                                    CStr::from_ptr(sy.range_string.as_ptr()),
-                                );
-                                fr = Some(pending);
+                                    string: sy.range_string,
+                                });
                             }
                         }
-                        cp = end.offset(1 as ::core::ffi::c_int as isize);
+                        cp = end + 1;
                     }
                 }
             }
@@ -1445,14 +1411,13 @@ pub unsafe fn format_draw(
             _ => {}
         }
         for range in &frs {
-            let mut owned = Box::new(style_range {
+            let owned = Box::new(style_range {
                 type_0: range.type_0,
                 argument: range.argument,
-                string: [0; 16],
+                string: range.string,
                 start: range.start,
                 end: range.end,
             });
-            cstr_copy_into(&mut owned.string, CStr::from_ptr(range.string.as_ptr()));
             match owned.type_0 as ::core::ffi::c_uint {
                 1 => {
                     log_debug(format_args!(
@@ -1517,8 +1482,8 @@ pub unsafe fn format_draw(
                 }
                 _ => {}
             }
-            if !srs.is_null() {
-                (*srs).push(owned);
+            if let Some(srs) = srs.as_deref_mut() {
+                srs.push(owned);
             }
         }
     }
@@ -1534,11 +1499,8 @@ pub unsafe fn format_draw(
         0 as ::core::ffi::c_int,
     );
 }
-pub unsafe fn format_width(mut expanded: *const ::core::ffi::c_char) -> u_int {
-    let mut cp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut n: u_int = 0;
-    let mut leading_width: u_int = 0;
+pub fn format_width(expanded: &CStr) -> u_int {
+    let s = expanded.to_bytes();
     let mut width: u_int = 0 as u_int;
     let mut ud: utf8_data = utf8_data {
         data: [0; 32],
@@ -1547,57 +1509,51 @@ pub unsafe fn format_width(mut expanded: *const ::core::ffi::c_char) -> u_int {
         width: 0,
     };
     let mut more: utf8_state = UTF8_MORE;
-    cp = expanded;
-    while *cp as ::core::ffi::c_int != '\0' as i32 {
-        if *cp as ::core::ffi::c_int == '#' as i32 {
-            end = format_leading_hashes(cp, &mut n, &mut leading_width);
+    let mut i = 0;
+    while i < s.len() {
+        if s[i] == b'#' {
+            let (consumed, _, leading_width) = format_leading_hashes(&s[i..]);
             width = width.wrapping_add(leading_width);
-            cp = end;
-            if *cp as ::core::ffi::c_int == '#' as i32 {
-                end = format_skip(cp.offset(2 as ::core::ffi::c_int as isize));
-                if end.is_null() {
+            i += consumed;
+            if s.get(i) == Some(&b'#') {
+                let Some(end) = format_skip(&s[i + 2..]) else {
                     return 0 as u_int;
-                }
-                cp = end.offset(1 as ::core::ffi::c_int as isize);
+                };
+                i += 2 + end + 1;
             }
         } else {
-            more = utf8_open(&mut ud, *cp as u_char);
+            more = utf8_open(&mut ud, s[i]);
             if more as ::core::ffi::c_uint == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
                 loop {
-                    cp = cp.offset(1);
-                    if !(*cp as ::core::ffi::c_int != '\0' as i32
+                    i += 1;
+                    if !(i < s.len()
                         && more as ::core::ffi::c_uint
                             == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint)
                     {
                         break;
                     }
-                    more = utf8_append(&mut ud, *cp as u_char);
+                    more = utf8_append(&mut ud, s[i]);
                 }
                 if more as ::core::ffi::c_uint
                     == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
                 {
                     width = width.wrapping_add(ud.width as u_int);
                 }
-            } else if *cp as ::core::ffi::c_int > 0x1f as ::core::ffi::c_int
-                && (*cp as ::core::ffi::c_int) < 0x7f as ::core::ffi::c_int
-            {
+            } else if s[i] > 0x1f && s[i] < 0x7f {
                 width = width.wrapping_add(1);
-                cp = cp.offset(1);
+                i += 1;
             } else {
-                cp = cp.offset(1);
+                i += 1;
             }
         }
     }
     width
 }
 pub(crate) unsafe fn format_trim_left_bytes(expanded: &CStr, mut limit: u_int) -> Vec<u8> {
+    let s = expanded.to_bytes();
     let mut out = Vec::<u8>::new();
-    let mut cp: *const ::core::ffi::c_char = expanded.as_ptr();
-    let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut n: u_int = 0;
     let mut width: u_int = 0 as u_int;
-    let mut leading_width: u_int = 0;
     let mut ud: utf8_data = utf8_data {
         data: [0; 32],
         have: 0,
@@ -1605,12 +1561,13 @@ pub(crate) unsafe fn format_trim_left_bytes(expanded: &CStr, mut limit: u_int) -
         width: 0,
     };
     let mut more: utf8_state = UTF8_MORE;
-    while *cp as ::core::ffi::c_int != '\0' as i32 {
+    let mut i = 0;
+    while i < s.len() {
         if width >= limit {
             break;
         }
-        if *cp as ::core::ffi::c_int == '#' as i32 {
-            end = format_leading_hashes(cp, &mut n, &mut leading_width);
+        if s[i] == b'#' {
+            let (consumed, n, mut leading_width) = format_leading_hashes(&s[i..]);
             if leading_width > limit.wrapping_sub(width) {
                 leading_width = limit.wrapping_sub(width);
             }
@@ -1622,30 +1579,29 @@ pub(crate) unsafe fn format_trim_left_bytes(expanded: &CStr, mut limit: u_int) -
                 }
                 width = width.wrapping_add(leading_width);
             }
-            cp = end;
-            if !(*cp as ::core::ffi::c_int == '#' as i32) {
+            i += consumed;
+            if s.get(i) != Some(&b'#') {
                 continue;
             }
-            end = format_skip(cp.offset(2 as ::core::ffi::c_int as isize));
-            if end.is_null() {
+            let Some(end) = format_skip(&s[i + 2..]) else {
                 break;
-            }
-            let span = end.offset(1).offset_from(cp) as usize;
-            out.extend_from_slice(::core::slice::from_raw_parts(cp.cast::<u8>(), span));
-            cp = end.offset(1 as ::core::ffi::c_int as isize);
+            };
+            let span = 2 + end + 1;
+            out.extend_from_slice(&s[i..i + span]);
+            i += span;
         } else {
-            more = utf8_open(&mut ud, *cp as u_char);
+            more = utf8_open(&mut ud, s[i]);
             if more as ::core::ffi::c_uint == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
                 loop {
-                    cp = cp.offset(1);
-                    if !(*cp as ::core::ffi::c_int != '\0' as i32
+                    i += 1;
+                    if !(i < s.len()
                         && more as ::core::ffi::c_uint
                             == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint)
                     {
                         break;
                     }
-                    more = utf8_append(&mut ud, *cp as u_char);
+                    more = utf8_append(&mut ud, s[i]);
                 }
                 if more as ::core::ffi::c_uint
                     == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -1655,33 +1611,28 @@ pub(crate) unsafe fn format_trim_left_bytes(expanded: &CStr, mut limit: u_int) -
                     }
                     width = width.wrapping_add(ud.width as u_int);
                 } else {
-                    cp = cp.offset(-(ud.have as ::core::ffi::c_int as isize));
-                    cp = cp.offset(1);
+                    i -= ud.have as usize;
+                    i += 1;
                 }
-            } else if *cp as ::core::ffi::c_int > 0x1f as ::core::ffi::c_int
-                && (*cp as ::core::ffi::c_int) < 0x7f as ::core::ffi::c_int
-            {
+            } else if s[i] > 0x1f && s[i] < 0x7f {
                 if width.wrapping_add(1 as u_int) <= limit {
-                    out.push(*cp as u8);
+                    out.push(s[i]);
                 }
                 width = width.wrapping_add(1);
-                cp = cp.offset(1);
+                i += 1;
             } else {
-                cp = cp.offset(1);
+                i += 1;
             }
         }
     }
     out
 }
 pub(crate) unsafe fn format_trim_right_bytes(expanded: &CStr, mut limit: u_int) -> Vec<u8> {
+    let s = expanded.to_bytes();
     let mut out = Vec::<u8>::new();
-    let mut cp: *const ::core::ffi::c_char = expanded.as_ptr();
-    let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut width: u_int = 0 as u_int;
     let mut total_width: u_int = 0;
     let mut skip: u_int = 0;
-    let mut n: u_int = 0;
-    let mut leading_width: u_int = 0;
     let mut copy_width: u_int = 0;
     let mut ud: utf8_data = utf8_data {
         data: [0; 32],
@@ -1690,14 +1641,15 @@ pub(crate) unsafe fn format_trim_right_bytes(expanded: &CStr, mut limit: u_int) 
         width: 0,
     };
     let mut more: utf8_state = UTF8_MORE;
-    total_width = format_width(expanded.as_ptr());
+    total_width = format_width(expanded);
     if total_width <= limit {
-        return expanded.to_bytes().to_vec();
+        return s.to_vec();
     }
     skip = total_width.wrapping_sub(limit);
-    while *cp as ::core::ffi::c_int != '\0' as i32 {
-        if *cp as ::core::ffi::c_int == '#' as i32 {
-            end = format_leading_hashes(cp, &mut n, &mut leading_width);
+    let mut i = 0;
+    while i < s.len() {
+        if s[i] == b'#' {
+            let (consumed, n, leading_width) = format_leading_hashes(&s[i..]);
             copy_width = leading_width;
             if width <= skip {
                 if skip.wrapping_sub(width) >= copy_width {
@@ -1714,30 +1666,29 @@ pub(crate) unsafe fn format_trim_right_bytes(expanded: &CStr, mut limit: u_int) 
                 }
             }
             width = width.wrapping_add(leading_width);
-            cp = end;
-            if !(*cp as ::core::ffi::c_int == '#' as i32) {
+            i += consumed;
+            if s.get(i) != Some(&b'#') {
                 continue;
             }
-            end = format_skip(cp.offset(2 as ::core::ffi::c_int as isize));
-            if end.is_null() {
+            let Some(end) = format_skip(&s[i + 2..]) else {
                 break;
-            }
-            let span = end.offset(1).offset_from(cp) as usize;
-            out.extend_from_slice(::core::slice::from_raw_parts(cp.cast::<u8>(), span));
-            cp = end.offset(1 as ::core::ffi::c_int as isize);
+            };
+            let span = 2 + end + 1;
+            out.extend_from_slice(&s[i..i + span]);
+            i += span;
         } else {
-            more = utf8_open(&mut ud, *cp as u_char);
+            more = utf8_open(&mut ud, s[i]);
             if more as ::core::ffi::c_uint == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
                 loop {
-                    cp = cp.offset(1);
-                    if !(*cp as ::core::ffi::c_int != '\0' as i32
+                    i += 1;
+                    if !(i < s.len()
                         && more as ::core::ffi::c_uint
                             == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint)
                     {
                         break;
                     }
-                    more = utf8_append(&mut ud, *cp as u_char);
+                    more = utf8_append(&mut ud, s[i]);
                 }
                 if more as ::core::ffi::c_uint
                     == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -1747,19 +1698,17 @@ pub(crate) unsafe fn format_trim_right_bytes(expanded: &CStr, mut limit: u_int) 
                     }
                     width = width.wrapping_add(ud.width as u_int);
                 } else {
-                    cp = cp.offset(-(ud.have as ::core::ffi::c_int as isize));
-                    cp = cp.offset(1);
+                    i -= ud.have as usize;
+                    i += 1;
                 }
-            } else if *cp as ::core::ffi::c_int > 0x1f as ::core::ffi::c_int
-                && (*cp as ::core::ffi::c_int) < 0x7f as ::core::ffi::c_int
-            {
+            } else if s[i] > 0x1f && s[i] < 0x7f {
                 if width >= skip {
-                    out.push(*cp as u8);
+                    out.push(s[i]);
                 }
                 width = width.wrapping_add(1);
-                cp = cp.offset(1);
+                i += 1;
             } else {
-                cp = cp.offset(1);
+                i += 1;
             }
         }
     }
@@ -1796,8 +1745,8 @@ mod range_tests {
                     &mut ctx,
                     &grid_default_cell,
                     width,
-                    c"#[align=left,range=user|left]LL#[norange]#[align=centre,range=user|centre]CC#[norange]#[align=right,range=user|right]RR#[norange]".as_ptr(),
-                    &mut ranges,
+                    c"#[align=left,range=user|left]LL#[norange]#[align=centre,range=user|centre]CC#[norange]#[align=right,range=user|right]RR#[norange]",
+                    Some(&mut ranges),
                     0,
                 );
                 screen_write_stop(ctx);
@@ -1805,7 +1754,10 @@ mod range_tests {
                     .iter()
                     .map(|range| {
                         (
-                            CStr::from_ptr(range.string.as_ptr()).to_str().unwrap(),
+                            CStr::from_bytes_until_nul(&range.string)
+                                .unwrap()
+                                .to_str()
+                                .unwrap(),
                             range.start,
                             range.end,
                         )

@@ -207,14 +207,12 @@ unsafe fn cmd_kill_window_filter(
     mut wl: refbox::Weak<winlink>,
     filter: Option<&CStr>,
 ) -> ::core::ffi::c_int {
-    let filter: *const ::core::ffi::c_char = filter.map_or(std::ptr::null(), CStr::as_ptr);
     let item = item_handle.borrow();
 
     let queue_client = cmdq_get_client(Some(&*item));
-    let mut flag: ::core::ffi::c_int = 0;
-    if filter.is_null() {
+    let Some(filter) = filter else {
         return 1 as ::core::ffi::c_int;
-    }
+    };
     let mut ft_owner = format_create(
         queue_client.as_ref(),
         Some(item_handle),
@@ -224,7 +222,7 @@ unsafe fn cmd_kill_window_filter(
     let ft = &mut *ft_owner;
     format_defaults(ft, None, Some(s_owner), wl.clone(), None);
     let expanded = format_expand_cstring(ft, filter);
-    flag = format_true(expanded.as_ptr());
+    let flag = format_true(&expanded);
     drop(ft_owner);
-    flag
+    ::core::ffi::c_int::from(flag)
 }

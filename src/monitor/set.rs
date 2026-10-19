@@ -71,7 +71,7 @@ unsafe fn monitor_expand(
     formats: &mut format_tree,
 ) -> Option<CString> {
     let expression = monitor_with_item(monitor, name, |item| item.format.clone())?;
-    Some(format_expand_cstring(formats, expression.as_ptr()))
+    Some(format_expand_cstring(formats, &expression))
 }
 fn monitor_next_generation(observer: &refbox::Weak<monitor_set>) -> Option<u32> {
     let mut state = monitor_borrow(observer)?;
@@ -161,7 +161,7 @@ unsafe fn monitor_check_value(
     target: MonitorValueTarget,
     generation: Option<u32>,
 ) {
-    let truth = format_true(value.as_ptr()) != 0;
+    let truth = format_true(value);
     let Some(state) = monitor_borrow(monitor) else {
         return;
     };

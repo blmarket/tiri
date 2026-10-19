@@ -968,7 +968,7 @@ unsafe fn window_customize_build_array(
                 ..window_customize_itemdata::new()
             },
         );
-        let text = format_expand_cstring(ft, (*data).format.as_ptr());
+        let text = format_expand_cstring(ft, &(*data).format);
         (*data).tree_owner().borrow_mut().add(
             Some(top),
             ModeTreeItemData::Customize(item_owner),
@@ -993,7 +993,6 @@ unsafe fn window_customize_build_option(
     fs: &cmd_find_state,
     mut type_0: window_customize_option_type,
 ) -> u_int {
-    let filter: *const ::core::ffi::c_char = filter.map_or(std::ptr::null(), CStr::as_ptr);
     let data = mode_owner.get();
     // Format expansion below may read option tables, so no entry borrow is
     // held past this snapshot.
@@ -1094,9 +1093,9 @@ unsafe fn window_customize_build_option(
     if let Some(value) = value {
         format_add(ft, c"option_value", |out| write_cstr(out, &*value));
     }
-    if !filter.is_null() {
+    if let Some(filter) = filter {
         let expanded = format_expand_cstring(ft, filter);
-        if format_true(expanded.as_ptr()) == 0 {
+        if !format_true(&expanded) {
             return 0 as u_int;
         }
     }
@@ -1115,7 +1114,7 @@ unsafe fn window_customize_build_option(
             ..window_customize_itemdata::new()
         },
     );
-    let text = (array == 0).then(|| format_expand_cstring(ft, (*data).format.as_ptr()));
+    let text = (array == 0).then(|| format_expand_cstring(ft, &(*data).format));
     let top = (*data).tree_owner().borrow_mut().add(
         Some(top),
         ModeTreeItemData::Customize(item_owner.clone()),
@@ -1254,7 +1253,6 @@ unsafe fn window_customize_build_keys(
     filter: Option<&CStr>,
     fs: &cmd_find_state,
 ) {
-    let filter: *const ::core::ffi::c_char = filter.map_or(std::ptr::null(), CStr::as_ptr);
     let data = mode_owner.get();
     let mut count: u_int = 0 as u_int;
     let mut title_bytes = b"Key Table - ".to_vec();
@@ -1284,9 +1282,9 @@ unsafe fn window_customize_build_keys(
             if !bd.note.is_none() {
                 format_add(ft, c"key_note", |out| write_cstr(out, (bd.note).as_deref()));
             }
-            if !filter.is_null() {
+            if let Some(filter) = filter {
                 let expanded = format_expand_cstring(ft, filter);
-                if format_true(expanded.as_ptr()) == 0 {
+                if !format_true(&expanded) {
                     continue;
                 }
             }
@@ -1301,7 +1299,7 @@ unsafe fn window_customize_build_keys(
                     ..window_customize_itemdata::new()
                 },
             );
-            let expanded = format_expand_cstring(ft, (*data).format.as_ptr());
+            let expanded = format_expand_cstring(ft, &(*data).format);
             let child = (*data).tree_owner().borrow_mut().add(
                 Some(&top),
                 ModeTreeItemData::Customize(item_owner.clone()),
@@ -1376,7 +1374,6 @@ unsafe fn window_customize_build_environment(
     filter: Option<&CStr>,
     fs: &cmd_find_state,
 ) {
-    let filter: *const ::core::ffi::c_char = filter.map_or(std::ptr::null(), CStr::as_ptr);
     let data = mode_owner.get();
     let Some(environment) = target.resolve() else {
         return;
@@ -1431,9 +1428,9 @@ unsafe fn window_customize_build_environment(
             (envent.value).as_deref().expect("string is present")
         };
         format_add(ft, c"environment_value", |out| write_cstr(out, &*value));
-        if !filter.is_null() {
+        if let Some(filter) = filter {
             let expanded = format_expand_cstring(ft, filter);
-            if format_true(expanded.as_ptr()) == 0 {
+            if !format_true(&expanded) {
                 continue;
             }
         }
@@ -1457,7 +1454,7 @@ unsafe fn window_customize_build_environment(
             text = None;
             Cow::Owned(CString::new(bytes).expect("environment name contains no NUL"))
         } else {
-            text = Some(format_expand_cstring(ft, (*data).format.as_ptr()));
+            text = Some(format_expand_cstring(ft, &(*data).format));
             Cow::Borrowed(envent.name.as_c_str())
         };
         (*data).tree_owner().borrow_mut().add(
@@ -1774,12 +1771,7 @@ unsafe fn window_customize_draw_option(
     let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut value_owner: Option<CString> = None;
     let mut default_value: Option<CString> = None;
-    let mut choices: [::core::ffi::c_char; 256] = ::core::mem::transmute::<
-        [u8; 256],
-        [::core::ffi::c_char; 256],
-    >(
-        *b"\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-    );
+    let mut choices: [u8; 256] = [0; 256];
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -2112,7 +2104,10 @@ unsafe fn window_customize_draw_option(
                                                             as ::core::ffi::c_int
                                                             as ::core::ffi::c_uint
                                                 {
-                                                    let expanded = format_expand_cstring(ft, value);
+                                                    let expanded = format_expand_cstring(
+                                                        ft,
+                                                        CStr::from_ptr(value),
+                                                    );
                                                     if strcmp(expanded.as_ptr(), value)
                                                         != 0 as ::core::ffi::c_int
                                                     {
@@ -2168,8 +2163,7 @@ unsafe fn window_customize_draw_option(
                                                                     as *mut ::core::ffi::c_char,
                                                             )
                                                             .wrapping_sub(2 as size_t)
-                                                                as usize] =
-                                                                '\0' as i32 as ::core::ffi::c_char;
+                                                                as usize] = 0;
                                                             if window_customize_write_value(
                                                                 ctx,
                                                                 cx,

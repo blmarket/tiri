@@ -1,4 +1,3 @@
-use std::ffi::c_char;
 use tiri::{
     grid::grid_default_cell,
     input_keys::input_key_get_mouse,
@@ -17,7 +16,7 @@ fn style_appends_preserve_raw_range_bytes_and_numeric_fields() {
         style_set(&mut value, &grid_default_cell);
         value.list = STYLE_LIST_ON;
         value.range_type = STYLE_RANGE_USER;
-        value.range_string[0] = 0xffu8 as c_char;
+        value.range_string[0] = 0xff;
         value.align = STYLE_ALIGN_RIGHT;
         value.dim = 25;
         value.width = 75;

@@ -135,31 +135,18 @@ unsafe fn cmd_list_panes_window(
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut i: u_int = 0;
-    let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut filter: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut flag: ::core::ffi::c_int = 0;
     let mut sort_crit: sort_criteria = sort_criteria {
         order: SORT_ACTIVITY,
         reversed: 0,
         order_seq: &[],
     };
-    template =
-        args_get(args, 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if template.is_null() {
-        match type_0 {
-            0 => {
-                template = c"#{pane_index}: [#{pane_width}x#{pane_height}] [history #{history_size}/#{history_limit}, #{history_bytes} bytes] #{pane_id}#{?pane_active, (active),}#{?pane_dead, (dead),}".as_ptr();
-            }
-            1 => {
-                template = c"#{window_index}.#{pane_index}: [#{pane_width}x#{pane_height}] [history #{history_size}/#{history_limit}, #{history_bytes} bytes] #{pane_id}#{?pane_active, (active),}#{?pane_dead, (dead),}".as_ptr();
-            }
-            2 => {
-                template = c"#{session_name}:#{window_index}.#{pane_index}: [#{pane_width}x#{pane_height}] [history #{history_size}/#{history_limit}, #{history_bytes} bytes] #{pane_id}#{?pane_active, (active),}#{?pane_dead, (dead),}".as_ptr();
-            }
-            _ => {}
-        }
-    }
-    filter = args_get(args, 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    let template = args_get(args, 'F' as i32 as u_char).unwrap_or(match type_0 {
+        0 => c"#{pane_index}: [#{pane_width}x#{pane_height}] [history #{history_size}/#{history_limit}, #{history_bytes} bytes] #{pane_id}#{?pane_active, (active),}#{?pane_dead, (dead),}",
+        1 => c"#{window_index}.#{pane_index}: [#{pane_width}x#{pane_height}] [history #{history_size}/#{history_limit}, #{history_bytes} bytes] #{pane_id}#{?pane_active, (active),}#{?pane_dead, (dead),}",
+        2 => c"#{session_name}:#{window_index}.#{pane_index}: [#{pane_width}x#{pane_height}] [history #{history_size}/#{history_limit}, #{history_bytes} bytes] #{pane_id}#{?pane_active, (active),}#{?pane_dead, (dead),}",
+        _ => c"",
+    });
+    let filter = args_get(args, 'f' as i32 as u_char);
     sort_crit.order = sort_order_from_string(nullable_cstr(
         args_get(args, 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
     ));
@@ -181,13 +168,7 @@ unsafe fn cmd_list_panes_window(
         let ft = &mut *ft_owner;
         format_add(ft, c"line", |out| write!(out, "{}", { n }));
         format_defaults(ft, c.as_ref(), Some(s_owner), wl.clone(), Some(pane));
-        if !filter.is_null() {
-            let expanded = format_expand_cstring(ft, filter);
-            flag = format_true(expanded.as_ptr());
-        } else {
-            flag = 1 as ::core::ffi::c_int;
-        }
-        if flag != 0 {
+        if filter.is_none_or(|filter| format_true(&format_expand_cstring(ft, filter))) {
             let line = format_expand_cstring(ft, template);
             cmdq_print(item_handle, |out| write_cstr(out, &*line));
         }

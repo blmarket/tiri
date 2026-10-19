@@ -50,7 +50,6 @@ use crate::shared::prompt::{
 };
 use crate::shared::screen::{screen, MODE_CURSOR};
 use crate::shared::screen_write::screen_write_ctx;
-use crate::shared::style::*;
 use libc::{strcasestr, strstr};
 
 use crate::sort::{sort_next_order, sort_order_from_string, sort_order_to_string};
@@ -1055,9 +1054,9 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<RefCell<mode_tree_data>>) {
             });
             let prefix = format_expand_cstring(
                 ft,
-                c"#[fg=themelightgrey]#[bg=default]#[noacs]#{p/#{mode_tree_key_width}:#{?#{!=:#{mode_tree_key},},(#{mode_tree_key}),}}#{R:#{?mode_tree_parent_last,    ,#[acs]x#[fg=themelightgrey]#[bg=default]#[noacs]   },#{mode_tree_repeat}}#{?mode_tree_branch,#[acs]#{?mode_tree_last,mq,tq}+#[fg=themelightgrey]#[bg=default]#[noacs] ,}#{?mode_tree_has_children,#{?mode_tree_expanded,#[fg=themered]-#[fg=themelightgrey]#[bg=default]#[noacs] ,#[fg=themegreen]+#[fg=themelightgrey]#[bg=default]#[noacs] },#{?mode_tree_flat,,  }}".as_ptr(),
+                c"#[fg=themelightgrey]#[bg=default]#[noacs]#{p/#{mode_tree_key_width}:#{?#{!=:#{mode_tree_key},},(#{mode_tree_key}),}}#{R:#{?mode_tree_parent_last,    ,#[acs]x#[fg=themelightgrey]#[bg=default]#[noacs]   },#{mode_tree_repeat}}#{?mode_tree_branch,#[acs]#{?mode_tree_last,mq,tq}+#[fg=themelightgrey]#[bg=default]#[noacs] ,}#{?mode_tree_has_children,#{?mode_tree_expanded,#[fg=themered]-#[fg=themelightgrey]#[bg=default]#[noacs] ,#[fg=themegreen]+#[fg=themelightgrey]#[bg=default]#[noacs] },#{?mode_tree_flat,,  }}",
             );
-            prefix_width = format_width(prefix.as_ptr());
+            prefix_width = format_width(&prefix);
             if prefix_width > w {
                 prefix_width = w;
             }
@@ -1082,7 +1081,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<RefCell<mode_tree_data>>) {
             row.extend_from_slice(tag);
             row.extend_from_slice(separator);
             let text = CString::new(row).expect("mode-tree row contains no NUL");
-            text_width = format_width(text.as_ptr());
+            text_width = format_width(&text);
             left = if prefix_width < w {
                 w.wrapping_sub(prefix_width)
             } else {
@@ -1102,8 +1101,8 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<RefCell<mode_tree_data>>) {
                     &mut ctx,
                     &grid_default_cell,
                     prefix_width,
-                    prefix.as_ptr(),
-                    ::core::ptr::null_mut::<style_ranges>(),
+                    &prefix,
+                    None,
                     0 as ::core::ffi::c_int,
                 );
                 if left != 0 as u_int {
@@ -1113,14 +1112,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<RefCell<mode_tree_data>>) {
                         i.wrapping_sub((*mtd).offset) as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
                     );
-                    format_draw(
-                        &mut ctx,
-                        &gc0,
-                        left,
-                        text.as_ptr(),
-                        ::core::ptr::null_mut::<style_ranges>(),
-                        0 as ::core::ffi::c_int,
-                    );
+                    format_draw(&mut ctx, &gc0, left, &text, None, 0 as ::core::ffi::c_int);
                     if !mti.text.is_none() && width < w {
                         screen_write_cursormove(
                             &mut ctx,
@@ -1132,10 +1124,8 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<RefCell<mode_tree_data>>) {
                             &mut ctx,
                             &gc0,
                             w.wrapping_sub(width),
-                            (mti.text)
-                                .as_ref()
-                                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                            ::core::ptr::null_mut::<style_ranges>(),
+                            mti.text.as_deref().unwrap_or(c""),
+                            None,
                             0 as ::core::ffi::c_int,
                         );
                     }
@@ -1146,8 +1136,8 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<RefCell<mode_tree_data>>) {
                     &mut ctx,
                     &gc,
                     prefix_width,
-                    prefix.as_ptr(),
-                    ::core::ptr::null_mut::<style_ranges>(),
+                    &prefix,
+                    None,
                     1 as ::core::ffi::c_int,
                 );
                 if left != 0 as u_int {
@@ -1157,14 +1147,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<RefCell<mode_tree_data>>) {
                         i.wrapping_sub((*mtd).offset) as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
                     );
-                    format_draw(
-                        &mut ctx,
-                        &gc,
-                        left,
-                        text.as_ptr(),
-                        ::core::ptr::null_mut::<style_ranges>(),
-                        1 as ::core::ffi::c_int,
-                    );
+                    format_draw(&mut ctx, &gc, left, &text, None, 1 as ::core::ffi::c_int);
                     if !mti.text.is_none() && width < w {
                         screen_write_cursormove(
                             &mut ctx,
@@ -1176,10 +1159,8 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<RefCell<mode_tree_data>>) {
                             &mut ctx,
                             &gc,
                             w.wrapping_sub(width),
-                            (mti.text)
-                                .as_ref()
-                                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                            ::core::ptr::null_mut::<style_ranges>(),
+                            mti.text.as_deref().unwrap_or(c""),
+                            None,
                             1 as ::core::ffi::c_int,
                         );
                     }
@@ -1777,7 +1758,7 @@ unsafe fn mode_tree_draw_help_line(
     mut w: u_int,
 ) {
     let replaced = cmd_template_replace_cstring(line, item, 1 as ::core::ffi::c_int);
-    let expanded = format_expand_cstring(ft, replaced.as_ptr());
+    let expanded = format_expand_cstring(ft, &replaced);
     drop(replaced);
     screen_write_cursormove(
         ctx,
@@ -1792,14 +1773,7 @@ unsafe fn mode_tree_draw_help_line(
         y as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    format_draw(
-        ctx,
-        gc,
-        w,
-        expanded.as_ptr(),
-        ::core::ptr::null_mut::<style_ranges>(),
-        0 as ::core::ffi::c_int,
-    );
+    format_draw(ctx, gc, w, &expanded, None, 0 as ::core::ffi::c_int);
 }
 unsafe fn mode_tree_draw_help(
     wp: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,

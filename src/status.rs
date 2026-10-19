@@ -317,12 +317,12 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
                     ft,
                     line_format
                         .as_ref()
-                        .and_then(|value| value.as_ref())
-                        .map_or(std::ptr::null(), |value| value.as_ptr()),
+                        .and_then(|value| value.as_deref())
+                        .unwrap_or(c""),
                 );
                 let mut status = c_owner.borrow_status_mut();
-                let sle = &mut status.entries[i as usize] as *mut style_line_entry;
-                if force != 0 || (*sle).expanded.as_ref() != Some(&expanded) {
+                let sle = &mut status.entries[i as usize];
+                if force != 0 || sle.expanded.as_ref() != Some(&expanded) {
                     changed = 1 as ::core::ffi::c_int;
                     n = 0 as u_int;
                     while n < width {
@@ -335,16 +335,16 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
                         i as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
                     );
-                    style_ranges_clear(&mut (*sle).ranges);
+                    style_ranges_clear(&mut sle.ranges);
                     format_draw(
                         &mut ctx,
                         &gc,
                         width,
-                        expanded.as_ptr(),
-                        &raw mut (*sle).ranges,
+                        &expanded,
+                        Some(&mut sle.ranges),
                         0 as ::core::ffi::c_int,
                     );
-                    (*sle).expanded = Some(expanded);
+                    sle.expanded = Some(expanded);
                 }
             }
             i = i.wrapping_add(1);
@@ -456,7 +456,6 @@ pub unsafe fn status_message_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
         us: 0,
         link: 0,
     };
-    let mut msgfmt: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if terminal_width == 0 as u_int || terminal_height == 0 as u_int {
         return 0 as ::core::ffi::c_int;
     }
@@ -504,10 +503,7 @@ pub unsafe fn status_message_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
         &s.as_ref().expect("live session").borrow_options_mut(),
         c"message-format",
     ));
-    msgfmt = msgfmt_session_value
-        .as_ref()
-        .expect("option snapshot")
-        .as_ptr();
+    let msgfmt = msgfmt_session_value.as_deref().expect("option snapshot");
     let expanded = format_expand_time_cstring(ft, msgfmt);
     drop(ft_owner);
     let mut status = c_owner.borrow_status_mut();
@@ -527,14 +523,7 @@ pub unsafe fn status_message_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
         messageline as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    format_draw(
-        &mut ctx,
-        &gc,
-        aw,
-        expanded.as_ptr(),
-        ::core::ptr::null_mut::<style_ranges>(),
-        0 as ::core::ffi::c_int,
-    );
+    format_draw(&mut ctx, &gc, aw, &expanded, None, 0 as ::core::ffi::c_int);
     screen_write_stop(ctx);
     let changed = grid_compare((*sl).active_screen().grid(), old_screen.grid()) != 0;
     let _ = status;

@@ -97,10 +97,7 @@ pub(super) unsafe fn pipe_pane(
     );
     let ft = &mut *ft_owner;
     format_defaults(ft, tc.as_ref(), s.as_ref(), wl.clone(), Some(pane_owner));
-    let cmd = format_expand_time_cstring(
-        ft,
-        args_string(args, 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
-    );
+    let cmd = format_expand_time_cstring(ft, args_string(args, 0 as u_int).unwrap_or(c""));
     drop(ft_owner);
     sigfillset(&raw mut set);
     sigprocmask(SIG_BLOCK, &raw mut set, &raw mut oldset);

@@ -53,7 +53,7 @@ unsafe fn cmd_list_single_command(
     format_add(ft, c"command_list_usage", |out| {
         write_cstr(out, &*entry.usage)
     });
-    let line = format_expand_cstring(ft, template.as_ptr());
+    let line = format_expand_cstring(ft, template);
     if !line.is_empty() {
         cmdq_print(item_handle, |out| write_cstr(out, &*line));
     }

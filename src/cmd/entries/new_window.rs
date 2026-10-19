@@ -91,8 +91,6 @@ unsafe fn cmd_new_window_exec(
     let mut count: ::core::ffi::c_int = args_count(args) as ::core::ffi::c_int;
     let mut cause: Option<std::ffi::CString> = None;
     let mut wname_owned: Option<CString> = None;
-    let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -113,8 +111,7 @@ unsafe fn cmd_new_window_exec(
         });
         return CmdOutcome::Error;
     }
-    name = args_get(args, 'n' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if !name.is_null() {
+    if let Some(name) = args_get(args, 'n' as i32 as u_char) {
         let expanded = format_single_cstring(
             Some(item_handle),
             name,
@@ -144,7 +141,7 @@ unsafe fn cmd_new_window_exec(
         } else if let Some(wname) = wname_owned.as_deref() {
             let expanded = format_single_cstring(
                 Some(item_handle),
-                wname.as_ptr(),
+                wname,
                 c_owner.as_ref(),
                 Some(&session_owner),
                 (refbox::Weak::new()).clone(),
@@ -263,11 +260,7 @@ unsafe fn cmd_new_window_exec(
             server_status_session_group(s.as_ref().expect("live session"));
         }
         if args_has(args, 'P' as i32 as u_char) != 0 {
-            template = args_get(args, 'F' as i32 as u_char)
-                .map_or(std::ptr::null(), |value| value.as_ptr());
-            if template.is_null() {
-                template = NEW_WINDOW_TEMPLATE.as_ptr();
-            }
+            let template = args_get(args, 'F' as i32 as u_char).unwrap_or(NEW_WINDOW_TEMPLATE);
             let cp = format_single_cstring(
                 Some(item_handle),
                 template,

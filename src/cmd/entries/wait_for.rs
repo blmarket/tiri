@@ -269,10 +269,10 @@ unsafe fn cmd_wait_for_event_cb(
         drop(item_owner);
         let ft = &mut *ft_owner;
         event_payload_add_formats(ep, ft, None);
-        let expanded = format_expand_cstring(ft, filter.as_ptr().cast_mut());
-        let flag = format_true(expanded.as_ptr());
+        let expanded = format_expand_cstring(ft, filter);
+        let flag = format_true(&expanded);
         drop(ft_owner);
-        if flag == 0 {
+        if !flag {
             return;
         }
     }

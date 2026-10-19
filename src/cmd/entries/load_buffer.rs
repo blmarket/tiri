@@ -125,7 +125,7 @@ unsafe fn cmd_load_buffer_exec(
     }
     let path = format_single_from_target_cstring(
         item_handle,
-        args_string(args, 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
+        args_string(args, 0 as u_int).unwrap_or(c""),
     );
     let wait = file_read_wait(queue_client.as_ref(), &path, |_| None);
     CmdOutcome::Suspend(Box::pin(cmd_load_buffer_complete(

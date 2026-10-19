@@ -61,7 +61,7 @@ pub unsafe fn style_resolve_with_options(
         Ok(parsed) => parsed,
         Err((value, colour)) => {
             let text = if let Some(context) = context {
-                format_expand_cstring(context, value.as_ptr())
+                format_expand_cstring(context, &value)
             } else {
                 value
             };

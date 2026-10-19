@@ -58,17 +58,12 @@ unsafe fn cmd_list_windows_exec(
     let mut s: Option<SessionRef> = None;
     let mut i: u_int = 0;
     let mut n: u_int = 0;
-    let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut filter: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut flag: ::core::ffi::c_int = 0;
     let mut sort_crit: sort_criteria = sort_criteria {
         order: SORT_ACTIVITY,
         reversed: 0,
         order_seq: &[],
     };
-    template =
-        args_get(args, 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    filter = args_get(args, 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    let filter = args_get(args, 'f' as i32 as u_char);
     sort_crit.order = sort_order_from_string(nullable_cstr(
         args_get(args, 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
     ));
@@ -80,20 +75,18 @@ unsafe fn cmd_list_windows_exec(
         return CmdOutcome::Error;
     }
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
-    let winlinks = if args_has(args, 'a' as i32 as u_char) != 0 {
-        let links = sort_get_winlinks(&sort_crit);
-        if template.is_null() {
-            template = LIST_WINDOWS_WITH_SESSION_TEMPLATE.as_ptr();
-        }
-        links
+    let (winlinks, default_template) = if args_has(args, 'a' as i32 as u_char) != 0 {
+        (
+            sort_get_winlinks(&sort_crit),
+            LIST_WINDOWS_WITH_SESSION_TEMPLATE,
+        )
     } else {
-        let links =
-            sort_get_winlinks_session(&target.session_handle().expect("live session"), &sort_crit);
-        if template.is_null() {
-            template = c"#{window_index}: #{window_name}#{window_raw_flags} (#{window_panes} panes) [#{window_width}x#{window_height}] [layout #{window_layout}] #{window_id}#{?window_active, (active),}".as_ptr();
-        }
-        links
+        (
+            sort_get_winlinks_session(&target.session_handle().expect("live session"), &sort_crit),
+            c"#{window_index}: #{window_name}#{window_raw_flags} (#{window_panes} panes) [#{window_width}x#{window_height}] [layout #{window_layout}] #{window_id}#{?window_active, (active),}",
+        )
     };
+    let template = args_get(args, 'F' as i32 as u_char).unwrap_or(default_template);
     n = u_int::try_from(winlinks.len()).expect("too many winlinks to list");
     i = 0 as u_int;
     while i < n {
@@ -112,13 +105,7 @@ unsafe fn cmd_list_windows_exec(
         let ft = &mut *ft_owner;
         format_add(ft, c"line", |out| write!(out, "{}", (n) as u32));
         format_defaults(ft, c.as_ref(), s.as_ref(), wl.clone(), None);
-        if !filter.is_null() {
-            let expanded = format_expand_cstring(ft, filter);
-            flag = format_true(expanded.as_ptr());
-        } else {
-            flag = 1 as ::core::ffi::c_int;
-        }
-        if flag != 0 {
+        if filter.is_none_or(|filter| format_true(&format_expand_cstring(ft, filter))) {
             let line = format_expand_cstring(ft, template);
             cmdq_print(item_handle, |out| write_cstr(out, &*line));
         }

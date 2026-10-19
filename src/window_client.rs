@@ -36,7 +36,6 @@ use crate::shared::screen_write::screen_write_ctx;
 use crate::shared::session::SessionRef;
 use crate::shared::sort::sort_criteria;
 use crate::shared::sort::*;
-use crate::shared::style::*;
 use crate::shared::window::WindowRef;
 use crate::shared::window::{window_mode, window_mode_entry, winlink};
 use crate::sort::sort_get_clients;
@@ -211,7 +210,6 @@ unsafe fn window_client_build(
     sort_crit: &sort_criteria,
     filter: Option<&CStr>,
 ) {
-    let filter: *const ::core::ffi::c_char = filter.map_or(std::ptr::null(), CStr::as_ptr);
     let mut i: u_int = 0;
     let mut c: Option<ClientRef> = None;
     (*data).items.clear();
@@ -239,7 +237,7 @@ unsafe fn window_client_build(
             .as_client()
             .unwrap();
         c = Some(item.client().clone());
-        if !filter.is_null() {
+        if let Some(filter) = filter {
             let cp = format_single_cstring(
                 None,
                 filter,
@@ -248,7 +246,7 @@ unsafe fn window_client_build(
                 (refbox::Weak::new()).clone(),
                 None,
             );
-            if format_true(cp.as_ptr()) == 0 {
+            if !format_true(&cp) {
                 current_block_21 = 3512920355445576850;
             } else {
                 current_block_21 = 12147880666119273379;
@@ -259,7 +257,7 @@ unsafe fn window_client_build(
         if current_block_21 == 12147880666119273379 {
             let text = format_single_cstring(
                 None,
-                (*data).format.as_ptr(),
+                &(*data).format,
                 c.as_ref(),
                 None,
                 (refbox::Weak::new()).clone(),
@@ -333,7 +331,7 @@ unsafe fn window_client_draw_info(
         if i == sy {
             break;
         }
-        let expanded = format_expand_cstring(ft, window_client_info_lines[i as usize].as_ptr());
+        let expanded = format_expand_cstring(ft, window_client_info_lines[i as usize]);
         screen_write_cursormove(
             ctx,
             cx as ::core::ffi::c_int,
@@ -344,8 +342,8 @@ unsafe fn window_client_draw_info(
             ctx,
             &grid_default_cell,
             sx,
-            expanded.as_ptr(),
-            ::core::ptr::null_mut::<style_ranges>(),
+            &expanded,
+            None,
             0 as ::core::ffi::c_int,
         );
         i = i.wrapping_add(1);
@@ -550,7 +548,7 @@ unsafe fn window_client_get_key(
         None,
     );
     format_add(ft, c"line", |out| write!(out, "{}", { line }));
-    let expanded = format_expand_cstring(ft, (*data).key_format.as_ptr());
+    let expanded = format_expand_cstring(ft, &(*data).key_format);
     key = key_string_parse_cstr(expanded.as_c_str()).unwrap_or(KEYC_UNKNOWN);
     drop(ft_owner);
     key

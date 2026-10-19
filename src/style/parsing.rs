@@ -20,71 +20,67 @@ use std::ffi::{CStr, CString};
 pub const STYLE_WIDTH_DEFAULT: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
 pub const STYLE_PAD_DEFAULT: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
 
-pub(super) static mut style_default: style = unsafe {
-    style {
-        gc: grid_cell {
-            data: utf8_data {
-                data: [
-                    ' ' as i32 as u_char,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                ],
-                have: 0 as u_char,
-                size: 1 as u_char,
-                width: 1 as u_char,
-            },
-            attr: 0 as u_short,
-            flags: 0 as u_char,
-            fg: 8 as ::core::ffi::c_int,
-            bg: 8 as ::core::ffi::c_int,
-            us: 0 as ::core::ffi::c_int,
-            link: 0 as u_int,
+pub(super) static mut style_default: style = style {
+    gc: grid_cell {
+        data: utf8_data {
+            data: [
+                ' ' as i32 as u_char,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ],
+            have: 0 as u_char,
+            size: 1 as u_char,
+            width: 1 as u_char,
         },
-        ignore: 0 as ::core::ffi::c_int,
-        dim: 0 as ::core::ffi::c_int,
-        fill: 8 as ::core::ffi::c_int,
-        align: STYLE_ALIGN_DEFAULT,
-        list: STYLE_LIST_OFF,
-        range_type: STYLE_RANGE_NONE,
-        range_argument: 0 as u_int,
-        range_string: ::core::mem::transmute::<[u8; 16], [::core::ffi::c_char; 16]>(
-            *b"\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-        ),
-        width: STYLE_WIDTH_DEFAULT,
-        width_percentage: 0 as ::core::ffi::c_int,
-        pad: STYLE_PAD_DEFAULT,
-        default_type: STYLE_DEFAULT_BASE,
+        attr: 0 as u_short,
+        flags: 0 as u_char,
+        fg: 8 as ::core::ffi::c_int,
+        bg: 8 as ::core::ffi::c_int,
+        us: 0 as ::core::ffi::c_int,
         link: 0 as u_int,
-    }
+    },
+    ignore: 0 as ::core::ffi::c_int,
+    dim: 0 as ::core::ffi::c_int,
+    fill: 8 as ::core::ffi::c_int,
+    align: STYLE_ALIGN_DEFAULT,
+    list: STYLE_LIST_OFF,
+    range_type: STYLE_RANGE_NONE,
+    range_argument: 0 as u_int,
+    range_string: [0; 16],
+    width: STYLE_WIDTH_DEFAULT,
+    width_percentage: 0 as ::core::ffi::c_int,
+    pad: STYLE_PAD_DEFAULT,
+    default_type: STYLE_DEFAULT_BASE,
+    link: 0 as u_int,
 };
 thread_local! {
     static STYLE_HYPERLINKS: std::cell::RefCell<Option<HyperlinksRef>> = const { std::cell::RefCell::new(None) };
@@ -156,10 +152,7 @@ unsafe fn style_parse_token(sy: &mut style, base: &grid_cell, tmp: &[u8]) -> boo
     } else if tmp.eq_ignore_ascii_case(b"norange") {
         sy.range_type = style_default.range_type;
         sy.range_argument = style_default.range_type as u_int;
-        cstr_copy_into(
-            &mut sy.range_string,
-            CStr::from_ptr((&raw const style_default.range_string).cast()),
-        );
+        sy.range_string = style_default.range_string;
     } else if let Some(value) = style_strip_prefix(tmp, b"range=").filter(|v| !v.is_empty()) {
         let (name, found) = match value.iter().position(|&b| b == b'|') {
             Some(i) => (&value[..i], Some(&value[i + 1..])),
@@ -461,8 +454,7 @@ pub unsafe fn style_tostring(sy: &style) -> CString {
             } else if sy.range_type as ::core::ffi::c_uint
                 == STYLE_RANGE_USER as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                let range_string = sy.range_string.map(|c| c as u8);
-                let range_string = CStr::from_bytes_until_nul(&range_string)
+                let range_string = CStr::from_bytes_until_nul(&sy.range_string)
                     .expect("range string is NUL-terminated");
                 b = [b"user|", range_string.to_bytes()].concat();
                 tmp = &b;
@@ -628,7 +620,7 @@ pub unsafe fn style_set_scrollbar_style_from_option(
     let oe = oe.unwrap_or_else(|| fatalx(|out| out.write_all(b"missing pane-scrollbars-style")));
     let style = format_single_cstring(
         None,
-        oe.default_str.map_or(std::ptr::null(), CStr::as_ptr),
+        oe.default_str.unwrap_or(c""),
         None,
         None,
         (refbox::Weak::new()).clone(),
@@ -640,7 +632,7 @@ pub unsafe fn style_set_scrollbar_style_from_option(
     if let Some(value) = value {
         let expanded = format_single_cstring(
             None,
-            value.as_ptr(),
+            &value,
             None,
             None,
             (refbox::Weak::new()).clone(),

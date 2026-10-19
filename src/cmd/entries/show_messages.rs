@@ -102,7 +102,7 @@ unsafe fn cmd_show_messages_exec(
         });
         let msg_time = msg.msg_time;
         format_add_time(ft, c"message_time", msg_time);
-        let s = format_expand_cstring(ft, SHOW_MESSAGES_TEMPLATE.as_ptr());
+        let s = format_expand_cstring(ft, SHOW_MESSAGES_TEMPLATE);
         cmdq_print(item_handle, |out| write_cstr(out, &*s));
     }
     drop(ft_owner);

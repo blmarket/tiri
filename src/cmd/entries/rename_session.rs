@@ -36,7 +36,7 @@ unsafe fn cmd_rename_session_exec(
     use crate::session::Session;
     let arguments = cmd_get_args(command.get_unchecked());
     let name = args_string(arguments, 0).expect("rename-session argument");
-    let expanded = format_single_from_target_cstring(item, name.as_ptr());
+    let expanded = format_single_from_target_cstring(item, name);
     let target = crate::cmd::queue::cmdq_get_target(&item.borrow()).clone();
     let owner = target.session_handle().expect("rename-session target");
     match owner.rename(&expanded) {

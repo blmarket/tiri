@@ -38,7 +38,6 @@ use crate::shared::screen::{screen, MODE_CURSOR};
 use crate::shared::session::SessionRef;
 use crate::shared::sort::sort_criteria;
 use crate::shared::sort::*;
-use crate::shared::style::*;
 
 use crate::shared::window::{window_mode, window_mode_entry, winlink};
 use crate::sort::{sort_get_sessions, sort_get_winlinks};
@@ -126,7 +125,7 @@ unsafe fn window_switch_add_item(
 ) {
     let fresh = *order;
     *order = (*order).wrapping_add(1);
-    let text = format_expand_cstring(ft, (*data).format.as_ptr());
+    let text = format_expand_cstring(ft, &(*data).format);
     (*data).item_list.push(window_switch_itemdata {
         type_0,
         session,
@@ -363,8 +362,8 @@ unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
                 &mut ctx,
                 &*dgc,
                 sx,
-                (*item).text.as_ptr(),
-                ::core::ptr::null_mut::<style_ranges>(),
+                &(*item).text,
+                None,
                 0 as ::core::ffi::c_int,
             );
         } else {
@@ -373,8 +372,8 @@ unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
                 &mut ctx,
                 &sgc,
                 sx,
-                (*item).text.as_ptr(),
-                ::core::ptr::null_mut::<style_ranges>(),
+                &(*item).text,
+                None,
                 0 as ::core::ffi::c_int,
             );
         }

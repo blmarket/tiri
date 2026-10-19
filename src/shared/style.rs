@@ -14,7 +14,7 @@ pub struct style {
     pub list: style_list,
     pub range_type: style_range_type,
     pub range_argument: u_int,
-    pub range_string: [::core::ffi::c_char; 16],
+    pub range_string: [u8; 16],
     pub width: ::core::ffi::c_int,
     pub width_percentage: ::core::ffi::c_int,
     pub pad: ::core::ffi::c_int,
@@ -67,7 +67,7 @@ pub type style_ranges = Vec<Box<style_range>>;
 pub struct style_range {
     pub type_0: style_range_type,
     pub argument: u_int,
-    pub string: [::core::ffi::c_char; 16],
+    pub string: [u8; 16],
     pub start: u_int,
     pub end: u_int,
 }

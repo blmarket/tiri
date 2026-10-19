@@ -167,7 +167,7 @@ unsafe fn cmd_new_session_exec(
     if let Some(tmp) = args_get(args, 'n' as i32 as u_char) {
         let ename = format_single_cstring(
             Some(item_handle),
-            tmp.as_ptr(),
+            tmp,
             c.as_ref(),
             None,
             (refbox::Weak::new()).clone(),
@@ -187,7 +187,7 @@ unsafe fn cmd_new_session_exec(
     if let Some(tmp) = args_get(args, 's' as i32 as u_char) {
         let ename = format_single_cstring(
             Some(item_handle),
-            tmp.as_ptr(),
+            tmp,
             c.as_ref(),
             None,
             (refbox::Weak::new()).clone(),
@@ -294,7 +294,7 @@ unsafe fn cmd_new_session_exec(
                     if let Some(tmp) = args_get(args, 'c' as i32 as u_char) {
                         cwd = Some(format_single_cstring(
                             Some(item_handle),
-                            tmp.as_ptr(),
+                            tmp,
                             c.as_ref(),
                             None,
                             (refbox::Weak::new()).clone(),
@@ -656,7 +656,7 @@ unsafe fn cmd_new_session_exec(
                                                             .unwrap_or(NEW_SESSION_TEMPLATE);
                                                             let cp = format_single_cstring(
                                                                 Some(item_handle),
-                                                                template.as_ptr(),
+                                                                template,
                                                                 c.as_ref(),
                                                                 s.as_ref(),
                                                                 (s.as_ref()

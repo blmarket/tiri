@@ -391,8 +391,7 @@ mod tests {
                 Some(c"stale".to_owned())
             });
             assert_eq!(
-                format_expand_cstring(ft, c"before#{custom_removed_entry}after".as_ptr())
-                    .as_c_str(),
+                format_expand_cstring(ft, c"before#{custom_removed_entry}after").as_c_str(),
                 c"beforeafter"
             );
             drop(ft_owner);

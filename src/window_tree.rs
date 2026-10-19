@@ -48,7 +48,6 @@ use crate::shared::screen_write::screen_write_ctx;
 use crate::shared::session::SessionRef;
 use crate::shared::sort::sort_criteria;
 use crate::shared::sort::*;
-use crate::shared::style::*;
 use crate::shared::tree::RB_NEGINF;
 use crate::shared::window::WindowRef;
 use crate::shared::window::{window_mode, window_mode_entry, winlink};
@@ -354,7 +353,7 @@ unsafe fn window_tree_build_pane(
     );
     let ft = &mut *ft_owner;
     format_defaults(ft, None, s.as_ref(), wl.clone(), Some(pane_owner));
-    let text = format_expand_cstring(ft, (*data).format.as_ptr());
+    let text = format_expand_cstring(ft, &(*data).format);
     let name = CString::new(idx.to_string()).expect("pane index contains NUL");
     drop(ft_owner);
     let mti = (*data).tree_owner().borrow_mut().add(
@@ -373,11 +372,9 @@ unsafe fn window_tree_filter_pane(
     pane_owner: &Rc<UnsafeCell<window_pane>>,
     filter: Option<&CStr>,
 ) -> ::core::ffi::c_int {
-    let filter: *const ::core::ffi::c_char = filter.map_or(std::ptr::null(), CStr::as_ptr);
-    let mut result: ::core::ffi::c_int = 0;
-    if filter.is_null() {
+    let Some(filter) = filter else {
         return 1 as ::core::ffi::c_int;
-    }
+    };
     let cp = format_single_cstring(
         None,
         filter,
@@ -386,8 +383,7 @@ unsafe fn window_tree_filter_pane(
         wl.clone(),
         Some(pane_owner),
     );
-    result = format_true(cp.as_ptr());
-    result
+    ::core::ffi::c_int::from(format_true(&cp))
 }
 unsafe fn window_tree_build_window(
     session_owner: &SessionRef,
@@ -438,7 +434,7 @@ unsafe fn window_tree_build_window(
     );
     let ft = &mut *ft_owner;
     format_defaults(ft, None, s.as_ref(), wl.clone(), None);
-    let text = format_expand_cstring(ft, (*data).format.as_ptr());
+    let text = format_expand_cstring(ft, &(*data).format);
     let name = CString::new((wl.get_unchecked().idx as u_int).to_string())
         .expect("window index contains NUL");
     drop(ft_owner);
@@ -536,7 +532,7 @@ unsafe fn window_tree_build_session(
     );
     let ft = &mut *ft_owner;
     format_defaults(ft, None, s.as_ref(), (refbox::Weak::new()).clone(), None);
-    let text = format_expand_cstring(ft, (*data).format.as_ptr());
+    let text = format_expand_cstring(ft, &(*data).format);
     drop(ft_owner);
     if (*data).type_0 as ::core::ffi::c_uint
         == WINDOW_TREE_SESSION as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -691,7 +687,7 @@ unsafe fn window_tree_draw_label(
     if sx < 5 as u_int || sy < 3 as u_int {
         return;
     }
-    width = format_width(label.as_ptr());
+    width = format_width(label);
     let trimmed_label = if width > sx.wrapping_sub(4 as u_int) {
         Some(
             CString::new(format_trim_left_bytes(label, sx.wrapping_sub(4 as u_int)))
@@ -701,7 +697,7 @@ unsafe fn window_tree_draw_label(
         None
     };
     if let Some(trimmed_label) = trimmed_label.as_ref() {
-        width = format_width(trimmed_label.as_ptr());
+        width = format_width(trimmed_label);
     }
     let label = trimmed_label.as_deref().unwrap_or(label);
     if width == 0 as u_int {
@@ -739,14 +735,7 @@ unsafe fn window_tree_draw_label(
         py.wrapping_add(oy) as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    format_draw(
-        ctx,
-        label_gc,
-        width,
-        label.as_ptr(),
-        ::core::ptr::null_mut::<style_ranges>(),
-        0 as ::core::ffi::c_int,
-    );
+    format_draw(ctx, label_gc, width, label, None, 0 as ::core::ffi::c_int);
 }
 unsafe fn window_tree_border_cell(
     gc: &mut grid_cell,
@@ -981,7 +970,7 @@ unsafe fn window_tree_draw_session(
             let format =
                 options_get_string(&window.borrow_options_mut(), c"tree-mode-preview-format");
             if !format.as_bytes().is_empty() {
-                let label = format_expand_cstring(ft, format.as_ptr());
+                let label = format_expand_cstring(ft, &format);
                 if !label.as_bytes().is_empty() {
                     window_tree_draw_label(
                         ctx,
@@ -1253,7 +1242,7 @@ unsafe fn window_tree_draw_window(
                         c"tree-mode-preview-format",
                     );
                     if !format.as_bytes().is_empty() {
-                        let label = format_expand_cstring(ft, format.as_ptr());
+                        let label = format_expand_cstring(ft, &format);
                         if !label.as_bytes().is_empty() {
                             window_tree_draw_label(
                                 ctx,
@@ -1390,7 +1379,7 @@ unsafe fn window_tree_draw_info(
             if i == sy {
                 break;
             }
-            let expanded = format_expand_cstring(ft, lines[j as usize][k as usize].as_ptr());
+            let expanded = format_expand_cstring(ft, lines[j as usize][k as usize]);
             screen_write_cursormove(
                 ctx,
                 cx as ::core::ffi::c_int,
@@ -1401,8 +1390,8 @@ unsafe fn window_tree_draw_info(
                 ctx,
                 &grid_default_cell,
                 sx,
-                expanded.as_ptr(),
-                ::core::ptr::null_mut::<style_ranges>(),
+                &expanded,
+                None,
                 0 as ::core::ffi::c_int,
             );
             i = i.wrapping_add(1);
@@ -1626,7 +1615,7 @@ unsafe fn window_tree_get_key(
         );
     }
     format_add(ft, c"line", |out| write!(out, "{}", { line }));
-    let expanded = format_expand_cstring(ft, (*data).key_format.as_ptr());
+    let expanded = format_expand_cstring(ft, &(*data).key_format);
     key = key_string_parse_cstr(expanded.as_c_str()).unwrap_or(KEYC_UNKNOWN);
     drop(ft_owner);
     key

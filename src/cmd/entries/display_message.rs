@@ -157,7 +157,7 @@ unsafe fn cmd_display_message_exec(
     let mut msg = if args_has(args, 'l' as i32 as u_char) != 0 {
         template.to_owned()
     } else {
-        format_expand_time_cstring(ft, template.as_ptr())
+        format_expand_time_cstring(ft, template)
     };
     if args_has(args, 'j' as i32 as u_char) != 0 {
         let Some(jn) = json_parse(&msg, Some(&mut cause)) else {

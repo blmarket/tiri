@@ -129,7 +129,6 @@ unsafe fn cmd_split_window_exec(
         let mut input: ::core::ffi::c_int = 0;
         let mut empty: ::core::ffi::c_int = 0;
         let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-        let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         let mut cause: Option<std::ffi::CString> = None;
         let mut count: u_int = args_count(args);
         if args_has(args, 'b' as i32 as u_char) != 0 {
@@ -262,8 +261,7 @@ unsafe fn cmd_split_window_exec(
                 if args_has(args, 'T' as i32 as u_char) != 0 {
                     let title = format_single_from_target_cstring(
                         item_handle,
-                        args_get(args, 'T' as i32 as u_char)
-                            .map_or(std::ptr::null(), |value| value.as_ptr()),
+                        args_get(args, 'T' as i32 as u_char).unwrap_or(c""),
                     );
                     new_pane.set_title(&title);
                     let mut ep = event_payload_create();
@@ -314,11 +312,8 @@ unsafe fn cmd_split_window_exec(
                         server_redraw_window(&original_window);
                         server_redraw_session(s.as_ref().expect("live session"));
                         if args_has(args, 'P' as i32 as u_char) != 0 {
-                            template = args_get(args, 'F' as i32 as u_char)
-                                .map_or(std::ptr::null(), |value| value.as_ptr());
-                            if template.is_null() {
-                                template = SPLIT_WINDOW_TEMPLATE.as_ptr();
-                            }
+                            let template = args_get(args, 'F' as i32 as u_char)
+                                .unwrap_or(SPLIT_WINDOW_TEMPLATE);
                             let cp = format_single_cstring(
                                 Some(item_handle),
                                 template,

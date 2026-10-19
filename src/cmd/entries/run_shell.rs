@@ -155,7 +155,6 @@ unsafe fn cmd_run_shell_exec(
     let mut s: Option<SessionRef> = target.session_handle();
     let pane_owner = target.pane_handle();
     let mut delay: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut d: ::core::ffi::c_double = 0.;
     let mut tv = Duration::ZERO;
     let mut end: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
@@ -177,7 +176,7 @@ unsafe fn cmd_run_shell_exec(
     }
     let cwd = if args_has(args, 'c' as i32 as u_char) != 0 {
         args_get(args, 'c' as i32 as u_char)
-            .map(|cwd| format_single_from_target_cstring(item_handle, cwd.as_ptr()))
+            .map(|cwd| format_single_from_target_cstring(item_handle, cwd))
     } else {
         ClientRef::working_directory(c.as_ref(), s.as_ref())
     };
@@ -191,8 +190,7 @@ unsafe fn cmd_run_shell_exec(
         flags: 0,
     });
     if args_has(args, 'C' as i32 as u_char) == 0 {
-        cmd = args_string(args, 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
-        if !cmd.is_null() {
+        if let Some(cmd) = args_string(args, 0 as u_int) {
             let mut ft_owner = format_create_from_target(item_handle);
             let ft = &mut *ft_owner;
             i = 1 as u_int;

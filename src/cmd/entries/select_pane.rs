@@ -291,7 +291,7 @@ unsafe fn cmd_select_pane_exec(
         if args_has(arguments, b'T') != 0 {
             let title = format_single_from_target_cstring(
                 item_handle,
-                args_get(arguments, b'T').expect("pane title").as_ptr(),
+                args_get(arguments, b'T').expect("pane title"),
             );
             if pane.set_title(&title) {
                 let mut find = cmd_find_state::default();

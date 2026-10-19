@@ -52,20 +52,13 @@ unsafe fn cmd_list_sessions_exec(
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut i: u_int = 0;
-    let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut filter: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut flag: ::core::ffi::c_int = 0;
     let mut sort_crit: sort_criteria = sort_criteria {
         order: SORT_ACTIVITY,
         reversed: 0,
         order_seq: &[],
     };
-    template =
-        args_get(args, 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if template.is_null() {
-        template = LIST_SESSIONS_TEMPLATE.as_ptr();
-    }
-    filter = args_get(args, 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    let template = args_get(args, 'F' as i32 as u_char).unwrap_or(LIST_SESSIONS_TEMPLATE);
+    let filter = args_get(args, 'f' as i32 as u_char);
     sort_crit.order = sort_order_from_string(nullable_cstr(
         args_get(args, 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
     ));
@@ -96,13 +89,7 @@ unsafe fn cmd_list_sessions_exec(
             (refbox::Weak::new()).clone(),
             None,
         );
-        if !filter.is_null() {
-            let expanded = format_expand_cstring(ft, filter);
-            flag = format_true(expanded.as_ptr());
-        } else {
-            flag = 1 as ::core::ffi::c_int;
-        }
-        if flag != 0 {
+        if filter.is_none_or(|filter| format_true(&format_expand_cstring(ft, filter))) {
             let line = format_expand_cstring(ft, template);
             cmdq_print(item_handle, |out| write_cstr(out, &*line));
         }

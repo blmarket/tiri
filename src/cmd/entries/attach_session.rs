@@ -140,7 +140,7 @@ pub unsafe fn cmd_attach_session(
             .expect("target session")
             .set_cwd(Some(format_single_cstring(
                 Some(item_handle),
-                cflag.as_ptr(),
+                cflag,
                 c.as_ref(),
                 s.as_ref(),
                 wl.clone(),

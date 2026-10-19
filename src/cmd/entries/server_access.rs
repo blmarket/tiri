@@ -88,7 +88,7 @@ unsafe fn cmd_server_access_exec(
     }
     let arg = format_single_cstring(
         Some(item_handle),
-        args_string(args, 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
+        args_string(args, 0 as u_int).unwrap_or(c""),
         c.as_ref(),
         None,
         (refbox::Weak::new()).clone(),

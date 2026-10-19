@@ -199,7 +199,6 @@ unsafe fn window_buffer_build(
     sort_crit: &sort_criteria,
     filter: Option<&CStr>,
 ) {
-    let filter: *const ::core::ffi::c_char = filter.map_or(std::ptr::null(), CStr::as_ptr);
     let mut i: u_int = 0;
     let mut s: Option<SessionRef> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
@@ -233,9 +232,9 @@ unsafe fn window_buffer_build(
             let ft = &mut *ft_owner;
             format_defaults(ft, None, s.as_ref(), wl.clone(), pane_owner.as_ref());
             format_defaults_paste_buffer(ft, &pb);
-            if !filter.is_null() {
+            if let Some(filter) = filter {
                 let cp = format_expand_cstring(ft, filter);
-                if format_true(cp.as_ptr()) == 0 {
+                if !format_true(&cp) {
                     current_block_32 = 5948590327928692120;
                 } else {
                     current_block_32 = 1608152415753874203;
@@ -246,7 +245,7 @@ unsafe fn window_buffer_build(
             match current_block_32 {
                 5948590327928692120 => {}
                 _ => {
-                    let text = format_expand_cstring(ft, (*data).format.as_ptr());
+                    let text = format_expand_cstring(ft, &(*data).format);
                     (*data).tree_owner().borrow_mut().add(
                         None,
                         ModeTreeItemData::Buffer(item_handle.clone()),
@@ -364,7 +363,7 @@ unsafe fn window_buffer_get_key(
     format_defaults(ft, None, s.as_ref(), wl.clone(), pane_owner.as_ref());
     format_defaults_paste_buffer(ft, &pb);
     format_add(ft, c"line", |out| write!(out, "{}", { line }));
-    let expanded = format_expand_cstring(ft, (*data).key_format.as_ptr());
+    let expanded = format_expand_cstring(ft, &(*data).key_format);
     key = key_string_parse_cstr(expanded.as_c_str()).unwrap_or(KEYC_UNKNOWN);
     drop(ft_owner);
     key

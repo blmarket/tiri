@@ -93,13 +93,11 @@ pub fn cstr_suffix(s: &CStr, offset: usize) -> &CStr {
 /// Copy `src` into a fixed C buffer like `strlcpy`: at most `dst.len() - 1`
 /// bytes and a NUL; bytes after the NUL are left alone. Returns the length of
 /// `src`, so a result `>= dst.len()` means the copy was truncated.
-pub fn cstr_copy_into(dst: &mut [c_char], src: &CStr) -> usize {
+pub fn cstr_copy_into(dst: &mut [u8], src: &CStr) -> usize {
     let src = src.to_bytes();
     if let Some(room) = dst.len().checked_sub(1) {
         let len = src.len().min(room);
-        for (out, &byte) in dst.iter_mut().zip(&src[..len]) {
-            *out = byte as c_char;
-        }
+        dst[..len].copy_from_slice(&src[..len]);
         dst[len] = 0;
     }
     src.len()
@@ -107,7 +105,7 @@ pub fn cstr_copy_into(dst: &mut [c_char], src: &CStr) -> usize {
 
 /// Append `src` to the C string in a fixed buffer like `strlcat`. Returns the
 /// length of the string it tried to create.
-pub fn cstr_append_into(dst: &mut [c_char], src: &CStr) -> usize {
+pub fn cstr_append_into(dst: &mut [u8], src: &CStr) -> usize {
     match dst.iter().position(|&byte| byte == 0) {
         Some(len) => len + cstr_copy_into(&mut dst[len..], src),
         None => dst.len() + src.to_bytes().len(),
@@ -146,10 +144,6 @@ pub unsafe fn nullable_cstr<'a>(ptr: *const c_char) -> Option<&'a CStr> {
 mod tests {
     use super::*;
 
-    fn c_buffer(text: &[u8]) -> Vec<c_char> {
-        text.iter().map(|&byte| byte as c_char).collect()
-    }
-
     #[test]
     fn copy_and_append_match_strlcpy_and_strlcat() {
         // (buffer, src, after copy, copy result, after append, append result)
@@ -163,12 +157,12 @@ mod tests {
             (b"", c"gh", b"", 2, b"", 2),
         ];
         for &(initial, src, copied, copy_len, appended, append_len) in cases {
-            let mut buffer = c_buffer(initial);
+            let mut buffer = initial.to_vec();
             assert_eq!(cstr_copy_into(&mut buffer, src), copy_len);
-            assert_eq!(buffer, c_buffer(copied));
-            let mut buffer = c_buffer(initial);
+            assert_eq!(buffer, copied);
+            let mut buffer = initial.to_vec();
             assert_eq!(cstr_append_into(&mut buffer, src), append_len);
-            assert_eq!(buffer, c_buffer(appended));
+            assert_eq!(buffer, appended);
         }
     }
 

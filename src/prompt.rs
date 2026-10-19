@@ -163,7 +163,7 @@ pub unsafe fn prompt_create(
     let expanded = if pd.flags & PROMPT_NOFORMAT != 0 {
         None
     } else {
-        Some(format_expand_time_cstring(ft, input.as_ptr()))
+        Some(format_expand_time_cstring(ft, input))
     };
     if pd.flags & PROMPT_INCREMENTAL != 0 {
         pr.last = Some(expanded.unwrap_or_else(|| input.to_owned()));
@@ -331,7 +331,7 @@ pub unsafe fn prompt_update(pr: &mut prompt, msg: &CStr, input: Option<&CStr>) {
     let expanded = if pr.flags & PROMPT_NOFORMAT != 0 {
         None
     } else {
-        Some(format_expand_time_cstring(ft, input.as_ptr()))
+        Some(format_expand_time_cstring(ft, input))
     };
     pr.buffer = utf8_fromcstr_vec(expanded.as_deref().unwrap_or(input));
     pr.index = utf8_strlen(&pr.buffer);
@@ -471,9 +471,9 @@ unsafe fn prompt_format_tree(pr: &prompt) -> Box<format_tree> {
     owner
 }
 unsafe fn prompt_expand1(pr: &prompt, ft: &mut format_tree) -> CString {
-    let prompt = format_expand_time_cstring(ft, pr.string.as_ptr());
+    let prompt = format_expand_time_cstring(ft, &pr.string);
     format_add(ft, c"message", |out| write_cstr(out, &*prompt));
-    format_expand_time_cstring(ft, pr.message_format.as_ptr())
+    format_expand_time_cstring(ft, &pr.message_format)
 }
 unsafe fn prompt_effective_style(pr: &prompt, sy: &mut style, ft: &mut format_tree) {
     let (text, cell) = if pr.flags & PROMPT_COMMANDMODE != 0 {
@@ -482,7 +482,7 @@ unsafe fn prompt_effective_style(pr: &prompt, sy: &mut style, ft: &mut format_tr
         (&pr.style_str, &pr.style)
     };
     style_set(sy, cell);
-    let expanded = format_expand_time_cstring(ft, text.as_ptr());
+    let expanded = format_expand_time_cstring(ft, text);
     if style_parse(sy, &grid_default_cell, &expanded) != 0 {
         style_set(sy, cell);
     }
@@ -514,7 +514,7 @@ unsafe fn prompt_layout(
     if aw == 0 as u_int {
         return (pl, expanded);
     }
-    pl.label_width = format_width(expanded.as_ptr());
+    pl.label_width = format_width(&expanded);
     if pl.label_width > aw {
         pl.label_width = aw;
     }
@@ -737,8 +737,8 @@ pub(crate) unsafe fn prompt_draw_prepared(
                 ctx,
                 &gc,
                 pl.label_width,
-                expanded.as_ptr(),
-                ::core::ptr::null_mut::<style_ranges>(),
+                &expanded,
+                None,
                 0 as ::core::ffi::c_int,
             );
         }

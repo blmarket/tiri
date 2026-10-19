@@ -294,10 +294,7 @@ unsafe fn cmd_source_file_exec(
     while i < args_count(args) {
         let mut path: &CStr = args_string(args, i).expect("argument is present");
         let expanded = if args_has(args, 'F' as i32 as u_char) != 0 {
-            Some(format_single_from_target_cstring(
-                item_handle,
-                path.as_ptr(),
-            ))
+            Some(format_single_from_target_cstring(item_handle, path))
         } else {
             None
         };

@@ -130,7 +130,7 @@ unsafe fn cmd_set_hook_event_exec(
     }
     let argument = format_single_from_target_cstring(
         item_handle,
-        args_string(args, 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
+        args_string(args, 0 as u_int).unwrap_or(c""),
     );
     if *argument.as_ptr() as ::core::ffi::c_int != '@' as i32 {
         cmdq_error(item_handle, |out| {
@@ -222,7 +222,7 @@ unsafe fn cmd_set_hook_monitor_exec(
     if args_count(args) != 0 {
         let mut value = args_string(args, 0).expect("monitor command").to_owned();
         if args_has(args, b'F') != 0 {
-            value = format_single_from_target_cstring(item_handle, value.as_ptr());
+            value = format_single_from_target_cstring(item_handle, &value);
         }
         let exists = selected.with_entry(&name, |_| ()).is_some();
         if args_has(args, b'o') == 0 || !exists {
@@ -317,10 +317,8 @@ unsafe fn cmd_set_option_exec(
     if args_count(args) == 0 {
         return set_option_error(item_handle, c"missing argument");
     }
-    let argument = format_single_from_target_cstring(
-        item_handle,
-        args_string(args, 0).map_or(std::ptr::null(), CStr::as_ptr),
-    );
+    let argument =
+        format_single_from_target_cstring(item_handle, args_string(args, 0).unwrap_or(c""));
     if set_hook && args_has(args, b'R') != 0 {
         hooks_run(Some(item_handle), &argument);
         return CmdOutcome::Normal;
@@ -354,7 +352,7 @@ unsafe fn cmd_set_option_exec(
     };
     if args_has(args, b'F') != 0 {
         if let Some(old) = value.as_ref() {
-            value = Some(format_single_from_target_cstring(item_handle, old.as_ptr()));
+            value = Some(format_single_from_target_cstring(item_handle, old));
         }
     }
     let (scope, selected) = match options_scope_from_name(args, window, &parsed.name, target) {

@@ -35,7 +35,6 @@ use crate::shared::pane::window_pane;
 use crate::shared::screen::{screen, MODE_CURSOR};
 use crate::shared::screen_write::screen_write_ctx;
 use crate::shared::session::{SessionRef, SessionWeak};
-use crate::shared::style::*;
 use crate::shared::window::WINDOW_MODE_NO_STACK;
 use crate::shared::window::{window_mode, window_mode_entry, winlink};
 use crate::shared::window::{WindowRef, WindowWeak};
@@ -409,14 +408,8 @@ unsafe fn window_panes_draw_format(
         }
         return;
     }
-    let expanded = format_single_cstring(
-        None,
-        format.as_ptr(),
-        None,
-        s.as_ref(),
-        wl.clone(),
-        Some(wp_owner),
-    );
+    let expanded =
+        format_single_cstring(None, &format, None, s.as_ref(), wl.clone(), Some(wp_owner));
     if !expanded.is_empty() {
         screen_write_cursormove(
             ctx,
@@ -424,14 +417,7 @@ unsafe fn window_panes_draw_format(
             y as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        format_draw(
-            ctx,
-            gc,
-            sx,
-            expanded.as_ptr(),
-            ::core::ptr::null_mut::<style_ranges>(),
-            0 as ::core::ffi::c_int,
-        );
+        format_draw(ctx, gc, sx, &expanded, None, 0 as ::core::ffi::c_int);
     }
     if let Some(owner) = session_owner {
         drop(owner);

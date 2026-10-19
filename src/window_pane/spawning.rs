@@ -244,7 +244,7 @@ pub(super) unsafe fn spawn_pane(
             if item_owner.is_some() {
                 cwd = Some(format_single_cstring(
                     item_owner.as_ref(),
-                    requested_cwd.as_ptr(),
+                    requested_cwd,
                     c.as_ref(),
                     target_session_owner.as_ref(),
                     (refbox::Weak::new()).clone(),

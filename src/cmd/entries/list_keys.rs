@@ -152,7 +152,6 @@ unsafe fn cmd_list_keys_exec(
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut table = None;
     let mut only: key_code = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
-    let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut single: ::core::ffi::c_int = 0;
     let mut notes_only: ::core::ffi::c_int = 0;
     let mut filter_notes: ::core::ffi::c_int = 0;
@@ -199,11 +198,7 @@ unsafe fn cmd_list_keys_exec(
     let prefix = cmd_list_keys_get_prefix(args);
     single = args_has(args, '1' as i32 as u_char);
     notes_only = args_has(args, 'N' as i32 as u_char);
-    template =
-        args_get(args, 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if template.is_null() {
-        template = LIST_KEYS_TEMPLATE.as_ptr();
-    }
+    let template = args_get(args, 'F' as i32 as u_char).unwrap_or(LIST_KEYS_TEMPLATE);
     let table_owners = key_tables::snapshot();
     let tables: Vec<_> = table_owners.iter().map(|table| table.borrow()).collect();
     let table_borrow = table.as_ref().map(|table| table.borrow());

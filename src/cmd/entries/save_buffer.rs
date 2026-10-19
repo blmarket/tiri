@@ -134,10 +134,7 @@ unsafe fn cmd_save_buffer_exec(
         return CmdOutcome::Normal;
     }
     let expanded_path = (!show_buffer).then(|| {
-        format_single_from_target_cstring(
-            item_handle,
-            args_string(args, 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
-        )
+        format_single_from_target_cstring(item_handle, args_string(args, 0 as u_int).unwrap_or(c""))
     });
     let dash_path = c"-";
     let path: &CStr = expanded_path.as_deref().unwrap_or(dash_path);

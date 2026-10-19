@@ -230,7 +230,7 @@ pub unsafe fn cmd_pack_argv(
     *buf = '\0' as i32 as ::core::ffi::c_char;
     i = 0 as ::core::ffi::c_int;
     while (i as usize) < argv.len() {
-        let dst = std::slice::from_raw_parts_mut(buf, len as usize);
+        let dst = std::slice::from_raw_parts_mut(buf.cast::<u8>(), len as usize);
         if cstr_copy_into(dst, &argv[i as usize]) as size_t >= len {
             return -(1 as ::core::ffi::c_int);
         }

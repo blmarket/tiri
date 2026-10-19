@@ -74,11 +74,11 @@ pub unsafe fn menu_add_item(
     };
     let index = menu.push_empty();
     let expanded = if let Some(fs) = fs {
-        format_single_from_state_cstring(qitem_handle, item.name.as_ptr(), client_owner, fs)
+        format_single_from_state_cstring(qitem_handle, item.name, client_owner, fs)
     } else {
         format_single_cstring(
             qitem_handle,
-            item.name.as_ptr(),
+            item.name,
             client_owner,
             None,
             refbox::Weak::new(),
@@ -126,11 +126,11 @@ pub unsafe fn menu_add_item(
     menu.items[index].name = Some(CString::new(name).expect("menu name contains no NUL"));
     menu.items[index].command = item.command.map(|command| {
         if let Some(fs) = fs {
-            format_single_from_state_cstring(qitem_handle, command.as_ptr(), client_owner, fs)
+            format_single_from_state_cstring(qitem_handle, command, client_owner, fs)
         } else {
             format_single_cstring(
                 qitem_handle,
-                command.as_ptr(),
+                command,
                 client_owner,
                 None,
                 refbox::Weak::new(),
@@ -140,7 +140,7 @@ pub unsafe fn menu_add_item(
     });
     menu.items[index].key = item.key;
     let row_name = menu.items[index].name.as_ref().unwrap();
-    let mut width = format_width(row_name.as_ptr());
+    let mut width = format_width(row_name);
     if row_name.as_bytes().starts_with(b"-") {
         width = width.wrapping_sub(1);
     }
@@ -148,7 +148,7 @@ pub unsafe fn menu_add_item(
 }
 pub unsafe fn menu_create(title: &CStr) -> Box<menu> {
     let title = title.to_owned();
-    let width = format_width(title.as_ptr());
+    let width = format_width(&title);
 
     Box::new(menu {
         title,

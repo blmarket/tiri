@@ -134,10 +134,8 @@ pub unsafe fn args_strtonum_and_expand_result(
     item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
 ) -> Result<i64, ArgumentValueError> {
     let value = args_last_string(args, flag).ok_or(ArgumentValueError::Missing)?;
-    let formatted = format_single_from_target_cstring(
-        (item_handle).expect("command queue item"),
-        value.as_ptr(),
-    );
+    let formatted =
+        format_single_from_target_cstring((item_handle).expect("command queue item"), value);
     parse_number(formatted.as_c_str(), minval, maxval)
 }
 

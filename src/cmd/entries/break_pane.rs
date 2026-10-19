@@ -80,7 +80,6 @@ unsafe fn cmd_break_pane_exec(
         let mut idx: ::core::ffi::c_int = target.idx;
         let mut before: ::core::ffi::c_int = 0;
         let mut old_idx: ::core::ffi::c_int = wl.get_unchecked().idx;
-        let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         let mut name: Option<&CStr> = args_get(args, 'n' as i32 as u_char);
         if name.is_some_and(|name| !check_name(name)) {
             cmdq_error(item_handle, |out| {
@@ -230,11 +229,7 @@ unsafe fn cmd_break_pane_exec(
             }
         }
         if args_has(args, 'P' as i32 as u_char) != 0 {
-            template = args_get(args, 'F' as i32 as u_char)
-                .map_or(std::ptr::null(), |value| value.as_ptr());
-            if template.is_null() {
-                template = BREAK_PANE_TEMPLATE.as_ptr();
-            }
+            let template = args_get(args, 'F' as i32 as u_char).unwrap_or(BREAK_PANE_TEMPLATE);
             let cp = format_single_cstring(
                 Some(item_handle),
                 template,

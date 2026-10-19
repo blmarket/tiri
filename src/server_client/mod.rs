@@ -1895,7 +1895,7 @@ unsafe fn server_client_update_theme_colours(c_owner: Option<&ClientRef>) {
         (*c).theme_colours[i as usize] = 8 as ::core::ffi::c_int;
         if let Some(name) = colour_theme_option(i, theme) {
             let value = OptionsScope::GlobalServer.with_local(|oo| options_get_string(oo, name));
-            let expanded = format_expand_cstring(ft, value.as_ptr());
+            let expanded = format_expand_cstring(ft, &value);
             colour = colour_parse_cstr(expanded.as_c_str()).unwrap_or(-1);
             if !(colour == -(1 as ::core::ffi::c_int) || colour & COLOUR_FLAG_THEME != 0) {
                 (*c).theme_colours[i as usize] = colour;
@@ -3355,15 +3355,11 @@ unsafe fn server_client_set_title(client_owner: &ClientRef) {
         return;
     };
     let s = Some(session_owner.clone());
-    let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     template_session_value = Some(options_get_string(
         &s.as_ref().expect("live session").borrow_options_mut(),
         c"set-titles-string",
     ));
-    template = template_session_value
-        .as_ref()
-        .expect("option snapshot")
-        .as_ptr();
+    let template = template_session_value.as_deref().expect("option snapshot");
     let mut ft_owner = crate::format::format_create(
         Some(client_owner),
         None,

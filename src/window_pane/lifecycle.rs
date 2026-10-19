@@ -33,7 +33,6 @@ use crate::shared::grid::*;
 use crate::shared::pane::window_pane;
 use crate::shared::pane::{PANE_REDRAW, PANE_STATUSDRAWN};
 use crate::shared::screen::MODE_CURSOR;
-use crate::shared::style::*;
 
 use crate::server_fn::{server_kill_window, server_redraw_window};
 use crate::shared::pane::PANE_EXITED;
@@ -118,7 +117,6 @@ pub(super) unsafe fn finish_process(
         link: 0,
     };
     let mut remain_on_exit: ::core::ffi::c_int = 0;
-    let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut sx: u_int = (*wp).base.grid().sx;
     let mut sy: u_int = (*wp).base.grid().sy;
     if (*wp).fd.is_some() {
@@ -165,8 +163,7 @@ pub(super) unsafe fn finish_process(
             }
             let format =
                 options_get_string(&pane_owner.borrow_options_mut(), c"remain-on-exit-format");
-            s = format.as_ptr();
-            if *s as ::core::ffi::c_int != '\0' as i32 {
+            if !format.is_empty() {
                 let mut ctx = screen_write_start_pane(pane_owner, &mut (*wp).base);
                 screen_write_scrollregion(&mut ctx, 0 as u_int, sy.wrapping_sub(1 as u_int));
                 screen_write_cursormove(
@@ -179,20 +176,13 @@ pub(super) unsafe fn finish_process(
                 gc = grid_default_cell;
                 let expanded = format_single_cstring(
                     None,
-                    s,
+                    &format,
                     None,
                     None,
                     (refbox::Weak::new()).clone(),
                     Some(pane_owner),
                 );
-                format_draw(
-                    &mut ctx,
-                    &gc,
-                    sx,
-                    expanded.as_ptr(),
-                    ::core::ptr::null_mut::<style_ranges>(),
-                    0 as ::core::ffi::c_int,
-                );
+                format_draw(&mut ctx, &gc, sx, &expanded, None, 0 as ::core::ffi::c_int);
                 screen_write_stop(ctx);
             }
             (*wp).base.mode &= !MODE_CURSOR;

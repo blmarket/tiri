@@ -27,10 +27,7 @@ use crate::regsub::regsub_cstring;
 use crate::server::{marked_pane, server_check_marked};
 use crate::shared::window::WindowWeak;
 use crate::window::Window as _;
-use libc::{
-    ctime_r, dirname, fnmatch, gethostname, getpwuid, getuid, localtime_r, memcmp, strcasecmp,
-    strchr, strcmp, strcspn, strftime, strlen, strstr, strtod,
-};
+use libc::{ctime_r, dirname, fnmatch, gethostname, getpwuid, getuid, localtime_r, strftime};
 
 use crate::server_client::Client as _;
 use crate::server_fn::server_status_client;

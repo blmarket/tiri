@@ -155,7 +155,7 @@ impl tiri_cmdparse::Context for ParserContext<'_, '_> {
                 (fsp.winlink_handle()).clone(),
                 fsp.pane_handle().as_ref(),
             );
-            let expanded = format_expand_cstring(ft, token.as_c_str().as_ptr());
+            let expanded = format_expand_cstring(ft, token.as_c_str());
             drop(ft_owner);
             take_parser_token(expanded)
         }
@@ -186,7 +186,7 @@ impl tiri_cmdparse::Context for ParserContext<'_, '_> {
     }
 
     fn is_true(&self, token: &tiri_cmdparse::TokenText) -> bool {
-        unsafe { format_true(token.as_c_str().as_ptr()) != 0 }
+        format_true(token.as_c_str())
     }
 }
 

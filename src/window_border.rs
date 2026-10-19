@@ -11,7 +11,6 @@ use crate::shared::format::{FORMAT_NOJOBS, FORMAT_WINDOW};
 use crate::shared::grid::*;
 use crate::shared::layout::*;
 use crate::shared::screen::screen;
-use crate::shared::style::style_ranges;
 use crate::shared::window::WindowRef;
 use crate::text::utf8::{utf8_copy, utf8_set};
 use crate::tty::{tty_acs_double_borders, tty_acs_heavy_borders, tty_acs_rounded_borders};
@@ -57,7 +56,7 @@ pub(crate) unsafe fn window_render_fill_cell(
         write!(out, "{}", { (!inside) as ::core::ffi::c_int })
     });
     let value = options_get_string(&w_owner.borrow_options_mut(), c"fill-character");
-    let expanded = format_expand_cstring(ft, value.as_ptr());
+    let expanded = format_expand_cstring(ft, &value);
     drop(ft_owner);
     screen_init(&mut s, 1 as u_int, 1 as u_int, 0 as u_int);
     let mut ctx = screen_write_start(&mut s);
@@ -65,8 +64,8 @@ pub(crate) unsafe fn window_render_fill_cell(
         &mut ctx,
         &grid_default_cell,
         1 as u_int,
-        expanded.as_ptr(),
-        ::core::ptr::null_mut::<style_ranges>(),
+        &expanded,
+        None,
         0 as ::core::ffi::c_int,
     );
     screen_write_stop(ctx);

@@ -75,10 +75,7 @@ pub unsafe fn args_make_commands_prepare(
         default_command.unwrap_or_else(|| fatalx(|out| out.write_all(b"argument out of range")))
     };
     if expand != 0 {
-        state.cmd = Some(format_single_from_target_cstring(
-            item_handle,
-            command.as_ptr(),
-        ));
+        state.cmd = Some(format_single_from_target_cstring(item_handle, command));
     } else {
         state.cmd = Some(command.to_owned());
     }

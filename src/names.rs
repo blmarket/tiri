@@ -81,10 +81,7 @@ unsafe fn format_window_name(owner: &WindowRef) -> CString {
         &owner.borrow_options_mut(),
         c"automatic-rename-format",
     );
-    let name = format_expand_cstring(
-        &mut *context,
-        format.as_deref().map_or(std::ptr::null(), CStr::as_ptr),
-    );
+    let name = format_expand_cstring(&mut *context, format.as_deref().unwrap_or(c""));
     drop(context);
     name
 }

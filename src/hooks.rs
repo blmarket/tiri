@@ -120,7 +120,7 @@ unsafe fn hooks_parse(hd: &mut hooks_data, fs: &cmd_find_state, value: &CStr) ->
     );
     let ft = &mut *ft_owner;
     format_merge(ft, &hd.formats);
-    let expanded = format_expand_cstring(ft, value.as_ptr());
+    let expanded = format_expand_cstring(ft, value);
     drop(ft_owner);
     let pr = cmd_parse_from_string(expanded.as_c_str(), None);
     drop(client_owner);

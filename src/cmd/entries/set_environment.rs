@@ -65,10 +65,7 @@ unsafe fn cmd_set_environment_exec(
         value = args_string(args, 1 as u_int);
     }
     if let Some(unexpanded) = value.filter(|_| args_has(args, 'F' as i32 as u_char) != 0) {
-        expanded = Some(format_single_from_target_cstring(
-            item_handle,
-            unexpanded.as_ptr(),
-        ));
+        expanded = Some(format_single_from_target_cstring(item_handle, unexpanded));
         value = expanded.as_deref();
     }
     let global = args_has(args, b'g') != 0;

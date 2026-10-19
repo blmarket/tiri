@@ -38,7 +38,6 @@ use crate::shared::screen_write::{
     screen_write_citem, screen_write_cline, screen_write_items, CLEAR,
 };
 use crate::shared::screen_write::{screen_write_ctx, screen_write_init_ctx_cb};
-use crate::shared::style::*;
 use crate::shared::tty::{tty_command_data, tty_ctx, tty_ctx_redraw_cb, tty_ctx_set_client_cb};
 use crate::shared::tty::{
     TTY_CTX_CELL_INVALIDATE, TTY_CTX_INVISIBLE_PANES, TTY_CTX_OVERLAY_SYNC, TTY_CTX_PANE_OBSCURED,
@@ -772,17 +771,10 @@ pub unsafe fn screen_write_menu(
         if disabled {
             default_gc.attr |= GRID_ATTR_DIM as u_short;
             let name = cstr_suffix(name, 1);
-            format_draw(
-                ctx,
-                &default_gc,
-                width,
-                name.as_ptr(),
-                std::ptr::null_mut(),
-                0,
-            );
+            format_draw(ctx, &default_gc, width, name, None, 0);
             default_gc.attr &= !(GRID_ATTR_DIM as u_short);
         } else {
-            format_draw(ctx, gc, width, name.as_ptr(), std::ptr::null_mut(), 0);
+            format_draw(ctx, gc, width, name, None, 0);
         }
     }
     screen_write_set_cursor(ctx, cx as ::core::ffi::c_int, cy as ::core::ffi::c_int);
@@ -857,8 +849,8 @@ pub unsafe fn screen_write_box(
             ctx,
             &gc,
             nx.wrapping_sub(4 as u_int),
-            title.as_ptr(),
-            ::core::ptr::null_mut::<style_ranges>(),
+            title,
+            None,
             0 as ::core::ffi::c_int,
         );
     }

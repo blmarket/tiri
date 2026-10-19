@@ -398,7 +398,7 @@ unsafe fn format_cb_mouse_status_range(ft: &mut format_tree) -> Option<CString> 
         }
         6 => {
             return Some(
-                CStr::from_bytes_until_nul(&sr.string.map(|c| c as u8))
+                CStr::from_bytes_until_nul(&sr.string)
                     .expect("range string is terminated")
                     .to_owned(),
             );

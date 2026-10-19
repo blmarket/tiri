@@ -675,13 +675,13 @@ mod tests {
             ft.wl = link.clone();
             assert_eq!(ft.winlink_handle(), link);
             assert_eq!(
-                crate::format::format_expand_cstring(ft, c"#{window_index}".as_ptr()).as_c_str(),
+                crate::format::format_expand_cstring(ft, c"#{window_index}").as_c_str(),
                 c"7"
             );
             crate::window::winlink_remove(&(*session).windows, link.clone());
             assert!(!ft.winlink_handle().is_alive());
             assert_eq!(
-                crate::format::format_expand_cstring(ft, c"#{window_index}".as_ptr()).as_c_str(),
+                crate::format::format_expand_cstring(ft, c"#{window_index}").as_c_str(),
                 c""
             );
             drop(ft_owner);
@@ -705,7 +705,7 @@ mod tests {
                 Some(FormatValue::Time(123))
             ));
             assert_eq!(
-                crate::format::format_expand_cstring(&mut context, c"#{session_created}".as_ptr())
+                crate::format::format_expand_cstring(&mut context, c"#{session_created}")
                     .as_c_str(),
                 c"123"
             );
@@ -736,11 +736,8 @@ mod tests {
             context.wl = link.clone();
 
             assert_eq!(
-                crate::format::format_expand_cstring(
-                    &mut context,
-                    c"#{window_stack_index}".as_ptr(),
-                )
-                .as_c_str(),
+                crate::format::format_expand_cstring(&mut context, c"#{window_stack_index}",)
+                    .as_c_str(),
                 c"1"
             );
             assert!(context.s.ptr_eq(&Rc::downgrade(&other)));

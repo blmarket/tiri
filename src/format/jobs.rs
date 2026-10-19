@@ -193,7 +193,7 @@ pub(super) unsafe fn format_job_get(es: &mut format_expand_state<'_>, command: &
     let entry = cache.entry(tag, command);
     let mut next = es.child(FORMAT_EXPAND_NOJOBS | FORMAT_EXPAND_NOCYCLE);
     next.flags &= !FORMAT_EXPAND_TIME;
-    let expanded = format_expand1_cstring(&mut next, command.as_ptr());
+    let expanded = format_expand1_cstring(&mut next, command.to_bytes());
     let Some((force, running)) = entry.with_record(|record| {
         let force = if record.expanded.as_deref() != Some(expanded.as_c_str()) {
             format_job_set_expanded(record, expanded.clone());
@@ -265,7 +265,7 @@ pub(super) unsafe fn format_job_get(es: &mut format_expand_state<'_>, command: &
         })
         .flatten();
     output.map_or_else(CString::default, |output| {
-        format_expand1_cstring(&mut next, output.as_ptr())
+        format_expand1_cstring(&mut next, output.as_bytes())
     })
 }
 

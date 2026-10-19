@@ -47,7 +47,7 @@ unsafe fn cmd_rename_window_exec(
     let mut wl: refbox::Weak<winlink> = target.winlink_handle();
     let name = format_single_from_target_cstring(
         item_handle,
-        args_string(args, 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
+        args_string(args, 0 as u_int).unwrap_or(c""),
     );
     if !check_name(&name) {
         cmdq_error(item_handle, |out| {
