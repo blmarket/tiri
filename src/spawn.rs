@@ -58,16 +58,16 @@ pub const _PATH_DEFPATH: &std::ffi::CStr = c"/usr/bin:/bin";
 
 pub const _PATH_TMP: &std::ffi::CStr = c"/tmp/";
 
-pub(crate) unsafe fn spawn_log(from: &CStr, mut sc: *mut spawn_context) {
-    let session_owner = (*sc).s.upgrade().expect("spawn context session");
-    let mut wl: refbox::Weak<winlink> = (*sc).winlink_handle();
-    let wp0_owner = (*sc).wp0.upgrade();
-    let name = (*sc).name.as_deref().unwrap_or(c"none");
+pub(crate) unsafe fn spawn_log(from: &CStr, sc: &spawn_context) {
+    let session_owner = sc.s.upgrade().expect("spawn context session");
+    let mut wl: refbox::Weak<winlink> = sc.winlink_handle();
+    let wp0_owner = sc.wp0.upgrade();
+    let name = sc.name.as_deref().unwrap_or(c"none");
     log_debug(format_args!(
         "{}: name={}, flags={}",
         log_cstr(from),
         log_cstr(name),
-        log_hex((((*sc).flags) as u32) as u64)
+        log_hex(((sc.flags) as u32) as u64)
     ));
     let tmp = format_message_with(|out| match (wl.is_alive(), wp0_owner.as_ref()) {
         (true, Some(wp0)) => write!(out, "wl={} wp0=%{}", { wl.get_unchecked().idx }, wp0.id()),
@@ -80,7 +80,7 @@ pub(crate) unsafe fn spawn_log(from: &CStr, mut sc: *mut spawn_context) {
         log_cstr(from),
         session_owner.id(),
         log_cstr(&tmp),
-        { (*sc).idx }
+        { sc.idx }
     ));
 }
 
@@ -100,17 +100,17 @@ pub unsafe fn spawn_window(
 /// Reset an existing window's panes before its process is respawned.
 /// Session link mutation remains in the Session-owned spawn transaction.
 pub(crate) unsafe fn prepare_respawn_window(
-    sc: *mut spawn_context,
-    cause: *mut Option<CString>,
+    sc: &mut spawn_context,
+    cause: &mut Option<CString>,
 ) -> bool {
-    let window = (*sc)
+    let window = sc
         .winlink_handle()
         .get_unchecked()
         .window_handle()
         .cloned()
         .expect("live respawn window");
     let result = (|| {
-        if !(*sc).flags & SPAWN_KILL != 0 {
+        if !sc.flags & SPAWN_KILL != 0 {
             if window
                 .pane_snapshot()
                 .iter()
@@ -118,12 +118,12 @@ pub(crate) unsafe fn prepare_respawn_window(
                 .any(|pane| pane.has_tty())
             {
                 set_spawn_cause(
-                    cause.as_mut(),
+                    Some(&mut *cause),
                     &[
                         b"window ",
-                        (*sc).s.upgrade().expect("spawn session").name().as_bytes(),
+                        sc.s.upgrade().expect("spawn session").name().as_bytes(),
                         b":",
-                        ((*sc).winlink_handle())
+                        (sc.winlink_handle())
                             .get_unchecked()
                             .idx
                             .to_string()
@@ -138,7 +138,7 @@ pub(crate) unsafe fn prepare_respawn_window(
             .step_pane(None, false)
             .upgrade()
             .expect("respawn window has a pane");
-        (*sc).wp0 = std::rc::Rc::downgrade(&source_pane_owner);
+        sc.wp0 = std::rc::Rc::downgrade(&source_pane_owner);
         let rest = window
             .pane_snapshot()
             .iter()
@@ -159,8 +159,8 @@ pub(crate) unsafe fn prepare_respawn_window(
 }
 /// Initialize the newly-created window's name and fill cells without emitting
 /// a rename notification (the window-created notification follows spawning).
-pub(crate) unsafe fn initialize_spawned_window(sc: *mut spawn_context, window: &WindowRef) {
-    if let Some(name) = (*sc).name.as_ref() {
+pub(crate) unsafe fn initialize_spawned_window(sc: &spawn_context, window: &WindowRef) {
+    if let Some(name) = sc.name.as_ref() {
         window.initialize_name(name.clone(), true);
     } else {
         window.initialize_name(default_window_name_cstring(window), false);

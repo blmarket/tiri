@@ -7,7 +7,7 @@ use crate::session::Session;
 use crate::shared::session::SessionRef;
 use crate::tmux::{getversion, global_environ, socket_path_cstr};
 use crate::xmalloc::xcalloc;
-use libc::{fnmatch, free, getpid, setenv};
+use libc::{fnmatch, free, setenv};
 use std::ffi::{CStr, CString};
 
 struct ProcessEnvironmentSeed(*mut *mut ::core::ffi::c_char);
@@ -229,12 +229,7 @@ pub unsafe fn environ_for_session(
     idx = s_owner.map_or(-1, |session| session.id() as i32);
     environ_set(&mut env, c"TMUX", 0 as ::core::ffi::c_int, |out| {
         out.write_all(socket_path_cstr().to_bytes())?;
-        write!(
-            out,
-            ",{},{}",
-            (getpid() as ::core::ffi::c_long) as ::core::ffi::c_long,
-            (idx) as i32
-        )
+        write!(out, ",{},{}", std::process::id(), (idx) as i32)
     });
     env
 }

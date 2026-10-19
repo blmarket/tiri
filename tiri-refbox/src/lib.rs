@@ -695,7 +695,7 @@ pub struct Borrow<'ptr, T: ?Sized> {
 impl<'ptr, T: ?Sized> Borrow<'ptr, T> {
     /// Creates a new borrow.
     #[inline]
-    unsafe fn new(heap: &'ptr RefBoxHeap<T>) -> Self {
+    fn new(heap: &'ptr RefBoxHeap<T>) -> Self {
         heap.inner.start_borrow();
         Self {
             heap,

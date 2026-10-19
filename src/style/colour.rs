@@ -123,7 +123,7 @@ fn colour_to_6cube(mut v: ::core::ffi::c_int) -> ::core::ffi::c_int {
     }
     (v - 35 as ::core::ffi::c_int) / 40 as ::core::ffi::c_int
 }
-pub unsafe fn colour_find_rgb(mut r: u_char, mut g: u_char, mut b: u_char) -> ::core::ffi::c_int {
+pub fn colour_find_rgb(mut r: u_char, mut g: u_char, mut b: u_char) -> ::core::ffi::c_int {
     const q2c: [::core::ffi::c_int; 6] = [
         0 as ::core::ffi::c_int,
         0x5f as ::core::ffi::c_int,
@@ -206,7 +206,7 @@ pub fn colour_split_rgb(colour: i32) -> (u_char, u_char, u_char) {
         (colour & 0xff) as u_char,
     )
 }
-pub unsafe fn colour_force_rgb(mut c: ::core::ffi::c_int) -> ::core::ffi::c_int {
+pub fn colour_force_rgb(mut c: ::core::ffi::c_int) -> ::core::ffi::c_int {
     if c & COLOUR_FLAG_RGB != 0 {
         return c;
     }
@@ -221,7 +221,7 @@ pub unsafe fn colour_force_rgb(mut c: ::core::ffi::c_int) -> ::core::ffi::c_int 
     }
     -(1 as ::core::ffi::c_int)
 }
-pub unsafe fn colour_dim(mut c: ::core::ffi::c_int, mut dim: u_int) -> ::core::ffi::c_int {
+pub fn colour_dim(mut c: ::core::ffi::c_int, mut dim: u_int) -> ::core::ffi::c_int {
     let mut r: u_char = 0;
     let mut g: u_char = 0;
     let mut b: u_char = 0;
@@ -373,8 +373,7 @@ pub(crate) fn colour_format_escape_resolved(
         return Some(std::ffi::CString::new(format!("\x1b[{}m", offset + 9)).unwrap());
     }
     if !flags & TERM_RGBCOLOURS & (colour & COLOUR_FLAG_RGB) != 0 {
-        colour =
-            unsafe { colour_find_rgb((colour >> 16) as u8, (colour >> 8) as u8, colour as u8) };
+        colour = colour_find_rgb((colour >> 16) as u8, (colour >> 8) as u8, colour as u8);
     }
     if !flags & TERM_256COLOURS & (colour & COLOUR_FLAG_256) != 0 {
         colour = colour_256to16(colour);
@@ -414,7 +413,7 @@ pub unsafe fn colour_format_escape_for_client(
     colour_format_escape_resolved(colour, background, TERM_256COLOURS | TERM_RGBCOLOURS)
 }
 
-pub unsafe fn colour_totheme(mut c: ::core::ffi::c_int) -> client_theme {
+pub fn colour_totheme(mut c: ::core::ffi::c_int) -> client_theme {
     let mut r: ::core::ffi::c_int = 0;
     let mut g: ::core::ffi::c_int = 0;
     let mut b: ::core::ffi::c_int = 0;
@@ -461,7 +460,7 @@ unsafe fn colour_fromstring_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
     let mut i: u_int = 0;
     if *s as ::core::ffi::c_int == '#' as i32 && strlen(s) == 7 as size_t {
         cp = s.offset(1 as ::core::ffi::c_int as isize);
-        while ::libc::isxdigit(*cp as u_char as ::core::ffi::c_int) != 0 {
+        while (*cp as u_char).is_ascii_hexdigit() {
             cp = cp.offset(1);
         }
         if *cp as ::core::ffi::c_int != '\0' as i32 {

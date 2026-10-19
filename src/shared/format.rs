@@ -155,8 +155,7 @@ pub struct format_entry {
     pub(crate) state: FormatEntryState,
 }
 
-pub(crate) type FormatEntryCallback =
-    Box<dyn FnMut(std::ptr::NonNull<format_tree>) -> Option<std::ffi::CString>>;
+pub(crate) type FormatEntryCallback = Box<dyn FnMut(&mut format_tree) -> Option<std::ffi::CString>>;
 
 pub(crate) enum FormatEntryState {
     Text(std::ffi::CString),

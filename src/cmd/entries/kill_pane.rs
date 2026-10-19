@@ -14,7 +14,6 @@ use crate::shared::abi::*;
 use crate::shared::command::CMD_AFTERHOOK;
 use crate::shared::command::*;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::shared::format::format_tree;
 use crate::shared::format::FORMAT_NONE;
 use crate::shared::pane::window_pane;
 use crate::shared::session::SessionRef;
@@ -114,7 +113,6 @@ unsafe fn cmd_kill_pane_filter(
     let item = item_handle.borrow();
 
     let queue_client = cmdq_get_client(Some(&*item));
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut flag: ::core::ffi::c_int = 0;
     if filter.is_null() {
         return 1 as ::core::ffi::c_int;
@@ -125,7 +123,7 @@ unsafe fn cmd_kill_pane_filter(
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );
-    ft = &raw mut *ft_owner;
+    let ft = &mut *ft_owner;
     format_defaults(ft, None, Some(s_owner), wl.clone(), Some(pane_owner));
     let expanded = format_expand_cstring(ft, filter);
     flag = format_true(expanded.as_ptr());

@@ -28,7 +28,7 @@ impl ServerObservability for ServerHost {
 
 impl Host for ServerHost {
     fn pane_cwd(&self, pane: PaneId) -> Option<PathBuf> {
-        unsafe { observability::cwd(pane) }
+        observability::cwd(pane)
     }
 
     fn pane_activity(&self, pane: PaneId) -> Option<PaneActivity> {

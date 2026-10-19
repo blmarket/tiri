@@ -42,8 +42,8 @@ use crate::tmux::{
 use crate::tty::tty_term_read_list;
 use libc::{
     cfgetispeed, cfgetospeed, cfmakeraw, cfsetispeed, cfsetospeed, execl, fflush, fprintf, getenv,
-    getpid, getppid, kill, memset, printf, setenv, sigaction, sigemptyset, strlen, strsignal,
-    system, unlink, waitpid,
+    getppid, kill, memset, printf, setenv, sigaction, sigemptyset, strlen, strsignal, system,
+    unlink, waitpid,
 };
 use libc::{EAGAIN, ECHILD, ENAMETOOLONG, ENOENT};
 use std::ffi::{CStr, CString, OsStr};
@@ -90,7 +90,7 @@ enum ClientLock {
     Unavailable,
 }
 
-unsafe fn client_get_lock(lockfile: &CStr) -> ClientLock {
+fn client_get_lock(lockfile: &CStr) -> ClientLock {
     log_debug(format_args!("lock file is {}", log_cstr(lockfile)));
     let lock = match tiri_rt::unix::open(lockfile, libc::O_WRONLY | libc::O_CREAT, 0o600) {
         Ok(file) => file,
@@ -478,7 +478,7 @@ unsafe fn client_send_identify(
         .try_clone_to_owned()
         .unwrap_or_else(|error| fatal(&error, |out| out.write_all(b"dup failed")));
     proc_send(client_peer, MSG_IDENTIFY_STDOUT, Some(fd), &[]);
-    pid = getpid() as pid_t;
+    pid = std::process::id() as pid_t;
     proc_send(client_peer, MSG_IDENTIFY_CLIENTPID, None, bytes_of(&pid));
     ss = environ;
     while !(*ss).is_null() {
@@ -821,7 +821,7 @@ unsafe fn client_dispatch_attached(imsg: &mut imsg) {
                 });
             }
             client_suspended = 1 as ::core::ffi::c_int;
-            kill(getpid(), SIGTSTP);
+            kill(std::process::id() as pid_t, SIGTSTP);
         }
         MSG_LOCK => {
             if datalen == 0 as ssize_t

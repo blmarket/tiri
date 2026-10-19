@@ -651,13 +651,13 @@ pub unsafe fn monitor_destroy(owner: refbox::RefBox<monitor_set>) {
     }
     drop(callback);
 }
-pub unsafe fn monitor_create_client_owned(
+pub fn monitor_create_client_owned(
     client: Option<&ClientRef>,
     callback: monitor_cb,
 ) -> refbox::RefBox<monitor_set> {
     monitor_create_client(client, callback)
 }
-pub unsafe fn monitor_create_session_owned(
+pub fn monitor_create_session_owned(
     session: Option<&SessionRef>,
     callback: monitor_cb,
 ) -> refbox::RefBox<monitor_set> {

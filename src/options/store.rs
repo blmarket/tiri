@@ -19,7 +19,7 @@ use crate::style::colour::{colour_format, colour_parse_cstr};
 
 use crate::shared::abi::*;
 use crate::shared::command::cmd_list;
-use crate::shared::command::{cmd_parse_input, cmd_parse_result};
+use crate::shared::command::cmd_parse_result;
 use crate::shared::key::*;
 use crate::shared::limits::UINT_MAX;
 use std::collections::btree_map;
@@ -176,10 +176,7 @@ pub unsafe fn options_default<'a>(
             set_scalar_string(o, oe.default_str.expect("string option default").to_owned());
         }
         6 => {
-            pr = cmd_parse_from_string(
-                oe.default_str.expect("string option default"),
-                ::core::ptr::null_mut::<cmd_parse_input>(),
-            );
+            pr = cmd_parse_from_string(oe.default_str.expect("string option default"), None);
             match pr.status as ::core::ffi::c_uint {
                 0 => {}
                 1 => {
@@ -329,7 +326,7 @@ impl options_array {
             return Ok(());
         };
         if oe.type_0 == OPTIONS_TABLE_COMMAND {
-            let mut pr = cmd_parse_from_string(value, ::core::ptr::null_mut::<cmd_parse_input>());
+            let mut pr = cmd_parse_from_string(value, None);
             if pr.status as ::core::ffi::c_uint == 0 {
                 return Err(pr.error.expect("command parse error"));
             }
@@ -397,11 +394,7 @@ pub fn options_is_string(o: &options_entry) -> ::core::ffi::c_int {
         .is_none_or(|entry| entry.type_0 == OPTIONS_TABLE_STRING)) as ::core::ffi::c_int
 }
 
-pub unsafe fn options_to_cstring(
-    entry: &options_entry,
-    key: Option<&CStr>,
-    numeric: i32,
-) -> CString {
+pub fn options_to_cstring(entry: &options_entry, key: Option<&CStr>, numeric: i32) -> CString {
     if entry
         .tableentry
         .is_some_and(|table| table.flags & OPTIONS_TABLE_IS_ARRAY != 0)

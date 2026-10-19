@@ -185,7 +185,7 @@ unsafe fn cmd_set_hook_event_exec(
 }
 unsafe fn cmd_set_hook_monitor_exec(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
-    args: *mut args,
+    args: &mut args,
     window: i32,
 ) -> CmdOutcome {
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item_handle.borrow()).clone();
@@ -260,7 +260,7 @@ unsafe fn cmd_set_hook_monitor_exec(
         id,
         format.as_deref().expect("monitor format"),
         flags,
-        &mut fs,
+        &fs,
         session.as_ref(),
     );
     if let Some(session) = session {
@@ -324,7 +324,7 @@ unsafe fn cmd_set_option_exec(
         return cmd_set_hook_event_exec(self_0, item_handle);
     }
     if set_hook && args_has(&*args, b'B') != 0 {
-        return cmd_set_hook_monitor_exec(item_handle, args, window);
+        return cmd_set_hook_monitor_exec(item_handle, &mut *args, window);
     }
     if args_count(&*args) == 0 {
         return set_option_error(item_handle, c"missing argument");
@@ -369,7 +369,7 @@ unsafe fn cmd_set_option_exec(
             value = Some(format_single_from_target_cstring(item_handle, old.as_ptr()));
         }
     }
-    let (scope, selected) = match options_scope_from_name(args, window, &parsed.name, &*target) {
+    let (scope, selected) = match options_scope_from_name(&*args, window, &parsed.name, &*target) {
         Ok(selected) => selected,
         Err(_) if args_has(&*args, b'q') != 0 => return CmdOutcome::Normal,
         Err(cause) => return set_option_error(item_handle, &cause),

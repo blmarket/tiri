@@ -708,7 +708,7 @@ unsafe fn cmd_new_session_exec(
                                                         cmdq_insert_hook(
                                                             s.as_ref(),
                                                             item_handle,
-                                                            &raw mut fs,
+                                                            Some(&fs),
                                                             |out| {
                                                                 out.write_all(b"after-new-session")
                                                             },

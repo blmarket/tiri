@@ -59,10 +59,10 @@ unsafe fn clients_calculate_size(
     c_owner: Option<&ClientRef>,
     w_owner: Option<&WindowRef>,
     mut skip_client: impl FnMut(&ClientRef) -> bool,
-    mut sx: *mut u_int,
-    mut sy: *mut u_int,
-    mut xpixel: *mut u_int,
-    mut ypixel: *mut u_int,
+    sx: &mut u_int,
+    sy: &mut u_int,
+    xpixel: &mut u_int,
+    ypixel: &mut u_int,
 ) -> ::core::ffi::c_int {
     let mut c: Option<ClientRef> = c_owner.cloned();
     let mut loop_0: Option<ClientRef> = None;
@@ -259,10 +259,10 @@ pub unsafe fn default_window_size(
     c_owner: Option<&ClientRef>,
     s_owner: &SessionRef,
     w_owner: Option<&WindowRef>,
-    mut sx: *mut u_int,
-    mut sy: *mut u_int,
-    mut xpixel: *mut u_int,
-    mut ypixel: *mut u_int,
+    sx: &mut u_int,
+    sy: &mut u_int,
+    xpixel: &mut u_int,
+    ypixel: &mut u_int,
     mut type_0: ::core::ffi::c_int,
 ) {
     let mut c: Option<ClientRef> = c_owner.cloned();
@@ -317,7 +317,13 @@ pub unsafe fn default_window_size(
             {
                 let options = s_owner.borrow_options_mut();
                 let value = options_get_string(&options, c"default-size");
-                if sscanf(value.as_ptr(), c"%ux%u".as_ptr(), sx, sy) != 2 {
+                if sscanf(
+                    value.as_ptr(),
+                    c"%ux%u".as_ptr(),
+                    &raw mut *sx,
+                    &raw mut *sy,
+                ) != 2
+                {
                     *sx = 80;
                     *sy = 24;
                 }
@@ -395,10 +401,10 @@ pub unsafe fn recalculate_size(w_owner: &WindowRef, mut now: ::core::ffi::c_int)
                 !session.contains_window(w_owner)
             }
         },
-        &raw mut sx,
-        &raw mut sy,
-        &raw mut xpixel,
-        &raw mut ypixel,
+        &mut sx,
+        &mut sy,
+        &mut xpixel,
+        &mut ypixel,
     );
     if let Some(pending) = w_owner.pending_resize() {
         if now == 0 && changed != 0 && pending == (sx, sy) {

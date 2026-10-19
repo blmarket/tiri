@@ -16,9 +16,7 @@ use crate::file::file_error;
 use crate::format::bytes::format_message_with;
 use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
-use crate::format::{
-    format_add, format_add_cstr, format_create_owned, format_merge, format_owner_ptr,
-};
+use crate::format::{format_add, format_add_cstr, format_create_owned, format_merge};
 use crate::key_string::key_string_format;
 use crate::log::{log_cstr, log_debug, log_get_level};
 use crate::reactor::{evbuffer_add_formatted, evbuffer_new};
@@ -42,7 +40,7 @@ use crate::shared::key::*;
 use crate::shared::session::SessionRef;
 use crate::status::status_message_set;
 use crate::text::utf8::utf8_sanitize_cstring;
-use libc::{getpwuid, getuid, time};
+use libc::{getpwuid, getuid};
 use std::ffi::{CStr, CString};
 use tiri_buffer::SegmentedBuf;
 
@@ -239,7 +237,7 @@ impl cmdq_list {
     }
 }
 
-unsafe fn cmdq_new_named_item(label: &'static CStr) -> std::rc::Rc<std::cell::RefCell<cmdq_item>> {
+fn cmdq_new_named_item(label: &'static CStr) -> std::rc::Rc<std::cell::RefCell<cmdq_item>> {
     let owner = std::rc::Rc::new(std::cell::RefCell::new(cmdq_item::empty()));
     let address = owner.as_ptr();
     owner.borrow_mut().name = Some(format_message_with(|out| {
@@ -383,23 +381,23 @@ pub fn cmdq_get_flags(item: &cmdq_item) -> ::core::ffi::c_int {
     cmdq_get_state(item).expect("command queue state").flags
 }
 pub unsafe fn cmdq_new_state(
-    mut current: *mut cmd_find_state,
-    mut event: *mut key_event,
+    current: Option<&cmd_find_state>,
+    event: Option<&key_event>,
     mut flags: ::core::ffi::c_int,
 ) -> std::rc::Rc<cmdq_state> {
-    let snapshot = if event.is_null() {
+    let snapshot = if let Some(event) = event {
+        event.metadata_snapshot()
+    } else {
         key_event {
             client: std::rc::Weak::new(),
             key: KEYC_NONE as key_code,
             m: Default::default(),
             bytes: None,
         }
-    } else {
-        (*event).metadata_snapshot()
     };
     let mut target = cmd_find_state::default();
-    if !current.is_null() && (*current).is_valid() {
-        target.copy_from(&*current);
+    if let Some(current) = current.filter(|current| current.is_valid()) {
+        target.copy_from(current);
     } else {
         target = cmd_find_state::clear_state(0);
     }
@@ -412,43 +410,33 @@ pub unsafe fn cmdq_new_state(
 }
 pub unsafe fn cmdq_copy_state(
     state: &cmdq_state,
-    current: *mut cmd_find_state,
+    current: Option<&cmd_find_state>,
 ) -> std::rc::Rc<cmdq_state> {
-    let mut event = state.event.metadata_snapshot();
-    if !current.is_null() {
-        return cmdq_new_state(current, &mut event, state.flags);
+    let event = state.event.metadata_snapshot();
+    if let Some(current) = current {
+        return cmdq_new_state(Some(current), Some(&event), state.flags);
     }
-    let mut current = state.current_snapshot();
-    cmdq_new_state(&mut current, &mut event, state.flags)
+    let current = state.current_snapshot();
+    cmdq_new_state(Some(&current), Some(&event), state.flags)
 }
 /// Copy a literal key and value into the command queue state's formats.
 pub unsafe fn cmdq_add_format(state: &cmdq_state, key: &CStr, value: &CStr) {
     let mut formats = state.formats.borrow_mut();
-    if formats.is_none() {
-        *formats = Some(format_create_owned(
-            None,
-            None,
-            FORMAT_NONE,
-            0 as ::core::ffi::c_int,
-        ));
-    }
-    format_add_cstr(format_owner_ptr(&mut formats), key, value);
+    let formats = formats.get_or_insert_with(|| {
+        format_create_owned(None, None, FORMAT_NONE, 0 as ::core::ffi::c_int)
+    });
+    format_add_cstr(formats, key, value);
 }
-pub unsafe fn cmdq_add_formats(state: &cmdq_state, mut ft: *mut format_tree) {
+pub unsafe fn cmdq_add_formats(state: &cmdq_state, ft: &format_tree) {
     let mut formats = state.formats.borrow_mut();
-    if formats.is_none() {
-        *formats = Some(format_create_owned(
-            None,
-            None,
-            FORMAT_NONE,
-            0 as ::core::ffi::c_int,
-        ));
-    }
-    format_merge(format_owner_ptr(&mut formats), ft);
+    let formats = formats.get_or_insert_with(|| {
+        format_create_owned(None, None, FORMAT_NONE, 0 as ::core::ffi::c_int)
+    });
+    format_merge(formats, ft);
 }
 pub unsafe fn cmdq_merge_formats(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
-    mut ft: *mut format_tree,
+    ft: &mut format_tree,
 ) {
     let (command, state) = {
         let item = item_handle.borrow();
@@ -460,7 +448,7 @@ pub unsafe fn cmdq_merge_formats(
     }
     let mut formats = state.formats.borrow_mut();
     if formats.is_some() {
-        format_merge(ft, format_owner_ptr(&mut formats));
+        format_merge(ft, formats.as_deref().expect("command formats"));
     }
 }
 /// Consume a detached chain, moving its owners into the queue in order.
@@ -534,7 +522,7 @@ pub unsafe fn cmdq_insert_after(
 pub unsafe fn cmdq_insert_hook(
     _s_owner: Option<&SessionRef>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
-    mut current: *mut cmd_find_state,
+    current: Option<&cmd_find_state>,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let (mut cmd, flags) = {
@@ -550,8 +538,8 @@ pub unsafe fn cmdq_insert_hook(
     }
     let name = format_message_with(write);
     let mut ep = event_payload_create();
-    if !current.is_null() {
-        event_payload_set_target(&mut ep, &*current);
+    if let Some(current) = current {
+        event_payload_set_target(&mut ep, current);
     }
     event_payload_set_identity(
         &mut ep,
@@ -649,7 +637,7 @@ async unsafe fn cmdq_drain(queue: QueueTarget) {
         number = number.wrapping_add(1);
         {
             let mut item = item_owner.borrow_mut();
-            item.time = time(std::ptr::null_mut());
+            item.time = crate::shared::time::unix_seconds(std::time::SystemTime::now());
             item.number = number;
         }
         let counted = match start(&item_owner) {
@@ -741,7 +729,7 @@ pub struct CmdqWaiter {
 /// Suspend the executing item until its waiter resumes it, and return the
 /// waiter with the outcome its command or callback must return.
 #[must_use = "return the suspension from the command"]
-pub(crate) unsafe fn cmdq_wait(
+pub(crate) fn cmdq_wait(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> (CmdqWaiter, CmdOutcome) {
     let client = {
@@ -769,7 +757,7 @@ impl CmdqWaiter {
         self.done.is_closed()
     }
     /// Complete the wait; a wake outside exec completes the item at once.
-    pub(crate) unsafe fn resume(self) {
+    pub(crate) fn resume(self) {
         let _ = self.done.send(());
     }
     /// Report `status` as the return value of a client without a session at
@@ -836,7 +824,7 @@ pub unsafe fn cmdq_get_command(
     }
     let state = state
         .cloned()
-        .unwrap_or_else(|| cmdq_new_state(std::ptr::null_mut(), std::ptr::null_mut(), 0));
+        .unwrap_or_else(|| cmdq_new_state(None, None, 0));
     let mut remaining = None;
     for command in cmdlist.list.iter().rev() {
         let cmd = command.downgrade();
@@ -866,7 +854,7 @@ unsafe fn cmdq_find_flag_into(
 }
 unsafe fn cmdq_find_flag(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
-    mut fs: *mut cmd_find_state,
+    fs: &mut cmd_find_state,
     flag: &cmd_entry_flag,
 ) -> CmdOutcome {
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -882,7 +870,7 @@ unsafe fn cmdq_find_flag(
         flag.flag as u_char,
     )
     .map_or(std::ptr::null(), |value| value.as_ptr());
-    if (*fs).find_target(
+    if fs.find_target(
         Some(item_handle),
         nullable_cstr(value),
         flag.type_0,
@@ -1091,7 +1079,7 @@ unsafe fn cmdq_fire_command(
                             cmdq_insert_hook(
                                 (*fsp).session_handle().as_ref(),
                                 item_handle,
-                                fsp,
+                                fsp.as_ref(),
                                 |out| {
                                     out.write_all(b"after-")?;
                                     write_cstr(out, &*entry.name)
@@ -1131,7 +1119,7 @@ unsafe fn cmdq_fire_command(
             })
             .as_ref(),
             item_handle,
-            fsp,
+            fsp.as_ref(),
             |out| out.write_all(b"command-error"),
         );
         cmdq_guard(item_handle, c"error", flags);
@@ -1149,11 +1137,7 @@ pub unsafe fn cmdq_get_callback_owned(
     {
         let mut item = owner.borrow_mut();
         item.group = 0 as u_int;
-        item.state = Some(cmdq_new_state(
-            ::core::ptr::null_mut::<cmd_find_state>(),
-            ::core::ptr::null_mut::<key_event>(),
-            0 as ::core::ffi::c_int,
-        ));
+        item.state = Some(cmdq_new_state(None, None, 0 as ::core::ffi::c_int));
         item.start = Some(cb.expect("non-null queue callback"));
     }
     owner
@@ -1306,7 +1290,7 @@ pub unsafe fn cmdq_error(
         }
         Some(_) => {
             let mut bytes = msg.into_bytes_with_nul();
-            bytes[0] = ::libc::toupper(bytes[0] as ::core::ffi::c_int) as u8;
+            bytes[0] = bytes[0].to_ascii_uppercase();
             msg = CString::from_vec_with_nul_unchecked(bytes);
             status_message_set(
                 c.as_ref(),
@@ -1738,7 +1722,7 @@ mod wait_tests {
 
     /// Run `exec` with `lent` lent to a clientless item, as cmdq_fire_command
     /// does around a command's exec.
-    unsafe fn with_lent_client(
+    fn with_lent_client(
         item: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
         lent: &ClientRef,
         exec: impl FnOnce() -> CmdOutcome,

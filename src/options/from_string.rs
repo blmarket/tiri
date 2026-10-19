@@ -58,13 +58,13 @@ unsafe fn options_from_string_check(oe: &options_table_entry, value: &CStr) -> R
     }
     if oe.flags & OPTIONS_TABLE_IS_STYLE != 0
         && !value.to_bytes().windows(2).any(|bytes| bytes == b"#{")
-        && style_parse(&raw mut sy, &grid_default_cell, value) != 0 as ::core::ffi::c_int
+        && style_parse(&mut sy, &grid_default_cell, value) != 0 as ::core::ffi::c_int
     {
         return Err(options_string_cause(c"invalid style: %s", &[value]));
     }
     if oe.flags & OPTIONS_TABLE_IS_COLOUR != 0
         && !value.to_bytes().windows(2).any(|bytes| bytes == b"#{")
-        && style_parse_colour(&raw mut sy, &grid_default_cell, value) != 0 as ::core::ffi::c_int
+        && style_parse_colour(&mut sy, &grid_default_cell, value) != 0 as ::core::ffi::c_int
     {
         return Err(options_string_cause(c"invalid colour: %s", &[value]));
     }

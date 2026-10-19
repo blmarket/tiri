@@ -27,7 +27,6 @@ use crate::shared::command::*;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CFLAG};
 use crate::shared::environment::environ;
-use crate::shared::format::format_tree;
 use crate::shared::key::key_event;
 use crate::shared::key::*;
 use crate::shared::layout::*;
@@ -149,9 +148,9 @@ unsafe fn cmd_display_menu_status_position(
 unsafe fn cmd_display_menu_get_popup_pos(
     tc_owner: &ClientRef,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
-    mut args: *mut args,
-    mut px: *mut u_int,
-    mut py: *mut u_int,
+    args: &args,
+    px: &mut u_int,
+    py: &mut u_int,
     mut w: u_int,
     mut h: u_int,
 ) -> ::core::ffi::c_int {
@@ -175,14 +174,13 @@ unsafe fn cmd_display_menu_get_popup_pos(
     let mut lines: u_int = 0;
     let mut position: u_int = 0;
     let mut n: ::core::ffi::c_long = 0;
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     if w > tc.as_ref().expect("live client").terminal_size().0
         || h > tc.as_ref().expect("live client").terminal_size().1
     {
         return 0 as ::core::ffi::c_int;
     }
     let mut ft_owner = format_create_from_target(item_handle);
-    ft = &raw mut *ft_owner;
+    let ft = &mut *ft_owner;
     if (*event).m.valid != 0 {
         format_add(ft, c"popup_mouse_x", |out| {
             write!(out, "{}", { (*event).m.x })
@@ -482,9 +480,9 @@ unsafe fn cmd_display_menu_get_popup_pos(
 unsafe fn cmd_display_menu_get_menu_pos(
     tc_owner: &ClientRef,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
-    mut args: *mut args,
-    mut px: *mut u_int,
-    mut py: *mut u_int,
+    args: &args,
+    px: &mut u_int,
+    py: &mut u_int,
     mut w: u_int,
     mut h: u_int,
 ) -> ::core::ffi::c_int {
@@ -512,13 +510,12 @@ unsafe fn cmd_display_menu_get_menu_pos(
     let mut max_y: ::core::ffi::c_long = 0;
     let mut mouse_x: ::core::ffi::c_long = 0 as ::core::ffi::c_long;
     let mut mouse_y: ::core::ffi::c_long = 0 as ::core::ffi::c_long;
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let tty_window_view { ox, oy, sx, sy, .. } = tc.as_ref().expect("live client").terminal_view();
     let logical = (ox.wrapping_add(sx), oy.wrapping_add(sy));
     max_x = ox.wrapping_add(sx.saturating_sub(w)) as ::core::ffi::c_long;
     max_y = oy.wrapping_add(sy.saturating_sub(h)) as ::core::ffi::c_long;
     let mut ft_owner = format_create_from_target(item_handle);
-    ft = &raw mut *ft_owner;
+    let ft = &mut *ft_owner;
     if (*event).m.valid != 0 {
         mouse_x = (*event).m.x.wrapping_add(ox) as ::core::ffi::c_long;
         if (*event).m.statusat == 0 as ::core::ffi::c_int {
@@ -756,7 +753,7 @@ unsafe fn cmd_display_menu_exec(
     let args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let target = &mut target_state;
+    let target = &target_state;
     let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
     let tc_owner = cmdq_get_target_client(Some(&*item));
@@ -804,7 +801,7 @@ unsafe fn cmd_display_menu_exec(
                 None,
                 Some(item_handle),
                 tc_owner.as_ref(),
-                target,
+                Some(target),
             );
             continue;
         }
@@ -826,7 +823,7 @@ unsafe fn cmd_display_menu_exec(
             Some(&definition),
             Some(item_handle),
             tc_owner.as_ref(),
-            target,
+            Some(target),
         );
     }
     let mut px = 0;
@@ -835,7 +832,7 @@ unsafe fn cmd_display_menu_exec(
         || cmd_display_menu_get_menu_pos(
             &tc.clone().expect("live client"),
             item_handle,
-            args,
+            &*args,
             &mut px,
             &mut py,
             menu.width.wrapping_add(4),
@@ -882,7 +879,7 @@ unsafe fn cmd_display_menu_exec(
         style,
         selected_style,
         border_style,
-        target,
+        Some(target),
         None,
     );
     CmdOutcome::Normal
@@ -1008,9 +1005,9 @@ unsafe fn cmd_display_popup_exec(
                         if cmd_display_menu_get_popup_pos(
                             &tc.clone().expect("live client"),
                             item_handle,
-                            args,
-                            &raw mut px,
-                            &raw mut py,
+                            &*args,
+                            &mut px,
+                            &mut py,
                             w,
                             h,
                         ) == 0

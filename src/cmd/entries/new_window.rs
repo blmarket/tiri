@@ -14,8 +14,6 @@ use crate::server_client::Client as _;
 use crate::server_fn::{
     server_redraw_session, server_redraw_session_group, server_status_session_group,
 };
-use libc::strcmp;
-
 use crate::session::Session;
 use crate::shared::abi::*;
 use crate::shared::client::ClientRef;
@@ -160,14 +158,12 @@ unsafe fn cmd_new_window_exec(
                 .expect("live session")
                 .with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
             while wl.is_alive() {
-                if !(strcmp(
-                    wl.get_unchecked()
-                        .window_handle()
-                        .expect("live window")
-                        .name()
-                        .as_ptr(),
-                    expanded.as_ptr(),
-                ) != 0 as ::core::ffi::c_int)
+                if wl
+                    .get_unchecked()
+                    .window_handle()
+                    .expect("live window")
+                    .name()
+                    == expanded
                 {
                     if !new_wl.is_alive() {
                         new_wl = wl.clone();
@@ -290,7 +286,7 @@ unsafe fn cmd_new_window_exec(
             cmdq_print(item_handle, |out| out.write_all(cp.as_bytes()));
         }
         fs = cmd_find_state::find_from_winlink((new_wl).clone(), 0 as ::core::ffi::c_int);
-        cmdq_insert_hook(Some(&session_owner), item_handle, &raw mut fs, |out| {
+        cmdq_insert_hook(Some(&session_owner), item_handle, Some(&fs), |out| {
             out.write_all(b"after-new-window")
         });
         drop(sc.environ.take());

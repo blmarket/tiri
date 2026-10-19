@@ -90,6 +90,49 @@ pub fn cstr_suffix(s: &CStr, offset: usize) -> &CStr {
         .expect("a suffix of a C string is NUL-terminated")
 }
 
+/// Copy `src` into a fixed C buffer like `strlcpy`: at most `dst.len() - 1`
+/// bytes and a NUL; bytes after the NUL are left alone. Returns the length of
+/// `src`, so a result `>= dst.len()` means the copy was truncated.
+pub fn cstr_copy_into(dst: &mut [c_char], src: &CStr) -> usize {
+    let src = src.to_bytes();
+    if let Some(room) = dst.len().checked_sub(1) {
+        let len = src.len().min(room);
+        for (out, &byte) in dst.iter_mut().zip(&src[..len]) {
+            *out = byte as c_char;
+        }
+        dst[len] = 0;
+    }
+    src.len()
+}
+
+/// Append `src` to the C string in a fixed buffer like `strlcat`. Returns the
+/// length of the string it tried to create.
+pub fn cstr_append_into(dst: &mut [c_char], src: &CStr) -> usize {
+    match dst.iter().position(|&byte| byte == 0) {
+        Some(len) => len + cstr_copy_into(&mut dst[len..], src),
+        None => dst.len() + src.to_bytes().len(),
+    }
+}
+
+/// POSIX `basename`: trailing slashes are ignored, an all-slash path is `/`
+/// and an empty path is `.`.
+pub fn cstr_basename(path: &CStr) -> CString {
+    let path = path.to_bytes();
+    let base: &[u8] = if path.is_empty() {
+        b"."
+    } else if let Some(last) = path.iter().rposition(|&byte| byte != b'/') {
+        let path = &path[..=last];
+        let start = path
+            .iter()
+            .rposition(|&byte| byte == b'/')
+            .map_or(0, |i| i + 1);
+        &path[start..]
+    } else {
+        b"/"
+    };
+    CString::new(base).expect("a part of a C string has no NUL")
+}
+
 /// Borrow a C string pointer from code that has not moved to `&CStr` yet.
 ///
 /// # Safety
@@ -102,6 +145,50 @@ pub unsafe fn nullable_cstr<'a>(ptr: *const c_char) -> Option<&'a CStr> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn c_buffer(text: &[u8]) -> Vec<c_char> {
+        text.iter().map(|&byte| byte as c_char).collect()
+    }
+
+    #[test]
+    fn copy_and_append_match_strlcpy_and_strlcat() {
+        // (buffer, src, after copy, copy result, after append, append result)
+        let cases: &[(&[u8], &CStr, &[u8], usize, &[u8], usize)] = &[
+            (b"#", c"", b"\0", 0, b"#", 1),
+            (b"########", c"abc", b"abc\0####", 3, b"########", 11),
+            (b"####", c"abcdefgh", b"abc\0", 8, b"####", 12),
+            (b"ab\0#####", c"cd", b"cd\0#####", 2, b"abcd\0###", 4),
+            (b"abc\0##", c"defgh", b"defgh\0", 5, b"abcde\0", 8),
+            (b"abcdef", c"gh", b"gh\0def", 2, b"abcdef", 8),
+            (b"", c"gh", b"", 2, b"", 2),
+        ];
+        for &(initial, src, copied, copy_len, appended, append_len) in cases {
+            let mut buffer = c_buffer(initial);
+            assert_eq!(cstr_copy_into(&mut buffer, src), copy_len);
+            assert_eq!(buffer, c_buffer(copied));
+            let mut buffer = c_buffer(initial);
+            assert_eq!(cstr_append_into(&mut buffer, src), append_len);
+            assert_eq!(buffer, c_buffer(appended));
+        }
+    }
+
+    #[test]
+    fn basename_follows_posix() {
+        for (path, base) in [
+            (c"", c"."),
+            (c"/", c"/"),
+            (c"//", c"/"),
+            (c"///", c"/"),
+            (c"name", c"name"),
+            (c"/usr/bin/vim", c"vim"),
+            (c"/usr/bin/", c"bin"),
+            (c"usr//", c"usr"),
+            (c"a//b///", c"b"),
+            (c"/\xffx", c"\xffx"),
+        ] {
+            assert_eq!(cstr_basename(path).as_c_str(), base, "{path:?}");
+        }
+    }
 
     #[test]
     fn byte_output_preserves_nul_while_cstring_reports_it() {

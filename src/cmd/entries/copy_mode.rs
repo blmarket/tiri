@@ -10,7 +10,6 @@ use crate::shared::command::{CMD_AFTERHOOK, CMD_READONLY, CMD_TARGET_PANE_USAGE}
 use crate::shared::key::key_event;
 use crate::shared::key::*;
 use crate::shared::session::SessionRef;
-use crate::shared::window::winlink;
 use crate::window::WindowPane;
 use crate::window_clock::window_clock_mode;
 use crate::window_copy::{
@@ -91,11 +90,7 @@ unsafe fn cmd_copy_mode_exec(
     }
     if args_has(&*args, 'M' as i32 as u_char) != 0 {
         let mut mouse_session_owner = None;
-        let mouse_pane_owner = cmd_mouse_pane(
-            &raw mut (*event).m,
-            Some(&mut mouse_session_owner),
-            ::core::ptr::null_mut::<refbox::Weak<winlink>>(),
-        );
+        let mouse_pane_owner = cmd_mouse_pane(&(*event).m, Some(&mut mouse_session_owner), None);
         s = mouse_session_owner.clone();
         let Some(mouse_pane) = mouse_pane_owner else {
             return CmdOutcome::Normal;
@@ -146,7 +141,7 @@ unsafe fn cmd_copy_mode_exec(
     {
         window_copy_set_line_numbers(&pane_owner, line_numbers);
         if args_has(&*args, 'M' as i32 as u_char) != 0 {
-            window_copy_start_drag(c_owner.as_ref(), &raw mut (*event).m);
+            window_copy_start_drag(c_owner.as_ref(), &mut (*event).m);
         }
     } else {
         window_copy_set_line_numbers(&pane_owner, line_numbers);

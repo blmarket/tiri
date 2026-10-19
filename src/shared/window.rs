@@ -96,8 +96,8 @@ impl window_mode_entry {
 pub type window_mode_init_cb = unsafe fn(
     refbox::Weak<window_mode_entry>,
     Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
-    *mut cmd_find_state,
-    *mut args,
+    Option<&cmd_find_state>,
+    Option<&mut args>,
 ) -> bool;
 /// Visits a screen owned by the mode payload, calling the visitor once when
 /// the payload has one. The borrow ends when the visitor returns.
@@ -125,7 +125,7 @@ pub type window_mode_key_cb = unsafe fn(
     &ClientRef,
     refbox::Weak<winlink>,
     key_code,
-    *mut mouse_event,
+    Option<&mut mouse_event>,
 );
 /// Runs a mode command (send-keys -X) with its arguments.
 pub type window_mode_command_cb = unsafe fn(
@@ -133,8 +133,8 @@ pub type window_mode_command_cb = unsafe fn(
     Option<&ClientRef>,
     Option<&SessionRef>,
     refbox::Weak<winlink>,
-    *mut args,
-    *mut mouse_event,
+    &mut args,
+    Option<&mut mouse_event>,
 );
 
 #[derive(Copy, Clone)]
@@ -151,7 +151,7 @@ pub struct window_mode {
     pub key: Option<window_mode_key_cb>,
     pub key_table: Option<unsafe fn(refbox::Weak<window_mode_entry>) -> &'static std::ffi::CStr>,
     pub command: Option<window_mode_command_cb>,
-    pub formats: Option<unsafe fn(refbox::Weak<window_mode_entry>, *mut format_tree) -> ()>,
+    pub formats: Option<unsafe fn(refbox::Weak<window_mode_entry>, &mut format_tree) -> ()>,
     /// The mode's source screen, for `capture-pane -M`.
     pub get_screen: Option<window_mode_screen_cb>,
     /// The screen the pane shows while this mode is selected.

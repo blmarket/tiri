@@ -89,8 +89,7 @@ unsafe fn cmd_respawn_pane_exec(
         sc.flags |= SPAWN_KILL;
     }
     if <std::rc::Rc<std::cell::UnsafeCell<window_pane>> as WindowPane>::spawn_process(
-        &raw mut sc,
-        &raw mut cause,
+        &mut sc, &mut cause,
     )
     .is_none()
     {

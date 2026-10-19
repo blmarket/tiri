@@ -36,7 +36,6 @@ use crate::shared::client::{
 };
 use crate::shared::command::cmd_find_state;
 use crate::shared::command::*;
-use crate::shared::format::format_tree;
 use crate::shared::format::{FORMAT_FORCE, FORMAT_NONE, FORMAT_STATUS};
 use crate::shared::grid::*;
 use crate::shared::key::*;
@@ -189,7 +188,7 @@ pub unsafe fn status_init(status: &mut status_line, width: u_int) {
             .wrapping_div(::core::mem::size_of::<style_line_entry>() as usize)
     {
         style_ranges_init(
-            &raw mut (*(&raw mut (*sl).entries as *mut style_line_entry).offset(i as isize)).ranges,
+            &mut (*(&raw mut (*sl).entries as *mut style_line_entry).offset(i as isize)).ranges,
         );
         i = i.wrapping_add(1);
     }
@@ -245,7 +244,6 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
     let mut changed: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut fg: ::core::ffi::c_int = 0;
     let mut bg: ::core::ffi::c_int = 0;
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     log_debug(format_args!("{} enter", "status_redraw"));
     if c_owner.borrow_status().active.is_some() {
         fatalx(|out| out.write_all(b"not the active screen"));
@@ -259,10 +257,10 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
         flags |= FORMAT_FORCE;
     }
     let mut ft_owner = format_create(Some(c_owner), None, FORMAT_NONE, flags);
-    ft = &raw mut *ft_owner;
+    let ft = &mut *ft_owner;
     format_defaults(ft, Some(c_owner), None, (refbox::Weak::new()).clone(), None);
     let scope = OptionsScope::Session(Rc::downgrade(s.as_ref().expect("live session")));
-    crate::style::style_apply_with_options(&mut gc, c"status-style", ft.as_mut(), &scope);
+    crate::style::style_apply_with_options(&mut gc, c"status-style", Some(&mut *ft), &scope);
     fg = scope.with_local(|oo| options_get_number(oo, c"status-fg")) as ::core::ffi::c_int;
     if !(fg == 8 as ::core::ffi::c_int || fg == 9 as ::core::ffi::c_int) {
         gc.fg = fg;
@@ -337,7 +335,7 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
                         i as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
                     );
-                    style_ranges_clear(&raw mut (*sle).ranges);
+                    style_ranges_clear(&mut (*sle).ranges);
                     format_draw(
                         &mut ctx,
                         &gc,
@@ -458,7 +456,6 @@ pub unsafe fn status_message_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
         us: 0,
         link: 0,
     };
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut msgfmt: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if terminal_width == 0 as u_int || terminal_height == 0 as u_int {
         return 0 as ::core::ffi::c_int;
@@ -486,11 +483,11 @@ pub unsafe fn status_message_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
         (refbox::Weak::new()).clone(),
         None,
     );
-    ft = &raw mut *ft_owner;
+    let ft = &mut *ft_owner;
     crate::style::style_apply_with_options(
         &mut gc,
         c"message-style",
-        ft.as_mut(),
+        Some(&mut *ft),
         &OptionsScope::Session(Rc::downgrade(s.as_ref().expect("live session"))),
     );
     let (message, ignore_styles) = c_owner.status_message_text();
@@ -547,11 +544,7 @@ pub unsafe fn status_message_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
 unsafe fn status_prompt_accept(c_owner: &ClientRef) -> CmdOutcome {
     let _c: Option<ClientRef> = Some(c_owner.clone());
     if c_owner.prompt_observer().is_alive() {
-        status_prompt_key(
-            c_owner,
-            'y' as i32 as key_code,
-            ::core::ptr::null_mut::<mouse_event>(),
-        );
+        status_prompt_key(c_owner, 'y' as i32 as key_code, None);
     }
     CmdOutcome::Normal
 }
@@ -722,7 +715,7 @@ pub unsafe fn status_prompt_cursor(c: &ClientRef) -> (u_int, u_int) {
 pub unsafe fn status_prompt_key(
     c_owner: &ClientRef,
     mut key: key_code,
-    mut m: *mut mouse_event,
+    m: Option<&mouse_event>,
 ) -> prompt_key_result {
     let mut c: Option<ClientRef> = Some(c_owner.clone());
     let prompt = c_owner.prompt_observer();
@@ -740,11 +733,13 @@ pub unsafe fn status_prompt_key(
                 <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
                     << 32 as ::core::ffi::c_int
     {
-        if m.is_null()
-            || (*m).b & MOUSE_MASK_BUTTONS as u_int != MOUSE_BUTTON_1 as u_int
-            || (*m).b & MOUSE_MASK_DRAG as u_int != 0
-            || (*m).b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int
-            || (*m).y != status_prompt_screen_line(c.as_ref().expect("live client"))
+        let Some(m) = m else {
+            return PROMPT_KEY_NOT_HANDLED;
+        };
+        if m.b & MOUSE_MASK_BUTTONS as u_int != MOUSE_BUTTON_1 as u_int
+            || m.b & MOUSE_MASK_DRAG as u_int != 0
+            || m.b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int
+            || m.y != status_prompt_screen_line(c.as_ref().expect("live client"))
         {
             return PROMPT_KEY_NOT_HANDLED;
         }

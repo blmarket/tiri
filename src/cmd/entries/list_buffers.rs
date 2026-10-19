@@ -10,7 +10,6 @@ use crate::shared::abi::*;
 use crate::shared::command::CMD_AFTERHOOK;
 use crate::shared::command::*;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
-use crate::shared::format::format_tree;
 use crate::shared::format::FORMAT_NONE;
 use crate::shared::sort::sort_criteria;
 use crate::shared::sort::*;
@@ -51,7 +50,6 @@ unsafe fn cmd_list_buffers_exec(
     let queue_client = cmdq_get_client(Some(&*item));
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut filter: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut flag: ::core::ffi::c_int = 0;
@@ -86,8 +84,8 @@ unsafe fn cmd_list_buffers_exec(
             FORMAT_NONE,
             0 as ::core::ffi::c_int,
         );
-        ft = &raw mut *ft_owner;
-        format_defaults_paste_buffer(&mut *ft, &pb);
+        let ft = &mut *ft_owner;
+        format_defaults_paste_buffer(ft, &pb);
         if !filter.is_null() {
             let expanded = format_expand_cstring(ft, filter);
             flag = format_true(expanded.as_ptr());

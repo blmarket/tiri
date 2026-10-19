@@ -20,7 +20,6 @@ use crate::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::shared::window::window_mode_visit_screen;
 use crate::style::colour::colour_format;
 use crate::text::utf8::utf8_strvis;
-use libc::snprintf;
 use std::ffi::CString;
 use std::io::Write;
 use std::{cell::UnsafeCell, rc::Rc};
@@ -259,7 +258,7 @@ unsafe fn cmd_capture_pane_grid(wp: &window_pane) -> Vec<u8> {
     }
     buf
 }
-unsafe fn cmd_capture_pane_pending(args: *mut args, wp: &mut window_pane) -> Vec<u8> {
+unsafe fn cmd_capture_pane_pending(args: &args, wp: &mut window_pane) -> Vec<u8> {
     let mut buf = Vec::new();
     let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut linelen: size_t = 0;
@@ -337,7 +336,7 @@ unsafe fn cmd_capture_pane_hyperlinks(
     line
 }
 unsafe fn cmd_capture_pane_history(
-    mut args: *mut args,
+    args: &args,
     wp: &window_pane,
     mode_screen: Option<&screen>,
     bounds: (CaptureBound, CaptureBound),
@@ -357,7 +356,6 @@ unsafe fn cmd_capture_pane_history(
     let mut bottom: u_int = 0;
     let mut tmp: u_int = 0;
     let mut buf = Vec::new();
-    let mut b: [::core::ffi::c_char; 64] = [0; 64];
     let _Sflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let _Eflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     sx = wp.base.grid().sx;
@@ -420,32 +418,13 @@ unsafe fn cmd_capture_pane_history(
                 } else {
                     n = i as ::core::ffi::c_int - gd.hsize as ::core::ffi::c_int;
                 }
-                n = snprintf(
-                    &raw mut b as *mut ::core::ffi::c_char,
-                    ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-                    c"%d ".as_ptr(),
-                    n,
-                );
-                if n >= 0 as ::core::ffi::c_int {
-                    cmd_capture_pane_append(
-                        &mut buf,
-                        std::slice::from_raw_parts(b.as_ptr().cast(), n as usize),
-                    );
-                }
+                cmd_capture_pane_append(&mut buf, format!("{} ", n).as_bytes());
             }
             if show_time != 0 {
-                n = snprintf(
-                    &raw mut b as *mut ::core::ffi::c_char,
-                    ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-                    c"%llu ".as_ptr(),
-                    grid_line_time(gl) as ::core::ffi::c_ulonglong,
+                cmd_capture_pane_append(
+                    &mut buf,
+                    format!("{} ", grid_line_time(gl) as ::core::ffi::c_ulonglong).as_bytes(),
                 );
-                if n >= 0 as ::core::ffi::c_int {
-                    cmd_capture_pane_append(
-                        &mut buf,
-                        std::slice::from_raw_parts(b.as_ptr().cast(), n as usize),
-                    );
-                }
             }
             if show_flags != 0 {
                 let mut line_flags = Vec::new();

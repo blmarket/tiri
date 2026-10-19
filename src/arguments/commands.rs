@@ -147,7 +147,7 @@ pub unsafe fn args_make_commands(
         "args_make_commands",
         log_bytes(cmd.as_bytes())
     ));
-    let mut pr = cmd_parse_from_string(cmd.as_c_str(), &raw mut state.pi);
+    let mut pr = cmd_parse_from_string(cmd.as_c_str(), Some(&mut state.pi));
     drop(cmd);
     match pr.status as ::core::ffi::c_uint {
         0 => Err(pr.error),

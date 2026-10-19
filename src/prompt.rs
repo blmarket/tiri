@@ -157,7 +157,7 @@ pub unsafe fn prompt_create(
         pr.state = cmd_find_state::clear_state(0);
         format_create_defaults(None, None, None, refbox::Weak::new(), None)
     };
-    let ft = &raw mut *ft_owner;
+    let ft = &mut *ft_owner;
     let input = pd.input.unwrap_or(c"");
     pr.string = pd.prompt.to_owned();
     let expanded = if pd.flags & PROMPT_NOFORMAT != 0 {
@@ -325,7 +325,7 @@ pub unsafe fn prompt_update(pr: &mut prompt, msg: &CStr, input: Option<&CStr>) {
     } else {
         format_create_defaults(None, None, None, refbox::Weak::new(), None)
     };
-    let ft = &raw mut *ft_owner;
+    let ft = &mut *ft_owner;
     pr.string = msg.to_owned();
     let input = input.unwrap_or(c"");
     let expanded = if pr.flags & PROMPT_NOFORMAT != 0 {
@@ -456,7 +456,7 @@ unsafe fn prompt_format_tree(pr: &prompt) -> Box<format_tree> {
     } else {
         owner = format_create_defaults(None, None, None, (refbox::Weak::new()).clone(), None);
     }
-    let ft = &raw mut *owner;
+    let ft = &mut *owner;
     let tmp = utf8_tocstr_cstring(&pr.buffer);
     format_add(ft, c"prompt_input", |out| write_cstr(out, &*tmp));
     format_add(ft, c"prompt_flags", |out| prompt_write_flags(out, pr.flags));
@@ -470,12 +470,12 @@ unsafe fn prompt_format_tree(pr: &prompt) -> Box<format_tree> {
     }
     owner
 }
-unsafe fn prompt_expand1(pr: &prompt, mut ft: *mut format_tree) -> CString {
+unsafe fn prompt_expand1(pr: &prompt, ft: &mut format_tree) -> CString {
     let prompt = format_expand_time_cstring(ft, pr.string.as_ptr());
     format_add(ft, c"message", |out| write_cstr(out, &*prompt));
     format_expand_time_cstring(ft, pr.message_format.as_ptr())
 }
-unsafe fn prompt_effective_style(pr: &prompt, sy: &mut style, ft: *mut format_tree) {
+unsafe fn prompt_effective_style(pr: &prompt, sy: &mut style, ft: &mut format_tree) {
     let (text, cell) = if pr.flags & PROMPT_COMMANDMODE != 0 {
         (&pr.command_style_str, &pr.command_style)
     } else {
@@ -493,7 +493,6 @@ unsafe fn prompt_layout(
     mut aw: u_int,
     mut sy: Option<&mut style>,
 ) -> (prompt_layout, CString) {
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut pcursor: u_int = 0;
     let mut pwidth: u_int = 0;
     let mut end: u_int = 0;
@@ -506,7 +505,7 @@ unsafe fn prompt_layout(
         ..Default::default()
     };
     let mut ft_owner = prompt_format_tree(pr);
-    ft = &raw mut *ft_owner;
+    let ft = &mut *ft_owner;
     if let Some(sy) = sy.as_deref_mut() {
         prompt_effective_style(pr, sy, ft);
     }
@@ -1058,7 +1057,7 @@ fn prompt_decode_paste(data: &[u8]) -> Vec<utf8_data> {
     cells
 }
 
-unsafe fn prompt_paste(pr: &mut prompt) -> ::core::ffi::c_int {
+fn prompt_paste(pr: &mut prompt) -> ::core::ffi::c_int {
     let decoded;
     let pasted = if let Some(copied) = pr.copied.as_deref() {
         &copied[..utf8_strlen(copied)]
@@ -2345,24 +2344,22 @@ mod prompt_buffer_tests {
         let mut pr = make_prompt(&input, 1, Some(copied_cells));
         pr.buffer.push(cell(b'!'));
 
-        unsafe {
-            assert_eq!(prompt_paste(&mut pr), 1);
-            prompt_trim_buffer(&mut pr);
-            assert_eq!(
-                utf8_tocstr_cstring(&pr.buffer).as_bytes(),
-                b"a\xce\xbb\xc3\xa9Z"
-            );
-            assert_eq!(pr.index, 2);
-            assert_eq!(pr.buffer.len(), utf8_strlen(&pr.buffer) + 1);
+        assert_eq!(prompt_paste(&mut pr), 1);
+        prompt_trim_buffer(&mut pr);
+        assert_eq!(
+            utf8_tocstr_cstring(&pr.buffer).as_bytes(),
+            b"a\xce\xbb\xc3\xa9Z"
+        );
+        assert_eq!(pr.index, 2);
+        assert_eq!(pr.buffer.len(), utf8_strlen(&pr.buffer) + 1);
 
-            pr.copied = Some(vec![utf8_data::default()].into_boxed_slice());
-            assert_eq!(prompt_paste(&mut pr), 1);
-            assert_eq!(pr.index, 2);
-            assert_eq!(
-                utf8_tocstr_cstring(&pr.buffer).as_bytes(),
-                b"a\xce\xbb\xc3\xa9Z"
-            );
-        }
+        pr.copied = Some(vec![utf8_data::default()].into_boxed_slice());
+        assert_eq!(prompt_paste(&mut pr), 1);
+        assert_eq!(pr.index, 2);
+        assert_eq!(
+            utf8_tocstr_cstring(&pr.buffer).as_bytes(),
+            b"a\xce\xbb\xc3\xa9Z"
+        );
     }
 
     #[test]

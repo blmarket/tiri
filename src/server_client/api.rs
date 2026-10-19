@@ -477,7 +477,7 @@ impl Client for ClientRef {
             features,
             separators,
             &mut state.term_features,
-            &mut state.term_nofeatures,
+            Some(&mut state.term_nofeatures),
         );
     }
     unsafe fn terminal_feature_mask(&self) -> i32 {

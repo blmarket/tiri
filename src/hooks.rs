@@ -30,9 +30,9 @@ use crate::options::{
 };
 use crate::shared::abi::*;
 use crate::shared::client::ClientWeak;
+use crate::shared::command::cmd_parse_result;
 use crate::shared::command::CMDQ_STATE_NOHOOKS;
 use crate::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_state};
-use crate::shared::command::{cmd_parse_input, cmd_parse_result};
 use crate::shared::events::{event_payload, events_callback, EventSinkId};
 use crate::shared::format::format_tree;
 use crate::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
@@ -84,7 +84,7 @@ pub struct hooks_monitor {
 static mut CStrings: HooksEvents = HooksEvents { events: Vec::new() };
 unsafe fn hooks_insert_one(
     item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
-    mut hd: *mut hooks_data,
+    hd: &hooks_data,
     commands: Option<&std::rc::Rc<std::cell::RefCell<cmd_list>>>,
     state: &std::rc::Rc<cmdq_state>,
 ) -> std::rc::Weak<std::cell::RefCell<cmdq_item>> {
@@ -96,7 +96,7 @@ unsafe fn hooks_insert_one(
         log_debug(format_args!(
             "{}: hook {} is: {}",
             "hooks_insert_one",
-            crate::log::log_bytes((*hd).name.to_bytes()),
+            crate::log::log_bytes(hd.name.to_bytes()),
             log_cstr(&s)
         ));
     }
@@ -106,12 +106,11 @@ unsafe fn hooks_insert_one(
     }
     cmdq_append(None, new_item_allocation)
 }
-unsafe fn hooks_parse(hd: *mut hooks_data, fs: &cmd_find_state, value: &CStr) -> cmd_parse_result {
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    if (*hd).expand == 0 {
-        return cmd_parse_from_string(value, ::core::ptr::null_mut::<cmd_parse_input>());
+unsafe fn hooks_parse(hd: &mut hooks_data, fs: &cmd_find_state, value: &CStr) -> cmd_parse_result {
+    if hd.expand == 0 {
+        return cmd_parse_from_string(value, None);
     }
-    let client_owner = (*hd).client.upgrade();
+    let client_owner = hd.client.upgrade();
     let mut ft_owner = format_create_defaults(
         None,
         client_owner.as_ref(),
@@ -119,34 +118,31 @@ unsafe fn hooks_parse(hd: *mut hooks_data, fs: &cmd_find_state, value: &CStr) ->
         (fs.winlink_handle()).clone(),
         fs.pane_handle().as_ref(),
     );
-    ft = &raw mut *ft_owner;
-    format_merge(ft, &raw mut *(*hd).formats);
+    let ft = &mut *ft_owner;
+    format_merge(ft, &hd.formats);
     let expanded = format_expand_cstring(ft, value.as_ptr());
     drop(ft_owner);
-    let pr = cmd_parse_from_string(
-        expanded.as_c_str(),
-        ::core::ptr::null_mut::<cmd_parse_input>(),
-    );
+    let pr = cmd_parse_from_string(expanded.as_c_str(), None);
     drop(client_owner);
     pr
 }
 unsafe fn hooks_insert(
     item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
-    hd: *mut hooks_data,
+    hd: &mut hooks_data,
 ) {
     let mut after = item_handle.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     let mut fs = cmd_find_state::default();
     log_debug(format_args!(
         "hooks_insert: inserting hook {}",
-        crate::log::log_bytes((*hd).name.to_bytes())
+        crate::log::log_bytes(hd.name.to_bytes())
     ));
-    if (*hd).fs.is_empty() || !(*hd).fs.is_valid() {
+    if hd.fs.is_empty() || !hd.fs.is_valid() {
         fs = cmd_find_state::find_from_nothing(0).unwrap_or_else(|| cmd_find_state::clear_state(0));
     } else {
-        fs.copy_from(&(*hd).fs);
+        fs.copy_from(&hd.fs);
     }
-    let name = (*hd).name;
-    let source = if let Some(scope) = &(*hd).oo {
+    let name = hd.name;
+    let source = if let Some(scope) = &hd.oo {
         scope.resolve(name, true)
     } else {
         let scope = if fs.s.strong_count() == 0 {
@@ -175,13 +171,9 @@ unsafe fn hooks_insert(
     source
         .with_entry(name, |entry| options_hook_fired(entry))
         .expect("resolved hook");
-    let mut event = item_handle.map(|item| cmdq_get_event(&item.borrow()));
-    let state = cmdq_new_state(
-        &mut fs,
-        event.as_mut().map_or(std::ptr::null_mut(), |event| event),
-        CMDQ_STATE_NOHOOKS,
-    );
-    cmdq_add_formats(&state, &mut *(*hd).formats);
+    let event = item_handle.map(|item| cmdq_get_event(&item.borrow()));
+    let state = cmdq_new_state(Some(&fs), event.as_ref(), CMDQ_STATE_NOHOOKS);
+    cmdq_add_formats(&state, &hd.formats);
     if name.to_bytes().starts_with(b"@") {
         let value = source
             .with_entry(name, |entry| {
@@ -213,7 +205,7 @@ unsafe fn hooks_insert(
             })
             .expect("resolved hook");
         for key in keys {
-            if (*hd).expand != 0 {
+            if hd.expand != 0 {
                 let value = source
                     .with_entry(name, |entry| {
                         entry
@@ -277,7 +269,7 @@ unsafe fn hooks_insert_event(
     }
     let c = event_payload_get_client(ep);
     let mut formats = format_create_owned(c, item_handle, FORMAT_NONE, FORMAT_NOJOBS);
-    let ft = &raw mut *formats;
+    let ft = &mut *formats;
     event_payload_add_formats(ep, ft, Some(c"hook_"));
     format_add(ft, c"hook", |out| write_cstr(out, &*name));
     format_log_debug(ft, c"hooks_insert_event");
@@ -290,7 +282,7 @@ unsafe fn hooks_insert_event(
         expand,
     };
     event_payload_get_target(ep, &mut hd.fs);
-    hooks_insert(item_handle, &raw mut hd);
+    hooks_insert(item_handle, &mut hd);
     drop(hd.formats);
 }
 unsafe fn CString_cb(name: &CStr, payload: &mut event_payload) {
@@ -374,9 +366,9 @@ pub unsafe fn hooks_run(
         expand: 0,
     };
     hd.fs.copy_from(target);
-    format_add(&raw mut *hd.formats, c"hook", |out| write_cstr(out, &*name));
-    format_log_debug(&raw mut *hd.formats, c"hooks_run");
-    hooks_insert(item_handle, &raw mut hd);
+    format_add(&mut *hd.formats, c"hook", |out| write_cstr(out, &*name));
+    format_log_debug(&mut *hd.formats, c"hooks_run");
+    hooks_insert(item_handle, &mut hd);
     drop(hd.formats);
 }
 impl Drop for hooks_monitor {
@@ -518,7 +510,7 @@ pub unsafe fn hooks_monitor_add(
     id: ::core::ffi::c_int,
     format: &CStr,
     flags: ::core::ffi::c_int,
-    fs: *mut cmd_find_state,
+    fs: &cmd_find_state,
     s_owner: Option<&SessionRef>,
 ) {
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -533,7 +525,7 @@ pub unsafe fn hooks_monitor_add(
         .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
         .expect("hook monitor identity exhausted");
     let mut fallback = cmd_find_state::default();
-    fallback.copy_from(&*fs);
+    fallback.copy_from(fs);
     let callback_scope = scope.clone();
     let mut owner = Box::new(hooks_monitor {
         generation,
@@ -589,13 +581,13 @@ pub(crate) fn hooks_monitor_to_cstring(name: &CStr, o: &options_entry) -> Option
     bytes.extend_from_slice(hm.format.as_bytes());
     Some(CString::new(bytes).expect("C string parts contain no NUL"))
 }
-pub unsafe fn hooks_monitor_get_fire_count(name: &CStr, o: &options_entry) -> u_int {
+pub fn hooks_monitor_get_fire_count(name: &CStr, o: &options_entry) -> u_int {
     let Some(hm) = options_get_monitor_data(o) else {
         return 0 as u_int;
     };
     monitor_get_fire_count(&hm.set.as_ref().expect("hook monitor").downgrade(), name)
 }
-pub unsafe fn hooks_monitor_get_fire_time(name: &CStr, o: &options_entry) -> time_t {
+pub fn hooks_monitor_get_fire_time(name: &CStr, o: &options_entry) -> time_t {
     let Some(hm) = options_get_monitor_data(o) else {
         return 0 as time_t;
     };

@@ -15,19 +15,19 @@ fn feature_list_separators_removal_and_unknown_feature() {
             c"RGB:256,256@:sixel",
             separators,
             &mut enabled,
-            &mut disabled,
+            Some(&mut disabled),
         );
         assert_eq!(feature_names(enabled), "RGB,sixel");
         assert_eq!(feature_names(disabled), "256");
 
-        tty_parse_features(c"256:mouse", separators, &mut enabled, &mut disabled);
+        tty_parse_features(c"256:mouse", separators, &mut enabled, Some(&mut disabled));
         assert_eq!(feature_names(enabled), "mouse,RGB,sixel");
 
         tty_parse_features(
             c"title:missing:clipboard",
             separators,
             &mut enabled,
-            &mut disabled,
+            Some(&mut disabled),
         );
         assert_eq!(feature_names(enabled), "mouse,RGB,sixel,title");
 
@@ -35,7 +35,7 @@ fn feature_list_separators_removal_and_unknown_feature() {
             std::ffi::CStr::from_bytes_until_nul(b"osc7\0,clipboard\0").unwrap(),
             separators,
             &mut enabled,
-            &mut disabled,
+            Some(&mut disabled),
         );
         assert_eq!(feature_names(enabled), "mouse,osc7,RGB,sixel,title");
     }

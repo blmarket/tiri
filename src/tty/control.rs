@@ -49,7 +49,6 @@ use crate::tty::term::{
     tty_term_string, tty_term_string_i, tty_term_string_ii, tty_term_string_ss,
 };
 use crate::window::{Window, WindowPane};
-use libc::{getpid, time};
 use std::time::Duration;
 
 use std::ffi::CStr;
@@ -61,7 +60,7 @@ use ::libc::{
 
 pub(super) static mut tty_log: Option<(tiri_rt::mio::Runtime, tiri_rt::mio::Io)> = None;
 pub unsafe fn tty_create_log() {
-    let name = format_message_with(|out| write!(out, "tmux-out-{}.log", getpid()));
+    let name = format_message_with(|out| write!(out, "tmux-out-{}.log", std::process::id()));
     use tiri_rt::Runtime as _;
     tty_log = (|| -> std::io::Result<_> {
         let file = tiri_rt::unix::open(&name, O_WRONLY | O_CREAT | O_TRUNC, 0o644)?;
@@ -553,10 +552,10 @@ pub unsafe fn tty_send_requests(tty: &ClientRef) {
     } else {
         terminal_set!(tty, flags, |=, TTY_ALL_REQUEST_FLAGS);
     }
-    terminal_set!(tty, last_requests, =, time(::core::ptr::null_mut::<time_t>()));
+    terminal_set!(tty, last_requests, =, crate::shared::time::unix_seconds(std::time::SystemTime::now()));
 }
 pub unsafe fn tty_repeat_requests(tty: &ClientRef, mut force: ::core::ffi::c_int) {
-    let mut t: time_t = time(::core::ptr::null_mut::<time_t>());
+    let mut t: time_t = crate::shared::time::unix_seconds(std::time::SystemTime::now());
     let mut n: u_int = (t - terminal_value!(tty, last_requests)) as u_int;
     if !terminal_value!(tty, flags) & TTY_STARTED != 0 {
         return;
@@ -1001,7 +1000,7 @@ pub unsafe fn tty_update_client_offset(owner: &ClientRef) {
 fn tty_large_region(ctx: &tty_ctx) -> ::core::ffi::c_int {
     (ctx.orlower.wrapping_sub(ctx.orupper) >= ctx.sy.wrapping_div(2 as u_int)) as ::core::ffi::c_int
 }
-pub(super) unsafe fn tty_fake_bce(tty: &tty, gc: &grid_cell, mut bg: u_int) -> ::core::ffi::c_int {
+pub(super) fn tty_fake_bce(tty: &tty, gc: &grid_cell, mut bg: u_int) -> ::core::ffi::c_int {
     if tty_term_flag(
         tty_term_owner_ptr(&tty.term).expect("client has a terminal"),
         TTYC_BCE,
@@ -2134,7 +2133,7 @@ impl tty {
     fn opened_term(&self) -> &tty_term {
         self.term.as_deref().expect("terminal description")
     }
-    pub unsafe fn has(&self, code: tty_code_code) -> bool {
+    pub fn has(&self, code: tty_code_code) -> bool {
         tty_term_has(self.opened_term(), code) != 0
     }
     pub unsafe fn has_capability_name(&self, name: &CStr) -> bool {
@@ -2155,7 +2154,7 @@ impl tty {
         }
         .unwrap_or(TERM_256COLOURS | TERM_RGBCOLOURS)
     }
-    pub unsafe fn colour_count(&self) -> u_int {
+    pub fn colour_count(&self) -> u_int {
         let term = self.opened_term();
         if term.flags & TERM_RGBCOLOURS != 0 {
             16777216

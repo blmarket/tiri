@@ -105,14 +105,14 @@ pub type input_end_type = ::core::ffi::c_uint;
 #[repr(C)]
 pub struct input_state {
     pub name: &'static ::std::ffi::CStr,
-    pub enter: Option<unsafe fn(*mut input_ctx)>,
-    pub exit: Option<unsafe fn(*mut input_ctx, &mut screen_write_ctx)>,
+    pub enter: Option<unsafe fn(&mut input_ctx)>,
+    pub exit: Option<unsafe fn(&mut input_ctx, &mut screen_write_ctx)>,
     pub transitions: &'static [input_transition],
 }
 
 /// Handles the current byte, writing through the parse's screen context;
 /// nonzero keeps the current state.
-pub type input_handler_cb = unsafe fn(*mut input_ctx, &mut screen_write_ctx) -> ::core::ffi::c_int;
+pub type input_handler_cb = unsafe fn(&mut input_ctx, &mut screen_write_ctx) -> ::core::ffi::c_int;
 
 #[derive(Copy, Clone)]
 #[repr(C)]

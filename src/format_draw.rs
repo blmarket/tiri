@@ -1,4 +1,4 @@
-use crate::ffi::libc::strlcpy;
+use crate::format::bytes::cstr_copy_into;
 use crate::format::format_skip;
 use crate::grid::grid_default_cell;
 use crate::hyperlinks::hyperlinks_put;
@@ -41,36 +41,31 @@ pub const RIGHT: C2RustUnnamed_39 = 2;
 pub const CENTRE: C2RustUnnamed_39 = 1;
 pub const LEFT: C2RustUnnamed_39 = 0;
 pub type C2RustUnnamed_39 = ::core::ffi::c_uint;
-unsafe fn format_is_type(mut fr: *mut format_range, mut sy: *mut style) -> ::core::ffi::c_int {
-    if (*fr).type_0 as ::core::ffi::c_uint != (*sy).range_type as ::core::ffi::c_uint {
+unsafe fn format_is_type(fr: &format_range, sy: &style) -> ::core::ffi::c_int {
+    if fr.type_0 as ::core::ffi::c_uint != sy.range_type as ::core::ffi::c_uint {
         return 0 as ::core::ffi::c_int;
     }
-    match (*fr).type_0 as ::core::ffi::c_uint {
+    match fr.type_0 as ::core::ffi::c_uint {
         0 | 1 | 2 | 7 => return 1 as ::core::ffi::c_int,
         3..=5 => {
-            return ((*fr).argument == (*sy).range_argument) as ::core::ffi::c_int;
+            return (fr.argument == sy.range_argument) as ::core::ffi::c_int;
         }
         6 => {
-            return (strcmp(
-                &raw mut (*fr).string as *mut ::core::ffi::c_char,
-                &raw mut (*sy).range_string as *mut ::core::ffi::c_char,
-            ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
+            return (strcmp(fr.string.as_ptr(), sy.range_string.as_ptr()) == 0 as ::core::ffi::c_int)
+                as ::core::ffi::c_int;
         }
         _ => {}
     }
     1 as ::core::ffi::c_int
 }
 unsafe fn format_update_ranges(
-    mut frs: *mut format_ranges,
+    frs: &mut format_ranges,
     index: u_int,
     mut offset: u_int,
     mut start: u_int,
     mut width: u_int,
 ) {
-    if frs.is_null() {
-        return;
-    }
-    (*frs).retain_mut(|fr| {
+    frs.retain_mut(|fr| {
         if fr.index != index {
             return true;
         }
@@ -97,7 +92,7 @@ unsafe fn format_draw_put(
     mut ocy: u_int,
     s: &screen,
     index: u_int,
-    mut frs: *mut format_ranges,
+    frs: &mut format_ranges,
     mut offset: u_int,
     mut start: u_int,
     mut width: u_int,
@@ -122,7 +117,7 @@ unsafe fn format_draw_put_list(
     list_right: &screen,
     mut focus_start: ::core::ffi::c_int,
     mut focus_end: ::core::ffi::c_int,
-    mut frs: *mut format_ranges,
+    frs: &mut format_ranges,
 ) {
     let mut start: u_int = 0;
     let mut focus_centre: u_int = 0;
@@ -188,7 +183,7 @@ unsafe fn format_draw_none(
     centre: &screen,
     right: &screen,
     abs_centre: &screen,
-    mut frs: *mut format_ranges,
+    frs: &mut format_ranges,
 ) {
     let mut width_left: u_int = 0;
     let mut width_centre: u_int = 0;
@@ -278,7 +273,7 @@ unsafe fn format_draw_left(
     after: &screen,
     mut focus_start: ::core::ffi::c_int,
     mut focus_end: ::core::ffi::c_int,
-    mut frs: *mut format_ranges,
+    frs: &mut format_ranges,
 ) {
     let mut width_left: u_int = 0;
     let mut width_centre: u_int = 0;
@@ -428,7 +423,7 @@ unsafe fn format_draw_centre(
     after: &screen,
     mut focus_start: ::core::ffi::c_int,
     mut focus_end: ::core::ffi::c_int,
-    mut frs: *mut format_ranges,
+    frs: &mut format_ranges,
 ) {
     let mut width_left: u_int = 0;
     let mut width_centre: u_int = 0;
@@ -573,7 +568,7 @@ unsafe fn format_draw_right(
     after: &screen,
     mut focus_start: ::core::ffi::c_int,
     mut focus_end: ::core::ffi::c_int,
-    mut frs: *mut format_ranges,
+    frs: &mut format_ranges,
 ) {
     let mut width_left: u_int = 0;
     let mut width_centre: u_int = 0;
@@ -722,7 +717,7 @@ unsafe fn format_draw_absolute_centre(
     after: &screen,
     mut focus_start: ::core::ffi::c_int,
     mut focus_end: ::core::ffi::c_int,
-    mut frs: *mut format_ranges,
+    frs: &mut format_ranges,
 ) {
     let mut width_left: u_int = 0;
     let mut width_centre: u_int = 0;
@@ -843,8 +838,8 @@ unsafe fn format_draw_absolute_centre(
 }
 unsafe fn format_leading_hashes(
     mut cp: *const ::core::ffi::c_char,
-    mut n: *mut u_int,
-    mut width: *mut u_int,
+    n: &mut u_int,
+    width: &mut u_int,
 ) -> *const ::core::ffi::c_char {
     *n = 0 as u_int;
     while *cp.offset(*n as isize) as ::core::ffi::c_int == '#' as i32 {
@@ -869,13 +864,13 @@ unsafe fn format_leading_hashes(
     cp.offset(*n as isize)
         .offset(-(1 as ::core::ffi::c_int as isize))
 }
-unsafe fn format_draw_many(mut ctx: &mut screen_write_ctx, mut sy: *mut style, mut n: u_int) {
+unsafe fn format_draw_many(mut ctx: &mut screen_write_ctx, sy: &mut style, mut n: u_int) {
     let mut ch: ::core::ffi::c_char = '#' as i32 as ::core::ffi::c_char;
     let mut i: u_int = 0;
-    utf8_set(&mut (*sy).gc.data, ch as u_char);
+    utf8_set(&mut sy.gc.data, ch as u_char);
     i = 0 as u_int;
     while i < n {
-        screen_write_cell(ctx, &(*sy).gc);
+        screen_write_cell(ctx, &sy.gc);
         i = i.wrapping_add(1);
     }
 }
@@ -1029,7 +1024,7 @@ pub unsafe fn format_draw(
     let mut frs: format_ranges = Vec::new();
     base_default = *base;
     current_default = *base;
-    style_set(&raw mut sy, &current_default);
+    style_set(&mut sy, &current_default);
     log_debug(format_args!(
         "{}: {}",
         "format_draw",
@@ -1067,7 +1062,7 @@ pub unsafe fn format_draw(
                         n = n.wrapping_div(2 as u_int).wrapping_add(1 as u_int);
                     }
                     width[current as usize] = width[current as usize].wrapping_add(n);
-                    format_draw_many(&mut ctx[current as usize], &raw mut sy, n);
+                    format_draw_many(&mut ctx[current as usize], &mut sy, n);
                 } else {
                     if even != 0 {
                         cp = cp.offset(n.wrapping_add(1 as u_int) as isize);
@@ -1079,7 +1074,7 @@ pub unsafe fn format_draw(
                     }
                     format_draw_many(
                         &mut ctx[current as usize],
-                        &raw mut sy,
+                        &mut sy,
                         n.wrapping_div(2 as u_int),
                     );
                     width[current as usize] =
@@ -1150,8 +1145,8 @@ pub unsafe fn format_draw(
                         style_len,
                     ))
                     .expect("format style contains an interior NUL");
-                    style_copy(&raw mut saved_sy, &raw mut sy);
-                    if style_parse(&raw mut sy, &current_default, &style_text)
+                    style_copy(&mut saved_sy, &sy);
+                    if style_parse(&mut sy, &current_default, &style_text)
                         != 0 as ::core::ffi::c_int
                     {
                         log_debug(format_args!(
@@ -1166,7 +1161,7 @@ pub unsafe fn format_draw(
                             "{}: style '{}' -> '{}'",
                             "format_draw",
                             crate::log::log_bytes(style_text.as_bytes()),
-                            log_cstr(&style_tostring(&raw mut sy))
+                            log_cstr(&style_tostring(&sy))
                         ));
                         drop(style_text);
                         if default_colours != 0 {
@@ -1286,7 +1281,7 @@ pub unsafe fn format_draw(
                         if !srs.is_null() {
                             if fr
                                 .as_mut()
-                                .is_some_and(|pending| format_is_type(pending, &raw mut sy) == 0)
+                                .is_some_and(|pending| format_is_type(pending, &sy) == 0)
                             {
                                 let mut finished = fr.take().unwrap();
                                 if ctx[current as usize].screen.cx != finished.start {
@@ -1306,10 +1301,9 @@ pub unsafe fn format_draw(
                                     argument: sy.range_argument,
                                     string: [0; 16],
                                 };
-                                strlcpy(
-                                    &raw mut pending.string as *mut ::core::ffi::c_char,
-                                    &raw mut sy.range_string as *mut ::core::ffi::c_char,
-                                    ::core::mem::size_of::<[::core::ffi::c_char; 16]>() as size_t,
+                                cstr_copy_into(
+                                    &mut pending.string,
+                                    CStr::from_ptr(sy.range_string.as_ptr()),
                                 );
                                 fr = Some(pending);
                             }
@@ -1365,15 +1359,7 @@ pub unsafe fn format_draw(
             0 => {
                 let [left, centre, right, abs_centre, ..] = &mut s;
                 format_draw_none(
-                    octx,
-                    available,
-                    ocx,
-                    ocy,
-                    left,
-                    centre,
-                    right,
-                    abs_centre,
-                    &raw mut frs,
+                    octx, available, ocx, ocy, left, centre, right, abs_centre, &mut frs,
                 );
             }
             1 => {
@@ -1393,7 +1379,7 @@ pub unsafe fn format_draw(
                     after,
                     focus_start,
                     focus_end,
-                    &raw mut frs,
+                    &mut frs,
                 );
             }
             2 => {
@@ -1413,7 +1399,7 @@ pub unsafe fn format_draw(
                     after,
                     focus_start,
                     focus_end,
-                    &raw mut frs,
+                    &mut frs,
                 );
             }
             3 => {
@@ -1433,7 +1419,7 @@ pub unsafe fn format_draw(
                     after,
                     focus_start,
                     focus_end,
-                    &raw mut frs,
+                    &mut frs,
                 );
             }
             4 => {
@@ -1453,7 +1439,7 @@ pub unsafe fn format_draw(
                     after,
                     focus_start,
                     focus_end,
-                    &raw mut frs,
+                    &mut frs,
                 );
             }
             _ => {}
@@ -1466,11 +1452,7 @@ pub unsafe fn format_draw(
                 start: range.start,
                 end: range.end,
             });
-            strlcpy(
-                &raw mut owned.string as *mut ::core::ffi::c_char,
-                range.string.as_ptr(),
-                ::core::mem::size_of::<[::core::ffi::c_char; 16]>() as size_t,
-            );
+            cstr_copy_into(&mut owned.string, CStr::from_ptr(range.string.as_ptr()));
             match owned.type_0 as ::core::ffi::c_uint {
                 1 => {
                     log_debug(format_args!(
@@ -1568,7 +1550,7 @@ pub unsafe fn format_width(mut expanded: *const ::core::ffi::c_char) -> u_int {
     cp = expanded;
     while *cp as ::core::ffi::c_int != '\0' as i32 {
         if *cp as ::core::ffi::c_int == '#' as i32 {
-            end = format_leading_hashes(cp, &raw mut n, &raw mut leading_width);
+            end = format_leading_hashes(cp, &mut n, &mut leading_width);
             width = width.wrapping_add(leading_width);
             cp = end;
             if *cp as ::core::ffi::c_int == '#' as i32 {
@@ -1628,7 +1610,7 @@ pub(crate) unsafe fn format_trim_left_bytes(expanded: &CStr, mut limit: u_int) -
             break;
         }
         if *cp as ::core::ffi::c_int == '#' as i32 {
-            end = format_leading_hashes(cp, &raw mut n, &raw mut leading_width);
+            end = format_leading_hashes(cp, &mut n, &mut leading_width);
             if leading_width > limit.wrapping_sub(width) {
                 leading_width = limit.wrapping_sub(width);
             }
@@ -1715,7 +1697,7 @@ pub(crate) unsafe fn format_trim_right_bytes(expanded: &CStr, mut limit: u_int) 
     skip = total_width.wrapping_sub(limit);
     while *cp as ::core::ffi::c_int != '\0' as i32 {
         if *cp as ::core::ffi::c_int == '#' as i32 {
-            end = format_leading_hashes(cp, &raw mut n, &raw mut leading_width);
+            end = format_leading_hashes(cp, &mut n, &mut leading_width);
             copy_width = leading_width;
             if width <= skip {
                 if skip.wrapping_sub(width) >= copy_width {

@@ -20,7 +20,6 @@ use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmd
 use crate::shared::command::{
     CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_CFLAG, CMD_FIND_CANFAIL,
 };
-use crate::shared::format::format_tree;
 use crate::shared::format::{FORMAT_NONE, FORMAT_VERBOSE};
 use crate::shared::limits::UINT_MAX;
 use crate::shared::window::winlink;
@@ -75,7 +74,6 @@ unsafe fn cmd_display_message_exec(
     let mut flags: ::core::ffi::c_int = 0;
     let mut Nflag: ::core::ffi::c_int = args_has(&*args, 'N' as i32 as u_char);
     let mut Cflag: ::core::ffi::c_int = args_has(&*args, 'C' as i32 as u_char);
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut count: u_int = args_count(&*args);
     if args_has(&*args, 'I' as i32 as u_char) != 0 && args_has(&*args, 'j' as i32 as u_char) == 0 {
         if wp.is_none() {
@@ -148,7 +146,7 @@ unsafe fn cmd_display_message_exec(
     }
     let mut ft_owner =
         format_create_with_client(queue_client.as_ref(), Some(item_handle), FORMAT_NONE, flags);
-    ft = &raw mut *ft_owner;
+    let ft = &mut *ft_owner;
     format_defaults(ft, c.as_ref(), s.as_ref(), wl.clone(), wp.as_ref());
     if args_has(&*args, 'a' as i32 as u_char) != 0 && args_has(&*args, 'j' as i32 as u_char) == 0 {
         format_each(ft, |key, value| unsafe {

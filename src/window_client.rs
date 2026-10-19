@@ -24,7 +24,6 @@ use crate::shared::abi::*;
 use crate::shared::client::ClientRef;
 use crate::shared::client::CLIENT_UNATTACHEDFLAGS;
 use crate::shared::command::{cmd_find_state, cmdq_item};
-use crate::shared::format::format_tree;
 use crate::shared::format::FORMAT_NONE;
 use crate::shared::grid::*;
 use crate::shared::key::*;
@@ -168,8 +167,8 @@ pub static window_client_mode: window_mode = {
                 as unsafe fn(
                     refbox::Weak<window_mode_entry>,
                     Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
-                    *mut cmd_find_state,
-                    *mut args,
+                    Option<&cmd_find_state>,
+                    Option<&mut args>,
                 ) -> bool,
         ),
         free: Some(window_client_free as unsafe fn(refbox::Weak<window_mode_entry>) -> ()),
@@ -185,7 +184,7 @@ pub static window_client_mode: window_mode = {
                     &ClientRef,
                     refbox::Weak<winlink>,
                     key_code,
-                    *mut mouse_event,
+                    Option<&mut mouse_event>,
                 ) -> (),
         ),
         key_table: None,
@@ -209,7 +208,7 @@ unsafe fn window_client_add_item(
 
 unsafe fn window_client_build(
     data: *mut window_client_modedata,
-    mut sort_crit: *mut sort_criteria,
+    sort_crit: &sort_criteria,
     filter: Option<&CStr>,
 ) {
     let filter: *const ::core::ffi::c_char = filter.map_or(std::ptr::null(), CStr::as_ptr);
@@ -315,10 +314,9 @@ unsafe fn window_client_draw_info(
     let mut cx: u_int = ctx.screen.cx;
     let mut cy: u_int = ctx.screen.cy;
     let mut i: u_int = 0;
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut ft_owner =
         format_create_defaults(None, Some(c), None, (refbox::Weak::new()).clone(), None);
-    ft = &raw mut *ft_owner;
+    let ft = &mut *ft_owner;
     if c.borrow_terminal().clipboard_invalid() {
         format_add(ft, c"clipboard_invalid", |out| out.write_all(b"1"));
     } else {
@@ -534,23 +532,16 @@ unsafe fn window_client_menu(data: *mut window_client_modedata, c: &ClientRef, m
     {
         return;
     }
-    window_client_key(
-        wme.clone(),
-        c,
-        (refbox::Weak::new()).clone(),
-        key,
-        ::core::ptr::null_mut::<mouse_event>(),
-    );
+    window_client_key(wme.clone(), c, (refbox::Weak::new()).clone(), key, None);
 }
 unsafe fn window_client_get_key(
     data: *mut window_client_modedata,
     item: &window_client_itemdata,
     mut line: u_int,
 ) -> key_code {
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut key: key_code = 0;
     let mut ft_owner = format_create(None, None, FORMAT_NONE, 0 as ::core::ffi::c_int);
-    ft = &raw mut *ft_owner;
+    let ft = &mut *ft_owner;
     format_defaults(
         ft,
         Some(item.client()),
@@ -601,8 +592,8 @@ unsafe fn window_client_data(wme: refbox::Weak<window_mode_entry>) -> *mut windo
 unsafe fn window_client_init(
     mut wme: refbox::Weak<window_mode_entry>,
     _item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
-    _fs: *mut cmd_find_state,
-    mut args: *mut args,
+    _fs: Option<&cmd_find_state>,
+    mut args: Option<&mut args>,
 ) -> bool {
     let mode_pane_owner = wme
         .get_unchecked()
@@ -610,27 +601,39 @@ unsafe fn window_client_init(
         .upgrade()
         .expect("mode belongs to a live pane");
     let mut data: *mut window_client_modedata = ::core::ptr::null_mut::<window_client_modedata>();
-    let format = if args.is_null() || args_has(&*args, 'F' as i32 as u_char) == 0 {
+    let format = if let Some(args) = args
+        .as_deref()
+        .filter(|args| args_has(args, 'F' as i32 as u_char) != 0)
+    {
+        args_get(args, 'F' as i32 as u_char).expect("-F takes a value")
+    } else {
         WINDOW_CLIENT_DEFAULT_FORMAT
+    }
+    .to_owned();
+    let key_format = if let Some(args) = args
+        .as_deref()
+        .filter(|args| args_has(args, 'K' as i32 as u_char) != 0)
+    {
+        args_get(args, 'K' as i32 as u_char).expect("-K takes a value")
     } else {
-        args_get(&*(args), 'F' as i32 as u_char).expect("-F takes a value")
-    };
-    let key_format = if args.is_null() || args_has(&*args, 'K' as i32 as u_char) == 0 {
         WINDOW_CLIENT_DEFAULT_KEY_FORMAT
+    }
+    .to_owned();
+    let command = if let Some(args) = args
+        .as_deref_mut()
+        .filter(|args| args_count(args) != 0 as u_int)
+    {
+        args_string(args, 0 as u_int).expect("argument 0 exists")
     } else {
-        args_get(&*(args), 'K' as i32 as u_char).expect("-K takes a value")
-    };
-    let command = if args.is_null() || args_count(&*args) == 0 as u_int {
         WINDOW_CLIENT_DEFAULT_COMMAND
-    } else {
-        args_string(&mut *(args), 0 as u_int).expect("argument 0 exists")
-    };
+    }
+    .to_owned();
     let owner = Box::new(std::cell::UnsafeCell::new(window_client_modedata {
         wp: Weak::new(),
         data: None,
-        format: format.to_owned(),
-        key_format: key_format.to_owned(),
-        command: command.to_owned(),
+        format,
+        key_format,
+        command,
         hide_preview_this_pane: 0,
         preview_is_info: 0,
         items: Vec::new(),
@@ -639,16 +642,20 @@ unsafe fn window_client_init(
     wme.get_mut_unchecked().boxed_data = Some(owner);
     let data_handle = std::ptr::NonNull::new(data).expect("live client mode data");
     (*data).wp = std::rc::Rc::downgrade(&mode_pane_owner);
-    (*data).hide_preview_this_pane =
-        (!args.is_null() && args_has(&*args, 'h' as i32 as u_char) != 0) as ::core::ffi::c_int;
-    (*data).preview_is_info =
-        (!args.is_null() && args_has(&*args, 'i' as i32 as u_char) != 0) as ::core::ffi::c_int;
+    (*data).hide_preview_this_pane = args
+        .as_deref()
+        .is_some_and(|args| args_has(args, 'h' as i32 as u_char) != 0)
+        as ::core::ffi::c_int;
+    (*data).preview_is_info = args
+        .as_deref()
+        .is_some_and(|args| args_has(args, 'i' as i32 as u_char) != 0)
+        as ::core::ffi::c_int;
     (*data).data = Some(mode_tree_start(
         &mode_pane_owner,
-        args,
+        args.as_deref().expect("mode arguments"),
         Some(Box::new(move |sort, tag, filter| {
             let mut selected = tag.unwrap_or(::core::primitive::u64::MAX as uint64_t);
-            window_client_build(data_handle.as_ptr(), sort as *mut sort_criteria, filter);
+            window_client_build(data_handle.as_ptr(), sort, filter);
             (selected != ::core::primitive::u64::MAX as uint64_t).then_some(selected)
         })),
         Some(Box::new(move |itemdata, ctx, sx, sy| {
@@ -755,7 +762,7 @@ unsafe fn window_client_key(
     client_owner: &ClientRef,
     _wl: refbox::Weak<winlink>,
     mut key: key_code,
-    mut m: *mut mouse_event,
+    mut m: Option<&mut mouse_event>,
 ) {
     let mode_pane_owner = wme
         .get_unchecked()
@@ -768,10 +775,11 @@ unsafe fn window_client_key(
     finished = mode_tree_key(
         (*data).data.as_ref().expect("mode tree owner").clone(),
         Some(client_owner),
-        &raw mut key,
-        m,
-        ::core::ptr::null_mut::<u_int>(),
-        ::core::ptr::null_mut::<u_int>(),
+        &mut key,
+        m.as_deref_mut()
+            .map_or(std::ptr::null_mut(), std::ptr::from_mut),
+        None,
+        None,
     );
     match key {
         100 | 120 | 122 => {

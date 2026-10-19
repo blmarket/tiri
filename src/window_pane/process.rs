@@ -20,7 +20,6 @@ use crate::shared::command::{cmd, cmd_find_state, cmdq_item};
 use crate::shared::errno::ErrorText;
 use crate::shared::event::*;
 use crate::shared::event::{EV_READ, EV_WRITE};
-use crate::shared::format::format_tree;
 use crate::shared::format::FORMAT_NONE;
 use crate::shared::pane::window_pane;
 use crate::shared::pane::window_pane_offset;
@@ -54,7 +53,6 @@ pub(super) unsafe fn pipe_pane(
     let mut null_fd: ::core::ffi::c_int = 0;
     let mut in_0: ::core::ffi::c_int = 0;
     let mut out: ::core::ffi::c_int = 0;
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut set: sigset_t = unsafe { ::core::mem::zeroed() };
     let mut oldset: sigset_t = unsafe { ::core::mem::zeroed() };
     if window_pane_exited(&*wp) != 0 {
@@ -99,7 +97,7 @@ pub(super) unsafe fn pipe_pane(
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );
-    ft = &raw mut *ft_owner;
+    let ft = &mut *ft_owner;
     format_defaults(ft, tc.as_ref(), s.as_ref(), wl.clone(), Some(pane_owner));
     let cmd = format_expand_time_cstring(
         ft,

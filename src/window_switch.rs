@@ -26,7 +26,6 @@ use crate::shared::command::{cmd_find_state, cmdq_item};
 use crate::shared::format::format_tree;
 use crate::shared::format::FORMAT_NONE;
 use crate::shared::grid::*;
-use crate::shared::key::key_event;
 use crate::shared::key::*;
 use crate::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
 use crate::shared::prompt::*;
@@ -90,8 +89,8 @@ pub static window_switch_mode: window_mode = {
                 as unsafe fn(
                     refbox::Weak<window_mode_entry>,
                     Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
-                    *mut cmd_find_state,
-                    *mut args,
+                    Option<&cmd_find_state>,
+                    Option<&mut args>,
                 ) -> bool,
         ),
         free: None,
@@ -107,7 +106,7 @@ pub static window_switch_mode: window_mode = {
                     &ClientRef,
                     refbox::Weak<winlink>,
                     key_code,
-                    *mut mouse_event,
+                    Option<&mut mouse_event>,
                 ) -> (),
         ),
         key_table: None,
@@ -122,8 +121,8 @@ unsafe fn window_switch_add_item(
     type_0: window_switch_type,
     session: ::core::ffi::c_int,
     winlink: ::core::ffi::c_int,
-    order: *mut u_int,
-    ft: *mut format_tree,
+    order: &mut u_int,
+    ft: &mut format_tree,
 ) {
     let fresh = *order;
     *order = (*order).wrapping_add(1);
@@ -141,11 +140,10 @@ unsafe fn window_switch_add_item(
 unsafe fn window_switch_add_session(
     mut data: *mut window_switch_modedata,
     s_owner: &SessionRef,
-    mut order: *mut u_int,
+    order: &mut u_int,
 ) {
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut ft_owner = format_create(None, None, FORMAT_NONE, 0 as ::core::ffi::c_int);
-    ft = &raw mut *ft_owner;
+    let ft = &mut *ft_owner;
     format_defaults(ft, None, Some(s_owner), (refbox::Weak::new()).clone(), None);
     window_switch_add_item(
         data,
@@ -160,14 +158,13 @@ unsafe fn window_switch_add_session(
 unsafe fn window_switch_add_window(
     mut data: *mut window_switch_modedata,
     mut wl: refbox::Weak<winlink>,
-    mut order: *mut u_int,
+    order: &mut u_int,
 ) {
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let Some(session_owner) = wl.get_unchecked().session.upgrade() else {
         return;
     };
     let mut ft_owner = format_create(None, None, FORMAT_NONE, 0 as ::core::ffi::c_int);
-    ft = &raw mut *ft_owner;
+    let ft = &mut *ft_owner;
     format_defaults(ft, None, Some(&session_owner), wl.clone(), None);
     window_switch_add_item(
         data,
@@ -224,14 +221,14 @@ unsafe fn window_switch_build(mut data: *mut window_switch_modedata) {
             let ns = u_int::try_from(sl.len()).expect("too many sessions for window switch");
             i = 0 as u_int;
             while i < ns {
-                window_switch_add_session(data, &sl[i as usize], &raw mut order);
+                window_switch_add_session(data, &sl[i as usize], &mut order);
                 i = i.wrapping_add(1);
             }
         }
         1 => {
-            let links = sort_get_winlinks(&raw mut sort_crit);
+            let links = sort_get_winlinks(&sort_crit);
             for wl in links {
-                window_switch_add_window(data, wl.clone(), &raw mut order);
+                window_switch_add_window(data, wl.clone(), &mut order);
             }
         }
         _ => {}
@@ -436,8 +433,8 @@ unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
 unsafe fn window_switch_init(
     mut wme: refbox::Weak<window_mode_entry>,
     _item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
-    mut fs: *mut cmd_find_state,
-    mut args: *mut args,
+    fs: Option<&cmd_find_state>,
+    mut args: Option<&mut args>,
 ) -> bool {
     let mode_pane_owner = wme
         .get_unchecked()
@@ -446,20 +443,28 @@ unsafe fn window_switch_init(
         .expect("mode belongs to a live pane");
     let mut data: *mut window_switch_modedata = ::core::ptr::null_mut::<window_switch_modedata>();
     let mut pd = prompt_create_data::default();
-    let format = if args.is_null() || args_has(&*args, 'F' as i32 as u_char) == 0 {
+    let format = if let Some(args) = args
+        .as_deref()
+        .filter(|args| args_has(args, 'F' as i32 as u_char) != 0)
+    {
+        args_get(args, 'F' as i32 as u_char).expect("-F takes a value")
+    } else {
         WINDOW_SWITCH_DEFAULT_FORMAT
+    }
+    .to_owned();
+    let command = if let Some(args) = args
+        .as_deref_mut()
+        .filter(|args| args_count(args) != 0 as u_int)
+    {
+        args_string(args, 0 as u_int).expect("argument 0 exists")
     } else {
-        args_get(&*(args), 'F' as i32 as u_char).expect("-F takes a value")
-    };
-    let command = if args.is_null() || args_count(&*args) == 0 as u_int {
         WINDOW_SWITCH_DEFAULT_COMMAND
-    } else {
-        args_string(&mut *(args), 0 as u_int).expect("argument 0 exists")
-    };
+    }
+    .to_owned();
     let owner = Box::new(std::cell::UnsafeCell::new(window_switch_modedata {
         screen: screen::empty(),
-        format: format.to_owned(),
-        command: command.to_owned(),
+        format,
+        command,
         type_0: WINDOW_SWITCH_TYPE_SESSION,
         filter: CString::default(),
         prompt: None,
@@ -471,13 +476,14 @@ unsafe fn window_switch_init(
     }));
     data = owner.get();
     wme.get_mut_unchecked().boxed_data = Some(owner);
+    let args = args.expect("mode arguments");
     if args_has(&*args, 'w' as i32 as u_char) != 0 {
         (*data).type_0 = WINDOW_SWITCH_TYPE_WINDOW;
     } else {
         (*data).type_0 = WINDOW_SWITCH_TYPE_SESSION;
     }
-    prompt_set_options(&mut pd, (*fs).session_handle().as_ref());
-    pd.fs = fs.as_ref();
+    prompt_set_options(&mut pd, fs.expect("mode target").session_handle().as_ref());
+    pd.fs = fs;
     pd.prompt = c"(search) ";
     pd.input = Some(c"");
     pd.type_0 = PROMPT_TYPE_SEARCH;
@@ -585,11 +591,7 @@ unsafe fn window_switch_run_command(
         1 as ::core::ffi::c_int,
     );
     if !command.as_bytes().is_empty() {
-        state = cmdq_new_state(
-            &raw mut fs,
-            ::core::ptr::null_mut::<key_event>(),
-            0 as ::core::ffi::c_int,
-        );
+        state = cmdq_new_state(Some(&fs), None, 0 as ::core::ffi::c_int);
         if let Err(mut error) = cmd_parse_and_append(command.as_c_str(), client_owner, Some(&state))
         {
             if let Some(owner) = client_owner {
@@ -637,7 +639,7 @@ unsafe fn window_switch_key(
     client_owner: &ClientRef,
     _wl: refbox::Weak<winlink>,
     mut key: key_code,
-    mut m: *mut mouse_event,
+    m: Option<&mut mouse_event>,
 ) {
     let mode_pane_owner = wme
         .get_unchecked()
@@ -662,14 +664,11 @@ unsafe fn window_switch_key(
                 <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
                     << 32 as ::core::ffi::c_int
     {
-        if m.is_null()
-            || cmd_mouse_at(
-                &mode_pane_owner,
-                m,
-                &raw mut x,
-                &raw mut y,
-                0 as ::core::ffi::c_int,
-            ) != 0 as ::core::ffi::c_int
+        let Some(m) = m else {
+            return;
+        };
+        if cmd_mouse_at(&mode_pane_owner, m, &mut x, &mut y, 0 as ::core::ffi::c_int)
+            != 0 as ::core::ffi::c_int
         {
             return;
         }

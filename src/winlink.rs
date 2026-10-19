@@ -97,14 +97,11 @@ pub unsafe fn winlink_find_by_window_id(wwl: &winlinks, mut id: u_int) -> refbox
     refbox::Weak::new()
 }
 
-unsafe fn winlink_next_index(
-    mut wwl: *mut winlinks,
-    mut idx: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
+unsafe fn winlink_next_index(wwl: &winlinks, mut idx: ::core::ffi::c_int) -> ::core::ffi::c_int {
     let mut i: ::core::ffi::c_int = 0;
     i = idx;
     loop {
-        if !winlink_find_by_index(&*wwl, i).is_alive() {
+        if !winlink_find_by_index(wwl, i).is_alive() {
             return i;
         }
         if i == INT_MAX {
@@ -131,17 +128,14 @@ pub fn winlinks_is_empty(wwl: &winlinks) -> bool {
         .is_empty()
 }
 
-pub unsafe fn winlink_add(
-    mut wwl: *mut winlinks,
-    mut idx: ::core::ffi::c_int,
-) -> refbox::Weak<winlink> {
+pub unsafe fn winlink_add(wwl: &winlinks, mut idx: ::core::ffi::c_int) -> refbox::Weak<winlink> {
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     if idx < 0 as ::core::ffi::c_int {
         idx = winlink_next_index(wwl, -(idx + 1));
         if idx == -(1 as ::core::ffi::c_int) {
             return refbox::Weak::new();
         }
-    } else if winlink_find_by_index(&*wwl, idx).is_alive() {
+    } else if winlink_find_by_index(wwl, idx).is_alive() {
         return refbox::Weak::new();
     }
     let owner = refbox::RefBox::new(winlink {
@@ -152,7 +146,7 @@ pub unsafe fn winlink_add(
         owner: refbox::Weak::new(),
     });
     wl = owner.downgrade();
-    let storage = &*wwl;
+    let storage = wwl;
     let observer = storage.downgrade();
     let mut map = storage
         .try_borrow_mut()
@@ -184,7 +178,7 @@ pub unsafe fn winlink_set_window(mut wl: refbox::Weak<winlink>, w_owner: &Window
     w_owner.add_winlink(wl);
 }
 
-pub unsafe fn winlink_remove(mut wwl: *mut winlinks, mut wl: refbox::Weak<winlink>) {
+pub unsafe fn winlink_remove(wwl: &winlinks, mut wl: refbox::Weak<winlink>) {
     if let Some(session_owner) = wl.get_unchecked().session.upgrade() {
         session_owner.forget_winlink(wl.clone());
     }
@@ -194,7 +188,7 @@ pub unsafe fn winlink_remove(mut wwl: *mut winlinks, mut wl: refbox::Weak<winlin
     }
     let idx = wl.get_unchecked().idx;
     let owner = {
-        let storage = &*wwl;
+        let storage = wwl;
         let mut map = storage
             .try_borrow_mut()
             .expect("winlink index already borrowed");
@@ -274,8 +268,8 @@ unsafe fn winlink_weak(wl: refbox::Weak<winlink>) -> refbox::Weak<winlink> {
 
 /// Move the owner between keys without invalidating the winlink or its observers.
 /// The caller must supply a live member of `head` and an unused destination index.
-pub unsafe fn winlinks_reindex(head: *mut winlinks, wl: refbox::Weak<winlink>, idx: i32) {
-    let owner = &*head;
+pub unsafe fn winlinks_reindex(head: &winlinks, wl: refbox::Weak<winlink>, idx: i32) {
+    let owner = head;
     let mut map = owner
         .try_borrow_mut()
         .expect("winlink index already borrowed");

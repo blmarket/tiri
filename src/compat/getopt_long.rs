@@ -50,7 +50,7 @@ static mut illoptchar: [::core::ffi::c_char; 21] = unsafe {
 static mut illoptstring: [::core::ffi::c_char; 21] = unsafe {
     ::core::mem::transmute::<[u8; 21], [::core::ffi::c_char; 21]>(*b"unknown option -- %s\0")
 };
-unsafe fn gcd(mut a: ::core::ffi::c_int, mut b: ::core::ffi::c_int) -> ::core::ffi::c_int {
+fn gcd(mut a: ::core::ffi::c_int, mut b: ::core::ffi::c_int) -> ::core::ffi::c_int {
     let mut c: ::core::ffi::c_int = 0;
     c = a % b;
     while c != 0 as ::core::ffi::c_int {

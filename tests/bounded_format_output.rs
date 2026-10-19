@@ -43,11 +43,9 @@ fn sgr_mouse_output_counts_the_final_character_as_one_byte() {
             sgr_b: 4,
             ..Default::default()
         };
-        unsafe {
-            let buf = input_key_get_mouse(ScreenMode::from(&screen), &mouse, 9, 19).unwrap();
-            let mut expected = b"\x1b[<4;10;20".to_vec();
-            expected.push(byte);
-            assert_eq!(buf, expected);
-        }
+        let buf = input_key_get_mouse(ScreenMode::from(&screen), &mouse, 9, 19).unwrap();
+        let mut expected = b"\x1b[<4;10;20".to_vec();
+        expected.push(byte);
+        assert_eq!(buf, expected);
     }
 }

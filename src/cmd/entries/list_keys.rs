@@ -57,7 +57,7 @@ pub static cmd_list_keys_entry: cmd_entry = {
         exec: Some(cmd_list_keys_exec),
     }
 };
-unsafe fn cmd_list_keys_get_prefix(args: *mut args) -> CString {
+unsafe fn cmd_list_keys_get_prefix(args: &args) -> CString {
     let mut prefix: key_code = 0;
     if args_has(&*args, 'P' as i32 as u_char) != 0 {
         return args_get(&*(args), 'P' as i32 as u_char)
@@ -88,7 +88,7 @@ fn cmd_list_keys_get_table_width(bindings: &[&key_binding]) -> u_int {
         .max()
         .unwrap_or(0)
 }
-unsafe fn cmd_list_keys_get_root_and_prefix<'a>(
+fn cmd_list_keys_get_root_and_prefix<'a>(
     tables: &'a [std::cell::Ref<'_, key_table>],
     sort_crit: &sort_criteria,
 ) -> Vec<&'a key_binding> {
@@ -115,7 +115,7 @@ fn cmd_list_keys_filter_key_list(
     });
 }
 unsafe fn cmd_list_keys_format_add_key_binding(
-    mut ft: *mut format_tree,
+    ft: &mut format_tree,
     bd: &key_binding,
     prefix: &CStr,
 ) {
@@ -153,7 +153,6 @@ unsafe fn cmd_list_keys_exec(
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut table = None;
     let mut only: key_code = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -200,7 +199,7 @@ unsafe fn cmd_list_keys_exec(
             return CmdOutcome::Error;
         }
     }
-    let prefix = cmd_list_keys_get_prefix(args);
+    let prefix = cmd_list_keys_get_prefix(&*args);
     single = args_has(&*args, '1' as i32 as u_char);
     notes_only = args_has(&*args, 'N' as i32 as u_char);
     template =
@@ -240,7 +239,7 @@ unsafe fn cmd_list_keys_exec(
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );
-    ft = &raw mut *ft_owner;
+    let ft = &mut *ft_owner;
     format_defaults(ft, tc.as_ref(), None, (refbox::Weak::new()).clone(), None);
     format_add(ft, c"notes_only", |out| {
         write!(out, "{}", (notes_only) as i32)

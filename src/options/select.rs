@@ -11,7 +11,7 @@ use std::ffi::{CStr, CString};
 
 /// Select the options scope for `name`, returning the table kind and scope.
 pub unsafe fn options_scope_from_name(
-    args: *mut args,
+    args: &args,
     window: i32,
     name: &CStr,
     fs: &cmd_find_state,
@@ -34,7 +34,7 @@ pub unsafe fn options_scope_from_name(
     options_select_scope(args, fs, kind)
 }
 pub unsafe fn options_scope_from_flags(
-    args: *mut args,
+    args: &args,
     window: i32,
     fs: &cmd_find_state,
 ) -> Result<(i32, OptionsScope), CString> {
@@ -50,7 +50,7 @@ pub unsafe fn options_scope_from_flags(
     options_select_scope(args, fs, kind)
 }
 unsafe fn options_select_scope(
-    args: *mut args,
+    args: &args,
     fs: &cmd_find_state,
     kind: i32,
 ) -> Result<(i32, OptionsScope), CString> {

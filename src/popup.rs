@@ -16,7 +16,6 @@ use crate::screen_write::{
     screen_write_start, screen_write_stop,
 };
 use crate::window::WindowRef;
-use libc::memcpy;
 
 use crate::server_client::{Client, Overlay};
 use crate::session::Session;
@@ -29,7 +28,6 @@ use crate::shared::client::{CLIENT_ALLREDRAWFLAGS, CLIENT_REDRAWOVERLAY};
 use crate::shared::colour::*;
 use crate::shared::display::visible_ranges;
 use crate::shared::environment::environ;
-use crate::shared::format::format_tree;
 use crate::shared::grid::*;
 use crate::shared::input::input_ctx;
 use crate::shared::job::{job, job_update_callback, JobCompletion};
@@ -232,7 +230,6 @@ unsafe fn popup_reapply_styles(popup: &PopupGuard) {
         .window_handle()
         .cloned()
         .expect("popup window");
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut sytmp: style = style {
         gc: grid_cell {
             data: utf8_data {
@@ -263,12 +260,8 @@ unsafe fn popup_reapply_styles(popup: &PopupGuard) {
         link: 0,
     };
     let mut ft_owner = format_create_defaults(None, Some(client), Some(&session), link, None);
-    ft = &raw mut *ft_owner;
-    memcpy(
-        &raw mut (*pd).defaults as *mut ::core::ffi::c_void,
-        &raw const grid_default_cell as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
+    let ft = &mut *ft_owner;
+    (*pd).defaults = grid_default_cell;
     style_apply_with_options(
         &mut (*pd).defaults,
         c"popup-style",
@@ -276,9 +269,9 @@ unsafe fn popup_reapply_styles(popup: &PopupGuard) {
         &OptionsScope::Window(WindowRef::downgrade(&window)),
     );
     if !(*pd).style.is_none() {
-        style_set(&raw mut sytmp, &grid_default_cell);
+        style_set(&mut sytmp, &grid_default_cell);
         if style_parse(
-            &raw mut sytmp,
+            &mut sytmp,
             &(*pd).defaults,
             ((*pd).style).as_deref().unwrap_or(c""),
         ) == 0 as ::core::ffi::c_int
@@ -288,11 +281,7 @@ unsafe fn popup_reapply_styles(popup: &PopupGuard) {
         }
     }
     (*pd).defaults.attr = 0 as u_short;
-    memcpy(
-        &raw mut (*pd).border_cell as *mut ::core::ffi::c_void,
-        &raw const grid_default_cell as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
+    (*pd).border_cell = grid_default_cell;
     style_apply_with_options(
         &mut (*pd).border_cell,
         c"popup-border-style",
@@ -300,9 +289,9 @@ unsafe fn popup_reapply_styles(popup: &PopupGuard) {
         &OptionsScope::Window(WindowRef::downgrade(&window)),
     );
     if !(*pd).border_style.is_none() {
-        style_set(&raw mut sytmp, &grid_default_cell);
+        style_set(&mut sytmp, &grid_default_cell);
         if style_parse(
-            &raw mut sytmp,
+            &mut sytmp,
             &(*pd).border_cell,
             ((*pd).border_style).as_deref().unwrap_or(c""),
         ) == 0 as ::core::ffi::c_int
@@ -480,11 +469,7 @@ unsafe fn popup_draw(c_owner: &ClientRef, popup: &PopupGuard) {
         );
     }
     screen_write_stop(ctx);
-    memcpy(
-        &raw mut defaults as *mut ::core::ffi::c_void,
-        &raw mut (*pd).defaults as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
+    defaults = (*pd).defaults;
     let mut palette = (*pd)
         .palette
         .try_borrow_mut()
@@ -624,7 +609,7 @@ unsafe fn popup_handle_drag(c_owner: &ClientRef, popup: &PopupGuard, mut m: *mut
         c_owner.request_redraw(CLIENT_ALLREDRAWFLAGS as u64);
     }
 }
-unsafe fn popup_key(c_owner: &ClientRef, popup: &PopupGuard, event: *mut key_event) -> i32 {
+unsafe fn popup_key(c_owner: &ClientRef, popup: &PopupGuard, event: &mut key_event) -> i32 {
     let pd = popup.as_ptr();
     let mut current_block: u64;
     let mut m: *mut mouse_event = &raw mut (*event).m;
@@ -774,10 +759,7 @@ unsafe fn popup_job_update_cb(job: &refbox::Weak<job>, popup: &PopupGuard) {
     let render = PopupRenderSnapshot::new(popup);
     client.with_overlay_check_disabled(popup_check_callback(popup.handle()), || {
         input_parse_screen(
-            (*pd)
-                .ictx
-                .as_deref_mut()
-                .map_or(std::ptr::null_mut(), |ictx| ictx),
+            (*pd).ictx.as_deref_mut().expect("input context"),
             &mut (*pd).s,
             Some(Box::new(move |ttyctx| render.init_ctx(ttyctx))),
             std::slice::from_raw_parts(data as *const u8, size as usize),
@@ -857,9 +839,9 @@ pub unsafe fn popup_modify(
         let updated = popup_optional_string(border_style);
         (*pd).border_style = updated;
 
-        style_set(&raw mut sytmp, &(*pd).border_cell);
+        style_set(&mut sytmp, &(*pd).border_cell);
         if style_parse(
-            &raw mut sytmp,
+            &mut sytmp,
             &(*pd).border_cell,
             ((*pd).border_style).as_deref().unwrap_or(c""),
         ) == 0 as ::core::ffi::c_int
@@ -872,9 +854,9 @@ pub unsafe fn popup_modify(
         let updated = popup_optional_string(style);
         (*pd).style = updated;
 
-        style_set(&raw mut sytmp, &(*pd).defaults);
+        style_set(&mut sytmp, &(*pd).defaults);
         if style_parse(
-            &raw mut sytmp,
+            &mut sytmp,
             &(*pd).defaults,
             ((*pd).style).as_deref().unwrap_or(c""),
         ) == 0 as ::core::ffi::c_int
@@ -1011,11 +993,7 @@ pub(crate) unsafe fn popup_display(
     (*pd).c = Some(c_owner.clone());
     (*pd).status = 128 as ::core::ffi::c_int + SIGHUP;
     (*pd).border_lines = lines;
-    memcpy(
-        &raw mut (*pd).border_cell as *mut ::core::ffi::c_void,
-        &raw const grid_default_cell as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
+    (*pd).border_cell = grid_default_cell;
     style_apply_with_options(
         &mut (*pd).border_cell,
         c"popup-border-style",
@@ -1023,9 +1001,9 @@ pub(crate) unsafe fn popup_display(
         &OptionsScope::Window(WindowRef::downgrade(&window)),
     );
     if border_style.is_some() {
-        style_set(&raw mut sytmp, &grid_default_cell);
+        style_set(&mut sytmp, &grid_default_cell);
         if style_parse(
-            &raw mut sytmp,
+            &mut sytmp,
             &(*pd).border_cell,
             ((*pd).border_style).as_deref().unwrap_or(c""),
         ) == 0 as ::core::ffi::c_int
@@ -1042,11 +1020,7 @@ pub(crate) unsafe fn popup_display(
         colour_palette_init(&mut palette);
         colour_palette_from_option(Some(&mut palette), &OptionsScope::GlobalWindow);
     }
-    memcpy(
-        &raw mut (*pd).defaults as *mut ::core::ffi::c_void,
-        &raw const grid_default_cell as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
+    (*pd).defaults = grid_default_cell;
     style_apply_with_options(
         &mut (*pd).defaults,
         c"popup-style",
@@ -1055,9 +1029,9 @@ pub(crate) unsafe fn popup_display(
     );
     drop(window);
     if style.is_some() {
-        style_set(&raw mut sytmp, &grid_default_cell);
+        style_set(&mut sytmp, &grid_default_cell);
         if style_parse(
-            &raw mut sytmp,
+            &mut sytmp,
             &(*pd).defaults,
             ((*pd).style).as_deref().unwrap_or(c""),
         ) == 0 as ::core::ffi::c_int

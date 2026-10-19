@@ -11,7 +11,6 @@ use crate::shared::abi::*;
 use crate::shared::command::*;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::shared::command::{CMD_AFTERHOOK, CMD_READONLY};
-use crate::shared::format::format_tree;
 use crate::shared::format::FORMAT_NONE;
 use crate::shared::session::SessionRef;
 use crate::shared::sort::sort_criteria;
@@ -55,7 +54,6 @@ unsafe fn cmd_list_clients_exec(
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let mut s: Option<SessionRef> = None;
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut filter: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut i: u_int = 0;
@@ -88,7 +86,7 @@ unsafe fn cmd_list_clients_exec(
         return CmdOutcome::Error;
     }
     sort_crit.reversed = args_has(&*args, 'r' as i32 as u_char);
-    let clients_sorted = sort_get_clients(&raw mut sort_crit);
+    let clients_sorted = sort_get_clients(&sort_crit);
     i = 0 as u_int;
     while (i as usize) < clients_sorted.len() {
         let c = &clients_sorted[i as usize];
@@ -102,7 +100,7 @@ unsafe fn cmd_list_clients_exec(
                 FORMAT_NONE,
                 0 as ::core::ffi::c_int,
             );
-            ft = &raw mut *ft_owner;
+            let ft = &mut *ft_owner;
             format_add(ft, c"line", |out| write!(out, "{}", (i) as u32));
             format_defaults(ft, Some(c), None, (refbox::Weak::new()).clone(), None);
             if !filter.is_null() {

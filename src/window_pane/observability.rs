@@ -76,7 +76,7 @@ pub(crate) fn activity(id: PaneId) -> Option<PaneActivity> {
     })
 }
 
-pub(crate) unsafe fn cwd(id: PaneId) -> Option<PathBuf> {
+pub(crate) fn cwd(id: PaneId) -> Option<PathBuf> {
     let info = activity(id)?;
     let path =
         PaneProcessProbe::new(info.foreground, info.session_leader, info.command).current_path()?;

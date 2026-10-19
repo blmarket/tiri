@@ -41,7 +41,7 @@ fn shuffle_moves_owners_without_losing_history_and_removal_clears_observers() {
         let session = &mut *session_owner.get();
         let mut nodes = Vec::new();
         for idx in 1..=3 {
-            let mut node = winlink_add(&raw mut session.windows, idx);
+            let mut node = winlink_add(&session.windows, idx);
             node.get_mut_unchecked().session = std::rc::Rc::downgrade(&session_owner);
             nodes.push(node);
         }
@@ -62,7 +62,7 @@ fn shuffle_moves_owners_without_losing_history_and_removal_clears_observers() {
         assert_eq!(winlink_stack_indices(&session.lastw), [3, 2]);
         assert_eq!(weak, nodes[0]);
         for node in nodes {
-            winlink_remove(&raw mut session.windows, (node).clone());
+            winlink_remove(&session.windows, (node).clone());
         }
         assert!(winlink_stack_indices(&session.lastw).is_empty());
         assert_eq!(weak.try_borrow_mut().err(), Some(BorrowError::Dropped));

@@ -32,4 +32,4 @@ pub unsafe fn setproctitle(write: impl FnOnce(&mut dyn std::io::Write) -> std::i
 }
 // Like tmux's compat fallback, platforms without PR_SET_NAME keep their title.
 #[cfg(not(target_os = "linux"))]
-pub unsafe fn setproctitle(_write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) {}
+pub fn setproctitle(_write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) {}

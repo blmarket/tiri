@@ -215,7 +215,7 @@ pub unsafe fn event_payload_get_target(ep: &event_payload, fs: &mut cmd_find_sta
     *fs = cmd_find_state::clear_state(flags);
     0
 }
-pub unsafe fn event_payload_set_string(
+pub fn event_payload_set_string(
     ep: &mut event_payload,
     name: &CStr,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
@@ -223,40 +223,36 @@ pub unsafe fn event_payload_set_string(
     let string = format_message_with(write);
     event_payload_set_item(&mut *ep, name, EventPayloadValue::String(string));
 }
-pub unsafe fn event_payload_set_time(ep: &mut event_payload, name: &CStr, mut value: time_t) {
+pub fn event_payload_set_time(ep: &mut event_payload, name: &CStr, mut value: time_t) {
     event_payload_set_item(&mut *ep, name, EventPayloadValue::Time(value));
 }
-pub unsafe fn event_payload_set_int(
-    ep: &mut event_payload,
-    name: &CStr,
-    mut value: ::core::ffi::c_int,
-) {
+pub fn event_payload_set_int(ep: &mut event_payload, name: &CStr, mut value: ::core::ffi::c_int) {
     event_payload_set_item(&mut *ep, name, EventPayloadValue::Int(value));
 }
-pub unsafe fn event_payload_set_uint(ep: &mut event_payload, name: &CStr, mut value: u_int) {
+pub fn event_payload_set_uint(ep: &mut event_payload, name: &CStr, mut value: u_int) {
     event_payload_set_item(&mut *ep, name, EventPayloadValue::Uint(value));
 }
 /// Transfer a retained client into the payload; payload cleanup releases it explicitly.
-pub unsafe fn event_payload_set_client(ep: &mut event_payload, owner: ClientRef) {
+pub fn event_payload_set_client(ep: &mut event_payload, owner: ClientRef) {
     event_payload_set_item(ep, c"client", EventPayloadValue::Client(owner));
 }
 /// Transfer a retained session into the payload; payload cleanup releases it explicitly.
-pub unsafe fn event_payload_set_session(ep: &mut event_payload, name: &CStr, owner: SessionRef) {
+pub fn event_payload_set_session(ep: &mut event_payload, name: &CStr, owner: SessionRef) {
     event_payload_set_item(ep, name, EventPayloadValue::Session(owner));
 }
 /// Transfer a retained window into the payload; payload cleanup releases it explicitly.
-pub unsafe fn event_payload_set_window(ep: &mut event_payload, name: &CStr, owner: WindowRef) {
+pub fn event_payload_set_window(ep: &mut event_payload, name: &CStr, owner: WindowRef) {
     event_payload_set_item(ep, name, EventPayloadValue::Window(owner));
 }
 /// Transfer a retained window_pane into the payload; payload cleanup releases it explicitly.
-pub unsafe fn event_payload_set_pane(
+pub fn event_payload_set_pane(
     ep: &mut event_payload,
     name: &CStr,
     owner: std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
 ) {
     event_payload_set_item(ep, name, EventPayloadValue::Pane(owner));
 }
-pub unsafe fn event_payload_set_identity(
+pub fn event_payload_set_identity(
     ep: &mut event_payload,
     name: &CStr,
     identity: EventPayloadIdentity,
@@ -332,7 +328,7 @@ pub(crate) unsafe fn event_payload_print_owned(ep: &event_payload) -> Option<Vec
 }
 pub unsafe fn event_payload_add_formats(
     ep: &event_payload,
-    mut ft: *mut format_tree,
+    ft: &mut format_tree,
     prefix: Option<&CStr>,
 ) {
     let prefix = prefix.unwrap_or(c"").to_bytes();
@@ -462,39 +458,37 @@ mod tests {
 
     #[test]
     fn boxed_items_preserve_order_and_addresses_when_the_payload_moves() {
-        unsafe {
-            let mut payload = event_payload {
-                target_pane: None,
-                target_window: None,
-                target_session: None,
-                items: event_payload_tree::default(),
-                target: Default::default(),
-            };
-            event_payload_set_int(&mut payload, c"beta", 2);
-            event_payload_set_int(&mut payload, c"alpha", 1);
-            let address = event_payload_find(&payload, c"alpha").unwrap()
-                as *const event_payload_item as usize;
-            let mut moved = payload;
-            for i in 0..128 {
-                let key = CString::new(format!("extra-{i}")).unwrap();
-                event_payload_set_int(&mut moved, &key, i);
-            }
-            assert_eq!(
-                event_payload_items(&moved).next().unwrap() as *const event_payload_item as usize,
-                address
-            );
-            assert_eq!(
-                event_payload_items(&moved)
-                    .take(2)
-                    .map(|item| item.name.to_bytes())
-                    .collect::<Vec<_>>(),
-                [b"alpha".as_slice(), b"beta".as_slice()]
-            );
-            let item = moved.items.remove(c"alpha").unwrap();
-            assert_eq!(item.value.number(), 1);
-            assert!(event_payload_find(&moved, c"alpha").is_none());
-            drop(moved);
-            assert_eq!(item.name.as_bytes(), b"alpha");
+        let mut payload = event_payload {
+            target_pane: None,
+            target_window: None,
+            target_session: None,
+            items: event_payload_tree::default(),
+            target: Default::default(),
+        };
+        event_payload_set_int(&mut payload, c"beta", 2);
+        event_payload_set_int(&mut payload, c"alpha", 1);
+        let address =
+            event_payload_find(&payload, c"alpha").unwrap() as *const event_payload_item as usize;
+        let mut moved = payload;
+        for i in 0..128 {
+            let key = CString::new(format!("extra-{i}")).unwrap();
+            event_payload_set_int(&mut moved, &key, i);
         }
+        assert_eq!(
+            event_payload_items(&moved).next().unwrap() as *const event_payload_item as usize,
+            address
+        );
+        assert_eq!(
+            event_payload_items(&moved)
+                .take(2)
+                .map(|item| item.name.to_bytes())
+                .collect::<Vec<_>>(),
+            [b"alpha".as_slice(), b"beta".as_slice()]
+        );
+        let item = moved.items.remove(c"alpha").unwrap();
+        assert_eq!(item.value.number(), 1);
+        assert!(event_payload_find(&moved, c"alpha").is_none());
+        drop(moved);
+        assert_eq!(item.name.as_bytes(), b"alpha");
     }
 }

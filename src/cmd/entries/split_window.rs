@@ -338,7 +338,7 @@ unsafe fn cmd_split_window_exec(
                             new_pane,
                             0 as ::core::ffi::c_int,
                         );
-                        cmdq_insert_hook(s.as_ref(), item_handle, &raw mut fs, |out| {
+                        cmdq_insert_hook(s.as_ref(), item_handle, Some(&fs), |out| {
                             out.write_all(b"after-split-window")
                         });
                         drop(sc.environ.take());

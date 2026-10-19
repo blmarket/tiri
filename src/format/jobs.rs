@@ -131,7 +131,7 @@ unsafe fn format_job_update(job: &refbox::Weak<job>, entry: &JobEntry) {
     }) else {
         return;
     };
-    let now = time(std::ptr::null_mut());
+    let now = crate::shared::time::unix_seconds(std::time::SystemTime::now());
     if status != 0 && last != now {
         if let Some(client) = entry.cache.client() {
             server_status_client(&client);
@@ -187,8 +187,8 @@ unsafe fn format_job_complete(completion: JobCompletion, entry: &JobEntry) {
     }
 }
 
-pub(super) unsafe fn format_job_get(es: *mut format_expand_state, command: &CStr) -> CString {
-    let ft = (*es).ft;
+pub(super) unsafe fn format_job_get(es: &mut format_expand_state, command: &CStr) -> CString {
+    let ft = es.ft;
     let cache = JobCache::for_client((*ft).client.as_ref());
     let entry = cache.entry((*ft).tag, command);
     let mut next = format_expand_state::default();
@@ -206,7 +206,7 @@ pub(super) unsafe fn format_job_get(es: *mut format_expand_state, command: &CStr
     }) else {
         return CString::default();
     };
-    let now = time(std::ptr::null_mut());
+    let now = crate::shared::time::unix_seconds(std::time::SystemTime::now());
     if force != 0 && !running.is_empty() {
         job_free(&running);
     }
@@ -327,13 +327,17 @@ unsafe fn format_job_tidy_at(cache: &JobCache, force: i32, now: time_t) {
 }
 
 pub unsafe fn format_tidy_jobs() {
-    format_job_tidy_at(&JobCache::Global, 0, time(std::ptr::null_mut()));
+    format_job_tidy_at(
+        &JobCache::Global,
+        0,
+        crate::shared::time::unix_seconds(std::time::SystemTime::now()),
+    );
     let mut current = ClientRegistry::first();
     while let Some(client) = current {
         format_job_tidy_at(
             &JobCache::for_client(Some(&client)),
             0,
-            time(std::ptr::null_mut()),
+            crate::shared::time::unix_seconds(std::time::SystemTime::now()),
         );
         current = ClientRegistry::next(&client);
     }
@@ -341,7 +345,11 @@ pub unsafe fn format_tidy_jobs() {
 
 pub unsafe fn format_lost_client(client: &ClientRef) {
     let cache = JobCache::for_client(Some(client));
-    format_job_tidy_at(&cache, 1, time(std::ptr::null_mut()));
+    format_job_tidy_at(
+        &cache,
+        1,
+        crate::shared::time::unix_seconds(std::time::SystemTime::now()),
+    );
     loop {
         let removed = std::mem::take(&mut *client.borrow_format_jobs_mut());
         if removed.is_empty() {

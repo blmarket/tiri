@@ -146,7 +146,7 @@ mod tests {
     use std::time::Duration;
     use tiri_buffer::SegmentedBuf;
 
-    unsafe fn buffer(name: &CStr) -> Option<Vec<u8>> {
+    fn buffer(name: &CStr) -> Option<Vec<u8>> {
         let pb = paste_get_name(name)?;
         let pb = pb.borrow();
         Some(paste_buffer_data(&pb).unwrap_or_default().to_vec())

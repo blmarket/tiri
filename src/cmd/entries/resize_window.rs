@@ -133,10 +133,10 @@ unsafe fn cmd_resize_window_exec(
                 None,
                 s.as_ref().expect("live session"),
                 Some(&window_owner),
-                &raw mut sx,
-                &raw mut sy,
-                &raw mut xpixel,
-                &raw mut ypixel,
+                &mut sx,
+                &mut sy,
+                &mut xpixel,
+                &mut ypixel,
                 WINDOW_SIZE_LARGEST,
             );
         } else if args_has(&*args, 'a' as i32 as u_char) != 0 {
@@ -144,10 +144,10 @@ unsafe fn cmd_resize_window_exec(
                 None,
                 s.as_ref().expect("live session"),
                 Some(&window_owner),
-                &raw mut sx,
-                &raw mut sy,
-                &raw mut xpixel,
-                &raw mut ypixel,
+                &mut sx,
+                &mut sy,
+                &mut xpixel,
+                &mut ypixel,
                 WINDOW_SIZE_SMALLEST,
             );
         }

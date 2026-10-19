@@ -404,7 +404,7 @@ unsafe fn window_pane_printable_flags(
     std::ffi::CString::new(flags).expect("pane flags contain no NUL")
 }
 
-unsafe fn window_pane_find_by_id_str(s: &CStr) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
+fn window_pane_find_by_id_str(s: &CStr) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
     if s.to_bytes().first() != Some(&b'%') {
         return None;
     }
@@ -495,14 +495,16 @@ unsafe fn window_pane_create(
     (*wp).control_bg = -(1 as ::core::ffi::c_int);
     (*wp).control_fg = -(1 as ::core::ffi::c_int);
     let scope = OptionsScope::Pane(Rc::downgrade(&owner));
-    style_set_scrollbar_style_from_option(&raw mut (*wp).scrollbar_style, &scope);
+    let mut scrollbar_style = (*wp).scrollbar_style;
+    style_set_scrollbar_style_from_option(&mut scrollbar_style, &scope);
+    (*wp).scrollbar_style = scrollbar_style;
     colour_palette_init(&mut (*wp).palette);
     colour_palette_from_option(Some(&mut (*wp).palette), &scope);
     screen_init(&mut (*wp).base, sx, sy, hlimit);
     (*wp).screen_source = PaneScreenSource::Base;
     window_pane_default_cursor(&owner);
     screen_init(&mut (*wp).status_screen, 1 as u_int, 1 as u_int, 0 as u_int);
-    style_ranges_init(&raw mut (*wp).border_status_line.ranges);
+    style_ranges_init(&mut (*wp).border_status_line.ranges);
     if gethostname(host.as_mut_ptr().cast(), host.len()) == 0 as ::core::ffi::c_int {
         if let Ok(host) = CStr::from_bytes_until_nul(&host) {
             screen_set_title(&mut (*wp).base, host, 0 as ::core::ffi::c_int);
@@ -762,8 +764,8 @@ unsafe fn window_pane_set_mode(
     source_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
     mode: &'static window_mode,
     item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
-    mut fs: *mut cmd_find_state,
-    mut args: *mut args,
+    fs: Option<&cmd_find_state>,
+    mut args: Option<&mut args>,
 ) -> ::core::ffi::c_int {
     let wp = pane_owner.get();
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
@@ -799,11 +801,13 @@ unsafe fn window_pane_set_mode(
             kill: 0,
         });
         wme = window_pane_mode_push(&mut *wp, entry);
-        let entered =
-            wme.get_unchecked()
-                .mode
-                .init
-                .expect("non-null function pointer")(wme.clone(), item_handle, fs, args);
+        let entered = wme
+            .get_unchecked()
+            .mode
+            .init
+            .expect("non-null function pointer")(
+            wme.clone(), item_handle, fs, args.as_deref_mut()
+        );
         if !entered {
             drop(
                 window_pane_mode_remove(&mut *(wp), wme.clone())
@@ -812,8 +816,8 @@ unsafe fn window_pane_set_mode(
             return 1 as ::core::ffi::c_int;
         }
     }
-    wme.get_mut_unchecked().kill = if !args.is_null() {
-        args_has(&*args, 'k' as i32 as u_char)
+    wme.get_mut_unchecked().kill = if let Some(args) = args {
+        args_has(args, 'k' as i32 as u_char)
     } else {
         0 as ::core::ffi::c_int
     };
@@ -981,7 +985,7 @@ unsafe fn window_pane_prompt_free_callback(
 unsafe fn window_pane_set_prompt(
     pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
     client_owner: Option<&ClientRef>,
-    mut fs: *mut cmd_find_state,
+    fs: Option<&cmd_find_state>,
     msg: &CStr,
     input: Option<&CStr>,
     mut inputcb: status_prompt_input_cb,
@@ -1001,7 +1005,7 @@ unsafe fn window_pane_set_prompt(
         type_0,
     });
     prompt_set_options(&mut pd, session_owner.as_ref());
-    pd.fs = fs.as_ref();
+    pd.fs = fs;
     pd.prompt = msg;
     pd.input = input;
     pd.type_0 = type_0;
@@ -1074,7 +1078,7 @@ unsafe fn window_pane_prompt_key(
     pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
     client_owner: Option<&ClientRef>,
     mut key: key_code,
-    mut m: *mut mouse_event,
+    m: Option<&mut mouse_event>,
 ) -> prompt_key_result {
     let mut wp = pane_owner.get();
     let prompt = (*wp).prompt.as_ref().map(|prompt| prompt.downgrade());
@@ -1101,18 +1105,13 @@ unsafe fn window_pane_prompt_key(
                 <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
                     << 32 as ::core::ffi::c_int
     {
-        if m.is_null()
-            || (*m).b & MOUSE_MASK_BUTTONS as u_int != MOUSE_BUTTON_1 as u_int
-            || (*m).b & MOUSE_MASK_DRAG as u_int != 0
-            || (*m).b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int
-            || cmd_mouse_at(
-                pane_owner,
-                m,
-                &raw mut x,
-                &raw mut y,
-                0 as ::core::ffi::c_int,
-            ) != 0 as ::core::ffi::c_int
-        {
+        if m.is_none_or(|m| {
+            m.b & MOUSE_MASK_BUTTONS as u_int != MOUSE_BUTTON_1 as u_int
+                || m.b & MOUSE_MASK_DRAG as u_int != 0
+                || m.b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int
+                || cmd_mouse_at(pane_owner, m, &mut x, &mut y, 0 as ::core::ffi::c_int)
+                    != 0 as ::core::ffi::c_int
+        }) {
             result = PROMPT_KEY_NOT_HANDLED;
         } else {
             if client_owner.is_some_and(|owner| status_at_line(owner) == 0) {
@@ -1215,7 +1214,7 @@ unsafe fn window_pane_copy_key(
             && !(*loop_0).flags & PANE_INPUTOFF != 0
             && options_get_number(&(*loop_0).borrow_options_mut(), c"synchronize-panes") != 0
         {
-            input_key_pane(&pane_owner, key, ::core::ptr::null_mut::<mouse_event>());
+            input_key_pane(&pane_owner, key, None);
         }
     }
     drop(window_owner);
@@ -1262,7 +1261,7 @@ unsafe fn window_pane_key(
     client_owner: Option<&ClientRef>,
     mut wl: refbox::Weak<winlink>,
     mut key: key_code,
-    mut m: *mut mouse_event,
+    m: Option<&mut mouse_event>,
 ) -> ::core::ffi::c_int {
     let wp = pane_owner.get();
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
@@ -1274,7 +1273,7 @@ unsafe fn window_pane_key(
             && key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
                 <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
                     << 32 as ::core::ffi::c_int)
-        && m.is_null()
+        && m.is_none()
     {
         return -(1 as ::core::ffi::c_int);
     }
@@ -1295,7 +1294,7 @@ unsafe fn window_pane_key(
     if (*wp).fd.is_none() || (*wp).flags & PANE_INPUTOFF != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    if input_key_pane(pane_owner, key, m) != 0 as ::core::ffi::c_int {
+    if input_key_pane(pane_owner, key, m.as_deref()) != 0 as ::core::ffi::c_int {
         return -(1 as ::core::ffi::c_int);
     }
     if key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
@@ -1361,7 +1360,7 @@ unsafe fn window_pane_search(
             line.truncate(nul);
         }
         while let Some(&last) = line.last() {
-            if ::libc::isspace(last as ::core::ffi::c_int) == 0 {
+            if !matches!(last, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r') {
                 break;
             }
             line.pop();

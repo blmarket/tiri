@@ -20,7 +20,6 @@ use crate::shared::abi::ssize_t;
 use crate::shared::abi::*;
 use crate::shared::client::ClientRef;
 use crate::shared::command::{cmd_find_state, cmdq_item};
-use crate::shared::format::format_tree;
 use crate::shared::format::FORMAT_NONE;
 use crate::shared::key::*;
 use crate::shared::menu::menu_item;
@@ -148,8 +147,8 @@ pub static window_buffer_mode: window_mode = {
                 as unsafe fn(
                     refbox::Weak<window_mode_entry>,
                     Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
-                    *mut cmd_find_state,
-                    *mut args,
+                    Option<&cmd_find_state>,
+                    Option<&mut args>,
                 ) -> bool,
         ),
         free: Some(window_buffer_free as unsafe fn(refbox::Weak<window_mode_entry>) -> ()),
@@ -165,7 +164,7 @@ pub static window_buffer_mode: window_mode = {
                     &ClientRef,
                     refbox::Weak<winlink>,
                     key_code,
-                    *mut mouse_event,
+                    Option<&mut mouse_event>,
                 ) -> (),
         ),
         key_table: None,
@@ -197,17 +196,16 @@ fn window_buffer_clear_items(items: &mut Vec<refbox::RefBox<window_buffer_itemda
 }
 unsafe fn window_buffer_build(
     data: *mut window_buffer_modedata,
-    mut sort_crit: *mut sort_criteria,
+    sort_crit: &sort_criteria,
     filter: Option<&CStr>,
 ) {
     let filter: *const ::core::ffi::c_char = filter.map_or(std::ptr::null(), CStr::as_ptr);
     let mut i: u_int = 0;
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut s: Option<SessionRef> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut pane_owner = None;
     window_buffer_clear_items(&mut (*data).item_list);
-    let buffers = sort_get_buffers(&*sort_crit);
+    let buffers = sort_get_buffers(sort_crit);
     for pb in buffers {
         let buffer = pb.borrow();
         let name = paste_buffer_name(&buffer);
@@ -232,9 +230,9 @@ unsafe fn window_buffer_build(
             .unwrap();
         if let Some(pb) = paste_get_name(&item.name) {
             let mut ft_owner = format_create(None, None, FORMAT_NONE, 0 as ::core::ffi::c_int);
-            ft = &raw mut *ft_owner;
+            let ft = &mut *ft_owner;
             format_defaults(ft, None, s.as_ref(), wl.clone(), pane_owner.as_ref());
-            format_defaults_paste_buffer(&mut *ft, &pb);
+            format_defaults_paste_buffer(ft, &pb);
             if !filter.is_null() {
                 let cp = format_expand_cstring(ft, filter);
                 if format_true(cp.as_ptr()) == 0 {
@@ -300,9 +298,7 @@ fn window_buffer_find(data: &[u8], find: &[u8], icase: bool) -> bool {
     }
     data.windows(find.len()).any(|candidate| {
         if icase {
-            candidate.iter().zip(find).all(|(&a, &b)| unsafe {
-                libc::tolower(i32::from(a)) == libc::tolower(i32::from(b))
-            })
+            candidate.eq_ignore_ascii_case(find)
         } else {
             candidate == find
         }
@@ -343,20 +339,13 @@ unsafe fn window_buffer_menu(data: *mut window_buffer_modedata, c: &ClientRef, m
     {
         return;
     }
-    window_buffer_key(
-        wme.clone(),
-        c,
-        (refbox::Weak::new()).clone(),
-        key,
-        ::core::ptr::null_mut::<mouse_event>(),
-    );
+    window_buffer_key(wme.clone(), c, (refbox::Weak::new()).clone(), key, None);
 }
 unsafe fn window_buffer_get_key(
     data: *mut window_buffer_modedata,
     item: &window_buffer_itemdata,
     mut line: u_int,
 ) -> key_code {
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut s: Option<SessionRef> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut pane_owner = None;
@@ -370,10 +359,10 @@ unsafe fn window_buffer_get_key(
         return KEYC_NONE;
     };
     let mut ft_owner = format_create(None, None, FORMAT_NONE, 0 as ::core::ffi::c_int);
-    ft = &raw mut *ft_owner;
+    let ft = &mut *ft_owner;
     format_defaults(ft, None, None, (refbox::Weak::new()).clone(), None);
     format_defaults(ft, None, s.as_ref(), wl.clone(), pane_owner.as_ref());
-    format_defaults_paste_buffer(&mut *ft, &pb);
+    format_defaults_paste_buffer(ft, &pb);
     format_add(ft, c"line", |out| write!(out, "{}", { line }));
     let expanded = format_expand_cstring(ft, (*data).key_format.as_ptr());
     key = key_string_parse_cstr(expanded.as_c_str()).unwrap_or(KEYC_UNKNOWN);
@@ -415,8 +404,8 @@ unsafe fn window_buffer_data(wme: refbox::Weak<window_mode_entry>) -> *mut windo
 unsafe fn window_buffer_init(
     mut wme: refbox::Weak<window_mode_entry>,
     _item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
-    mut fs: *mut cmd_find_state,
-    mut args: *mut args,
+    fs: Option<&cmd_find_state>,
+    mut args: Option<&mut args>,
 ) -> bool {
     let mode_pane_owner = wme
         .get_unchecked()
@@ -424,26 +413,35 @@ unsafe fn window_buffer_init(
         .upgrade()
         .expect("mode belongs to a live pane");
     let mut data: *mut window_buffer_modedata = ::core::ptr::null_mut::<window_buffer_modedata>();
-    let format = if args.is_null() || args_has(&*args, 'F' as i32 as u_char) == 0 {
+    let format = if let Some(args) = args
+        .as_deref()
+        .filter(|args| args_has(args, 'F' as i32 as u_char) != 0)
+    {
+        args_get(args, 'F' as i32 as u_char)
+            .expect("argument is present")
+            .to_owned()
+    } else {
         WINDOW_BUFFER_DEFAULT_FORMAT.to_owned()
-    } else {
-        args_get(&*(args), 'F' as i32 as u_char)
+    };
+    let key_format = if let Some(args) = args
+        .as_deref()
+        .filter(|args| args_has(args, 'K' as i32 as u_char) != 0)
+    {
+        args_get(args, 'K' as i32 as u_char)
             .expect("argument is present")
             .to_owned()
-    };
-    let key_format = if args.is_null() || args_has(&*args, 'K' as i32 as u_char) == 0 {
+    } else {
         WINDOW_BUFFER_DEFAULT_KEY_FORMAT.to_owned()
-    } else {
-        args_get(&*(args), 'K' as i32 as u_char)
-            .expect("argument is present")
-            .to_owned()
     };
-    let command = if args.is_null() || args_count(&*args) == 0 as u_int {
-        WINDOW_BUFFER_DEFAULT_COMMAND.to_owned()
-    } else {
-        args_string(&mut *(args), 0 as u_int)
+    let command = if let Some(args) = args
+        .as_deref_mut()
+        .filter(|args| args_count(args) != 0 as u_int)
+    {
+        args_string(args, 0 as u_int)
             .expect("argument is present")
             .to_owned()
+    } else {
+        WINDOW_BUFFER_DEFAULT_COMMAND.to_owned()
     };
     let owner = Box::new(std::cell::UnsafeCell::new(window_buffer_modedata {
         wp: std::rc::Rc::downgrade(&mode_pane_owner),
@@ -458,13 +456,13 @@ unsafe fn window_buffer_init(
     data = owner.get();
     wme.get_mut_unchecked().boxed_data = Some(owner);
     let data_handle = std::ptr::NonNull::new(data).expect("live buffer mode data");
-    (*data).fs.copy_from(&*fs);
+    (*data).fs.copy_from(fs.expect("mode target"));
     (*data).data = Some(mode_tree_start(
         &mode_pane_owner,
-        args,
+        args.as_deref().expect("mode arguments"),
         Some(Box::new(move |sort, tag, filter| {
             let mut selected = tag.unwrap_or(::core::primitive::u64::MAX as uint64_t);
-            window_buffer_build(data_handle.as_ptr(), sort as *mut sort_criteria, filter);
+            window_buffer_build(data_handle.as_ptr(), sort, filter);
             (selected != ::core::primitive::u64::MAX as uint64_t).then_some(selected)
         })),
         Some(Box::new(move |itemdata, ctx, sx, sy| {
@@ -675,7 +673,7 @@ unsafe fn window_buffer_key(
     client_owner: &ClientRef,
     _wl: refbox::Weak<winlink>,
     mut key: key_code,
-    mut m: *mut mouse_event,
+    mut m: Option<&mut mouse_event>,
 ) {
     let mode_pane_owner = wme
         .get_unchecked()
@@ -700,10 +698,11 @@ unsafe fn window_buffer_key(
         finished = mode_tree_key(
             (*data).data.as_ref().expect("mode tree owner").clone(),
             Some(client_owner),
-            &raw mut key,
-            m,
-            ::core::ptr::null_mut::<u_int>(),
-            ::core::ptr::null_mut::<u_int>(),
+            &mut key,
+            m.as_deref_mut()
+                .map_or(std::ptr::null_mut(), std::ptr::from_mut),
+            None,
+            None,
         );
         match key {
             101 => {

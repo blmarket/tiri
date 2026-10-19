@@ -554,7 +554,7 @@ pub fn tty_acs_heavy_borders(cell_type: ::core::ffi::c_int) -> &'static utf8_dat
 pub fn tty_acs_rounded_borders(cell_type: ::core::ffi::c_int) -> &'static utf8_data {
     &tty_acs_rounded_borders_list[cell_type as usize]
 }
-pub(super) unsafe fn tty_acs_needed(terminal: Option<&tty>, utf8: bool) -> ::core::ffi::c_int {
+pub(super) fn tty_acs_needed(terminal: Option<&tty>, utf8: bool) -> ::core::ffi::c_int {
     let Some(terminal) = terminal else {
         return 0;
     };
@@ -573,7 +573,7 @@ pub(super) unsafe fn tty_acs_needed(terminal: Option<&tty>, utf8: bool) -> ::cor
 }
 
 /// The terminal and its capabilities must remain valid while the result is borrowed.
-pub unsafe fn tty_acs_get(terminal: Option<&tty>, utf8: bool, ch: u_char) -> Option<&CStr> {
+pub fn tty_acs_get(terminal: Option<&tty>, utf8: bool, ch: u_char) -> Option<&CStr> {
     if tty_acs_needed(terminal, utf8) != 0 {
         let term = terminal
             .expect("legacy ACS requires a terminal")

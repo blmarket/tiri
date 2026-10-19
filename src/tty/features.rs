@@ -5,7 +5,6 @@ use crate::server_client::Client as _;
 use crate::shared::abi::*;
 use crate::shared::client::ClientRef;
 use crate::tty::term::{tty_term_apply, tty_term_has_name};
-use libc::strcmp;
 use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone)]
@@ -225,8 +224,8 @@ pub(super) unsafe fn tty_parse_client_features(
 pub unsafe fn tty_parse_features(
     s: &CStr,
     sep: &CStr,
-    mut enabled: *mut ::core::ffi::c_int,
-    mut disabled: *mut ::core::ffi::c_int,
+    enabled: &mut ::core::ffi::c_int,
+    mut disabled: Option<&mut ::core::ffi::c_int>,
 ) {
     log_debug(format_args!("adding terminal features {}", log_cstr(s)));
     let sep = sep.to_bytes();
@@ -251,11 +250,14 @@ pub unsafe fn tty_parse_features(
                 log_bytes(tty_features[i].name.to_bytes())
             ));
             *enabled &= !((1 as ::core::ffi::c_int) << i);
-            if !disabled.is_null() {
+            if let Some(disabled) = disabled.as_deref_mut() {
                 *disabled |= (1 as ::core::ffi::c_int) << i;
             }
         } else {
-            if !disabled.is_null() && *disabled & (1 as ::core::ffi::c_int) << i != 0 {
+            if disabled
+                .as_deref()
+                .is_some_and(|disabled| *disabled & (1 as ::core::ffi::c_int) << i != 0)
+            {
                 continue;
             }
             if !*enabled & (1 as ::core::ffi::c_int) << i != 0 {
@@ -287,14 +289,14 @@ pub(super) unsafe fn tty_feature_present(
 ) -> ::core::ffi::c_int {
     let mut tf: Option<&tty_feature> = None;
     let mut i: u_int = 0;
-    if strcmp(name.as_ptr(), c"utf8".as_ptr()) == 0 as ::core::ffi::c_int {
+    if name == c"utf8" {
         return utf8 as ::core::ffi::c_int;
     }
     i = 0 as u_int;
     while (i as usize) < tty_features.len() {
         let feature = tty_features[i as usize];
         tf = Some(feature);
-        if strcmp(feature.name.as_ptr(), name.as_ptr()) == 0 as ::core::ffi::c_int {
+        if feature.name == name {
             if term.applied_features & (1 as ::core::ffi::c_int) << i != 0 {
                 return 1 as ::core::ffi::c_int;
             }
@@ -306,7 +308,7 @@ pub(super) unsafe fn tty_feature_present(
     let Some(tf) = tf else {
         return 0 as ::core::ffi::c_int;
     };
-    if strcmp(name.as_ptr(), c"ignorefkeys".as_ptr()) == 0 as ::core::ffi::c_int {
+    if name == c"ignorefkeys" {
         return 0 as ::core::ffi::c_int;
     }
     if tf.flags != 0 as ::core::ffi::c_int && term.flags & tf.flags != tf.flags {
@@ -338,7 +340,7 @@ pub(super) struct AppliedFeatures {
     pub enable_utf8: bool,
 }
 
-pub(super) unsafe fn tty_apply_features(mut term: *mut tty_term, feat: i32) -> AppliedFeatures {
+pub(super) unsafe fn tty_apply_features(term: &mut tty_term, feat: i32) -> AppliedFeatures {
     let mut result = AppliedFeatures::default();
     let mut i: u_int = 0;
     if feat == 0 as ::core::ffi::c_int {
@@ -350,7 +352,7 @@ pub(super) unsafe fn tty_apply_features(mut term: *mut tty_term, feat: i32) -> A
     ));
     i = 0 as u_int;
     while (i as usize) < tty_features.len() {
-        if !((*term).applied_features & (1 as ::core::ffi::c_int) << i != 0
+        if !(term.applied_features & (1 as ::core::ffi::c_int) << i != 0
             || !feat & (1 as ::core::ffi::c_int) << i != 0)
         {
             let tf = tty_features[i as usize];
@@ -367,17 +369,17 @@ pub(super) unsafe fn tty_apply_features(mut term: *mut tty_term, feat: i32) -> A
                     tty_term_apply(term, capability.as_ptr(), 1 as ::core::ffi::c_int, tf.flags);
                 }
             }
-            (*term).flags |= tf.flags & !TERM_NOREPLACE;
+            term.flags |= tf.flags & !TERM_NOREPLACE;
             if std::ptr::eq(tf, &tty_feature_utf8) {
                 result.enable_utf8 = true;
             }
         }
         i = i.wrapping_add(1);
     }
-    if (*term).applied_features | feat == (*term).applied_features {
+    if term.applied_features | feat == term.applied_features {
         return result;
     }
-    (*term).applied_features |= feat;
+    term.applied_features |= feat;
     result.changed = true;
     result
 }
@@ -436,7 +438,7 @@ pub(super) unsafe fn tty_default_features(owner: &ClientRef, name: &CStr) {
         < (::core::mem::size_of::<[C2RustUnnamed_35; 9]>() as usize)
             .wrapping_div(::core::mem::size_of::<C2RustUnnamed_35>() as usize)
     {
-        if !(strcmp(table[i as usize].name.as_ptr(), name.as_ptr()) != 0 as ::core::ffi::c_int) {
+        if table[i as usize].name == name {
             tty_parse_client_features(owner, table[i as usize].features, c",");
         }
         i = i.wrapping_add(1);

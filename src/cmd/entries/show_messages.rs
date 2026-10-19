@@ -11,7 +11,6 @@ use crate::shared::abi::*;
 use crate::shared::command::*;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_TFLAG};
-use crate::shared::format::format_tree;
 use crate::tty::tty_term_descriptions;
 
 pub const SHOW_MESSAGES_TEMPLATE: &std::ffi::CStr = c"#{t/p:message_time}: #{message_text}";
@@ -83,7 +82,6 @@ unsafe fn cmd_show_messages_exec(
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut done: ::core::ffi::c_int = 0;
     let mut blank: ::core::ffi::c_int = 0;
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     blank = 0 as ::core::ffi::c_int;
     done = blank;
     if args_has(&*args, 'T' as i32 as u_char) != 0 {
@@ -98,7 +96,7 @@ unsafe fn cmd_show_messages_exec(
         return CmdOutcome::Normal;
     }
     let mut ft_owner = format_create_from_target(item_handle);
-    ft = &raw mut *ft_owner;
+    let ft = &mut *ft_owner;
     for msg in message_log.iter_rev() {
         format_add(ft, c"message_text", |out| write_cstr(out, &*msg.msg));
         format_add(ft, c"message_number", |out| {

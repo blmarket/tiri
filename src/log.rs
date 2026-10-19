@@ -3,7 +3,7 @@ use crate::format::bytes::format_bytes;
 use crate::format::bytes::try_format_message_with;
 use crate::shared::errno::ErrorText;
 use crate::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
-use libc::{exit, getpid};
+use libc::exit;
 use std::cell::{Cell, RefCell};
 use std::ffi::{CStr, CString};
 use std::fmt;
@@ -41,7 +41,7 @@ pub unsafe fn log_open(name: &CStr) {
         return;
     }
     log_close();
-    let pid = (getpid() as ::core::ffi::c_long).to_string();
+    let pid = std::process::id().to_string();
     let mut path = b"tmux-".to_vec();
     path.extend_from_slice(name.to_bytes());
     path.push(b'-');

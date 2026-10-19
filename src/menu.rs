@@ -56,7 +56,7 @@ pub unsafe fn menu_add_items(
     client_owner: Option<&ClientRef>,
 ) {
     for item in items {
-        menu_add_item(menu, Some(item), None, client_owner, std::ptr::null_mut());
+        menu_add_item(menu, Some(item), None, client_owner, None);
     }
 }
 pub unsafe fn menu_add_item(
@@ -64,7 +64,7 @@ pub unsafe fn menu_add_item(
     item: Option<&menu_item<'_>>,
     qitem_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     client_owner: Option<&ClientRef>,
-    fs: *mut cmd_find_state,
+    fs: Option<&cmd_find_state>,
 ) {
     let Some(item) = item.filter(|item| !item.name.is_empty()) else {
         if menu.items.last().is_some_and(|row| row.name.is_some()) {
@@ -73,7 +73,7 @@ pub unsafe fn menu_add_item(
         return;
     };
     let index = menu.push_empty();
-    let expanded = if !fs.is_null() {
+    let expanded = if let Some(fs) = fs {
         format_single_from_state_cstring(qitem_handle, item.name.as_ptr(), client_owner, fs)
     } else {
         format_single_cstring(
@@ -125,7 +125,7 @@ pub unsafe fn menu_add_item(
     }
     menu.items[index].name = Some(CString::new(name).expect("menu name contains no NUL"));
     menu.items[index].command = item.command.map(|command| {
-        if !fs.is_null() {
+        if let Some(fs) = fs {
             format_single_from_state_cstring(qitem_handle, command.as_ptr(), client_owner, fs)
         } else {
             format_single_cstring(
@@ -167,7 +167,7 @@ unsafe fn menu_reapply_styles(md: &mut menu_data) {
         (md.fs.winlink_handle()).clone(),
         md.fs.pane_handle().as_ref(),
     );
-    let ft = &raw mut *ft_owner;
+    let ft = &mut *ft_owner;
     let mut parsed = style::default();
     for (cell, option, override_style) in [
         (&mut md.style_gc, c"menu-style", md.style.as_deref()),
@@ -541,18 +541,18 @@ pub unsafe fn menu_key(
         return 1;
     }
     let mut md = owner.try_borrow_mut().expect("live unborrowed menu");
-    let mut saved_event = key_event {
+    let saved_event = key_event {
         client: std::rc::Weak::new(),
         key: md.key,
         m: md.m,
         bytes: None,
     };
     let event = if md.key != KEYC_NONE {
-        &mut saved_event
+        Some(&saved_event)
     } else {
-        std::ptr::null_mut()
+        None
     };
-    let state = cmdq_new_state(&mut md.fs, event, 0);
+    let state = cmdq_new_state(Some(&md.fs), event, 0);
     if let Err(error) = cmd_parse_and_append(
         md.menu.items[index]
             .command
@@ -603,10 +603,12 @@ pub unsafe fn menu_display(
     style: Option<&CStr>,
     selected_style: Option<&CStr>,
     border_style: Option<&CStr>,
-    fs: *mut cmd_find_state,
+    fs: Option<&cmd_find_state>,
     cb: menu_choice_cb,
 ) {
-    let setup_window = if fs.is_null() {
+    let setup_window = if let Some(fs) = fs {
+        fs.w.upgrade().expect("live menu target window")
+    } else {
         let client = client_owner.expect("menu without a target requires a client");
         let link_handle = client
             .attached_session()
@@ -618,8 +620,6 @@ pub unsafe fn menu_display(
             .as_ref()
             .expect("current link has a window")
             .clone()
-    } else {
-        (*fs).w.upgrade().expect("live menu target window")
     };
     let window = crate::shared::window::WindowRef::downgrade(&setup_window);
     let sx = menu.width.wrapping_add(4);
@@ -650,8 +650,8 @@ pub unsafe fn menu_display(
     });
     {
         let mut md = owner.try_borrow_mut().expect("live unborrowed menu");
-        if !fs.is_null() {
-            md.fs.copy_from(&*fs);
+        if let Some(fs) = fs {
+            md.fs.copy_from(fs);
         } else {
             md.fs = cmd_find_state::find_from_window(&setup_window, 0).unwrap_or_default();
         }

@@ -203,7 +203,7 @@ unsafe fn cmd_source_file_done(
             path.expect("file read sets the path"),
             cdata.client.as_ref(),
             Some(&after_owner),
-            target,
+            Some(&*target),
             cdata.flags,
             Some(&mut new_item),
         ) < 0
@@ -225,7 +225,7 @@ fn cmd_source_file_add(cdata: &mut cmd_source_file_data, path: &CStr) {
 unsafe fn cmd_source_file_quote_for_glob(path: &CStr) -> CString {
     let mut quoted = Vec::new();
     for &byte in path.to_bytes() {
-        if byte < 128 && ::libc::isalnum(byte as ::core::ffi::c_int) == 0 && byte != b'/' {
+        if byte < 128 && !byte.is_ascii_alphanumeric() && byte != b'/' {
             quoted.push(b'\\');
         }
         quoted.push(byte);

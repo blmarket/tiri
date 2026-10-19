@@ -1,5 +1,5 @@
 use crate::arguments::args;
-use crate::ffi::libc::strlcat;
+use crate::format::bytes::cstr_append_into;
 use crate::format::bytes::write_cstr;
 use crate::format::format_create_defaults;
 use crate::grid::grid_default_cell;
@@ -14,7 +14,6 @@ use crate::shared::abi::*;
 use crate::shared::client::ClientRef;
 use crate::shared::command::{cmd_find_state, cmdq_item};
 use crate::shared::event::*;
-use crate::shared::format::format_tree;
 use crate::shared::grid::*;
 use crate::shared::key::*;
 use crate::shared::mouse::mouse_event;
@@ -23,7 +22,7 @@ use crate::shared::time::tm;
 use crate::shared::window::{window_mode, window_mode_entry, winlink};
 use crate::style::style_apply_with_options;
 use crate::window::Window as _;
-use libc::{gmtime_r, localtime, strftime, strlen, time};
+use libc::{gmtime_r, localtime, strftime, strlen};
 
 use crate::window_pane::WindowPane as _;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -44,8 +43,8 @@ pub static window_clock_mode: window_mode = {
                 as unsafe fn(
                     refbox::Weak<window_mode_entry>,
                     Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
-                    *mut cmd_find_state,
-                    *mut args,
+                    Option<&cmd_find_state>,
+                    Option<&mut args>,
                 ) -> bool,
         ),
         free: None,
@@ -61,7 +60,7 @@ pub static window_clock_mode: window_mode = {
                     &ClientRef,
                     refbox::Weak<winlink>,
                     key_code,
-                    *mut mouse_event,
+                    Option<&mut mouse_event>,
                 ) -> (),
         ),
         key_table: None,
@@ -629,7 +628,7 @@ unsafe fn window_clock_timer_callback(wme: refbox::Weak<window_mode_entry>) {
     let mut then: tm = unsafe { ::core::mem::zeroed() };
     let mut t: time_t = 0;
     drop((*data).timer.take());
-    t = time(::core::ptr::null_mut::<time_t>());
+    t = crate::shared::time::unix_seconds(std::time::SystemTime::now());
     gmtime_r(&raw mut t, &raw mut now);
     gmtime_r(&raw mut (*data).tim, &raw mut then);
     if now.tm_sec != then.tm_sec {
@@ -642,8 +641,8 @@ unsafe fn window_clock_timer_callback(wme: refbox::Weak<window_mode_entry>) {
 unsafe fn window_clock_init(
     mut wme: refbox::Weak<window_mode_entry>,
     _item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
-    _fs: *mut cmd_find_state,
-    _args: *mut args,
+    _fs: Option<&cmd_find_state>,
+    _args: Option<&mut args>,
 ) -> bool {
     let mode_pane_owner = wme
         .get_unchecked()
@@ -658,7 +657,7 @@ unsafe fn window_clock_init(
     }));
     data = owner.get();
     wme.get_mut_unchecked().boxed_data = Some(owner);
-    (*data).tim = time(::core::ptr::null_mut::<time_t>());
+    (*data).tim = crate::shared::time::unix_seconds(std::time::SystemTime::now());
     window_clock_start_timer(wme.clone());
     let (pane_sx, pane_sy) = mode_pane_owner.screen_size(false);
     screen_init(&mut (*data).screen, pane_sx, pane_sy, 0 as u_int);
@@ -692,7 +691,7 @@ unsafe fn window_clock_key(
     _client_owner: &ClientRef,
     _wl: refbox::Weak<winlink>,
     _key: key_code,
-    _m: *mut mouse_event,
+    _m: Option<&mut mouse_event>,
 ) {
     let mode_pane_owner = wme
         .get_unchecked()
@@ -725,8 +724,7 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         us: 0,
         link: 0,
     };
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut tim: [u8; 64] = [0; 64];
+    let mut tim: [::core::ffi::c_char; 64] = [0; 64];
     let mut ptr: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut t: time_t = 0;
     let mut tm: *mut tm = ::core::ptr::null_mut::<tm>();
@@ -742,7 +740,7 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         (refbox::Weak::new()).clone(),
         Some(&mode_pane_owner),
     );
-    ft = &raw mut *ft_owner;
+    let ft = &mut *ft_owner;
     style_apply_with_options(
         &mut gc,
         c"clock-mode-colour",
@@ -759,7 +757,7 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         c"clock-mode-style",
     ) as ::core::ffi::c_int;
     let mut ctx = screen_write_start(&mut (*data).screen);
-    t = time(::core::ptr::null_mut::<time_t>());
+    t = crate::shared::time::unix_seconds(std::time::SystemTime::now());
     tm = localtime(&raw mut t);
     if style == 0 as ::core::ffi::c_int || style == 2 as ::core::ffi::c_int {
         if style == 2 as ::core::ffi::c_int {
@@ -778,17 +776,9 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
             );
         }
         if (*tm).tm_hour >= 12 as ::core::ffi::c_int {
-            strlcat(
-                &raw mut tim as *mut ::core::ffi::c_char,
-                c"PM".as_ptr(),
-                ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-            );
+            cstr_append_into(&mut tim, c"PM");
         } else {
-            strlcat(
-                &raw mut tim as *mut ::core::ffi::c_char,
-                c"AM".as_ptr(),
-                ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-            );
+            cstr_append_into(&mut tim, c"AM");
         }
     } else if style == 3 as ::core::ffi::c_int {
         strftime(
@@ -829,7 +819,8 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
             screen_write_puts(&mut ctx, &gc, |out| {
                 write_cstr(
                     out,
-                    std::ffi::CStr::from_bytes_until_nul(&tim).expect("clock text is terminated"),
+                    std::ffi::CStr::from_bytes_until_nul(&tim.map(|byte| byte as u8))
+                        .expect("clock text is terminated"),
                 )
             });
         }

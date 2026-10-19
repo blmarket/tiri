@@ -39,7 +39,7 @@ fn fuzzy_is_boundary(ud: &utf8_data) -> bool {
 
 fn fuzzy_char_equal(a: &utf8_data, b: &utf8_data, fold: bool) -> bool {
     if fold && a.size == 1 && b.size == 1 && a.data[0] < 0x80 && b.data[0] < 0x80 {
-        return unsafe { libc::tolower(a.data[0] as i32) == libc::tolower(b.data[0] as i32) };
+        return a.data[0].eq_ignore_ascii_case(&b.data[0]);
     }
     a.size == b.size && a.data[..a.size as usize] == b.data[..b.size as usize]
 }
@@ -185,7 +185,7 @@ fn fuzzy_column(
 }
 
 /// Decode a UTF-8 term, or `None` if it has more characters than `out` holds.
-unsafe fn fuzzy_decode<'a>(mut text: &[u8], out: &'a mut [utf8_data]) -> Option<&'a [utf8_data]> {
+fn fuzzy_decode<'a>(mut text: &[u8], out: &'a mut [utf8_data]) -> Option<&'a [utf8_data]> {
     let mut count = 0;
     while !text.is_empty() {
         if count == out.len() {
@@ -362,7 +362,7 @@ fn fuzzy_parse_term(mut text: &[u8]) -> Option<fuzzy_term<'_>> {
     term.text = text;
     Some(term)
 }
-unsafe fn fuzzy_match_term(
+fn fuzzy_match_term(
     term: &fuzzy_term<'_>,
     tok: &mut [utf8_data],
     cs: &[fuzzy_char],
@@ -395,7 +395,7 @@ unsafe fn fuzzy_match_term(
     }
 }
 
-unsafe fn fuzzy_match_group(
+fn fuzzy_match_group(
     group: &[u8],
     tok: &mut [utf8_data],
     cs: &[fuzzy_char],

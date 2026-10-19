@@ -12,10 +12,10 @@ use crate::server_client::Client as _;
 use crate::shared::abi::*;
 use crate::shared::client::ClientRef;
 use crate::shared::client::CLIENT_READONLY;
+use crate::shared::command::cmd_parse_result;
 use crate::shared::command::CMDQ_STATE_REPEAT;
 use crate::shared::command::*;
 use crate::shared::command::{cmd_find_state, cmd_list, cmdq_item};
-use crate::shared::command::{cmd_parse_input, cmd_parse_result};
 use crate::shared::key::KEY_BINDING_REPEAT;
 use crate::shared::key::*;
 use crate::shared::key::{key_binding, key_event, key_table};
@@ -110,7 +110,7 @@ pub fn key_bindings_get_default(table: &key_table, key: key_code) -> Option<&key
     table.default_key_bindings.get(key)
 }
 
-pub unsafe fn key_bindings_add(
+pub fn key_bindings_add(
     name: &CStr,
     key: key_code,
     note: Option<&CStr>,
@@ -150,7 +150,7 @@ pub unsafe fn key_bindings_add(
     ));
 }
 
-pub unsafe fn key_bindings_remove(name: &CStr, key: key_code) {
+pub fn key_bindings_remove(name: &CStr, key: key_code) {
     let Some(owner) = key_bindings_get_table(name, 0) else {
         return;
     };
@@ -170,7 +170,7 @@ pub unsafe fn key_bindings_remove(name: &CStr, key: key_code) {
     }
 }
 
-pub unsafe fn key_bindings_reset(name: &CStr, key: key_code) {
+pub fn key_bindings_reset(name: &CStr, key: key_code) {
     let Some(owner) = key_bindings_get_table(name, 0) else {
         return;
     };
@@ -523,7 +523,7 @@ pub unsafe fn key_bindings_init() {
     ];
     let mut pr: cmd_parse_result = cmd_parse_result::empty();
     for command in defaults {
-        pr = cmd_parse_from_string(command, ::core::ptr::null_mut::<cmd_parse_input>());
+        pr = cmd_parse_from_string(command, None);
         if pr.status as ::core::ffi::c_uint
             != CMD_PARSE_SUCCESS as ::core::ffi::c_int as ::core::ffi::c_uint
         {
@@ -560,8 +560,8 @@ pub unsafe fn key_bindings_dispatch(
     bd: KeyBindingCommand,
     item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     c_owner: Option<&ClientRef>,
-    mut event: *mut key_event,
-    mut fs: *mut cmd_find_state,
+    event: Option<&key_event>,
+    fs: &cmd_find_state,
 ) -> std::rc::Weak<std::cell::RefCell<cmdq_item>> {
     let mut c: Option<ClientRef> = c_owner.cloned();
     let new_item_allocation;
@@ -582,7 +582,7 @@ pub unsafe fn key_bindings_dispatch(
         if bd.flags & KEY_BINDING_REPEAT != 0 {
             flags |= CMDQ_STATE_REPEAT;
         }
-        new_state = cmdq_new_state(fs, event, flags);
+        new_state = cmdq_new_state(Some(fs), event, flags);
         new_item_allocation = cmdq_get_command(&bd.commands, Some(&new_state));
     }
     if let Some(item) = item_handle {
@@ -603,7 +603,7 @@ mod ownership_tests {
 
     use std::rc::Rc;
 
-    unsafe fn binding(key: key_code) -> Box<key_binding> {
+    fn binding(key: key_code) -> Box<key_binding> {
         Box::new(key_binding {
             key,
             commands: cmd_list_new(),
@@ -647,29 +647,27 @@ mod ownership_tests {
 
     #[test]
     fn index_owns_bindings_and_keeps_addresses_stable() {
-        unsafe {
-            let mut index = key_bindings::default();
-            let first = binding(8);
-            let address = std::ptr::from_ref(&*first);
-            let commands = Rc::downgrade(&first.commands);
-            index.insert(first);
-            index.insert(binding(2));
-            index.insert(binding(13));
-            assert_eq!(
-                index.iter().map(|bd| bd.key).collect::<Vec<_>>(),
-                [2, 8, 13]
-            );
-            assert_eq!(std::ptr::from_ref(index.get(8).unwrap()), address);
-            let detached = index.remove(8).unwrap();
-            assert_eq!(std::ptr::from_ref(&*detached), address);
-            assert!(index.get(8).is_none());
-            assert!(commands.upgrade().is_some());
-            drop(detached);
-            assert!(commands.upgrade().is_none());
-            drop(index.remove(2));
-            drop(index.remove(13));
-            assert!(key_tables::snapshot().is_empty());
-        }
+        let mut index = key_bindings::default();
+        let first = binding(8);
+        let address = std::ptr::from_ref(&*first);
+        let commands = Rc::downgrade(&first.commands);
+        index.insert(first);
+        index.insert(binding(2));
+        index.insert(binding(13));
+        assert_eq!(
+            index.iter().map(|bd| bd.key).collect::<Vec<_>>(),
+            [2, 8, 13]
+        );
+        assert_eq!(std::ptr::from_ref(index.get(8).unwrap()), address);
+        let detached = index.remove(8).unwrap();
+        assert_eq!(std::ptr::from_ref(&*detached), address);
+        assert!(index.get(8).is_none());
+        assert!(commands.upgrade().is_some());
+        drop(detached);
+        assert!(commands.upgrade().is_none());
+        drop(index.remove(2));
+        drop(index.remove(13));
+        assert!(key_tables::snapshot().is_empty());
     }
 
     #[test]

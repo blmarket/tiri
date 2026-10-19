@@ -473,9 +473,9 @@ pub fn input_key_build() {
 pub unsafe fn input_key_pane(
     pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     key: key_code,
-    mouse: *mut mouse_event,
+    mouse: Option<&mouse_event>,
 ) -> i32 {
-    pane.write_key(key, mouse.as_ref())
+    pane.write_key(key, mouse)
 }
 unsafe fn input_key_write(from: &CStr, bev: *mut bufferevent, data: &[u8]) {
     log_debug(format_args!("{}: {}", log_cstr(from), log_cstr_n(data)));
@@ -790,7 +790,7 @@ pub unsafe fn input_key(
         _ => input_key_vt10x(bev, key),
     }
 }
-pub unsafe fn input_key_get_mouse(
+pub fn input_key_get_mouse(
     s: ScreenMode,
     m: &mouse_event,
     mut x: u_int,

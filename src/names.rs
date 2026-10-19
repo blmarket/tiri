@@ -1,4 +1,4 @@
-use crate::ffi::libc::basename;
+use crate::format::bytes::cstr_basename;
 use crate::format::{
     format_create, format_defaults_pane, format_defaults_window, format_expand_cstring,
 };
@@ -120,18 +120,21 @@ pub unsafe fn parse_window_name_cstring(in_0: &CStr) -> CString {
             .add(strlen(name))
             .offset(-(1 as ::core::ffi::c_int as isize));
         while ptr > name
-            && ::libc::isalnum(*ptr as u_char as ::core::ffi::c_int) == 0
-            && ::libc::ispunct(*ptr as u_char as ::core::ffi::c_int) == 0
+            && !(*ptr as u_char).is_ascii_alphanumeric()
+            && !(*ptr as u_char).is_ascii_punctuation()
         {
             let fresh0 = ptr;
             ptr = ptr.offset(-1);
             *fresh0 = '\0' as i32 as ::core::ffi::c_char;
         }
     }
-    if *name as ::core::ffi::c_int == '/' as i32 {
-        name = basename(name);
-    }
-    clean_name_cstring(CStr::from_ptr(name), 0).unwrap_or_else(|| c"".to_owned())
+    let name = CStr::from_ptr(name);
+    let name = if name.to_bytes().first() == Some(&b'/') {
+        cstr_basename(name)
+    } else {
+        name.to_owned()
+    };
+    clean_name_cstring(&name, 0).unwrap_or_else(|| c"".to_owned())
 }
 
 #[cfg(test)]

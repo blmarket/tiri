@@ -124,7 +124,7 @@ unsafe fn cmd_show_options_exec(
     let monitor = show_hooks && args_has(&*args, b'B') != 0;
     let quiet = args_has(&*args, b'q') != 0;
     if args_count(&*args) == 0 {
-        let (scope, selected) = match options_scope_from_flags(args, window, &*target) {
+        let (scope, selected) = match options_scope_from_flags(&*args, window, &*target) {
             Ok(selected) => selected,
             Err(cause) => return show_options_scope_error(item_handle, quiet, &cause),
         };
@@ -169,7 +169,7 @@ unsafe fn cmd_show_options_exec(
             return CmdOutcome::Error;
         }
     };
-    let selected = match options_scope_from_name(args, window, &parsed.name, &*target) {
+    let selected = match options_scope_from_name(&*args, window, &parsed.name, &*target) {
         Ok((_, selected)) => selected,
         Err(cause) => return show_options_scope_error(item_handle, quiet, &cause),
     };
@@ -289,7 +289,7 @@ unsafe fn cmd_show_options_print(
     let value_only = args_has(args, b'v');
     let show_hooks = std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_show_hooks_entry);
     let mut ft_owner = format_create_from_target(item_handle);
-    let ft = &raw mut *ft_owner;
+    let ft = &mut *ft_owner;
     let print = scope.with_entry(name, |entry| {
         let is_array = options_is_array(entry);
         let has_value = array_key.is_some() || is_array == 0;
@@ -348,7 +348,7 @@ unsafe fn cmd_show_options_print(
     cmdq_print(item_handle, |out| write_cstr(out, &*line));
 }
 
-unsafe fn show_hook_add_fire_formats(ft: *mut format_tree, count: u32, time: time_t) {
+unsafe fn show_hook_add_fire_formats(ft: &mut format_tree, count: u32, time: time_t) {
     format_add(ft, c"hook_fire_count", |out| write!(out, "{count}"));
     if time != 0 {
         let offset = Duration::from_secs(time.unsigned_abs());
@@ -372,7 +372,7 @@ unsafe fn cmd_show_hooks_print_monitor(
         .map(CStr::to_owned)
         .unwrap_or_else(|| SHOW_HOOKS_MONITOR_TEMPLATE.to_owned());
     let mut ft_owner = format_create_from_target(item_handle);
-    let ft = &raw mut *ft_owner;
+    let ft = &mut *ft_owner;
     let print = scope.with_entry(name, |entry| {
         let Some(value) = hooks_monitor_to_cstring(name, entry) else {
             return false;

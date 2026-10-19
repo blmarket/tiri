@@ -14,7 +14,6 @@ use crate::shared::client::ClientRef;
 use crate::shared::command::CMD_AFTERHOOK;
 use crate::shared::command::*;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::shared::format::format_tree;
 use crate::shared::format::FORMAT_NONE;
 use crate::shared::session::SessionRef;
 use crate::shared::sort::sort_criteria;
@@ -139,7 +138,6 @@ unsafe fn cmd_list_panes_window(
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut i: u_int = 0;
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut filter: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut flag: ::core::ffi::c_int = 0;
@@ -184,7 +182,7 @@ unsafe fn cmd_list_panes_window(
             FORMAT_NONE,
             0 as ::core::ffi::c_int,
         );
-        ft = &raw mut *ft_owner;
+        let ft = &mut *ft_owner;
         format_add(ft, c"line", |out| write!(out, "{}", { n }));
         format_defaults(ft, c.as_ref(), Some(s_owner), wl.clone(), Some(pane));
         if !filter.is_null() {

@@ -21,15 +21,14 @@ use crate::shared::client::ClientRef;
 use crate::shared::client::{
     CLIENT_CONTROL_NOOUTPUT, CLIENT_CONTROL_PAUSEAFTER, CLIENT_EXIT, CLIENT_UNATTACHEDFLAGS,
 };
+use crate::shared::command::cmdq_item;
 use crate::shared::command::CMDQ_STATE_CONTROL;
 use crate::shared::command::*;
-use crate::shared::command::{cmd_find_state, cmdq_item};
 use crate::shared::control::{
     control_block, control_pane, control_panes, control_state, control_window, control_windows,
 };
 use crate::shared::event::*;
 use crate::shared::event::{EV_READ, EV_WRITE};
-use crate::shared::key::key_event;
 use crate::shared::pane::window_pane;
 use crate::shared::pane::window_pane_offset;
 use crate::shared::session::SessionRef;
@@ -107,7 +106,7 @@ fn control_add_block(
     cs.add_block(owner)
 }
 
-unsafe fn control_free_block(cs: &mut control_state, cb: &refbox::Weak<control_block>) {
+fn control_free_block(cs: &mut control_state, cb: &refbox::Weak<control_block>) {
     control_release_block(&mut cs.all_blocks, &mut cs.queued_reply_bytes, cb);
 }
 
@@ -165,8 +164,8 @@ pub unsafe fn control_set_window_size(c: &ClientRef, window: u_int, sx: u_int, s
 pub unsafe fn control_get_window_size(
     c: &ClientRef,
     window: u_int,
-    sx: *mut u_int,
-    sy: *mut u_int,
+    sx: &mut u_int,
+    sy: &mut u_int,
 ) -> ::core::ffi::c_int {
     let Some(cs) = c.borrow_control_mut() else {
         return 0;
@@ -185,7 +184,7 @@ pub unsafe fn control_clear_window_size(c: &ClientRef, window: u_int) {
     }
 }
 
-unsafe fn control_discard_pane(cs: &mut control_state, pane: u_int) {
+fn control_discard_pane(cs: &mut control_state, pane: u_int) {
     let Some(cp) = cs.panes.get_mut(&pane) else {
         return;
     };
@@ -625,11 +624,7 @@ unsafe fn control_read_callback(owner: &ClientRef) {
                 .update_flags(CLIENT_EXIT as uint64_t, 0);
             break;
         } else {
-            let state = cmdq_new_state(
-                ::core::ptr::null_mut::<cmd_find_state>(),
-                ::core::ptr::null_mut::<key_event>(),
-                CMDQ_STATE_CONTROL,
-            );
+            let state = cmdq_new_state(None, None, CMDQ_STATE_CONTROL);
             if let Err(error) = cmd_parse_and_append(
                 CStr::from_bytes_until_nul(&line).expect("control line is terminated"),
                 Some(owner),

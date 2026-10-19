@@ -56,10 +56,10 @@ pub trait WindowPane {
     unsafe fn borrow_palette_mut(&self) -> Self::PaletteMut<'_>;
 
     unsafe fn id(&self) -> u32;
-    unsafe fn find_by_id(id: u32) -> Option<Self>
+    fn find_by_id(id: u32) -> Option<Self>
     where
         Self: Sized;
-    unsafe fn find_by_id_str(id: &CStr) -> Option<Self>
+    fn find_by_id_str(id: &CStr) -> Option<Self>
     where
         Self: Sized;
     unsafe fn from_observer(observer: &std::rc::Weak<UnsafeCell<window_pane>>) -> Option<Self>
@@ -307,8 +307,8 @@ pub trait WindowPane {
     /// pane instead. The layout's refusal or the spawn's failure comes back
     /// in `cause`; a refusal comes before any side effect.
     unsafe fn spawn_process(
-        context: *mut crate::shared::spawn::spawn_context,
-        cause: *mut Option<CString>,
+        context: &mut crate::shared::spawn::spawn_context,
+        cause: &mut Option<CString>,
     ) -> Option<Self>
     where
         Self: Sized;
@@ -642,10 +642,10 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         super::render::draw_prompt(self, context);
     }
 
-    unsafe fn find_by_id(id: u32) -> Option<Self> {
+    fn find_by_id(id: u32) -> Option<Self> {
         window_pane_find_by_id(id)
     }
-    unsafe fn find_by_id_str(id: &CStr) -> Option<Self> {
+    fn find_by_id_str(id: &CStr) -> Option<Self> {
         window_pane_find_by_id_str(id)
     }
     unsafe fn from_observer(observer: &std::rc::Weak<UnsafeCell<window_pane>>) -> Option<Self> {
@@ -682,7 +682,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         window_pane_set_prompt(
             self,
             client,
-            find.map_or(std::ptr::null_mut(), |find| find),
+            find.as_deref(),
             message,
             input,
             inputcb,
@@ -1069,13 +1069,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         key: key_code,
         mouse: Option<&mut mouse_event>,
     ) -> i32 {
-        window_pane_key(
-            self,
-            client,
-            link,
-            key,
-            mouse.map_or(std::ptr::null_mut(), |mouse| mouse),
-        )
+        window_pane_key(self, client, link, key, mouse)
     }
 
     unsafe fn paste(&self, key: key_code, bytes: &[u8]) {
@@ -1090,14 +1084,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         find: Option<&mut cmd_find_state>,
         arguments: Option<&mut args>,
     ) -> i32 {
-        window_pane_set_mode(
-            self,
-            source,
-            mode,
-            item,
-            find.map_or(std::ptr::null_mut(), |find| find),
-            arguments.map_or(std::ptr::null_mut(), |arguments| arguments),
-        )
+        window_pane_set_mode(self, source, mode, item, find.as_deref(), arguments)
     }
 
     unsafe fn reset_mode(&self) {
@@ -1266,8 +1253,8 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         lifecycle::finish_process(self, notify)
     }
     unsafe fn spawn_process(
-        context: *mut crate::shared::spawn::spawn_context,
-        cause: *mut Option<CString>,
+        context: &mut crate::shared::spawn::spawn_context,
+        cause: &mut Option<CString>,
     ) -> Option<Self> {
         spawning::spawn_pane(context, cause)
     }
@@ -1318,7 +1305,6 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
             let pane = &mut *self.get();
             crate::style::colour::colour_palette_clear(Some(&mut pane.palette));
             pane.ictx.as_deref_mut().expect("pane input context")
-                as *mut crate::shared::input::input_ctx
         };
         super::input::input_reset(context, 1);
         (*self.get()).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED | PANE_REDRAW;
@@ -1404,12 +1390,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         key: key_code,
         mouse: Option<&mut mouse_event>,
     ) -> prompt_key_result {
-        window_pane_prompt_key(
-            self,
-            client,
-            key,
-            mouse.map_or(std::ptr::null_mut(), |mouse| mouse),
-        )
+        window_pane_prompt_key(self, client, key, mouse)
     }
     unsafe fn notify_moved(
         &self,

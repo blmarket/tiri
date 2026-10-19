@@ -8,7 +8,6 @@ use crate::shared::tree::{RB_INF, RB_NEGINF};
 use crate::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::text::utf8::utf8_strvis;
 use crate::tmux::clean_name_cstring;
-use libc::time;
 use refbox::RefBox;
 use std::cell::RefCell;
 use std::ffi::{CStr, CString};
@@ -310,7 +309,7 @@ pub(crate) unsafe fn paste_add_owned(prefix: Option<CString>, data: Box<[u8]>) {
         paste_store_data(&mut buffer, Some(data));
         buffer.automatic = 1;
         paste_automatic_count_increment();
-        buffer.created = time(std::ptr::null_mut());
+        buffer.created = crate::shared::time::unix_seconds(std::time::SystemTime::now());
         buffer.order = paste_next_order_take();
     }
     paste_name_tree_insert_local(&pb);
@@ -402,7 +401,7 @@ pub(crate) unsafe fn paste_set_owned(
         let mut buffer = pb.borrow_mut();
         paste_store_data(&mut buffer, Some(data));
         buffer.order = paste_next_order_take();
-        buffer.created = time(std::ptr::null_mut());
+        buffer.created = crate::shared::time::unix_seconds(std::time::SystemTime::now());
     }
     let old = paste_get_name(&pb.borrow().name);
     if let Some(old) = old {

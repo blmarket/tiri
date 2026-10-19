@@ -6,7 +6,6 @@ use crate::cmd::queue::{
 };
 use crate::compat::strtonum::strtonum;
 use crate::environ::{environ_find, environ_iter};
-use crate::ffi::libc::basename;
 use crate::ffi::libm::{fabs, fmod};
 use crate::ffi::regex::RegexStorage;
 use crate::format::bytes::format_message_with;
@@ -29,8 +28,8 @@ use crate::server::{marked_pane, server_check_marked};
 use crate::shared::window::WindowWeak;
 use crate::window::Window as _;
 use libc::{
-    ctime_r, dirname, fnmatch, gethostname, getpid, getpwuid, getuid, localtime_r, memcmp, memcpy,
-    memset, strcasecmp, strchr, strcmp, strcspn, strftime, strlen, strstr, strtod, time,
+    ctime_r, dirname, fnmatch, gethostname, getpwuid, getuid, localtime_r, memcmp, memcpy, memset,
+    strcasecmp, strchr, strcmp, strcspn, strftime, strlen, strstr, strtod,
 };
 
 use crate::server_client::Client as _;
@@ -110,7 +109,6 @@ use tree::*;
 pub use tree::{
     format_add, format_add_cstr, format_add_time, format_create, format_create_owned,
     format_create_with_client, format_each, format_get_pane, format_log_debug, format_merge,
-    format_owner_ptr,
 };
 mod jobs;
 use jobs::*;
@@ -124,8 +122,8 @@ pub(crate) fn format_is_builtin(key: &CStr) -> bool {
     format_table_get(key).is_some()
 }
 
-pub(super) unsafe fn format_plugin_pane(ft: *mut format_tree) -> Option<crate::plugin::PaneId> {
-    let pane = <std::rc::Rc<std::cell::UnsafeCell<window_pane>>>::from_observer(&(*ft).wp)?;
+pub(super) unsafe fn format_plugin_pane(ft: &mut format_tree) -> Option<crate::plugin::PaneId> {
+    let pane = <std::rc::Rc<std::cell::UnsafeCell<window_pane>>>::from_observer(&ft.wp)?;
     Some(crate::plugin::PaneId(pane.id()))
 }
 mod expression;
@@ -258,17 +256,17 @@ const format_lower: [Option<&CStr>; 26] = [
     None,
 ];
 #[inline]
-unsafe fn format_logging(mut ft: *mut format_tree) -> ::core::ffi::c_int {
-    (log_get_level() != 0 as ::core::ffi::c_int || (*ft).flags & FORMAT_VERBOSE != 0)
+fn format_logging(ft: &mut format_tree) -> ::core::ffi::c_int {
+    (log_get_level() != 0 as ::core::ffi::c_int || ft.flags & FORMAT_VERBOSE != 0)
         as ::core::ffi::c_int
 }
 unsafe fn format_log1(
-    mut es: *mut format_expand_state,
+    es: &mut format_expand_state,
     mut from: *const ::core::ffi::c_char,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
-    let mut ft: *mut format_tree = (*es).ft;
-    if format_logging(ft) == 0 {
+    let mut ft: *mut format_tree = es.ft;
+    if format_logging(&mut *ft) == 0 {
         return;
     }
     let s = format_message_with(write);
@@ -284,26 +282,22 @@ unsafe fn format_log1(
     {
         cmdq_print(&item, |out| {
             out.write_all(b"#")?;
-            out.write_all(&b"          "[..((*es).loop_0 as usize).min(10)])?;
+            out.write_all(&b"          "[..(es.loop_0 as usize).min(10)])?;
             write_cstr(out, &*s)
         });
     }
 }
 unsafe fn format_copy_state(
-    mut to: *mut format_expand_state,
-    mut from: *mut format_expand_state,
+    to: &mut format_expand_state,
+    from: &format_expand_state,
     mut flags: ::core::ffi::c_int,
 ) {
-    (*to).ft = (*from).ft;
-    (*to).loop_0 = (*from).loop_0;
-    (*to).time = (*from).time;
-    memcpy(
-        &raw mut (*to).tm as *mut ::core::ffi::c_void,
-        &raw mut (*from).tm as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<tm>() as size_t,
-    );
-    (*to).flags = (*from).flags | flags;
-    (*to).start_time = (*from).start_time;
+    to.ft = from.ft;
+    to.loop_0 = from.loop_0;
+    to.time = from.time;
+    to.tm = from.tm;
+    to.flags = from.flags | flags;
+    to.start_time = from.start_time;
 }
 pub unsafe fn format_create_defaults(
     item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
@@ -324,7 +318,7 @@ pub unsafe fn format_create_defaults(
     } else {
         owner = format_create(None, item_handle, FORMAT_NONE, 0 as ::core::ffi::c_int);
     }
-    let ft = &raw mut *owner;
+    let ft = &mut *owner;
     format_defaults(ft, c_owner, s_owner, wl.clone(), wp_owner);
     owner
 }
@@ -354,7 +348,7 @@ pub unsafe fn format_create_from_target(
     format_create_from_state(Some(item_handle), tc.as_ref(), &target)
 }
 pub unsafe fn format_defaults(
-    mut ft: *mut format_tree,
+    ft: &mut format_tree,
     c_owner: Option<&ClientRef>,
     s_owner: Option<&SessionRef>,
     mut wl: refbox::Weak<winlink>,
@@ -402,13 +396,13 @@ pub unsafe fn format_defaults(
         ));
     }
     if wp_owner.is_some() {
-        (*ft).type_0 = FORMAT_TYPE_PANE;
+        ft.type_0 = FORMAT_TYPE_PANE;
     } else if wl.is_alive() {
-        (*ft).type_0 = FORMAT_TYPE_WINDOW;
+        ft.type_0 = FORMAT_TYPE_WINDOW;
     } else if s_owner.is_some() {
-        (*ft).type_0 = FORMAT_TYPE_SESSION;
+        ft.type_0 = FORMAT_TYPE_SESSION;
     } else {
-        (*ft).type_0 = FORMAT_TYPE_UNKNOWN;
+        ft.type_0 = FORMAT_TYPE_UNKNOWN;
     }
     let session_owner = s_owner
         .cloned()
@@ -438,37 +432,37 @@ pub unsafe fn format_defaults(
         format_defaults_pane(ft, pane);
     }
     if let Some(pb) = paste_get_top(None) {
-        format_defaults_paste_buffer(&mut *ft, &pb);
+        format_defaults_paste_buffer(ft, &pb);
     }
 }
-unsafe fn format_defaults_session(mut ft: *mut format_tree, s_owner: &SessionRef) {
-    (*ft).s = std::rc::Rc::downgrade(s_owner);
+fn format_defaults_session(ft: &mut format_tree, s_owner: &SessionRef) {
+    ft.s = std::rc::Rc::downgrade(s_owner);
 }
-unsafe fn format_defaults_client(mut ft: *mut format_tree, c_owner: &ClientRef) {
+unsafe fn format_defaults_client(ft: &mut format_tree, c_owner: &ClientRef) {
     let _c: Option<ClientRef> = Some(c_owner.clone());
-    if (*ft).s.upgrade().is_none() {
-        (*ft).s = c_owner.attached_session();
+    if ft.s.upgrade().is_none() {
+        ft.s = c_owner.attached_session();
     }
-    (*ft).c = std::rc::Rc::downgrade(c_owner);
+    ft.c = std::rc::Rc::downgrade(c_owner);
 }
-pub unsafe fn format_defaults_window(mut ft: *mut format_tree, w_owner: Option<&WindowRef>) {
-    (*ft).w = w_owner.map_or_else(WindowWeak::new, WindowRef::downgrade);
+pub fn format_defaults_window(ft: &mut format_tree, w_owner: Option<&WindowRef>) {
+    ft.w = w_owner.map_or_else(WindowWeak::new, WindowRef::downgrade);
 }
-unsafe fn format_defaults_winlink(mut ft: *mut format_tree, mut wl: refbox::Weak<winlink>) {
-    if (*ft).w.upgrade().is_none() {
+unsafe fn format_defaults_winlink(ft: &mut format_tree, mut wl: refbox::Weak<winlink>) {
+    if ft.w.upgrade().is_none() {
         format_defaults_window(ft, wl.get_unchecked().window_owner.as_ref());
     }
-    (*ft).wl = wl;
+    ft.wl = wl;
 }
 pub unsafe fn format_defaults_pane(
-    mut ft: *mut format_tree,
+    ft: &mut format_tree,
     wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
 ) {
-    if (*ft).w.upgrade().is_none() {
-        (*ft).w = wp_owner.window_observer();
+    if ft.w.upgrade().is_none() {
+        ft.w = wp_owner.window_observer();
     }
-    (*ft).wp = std::rc::Rc::downgrade(wp_owner);
-    wp_owner.add_mode_formats(&mut *ft);
+    ft.wp = std::rc::Rc::downgrade(wp_owner);
+    wp_owner.add_mode_formats(ft);
 }
 pub fn format_defaults_paste_buffer(ft: &mut format_tree, pb: &PasteBufferRef) {
     ft.pb = Some(pb.clone());

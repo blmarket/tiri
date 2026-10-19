@@ -50,8 +50,7 @@ pub fn attributes_parse(input: &[u8]) -> Option<i32> {
 }
 
 fn equal(a: &[u8], b: &[u8]) -> bool {
-    a.len() == b.len()
-        && unsafe { libc::strncasecmp(a.as_ptr().cast(), b.as_ptr().cast(), a.len()) == 0 }
+    a.eq_ignore_ascii_case(b)
 }
 
 /// Parse a NUL-terminated byte string without retaining its pointer.

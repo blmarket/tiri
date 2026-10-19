@@ -9,10 +9,10 @@ use crate::format::bytes::write_cstr;
 use crate::key_bindings::key_bindings_add;
 use crate::key_string::key_string_parse_cstr;
 use crate::shared::abi::*;
+use crate::shared::command::cmd_parse_result;
 use crate::shared::command::CMD_AFTERHOOK;
 use crate::shared::command::*;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
-use crate::shared::command::{cmd_parse_input, cmd_parse_result};
 use crate::shared::key::*;
 use std::ffi::CStr;
 pub static cmd_bind_key_entry: cmd_entry = {
@@ -91,13 +91,10 @@ unsafe fn cmd_bind_key_exec(
     if count == 2 as u_int {
         pr = cmd_parse_from_string(
             args_string(&mut *(args), 1 as u_int).expect("argument is present"),
-            ::core::ptr::null_mut::<cmd_parse_input>(),
+            None,
         );
     } else {
-        pr = cmd_parse_from_arguments(
-            &(&(*args).values)[1..],
-            ::core::ptr::null_mut::<cmd_parse_input>(),
-        );
+        pr = cmd_parse_from_arguments(&(&(*args).values)[1..], None);
     }
     if pr.status as ::core::ffi::c_uint == 0 {
         cmdq_error(item_handle, |out| write_cstr(out, pr.error.as_deref()));

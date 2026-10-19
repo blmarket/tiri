@@ -21,10 +21,10 @@ impl PanePty {
             return;
         }
         unsafe {
-            let record = std::ffi::CString::new(format!("tmux({}).%{}", libc::getpid(), id))
+            let record = std::ffi::CString::new(format!("tmux({}).%{}", std::process::id(), id))
                 .expect("pane login record contains no NUL");
             utempter_add_record(self.fd.as_raw_fd(), record.as_ptr());
-            libc::kill(libc::getpid(), libc::SIGCHLD);
+            libc::kill(std::process::id() as libc::pid_t, libc::SIGCHLD);
         }
         self.utmp = true;
     }
@@ -39,7 +39,7 @@ impl PanePty {
         #[cfg(target_os = "linux")]
         unsafe {
             utempter_remove_record(self.fd.as_raw_fd());
-            libc::kill(libc::getpid(), libc::SIGCHLD);
+            libc::kill(std::process::id() as libc::pid_t, libc::SIGCHLD);
         }
         self.utmp = false;
     }

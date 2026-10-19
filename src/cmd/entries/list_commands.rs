@@ -42,7 +42,7 @@ pub static cmd_list_commands_entry: cmd_entry = {
 };
 unsafe fn cmd_list_single_command(
     entry: &cmd_entry,
-    mut ft: *mut format_tree,
+    ft: &mut format_tree,
     template: &CStr,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) {
@@ -68,7 +68,6 @@ unsafe fn cmd_list_commands(
     let queue_client = cmdq_get_client(Some(&*item));
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let template: &CStr =
         args_get(&*(args), 'F' as i32 as u_char).unwrap_or(LIST_COMMANDS_TEMPLATE);
     let mut ft_owner = format_create_with_client(
@@ -77,7 +76,7 @@ unsafe fn cmd_list_commands(
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );
-    ft = &raw mut *ft_owner;
+    let ft = &mut *ft_owner;
     format_defaults(ft, None, None, (refbox::Weak::new()).clone(), None);
     if let Some(command) = args_string(&mut *(args), 0 as u_int) {
         match cmd_find(command) {

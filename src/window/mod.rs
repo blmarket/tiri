@@ -29,7 +29,6 @@ use crate::format::bytes::write_cstr;
 use crate::log::log_debug;
 use crate::menu::{menu_destroy, menu_resize};
 use crate::options::options_get_number;
-use libc::strcasecmp;
 
 use crate::server::{marked_pane, server_check_marked, server_clear_marked};
 use crate::server_client::Client;
@@ -226,7 +225,7 @@ unsafe fn window_fire_pane_changed(
     events_fire(c"window-pane-changed", payload);
 }
 
-pub unsafe fn window_find_by_id_str(s: &CStr) -> Option<WindowRef> {
+pub fn window_find_by_id_str(s: &CStr) -> Option<WindowRef> {
     let mut id: u_int = 0;
     if s.to_bytes().first() != Some(&b'@') {
         return None;
@@ -483,7 +482,7 @@ unsafe fn window_find_string(
         layout::content_width(&window_arrangement(window_owner)),
         (*w).sy,
     );
-    let s = name.as_ptr();
+    let s = name.to_bytes();
     let mut x: u_int = 0;
     let mut y: u_int = 0;
     let mut top: u_int = 0 as u_int;
@@ -496,24 +495,24 @@ unsafe fn window_find_string(
     } else if status == PANE_STATUS_BOTTOM {
         bottom = bottom.wrapping_sub(1);
     }
-    if strcasecmp(s, c"top".as_ptr()) == 0 as ::core::ffi::c_int {
+    if s.eq_ignore_ascii_case(b"top") {
         y = top;
-    } else if strcasecmp(s, c"bottom".as_ptr()) == 0 as ::core::ffi::c_int {
+    } else if s.eq_ignore_ascii_case(b"bottom") {
         y = bottom;
-    } else if strcasecmp(s, c"left".as_ptr()) == 0 as ::core::ffi::c_int {
+    } else if s.eq_ignore_ascii_case(b"left") {
         x = 0 as u_int;
-    } else if strcasecmp(s, c"right".as_ptr()) == 0 as ::core::ffi::c_int {
+    } else if s.eq_ignore_ascii_case(b"right") {
         x = wsx.wrapping_sub(1 as u_int);
-    } else if strcasecmp(s, c"top-left".as_ptr()) == 0 as ::core::ffi::c_int {
+    } else if s.eq_ignore_ascii_case(b"top-left") {
         x = 0 as u_int;
         y = top;
-    } else if strcasecmp(s, c"top-right".as_ptr()) == 0 as ::core::ffi::c_int {
+    } else if s.eq_ignore_ascii_case(b"top-right") {
         x = wsx.wrapping_sub(1 as u_int);
         y = top;
-    } else if strcasecmp(s, c"bottom-left".as_ptr()) == 0 as ::core::ffi::c_int {
+    } else if s.eq_ignore_ascii_case(b"bottom-left") {
         x = 0 as u_int;
         y = bottom;
-    } else if strcasecmp(s, c"bottom-right".as_ptr()) == 0 as ::core::ffi::c_int {
+    } else if s.eq_ignore_ascii_case(b"bottom-right") {
         x = wsx.wrapping_sub(1 as u_int);
         y = bottom;
     } else {

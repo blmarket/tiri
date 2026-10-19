@@ -898,14 +898,14 @@ impl cmd_find_state {
         fs.log_state(c"cmd_find_from_nothing");
         Some(fs)
     }
-    pub unsafe fn find_from_mouse(m: *mut mouse_event) -> Option<Self> {
-        if (*m).valid == 0 {
+    pub unsafe fn find_from_mouse(m: &mouse_event) -> Option<Self> {
+        if m.valid == 0 {
             return None;
         }
         let mut fs = Self::clear_state(0);
         let mut wl = refbox::Weak::new();
         let mut mouse_session_owner = None;
-        let mouse_pane_owner = cmd_mouse_pane(m, Some(&mut mouse_session_owner), &raw mut wl);
+        let mouse_pane_owner = cmd_mouse_pane(m, Some(&mut mouse_session_owner), Some(&mut wl));
         mouse_pane_owner.as_ref()?;
         fs.set_s(mouse_session_owner.as_ref());
         fs.set_wl(wl);
@@ -1121,7 +1121,7 @@ impl cmd_find_state {
                             let mut wl = refbox::Weak::new();
                             let mut mouse_session_owner = None;
                             mouse_pane_owner =
-                                cmd_mouse_pane(m, Some(&mut mouse_session_owner), &raw mut wl);
+                                cmd_mouse_pane(&*m, Some(&mut mouse_session_owner), Some(&mut wl));
                             self.set_s(mouse_session_owner.as_ref());
                             self.set_wl(wl.clone());
                             self.set_wp(mouse_pane_owner.as_ref());
@@ -1143,7 +1143,7 @@ impl cmd_find_state {
                 if current_block_56 == 2308649987175926278 {
                     {
                         let mut mouse_session_owner = None;
-                        let wl = cmd_mouse_window(m, Some(&mut mouse_session_owner));
+                        let wl = cmd_mouse_window(&*m, Some(&mut mouse_session_owner));
                         self.set_s(mouse_session_owner.as_ref());
                         self.set_wl(wl.clone());
                     }

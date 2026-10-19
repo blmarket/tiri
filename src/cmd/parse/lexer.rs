@@ -504,13 +504,11 @@ fn finish(mut bytes: Vec<u8>) -> CString {
 }
 
 fn is_digit(byte: u8) -> bool {
-    unsafe { ::libc::isdigit(byte as ::core::ffi::c_int) != 0 }
+    byte.is_ascii_digit()
 }
 
 fn is_variable(byte: u8, first: bool) -> bool {
-    byte != b'='
-        && !(first && is_digit(byte))
-        && (byte == b'_' || unsafe { ::libc::isalnum(byte as ::core::ffi::c_int) != 0 })
+    byte != b'=' && !(first && is_digit(byte)) && (byte == b'_' || byte.is_ascii_alphanumeric())
 }
 
 #[cfg(test)]

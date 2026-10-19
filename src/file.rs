@@ -15,7 +15,7 @@ use crate::reactor::{
     bufferevent_enable, bufferevent_get_input, bufferevent_new, bufferevent_write, evbuffer_add,
     evbuffer_add_formatted, evbuffer_drain, evbuffer_get_length, evbuffer_pullup,
 };
-use libc::{memcpy, strcmp, strlen};
+use libc::{memcpy, strlen};
 
 use crate::server_client::Client as _;
 use crate::shared::abi::ssize_t;
@@ -477,7 +477,7 @@ unsafe fn file_write_impl(
     let mut guard = transfer_owner.borrow_mut();
     let cf = &mut *guard;
     cf.wait = Some(waiter);
-    if strcmp(path.as_ptr(), c"-".as_ptr()) == 0 as ::core::ffi::c_int {
+    if path == c"-" {
         file_set_path(cf, CString::new("-").unwrap());
         fd = STDOUT_FILENO;
         if client_owner
@@ -1241,7 +1241,7 @@ pub(crate) fn client_files_find_stream(
     head.get(&stream).cloned()
 }
 
-pub(crate) unsafe fn client_files_insert(
+pub(crate) fn client_files_insert(
     head: &mut client_files,
     file: Rc<RefCell<client_file>>,
 ) -> Option<Rc<RefCell<client_file>>> {
@@ -1299,7 +1299,7 @@ pub fn client_files_is_empty(files: &client_files) -> bool {
     files.is_empty()
 }
 
-pub(crate) unsafe fn client_files_has_pending_data(files: &client_files) -> bool {
+pub(crate) fn client_files_has_pending_data(files: &client_files) -> bool {
     client_files_iter(files).any(|owner| {
         let owner = owner.upgrade().expect("indexed file is live");
         let file = owner.borrow();

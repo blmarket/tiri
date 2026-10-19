@@ -26,7 +26,6 @@ use crate::shared::borders::{CELL_BORDERS, CELL_LR, CELL_UD};
 use crate::shared::client::ClientRef;
 use crate::shared::command::{cmd, cmd_find_state, cmdq_item};
 use crate::shared::event::*;
-use crate::shared::format::format_tree;
 use crate::shared::grid::*;
 use crate::shared::key::*;
 use crate::shared::layout::*;
@@ -85,8 +84,8 @@ pub static window_panes_mode: window_mode = {
                 as unsafe fn(
                     refbox::Weak<window_mode_entry>,
                     Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
-                    *mut cmd_find_state,
-                    *mut args,
+                    Option<&cmd_find_state>,
+                    Option<&mut args>,
                 ) -> bool,
         ),
         free: Some(window_panes_free as unsafe fn(refbox::Weak<window_mode_entry>) -> ()),
@@ -102,7 +101,7 @@ pub static window_panes_mode: window_mode = {
                     &ClientRef,
                     refbox::Weak<winlink>,
                     key_code,
-                    *mut mouse_event,
+                    Option<&mut mouse_event>,
                 ) -> (),
         ),
         key_table: None,
@@ -248,10 +247,10 @@ unsafe fn window_panes_get_geometry(
     mut osy: u_int,
     mut dsx: u_int,
     mut dsy: u_int,
-    mut xp: *mut u_int,
-    mut yp: *mut u_int,
-    mut sxp: *mut u_int,
-    mut syp: *mut u_int,
+    xp: &mut u_int,
+    yp: &mut u_int,
+    sxp: &mut u_int,
+    syp: &mut u_int,
 ) -> ::core::ffi::c_int {
     let Some(geometry) = window_panes_pane_geometry(wp_owner) else {
         return 0;
@@ -265,14 +264,10 @@ unsafe fn window_panes_get_geometry(
     *syp = sy;
     1 as ::core::ffi::c_int
 }
-unsafe fn window_panes_get_border_cell(
-    mut data: *mut window_panes_modedata,
-    mut gc: *mut grid_cell,
-) {
+unsafe fn window_panes_get_border_cell(mut data: *mut window_panes_modedata, gc: &mut grid_cell) {
     let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*data).wp) else {
         return;
     };
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let session_owner = window_panes_session(data);
     let mut s = session_owner.clone();
     *gc = grid_default_cell;
@@ -284,10 +279,10 @@ unsafe fn window_panes_get_border_cell(
             .map_or_else(refbox::Weak::new, |session| session.current_winlink()),
         Some(&mode_pane_owner),
     );
-    ft = &raw mut *ft_owner;
+    let ft = &mut *ft_owner;
     let options_window = mode_pane_owner.window_observer();
     style_apply_with_options(
-        &mut *gc,
+        gc,
         c"display-panes-border-style",
         Some(&mut *ft),
         &OptionsScope::Window(options_window.clone()),
@@ -493,7 +488,6 @@ unsafe fn window_panes_draw_number(
         us: 0,
         link: 0,
     };
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut len: size_t = 0;
     let mut llen: size_t = 0 as size_t;
     let mut width: size_t = 0;
@@ -536,7 +530,7 @@ unsafe fn window_panes_draw_number(
         c"display-panes-colour"
     };
     let mut ft_owner = format_create_defaults(None, None, s.as_ref(), wl.clone(), Some(wp_owner));
-    ft = &raw mut *ft_owner;
+    let ft = &mut *ft_owner;
     style_apply_with_options(
         &mut fgc,
         name,
@@ -668,15 +662,7 @@ unsafe fn window_panes_draw_pane(
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     if window_panes_get_geometry(
-        wp_owner,
-        osx,
-        osy,
-        dsx,
-        dsy,
-        &raw mut x,
-        &raw mut y,
-        &raw mut sx,
-        &raw mut sy,
+        wp_owner, osx, osy, dsx, dsy, &mut x, &mut y, &mut sx, &mut sy,
     ) == 0
     {
         return;
@@ -786,7 +772,7 @@ unsafe fn window_panes_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         {
             window_panes_draw_pane(data, &mut ctx, &pane, osx, osy, sx, sy);
         }
-        window_panes_get_border_cell(data, &raw mut border_gc);
+        window_panes_get_border_cell(data, &mut border_gc);
         window_panes_draw_borders(&mut ctx, &window, &border_gc, osx, osy, sx, sy);
         screen_write_stop(ctx);
         mode_pane_owner.request_redraw(false);
@@ -807,8 +793,8 @@ unsafe fn window_panes_timer_callback(wme: refbox::Weak<window_mode_entry>) {
 unsafe fn window_panes_init(
     mut wme: refbox::Weak<window_mode_entry>,
     item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
-    _fs: *mut cmd_find_state,
-    mut args: *mut args,
+    _fs: Option<&cmd_find_state>,
+    args: Option<&mut args>,
 ) -> bool {
     let mode_pane_owner = wme
         .get_unchecked()
@@ -840,6 +826,7 @@ unsafe fn window_panes_init(
     source = &raw mut source_state;
     target = &raw mut target_state;
     s = (*target).session_handle();
+    let args = args.expect("mode arguments");
     if args_has(&*args, 'd' as i32 as u_char) == 0 {
         delay = options_get_number(
             &original_window
@@ -1052,7 +1039,7 @@ unsafe fn window_panes_key_pane(
 unsafe fn window_panes_get_target(
     mut wme: refbox::Weak<window_mode_entry>,
     mut key: key_code,
-    mut m: *mut mouse_event,
+    m: Option<&mut mouse_event>,
 ) -> Option<Rc<UnsafeCell<window_pane>>> {
     let mode_pane_owner = wme
         .get_unchecked()
@@ -1075,14 +1062,10 @@ unsafe fn window_panes_get_target(
                     << 32 as ::core::ffi::c_int
     {
         if key != KEYC_MOUSEDOWN1_PANE as ::core::ffi::c_ulong as key_code
-            || m.is_null()
-            || cmd_mouse_at(
-                &mode_pane_owner,
-                m,
-                &raw mut x,
-                &raw mut y,
-                0 as ::core::ffi::c_int,
-            ) != 0 as ::core::ffi::c_int
+            || m.is_none_or(|m| {
+                cmd_mouse_at(&mode_pane_owner, m, &mut x, &mut y, 0 as ::core::ffi::c_int)
+                    != 0 as ::core::ffi::c_int
+            })
         {
             return None;
         }
@@ -1095,7 +1078,7 @@ unsafe fn window_panes_key(
     client_owner: &ClientRef,
     _wl: refbox::Weak<winlink>,
     mut key: key_code,
-    mut m: *mut mouse_event,
+    m: Option<&mut mouse_event>,
 ) {
     let mode_pane_owner = wme
         .get_unchecked()

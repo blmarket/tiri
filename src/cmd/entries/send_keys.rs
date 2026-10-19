@@ -79,7 +79,7 @@ pub static cmd_send_prefix_entry: cmd_entry = {
 unsafe fn cmd_send_keys_inject_key(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     after_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
-    mut args: *mut args,
+    args: &args,
     mut key: key_code,
 ) -> std::rc::Weak<std::cell::RefCell<cmdq_item>> {
     let mut after = after_handle.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
@@ -148,8 +148,8 @@ unsafe fn cmd_send_keys_inject_key(
             command,
             after.upgrade().as_ref(),
             tc.as_ref(),
-            ::core::ptr::null_mut::<key_event>(),
-            target,
+            None,
+            &*target,
         );
     }
     after
@@ -180,7 +180,7 @@ unsafe fn cmd_send_keys_inject_string(
         return cmd_send_keys_inject_key(
             item_handle,
             after.upgrade().as_ref(),
-            args,
+            &*args,
             KEYC_LITERAL | n as key_code,
         );
     }
@@ -190,7 +190,7 @@ unsafe fn cmd_send_keys_inject_string(
         if key != KEYC_NONE as ::core::ffi::c_ulong as key_code
             && key != KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code
         {
-            after = cmd_send_keys_inject_key(item_handle, after.upgrade().as_ref(), args, key);
+            after = cmd_send_keys_inject_key(item_handle, after.upgrade().as_ref(), &*args, key);
             if after.strong_count() != 0 {
                 return after;
             }
@@ -216,7 +216,8 @@ unsafe fn cmd_send_keys_inject_string(
                 current_block_20 = 12147880666119273379;
             }
             if current_block_20 == 12147880666119273379 {
-                after = cmd_send_keys_inject_key(item_handle, after.upgrade().as_ref(), args, key);
+                after =
+                    cmd_send_keys_inject_key(item_handle, after.upgrade().as_ref(), &*args, key);
             }
         }
     }
@@ -284,9 +285,7 @@ unsafe fn cmd_send_keys_exec(
             cmdq_error(item_handle, |out| out.write_all(b"not in a mode"));
             return CmdOutcome::Error;
         }
-        if (*m).valid == 0 {
-            m = ::core::ptr::null_mut::<mouse_event>();
-        }
+        let m = if (*m).valid == 0 { None } else { Some(&mut *m) };
         wme.get_unchecked()
             .mode
             .command
@@ -295,18 +294,14 @@ unsafe fn cmd_send_keys_exec(
             tc_owner.as_ref(),
             (*target).s.upgrade().as_ref(),
             wl,
-            args,
+            &mut *args,
             m,
         );
         return CmdOutcome::Normal;
     }
     if args_has(&*args, 'M' as i32 as u_char) != 0 {
         let mut mouse_session_owner = None;
-        mouse_pane_owner = cmd_mouse_pane(
-            m,
-            Some(&mut mouse_session_owner),
-            ::core::ptr::null_mut::<refbox::Weak<winlink>>(),
-        );
+        mouse_pane_owner = cmd_mouse_pane(&*m, Some(&mut mouse_session_owner), None);
         s = mouse_session_owner.clone();
         if mouse_pane_owner.is_none() {
             cmdq_error(item_handle, |out| out.write_all(b"no mouse target"));
@@ -335,7 +330,7 @@ unsafe fn cmd_send_keys_exec(
                 c"prefix",
             ) as key_code;
         }
-        cmd_send_keys_inject_key(item_handle, Some(item_handle), args, key);
+        cmd_send_keys_inject_key(item_handle, Some(item_handle), &*args, key);
         return CmdOutcome::Normal;
     }
     if args_has(&*args, 'R' as i32 as u_char) != 0 {
@@ -353,8 +348,12 @@ unsafe fn cmd_send_keys_exec(
             std::rc::Weak::new()
         };
         while np != 0 as u_int {
-            after =
-                cmd_send_keys_inject_key(item_handle, after.upgrade().as_ref(), args, (*event).key);
+            after = cmd_send_keys_inject_key(
+                item_handle,
+                after.upgrade().as_ref(),
+                &*args,
+                (*event).key,
+            );
             np = np.wrapping_sub(1);
         }
         return CmdOutcome::Normal;

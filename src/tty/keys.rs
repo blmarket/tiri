@@ -2,7 +2,6 @@ use crate::bracketed_paste::{
     match_bracketed_paste_boundary, BracketedPasteBoundary, BracketedPasteBoundaryMatch,
 };
 use crate::events::events_fire_client;
-use crate::ffi::libc::strsep;
 use crate::ffi::resolv::b64_pton;
 use crate::input::{input_request_reply, InputRequestReply};
 use crate::key_string::key_string_format;
@@ -1223,10 +1222,10 @@ static mut tty_default_code_keys: [tty_default_key_code; 136] = [
             | KEYC_CTRL,
     },
 ];
-unsafe fn tty_keys_add(tty: *mut tty, bytes: &[u8], key: key_code) {
+unsafe fn tty_keys_add(tty: &mut tty, bytes: &[u8], key: key_code) {
     let key_string = key_string_format(key, true);
     let mut size = 0;
-    if let Some(tk) = tty_keys_find_mut((*tty).key_tree.as_deref_mut(), bytes, &mut size) {
+    if let Some(tk) = tty_keys_find_mut(tty.key_tree.as_deref_mut(), bytes, &mut size) {
         log_debug(format_args!(
             "replacing key {}: 0x{:x} ({})",
             log_bytes(bytes),
@@ -1241,7 +1240,7 @@ unsafe fn tty_keys_add(tty: *mut tty, bytes: &[u8], key: key_code) {
             { key },
             crate::log::log_bytes(key_string.as_bytes())
         ));
-        tty_keys_add1(&mut (*tty).key_tree, bytes, key);
+        tty_keys_add1(&mut tty.key_tree, bytes, key);
     }
 }
 
@@ -1267,7 +1266,7 @@ fn tty_keys_add1(tree: &mut Option<Box<tty_key>>, bytes: &[u8], key: key_code) {
     }
 }
 
-pub unsafe fn tty_keys_build(mut tty: *mut tty) {
+pub unsafe fn tty_keys_build(tty: &mut tty) {
     let mut i: u_int = 0;
     let mut j: u_int = 0;
     let mut key: key_code = 0;
@@ -1313,9 +1312,10 @@ pub unsafe fn tty_keys_build(mut tty: *mut tty) {
     {
         let tdkc = &tty_default_code_keys[i as usize];
         let s = tty_term_string(
-            tty_term_owner_ptr(&(*tty).term).expect("client has a terminal"),
+            tty_term_owner_ptr(&tty.term).expect("client has a terminal"),
             tdkc.code,
-        );
+        )
+        .to_owned();
         if !s.is_empty() {
             tty_keys_add(tty, s.to_bytes(), tdkc.key);
         }
@@ -1345,8 +1345,8 @@ pub unsafe fn tty_keys_build(mut tty: *mut tty) {
         );
     }
 }
-pub(super) unsafe fn tty_keys_free(tty: *mut tty) {
-    (*tty).key_tree = None;
+pub(super) unsafe fn tty_keys_free(tty: &mut tty) {
+    tty.key_tree = None;
 }
 
 fn tty_keys_find1<'a>(
@@ -1399,8 +1399,8 @@ unsafe fn tty_keys_next1(
     tty: &tty,
     diagnostic_name: Option<&CStr>,
     bytes: &[u8],
-    mut key: *mut key_code,
-    mut size: *mut size_t,
+    key: &mut key_code,
+    size: &mut size_t,
     mut expired: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let mut len: size_t = bytes.len();
@@ -1481,7 +1481,7 @@ unsafe fn tty_keys_next1(
 unsafe fn tty_keys_winsz(
     terminal_client_owner: &ClientRef,
     bytes: &[u8],
-    mut size: *mut size_t,
+    size: &mut size_t,
 ) -> ::core::ffi::c_int {
     let mut len: size_t = bytes.len();
     let mut buf: *const ::core::ffi::c_char = bytes.as_ptr().cast();
@@ -1514,7 +1514,7 @@ unsafe fn tty_keys_winsz(
         if *buf.add(end) as ::core::ffi::c_int == 't' as i32 {
             break;
         }
-        if ::libc::isdigit(*buf.add(end) as u_char as ::core::ffi::c_int) == 0
+        if !(*buf.add(end) as u_char).is_ascii_digit()
             && *buf.add(end) as ::core::ffi::c_int != ';' as i32
         {
             break;
@@ -1656,7 +1656,7 @@ pub(super) unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core:
             .drain(len);
         return 1 as ::core::ffi::c_int;
     }
-    match tty_keys_clipboard(bytes, &raw mut size, &mut clipboard_reply) {
+    match tty_keys_clipboard(bytes, &mut size, &mut clipboard_reply) {
         0 => {
             key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
             current_block = 5025795842197473417;
@@ -1672,7 +1672,7 @@ pub(super) unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core:
         }
     }
     if current_block == 1917311967535052937 {
-        match tty_keys_sync(terminal_client_owner, bytes, &raw mut size) {
+        match tty_keys_sync(terminal_client_owner, bytes, &mut size) {
             0 => {
                 key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                 current_block = 5025795842197473417;
@@ -1691,7 +1691,7 @@ pub(super) unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core:
             5025795842197473417 => {}
             16977559109335092698 => {}
             _ => {
-                match tty_keys_device_attributes(terminal_client_owner, bytes, &raw mut size) {
+                match tty_keys_device_attributes(terminal_client_owner, bytes, &mut size) {
                     0 => {
                         key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                         current_block = 5025795842197473417;
@@ -1710,11 +1710,7 @@ pub(super) unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core:
                     5025795842197473417 => {}
                     16977559109335092698 => {}
                     _ => {
-                        match tty_keys_device_attributes2(
-                            terminal_client_owner,
-                            bytes,
-                            &raw mut size,
-                        ) {
+                        match tty_keys_device_attributes2(terminal_client_owner, bytes, &mut size) {
                             0 => {
                                 key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                                 current_block = 5025795842197473417;
@@ -1736,7 +1732,7 @@ pub(super) unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core:
                                 match tty_keys_extended_device_attributes(
                                     terminal_client_owner,
                                     bytes,
-                                    &raw mut size,
+                                    &mut size,
                                 ) {
                                     0 => {
                                         key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
@@ -1766,7 +1762,7 @@ pub(super) unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core:
                                                     diagnostic_name.as_deref().unwrap_or(c"(null)"),
                                                 ),
                                                 bytes,
-                                                &raw mut size,
+                                                &mut size,
                                                 fg,
                                                 bg,
                                             )
@@ -1821,7 +1817,7 @@ pub(super) unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core:
                                             _ => {
                                                 match tty_keys_palette(
                                                     bytes,
-                                                    &raw mut size,
+                                                    &mut size,
                                                     &mut palette_reply,
                                                 ) {
                                                     0 => {
@@ -1851,8 +1847,8 @@ pub(super) unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core:
                                                                 &mut *terminal,
                                                                 diagnostic_name.as_deref(),
                                                                 bytes,
-                                                                &raw mut size,
-                                                                &raw mut m,
+                                                                &mut size,
+                                                                &mut m,
                                                             )
                                                         };
                                                         match res {
@@ -1912,8 +1908,8 @@ pub(super) unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core:
                                                                         terminal,
                                                                         diagnostic_name.as_deref(),
                                                                         bytes,
-                                                                        &raw mut size,
-                                                                        &raw mut key,
+                                                                        &mut size,
+                                                                        &mut key,
                                                                     )
                                                                 };
                                                                 match res {
@@ -1941,7 +1937,7 @@ pub(super) unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core:
                                                                         match tty_keys_winsz(
                                                                             terminal_client_owner,
                                                                             bytes,
-                                                                            &raw mut size,
+                                                                            &mut size,
                                                                         ) {
                                                                             0 => {
                                                                                 current_block = 1414802762261447502;
@@ -1995,8 +1991,8 @@ pub(super) unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core:
                     terminal_client_owner.borrow_terminal(),
                     diagnostic_name.as_deref(),
                     bytes,
-                    &raw mut key,
-                    &raw mut size,
+                    &mut key,
+                    &mut size,
                     expired,
                 );
                 if n == 0 as ::core::ffi::c_int {
@@ -2012,8 +2008,8 @@ pub(super) unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core:
                         terminal_client_owner.borrow_terminal(),
                         diagnostic_name.as_deref(),
                         &bytes[1..],
-                        &raw mut key,
-                        &raw mut size,
+                        &mut key,
+                        &mut size,
                         expired,
                     );
                     if n == 0 as ::core::ffi::c_int {
@@ -2279,8 +2275,8 @@ unsafe fn tty_keys_extended_key(
     tty: &tty,
     diagnostic_name: Option<&CStr>,
     bytes: &[u8],
-    mut size: *mut size_t,
-    mut key: *mut key_code,
+    size: &mut size_t,
+    key: &mut key_code,
 ) -> ::core::ffi::c_int {
     let mut len: size_t = bytes.len();
     let mut buf: *const ::core::ffi::c_char = bytes.as_ptr().cast();
@@ -2316,7 +2312,7 @@ unsafe fn tty_keys_extended_key(
         if *buf.add(end) as ::core::ffi::c_int == '~' as i32 {
             break;
         }
-        if ::libc::isdigit(*buf.add(end) as u_char as ::core::ffi::c_int) == 0
+        if !(*buf.add(end) as u_char).is_ascii_digit()
             && *buf.add(end) as ::core::ffi::c_int != ';' as i32
         {
             break;
@@ -2424,8 +2420,8 @@ unsafe fn tty_keys_mouse(
     tty: &mut tty,
     diagnostic_name: Option<&CStr>,
     bytes: &[u8],
-    mut size: *mut size_t,
-    mut m: *mut mouse_event,
+    size: &mut size_t,
+    m: &mut mouse_event,
 ) -> ::core::ffi::c_int {
     let mut len: size_t = bytes.len();
     let mut buf: *const ::core::ffi::c_char = bytes.as_ptr().cast();
@@ -2564,14 +2560,14 @@ unsafe fn tty_keys_mouse(
     } else {
         return -(1 as ::core::ffi::c_int);
     }
-    (*m).lx = tty.mouse_last_x;
-    (*m).x = x;
-    (*m).ly = tty.mouse_last_y;
-    (*m).y = y;
-    (*m).lb = tty.mouse_last_b;
-    (*m).b = b;
-    (*m).sgr_type = sgr_type as u_int;
-    (*m).sgr_b = sgr_b;
+    m.lx = tty.mouse_last_x;
+    m.x = x;
+    m.ly = tty.mouse_last_y;
+    m.y = y;
+    m.lb = tty.mouse_last_b;
+    m.b = b;
+    m.sgr_type = sgr_type as u_int;
+    m.sgr_b = sgr_b;
     tty.mouse_last_x = x;
     tty.mouse_last_y = y;
     tty.mouse_last_b = b;
@@ -2579,7 +2575,7 @@ unsafe fn tty_keys_mouse(
 }
 unsafe fn tty_keys_clipboard(
     bytes: &[u8],
-    mut size: *mut size_t,
+    size: &mut size_t,
     reply: &mut Option<input_request_clipboard_data>,
 ) -> ::core::ffi::c_int {
     let mut len: size_t = bytes.len();
@@ -2688,7 +2684,7 @@ unsafe fn tty_keys_clipboard(
 unsafe fn tty_keys_device_attributes(
     terminal_client_owner: &ClientRef,
     bytes: &[u8],
-    mut size: *mut size_t,
+    size: &mut size_t,
 ) -> ::core::ffi::c_int {
     let mut len: size_t = bytes.len();
     let mut buf: *const ::core::ffi::c_char = bytes.as_ptr().cast();
@@ -2730,8 +2726,6 @@ unsafe fn tty_keys_device_attributes(
         0,
         0,
     ];
-    let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     *size = 0 as size_t;
     if terminal_client_owner.borrow_terminal().flags & TTY_HAVEDA != 0 {
         return -(1 as ::core::ffi::c_int);
@@ -2776,14 +2770,18 @@ unsafe fn tty_keys_device_attributes(
     }
     tmp[i as usize] = '\0' as i32 as ::core::ffi::c_char;
     *size = (4 as u_int).wrapping_add(i) as size_t;
-    cp = &raw mut tmp as *mut ::core::ffi::c_char;
-    loop {
-        next = strsep(&raw mut cp, c";".as_ptr());
-        if next.is_null() {
-            break;
+    let fields_len = tmp
+        .iter()
+        .position(|&byte| byte == 0)
+        .expect("DA text is terminated");
+    for byte in &mut tmp[..fields_len] {
+        if *byte == b';' as ::core::ffi::c_char {
+            *byte = 0;
         }
-        p[n as usize] =
-            strtoul(next, &raw mut endptr, 10 as ::core::ffi::c_int) as ::core::ffi::c_char;
+    }
+    for next in tmp[..=fields_len].split_inclusive(|&byte| byte == 0) {
+        p[n as usize] = strtoul(next.as_ptr(), &raw mut endptr, 10 as ::core::ffi::c_int)
+            as ::core::ffi::c_char;
         if *endptr as ::core::ffi::c_int != '\0' as i32 {
             p[n as usize] = 0 as ::core::ffi::c_char;
         }
@@ -2838,7 +2836,7 @@ unsafe fn tty_keys_device_attributes(
 unsafe fn tty_keys_sync(
     terminal_client_owner: &ClientRef,
     bytes: &[u8],
-    mut size: *mut size_t,
+    size: &mut size_t,
 ) -> ::core::ffi::c_int {
     let mut len: size_t = bytes.len();
     let mut buf: *const ::core::ffi::c_char = bytes.as_ptr().cast();
@@ -2909,7 +2907,7 @@ unsafe fn tty_keys_sync(
 unsafe fn tty_keys_device_attributes2(
     terminal_client_owner: &ClientRef,
     bytes: &[u8],
-    mut size: *mut size_t,
+    size: &mut size_t,
 ) -> ::core::ffi::c_int {
     let mut len: size_t = bytes.len();
     let mut buf: *const ::core::ffi::c_char = bytes.as_ptr().cast();
@@ -2951,8 +2949,6 @@ unsafe fn tty_keys_device_attributes2(
         0,
         0,
     ];
-    let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     *size = 0 as size_t;
     if terminal_client_owner.borrow_terminal().flags & TTY_HAVEDA2 != 0 {
         return -(1 as ::core::ffi::c_int);
@@ -2997,14 +2993,18 @@ unsafe fn tty_keys_device_attributes2(
     }
     tmp[i as usize] = '\0' as i32 as ::core::ffi::c_char;
     *size = (4 as u_int).wrapping_add(i) as size_t;
-    cp = &raw mut tmp as *mut ::core::ffi::c_char;
-    loop {
-        next = strsep(&raw mut cp, c";".as_ptr());
-        if next.is_null() {
-            break;
+    let fields_len = tmp
+        .iter()
+        .position(|&byte| byte == 0)
+        .expect("DA text is terminated");
+    for byte in &mut tmp[..fields_len] {
+        if *byte == b';' as ::core::ffi::c_char {
+            *byte = 0;
         }
-        p[n as usize] =
-            strtoul(next, &raw mut endptr, 10 as ::core::ffi::c_int) as ::core::ffi::c_char;
+    }
+    for next in tmp[..=fields_len].split_inclusive(|&byte| byte == 0) {
+        p[n as usize] = strtoul(next.as_ptr(), &raw mut endptr, 10 as ::core::ffi::c_int)
+            as ::core::ffi::c_char;
         if *endptr as ::core::ffi::c_int != '\0' as i32 {
             p[n as usize] = 0 as ::core::ffi::c_char;
         }
@@ -3044,7 +3044,7 @@ unsafe fn tty_keys_device_attributes2(
 unsafe fn tty_keys_extended_device_attributes(
     terminal_client_owner: &ClientRef,
     bytes: &[u8],
-    mut size: *mut size_t,
+    size: &mut size_t,
 ) -> ::core::ffi::c_int {
     let mut len: size_t = bytes.len();
     let mut buf: *const ::core::ffi::c_char = bytes.as_ptr().cast();
@@ -3183,7 +3183,7 @@ pub(super) unsafe fn tty_keys_colours(
     flags: &mut i32,
     diagnostic_name: Option<&std::ffi::CStr>,
     bytes: &[u8],
-    mut size: *mut size_t,
+    size: &mut size_t,
     fg: &mut i32,
     bg: &mut i32,
 ) -> ::core::ffi::c_int {
@@ -3303,7 +3303,7 @@ pub(super) unsafe fn tty_keys_colours(
 }
 unsafe fn tty_keys_palette(
     bytes: &[u8],
-    mut size: *mut size_t,
+    size: &mut size_t,
     reply: &mut Option<input_request_palette_data>,
 ) -> ::core::ffi::c_int {
     let mut len: size_t = bytes.len();

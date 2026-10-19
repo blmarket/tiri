@@ -13,7 +13,7 @@ use std::collections::btree_map;
 use std::ffi::{CStr, CString};
 
 fn command_parser(value: &CStr) -> cmd_parse_result {
-    unsafe { cmd_parse_from_string(value, std::ptr::null_mut()) }
+    unsafe { cmd_parse_from_string(value, None) }
 }
 
 fn parse_commands(

@@ -183,7 +183,7 @@ unsafe fn cmd_select_window_exec(
         cmdq_insert_hook(
             s.as_ref(),
             item_handle,
-            &mut current.current_snapshot(),
+            Some(&current.current_snapshot()),
             |out| out.write_all(b"after-select-window"),
         );
     } else {
@@ -216,7 +216,7 @@ unsafe fn cmd_select_window_exec(
         cmdq_insert_hook(
             s.as_ref(),
             item_handle,
-            &mut current.current_snapshot(),
+            Some(&current.current_snapshot()),
             |out| out.write_all(b"after-select-window"),
         );
     }

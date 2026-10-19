@@ -52,7 +52,6 @@ use crate::window::{
     winlink_stack_push, winlink_stack_remove, winlinks_minmax, winlinks_next,
 };
 use crate::window_pane::WindowPane as _;
-use libc::strcmp;
 use size::recalculate_size_state;
 use size::status_update_cache;
 use sort::sort_get_sessions;
@@ -171,7 +170,7 @@ fn session_set_cwd(s: &mut session, cwd: Option<CString>) {
 fn session_replace_name(s: &mut session, name: CString) -> CString {
     std::mem::replace(&mut s.name, name)
 }
-unsafe fn session_find_by_id_str(s: &CStr) -> Option<SessionRef> {
+fn session_find_by_id_str(s: &CStr) -> Option<SessionRef> {
     let mut id: u_int = 0;
     if s.to_bytes().first() != Some(&b'$') {
         return None;
@@ -277,7 +276,7 @@ unsafe fn session_destroy(s_owner: &SessionRef, mut notify: ::core::ffi::c_int, 
     while !crate::window::winlinks_is_empty(&(*s).windows) {
         let wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
         events_fire_winlink(c"window-unlinked", wl.clone());
-        winlink_remove(&raw mut (*s).windows, wl.clone());
+        winlink_remove(&(*s).windows, wl.clone());
     }
     session_set_cwd(&mut *s, None);
     session_remove_ref(owner, c"session_destroy");
@@ -359,7 +358,7 @@ unsafe fn session_attach(
     let s = s_owner.get();
 
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    wl = winlink_add(&raw mut (*s).windows, idx);
+    wl = winlink_add(&(*s).windows, idx);
     if !wl.is_alive() {
         return Err(std::ffi::CString::new(format!("index in use: {idx}"))
             .expect("numeric diagnostic contains no NUL"));
@@ -390,7 +389,7 @@ unsafe fn session_detach(
     wl.get_mut_unchecked().flags &= !WINLINK_ALERTFLAGS;
     events_fire_winlink(c"window-unlinked", wl.clone());
     winlink_stack_remove(&raw mut (*s).lastw, wl.clone());
-    winlink_remove(&raw mut (*s).windows, wl.clone());
+    winlink_remove(&(*s).windows, wl.clone());
     session_group_synchronize_from(s_owner);
     0 as ::core::ffi::c_int
 }
@@ -671,7 +670,7 @@ unsafe fn session_renumber_windows(s_owner: &SessionRef) {
     new_curw_idx = 0 as ::core::ffi::c_int;
     wl = winlinks_minmax(&old_wins, RB_NEGINF);
     while wl.is_alive() {
-        wl_new = winlink_add(&raw mut (*s).windows, new_idx);
+        wl_new = winlink_add(&(*s).windows, new_idx);
         wl_new.get_mut_unchecked().session = std::rc::Rc::downgrade(s_owner);
         winlink_set_window(
             (wl_new).clone(),
@@ -715,7 +714,7 @@ unsafe fn session_renumber_windows(s_owner: &SessionRef) {
         wl1 = winlinks_next(wl.get_unchecked());
         1 as ::core::ffi::c_int != 0
     } {
-        winlink_remove(&raw mut old_wins, wl.clone());
+        winlink_remove(&old_wins, wl.clone());
         wl = wl1;
     }
 }
@@ -772,10 +771,10 @@ mod session_index_tests {
         unsafe {
             let owner = session::new();
             let session = &mut *owner.get();
-            let link = winlink_add(&raw mut session.windows, 4);
+            let link = winlink_add(&session.windows, 4);
             session.set_curw(link.clone());
             assert_eq!(session.current_winlink(), link);
-            winlink_remove(&raw mut session.windows, link.clone());
+            winlink_remove(&session.windows, link.clone());
             assert!(!session.current_winlink().is_alive());
             assert!(!session.curw.is_empty());
             session.set_curw(refbox::Weak::new());

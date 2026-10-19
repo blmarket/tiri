@@ -23,7 +23,6 @@ use crate::shared::command::{cmd_find_state, cmdq_item};
 use crate::shared::command::{cmd_parse_input, cmd_parse_result};
 use crate::shared::command::{CMD_PARSE_PARSEONLY, CMD_PARSE_QUIET};
 use crate::shared::errno::ErrorText;
-use crate::shared::key::key_event;
 use crate::shared::session::SessionRef;
 use crate::window::Window as _;
 use crate::window_copy::{window_copy_add, window_view_mode};
@@ -147,7 +146,7 @@ pub unsafe fn load_cfg(
     pi.line = 1 as u_int;
     pi.set_item(None);
     pi.c = c.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-    pr = cmd_parse_from_file(&bytes, &raw mut pi);
+    pr = cmd_parse_from_file(&bytes, Some(&mut pi));
     if pr.status as ::core::ffi::c_uint
         == CMD_PARSE_ERROR as ::core::ffi::c_int as ::core::ffi::c_uint
     {
@@ -159,11 +158,7 @@ pub unsafe fn load_cfg(
         return 0 as ::core::ffi::c_int;
     }
 
-    state = cmdq_new_state(
-        ::core::ptr::null_mut::<cmd_find_state>(),
-        ::core::ptr::null_mut::<key_event>(),
-        0 as ::core::ffi::c_int,
-    );
+    state = cmdq_new_state(None, None, 0 as ::core::ffi::c_int);
 
     cmdq_add_format(
         &state,
@@ -186,7 +181,7 @@ pub unsafe fn load_cfg_from_buffer(
     path: &CStr,
     c: Option<&ClientRef>,
     item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
-    mut current: *mut cmd_find_state,
+    current: Option<&cmd_find_state>,
     mut flags: ::core::ffi::c_int,
     mut new_item: Option<&mut std::rc::Weak<std::cell::RefCell<cmdq_item>>>,
 ) -> ::core::ffi::c_int {
@@ -216,7 +211,7 @@ pub unsafe fn load_cfg_from_buffer(
     pi.line = 1 as u_int;
     pi.set_item(item_handle);
     pi.c = c.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-    pr = cmd_parse_from_buffer(buf, &raw mut pi);
+    pr = cmd_parse_from_buffer(buf, Some(&mut pi));
     if pr.status as ::core::ffi::c_uint
         == CMD_PARSE_ERROR as ::core::ffi::c_int as ::core::ffi::c_uint
     {
@@ -230,11 +225,7 @@ pub unsafe fn load_cfg_from_buffer(
     let state = if let Some(item) = item_handle {
         cmdq_copy_state(&cmdq_get_state_owned(&item.borrow()), current)
     } else {
-        cmdq_new_state(
-            ::core::ptr::null_mut::<cmd_find_state>(),
-            ::core::ptr::null_mut::<key_event>(),
-            0 as ::core::ffi::c_int,
-        )
+        cmdq_new_state(None, None, 0 as ::core::ffi::c_int)
     };
     cmdq_add_format(
         &state,

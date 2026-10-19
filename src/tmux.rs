@@ -427,12 +427,7 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
         }
         match opt {
             50 => {
-                tty_parse_features(
-                    c"256",
-                    c":,",
-                    &raw mut feat,
-                    ::core::ptr::null_mut::<::core::ffi::c_int>(),
-                );
+                tty_parse_features(c"256", c":,", &mut feat, None);
             }
             99 => {
                 shell_command = Some(CStr::from_ptr(BSDoptarg).to_owned());
@@ -476,12 +471,7 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
                 path = Some(CStr::from_ptr(BSDoptarg).to_owned());
             }
             84 => {
-                tty_parse_features(
-                    CStr::from_ptr(BSDoptarg),
-                    c":,",
-                    &raw mut feat,
-                    ::core::ptr::null_mut::<::core::ffi::c_int>(),
-                );
+                tty_parse_features(CStr::from_ptr(BSDoptarg), c":,", &mut feat, None);
             }
             117 => {
                 flags |= CLIENT_UTF8 as uint64_t;

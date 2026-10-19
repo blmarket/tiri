@@ -31,7 +31,6 @@ use crate::shared::command::CMD_FIND_CANFAIL;
 use crate::shared::command::*;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::shared::event::*;
-use crate::shared::format::format_tree;
 use crate::shared::job::{job, JobCompletion, JOB_NOWAIT, JOB_SHOWSTDERR};
 use crate::shared::pane::window_pane;
 use crate::shared::session::SessionRef;
@@ -162,7 +161,6 @@ unsafe fn cmd_run_shell_exec(
     let pane_owner = (*target).pane_handle();
     let mut delay: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut d: ::core::ffi::c_double = 0.;
     let mut tv = Duration::ZERO;
     let mut end: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
@@ -203,7 +201,7 @@ unsafe fn cmd_run_shell_exec(
             args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
         if !cmd.is_null() {
             let mut ft_owner = format_create_from_target(item_handle);
-            ft = &raw mut *ft_owner;
+            let ft = &mut *ft_owner;
             i = 1 as u_int;
             while i < args_count(&*args) {
                 let key = format_message_with(|out| write!(out, "{}", i));

@@ -68,7 +68,7 @@ use crate::tmux::{get_timer, getversion};
 use crate::tty::tty_set_selection;
 use crate::window::Window as _;
 use crate::window::WindowPane;
-use libc::{strncmp, strtol, time};
+use libc::{strncmp, strtol};
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 use std::time::Duration;
@@ -209,14 +209,14 @@ mod input_buffer_ownership_tests {
     fn colon_parameter_survives_later_numeric_error_until_next_split() {
         unsafe {
             let mut ictx_owner = Box::new(input_ctx::new());
-            let ictx = &raw mut *ictx_owner;
+            let ictx = &mut *ictx_owner;
             let invalid = b"38:5:196;invalid\0";
-            (&mut (*ictx).param_buf)[..invalid.len()].copy_from_slice(invalid);
-            (*ictx).param_len = invalid.len() - 1;
+            (&mut ictx.param_buf)[..invalid.len()].copy_from_slice(invalid);
+            ictx.param_len = invalid.len() - 1;
             assert_eq!(input_split(ictx), -1);
-            assert_eq!((*ictx).param_list_len, 1);
+            assert_eq!(ictx.param_list_len, 1);
             assert_eq!(
-                match &(*ictx).param_list[0] {
+                match &ictx.param_list[0] {
                     input_param::String(value) => value.as_c_str(),
                     _ => panic!("expected string parameter"),
                 },
@@ -224,18 +224,18 @@ mod input_buffer_ownership_tests {
             );
 
             let next = b"48:5:25\0";
-            (&mut (*ictx).param_buf)[..next.len()].copy_from_slice(next);
-            (*ictx).param_len = next.len() - 1;
+            (&mut ictx.param_buf)[..next.len()].copy_from_slice(next);
+            ictx.param_len = next.len() - 1;
             assert_eq!(input_split(ictx), 0);
-            assert_eq!((*ictx).param_list_len, 1);
+            assert_eq!(ictx.param_list_len, 1);
             assert_eq!(
-                match &(*ictx).param_list[0] {
+                match &ictx.param_list[0] {
                     input_param::String(value) => value.as_c_str(),
                     _ => panic!("expected string parameter"),
                 },
                 c"48:5:25"
             );
-            input_clear_params(&mut *ictx);
+            input_clear_params(ictx);
             drop(ictx_owner);
         }
     }
@@ -244,23 +244,23 @@ mod input_buffer_ownership_tests {
     fn parser_buffer_grows_preserves_bytes_and_shrinks() {
         unsafe {
             let mut ictx_owner = Box::new(input_ctx::new());
-            let ictx = &raw mut *ictx_owner;
+            let ictx = &mut *ictx_owner;
             let mut s = screen::empty();
             s.grid = Some(crate::grid::grid_create(1, 1, 0));
             let mut ctx = screen_write_start(&mut s);
-            assert_eq!((*ictx).input_buf.len(), INPUT_BUF_START as usize);
+            assert_eq!(ictx.input_buf.len(), INPUT_BUF_START as usize);
             for ch in (0..96).map(|i| if i == 17 { 0 } else { b'a' + (i % 26) }) {
-                (*ictx).ch = ch as i32;
+                ictx.ch = ch as i32;
                 input_input(ictx, &mut ctx);
             }
             screen_write_stop(ctx);
-            assert_eq!((*ictx).input_len, 96);
-            assert_eq!((&(*ictx).input_buf)[17], 0);
-            assert_eq!((&(*ictx).input_buf)[96], 0);
-            assert_eq!((*ictx).input_buf.len(), 128);
+            assert_eq!(ictx.input_len, 96);
+            assert_eq!((&ictx.input_buf)[17], 0);
+            assert_eq!((&ictx.input_buf)[96], 0);
+            assert_eq!(ictx.input_buf.len(), 128);
 
-            (*ictx).shrink_buffer();
-            assert_eq!((*ictx).input_buf.len(), INPUT_BUF_START as usize);
+            ictx.shrink_buffer();
+            assert_eq!(ictx.input_buf.len(), INPUT_BUF_START as usize);
             drop(ictx_owner);
         }
     }
@@ -299,9 +299,9 @@ mod input_request_ownership_tests {
     fn reply_without_pending_request_does_not_queue() {
         unsafe {
             let mut ictx_owner = Box::new(input_ctx::new());
-            let ictx = &raw mut *ictx_owner;
+            let ictx = &mut *ictx_owner;
             input_reply(ictx, 1, |out| out.write_all(b"\x1b[0n"));
-            assert!(input_ctx_requests(ictx).is_empty());
+            assert!(ictx.requests.is_empty());
             drop(ictx_owner);
         }
     }
@@ -1978,7 +1978,7 @@ static input_state_consume_st_table: [input_transition; 8] = {
     ]
 };
 static mut input_buffer_size: size_t = INPUT_BUF_DEFAULT_SIZE as size_t;
-unsafe fn input_stop_utf8(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx) {
+unsafe fn input_stop_utf8(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) {
     static mut rc: utf8_data = {
         utf8_data {
             data: *b"\xEF\xBF\xBD\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
@@ -1987,11 +1987,11 @@ unsafe fn input_stop_utf8(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx)
             width: 1 as u_char,
         }
     };
-    if (*ictx).utf8started != 0 {
-        (*ictx).cell.cell.data = utf8_copy(&rc);
-        screen_write_collect_add(sctx, &(*ictx).cell.cell);
+    if ictx.utf8started != 0 {
+        ictx.cell.cell.data = utf8_copy(&rc);
+        screen_write_collect_add(sctx, &ictx.cell.cell);
     }
-    (*ictx).utf8started = 0 as ::core::ffi::c_int;
+    ictx.utf8started = 0 as ::core::ffi::c_int;
 }
 unsafe fn input_fire_pane_title_changed(
     wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
@@ -2021,47 +2021,51 @@ unsafe fn input_fire_pane_title_changed(
     });
     events_fire(c"pane-title-changed", ep);
 }
-unsafe fn input_ground_timer_callback(ictx: *mut input_ctx) {
+unsafe fn input_ground_timer_callback(ictx: &mut input_ctx) {
     log_debug(format_args!(
         "{}: {} expired",
         "input_ground_timer_callback",
-        crate::log::log_bytes((*ictx).state.name.to_bytes())
+        crate::log::log_bytes(ictx.state.name.to_bytes())
     ));
     input_reset(ictx, 0 as ::core::ffi::c_int);
 }
-unsafe fn input_start_ground_timer(mut ictx: *mut input_ctx) {
+unsafe fn input_start_ground_timer(ictx: &mut input_ctx) {
     let tv = Duration::from_secs(5);
-    drop((*ictx).ground_timer.take());
-    (*ictx).ground_timer = Some(
-        Timer::new(tv, move || unsafe { input_ground_timer_callback(ictx) }).expect("arm timer"),
+    drop(ictx.ground_timer.take());
+    let ictx_ptr: *mut input_ctx = ictx;
+    ictx.ground_timer = Some(
+        Timer::new(tv, move || unsafe {
+            input_ground_timer_callback(&mut *ictx_ptr)
+        })
+        .expect("arm timer"),
     );
 }
-unsafe fn input_reset_cell(mut ictx: *mut input_ctx) {
-    (*ictx).cell.cell = grid_default_cell;
-    (*ictx).cell.set = 0 as ::core::ffi::c_int;
-    (*ictx).cell.g1set = 0 as ::core::ffi::c_int;
-    (*ictx).cell.g0set = (*ictx).cell.g1set;
-    (*ictx).old_cell = (*ictx).cell;
-    (*ictx).old_cx = 0 as u_int;
-    (*ictx).old_cy = 0 as u_int;
+unsafe fn input_reset_cell(ictx: &mut input_ctx) {
+    ictx.cell.cell = grid_default_cell;
+    ictx.cell.set = 0 as ::core::ffi::c_int;
+    ictx.cell.g1set = 0 as ::core::ffi::c_int;
+    ictx.cell.g0set = ictx.cell.g1set;
+    ictx.old_cell = ictx.cell;
+    ictx.old_cx = 0 as u_int;
+    ictx.old_cy = 0 as u_int;
 }
-unsafe fn input_save_state(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx) {
-    (*ictx).old_cell = (*ictx).cell;
-    (*ictx).old_cx = sctx.screen.cx;
-    (*ictx).old_cy = sctx.screen.cy;
-    (*ictx).old_mode = sctx.screen.mode;
+unsafe fn input_save_state(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) {
+    ictx.old_cell = ictx.cell;
+    ictx.old_cx = sctx.screen.cx;
+    ictx.old_cy = sctx.screen.cy;
+    ictx.old_mode = sctx.screen.mode;
 }
-unsafe fn input_restore_state(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx) {
-    (*ictx).cell = (*ictx).old_cell;
-    if (*ictx).old_mode & MODE_ORIGIN != 0 {
+unsafe fn input_restore_state(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) {
+    ictx.cell = ictx.old_cell;
+    if ictx.old_mode & MODE_ORIGIN != 0 {
         screen_write_mode_set(sctx, MODE_ORIGIN);
     } else {
         screen_write_mode_clear(sctx, MODE_ORIGIN);
     }
     screen_write_cursormove(
         sctx,
-        (*ictx).old_cx as ::core::ffi::c_int,
-        (*ictx).old_cy as ::core::ffi::c_int,
+        ictx.old_cx as ::core::ffi::c_int,
+        ictx.old_cy as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
 }
@@ -2072,11 +2076,11 @@ pub unsafe fn input_init(
     c: Option<&ClientRef>,
 ) -> Box<input_ctx> {
     let mut owner = Box::new(input_ctx::new());
-    let ictx = &raw mut *owner;
-    (*ictx).wp = wp.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-    (*ictx).event = crate::reactor::StreamHandle::from_ptr(bev);
-    (*ictx).palette = palette;
-    (*ictx).c = c.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
+    let ictx = &mut *owner;
+    ictx.wp = wp.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
+    ictx.event = crate::reactor::StreamHandle::from_ptr(bev);
+    ictx.palette = palette;
+    ictx.c = c.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     input_reset(ictx, 0 as ::core::ffi::c_int);
     owner
 }
@@ -2100,8 +2104,8 @@ impl Drop for input_ctx {
         }
     }
 }
-pub unsafe fn input_reset(mut ictx: *mut input_ctx, mut clear: ::core::ffi::c_int) {
-    let input_pane_owner = (*ictx).wp.upgrade();
+pub unsafe fn input_reset(ictx: &mut input_ctx, mut clear: ::core::ffi::c_int) {
+    let input_pane_owner = ictx.wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
@@ -2120,44 +2124,44 @@ pub unsafe fn input_reset(mut ictx: *mut input_ctx, mut clear: ::core::ffi::c_in
         screen_write_stop(ctx);
     }
     input_clear(ictx);
-    (*ictx).state = &input_state_ground;
-    (*ictx).flags = 0 as ::core::ffi::c_int;
+    ictx.state = &input_state_ground;
+    ictx.flags = 0 as ::core::ffi::c_int;
 }
 pub fn input_pending(ictx: &mut input_ctx) -> &mut SegmentedBuf {
     &mut ictx.since_ground
 }
 unsafe fn input_set_state(
-    mut ictx: *mut input_ctx,
+    ictx: &mut input_ctx,
     sctx: &mut screen_write_ctx,
     state: &'static input_state,
 ) {
-    if (*ictx).state.exit.is_some() {
-        (*ictx).state.exit.expect("non-null function pointer")(ictx, sctx);
+    if ictx.state.exit.is_some() {
+        ictx.state.exit.expect("non-null function pointer")(ictx, sctx);
     }
-    (*ictx).state = state;
-    if (*ictx).state.enter.is_some() {
-        (*ictx).state.enter.expect("non-null function pointer")(ictx);
+    ictx.state = state;
+    if ictx.state.enter.is_some() {
+        ictx.state.enter.expect("non-null function pointer")(ictx);
     }
 }
-unsafe fn input_parse(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, buf: &[u8]) {
+unsafe fn input_parse(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, buf: &[u8]) {
     let mut state: Option<&'static input_state> = None;
     let mut transition: Option<&'static input_transition> = None;
     for &byte in buf {
-        (*ictx).ch = byte as ::core::ffi::c_int;
-        if !state.is_some_and(|state| std::ptr::eq((*ictx).state, state))
-            || !transition.is_some_and(|itr| (*ictx).ch >= itr.first && (*ictx).ch <= itr.last)
+        ictx.ch = byte as ::core::ffi::c_int;
+        if !state.is_some_and(|state| std::ptr::eq(ictx.state, state))
+            || !transition.is_some_and(|itr| ictx.ch >= itr.first && ictx.ch <= itr.last)
         {
-            transition = (*ictx)
+            transition = ictx
                 .state
                 .transitions
                 .iter()
                 .take_while(|itr| itr.first != -1 && itr.last != -1)
-                .find(|itr| (*ictx).ch >= itr.first && (*ictx).ch <= itr.last);
+                .find(|itr| ictx.ch >= itr.first && ictx.ch <= itr.last);
         }
         let Some(itr) = transition else {
             fatalx(|out| out.write_all(b"no transition from state"));
         };
-        state = Some((*ictx).state);
+        state = Some(ictx.state);
         if !itr
             .handler
             .is_some_and(|handler| std::ptr::fn_addr_eq(handler, input_print as input_handler_cb))
@@ -2173,8 +2177,8 @@ unsafe fn input_parse(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, buf
         if let Some(state) = itr.state {
             input_set_state(ictx, sctx, state);
         }
-        if !std::ptr::eq((*ictx).state, &input_state_ground) {
-            evbuffer_add(&mut (*ictx).since_ground, &[(*ictx).ch as u8]);
+        if !std::ptr::eq(ictx.state, &input_state_ground) {
+            evbuffer_add(&mut ictx.since_ground, &[ictx.ch as u8]);
         }
     }
 }
@@ -2190,7 +2194,7 @@ pub(super) unsafe fn input_parse_pane(wp_owner: &std::rc::Rc<std::cell::UnsafeCe
         })
         .unwrap_or_default();
     if !data.is_empty() {
-        (*wp).last_output_time = time(::core::ptr::null_mut::<time_t>());
+        (*wp).last_output_time = crate::shared::time::unix_seconds(std::time::SystemTime::now());
     }
     input_parse_buffer(wp_owner, &data);
     window_pane_update_used_data(wp_owner, &raw mut (*wp).offset, data.len());
@@ -2200,13 +2204,10 @@ pub(super) unsafe fn input_parse_buffer(
     buf: &[u8],
 ) {
     let mut wp = wp_owner.get();
-    let mut ictx: *mut input_ctx = (*wp)
-        .ictx
-        .as_deref_mut()
-        .map_or(std::ptr::null_mut(), |ictx| ictx);
     if buf.is_empty() {
         return;
     }
+    let ictx = (*wp).ictx.as_deref_mut().expect("pane input context");
     (*wp).output_generation = (*wp).output_generation.wrapping_add(1);
     WindowRef::clone(((*wp).window_handle().as_ref()).expect("live window")).update_activity();
     if !(*wp).flags & PANE_ACTIVITY != 0 {
@@ -2232,7 +2233,7 @@ pub(super) unsafe fn input_parse_buffer(
         "{}: %{} {}, {} bytes: {}",
         "input_parse_buffer",
         { (*wp).id },
-        crate::log::log_bytes((*ictx).state.name.to_bytes()),
+        crate::log::log_bytes(ictx.state.name.to_bytes()),
         buf.len(),
         log_cstr_n(buf)
     ));
@@ -2240,7 +2241,7 @@ pub(super) unsafe fn input_parse_buffer(
     screen_write_stop(ctx);
 }
 pub unsafe fn input_parse_screen(
-    ictx: *mut input_ctx,
+    ictx: &mut input_ctx,
     s: &mut screen,
     cb: screen_write_init_ctx_cb,
     buf: &[u8],
@@ -2264,16 +2265,16 @@ fn input_split_fields(buf: &mut [u8], delim: u8) -> impl Iterator<Item = &CStr> 
         .split_inclusive(|&byte| byte == 0)
         .map(|field| CStr::from_bytes_with_nul(field).expect("field is terminated"))
 }
-unsafe fn input_split(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
+unsafe fn input_split(ictx: &mut input_ctx) -> ::core::ffi::c_int {
     let mut ip: *mut input_param = ::core::ptr::null_mut::<input_param>();
     let mut i: u_int = 0;
-    input_clear_params(&mut *ictx);
-    (*ictx).param_list_len = 0 as u_int;
-    if (*ictx).param_len == 0 as size_t {
+    input_clear_params(ictx);
+    ictx.param_list_len = 0 as u_int;
+    if ictx.param_len == 0 as size_t {
         return 0 as ::core::ffi::c_int;
     }
-    ip = (&raw mut (*ictx).param_list as *mut input_param).offset(0 as ::core::ffi::c_int as isize);
-    let mut params = (*ictx).param_buf;
+    ip = (&raw mut ictx.param_list as *mut input_param).offset(0 as ::core::ffi::c_int as isize);
+    let mut params = ictx.param_buf;
     for out in input_split_fields(&mut params, b';') {
         if out.is_empty() {
             *ip = input_param::Missing;
@@ -2285,10 +2286,9 @@ unsafe fn input_split(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             };
             *ip = input_param::Number(number as ::core::ffi::c_int);
         }
-        (*ictx).param_list_len = (*ictx).param_list_len.wrapping_add(1);
-        ip = (&raw mut (*ictx).param_list as *mut input_param)
-            .offset((*ictx).param_list_len as isize);
-        if (*ictx).param_list_len as usize
+        ictx.param_list_len = ictx.param_list_len.wrapping_add(1);
+        ip = (&raw mut ictx.param_list as *mut input_param).offset(ictx.param_list_len as isize);
+        if ictx.param_list_len as usize
             == (::core::mem::size_of::<[input_param; 24]>() as usize)
                 .wrapping_div(::core::mem::size_of::<input_param>() as usize)
         {
@@ -2296,8 +2296,8 @@ unsafe fn input_split(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
         }
     }
     i = 0 as u_int;
-    while i < (*ictx).param_list_len {
-        ip = (&raw mut (*ictx).param_list as *mut input_param).offset(i as isize);
+    while i < ictx.param_list_len {
+        ip = (&raw mut ictx.param_list as *mut input_param).offset(i as isize);
         match &*ip {
             input_param::Missing => log_debug(format_args!("parameter {}: missing", (i) as u32)),
             input_param::String(value) => {
@@ -2318,17 +2318,17 @@ unsafe fn input_split(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     0 as ::core::ffi::c_int
 }
 unsafe fn input_get(
-    mut ictx: *mut input_ctx,
+    ictx: &mut input_ctx,
     mut validx: u_int,
     mut minval: ::core::ffi::c_int,
     mut defval: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let mut ip: *mut input_param = ::core::ptr::null_mut::<input_param>();
     let mut retval: ::core::ffi::c_int = 0;
-    if validx >= (*ictx).param_list_len {
+    if validx >= ictx.param_list_len {
         return defval;
     }
-    ip = (&raw mut (*ictx).param_list as *mut input_param).offset(validx as isize);
+    ip = (&raw mut ictx.param_list as *mut input_param).offset(validx as isize);
     retval = match &*ip {
         input_param::Missing => return defval,
         input_param::String(_) => return -1,
@@ -2339,125 +2339,118 @@ unsafe fn input_get(
     }
     retval
 }
-unsafe fn input_send_reply(mut ictx: *mut input_ctx, reply: &CStr) {
-    if (*ictx).event.is_alive() {
+unsafe fn input_send_reply(ictx: &mut input_ctx, reply: &CStr) {
+    if ictx.event.is_alive() {
         log_debug(format_args!("{}: {}", "input_send_reply", log_cstr(reply)));
-        let _ = (*ictx)
+        let _ = ictx
             .event
             .with_ptr(|event| unsafe { bufferevent_write(event, reply.to_bytes()) });
     }
 }
 unsafe fn input_reply(
-    mut ictx: *mut input_ctx,
+    ictx: &mut input_ctx,
     mut add: ::core::ffi::c_int,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let mut ir: *mut input_request = ::core::ptr::null_mut::<input_request>();
     let reply = format_message_with(write);
-    if add != 0 && !input_ctx_requests(ictx).is_empty() {
+    if add != 0 && !ictx.requests.is_empty() {
         ir = input_make_request(ictx, INPUT_REQUEST_QUEUE);
         (*ir).data = Some(reply);
     } else {
         input_send_reply(ictx, &reply);
     };
 }
-unsafe fn input_clear(mut ictx: *mut input_ctx) {
-    drop((*ictx).ground_timer.take());
-    *(&raw mut (*ictx).interm_buf as *mut u_char) = '\0' as i32 as u_char;
-    (*ictx).interm_len = 0 as size_t;
-    *(&raw mut (*ictx).param_buf as *mut u_char) = '\0' as i32 as u_char;
-    (*ictx).param_len = 0 as size_t;
-    (&mut (*ictx).input_buf)[0] = 0;
-    (*ictx).input_len = 0 as size_t;
-    (*ictx).input_end = INPUT_END_ST;
-    (*ictx).flags &= !INPUT_DISCARD;
+unsafe fn input_clear(ictx: &mut input_ctx) {
+    drop(ictx.ground_timer.take());
+    *(&raw mut ictx.interm_buf as *mut u_char) = '\0' as i32 as u_char;
+    ictx.interm_len = 0 as size_t;
+    *(&raw mut ictx.param_buf as *mut u_char) = '\0' as i32 as u_char;
+    ictx.param_len = 0 as size_t;
+    (&mut ictx.input_buf)[0] = 0;
+    ictx.input_len = 0 as size_t;
+    ictx.input_end = INPUT_END_ST;
+    ictx.flags &= !INPUT_DISCARD;
 }
-unsafe fn input_ground(mut ictx: *mut input_ctx) {
-    drop((*ictx).ground_timer.take());
-    evbuffer_drain(
-        &mut (*ictx).since_ground,
-        evbuffer_get_length(&(*ictx).since_ground),
-    );
-    (*ictx).shrink_buffer();
+unsafe fn input_ground(ictx: &mut input_ctx) {
+    drop(ictx.ground_timer.take());
+    let len = evbuffer_get_length(&ictx.since_ground);
+    evbuffer_drain(&mut ictx.since_ground, len);
+    ictx.shrink_buffer();
 }
-unsafe fn input_print(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx) -> ::core::ffi::c_int {
+unsafe fn input_print(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) -> ::core::ffi::c_int {
     let mut set: ::core::ffi::c_int = 0;
     input_stop_utf8(ictx, sctx);
-    set = if (*ictx).cell.set == 0 as ::core::ffi::c_int {
-        (*ictx).cell.g0set
+    set = if ictx.cell.set == 0 as ::core::ffi::c_int {
+        ictx.cell.g0set
     } else {
-        (*ictx).cell.g1set
+        ictx.cell.g1set
     };
     if set == 1 as ::core::ffi::c_int {
-        (*ictx).cell.cell.attr =
-            ((*ictx).cell.cell.attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
+        ictx.cell.cell.attr =
+            (ictx.cell.cell.attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
     } else {
-        (*ictx).cell.cell.attr =
-            ((*ictx).cell.cell.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
+        ictx.cell.cell.attr =
+            (ictx.cell.cell.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
     }
-    utf8_set(&mut (*ictx).cell.cell.data, (*ictx).ch as u_char);
-    screen_write_collect_add(sctx, &(*ictx).cell.cell);
-    (*ictx).last = utf8_copy(&(*ictx).cell.cell.data);
-    (*ictx).flags |= INPUT_LAST;
-    (*ictx).cell.cell.attr =
-        ((*ictx).cell.cell.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
+    utf8_set(&mut ictx.cell.cell.data, ictx.ch as u_char);
+    screen_write_collect_add(sctx, &ictx.cell.cell);
+    ictx.last = utf8_copy(&ictx.cell.cell.data);
+    ictx.flags |= INPUT_LAST;
+    ictx.cell.cell.attr =
+        (ictx.cell.cell.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
     0 as ::core::ffi::c_int
 }
 unsafe fn input_intermediate(
-    mut ictx: *mut input_ctx,
+    ictx: &mut input_ctx,
     _sctx: &mut screen_write_ctx,
 ) -> ::core::ffi::c_int {
-    if (*ictx).interm_len == (::core::mem::size_of::<[u_char; 4]>() as usize).wrapping_sub(1_usize)
-    {
-        (*ictx).flags |= INPUT_DISCARD;
+    if ictx.interm_len == (::core::mem::size_of::<[u_char; 4]>() as usize).wrapping_sub(1_usize) {
+        ictx.flags |= INPUT_DISCARD;
     } else {
-        let fresh15 = (*ictx).interm_len;
-        (*ictx).interm_len = (*ictx).interm_len.wrapping_add(1);
-        (*ictx).interm_buf[fresh15] = (*ictx).ch as u_char;
-        (*ictx).interm_buf[(*ictx).interm_len] = '\0' as i32 as u_char;
+        let fresh15 = ictx.interm_len;
+        ictx.interm_len = ictx.interm_len.wrapping_add(1);
+        ictx.interm_buf[fresh15] = ictx.ch as u_char;
+        ictx.interm_buf[ictx.interm_len] = '\0' as i32 as u_char;
     }
     0 as ::core::ffi::c_int
 }
 unsafe fn input_parameter(
-    mut ictx: *mut input_ctx,
+    ictx: &mut input_ctx,
     _sctx: &mut screen_write_ctx,
 ) -> ::core::ffi::c_int {
-    if (*ictx).param_len == (::core::mem::size_of::<[u_char; 64]>() as usize).wrapping_sub(1_usize)
-    {
-        (*ictx).flags |= INPUT_DISCARD;
+    if ictx.param_len == (::core::mem::size_of::<[u_char; 64]>() as usize).wrapping_sub(1_usize) {
+        ictx.flags |= INPUT_DISCARD;
     } else {
-        let fresh14 = (*ictx).param_len;
-        (*ictx).param_len = (*ictx).param_len.wrapping_add(1);
-        (*ictx).param_buf[fresh14] = (*ictx).ch as u_char;
-        (*ictx).param_buf[(*ictx).param_len] = '\0' as i32 as u_char;
+        let fresh14 = ictx.param_len;
+        ictx.param_len = ictx.param_len.wrapping_add(1);
+        ictx.param_buf[fresh14] = ictx.ch as u_char;
+        ictx.param_buf[ictx.param_len] = '\0' as i32 as u_char;
     }
     0 as ::core::ffi::c_int
 }
-unsafe fn input_input(
-    mut ictx: *mut input_ctx,
-    _sctx: &mut screen_write_ctx,
-) -> ::core::ffi::c_int {
+unsafe fn input_input(ictx: &mut input_ctx, _sctx: &mut screen_write_ctx) -> ::core::ffi::c_int {
     let mut available: size_t = 0;
-    available = (*ictx).input_buf.len();
-    while (*ictx).input_len.wrapping_add(1 as size_t) >= available {
+    available = ictx.input_buf.len();
+    while ictx.input_len.wrapping_add(1 as size_t) >= available {
         available = available.wrapping_mul(2 as size_t);
         if available > input_buffer_size {
-            (*ictx).flags |= INPUT_DISCARD;
+            ictx.flags |= INPUT_DISCARD;
             return 0 as ::core::ffi::c_int;
         }
-        (*ictx).input_buf.resize(available, 0);
+        ictx.input_buf.resize(available, 0);
     }
-    let fresh1 = (*ictx).input_len;
-    (*ictx).input_len = (*ictx).input_len.wrapping_add(1);
-    (&mut (*ictx).input_buf)[fresh1] = (*ictx).ch as u_char;
-    (&mut (*ictx).input_buf)[(*ictx).input_len] = '\0' as i32 as u_char;
+    let fresh1 = ictx.input_len;
+    ictx.input_len = ictx.input_len.wrapping_add(1);
+    (&mut ictx.input_buf)[fresh1] = ictx.ch as u_char;
+    (&mut ictx.input_buf)[ictx.input_len] = '\0' as i32 as u_char;
     0 as ::core::ffi::c_int
 }
 unsafe fn input_c0_dispatch(
-    mut ictx: *mut input_ctx,
+    ictx: &mut input_ctx,
     sctx: &mut screen_write_ctx,
 ) -> ::core::ffi::c_int {
-    let input_pane_owner = (*ictx).wp.upgrade();
+    let input_pane_owner = ictx.wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
@@ -2498,9 +2491,9 @@ unsafe fn input_c0_dispatch(
     log_debug(format_args!(
         "{}: '{}'",
         "input_c0_dispatch",
-        log_byte(((*ictx).ch) as u8)
+        log_byte((ictx.ch) as u8)
     ));
-    match (*ictx).ch {
+    match ictx.ch {
         0 => {}
         7 => {
             if !wp.is_null() {
@@ -2554,7 +2547,7 @@ unsafe fn input_c0_dispatch(
             }
         }
         10..=12 => {
-            screen_write_linefeed(sctx, 0 as ::core::ffi::c_int, (*ictx).cell.cell.bg as u_int);
+            screen_write_linefeed(sctx, 0 as ::core::ffi::c_int, ictx.cell.cell.bg as u_int);
             if sctx.screen.mode & MODE_CRLF != 0 {
                 screen_write_carriagereturn(sctx);
             }
@@ -2563,46 +2556,46 @@ unsafe fn input_c0_dispatch(
             screen_write_carriagereturn(sctx);
         }
         14 => {
-            (*ictx).cell.set = 1 as ::core::ffi::c_int;
+            ictx.cell.set = 1 as ::core::ffi::c_int;
         }
         15 => {
-            (*ictx).cell.set = 0 as ::core::ffi::c_int;
+            ictx.cell.set = 0 as ::core::ffi::c_int;
         }
         _ => {
             log_debug(format_args!(
                 "{}: unknown '{}'",
                 "input_c0_dispatch",
-                log_byte(((*ictx).ch) as u8)
+                log_byte((ictx.ch) as u8)
             ));
         }
     }
-    (*ictx).flags &= !INPUT_LAST;
+    ictx.flags &= !INPUT_LAST;
     0 as ::core::ffi::c_int
 }
 unsafe fn input_esc_dispatch(
-    mut ictx: *mut input_ctx,
+    ictx: &mut input_ctx,
     sctx: &mut screen_write_ctx,
 ) -> ::core::ffi::c_int {
-    if (*ictx).flags & INPUT_DISCARD != 0 {
+    if ictx.flags & INPUT_DISCARD != 0 {
         return 0 as ::core::ffi::c_int;
     }
     log_debug(format_args!(
         "{}: '{}', {}",
         "input_esc_dispatch",
-        log_byte(((*ictx).ch) as u8),
-        log_bytes(&(*ictx).interm_buf)
+        log_byte((ictx.ch) as u8),
+        log_bytes(&ictx.interm_buf)
     ));
-    let Some(entry) = input_table_find(&input_esc_table, &*ictx) else {
+    let Some(entry) = input_table_find(&input_esc_table, ictx) else {
         log_debug(format_args!(
             "{}: unknown '{}'",
             "input_esc_dispatch",
-            log_byte(((*ictx).ch) as u8)
+            log_byte((ictx.ch) as u8)
         ));
         return 0 as ::core::ffi::c_int;
     };
     match entry.type_0 {
         9 => {
-            let _ = (*ictx)
+            let _ = ictx
                 .palette
                 .with_mut(|palette| colour_palette_clear(Some(palette)));
             input_reset_cell(ictx);
@@ -2610,11 +2603,11 @@ unsafe fn input_esc_dispatch(
             screen_write_fullredraw(sctx);
         }
         6 => {
-            screen_write_linefeed(sctx, 0 as ::core::ffi::c_int, (*ictx).cell.cell.bg as u_int);
+            screen_write_linefeed(sctx, 0 as ::core::ffi::c_int, ictx.cell.cell.bg as u_int);
         }
         7 => {
             screen_write_carriagereturn(sctx);
-            screen_write_linefeed(sctx, 0 as ::core::ffi::c_int, (*ictx).cell.cell.bg as u_int);
+            screen_write_linefeed(sctx, 0 as ::core::ffi::c_int, ictx.cell.cell.bg as u_int);
         }
         5 => {
             if sctx.screen.cx < sctx.screen.grid().sx {
@@ -2623,7 +2616,7 @@ unsafe fn input_esc_dispatch(
             }
         }
         8 => {
-            screen_write_reverseindex(sctx, (*ictx).cell.cell.bg as u_int);
+            screen_write_reverseindex(sctx, ictx.cell.cell.bg as u_int);
         }
         1 => {
             screen_write_mode_set(sctx, MODE_KKEYPAD);
@@ -2641,27 +2634,27 @@ unsafe fn input_esc_dispatch(
             screen_write_alignmenttest(sctx);
         }
         11 => {
-            (*ictx).cell.g0set = 1 as ::core::ffi::c_int;
+            ictx.cell.g0set = 1 as ::core::ffi::c_int;
         }
         10 => {
-            (*ictx).cell.g0set = 0 as ::core::ffi::c_int;
+            ictx.cell.g0set = 0 as ::core::ffi::c_int;
         }
         13 => {
-            (*ictx).cell.g1set = 1 as ::core::ffi::c_int;
+            ictx.cell.g1set = 1 as ::core::ffi::c_int;
         }
         12 => {
-            (*ictx).cell.g1set = 0 as ::core::ffi::c_int;
+            ictx.cell.g1set = 0 as ::core::ffi::c_int;
         }
         _ => {}
     }
-    (*ictx).flags &= !INPUT_LAST;
+    ictx.flags &= !INPUT_LAST;
     0 as ::core::ffi::c_int
 }
 unsafe fn input_csi_dispatch(
-    mut ictx: *mut input_ctx,
+    ictx: &mut input_ctx,
     sctx: &mut screen_write_ctx,
 ) -> ::core::ffi::c_int {
-    let input_pane_owner = (*ictx).wp.upgrade();
+    let input_pane_owner = ictx.wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
@@ -2672,25 +2665,25 @@ unsafe fn input_csi_dispatch(
     let mut set: ::core::ffi::c_int = 0;
     let mut p: ::core::ffi::c_int = 0;
     let mut cx: u_int = 0;
-    let mut bg: u_int = (*ictx).cell.cell.bg as u_int;
-    if (*ictx).flags & INPUT_DISCARD != 0 {
+    let mut bg: u_int = ictx.cell.cell.bg as u_int;
+    if ictx.flags & INPUT_DISCARD != 0 {
         return 0 as ::core::ffi::c_int;
     }
     log_debug(format_args!(
         "{}: '{}' \"{}\" \"{}\"",
         "input_csi_dispatch",
-        log_byte(((*ictx).ch) as u8),
-        log_bytes(&(*ictx).interm_buf),
-        log_bytes(&(*ictx).param_buf)
+        log_byte((ictx.ch) as u8),
+        log_bytes(&ictx.interm_buf),
+        log_bytes(&ictx.param_buf)
     ));
     if input_split(ictx) != 0 as ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
-    let Some(entry) = input_table_find(&input_csi_table, &*ictx) else {
+    let Some(entry) = input_table_find(&input_csi_table, ictx) else {
         log_debug(format_args!(
             "{}: unknown '{}'",
             "input_csi_dispatch",
-            log_byte(((*ictx).ch) as u8)
+            log_byte((ictx.ch) as u8)
         ));
         return 0 as ::core::ffi::c_int;
     };
@@ -2876,7 +2869,7 @@ unsafe fn input_csi_dispatch(
                     log_debug(format_args!(
                         "{}: unknown '{}'",
                         "input_csi_dispatch",
-                        log_byte(((*ictx).ch) as u8)
+                        log_byte((ictx.ch) as u8)
                     ));
                 }
             }
@@ -2898,7 +2891,7 @@ unsafe fn input_csi_dispatch(
                     log_debug(format_args!(
                         "{}: unknown '{}'",
                         "input_csi_dispatch",
-                        log_byte(((*ictx).ch) as u8)
+                        log_byte((ictx.ch) as u8)
                     ));
                 }
             }
@@ -3166,7 +3159,7 @@ unsafe fn input_csi_dispatch(
                     log_debug(format_args!(
                         "{}: unknown '{}'",
                         "input_csi_dispatch",
-                        log_byte(((*ictx).ch) as u8)
+                        log_byte((ictx.ch) as u8)
                     ));
                 }
             }
@@ -3203,7 +3196,7 @@ unsafe fn input_csi_dispatch(
                     log_debug(format_args!(
                         "{}: unknown '{}'",
                         "input_csi_dispatch",
-                        log_byte(((*ictx).ch) as u8)
+                        log_byte((ictx.ch) as u8)
                     ));
                 }
             }
@@ -3229,7 +3222,7 @@ unsafe fn input_csi_dispatch(
                     log_debug(format_args!(
                         "{}: unknown '{}'",
                         "input_csi_dispatch",
-                        log_byte(((*ictx).ch) as u8)
+                        log_byte((ictx.ch) as u8)
                     ));
                 }
             }
@@ -3284,25 +3277,25 @@ unsafe fn input_csi_dispatch(
                 if n > m {
                     n = m;
                 }
-                if !(!(*ictx).flags & INPUT_LAST != 0) {
-                    set = if (*ictx).cell.set == 0 as ::core::ffi::c_int {
-                        (*ictx).cell.g0set
+                if !(!ictx.flags & INPUT_LAST != 0) {
+                    set = if ictx.cell.set == 0 as ::core::ffi::c_int {
+                        ictx.cell.g0set
                     } else {
-                        (*ictx).cell.g1set
+                        ictx.cell.g1set
                     };
                     if set == 1 as ::core::ffi::c_int {
-                        (*ictx).cell.cell.attr = ((*ictx).cell.cell.attr as ::core::ffi::c_int
+                        ictx.cell.cell.attr = (ictx.cell.cell.attr as ::core::ffi::c_int
                             | GRID_ATTR_CHARSET)
                             as u_short;
                     } else {
-                        (*ictx).cell.cell.attr = ((*ictx).cell.cell.attr as ::core::ffi::c_int
+                        ictx.cell.cell.attr = (ictx.cell.cell.attr as ::core::ffi::c_int
                             & !GRID_ATTR_CHARSET)
                             as u_short;
                     }
-                    (*ictx).cell.cell.data = utf8_copy(&(*ictx).last);
+                    ictx.cell.cell.data = utf8_copy(&ictx.last);
                     i = 0 as ::core::ffi::c_int;
                     while i < n {
-                        screen_write_collect_add(sctx, &(*ictx).cell.cell);
+                        screen_write_collect_add(sctx, &ictx.cell.cell);
                         i += 1;
                     }
                 }
@@ -3375,7 +3368,7 @@ unsafe fn input_csi_dispatch(
                     log_debug(format_args!(
                         "{}: unknown '{}'",
                         "input_csi_dispatch",
-                        log_byte(((*ictx).ch) as u8)
+                        log_byte((ictx.ch) as u8)
                     ));
                 }
             }
@@ -3427,13 +3420,13 @@ unsafe fn input_csi_dispatch(
         }
         _ => {}
     }
-    (*ictx).flags &= !INPUT_LAST;
+    ictx.flags &= !INPUT_LAST;
     0 as ::core::ffi::c_int
 }
-unsafe fn input_csi_dispatch_rm(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx) {
+unsafe fn input_csi_dispatch_rm(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) {
     let mut i: u_int = 0;
     i = 0 as u_int;
-    while i < (*ictx).param_list_len {
+    while i < ictx.param_list_len {
         match input_get(ictx, i, 0 as ::core::ffi::c_int, -(1 as ::core::ffi::c_int)) {
             -1 => {}
             4 => {
@@ -3446,22 +3439,22 @@ unsafe fn input_csi_dispatch_rm(mut ictx: *mut input_ctx, sctx: &mut screen_writ
                 log_debug(format_args!(
                     "{}: unknown '{}'",
                     "input_csi_dispatch_rm",
-                    log_byte(((*ictx).ch) as u8)
+                    log_byte((ictx.ch) as u8)
                 ));
             }
         }
         i = i.wrapping_add(1);
     }
 }
-unsafe fn input_csi_dispatch_rm_private(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx) {
-    let input_pane_owner = (*ictx).wp.upgrade();
+unsafe fn input_csi_dispatch_rm_private(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) {
+    let input_pane_owner = ictx.wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
-    let mut gc: *mut grid_cell = &raw mut (*ictx).cell.cell;
+    let mut gc: *mut grid_cell = &raw mut ictx.cell.cell;
     let mut i: u_int = 0;
     i = 0 as u_int;
-    while i < (*ictx).param_list_len {
+    while i < ictx.param_list_len {
         match input_get(ictx, i, 0 as ::core::ffi::c_int, -(1 as ::core::ffi::c_int)) {
             -1 => {}
             1 => {
@@ -3529,17 +3522,17 @@ unsafe fn input_csi_dispatch_rm_private(mut ictx: *mut input_ctx, sctx: &mut scr
                 log_debug(format_args!(
                     "{}: unknown '{}'",
                     "input_csi_dispatch_rm_private",
-                    log_byte(((*ictx).ch) as u8)
+                    log_byte((ictx.ch) as u8)
                 ));
             }
         }
         i = i.wrapping_add(1);
     }
 }
-unsafe fn input_csi_dispatch_sm(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx) {
+unsafe fn input_csi_dispatch_sm(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) {
     let mut i: u_int = 0;
     i = 0 as u_int;
-    while i < (*ictx).param_list_len {
+    while i < ictx.param_list_len {
         match input_get(ictx, i, 0 as ::core::ffi::c_int, -(1 as ::core::ffi::c_int)) {
             -1 => {}
             4 => {
@@ -3552,22 +3545,22 @@ unsafe fn input_csi_dispatch_sm(mut ictx: *mut input_ctx, sctx: &mut screen_writ
                 log_debug(format_args!(
                     "{}: unknown '{}'",
                     "input_csi_dispatch_sm",
-                    log_byte(((*ictx).ch) as u8)
+                    log_byte((ictx.ch) as u8)
                 ));
             }
         }
         i = i.wrapping_add(1);
     }
 }
-unsafe fn input_csi_dispatch_sm_private(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx) {
-    let input_pane_owner = (*ictx).wp.upgrade();
+unsafe fn input_csi_dispatch_sm_private(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) {
+    let input_pane_owner = ictx.wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
-    let mut gc: *mut grid_cell = &raw mut (*ictx).cell.cell;
+    let mut gc: *mut grid_cell = &raw mut ictx.cell.cell;
     let mut i: u_int = 0;
     i = 0 as u_int;
-    while i < (*ictx).param_list_len {
+    while i < ictx.param_list_len {
         match input_get(ictx, i, 0 as ::core::ffi::c_int, -(1 as ::core::ffi::c_int)) {
             -1 => {}
             1 => {
@@ -3580,7 +3573,7 @@ unsafe fn input_csi_dispatch_sm_private(mut ictx: *mut input_ctx, sctx: &mut scr
                     0 as ::core::ffi::c_int,
                     1 as ::core::ffi::c_int,
                 );
-                screen_write_clearscreen(sctx, (*ictx).cell.cell.bg as u_int);
+                screen_write_clearscreen(sctx, ictx.cell.cell.bg as u_int);
             }
             6 => {
                 screen_write_mode_set(sctx, MODE_ORIGIN);
@@ -3647,7 +3640,7 @@ unsafe fn input_csi_dispatch_sm_private(mut ictx: *mut input_ctx, sctx: &mut scr
                 log_debug(format_args!(
                     "{}: unknown '{}'",
                     "input_csi_dispatch_sm_private",
-                    log_byte(((*ictx).ch) as u8)
+                    log_byte((ictx.ch) as u8)
                 ));
             }
         }
@@ -3655,8 +3648,8 @@ unsafe fn input_csi_dispatch_sm_private(mut ictx: *mut input_ctx, sctx: &mut scr
     }
 }
 fn input_csi_dispatch_sm_graphics() {}
-unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx) {
-    let input_pane_owner = (*ictx).wp.upgrade();
+unsafe fn input_csi_dispatch_winops(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) {
+    let input_pane_owner = ictx.wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
@@ -3795,7 +3788,7 @@ unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx, sctx: &mut screen_
                 log_debug(format_args!(
                     "{}: unknown '{}'",
                     "input_csi_dispatch_winops",
-                    log_byte(((*ictx).ch) as u8)
+                    log_byte((ictx.ch) as u8)
                 ));
                 current_block_25 = 980989089337379490;
             }
@@ -3819,11 +3812,11 @@ unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx, sctx: &mut screen_
     }
 }
 unsafe fn input_csi_dispatch_sgr_256_do(
-    mut ictx: *mut input_ctx,
+    ictx: &mut input_ctx,
     mut fgbg: ::core::ffi::c_int,
     mut c: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut gc: *mut grid_cell = &raw mut (*ictx).cell.cell;
+    let mut gc: *mut grid_cell = &raw mut ictx.cell.cell;
     if c == -(1 as ::core::ffi::c_int) || c > 255 as ::core::ffi::c_int {
         if fgbg == 38 as ::core::ffi::c_int {
             (*gc).fg = 8 as ::core::ffi::c_int;
@@ -3840,29 +3833,29 @@ unsafe fn input_csi_dispatch_sgr_256_do(
     1 as ::core::ffi::c_int
 }
 unsafe fn input_csi_dispatch_sgr_256(
-    mut ictx: *mut input_ctx,
+    ictx: &mut input_ctx,
     mut fgbg: ::core::ffi::c_int,
-    mut i: *mut u_int,
+    i: &mut u_int,
 ) {
     let mut c: ::core::ffi::c_int = 0;
     c = input_get(
         ictx,
-        (*i).wrapping_add(1 as u_int),
+        i.wrapping_add(1 as u_int),
         0 as ::core::ffi::c_int,
         -(1 as ::core::ffi::c_int),
     );
     if input_csi_dispatch_sgr_256_do(ictx, fgbg, c) != 0 {
-        *i = (*i).wrapping_add(1);
+        *i = i.wrapping_add(1);
     }
 }
 unsafe fn input_csi_dispatch_sgr_rgb_do(
-    mut ictx: *mut input_ctx,
+    ictx: &mut input_ctx,
     mut fgbg: ::core::ffi::c_int,
     mut r: ::core::ffi::c_int,
     mut g: ::core::ffi::c_int,
     mut b: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut gc: *mut grid_cell = &raw mut (*ictx).cell.cell;
+    let mut gc: *mut grid_cell = &raw mut ictx.cell.cell;
     if r == -(1 as ::core::ffi::c_int) || r > 255 as ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
@@ -3882,38 +3875,38 @@ unsafe fn input_csi_dispatch_sgr_rgb_do(
     1 as ::core::ffi::c_int
 }
 unsafe fn input_csi_dispatch_sgr_rgb(
-    mut ictx: *mut input_ctx,
+    ictx: &mut input_ctx,
     mut fgbg: ::core::ffi::c_int,
-    mut i: *mut u_int,
+    i: &mut u_int,
 ) {
     let mut r: ::core::ffi::c_int = 0;
     let mut g: ::core::ffi::c_int = 0;
     let mut b: ::core::ffi::c_int = 0;
     r = input_get(
         ictx,
-        (*i).wrapping_add(1 as u_int),
+        i.wrapping_add(1 as u_int),
         0 as ::core::ffi::c_int,
         -(1 as ::core::ffi::c_int),
     );
     g = input_get(
         ictx,
-        (*i).wrapping_add(2 as u_int),
+        i.wrapping_add(2 as u_int),
         0 as ::core::ffi::c_int,
         -(1 as ::core::ffi::c_int),
     );
     b = input_get(
         ictx,
-        (*i).wrapping_add(3 as u_int),
+        i.wrapping_add(3 as u_int),
         0 as ::core::ffi::c_int,
         -(1 as ::core::ffi::c_int),
     );
     if input_csi_dispatch_sgr_rgb_do(ictx, fgbg, r, g, b) != 0 {
-        *i = (*i).wrapping_add(3 as u_int);
+        *i = i.wrapping_add(3 as u_int);
     }
 }
-unsafe fn input_csi_dispatch_sgr_colon(mut ictx: *mut input_ctx, mut i: u_int) {
-    let mut gc: *mut grid_cell = &raw mut (*ictx).cell.cell;
-    let s = match &(*ictx).param_list[i as usize] {
+unsafe fn input_csi_dispatch_sgr_colon(ictx: &mut input_ctx, mut i: u_int) {
+    let mut gc: *mut grid_cell = &raw mut ictx.cell.cell;
+    let s = match &ictx.param_list[i as usize] {
         input_param::String(value) => value.as_c_str(),
         _ => panic!("SGR colon parser requires a string parameter"),
     };
@@ -4089,18 +4082,18 @@ mod sgr_colon_tests {
         assert_eq!(parse(b"38:5:196\0:2:1:2:3\0").fg, 196 | COLOUR_FLAG_256);
     }
 }
-unsafe fn input_csi_dispatch_sgr(mut ictx: *mut input_ctx) {
-    let mut gc: *mut grid_cell = &raw mut (*ictx).cell.cell;
+unsafe fn input_csi_dispatch_sgr(ictx: &mut input_ctx) {
+    let mut gc: *mut grid_cell = &raw mut ictx.cell.cell;
     let mut i: u_int = 0;
     let mut link: u_int = 0;
     let mut n: ::core::ffi::c_int = 0;
-    if (*ictx).param_list_len == 0 as u_int {
+    if ictx.param_list_len == 0 as u_int {
         *gc = grid_default_cell;
         return;
     }
     i = 0 as u_int;
-    while i < (*ictx).param_list_len {
-        if matches!(&(*ictx).param_list[i as usize], input_param::String(_)) {
+    while i < ictx.param_list_len {
+        if matches!(&ictx.param_list[i as usize], input_param::String(_)) {
             input_csi_dispatch_sgr_colon(ictx, i);
         } else {
             n = input_get(ictx, i, 0 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
@@ -4112,10 +4105,10 @@ unsafe fn input_csi_dispatch_sgr(mut ictx: *mut input_ctx) {
                     i = i.wrapping_add(1);
                     match input_get(ictx, i, 0 as ::core::ffi::c_int, -(1 as ::core::ffi::c_int)) {
                         2 => {
-                            input_csi_dispatch_sgr_rgb(ictx, n, &raw mut i);
+                            input_csi_dispatch_sgr_rgb(ictx, n, &mut i);
                         }
                         5 => {
-                            input_csi_dispatch_sgr_256(ictx, n, &raw mut i);
+                            input_csi_dispatch_sgr_256(ictx, n, &mut i);
                         }
                         _ => {}
                     }
@@ -4237,31 +4230,28 @@ unsafe fn input_csi_dispatch_sgr(mut ictx: *mut input_ctx) {
         i = i.wrapping_add(1);
     }
 }
-unsafe fn input_end_bel(
-    mut ictx: *mut input_ctx,
-    _sctx: &mut screen_write_ctx,
-) -> ::core::ffi::c_int {
+unsafe fn input_end_bel(ictx: &mut input_ctx, _sctx: &mut screen_write_ctx) -> ::core::ffi::c_int {
     log_debug(format_args!("{}", "input_end_bel"));
-    (*ictx).input_end = INPUT_END_BEL;
+    ictx.input_end = INPUT_END_BEL;
     0 as ::core::ffi::c_int
 }
-unsafe fn input_enter_dcs(mut ictx: *mut input_ctx) {
+unsafe fn input_enter_dcs(ictx: &mut input_ctx) {
     log_debug(format_args!("{}", "input_enter_dcs"));
     input_clear(ictx);
     input_start_ground_timer(ictx);
-    (*ictx).flags &= !INPUT_LAST;
+    ictx.flags &= !INPUT_LAST;
 }
 unsafe fn input_handle_decrqss(
-    mut ictx: *mut input_ctx,
+    ictx: &mut input_ctx,
     sctx: &mut screen_write_ctx,
 ) -> ::core::ffi::c_int {
-    let input_pane_owner = (*ictx).wp.upgrade();
+    let input_pane_owner = ictx.wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
     let mut wp: *mut window_pane = input_pane;
-    let mut buf: *mut u_char = (*ictx).input_buf.as_mut_ptr();
-    let mut len: size_t = (*ictx).input_len;
+    let mut buf: *mut u_char = ictx.input_buf.as_mut_ptr();
+    let mut len: size_t = ictx.input_len;
     let mut ps: ::core::ffi::c_int = 0;
     let mut opt_ps: ::core::ffi::c_int = 0;
     let mut blinking: ::core::ffi::c_int = 0;
@@ -4334,22 +4324,22 @@ unsafe fn input_handle_decrqss(
     }
 }
 unsafe fn input_dcs_dispatch(
-    mut ictx: *mut input_ctx,
+    ictx: &mut input_ctx,
     sctx: &mut screen_write_ctx,
 ) -> ::core::ffi::c_int {
-    let input_pane_owner = (*ictx).wp.upgrade();
+    let input_pane_owner = ictx.wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
     let mut wp: *mut window_pane = input_pane;
-    let mut buf: *mut u_char = (*ictx).input_buf.as_mut_ptr();
-    let mut len: size_t = (*ictx).input_len;
+    let mut buf: *mut u_char = ictx.input_buf.as_mut_ptr();
+    let mut len: size_t = ictx.input_len;
     let prefix: [::core::ffi::c_char; 6] =
         ::core::mem::transmute::<[u8; 6], [::core::ffi::c_char; 6]>(*b"tmux;\0");
     let prefixlen: u_int = (::core::mem::size_of::<[::core::ffi::c_char; 6]>() as usize)
         .wrapping_sub(1_usize) as u_int;
     let mut allow_passthrough: ::core::ffi::c_longlong = 0 as ::core::ffi::c_longlong;
-    if (*ictx).flags & INPUT_DISCARD != 0 {
+    if ictx.flags & INPUT_DISCARD != 0 {
         log_debug(format_args!(
             "{}: {} bytes (discard)",
             "input_dcs_dispatch",
@@ -4357,8 +4347,8 @@ unsafe fn input_dcs_dispatch(
         ));
         return 0 as ::core::ffi::c_int;
     }
-    if (*ictx).interm_len == 1 as size_t
-        && (*ictx).interm_buf[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int == '$' as i32
+    if ictx.interm_len == 1 as size_t
+        && ictx.interm_buf[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int == '$' as i32
         && len >= 1 as size_t
         && *buf.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == 'q' as i32
     {
@@ -4375,7 +4365,7 @@ unsafe fn input_dcs_dispatch(
     log_debug(format_args!(
         "{}: \"{}\"",
         "input_dcs_dispatch",
-        log_bytes(&(*ictx).input_buf)
+        log_bytes(&ictx.input_buf)
     ));
     if len >= prefixlen as size_t
         && strncmp(
@@ -4386,40 +4376,42 @@ unsafe fn input_dcs_dispatch(
     {
         screen_write_rawstring(
             sctx,
-            &(&(*ictx).input_buf)[prefixlen as usize..len],
+            &(&ictx.input_buf)[prefixlen as usize..len],
             (allow_passthrough == 2 as ::core::ffi::c_longlong) as ::core::ffi::c_int,
         );
     }
     0 as ::core::ffi::c_int
 }
-unsafe fn input_enter_osc(mut ictx: *mut input_ctx) {
+unsafe fn input_enter_osc(ictx: &mut input_ctx) {
     log_debug(format_args!("{}", "input_enter_osc"));
     input_clear(ictx);
     input_start_ground_timer(ictx);
-    (*ictx).flags &= !INPUT_LAST;
+    ictx.flags &= !INPUT_LAST;
 }
-unsafe fn input_exit_osc(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx) {
-    let input_pane_owner = (*ictx).wp.upgrade();
+unsafe fn input_exit_osc(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) {
+    let input_pane_owner = ictx.wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
     let mut wp: *mut window_pane = input_pane;
     let mut option: u_int = 0;
-    if (*ictx).flags & INPUT_DISCARD != 0 {
+    if ictx.flags & INPUT_DISCARD != 0 {
         return;
     }
-    let input =
-        CStr::from_bytes_until_nul(&(*ictx).input_buf).expect("input buffer has a terminator");
+    // The OSC payload stays borrowed from `input_buf` while handlers take the
+    // context; none of them touch `input_buf`, so view it through a raw place.
+    let input = CStr::from_bytes_until_nul(&*(&raw const ictx.input_buf))
+        .expect("input buffer has a terminator");
     let bytes = input.to_bytes();
-    if (*ictx).input_len < 1 as size_t || !bytes.first().is_some_and(u8::is_ascii_digit) {
+    if ictx.input_len < 1 as size_t || !bytes.first().is_some_and(u8::is_ascii_digit) {
         return;
     }
     log_debug(format_args!(
         "{}: \"{}\" (end {})",
         "input_exit_osc",
-        log_bytes(&(*ictx).input_buf),
+        log_bytes(&ictx.input_buf),
         log_cstr(
-            if (*ictx).input_end as ::core::ffi::c_uint
+            if ictx.input_end as ::core::ffi::c_uint
                 == INPUT_END_ST as ::core::ffi::c_int as ::core::ffi::c_uint
             {
                 c"ST"
@@ -4509,28 +4501,27 @@ unsafe fn input_exit_osc(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx) 
         }
     };
 }
-unsafe fn input_enter_apc(mut ictx: *mut input_ctx) {
+unsafe fn input_enter_apc(ictx: &mut input_ctx) {
     log_debug(format_args!("{}", "input_enter_apc"));
     input_clear(ictx);
     input_start_ground_timer(ictx);
-    (*ictx).flags &= !INPUT_LAST;
+    ictx.flags &= !INPUT_LAST;
 }
-unsafe fn input_exit_apc(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx) {
-    let input_pane_owner = (*ictx).wp.upgrade();
+unsafe fn input_exit_apc(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) {
+    let input_pane_owner = ictx.wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
     let mut wp: *mut window_pane = input_pane;
-    if (*ictx).flags & INPUT_DISCARD != 0 {
+    if ictx.flags & INPUT_DISCARD != 0 {
         return;
     }
     log_debug(format_args!(
         "{}: \"{}\"",
         "input_exit_apc",
-        log_bytes(&(*ictx).input_buf)
+        log_bytes(&ictx.input_buf)
     ));
-    let title =
-        CStr::from_bytes_until_nul(&(*ictx).input_buf).expect("input buffer has a terminator");
+    let title = CStr::from_bytes_until_nul(&ictx.input_buf).expect("input buffer has a terminator");
     if !wp.is_null()
         && options_get_number(&(*wp).borrow_options_mut(), c"allow-set-title") != 0
         && screen_set_title(&mut *sctx.screen, title, 1 as ::core::ffi::c_int) != 0
@@ -4540,17 +4531,17 @@ unsafe fn input_exit_apc(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx) 
         server_status_window(((*wp).window_handle().as_ref()).expect("live window"));
     }
 }
-unsafe fn input_enter_rename(mut ictx: *mut input_ctx) {
+unsafe fn input_enter_rename(ictx: &mut input_ctx) {
     log_debug(format_args!("{}", "input_enter_rename"));
     input_clear(ictx);
     input_start_ground_timer(ictx);
-    (*ictx).flags &= !INPUT_LAST;
+    ictx.flags &= !INPUT_LAST;
 }
-unsafe fn input_exit_rename(ictx: *mut input_ctx, _sctx: &mut screen_write_ctx) {
-    let Some(pane) = (*ictx).wp.upgrade() else {
+unsafe fn input_exit_rename(ictx: &mut input_ctx, _sctx: &mut screen_write_ctx) {
+    let Some(pane) = ictx.wp.upgrade() else {
         return;
     };
-    if (*ictx).flags & INPUT_DISCARD != 0 {
+    if ictx.flags & INPUT_DISCARD != 0 {
         return;
     }
     if options_get_number(&pane.borrow_options_mut(), c"allow-rename") == 0 {
@@ -4559,15 +4550,15 @@ unsafe fn input_exit_rename(ictx: *mut input_ctx, _sctx: &mut screen_write_ctx) 
     log_debug(format_args!(
         "{}: \"{}\"",
         "input_exit_rename",
-        log_bytes(&(*ictx).input_buf)
+        log_bytes(&ictx.input_buf)
     ));
-    let name = CStr::from_bytes_until_nul(&(*ictx).input_buf).expect("input buffer is terminated");
+    let name = CStr::from_bytes_until_nul(&ictx.input_buf).expect("input buffer is terminated");
     if !utf8_isvalid(name) {
         return;
     }
     let name = name.to_owned();
     let window = pane.window_observer().upgrade().expect("pane window");
-    if (*ictx).input_len == 0 {
+    if ictx.input_len == 0 {
         let scope = crate::options::OptionsScope::Window(WindowRef::downgrade(&window));
         scope
             .remove_or_default(c"automatic-rename", None)
@@ -4585,21 +4576,21 @@ unsafe fn input_exit_rename(ictx: *mut input_ctx, _sctx: &mut screen_write_ctx) 
     drop(window);
 }
 unsafe fn input_top_bit_set(
-    mut ictx: *mut input_ctx,
+    ictx: &mut input_ctx,
     sctx: &mut screen_write_ctx,
 ) -> ::core::ffi::c_int {
-    let mut ud: *mut utf8_data = &raw mut (*ictx).utf8data;
-    (*ictx).flags &= !INPUT_LAST;
-    if (*ictx).utf8started == 0 {
-        (*ictx).utf8started = 1 as ::core::ffi::c_int;
-        if utf8_open(&mut *ud, (*ictx).ch as u_char) as ::core::ffi::c_uint
+    let mut ud: *mut utf8_data = &raw mut ictx.utf8data;
+    ictx.flags &= !INPUT_LAST;
+    if ictx.utf8started == 0 {
+        ictx.utf8started = 1 as ::core::ffi::c_int;
+        if utf8_open(&mut *ud, ictx.ch as u_char) as ::core::ffi::c_uint
             != UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             input_stop_utf8(ictx, sctx);
         }
         return 0 as ::core::ffi::c_int;
     }
-    match utf8_append(&mut *ud, (*ictx).ch as u_char) as ::core::ffi::c_uint {
+    match utf8_append(&mut *ud, ictx.ch as u_char) as ::core::ffi::c_uint {
         0 => return 0 as ::core::ffi::c_int,
         2 => {
             input_stop_utf8(ictx, sctx);
@@ -4607,7 +4598,7 @@ unsafe fn input_top_bit_set(
         }
         _ => {}
     }
-    (*ictx).utf8started = 0 as ::core::ffi::c_int;
+    ictx.utf8started = 0 as ::core::ffi::c_int;
     log_debug(format_args!(
         "{} {} '{}' (width {})",
         "input_top_bit_set",
@@ -4618,14 +4609,14 @@ unsafe fn input_top_bit_set(
         ),
         ((*ud).width as ::core::ffi::c_int) as u8
     ));
-    (*ictx).cell.cell.data = utf8_copy(&*ud);
-    screen_write_collect_add(sctx, &(*ictx).cell.cell);
-    (*ictx).last = utf8_copy(&(*ictx).cell.cell.data);
-    (*ictx).flags |= INPUT_LAST;
+    ictx.cell.cell.data = utf8_copy(&*ud);
+    screen_write_collect_add(sctx, &ictx.cell.cell);
+    ictx.last = utf8_copy(&ictx.cell.cell.data);
+    ictx.flags |= INPUT_LAST;
     0 as ::core::ffi::c_int
 }
 unsafe fn input_osc_colour_reply(
-    mut ictx: *mut input_ctx,
+    ictx: &mut input_ctx,
     mut add: ::core::ffi::c_int,
     mut n: u_int,
     mut idx: ::core::ffi::c_int,
@@ -4682,7 +4673,7 @@ unsafe fn input_osc_colour_reply(
         });
     };
 }
-unsafe fn input_osc_4(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
+unsafe fn input_osc_4(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
     let mut s: Option<&CStr> = Some(p);
     let mut idx: ::core::ffi::c_long = 0;
     let mut c: ::core::ffi::c_int = 0;
@@ -4704,7 +4695,7 @@ unsafe fn input_osc_4(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p: 
                 None => (rest.to_bytes(), None),
             };
             if spec == b"?" {
-                c = (*ictx)
+                c = ictx
                     .palette
                     .with_mut(|palette| {
                         colour_palette_get(
@@ -4720,7 +4711,7 @@ unsafe fn input_osc_4(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p: 
                         4 as u_int,
                         idx as ::core::ffi::c_int,
                         c,
-                        (*ictx).input_end,
+                        ictx.input_end,
                     );
                     s = next;
                 } else {
@@ -4733,7 +4724,7 @@ unsafe fn input_osc_4(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p: 
                 if c == -(1 as ::core::ffi::c_int) {
                     s = next;
                 } else {
-                    if (*ictx)
+                    if ictx
                         .palette
                         .with_mut(|palette| {
                             colour_palette_set(Some(palette), idx as ::core::ffi::c_int, c)
@@ -4755,13 +4746,13 @@ unsafe fn input_osc_4(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p: 
         screen_write_fullredraw(sctx);
     }
 }
-unsafe fn input_osc_8(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
+unsafe fn input_osc_8(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
     let hl = sctx
         .screen
         .hyperlinks
         .as_ref()
         .expect("screen hyperlink table");
-    let mut gc: *mut grid_cell = &raw mut (*ictx).cell.cell;
+    let mut gc: *mut grid_cell = &raw mut ictx.cell.cell;
     let bytes = p.to_bytes();
     let mut start = 0;
     let mut id: Option<std::ffi::CString> = None;
@@ -4811,12 +4802,12 @@ unsafe fn input_osc_8(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p: 
     log_debug(format_args!("bad OSC 8 {}", log_cstr(p)));
 }
 unsafe fn input_set_progress_bar(
-    mut ictx: *mut input_ctx,
+    ictx: &mut input_ctx,
     sctx: &mut screen_write_ctx,
     mut state: progress_bar_state,
     mut p: ::core::ffi::c_int,
 ) {
-    let input_pane_owner = (*ictx).wp.upgrade();
+    let input_pane_owner = ictx.wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
@@ -4828,7 +4819,7 @@ unsafe fn input_set_progress_bar(
         server_status_window(((*input_pane).window_handle().as_ref()).expect("live window"));
     }
 }
-unsafe fn input_osc_9(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
+unsafe fn input_osc_9(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
     let pb = p.to_bytes_with_nul();
     let mut state: progress_bar_state = PROGRESS_BAR_HIDDEN;
     let mut progress: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -4862,8 +4853,8 @@ unsafe fn input_osc_9(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p: 
     }
     log_debug(format_args!("bad OSC 9;4 {}", log_cstr(p)));
 }
-unsafe fn input_osc_10(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
-    let input_pane_owner = (*ictx).wp.upgrade();
+unsafe fn input_osc_10(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
+    let input_pane_owner = ictx.wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
@@ -4906,7 +4897,7 @@ unsafe fn input_osc_10(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p:
             10 as u_int,
             0 as ::core::ffi::c_int,
             c,
-            (*ictx).input_end,
+            ictx.input_end,
         );
         return;
     }
@@ -4915,15 +4906,15 @@ unsafe fn input_osc_10(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p:
         log_debug(format_args!("bad OSC 10: {}", log_cstr(p)));
         return;
     }
-    if (*ictx).palette.with_mut(|palette| palette.fg = c).is_some() {
+    if ictx.palette.with_mut(|palette| palette.fg = c).is_some() {
         if !wp.is_null() {
             (*wp).flags |= PANE_STYLECHANGED;
         }
         screen_write_fullredraw(sctx);
     }
 }
-unsafe fn input_osc_110(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
-    let input_pane_owner = (*ictx).wp.upgrade();
+unsafe fn input_osc_110(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
+    let input_pane_owner = ictx.wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
@@ -4931,7 +4922,7 @@ unsafe fn input_osc_110(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p
     if !p.is_empty() {
         return;
     }
-    if (*ictx)
+    if ictx
         .palette
         .with_mut(|palette| palette.fg = 8 as ::core::ffi::c_int)
         .is_some()
@@ -4942,8 +4933,8 @@ unsafe fn input_osc_110(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p
         screen_write_fullredraw(sctx);
     }
 }
-unsafe fn input_osc_11(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
-    let input_pane_owner = (*ictx).wp.upgrade();
+unsafe fn input_osc_11(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
+    let input_pane_owner = ictx.wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
@@ -4960,7 +4951,7 @@ unsafe fn input_osc_11(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p:
             11 as u_int,
             0 as ::core::ffi::c_int,
             c,
-            (*ictx).input_end,
+            ictx.input_end,
         );
         return;
     }
@@ -4969,15 +4960,15 @@ unsafe fn input_osc_11(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p:
         log_debug(format_args!("bad OSC 11: {}", log_cstr(p)));
         return;
     }
-    if (*ictx).palette.with_mut(|palette| palette.bg = c).is_some() {
+    if ictx.palette.with_mut(|palette| palette.bg = c).is_some() {
         if !wp.is_null() {
             (*wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
         }
         screen_write_fullredraw(sctx);
     }
 }
-unsafe fn input_osc_111(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
-    let input_pane_owner = (*ictx).wp.upgrade();
+unsafe fn input_osc_111(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
+    let input_pane_owner = ictx.wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
@@ -4985,7 +4976,7 @@ unsafe fn input_osc_111(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p
     if !p.is_empty() {
         return;
     }
-    if (*ictx)
+    if ictx
         .palette
         .with_mut(|palette| palette.bg = 8 as ::core::ffi::c_int)
         .is_some()
@@ -4996,8 +4987,8 @@ unsafe fn input_osc_111(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p
         screen_write_fullredraw(sctx);
     }
 }
-unsafe fn input_osc_12(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
-    let input_pane_owner = (*ictx).wp.upgrade();
+unsafe fn input_osc_12(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
+    let input_pane_owner = ictx.wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
@@ -5015,7 +5006,7 @@ unsafe fn input_osc_12(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p:
                 12 as u_int,
                 0 as ::core::ffi::c_int,
                 c,
-                (*ictx).input_end,
+                ictx.input_end,
             );
         }
         return;
@@ -5027,12 +5018,12 @@ unsafe fn input_osc_12(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p:
     }
     screen_set_cursor_colour(&mut *sctx.screen, c);
 }
-unsafe fn input_osc_112(sctx: &mut screen_write_ctx, p: &CStr) {
+fn input_osc_112(sctx: &mut screen_write_ctx, p: &CStr) {
     if p.is_empty() {
         screen_set_cursor_colour(&mut *sctx.screen, -(1 as ::core::ffi::c_int));
     }
 }
-unsafe fn input_osc_133_exit_status(p: &CStr) -> ::core::ffi::c_int {
+fn input_osc_133_exit_status(p: &CStr) -> ::core::ffi::c_int {
     let bytes = p.to_bytes();
     if bytes.get(1) != Some(&b';') || bytes.get(2).is_none_or(|&byte| byte == b'=') {
         return 0 as ::core::ffi::c_int;
@@ -5083,7 +5074,7 @@ mod osc_133_exit_status_tests {
             (b"D;\xff\0", 255),
         ] {
             let input = std::ffi::CStr::from_bytes_until_nul(input).unwrap();
-            let actual = unsafe { input_osc_133_exit_status(input) };
+            let actual = input_osc_133_exit_status(input);
             assert_eq!(actual, expected, "input {input:?}");
         }
     }
@@ -5139,7 +5130,7 @@ unsafe fn input_fire_command_event(
     }
     if tstart != 0 as time_t {
         if (*wp).flags & PANE_CMDRUNNING != 0 {
-            end = time(::core::ptr::null_mut::<time_t>());
+            end = crate::shared::time::unix_seconds(std::time::SystemTime::now());
         } else {
             end = tend;
         }
@@ -5151,8 +5142,8 @@ unsafe fn input_fire_command_event(
     }
     events_fire(name, ep);
 }
-unsafe fn input_osc_133(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
-    let input_pane_owner = (*ictx).wp.upgrade();
+unsafe fn input_osc_133(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
+    let input_pane_owner = ictx.wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
@@ -5170,7 +5161,8 @@ unsafe fn input_osc_133(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p
                 gl.flags = (gl.flags as ::core::ffi::c_int | GRID_LINE_START_PROMPT) as u_short;
             }
             if !wp.is_null() {
-                (*wp).last_prompt_time = time(::core::ptr::null_mut::<time_t>());
+                (*wp).last_prompt_time =
+                    crate::shared::time::unix_seconds(std::time::SystemTime::now());
                 events_fire_pane(
                     c"pane-shell-prompt",
                     std::rc::Rc::clone(input_pane_owner.as_ref().expect("live pane")),
@@ -5208,7 +5200,8 @@ unsafe fn input_osc_133(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p
                 gl.osc133_data.out_start_col = sctx.screen.cx as u_short;
             }
             if !wp.is_null() {
-                (*wp).cmd_start_time = time(::core::ptr::null_mut::<time_t>());
+                (*wp).cmd_start_time =
+                    crate::shared::time::unix_seconds(std::time::SystemTime::now());
                 (*wp).cmd_end_time = 0 as time_t;
                 (*wp).flags |= PANE_CMDRUNNING;
                 (*wp).cmd_status = -(1 as ::core::ffi::c_int);
@@ -5221,7 +5214,8 @@ unsafe fn input_osc_133(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p
         68 => {
             status = input_osc_133_exit_status(p);
             if !wp.is_null() {
-                (*wp).cmd_end_time = time(::core::ptr::null_mut::<time_t>());
+                (*wp).cmd_end_time =
+                    crate::shared::time::unix_seconds(std::time::SystemTime::now());
                 (*wp).flags &= !PANE_CMDRUNNING;
                 (*wp).cmd_status = status;
                 input_fire_command_event(
@@ -5239,7 +5233,7 @@ unsafe fn input_osc_133(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p
         _ => {}
     };
 }
-unsafe fn input_osc_52_reply(mut ictx: *mut input_ctx, mut clip: ::core::ffi::c_char) {
+unsafe fn input_osc_52_reply(ictx: &mut input_ctx, mut clip: ::core::ffi::c_char) {
     let mut state: ::core::ffi::c_int = 0;
     state = OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"get-clipboard"))
         as ::core::ffi::c_int;
@@ -5252,27 +5246,27 @@ unsafe fn input_osc_52_reply(mut ictx: *mut input_ctx, mut clip: ::core::ffi::c_
         };
         let buffer = pb.borrow();
         let buf = paste_buffer_data(&buffer).unwrap_or_default();
-        if (*ictx).input_end as ::core::ffi::c_uint
+        if ictx.input_end as ::core::ffi::c_uint
             == INPUT_END_BEL as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            let _ = (*ictx).event.with_ptr(|event| unsafe {
-                input_reply_clipboard(event, buf.as_ptr().cast(), buf.len(), c"\x07", clip)
-            });
+            let _ = ictx
+                .event
+                .with_ptr(|event| unsafe { input_reply_clipboard(event, buf, c"\x07", clip) });
         } else {
-            let _ = (*ictx).event.with_ptr(|event| unsafe {
-                input_reply_clipboard(event, buf.as_ptr().cast(), buf.len(), c"\x1B\\", clip)
-            });
+            let _ = ictx
+                .event
+                .with_ptr(|event| unsafe { input_reply_clipboard(event, buf, c"\x1B\\", clip) });
         }
         return;
     }
     input_add_request(
         ictx,
         INPUT_REQUEST_CLIPBOARD,
-        (*ictx).input_end as ::core::ffi::c_int,
+        ictx.input_end as ::core::ffi::c_int,
     );
 }
 unsafe fn input_osc_52_parse(
-    mut ictx: *mut input_ctx,
+    ictx: &mut input_ctx,
     p: &CStr,
     clip: &mut [u8; 13],
 ) -> Option<Vec<u8>> {
@@ -5323,8 +5317,8 @@ unsafe fn input_osc_52_parse(
     out.truncate(outlen as usize);
     Some(out)
 }
-unsafe fn input_osc_52(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
-    let input_pane_owner = (*ictx).wp.upgrade();
+unsafe fn input_osc_52(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
+    let input_pane_owner = ictx.wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
@@ -5335,7 +5329,7 @@ unsafe fn input_osc_52(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p:
     };
     let clip = std::ffi::CStr::from_bytes_until_nul(&clip).expect("terminated clipboard selectors");
     if wp.is_null() {
-        let Some(client) = (*ictx).c.upgrade() else {
+        let Some(client) = ictx.c.upgrade() else {
             return;
         };
         tty_set_selection(&client, clip, &out);
@@ -5357,12 +5351,12 @@ unsafe fn input_osc_52(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p:
         paste_add_owned(None, out.into_boxed_slice());
     };
 }
-unsafe fn input_osc_104(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
+unsafe fn input_osc_104(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
     let mut idx: ::core::ffi::c_long = 0;
     let mut bad: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut redraw: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if p.is_empty() {
-        let _ = (*ictx)
+        let _ = ictx
             .palette
             .with_mut(|palette| colour_palette_clear(Some(palette)));
         screen_write_fullredraw(sctx);
@@ -5380,7 +5374,7 @@ unsafe fn input_osc_104(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p
             bad = 1 as ::core::ffi::c_int;
             break;
         } else {
-            if (*ictx)
+            if ictx
                 .palette
                 .with_mut(|palette| {
                     colour_palette_set(
@@ -5408,14 +5402,14 @@ unsafe fn input_osc_104(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p
 }
 pub unsafe fn input_reply_clipboard(
     mut bev: *mut bufferevent,
-    mut buf: *const ::core::ffi::c_char,
-    mut len: size_t,
+    buf: &[u8],
     end: &CStr,
     mut clip: ::core::ffi::c_char,
 ) {
     let mut out = Vec::<u8>::new();
     let mut outlen: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if !buf.is_null() && len != 0 as size_t {
+    if !buf.is_empty() {
+        let len = buf.len();
         if len
             >= (INT_MAX as size_t)
                 .wrapping_mul(3 as size_t)
@@ -5428,12 +5422,7 @@ pub unsafe fn input_reply_clipboard(
             .wrapping_mul(len.wrapping_add(2 as size_t).wrapping_div(3 as size_t))
             .wrapping_add(1 as size_t) as ::core::ffi::c_int;
         out.resize(outlen as usize, 0);
-        outlen = b64_ntop(
-            buf as *const ::core::ffi::c_uchar,
-            len,
-            out.as_mut_ptr().cast(),
-            outlen as size_t,
-        );
+        outlen = b64_ntop(buf.as_ptr(), len, out.as_mut_ptr().cast(), outlen as size_t);
         if outlen == -(1 as ::core::ffi::c_int) {
             return;
         }
@@ -5471,7 +5460,7 @@ unsafe fn input_request_timer_callback(ictx: *mut input_ctx) {
                 == INPUT_REQUEST_QUEUE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
                 input_send_reply(
-                    (*ir).ictx,
+                    &mut *(*ir).ictx,
                     (*ir)
                         .data
                         .as_deref()
@@ -5482,18 +5471,22 @@ unsafe fn input_request_timer_callback(ictx: *mut input_ctx) {
         }
     }
     if !(*ictx).requests.is_empty() {
-        input_start_request_timer(ictx);
+        input_start_request_timer(&mut *ictx);
     }
 }
-unsafe fn input_start_request_timer(mut ictx: *mut input_ctx) {
+unsafe fn input_start_request_timer(ictx: &mut input_ctx) {
     let tv = Duration::from_micros(100000);
-    drop((*ictx).request_timer.take());
-    (*ictx).request_timer = Some(
-        Timer::new(tv, move || unsafe { input_request_timer_callback(ictx) }).expect("arm timer"),
+    drop(ictx.request_timer.take());
+    let ictx_ptr: *mut input_ctx = ictx;
+    ictx.request_timer = Some(
+        Timer::new(tv, move || unsafe {
+            input_request_timer_callback(ictx_ptr)
+        })
+        .expect("arm timer"),
     );
 }
 unsafe fn input_make_request(
-    mut ictx: *mut input_ctx,
+    ictx: &mut input_ctx,
     mut type_0: input_request_type,
 ) -> *mut input_request {
     let mut owner = input_request::new();
@@ -5501,10 +5494,10 @@ unsafe fn input_make_request(
     (*ir).type_0 = type_0;
     (*ir).ictx = ictx;
     (*ir).t = get_timer();
-    if (*ictx).requests.is_empty() {
+    if ictx.requests.is_empty() {
         input_start_request_timer(ictx);
     }
-    input_ctx_requests(ictx).push_back(owner);
+    ictx.requests.push_back(owner);
     ir
 }
 pub(crate) unsafe fn input_free_request(mut ir: *mut input_request) {
@@ -5520,11 +5513,11 @@ pub(crate) unsafe fn input_free_request(mut ir: *mut input_request) {
     drop(requests.remove(index).unwrap());
 }
 unsafe fn input_add_request(
-    mut ictx: *mut input_ctx,
+    ictx: &mut input_ctx,
     mut type_0: input_request_type,
     mut idx: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let input_pane_owner = (*ictx).wp.upgrade();
+    let input_pane_owner = ictx.wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
@@ -5581,7 +5574,7 @@ unsafe fn input_add_request(
     ir = input_make_request(ictx, type_0);
     (*ir).c = std::rc::Rc::downgrade(c.as_ref().expect("live client"));
     (*ir).idx = idx;
-    (*ir).end = (*ictx).input_end;
+    (*ir).end = ictx.input_end;
     c.as_ref()
         .expect("live client")
         .observe_input_request(&mut *ir);
@@ -5600,7 +5593,7 @@ unsafe fn input_add_request(
 }
 unsafe fn input_request_palette_reply(ir: *mut input_request, pd: &input_request_palette_data) {
     input_osc_colour_reply(
-        (*ir).ictx,
+        &mut *(*ir).ictx,
         0 as ::core::ffi::c_int,
         4 as u_int,
         pd.idx,
@@ -5621,24 +5614,12 @@ unsafe fn input_request_clipboard_reply(ir: *mut input_request, cd: &input_reque
         paste_add_owned(None, owned);
     }
     if (*ir).idx == INPUT_END_BEL as ::core::ffi::c_int {
-        let _ = (*ictx).event.with_ptr(|event| unsafe {
-            input_reply_clipboard(
-                event,
-                cd.data.as_ptr().cast(),
-                cd.data.len(),
-                c"\x07",
-                cd.clip,
-            )
-        });
+        let _ = (*ictx)
+            .event
+            .with_ptr(|event| unsafe { input_reply_clipboard(event, &cd.data, c"\x07", cd.clip) });
     } else {
         let _ = (*ictx).event.with_ptr(|event| unsafe {
-            input_reply_clipboard(
-                event,
-                cd.data.as_ptr().cast(),
-                cd.data.len(),
-                c"\x1B\\",
-                cd.clip,
-            )
+            input_reply_clipboard(event, &cd.data, c"\x1B\\", cd.clip)
         });
     };
 }
@@ -5684,7 +5665,7 @@ pub(crate) unsafe fn input_complete_request(
             == INPUT_REQUEST_QUEUE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             input_send_reply(
-                (*ir).ictx,
+                &mut *(*ir).ictx,
                 (*ir)
                     .data
                     .as_deref()
@@ -5700,8 +5681,8 @@ pub(crate) unsafe fn input_complete_request(
         input_free_request(ir);
     }
 }
-unsafe fn input_report_current_theme(mut ictx: *mut input_ctx) {
-    let input_pane_owner = (*ictx).wp.upgrade();
+unsafe fn input_report_current_theme(ictx: &mut input_ctx) {
+    let input_pane_owner = ictx.wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());

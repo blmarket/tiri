@@ -12,41 +12,39 @@ use tiri::{
 
 #[test]
 fn mouse_encodings_preserve_tmux_bytes_and_independent_results() {
-    unsafe {
-        let mut screen = screen::default();
-        screen.mode = MODE_MOUSE_BUTTON | MODE_MOUSE_SGR;
-        let mut mouse = mouse_event {
-            sgr_type: b'M' as u32,
-            ..Default::default()
-        };
-        let first_bytes = input_key_get_mouse(ScreenMode::from(&screen), &mouse, 9, 19).unwrap();
-        assert_eq!(first_bytes, b"\x1b[<0;10;20M");
+    let mut screen = screen::default();
+    screen.mode = MODE_MOUSE_BUTTON | MODE_MOUSE_SGR;
+    let mut mouse = mouse_event {
+        sgr_type: b'M' as u32,
+        ..Default::default()
+    };
+    let first_bytes = input_key_get_mouse(ScreenMode::from(&screen), &mouse, 9, 19).unwrap();
+    assert_eq!(first_bytes, b"\x1b[<0;10;20M");
 
-        mouse.sgr_type = b' ' as u32;
-        mouse.b = 3;
-        assert_eq!(
-            input_key_get_mouse(ScreenMode::from(&screen), &mouse, 222, 1000).unwrap(),
-            b"\x1b[M#\xff\xff"
-        );
-        assert_eq!(first_bytes, b"\x1b[<0;10;20M");
+    mouse.sgr_type = b' ' as u32;
+    mouse.b = 3;
+    assert_eq!(
+        input_key_get_mouse(ScreenMode::from(&screen), &mouse, 222, 1000).unwrap(),
+        b"\x1b[M#\xff\xff"
+    );
+    assert_eq!(first_bytes, b"\x1b[<0;10;20M");
 
-        screen.mode |= MODE_MOUSE_UTF8;
-        assert_eq!(
-            input_key_get_mouse(ScreenMode::from(&screen), &mouse, 95, 2014).unwrap(),
-            b"\x1b[M#\xc2\x80\xdf\xbf"
-        );
-        assert!(input_key_get_mouse(ScreenMode::from(&screen), &mouse, 2015, 0).is_none());
+    screen.mode |= MODE_MOUSE_UTF8;
+    assert_eq!(
+        input_key_get_mouse(ScreenMode::from(&screen), &mouse, 95, 2014).unwrap(),
+        b"\x1b[M#\xc2\x80\xdf\xbf"
+    );
+    assert!(input_key_get_mouse(ScreenMode::from(&screen), &mouse, 2015, 0).is_none());
 
-        screen.mode = MODE_MOUSE_BUTTON;
-        mouse.b = 35;
-        mouse.lb = 3;
-        assert!(input_key_get_mouse(ScreenMode::from(&screen), &mouse, 0, 0).is_none());
-        screen.mode = MODE_MOUSE_ALL;
-        assert!(input_key_get_mouse(ScreenMode::from(&screen), &mouse, 0, 0).is_some());
-        screen.mode = 0;
-        assert!(input_key_get_mouse(ScreenMode::from(&screen), &mouse, 0, 0).is_none());
-        assert_eq!(first_bytes, b"\x1b[<0;10;20M");
-    }
+    screen.mode = MODE_MOUSE_BUTTON;
+    mouse.b = 35;
+    mouse.lb = 3;
+    assert!(input_key_get_mouse(ScreenMode::from(&screen), &mouse, 0, 0).is_none());
+    screen.mode = MODE_MOUSE_ALL;
+    assert!(input_key_get_mouse(ScreenMode::from(&screen), &mouse, 0, 0).is_some());
+    screen.mode = 0;
+    assert!(input_key_get_mouse(ScreenMode::from(&screen), &mouse, 0, 0).is_none());
+    assert_eq!(first_bytes, b"\x1b[<0;10;20M");
 }
 
 #[test]

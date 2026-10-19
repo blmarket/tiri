@@ -472,7 +472,7 @@ pub unsafe fn grid_empty_line(gd: &mut grid, py: u_int, bg: u_int) {
         grid_expand_line(gd, py, gd.sx, bg);
     }
 }
-pub unsafe fn grid_peek_line(gd: &grid, py: u_int) -> Option<&grid_line> {
+pub fn grid_peek_line(gd: &grid, py: u_int) -> Option<&grid_line> {
     if grid_check_y(gd, "grid_peek_line", py) != 0 {
         return None;
     }
@@ -672,7 +672,7 @@ pub unsafe fn grid_move_cells(
         }
     }
 }
-unsafe fn grid_string_cells_fg(gc: &grid_cell, values: &mut [i32; 64]) -> usize {
+fn grid_string_cells_fg(gc: &grid_cell, values: &mut [i32; 64]) -> usize {
     let colour = gc.fg;
     if colour & COLOUR_FLAG_THEME != 0 {
         let terminal = colour_theme_terminal_colour((colour & 0xff) as u_int);
@@ -696,7 +696,7 @@ unsafe fn grid_string_cells_fg(gc: &grid_cell, values: &mut [i32; 64]) -> usize 
     }
 }
 
-unsafe fn grid_string_cells_bg(gc: &grid_cell, values: &mut [i32; 64]) -> usize {
+fn grid_string_cells_bg(gc: &grid_cell, values: &mut [i32; 64]) -> usize {
     let colour = gc.bg;
     if colour & COLOUR_FLAG_THEME != 0 {
         let terminal = colour_theme_terminal_colour((colour & 0xff) as u_int);
@@ -720,7 +720,7 @@ unsafe fn grid_string_cells_bg(gc: &grid_cell, values: &mut [i32; 64]) -> usize 
     }
 }
 
-unsafe fn grid_string_cells_us(gc: &grid_cell, values: &mut [i32; 64]) -> usize {
+fn grid_string_cells_us(gc: &grid_cell, values: &mut [i32; 64]) -> usize {
     let colour = gc.us;
     if colour & COLOUR_FLAG_THEME != 0 {
         let terminal = colour_theme_terminal_colour((colour & 0xff) as u_int);
@@ -825,7 +825,7 @@ fn grid_string_cells_add_hyperlink(
     buf.append(if escaped { b"\\033\\\\" } else { b"\x1b\\" });
     true
 }
-unsafe fn grid_string_cells_code(
+fn grid_string_cells_code(
     lastgc: &grid_cell,
     gc: &grid_cell,
     buf: &mut GridStringBuffer<'_>,
@@ -1445,35 +1445,33 @@ mod storage_tests {
 
     #[test]
     fn sequence_buffers_preserve_resets_charset_and_truncated_prefixes() {
-        unsafe {
-            let mut previous = grid_default_cell;
-            previous.attr = (GRID_ATTR_BRIGHT | GRID_ATTR_CHARSET) as u_short;
-            previous.fg = COLOUR_FLAG_RGB | 0xabcdef;
-            previous.us = COLOUR_FLAG_RGB | 0x010203;
-            let mut cell = grid_default_cell;
-            cell.attr = (GRID_ATTR_UNDERSCORE_2 | GRID_ATTR_OVERLINE) as u_short;
-            cell.fg = previous.fg;
-            for (flags, expected) in [
-                (0, b"\x1b[0;4:2;5:3m\x1b[38;2;171;205;239m\x0f".as_slice()),
-                (
-                    GRID_STRING_ESCAPE_SEQUENCES,
-                    b"\\033[0;4:2;5:3m\\033[38;2;171;205;239m\\017".as_slice(),
-                ),
-            ] {
-                let mut storage = [0; 128];
-                let mut out = GridStringBuffer::new(&mut storage);
-                let mut has_link = false;
-                grid_string_cells_code(&previous, &cell, &mut out, flags, None, &mut has_link);
-                assert_eq!(out.as_bytes(), expected);
-                grid_string_cells_code(&cell, &cell, &mut out, flags, None, &mut has_link);
-                assert!(out.as_bytes().is_empty());
-            }
-            let mut storage = [99; 5];
+        let mut previous = grid_default_cell;
+        previous.attr = (GRID_ATTR_BRIGHT | GRID_ATTR_CHARSET) as u_short;
+        previous.fg = COLOUR_FLAG_RGB | 0xabcdef;
+        previous.us = COLOUR_FLAG_RGB | 0x010203;
+        let mut cell = grid_default_cell;
+        cell.attr = (GRID_ATTR_UNDERSCORE_2 | GRID_ATTR_OVERLINE) as u_short;
+        cell.fg = previous.fg;
+        for (flags, expected) in [
+            (0, b"\x1b[0;4:2;5:3m\x1b[38;2;171;205;239m\x0f".as_slice()),
+            (
+                GRID_STRING_ESCAPE_SEQUENCES,
+                b"\\033[0;4:2;5:3m\\033[38;2;171;205;239m\\017".as_slice(),
+            ),
+        ] {
+            let mut storage = [0; 128];
             let mut out = GridStringBuffer::new(&mut storage);
-            grid_string_cells_code(&previous, &cell, &mut out, 0, None, &mut false);
-            assert_eq!(out.as_bytes(), b"\x1b[0;");
-            assert_eq!(storage[4], 0);
+            let mut has_link = false;
+            grid_string_cells_code(&previous, &cell, &mut out, flags, None, &mut has_link);
+            assert_eq!(out.as_bytes(), expected);
+            grid_string_cells_code(&cell, &cell, &mut out, flags, None, &mut has_link);
+            assert!(out.as_bytes().is_empty());
         }
+        let mut storage = [99; 5];
+        let mut out = GridStringBuffer::new(&mut storage);
+        grid_string_cells_code(&previous, &cell, &mut out, 0, None, &mut false);
+        assert_eq!(out.as_bytes(), b"\x1b[0;");
+        assert_eq!(storage[4], 0);
     }
 
     #[test]
@@ -1544,45 +1542,43 @@ mod storage_tests {
 
     #[test]
     fn colour_parameters_keep_theme_priority_and_default_underline_semantics() {
-        unsafe {
-            for (colour, fg, bg, us) in [
-                (8, &[39][..], &[49][..], &[][..]),
-                (9, &[][..], &[][..], &[][..]),
-                (91, &[91][..], &[101][..], &[][..]),
-                (
-                    COLOUR_FLAG_256 | 17,
-                    &[38, 5, 17][..],
-                    &[48, 5, 17][..],
-                    &[58, 5, 17][..],
-                ),
-                (
-                    COLOUR_FLAG_RGB | 0x123456,
-                    &[38, 2, 18, 52, 86][..],
-                    &[48, 2, 18, 52, 86][..],
-                    &[58, 2, 18, 52, 86][..],
-                ),
-                (
-                    COLOUR_FLAG_THEME | COLOUR_FLAG_RGB | COLOUR_FLAG_256 | 4,
-                    &[32][..],
-                    &[42][..],
-                    &[58, 5, 2][..],
-                ),
-                (COLOUR_FLAG_THEME | 255, &[39][..], &[49][..], &[59][..]),
-            ] {
-                let cell = grid_cell {
-                    fg: colour,
-                    bg: colour,
-                    us: colour,
-                    ..grid_default_cell
-                };
-                let mut values = [-1; 64];
-                let count = grid_string_cells_fg(&cell, &mut values);
-                assert_eq!(&values[..count], fg);
-                let count = grid_string_cells_bg(&cell, &mut values);
-                assert_eq!(&values[..count], bg);
-                let count = grid_string_cells_us(&cell, &mut values);
-                assert_eq!(&values[..count], us);
-            }
+        for (colour, fg, bg, us) in [
+            (8, &[39][..], &[49][..], &[][..]),
+            (9, &[][..], &[][..], &[][..]),
+            (91, &[91][..], &[101][..], &[][..]),
+            (
+                COLOUR_FLAG_256 | 17,
+                &[38, 5, 17][..],
+                &[48, 5, 17][..],
+                &[58, 5, 17][..],
+            ),
+            (
+                COLOUR_FLAG_RGB | 0x123456,
+                &[38, 2, 18, 52, 86][..],
+                &[48, 2, 18, 52, 86][..],
+                &[58, 2, 18, 52, 86][..],
+            ),
+            (
+                COLOUR_FLAG_THEME | COLOUR_FLAG_RGB | COLOUR_FLAG_256 | 4,
+                &[32][..],
+                &[42][..],
+                &[58, 5, 2][..],
+            ),
+            (COLOUR_FLAG_THEME | 255, &[39][..], &[49][..], &[59][..]),
+        ] {
+            let cell = grid_cell {
+                fg: colour,
+                bg: colour,
+                us: colour,
+                ..grid_default_cell
+            };
+            let mut values = [-1; 64];
+            let count = grid_string_cells_fg(&cell, &mut values);
+            assert_eq!(&values[..count], fg);
+            let count = grid_string_cells_bg(&cell, &mut values);
+            assert_eq!(&values[..count], bg);
+            let count = grid_string_cells_us(&cell, &mut values);
+            assert_eq!(&values[..count], us);
         }
     }
 

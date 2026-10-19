@@ -164,8 +164,7 @@ unsafe fn sort_key_binding_cmp(
     }
     sort_ordering(result, sort_crit.reversed)
 }
-pub unsafe fn sort_next_order(sort_crit: *mut sort_criteria) {
-    let criteria = &mut *sort_crit;
+pub unsafe fn sort_next_order(criteria: &mut sort_criteria) {
     let sequence = criteria.order_seq;
     if sequence.is_empty() {
         return;
@@ -232,16 +231,16 @@ pub fn sort_order_to_string(order: sort_order) -> Option<&'static CStr> {
     None
 }
 pub unsafe fn sort_would_window_tree_swap(
-    mut sort_crit: *mut sort_criteria,
+    sort_crit: &sort_criteria,
     mut wla: refbox::Weak<winlink>,
     mut wlb: refbox::Weak<winlink>,
 ) -> ::core::ffi::c_int {
-    if (*sort_crit).order as ::core::ffi::c_uint
+    if sort_crit.order as ::core::ffi::c_uint
         == SORT_INDEX as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return 0 as ::core::ffi::c_int;
     }
-    (sort_winlink_cmp((wla).clone(), (wlb).clone(), &*sort_crit) != Ordering::Equal)
+    (sort_winlink_cmp((wla).clone(), (wlb).clone(), sort_crit) != Ordering::Equal)
         as ::core::ffi::c_int
 }
 pub fn sort_get_buffers(sort_crit: &sort_criteria) -> Vec<PasteBufferRef> {
@@ -260,7 +259,7 @@ pub fn sort_get_buffers(sort_crit: &sort_criteria) -> Vec<PasteBufferRef> {
     });
     buffers
 }
-pub unsafe fn sort_get_clients(sort_crit: *mut sort_criteria) -> Vec<ClientRef> {
+pub unsafe fn sort_get_clients(sort_crit: &sort_criteria) -> Vec<ClientRef> {
     let mut clients_sorted = Vec::new();
     let mut current = ClientRegistry::first();
     while let Some(owner) = current {
@@ -272,7 +271,7 @@ pub unsafe fn sort_get_clients(sort_crit: *mut sort_criteria) -> Vec<ClientRef> 
             clients_sorted.push(owner);
         }
     }
-    sort_by_criteria(&mut clients_sorted, &*sort_crit, |a, b, criteria| unsafe {
+    sort_by_criteria(&mut clients_sorted, sort_crit, |a, b, criteria| unsafe {
         sort_client_cmp(a, b, criteria)
     });
     clients_sorted
@@ -294,7 +293,7 @@ pub unsafe fn sort_get_panes_window(
     });
     panes
 }
-pub unsafe fn sort_get_winlinks(sort_crit: *mut sort_criteria) -> Vec<refbox::Weak<winlink>> {
+pub unsafe fn sort_get_winlinks(sort_crit: &sort_criteria) -> Vec<refbox::Weak<winlink>> {
     let mut links = Vec::new();
     let mut s_owner = sessions::first();
     while s_owner.is_some() {
@@ -308,14 +307,14 @@ pub unsafe fn sort_get_winlinks(sort_crit: *mut sort_criteria) -> Vec<refbox::We
         }
         s_owner = sessions::after(s_owner.as_ref().expect("live session").name().as_c_str());
     }
-    sort_by_criteria(&mut links, &*sort_crit, |a, b, criteria| unsafe {
+    sort_by_criteria(&mut links, sort_crit, |a, b, criteria| unsafe {
         sort_winlink_cmp((*a).clone(), (*b).clone(), criteria)
     });
     links
 }
 pub unsafe fn sort_get_winlinks_session(
     s_owner: &SessionRef,
-    sort_crit: *mut sort_criteria,
+    sort_crit: &sort_criteria,
 ) -> Vec<refbox::Weak<winlink>> {
     let mut l = Vec::new();
     let mut wl = s_owner.with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
@@ -323,7 +322,7 @@ pub unsafe fn sort_get_winlinks_session(
         l.push(wl.clone());
         wl = winlinks_next(wl.get_unchecked());
     }
-    sort_by_criteria(&mut l, &*sort_crit, |a, b, criteria| unsafe {
+    sort_by_criteria(&mut l, sort_crit, |a, b, criteria| unsafe {
         sort_winlink_cmp((*a).clone(), (*b).clone(), criteria)
     });
     l

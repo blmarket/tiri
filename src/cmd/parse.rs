@@ -22,7 +22,6 @@ use crate::shared::environment::ENVIRON_HIDDEN;
 use crate::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
 use crate::shared::limits::UINT_MAX;
 use crate::tmux::global_environ;
-use libc;
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
@@ -87,27 +86,27 @@ pub fn cmd_parse_error_uppercase_first(error: &mut Option<CString>) {
     };
     let mut bytes = cause.as_bytes_with_nul().to_vec();
     if let Some(first) = bytes.first_mut() {
-        *first = unsafe { libc::toupper(*first as libc::c_int) as u8 };
+        *first = first.to_ascii_uppercase();
     }
     *cause = CString::from_vec_with_nul(bytes).expect("cause remains NUL terminated");
 }
-unsafe fn cmd_parse_print_commands(mut pi: *mut cmd_parse_input, cmdlist: &cmd_list) {
-    if !(*pi).flags & CMD_PARSE_VERBOSE != 0 {
+unsafe fn cmd_parse_print_commands(pi: &cmd_parse_input, cmdlist: &cmd_list) {
+    if !pi.flags & CMD_PARSE_VERBOSE != 0 {
         return;
     }
-    let Some(item_owner) = (*pi).item.upgrade() else {
+    let Some(item_owner) = pi.item.upgrade() else {
         return;
     };
     let s = cmd_list_print_cstring(cmdlist, 0);
-    if (*pi).file.is_some() {
+    if pi.file.is_some() {
         cmdq_print(&item_owner, |out| {
-            out.write_all((*pi).file.as_ref().expect("parse file").to_bytes())?;
-            write!(out, ":{}: ", { (*pi).line })?;
+            out.write_all(pi.file.as_ref().expect("parse file").to_bytes())?;
+            write!(out, ":{}: ", { pi.line })?;
             out.write_all(s.as_bytes())
         });
     } else {
         cmdq_print(&item_owner, |out| {
-            write!(out, "{}: ", { (*pi).line })?;
+            write!(out, "{}: ", { pi.line })?;
             out.write_all(s.as_bytes())
         });
     }
@@ -150,7 +149,7 @@ impl tiri_cmdparse::Context for ParserContext<'_, '_> {
                 FORMAT_NONE,
                 FORMAT_NOJOBS,
             );
-            let ft = &raw mut *ft_owner;
+            let ft = &mut *ft_owner;
             format_defaults(
                 ft,
                 client_owner.as_ref(),
@@ -252,7 +251,7 @@ fn cmd_parse_do_buffer(
     cmd_parse_run_parser(&session, Lexer::from_bytes(bytes, &session))
 }
 
-unsafe fn cmd_parse_log_commands(cmds: &cmd_parse_commands, prefix: &CStr) {
+fn cmd_parse_log_commands(cmds: &cmd_parse_commands, prefix: &CStr) {
     for (i, cmd) in cmds.items.iter().enumerate() {
         for (j, arg) in cmd.arguments.iter().enumerate() {
             match arg.as_ref() {
@@ -425,127 +424,9 @@ unsafe fn cmd_parse_build_commands(
     pr.cmdlist = Some(result_owner);
 }
 /// Parse file contents already read into memory.
-pub unsafe fn cmd_parse_from_file(bytes: &[u8], mut pi: *mut cmd_parse_input) -> cmd_parse_result {
-    let mut input: cmd_parse_input = cmd_parse_input {
-        flags: 0,
-        file: None,
-        line: 0,
-        item: std::rc::Weak::new(),
-        c: Default::default(),
-        fs: cmd_find_state {
-            flags: 0,
-            s: Default::default(),
-            wl: Default::default(),
-            w: Default::default(),
-            wp: Default::default(),
-            idx: 0,
-        },
-    };
-    let mut pr = cmd_parse_result::empty();
-    if pi.is_null() {
-        pi = &raw mut input;
-    }
-    let mut cmds = match cmd_parse_do_file(bytes, &mut *pi) {
-        Ok(cmds) => cmds,
-        Err(cause) => {
-            pr.status = CMD_PARSE_ERROR;
-            pr.error = Some(cause);
-            return pr;
-        }
-    };
-    cmd_parse_build_commands(&mut cmds, &mut *pi, &mut pr);
-    pr
-}
-pub unsafe fn cmd_parse_from_string(s: &CStr, mut pi: *mut cmd_parse_input) -> cmd_parse_result {
-    let mut input: cmd_parse_input = cmd_parse_input {
-        flags: 0,
-        file: None,
-        line: 0,
-        item: std::rc::Weak::new(),
-        c: Default::default(),
-        fs: cmd_find_state {
-            flags: 0,
-            s: Default::default(),
-            wl: Default::default(),
-            w: Default::default(),
-            wp: Default::default(),
-            idx: 0,
-        },
-    };
-    if pi.is_null() {
-        pi = &raw mut input;
-    }
-    (*pi).flags |= CMD_PARSE_ONEGROUP;
-    cmd_parse_from_buffer(s.to_bytes(), pi)
-}
-pub unsafe fn cmd_parse_and_append(
-    s: &CStr,
-    owner: Option<&ClientRef>,
-    state: Option<&std::rc::Rc<cmdq_state>>,
-) -> Result<cmd_parse_status, Option<CString>> {
-    let mut pi: *mut cmd_parse_input = ::core::ptr::null_mut::<cmd_parse_input>();
-    let item_allocation;
-    let mut pr = cmd_parse_from_string(s, pi);
-    if pr.status == CMD_PARSE_ERROR {
-        return Err(pr.error.take());
-    }
-    item_allocation = cmdq_get_command(
-        pr.cmdlist.as_ref().expect("successful command parse"),
-        state,
-    );
-    cmdq_append(owner, item_allocation);
-    drop(pr.cmdlist.take());
-    Ok(pr.status)
-}
-pub unsafe fn cmd_parse_from_buffer(buf: &[u8], mut pi: *mut cmd_parse_input) -> cmd_parse_result {
-    let mut input: cmd_parse_input = cmd_parse_input {
-        flags: 0,
-        file: None,
-        line: 0,
-        item: std::rc::Weak::new(),
-        c: Default::default(),
-        fs: cmd_find_state {
-            flags: 0,
-            s: Default::default(),
-            wl: Default::default(),
-            w: Default::default(),
-            wp: Default::default(),
-            idx: 0,
-        },
-    };
-    let mut pr = cmd_parse_result::empty();
-    if pi.is_null() {
-        pi = &raw mut input;
-    }
-    if buf.is_empty() {
-        pr.status = CMD_PARSE_SUCCESS;
-        pr.cmdlist = Some(cmd_list_new());
-        return pr;
-    }
-    let mut cmds = match cmd_parse_do_buffer(buf, &mut *pi) {
-        Ok(cmds) => cmds,
-        Err(cause) => {
-            pr.status = CMD_PARSE_ERROR;
-            pr.error = Some(cause);
-            return pr;
-        }
-    };
-    cmd_parse_build_commands(&mut cmds, &mut *pi, &mut pr);
-    pr
-}
-/// Parse argv while borrowing its strings for the duration of the parser call.
-pub unsafe fn cmd_parse_from_argv(argv: &[CString]) -> cmd_parse_result {
-    let pi: *mut cmd_parse_input = ::core::ptr::null_mut::<cmd_parse_input>();
-    let values: Vec<ArgumentValue> = argv
-        .iter()
-        .map(|string| ArgumentValue::borrowed_string(string))
-        .collect();
-    cmd_parse_from_arguments(&values, pi)
-}
-
-pub unsafe fn cmd_parse_from_arguments(
-    values: &[ArgumentValue<'_>],
-    mut pi: *mut cmd_parse_input,
+pub unsafe fn cmd_parse_from_file(
+    bytes: &[u8],
+    pi: Option<&mut cmd_parse_input>,
 ) -> cmd_parse_result {
     let mut input: cmd_parse_input = cmd_parse_input {
         flags: 0,
@@ -563,10 +444,126 @@ pub unsafe fn cmd_parse_from_arguments(
         },
     };
     let mut pr = cmd_parse_result::empty();
-    if pi.is_null() {
-        pi = &raw mut input;
+    let pi = pi.unwrap_or(&mut input);
+    let mut cmds = match cmd_parse_do_file(bytes, pi) {
+        Ok(cmds) => cmds,
+        Err(cause) => {
+            pr.status = CMD_PARSE_ERROR;
+            pr.error = Some(cause);
+            return pr;
+        }
+    };
+    cmd_parse_build_commands(&mut cmds, pi, &mut pr);
+    pr
+}
+pub unsafe fn cmd_parse_from_string(
+    s: &CStr,
+    pi: Option<&mut cmd_parse_input>,
+) -> cmd_parse_result {
+    let mut input: cmd_parse_input = cmd_parse_input {
+        flags: 0,
+        file: None,
+        line: 0,
+        item: std::rc::Weak::new(),
+        c: Default::default(),
+        fs: cmd_find_state {
+            flags: 0,
+            s: Default::default(),
+            wl: Default::default(),
+            w: Default::default(),
+            wp: Default::default(),
+            idx: 0,
+        },
+    };
+    let pi = pi.unwrap_or(&mut input);
+    pi.flags |= CMD_PARSE_ONEGROUP;
+    cmd_parse_from_buffer(s.to_bytes(), Some(pi))
+}
+pub unsafe fn cmd_parse_and_append(
+    s: &CStr,
+    owner: Option<&ClientRef>,
+    state: Option<&std::rc::Rc<cmdq_state>>,
+) -> Result<cmd_parse_status, Option<CString>> {
+    let item_allocation;
+    let mut pr = cmd_parse_from_string(s, None);
+    if pr.status == CMD_PARSE_ERROR {
+        return Err(pr.error.take());
     }
-    let pi = &mut *pi;
+    item_allocation = cmdq_get_command(
+        pr.cmdlist.as_ref().expect("successful command parse"),
+        state,
+    );
+    cmdq_append(owner, item_allocation);
+    drop(pr.cmdlist.take());
+    Ok(pr.status)
+}
+pub unsafe fn cmd_parse_from_buffer(
+    buf: &[u8],
+    pi: Option<&mut cmd_parse_input>,
+) -> cmd_parse_result {
+    let mut input: cmd_parse_input = cmd_parse_input {
+        flags: 0,
+        file: None,
+        line: 0,
+        item: std::rc::Weak::new(),
+        c: Default::default(),
+        fs: cmd_find_state {
+            flags: 0,
+            s: Default::default(),
+            wl: Default::default(),
+            w: Default::default(),
+            wp: Default::default(),
+            idx: 0,
+        },
+    };
+    let mut pr = cmd_parse_result::empty();
+    let pi = pi.unwrap_or(&mut input);
+    if buf.is_empty() {
+        pr.status = CMD_PARSE_SUCCESS;
+        pr.cmdlist = Some(cmd_list_new());
+        return pr;
+    }
+    let mut cmds = match cmd_parse_do_buffer(buf, pi) {
+        Ok(cmds) => cmds,
+        Err(cause) => {
+            pr.status = CMD_PARSE_ERROR;
+            pr.error = Some(cause);
+            return pr;
+        }
+    };
+    cmd_parse_build_commands(&mut cmds, pi, &mut pr);
+    pr
+}
+/// Parse argv while borrowing its strings for the duration of the parser call.
+pub unsafe fn cmd_parse_from_argv(argv: &[CString]) -> cmd_parse_result {
+    let values: Vec<ArgumentValue> = argv
+        .iter()
+        .map(|string| ArgumentValue::borrowed_string(string))
+        .collect();
+    cmd_parse_from_arguments(&values, None)
+}
+
+pub unsafe fn cmd_parse_from_arguments(
+    values: &[ArgumentValue<'_>],
+    pi: Option<&mut cmd_parse_input>,
+) -> cmd_parse_result {
+    let mut input: cmd_parse_input = cmd_parse_input {
+        flags: 0,
+        file: None,
+        line: 0,
+        item: std::rc::Weak::new(),
+        c: Default::default(),
+        fs: cmd_find_state {
+            flags: 0,
+            s: Default::default(),
+            wl: Default::default(),
+            w: Default::default(),
+            wp: Default::default(),
+            idx: 0,
+        },
+    };
+    let mut pr = cmd_parse_result::empty();
+    let pi = pi.unwrap_or(&mut input);
     let mut cmds = cmd_parse_new_commands();
     let mut cmd = cmd_parse_new_command(pi.line);
     for value in values {
@@ -615,7 +612,7 @@ pub unsafe fn cmd_parse_from_arguments(
 mod parser_collection_tests {
     use super::*;
 
-    unsafe fn parse_commands(input: &[u8]) -> Vec<Vec<Vec<u8>>> {
+    fn parse_commands(input: &[u8]) -> Vec<Vec<Vec<u8>>> {
         let mut pi = cmd_parse_input {
             line: 1,
             ..Default::default()
@@ -654,7 +651,7 @@ mod parser_collection_tests {
             flags: CMD_PARSE_NOALIAS,
             ..Default::default()
         };
-        let mut result = cmd_parse_from_string(source, &mut input);
+        let mut result = cmd_parse_from_string(source, Some(&mut input));
         assert_eq!(result.status, CMD_PARSE_SUCCESS, "{:?}", result.error);
         result.cmdlist.take().expect("successful command parse")
     }
@@ -768,31 +765,29 @@ mod parser_collection_tests {
 
     #[test]
     fn parser_preserves_specific_errors_and_recovers_for_next_parse() {
-        unsafe {
-            for (source, expected) in [
-                (
-                    b"display-message \\400\n".as_slice(),
-                    b"input.conf:3: invalid octal escape".as_slice(),
-                ),
-                (
-                    b"%if 1\ndisplay-message missing-endif\n",
-                    b"input.conf:5: syntax error",
-                ),
-            ] {
-                let mut input = cmd_parse_input {
-                    line: 3,
-                    file: Some(c"input.conf".to_owned()),
-                    ..Default::default()
-                };
-                let error = cmd_parse_do_buffer(source, &mut input)
-                    .err()
-                    .expect("invalid parser input");
-                assert_eq!(error.as_bytes(), expected);
-            }
-            assert_eq!(
-                parse_commands(b"display-message recovered"),
-                vec![vec![b"display-message".to_vec(), b"recovered".to_vec()]]
-            );
+        for (source, expected) in [
+            (
+                b"display-message \\400\n".as_slice(),
+                b"input.conf:3: invalid octal escape".as_slice(),
+            ),
+            (
+                b"%if 1\ndisplay-message missing-endif\n",
+                b"input.conf:5: syntax error",
+            ),
+        ] {
+            let mut input = cmd_parse_input {
+                line: 3,
+                file: Some(c"input.conf".to_owned()),
+                ..Default::default()
+            };
+            let error = cmd_parse_do_buffer(source, &mut input)
+                .err()
+                .expect("invalid parser input");
+            assert_eq!(error.as_bytes(), expected);
         }
+        assert_eq!(
+            parse_commands(b"display-message recovered"),
+            vec![vec![b"display-message".to_vec(), b"recovered".to_vec()]]
+        );
     }
 }

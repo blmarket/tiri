@@ -102,7 +102,7 @@ impl client {
     /// # Safety
     /// The caller must serialize access to the global server model and perform
     /// client-loss cleanup before releasing a fully initialized client.
-    unsafe fn new() -> ClientRef {
+    fn new() -> ClientRef {
         std::rc::Rc::new(std::cell::UnsafeCell::new(client::empty()))
     }
 }
@@ -1322,10 +1322,7 @@ unsafe fn server_client_pane_window_id(pane: &Rc<UnsafeCell<window_pane>>) -> u3
     id
 }
 
-unsafe fn server_client_check_mouse(
-    client_owner: &ClientRef,
-    mut event: *mut key_event,
-) -> key_code {
+unsafe fn server_client_check_mouse(client_owner: &ClientRef, event: &mut key_event) -> key_code {
     let c = client_owner.get();
     let mut selected_pane = None;
     let mut last_pane = None;
@@ -1863,7 +1860,6 @@ unsafe fn server_client_check_mouse(
 }
 unsafe fn server_client_update_theme_colours(c_owner: Option<&ClientRef>) {
     let mut c = c_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let _value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut theme: client_theme = THEME_UNKNOWN;
     let mut i: u_int = 0;
@@ -1883,7 +1879,7 @@ unsafe fn server_client_update_theme_colours(c_owner: Option<&ClientRef>) {
         return;
     }
     let mut ft_owner = format_create(c_owner, None, FORMAT_NONE, FORMAT_NOJOBS);
-    ft = &raw mut *ft_owner;
+    let ft = &mut *ft_owner;
     format_defaults(ft, c_owner, None, (refbox::Weak::new()).clone(), None);
     theme = (*c).theme;
     if theme as ::core::ffi::c_uint == THEME_UNKNOWN as ::core::ffi::c_int as ::core::ffi::c_uint {
@@ -2083,7 +2079,7 @@ unsafe fn server_client_key_callback(
             if (*c).flags & CLIENT_READONLY as uint64_t != 0 {
                 current_block = 1578459965781631232;
             } else {
-                key = server_client_check_mouse(&c_owner, event);
+                key = server_client_check_mouse(&c_owner, &mut *event);
                 if key == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code {
                     current_block = 1578459965781631232;
                 } else {
@@ -2121,7 +2117,7 @@ unsafe fn server_client_key_callback(
                                 as ::core::ffi::c_ulonglong)
                                 << 32 as ::core::ffi::c_int
                 {
-                    cmd_find_state::find_from_mouse(m)
+                    cmd_find_state::find_from_mouse(&*m)
                 } else {
                     None
                 };
@@ -2371,8 +2367,8 @@ unsafe fn server_client_key_callback(
                                             bd,
                                             Some(item_handle),
                                             Some(&c_owner),
-                                            event,
-                                            &raw mut fs,
+                                            Some(&*event),
+                                            &fs,
                                         );
                                         current_block = 1578459965781631232;
                                         break;
@@ -2471,7 +2467,7 @@ struct QueuedKeyEvent(Box<key_event>, Option<ClientRef>);
 
 unsafe fn server_client_handle_menu_key(
     owner: &ClientRef,
-    mut event: *mut key_event,
+    event: &key_event,
 ) -> ::core::ffi::c_int {
     let c = owner.get();
     let (window, menu) = {
@@ -2573,12 +2569,11 @@ unsafe fn server_client_handle_key0(
         if server_client_handle_dead_key(active_pane_owner.as_ref(), (*event).key) != 0 {
             return 0 as ::core::ffi::c_int;
         }
-        if server_client_handle_menu_key(owner, event) != 0 {
+        if server_client_handle_menu_key(owner, &*event) != 0 {
             return 0 as ::core::ffi::c_int;
         }
         if (*c).prompt.is_some() {
-            match status_prompt_key(owner, (*event).key, &raw mut (*event).m) as ::core::ffi::c_uint
-            {
+            match status_prompt_key(owner, (*event).key, Some(&(*event).m)) as ::core::ffi::c_uint {
                 1 | 2 => return 0 as ::core::ffi::c_int,
                 _ => {}
             }
@@ -3361,7 +3356,6 @@ unsafe fn server_client_set_title(client_owner: &ClientRef) {
     };
     let s = Some(session_owner.clone());
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     template_session_value = Some(options_get_string(
         &s.as_ref().expect("live session").borrow_options_mut(),
         c"set-titles-string",
@@ -3376,7 +3370,7 @@ unsafe fn server_client_set_title(client_owner: &ClientRef) {
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );
-    ft = &raw mut *ft_owner;
+    let ft = &mut *ft_owner;
     format_defaults(
         ft,
         Some(client_owner),

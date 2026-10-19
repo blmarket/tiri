@@ -11,7 +11,7 @@ use crate::shared::key::*;
 use crate::shared::utf8::wchar_t;
 use crate::shared::utf8::*;
 use crate::text::utf8::{utf8_append, utf8_from_data, utf8_fromcstr_vec, utf8_open, utf8_to_data};
-use libc::{sscanf, strcasecmp};
+use libc::sscanf;
 use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone)]
@@ -19,14 +19,6 @@ use std::ffi::{CStr, CString};
 pub struct C2RustUnnamed_1 {
     pub string: &'static CStr,
     pub key: key_code,
-}
-#[inline]
-unsafe fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
-    if __c >= -(128 as ::core::ffi::c_int) && __c < 256 as ::core::ffi::c_int {
-        ::libc::tolower(__c as ::core::ffi::c_int) as ::core::ffi::c_int
-    } else {
-        __c
-    }
 }
 pub const MB_LEN_MAX: ::core::ffi::c_int = 16 as ::core::ffi::c_int;
 static key_string_table: [C2RustUnnamed_1; 1379] = [
@@ -5548,13 +5540,16 @@ static key_string_table: [C2RustUnnamed_1; 1379] = [
     },
 ];
 
-/// Search the static key names using libc's case-insensitive comparison.
+/// Search the static key names, ignoring ASCII case.
 fn key_string_search_table(input: &CStr) -> key_code {
     let mut user: u_int = 0;
 
     unsafe {
         for entry in &key_string_table {
-            if strcasecmp(input.as_ptr(), entry.string.as_ptr()) == 0 as ::core::ffi::c_int {
+            if input
+                .to_bytes()
+                .eq_ignore_ascii_case(entry.string.to_bytes())
+            {
                 return entry.key;
             }
         }
@@ -5587,7 +5582,7 @@ fn key_string_get_modifiers(input: &[u8]) -> Option<(key_code, usize)> {
 }
 
 fn key_string_lowercase_byte(byte: u8) -> key_code {
-    unsafe { tolower(byte as ::core::ffi::c_int) as key_code }
+    byte.to_ascii_lowercase() as key_code
 }
 
 fn key_string_parse_numeric(input: &CStr) -> Option<key_code> {
@@ -5628,10 +5623,10 @@ fn key_string_parse_numeric(input: &CStr) -> Option<key_code> {
 /// locale-sensitive libc/table operations require a NUL-terminated view.
 fn key_string_lookup_string_bytes(input: &CStr) -> key_code {
     let bytes = input.to_bytes();
-    if unsafe { strcasecmp(input.as_ptr(), c"None".as_ptr()) == 0 as ::core::ffi::c_int } {
+    if bytes.eq_ignore_ascii_case(b"None") {
         return KEYC_NONE as ::core::ffi::c_ulong as key_code;
     }
-    if unsafe { strcasecmp(input.as_ptr(), c"Any".as_ptr()) == 0 as ::core::ffi::c_int } {
+    if bytes.eq_ignore_ascii_case(b"Any") {
         return KEYC_ANY as ::core::ffi::c_ulong as key_code;
     }
     if bytes.starts_with(b"0x") {

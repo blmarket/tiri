@@ -21,7 +21,7 @@ pub use crate::shared::signal::{
 };
 use crate::tmux::{getversion, socket_path_cstr};
 use libc::utsname;
-use libc::{daemon, fork, getpid, memset, sigaction, sigemptyset, uname};
+use libc::{daemon, fork, memset, sigaction, sigemptyset, uname};
 use std::ffi::CStr;
 use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use tiri_rt::{AsyncRead as _, AsyncWrite as _, Runtime as _, Signals as _};
@@ -246,7 +246,7 @@ pub unsafe fn proc_start(name: &CStr) -> Box<tmuxproc> {
     log_debug(format_args!(
         "{} started ({}): version {}, socket {}, protocol {}",
         log_cstr(name),
-        getpid() as ::core::ffi::c_long,
+        std::process::id(),
         log_cstr(getversion()),
         log_cstr(socket_path_cstr()),
         { PROTOCOL_VERSION }

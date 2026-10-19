@@ -26,7 +26,7 @@ pub trait Session {
     ) -> Self
     where
         Self: Sized;
-    unsafe fn find_by_id_str(id: &CStr) -> Option<Self>
+    fn find_by_id_str(id: &CStr) -> Option<Self>
     where
         Self: Sized;
     unsafe fn sorted(criteria: &sort_criteria) -> Vec<Self>
@@ -60,7 +60,7 @@ pub trait Session {
     unsafe fn update_environment(&self, source: &environ);
 
     /// Registry liveness is distinct from retained allocation liveness.
-    unsafe fn is_registered(&self) -> bool;
+    fn is_registered(&self) -> bool;
     unsafe fn contains_window(&self, window: &WindowRef) -> bool;
     unsafe fn id(&self) -> u32;
     unsafe fn name(&self) -> CString;
@@ -137,7 +137,7 @@ impl Session for SessionRef {
     ) -> Self {
         session_create(prefix, name, cwd, environment, options, termios)
     }
-    unsafe fn find_by_id_str(id: &CStr) -> Option<Self> {
+    fn find_by_id_str(id: &CStr) -> Option<Self> {
         session_find_by_id_str(id)
     }
     unsafe fn sorted(criteria: &sort_criteria) -> Vec<Self> {
@@ -187,7 +187,7 @@ impl Session for SessionRef {
         );
     }
 
-    unsafe fn is_registered(&self) -> bool {
+    fn is_registered(&self) -> bool {
         sessions::resolve(&Rc::downgrade(self)).is_some()
     }
     unsafe fn contains_window(&self, window: &WindowRef) -> bool {
@@ -300,7 +300,7 @@ impl Session for SessionRef {
         events_fire_winlink(c"window-unlinked", link.clone());
         link.get_mut_unchecked().flags &= !WINLINK_ALERTFLAGS;
         self.forget_winlink(link.clone());
-        winlink_remove(&raw mut (*self.get()).windows, link.clone());
+        winlink_remove(&(*self.get()).windows, link.clone());
         let was_current = link == self.current_winlink();
         if was_current {
             (*self.get()).curw = refbox::Weak::new();

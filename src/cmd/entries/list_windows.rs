@@ -11,7 +11,6 @@ use crate::shared::client::ClientRef;
 use crate::shared::command::CMD_AFTERHOOK;
 use crate::shared::command::*;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::shared::format::format_tree;
 use crate::shared::format::FORMAT_NONE;
 use crate::shared::session::SessionRef;
 use crate::shared::sort::sort_criteria;
@@ -61,7 +60,6 @@ unsafe fn cmd_list_windows_exec(
     let mut s: Option<SessionRef> = None;
     let mut i: u_int = 0;
     let mut n: u_int = 0;
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut filter: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut flag: ::core::ffi::c_int = 0;
@@ -86,7 +84,7 @@ unsafe fn cmd_list_windows_exec(
     }
     sort_crit.reversed = args_has(&*args, 'r' as i32 as u_char);
     let winlinks = if args_has(&*args, 'a' as i32 as u_char) != 0 {
-        let links = sort_get_winlinks(&raw mut sort_crit);
+        let links = sort_get_winlinks(&sort_crit);
         if template.is_null() {
             template = LIST_WINDOWS_WITH_SESSION_TEMPLATE.as_ptr();
         }
@@ -94,7 +92,7 @@ unsafe fn cmd_list_windows_exec(
     } else {
         let links = sort_get_winlinks_session(
             &(*target).session_handle().expect("live session"),
-            &raw mut sort_crit,
+            &sort_crit,
         );
         if template.is_null() {
             template = c"#{window_index}: #{window_name}#{window_raw_flags} (#{window_panes} panes) [#{window_width}x#{window_height}] [layout #{window_layout}] #{window_id}#{?window_active, (active),}".as_ptr();
@@ -116,7 +114,7 @@ unsafe fn cmd_list_windows_exec(
             FORMAT_NONE,
             0 as ::core::ffi::c_int,
         );
-        ft = &raw mut *ft_owner;
+        let ft = &mut *ft_owner;
         format_add(ft, c"line", |out| write!(out, "{}", (n) as u32));
         format_defaults(ft, c.as_ref(), s.as_ref(), wl.clone(), None);
         if !filter.is_null() {

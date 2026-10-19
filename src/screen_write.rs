@@ -283,7 +283,7 @@ pub unsafe fn screen_write_start_pane<'s>(
     }
     ctx
 }
-pub unsafe fn screen_write_start_callback(
+pub fn screen_write_start_callback(
     s: &mut screen,
     cb: screen_write_init_ctx_cb,
 ) -> screen_write_ctx<'_> {
@@ -299,7 +299,7 @@ pub unsafe fn screen_write_start_callback(
     }
     ctx
 }
-pub unsafe fn screen_write_start(s: &mut screen) -> screen_write_ctx<'_> {
+pub fn screen_write_start(s: &mut screen) -> screen_write_ctx<'_> {
     let ctx = screen_write_init(s);
     if log_get_level() != 0 as ::core::ffi::c_int {
         log_debug(format_args!(
@@ -933,7 +933,7 @@ pub unsafe fn screen_write_preview(
         screen_write_cell(ctx, &gc);
     }
 }
-pub unsafe fn screen_write_mode_set(ctx: &mut screen_write_ctx, mut mode: ::core::ffi::c_int) {
+pub fn screen_write_mode_set(ctx: &mut screen_write_ctx, mut mode: ::core::ffi::c_int) {
     ctx.screen.mode |= mode;
     if log_get_level() != 0 as ::core::ffi::c_int {
         log_debug(format_args!(
@@ -943,7 +943,7 @@ pub unsafe fn screen_write_mode_set(ctx: &mut screen_write_ctx, mut mode: ::core
         ));
     }
 }
-pub unsafe fn screen_write_mode_clear(ctx: &mut screen_write_ctx, mut mode: ::core::ffi::c_int) {
+pub fn screen_write_mode_clear(ctx: &mut screen_write_ctx, mut mode: ::core::ffi::c_int) {
     ctx.screen.mode &= !mode;
     if log_get_level() != 0 as ::core::ffi::c_int {
         log_debug(format_args!(
@@ -2154,7 +2154,7 @@ pub unsafe fn screen_write_clearscreen(ctx: &mut screen_write_ctx, mut bg: u_int
     }
     screen_write_set_cursor(ctx, ocx as ::core::ffi::c_int, ocy as ::core::ffi::c_int);
 }
-pub unsafe fn screen_write_clearhistory(ctx: &mut screen_write_ctx) {
+pub fn screen_write_clearhistory(ctx: &mut screen_write_ctx) {
     grid_clear_history(&mut *(ctx.screen.grid_mut()));
 }
 pub unsafe fn screen_write_fullredraw(ctx: &mut screen_write_ctx) {
@@ -2212,7 +2212,7 @@ fn screen_write_collect_trim(
     }
     (index, wrapped)
 }
-unsafe fn screen_write_collect_clear(ctx: &mut screen_write_ctx, mut y: u_int, mut n: u_int) {
+fn screen_write_collect_clear(ctx: &mut screen_write_ctx, mut y: u_int, mut n: u_int) {
     let mut i: u_int = 0;
     i = y;
     while i < y.wrapping_add(n) {
@@ -2221,7 +2221,7 @@ unsafe fn screen_write_collect_clear(ctx: &mut screen_write_ctx, mut y: u_int, m
         i = i.wrapping_add(1);
     }
 }
-unsafe fn screen_write_collect_scroll(ctx: &mut screen_write_ctx, bg: u_int) {
+fn screen_write_collect_scroll(ctx: &mut screen_write_ctx, bg: u_int) {
     let s = &mut *ctx.screen;
     log_debug(format_args!(
         "{}: at {},{} (region {}-{})",
@@ -2541,7 +2541,7 @@ unsafe fn screen_write_collect_flush_with_ranges(
     ctx.scrolled = 0 as u_int;
     ctx.bg = 8 as u_int;
 }
-unsafe fn screen_write_collect_insert(ctx: &mut screen_write_ctx) {
+fn screen_write_collect_insert(ctx: &mut screen_write_ctx) {
     let mut item = ctx.item.take().expect("active screen write context");
     let s = &mut *ctx.screen;
     let row = s.cy as usize;
@@ -2553,7 +2553,7 @@ unsafe fn screen_write_collect_insert(ctx: &mut screen_write_ctx) {
     items.insert(before, item);
     ctx.item = Some(screen_write_get_citem());
 }
-unsafe fn screen_write_collect_insert_clear(
+fn screen_write_collect_insert_clear(
     ctx: &mut screen_write_ctx,
     mut px: u_int,
     mut nx: u_int,

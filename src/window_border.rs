@@ -7,7 +7,7 @@ use crate::screen::screen_init;
 use crate::screen_write::{screen_write_start, screen_write_stop};
 use crate::shared::abi::*;
 use crate::shared::borders::{CELL_BORDERS, SIMPLE_BORDERS};
-use crate::shared::format::{format_tree, FORMAT_NOJOBS, FORMAT_WINDOW};
+use crate::shared::format::{FORMAT_NOJOBS, FORMAT_WINDOW};
 use crate::shared::grid::*;
 use crate::shared::layout::*;
 use crate::shared::screen::screen;
@@ -23,7 +23,6 @@ pub(crate) unsafe fn window_render_fill_cell(
     w_owner: &WindowRef,
     inside: bool,
 ) -> Option<grid_cell> {
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut s: screen = screen::empty();
     let mut new_gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -45,7 +44,7 @@ pub(crate) unsafe fn window_render_fill_cell(
         (FORMAT_WINDOW | (w_owner).id()) as ::core::ffi::c_int,
         FORMAT_NOJOBS,
     );
-    ft = &raw mut *ft_owner;
+    let ft = &mut *ft_owner;
     format_defaults(
         ft,
         None,
@@ -76,24 +75,24 @@ pub(crate) unsafe fn window_render_fill_cell(
     (new_gc.data.width == 1).then_some(new_gc)
 }
 
-unsafe fn window_copy_fill_cell(mut gc: *mut grid_cell, fill: &grid_cell) {
-    (*gc).data = utf8_copy(&fill.data);
-    (*gc).attr = ((*gc).attr as ::core::ffi::c_int | fill.attr as ::core::ffi::c_int) as u_short;
-    (*gc).flags = ((*gc).flags as ::core::ffi::c_int | fill.flags as ::core::ffi::c_int) as u_char;
+unsafe fn window_copy_fill_cell(gc: &mut grid_cell, fill: &grid_cell) {
+    gc.data = utf8_copy(&fill.data);
+    gc.attr = (gc.attr as ::core::ffi::c_int | fill.attr as ::core::ffi::c_int) as u_short;
+    gc.flags = (gc.flags as ::core::ffi::c_int | fill.flags as ::core::ffi::c_int) as u_char;
     if fill.fg != 8 as ::core::ffi::c_int {
-        (*gc).fg = fill.fg;
+        gc.fg = fill.fg;
     }
     if fill.bg != 8 as ::core::ffi::c_int {
-        (*gc).bg = fill.bg;
+        gc.bg = fill.bg;
     }
     if fill.us != 8 as ::core::ffi::c_int {
-        (*gc).us = fill.us;
+        gc.us = fill.us;
     }
 }
 pub unsafe fn window_get_fill_cell(
     owner: &WindowRef,
     inside: ::core::ffi::c_int,
-    gc: *mut grid_cell,
+    gc: &mut grid_cell,
 ) {
     let fill = owner.fill_cell(inside != 0);
     window_copy_fill_cell(gc, &fill);

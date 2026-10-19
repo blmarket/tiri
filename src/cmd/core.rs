@@ -77,7 +77,7 @@ use crate::cmd::entries::swap_window::cmd_swap_window_entry;
 use crate::cmd::entries::switch_client::cmd_switch_client_entry;
 use crate::cmd::entries::unbind_key::cmd_unbind_key_entry;
 use crate::cmd::entries::wait_for::cmd_wait_for_entry;
-use crate::ffi::libc::strlcpy;
+use crate::format::bytes::cstr_copy_into;
 use crate::log::{fatalx, log_bytes, log_debug};
 use crate::options::OptionsScope;
 use crate::window::Window as _;
@@ -230,7 +230,8 @@ pub unsafe fn cmd_pack_argv(
     *buf = '\0' as i32 as ::core::ffi::c_char;
     i = 0 as ::core::ffi::c_int;
     while (i as usize) < argv.len() {
-        if strlcpy(buf, argv[i as usize].as_ptr(), len) as size_t >= len {
+        let dst = std::slice::from_raw_parts_mut(buf, len as usize);
+        if cstr_copy_into(dst, &argv[i as usize]) as size_t >= len {
             return -(1 as ::core::ffi::c_int);
         }
         arglen = argv[i as usize].as_bytes_with_nul().len() as size_t;
@@ -548,23 +549,19 @@ pub fn cmd_list_any_have(cmdlist: &cmd_list) -> ::core::ffi::c_int {
 pub unsafe fn cmd_mouse_at(
     pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mouse: *mut mouse_event,
-    x: *mut u_int,
-    y: *mut u_int,
+    x: &mut u_int,
+    y: &mut u_int,
     last: i32,
 ) -> i32 {
     let Some((mx, my)) = pane.mouse_position(&*mouse, last != 0) else {
         return -1;
     };
-    if !x.is_null() {
-        *x = mx;
-    }
-    if !y.is_null() {
-        *y = my;
-    }
+    *x = mx;
+    *y = my;
     0
 }
 pub unsafe fn cmd_mouse_window(
-    mut m: *mut mouse_event,
+    m: &mouse_event,
     sp: Option<&mut Option<SessionRef>>,
 ) -> refbox::Weak<winlink> {
     let mut s: Option<SessionRef> = None;
@@ -597,9 +594,9 @@ pub unsafe fn cmd_mouse_window(
     wl
 }
 pub unsafe fn cmd_mouse_pane(
-    mut m: *mut mouse_event,
+    m: &mouse_event,
     sp: Option<&mut Option<SessionRef>>,
-    mut wlp: *mut refbox::Weak<winlink>,
+    wlp: Option<&mut refbox::Weak<winlink>>,
 ) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
     let link = cmd_mouse_window(m, sp);
     if !link.is_alive() {
@@ -615,7 +612,7 @@ pub unsafe fn cmd_mouse_pane(
         }
         Some(pane)
     };
-    if !wlp.is_null() {
+    if let Some(wlp) = wlp {
         *wlp = link;
     }
     pane

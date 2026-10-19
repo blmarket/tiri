@@ -4,7 +4,7 @@ use crate::shared::command::CMD_STARTSERVER;
 use crate::shared::command::*;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::signal::SIGTERM;
-use libc::{getpid, kill};
+use libc::kill;
 pub static cmd_kill_server_entry: cmd_entry = {
     cmd_entry {
         name: c"kill-server",
@@ -63,7 +63,7 @@ unsafe fn cmd_kill_server_exec(
         cmd_get_entry(self_0.get_unchecked()),
         &cmd_kill_server_entry,
     ) {
-        kill(getpid(), SIGTERM);
+        kill(std::process::id() as libc::pid_t, SIGTERM);
     }
     CmdOutcome::Normal
 }

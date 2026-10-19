@@ -3,7 +3,6 @@ use crate::cmd::queue::cmdq_next;
 #[cfg(target_os = "linux")]
 use crate::compat::systemd::{systemd_activated, systemd_create_socket};
 use crate::control_notify::control_build_events;
-use crate::ffi::libc::stderr;
 use crate::format::bytes::format_message_with;
 use crate::format::format_tidy_jobs;
 use crate::hooks::hooks_build_events;
@@ -21,7 +20,7 @@ use crate::server_client::Client as _;
 use crate::server_client::ClientRegistry;
 use crate::shared::window::WindowWeak;
 use crate::window::Window as _;
-use libc::{exit, fprintf, kill, killpg, sigfillset, sigprocmask, strsignal, time, umask, waitpid};
+use libc::{exit, kill, killpg, sigfillset, sigprocmask, strsignal, umask, waitpid};
 use std::fs;
 #[cfg(target_os = "linux")]
 use std::os::fd::FromRawFd;
@@ -275,7 +274,8 @@ pub(crate) unsafe fn server_start(
         if let Some(c_value) = c.as_ref() {
             c_value.exit_with_message(cause, Some(1));
         } else {
-            fprintf(stderr, c"%s\n".as_ptr(), cause.as_ptr());
+            let message = [cause.as_bytes(), b"\n"].concat();
+            let _ = io::Write::write_all(&mut io::stderr(), &message);
             drop(process_owner);
             server_proc = std::ptr::null_mut();
             crate::plugin::shutdown();
@@ -300,7 +300,7 @@ pub(crate) unsafe fn server_start(
 unsafe fn server_loop() -> ::core::ffi::c_int {
     let mut c: Option<ClientRef> = None;
     let mut items: u_int = 0;
-    current_time = time(::core::ptr::null_mut::<time_t>());
+    current_time = crate::shared::time::unix_seconds(std::time::SystemTime::now());
     loop {
         items = cmdq_next(None);
         let mut registry_c_owner = ClientRegistry::first();

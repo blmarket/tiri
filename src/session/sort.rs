@@ -17,12 +17,12 @@ unsafe fn sort_session_cmp(sa: &session, sb: &session, sort_crit: &sort_criteria
             result = sb.activity_time.cmp(&sa.activity_time) as i32;
         }
         4 => {
-            result = strcmp((sa.name).as_ptr().cast_mut(), (sb.name).as_ptr().cast_mut());
+            result = sa.name.cmp(&sb.name) as ::core::ffi::c_int;
         }
         _ => {}
     }
     if result == 0 as ::core::ffi::c_int {
-        result = strcmp((sa.name).as_ptr().cast_mut(), (sb.name).as_ptr().cast_mut());
+        result = sa.name.cmp(&sb.name) as ::core::ffi::c_int;
     }
     sort_ordering(result, sort_crit.reversed)
 }
