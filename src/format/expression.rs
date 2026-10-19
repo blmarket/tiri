@@ -2760,6 +2760,21 @@ mod format_float_tests {
     use super::{format_float, format_parse_double};
     use std::ffi::CString;
 
+    /// Check `input` parses to the value and leaves the rest `strtod` does.
+    fn assert_matches_strtod(input: &str) {
+        let owned = CString::new(input).unwrap();
+        let mut end = std::ptr::null_mut();
+        let expected = unsafe { libc::strtod(owned.as_ptr(), &mut end) };
+        let consumed = unsafe { end.offset_from(owned.as_ptr()) } as usize;
+        let (value, rest) = format_parse_double(input.as_bytes());
+        assert_eq!(rest, &input.as_bytes()[consumed..], "{input:?}");
+        if expected.is_nan() {
+            assert!(value.is_nan(), "{input:?}: {value}");
+        } else {
+            assert_eq!(value.to_bits(), expected.to_bits(), "{input:?}: {value}");
+        }
+    }
+
     #[test]
     fn parsed_operands_match_strtod() {
         for input in [
@@ -2800,17 +2815,26 @@ mod format_float_tests {
             "1,5",
             "2 ",
         ] {
-            let owned = CString::new(input).unwrap();
-            let mut end = std::ptr::null_mut();
-            let expected = unsafe { libc::strtod(owned.as_ptr(), &mut end) };
-            let consumed = unsafe { end.offset_from(owned.as_ptr()) } as usize;
-            let (value, rest) = format_parse_double(input.as_bytes());
-            assert_eq!(rest, &input.as_bytes()[consumed..], "{input:?}");
-            if expected.is_nan() {
-                assert!(value.is_nan(), "{input:?}: {value}");
-            } else {
-                assert_eq!(value.to_bits(), expected.to_bits(), "{input:?}: {value}");
-            }
+            assert_matches_strtod(input);
+        }
+    }
+
+    /// A hexadecimal mantissa wider than a double rounds once, as `strtod`
+    /// rounds it, not once per digit; nor does a long one overflow or
+    /// underflow before its binary exponent scales it back into range.
+    #[test]
+    fn wide_hex_operands_round_like_strtod() {
+        let zeros = "0".repeat(256);
+        let places = "0".repeat(300);
+        for input in [
+            "0x200000000000011".to_owned(),
+            "0x1.000000000000081".to_owned(),
+            "-0x6899e5422e751aa8".to_owned(),
+            "0x.66f78f868fd4e22f69".to_owned(),
+            format!("0x1{zeros}p-1024"),
+            format!("0x0.{places}1p1300"),
+        ] {
+            assert_matches_strtod(&input);
         }
     }
 
