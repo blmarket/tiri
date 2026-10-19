@@ -9,7 +9,7 @@ use crate::mode_tree::ModeTreeItemSnapshot;
 use crate::mode_tree::{
     mode_tree_add, mode_tree_build, mode_tree_down, mode_tree_draw, mode_tree_each_tagged,
     mode_tree_free, mode_tree_get_current, mode_tree_key, mode_tree_resize, mode_tree_run_command,
-    mode_tree_start, mode_tree_up,
+    mode_tree_screen, mode_tree_start, mode_tree_up,
 };
 use crate::mode_tree::{mode_tree_data, mode_tree_help_info, ModeTreeItemData};
 use crate::paste::{
@@ -50,7 +50,7 @@ use std::rc::{Rc, Weak};
 pub struct window_buffer_modedata {
     pub wp: Weak<UnsafeCell<window_pane>>,
     pub fs: cmd_find_state,
-    pub data: Option<std::rc::Rc<std::cell::UnsafeCell<mode_tree_data>>>,
+    pub data: Option<std::rc::Rc<std::cell::RefCell<mode_tree_data>>>,
     pub editor: Option<EditorHandle>,
     pub command: CString,
     pub format: CString,
@@ -59,7 +59,7 @@ pub struct window_buffer_modedata {
 }
 
 impl window_buffer_modedata {
-    fn tree_owner(&self) -> Rc<UnsafeCell<mode_tree_data>> {
+    fn tree_owner(&self) -> Rc<std::cell::RefCell<mode_tree_data>> {
         self.data.as_ref().expect("mode tree owner").clone()
     }
 }
@@ -251,7 +251,7 @@ unsafe fn window_buffer_build(
                 _ => {
                     let text = format_expand_cstring(ft, (*data).format.as_ptr());
                     mode_tree_add(
-                        &mut *(*data).tree_owner().get(),
+                        &mut (*data).tree_owner().borrow_mut(),
                         None,
                         ModeTreeItemData::Buffer(item_handle.clone()),
                         item.order as uint64_t,
@@ -511,7 +511,7 @@ unsafe fn window_buffer_get_screen(wme: refbox::Weak<window_mode_entry>) -> *mut
     (*data)
         .data
         .as_ref()
-        .map_or(std::ptr::null_mut(), |tree| &raw mut (*tree.get()).screen)
+        .map_or(std::ptr::null_mut(), mode_tree_screen)
 }
 
 unsafe fn window_buffer_free(wme: refbox::Weak<window_mode_entry>) {
@@ -554,10 +554,16 @@ unsafe fn window_buffer_do_delete(
     mut data: *mut window_buffer_modedata,
     item: &ModeTreeItemSnapshot<window_buffer_itemdata>,
 ) {
-    if mode_tree_get_current(&*(*data).tree_owner().get()).is_buffer(item)
-        && mode_tree_down(&mut *(*data).tree_owner().get(), 0 as ::core::ffi::c_int) == 0
+    if mode_tree_get_current(&(*data).tree_owner().borrow()).is_buffer(item)
+        && mode_tree_down(
+            &mut (*data).tree_owner().borrow_mut(),
+            0 as ::core::ffi::c_int,
+        ) == 0
     {
-        mode_tree_up(&mut *(*data).tree_owner().get(), 0 as ::core::ffi::c_int);
+        mode_tree_up(
+            &mut (*data).tree_owner().borrow_mut(),
+            0 as ::core::ffi::c_int,
+        );
     }
     if let Some(pb) = paste_get_name(&item.name) {
         paste_free(&pb);
@@ -707,13 +713,13 @@ unsafe fn window_buffer_key(
         );
         match key {
             101 => {
-                let item_owner = mode_tree_get_current(&*tree_owner.get());
+                let item_owner = mode_tree_get_current(&tree_owner.borrow());
                 if let Some(item) = item_owner.as_buffer() {
                     window_buffer_start_edit(data, &item, client_owner);
                 }
             }
             100 => {
-                let item_owner = mode_tree_get_current(&*tree_owner.get());
+                let item_owner = mode_tree_get_current(&tree_owner.borrow());
                 if let Some(item) = item_owner.as_buffer() {
                     window_buffer_do_delete(data, &item);
                 }
@@ -751,7 +757,7 @@ unsafe fn window_buffer_key(
                 finished = 1 as ::core::ffi::c_int;
             }
             112 | 13 => {
-                let item_owner = mode_tree_get_current(&*tree_owner.get());
+                let item_owner = mode_tree_get_current(&tree_owner.borrow());
                 if let Some(item) = item_owner.as_buffer() {
                     window_buffer_do_paste(data, &item, client_owner);
                 }

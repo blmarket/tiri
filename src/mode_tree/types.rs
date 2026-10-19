@@ -13,7 +13,7 @@ use crate::window_buffer::window_buffer_itemdata;
 use crate::window_client::window_client_itemdata;
 use crate::window_customize::window_customize_itemdata;
 use crate::window_tree::window_tree_itemdata;
-use std::cell::UnsafeCell;
+use std::cell::{RefCell, UnsafeCell};
 use std::rc::{Rc, Weak};
 
 #[derive(Copy, Clone)]
@@ -112,7 +112,7 @@ pub type mode_tree_search_dir = ::core::ffi::c_uint;
 /// The prompt cleanup closure owns this record; all other handles observe it.
 pub struct mode_tree_prompt {
     /// Taken at logical cleanup before dropping the callback record.
-    pub mtd: Option<Rc<UnsafeCell<mode_tree_data>>>,
+    pub mtd: Option<Rc<RefCell<mode_tree_data>>>,
     pub c: ClientWeak,
     pub inputcb: mode_tree_prompt_input_cb,
     pub freecb: prompt_free_cb,
