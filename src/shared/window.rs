@@ -69,13 +69,6 @@ pub struct window_mode_entry {
 }
 
 impl window_mode_entry {
-    pub fn boxed_data_ptr<T: std::any::Any>(&self) -> Option<*mut T> {
-        self.boxed_data
-            .as_ref()?
-            .downcast_ref::<std::cell::UnsafeCell<T>>()
-            .map(std::cell::UnsafeCell::get)
-    }
-
     /// Boxed payload behind a RefCell; callers take scoped borrows.
     pub fn boxed_data_cell<T: std::any::Any>(&self) -> Option<&std::cell::RefCell<T>> {
         self.boxed_data
