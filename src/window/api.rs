@@ -406,9 +406,9 @@ impl Window for WindowRef {
     }
     unsafe fn next_winlink(&self, after: Option<refbox::Weak<winlink>>) -> refbox::Weak<winlink> {
         if let Some(after) = after {
-            window_winlinks_next(Some(&*self.get()), after)
+            window_winlinks_next(&*self.get(), after)
         } else {
-            window_winlinks_first(Some(&*self.get()))
+            window_winlinks_first(&*self.get())
         }
     }
     unsafe fn contains_pane(&self, pane: &Weak<UnsafeCell<window_pane>>) -> bool {

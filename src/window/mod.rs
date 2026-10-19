@@ -130,12 +130,8 @@ impl windows {
 }
 
 /// Return the first winlink in a window's association order.
-unsafe fn window_winlinks_first(w_value: Option<&window>) -> refbox::Weak<winlink> {
-    let w: *mut window = w_value.map_or(std::ptr::null_mut(), |value| value as *const _ as *mut _);
-    if w.is_null() {
-        return refbox::Weak::new();
-    }
-    (*w).winlinks
+fn window_winlinks_first(w: &window) -> refbox::Weak<winlink> {
+    w.winlinks
         .first()
         .filter(|link| link.is_alive())
         .map_or(refbox::Weak::new(), |link| link.clone())
@@ -144,15 +140,11 @@ unsafe fn window_winlinks_first(w_value: Option<&window>) -> refbox::Weak<winlin
 /// Return the next winlink in `w` after `wl`, or an empty handle when it is no longer in
 /// that window. Taking the owner explicitly keeps iteration correct if a
 /// callback moves `wl` to another window while the original list is traversed.
-unsafe fn window_winlinks_next(
-    w_value: Option<&window>,
-    wl: refbox::Weak<winlink>,
-) -> refbox::Weak<winlink> {
-    let w: *mut window = w_value.map_or(std::ptr::null_mut(), |value| value as *const _ as *mut _);
-    if w.is_null() || !wl.is_alive() {
+fn window_winlinks_next(w: &window, wl: refbox::Weak<winlink>) -> refbox::Weak<winlink> {
+    if !wl.is_alive() {
         return refbox::Weak::new();
     }
-    let links = &(*w).winlinks;
+    let links = &w.winlinks;
     links
         .iter()
         .position(|link| *link == wl)
@@ -162,10 +154,9 @@ unsafe fn window_winlinks_next(
 }
 
 /// Append a non-owning winlink handle to the window's association order.
-unsafe fn window_winlinks_append(w_value: &mut window, wl: refbox::Weak<winlink>) {
-    let w: *mut window = w_value as *mut _;
-    assert!(!w.is_null() && wl.is_alive());
-    let links = &mut (*w).winlinks;
+fn window_winlinks_append(w: &mut window, wl: refbox::Weak<winlink>) {
+    assert!(wl.is_alive());
+    let links = &mut w.winlinks;
     assert!(
         !links.contains(&wl),
         "winlink is already present in this window"
@@ -174,10 +165,9 @@ unsafe fn window_winlinks_append(w_value: &mut window, wl: refbox::Weak<winlink>
 }
 
 /// Remove a non-owning winlink handle from its window's association order.
-unsafe fn window_winlinks_remove(w_value: &mut window, wl: refbox::Weak<winlink>) {
-    let w: *mut window = w_value as *mut _;
-    assert!(!w.is_null() && wl.is_alive());
-    let links = &mut (*w).winlinks;
+fn window_winlinks_remove(w: &mut window, wl: refbox::Weak<winlink>) {
+    assert!(wl.is_alive());
+    let links = &mut w.winlinks;
     let position = links
         .iter()
         .position(|link| *link == wl)

@@ -175,36 +175,29 @@ pub unsafe fn sort_next_order(criteria: &mut sort_criteria) {
         .map_or(0, |index| (index + 1) % sequence.len());
     criteria.order = sequence[next];
 }
-pub unsafe fn sort_order_from_string(order: Option<&CStr>) -> sort_order {
-    let order: *const ::core::ffi::c_char = order.map_or(std::ptr::null(), CStr::as_ptr);
-    if !order.is_null() {
-        if strcasecmp(order, c"activity".as_ptr()) == 0 as ::core::ffi::c_int {
-            return SORT_ACTIVITY;
-        }
-        if strcasecmp(order, c"creation".as_ptr()) == 0 as ::core::ffi::c_int {
-            return SORT_CREATION;
-        }
-        if strcasecmp(order, c"index".as_ptr()) == 0 as ::core::ffi::c_int
-            || strcasecmp(order, c"key".as_ptr()) == 0 as ::core::ffi::c_int
-        {
-            return SORT_INDEX;
-        }
-        if strcasecmp(order, c"modifier".as_ptr()) == 0 as ::core::ffi::c_int {
-            return SORT_MODIFIER;
-        }
-        if strcasecmp(order, c"name".as_ptr()) == 0 as ::core::ffi::c_int
-            || strcasecmp(order, c"title".as_ptr()) == 0 as ::core::ffi::c_int
-        {
-            return SORT_NAME;
-        }
-        if strcasecmp(order, c"order".as_ptr()) == 0 as ::core::ffi::c_int {
-            return SORT_ORDER;
-        }
-        if strcasecmp(order, c"size".as_ptr()) == 0 as ::core::ffi::c_int {
-            return SORT_SIZE;
-        }
+pub fn sort_order_from_string(order: Option<&CStr>) -> sort_order {
+    let Some(order) = order else {
+        return SORT_END;
+    };
+    let order = order.to_bytes();
+    let is = |name: &[u8]| order.eq_ignore_ascii_case(name);
+    if is(b"activity") {
+        SORT_ACTIVITY
+    } else if is(b"creation") {
+        SORT_CREATION
+    } else if is(b"index") || is(b"key") {
+        SORT_INDEX
+    } else if is(b"modifier") {
+        SORT_MODIFIER
+    } else if is(b"name") || is(b"title") {
+        SORT_NAME
+    } else if is(b"order") {
+        SORT_ORDER
+    } else if is(b"size") {
+        SORT_SIZE
+    } else {
+        SORT_END
     }
-    SORT_END
 }
 pub fn sort_order_to_string(order: sort_order) -> Option<&'static CStr> {
     if order as ::core::ffi::c_uint == SORT_ACTIVITY as ::core::ffi::c_int as ::core::ffi::c_uint {
@@ -420,9 +413,9 @@ mod sequence_tests {
             SORT_SIZE,
         ] {
             let name = sort_order_to_string(order).expect("sort order has a name");
-            assert_eq!(unsafe { sort_order_from_string(Some(name)) }, order);
+            assert_eq!(sort_order_from_string(Some(name)), order);
         }
         assert_eq!(sort_order_to_string(SORT_END), None);
-        assert_eq!(unsafe { sort_order_from_string(None) }, SORT_END);
+        assert_eq!(sort_order_from_string(None), SORT_END);
     }
 }
