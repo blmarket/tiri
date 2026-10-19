@@ -4,7 +4,6 @@ use crate::cmd::queue::{
     cmdq_get_command, cmdq_get_state_owned, cmdq_insert_after, cmdq_new_state, cmdq_print,
     cmdq_wait, CmdqWaiter,
 };
-use crate::compat::stdio::CFile;
 use crate::control::control_notify_write;
 use crate::format::bytes::format_message_with;
 use crate::format::bytes::nullable_cstr;
@@ -14,7 +13,6 @@ use crate::prompt_history::prompt_load_history;
 use crate::server_client::Client as _;
 use crate::server_client::ClientRegistry;
 use crate::session::sessions;
-use libc::fopen;
 
 use crate::session::Session as _;
 use crate::shared::abi::*;
@@ -27,13 +25,12 @@ use crate::shared::command::{CMD_PARSE_PARSEONLY, CMD_PARSE_QUIET};
 use crate::shared::errno::ErrorText;
 use crate::shared::key::key_event;
 use crate::shared::session::SessionRef;
-use crate::shared::stdio::FILE;
 use crate::window::Window as _;
 use crate::window_copy::{window_copy_add, window_view_mode};
 use crate::window_pane::WindowPane as _;
-use libc::ENOENT;
 use std::collections::VecDeque;
-use std::ffi::{CStr, CString};
+use std::ffi::{CStr, CString, OsStr};
+use std::os::unix::ffi::OsStrExt;
 use std::sync::{Mutex, OnceLock};
 pub static mut cfg_client: ClientWeak = std::rc::Weak::new();
 pub static mut cfg_finished: ::core::ffi::c_int = 0;
@@ -106,7 +103,6 @@ pub unsafe fn load_cfg(
     c: Option<&ClientRef>,
     mut flags: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
     let mut pi: cmd_parse_input = cmd_parse_input {
         flags: 0,
         file: None,
@@ -126,27 +122,26 @@ pub unsafe fn load_cfg(
     let state;
 
     log_debug(format_args!("loading {}", log_cstr(path)));
-    f = fopen(path.as_ptr(), c"rb".as_ptr());
-    if f.is_null() {
-        let error = std::io::Error::last_os_error();
-        if error.raw_os_error() == Some(ENOENT) && flags & CMD_PARSE_QUIET != 0 {
-            return 0 as ::core::ffi::c_int;
+    let bytes = match std::fs::read(OsStr::from_bytes(path.to_bytes())) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            if error.kind() == std::io::ErrorKind::NotFound && flags & CMD_PARSE_QUIET != 0 {
+                return 0 as ::core::ffi::c_int;
+            }
+            cfg_add_cause(|out| {
+                write_cstr(out, nullable_cstr(path.as_ptr()))?;
+                out.write_all(b": ")?;
+                write!(out, "{}", ErrorText(&error))
+            });
+            return -(1 as ::core::ffi::c_int);
         }
-        cfg_add_cause(|out| {
-            write_cstr(out, nullable_cstr(path.as_ptr()))?;
-            out.write_all(b": ")?;
-            write!(out, "{}", ErrorText(&error))
-        });
-        return -(1 as ::core::ffi::c_int);
-    }
-    let stream = CFile::from_raw(f).expect("fopen returned a non-null stream");
+    };
     pi.flags = flags;
     pi.file = Some(path.to_owned());
     pi.line = 1 as u_int;
     pi.set_item(None);
     pi.c = c.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-    pr = cmd_parse_from_file(stream.as_ptr(), &raw mut pi);
-    drop(stream);
+    pr = cmd_parse_from_file(&bytes, &raw mut pi);
     if pr.status as ::core::ffi::c_uint
         == CMD_PARSE_ERROR as ::core::ffi::c_int as ::core::ffi::c_uint
     {

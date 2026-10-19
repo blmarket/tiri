@@ -6,7 +6,6 @@ use super::{
 use crate::cmd::queue::cmdq_get_client;
 use crate::cmd::{cmd_log_argv, cmd_stringify_argv_cstring};
 use crate::compat::fdforkpty::fdforkpty;
-use crate::compat::stdio::CFile;
 #[cfg(target_os = "linux")]
 use crate::compat::systemd::systemd_move_to_new_cgroup;
 use crate::control::control_reset_pane;
@@ -31,10 +30,7 @@ use crate::server_client::Client;
 use crate::server_client::ClientRegistry;
 use crate::shared::errno::ErrorText;
 use crate::window::Window as _;
-use libc::{
-    _exit, chdir, execl, execvp, fopen, fread, fseeko, ftello, getcwd, memset, sigfillset,
-    sigprocmask,
-};
+use libc::{_exit, chdir, execl, execvp, getcwd, memset, sigfillset, sigprocmask};
 
 use crate::session::Session;
 use crate::shared::client::ClientRef;
@@ -43,14 +39,12 @@ use crate::shared::window::WindowRef;
 use crate::tmux::{checkshell, find_home_cstr, ptm_fd};
 
 use crate::window_pane::WindowPane as _;
-use std::ffi::{CStr, CString};
+use std::ffi::{CStr, CString, OsStr};
 
-use crate::shared::abi::__off_t;
 use crate::shared::abi::*;
 use crate::shared::client::CLIENT_CONTROL;
 use crate::shared::command::cmd_find_state;
 use crate::shared::key::*;
-use crate::shared::limits::SIZE_MAX;
 use crate::shared::pane::window_pane;
 use crate::shared::pane::{PANE_EMPTY, PANE_EXITED, PANE_STATUSDRAWN};
 use crate::shared::posix_io::{_PATH_BSHELL, STDERR_FILENO, STDIN_FILENO};
@@ -61,16 +55,14 @@ use crate::shared::spawn::spawn_editor_state;
 use crate::shared::spawn::{
     SPAWN_BEFORE, SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_KILL, SPAWN_NONOTIFY, SPAWN_RESPAWN,
 };
-use crate::shared::stdio::FILE;
 use crate::shared::terminal::*;
 
 use std::os::fd::{FromRawFd, OwnedFd};
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::process::ExitStatusExt;
 
 use crate::shared::spawn::EditorHandle;
-use crate::spawn::{
-    off_t, set_spawn_cause, spawn_log, uintmax_t, _PATH_DEFPATH, IUTF8, SEEK_END, SEEK_SET,
-};
+use crate::spawn::{set_spawn_cause, spawn_log, _PATH_DEFPATH, IUTF8};
 unsafe fn spawn_fire_pane_created(
     mut sc: *mut spawn_context,
     wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
@@ -656,9 +648,6 @@ pub(super) unsafe fn finish_editing(wp_owner: &std::rc::Rc<std::cell::UnsafeCell
         return;
     };
     let es = &raw mut *owner;
-    let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
-    let mut result: Option<Vec<u8>> = None;
-    let mut len: off_t = 0 as off_t;
     let status = match (*wp).exit_status {
         Some(exit_status) => exit_status
             .code()
@@ -676,37 +665,7 @@ pub(super) unsafe fn finish_editing(wp_owner: &std::rc::Rc<std::cell::UnsafeCell
         );
         return;
     }
-    f = fopen(((*es).path).as_ptr().cast_mut(), c"r".as_ptr());
-    if !f.is_null() {
-        let stream = CFile::from_raw(f).expect("fopen returned a non-null stream");
-        if fseeko(stream.as_ptr(), 0 as __off_t, SEEK_END) == 0 as ::core::ffi::c_int {
-            len = ftello(stream.as_ptr()) as off_t;
-            if len >= 0 as off_t && len as uintmax_t <= SIZE_MAX as uintmax_t {
-                if fseeko(stream.as_ptr(), 0 as __off_t, SEEK_SET) == 0 as ::core::ffi::c_int {
-                    if len == 0 as off_t {
-                        result = Some(Vec::new());
-                    } else {
-                        let mut bytes = Vec::new();
-                        if bytes.try_reserve_exact(len as usize).is_ok() {
-                            bytes.extend(std::iter::repeat_n(0u8, len as usize));
-                            if fread(
-                                bytes.as_mut_ptr().cast::<::core::ffi::c_void>(),
-                                len as size_t,
-                                1 as size_t,
-                                stream.as_ptr(),
-                            ) == 1
-                            {
-                                result = Some(bytes);
-                            }
-                        }
-                    }
-                }
-            } else {
-                len = 0 as off_t;
-            }
-        }
-        drop(stream);
-    }
+    let result = std::fs::read(OsStr::from_bytes((*es).path.to_bytes())).ok();
     (*es).cb.take().expect("non-null editor callback")(std::ptr::NonNull::new(es).unwrap(), result);
 }
 pub(super) unsafe fn install_editor(
@@ -727,9 +686,8 @@ mod tests {
     use super::*;
     use crate::shared::spawn::spawn_finish_edit_cb;
     use crate::shared::spawn::EditorHandle;
-    use crate::spawn::{spawn_editor_fdopen, spawn_editor_finish};
-    use libc::fclose;
-    use libc::{fwrite, mkstemp};
+    use crate::spawn::spawn_editor_finish;
+    use libc::mkstemp;
     use std::ffi::CStr;
     use std::fs;
     use std::os::fd::AsRawFd;
@@ -826,20 +784,10 @@ mod tests {
                 assert!(flags >= 0);
                 assert_eq!(flags & ::libc::O_ACCMODE, ::libc::O_RDWR);
                 assert!(std::path::Path::new(path.to_str().unwrap()).exists());
-                let file = spawn_editor_fdopen(fd_owner).unwrap();
-                assert_eq!(::libc::fcntl(fd, ::libc::F_GETFL), flags);
-                assert!(::libc::fcntl(fd, ::libc::F_GETFD) >= 0);
-                let original = b"created through fdopen";
-                assert_eq!(
-                    fwrite(
-                        original.as_ptr() as *const ::core::ffi::c_void,
-                        original.len(),
-                        1,
-                        file,
-                    ),
-                    1
-                );
-                assert_eq!(fclose(file), 0);
+                let mut file = fs::File::from(fd_owner);
+                let original = b"created through mkstemp";
+                assert!(crate::spawn::spawn_editor_write(&mut file, original));
+                drop(file);
                 assert_eq!(::libc::fcntl(fd, ::libc::F_GETFD), -1);
                 assert_eq!(fs::read(path.to_str().unwrap()).unwrap(), original);
 

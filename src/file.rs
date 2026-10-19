@@ -8,7 +8,6 @@ pub use model::{client_file, client_file_cb, client_file_event, client_files};
 use crate::compat::imsg::imsg;
 use crate::compat::imsg::*;
 use crate::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE};
-use crate::compat::stdio::CFile;
 use crate::log::{fatalx, log_cstr, log_debug};
 use crate::proc::{bytes_of, proc_send};
 use crate::reactor::BufferEvent;
@@ -16,7 +15,7 @@ use crate::reactor::{
     bufferevent_enable, bufferevent_get_input, bufferevent_new, bufferevent_write, evbuffer_add,
     evbuffer_add_formatted, evbuffer_drain, evbuffer_get_length, evbuffer_pullup,
 };
-use libc::{ferror, fopen, fread, fwrite, memcpy, strcmp, strlen};
+use libc::{memcpy, strcmp, strlen};
 
 use crate::server_client::Client as _;
 use crate::shared::abi::ssize_t;
@@ -27,13 +26,13 @@ use crate::shared::event::*;
 use crate::shared::event::{EV_READ, EV_WRITE};
 use crate::shared::posix_io::{O_APPEND, O_NONBLOCK, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO};
 use crate::shared::process::tmuxpeer;
-use crate::shared::stdio::FILE;
 use crate::tmux::find_home_cstr;
 use libc::{E2BIG, EINVAL, ENOMEM};
 use std::cell::UnsafeCell;
-use std::ffi::{CStr, CString};
-use std::io;
+use std::ffi::{CStr, CString, OsStr};
+use std::io::{self, Write as _};
 use std::os::fd::{AsFd, AsRawFd, IntoRawFd, OwnedFd};
+use std::os::unix::ffi::OsStrExt;
 use std::rc::{Rc, Weak};
 
 #[derive(Copy, Clone)]
@@ -105,6 +104,11 @@ static mut file_next_stream: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 fn file_set_path(cf: &mut client_file, path: CString) {
     cf.path = Default::default();
     cf.path = Some(path);
+}
+
+/// The local path of a file opened by the server itself.
+fn file_os_path(cf: &client_file) -> &OsStr {
+    OsStr::from_bytes(cf.path.as_deref().expect("file path").to_bytes())
 }
 
 /// A transfer's terminal event, as reported to its waiting command.
@@ -462,8 +466,6 @@ unsafe fn file_write_impl(
     let fresh0 = file_next_stream;
     file_next_stream += 1;
     let mut stream: u_int = fresh0 as u_int;
-    let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
-    let mut mode: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let transfer_owner = file_create_with_client(client_owner, stream as ::core::ffi::c_int, None);
     (*transfer_owner.get()).wait = Some(waiter);
     let cf = &mut *transfer_owner.get();
@@ -481,31 +483,19 @@ unsafe fn file_write_impl(
     } else {
         file_set_path(cf, file_get_path(client_owner, path));
         if client_owner.is_none_or(|owner| owner.flags() & CLIENT_ATTACHED as uint64_t != 0) {
-            if flags & O_APPEND != 0 {
-                mode = c"ab".as_ptr();
-            } else {
-                mode = c"wb".as_ptr();
-            }
-            f = fopen(
-                cf.path
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                mode,
-            );
-            if f.is_null() {
-                cf.error = io::Error::last_os_error().raw_os_error().unwrap_or(EIO);
-            } else {
-                let file = CFile::from_raw(f).expect("fopen returned a non-null stream");
-                let write_failed = fwrite(
-                    bdata.as_ptr().cast(),
-                    1 as size_t,
-                    bdata.len(),
-                    file.as_ptr(),
-                ) as size_t
-                    != bdata.len();
-                drop(file);
-                if write_failed {
-                    cf.error = EIO;
+            let append = flags & O_APPEND != 0;
+            match std::fs::OpenOptions::new()
+                .create(true)
+                .append(append)
+                .write(true)
+                .truncate(!append)
+                .open(file_os_path(cf))
+            {
+                Err(error) => cf.error = error.raw_os_error().unwrap_or(EIO),
+                Ok(mut file) => {
+                    if file.write_all(bdata).is_err() {
+                        cf.error = EIO;
+                    }
                 }
             }
             current_block = 4636144702248558238;
@@ -571,10 +561,6 @@ unsafe fn file_read_impl(
     let fresh1 = file_next_stream;
     file_next_stream += 1;
     let mut stream: u_int = fresh1 as u_int;
-    let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
-    let mut file_owner: Option<CFile> = None;
-    let mut size: size_t = 0;
-    let mut buffer: [u8; 8192] = [0; 8192];
     let transfer_owner = file_create_with_client(client_owner, stream as ::core::ffi::c_int, None);
     (*transfer_owner.get()).read.active = true;
     let cb = init(&transfer_owner);
@@ -594,49 +580,10 @@ unsafe fn file_read_impl(
     } else {
         file_set_path(cf, file_get_path(client_owner, path));
         if client_owner.is_none_or(|owner| owner.flags() & CLIENT_ATTACHED as uint64_t != 0) {
-            f = fopen(
-                cf.path
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                c"rb".as_ptr(),
-            );
-            if f.is_null() {
-                cf.error = io::Error::last_os_error().raw_os_error().unwrap_or(EIO);
-            } else {
-                file_owner = CFile::from_raw(f);
-                let file = file_owner
-                    .as_ref()
-                    .expect("fopen returned a non-null stream");
-                loop {
-                    size = fread(
-                        buffer.as_mut_ptr().cast(),
-                        1 as size_t,
-                        ::core::mem::size_of::<[::core::ffi::c_char; 8192]>() as size_t,
-                        file.as_ptr(),
-                    ) as size_t;
-                    if ferror(file.as_ptr()) != 0 {
-                        cf.error = io::Error::last_os_error().raw_os_error().unwrap_or(EIO);
-                        current_block = 17369485759464587280;
-                        break;
-                    } else if evbuffer_add(&mut cf.read.input, &buffer[..size])
-                        != 0 as ::core::ffi::c_int
-                    {
-                        cf.error = ENOMEM;
-                        current_block = 17369485759464587280;
-                        break;
-                    } else if size != ::core::mem::size_of::<[::core::ffi::c_char; 8192]>() as usize
-                    {
-                        current_block = 4808432441040389987;
-                        break;
-                    }
-                }
-                match current_block {
-                    17369485759464587280 => {}
-                    _ => {
-                        if ferror(file.as_ptr()) != 0 {
-                            cf.error = EIO;
-                        }
-                    }
+            match std::fs::read(file_os_path(cf)) {
+                Err(error) => cf.error = error.raw_os_error().unwrap_or(EIO),
+                Ok(bytes) => {
+                    evbuffer_add(&mut cf.read.input, &bytes);
                 }
             }
             current_block = 17369485759464587280;
@@ -669,7 +616,6 @@ unsafe fn file_read_impl(
             }
         }
     }
-    drop(file_owner);
     file_fire_done(&transfer_owner);
     transfer_owner
 }

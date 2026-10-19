@@ -24,7 +24,6 @@ extern "C" {
     pub static mut environ: *mut *mut ::core::ffi::c_char;
     pub fn err(_: ::core::ffi::c_int, _: *const ::core::ffi::c_char, ...);
     pub fn errx(_: ::core::ffi::c_int, _: *const ::core::ffi::c_char, ...);
-    pub fn getc(__stream: *mut FILE) -> ::core::ffi::c_int;
     pub fn llabs(__x: ::core::ffi::c_longlong) -> ::core::ffi::c_longlong;
     pub fn strlcat(
         __dest: *mut ::core::ffi::c_char,

@@ -28,7 +28,6 @@ pub const NULL: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::
 pub type cc_t = ::libc::cc_t;
 pub type tcflag_t = ::libc::tcflag_t;
 
-pub type __off_t = ::libc::off_t;
 pub type __uint16_t = u16;
 pub type __uint32_t = u32;
 pub type __uid_t = ::libc::uid_t;

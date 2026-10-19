@@ -21,7 +21,6 @@ use crate::shared::command::{
 use crate::shared::environment::ENVIRON_HIDDEN;
 use crate::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
 use crate::shared::limits::UINT_MAX;
-use crate::shared::stdio::FILE;
 use crate::tmux::global_environ;
 use libc;
 use std::cell::RefCell;
@@ -231,15 +230,15 @@ fn cmd_parse_run_parser(
         }
     }
 }
-unsafe fn cmd_parse_do_file(
-    f: *mut FILE,
+fn cmd_parse_do_file(
+    bytes: &[u8],
     pi: &mut cmd_parse_input,
 ) -> Result<Box<cmd_parse_commands>, CString> {
     let session = RefCell::new(ParseSession {
         input: pi,
         error: None,
     });
-    cmd_parse_run_parser(&session, Lexer::from_file(f, &session))
+    cmd_parse_run_parser(&session, Lexer::from_file(bytes, &session))
 }
 
 fn cmd_parse_do_buffer(
@@ -425,10 +424,8 @@ unsafe fn cmd_parse_build_commands(
     pr.status = CMD_PARSE_SUCCESS;
     pr.cmdlist = Some(result_owner);
 }
-pub unsafe fn cmd_parse_from_file(
-    mut f: *mut FILE,
-    mut pi: *mut cmd_parse_input,
-) -> cmd_parse_result {
+/// Parse file contents already read into memory.
+pub unsafe fn cmd_parse_from_file(bytes: &[u8], mut pi: *mut cmd_parse_input) -> cmd_parse_result {
     let mut input: cmd_parse_input = cmd_parse_input {
         flags: 0,
         file: None,
@@ -448,7 +445,7 @@ pub unsafe fn cmd_parse_from_file(
     if pi.is_null() {
         pi = &raw mut input;
     }
-    let mut cmds = match cmd_parse_do_file(f, &mut *pi) {
+    let mut cmds = match cmd_parse_do_file(bytes, &mut *pi) {
         Ok(cmds) => cmds,
         Err(cause) => {
             pr.status = CMD_PARSE_ERROR;

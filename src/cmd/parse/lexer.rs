@@ -2,10 +2,10 @@
 //! after any preceding grammar actions have updated the application environment.
 use super::{ParseSession, RefCell};
 use crate::environ::environ_find;
-use crate::ffi::libc::{getc, wctomb};
-use crate::shared::stdio::{EOF, FILE};
+use crate::ffi::libc::wctomb;
+use crate::shared::stdio::EOF;
 use crate::tmux::global_environ;
-use libc::{getpwnam, getpwuid, getuid, ungetc};
+use libc::{getpwnam, getpwuid, getuid};
 use std::ffi::{c_char, CStr, CString};
 use tiri_cmdparse::{Token, TokenText};
 
@@ -35,9 +35,11 @@ impl LexError {
     }
 }
 
+/// Both sources are in memory; they differ only in how a raw byte widens,
+/// as tmux reads buffers as `char` and files through `getc`.
 enum Source<'a> {
     Bytes(&'a [u8]),
-    File(*mut FILE),
+    File(&'a [u8]),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -63,12 +65,8 @@ impl<'a, 'input> Lexer<'a, 'input> {
         Self::new(Source::Bytes(bytes), session)
     }
 
-    /// The caller keeps the file open and exclusively available while lexing.
-    pub(super) unsafe fn from_file(
-        file: *mut FILE,
-        session: &'a RefCell<ParseSession<'input>>,
-    ) -> Self {
-        Self::new(Source::File(file), session)
+    pub(super) fn from_file(bytes: &'a [u8], session: &'a RefCell<ParseSession<'input>>) -> Self {
+        Self::new(Source::File(bytes), session)
     }
 
     fn new(source: Source<'a>, session: &'a RefCell<ParseSession<'input>>) -> Self {
@@ -90,34 +88,22 @@ impl<'a, 'input> Lexer<'a, 'input> {
     }
 
     fn read_byte(&mut self) -> i32 {
-        let ch = match self.source {
-            Source::Bytes(bytes) => {
-                let Some(&byte) = bytes.get(self.offset) else {
-                    return EOF;
-                };
-                self.offset += 1;
-                return i32::from(byte as c_char);
-            }
-            Source::File(file) => unsafe { getc(file) },
+        let (Source::Bytes(bytes) | Source::File(bytes)) = self.source;
+        let Some(&byte) = bytes.get(self.offset) else {
+            return EOF;
         };
-        if ch != EOF {
-            self.offset += 1;
+        self.offset += 1;
+        match self.source {
+            Source::Bytes(_) => i32::from(byte as c_char),
+            Source::File(_) => i32::from(byte),
         }
-        ch
     }
 
     fn unread(&mut self, ch: i32) {
         if ch == EOF {
             return;
         }
-        match self.source {
-            Source::Bytes(_) => self.offset = self.offset.saturating_sub(1),
-            Source::File(file) => unsafe {
-                if ungetc(ch, file) != EOF {
-                    self.offset = self.offset.saturating_sub(1);
-                }
-            },
-        }
+        self.offset = self.offset.saturating_sub(1);
     }
 
     fn read(&mut self) -> i32 {
@@ -706,20 +692,10 @@ mod tests {
         assert_eq!(buffer.read_byte(), i32::from(0xff_u8 as c_char));
         assert_eq!(buffer.read_byte(), i32::from(b'x'));
         assert_eq!(buffer.read_byte(), EOF);
-        unsafe {
-            let file = libc::tmpfile();
-            assert!(!file.is_null());
-            assert_eq!(
-                libc::fwrite(bytes.as_ptr().cast(), 1, bytes.len(), file),
-                bytes.len()
-            );
-            libc::rewind(file);
-            let mut lexer = Lexer::from_file(file.cast(), &session);
-            assert_eq!(lexer.read_byte(), 255);
-            assert_eq!(lexer.read_byte(), i32::from(b'x'));
-            assert_eq!(lexer.read_byte(), EOF);
-            libc::fclose(file);
-        }
+        let mut lexer = Lexer::from_file(bytes, &session);
+        assert_eq!(lexer.read_byte(), 255);
+        assert_eq!(lexer.read_byte(), i32::from(b'x'));
+        assert_eq!(lexer.read_byte(), EOF);
     }
 
     #[test]
@@ -738,29 +714,19 @@ mod tests {
         let expected = scan(Lexer::from_bytes(&bytes, &buffer_session));
         assert_eq!(expected[1].1, (128..=254).collect::<Vec<u8>>());
         assert_eq!(expected[2].1, vec![255]);
-        unsafe {
-            let file = libc::tmpfile();
-            assert!(!file.is_null());
-            assert_eq!(
-                libc::fwrite(bytes.as_ptr().cast(), 1, bytes.len(), file),
-                bytes.len()
-            );
-            libc::rewind(file);
-            let mut input = cmd_parse_input {
-                line: 1,
-                ..Default::default()
-            };
-            let session = RefCell::new(ParseSession {
-                input: &mut input,
-                error: None,
-            });
-            let actual = scan(Lexer::from_file(file.cast(), &session));
-            libc::fclose(file);
-            assert_eq!(actual, expected);
-            assert_eq!(
-                session.borrow().input.line,
-                buffer_session.borrow().input.line
-            );
-        }
+        let mut input = cmd_parse_input {
+            line: 1,
+            ..Default::default()
+        };
+        let session = RefCell::new(ParseSession {
+            input: &mut input,
+            error: None,
+        });
+        let actual = scan(Lexer::from_file(&bytes, &session));
+        assert_eq!(actual, expected);
+        assert_eq!(
+            session.borrow().input.line,
+            buffer_session.borrow().input.line
+        );
     }
 }

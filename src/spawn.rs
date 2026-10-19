@@ -1,4 +1,3 @@
-use crate::compat::stdio::CFile;
 use crate::environ::environ_create;
 use crate::format::bytes::format_message_with;
 use crate::log::{log_cstr, log_debug, log_hex};
@@ -7,7 +6,7 @@ use crate::options::options_get_string;
 use crate::options::OptionsScope;
 use crate::server_client::Client as _;
 use crate::window::Window as _;
-use libc::{fdopen, fwrite, mkstemp, unlink};
+use libc::{mkstemp, unlink};
 
 use crate::session::Session;
 use crate::shared::client::ClientRef;
@@ -28,18 +27,14 @@ pub(crate) fn set_spawn_cause(cause: Option<&mut Option<CString>>, parts: &[&[u8
     *cause = Some(CString::new(bytes).expect("spawn diagnostic contains no NUL"));
 }
 
-use crate::shared::abi::__off_t;
 use crate::shared::pane::window_pane;
 use crate::shared::spawn::SPAWN_KILL;
 use crate::shared::spawn::{spawn_editor_state, spawn_finish_edit_cb};
-use crate::shared::stdio::FILE;
 use crate::shared::window::winlink;
 
-use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
-
-pub type off_t = __off_t;
-
-pub type uintmax_t = ::libc::uintmax_t;
+use std::fs::File;
+use std::io::Write as _;
+use std::os::fd::{FromRawFd, OwnedFd};
 
 impl spawn_editor_state {
     pub(crate) fn new(path: CString, cb: spawn_finish_edit_cb) -> Box<Self> {
@@ -57,7 +52,7 @@ impl spawn_editor_state {
     }
 }
 
-pub use ::libc::{IUTF8, SEEK_END, SEEK_SET};
+pub use ::libc::IUTF8;
 
 pub const _PATH_DEFPATH: &std::ffi::CStr = c"/usr/bin:/bin";
 
@@ -183,33 +178,15 @@ pub unsafe fn spawn_editor_finish(wp_owner: &std::rc::Rc<std::cell::UnsafeCell<w
     wp_owner.finish_editing();
 }
 
-/// Open the editor's temporary descriptor as a C `FILE` while keeping its
-/// ownership explicit at the Rust/stdio boundary.
-///
-/// `fd_owner` owns the live descriptor returned by `mkstemp`. On `fdopen`
-/// failure, `FILE` never owns the descriptor and `OwnedFd::drop` closes it
-/// exactly once, after the `fdopen` error is captured. On success,
-/// `into_raw_fd` relinquishes the Rust owner before the caller can `fclose`
-/// the stream, making `FILE` the sole closer.
-pub(crate) unsafe fn spawn_editor_fdopen(fd_owner: OwnedFd) -> std::io::Result<*mut FILE> {
-    let mode: &CStr = c"w";
-    let file = fdopen(fd_owner.as_raw_fd(), mode.as_ptr());
-    if file.is_null() {
-        return Err(std::io::Error::last_os_error());
-    }
-    let _fd_owned_by_file = fd_owner.into_raw_fd();
-    Ok(file)
-}
-
 /// Write the existing bytes before editor pane creation can dispatch events.
-/// Keep the fwrite item-count behavior for empty input and short writes.
-pub(crate) fn spawn_editor_write(stream: &CFile, bytes: &[u8]) -> bool {
-    unsafe { fwrite(bytes.as_ptr().cast(), bytes.len(), 1, stream.as_ptr()) == 1 }
+/// Empty input fails, as tmux's single-item fwrite of zero bytes does.
+pub(crate) fn spawn_editor_write(stream: &mut File, bytes: &[u8]) -> bool {
+    !bytes.is_empty() && stream.write_all(bytes).is_ok()
 }
 
 pub(crate) unsafe fn spawn_editor(
     client_owner: &ClientRef,
-    write: impl FnOnce(&CFile) -> bool,
+    write: impl FnOnce(&mut File) -> bool,
     mut cb: spawn_finish_edit_cb,
 ) -> Option<crate::shared::spawn::EditorHandle> {
     let session_owner = client_owner.attached_session().upgrade()?;
@@ -241,13 +218,8 @@ pub(crate) unsafe fn spawn_editor(
         if fd == -(1 as ::core::ffi::c_int) {
             return None;
         }
-        let fd_owner = OwnedFd::from_raw_fd(fd);
-        let Ok(f) = spawn_editor_fdopen(fd_owner) else {
-            unlink(path.as_ptr().cast());
-            return None;
-        };
-        let stream = CFile::from_raw(f).expect("fdopen returned a non-null stream");
-        if !write(&stream) {
+        let mut stream = File::from(OwnedFd::from_raw_fd(fd));
+        if !write(&mut stream) {
             drop(stream);
             unlink(path.as_ptr().cast());
             return None;

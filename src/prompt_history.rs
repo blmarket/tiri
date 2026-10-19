@@ -1,4 +1,3 @@
-use crate::compat::stdio::CFile;
 use crate::format::bytes::cstr_suffix;
 use crate::log::{log_bytes, log_debug};
 use crate::options::OptionsScope;
@@ -8,25 +7,12 @@ use crate::shared::abi::*;
 use crate::shared::errno::ErrorText;
 use crate::shared::prompt::PROMPT_NTYPES;
 use crate::shared::prompt::*;
-use crate::shared::stdio::FILE;
 use crate::tmux::find_home_cstr;
-use libc::{fgetc, fopen, fputc, fputs};
 use std::cell::RefCell;
-use std::ffi::{CStr, CString};
+use std::ffi::{CStr, CString, OsStr};
+use std::io::{BufWriter, Write as _};
+use std::os::unix::ffi::OsStrExt;
 
-unsafe fn read_history_line(stream: &mut CFile, line: &mut Vec<u8>) -> bool {
-    line.clear();
-    loop {
-        let ch = fgetc(stream.as_ptr());
-        if ch == -1 {
-            return !line.is_empty();
-        }
-        if ch == '\n' as i32 {
-            return true;
-        }
-        line.push(ch as u8);
-    }
-}
 thread_local! {
     static PROMPT_HISTORY: RefCell<[Vec<CString>; PROMPT_NTYPES as usize]> =
         const { RefCell::new([Vec::new(), Vec::new()]) };
@@ -69,8 +55,6 @@ unsafe fn prompt_add_typed_history(line: &CStr) {
     prompt_add_history(line, PROMPT_TYPE_COMMAND);
 }
 pub unsafe fn prompt_load_history() {
-    let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
-    let mut line = Vec::<u8>::new();
     let history_file = match prompt_find_history_file() {
         Some(path) => path,
         None => return,
@@ -79,25 +63,25 @@ pub unsafe fn prompt_load_history() {
         "loading history from {}",
         log_bytes(history_file.as_bytes())
     ));
-    f = fopen(history_file.as_ptr(), c"r".as_ptr());
-    if f.is_null() {
-        log_debug(format_args!(
-            "{}: {}",
-            log_bytes(history_file.as_bytes()),
-            ErrorText(&std::io::Error::last_os_error())
-        ));
-        return;
-    }
-    let mut stream = CFile::from_raw(f).expect("fopen returned a non-null stream");
-    while read_history_line(&mut stream, &mut line) {
+    let bytes = match std::fs::read(OsStr::from_bytes(history_file.as_bytes())) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            log_debug(format_args!(
+                "{}: {}",
+                log_bytes(history_file.as_bytes()),
+                ErrorText(&error)
+            ));
+            return;
+        }
+    };
+    for line in bytes.split_inclusive(|&byte| byte == b'\n') {
+        let mut line = line.strip_suffix(b"\n").unwrap_or(line).to_vec();
         line.push(0);
         let line = CStr::from_bytes_until_nul(&line).expect("history line has a terminator");
         prompt_add_typed_history(line);
     }
-    drop(stream);
 }
 pub unsafe fn prompt_save_history() {
-    let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
     let history_file = match prompt_find_history_file() {
         Some(path) => path,
         None => return,
@@ -106,30 +90,29 @@ pub unsafe fn prompt_save_history() {
         "saving history to {}",
         log_bytes(history_file.as_bytes())
     ));
-    f = fopen(history_file.as_ptr(), c"w".as_ptr());
-    if f.is_null() {
-        log_debug(format_args!(
-            "{}: {}",
-            log_bytes(history_file.as_bytes()),
-            ErrorText(&std::io::Error::last_os_error())
-        ));
-        return;
-    }
-    let stream = CFile::from_raw(f).expect("fopen returned a non-null stream");
-    PROMPT_HISTORY.with_borrow(|histories| {
+    let mut stream = match std::fs::File::create(OsStr::from_bytes(history_file.as_bytes())) {
+        Ok(file) => BufWriter::new(file),
+        Err(error) => {
+            log_debug(format_args!(
+                "{}: {}",
+                log_bytes(history_file.as_bytes()),
+                ErrorText(&error)
+            ));
+            return;
+        }
+    };
+    // Write failures are ignored, as with the unchecked stdio writes in tmux.
+    let _ = PROMPT_HISTORY.with_borrow(|histories| -> std::io::Result<()> {
         for (kind, history) in histories.iter().enumerate() {
             for entry in history {
-                fputs(
-                    prompt_type_string(kind as prompt_type).as_ptr(),
-                    stream.as_ptr(),
-                );
-                fputc(b':' as i32, stream.as_ptr());
-                fputs(entry.as_ptr(), stream.as_ptr());
-                fputc(b'\n' as i32, stream.as_ptr());
+                stream.write_all(prompt_type_string(kind as prompt_type).to_bytes())?;
+                stream.write_all(b":")?;
+                stream.write_all(entry.to_bytes())?;
+                stream.write_all(b"\n")?;
             }
         }
+        stream.flush()
     });
-    drop(stream);
 }
 /// Move backward through history. None leaves the prompt input unchanged.
 pub fn prompt_up_history(
