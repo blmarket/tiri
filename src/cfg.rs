@@ -122,8 +122,14 @@ pub unsafe fn load_cfg(
     let state;
 
     log_debug(format_args!("loading {}", log_cstr(path)));
-    let bytes = match std::fs::read(OsStr::from_bytes(path.to_bytes())) {
-        Ok(bytes) => bytes,
+    // tmux lexes the stream with `getc`, which reads an error as EOF: a
+    // directory opens and loads as an empty file, and a read that fails part
+    // way keeps what came before it.
+    let mut bytes = Vec::new();
+    match std::fs::File::open(OsStr::from_bytes(path.to_bytes())) {
+        Ok(mut file) => {
+            let _ = std::io::Read::read_to_end(&mut file, &mut bytes);
+        }
         Err(error) => {
             if error.kind() == std::io::ErrorKind::NotFound && flags & CMD_PARSE_QUIET != 0 {
                 return 0 as ::core::ffi::c_int;
@@ -135,7 +141,7 @@ pub unsafe fn load_cfg(
             });
             return -(1 as ::core::ffi::c_int);
         }
-    };
+    }
     pi.flags = flags;
     pi.file = Some(path.to_owned());
     pi.line = 1 as u_int;

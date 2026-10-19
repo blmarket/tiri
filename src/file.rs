@@ -33,6 +33,7 @@ use std::ffi::{CStr, CString, OsStr};
 use std::io::{self, Write as _};
 use std::os::fd::{AsFd, AsRawFd, IntoRawFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::MetadataExt as _;
 use std::rc::{Rc, Weak};
 
 #[derive(Copy, Clone)]
@@ -492,7 +493,16 @@ unsafe fn file_write_impl(
                 .open(file_os_path(cf))
             {
                 Err(error) => cf.error = error.raw_os_error().unwrap_or(EIO),
-                Ok(mut file) => {
+                Ok(file) => {
+                    // As tmux's `fwrite` into a stdio buffer of the file's
+                    // block size: only a write that overflows it reaches the
+                    // file now, and the error of the final flush, which
+                    // tmux's ignored `fclose` does, is lost on drop.
+                    let capacity = match file.metadata().map(|meta| meta.blksize()) {
+                        Ok(size) if size > 0 => size as usize,
+                        _ => libc::BUFSIZ as usize,
+                    };
+                    let mut file = io::BufWriter::with_capacity(capacity, file);
                     if file.write_all(bdata).is_err() {
                         cf.error = EIO;
                     }
