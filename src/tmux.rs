@@ -19,8 +19,8 @@ use crate::log::{log_add_level, log_cstr, log_debug};
 use crate::options::options_table;
 use crate::options::{options_set_number, options_set_string, OptionsScope};
 use crate::options::{OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION, OPTIONS_TABLE_WINDOW};
+use crate::shared::abi::uid_t;
 use crate::shared::abi::*;
-use crate::shared::abi::{__mode_t, uid_t};
 use crate::shared::account::passwd;
 use crate::shared::client::{
     CLIENT_CONTROL, CLIENT_CONTROLCONTROL, CLIENT_DEFAULTSOCKET, CLIENT_LOGIN, CLIENT_NOFORK,
@@ -29,24 +29,26 @@ use crate::shared::client::{
 use crate::shared::environment::{environ, environ_entry};
 use crate::shared::errno::ErrorText;
 use crate::shared::key::{MODEKEY_EMACS, MODEKEY_VI};
-use crate::shared::posix_io::stat;
-use crate::shared::posix_io::{S_IRWXU, X_OK};
+use crate::shared::posix_io::X_OK;
 use crate::shared::time::{timespec, CLOCK_REALTIME};
 use crate::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::text::utf8::{utf8_isvalid, utf8_stravis_cstring};
 use crate::tty::tty_parse_features;
 use ::libc::nl_item;
 use libc::{
-    access, clock_gettime, exit, fprintf, getcwd, getenv, getpwuid, getuid, lstat, mkdir,
-    nl_langinfo, printf, realpath, setlocale, strcasecmp, strcasestr, strcmp, strrchr, strstr,
+    access, clock_gettime, exit, fprintf, getenv, getpwuid, getuid, nl_langinfo, printf, setlocale,
+    strcasecmp, strcasestr, strcmp, strrchr, strstr,
 };
-use std::ffi::{CStr, CString};
+use std::ffi::{CStr, CString, OsStr};
+use std::fs;
+use std::io;
+use std::os::unix::ffi::{OsStrExt, OsStringExt};
+use std::os::unix::fs::{DirBuilderExt, MetadataExt};
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub use ::libc::{CLOCK_MONOTONIC, CODESET, EEXIST, LC_CTYPE, LC_TIME};
-
-pub use ::libc::{S_IFDIR, S_IFMT};
+pub use ::libc::{CLOCK_MONOTONIC, CODESET, LC_CTYPE, LC_TIME};
 
 pub const TMUX_SOCK_PERM: ::core::ffi::c_int = 7 as ::core::ffi::c_int;
 pub static mut global_environ: Option<Box<environ>> = None;
@@ -145,9 +147,14 @@ unsafe fn expand_path(path: &CStr, home: Option<&CStr>) -> Option<CString> {
     }
     Some(path.to_owned())
 }
+fn cstr_path(path: &CStr) -> &Path {
+    Path::new(OsStr::from_bytes(path.to_bytes()))
+}
+fn path_cstring(path: PathBuf) -> CString {
+    CString::new(path.into_os_string().into_vec()).expect("a Unix path contains no NUL")
+}
 unsafe fn expand_paths(s: &CStr, no_realpath: bool) -> Vec<CString> {
     let home = find_home_cstr();
-    let mut resolved = [0u8; 4096];
     let mut paths = Vec::new();
     for next in s.to_bytes().split(|&b| b == b':') {
         let next = CString::new(next).expect("a path from a C string contains no NUL");
@@ -155,20 +162,17 @@ unsafe fn expand_paths(s: &CStr, no_realpath: bool) -> Vec<CString> {
             let path = if no_realpath {
                 Some(expanded)
             } else {
-                let path = if realpath(expanded.as_ptr(), resolved.as_mut_ptr().cast()).is_null() {
-                    log_debug(format_args!(
-                        "{}: realpath(\"{}\") failed: {}",
-                        "expand_paths",
-                        log_cstr(&expanded),
-                        ErrorText(&std::io::Error::last_os_error())
-                    ));
-                    None
-                } else {
-                    Some(
-                        CStr::from_bytes_until_nul(&resolved)
-                            .expect("realpath NUL-terminates")
-                            .to_owned(),
-                    )
+                let path = match fs::canonicalize(cstr_path(&expanded)) {
+                    Ok(resolved) => Some(path_cstring(resolved)),
+                    Err(error) => {
+                        log_debug(format_args!(
+                            "{}: realpath(\"{}\") failed: {}",
+                            "expand_paths",
+                            log_cstr(&expanded),
+                            ErrorText(&error)
+                        ));
+                        None
+                    }
                 };
                 drop(expanded);
                 path
@@ -203,7 +207,6 @@ fn make_label_cause(parts: &[&[u8]]) -> CString {
 }
 
 unsafe fn make_label(label: Option<&CStr>) -> Result<CString, CString> {
-    let mut sb: stat = unsafe { ::core::mem::zeroed() };
     let mut uid: uid_t = 0;
     uid = getuid() as uid_t;
     let paths = expand_paths(c"$TMUX_TMPDIR:/tmp/", false);
@@ -214,41 +217,48 @@ unsafe fn make_label(label: Option<&CStr>) -> Result<CString, CString> {
     base_bytes.extend_from_slice(b"/tmux-");
     base_bytes.extend_from_slice((uid as ::core::ffi::c_long).to_string().as_bytes());
     let base = CString::new(base_bytes).expect("socket base contains no NUL");
-    let mkdir_error = (mkdir(base.as_ptr(), S_IRWXU as __mode_t) != 0 as ::core::ffi::c_int)
-        .then(std::io::Error::last_os_error)
-        .filter(|error| error.raw_os_error() != Some(EEXIST));
+    let mkdir_error = fs::DirBuilder::new()
+        .mode(0o700)
+        .create(cstr_path(&base))
+        .err()
+        .filter(|error| error.kind() != io::ErrorKind::AlreadyExists);
     if let Some(error) = &mkdir_error {
         let error = ErrorText(error).to_string();
-        Err(make_label_cause(&[
+        return Err(make_label_cause(&[
             b"couldn't create directory ",
             base.to_bytes(),
             b" (",
             error.as_bytes(),
             b")",
-        ]))
-    } else if lstat(base.as_ptr(), &raw mut sb) != 0 as ::core::ffi::c_int {
-        let error = ErrorText(&std::io::Error::last_os_error()).to_string();
-        Err(make_label_cause(&[
-            b"couldn't read directory ",
-            base.to_bytes(),
-            b" (",
-            error.as_bytes(),
-            b")",
-        ]))
-    } else if sb.st_mode & S_IFMT != S_IFDIR {
-        Err(make_label_cause(&[base.to_bytes(), b" is not a directory"]))
-    } else if sb.st_uid != uid || sb.st_mode & TMUX_SOCK_PERM as __mode_t != 0 as __mode_t {
-        Err(make_label_cause(&[
+        ]));
+    }
+    let sb = match fs::symlink_metadata(cstr_path(&base)) {
+        Ok(sb) => sb,
+        Err(error) => {
+            let error = ErrorText(&error).to_string();
+            return Err(make_label_cause(&[
+                b"couldn't read directory ",
+                base.to_bytes(),
+                b" (",
+                error.as_bytes(),
+                b")",
+            ]));
+        }
+    };
+    if !sb.file_type().is_dir() {
+        return Err(make_label_cause(&[base.to_bytes(), b" is not a directory"]));
+    }
+    if sb.uid() != uid || sb.mode() & TMUX_SOCK_PERM as u32 != 0 {
+        return Err(make_label_cause(&[
             b"directory ",
             base.to_bytes(),
             b" has unsafe permissions",
-        ]))
-    } else {
-        let mut path = base.into_bytes();
-        path.push(b'/');
-        path.extend_from_slice(label.unwrap_or(c"default").to_bytes());
-        Ok(CString::new(path).expect("socket label path contains no NUL"))
+        ]));
     }
+    let mut path = base.into_bytes();
+    path.push(b'/');
+    path.extend_from_slice(label.unwrap_or(c"default").to_bytes());
+    Ok(CString::new(path).expect("socket label path contains no NUL"))
 }
 pub(crate) fn shell_argv0_cstring(shell: &CStr, is_login: bool) -> CString {
     let shell = shell.to_bytes();
@@ -308,24 +318,17 @@ pub fn sig2name(signo: ::core::ffi::c_int) -> CString {
     CString::new(signo.to_string()).expect("decimal number has no NUL")
 }
 pub unsafe fn find_cwd() -> Option<CString> {
-    let mut resolved1: [::core::ffi::c_char; 4096] = [0; 4096];
-    let mut resolved2: [::core::ffi::c_char; 4096] = [0; 4096];
-    let mut buffer = [0u8; 4096];
-    if getcwd(buffer.as_mut_ptr().cast(), buffer.len() as size_t).is_null() {
-        return None;
-    }
-    let cwd = CStr::from_bytes_until_nul(&buffer)
-        .expect("getcwd NUL-terminates")
-        .to_owned();
+    let cwd = std::env::current_dir().ok()?;
     let Some(pwd) = nullable_cstr(getenv(c"PWD".as_ptr())) else {
-        return Some(cwd);
+        return Some(path_cstring(cwd));
     };
-    if pwd.is_empty()
-        || realpath(pwd.as_ptr(), resolved1.as_mut_ptr()).is_null()
-        || realpath(cwd.as_ptr(), resolved2.as_mut_ptr()).is_null()
-        || strcmp(resolved1.as_ptr(), resolved2.as_ptr()) != 0 as ::core::ffi::c_int
-    {
-        return Some(cwd);
+    let same = !pwd.is_empty()
+        && matches!(
+            (fs::canonicalize(cstr_path(pwd)), fs::canonicalize(&cwd)),
+            (Ok(resolved1), Ok(resolved2)) if resolved1 == resolved2
+        );
+    if !same {
+        return Some(path_cstring(cwd));
     }
     Some(pwd.to_owned())
 }

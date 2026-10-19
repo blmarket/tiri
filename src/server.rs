@@ -21,14 +21,13 @@ use crate::server_client::Client as _;
 use crate::server_client::ClientRegistry;
 use crate::shared::window::WindowWeak;
 use crate::window::Window as _;
-use libc::{
-    chmod, exit, fprintf, kill, killpg, sigfillset, sigprocmask, stat, strsignal, time, umask,
-    unlink, waitpid,
-};
+use libc::{exit, fprintf, kill, killpg, sigfillset, sigprocmask, strsignal, time, umask, waitpid};
+use std::fs;
 #[cfg(target_os = "linux")]
 use std::os::fd::FromRawFd;
 use std::os::fd::{IntoRawFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
 use std::os::unix::net::UnixListener;
 use std::os::unix::process::ExitStatusExt;
 use std::process::ExitStatus;
@@ -148,7 +147,7 @@ unsafe fn server_create_listener(flags: uint64_t) -> Result<UnixListener, CStrin
         if path.len() >= 108 {
             return Err(io::Error::from_raw_os_error(ENAMETOOLONG));
         }
-        unlink(socket_path_cstr().as_ptr());
+        let _ = fs::remove_file(std::path::Path::new(OsStr::from_bytes(path)));
         let mask = if flags & CLIENT_DEFAULTSOCKET as uint64_t != 0 {
             umask((S_IXUSR | S_IXGRP | S_IRWXO) as __mode_t)
         } else {
@@ -268,7 +267,7 @@ pub(crate) unsafe fn server_start(
     };
     if lockfd.is_some() {
         if let Some(path) = lockfile.take() {
-            unlink(path.as_ptr());
+            let _ = fs::remove_file(std::path::Path::new(OsStr::from_bytes(path.to_bytes())));
         }
         drop(lockfd.take());
     }
@@ -377,8 +376,6 @@ pub unsafe fn server_update_socket() {
     let mut s: Option<SessionRef> = None;
     static mut last: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     let mut n: ::core::ffi::c_int = 0;
-    let mut mode: __mode_t = 0;
-    let mut sb: stat = unsafe { ::core::mem::zeroed() };
     n = 0 as ::core::ffi::c_int;
     let mut s_owner = sessions::first();
     s = s_owner.clone();
@@ -393,10 +390,11 @@ pub unsafe fn server_update_socket() {
     }
     if n != last {
         last = n;
-        if stat(socket_path_cstr().as_ptr(), &raw mut sb) != 0 as ::core::ffi::c_int {
+        let path = std::path::Path::new(OsStr::from_bytes(socket_path_cstr().to_bytes()));
+        let Ok(sb) = fs::metadata(path) else {
             return;
-        }
-        mode = sb.st_mode & ACCESSPERMS;
+        };
+        let mut mode = sb.mode() as mode_t & ACCESSPERMS;
         if n != 0 as ::core::ffi::c_int {
             if mode & S_IRUSR != 0 {
                 mode |= S_IXUSR;
@@ -410,7 +408,9 @@ pub unsafe fn server_update_socket() {
         } else {
             mode &= !(S_IXUSR | S_IXGRP | S_IXOTH);
         }
-        chmod(socket_path_cstr().as_ptr(), mode);
+        // mode_t is u16 on macOS.
+        #[allow(clippy::useless_conversion)]
+        let _ = fs::set_permissions(path, fs::Permissions::from_mode(mode.into()));
     }
 }
 unsafe fn server_accept(result: io::Result<OwnedFd>) {
