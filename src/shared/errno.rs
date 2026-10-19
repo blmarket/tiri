@@ -1,12 +1,8 @@
-//! Authoritative errno declarations, supplied by the platform libc.
+//! errno helpers; the errno constants themselves come from `libc`.
 
 use std::ffi::CStr;
 use std::fmt;
 use std::io;
-
-pub use ::libc::{
-    E2BIG, EAGAIN, EBADMSG, ECHILD, EINTR, EINVAL, ENAMETOOLONG, ENOENT, ENOMEM, ERANGE,
-};
 
 /// strerror(3) text of an I/O error, as tmux prints it: std's Display would
 /// append " (os error N)". An error without an OS code prints itself.

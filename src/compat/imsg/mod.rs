@@ -1,7 +1,7 @@
 mod message;
 
 use crate::shared::abi::{pid_t, uint32_t};
-use crate::shared::errno::{EBADMSG, EINVAL, ERANGE};
+use libc::{EBADMSG, EINVAL, ERANGE};
 use message::Outgoing;
 pub use message::{
     imsg, imsg_hdr, msgtype, MSG_COMMAND, MSG_DETACH, MSG_DETACHKILL, MSG_EXEC, MSG_EXIT,

@@ -22,7 +22,8 @@ use crate::shared::command::{
     CMD_FIND_CANFAIL, CMD_PARSE_PARSEONLY, CMD_PARSE_QUIET, CMD_PARSE_VERBOSE,
     CMD_SOURCE_FILE_DEPTH_LIMIT,
 };
-use crate::shared::errno::{ErrorText, EINVAL, ENOENT, ENOMEM};
+use crate::shared::errno::ErrorText;
+use libc::{EINVAL, ENOENT, ENOMEM};
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
 

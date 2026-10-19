@@ -59,7 +59,7 @@ use crate::shared::abi::__mode_t;
 use crate::shared::abi::*;
 use crate::shared::client::{CLIENT_DEFAULTSOCKET, CLIENT_IDENTIFIED, CLIENT_NOFORK};
 use crate::shared::command::cmd_find_state;
-use crate::shared::errno::{ErrorText, EAGAIN, ECHILD, EINTR, ENAMETOOLONG};
+use crate::shared::errno::ErrorText;
 use crate::shared::event::*;
 use crate::shared::pane::window_pane;
 use crate::shared::posix_io::{S_IRWXU, WAIT_ANY, WNOHANG};
@@ -68,6 +68,7 @@ use crate::shared::signal::{
     sigset_t, ProcessSignal, SIGCONT, SIGTTIN, SIGTTOU, SIG_BLOCK, SIG_SETMASK,
 };
 use crate::shared::window::winlink;
+use libc::{EAGAIN, ECHILD, EINTR, ENAMETOOLONG};
 
 pub type mode_t = __mode_t;
 

@@ -1,11 +1,12 @@
 use crate::format::bytes::{format_message_with, write_cstr};
 use crate::server::server_create_socket;
 use crate::shared::abi::uint64_t;
-use crate::shared::errno::{ErrorText, E2BIG};
+use crate::shared::errno::ErrorText;
 use crate::tmux::socket_path;
 use ::systemd::daemon::{self, Listening, SocketType};
 use ::systemd::id128::Id128;
 use ::systemd::login::{self, UnitType};
+use libc::E2BIG;
 use libc::{getpid, getppid};
 use std::cell::{Cell, OnceCell};
 use std::ffi::{CStr, CString};

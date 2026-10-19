@@ -29,7 +29,7 @@ use crate::shared::client::{
 };
 use crate::shared::command::cmd_parse_result;
 use crate::shared::command::*;
-use crate::shared::errno::{ErrorText, EAGAIN, ECHILD, ENAMETOOLONG, ENOENT};
+use crate::shared::errno::ErrorText;
 use crate::shared::posix_io::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, WAIT_ANY, WNOHANG};
 use crate::shared::posix_terminal::{ICRNL, ONLCR, OPOST, TCSANOW, VMIN, VTIME};
 use crate::shared::process::{tmuxpeer, tmuxproc};
@@ -45,6 +45,7 @@ use libc::{
     getpid, getppid, kill, memset, printf, setenv, sigaction, sigemptyset, strlen, strsignal,
     system, unlink, waitpid,
 };
+use libc::{EAGAIN, ECHILD, ENAMETOOLONG, ENOENT};
 use std::ffi::{CStr, CString, OsStr};
 use std::io;
 use std::os::fd::{AsFd, AsRawFd, OwnedFd};

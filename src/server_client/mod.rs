@@ -597,7 +597,6 @@ use crate::shared::command::*;
 use crate::shared::command::{cmd_find_state, cmdq_item};
 use crate::shared::display::visible_ranges;
 use crate::shared::environment::environ_entry;
-use crate::shared::errno::EINTR;
 use crate::shared::event::*;
 use crate::shared::format::format_tree;
 use crate::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
@@ -626,6 +625,7 @@ use crate::shared::vis::{VIS_CSTYLE, VIS_NOSLASH, VIS_OCTAL};
 use crate::shared::window::WINDOW_SIZE_LATEST;
 use crate::shared::window::{window_mode_entry, winlink};
 use crate::tty::tty;
+use libc::EINTR;
 
 pub const _PATH_TTY: &std::ffi::CStr = c"/dev/tty";
 unsafe fn server_client_how_many() -> u_int {
