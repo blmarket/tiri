@@ -16,7 +16,7 @@ use crate::file::file_error;
 use crate::format::bytes::format_message_with;
 use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
-use crate::format::{format_add, format_add_cstr, format_create_owned, format_merge};
+use crate::format::{format_add, format_add_cstr, format_create, format_merge};
 use crate::key_string::key_string_format;
 use crate::log::{log_cstr, log_debug, log_get_level};
 use crate::reactor::{evbuffer_add_formatted, evbuffer_new};
@@ -422,16 +422,14 @@ pub unsafe fn cmdq_copy_state(
 /// Copy a literal key and value into the command queue state's formats.
 pub unsafe fn cmdq_add_format(state: &cmdq_state, key: &CStr, value: &CStr) {
     let mut formats = state.formats.borrow_mut();
-    let formats = formats.get_or_insert_with(|| {
-        format_create_owned(None, None, FORMAT_NONE, 0 as ::core::ffi::c_int)
-    });
+    let formats = formats
+        .get_or_insert_with(|| format_create(None, None, FORMAT_NONE, 0 as ::core::ffi::c_int));
     format_add_cstr(formats, key, value);
 }
 pub unsafe fn cmdq_add_formats(state: &cmdq_state, ft: &format_tree) {
     let mut formats = state.formats.borrow_mut();
-    let formats = formats.get_or_insert_with(|| {
-        format_create_owned(None, None, FORMAT_NONE, 0 as ::core::ffi::c_int)
-    });
+    let formats = formats
+        .get_or_insert_with(|| format_create(None, None, FORMAT_NONE, 0 as ::core::ffi::c_int));
     format_merge(formats, ft);
 }
 pub unsafe fn cmdq_merge_formats(

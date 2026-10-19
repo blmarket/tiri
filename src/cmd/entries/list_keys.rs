@@ -3,9 +3,7 @@ use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client, cmd
 use crate::cmd::{cmd_get_args_mut, cmd_list_print_cstring};
 use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
-use crate::format::{
-    format_add, format_create_with_client, format_defaults, format_expand_cstring,
-};
+use crate::format::{format_add, format_create, format_defaults, format_expand_cstring};
 use crate::key_bindings::{key_bindings_get_table, key_bindings_has_repeat, key_tables};
 use crate::key_string::{key_string_format, key_string_parse_cstr};
 use crate::options::options_get_number;
@@ -233,7 +231,7 @@ unsafe fn cmd_list_keys_exec(
     if single != 0 {
         bindings.truncate(1);
     }
-    let mut ft_owner = format_create_with_client(
+    let mut ft_owner = format_create(
         queue_client.as_ref(),
         Some(item_handle),
         FORMAT_NONE,

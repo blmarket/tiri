@@ -7,7 +7,7 @@ use crate::events_payload::{
     event_payload_items,
 };
 use crate::format::bytes::write_cstr;
-use crate::format::{format_create_with_client, format_expand_cstring, format_true};
+use crate::format::{format_create, format_expand_cstring, format_true};
 use crate::hooks::hooks_valid_event_name;
 use crate::log::{log_cstr, log_debug, log_pointer};
 use crate::reactor::{evbuffer_add_formatted, evbuffer_new};
@@ -261,7 +261,7 @@ unsafe fn cmd_wait_for_event_cb(
         let Some(item_owner) = key.upgrade() else {
             return;
         };
-        let mut ft_owner = format_create_with_client(
+        let mut ft_owner = format_create(
             queue_client.as_ref(),
             Some(&item_owner),
             FORMAT_NONE,

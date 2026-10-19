@@ -5,9 +5,7 @@ use crate::cmd::{
     cmd_list_print_cstring, cmd_parse,
 };
 use crate::environ::environ_put;
-use crate::format::{
-    format_create_with_client, format_defaults, format_expand_cstring, format_true,
-};
+use crate::format::{format_create, format_defaults, format_expand_cstring, format_true};
 use crate::log::{fatalx, log_bytes, log_debug};
 use crate::shared::abi::*;
 use crate::shared::client::ClientRef;
@@ -143,7 +141,7 @@ impl tiri_cmdparse::Context for ParserContext<'_, '_> {
                 &raw mut fs
             };
             let item_owner = pi.item.upgrade();
-            let mut ft_owner = format_create_with_client(
+            let mut ft_owner = format_create(
                 client_owner.as_ref(),
                 item_owner.as_ref(),
                 FORMAT_NONE,

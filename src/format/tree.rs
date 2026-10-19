@@ -99,27 +99,21 @@ pub(super) unsafe fn format_create_add_item(
     ft: &mut format_tree,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) {
-    let item = item_handle.borrow();
-    let mut event_snapshot = cmdq_get_event(&*(item));
-    let event: *mut key_event = &mut event_snapshot;
-    let mut m: *mut mouse_event = &raw mut (*event).m;
+    let event = cmdq_get_event(&item_handle.borrow());
     cmdq_merge_formats(item_handle, ft);
-    memcpy(
-        &raw mut ft.m as *mut ::core::ffi::c_void,
-        m as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<mouse_event>() as size_t,
-    );
+    ft.m = event.m;
 }
-/// Construct the sole owner; callers may project pointers for legacy readers.
-unsafe fn format_create_box(
-    c: Option<ClientRef>,
+/// Construct the sole owner of a format tree, retaining the supplied client
+/// handle and merging the command item's formats when one is given.
+pub unsafe fn format_create(
+    c: Option<&ClientRef>,
     item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     tag: ::core::ffi::c_int,
     flags: ::core::ffi::c_int,
 ) -> Box<format_tree> {
     let mut owner = Box::new(format_tree::default());
     let ft = &mut *owner;
-    ft.client = c;
+    ft.client = c.cloned();
     ft.item = item_handle.map(std::rc::Rc::downgrade).unwrap_or_default();
     ft.tag = tag as u_int;
     ft.flags = flags;
@@ -127,38 +121,6 @@ unsafe fn format_create_box(
         format_create_add_item(ft, item_handle);
     }
     owner
-}
-
-pub unsafe fn format_create(
-    c_owner: Option<&ClientRef>,
-    item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
-    tag: ::core::ffi::c_int,
-    flags: ::core::ffi::c_int,
-) -> Box<format_tree> {
-    format_create_box(c_owner.cloned(), item_handle, tag, flags)
-}
-
-/// Construct a format tree retaining the supplied client handle.
-/// Clone the handle before merging command-item formats.
-///
-/// # Safety
-/// A non-null `item` must point to a live command-queue item.
-pub unsafe fn format_create_with_client(
-    c: Option<&ClientRef>,
-    item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
-    tag: ::core::ffi::c_int,
-    flags: ::core::ffi::c_int,
-) -> Box<format_tree> {
-    format_create_box(c.cloned(), item_handle, tag, flags)
-}
-
-pub unsafe fn format_create_owned(
-    c: Option<&ClientRef>,
-    item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
-    tag: ::core::ffi::c_int,
-    flags: ::core::ffi::c_int,
-) -> Box<format_tree> {
-    format_create_box(c.cloned(), item_handle, tag, flags)
 }
 
 impl Drop for format_tree {
@@ -477,7 +439,7 @@ mod tests {
         for owned in [false, true] {
             unsafe {
                 let mut owner = if owned {
-                    format_create_owned(None, None, FORMAT_NONE, 0)
+                    format_create(None, None, FORMAT_NONE, 0)
                 } else {
                     tree()
                 };

@@ -1,9 +1,7 @@
 use crate::arguments::{args, args_get, args_has, args_parse};
 use crate::cmd::cmd_get_args_mut;
 use crate::cmd::queue::{cmdq_error, cmdq_get_client};
-use crate::format::{
-    format_create_with_client, format_defaults, format_expand_cstring, format_true,
-};
+use crate::format::{format_create, format_defaults, format_expand_cstring, format_true};
 use crate::server_client::Client as _;
 use crate::shared::client::ClientRef;
 use crate::shared::window::WindowRef;
@@ -117,7 +115,7 @@ unsafe fn cmd_kill_pane_filter(
     if filter.is_null() {
         return 1 as ::core::ffi::c_int;
     }
-    let mut ft_owner = format_create_with_client(
+    let mut ft_owner = format_create(
         queue_client.as_ref(),
         Some(item_handle),
         FORMAT_NONE,

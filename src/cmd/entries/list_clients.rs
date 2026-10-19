@@ -4,7 +4,7 @@ use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print};
 use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
 use crate::format::{
-    format_add, format_create_with_client, format_defaults, format_expand_cstring, format_true,
+    format_add, format_create, format_defaults, format_expand_cstring, format_true,
 };
 use crate::server_client::Client as _;
 use crate::shared::abi::*;
@@ -94,7 +94,7 @@ unsafe fn cmd_list_clients_exec(
         if !(attached.is_none()
             || !s.is_none() && !crate::shared::rc::same(s.as_ref(), attached.as_ref()))
         {
-            let mut ft_owner = format_create_with_client(
+            let mut ft_owner = format_create(
                 queue_client.as_ref(),
                 Some(item_handle),
                 FORMAT_NONE,

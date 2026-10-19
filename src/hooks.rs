@@ -14,8 +14,8 @@ use crate::events_payload::{
 };
 use crate::format::bytes::write_cstr;
 use crate::format::{
-    format_add, format_create_defaults, format_create_owned, format_expand_cstring,
-    format_log_debug, format_merge,
+    format_add, format_create, format_create_defaults, format_expand_cstring, format_log_debug,
+    format_merge,
 };
 use crate::log::{log_cstr, log_debug, log_get_level};
 use crate::monitor::{
@@ -268,7 +268,7 @@ unsafe fn hooks_insert_event(
         return;
     }
     let c = event_payload_get_client(ep);
-    let mut formats = format_create_owned(c, item_handle, FORMAT_NONE, FORMAT_NOJOBS);
+    let mut formats = format_create(c, item_handle, FORMAT_NONE, FORMAT_NOJOBS);
     let ft = &mut *formats;
     event_payload_add_formats(ep, ft, Some(c"hook_"));
     format_add(ft, c"hook", |out| write_cstr(out, &*name));
@@ -360,7 +360,7 @@ pub unsafe fn hooks_run(
     let mut hd = hooks_data {
         name,
         fs: cmd_find_state::default(),
-        formats: format_create_owned(None, None, 0, FORMAT_NOJOBS),
+        formats: format_create(None, None, 0, FORMAT_NOJOBS),
         oo: None,
         client,
         expand: 0,

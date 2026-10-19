@@ -5,9 +5,7 @@ use crate::cmd::cmd_get_args_mut;
 use crate::cmd::find::cmd_find_best_client;
 use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_print};
 use crate::format::bytes::write_cstr;
-use crate::format::{
-    format_create_with_client, format_defaults, format_each, format_expand_time_cstring,
-};
+use crate::format::{format_create, format_defaults, format_each, format_expand_time_cstring};
 use crate::json::{json_parse, json_to_string};
 use crate::reactor::{evbuffer_add_formatted, evbuffer_new};
 
@@ -144,8 +142,7 @@ unsafe fn cmd_display_message_exec(
     } else {
         flags = 0 as ::core::ffi::c_int;
     }
-    let mut ft_owner =
-        format_create_with_client(queue_client.as_ref(), Some(item_handle), FORMAT_NONE, flags);
+    let mut ft_owner = format_create(queue_client.as_ref(), Some(item_handle), FORMAT_NONE, flags);
     let ft = &mut *ft_owner;
     format_defaults(ft, c.as_ref(), s.as_ref(), wl.clone(), wp.as_ref());
     if args_has(&*args, 'a' as i32 as u_char) != 0 && args_has(&*args, 'j' as i32 as u_char) == 0 {

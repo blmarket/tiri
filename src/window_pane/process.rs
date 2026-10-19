@@ -3,7 +3,7 @@ use super::{window_pane_destroy_ready, window_pane_exited};
 use crate::arguments::{args, args_count, args_has, args_string};
 use crate::cmd::cmd_get_args_mut;
 use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client};
-use crate::format::{format_create_with_client, format_defaults, format_expand_time_cstring};
+use crate::format::{format_create, format_defaults, format_expand_time_cstring};
 use crate::log::{fatalx, log_debug};
 use crate::proc::proc_clear_signals;
 use crate::reactor::BufferEvent;
@@ -91,7 +91,7 @@ pub(super) unsafe fn pipe_pane(
             return CmdOutcome::Error;
         }
     };
-    let mut ft_owner = format_create_with_client(
+    let mut ft_owner = format_create(
         queue_client.as_ref(),
         Some(item_handle),
         FORMAT_NONE,

@@ -4,7 +4,7 @@ use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print};
 use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
 use crate::format::{
-    format_create_with_client, format_defaults_paste_buffer, format_expand_cstring, format_true,
+    format_create, format_defaults_paste_buffer, format_expand_cstring, format_true,
 };
 use crate::shared::abi::*;
 use crate::shared::command::CMD_AFTERHOOK;
@@ -78,7 +78,7 @@ unsafe fn cmd_list_buffers_exec(
     sort_crit.reversed = args_has(&*args, 'r' as i32 as u_char);
     let buffers = sort_get_buffers(&sort_crit);
     for pb in buffers {
-        let mut ft_owner = format_create_with_client(
+        let mut ft_owner = format_create(
             queue_client.as_ref(),
             Some(item_handle),
             FORMAT_NONE,

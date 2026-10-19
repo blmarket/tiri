@@ -28,8 +28,8 @@ use crate::server::{marked_pane, server_check_marked};
 use crate::shared::window::WindowWeak;
 use crate::window::Window as _;
 use libc::{
-    ctime_r, dirname, fnmatch, gethostname, getpwuid, getuid, localtime_r, memcmp, memcpy, memset,
-    strcasecmp, strchr, strcmp, strcspn, strftime, strlen, strstr, strtod,
+    ctime_r, dirname, fnmatch, gethostname, getpwuid, getuid, localtime_r, memcmp, strcasecmp,
+    strchr, strcmp, strcspn, strftime, strlen, strstr, strtod,
 };
 
 use crate::server_client::Client as _;
@@ -78,8 +78,6 @@ use crate::shared::format::{
 use crate::shared::grid::*;
 use crate::shared::job::JOB_NOWAIT;
 use crate::shared::job::{job, job_update_callback, JobCompletion};
-use crate::shared::key::key_event;
-use crate::shared::mouse::mouse_event;
 use crate::shared::pane::window_pane;
 use crate::shared::paste::PasteBufferRef;
 use crate::shared::posix_io::FNM_CASEFOLD;
@@ -107,8 +105,8 @@ mod tree;
 pub use tree::format_add_owned_cb;
 use tree::*;
 pub use tree::{
-    format_add, format_add_cstr, format_add_time, format_create, format_create_owned,
-    format_create_with_client, format_each, format_get_pane, format_log_debug, format_merge,
+    format_add, format_add_cstr, format_add_time, format_create, format_each, format_get_pane,
+    format_log_debug, format_merge,
 };
 mod jobs;
 use jobs::*;
@@ -138,7 +136,7 @@ pub(crate) use expression::{
 pub use expression::{format_skip, format_true};
 
 pub struct format_modifier {
-    pub modifier: [::core::ffi::c_char; 3],
+    pub modifier: [u8; 3],
     pub size: u_int,
     pub argv: Vec<std::ffi::CString>,
 }
@@ -154,11 +152,13 @@ impl format_modifier {
     fn arg(&self, index: usize) -> &CStr {
         &self.argv[index]
     }
+
+    fn name(&self) -> &CStr {
+        CStr::from_bytes_until_nul(&self.modifier).expect("modifier name is NUL-terminated")
+    }
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct format_expand_state {
-    pub ft: *mut format_tree,
+pub struct format_expand_state<'a> {
+    pub ft: &'a mut format_tree,
     pub loop_0: u_int,
     pub start_time: uint64_t,
     pub flags: ::core::ffi::c_int,
@@ -166,9 +166,45 @@ pub struct format_expand_state {
     pub tm: tm,
 }
 
-impl Default for format_expand_state {
-    fn default() -> Self {
-        unsafe { ::core::mem::zeroed() }
+impl<'a> format_expand_state<'a> {
+    /// Fresh expansion over `ft`; this is what the public entry points use.
+    pub fn new(ft: &'a mut format_tree, flags: ::core::ffi::c_int) -> Self {
+        format_expand_state {
+            ft,
+            loop_0: 0,
+            start_time: unsafe { get_timer() },
+            flags,
+            time: 0,
+            tm: unsafe { ::core::mem::zeroed() },
+        }
+    }
+
+    /// Nested expansion over the same tree (job commands, time formats).
+    pub fn child(&mut self, flags: ::core::ffi::c_int) -> format_expand_state<'_> {
+        format_expand_state {
+            ft: &mut *self.ft,
+            loop_0: self.loop_0,
+            start_time: self.start_time,
+            flags: self.flags | flags,
+            time: self.time,
+            tm: self.tm,
+        }
+    }
+
+    /// Nested expansion over a loop iteration's own tree.
+    pub fn with_tree<'b>(
+        &self,
+        ft: &'b mut format_tree,
+        flags: ::core::ffi::c_int,
+    ) -> format_expand_state<'b> {
+        format_expand_state {
+            ft,
+            loop_0: self.loop_0,
+            start_time: self.start_time,
+            flags: self.flags | flags,
+            time: self.time,
+            tm: self.tm,
+        }
     }
 }
 
@@ -194,11 +230,6 @@ pub type C2RustUnnamed_44 = ::core::ffi::c_uint;
 pub use ::libc::REG_NOSUB;
 pub const INT64_MAX: ::core::ffi::c_long = 9223372036854775807 as ::core::ffi::c_long;
 
-static mut sort_crit: sort_criteria = sort_criteria {
-    order: SORT_ACTIVITY,
-    reversed: 0,
-    order_seq: &[],
-};
 const format_upper: [Option<&CStr>; 26] = [
     None,
     None,
@@ -256,17 +287,17 @@ const format_lower: [Option<&CStr>; 26] = [
     None,
 ];
 #[inline]
-fn format_logging(ft: &mut format_tree) -> ::core::ffi::c_int {
+fn format_logging(ft: &format_tree) -> ::core::ffi::c_int {
     (log_get_level() != 0 as ::core::ffi::c_int || ft.flags & FORMAT_VERBOSE != 0)
         as ::core::ffi::c_int
 }
 unsafe fn format_log1(
-    es: &mut format_expand_state,
+    es: &format_expand_state<'_>,
     mut from: *const ::core::ffi::c_char,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
-    let mut ft: *mut format_tree = es.ft;
-    if format_logging(&mut *ft) == 0 {
+    let ft = &*es.ft;
+    if format_logging(ft) == 0 {
         return;
     }
     let s = format_message_with(write);
@@ -275,29 +306,13 @@ unsafe fn format_log1(
         log_cstr(CStr::from_ptr(from)),
         log_cstr(&s)
     ));
-    if let Some(item) = (*ft)
-        .item
-        .upgrade()
-        .filter(|_| (*ft).flags & FORMAT_VERBOSE != 0)
-    {
+    if let Some(item) = ft.item.upgrade().filter(|_| ft.flags & FORMAT_VERBOSE != 0) {
         cmdq_print(&item, |out| {
             out.write_all(b"#")?;
             out.write_all(&b"          "[..(es.loop_0 as usize).min(10)])?;
             write_cstr(out, &*s)
         });
     }
-}
-unsafe fn format_copy_state(
-    to: &mut format_expand_state,
-    from: &format_expand_state,
-    mut flags: ::core::ffi::c_int,
-) {
-    to.ft = from.ft;
-    to.loop_0 = from.loop_0;
-    to.time = from.time;
-    to.tm = from.tm;
-    to.flags = from.flags | flags;
-    to.start_time = from.start_time;
 }
 pub unsafe fn format_create_defaults(
     item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
@@ -307,17 +322,12 @@ pub unsafe fn format_create_defaults(
     wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
 ) -> Box<format_tree> {
     let queue_client = cmdq_get_client(item_handle.map(|item| item.borrow()).as_deref());
-    let mut owner;
-    if item_handle.is_some() {
-        owner = format_create_with_client(
-            queue_client.as_ref(),
-            item_handle,
-            FORMAT_NONE,
-            0 as ::core::ffi::c_int,
-        );
-    } else {
-        owner = format_create(None, item_handle, FORMAT_NONE, 0 as ::core::ffi::c_int);
-    }
+    let mut owner = format_create(
+        queue_client.as_ref(),
+        item_handle,
+        FORMAT_NONE,
+        0 as ::core::ffi::c_int,
+    );
     let ft = &mut *owner;
     format_defaults(ft, c_owner, s_owner, wl.clone(), wp_owner);
     owner

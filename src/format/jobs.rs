@@ -187,12 +187,11 @@ unsafe fn format_job_complete(completion: JobCompletion, entry: &JobEntry) {
     }
 }
 
-pub(super) unsafe fn format_job_get(es: &mut format_expand_state, command: &CStr) -> CString {
-    let ft = es.ft;
-    let cache = JobCache::for_client((*ft).client.as_ref());
-    let entry = cache.entry((*ft).tag, command);
-    let mut next = format_expand_state::default();
-    format_copy_state(&mut next, es, FORMAT_EXPAND_NOJOBS | FORMAT_EXPAND_NOCYCLE);
+pub(super) unsafe fn format_job_get(es: &mut format_expand_state<'_>, command: &CStr) -> CString {
+    let (flags, tag, client) = (es.ft.flags, es.ft.tag, es.ft.client.clone());
+    let cache = JobCache::for_client(client.as_ref());
+    let entry = cache.entry(tag, command);
+    let mut next = es.child(FORMAT_EXPAND_NOJOBS | FORMAT_EXPAND_NOCYCLE);
     next.flags &= !FORMAT_EXPAND_TIME;
     let expanded = format_expand1_cstring(&mut next, command.as_ptr());
     let Some((force, running)) = entry.with_record(|record| {
@@ -200,7 +199,7 @@ pub(super) unsafe fn format_job_get(es: &mut format_expand_state, command: &CStr
             format_job_set_expanded(record, expanded.clone());
             1
         } else {
-            (*ft).flags & FORMAT_FORCE
+            flags & FORMAT_FORCE
         };
         (force, record.job.clone())
     }) else {
@@ -216,7 +215,7 @@ pub(super) unsafe fn format_job_get(es: &mut format_expand_state, command: &CStr
         return CString::default();
     };
     if start {
-        let cwd = ClientRef::working_directory((*ft).client.as_ref(), None);
+        let cwd = ClientRef::working_directory(client.as_ref(), None);
         let update_entry = entry.clone();
         let complete_entry = entry.clone();
         let started = job_run(
@@ -259,7 +258,7 @@ pub(super) unsafe fn format_job_get(es: &mut format_expand_state, command: &CStr
     }
     let output = entry
         .with_record(|record| {
-            if (*ft).flags & FORMAT_STATUS != 0 {
+            if flags & FORMAT_STATUS != 0 {
                 record.status = 1;
             }
             record.out.clone()

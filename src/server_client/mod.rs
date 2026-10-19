@@ -3364,7 +3364,7 @@ unsafe fn server_client_set_title(client_owner: &ClientRef) {
         .as_ref()
         .expect("option snapshot")
         .as_ptr();
-    let mut ft_owner = crate::format::format_create_with_client(
+    let mut ft_owner = crate::format::format_create(
         Some(client_owner),
         None,
         FORMAT_NONE,

@@ -307,7 +307,7 @@ pub(super) unsafe fn format_find(
 }
 
 pub(super) unsafe fn format_check_time(
-    es: &mut format_expand_state,
+    es: &mut format_expand_state<'_>,
     mut check: *mut u_int,
 ) -> ::core::ffi::c_int {
     let mut t: uint64_t = 0;
@@ -332,7 +332,7 @@ pub(super) unsafe fn format_check_time(
     0 as ::core::ffi::c_int
 }
 unsafe fn format_unescape_cstring(
-    es: &mut format_expand_state,
+    es: &mut format_expand_state<'_>,
     mut s: *const ::core::ffi::c_char,
     n: size_t,
 ) -> CString {
@@ -375,7 +375,7 @@ unsafe fn format_unescape_cstring(
     CString::new(out).expect("unescaped C-string view has no NUL")
 }
 
-unsafe fn format_strip_cstring(es: &mut format_expand_state, s: &CStr) -> CString {
+unsafe fn format_strip_cstring(es: &mut format_expand_state<'_>, s: &CStr) -> CString {
     let input = s.to_bytes();
     let mut out = Vec::with_capacity(input.len());
     let mut brackets: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -402,7 +402,7 @@ unsafe fn format_strip_cstring(es: &mut format_expand_state, s: &CStr) -> CStrin
     CString::new(out).expect("stripped C string contains no NUL")
 }
 pub(super) unsafe fn format_skip1(
-    mut es: Option<&mut format_expand_state>,
+    mut es: Option<&mut format_expand_state<'_>>,
     mut s: *const ::core::ffi::c_char,
     mut end: *const ::core::ffi::c_char,
 ) -> *const ::core::ffi::c_char {
@@ -456,7 +456,7 @@ pub unsafe fn format_skip(mut s: *const ::core::ffi::c_char) -> *const ::core::f
     let mut end: *const ::core::ffi::c_char = c"]".as_ptr();
     format_skip1(None, s, end)
 }
-unsafe fn format_choose(es: &mut format_expand_state, s: &CStr) -> Option<(CString, CString)> {
+unsafe fn format_choose(es: &mut format_expand_state<'_>, s: &CStr) -> Option<(CString, CString)> {
     let cp = format_skip1(Some(es), s.as_ptr(), c",".as_ptr());
     if cp.is_null() {
         return None;
@@ -471,7 +471,7 @@ unsafe fn format_choose(es: &mut format_expand_state, s: &CStr) -> Option<(CStri
 }
 
 unsafe fn format_choose_loop(
-    es: &mut format_expand_state,
+    es: &mut format_expand_state<'_>,
     fmt: &CStr,
 ) -> (CString, Option<CString>) {
     let cp = format_skip1(Some(es), fmt.as_ptr(), c",".as_ptr());
@@ -508,21 +508,17 @@ pub(super) unsafe fn format_add_modifier(
         size: n as u_int,
         argv,
     };
-    memcpy(
-        fm.modifier.as_mut_ptr() as *mut ::core::ffi::c_void,
-        c as *const ::core::ffi::c_void,
-        n,
-    );
+    fm.modifier[..n].copy_from_slice(std::slice::from_raw_parts(c.cast::<u8>(), n));
     list.push(fm);
 }
 unsafe fn format_expand_modifier_arg(
-    es: &mut format_expand_state,
+    es: &mut format_expand_state<'_>,
     value: *const ::core::ffi::c_char,
 ) -> CString {
     format_expand1_cstring(es, value)
 }
 pub(super) unsafe fn format_build_modifiers(
-    es: &mut format_expand_state,
+    es: &mut format_expand_state<'_>,
     s: &mut &CStr,
 ) -> Vec<format_modifier> {
     let mut cp = s.as_ptr();
@@ -756,7 +752,7 @@ pub(super) unsafe fn format_search(
 }
 
 pub(super) unsafe fn format_bool_op_1(
-    es: &mut format_expand_state,
+    es: &mut format_expand_state<'_>,
     mut fmt: *const ::core::ffi::c_char,
     mut not: ::core::ffi::c_int,
 ) -> CString {
@@ -773,7 +769,7 @@ pub(super) unsafe fn format_bool_op_1(
     }
 }
 pub(super) unsafe fn format_bool_op_n(
-    es: &mut format_expand_state,
+    es: &mut format_expand_state<'_>,
     fmt: &CStr,
     mut and: ::core::ffi::c_int,
 ) -> CString {
@@ -821,7 +817,7 @@ pub(super) unsafe fn format_bool_op_n(
     }
 }
 pub(super) unsafe fn format_session_name(
-    es: &mut format_expand_state,
+    es: &mut format_expand_state<'_>,
     fmt: *const ::core::ffi::c_char,
 ) -> CString {
     let name = format_expand1_cstring(es, fmt);
@@ -831,25 +827,19 @@ pub(super) unsafe fn format_session_name(
         c"0".to_owned()
     }
 }
-pub(super) unsafe fn format_loop_sessions(es: &mut format_expand_state, fmt: &CStr) -> CString {
-    let mut sc: *mut sort_criteria = &raw mut sort_crit;
-    let mut ft: *mut format_tree = es.ft;
-    let format_client_owner = (*ft).c.upgrade();
+pub(super) unsafe fn format_loop_sessions(
+    es: &mut format_expand_state<'_>,
+    fmt: &CStr,
+    sort: &sort_criteria,
+) -> CString {
+    let format_client_owner = es.ft.c.upgrade();
     let mut format_client: Option<ClientRef> = format_client_owner.clone();
-    let client_owner = (*ft).client.clone();
-    let item_owner = (*ft).item.upgrade();
-    let mut next: format_expand_state = format_expand_state {
-        ft: ::core::ptr::null_mut::<format_tree>(),
-        loop_0: 0,
-        start_time: 0,
-        flags: 0,
-        time: 0,
-        tm: unsafe { ::core::mem::zeroed() },
-    };
+    let client_owner = es.ft.client.clone();
+    let item_owner = es.ft.item.upgrade();
     let mut buffer = Vec::new();
     let mut i: ::core::ffi::c_int = 0;
     let (all, active) = format_choose_loop(es, fmt);
-    let l = sort_get_sessions(&*sc);
+    let l = sort_get_sessions(sort);
     let n = ::core::ffi::c_int::try_from(l.len()).expect("too many sessions to format");
     i = 0 as ::core::ffi::c_int;
     while i < n {
@@ -870,11 +860,11 @@ pub(super) unsafe fn format_loop_sessions(es: &mut format_expand_state, fmt: &CS
             }
             _ => all.as_ptr(),
         };
-        let mut nft_owner = format_create_with_client(
+        let mut nft_owner = format_create(
             client_owner.as_ref(),
             item_owner.as_ref(),
             FORMAT_NONE,
-            (*ft).flags,
+            es.ft.flags,
         );
         let nft = &mut *nft_owner;
         format_add(nft, c"loop_index", |out| write!(out, "{}", (i) as i32));
@@ -892,8 +882,7 @@ pub(super) unsafe fn format_loop_sessions(es: &mut format_expand_state, fmt: &CS
             (refbox::Weak::new()).clone(),
             None,
         );
-        format_copy_state(&mut next, es, 0 as ::core::ffi::c_int);
-        next.ft = nft;
+        let mut next = es.with_tree(nft, 0);
         let expanded = format_expand1_cstring(&mut next, use_0);
         drop(nft_owner);
         buffer.extend_from_slice(expanded.as_bytes());
@@ -905,11 +894,10 @@ pub(super) unsafe fn format_loop_sessions(es: &mut format_expand_state, fmt: &CS
 }
 
 pub(super) unsafe fn format_window_name(
-    es: &mut format_expand_state,
+    es: &mut format_expand_state<'_>,
     mut fmt: *const ::core::ffi::c_char,
 ) -> Option<CString> {
-    let mut ft: *mut format_tree = es.ft;
-    let format_session_owner = (*ft).s.upgrade();
+    let format_session_owner = es.ft.s.upgrade();
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     if format_session_owner.is_none() {
         format_log1(es, c"format_window_name".as_ptr(), |out| {
@@ -972,24 +960,15 @@ pub(super) unsafe fn format_add_window_neighbour(
     }
 }
 pub(super) unsafe fn format_loop_windows(
-    es: &mut format_expand_state,
+    es: &mut format_expand_state<'_>,
     fmt: &CStr,
+    sort: &sort_criteria,
 ) -> Option<CString> {
-    let mut sc: *mut sort_criteria = &raw mut sort_crit;
-    let mut ft: *mut format_tree = es.ft;
-    let format_session_owner = (*ft).s.upgrade();
-    let format_client_owner = (*ft).c.upgrade();
+    let format_session_owner = es.ft.s.upgrade();
+    let format_client_owner = es.ft.c.upgrade();
     let mut format_client: Option<ClientRef> = format_client_owner.clone();
-    let client_owner = (*ft).client.clone();
-    let item_owner = (*ft).item.upgrade();
-    let mut next: format_expand_state = format_expand_state {
-        ft: ::core::ptr::null_mut::<format_tree>(),
-        loop_0: 0,
-        start_time: 0,
-        flags: 0,
-        time: 0,
-        tm: unsafe { ::core::mem::zeroed() },
-    };
+    let client_owner = es.ft.client.clone();
+    let item_owner = es.ft.item.upgrade();
     let mut buffer = Vec::new();
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut i: ::core::ffi::c_int = 0;
@@ -1001,7 +980,7 @@ pub(super) unsafe fn format_loop_windows(
     }
     let session = format_session_owner.as_ref().expect("format session");
     let (all, active) = format_choose_loop(es, fmt);
-    let l = sort_get_winlinks_session(session, &*sc);
+    let l = sort_get_winlinks_session(session, sort);
     let n = ::core::ffi::c_int::try_from(l.len()).expect("too many winlinks in format loop");
     i = 0 as ::core::ffi::c_int;
     while i < n {
@@ -1023,11 +1002,11 @@ pub(super) unsafe fn format_loop_windows(
             Some(active_fmt) if wl == session.current_winlink() => active_fmt.as_ptr(),
             _ => all.as_ptr(),
         };
-        let mut nft_owner = format_create_with_client(
+        let mut nft_owner = format_create(
             client_owner.as_ref(),
             item_owner.as_ref(),
             (FORMAT_WINDOW | window_id) as ::core::ffi::c_int,
-            (*ft).flags,
+            es.ft.flags,
         );
         let nft = &mut *nft_owner;
         format_add(nft, c"loop_index", |out| write!(out, "{}", (i) as i32));
@@ -1069,8 +1048,7 @@ pub(super) unsafe fn format_loop_windows(
             );
         }
         format_defaults(nft, format_client.as_ref(), Some(session), wl.clone(), None);
-        format_copy_state(&mut next, es, 0 as ::core::ffi::c_int);
-        next.ft = nft;
+        let mut next = es.with_tree(nft, 0);
         let expanded = format_expand1_cstring(&mut next, use_0);
         drop(nft_owner);
         buffer.extend_from_slice(expanded.as_bytes());
@@ -1082,25 +1060,16 @@ pub(super) unsafe fn format_loop_windows(
 }
 
 pub(super) unsafe fn format_loop_panes(
-    es: &mut format_expand_state,
+    es: &mut format_expand_state<'_>,
     fmt: &CStr,
+    sort: &sort_criteria,
 ) -> Option<CString> {
-    let mut sc: *mut sort_criteria = &raw mut sort_crit;
-    let mut ft: *mut format_tree = es.ft;
-    let format_window_owner = (*ft).w.upgrade();
-    let format_session_owner = (*ft).s.upgrade();
-    let format_client_owner = (*ft).c.upgrade();
+    let format_window_owner = es.ft.w.upgrade();
+    let format_session_owner = es.ft.s.upgrade();
+    let format_client_owner = es.ft.c.upgrade();
     let mut format_client: Option<ClientRef> = format_client_owner.clone();
-    let client_owner = (*ft).client.clone();
-    let item_owner = (*ft).item.upgrade();
-    let mut next: format_expand_state = format_expand_state {
-        ft: ::core::ptr::null_mut::<format_tree>(),
-        loop_0: 0,
-        start_time: 0,
-        flags: 0,
-        time: 0,
-        tm: unsafe { ::core::mem::zeroed() },
-    };
+    let client_owner = es.ft.client.clone();
+    let item_owner = es.ft.item.upgrade();
     let mut buffer = Vec::new();
     let mut i: ::core::ffi::c_int = 0;
     if format_window_owner.is_none() {
@@ -1110,7 +1079,7 @@ pub(super) unsafe fn format_loop_panes(
         return None;
     }
     let (all, active) = format_choose_loop(es, fmt);
-    let l = sort_get_panes_window(format_window_owner.as_ref().expect("format window"), &*sc);
+    let l = sort_get_panes_window(format_window_owner.as_ref().expect("format window"), sort);
     let n = i32::try_from(l.len()).expect("too many panes in format loop");
     i = 0 as ::core::ffi::c_int;
     while i < n {
@@ -1130,11 +1099,11 @@ pub(super) unsafe fn format_loop_panes(
             }
             _ => all.as_ptr(),
         };
-        let mut nft_owner = format_create_with_client(
+        let mut nft_owner = format_create(
             client_owner.as_ref(),
             item_owner.as_ref(),
             (FORMAT_PANE | pane.id()) as ::core::ffi::c_int,
-            (*ft).flags,
+            es.ft.flags,
         );
         let nft = &mut *nft_owner;
         format_add(nft, c"loop_index", |out| write!(out, "{}", (i) as i32));
@@ -1149,11 +1118,10 @@ pub(super) unsafe fn format_loop_panes(
             nft,
             format_client.as_ref(),
             format_session_owner.as_ref(),
-            ((*ft).winlink_handle()).clone(),
+            (es.ft.winlink_handle()).clone(),
             Some(pane),
         );
-        format_copy_state(&mut next, es, 0 as ::core::ffi::c_int);
-        next.ft = nft;
+        let mut next = es.with_tree(nft, 0);
         let expanded = format_expand1_cstring(&mut next, use_0);
         drop(nft_owner);
         buffer.extend_from_slice(expanded.as_bytes());
@@ -1225,16 +1193,15 @@ fn format_option_loop_values(
 }
 
 unsafe fn format_loop_emit_option(
-    es: &mut format_expand_state,
+    es: &mut format_expand_state<'_>,
     fmt: *const ::core::ffi::c_char,
     buffer: &mut Vec<u8>,
     values: Vec<(&'static CStr, CString)>,
 ) {
-    let ft = es.ft;
-    let pane = (*ft).wp.upgrade();
-    let session = (*ft).s.upgrade();
-    let client = (*ft).c.upgrade();
-    let item = (*ft).item.upgrade();
+    let pane = es.ft.wp.upgrade();
+    let session = es.ft.s.upgrade();
+    let client = es.ft.c.upgrade();
+    let item = es.ft.item.upgrade();
     format_log1(es, c"format_loop_options".as_ptr(), |out| {
         out.write_all(b"option loop: ")?;
         write_cstr(out, nullable_cstr(values[0].1.as_ptr()))?;
@@ -1245,11 +1212,11 @@ unsafe fn format_loop_emit_option(
         }
         Ok(())
     });
-    let mut context = format_create_with_client(
-        (*ft).client.as_ref(),
+    let mut context = format_create(
+        es.ft.client.as_ref(),
         item.as_ref(),
         FORMAT_NONE,
-        (*ft).flags,
+        es.ft.flags,
     );
     for (key, value) in values {
         format_add_cstr(&mut *context, key, &value);
@@ -1258,26 +1225,23 @@ unsafe fn format_loop_emit_option(
         &mut *context,
         client.as_ref(),
         session.as_ref(),
-        (*ft).winlink_handle(),
+        es.ft.winlink_handle(),
         pane.as_ref(),
     );
-    let mut next = format_expand_state::default();
-    format_copy_state(&mut next, es, 0);
-    next.ft = &mut *context;
+    let mut next = es.with_tree(&mut *context, 0);
     let expanded = format_expand1_cstring(&mut next, fmt);
     drop(context);
     buffer.extend_from_slice(expanded.as_bytes());
 }
 
 pub(super) unsafe fn format_loop_options(
-    es: &mut format_expand_state,
+    es: &mut format_expand_state<'_>,
     fmt: *const ::core::ffi::c_char,
     flags: &CStr,
 ) -> CString {
-    let ft = es.ft;
-    let pane = (*ft).wp.upgrade();
-    let window = (*ft).w.upgrade();
-    let session = (*ft).s.upgrade();
+    let pane = es.ft.wp.upgrade();
+    let window = es.ft.w.upgrade();
+    let session = es.ft.s.upgrade();
     let flags = if flags.is_empty() { c"s" } else { flags };
     let has = |flag| flags.to_bytes().contains(&flag);
     let global = has(b'g');
@@ -1406,16 +1370,15 @@ pub(super) unsafe fn format_loop_options(
 }
 
 pub(super) unsafe fn format_loop_environ(
-    es: &mut format_expand_state,
+    es: &mut format_expand_state<'_>,
     fmt: *const ::core::ffi::c_char,
     flags: &CStr,
 ) -> CString {
-    let ft = es.ft;
-    let pane = (*ft).wp.upgrade();
-    let session = (*ft).s.upgrade();
-    let format_client = (*ft).c.upgrade();
-    let client = (*ft).client.clone();
-    let item = (*ft).item.upgrade();
+    let pane = es.ft.wp.upgrade();
+    let session = es.ft.s.upgrade();
+    let format_client = es.ft.c.upgrade();
+    let client = es.ft.client.clone();
+    let item = es.ft.item.upgrade();
     let flags = if flags.is_empty() { c"s" } else { flags };
     let mut access = |read: &mut dyn FnMut(&environ)| {
         if flags == c"s" {
@@ -1450,8 +1413,7 @@ pub(super) unsafe fn format_loop_environ(
             out.write_all(b"environment loop: ")?;
             write_cstr(out, &*entry.name)
         });
-        let mut context =
-            format_create_with_client(client.as_ref(), item.as_ref(), FORMAT_NONE, (*ft).flags);
+        let mut context = format_create(client.as_ref(), item.as_ref(), FORMAT_NONE, es.ft.flags);
         format_add_cstr(&mut *context, c"environ_name", &entry.name);
         format_add_cstr(
             &mut *context,
@@ -1484,12 +1446,10 @@ pub(super) unsafe fn format_loop_environ(
             &mut *context,
             format_client.as_ref(),
             session.as_ref(),
-            (*ft).winlink_handle(),
+            es.ft.winlink_handle(),
             pane.as_ref(),
         );
-        let mut next = format_expand_state::default();
-        format_copy_state(&mut next, es, 0);
-        next.ft = &mut *context;
+        let mut next = es.with_tree(&mut *context, 0);
         let expanded = format_expand1_cstring(&mut next, fmt);
         drop(context);
         buffer.extend_from_slice(expanded.as_bytes());
@@ -1498,26 +1458,17 @@ pub(super) unsafe fn format_loop_environ(
 }
 
 pub(super) unsafe fn format_loop_clients(
-    es: &mut format_expand_state,
+    es: &mut format_expand_state<'_>,
     mut fmt: *const ::core::ffi::c_char,
+    sort: &sort_criteria,
 ) -> CString {
-    let mut sc: *mut sort_criteria = &raw mut sort_crit;
-    let mut ft: *mut format_tree = es.ft;
-    let format_pane_owner = (*ft).wp.upgrade();
-    let format_session_owner = (*ft).s.upgrade();
+    let format_pane_owner = es.ft.wp.upgrade();
+    let format_session_owner = es.ft.s.upgrade();
     let mut c: Option<ClientRef> = None;
-    let item_owner = (*ft).item.upgrade();
-    let mut next: format_expand_state = format_expand_state {
-        ft: ::core::ptr::null_mut::<format_tree>(),
-        loop_0: 0,
-        start_time: 0,
-        flags: 0,
-        time: 0,
-        tm: unsafe { ::core::mem::zeroed() },
-    };
+    let item_owner = es.ft.item.upgrade();
     let mut buffer = Vec::new();
     let mut i: ::core::ffi::c_int = 0;
-    let clients_sorted = sort_get_clients(&*sc);
+    let clients_sorted = sort_get_clients(sort);
     let n = ::core::ffi::c_int::try_from(clients_sorted.len())
         .expect("too many clients for format loop");
     i = 0 as ::core::ffi::c_int;
@@ -1527,11 +1478,11 @@ pub(super) unsafe fn format_loop_clients(
             out.write_all(b"client loop: ")?;
             write_cstr(out, (c.as_ref().expect("live client").name()).as_deref())
         });
-        let mut nft_owner = format_create_with_client(
+        let mut nft_owner = format_create(
             Some(&clients_sorted[i as usize]),
             item_owner.as_ref(),
             0 as ::core::ffi::c_int,
-            (*ft).flags,
+            es.ft.flags,
         );
         let nft = &mut *nft_owner;
         format_add(nft, c"loop_index", |out| write!(out, "{}", (i) as i32));
@@ -1546,11 +1497,10 @@ pub(super) unsafe fn format_loop_clients(
             nft,
             c.as_ref(),
             format_session_owner.as_ref(),
-            ((*ft).winlink_handle()).clone(),
+            (es.ft.winlink_handle()).clone(),
             format_pane_owner.as_ref(),
         );
-        format_copy_state(&mut next, es, 0 as ::core::ffi::c_int);
-        next.ft = nft;
+        let mut next = es.with_tree(nft, 0);
         let expanded = format_expand1_cstring(&mut next, fmt);
         drop(nft_owner);
         buffer.extend_from_slice(expanded.as_bytes());
@@ -1582,7 +1532,7 @@ fn format_expression_integer(value: f64) -> ::core::ffi::c_longlong {
 
 pub(super) unsafe fn format_replace_expression(
     mexp: &format_modifier,
-    es: &mut format_expand_state,
+    es: &mut format_expand_state<'_>,
     copy: &CStr,
 ) -> Option<CString> {
     let mut current_block: u64;
@@ -1768,18 +1718,17 @@ pub(super) unsafe fn format_cycle_start_timer(client: &ClientRef) {
     client.schedule_format_cycle(FORMAT_CYCLE_PERIOD);
 }
 pub(super) unsafe fn format_cycle(
-    es: &mut format_expand_state,
+    es: &mut format_expand_state<'_>,
     mut frames: *const ::core::ffi::c_char,
     mut count: u_int,
 ) -> CString {
-    let mut ft: *mut format_tree = es.ft;
     let mut start: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut cp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut n: u_int = 0;
     let mut index: u_int = 0;
     let mut i: u_int = 0;
-    if (*ft).flags & FORMAT_STATUS == 0 || es.flags & FORMAT_EXPAND_NOCYCLE != 0 {
+    if es.ft.flags & FORMAT_STATUS == 0 || es.flags & FORMAT_EXPAND_NOCYCLE != 0 {
         return c"".to_owned();
     }
     if *frames as ::core::ffi::c_int == '\0' as i32 {
@@ -1797,8 +1746,8 @@ pub(super) unsafe fn format_cycle(
         .start_time
         .wrapping_div(count.wrapping_mul(FORMAT_CYCLE_PERIOD as u_int) as uint64_t)
         .wrapping_rem(n as uint64_t) as u_int;
-    if n > 1 as u_int && (*ft).client.is_some() {
-        format_cycle_start_timer((*ft).client.as_ref().expect("format client"));
+    if n > 1 as u_int && es.ft.client.is_some() {
+        format_cycle_start_timer(es.ft.client.as_ref().expect("format client"));
     }
     start = frames;
     i = 0 as u_int;
@@ -1817,16 +1766,19 @@ pub(super) unsafe fn format_cycle(
     .expect("cycle frame contains no NUL")
 }
 pub(super) unsafe fn format_replace(
-    es: &mut format_expand_state,
+    es: &mut format_expand_state<'_>,
     mut key: *const ::core::ffi::c_char,
     mut keylen: size_t,
     output: &mut Vec<u8>,
 ) -> ::core::ffi::c_int {
     let mut current_block: u64;
-    let mut sc: *mut sort_criteria = &raw mut sort_crit;
-    let mut ft: *mut format_tree = es.ft;
-    let format_pane_owner = (*ft).wp.upgrade();
-    let format_client_owner = (*ft).c.upgrade();
+    let mut sc = sort_criteria {
+        order: SORT_ORDER,
+        reversed: 0,
+        order_seq: &[],
+    };
+    let format_pane_owner = es.ft.wp.upgrade();
+    let format_client_owner = es.ft.c.upgrade();
     let mut format_client: Option<ClientRef> = format_client_owner.clone();
     let mut cp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut cp2: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -1839,27 +1791,15 @@ pub(super) unsafe fn format_replace(
     let mut j: ::core::ffi::c_int = 0;
     let mut c: ::core::ffi::c_int = 0;
     let mut list: Vec<format_modifier> = Vec::new();
-    let mut cmp: *mut format_modifier = ::core::ptr::null_mut::<format_modifier>();
-    let mut search: *mut format_modifier = ::core::ptr::null_mut::<format_modifier>();
-    let mut sub: Vec<*mut format_modifier> = Vec::new();
-    let mut mexp: *mut format_modifier = ::core::ptr::null_mut::<format_modifier>();
-    let mut fm: *mut format_modifier = ::core::ptr::null_mut::<format_modifier>();
-    let mut bool_op_n: *mut format_modifier = ::core::ptr::null_mut::<format_modifier>();
+    let mut cmp: Option<usize> = None;
+    let mut search: Option<usize> = None;
+    let mut sub: Vec<usize> = Vec::new();
+    let mut mexp: Option<usize> = None;
+    let mut bool_op_n: Option<usize> = None;
     let mut cycle_count: u_int = 1 as u_int;
-    let mut i: u_int = 0;
     let mut nrep: u_int = 0;
     let mut loop_flags: &CStr = c"";
-    let mut next: format_expand_state = format_expand_state {
-        ft: ::core::ptr::null_mut::<format_tree>(),
-        loop_0: 0,
-        start_time: 0,
-        flags: 0,
-        time: 0,
-        tm: unsafe { ::core::mem::zeroed() },
-    };
     let _envent: Option<&environ_entry> = None;
-    (*sc).order = SORT_ORDER;
-    (*sc).reversed = 0 as ::core::ffi::c_int;
     let key_bytes = std::slice::from_raw_parts(key.cast::<u8>(), keylen);
     let key_end = key_bytes
         .iter()
@@ -1869,46 +1809,41 @@ pub(super) unsafe fn format_replace(
     let mut remaining = copy0.as_c_str();
     list = format_build_modifiers(es, &mut remaining);
     let copy = remaining;
-    i = 0 as u_int;
-    while (i as usize) < list.len() {
-        fm = list.as_mut_ptr().add(i as usize);
-        if format_logging(&mut *ft) != 0 {
+    for (i, fm) in list.iter().enumerate() {
+        if format_logging(es.ft) != 0 {
             format_log1(es, c"format_replace".as_ptr(), |out| {
                 write!(out, "modifier {} is ", (i) as u32)?;
-                write_cstr(
-                    out,
-                    nullable_cstr(&raw mut (*fm).modifier as *mut ::core::ffi::c_char),
-                )
+                write_cstr(out, fm.name())
             });
             j = 0 as ::core::ffi::c_int;
-            while j < (*fm).argc() {
+            while j < fm.argc() {
                 format_log1(es, c"format_replace".as_ptr(), |out| {
                     write!(out, "modifier {} argument {}: ", (i) as u32, (j) as i32)?;
-                    out.write_all((*fm).arg(j as usize).to_bytes())
+                    out.write_all(fm.arg(j as usize).to_bytes())
                 });
                 j += 1;
             }
         }
-        if (*fm).size == 1 as u_int {
-            match (*fm).modifier[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int {
+        if fm.size == 1 as u_int {
+            match fm.modifier[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int {
                 109 | 60 | 62 => {
-                    cmp = fm;
+                    cmp = Some(i);
                 }
                 33 => {
                     modifiers |= FORMAT_NOT as uint64_t;
                 }
                 67 => {
-                    search = fm;
+                    search = Some(i);
                 }
                 115 => {
-                    if !((*fm).argc() < 2 as ::core::ffi::c_int) {
-                        sub.push(fm);
+                    if !(fm.argc() < 2 as ::core::ffi::c_int) {
+                        sub.push(i);
                     }
                 }
                 61 => {
-                    if !((*fm).argc() < 1 as ::core::ffi::c_int) {
+                    if !(fm.argc() < 1 as ::core::ffi::c_int) {
                         let parsed = strtonum(
-                            (*fm).arg(0),
+                            fm.arg(0),
                             -FORMAT_MAX_WIDTH as ::core::ffi::c_longlong,
                             FORMAT_MAX_WIDTH as ::core::ffi::c_longlong,
                         );
@@ -1916,15 +1851,15 @@ pub(super) unsafe fn format_replace(
                         if parsed.is_err() {
                             limit = 0 as ::core::ffi::c_int;
                         }
-                        if (*fm).argc() >= 2 as ::core::ffi::c_int {
-                            marker = Some((*fm).arg(1));
+                        if fm.argc() >= 2 as ::core::ffi::c_int {
+                            marker = Some(fm.arg(1));
                         }
                     }
                 }
                 112 => {
-                    if !((*fm).argc() < 1 as ::core::ffi::c_int) {
+                    if !(fm.argc() < 1 as ::core::ffi::c_int) {
                         let parsed = strtonum(
-                            (*fm).arg(0),
+                            fm.arg(0),
                             -FORMAT_MAX_WIDTH as ::core::ffi::c_longlong,
                             FORMAT_MAX_WIDTH as ::core::ffi::c_longlong,
                         );
@@ -1936,9 +1871,9 @@ pub(super) unsafe fn format_replace(
                 }
                 65 => {
                     modifiers = (modifiers as ::core::ffi::c_ulonglong | FORMAT_CYCLE) as uint64_t;
-                    if !((*fm).argc() < 1 as ::core::ffi::c_int) {
+                    if !(fm.argc() < 1 as ::core::ffi::c_int) {
                         let parsed = strtonum(
-                            (*fm).arg(0),
+                            fm.arg(0),
                             1 as ::core::ffi::c_longlong,
                             100 as ::core::ffi::c_longlong,
                         );
@@ -1952,10 +1887,9 @@ pub(super) unsafe fn format_replace(
                     modifiers |= FORMAT_WIDTH as uint64_t;
                 }
                 101 => {
-                    if !((*fm).argc() < 1 as ::core::ffi::c_int
-                        || (*fm).argc() > 3 as ::core::ffi::c_int)
+                    if !(fm.argc() < 1 as ::core::ffi::c_int || fm.argc() > 3 as ::core::ffi::c_int)
                     {
-                        mexp = fm;
+                        mexp = Some(i);
                     }
                 }
                 108 => {
@@ -1969,11 +1903,11 @@ pub(super) unsafe fn format_replace(
                 }
                 99 => {
                     modifiers |= FORMAT_COLOUR as uint64_t;
-                    if !((*fm).argc() < 1 as ::core::ffi::c_int) {
-                        if (*fm).arg(0).to_bytes().contains(&b'f') {
+                    if !(fm.argc() < 1 as ::core::ffi::c_int) {
+                        if fm.arg(0).to_bytes().contains(&b'f') {
                             modifiers |= FORMAT_COLOUR_ESC_FG as uint64_t;
                         }
-                        if (*fm).arg(0).to_bytes().contains(&b'b') {
+                        if fm.arg(0).to_bytes().contains(&b'b') {
                             modifiers |= FORMAT_COLOUR_ESC_BG as uint64_t;
                         }
                     }
@@ -1985,45 +1919,45 @@ pub(super) unsafe fn format_replace(
                     modifiers |= FORMAT_LENGTH as uint64_t;
                 }
                 73 => {
-                    if !((*fm).argc() < 1 as ::core::ffi::c_int) {
-                        if (*fm).arg(0).to_bytes().contains(&b'f') {
+                    if !(fm.argc() < 1 as ::core::ffi::c_int) {
+                        if fm.arg(0).to_bytes().contains(&b'f') {
                             modifiers |= FORMAT_CLIENT_TERMFEAT as uint64_t;
                         }
-                        if (*fm).arg(0).to_bytes().contains(&b'c') {
+                        if fm.arg(0).to_bytes().contains(&b'c') {
                             modifiers |= FORMAT_CLIENT_TERMCAP as uint64_t;
                         }
-                        if (*fm).arg(0).to_bytes().contains(&b'e') {
+                        if fm.arg(0).to_bytes().contains(&b'e') {
                             modifiers |= FORMAT_CLIENT_ENVIRON as uint64_t;
                         }
                     }
                 }
                 116 => {
                     modifiers |= FORMAT_TIMESTRING as uint64_t;
-                    if !((*fm).argc() < 1 as ::core::ffi::c_int) {
-                        if (*fm).arg(0).to_bytes().contains(&b'p') {
+                    if !(fm.argc() < 1 as ::core::ffi::c_int) {
+                        if fm.arg(0).to_bytes().contains(&b'p') {
                             modifiers |= FORMAT_PRETTY as uint64_t;
-                        } else if (*fm).arg(0).to_bytes().contains(&b'r') {
+                        } else if fm.arg(0).to_bytes().contains(&b'r') {
                             modifiers |= FORMAT_RELATIVE as uint64_t;
-                        } else if (*fm).arg(0).to_bytes().contains(&b'd') {
+                        } else if fm.arg(0).to_bytes().contains(&b'd') {
                             modifiers = (modifiers as ::core::ffi::c_ulonglong | FORMAT_DIFFERENCE)
                                 as uint64_t;
-                        } else if (*fm).argc() >= 2 as ::core::ffi::c_int
-                            && (*fm).arg(0).to_bytes().contains(&b'f')
+                        } else if fm.argc() >= 2 as ::core::ffi::c_int
+                            && fm.arg(0).to_bytes().contains(&b'f')
                         {
-                            time_format = Some(format_strip_cstring(es, (*fm).arg(1)));
+                            time_format = Some(format_strip_cstring(es, fm.arg(1)));
                         }
                     }
                 }
                 113 => {
-                    if (*fm).argc() < 1 as ::core::ffi::c_int {
+                    if fm.argc() < 1 as ::core::ffi::c_int {
                         modifiers |= FORMAT_QUOTE_SHELL as uint64_t;
-                    } else if (*fm).arg(0).to_bytes().contains(&b's') {
+                    } else if fm.arg(0).to_bytes().contains(&b's') {
                         modifiers |= FORMAT_QUOTE_SHELL_SQ as uint64_t;
-                    } else if (*fm).arg(0).to_bytes().contains(&b'e')
-                        || (*fm).arg(0).to_bytes().contains(&b'h')
+                    } else if fm.arg(0).to_bytes().contains(&b'e')
+                        || fm.arg(0).to_bytes().contains(&b'h')
                     {
                         modifiers |= FORMAT_QUOTE_STYLE as uint64_t;
-                    } else if (*fm).arg(0).to_bytes().contains(&b'a') {
+                    } else if fm.arg(0).to_bytes().contains(&b'a') {
                         modifiers |= FORMAT_QUOTE_ARGUMENTS as uint64_t;
                     }
                 }
@@ -2034,108 +1968,106 @@ pub(super) unsafe fn format_replace(
                     modifiers |= FORMAT_EXPANDTIME as uint64_t;
                 }
                 78 => {
-                    if (*fm).argc() < 1 as ::core::ffi::c_int
-                        || (*fm).arg(0).to_bytes().contains(&b'w')
-                    {
+                    if fm.argc() < 1 as ::core::ffi::c_int || fm.arg(0).to_bytes().contains(&b'w') {
                         modifiers |= FORMAT_WINDOW_NAME as uint64_t;
-                    } else if (*fm).arg(0).to_bytes().contains(&b's') {
+                    } else if fm.arg(0).to_bytes().contains(&b's') {
                         modifiers |= FORMAT_SESSION_NAME as uint64_t;
                     }
                 }
                 83 => {
                     modifiers |= FORMAT_SESSIONS as uint64_t;
-                    if (*fm).argc() < 1 as ::core::ffi::c_int {
-                        (*sc).order = SORT_INDEX;
-                        (*sc).reversed = 0 as ::core::ffi::c_int;
+                    if fm.argc() < 1 as ::core::ffi::c_int {
+                        sc.order = SORT_INDEX;
+                        sc.reversed = 0 as ::core::ffi::c_int;
                     } else {
-                        if (*fm).arg(0).to_bytes().contains(&b'i') {
-                            (*sc).order = SORT_INDEX;
-                        } else if (*fm).arg(0).to_bytes().contains(&b'n') {
-                            (*sc).order = SORT_NAME;
-                        } else if (*fm).arg(0).to_bytes().contains(&b't') {
-                            (*sc).order = SORT_ACTIVITY;
+                        if fm.arg(0).to_bytes().contains(&b'i') {
+                            sc.order = SORT_INDEX;
+                        } else if fm.arg(0).to_bytes().contains(&b'n') {
+                            sc.order = SORT_NAME;
+                        } else if fm.arg(0).to_bytes().contains(&b't') {
+                            sc.order = SORT_ACTIVITY;
                         } else {
-                            (*sc).order = SORT_INDEX;
+                            sc.order = SORT_INDEX;
                         }
-                        if (*fm).arg(0).to_bytes().contains(&b'r') {
-                            (*sc).reversed = 1 as ::core::ffi::c_int;
+                        if fm.arg(0).to_bytes().contains(&b'r') {
+                            sc.reversed = 1 as ::core::ffi::c_int;
                         } else {
-                            (*sc).reversed = 0 as ::core::ffi::c_int;
+                            sc.reversed = 0 as ::core::ffi::c_int;
                         }
                     }
                 }
                 87 => {
                     modifiers |= FORMAT_WINDOWS as uint64_t;
-                    if (*fm).argc() < 1 as ::core::ffi::c_int {
-                        (*sc).order = SORT_ORDER;
-                        (*sc).reversed = 0 as ::core::ffi::c_int;
+                    if fm.argc() < 1 as ::core::ffi::c_int {
+                        sc.order = SORT_ORDER;
+                        sc.reversed = 0 as ::core::ffi::c_int;
                     } else {
-                        if (*fm).arg(0).to_bytes().contains(&b'i') {
-                            (*sc).order = SORT_ORDER;
-                        } else if (*fm).arg(0).to_bytes().contains(&b'n') {
-                            (*sc).order = SORT_NAME;
-                        } else if (*fm).arg(0).to_bytes().contains(&b't') {
-                            (*sc).order = SORT_ACTIVITY;
+                        if fm.arg(0).to_bytes().contains(&b'i') {
+                            sc.order = SORT_ORDER;
+                        } else if fm.arg(0).to_bytes().contains(&b'n') {
+                            sc.order = SORT_NAME;
+                        } else if fm.arg(0).to_bytes().contains(&b't') {
+                            sc.order = SORT_ACTIVITY;
                         } else {
-                            (*sc).order = SORT_ORDER;
+                            sc.order = SORT_ORDER;
                         }
-                        if (*fm).arg(0).to_bytes().contains(&b'r') {
-                            (*sc).reversed = 1 as ::core::ffi::c_int;
+                        if fm.arg(0).to_bytes().contains(&b'r') {
+                            sc.reversed = 1 as ::core::ffi::c_int;
                         } else {
-                            (*sc).reversed = 0 as ::core::ffi::c_int;
+                            sc.reversed = 0 as ::core::ffi::c_int;
                         }
                     }
                 }
                 80 => {
                     modifiers |= FORMAT_PANES as uint64_t;
-                    (*sc).order = SORT_CREATION;
-                    if (*fm).argc() < 1 as ::core::ffi::c_int {
-                        (*sc).reversed = 0 as ::core::ffi::c_int;
+                    sc.order = SORT_CREATION;
+                    if fm.argc() < 1 as ::core::ffi::c_int {
+                        sc.reversed = 0 as ::core::ffi::c_int;
                     } else {
-                        if (*fm).arg(0).to_bytes().contains(&b'i') {
-                            (*sc).order = SORT_INDEX;
+                        if fm.arg(0).to_bytes().contains(&b'i') {
+                            sc.order = SORT_INDEX;
                         } else {
-                            (*sc).order = SORT_CREATION;
+                            sc.order = SORT_CREATION;
                         }
-                        if (*fm).arg(0).to_bytes().contains(&b'r') {
-                            (*sc).reversed = 1 as ::core::ffi::c_int;
+                        if fm.arg(0).to_bytes().contains(&b'r') {
+                            sc.reversed = 1 as ::core::ffi::c_int;
                         } else {
-                            (*sc).reversed = 0 as ::core::ffi::c_int;
+                            sc.reversed = 0 as ::core::ffi::c_int;
                         }
                     }
                 }
                 79 => {
                     modifiers |= FORMAT_OPTIONS as uint64_t;
-                    if (*fm).argc() == 1 as ::core::ffi::c_int {
-                        loop_flags = (*fm).arg(0);
+                    if fm.argc() == 1 as ::core::ffi::c_int {
+                        loop_flags = fm.arg(0);
                     }
                 }
                 86 => {
                     modifiers =
                         (modifiers as ::core::ffi::c_ulonglong | FORMAT_ENVIRON) as uint64_t;
-                    if (*fm).argc() == 1 as ::core::ffi::c_int {
-                        loop_flags = (*fm).arg(0);
+                    if fm.argc() == 1 as ::core::ffi::c_int {
+                        loop_flags = fm.arg(0);
                     }
                 }
                 76 => {
                     modifiers |= FORMAT_CLIENTS as uint64_t;
-                    if (*fm).argc() < 1 as ::core::ffi::c_int {
-                        (*sc).order = SORT_ORDER;
-                        (*sc).reversed = 0 as ::core::ffi::c_int;
+                    if fm.argc() < 1 as ::core::ffi::c_int {
+                        sc.order = SORT_ORDER;
+                        sc.reversed = 0 as ::core::ffi::c_int;
                     } else {
-                        if (*fm).arg(0).to_bytes().contains(&b'i') {
-                            (*sc).order = SORT_ORDER;
-                        } else if (*fm).arg(0).to_bytes().contains(&b'n') {
-                            (*sc).order = SORT_NAME;
-                        } else if (*fm).arg(0).to_bytes().contains(&b't') {
-                            (*sc).order = SORT_ACTIVITY;
+                        if fm.arg(0).to_bytes().contains(&b'i') {
+                            sc.order = SORT_ORDER;
+                        } else if fm.arg(0).to_bytes().contains(&b'n') {
+                            sc.order = SORT_NAME;
+                        } else if fm.arg(0).to_bytes().contains(&b't') {
+                            sc.order = SORT_ACTIVITY;
                         } else {
-                            (*sc).order = SORT_ORDER;
+                            sc.order = SORT_ORDER;
                         }
-                        if (*fm).arg(0).to_bytes().contains(&b'r') {
-                            (*sc).reversed = 1 as ::core::ffi::c_int;
+                        if fm.arg(0).to_bytes().contains(&b'r') {
+                            sc.reversed = 1 as ::core::ffi::c_int;
                         } else {
-                            (*sc).reversed = 0 as ::core::ffi::c_int;
+                            sc.reversed = 0 as ::core::ffi::c_int;
                         }
                     }
                 }
@@ -2144,44 +2076,19 @@ pub(super) unsafe fn format_replace(
                 }
                 _ => {}
             }
-        } else if (*fm).size == 2 as u_int {
-            if strcmp(
-                &raw mut (*fm).modifier as *mut ::core::ffi::c_char,
-                c"||".as_ptr(),
-            ) == 0 as ::core::ffi::c_int
-                || strcmp(
-                    &raw mut (*fm).modifier as *mut ::core::ffi::c_char,
-                    c"&&".as_ptr(),
-                ) == 0 as ::core::ffi::c_int
-            {
-                bool_op_n = fm;
-            } else if strcmp(
-                &raw mut (*fm).modifier as *mut ::core::ffi::c_char,
-                c"!!".as_ptr(),
-            ) == 0 as ::core::ffi::c_int
-            {
+        } else if fm.size == 2 as u_int {
+            if fm.name() == c"||" || fm.name() == c"&&" {
+                bool_op_n = Some(i);
+            } else if fm.name() == c"!!" {
                 modifiers |= FORMAT_NOT_NOT as uint64_t;
-            } else if strcmp(
-                &raw mut (*fm).modifier as *mut ::core::ffi::c_char,
-                c"==".as_ptr(),
-            ) == 0 as ::core::ffi::c_int
-                || strcmp(
-                    &raw mut (*fm).modifier as *mut ::core::ffi::c_char,
-                    c"!=".as_ptr(),
-                ) == 0 as ::core::ffi::c_int
-                || strcmp(
-                    &raw mut (*fm).modifier as *mut ::core::ffi::c_char,
-                    c">=".as_ptr(),
-                ) == 0 as ::core::ffi::c_int
-                || strcmp(
-                    &raw mut (*fm).modifier as *mut ::core::ffi::c_char,
-                    c"<=".as_ptr(),
-                ) == 0 as ::core::ffi::c_int
+            } else if fm.name() == c"=="
+                || fm.name() == c"!="
+                || fm.name() == c">="
+                || fm.name() == c"<="
             {
-                cmp = fm;
+                cmp = Some(i);
             }
         }
-        i = i.wrapping_add(1);
     }
     if modifiers & FORMAT_CLIENT_TERMCAP as uint64_t != 0
         || modifiers & FORMAT_CLIENT_TERMFEAT as uint64_t != 0
@@ -2277,24 +2184,24 @@ pub(super) unsafe fn format_replace(
         }
     } else {
         if modifiers & FORMAT_SESSIONS as uint64_t != 0 {
-            value = format_loop_sessions(es, copy);
+            value = format_loop_sessions(es, copy, &sc);
             current_block = 1803726662341650892;
         } else if modifiers & FORMAT_WINDOWS as uint64_t != 0 {
-            if let Some(result) = format_loop_windows(es, copy) {
+            if let Some(result) = format_loop_windows(es, copy, &sc) {
                 value = result;
                 current_block = 1803726662341650892;
             } else {
                 current_block = 6506207624831006569;
             }
         } else if modifiers & FORMAT_PANES as uint64_t != 0 {
-            if let Some(result) = format_loop_panes(es, copy) {
+            if let Some(result) = format_loop_panes(es, copy, &sc) {
                 value = result;
                 current_block = 1803726662341650892;
             } else {
                 current_block = 6506207624831006569;
             }
         } else if modifiers & FORMAT_CLIENTS as uint64_t != 0 {
-            value = format_loop_clients(es, copy.as_ptr());
+            value = format_loop_clients(es, copy.as_ptr(), &sc);
             current_block = 1803726662341650892;
         } else if modifiers & FORMAT_OPTIONS as uint64_t != 0 {
             value = format_loop_options(es, copy.as_ptr(), loop_flags);
@@ -2312,7 +2219,7 @@ pub(super) unsafe fn format_replace(
         } else if modifiers & FORMAT_SESSION_NAME as uint64_t != 0 {
             value = format_session_name(es, copy.as_ptr());
             current_block = 1803726662341650892;
-        } else if !search.is_null() {
+        } else if let Some(search) = search.map(|i| &list[i]) {
             let new = format_expand1_cstring(es, copy.as_ptr());
             match &format_pane_owner {
                 None => {
@@ -2329,7 +2236,7 @@ pub(super) unsafe fn format_replace(
                         write_cstr(out, &*new)?;
                         write!(out, "' pane %{}", search_pane.id())
                     });
-                    value = format_search(&*search, search_pane, &new);
+                    value = format_search(search, search_pane, &new);
                 }
             }
             current_block = 1803726662341650892;
@@ -2372,31 +2279,20 @@ pub(super) unsafe fn format_replace(
         } else if modifiers & FORMAT_NOT_NOT as uint64_t != 0 {
             value = format_bool_op_1(es, copy.as_ptr(), 0 as ::core::ffi::c_int);
             current_block = 1803726662341650892;
-        } else if !bool_op_n.is_null() {
-            if strcmp(
-                &raw mut (*bool_op_n).modifier as *mut ::core::ffi::c_char,
-                c"||".as_ptr(),
-            ) == 0 as ::core::ffi::c_int
-            {
+        } else if let Some(bool_op_n) = bool_op_n.map(|i| &list[i]) {
+            if bool_op_n.name() == c"||" {
                 value = format_bool_op_n(es, copy, 0 as ::core::ffi::c_int);
-            } else if strcmp(
-                &raw mut (*bool_op_n).modifier as *mut ::core::ffi::c_char,
-                c"&&".as_ptr(),
-            ) == 0 as ::core::ffi::c_int
-            {
+            } else if bool_op_n.name() == c"&&" {
                 value = format_bool_op_n(es, copy, 1 as ::core::ffi::c_int);
             }
             current_block = 1803726662341650892;
-        } else if !cmp.is_null() {
+        } else if let Some(cmp) = cmp.map(|i| &list[i]) {
             let operands = format_choose(es, copy);
             match operands {
                 None => {
                     format_log1(es, c"format_replace".as_ptr(), |out| {
                         out.write_all(b"compare ")?;
-                        write_cstr(
-                            out,
-                            nullable_cstr(&raw mut (*cmp).modifier as *mut ::core::ffi::c_char),
-                        )?;
+                        write_cstr(out, cmp.name())?;
                         out.write_all(b" syntax error: ")?;
                         write_cstr(out, copy)
                     });
@@ -2405,88 +2301,54 @@ pub(super) unsafe fn format_replace(
                 Some((left, right)) => {
                     format_log1(es, c"format_replace".as_ptr(), |out| {
                         out.write_all(b"compare ")?;
-                        write_cstr(
-                            out,
-                            nullable_cstr(&raw mut (*cmp).modifier as *mut ::core::ffi::c_char),
-                        )?;
+                        write_cstr(out, cmp.name())?;
                         out.write_all(b" left is: ")?;
                         write_cstr(out, &*left)
                     });
                     format_log1(es, c"format_replace".as_ptr(), |out| {
                         out.write_all(b"compare ")?;
-                        write_cstr(
-                            out,
-                            nullable_cstr(&raw mut (*cmp).modifier as *mut ::core::ffi::c_char),
-                        )?;
+                        write_cstr(out, cmp.name())?;
                         out.write_all(b" right is: ")?;
                         write_cstr(out, &*right)
                     });
-                    if strcmp(
-                        &raw mut (*cmp).modifier as *mut ::core::ffi::c_char,
-                        c"==".as_ptr(),
-                    ) == 0 as ::core::ffi::c_int
-                    {
+                    if cmp.name() == c"==" {
                         if strcmp(left.as_ptr(), right.as_ptr()) == 0 as ::core::ffi::c_int {
                             value = c"1".to_owned();
                         } else {
                             value = c"0".to_owned();
                         }
-                    } else if strcmp(
-                        &raw mut (*cmp).modifier as *mut ::core::ffi::c_char,
-                        c"!=".as_ptr(),
-                    ) == 0 as ::core::ffi::c_int
-                    {
+                    } else if cmp.name() == c"!=" {
                         if strcmp(left.as_ptr(), right.as_ptr()) != 0 as ::core::ffi::c_int {
                             value = c"1".to_owned();
                         } else {
                             value = c"0".to_owned();
                         }
-                    } else if strcmp(
-                        &raw mut (*cmp).modifier as *mut ::core::ffi::c_char,
-                        c"<".as_ptr(),
-                    ) == 0 as ::core::ffi::c_int
-                    {
+                    } else if cmp.name() == c"<" {
                         if strcmp(left.as_ptr(), right.as_ptr()) < 0 as ::core::ffi::c_int {
                             value = c"1".to_owned();
                         } else {
                             value = c"0".to_owned();
                         }
-                    } else if strcmp(
-                        &raw mut (*cmp).modifier as *mut ::core::ffi::c_char,
-                        c">".as_ptr(),
-                    ) == 0 as ::core::ffi::c_int
-                    {
+                    } else if cmp.name() == c">" {
                         if strcmp(left.as_ptr(), right.as_ptr()) > 0 as ::core::ffi::c_int {
                             value = c"1".to_owned();
                         } else {
                             value = c"0".to_owned();
                         }
-                    } else if strcmp(
-                        &raw mut (*cmp).modifier as *mut ::core::ffi::c_char,
-                        c"<=".as_ptr(),
-                    ) == 0 as ::core::ffi::c_int
-                    {
+                    } else if cmp.name() == c"<=" {
                         if strcmp(left.as_ptr(), right.as_ptr()) <= 0 as ::core::ffi::c_int {
                             value = c"1".to_owned();
                         } else {
                             value = c"0".to_owned();
                         }
-                    } else if strcmp(
-                        &raw mut (*cmp).modifier as *mut ::core::ffi::c_char,
-                        c">=".as_ptr(),
-                    ) == 0 as ::core::ffi::c_int
-                    {
+                    } else if cmp.name() == c">=" {
                         if strcmp(left.as_ptr(), right.as_ptr()) >= 0 as ::core::ffi::c_int {
                             value = c"1".to_owned();
                         } else {
                             value = c"0".to_owned();
                         }
-                    } else if strcmp(
-                        &raw mut (*cmp).modifier as *mut ::core::ffi::c_char,
-                        c"m".as_ptr(),
-                    ) == 0 as ::core::ffi::c_int
-                    {
-                        value = format_match(&*cmp, &left, &right);
+                    } else if cmp.name() == c"m" {
+                        value = format_match(cmp, &left, &right);
                     }
                     current_block = 1803726662341650892;
                 }
@@ -2515,7 +2377,7 @@ pub(super) unsafe fn format_replace(
                             write_cstr(out, &*condition)
                         });
                         let found = format_find(
-                            &mut *ft,
+                            &mut *es.ft,
                             &condition,
                             modifiers,
                             time_format
@@ -2589,8 +2451,8 @@ pub(super) unsafe fn format_replace(
                         }
                     }
                 }
-            } else if !mexp.is_null() {
-                value = format_replace_expression(&*mexp, es, copy).unwrap_or_default();
+            } else if let Some(mexp) = mexp.map(|i| &list[i]) {
+                value = format_replace_expression(mexp, es, copy).unwrap_or_default();
             } else if !strstr(copy.as_ptr(), c"#{".as_ptr()).is_null() {
                 format_log1(es, c"format_replace".as_ptr(), |out| {
                     out.write_all(b"expanding inner format '")?;
@@ -2600,7 +2462,7 @@ pub(super) unsafe fn format_replace(
                 value = format_expand1_cstring(es, copy.as_ptr());
             } else {
                 value = if let Some(found) = format_find(
-                    &mut *ft,
+                    &mut *es.ft,
                     copy,
                     modifiers,
                     time_format
@@ -2642,13 +2504,13 @@ pub(super) unsafe fn format_replace(
     if modifiers & FORMAT_EXPAND as uint64_t != 0 {
         value = format_expand1_cstring(es, value.as_ptr());
     } else if modifiers & FORMAT_EXPANDTIME as uint64_t != 0 {
-        format_copy_state(&mut next, es, FORMAT_EXPAND_TIME);
-        value = format_expand1_cstring(&mut next, value.as_ptr());
+        value = format_expand1_cstring(&mut es.child(FORMAT_EXPAND_TIME), value.as_ptr());
     }
-    for &modifier in &sub {
-        let left = format_expand1_cstring(es, (*modifier).arg(0).as_ptr());
-        let right = format_expand1_cstring(es, (*modifier).arg(1).as_ptr());
-        value = format_sub(&*modifier, &value, &left, &right);
+    for &i in &sub {
+        let modifier = &list[i];
+        let left = format_expand1_cstring(es, modifier.arg(0).as_ptr());
+        let right = format_expand1_cstring(es, modifier.arg(1).as_ptr());
+        value = format_sub(modifier, &value, &left, &right);
         format_log1(es, c"format_replace".as_ptr(), |out| {
             out.write_all(b"substitute '")?;
             write_cstr(out, &*left)?;
@@ -2714,10 +2576,9 @@ pub(super) unsafe fn format_replace(
     0
 }
 pub(super) unsafe fn format_expand1_cstring(
-    es: &mut format_expand_state,
+    es: &mut format_expand_state<'_>,
     mut fmt: *const ::core::ffi::c_char,
 ) -> CString {
-    let mut ft: *mut format_tree = es.ft;
     let mut ptr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut style_end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -2759,7 +2620,7 @@ pub(super) unsafe fn format_expand1_cstring(
             });
             return CString::default();
         }
-        if format_logging(&mut *ft) != 0
+        if format_logging(es.ft) != 0
             && strcmp(&raw mut expanded as *mut ::core::ffi::c_char, fmt) != 0 as ::core::ffi::c_int
         {
             format_log1(es, c"format_expand1".as_ptr(), |out| {
@@ -2814,7 +2675,7 @@ pub(super) unsafe fn format_expand1_cstring(
                         out.write_all(b"found #(): ")?;
                         write_cstr(out, &*name)
                     });
-                    let out = if (*ft).flags & FORMAT_NOJOBS != 0
+                    let out = if es.ft.flags & FORMAT_NOJOBS != 0
                         || es.flags & FORMAT_EXPAND_NOJOBS != 0
                     {
                         format_log1(es, c"format_expand1".as_ptr(), |out| {
@@ -2936,22 +2797,7 @@ pub(crate) unsafe fn format_expand_time_cstring(
     ft: &mut format_tree,
     mut fmt: *const ::core::ffi::c_char,
 ) -> CString {
-    let mut es: format_expand_state = format_expand_state {
-        ft: ::core::ptr::null_mut::<format_tree>(),
-        loop_0: 0,
-        start_time: 0,
-        flags: 0,
-        time: 0,
-        tm: unsafe { ::core::mem::zeroed() },
-    };
-    memset(
-        &raw mut es as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<format_expand_state>() as size_t,
-    );
-    es.ft = ft;
-    es.flags = FORMAT_EXPAND_TIME;
-    es.start_time = get_timer();
+    let mut es = format_expand_state::new(ft, FORMAT_EXPAND_TIME);
     format_expand1_cstring(&mut es, fmt)
 }
 /// Own the expanded bytes independently of the tree. A null format is empty.
@@ -2959,22 +2805,7 @@ pub unsafe fn format_expand_cstring(
     ft: &mut format_tree,
     mut fmt: *const ::core::ffi::c_char,
 ) -> CString {
-    let mut es: format_expand_state = format_expand_state {
-        ft: ::core::ptr::null_mut::<format_tree>(),
-        loop_0: 0,
-        start_time: 0,
-        flags: 0,
-        time: 0,
-        tm: unsafe { ::core::mem::zeroed() },
-    };
-    memset(
-        &raw mut es as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<format_expand_state>() as size_t,
-    );
-    es.ft = ft;
-    es.flags = 0 as ::core::ffi::c_int;
-    es.start_time = get_timer();
+    let mut es = format_expand_state::new(ft, 0);
     format_expand1_cstring(&mut es, fmt)
 }
 pub(crate) unsafe fn format_single_cstring(
@@ -3124,12 +2955,8 @@ mod format_choose_tests {
                     .as_bytes(),
                 b"first"
             );
-            let mut es = format_expand_state {
-                ft,
-                start_time: get_timer(),
-                loop_0: FORMAT_LOOP_LIMIT as u_int,
-                ..Default::default()
-            };
+            let mut es = format_expand_state::new(ft, 0);
+            es.loop_0 = FORMAT_LOOP_LIMIT as u_int;
             assert!(format_expand1_cstring(&mut es, c"limit".as_ptr())
                 .as_bytes()
                 .is_empty());
@@ -3154,11 +2981,7 @@ mod format_choose_tests {
         unsafe {
             let mut ft_owner = format_create(None, None, 0, 0);
             let ft = &mut *ft_owner;
-            let mut es = format_expand_state {
-                ft,
-                start_time: get_timer(),
-                ..Default::default()
-            };
+            let mut es = format_expand_state::new(ft, 0);
 
             for (input, expected_left, expected_right) in [
                 (

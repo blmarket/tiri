@@ -2,9 +2,7 @@ use crate::arguments::{args, args_get, args_parse, args_string};
 use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print};
 use crate::cmd::{cmd_find, cmd_get_args_mut, cmd_table};
 use crate::format::bytes::write_cstr;
-use crate::format::{
-    format_add, format_create_with_client, format_defaults, format_expand_cstring,
-};
+use crate::format::{format_add, format_create, format_defaults, format_expand_cstring};
 use crate::shared::abi::*;
 use crate::shared::command::*;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
@@ -70,7 +68,7 @@ unsafe fn cmd_list_commands(
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let template: &CStr =
         args_get(&*(args), 'F' as i32 as u_char).unwrap_or(LIST_COMMANDS_TEMPLATE);
-    let mut ft_owner = format_create_with_client(
+    let mut ft_owner = format_create(
         queue_client.as_ref(),
         Some(item_handle),
         FORMAT_NONE,
