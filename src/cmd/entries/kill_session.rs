@@ -9,7 +9,7 @@ use std::ffi::CStr;
 
 use crate::shared::abi::*;
 use crate::shared::command::*;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::format::FORMAT_NONE;
 use crate::shared::session::SessionRef;
 use crate::shared::tree::RB_NEGINF;
@@ -48,9 +48,8 @@ unsafe fn cmd_kill_session_exec(
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0.get_unchecked());
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
-    let source = (*target).s.upgrade().expect("live target session");
+    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let source = target.s.upgrade().expect("live target session");
     let mut sg = crate::shared::session::SessionGroupWeak::new();
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut filter: Option<&CStr> = args_get(args, 'f' as i32 as u_char);

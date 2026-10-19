@@ -11,7 +11,7 @@ use crate::format::format_single_from_target_cstring;
 use crate::log::{fatalx, log_bytes, log_cstr, log_debug};
 use crate::shared::abi::*;
 use crate::shared::client::ClientRef;
-use crate::shared::command::{cmd, cmd_find_state, cmd_list, cmd_parse_input, cmdq_item};
+use crate::shared::command::{cmd, cmd_list, cmd_parse_input, cmdq_item};
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
 
@@ -61,8 +61,7 @@ pub unsafe fn args_make_commands_prepare(
 ) -> Box<args_command_state> {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0.get_unchecked());
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
+    let target = crate::cmd::queue::cmdq_get_target(&item);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut state = Box::new(args_command_state::empty());
     let values = &args.values;
@@ -102,7 +101,7 @@ pub unsafe fn args_make_commands_prepare(
         .as_ref()
         .map_or_else(std::rc::Weak::new, Rc::downgrade);
     state.client = tc_owner;
-    state.pi.fs.copy_from(&*target);
+    state.pi.fs.copy_from(target);
     state
 }
 pub unsafe fn args_make_commands(

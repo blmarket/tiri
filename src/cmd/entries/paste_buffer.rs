@@ -6,7 +6,7 @@ use crate::paste::{paste_buffer_data, paste_free, paste_get_name, paste_get_top}
 use crate::shared::abi::*;
 use crate::shared::command::CMD_AFTERHOOK;
 use crate::shared::command::*;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::window_pane::WindowPane as _;
 use std::ffi::CStr;
 pub static cmd_paste_buffer_entry: cmd_entry = {
@@ -40,9 +40,8 @@ unsafe fn cmd_paste_buffer_exec(
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0.get_unchecked());
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
-    let pane_owner = (*target).pane_handle().expect("paste target pane");
+    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let pane_owner = target.pane_handle().expect("paste target pane");
     let pb;
     let mut bufname: Option<&CStr> = None;
     let mut bracket: ::core::ffi::c_int = args_has(args, 'p' as i32 as u_char);

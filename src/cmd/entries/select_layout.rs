@@ -4,7 +4,7 @@ use crate::cmd::queue::cmdq_error;
 use crate::format::bytes::write_cstr;
 use crate::shared::abi::*;
 use crate::shared::command::*;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::window::{LayoutKind, Window as _};
 pub static cmd_select_layout_entry: cmd_entry = {
     cmd_entry {
@@ -40,9 +40,8 @@ unsafe fn cmd_select_layout_exec(
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0.get_unchecked());
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let target: *mut cmd_find_state = &mut target_state;
-    let window_owner = (*target).w.upgrade().expect("live layout window");
+    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let window_owner = target.w.upgrade().expect("live layout window");
     let current = window_owner.layout();
     let kind = if args_has(args, b'n') != 0 {
         Some(current.next())

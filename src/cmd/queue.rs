@@ -951,7 +951,7 @@ unsafe fn cmdq_fire_command(
     let entry = cmd_get_entry(cmd.get_unchecked());
     let mut tc = None;
     let mut retval: CmdOutcome = CmdOutcome::Normal;
-    let mut fsp: *mut cmd_find_state = ::core::ptr::null_mut::<cmd_find_state>();
+    let mut fsp: Option<&cmd_find_state> = None;
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -1049,18 +1049,18 @@ unsafe fn cmdq_fire_command(
                     let target = cmdq_get_target(&item_handle.borrow()).clone();
                     if target.is_valid() {
                         fs = target;
-                        fsp = &raw mut fs;
+                        fsp = Some(&fs);
                         current_block = 8704759739624374314;
                     } else if state.current.borrow().is_valid() {
                         fs = state.current_snapshot();
-                        fsp = &mut fs;
+                        fsp = Some(&fs);
                         current_block = 8704759739624374314;
                     } else if let Some(found) = cmd_find_state::find_from_client(
                         execution_client.as_ref(),
                         0 as ::core::ffi::c_int,
                     ) {
                         fs = found;
-                        fsp = &raw mut fs;
+                        fsp = Some(&fs);
                         current_block = 8704759739624374314;
                     } else {
                         current_block = 7379054416801212160;
@@ -1069,9 +1069,9 @@ unsafe fn cmdq_fire_command(
                         7379054416801212160 => {}
                         _ => {
                             cmdq_insert_hook(
-                                (*fsp).session_handle().as_ref(),
+                                fsp.and_then(|fs| fs.session_handle()).as_ref(),
                                 item_handle,
-                                fsp.as_ref(),
+                                fsp,
                                 |out| {
                                     out.write_all(b"after-")?;
                                     write_cstr(out, &*entry.name)
@@ -1089,29 +1089,24 @@ unsafe fn cmdq_fire_command(
         item.client_lent = false;
     }
     if matches!(retval, CmdOutcome::Error) {
-        fsp = ::core::ptr::null_mut::<cmd_find_state>();
+        fsp = None;
         let target = cmdq_get_target(&item_handle.borrow()).clone();
         if target.is_valid() {
             fs = target;
-            fsp = &raw mut fs;
+            fsp = Some(&fs);
         } else if state.current.borrow().is_valid() {
             fs = state.current_snapshot();
-            fsp = &mut fs;
+            fsp = Some(&fs);
         } else if let Some(found) =
             cmd_find_state::find_from_client(saved_client.as_ref(), 0 as ::core::ffi::c_int)
         {
             fs = found;
-            fsp = &raw mut fs;
+            fsp = Some(&fs);
         }
         cmdq_insert_hook(
-            (if !fsp.is_null() {
-                (*fsp).session_handle()
-            } else {
-                None
-            })
-            .as_ref(),
+            fsp.and_then(|fs| fs.session_handle()).as_ref(),
             item_handle,
-            fsp.as_ref(),
+            fsp,
             |out| out.write_all(b"command-error"),
         );
         cmdq_guard(item_handle, c"error", flags);

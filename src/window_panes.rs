@@ -804,15 +804,13 @@ unsafe fn window_panes_init(
     let original_window = mode_pane_owner.window_observer();
     let mut data: *mut window_panes_modedata = ::core::ptr::null_mut::<window_panes_modedata>();
     let mut self_0: refbox::Weak<cmd> = refbox::Weak::new();
-    let mut source: *mut cmd_find_state = ::core::ptr::null_mut::<cmd_find_state>();
-    let mut target: *mut cmd_find_state = ::core::ptr::null_mut::<cmd_find_state>();
     let mut s: Option<SessionRef> = None;
     let (sx, sy) = mode_pane_owner.screen_size(false);
     let mut delay: u_int = 0;
     let Some(item_owner) = item_handle else {
         return false;
     };
-    let (mut source_state, mut target_state) = {
+    let (source, target) = {
         let item = item_owner.borrow();
         self_0 = cmdq_get_cmd(&item);
         (
@@ -823,9 +821,7 @@ unsafe fn window_panes_init(
     if !self_0.is_alive() {
         return false;
     }
-    source = &raw mut source_state;
-    target = &raw mut target_state;
-    s = (*target).session_handle();
+    s = target.session_handle();
     let args = args.expect("mode arguments");
     if args_has(args, 'd' as i32 as u_char) == 0 {
         delay = options_get_number(
@@ -880,11 +876,11 @@ unsafe fn window_panes_init(
         0 as ::core::ffi::c_int,
     ));
     if args_has(args, 's' as i32 as u_char) != 0 {
-        (*data).source_session = (*source).session_handle().expect("live session").id();
-        (*data).source_window = (((*source).window_handle().as_ref()).expect("live window")).id();
+        (*data).source_session = source.session_handle().expect("live session").id();
+        (*data).source_window = ((source.window_handle().as_ref()).expect("live window")).id();
     } else {
-        (*data).source_session = (*target).session_handle().expect("live session").id();
-        (*data).source_window = (((*target).window_handle().as_ref()).expect("live window")).id();
+        (*data).source_session = target.session_handle().expect("live session").id();
+        (*data).source_window = ((target.window_handle().as_ref()).expect("live window")).id();
     }
     (*data).delay = delay;
     (*data).ignore_keys = args_has(args, 'N' as i32 as u_char);

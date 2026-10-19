@@ -7,7 +7,7 @@ use crate::resize::{default_window_size, recalculate_size};
 use crate::shared::abi::*;
 use crate::shared::command::CMD_AFTERHOOK;
 use crate::shared::command::*;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::limits::INT_MAX;
 use crate::shared::session::SessionRef;
 use crate::shared::window::winlink;
@@ -46,16 +46,15 @@ unsafe fn cmd_resize_window_exec(
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0.get_unchecked());
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
-    let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
+    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let mut wl: refbox::Weak<winlink> = target.winlink_handle();
     let window_owner = wl
         .get_unchecked()
         .window_handle()
         .cloned()
         .expect("resize target window");
     let result = (|| {
-        let mut s: Option<SessionRef> = (*target).session_handle();
+        let mut s: Option<SessionRef> = target.session_handle();
         let mut adjust: u_int = 0;
         let mut sx: u_int = 0;
         let mut sy: u_int = 0;

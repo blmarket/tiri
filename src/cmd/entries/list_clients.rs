@@ -9,7 +9,7 @@ use crate::format::{
 use crate::server_client::Client as _;
 use crate::shared::abi::*;
 use crate::shared::command::*;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::command::{CMD_AFTERHOOK, CMD_READONLY};
 use crate::shared::format::FORMAT_NONE;
 use crate::shared::session::SessionRef;
@@ -50,8 +50,7 @@ unsafe fn cmd_list_clients_exec(
     let item = item_handle.borrow();
     let queue_client = cmdq_get_client(Some(&*item));
     let args = cmd_get_args(self_0.get_unchecked());
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
+    let target = crate::cmd::queue::cmdq_get_target(&item);
     let mut s: Option<SessionRef> = None;
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut filter: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -63,7 +62,7 @@ unsafe fn cmd_list_clients_exec(
         order_seq: &[],
     };
     if args_has(args, 't' as i32 as u_char) != 0 {
-        s = (*target).session_handle();
+        s = target.session_handle();
     } else {
         s = None;
     }

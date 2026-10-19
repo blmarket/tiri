@@ -8,7 +8,7 @@ use crate::session::session_group_synchronize_from;
 use crate::session::Session;
 use crate::shared::abi::*;
 use crate::shared::command::*;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::command::{CMD_AFTERHOOK, CMD_FIND_DEFAULT_MARKED};
 use crate::shared::session::SessionRef;
 use crate::shared::window::winlink;
@@ -45,16 +45,14 @@ unsafe fn cmd_swap_window_exec(
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0.get_unchecked());
-    let mut source_state = crate::cmd::queue::cmdq_get_source(&item).clone();
-    let mut source: *mut cmd_find_state = &mut source_state;
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
-    let mut src: Option<SessionRef> = (*source).session_handle();
-    let mut dst: Option<SessionRef> = (*target).session_handle();
+    let source = crate::cmd::queue::cmdq_get_source(&item);
+    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let mut src: Option<SessionRef> = source.session_handle();
+    let mut dst: Option<SessionRef> = target.session_handle();
     let mut sg_src = crate::shared::session::SessionGroupWeak::new();
     let mut sg_dst = crate::shared::session::SessionGroupWeak::new();
-    let mut wl_src: refbox::Weak<winlink> = (*source).winlink_handle();
-    let mut wl_dst: refbox::Weak<winlink> = (*target).winlink_handle();
+    let mut wl_src: refbox::Weak<winlink> = source.winlink_handle();
+    let mut wl_dst: refbox::Weak<winlink> = target.winlink_handle();
     sg_src = crate::session::session_groups::for_session(
         &src.as_ref()
             .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),

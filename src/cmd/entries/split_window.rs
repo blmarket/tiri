@@ -91,8 +91,7 @@ unsafe fn cmd_split_window_exec(
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0.get_unchecked());
     let current = cmdq_get_state_owned(&*(item));
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
+    let target = crate::cmd::queue::cmdq_get_target(&item);
     let mut sc: spawn_context = spawn_context {
         item: std::rc::Weak::new(),
         s: std::rc::Weak::new(),
@@ -109,8 +108,8 @@ unsafe fn cmd_split_window_exec(
     let mut argv_owner = Vec::new();
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
-    let mut s: Option<SessionRef> = (*target).session_handle();
-    let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
+    let mut s: Option<SessionRef> = target.session_handle();
+    let mut wl: refbox::Weak<winlink> = target.winlink_handle();
     let original_window = wl
         .get_unchecked()
         .window_handle()
@@ -118,7 +117,7 @@ unsafe fn cmd_split_window_exec(
         .expect("split target window");
     let result = (|| {
         let mut current_block: u64;
-        let original_pane = (*target).pane_handle().expect("split target pane");
+        let original_pane = target.pane_handle().expect("split target pane");
         let mut fs: cmd_find_state = cmd_find_state {
             flags: 0,
             s: Default::default(),

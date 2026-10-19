@@ -24,7 +24,7 @@ use crate::shared::abi::*;
 use crate::shared::client::ClientRef;
 use crate::shared::client::CLIENT_CONTROL;
 use crate::shared::command::*;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CFLAG};
 use crate::shared::environment::environ;
 use crate::shared::key::key_event;
@@ -153,8 +153,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
 ) -> ::core::ffi::c_int {
     let item = item_handle.borrow();
     let mut tc: Option<ClientRef> = Some(tc_owner.clone());
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
+    let target = crate::cmd::queue::cmdq_get_target(&item);
     let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
     let mut s: Option<SessionRef> = tc
@@ -162,8 +161,8 @@ unsafe fn cmd_display_menu_get_popup_pos(
         .expect("live client")
         .attached_session()
         .upgrade();
-    let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
-    let pane = (*target).pane_handle().expect("menu target pane");
+    let mut wl: refbox::Weak<winlink> = target.winlink_handle();
+    let pane = target.pane_handle().expect("menu target pane");
     let mut xp: &CStr = c"";
     let mut yp: &CStr = c"";
     let mut top: ::core::ffi::c_int = 0;
@@ -186,7 +185,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
             write!(out, "{}", { (*event).m.y })
         });
     }
-    let (last_x, last_y) = (*target)
+    let (last_x, last_y) = target
         .window_handle()
         .expect("popup target window")
         .last_menu_position();
@@ -485,8 +484,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
 ) -> ::core::ffi::c_int {
     let item = item_handle.borrow();
     let mut tc: Option<ClientRef> = Some(tc_owner.clone());
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
+    let target = crate::cmd::queue::cmdq_get_target(&item);
     let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
     let mut s: Option<SessionRef> = tc
@@ -494,9 +492,9 @@ unsafe fn cmd_display_menu_get_menu_pos(
         .expect("live client")
         .attached_session()
         .upgrade();
-    let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
-    let window = (*target).window_handle().expect("menu target window");
-    let pane = (*target).pane_handle().expect("menu target pane");
+    let mut wl: refbox::Weak<winlink> = target.winlink_handle();
+    let window = target.window_handle().expect("menu target window");
+    let pane = target.pane_handle().expect("menu target pane");
     let mut xp: &CStr = c"";
     let mut yp: &CStr = c"";
     let _line: u_int = 0;
@@ -890,9 +888,8 @@ unsafe fn cmd_display_popup_exec(
     let item = item_handle.borrow();
     let mut current_block: u64;
     let args = cmd_get_args(self_0.get_unchecked());
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
-    let mut s: Option<SessionRef> = (*target).session_handle();
+    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let mut s: Option<SessionRef> = target.session_handle();
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut value: Option<&CStr> = None;

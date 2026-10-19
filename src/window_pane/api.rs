@@ -72,7 +72,7 @@ pub trait WindowPane {
     unsafe fn set_prompt(
         &self,
         client: Option<&ClientRef>,
-        find: Option<&mut cmd_find_state>,
+        find: Option<&cmd_find_state>,
         message: &CStr,
         input: Option<&CStr>,
         inputcb: status_prompt_input_cb,
@@ -259,7 +259,7 @@ pub trait WindowPane {
         source: Option<&Rc<UnsafeCell<window_pane>>>,
         mode: &'static window_mode,
         item: Option<&Rc<std::cell::RefCell<cmdq_item>>>,
-        find: Option<&mut cmd_find_state>,
+        find: Option<&cmd_find_state>,
         arguments: Option<&args>,
     ) -> i32;
     unsafe fn reset_mode(&self);
@@ -671,7 +671,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     unsafe fn set_prompt(
         &self,
         client: Option<&ClientRef>,
-        find: Option<&mut cmd_find_state>,
+        find: Option<&cmd_find_state>,
         message: &CStr,
         input: Option<&CStr>,
         inputcb: status_prompt_input_cb,
@@ -680,15 +680,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         kind: prompt_type,
     ) {
         window_pane_set_prompt(
-            self,
-            client,
-            find.as_deref(),
-            message,
-            input,
-            inputcb,
-            freecb,
-            flags,
-            kind,
+            self, client, find, message, input, inputcb, freecb, flags, kind,
         );
     }
     unsafe fn update_prompt(&self, message: &CStr, input: Option<&CStr>) {
@@ -1081,10 +1073,10 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         source: Option<&Rc<UnsafeCell<window_pane>>>,
         mode: &'static window_mode,
         item: Option<&Rc<std::cell::RefCell<cmdq_item>>>,
-        find: Option<&mut cmd_find_state>,
+        find: Option<&cmd_find_state>,
         arguments: Option<&args>,
     ) -> i32 {
-        window_pane_set_mode(self, source, mode, item, find.as_deref(), arguments)
+        window_pane_set_mode(self, source, mode, item, find, arguments)
     }
 
     unsafe fn reset_mode(&self) {

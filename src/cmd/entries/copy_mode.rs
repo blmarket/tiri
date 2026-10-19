@@ -5,7 +5,7 @@ use crate::server_client::Client as _;
 use crate::shared::abi::*;
 use crate::shared::client::ClientRef;
 use crate::shared::command::*;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::command::{CMD_AFTERHOOK, CMD_READONLY, CMD_TARGET_PANE_USAGE};
 use crate::shared::key::key_event;
 use crate::shared::key::*;
@@ -74,14 +74,12 @@ unsafe fn cmd_copy_mode_exec(
     let args = cmd_get_args(self_0.get_unchecked());
     let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
-    let mut source_state = crate::cmd::queue::cmdq_get_source(&item).clone();
-    let mut source: *mut cmd_find_state = &mut source_state;
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
+    let source = crate::cmd::queue::cmdq_get_source(&item);
+    let target = crate::cmd::queue::cmdq_get_target(&item);
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut s: Option<SessionRef> = None;
-    let mut pane_owner = (*target).wp.upgrade().expect("copy-mode target pane");
+    let mut pane_owner = target.wp.upgrade().expect("copy-mode target pane");
     let mut line_numbers: ::core::ffi::c_int = 0;
     if args_has(args, 'q' as i32 as u_char) != 0 {
         pane_owner.reset_all_modes();
@@ -113,7 +111,7 @@ unsafe fn cmd_copy_mode_exec(
         return CmdOutcome::Normal;
     }
     let source_owner = if args_has(args, 's' as i32 as u_char) != 0 {
-        (*source).wp.upgrade()
+        source.wp.upgrade()
     } else {
         Some(pane_owner.clone())
     };

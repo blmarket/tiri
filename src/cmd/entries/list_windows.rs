@@ -10,7 +10,7 @@ use crate::shared::abi::*;
 use crate::shared::client::ClientRef;
 use crate::shared::command::CMD_AFTERHOOK;
 use crate::shared::command::*;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::format::FORMAT_NONE;
 use crate::shared::session::SessionRef;
 use crate::shared::sort::sort_criteria;
@@ -51,8 +51,7 @@ unsafe fn cmd_list_windows_exec(
     let item = item_handle.borrow();
     let queue_client = cmdq_get_client(Some(&*item));
     let args = cmd_get_args(self_0.get_unchecked());
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
+    let target = crate::cmd::queue::cmdq_get_target(&item);
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
@@ -88,10 +87,8 @@ unsafe fn cmd_list_windows_exec(
         }
         links
     } else {
-        let links = sort_get_winlinks_session(
-            &(*target).session_handle().expect("live session"),
-            &sort_crit,
-        );
+        let links =
+            sort_get_winlinks_session(&target.session_handle().expect("live session"), &sort_crit);
         if template.is_null() {
             template = c"#{window_index}: #{window_name}#{window_raw_flags} (#{window_panes} panes) [#{window_width}x#{window_height}] [layout #{window_layout}] #{window_id}#{?window_active, (active),}".as_ptr();
         }

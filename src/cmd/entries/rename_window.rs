@@ -8,7 +8,7 @@ use crate::server_fn::{server_redraw_window_borders, server_status_window};
 use crate::shared::abi::*;
 use crate::shared::command::CMD_AFTERHOOK;
 use crate::shared::command::*;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::window::winlink;
 use crate::tmux::check_name;
 use crate::window::Window;
@@ -43,9 +43,8 @@ unsafe fn cmd_rename_window_exec(
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0.get_unchecked());
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
-    let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
+    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let mut wl: refbox::Weak<winlink> = target.winlink_handle();
     let name = format_single_from_target_cstring(
         item_handle,
         args_string(args, 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),

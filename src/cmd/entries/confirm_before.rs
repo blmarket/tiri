@@ -14,7 +14,7 @@ use crate::shared::client::ClientRef;
 use crate::shared::client::CLIENT_DEAD;
 use crate::shared::command::CMD_CLIENT_TFLAG;
 use crate::shared::command::*;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmd_list, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_list, cmdq_item};
 use crate::shared::prompt::*;
 use crate::shared::prompt::{prompt_result, PROMPT_CLOSE, PROMPT_SINGLE};
 use crate::status::status_prompt_set;
@@ -74,8 +74,7 @@ unsafe fn cmd_confirm_before_exec(
     let args = cmd_get_args(self_0.get_unchecked());
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
+    let target = crate::cmd::queue::cmdq_get_target(&item);
     let mut confirm_key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut wait: ::core::ffi::c_int =
         (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
@@ -137,7 +136,7 @@ unsafe fn cmd_confirm_before_exec(
     let inputcb = cdata.into_callback();
     status_prompt_set(
         &tc.clone().expect("live client"),
-        target.as_ref(),
+        Some(target),
         &new_prompt,
         nullable_cstr(::core::ptr::null::<::core::ffi::c_char>()),
         inputcb,

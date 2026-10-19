@@ -12,7 +12,7 @@ use crate::shared::client::ClientRef;
 use crate::shared::abi::*;
 use crate::shared::command::CMD_AFTERHOOK;
 use crate::shared::command::*;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::sort::*;
 use crate::shared::window::window_mode;
 use crate::sort::sort_order_from_string;
@@ -191,9 +191,8 @@ unsafe fn cmd_choose_tree_exec(
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0.get_unchecked());
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
-    let wp = (*target).pane_handle();
+    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let wp = target.pane_handle();
 
     let mut order: sort_order = SORT_ACTIVITY;
     order = sort_order_from_string(nullable_cstr(
@@ -243,7 +242,7 @@ unsafe fn cmd_choose_tree_exec(
         None,
         mode,
         Some(item_handle),
-        Some(&mut *target),
+        Some(target),
         Some(args),
     );
     CmdOutcome::Normal

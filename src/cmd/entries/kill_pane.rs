@@ -11,7 +11,7 @@ use crate::server_fn::{server_kill_pane, server_redraw_window};
 use crate::shared::abi::*;
 use crate::shared::command::CMD_AFTERHOOK;
 use crate::shared::command::*;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::format::FORMAT_NONE;
 use crate::shared::pane::window_pane;
 use crate::shared::session::SessionRef;
@@ -48,9 +48,8 @@ unsafe fn cmd_kill_pane_exec(
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0.get_unchecked());
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
-    let pane_owner = (*target).wp.upgrade();
+    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let pane_owner = target.wp.upgrade();
     let mut filter: Option<&CStr> = args_get(args, 'f' as i32 as u_char);
     if filter.is_some() && args_has(args, 'a' as i32 as u_char) == 0 {
         cmdq_error(item_handle, |out| out.write_all(b"-f only valid with -a"));
@@ -71,11 +70,10 @@ unsafe fn cmd_kill_pane_all(
     filter: Option<&CStr>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
-    let mut s: Option<SessionRef> = (*target).session_handle();
-    let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
-    let target_pane = (*target).pane_handle().expect("kill target pane");
+    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let mut s: Option<SessionRef> = target.session_handle();
+    let mut wl: refbox::Weak<winlink> = target.winlink_handle();
+    let target_pane = target.pane_handle().expect("kill target pane");
     let panes = wl
         .get_unchecked()
         .window_handle()

@@ -3,7 +3,7 @@ use crate::cmd::cmd_get_args;
 use crate::cmd::queue::cmdq_error;
 use crate::shared::command::CMD_AFTERHOOK;
 use crate::shared::command::*;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::window::{LayoutAction, Window as _};
 use crate::window_pane::WindowPane as _;
 
@@ -40,11 +40,10 @@ unsafe fn cmd_resize_pane_exec(
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0.get_unchecked());
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
-    let pane_owner = (*target).wp.upgrade().expect("live resize target pane");
+    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let pane_owner = target.wp.upgrade().expect("live resize target pane");
     if args_has(args, b'Z') != 0 {
-        let window_owner = (*target).w.upgrade().expect("live resize target window");
+        let window_owner = target.w.upgrade().expect("live resize target window");
         let toggled = window_owner.layout_action(&pane_owner, LayoutAction::ToggleZoom);
         drop(window_owner);
         if let Err(cause) = toggled {

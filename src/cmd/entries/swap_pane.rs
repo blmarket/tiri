@@ -10,7 +10,7 @@ use crate::server_fn::server_redraw_window;
 use crate::shared::abi::*;
 use crate::shared::command::CMD_FIND_DEFAULT_MARKED;
 use crate::shared::command::*;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::window::WindowRef;
 use crate::window_pane::WindowPane as _;
 use std::rc::Rc;
@@ -45,21 +45,19 @@ unsafe fn cmd_swap_pane_exec(
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0.get_unchecked());
-    let mut source_state = crate::cmd::queue::cmdq_get_source(&item).clone();
-    let mut source: *mut cmd_find_state = &mut source_state;
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
+    let source = crate::cmd::queue::cmdq_get_source(&item);
+    let target = crate::cmd::queue::cmdq_get_target(&item);
     let mut src_idx: ::core::ffi::c_int = 0;
     let mut dst_idx: ::core::ffi::c_int = 0;
-    let dst_window_owner = (*target).w.upgrade().expect("live swap target window");
-    let dst_pane_owner = (*target).wp.upgrade().expect("live swap target pane");
+    let dst_window_owner = target.w.upgrade().expect("live swap target window");
+    let dst_pane_owner = target.wp.upgrade().expect("live swap target pane");
 
-    dst_idx = ((*target).winlink_handle()).get_unchecked().idx;
-    let mut src_window_owner = (*source).w.upgrade().expect("live swap source window");
+    dst_idx = (target.winlink_handle()).get_unchecked().idx;
+    let mut src_window_owner = source.w.upgrade().expect("live swap source window");
     let result = (|| {
-        let mut src_pane_owner = (*source).wp.upgrade().expect("live swap source pane");
+        let mut src_pane_owner = source.wp.upgrade().expect("live swap source pane");
 
-        src_idx = ((*source).winlink_handle()).get_unchecked().idx;
+        src_idx = (source.winlink_handle()).get_unchecked().idx;
         if args_has(args, 'D' as i32 as u_char) != 0 {
             let previous = std::mem::replace(&mut src_window_owner, dst_window_owner.clone());
             drop(previous);

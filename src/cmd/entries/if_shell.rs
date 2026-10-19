@@ -19,7 +19,7 @@ use crate::shared::abi::*;
 use crate::shared::client::ClientRef;
 use crate::shared::command::CMD_FIND_CANFAIL;
 use crate::shared::command::*;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::job::JobCompletion;
 use crate::shared::session::SessionRef;
 use crate::status::status_message_set;
@@ -69,12 +69,11 @@ unsafe fn cmd_if_shell_exec(
     let queue_client = cmdq_get_client(Some(&*item));
     let mut queue_client_ptr: Option<ClientRef> = queue_client.clone();
     let args = cmd_get_args(self_0.get_unchecked());
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
+    let target = crate::cmd::queue::cmdq_get_target(&item);
     let new_item_allocation;
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let _tc: Option<ClientRef> = tc_owner.clone();
-    let mut s: Option<SessionRef> = (*target).session_handle();
+    let mut s: Option<SessionRef> = target.session_handle();
     let mut count: u_int = args_count(args);
     let mut wait: ::core::ffi::c_int =
         (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;

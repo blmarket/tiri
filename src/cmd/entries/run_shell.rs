@@ -147,14 +147,13 @@ unsafe fn cmd_run_shell_exec(
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0.get_unchecked());
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
+    let target = crate::cmd::queue::cmdq_get_target(&item);
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let _tc: Option<ClientRef> = tc_owner.clone();
-    let mut s: Option<SessionRef> = (*target).session_handle();
-    let pane_owner = (*target).pane_handle();
+    let mut s: Option<SessionRef> = target.session_handle();
+    let pane_owner = target.pane_handle();
     let mut delay: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut d: ::core::ffi::c_double = 0.;

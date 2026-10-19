@@ -4,7 +4,7 @@ use crate::cmd::queue::cmdq_get_target_client;
 use crate::resize::recalculate_sizes;
 use crate::server_fn::{server_lock, server_lock_client, server_lock_session};
 use crate::shared::command::*;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::command::{
     CMD_AFTERHOOK, CMD_CLIENT_TFLAG, CMD_TARGET_CLIENT_USAGE, CMD_TARGET_SESSION_USAGE,
 };
@@ -88,8 +88,7 @@ unsafe fn cmd_lock_server_exec(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
+    let target = crate::cmd::queue::cmdq_get_target(&item);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     if std::ptr::eq(
         cmd_get_entry(self_0.get_unchecked()),
@@ -100,7 +99,7 @@ unsafe fn cmd_lock_server_exec(
         cmd_get_entry(self_0.get_unchecked()),
         &cmd_lock_session_entry,
     ) {
-        server_lock_session(&(*target).s.upgrade().expect("live target session"));
+        server_lock_session(&target.s.upgrade().expect("live target session"));
     } else {
         server_lock_client(tc_owner.as_ref().expect("lock target client"));
     }

@@ -134,11 +134,11 @@ impl tiri_cmdparse::Context for ParserContext<'_, '_> {
             let client_owner = pi.c.upgrade();
             let mut fs: cmd_find_state = Default::default();
             let fsp = if pi.fs.is_valid() {
-                &raw mut pi.fs
+                &pi.fs
             } else {
                 fs = cmd_find_state::find_from_client(client_owner.as_ref(), 0)
                     .unwrap_or_else(|| cmd_find_state::clear_state(0));
-                &raw mut fs
+                &fs
             };
             let item_owner = pi.item.upgrade();
             let mut ft_owner = format_create(
@@ -151,9 +151,9 @@ impl tiri_cmdparse::Context for ParserContext<'_, '_> {
             format_defaults(
                 ft,
                 client_owner.as_ref(),
-                (*fsp).session_handle().as_ref(),
-                ((*fsp).winlink_handle()).clone(),
-                (*fsp).pane_handle().as_ref(),
+                fsp.session_handle().as_ref(),
+                (fsp.winlink_handle()).clone(),
+                fsp.pane_handle().as_ref(),
             );
             let expanded = format_expand_cstring(ft, token.as_c_str().as_ptr());
             drop(ft_owner);

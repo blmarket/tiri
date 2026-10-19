@@ -15,7 +15,7 @@ use crate::shared::abi::*;
 use crate::shared::client::ClientRef;
 use crate::shared::command::CMD_CLIENT_TFLAG;
 use crate::shared::command::*;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmd_list, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_list, cmdq_item};
 use crate::shared::pane::window_pane;
 use crate::shared::prompt::*;
 use crate::shared::prompt::{
@@ -115,10 +115,9 @@ unsafe fn cmd_command_prompt_exec(
     let args = cmd_get_args(self_0.get_unchecked());
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
+    let target = crate::cmd::queue::cmdq_get_target(&item);
     let mut prompt_bytes = Vec::<u8>::new();
-    let wp = (*target).pane_handle();
+    let wp = target.pane_handle();
     let mut count: u_int = args_count(args);
     let mut wait: ::core::ffi::c_int =
         (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
@@ -229,7 +228,7 @@ unsafe fn cmd_command_prompt_exec(
     if pane != 0 {
         wp.as_ref().expect("prompt target pane").set_prompt(
             tc_owner.as_ref(),
-            Some(&mut *target),
+            Some(target),
             &prompt,
             input.as_deref(),
             inputcb,
@@ -240,7 +239,7 @@ unsafe fn cmd_command_prompt_exec(
     } else {
         status_prompt_set(
             &tc.clone().expect("live client"),
-            target.as_ref(),
+            Some(target),
             &prompt,
             input.as_deref(),
             inputcb,

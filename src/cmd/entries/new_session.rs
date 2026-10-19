@@ -101,8 +101,7 @@ unsafe fn cmd_new_session_exec(
     let mut current_block: u64;
     let args = cmd_get_args(self_0.get_unchecked());
     let current = cmdq_get_state_owned(&*(item));
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
+    let target = crate::cmd::queue::cmdq_get_target(&item);
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut s: Option<SessionRef> = None;
@@ -215,7 +214,7 @@ unsafe fn cmd_new_session_exec(
             if let Some(sname) = sname_owned.as_deref() {
                 as_0 = crate::session::sessions::find(sname);
             } else {
-                as_0 = (*target).session_handle();
+                as_0 = target.session_handle();
             }
             if let Some(as_0_value) = as_0.as_ref() {
                 retval = cmd_attach_session(
@@ -242,7 +241,7 @@ unsafe fn cmd_new_session_exec(
         } else {
             group = args_get(args, 't' as i32 as u_char);
             if let Some(group) = group {
-                groupwith_owner = (*target).s.upgrade();
+                groupwith_owner = target.s.upgrade();
                 groupwith = groupwith_owner.clone();
                 if groupwith.is_none() {
                     sg = session_groups::find(group);

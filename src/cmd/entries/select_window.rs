@@ -123,10 +123,9 @@ unsafe fn cmd_select_window_exec(
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     let current = cmdq_get_state_owned(&*(item));
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
-    let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
-    let mut s: Option<SessionRef> = (*target).session_handle();
+    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let mut wl: refbox::Weak<winlink> = target.winlink_handle();
+    let mut s: Option<SessionRef> = target.session_handle();
     let mut next: ::core::ffi::c_int = 0;
     let mut previous: ::core::ffi::c_int = 0;
     let mut last: ::core::ffi::c_int = 0;

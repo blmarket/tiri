@@ -2289,7 +2289,6 @@ unsafe fn window_tree_key(
         wp: Default::default(),
         idx: 0,
     };
-    let mut fsp: *mut cmd_find_state = &raw mut (*data).fs;
     let mut finished: ::core::ffi::c_int = 0;
     let mut tagged: u_int = 0;
     let mut x: u_int = 0;
@@ -2348,14 +2347,15 @@ unsafe fn window_tree_key(
         72 => {
             mode_tree_expand(
                 (*data).data.clone().as_ref().expect("mode tree owner"),
-                (*fsp)
+                (*data)
+                    .fs
                     .session_handle()
                     .as_ref()
                     .map_or(0, |owner| std::rc::Rc::as_ptr(owner) as uint64_t),
             );
             mode_tree_expand(
                 (*data).data.clone().as_ref().expect("mode tree owner"),
-                (*fsp).winlink_handle().as_ptr() as uint64_t,
+                (*data).fs.winlink_handle().as_ptr() as uint64_t,
             );
             if (*data)
                 .tree_owner()
@@ -2366,7 +2366,7 @@ unsafe fn window_tree_key(
                 (*data)
                     .tree_owner()
                     .borrow_mut()
-                    .set_current((*fsp).winlink_handle().as_ptr() as uint64_t);
+                    .set_current((*data).fs.winlink_handle().as_ptr() as uint64_t);
             }
         }
         109 if item.is_some() => {

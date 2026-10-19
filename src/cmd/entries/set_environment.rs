@@ -7,7 +7,7 @@ use crate::format::format_single_from_target_cstring;
 use crate::session::Session;
 use crate::shared::abi::*;
 use crate::shared::command::*;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
 use crate::shared::environment::environ;
 use crate::shared::environment::ENVIRON_HIDDEN;
@@ -44,8 +44,7 @@ unsafe fn cmd_set_environment_exec(
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0.get_unchecked());
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
+    let target = crate::cmd::queue::cmdq_get_target(&item);
 
     let mut name: &CStr = args_string(args, 0 as u_int).expect("argument is present");
     let mut value: Option<&CStr> = None;
@@ -73,7 +72,7 @@ unsafe fn cmd_set_environment_exec(
         value = expanded.as_deref();
     }
     let global = args_has(args, b'g') != 0;
-    let session = (*target).session_handle();
+    let session = target.session_handle();
     if !global && session.is_none() {
         if let Some(target) = args_get(args, b't') {
             cmdq_error(item_handle, |out| {

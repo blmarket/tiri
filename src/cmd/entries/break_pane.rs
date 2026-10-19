@@ -62,16 +62,14 @@ unsafe fn cmd_break_pane_exec(
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0.get_unchecked());
     let current = cmdq_get_state_owned(&*(item));
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
-    let mut source_state = crate::cmd::queue::cmdq_get_source(&item).clone();
-    let mut source: *mut cmd_find_state = &mut source_state;
+    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let source = crate::cmd::queue::cmdq_get_source(&item);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
-    let mut wl: refbox::Weak<winlink> = (*source).winlink_handle();
-    let mut src_s: Option<SessionRef> = (*source).session_handle();
-    let mut dst_s: Option<SessionRef> = (*target).session_handle();
-    let pane_owner = (*source).pane_handle().expect("live break pane");
+    let mut wl: refbox::Weak<winlink> = source.winlink_handle();
+    let mut src_s: Option<SessionRef> = source.session_handle();
+    let mut dst_s: Option<SessionRef> = target.session_handle();
+    let pane_owner = source.pane_handle().expect("live break pane");
     let source_window = wl
         .get_unchecked()
         .window_handle()
@@ -79,7 +77,7 @@ unsafe fn cmd_break_pane_exec(
         .expect("live source window");
     let result = (|| {
         let _cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-        let mut idx: ::core::ffi::c_int = (*target).idx;
+        let mut idx: ::core::ffi::c_int = target.idx;
         let mut before: ::core::ffi::c_int = 0;
         let mut old_idx: ::core::ffi::c_int = wl.get_unchecked().idx;
         let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -93,10 +91,10 @@ unsafe fn cmd_break_pane_exec(
         }
         before = args_has(args, 'b' as i32 as u_char);
         if args_has(args, 'a' as i32 as u_char) != 0 || before != 0 {
-            if (*target).winlink_handle().is_alive() {
+            if target.winlink_handle().is_alive() {
                 idx = winlink_shuffle_up(
                     dst_s.as_ref().expect("live session"),
-                    ((*target).winlink_handle()).clone(),
+                    (target.winlink_handle()).clone(),
                     before,
                 );
             } else {
@@ -191,7 +189,7 @@ unsafe fn cmd_break_pane_exec(
                         c"base-index",
                     )) as ::core::ffi::c_int;
             }
-            let destination_session = (*target)
+            let destination_session = target
                 .session_handle()
                 .expect("break-pane destination session");
             wl = match crate::session::Session::attach_window(&destination_session, &window, idx) {

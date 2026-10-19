@@ -6,7 +6,7 @@ use crate::format::bytes::write_cstr;
 use crate::server_fn::{server_redraw_window_borders, server_status_window};
 use crate::shared::abi::*;
 use crate::shared::command::*;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::pane::window_pane;
 use crate::shared::session::SessionRef;
 use crate::shared::spawn::spawn_context;
@@ -44,8 +44,7 @@ unsafe fn cmd_respawn_pane_exec(
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0.get_unchecked());
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
+    let target = crate::cmd::queue::cmdq_get_target(&item);
     let mut sc: spawn_context = spawn_context {
         item: std::rc::Weak::new(),
         s: std::rc::Weak::new(),
@@ -60,9 +59,9 @@ unsafe fn cmd_respawn_pane_exec(
         flags: 0,
     };
     let mut argv_owner = Vec::new();
-    let mut s: Option<SessionRef> = (*target).session_handle();
-    let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
-    let wp = (*target).pane_handle();
+    let mut s: Option<SessionRef> = target.session_handle();
+    let mut wl: refbox::Weak<winlink> = target.winlink_handle();
+    let wp = target.pane_handle();
     let mut cause: Option<std::ffi::CString> = None;
     sc.item = std::rc::Rc::downgrade(item_handle);
     sc.s = std::rc::Rc::downgrade(s.as_ref().expect("live session"));

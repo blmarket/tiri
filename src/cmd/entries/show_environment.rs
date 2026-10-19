@@ -7,7 +7,7 @@ use crate::format::bytes::write_cstr;
 use crate::session::Session;
 use crate::shared::abi::*;
 use crate::shared::command::*;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
 use crate::shared::environment::ENVIRON_HIDDEN;
 use crate::shared::environment::{environ, environ_entry};
@@ -100,14 +100,13 @@ unsafe fn cmd_show_environment_exec(
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0.get_unchecked());
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
+    let target = crate::cmd::queue::cmdq_get_target(&item);
 
     let mut envent: Option<&environ_entry> = None;
     let mut tflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut name: Option<&CStr> = args_string(args, 0 as u_int);
     tflag = args_get(args, 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if !tflag.is_null() && (*target).session_handle().is_none() {
+    if !tflag.is_null() && target.session_handle().is_none() {
         cmdq_error(item_handle, |out| {
             out.write_all(b"no such session: ")?;
             write_cstr(out, nullable_cstr(tflag))
@@ -117,7 +116,7 @@ unsafe fn cmd_show_environment_exec(
     let env: environ = if args_has(args, 'g' as i32 as u_char) != 0 {
         global_environ.as_deref().expect("environment").clone()
     } else {
-        if (*target).session_handle().is_none() {
+        if target.session_handle().is_none() {
             tflag = args_get(args, 't' as i32 as u_char)
                 .map_or(std::ptr::null(), |value| value.as_ptr());
             if !tflag.is_null() {
@@ -130,7 +129,7 @@ unsafe fn cmd_show_environment_exec(
             }
             return CmdOutcome::Error;
         }
-        let session = (*target).session_handle().expect("target session");
+        let session = target.session_handle().expect("target session");
         session.borrow_environment().expect("environment").clone()
     };
     if let Some(name) = name {

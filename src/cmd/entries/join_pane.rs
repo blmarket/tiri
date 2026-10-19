@@ -52,17 +52,15 @@ unsafe fn cmd_join_pane_exec(
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0.get_unchecked());
     let current = cmdq_get_state_owned(&*(item));
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
-    let mut source_state = crate::cmd::queue::cmdq_get_source(&item).clone();
-    let mut source: *mut cmd_find_state = &mut source_state;
+    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let source = crate::cmd::queue::cmdq_get_source(&item);
     let mut dst_s: Option<SessionRef> = None;
     let mut src_wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut dst_wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut dst_idx: ::core::ffi::c_int = 0;
-    dst_s = (*target).session_handle();
-    dst_wl = (*target).winlink_handle();
-    let dst_pane_owner = (*target).pane_handle().expect("join target pane");
+    dst_s = target.session_handle();
+    dst_wl = target.winlink_handle();
+    let dst_pane_owner = target.pane_handle().expect("join target pane");
     let dst_window = dst_wl
         .get_unchecked()
         .window_handle()
@@ -71,8 +69,8 @@ unsafe fn cmd_join_pane_exec(
     let mut src_window = None;
     let result = (|| {
         dst_idx = dst_wl.get_unchecked().idx;
-        src_wl = (*source).winlink_handle();
-        let src_pane_owner = (*source).pane_handle().expect("join source pane");
+        src_wl = source.winlink_handle();
+        let src_pane_owner = source.pane_handle().expect("join source pane");
         src_window = src_wl.get_unchecked().window_handle().cloned();
         let src_owner = src_window.as_ref().expect("live source window");
         if std::rc::Rc::ptr_eq(&src_pane_owner, &dst_pane_owner) {

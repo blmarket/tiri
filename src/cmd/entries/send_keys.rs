@@ -13,7 +13,7 @@ use crate::shared::abi::*;
 use crate::shared::client::ClientRef;
 use crate::shared::client::CLIENT_READONLY;
 use crate::shared::command::*;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_CFLAG, CMD_READONLY};
 use crate::shared::grid::*;
 use crate::shared::key::key_event;
@@ -84,13 +84,12 @@ unsafe fn cmd_send_keys_inject_key(
 ) -> std::rc::Weak<std::cell::RefCell<cmdq_item>> {
     let mut after = after_handle.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     let item = item_handle.borrow();
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
+    let target = crate::cmd::queue::cmdq_get_target(&item);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
-    let mut _s: Option<SessionRef> = (*target).session_handle();
-    let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
-    let pane = (*target).pane_handle().expect("key target pane");
+    let mut _s: Option<SessionRef> = target.session_handle();
+    let mut wl: refbox::Weak<winlink> = target.winlink_handle();
+    let pane = target.pane_handle().expect("key target pane");
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
     let mut new_after = after.clone();
     if args_has(args, 'K' as i32 as u_char) != 0 {
@@ -123,7 +122,7 @@ unsafe fn cmd_send_keys_inject_key(
     }
     wme = pane.mode_entry();
     if !wme.is_alive() || wme.get_unchecked().mode.key_table.is_none() {
-        if (*target).pane_handle().expect("key target pane").key(
+        if target.pane_handle().expect("key target pane").key(
             tc_owner.as_ref(),
             wl.clone(),
             key,
@@ -144,13 +143,7 @@ unsafe fn cmd_send_keys_inject_key(
     .expect("created key table");
     let command = key_bindings_get(&table.borrow(), key & !KEYC_MASK_FLAGS).map(|bd| bd.command());
     if let Some(command) = command {
-        after = key_bindings_dispatch(
-            command,
-            after.upgrade().as_ref(),
-            tc.as_ref(),
-            None,
-            &*target,
-        );
+        after = key_bindings_dispatch(command, after.upgrade().as_ref(), tc.as_ref(), None, target);
     }
     after
 }
@@ -228,13 +221,12 @@ unsafe fn cmd_send_keys_exec(
     let item = item_handle.borrow();
     let mouse_pane_owner;
     let args = cmd_get_args(self_0.get_unchecked());
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
+    let target = crate::cmd::queue::cmdq_get_target(&item);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
-    let mut s: Option<SessionRef> = (*target).session_handle();
-    let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
-    let pane = (*target).pane_handle().expect("key target pane");
+    let mut s: Option<SessionRef> = target.session_handle();
+    let mut wl: refbox::Weak<winlink> = target.winlink_handle();
+    let pane = target.pane_handle().expect("key target pane");
     let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
     let mut m: *mut mouse_event = &raw mut (*event).m;
@@ -288,7 +280,7 @@ unsafe fn cmd_send_keys_exec(
             .expect("non-null function pointer")(
             wme,
             tc_owner.as_ref(),
-            (*target).s.upgrade().as_ref(),
+            target.s.upgrade().as_ref(),
             wl,
             args,
             m,

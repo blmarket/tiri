@@ -13,7 +13,7 @@ use crate::shared::abi::*;
 use crate::shared::client::ClientRef;
 use crate::shared::command::CMD_AFTERHOOK;
 use crate::shared::command::*;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::format::FORMAT_NONE;
 use crate::shared::session::SessionRef;
 use crate::shared::sort::sort_criteria;
@@ -53,10 +53,9 @@ unsafe fn cmd_list_panes_exec(
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0.get_unchecked());
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
-    let mut s: Option<SessionRef> = (*target).session_handle();
-    let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
+    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let mut s: Option<SessionRef> = target.session_handle();
+    let mut wl: refbox::Weak<winlink> = target.winlink_handle();
     let mut order: sort_order = SORT_ACTIVITY;
     order = sort_order_from_string(nullable_cstr(
         args_get(args, 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),

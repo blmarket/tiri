@@ -71,8 +71,7 @@ unsafe fn cmd_move_window_exec(
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0.get_unchecked());
-    let mut source_state = crate::cmd::queue::cmdq_get_source(&item).clone();
-    let mut source: *mut cmd_find_state = &mut source_state;
+    let source = crate::cmd::queue::cmdq_get_source(&item);
     let mut target: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -83,9 +82,9 @@ unsafe fn cmd_move_window_exec(
     };
     let mut tflag: *const ::core::ffi::c_char =
         args_get(args, 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    let mut src: Option<SessionRef> = (*source).session_handle();
+    let mut src: Option<SessionRef> = source.session_handle();
     let mut dst: Option<SessionRef> = None;
-    let mut wl: refbox::Weak<winlink> = (*source).winlink_handle();
+    let mut wl: refbox::Weak<winlink> = source.winlink_handle();
     let mut idx: ::core::ffi::c_int = 0;
     let mut kflag: ::core::ffi::c_int = 0;
     let mut dflag: ::core::ffi::c_int = 0;

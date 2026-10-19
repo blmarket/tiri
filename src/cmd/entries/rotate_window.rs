@@ -40,10 +40,9 @@ unsafe fn cmd_rotate_window_exec(
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0.get_unchecked());
     let current = cmdq_get_state_owned(&*(item));
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
-    let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
-    let window_owner = (*target).w.upgrade().expect("live rotation window");
+    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let mut wl: refbox::Weak<winlink> = target.winlink_handle();
+    let window_owner = target.w.upgrade().expect("live rotation window");
     let result = {
         let down = args_has(args, b'D') != 0;
         let mut order = window_owner

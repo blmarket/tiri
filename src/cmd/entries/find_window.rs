@@ -2,7 +2,7 @@ use crate::arguments::{args_create, args_has, args_parse, args_set_string, args_
 use crate::cmd::cmd_get_args;
 use crate::shared::abi::*;
 use crate::shared::command::*;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::window_pane::WindowPane as _;
 use crate::window_tree::window_tree_mode;
 use std::ffi::{CStr, CString};
@@ -37,9 +37,8 @@ unsafe fn cmd_find_window_exec(
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0.get_unchecked());
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
-    let wp = (*target).pane_handle();
+    let target = crate::cmd::queue::cmdq_get_target(&item);
+    let wp = target.pane_handle();
     let mut s: &CStr = args_string(args, 0 as u_int).expect("argument is present");
     let mut suffix: &CStr = c"";
     let mut star: &CStr = c"*";
@@ -72,7 +71,7 @@ unsafe fn cmd_find_window_exec(
         None,
         &window_tree_mode,
         Some(item_handle),
-        Some(&mut *target),
+        Some(target),
         Some(&new_args),
     );
     drop(new_args);

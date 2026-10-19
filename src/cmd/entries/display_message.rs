@@ -14,7 +14,7 @@ use crate::shared::abi::*;
 use crate::shared::client::ClientRef;
 use crate::shared::client::CLIENT_CONTROL;
 use crate::shared::command::*;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::command::{
     CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_CFLAG, CMD_FIND_CANFAIL,
 };
@@ -58,14 +58,13 @@ unsafe fn cmd_display_message_exec(
     let item = item_handle.borrow();
     let queue_client = cmdq_get_client(Some(&*item));
     let args = cmd_get_args(self_0.get_unchecked());
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
+    let target = crate::cmd::queue::cmdq_get_target(&item);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut c: Option<ClientRef> = None;
-    let s = (*target).session_handle();
-    let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
-    let wp = (*target).pane_handle();
+    let s = target.session_handle();
+    let mut wl: refbox::Weak<winlink> = target.winlink_handle();
+    let wp = target.pane_handle();
     let mut cause: Option<CString> = None;
     let mut delay: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     let mut flags: ::core::ffi::c_int = 0;

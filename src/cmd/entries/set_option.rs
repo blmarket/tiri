@@ -118,8 +118,7 @@ unsafe fn cmd_set_hook_event_exec(
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0.get_unchecked());
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
+    let target = crate::cmd::queue::cmdq_get_target(&item);
     let mut c: Option<ClientRef> = None;
     if args_count(args) == 0 as u_int {
         cmdq_error(item_handle, |out| out.write_all(b"missing argument"));
@@ -140,41 +139,37 @@ unsafe fn cmd_set_hook_event_exec(
         return CmdOutcome::Error;
     }
     let mut ep = event_payload_create();
-    event_payload_set_target(&mut ep, &*target);
+    event_payload_set_target(&mut ep, target);
     let c_owner = cmdq_get_client(Some(&*item));
     c = c_owner.clone();
     if !c.is_none() {
         event_payload_set_client(&mut ep, c.clone().expect("live client"));
     }
-    if !(*target).session_handle().is_none() {
+    if !target.session_handle().is_none() {
         event_payload_set_session(
             &mut ep,
             c"session",
-            (*target).session_handle().expect("live session"),
+            target.session_handle().expect("live session"),
         );
     }
-    if !(*target).window_handle().is_none() {
+    if !target.window_handle().is_none() {
         event_payload_set_window(
             &mut ep,
             c"window",
-            WindowRef::clone(((*target).window_handle().as_ref()).expect("live window")),
+            WindowRef::clone((target.window_handle().as_ref()).expect("live window")),
         );
     }
-    if (*target).winlink_handle().is_alive() {
+    if target.winlink_handle().is_alive() {
         event_payload_set_int(
             &mut ep,
             c"window_index",
-            ((*target).winlink_handle()).get_unchecked().idx,
+            (target.winlink_handle()).get_unchecked().idx,
         );
-    } else if (*target).idx != -(1 as ::core::ffi::c_int) {
-        event_payload_set_int(&mut ep, c"window_index", (*target).idx);
+    } else if target.idx != -(1 as ::core::ffi::c_int) {
+        event_payload_set_int(&mut ep, c"window_index", target.idx);
     }
-    if !(*target).pane_handle().is_none() {
-        event_payload_set_pane(
-            &mut ep,
-            c"pane",
-            (*target).pane_handle().expect("live pane"),
-        );
+    if !target.pane_handle().is_none() {
+        event_payload_set_pane(&mut ep, c"pane", target.pane_handle().expect("live pane"));
     }
     events_fire(&argument, ep);
     CmdOutcome::Normal
@@ -214,7 +209,7 @@ unsafe fn cmd_set_hook_monitor_exec(
         });
         return CmdOutcome::Error;
     }
-    let selected = match options_scope_from_name(args, window, &name, &*target) {
+    let selected = match options_scope_from_name(args, window, &name, target) {
         Ok((_, selected)) => selected,
         Err(cause) => return set_option_error(item_handle, &cause),
     };
@@ -240,7 +235,7 @@ unsafe fn cmd_set_hook_monitor_exec(
     let session = if selected.is_global() {
         None
     } else {
-        (*target).session_handle()
+        target.session_handle()
     };
     let flags = if args_has(args, b'T') != 0 {
         MONITOR_NOTIFY_TRUE
@@ -362,7 +357,7 @@ unsafe fn cmd_set_option_exec(
             value = Some(format_single_from_target_cstring(item_handle, old.as_ptr()));
         }
     }
-    let (scope, selected) = match options_scope_from_name(args, window, &parsed.name, &*target) {
+    let (scope, selected) = match options_scope_from_name(args, window, &parsed.name, target) {
         Ok(selected) => selected,
         Err(_) if args_has(args, b'q') != 0 => return CmdOutcome::Normal,
         Err(cause) => return set_option_error(item_handle, &cause),
@@ -405,7 +400,7 @@ unsafe fn cmd_set_option_exec(
         }
     }
     if args_has(args, b'U') != 0 && scope == OPTIONS_TABLE_WINDOW {
-        if let Err(cause) = unset_window_panes(&*target, name, array_key) {
+        if let Err(cause) = unset_window_panes(target, name, array_key) {
             return set_option_error(item_handle, &cause);
         }
     }

@@ -7,7 +7,7 @@ use crate::server_fn::server_redraw_window;
 use crate::shared::abi::*;
 use crate::shared::client::ClientRef;
 use crate::shared::command::*;
-use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::session::SessionRef;
 use crate::shared::spawn::spawn_context;
 use crate::shared::spawn::{SPAWN_EMPTY, SPAWN_KILL, SPAWN_RESPAWN};
@@ -44,8 +44,7 @@ unsafe fn cmd_respawn_window_exec(
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0.get_unchecked());
-    let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
-    let mut target: *mut cmd_find_state = &mut target_state;
+    let target = crate::cmd::queue::cmdq_get_target(&item);
     let mut sc: spawn_context = spawn_context {
         item: std::rc::Weak::new(),
         s: std::rc::Weak::new(),
@@ -62,8 +61,8 @@ unsafe fn cmd_respawn_window_exec(
     let mut argv_owner = Vec::new();
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut _tc: Option<ClientRef> = tc_owner.clone();
-    let mut s: Option<SessionRef> = (*target).session_handle();
-    let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
+    let mut s: Option<SessionRef> = target.session_handle();
+    let mut wl: refbox::Weak<winlink> = target.winlink_handle();
     let mut cause: Option<std::ffi::CString> = None;
     sc.item = std::rc::Rc::downgrade(item_handle);
     sc.s = std::rc::Rc::downgrade(s.as_ref().expect("live session"));
