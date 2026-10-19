@@ -1,31 +1,17 @@
 //! Printing and escaping arguments.
 
-use super::store::{args, ARGS_ENTRY_OPTIONAL_VALUE};
-use super::value::{args_type, args_value, ArgumentValue, ARGS_COMMANDS, ARGS_NONE, ARGS_STRING};
+use super::store::args;
+use super::value::{args_value, ParseValue};
 use crate::cmd::cmd_list_print_cstring;
-use crate::log::fatalx;
 use crate::shared::vis::{VIS_CSTYLE, VIS_DQ, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::text::utf8::utf8_strvis;
 use std::borrow::Cow;
 use std::ffi::{CStr, CString};
 
-pub(super) fn args_type_to_string(kind: args_type) -> &'static CStr {
-    match kind {
-        ARGS_NONE => c"NONE",
-        ARGS_STRING => c"STRING",
-        ARGS_COMMANDS => c"COMMANDS",
-        _ => c"INVALID",
-    }
-}
-pub(super) fn args_value_for_log<'a>(value: &'a ArgumentValue<'_>) -> Cow<'a, CStr> {
-    match value.type_0() as ::core::ffi::c_uint {
-        0 => Cow::Borrowed(c""),
-        1 => Cow::Borrowed(value.as_string().expect("string argument")),
-        2 => Cow::Owned(cmd_list_print_cstring(
-            &value.as_commands().expect("command argument").borrow(),
-            0,
-        )),
-        _ => fatalx(|out| out.write_all(b"unexpected argument type")),
+pub(super) fn args_value_for_log<'a>(value: ParseValue<'a>) -> Cow<'a, CStr> {
+    match value {
+        ParseValue::String(text) => Cow::Borrowed(text),
+        ParseValue::Commands(commands) => Cow::Owned(cmd_list_print_cstring(&commands.borrow(), 0)),
     }
 }
 
@@ -33,45 +19,43 @@ fn args_print_add_value(buf: &mut Vec<u8>, value: &args_value) {
     if !buf.is_empty() {
         buf.push(b' ');
     }
-    match value.type_0() as ::core::ffi::c_uint {
-        2 => {
-            let expanded =
-                cmd_list_print_cstring(&value.as_commands().expect("command argument").borrow(), 0);
+    match value {
+        args_value::Commands(commands, _) => {
+            let expanded = cmd_list_print_cstring(&commands.borrow(), 0);
             buf.extend_from_slice(b"{ ");
             buf.extend_from_slice(expanded.as_bytes());
             buf.extend_from_slice(b" }");
         }
-        1 => {
-            let expanded = args_escape_cstring(value.as_string().expect("string argument"));
+        args_value::String(text) => {
+            let expanded = args_escape_cstring(text);
             buf.extend_from_slice(expanded.as_bytes());
         }
-        _ => {}
+        args_value::None => {}
     }
 }
-
 pub(crate) fn args_print_cstring(args: &args) -> CString {
     let mut buf = Vec::new();
-    for entry in args.tree.values() {
-        if entry.flags & ARGS_ENTRY_OPTIONAL_VALUE == 0 && entry.values.is_empty() {
+    for (&flag, entry) in &args.tree {
+        if !entry.optional && entry.values.is_empty() {
             if buf.is_empty() {
                 buf.push(b'-');
             }
             for _ in 0..entry.count {
-                if entry.flag != 0 {
-                    buf.push(entry.flag);
+                if flag != 0 {
+                    buf.push(flag);
                 }
             }
         }
     }
     let mut last_optional = false;
-    for entry in args.tree.values() {
-        if entry.flags & ARGS_ENTRY_OPTIONAL_VALUE != 0 {
+    for (&flag, entry) in &args.tree {
+        if entry.optional {
             if !buf.is_empty() {
                 buf.push(b' ');
             }
             buf.push(b'-');
-            if entry.flag != 0 {
-                buf.push(entry.flag);
+            if flag != 0 {
+                buf.push(flag);
             }
             last_optional = true;
         } else if !entry.values.is_empty() {
@@ -80,8 +64,8 @@ pub(crate) fn args_print_cstring(args: &args) -> CString {
                     buf.push(b' ');
                 }
                 buf.push(b'-');
-                if entry.flag != 0 {
-                    buf.push(entry.flag);
+                if flag != 0 {
+                    buf.push(flag);
                 }
                 args_print_add_value(&mut buf, value);
             }

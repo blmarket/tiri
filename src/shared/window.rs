@@ -97,7 +97,7 @@ pub type window_mode_init_cb = unsafe fn(
     refbox::Weak<window_mode_entry>,
     Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     Option<&cmd_find_state>,
-    Option<&mut args>,
+    Option<&args>,
 ) -> bool;
 /// Visits a screen owned by the mode payload, calling the visitor once when
 /// the payload has one. The borrow ends when the visitor returns.
@@ -133,7 +133,7 @@ pub type window_mode_command_cb = unsafe fn(
     Option<&ClientRef>,
     Option<&SessionRef>,
     refbox::Weak<winlink>,
-    &mut args,
+    &args,
     Option<&mut mouse_event>,
 );
 

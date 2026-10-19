@@ -1,12 +1,12 @@
 use crate::arguments::{
-    args, args_count, args_flag_values, args_get, args_has, args_parse, args_to_vector,
+    args_count, args_flag_values, args_get, args_has, args_parse, args_to_vector,
 };
 use crate::cfg::{cfg_finished, cfg_show_causes};
 use crate::cmd::entries::attach_session::cmd_attach_session;
 use crate::cmd::queue::{
     cmdq_error, cmdq_get_client, cmdq_get_flags, cmdq_get_state_owned, cmdq_insert_hook, cmdq_print,
 };
-use crate::cmd::{cmd_get_args_mut, cmd_get_entry};
+use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::compat::strtonum::strtonum;
 use crate::environ::{environ_create, environ_put, environ_update};
 use crate::events::events_fire_session;
@@ -92,15 +92,14 @@ pub static cmd_has_session_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_new_session_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let queue_client = cmdq_get_client(Some(&*item));
     let mut queue_client_ptr: Option<ClientRef> = queue_client.clone();
     let mut current_block: u64;
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let current = cmdq_get_state_owned(&*(item));
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
@@ -128,7 +127,7 @@ unsafe fn cmd_new_session_exec(
     let mut sy: u_int = 0;
     let mut dsx: u_int = 0;
     let mut dsy: u_int = 0;
-    let mut count: u_int = args_count(&*args);
+    let mut count: u_int = args_count(args);
     let mut sc: spawn_context = spawn_context {
         item: std::rc::Weak::new(),
         s: std::rc::Weak::new(),
@@ -158,15 +157,15 @@ unsafe fn cmd_new_session_exec(
     ) {
         return CmdOutcome::Normal;
     }
-    if args_has(&*args, 't' as i32 as u_char) != 0
-        && (count != 0 as u_int || args_has(&*args, 'n' as i32 as u_char) != 0)
+    if args_has(args, 't' as i32 as u_char) != 0
+        && (count != 0 as u_int || args_has(args, 'n' as i32 as u_char) != 0)
     {
         cmdq_error(item_handle, |out| {
             out.write_all(b"command or window name given with target")
         });
         return CmdOutcome::Error;
     }
-    if let Some(tmp) = args_get(&*(args), 'n' as i32 as u_char) {
+    if let Some(tmp) = args_get(args, 'n' as i32 as u_char) {
         let ename = format_single_cstring(
             Some(item_handle),
             tmp.as_ptr(),
@@ -186,7 +185,7 @@ unsafe fn cmd_new_session_exec(
             clean_name_cstring(ename.as_c_str(), 0).expect("check_name validated the window name"),
         );
     }
-    if let Some(tmp) = args_get(&*(args), 's' as i32 as u_char) {
+    if let Some(tmp) = args_get(args, 's' as i32 as u_char) {
         let ename = format_single_cstring(
             Some(item_handle),
             tmp.as_ptr(),
@@ -212,7 +211,7 @@ unsafe fn cmd_new_session_exec(
         current_block = 10043043949733653460;
     }
     if current_block == 10043043949733653460 {
-        if args_has(&*args, 'A' as i32 as u_char) != 0 {
+        if args_has(args, 'A' as i32 as u_char) != 0 {
             if let Some(sname) = sname_owned.as_deref() {
                 as_0 = crate::session::sessions::find(sname);
             } else {
@@ -222,12 +221,12 @@ unsafe fn cmd_new_session_exec(
                 retval = cmd_attach_session(
                     item_handle,
                     Some(&*(as_0_value.name())),
-                    args_has(&*args, 'D' as i32 as u_char),
-                    args_has(&*args, 'X' as i32 as u_char),
+                    args_has(args, 'D' as i32 as u_char),
+                    args_has(args, 'X' as i32 as u_char),
                     0 as ::core::ffi::c_int,
-                    args_get(&*(args), 'c' as i32 as u_char),
-                    args_has(&*args, 'E' as i32 as u_char),
-                    args_get(&*(args), 'f' as i32 as u_char),
+                    args_get(args, 'c' as i32 as u_char),
+                    args_has(args, 'E' as i32 as u_char),
+                    args_get(args, 'f' as i32 as u_char),
                 );
                 return retval;
             }
@@ -241,7 +240,7 @@ unsafe fn cmd_new_session_exec(
                 write_cstr(out, sname_owned.as_deref())
             });
         } else {
-            group = args_get(&*(args), 't' as i32 as u_char);
+            group = args_get(args, 't' as i32 as u_char);
             if let Some(group) = group {
                 groupwith_owner = (*target).s.upgrade();
                 groupwith = groupwith_owner.clone();
@@ -279,7 +278,7 @@ unsafe fn cmd_new_session_exec(
             match current_block {
                 5193972633326621385 => {}
                 _ => {
-                    detached = args_has(&*args, 'd' as i32 as u_char);
+                    detached = args_has(args, 'd' as i32 as u_char);
                     match &c {
                         None => detached = 1 as ::core::ffi::c_int,
                         Some(client) if client.flags() & CLIENT_CONTROL as uint64_t != 0 => {
@@ -293,7 +292,7 @@ unsafe fn cmd_new_session_exec(
                     {
                         already_attached = 1 as ::core::ffi::c_int;
                     }
-                    if let Some(tmp) = args_get(&*(args), 'c' as i32 as u_char) {
+                    if let Some(tmp) = args_get(args, 'c' as i32 as u_char) {
                         cwd = Some(format_single_cstring(
                             Some(item_handle),
                             tmp.as_ptr(),
@@ -348,8 +347,8 @@ unsafe fn cmd_new_session_exec(
                             match current_block {
                                 5193972633326621385 => {}
                                 _ => {
-                                    if args_has(&*args, 'x' as i32 as u_char) != 0 {
-                                        let tmp = args_get(&*(args), 'x' as i32 as u_char)
+                                    if args_has(args, 'x' as i32 as u_char) != 0 {
+                                        let tmp = args_get(args, 'x' as i32 as u_char)
                                             .expect("-x has a value");
                                         if tmp == c"-" {
                                             if let Some(c_value) = c.as_ref() {
@@ -382,8 +381,8 @@ unsafe fn cmd_new_session_exec(
                                     match current_block {
                                         5193972633326621385 => {}
                                         _ => {
-                                            if args_has(&*args, 'y' as i32 as u_char) != 0 {
-                                                let tmp = args_get(&*(args), 'y' as i32 as u_char)
+                                            if args_has(args, 'y' as i32 as u_char) != 0 {
+                                                let tmp = args_get(args, 'y' as i32 as u_char)
                                                     .expect("-y has a value");
                                                 if tmp == c"-" {
                                                     if let Some(c_value) = c.as_ref() {
@@ -458,17 +457,13 @@ unsafe fn cmd_new_session_exec(
                                                             sx = dsx;
                                                             sy = dsy;
                                                         } else {
-                                                            if args_has(
-                                                                &*args,
-                                                                'x' as i32 as u_char,
-                                                            ) != 0
+                                                            if args_has(args, 'x' as i32 as u_char)
+                                                                != 0
                                                             {
                                                                 sx = dsx;
                                                             }
-                                                            if args_has(
-                                                                &*args,
-                                                                'y' as i32 as u_char,
-                                                            ) != 0
+                                                            if args_has(args, 'y' as i32 as u_char)
+                                                                != 0
                                                             {
                                                                 sy = dsy;
                                                             }
@@ -481,17 +476,14 @@ unsafe fn cmd_new_session_exec(
                                                         sy = 1 as u_int;
                                                     }
                                                     oo = Some(crate::options::options_create(Some(crate::options::OptionsScope::GlobalSession)));
-                                                    if args_has(&*args, 'x' as i32 as u_char) != 0
-                                                        || args_has(&*args, 'y' as i32 as u_char)
-                                                            != 0
+                                                    if args_has(args, 'x' as i32 as u_char) != 0
+                                                        || args_has(args, 'y' as i32 as u_char) != 0
                                                     {
-                                                        if args_has(&*args, 'x' as i32 as u_char)
-                                                            == 0
+                                                        if args_has(args, 'x' as i32 as u_char) == 0
                                                         {
                                                             dsx = sx;
                                                         }
-                                                        if args_has(&*args, 'y' as i32 as u_char)
-                                                            == 0
+                                                        if args_has(args, 'y' as i32 as u_char) == 0
                                                         {
                                                             dsy = sy;
                                                         }
@@ -512,7 +504,7 @@ unsafe fn cmd_new_session_exec(
                                                     }
                                                     env = Some(environ_create());
                                                     if let Some(client) = c.as_ref().filter(|_| {
-                                                        args_has(&*args, 'E' as i32 as u_char) == 0
+                                                        args_has(args, 'E' as i32 as u_char) == 0
                                                     }) {
                                                         let client_environment = client
                                                             .with_environment(|env| {
@@ -526,10 +518,9 @@ unsafe fn cmd_new_session_exec(
                                                                 .expect("new environment"),
                                                         );
                                                     }
-                                                    for av in args_flag_values(
-                                                        &*args,
-                                                        'e' as i32 as u_char,
-                                                    ) {
+                                                    for av in
+                                                        args_flag_values(args, 'e' as i32 as u_char)
+                                                    {
                                                         environ_put(
                                                             env.as_deref_mut()
                                                                 .expect("environment"),
@@ -550,12 +541,11 @@ unsafe fn cmd_new_session_exec(
                                                         );
                                                     }
                                                     sc.name = wname_owned.clone();
-                                                    argv_owner = args_to_vector(&*args);
+                                                    argv_owner = args_to_vector(args);
                                                     sc.argv = argv_owner;
                                                     sc.idx = -(1 as ::core::ffi::c_int);
-                                                    sc.cwd =
-                                                        args_get(&*(args), 'c' as i32 as u_char)
-                                                            .map(CStr::to_owned);
+                                                    sc.cwd = args_get(args, 'c' as i32 as u_char)
+                                                        .map(CStr::to_owned);
                                                     sc.flags = 0 as ::core::ffi::c_int;
                                                     if !spawn_window(&mut sc, &mut cause).is_alive()
                                                     {
@@ -610,16 +600,14 @@ unsafe fn cmd_new_session_exec(
                                                             s.clone().expect("live session"),
                                                         );
                                                         if detached == 0 {
-                                                            if args_has(
-                                                                &*args,
-                                                                'f' as i32 as u_char,
-                                                            ) != 0
+                                                            if args_has(args, 'f' as i32 as u_char)
+                                                                != 0
                                                             {
                                                                 c.clone()
                                                                     .expect("live client")
                                                                     .parse_flags(
                                                                         args_get(
-                                                                            &*(args),
+                                                                            args,
                                                                             'f' as i32 as u_char,
                                                                         )
                                                                         .expect("-f has a value"),
@@ -660,11 +648,10 @@ unsafe fn cmd_new_session_exec(
                                                                     .set_key_table(None);
                                                             }
                                                         }
-                                                        if args_has(&*args, 'P' as i32 as u_char)
-                                                            != 0
+                                                        if args_has(args, 'P' as i32 as u_char) != 0
                                                         {
                                                             let template = args_get(
-                                                                &*(args),
+                                                                args,
                                                                 'F' as i32 as u_char,
                                                             )
                                                             .unwrap_or(NEW_SESSION_TEMPLATE);
@@ -691,8 +678,7 @@ unsafe fn cmd_new_session_exec(
                                                                     0,
                                                                 );
                                                         }
-                                                        if args_has(&*args, 'd' as i32 as u_char)
-                                                            == 0
+                                                        if args_has(args, 'd' as i32 as u_char) == 0
                                                         {
                                                             *current.current.borrow_mut() =
                                                                 cmd_find_state::find_from_session(

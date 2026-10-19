@@ -1,5 +1,5 @@
-use crate::arguments::{args, args_get, args_has, args_parse};
-use crate::cmd::cmd_get_args_mut;
+use crate::arguments::{args_get, args_has, args_parse};
+use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{
     cmdq_error, cmdq_get_client, cmdq_get_flags, cmdq_get_state_owned, cmdq_get_target_client,
 };
@@ -51,12 +51,11 @@ pub static cmd_switch_client_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_switch_client_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let current = cmdq_get_state_owned(&*(item));
     let mut target: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -67,7 +66,7 @@ unsafe fn cmd_switch_client_exec(
         idx: 0,
     };
     let mut tflag: *const ::core::ffi::c_char =
-        args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+        args_get(args, 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut type_0: cmd_find_type = CMD_FIND_PANE;
     let mut flags: ::core::ffi::c_int = 0;
     let c_owner = cmdq_get_client(Some(&*item));
@@ -104,7 +103,7 @@ unsafe fn cmd_switch_client_exec(
     s = selected_session.clone();
     wl = target.winlink_handle();
     wp = target.pane_handle();
-    if args_has(&*args, 'r' as i32 as u_char) != 0 {
+    if args_has(args, 'r' as i32 as u_char) != 0 {
         if tc.as_ref().expect("live client").flags() & CLIENT_READONLY as uint64_t != 0 {
             uid = c.as_ref().expect("live client").peer_uid();
             if uid != getuid() {
@@ -122,7 +121,7 @@ unsafe fn cmd_switch_client_exec(
                 .update_flags((CLIENT_READONLY | CLIENT_IGNORESIZE) as uint64_t, 0);
         }
     }
-    if let Some(tablename) = args_get(&*(args), 'T' as i32 as u_char) {
+    if let Some(tablename) = args_get(args, 'T' as i32 as u_char) {
         let Some(table) = key_bindings_get_table(tablename, 0) else {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"table ")?;
@@ -135,17 +134,17 @@ unsafe fn cmd_switch_client_exec(
         return CmdOutcome::Normal;
     }
     sort_crit.order = sort_order_from_string(nullable_cstr(
-        args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
+        args_get(args, 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
     ));
     if sort_crit.order as ::core::ffi::c_uint
         == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
-        && args_has(&*args, 'O' as i32 as u_char) != 0
+        && args_has(args, 'O' as i32 as u_char) != 0
     {
         cmdq_error(item_handle, |out| out.write_all(b"invalid sort order"));
         return CmdOutcome::Error;
     }
-    sort_crit.reversed = args_has(&*args, 'r' as i32 as u_char);
-    if args_has(&*args, 'n' as i32 as u_char) != 0 {
+    sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
+    if args_has(args, 'n' as i32 as u_char) != 0 {
         selected_session = (tc
             .as_ref()
             .expect("live client")
@@ -158,7 +157,7 @@ unsafe fn cmd_switch_client_exec(
             cmdq_error(item_handle, |out| out.write_all(b"can't find next session"));
             return CmdOutcome::Error;
         }
-    } else if args_has(&*args, 'p' as i32 as u_char) != 0 {
+    } else if args_has(args, 'p' as i32 as u_char) != 0 {
         selected_session = (tc
             .as_ref()
             .expect("live client")
@@ -173,7 +172,7 @@ unsafe fn cmd_switch_client_exec(
             });
             return CmdOutcome::Error;
         }
-    } else if args_has(&*args, 'l' as i32 as u_char) != 0 {
+    } else if args_has(args, 'l' as i32 as u_char) != 0 {
         selected_session = crate::session::sessions::resolve(
             &tc.as_ref().expect("live client").previous_session(),
         );
@@ -212,7 +211,7 @@ unsafe fn cmd_switch_client_exec(
             );
         }
     }
-    if args_has(&*args, 'E' as i32 as u_char) == 0 {
+    if args_has(args, 'E' as i32 as u_char) == 0 {
         let source = tc_owner
             .as_ref()
             .expect("target client")

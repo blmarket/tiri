@@ -84,7 +84,7 @@ pub static cmd_lock_client_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_lock_server_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();

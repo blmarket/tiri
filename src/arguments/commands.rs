@@ -1,10 +1,9 @@
 //! Building command lists from command arguments.
 
-use super::store::args;
 use crate::cmd::parse::cmd_parse_from_string;
 use crate::cmd::queue::{cmdq_error, cmdq_get_target_client};
 use crate::cmd::{
-    cmd_get_args_mut, cmd_get_source, cmd_list_copy, cmd_list_first, cmd_log_argv,
+    cmd_get_args, cmd_get_source, cmd_list_copy, cmd_list_first, cmd_log_argv,
     cmd_template_replace_cstring,
 };
 use crate::format::bytes::write_cstr;
@@ -53,7 +52,7 @@ pub unsafe fn args_make_commands_now(
     }
 }
 pub unsafe fn args_make_commands_prepare(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     mut idx: u_int,
     default_command: Option<&'static CStr>,
@@ -61,13 +60,12 @@ pub unsafe fn args_make_commands_prepare(
     mut expand: ::core::ffi::c_int,
 ) -> Box<args_command_state> {
     let item = item_handle.borrow();
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut state = Box::new(args_command_state::empty());
-    let values = &(*args).values;
+    let values = &args.values;
     let command = if let Some(value) = values.get(idx as usize) {
         if let Some(commands) = value.as_commands() {
             state.cmdlist = Some(commands.clone());

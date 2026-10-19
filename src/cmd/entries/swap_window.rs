@@ -1,5 +1,5 @@
-use crate::arguments::{args, args_has, args_parse};
-use crate::cmd::cmd_get_args_mut;
+use crate::arguments::{args_has, args_parse};
+use crate::cmd::cmd_get_args;
 use crate::cmd::queue::cmdq_error;
 use crate::resize::recalculate_sizes;
 use crate::server::marked_pane;
@@ -40,12 +40,11 @@ pub static cmd_swap_window_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_swap_window_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let mut source_state = crate::cmd::queue::cmdq_get_source(&item).clone();
     let mut source: *mut cmd_find_state = &mut source_state;
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
@@ -109,7 +108,7 @@ unsafe fn cmd_swap_window_exec(
     if marked_pane.winlink_handle() == wl_src {
         marked_pane.set_wl((wl_dst).clone());
     }
-    if args_has(&*args, 'd' as i32 as u_char) != 0 {
+    if args_has(args, 'd' as i32 as u_char) != 0 {
         (dst.as_ref().expect("live session")).select_index(wl_dst.get_unchecked().idx);
         if !crate::shared::rc::same(src.as_ref(), dst.as_ref()) {
             (src.as_ref().expect("live session")).select_index(wl_src.get_unchecked().idx);

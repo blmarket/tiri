@@ -1,7 +1,7 @@
 use crate::arguments::{
-    args, args_count, args_get, args_has, args_parse, args_string, args_strtonum_result,
+    args_count, args_get, args_has, args_parse, args_string, args_strtonum_result,
 };
-use crate::cmd::cmd_get_args_mut;
+use crate::cmd::cmd_get_args;
 use crate::cmd::find::cmd_find_best_client;
 use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_print};
 use crate::format::bytes::write_cstr;
@@ -52,13 +52,12 @@ pub static cmd_display_message_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_display_message_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let queue_client = cmdq_get_client(Some(&*item));
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let tc_owner = cmdq_get_target_client(Some(&*item));
@@ -70,10 +69,10 @@ unsafe fn cmd_display_message_exec(
     let mut cause: Option<CString> = None;
     let mut delay: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     let mut flags: ::core::ffi::c_int = 0;
-    let mut Nflag: ::core::ffi::c_int = args_has(&*args, 'N' as i32 as u_char);
-    let mut Cflag: ::core::ffi::c_int = args_has(&*args, 'C' as i32 as u_char);
-    let mut count: u_int = args_count(&*args);
-    if args_has(&*args, 'I' as i32 as u_char) != 0 && args_has(&*args, 'j' as i32 as u_char) == 0 {
+    let mut Nflag: ::core::ffi::c_int = args_has(args, 'N' as i32 as u_char);
+    let mut Cflag: ::core::ffi::c_int = args_has(args, 'C' as i32 as u_char);
+    let mut count: u_int = args_count(args);
+    if args_has(args, 'I' as i32 as u_char) != 0 && args_has(args, 'j' as i32 as u_char) == 0 {
         if wp.is_none() {
             return CmdOutcome::Normal;
         }
@@ -86,15 +85,15 @@ unsafe fn cmd_display_message_exec(
             Ok(Some(input)) => return CmdOutcome::Suspend(Box::pin(input)),
         }
     }
-    if args_has(&*args, 'F' as i32 as u_char) != 0 && count != 0 as u_int {
+    if args_has(args, 'F' as i32 as u_char) != 0 && count != 0 as u_int {
         cmdq_error(item_handle, |out| {
             out.write_all(b"only one of -F or argument must be given")
         });
         return CmdOutcome::Error;
     }
-    if args_has(&*args, 'd' as i32 as u_char) != 0 {
+    if args_has(args, 'd' as i32 as u_char) != 0 {
         delay = match args_strtonum_result(
-            &*args,
+            args,
             'd' as i32 as u_char,
             0 as ::core::ffi::c_longlong,
             UINT_MAX as ::core::ffi::c_longlong,
@@ -110,13 +109,13 @@ unsafe fn cmd_display_message_exec(
         };
     }
     let template = if count != 0 as u_int {
-        args_string(&mut *(args), 0 as u_int)
+        args_string(args, 0 as u_int)
     } else {
-        args_get(&*(args), 'F' as i32 as u_char)
+        args_get(args, 'F' as i32 as u_char)
     };
     let template: &CStr = match template {
         Some(template) => template,
-        None if args_has(&*args, 'j' as i32 as u_char) != 0 => c"",
+        None if args_has(args, 'j' as i32 as u_char) != 0 => c"",
         None => DISPLAY_MESSAGE_TEMPLATE,
     };
     let best_client_owner;
@@ -137,7 +136,7 @@ unsafe fn cmd_display_message_exec(
     } else {
         c = None;
     }
-    if args_has(&*args, 'v' as i32 as u_char) != 0 {
+    if args_has(args, 'v' as i32 as u_char) != 0 {
         flags = FORMAT_VERBOSE;
     } else {
         flags = 0 as ::core::ffi::c_int;
@@ -145,7 +144,7 @@ unsafe fn cmd_display_message_exec(
     let mut ft_owner = format_create(queue_client.as_ref(), Some(item_handle), FORMAT_NONE, flags);
     let ft = &mut *ft_owner;
     format_defaults(ft, c.as_ref(), s.as_ref(), wl.clone(), wp.as_ref());
-    if args_has(&*args, 'a' as i32 as u_char) != 0 && args_has(&*args, 'j' as i32 as u_char) == 0 {
+    if args_has(args, 'a' as i32 as u_char) != 0 && args_has(args, 'j' as i32 as u_char) == 0 {
         format_each(ft, |key, value| unsafe {
             cmdq_print(item_handle, |out| {
                 write_cstr(out, &*key)?;
@@ -156,12 +155,12 @@ unsafe fn cmd_display_message_exec(
         drop(ft_owner);
         return CmdOutcome::Normal;
     }
-    let mut msg = if args_has(&*args, 'l' as i32 as u_char) != 0 {
+    let mut msg = if args_has(args, 'l' as i32 as u_char) != 0 {
         template.to_owned()
     } else {
         format_expand_time_cstring(ft, template.as_ptr())
     };
-    if args_has(&*args, 'j' as i32 as u_char) != 0 {
+    if args_has(args, 'j' as i32 as u_char) != 0 {
         let Some(jn) = json_parse(&msg, Some(&mut cause)) else {
             cmdq_error(item_handle, |out| write_cstr(out, cause.as_deref()));
             drop(msg);
@@ -172,7 +171,7 @@ unsafe fn cmd_display_message_exec(
     }
     if cmdq_get_client(Some(&*item)).is_none() {
         cmdq_error(item_handle, |out| write_cstr(out, &*msg));
-    } else if args_has(&*args, 'p' as i32 as u_char) != 0 {
+    } else if args_has(args, 'p' as i32 as u_char) != 0 {
         cmdq_print(item_handle, |out| write_cstr(out, &*msg));
     } else if !tc.is_none()
         && tc.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0

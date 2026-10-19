@@ -1,6 +1,6 @@
 //! Flag and positional argument storage.
 
-use super::value::{args_value, ARGS_COMMANDS, ARGS_NONE, ARGS_STRING};
+use super::value::args_value;
 use crate::cmd::{
     cmd_list_copy, cmd_list_print_cstring, cmd_log_argv, cmd_template_replace_cstring,
 };
@@ -8,28 +8,20 @@ use crate::shared::abi::*;
 use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
 
-#[repr(C)]
 pub struct args {
     pub(super) tree: args_tree,
     pub values: Vec<args_value>,
 }
 
-pub(super) type args_tree = BTreeMap<u_char, Box<args_entry>>;
+pub(super) type args_tree = BTreeMap<u_char, args_entry>;
 
-#[repr(C)]
-/// Box-owned by the enclosing args tree; dropping it also drops its values.
+/// Owned by the enclosing args tree, keyed by its flag.
 pub(super) struct args_entry {
-    pub(super) flag: u_char,
-    pub(super) values: args_values,
+    pub(super) values: Vec<args_value>,
     pub(super) count: u_int,
-    pub(super) flags: ::core::ffi::c_int,
+    /// Parsed as `-f` without its optional value.
+    pub(super) optional: bool,
 }
-
-pub(super) const ARGS_ENTRY_OPTIONAL_VALUE: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-
-/// Owns flag-value storage directly. Iteration borrows
-/// the boxed records and cannot outlive the containing argument set.
-pub(super) type args_values = Vec<Box<args_value>>;
 
 /// Iterate flags in tmux's byte ordering. Zero remains the legacy end sentinel.
 pub fn args_flags(args: &args) -> impl Iterator<Item = u_char> + '_ {
@@ -41,11 +33,11 @@ pub fn args_flag_values(args: &args, flag: u_char) -> impl Iterator<Item = &args
     args.tree
         .get(&flag)
         .into_iter()
-        .flat_map(|entry| entry.values.iter().map(Box::as_ref))
+        .flat_map(|entry| entry.values.iter())
 }
 
 pub(super) fn args_last_value(args: &args, flag: u_char) -> Option<&args_value> {
-    args.tree.get(&flag)?.values.last().map(Box::as_ref)
+    args.tree.get(&flag)?.values.last()
 }
 
 pub(super) fn args_last_string(args: &args, flag: u_char) -> Option<&CStr> {
@@ -63,11 +55,10 @@ pub(super) fn args_push_positional_owned(args: &mut args, value: args_value) {
 }
 
 fn args_copy_copy_value(from: &args_value, argv: &Vec<CString>) -> args_value {
-    match from.type_0() as ::core::ffi::c_uint {
-        1 => {
-            let source = from.as_string().expect("string argument");
+    match from {
+        args_value::String(source) => {
             if argv.is_empty() {
-                return args_value::string(source.to_owned());
+                return args_value::String(source.clone());
             }
             let mut expanded = cmd_template_replace_cstring(source, argv[0].as_c_str(), 1);
             for (i, argument) in argv.iter().enumerate().skip(1) {
@@ -77,30 +68,29 @@ fn args_copy_copy_value(from: &args_value, argv: &Vec<CString>) -> args_value {
                     (i + 1) as ::core::ffi::c_int,
                 );
             }
-            args_value::string(expanded)
+            args_value::String(expanded)
         }
-        2 => args_value::commands(cmd_list_copy(
-            &from.as_commands().expect("command argument").borrow(),
-            argv,
-        )),
-        _ => args_value::empty(),
+        args_value::Commands(commands, _) => {
+            args_value::commands(cmd_list_copy(&commands.borrow(), argv))
+        }
+        args_value::None => args_value::None,
     }
 }
 pub fn args_copy(args: &args, argv: &Vec<CString>) -> Box<args> {
     cmd_log_argv(argv, c"args_copy");
     let mut new_args = args_create();
-    for entry in args.tree.values() {
+    for (&flag, entry) in &args.tree {
         if entry.values.is_empty() {
             for _ in 0..entry.count {
-                args_set_flag(&mut new_args, entry.flag, 0);
+                args_set_flag(&mut new_args, flag, false);
             }
         } else {
             for value in &entry.values {
                 args_set_value(
                     &mut new_args,
-                    entry.flag,
+                    flag,
                     Some(args_copy_copy_value(value, argv)),
-                    0,
+                    false,
                 );
             }
         }
@@ -113,18 +103,12 @@ pub fn args_copy(args: &args, argv: &Vec<CString>) -> Box<args> {
 pub fn args_to_vector(args: &args) -> Vec<CString> {
     let mut argv = Vec::new();
     for value in args.values.iter() {
-        match value.type_0() as ::core::ffi::c_uint {
-            1 => {
-                argv.push(value.as_string().expect("string argument").to_owned());
+        match value {
+            args_value::String(text) => argv.push(text.clone()),
+            args_value::Commands(commands, _) => {
+                argv.push(cmd_list_print_cstring(&commands.borrow(), 0));
             }
-            2 => {
-                let printed = cmd_list_print_cstring(
-                    &value.as_commands().expect("command argument").borrow(),
-                    0 as ::core::ffi::c_int,
-                );
-                argv.push(printed);
-            }
-            _ => {}
+            args_value::None => {}
         }
     }
     argv
@@ -139,33 +123,26 @@ pub(super) fn args_set_value(
     args: &mut args,
     flag: u_char,
     value: Option<args_value>,
-    flags: ::core::ffi::c_int,
+    optional: bool,
 ) {
-    let entry = args.tree.entry(flag).or_insert_with(|| {
-        Box::new(args_entry {
-            flag,
-            values: Default::default(),
-            count: 0,
-            flags,
-        })
+    let entry = args.tree.entry(flag).or_insert_with(|| args_entry {
+        values: Vec::new(),
+        count: 0,
+        optional,
     });
     entry.count = entry.count.wrapping_add(1);
-    if let Some(value) = value {
-        if value.type_0() != ARGS_NONE {
-            entry.values.push(Box::new(value));
-        }
+    if let Some(value) = value.filter(|value| !matches!(value, args_value::None)) {
+        entry.values.push(value);
     }
 }
 
-pub fn args_set_owned_string(args: &mut args, value: CString) {
-    let flag: u_char = 'f' as i32 as u_char;
-    let flags: ::core::ffi::c_int = 0;
-    args_set_value(args, flag, Some(args_value::string(value)), flags);
+pub fn args_set_string(args: &mut args, flag: u_char, value: CString) {
+    args_set_value(args, flag, Some(args_value::String(value)), false);
 }
 
 /// Add an occurrence of a flag that has no associated value.
-fn args_set_flag(args: &mut args, flag: u_char, flags: ::core::ffi::c_int) {
-    args_set_value(args, flag, None, flags);
+fn args_set_flag(args: &mut args, flag: u_char, optional: bool) {
+    args_set_value(args, flag, None, optional);
 }
 
 pub fn args_get(args: &args, flag: u_char) -> Option<&CStr> {
@@ -175,24 +152,12 @@ pub fn args_get(args: &args, flag: u_char) -> Option<&CStr> {
 pub fn args_count(args: &args) -> u_int {
     args.values.len() as u_int
 }
-pub fn args_string(args: &mut args, idx: u_int) -> Option<&CStr> {
-    if idx >= (args.values.len() as u_int) {
-        return None;
-    }
-    let value = &mut args.values[idx as usize];
-    match value.type_0() {
-        ARGS_NONE => Some(c""),
-        ARGS_STRING => value.as_string(),
-        ARGS_COMMANDS => {
-            if value.cached.is_none() {
-                let printed = cmd_list_print_cstring(
-                    &value.as_commands().expect("command argument").borrow(),
-                    0,
-                );
-                value.cached = Some(printed);
-            }
-            value.cached.as_deref()
+pub fn args_string(args: &args, idx: u_int) -> Option<&CStr> {
+    match args.values.get(idx as usize)? {
+        args_value::None => Some(c""),
+        args_value::String(text) => Some(text),
+        args_value::Commands(commands, cached) => {
+            Some(cached.get_or_init(|| cmd_list_print_cstring(&commands.borrow(), 0)))
         }
-        _ => unreachable!("unexpected argument type"),
     }
 }

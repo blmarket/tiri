@@ -1,5 +1,5 @@
-use crate::arguments::{args, args_has, args_parse};
-use crate::cmd::cmd_get_args_mut;
+use crate::arguments::{args_has, args_parse};
+use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{cmdq_error, cmdq_get_state_owned};
 use crate::events::events_fire_window;
 use crate::resize::recalculate_sizes;
@@ -46,12 +46,11 @@ pub static cmd_join_pane_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_join_pane_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let current = cmdq_get_state_owned(&*(item));
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
@@ -82,7 +81,7 @@ unsafe fn cmd_join_pane_exec(
             });
             return CmdOutcome::Error;
         }
-        let before = args_has(&*args, 'b' as i32 as u_char) != 0;
+        let before = args_has(args, 'b' as i32 as u_char) != 0;
         let same_window = WindowRef::ptr_eq(src_owner, &dst_window);
         let mut order = dst_window
             .pane_snapshot()
@@ -120,7 +119,7 @@ unsafe fn cmd_join_pane_exec(
         recalculate_sizes();
         server_redraw_window(src_owner);
         server_redraw_window(&dst_window);
-        if args_has(&*args, 'd' as i32 as u_char) == 0 {
+        if args_has(args, 'd' as i32 as u_char) == 0 {
             dst_window.select_pane(&src_pane_owner, true);
             (dst_s.as_ref().expect("live session")).select_index(dst_idx);
             *current.current.borrow_mut() = cmd_find_state::find_from_session(

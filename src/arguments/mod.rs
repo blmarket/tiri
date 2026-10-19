@@ -21,9 +21,9 @@ pub use parse::{
 pub(crate) use print::{args_escape_cstring, args_print_cstring};
 pub use store::{
     args, args_copy, args_count, args_create, args_flag_values, args_flags, args_get, args_has,
-    args_set_owned_string, args_string, args_to_vector,
+    args_set_string, args_string, args_to_vector,
 };
-pub use value::{args_value, ArgumentValue, ARGS_COMMANDS, ARGS_STRING};
+pub use value::{args_value, ParseValue};
 
 #[cfg(test)]
 mod tests;

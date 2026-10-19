@@ -1,6 +1,6 @@
 use crate::arguments::{
     args, args_copy, args_escape_cstring, args_parse, args_print_cstring, ArgsParseError,
-    ArgumentValue, ARGS_STRING,
+    ParseValue,
 };
 use crate::cmd::entries::attach_session::cmd_attach_session_entry;
 use crate::cmd::entries::bind_key::cmd_bind_key_entry;
@@ -263,16 +263,16 @@ pub(crate) fn cmd_stringify_argv_cstring(argv: &[CString]) -> Option<CString> {
 pub fn cmd_get_entry(cmd: &cmd) -> &'static cmd_entry {
     cmd.entry
 }
-pub fn cmd_get_args_mut(cmd: &mut cmd) -> Option<&mut args> {
-    cmd.args.as_deref_mut()
+pub fn cmd_get_args(cmd: &cmd) -> &args {
+    &cmd.args
 }
-pub unsafe fn cmd_get_group(mut cmd: refbox::Weak<cmd>) -> u_int {
+pub unsafe fn cmd_get_group(cmd: refbox::Weak<cmd>) -> u_int {
     cmd.get_unchecked().group
 }
 pub fn cmd_get_source(cmd: &cmd) -> (Option<&CStr>, u32) {
     (cmd.file.as_deref(), cmd.line)
 }
-pub unsafe fn cmd_get_parse_flags(mut cmd: refbox::Weak<cmd>) -> ::core::ffi::c_int {
+pub unsafe fn cmd_get_parse_flags(cmd: refbox::Weak<cmd>) -> ::core::ffi::c_int {
     cmd.get_unchecked().parse_flags
 }
 pub unsafe fn cmd_get_alias(name: &CStr) -> Option<CString> {
@@ -343,23 +343,16 @@ pub fn cmd_find(name: &CStr) -> Result<&'static cmd_entry, CString> {
     })
 }
 
-fn cmd_new_owned(entry: &'static cmd_entry, file: Option<&CStr>) -> refbox::RefBox<cmd> {
-    refbox::RefBox::new(cmd {
-        file: file.map(CStr::to_owned),
-        ..cmd::new(entry)
-    })
-}
-
 pub fn cmd_parse(
-    values: &[ArgumentValue<'_>],
+    values: &[ParseValue<'_>],
     file: Option<&CStr>,
     line: u_int,
     parse_flags: ::core::ffi::c_int,
 ) -> Result<refbox::RefBox<cmd>, CString> {
-    let Some(command) = values.first().filter(|value| value.type_0() == ARGS_STRING) else {
+    let Some(&ParseValue::String(command)) = values.first() else {
         return Err(CString::new("no command").unwrap());
     };
-    let entry = cmd_find(command.as_string().expect("command name"))?;
+    let entry = cmd_find(command)?;
     let args = match args_parse(&entry.args, values) {
         Ok(args) => args,
         Err(ArgsParseError::Usage) => {
@@ -377,32 +370,28 @@ pub fn cmd_parse(
             return Err(CString::new(error).expect("command diagnostic contains no NUL"));
         }
     };
-    let cmd = cmd_new_owned(entry, file);
-    {
-        let mut command = cmd.try_borrow_mut().expect("new command is not borrowed");
-        command.args = Some(args);
-        command.parse_flags = parse_flags;
-        command.line = line;
-    }
-    Ok(cmd)
+    Ok(refbox::RefBox::new(cmd {
+        entry,
+        args,
+        group: 0,
+        file: file.map(CStr::to_owned),
+        line,
+        parse_flags,
+    }))
 }
 pub fn cmd_copy(cmd: &cmd, argv: &Vec<CString>) -> refbox::RefBox<cmd> {
-    let new_cmd = cmd_new_owned(cmd.entry, cmd.file.as_deref());
-    {
-        let mut copy = new_cmd
-            .try_borrow_mut()
-            .expect("new command is not borrowed");
-        copy.args = Some(args_copy(
-            cmd.args.as_deref().expect("parsed command arguments"),
-            argv,
-        ));
-        copy.line = cmd.line;
-    }
-    new_cmd
+    refbox::RefBox::new(cmd {
+        entry: cmd.entry,
+        args: args_copy(&cmd.args, argv),
+        group: 0,
+        file: cmd.file.clone(),
+        line: cmd.line,
+        parse_flags: 0,
+    })
 }
 
 pub(crate) fn cmd_print_cstring(cmd: &cmd) -> CString {
-    let args = args_print_cstring(cmd.args.as_deref().expect("parsed command arguments"));
+    let args = args_print_cstring(&cmd.args);
     let arguments = args.as_bytes();
     let name = cmd.entry.name.to_bytes();
     let mut buf = Vec::with_capacity(

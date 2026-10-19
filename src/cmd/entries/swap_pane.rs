@@ -1,5 +1,5 @@
-use crate::arguments::{args, args_has, args_parse};
-use crate::cmd::cmd_get_args_mut;
+use crate::arguments::{args_has, args_parse};
+use crate::cmd::cmd_get_args;
 use crate::cmd::queue::cmdq_error;
 use crate::events::events_fire_window;
 use crate::server_client::Client as _;
@@ -40,12 +40,11 @@ pub static cmd_swap_pane_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_swap_pane_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let mut source_state = crate::cmd::queue::cmdq_get_source(&item).clone();
     let mut source: *mut cmd_find_state = &mut source_state;
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
@@ -61,7 +60,7 @@ unsafe fn cmd_swap_pane_exec(
         let mut src_pane_owner = (*source).wp.upgrade().expect("live swap source pane");
 
         src_idx = ((*source).winlink_handle()).get_unchecked().idx;
-        if args_has(&*args, 'D' as i32 as u_char) != 0 {
+        if args_has(args, 'D' as i32 as u_char) != 0 {
             let previous = std::mem::replace(&mut src_window_owner, dst_window_owner.clone());
             drop(previous);
 
@@ -69,7 +68,7 @@ unsafe fn cmd_swap_pane_exec(
                 .step_pane(Some(&Rc::downgrade(&dst_pane_owner)), false)
                 .upgrade()
                 .unwrap_or_else(|| dst_pane_owner.clone());
-        } else if args_has(&*args, 'U' as i32 as u_char) != 0 {
+        } else if args_has(args, 'U' as i32 as u_char) != 0 {
             let previous = std::mem::replace(&mut src_window_owner, dst_window_owner.clone());
             drop(previous);
 
@@ -130,7 +129,7 @@ unsafe fn cmd_swap_pane_exec(
                     return CmdOutcome::Error;
                 }
             }
-            if args_has(&*args, 'd' as i32 as u_char) == 0 {
+            if args_has(args, 'd' as i32 as u_char) == 0 {
                 if !WindowRef::ptr_eq(&src_window_owner, &dst_window_owner) {
                     src_window_owner.select_pane(&dst_pane_owner, true);
                     WindowRef::clone(&(dst_window_owner)).select_pane(&src_pane_owner, true);

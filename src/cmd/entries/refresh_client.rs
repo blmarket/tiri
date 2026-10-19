@@ -1,7 +1,5 @@
-use crate::arguments::{
-    args, args_count, args_flag_values, args_get, args_has, args_parse, args_string,
-};
-use crate::cmd::cmd_get_args_mut;
+use crate::arguments::{args_count, args_flag_values, args_get, args_has, args_parse, args_string};
+use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{cmdq_error, cmdq_get_target_client};
 use crate::compat::strtonum::strtonum;
 use crate::control::{
@@ -71,16 +69,15 @@ unsafe fn cmd_refresh_client_update_subscription(tc_owner: &ClientRef, value: &C
     );
 }
 unsafe fn cmd_refresh_client_control_client_size(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut size: *const ::core::ffi::c_char =
-        args_get(&*(args), 'C' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+        args_get(args, 'C' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut w: u_int = 0;
     let mut x: u_int = 0;
     let mut y: u_int = 0;
@@ -202,26 +199,25 @@ unsafe fn cmd_refresh_report(client: &ClientRef, value: &CStr) {
 }
 
 unsafe fn cmd_refresh_client_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut adjust: u_int = 0;
-    if args_has(&*args, 'c' as i32 as u_char) != 0
-        || args_has(&*args, 'L' as i32 as u_char) != 0
-        || args_has(&*args, 'R' as i32 as u_char) != 0
-        || args_has(&*args, 'U' as i32 as u_char) != 0
-        || args_has(&*args, 'D' as i32 as u_char) != 0
+    if args_has(args, 'c' as i32 as u_char) != 0
+        || args_has(args, 'L' as i32 as u_char) != 0
+        || args_has(args, 'R' as i32 as u_char) != 0
+        || args_has(args, 'U' as i32 as u_char) != 0
+        || args_has(args, 'D' as i32 as u_char) != 0
     {
-        if args_count(&*args) == 0 as u_int {
+        if args_count(args) == 0 as u_int {
             adjust = 1 as u_int;
         } else {
             let parsed = strtonum(
-                args_string(&mut *(args), 0 as u_int).expect("numeric argument"),
+                args_string(args, 0 as u_int).expect("numeric argument"),
                 1 as ::core::ffi::c_longlong,
                 INT_MAX as ::core::ffi::c_longlong,
             );
@@ -235,7 +231,7 @@ unsafe fn cmd_refresh_client_exec(
             }
         }
         let client = tc.as_ref().expect("live client");
-        if args_has(&*args, b'c') != 0 {
+        if args_has(args, b'c') != 0 {
             client.reset_pan(None);
         } else {
             let window = client
@@ -247,11 +243,11 @@ unsafe fn cmd_refresh_client_exec(
                 .window_handle()
                 .cloned()
                 .expect("current window");
-            let direction = if args_has(&*args, b'L') != 0 {
+            let direction = if args_has(args, b'L') != 0 {
                 Direction::Left
-            } else if args_has(&*args, b'R') != 0 {
+            } else if args_has(args, b'R') != 0 {
                 Direction::Right
-            } else if args_has(&*args, b'U') != 0 {
+            } else if args_has(args, b'U') != 0 {
                 Direction::Up
             } else {
                 Direction::Down
@@ -262,29 +258,29 @@ unsafe fn cmd_refresh_client_exec(
         server_redraw_client(tc.as_ref().expect("live client"));
         return CmdOutcome::Normal;
     }
-    if args_has(&*args, 'l' as i32 as u_char) != 0 {
+    if args_has(args, 'l' as i32 as u_char) != 0 {
         tty_clipboard_query(tc.as_ref().expect("live client"));
         return CmdOutcome::Normal;
     }
-    if args_has(&*args, 'F' as i32 as u_char) != 0 {
+    if args_has(args, 'F' as i32 as u_char) != 0 {
         tc.clone()
             .expect("live client")
-            .parse_flags(args_get(&*(args), 'F' as i32 as u_char).expect("-F has a value"));
+            .parse_flags(args_get(args, 'F' as i32 as u_char).expect("-F has a value"));
     }
-    if args_has(&*args, 'f' as i32 as u_char) != 0 {
+    if args_has(args, 'f' as i32 as u_char) != 0 {
         tc.clone()
             .expect("live client")
-            .parse_flags(args_get(&*(args), 'f' as i32 as u_char).expect("-f has a value"));
+            .parse_flags(args_get(args, 'f' as i32 as u_char).expect("-f has a value"));
     }
-    if args_has(&*args, 'r' as i32 as u_char) != 0 {
+    if args_has(args, 'r' as i32 as u_char) != 0 {
         cmd_refresh_report(
             tc.as_ref().expect("live client"),
-            args_get(&*(args), 'r' as i32 as u_char).expect("-r takes a value"),
+            args_get(args, 'r' as i32 as u_char).expect("-r takes a value"),
         );
     }
-    if args_has(&*args, 'A' as i32 as u_char) != 0 {
+    if args_has(args, 'A' as i32 as u_char) != 0 {
         if !(!tc.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0) {
-            for av in args_flag_values(&*args, 'A' as i32 as u_char) {
+            for av in args_flag_values(args, 'A' as i32 as u_char) {
                 cmd_refresh_client_update_offset(
                     &tc.clone().expect("live client"),
                     av.as_string().expect("-A takes a value"),
@@ -292,9 +288,9 @@ unsafe fn cmd_refresh_client_exec(
             }
             return CmdOutcome::Normal;
         }
-    } else if args_has(&*args, 'B' as i32 as u_char) != 0 {
+    } else if args_has(args, 'B' as i32 as u_char) != 0 {
         if !(!tc.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0) {
-            for av in args_flag_values(&*args, 'B' as i32 as u_char) {
+            for av in args_flag_values(args, 'B' as i32 as u_char) {
                 cmd_refresh_client_update_subscription(
                     &tc.clone().expect("live client"),
                     av.as_string().expect("-B takes a value"),
@@ -302,12 +298,12 @@ unsafe fn cmd_refresh_client_exec(
             }
             return CmdOutcome::Normal;
         }
-    } else if args_has(&*args, 'C' as i32 as u_char) != 0 {
+    } else if args_has(args, 'C' as i32 as u_char) != 0 {
         if !(!tc.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0) {
             return cmd_refresh_client_control_client_size(self_0.clone(), item_handle);
         }
     } else {
-        if args_has(&*args, 'S' as i32 as u_char) != 0 {
+        if args_has(args, 'S' as i32 as u_char) != 0 {
             tc.as_ref()
                 .expect("live client")
                 .update_flags(CLIENT_STATUSFORCE as uint64_t, 0);

@@ -44,7 +44,7 @@ pub static window_clock_mode: window_mode = {
                     refbox::Weak<window_mode_entry>,
                     Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
                     Option<&cmd_find_state>,
-                    Option<&mut args>,
+                    Option<&args>,
                 ) -> bool,
         ),
         free: None,
@@ -642,7 +642,7 @@ unsafe fn window_clock_init(
     mut wme: refbox::Weak<window_mode_entry>,
     _item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     _fs: Option<&cmd_find_state>,
-    _args: Option<&mut args>,
+    _args: Option<&args>,
 ) -> bool {
     let mode_pane_owner = wme
         .get_unchecked()

@@ -1,8 +1,8 @@
 use crate::arguments::{
-    args, args_count, args_get, args_has, args_parse, args_parse_type, args_string, ArgsParseError,
-    ARGS_PARSE_COMMANDS_OR_STRING,
+    args, args_count, args_get, args_has, args_parse, args_parse_type, args_string, args_value,
+    ArgsParseError, ARGS_PARSE_COMMANDS_OR_STRING,
 };
-use crate::cmd::cmd_get_args_mut;
+use crate::cmd::cmd_get_args;
 use crate::cmd::parse::{cmd_parse_from_arguments, cmd_parse_from_string};
 use crate::cmd::queue::cmdq_error;
 use crate::format::bytes::write_cstr;
@@ -40,61 +40,60 @@ pub static cmd_bind_key_entry: cmd_entry = {
         exec: Some(cmd_bind_key_exec),
     }
 };
-fn cmd_bind_key_args_parse(
-    _args: &mut args,
-    _idx: u_int,
-) -> Result<args_parse_type, ArgsParseError> {
+fn cmd_bind_key_args_parse(_args: &args, _idx: u_int) -> Result<args_parse_type, ArgsParseError> {
     Ok(ARGS_PARSE_COMMANDS_OR_STRING)
 }
 unsafe fn cmd_bind_key_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let mut key: key_code = 0;
     let mut tablename: &CStr = c"";
-    let mut note: Option<&CStr> = args_get(&*(args), 'N' as i32 as u_char);
+    let mut note: Option<&CStr> = args_get(args, 'N' as i32 as u_char);
     let mut pr: cmd_parse_result = cmd_parse_result::empty();
     let mut repeat: ::core::ffi::c_int = 0;
-    let mut count: u_int = args_count(&*args);
-    key =
-        key_string_parse_cstr(args_string(&mut *(args), 0 as u_int).expect("argument is present"))
-            .unwrap_or(KEYC_UNKNOWN);
+    let mut count: u_int = args_count(args);
+    key = key_string_parse_cstr(args_string(args, 0 as u_int).expect("argument is present"))
+        .unwrap_or(KEYC_UNKNOWN);
     if key == KEYC_NONE as ::core::ffi::c_ulong as key_code
         || key == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code
     {
         cmdq_error(item_handle, |out| {
             out.write_all(b"unknown key: ")?;
-            write_cstr(out, args_string(&mut *(args), 0 as u_int))
+            write_cstr(out, args_string(args, 0 as u_int))
         });
         return CmdOutcome::Error;
     }
-    if args_has(&*args, 'T' as i32 as u_char) != 0 {
-        tablename = args_get(&*(args), 'T' as i32 as u_char).expect("-T has a value");
-    } else if args_has(&*args, 'n' as i32 as u_char) != 0 {
+    if args_has(args, 'T' as i32 as u_char) != 0 {
+        tablename = args_get(args, 'T' as i32 as u_char).expect("-T has a value");
+    } else if args_has(args, 'n' as i32 as u_char) != 0 {
         tablename = c"root";
     } else {
         tablename = c"prefix";
     }
-    repeat = args_has(&*args, 'r' as i32 as u_char);
+    repeat = args_has(args, 'r' as i32 as u_char);
     if count == 1 as u_int {
         key_bindings_add(tablename, key, note, repeat, None);
         return CmdOutcome::Normal;
     }
     if count == 2 {
-        if let Some(commands) = (&(*args).values)[1].as_commands() {
+        if let Some(commands) = (&args.values)[1].as_commands() {
             key_bindings_add(tablename, key, note, repeat, Some(commands.clone()));
             return CmdOutcome::Normal;
         }
     }
     if count == 2 as u_int {
         pr = cmd_parse_from_string(
-            args_string(&mut *(args), 1 as u_int).expect("argument is present"),
+            args_string(args, 1 as u_int).expect("argument is present"),
             None,
         );
     } else {
-        pr = cmd_parse_from_arguments(&(&(*args).values)[1..], None);
+        let values: Vec<_> = args.values[1..]
+            .iter()
+            .map(args_value::as_parse_value)
+            .collect();
+        pr = cmd_parse_from_arguments(&values, None);
     }
     if pr.status as ::core::ffi::c_uint == 0 {
         cmdq_error(item_handle, |out| write_cstr(out, pr.error.as_deref()));

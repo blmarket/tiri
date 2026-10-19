@@ -1,7 +1,7 @@
 use crate::arguments::{
-    args, args_count, args_flag_values, args_get, args_has, args_parse, args_string, args_to_vector,
+    args_count, args_flag_values, args_get, args_has, args_parse, args_string, args_to_vector,
 };
-use crate::cmd::cmd_get_args_mut;
+use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{
     cmdq_error, cmdq_get_state_owned, cmdq_get_target_client, cmdq_insert_hook, cmdq_print,
     cmdq_wait,
@@ -85,12 +85,11 @@ pub static cmd_split_window_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_split_window_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let current = cmdq_get_state_owned(&*(item));
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
@@ -133,30 +132,28 @@ unsafe fn cmd_split_window_exec(
         let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
         let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         let mut cause: Option<std::ffi::CString> = None;
-        let mut count: u_int = args_count(&*args);
-        if args_has(&*args, 'b' as i32 as u_char) != 0 {
+        let mut count: u_int = args_count(args);
+        if args_has(args, 'b' as i32 as u_char) != 0 {
             flags |= SPAWN_BEFORE;
         }
-        if args_has(&*args, 'd' as i32 as u_char) != 0 {
+        if args_has(args, 'd' as i32 as u_char) != 0 {
             flags |= SPAWN_DETACHED;
         }
-        input = args_has(&*args, 'I' as i32 as u_char);
+        input = args_has(args, 'I' as i32 as u_char);
         if input != 0
             || count == 1 as u_int
-                && *args_string(&mut *(args), 0 as u_int)
-                    .map_or(std::ptr::null(), |value| value.as_ptr())
+                && *args_string(args, 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())
                     as ::core::ffi::c_int
                     == '\0' as i32
         {
             empty = 1 as ::core::ffi::c_int;
         } else {
-            empty = args_has(&*args, 'E' as i32 as u_char);
+            empty = args_has(args, 'E' as i32 as u_char);
         }
         if empty != 0
             && count != 0 as u_int
             && (count != 1 as u_int
-                || *args_string(&mut *(args), 0 as u_int)
-                    .map_or(std::ptr::null(), |value| value.as_ptr())
+                || *args_string(args, 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())
                     as ::core::ffi::c_int
                     != '\0' as i32)
         {
@@ -172,10 +169,10 @@ unsafe fn cmd_split_window_exec(
         sc.s = std::rc::Rc::downgrade(s.as_ref().expect("live session"));
         sc.set_wl(wl.clone());
         sc.wp0 = std::rc::Rc::downgrade(&original_pane);
-        argv_owner = args_to_vector(&*args);
+        argv_owner = args_to_vector(args);
         sc.argv = argv_owner;
         sc.environ = Some(environ_create());
-        for av in args_flag_values(&*args, 'e' as i32 as u_char) {
+        for av in args_flag_values(args, 'e' as i32 as u_char) {
             environ_put(
                 sc.environ.as_deref_mut().expect("environment"),
                 av.as_string().expect("string argument"),
@@ -183,7 +180,7 @@ unsafe fn cmd_split_window_exec(
             );
         }
         sc.idx = -(1 as ::core::ffi::c_int);
-        sc.cwd = args_get(&*(args), 'c' as i32 as u_char).map(|value| value.to_owned());
+        sc.cwd = args_get(args, 'c' as i32 as u_char).map(|value| value.to_owned());
         sc.flags = flags;
         let window_owner = wl
             .get_unchecked()
@@ -210,7 +207,7 @@ unsafe fn cmd_split_window_exec(
                 cmdq_error(item_handle, |out| write_cstr(out, cause.as_deref()));
             }
             Some(new_pane) => {
-                if let Some(style) = args_get(&*(args), b's') {
+                if let Some(style) = args_get(args, b's') {
                     {
                         let mut options = new_pane.borrow_options_mut();
                         options_set_string(&mut options, c"window-style", 0, |out| {
@@ -222,7 +219,7 @@ unsafe fn cmd_split_window_exec(
                     }
                     new_pane.invalidate_style();
                 }
-                if let Some(style) = args_get(&*(args), b'S') {
+                if let Some(style) = args_get(args, b'S') {
                     options_set_string(
                         &mut new_pane.borrow_options_mut(),
                         c"pane-active-border-style",
@@ -230,7 +227,7 @@ unsafe fn cmd_split_window_exec(
                         |out| write_cstr(out, style),
                     );
                 }
-                if let Some(style) = args_get(&*(args), b'R') {
+                if let Some(style) = args_get(args, b'R') {
                     options_set_string(
                         &mut new_pane.borrow_options_mut(),
                         c"pane-border-style",
@@ -238,15 +235,15 @@ unsafe fn cmd_split_window_exec(
                         |out| write_cstr(out, style),
                     );
                 }
-                if args_has(&*args, 'k' as i32 as u_char) != 0
-                    || args_has(&*args, 'm' as i32 as u_char) != 0
+                if args_has(args, 'k' as i32 as u_char) != 0
+                    || args_has(args, 'm' as i32 as u_char) != 0
                 {
                     options_set_number(
                         &mut new_pane.borrow_options_mut(),
                         c"remain-on-exit",
                         3 as ::core::ffi::c_longlong,
                     );
-                    if args_has(&*args, 'm' as i32 as u_char) != 0 {
+                    if args_has(args, 'm' as i32 as u_char) != 0 {
                         options_set_string(
                             &mut new_pane.borrow_options_mut(),
                             c"remain-on-exit-format",
@@ -255,7 +252,7 @@ unsafe fn cmd_split_window_exec(
                                 write_cstr(
                                     out,
                                     nullable_cstr(
-                                        args_get(&*(args), 'm' as i32 as u_char)
+                                        args_get(args, 'm' as i32 as u_char)
                                             .map_or(std::ptr::null(), |value| value.as_ptr()),
                                     ),
                                 )
@@ -263,10 +260,10 @@ unsafe fn cmd_split_window_exec(
                         );
                     }
                 }
-                if args_has(&*args, 'T' as i32 as u_char) != 0 {
+                if args_has(args, 'T' as i32 as u_char) != 0 {
                     let title = format_single_from_target_cstring(
                         item_handle,
-                        args_get(&*(args), 'T' as i32 as u_char)
+                        args_get(args, 'T' as i32 as u_char)
                             .map_or(std::ptr::null(), |value| value.as_ptr()),
                     );
                     new_pane.set_title(&title);
@@ -317,8 +314,8 @@ unsafe fn cmd_split_window_exec(
                         }
                         server_redraw_window(&original_window);
                         server_redraw_session(s.as_ref().expect("live session"));
-                        if args_has(&*args, 'P' as i32 as u_char) != 0 {
-                            template = args_get(&*(args), 'F' as i32 as u_char)
+                        if args_has(args, 'P' as i32 as u_char) != 0 {
+                            template = args_get(args, 'F' as i32 as u_char)
                                 .map_or(std::ptr::null(), |value| value.as_ptr());
                             if template.is_null() {
                                 template = SPLIT_WINDOW_TEMPLATE.as_ptr();
@@ -346,7 +343,7 @@ unsafe fn cmd_split_window_exec(
                             drop(window_owner);
                             return CmdOutcome::Suspend(Box::pin(wait));
                         }
-                        if args_has(&*args, 'W' as i32 as u_char) != 0 {
+                        if args_has(args, 'W' as i32 as u_char) != 0 {
                             let (waiter, retval) = cmdq_wait(item_handle);
                             new_pane.wait_until_close(waiter);
                             drop(window_owner);

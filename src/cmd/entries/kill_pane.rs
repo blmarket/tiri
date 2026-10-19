@@ -1,5 +1,5 @@
-use crate::arguments::{args, args_get, args_has, args_parse};
-use crate::cmd::cmd_get_args_mut;
+use crate::arguments::{args_get, args_has, args_parse};
+use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{cmdq_error, cmdq_get_client};
 use crate::format::{format_create, format_defaults, format_expand_cstring, format_true};
 use crate::server_client::Client as _;
@@ -43,21 +43,20 @@ pub static cmd_kill_pane_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_kill_pane_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let pane_owner = (*target).wp.upgrade();
-    let mut filter: Option<&CStr> = args_get(&*(args), 'f' as i32 as u_char);
-    if filter.is_some() && args_has(&*args, 'a' as i32 as u_char) == 0 {
+    let mut filter: Option<&CStr> = args_get(args, 'f' as i32 as u_char);
+    if filter.is_some() && args_has(args, 'a' as i32 as u_char) == 0 {
         cmdq_error(item_handle, |out| out.write_all(b"-f only valid with -a"));
         return CmdOutcome::Error;
     }
-    if args_has(&*args, 'a' as i32 as u_char) != 0 {
+    if args_has(args, 'a' as i32 as u_char) != 0 {
         return cmd_kill_pane_all(item_handle, filter);
     }
     let Some(pane_owner) = pane_owner else {

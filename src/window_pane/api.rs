@@ -85,7 +85,7 @@ pub trait WindowPane {
     unsafe fn paste_buffer(&self, bytes: &[u8], separator: &[u8], bracket: bool, raw: bool);
     unsafe fn capture(
         &self,
-        arguments: &mut args,
+        arguments: &args,
         item: &Rc<std::cell::RefCell<cmdq_item>>,
     ) -> Result<Vec<u8>, CString>;
     /// Clear complete history after retiring modes; optionally reset link identities.
@@ -260,7 +260,7 @@ pub trait WindowPane {
         mode: &'static window_mode,
         item: Option<&Rc<std::cell::RefCell<cmdq_item>>>,
         find: Option<&mut cmd_find_state>,
-        arguments: Option<&mut args>,
+        arguments: Option<&args>,
     ) -> i32;
     unsafe fn reset_mode(&self);
     unsafe fn reset_all_modes(&self);
@@ -732,7 +732,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     }
     unsafe fn capture(
         &self,
-        arguments: &mut args,
+        arguments: &args,
         item: &Rc<std::cell::RefCell<cmdq_item>>,
     ) -> Result<Vec<u8>, CString> {
         super::capture::capture(self, arguments, item)
@@ -1082,7 +1082,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         mode: &'static window_mode,
         item: Option<&Rc<std::cell::RefCell<cmdq_item>>>,
         find: Option<&mut cmd_find_state>,
-        arguments: Option<&mut args>,
+        arguments: Option<&args>,
     ) -> i32 {
         window_pane_set_mode(self, source, mode, item, find.as_deref(), arguments)
     }

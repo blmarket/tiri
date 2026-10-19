@@ -1,6 +1,6 @@
 use crate::arguments::{args_count, args_get, args_has, args_parse, args_string};
 use crate::cmd::queue::{cmdq_error, cmdq_print};
-use crate::cmd::{cmd_get_args_mut, cmd_get_entry};
+use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::format::bytes::write_cstr;
 use crate::format::{
     format_add, format_add_time, format_create_from_target, format_expand_cstring,
@@ -108,12 +108,11 @@ pub static cmd_show_hooks_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_show_options_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let target = &mut target_state;
     let window = std::ptr::eq(
@@ -121,10 +120,10 @@ unsafe fn cmd_show_options_exec(
         &cmd_show_window_options_entry,
     ) as i32;
     let show_hooks = std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_show_hooks_entry);
-    let monitor = show_hooks && args_has(&*args, b'B') != 0;
-    let quiet = args_has(&*args, b'q') != 0;
-    if args_count(&*args) == 0 {
-        let (scope, selected) = match options_scope_from_flags(&*args, window, &*target) {
+    let monitor = show_hooks && args_has(args, b'B') != 0;
+    let quiet = args_has(args, b'q') != 0;
+    if args_count(args) == 0 {
+        let (scope, selected) = match options_scope_from_flags(args, window, &*target) {
             Ok(selected) => selected,
             Err(cause) => return show_options_scope_error(item_handle, quiet, &cause),
         };
@@ -146,7 +145,7 @@ unsafe fn cmd_show_options_exec(
 
     let argument = format_single_from_target_cstring(
         item_handle,
-        args_string(&mut *args, 0).map_or(std::ptr::null(), |value| value.as_ptr()),
+        args_string(args, 0).map_or(std::ptr::null(), |value| value.as_ptr()),
     );
     let parsed = match options_match_owned(&argument) {
         Ok(parsed) => parsed,
@@ -169,11 +168,11 @@ unsafe fn cmd_show_options_exec(
             return CmdOutcome::Error;
         }
     };
-    let selected = match options_scope_from_name(&*args, window, &parsed.name, &*target) {
+    let selected = match options_scope_from_name(args, window, &parsed.name, &*target) {
         Ok((_, selected)) => selected,
         Err(cause) => return show_options_scope_error(item_handle, quiet, &cause),
     };
-    let resolved = show_options_resolve(&selected, &parsed.name, args_has(&*args, b'A') != 0);
+    let resolved = show_options_resolve(&selected, &parsed.name, args_has(args, b'A') != 0);
     let Some((resolved, parent)) = resolved else {
         if parsed.name.as_bytes().first() == Some(&b'@') && !quiet {
             cmdq_error(item_handle, |out| {
@@ -229,7 +228,7 @@ unsafe fn show_options_resolve(
 }
 
 unsafe fn cmd_show_options_print(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     scope: &OptionsScope,
     name: &CStr,
@@ -284,7 +283,7 @@ unsafe fn cmd_show_options_print(
         }
     }
 
-    let args = cmd_get_args_mut(self_0.get_mut_unchecked()).expect("show options arguments");
+    let args = cmd_get_args(self_0.get_unchecked());
     let template = args_get(args, b'F').map(CStr::to_owned);
     let value_only = args_has(args, b'v');
     let show_hooks = std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_show_hooks_entry);
@@ -362,12 +361,12 @@ unsafe fn show_hook_add_fire_formats(ft: &mut format_tree, count: u32, time: tim
 }
 
 unsafe fn cmd_show_hooks_print_monitor(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     scope: &OptionsScope,
     name: &CStr,
 ) -> bool {
-    let args = cmd_get_args_mut(self_0.get_mut_unchecked()).expect("show hook arguments");
+    let args = cmd_get_args(self_0.get_unchecked());
     let template = args_get(args, b'F')
         .map(CStr::to_owned)
         .unwrap_or_else(|| SHOW_HOOKS_MONITOR_TEMPLATE.to_owned());
@@ -425,13 +424,13 @@ unsafe fn cmd_show_hooks_print_monitor(
 }
 
 unsafe fn cmd_show_options_all(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     scope: i32,
     selected: &OptionsScope,
 ) -> CmdOutcome {
     let show_hooks = std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_show_hooks_entry);
-    let args = cmd_get_args_mut(self_0.get_mut_unchecked()).expect("show options arguments");
+    let args = cmd_get_args(self_0.get_unchecked());
     let include_hooks = args_has(args, b'H') != 0;
     let include_parent = args_has(args, b'A') != 0;
     let names = selected.with_local(|table| {

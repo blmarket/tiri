@@ -1,7 +1,7 @@
 //! Pane-owned process and pipe lifecycle operations.
 use super::{window_pane_destroy_ready, window_pane_exited};
-use crate::arguments::{args, args_count, args_has, args_string};
-use crate::cmd::cmd_get_args_mut;
+use crate::arguments::{args_count, args_has, args_string};
+use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client};
 use crate::format::{format_create, format_defaults, format_expand_time_cstring};
 use crate::log::{fatalx, log_debug};
@@ -34,13 +34,12 @@ use libc::{_exit, execl, fork, memcpy, setpgid, sigfillset, sigprocmask};
 use std::os::fd::{AsRawFd, IntoRawFd};
 pub(super) unsafe fn pipe_pane(
     pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let queue_client = cmdq_get_client(Some(&*item));
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let tc_owner = cmdq_get_target_client(Some(&*item));
@@ -67,19 +66,19 @@ pub(super) unsafe fn pipe_pane(
             return CmdOutcome::Normal;
         }
     }
-    if args_count(&*args) == 0 as u_int
-        || *args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())
+    if args_count(args) == 0 as u_int
+        || *args_string(args, 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())
             as ::core::ffi::c_int
             == '\0' as i32
     {
         return CmdOutcome::Normal;
     }
-    if args_has(&*args, 'o' as i32 as u_char) != 0 && had_pipe {
+    if args_has(args, 'o' as i32 as u_char) != 0 && had_pipe {
         return CmdOutcome::Normal;
     }
-    if args_has(&*args, 'I' as i32 as u_char) != 0 {
+    if args_has(args, 'I' as i32 as u_char) != 0 {
         in_0 = 1 as ::core::ffi::c_int;
-        out = args_has(&*args, 'O' as i32 as u_char);
+        out = args_has(args, 'O' as i32 as u_char);
     } else {
         in_0 = 0 as ::core::ffi::c_int;
         out = 1 as ::core::ffi::c_int;
@@ -101,7 +100,7 @@ pub(super) unsafe fn pipe_pane(
     format_defaults(ft, tc.as_ref(), s.as_ref(), wl.clone(), Some(pane_owner));
     let cmd = format_expand_time_cstring(
         ft,
-        args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
+        args_string(args, 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
     );
     drop(ft_owner);
     sigfillset(&raw mut set);

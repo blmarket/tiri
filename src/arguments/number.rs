@@ -1,7 +1,6 @@
 //! Converting argument strings to bounded numbers.
 
 use super::store::{args, args_last_string, args_last_value};
-use super::value::ARGS_STRING;
 use crate::format::format_single_from_target_cstring;
 use crate::shared::abi::*;
 use crate::shared::command::cmdq_item;
@@ -154,16 +153,6 @@ pub fn args_percentage_result(
         return Err(ArgumentValueError::Missing);
     }
     let value = args_last_value(args, flag).ok_or(ArgumentValueError::Empty)?;
-    if value.type_0() as ::core::ffi::c_uint
-        != ARGS_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
-        || value.as_string().is_none()
-    {
-        return Err(ArgumentValueError::Missing);
-    }
-    parse_percentage(
-        value.as_string().expect("string argument"),
-        minval,
-        maxval,
-        curval,
-    )
+    let value = value.as_string().ok_or(ArgumentValueError::Missing)?;
+    parse_percentage(value, minval, maxval, curval)
 }

@@ -1,9 +1,9 @@
-use crate::arguments::{args, args_count, args_has, args_parse, args_string};
+use crate::arguments::{args_count, args_has, args_parse, args_string};
 use crate::cfg::{cfg_finished, cfg_print_causes, load_cfg_from_buffer};
 use crate::cmd::queue::{
     cmdq_error, cmdq_get_callback_owned, cmdq_get_client, cmdq_insert_after, cmdq_resumed,
 };
-use crate::cmd::{cmd_get_args_mut, cmd_get_parse_flags};
+use crate::cmd::{cmd_get_args, cmd_get_parse_flags};
 use crate::compat::glob::GlobResult;
 use crate::file::{file_read_wait, FileOutcome, FileWait};
 use crate::format::bytes::write_cstr;
@@ -233,12 +233,11 @@ unsafe fn cmd_source_file_quote_for_glob(path: &CStr) -> CString {
     CString::new(quoted).expect("C string path has no interior NUL")
 }
 unsafe fn cmd_source_file_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut failed = false;
@@ -276,15 +275,15 @@ unsafe fn cmd_source_file_exec(
         current: 0,
         files: Vec::new(),
     });
-    if args_has(&*args, 'q' as i32 as u_char) != 0 {
+    if args_has(args, 'q' as i32 as u_char) != 0 {
         cdata.flags |= CMD_PARSE_QUIET;
     }
-    if args_has(&*args, 'n' as i32 as u_char) != 0 {
+    if args_has(args, 'n' as i32 as u_char) != 0 {
         cdata.flags |= CMD_PARSE_PARSEONLY;
     }
     if c.is_none() || !c.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0 {
         parse_flags = cmd_get_parse_flags(self_0.clone());
-        if args_has(&*args, 'v' as i32 as u_char) != 0 || parse_flags & CMD_PARSE_VERBOSE != 0 {
+        if args_has(args, 'v' as i32 as u_char) != 0 || parse_flags & CMD_PARSE_VERBOSE != 0 {
             cdata.flags |= CMD_PARSE_VERBOSE;
         }
     }
@@ -292,9 +291,9 @@ unsafe fn cmd_source_file_exec(
         ClientRef::working_directory(c.as_ref(), None).expect("source working directory");
     let cwd = cmd_source_file_quote_for_glob(&cwd_owner);
     i = 0 as u_int;
-    while i < args_count(&*args) {
-        let mut path: &CStr = args_string(&mut *(args), i).expect("argument is present");
-        let expanded = if args_has(&*args, 'F' as i32 as u_char) != 0 {
+    while i < args_count(args) {
+        let mut path: &CStr = args_string(args, i).expect("argument is present");
+        let expanded = if args_has(args, 'F' as i32 as u_char) != 0 {
             Some(format_single_from_target_cstring(
                 item_handle,
                 path.as_ptr(),

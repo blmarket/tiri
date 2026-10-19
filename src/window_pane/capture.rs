@@ -31,7 +31,7 @@ enum CaptureBound {
     Default,
 }
 unsafe fn parse_bound(
-    arguments: &mut args,
+    arguments: &args,
     item: &Rc<std::cell::RefCell<cmdq_item>>,
     flag: u8,
 ) -> CaptureBound {
@@ -65,7 +65,7 @@ fn resolve_bound(bound: CaptureBound, history: u32, height: u32, end: bool) -> u
 
 pub(super) unsafe fn capture(
     owner: &Rc<UnsafeCell<window_pane>>,
-    arguments: &mut args,
+    arguments: &args,
     item: &Rc<std::cell::RefCell<cmdq_item>>,
 ) -> Result<Vec<u8>, CString> {
     if args_has(arguments, b'R') != 0 {
@@ -267,7 +267,7 @@ unsafe fn cmd_capture_pane_pending(args: &args, wp: &mut window_pane) -> Vec<u8>
     line = evbuffer_pullup(pending, -1).map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
         as *mut ::core::ffi::c_char;
     linelen = evbuffer_get_length(&*pending);
-    if args_has(&*args, 'C' as i32 as u_char) != 0 {
+    if args_has(args, 'C' as i32 as u_char) != 0 {
         i = 0 as u_int;
         while (i as size_t) < linelen {
             if *line.offset(i as isize) as ::core::ffi::c_int >= ' ' as i32
@@ -359,9 +359,9 @@ unsafe fn cmd_capture_pane_history(
     let _Sflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let _Eflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     sx = wp.base.grid().sx;
-    let (gd, s) = if args_has(&*args, b'a') != 0 {
+    let (gd, s) = if args_has(args, b'a') != 0 {
         let Some(saved) = wp.base.saved_grid.as_deref() else {
-            if args_has(&*args, b'q') == 0 {
+            if args_has(args, b'q') == 0 {
                 return Err(c"no alternate screen".to_owned());
             }
             return Ok(buf);
@@ -378,23 +378,23 @@ unsafe fn cmd_capture_pane_history(
         bottom = top;
         top = tmp;
     }
-    join_lines = args_has(&*args, 'J' as i32 as u_char);
-    if args_has(&*args, 'e' as i32 as u_char) != 0 {
+    join_lines = args_has(args, 'J' as i32 as u_char);
+    if args_has(args, 'e' as i32 as u_char) != 0 {
         flags |= GRID_STRING_WITH_SEQUENCES;
     }
-    if args_has(&*args, 'C' as i32 as u_char) != 0 {
+    if args_has(args, 'C' as i32 as u_char) != 0 {
         flags |= GRID_STRING_ESCAPE_SEQUENCES;
     }
-    if join_lines == 0 && args_has(&*args, 'T' as i32 as u_char) == 0 {
+    if join_lines == 0 && args_has(args, 'T' as i32 as u_char) == 0 {
         flags |= GRID_STRING_EMPTY_CELLS;
     }
-    if join_lines == 0 && args_has(&*args, 'N' as i32 as u_char) == 0 {
+    if join_lines == 0 && args_has(args, 'N' as i32 as u_char) == 0 {
         flags |= GRID_STRING_TRIM_SPACES;
     }
-    number_lines = args_has(&*args, 'L' as i32 as u_char);
-    show_flags = args_has(&*args, 'F' as i32 as u_char);
-    show_time = args_has(&*args, 'I' as i32 as u_char);
-    hyperlinks = args_has(&*args, 'H' as i32 as u_char);
+    number_lines = args_has(args, 'L' as i32 as u_char);
+    show_flags = args_has(args, 'F' as i32 as u_char);
+    show_time = args_has(args, 'I' as i32 as u_char);
+    hyperlinks = args_has(args, 'H' as i32 as u_char);
     if hyperlinks != 0 {
         links = Vec::with_capacity(gd.sx as usize);
     }

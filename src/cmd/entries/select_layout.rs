@@ -1,5 +1,5 @@
-use crate::arguments::{args, args_has, args_parse, args_string};
-use crate::cmd::cmd_get_args_mut;
+use crate::arguments::{args_has, args_parse, args_string};
+use crate::cmd::cmd_get_args;
 use crate::cmd::queue::cmdq_error;
 use crate::format::bytes::write_cstr;
 use crate::shared::abi::*;
@@ -35,19 +35,18 @@ pub static cmd_select_layout_entry: cmd_entry = {
 /// Arrange the window in the named layout, the next one with -n, or afresh
 /// in its current one.
 unsafe fn cmd_select_layout_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let target: *mut cmd_find_state = &mut target_state;
     let window_owner = (*target).w.upgrade().expect("live layout window");
     let current = window_owner.layout();
-    let kind = if args_has(&*args, b'n') != 0 {
+    let kind = if args_has(args, b'n') != 0 {
         Some(current.next())
-    } else if let Some(name) = args_string(&mut *args, 0 as u_int) {
+    } else if let Some(name) = args_string(args, 0 as u_int) {
         LayoutKind::from_name(name)
     } else {
         Some(current)
@@ -58,7 +57,7 @@ unsafe fn cmd_select_layout_exec(
             CmdOutcome::Normal
         }
         None => {
-            let name = args_string(&mut *args, 0 as u_int).expect("named layout");
+            let name = args_string(args, 0 as u_int).expect("named layout");
             cmdq_error(item_handle, |out| {
                 out.write_all(b"unknown layout: ")?;
                 write_cstr(out, &*name)

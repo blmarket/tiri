@@ -1,5 +1,5 @@
-use crate::arguments::{args, args_get, args_has, args_parse};
-use crate::cmd::cmd_get_args_mut;
+use crate::arguments::{args_get, args_has, args_parse};
+use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{cmdq_error, cmdq_get_state_owned, cmdq_get_target_client, cmdq_print};
 use crate::events::events_fire_window;
 use crate::format::bytes::write_cstr;
@@ -56,12 +56,11 @@ pub static cmd_break_pane_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_break_pane_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let current = cmdq_get_state_owned(&*(item));
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
@@ -84,7 +83,7 @@ unsafe fn cmd_break_pane_exec(
         let mut before: ::core::ffi::c_int = 0;
         let mut old_idx: ::core::ffi::c_int = wl.get_unchecked().idx;
         let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-        let mut name: Option<&CStr> = args_get(&*(args), 'n' as i32 as u_char);
+        let mut name: Option<&CStr> = args_get(args, 'n' as i32 as u_char);
         if name.is_some_and(|name| !check_name(name)) {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"invalid window name: ")?;
@@ -92,8 +91,8 @@ unsafe fn cmd_break_pane_exec(
             });
             return CmdOutcome::Error;
         }
-        before = args_has(&*args, 'b' as i32 as u_char);
-        if args_has(&*args, 'a' as i32 as u_char) != 0 || before != 0 {
+        before = args_has(args, 'b' as i32 as u_char);
+        if args_has(args, 'a' as i32 as u_char) != 0 || before != 0 {
             if (*target).winlink_handle().is_alive() {
                 idx = winlink_shuffle_up(
                     dst_s.as_ref().expect("live session"),
@@ -118,7 +117,7 @@ unsafe fn cmd_break_pane_exec(
                 dst_s.as_ref().expect("live session"),
                 idx,
                 0 as ::core::ffi::c_int,
-                (args_has(&*args, 'd' as i32 as u_char) == 0) as ::core::ffi::c_int,
+                (args_has(args, 'd' as i32 as u_char) == 0) as ::core::ffi::c_int,
             ) {
                 cmdq_error(item_handle, |out| write_cstr(out, &*link_error));
                 return CmdOutcome::Error;
@@ -216,7 +215,7 @@ unsafe fn cmd_break_pane_exec(
                 &destination.upgrade().expect("live destination window"),
                 wl.get_unchecked().idx,
             );
-            if args_has(&*args, 'd' as i32 as u_char) == 0 {
+            if args_has(args, 'd' as i32 as u_char) == 0 {
                 (dst_s.as_ref().expect("live session")).select_index(wl.get_unchecked().idx);
                 *current.current.borrow_mut() = cmd_find_state::find_from_session(
                     dst_s.as_ref().expect("live session"),
@@ -232,8 +231,8 @@ unsafe fn cmd_break_pane_exec(
                 server_status_session_group(dst_s.as_ref().expect("live session"));
             }
         }
-        if args_has(&*args, 'P' as i32 as u_char) != 0 {
-            template = args_get(&*(args), 'F' as i32 as u_char)
+        if args_has(args, 'P' as i32 as u_char) != 0 {
+            template = args_get(args, 'F' as i32 as u_char)
                 .map_or(std::ptr::null(), |value| value.as_ptr());
             if template.is_null() {
                 template = BREAK_PANE_TEMPLATE.as_ptr();

@@ -1,5 +1,5 @@
-use crate::arguments::{args, args_get, args_has, args_parse, args_string};
-use crate::cmd::cmd_get_args_mut;
+use crate::arguments::{args_get, args_has, args_parse, args_string};
+use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_resumed};
 use crate::file::{file_read_wait, FileOutcome};
 use crate::format::bytes::write_cstr;
@@ -107,26 +107,25 @@ async fn cmd_load_buffer_complete(
     unsafe { cmd_load_buffer_done(&cmdq_resumed(&item), cdata, outcome) };
 }
 unsafe fn cmd_load_buffer_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let queue_client = cmdq_get_client(Some(&*item));
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut cdata = cmd_load_buffer_data {
         client: None,
         name: None,
     };
-    cdata.name = args_get(&*(args), 'b' as i32 as u_char).map(CStr::to_owned);
-    if args_has(&*args, 'w' as i32 as u_char) != 0 && !tc.is_none() {
+    cdata.name = args_get(args, 'b' as i32 as u_char).map(CStr::to_owned);
+    if args_has(args, 'w' as i32 as u_char) != 0 && !tc.is_none() {
         cdata.client = tc_owner.clone();
     }
     let path = format_single_from_target_cstring(
         item_handle,
-        args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
+        args_string(args, 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
     );
     let wait = file_read_wait(queue_client.as_ref(), &path, |_| None);
     CmdOutcome::Suspend(Box::pin(cmd_load_buffer_complete(

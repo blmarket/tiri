@@ -1,6 +1,6 @@
-use crate::arguments::{args, args_get, args_parse};
+use crate::arguments::{args_get, args_parse};
 use crate::cmd::queue::{cmdq_error, cmdq_print};
-use crate::cmd::{cmd_get_args_mut, cmd_get_entry};
+use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::format::bytes::write_cstr;
 use crate::prompt::{prompt_type, prompt_type_string};
 use crate::prompt_history::{prompt_history_clear, prompt_history_get, prompt_history_size};
@@ -62,12 +62,11 @@ pub static cmd_clear_prompt_history_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_show_prompt_history_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let typestr: Option<&CStr> = args_get(&*(args), 'T' as i32 as u_char);
+    let args = cmd_get_args(self_0.get_unchecked());
+    let typestr: Option<&CStr> = args_get(args, 'T' as i32 as u_char);
     let mut type_0: prompt_type = PROMPT_TYPE_COMMAND;
     let mut t: u_int = 0;
     let mut h: u_int = 0;

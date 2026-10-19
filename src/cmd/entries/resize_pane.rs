@@ -1,5 +1,5 @@
-use crate::arguments::{args, args_has, args_parse};
-use crate::cmd::cmd_get_args_mut;
+use crate::arguments::{args_has, args_parse};
+use crate::cmd::cmd_get_args;
 use crate::cmd::queue::cmdq_error;
 use crate::shared::command::CMD_AFTERHOOK;
 use crate::shared::command::*;
@@ -35,16 +35,15 @@ pub static cmd_resize_pane_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_resize_pane_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let pane_owner = (*target).wp.upgrade().expect("live resize target pane");
-    if args_has(&*args, b'Z') != 0 {
+    if args_has(args, b'Z') != 0 {
         let window_owner = (*target).w.upgrade().expect("live resize target window");
         let toggled = window_owner.layout_action(&pane_owner, LayoutAction::ToggleZoom);
         drop(window_owner);
@@ -53,7 +52,7 @@ unsafe fn cmd_resize_pane_exec(
             return CmdOutcome::Error;
         }
     }
-    if args_has(&*args, b'T') != 0 {
+    if args_has(args, b'T') != 0 {
         pane_owner.trim_history();
     }
     CmdOutcome::Normal

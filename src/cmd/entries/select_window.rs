@@ -1,6 +1,6 @@
-use crate::arguments::{args, args_has, args_parse};
+use crate::arguments::{args_has, args_parse};
 use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_state_owned, cmdq_insert_hook};
-use crate::cmd::{cmd_get_args_mut, cmd_get_entry};
+use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::resize::recalculate_sizes;
 use crate::server_client::Client as _;
 use crate::server_fn::server_redraw_session;
@@ -115,12 +115,11 @@ pub static cmd_last_window_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_select_window_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     let current = cmdq_get_state_owned(&*(item));
@@ -136,25 +135,25 @@ unsafe fn cmd_select_window_exec(
         cmd_get_entry(self_0.get_unchecked()),
         &cmd_next_window_entry,
     )) as ::core::ffi::c_int;
-    if args_has(&*args, 'n' as i32 as u_char) != 0 {
+    if args_has(args, 'n' as i32 as u_char) != 0 {
         next = 1 as ::core::ffi::c_int;
     }
     previous = (std::ptr::eq(
         cmd_get_entry(self_0.get_unchecked()),
         &cmd_previous_window_entry,
     )) as ::core::ffi::c_int;
-    if args_has(&*args, 'p' as i32 as u_char) != 0 {
+    if args_has(args, 'p' as i32 as u_char) != 0 {
         previous = 1 as ::core::ffi::c_int;
     }
     last = (std::ptr::eq(
         cmd_get_entry(self_0.get_unchecked()),
         &cmd_last_window_entry,
     )) as ::core::ffi::c_int;
-    if args_has(&*args, 'l' as i32 as u_char) != 0 {
+    if args_has(args, 'l' as i32 as u_char) != 0 {
         last = 1 as ::core::ffi::c_int;
     }
     if next != 0 || previous != 0 || last != 0 {
-        activity = args_has(&*args, 'a' as i32 as u_char);
+        activity = args_has(args, 'a' as i32 as u_char);
         if next != 0 {
             if (s.as_ref().expect("live session")).select_adjacent_window(false, (activity) != 0)
                 != 0 as ::core::ffi::c_int
@@ -187,7 +186,7 @@ unsafe fn cmd_select_window_exec(
             |out| out.write_all(b"after-select-window"),
         );
     } else {
-        if args_has(&*args, 'T' as i32 as u_char) != 0
+        if args_has(args, 'T' as i32 as u_char) != 0
             && wl == s.as_ref().expect("live session").current_winlink()
         {
             if (s.as_ref().expect("live session")).select_last_window() != 0 as ::core::ffi::c_int {

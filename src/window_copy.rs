@@ -1,4 +1,4 @@
-use crate::arguments::{args, args_count, args_has, args_parse, args_string};
+use crate::arguments::{args, args_count, args_has, args_parse, args_string, args_value};
 use crate::cmd::{cmd_mouse_at, cmd_mouse_pane};
 use crate::compat::strtonum::strtonum;
 use crate::events::events_fire_pane;
@@ -370,7 +370,7 @@ pub static window_copy_mode: window_mode = {
                     refbox::Weak<window_mode_entry>,
                     Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
                     Option<&cmd_find_state>,
-                    Option<&mut args>,
+                    Option<&args>,
                 ) -> bool,
         ),
         free: None,
@@ -392,7 +392,7 @@ pub static window_copy_mode: window_mode = {
                     Option<&ClientRef>,
                     Option<&SessionRef>,
                     refbox::Weak<winlink>,
-                    &mut args,
+                    &args,
                     Option<&mut mouse_event>,
                 ) -> (),
         ),
@@ -415,7 +415,7 @@ pub static window_view_mode: window_mode = {
                     refbox::Weak<window_mode_entry>,
                     Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
                     Option<&cmd_find_state>,
-                    Option<&mut args>,
+                    Option<&args>,
                 ) -> bool,
         ),
         free: None,
@@ -437,7 +437,7 @@ pub static window_view_mode: window_mode = {
                     Option<&ClientRef>,
                     Option<&SessionRef>,
                     refbox::Weak<winlink>,
-                    &mut args,
+                    &args,
                     Option<&mut mouse_event>,
                 ) -> (),
         ),
@@ -678,7 +678,7 @@ unsafe fn window_copy_init(
     mut wme: refbox::Weak<window_mode_entry>,
     _item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     _fs: Option<&cmd_find_state>,
-    args: Option<&mut args>,
+    args: Option<&args>,
 ) -> bool {
     let Some(source_owner) = wme.get_unchecked().swp.upgrade() else {
         return false;
@@ -703,8 +703,8 @@ unsafe fn window_copy_init(
         (*data).oy = 0 as u_int;
     }
     let args = args.expect("copy-mode arguments");
-    (*data).scroll_exit = args_has(&*args, 'e' as i32 as u_char);
-    (*data).hide_position = args_has(&*args, 'H' as i32 as u_char);
+    (*data).scroll_exit = args_has(args, 'e' as i32 as u_char);
+    (*data).hide_position = args_has(args, 'H' as i32 as u_char);
     source_owner.share_screen_hyperlinks(&mut (*data).screen);
     (*data).screen.cx =
         window_copy_cursor_offset(wme.clone(), (*data).cx, (*data).screen.grid().sx);
@@ -740,7 +740,7 @@ unsafe fn window_copy_view_init(
     mut wme: refbox::Weak<window_mode_entry>,
     _item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     _fs: Option<&cmd_find_state>,
-    _args: Option<&mut args>,
+    _args: Option<&args>,
 ) -> bool {
     let mode_pane_owner = wme
         .get_unchecked()
@@ -4907,7 +4907,7 @@ unsafe fn window_copy_command(
     client_owner: Option<&ClientRef>,
     session: Option<&SessionRef>,
     wl: refbox::Weak<winlink>,
-    args: &mut args,
+    args: &args,
     m: Option<&mut mouse_event>,
 ) {
     let session_owner = session.cloned();
@@ -4927,7 +4927,7 @@ unsafe fn window_copy_command_with_session(
     client_owner: Option<&ClientRef>,
     s: Option<&SessionRef>,
     wl: refbox::Weak<winlink>,
-    args: *mut args,
+    args: &args,
     m: *mut mouse_event,
 ) {
     let mut c: Option<ClientRef> = client_owner.cloned();
@@ -4950,14 +4950,13 @@ unsafe fn window_copy_command_with_session(
     let mut clear: window_copy_cmd_clear = WINDOW_COPY_CMD_CLEAR_NEVER;
     let mut command: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut i: u_int = 0;
-    let mut count: u_int = args_count(&*args);
+    let mut count: u_int = args_count(args);
     let mut keys: ::core::ffi::c_int = 0;
     let mut flags: ::core::ffi::c_int = 0;
     if count == 0 as u_int {
         return;
     }
-    command =
-        args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
+    command = args_string(args, 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
     if !m.is_null()
         && (*m).valid != 0
         && !((*m).b & MOUSE_MASK_BUTTONS as u_int == MOUSE_WHEEL_UP as u_int
@@ -4966,7 +4965,7 @@ unsafe fn window_copy_command_with_session(
         window_copy_move_mouse(&mut *m);
     }
     cs.wme = wme.clone();
-    cs.format_search = args_has(&*args, 'F' as i32 as u_char) != 0;
+    cs.format_search = args_has(args, 'F' as i32 as u_char) != 0;
     cs.wargs = None;
     cs.m = m.as_ref().copied();
     cs.c = client_owner;
@@ -4996,7 +4995,8 @@ unsafe fn window_copy_command_with_session(
                 );
                 return;
             }
-            cs.wargs = args_parse(&window_copy_cmd_table[i as usize].args, &(*args).values).ok();
+            let values: Vec<_> = args.values.iter().map(args_value::as_parse_value).collect();
+            cs.wargs = args_parse(&window_copy_cmd_table[i as usize].args, &values).ok();
             if cs.wargs.is_none() {
                 break;
             }

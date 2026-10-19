@@ -1,5 +1,5 @@
-use crate::arguments::{args, args_count, args_has, args_parse, args_string, args_strtonum_result};
-use crate::cmd::cmd_get_args_mut;
+use crate::arguments::{args_count, args_has, args_parse, args_string, args_strtonum_result};
+use crate::cmd::cmd_get_args;
 use crate::cmd::queue::cmdq_error;
 use crate::compat::strtonum::strtonum;
 use crate::format::bytes::write_cstr;
@@ -41,12 +41,11 @@ pub static cmd_resize_window_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_resize_window_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
@@ -62,11 +61,11 @@ unsafe fn cmd_resize_window_exec(
         let mut sy: u_int = 0;
         let mut xpixel: u_int = 0 as u_int;
         let mut ypixel: u_int = 0 as u_int;
-        if args_count(&*args) == 0 as u_int {
+        if args_count(args) == 0 as u_int {
             adjust = 1 as u_int;
         } else {
             let parsed = strtonum(
-                args_string(&mut *(args), 0 as u_int).expect("numeric argument"),
+                args_string(args, 0 as u_int).expect("numeric argument"),
                 1 as ::core::ffi::c_longlong,
                 INT_MAX as ::core::ffi::c_longlong,
             );
@@ -81,9 +80,9 @@ unsafe fn cmd_resize_window_exec(
         }
         sx = window_owner.size().0;
         sy = window_owner.size().1;
-        if args_has(&*args, 'x' as i32 as u_char) != 0 {
+        if args_has(args, 'x' as i32 as u_char) != 0 {
             sx = match args_strtonum_result(
-                &*args,
+                args,
                 'x' as i32 as u_char,
                 WINDOW_MINIMUM as ::core::ffi::c_longlong,
                 WINDOW_MAXIMUM as ::core::ffi::c_longlong,
@@ -98,9 +97,9 @@ unsafe fn cmd_resize_window_exec(
                 }
             };
         }
-        if args_has(&*args, 'y' as i32 as u_char) != 0 {
+        if args_has(args, 'y' as i32 as u_char) != 0 {
             sy = match args_strtonum_result(
-                &*args,
+                args,
                 'y' as i32 as u_char,
                 WINDOW_MINIMUM as ::core::ffi::c_longlong,
                 WINDOW_MAXIMUM as ::core::ffi::c_longlong,
@@ -115,20 +114,20 @@ unsafe fn cmd_resize_window_exec(
                 }
             };
         }
-        if args_has(&*args, 'L' as i32 as u_char) != 0 {
+        if args_has(args, 'L' as i32 as u_char) != 0 {
             if sx >= adjust {
                 sx = sx.wrapping_sub(adjust);
             }
-        } else if args_has(&*args, 'R' as i32 as u_char) != 0 {
+        } else if args_has(args, 'R' as i32 as u_char) != 0 {
             sx = sx.wrapping_add(adjust);
-        } else if args_has(&*args, 'U' as i32 as u_char) != 0 {
+        } else if args_has(args, 'U' as i32 as u_char) != 0 {
             if sy >= adjust {
                 sy = sy.wrapping_sub(adjust);
             }
-        } else if args_has(&*args, 'D' as i32 as u_char) != 0 {
+        } else if args_has(args, 'D' as i32 as u_char) != 0 {
             sy = sy.wrapping_add(adjust);
         }
-        if args_has(&*args, 'A' as i32 as u_char) != 0 {
+        if args_has(args, 'A' as i32 as u_char) != 0 {
             default_window_size(
                 None,
                 s.as_ref().expect("live session"),
@@ -139,7 +138,7 @@ unsafe fn cmd_resize_window_exec(
                 &mut ypixel,
                 WINDOW_SIZE_LARGEST,
             );
-        } else if args_has(&*args, 'a' as i32 as u_char) != 0 {
+        } else if args_has(args, 'a' as i32 as u_char) != 0 {
             default_window_size(
                 None,
                 s.as_ref().expect("live session"),

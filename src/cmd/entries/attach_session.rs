@@ -1,6 +1,6 @@
-use crate::arguments::{args, args_get, args_has, args_parse};
+use crate::arguments::{args_get, args_has, args_parse};
 use crate::cfg::{cfg_finished, cfg_show_causes};
-use crate::cmd::cmd_get_args_mut;
+use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_flags, cmdq_get_state_owned};
 use crate::compat::imsg::*;
 use crate::events::events_fire_client;
@@ -276,28 +276,24 @@ pub unsafe fn cmd_attach_session(
     CmdOutcome::Normal
 }
 unsafe fn cmd_attach_session_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     cmd_attach_session(
         item_handle,
         nullable_cstr(
-            args_get(&*(args), 't' as i32 as u_char)
-                .map_or(std::ptr::null(), |value| value.as_ptr()),
+            args_get(args, 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
         ),
-        args_has(&*args, 'd' as i32 as u_char),
-        args_has(&*args, 'x' as i32 as u_char),
-        args_has(&*args, 'r' as i32 as u_char),
+        args_has(args, 'd' as i32 as u_char),
+        args_has(args, 'x' as i32 as u_char),
+        args_has(args, 'r' as i32 as u_char),
         nullable_cstr(
-            args_get(&*(args), 'c' as i32 as u_char)
-                .map_or(std::ptr::null(), |value| value.as_ptr()),
+            args_get(args, 'c' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
         ),
-        args_has(&*args, 'E' as i32 as u_char),
+        args_has(args, 'E' as i32 as u_char),
         nullable_cstr(
-            args_get(&*(args), 'f' as i32 as u_char)
-                .map_or(std::ptr::null(), |value| value.as_ptr()),
+            args_get(args, 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
         ),
     )
 }

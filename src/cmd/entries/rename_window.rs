@@ -1,5 +1,5 @@
-use crate::arguments::{args, args_parse, args_string};
-use crate::cmd::cmd_get_args_mut;
+use crate::arguments::{args_parse, args_string};
+use crate::cmd::cmd_get_args;
 use crate::cmd::queue::cmdq_error;
 use crate::format::bytes::write_cstr;
 use crate::format::format_single_from_target_cstring;
@@ -38,18 +38,17 @@ pub static cmd_rename_window_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_rename_window_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let name = format_single_from_target_cstring(
         item_handle,
-        args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
+        args_string(args, 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
     );
     if !check_name(&name) {
         cmdq_error(item_handle, |out| {

@@ -1,6 +1,6 @@
 use crate::arguments::{args_get, args_has, args_parse};
 use crate::cmd::queue::{cmdq_error, cmdq_get_state_owned, cmdq_insert_hook, cmdq_print};
-use crate::cmd::{cmd_get_args_mut, cmd_get_entry};
+use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::events::events_fire;
 use crate::events_payload::{
     event_payload_create, event_payload_set_int, event_payload_set_pane, event_payload_set_string,
@@ -145,7 +145,7 @@ unsafe fn cmd_select_pane_marked_pane(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let arguments = cmd_get_args_mut(command.get_mut_unchecked()).expect("select pane arguments");
+    let arguments = cmd_get_args(command.get_unchecked());
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let target = &mut target_state;
     let pane = target.pane_handle().expect("marked target pane");
@@ -206,7 +206,7 @@ unsafe fn cmd_select_pane_exec(
     let item = item_handle.borrow();
     let entry = cmd_get_entry(command.get_unchecked());
     let marked_command = command.clone();
-    let arguments = cmd_get_args_mut(command.get_mut_unchecked()).expect("select pane arguments");
+    let arguments = cmd_get_args(command.get_unchecked());
     let current = cmdq_get_state_owned(&*item);
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let target = &mut target_state;

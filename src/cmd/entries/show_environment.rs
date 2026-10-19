@@ -1,5 +1,5 @@
-use crate::arguments::{args, args_get, args_has, args_parse, args_string};
-use crate::cmd::cmd_get_args_mut;
+use crate::arguments::{args_get, args_has, args_parse, args_string};
+use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{cmdq_error, cmdq_print};
 use crate::environ::{environ_find, environ_iter};
 use crate::format::bytes::nullable_cstr;
@@ -50,19 +50,18 @@ fn cmd_show_environment_escape(value: &CStr) -> CString {
     CString::new(escaped).expect("environment value was truncated at its first NUL")
 }
 unsafe fn cmd_show_environment_print(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     envent: &environ_entry,
 ) {
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    if args_has(&*args, 'h' as i32 as u_char) == 0 && envent.flags & ENVIRON_HIDDEN != 0 {
+    let args = cmd_get_args(self_0.get_unchecked());
+    if args_has(args, 'h' as i32 as u_char) == 0 && envent.flags & ENVIRON_HIDDEN != 0 {
         return;
     }
-    if args_has(&*args, 'h' as i32 as u_char) != 0 && !envent.flags & ENVIRON_HIDDEN != 0 {
+    if args_has(args, 'h' as i32 as u_char) != 0 && !envent.flags & ENVIRON_HIDDEN != 0 {
         return;
     }
-    if args_has(&*args, 's' as i32 as u_char) == 0 {
+    if args_has(args, 's' as i32 as u_char) == 0 {
         if let Some(value) = envent.value.as_deref() {
             cmdq_print(item_handle, |out| {
                 out.write_all(envent.name.as_bytes())?;
@@ -96,20 +95,18 @@ unsafe fn cmd_show_environment_print(
     };
 }
 unsafe fn cmd_show_environment_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
 
     let mut envent: Option<&environ_entry> = None;
     let mut tflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut name: Option<&CStr> = args_string(&mut *(args), 0 as u_int);
-    tflag =
-        args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    let mut name: Option<&CStr> = args_string(args, 0 as u_int);
+    tflag = args_get(args, 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !tflag.is_null() && (*target).session_handle().is_none() {
         cmdq_error(item_handle, |out| {
             out.write_all(b"no such session: ")?;
@@ -117,11 +114,11 @@ unsafe fn cmd_show_environment_exec(
         });
         return CmdOutcome::Error;
     }
-    let env: environ = if args_has(&*args, 'g' as i32 as u_char) != 0 {
+    let env: environ = if args_has(args, 'g' as i32 as u_char) != 0 {
         global_environ.as_deref().expect("environment").clone()
     } else {
         if (*target).session_handle().is_none() {
-            tflag = args_get(&*(args), 't' as i32 as u_char)
+            tflag = args_get(args, 't' as i32 as u_char)
                 .map_or(std::ptr::null(), |value| value.as_ptr());
             if !tflag.is_null() {
                 cmdq_error(item_handle, |out| {

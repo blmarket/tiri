@@ -90,7 +90,7 @@ pub static window_switch_mode: window_mode = {
                     refbox::Weak<window_mode_entry>,
                     Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
                     Option<&cmd_find_state>,
-                    Option<&mut args>,
+                    Option<&args>,
                 ) -> bool,
         ),
         free: None,
@@ -434,7 +434,7 @@ unsafe fn window_switch_init(
     mut wme: refbox::Weak<window_mode_entry>,
     _item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     fs: Option<&cmd_find_state>,
-    mut args: Option<&mut args>,
+    args: Option<&args>,
 ) -> bool {
     let mode_pane_owner = wme
         .get_unchecked()
@@ -452,10 +452,7 @@ unsafe fn window_switch_init(
         WINDOW_SWITCH_DEFAULT_FORMAT
     }
     .to_owned();
-    let command = if let Some(args) = args
-        .as_deref_mut()
-        .filter(|args| args_count(args) != 0 as u_int)
-    {
+    let command = if let Some(args) = args.filter(|args| args_count(args) != 0 as u_int) {
         args_string(args, 0 as u_int).expect("argument 0 exists")
     } else {
         WINDOW_SWITCH_DEFAULT_COMMAND
@@ -477,7 +474,7 @@ unsafe fn window_switch_init(
     data = owner.get();
     wme.get_mut_unchecked().boxed_data = Some(owner);
     let args = args.expect("mode arguments");
-    if args_has(&*args, 'w' as i32 as u_char) != 0 {
+    if args_has(args, 'w' as i32 as u_char) != 0 {
         (*data).type_0 = WINDOW_SWITCH_TYPE_WINDOW;
     } else {
         (*data).type_0 = WINDOW_SWITCH_TYPE_SESSION;

@@ -1,10 +1,8 @@
 //! Parsing raw command values into an argument set.
 
-use super::print::{args_type_to_string, args_value_for_log};
-use super::store::{
-    args, args_create, args_push_positional_owned, args_set_value, ARGS_ENTRY_OPTIONAL_VALUE,
-};
-use super::value::{args_value, ArgumentValue, ARGS_COMMANDS, ARGS_STRING};
+use super::print::args_value_for_log;
+use super::store::{args, args_create, args_push_positional_owned, args_set_value};
+use super::value::{args_value, ParseValue};
 use crate::log::{log_byte, log_bytes, log_debug};
 use crate::shared::abi::*;
 use std::ffi::{CStr, CString};
@@ -21,7 +19,7 @@ pub enum ArgsParseError {
     Message(std::ffi::CString),
 }
 
-type args_parse_cb = Option<fn(&mut args, u_int) -> Result<args_parse_type, ArgsParseError>>;
+type args_parse_cb = Option<fn(&args, u_int) -> Result<args_parse_type, ArgsParseError>>;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -44,12 +42,8 @@ fn parse_number_error(message: String) -> CString {
     CString::new(message).expect("argument diagnostics contain no NUL")
 }
 
-fn args_copy_value(from: &ArgumentValue<'_>) -> args_value {
-    from.to_owned()
-}
-
 fn args_parse_flag_argument(
-    values: &[ArgumentValue<'_>],
+    values: &[ParseValue<'_>],
     args: &mut args,
     i: &mut usize,
     suffix: &[u8],
@@ -57,10 +51,10 @@ fn args_parse_flag_argument(
     optional_argument: bool,
 ) -> Result<(), CString> {
     let new = if !suffix.is_empty() {
-        args_value::string(CString::new(suffix).expect("flag suffix contains no NUL"))
+        args_value::String(CString::new(suffix).expect("flag suffix contains no NUL"))
     } else {
         let argument = values.get(*i);
-        if argument.is_some_and(|value| value.type_0() != ARGS_STRING) {
+        if argument.is_some_and(|value| !matches!(value, ParseValue::String(_))) {
             return Err(parse_flag_error(b"-", flag, b" argument must be a string"));
         }
         let skip_optional = optional_argument
@@ -76,36 +70,35 @@ fn args_parse_flag_argument(
                 "args_parse_flag_argument: -{} (optional)",
                 log_byte(flag)
             ));
-            args_set_value(args, flag, None, ARGS_ENTRY_OPTIONAL_VALUE);
+            args_set_value(args, flag, None, true);
             return Ok(());
         }
         let argument =
             argument.ok_or_else(|| parse_flag_error(b"-", flag, b" expects an argument"))?;
         *i += 1;
-        args_copy_value(argument)
+        argument.to_args_value()
     };
-    let printed = args_value_for_log(&new);
+    let printed = args_value_for_log(new.as_parse_value());
     log_debug(format_args!(
         "args_parse_flag_argument: -{} = {}",
         log_byte(flag),
         log_bytes(printed.to_bytes())
     ));
-    args_set_value(args, flag, Some(new), 0);
+    args_set_value(args, flag, Some(new), false);
     Ok(())
 }
 
 /// Return true when flags end, leaving the first positional value unconsumed.
 fn args_parse_flags(
     parse: &args_parse,
-    values: &[ArgumentValue<'_>],
+    values: &[ParseValue<'_>],
     args: &mut args,
     i: &mut usize,
 ) -> Result<bool, ArgsParseError> {
-    let value = &values[*i];
-    if value.type_0() != ARGS_STRING {
+    let ParseValue::String(string) = values[*i] else {
         return Ok(true);
-    }
-    let string = value.as_string().expect("string argument").to_bytes();
+    };
+    let string = string.to_bytes();
     log_debug(format_args!("args_parse_flags: next {}", log_bytes(string)));
     if string.first() != Some(&b'-') || string.len() == 1 {
         return Ok(true);
@@ -134,7 +127,7 @@ fn args_parse_flags(
             })?;
         if template.get(found + 1) != Some(&b':') {
             log_debug(format_args!("args_parse_flags: -{}", log_byte(flag)));
-            args_set_value(args, flag, None, 0);
+            args_set_value(args, flag, None, false);
         } else {
             return args_parse_flag_argument(
                 values,
@@ -153,7 +146,7 @@ fn args_parse_flags(
 
 pub fn args_parse(
     parse: &args_parse,
-    values: &[ArgumentValue<'_>],
+    values: &[ParseValue<'_>],
 ) -> Result<Box<args>, ArgsParseError> {
     let mut args = args_create();
     if values.is_empty() {
@@ -170,29 +163,29 @@ pub fn args_parse(
         i,
         values.len()
     ));
-    for (index, value) in values.iter().enumerate().skip(i) {
+    for (index, &value) in values.iter().enumerate().skip(i) {
         let printed = args_value_for_log(value);
         log_debug(format_args!(
             "args_parse: {} = {} (type {})",
             index,
             log_bytes(printed.to_bytes()),
-            log_bytes(args_type_to_string(value.type_0()).to_bytes())
+            log_bytes(value.type_name().to_bytes())
         ));
         let kind = if let Some(callback) = parse.cb {
             let index = args.values.len() as u_int;
-            callback(&mut args, index)?
+            callback(&args, index)?
         } else {
             ARGS_PARSE_STRING
         };
         match kind {
             ARGS_PARSE_INVALID => return Err(ArgsParseError::Usage),
-            ARGS_PARSE_STRING if value.type_0() != ARGS_STRING => {
+            ARGS_PARSE_STRING if !matches!(value, ParseValue::String(_)) => {
                 return Err(ArgsParseError::Message(parse_number_error(format!(
                     "argument {} must be \"string\"",
                     (args.values.len() as u_int).wrapping_add(1)
                 ))));
             }
-            ARGS_PARSE_COMMANDS if value.type_0() != ARGS_COMMANDS => {
+            ARGS_PARSE_COMMANDS if !matches!(value, ParseValue::Commands(_)) => {
                 return Err(ArgsParseError::Message(parse_number_error(format!(
                     "argument {} must be {{ commands }}",
                     (args.values.len() as u_int).wrapping_add(1)
@@ -202,9 +195,9 @@ pub fn args_parse(
         }
         let copied = match kind {
             ARGS_PARSE_STRING | ARGS_PARSE_COMMANDS_OR_STRING | ARGS_PARSE_COMMANDS => {
-                args_copy_value(value)
+                value.to_args_value()
             }
-            _ => args_value::empty(),
+            _ => args_value::None,
         };
         args_push_positional_owned(&mut args, copied);
     }

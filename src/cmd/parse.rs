@@ -1,4 +1,4 @@
-use crate::arguments::{ArgumentValue, ARGS_COMMANDS, ARGS_STRING};
+use crate::arguments::ParseValue;
 use crate::cmd::queue::{cmdq_append, cmdq_get_command, cmdq_print};
 use crate::cmd::{
     cmd_get_alias, cmd_list_append, cmd_list_append_all, cmd_list_move, cmd_list_new,
@@ -6,7 +6,7 @@ use crate::cmd::{
 };
 use crate::environ::environ_put;
 use crate::format::{format_create, format_defaults, format_expand_cstring, format_true};
-use crate::log::{fatalx, log_bytes, log_debug};
+use crate::log::{log_bytes, log_debug};
 use crate::shared::abi::*;
 use crate::shared::client::ClientRef;
 use crate::shared::command::*;
@@ -342,23 +342,28 @@ unsafe fn cmd_parse_build_command(
     if cmd_parse_expand_alias(cmd, pi, pr) {
         return;
     }
-    let mut values = Vec::<ArgumentValue>::new();
+    let mut built = Vec::new();
     for arg in &mut cmd.arguments {
-        let value = match arg.as_mut() {
-            cmd_parse_argument::String(text) => ArgumentValue::borrowed_string(text),
-            cmd_parse_argument::Commands(commands) => {
-                cmd_parse_build_commands(commands, pi, pr);
-                if pr.status != CMD_PARSE_SUCCESS {
-                    return;
-                }
-                ArgumentValue::commands(pr.cmdlist.take().expect("successful command parse"))
+        if let cmd_parse_argument::Commands(commands) = arg.as_mut() {
+            cmd_parse_build_commands(commands, pi, pr);
+            if pr.status != CMD_PARSE_SUCCESS {
+                return;
             }
-            cmd_parse_argument::ParsedCommands(commands) => {
-                ArgumentValue::borrowed_commands(commands)
-            }
-        };
-        values.push(value);
+            built.push(pr.cmdlist.take().expect("successful command parse"));
+        }
     }
+    let mut built = built.iter();
+    let values: Vec<ParseValue> = cmd
+        .arguments
+        .iter()
+        .map(|arg| match arg.as_ref() {
+            cmd_parse_argument::String(text) => ParseValue::String(text),
+            cmd_parse_argument::Commands(_) => {
+                ParseValue::Commands(built.next().expect("built command block"))
+            }
+            cmd_parse_argument::ParsedCommands(commands) => ParseValue::Commands(commands),
+        })
+        .collect();
     match cmd_parse(&values, pi.file.as_deref(), pi.line, pi.flags) {
         Ok(command) => {
             pr.status = CMD_PARSE_SUCCESS;
@@ -534,15 +539,15 @@ pub unsafe fn cmd_parse_from_buffer(
 }
 /// Parse argv while borrowing its strings for the duration of the parser call.
 pub unsafe fn cmd_parse_from_argv(argv: &[CString]) -> cmd_parse_result {
-    let values: Vec<ArgumentValue> = argv
+    let values: Vec<ParseValue> = argv
         .iter()
-        .map(|string| ArgumentValue::borrowed_string(string))
+        .map(|string| ParseValue::String(string))
         .collect();
     cmd_parse_from_arguments(&values, None)
 }
 
 pub unsafe fn cmd_parse_from_arguments(
-    values: &[ArgumentValue<'_>],
+    values: &[ParseValue<'_>],
     pi: Option<&mut cmd_parse_input>,
 ) -> cmd_parse_result {
     let mut input: cmd_parse_input = cmd_parse_input {
@@ -566,13 +571,9 @@ pub unsafe fn cmd_parse_from_arguments(
     let mut cmd = cmd_parse_new_command(pi.line);
     for value in values {
         let mut end = false;
-        match value.type_0() {
-            ARGS_STRING => {
-                let mut bytes = value
-                    .as_string()
-                    .expect("string argument")
-                    .to_bytes()
-                    .to_vec();
+        match *value {
+            ParseValue::String(text) => {
+                let mut bytes = text.to_bytes().to_vec();
                 if bytes.last() == Some(&b';') {
                     bytes.pop();
                     if bytes.last() == Some(&b'\\') {
@@ -587,13 +588,12 @@ pub unsafe fn cmd_parse_from_arguments(
                     )));
                 }
             }
-            ARGS_COMMANDS => {
+            ParseValue::Commands(commands) => {
                 cmd.arguments
                     .push_back(Box::new(cmd_parse_argument::ParsedCommands(
-                        value.as_commands().expect("command argument").clone(),
+                        commands.clone(),
                     )));
             }
-            _ => fatalx(|out| out.write_all(b"unknown argument type")),
         }
         if end {
             cmds.items.push(cmd);

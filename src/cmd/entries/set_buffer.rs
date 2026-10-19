@@ -1,6 +1,6 @@
 use crate::arguments::{args_count, args_get, args_has, args_parse, args_string};
 use crate::cmd::queue::{cmdq_error, cmdq_get_target_client};
-use crate::cmd::{cmd_get_args_mut, cmd_get_entry};
+use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::paste::{
     paste_buffer_data, paste_free, paste_get_name, paste_get_top, paste_rename, paste_set_owned,
 };
@@ -63,22 +63,21 @@ pub static cmd_delete_buffer_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_set_buffer_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
-    let mut bufname = args_get(&*(args), b'b').map(CStr::to_owned);
+    let mut bufname = args_get(args, b'b').map(CStr::to_owned);
     let mut pb = bufname.as_deref().and_then(paste_get_name);
     let mut cause = None;
     let deleting = std::ptr::eq(
         cmd_get_entry(self_0.get_unchecked()),
         &cmd_delete_buffer_entry,
     );
-    if deleting || args_has(&*args, b'n') != 0 {
+    if deleting || args_has(args, b'n') != 0 {
         if pb.is_none() {
             if let Some(name) = bufname.as_ref() {
                 cmdq_error(item_handle, |out| {
@@ -99,7 +98,7 @@ unsafe fn cmd_set_buffer_exec(
         }
         if paste_rename(
             bufname.as_deref(),
-            Some(args_get(&*(args), b'n').expect("argument is present")),
+            Some(args_get(args, b'n').expect("argument is present")),
             Some(&mut cause),
         ) != 0
         {
@@ -110,24 +109,24 @@ unsafe fn cmd_set_buffer_exec(
         }
         return CmdOutcome::Normal;
     }
-    if args_count(&*args) != 1 {
+    if args_count(args) != 1 {
         cmdq_error(item_handle, |out| out.write_all(b"no data specified"));
         return CmdOutcome::Error;
     }
-    let new_data = args_string(&mut *(args), 0)
+    let new_data = args_string(args, 0)
         .expect("argument is present")
         .to_bytes();
     if new_data.is_empty() {
         return CmdOutcome::Normal;
     }
     let mut bufdata = Vec::new();
-    if args_has(&*args, b'a') != 0 {
+    if args_has(args, b'a') != 0 {
         if let Some(pb) = pb {
             bufdata.extend_from_slice(paste_buffer_data(&pb.borrow()).unwrap_or_default());
         }
     }
     bufdata.extend_from_slice(new_data);
-    let selection_data = (args_has(&*args, b'w') != 0 && !tc.is_none()).then(|| bufdata.clone());
+    let selection_data = (args_has(args, b'w') != 0 && !tc.is_none()).then(|| bufdata.clone());
     if paste_set_owned(
         bufdata.into_boxed_slice(),
         bufname.as_deref(),

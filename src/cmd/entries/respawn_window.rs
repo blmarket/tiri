@@ -1,5 +1,5 @@
-use crate::arguments::{args, args_flag_values, args_get, args_has, args_parse, args_to_vector};
-use crate::cmd::cmd_get_args_mut;
+use crate::arguments::{args_flag_values, args_get, args_has, args_parse, args_to_vector};
+use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{cmdq_error, cmdq_get_target_client};
 use crate::environ::{environ_create, environ_put};
 use crate::format::bytes::write_cstr;
@@ -39,12 +39,11 @@ pub static cmd_respawn_window_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_respawn_window_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let mut sc: spawn_context = spawn_context {
@@ -72,10 +71,10 @@ unsafe fn cmd_respawn_window_exec(
     sc.tc = tc_owner
         .as_ref()
         .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-    argv_owner = args_to_vector(&*args);
+    argv_owner = args_to_vector(args);
     sc.argv = argv_owner;
     sc.environ = Some(environ_create());
-    for av in args_flag_values(&*args, 'e' as i32 as u_char) {
+    for av in args_flag_values(args, 'e' as i32 as u_char) {
         environ_put(
             sc.environ.as_deref_mut().expect("environment"),
             av.as_string().expect("string argument"),
@@ -83,12 +82,12 @@ unsafe fn cmd_respawn_window_exec(
         );
     }
     sc.idx = -(1 as ::core::ffi::c_int);
-    sc.cwd = args_get(&*(args), 'c' as i32 as u_char).map(|value| value.to_owned());
+    sc.cwd = args_get(args, 'c' as i32 as u_char).map(|value| value.to_owned());
     sc.flags = SPAWN_RESPAWN;
-    if args_has(&*args, 'E' as i32 as u_char) != 0 {
+    if args_has(args, 'E' as i32 as u_char) != 0 {
         sc.flags |= SPAWN_EMPTY;
     }
-    if args_has(&*args, 'k' as i32 as u_char) != 0 {
+    if args_has(args, 'k' as i32 as u_char) != 0 {
         sc.flags |= SPAWN_KILL;
     }
     if !spawn_window(&mut sc, &mut cause).is_alive() {

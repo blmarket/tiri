@@ -216,24 +216,11 @@ pub struct cmd_list {
 #[repr(C)]
 pub struct cmd {
     pub entry: &'static cmd_entry,
-    pub args: Option<Box<args>>,
+    pub args: Box<args>,
     pub group: u_int,
     pub file: Option<std::ffi::CString>,
     pub line: u_int,
     pub parse_flags: ::core::ffi::c_int,
-}
-
-impl cmd {
-    pub fn new(entry: &'static cmd_entry) -> Self {
-        Self {
-            entry,
-            args: Default::default(),
-            group: Default::default(),
-            file: Default::default(),
-            line: Default::default(),
-            parse_flags: Default::default(),
-        }
-    }
 }
 
 #[derive(Copy, Clone)]

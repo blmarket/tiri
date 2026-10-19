@@ -1,6 +1,6 @@
-use crate::arguments::{args, args_get, args_parse, args_string};
+use crate::arguments::{args_get, args_parse, args_string};
 use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print};
-use crate::cmd::{cmd_find, cmd_get_args_mut, cmd_table};
+use crate::cmd::{cmd_find, cmd_get_args, cmd_table};
 use crate::format::bytes::write_cstr;
 use crate::format::{format_add, format_create, format_defaults, format_expand_cstring};
 use crate::shared::abi::*;
@@ -59,15 +59,13 @@ unsafe fn cmd_list_single_command(
     }
 }
 unsafe fn cmd_list_commands(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let queue_client = cmdq_get_client(Some(&*item));
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let template: &CStr =
-        args_get(&*(args), 'F' as i32 as u_char).unwrap_or(LIST_COMMANDS_TEMPLATE);
+    let args = cmd_get_args(self_0.get_unchecked());
+    let template: &CStr = args_get(args, 'F' as i32 as u_char).unwrap_or(LIST_COMMANDS_TEMPLATE);
     let mut ft_owner = format_create(
         queue_client.as_ref(),
         Some(item_handle),
@@ -76,7 +74,7 @@ unsafe fn cmd_list_commands(
     );
     let ft = &mut *ft_owner;
     format_defaults(ft, None, None, (refbox::Weak::new()).clone(), None);
-    if let Some(command) = args_string(&mut *(args), 0 as u_int) {
+    if let Some(command) = args_string(args, 0 as u_int) {
         match cmd_find(command) {
             Ok(found) => {
                 cmd_list_single_command(found, ft, template, item_handle);

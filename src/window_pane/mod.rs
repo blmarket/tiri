@@ -765,7 +765,7 @@ unsafe fn window_pane_set_mode(
     mode: &'static window_mode,
     item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     fs: Option<&cmd_find_state>,
-    mut args: Option<&mut args>,
+    args: Option<&args>,
 ) -> ::core::ffi::c_int {
     let wp = pane_owner.get();
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
@@ -801,13 +801,11 @@ unsafe fn window_pane_set_mode(
             kill: 0,
         });
         wme = window_pane_mode_push(&mut *wp, entry);
-        let entered = wme
-            .get_unchecked()
-            .mode
-            .init
-            .expect("non-null function pointer")(
-            wme.clone(), item_handle, fs, args.as_deref_mut()
-        );
+        let entered =
+            wme.get_unchecked()
+                .mode
+                .init
+                .expect("non-null function pointer")(wme.clone(), item_handle, fs, args);
         if !entered {
             drop(
                 window_pane_mode_remove(&mut *(wp), wme.clone())

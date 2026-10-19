@@ -337,7 +337,7 @@ pub static window_customize_mode: window_mode = {
                     refbox::Weak<window_mode_entry>,
                     Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
                     Option<&cmd_find_state>,
-                    Option<&mut args>,
+                    Option<&args>,
                 ) -> bool,
         ),
         free: Some(window_customize_free as unsafe fn(refbox::Weak<window_mode_entry>) -> ()),
@@ -2682,7 +2682,7 @@ unsafe fn window_customize_init(
     mut wme: refbox::Weak<window_mode_entry>,
     _item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     fs: Option<&cmd_find_state>,
-    args: Option<&mut args>,
+    args: Option<&args>,
 ) -> bool {
     let mode_pane_owner = wme
         .get_unchecked()
@@ -2720,12 +2720,12 @@ unsafe fn window_customize_init(
     let draw_mode = build_mode.clone();
     let menu_mode = build_mode.clone();
     let args = args.expect("mode arguments");
-    if args_has(&*args, 'y' as i32 as u_char) != 0 {
+    if args_has(args, 'y' as i32 as u_char) != 0 {
         (*data).prompt_flags = PROMPT_ACCEPT;
     }
     (*data).data = Some(mode_tree_start(
         &mode_pane_owner,
-        &*args,
+        args,
         Some(Box::new(move |_, tag, filter| {
             let Some(mode) = window_customize_live_mode(&build_mode) else {
                 return tag;

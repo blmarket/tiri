@@ -1,6 +1,6 @@
 use crate::arguments::{args, args_get, args_has, args_parse, args_string};
 use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_print};
-use crate::cmd::{cmd_get_args_mut, cmd_list_print_cstring};
+use crate::cmd::{cmd_get_args, cmd_list_print_cstring};
 use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
 use crate::format::{format_add, format_create, format_defaults, format_expand_cstring};
@@ -57,8 +57,8 @@ pub static cmd_list_keys_entry: cmd_entry = {
 };
 unsafe fn cmd_list_keys_get_prefix(args: &args) -> CString {
     let mut prefix: key_code = 0;
-    if args_has(&*args, 'P' as i32 as u_char) != 0 {
-        return args_get(&*(args), 'P' as i32 as u_char)
+    if args_has(args, 'P' as i32 as u_char) != 0 {
+        return args_get(args, 'P' as i32 as u_char)
             .expect("argument is present")
             .to_owned();
     }
@@ -142,13 +142,12 @@ unsafe fn cmd_list_keys_format_add_key_binding(
     format_add(ft, c"key_command", |out| write_cstr(out, &*command));
 }
 unsafe fn cmd_list_keys_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let queue_client = cmdq_get_client(Some(&*item));
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut table = None;
@@ -163,7 +162,7 @@ unsafe fn cmd_list_keys_exec(
         reversed: 0,
         order_seq: &[],
     };
-    let keystr: Option<&CStr> = args_string(&mut *(args), 0 as u_int);
+    let keystr: Option<&CStr> = args_string(args, 0 as u_int);
     if let Some(keystr) = keystr {
         only = key_string_parse_cstr(keystr).unwrap_or(KEYC_UNKNOWN);
         if only == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code {
@@ -176,17 +175,17 @@ unsafe fn cmd_list_keys_exec(
         only &= KEYC_MASK_KEY | KEYC_MASK_MODIFIERS;
     }
     sort_crit.order = sort_order_from_string(nullable_cstr(
-        args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
+        args_get(args, 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
     ));
     if sort_crit.order as ::core::ffi::c_uint
         == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
-        && args_has(&*args, 'O' as i32 as u_char) != 0
+        && args_has(args, 'O' as i32 as u_char) != 0
     {
         cmdq_error(item_handle, |out| out.write_all(b"invalid sort order"));
         return CmdOutcome::Error;
     }
-    sort_crit.reversed = args_has(&*args, 'r' as i32 as u_char);
-    if let Some(tablename) = args_get(&*(args), 'T' as i32 as u_char) {
+    sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
+    if let Some(tablename) = args_get(args, 'T' as i32 as u_char) {
         table = key_bindings_get_table(tablename, 0 as ::core::ffi::c_int);
         if table.is_none() {
             cmdq_error(item_handle, |out| {
@@ -197,11 +196,11 @@ unsafe fn cmd_list_keys_exec(
             return CmdOutcome::Error;
         }
     }
-    let prefix = cmd_list_keys_get_prefix(&*args);
-    single = args_has(&*args, '1' as i32 as u_char);
-    notes_only = args_has(&*args, 'N' as i32 as u_char);
+    let prefix = cmd_list_keys_get_prefix(args);
+    single = args_has(args, '1' as i32 as u_char);
+    notes_only = args_has(args, 'N' as i32 as u_char);
     template =
-        args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+        args_get(args, 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if template.is_null() {
         template = LIST_KEYS_TEMPLATE.as_ptr();
     }
@@ -216,7 +215,7 @@ unsafe fn cmd_list_keys_exec(
         sort_get_key_bindings(&tables, &sort_crit)
     };
     filter_notes =
-        (notes_only != 0 && args_has(&*args, 'a' as i32 as u_char) == 0) as ::core::ffi::c_int;
+        (notes_only != 0 && args_has(args, 'a' as i32 as u_char) == 0) as ::core::ffi::c_int;
     filter_key = (only != KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code) as ::core::ffi::c_int;
     if filter_notes != 0 || filter_key != 0 {
         cmd_list_keys_filter_key_list(filter_notes, filter_key, only, &mut bindings);

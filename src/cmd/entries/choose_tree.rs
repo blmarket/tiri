@@ -3,7 +3,7 @@ use crate::arguments::{
     ARGS_PARSE_COMMANDS_OR_STRING,
 };
 use crate::cmd::queue::cmdq_error;
-use crate::cmd::{cmd_get_args_mut, cmd_get_entry};
+use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::format::bytes::nullable_cstr;
 use crate::paste::paste_is_empty;
 use crate::server_client::Client as _;
@@ -180,28 +180,27 @@ pub static cmd_display_panes_entry: cmd_entry = {
     }
 };
 fn cmd_choose_tree_args_parse(
-    _args: &mut args,
+    _args: &args,
     _idx: u_int,
 ) -> Result<args_parse_type, ArgsParseError> {
     Ok(ARGS_PARSE_COMMANDS_OR_STRING)
 }
 unsafe fn cmd_choose_tree_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let wp = (*target).pane_handle();
 
     let mut order: sort_order = SORT_ACTIVITY;
     order = sort_order_from_string(nullable_cstr(
-        args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
+        args_get(args, 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
     ));
     if order as ::core::ffi::c_uint == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
-        && args_has(&*args, 'O' as i32 as u_char) != 0
+        && args_has(args, 'O' as i32 as u_char) != 0
     {
         cmdq_error(item_handle, |out| out.write_all(b"invalid sort order"));
         return CmdOutcome::Error;
@@ -245,7 +244,7 @@ unsafe fn cmd_choose_tree_exec(
         mode,
         Some(item_handle),
         Some(&mut *target),
-        Some(&mut *args),
+        Some(args),
     );
     CmdOutcome::Normal
 }

@@ -3,7 +3,7 @@ use crate::arguments::{
     args_make_commands_prepare, args_parse, args_parse_type, args_string, ArgsParseError,
     ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_STRING,
 };
-use crate::cmd::cmd_get_args_mut;
+use crate::cmd::cmd_get_args;
 use crate::cmd::parse::cmd_parse_error_uppercase_first;
 use crate::cmd::queue::{
     cmdq_append, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_target_client,
@@ -55,38 +55,34 @@ pub static cmd_if_shell_entry: cmd_entry = {
         exec: Some(cmd_if_shell_exec),
     }
 };
-fn cmd_if_shell_args_parse(
-    _args: &mut args,
-    idx: u_int,
-) -> Result<args_parse_type, ArgsParseError> {
+fn cmd_if_shell_args_parse(_args: &args, idx: u_int) -> Result<args_parse_type, ArgsParseError> {
     if idx == 1 as u_int || idx == 2 as u_int {
         return Ok(ARGS_PARSE_COMMANDS_OR_STRING);
     }
     Ok(ARGS_PARSE_STRING)
 }
 unsafe fn cmd_if_shell_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let queue_client = cmdq_get_client(Some(&*item));
     let mut queue_client_ptr: Option<ClientRef> = queue_client.clone();
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let new_item_allocation;
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let _tc: Option<ClientRef> = tc_owner.clone();
     let mut s: Option<SessionRef> = (*target).session_handle();
-    let mut count: u_int = args_count(&*args);
+    let mut count: u_int = args_count(args);
     let mut wait: ::core::ffi::c_int =
-        (args_has(&*args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
+        (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
     let shellcmd = format_single_from_target_cstring(
         item_handle,
-        args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
+        args_string(args, 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
     );
-    if args_has(&*args, 'F' as i32 as u_char) != 0 {
+    if args_has(args, 'F' as i32 as u_char) != 0 {
         let cmdlist = if *shellcmd.as_ptr() as ::core::ffi::c_int != '0' as i32
             && *shellcmd.as_ptr() as ::core::ffi::c_int != '\0' as i32
         {

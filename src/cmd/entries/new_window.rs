@@ -1,7 +1,7 @@
 use crate::arguments::{
-    args, args_count, args_flag_values, args_get, args_has, args_parse, args_string, args_to_vector,
+    args_count, args_flag_values, args_get, args_has, args_parse, args_string, args_to_vector,
 };
-use crate::cmd::cmd_get_args_mut;
+use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{
     cmdq_error, cmdq_get_client, cmdq_get_state_owned, cmdq_get_target, cmdq_get_target_client,
     cmdq_insert_hook, cmdq_print,
@@ -57,12 +57,11 @@ pub static cmd_new_window_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_new_window_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     let current = cmdq_get_state_owned(&*(item));
@@ -89,7 +88,7 @@ unsafe fn cmd_new_window_exec(
     let mut new_wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut idx: ::core::ffi::c_int = target.idx;
     let mut before: ::core::ffi::c_int = 0;
-    let mut count: ::core::ffi::c_int = args_count(&*args) as ::core::ffi::c_int;
+    let mut count: ::core::ffi::c_int = args_count(args) as ::core::ffi::c_int;
     let mut cause: Option<std::ffi::CString> = None;
     let mut wname_owned: Option<CString> = None;
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -102,11 +101,10 @@ unsafe fn cmd_new_window_exec(
         wp: Default::default(),
         idx: 0,
     };
-    if args_has(&*args, 'E' as i32 as u_char) != 0
+    if args_has(args, 'E' as i32 as u_char) != 0
         && count != 0 as ::core::ffi::c_int
         && (count != 1 as ::core::ffi::c_int
-            || *args_string(&mut *(args), 0 as u_int)
-                .map_or(std::ptr::null(), |value| value.as_ptr())
+            || *args_string(args, 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())
                 as ::core::ffi::c_int
                 != '\0' as i32)
     {
@@ -115,8 +113,7 @@ unsafe fn cmd_new_window_exec(
         });
         return CmdOutcome::Error;
     }
-    name =
-        args_get(&*(args), 'n' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    name = args_get(args, 'n' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !name.is_null() {
         let expanded = format_single_cstring(
             Some(item_handle),
@@ -138,7 +135,7 @@ unsafe fn cmd_new_window_exec(
                 .expect("check_name validated the window name"),
         );
     }
-    if args_has(&*args, 'S' as i32 as u_char) != 0 {
+    if args_has(args, 'S' as i32 as u_char) != 0 {
         if idx != -(1 as ::core::ffi::c_int) {
             new_wl = s
                 .as_ref()
@@ -180,7 +177,7 @@ unsafe fn cmd_new_window_exec(
         }
     }
     if new_wl.is_alive() {
-        if args_has(&*args, 'd' as i32 as u_char) != 0 {
+        if args_has(args, 'd' as i32 as u_char) != 0 {
             return CmdOutcome::Normal;
         }
         if (s.as_ref().expect("live session")).select_winlink((new_wl).clone())
@@ -207,8 +204,8 @@ unsafe fn cmd_new_window_exec(
         recalculate_sizes();
         return CmdOutcome::Normal;
     }
-    before = args_has(&*args, 'b' as i32 as u_char);
-    if args_has(&*args, 'a' as i32 as u_char) != 0 || before != 0 {
+    before = args_has(args, 'b' as i32 as u_char);
+    if args_has(args, 'a' as i32 as u_char) != 0 || before != 0 {
         idx = winlink_shuffle_up(&session_owner, wl.clone(), before);
         if idx == -(1 as ::core::ffi::c_int) {
             idx = target.idx;
@@ -220,10 +217,10 @@ unsafe fn cmd_new_window_exec(
         .as_ref()
         .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     sc.name = wname_owned.clone();
-    argv_owner = args_to_vector(&*args);
+    argv_owner = args_to_vector(args);
     sc.argv = argv_owner;
     sc.environ = Some(environ_create());
-    for av in args_flag_values(&*args, 'e' as i32 as u_char) {
+    for av in args_flag_values(args, 'e' as i32 as u_char) {
         environ_put(
             sc.environ.as_deref_mut().expect("environment"),
             av.as_string().expect("string argument"),
@@ -231,21 +228,20 @@ unsafe fn cmd_new_window_exec(
         );
     }
     sc.idx = idx;
-    sc.cwd = args_get(&*(args), 'c' as i32 as u_char).map(CStr::to_owned);
+    sc.cwd = args_get(args, 'c' as i32 as u_char).map(CStr::to_owned);
     sc.flags = 0 as ::core::ffi::c_int;
-    if args_has(&*args, 'E' as i32 as u_char) != 0
+    if args_has(args, 'E' as i32 as u_char) != 0
         || count == 1 as ::core::ffi::c_int
-            && *args_string(&mut *(args), 0 as u_int)
-                .map_or(std::ptr::null(), |value| value.as_ptr())
+            && *args_string(args, 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())
                 as ::core::ffi::c_int
                 == '\0' as i32
     {
         sc.flags |= SPAWN_EMPTY;
     }
-    if args_has(&*args, 'd' as i32 as u_char) != 0 {
+    if args_has(args, 'd' as i32 as u_char) != 0 {
         sc.flags |= SPAWN_DETACHED;
     }
-    if args_has(&*args, 'k' as i32 as u_char) != 0 {
+    if args_has(args, 'k' as i32 as u_char) != 0 {
         sc.flags |= SPAWN_KILL;
     }
     new_wl = spawn_window(&mut sc, &mut cause);
@@ -257,7 +253,7 @@ unsafe fn cmd_new_window_exec(
         drop(sc.environ.take());
         CmdOutcome::Error
     } else {
-        if args_has(&*args, 'd' as i32 as u_char) == 0
+        if args_has(args, 'd' as i32 as u_char) == 0
             || new_wl == s.as_ref().expect("live session").current_winlink()
         {
             *current.current.borrow_mut() =
@@ -266,8 +262,8 @@ unsafe fn cmd_new_window_exec(
         } else {
             server_status_session_group(s.as_ref().expect("live session"));
         }
-        if args_has(&*args, 'P' as i32 as u_char) != 0 {
-            template = args_get(&*(args), 'F' as i32 as u_char)
+        if args_has(args, 'P' as i32 as u_char) != 0 {
+            template = args_get(args, 'F' as i32 as u_char)
                 .map_or(std::ptr::null(), |value| value.as_ptr());
             if template.is_null() {
                 template = NEW_WINDOW_TEMPLATE.as_ptr();

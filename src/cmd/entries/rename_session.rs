@@ -1,5 +1,5 @@
 use crate::arguments::{args_parse, args_string};
-use crate::cmd::cmd_get_args_mut;
+use crate::cmd::cmd_get_args;
 use crate::cmd::queue::cmdq_error;
 use crate::format::format_single_from_target_cstring;
 use crate::shared::command::*;
@@ -34,7 +34,7 @@ unsafe fn cmd_rename_session_exec(
     item: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     use crate::session::Session;
-    let arguments = cmd_get_args_mut(command.get_mut_unchecked()).expect("command arguments");
+    let arguments = cmd_get_args(command.get_unchecked());
     let name = args_string(arguments, 0).expect("rename-session argument");
     let expanded = format_single_from_target_cstring(item, name.as_ptr());
     let target = crate::cmd::queue::cmdq_get_target(&item.borrow()).clone();

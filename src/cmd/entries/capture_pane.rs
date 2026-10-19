@@ -1,6 +1,6 @@
-use crate::arguments::{args, args_get, args_has, args_parse};
+use crate::arguments::{args_get, args_has, args_parse};
 use crate::cmd::queue::{cmdq_error, cmdq_get_client};
-use crate::cmd::{cmd_get_args_mut, cmd_get_entry};
+use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::control::control_write;
 use crate::file::{file_can_print, file_print, file_print_buffer};
 use crate::format::bytes::write_cstr;
@@ -64,12 +64,11 @@ pub static cmd_clear_history_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_capture_pane_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
@@ -81,7 +80,7 @@ unsafe fn cmd_capture_pane_exec(
         cmd_get_entry(self_0.get_unchecked()),
         &cmd_clear_history_entry,
     ) {
-        pane_owner.clear_history(args_has(&*args, b'H') != 0);
+        pane_owner.clear_history(args_has(args, b'H') != 0);
         let window = pane_owner
             .window_observer()
             .upgrade()
@@ -90,14 +89,14 @@ unsafe fn cmd_capture_pane_exec(
         drop(window);
         return CmdOutcome::Normal;
     }
-    buf = match pane_owner.capture(&mut *args, item_handle) {
+    buf = match pane_owner.capture(args, item_handle) {
         Ok(bytes) => bytes,
         Err(cause) => {
             cmdq_error(item_handle, |out| write_cstr(out, &*cause));
             return CmdOutcome::Error;
         }
     };
-    if args_has(&*args, 'p' as i32 as u_char) != 0 {
+    if args_has(args, 'p' as i32 as u_char) != 0 {
         let len = if buf.last() == Some(&b'\n') {
             buf.len() - 1
         } else {
@@ -117,8 +116,8 @@ unsafe fn cmd_capture_pane_exec(
         }
     } else {
         bufname = None;
-        if args_has(&*args, 'b' as i32 as u_char) != 0 {
-            bufname = args_get(&*(args), 'b' as i32 as u_char);
+        if args_has(args, 'b' as i32 as u_char) != 0 {
+            bufname = args_get(args, 'b' as i32 as u_char);
         }
         if paste_set_owned(buf.into_boxed_slice(), bufname, Some(&mut cause))
             != 0 as ::core::ffi::c_int

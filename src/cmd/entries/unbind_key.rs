@@ -1,5 +1,5 @@
-use crate::arguments::{args, args_get, args_has, args_parse, args_string};
-use crate::cmd::cmd_get_args_mut;
+use crate::arguments::{args_get, args_has, args_parse, args_string};
+use crate::cmd::cmd_get_args;
 use crate::cmd::queue::cmdq_error;
 use crate::format::bytes::write_cstr;
 use crate::key_bindings::{key_bindings_get_table, key_bindings_remove, key_bindings_remove_table};
@@ -36,25 +36,24 @@ pub static cmd_unbind_key_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_unbind_key_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let mut key: key_code = 0;
     let mut tablename: &CStr = c"";
-    let mut keystr: Option<&CStr> = args_string(&mut *(args), 0 as u_int);
-    let mut quiet: ::core::ffi::c_int = args_has(&*args, 'q' as i32 as u_char);
-    if args_has(&*args, 'a' as i32 as u_char) != 0 {
+    let mut keystr: Option<&CStr> = args_string(args, 0 as u_int);
+    let mut quiet: ::core::ffi::c_int = args_has(args, 'q' as i32 as u_char);
+    if args_has(args, 'a' as i32 as u_char) != 0 {
         if keystr.is_some() {
             if quiet == 0 {
                 cmdq_error(item_handle, |out| out.write_all(b"key given with -a"));
             }
             return CmdOutcome::Error;
         }
-        tablename = match args_get(&*(args), 'T' as i32 as u_char) {
+        tablename = match args_get(args, 'T' as i32 as u_char) {
             Some(tablename) => tablename,
-            None if args_has(&*args, 'n' as i32 as u_char) != 0 => c"root",
+            None if args_has(args, 'n' as i32 as u_char) != 0 => c"root",
             None => c"prefix",
         };
         if key_bindings_get_table(tablename, 0 as ::core::ffi::c_int).is_none() {
@@ -88,8 +87,8 @@ unsafe fn cmd_unbind_key_exec(
         }
         return CmdOutcome::Error;
     }
-    if args_has(&*args, 'T' as i32 as u_char) != 0 {
-        tablename = args_get(&*(args), 'T' as i32 as u_char).expect("-T has a value");
+    if args_has(args, 'T' as i32 as u_char) != 0 {
+        tablename = args_get(args, 'T' as i32 as u_char).expect("-T has a value");
         if key_bindings_get_table(tablename, 0 as ::core::ffi::c_int).is_none() {
             if quiet == 0 {
                 cmdq_error(item_handle, |out| {
@@ -100,7 +99,7 @@ unsafe fn cmd_unbind_key_exec(
             }
             return CmdOutcome::Error;
         }
-    } else if args_has(&*args, 'n' as i32 as u_char) != 0 {
+    } else if args_has(args, 'n' as i32 as u_char) != 0 {
         tablename = c"root";
     } else {
         tablename = c"prefix";

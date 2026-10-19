@@ -1,6 +1,6 @@
 use crate::arguments::{args_get, args_has, args_parse};
 use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_source, cmdq_get_target_client};
-use crate::cmd::{cmd_get_args_mut, cmd_get_entry};
+use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::compat::imsg::*;
 use crate::server_client::Client;
 use crate::server_client::ClientRegistry;
@@ -68,7 +68,7 @@ unsafe fn cmd_detach_client_exec(
         cmd_get_entry(command.get_unchecked()),
         &cmd_suspend_client_entry,
     );
-    let args = cmd_get_args_mut(command.get_mut_unchecked()).expect("command arguments");
+    let args = cmd_get_args(command.get_unchecked());
     let source = cmdq_get_source(&item.borrow()).clone();
     let client = cmdq_get_client(Some(&item.borrow()));
     let target = cmdq_get_target_client(Some(&item.borrow())).expect("target client");

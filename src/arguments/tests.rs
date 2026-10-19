@@ -1,7 +1,6 @@
 use super::number::parse_number;
 use super::parse::{ARGS_PARSE_COMMANDS, ARGS_PARSE_INVALID};
 use super::store::args_last_string;
-use super::value::{args_type, ARGS_NONE};
 use super::*;
 use crate::cmd::cmd_list_new;
 use crate::shared::command::cmd_list;
@@ -36,10 +35,11 @@ fn parser_slices_preserve_optional_values_and_flag_boundaries() {
         (&[b"-", b"-a"], None, false, &[b"-", b"-a"]),
     ];
     for &(input, optional, has_a, positional) in cases {
-        let values: Vec<_> = std::iter::once(b"test".as_slice())
+        let argv: Vec<_> = std::iter::once(b"test".as_slice())
             .chain(input.iter().copied())
-            .map(|bytes| args_value::string(CString::new(bytes).unwrap()))
+            .map(|bytes| CString::new(bytes).unwrap())
             .collect();
+        let values: Vec<_> = argv.iter().map(|text| ParseValue::String(text)).collect();
         let parsed = args_parse(&spec, &values).unwrap();
         assert_eq!(
             args_last_string(&parsed, b'o').map(CStr::to_bytes),
@@ -59,9 +59,9 @@ fn parser_slices_preserve_optional_values_and_flag_boundaries() {
         assert_eq!(actual, positional, "{input:?}");
     }
     let values = [
-        args_value::string(c"test".to_owned()),
-        args_value::string(c"-a".to_owned()),
-        args_value::string(c"-?".to_owned()),
+        ParseValue::String(c"test"),
+        ParseValue::String(c"-a"),
+        ParseValue::String(c"-?"),
     ];
     assert!(args_parse(&spec, &values[..2]).is_ok());
     assert!(matches!(
@@ -81,17 +81,13 @@ fn borrowed_payloads_copy_to_owners_without_retaining_input_storage() {
         list: Vec::new(),
     }));
     let observer = Rc::downgrade(&commands);
-    let inputs = [
-        ArgumentValue::borrowed_string(&text),
-        ArgumentValue::borrowed_commands(&commands),
-    ];
+    let inputs = [ParseValue::String(&text), ParseValue::Commands(&commands)];
     assert_eq!(inputs[0].as_string().unwrap().as_ptr(), text.as_ptr());
     assert_eq!(Rc::strong_count(&commands), 1);
-    let stored: Vec<args_value> = inputs.iter().map(ArgumentValue::to_owned).collect();
+    let stored: Vec<args_value> = inputs.iter().map(|value| value.to_args_value()).collect();
     assert_ne!(stored[0].as_string().unwrap().as_ptr(), text.as_ptr());
     assert!(Rc::ptr_eq(stored[1].as_commands().unwrap(), &commands));
     assert_eq!(Rc::strong_count(&commands), 2);
-    drop(inputs);
     drop(text);
     drop(commands);
     assert_eq!(stored[0].as_string().unwrap().to_bytes(), b"borrowed\xff");
@@ -102,12 +98,8 @@ fn borrowed_payloads_copy_to_owners_without_retaining_input_storage() {
 
 #[test]
 fn argument_domains_match_translated_c_baseline() {
-    assert_eq!(size_of::<args_type>(), 4);
-    assert_eq!(align_of::<args_type>(), 4);
     assert_eq!(size_of::<args_parse_type>(), 4);
     assert_eq!(align_of::<args_parse_type>(), 4);
-    assert_eq!(ARGS_NONE, 0);
-    assert_eq!(ARGS_COMMANDS, 2);
     assert_eq!(ARGS_PARSE_INVALID, 0);
     assert_eq!(ARGS_PARSE_COMMANDS, 3);
 }
@@ -118,14 +110,6 @@ fn cstring(value: &str) -> CString {
 
 fn error_message(error: ArgumentValueError) -> &'static [u8] {
     error.message().to_bytes()
-}
-
-fn borrowed_string_value(value: &CStr) -> ArgumentValue<'_> {
-    ArgumentValue::borrowed_string(value)
-}
-
-fn borrowed_commands_value(cmdlist: &Rc<std::cell::RefCell<cmd_list>>) -> ArgumentValue<'_> {
-    ArgumentValue::borrowed_commands(cmdlist)
 }
 
 #[test]
@@ -179,14 +163,14 @@ fn number_helper_preserves_syntax_bounds_and_diagnostics() {
 
 #[test]
 fn borrowed_parser_command_retains_only_while_stored() {
-    fn commands(_: &mut args, _: core::ffi::c_uint) -> Result<core::ffi::c_uint, ArgsParseError> {
+    fn commands(_: &args, _: core::ffi::c_uint) -> Result<core::ffi::c_uint, ArgsParseError> {
         Ok(ARGS_PARSE_COMMANDS)
     }
 
     let cmdlist = cmd_list_new();
     let values = [
-        ArgumentValue::borrowed_string(c"command"),
-        ArgumentValue::borrowed_commands(&cmdlist),
+        ParseValue::String(c"command"),
+        ParseValue::Commands(&cmdlist),
     ];
     let mut spec = args_parse {
         template: c"",
@@ -202,14 +186,13 @@ fn borrowed_parser_command_retains_only_while_stored() {
     spec.lower = 2;
     assert!(args_parse(&spec, &values).is_err());
     assert_eq!(Rc::strong_count(&cmdlist), 1);
-    drop(values);
     drop(cmdlist);
 }
 
 #[test]
 fn positional_command_cache_survives_array_growth_and_copy() {
     fn command_argument(
-        args: &mut args,
+        args: &args,
         count: core::ffi::c_uint,
     ) -> Result<core::ffi::c_uint, ArgsParseError> {
         if count == 1 {
@@ -221,9 +204,9 @@ fn positional_command_cache_survives_array_growth_and_copy() {
     let command = cstring("command");
     let command_lists = [cmd_list_new(), cmd_list_new()];
     let values = [
-        borrowed_string_value(command.as_c_str()),
-        borrowed_commands_value(&command_lists[0]),
-        borrowed_commands_value(&command_lists[1]),
+        ParseValue::String(command.as_c_str()),
+        ParseValue::Commands(&command_lists[0]),
+        ParseValue::Commands(&command_lists[1]),
     ];
     let spec = args_parse {
         template: c"",
@@ -231,34 +214,27 @@ fn positional_command_cache_survives_array_growth_and_copy() {
         upper: -1,
         cb: Some(command_argument),
     };
-    let mut args = args_parse(&spec, &values).expect("valid command arguments");
-    drop(values);
+    let args = args_parse(&spec, &values).expect("valid command arguments");
     drop(command_lists);
 
-    let cached = args.values[0]
-        .cached
-        .as_deref()
-        .expect("cached command text");
+    let args_value::Commands(_, cached) = &args.values[0] else {
+        panic!("command argument");
+    };
+    let cached = cached.get().expect("cached command text");
     assert_eq!(cached.to_bytes(), b"");
     let first = cached.as_ptr();
-    assert_eq!(args_string(&mut args, 0).map(CStr::as_ptr), Some(first));
-    let second = args_string(&mut args, 1).map(CStr::as_ptr);
+    assert_eq!(args_string(&args, 0).map(CStr::as_ptr), Some(first));
+    let second = args_string(&args, 1).map(CStr::as_ptr);
     assert_ne!(Some(first), second);
 
-    let mut copied = args_copy(&args, &Vec::new());
-    let copied_first = args_string(&mut copied, 0).map(CStr::as_ptr);
-    let copied_second = args_string(&mut copied, 1).map(CStr::as_ptr);
+    let copied = args_copy(&args, &Vec::new());
+    let copied_first = args_string(&copied, 0).map(CStr::as_ptr);
+    let copied_second = args_string(&copied, 1).map(CStr::as_ptr);
     assert_ne!(copied_first, Some(first));
     assert_ne!(copied_second, second);
     drop(args);
-    assert_eq!(
-        args_string(&mut copied, 0).map(CStr::to_bytes),
-        Some(&b""[..])
-    );
-    assert_eq!(
-        args_string(&mut copied, 1).map(CStr::to_bytes),
-        Some(&b""[..])
-    );
+    assert_eq!(args_string(&copied, 0).map(CStr::to_bytes), Some(&b""[..]));
+    assert_eq!(args_string(&copied, 1).map(CStr::to_bytes), Some(&b""[..]));
     drop(copied);
 }
 
@@ -267,8 +243,8 @@ fn rejected_command_argument_keeps_source_value_ownership() {
     let command = cstring("command");
     let command_list = cmd_list_new();
     let values = [
-        borrowed_string_value(command.as_c_str()),
-        borrowed_commands_value(&command_list),
+        ParseValue::String(command.as_c_str()),
+        ParseValue::Commands(&command_list),
     ];
     let spec = args_parse {
         template: c"",
@@ -284,6 +260,5 @@ fn rejected_command_argument_keeps_source_value_ownership() {
         ArgsParseError::Usage => panic!("expected a diagnostic"),
     };
     assert_eq!(error.to_bytes(), b"argument 1 must be \"string\"");
-    drop(values);
     drop(command_list);
 }

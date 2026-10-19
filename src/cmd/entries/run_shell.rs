@@ -3,7 +3,7 @@ use crate::arguments::{
     args_make_commands_prepare, args_parse, args_parse_type, args_string, ArgsParseError,
     ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_STRING,
 };
-use crate::cmd::cmd_get_args_mut;
+use crate::cmd::cmd_get_args;
 use crate::cmd::parse::cmd_parse_error_uppercase_first;
 use crate::cmd::queue::{
     cmdq_append, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_target_client,
@@ -79,10 +79,7 @@ pub static cmd_run_shell_entry: cmd_entry = {
         exec: Some(cmd_run_shell_exec),
     }
 };
-fn cmd_run_shell_args_parse(
-    args: &mut args,
-    _idx: u_int,
-) -> Result<args_parse_type, ArgsParseError> {
+fn cmd_run_shell_args_parse(args: &args, _idx: u_int) -> Result<args_parse_type, ArgsParseError> {
     if args_has(args, 'C' as i32 as u_char) != 0 {
         return Ok(ARGS_PARSE_COMMANDS_OR_STRING);
     }
@@ -145,12 +142,11 @@ fn cmd_run_shell_status_message(cmd: &CStr, suffix: &[u8], code: ::core::ffi::c_
 }
 
 unsafe fn cmd_run_shell_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let c_owner = cmdq_get_client(Some(&*item));
@@ -166,9 +162,8 @@ unsafe fn cmd_run_shell_exec(
     let mut end: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut i: u_int = 0;
     let mut wait: ::core::ffi::c_int =
-        (args_has(&*args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
-    delay =
-        args_get(&*(args), 'd' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+        (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
+    delay = args_get(args, 'd' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !delay.is_null() {
         d = strtod(delay, &raw mut end);
         if *end as ::core::ffi::c_int != '\0' as i32 {
@@ -178,11 +173,11 @@ unsafe fn cmd_run_shell_exec(
             });
             return CmdOutcome::Error;
         }
-    } else if args_count(&*args) == 0 as u_int {
+    } else if args_count(args) == 0 as u_int {
         return CmdOutcome::Normal;
     }
-    let cwd = if args_has(&*args, 'c' as i32 as u_char) != 0 {
-        args_get(&*(args), 'c' as i32 as u_char)
+    let cwd = if args_has(args, 'c' as i32 as u_char) != 0 {
+        args_get(args, 'c' as i32 as u_char)
             .map(|cwd| format_single_from_target_cstring(item_handle, cwd.as_ptr()))
     } else {
         ClientRef::working_directory(c.as_ref(), s.as_ref())
@@ -196,21 +191,19 @@ unsafe fn cmd_run_shell_exec(
         wp_id: 0,
         flags: 0,
     });
-    if args_has(&*args, 'C' as i32 as u_char) == 0 {
-        cmd =
-            args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
+    if args_has(args, 'C' as i32 as u_char) == 0 {
+        cmd = args_string(args, 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
         if !cmd.is_null() {
             let mut ft_owner = format_create_from_target(item_handle);
             let ft = &mut *ft_owner;
             i = 1 as u_int;
-            while i < args_count(&*args) {
+            while i < args_count(args) {
                 let key = format_message_with(|out| write!(out, "{}", i));
                 format_add(ft, &key, |out| {
                     write_cstr(
                         out,
                         nullable_cstr(
-                            args_string(&mut *(args), i)
-                                .map_or(std::ptr::null(), |value| value.as_ptr()),
+                            args_string(args, i).map_or(std::ptr::null(), |value| value.as_ptr()),
                         ),
                     )
                 });
@@ -231,7 +224,7 @@ unsafe fn cmd_run_shell_exec(
     }
     if let Some(pane) = pane_owner
         .as_ref()
-        .filter(|_| args_has(&*args, 't' as i32 as u_char) != 0)
+        .filter(|_| args_has(args, 't' as i32 as u_char) != 0)
     {
         cdata.wp_id = pane.id() as ::core::ffi::c_int;
     } else {
@@ -243,7 +236,7 @@ unsafe fn cmd_run_shell_exec(
         cdata.client = tc_owner.clone();
         cdata.flags |= JOB_NOWAIT;
     }
-    if args_has(&*args, 'E' as i32 as u_char) != 0 {
+    if args_has(args, 'E' as i32 as u_char) != 0 {
         cdata.flags |= JOB_SHOWSTDERR;
     }
     cdata.s = if s.is_none() { None } else { s.clone() };

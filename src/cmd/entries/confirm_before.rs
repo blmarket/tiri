@@ -6,7 +6,7 @@ use crate::cmd::queue::{
     cmdq_append, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_target_client,
     cmdq_insert_after, cmdq_resumed,
 };
-use crate::cmd::{cmd_get_args_mut, cmd_list_first};
+use crate::cmd::{cmd_get_args, cmd_list_first};
 use crate::format::bytes::nullable_cstr;
 use crate::server_client::Client as _;
 use crate::shared::abi::*;
@@ -61,25 +61,24 @@ pub static cmd_confirm_before_entry: cmd_entry = {
     }
 };
 fn cmd_confirm_before_args_parse(
-    _args: &mut args,
+    _args: &args,
     _idx: u_int,
 ) -> Result<args_parse_type, ArgsParseError> {
     Ok(ARGS_PARSE_COMMANDS_OR_STRING)
 }
 unsafe fn cmd_confirm_before_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let mut confirm_key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut wait: ::core::ffi::c_int =
-        (args_has(&*args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
+        (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
     let Some(cmdlist) = args_make_commands_now(self_0.clone(), item_handle, 0, 1) else {
         return CmdOutcome::Error;
     };
@@ -88,9 +87,9 @@ unsafe fn cmd_confirm_before_exec(
         confirm_key: 0,
         default_yes: 0,
     });
-    cdata.default_yes = args_has(&*args, 'y' as i32 as u_char);
+    cdata.default_yes = args_has(args, 'y' as i32 as u_char);
     confirm_key =
-        args_get(&*(args), 'c' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+        args_get(args, 'c' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !confirm_key.is_null() {
         if *confirm_key.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
             == '\0' as i32
@@ -107,7 +106,7 @@ unsafe fn cmd_confirm_before_exec(
     } else {
         cdata.confirm_key = 'y' as i32 as u_char;
     }
-    let new_prompt = if let Some(prompt) = args_get(&*(args), 'p' as i32 as u_char) {
+    let new_prompt = if let Some(prompt) = args_get(args, 'p' as i32 as u_char) {
         let mut bytes = prompt.to_bytes().to_vec();
         bytes.push(b' ');
         CString::new(bytes).expect("C string prompt contains no interior NUL")

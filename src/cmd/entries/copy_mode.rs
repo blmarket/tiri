@@ -1,6 +1,6 @@
-use crate::arguments::{args, args_has, args_parse};
+use crate::arguments::{args_has, args_parse};
 use crate::cmd::queue::{cmdq_get_client, cmdq_get_event};
-use crate::cmd::{cmd_get_args_mut, cmd_get_entry, cmd_mouse_pane};
+use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
 use crate::server_client::Client as _;
 use crate::shared::abi::*;
 use crate::shared::client::ClientRef;
@@ -67,12 +67,11 @@ pub static cmd_clock_mode_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_copy_mode_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
     let mut source_state = crate::cmd::queue::cmdq_get_source(&item).clone();
@@ -84,11 +83,11 @@ unsafe fn cmd_copy_mode_exec(
     let mut s: Option<SessionRef> = None;
     let mut pane_owner = (*target).wp.upgrade().expect("copy-mode target pane");
     let mut line_numbers: ::core::ffi::c_int = 0;
-    if args_has(&*args, 'q' as i32 as u_char) != 0 {
+    if args_has(args, 'q' as i32 as u_char) != 0 {
         pane_owner.reset_all_modes();
         return CmdOutcome::Normal;
     }
-    if args_has(&*args, 'M' as i32 as u_char) != 0 {
+    if args_has(args, 'M' as i32 as u_char) != 0 {
         let mut mouse_session_owner = None;
         let mouse_pane_owner = cmd_mouse_pane(&(*event).m, Some(&mut mouse_session_owner), None);
         s = mouse_session_owner.clone();
@@ -113,7 +112,7 @@ unsafe fn cmd_copy_mode_exec(
         pane_owner.set_mode(None, &window_clock_mode, Some(item_handle), None, None);
         return CmdOutcome::Normal;
     }
-    let source_owner = if args_has(&*args, 's' as i32 as u_char) != 0 {
+    let source_owner = if args_has(args, 's' as i32 as u_char) != 0 {
         (*source).wp.upgrade()
     } else {
         Some(pane_owner.clone())
@@ -136,23 +135,23 @@ unsafe fn cmd_copy_mode_exec(
         &window_copy_mode,
         Some(item_handle),
         None,
-        args.as_mut(),
+        Some(args),
     ) == 0
     {
         window_copy_set_line_numbers(&pane_owner, line_numbers);
-        if args_has(&*args, 'M' as i32 as u_char) != 0 {
+        if args_has(args, 'M' as i32 as u_char) != 0 {
             window_copy_start_drag(c_owner.as_ref(), &mut (*event).m);
         }
     } else {
         window_copy_set_line_numbers(&pane_owner, line_numbers);
     }
-    if args_has(&*args, 'u' as i32 as u_char) != 0 {
+    if args_has(args, 'u' as i32 as u_char) != 0 {
         window_copy_pageup(&pane_owner);
     }
-    if args_has(&*args, 'd' as i32 as u_char) != 0 {
-        window_copy_pagedown(&pane_owner, args_has(&*args, 'e' as i32 as u_char));
+    if args_has(args, 'd' as i32 as u_char) != 0 {
+        window_copy_pagedown(&pane_owner, args_has(args, 'e' as i32 as u_char));
     }
-    if args_has(&*args, 'S' as i32 as u_char) != 0 {
+    if args_has(args, 'S' as i32 as u_char) != 0 {
         let Some(c) = c.as_ref() else {
             return CmdOutcome::Normal;
         };
@@ -163,7 +162,7 @@ unsafe fn cmd_copy_mode_exec(
             slider,
             (*event).m.y,
             tty_oy,
-            args_has(&*args, 'e' as i32 as u_char),
+            args_has(args, 'e' as i32 as u_char),
         );
         return CmdOutcome::Normal;
     }

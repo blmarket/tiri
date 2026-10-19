@@ -2,7 +2,7 @@ use crate::arguments::{
     args, args_count, args_has, args_parse, args_string, args_strtonum_and_expand_result,
 };
 use crate::cmd::queue::{cmdq_error, cmdq_get_event, cmdq_get_target_client};
-use crate::cmd::{cmd_get_args_mut, cmd_get_entry, cmd_mouse_pane};
+use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
 use crate::format::bytes::write_cstr;
 use crate::key_bindings::{key_bindings_dispatch, key_bindings_get, key_bindings_get_table};
 use crate::key_string::key_string_parse_cstr;
@@ -93,7 +93,7 @@ unsafe fn cmd_send_keys_inject_key(
     let pane = (*target).pane_handle().expect("key target pane");
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
     let mut new_after = after.clone();
-    if args_has(&*args, 'K' as i32 as u_char) != 0 {
+    if args_has(args, 'K' as i32 as u_char) != 0 {
         if tc.is_none() {
             return std::rc::Rc::downgrade(item_handle);
         }
@@ -157,18 +157,17 @@ unsafe fn cmd_send_keys_inject_key(
 unsafe fn cmd_send_keys_inject_string(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     after_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
-    mut args: *mut args,
+    args: &args,
     mut i: ::core::ffi::c_int,
 ) -> std::rc::Weak<std::cell::RefCell<cmdq_item>> {
     let mut after = after_handle.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-    let mut s: &std::ffi::CStr =
-        args_string(&mut *(args), i as u_int).expect("argument is present");
+    let mut s: &std::ffi::CStr = args_string(args, i as u_int).expect("argument is present");
     let mut uc: utf8_char = 0;
     let mut key: key_code = 0;
     let mut endptr: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut n: ::core::ffi::c_long = 0;
     let mut literal: ::core::ffi::c_int = 0;
-    if args_has(&*args, 'H' as i32 as u_char) != 0 {
+    if args_has(args, 'H' as i32 as u_char) != 0 {
         n = strtol(s.as_ptr(), &raw mut endptr, 16 as ::core::ffi::c_int);
         if s.is_empty()
             || n < 0 as ::core::ffi::c_long
@@ -180,17 +179,17 @@ unsafe fn cmd_send_keys_inject_string(
         return cmd_send_keys_inject_key(
             item_handle,
             after.upgrade().as_ref(),
-            &*args,
+            args,
             KEYC_LITERAL | n as key_code,
         );
     }
-    literal = args_has(&*args, 'l' as i32 as u_char);
+    literal = args_has(args, 'l' as i32 as u_char);
     if literal == 0 {
         key = key_string_parse_cstr(s).unwrap_or(KEYC_UNKNOWN);
         if key != KEYC_NONE as ::core::ffi::c_ulong as key_code
             && key != KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code
         {
-            after = cmd_send_keys_inject_key(item_handle, after.upgrade().as_ref(), &*args, key);
+            after = cmd_send_keys_inject_key(item_handle, after.upgrade().as_ref(), args, key);
             if after.strong_count() != 0 {
                 return after;
             }
@@ -216,21 +215,19 @@ unsafe fn cmd_send_keys_inject_string(
                 current_block_20 = 12147880666119273379;
             }
             if current_block_20 == 12147880666119273379 {
-                after =
-                    cmd_send_keys_inject_key(item_handle, after.upgrade().as_ref(), &*args, key);
+                after = cmd_send_keys_inject_key(item_handle, after.upgrade().as_ref(), args, key);
             }
         }
     }
     after
 }
 unsafe fn cmd_send_keys_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let mouse_pane_owner;
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let tc_owner = cmdq_get_target_client(Some(&*item));
@@ -246,17 +243,17 @@ unsafe fn cmd_send_keys_exec(
     let mut key: key_code = 0;
     let mut i: u_int = 0;
     let mut np: u_int = 1 as u_int;
-    let mut count: u_int = args_count(&*args);
+    let mut count: u_int = args_count(args);
     if !tc.is_none()
         && tc.as_ref().expect("live client").flags() & CLIENT_READONLY as uint64_t != 0
-        && args_has(&*args, 'X' as i32 as u_char) == 0
+        && args_has(args, 'X' as i32 as u_char) == 0
     {
         cmdq_error(item_handle, |out| out.write_all(b"client is read-only"));
         return CmdOutcome::Error;
     }
-    if args_has(&*args, 'N' as i32 as u_char) != 0 {
+    if args_has(args, 'N' as i32 as u_char) != 0 {
         np = match args_strtonum_and_expand_result(
-            &*args,
+            args,
             'N' as i32 as u_char,
             1 as ::core::ffi::c_longlong,
             UINT_MAX as ::core::ffi::c_longlong,
@@ -271,8 +268,7 @@ unsafe fn cmd_send_keys_exec(
                 return CmdOutcome::Error;
             }
         };
-        if !!wme.is_alive() && (args_has(&*args, 'X' as i32 as u_char) != 0 || count == 0 as u_int)
-        {
+        if !!wme.is_alive() && (args_has(args, 'X' as i32 as u_char) != 0 || count == 0 as u_int) {
             if wme.get_unchecked().mode.command.is_none() {
                 cmdq_error(item_handle, |out| out.write_all(b"not in a mode"));
                 return CmdOutcome::Error;
@@ -280,7 +276,7 @@ unsafe fn cmd_send_keys_exec(
             wme.get_mut_unchecked().prefix = np;
         }
     }
-    if args_has(&*args, 'X' as i32 as u_char) != 0 {
+    if args_has(args, 'X' as i32 as u_char) != 0 {
         if !wme.is_alive() || wme.get_unchecked().mode.command.is_none() {
             cmdq_error(item_handle, |out| out.write_all(b"not in a mode"));
             return CmdOutcome::Error;
@@ -294,12 +290,12 @@ unsafe fn cmd_send_keys_exec(
             tc_owner.as_ref(),
             (*target).s.upgrade().as_ref(),
             wl,
-            &mut *args,
+            args,
             m,
         );
         return CmdOutcome::Normal;
     }
-    if args_has(&*args, 'M' as i32 as u_char) != 0 {
+    if args_has(args, 'M' as i32 as u_char) != 0 {
         let mut mouse_session_owner = None;
         mouse_pane_owner = cmd_mouse_pane(&*m, Some(&mut mouse_session_owner), None);
         s = mouse_session_owner.clone();
@@ -319,7 +315,7 @@ unsafe fn cmd_send_keys_exec(
         cmd_get_entry(self_0.get_unchecked()),
         &cmd_send_prefix_entry,
     ) {
-        if args_has(&*args, '2' as i32 as u_char) != 0 {
+        if args_has(args, '2' as i32 as u_char) != 0 {
             key = options_get_number(
                 &s.as_ref().expect("live session").borrow_options_mut(),
                 c"prefix2",
@@ -330,30 +326,24 @@ unsafe fn cmd_send_keys_exec(
                 c"prefix",
             ) as key_code;
         }
-        cmd_send_keys_inject_key(item_handle, Some(item_handle), &*args, key);
+        cmd_send_keys_inject_key(item_handle, Some(item_handle), args, key);
         return CmdOutcome::Normal;
     }
-    if args_has(&*args, 'R' as i32 as u_char) != 0 {
+    if args_has(args, 'R' as i32 as u_char) != 0 {
         pane.reset_input();
     }
     if count == 0 as u_int {
-        if args_has(&*args, 'N' as i32 as u_char) != 0
-            || args_has(&*args, 'R' as i32 as u_char) != 0
-        {
+        if args_has(args, 'N' as i32 as u_char) != 0 || args_has(args, 'R' as i32 as u_char) != 0 {
             return CmdOutcome::Normal;
         }
-        after = if args_has(&*args, 'K' as i32 as u_char) != 0 {
+        after = if args_has(args, 'K' as i32 as u_char) != 0 {
             std::rc::Rc::downgrade(item_handle)
         } else {
             std::rc::Weak::new()
         };
         while np != 0 as u_int {
-            after = cmd_send_keys_inject_key(
-                item_handle,
-                after.upgrade().as_ref(),
-                &*args,
-                (*event).key,
-            );
+            after =
+                cmd_send_keys_inject_key(item_handle, after.upgrade().as_ref(), args, (*event).key);
             np = np.wrapping_sub(1);
         }
         return CmdOutcome::Normal;

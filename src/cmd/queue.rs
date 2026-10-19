@@ -1,11 +1,9 @@
 use crate::arguments::{
-    args, args_count, args_flag_values, args_flags, args_get, args_print_cstring, args_string,
+    args_count, args_flag_values, args_flags, args_get, args_print_cstring, args_string,
 };
 use crate::cfg::{cfg_add_cause, cfg_finished};
 use crate::cmd::find::cmd_find_client;
-use crate::cmd::{
-    cmd_get_args_mut, cmd_get_entry, cmd_get_group, cmd_get_source, cmd_print_cstring,
-};
+use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_get_group, cmd_get_source, cmd_print_cstring};
 use crate::control::{control_write, control_write_guard};
 use crate::events::events_fire;
 use crate::events_payload::{
@@ -523,12 +521,11 @@ pub unsafe fn cmdq_insert_hook(
     current: Option<&cmd_find_state>,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
-    let (mut cmd, flags) = {
+    let (cmd, flags) = {
         let item = item_handle.borrow();
         (item.command_handle(), cmdq_get_flags(&item))
     };
-    let mut args_0: *mut args =
-        cmd_get_args_mut(cmd.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args_0 = cmd_get_args(cmd.get_unchecked());
     let mut i: u_int = 0;
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if flags & CMDQ_STATE_NOHOOKS != 0 {
@@ -544,24 +541,23 @@ pub unsafe fn cmdq_insert_hook(
         c"_cmdq_item",
         crate::shared::events::EventPayloadIdentity::QueueItem(std::rc::Rc::downgrade(item_handle)),
     );
-    let arguments = args_print_cstring(&*args_0);
+    let arguments = args_print_cstring(args_0);
     event_payload_set_string(&mut ep, c"arguments", |out| write_cstr(out, &*arguments));
     i = 0 as u_int;
-    while i < args_count(&*args_0) {
+    while i < args_count(args_0) {
         let key = format_message_with(|out| write!(out, "argument_{}", i));
         event_payload_set_string(&mut ep, &key, |out| {
             write_cstr(
                 out,
                 nullable_cstr(
-                    args_string(&mut *(args_0), i).map_or(std::ptr::null(), |value| value.as_ptr()),
+                    args_string(args_0, i).map_or(std::ptr::null(), |value| value.as_ptr()),
                 ),
             )
         });
         i = i.wrapping_add(1);
     }
-    for flag in args_flags(&*args_0) {
-        value =
-            args_get(&*(args_0), flag as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    for flag in args_flags(args_0) {
+        value = args_get(args_0, flag as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
         let key = format_message_with(|out| {
             out.write_all(b"flag_")?;
             out.write_all(&[flag])
@@ -572,7 +568,7 @@ pub unsafe fn cmdq_insert_hook(
             event_payload_set_string(&mut ep, &key, |out| write_cstr(out, nullable_cstr(value)));
         }
         i = 0 as u_int;
-        for av in args_flag_values(&*args_0, flag as u_char) {
+        for av in args_flag_values(args_0, flag as u_char) {
             let key = format_message_with(|out| {
                 out.write_all(b"flag_")?;
                 out.write_all(&[flag])?;
@@ -863,8 +859,7 @@ unsafe fn cmdq_find_flag(
         return CmdOutcome::Normal;
     }
     value = args_get(
-        &*(cmd_get_args_mut(item_handle.borrow().command_handle().get_mut_unchecked())
-            .map_or(std::ptr::null_mut(), |args| args)),
+        cmd_get_args(item_handle.borrow().command_handle().get_unchecked()),
         flag.flag as u_char,
     )
     .map_or(std::ptr::null(), |value| value.as_ptr());
@@ -941,7 +936,7 @@ unsafe fn cmdq_fire_command(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let mut current_block: u64;
-    let (saved_client, state, mut cmd, saved, group) = {
+    let (saved_client, state, cmd, saved, group) = {
         let item = item_handle.borrow();
         (
             cmdq_get_client(Some(&item)),
@@ -952,8 +947,7 @@ unsafe fn cmdq_fire_command(
         )
     };
     let name = cmdq_name(saved_client.as_ref());
-    let mut args: *mut args =
-        cmd_get_args_mut(cmd.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(cmd.get_unchecked());
     let entry = cmd_get_entry(cmd.get_unchecked());
     let mut tc = None;
     let mut retval: CmdOutcome = CmdOutcome::Normal;
@@ -1008,7 +1002,7 @@ unsafe fn cmdq_fire_command(
         tc = cmd_find_client(
             Some(item_handle),
             nullable_cstr(
-                args_get(&*(args), 'c' as i32 as u_char)
+                args_get(args, 'c' as i32 as u_char)
                     .map_or(std::ptr::null(), |value| value.as_ptr()),
             ),
             quiet,
@@ -1023,7 +1017,7 @@ unsafe fn cmdq_fire_command(
         tc = cmd_find_client(
             Some(item_handle),
             nullable_cstr(
-                args_get(&*(args), 't' as i32 as u_char)
+                args_get(args, 't' as i32 as u_char)
                     .map_or(std::ptr::null(), |value| value.as_ptr()),
             ),
             quiet,
@@ -1222,7 +1216,7 @@ pub unsafe fn cmdq_error(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
-    let (c_owner, mut cmd) = {
+    let (c_owner, cmd) = {
         let item = item_handle.borrow();
         (cmdq_get_client(Some(&item)), item.command_handle())
     };

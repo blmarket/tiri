@@ -23,7 +23,7 @@ pub unsafe fn options_scope_from_name(
         return Err(options_string_cause(c"unknown option: %s", &[name]));
     };
     let kind = if definition.scope == OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE {
-        if args_has(&*args, b'p') != 0 {
+        if args_has(args, b'p') != 0 {
             OPTIONS_TABLE_PANE
         } else {
             OPTIONS_TABLE_WINDOW
@@ -38,11 +38,11 @@ pub unsafe fn options_scope_from_flags(
     window: i32,
     fs: &cmd_find_state,
 ) -> Result<(i32, OptionsScope), CString> {
-    let kind = if args_has(&*args, b's') != 0 {
+    let kind = if args_has(args, b's') != 0 {
         OPTIONS_TABLE_SERVER
-    } else if args_has(&*args, b'p') != 0 {
+    } else if args_has(args, b'p') != 0 {
         OPTIONS_TABLE_PANE
-    } else if window != 0 || args_has(&*args, b'w') != 0 {
+    } else if window != 0 || args_has(args, b'w') != 0 {
         OPTIONS_TABLE_WINDOW
     } else {
         OPTIONS_TABLE_SESSION
@@ -54,7 +54,7 @@ unsafe fn options_select_scope(
     fs: &cmd_find_state,
     kind: i32,
 ) -> Result<(i32, OptionsScope), CString> {
-    let global = args_has(&*args, b'g') != 0;
+    let global = args_has(args, b'g') != 0;
     let (scope, noun) = match kind {
         OPTIONS_TABLE_SERVER => (Some(OptionsScope::GlobalServer), c"server"),
         OPTIONS_TABLE_SESSION if global => (Some(OptionsScope::GlobalSession), c"session"),
@@ -85,7 +85,7 @@ unsafe fn options_select_scope(
     if let Some(scope) = scope {
         return Ok((kind, scope));
     }
-    let target = args_get(&*args, b't');
+    let target = args_get(args, b't');
     let diagnostic = if let Some(target) = target {
         let mut bytes = b"no such ".to_vec();
         bytes.extend_from_slice(noun.to_bytes());

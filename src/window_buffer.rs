@@ -148,7 +148,7 @@ pub static window_buffer_mode: window_mode = {
                     refbox::Weak<window_mode_entry>,
                     Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
                     Option<&cmd_find_state>,
-                    Option<&mut args>,
+                    Option<&args>,
                 ) -> bool,
         ),
         free: Some(window_buffer_free as unsafe fn(refbox::Weak<window_mode_entry>) -> ()),
@@ -405,7 +405,7 @@ unsafe fn window_buffer_init(
     mut wme: refbox::Weak<window_mode_entry>,
     _item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     fs: Option<&cmd_find_state>,
-    mut args: Option<&mut args>,
+    args: Option<&args>,
 ) -> bool {
     let mode_pane_owner = wme
         .get_unchecked()
@@ -433,10 +433,7 @@ unsafe fn window_buffer_init(
     } else {
         WINDOW_BUFFER_DEFAULT_KEY_FORMAT.to_owned()
     };
-    let command = if let Some(args) = args
-        .as_deref_mut()
-        .filter(|args| args_count(args) != 0 as u_int)
-    {
+    let command = if let Some(args) = args.filter(|args| args_count(args) != 0 as u_int) {
         args_string(args, 0 as u_int)
             .expect("argument is present")
             .to_owned()

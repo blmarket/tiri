@@ -1,5 +1,5 @@
-use crate::arguments::{args, args_has, args_parse};
-use crate::cmd::cmd_get_args_mut;
+use crate::arguments::{args_has, args_parse};
+use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{cmdq_get_target_client, cmdq_print};
 use crate::format::bytes::write_cstr;
 use crate::format::{
@@ -40,15 +40,14 @@ pub static cmd_show_messages_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_show_messages_terminals(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     mut blank: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let item = item_handle.borrow();
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let tc_owner = cmdq_get_target_client(Some(&*item));
-    let target = if args_has(&*args, b't') != 0 {
+    let target = if args_has(args, b't') != 0 {
         tc_owner.as_ref()
     } else {
         None
@@ -75,20 +74,19 @@ unsafe fn cmd_show_messages_terminals(
 }
 
 unsafe fn cmd_show_messages_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let mut done: ::core::ffi::c_int = 0;
     let mut blank: ::core::ffi::c_int = 0;
     blank = 0 as ::core::ffi::c_int;
     done = blank;
-    if args_has(&*args, 'T' as i32 as u_char) != 0 {
+    if args_has(args, 'T' as i32 as u_char) != 0 {
         blank = cmd_show_messages_terminals(self_0.clone(), item_handle, blank);
         done = 1 as ::core::ffi::c_int;
     }
-    if args_has(&*args, 'J' as i32 as u_char) != 0 {
+    if args_has(args, 'J' as i32 as u_char) != 0 {
         job_print_summary(item_handle, blank);
         done = 1 as ::core::ffi::c_int;
     }

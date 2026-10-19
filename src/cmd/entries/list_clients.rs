@@ -1,5 +1,5 @@
-use crate::arguments::{args, args_get, args_has, args_parse};
-use crate::cmd::cmd_get_args_mut;
+use crate::arguments::{args_get, args_has, args_parse};
+use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print};
 use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
@@ -44,13 +44,12 @@ pub static cmd_list_clients_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_list_clients_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let queue_client = cmdq_get_client(Some(&*item));
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let mut s: Option<SessionRef> = None;
@@ -63,29 +62,28 @@ unsafe fn cmd_list_clients_exec(
         reversed: 0,
         order_seq: &[],
     };
-    if args_has(&*args, 't' as i32 as u_char) != 0 {
+    if args_has(args, 't' as i32 as u_char) != 0 {
         s = (*target).session_handle();
     } else {
         s = None;
     }
     template =
-        args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+        args_get(args, 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if template.is_null() {
         template = LIST_CLIENTS_TEMPLATE.as_ptr();
     }
-    filter =
-        args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    filter = args_get(args, 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     sort_crit.order = sort_order_from_string(nullable_cstr(
-        args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
+        args_get(args, 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
     ));
     if sort_crit.order as ::core::ffi::c_uint
         == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
-        && args_has(&*args, 'O' as i32 as u_char) != 0
+        && args_has(args, 'O' as i32 as u_char) != 0
     {
         cmdq_error(item_handle, |out| out.write_all(b"invalid sort order"));
         return CmdOutcome::Error;
     }
-    sort_crit.reversed = args_has(&*args, 'r' as i32 as u_char);
+    sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
     let clients_sorted = sort_get_clients(&sort_crit);
     i = 0 as u_int;
     while (i as usize) < clients_sorted.len() {

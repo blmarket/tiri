@@ -1,5 +1,5 @@
 use crate::arguments::{args, args_get, args_has, args_parse, args_string};
-use crate::cmd::cmd_get_args_mut;
+use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print, cmdq_wait, CmdqWaiter};
 use crate::events::{events_add_sink, events_remove_sink};
 use crate::events_payload::{
@@ -180,29 +180,28 @@ fn cmd_wait_for_prune_expired(wc: &mut wait_channel) {
     wc.lockers.retain(|waiter| !waiter.is_cancelled());
 }
 unsafe fn cmd_wait_for_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut name: &CStr = args_string(&mut *(args), 0 as u_int).expect("argument is present");
-    if args_has(&*args, 'E' as i32 as u_char) != 0 {
-        return cmd_wait_for_event(item_handle, name, &*args);
+    let args = cmd_get_args(self_0.get_unchecked());
+    let mut name: &CStr = args_string(args, 0 as u_int).expect("argument is present");
+    if args_has(args, 'E' as i32 as u_char) != 0 {
+        return cmd_wait_for_event(item_handle, name, args);
     }
     let wc = wait_channels_find(&mut *wait_channels_ptr(), name);
-    if args_has(&*args, 'l' as i32 as u_char) != 0 {
+    if args_has(args, 'l' as i32 as u_char) != 0 {
         return cmd_wait_for_list(item_handle, wc);
     }
-    if args_has(&*args, 'w' as i32 as u_char) != 0 {
-        return cmd_wait_for_wake(&*args, wc.map_or(std::ptr::null_mut(), std::ptr::from_mut));
+    if args_has(args, 'w' as i32 as u_char) != 0 {
+        return cmd_wait_for_wake(args, wc.map_or(std::ptr::null_mut(), std::ptr::from_mut));
     }
-    if args_has(&*args, 'S' as i32 as u_char) != 0 {
+    if args_has(args, 'S' as i32 as u_char) != 0 {
         return cmd_wait_for_signal(name, wc.map_or(std::ptr::null_mut(), std::ptr::from_mut));
     }
-    if args_has(&*args, 'L' as i32 as u_char) != 0 {
+    if args_has(args, 'L' as i32 as u_char) != 0 {
         return cmd_wait_for_lock(item_handle, name, wc);
     }
-    if args_has(&*args, 'U' as i32 as u_char) != 0 {
+    if args_has(args, 'U' as i32 as u_char) != 0 {
         return cmd_wait_for_unlock(
             item_handle,
             name,
@@ -304,7 +303,7 @@ unsafe fn cmd_wait_for_event(
     args: &args,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let mut filter: Option<&CStr> = args_get(&*(args), 'F' as i32 as u_char);
+    let mut filter: Option<&CStr> = args_get(args, 'F' as i32 as u_char);
     if hooks_valid_event_name(name) == 0 {
         cmdq_error(item_handle, |out| {
             out.write_all(b"invalid event: ")?;
@@ -312,10 +311,10 @@ unsafe fn cmd_wait_for_event(
         });
         return CmdOutcome::Error;
     }
-    if args_has(&*args, 'l' as i32 as u_char) != 0 {
+    if args_has(args, 'l' as i32 as u_char) != 0 {
         return cmd_wait_for_event_list(item_handle, name);
     }
-    if args_has(&*args, 'w' as i32 as u_char) != 0 {
+    if args_has(args, 'w' as i32 as u_char) != 0 {
         return cmd_wait_for_event_wake(item_handle, name, args);
     }
     if cmdq_get_client(Some(&*item)).is_none() {
@@ -337,7 +336,7 @@ unsafe fn cmd_wait_for_event(
             sink,
             name: name.to_owned(),
             filter: filter.map(CStr::to_owned),
-            verbose: args_has(&*args, 'v' as i32 as u_char),
+            verbose: args_has(args, 'v' as i32 as u_char),
         });
     retval
 }
@@ -364,7 +363,7 @@ unsafe fn cmd_wait_for_event_wake(
     args: &args,
 ) -> CmdOutcome {
     cmd_wait_for_event_prune_expired(&mut *wait_event_items_ptr());
-    let mut client_name: &CStr = args_get(&*(args), 'w' as i32 as u_char).expect("-w has a value");
+    let mut client_name: &CStr = args_get(args, 'w' as i32 as u_char).expect("-w has a value");
     let mut index = 0;
     while index < wait_event_items_ptr().as_ref().unwrap().len() {
         let wei = &wait_event_items_ptr().as_ref().unwrap()[index];
@@ -408,7 +407,7 @@ unsafe fn cmd_wait_for_list(
     CmdOutcome::Normal
 }
 unsafe fn cmd_wait_for_wake(args: &args, mut wc: *mut wait_channel) -> CmdOutcome {
-    let mut client_name: &CStr = args_get(&*(args), 'w' as i32 as u_char).expect("-w has a value");
+    let mut client_name: &CStr = args_get(args, 'w' as i32 as u_char).expect("-w has a value");
     if !wc.is_null() {
         cmd_wait_for_prune_expired(&mut *wc);
         for list in [&raw mut (*wc).waiters, &raw mut (*wc).lockers] {
@@ -840,16 +839,14 @@ mod tests {
             .into_iter()
             .chain(flags.iter().copied())
             .chain([name])
-            .map(|value| crate::arguments::args_value::string(value.to_owned()))
+            .map(crate::arguments::ParseValue::String)
             .collect::<Vec<_>>();
-        let mut args = crate::arguments::args_parse(&cmd_wait_for_entry.args, &values).unwrap();
+        let args = crate::arguments::args_parse(&cmd_wait_for_entry.args, &values).unwrap();
         let item = cmdq_append(
             Some(owner),
             cmdq_get_callback_owned(
                 c"wait-for",
-                Some(Box::new(move |item| {
-                    cmd_wait_for_event(item, name, &mut *args)
-                })),
+                Some(Box::new(move |item| cmd_wait_for_event(item, name, &args))),
             ),
         );
         cmdq_next(Some(owner));

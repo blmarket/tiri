@@ -1,5 +1,5 @@
-use crate::arguments::{args, args_get, args_has, args_parse};
-use crate::cmd::cmd_get_args_mut;
+use crate::arguments::{args_get, args_has, args_parse};
+use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{cmdq_error, cmdq_get_client};
 use crate::format::{format_create, format_defaults, format_expand_cstring, format_true};
 use crate::server_fn::{server_destroy_session, server_redraw_session};
@@ -43,26 +43,24 @@ pub static cmd_kill_session_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_kill_session_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let source = (*target).s.upgrade().expect("live target session");
     let mut sg = crate::shared::session::SessionGroupWeak::new();
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut filter: Option<&CStr> = args_get(&*(args), 'f' as i32 as u_char);
+    let mut filter: Option<&CStr> = args_get(args, 'f' as i32 as u_char);
     if filter.is_some()
-        && (args_has(&*args, 'a' as i32 as u_char) == 0
-            || args_has(&*args, 'C' as i32 as u_char) != 0)
+        && (args_has(args, 'a' as i32 as u_char) == 0 || args_has(args, 'C' as i32 as u_char) != 0)
     {
         cmdq_error(item_handle, |out| out.write_all(b"-f only valid with -a"));
         return CmdOutcome::Error;
     }
-    if args_has(&*args, 'C' as i32 as u_char) != 0 {
+    if args_has(args, 'C' as i32 as u_char) != 0 {
         wl = source.with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
         while wl.is_alive() {
             wl.get_unchecked()
@@ -73,9 +71,9 @@ unsafe fn cmd_kill_session_exec(
             wl = winlinks_next(wl.get_unchecked());
         }
         server_redraw_session(&source);
-    } else if args_has(&*args, 'a' as i32 as u_char) != 0 {
+    } else if args_has(args, 'a' as i32 as u_char) != 0 {
         return cmd_kill_session_all(item_handle, filter);
-    } else if args_has(&*args, 'g' as i32 as u_char) != 0 && {
+    } else if args_has(args, 'g' as i32 as u_char) != 0 && {
         sg = crate::session::session_groups::for_session(&std::rc::Rc::downgrade(&source));
         sg.is_alive()
     } {

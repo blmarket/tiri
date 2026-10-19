@@ -1,6 +1,6 @@
-use crate::arguments::{args, args_get, args_has, args_parse};
+use crate::arguments::{args_get, args_has, args_parse};
 use crate::cmd::queue::{cmdq_error, cmdq_get_client};
-use crate::cmd::{cmd_get_args_mut, cmd_get_entry};
+use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::format::{format_create, format_defaults, format_expand_cstring, format_true};
 use crate::resize::recalculate_sizes;
 use crate::server_fn::{server_kill_window, server_renumber_all, server_unlink_window};
@@ -66,18 +66,17 @@ pub static cmd_unlink_window_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_kill_window_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let mut target: *mut cmd_find_state = &mut target_state;
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut s: Option<SessionRef> = (*target).session_handle();
-    let mut filter: Option<&CStr> = args_get(&*(args), 'f' as i32 as u_char);
-    if filter.is_some() && args_has(&*args, 'a' as i32 as u_char) == 0 {
+    let mut filter: Option<&CStr> = args_get(args, 'f' as i32 as u_char);
+    if filter.is_some() && args_has(args, 'a' as i32 as u_char) == 0 {
         cmdq_error(item_handle, |out| out.write_all(b"-f only valid with -a"));
         return CmdOutcome::Error;
     }
@@ -85,7 +84,7 @@ unsafe fn cmd_kill_window_exec(
         cmd_get_entry(self_0.get_unchecked()),
         &cmd_unlink_window_entry,
     ) {
-        if args_has(&*args, 'k' as i32 as u_char) == 0
+        if args_has(args, 'k' as i32 as u_char) == 0
             && (crate::shared::session::SessionRef::window_linked_outside_group(
                 s.as_ref(),
                 wl.get_unchecked().window_handle().expect("live window"),
@@ -101,7 +100,7 @@ unsafe fn cmd_kill_window_exec(
         recalculate_sizes();
         return CmdOutcome::Normal;
     }
-    if args_has(&*args, 'a' as i32 as u_char) != 0 {
+    if args_has(args, 'a' as i32 as u_char) != 0 {
         return cmd_kill_window_all(item_handle, filter);
     }
     server_kill_window(

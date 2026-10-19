@@ -1,6 +1,6 @@
-use crate::arguments::{args, args_get, args_has, args_parse, args_string};
+use crate::arguments::{args_get, args_has, args_parse, args_string};
 use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print_data, cmdq_resumed};
-use crate::cmd::{cmd_get_args_mut, cmd_get_entry};
+use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::file::{file_write_wait, FileOutcome};
 use crate::format::bytes::write_cstr;
 use crate::format::format_single_from_target_cstring;
@@ -84,18 +84,17 @@ unsafe fn cmd_save_buffer_done(
     }
 }
 unsafe fn cmd_save_buffer_exec(
-    mut self_0: refbox::Weak<cmd>,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let queue_client = cmdq_get_client(Some(&*item));
-    let mut args: *mut args =
-        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args(self_0.get_unchecked());
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     let pb;
     let mut flags: ::core::ffi::c_int = 0;
-    if let Some(bufname) = args_get(&*(args), 'b' as i32 as u_char) {
+    if let Some(bufname) = args_get(args, 'b' as i32 as u_char) {
         pb = paste_get_name(bufname);
         if pb.is_none() {
             cmdq_error(item_handle, |out| {
@@ -137,12 +136,12 @@ unsafe fn cmd_save_buffer_exec(
     let expanded_path = (!show_buffer).then(|| {
         format_single_from_target_cstring(
             item_handle,
-            args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
+            args_string(args, 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
         )
     });
     let dash_path = c"-";
     let path: &CStr = expanded_path.as_deref().unwrap_or(dash_path);
-    if args_has(&*args, 'a' as i32 as u_char) != 0 {
+    if args_has(args, 'a' as i32 as u_char) != 0 {
         flags = O_APPEND;
     } else {
         flags = O_TRUNC;
