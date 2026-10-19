@@ -4,13 +4,12 @@ use crate::screen_write::{
     screen_write_initctx, screen_write_redraw_line, screen_write_start_pane, screen_write_stop,
 };
 use crate::shared::screen::MODE_SYNC;
-use crate::shared::screen_write::screen_write_ctx;
 use crate::shared::tty::tty_ctx;
 use std::time::Duration;
 
-pub(super) unsafe fn start(pane: &Rc<UnsafeCell<window_pane>>) {
+pub(super) unsafe fn start(pane: &Rc<UnsafeCell<window_pane>>, base: &mut screen) {
     let wp = pane.get();
-    (*wp).base.mode |= MODE_SYNC;
+    base.mode |= MODE_SYNC;
     let observer = Rc::downgrade(pane);
     (*wp).sync_timer = Some(
         Timer::new(Duration::from_secs(1), move || {
@@ -21,8 +20,9 @@ pub(super) unsafe fn start(pane: &Rc<UnsafeCell<window_pane>>) {
                 ));
                 drop((*pane.get()).sync_timer.take());
                 if pane.is_synchronized() {
-                    (*pane.get()).base.mode &= !MODE_SYNC;
-                    flush_dirty(&pane);
+                    let base = &mut (*pane.get()).base;
+                    base.mode &= !MODE_SYNC;
+                    flush_dirty(&pane, base);
                 }
             }
         })
@@ -34,16 +34,17 @@ pub(super) unsafe fn start(pane: &Rc<UnsafeCell<window_pane>>) {
     ));
 }
 
-pub(super) unsafe fn stop(pane: &Rc<UnsafeCell<window_pane>>) {
-    if !pane.is_synchronized() {
+pub(super) unsafe fn stop(pane: &Rc<UnsafeCell<window_pane>>, writing: Option<&mut screen>) {
+    let base = match writing {
+        Some(base) => base,
+        None => &mut (*pane.get()).base,
+    };
+    if base.mode & MODE_SYNC == 0 {
         return;
     }
-    {
-        let state = &mut *pane.get();
-        drop(state.sync_timer.take());
-        state.base.mode &= !MODE_SYNC;
-    }
-    flush_dirty(pane);
+    drop((*pane.get()).sync_timer.take());
+    base.mode &= !MODE_SYNC;
+    flush_dirty(pane, base);
     log_debug(format_args!(
         "screen_write_stop_sync: %{} stopped sync mode",
         pane.id()
@@ -96,27 +97,18 @@ pub(super) unsafe fn should_draw_rows(
     false
 }
 
-unsafe fn flush_dirty(pane: &Rc<UnsafeCell<window_pane>>) {
+/// Draw the rows marked while synchronized; `base` is the pane's base screen.
+unsafe fn flush_dirty(pane: &Rc<UnsafeCell<window_pane>>, base: &mut screen) {
     let wp = pane.get();
     let mut r = Vec::new();
-    let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: std::rc::Weak::new(),
-        target: Default::default(),
-        flags: 0,
-        init_ctx_cb: None,
-        item: None,
-        scrolled: 0,
-        bg: 0,
-    };
     let mut ttyctx = tty_ctx::default();
-    let mut s: *mut screen = &raw mut (*wp).base;
     let mut y: u_int = 0;
-    let mut sy: u_int = (*s).grid().sy;
+    let mut sy: u_int = base.grid().sy;
     let mut lines: u_int = 0 as u_int;
     if (*wp).sync_dirty.is_none() {
         return;
     }
-    screen_write_start_pane(&mut ctx, pane, s);
+    let mut ctx = screen_write_start_pane(pane, base);
     screen_write_initctx(
         &mut ctx,
         &mut ttyctx,
@@ -141,7 +133,7 @@ unsafe fn flush_dirty(pane: &Rc<UnsafeCell<window_pane>>) {
         { (*wp).id },
         (lines) as u32
     ));
-    screen_write_stop(&mut ctx);
+    screen_write_stop(ctx);
     pane.clear_sync_dirty();
 }
 
@@ -161,16 +153,16 @@ mod tests {
             (*pane.get()).pipe_fd = None;
             let observer = Rc::downgrade(&pane);
             let pending = || (*pane.get()).sync_timer.is_some();
-            pane.start_sync();
-            pane.start_sync();
+            pane.start_sync(&mut (*pane.get()).base);
+            pane.start_sync(&mut (*pane.get()).base);
             assert!(pane.is_synchronized());
             assert!(pending());
             assert_eq!(Rc::strong_count(&pane), 1, "timer only observes the pane");
-            pane.stop_sync();
+            pane.stop_sync(None);
             assert!(!pane.is_synchronized());
             assert!(!pending());
-            pane.stop_sync();
-            pane.start_sync();
+            pane.stop_sync(None);
+            pane.start_sync(&mut (*pane.get()).base);
             assert!(!pane.should_draw_rows(true, 0, 1, 2));
             super::window_pane_tree::insert(pane.clone());
             pane.destroy();

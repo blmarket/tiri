@@ -81,10 +81,10 @@ use crate::shared::command::cmd_find_state;
 use crate::shared::display::*;
 use crate::shared::event::*;
 use crate::shared::grid::*;
-use crate::shared::input::input_request_type;
 use crate::shared::input::{
     input_ctx, input_end_type, input_param, input_request, input_state, input_transition,
 };
+use crate::shared::input::{input_handler_cb, input_request_type};
 use crate::shared::input::{
     INPUT_BUF_DEFAULT_SIZE, INPUT_REQUEST_CLIPBOARD, INPUT_REQUEST_PALETTE, INPUT_REQUEST_QUEUE,
 };
@@ -113,15 +113,6 @@ impl input_ctx {
         Self {
             wp: std::rc::Weak::new(),
             event: Default::default(),
-            ctx: screen_write_ctx {
-                wp: std::rc::Weak::new(),
-                target: Default::default(),
-                flags: 0,
-                init_ctx_cb: None,
-                item: None,
-                scrolled: 0,
-                bg: 0,
-            },
             palette: Default::default(),
             c: std::rc::Weak::new(),
             cell: Default::default(),
@@ -254,11 +245,15 @@ mod input_buffer_ownership_tests {
         unsafe {
             let mut ictx_owner = Box::new(input_ctx::new());
             let ictx = &raw mut *ictx_owner;
+            let mut s = screen::empty();
+            s.grid = Some(crate::grid::grid_create(1, 1, 0));
+            let mut ctx = screen_write_start(&mut s);
             assert_eq!((*ictx).input_buf.len(), INPUT_BUF_START as usize);
             for ch in (0..96).map(|i| if i == 17 { 0 } else { b'a' + (i % 26) }) {
                 (*ictx).ch = ch as i32;
-                input_input(ictx);
+                input_input(ictx, &mut ctx);
             }
+            screen_write_stop(ctx);
             assert_eq!((*ictx).input_len, 96);
             assert_eq!((&(*ictx).input_buf)[17], 0);
             assert_eq!((&(*ictx).input_buf)[96], 0);
@@ -1983,8 +1978,7 @@ static input_state_consume_st_table: [input_transition; 8] = {
     ]
 };
 static mut input_buffer_size: size_t = INPUT_BUF_DEFAULT_SIZE as size_t;
-unsafe fn input_stop_utf8(mut ictx: *mut input_ctx) {
-    let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
+unsafe fn input_stop_utf8(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx) {
     static mut rc: utf8_data = {
         utf8_data {
             data: *b"\xEF\xBF\xBD\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
@@ -1995,7 +1989,7 @@ unsafe fn input_stop_utf8(mut ictx: *mut input_ctx) {
     };
     if (*ictx).utf8started != 0 {
         (*ictx).cell.cell.data = utf8_copy(&rc);
-        screen_write_collect_add(&mut *sctx, &(*ictx).cell.cell);
+        screen_write_collect_add(sctx, &(*ictx).cell.cell);
     }
     (*ictx).utf8started = 0 as ::core::ffi::c_int;
 }
@@ -2051,24 +2045,21 @@ unsafe fn input_reset_cell(mut ictx: *mut input_ctx) {
     (*ictx).old_cx = 0 as u_int;
     (*ictx).old_cy = 0 as u_int;
 }
-unsafe fn input_save_state(mut ictx: *mut input_ctx) {
-    let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
-    let mut s: *mut screen = (*sctx).screen_ptr();
+unsafe fn input_save_state(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx) {
     (*ictx).old_cell = (*ictx).cell;
-    (*ictx).old_cx = (*s).cx;
-    (*ictx).old_cy = (*s).cy;
-    (*ictx).old_mode = (*s).mode;
+    (*ictx).old_cx = sctx.screen.cx;
+    (*ictx).old_cy = sctx.screen.cy;
+    (*ictx).old_mode = sctx.screen.mode;
 }
-unsafe fn input_restore_state(mut ictx: *mut input_ctx) {
-    let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
+unsafe fn input_restore_state(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx) {
     (*ictx).cell = (*ictx).old_cell;
     if (*ictx).old_mode & MODE_ORIGIN != 0 {
-        screen_write_mode_set(&mut *sctx, MODE_ORIGIN);
+        screen_write_mode_set(sctx, MODE_ORIGIN);
     } else {
-        screen_write_mode_clear(&mut *sctx, MODE_ORIGIN);
+        screen_write_mode_clear(sctx, MODE_ORIGIN);
     }
     screen_write_cursormove(
-        &mut *sctx,
+        sctx,
         (*ictx).old_cx as ::core::ffi::c_int,
         (*ictx).old_cy as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
@@ -2104,7 +2095,7 @@ impl Drop for input_ctx {
                 input_free_request(ir);
             }
             if let Some(pane) = self.wp.upgrade() {
-                pane.stop_sync();
+                pane.stop_sync(None);
             }
         }
     }
@@ -2114,21 +2105,19 @@ pub unsafe fn input_reset(mut ictx: *mut input_ctx, mut clear: ::core::ffi::c_in
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
-    let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     let mut wp: *mut window_pane = input_pane;
     input_reset_cell(ictx);
     if clear != 0 && !wp.is_null() {
-        if (*wp).modes.is_empty() {
+        let mut ctx = if (*wp).modes.is_empty() {
             screen_write_start_pane(
-                &mut *sctx,
                 input_pane_owner.as_ref().expect("live input pane"),
-                &raw mut (*wp).base,
-            );
+                &mut (*wp).base,
+            )
         } else {
-            screen_write_start(&mut *sctx, &raw mut (*wp).base);
-        }
-        screen_write_reset(&mut *sctx);
-        screen_write_stop(&mut *sctx);
+            screen_write_start(&mut (*wp).base)
+        };
+        screen_write_reset(&mut ctx);
+        screen_write_stop(ctx);
     }
     input_clear(ictx);
     (*ictx).state = &input_state_ground;
@@ -2137,17 +2126,20 @@ pub unsafe fn input_reset(mut ictx: *mut input_ctx, mut clear: ::core::ffi::c_in
 pub fn input_pending(ictx: &mut input_ctx) -> &mut SegmentedBuf {
     &mut ictx.since_ground
 }
-unsafe fn input_set_state(mut ictx: *mut input_ctx, state: &'static input_state) {
+unsafe fn input_set_state(
+    mut ictx: *mut input_ctx,
+    sctx: &mut screen_write_ctx,
+    state: &'static input_state,
+) {
     if (*ictx).state.exit.is_some() {
-        (*ictx).state.exit.expect("non-null function pointer")(ictx);
+        (*ictx).state.exit.expect("non-null function pointer")(ictx, sctx);
     }
     (*ictx).state = state;
     if (*ictx).state.enter.is_some() {
         (*ictx).state.enter.expect("non-null function pointer")(ictx);
     }
 }
-unsafe fn input_parse(mut ictx: *mut input_ctx, buf: &[u8]) {
-    let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
+unsafe fn input_parse(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, buf: &[u8]) {
     let mut state: Option<&'static input_state> = None;
     let mut transition: Option<&'static input_transition> = None;
     for &byte in buf {
@@ -2166,21 +2158,20 @@ unsafe fn input_parse(mut ictx: *mut input_ctx, buf: &[u8]) {
             fatalx(|out| out.write_all(b"no transition from state"));
         };
         state = Some((*ictx).state);
-        if !itr.handler.is_some_and(|handler| {
-            std::ptr::fn_addr_eq(
-                handler,
-                input_print as unsafe fn(*mut input_ctx) -> ::core::ffi::c_int,
-            )
-        }) {
-            screen_write_collect_end(&mut *sctx);
+        if !itr
+            .handler
+            .is_some_and(|handler| std::ptr::fn_addr_eq(handler, input_print as input_handler_cb))
+        {
+            screen_write_collect_end(sctx);
         }
         if itr.handler.is_some()
-            && itr.handler.expect("non-null function pointer")(ictx) != 0 as ::core::ffi::c_int
+            && itr.handler.expect("non-null function pointer")(ictx, sctx)
+                != 0 as ::core::ffi::c_int
         {
             continue;
         }
         if let Some(state) = itr.state {
-            input_set_state(ictx, state);
+            input_set_state(ictx, sctx, state);
         }
         if !std::ptr::eq((*ictx).state, &input_state_ground) {
             evbuffer_add(&mut (*ictx).since_ground, &[(*ictx).ch as u8]);
@@ -2213,7 +2204,6 @@ pub(super) unsafe fn input_parse_buffer(
         .ictx
         .as_deref_mut()
         .map_or(std::ptr::null_mut(), |ictx| ictx);
-    let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     if buf.is_empty() {
         return;
     }
@@ -2227,11 +2217,17 @@ pub(super) unsafe fn input_parse_buffer(
     if !(*wp).modes.is_empty() {
         (*wp).flags |= PANE_UNSEENCHANGES;
     }
-    if (*wp).modes.is_empty() {
-        screen_write_start_pane(&mut *sctx, wp_owner, &raw mut (*wp).base);
+    // The context borrows `base` until stop. While it does, nothing else may
+    // read or write `base`: parser callbacks reach the pane through `ictx.wp`
+    // only for its other fields, and sync state goes through the context
+    // (`start_sync`, `screen_write_end_sync`). Known exception: entering or
+    // leaving the alternate screen refits the window, which can resize this
+    // pane's `base` in place through the pane.
+    let mut ctx = if (*wp).modes.is_empty() {
+        screen_write_start_pane(wp_owner, &mut (*wp).base)
     } else {
-        screen_write_start(&mut *sctx, &raw mut (*wp).base);
-    }
+        screen_write_start(&mut (*wp).base)
+    };
     log_debug(format_args!(
         "{}: %{} {}, {} bytes: {}",
         "input_parse_buffer",
@@ -2240,22 +2236,21 @@ pub(super) unsafe fn input_parse_buffer(
         buf.len(),
         log_cstr_n(buf)
     ));
-    input_parse(ictx, buf);
-    screen_write_stop(&mut *sctx);
+    input_parse(ictx, &mut ctx, buf);
+    screen_write_stop(ctx);
 }
 pub unsafe fn input_parse_screen(
-    mut ictx: *mut input_ctx,
-    mut s: *mut screen,
-    mut cb: screen_write_init_ctx_cb,
+    ictx: *mut input_ctx,
+    s: &mut screen,
+    cb: screen_write_init_ctx_cb,
     buf: &[u8],
 ) {
-    let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     if buf.is_empty() {
         return;
     }
-    screen_write_start_callback(&mut *sctx, s, cb);
-    input_parse(ictx, buf);
-    screen_write_stop(&mut *sctx);
+    let mut ctx = screen_write_start_callback(s, cb);
+    input_parse(ictx, &mut ctx, buf);
+    screen_write_stop(ctx);
 }
 fn input_split_fields(buf: &mut [u8], delim: u8) -> impl Iterator<Item = &CStr> {
     let len = CStr::from_bytes_until_nul(buf)
@@ -2385,10 +2380,9 @@ unsafe fn input_ground(mut ictx: *mut input_ctx) {
     );
     (*ictx).shrink_buffer();
 }
-unsafe fn input_print(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
-    let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
+unsafe fn input_print(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx) -> ::core::ffi::c_int {
     let mut set: ::core::ffi::c_int = 0;
-    input_stop_utf8(ictx);
+    input_stop_utf8(ictx, sctx);
     set = if (*ictx).cell.set == 0 as ::core::ffi::c_int {
         (*ictx).cell.g0set
     } else {
@@ -2402,14 +2396,17 @@ unsafe fn input_print(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             ((*ictx).cell.cell.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
     }
     utf8_set(&mut (*ictx).cell.cell.data, (*ictx).ch as u_char);
-    screen_write_collect_add(&mut *sctx, &(*ictx).cell.cell);
+    screen_write_collect_add(sctx, &(*ictx).cell.cell);
     (*ictx).last = utf8_copy(&(*ictx).cell.cell.data);
     (*ictx).flags |= INPUT_LAST;
     (*ictx).cell.cell.attr =
         ((*ictx).cell.cell.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
     0 as ::core::ffi::c_int
 }
-unsafe fn input_intermediate(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
+unsafe fn input_intermediate(
+    mut ictx: *mut input_ctx,
+    _sctx: &mut screen_write_ctx,
+) -> ::core::ffi::c_int {
     if (*ictx).interm_len == (::core::mem::size_of::<[u_char; 4]>() as usize).wrapping_sub(1_usize)
     {
         (*ictx).flags |= INPUT_DISCARD;
@@ -2421,7 +2418,10 @@ unsafe fn input_intermediate(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     }
     0 as ::core::ffi::c_int
 }
-unsafe fn input_parameter(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
+unsafe fn input_parameter(
+    mut ictx: *mut input_ctx,
+    _sctx: &mut screen_write_ctx,
+) -> ::core::ffi::c_int {
     if (*ictx).param_len == (::core::mem::size_of::<[u_char; 64]>() as usize).wrapping_sub(1_usize)
     {
         (*ictx).flags |= INPUT_DISCARD;
@@ -2433,7 +2433,10 @@ unsafe fn input_parameter(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     }
     0 as ::core::ffi::c_int
 }
-unsafe fn input_input(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
+unsafe fn input_input(
+    mut ictx: *mut input_ctx,
+    _sctx: &mut screen_write_ctx,
+) -> ::core::ffi::c_int {
     let mut available: size_t = 0;
     available = (*ictx).input_buf.len();
     while (*ictx).input_len.wrapping_add(1 as size_t) >= available {
@@ -2450,14 +2453,15 @@ unsafe fn input_input(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     (&mut (*ictx).input_buf)[(*ictx).input_len] = '\0' as i32 as u_char;
     0 as ::core::ffi::c_int
 }
-unsafe fn input_c0_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
+unsafe fn input_c0_dispatch(
+    mut ictx: *mut input_ctx,
+    sctx: &mut screen_write_ctx,
+) -> ::core::ffi::c_int {
     let input_pane_owner = (*ictx).wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
-    let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     let mut wp: *mut window_pane = input_pane;
-    let mut s: *mut screen = (*sctx).screen_ptr();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -2490,7 +2494,7 @@ unsafe fn input_c0_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     let mut line: u_int = 0;
     let mut width: u_int = 0;
     let mut has_content: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    input_stop_utf8(ictx);
+    input_stop_utf8(ictx, sctx);
     log_debug(format_args!(
         "{}: '{}'",
         "input_c0_dispatch",
@@ -2511,16 +2515,16 @@ unsafe fn input_c0_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             }
         }
         8 => {
-            screen_write_backspace(&mut *sctx);
+            screen_write_backspace(sctx);
         }
         9 => {
-            cx = (*s).cx;
-            if !(cx >= (*s).grid().sx.wrapping_sub(1 as u_int)) {
-                line = (*s).cy.wrapping_add((*s).grid().hsize);
-                grid_get_cell((*s).grid(), cx, line, &mut first_gc);
+            cx = sctx.screen.cx;
+            if !(cx >= sctx.screen.grid().sx.wrapping_sub(1 as u_int)) {
+                line = sctx.screen.cy.wrapping_add(sctx.screen.grid().hsize);
+                grid_get_cell(sctx.screen.grid(), cx, line, &mut first_gc);
                 loop {
                     if has_content == 0 {
-                        grid_get_cell((*s).grid(), cx, line, &mut gc);
+                        grid_get_cell(sctx.screen.grid(), cx, line, &mut gc);
                         if gc.data.size as ::core::ffi::c_int != 1 as ::core::ffi::c_int
                             || *(&raw mut gc.data.data as *mut u_char) as ::core::ffi::c_int
                                 != ' ' as i32
@@ -2530,37 +2534,33 @@ unsafe fn input_c0_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                         }
                     }
                     cx = cx.wrapping_add(1);
-                    if screen_has_tab(&*s, cx) {
+                    if screen_has_tab(&*sctx.screen, cx) {
                         break;
                     }
-                    if !(cx < (*s).grid().sx.wrapping_sub(1 as u_int)) {
+                    if !(cx < sctx.screen.grid().sx.wrapping_sub(1 as u_int)) {
                         break;
                     }
                 }
-                width = cx.wrapping_sub((*s).cx);
+                width = cx.wrapping_sub(sctx.screen.cx);
                 if has_content != 0
                     || width as usize > ::core::mem::size_of::<[u_char; 32]>() as usize
                 {
-                    (*s).cx = cx;
+                    sctx.screen.cx = cx;
                 } else {
-                    grid_get_cell((*s).grid(), (*s).cx, line, &mut gc);
+                    grid_get_cell(sctx.screen.grid(), sctx.screen.cx, line, &mut gc);
                     grid_set_tab(&mut gc, width);
-                    screen_write_collect_add(&mut *sctx, &gc);
+                    screen_write_collect_add(sctx, &gc);
                 }
             }
         }
         10..=12 => {
-            screen_write_linefeed(
-                &mut *sctx,
-                0 as ::core::ffi::c_int,
-                (*ictx).cell.cell.bg as u_int,
-            );
-            if (*s).mode & MODE_CRLF != 0 {
-                screen_write_carriagereturn(&mut *sctx);
+            screen_write_linefeed(sctx, 0 as ::core::ffi::c_int, (*ictx).cell.cell.bg as u_int);
+            if sctx.screen.mode & MODE_CRLF != 0 {
+                screen_write_carriagereturn(sctx);
             }
         }
         13 => {
-            screen_write_carriagereturn(&mut *sctx);
+            screen_write_carriagereturn(sctx);
         }
         14 => {
             (*ictx).cell.set = 1 as ::core::ffi::c_int;
@@ -2579,9 +2579,10 @@ unsafe fn input_c0_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     (*ictx).flags &= !INPUT_LAST;
     0 as ::core::ffi::c_int
 }
-unsafe fn input_esc_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
-    let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
-    let mut s: *mut screen = (*sctx).screen_ptr();
+unsafe fn input_esc_dispatch(
+    mut ictx: *mut input_ctx,
+    sctx: &mut screen_write_ctx,
+) -> ::core::ffi::c_int {
     if (*ictx).flags & INPUT_DISCARD != 0 {
         return 0 as ::core::ffi::c_int;
     }
@@ -2605,47 +2606,39 @@ unsafe fn input_esc_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 .palette
                 .with_mut(|palette| colour_palette_clear(Some(palette)));
             input_reset_cell(ictx);
-            screen_write_reset(&mut *sctx);
-            screen_write_fullredraw(&mut *sctx);
+            screen_write_reset(sctx);
+            screen_write_fullredraw(sctx);
         }
         6 => {
-            screen_write_linefeed(
-                &mut *sctx,
-                0 as ::core::ffi::c_int,
-                (*ictx).cell.cell.bg as u_int,
-            );
+            screen_write_linefeed(sctx, 0 as ::core::ffi::c_int, (*ictx).cell.cell.bg as u_int);
         }
         7 => {
-            screen_write_carriagereturn(&mut *sctx);
-            screen_write_linefeed(
-                &mut *sctx,
-                0 as ::core::ffi::c_int,
-                (*ictx).cell.cell.bg as u_int,
-            );
+            screen_write_carriagereturn(sctx);
+            screen_write_linefeed(sctx, 0 as ::core::ffi::c_int, (*ictx).cell.cell.bg as u_int);
         }
         5 => {
-            if (*s).cx < (*s).grid().sx {
-                let column = (*s).cx;
-                screen_set_tab(&mut *s, column, true);
+            if sctx.screen.cx < sctx.screen.grid().sx {
+                let column = sctx.screen.cx;
+                screen_set_tab(&mut *sctx.screen, column, true);
             }
         }
         8 => {
-            screen_write_reverseindex(&mut *sctx, (*ictx).cell.cell.bg as u_int);
+            screen_write_reverseindex(sctx, (*ictx).cell.cell.bg as u_int);
         }
         1 => {
-            screen_write_mode_set(&mut *sctx, MODE_KKEYPAD);
+            screen_write_mode_set(sctx, MODE_KKEYPAD);
         }
         2 => {
-            screen_write_mode_clear(&mut *sctx, MODE_KKEYPAD);
+            screen_write_mode_clear(sctx, MODE_KKEYPAD);
         }
         4 => {
-            input_save_state(ictx);
+            input_save_state(ictx, sctx);
         }
         3 => {
-            input_restore_state(ictx);
+            input_restore_state(ictx, sctx);
         }
         0 => {
-            screen_write_alignmenttest(&mut *sctx);
+            screen_write_alignmenttest(sctx);
         }
         11 => {
             (*ictx).cell.g0set = 1 as ::core::ffi::c_int;
@@ -2664,13 +2657,14 @@ unsafe fn input_esc_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     (*ictx).flags &= !INPUT_LAST;
     0 as ::core::ffi::c_int
 }
-unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
+unsafe fn input_csi_dispatch(
+    mut ictx: *mut input_ctx,
+    sctx: &mut screen_write_ctx,
+) -> ::core::ffi::c_int {
     let input_pane_owner = (*ictx).wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
-    let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
-    let mut s: *mut screen = (*sctx).screen_ptr();
     let mut i: ::core::ffi::c_int = 0;
     let mut n: ::core::ffi::c_int = 0;
     let mut m: ::core::ffi::c_int = 0;
@@ -2702,9 +2696,9 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     };
     match entry.type_0 {
         0 => {
-            cx = (*s).cx;
-            if cx > (*s).grid().sx.wrapping_sub(1 as u_int) {
-                cx = (*s).grid().sx.wrapping_sub(1 as u_int);
+            cx = sctx.screen.cx;
+            if cx > sctx.screen.grid().sx.wrapping_sub(1 as u_int) {
+                cx = sctx.screen.grid().sx.wrapping_sub(1 as u_int);
             }
             n = input_get(
                 ictx,
@@ -2720,12 +2714,12 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 } {
                     loop {
                         cx = cx.wrapping_sub(1);
-                        if !(cx > 0 as u_int && !screen_has_tab(&*s, cx)) {
+                        if !(cx > 0 as u_int && !screen_has_tab(&*sctx.screen, cx)) {
                             break;
                         }
                     }
                 }
-                (*s).cx = cx;
+                sctx.screen.cx = cx;
             }
         }
         3 => {
@@ -2736,7 +2730,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 1 as ::core::ffi::c_int,
             );
             if n != -(1 as ::core::ffi::c_int) {
-                screen_write_cursorleft(&mut *sctx, n as u_int);
+                screen_write_cursorleft(sctx, n as u_int);
             }
         }
         4 => {
@@ -2747,7 +2741,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 1 as ::core::ffi::c_int,
             );
             if n != -(1 as ::core::ffi::c_int) {
-                screen_write_cursordown(&mut *sctx, n as u_int);
+                screen_write_cursordown(sctx, n as u_int);
             }
         }
         5 => {
@@ -2758,7 +2752,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 1 as ::core::ffi::c_int,
             );
             if n != -(1 as ::core::ffi::c_int) {
-                screen_write_cursorright(&mut *sctx, n as u_int);
+                screen_write_cursorright(sctx, n as u_int);
             }
         }
         6 => {
@@ -2776,7 +2770,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             );
             if n != -(1 as ::core::ffi::c_int) && m != -(1 as ::core::ffi::c_int) {
                 screen_write_cursormove(
-                    &mut *sctx,
+                    sctx,
                     m - 1 as ::core::ffi::c_int,
                     n - 1 as ::core::ffi::c_int,
                     1 as ::core::ffi::c_int,
@@ -2801,11 +2795,11 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                     .with_local(|oo| options_get_number(oo, c"extended-keys"))
                     as ::core::ffi::c_int;
                 if !(ek == 0 as ::core::ffi::c_int) {
-                    screen_write_mode_clear(&mut *sctx, EXTENDED_KEY_MODES);
+                    screen_write_mode_clear(sctx, EXTENDED_KEY_MODES);
                     if m == 2 as ::core::ffi::c_int {
-                        screen_write_mode_set(&mut *sctx, MODE_KEYS_EXTENDED_2);
+                        screen_write_mode_set(sctx, MODE_KEYS_EXTENDED_2);
                     } else if m == 1 as ::core::ffi::c_int || ek == 2 as ::core::ffi::c_int {
-                        screen_write_mode_set(&mut *sctx, MODE_KEYS_EXTENDED);
+                        screen_write_mode_set(sctx, MODE_KEYS_EXTENDED);
                     }
                 }
             }
@@ -2818,17 +2812,17 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 0 as ::core::ffi::c_int,
             );
             if !(n != 4 as ::core::ffi::c_int) {
-                screen_write_mode_clear(&mut *sctx, MODE_KEYS_EXTENDED | MODE_KEYS_EXTENDED_2);
+                screen_write_mode_clear(sctx, MODE_KEYS_EXTENDED | MODE_KEYS_EXTENDED_2);
                 if OptionsScope::GlobalServer
                     .with_local(|oo| options_get_number(oo, c"extended-keys"))
                     == 2 as ::core::ffi::c_longlong
                 {
-                    screen_write_mode_set(&mut *sctx, MODE_KEYS_EXTENDED);
+                    screen_write_mode_set(sctx, MODE_KEYS_EXTENDED);
                 }
             }
         }
         39 => {
-            input_csi_dispatch_winops(ictx);
+            input_csi_dispatch_winops(ictx, sctx);
         }
         7 => {
             n = input_get(
@@ -2838,7 +2832,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 1 as ::core::ffi::c_int,
             );
             if n != -(1 as ::core::ffi::c_int) {
-                screen_write_cursorup(&mut *sctx, n as u_int);
+                screen_write_cursorup(sctx, n as u_int);
             }
         }
         1 => {
@@ -2849,8 +2843,8 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 1 as ::core::ffi::c_int,
             );
             if n != -(1 as ::core::ffi::c_int) {
-                screen_write_carriagereturn(&mut *sctx);
-                screen_write_cursordown(&mut *sctx, n as u_int);
+                screen_write_carriagereturn(sctx);
+                screen_write_cursordown(sctx, n as u_int);
             }
         }
         2 => {
@@ -2861,8 +2855,8 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 1 as ::core::ffi::c_int,
             );
             if n != -(1 as ::core::ffi::c_int) {
-                screen_write_carriagereturn(&mut *sctx);
-                screen_write_cursorup(&mut *sctx, n as u_int);
+                screen_write_carriagereturn(sctx);
+                screen_write_cursorup(sctx, n as u_int);
             }
         }
         8 => {
@@ -2917,7 +2911,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 1 as ::core::ffi::c_int,
             );
             if n != -(1 as ::core::ffi::c_int) {
-                screen_write_clearcharacter(&mut *sctx, n as u_int, bg);
+                screen_write_clearcharacter(sctx, n as u_int, bg);
             }
         }
         10 => {
@@ -2928,7 +2922,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 1 as ::core::ffi::c_int,
             );
             if n != -(1 as ::core::ffi::c_int) {
-                screen_write_deletecharacter(&mut *sctx, n as u_int, bg);
+                screen_write_deletecharacter(sctx, n as u_int, bg);
             }
         }
         12 => {
@@ -2942,11 +2936,11 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 ictx,
                 1 as u_int,
                 1 as ::core::ffi::c_int,
-                (*s).grid().sy as ::core::ffi::c_int,
+                sctx.screen.grid().sy as ::core::ffi::c_int,
             );
             if n != -(1 as ::core::ffi::c_int) && m != -(1 as ::core::ffi::c_int) {
                 screen_write_scrollregion(
-                    &mut *sctx,
+                    sctx,
                     (n - 1 as ::core::ffi::c_int) as u_int,
                     (m - 1 as ::core::ffi::c_int) as u_int,
                 );
@@ -2960,7 +2954,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 1 as ::core::ffi::c_int,
             );
             if n != -(1 as ::core::ffi::c_int) {
-                screen_write_deleteline(&mut *sctx, n as u_int, bg);
+                screen_write_deleteline(sctx, n as u_int, bg);
             }
         }
         15 => {
@@ -2983,7 +2977,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             );
             match m {
                 4 => {
-                    n = if (*s).mode & MODE_INSERT != 0 {
+                    n = if sctx.screen.mode & MODE_INSERT != 0 {
                         1 as ::core::ffi::c_int
                     } else {
                         2 as ::core::ffi::c_int
@@ -3008,7 +3002,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             );
             match m {
                 1 => {
-                    n = if (*s).mode & MODE_KCURSOR != 0 {
+                    n = if sctx.screen.mode & MODE_KCURSOR != 0 {
                         1 as ::core::ffi::c_int
                     } else {
                         2 as ::core::ffi::c_int
@@ -3018,25 +3012,25 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                     n = 4 as ::core::ffi::c_int;
                 }
                 6 => {
-                    n = if (*s).mode & MODE_ORIGIN != 0 {
+                    n = if sctx.screen.mode & MODE_ORIGIN != 0 {
                         1 as ::core::ffi::c_int
                     } else {
                         2 as ::core::ffi::c_int
                     };
                 }
                 7 => {
-                    n = if (*s).mode & MODE_WRAP != 0 {
+                    n = if sctx.screen.mode & MODE_WRAP != 0 {
                         1 as ::core::ffi::c_int
                     } else {
                         2 as ::core::ffi::c_int
                     };
                 }
                 12 => {
-                    if (*s).cstyle as ::core::ffi::c_uint
+                    if sctx.screen.cstyle as ::core::ffi::c_uint
                         != SCREEN_CURSOR_DEFAULT as ::core::ffi::c_int as ::core::ffi::c_uint
-                        || (*s).mode & MODE_CURSOR_BLINKING_SET != 0
+                        || sctx.screen.mode & MODE_CURSOR_BLINKING_SET != 0
                     {
-                        n = if (*s).mode & MODE_CURSOR_BLINKING != 0 {
+                        n = if sctx.screen.mode & MODE_CURSOR_BLINKING != 0 {
                             1 as ::core::ffi::c_int
                         } else {
                             2 as ::core::ffi::c_int
@@ -3059,77 +3053,77 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                     }
                 }
                 25 => {
-                    n = if (*s).mode & MODE_CURSOR != 0 {
+                    n = if sctx.screen.mode & MODE_CURSOR != 0 {
                         1 as ::core::ffi::c_int
                     } else {
                         2 as ::core::ffi::c_int
                     };
                 }
                 47 | 1047 | 1049 => {
-                    n = if (*s).saved_grid.is_some() {
+                    n = if sctx.screen.saved_grid.is_some() {
                         1 as ::core::ffi::c_int
                     } else {
                         2 as ::core::ffi::c_int
                     };
                 }
                 1000 => {
-                    n = if (*s).mode & MODE_MOUSE_STANDARD != 0 {
+                    n = if sctx.screen.mode & MODE_MOUSE_STANDARD != 0 {
                         1 as ::core::ffi::c_int
                     } else {
                         2 as ::core::ffi::c_int
                     };
                 }
                 1002 => {
-                    n = if (*s).mode & MODE_MOUSE_BUTTON != 0 {
+                    n = if sctx.screen.mode & MODE_MOUSE_BUTTON != 0 {
                         1 as ::core::ffi::c_int
                     } else {
                         2 as ::core::ffi::c_int
                     };
                 }
                 1003 => {
-                    n = if (*s).mode & MODE_MOUSE_ALL != 0 {
+                    n = if sctx.screen.mode & MODE_MOUSE_ALL != 0 {
                         1 as ::core::ffi::c_int
                     } else {
                         2 as ::core::ffi::c_int
                     };
                 }
                 1004 => {
-                    n = if (*s).mode & MODE_FOCUSON != 0 {
+                    n = if sctx.screen.mode & MODE_FOCUSON != 0 {
                         1 as ::core::ffi::c_int
                     } else {
                         2 as ::core::ffi::c_int
                     };
                 }
                 1005 => {
-                    n = if (*s).mode & MODE_MOUSE_UTF8 != 0 {
+                    n = if sctx.screen.mode & MODE_MOUSE_UTF8 != 0 {
                         1 as ::core::ffi::c_int
                     } else {
                         2 as ::core::ffi::c_int
                     };
                 }
                 1006 => {
-                    n = if (*s).mode & MODE_MOUSE_SGR != 0 {
+                    n = if sctx.screen.mode & MODE_MOUSE_SGR != 0 {
                         1 as ::core::ffi::c_int
                     } else {
                         2 as ::core::ffi::c_int
                     };
                 }
                 2004 => {
-                    n = if (*s).mode & MODE_BRACKETPASTE != 0 {
+                    n = if sctx.screen.mode & MODE_BRACKETPASTE != 0 {
                         1 as ::core::ffi::c_int
                     } else {
                         2 as ::core::ffi::c_int
                     };
                 }
                 2026 => {
-                    n = if (*s).mode & MODE_SYNC != 0 {
+                    n = if sctx.screen.mode & MODE_SYNC != 0 {
                         1 as ::core::ffi::c_int
                     } else {
                         2 as ::core::ffi::c_int
                     };
                 }
                 2031 => {
-                    n = if (*s).mode & MODE_THEME_UPDATES != 0 {
+                    n = if sctx.screen.mode & MODE_THEME_UPDATES != 0 {
                         1 as ::core::ffi::c_int
                     } else {
                         2 as ::core::ffi::c_int
@@ -3160,9 +3154,12 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 }
                 6 => {
                     input_reply(ictx, 1 as ::core::ffi::c_int, |out| {
-                        write!(out, "\x1B[{};{}R", { (*s).cy.wrapping_add(1 as u_int) }, {
-                            (*s).cx.wrapping_add(1 as u_int)
-                        })
+                        write!(
+                            out,
+                            "\x1B[{};{}R",
+                            { sctx.screen.cy.wrapping_add(1 as u_int) },
+                            { sctx.screen.cx.wrapping_add(1 as u_int) }
+                        )
                     });
                 }
                 _ => {
@@ -3183,13 +3180,13 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             ) {
                 -1 => {}
                 0 => {
-                    screen_write_clearendofscreen(&mut *sctx, bg);
+                    screen_write_clearendofscreen(sctx, bg);
                 }
                 1 => {
-                    screen_write_clearstartofscreen(&mut *sctx, bg);
+                    screen_write_clearstartofscreen(sctx, bg);
                 }
                 2 => {
-                    screen_write_clearscreen(&mut *sctx, bg);
+                    screen_write_clearscreen(sctx, bg);
                 }
                 3 => {
                     if input_get(
@@ -3199,7 +3196,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                         0 as ::core::ffi::c_int,
                     ) == 0 as ::core::ffi::c_int
                     {
-                        screen_write_clearhistory(&mut *sctx);
+                        screen_write_clearhistory(sctx);
                     }
                 }
                 _ => {
@@ -3220,13 +3217,13 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             ) {
                 -1 => {}
                 0 => {
-                    screen_write_clearendofline(&mut *sctx, bg);
+                    screen_write_clearendofline(sctx, bg);
                 }
                 1 => {
-                    screen_write_clearstartofline(&mut *sctx, bg);
+                    screen_write_clearstartofline(sctx, bg);
                 }
                 2 => {
-                    screen_write_clearline(&mut *sctx, bg);
+                    screen_write_clearline(sctx, bg);
                 }
                 _ => {
                     log_debug(format_args!(
@@ -3246,7 +3243,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             );
             if n != -(1 as ::core::ffi::c_int) {
                 screen_write_cursormove(
-                    &mut *sctx,
+                    sctx,
                     n - 1 as ::core::ffi::c_int,
                     -(1 as ::core::ffi::c_int),
                     1 as ::core::ffi::c_int,
@@ -3261,7 +3258,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 1 as ::core::ffi::c_int,
             );
             if n != -(1 as ::core::ffi::c_int) {
-                screen_write_insertcharacter(&mut *sctx, n as u_int, bg);
+                screen_write_insertcharacter(sctx, n as u_int, bg);
             }
         }
         21 => {
@@ -3272,7 +3269,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 1 as ::core::ffi::c_int,
             );
             if n != -(1 as ::core::ffi::c_int) {
-                screen_write_insertline(&mut *sctx, n as u_int, bg);
+                screen_write_insertline(sctx, n as u_int, bg);
             }
         }
         27 => {
@@ -3283,7 +3280,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 1 as ::core::ffi::c_int,
             );
             if !(n == -(1 as ::core::ffi::c_int)) {
-                m = (*s).grid().sx.wrapping_sub((*s).cx) as ::core::ffi::c_int;
+                m = sctx.screen.grid().sx.wrapping_sub(sctx.screen.cx) as ::core::ffi::c_int;
                 if n > m {
                     n = m;
                 }
@@ -3305,32 +3302,32 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                     (*ictx).cell.cell.data = utf8_copy(&(*ictx).last);
                     i = 0 as ::core::ffi::c_int;
                     while i < n {
-                        screen_write_collect_add(&mut *sctx, &(*ictx).cell.cell);
+                        screen_write_collect_add(sctx, &(*ictx).cell.cell);
                         i += 1;
                     }
                 }
             }
         }
         26 => {
-            input_restore_state(ictx);
+            input_restore_state(ictx, sctx);
         }
         28 => {
-            input_csi_dispatch_rm(ictx);
+            input_csi_dispatch_rm(ictx, sctx);
         }
         29 => {
-            input_csi_dispatch_rm_private(ictx);
+            input_csi_dispatch_rm_private(ictx, sctx);
         }
         30 => {
-            input_save_state(ictx);
+            input_save_state(ictx, sctx);
         }
         32 => {
             input_csi_dispatch_sgr(ictx);
         }
         33 => {
-            input_csi_dispatch_sm(ictx);
+            input_csi_dispatch_sm(ictx, sctx);
         }
         35 => {
-            input_csi_dispatch_sm_private(ictx);
+            input_csi_dispatch_sm_private(ictx, sctx);
         }
         34 => {
             input_csi_dispatch_sm_graphics();
@@ -3343,7 +3340,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 1 as ::core::ffi::c_int,
             );
             if n != -(1 as ::core::ffi::c_int) {
-                screen_write_scrollup(&mut *sctx, n as u_int, bg);
+                screen_write_scrollup(sctx, n as u_int, bg);
             }
         }
         31 => {
@@ -3354,7 +3351,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 1 as ::core::ffi::c_int,
             );
             if n != -(1 as ::core::ffi::c_int) {
-                screen_write_scrolldown(&mut *sctx, n as u_int, bg);
+                screen_write_scrolldown(sctx, n as u_int, bg);
             }
         }
         37 => {
@@ -3366,13 +3363,13 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             ) {
                 -1 => {}
                 0 => {
-                    if (*s).cx < (*s).grid().sx {
-                        let column = (*s).cx;
-                        screen_set_tab(&mut *s, column, false);
+                    if sctx.screen.cx < sctx.screen.grid().sx {
+                        let column = sctx.screen.cx;
+                        screen_set_tab(&mut *sctx.screen, column, false);
                     }
                 }
                 3 => {
-                    screen_clear_tabs(&mut *s);
+                    screen_clear_tabs(&mut *sctx.screen);
                 }
                 _ => {
                     log_debug(format_args!(
@@ -3392,7 +3389,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             );
             if n != -(1 as ::core::ffi::c_int) {
                 screen_write_cursormove(
-                    &mut *sctx,
+                    sctx,
                     -(1 as ::core::ffi::c_int),
                     n - 1 as ::core::ffi::c_int,
                     1 as ::core::ffi::c_int,
@@ -3407,9 +3404,9 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 0 as ::core::ffi::c_int,
             );
             if !(n == -(1 as ::core::ffi::c_int)) {
-                screen_set_cursor_style(n as u_int, &mut (*s).cstyle, &mut (*s).mode);
+                screen_set_cursor_style(n as u_int, &mut sctx.screen.cstyle, &mut sctx.screen.mode);
                 if n == 0 as ::core::ffi::c_int {
-                    screen_write_mode_clear(&mut *sctx, MODE_CURSOR_BLINKING_SET);
+                    screen_write_mode_clear(sctx, MODE_CURSOR_BLINKING_SET);
                 }
             }
         }
@@ -3433,18 +3430,17 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     (*ictx).flags &= !INPUT_LAST;
     0 as ::core::ffi::c_int
 }
-unsafe fn input_csi_dispatch_rm(mut ictx: *mut input_ctx) {
-    let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
+unsafe fn input_csi_dispatch_rm(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx) {
     let mut i: u_int = 0;
     i = 0 as u_int;
     while i < (*ictx).param_list_len {
         match input_get(ictx, i, 0 as ::core::ffi::c_int, -(1 as ::core::ffi::c_int)) {
             -1 => {}
             4 => {
-                screen_write_mode_clear(&mut *sctx, MODE_INSERT);
+                screen_write_mode_clear(sctx, MODE_INSERT);
             }
             34 => {
-                screen_write_mode_set(&mut *sctx, MODE_CURSOR_VERY_VISIBLE);
+                screen_write_mode_set(sctx, MODE_CURSOR_VERY_VISIBLE);
             }
             _ => {
                 log_debug(format_args!(
@@ -3457,12 +3453,11 @@ unsafe fn input_csi_dispatch_rm(mut ictx: *mut input_ctx) {
         i = i.wrapping_add(1);
     }
 }
-unsafe fn input_csi_dispatch_rm_private(mut ictx: *mut input_ctx) {
+unsafe fn input_csi_dispatch_rm_private(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx) {
     let input_pane_owner = (*ictx).wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
-    let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     let mut gc: *mut grid_cell = &raw mut (*ictx).cell.cell;
     let mut i: u_int = 0;
     i = 0 as u_int;
@@ -3470,62 +3465,62 @@ unsafe fn input_csi_dispatch_rm_private(mut ictx: *mut input_ctx) {
         match input_get(ictx, i, 0 as ::core::ffi::c_int, -(1 as ::core::ffi::c_int)) {
             -1 => {}
             1 => {
-                screen_write_mode_clear(&mut *sctx, MODE_KCURSOR);
+                screen_write_mode_clear(sctx, MODE_KCURSOR);
             }
             3 => {
                 screen_write_cursormove(
-                    &mut *sctx,
+                    sctx,
                     0 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                     1 as ::core::ffi::c_int,
                 );
-                screen_write_clearscreen(&mut *sctx, (*gc).bg as u_int);
+                screen_write_clearscreen(sctx, (*gc).bg as u_int);
             }
             6 => {
-                screen_write_mode_clear(&mut *sctx, MODE_ORIGIN);
+                screen_write_mode_clear(sctx, MODE_ORIGIN);
                 screen_write_cursormove(
-                    &mut *sctx,
+                    sctx,
                     0 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                     1 as ::core::ffi::c_int,
                 );
             }
             7 => {
-                screen_write_mode_clear(&mut *sctx, MODE_WRAP);
+                screen_write_mode_clear(sctx, MODE_WRAP);
             }
             12 => {
-                screen_write_mode_clear(&mut *sctx, MODE_CURSOR_BLINKING);
-                screen_write_mode_set(&mut *sctx, MODE_CURSOR_BLINKING_SET);
+                screen_write_mode_clear(sctx, MODE_CURSOR_BLINKING);
+                screen_write_mode_set(sctx, MODE_CURSOR_BLINKING_SET);
             }
             25 => {
-                screen_write_mode_clear(&mut *sctx, MODE_CURSOR);
+                screen_write_mode_clear(sctx, MODE_CURSOR);
             }
             1000..=1003 => {
-                screen_write_mode_clear(&mut *sctx, ALL_MOUSE_MODES);
+                screen_write_mode_clear(sctx, ALL_MOUSE_MODES);
             }
             1004 => {
-                screen_write_mode_clear(&mut *sctx, MODE_FOCUSON);
+                screen_write_mode_clear(sctx, MODE_FOCUSON);
             }
             1005 => {
-                screen_write_mode_clear(&mut *sctx, MODE_MOUSE_UTF8);
+                screen_write_mode_clear(sctx, MODE_MOUSE_UTF8);
             }
             1006 => {
-                screen_write_mode_clear(&mut *sctx, MODE_MOUSE_SGR);
+                screen_write_mode_clear(sctx, MODE_MOUSE_SGR);
             }
             47 | 1047 => {
-                screen_write_alternateoff(&mut *sctx, &mut *gc, 0 as ::core::ffi::c_int);
+                screen_write_alternateoff(sctx, &mut *gc, 0 as ::core::ffi::c_int);
             }
             1049 => {
-                screen_write_alternateoff(&mut *sctx, &mut *gc, 1 as ::core::ffi::c_int);
+                screen_write_alternateoff(sctx, &mut *gc, 1 as ::core::ffi::c_int);
             }
             2004 => {
-                screen_write_mode_clear(&mut *sctx, MODE_BRACKETPASTE);
+                screen_write_mode_clear(sctx, MODE_BRACKETPASTE);
             }
             2026 => {
-                screen_write_end_sync(&mut *sctx);
+                screen_write_end_sync(sctx);
             }
             2031 => {
-                screen_write_mode_clear(&mut *sctx, MODE_THEME_UPDATES);
+                screen_write_mode_clear(sctx, MODE_THEME_UPDATES);
                 if !input_pane.is_null() {
                     (*input_pane).flags &= !PANE_THEMECHANGED;
                 }
@@ -3541,18 +3536,17 @@ unsafe fn input_csi_dispatch_rm_private(mut ictx: *mut input_ctx) {
         i = i.wrapping_add(1);
     }
 }
-unsafe fn input_csi_dispatch_sm(mut ictx: *mut input_ctx) {
-    let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
+unsafe fn input_csi_dispatch_sm(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx) {
     let mut i: u_int = 0;
     i = 0 as u_int;
     while i < (*ictx).param_list_len {
         match input_get(ictx, i, 0 as ::core::ffi::c_int, -(1 as ::core::ffi::c_int)) {
             -1 => {}
             4 => {
-                screen_write_mode_set(&mut *sctx, MODE_INSERT);
+                screen_write_mode_set(sctx, MODE_INSERT);
             }
             34 => {
-                screen_write_mode_clear(&mut *sctx, MODE_CURSOR_VERY_VISIBLE);
+                screen_write_mode_clear(sctx, MODE_CURSOR_VERY_VISIBLE);
             }
             _ => {
                 log_debug(format_args!(
@@ -3565,12 +3559,11 @@ unsafe fn input_csi_dispatch_sm(mut ictx: *mut input_ctx) {
         i = i.wrapping_add(1);
     }
 }
-unsafe fn input_csi_dispatch_sm_private(mut ictx: *mut input_ctx) {
+unsafe fn input_csi_dispatch_sm_private(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx) {
     let input_pane_owner = (*ictx).wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
-    let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     let mut gc: *mut grid_cell = &raw mut (*ictx).cell.cell;
     let mut i: u_int = 0;
     i = 0 as u_int;
@@ -3578,68 +3571,68 @@ unsafe fn input_csi_dispatch_sm_private(mut ictx: *mut input_ctx) {
         match input_get(ictx, i, 0 as ::core::ffi::c_int, -(1 as ::core::ffi::c_int)) {
             -1 => {}
             1 => {
-                screen_write_mode_set(&mut *sctx, MODE_KCURSOR);
+                screen_write_mode_set(sctx, MODE_KCURSOR);
             }
             3 => {
                 screen_write_cursormove(
-                    &mut *sctx,
+                    sctx,
                     0 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                     1 as ::core::ffi::c_int,
                 );
-                screen_write_clearscreen(&mut *sctx, (*ictx).cell.cell.bg as u_int);
+                screen_write_clearscreen(sctx, (*ictx).cell.cell.bg as u_int);
             }
             6 => {
-                screen_write_mode_set(&mut *sctx, MODE_ORIGIN);
+                screen_write_mode_set(sctx, MODE_ORIGIN);
                 screen_write_cursormove(
-                    &mut *sctx,
+                    sctx,
                     0 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                     1 as ::core::ffi::c_int,
                 );
             }
             7 => {
-                screen_write_mode_set(&mut *sctx, MODE_WRAP);
+                screen_write_mode_set(sctx, MODE_WRAP);
             }
             12 => {
-                screen_write_mode_set(&mut *sctx, MODE_CURSOR_BLINKING);
-                screen_write_mode_set(&mut *sctx, MODE_CURSOR_BLINKING_SET);
+                screen_write_mode_set(sctx, MODE_CURSOR_BLINKING);
+                screen_write_mode_set(sctx, MODE_CURSOR_BLINKING_SET);
             }
             25 => {
-                screen_write_mode_set(&mut *sctx, MODE_CURSOR);
+                screen_write_mode_set(sctx, MODE_CURSOR);
             }
             1000 => {
-                screen_write_mode_clear(&mut *sctx, ALL_MOUSE_MODES);
-                screen_write_mode_set(&mut *sctx, MODE_MOUSE_STANDARD);
+                screen_write_mode_clear(sctx, ALL_MOUSE_MODES);
+                screen_write_mode_set(sctx, MODE_MOUSE_STANDARD);
             }
             1002 => {
-                screen_write_mode_clear(&mut *sctx, ALL_MOUSE_MODES);
-                screen_write_mode_set(&mut *sctx, MODE_MOUSE_BUTTON);
+                screen_write_mode_clear(sctx, ALL_MOUSE_MODES);
+                screen_write_mode_set(sctx, MODE_MOUSE_BUTTON);
             }
             1003 => {
-                screen_write_mode_clear(&mut *sctx, ALL_MOUSE_MODES);
-                screen_write_mode_set(&mut *sctx, MODE_MOUSE_ALL);
+                screen_write_mode_clear(sctx, ALL_MOUSE_MODES);
+                screen_write_mode_set(sctx, MODE_MOUSE_ALL);
             }
             1004 => {
-                screen_write_mode_set(&mut *sctx, MODE_FOCUSON);
+                screen_write_mode_set(sctx, MODE_FOCUSON);
             }
             1005 => {
-                screen_write_mode_set(&mut *sctx, MODE_MOUSE_UTF8);
+                screen_write_mode_set(sctx, MODE_MOUSE_UTF8);
             }
             1006 => {
-                screen_write_mode_set(&mut *sctx, MODE_MOUSE_SGR);
+                screen_write_mode_set(sctx, MODE_MOUSE_SGR);
             }
             47 | 1047 => {
-                screen_write_alternateon(&mut *sctx, &*gc, 0 as ::core::ffi::c_int);
+                screen_write_alternateon(sctx, &*gc, 0 as ::core::ffi::c_int);
             }
             1049 => {
-                screen_write_alternateon(&mut *sctx, &*gc, 1 as ::core::ffi::c_int);
+                screen_write_alternateon(sctx, &*gc, 1 as ::core::ffi::c_int);
             }
             2004 => {
-                screen_write_mode_set(&mut *sctx, MODE_BRACKETPASTE);
+                screen_write_mode_set(sctx, MODE_BRACKETPASTE);
             }
             2031 => {
-                screen_write_mode_set(&mut *sctx, MODE_THEME_UPDATES);
+                screen_write_mode_set(sctx, MODE_THEME_UPDATES);
                 if !input_pane.is_null() {
                     (*input_pane).last_theme = window_pane_get_theme(input_pane_owner.as_ref());
                     (*input_pane).flags &= !PANE_THEMECHANGED;
@@ -3647,7 +3640,7 @@ unsafe fn input_csi_dispatch_sm_private(mut ictx: *mut input_ctx) {
             }
             2026 => {
                 if let Some(pane) = input_pane_owner.as_ref() {
-                    pane.start_sync();
+                    pane.start_sync(&mut *sctx.screen);
                 }
             }
             _ => {
@@ -3662,16 +3655,14 @@ unsafe fn input_csi_dispatch_sm_private(mut ictx: *mut input_ctx) {
     }
 }
 fn input_csi_dispatch_sm_graphics() {}
-unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
+unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx) {
     let input_pane_owner = (*ictx).wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
-    let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
-    let mut s: *mut screen = (*sctx).screen_ptr();
     let mut wp: *mut window_pane = input_pane;
-    let mut x: u_int = (*s).grid().sx;
-    let mut y: u_int = (*s).grid().sy;
+    let mut x: u_int = sctx.screen.grid().sx;
+    let mut y: u_int = sctx.screen.grid().sy;
     let mut n: ::core::ffi::c_int = 0;
     let mut m: ::core::ffi::c_int = 0;
     let window_owner = input_pane_owner
@@ -3768,7 +3759,7 @@ unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
                 ) {
                     -1 => break,
                     0 | 2 => {
-                        screen_push_title(&mut *(*sctx).screen_ptr());
+                        screen_push_title(&mut *sctx.screen);
                     }
                     _ => {}
                 }
@@ -3784,11 +3775,11 @@ unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
                 ) {
                     -1 => break,
                     0 | 2 => {
-                        screen_pop_title(&mut *(*sctx).screen_ptr());
+                        screen_pop_title(&mut *sctx.screen);
                         if !wp.is_null() {
                             input_fire_pane_title_changed(
                                 input_pane_owner.as_ref().expect("live pane"),
-                                &((*(*sctx).screen_ptr()).title),
+                                &(sctx.screen.title),
                             );
                             server_redraw_window_borders(
                                 window_owner.as_ref().expect("pane window"),
@@ -4061,7 +4052,7 @@ mod sgr_colon_tests {
         ictx.cell.cell.bg = 12;
         ictx.cell.cell.us = 13;
         ictx.cell.cell.attr = GRID_ATTR_UNDERSCORE_2 as u16;
-        unsafe { input_csi_dispatch_sgr_colon(&raw mut ictx, 0) };
+        unsafe { input_csi_dispatch_sgr_colon(&mut ictx, 0) };
         assert_eq!(
             match &ictx.param_list[0] {
                 input_param::String(value) => value.as_c_str(),
@@ -4246,7 +4237,10 @@ unsafe fn input_csi_dispatch_sgr(mut ictx: *mut input_ctx) {
         i = i.wrapping_add(1);
     }
 }
-unsafe fn input_end_bel(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
+unsafe fn input_end_bel(
+    mut ictx: *mut input_ctx,
+    _sctx: &mut screen_write_ctx,
+) -> ::core::ffi::c_int {
     log_debug(format_args!("{}", "input_end_bel"));
     (*ictx).input_end = INPUT_END_BEL;
     0 as ::core::ffi::c_int
@@ -4257,16 +4251,17 @@ unsafe fn input_enter_dcs(mut ictx: *mut input_ctx) {
     input_start_ground_timer(ictx);
     (*ictx).flags &= !INPUT_LAST;
 }
-unsafe fn input_handle_decrqss(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
+unsafe fn input_handle_decrqss(
+    mut ictx: *mut input_ctx,
+    sctx: &mut screen_write_ctx,
+) -> ::core::ffi::c_int {
     let input_pane_owner = (*ictx).wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
     let mut wp: *mut window_pane = input_pane;
-    let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     let mut buf: *mut u_char = (*ictx).input_buf.as_mut_ptr();
     let mut len: size_t = (*ictx).input_len;
-    let mut s: *mut screen = (*sctx).screen_ptr();
     let mut ps: ::core::ffi::c_int = 0;
     let mut opt_ps: ::core::ffi::c_int = 0;
     let mut blinking: ::core::ffi::c_int = 0;
@@ -4279,16 +4274,16 @@ unsafe fn input_handle_decrqss(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
         });
         0 as ::core::ffi::c_int
     } else {
-        if (*s).cstyle as ::core::ffi::c_uint
+        if sctx.screen.cstyle as ::core::ffi::c_uint
             == SCREEN_CURSOR_BLOCK as ::core::ffi::c_int as ::core::ffi::c_uint
-            || (*s).cstyle as ::core::ffi::c_uint
+            || sctx.screen.cstyle as ::core::ffi::c_uint
                 == SCREEN_CURSOR_UNDERLINE as ::core::ffi::c_int as ::core::ffi::c_uint
-            || (*s).cstyle as ::core::ffi::c_uint
+            || sctx.screen.cstyle as ::core::ffi::c_uint
                 == SCREEN_CURSOR_BAR as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            blinking =
-                ((*s).mode & MODE_CURSOR_BLINKING != 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
-            match (*s).cstyle as ::core::ffi::c_uint {
+            blinking = (sctx.screen.mode & MODE_CURSOR_BLINKING != 0 as ::core::ffi::c_int)
+                as ::core::ffi::c_int;
+            match sctx.screen.cstyle as ::core::ffi::c_uint {
                 1 => {
                     ps = if blinking != 0 {
                         1 as ::core::ffi::c_int
@@ -4329,8 +4324,8 @@ unsafe fn input_handle_decrqss(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             "{}: DECRQSS cursor -> Ps={} (cstyle={} mode={})",
             "input_handle_decrqss",
             (ps) as i32,
-            ((*s).cstyle as ::core::ffi::c_uint) as i32,
-            log_hex((((*s).mode) as u32) as u64)
+            (sctx.screen.cstyle as ::core::ffi::c_uint) as i32,
+            log_hex(((sctx.screen.mode) as u32) as u64)
         ));
         input_reply(ictx, 1 as ::core::ffi::c_int, |out| {
             write!(out, "\x1BP1$r q{} q\x1B\\", (ps) as i32)
@@ -4338,13 +4333,15 @@ unsafe fn input_handle_decrqss(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
         0 as ::core::ffi::c_int
     }
 }
-unsafe fn input_dcs_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
+unsafe fn input_dcs_dispatch(
+    mut ictx: *mut input_ctx,
+    sctx: &mut screen_write_ctx,
+) -> ::core::ffi::c_int {
     let input_pane_owner = (*ictx).wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
     let mut wp: *mut window_pane = input_pane;
-    let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     let mut buf: *mut u_char = (*ictx).input_buf.as_mut_ptr();
     let mut len: size_t = (*ictx).input_len;
     let prefix: [::core::ffi::c_char; 6] =
@@ -4365,7 +4362,7 @@ unsafe fn input_dcs_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
         && len >= 1 as size_t
         && *buf.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == 'q' as i32
     {
-        return input_handle_decrqss(ictx);
+        return input_handle_decrqss(ictx, sctx);
     }
     allow_passthrough = if wp.is_null() {
         OptionsScope::GlobalWindow.with_local(|oo| options_get_number(oo, c"allow-passthrough"))
@@ -4388,7 +4385,7 @@ unsafe fn input_dcs_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
         ) == 0 as ::core::ffi::c_int
     {
         screen_write_rawstring(
-            &mut *sctx,
+            sctx,
             &(&(*ictx).input_buf)[prefixlen as usize..len],
             (allow_passthrough == 2 as ::core::ffi::c_longlong) as ::core::ffi::c_int,
         );
@@ -4401,12 +4398,11 @@ unsafe fn input_enter_osc(mut ictx: *mut input_ctx) {
     input_start_ground_timer(ictx);
     (*ictx).flags &= !INPUT_LAST;
 }
-unsafe fn input_exit_osc(mut ictx: *mut input_ctx) {
+unsafe fn input_exit_osc(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx) {
     let input_pane_owner = (*ictx).wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
-    let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     let mut wp: *mut window_pane = input_pane;
     let mut option: u_int = 0;
     if (*ictx).flags & INPUT_DISCARD != 0 {
@@ -4451,7 +4447,7 @@ unsafe fn input_exit_osc(mut ictx: *mut input_ctx) {
         0 | 2 => {
             if !wp.is_null()
                 && options_get_number(&(*wp).borrow_options_mut(), c"allow-set-title") != 0
-                && screen_set_title(&mut *(*sctx).screen_ptr(), p, 1 as ::core::ffi::c_int) != 0
+                && screen_set_title(&mut *sctx.screen, p, 1 as ::core::ffi::c_int) != 0
             {
                 input_fire_pane_title_changed(input_pane_owner.as_ref().expect("live pane"), p);
                 server_redraw_window_borders(
@@ -4461,10 +4457,10 @@ unsafe fn input_exit_osc(mut ictx: *mut input_ctx) {
             }
         }
         4 => {
-            input_osc_4(ictx, p);
+            input_osc_4(ictx, sctx, p);
         }
         7 => {
-            if !wp.is_null() && screen_set_path(&mut *(*sctx).screen_ptr(), p) != 0 {
+            if !wp.is_null() && screen_set_path(&mut *sctx.screen, p) != 0 {
                 server_redraw_window_borders(
                     ((*wp).window_handle().as_ref()).expect("live window"),
                 );
@@ -4472,37 +4468,37 @@ unsafe fn input_exit_osc(mut ictx: *mut input_ctx) {
             }
         }
         8 => {
-            input_osc_8(ictx, p);
+            input_osc_8(ictx, sctx, p);
         }
         9 => {
-            input_osc_9(ictx, p);
+            input_osc_9(ictx, sctx, p);
         }
         10 => {
-            input_osc_10(ictx, p);
+            input_osc_10(ictx, sctx, p);
         }
         11 => {
-            input_osc_11(ictx, p);
+            input_osc_11(ictx, sctx, p);
         }
         12 => {
-            input_osc_12(ictx, p);
+            input_osc_12(ictx, sctx, p);
         }
         52 => {
-            input_osc_52(ictx, p);
+            input_osc_52(ictx, sctx, p);
         }
         104 => {
-            input_osc_104(ictx, p);
+            input_osc_104(ictx, sctx, p);
         }
         110 => {
-            input_osc_110(ictx, p);
+            input_osc_110(ictx, sctx, p);
         }
         111 => {
-            input_osc_111(ictx, p);
+            input_osc_111(ictx, sctx, p);
         }
         112 => {
-            input_osc_112(ictx, p);
+            input_osc_112(sctx, p);
         }
         133 => {
-            input_osc_133(ictx, p);
+            input_osc_133(ictx, sctx, p);
         }
         _ => {
             log_debug(format_args!(
@@ -4519,12 +4515,11 @@ unsafe fn input_enter_apc(mut ictx: *mut input_ctx) {
     input_start_ground_timer(ictx);
     (*ictx).flags &= !INPUT_LAST;
 }
-unsafe fn input_exit_apc(mut ictx: *mut input_ctx) {
+unsafe fn input_exit_apc(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx) {
     let input_pane_owner = (*ictx).wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
-    let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
     let mut wp: *mut window_pane = input_pane;
     if (*ictx).flags & INPUT_DISCARD != 0 {
         return;
@@ -4538,7 +4533,7 @@ unsafe fn input_exit_apc(mut ictx: *mut input_ctx) {
         CStr::from_bytes_until_nul(&(*ictx).input_buf).expect("input buffer has a terminator");
     if !wp.is_null()
         && options_get_number(&(*wp).borrow_options_mut(), c"allow-set-title") != 0
-        && screen_set_title(&mut *(*sctx).screen_ptr(), title, 1 as ::core::ffi::c_int) != 0
+        && screen_set_title(&mut *sctx.screen, title, 1 as ::core::ffi::c_int) != 0
     {
         input_fire_pane_title_changed(input_pane_owner.as_ref().expect("live pane"), title);
         server_redraw_window_borders(((*wp).window_handle().as_ref()).expect("live window"));
@@ -4551,7 +4546,7 @@ unsafe fn input_enter_rename(mut ictx: *mut input_ctx) {
     input_start_ground_timer(ictx);
     (*ictx).flags &= !INPUT_LAST;
 }
-unsafe fn input_exit_rename(ictx: *mut input_ctx) {
+unsafe fn input_exit_rename(ictx: *mut input_ctx, _sctx: &mut screen_write_ctx) {
     let Some(pane) = (*ictx).wp.upgrade() else {
         return;
     };
@@ -4589,8 +4584,10 @@ unsafe fn input_exit_rename(ictx: *mut input_ctx) {
     server_status_window(&window);
     drop(window);
 }
-unsafe fn input_top_bit_set(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
-    let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
+unsafe fn input_top_bit_set(
+    mut ictx: *mut input_ctx,
+    sctx: &mut screen_write_ctx,
+) -> ::core::ffi::c_int {
     let mut ud: *mut utf8_data = &raw mut (*ictx).utf8data;
     (*ictx).flags &= !INPUT_LAST;
     if (*ictx).utf8started == 0 {
@@ -4598,14 +4595,14 @@ unsafe fn input_top_bit_set(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
         if utf8_open(&mut *ud, (*ictx).ch as u_char) as ::core::ffi::c_uint
             != UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            input_stop_utf8(ictx);
+            input_stop_utf8(ictx, sctx);
         }
         return 0 as ::core::ffi::c_int;
     }
     match utf8_append(&mut *ud, (*ictx).ch as u_char) as ::core::ffi::c_uint {
         0 => return 0 as ::core::ffi::c_int,
         2 => {
-            input_stop_utf8(ictx);
+            input_stop_utf8(ictx, sctx);
             return 0 as ::core::ffi::c_int;
         }
         _ => {}
@@ -4622,7 +4619,7 @@ unsafe fn input_top_bit_set(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
         ((*ud).width as ::core::ffi::c_int) as u8
     ));
     (*ictx).cell.cell.data = utf8_copy(&*ud);
-    screen_write_collect_add(&mut *sctx, &(*ictx).cell.cell);
+    screen_write_collect_add(sctx, &(*ictx).cell.cell);
     (*ictx).last = utf8_copy(&(*ictx).cell.cell.data);
     (*ictx).flags |= INPUT_LAST;
     0 as ::core::ffi::c_int
@@ -4685,7 +4682,7 @@ unsafe fn input_osc_colour_reply(
         });
     };
 }
-unsafe fn input_osc_4(mut ictx: *mut input_ctx, p: &CStr) {
+unsafe fn input_osc_4(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
     let mut s: Option<&CStr> = Some(p);
     let mut idx: ::core::ffi::c_long = 0;
     let mut c: ::core::ffi::c_int = 0;
@@ -4755,11 +4752,12 @@ unsafe fn input_osc_4(mut ictx: *mut input_ctx, p: &CStr) {
         log_debug(format_args!("bad OSC 4: {}", log_cstr(p)));
     }
     if redraw != 0 {
-        screen_write_fullredraw(&mut (*ictx).ctx);
+        screen_write_fullredraw(sctx);
     }
 }
-unsafe fn input_osc_8(mut ictx: *mut input_ctx, p: &CStr) {
-    let hl = (*(*ictx).ctx.screen_ptr())
+unsafe fn input_osc_8(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
+    let hl = sctx
+        .screen
         .hyperlinks
         .as_ref()
         .expect("screen hyperlink table");
@@ -4814,6 +4812,7 @@ unsafe fn input_osc_8(mut ictx: *mut input_ctx, p: &CStr) {
 }
 unsafe fn input_set_progress_bar(
     mut ictx: *mut input_ctx,
+    sctx: &mut screen_write_ctx,
     mut state: progress_bar_state,
     mut p: ::core::ffi::c_int,
 ) {
@@ -4821,7 +4820,7 @@ unsafe fn input_set_progress_bar(
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
-    screen_set_progress_bar(&mut *(*ictx).ctx.screen_ptr(), state, p);
+    screen_set_progress_bar(&mut *sctx.screen, state, p);
     if !input_pane.is_null() {
         server_redraw_window_borders(
             ((*input_pane).window_handle().as_ref()).expect("live window"),
@@ -4829,7 +4828,7 @@ unsafe fn input_set_progress_bar(
         server_status_window(((*input_pane).window_handle().as_ref()).expect("live window"));
     }
 }
-unsafe fn input_osc_9(mut ictx: *mut input_ctx, p: &CStr) {
+unsafe fn input_osc_9(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
     let pb = p.to_bytes_with_nul();
     let mut state: progress_bar_state = PROGRESS_BAR_HIDDEN;
     let mut progress: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -4845,7 +4844,7 @@ unsafe fn input_osc_9(mut ictx: *mut input_ctx, p: &CStr) {
     if (b'0'..=b'4').contains(&pb[2]) {
         state = (pb[2] - b'0') as progress_bar_state;
         if pb[3] == b'\0' || pb[3] == b';' && pb[4] == b'\0' {
-            input_set_progress_bar(ictx, state, -(1 as ::core::ffi::c_int));
+            input_set_progress_bar(ictx, sctx, state, -(1 as ::core::ffi::c_int));
             return;
         }
         if pb[3] == b';' {
@@ -4856,14 +4855,14 @@ unsafe fn input_osc_9(mut ictx: *mut input_ctx, p: &CStr) {
                 i += 1;
             }
             if pb[i] == b'\0' && (0..=100).contains(&progress) {
-                input_set_progress_bar(ictx, state, progress);
+                input_set_progress_bar(ictx, sctx, state, progress);
                 return;
             }
         }
     }
     log_debug(format_args!("bad OSC 9;4 {}", log_cstr(p)));
 }
-unsafe fn input_osc_10(mut ictx: *mut input_ctx, p: &CStr) {
+unsafe fn input_osc_10(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
     let input_pane_owner = (*ictx).wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
@@ -4920,10 +4919,10 @@ unsafe fn input_osc_10(mut ictx: *mut input_ctx, p: &CStr) {
         if !wp.is_null() {
             (*wp).flags |= PANE_STYLECHANGED;
         }
-        screen_write_fullredraw(&mut (*ictx).ctx);
+        screen_write_fullredraw(sctx);
     }
 }
-unsafe fn input_osc_110(mut ictx: *mut input_ctx, p: &CStr) {
+unsafe fn input_osc_110(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
     let input_pane_owner = (*ictx).wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
@@ -4940,10 +4939,10 @@ unsafe fn input_osc_110(mut ictx: *mut input_ctx, p: &CStr) {
         if !wp.is_null() {
             (*wp).flags |= PANE_STYLECHANGED;
         }
-        screen_write_fullredraw(&mut (*ictx).ctx);
+        screen_write_fullredraw(sctx);
     }
 }
-unsafe fn input_osc_11(mut ictx: *mut input_ctx, p: &CStr) {
+unsafe fn input_osc_11(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
     let input_pane_owner = (*ictx).wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
@@ -4974,10 +4973,10 @@ unsafe fn input_osc_11(mut ictx: *mut input_ctx, p: &CStr) {
         if !wp.is_null() {
             (*wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
         }
-        screen_write_fullredraw(&mut (*ictx).ctx);
+        screen_write_fullredraw(sctx);
     }
 }
-unsafe fn input_osc_111(mut ictx: *mut input_ctx, p: &CStr) {
+unsafe fn input_osc_111(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
     let input_pane_owner = (*ictx).wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
@@ -4994,10 +4993,10 @@ unsafe fn input_osc_111(mut ictx: *mut input_ctx, p: &CStr) {
         if !wp.is_null() {
             (*wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
         }
-        screen_write_fullredraw(&mut (*ictx).ctx);
+        screen_write_fullredraw(sctx);
     }
 }
-unsafe fn input_osc_12(mut ictx: *mut input_ctx, p: &CStr) {
+unsafe fn input_osc_12(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
     let input_pane_owner = (*ictx).wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
@@ -5006,9 +5005,9 @@ unsafe fn input_osc_12(mut ictx: *mut input_ctx, p: &CStr) {
     let mut c: ::core::ffi::c_int = 0;
     if p == c"?" {
         if !wp.is_null() {
-            c = (*(*ictx).ctx.screen_ptr()).ccolour;
+            c = sctx.screen.ccolour;
             if c == -(1 as ::core::ffi::c_int) {
-                c = (*(*ictx).ctx.screen_ptr()).default_ccolour;
+                c = sctx.screen.default_ccolour;
             }
             input_osc_colour_reply(
                 ictx,
@@ -5026,11 +5025,11 @@ unsafe fn input_osc_12(mut ictx: *mut input_ctx, p: &CStr) {
         log_debug(format_args!("bad OSC 12: {}", log_cstr(p)));
         return;
     }
-    screen_set_cursor_colour(&mut *(*ictx).ctx.screen_ptr(), c);
+    screen_set_cursor_colour(&mut *sctx.screen, c);
 }
-unsafe fn input_osc_112(mut ictx: *mut input_ctx, p: &CStr) {
+unsafe fn input_osc_112(sctx: &mut screen_write_ctx, p: &CStr) {
     if p.is_empty() {
-        screen_set_cursor_colour(&mut *(*ictx).ctx.screen_ptr(), -(1 as ::core::ffi::c_int));
+        screen_set_cursor_colour(&mut *sctx.screen, -(1 as ::core::ffi::c_int));
     }
 }
 unsafe fn input_osc_133_exit_status(p: &CStr) -> ::core::ffi::c_int {
@@ -5152,15 +5151,14 @@ unsafe fn input_fire_command_event(
     }
     events_fire(name, ep);
 }
-unsafe fn input_osc_133(mut ictx: *mut input_ctx, p: &CStr) {
+unsafe fn input_osc_133(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
     let input_pane_owner = (*ictx).wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
     let mut wp: *mut window_pane = input_pane;
-    let mut s: *mut screen = (*ictx).ctx.screen_ptr();
-    let mut gd: *mut grid = (*s).grid_mut();
-    let mut line: u_int = (*s).cy.wrapping_add((*gd).hsize);
+    let mut gd: *mut grid = sctx.screen.grid_mut();
+    let mut line: u_int = sctx.screen.cy.wrapping_add((*gd).hsize);
     let mut status: ::core::ffi::c_int = 0;
     let line = (line < (*gd).hsize.wrapping_add((*gd).sy)).then_some(line);
     match p.to_bytes_with_nul()[0] as ::core::ffi::c_int {
@@ -5168,7 +5166,7 @@ unsafe fn input_osc_133(mut ictx: *mut input_ctx, p: &CStr) {
             if let Some(line) = line {
                 let gl = grid_get_line_mut(&mut *gd, line);
                 gl.osc133_data = osc133_data::default();
-                gl.osc133_data.prompt_col = (*s).cx as u_short;
+                gl.osc133_data.prompt_col = sctx.screen.cx as u_short;
                 gl.flags = (gl.flags as ::core::ffi::c_int | GRID_LINE_START_PROMPT) as u_short;
             }
             if !wp.is_null() {
@@ -5193,21 +5191,21 @@ unsafe fn input_osc_133(mut ictx: *mut input_ctx, p: &CStr) {
                 } else {
                     gl.flags = (gl.flags as ::core::ffi::c_int | GRID_LINE_START_PROMPT) as u_short;
                 }
-                gl.osc133_data.prompt_col = (*s).cx as u_short;
+                gl.osc133_data.prompt_col = sctx.screen.cx as u_short;
             }
         }
         66 | 73 => {
             if let Some(line) = line {
                 let gl = grid_get_line_mut(&mut *gd, line);
                 gl.flags = (gl.flags as ::core::ffi::c_int | GRID_LINE_START_COMMAND) as u_short;
-                gl.osc133_data.cmd_col = (*s).cx as u_short;
+                gl.osc133_data.cmd_col = sctx.screen.cx as u_short;
             }
         }
         67 => {
             if let Some(line) = line {
                 let gl = grid_get_line_mut(&mut *gd, line);
                 gl.flags = (gl.flags as ::core::ffi::c_int | GRID_LINE_START_OUTPUT) as u_short;
-                gl.osc133_data.out_start_col = (*s).cx as u_short;
+                gl.osc133_data.out_start_col = sctx.screen.cx as u_short;
             }
             if !wp.is_null() {
                 (*wp).cmd_start_time = time(::core::ptr::null_mut::<time_t>());
@@ -5234,7 +5232,7 @@ unsafe fn input_osc_133(mut ictx: *mut input_ctx, p: &CStr) {
             if let Some(line) = line {
                 let gl = grid_get_line_mut(&mut *gd, line);
                 gl.flags = (gl.flags as ::core::ffi::c_int | GRID_LINE_END_OUTPUT) as u_short;
-                gl.osc133_data.out_end_col = (*s).cx as u_short;
+                gl.osc133_data.out_end_col = sctx.screen.cx as u_short;
                 gl.osc133_data.exit_status = status as u_char;
             }
         }
@@ -5325,21 +5323,12 @@ unsafe fn input_osc_52_parse(
     out.truncate(outlen as usize);
     Some(out)
 }
-unsafe fn input_osc_52(mut ictx: *mut input_ctx, p: &CStr) {
+unsafe fn input_osc_52(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
     let input_pane_owner = (*ictx).wp.upgrade();
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
     let mut wp: *mut window_pane = input_pane;
-    let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: std::rc::Weak::new(),
-        target: Default::default(),
-        flags: 0,
-        init_ctx_cb: None,
-        item: None,
-        scrolled: 0,
-        bg: 0,
-    };
     let mut clip = [0u8; 13];
     let Some(out) = input_osc_52_parse(ictx, p, &mut clip) else {
         return;
@@ -5352,13 +5341,15 @@ unsafe fn input_osc_52(mut ictx: *mut input_ctx, p: &CStr) {
         tty_set_selection(&client, clip, &out);
         paste_add_owned(None, out.into_boxed_slice());
     } else {
-        screen_write_start_pane(
-            &mut ctx,
+        // The selection carries no screen state, so a fresh context on the
+        // screen the parser is writing reaches the pane's clients whether or
+        // not a mode is displayed.
+        let mut ctx = screen_write_start_pane(
             input_pane_owner.as_ref().expect("live input pane"),
-            ::core::ptr::null_mut::<screen>(),
+            &mut *sctx.screen,
         );
         screen_write_setselection(&mut ctx, clip, &out);
-        screen_write_stop(&mut ctx);
+        screen_write_stop(ctx);
         events_fire_pane(
             c"pane-set-clipboard",
             std::rc::Rc::clone(input_pane_owner.as_ref().expect("live pane")),
@@ -5366,7 +5357,7 @@ unsafe fn input_osc_52(mut ictx: *mut input_ctx, p: &CStr) {
         paste_add_owned(None, out.into_boxed_slice());
     };
 }
-unsafe fn input_osc_104(mut ictx: *mut input_ctx, p: &CStr) {
+unsafe fn input_osc_104(mut ictx: *mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
     let mut idx: ::core::ffi::c_long = 0;
     let mut bad: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut redraw: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -5374,7 +5365,7 @@ unsafe fn input_osc_104(mut ictx: *mut input_ctx, p: &CStr) {
         let _ = (*ictx)
             .palette
             .with_mut(|palette| colour_palette_clear(Some(palette)));
-        screen_write_fullredraw(&mut (*ictx).ctx);
+        screen_write_fullredraw(sctx);
         return;
     }
     let mut s = p;
@@ -5412,7 +5403,7 @@ unsafe fn input_osc_104(mut ictx: *mut input_ctx, p: &CStr) {
         log_debug(format_args!("bad OSC 104: {}", log_cstr(p)));
     }
     if redraw != 0 {
-        screen_write_fullredraw(&mut (*ictx).ctx);
+        screen_write_fullredraw(sctx);
     }
 }
 pub unsafe fn input_reply_clipboard(

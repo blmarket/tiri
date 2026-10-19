@@ -36,10 +36,8 @@ pub(super) unsafe fn write_key(
         }
         return 0;
     }
-    let (screen, stream) = {
-        let state = &mut *pane.get();
-        (state.screen_ptr(), state.event.clone())
-    };
+    let screen = pane.screen_mode(true);
+    let stream = (*pane.get()).event.clone();
     stream
         .with_ptr(|event| input_key(screen, event, key))
         .unwrap_or(0)
@@ -49,11 +47,9 @@ unsafe fn write_mouse(pane: &Rc<UnsafeCell<window_pane>>, mouse: &mouse_event) {
     if mouse.ignore != 0 {
         return;
     }
-    let (screen, stream) = {
-        let state = &mut *pane.get();
-        (state.screen_ptr(), state.event.clone())
-    };
-    if (*screen).mode & ALL_MOUSE_MODES == 0 {
+    let screen = pane.screen_mode(true);
+    let stream = (*pane.get()).event.clone();
+    if screen.mode & ALL_MOUSE_MODES == 0 {
         return;
     }
     let Some((x, y)) = pane.mouse_position(mouse, false) else {

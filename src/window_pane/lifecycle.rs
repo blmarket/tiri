@@ -33,7 +33,6 @@ use crate::shared::grid::*;
 use crate::shared::pane::window_pane;
 use crate::shared::pane::{PANE_REDRAW, PANE_STATUSDRAWN};
 use crate::shared::screen::MODE_CURSOR;
-use crate::shared::screen_write::screen_write_ctx;
 use crate::shared::style::*;
 
 use crate::server_fn::{server_kill_window, server_redraw_window};
@@ -104,15 +103,6 @@ pub(super) unsafe fn finish_process(
         .window_observer()
         .upgrade()
         .expect("live pane window");
-    let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: std::rc::Weak::new(),
-        target: Default::default(),
-        flags: 0,
-        init_ctx_cb: None,
-        item: None,
-        scrolled: 0,
-        bg: 0,
-    };
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -177,7 +167,7 @@ pub(super) unsafe fn finish_process(
                 options_get_string(&pane_owner.borrow_options_mut(), c"remain-on-exit-format");
             s = format.as_ptr();
             if *s as ::core::ffi::c_int != '\0' as i32 {
-                screen_write_start_pane(&mut ctx, pane_owner, &raw mut (*wp).base);
+                let mut ctx = screen_write_start_pane(pane_owner, &mut (*wp).base);
                 screen_write_scrollregion(&mut ctx, 0 as u_int, sy.wrapping_sub(1 as u_int));
                 screen_write_cursormove(
                     &mut ctx,
@@ -196,14 +186,14 @@ pub(super) unsafe fn finish_process(
                     Some(pane_owner),
                 );
                 format_draw(
-                    &raw mut ctx,
+                    &mut ctx,
                     &gc,
                     sx,
                     expanded.as_ptr(),
                     ::core::ptr::null_mut::<style_ranges>(),
                     0 as ::core::ffi::c_int,
                 );
-                screen_write_stop(&mut ctx);
+                screen_write_stop(ctx);
             }
             (*wp).base.mode &= !MODE_CURSOR;
             (*wp).flags |= PANE_REDRAW;

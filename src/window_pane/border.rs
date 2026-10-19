@@ -13,7 +13,6 @@ use crate::screen_write::{
 };
 use crate::shared::format::{FORMAT_PANE, FORMAT_STATUS};
 use crate::shared::redraw::redraw_spans;
-use crate::shared::screen_write::screen_write_ctx;
 use crate::style::{style_apply_with_options, style_ranges_clear};
 use crate::window_border::window_get_border_cell;
 
@@ -130,8 +129,7 @@ pub(super) unsafe fn make_status(
     let mut next = screen::empty();
     screen_init(&mut next, width, 1, 0);
     next.mode = 0;
-    let mut write = screen_write_ctx::default();
-    screen_write_start(&mut write, &mut next);
+    let mut write = screen_write_start(&mut next);
     for offset in 0..width {
         let cell_type = redraw_get_status_border_cell_type(spans, &mut span_index, offset);
         window_get_border_cell(index, lines, cell_type, &mut cell);
@@ -141,7 +139,7 @@ pub(super) unsafe fn make_status(
     screen_write_cursormove(&mut write, 0, 0, 0);
     style_ranges_clear(&mut ranges);
     format_draw(&mut write, &cell, width, expanded.as_ptr(), &mut ranges, 0);
-    screen_write_stop(&mut write);
+    screen_write_stop(write);
     drop(context);
     let changed = grid_compare(next.grid(), old.grid()) != 0;
     drop(old);

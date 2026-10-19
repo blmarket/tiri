@@ -31,7 +31,6 @@ use crate::shared::mouse::{
     MOUSE_WHEEL_UP,
 };
 use crate::shared::screen::{screen, MODE_CURSOR, MODE_MOUSE_ALL, MODE_MOUSE_BUTTON};
-use crate::shared::screen_write::screen_write_ctx;
 use crate::shared::style::*;
 use crate::shared::window::WindowWeak;
 use crate::style::{style_apply_with_options, style_parse, style_set};
@@ -208,8 +207,7 @@ pub unsafe fn menu_update(md: &mut menu_data) {
     }
     menu_reapply_styles(md);
     let menu = &md.menu;
-    let mut ctx = screen_write_ctx::default();
-    screen_write_start(&mut ctx, &mut md.s);
+    let mut ctx = screen_write_start(&mut md.s);
     screen_write_clearscreen(&mut ctx, 8);
     if md.border_lines != BOX_LINES_NONE {
         screen_write_box(
@@ -230,7 +228,7 @@ pub unsafe fn menu_update(md: &mut menu_data) {
         Some(&md.border_style_gc),
         &md.selected_style_gc,
     );
-    screen_write_stop(&mut ctx);
+    screen_write_stop(ctx);
 }
 fn menu_free_data(owner: refbox::RefBox<crate::shared::menu::menu_data>) {
     let callback = {

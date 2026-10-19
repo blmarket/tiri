@@ -43,7 +43,6 @@ use crate::shared::mouse::{
 };
 use crate::shared::popup::{POPUP_CLOSEANYKEY, POPUP_CLOSEEXIT, POPUP_CLOSEEXITZERO};
 use crate::shared::screen::{screen, ScreenMode};
-use crate::shared::screen_write::screen_write_ctx;
 use crate::shared::session::SessionRef;
 use crate::shared::signal::SIGHUP;
 use crate::shared::style::*;
@@ -411,15 +410,6 @@ unsafe fn popup_check(popup: &PopupGuard, px: u_int, py: u_int, nx: u_int) -> vi
 unsafe fn popup_draw(c_owner: &ClientRef, popup: &PopupGuard) {
     let pd = popup.as_ptr();
     let mut s: screen = screen::empty();
-    let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: std::rc::Weak::new(),
-        target: Default::default(),
-        flags: 0,
-        init_ctx_cb: None,
-        item: None,
-        scrolled: 0,
-        bg: 0,
-    };
     let _i: u_int = 0;
     let mut px: u_int = (*pd).px;
     let mut py: u_int = (*pd).py;
@@ -448,7 +438,7 @@ unsafe fn popup_draw(c_owner: &ClientRef, popup: &PopupGuard) {
     if (*pd).s.hyperlinks.is_some() {
         screen_share_hyperlinks(&mut s, &(*pd).s);
     }
-    screen_write_start(&mut ctx, &raw mut s);
+    let mut ctx = screen_write_start(&mut s);
     screen_write_clearscreen(&mut ctx, 8 as u_int);
     if (*pd).border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
         screen_write_cursormove(
@@ -489,7 +479,7 @@ unsafe fn popup_draw(c_owner: &ClientRef, popup: &PopupGuard) {
             (*pd).sy.wrapping_sub(2 as u_int),
         );
     }
-    screen_write_stop(&mut ctx);
+    screen_write_stop(ctx);
     memcpy(
         &raw mut defaults as *mut ::core::ffi::c_void,
         &raw mut (*pd).defaults as *const ::core::ffi::c_void,
@@ -756,13 +746,17 @@ unsafe fn popup_key(c_owner: &ClientRef, popup: &PopupGuard, event: *mut key_eve
                 px = (*m).x.wrapping_sub((*pd).px).wrapping_sub(1 as u_int);
                 py = (*m).y.wrapping_sub((*pd).py).wrapping_sub(1 as u_int);
             }
-            let Some(buf) = input_key_get_mouse(&raw mut (*pd).s, &*m, px, py) else {
+            let Some(buf) = input_key_get_mouse(ScreenMode::from(&(*pd).s), &*m, px, py) else {
                 return 0 as ::core::ffi::c_int;
             };
             bufferevent_write(job_get_event(&(*pd).job), &buf);
             return 0 as ::core::ffi::c_int;
         }
-        input_key(&raw mut (*pd).s, job_get_event(&(*pd).job), (*event).key);
+        input_key(
+            ScreenMode::from(&(*pd).s),
+            job_get_event(&(*pd).job),
+            (*event).key,
+        );
     }
     0 as ::core::ffi::c_int
 }
@@ -770,7 +764,6 @@ unsafe fn popup_job_update_cb(job: &refbox::Weak<job>, popup: &PopupGuard) {
     let pd = popup.as_ptr();
     let evb: &mut SegmentedBuf = bufferevent_get_input(&mut *job_get_event(job));
     let client = (*pd).c.as_ref().expect("popup client");
-    let mut s: *mut screen = &raw mut (*pd).s;
     let mut data: *mut ::core::ffi::c_void = evbuffer_pullup(evb, -1)
         .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
         as *mut ::core::ffi::c_void;
@@ -785,7 +778,7 @@ unsafe fn popup_job_update_cb(job: &refbox::Weak<job>, popup: &PopupGuard) {
                 .ictx
                 .as_deref_mut()
                 .map_or(std::ptr::null_mut(), |ictx| ictx),
-            s,
+            &mut (*pd).s,
             Some(Box::new(move |ttyctx| render.init_ctx(ttyctx))),
             std::slice::from_raw_parts(data as *const u8, size as usize),
         )

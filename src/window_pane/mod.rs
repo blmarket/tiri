@@ -713,7 +713,7 @@ unsafe fn window_pane_resize(
     if sx == (*wp).sx && sy == (*wp).sy {
         return;
     }
-    pane_owner.stop_sync();
+    pane_owner.stop_sync(None);
     let old_sx = (*wp).sx;
     let old_sy = (*wp).sy;
     (*wp).push_resize(window_pane_resize {
@@ -767,7 +767,6 @@ unsafe fn window_pane_set_mode(
 ) -> ::core::ffi::c_int {
     let wp = pane_owner.get();
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
-    let mode_screen: *mut screen;
     let mut name: *const ::core::ffi::c_char = mode.name.as_ptr();
     let mut oname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if let Some(active) = (*wp).active_mode() {
@@ -789,11 +788,6 @@ unsafe fn window_pane_set_mode(
     if existing.is_alive() {
         wme = existing.clone();
         window_pane_mode_promote(&mut *(wp), wme.clone());
-        mode_screen = wme
-            .get_unchecked()
-            .mode
-            .display_screen
-            .expect("mode display screen getter")(wme.clone());
     } else {
         let entry = refbox::RefBox::new(window_mode_entry {
             wp: std::rc::Rc::downgrade(pane_owner),
@@ -805,12 +799,12 @@ unsafe fn window_pane_set_mode(
             kill: 0,
         });
         wme = window_pane_mode_push(&mut *wp, entry);
-        mode_screen =
+        let entered =
             wme.get_unchecked()
                 .mode
                 .init
                 .expect("non-null function pointer")(wme.clone(), item_handle, fs, args);
-        if mode_screen.is_null() {
+        if !entered {
             drop(
                 window_pane_mode_remove(&mut *(wp), wme.clone())
                     .expect("mode entry is owned by pane"),
@@ -823,8 +817,11 @@ unsafe fn window_pane_set_mode(
     } else {
         0 as ::core::ffi::c_int
     };
-    assert!(!mode_screen.is_null(), "active mode has a screen");
     (*wp).screen_source = PaneScreenSource::Mode((*wp).active_mode_entry());
+    assert!(
+        (*wp).with_screen(|_| ()).is_some(),
+        "active mode has a screen"
+    );
     (*wp).flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR | PANE_CHANGED;
     ((*wp).window_handle().as_ref())
         .expect("live window")
@@ -888,7 +885,10 @@ unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::UnsafeCell<window_pa
             "window_pane_reset_mode",
             crate::log::log_bytes(next.get_unchecked().mode.name.to_bytes())
         ));
-        assert!(!(*wp).screen_ptr().is_null(), "restored mode has a screen");
+        assert!(
+            (*wp).with_screen(|_| ()).is_some(),
+            "restored mode has a screen"
+        );
         if next.get_unchecked().mode.resize.is_some() {
             next.get_unchecked()
                 .mode
@@ -1240,7 +1240,7 @@ unsafe fn window_pane_paste(
             == KEYC_PASTE_START as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
             || key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
                 == KEYC_PASTE_END as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong)
-        && !(*(*wp).screen_ptr()).mode & MODE_BRACKETPASTE != 0
+        && !pane_owner.screen_mode(true).mode & MODE_BRACKETPASTE != 0
     {
         return;
     }
@@ -1534,11 +1534,10 @@ unsafe fn window_pane_update_used_data(
 }
 
 unsafe fn window_pane_default_cursor(wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
-    let wp = wp_owner.get();
-    screen_set_default_cursor(
-        &mut *(*wp).screen_ptr(),
-        &OptionsScope::Pane(Rc::downgrade(wp_owner)),
-    );
+    let scope = OptionsScope::Pane(Rc::downgrade(wp_owner));
+    (*wp_owner.get())
+        .with_screen_mut(|screen| screen_set_default_cursor(screen, &scope))
+        .expect("displayed pane screen");
 }
 
 fn window_pane_mode(wp: &window_pane) -> ::core::ffi::c_int {
@@ -1877,7 +1876,7 @@ unsafe fn window_pane_send_theme_update(pane_owner: &Rc<std::cell::UnsafeCell<wi
     if !(*wp).flags & PANE_THEMECHANGED != 0 {
         return;
     }
-    if !(*(*wp).screen_ptr()).mode & MODE_THEME_UPDATES != 0 {
+    if !pane_owner.screen_mode(true).mode & MODE_THEME_UPDATES != 0 {
         return;
     }
     theme = window_pane_get_theme(Some(pane_owner));

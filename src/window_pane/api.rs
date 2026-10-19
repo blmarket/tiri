@@ -153,10 +153,14 @@ pub trait WindowPane {
     /// Whether the pane still has a PTY, including an exited process being drained.
     unsafe fn has_tty(&self) -> bool;
     unsafe fn is_synchronized(&self) -> bool;
-    unsafe fn start_sync(&self);
+    /// Enter sync mode on `base`, the pane's base screen as borrowed by the
+    /// write that requested it.
+    unsafe fn start_sync(&self, base: &mut screen);
     /// Cancel the timer and leave sync mode before drawing the accumulated rows.
-    /// No pane reference is retained during terminal callbacks.
-    unsafe fn stop_sync(&self);
+    /// `writing` is the pane's base screen when a write context currently
+    /// borrows it; `None` reaches it through the pane. No pane reference is
+    /// retained during terminal callbacks.
+    unsafe fn stop_sync(&self, writing: Option<&mut screen>);
     unsafe fn clear_sync_dirty(&self);
     /// Decide whether a screen write draws immediately; synchronized writes
     /// mark rows in the pane-owned bitmap, including resize invalidation.
@@ -205,15 +209,6 @@ pub trait WindowPane {
     unsafe fn has_new_status(&self) -> bool;
     unsafe fn set_new_status(&self, redraw: bool);
     unsafe fn default_colours(&self) -> (grid_cell, u32);
-    /// Start a bounded screen write. A requested component must stay allocated
-    /// until stop. For a pane screen (including a null request for its displayed
-    /// screen), stop before replacing that screen, changing modes, or logically
-    /// destroying the pane. The context observes the pane without owning it.
-    unsafe fn prepare_write(
-        &self,
-        context: &mut crate::shared::screen_write::screen_write_ctx,
-        requested: *mut screen,
-    );
     unsafe fn is_obscured(&self) -> bool;
     unsafe fn visible_ranges(
         base: Option<&Self>,
@@ -466,12 +461,12 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     }
     unsafe fn screen_mode(&self, displayed: bool) -> crate::shared::screen::ScreenMode {
         let pane = &*self.get();
-        let screen = if displayed {
-            &*pane.screen_ptr()
+        if displayed {
+            pane.with_screen(|screen| crate::shared::screen::ScreenMode::from(screen))
+                .expect("displayed pane screen")
         } else {
-            &pane.base
-        };
-        crate::shared::screen::ScreenMode::from(screen)
+            crate::shared::screen::ScreenMode::from(&pane.base)
+        }
     }
     unsafe fn prompt_position(&self, top: bool) -> Option<(i32, i32)> {
         let pane = &*self.get();
@@ -584,13 +579,6 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     }
     unsafe fn default_colours(&self) -> (grid_cell, u32) {
         super::render::default_colours(self)
-    }
-    unsafe fn prepare_write(
-        &self,
-        context: &mut crate::shared::screen_write::screen_write_ctx,
-        requested: *mut screen,
-    ) {
-        super::render::prepare_write(self, context, requested);
     }
     unsafe fn is_obscured(&self) -> bool {
         super::render::is_obscured(self)
@@ -711,8 +699,10 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         if pane.flags & PANE_INPUTOFF != 0 {
             return;
         }
-        let bracket =
-            bracket && (*pane.screen_ptr()).mode & crate::shared::screen::MODE_BRACKETPASTE != 0;
+        let bracket = bracket
+            && pane
+                .with_screen(|screen| screen.mode & crate::shared::screen::MODE_BRACKETPASTE != 0)
+                .expect("displayed pane screen");
         let write = |bytes: &[u8]| {
             let _ = pane
                 .event
@@ -915,11 +905,11 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     unsafe fn is_synchronized(&self) -> bool {
         (*self.get()).base.mode & MODE_SYNC != 0
     }
-    unsafe fn start_sync(&self) {
-        super::pane_sync::start(self);
+    unsafe fn start_sync(&self, base: &mut screen) {
+        super::pane_sync::start(self, base);
     }
-    unsafe fn stop_sync(&self) {
-        super::pane_sync::stop(self);
+    unsafe fn stop_sync(&self, writing: Option<&mut screen>) {
+        super::pane_sync::stop(self, writing);
     }
     unsafe fn clear_sync_dirty(&self) {
         super::pane_sync::clear_dirty(&mut *self.get());
@@ -973,7 +963,9 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
 
     unsafe fn visible_cursor_in_window(&self) -> Option<(u32, u32)> {
         let pane = &*self.get();
-        let screen = &*pane.screen_ptr();
+        let screen = pane
+            .with_screen(|screen| crate::shared::screen::ScreenMode::from(screen))
+            .expect("displayed pane screen");
         (screen.mode & crate::shared::screen::MODE_CURSOR != 0).then_some((
             (pane.xoff as u32).wrapping_add(screen.cx),
             (pane.yoff as u32).wrapping_add(screen.cy),
@@ -1124,87 +1116,87 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         sy: u32,
         displayed: bool,
     ) {
-        let pane = self.get();
-        let source = if displayed {
-            (*pane).screen_ptr()
-        } else {
-            &raw mut (*pane).base
-        };
-        assert!(!source.is_null(), "live pane screen");
-        assert!(
-            !std::ptr::eq(source, destination),
-            "screen copy cannot alias its source"
-        );
-        let source = &*source;
-        assert!(x <= source.grid().sx && sx <= source.grid().sx - x);
-        assert!(y <= source.grid().sy && sy <= source.grid().sy - y);
-        let mut cells = Vec::with_capacity(sx as usize * sy as usize);
-        let mut links = std::collections::HashMap::new();
-        for row in 0..sy {
-            for column in 0..sx {
-                let mut cell = grid_cell::default();
-                grid_get_cell(
-                    source.grid(),
-                    x + column,
-                    source.grid().hsize + y + row,
-                    &mut cell,
-                );
-                if crate::screen::screen_check_selection(source, x + column, y + row) != 0 {
-                    if let Some(selected) = crate::screen::screen_select_cell(source, &cell) {
-                        cell = selected;
-                    }
-                }
-                if cell.link != 0 {
-                    links.entry(cell.link).or_insert_with(|| {
-                        source.hyperlinks.as_ref().and_then(|table| {
-                            hyperlinks_get(table, cell.link)
-                                .map(|link| (link.uri.clone(), link.internal_id.clone()))
-                        })
-                    });
-                }
-                cells.push(cell);
-            }
-        }
-        drop(std::mem::take(destination));
-        screen_init(destination, sx, sy, 0);
-        destination.title = source.title.clone();
-        destination.path = source.path.clone();
-        destination.mode = source.mode;
-        destination.cstyle = source.cstyle;
-        destination.default_cstyle = source.default_cstyle;
-        destination.ccolour = source.ccolour;
-        destination.default_ccolour = source.default_ccolour;
-        destination.cx = source.cx.saturating_sub(x).min(sx.saturating_sub(1));
-        destination.cy = source.cy.saturating_sub(y).min(sy.saturating_sub(1));
-        if source.cx < x || source.cy < y || source.cx >= x + sx || source.cy >= y + sy {
-            destination.mode &= !crate::shared::screen::MODE_CURSOR;
-        }
-        let links: std::collections::HashMap<_, _> = links
-            .into_iter()
-            .map(|(id, text)| {
-                let copied = text.map_or(0, |(uri, internal_id)| {
-                    hyperlinks_put(
-                        destination
-                            .hyperlinks
-                            .as_ref()
-                            .expect("copy hyperlink table"),
-                        &uri,
-                        Some(&internal_id),
-                    )
-                });
-                (id, copied)
-            })
-            .collect();
-        for (index, mut cell) in cells.into_iter().enumerate() {
-            if cell.link != 0 {
-                cell.link = links[&cell.link];
-            }
-            grid_set_cell(
-                destination.grid_mut(),
-                index as u32 % sx,
-                index as u32 / sx,
-                &cell,
+        let pane = &*self.get();
+        let mut copy = |source: &screen| {
+            assert!(
+                !std::ptr::eq(source, destination),
+                "screen copy cannot alias its source"
             );
+            assert!(x <= source.grid().sx && sx <= source.grid().sx - x);
+            assert!(y <= source.grid().sy && sy <= source.grid().sy - y);
+            let mut cells = Vec::with_capacity(sx as usize * sy as usize);
+            let mut links = std::collections::HashMap::new();
+            for row in 0..sy {
+                for column in 0..sx {
+                    let mut cell = grid_cell::default();
+                    grid_get_cell(
+                        source.grid(),
+                        x + column,
+                        source.grid().hsize + y + row,
+                        &mut cell,
+                    );
+                    if crate::screen::screen_check_selection(source, x + column, y + row) != 0 {
+                        if let Some(selected) = crate::screen::screen_select_cell(source, &cell) {
+                            cell = selected;
+                        }
+                    }
+                    if cell.link != 0 {
+                        links.entry(cell.link).or_insert_with(|| {
+                            source.hyperlinks.as_ref().and_then(|table| {
+                                hyperlinks_get(table, cell.link)
+                                    .map(|link| (link.uri.clone(), link.internal_id.clone()))
+                            })
+                        });
+                    }
+                    cells.push(cell);
+                }
+            }
+            drop(std::mem::take(destination));
+            screen_init(destination, sx, sy, 0);
+            destination.title = source.title.clone();
+            destination.path = source.path.clone();
+            destination.mode = source.mode;
+            destination.cstyle = source.cstyle;
+            destination.default_cstyle = source.default_cstyle;
+            destination.ccolour = source.ccolour;
+            destination.default_ccolour = source.default_ccolour;
+            destination.cx = source.cx.saturating_sub(x).min(sx.saturating_sub(1));
+            destination.cy = source.cy.saturating_sub(y).min(sy.saturating_sub(1));
+            if source.cx < x || source.cy < y || source.cx >= x + sx || source.cy >= y + sy {
+                destination.mode &= !crate::shared::screen::MODE_CURSOR;
+            }
+            let links: std::collections::HashMap<_, _> = links
+                .into_iter()
+                .map(|(id, text)| {
+                    let copied = text.map_or(0, |(uri, internal_id)| {
+                        hyperlinks_put(
+                            destination
+                                .hyperlinks
+                                .as_ref()
+                                .expect("copy hyperlink table"),
+                            &uri,
+                            Some(&internal_id),
+                        )
+                    });
+                    (id, copied)
+                })
+                .collect();
+            for (index, mut cell) in cells.into_iter().enumerate() {
+                if cell.link != 0 {
+                    cell.link = links[&cell.link];
+                }
+                grid_set_cell(
+                    destination.grid_mut(),
+                    index as u32 % sx,
+                    index as u32 / sx,
+                    &cell,
+                );
+            }
+        };
+        if displayed {
+            pane.with_screen(copy).expect("displayed pane screen");
+        } else {
+            copy(&pane.base);
         }
     }
 
@@ -1332,13 +1324,13 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         (*self.get()).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED | PANE_REDRAW;
     }
     unsafe fn screen_size(&self, displayed: bool) -> (u32, u32) {
-        let pane = &mut *self.get();
-        let source = if displayed {
-            &*pane.screen_ptr()
+        let pane = &*self.get();
+        let size = |source: &screen| (source.grid().sx, source.grid().sy);
+        if displayed {
+            pane.with_screen(size).expect("displayed pane screen")
         } else {
-            &pane.base
-        };
-        (source.grid().sx, source.grid().sy)
+            size(&pane.base)
+        }
     }
     unsafe fn clone_history(
         &self,
@@ -1371,7 +1363,9 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         x: u32,
         y: u32,
     ) -> Option<CString> {
-        crate::format::format_grid_hyperlink_cstring(grid, x, y, &*(*self.get()).screen_ptr())
+        (*self.get())
+            .with_screen(|screen| crate::format::format_grid_hyperlink_cstring(grid, x, y, screen))
+            .expect("displayed pane screen")
     }
     unsafe fn saved_search(&self) -> (Option<CString>, i32) {
         let pane = &*self.get();

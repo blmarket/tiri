@@ -15,7 +15,7 @@ use crate::shared::mouse::{
 };
 use crate::shared::pane::window_pane;
 use crate::shared::screen::{
-    screen, ALL_MOUSE_MODES, EXTENDED_KEY_MODES, MODE_BRACKETPASTE, MODE_KCURSOR,
+    ScreenMode, ALL_MOUSE_MODES, EXTENDED_KEY_MODES, MODE_BRACKETPASTE, MODE_KCURSOR,
     MODE_KEYS_EXTENDED, MODE_KEYS_EXTENDED_2, MODE_KKEYPAD, MODE_MOUSE_ALL, MODE_MOUSE_BUTTON,
     MODE_MOUSE_SGR, MODE_MOUSE_UTF8,
 };
@@ -618,7 +618,7 @@ unsafe fn input_key_mode1(mut bev: *mut bufferevent, mut key: key_code) -> ::cor
     -(1 as ::core::ffi::c_int)
 }
 pub unsafe fn input_key(
-    mut s: *mut screen,
+    s: ScreenMode,
     mut bev: *mut bufferevent,
     mut key: key_code,
 ) -> ::core::ffi::c_int {
@@ -688,7 +688,7 @@ pub unsafe fn input_key(
     if key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
         == KEYC_BTAB as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
     {
-        if (*s).mode & MODE_KEYS_EXTENDED_2 != 0 {
+        if s.mode & MODE_KEYS_EXTENDED_2 != 0 {
             key = ('\t' as i32 as ::core::ffi::c_ulonglong
                 | key as ::core::ffi::c_ulonglong & !KEYC_MASK_KEY
                 | KEYC_SHIFT) as key_code;
@@ -716,10 +716,10 @@ pub unsafe fn input_key(
             return 0 as ::core::ffi::c_int;
         }
     }
-    if !(*s).mode & MODE_KKEYPAD != 0 {
+    if !s.mode & MODE_KKEYPAD != 0 {
         key &= !KEYC_KEYPAD;
     }
-    if !(*s).mode & MODE_KCURSOR != 0 {
+    if !s.mode & MODE_KCURSOR != 0 {
         key &= !KEYC_CURSOR;
     }
     let mut ike = input_key_tree::find(key);
@@ -749,7 +749,7 @@ pub unsafe fn input_key(
                 == KEYC_PASTE_START as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
                 || key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
                     == KEYC_PASTE_END as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong)
-            && !(*s).mode & MODE_BRACKETPASTE != 0
+            && !s.mode & MODE_BRACKETPASTE != 0
         {
             return 0 as ::core::ffi::c_int;
         }
@@ -779,7 +779,7 @@ pub unsafe fn input_key(
         log_debug(format_args!("{}: ignoring key 0x{:x}", "input_key", key));
         return 0 as ::core::ffi::c_int;
     }
-    match (*s).mode & EXTENDED_KEY_MODES {
+    match s.mode & EXTENDED_KEY_MODES {
         MODE_KEYS_EXTENDED_2 => input_key_extended(bev, key),
         MODE_KEYS_EXTENDED => {
             if input_key_mode1(bev, key) == -(1 as ::core::ffi::c_int) {
@@ -791,35 +791,34 @@ pub unsafe fn input_key(
     }
 }
 pub unsafe fn input_key_get_mouse(
-    mut s: *mut screen,
+    s: ScreenMode,
     m: &mouse_event,
     mut x: u_int,
     mut y: u_int,
 ) -> Option<Vec<u8>> {
-    if m.b & MOUSE_MASK_DRAG as u_int != 0
-        && (*s).mode & MOTION_MOUSE_MODES == 0 as ::core::ffi::c_int
+    if m.b & MOUSE_MASK_DRAG as u_int != 0 && s.mode & MOTION_MOUSE_MODES == 0 as ::core::ffi::c_int
     {
         return None;
     }
-    if (*s).mode & ALL_MOUSE_MODES == 0 as ::core::ffi::c_int {
+    if s.mode & ALL_MOUSE_MODES == 0 as ::core::ffi::c_int {
         return None;
     }
     if m.sgr_type != ' ' as i32 as u_int {
         if m.sgr_b & MOUSE_MASK_DRAG as u_int != 0
             && m.sgr_b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int
-            && !(*s).mode & MODE_MOUSE_ALL != 0
+            && !s.mode & MODE_MOUSE_ALL != 0
         {
             return None;
         }
     } else if m.b & MOUSE_MASK_DRAG as u_int != 0
         && m.b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int
         && m.lb & MOUSE_MASK_BUTTONS as u_int == 3 as u_int
-        && !(*s).mode & MODE_MOUSE_ALL != 0
+        && !s.mode & MODE_MOUSE_ALL != 0
     {
         return None;
     }
     let mut buf;
-    if m.sgr_type != ' ' as i32 as u_int && (*s).mode & MODE_MOUSE_SGR != 0 {
+    if m.sgr_type != ' ' as i32 as u_int && s.mode & MODE_MOUSE_SGR != 0 {
         buf = format_bytes(format_args!(
             "\x1B[<{};{};{}",
             { m.sgr_b },
@@ -827,7 +826,7 @@ pub unsafe fn input_key_get_mouse(
             { y.wrapping_add(1 as u_int) }
         ));
         buf.push((m.sgr_type) as u8);
-    } else if (*s).mode & MODE_MOUSE_UTF8 != 0 {
+    } else if s.mode & MODE_MOUSE_UTF8 != 0 {
         if m.b > (MOUSE_PARAM_UTF8_MAX - MOUSE_PARAM_BTN_OFF) as u_int
             || x > (MOUSE_PARAM_UTF8_MAX - MOUSE_PARAM_POS_OFF) as u_int
             || y > (MOUSE_PARAM_UTF8_MAX - MOUSE_PARAM_POS_OFF) as u_int

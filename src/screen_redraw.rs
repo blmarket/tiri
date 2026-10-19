@@ -1540,7 +1540,7 @@ unsafe fn redraw_draw_scene(
     }
     if flags & REDRAW_PANE != 0 {
         if let Some(pane) = pane_owner {
-            pane.stop_sync();
+            pane.stop_sync(None);
             pane.clear_sync_dirty();
         } else {
             for pane in window_owner
@@ -1548,7 +1548,7 @@ unsafe fn redraw_draw_scene(
                 .iter()
                 .filter_map(std::rc::Weak::upgrade)
             {
-                pane.stop_sync();
+                pane.stop_sync(None);
                 pane.clear_sync_dirty();
             }
         }

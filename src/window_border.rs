@@ -11,7 +11,6 @@ use crate::shared::format::{format_tree, FORMAT_NOJOBS, FORMAT_WINDOW};
 use crate::shared::grid::*;
 use crate::shared::layout::*;
 use crate::shared::screen::screen;
-use crate::shared::screen_write::screen_write_ctx;
 use crate::shared::style::style_ranges;
 use crate::shared::window::WindowRef;
 use crate::text::utf8::{utf8_copy, utf8_set};
@@ -26,15 +25,6 @@ pub(crate) unsafe fn window_render_fill_cell(
 ) -> Option<grid_cell> {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut s: screen = screen::empty();
-    let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: std::rc::Weak::new(),
-        target: Default::default(),
-        flags: 0,
-        init_ctx_cb: None,
-        item: None,
-        scrolled: 0,
-        bg: 0,
-    };
     let mut new_gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -71,16 +61,16 @@ pub(crate) unsafe fn window_render_fill_cell(
     let expanded = format_expand_cstring(ft, value.as_ptr());
     drop(ft_owner);
     screen_init(&mut s, 1 as u_int, 1 as u_int, 0 as u_int);
-    screen_write_start(&mut ctx, &raw mut s);
+    let mut ctx = screen_write_start(&mut s);
     format_draw(
-        &raw mut ctx,
+        &mut ctx,
         &grid_default_cell,
         1 as u_int,
         expanded.as_ptr(),
         ::core::ptr::null_mut::<style_ranges>(),
         0 as ::core::ffi::c_int,
     );
-    screen_write_stop(&mut ctx);
+    screen_write_stop(ctx);
     grid_view_get_cell(s.grid(), 0 as u_int, 0 as u_int, &mut new_gc);
     drop(s);
     (new_gc.data.width == 1).then_some(new_gc)

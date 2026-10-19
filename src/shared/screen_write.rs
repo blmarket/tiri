@@ -32,47 +32,27 @@ pub type screen_write_items = VecDeque<Box<screen_write_citem>>;
 pub type screen_write_item_type = ::core::ffi::c_uint;
 pub const CLEAR: screen_write_item_type = 1;
 
-#[derive(Default)]
-pub struct screen_write_ctx {
+/// A write into one screen, from `screen_write_start*` until
+/// `screen_write_stop` consumes it. The context borrows its target for that
+/// whole span.
+pub struct screen_write_ctx<'s> {
+    pub(crate) screen: &'s mut screen,
     /// Optional pane observer for redraw and terminal output.
     pub wp: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-    pub(crate) target: ScreenWriteTarget,
     pub flags: ::core::ffi::c_int,
     pub init_ctx_cb: screen_write_init_ctx_cb,
+    /// The pending cell; `screen_write_stop` flushes and releases it.
     pub item: Option<Box<screen_write_citem>>,
     pub scrolled: u_int,
     pub bg: u_int,
 }
 
-/// The active write target. A borrowed target is valid only between start and
-/// stop; the pane operation installs the same bounded component target.
-#[derive(Default)]
-pub(crate) enum ScreenWriteTarget {
-    #[default]
-    None,
-    Borrowed(std::ptr::NonNull<screen>),
-}
-
-impl screen_write_ctx {
-    pub fn screen_ptr(&self) -> *mut screen {
-        match &self.target {
-            ScreenWriteTarget::None => std::ptr::null_mut(),
-            ScreenWriteTarget::Borrowed(screen) => screen.as_ptr(),
-        }
-    }
-
-    /// # Safety
-    /// The screen must remain allocated until this context stops or changes target.
-    pub unsafe fn borrow_screen(&mut self, screen: *mut screen) {
-        self.target = ScreenWriteTarget::Borrowed(
-            std::ptr::NonNull::new(screen).expect("screen write target"),
+impl Drop for screen_write_ctx<'_> {
+    fn drop(&mut self) {
+        debug_assert!(
+            self.item.is_none() || std::thread::panicking(),
+            "screen write context dropped without screen_write_stop"
         );
-    }
-}
-
-impl ScreenWriteTarget {
-    pub(crate) const fn none() -> Self {
-        Self::None
     }
 }
 

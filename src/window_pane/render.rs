@@ -5,12 +5,11 @@ use crate::grid::grid_default_cell;
 use crate::options::OptionsScope;
 use crate::prompt::prompt_draw;
 use crate::screen_redraw::{redraw_draw_ctx, REDRAW_SCROLLBAR_LEFT, REDRAW_STATUS_TOP};
-use crate::screen_write::{screen_write_init, screen_write_start, screen_write_stop};
+use crate::screen_write::{screen_write_start, screen_write_stop};
 use crate::shared::client::ClientRef;
 use crate::shared::format::{FORMAT_NOJOBS, FORMAT_PANE};
 use crate::shared::prompt::prompt_draw_data;
 use crate::shared::redraw::redraw_span;
-use crate::shared::screen_write::screen_write_ctx;
 use crate::shared::style::style;
 use crate::shared::tty::tty_style_ctx;
 use crate::tty::tty_draw_line;
@@ -21,38 +20,6 @@ pub(super) unsafe fn refresh_scrollbar_style(pane: &Rc<UnsafeCell<window_pane>>)
     let mut updated = (*pane.get()).scrollbar_style;
     style_set_scrollbar_style_from_option(&mut updated, &OptionsScope::Pane(Rc::downgrade(pane)));
     (*pane.get()).scrollbar_style = updated;
-}
-
-/// Resolve the selected mode after releasing pane storage. The mode stack keeps
-/// its screen alive until the bounded drawing or write operation finishes.
-unsafe fn displayed_screen(pane: &Rc<UnsafeCell<window_pane>>) -> *mut screen {
-    let mode = match &(*pane.get()).screen_source {
-        PaneScreenSource::Base => return &raw mut (*pane.get()).base,
-        PaneScreenSource::Mode(observer) => observer.clone(),
-    };
-    if !mode.is_alive() {
-        return std::ptr::null_mut();
-    }
-    let display = mode
-        .get_unchecked()
-        .mode
-        .display_screen
-        .expect("mode display screen getter");
-    display(mode)
-}
-
-pub(super) unsafe fn prepare_write(
-    pane: &Rc<UnsafeCell<window_pane>>,
-    context: &mut screen_write_ctx,
-    requested: *mut screen,
-) {
-    let screen = if requested.is_null() {
-        displayed_screen(pane)
-    } else {
-        requested
-    };
-    screen_write_init(context, screen);
-    context.wp = Rc::downgrade(pane);
 }
 
 pub(super) unsafe fn is_obscured(pane: &Rc<UnsafeCell<window_pane>>) -> bool {
@@ -182,12 +149,16 @@ pub(super) unsafe fn draw_line(
     } else {
         pane.default_colours()
     };
-    let target = if status {
-        &raw mut (*pane.get()).status_screen
+    // Take the screen out of its owner so terminal callbacks can reach the
+    // pane while it draws; put it back afterwards.
+    let take = |screen: &mut screen| std::mem::take(screen);
+    let selected = if status {
+        take(&mut (*pane.get()).status_screen)
     } else {
-        displayed_screen(pane)
+        (*pane.get())
+            .with_screen_mut(take)
+            .expect("displayed pane screen")
     };
-    let selected = std::mem::take(&mut *target);
     let context = tty_style_ctx {
         defaults,
         dim,
@@ -209,7 +180,14 @@ pub(super) unsafe fn draw_line(
             (!status).then_some(&context),
         );
     }
-    *target = selected;
+    let put = |screen: &mut screen| *screen = selected;
+    if status {
+        put(&mut (*pane.get()).status_screen);
+    } else {
+        (*pane.get())
+            .with_screen_mut(put)
+            .expect("displayed pane screen");
+    }
 }
 
 pub(super) unsafe fn draw_scrollbar(
@@ -276,10 +254,9 @@ pub(super) unsafe fn draw_scrollbar(
     let mut sb_w: u_int = 0;
     let mut sb_pad: u_int = 0;
     if window_pane_mode(&*wp) == WINDOW_PANE_NO_MODE {
-        total_height = {
-            let screen = &*displayed_screen(pane_owner);
-            screen.grid().sy.wrapping_add(screen.grid().hsize)
-        };
+        total_height = (*wp)
+            .with_screen(|screen| screen.grid().sy.wrapping_add(screen.grid().hsize))
+            .expect("displayed pane screen");
         if total_height == 0 as u_int {
             return;
         }
@@ -364,15 +341,6 @@ pub(super) unsafe fn draw_prompt(
     };
     let _c: Option<ClientRef> = Some(client_owner.clone());
     let mut screen: screen = screen::empty();
-    let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: std::rc::Weak::new(),
-        target: Default::default(),
-        flags: 0,
-        init_ctx_cb: None,
-        item: None,
-        scrolled: 0,
-        bg: 0,
-    };
     let mut ox: ::core::ffi::c_int = scene.ox as ::core::ffi::c_int;
     let mut oy: ::core::ffi::c_int = scene.oy as ::core::ffi::c_int;
     let mut sx: ::core::ffi::c_int = scene.sx as ::core::ffi::c_int;
@@ -415,7 +383,7 @@ pub(super) unsafe fn draw_prompt(
         width = sx - px;
     }
     screen_init(&mut screen, pane_width, 1 as u_int, 0 as u_int);
-    screen_write_start(&mut ctx, &raw mut screen);
+    let mut ctx = screen_write_start(&mut screen);
     let pdd = prompt_draw_data {
         area_x: 0 as u_int,
         area_width: pane_width,
@@ -431,7 +399,7 @@ pub(super) unsafe fn draw_prompt(
         pdd,
     );
     (*wp).prompt_cx = prompt_cx;
-    screen_write_stop(&mut ctx);
+    screen_write_stop(ctx);
     {
         let terminal = &(client_owner);
         tty_draw_line(

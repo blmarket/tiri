@@ -402,7 +402,7 @@ unsafe fn prompt_redraw_quote(
     };
     if pr.flags & PROMPT_QUOTENEXT != 0
         && pcursor >= offset
-        && (*ctx.screen_ptr()).cx == input_x.wrapping_add(pcursor).wrapping_sub(offset)
+        && ctx.screen.cx == input_x.wrapping_add(pcursor).wrapping_sub(offset)
     {
         utf8_set(&mut ud, '^' as i32 as u_char);
         return prompt_redraw_character(ctx, offset, pw, w, gc, &ud);
@@ -800,7 +800,7 @@ pub(crate) unsafe fn prompt_draw_prepared(
 }
 
 pub unsafe fn prompt_draw(pr: &prompt, ctx: &mut screen_write_ctx, pd: prompt_draw_data) -> u_int {
-    prompt_draw_cursor_style(pr, &mut *ctx.screen_ptr());
+    prompt_draw_cursor_style(pr, &mut *ctx.screen);
     let prepared = prompt_prepare_draw(pr, pd.area_x, pd.area_width);
     prompt_draw_prepared(pr, ctx, pd, prepared)
 }

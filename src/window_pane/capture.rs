@@ -17,6 +17,7 @@ use crate::shared::limits::{INT_MIN, SHRT_MAX};
 use crate::shared::pane::window_pane;
 use crate::shared::screen::screen;
 use crate::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
+use crate::shared::window::window_mode_visit_screen;
 use crate::style::colour::colour_format;
 use crate::text::utf8::utf8_strvis;
 use libc::snprintf;
@@ -92,8 +93,14 @@ pub(super) unsafe fn capture(
         } else {
             None
         };
-    let mode_screen = get_screen.map_or(std::ptr::null_mut(), |get_screen| get_screen(active));
-    cmd_capture_pane_history(arguments, &*owner.get(), mode_screen, bounds)
+    let pane = &*owner.get();
+    match get_screen {
+        Some(get_screen) => window_mode_visit_screen(get_screen, active, |mode_screen| {
+            cmd_capture_pane_history(arguments, pane, Some(mode_screen), bounds)
+        })
+        .unwrap_or_else(|| cmd_capture_pane_history(arguments, pane, None, bounds)),
+        None => cmd_capture_pane_history(arguments, pane, None, bounds),
+    }
 }
 
 pub(super) unsafe fn clear_history(owner: &Rc<UnsafeCell<window_pane>>, reset_links: bool) {
@@ -101,7 +108,8 @@ pub(super) unsafe fn clear_history(owner: &Rc<UnsafeCell<window_pane>>, reset_li
     let pane = &mut *owner.get();
     grid_clear_history(pane.base.grid_mut());
     if reset_links {
-        screen_reset_hyperlinks(&mut *pane.screen_ptr());
+        pane.with_screen_mut(screen_reset_hyperlinks)
+            .expect("displayed pane screen");
     }
 }
 
@@ -331,7 +339,7 @@ unsafe fn cmd_capture_pane_hyperlinks(
 unsafe fn cmd_capture_pane_history(
     mut args: *mut args,
     wp: &window_pane,
-    mode_screen: *mut screen,
+    mode_screen: Option<&screen>,
     bounds: (CaptureBound, CaptureBound),
 ) -> Result<Vec<u8>, CString> {
     let mut gc = grid_default_cell;
@@ -362,7 +370,7 @@ unsafe fn cmd_capture_pane_history(
         };
         (saved, &wp.base)
     } else {
-        let s = mode_screen.as_ref().unwrap_or(&wp.base);
+        let s = mode_screen.unwrap_or(&wp.base);
         (s.grid(), s)
     };
     top = resolve_bound(bounds.0, gd.hsize, gd.sy, false);

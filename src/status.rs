@@ -44,7 +44,6 @@ use crate::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUS
 use crate::shared::prompt::*;
 use crate::shared::prompt::{prompt_free_cb, PROMPT_ACCEPT, PROMPT_SINGLE};
 use crate::shared::screen::screen;
-use crate::shared::screen_write::screen_write_ctx;
 use crate::shared::status::{status_line, status_prompt_input_cb};
 use crate::shared::style::*;
 
@@ -223,15 +222,6 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
         .expect("live client")
         .attached_session()
         .upgrade();
-    let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: std::rc::Weak::new(),
-        target: Default::default(),
-        flags: 0,
-        init_ctx_cb: None,
-        item: None,
-        scrolled: 0,
-        bg: 0,
-    };
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -293,24 +283,22 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
             force = 1 as ::core::ffi::c_int;
             changed = force;
         }
-        screen_write_start(&mut ctx, &raw mut (*sl).screen);
-        ctx.target = Default::default();
     }
+    // Draw into the status screen with it taken out of the client, so the
+    // single write context can live across the format expansions below while
+    // they reach the client.
+    let mut screen = std::mem::take(&mut c_owner.borrow_status_mut().screen);
+    let mut ctx = screen_write_start(&mut screen);
     let format_owner = scope.resolve(c"status-format", false);
     if let Some(format_owner) = &format_owner {
         i = 0 as u_int;
         while i < lines {
-            {
-                let mut status = c_owner.borrow_status_mut();
-                ctx.borrow_screen(&mut status.screen);
-                screen_write_cursormove(
-                    &mut ctx,
-                    0 as ::core::ffi::c_int,
-                    i as ::core::ffi::c_int,
-                    0 as ::core::ffi::c_int,
-                );
-                ctx.target = Default::default();
-            }
+            screen_write_cursormove(
+                &mut ctx,
+                0 as ::core::ffi::c_int,
+                i as ::core::ffi::c_int,
+                0 as ::core::ffi::c_int,
+            );
             let line_format = format_owner
                 .with_entry(c"status-format", |entry| {
                     entry
@@ -321,14 +309,11 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
                 })
                 .expect("status format stays live during expansion");
             if line_format.is_none() {
-                let mut status = c_owner.borrow_status_mut();
-                ctx.borrow_screen(&mut status.screen);
                 n = 0 as u_int;
                 while n < width {
                     screen_write_putc(&mut ctx, &gc, ' ' as i32 as u_char);
                     n = n.wrapping_add(1);
                 }
-                ctx.target = Default::default();
             } else {
                 let expanded = format_expand_time_cstring(
                     ft,
@@ -338,7 +323,6 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
                         .map_or(std::ptr::null(), |value| value.as_ptr()),
                 );
                 let mut status = c_owner.borrow_status_mut();
-                ctx.borrow_screen(&mut status.screen);
                 let sle = &mut status.entries[i as usize] as *mut style_line_entry;
                 if force != 0 || (*sle).expanded.as_ref() != Some(&expanded) {
                     changed = 1 as ::core::ffi::c_int;
@@ -355,7 +339,7 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
                     );
                     style_ranges_clear(&raw mut (*sle).ranges);
                     format_draw(
-                        &raw mut ctx,
+                        &mut ctx,
                         &gc,
                         width,
                         expanded.as_ptr(),
@@ -364,25 +348,18 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
                     );
                     (*sle).expanded = Some(expanded);
                 }
-                ctx.target = Default::default();
             }
             i = i.wrapping_add(1);
         }
     } else {
-        let mut status = c_owner.borrow_status_mut();
-        ctx.borrow_screen(&mut status.screen);
         n = 0 as u_int;
         while n < width.wrapping_mul(lines) {
             screen_write_putc(&mut ctx, &gc, ' ' as i32 as u_char);
             n = n.wrapping_add(1);
         }
-        ctx.target = Default::default();
     }
-    {
-        let mut status = c_owner.borrow_status_mut();
-        ctx.borrow_screen(&mut status.screen);
-        screen_write_stop(&mut ctx);
-    }
+    screen_write_stop(ctx);
+    c_owner.borrow_status_mut().screen = screen;
     drop(ft_owner);
     log_debug(format_args!(
         "{} exit: force={}, changed={}",
@@ -459,15 +436,6 @@ pub unsafe fn status_message_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
 
     let mut c: Option<ClientRef> = Some(c_owner.clone());
     let (terminal_width, terminal_height) = c_owner.terminal_size();
-    let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: std::rc::Weak::new(),
-        target: Default::default(),
-        flags: 0,
-        init_ctx_cb: None,
-        item: None,
-        scrolled: 0,
-        bg: 0,
-    };
     let mut s: Option<SessionRef> = c
         .as_ref()
         .expect("live client")
@@ -547,7 +515,7 @@ pub unsafe fn status_message_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
     drop(ft_owner);
     let mut status = c_owner.borrow_status_mut();
     let sl: *mut status_line = &mut *status;
-    screen_write_start(&mut ctx, (*sl).active_screen());
+    let mut ctx = screen_write_start(&mut *((*sl).active_screen()));
     screen_write_fast_copy(
         &mut ctx,
         &(*sl).screen,
@@ -563,14 +531,14 @@ pub unsafe fn status_message_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
         0 as ::core::ffi::c_int,
     );
     format_draw(
-        &raw mut ctx,
+        &mut ctx,
         &gc,
         aw,
         expanded.as_ptr(),
         ::core::ptr::null_mut::<style_ranges>(),
         0 as ::core::ffi::c_int,
     );
-    screen_write_stop(&mut ctx);
+    screen_write_stop(ctx);
     let changed = grid_compare((*sl).active_screen().grid(), old_screen.grid()) != 0;
     let _ = status;
     drop(old_screen);
@@ -687,15 +655,6 @@ unsafe fn status_prompt_screen_line(c: &ClientRef) -> u_int {
 pub unsafe fn status_prompt_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
     let mut c: Option<ClientRef> = Some(c_owner.clone());
     let (terminal_width, terminal_height) = c_owner.terminal_size();
-    let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: std::rc::Weak::new(),
-        target: Default::default(),
-        flags: 0,
-        init_ctx_cb: None,
-        item: None,
-        scrolled: 0,
-        bg: 0,
-    };
     let mut old_screen: screen = screen::empty();
     let mut lines: u_int = 0;
     let mut promptline: u_int = 0;
@@ -718,19 +677,24 @@ pub unsafe fn status_prompt_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
         promptline = lines.wrapping_sub(1 as u_int);
     }
     let (ax, aw) = status_message_area(c.as_ref().expect("live client"));
+    // Draw the active screen with it taken out of the client, so the write
+    // context can live across the prompt preparation below.
+    let mut active = std::mem::take(c_owner.borrow_status_mut().active_screen());
+    let mut ctx = screen_write_start(&mut active);
     {
-        let mut status = c_owner.borrow_status_mut();
-        let sl: *mut status_line = &mut *status;
-        screen_write_start(&mut ctx, (*sl).active_screen());
-        screen_write_fast_copy(
-            &mut ctx,
-            &(*sl).screen,
-            0 as u_int,
-            0 as u_int,
-            terminal_width,
-            lines,
-        );
-        ctx.target = Default::default();
+        let status = c_owner.borrow_status_mut();
+        // Without a pushed screen the status screen is the active one, now
+        // in hand and freshly initialized, so there is nothing to copy.
+        if status.active.is_some() {
+            screen_write_fast_copy(
+                &mut ctx,
+                &status.screen,
+                0 as u_int,
+                0 as u_int,
+                terminal_width,
+                lines,
+            );
+        }
     }
     let pdd = prompt_draw_data {
         area_x: ax,
@@ -739,19 +703,15 @@ pub unsafe fn status_prompt_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
     };
     let prompt = c_owner.prompt_observer();
     let prompt = prompt.try_borrow_mut().expect("unborrowed active prompt");
-    {
-        let mut status = c_owner.borrow_status_mut();
-        crate::prompt::prompt_draw_cursor_style(&prompt, status.active_screen());
-    }
+    crate::prompt::prompt_draw_cursor_style(&prompt, ctx.screen);
     let prepared = crate::prompt::prompt_prepare_draw(&prompt, ax, aw);
-    let mut status = c_owner.borrow_status_mut();
-    let sl: *mut status_line = &mut *status;
-    ctx.borrow_screen((*sl).active_screen());
-    (*sl).prompt_cx = crate::prompt::prompt_draw_prepared(&prompt, &mut ctx, pdd, prepared);
+    let prompt_cx = crate::prompt::prompt_draw_prepared(&prompt, &mut ctx, pdd, prepared);
     drop(prompt);
-    screen_write_stop(&mut ctx);
-    let changed = grid_compare((*sl).active_screen().grid(), old_screen.grid()) != 0;
-    let _ = status;
+    screen_write_stop(ctx);
+    let changed = grid_compare(active.grid(), old_screen.grid()) != 0;
+    let mut status = c_owner.borrow_status_mut();
+    status.prompt_cx = prompt_cx;
+    *status.active_screen() = active;
     drop(old_screen);
     i32::from(changed)
 }

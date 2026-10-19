@@ -23,10 +23,9 @@ pub(super) unsafe fn compare(
             b.id,
             b.sx.wrapping_mul(b.sy),
             b.window.clone(),
-            libc::strcmp(
-                (*a.screen_ptr()).title.as_ptr(),
-                (*b.screen_ptr()).title.as_ptr(),
-            ),
+            a.with_screen(|a| b.with_screen(|b| a.title.cmp(&b.title) as i32))
+                .flatten()
+                .expect("displayed pane screens"),
         )
     };
     let order_index = |parent: &WindowWeak, observer: &std::rc::Weak<UnsafeCell<window_pane>>| {

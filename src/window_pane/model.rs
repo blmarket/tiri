@@ -171,17 +171,23 @@ impl window_pane {
         self.window.upgrade()
     }
 
-    /// Resolve the displayed screen while the pane and selected mode are live.
-    pub(super) unsafe fn screen_ptr(&self) -> *mut screen {
+    /// Visit the displayed screen: the base screen, or the selected mode's.
+    /// `None` when the selected mode has no screen.
+    pub(super) unsafe fn with_screen<R>(&self, visit: impl FnOnce(&screen) -> R) -> Option<R> {
         match &self.screen_source {
-            PaneScreenSource::Base => (&raw const self.base).cast_mut(),
-            PaneScreenSource::Mode(observer) => {
-                if !observer.is_alive() {
-                    return std::ptr::null_mut();
-                }
-                let mode = observer.get_unchecked().mode;
-                mode.display_screen.expect("mode display screen getter")(observer.clone())
-            }
+            PaneScreenSource::Base => Some(visit(&self.base)),
+            PaneScreenSource::Mode(entry) => visit_mode_screen(entry, |screen| visit(screen)),
+        }
+    }
+
+    /// Mutable form of [`Self::with_screen`].
+    pub(super) unsafe fn with_screen_mut<R>(
+        &mut self,
+        visit: impl FnOnce(&mut screen) -> R,
+    ) -> Option<R> {
+        match &self.screen_source {
+            PaneScreenSource::Base => Some(visit(&mut self.base)),
+            PaneScreenSource::Mode(entry) => visit_mode_screen(entry, visit),
         }
     }
 
@@ -235,4 +241,20 @@ impl window_pane {
         self.resize_queue
             .retain(|resize| std::ptr::eq(&**resize, except));
     }
+}
+
+/// The selected mode's screen lives in the mode payload, not in the pane.
+unsafe fn visit_mode_screen<R>(
+    entry: &refbox::Weak<window_mode_entry>,
+    visit: impl FnOnce(&mut screen) -> R,
+) -> Option<R> {
+    if !entry.is_alive() {
+        return None;
+    }
+    let display = entry
+        .get_unchecked()
+        .mode
+        .display_screen
+        .expect("mode display screen getter");
+    crate::shared::window::window_mode_visit_screen(display, entry.clone(), visit)
 }

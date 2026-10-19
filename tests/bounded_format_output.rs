@@ -4,7 +4,7 @@ use tiri::{
     input_keys::input_key_get_mouse,
     shared::{
         mouse::mouse_event,
-        screen::{screen, MODE_MOUSE_BUTTON, MODE_MOUSE_SGR},
+        screen::{screen, ScreenMode, MODE_MOUSE_BUTTON, MODE_MOUSE_SGR},
         style::{style, STYLE_ALIGN_RIGHT, STYLE_LIST_ON, STYLE_RANGE_USER},
     },
     style::{style_set, style_tostring},
@@ -44,7 +44,7 @@ fn sgr_mouse_output_counts_the_final_character_as_one_byte() {
             ..Default::default()
         };
         unsafe {
-            let buf = input_key_get_mouse(&mut screen, &mouse, 9, 19).unwrap();
+            let buf = input_key_get_mouse(ScreenMode::from(&screen), &mouse, 9, 19).unwrap();
             let mut expected = b"\x1b[<4;10;20".to_vec();
             expected.push(byte);
             assert_eq!(buf, expected);

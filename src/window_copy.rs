@@ -62,8 +62,8 @@ use crate::shared::screen::screen;
 use crate::shared::screen_write::screen_write_ctx;
 use crate::shared::session::SessionRef;
 use crate::shared::style::*;
-use crate::shared::window::WindowRef;
 pub use crate::shared::window::{window_mode, window_mode_entry, winlink};
+use crate::shared::window::{window_mode_screen_cb, WindowRef};
 use crate::status::status_message_set;
 use crate::style::style_apply_with_options;
 use crate::text::utf8::{utf8_copy, utf8_fromcstr_vec, utf8_set, utf8_to_data};
@@ -380,7 +380,7 @@ pub static window_copy_mode: window_mode = {
                     Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
                     *mut cmd_find_state,
                     *mut args,
-                ) -> *mut screen,
+                ) -> bool,
         ),
         free: None,
         resize: Some(
@@ -409,9 +409,7 @@ pub static window_copy_mode: window_mode = {
             window_copy_formats
                 as unsafe fn(refbox::Weak<window_mode_entry>, *mut format_tree) -> (),
         ),
-        get_screen: Some(
-            window_copy_get_screen as unsafe fn(refbox::Weak<window_mode_entry>) -> *mut screen,
-        ),
+        get_screen: Some(window_copy_get_screen as window_mode_screen_cb),
         display_screen: Some(window_copy_display_screen),
     }
 };
@@ -427,7 +425,7 @@ pub static window_view_mode: window_mode = {
                     Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
                     *mut cmd_find_state,
                     *mut args,
-                ) -> *mut screen,
+                ) -> bool,
         ),
         free: None,
         resize: Some(
@@ -456,9 +454,7 @@ pub static window_view_mode: window_mode = {
             window_copy_formats
                 as unsafe fn(refbox::Weak<window_mode_entry>, *mut format_tree) -> (),
         ),
-        get_screen: Some(
-            window_copy_get_screen as unsafe fn(refbox::Weak<window_mode_entry>) -> *mut screen,
-        ),
+        get_screen: Some(window_copy_get_screen as window_mode_screen_cb),
         display_screen: Some(window_copy_display_screen),
     }
 };
@@ -573,9 +569,8 @@ pub(crate) unsafe fn window_copy_sync_screen(
     target: &mut screen,
     sync: (u_int, u_int, u_int),
 ) -> bool {
-    let dst: *mut screen = target;
     let sg: *const grid = source.grid();
-    let mut dg: *mut grid = (*dst).grid_mut();
+    let mut dg: *mut grid = target.grid_mut();
     let mut sy: u_int = (*sg).sy;
     let mut old_hsize: u_int = (*dg).hsize;
     let mut new_hsize: u_int = (*sg).hsize;
@@ -614,12 +609,13 @@ pub(crate) unsafe fn window_copy_sync_screen(
         grid_duplicate_lines(&mut *dg, new_hsize, &*sg, new_hsize, sy);
     }
     (*dg).hscrolled = (*sg).hscrolled;
-    if source.cy > (*dg).sy.wrapping_sub(1 as u_int) {
-        (*dst).cx = 0 as u_int;
-        (*dst).cy = (*dg).sy.wrapping_sub(1 as u_int);
+    let last = (*dg).sy.wrapping_sub(1 as u_int);
+    if source.cy > last {
+        target.cx = 0 as u_int;
+        target.cy = last;
     } else {
-        (*dst).cx = source.cx;
-        (*dst).cy = source.cy;
+        target.cx = source.cx;
+        target.cy = source.cy;
     }
     true
 }
@@ -692,20 +688,11 @@ unsafe fn window_copy_init(
     _item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     _fs: *mut cmd_find_state,
     mut args: *mut args,
-) -> *mut screen {
+) -> bool {
     let Some(source_owner) = wme.get_unchecked().swp.upgrade() else {
-        return std::ptr::null_mut();
+        return false;
     };
     let mut data: *mut window_copy_mode_data = ::core::ptr::null_mut::<window_copy_mode_data>();
-    let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: std::rc::Weak::new(),
-        target: Default::default(),
-        flags: 0,
-        init_ctx_cb: None,
-        item: None,
-        scrolled: 0,
-        bg: 0,
-    };
     let mut i: u_int = 0;
     let mut cx: u_int = 0;
     let mut cy: u_int = 0;
@@ -738,30 +725,31 @@ unsafe fn window_copy_init(
         .wrapping_add((*data).cy)
         .wrapping_sub((*data).oy);
     (*data).showmark = 0 as ::core::ffi::c_int;
-    screen_write_start(&mut ctx, &raw mut (*data).screen);
+    let mut ctx = screen_write_start(&mut (*data).screen);
     i = 0 as u_int;
-    while i < (*data).screen.grid().sy {
-        window_copy_write_line(wme.clone(), &raw mut ctx, i);
+    while i < ctx.screen.grid().sy {
+        window_copy_write_line(wme.clone(), &mut ctx, i);
         i = i.wrapping_add(1);
     }
+    let cursor_x = window_copy_cursor_offset(wme.clone(), (*data).cx, ctx.screen.grid().sx)
+        as ::core::ffi::c_int;
     screen_write_cursormove(
         &mut ctx,
-        window_copy_cursor_offset(wme.clone(), (*data).cx, (*data).screen.grid().sx)
-            as ::core::ffi::c_int,
+        cursor_x,
         (*data).cy as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    screen_write_stop(&mut ctx);
+    screen_write_stop(ctx);
     (*data).recentre_state = RECENTRE_MIDDLE;
     (*data).recentre_line = 0 as u_int;
-    &raw mut (*data).screen
+    true
 }
 unsafe fn window_copy_view_init(
     mut wme: refbox::Weak<window_mode_entry>,
     _item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     _fs: *mut cmd_find_state,
     _args: *mut args,
-) -> *mut screen {
+) -> bool {
     let mode_pane_owner = wme
         .get_unchecked()
         .wp
@@ -788,7 +776,7 @@ unsafe fn window_copy_view_init(
         .wrapping_add((*data).cy)
         .wrapping_sub((*data).oy);
     (*data).showmark = 0 as ::core::ffi::c_int;
-    &raw mut (*data).screen
+    true
 }
 pub unsafe fn window_copy_add(
     pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
@@ -797,25 +785,6 @@ pub unsafe fn window_copy_add(
 ) {
     let mut wme: refbox::Weak<window_mode_entry> = pane_owner.mode_entry();
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
-    let mut backing: *mut screen = (*data).backing_mut();
-    let mut backing_ctx: screen_write_ctx = screen_write_ctx {
-        wp: std::rc::Weak::new(),
-        target: Default::default(),
-        flags: 0,
-        init_ctx_cb: None,
-        item: None,
-        scrolled: 0,
-        bg: 0,
-    };
-    let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: std::rc::Weak::new(),
-        target: Default::default(),
-        flags: 0,
-        init_ctx_cb: None,
-        item: None,
-        scrolled: 0,
-        bg: 0,
-    };
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -833,14 +802,14 @@ pub unsafe fn window_copy_add(
     let mut old_hsize: u_int = 0;
     let mut old_cy: u_int = 0;
     old_hsize = (*data).backing().grid().hsize;
-    screen_write_start(&mut backing_ctx, backing);
+    let mut backing_ctx = screen_write_start((*data).backing_mut());
     if (*data).backing_written != 0 {
         screen_write_carriagereturn(&mut backing_ctx);
         screen_write_linefeed(&mut backing_ctx, 0 as ::core::ffi::c_int, 8 as u_int);
     } else {
         (*data).backing_written = 1 as ::core::ffi::c_int;
     }
-    old_cy = (*backing).cy;
+    old_cy = backing_ctx.screen.cy;
     if parse != 0 {
         let text = format_message_with(write);
         input_parse_screen(
@@ -848,7 +817,7 @@ pub unsafe fn window_copy_add(
                 .ictx
                 .as_deref_mut()
                 .map_or(std::ptr::null_mut(), |ictx| ictx),
-            backing,
+            &mut *backing_ctx.screen,
             Some(Box::new(|_| {})),
             text.as_bytes(),
         );
@@ -856,20 +825,23 @@ pub unsafe fn window_copy_add(
         gc = grid_default_cell;
         screen_write_nputs(&mut backing_ctx, 0 as ssize_t, &gc, write);
     }
-    screen_write_stop(&mut backing_ctx);
+    screen_write_stop(backing_ctx);
     (*data).oy = (*data)
         .oy
         .wrapping_add((*data).backing().grid().hsize.wrapping_sub(old_hsize));
-    screen_write_start_pane(&mut ctx, pane_owner, &raw mut (*data).screen);
+    let mut ctx = screen_write_start_pane(pane_owner, &mut (*data).screen);
     if (*data).backing().grid().hsize != 0 {
         window_copy_redraw_lines(wme.clone(), 0 as u_int, 1 as u_int);
     }
     window_copy_redraw_lines(
         wme.clone(),
         old_cy,
-        (*backing).cy.wrapping_sub(old_cy).wrapping_add(1 as u_int),
+        (*(*data).backing_mut())
+            .cy
+            .wrapping_sub(old_cy)
+            .wrapping_add(1 as u_int),
     );
-    screen_write_stop(&mut ctx);
+    screen_write_stop(ctx);
 }
 pub unsafe fn window_copy_scroll(
     pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
@@ -986,7 +958,7 @@ unsafe fn window_copy_scroll1(
     if !(*data).searchmark.is_empty() && (*data).timeout == 0 {
         window_copy_search_marks(
             wme.clone(),
-            ::core::ptr::null_mut::<screen>(),
+            None,
             (*data).searchregex,
             1 as ::core::ffi::c_int,
         );
@@ -1009,7 +981,6 @@ unsafe fn window_copy_pageup1(
         .upgrade()
         .expect("mode belongs to a live pane");
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
-    let mut s: *mut screen = &raw mut (*data).screen;
     let mut n: u_int = 0;
     let mut ox: u_int = 0;
     let mut oy: u_int = 0;
@@ -1028,11 +999,11 @@ unsafe fn window_copy_pageup1(
     }
     (*data).cx = (*data).lastcx;
     n = 1 as u_int;
-    if (*s).grid().sy > 2 as u_int {
+    if (*data).screen.grid().sy > 2 as u_int {
         if half_page != 0 {
-            n = (*s).grid().sy.wrapping_div(2 as u_int);
+            n = (*data).screen.grid().sy.wrapping_div(2 as u_int);
         } else {
-            n = (*s).grid().sy.wrapping_sub(2 as u_int);
+            n = (*data).screen.grid().sy.wrapping_sub(2 as u_int);
         }
     }
     if (*data).oy.wrapping_add(n) > (*data).backing().grid().hsize {
@@ -1060,7 +1031,7 @@ unsafe fn window_copy_pageup1(
     if !(*data).searchmark.is_empty() && (*data).timeout == 0 {
         window_copy_search_marks(
             wme.clone(),
-            ::core::ptr::null_mut::<screen>(),
+            None,
             (*data).searchregex,
             1 as ::core::ffi::c_int,
         );
@@ -1093,7 +1064,6 @@ unsafe fn window_copy_pagedown1(
         .upgrade()
         .expect("mode belongs to a live pane");
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
-    let mut s: *mut screen = &raw mut (*data).screen;
     let mut n: u_int = 0;
     let mut ox: u_int = 0;
     let mut oy: u_int = 0;
@@ -1112,11 +1082,11 @@ unsafe fn window_copy_pagedown1(
     }
     (*data).cx = (*data).lastcx;
     n = 1 as u_int;
-    if (*s).grid().sy > 2 as u_int {
+    if (*data).screen.grid().sy > 2 as u_int {
         if half_page != 0 {
-            n = (*s).grid().sy.wrapping_div(2 as u_int);
+            n = (*data).screen.grid().sy.wrapping_div(2 as u_int);
         } else {
-            n = (*s).grid().sy.wrapping_sub(2 as u_int);
+            n = (*data).screen.grid().sy.wrapping_sub(2 as u_int);
         }
     }
     if (*data).oy < n {
@@ -1147,7 +1117,7 @@ unsafe fn window_copy_pagedown1(
     if !(*data).searchmark.is_empty() && (*data).timeout == 0 {
         window_copy_search_marks(
             wme.clone(),
-            ::core::ptr::null_mut::<screen>(),
+            None,
             (*data).searchregex,
             1 as ::core::ffi::c_int,
         );
@@ -1180,7 +1150,6 @@ unsafe fn window_copy_previous_paragraph(mut wme: refbox::Weak<window_mode_entry
 }
 unsafe fn window_copy_next_paragraph(mut wme: refbox::Weak<window_mode_entry>) {
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
-    let mut s: *mut screen = &raw mut (*data).screen;
     let mut maxy: u_int = 0;
     let mut ox: u_int = 0;
     let mut oy: u_int = 0;
@@ -1194,7 +1163,7 @@ unsafe fn window_copy_next_paragraph(mut wme: refbox::Weak<window_mode_entry>) {
         .backing()
         .grid()
         .hsize
-        .wrapping_add((*s).grid().sy)
+        .wrapping_add((*data).screen.grid().sy)
         .wrapping_sub(1 as u_int);
     while oy < maxy && window_copy_find_length(wme.clone(), oy) == 0 as u_int {
         oy = oy.wrapping_add(1);
@@ -1388,38 +1357,37 @@ unsafe fn window_copy_formats(mut wme: refbox::Weak<window_mode_entry>, mut ft: 
         window_copy_cursor_hyperlink_cb(ft.as_ptr())
     });
 }
-unsafe fn window_copy_get_screen(mut wme: refbox::Weak<window_mode_entry>) -> *mut screen {
-    let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
-    (*data).backing_mut()
+unsafe fn window_copy_get_screen(
+    wme: refbox::Weak<window_mode_entry>,
+    visit: &mut dyn FnMut(&mut screen),
+) {
+    let data: *mut window_copy_mode_data = window_copy_data(wme);
+    visit((*data).backing_mut());
 }
-unsafe fn window_copy_display_screen(wme: refbox::Weak<window_mode_entry>) -> *mut screen {
-    let data = wme
+unsafe fn window_copy_display_screen(
+    wme: refbox::Weak<window_mode_entry>,
+    visit: &mut dyn FnMut(&mut screen),
+) {
+    if let Some(data) = wme
         .get_unchecked()
-        .boxed_data_ptr::<window_copy_mode_data>();
-    data.map_or(std::ptr::null_mut(), |data| &raw mut (*data).screen)
+        .boxed_data_ptr::<window_copy_mode_data>()
+    {
+        visit(&mut (*data).screen);
+    }
 }
 unsafe fn window_copy_size_changed(mut wme: refbox::Weak<window_mode_entry>) {
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
-    let mut s: *mut screen = &raw mut (*data).screen;
-    let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: std::rc::Weak::new(),
-        target: Default::default(),
-        flags: 0,
-        init_ctx_cb: None,
-        item: None,
-        scrolled: 0,
-        bg: 0,
-    };
     let mut search: ::core::ffi::c_int = (!(*data).searchmark.is_empty()) as ::core::ffi::c_int;
     window_copy_clear_selection(wme.clone());
     window_copy_clear_marks(wme.clone());
-    screen_write_start(&mut ctx, s);
-    window_copy_write_lines(wme.clone(), &raw mut ctx, 0 as u_int, (*s).grid().sy);
-    screen_write_stop(&mut ctx);
+    let mut ctx = screen_write_start(&mut (*data).screen);
+    let rows = ctx.screen.grid().sy;
+    window_copy_write_lines(wme.clone(), &mut ctx, 0 as u_int, rows);
+    screen_write_stop(ctx);
     if search != 0 && (*data).timeout == 0 {
         window_copy_search_marks(
             wme.clone(),
-            ::core::ptr::null_mut::<screen>(),
+            None,
             (*data).searchregex,
             0 as ::core::ffi::c_int,
         );
@@ -1434,13 +1402,12 @@ unsafe fn window_copy_resize(
     mut sy: u_int,
 ) {
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
-    let mut s: *mut screen = &raw mut (*data).screen;
     let mut cx: u_int = 0;
     let mut cy: u_int = 0;
     let mut wx: u_int = 0;
     let mut wy: u_int = 0;
     let mut reflow: ::core::ffi::c_int = 0;
-    screen_resize(&mut *s, sx, sy, 0 as ::core::ffi::c_int);
+    screen_resize(&mut (*data).screen, sx, sy, 0 as ::core::ffi::c_int);
     let gd = (*data).backing().grid();
     cx = (*data).cx;
     if (*data).oy > gd.hsize.wrapping_add((*data).cy) {
@@ -2147,7 +2114,7 @@ unsafe fn window_copy_cmd_history_bottom(
     if !(*data).searchmark.is_empty() && (*data).timeout == 0 {
         window_copy_search_marks(
             wme.clone(),
-            ::core::ptr::null_mut::<screen>(),
+            None,
             (*data).searchregex,
             1 as ::core::ffi::c_int,
         );
@@ -2192,7 +2159,7 @@ unsafe fn window_copy_cmd_history_top(
     if !(*data).searchmark.is_empty() && (*data).timeout == 0 {
         window_copy_search_marks(
             wme.clone(),
-            ::core::ptr::null_mut::<screen>(),
+            None,
             (*data).searchregex,
             1 as ::core::ffi::c_int,
         );
@@ -5224,7 +5191,7 @@ unsafe fn window_copy_scroll_to(
     if no_redraw == 0 && !(*data).searchmark.is_empty() && (*data).timeout == 0 {
         window_copy_search_marks(
             wme.clone(),
-            ::core::ptr::null_mut::<screen>(),
+            None,
             (*data).searchregex,
             1 as ::core::ffi::c_int,
         );
@@ -5778,7 +5745,7 @@ fn window_copy_find_cell_suffix(cells: &[Cow<'_, [u8]>], text: &[u8]) -> usize {
     cells.len()
 }
 unsafe fn window_copy_move_left(
-    mut s: *mut screen,
+    s: &screen,
     mut fx: *mut u_int,
     mut fy: *mut u_int,
     mut wrapflag: ::core::ffi::c_int,
@@ -5802,7 +5769,7 @@ unsafe fn window_copy_move_left(
     };
 }
 unsafe fn window_copy_move_right(
-    mut s: *mut screen,
+    s: &screen,
     mut fx: *mut u_int,
     mut fy: *mut u_int,
     mut wrapflag: ::core::ffi::c_int,
@@ -6053,7 +6020,6 @@ unsafe fn window_copy_move_after_search_mark(
     mut fy: *mut u_int,
     mut wrapflag: ::core::ffi::c_int,
 ) {
-    let mut s: *mut screen = (*data).backing_mut();
     let mut at: u_int = 0;
     let mut start: u_int = 0;
     if window_copy_search_mark_at(data, *fx, *fy, &raw mut start) == 0 as ::core::ffi::c_int
@@ -6066,17 +6032,17 @@ unsafe fn window_copy_move_after_search_mark(
                 break;
             }
             if wrapflag == 0
-                && *fx == (*s).grid().sx.wrapping_sub(1 as u_int)
+                && *fx == (*(*data).backing_mut()).grid().sx.wrapping_sub(1 as u_int)
                 && *fy
-                    == (*s)
+                    == (*(*data).backing_mut())
                         .grid()
                         .hsize
-                        .wrapping_add((*s).grid().sy)
+                        .wrapping_add((*(*data).backing_mut()).grid().sy)
                         .wrapping_sub(1 as u_int)
             {
                 break;
             }
-            window_copy_move_right(s, fx, fy, wrapflag);
+            window_copy_move_right((*data).backing(), fx, fy, wrapflag);
         }
     }
 }
@@ -6091,18 +6057,8 @@ unsafe fn window_copy_search(
         .upgrade()
         .expect("mode belongs to a live pane");
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
-    let mut s: *mut screen = (*data).backing_mut();
     let mut ss: screen = screen::empty();
-    let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: std::rc::Weak::new(),
-        target: Default::default(),
-        flags: 0,
-        init_ctx_cb: None,
-        item: None,
-        scrolled: 0,
-        bg: 0,
-    };
-    let mut gd: *mut grid = (*s).grid_mut();
+    let mut gd: *mut grid = (*(*data).backing_mut()).grid_mut();
     let searchstr = window_copy_searchstr(&*data)
         .expect("search has a string")
         .to_owned();
@@ -6153,14 +6109,14 @@ unsafe fn window_copy_search(
         return 0 as ::core::ffi::c_int;
     }
     screen_init(&mut ss, ssx, 1 as u_int, 0 as u_int);
-    screen_write_start(&mut ctx, &raw mut ss);
+    let mut ctx = screen_write_start(&mut ss);
     screen_write_nputs(
         &mut ctx,
         -(1 as ::core::ffi::c_int) as ssize_t,
         &grid_default_cell,
         |out| write_cstr(out, str),
     );
-    screen_write_stop(&mut ctx);
+    screen_write_stop(ctx);
     wrapflag = options_get_number(
         &mode_pane_owner
             .window_observer()
@@ -6183,12 +6139,12 @@ unsafe fn window_copy_search(
             if !(*data).searchmark.is_empty() {
                 window_copy_move_after_search_mark(data, &raw mut fx, &raw mut fy, wrapflag);
             } else {
-                window_copy_move_right(s, &raw mut fx, &raw mut fy, wrapflag);
+                window_copy_move_right((*data).backing(), &raw mut fx, &raw mut fy, wrapflag);
             }
         }
         endline = (*gd).hsize.wrapping_add((*gd).sy).wrapping_sub(1 as u_int);
     } else {
-        window_copy_move_left(s, &raw mut fx, &raw mut fy, wrapflag);
+        window_copy_move_left((*data).backing(), &raw mut fx, &raw mut fy, wrapflag);
         endline = 0 as u_int;
     }
     found = window_copy_search_jump(
@@ -6204,7 +6160,7 @@ unsafe fn window_copy_search(
         regex,
     );
     if found != 0 {
-        window_copy_search_marks(wme.clone(), &raw mut ss, regex, visible_only);
+        window_copy_search_marks(wme.clone(), Some(&mut ss), regex, visible_only);
         fx = (*data).cx;
         fy = (*data)
             .backing()
@@ -6263,7 +6219,12 @@ unsafe fn window_copy_search(
                 if at == 0 as u_int {
                     break;
                 }
-                window_copy_move_left(s, &raw mut fx, &raw mut fy, 0 as ::core::ffi::c_int);
+                window_copy_move_left(
+                    (*data).backing(),
+                    &raw mut fx,
+                    &raw mut fy,
+                    0 as ::core::ffi::c_int,
+                );
             }
         }
     }
@@ -6295,8 +6256,7 @@ unsafe fn window_copy_search_mark_at(
     mut py: u_int,
     mut at: *mut u_int,
 ) -> ::core::ffi::c_int {
-    let mut s: *mut screen = (*data).backing_mut();
-    let mut gd: *mut grid = (*s).grid_mut();
+    let mut gd: *mut grid = (*(*data).backing_mut()).grid_mut();
     if py < (*gd).hsize.wrapping_sub((*data).oy) {
         return -(1 as ::core::ffi::c_int);
     }
@@ -6400,23 +6360,13 @@ unsafe fn window_copy_replace_searchmark(data: &mut window_copy_mode_data, sx: u
 
 unsafe fn window_copy_search_marks(
     mut wme: refbox::Weak<window_mode_entry>,
-    mut ssp: *mut screen,
+    search: Option<&mut screen>,
     mut regex: ::core::ffi::c_int,
     mut visible_only: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
-    let mut s: *mut screen = (*data).backing_mut();
     let mut ss: screen = screen::empty();
-    let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: std::rc::Weak::new(),
-        target: Default::default(),
-        flags: 0,
-        init_ctx_cb: None,
-        item: None,
-        scrolled: 0,
-        bg: 0,
-    };
-    let mut gd: *mut grid = (*s).grid_mut();
+    let mut gd: *mut grid = (*(*data).backing_mut()).grid_mut();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -6447,21 +6397,25 @@ unsafe fn window_copy_search_marks(
     let mut stop: uint64_t = 0 as uint64_t;
     let mut tstart: uint64_t = 0;
     let mut t: uint64_t = 0;
-    if ssp.is_null() {
-        width = screen_write_strlen((*data).searchstr.as_deref().unwrap_or(c"(null)")) as u_int;
-        screen_init(&mut ss, width, 1 as u_int, 0 as u_int);
-        screen_write_start(&mut ctx, &raw mut ss);
-        screen_write_nputs(
-            &mut ctx,
-            -(1 as ::core::ffi::c_int) as ssize_t,
-            &grid_default_cell,
-            |out| write_cstr(out, window_copy_searchstr(&*data)),
-        );
-        screen_write_stop(&mut ctx);
-        ssp = &raw mut ss;
-    } else {
-        width = (*ssp).grid().sx;
-    }
+    let ssp: &mut screen = match search {
+        None => {
+            width = screen_write_strlen((*data).searchstr.as_deref().unwrap_or(c"(null)")) as u_int;
+            screen_init(&mut ss, width, 1 as u_int, 0 as u_int);
+            let mut ctx = screen_write_start(&mut ss);
+            screen_write_nputs(
+                &mut ctx,
+                -(1 as ::core::ffi::c_int) as ssize_t,
+                &grid_default_cell,
+                |out| write_cstr(out, window_copy_searchstr(&*data)),
+            );
+            screen_write_stop(ctx);
+            &mut ss
+        }
+        Some(search) => {
+            width = search.grid().sx;
+            search
+        }
+    };
     cis = window_copy_is_lowercase(
         window_copy_searchstr(&*data).map_or(std::ptr::null(), std::ffi::CStr::as_ptr),
     );
@@ -6578,9 +6532,6 @@ unsafe fn window_copy_search_marks(
             }
             break;
         }
-    }
-    if ssp == &raw mut ss {
-        drop(ss);
     }
     drop(regex_owner);
     1 as ::core::ffi::c_int
@@ -6855,7 +6806,7 @@ unsafe fn window_copy_update_style(
 }
 unsafe fn window_copy_write_one(
     mut wme: refbox::Weak<window_mode_entry>,
-    mut ctx: *mut screen_write_ctx,
+    mut ctx: &mut screen_write_ctx,
     mut px: u_int,
     mut py: u_int,
     mut fy: u_int,
@@ -6885,7 +6836,7 @@ unsafe fn window_copy_write_one(
     let mut i: u_int = 0;
     let mut width: u_int = 0;
     screen_write_cursormove(
-        &mut *ctx,
+        ctx,
         px as ::core::ffi::c_int,
         py as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
@@ -6896,31 +6847,29 @@ unsafe fn window_copy_write_one(
         if fx.wrapping_add(gc.data.width as u_int) <= nx {
             window_copy_update_style(wme.clone(), fx, fy, &raw mut gc, mgc, cgc, mkgc, clgc);
             if gc.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0 {
-                if (*(*ctx).screen_ptr()).cy == py
-                    && (*(*ctx).screen_ptr()).cx <= px.wrapping_add(fx)
-                {
+                if ctx.screen.cy == py && ctx.screen.cx <= px.wrapping_add(fx) {
                     gc.flags = (gc.flags as ::core::ffi::c_int & !GRID_FLAG_PADDING) as u_char;
                     screen_write_cursormove(
-                        &mut *ctx,
+                        ctx,
                         px.wrapping_add(fx) as ::core::ffi::c_int,
                         py as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
                     );
-                    screen_write_putc(&mut *ctx, &gc, ' ' as i32 as u_char);
+                    screen_write_putc(ctx, &gc, ' ' as i32 as u_char);
                 }
             } else if gc.flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
                 width = gc.data.width as u_int;
                 gc.flags = (gc.flags as ::core::ffi::c_int & !GRID_FLAG_TAB) as u_char;
                 i = 0 as u_int;
                 while i < width {
-                    screen_write_putc(&mut *ctx, &gc, ' ' as i32 as u_char);
+                    screen_write_putc(ctx, &gc, ' ' as i32 as u_char);
                     i = i.wrapping_add(1);
                 }
             } else {
-                screen_write_cell(&mut *ctx, &gc);
+                screen_write_cell(ctx, &gc);
             }
         } else {
-            screen_write_putc(&mut *ctx, &grid_default_cell, ' ' as i32 as u_char);
+            screen_write_putc(ctx, &grid_default_cell, ' ' as i32 as u_char);
         }
         fx = fx.wrapping_add(1);
     }
@@ -7121,7 +7070,7 @@ pub unsafe fn window_copy_get_current_offset(
 
 unsafe fn window_copy_write_line(
     mut wme: refbox::Weak<window_mode_entry>,
-    mut ctx: *mut screen_write_ctx,
+    mut ctx: &mut screen_write_ctx,
     mut py: u_int,
 ) {
     let mode_pane_owner = wme
@@ -7130,7 +7079,6 @@ unsafe fn window_copy_write_line(
         .upgrade()
         .expect("mode belongs to a live pane");
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
-    let mut s: *mut screen = &raw mut (*data).screen;
     let options_window = mode_pane_owner.window_observer();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -7230,7 +7178,7 @@ unsafe fn window_copy_write_line(
         us: 0,
         link: 0,
     };
-    let mut sx: u_int = (*s).grid().sx;
+    let mut sx: u_int = (*data).screen.grid().sx;
     let mut hsize: u_int = (*data).backing().grid().hsize;
     let mut width: u_int = 0;
     let mut absolute: u_int = 0;
@@ -7249,7 +7197,7 @@ unsafe fn window_copy_write_line(
         content_sx = sx;
     }
     screen_write_cursormove(
-        &mut *ctx,
+        ctx,
         0 as ::core::ffi::c_int,
         py as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
@@ -7334,13 +7282,13 @@ unsafe fn window_copy_write_line(
             line_number = (*data).cy.wrapping_sub(py);
         }
         screen_write_cursormove(
-            &mut *ctx,
+            ctx,
             0 as ::core::ffi::c_int,
             py as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
         screen_write_nputs(
-            &mut *ctx,
+            ctx,
             width as ssize_t,
             &*if current != 0 {
                 &raw mut cur_ln_gc
@@ -7380,7 +7328,10 @@ unsafe fn window_copy_write_line(
         &mkgc,
         &clgc,
     );
-    if py == 0 as u_int && (*s).rupper < (*s).rlower && (*data).hide_position == 0 {
+    if py == 0 as u_int
+        && (*data).screen.rupper < (*data).screen.rlower
+        && (*data).hide_position == 0
+    {
         let position_format = options_get_string(
             &options_window
                 .upgrade()
@@ -7393,7 +7344,7 @@ unsafe fn window_copy_write_line(
             let expanded = format_expand_cstring(ft, value);
             if !expanded.is_empty() {
                 screen_write_cursormove(
-                    &mut *ctx,
+                    ctx,
                     width as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
@@ -7411,19 +7362,19 @@ unsafe fn window_copy_write_line(
     }
     if py == (*data).cy && (*data).cx >= content_sx {
         screen_write_cursormove(
-            &mut *ctx,
-            window_copy_cursor_offset(wme.clone(), (*data).cx, (*s).grid().sx)
+            ctx,
+            window_copy_cursor_offset(wme.clone(), (*data).cx, (*data).screen.grid().sx)
                 as ::core::ffi::c_int,
             py as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_putc(&mut *ctx, &grid_default_cell, '$' as i32 as u_char);
+        screen_write_putc(ctx, &grid_default_cell, '$' as i32 as u_char);
     }
     drop(ft_owner);
 }
 unsafe fn window_copy_write_lines(
     mut wme: refbox::Weak<window_mode_entry>,
-    mut ctx: *mut screen_write_ctx,
+    mut ctx: &mut screen_write_ctx,
     mut py: u_int,
     mut ny: u_int,
 ) {
@@ -7471,32 +7422,23 @@ unsafe fn window_copy_redraw_lines(
         .upgrade()
         .expect("mode belongs to a live pane");
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
-    let mut s: *mut screen = &raw mut (*data).screen;
-    let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: std::rc::Weak::new(),
-        target: Default::default(),
-        flags: 0,
-        init_ctx_cb: None,
-        item: None,
-        scrolled: 0,
-        bg: 0,
-    };
     let mut i: u_int = 0;
     if window_copy_line_number_width(wme.clone()) != 0 as u_int {
-        screen_write_start(&mut ctx, &raw mut (*data).screen);
+        let mut ctx = screen_write_start(&mut (*data).screen);
         i = py;
         while i < py.wrapping_add(ny) {
-            window_copy_write_line(wme.clone(), &raw mut ctx, i);
+            window_copy_write_line(wme.clone(), &mut ctx, i);
             i = i.wrapping_add(1);
         }
+        let cursor_x = window_copy_cursor_offset(wme.clone(), (*data).cx, ctx.screen.grid().sx)
+            as ::core::ffi::c_int;
         screen_write_cursormove(
             &mut ctx,
-            window_copy_cursor_offset(wme.clone(), (*data).cx, (*s).grid().sx)
-                as ::core::ffi::c_int,
+            cursor_x,
             (*data).cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_stop(&mut ctx);
+        screen_write_stop(ctx);
         mode_pane_owner.request_redraw(true);
         return;
     }
@@ -7504,27 +7446,25 @@ unsafe fn window_copy_redraw_lines(
         let scrollbar = &mode_pane_owner;
         scrollbar.scrollbar_overlay() && scrollbar.scrollbar_visible()
     };
-    if res {
-        screen_write_start(&mut ctx, &raw mut (*data).screen);
+    let mut ctx = if res {
+        screen_write_start(&mut (*data).screen)
     } else {
-        screen_write_start_pane(
-            &mut ctx,
-            &mode_pane_owner,
-            ::core::ptr::null_mut::<screen>(),
-        );
-    }
+        screen_write_start_pane(&mode_pane_owner, &mut (*data).screen)
+    };
     i = py;
     while i < py.wrapping_add(ny) {
-        window_copy_write_line(wme.clone(), &raw mut ctx, i);
+        window_copy_write_line(wme.clone(), &mut ctx, i);
         i = i.wrapping_add(1);
     }
+    let cursor_x = window_copy_cursor_offset(wme.clone(), (*data).cx, ctx.screen.grid().sx)
+        as ::core::ffi::c_int;
     screen_write_cursormove(
         &mut ctx,
-        window_copy_cursor_offset(wme.clone(), (*data).cx, (*s).grid().sx) as ::core::ffi::c_int,
+        cursor_x,
         (*data).cy as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    screen_write_stop(&mut ctx);
+    screen_write_stop(ctx);
     mode_pane_owner.redraw_scrollbar();
 }
 unsafe fn window_copy_redraw_screen(mut wme: refbox::Weak<window_mode_entry>) {
@@ -7644,16 +7584,6 @@ unsafe fn window_copy_update_cursor(
         .upgrade()
         .expect("mode belongs to a live pane");
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
-    let mut s: *mut screen = &raw mut (*data).screen;
-    let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: std::rc::Weak::new(),
-        target: Default::default(),
-        flags: 0,
-        init_ctx_cb: None,
-        item: None,
-        scrolled: 0,
-        bg: 0,
-    };
     let mut old_cx: u_int = 0;
     let mut old_cy: u_int = 0;
     let mut py: u_int = 0;
@@ -7661,7 +7591,7 @@ unsafe fn window_copy_update_cursor(
     let mut content_sx: u_int = 0;
     let mut maxx: u_int = 0;
     let mut allow_onemore: ::core::ffi::c_int = 0;
-    if (*data).rectflag == 0 && cy < (*s).grid().sy {
+    if (*data).rectflag == 0 && cy < (*data).screen.grid().sy {
         allow_onemore =
             (!(*data).screen.sel.is_none() && (*data).rectflag != 0) as ::core::ffi::c_int;
         py = (*data)
@@ -7681,7 +7611,7 @@ unsafe fn window_copy_update_cursor(
     (*data).cy = cy;
     if window_copy_line_numbers_active(wme.clone()) != 0 {
         width = window_copy_line_number_width(wme.clone());
-        if !(*s).sel.is_none()
+        if !(*data).screen.sel.is_none()
             || (*data).lineflag as ::core::ffi::c_uint
                 != LINE_SEL_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
             || old_cy != (*data).cy
@@ -7689,28 +7619,25 @@ unsafe fn window_copy_update_cursor(
             window_copy_redraw_screen(wme.clone());
             return;
         }
-        if width >= (*s).grid().sx {
+        if width >= (*data).screen.grid().sx {
             content_sx = 1 as u_int;
         } else {
-            content_sx = (*s).grid().sx.wrapping_sub(width);
+            content_sx = (*data).screen.grid().sx.wrapping_sub(width);
         }
         if old_cx >= content_sx || (*data).cx >= content_sx {
             window_copy_redraw_screen(wme.clone());
             return;
         }
-        screen_write_start_pane(
-            &mut ctx,
-            &mode_pane_owner,
-            ::core::ptr::null_mut::<screen>(),
-        );
+        let mut ctx = screen_write_start_pane(&mode_pane_owner, &mut (*data).screen);
+        let cursor_x = window_copy_cursor_offset(wme.clone(), (*data).cx, ctx.screen.grid().sx)
+            as ::core::ffi::c_int;
         screen_write_cursormove(
             &mut ctx,
-            window_copy_cursor_offset(wme.clone(), (*data).cx, (*s).grid().sx)
-                as ::core::ffi::c_int,
+            cursor_x,
             (*data).cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_stop(&mut ctx);
+        screen_write_stop(ctx);
         return;
     }
     if old_cy != (*data).cy && window_copy_cursor_line_active(wme.clone()) != 0 {
@@ -7718,25 +7645,22 @@ unsafe fn window_copy_update_cursor(
         window_copy_redraw_lines(wme.clone(), (*data).cy, 1 as u_int);
         return;
     }
-    if old_cx == (*s).grid().sx {
+    if old_cx == (*data).screen.grid().sx {
         window_copy_redraw_lines(wme.clone(), old_cy, 1 as u_int);
     }
-    if (*data).cx == (*s).grid().sx {
+    if (*data).cx == (*data).screen.grid().sx {
         window_copy_redraw_lines(wme.clone(), (*data).cy, 1 as u_int);
     } else {
-        screen_write_start_pane(
-            &mut ctx,
-            &mode_pane_owner,
-            ::core::ptr::null_mut::<screen>(),
-        );
+        let mut ctx = screen_write_start_pane(&mode_pane_owner, &mut (*data).screen);
+        let cursor_x = window_copy_cursor_offset(wme.clone(), (*data).cx, ctx.screen.grid().sx)
+            as ::core::ffi::c_int;
         screen_write_cursormove(
             &mut ctx,
-            window_copy_cursor_offset(wme.clone(), (*data).cx, (*s).grid().sx)
-                as ::core::ffi::c_int,
+            cursor_x,
             (*data).cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_stop(&mut ctx);
+        screen_write_stop(ctx);
     };
 }
 unsafe fn window_copy_start_selection(mut wme: refbox::Weak<window_mode_entry>) {
@@ -7844,7 +7768,6 @@ unsafe fn window_copy_adjust_selection(
     mut sely: *mut u_int,
 ) -> ::core::ffi::c_int {
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
-    let mut s: *mut screen = &raw mut (*data).screen;
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     let mut ty: u_int = 0;
@@ -7858,12 +7781,15 @@ unsafe fn window_copy_adjust_selection(
             sx = 0 as u_int;
         }
         sy = 0 as u_int;
-    } else if sy > ty.wrapping_add((*s).grid().sy).wrapping_sub(1 as u_int) {
+    } else if sy
+        > ty.wrapping_add((*data).screen.grid().sy)
+            .wrapping_sub(1 as u_int)
+    {
         relpos = WINDOW_COPY_REL_POS_BELOW as ::core::ffi::c_int;
         if (*data).rectflag == 0 {
-            sx = (*s).grid().sx.wrapping_sub(1 as u_int);
+            sx = (*data).screen.grid().sx.wrapping_sub(1 as u_int);
         }
-        sy = (*s).grid().sy.wrapping_sub(1 as u_int);
+        sy = (*data).screen.grid().sy.wrapping_sub(1 as u_int);
     } else {
         relpos = WINDOW_COPY_REL_POS_ON_SCREEN as ::core::ffi::c_int;
         sy = sy.wrapping_sub(ty);
@@ -7878,8 +7804,7 @@ unsafe fn window_copy_update_selection(
     mut no_reset: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
-    let mut s: *mut screen = &raw mut (*data).screen;
-    if (*s).sel.is_none()
+    if (*data).screen.sel.is_none()
         && (*data).lineflag as ::core::ffi::c_uint
             == LINE_SEL_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
@@ -7925,7 +7850,6 @@ unsafe fn window_copy_set_selection(
         .upgrade()
         .expect("mode belongs to a live pane");
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
-    let mut s: *mut screen = &raw mut (*data).screen;
     let options_window = mode_pane_owner.window_observer();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -7960,7 +7884,7 @@ unsafe fn window_copy_set_selection(
     if startrelpos == endrelpos
         && startrelpos != WINDOW_COPY_REL_POS_ON_SCREEN as ::core::ffi::c_int
     {
-        screen_hide_selection(&mut *s);
+        screen_hide_selection(&mut (*data).screen);
         return 0 as ::core::ffi::c_int;
     }
     let mut ft_owner = format_create_defaults(
@@ -7980,15 +7904,15 @@ unsafe fn window_copy_set_selection(
     gc.flags = (gc.flags as ::core::ffi::c_int | GRID_FLAG_NOPALETTE) as u_char;
     drop(ft_owner);
     clipx = window_copy_line_number_width(wme.clone());
-    if clipx >= (*s).grid().sx {
-        clipx = (*s).grid().sx.wrapping_sub(1 as u_int);
+    if clipx >= (*data).screen.grid().sx {
+        clipx = (*data).screen.grid().sx.wrapping_sub(1 as u_int);
     }
     if window_copy_line_numbers_active(wme.clone()) != 0 {
-        sx = window_copy_cursor_offset(wme.clone(), sx, (*s).grid().sx);
-        endsx = window_copy_cursor_offset(wme.clone(), endsx, (*s).grid().sx);
+        sx = window_copy_cursor_offset(wme.clone(), sx, (*data).screen.grid().sx);
+        endsx = window_copy_cursor_offset(wme.clone(), endsx, (*data).screen.grid().sx);
     }
     screen_set_selection(
-        &mut *s,
+        &mut (*data).screen,
         sx,
         sy,
         endsx,
@@ -8039,7 +7963,6 @@ unsafe fn window_copy_get_selection(mut wme: refbox::Weak<window_mode_entry>) ->
         .upgrade()
         .expect("mode belongs to a live pane");
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
-    let mut s: *mut screen = &raw mut (*data).screen;
     let mut buf = Vec::<u8>::new();
     let mut i: u_int = 0;
     let mut xx: u_int = 0;
@@ -8083,7 +8006,7 @@ unsafe fn window_copy_get_selection(mut wme: refbox::Weak<window_mode_entry>) ->
     if ex > ey_last {
         ex = ey_last;
     }
-    xx = (*s).grid().sx;
+    xx = (*data).screen.grid().sx;
     keys = options_get_number(
         &mode_pane_owner
             .window_observer()
@@ -8165,15 +8088,6 @@ unsafe fn window_copy_copy_buffer(
     let prefix = prefix
         .filter(|_| set_paste != 0 && !buf.is_empty())
         .map(CStr::to_owned);
-    let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: std::rc::Weak::new(),
-        target: Default::default(),
-        flags: 0,
-        init_ctx_cb: None,
-        item: None,
-        scrolled: 0,
-        bg: 0,
-    };
     let mut redraw: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if set_clip != 0
         && OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"set-clipboard"))
@@ -8184,13 +8098,12 @@ unsafe fn window_copy_copy_buffer(
             redraw = PANE_REDRAW;
             mode_pane_owner.take_pending_redraw();
         }
-        screen_write_start_pane(
-            &mut ctx,
+        let mut ctx = screen_write_start_pane(
             &mode_pane_owner,
-            ::core::ptr::null_mut::<screen>(),
+            &mut (*window_copy_data(wme.clone())).screen,
         );
         screen_write_setselection(&mut ctx, c"", &buf);
-        screen_write_stop(&mut ctx);
+        screen_write_stop(ctx);
         if redraw != 0 {
             mode_pane_owner.request_redraw(false);
         }
@@ -8271,15 +8184,6 @@ unsafe fn window_copy_append_selection(mut wme: refbox::Weak<window_mode_entry>)
         .expect("mode belongs to a live pane");
     let mut buf: Vec<u8>;
     let mut bufname: Option<CString> = None;
-    let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: std::rc::Weak::new(),
-        target: Default::default(),
-        flags: 0,
-        init_ctx_cb: None,
-        item: None,
-        scrolled: 0,
-        bg: 0,
-    };
     buf = match window_copy_get_selection(wme.clone()) {
         Some(buf) => buf,
         None => return,
@@ -8287,13 +8191,12 @@ unsafe fn window_copy_append_selection(mut wme: refbox::Weak<window_mode_entry>)
     if OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"set-clipboard"))
         != 0 as ::core::ffi::c_longlong
     {
-        screen_write_start_pane(
-            &mut ctx,
+        let mut ctx = screen_write_start_pane(
             &mode_pane_owner,
-            ::core::ptr::null_mut::<screen>(),
+            &mut (*window_copy_data(wme.clone())).screen,
         );
         screen_write_setselection(&mut ctx, c"", &buf);
-        screen_write_stop(&mut ctx);
+        screen_write_stop(ctx);
         events_fire_pane(c"pane-set-clipboard", mode_pane_owner.clone());
     }
     if let Some(pb) = paste_get_top(Some(&mut bufname)) {
@@ -8511,13 +8414,12 @@ unsafe fn window_copy_cursor_end_of_line(mut wme: refbox::Weak<window_mode_entry
 }
 unsafe fn window_copy_other_end(mut wme: refbox::Weak<window_mode_entry>) {
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
-    let mut s: *mut screen = &raw mut (*data).screen;
     let mut selx: u_int = 0;
     let mut sely: u_int = 0;
     let mut cy: u_int = 0;
     let mut yy: u_int = 0;
     let mut hsize: u_int = 0;
-    if (*s).sel.is_none()
+    if (*data).screen.sel.is_none()
         && (*data).lineflag as ::core::ffi::c_uint
             == LINE_SEL_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
@@ -8561,12 +8463,16 @@ unsafe fn window_copy_other_end(mut wme: refbox::Weak<window_mode_entry>) {
     if sely < hsize.wrapping_sub((*data).oy) {
         (*data).oy = hsize.wrapping_sub(sely);
         (*data).cy = 0 as u_int;
-    } else if sely > hsize.wrapping_sub((*data).oy).wrapping_add((*s).grid().sy) {
+    } else if sely
+        > hsize
+            .wrapping_sub((*data).oy)
+            .wrapping_add((*data).screen.grid().sy)
+    {
         (*data).oy = hsize
             .wrapping_sub(sely)
-            .wrapping_add((*s).grid().sy)
+            .wrapping_add((*data).screen.grid().sy)
             .wrapping_sub(1 as u_int);
-        (*data).cy = (*s).grid().sy.wrapping_sub(1 as u_int);
+        (*data).cy = (*data).screen.grid().sy.wrapping_sub(1 as u_int);
     } else {
         (*data).cy = cy.wrapping_add(sely).wrapping_sub(yy);
     }
@@ -8656,7 +8562,6 @@ unsafe fn window_copy_cursor_up(
         .expect("mode belongs to a live pane");
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
     let options_window = mode_pane_owner.window_observer();
-    let mut s: *mut screen = &raw mut (*data).screen;
     let mut ox: u_int = 0;
     let mut oy: u_int = 0;
     let mut px: u_int = 0;
@@ -8688,7 +8593,7 @@ unsafe fn window_copy_cursor_up(
                 .borrow_options_mut(),
             c"mode-keys",
         ) == MODEKEY_VI as ::core::ffi::c_longlong
-        && (*data).cy < (*s).grid().sy.wrapping_sub(1 as u_int)
+        && (*data).cy < (*data).screen.grid().sy.wrapping_sub(1 as u_int)
     {
         window_copy_update_cursor(wme.clone(), (*data).cx, (*data).cy.wrapping_add(1 as u_int));
     }
@@ -8698,7 +8603,7 @@ unsafe fn window_copy_cursor_up(
         }
         window_copy_scroll_down(wme.clone(), 1 as u_int);
         if scroll_only != 0 {
-            if (*data).cy == (*s).grid().sy.wrapping_sub(1 as u_int) {
+            if (*data).cy == (*data).screen.grid().sy.wrapping_sub(1 as u_int) {
                 window_copy_redraw_lines(wme.clone(), (*data).cy, 1 as u_int);
             } else {
                 window_copy_redraw_lines(wme.clone(), (*data).cy, 2 as u_int);
@@ -8720,7 +8625,7 @@ unsafe fn window_copy_cursor_up(
             0 as ::core::ffi::c_int,
         ) != 0
         {
-            if (*data).cy == (*s).grid().sy.wrapping_sub(1 as u_int) {
+            if (*data).cy == (*data).screen.grid().sy.wrapping_sub(1 as u_int) {
                 window_copy_redraw_lines(wme.clone(), (*data).cy, 1 as u_int);
             } else {
                 window_copy_redraw_lines(wme.clone(), (*data).cy, 2 as u_int);
@@ -8795,7 +8700,6 @@ unsafe fn window_copy_cursor_down(
         .expect("mode belongs to a live pane");
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
     let options_window = mode_pane_owner.window_observer();
-    let mut s: *mut screen = &raw mut (*data).screen;
     let mut ox: u_int = 0;
     let mut oy: u_int = 0;
     let mut px: u_int = 0;
@@ -8831,7 +8735,7 @@ unsafe fn window_copy_cursor_down(
     {
         window_copy_update_cursor(wme.clone(), (*data).cx, (*data).cy.wrapping_sub(1 as u_int));
     }
-    if scroll_only != 0 || (*data).cy == (*s).grid().sy.wrapping_sub(1 as u_int) {
+    if scroll_only != 0 || (*data).cy == (*data).screen.grid().sy.wrapping_sub(1 as u_int) {
         if norectsel != 0 {
             (*data).cx = (*data).lastcx;
         }
@@ -9224,8 +9128,7 @@ unsafe fn window_copy_cursor_prompt(
     mut start_output: ::core::ffi::c_int,
 ) {
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
-    let mut s: *mut screen = (*data).backing_mut();
-    let mut gd: *mut grid = (*s).grid_mut();
+    let mut gd: *mut grid = (*(*data).backing_mut()).grid_mut();
     let mut end_line: u_int = 0;
     let mut line: u_int = (*gd)
         .hsize
@@ -9279,16 +9182,6 @@ unsafe fn window_copy_scroll_up(mut wme: refbox::Weak<window_mode_entry>, mut ny
         .upgrade()
         .expect("mode belongs to a live pane");
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
-    let mut s: *mut screen = &raw mut (*data).screen;
-    let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: std::rc::Weak::new(),
-        target: Default::default(),
-        flags: 0,
-        init_ctx_cb: None,
-        item: None,
-        scrolled: 0,
-        bg: 0,
-    };
     if (*data).oy < ny {
         ny = (*data).oy;
     }
@@ -9300,7 +9193,7 @@ unsafe fn window_copy_scroll_up(mut wme: refbox::Weak<window_mode_entry>, mut ny
     if !(*data).searchmark.is_empty() && (*data).timeout == 0 {
         window_copy_search_marks(
             wme.clone(),
-            ::core::ptr::null_mut::<screen>(),
+            None,
             (*data).searchregex,
             1 as ::core::ffi::c_int,
         );
@@ -9317,7 +9210,7 @@ unsafe fn window_copy_scroll_up(mut wme: refbox::Weak<window_mode_entry>, mut ny
             window_copy_redraw_screen(wme.clone());
             return;
         }
-        screen_write_start(&mut ctx, &raw mut (*data).screen);
+        let mut ctx = screen_write_start(&mut (*data).screen);
         screen_write_cursormove(
             &mut ctx,
             0 as ::core::ffi::c_int,
@@ -9325,38 +9218,34 @@ unsafe fn window_copy_scroll_up(mut wme: refbox::Weak<window_mode_entry>, mut ny
             0 as ::core::ffi::c_int,
         );
         screen_write_deleteline(&mut ctx, ny, 8 as u_int);
-        window_copy_write_lines(
-            wme.clone(),
-            &raw mut ctx,
-            (*s).grid().sy.wrapping_sub(ny),
-            ny,
-        );
-        window_copy_write_line(wme.clone(), &raw mut ctx, 0 as u_int);
-        if (*s).grid().sy > 1 as u_int {
-            window_copy_write_line(wme.clone(), &raw mut ctx, 1 as u_int);
+        let line = ctx.screen.grid().sy.wrapping_sub(ny);
+        window_copy_write_lines(wme.clone(), &mut ctx, line, ny);
+        window_copy_write_line(wme.clone(), &mut ctx, 0 as u_int);
+        if ctx.screen.grid().sy > 1 as u_int {
+            window_copy_write_line(wme.clone(), &mut ctx, 1 as u_int);
         }
-        if (*s).grid().sy > 3 as u_int {
-            window_copy_write_line(
-                wme.clone(),
-                &raw mut ctx,
-                (*s).grid().sy.wrapping_sub(2 as u_int),
-            );
+        if ctx.screen.grid().sy > 3 as u_int {
+            let line = ctx.screen.grid().sy.wrapping_sub(2 as u_int);
+            window_copy_write_line(wme.clone(), &mut ctx, line);
         }
-        if !(*s).sel.is_none() && (*s).grid().sy > ny {
-            window_copy_write_line(
-                wme.clone(),
-                &raw mut ctx,
-                (*s).grid().sy.wrapping_sub(ny).wrapping_sub(1 as u_int),
-            );
+        if !ctx.screen.sel.is_none() && ctx.screen.grid().sy > ny {
+            let line = ctx
+                .screen
+                .grid()
+                .sy
+                .wrapping_sub(ny)
+                .wrapping_sub(1 as u_int);
+            window_copy_write_line(wme.clone(), &mut ctx, line);
         }
+        let cursor_x = window_copy_cursor_offset(wme.clone(), (*data).cx, ctx.screen.grid().sx)
+            as ::core::ffi::c_int;
         screen_write_cursormove(
             &mut ctx,
-            window_copy_cursor_offset(wme.clone(), (*data).cx, (*s).grid().sx)
-                as ::core::ffi::c_int,
+            cursor_x,
             (*data).cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_stop(&mut ctx);
+        screen_write_stop(ctx);
         mode_pane_owner.request_redraw(true);
         return;
     }
@@ -9364,15 +9253,11 @@ unsafe fn window_copy_scroll_up(mut wme: refbox::Weak<window_mode_entry>, mut ny
         let scrollbar = &mode_pane_owner;
         scrollbar.scrollbar_overlay() && scrollbar.scrollbar_visible()
     };
-    if res {
-        screen_write_start(&mut ctx, &raw mut (*data).screen);
+    let mut ctx = if res {
+        screen_write_start(&mut (*data).screen)
     } else {
-        screen_write_start_pane(
-            &mut ctx,
-            &mode_pane_owner,
-            ::core::ptr::null_mut::<screen>(),
-        );
-    }
+        screen_write_start_pane(&mode_pane_owner, &mut (*data).screen)
+    };
     screen_write_cursormove(
         &mut ctx,
         0 as ::core::ffi::c_int,
@@ -9380,37 +9265,34 @@ unsafe fn window_copy_scroll_up(mut wme: refbox::Weak<window_mode_entry>, mut ny
         0 as ::core::ffi::c_int,
     );
     screen_write_deleteline(&mut ctx, ny, 8 as u_int);
-    window_copy_write_lines(
-        wme.clone(),
-        &raw mut ctx,
-        (*s).grid().sy.wrapping_sub(ny),
-        ny,
-    );
-    window_copy_write_line(wme.clone(), &raw mut ctx, 0 as u_int);
-    if (*s).grid().sy > 1 as u_int {
-        window_copy_write_line(wme.clone(), &raw mut ctx, 1 as u_int);
+    let line = ctx.screen.grid().sy.wrapping_sub(ny);
+    window_copy_write_lines(wme.clone(), &mut ctx, line, ny);
+    window_copy_write_line(wme.clone(), &mut ctx, 0 as u_int);
+    if ctx.screen.grid().sy > 1 as u_int {
+        window_copy_write_line(wme.clone(), &mut ctx, 1 as u_int);
     }
-    if (*s).grid().sy > 3 as u_int {
-        window_copy_write_line(
-            wme.clone(),
-            &raw mut ctx,
-            (*s).grid().sy.wrapping_sub(2 as u_int),
-        );
+    if ctx.screen.grid().sy > 3 as u_int {
+        let line = ctx.screen.grid().sy.wrapping_sub(2 as u_int);
+        window_copy_write_line(wme.clone(), &mut ctx, line);
     }
-    if !(*s).sel.is_none() && (*s).grid().sy > ny {
-        window_copy_write_line(
-            wme.clone(),
-            &raw mut ctx,
-            (*s).grid().sy.wrapping_sub(ny).wrapping_sub(1 as u_int),
-        );
+    if !ctx.screen.sel.is_none() && ctx.screen.grid().sy > ny {
+        let line = ctx
+            .screen
+            .grid()
+            .sy
+            .wrapping_sub(ny)
+            .wrapping_sub(1 as u_int);
+        window_copy_write_line(wme.clone(), &mut ctx, line);
     }
+    let cursor_x = window_copy_cursor_offset(wme.clone(), (*data).cx, ctx.screen.grid().sx)
+        as ::core::ffi::c_int;
     screen_write_cursormove(
         &mut ctx,
-        window_copy_cursor_offset(wme.clone(), (*data).cx, (*s).grid().sx) as ::core::ffi::c_int,
+        cursor_x,
         (*data).cy as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    screen_write_stop(&mut ctx);
+    screen_write_stop(ctx);
     mode_pane_owner.redraw_scrollbar();
 }
 unsafe fn window_copy_scroll_down(mut wme: refbox::Weak<window_mode_entry>, mut ny: u_int) {
@@ -9420,16 +9302,6 @@ unsafe fn window_copy_scroll_down(mut wme: refbox::Weak<window_mode_entry>, mut 
         .upgrade()
         .expect("mode belongs to a live pane");
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
-    let mut s: *mut screen = &raw mut (*data).screen;
-    let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: std::rc::Weak::new(),
-        target: Default::default(),
-        flags: 0,
-        init_ctx_cb: None,
-        item: None,
-        scrolled: 0,
-        bg: 0,
-    };
     if ny > (*data).backing().grid().hsize {
         return;
     }
@@ -9444,7 +9316,7 @@ unsafe fn window_copy_scroll_down(mut wme: refbox::Weak<window_mode_entry>, mut 
     if !(*data).searchmark.is_empty() && (*data).timeout == 0 {
         window_copy_search_marks(
             wme.clone(),
-            ::core::ptr::null_mut::<screen>(),
+            None,
             (*data).searchregex,
             1 as ::core::ffi::c_int,
         );
@@ -9461,7 +9333,7 @@ unsafe fn window_copy_scroll_down(mut wme: refbox::Weak<window_mode_entry>, mut 
             window_copy_redraw_screen(wme.clone());
             return;
         }
-        screen_write_start(&mut ctx, &raw mut (*data).screen);
+        let mut ctx = screen_write_start(&mut (*data).screen);
         screen_write_cursormove(
             &mut ctx,
             0 as ::core::ffi::c_int,
@@ -9469,20 +9341,21 @@ unsafe fn window_copy_scroll_down(mut wme: refbox::Weak<window_mode_entry>, mut 
             0 as ::core::ffi::c_int,
         );
         screen_write_insertline(&mut ctx, ny, 8 as u_int);
-        window_copy_write_lines(wme.clone(), &raw mut ctx, 0 as u_int, ny);
-        if !(*s).sel.is_none() && (*s).grid().sy > ny {
-            window_copy_write_line(wme.clone(), &raw mut ctx, ny);
+        window_copy_write_lines(wme.clone(), &mut ctx, 0 as u_int, ny);
+        if !ctx.screen.sel.is_none() && ctx.screen.grid().sy > ny {
+            window_copy_write_line(wme.clone(), &mut ctx, ny);
         } else if ny == 1 as u_int {
-            window_copy_write_line(wme.clone(), &raw mut ctx, 1 as u_int);
+            window_copy_write_line(wme.clone(), &mut ctx, 1 as u_int);
         }
+        let cursor_x = window_copy_cursor_offset(wme.clone(), (*data).cx, ctx.screen.grid().sx)
+            as ::core::ffi::c_int;
         screen_write_cursormove(
             &mut ctx,
-            window_copy_cursor_offset(wme.clone(), (*data).cx, (*s).grid().sx)
-                as ::core::ffi::c_int,
+            cursor_x,
             (*data).cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_stop(&mut ctx);
+        screen_write_stop(ctx);
         mode_pane_owner.request_redraw(true);
         return;
     }
@@ -9490,15 +9363,11 @@ unsafe fn window_copy_scroll_down(mut wme: refbox::Weak<window_mode_entry>, mut 
         let scrollbar = &mode_pane_owner;
         scrollbar.scrollbar_overlay() && scrollbar.scrollbar_visible()
     };
-    if res {
-        screen_write_start(&mut ctx, &raw mut (*data).screen);
+    let mut ctx = if res {
+        screen_write_start(&mut (*data).screen)
     } else {
-        screen_write_start_pane(
-            &mut ctx,
-            &mode_pane_owner,
-            ::core::ptr::null_mut::<screen>(),
-        );
-    }
+        screen_write_start_pane(&mode_pane_owner, &mut (*data).screen)
+    };
     screen_write_cursormove(
         &mut ctx,
         0 as ::core::ffi::c_int,
@@ -9506,19 +9375,21 @@ unsafe fn window_copy_scroll_down(mut wme: refbox::Weak<window_mode_entry>, mut 
         0 as ::core::ffi::c_int,
     );
     screen_write_insertline(&mut ctx, ny, 8 as u_int);
-    window_copy_write_lines(wme.clone(), &raw mut ctx, 0 as u_int, ny);
-    if !(*s).sel.is_none() && (*s).grid().sy > ny {
-        window_copy_write_line(wme.clone(), &raw mut ctx, ny);
+    window_copy_write_lines(wme.clone(), &mut ctx, 0 as u_int, ny);
+    if !ctx.screen.sel.is_none() && ctx.screen.grid().sy > ny {
+        window_copy_write_line(wme.clone(), &mut ctx, ny);
     } else if ny == 1 as u_int {
-        window_copy_write_line(wme.clone(), &raw mut ctx, 1 as u_int);
+        window_copy_write_line(wme.clone(), &mut ctx, 1 as u_int);
     }
+    let cursor_x = window_copy_cursor_offset(wme.clone(), (*data).cx, ctx.screen.grid().sx)
+        as ::core::ffi::c_int;
     screen_write_cursormove(
         &mut ctx,
-        window_copy_cursor_offset(wme.clone(), (*data).cx, (*s).grid().sx) as ::core::ffi::c_int,
+        cursor_x,
         (*data).cy as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    screen_write_stop(&mut ctx);
+    screen_write_stop(ctx);
     mode_pane_owner.redraw_scrollbar();
 }
 unsafe fn window_copy_rectangle_set(

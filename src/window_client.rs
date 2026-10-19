@@ -11,7 +11,7 @@ use crate::mode_tree::ModeTreeItemSnapshot;
 use crate::mode_tree::{
     mode_tree_add, mode_tree_build, mode_tree_down, mode_tree_draw, mode_tree_each_tagged,
     mode_tree_free, mode_tree_get_current, mode_tree_key, mode_tree_resize, mode_tree_run_command,
-    mode_tree_screen, mode_tree_start, mode_tree_view_name,
+    mode_tree_start, mode_tree_view_name, mode_tree_visit_screen,
 };
 use crate::mode_tree::{mode_tree_data, mode_tree_help_info, ModeTreeItemData};
 use crate::options::OptionsScope;
@@ -171,7 +171,7 @@ pub static window_client_mode: window_mode = {
                     Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
                     *mut cmd_find_state,
                     *mut args,
-                ) -> *mut screen,
+                ) -> bool,
         ),
         free: Some(window_client_free as unsafe fn(refbox::Weak<window_mode_entry>) -> ()),
         resize: Some(
@@ -291,7 +291,6 @@ unsafe fn window_client_draw_info(
     mut sy: u_int,
 ) {
     let c = item.client();
-    let mut s: *mut screen = (*ctx).screen_ptr();
     let options_window = WindowRef::downgrade(
         c.attached_session()
             .upgrade()
@@ -315,8 +314,8 @@ unsafe fn window_client_draw_info(
         us: 0,
         link: 0,
     };
-    let mut cx: u_int = (*s).cx;
-    let mut cy: u_int = (*s).cy;
+    let mut cx: u_int = ctx.screen.cx;
+    let mut cy: u_int = ctx.screen.cy;
     let mut i: u_int = 0;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut ft_owner =
@@ -328,7 +327,7 @@ unsafe fn window_client_draw_info(
         format_add(ft, c"clipboard_invalid", |out| out.write_all(b"0"));
     }
     screen_write_cursormove(
-        &mut *ctx,
+        ctx,
         cx as ::core::ffi::c_int,
         cy as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
@@ -340,7 +339,7 @@ unsafe fn window_client_draw_info(
         }
         let expanded = format_expand_cstring(ft, window_client_info_lines[i as usize].as_ptr());
         screen_write_cursormove(
-            &mut *ctx,
+            ctx,
             cx as ::core::ffi::c_int,
             cy.wrapping_add(i) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -364,12 +363,12 @@ unsafe fn window_client_draw_info(
             &OptionsScope::Window(options_window.clone()),
         );
         screen_write_cursormove(
-            &mut *ctx,
+            ctx,
             cx.wrapping_add(14 as u_int) as ::core::ffi::c_int,
             cy.wrapping_add(i) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_vline(&mut *ctx, sy.wrapping_sub(i), Some(&gc));
+        screen_write_vline(ctx, sy.wrapping_sub(i), Some(&gc));
     }
     drop(ft_owner);
 }
@@ -387,7 +386,6 @@ unsafe fn window_client_draw(
     };
     let c = item.client();
     let mut session: Option<SessionRef> = c.attached_session().upgrade();
-    let mut s: *mut screen = (*ctx).screen_ptr();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -402,8 +400,8 @@ unsafe fn window_client_draw(
         us: 0,
         link: 0,
     };
-    let mut cx: u_int = (*s).cx;
-    let mut cy: u_int = (*s).cy;
+    let mut cx: u_int = ctx.screen.cx;
+    let mut cy: u_int = ctx.screen.cy;
     let mut lines: u_int = 0;
     let mut at: u_int = 0;
     if session.is_none() || c.flags() & CLIENT_UNATTACHEDFLAGS as uint64_t != 0 {
@@ -441,7 +439,7 @@ unsafe fn window_client_draw(
         at = 0 as u_int;
     }
     screen_write_cursormove(
-        &mut *ctx,
+        ctx,
         cx as ::core::ffi::c_int,
         cy.wrapping_add(at) as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
@@ -451,7 +449,7 @@ unsafe fn window_client_draw(
         let mut snapshot = screen::empty();
         pane.copy_screen(&mut snapshot, 0, 0, width, height, false);
         screen_write_preview(
-            &mut *ctx,
+            ctx,
             &snapshot,
             sx,
             sy.wrapping_sub(2 as u_int).wrapping_sub(lines),
@@ -463,14 +461,14 @@ unsafe fn window_client_draw(
     }
     if at != 0 as u_int {
         screen_write_cursormove(
-            &mut *ctx,
+            ctx,
             cx as ::core::ffi::c_int,
             cy.wrapping_add(2 as u_int) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
     } else {
         screen_write_cursormove(
-            &mut *ctx,
+            ctx,
             cx as ::core::ffi::c_int,
             cy.wrapping_add(sy)
                 .wrapping_sub(1 as u_int)
@@ -486,7 +484,7 @@ unsafe fn window_client_draw(
         &OptionsScope::Window(options_window.clone()),
     );
     screen_write_hline(
-        &mut *ctx,
+        ctx,
         sx,
         0 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
@@ -495,14 +493,14 @@ unsafe fn window_client_draw(
     );
     if at != 0 as u_int {
         screen_write_cursormove(
-            &mut *ctx,
+            ctx,
             cx as ::core::ffi::c_int,
             cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
     } else {
         screen_write_cursormove(
-            &mut *ctx,
+            ctx,
             cx as ::core::ffi::c_int,
             cy.wrapping_add(sy).wrapping_sub(lines) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -607,14 +605,13 @@ unsafe fn window_client_init(
     _item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     _fs: *mut cmd_find_state,
     mut args: *mut args,
-) -> *mut screen {
+) -> bool {
     let mode_pane_owner = wme
         .get_unchecked()
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
     let mut data: *mut window_client_modedata = ::core::ptr::null_mut::<window_client_modedata>();
-    let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
     let format = if args.is_null() || args_has(&*args, 'F' as i32 as u_char) == 0 {
         WINDOW_CLIENT_DEFAULT_FORMAT
     } else {
@@ -673,7 +670,6 @@ unsafe fn window_client_init(
         Some(window_client_sort),
         Some(window_client_help),
         &window_client_menu_items,
-        &raw mut s,
     ));
     if (*data).preview_is_info != 0 {
         mode_tree_view_name(&mut (*data).tree_owner().borrow_mut(), Some(c"info"));
@@ -682,19 +678,21 @@ unsafe fn window_client_init(
     }
     mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
     mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
-    s
+    true
 }
-unsafe fn window_client_get_screen(wme: refbox::Weak<window_mode_entry>) -> *mut screen {
+unsafe fn window_client_get_screen(
+    wme: refbox::Weak<window_mode_entry>,
+    visit: &mut dyn FnMut(&mut screen),
+) {
     let Some(data) = wme
         .get_unchecked()
         .boxed_data_ptr::<window_client_modedata>()
     else {
-        return std::ptr::null_mut();
+        return;
     };
-    (*data)
-        .data
-        .as_ref()
-        .map_or(std::ptr::null_mut(), mode_tree_screen)
+    if let Some(tree_owner) = (*data).data.as_ref() {
+        mode_tree_visit_screen(tree_owner, visit);
+    }
 }
 
 unsafe fn window_client_free(wme: refbox::Weak<window_mode_entry>) {

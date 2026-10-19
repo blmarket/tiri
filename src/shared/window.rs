@@ -92,13 +92,31 @@ impl window_mode_entry {
 }
 
 /// Enters a mode for an entry, optionally on behalf of a queue item; returns
-/// the screen the mode draws to.
+/// whether the mode now owns a screen to draw to.
 pub type window_mode_init_cb = unsafe fn(
     refbox::Weak<window_mode_entry>,
     Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     *mut cmd_find_state,
     *mut args,
-) -> *mut screen;
+) -> bool;
+/// Visits a screen owned by the mode payload, calling the visitor once when
+/// the payload has one. The borrow ends when the visitor returns.
+pub type window_mode_screen_cb =
+    unsafe fn(refbox::Weak<window_mode_entry>, &mut dyn FnMut(&mut screen));
+
+/// Run `visit` on the screen `cb` exposes; `None` when the mode has no screen.
+pub unsafe fn window_mode_visit_screen<R>(
+    cb: window_mode_screen_cb,
+    wme: refbox::Weak<window_mode_entry>,
+    visit: impl FnOnce(&mut screen) -> R,
+) -> Option<R> {
+    let mut visit = Some(visit);
+    let mut result = None;
+    cb(wme, &mut |screen| {
+        result = visit.take().map(|visit| visit(screen));
+    });
+    result
+}
 /// Resizes a mode's screen to the given width and height.
 pub type window_mode_resize_cb = unsafe fn(refbox::Weak<window_mode_entry>, u_int, u_int);
 /// Handles a key from a client in the mode's winlink.
@@ -134,8 +152,10 @@ pub struct window_mode {
     pub key_table: Option<unsafe fn(refbox::Weak<window_mode_entry>) -> &'static std::ffi::CStr>,
     pub command: Option<window_mode_command_cb>,
     pub formats: Option<unsafe fn(refbox::Weak<window_mode_entry>, *mut format_tree) -> ()>,
-    pub get_screen: Option<unsafe fn(refbox::Weak<window_mode_entry>) -> *mut screen>,
-    pub display_screen: Option<unsafe fn(refbox::Weak<window_mode_entry>) -> *mut screen>,
+    /// The mode's source screen, for `capture-pane -M`.
+    pub get_screen: Option<window_mode_screen_cb>,
+    /// The screen the pane shows while this mode is selected.
+    pub display_screen: Option<window_mode_screen_cb>,
 }
 
 impl Default for window_mode {

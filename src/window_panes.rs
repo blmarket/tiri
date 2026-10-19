@@ -87,7 +87,7 @@ pub static window_panes_mode: window_mode = {
                     Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
                     *mut cmd_find_state,
                     *mut args,
-                ) -> *mut screen,
+                ) -> bool,
         ),
         free: Some(window_panes_free as unsafe fn(refbox::Weak<window_mode_entry>) -> ()),
         resize: Some(
@@ -313,7 +313,7 @@ fn window_panes_map_y(mut y: u_int, mut osy: u_int, mut dsy: u_int) -> ::core::f
 /// one below every pane but the lowest. Where separators cross the preview
 /// draws plain lines.
 unsafe fn window_panes_draw_borders(
-    mut ctx: *mut screen_write_ctx,
+    mut ctx: &mut screen_write_ctx,
     w_owner: &WindowRef,
     gc: &grid_cell,
     mut osx: u_int,
@@ -352,21 +352,21 @@ unsafe fn window_panes_draw_borders(
         let y2 = window_panes_map_y(bottom, osy, dsy);
         if right < right_edge && x2 >= 0 && (x2 as u_int) < dsx {
             for yy in y..y2.min(dsy as ::core::ffi::c_int) {
-                screen_write_cursormove(&mut *ctx, x2, yy, 0 as ::core::ffi::c_int);
-                screen_write_cell(&mut *ctx, &vertical);
+                screen_write_cursormove(ctx, x2, yy, 0 as ::core::ffi::c_int);
+                screen_write_cell(ctx, &vertical);
             }
         }
         if bottom < bottom_edge && y2 >= 0 && (y2 as u_int) < dsy {
             for xx in x..x2.min(dsx as ::core::ffi::c_int) {
-                screen_write_cursormove(&mut *ctx, xx, y2, 0 as ::core::ffi::c_int);
-                screen_write_cell(&mut *ctx, &horizontal);
+                screen_write_cursormove(ctx, xx, y2, 0 as ::core::ffi::c_int);
+                screen_write_cell(ctx, &horizontal);
             }
         }
     }
 }
 unsafe fn window_panes_draw_format(
     mut data: *mut window_panes_modedata,
-    mut ctx: *mut screen_write_ctx,
+    mut ctx: &mut screen_write_ctx,
     wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut x: u_int,
     mut y: u_int,
@@ -424,7 +424,7 @@ unsafe fn window_panes_draw_format(
     );
     if !expanded.is_empty() {
         screen_write_cursormove(
-            &mut *ctx,
+            ctx,
             x as ::core::ffi::c_int,
             y as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -447,7 +447,7 @@ unsafe fn window_panes_draw_format(
 }
 unsafe fn window_panes_draw_number(
     mut data: *mut window_panes_modedata,
-    mut ctx: *mut screen_write_ctx,
+    mut ctx: &mut screen_write_ctx,
     wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut pane: u_int,
     mut x: u_int,
@@ -572,14 +572,14 @@ unsafe fn window_panes_draw_number(
             as u_int;
         cy = y.wrapping_add(sy.wrapping_div(2 as u_int));
         screen_write_cursormove(
-            &mut *ctx,
+            ctx,
             cx as ::core::ffi::c_int,
             cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_puts(&mut *ctx, &fgc, |out| out.write_all(&buf));
+        screen_write_puts(ctx, &fgc, |out| out.write_all(&buf));
         if width > len {
-            screen_write_puts(&mut *ctx, &fgc, |out| {
+            screen_write_puts(ctx, &fgc, |out| {
                 out.write_all(b" ")?;
                 out.write_all(&lbuf)
             });
@@ -606,12 +606,12 @@ unsafe fn window_panes_draw_number(
                 while i < 5 as u_int {
                     if !(window_clock_table[idx as usize][j as usize][i as usize] == 0) {
                         screen_write_cursormove(
-                            &mut *ctx,
+                            ctx,
                             x.wrapping_add(px).wrapping_add(i) as ::core::ffi::c_int,
                             y.wrapping_add(py).wrapping_add(j) as ::core::ffi::c_int,
                             0 as ::core::ffi::c_int,
                         );
-                        screen_write_putc(&mut *ctx, &bgc, ' ' as i32 as u_char);
+                        screen_write_putc(ctx, &bgc, ' ' as i32 as u_char);
                     }
                     i = i.wrapping_add(1);
                 }
@@ -636,12 +636,12 @@ unsafe fn window_panes_draw_number(
             .wrapping_sub(1 as size_t) as u_int;
         cy = y.wrapping_add(py).wrapping_add(5 as u_int);
         screen_write_cursormove(
-            &mut *ctx,
+            ctx,
             cx as ::core::ffi::c_int,
             cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_puts(&mut *ctx, &fgc, |out| out.write_all(&lbuf));
+        screen_write_puts(ctx, &fgc, |out| out.write_all(&lbuf));
     }
     if let Some(owner) = session_owner {
         drop(owner);
@@ -652,7 +652,7 @@ unsafe fn window_panes_draw_number(
 }
 unsafe fn window_panes_draw_pane(
     mut data: *mut window_panes_modedata,
-    mut ctx: *mut screen_write_ctx,
+    mut ctx: &mut screen_write_ctx,
     wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut osx: u_int,
     mut osy: u_int,
@@ -692,24 +692,19 @@ unsafe fn window_panes_draw_pane(
     };
     window_panes_add_area(data, wp_owner, x, y, sx, sy);
     screen_write_cursormove(
-        &mut *ctx,
+        ctx,
         x as ::core::ffi::c_int,
         y as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    let preview = (*data)
-        .preview
-        .as_deref_mut()
-        .map_or(::core::ptr::null_mut(), |preview| preview as *mut screen);
-    if !preview.is_null()
-        && Rc::ptr_eq(wp_owner, &mode_pane_owner)
-        && sx <= (*preview).grid().sx
-        && sy <= (*preview).grid().sy
-    {
+    let preview = (*data).preview.as_deref().filter(|preview| {
+        Rc::ptr_eq(wp_owner, &mode_pane_owner) && sx <= preview.grid().sx && sy <= preview.grid().sy
+    });
+    if let Some(preview) = preview {
         if osx <= dsx && osy <= dsy {
-            screen_write_fast_copy(&mut *ctx, &*preview, 0, (*preview).grid().hsize, sx, sy);
+            screen_write_fast_copy(ctx, preview, 0, preview.grid().hsize, sx, sy);
         } else {
-            screen_write_preview(&mut *ctx, &*preview, sx, sy);
+            screen_write_preview(ctx, preview, sx, sy);
         }
     } else {
         let (source_sx, source_sy) = wp_owner.screen_size(false);
@@ -717,9 +712,9 @@ unsafe fn window_panes_draw_pane(
         wp_owner.copy_screen(&mut snapshot, 0, 0, source_sx, source_sy, false);
         let s = &snapshot;
         if osx <= dsx && osy <= dsy {
-            screen_write_fast_copy(&mut *ctx, s, 0, s.grid().hsize, sx, sy);
+            screen_write_fast_copy(ctx, s, 0, s.grid().hsize, sx, sy);
         } else {
-            screen_write_preview(&mut *ctx, s, sx, sy);
+            screen_write_preview(ctx, s, sx, sy);
         }
         drop(snapshot);
     }
@@ -736,15 +731,6 @@ unsafe fn window_panes_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
     let mut data: *mut window_panes_modedata = window_panes_data(wme.clone());
     let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*data).wp) else {
         return;
-    };
-    let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: std::rc::Weak::new(),
-        target: Default::default(),
-        flags: 0,
-        init_ctx_cb: None,
-        item: None,
-        scrolled: 0,
-        bg: 0,
     };
     let mut border_gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -791,18 +777,18 @@ unsafe fn window_panes_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         sx = (*data).screen.grid().sx;
         sy = (*data).screen.grid().sy;
         window_panes_free_areas(data);
-        screen_write_start(&mut ctx, &raw mut (*data).screen);
+        let mut ctx = screen_write_start(&mut (*data).screen);
         screen_write_clearscreen(&mut ctx, 8 as u_int);
         for pane in window
             .pane_snapshot()
             .iter()
             .filter_map(std::rc::Weak::upgrade)
         {
-            window_panes_draw_pane(data, &raw mut ctx, &pane, osx, osy, sx, sy);
+            window_panes_draw_pane(data, &mut ctx, &pane, osx, osy, sx, sy);
         }
         window_panes_get_border_cell(data, &raw mut border_gc);
-        window_panes_draw_borders(&raw mut ctx, &window, &border_gc, osx, osy, sx, sy);
-        screen_write_stop(&mut ctx);
+        window_panes_draw_borders(&mut ctx, &window, &border_gc, osx, osy, sx, sy);
+        screen_write_stop(ctx);
         mode_pane_owner.request_redraw(false);
     })();
     drop(window);
@@ -823,7 +809,7 @@ unsafe fn window_panes_init(
     item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     _fs: *mut cmd_find_state,
     mut args: *mut args,
-) -> *mut screen {
+) -> bool {
     let mode_pane_owner = wme
         .get_unchecked()
         .wp
@@ -838,7 +824,7 @@ unsafe fn window_panes_init(
     let (sx, sy) = mode_pane_owner.screen_size(false);
     let mut delay: u_int = 0;
     let Some(item_owner) = item_handle else {
-        return ::core::ptr::null_mut::<screen>();
+        return false;
     };
     let (mut source_state, mut target_state) = {
         let item = item_owner.borrow();
@@ -849,7 +835,7 @@ unsafe fn window_panes_init(
         )
     };
     if !self_0.is_alive() {
-        return ::core::ptr::null_mut::<screen>();
+        return false;
     }
     source = &raw mut source_state;
     target = &raw mut target_state;
@@ -875,7 +861,7 @@ unsafe fn window_panes_init(
                     out.write_all(b"delay ")?;
                     write_cstr(out, error.message())
                 });
-                return ::core::ptr::null_mut::<screen>();
+                return false;
             }
         };
     }
@@ -936,13 +922,18 @@ unsafe fn window_panes_init(
         );
     }
     window_panes_draw_screen(wme.clone());
-    &raw mut (*data).screen
+    true
 }
-unsafe fn window_panes_get_screen(wme: refbox::Weak<window_mode_entry>) -> *mut screen {
-    let data = wme
+unsafe fn window_panes_get_screen(
+    wme: refbox::Weak<window_mode_entry>,
+    visit: &mut dyn FnMut(&mut screen),
+) {
+    if let Some(data) = wme
         .get_unchecked()
-        .boxed_data_ptr::<window_panes_modedata>();
-    data.map_or(std::ptr::null_mut(), |data| &raw mut (*data).screen)
+        .boxed_data_ptr::<window_panes_modedata>()
+    {
+        visit(&mut (*data).screen);
+    }
 }
 
 unsafe fn window_panes_free(wme: refbox::Weak<window_mode_entry>) {

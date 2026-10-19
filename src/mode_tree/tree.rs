@@ -221,10 +221,19 @@ fn mode_tree_alloc_data() -> std::rc::Rc<std::cell::RefCell<mode_tree_data>> {
     Rc::new(RefCell::new(mode_tree_data::default()))
 }
 
-/// The mode's screen as handed to the pane, which reads it outside any borrow
-/// of the tree; only `mode_tree_draw` writes it, while holding the borrow.
-pub fn mode_tree_screen(owner: &Rc<RefCell<mode_tree_data>>) -> *mut screen {
-    unsafe { &raw mut (*owner.as_ptr()).screen }
+/// Visit the tree's screen for the pane. `mode_tree_draw` holds the tree
+/// borrow while it expands formats for this same pane, and those formats read
+/// the displayed screen's mode and cursor state. Such a reentrant visit sees
+/// the screen in its mid-draw state through the cell, as the pane always has;
+/// every other visit goes through the borrow.
+pub unsafe fn mode_tree_visit_screen(
+    owner: &Rc<RefCell<mode_tree_data>>,
+    visit: &mut dyn FnMut(&mut screen),
+) {
+    match owner.try_borrow_mut() {
+        Ok(mut mtd) => visit(&mut mtd.screen),
+        Err(_) => visit(&mut (*owner.as_ptr()).screen),
+    }
 }
 
 #[inline]
@@ -545,7 +554,6 @@ pub unsafe fn mode_tree_start(
     sortcb: mode_tree_sort_cb,
     helpcb: mode_tree_help_cb,
     menu: &'static [menu_item<'static>],
-    s: *mut *mut screen,
 ) -> std::rc::Rc<std::cell::RefCell<mode_tree_data>> {
     let (pane_sx, pane_sy) = pane_owner.screen_size(false);
     let owner = mode_tree_alloc_data();
@@ -586,7 +594,6 @@ pub unsafe fn mode_tree_start(
     screen_init(&mut mtd.screen, pane_sx, pane_sy, 0 as u_int);
     mtd.screen.mode &= !MODE_CURSOR;
     drop(mtd);
-    *s = mode_tree_screen(&owner);
     owner
 }
 unsafe fn mode_tree_set_height(tree_owner: &Rc<RefCell<mode_tree_data>>) {
@@ -840,17 +847,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<RefCell<mode_tree_data>>) {
     else {
         return;
     };
-    let mut s: *mut screen = &raw mut (*mtd).screen;
     let options_window = mode_pane_owner.window_observer();
-    let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: std::rc::Weak::new(),
-        target: Default::default(),
-        flags: 0,
-        init_ctx_cb: None,
-        item: None,
-        scrolled: 0,
-        bg: 0,
-    };
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut gc0: grid_cell = grid_cell {
         data: utf8_data {
@@ -910,7 +907,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<RefCell<mode_tree_data>>) {
     let mut alignlen: Vec<::core::ffi::c_int> = ::std::vec::from_elem(0, vla);
     let mut dfg: ::core::ffi::c_int = 0;
     let mut dfg0: ::core::ffi::c_int = 0;
-    if mode_tree_line_count(&*mtd) == 0 as u_int {
+    if ((*mtd).lines.len() as u_int) == 0 as u_int {
         return;
     }
     w = (*mtd).width;
@@ -935,7 +932,9 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<RefCell<mode_tree_data>>) {
     );
     dfg = gc.fg;
     dfg0 = gc0.fg;
-    screen_write_start(&mut ctx, s);
+    // The context borrows only the screen field; drawing reads the rest of
+    // the tree through the other fields.
+    let mut ctx = screen_write_start(&mut (*mtd).screen);
     screen_write_clearscreen(&mut ctx, 8 as u_int);
     let mut ft_owner = format_create_defaults(
         None,
@@ -947,7 +946,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<RefCell<mode_tree_data>>) {
     ft = &raw mut *ft_owner;
     keylen = 0 as ::core::ffi::c_int;
     i = 0 as u_int;
-    while i < mode_tree_line_count(&*mtd) {
+    while i < ((*mtd).lines.len() as u_int) {
         let mti = (&(*mtd).lines)[i as usize].item.borrow();
         if !(mti.key == KEYC_NONE as ::core::ffi::c_ulong as key_code)
             && mti.keylen as ::core::ffi::c_int + 3 as ::core::ffi::c_int > keylen
@@ -962,7 +961,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<RefCell<mode_tree_data>>) {
         i = i.wrapping_add(1);
     }
     i = 0 as u_int;
-    while i < mode_tree_line_count(&*mtd) {
+    while i < ((*mtd).lines.len() as u_int) {
         let line = (&(*mtd).lines)[i as usize].clone();
         let mti = line.item.borrow();
         if mti.align != 0
@@ -975,7 +974,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<RefCell<mode_tree_data>>) {
         i = i.wrapping_add(1);
     }
     i = 0 as u_int;
-    while i < mode_tree_line_count(&*mtd) {
+    while i < ((*mtd).lines.len() as u_int) {
         if !(i < (*mtd).offset) {
             if i > (*mtd).offset.wrapping_add(h).wrapping_sub(1 as u_int) {
                 break;
@@ -1084,7 +1083,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<RefCell<mode_tree_data>>) {
             if i != (*mtd).current {
                 screen_write_clearendofline(&mut ctx, 8 as u_int);
                 format_draw(
-                    &raw mut ctx,
+                    &mut ctx,
                     &grid_default_cell,
                     prefix_width,
                     prefix.as_ptr(),
@@ -1099,7 +1098,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<RefCell<mode_tree_data>>) {
                         0 as ::core::ffi::c_int,
                     );
                     format_draw(
-                        &raw mut ctx,
+                        &mut ctx,
                         &gc0,
                         left,
                         text.as_ptr(),
@@ -1114,7 +1113,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<RefCell<mode_tree_data>>) {
                             0 as ::core::ffi::c_int,
                         );
                         format_draw(
-                            &raw mut ctx,
+                            &mut ctx,
                             &gc0,
                             w.wrapping_sub(width),
                             (mti.text)
@@ -1128,7 +1127,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<RefCell<mode_tree_data>>) {
             } else {
                 screen_write_clearendofline(&mut ctx, gc.bg as u_int);
                 format_draw(
-                    &raw mut ctx,
+                    &mut ctx,
                     &gc,
                     prefix_width,
                     prefix.as_ptr(),
@@ -1143,7 +1142,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<RefCell<mode_tree_data>>) {
                         0 as ::core::ffi::c_int,
                     );
                     format_draw(
-                        &raw mut ctx,
+                        &mut ctx,
                         &gc,
                         left,
                         text.as_ptr(),
@@ -1158,7 +1157,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<RefCell<mode_tree_data>>) {
                             0 as ::core::ffi::c_int,
                         );
                         format_draw(
-                            &raw mut ctx,
+                            &mut ctx,
                             &gc,
                             w.wrapping_sub(width),
                             (mti.text)
@@ -1180,7 +1179,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<RefCell<mode_tree_data>>) {
     }
     drop(ft_owner);
     if !((*mtd).preview == MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int) {
-        sy = (*s).grid().sy;
+        sy = ctx.screen.grid().sy;
         if !(sy <= 4 as u_int
             || h < 2 as u_int
             || sy.wrapping_sub(h) <= 4 as u_int
@@ -1279,12 +1278,17 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<RefCell<mode_tree_data>>) {
         }
     }
     if (*mtd).help != 0 {
-        mode_tree_draw_help(mtd, &raw mut ctx);
+        mode_tree_draw_help(&(*mtd).wp, (*mtd).helpcb, &mut ctx);
     }
     if (*mtd).prompt.is_some() {
-        mode_tree_draw_prompt(mtd, &mut ctx);
+        mode_tree_draw_prompt(
+            (*mtd).prompt_top,
+            &(*mtd).prompt,
+            &mut (*mtd).prompt_cx,
+            &mut ctx,
+        );
     } else {
-        (*s).mode &= !MODE_CURSOR;
+        ctx.screen.mode &= !MODE_CURSOR;
         screen_write_cursormove(
             &mut ctx,
             0 as ::core::ffi::c_int,
@@ -1292,17 +1296,21 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<RefCell<mode_tree_data>>) {
             0 as ::core::ffi::c_int,
         );
     }
-    screen_write_stop(&mut ctx);
+    screen_write_stop(ctx);
 }
-unsafe fn mode_tree_draw_prompt(mtd: &mut mode_tree_data, ctx: &mut screen_write_ctx) {
-    let mut s: *mut screen = &raw mut (*mtd).screen;
-    let mut sx: u_int = (*s).grid().sx;
-    let mut sy: u_int = (*s).grid().sy;
+unsafe fn mode_tree_draw_prompt(
+    prompt_top: ::core::ffi::c_int,
+    prompt: &Option<refbox::RefBox<crate::shared::prompt::prompt>>,
+    prompt_cx: &mut u_int,
+    ctx: &mut screen_write_ctx,
+) {
+    let mut sx: u_int = ctx.screen.grid().sx;
+    let mut sy: u_int = ctx.screen.grid().sy;
     let mut py: u_int = 0;
     if sx == 0 as u_int || sy == 0 as u_int {
         return;
     }
-    if (*mtd).prompt_top != 0 {
+    if prompt_top != 0 {
         py = 0 as u_int;
     } else {
         py = sy.wrapping_sub(1 as u_int);
@@ -1312,10 +1320,9 @@ unsafe fn mode_tree_draw_prompt(mtd: &mut mode_tree_data, ctx: &mut screen_write
         area_width: sx,
         prompt_line: py,
     };
-    (*s).mode |= MODE_CURSOR;
-    (*mtd).prompt_cx = prompt_draw(
-        &(*mtd)
-            .prompt
+    ctx.screen.mode |= MODE_CURSOR;
+    *prompt_cx = prompt_draw(
+        &prompt
             .as_ref()
             .expect("active prompt")
             .try_borrow_mut()
@@ -1325,7 +1332,7 @@ unsafe fn mode_tree_draw_prompt(mtd: &mut mode_tree_data, ctx: &mut screen_write
     );
     screen_write_cursormove(
         ctx,
-        (*mtd).prompt_cx as ::core::ffi::c_int,
+        *prompt_cx as ::core::ffi::c_int,
         py as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
@@ -1784,7 +1791,7 @@ unsafe fn mode_tree_display_menu(
     );
 }
 unsafe fn mode_tree_draw_help_line(
-    mut ctx: *mut screen_write_ctx,
+    mut ctx: &mut screen_write_ctx,
     gc: &grid_cell,
     mut ft: *mut format_tree,
     line: &CStr,
@@ -1797,14 +1804,14 @@ unsafe fn mode_tree_draw_help_line(
     let expanded = format_expand_cstring(ft, replaced.as_ptr());
     drop(replaced);
     screen_write_cursormove(
-        &mut *ctx,
+        ctx,
         x as ::core::ffi::c_int,
         y as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    screen_write_clearcharacter(&mut *ctx, w, gc.bg as u_int);
+    screen_write_clearcharacter(ctx, w, gc.bg as u_int);
     screen_write_cursormove(
-        &mut *ctx,
+        ctx,
         x as ::core::ffi::c_int,
         y as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
@@ -1818,13 +1825,16 @@ unsafe fn mode_tree_draw_help_line(
         0 as ::core::ffi::c_int,
     );
 }
-unsafe fn mode_tree_draw_help(mtd: &mut mode_tree_data, mut ctx: *mut screen_write_ctx) {
+unsafe fn mode_tree_draw_help(
+    wp: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
+    helpcb: mode_tree_help_cb,
+    ctx: &mut screen_write_ctx,
+) {
     let Some(mode_pane_owner) =
-        std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&(*mtd).wp)
+        std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(wp)
     else {
         return;
     };
-    let mut s: *mut screen = &raw mut (*mtd).screen;
     let options_window = mode_pane_owner.window_observer();
     let mut box_gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -1855,11 +1865,11 @@ unsafe fn mode_tree_draw_help(mtd: &mut mode_tree_data, mut ctx: *mut screen_wri
         link: 0,
     };
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let help = (*mtd).helpcb.map(|callback| callback());
+    let help = helpcb.map(|callback| callback());
     let lines: &[&'static CStr] = help.map_or(&[], |info| info.lines);
     let item = help.map_or(c"item", |info| info.item);
-    let mut sx: u_int = (*s).grid().sx;
-    let mut sy: u_int = (*s).grid().sy;
+    let mut sx: u_int = ctx.screen.grid().sx;
+    let mut sy: u_int = ctx.screen.grid().sy;
     let mut x: u_int = 0;
     let mut y: u_int = 0;
     let mut w = help
@@ -1892,19 +1902,12 @@ unsafe fn mode_tree_draw_help(mtd: &mut mode_tree_data, mut ctx: *mut screen_wri
     );
     ft = &raw mut *ft_owner;
     screen_write_cursormove(
-        &mut *ctx,
+        ctx,
         x as ::core::ffi::c_int,
         y as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    screen_write_box(
-        &mut *ctx,
-        box_w,
-        box_h,
-        BOX_LINES_DEFAULT,
-        Some(&box_gc),
-        None,
-    );
+    screen_write_box(ctx, box_w, box_h, BOX_LINES_DEFAULT, Some(&box_gc), None);
     y = y.wrapping_add(1);
     x = x.wrapping_add(1);
     for line in mode_tree_help_start.iter().copied() {

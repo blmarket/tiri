@@ -11,8 +11,8 @@ use crate::mode_tree::{
     mode_tree_add, mode_tree_align, mode_tree_build, mode_tree_count_tagged, mode_tree_draw,
     mode_tree_each_tagged, mode_tree_expand, mode_tree_expand_current, mode_tree_free,
     mode_tree_get_current, mode_tree_key, mode_tree_remove, mode_tree_resize,
-    mode_tree_run_command, mode_tree_screen, mode_tree_set_current, mode_tree_set_prompt,
-    mode_tree_start, mode_tree_view_name,
+    mode_tree_run_command, mode_tree_set_current, mode_tree_set_prompt, mode_tree_start,
+    mode_tree_view_name, mode_tree_visit_screen,
 };
 use crate::mode_tree::{mode_tree_data, mode_tree_help_info, ModeTreeItemData, ModeTreeItemRef};
 use crate::options::options_get_string;
@@ -199,7 +199,7 @@ pub static window_tree_mode: window_mode = {
                     Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
                     *mut cmd_find_state,
                     *mut args,
-                ) -> *mut screen,
+                ) -> bool,
         ),
         free: Some(window_tree_free as unsafe fn(refbox::Weak<window_mode_entry>) -> ()),
         resize: Some(
@@ -693,7 +693,7 @@ unsafe fn window_tree_build(
     };
 }
 unsafe fn window_tree_draw_label(
-    mut ctx: *mut screen_write_ctx,
+    mut ctx: &mut screen_write_ctx,
     mut px: u_int,
     mut py: u_int,
     mut sx: u_int,
@@ -730,13 +730,13 @@ unsafe fn window_tree_draw_label(
         .wrapping_div(2 as u_int);
     oy = sy.wrapping_add(1 as u_int).wrapping_div(2 as u_int);
     screen_write_cursormove(
-        &mut *ctx,
+        ctx,
         px.wrapping_add(ox).wrapping_sub(2 as u_int) as ::core::ffi::c_int,
         py.wrapping_add(oy).wrapping_sub(1 as u_int) as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
     screen_write_box(
-        &mut *ctx,
+        ctx,
         width.wrapping_add(4 as u_int),
         3 as u_int,
         BOX_LINES_DEFAULT,
@@ -744,18 +744,14 @@ unsafe fn window_tree_draw_label(
         None,
     );
     screen_write_cursormove(
-        &mut *ctx,
+        ctx,
         px.wrapping_add(ox).wrapping_sub(1 as u_int) as ::core::ffi::c_int,
         py.wrapping_add(oy) as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    screen_write_clearcharacter(
-        &mut *ctx,
-        width.wrapping_add(2 as u_int),
-        border_gc.bg as u_int,
-    );
+    screen_write_clearcharacter(ctx, width.wrapping_add(2 as u_int), border_gc.bg as u_int);
     screen_write_cursormove(
-        &mut *ctx,
+        ctx,
         px.wrapping_add(ox) as ::core::ffi::c_int,
         py.wrapping_add(oy) as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
@@ -775,7 +771,7 @@ unsafe fn window_tree_border_cell(gc: *mut grid_cell, scope: &OptionsScope, ft: 
 unsafe fn window_tree_draw_session(
     mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
     session_owner: &SessionRef,
-    mut ctx: *mut screen_write_ctx,
+    mut ctx: &mut screen_write_ctx,
     mut sx: u_int,
     mut sy: u_int,
 ) {
@@ -785,8 +781,8 @@ unsafe fn window_tree_draw_session(
         return;
     };
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut cx: u_int = (*(*ctx).screen_ptr()).cx;
-    let mut cy: u_int = (*(*ctx).screen_ptr()).cy;
+    let mut cx: u_int = ctx.screen.cx;
+    let mut cy: u_int = ctx.screen.cy;
     let mut loop_0: u_int = 0;
     let mut total: u_int = 0;
     let mut visible: u_int = 0;
@@ -904,38 +900,38 @@ unsafe fn window_tree_draw_session(
     if left != 0 {
         (*data).left = cx.wrapping_add(2 as u_int) as ::core::ffi::c_int;
         screen_write_cursormove(
-            &mut *ctx,
+            ctx,
             cx.wrapping_add(2 as u_int) as ::core::ffi::c_int,
             cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_vline(&mut *ctx, sy, Some(&gc));
+        screen_write_vline(ctx, sy, Some(&gc));
         screen_write_cursormove(
-            &mut *ctx,
+            ctx,
             cx as ::core::ffi::c_int,
             cy.wrapping_add(sy.wrapping_div(2 as u_int)) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_puts(&mut *ctx, &gc, |out| out.write_all(b"<"));
+        screen_write_puts(ctx, &gc, |out| out.write_all(b"<"));
     } else {
         (*data).left = -(1 as ::core::ffi::c_int);
     }
     if right != 0 {
         (*data).right = cx.wrapping_add(sx).wrapping_sub(3 as u_int) as ::core::ffi::c_int;
         screen_write_cursormove(
-            &mut *ctx,
+            ctx,
             cx.wrapping_add(sx).wrapping_sub(3 as u_int) as ::core::ffi::c_int,
             cy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_vline(&mut *ctx, sy, Some(&gc));
+        screen_write_vline(ctx, sy, Some(&gc));
         screen_write_cursormove(
-            &mut *ctx,
+            ctx,
             cx.wrapping_add(sx).wrapping_sub(1 as u_int) as ::core::ffi::c_int,
             cy.wrapping_add(sy.wrapping_div(2 as u_int)) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_puts(&mut *ctx, &gc, |out| out.write_all(b">"));
+        screen_write_puts(ctx, &gc, |out| out.write_all(b">"));
     } else {
         (*data).right = -(1 as ::core::ffi::c_int);
     }
@@ -992,7 +988,7 @@ unsafe fn window_tree_draw_session(
                 width = each.wrapping_sub(1 as u_int);
             }
             screen_write_cursormove(
-                &mut *ctx,
+                ctx,
                 cx.wrapping_add(offset) as ::core::ffi::c_int,
                 cy as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
@@ -1021,12 +1017,12 @@ unsafe fn window_tree_draw_session(
             drop(window);
             if loop_0 != end.wrapping_sub(1 as u_int) {
                 screen_write_cursormove(
-                    &mut *ctx,
+                    ctx,
                     cx.wrapping_add(offset).wrapping_add(width) as ::core::ffi::c_int,
                     cy as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                 );
-                screen_write_vline(&mut *ctx, sy, Some(&gc));
+                screen_write_vline(ctx, sy, Some(&gc));
             }
             loop_0 = loop_0.wrapping_add(1);
             i = i.wrapping_add(1);
@@ -1038,7 +1034,7 @@ unsafe fn window_tree_draw_window(
     mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
     session_owner: &SessionRef,
     mut wl: refbox::Weak<winlink>,
-    mut ctx: *mut screen_write_ctx,
+    mut ctx: &mut screen_write_ctx,
     mut sx: u_int,
     mut sy: u_int,
 ) {
@@ -1053,8 +1049,8 @@ unsafe fn window_tree_draw_window(
         .cloned()
         .expect("preview window");
     (|| {
-        let mut cx: u_int = (*(*ctx).screen_ptr()).cx;
-        let mut cy: u_int = (*(*ctx).screen_ptr()).cy;
+        let mut cx: u_int = ctx.screen.cx;
+        let mut cy: u_int = ctx.screen.cy;
         let mut loop_0: u_int = 0;
         let mut total: u_int = 0;
         let mut visible: u_int = 0;
@@ -1181,38 +1177,38 @@ unsafe fn window_tree_draw_window(
         if left != 0 {
             (*data).left = cx.wrapping_add(2 as u_int) as ::core::ffi::c_int;
             screen_write_cursormove(
-                &mut *ctx,
+                ctx,
                 cx.wrapping_add(2 as u_int) as ::core::ffi::c_int,
                 cy as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
             );
-            screen_write_vline(&mut *ctx, sy, Some(&gc));
+            screen_write_vline(ctx, sy, Some(&gc));
             screen_write_cursormove(
-                &mut *ctx,
+                ctx,
                 cx as ::core::ffi::c_int,
                 cy.wrapping_add(sy.wrapping_div(2 as u_int)) as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
             );
-            screen_write_puts(&mut *ctx, &gc, |out| out.write_all(b"<"));
+            screen_write_puts(ctx, &gc, |out| out.write_all(b"<"));
         } else {
             (*data).left = -(1 as ::core::ffi::c_int);
         }
         if right != 0 {
             (*data).right = cx.wrapping_add(sx).wrapping_sub(3 as u_int) as ::core::ffi::c_int;
             screen_write_cursormove(
-                &mut *ctx,
+                ctx,
                 cx.wrapping_add(sx).wrapping_sub(3 as u_int) as ::core::ffi::c_int,
                 cy as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
             );
-            screen_write_vline(&mut *ctx, sy, Some(&gc));
+            screen_write_vline(ctx, sy, Some(&gc));
             screen_write_cursormove(
-                &mut *ctx,
+                ctx,
                 cx.wrapping_add(sx).wrapping_sub(1 as u_int) as ::core::ffi::c_int,
                 cy.wrapping_add(sy.wrapping_div(2 as u_int)) as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
             );
-            screen_write_puts(&mut *ctx, &gc, |out| out.write_all(b">"));
+            screen_write_puts(ctx, &gc, |out| out.write_all(b">"));
         } else {
             (*data).right = -(1 as ::core::ffi::c_int);
         }
@@ -1266,7 +1262,7 @@ unsafe fn window_tree_draw_window(
                         width = each.wrapping_sub(1 as u_int);
                     }
                     screen_write_cursormove(
-                        &mut *ctx,
+                        ctx,
                         cx.wrapping_add(offset) as ::core::ffi::c_int,
                         cy as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
@@ -1297,12 +1293,12 @@ unsafe fn window_tree_draw_window(
                     drop(ft_owner);
                     if loop_0 != end.wrapping_sub(1 as u_int) {
                         screen_write_cursormove(
-                            &mut *ctx,
+                            ctx,
                             cx.wrapping_add(offset).wrapping_add(width) as ::core::ffi::c_int,
                             cy as ::core::ffi::c_int,
                             0 as ::core::ffi::c_int,
                         );
-                        screen_write_vline(&mut *ctx, sy, Some(&gc));
+                        screen_write_vline(ctx, sy, Some(&gc));
                     }
                     loop_0 = loop_0.wrapping_add(1);
                     i = i.wrapping_add(1);
@@ -1323,7 +1319,6 @@ unsafe fn window_tree_draw_info(
     let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*data).wp) else {
         return;
     };
-    let mut s: *mut screen = (*ctx).screen_ptr();
     let mut sp: Option<SessionRef> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut gc: grid_cell = grid_cell {
@@ -1340,8 +1335,8 @@ unsafe fn window_tree_draw_info(
         us: 0,
         link: 0,
     };
-    let mut cx: u_int = (*s).cx;
-    let mut cy: u_int = (*s).cy;
+    let mut cx: u_int = ctx.screen.cx;
+    let mut cy: u_int = ctx.screen.cy;
     let mut i: u_int = 0;
     let mut j: u_int = 0;
     let mut k: u_int = 0;
@@ -1393,13 +1388,13 @@ unsafe fn window_tree_draw_info(
                 std::ptr::null_mut(),
             );
             screen_write_cursormove(
-                &mut *ctx,
+                ctx,
                 cx as ::core::ffi::c_int,
                 cy.wrapping_add(i) as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
             );
             screen_write_hline(
-                &mut *ctx,
+                ctx,
                 sx,
                 0 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
@@ -1409,12 +1404,12 @@ unsafe fn window_tree_draw_info(
             if sx > 14 as u_int {
                 gc.attr = (gc.attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
                 screen_write_cursormove(
-                    &mut *ctx,
+                    ctx,
                     cx.wrapping_add(14 as u_int) as ::core::ffi::c_int,
                     cy.wrapping_add(i) as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                 );
-                screen_write_putc(&mut *ctx, &gc, 'n' as i32 as u_char);
+                screen_write_putc(ctx, &gc, 'n' as i32 as u_char);
             }
             i = i.wrapping_add(1);
         }
@@ -1425,7 +1420,7 @@ unsafe fn window_tree_draw_info(
             }
             let expanded = format_expand_cstring(ft, lines[j as usize][k as usize].as_ptr());
             screen_write_cursormove(
-                &mut *ctx,
+                ctx,
                 cx as ::core::ffi::c_int,
                 cy.wrapping_add(i) as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
@@ -1454,12 +1449,12 @@ unsafe fn window_tree_draw_info(
             std::ptr::null_mut(),
         );
         screen_write_cursormove(
-            &mut *ctx,
+            ctx,
             cx.wrapping_add(14 as u_int) as ::core::ffi::c_int,
             cy.wrapping_add(i) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_vline(&mut *ctx, sy.wrapping_sub(i), Some(&gc));
+        screen_write_vline(ctx, sy.wrapping_sub(i), Some(&gc));
     }
     drop(ft_owner);
 }
@@ -1793,14 +1788,13 @@ unsafe fn window_tree_init(
     _item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     mut fs: *mut cmd_find_state,
     mut args: *mut args,
-) -> *mut screen {
+) -> bool {
     let mode_pane_owner = wme
         .get_unchecked()
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
     let mut data: *mut window_tree_modedata = ::core::ptr::null_mut::<window_tree_modedata>();
-    let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
     let format = if args.is_null() || args_has(&*args, 'F' as i32 as u_char) == 0 {
         WINDOW_TREE_DEFAULT_FORMAT
     } else {
@@ -1904,25 +1898,26 @@ unsafe fn window_tree_init(
         Some(window_tree_sort),
         Some(window_tree_help),
         &window_tree_menu_items,
-        &raw mut s,
     ));
     mode_tree_view_name(&mut (*data).tree_owner().borrow_mut(), Some(c"preview"));
     mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
     mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
     (*data).type_0 = WINDOW_TREE_NONE;
-    s
+    true
 }
-unsafe fn window_tree_get_screen(wme: refbox::Weak<window_mode_entry>) -> *mut screen {
+unsafe fn window_tree_get_screen(
+    wme: refbox::Weak<window_mode_entry>,
+    visit: &mut dyn FnMut(&mut screen),
+) {
     let Some(data) = wme
         .get_unchecked()
         .shared_data_ptr::<window_tree_modedata>()
     else {
-        return std::ptr::null_mut();
+        return;
     };
-    (*data)
-        .data
-        .as_ref()
-        .map_or(std::ptr::null_mut(), mode_tree_screen)
+    if let Some(tree_owner) = (*data).data.as_ref() {
+        mode_tree_visit_screen(tree_owner, visit);
+    }
 }
 
 unsafe fn window_tree_free(wme: refbox::Weak<window_mode_entry>) {

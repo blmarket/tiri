@@ -57,7 +57,6 @@ pub struct input_ctx {
     /// Pane lifetime is owned by the pane index and retained event handlers.
     pub wp: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
     pub event: crate::reactor::StreamHandle,
-    pub ctx: screen_write_ctx,
     pub palette: InputPalette,
     /// Client observation; request/context ownership does not retain the client.
     pub c: ClientWeak,
@@ -107,16 +106,20 @@ pub type input_end_type = ::core::ffi::c_uint;
 pub struct input_state {
     pub name: &'static ::std::ffi::CStr,
     pub enter: Option<unsafe fn(*mut input_ctx)>,
-    pub exit: Option<unsafe fn(*mut input_ctx)>,
+    pub exit: Option<unsafe fn(*mut input_ctx, &mut screen_write_ctx)>,
     pub transitions: &'static [input_transition],
 }
+
+/// Handles the current byte, writing through the parse's screen context;
+/// nonzero keeps the current state.
+pub type input_handler_cb = unsafe fn(*mut input_ctx, &mut screen_write_ctx) -> ::core::ffi::c_int;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct input_transition {
     pub first: ::core::ffi::c_int,
     pub last: ::core::ffi::c_int,
-    pub handler: Option<unsafe fn(*mut input_ctx) -> ::core::ffi::c_int>,
+    pub handler: Option<input_handler_cb>,
     pub state: Option<&'static input_state>,
 }
 

@@ -55,8 +55,7 @@ fn menu_rendering_preserves_selection_disabled_rows_and_borrowed_inputs() {
             border.fg = 5;
             border.bg = 6;
             let originals = [normal, selected, border];
-            let mut ctx = screen_write_ctx::default();
-            screen_write_start(&mut ctx, &mut s);
+            let mut ctx = screen_write_start(&mut s);
             screen_write_menu(
                 &mut ctx,
                 &menu,
@@ -66,7 +65,7 @@ fn menu_rendering_preserves_selection_disabled_rows_and_borrowed_inputs() {
                 Some(&border),
                 &selected,
             );
-            screen_write_stop(&mut ctx);
+            screen_write_stop(ctx);
             assert_eq!((s.cx, s.cy), (1, 1));
             for (style, original) in [&normal, &selected, &border].into_iter().zip(&originals) {
                 assert!(grid_cells_equal(style, original));

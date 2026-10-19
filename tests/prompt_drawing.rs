@@ -180,8 +180,7 @@ fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {
                 .display = completion.map(CStr::to_owned);
             let mut s = screen::empty();
             screen_init(&mut s, 80, 1, 0);
-            let mut ctx = screen_write_ctx::default();
-            screen_write_start(&mut ctx, &mut s);
+            let mut ctx = screen_write_start(&mut s);
             let cursor_x = prompt_draw(
                 &prompt.try_borrow_mut().expect("live unborrowed prompt"),
                 &mut ctx,
@@ -191,7 +190,7 @@ fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {
                     prompt_line: 0,
                 },
             );
-            screen_write_stop(&mut ctx);
+            screen_write_stop(ctx);
             let text =
                 grid_string_cells_bytes(s.grid(), 0, 0, 80, None, GRID_STRING_TRIM_SPACES, None);
             assert_eq!(

@@ -36,7 +36,6 @@ use crate::shared::prompt::{
     PROMPT_NOFORMAT,
 };
 use crate::shared::screen::{screen, MODE_CURSOR};
-use crate::shared::screen_write::screen_write_ctx;
 use crate::shared::session::SessionRef;
 use crate::shared::sort::sort_criteria;
 use crate::shared::sort::*;
@@ -93,7 +92,7 @@ pub static window_switch_mode: window_mode = {
                     Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
                     *mut cmd_find_state,
                     *mut args,
-                ) -> *mut screen,
+                ) -> bool,
         ),
         free: None,
         resize: Some(
@@ -279,20 +278,10 @@ unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         .upgrade()
         .expect("mode belongs to a live pane");
     let mut data: *mut window_switch_modedata = window_switch_data(wme.clone());
-    let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: std::rc::Weak::new(),
-        target: Default::default(),
-        flags: 0,
-        init_ctx_cb: None,
-        item: None,
-        scrolled: 0,
-        bg: 0,
-    };
-    let mut s: *mut screen = &raw mut (*data).screen;
-    let mut sx: u_int = (*s).grid().sx;
+    let mut sx: u_int = (*data).screen.grid().sx;
     let mut i: u_int = 0;
     let mut j: u_int = 0;
-    let mut sy: u_int = (*s).grid().sy;
+    let mut sy: u_int = (*data).screen.grid().sy;
     let mut visible: u_int = 0;
     let mut idx: u_int = 0;
     let mut item: *mut window_switch_itemdata = ::core::ptr::null_mut::<window_switch_itemdata>();
@@ -339,10 +328,10 @@ unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         link: 0,
     };
     let dgc = &raw const grid_default_cell;
-    screen_write_start(&mut ctx, s);
+    let mut ctx = screen_write_start(&mut (*data).screen);
     screen_write_clearscreen(&mut ctx, 8 as u_int);
     if sy <= 1 as u_int {
-        screen_write_stop(&mut ctx);
+        screen_write_stop(ctx);
         return;
     }
     style_apply_with_options(
@@ -374,7 +363,7 @@ unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         );
         if idx != (*data).current {
             format_draw(
-                &raw mut ctx,
+                &mut ctx,
                 &*dgc,
                 sx,
                 (*item).text.as_ptr(),
@@ -384,7 +373,7 @@ unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         } else {
             screen_write_clearendofline(&mut ctx, sgc.bg as u_int);
             format_draw(
-                &raw mut ctx,
+                &mut ctx,
                 &sgc,
                 sx,
                 (*item).text.as_ptr(),
@@ -401,7 +390,7 @@ unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
                     & (1 as ::core::ffi::c_int) << (j & 0x7 as u_int)
                     == 0)
                 {
-                    grid_get_cell((*s).grid(), j, i, &mut gc);
+                    grid_get_cell((*data).screen.grid(), j, i, &mut gc);
                     gc.attr = mgc.attr;
                     gc.fg = mgc.fg;
                     gc.bg = mgc.bg;
@@ -424,7 +413,7 @@ unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
             area_width: sx,
             prompt_line: sy.wrapping_sub(1 as u_int),
         };
-        (*s).mode |= MODE_CURSOR;
+        (*data).screen.mode |= MODE_CURSOR;
         (*data).prompt_cx = prompt_draw(
             &(*data)
                 .prompt
@@ -442,21 +431,20 @@ unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
             0 as ::core::ffi::c_int,
         );
     }
-    screen_write_stop(&mut ctx);
+    screen_write_stop(ctx);
 }
 unsafe fn window_switch_init(
     mut wme: refbox::Weak<window_mode_entry>,
     _item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     mut fs: *mut cmd_find_state,
     mut args: *mut args,
-) -> *mut screen {
+) -> bool {
     let mode_pane_owner = wme
         .get_unchecked()
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
     let mut data: *mut window_switch_modedata = ::core::ptr::null_mut::<window_switch_modedata>();
-    let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
     let mut pd = prompt_create_data::default();
     let format = if args.is_null() || args_has(&*args, 'F' as i32 as u_char) == 0 {
         WINDOW_SWITCH_DEFAULT_FORMAT
@@ -507,19 +495,23 @@ unsafe fn window_switch_init(
         c"(search) ",
         Some(&(*data).filter),
     );
-    s = &raw mut (*data).screen;
     let (pane_sx, pane_sy) = mode_pane_owner.screen_size(false);
-    screen_init(&mut *s, pane_sx, pane_sy, 0 as u_int);
+    screen_init(&mut (*data).screen, pane_sx, pane_sy, 0 as u_int);
     window_switch_build(data);
     prompt_incremental_start(&prompt);
     window_switch_draw_screen(wme.clone());
-    s
+    true
 }
-unsafe fn window_switch_get_screen(wme: refbox::Weak<window_mode_entry>) -> *mut screen {
-    let data = wme
+unsafe fn window_switch_get_screen(
+    wme: refbox::Weak<window_mode_entry>,
+    visit: &mut dyn FnMut(&mut screen),
+) {
+    if let Some(data) = wme
         .get_unchecked()
-        .boxed_data_ptr::<window_switch_modedata>();
-    data.map_or(std::ptr::null_mut(), |data| &raw mut (*data).screen)
+        .boxed_data_ptr::<window_switch_modedata>()
+    {
+        visit(&mut (*data).screen);
+    }
 }
 
 unsafe fn window_switch_resize(
@@ -528,8 +520,7 @@ unsafe fn window_switch_resize(
     mut sy: u_int,
 ) {
     let mut data: *mut window_switch_modedata = window_switch_data(wme.clone());
-    let mut s: *mut screen = &raw mut (*data).screen;
-    screen_resize(&mut *s, sx, sy, 0 as ::core::ffi::c_int);
+    screen_resize(&mut (*data).screen, sx, sy, 0 as ::core::ffi::c_int);
     window_switch_build(data);
     window_switch_set_current(data, (*data).current);
     window_switch_draw_screen(wme.clone());

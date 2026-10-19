@@ -9,7 +9,7 @@ use crate::mode_tree::ModeTreeItemSnapshot;
 use crate::mode_tree::{
     mode_tree_add, mode_tree_build, mode_tree_down, mode_tree_draw, mode_tree_each_tagged,
     mode_tree_free, mode_tree_get_current, mode_tree_key, mode_tree_resize, mode_tree_run_command,
-    mode_tree_screen, mode_tree_start, mode_tree_up,
+    mode_tree_start, mode_tree_up, mode_tree_visit_screen,
 };
 use crate::mode_tree::{mode_tree_data, mode_tree_help_info, ModeTreeItemData};
 use crate::paste::{
@@ -151,7 +151,7 @@ pub static window_buffer_mode: window_mode = {
                     Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
                     *mut cmd_find_state,
                     *mut args,
-                ) -> *mut screen,
+                ) -> bool,
         ),
         free: Some(window_buffer_free as unsafe fn(refbox::Weak<window_mode_entry>) -> ()),
         resize: Some(
@@ -272,8 +272,8 @@ unsafe fn window_buffer_draw(
     mut sx: u_int,
     mut sy: u_int,
 ) {
-    let cx = (*(*ctx).screen_ptr()).cx;
-    let cy = (*(*ctx).screen_ptr()).cy;
+    let cx = ctx.screen.cx;
+    let cy = ctx.screen.cy;
     let Some(pb) = paste_get_name(&item.name) else {
         return;
     };
@@ -289,13 +289,8 @@ unsafe fn window_buffer_draw(
         utf8_strvis(&mut buf, line, VIS_OCTAL | VIS_CSTYLE | VIS_TAB);
         let escaped = CStr::from_bytes_until_nul(&buf).expect("escaped line is terminated");
         if !escaped.is_empty() {
-            screen_write_cursormove(
-                &mut *ctx,
-                cx as i32,
-                cy.wrapping_add(row as u_int) as i32,
-                0,
-            );
-            screen_write_nputs(&mut *ctx, sx as ssize_t, &grid_default_cell, |out| {
+            screen_write_cursormove(ctx, cx as i32, cy.wrapping_add(row as u_int) as i32, 0);
+            screen_write_nputs(ctx, sx as ssize_t, &grid_default_cell, |out| {
                 out.write_all(escaped.to_bytes())
             });
         }
@@ -424,14 +419,13 @@ unsafe fn window_buffer_init(
     _item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     mut fs: *mut cmd_find_state,
     mut args: *mut args,
-) -> *mut screen {
+) -> bool {
     let mode_pane_owner = wme
         .get_unchecked()
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
     let mut data: *mut window_buffer_modedata = ::core::ptr::null_mut::<window_buffer_modedata>();
-    let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
     let format = if args.is_null() || args_has(&*args, 'F' as i32 as u_char) == 0 {
         WINDOW_BUFFER_DEFAULT_FORMAT.to_owned()
     } else {
@@ -495,23 +489,24 @@ unsafe fn window_buffer_init(
         Some(window_buffer_sort),
         Some(window_buffer_help),
         &window_buffer_menu_items,
-        &raw mut s,
     ));
     mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
     mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
-    s
+    true
 }
-unsafe fn window_buffer_get_screen(wme: refbox::Weak<window_mode_entry>) -> *mut screen {
+unsafe fn window_buffer_get_screen(
+    wme: refbox::Weak<window_mode_entry>,
+    visit: &mut dyn FnMut(&mut screen),
+) {
     let Some(data) = wme
         .get_unchecked()
         .boxed_data_ptr::<window_buffer_modedata>()
     else {
-        return std::ptr::null_mut();
+        return;
     };
-    (*data)
-        .data
-        .as_ref()
-        .map_or(std::ptr::null_mut(), mode_tree_screen)
+    if let Some(tree_owner) = (*data).data.as_ref() {
+        mode_tree_visit_screen(tree_owner, visit);
+    }
 }
 
 unsafe fn window_buffer_free(wme: refbox::Weak<window_mode_entry>) {

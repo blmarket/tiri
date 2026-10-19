@@ -40,7 +40,7 @@ use crate::mode_tree::{
     mode_tree_add, mode_tree_build, mode_tree_count_tagged, mode_tree_draw,
     mode_tree_draw_as_parent, mode_tree_each_tagged, mode_tree_free, mode_tree_get_current,
     mode_tree_get_current_name, mode_tree_key, mode_tree_no_tag, mode_tree_remove,
-    mode_tree_resize, mode_tree_screen, mode_tree_set_prompt, mode_tree_start, mode_tree_up,
+    mode_tree_resize, mode_tree_set_prompt, mode_tree_start, mode_tree_up, mode_tree_visit_screen,
 };
 use crate::mode_tree::{
     mode_tree_data, mode_tree_help_info, mode_tree_prompt_input_cb, ModeTreeItemData,
@@ -349,7 +349,7 @@ pub static window_customize_mode: window_mode = {
                     Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
                     *mut cmd_find_state,
                     *mut args,
-                ) -> *mut screen,
+                ) -> bool,
         ),
         free: Some(window_customize_free as unsafe fn(refbox::Weak<window_mode_entry>) -> ()),
         resize: Some(
@@ -512,7 +512,7 @@ unsafe fn window_customize_scope_text(
     }
 }
 unsafe fn window_customize_write_hook_fire(
-    mut ctx: *mut screen_write_ctx,
+    mut ctx: &mut screen_write_ctx,
     mut cx: u_int,
     mut sx: u_int,
     mut sy: u_int,
@@ -534,7 +534,7 @@ unsafe fn window_customize_write_hook_fire(
     if fire_time != 0 as time_t {
         let fire_time_string = format_pretty_time_cstring(fire_time);
         if screen_write_text(
-            &mut *ctx,
+            ctx,
             cx,
             sx,
             sy,
@@ -554,7 +554,7 @@ unsafe fn window_customize_write_hook_fire(
         return 1 as ::core::ffi::c_int;
     }
     screen_write_text(
-        &mut *ctx,
+        ctx,
         cx,
         sx,
         sy,
@@ -573,7 +573,7 @@ fn window_customize_add_item(
     handle
 }
 unsafe fn window_customize_write_value(
-    mut ctx: *mut screen_write_ctx,
+    mut ctx: &mut screen_write_ctx,
     mut cx: u_int,
     mut sx: u_int,
     mut sy: u_int,
@@ -581,7 +581,6 @@ unsafe fn window_customize_write_value(
     label: &CStr,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) -> ::core::ffi::c_int {
-    let mut s: *mut screen = (*ctx).screen_ptr();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -596,13 +595,13 @@ unsafe fn window_customize_write_value(
         us: 0,
         link: 0,
     };
-    let mut cy: u_int = (*s).cy;
+    let mut cy: u_int = ctx.screen.cy;
     let mut retval: ::core::ffi::c_int = 0;
     if sy == 0 as u_int {
         return 0 as ::core::ffi::c_int;
     }
     if screen_write_text(
-        &mut *ctx,
+        ctx,
         cx,
         sx,
         sy,
@@ -613,16 +612,14 @@ unsafe fn window_customize_write_value(
     {
         return 0 as ::core::ffi::c_int;
     }
-    if (*s).cy.wrapping_sub(cy) >= sy {
+    if ctx.screen.cy.wrapping_sub(cy) >= sy {
         return 0 as ::core::ffi::c_int;
     }
-    sy = sy.wrapping_sub((*s).cy.wrapping_sub(cy));
+    sy = sy.wrapping_sub(ctx.screen.cy.wrapping_sub(cy));
     gc = grid_default_cell;
     gc.fg = COLOUR_THEME_LIGHT_GREY as ::core::ffi::c_int | COLOUR_FLAG_THEME;
     let value = format_message_with(write);
-    retval = screen_write_text(&mut *ctx, cx, sx, sy, more, &gc, |out| {
-        write_cstr(out, &*value)
-    });
+    retval = screen_write_text(ctx, cx, sx, sy, more, &gc, |out| write_cstr(out, &*value));
     retval
 }
 
@@ -638,17 +635,8 @@ unsafe fn window_customize_draw_waiting(mode_owner: &Rc<UnsafeCell<window_custom
     let Some(_mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*data).wp) else {
         return;
     };
-    let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: std::rc::Weak::new(),
-        target: Default::default(),
-        flags: 0,
-        init_ctx_cb: None,
-        item: None,
-        scrolled: 0,
-        bg: 0,
-    };
     let tree_owner = (*data).tree_owner();
-    let s: *mut screen = mode_tree_screen(&tree_owner);
+    let mut tree = tree_owner.borrow_mut();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -675,8 +663,8 @@ unsafe fn window_customize_draw_waiting(mode_owner: &Rc<UnsafeCell<window_custom
     let Some(editor) = (*data).editor.as_ref() else {
         return;
     };
-    sx = (*s).grid().sx;
-    sy = (*s).grid().sy;
+    sx = tree.screen.grid().sx;
+    sy = tree.screen.grid().sy;
     if sx == 0 as u_int || sy == 0 as u_int {
         return;
     }
@@ -700,7 +688,7 @@ unsafe fn window_customize_draw_waiting(mode_owner: &Rc<UnsafeCell<window_custom
             .wrapping_div(2 as size_t),
     ) as u_int;
     gc = grid_default_cell;
-    screen_write_start(&mut ctx, s);
+    let mut ctx = screen_write_start(&mut tree.screen);
     screen_write_cursormove(
         &mut ctx,
         x as ::core::ffi::c_int,
@@ -727,7 +715,7 @@ unsafe fn window_customize_draw_waiting(mode_owner: &Rc<UnsafeCell<window_custom
         &gc,
         |out| out.write_all(&text),
     );
-    screen_write_stop(&mut ctx);
+    screen_write_stop(ctx);
 }
 unsafe fn window_customize_set_option_value(
     item: &window_customize_itemdata,
@@ -1652,13 +1640,12 @@ unsafe fn window_customize_build(
 }
 unsafe fn window_customize_draw_key(
     item: &window_customize_itemdata,
-    mut ctx: *mut screen_write_ctx,
+    mut ctx: &mut screen_write_ctx,
     mut sx: u_int,
     mut sy: u_int,
 ) {
-    let mut s: *mut screen = (*ctx).screen_ptr();
-    let mut cx: u_int = (*s).cx;
-    let mut cy: u_int = (*s).cy;
+    let mut cx: u_int = ctx.screen.cx;
+    let mut cy: u_int = ctx.screen.cy;
     let mut note: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut period: *const ::core::ffi::c_char = c"".as_ptr();
     let Some(table) = window_customize_get_key_table(item) else {
@@ -1678,7 +1665,7 @@ unsafe fn window_customize_draw_key(
         period = c".".as_ptr();
     }
     if screen_write_text(
-        &mut *ctx,
+        ctx,
         cx,
         sx,
         sy,
@@ -1693,19 +1680,19 @@ unsafe fn window_customize_draw_key(
         return;
     }
     screen_write_cursormove(
-        &mut *ctx,
+        ctx,
         cx as ::core::ffi::c_int,
-        (*s).cy.wrapping_add(1 as u_int) as ::core::ffi::c_int,
+        ctx.screen.cy.wrapping_add(1 as u_int) as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    if (*s).cy >= cy.wrapping_add(sy).wrapping_sub(1 as u_int) {
+    if ctx.screen.cy >= cy.wrapping_add(sy).wrapping_sub(1 as u_int) {
         return;
     }
     if screen_write_text(
-        &mut *ctx,
+        ctx,
         cx,
         sx,
-        sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
+        sy.wrapping_sub(ctx.screen.cy.wrapping_sub(cy)),
         0 as ::core::ffi::c_int,
         &grid_default_cell,
         |out| {
@@ -1721,7 +1708,7 @@ unsafe fn window_customize_draw_key(
         ctx,
         cx,
         sx,
-        sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
+        sy.wrapping_sub(ctx.screen.cy.wrapping_sub(cy)),
         0 as ::core::ffi::c_int,
         c"Repeat: ",
         |out| {
@@ -1739,12 +1726,12 @@ unsafe fn window_customize_draw_key(
         return;
     }
     screen_write_cursormove(
-        &mut *ctx,
+        ctx,
         cx as ::core::ffi::c_int,
-        (*s).cy.wrapping_add(1 as u_int) as ::core::ffi::c_int,
+        ctx.screen.cy.wrapping_add(1 as u_int) as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    if (*s).cy >= cy.wrapping_add(sy).wrapping_sub(1 as u_int) {
+    if ctx.screen.cy >= cy.wrapping_add(sy).wrapping_sub(1 as u_int) {
         return;
     }
     let cmd = cmd_list_print_cstring(&bd.cmdlist().borrow(), 0);
@@ -1752,7 +1739,7 @@ unsafe fn window_customize_draw_key(
         ctx,
         cx,
         sx,
-        sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
+        sy.wrapping_sub(ctx.screen.cy.wrapping_sub(cy)),
         0 as ::core::ffi::c_int,
         c"Command: ",
         |out| write_cstr(out, &*cmd),
@@ -1767,7 +1754,7 @@ unsafe fn window_customize_draw_key(
                 ctx,
                 cx,
                 sx,
-                sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
+                sy.wrapping_sub(ctx.screen.cy.wrapping_sub(cy)),
                 0 as ::core::ffi::c_int,
                 c"The default is: ",
                 |out| write_cstr(out, &*default_cmd),
@@ -1778,15 +1765,14 @@ unsafe fn window_customize_draw_key(
 unsafe fn window_customize_draw_option(
     mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
     item: &window_customize_itemdata,
-    mut ctx: *mut screen_write_ctx,
+    mut ctx: &mut screen_write_ctx,
     mut sx: u_int,
     mut sy: u_int,
 ) {
     let data = mode_owner.get();
     let mut current_block: u64;
-    let mut s: *mut screen = (*ctx).screen_ptr();
-    let mut cx: u_int = (*s).cx;
-    let mut cy: u_int = (*s).cy;
+    let mut cx: u_int = ctx.screen.cx;
+    let mut cy: u_int = ctx.screen.cy;
     let mut go: Option<OptionsScope> = None;
     let mut wo: Option<OptionsScope> = None;
     let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
@@ -1877,7 +1863,7 @@ unsafe fn window_customize_draw_option(
         text = (*oe).text.map_or(std::ptr::null(), CStr::as_ptr);
     }
     if !(screen_write_text(
-        &mut *ctx,
+        ctx,
         cx,
         sx,
         sy,
@@ -1887,18 +1873,18 @@ unsafe fn window_customize_draw_option(
     ) == 0)
     {
         screen_write_cursormove(
-            &mut *ctx,
+            ctx,
             cx as ::core::ffi::c_int,
-            (*s).cy.wrapping_add(1 as u_int) as ::core::ffi::c_int,
+            ctx.screen.cy.wrapping_add(1 as u_int) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        if !((*s).cy >= cy.wrapping_add(sy).wrapping_sub(1 as u_int)) {
+        if !(ctx.screen.cy >= cy.wrapping_add(sy).wrapping_sub(1 as u_int)) {
             if is_monitor != 0 {
                 if screen_write_text(
-                    &mut *ctx,
+                    ctx,
                     cx,
                     sx,
-                    sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
+                    sy.wrapping_sub(ctx.screen.cy.wrapping_sub(cy)),
                     0 as ::core::ffi::c_int,
                     &grid_default_cell,
                     |out| out.write_all(b"This is a monitor hook."),
@@ -1924,10 +1910,10 @@ unsafe fn window_customize_draw_option(
                 }
                 if is_user_hook != 0 {
                     if screen_write_text(
-                        &mut *ctx,
+                        ctx,
                         cx,
                         sx,
-                        sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
+                        sy.wrapping_sub(ctx.screen.cy.wrapping_sub(cy)),
                         0 as ::core::ffi::c_int,
                         &grid_default_cell,
                         |out| out.write_all(b"This is a user hook."),
@@ -1939,10 +1925,10 @@ unsafe fn window_customize_draw_option(
                     }
                 } else if is_hook != 0 {
                     if screen_write_text(
-                        &mut *ctx,
+                        ctx,
                         cx,
                         sx,
-                        sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
+                        sy.wrapping_sub(ctx.screen.cy.wrapping_sub(cy)),
                         0 as ::core::ffi::c_int,
                         &grid_default_cell,
                         |out| {
@@ -1957,10 +1943,10 @@ unsafe fn window_customize_draw_option(
                         current_block = 14134146928577265803;
                     }
                 } else if screen_write_text(
-                    &mut *ctx,
+                    ctx,
                     cx,
                     sx,
-                    sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
+                    sy.wrapping_sub(ctx.screen.cy.wrapping_sub(cy)),
                     0 as ::core::ffi::c_int,
                     &grid_default_cell,
                     |out| {
@@ -1983,7 +1969,7 @@ unsafe fn window_customize_draw_option(
                             ctx,
                             cx,
                             sx,
-                            sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
+                            sy.wrapping_sub(ctx.screen.cy.wrapping_sub(cy)),
                             0 as ::core::ffi::c_int,
                             c"Monitor: ",
                             |out| write_cstr(out, &*monitor),
@@ -2003,10 +1989,10 @@ unsafe fn window_customize_draw_option(
                                 if is_hook != 0 {
                                     if array_key.is_null() {
                                         if screen_write_text(
-                                            &mut *ctx,
+                                            ctx,
                                             cx,
                                             sx,
-                                            sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
+                                            sy.wrapping_sub(ctx.screen.cy.wrapping_sub(cy)),
                                             0 as ::core::ffi::c_int,
                                             &grid_default_cell,
                                             |out| out.write_all(b"This is an array hook."),
@@ -2018,7 +2004,7 @@ unsafe fn window_customize_draw_option(
                                                 ctx,
                                                 cx,
                                                 sx,
-                                                sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
+                                                sy.wrapping_sub(ctx.screen.cy.wrapping_sub(cy)),
                                                 &owner,
                                                 name,
                                             );
@@ -2029,10 +2015,10 @@ unsafe fn window_customize_draw_option(
                                     }
                                 } else if !array_key.is_null() {
                                     if screen_write_text(
-                                        &mut *ctx,
+                                        ctx,
                                         cx,
                                         sx,
-                                        sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
+                                        sy.wrapping_sub(ctx.screen.cy.wrapping_sub(cy)),
                                         0 as ::core::ffi::c_int,
                                         &grid_default_cell,
                                         |out| {
@@ -2047,10 +2033,10 @@ unsafe fn window_customize_draw_option(
                                         current_block = 168769493162332264;
                                     }
                                 } else if screen_write_text(
-                                    &mut *ctx,
+                                    ctx,
                                     cx,
                                     sx,
-                                    sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
+                                    sy.wrapping_sub(ctx.screen.cy.wrapping_sub(cy)),
                                     0 as ::core::ffi::c_int,
                                     &grid_default_cell,
                                     |out| out.write_all(b"This is an array option."),
@@ -2077,12 +2063,15 @@ unsafe fn window_customize_draw_option(
                                 4086289836260337793 => {}
                                 _ => {
                                     screen_write_cursormove(
-                                        &mut *ctx,
+                                        ctx,
                                         cx as ::core::ffi::c_int,
-                                        (*s).cy.wrapping_add(1 as u_int) as ::core::ffi::c_int,
+                                        ctx.screen.cy.wrapping_add(1 as u_int)
+                                            as ::core::ffi::c_int,
                                         0 as ::core::ffi::c_int,
                                     );
-                                    if !((*s).cy >= cy.wrapping_add(sy).wrapping_sub(1 as u_int)) {
+                                    if !(ctx.screen.cy
+                                        >= cy.wrapping_add(sy).wrapping_sub(1 as u_int))
+                                    {
                                         value_owner = Some(option_value);
                                         value = value_owner.as_ref().unwrap().as_ptr().cast_mut();
                                         if !oe.is_null() && array_key.is_null() {
@@ -2098,7 +2087,7 @@ unsafe fn window_customize_draw_option(
                                                 ctx,
                                                 cx,
                                                 sx,
-                                                sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
+                                                sy.wrapping_sub(ctx.screen.cy.wrapping_sub(cy)),
                                                 0 as ::core::ffi::c_int,
                                                 c"Hook command: ",
                                                 |out| {
@@ -2111,7 +2100,7 @@ unsafe fn window_customize_draw_option(
                                                     ctx,
                                                     cx,
                                                     sx,
-                                                    sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
+                                                    sy.wrapping_sub(ctx.screen.cy.wrapping_sub(cy)),
                                                     &owner,
                                                     name,
                                                 ) == 0)
@@ -2124,7 +2113,7 @@ unsafe fn window_customize_draw_option(
                                             ctx,
                                             cx,
                                             sx,
-                                            sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
+                                            sy.wrapping_sub(ctx.screen.cy.wrapping_sub(cy)),
                                             0 as ::core::ffi::c_int,
                                             c"Option value: ",
                                             |out| {
@@ -2156,7 +2145,7 @@ unsafe fn window_customize_draw_option(
                                                             cx,
                                                             sx,
                                                             sy.wrapping_sub(
-                                                                (*s).cy.wrapping_sub(cy),
+                                                                ctx.screen.cy.wrapping_sub(cy),
                                                             ),
                                                             0 as ::core::ffi::c_int,
                                                             c"This expands to: ",
@@ -2222,7 +2211,7 @@ unsafe fn window_customize_draw_option(
                                                                 cx,
                                                                 sx,
                                                                 sy.wrapping_sub(
-                                                                    (*s).cy.wrapping_sub(cy),
+                                                                    ctx.screen.cy.wrapping_sub(cy),
                                                                 ),
                                                                 0 as ::core::ffi::c_int,
                                                                 c"Available values are: ",
@@ -2251,11 +2240,12 @@ unsafe fn window_customize_draw_option(
                                                                             as ::core::ffi::c_uint
                                                                 {
                                                                     if screen_write_text(
-                                                                        &mut *ctx,
+                                                                        ctx,
                                                                         cx,
                                                                         sx,
                                                                         sy.wrapping_sub(
-                                                                            (*s).cy
+                                                                            ctx.screen
+                                                                                .cy
                                                                                 .wrapping_sub(cy),
                                                                         ),
                                                                         1 as ::core::ffi::c_int,
@@ -2280,11 +2270,12 @@ unsafe fn window_customize_draw_option(
                                                                             })
                                                                             as ::core::ffi::c_int;
                                                                         if screen_write_text(
-                                                                            &mut *ctx,
+                                                                            ctx,
                                                                             cx,
                                                                             sx,
                                                                             sy.wrapping_sub(
-                                                                                (*s).cy
+                                                                                ctx.screen
+                                                                                    .cy
                                                                                     .wrapping_sub(
                                                                                         cy,
                                                                                     ),
@@ -2314,10 +2305,10 @@ unsafe fn window_customize_draw_option(
                                                                         if !oe.is_null()
                                                                             && (*oe).flags & OPTIONS_TABLE_IS_COLOUR != 0
                                                                         {
-                                                                            if screen_write_text(&mut *ctx,
+                                                                            if screen_write_text(ctx,
 cx,
 sx,
-sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
+sy.wrapping_sub(ctx.screen.cy.wrapping_sub(cy)),
 1 as ::core::ffi::c_int,
 &grid_default_cell,
 |out| {
@@ -2327,10 +2318,10 @@ out.write_all(b"This is a colour option: ")
                                                                                 current_block = 4086289836260337793;
                                                                             } else {
                                                                                 crate::style::style_apply_with_options(&mut gc, name, ft.as_mut(), item.oo.as_ref().expect("option scope"));
-                                                                                if screen_write_text(&mut *ctx,
+                                                                                if screen_write_text(ctx,
 cx,
 sx,
-sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
+sy.wrapping_sub(ctx.screen.cy.wrapping_sub(cy)),
 0 as ::core::ffi::c_int,
 &gc,
 |out| {
@@ -2352,10 +2343,10 @@ out.write_all(b"EXAMPLE")
                                                                                 if !oe.is_null()
                                                                                     && (*oe).flags & OPTIONS_TABLE_IS_STYLE != 0
                                                                                 {
-                                                                                    if screen_write_text(&mut *ctx,
+                                                                                    if screen_write_text(ctx,
 cx,
 sx,
-sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
+sy.wrapping_sub(ctx.screen.cy.wrapping_sub(cy)),
 1 as ::core::ffi::c_int,
 &grid_default_cell,
 |out| {
@@ -2365,10 +2356,10 @@ out.write_all(b"This is a style option: ")
                                                                                         current_block = 4086289836260337793;
                                                                                     } else {
                                                                                         crate::style::style_apply_with_options(&mut gc, name, ft.as_mut(), item.oo.as_ref().expect("option scope"));
-                                                                                        if screen_write_text(&mut *ctx,
+                                                                                        if screen_write_text(ctx,
 cx,
 sx,
-sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
+sy.wrapping_sub(ctx.screen.cy.wrapping_sub(cy)),
 0 as ::core::ffi::c_int,
 &gc,
 |out| {
@@ -2390,7 +2381,7 @@ out.write_all(b"EXAMPLE")
                                                                                             if window_customize_write_value(ctx,
 cx,
 sx,
-sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
+sy.wrapping_sub(ctx.screen.cy.wrapping_sub(cy)),
 0 as ::core::ffi::c_int,
 c"The default is: ",
 |out| {
@@ -2409,13 +2400,12 @@ write_cstr(out, nullable_cstr(unit))
                                                                                         match current_block {
                                                                                             4086289836260337793 => {}
                                                                                             _ => {
-                                                                                                screen_write_cursormove(
-                                                                                                    &mut *ctx,
+                                                                                                screen_write_cursormove(ctx,
                                                                                                     cx as ::core::ffi::c_int,
-                                                                                                    (*s).cy.wrapping_add(1 as u_int) as ::core::ffi::c_int,
+                                                                                                    ctx.screen.cy.wrapping_add(1 as u_int) as ::core::ffi::c_int,
                                                                                                     0 as ::core::ffi::c_int,
                                                                                                 );
-                                                                                                if !((*s).cy > cy.wrapping_add(sy).wrapping_sub(1 as u_int))
+                                                                                                if !(ctx.screen.cy > cy.wrapping_add(sy).wrapping_sub(1 as u_int))
                                                                                                 {
                                                                                                     if !oe.is_null()
                                                                                                         && (*oe).flags & OPTIONS_TABLE_IS_ARRAY != 0
@@ -2445,9 +2435,9 @@ write_cstr(out, nullable_cstr(unit))
                                                                                                             value = value_owner.as_ref().unwrap().as_ptr().cast_mut();
                                                                                                             let label = format_message_with(|out| write!(out, "Window value (from window {}): ", (fs.winlink_handle()).get_unchecked().idx));
                                                                                                             if window_customize_write_value(ctx,
-(*s).cx,
+ctx.screen.cx,
 sx,
-sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
+sy.wrapping_sub(ctx.screen.cy.wrapping_sub(cy)),
 0 as ::core::ffi::c_int,
 &label,
 |out| {
@@ -2475,9 +2465,9 @@ write_cstr(out, nullable_cstr(unit))
                                                                                                                     value_owner = Some(parent_value);
                                                                                                                     value = value_owner.as_ref().unwrap().as_ptr().cast_mut();
                                                                                                                     window_customize_write_value(ctx,
-(*s).cx,
+ctx.screen.cx,
 sx,
-sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
+sy.wrapping_sub(ctx.screen.cy.wrapping_sub(cy)),
 0 as ::core::ffi::c_int,
 c"Global value: ",
 |out| {
@@ -2519,7 +2509,7 @@ write_cstr(out, nullable_cstr(unit))
 unsafe fn window_customize_draw_environment(
     mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
     item: &window_customize_itemdata,
-    mut ctx: *mut screen_write_ctx,
+    mut ctx: &mut screen_write_ctx,
     mut sx: u_int,
     mut sy: u_int,
 ) {
@@ -2535,9 +2525,8 @@ unsafe fn window_customize_draw_environment(
         return;
     };
 
-    let mut s: *mut screen = (*ctx).screen_ptr();
-    let mut cx: u_int = (*s).cx;
-    let mut cy: u_int = (*s).cy;
+    let mut cx: u_int = ctx.screen.cx;
+    let mut cy: u_int = ctx.screen.cy;
     let mut envent: Option<&environ_entry> = None;
     let mut parent: Option<&environ_entry> = None;
     let mut fs: cmd_find_state = cmd_find_state {
@@ -2564,7 +2553,7 @@ unsafe fn window_customize_draw_environment(
         text = c"session".as_ptr();
     }
     if screen_write_text(
-        &mut *ctx,
+        ctx,
         cx,
         sx,
         sy,
@@ -2581,10 +2570,10 @@ unsafe fn window_customize_draw_environment(
     }
     if envent.unwrap().flags & ENVIRON_HIDDEN != 0
         && screen_write_text(
-            &mut *ctx,
+            ctx,
             cx,
             sx,
-            sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
+            sy.wrapping_sub(ctx.screen.cy.wrapping_sub(cy)),
             0 as ::core::ffi::c_int,
             &grid_default_cell,
             |out| out.write_all(b"This variable is hidden."),
@@ -2593,20 +2582,20 @@ unsafe fn window_customize_draw_environment(
         return;
     }
     screen_write_cursormove(
-        &mut *ctx,
+        ctx,
         cx as ::core::ffi::c_int,
-        (*s).cy.wrapping_add(1 as u_int) as ::core::ffi::c_int,
+        ctx.screen.cy.wrapping_add(1 as u_int) as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    if (*s).cy >= cy.wrapping_add(sy).wrapping_sub(1 as u_int) {
+    if ctx.screen.cy >= cy.wrapping_add(sy).wrapping_sub(1 as u_int) {
         return;
     }
     if envent.unwrap().value.is_none() {
         if screen_write_text(
-            &mut *ctx,
+            ctx,
             cx,
             sx,
-            sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
+            sy.wrapping_sub(ctx.screen.cy.wrapping_sub(cy)),
             0 as ::core::ffi::c_int,
             &grid_default_cell,
             |out| out.write_all(b"Variable is removed."),
@@ -2618,7 +2607,7 @@ unsafe fn window_customize_draw_environment(
         ctx,
         cx,
         sx,
-        sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
+        sy.wrapping_sub(ctx.screen.cy.wrapping_sub(cy)),
         0 as ::core::ffi::c_int,
         c"Variable value: ",
         |out| write_cstr(out, (envent.unwrap().value).as_deref()),
@@ -2640,10 +2629,10 @@ unsafe fn window_customize_draw_environment(
     }
     if parent.unwrap().value.is_none() {
         if screen_write_text(
-            &mut *ctx,
+            ctx,
             cx,
             sx,
-            sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
+            sy.wrapping_sub(ctx.screen.cy.wrapping_sub(cy)),
             0 as ::core::ffi::c_int,
             &grid_default_cell,
             |out| out.write_all(b"Global variable is removed."),
@@ -2653,7 +2642,7 @@ unsafe fn window_customize_draw_environment(
         ctx,
         cx,
         sx,
-        sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
+        sy.wrapping_sub(ctx.screen.cy.wrapping_sub(cy)),
         0 as ::core::ffi::c_int,
         c"Global value: ",
         |out| write_cstr(out, (parent.unwrap().value).as_deref()),
@@ -2736,7 +2725,7 @@ unsafe fn window_customize_init(
     _item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     mut fs: *mut cmd_find_state,
     mut args: *mut args,
-) -> *mut screen {
+) -> bool {
     let mode_pane_owner = wme
         .get_unchecked()
         .wp
@@ -2744,7 +2733,6 @@ unsafe fn window_customize_init(
         .expect("mode belongs to a live pane");
     let mut data: *mut window_customize_modedata =
         ::core::ptr::null_mut::<window_customize_modedata>();
-    let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
     let format = if args.is_null() || args_has(&*args, 'F' as i32 as u_char) == 0 {
         WINDOW_CUSTOMIZE_DEFAULT_FORMAT.to_owned()
     } else {
@@ -2806,23 +2794,24 @@ unsafe fn window_customize_init(
         None,
         Some(window_customize_help),
         &window_customize_menu_items,
-        &raw mut s,
     ));
     mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
     mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
-    s
+    true
 }
-unsafe fn window_customize_get_screen(wme: refbox::Weak<window_mode_entry>) -> *mut screen {
+unsafe fn window_customize_get_screen(
+    wme: refbox::Weak<window_mode_entry>,
+    visit: &mut dyn FnMut(&mut screen),
+) {
     let Some(data) = wme
         .get_unchecked()
         .shared_data_ptr::<window_customize_modedata>()
     else {
-        return std::ptr::null_mut();
+        return;
     };
-    (*data)
-        .data
-        .as_ref()
-        .map_or(std::ptr::null_mut(), mode_tree_screen)
+    if let Some(tree_owner) = (*data).data.as_ref() {
+        mode_tree_visit_screen(tree_owner, visit);
+    }
 }
 
 unsafe fn window_customize_free(wme: refbox::Weak<window_mode_entry>) {

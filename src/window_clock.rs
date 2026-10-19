@@ -19,7 +19,6 @@ use crate::shared::grid::*;
 use crate::shared::key::*;
 use crate::shared::mouse::mouse_event;
 use crate::shared::screen::{screen, MODE_CURSOR};
-use crate::shared::screen_write::screen_write_ctx;
 use crate::shared::time::tm;
 use crate::shared::window::{window_mode, window_mode_entry, winlink};
 use crate::style::style_apply_with_options;
@@ -47,7 +46,7 @@ pub static window_clock_mode: window_mode = {
                     Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
                     *mut cmd_find_state,
                     *mut args,
-                ) -> *mut screen,
+                ) -> bool,
         ),
         free: None,
         resize: Some(
@@ -645,14 +644,13 @@ unsafe fn window_clock_init(
     _item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     _fs: *mut cmd_find_state,
     _args: *mut args,
-) -> *mut screen {
+) -> bool {
     let mode_pane_owner = wme
         .get_unchecked()
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
     let mut data: *mut window_clock_mode_data = ::core::ptr::null_mut::<window_clock_mode_data>();
-    let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
     let owner = Box::new(std::cell::UnsafeCell::new(window_clock_mode_data {
         screen: screen::empty(),
         tim: 0,
@@ -662,18 +660,22 @@ unsafe fn window_clock_init(
     wme.get_mut_unchecked().boxed_data = Some(owner);
     (*data).tim = time(::core::ptr::null_mut::<time_t>());
     window_clock_start_timer(wme.clone());
-    s = &raw mut (*data).screen;
     let (pane_sx, pane_sy) = mode_pane_owner.screen_size(false);
-    screen_init(&mut *s, pane_sx, pane_sy, 0 as u_int);
-    (*s).mode &= !MODE_CURSOR;
+    screen_init(&mut (*data).screen, pane_sx, pane_sy, 0 as u_int);
+    (*data).screen.mode &= !MODE_CURSOR;
     window_clock_draw_screen(wme.clone());
-    s
+    true
 }
-unsafe fn window_clock_get_screen(wme: refbox::Weak<window_mode_entry>) -> *mut screen {
-    let data = wme
+unsafe fn window_clock_get_screen(
+    wme: refbox::Weak<window_mode_entry>,
+    visit: &mut dyn FnMut(&mut screen),
+) {
+    if let Some(data) = wme
         .get_unchecked()
-        .boxed_data_ptr::<window_clock_mode_data>();
-    data.map_or(std::ptr::null_mut(), |data| &raw mut (*data).screen)
+        .boxed_data_ptr::<window_clock_mode_data>()
+    {
+        visit(&mut (*data).screen);
+    }
 }
 
 unsafe fn window_clock_resize(
@@ -682,8 +684,7 @@ unsafe fn window_clock_resize(
     mut sy: u_int,
 ) {
     let mut data: *mut window_clock_mode_data = window_clock_data(wme.clone());
-    let mut s: *mut screen = &raw mut (*data).screen;
-    screen_resize(&mut *s, sx, sy, 0 as ::core::ffi::c_int);
+    screen_resize(&mut (*data).screen, sx, sy, 0 as ::core::ffi::c_int);
     window_clock_draw_screen(wme.clone());
 }
 unsafe fn window_clock_key(
@@ -708,18 +709,8 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         .expect("mode belongs to a live pane");
     let options_window = mode_pane_owner.window_observer();
     let mut data: *mut window_clock_mode_data = window_clock_data(wme.clone());
-    let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: std::rc::Weak::new(),
-        target: Default::default(),
-        flags: 0,
-        init_ctx_cb: None,
-        item: None,
-        scrolled: 0,
-        bg: 0,
-    };
     let mut colour: ::core::ffi::c_int = 0;
     let mut style: ::core::ffi::c_int = 0;
-    let mut s: *mut screen = &raw mut (*data).screen;
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -767,7 +758,7 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
             .borrow_options_mut(),
         c"clock-mode-style",
     ) as ::core::ffi::c_int;
-    screen_write_start(&mut ctx, s);
+    let mut ctx = screen_write_start(&mut (*data).screen);
     t = time(::core::ptr::null_mut::<time_t>());
     tm = localtime(&raw mut t);
     if style == 0 as ::core::ffi::c_int || style == 2 as ::core::ffi::c_int {
@@ -815,17 +806,17 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         );
     }
     screen_write_clearscreen(&mut ctx, 8 as u_int);
-    if ((*s).grid().sx as size_t)
+    if (ctx.screen.grid().sx as size_t)
         < (6 as size_t).wrapping_mul(strlen(&raw mut tim as *mut ::core::ffi::c_char))
-        || (*s).grid().sy < 6 as u_int
+        || ctx.screen.grid().sy < 6 as u_int
     {
-        if (*s).grid().sx as size_t >= strlen(&raw mut tim as *mut ::core::ffi::c_char)
-            && (*s).grid().sy != 0 as u_int
+        if ctx.screen.grid().sx as size_t >= strlen(&raw mut tim as *mut ::core::ffi::c_char)
+            && ctx.screen.grid().sy != 0 as u_int
         {
-            x = ((*s).grid().sx.wrapping_div(2 as u_int) as size_t).wrapping_sub(
+            x = (ctx.screen.grid().sx.wrapping_div(2 as u_int) as size_t).wrapping_sub(
                 strlen(&raw mut tim as *mut ::core::ffi::c_char).wrapping_div(2 as size_t),
             ) as u_int;
-            y = (*s).grid().sy.wrapping_div(2 as u_int);
+            y = ctx.screen.grid().sy.wrapping_div(2 as u_int);
             screen_write_cursormove(
                 &mut ctx,
                 x as ::core::ffi::c_int,
@@ -842,13 +833,14 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
                 )
             });
         }
-        screen_write_stop(&mut ctx);
+        screen_write_stop(ctx);
         return;
     }
-    x = ((*s).grid().sx.wrapping_div(2 as u_int) as size_t)
+    x = ((*data).screen.grid().sx.wrapping_div(2 as u_int) as size_t)
         .wrapping_sub((3 as size_t).wrapping_mul(strlen(&raw mut tim as *mut ::core::ffi::c_char)))
         as u_int;
-    y = (*s)
+    y = (*data)
+        .screen
         .grid()
         .sy
         .wrapping_div(2 as u_int)
@@ -901,5 +893,5 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         }
         ptr = ptr.offset(1);
     }
-    screen_write_stop(&mut ctx);
+    screen_write_stop(ctx);
 }

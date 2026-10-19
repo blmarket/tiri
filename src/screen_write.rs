@@ -75,10 +75,11 @@ fn screen_write_get_citem() -> Box<screen_write_citem> {
 fn screen_write_free_citem(item: Box<screen_write_citem>) {
     let _ = WRITE_ITEM_POOL.try_with(|pool| pool.borrow_mut().push_back(item));
 }
-fn screen_write_current_item(ctx: &mut screen_write_ctx) -> &mut screen_write_citem {
-    ctx.item
-        .as_deref_mut()
-        .expect("active screen write context")
+/// The pending item, borrowed through its field so the screen stays usable.
+fn screen_write_current_item(
+    item: &mut Option<Box<screen_write_citem>>,
+) -> &mut screen_write_citem {
+    item.as_deref_mut().expect("active screen write context")
 }
 fn screen_write_recycle_items(items: &mut screen_write_items) {
     while let Some(item) = items.pop_front() {
@@ -93,25 +94,24 @@ unsafe fn screen_write_set_cursor(
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
     let wp = write_pane;
-    let mut s: *mut screen = ctx.screen_ptr();
     if cx != -(1 as ::core::ffi::c_int)
-        && cx as u_int == (*s).cx
+        && cx as u_int == ctx.screen.cx
         && cy != -(1 as ::core::ffi::c_int)
-        && cy as u_int == (*s).cy
+        && cy as u_int == ctx.screen.cy
     {
         return;
     }
     if cx != -(1 as ::core::ffi::c_int) {
-        if cx as u_int > (*s).grid().sx {
-            cx = (*s).grid().sx.wrapping_sub(1 as u_int) as ::core::ffi::c_int;
+        if cx as u_int > ctx.screen.grid().sx {
+            cx = ctx.screen.grid().sx.wrapping_sub(1 as u_int) as ::core::ffi::c_int;
         }
-        (*s).cx = cx as u_int;
+        ctx.screen.cx = cx as u_int;
     }
     if cy != -(1 as ::core::ffi::c_int) {
-        if cy as u_int > (*s).grid().sy.wrapping_sub(1 as u_int) {
-            cy = (*s).grid().sy.wrapping_sub(1 as u_int) as ::core::ffi::c_int;
+        if cy as u_int > ctx.screen.grid().sy.wrapping_sub(1 as u_int) {
+            cy = ctx.screen.grid().sy.wrapping_sub(1 as u_int) as ::core::ffi::c_int;
         }
-        (*s).cy = cy as u_int;
+        ctx.screen.cy = cy as u_int;
     }
     if wp.is_none() {
         return;
@@ -155,7 +155,7 @@ unsafe fn screen_write_pane_is_obscured(ctx: &mut screen_write_ctx) -> ::core::f
     (ctx.flags & SCREEN_WRITE_OBSCURED != 0) as i32
 }
 unsafe fn screen_write_should_draw_lines(ctx: &mut screen_write_ctx, y: u_int, ny: u_int) -> i32 {
-    let screen = &*ctx.screen_ptr();
+    let screen = &*ctx.screen;
     let synchronized = screen.mode & MODE_SYNC != 0;
     let height = screen.grid().sy;
     match ctx.wp.upgrade() {
@@ -177,19 +177,18 @@ pub(crate) unsafe fn screen_write_initctx(
 ) {
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
-    let mut s: *mut screen = ctx.screen_ptr();
     *ttyctx = tty_ctx::default();
-    ttyctx.sx = (*s).grid().sx;
-    ttyctx.sy = (*s).grid().sy;
-    ttyctx.ocx = (*s).cx;
-    ttyctx.ocy = (*s).cy;
-    ttyctx.orlower = (*s).rlower;
-    ttyctx.orupper = (*s).rupper;
+    ttyctx.sx = ctx.screen.grid().sx;
+    ttyctx.sy = ctx.screen.grid().sy;
+    ttyctx.ocx = ctx.screen.cx;
+    ttyctx.ocy = ctx.screen.cy;
+    ttyctx.orlower = ctx.screen.rlower;
+    ttyctx.orupper = ctx.screen.rupper;
     if check_obscured != 0 && screen_write_pane_is_obscured(ctx) != 0 {
         ttyctx.flags |= TTY_CTX_PANE_OBSCURED;
     }
     ttyctx.style_ctx.defaults = grid_default_cell;
-    ttyctx.style_ctx.hyperlinks = (*ctx.screen_ptr()).hyperlinks.clone();
+    ttyctx.style_ctx.hyperlinks = ctx.screen.hyperlinks.clone();
     if let Some(callback) = ctx.init_ctx_cb.as_mut() {
         callback(ttyctx);
         if let Some((fg, bg)) = ttyctx
@@ -248,76 +247,88 @@ pub fn screen_write_free_list(s: &mut screen) {
     }
 }
 
-pub(crate) unsafe fn screen_write_init(ctx: &mut screen_write_ctx, mut s: *mut screen) {
-    *ctx = screen_write_ctx::default();
-    ctx.borrow_screen(s);
-    if (*ctx.screen_ptr()).write_list.is_none() {
-        screen_write_make_list(&mut *ctx.screen_ptr());
+fn screen_write_init(s: &mut screen) -> screen_write_ctx<'_> {
+    if s.write_list.is_none() {
+        screen_write_make_list(s);
     }
-    ctx.item = Some(screen_write_get_citem());
-    ctx.scrolled = 0 as u_int;
-    ctx.bg = 8 as u_int;
+    screen_write_ctx {
+        screen: s,
+        wp: std::rc::Weak::new(),
+        flags: 0,
+        init_ctx_cb: None,
+        item: Some(screen_write_get_citem()),
+        scrolled: 0,
+        bg: 8,
+    }
 }
-pub unsafe fn screen_write_start_pane(
-    ctx: &mut screen_write_ctx,
+/// Start writing a pane's screen: the pane observes the write for redraw and
+/// terminal output. Stop before replacing that screen, changing modes, or
+/// logically destroying the pane; the context does not own the pane.
+pub unsafe fn screen_write_start_pane<'s>(
     pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-    mut s: *mut screen,
-) {
-    pane_owner.prepare_write(ctx, s);
+    s: &'s mut screen,
+) -> screen_write_ctx<'s> {
+    let mut ctx = screen_write_init(s);
+    ctx.wp = std::rc::Rc::downgrade(pane_owner);
     if log_get_level() != 0 {
         let (_, _, x, y) = pane_owner.geometry();
         log_debug(format_args!(
             "screen_write_start_pane: size {}x{}, pane %{} (at {},{})",
-            (*ctx.screen_ptr()).grid().sx,
-            (*ctx.screen_ptr()).grid().sy,
+            ctx.screen.grid().sx,
+            ctx.screen.grid().sy,
             pane_owner.id(),
             x,
             y
         ));
     }
+    ctx
 }
 pub unsafe fn screen_write_start_callback(
-    ctx: &mut screen_write_ctx,
-    mut s: *mut screen,
-    mut cb: screen_write_init_ctx_cb,
-) {
-    screen_write_init(ctx, s);
+    s: &mut screen,
+    cb: screen_write_init_ctx_cb,
+) -> screen_write_ctx<'_> {
+    let mut ctx = screen_write_init(s);
     ctx.init_ctx_cb = cb;
     if log_get_level() != 0 as ::core::ffi::c_int {
         log_debug(format_args!(
             "{}: size {}x{}, with callback",
             "screen_write_start_callback",
-            { (*ctx.screen_ptr()).grid().sx },
-            { (*ctx.screen_ptr()).grid().sy }
+            ctx.screen.grid().sx,
+            ctx.screen.grid().sy
         ));
     }
+    ctx
 }
-pub unsafe fn screen_write_start(ctx: &mut screen_write_ctx, mut s: *mut screen) {
-    screen_write_init(ctx, s);
+pub unsafe fn screen_write_start(s: &mut screen) -> screen_write_ctx<'_> {
+    let ctx = screen_write_init(s);
     if log_get_level() != 0 as ::core::ffi::c_int {
         log_debug(format_args!(
             "{}: size {}x{}, no pane",
             "screen_write_start",
-            { (*ctx.screen_ptr()).grid().sx },
-            { (*ctx.screen_ptr()).grid().sy }
+            ctx.screen.grid().sx,
+            ctx.screen.grid().sy
         ));
     }
+    ctx
 }
-pub unsafe fn screen_write_stop(ctx: &mut screen_write_ctx) {
-    screen_write_collect_end(ctx);
-    screen_write_collect_flush(ctx, 0 as ::core::ffi::c_int, "screen_write_stop");
+/// Flush pending output and end the write, releasing the screen borrow.
+pub unsafe fn screen_write_stop(mut ctx: screen_write_ctx<'_>) {
+    screen_write_collect_end(&mut ctx);
+    screen_write_collect_flush(&mut ctx, 0 as ::core::ffi::c_int, "screen_write_stop");
     screen_write_free_citem(ctx.item.take().expect("active screen write context"));
-    ctx.target = Default::default();
 }
 pub unsafe fn screen_write_reset(ctx: &mut screen_write_ctx) {
-    let mut s: *mut screen = ctx.screen_ptr();
-    screen_reset_tabs(&mut *s);
-    screen_write_scrollregion(ctx, 0 as u_int, (*s).grid().sy.wrapping_sub(1 as u_int));
-    (*s).mode = MODE_CURSOR | MODE_WRAP;
+    screen_reset_tabs(&mut *ctx.screen);
+    screen_write_scrollregion(
+        ctx,
+        0 as u_int,
+        ctx.screen.grid().sy.wrapping_sub(1 as u_int),
+    );
+    ctx.screen.mode = MODE_CURSOR | MODE_WRAP;
     if OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"extended-keys"))
         == 2 as ::core::ffi::c_longlong
     {
-        (*s).mode = (*s).mode & !EXTENDED_KEY_MODES | MODE_KEYS_EXTENDED;
+        ctx.screen.mode = ctx.screen.mode & !EXTENDED_KEY_MODES | MODE_KEYS_EXTENDED;
     }
     screen_write_clearscreen(ctx, 8 as u_int);
     screen_write_set_cursor(ctx, 0 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
@@ -367,8 +378,7 @@ pub unsafe fn screen_write_text(
     gcp: &grid_cell,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) -> ::core::ffi::c_int {
-    let mut s: *mut screen = ctx.screen_ptr();
-    let mut cy: u_int = (*s).cy;
+    let mut cy: u_int = ctx.screen.cy;
     let mut i: u_int = 0;
     let mut end: u_int = 0;
     let mut next: u_int = 0;
@@ -380,7 +390,7 @@ pub unsafe fn screen_write_text(
         let tmp = format_message_with(write);
         utf8_fromcstr_vec(tmp.as_c_str())
     };
-    left = cx.wrapping_add(width).wrapping_sub((*s).cx);
+    left = cx.wrapping_add(width).wrapping_sub(ctx.screen.cx);
     loop {
         at = 0 as u_int;
         end = idx;
@@ -433,7 +443,7 @@ pub unsafe fn screen_write_text(
             i = i.wrapping_add(1);
         }
         idx = next;
-        if (*s).cy == cy.wrapping_add(lines).wrapping_sub(1 as u_int)
+        if ctx.screen.cy == cy.wrapping_add(lines).wrapping_sub(1 as u_int)
             || cells[idx as usize].size as ::core::ffi::c_int == 0 as ::core::ffi::c_int
         {
             break;
@@ -441,22 +451,22 @@ pub unsafe fn screen_write_text(
         screen_write_cursormove(
             ctx,
             cx as ::core::ffi::c_int,
-            (*s).cy.wrapping_add(1 as u_int) as ::core::ffi::c_int,
+            ctx.screen.cy.wrapping_add(1 as u_int) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
         left = width;
     }
-    if (*s).cy == cy.wrapping_add(lines).wrapping_sub(1 as u_int)
-        && (more == 0 || (*s).cx == cx.wrapping_add(width))
+    if ctx.screen.cy == cy.wrapping_add(lines).wrapping_sub(1 as u_int)
+        && (more == 0 || ctx.screen.cx == cx.wrapping_add(width))
         || cells[idx as usize].size as ::core::ffi::c_int != 0 as ::core::ffi::c_int
     {
         return 0 as ::core::ffi::c_int;
     }
-    if more == 0 || (*s).cx == cx.wrapping_add(width) {
+    if more == 0 || ctx.screen.cx == cx.wrapping_add(width) {
         screen_write_cursormove(
             ctx,
             cx as ::core::ffi::c_int,
-            (*s).cy.wrapping_add(1 as u_int) as ::core::ffi::c_int,
+            ctx.screen.cy.wrapping_add(1 as u_int) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
     }
@@ -534,7 +544,6 @@ pub unsafe fn screen_write_fast_copy(
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
     let mut r = Vec::new();
-    let mut s: *mut screen = ctx.screen_ptr();
     let wp = write_pane;
     let mut ttyctx = tty_ctx::default();
     let gd = src.grid();
@@ -554,8 +563,8 @@ pub unsafe fn screen_write_fast_copy(
     };
     let mut xx: u_int = 0;
     let mut yy: u_int = 0;
-    let mut cx: u_int = (*s).cx;
-    let mut cy: u_int = (*s).cy;
+    let mut cx: u_int = ctx.screen.cx;
+    let mut cy: u_int = ctx.screen.cy;
     let mut xoff: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut yoff: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if nx == 0 as u_int || ny == 0 as u_int {
@@ -570,7 +579,7 @@ pub unsafe fn screen_write_fast_copy(
         if yy >= gd.hsize.wrapping_add(gd.sy) {
             break;
         }
-        (*s).cx = cx;
+        ctx.screen.cx = cx;
         screen_write_initctx(
             ctx,
             &mut ttyctx,
@@ -579,37 +588,38 @@ pub unsafe fn screen_write_fast_copy(
         );
         WindowPane::visible_ranges(
             wp,
-            (xoff as u_int).wrapping_add((*s).cx) as ::core::ffi::c_int,
-            (*s).cy.wrapping_add(yoff as u_int) as ::core::ffi::c_int,
+            (xoff as u_int).wrapping_add(ctx.screen.cx) as ::core::ffi::c_int,
+            ctx.screen.cy.wrapping_add(yoff as u_int) as ::core::ffi::c_int,
             nx,
             &mut r,
         );
         xx = px;
         while xx < px.wrapping_add(nx) {
             let gl = grid_get_line(gd, yy);
-            let sgl = grid_get_line((*s).grid(), (*s).cy);
-            if xx >= gl.cellsize as u_int && (*s).cx >= sgl.cellsize as u_int {
+            let sgl = grid_get_line(ctx.screen.grid(), ctx.screen.cy);
+            if xx >= gl.cellsize as u_int && ctx.screen.cx >= sgl.cellsize as u_int {
                 break;
             }
             grid_get_cell(gd, xx, yy, &mut gc);
             if xx.wrapping_add(gc.data.width as u_int) > px.wrapping_add(nx) {
                 break;
             }
-            grid_view_set_cell((*s).grid_mut(), (*s).cx, (*s).cy, &gc);
-            if !window_position_is_visible(&r, (xoff as u_int).wrapping_add((*s).cx)) {
+            let (screen_cx, screen_cy) = (ctx.screen.cx, ctx.screen.cy);
+            grid_view_set_cell(ctx.screen.grid_mut(), screen_cx, screen_cy, &gc);
+            if !window_position_is_visible(&r, (xoff as u_int).wrapping_add(ctx.screen.cx)) {
                 break;
             }
             ttyctx.flags &= TTY_CTX_OVERLAY_SYNC | TTY_CTX_SYNC;
-            tty_write(TtyCmd::Cell(&*s, &gc), &mut ttyctx);
+            tty_write(TtyCmd::Cell(&*ctx.screen, &gc), &mut ttyctx);
             ttyctx.ocx = ttyctx.ocx.wrapping_add(1);
-            (*s).cx = (*s).cx.wrapping_add(1);
+            ctx.screen.cx = ctx.screen.cx.wrapping_add(1);
             xx = xx.wrapping_add(1);
         }
-        (*s).cy = (*s).cy.wrapping_add(1);
+        ctx.screen.cy = ctx.screen.cy.wrapping_add(1);
         yy = yy.wrapping_add(1);
     }
-    (*s).cx = cx;
-    (*s).cy = cy;
+    ctx.screen.cx = cx;
+    ctx.screen.cy = cy;
 }
 fn screen_write_box_border_set(
     mut lines: box_lines,
@@ -652,13 +662,12 @@ pub unsafe fn screen_write_hline(
     mut lines: box_lines,
     border_gc: Option<&grid_cell>,
 ) {
-    let mut s: *mut screen = ctx.screen_ptr();
     let mut gc = border_gc.copied().unwrap_or(grid_default_cell);
     let mut cx: u_int = 0;
     let mut cy: u_int = 0;
     let mut i: u_int = 0;
-    cx = (*s).cx;
-    cy = (*s).cy;
+    cx = ctx.screen.cx;
+    cy = ctx.screen.cy;
     gc.attr = (gc.attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
     if left != 0 {
         screen_write_box_border_set(lines, CELL_URD, &mut gc);
@@ -685,13 +694,12 @@ pub unsafe fn screen_write_vline(
     mut ny: u_int,
     gcp: Option<&grid_cell>,
 ) {
-    let mut s: *mut screen = ctx.screen_ptr();
     let mut gc = gcp.copied().unwrap_or(grid_default_cell);
     let mut cx: u_int = 0;
     let mut cy: u_int = 0;
     let mut i: u_int = 0;
-    cx = (*s).cx;
-    cy = (*s).cy;
+    cx = ctx.screen.cx;
+    cy = ctx.screen.cy;
     gc.attr = (gc.attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
     screen_write_putc(ctx, &gc, ('x' as i32) as u_char);
     i = 1 as u_int;
@@ -721,8 +729,8 @@ pub unsafe fn screen_write_menu(
     border_gc: Option<&grid_cell>,
     choice_gc: &grid_cell,
 ) {
-    let cx = (*ctx.screen_ptr()).cx;
-    let cy = (*ctx.screen_ptr()).cy;
+    let cx = ctx.screen.cx;
+    let cy = ctx.screen.cy;
     let width = menu.width;
     let mut default_gc = *menu_gc;
     screen_write_box(
@@ -787,13 +795,12 @@ pub unsafe fn screen_write_box(
     gcp: Option<&grid_cell>,
     title: Option<&CStr>,
 ) {
-    let mut s: *mut screen = ctx.screen_ptr();
     let mut gc = gcp.copied().unwrap_or(grid_default_cell);
     let mut cx: u_int = 0;
     let mut cy: u_int = 0;
     let mut i: u_int = 0;
-    cx = (*s).cx;
-    cy = (*s).cy;
+    cx = ctx.screen.cx;
+    cy = ctx.screen.cy;
     gc.attr = (gc.attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
     gc.flags = (gc.flags as ::core::ffi::c_int | GRID_FLAG_NOPALETTE) as u_char;
     screen_write_box_border_set(lines, CELL_RD, &mut gc);
@@ -863,7 +870,6 @@ pub unsafe fn screen_write_preview(
     mut nx: u_int,
     mut ny: u_int,
 ) {
-    let mut s: *mut screen = ctx.screen_ptr();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -882,8 +888,8 @@ pub unsafe fn screen_write_preview(
     let mut cy: u_int = 0;
     let mut px: u_int = 0;
     let mut py: u_int = 0;
-    cx = (*s).cx;
-    cy = (*s).cy;
+    cx = ctx.screen.cx;
+    cy = ctx.screen.cy;
     if src.mode & MODE_CURSOR != 0 {
         px = src.cx;
         if px < nx.wrapping_div(3 as u_int) {
@@ -928,8 +934,7 @@ pub unsafe fn screen_write_preview(
     }
 }
 pub unsafe fn screen_write_mode_set(ctx: &mut screen_write_ctx, mut mode: ::core::ffi::c_int) {
-    let mut s: *mut screen = ctx.screen_ptr();
-    (*s).mode |= mode;
+    ctx.screen.mode |= mode;
     if log_get_level() != 0 as ::core::ffi::c_int {
         log_debug(format_args!(
             "{}: {}",
@@ -939,8 +944,7 @@ pub unsafe fn screen_write_mode_set(ctx: &mut screen_write_ctx, mut mode: ::core
     }
 }
 pub unsafe fn screen_write_mode_clear(ctx: &mut screen_write_ctx, mut mode: ::core::ffi::c_int) {
-    let mut s: *mut screen = ctx.screen_ptr();
-    (*s).mode &= !mode;
+    ctx.screen.mode &= !mode;
     if log_get_level() != 0 as ::core::ffi::c_int {
         log_debug(format_args!(
             "{}: {}",
@@ -949,48 +953,60 @@ pub unsafe fn screen_write_mode_clear(ctx: &mut screen_write_ctx, mut mode: ::co
         ));
     }
 }
+/// Leave the observing pane's sync mode; `ctx` is writing that pane's base
+/// screen, so sync state is read and drawn through the context's borrow.
 pub unsafe fn screen_write_end_sync(ctx: &mut screen_write_ctx) {
     let Some(pane) = ctx.wp.upgrade() else { return };
-    if pane.is_synchronized() {
+    if ctx.screen.mode & MODE_SYNC != 0 {
         screen_write_collect_flush(ctx, 0, "screen_write_end_sync");
     }
-    pane.stop_sync();
+    pane.stop_sync(Some(&mut *ctx.screen));
 }
 pub unsafe fn screen_write_cursorup(ctx: &mut screen_write_ctx, mut ny: u_int) {
-    let mut s: *mut screen = ctx.screen_ptr();
-    let mut cx: u_int = (*s).cx;
-    let mut cy: u_int = (*s).cy;
+    let mut cx: u_int = ctx.screen.cx;
+    let mut cy: u_int = ctx.screen.cy;
     if ny == 0 as u_int {
         ny = 1 as u_int;
     }
-    if cy < (*s).rupper {
+    if cy < ctx.screen.rupper {
         if ny > cy {
             ny = cy;
         }
-    } else if ny > cy.wrapping_sub((*s).rupper) {
-        ny = cy.wrapping_sub((*s).rupper);
+    } else if ny > cy.wrapping_sub(ctx.screen.rupper) {
+        ny = cy.wrapping_sub(ctx.screen.rupper);
     }
-    if cx == (*s).grid().sx {
+    if cx == ctx.screen.grid().sx {
         cx = cx.wrapping_sub(1);
     }
     cy = cy.wrapping_sub(ny);
     screen_write_set_cursor(ctx, cx as ::core::ffi::c_int, cy as ::core::ffi::c_int);
 }
 pub unsafe fn screen_write_cursordown(ctx: &mut screen_write_ctx, mut ny: u_int) {
-    let mut s: *mut screen = ctx.screen_ptr();
-    let mut cx: u_int = (*s).cx;
-    let mut cy: u_int = (*s).cy;
+    let mut cx: u_int = ctx.screen.cx;
+    let mut cy: u_int = ctx.screen.cy;
     if ny == 0 as u_int {
         ny = 1 as u_int;
     }
-    if cy > (*s).rlower {
-        if ny > (*s).grid().sy.wrapping_sub(1 as u_int).wrapping_sub(cy) {
-            ny = (*s).grid().sy.wrapping_sub(1 as u_int).wrapping_sub(cy);
+    if cy > ctx.screen.rlower {
+        if ny
+            > ctx
+                .screen
+                .grid()
+                .sy
+                .wrapping_sub(1 as u_int)
+                .wrapping_sub(cy)
+        {
+            ny = ctx
+                .screen
+                .grid()
+                .sy
+                .wrapping_sub(1 as u_int)
+                .wrapping_sub(cy);
         }
-    } else if ny > (*s).rlower.wrapping_sub(cy) {
-        ny = (*s).rlower.wrapping_sub(cy);
+    } else if ny > ctx.screen.rlower.wrapping_sub(cy) {
+        ny = ctx.screen.rlower.wrapping_sub(cy);
     }
-    if cx == (*s).grid().sx {
+    if cx == ctx.screen.grid().sx {
         cx = cx.wrapping_sub(1);
     } else if ny == 0 as u_int {
         return;
@@ -999,14 +1015,25 @@ pub unsafe fn screen_write_cursordown(ctx: &mut screen_write_ctx, mut ny: u_int)
     screen_write_set_cursor(ctx, cx as ::core::ffi::c_int, cy as ::core::ffi::c_int);
 }
 pub unsafe fn screen_write_cursorright(ctx: &mut screen_write_ctx, mut nx: u_int) {
-    let mut s: *mut screen = ctx.screen_ptr();
-    let mut cx: u_int = (*s).cx;
-    let mut cy: u_int = (*s).cy;
+    let mut cx: u_int = ctx.screen.cx;
+    let mut cy: u_int = ctx.screen.cy;
     if nx == 0 as u_int {
         nx = 1 as u_int;
     }
-    if nx > (*s).grid().sx.wrapping_sub(1 as u_int).wrapping_sub(cx) {
-        nx = (*s).grid().sx.wrapping_sub(1 as u_int).wrapping_sub(cx);
+    if nx
+        > ctx
+            .screen
+            .grid()
+            .sx
+            .wrapping_sub(1 as u_int)
+            .wrapping_sub(cx)
+    {
+        nx = ctx
+            .screen
+            .grid()
+            .sx
+            .wrapping_sub(1 as u_int)
+            .wrapping_sub(cx);
     }
     if nx == 0 as u_int {
         return;
@@ -1015,9 +1042,8 @@ pub unsafe fn screen_write_cursorright(ctx: &mut screen_write_ctx, mut nx: u_int
     screen_write_set_cursor(ctx, cx as ::core::ffi::c_int, cy as ::core::ffi::c_int);
 }
 pub unsafe fn screen_write_cursorleft(ctx: &mut screen_write_ctx, mut nx: u_int) {
-    let mut s: *mut screen = ctx.screen_ptr();
-    let mut cx: u_int = (*s).cx;
-    let mut cy: u_int = (*s).cy;
+    let mut cx: u_int = ctx.screen.cx;
+    let mut cy: u_int = ctx.screen.cy;
     if nx == 0 as u_int {
         nx = 1 as u_int;
     }
@@ -1031,20 +1057,23 @@ pub unsafe fn screen_write_cursorleft(ctx: &mut screen_write_ctx, mut nx: u_int)
     screen_write_set_cursor(ctx, cx as ::core::ffi::c_int, cy as ::core::ffi::c_int);
 }
 pub unsafe fn screen_write_backspace(ctx: &mut screen_write_ctx) {
-    let mut s: *mut screen = ctx.screen_ptr();
-    let mut cx: u_int = (*s).cx;
-    let mut cy: u_int = (*s).cy;
+    let mut cx: u_int = ctx.screen.cx;
+    let mut cy: u_int = ctx.screen.cy;
     if cx == 0 as u_int {
         if cy == 0 as u_int {
             return;
         }
         let gl = grid_get_line(
-            (*s).grid(),
-            (*s).grid().hsize.wrapping_add(cy).wrapping_sub(1 as u_int),
+            ctx.screen.grid(),
+            ctx.screen
+                .grid()
+                .hsize
+                .wrapping_add(cy)
+                .wrapping_sub(1 as u_int),
         );
         if gl.flags as ::core::ffi::c_int & GRID_LINE_WRAPPED != 0 {
             cy = cy.wrapping_sub(1);
-            cx = (*s).grid().sx.wrapping_sub(1 as u_int);
+            cx = ctx.screen.grid().sx.wrapping_sub(1 as u_int);
         }
     } else {
         cx = cx.wrapping_sub(1);
@@ -1068,7 +1097,6 @@ pub(crate) unsafe fn screen_write_redraw_line(
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
     let wp = write_pane;
-    let mut s: *mut screen = ctx.screen_ptr();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -1097,7 +1125,7 @@ pub(crate) unsafe fn screen_write_redraw_line(
         us: 0,
         link: 0,
     };
-    let mut sx: u_int = (*s).grid().sx;
+    let mut sx: u_int = ctx.screen.grid().sx;
     let mut cx: u_int = 0;
     let mut i: u_int = 0;
     let mut xoff: ::core::ffi::c_int = wp.expect("write pane").geometry().2;
@@ -1124,22 +1152,22 @@ pub(crate) unsafe fn screen_write_redraw_line(
                     ttyctx.ocx = cx;
                     ttyctx.ocy = yy;
                     if ttyctx.data.count() != 1 as u_int {
-                        tty_write(TtyCmd::RedrawLine(&*s), ttyctx);
+                        tty_write(TtyCmd::RedrawLine(&*ctx.screen), ttyctx);
                     } else {
-                        grid_view_get_cell((*s).grid(), cx, yy, &mut gc);
+                        grid_view_get_cell(ctx.screen.grid(), cx, yy, &mut gc);
                         if screen_write_cell_is_single(&gc) == 0 {
-                            tty_write(TtyCmd::RedrawLine(&*s), ttyctx);
+                            tty_write(TtyCmd::RedrawLine(&*ctx.screen), ttyctx);
                         } else {
                             let cell =
                                 if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_SELECTED != 0 {
                                     &gc
                                 } else {
-                                    if let Some(selected) = screen_select_cell(&*s, &gc) {
+                                    if let Some(selected) = screen_select_cell(&*ctx.screen, &gc) {
                                         ngc = selected;
                                     }
                                     &ngc
                                 };
-                            tty_write(TtyCmd::Cell(&*s, cell), ttyctx);
+                            tty_write(TtyCmd::Cell(&*ctx.screen, cell), ttyctx);
                         }
                     }
                 }
@@ -1151,10 +1179,9 @@ pub(crate) unsafe fn screen_write_redraw_line(
 
 unsafe fn screen_write_redraw_pane(ctx: &mut screen_write_ctx, ttyctx: &mut tty_ctx) {
     let mut r = Vec::new();
-    let mut s: *mut screen = ctx.screen_ptr();
     let mut yy: u_int = 0;
     yy = 0 as u_int;
-    while yy < (*s).grid().sy {
+    while yy < ctx.screen.grid().sy {
         screen_write_redraw_line(ctx, ttyctx, yy, &mut r);
         yy = yy.wrapping_add(1);
     }
@@ -1162,7 +1189,6 @@ unsafe fn screen_write_redraw_pane(ctx: &mut screen_write_ctx, ttyctx: &mut tty_
 pub unsafe fn screen_write_alignmenttest(ctx: &mut screen_write_ctx) {
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
-    let mut s: *mut screen = ctx.screen_ptr();
     let mut ttyctx = tty_ctx::default();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -1183,25 +1209,29 @@ pub unsafe fn screen_write_alignmenttest(ctx: &mut screen_write_ctx) {
     gc = grid_default_cell;
     utf8_set(&mut gc.data, 'E' as i32 as u_char);
     yy = 0 as u_int;
-    while yy < (*s).grid().sy {
+    while yy < ctx.screen.grid().sy {
         xx = 0 as u_int;
-        while xx < (*s).grid().sx {
-            grid_view_set_cell(&mut *((*s).grid_mut()), xx, yy, &gc);
+        while xx < ctx.screen.grid().sx {
+            grid_view_set_cell(&mut *(ctx.screen.grid_mut()), xx, yy, &gc);
             xx = xx.wrapping_add(1);
         }
         yy = yy.wrapping_add(1);
     }
     screen_write_set_cursor(ctx, 0 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
-    (*s).rupper = 0 as u_int;
-    (*s).rlower = (*s).grid().sy.wrapping_sub(1 as u_int);
-    screen_write_collect_clear(ctx, 0 as u_int, (*s).grid().sy.wrapping_sub(1 as u_int));
+    ctx.screen.rupper = 0 as u_int;
+    ctx.screen.rlower = ctx.screen.grid().sy.wrapping_sub(1 as u_int);
+    screen_write_collect_clear(
+        ctx,
+        0 as u_int,
+        ctx.screen.grid().sy.wrapping_sub(1 as u_int),
+    );
     screen_write_initctx(
         ctx,
         &mut ttyctx,
         1 as ::core::ffi::c_int,
         1 as ::core::ffi::c_int,
     );
-    if screen_write_should_draw_lines(ctx, 0 as u_int, (*s).grid().sy) == 0 {
+    if screen_write_should_draw_lines(ctx, 0 as u_int, ctx.screen.grid().sy) == 0 {
         return;
     }
     if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 || write_pane.is_none() {
@@ -1218,18 +1248,17 @@ pub unsafe fn screen_write_insertcharacter(
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
     let mut r = Vec::new();
-    let mut s: *mut screen = ctx.screen_ptr();
     let mut ttyctx = tty_ctx::default();
     if nx == 0 as u_int {
         nx = 1 as u_int;
     }
-    if nx > (*s).grid().sx.wrapping_sub((*s).cx) {
-        nx = (*s).grid().sx.wrapping_sub((*s).cx);
+    if nx > ctx.screen.grid().sx.wrapping_sub(ctx.screen.cx) {
+        nx = ctx.screen.grid().sx.wrapping_sub(ctx.screen.cx);
     }
     if nx == 0 as u_int {
         return;
     }
-    if (*s).cx > (*s).grid().sx.wrapping_sub(1 as u_int) {
+    if ctx.screen.cx > ctx.screen.grid().sx.wrapping_sub(1 as u_int) {
         return;
     }
     screen_write_initctx(
@@ -1239,17 +1268,18 @@ pub unsafe fn screen_write_insertcharacter(
         1 as ::core::ffi::c_int,
     );
     ttyctx.bg = bg;
-    grid_view_insert_cells((*s).grid_mut(), (*s).cx, (*s).cy, nx, bg);
+    let (screen_cx, screen_cy) = (ctx.screen.cx, ctx.screen.cy);
+    grid_view_insert_cells(ctx.screen.grid_mut(), screen_cx, screen_cy, nx, bg);
     screen_write_collect_flush(ctx, 0 as ::core::ffi::c_int, "screen_write_insertcharacter");
     ttyctx.data = tty_command_data::Count(nx);
-    if screen_write_should_draw_line(ctx, (*s).cy) == 0 {
+    if screen_write_should_draw_line(ctx, ctx.screen.cy) == 0 {
         return;
     }
     if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 || write_pane.is_none() {
-        tty_write(TtyCmd::InsertCharacter(&*s), &mut ttyctx);
+        tty_write(TtyCmd::InsertCharacter(&*ctx.screen), &mut ttyctx);
         return;
     }
-    screen_write_redraw_line(ctx, &mut ttyctx, (*s).cy, &mut r);
+    screen_write_redraw_line(ctx, &mut ttyctx, ctx.screen.cy, &mut r);
 }
 pub unsafe fn screen_write_deletecharacter(
     ctx: &mut screen_write_ctx,
@@ -1259,18 +1289,17 @@ pub unsafe fn screen_write_deletecharacter(
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
     let mut r = Vec::new();
-    let mut s: *mut screen = ctx.screen_ptr();
     let mut ttyctx = tty_ctx::default();
     if nx == 0 as u_int {
         nx = 1 as u_int;
     }
-    if nx > (*s).grid().sx.wrapping_sub((*s).cx) {
-        nx = (*s).grid().sx.wrapping_sub((*s).cx);
+    if nx > ctx.screen.grid().sx.wrapping_sub(ctx.screen.cx) {
+        nx = ctx.screen.grid().sx.wrapping_sub(ctx.screen.cx);
     }
     if nx == 0 as u_int {
         return;
     }
-    if (*s).cx > (*s).grid().sx.wrapping_sub(1 as u_int) {
+    if ctx.screen.cx > ctx.screen.grid().sx.wrapping_sub(1 as u_int) {
         return;
     }
     screen_write_initctx(
@@ -1280,17 +1309,18 @@ pub unsafe fn screen_write_deletecharacter(
         1 as ::core::ffi::c_int,
     );
     ttyctx.bg = bg;
-    grid_view_delete_cells((*s).grid_mut(), (*s).cx, (*s).cy, nx, bg);
+    let (screen_cx, screen_cy) = (ctx.screen.cx, ctx.screen.cy);
+    grid_view_delete_cells(ctx.screen.grid_mut(), screen_cx, screen_cy, nx, bg);
     screen_write_collect_flush(ctx, 0 as ::core::ffi::c_int, "screen_write_deletecharacter");
     ttyctx.data = tty_command_data::Count(nx);
-    if screen_write_should_draw_line(ctx, (*s).cy) == 0 {
+    if screen_write_should_draw_line(ctx, ctx.screen.cy) == 0 {
         return;
     }
     if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 || write_pane.is_none() {
-        tty_write(TtyCmd::DeleteCharacter(&*s), &mut ttyctx);
+        tty_write(TtyCmd::DeleteCharacter(&*ctx.screen), &mut ttyctx);
         return;
     }
-    screen_write_redraw_line(ctx, &mut ttyctx, (*s).cy, &mut r);
+    screen_write_redraw_line(ctx, &mut ttyctx, ctx.screen.cy, &mut r);
 }
 pub unsafe fn screen_write_clearcharacter(
     ctx: &mut screen_write_ctx,
@@ -1300,18 +1330,17 @@ pub unsafe fn screen_write_clearcharacter(
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
     let mut r = Vec::new();
-    let mut s: *mut screen = ctx.screen_ptr();
     let mut ttyctx = tty_ctx::default();
     if nx == 0 as u_int {
         nx = 1 as u_int;
     }
-    if nx > (*s).grid().sx.wrapping_sub((*s).cx) {
-        nx = (*s).grid().sx.wrapping_sub((*s).cx);
+    if nx > ctx.screen.grid().sx.wrapping_sub(ctx.screen.cx) {
+        nx = ctx.screen.grid().sx.wrapping_sub(ctx.screen.cx);
     }
     if nx == 0 as u_int {
         return;
     }
-    if (*s).cx > (*s).grid().sx.wrapping_sub(1 as u_int) {
+    if ctx.screen.cx > ctx.screen.grid().sx.wrapping_sub(1 as u_int) {
         return;
     }
     screen_write_initctx(
@@ -1321,30 +1350,37 @@ pub unsafe fn screen_write_clearcharacter(
         1 as ::core::ffi::c_int,
     );
     ttyctx.bg = bg;
-    grid_view_clear((*s).grid_mut(), (*s).cx, (*s).cy, nx, 1 as u_int, bg);
+    let (screen_cx, screen_cy) = (ctx.screen.cx, ctx.screen.cy);
+    grid_view_clear(
+        ctx.screen.grid_mut(),
+        screen_cx,
+        screen_cy,
+        nx,
+        1 as u_int,
+        bg,
+    );
     screen_write_collect_flush(ctx, 0 as ::core::ffi::c_int, "screen_write_clearcharacter");
     ttyctx.data = tty_command_data::Count(nx);
-    if screen_write_should_draw_line(ctx, (*s).cy) == 0 {
+    if screen_write_should_draw_line(ctx, ctx.screen.cy) == 0 {
         return;
     }
     if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 || write_pane.is_none() {
         tty_write(TtyCmd::ClearCharacter, &mut ttyctx);
         return;
     }
-    screen_write_redraw_line(ctx, &mut ttyctx, (*s).cy, &mut r);
+    screen_write_redraw_line(ctx, &mut ttyctx, ctx.screen.cy, &mut r);
 }
 pub unsafe fn screen_write_insertline(ctx: &mut screen_write_ctx, mut ny: u_int, mut bg: u_int) {
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
-    let mut s: *mut screen = ctx.screen_ptr();
     let mut ttyctx = tty_ctx::default();
-    let mut sy: u_int = (*s).grid().sy;
+    let mut sy: u_int = ctx.screen.grid().sy;
     if ny == 0 as u_int {
         ny = 1 as u_int;
     }
-    if (*s).cy < (*s).rupper || (*s).cy > (*s).rlower {
-        if ny > sy.wrapping_sub((*s).cy) {
-            ny = sy.wrapping_sub((*s).cy);
+    if ctx.screen.cy < ctx.screen.rupper || ctx.screen.cy > ctx.screen.rlower {
+        if ny > sy.wrapping_sub(ctx.screen.cy) {
+            ny = sy.wrapping_sub(ctx.screen.cy);
         }
         if ny == 0 as u_int {
             return;
@@ -1356,21 +1392,32 @@ pub unsafe fn screen_write_insertline(ctx: &mut screen_write_ctx, mut ny: u_int,
             1 as ::core::ffi::c_int,
         );
         ttyctx.bg = bg;
-        grid_view_insert_lines((*s).grid_mut(), (*s).cy, ny, bg);
+        let screen_cy = ctx.screen.cy;
+        grid_view_insert_lines(ctx.screen.grid_mut(), screen_cy, ny, bg);
         screen_write_collect_flush(ctx, 0 as ::core::ffi::c_int, "screen_write_insertline");
         ttyctx.data = tty_command_data::Count(ny);
-        if screen_write_should_draw_lines(ctx, (*s).cy, sy.wrapping_sub((*s).cy)) == 0 {
+        if screen_write_should_draw_lines(ctx, ctx.screen.cy, sy.wrapping_sub(ctx.screen.cy)) == 0 {
             return;
         }
         if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 || write_pane.is_none() {
-            tty_write(TtyCmd::InsertLine(&*s), &mut ttyctx);
+            tty_write(TtyCmd::InsertLine(&*ctx.screen), &mut ttyctx);
             return;
         }
         screen_write_redraw_pane(ctx, &mut ttyctx);
         return;
     }
-    if ny > (*s).rlower.wrapping_add(1 as u_int).wrapping_sub((*s).cy) {
-        ny = (*s).rlower.wrapping_add(1 as u_int).wrapping_sub((*s).cy);
+    if ny
+        > ctx
+            .screen
+            .rlower
+            .wrapping_add(1 as u_int)
+            .wrapping_sub(ctx.screen.cy)
+    {
+        ny = ctx
+            .screen
+            .rlower
+            .wrapping_add(1 as u_int)
+            .wrapping_sub(ctx.screen.cy);
     }
     if ny == 0 as u_int {
         return;
@@ -1382,23 +1429,28 @@ pub unsafe fn screen_write_insertline(ctx: &mut screen_write_ctx, mut ny: u_int,
         1 as ::core::ffi::c_int,
     );
     ttyctx.bg = bg;
-    if (*s).cy < (*s).rupper || (*s).cy > (*s).rlower {
-        grid_view_insert_lines((*s).grid_mut(), (*s).cy, ny, bg);
+    if ctx.screen.cy < ctx.screen.rupper || ctx.screen.cy > ctx.screen.rlower {
+        let screen_cy = ctx.screen.cy;
+        grid_view_insert_lines(ctx.screen.grid_mut(), screen_cy, ny, bg);
     } else {
-        grid_view_insert_lines_region((*s).grid_mut(), (*s).rlower, (*s).cy, ny, bg);
+        let (screen_cy, screen_rlower) = (ctx.screen.cy, ctx.screen.rlower);
+        grid_view_insert_lines_region(ctx.screen.grid_mut(), screen_rlower, screen_cy, ny, bg);
     }
     screen_write_collect_flush(ctx, 0 as ::core::ffi::c_int, "screen_write_insertline");
     ttyctx.data = tty_command_data::Count(ny);
     if screen_write_should_draw_lines(
         ctx,
-        (*s).cy,
-        (*s).rlower.wrapping_add(1 as u_int).wrapping_sub((*s).cy),
+        ctx.screen.cy,
+        ctx.screen
+            .rlower
+            .wrapping_add(1 as u_int)
+            .wrapping_sub(ctx.screen.cy),
     ) == 0
     {
         return;
     }
     if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 || write_pane.is_none() {
-        tty_write(TtyCmd::InsertLine(&*s), &mut ttyctx);
+        tty_write(TtyCmd::InsertLine(&*ctx.screen), &mut ttyctx);
         return;
     }
     screen_write_redraw_pane(ctx, &mut ttyctx);
@@ -1406,16 +1458,15 @@ pub unsafe fn screen_write_insertline(ctx: &mut screen_write_ctx, mut ny: u_int,
 pub unsafe fn screen_write_deleteline(ctx: &mut screen_write_ctx, mut ny: u_int, mut bg: u_int) {
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
-    let mut s: *mut screen = ctx.screen_ptr();
     let mut ttyctx = tty_ctx::default();
-    let mut sy: u_int = (*s).grid().sy;
+    let mut sy: u_int = ctx.screen.grid().sy;
     let mut ry: u_int = 0;
     if ny == 0 as u_int {
         ny = 1 as u_int;
     }
-    if (*s).cy < (*s).rupper || (*s).cy > (*s).rlower {
-        if ny > sy.wrapping_sub((*s).cy) {
-            ny = sy.wrapping_sub((*s).cy);
+    if ctx.screen.cy < ctx.screen.rupper || ctx.screen.cy > ctx.screen.rlower {
+        if ny > sy.wrapping_sub(ctx.screen.cy) {
+            ny = sy.wrapping_sub(ctx.screen.cy);
         }
         if ny == 0 as u_int {
             return;
@@ -1427,24 +1478,30 @@ pub unsafe fn screen_write_deleteline(ctx: &mut screen_write_ctx, mut ny: u_int,
             1 as ::core::ffi::c_int,
         );
         ttyctx.bg = bg;
-        grid_view_delete_lines((*s).grid_mut(), (*s).cy, ny, bg);
+        let screen_cy = ctx.screen.cy;
+        grid_view_delete_lines(ctx.screen.grid_mut(), screen_cy, ny, bg);
         screen_write_collect_flush(ctx, 0 as ::core::ffi::c_int, "screen_write_deleteline");
         ttyctx.data = tty_command_data::Count(ny);
-        ry = (*s)
+        ry = ctx
+            .screen
             .rlower
             .wrapping_add(1 as u_int)
-            .wrapping_sub((*s).rupper);
-        if screen_write_should_draw_lines(ctx, (*s).rupper, ry) == 0 {
+            .wrapping_sub(ctx.screen.rupper);
+        if screen_write_should_draw_lines(ctx, ctx.screen.rupper, ry) == 0 {
             return;
         }
         if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 || write_pane.is_none() {
-            tty_write(TtyCmd::DeleteLine(&*s), &mut ttyctx);
+            tty_write(TtyCmd::DeleteLine(&*ctx.screen), &mut ttyctx);
             return;
         }
         screen_write_redraw_pane(ctx, &mut ttyctx);
         return;
     }
-    ry = (*s).rlower.wrapping_add(1 as u_int).wrapping_sub((*s).cy);
+    ry = ctx
+        .screen
+        .rlower
+        .wrapping_add(1 as u_int)
+        .wrapping_sub(ctx.screen.cy);
     if ny > ry {
         ny = ry;
     }
@@ -1458,27 +1515,31 @@ pub unsafe fn screen_write_deleteline(ctx: &mut screen_write_ctx, mut ny: u_int,
         1 as ::core::ffi::c_int,
     );
     ttyctx.bg = bg;
-    if (*s).cy < (*s).rupper || (*s).cy > (*s).rlower {
-        grid_view_delete_lines((*s).grid_mut(), (*s).cy, ny, bg);
+    if ctx.screen.cy < ctx.screen.rupper || ctx.screen.cy > ctx.screen.rlower {
+        let screen_cy = ctx.screen.cy;
+        grid_view_delete_lines(ctx.screen.grid_mut(), screen_cy, ny, bg);
     } else {
-        grid_view_delete_lines_region((*s).grid_mut(), (*s).rlower, (*s).cy, ny, bg);
+        let (screen_cy, screen_rlower) = (ctx.screen.cy, ctx.screen.rlower);
+        grid_view_delete_lines_region(ctx.screen.grid_mut(), screen_rlower, screen_cy, ny, bg);
     }
     screen_write_collect_flush(ctx, 0 as ::core::ffi::c_int, "screen_write_deleteline");
     ttyctx.data = tty_command_data::Count(ny);
-    if screen_write_should_draw_lines(ctx, (*s).cy, ry) == 0 {
+    if screen_write_should_draw_lines(ctx, ctx.screen.cy, ry) == 0 {
         return;
     }
     if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 || write_pane.is_none() {
-        tty_write(TtyCmd::DeleteLine(&*s), &mut ttyctx);
+        tty_write(TtyCmd::DeleteLine(&*ctx.screen), &mut ttyctx);
         return;
     }
     screen_write_redraw_pane(ctx, &mut ttyctx);
 }
 pub unsafe fn screen_write_clearline(ctx: &mut screen_write_ctx, mut bg: u_int) {
-    let mut s: *mut screen = ctx.screen_ptr();
-    let mut sx: u_int = (*s).grid().sx;
+    let mut sx: u_int = ctx.screen.grid().sx;
     let mut flags: u_int = 0;
-    let gl = grid_get_line((*s).grid(), (*s).grid().hsize.wrapping_add((*s).cy));
+    let gl = grid_get_line(
+        ctx.screen.grid(),
+        ctx.screen.grid().hsize.wrapping_add(ctx.screen.cy),
+    );
     if gl.cellsize as ::core::ffi::c_int == 0 as ::core::ffi::c_int
         && (bg == 8 as u_int || bg == 9 as u_int)
     {
@@ -1486,72 +1547,92 @@ pub unsafe fn screen_write_clearline(ctx: &mut screen_write_ctx, mut bg: u_int) 
     }
     flags = (gl.flags as ::core::ffi::c_int & GRID_LINE_OSC133_FLAGS) as u_int;
     let od = gl.osc133_data;
-    grid_view_clear((*s).grid_mut(), 0 as u_int, (*s).cy, sx, 1 as u_int, bg);
-    let row = (*s).grid().hsize.wrapping_add((*s).cy);
-    let gl = grid_get_line_mut((*s).grid_mut(), row);
+    let screen_cy = ctx.screen.cy;
+    grid_view_clear(
+        ctx.screen.grid_mut(),
+        0 as u_int,
+        screen_cy,
+        sx,
+        1 as u_int,
+        bg,
+    );
+    let row = ctx.screen.grid().hsize.wrapping_add(ctx.screen.cy);
+    let gl = grid_get_line_mut(ctx.screen.grid_mut(), row);
     gl.flags = (gl.flags as u_int | flags) as u_short;
     gl.osc133_data = od;
-    screen_write_collect_clear(ctx, (*s).cy, 1 as u_int);
-    let ci = screen_write_current_item(ctx);
+    screen_write_collect_clear(ctx, ctx.screen.cy, 1 as u_int);
+    let ci = screen_write_current_item(&mut ctx.item);
     ci.x = 0 as u_int;
     ci.used = sx;
     ci.type_0 = CLEAR;
     ci.bg = bg;
-    (*s).write_rows_mut()[(*s).cy as usize]
+    let row = ctx.screen.cy as usize;
+    ctx.screen.write_rows_mut()[row]
         .items
         .push_back(ctx.item.take().expect("active screen write context"));
     ctx.item = Some(screen_write_get_citem());
 }
 pub unsafe fn screen_write_clearendofline(ctx: &mut screen_write_ctx, mut bg: u_int) {
-    let mut s: *mut screen = ctx.screen_ptr();
-    let mut sx: u_int = (*s).grid().sx;
-    if (*s).cx == 0 as u_int {
+    let mut sx: u_int = ctx.screen.grid().sx;
+    if ctx.screen.cx == 0 as u_int {
         screen_write_clearline(ctx, bg);
         return;
     }
-    let gl = grid_get_line((*s).grid(), (*s).grid().hsize.wrapping_add((*s).cy));
-    if (*s).cx > sx.wrapping_sub(1 as u_int)
-        || (*s).cx >= gl.cellsize as u_int && (bg == 8 as u_int || bg == 9 as u_int)
+    let gl = grid_get_line(
+        ctx.screen.grid(),
+        ctx.screen.grid().hsize.wrapping_add(ctx.screen.cy),
+    );
+    if ctx.screen.cx > sx.wrapping_sub(1 as u_int)
+        || ctx.screen.cx >= gl.cellsize as u_int && (bg == 8 as u_int || bg == 9 as u_int)
     {
         return;
     }
+    let (screen_cx, screen_cy) = (ctx.screen.cx, ctx.screen.cy);
     grid_view_clear(
-        (*s).grid_mut(),
-        (*s).cx,
-        (*s).cy,
-        sx.wrapping_sub((*s).cx),
+        ctx.screen.grid_mut(),
+        screen_cx,
+        screen_cy,
+        sx.wrapping_sub(screen_cx),
         1 as u_int,
         bg,
     );
-    let ci = screen_write_current_item(ctx);
-    ci.x = (*s).cx;
-    ci.used = sx.wrapping_sub((*s).cx);
+    let ci = screen_write_current_item(&mut ctx.item);
+    ci.x = ctx.screen.cx;
+    ci.used = sx.wrapping_sub(ctx.screen.cx);
     ci.type_0 = CLEAR;
     ci.bg = bg;
     screen_write_collect_insert(ctx);
 }
 pub unsafe fn screen_write_clearstartofline(ctx: &mut screen_write_ctx, mut bg: u_int) {
-    let mut s: *mut screen = ctx.screen_ptr();
-    let mut sx: u_int = (*s).grid().sx;
-    if (*s).cx >= sx.wrapping_sub(1 as u_int) {
+    let mut sx: u_int = ctx.screen.grid().sx;
+    if ctx.screen.cx >= sx.wrapping_sub(1 as u_int) {
         screen_write_clearline(ctx, bg);
         return;
     }
-    if (*s).cx > sx.wrapping_sub(1 as u_int) {
-        grid_view_clear((*s).grid_mut(), 0 as u_int, (*s).cy, sx, 1 as u_int, bg);
-    } else {
+    if ctx.screen.cx > sx.wrapping_sub(1 as u_int) {
+        let screen_cy = ctx.screen.cy;
         grid_view_clear(
-            (*s).grid_mut(),
+            ctx.screen.grid_mut(),
             0 as u_int,
-            (*s).cy,
-            (*s).cx.wrapping_add(1 as u_int),
+            screen_cy,
+            sx,
+            1 as u_int,
+            bg,
+        );
+    } else {
+        let (screen_cx, screen_cy) = (ctx.screen.cx, ctx.screen.cy);
+        grid_view_clear(
+            ctx.screen.grid_mut(),
+            0 as u_int,
+            screen_cy,
+            screen_cx.wrapping_add(1 as u_int),
             1 as u_int,
             bg,
         );
     }
-    let ci = screen_write_current_item(ctx);
+    let ci = screen_write_current_item(&mut ctx.item);
     ci.x = 0 as u_int;
-    ci.used = (*s).cx.wrapping_add(1 as u_int);
+    ci.used = ctx.screen.cx.wrapping_add(1 as u_int);
     ci.type_0 = CLEAR;
     ci.bg = bg;
     screen_write_collect_insert(ctx);
@@ -1562,26 +1643,29 @@ pub unsafe fn screen_write_cursormove(
     mut py: ::core::ffi::c_int,
     mut origin: ::core::ffi::c_int,
 ) {
-    let mut s: *mut screen = ctx.screen_ptr();
-    if origin != 0 && py != -(1 as ::core::ffi::c_int) && (*s).mode & MODE_ORIGIN != 0 {
-        if py as u_int > (*s).rlower.wrapping_sub((*s).rupper) {
-            py = (*s).rlower as ::core::ffi::c_int;
+    if origin != 0 && py != -(1 as ::core::ffi::c_int) && ctx.screen.mode & MODE_ORIGIN != 0 {
+        if py as u_int > ctx.screen.rlower.wrapping_sub(ctx.screen.rupper) {
+            py = ctx.screen.rlower as ::core::ffi::c_int;
         } else {
-            py =
-                (py as u_int).wrapping_add((*s).rupper) as ::core::ffi::c_int as ::core::ffi::c_int;
+            py = (py as u_int).wrapping_add(ctx.screen.rupper) as ::core::ffi::c_int
+                as ::core::ffi::c_int;
         }
     }
-    if px != -(1 as ::core::ffi::c_int) && px as u_int > (*s).grid().sx.wrapping_sub(1 as u_int) {
-        px = (*s).grid().sx.wrapping_sub(1 as u_int) as ::core::ffi::c_int;
+    if px != -(1 as ::core::ffi::c_int)
+        && px as u_int > ctx.screen.grid().sx.wrapping_sub(1 as u_int)
+    {
+        px = ctx.screen.grid().sx.wrapping_sub(1 as u_int) as ::core::ffi::c_int;
     }
-    if py != -(1 as ::core::ffi::c_int) && py as u_int > (*s).grid().sy.wrapping_sub(1 as u_int) {
-        py = (*s).grid().sy.wrapping_sub(1 as u_int) as ::core::ffi::c_int;
+    if py != -(1 as ::core::ffi::c_int)
+        && py as u_int > ctx.screen.grid().sy.wrapping_sub(1 as u_int)
+    {
+        py = ctx.screen.grid().sy.wrapping_sub(1 as u_int) as ::core::ffi::c_int;
     }
     log_debug(format_args!(
         "{}: from {},{} to {},{}",
         "screen_write_cursormove",
-        { (*s).cx },
-        { (*s).cy },
+        { ctx.screen.cx },
+        { ctx.screen.cy },
         (px) as u32,
         (py) as u32
     ));
@@ -1590,20 +1674,20 @@ pub unsafe fn screen_write_cursormove(
 pub unsafe fn screen_write_reverseindex(ctx: &mut screen_write_ctx, mut bg: u_int) {
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
-    let mut s: *mut screen = ctx.screen_ptr();
     let mut ttyctx = tty_ctx::default();
     let mut ry: u_int = 0;
-    if (*s).cy != (*s).rupper {
-        if (*s).cy > 0 as u_int {
+    if ctx.screen.cy != ctx.screen.rupper {
+        if ctx.screen.cy > 0 as u_int {
             screen_write_set_cursor(
                 ctx,
                 -(1 as ::core::ffi::c_int),
-                (*s).cy.wrapping_sub(1 as u_int) as ::core::ffi::c_int,
+                ctx.screen.cy.wrapping_sub(1 as u_int) as ::core::ffi::c_int,
             );
         }
         return;
     }
-    grid_view_scroll_region_down((*s).grid_mut(), (*s).rupper, (*s).rlower, bg);
+    let (screen_rupper, screen_rlower) = (ctx.screen.rupper, ctx.screen.rlower);
+    grid_view_scroll_region_down(ctx.screen.grid_mut(), screen_rupper, screen_rlower, bg);
     screen_write_collect_flush(ctx, 0 as ::core::ffi::c_int, "screen_write_reverseindex");
     screen_write_initctx(
         ctx,
@@ -1612,15 +1696,16 @@ pub unsafe fn screen_write_reverseindex(ctx: &mut screen_write_ctx, mut bg: u_in
         1 as ::core::ffi::c_int,
     );
     ttyctx.bg = bg;
-    ry = (*s)
+    ry = ctx
+        .screen
         .rlower
         .wrapping_add(1 as u_int)
-        .wrapping_sub((*s).rupper);
-    if screen_write_should_draw_lines(ctx, (*s).rupper, ry) == 0 {
+        .wrapping_sub(ctx.screen.rupper);
+    if screen_write_should_draw_lines(ctx, ctx.screen.rupper, ry) == 0 {
         return;
     }
     if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 || write_pane.is_none() {
-        tty_write(TtyCmd::ReverseIndex(&*s), &mut ttyctx);
+        tty_write(TtyCmd::ReverseIndex(&*ctx.screen), &mut ttyctx);
         return;
     }
     screen_write_redraw_pane(ctx, &mut ttyctx);
@@ -1630,39 +1715,37 @@ pub unsafe fn screen_write_scrollregion(
     mut rupper: u_int,
     mut rlower: u_int,
 ) {
-    let mut s: *mut screen = ctx.screen_ptr();
-    if rupper > (*s).grid().sy.wrapping_sub(1 as u_int) {
-        rupper = (*s).grid().sy.wrapping_sub(1 as u_int);
+    if rupper > ctx.screen.grid().sy.wrapping_sub(1 as u_int) {
+        rupper = ctx.screen.grid().sy.wrapping_sub(1 as u_int);
     }
-    if rlower > (*s).grid().sy.wrapping_sub(1 as u_int) {
-        rlower = (*s).grid().sy.wrapping_sub(1 as u_int);
+    if rlower > ctx.screen.grid().sy.wrapping_sub(1 as u_int) {
+        rlower = ctx.screen.grid().sy.wrapping_sub(1 as u_int);
     }
     if rupper >= rlower {
         return;
     }
     screen_write_collect_flush(ctx, 0 as ::core::ffi::c_int, "screen_write_scrollregion");
     screen_write_set_cursor(ctx, 0 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
-    (*s).rupper = rupper;
-    (*s).rlower = rlower;
+    ctx.screen.rupper = rupper;
+    ctx.screen.rlower = rlower;
 }
 pub unsafe fn screen_write_linefeed(
     ctx: &mut screen_write_ctx,
     mut wrapped: ::core::ffi::c_int,
     mut bg: u_int,
 ) {
-    let mut s: *mut screen = ctx.screen_ptr();
-    let mut rupper: u_int = (*s).rupper;
-    let mut rlower: u_int = (*s).rlower;
-    let row = (*s).grid().hsize.wrapping_add((*s).cy);
-    let gl = grid_get_line_mut((*s).grid_mut(), row);
+    let mut rupper: u_int = ctx.screen.rupper;
+    let mut rlower: u_int = ctx.screen.rlower;
+    let row = ctx.screen.grid().hsize.wrapping_add(ctx.screen.cy);
+    let gl = grid_get_line_mut(ctx.screen.grid_mut(), row);
     if wrapped != 0 {
         gl.flags = (gl.flags as ::core::ffi::c_int | GRID_LINE_WRAPPED) as u_short;
     }
     log_debug(format_args!(
         "{}: at {},{} (region {}-{})",
         "screen_write_linefeed",
-        { (*s).cx },
-        { (*s).cy },
+        { ctx.screen.cx },
+        { ctx.screen.cy },
         (rupper) as u32,
         (rlower) as u32
     ));
@@ -1670,34 +1753,36 @@ pub unsafe fn screen_write_linefeed(
         screen_write_collect_flush(ctx, 1 as ::core::ffi::c_int, "screen_write_linefeed");
         ctx.bg = bg;
     }
-    if (*s).cy != (*s).rlower {
-        if (*s).cy < (*s).grid().sy.wrapping_sub(1 as u_int) {
+    if ctx.screen.cy != ctx.screen.rlower {
+        if ctx.screen.cy < ctx.screen.grid().sy.wrapping_sub(1 as u_int) {
             screen_write_set_cursor(
                 ctx,
                 -(1 as ::core::ffi::c_int),
-                (*s).cy.wrapping_add(1 as u_int) as ::core::ffi::c_int,
+                ctx.screen.cy.wrapping_add(1 as u_int) as ::core::ffi::c_int,
             );
         }
         return;
     }
-    grid_view_scroll_region_up((*s).grid_mut(), (*s).rupper, (*s).rlower, bg);
+    let (screen_rupper, screen_rlower) = (ctx.screen.rupper, ctx.screen.rlower);
+    grid_view_scroll_region_up(ctx.screen.grid_mut(), screen_rupper, screen_rlower, bg);
     screen_write_collect_scroll(ctx, bg);
     ctx.scrolled = ctx.scrolled.wrapping_add(1);
 }
 pub unsafe fn screen_write_scrollup(ctx: &mut screen_write_ctx, mut lines: u_int, mut bg: u_int) {
-    let mut s: *mut screen = ctx.screen_ptr();
     let mut i: u_int = 0;
     if lines == 0 as u_int {
         lines = 1 as u_int;
     } else if lines
-        > (*s)
+        > ctx
+            .screen
             .rlower
-            .wrapping_sub((*s).rupper)
+            .wrapping_sub(ctx.screen.rupper)
             .wrapping_add(1 as u_int)
     {
-        lines = (*s)
+        lines = ctx
+            .screen
             .rlower
-            .wrapping_sub((*s).rupper)
+            .wrapping_sub(ctx.screen.rupper)
             .wrapping_add(1 as u_int);
     }
     if bg != ctx.bg {
@@ -1706,7 +1791,8 @@ pub unsafe fn screen_write_scrollup(ctx: &mut screen_write_ctx, mut lines: u_int
     }
     i = 0 as u_int;
     while i < lines {
-        grid_view_scroll_region_up((*s).grid_mut(), (*s).rupper, (*s).rlower, bg);
+        let (screen_rupper, screen_rlower) = (ctx.screen.rupper, ctx.screen.rlower);
+        grid_view_scroll_region_up(ctx.screen.grid_mut(), screen_rupper, screen_rlower, bg);
         screen_write_collect_scroll(ctx, bg);
         i = i.wrapping_add(1);
     }
@@ -1715,7 +1801,6 @@ pub unsafe fn screen_write_scrollup(ctx: &mut screen_write_ctx, mut lines: u_int
 pub unsafe fn screen_write_scrolldown(ctx: &mut screen_write_ctx, mut lines: u_int, mut bg: u_int) {
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
-    let mut s: *mut screen = ctx.screen_ptr();
     let mut ttyctx = tty_ctx::default();
     let mut i: u_int = 0;
     let mut ry: u_int = 0;
@@ -1729,32 +1814,36 @@ pub unsafe fn screen_write_scrolldown(ctx: &mut screen_write_ctx, mut lines: u_i
     if lines == 0 as u_int {
         lines = 1 as u_int;
     } else if lines
-        > (*s)
+        > ctx
+            .screen
             .rlower
-            .wrapping_sub((*s).rupper)
+            .wrapping_sub(ctx.screen.rupper)
             .wrapping_add(1 as u_int)
     {
-        lines = (*s)
+        lines = ctx
+            .screen
             .rlower
-            .wrapping_sub((*s).rupper)
+            .wrapping_sub(ctx.screen.rupper)
             .wrapping_add(1 as u_int);
     }
     i = 0 as u_int;
     while i < lines {
-        grid_view_scroll_region_down((*s).grid_mut(), (*s).rupper, (*s).rlower, bg);
+        let (screen_rupper, screen_rlower) = (ctx.screen.rupper, ctx.screen.rlower);
+        grid_view_scroll_region_down(ctx.screen.grid_mut(), screen_rupper, screen_rlower, bg);
         i = i.wrapping_add(1);
     }
     screen_write_collect_flush(ctx, 0 as ::core::ffi::c_int, "screen_write_scrolldown");
     ttyctx.data = tty_command_data::Count(lines);
-    ry = (*s)
+    ry = ctx
+        .screen
         .rlower
         .wrapping_add(1 as u_int)
-        .wrapping_sub((*s).rupper);
-    if screen_write_should_draw_lines(ctx, (*s).rupper, ry) == 0 {
+        .wrapping_sub(ctx.screen.rupper);
+    if screen_write_should_draw_lines(ctx, ctx.screen.rupper, ry) == 0 {
         return;
     }
     if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 || write_pane.is_none() {
-        tty_write(TtyCmd::ScrollDown(&*s), &mut ttyctx);
+        tty_write(TtyCmd::ScrollDown(&*ctx.screen), &mut ttyctx);
         return;
     }
     screen_write_redraw_pane(ctx, &mut ttyctx);
@@ -1766,10 +1855,9 @@ pub unsafe fn screen_write_clearendofscreen(ctx: &mut screen_write_ctx, mut bg: 
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
     let mut r = Vec::new();
-    let mut s: *mut screen = ctx.screen_ptr();
     let mut ttyctx = tty_ctx::default();
-    let mut sx: u_int = (*s).grid().sx;
-    let mut sy: u_int = (*s).grid().sy;
+    let mut sx: u_int = ctx.screen.grid().sx;
+    let mut sy: u_int = ctx.screen.grid().sy;
     let mut y: u_int = 0;
     let mut i: u_int = 0;
     let mut xoff: u_int = 0;
@@ -1783,55 +1871,57 @@ pub unsafe fn screen_write_clearendofscreen(ctx: &mut screen_write_ctx, mut bg: 
         1 as ::core::ffi::c_int,
     );
     ttyctx.bg = bg;
-    if (*s).cx == 0 as u_int
-        && (*s).cy == 0 as u_int
-        && (*s).grid().flags & GRID_HISTORY != 0
+    if ctx.screen.cx == 0 as u_int
+        && ctx.screen.cy == 0 as u_int
+        && ctx.screen.grid().flags & GRID_HISTORY != 0
         && write_pane.is_some()
         && options_get_number(
             &write_pane.expect("write pane").borrow_options_mut(),
             c"scroll-on-clear",
         ) != 0
     {
-        grid_view_clear_history((*s).grid_mut(), bg);
+        grid_view_clear_history(ctx.screen.grid_mut(), bg);
     } else {
-        if (*s).cx <= sx.wrapping_sub(1 as u_int) {
+        if ctx.screen.cx <= sx.wrapping_sub(1 as u_int) {
+            let (screen_cx, screen_cy) = (ctx.screen.cx, ctx.screen.cy);
             grid_view_clear(
-                (*s).grid_mut(),
-                (*s).cx,
-                (*s).cy,
-                sx.wrapping_sub((*s).cx),
+                ctx.screen.grid_mut(),
+                screen_cx,
+                screen_cy,
+                sx.wrapping_sub(screen_cx),
                 1 as u_int,
                 bg,
             );
         }
+        let screen_cy = ctx.screen.cy;
         grid_view_clear(
-            (*s).grid_mut(),
+            ctx.screen.grid_mut(),
             0 as u_int,
-            (*s).cy.wrapping_add(1 as u_int),
+            screen_cy.wrapping_add(1 as u_int),
             sx,
-            sy.wrapping_sub((*s).cy.wrapping_add(1 as u_int)),
+            sy.wrapping_sub(screen_cy.wrapping_add(1 as u_int)),
             bg,
         );
     }
     screen_write_collect_clear(
         ctx,
-        (*s).cy.wrapping_add(1 as u_int),
-        sy.wrapping_sub((*s).cy.wrapping_add(1 as u_int)),
+        ctx.screen.cy.wrapping_add(1 as u_int),
+        sy.wrapping_sub(ctx.screen.cy.wrapping_add(1 as u_int)),
     );
     screen_write_collect_flush(
         ctx,
         0 as ::core::ffi::c_int,
         "screen_write_clearendofscreen",
     );
-    if screen_write_should_draw_lines(ctx, (*s).cy, sy.wrapping_sub((*s).cy)) == 0 {
+    if screen_write_should_draw_lines(ctx, ctx.screen.cy, sy.wrapping_sub(ctx.screen.cy)) == 0 {
         return;
     }
     if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 {
         tty_write(TtyCmd::ClearEndOfScreen, &mut ttyctx);
         return;
     }
-    ocx = (*s).cx;
-    ocy = (*s).cy;
+    ocx = ctx.screen.cx;
+    ocy = ctx.screen.cy;
     if let Some(write_pane_value) = write_pane {
         xoff = write_pane_value.geometry().2 as u_int;
         yoff = write_pane_value.geometry().3 as u_int;
@@ -1839,12 +1929,12 @@ pub unsafe fn screen_write_clearendofscreen(ctx: &mut screen_write_ctx, mut bg: 
         xoff = 0 as u_int;
         yoff = 0 as u_int;
     }
-    if (*s).cx <= sx.wrapping_sub(1 as u_int) {
+    if ctx.screen.cx <= sx.wrapping_sub(1 as u_int) {
         WindowPane::visible_ranges(
             write_pane,
-            xoff.wrapping_add((*s).cx) as ::core::ffi::c_int,
-            yoff.wrapping_add((*s).cy) as ::core::ffi::c_int,
-            sx.wrapping_sub((*s).cx),
+            xoff.wrapping_add(ctx.screen.cx) as ::core::ffi::c_int,
+            yoff.wrapping_add(ctx.screen.cy) as ::core::ffi::c_int,
+            sx.wrapping_sub(ctx.screen.cx),
             &mut r,
         );
         i = 0 as u_int;
@@ -1856,7 +1946,7 @@ pub unsafe fn screen_write_clearendofscreen(ctx: &mut screen_write_ctx, mut bg: 
             i = i.wrapping_add(1);
         }
     }
-    y = (*s).cy.wrapping_add(1 as u_int);
+    y = ctx.screen.cy.wrapping_add(1 as u_int);
     while y < sy {
         screen_write_set_cursor(ctx, 0 as ::core::ffi::c_int, y as ::core::ffi::c_int);
         WindowPane::visible_ranges(
@@ -1882,9 +1972,8 @@ pub unsafe fn screen_write_clearstartofscreen(ctx: &mut screen_write_ctx, mut bg
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
     let mut r = Vec::new();
-    let mut s: *mut screen = ctx.screen_ptr();
     let mut ttyctx = tty_ctx::default();
-    let mut sx: u_int = (*s).grid().sx;
+    let mut sx: u_int = ctx.screen.grid().sx;
     let mut y: u_int = 0;
     let mut i: u_int = 0;
     let mut xoff: u_int = 0;
@@ -1898,36 +1987,54 @@ pub unsafe fn screen_write_clearstartofscreen(ctx: &mut screen_write_ctx, mut bg
         1 as ::core::ffi::c_int,
     );
     ttyctx.bg = bg;
-    if (*s).cy > 0 as u_int {
-        grid_view_clear((*s).grid_mut(), 0 as u_int, 0 as u_int, sx, (*s).cy, bg);
-    }
-    if (*s).cx > sx.wrapping_sub(1 as u_int) {
-        grid_view_clear((*s).grid_mut(), 0 as u_int, (*s).cy, sx, 1 as u_int, bg);
-    } else {
+    if ctx.screen.cy > 0 as u_int {
+        let screen_cy = ctx.screen.cy;
         grid_view_clear(
-            (*s).grid_mut(),
+            ctx.screen.grid_mut(),
             0 as u_int,
-            (*s).cy,
-            (*s).cx.wrapping_add(1 as u_int),
+            0 as u_int,
+            sx,
+            screen_cy,
+            bg,
+        );
+    }
+    if ctx.screen.cx > sx.wrapping_sub(1 as u_int) {
+        let screen_cy = ctx.screen.cy;
+        grid_view_clear(
+            ctx.screen.grid_mut(),
+            0 as u_int,
+            screen_cy,
+            sx,
+            1 as u_int,
+            bg,
+        );
+    } else {
+        let (screen_cx, screen_cy) = (ctx.screen.cx, ctx.screen.cy);
+        grid_view_clear(
+            ctx.screen.grid_mut(),
+            0 as u_int,
+            screen_cy,
+            screen_cx.wrapping_add(1 as u_int),
             1 as u_int,
             bg,
         );
     }
-    screen_write_collect_clear(ctx, 0 as u_int, (*s).cy);
+    screen_write_collect_clear(ctx, 0 as u_int, ctx.screen.cy);
     screen_write_collect_flush(
         ctx,
         0 as ::core::ffi::c_int,
         "screen_write_clearstartofscreen",
     );
-    if screen_write_should_draw_lines(ctx, 0 as u_int, (*s).cy.wrapping_add(1 as u_int)) == 0 {
+    if screen_write_should_draw_lines(ctx, 0 as u_int, ctx.screen.cy.wrapping_add(1 as u_int)) == 0
+    {
         return;
     }
     if !ttyctx.flags & TTY_CTX_PANE_OBSCURED != 0 {
         tty_write(TtyCmd::ClearStartOfScreen, &mut ttyctx);
         return;
     }
-    ocx = (*s).cx;
-    ocy = (*s).cy;
+    ocx = ctx.screen.cx;
+    ocy = ctx.screen.cy;
     if let Some(write_pane_value) = write_pane {
         xoff = write_pane_value.geometry().2 as u_int;
         yoff = write_pane_value.geometry().3 as u_int;
@@ -1936,7 +2043,7 @@ pub unsafe fn screen_write_clearstartofscreen(ctx: &mut screen_write_ctx, mut bg
         yoff = 0 as u_int;
     }
     y = 0 as u_int;
-    while y < (*s).cy {
+    while y < ctx.screen.cy {
         screen_write_set_cursor(ctx, 0 as ::core::ffi::c_int, y as ::core::ffi::c_int);
         WindowPane::visible_ranges(
             write_pane,
@@ -1955,12 +2062,16 @@ pub unsafe fn screen_write_clearstartofscreen(ctx: &mut screen_write_ctx, mut bg
         }
         y = y.wrapping_add(1);
     }
-    screen_write_set_cursor(ctx, 0 as ::core::ffi::c_int, (*s).cy as ::core::ffi::c_int);
+    screen_write_set_cursor(
+        ctx,
+        0 as ::core::ffi::c_int,
+        ctx.screen.cy as ::core::ffi::c_int,
+    );
     WindowPane::visible_ranges(
         write_pane,
         xoff as ::core::ffi::c_int,
         yoff.wrapping_add(ocy) as ::core::ffi::c_int,
-        (*s).cx.wrapping_add(1 as u_int),
+        ctx.screen.cx.wrapping_add(1 as u_int),
         &mut r,
     );
     i = 0 as u_int;
@@ -1977,10 +2088,9 @@ pub unsafe fn screen_write_clearscreen(ctx: &mut screen_write_ctx, mut bg: u_int
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
     let mut r = Vec::new();
-    let mut s: *mut screen = ctx.screen_ptr();
     let mut ttyctx = tty_ctx::default();
-    let mut sx: u_int = (*s).grid().sx;
-    let mut sy: u_int = (*s).grid().sy;
+    let mut sx: u_int = ctx.screen.grid().sx;
+    let mut sy: u_int = ctx.screen.grid().sy;
     let mut y: u_int = 0;
     let mut i: u_int = 0;
     let mut xoff: u_int = 0;
@@ -1994,16 +2104,16 @@ pub unsafe fn screen_write_clearscreen(ctx: &mut screen_write_ctx, mut bg: u_int
         1 as ::core::ffi::c_int,
     );
     ttyctx.bg = bg;
-    if (*s).grid().flags & GRID_HISTORY != 0
+    if ctx.screen.grid().flags & GRID_HISTORY != 0
         && write_pane.is_some()
         && options_get_number(
             &write_pane.expect("write pane").borrow_options_mut(),
             c"scroll-on-clear",
         ) != 0
     {
-        grid_view_clear_history((*s).grid_mut(), bg);
+        grid_view_clear_history(ctx.screen.grid_mut(), bg);
     } else {
-        grid_view_clear((*s).grid_mut(), 0 as u_int, 0 as u_int, sx, sy, bg);
+        grid_view_clear(ctx.screen.grid_mut(), 0 as u_int, 0 as u_int, sx, sy, bg);
     }
     screen_write_collect_clear(ctx, 0 as u_int, sy);
     if screen_write_should_draw_lines(ctx, 0 as u_int, sy) == 0 {
@@ -2013,8 +2123,8 @@ pub unsafe fn screen_write_clearscreen(ctx: &mut screen_write_ctx, mut bg: u_int
         tty_write(TtyCmd::ClearScreen, &mut ttyctx);
         return;
     }
-    ocx = (*s).cx;
-    ocy = (*s).cy;
+    ocx = ctx.screen.cx;
+    ocy = ctx.screen.cy;
     if let Some(write_pane_value) = write_pane {
         xoff = write_pane_value.geometry().2 as u_int;
         yoff = write_pane_value.geometry().3 as u_int;
@@ -2045,7 +2155,7 @@ pub unsafe fn screen_write_clearscreen(ctx: &mut screen_write_ctx, mut bg: u_int
     screen_write_set_cursor(ctx, ocx as ::core::ffi::c_int, ocy as ::core::ffi::c_int);
 }
 pub unsafe fn screen_write_clearhistory(ctx: &mut screen_write_ctx) {
-    grid_clear_history(&mut *((*ctx.screen_ptr()).grid_mut()));
+    grid_clear_history(&mut *(ctx.screen.grid_mut()));
 }
 pub unsafe fn screen_write_fullredraw(ctx: &mut screen_write_ctx) {
     let mut ttyctx = tty_ctx::default();
@@ -2106,13 +2216,13 @@ unsafe fn screen_write_collect_clear(ctx: &mut screen_write_ctx, mut y: u_int, m
     let mut i: u_int = 0;
     i = y;
     while i < y.wrapping_add(n) {
-        let cl = &mut (*ctx.screen_ptr()).write_rows_mut()[i as usize];
+        let cl = &mut ctx.screen.write_rows_mut()[i as usize];
         screen_write_recycle_items(&mut cl.items);
         i = i.wrapping_add(1);
     }
 }
 unsafe fn screen_write_collect_scroll(ctx: &mut screen_write_ctx, bg: u_int) {
-    let s = &mut *ctx.screen_ptr();
+    let s = &mut *ctx.screen;
     log_debug(format_args!(
         "{}: at {},{} (region {}-{})",
         "screen_write_collect_scroll", s.cx, s.cy, s.rupper, s.rlower
@@ -2136,7 +2246,6 @@ unsafe fn screen_write_collect_flush_scrolled(ctx: &mut screen_write_ctx) -> ::c
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
     let wp = write_pane;
-    let mut s: *mut screen = ctx.screen_ptr();
     let mut ttyctx = tty_ctx::default();
     screen_write_initctx(
         ctx,
@@ -2156,18 +2265,20 @@ unsafe fn screen_write_collect_flush_scrolled(ctx: &mut screen_write_ctx) -> ::c
         "{}: scrolled {} (region {}-{})",
         "screen_write_collect_flush_scrolled",
         { ctx.scrolled },
-        { (*s).rupper },
-        { (*s).rlower }
+        { ctx.screen.rupper },
+        { ctx.screen.rlower }
     ));
     if ctx.scrolled
-        > (*s)
+        > ctx
+            .screen
             .rlower
-            .wrapping_sub((*s).rupper)
+            .wrapping_sub(ctx.screen.rupper)
             .wrapping_add(1 as u_int)
     {
-        ctx.scrolled = (*s)
+        ctx.scrolled = ctx
+            .screen
             .rlower
-            .wrapping_sub((*s).rupper)
+            .wrapping_sub(ctx.screen.rupper)
             .wrapping_add(1 as u_int);
     }
     if let Some(pane) = wp {
@@ -2181,7 +2292,7 @@ unsafe fn screen_write_collect_flush_scrolled(ctx: &mut screen_write_ctx) -> ::c
     }
     ttyctx.data = tty_command_data::Count(ctx.scrolled);
     ttyctx.bg = ctx.bg;
-    tty_write(TtyCmd::ScrollUp(&*s), &mut ttyctx);
+    tty_write(TtyCmd::ScrollUp(&*ctx.screen), &mut ttyctx);
     if wp.is_some() {
         write_pane_owner
             .as_ref()
@@ -2198,7 +2309,6 @@ unsafe fn screen_write_collect_flush_line(
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
     let wp = write_pane;
-    let mut s: *mut screen = ctx.screen_ptr();
     let mut last: u_int = UINT_MAX;
     let mut items: u_int = 0 as u_int;
     let mut wsx: u_int = 0;
@@ -2214,15 +2324,14 @@ unsafe fn screen_write_collect_flush_line(
     let mut r_end: ::core::ffi::c_int = 0;
     let mut c_start: ::core::ffi::c_int = 0;
     let mut c_end: ::core::ffi::c_int = 0;
-    let mut ttyctx = tty_ctx::default();
     if let Some(wp_value) = wp {
         wsx = wp_value.window_size().0;
         wsy = wp_value.window_size().1;
         xoff = wp_value.geometry().2;
         yoff = wp_value.geometry().3;
     } else {
-        wsx = (*s).grid().sx;
-        wsy = (*s).grid().sy;
+        wsx = ctx.screen.grid().sx;
+        wsy = ctx.screen.grid().sy;
         xoff = 0 as ::core::ffi::c_int;
         yoff = 0 as ::core::ffi::c_int;
     }
@@ -2238,23 +2347,28 @@ unsafe fn screen_write_collect_flush_line(
     );
     let mut index = 0;
     loop {
-        let cl = &(*s).write_rows()[y as usize];
-        let Some(ci) = cl.items.get(index) else {
+        // Copy the item out: drawing it moves the cursor through `ctx`.
+        let Some((ci_x, ci_used, ci_type, ci_bg, ci_wrapped, ci_gc)) = ctx.screen.write_rows()
+            [y as usize]
+            .items
+            .get(index)
+            .map(|ci| (ci.x, ci.used, ci.type_0, ci.bg, ci.wrapped, ci.gc))
+        else {
             break;
         };
         log_debug(format_args!(
             "collect list: x={} (last {}), y={}, used={}",
-            { ci.x },
+            { ci_x },
             (last) as u32,
             { y },
-            { ci.used }
+            { ci_used }
         ));
-        if last != UINT_MAX && ci.x <= last {
+        if last != UINT_MAX && ci_x <= last {
             fatalx(|out| {
                 write!(
                     out,
                     "collect list bad order: {} <= {}",
-                    { ci.x },
+                    { ci_x },
                     (last) as u32
                 )
             });
@@ -2267,8 +2381,8 @@ unsafe fn screen_write_collect_flush_line(
             if !(ri.nx == 0 as u_int) {
                 r_start = ri.px as ::core::ffi::c_int;
                 r_end = ri.px.wrapping_add(ri.nx) as ::core::ffi::c_int;
-                c_start = ci.x as ::core::ffi::c_int;
-                c_end = ci.x.wrapping_add(ci.used) as ::core::ffi::c_int;
+                c_start = ci_x as ::core::ffi::c_int;
+                c_end = ci_x.wrapping_add(ci_used) as ::core::ffi::c_int;
                 if !(c_start + xoff >= r_end || c_end + xoff <= r_start) {
                     if r_start > c_start + xoff {
                         w_start = r_start - xoff;
@@ -2284,7 +2398,8 @@ unsafe fn screen_write_collect_flush_line(
                         w_length = (w_end - w_start) as u_int;
                         if !(w_length <= 0 as u_int) {
                             screen_write_set_cursor(ctx, w_start, y as ::core::ffi::c_int);
-                            if ci.type_0 as ::core::ffi::c_uint
+                            let mut ttyctx = tty_ctx::default();
+                            if ci_type as ::core::ffi::c_uint
                                 == CLEAR as ::core::ffi::c_int as ::core::ffi::c_uint
                             {
                                 screen_write_initctx(
@@ -2293,7 +2408,7 @@ unsafe fn screen_write_collect_flush_line(
                                     1 as ::core::ffi::c_int,
                                     0 as ::core::ffi::c_int,
                                 );
-                                ttyctx.bg = ci.bg;
+                                ttyctx.bg = ci_bg;
                                 ttyctx.data = tty_command_data::Count(w_length);
                                 tty_write(TtyCmd::ClearCharacter, &mut ttyctx);
                             } else {
@@ -2303,14 +2418,15 @@ unsafe fn screen_write_collect_flush_line(
                                     0 as ::core::ffi::c_int,
                                     0 as ::core::ffi::c_int,
                                 );
-                                if ci.wrapped != 0 {
+                                if ci_wrapped != 0 {
                                     ttyctx.flags |= TTY_CTX_WRAPPED;
                                 }
+                                let cl = &ctx.screen.write_rows()[y as usize];
                                 ttyctx.data = tty_command_data::Bytes(
                                     &cl.data
                                         [w_start as usize..w_start as usize + w_length as usize],
                                 );
-                                tty_write(TtyCmd::Cells(&*s, &ci.gc), &mut ttyctx);
+                                tty_write(TtyCmd::Cells(&*ctx.screen, &ci_gc), &mut ttyctx);
                             }
                             items = items.wrapping_add(1);
                             written = 1 as ::core::ffi::c_int;
@@ -2321,9 +2437,9 @@ unsafe fn screen_write_collect_flush_line(
             i = i.wrapping_add(1);
         }
         if written != 0 {
-            last = ci.x;
+            last = ci_x;
             screen_write_free_citem(
-                (*s).write_rows_mut()[y as usize]
+                ctx.screen.write_rows_mut()[y as usize]
                     .items
                     .remove(index)
                     .expect("linked write command"),
@@ -2351,26 +2467,26 @@ unsafe fn screen_write_collect_flush_with_ranges(
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
     let mut current_block: u64;
-    let mut s: *mut screen = ctx.screen_ptr();
     let wp = write_pane;
     let mut y: u_int = 0;
     let mut cx: u_int = 0;
     let mut cy: u_int = 0;
     let mut items: u_int = 0 as u_int;
     if !(wp.is_some() && wp.expect("write pane").output_suppressed()) {
-        if (*s).mode & MODE_SYNC != 0 {
+        if ctx.screen.mode & MODE_SYNC != 0 {
             if ctx.scrolled != 0 as u_int {
                 screen_write_should_draw_lines(
                     ctx,
-                    (*s).rupper,
-                    (*s).rlower
+                    ctx.screen.rupper,
+                    ctx.screen
+                        .rlower
                         .wrapping_add(1 as u_int)
-                        .wrapping_sub((*s).rupper),
+                        .wrapping_sub(ctx.screen.rupper),
                 );
             }
             y = 0 as u_int;
-            while y < (*s).grid().sy {
-                let cl = &(*s).write_rows()[y as usize];
+            while y < ctx.screen.grid().sy {
+                let cl = &ctx.screen.write_rows()[y as usize];
                 if !cl.items.is_empty() {
                     screen_write_should_draw_line(ctx, y);
                 }
@@ -2394,15 +2510,15 @@ unsafe fn screen_write_collect_flush_with_ranges(
                     if scroll_only != 0 {
                         return;
                     }
-                    cx = (*s).cx;
-                    cy = (*s).cy;
+                    cx = ctx.screen.cx;
+                    cy = ctx.screen.cy;
                     y = 0 as u_int;
-                    while y < (*s).grid().sy {
+                    while y < ctx.screen.grid().sy {
                         items = items.wrapping_add(screen_write_collect_flush_line(ctx, y, r));
                         y = y.wrapping_add(1);
                     }
-                    (*s).cx = cx;
-                    (*s).cy = cy;
+                    ctx.screen.cx = cx;
+                    ctx.screen.cy = cy;
                     log_debug(format_args!(
                         "{}: flushed {} items ({})",
                         "screen_write_collect_flush",
@@ -2415,8 +2531,8 @@ unsafe fn screen_write_collect_flush_with_ranges(
         }
     }
     y = 0 as u_int;
-    while y < (*s).grid().sy {
-        let cl = &mut (*s).write_rows_mut()[y as usize];
+    while y < ctx.screen.grid().sy {
+        let cl = &mut ctx.screen.write_rows_mut()[y as usize];
         while let Some(item) = cl.items.pop_front() {
             screen_write_free_citem(item);
         }
@@ -2427,7 +2543,7 @@ unsafe fn screen_write_collect_flush_with_ranges(
 }
 unsafe fn screen_write_collect_insert(ctx: &mut screen_write_ctx) {
     let mut item = ctx.item.take().expect("active screen write context");
-    let s = &mut *ctx.screen_ptr();
+    let s = &mut *ctx.screen;
     let row = s.cy as usize;
     let items = &mut s.write_rows_mut()[row].items;
     let (before, wrapped) = screen_write_collect_trim(items, item.x, item.used);
@@ -2443,7 +2559,7 @@ unsafe fn screen_write_collect_insert_clear(
     mut nx: u_int,
     mut bg: u_int,
 ) {
-    let ci = screen_write_current_item(ctx);
+    let ci = screen_write_current_item(&mut ctx.item);
     if nx != 0 as u_int {
         ci.x = px;
         ci.used = nx;
@@ -2461,7 +2577,6 @@ unsafe fn screen_write_clear_cell(gd: &mut grid, px: u_int, py: u_int) {
     grid_view_set_cell(gd, px, py, &gc);
 }
 unsafe fn screen_write_insert_clears(ctx: &mut screen_write_ctx, mut px: u_int, mut nx: u_int) {
-    let mut s: *mut screen = ctx.screen_ptr();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -2482,7 +2597,7 @@ unsafe fn screen_write_insert_clears(ctx: &mut screen_write_ctx, mut px: u_int, 
     let mut bg: ::core::ffi::c_int = 8 as ::core::ffi::c_int;
     xx = px;
     while xx < px.wrapping_add(nx) {
-        grid_view_get_cell((*s).grid(), xx, (*s).cy, &mut gc);
+        grid_view_get_cell(ctx.screen.grid(), xx, ctx.screen.cy, &mut gc);
         if xx == start {
             bg = gc.bg;
         } else if gc.bg != bg {
@@ -2508,8 +2623,7 @@ unsafe fn screen_write_insert_clears(ctx: &mut screen_write_ctx, mut px: u_int, 
     screen_write_collect_insert_clear(ctx, start, xx.wrapping_sub(start), bg as u_int);
 }
 pub unsafe fn screen_write_collect_end(ctx: &mut screen_write_ctx) {
-    let mut s: *mut screen = ctx.screen_ptr();
-    let row = (*s).cy as usize;
+    let row = ctx.screen.cy as usize;
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -2528,64 +2642,72 @@ pub unsafe fn screen_write_collect_end(ctx: &mut screen_write_ctx) {
     let mut bx: u_int = 0 as u_int;
     let mut bnx: u_int = 0 as u_int;
     let (start, used, collected_cell) = {
-        let item = screen_write_current_item(ctx);
+        let item = screen_write_current_item(&mut ctx.item);
         if item.used == 0 {
             return;
         }
-        item.x = (*s).cx;
+        item.x = ctx.screen.cx;
         (item.x, item.used, item.gc)
     };
     screen_write_collect_insert(ctx);
-    let cl = &(*s).write_rows()[row];
+    let cl = &ctx.screen.write_rows()[row];
     log_debug(format_args!(
         "{}: {} {} (at {},{})",
         "screen_write_collect_end",
         { used },
         log_bytes(&cl.data[start as usize..start as usize + used as usize]),
-        { (*s).cx },
-        { (*s).cy }
+        { ctx.screen.cx },
+        { ctx.screen.cy }
     ));
-    if (*s).cx != 0 as u_int {
-        xx = (*s).cx;
+    if ctx.screen.cx != 0 as u_int {
+        xx = ctx.screen.cx;
         while xx > 0 as u_int {
-            grid_view_get_cell((*s).grid(), xx, (*s).cy, &mut gc);
+            grid_view_get_cell(ctx.screen.grid(), xx, ctx.screen.cy, &mut gc);
             if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0 {
                 break;
             }
-            screen_write_clear_cell((*s).grid_mut(), xx, (*s).cy);
+            let screen_cy = ctx.screen.cy;
+            screen_write_clear_cell(ctx.screen.grid_mut(), xx, screen_cy);
             log_debug(format_args!(
                 "{}: padding erased (before) at {} (cx {})",
                 "screen_write_collect_end",
                 (xx) as u32,
-                { (*s).cx }
+                { ctx.screen.cx }
             ));
             xx = xx.wrapping_sub(1);
         }
-        if xx != (*s).cx {
+        if xx != ctx.screen.cx {
             if xx == 0 as u_int {
-                grid_view_get_cell((*s).grid(), 0 as u_int, (*s).cy, &mut gc);
+                grid_view_get_cell(ctx.screen.grid(), 0 as u_int, ctx.screen.cy, &mut gc);
             }
             if gc.data.width as ::core::ffi::c_int > 1 as ::core::ffi::c_int
                 || gc.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0
             {
-                screen_write_clear_cell((*s).grid_mut(), xx, (*s).cy);
+                let screen_cy = ctx.screen.cy;
+                screen_write_clear_cell(ctx.screen.grid_mut(), xx, screen_cy);
                 log_debug(format_args!(
                     "{}: padding erased (before) at {} (cx {})",
                     "screen_write_collect_end",
                     (xx) as u32,
-                    { (*s).cx }
+                    { ctx.screen.cx }
                 ));
             }
             bx = xx;
-            bnx = (*s).cx.wrapping_sub(xx);
+            bnx = ctx.screen.cx.wrapping_sub(xx);
         }
     }
-    let cl = &(*s).write_rows()[row];
+    let (cx, cy) = (ctx.screen.cx, ctx.screen.cy);
+    // Borrow the collected bytes and the grid as disjoint fields.
+    let screen = &mut *ctx.screen;
+    let cl = &screen
+        .write_list
+        .as_deref()
+        .expect("screen write rows are initialized")[row];
     let bytes = &cl.data[start as usize..start as usize + used as usize];
     grid_view_set_cells(
-        (*s).grid.as_deref_mut().expect("screen is initialized"),
-        (*s).cx,
-        (*s).cy,
+        screen.grid.as_deref_mut().expect("screen is initialized"),
+        cx,
+        cy,
         &collected_cell,
         bytes,
     );
@@ -2594,31 +2716,31 @@ pub unsafe fn screen_write_collect_end(ctx: &mut screen_write_ctx) {
     }
     screen_write_set_cursor(
         ctx,
-        (*s).cx.wrapping_add(used) as ::core::ffi::c_int,
+        ctx.screen.cx.wrapping_add(used) as ::core::ffi::c_int,
         -(1 as ::core::ffi::c_int),
     );
-    xx = (*s).cx;
-    while xx < (*s).grid().sx {
-        grid_view_get_cell((*s).grid(), xx, (*s).cy, &mut gc);
+    xx = ctx.screen.cx;
+    while xx < ctx.screen.grid().sx {
+        grid_view_get_cell(ctx.screen.grid(), xx, ctx.screen.cy, &mut gc);
         if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0 {
             break;
         }
-        screen_write_clear_cell((*s).grid_mut(), xx, (*s).cy);
+        let screen_cy = ctx.screen.cy;
+        screen_write_clear_cell(ctx.screen.grid_mut(), xx, screen_cy);
         log_debug(format_args!(
             "{}: padding erased (after) at {} (cx {})",
             "screen_write_collect_end",
             (xx) as u32,
-            { (*s).cx }
+            { ctx.screen.cx }
         ));
         xx = xx.wrapping_add(1);
     }
-    if xx != (*s).cx {
-        screen_write_insert_clears(ctx, (*s).cx, xx.wrapping_sub((*s).cx));
+    if xx != ctx.screen.cx {
+        screen_write_insert_clears(ctx, ctx.screen.cx, xx.wrapping_sub(ctx.screen.cx));
     }
 }
 pub unsafe fn screen_write_collect_add(ctx: &mut screen_write_ctx, gc: &grid_cell) {
-    let mut s: *mut screen = ctx.screen_ptr();
-    let mut sx: u_int = (*s).grid().sx;
+    let mut sx: u_int = ctx.screen.grid().sx;
     let mut collect: ::core::ffi::c_int = 0;
     collect = 1 as ::core::ffi::c_int;
     if gc.data.width as ::core::ffi::c_int != 1 as ::core::ffi::c_int
@@ -2626,9 +2748,9 @@ pub unsafe fn screen_write_collect_add(ctx: &mut screen_write_ctx, gc: &grid_cel
         || gc.data.data[0] as ::core::ffi::c_int >= 0x7f as ::core::ffi::c_int
         || (gc.flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0)
         || (gc.attr as ::core::ffi::c_int & GRID_ATTR_CHARSET != 0)
-        || (!(*s).mode & MODE_WRAP != 0)
-        || ((*s).mode & MODE_INSERT != 0)
-        || (!(*s).sel.is_none())
+        || (!ctx.screen.mode & MODE_WRAP != 0)
+        || (ctx.screen.mode & MODE_INSERT != 0)
+        || (!ctx.screen.sel.is_none())
     {
         collect = 0 as ::core::ffi::c_int;
     }
@@ -2638,28 +2760,30 @@ pub unsafe fn screen_write_collect_add(ctx: &mut screen_write_ctx, gc: &grid_cel
         screen_write_cell(ctx, gc);
         return;
     }
-    if (*s).cx > sx.wrapping_sub(1 as u_int)
-        || screen_write_current_item(ctx).used > sx.wrapping_sub(1 as u_int).wrapping_sub((*s).cx)
+    if ctx.screen.cx > sx.wrapping_sub(1 as u_int)
+        || screen_write_current_item(&mut ctx.item).used
+            > sx.wrapping_sub(1 as u_int).wrapping_sub(ctx.screen.cx)
     {
         screen_write_collect_end(ctx);
     }
-    if (*s).cx > sx.wrapping_sub(1 as u_int) {
+    if ctx.screen.cx > sx.wrapping_sub(1 as u_int) {
         log_debug(format_args!(
             "{}: wrapped at {},{}",
             "screen_write_collect_add",
-            { (*s).cx },
-            { (*s).cy }
+            { ctx.screen.cx },
+            { ctx.screen.cy }
         ));
-        screen_write_current_item(ctx).wrapped = 1 as ::core::ffi::c_int;
+        screen_write_current_item(&mut ctx.item).wrapped = 1 as ::core::ffi::c_int;
         screen_write_linefeed(ctx, 1 as ::core::ffi::c_int, 8 as u_int);
         screen_write_set_cursor(ctx, 0 as ::core::ffi::c_int, -(1 as ::core::ffi::c_int));
     }
-    let ci = screen_write_current_item(ctx);
+    let ci = screen_write_current_item(&mut ctx.item);
     if ci.used == 0 {
         ci.gc = *gc;
     }
-    let width = (*s).grid().sx as usize;
-    let row = &mut (*s).write_rows_mut()[(*s).cy as usize];
+    let width = ctx.screen.grid().sx as usize;
+    let (cx, cy) = (ctx.screen.cx, ctx.screen.cy);
+    let row = &mut ctx.screen.write_rows_mut()[cy as usize];
     if row.data.is_empty() {
         if width == 0 {
             fatalx(|out| out.write_all(b"xmalloc: zero size"));
@@ -2668,13 +2792,12 @@ pub unsafe fn screen_write_collect_add(ctx: &mut screen_write_ctx, gc: &grid_cel
     }
     let used = ci.used;
     ci.used = used.wrapping_add(1);
-    row.data[(*s).cx.wrapping_add(used) as usize] = gc.data.data[0];
+    row.data[cx.wrapping_add(used) as usize] = gc.data.data[0];
 }
 pub unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cell) {
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
     let mut r = Vec::new();
-    let mut s: *mut screen = ctx.screen_ptr();
     let wp = write_pane;
     let ud = &gc.data;
     let mut tmp_gc: grid_cell = grid_cell {
@@ -2706,8 +2829,8 @@ pub unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cell) {
         link: 0,
     };
     let mut ttyctx = tty_ctx::default();
-    let mut sx: u_int = (*s).grid().sx;
-    let mut sy: u_int = (*s).grid().sy;
+    let mut sx: u_int = ctx.screen.grid().sx;
+    let mut sy: u_int = ctx.screen.grid().sy;
     let mut width: u_int = ud.width as u_int;
     let mut xx: u_int = 0;
     let mut not_wrap: u_int = 0;
@@ -2726,28 +2849,35 @@ pub unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cell) {
         return;
     }
     screen_write_collect_flush(ctx, 1 as ::core::ffi::c_int, "screen_write_cell");
-    if !(*s).mode & MODE_WRAP != 0
+    if !ctx.screen.mode & MODE_WRAP != 0
         && width > 1 as u_int
-        && (width > sx || (*s).cx != sx && (*s).cx > sx.wrapping_sub(width))
+        && (width > sx || ctx.screen.cx != sx && ctx.screen.cx > sx.wrapping_sub(width))
     {
         return;
     }
-    if (*s).mode & MODE_INSERT != 0 {
-        grid_view_insert_cells((*s).grid_mut(), (*s).cx, (*s).cy, width, 8 as u_int);
+    if ctx.screen.mode & MODE_INSERT != 0 {
+        let (screen_cx, screen_cy) = (ctx.screen.cx, ctx.screen.cy);
+        grid_view_insert_cells(
+            ctx.screen.grid_mut(),
+            screen_cx,
+            screen_cy,
+            width,
+            8 as u_int,
+        );
         skip = 0 as ::core::ffi::c_int;
     }
-    if (*s).mode & MODE_WRAP != 0 && (*s).cx > sx.wrapping_sub(width) {
+    if ctx.screen.mode & MODE_WRAP != 0 && ctx.screen.cx > sx.wrapping_sub(width) {
         log_debug(format_args!(
             "{}: wrapped at {},{}",
             "screen_write_cell",
-            { (*s).cx },
-            { (*s).cy }
+            { ctx.screen.cx },
+            { ctx.screen.cy }
         ));
         screen_write_linefeed(ctx, 1 as ::core::ffi::c_int, 8 as u_int);
         screen_write_set_cursor(ctx, 0 as ::core::ffi::c_int, -(1 as ::core::ffi::c_int));
         screen_write_collect_flush(ctx, 0 as ::core::ffi::c_int, "screen_write_cell");
     }
-    if (*s).cx > sx.wrapping_sub(width) || (*s).cy > sy.wrapping_sub(1 as u_int) {
+    if ctx.screen.cx > sx.wrapping_sub(width) || ctx.screen.cy > sy.wrapping_sub(1 as u_int) {
         return;
     }
     screen_write_initctx(
@@ -2756,32 +2886,40 @@ pub unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cell) {
         0 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    let gl = grid_get_line((*s).grid(), (*s).grid().hsize.wrapping_add((*s).cy));
+    let gl = grid_get_line(
+        ctx.screen.grid(),
+        ctx.screen.grid().hsize.wrapping_add(ctx.screen.cy),
+    );
     if gl.flags as ::core::ffi::c_int & GRID_LINE_EXTENDED != 0 {
-        grid_view_get_cell((*s).grid(), (*s).cx, (*s).cy, &mut now_gc);
-        if screen_write_overwrite((*s).grid_mut(), (*s).cx, (*s).cy, &now_gc, width) != 0 {
+        grid_view_get_cell(ctx.screen.grid(), ctx.screen.cx, ctx.screen.cy, &mut now_gc);
+        let (cx, cy) = (ctx.screen.cx, ctx.screen.cy);
+        if screen_write_overwrite(ctx.screen.grid_mut(), cx, cy, &now_gc, width) != 0 {
             redraw = 1 as ::core::ffi::c_int;
             skip = 0 as ::core::ffi::c_int;
         }
     }
-    xx = (*s).cx.wrapping_add(1 as u_int);
-    while xx < (*s).cx.wrapping_add(width) {
+    xx = ctx.screen.cx.wrapping_add(1 as u_int);
+    while xx < ctx.screen.cx.wrapping_add(width) {
         log_debug(format_args!(
             "{}: new padding at {},{}",
             "screen_write_cell",
             (xx) as u32,
-            { (*s).cy }
+            { ctx.screen.cy }
         ));
-        grid_view_set_padding((*s).grid_mut(), xx, (*s).cy, gc.bg);
+        let screen_cy = ctx.screen.cy;
+        grid_view_set_padding(ctx.screen.grid_mut(), xx, screen_cy, gc.bg);
         skip = 0 as ::core::ffi::c_int;
         xx = xx.wrapping_add(1);
     }
     if skip != 0 {
-        let gl = grid_get_line((*s).grid(), (*s).grid().hsize.wrapping_add((*s).cy));
-        if (*s).cx >= gl.cellsize as u_int {
+        let gl = grid_get_line(
+            ctx.screen.grid(),
+            ctx.screen.grid().hsize.wrapping_add(ctx.screen.cy),
+        );
+        if ctx.screen.cx >= gl.cellsize as u_int {
             skip = grid_cells_equal(gc, &grid_default_cell) as ::core::ffi::c_int;
         } else {
-            let gce = &gl.celldata[(*s).cx as usize];
+            let gce = &gl.celldata[ctx.screen.cx as usize];
             if gce.flags as ::core::ffi::c_int & GRID_FLAG_EXTENDED != 0
                 || (gc.flags as ::core::ffi::c_int != gce.flags as ::core::ffi::c_int)
                 || (gc.attr as ::core::ffi::c_int
@@ -2797,17 +2935,20 @@ pub unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cell) {
             }
         }
     }
-    selected = screen_check_selection(&*s, (*s).cx, (*s).cy);
+    selected = screen_check_selection(&*ctx.screen, ctx.screen.cx, ctx.screen.cy);
     if selected != 0 && !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_SELECTED != 0 {
         tmp_gc = *gc;
         tmp_gc.flags = (tmp_gc.flags as ::core::ffi::c_int | GRID_FLAG_SELECTED) as u_char;
-        grid_view_set_cell((*s).grid_mut(), (*s).cx, (*s).cy, &tmp_gc);
+        let (screen_cx, screen_cy) = (ctx.screen.cx, ctx.screen.cy);
+        grid_view_set_cell(ctx.screen.grid_mut(), screen_cx, screen_cy, &tmp_gc);
     } else if selected == 0 && gc.flags as ::core::ffi::c_int & GRID_FLAG_SELECTED != 0 {
         tmp_gc = *gc;
         tmp_gc.flags = (tmp_gc.flags as ::core::ffi::c_int & !GRID_FLAG_SELECTED) as u_char;
-        grid_view_set_cell((*s).grid_mut(), (*s).cx, (*s).cy, &tmp_gc);
+        let (screen_cx, screen_cy) = (ctx.screen.cx, ctx.screen.cy);
+        grid_view_set_cell(ctx.screen.grid_mut(), screen_cx, screen_cy, &tmp_gc);
     } else if skip == 0 {
-        grid_view_set_cell((*s).grid_mut(), (*s).cx, (*s).cy, gc);
+        let (screen_cx, screen_cy) = (ctx.screen.cx, ctx.screen.cy);
+        grid_view_set_cell(ctx.screen.grid_mut(), screen_cx, screen_cy, gc);
     }
     if selected != 0 {
         skip = 0 as ::core::ffi::c_int;
@@ -2818,16 +2959,16 @@ pub unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cell) {
     }
     WindowPane::visible_ranges(
         wp,
-        (xoff as u_int).wrapping_add((*s).cx) as ::core::ffi::c_int,
-        (*s).cy.wrapping_add(yoff as u_int) as ::core::ffi::c_int,
+        (xoff as u_int).wrapping_add(ctx.screen.cx) as ::core::ffi::c_int,
+        ctx.screen.cy.wrapping_add(yoff as u_int) as ::core::ffi::c_int,
         width,
         &mut r,
     );
-    not_wrap = ((*s).mode & MODE_WRAP == 0) as ::core::ffi::c_int as u_int;
-    if (*s).cx <= sx.wrapping_sub(not_wrap).wrapping_sub(width) {
+    not_wrap = (ctx.screen.mode & MODE_WRAP == 0) as ::core::ffi::c_int as u_int;
+    if ctx.screen.cx <= sx.wrapping_sub(not_wrap).wrapping_sub(width) {
         screen_write_set_cursor(
             ctx,
-            (*s).cx.wrapping_add(width) as ::core::ffi::c_int,
+            ctx.screen.cx.wrapping_add(width) as ::core::ffi::c_int,
             -(1 as ::core::ffi::c_int),
         );
     } else {
@@ -2837,22 +2978,22 @@ pub unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cell) {
             -(1 as ::core::ffi::c_int),
         );
     }
-    if (*s).mode & MODE_INSERT != 0 {
+    if ctx.screen.mode & MODE_INSERT != 0 {
         screen_write_collect_flush_with_ranges(ctx, 0, "screen_write_cell", &mut r);
         ttyctx.data = tty_command_data::Count(width);
-        if screen_write_should_draw_line(ctx, (*s).cy) != 0 {
-            tty_write(TtyCmd::InsertCharacter(&*s), &mut ttyctx);
+        if screen_write_should_draw_line(ctx, ctx.screen.cy) != 0 {
+            tty_write(TtyCmd::InsertCharacter(&*ctx.screen), &mut ttyctx);
         }
     }
-    if skip != 0 || screen_write_should_draw_line(ctx, (*s).cy) == 0 {
+    if skip != 0 || screen_write_should_draw_line(ctx, ctx.screen.cy) == 0 {
         return;
     }
     if redraw != 0 && wp.is_some() {
-        screen_write_redraw_line(ctx, &mut ttyctx, (*s).cy, &mut r);
+        screen_write_redraw_line(ctx, &mut ttyctx, ctx.screen.cy, &mut r);
         return;
     }
     if selected != 0 {
-        if let Some(selected) = screen_select_cell(&*s, gc) {
+        if let Some(selected) = screen_select_cell(&*ctx.screen, gc) {
             tmp_gc = selected;
         }
     } else {
@@ -2865,13 +3006,13 @@ pub unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cell) {
         i = i.wrapping_add(1);
     }
     if vis >= width {
-        if screen_write_should_draw_line(ctx, (*s).cy) != 0 {
-            tty_write(TtyCmd::Cell(&*s, &tmp_gc), &mut ttyctx);
+        if screen_write_should_draw_line(ctx, ctx.screen.cy) != 0 {
+            tty_write(TtyCmd::Cell(&*ctx.screen, &tmp_gc), &mut ttyctx);
         }
         return;
     }
     utf8_set(&mut tmp_gc.data, ' ' as i32 as u_char);
-    if screen_write_should_draw_line(ctx, (*s).cy) == 0 {
+    if screen_write_should_draw_line(ctx, ctx.screen.cy) == 0 {
         return;
     }
     i = 0 as u_int;
@@ -2882,7 +3023,7 @@ pub unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cell) {
             while n < ri.nx {
                 ttyctx.ocx =
                     (ri.px as ::core::ffi::c_int - xoff + n as ::core::ffi::c_int) as u_int;
-                tty_write(TtyCmd::Cell(&*s, &tmp_gc), &mut ttyctx);
+                tty_write(TtyCmd::Cell(&*ctx.screen, &tmp_gc), &mut ttyctx);
                 n = n.wrapping_add(1);
             }
         }
@@ -2893,13 +3034,12 @@ unsafe fn screen_write_combine(ctx: &mut screen_write_ctx, gc: &grid_cell) -> ::
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
     let mut r = Vec::new();
-    let mut s: *mut screen = ctx.screen_ptr();
     let wp = write_pane;
     let ud = &gc.data;
     let mut i: u_int = 0;
     let mut n: u_int = 0;
-    let mut cx: u_int = (*s).cx;
-    let mut cy: u_int = (*s).cy;
+    let mut cx: u_int = ctx.screen.cx;
+    let mut cy: u_int = ctx.screen.cy;
     let mut vis: u_int = 0;
     let mut last: grid_cell = grid_cell {
         data: utf8_data {
@@ -2948,10 +3088,10 @@ unsafe fn screen_write_combine(ctx: &mut screen_write_ctx, gc: &grid_cell) -> ::
         (ud.width as ::core::ffi::c_int) as u32
     ));
     n = 1 as u_int;
-    grid_view_get_cell((*s).grid(), cx.wrapping_sub(n), cy, &mut last);
+    grid_view_get_cell(ctx.screen.grid(), cx.wrapping_sub(n), cy, &mut last);
     if cx != 1 as u_int && last.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0 {
         n = 2 as u_int;
-        grid_view_get_cell((*s).grid(), cx.wrapping_sub(n), cy, &mut last);
+        grid_view_get_cell(ctx.screen.grid(), cx.wrapping_sub(n), cy, &mut last);
     }
     if n != last.data.width as u_int || last.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0 {
         return zero_width;
@@ -2999,9 +3139,14 @@ unsafe fn screen_write_combine(ctx: &mut screen_write_ctx, gc: &grid_cell) -> ::
     } else {
         force_wide = 0 as ::core::ffi::c_int;
     }
-    grid_view_set_cell((*s).grid_mut(), cx.wrapping_sub(n), cy, &last);
+    grid_view_set_cell(ctx.screen.grid_mut(), cx.wrapping_sub(n), cy, &last);
     if force_wide != 0 {
-        grid_view_set_padding((*s).grid_mut(), cx.wrapping_sub(1 as u_int), cy, last.bg);
+        grid_view_set_padding(
+            ctx.screen.grid_mut(),
+            cx.wrapping_sub(1 as u_int),
+            cy,
+            last.bg,
+        );
     }
     if let Some(wp_value) = wp {
         xoff = wp_value.geometry().2;
@@ -3038,7 +3183,7 @@ unsafe fn screen_write_combine(ctx: &mut screen_write_ctx, gc: &grid_cell) -> ::
         ttyctx.flags |= TTY_CTX_CELL_INVALIDATE;
     }
     if screen_write_should_draw_line(ctx, cy) != 0 {
-        tty_write(TtyCmd::Cell(&*s, &last), &mut ttyctx);
+        tty_write(TtyCmd::Cell(&*ctx.screen, &last), &mut ttyctx);
     }
     screen_write_set_cursor(ctx, cx as ::core::ffi::c_int, cy as ::core::ffi::c_int);
     1 as ::core::ffi::c_int
@@ -3165,7 +3310,7 @@ pub unsafe fn screen_write_alternateon(
         return;
     }
     screen_write_collect_flush(ctx, 0 as ::core::ffi::c_int, "screen_write_alternateon");
-    if screen_alternate_on(&mut *ctx.screen_ptr(), gc, cursor) == 0 {
+    if screen_alternate_on(&mut *ctx.screen, gc, cursor) == 0 {
         return;
     }
     if let Some(pane) = write_pane_owner.as_ref() {
@@ -3197,7 +3342,7 @@ pub unsafe fn screen_write_alternateoff(
         return;
     }
     screen_write_collect_flush(ctx, 0 as ::core::ffi::c_int, "screen_write_alternateoff");
-    if screen_alternate_off(&mut *ctx.screen_ptr(), Some(gc), cursor) == 0 {
+    if screen_alternate_off(&mut *ctx.screen, Some(gc), cursor) == 0 {
         return;
     }
     if let Some(pane) = write_pane_owner.as_ref() {
@@ -3229,16 +3374,14 @@ mod write_ctx_tests {
     }
 
     #[test]
-    fn restarting_a_stopped_context_releases_its_previous_callback() {
+    fn stopping_a_context_releases_its_callback() {
         unsafe {
             let mut s = screen::empty();
             s.grid = Some(crate::grid::grid_create(8, 2, 0));
-            let mut ctx = screen_write_ctx::default();
             let drops = Rc::new(Cell::new(0));
             for pass in 0..3 {
                 let owner = DropCounter(drops.clone());
-                screen_write_start_callback(
-                    &mut ctx,
+                let mut ctx = screen_write_start_callback(
                     &mut s,
                     Some(Box::new(move |_| {
                         let _ = &owner;
@@ -3248,14 +3391,13 @@ mod write_ctx_tests {
                 assert!(ctx.item.is_some());
                 assert_eq!(ctx.bg, 8);
                 screen_write_collect_add(&mut ctx, &grid_default_cell);
-                screen_write_stop(&mut ctx);
-                assert!(ctx.item.is_none());
-                assert_eq!(drops.get(), pass);
+                screen_write_stop(ctx);
+                assert_eq!(drops.get(), pass + 1);
             }
-            screen_write_start(&mut ctx, &mut s);
-            assert_eq!(drops.get(), 3);
+            let ctx = screen_write_start(&mut s);
             assert!(ctx.init_ctx_cb.is_none());
-            screen_write_stop(&mut ctx);
+            screen_write_stop(ctx);
+            assert_eq!(drops.get(), 3);
             assert_eq!(s.cx, 3);
         }
     }
@@ -3271,16 +3413,15 @@ mod write_ctx_tests {
                 ..Default::default()
             });
             let palette_observer = palette.downgrade();
-            let mut ctx = screen_write_ctx {
-                flags: SCREEN_WRITE_SYNC,
-                init_ctx_cb: Some(Box::new(move |ttyctx| {
+            let mut ctx = screen_write_start_callback(
+                &mut s,
+                Some(Box::new(move |ttyctx| {
                     ttyctx.style_ctx.defaults.fg = 7;
                     ttyctx.style_ctx.palette =
                         crate::shared::tty::PaletteSource::Popup(palette_observer.clone());
                 })),
-                ..Default::default()
-            };
-            ctx.borrow_screen(&raw mut s);
+            );
+            ctx.flags = SCREEN_WRITE_SYNC;
             let mut ttyctx = tty_ctx::default();
             screen_write_initctx(&mut ctx, &mut ttyctx, 0, 0);
             assert_eq!(
@@ -3302,6 +3443,7 @@ mod write_ctx_tests {
                 ),
                 (7, 4)
             );
+            screen_write_stop(ctx);
         }
     }
 
@@ -3313,11 +3455,8 @@ mod write_ctx_tests {
             s.cx = 3;
             s.cy = 1;
             s.rlower = 1;
-            let mut ctx = screen_write_ctx {
-                flags: SCREEN_WRITE_SYNC,
-                ..Default::default()
-            };
-            ctx.borrow_screen(&raw mut s);
+            let mut ctx = screen_write_start(&mut s);
+            ctx.flags = SCREEN_WRITE_SYNC;
             let drops = Rc::new(Cell::new(0));
             let mut ttyctx = tty_ctx::default();
             for reset in 1..=3 {
@@ -3339,6 +3478,7 @@ mod write_ctx_tests {
                 ));
                 assert!(ttyctx.set_client_cb.is_none());
             }
+            screen_write_stop(ctx);
         }
     }
 }
@@ -3423,26 +3563,27 @@ mod write_row_tests {
                 item.bg = index as u_int;
                 row.items.push_back(item);
             }
-            let mut ctx = screen_write_ctx::default();
-            ctx.borrow_screen(&raw mut s);
+            let mut ctx = screen_write_start(&mut s);
             screen_write_collect_scroll(&mut ctx, 99);
             allocations[1..=3].rotate_left(1);
             for (index, &expected) in [0, 2, 3, 99, 4].iter().enumerate() {
-                let row = &mut s.write_rows_mut()[index];
+                let row = &mut ctx.screen.write_rows_mut()[index];
                 assert_eq!(row.data.as_ptr(), allocations[index]);
                 let item = row.items.front().unwrap();
                 assert_eq!(item.bg, expected);
                 assert!(row.items.get(1).is_none());
             }
-            assert_eq!(s.write_rows()[3].data[0], b'B');
-            let item = s.write_rows()[3].items.front().unwrap();
+            assert_eq!(ctx.screen.write_rows()[3].data[0], b'B');
+            let item = ctx.screen.write_rows()[3].items.front().unwrap();
             assert_eq!((item.x, item.used, item.type_0), (0, 4, CLEAR));
 
-            s.rupper = 2;
-            s.rlower = 2;
+            ctx.screen.rupper = 2;
+            ctx.screen.rlower = 2;
             screen_write_collect_scroll(&mut ctx, 100);
-            assert_eq!(s.write_rows()[2].data.as_ptr(), allocations[2]);
-            assert_eq!(s.write_rows()[2].items.front().unwrap().bg, 100);
+            assert_eq!(ctx.screen.write_rows()[2].data.as_ptr(), allocations[2]);
+            assert_eq!(ctx.screen.write_rows()[2].items.front().unwrap().bg, 100);
+
+            screen_write_stop(ctx);
 
             crate::screen::screen_resize(&mut s, 6, 3, 0);
             assert_eq!(s.write_rows().len(), 3);
@@ -3477,19 +3618,17 @@ mod write_row_tests {
                 row.data.resize_with(4, || b'A' + y as u8);
                 pointers.push(row.data.as_ptr());
             }
-            let mut ctx: screen_write_ctx = Default::default();
-            ctx.borrow_screen(&raw mut s);
+            let mut ctx = screen_write_start(&mut s);
             for _ in 0..4 {
                 screen_write_collect_scroll(&mut ctx, 8);
                 pointers.rotate_left(1);
                 for (y, pointer) in pointers.iter().enumerate() {
-                    assert_eq!(s.write_rows()[y].data.as_ptr(), *pointer);
+                    assert_eq!(ctx.screen.write_rows()[y].data.as_ptr(), *pointer);
                 }
             }
-            screen_write_recycle_items(&mut s.write_rows_mut()[0].items);
-            ctx.item = Some(screen_write_get_citem());
+            screen_write_recycle_items(&mut ctx.screen.write_rows_mut()[0].items);
             for (x, used, wrapped) in [(0, 10, 1), (3, 3, 0)] {
-                let item = screen_write_current_item(&mut ctx);
+                let item = screen_write_current_item(&mut ctx.item);
                 item.x = x;
                 item.used = used;
                 item.wrapped = wrapped;
@@ -3497,12 +3636,12 @@ mod write_row_tests {
             }
             let mut intervals = Vec::new();
             let mut index = 0;
-            while let Some(item) = s.write_rows()[0].items.get(index) {
+            while let Some(item) = ctx.screen.write_rows()[0].items.get(index) {
                 intervals.push((item.x, item.used, item.wrapped));
                 index += 1;
             }
             assert_eq!(intervals, [(0, 3, 1), (3, 3, 0), (6, 4, 0)]);
-            let items = &mut s.write_rows_mut()[0].items;
+            let items = &mut ctx.screen.write_rows_mut()[0].items;
             let (tail, wrapped) = screen_write_collect_trim(items, 0, 8);
             assert!(wrapped);
             assert_eq!(
@@ -3516,7 +3655,7 @@ mod write_row_tests {
             );
             screen_write_collect_trim(items, 0, 20);
             assert!(items.is_empty());
-            screen_write_free_citem(ctx.item.take().unwrap());
+            screen_write_stop(ctx);
             screen_write_free_list(&mut s);
             assert!(s.write_list.is_none());
         }

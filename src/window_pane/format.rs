@@ -503,19 +503,25 @@ unsafe fn format_cb_cursor_character(mut ft: *mut format_tree) -> Option<CString
     value
 }
 
+/// Display state of the format pane's displayed screen, copied out of its owner.
+unsafe fn format_pane_screen_mode(
+    format_pane: *mut window_pane,
+) -> Option<crate::shared::screen::ScreenMode> {
+    format_pane
+        .as_ref()?
+        .with_screen(|screen| crate::shared::screen::ScreenMode::from(screen))
+}
+
 unsafe fn format_cb_cursor_colour(mut ft: *mut format_tree) -> Option<CString> {
     let format_pane_owner = (*ft).wp.upgrade();
     let format_pane = format_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wp: *mut window_pane = format_pane;
-    if wp.is_null() || (*wp).screen_ptr().is_null() {
-        return None;
+    let screen = format_pane_screen_mode(format_pane)?;
+    if screen.ccolour != -(1 as ::core::ffi::c_int) {
+        return Some(colour_format(screen.ccolour));
     }
-    if (*(*wp).screen_ptr()).ccolour != -(1 as ::core::ffi::c_int) {
-        return Some(colour_format((*(*wp).screen_ptr()).ccolour));
-    }
-    Some(colour_format((*(*wp).screen_ptr()).default_ccolour))
+    Some(colour_format(screen.default_ccolour))
 }
 
 unsafe fn format_cb_alternate_on(mut ft: *mut format_tree) -> Option<CString> {
@@ -565,8 +571,8 @@ unsafe fn format_cb_bracket_paste_flag(mut ft: *mut format_tree) -> Option<CStri
     let format_pane = format_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_pane.is_null() && !(*format_pane).screen_ptr().is_null() {
-        if (*(*format_pane).screen_ptr()).mode & MODE_BRACKETPASTE != 0 {
+    if let Some(screen) = format_pane_screen_mode(format_pane) {
+        if screen.mode & MODE_BRACKETPASTE != 0 {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());
@@ -593,8 +599,8 @@ unsafe fn format_cb_cursor_shape(mut ft: *mut format_tree) -> Option<CString> {
     let format_pane = format_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_pane.is_null() && !(*format_pane).screen_ptr().is_null() {
-        match (*(*format_pane).screen_ptr()).cstyle as ::core::ffi::c_uint {
+    if let Some(screen) = format_pane_screen_mode(format_pane) {
+        match screen.cstyle as ::core::ffi::c_uint {
             1 => {
                 return Some(c"block".to_owned());
             }
@@ -617,8 +623,8 @@ unsafe fn format_cb_cursor_very_visible(mut ft: *mut format_tree) -> Option<CStr
     let format_pane = format_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_pane.is_null() && !(*format_pane).screen_ptr().is_null() {
-        if (*(*format_pane).screen_ptr()).mode & MODE_CURSOR_VERY_VISIBLE != 0 {
+    if let Some(screen) = format_pane_screen_mode(format_pane) {
+        if screen.mode & MODE_CURSOR_VERY_VISIBLE != 0 {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());
@@ -659,8 +665,8 @@ unsafe fn format_cb_cursor_blinking(mut ft: *mut format_tree) -> Option<CString>
     let format_pane = format_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_pane.is_null() && !(*format_pane).screen_ptr().is_null() {
-        if (*(*format_pane).screen_ptr()).mode & MODE_CURSOR_BLINKING != 0 {
+    if let Some(screen) = format_pane_screen_mode(format_pane) {
+        if screen.mode & MODE_CURSOR_BLINKING != 0 {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());
@@ -1322,8 +1328,8 @@ unsafe fn format_cb_pane_key_mode(mut ft: *mut format_tree) -> Option<CString> {
     let format_pane = format_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_pane.is_null() && !(*format_pane).screen_ptr().is_null() {
-        match (*(*format_pane).screen_ptr()).mode & EXTENDED_KEY_MODES {
+    if let Some(screen) = format_pane_screen_mode(format_pane) {
+        match screen.mode & EXTENDED_KEY_MODES {
             MODE_KEYS_EXTENDED => {
                 return Some(c"Ext 1".to_owned());
             }
@@ -1706,9 +1712,11 @@ unsafe fn mouse_value(
     let row = grid.hsize.wrapping_add(y);
     match key.to_bytes() {
         b"mouse_word" => crate::format::format_grid_word_cstring(grid, x, row),
-        b"mouse_hyperlink" => {
-            crate::format::format_grid_hyperlink_cstring(grid, x, row, &*pane.screen_ptr())
-        }
+        b"mouse_hyperlink" => pane
+            .with_screen(|screen| {
+                crate::format::format_grid_hyperlink_cstring(grid, x, row, screen)
+            })
+            .flatten(),
         b"mouse_line" => crate::format::format_grid_line_cstring(grid, row),
         _ => None,
     }
