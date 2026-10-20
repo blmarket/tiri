@@ -1,5 +1,4 @@
 use crate::compat::strtonum::strtonum;
-use crate::ffi::libm::round;
 use crate::format::bytes::cstr_suffix;
 use crate::log::log_cstr;
 use crate::options::OptionsScope;
@@ -3465,7 +3464,7 @@ unsafe fn colour_byname_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
         if parsed.is_err() {
             return -(1 as ::core::ffi::c_int);
         }
-        c = round(2.55f64 * c as ::core::ffi::c_double) as ::core::ffi::c_int;
+        c = (2.55f64 * c as ::core::ffi::c_double).round() as ::core::ffi::c_int;
         if c < 0 as ::core::ffi::c_int || c > 255 as ::core::ffi::c_int {
             return -(1 as ::core::ffi::c_int);
         }

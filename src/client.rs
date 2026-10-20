@@ -7,7 +7,7 @@ use crate::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE, PROTOCOL_VERSION};
 #[cfg(target_os = "linux")]
 use crate::compat::systemd::systemd_activated;
 use crate::control::control_wait_exit;
-use crate::ffi::libc::{environ, stderr, stdout};
+use crate::ffi::libc::environ;
 use crate::file::{
     file_read_cancel, file_read_open, file_write_close, file_write_data, file_write_left,
     file_write_open,
@@ -41,13 +41,12 @@ use crate::tmux::{
 };
 use crate::tty::tty_term_read_list;
 use libc::{
-    cfgetispeed, cfgetospeed, cfmakeraw, cfsetispeed, cfsetospeed, execl, fflush, fprintf, getenv,
-    getppid, kill, memset, printf, setenv, sigaction, sigemptyset, strlen, strsignal, system,
-    unlink, waitpid,
+    cfgetispeed, cfgetospeed, cfmakeraw, cfsetispeed, cfsetospeed, execl, getenv, getppid, kill,
+    memset, setenv, sigaction, sigemptyset, strlen, strsignal, system, unlink, waitpid,
 };
 use libc::{EAGAIN, ECHILD, ENAMETOOLONG, ENOENT};
 use std::ffi::{CStr, CString, OsStr};
-use std::io;
+use std::io::{self, Write as _};
 use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
 use tiri_rt::Runtime as _;
@@ -252,19 +251,25 @@ pub unsafe fn client_main(
             Ok(fd) => fd,
             Err(error) => {
                 if error.raw_os_error() == Some(ECONNREFUSED) {
-                    fprintf(
-                        stderr,
-                        c"no server running on %s\n".as_ptr(),
-                        socket_path_cstr().as_ptr(),
+                    let _ = io::stderr().write_all(
+                        &[
+                            b"no server running on ",
+                            socket_path_cstr().to_bytes(),
+                            b"\n",
+                        ]
+                        .concat(),
                     );
                 } else {
-                    let reason = CString::new(ErrorText(&error).to_string())
-                        .expect("strerror text contains no NUL");
-                    fprintf(
-                        stderr,
-                        c"error connecting to %s (%s)\n".as_ptr(),
-                        socket_path_cstr().as_ptr(),
-                        reason.as_ptr(),
+                    let reason = ErrorText(&error).to_string();
+                    let _ = io::stderr().write_all(
+                        &[
+                            b"error connecting to ",
+                            socket_path_cstr().to_bytes(),
+                            b" (",
+                            reason.as_bytes(),
+                            b")\n",
+                        ]
+                        .concat(),
                     );
                 }
                 return 1;
@@ -298,7 +303,7 @@ pub unsafe fn client_main(
             match tty_term_read_list(termname) {
                 Ok(read_caps) => caps = read_caps,
                 Err(cause) => {
-                    fprintf(stderr, c"%s\n".as_ptr(), cause.as_ptr());
+                    let _ = io::stderr().write_all(&[cause.as_bytes(), b"\n"].concat());
                     return 1 as ::core::ffi::c_int;
                 }
             }
@@ -310,9 +315,7 @@ pub unsafe fn client_main(
             saved_tio = match crate::shared::terminal::read_attributes(STDIN_FILENO) {
                 Ok(attributes) => attributes,
                 Err(error) => {
-                    let reason = CString::new(ErrorText(&error).to_string())
-                        .expect("strerror text contains no NUL");
-                    fprintf(stderr, c"tcgetattr failed: %s\n".as_ptr(), reason.as_ptr());
+                    eprintln!("tcgetattr failed: {}", ErrorText(&error));
                     return 1 as ::core::ffi::c_int;
                 }
             };
@@ -338,7 +341,7 @@ pub unsafe fn client_main(
                 > (MAX_IMSGSIZE as usize)
                     .wrapping_sub(::core::mem::size_of::<msg_command>() as usize)
             {
-                fprintf(stderr, c"command too long\n".as_ptr());
+                eprintln!("command too long");
                 return 1 as ::core::ffi::c_int;
             }
             const _: () = assert!(
@@ -355,11 +358,11 @@ pub unsafe fn client_main(
                 size,
             ) != 0 as ::core::ffi::c_int
             {
-                fprintf(stderr, c"command too long\n".as_ptr());
+                eprintln!("command too long");
                 return 1 as ::core::ffi::c_int;
             }
             if proc_send(client_peer, msg, None, &data) != 0 as ::core::ffi::c_int {
-                fprintf(stderr, c"failed to send command\n".as_ptr());
+                eprintln!("failed to send command");
                 return 1 as ::core::ffi::c_int;
             }
         } else if msg as ::core::ffi::c_uint
@@ -384,7 +387,8 @@ pub unsafe fn client_main(
             if client_exitreason as ::core::ffi::c_uint
                 != CLIENT_EXIT_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                printf(c"[%s]\n".as_ptr(), client_exit_message().as_ptr());
+                let _ = io::stdout()
+                    .write_all(&[b"[", client_exit_message().as_bytes(), b"]\n"].concat());
             }
             ppid = getppid() as pid_t;
             if client_exittype as ::core::ffi::c_uint
@@ -397,24 +401,25 @@ pub unsafe fn client_main(
             if client_exitreason as ::core::ffi::c_uint
                 != CLIENT_EXIT_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                printf(c"%%exit %s\n".as_ptr(), client_exit_message().as_ptr());
+                let _ = io::stdout()
+                    .write_all(&[b"%exit ", client_exit_message().as_bytes(), b"\n"].concat());
             } else {
-                printf(c"%%exit\n".as_ptr());
+                let _ = io::stdout().write_all(b"%exit\n");
             }
-            fflush(stdout);
+            let _ = io::stdout().flush();
             if client_flags as ::core::ffi::c_ulonglong & CLIENT_CONTROL_WAITEXIT != 0 {
                 control_wait_exit();
             }
             if client_flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {
-                printf(c"\x1B\\".as_ptr());
-                fflush(stdout);
+                let _ = io::stdout().write_all(b"\x1b\\");
+                let _ = io::stdout().flush();
                 let _ =
                     crate::shared::terminal::set_attributes(STDOUT_FILENO, TCSAFLUSH, &saved_tio);
             }
         } else if client_exitreason as ::core::ffi::c_uint
             != CLIENT_EXIT_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            fprintf(stderr, c"%s\n".as_ptr(), client_exit_message().as_ptr());
+            let _ = io::stderr().write_all(&[client_exit_message().as_bytes(), b"\n"].concat());
         }
         setblocking(STDIN_FILENO, 1 as ::core::ffi::c_int);
         setblocking(STDOUT_FILENO, 1 as ::core::ffi::c_int);
@@ -665,9 +670,8 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
             if datalen != 0 as ssize_t {
                 fatalx(|out| out.write_all(b"bad MSG_VERSION size"));
             }
-            fprintf(
-                stderr,
-                c"protocol version mismatch (client %d, server %u)\n".as_ptr(),
+            eprintln!(
+                "protocol version mismatch (client {}, server {})",
                 PROTOCOL_VERSION,
                 imsg.hdr.peerid & 0xff as uint32_t,
             );
@@ -725,7 +729,7 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
             file_write_close(imsg);
         }
         MSG_STDERR | MSG_STDIN | MSG_STDOUT => {
-            fprintf(stderr, c"server version is too old for client\n".as_ptr());
+            eprintln!("server version is too old for client");
             proc_exit(client_proc);
         }
         _ => {

@@ -2,7 +2,6 @@
 //! after any preceding grammar actions have updated the application environment.
 use super::{ParseSession, RefCell};
 use crate::environ::environ_find;
-use crate::ffi::libc::wctomb;
 use crate::shared::stdio::EOF;
 use crate::tmux::global_environ;
 use libc::{getpwnam, getpwuid, getuid};
@@ -373,12 +372,11 @@ impl<'a, 'input> Lexer<'a, 'input> {
                         .ok_or(LexError::InvalidUnicode(ch as u8))?;
                     value = (value << 4) | digit;
                 }
-                let mut encoded = [0 as c_char; 16];
-                let len = unsafe { wctomb(encoded.as_mut_ptr(), value as libc::wchar_t) };
-                if len <= 0 || len as usize > encoded.len() {
-                    return Err(LexError::InvalidUnicode(ch as u8));
-                }
-                bytes.extend(encoded[..len as usize].iter().map(|&b| b as u8));
+                let mut encoded = [0u8; 4];
+                let encoded = char::from_u32(value)
+                    .ok_or(LexError::InvalidUnicode(ch as u8))?
+                    .encode_utf8(&mut encoded);
+                bytes.extend_from_slice(encoded.as_bytes());
                 return Ok(());
             }
             _ => ch as u8,
@@ -539,7 +537,7 @@ mod tests {
             input: &mut input,
             error: None,
         });
-        let source = b"one\" two\"' three' \\141\\000ignored;{ x } # comment\r\n%if #{?#{x},1,0}\n%elif 0\n%else\n%endif\n%hidden VAR=yes\n%12 %% \\u0041 \\U00000042\n";
+        let source = b"one\" two\"' three' \\141\\000ignored;{ x } # comment\r\n%if #{?#{x},1,0}\n%elif 0\n%else\n%endif\n%hidden VAR=yes\n%12 %% \\u0041 \\U00000042 \\U0001F600\n";
         let actual = scan(Lexer::from_bytes(source, &session));
         let expected: &[(&str, &[u8])] = &[
             ("word", b"one two three"),
@@ -566,6 +564,7 @@ mod tests {
             ("word", b"%%"),
             ("word", b"A"),
             ("word", b"B"),
+            ("word", "\u{1F600}".as_bytes()),
             ("Newline", b""),
             ("Newline", b""),
         ];
@@ -611,6 +610,8 @@ mod tests {
             (b"\\12", b"invalid octal escape"),
             (b"\\uQ000", b"invalid \\u argument"),
             (b"\\UQ0000000", b"invalid \\U argument"),
+            (b"\\uD800", b"invalid \\u argument"),
+            (b"\\U00110000", b"invalid \\U argument"),
             (b"${bad-}", b"invalid environment variable"),
             (b"%unknown", b"syntax error"),
             (b"%if #{unfinished", b"syntax error"),

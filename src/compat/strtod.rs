@@ -1,5 +1,5 @@
-use crate::ffi::numbers::integer_prefix;
 use crate::format::bytes::cstr_suffix;
+use crate::text::numbers::integer_prefix;
 use std::ffi::CStr;
 
 /// glibc strtod(3) in the C locale: convert the longest prefix of `nptr` and

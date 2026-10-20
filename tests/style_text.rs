@@ -28,3 +28,19 @@ fn safe_formatting_is_independent_across_threads() {
         thread.join().unwrap();
     }
 }
+
+#[test]
+fn grey_percentages_round_half_away_from_zero() {
+    for (name, level) in [
+        (c"grey10", 26),
+        (c"grey30", 77),
+        (c"grey50", 127),
+        (c"grey70", 179),
+    ] {
+        assert_eq!(
+            colour_parse_cstr(name),
+            Some(colour_join_rgb(level, level, level)),
+            "{name:?}"
+        );
+    }
+}

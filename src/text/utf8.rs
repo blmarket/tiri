@@ -1,4 +1,4 @@
-use crate::ffi::vis::{is_alpha, vis_into};
+use crate::compat::vis::vis_into;
 use crate::log::{fatalx, log_bytes, log_debug};
 use crate::options::OptionsScope;
 use crate::shared::abi::ssize_t;
@@ -236,21 +236,11 @@ pub fn utf8_has_whitespace(ud: &utf8_data) -> ::core::ffi::c_int {
 }
 
 pub fn utf8_fromwc(wc: wchar_t, ud: &mut utf8_data) -> utf8_state {
-    let size = match crate::ffi::utf8proc::encode_cell(wc, &mut ud.data) {
-        Ok(size) => size,
-        Err(error) => {
-            log_debug(format_args!(
-                "UTF-8 {}, wctomb() {}",
-                wc,
-                error.raw_os_error().unwrap_or(0)
-            ));
-            crate::ffi::utf8proc::reset_wctomb();
-            return UTF8_ERROR;
-        }
-    };
-    if size == 0 {
+    let Some(codepoint) = char::from_u32(wc as u32) else {
+        log_debug(format_args!("UTF-8 {}: invalid codepoint", wc));
         return UTF8_ERROR;
-    }
+    };
+    let size = codepoint.encode_utf8(&mut ud.data).len();
     ud.have = size as u_char;
     ud.size = ud.have;
     if let Some(width) = utf8_width(ud) {
@@ -330,7 +320,7 @@ pub fn utf8_strvis(dst: &mut [u8], src: &[u8], flag: i32) -> usize {
         }
         let next = src.get(offset + 1).copied();
         if let Some(next) = next.filter(|_| flag & VIS_DQ != 0 && src[offset] == b'$') {
-            if is_alpha(next) || matches!(next, b'_' | b'{') {
+            if next.is_ascii_alphabetic() || matches!(next, b'_' | b'{') {
                 dst[written] = b'\\';
                 written += 1;
             }

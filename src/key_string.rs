@@ -1,4 +1,3 @@
-use crate::ffi::libc::wctomb;
 use crate::format::bytes::cstr_suffix;
 use crate::shared::abi::*;
 use crate::shared::control_character::{
@@ -8,7 +7,6 @@ use crate::shared::control_character::{
 };
 use crate::shared::grid::*;
 use crate::shared::key::*;
-use crate::shared::utf8::wchar_t;
 use crate::shared::utf8::*;
 use crate::text::utf8::{utf8_append, utf8_from_data, utf8_fromcstr_vec, utf8_open, utf8_to_data};
 use libc::sscanf;
@@ -20,7 +18,6 @@ pub struct C2RustUnnamed_1 {
     pub string: &'static CStr,
     pub key: key_code,
 }
-pub const MB_LEN_MAX: ::core::ffi::c_int = 16 as ::core::ffi::c_int;
 static key_string_table: [C2RustUnnamed_1; 1379] = [
     C2RustUnnamed_1 {
         string: c"F1",
@@ -5601,15 +5598,12 @@ fn key_string_parse_numeric(input: &CStr) -> Option<key_code> {
         return Some(value as key_code);
     }
 
-    let mut multibyte = [0u8; 17];
-    let length = unsafe { wctomb(multibyte.as_mut_ptr().cast(), value as wchar_t) };
-    if length <= 0 as ::core::ffi::c_int || length > MB_LEN_MAX {
-        return None;
-    }
-    multibyte[length as usize] = 0;
+    let mut multibyte = [0u8; 5];
+    let length = char::from_u32(value)?.encode_utf8(&mut multibyte).len();
 
-    let decoded =
-        utf8_fromcstr_vec(CStr::from_bytes_until_nul(&multibyte).expect("terminated above"));
+    let decoded = utf8_fromcstr_vec(
+        CStr::from_bytes_with_nul(&multibyte[..=length]).expect("terminated by the spare byte"),
+    );
     let mut codepoint: utf8_char = 0;
     let valid = decoded[0].size as ::core::ffi::c_int != 0 as ::core::ffi::c_int
         && decoded[1].size as ::core::ffi::c_int == 0 as ::core::ffi::c_int

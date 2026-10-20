@@ -12,7 +12,7 @@ use crate::compat::fdforkpty::getptmfd;
 use crate::compat::getopt_long::{BSDgetopt, BSDoptarg, BSDoptind};
 use crate::compat::getprogname::getprogname;
 use crate::environ::{environ_create, environ_find, environ_put, environ_set};
-use crate::ffi::libc::{environ, err, errx, stderr, stdout, tzset};
+use crate::ffi::libc::{environ, tzset};
 use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
 use crate::log::{log_add_level, log_cstr, log_debug};
@@ -36,12 +36,13 @@ use crate::text::utf8::{utf8_isvalid, utf8_stravis_cstring};
 use crate::tty::tty_parse_features;
 use ::libc::nl_item;
 use libc::{
-    access, clock_gettime, exit, fprintf, getenv, getpwuid, getuid, nl_langinfo, printf, setlocale,
-    strcasecmp, strcasestr, strcmp, strrchr, strstr,
+    access, clock_gettime, exit, getenv, getpwuid, getuid, nl_langinfo, setlocale, strcasecmp,
+    strcasestr, strcmp, strrchr, strstr,
 };
 use std::ffi::{CStr, CString, OsStr};
+use std::fmt;
 use std::fs;
-use std::io;
+use std::io::{self, Write as _};
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::fs::{DirBuilderExt, MetadataExt};
 use std::path::{Path, PathBuf};
@@ -60,13 +61,27 @@ pub static mut shell_command: Option<CString> = None;
 pub unsafe fn socket_path_cstr() -> &'static CStr {
     socket_path.as_deref().expect("socket path is set")
 }
-unsafe fn usage(mut status: ::core::ffi::c_int) -> ! {
-    fprintf(
-        if status != 0 { stderr } else { stdout },
-        c"usage: %s [-2CDhlNuVv] [-c shell-command] [-f file] [-L socket-name]\n            [-S socket-path] [-T features] [command [flags]]\n".as_ptr(),
-        getprogname().as_ptr(),
-    );
-    exit(status);
+fn usage(status: i32) -> ! {
+    let message = [
+        b"usage: ".as_slice(),
+        getprogname().to_bytes(),
+        b" [-2CDhlNuVv] [-c shell-command] [-f file] [-L socket-name]\n            [-S socket-path] [-T features] [command [flags]]\n",
+    ]
+    .concat();
+    let _ = if status != 0 {
+        io::stderr().write_all(&message)
+    } else {
+        io::stdout().write_all(&message)
+    };
+    std::process::exit(status);
+}
+
+/// Print `progname: message` to stderr and exit, as errx(3) does.
+fn die(status: i32, message: fmt::Arguments<'_>) -> ! {
+    let mut stderr = io::stderr().lock();
+    let _ = stderr.write_all(getprogname().to_bytes());
+    let _ = writeln!(stderr, ": {message}");
+    std::process::exit(status);
 }
 unsafe fn getshell() -> CString {
     let shell = nullable_cstr(getenv(c"SHELL".as_ptr()));
@@ -380,19 +395,18 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
         && setlocale(LC_CTYPE, c"C.UTF-8".as_ptr()).is_null()
     {
         if setlocale(LC_CTYPE, c"".as_ptr()).is_null() {
-            errx(
-                1 as ::core::ffi::c_int,
-                c"invalid LC_ALL, LC_CTYPE or LANG".as_ptr(),
-            );
+            die(1, format_args!("invalid LC_ALL, LC_CTYPE or LANG"));
         }
         s = nl_langinfo(CODESET as ::core::ffi::c_int as nl_item);
         if strcasecmp(s, c"UTF-8".as_ptr()) != 0 as ::core::ffi::c_int
             && strcasecmp(s, c"UTF8".as_ptr()) != 0 as ::core::ffi::c_int
         {
-            errx(
-                1 as ::core::ffi::c_int,
-                c"need UTF-8 locale (LC_CTYPE) but have %s".as_ptr(),
-                s,
+            die(
+                1,
+                format_args!(
+                    "need UTF-8 locale (LC_CTYPE) but have {}",
+                    CStr::from_ptr(s).to_string_lossy()
+                ),
             );
         }
     }
@@ -451,11 +465,12 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
                 cfg_quiet = 0 as ::core::ffi::c_int;
             }
             104 => {
-                usage(0 as ::core::ffi::c_int);
+                usage(0);
             }
             86 => {
-                printf(c"tmux %s\n".as_ptr(), getversion().as_ptr());
-                exit(0 as ::core::ffi::c_int);
+                let _ =
+                    io::stdout().write_all(&[b"tmux ", getversion().to_bytes(), b"\n"].concat());
+                std::process::exit(0);
             }
             108 => {
                 flags |= CLIENT_LOGIN as uint64_t;
@@ -480,7 +495,7 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
                 log_add_level();
             }
             _ => {
-                usage(1 as ::core::ffi::c_int);
+                usage(1);
             }
         }
     }
@@ -488,17 +503,15 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
     argc -= BSDoptind;
     argv = argv.offset(BSDoptind as isize);
     if shell_command.is_some() && argc != 0 as ::core::ffi::c_int {
-        usage(1 as ::core::ffi::c_int);
+        usage(1);
     }
     if flags & CLIENT_NOFORK as uint64_t != 0 && argc != 0 as ::core::ffi::c_int {
-        usage(1 as ::core::ffi::c_int);
+        usage(1);
     }
     ptm_fd = getptmfd();
     if ptm_fd == -(1 as ::core::ffi::c_int) {
-        err(1 as ::core::ffi::c_int, c"getptmfd".as_ptr());
-    }
-    if 0 as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
-        err(1 as ::core::ffi::c_int, c"pledge".as_ptr());
+        let error = io::Error::last_os_error();
+        die(1, format_args!("getptmfd: {}", ErrorText(&error)));
     }
     if !getenv(c"TMUX".as_ptr()).is_null() {
         flags |= CLIENT_UTF8 as uint64_t;
@@ -580,7 +593,7 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
         path = Some(match make_label(label) {
             Ok(path) => path,
             Err(cause) => {
-                fprintf(stderr, c"%s\n".as_ptr(), cause.as_ptr());
+                let _ = io::stderr().write_all(&[cause.as_bytes(), b"\n"].concat());
                 drop(cause);
                 exit(1 as ::core::ffi::c_int);
             }

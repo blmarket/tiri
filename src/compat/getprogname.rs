@@ -1,8 +1,17 @@
-#[cfg(target_os = "linux")]
-pub unsafe fn getprogname() -> &'static std::ffi::CStr {
-    std::ffi::CStr::from_ptr(crate::ffi::libc::program_invocation_short_name)
-}
-#[cfg(not(target_os = "linux"))]
-pub fn getprogname() -> &'static std::ffi::CStr {
-    std::ffi::CStr::from_ptr(::libc::getprogname())
+use std::ffi::{CStr, CString};
+use std::os::unix::ffi::OsStrExt;
+use std::sync::OnceLock;
+
+/// The final path component of argv[0], as glibc's short invocation name
+/// and BSD getprogname report it.
+pub fn getprogname() -> &'static CStr {
+    static PROGNAME: OnceLock<Option<CString>> = OnceLock::new();
+    PROGNAME
+        .get_or_init(|| {
+            let argv0 = std::env::args_os().next()?;
+            let name = argv0.as_bytes().rsplit(|&byte| byte == b'/').next()?;
+            CString::new(name).ok()
+        })
+        .as_deref()
+        .unwrap_or(c"tiri")
 }

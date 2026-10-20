@@ -6,7 +6,6 @@ use crate::cmd::queue::{
 };
 use crate::compat::strtonum::strtonum;
 use crate::environ::{environ_find, environ_iter};
-use crate::ffi::libm::{fabs, fmod};
 use crate::ffi::regex::RegexStorage;
 use crate::format::bytes::format_message_with;
 use crate::format::bytes::write_cstr;

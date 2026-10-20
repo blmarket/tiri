@@ -1,8 +1,8 @@
 //! Parse codepoint-width overrides without raw pointers or global decoder flags.
 #![forbid(unsafe_code)]
 
-use crate::ffi::numbers::{decimal_in_range, hexadecimal_prefix};
 use crate::shared::utf8::wchar_t;
+use crate::text::numbers::{decimal_in_range, hexadecimal_prefix};
 use crate::text::utf8_decode::{decode_utf8, DecodeResult};
 use std::ffi::CStr;
 use std::ops::RangeInclusive;

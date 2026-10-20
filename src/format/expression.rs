@@ -1537,15 +1537,15 @@ pub(super) unsafe fn format_replace_expression(
                                         result = mleft / mright;
                                     }
                                     4 => {
-                                        result = fmod(mleft, mright);
+                                        result = mleft % mright;
                                     }
                                     5 => {
-                                        result = (fabs(mleft - mright) < 1e-9f64)
+                                        result = ((mleft - mright).abs() < 1e-9f64)
                                             as ::core::ffi::c_int
                                             as ::core::ffi::c_double;
                                     }
                                     6 => {
-                                        result = (fabs(mleft - mright) > 1e-9f64)
+                                        result = ((mleft - mright).abs() > 1e-9f64)
                                             as ::core::ffi::c_int
                                             as ::core::ffi::c_double;
                                     }

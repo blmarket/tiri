@@ -21,7 +21,7 @@ pub unsafe fn vis(
                 == 0 as ::core::ffi::c_int
             && (c != '*' as i32 && c != '?' as i32 && c != '[' as i32 && c != '#' as i32
                 || flag & VIS_GLOB == 0 as ::core::ffi::c_int)
-            && ::libc::isgraph(c as u_char as ::core::ffi::c_int) != 0
+            && (c as u_char).is_ascii_graphic()
             || flag & VIS_SP == 0 as ::core::ffi::c_int && c == ' ' as i32
             || flag & VIS_TAB == 0 as ::core::ffi::c_int && c == '\t' as i32
             || flag & VIS_NL == 0 as ::core::ffi::c_int && c == '\n' as i32
@@ -29,7 +29,7 @@ pub unsafe fn vis(
                 && (c == '\u{8}' as i32
                     || c == '\u{7}' as i32
                     || c == '\r' as i32
-                    || ::libc::isgraph(c as u_char as ::core::ffi::c_int) != 0))
+                    || (c as u_char).is_ascii_graphic()))
     {
         if c == '"' as i32 && flag & VIS_DQ != 0 as ::core::ffi::c_int
             || c == '\\' as i32 && flag & VIS_NOSLASH == 0 as ::core::ffi::c_int
@@ -955,7 +955,7 @@ pub unsafe fn strnvis(
                     == 0 as ::core::ffi::c_int
                 && (c != '*' as i32 && c != '?' as i32 && c != '[' as i32 && c != '#' as i32
                     || flag & VIS_GLOB == 0 as ::core::ffi::c_int)
-                && ::libc::isgraph(c as u_char as ::core::ffi::c_int) != 0
+                && (c as u_char).is_ascii_graphic()
                 || flag & VIS_SP == 0 as ::core::ffi::c_int && c == ' ' as i32
                 || flag & VIS_TAB == 0 as ::core::ffi::c_int && c == '\t' as i32
                 || flag & VIS_NL == 0 as ::core::ffi::c_int && c == '\n' as i32
@@ -963,7 +963,7 @@ pub unsafe fn strnvis(
                     && (c == '\u{8}' as i32
                         || c == '\u{7}' as i32
                         || c == '\r' as i32
-                        || ::libc::isgraph(c as u_char as ::core::ffi::c_int) != 0))
+                        || (c as u_char).is_ascii_graphic()))
         {
             if c == '"' as i32 && flag & VIS_DQ != 0 as ::core::ffi::c_int
                 || c == '\\' as i32 && flag & VIS_NOSLASH == 0 as ::core::ffi::c_int
@@ -1040,6 +1040,21 @@ pub(crate) fn stravis_cstring(src: &std::ffi::CStr, flag: ::core::ffi::c_int) ->
     let escaped_len = unsafe { strvis(buffer.as_mut_ptr().cast(), src.as_ptr(), flag) } as usize;
     buffer.truncate(escaped_len + 1);
     std::ffi::CString::from_vec_with_nul(buffer).expect("vis output contains no interior NUL")
+}
+
+/// vis writes at most four encoded bytes plus its trailing NUL.
+pub(crate) fn vis_into(output: &mut [u8], byte: u8, flags: i32, next: u8) -> usize {
+    assert!(output.len() >= 5, "vis needs four bytes plus a terminator");
+    unsafe {
+        let start = output.as_mut_ptr().cast::<::core::ffi::c_char>();
+        let end = vis(
+            start,
+            byte as ::core::ffi::c_char as i32,
+            flags,
+            next as ::core::ffi::c_char as i32,
+        );
+        end.offset_from(start) as usize
+    }
 }
 
 #[cfg(test)]

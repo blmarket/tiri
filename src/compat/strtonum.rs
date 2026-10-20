@@ -1,4 +1,4 @@
-use crate::ffi::numbers::integer_prefix;
+use crate::text::numbers::integer_prefix;
 use std::ffi::CStr;
 
 /// OpenBSD strtonum(3): the whole string must be one decimal integer within
