@@ -13,7 +13,16 @@ extern "C" {
     pub fn utf8proc_version() -> *const ::core::ffi::c_char;
 }
 
-/// Terminal width of a codepoint; utf8proc only looks it up in static tables.
+const UTF8PROC_CATEGORY_CO: utf8proc_category_t = 29;
+
+/// Terminal width of a codepoint, with private-use codepoints one cell wide
+/// as tmux's `utf8proc_wcwidth` has them.
 pub(crate) fn codepoint_width(codepoint: crate::shared::utf8::wchar_t) -> i32 {
-    unsafe { crate::compat::utf8proc::utf8proc_wcwidth(codepoint) }
+    // SAFETY: utf8proc only looks the codepoint up in static tables.
+    unsafe {
+        if utf8proc_category(codepoint as utf8proc_int32_t) == UTF8PROC_CATEGORY_CO {
+            return 1;
+        }
+        utf8proc_charwidth(codepoint as utf8proc_int32_t)
+    }
 }

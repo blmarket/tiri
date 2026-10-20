@@ -1,1071 +1,286 @@
-use crate::shared::abi::*;
-use crate::shared::limits::UCHAR_MAX;
-use crate::shared::vis::{VIS_CSTYLE, VIS_DQ, VIS_NL, VIS_NOSLASH, VIS_OCTAL, VIS_SAFE, VIS_TAB};
-use libc::memcpy;
+//! OpenBSD vis(3) over bytes. Each source byte is escaped as `vis` escapes
+//! it; the string forms stop at the first NUL, as the C loops did.
 
-pub const VIS_SP: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
+use crate::shared::vis::{
+    VIS_ALL, VIS_CSTYLE, VIS_DQ, VIS_GLOB, VIS_NL, VIS_NOSLASH, VIS_OCTAL, VIS_SAFE, VIS_SP,
+    VIS_TAB,
+};
 
-pub const VIS_ALL: ::core::ffi::c_int = 0x400 as ::core::ffi::c_int;
+/// The at most four bytes `vis` writes for one source byte.
+pub struct VisBytes {
+    len: u8,
+    bytes: [u8; 4],
+}
 
-pub const VIS_GLOB: ::core::ffi::c_int = 0x100 as ::core::ffi::c_int;
-pub unsafe fn vis(
-    mut dst: *mut ::core::ffi::c_char,
-    mut c: ::core::ffi::c_int,
-    mut flag: ::core::ffi::c_int,
-    mut nextc: ::core::ffi::c_int,
-) -> *mut ::core::ffi::c_char {
-    let mut current_block: u64;
-    if (c == '\\' as i32 || flag & VIS_ALL == 0 as ::core::ffi::c_int)
-        && (c as u_int <= UCHAR_MAX as u_int
-            && c as u_char as ::core::ffi::c_int & !(0x7f as ::core::ffi::c_int)
-                == 0 as ::core::ffi::c_int
-            && (c != '*' as i32 && c != '?' as i32 && c != '[' as i32 && c != '#' as i32
-                || flag & VIS_GLOB == 0 as ::core::ffi::c_int)
-            && (c as u_char).is_ascii_graphic()
-            || flag & VIS_SP == 0 as ::core::ffi::c_int && c == ' ' as i32
-            || flag & VIS_TAB == 0 as ::core::ffi::c_int && c == '\t' as i32
-            || flag & VIS_NL == 0 as ::core::ffi::c_int && c == '\n' as i32
-            || flag & VIS_SAFE != 0
-                && (c == '\u{8}' as i32
-                    || c == '\u{7}' as i32
-                    || c == '\r' as i32
-                    || (c as u_char).is_ascii_graphic()))
+impl VisBytes {
+    fn push(&mut self, byte: u8) {
+        self.bytes[self.len as usize] = byte;
+        self.len += 1;
+    }
+}
+
+impl AsRef<[u8]> for VisBytes {
+    fn as_ref(&self) -> &[u8] {
+        &self.bytes[..self.len as usize]
+    }
+}
+
+/// OpenBSD's `isvisible`: the byte is copied, with a backslash prefix for
+/// `"` under `VIS_DQ` and for `\` without `VIS_NOSLASH`.
+fn is_visible(c: u8, flags: i32) -> bool {
+    let glob = matches!(c, b'*' | b'?' | b'[' | b'#');
+    (c == b'\\' || flags & VIS_ALL == 0)
+        && (c.is_ascii_graphic() && (!glob || flags & VIS_GLOB == 0)
+            || flags & VIS_SP == 0 && c == b' '
+            || flags & VIS_TAB == 0 && c == b'\t'
+            || flags & VIS_NL == 0 && c == b'\n'
+            || flags & VIS_SAFE != 0 && (matches!(c, 0x08 | 0x07 | b'\r') || c.is_ascii_graphic()))
+}
+
+fn needs_backslash(c: u8, flags: i32) -> bool {
+    c == b'"' && flags & VIS_DQ != 0 || c == b'\\' && flags & VIS_NOSLASH == 0
+}
+
+/// Escape `c`, followed in the source by `next`, as OpenBSD `vis(3)` does.
+///
+/// The C function takes an `int`; callers passed both sign-extended `char`s
+/// and zero-extended bytes, which reach the same output here because no byte
+/// above 0x7f is visible and every later test masks to the low eight bits.
+pub fn vis_byte(c: u8, flags: i32, next: u8) -> VisBytes {
+    let mut out = VisBytes {
+        len: 0,
+        bytes: [0; 4],
+    };
+    if is_visible(c, flags) {
+        if needs_backslash(c, flags) {
+            out.push(b'\\');
+        }
+        out.push(c);
+        return out;
+    }
+    if flags & VIS_CSTYLE != 0 {
+        let letter = match c {
+            b'\n' => Some(b'n'),
+            b'\r' => Some(b'r'),
+            0x08 => Some(b'b'),
+            0x07 => Some(b'a'),
+            0x0b => Some(b'v'),
+            b'\t' => Some(b't'),
+            0x0c => Some(b'f'),
+            b' ' => Some(b's'),
+            0 => Some(b'0'),
+            _ => None,
+        };
+        if let Some(letter) = letter {
+            out.push(b'\\');
+            out.push(letter);
+            // `\0` would swallow a following octal digit when decoded.
+            if c == 0 && (b'0'..=b'7').contains(&next) {
+                out.push(b'0');
+                out.push(b'0');
+            }
+            return out;
+        }
+    }
+    if c & 0o177 == b' '
+        || flags & VIS_OCTAL != 0
+        || flags & VIS_GLOB != 0 && matches!(c, b'*' | b'?' | b'[' | b'#')
     {
-        if c == '"' as i32 && flag & VIS_DQ != 0 as ::core::ffi::c_int
-            || c == '\\' as i32 && flag & VIS_NOSLASH == 0 as ::core::ffi::c_int
-        {
-            let fresh0 = dst;
-            dst = dst.offset(1);
-            *fresh0 = '\\' as i32 as ::core::ffi::c_char;
-        }
-        let fresh1 = dst;
-        dst = dst.offset(1);
-        *fresh1 = c as ::core::ffi::c_char;
-        *dst = '\0' as i32 as ::core::ffi::c_char;
-        return dst;
+        out.push(b'\\');
+        out.push(b'0' + (c >> 6 & 0o7));
+        out.push(b'0' + (c >> 3 & 0o7));
+        out.push(b'0' + (c & 0o7));
+        return out;
     }
-    if flag & VIS_CSTYLE != 0 {
-        match c {
-            10 => {
-                current_block = 17172381846212826752;
-                match current_block {
-                    17172381846212826752 => {
-                        let fresh2 = dst;
-                        dst = dst.offset(1);
-                        *fresh2 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh3 = dst;
-                        dst = dst.offset(1);
-                        *fresh3 = 'n' as i32 as ::core::ffi::c_char;
-                    }
-                    6023546525629896002 => {
-                        let fresh16 = dst;
-                        dst = dst.offset(1);
-                        *fresh16 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh17 = dst;
-                        dst = dst.offset(1);
-                        *fresh17 = 's' as i32 as ::core::ffi::c_char;
-                    }
-                    1901908384453561418 => {
-                        let fresh14 = dst;
-                        dst = dst.offset(1);
-                        *fresh14 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh15 = dst;
-                        dst = dst.offset(1);
-                        *fresh15 = 'f' as i32 as ::core::ffi::c_char;
-                    }
-                    286618792822599835 => {
-                        let fresh12 = dst;
-                        dst = dst.offset(1);
-                        *fresh12 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh13 = dst;
-                        dst = dst.offset(1);
-                        *fresh13 = 't' as i32 as ::core::ffi::c_char;
-                    }
-                    4505220464648351793 => {
-                        let fresh10 = dst;
-                        dst = dst.offset(1);
-                        *fresh10 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh11 = dst;
-                        dst = dst.offset(1);
-                        *fresh11 = 'v' as i32 as ::core::ffi::c_char;
-                    }
-                    12286141215944697742 => {
-                        let fresh8 = dst;
-                        dst = dst.offset(1);
-                        *fresh8 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh9 = dst;
-                        dst = dst.offset(1);
-                        *fresh9 = 'a' as i32 as ::core::ffi::c_char;
-                    }
-                    16114436840521083897 => {
-                        let fresh6 = dst;
-                        dst = dst.offset(1);
-                        *fresh6 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh7 = dst;
-                        dst = dst.offset(1);
-                        *fresh7 = 'b' as i32 as ::core::ffi::c_char;
-                    }
-                    15896914202393627355 => {
-                        let fresh4 = dst;
-                        dst = dst.offset(1);
-                        *fresh4 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh5 = dst;
-                        dst = dst.offset(1);
-                        *fresh5 = 'r' as i32 as ::core::ffi::c_char;
-                    }
-                    _ => {
-                        let fresh18 = dst;
-                        dst = dst.offset(1);
-                        *fresh18 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh19 = dst;
-                        dst = dst.offset(1);
-                        *fresh19 = '0' as i32 as ::core::ffi::c_char;
-                        if nextc as u_char as ::core::ffi::c_int >= '0' as i32
-                            && nextc as u_char as ::core::ffi::c_int <= '7' as i32
-                        {
-                            let fresh20 = dst;
-                            dst = dst.offset(1);
-                            *fresh20 = '0' as i32 as ::core::ffi::c_char;
-                            let fresh21 = dst;
-                            dst = dst.offset(1);
-                            *fresh21 = '0' as i32 as ::core::ffi::c_char;
-                        }
-                    }
-                }
-                current_block = 1609532167703825882;
-            }
-            13 => {
-                current_block = 15896914202393627355;
-                match current_block {
-                    17172381846212826752 => {
-                        let fresh2 = dst;
-                        dst = dst.offset(1);
-                        *fresh2 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh3 = dst;
-                        dst = dst.offset(1);
-                        *fresh3 = 'n' as i32 as ::core::ffi::c_char;
-                    }
-                    6023546525629896002 => {
-                        let fresh16 = dst;
-                        dst = dst.offset(1);
-                        *fresh16 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh17 = dst;
-                        dst = dst.offset(1);
-                        *fresh17 = 's' as i32 as ::core::ffi::c_char;
-                    }
-                    1901908384453561418 => {
-                        let fresh14 = dst;
-                        dst = dst.offset(1);
-                        *fresh14 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh15 = dst;
-                        dst = dst.offset(1);
-                        *fresh15 = 'f' as i32 as ::core::ffi::c_char;
-                    }
-                    286618792822599835 => {
-                        let fresh12 = dst;
-                        dst = dst.offset(1);
-                        *fresh12 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh13 = dst;
-                        dst = dst.offset(1);
-                        *fresh13 = 't' as i32 as ::core::ffi::c_char;
-                    }
-                    4505220464648351793 => {
-                        let fresh10 = dst;
-                        dst = dst.offset(1);
-                        *fresh10 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh11 = dst;
-                        dst = dst.offset(1);
-                        *fresh11 = 'v' as i32 as ::core::ffi::c_char;
-                    }
-                    12286141215944697742 => {
-                        let fresh8 = dst;
-                        dst = dst.offset(1);
-                        *fresh8 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh9 = dst;
-                        dst = dst.offset(1);
-                        *fresh9 = 'a' as i32 as ::core::ffi::c_char;
-                    }
-                    16114436840521083897 => {
-                        let fresh6 = dst;
-                        dst = dst.offset(1);
-                        *fresh6 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh7 = dst;
-                        dst = dst.offset(1);
-                        *fresh7 = 'b' as i32 as ::core::ffi::c_char;
-                    }
-                    15896914202393627355 => {
-                        let fresh4 = dst;
-                        dst = dst.offset(1);
-                        *fresh4 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh5 = dst;
-                        dst = dst.offset(1);
-                        *fresh5 = 'r' as i32 as ::core::ffi::c_char;
-                    }
-                    _ => {
-                        let fresh18 = dst;
-                        dst = dst.offset(1);
-                        *fresh18 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh19 = dst;
-                        dst = dst.offset(1);
-                        *fresh19 = '0' as i32 as ::core::ffi::c_char;
-                        if nextc as u_char as ::core::ffi::c_int >= '0' as i32
-                            && nextc as u_char as ::core::ffi::c_int <= '7' as i32
-                        {
-                            let fresh20 = dst;
-                            dst = dst.offset(1);
-                            *fresh20 = '0' as i32 as ::core::ffi::c_char;
-                            let fresh21 = dst;
-                            dst = dst.offset(1);
-                            *fresh21 = '0' as i32 as ::core::ffi::c_char;
-                        }
-                    }
-                }
-                current_block = 1609532167703825882;
-            }
-            8 => {
-                current_block = 16114436840521083897;
-                match current_block {
-                    17172381846212826752 => {
-                        let fresh2 = dst;
-                        dst = dst.offset(1);
-                        *fresh2 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh3 = dst;
-                        dst = dst.offset(1);
-                        *fresh3 = 'n' as i32 as ::core::ffi::c_char;
-                    }
-                    6023546525629896002 => {
-                        let fresh16 = dst;
-                        dst = dst.offset(1);
-                        *fresh16 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh17 = dst;
-                        dst = dst.offset(1);
-                        *fresh17 = 's' as i32 as ::core::ffi::c_char;
-                    }
-                    1901908384453561418 => {
-                        let fresh14 = dst;
-                        dst = dst.offset(1);
-                        *fresh14 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh15 = dst;
-                        dst = dst.offset(1);
-                        *fresh15 = 'f' as i32 as ::core::ffi::c_char;
-                    }
-                    286618792822599835 => {
-                        let fresh12 = dst;
-                        dst = dst.offset(1);
-                        *fresh12 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh13 = dst;
-                        dst = dst.offset(1);
-                        *fresh13 = 't' as i32 as ::core::ffi::c_char;
-                    }
-                    4505220464648351793 => {
-                        let fresh10 = dst;
-                        dst = dst.offset(1);
-                        *fresh10 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh11 = dst;
-                        dst = dst.offset(1);
-                        *fresh11 = 'v' as i32 as ::core::ffi::c_char;
-                    }
-                    12286141215944697742 => {
-                        let fresh8 = dst;
-                        dst = dst.offset(1);
-                        *fresh8 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh9 = dst;
-                        dst = dst.offset(1);
-                        *fresh9 = 'a' as i32 as ::core::ffi::c_char;
-                    }
-                    16114436840521083897 => {
-                        let fresh6 = dst;
-                        dst = dst.offset(1);
-                        *fresh6 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh7 = dst;
-                        dst = dst.offset(1);
-                        *fresh7 = 'b' as i32 as ::core::ffi::c_char;
-                    }
-                    15896914202393627355 => {
-                        let fresh4 = dst;
-                        dst = dst.offset(1);
-                        *fresh4 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh5 = dst;
-                        dst = dst.offset(1);
-                        *fresh5 = 'r' as i32 as ::core::ffi::c_char;
-                    }
-                    _ => {
-                        let fresh18 = dst;
-                        dst = dst.offset(1);
-                        *fresh18 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh19 = dst;
-                        dst = dst.offset(1);
-                        *fresh19 = '0' as i32 as ::core::ffi::c_char;
-                        if nextc as u_char as ::core::ffi::c_int >= '0' as i32
-                            && nextc as u_char as ::core::ffi::c_int <= '7' as i32
-                        {
-                            let fresh20 = dst;
-                            dst = dst.offset(1);
-                            *fresh20 = '0' as i32 as ::core::ffi::c_char;
-                            let fresh21 = dst;
-                            dst = dst.offset(1);
-                            *fresh21 = '0' as i32 as ::core::ffi::c_char;
-                        }
-                    }
-                }
-                current_block = 1609532167703825882;
-            }
-            7 => {
-                current_block = 12286141215944697742;
-                match current_block {
-                    17172381846212826752 => {
-                        let fresh2 = dst;
-                        dst = dst.offset(1);
-                        *fresh2 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh3 = dst;
-                        dst = dst.offset(1);
-                        *fresh3 = 'n' as i32 as ::core::ffi::c_char;
-                    }
-                    6023546525629896002 => {
-                        let fresh16 = dst;
-                        dst = dst.offset(1);
-                        *fresh16 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh17 = dst;
-                        dst = dst.offset(1);
-                        *fresh17 = 's' as i32 as ::core::ffi::c_char;
-                    }
-                    1901908384453561418 => {
-                        let fresh14 = dst;
-                        dst = dst.offset(1);
-                        *fresh14 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh15 = dst;
-                        dst = dst.offset(1);
-                        *fresh15 = 'f' as i32 as ::core::ffi::c_char;
-                    }
-                    286618792822599835 => {
-                        let fresh12 = dst;
-                        dst = dst.offset(1);
-                        *fresh12 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh13 = dst;
-                        dst = dst.offset(1);
-                        *fresh13 = 't' as i32 as ::core::ffi::c_char;
-                    }
-                    4505220464648351793 => {
-                        let fresh10 = dst;
-                        dst = dst.offset(1);
-                        *fresh10 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh11 = dst;
-                        dst = dst.offset(1);
-                        *fresh11 = 'v' as i32 as ::core::ffi::c_char;
-                    }
-                    12286141215944697742 => {
-                        let fresh8 = dst;
-                        dst = dst.offset(1);
-                        *fresh8 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh9 = dst;
-                        dst = dst.offset(1);
-                        *fresh9 = 'a' as i32 as ::core::ffi::c_char;
-                    }
-                    16114436840521083897 => {
-                        let fresh6 = dst;
-                        dst = dst.offset(1);
-                        *fresh6 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh7 = dst;
-                        dst = dst.offset(1);
-                        *fresh7 = 'b' as i32 as ::core::ffi::c_char;
-                    }
-                    15896914202393627355 => {
-                        let fresh4 = dst;
-                        dst = dst.offset(1);
-                        *fresh4 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh5 = dst;
-                        dst = dst.offset(1);
-                        *fresh5 = 'r' as i32 as ::core::ffi::c_char;
-                    }
-                    _ => {
-                        let fresh18 = dst;
-                        dst = dst.offset(1);
-                        *fresh18 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh19 = dst;
-                        dst = dst.offset(1);
-                        *fresh19 = '0' as i32 as ::core::ffi::c_char;
-                        if nextc as u_char as ::core::ffi::c_int >= '0' as i32
-                            && nextc as u_char as ::core::ffi::c_int <= '7' as i32
-                        {
-                            let fresh20 = dst;
-                            dst = dst.offset(1);
-                            *fresh20 = '0' as i32 as ::core::ffi::c_char;
-                            let fresh21 = dst;
-                            dst = dst.offset(1);
-                            *fresh21 = '0' as i32 as ::core::ffi::c_char;
-                        }
-                    }
-                }
-                current_block = 1609532167703825882;
-            }
-            11 => {
-                current_block = 4505220464648351793;
-                match current_block {
-                    17172381846212826752 => {
-                        let fresh2 = dst;
-                        dst = dst.offset(1);
-                        *fresh2 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh3 = dst;
-                        dst = dst.offset(1);
-                        *fresh3 = 'n' as i32 as ::core::ffi::c_char;
-                    }
-                    6023546525629896002 => {
-                        let fresh16 = dst;
-                        dst = dst.offset(1);
-                        *fresh16 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh17 = dst;
-                        dst = dst.offset(1);
-                        *fresh17 = 's' as i32 as ::core::ffi::c_char;
-                    }
-                    1901908384453561418 => {
-                        let fresh14 = dst;
-                        dst = dst.offset(1);
-                        *fresh14 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh15 = dst;
-                        dst = dst.offset(1);
-                        *fresh15 = 'f' as i32 as ::core::ffi::c_char;
-                    }
-                    286618792822599835 => {
-                        let fresh12 = dst;
-                        dst = dst.offset(1);
-                        *fresh12 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh13 = dst;
-                        dst = dst.offset(1);
-                        *fresh13 = 't' as i32 as ::core::ffi::c_char;
-                    }
-                    4505220464648351793 => {
-                        let fresh10 = dst;
-                        dst = dst.offset(1);
-                        *fresh10 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh11 = dst;
-                        dst = dst.offset(1);
-                        *fresh11 = 'v' as i32 as ::core::ffi::c_char;
-                    }
-                    12286141215944697742 => {
-                        let fresh8 = dst;
-                        dst = dst.offset(1);
-                        *fresh8 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh9 = dst;
-                        dst = dst.offset(1);
-                        *fresh9 = 'a' as i32 as ::core::ffi::c_char;
-                    }
-                    16114436840521083897 => {
-                        let fresh6 = dst;
-                        dst = dst.offset(1);
-                        *fresh6 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh7 = dst;
-                        dst = dst.offset(1);
-                        *fresh7 = 'b' as i32 as ::core::ffi::c_char;
-                    }
-                    15896914202393627355 => {
-                        let fresh4 = dst;
-                        dst = dst.offset(1);
-                        *fresh4 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh5 = dst;
-                        dst = dst.offset(1);
-                        *fresh5 = 'r' as i32 as ::core::ffi::c_char;
-                    }
-                    _ => {
-                        let fresh18 = dst;
-                        dst = dst.offset(1);
-                        *fresh18 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh19 = dst;
-                        dst = dst.offset(1);
-                        *fresh19 = '0' as i32 as ::core::ffi::c_char;
-                        if nextc as u_char as ::core::ffi::c_int >= '0' as i32
-                            && nextc as u_char as ::core::ffi::c_int <= '7' as i32
-                        {
-                            let fresh20 = dst;
-                            dst = dst.offset(1);
-                            *fresh20 = '0' as i32 as ::core::ffi::c_char;
-                            let fresh21 = dst;
-                            dst = dst.offset(1);
-                            *fresh21 = '0' as i32 as ::core::ffi::c_char;
-                        }
-                    }
-                }
-                current_block = 1609532167703825882;
-            }
-            9 => {
-                current_block = 286618792822599835;
-                match current_block {
-                    17172381846212826752 => {
-                        let fresh2 = dst;
-                        dst = dst.offset(1);
-                        *fresh2 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh3 = dst;
-                        dst = dst.offset(1);
-                        *fresh3 = 'n' as i32 as ::core::ffi::c_char;
-                    }
-                    6023546525629896002 => {
-                        let fresh16 = dst;
-                        dst = dst.offset(1);
-                        *fresh16 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh17 = dst;
-                        dst = dst.offset(1);
-                        *fresh17 = 's' as i32 as ::core::ffi::c_char;
-                    }
-                    1901908384453561418 => {
-                        let fresh14 = dst;
-                        dst = dst.offset(1);
-                        *fresh14 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh15 = dst;
-                        dst = dst.offset(1);
-                        *fresh15 = 'f' as i32 as ::core::ffi::c_char;
-                    }
-                    286618792822599835 => {
-                        let fresh12 = dst;
-                        dst = dst.offset(1);
-                        *fresh12 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh13 = dst;
-                        dst = dst.offset(1);
-                        *fresh13 = 't' as i32 as ::core::ffi::c_char;
-                    }
-                    4505220464648351793 => {
-                        let fresh10 = dst;
-                        dst = dst.offset(1);
-                        *fresh10 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh11 = dst;
-                        dst = dst.offset(1);
-                        *fresh11 = 'v' as i32 as ::core::ffi::c_char;
-                    }
-                    12286141215944697742 => {
-                        let fresh8 = dst;
-                        dst = dst.offset(1);
-                        *fresh8 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh9 = dst;
-                        dst = dst.offset(1);
-                        *fresh9 = 'a' as i32 as ::core::ffi::c_char;
-                    }
-                    16114436840521083897 => {
-                        let fresh6 = dst;
-                        dst = dst.offset(1);
-                        *fresh6 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh7 = dst;
-                        dst = dst.offset(1);
-                        *fresh7 = 'b' as i32 as ::core::ffi::c_char;
-                    }
-                    15896914202393627355 => {
-                        let fresh4 = dst;
-                        dst = dst.offset(1);
-                        *fresh4 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh5 = dst;
-                        dst = dst.offset(1);
-                        *fresh5 = 'r' as i32 as ::core::ffi::c_char;
-                    }
-                    _ => {
-                        let fresh18 = dst;
-                        dst = dst.offset(1);
-                        *fresh18 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh19 = dst;
-                        dst = dst.offset(1);
-                        *fresh19 = '0' as i32 as ::core::ffi::c_char;
-                        if nextc as u_char as ::core::ffi::c_int >= '0' as i32
-                            && nextc as u_char as ::core::ffi::c_int <= '7' as i32
-                        {
-                            let fresh20 = dst;
-                            dst = dst.offset(1);
-                            *fresh20 = '0' as i32 as ::core::ffi::c_char;
-                            let fresh21 = dst;
-                            dst = dst.offset(1);
-                            *fresh21 = '0' as i32 as ::core::ffi::c_char;
-                        }
-                    }
-                }
-                current_block = 1609532167703825882;
-            }
-            12 => {
-                current_block = 1901908384453561418;
-                match current_block {
-                    17172381846212826752 => {
-                        let fresh2 = dst;
-                        dst = dst.offset(1);
-                        *fresh2 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh3 = dst;
-                        dst = dst.offset(1);
-                        *fresh3 = 'n' as i32 as ::core::ffi::c_char;
-                    }
-                    6023546525629896002 => {
-                        let fresh16 = dst;
-                        dst = dst.offset(1);
-                        *fresh16 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh17 = dst;
-                        dst = dst.offset(1);
-                        *fresh17 = 's' as i32 as ::core::ffi::c_char;
-                    }
-                    1901908384453561418 => {
-                        let fresh14 = dst;
-                        dst = dst.offset(1);
-                        *fresh14 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh15 = dst;
-                        dst = dst.offset(1);
-                        *fresh15 = 'f' as i32 as ::core::ffi::c_char;
-                    }
-                    286618792822599835 => {
-                        let fresh12 = dst;
-                        dst = dst.offset(1);
-                        *fresh12 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh13 = dst;
-                        dst = dst.offset(1);
-                        *fresh13 = 't' as i32 as ::core::ffi::c_char;
-                    }
-                    4505220464648351793 => {
-                        let fresh10 = dst;
-                        dst = dst.offset(1);
-                        *fresh10 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh11 = dst;
-                        dst = dst.offset(1);
-                        *fresh11 = 'v' as i32 as ::core::ffi::c_char;
-                    }
-                    12286141215944697742 => {
-                        let fresh8 = dst;
-                        dst = dst.offset(1);
-                        *fresh8 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh9 = dst;
-                        dst = dst.offset(1);
-                        *fresh9 = 'a' as i32 as ::core::ffi::c_char;
-                    }
-                    16114436840521083897 => {
-                        let fresh6 = dst;
-                        dst = dst.offset(1);
-                        *fresh6 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh7 = dst;
-                        dst = dst.offset(1);
-                        *fresh7 = 'b' as i32 as ::core::ffi::c_char;
-                    }
-                    15896914202393627355 => {
-                        let fresh4 = dst;
-                        dst = dst.offset(1);
-                        *fresh4 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh5 = dst;
-                        dst = dst.offset(1);
-                        *fresh5 = 'r' as i32 as ::core::ffi::c_char;
-                    }
-                    _ => {
-                        let fresh18 = dst;
-                        dst = dst.offset(1);
-                        *fresh18 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh19 = dst;
-                        dst = dst.offset(1);
-                        *fresh19 = '0' as i32 as ::core::ffi::c_char;
-                        if nextc as u_char as ::core::ffi::c_int >= '0' as i32
-                            && nextc as u_char as ::core::ffi::c_int <= '7' as i32
-                        {
-                            let fresh20 = dst;
-                            dst = dst.offset(1);
-                            *fresh20 = '0' as i32 as ::core::ffi::c_char;
-                            let fresh21 = dst;
-                            dst = dst.offset(1);
-                            *fresh21 = '0' as i32 as ::core::ffi::c_char;
-                        }
-                    }
-                }
-                current_block = 1609532167703825882;
-            }
-            32 => {
-                current_block = 6023546525629896002;
-                match current_block {
-                    17172381846212826752 => {
-                        let fresh2 = dst;
-                        dst = dst.offset(1);
-                        *fresh2 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh3 = dst;
-                        dst = dst.offset(1);
-                        *fresh3 = 'n' as i32 as ::core::ffi::c_char;
-                    }
-                    6023546525629896002 => {
-                        let fresh16 = dst;
-                        dst = dst.offset(1);
-                        *fresh16 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh17 = dst;
-                        dst = dst.offset(1);
-                        *fresh17 = 's' as i32 as ::core::ffi::c_char;
-                    }
-                    1901908384453561418 => {
-                        let fresh14 = dst;
-                        dst = dst.offset(1);
-                        *fresh14 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh15 = dst;
-                        dst = dst.offset(1);
-                        *fresh15 = 'f' as i32 as ::core::ffi::c_char;
-                    }
-                    286618792822599835 => {
-                        let fresh12 = dst;
-                        dst = dst.offset(1);
-                        *fresh12 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh13 = dst;
-                        dst = dst.offset(1);
-                        *fresh13 = 't' as i32 as ::core::ffi::c_char;
-                    }
-                    4505220464648351793 => {
-                        let fresh10 = dst;
-                        dst = dst.offset(1);
-                        *fresh10 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh11 = dst;
-                        dst = dst.offset(1);
-                        *fresh11 = 'v' as i32 as ::core::ffi::c_char;
-                    }
-                    12286141215944697742 => {
-                        let fresh8 = dst;
-                        dst = dst.offset(1);
-                        *fresh8 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh9 = dst;
-                        dst = dst.offset(1);
-                        *fresh9 = 'a' as i32 as ::core::ffi::c_char;
-                    }
-                    16114436840521083897 => {
-                        let fresh6 = dst;
-                        dst = dst.offset(1);
-                        *fresh6 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh7 = dst;
-                        dst = dst.offset(1);
-                        *fresh7 = 'b' as i32 as ::core::ffi::c_char;
-                    }
-                    15896914202393627355 => {
-                        let fresh4 = dst;
-                        dst = dst.offset(1);
-                        *fresh4 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh5 = dst;
-                        dst = dst.offset(1);
-                        *fresh5 = 'r' as i32 as ::core::ffi::c_char;
-                    }
-                    _ => {
-                        let fresh18 = dst;
-                        dst = dst.offset(1);
-                        *fresh18 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh19 = dst;
-                        dst = dst.offset(1);
-                        *fresh19 = '0' as i32 as ::core::ffi::c_char;
-                        if nextc as u_char as ::core::ffi::c_int >= '0' as i32
-                            && nextc as u_char as ::core::ffi::c_int <= '7' as i32
-                        {
-                            let fresh20 = dst;
-                            dst = dst.offset(1);
-                            *fresh20 = '0' as i32 as ::core::ffi::c_char;
-                            let fresh21 = dst;
-                            dst = dst.offset(1);
-                            *fresh21 = '0' as i32 as ::core::ffi::c_char;
-                        }
-                    }
-                }
-                current_block = 1609532167703825882;
-            }
-            0 => {
-                current_block = 18317758206522205410;
-                match current_block {
-                    17172381846212826752 => {
-                        let fresh2 = dst;
-                        dst = dst.offset(1);
-                        *fresh2 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh3 = dst;
-                        dst = dst.offset(1);
-                        *fresh3 = 'n' as i32 as ::core::ffi::c_char;
-                    }
-                    6023546525629896002 => {
-                        let fresh16 = dst;
-                        dst = dst.offset(1);
-                        *fresh16 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh17 = dst;
-                        dst = dst.offset(1);
-                        *fresh17 = 's' as i32 as ::core::ffi::c_char;
-                    }
-                    1901908384453561418 => {
-                        let fresh14 = dst;
-                        dst = dst.offset(1);
-                        *fresh14 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh15 = dst;
-                        dst = dst.offset(1);
-                        *fresh15 = 'f' as i32 as ::core::ffi::c_char;
-                    }
-                    286618792822599835 => {
-                        let fresh12 = dst;
-                        dst = dst.offset(1);
-                        *fresh12 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh13 = dst;
-                        dst = dst.offset(1);
-                        *fresh13 = 't' as i32 as ::core::ffi::c_char;
-                    }
-                    4505220464648351793 => {
-                        let fresh10 = dst;
-                        dst = dst.offset(1);
-                        *fresh10 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh11 = dst;
-                        dst = dst.offset(1);
-                        *fresh11 = 'v' as i32 as ::core::ffi::c_char;
-                    }
-                    12286141215944697742 => {
-                        let fresh8 = dst;
-                        dst = dst.offset(1);
-                        *fresh8 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh9 = dst;
-                        dst = dst.offset(1);
-                        *fresh9 = 'a' as i32 as ::core::ffi::c_char;
-                    }
-                    16114436840521083897 => {
-                        let fresh6 = dst;
-                        dst = dst.offset(1);
-                        *fresh6 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh7 = dst;
-                        dst = dst.offset(1);
-                        *fresh7 = 'b' as i32 as ::core::ffi::c_char;
-                    }
-                    15896914202393627355 => {
-                        let fresh4 = dst;
-                        dst = dst.offset(1);
-                        *fresh4 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh5 = dst;
-                        dst = dst.offset(1);
-                        *fresh5 = 'r' as i32 as ::core::ffi::c_char;
-                    }
-                    _ => {
-                        let fresh18 = dst;
-                        dst = dst.offset(1);
-                        *fresh18 = '\\' as i32 as ::core::ffi::c_char;
-                        let fresh19 = dst;
-                        dst = dst.offset(1);
-                        *fresh19 = '0' as i32 as ::core::ffi::c_char;
-                        if nextc as u_char as ::core::ffi::c_int >= '0' as i32
-                            && nextc as u_char as ::core::ffi::c_int <= '7' as i32
-                        {
-                            let fresh20 = dst;
-                            dst = dst.offset(1);
-                            *fresh20 = '0' as i32 as ::core::ffi::c_char;
-                            let fresh21 = dst;
-                            dst = dst.offset(1);
-                            *fresh21 = '0' as i32 as ::core::ffi::c_char;
-                        }
-                    }
-                }
-                current_block = 1609532167703825882;
-            }
-            _ => {
-                current_block = 15345278821338558188;
-            }
-        }
+    if flags & VIS_NOSLASH == 0 {
+        out.push(b'\\');
+    }
+    let mut c = c;
+    if c & 0o200 != 0 {
+        c &= 0o177;
+        out.push(b'M');
+    }
+    if c.is_ascii_control() {
+        out.push(b'^');
+        out.push(if c == 0o177 { b'?' } else { c + b'@' });
     } else {
-        current_block = 15345278821338558188;
+        out.push(b'-');
+        out.push(c);
     }
-    if current_block == 15345278821338558188 {
-        if c & 0o177 as ::core::ffi::c_int == ' ' as i32
-            || flag & VIS_OCTAL != 0
-            || flag & VIS_GLOB != 0
-                && (c == '*' as i32 || c == '?' as i32 || c == '[' as i32 || c == '#' as i32)
-        {
-            let fresh22 = dst;
-            dst = dst.offset(1);
-            *fresh22 = '\\' as i32 as ::core::ffi::c_char;
-            let fresh23 = dst;
-            dst = dst.offset(1);
-            *fresh23 = ((c as u_char as ::core::ffi::c_int >> 6 as ::core::ffi::c_int
-                & 0o7 as ::core::ffi::c_int)
-                + '0' as i32) as ::core::ffi::c_char;
-            let fresh24 = dst;
-            dst = dst.offset(1);
-            *fresh24 = ((c as u_char as ::core::ffi::c_int >> 3 as ::core::ffi::c_int
-                & 0o7 as ::core::ffi::c_int)
-                + '0' as i32) as ::core::ffi::c_char;
-            let fresh25 = dst;
-            dst = dst.offset(1);
-            *fresh25 = ((c as u_char as ::core::ffi::c_int & 0o7 as ::core::ffi::c_int)
-                + '0' as i32) as ::core::ffi::c_char;
-        } else {
-            if flag & VIS_NOSLASH == 0 as ::core::ffi::c_int {
-                let fresh26 = dst;
-                dst = dst.offset(1);
-                *fresh26 = '\\' as i32 as ::core::ffi::c_char;
-            }
-            if c & 0o200 as ::core::ffi::c_int != 0 {
-                c &= 0o177 as ::core::ffi::c_int;
-                let fresh27 = dst;
-                dst = dst.offset(1);
-                *fresh27 = 'M' as i32 as ::core::ffi::c_char;
-            }
-            if ::libc::iscntrl(c as u_char as ::core::ffi::c_int) != 0 {
-                let fresh28 = dst;
-                dst = dst.offset(1);
-                *fresh28 = '^' as i32 as ::core::ffi::c_char;
-                if c == 0o177 as ::core::ffi::c_int {
-                    let fresh29 = dst;
-                    dst = dst.offset(1);
-                    *fresh29 = '?' as i32 as ::core::ffi::c_char;
-                } else {
-                    let fresh30 = dst;
-                    dst = dst.offset(1);
-                    *fresh30 = (c + '@' as i32) as ::core::ffi::c_char;
-                }
-            } else {
-                let fresh31 = dst;
-                dst = dst.offset(1);
-                *fresh31 = '-' as i32 as ::core::ffi::c_char;
-                let fresh32 = dst;
-                dst = dst.offset(1);
-                *fresh32 = c as ::core::ffi::c_char;
-            }
-        }
-    }
-    *dst = '\0' as i32 as ::core::ffi::c_char;
-    dst
+    out
 }
-pub unsafe fn strvis(
-    mut dst: *mut ::core::ffi::c_char,
-    mut src: *const ::core::ffi::c_char,
-    mut flag: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
-    let mut c: ::core::ffi::c_char = 0;
-    let mut start: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    start = dst;
-    loop {
-        c = *src;
-        if !(c != 0) {
+
+fn until_nul(src: &[u8]) -> &[u8] {
+    src.iter()
+        .position(|&byte| byte == 0)
+        .map_or(src, |nul| &src[..nul])
+}
+
+/// `strvis(3)`: append the escaped form of `src`, without a trailing NUL.
+pub fn strvis_append(out: &mut Vec<u8>, src: &[u8], flags: i32) {
+    let src = until_nul(src);
+    for (index, &c) in src.iter().enumerate() {
+        let next = src.get(index + 1).copied().unwrap_or(0);
+        out.extend_from_slice(vis_byte(c, flags, next).as_ref());
+    }
+}
+
+/// `strnvis(3)` into a `siz`-byte buffer, returning the bytes before its
+/// NUL. As in OpenBSD, `siz - 1` bytes are available, and the first byte
+/// whose whole escape does not fit ends the output; the full length the C
+/// function returned has no reader.
+pub fn strnvis(src: &[u8], siz: usize, flags: i32) -> Vec<u8> {
+    let src = until_nul(src);
+    let end = siz.saturating_sub(1);
+    let mut out = Vec::with_capacity(end);
+    for (index, &c) in src.iter().enumerate() {
+        let next = src.get(index + 1).copied().unwrap_or(0);
+        let escaped = vis_byte(c, flags, next);
+        if out.len() + escaped.as_ref().len() > end {
             break;
         }
-        src = src.offset(1);
-        dst = vis(
-            dst,
-            c as ::core::ffi::c_int,
-            flag,
-            *src as ::core::ffi::c_int,
-        );
+        out.extend_from_slice(escaped.as_ref());
     }
-    *dst = '\0' as i32 as ::core::ffi::c_char;
-    dst.offset_from(start) as ::core::ffi::c_long as ::core::ffi::c_int
-}
-pub unsafe fn strnvis(
-    mut dst: *mut ::core::ffi::c_char,
-    mut src: *const ::core::ffi::c_char,
-    mut siz: size_t,
-    mut flag: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
-    let mut start: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut end: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut tbuf: [::core::ffi::c_char; 5] = [0; 5];
-    let mut c: ::core::ffi::c_int = 0;
-    let mut i: ::core::ffi::c_int = 0;
-    i = 0 as ::core::ffi::c_int;
-    start = dst;
-    end = start.add(siz).offset(-(1 as ::core::ffi::c_int as isize));
-    loop {
-        c = *src as ::core::ffi::c_int;
-        if !(c != 0 && dst < end) {
-            break;
-        }
-        if (c == '\\' as i32 || flag & VIS_ALL == 0 as ::core::ffi::c_int)
-            && (c as u_int <= UCHAR_MAX as u_int
-                && c as u_char as ::core::ffi::c_int & !(0x7f as ::core::ffi::c_int)
-                    == 0 as ::core::ffi::c_int
-                && (c != '*' as i32 && c != '?' as i32 && c != '[' as i32 && c != '#' as i32
-                    || flag & VIS_GLOB == 0 as ::core::ffi::c_int)
-                && (c as u_char).is_ascii_graphic()
-                || flag & VIS_SP == 0 as ::core::ffi::c_int && c == ' ' as i32
-                || flag & VIS_TAB == 0 as ::core::ffi::c_int && c == '\t' as i32
-                || flag & VIS_NL == 0 as ::core::ffi::c_int && c == '\n' as i32
-                || flag & VIS_SAFE != 0
-                    && (c == '\u{8}' as i32
-                        || c == '\u{7}' as i32
-                        || c == '\r' as i32
-                        || (c as u_char).is_ascii_graphic()))
-        {
-            if c == '"' as i32 && flag & VIS_DQ != 0 as ::core::ffi::c_int
-                || c == '\\' as i32 && flag & VIS_NOSLASH == 0 as ::core::ffi::c_int
-            {
-                if dst.offset(1 as ::core::ffi::c_int as isize) >= end {
-                    i = 2 as ::core::ffi::c_int;
-                    break;
-                } else {
-                    let fresh33 = dst;
-                    dst = dst.offset(1);
-                    *fresh33 = '\\' as i32 as ::core::ffi::c_char;
-                }
-            }
-            i = 1 as ::core::ffi::c_int;
-            let fresh34 = dst;
-            dst = dst.offset(1);
-            *fresh34 = c as ::core::ffi::c_char;
-            src = src.offset(1);
-        } else {
-            src = src.offset(1);
-            i = vis(
-                &raw mut tbuf as *mut ::core::ffi::c_char,
-                c,
-                flag,
-                *src as ::core::ffi::c_int,
-            )
-            .offset_from(&raw mut tbuf as *mut ::core::ffi::c_char)
-                as ::core::ffi::c_long as ::core::ffi::c_int;
-            if dst.offset(i as isize) <= end {
-                memcpy(
-                    dst as *mut ::core::ffi::c_void,
-                    &raw mut tbuf as *mut ::core::ffi::c_char as *const ::core::ffi::c_void,
-                    i as size_t,
-                );
-                dst = dst.offset(i as isize);
-            } else {
-                src = src.offset(-1);
-                break;
-            }
-        }
-    }
-    if siz > 0 as size_t {
-        *dst = '\0' as i32 as ::core::ffi::c_char;
-    }
-    if dst.offset(i as isize) > end {
-        loop {
-            c = *src as ::core::ffi::c_int;
-            if !(c != 0) {
-                break;
-            }
-            src = src.offset(1);
-            dst = dst.offset(
-                vis(
-                    &raw mut tbuf as *mut ::core::ffi::c_char,
-                    c,
-                    flag,
-                    *src as ::core::ffi::c_int,
-                )
-                .offset_from(&raw mut tbuf as *mut ::core::ffi::c_char)
-                    as ::core::ffi::c_long as isize,
-            );
-        }
-    }
-    dst.offset_from(start) as ::core::ffi::c_long as ::core::ffi::c_int
-}
-/// Escape a borrowed C string into Rust-owned storage, preserving `stravis` byte rules.
-pub(crate) fn stravis_cstring(src: &std::ffi::CStr, flag: ::core::ffi::c_int) -> std::ffi::CString {
-    let source_len = src.to_bytes().len();
-    let capacity = source_len
-        .checked_mul(4)
-        .and_then(|size| size.checked_add(1))
-        .expect("escaped string is too large");
-    let mut buffer = vec![0u8; capacity];
-    let escaped_len = unsafe { strvis(buffer.as_mut_ptr().cast(), src.as_ptr(), flag) } as usize;
-    buffer.truncate(escaped_len + 1);
-    std::ffi::CString::from_vec_with_nul(buffer).expect("vis output contains no interior NUL")
+    out
 }
 
 /// vis writes at most four encoded bytes plus its trailing NUL.
 pub(crate) fn vis_into(output: &mut [u8], byte: u8, flags: i32, next: u8) -> usize {
     assert!(output.len() >= 5, "vis needs four bytes plus a terminator");
-    unsafe {
-        let start = output.as_mut_ptr().cast::<::core::ffi::c_char>();
-        let end = vis(
-            start,
-            byte as ::core::ffi::c_char as i32,
-            flags,
-            next as ::core::ffi::c_char as i32,
-        );
-        end.offset_from(start) as usize
-    }
+    let escaped = vis_byte(byte, flags, next);
+    let escaped = escaped.as_ref();
+    output[..escaped.len()].copy_from_slice(escaped);
+    output[escaped.len()] = 0;
+    escaped.len()
 }
 
 #[cfg(test)]
-mod owned_vis_tests {
+mod tests {
     use super::*;
 
+    fn vis(c: u8, flags: i32, next: u8) -> Vec<u8> {
+        vis_byte(c, flags, next).as_ref().to_vec()
+    }
+
     #[test]
-    fn stravis_cstring_owns_escaped_output() {
-        let input = std::ffi::CString::new(&b"a\t\\\xff"[..]).unwrap();
-        let escaped = stravis_cstring(input.as_c_str(), VIS_CSTYLE | VIS_TAB | VIS_OCTAL);
-        drop(input);
-        assert_eq!(escaped.as_bytes(), b"a\\t\\\\\\377");
+    fn cstyle_names_each_control_byte() {
+        let cases: [(u8, &[u8]); 8] = [
+            (b'\n', b"\\n"),
+            (b'\r', b"\\r"),
+            (0x08, b"\\b"),
+            (0x07, b"\\a"),
+            (0x0b, b"\\v"),
+            (b'\t', b"\\t"),
+            (0x0c, b"\\f"),
+            (b' ', b"\\s"),
+        ];
+        let flags = VIS_CSTYLE | VIS_SP | VIS_TAB | VIS_NL;
+        for (c, escaped) in cases {
+            assert_eq!(vis(c, flags, 0), escaped, "{c:#x}");
+            assert_eq!(vis(c, flags | VIS_OCTAL, 0), escaped, "{c:#x}");
+        }
+    }
+
+    #[test]
+    fn cstyle_nul_widens_before_an_octal_digit() {
+        let flags = VIS_CSTYLE | VIS_OCTAL;
+        assert_eq!(vis(0, flags, 0), b"\\0");
+        assert_eq!(vis(0, flags, b'a'), b"\\0");
+        assert_eq!(vis(0, flags, b'8'), b"\\0");
+        assert_eq!(vis(0, flags, b'0'), b"\\000");
+        assert_eq!(vis(0, flags, b'7'), b"\\000");
+        assert_eq!(vis(0, VIS_OCTAL, b'7'), b"\\000");
+        assert_eq!(vis(0, 0, 0), b"\\^@");
+    }
+
+    #[test]
+    fn quotes_and_backslashes_follow_their_flags() {
+        assert_eq!(vis(b'"', 0, 0), b"\"");
+        assert_eq!(vis(b'"', VIS_DQ, 0), b"\\\"");
+        assert_eq!(vis(b'\\', 0, 0), b"\\\\");
+        assert_eq!(vis(b'\\', VIS_NOSLASH, 0), b"\\");
+        assert_eq!(vis(b'\\', VIS_ALL, 0), b"\\\\");
+        assert_eq!(vis(b'a', VIS_ALL, 0), b"\\-a");
+        assert_eq!(vis(b'a', VIS_ALL | VIS_OCTAL, 0), b"\\141");
+    }
+
+    #[test]
+    fn whitespace_is_kept_unless_its_flag_is_set() {
+        assert_eq!(vis(b' ', 0, 0), b" ");
+        assert_eq!(vis(b' ', VIS_SP, 0), b"\\040");
+        assert_eq!(vis(b'\t', 0, 0), b"\t");
+        assert_eq!(vis(b'\t', VIS_TAB, 0), b"\\^I");
+        assert_eq!(vis(b'\t', VIS_TAB | VIS_OCTAL, 0), b"\\011");
+        assert_eq!(vis(b'\n', 0, 0), b"\n");
+        assert_eq!(vis(b'\n', VIS_NL, 0), b"\\^J");
+        assert_eq!(vis(b'\n', VIS_NL | VIS_NOSLASH, 0), b"^J");
+        assert_eq!(vis(b'\r', 0, 0), b"\\^M");
+        assert_eq!(vis(b'\r', VIS_SAFE, 0), b"\r");
+        assert_eq!(vis(0x07, VIS_SAFE, 0), b"\x07");
+        assert_eq!(vis(0x08, VIS_SAFE, 0), b"\x08");
+        assert_eq!(vis(0x01, VIS_SAFE, 0), b"\\^A");
+    }
+
+    #[test]
+    fn meta_control_and_space_forms() {
+        assert_eq!(vis(0x7f, 0, 0), b"\\^?");
+        assert_eq!(vis(0x80, 0, 0), b"\\M^@");
+        assert_eq!(vis(0xc1, 0, 0), b"\\M-A");
+        assert_eq!(vis(0xc1, VIS_NOSLASH, 0), b"M-A");
+        assert_eq!(vis(0xff, 0, 0), b"\\M^?");
+        assert_eq!(vis(0xff, VIS_OCTAL, 0), b"\\377");
+        // `(c & 0177) == ' '` always takes the octal form.
+        assert_eq!(vis(0xa0, 0, 0), b"\\240");
+        assert_eq!(vis(b' ', VIS_SP | VIS_NOSLASH, 0), b"\\040");
+        assert_eq!(vis(0x80, VIS_CSTYLE, 0), b"\\M^@");
+    }
+
+    #[test]
+    fn glob_characters_become_octal() {
+        for (c, escaped) in [
+            (b'*', b"\\052"),
+            (b'?', b"\\077"),
+            (b'[', b"\\133"),
+            (b'#', b"\\043"),
+        ] {
+            assert_eq!(vis(c, 0, 0), [c]);
+            assert_eq!(vis(c, VIS_GLOB, 0), escaped);
+            assert_eq!(vis(c, VIS_GLOB | VIS_SAFE, 0), [c]);
+        }
+        assert_eq!(vis(b']', VIS_GLOB, 0), b"]");
+    }
+
+    #[test]
+    fn strvis_appends_without_a_terminator() {
+        let mut out = b"> ".to_vec();
+        strvis_append(&mut out, b"a\tb\0c", VIS_OCTAL | VIS_CSTYLE | VIS_TAB);
+        assert_eq!(out, b"> a\\tb");
+        let mut out = Vec::new();
+        strvis_append(&mut out, b"\x007\xe3\x81", VIS_OCTAL | VIS_CSTYLE);
+        assert_eq!(out, b"");
+        strvis_append(&mut out, b"\x1b7\xe3\x81", VIS_OCTAL | VIS_CSTYLE);
+        assert_eq!(out, b"\\0337\\343\\201");
+    }
+
+    #[test]
+    fn strnvis_stops_at_the_first_unit_that_does_not_fit() {
+        let flags = VIS_OCTAL | VIS_CSTYLE;
+        assert_eq!(strnvis(b"abc", 0, flags), b"");
+        assert_eq!(strnvis(b"abc", 1, flags), b"");
+        assert_eq!(strnvis(b"abc", 3, flags), b"ab");
+        assert_eq!(strnvis(b"abc", 4, flags), b"abc");
+        // A backslashed byte needs two cells.
+        assert_eq!(strnvis(b"a\\b", 3, flags), b"a");
+        assert_eq!(strnvis(b"a\\b", 4, flags), b"a\\\\");
+        // A CSTYLE escape needs two, an octal one four.
+        assert_eq!(strnvis(b"a\nb", 3, flags | VIS_NL), b"a");
+        assert_eq!(strnvis(b"a\nb", 4, flags | VIS_NL), b"a\\n");
+        assert_eq!(strnvis(b"a\xffb", 5, flags), b"a");
+        assert_eq!(strnvis(b"a\xffb", 6, flags), b"a\\377");
+        assert_eq!(strnvis(b"a\xffb", 7, flags), b"a\\377b");
+        // The meta form without VIS_OCTAL is four cells too.
+        assert_eq!(strnvis(b"\x81", 4, 0), b"");
+        assert_eq!(strnvis(b"\x81", 5, 0), b"\\M^A");
+        assert_eq!(strnvis(b"ab\0cd", 12, flags), b"ab");
     }
 }

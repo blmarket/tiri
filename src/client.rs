@@ -7,7 +7,7 @@ use crate::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE, PROTOCOL_VERSION};
 #[cfg(target_os = "linux")]
 use crate::compat::systemd::systemd_activated;
 use crate::control::control_wait_exit;
-use crate::ffi::libc::environ;
+use crate::environ::process_environment;
 use crate::file::{
     file_read_cancel, file_read_open, file_write_close, file_write_data, file_write_left,
     file_write_open,
@@ -42,7 +42,7 @@ use crate::tmux::{
 use crate::tty::tty_term_read_list;
 use libc::{
     cfgetispeed, cfgetospeed, cfmakeraw, cfsetispeed, cfsetospeed, execl, getenv, getppid, kill,
-    memset, setenv, sigaction, sigemptyset, strlen, strsignal, system, unlink, waitpid,
+    memset, setenv, sigaction, sigemptyset, strsignal, system, unlink, waitpid,
 };
 use libc::{EAGAIN, ECHILD, ENAMETOOLONG, ENOENT};
 use std::ffi::{CStr, CString, OsStr};
@@ -440,8 +440,6 @@ unsafe fn client_send_identify(
     cwd: &CStr,
     mut feat: ::core::ffi::c_int,
 ) {
-    let mut ss: *mut *mut ::core::ffi::c_char = ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
-    let mut sslen: size_t = 0;
     let mut flags: uint64_t = client_flags;
     let mut pid: pid_t = 0;
     proc_send(client_peer, MSG_IDENTIFY_LONGFLAGS, None, bytes_of(&flags));
@@ -485,18 +483,11 @@ unsafe fn client_send_identify(
     proc_send(client_peer, MSG_IDENTIFY_STDOUT, Some(fd), &[]);
     pid = std::process::id() as pid_t;
     proc_send(client_peer, MSG_IDENTIFY_CLIENTPID, None, bytes_of(&pid));
-    ss = environ;
-    while !(*ss).is_null() {
-        sslen = strlen(*ss).wrapping_add(1 as size_t);
-        if !(sslen > (MAX_IMSGSIZE as usize).wrapping_sub(IMSG_HEADER_SIZE)) {
-            proc_send(
-                client_peer,
-                MSG_IDENTIFY_ENVIRON,
-                None,
-                CStr::from_ptr(*ss).to_bytes_with_nul(),
-            );
+    for var in process_environment() {
+        let var = var.as_bytes_with_nul();
+        if var.len() <= (MAX_IMSGSIZE as usize).wrapping_sub(IMSG_HEADER_SIZE) {
+            proc_send(client_peer, MSG_IDENTIFY_ENVIRON, None, var);
         }
-        ss = ss.offset(1);
     }
     proc_send(client_peer, MSG_IDENTIFY_DONE, None, &[]);
 }

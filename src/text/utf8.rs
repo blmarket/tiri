@@ -700,7 +700,7 @@ mod tests {
 
     #[test]
     fn escaping_preserves_lookahead_and_retries_invalid_utf8_bytes() {
-        use crate::compat::vis::VIS_ALL;
+        use crate::shared::vis::VIS_ALL;
         use crate::shared::vis::{VIS_CSTYLE, VIS_OCTAL};
 
         for (source, flags, expected) in [

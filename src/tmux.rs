@@ -9,10 +9,10 @@
 use crate::cfg::{cfg_quiet, cfg_set_files};
 use crate::client::client_main;
 use crate::compat::fdforkpty::getptmfd;
-use crate::compat::getopt_long::{BSDgetopt, BSDoptarg, BSDoptind};
+use crate::compat::getopt::Getopt;
 use crate::compat::getprogname::getprogname;
-use crate::environ::{environ_create, environ_find, environ_put, environ_set};
-use crate::ffi::libc::{environ, tzset};
+use crate::environ::{environ_create, environ_find, environ_put, environ_set, process_environment};
+use crate::ffi::libc::tzset;
 use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
 use crate::log::{log_add_level, log_cstr, log_debug};
@@ -377,16 +377,9 @@ pub fn getversion() -> &'static CStr {
     c"3.8"
 }
 unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
-    let mut argc = ::core::ffi::c_int::try_from(args.len()).expect("argv length exceeds c_int");
-    let mut argv_view: Vec<_> = args.iter().map(|arg| arg.as_ptr().cast_mut()).collect();
-    argv_view.push(::core::ptr::null_mut());
-    let mut argv = argv_view.as_mut_ptr();
     let mut path: Option<CString> = None;
     let mut label: Option<&CStr> = None;
-    let mut var: *mut *mut ::core::ffi::c_char =
-        ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut opt: ::core::ffi::c_int = 0;
     let mut keys: ::core::ffi::c_int = 0;
     let mut feat: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut fflag: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -416,14 +409,12 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
         flags = CLIENT_LOGIN as uint64_t;
     }
     global_environ = Some(environ_create());
-    var = environ;
-    while !(*var).is_null() {
+    for var in process_environment() {
         environ_put(
             global_environ.as_deref_mut().expect("environment"),
-            CStr::from_ptr(*var),
+            &var,
             0 as ::core::ffi::c_int,
         );
-        var = var.offset(1);
     }
     if let Some(cwd) = find_cwd() {
         environ_set(
@@ -434,64 +425,71 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
         );
     }
     let mut config_paths = expand_paths(TMUX_CONF, true);
-    loop {
-        opt = BSDgetopt(argc, argv, c"2c:CDdf:hlL:NqS:T:uUvV".as_ptr());
-        if !(opt != -(1 as ::core::ffi::c_int)) {
-            break;
-        }
-        match opt {
-            50 => {
+    let mut getopt = Getopt::new(args, b"2c:CDdf:hlL:NqS:T:uUvV");
+    for opt in getopt.by_ref() {
+        let opt = match opt {
+            Ok(opt) => opt,
+            Err(error) => {
+                let _ = io::stderr().write_all(
+                    &[getprogname().to_bytes(), format!(": {error}\n").as_bytes()].concat(),
+                );
+                usage(1);
+            }
+        };
+        let optarg = || opt.arg.expect("getopt spec gives this option an argument");
+        match opt.flag {
+            b'2' => {
                 tty_parse_features(c"256", c":,", &mut feat, None);
             }
-            99 => {
-                shell_command = Some(CStr::from_ptr(BSDoptarg).to_owned());
+            b'c' => {
+                shell_command = Some(optarg().to_owned());
             }
-            68 => {
+            b'D' => {
                 flags |= CLIENT_NOFORK as uint64_t;
             }
-            67 => {
+            b'C' => {
                 if flags & CLIENT_CONTROL as uint64_t != 0 {
                     flags |= CLIENT_CONTROLCONTROL as uint64_t;
                 } else {
                     flags |= CLIENT_CONTROL as uint64_t;
                 }
             }
-            102 => {
+            b'f' => {
                 if fflag == 0 {
                     fflag = 1 as ::core::ffi::c_int;
                     config_paths.clear();
                 }
-                config_paths.push(CStr::from_ptr(BSDoptarg).to_owned());
+                config_paths.push(optarg().to_owned());
                 cfg_quiet = 0 as ::core::ffi::c_int;
             }
-            104 => {
+            b'h' => {
                 usage(0);
             }
-            86 => {
+            b'V' => {
                 let _ =
                     io::stdout().write_all(&[b"tmux ", getversion().to_bytes(), b"\n"].concat());
                 std::process::exit(0);
             }
-            108 => {
+            b'l' => {
                 flags |= CLIENT_LOGIN as uint64_t;
             }
-            76 => {
-                label = Some(CStr::from_ptr(BSDoptarg));
+            b'L' => {
+                label = Some(optarg());
             }
-            78 => {
+            b'N' => {
                 flags |= CLIENT_NOSTARTSERVER as uint64_t;
             }
-            113 => {}
-            83 => {
-                path = Some(CStr::from_ptr(BSDoptarg).to_owned());
+            b'q' => {}
+            b'S' => {
+                path = Some(optarg().to_owned());
             }
-            84 => {
-                tty_parse_features(CStr::from_ptr(BSDoptarg), c":,", &mut feat, None);
+            b'T' => {
+                tty_parse_features(optarg(), c":,", &mut feat, None);
             }
-            117 => {
+            b'u' => {
                 flags |= CLIENT_UTF8 as uint64_t;
             }
-            118 => {
+            b'v' => {
                 log_add_level();
             }
             _ => {
@@ -500,12 +498,11 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
         }
     }
     cfg_set_files(config_paths);
-    argc -= BSDoptind;
-    argv = argv.offset(BSDoptind as isize);
-    if shell_command.is_some() && argc != 0 as ::core::ffi::c_int {
+    let command_argv = getopt.remaining().to_vec();
+    if shell_command.is_some() && !command_argv.is_empty() {
         usage(1);
     }
-    if flags & CLIENT_NOFORK as uint64_t != 0 && argc != 0 as ::core::ffi::c_int {
+    if flags & CLIENT_NOFORK as uint64_t != 0 && !command_argv.is_empty() {
         usage(1);
     }
     ptm_fd = getptmfd();
@@ -601,9 +598,6 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
         flags |= CLIENT_DEFAULTSOCKET as uint64_t;
     }
     socket_path = Some(path.expect("socket path was selected"));
-    let command_argv: Vec<CString> = (0..argc)
-        .map(|i| CStr::from_ptr(*argv.add(i as usize)).to_owned())
-        .collect();
     exit(client_main(&command_argv, flags, feat));
 }
 pub const TMUX_CONF: &std::ffi::CStr =

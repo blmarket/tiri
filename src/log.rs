@@ -1,4 +1,4 @@
-use crate::compat::vis::strvis;
+use crate::compat::vis::strvis_append;
 use crate::format::bytes::format_bytes;
 use crate::format::bytes::try_format_message_with;
 use crate::shared::errno::ErrorText;
@@ -86,19 +86,13 @@ fn log_message(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()
     if out.try_reserve_exact(capacity).is_err() {
         return;
     }
-    out.resize(capacity, 0);
-    // SAFETY: `s` is NUL-terminated and `out` holds 4 * (len + 1) bytes,
-    // more than the 4 * len + 1 that strvis can write.
-    unsafe {
-        strvis(
-            out.as_mut_ptr().cast(),
-            s.as_ptr(),
-            VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL,
-        );
-    }
+    strvis_append(
+        &mut out,
+        s.as_bytes(),
+        VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL,
+    );
     drop(s);
-    let message = CStr::from_bytes_until_nul(&out).unwrap();
-    log_write(message.to_bytes(), prefix.to_bytes());
+    log_write(&out, prefix.to_bytes());
 }
 
 /// Write one complete log line with a single write, so the line reaches the
@@ -153,9 +147,8 @@ mod tests {
             let mut raw = vec![0u8; count as usize + 1];
             assert_eq!(snprintf(raw.as_mut_ptr().cast(), raw.len(), $format $(, $arg)*), count);
             let raw = CStr::from_ptr(raw.as_ptr().cast());
-            let mut escaped = vec![0u8; raw.to_bytes().len() * 4 + 1];
-            strvis(escaped.as_mut_ptr().cast(), raw.as_ptr(), VIS_CSTYLE | VIS_NL | VIS_OCTAL | VIS_TAB);
-            escaped.truncate(escaped.iter().position(|&byte| byte == 0).unwrap());
+            let mut escaped = Vec::with_capacity(raw.to_bytes().len() * 4 + 1);
+            strvis_append(&mut escaped, raw.to_bytes(), VIS_CSTYLE | VIS_NL | VIS_OCTAL | VIS_TAB);
             escaped
         }};
     }

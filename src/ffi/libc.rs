@@ -4,5 +4,4 @@
 extern "C" {
     pub static mut environ: *mut *mut ::core::ffi::c_char;
     pub fn tzset();
-    pub fn warnx(_: *const ::core::ffi::c_char, ...);
 }

@@ -1,5 +1,5 @@
 fn main() {
-    let mut libraries = vec!["ncursesw", "utf8proc", "resolv"];
+    let mut libraries = vec!["ncursesw", "utf8proc"];
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux") {
         libraries.push("utempter");
     }

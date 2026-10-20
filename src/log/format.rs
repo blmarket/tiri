@@ -2,9 +2,9 @@
 //!
 //! Escape byte inputs here, before interpolation. The debug sink must not run
 //! `strvis` again: doing so would double the backslashes in these arguments.
-use crate::compat::vis::vis;
+use crate::compat::vis::vis_byte;
 use crate::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
-use std::ffi::{c_char, c_int, CStr};
+use std::ffi::{c_int, CStr};
 use std::fmt;
 
 /// Display bytes using the logger's existing escaping, stopping at the first NUL.
@@ -24,18 +24,8 @@ impl fmt::Display for LogBytes<'_> {
 }
 
 fn escaped_byte(byte: u8, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    let mut escaped = [0 as c_char; 5];
-    let end = unsafe {
-        vis(
-            escaped.as_mut_ptr(),
-            byte.into(),
-            VIS_CSTYLE | VIS_NL | VIS_OCTAL | VIS_TAB,
-            0,
-        )
-    };
-    let len = unsafe { end.offset_from(escaped.as_ptr()) as usize };
-    let bytes = unsafe { std::slice::from_raw_parts(escaped.as_ptr().cast(), len) };
-    f.write_str(std::str::from_utf8(bytes).expect("vis produces ASCII"))
+    let escaped = vis_byte(byte, VIS_CSTYLE | VIS_NL | VIS_OCTAL | VIS_TAB, 0);
+    f.write_str(std::str::from_utf8(escaped.as_ref()).expect("vis produces ASCII"))
 }
 
 /// Display a C string using the logger's existing escaping.

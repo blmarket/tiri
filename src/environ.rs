@@ -153,6 +153,23 @@ pub unsafe fn environ_update(scope: &OptionsScope, src: &environ, dst: &mut envi
         }
     }
 }
+/// The process's `environ` strings as they are, read once. `std::env::vars_os`
+/// is no substitute: it skips entries without `=` and reparses names that
+/// begin with `=`, while tmux passes every raw string on.
+pub(crate) fn process_environment() -> Vec<CString> {
+    let mut entries = Vec::new();
+    // SAFETY: `environ` is a NULL-terminated array of C strings, and its
+    // writers (environ_push, setenv) run only in forked children or after
+    // the two readers are done.
+    unsafe {
+        let mut var = environ;
+        while !var.is_null() && !(*var).is_null() {
+            entries.push(CStr::from_ptr(*var).to_owned());
+            var = var.add(1);
+        }
+    }
+    entries
+}
 pub unsafe fn environ_push(env: &environ) {
     let seed = xcalloc(::core::mem::size_of::<*mut ::core::ffi::c_char>() as size_t)
         as *mut *mut ::core::ffi::c_char;

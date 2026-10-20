@@ -2,7 +2,6 @@ use crate::bracketed_paste::{
     match_bracketed_paste_boundary, BracketedPasteBoundary, BracketedPasteBoundaryMatch,
 };
 use crate::events::events_fire_client;
-use crate::ffi::resolv::b64_pton;
 use crate::input::{input_request_reply, InputRequestReply};
 use crate::key_string::key_string_format;
 use crate::log::{log_bytes, log_cstr, log_cstr_n, log_debug, log_get_level, log_hex};
@@ -2582,9 +2581,7 @@ unsafe fn tty_keys_clipboard(
     let mut buf: *const ::core::ffi::c_char = bytes.as_ptr().cast();
     let mut end: size_t = 0;
     let mut terminator: size_t = 0 as size_t;
-    let mut needed: size_t = 0;
     let mut clip: ::core::ffi::c_char = 0 as ::core::ffi::c_char;
-    let mut outlen: ::core::ffi::c_int = 0;
     *size = 0 as size_t;
     if *buf.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int != '\u{1b}' as i32 {
         return -(1 as ::core::ffi::c_int);
@@ -2653,30 +2650,15 @@ unsafe fn tty_keys_clipboard(
     }
     buf = buf.offset(1);
     end = end.wrapping_sub(1);
-    let mut copy = ::core::slice::from_raw_parts(buf.cast::<u8>(), end).to_vec();
-    copy.push(0);
-    needed = end
-        .wrapping_add(3 as size_t)
-        .wrapping_div(4 as size_t)
-        .wrapping_mul(3 as size_t);
-    if needed == 0 as size_t {
+    let Some(out) =
+        crate::text::base64::decode(::core::slice::from_raw_parts(buf.cast::<u8>(), end))
+    else {
         return 0 as ::core::ffi::c_int;
-    }
-    let mut out = Vec::<u8>::with_capacity(needed);
-    outlen = b64_pton(
-        copy.as_ptr().cast::<::core::ffi::c_char>(),
-        out.as_mut_ptr(),
-        needed,
-    );
-    if outlen == -(1 as ::core::ffi::c_int) {
-        return 0 as ::core::ffi::c_int;
-    }
-    out.set_len(outlen as usize);
-    drop(copy);
+    };
     log_debug(format_args!(
         "{}: {}",
         "tty_keys_clipboard",
-        log_cstr_n(&out[..outlen as usize])
+        log_cstr_n(&out)
     ));
     *reply = Some(input_request_clipboard_data { data: out, clip });
     0 as ::core::ffi::c_int

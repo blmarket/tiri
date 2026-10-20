@@ -22,7 +22,7 @@ pub mod ffi;
 #[allow(unused_imports)]
 pub mod compat {
     pub mod fdforkpty;
-    pub mod getopt_long;
+    pub mod getopt;
     pub mod getprogname;
     pub mod glob;
     pub mod imsg;
@@ -32,7 +32,6 @@ pub mod compat {
     #[cfg(target_os = "linux")]
     pub mod systemd;
     pub mod unvis;
-    pub mod utf8proc;
     pub mod vis;
 }
 pub mod control;

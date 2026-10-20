@@ -1,218 +1,229 @@
-use crate::shared::abi::ssize_t;
-use crate::shared::abi::*;
-pub const UNVIS_VALID: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const UNVIS_VALIDPUSH: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
-pub const UNVIS_NOCHAR: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
-pub const UNVIS_SYNBAD: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-pub const UNVIS_END: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const S_GROUND: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const S_START: ::core::ffi::c_int = 1;
-pub const S_META: ::core::ffi::c_int = 2;
-pub const S_META1: ::core::ffi::c_int = 3;
-pub const S_CTRL: ::core::ffi::c_int = 4;
-pub const S_OCTAL2: ::core::ffi::c_int = 5;
-pub const S_OCTAL3: ::core::ffi::c_int = 6;
-pub unsafe fn unvis(
-    mut cp: *mut ::core::ffi::c_char,
-    mut c: ::core::ffi::c_char,
-    mut astate: *mut ::core::ffi::c_int,
-    mut flag: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
-    if flag & UNVIS_END != 0 {
-        if *astate == S_OCTAL2 || *astate == S_OCTAL3 {
-            *astate = S_GROUND;
-            return 1 as ::core::ffi::c_int;
-        }
-        return if *astate == S_GROUND {
-            UNVIS_NOCHAR
-        } else {
-            UNVIS_SYNBAD
-        };
-    }
-    match *astate {
-        S_GROUND => {
-            *cp = 0 as ::core::ffi::c_char;
-            if c as ::core::ffi::c_int == '\\' as i32 {
-                *astate = S_START;
-                return 0 as ::core::ffi::c_int;
-            }
-            *cp = c;
-            1 as ::core::ffi::c_int
-        }
-        S_START => {
-            match c as ::core::ffi::c_int {
-                92 => {
-                    *cp = c;
-                    *astate = S_GROUND;
-                    return 1 as ::core::ffi::c_int;
-                }
-                48..=55 => {
-                    *cp = (c as ::core::ffi::c_int - '0' as i32) as ::core::ffi::c_char;
-                    *astate = S_OCTAL2;
-                    return 0 as ::core::ffi::c_int;
-                }
-                77 => {
-                    *cp = 0o200 as ::core::ffi::c_int as ::core::ffi::c_char;
-                    *astate = S_META;
-                    return 0 as ::core::ffi::c_int;
-                }
-                94 => {
-                    *astate = S_CTRL;
-                    return 0 as ::core::ffi::c_int;
-                }
-                110 => {
-                    *cp = '\n' as i32 as ::core::ffi::c_char;
-                    *astate = S_GROUND;
-                    return 1 as ::core::ffi::c_int;
-                }
-                114 => {
-                    *cp = '\r' as i32 as ::core::ffi::c_char;
-                    *astate = S_GROUND;
-                    return 1 as ::core::ffi::c_int;
-                }
-                98 => {
-                    *cp = '\u{8}' as i32 as ::core::ffi::c_char;
-                    *astate = S_GROUND;
-                    return 1 as ::core::ffi::c_int;
-                }
-                97 => {
-                    *cp = '\u{7}' as i32 as ::core::ffi::c_char;
-                    *astate = S_GROUND;
-                    return 1 as ::core::ffi::c_int;
-                }
-                118 => {
-                    *cp = '\u{b}' as i32 as ::core::ffi::c_char;
-                    *astate = S_GROUND;
-                    return 1 as ::core::ffi::c_int;
-                }
-                116 => {
-                    *cp = '\t' as i32 as ::core::ffi::c_char;
-                    *astate = S_GROUND;
-                    return 1 as ::core::ffi::c_int;
-                }
-                102 => {
-                    *cp = '\u{c}' as i32 as ::core::ffi::c_char;
-                    *astate = S_GROUND;
-                    return 1 as ::core::ffi::c_int;
-                }
-                115 => {
-                    *cp = ' ' as i32 as ::core::ffi::c_char;
-                    *astate = S_GROUND;
-                    return 1 as ::core::ffi::c_int;
-                }
-                69 => {
-                    *cp = '\u{1b}' as i32 as ::core::ffi::c_char;
-                    *astate = S_GROUND;
-                    return 1 as ::core::ffi::c_int;
-                }
-                10 => {
-                    *astate = S_GROUND;
-                    return 3 as ::core::ffi::c_int;
-                }
-                36 => {
-                    *astate = S_GROUND;
-                    return 3 as ::core::ffi::c_int;
-                }
-                _ => {}
-            }
-            *astate = S_GROUND;
-            -(1 as ::core::ffi::c_int)
-        }
-        S_META => {
-            if c as ::core::ffi::c_int == '-' as i32 {
-                *astate = S_META1;
-            } else if c as ::core::ffi::c_int == '^' as i32 {
-                *astate = S_CTRL;
-            } else {
-                *astate = S_GROUND;
-                return -(1 as ::core::ffi::c_int);
-            }
-            0 as ::core::ffi::c_int
-        }
-        S_META1 => {
-            *astate = S_GROUND;
-            *cp = (*cp as ::core::ffi::c_int | c as ::core::ffi::c_int) as ::core::ffi::c_char;
-            1 as ::core::ffi::c_int
-        }
-        S_CTRL => {
-            if c as ::core::ffi::c_int == '?' as i32 {
-                *cp = (*cp as ::core::ffi::c_int | 0o177 as ::core::ffi::c_int)
-                    as ::core::ffi::c_char;
-            } else {
-                *cp = (*cp as ::core::ffi::c_int
-                    | c as ::core::ffi::c_int & 0o37 as ::core::ffi::c_int)
-                    as ::core::ffi::c_char;
-            }
-            *astate = S_GROUND;
-            1 as ::core::ffi::c_int
-        }
-        S_OCTAL2 => {
-            if c as u_char as ::core::ffi::c_int >= '0' as i32
-                && c as u_char as ::core::ffi::c_int <= '7' as i32
-            {
-                *cp = (((*cp as ::core::ffi::c_int) << 3 as ::core::ffi::c_int)
-                    + (c as ::core::ffi::c_int - '0' as i32))
-                    as ::core::ffi::c_char;
-                *astate = S_OCTAL3;
-                return 0 as ::core::ffi::c_int;
-            }
-            *astate = S_GROUND;
-            2 as ::core::ffi::c_int
-        }
-        S_OCTAL3 => {
-            *astate = S_GROUND;
-            if c as u_char as ::core::ffi::c_int >= '0' as i32
-                && c as u_char as ::core::ffi::c_int <= '7' as i32
-            {
-                *cp = (((*cp as ::core::ffi::c_int) << 3 as ::core::ffi::c_int)
-                    + (c as ::core::ffi::c_int - '0' as i32))
-                    as ::core::ffi::c_char;
-                return 1 as ::core::ffi::c_int;
-            }
-            2 as ::core::ffi::c_int
-        }
-        _ => {
-            *astate = S_GROUND;
-            -(1 as ::core::ffi::c_int)
-        }
-    }
+//! OpenBSD strunvis(3) over bytes.
+
+#[derive(Clone, Copy)]
+enum State {
+    Ground,
+    Start,
+    Meta,
+    Meta1,
+    Ctrl,
+    Octal2,
+    Octal3,
 }
-pub unsafe fn strunvis(
-    mut dst: *mut ::core::ffi::c_char,
-    mut src: *const ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
-    let mut c: ::core::ffi::c_char = 0;
-    let mut start: *mut ::core::ffi::c_char = dst;
-    let mut state: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    loop {
-        let fresh0 = src;
-        src = src.offset(1);
-        c = *fresh0;
-        if !(c != 0) {
-            break;
+
+/// What `unvis(3)` reports for one input byte; `None` is `UNVIS_SYNBAD`.
+enum Step {
+    /// The byte was consumed with nothing to emit (0 or `UNVIS_NOCHAR`).
+    Pending,
+    /// The value is complete (`UNVIS_VALID`).
+    Valid,
+    /// The value is complete and the byte must be read again
+    /// (`UNVIS_VALIDPUSH`), after one or two octal digits.
+    ValidPush,
+}
+
+/// One step of the state machine. `value` is the output cell the C function
+/// wrote through `cp`: cleared on every byte in the ground state, and only
+/// partly set by the states that build it.
+fn unvis(state: &mut State, value: &mut u8, c: u8) -> Option<Step> {
+    let step = match *state {
+        State::Ground => {
+            *value = 0;
+            if c == b'\\' {
+                *state = State::Start;
+                return Some(Step::Pending);
+            }
+            *value = c;
+            Step::Valid
         }
-        loop {
-            match unvis(dst, c, &raw mut state, 0 as ::core::ffi::c_int) {
-                UNVIS_VALID => {
-                    dst = dst.offset(1);
-                    break;
+        State::Start => {
+            *state = State::Ground;
+            let decoded = match c {
+                b'\\' => c,
+                b'0'..=b'7' => {
+                    *value = c - b'0';
+                    *state = State::Octal2;
+                    return Some(Step::Pending);
                 }
-                UNVIS_VALIDPUSH => {
-                    dst = dst.offset(1);
+                b'M' => {
+                    *value = 0o200;
+                    *state = State::Meta;
+                    return Some(Step::Pending);
                 }
-                0 | UNVIS_NOCHAR => {
-                    break;
+                b'^' => {
+                    *state = State::Ctrl;
+                    return Some(Step::Pending);
                 }
+                b'n' => b'\n',
+                b'r' => b'\r',
+                b'b' => 0x08,
+                b'a' => 0x07,
+                b'v' => 0x0b,
+                b't' => b'\t',
+                b'f' => 0x0c,
+                b's' => b' ',
+                b'E' => 0x1b,
+                // An escaped newline or `$` produces nothing.
+                b'\n' | b'$' => return Some(Step::Pending),
+                _ => return None,
+            };
+            *value = decoded;
+            Step::Valid
+        }
+        State::Meta => {
+            *state = match c {
+                b'-' => State::Meta1,
+                b'^' => State::Ctrl,
                 _ => {
-                    *dst = '\0' as i32 as ::core::ffi::c_char;
-                    return -(1 as ::core::ffi::c_int);
+                    *state = State::Ground;
+                    return None;
                 }
+            };
+            Step::Pending
+        }
+        State::Meta1 => {
+            *state = State::Ground;
+            *value |= c;
+            Step::Valid
+        }
+        State::Ctrl => {
+            *state = State::Ground;
+            *value |= if c == b'?' { 0o177 } else { c & 0o37 };
+            Step::Valid
+        }
+        State::Octal2 | State::Octal3 if (b'0'..=b'7').contains(&c) => {
+            // Three digits can exceed a byte; the C `char` kept the low bits.
+            *value = (*value << 3) + (c - b'0');
+            if matches!(*state, State::Octal3) {
+                *state = State::Ground;
+                Step::Valid
+            } else {
+                *state = State::Octal3;
+                Step::Pending
+            }
+        }
+        State::Octal2 | State::Octal3 => {
+            *state = State::Ground;
+            Step::ValidPush
+        }
+    };
+    Some(step)
+}
+
+/// Decode `src` as OpenBSD `strunvis(3)` does, returning `None` where it
+/// returned -1.
+///
+/// Input ends at the first NUL, as the C loop did; callers pass C string
+/// bytes. At the end a pending octal value is emitted, and an unfinished
+/// `\`, `\M`, `\M-` or `\^` is dropped without an error, because `strunvis`
+/// ignores everything `unvis(UNVIS_END)` reports except a valid character.
+/// The output may contain NUL bytes (`\0`, `\^@`).
+pub fn strunvis(src: &[u8]) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(src.len());
+    let mut state = State::Ground;
+    let mut value = 0;
+    for &c in src.iter().take_while(|&&c| c != 0) {
+        loop {
+            match unvis(&mut state, &mut value, c)? {
+                Step::Pending => break,
+                Step::Valid => {
+                    out.push(value);
+                    break;
+                }
+                Step::ValidPush => out.push(value),
             }
         }
     }
-    if unvis(dst, c, &raw mut state, UNVIS_END) == UNVIS_VALID {
-        dst = dst.offset(1);
+    if matches!(state, State::Octal2 | State::Octal3) {
+        out.push(value);
     }
-    *dst = '\0' as i32 as ::core::ffi::c_char;
-    dst.offset_from(start) as ::core::ffi::c_long as ::core::ffi::c_int
+    Some(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn decoded(src: &[u8]) -> Vec<u8> {
+        strunvis(src).expect("valid escapes")
+    }
+
+    #[test]
+    fn plain_bytes_and_escaped_backslashes_pass_through() {
+        assert_eq!(decoded(b""), b"");
+        assert_eq!(decoded(b"ab\xff"), b"ab\xff");
+        assert_eq!(decoded(b"a\\\\b"), b"a\\b");
+    }
+
+    #[test]
+    fn each_named_escape() {
+        let cases: [(&[u8], u8); 9] = [
+            (b"\\n", b'\n'),
+            (b"\\r", b'\r'),
+            (b"\\b", 0x08),
+            (b"\\a", 0x07),
+            (b"\\v", 0x0b),
+            (b"\\t", b'\t'),
+            (b"\\f", 0x0c),
+            (b"\\s", b' '),
+            (b"\\E", 0x1b),
+        ];
+        for (src, byte) in cases {
+            assert_eq!(decoded(src), [byte], "{src:?}");
+        }
+        assert_eq!(decoded(b"a\\\nb\\$c"), b"abc");
+    }
+
+    #[test]
+    fn meta_and_control_forms() {
+        assert_eq!(decoded(b"\\M-a"), [0xe1]);
+        assert_eq!(decoded(b"\\M-\xff"), [0xff]);
+        assert_eq!(decoded(b"\\M^A"), [0x81]);
+        assert_eq!(decoded(b"\\M^?"), [0xff]);
+        assert_eq!(decoded(b"\\^A"), [0x01]);
+        assert_eq!(decoded(b"\\^a"), [0x01]);
+        assert_eq!(decoded(b"\\^?"), [0x7f]);
+        assert_eq!(decoded(b"\\^@"), [0x00]);
+    }
+
+    #[test]
+    fn octal_digits_and_the_push_back() {
+        assert_eq!(decoded(b"\\101"), b"A");
+        assert_eq!(decoded(b"\\1012"), b"A2");
+        assert_eq!(decoded(b"\\377"), [0xff]);
+        // Three digits keep only the low eight bits.
+        assert_eq!(decoded(b"\\777"), [0xff]);
+        // The first non-octal byte ends the number and is read again.
+        assert_eq!(decoded(b"\\1x"), b"\x01x");
+        assert_eq!(decoded(b"\\18"), b"\x018");
+        assert_eq!(decoded(b"\\12x"), b"\x0ax");
+        assert_eq!(decoded(b"\\1\\n"), b"\x01\n");
+        assert_eq!(decoded(b"\\12\\n"), b"\x0a\n");
+    }
+
+    #[test]
+    fn syntax_errors() {
+        assert_eq!(strunvis(b"\\x"), None);
+        assert_eq!(strunvis(b"a\\8"), None);
+        assert_eq!(strunvis(b"\\Mx"), None);
+        assert_eq!(strunvis(b"\\M"), Some(Vec::new()));
+        assert_eq!(strunvis(b"ok\\q"), None);
+    }
+
+    #[test]
+    fn end_of_input_emits_octal_and_drops_unfinished_escapes() {
+        assert_eq!(decoded(b"\\1"), [0x01]);
+        assert_eq!(decoded(b"\\12"), [0x0a]);
+        assert_eq!(decoded(b"a\\"), b"a");
+        assert_eq!(decoded(b"a\\M"), b"a");
+        assert_eq!(decoded(b"a\\M-"), b"a");
+        assert_eq!(decoded(b"a\\M^"), b"a");
+        assert_eq!(decoded(b"a\\^"), b"a");
+    }
+
+    #[test]
+    fn input_ends_at_the_first_nul() {
+        assert_eq!(decoded(b"a\0\\x"), b"a");
+        assert_eq!(decoded(b"\\1\0"), [0x01]);
+    }
 }

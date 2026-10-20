@@ -11,7 +11,6 @@ use crate::events_payload::{
     event_payload_set_string, event_payload_set_target, event_payload_set_time,
     event_payload_set_uint, event_payload_set_window,
 };
-use crate::ffi::resolv::{b64_ntop, b64_pton};
 use crate::format::bytes::cstr_suffix;
 use crate::format::bytes::format_bytes;
 use crate::format::bytes::format_message_with;
@@ -63,6 +62,7 @@ use crate::style::colour::{
     colour_force_rgb, colour_join_rgb, colour_palette_clear, colour_palette_get,
     colour_palette_set, colour_parse_x11_logged, colour_split_rgb,
 };
+use crate::text::base64;
 use crate::text::utf8::{utf8_append, utf8_copy, utf8_isvalid, utf8_open, utf8_set};
 use crate::tmux::{get_timer, getversion};
 use crate::tty::tty_set_selection;
@@ -5253,7 +5253,6 @@ unsafe fn input_osc_52_parse(
     p: &CStr,
     clip: &mut [u8; 13],
 ) -> Option<Vec<u8>> {
-    let mut len: size_t = 0;
     let allow = b"cpqs01234567";
     let mut j: usize = 0;
     if OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"set-clipboard"))
@@ -5284,21 +5283,10 @@ unsafe fn input_osc_52_parse(
         input_osc_52_reply(ictx, clip[0] as ::core::ffi::c_char);
         return None;
     }
-    len = end
-        .count_bytes()
-        .wrapping_add(3 as size_t)
-        .wrapping_div(4 as size_t)
-        .wrapping_mul(3 as size_t);
-    if len == 0 as size_t {
+    if end.is_empty() {
         return None;
     }
-    let mut out = vec![0; len];
-    let outlen = b64_pton(end.as_ptr(), out.as_mut_ptr(), len);
-    if outlen == -(1 as ::core::ffi::c_int) {
-        return None;
-    }
-    out.truncate(outlen as usize);
-    Some(out)
+    base64::decode(end.to_bytes())
 }
 unsafe fn input_osc_52(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
     let input_pane_owner = ictx.wp.upgrade();
@@ -5389,34 +5377,22 @@ pub unsafe fn input_reply_clipboard(
     end: &CStr,
     mut clip: ::core::ffi::c_char,
 ) {
-    let mut out = Vec::<u8>::new();
-    let mut outlen: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if !buf.is_empty() {
-        let len = buf.len();
-        if len
-            >= (INT_MAX as size_t)
-                .wrapping_mul(3 as size_t)
-                .wrapping_div(4 as size_t)
-                .wrapping_sub(1 as size_t)
-        {
-            return;
-        }
-        outlen = (4 as size_t)
-            .wrapping_mul(len.wrapping_add(2 as size_t).wrapping_div(3 as size_t))
-            .wrapping_add(1 as size_t) as ::core::ffi::c_int;
-        out.resize(outlen as usize, 0);
-        outlen = b64_ntop(buf.as_ptr(), len, out.as_mut_ptr().cast(), outlen as size_t);
-        if outlen == -(1 as ::core::ffi::c_int) {
-            return;
-        }
+    if buf.len()
+        >= (INT_MAX as size_t)
+            .wrapping_mul(3 as size_t)
+            .wrapping_div(4 as size_t)
+            .wrapping_sub(1 as size_t)
+    {
+        return;
     }
+    let out = base64::encode(buf);
     bufferevent_write(bev, b"\x1B]52;");
     if clip as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
         bufferevent_write(bev, &[clip as u8]);
     }
     bufferevent_write(bev, b";");
-    if outlen != 0 as ::core::ffi::c_int {
-        bufferevent_write(bev, &out[..outlen as usize]);
+    if !out.is_empty() {
+        bufferevent_write(bev, &out);
     }
     bufferevent_write(bev, end.to_bytes());
 }

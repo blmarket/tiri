@@ -13,3 +13,9 @@ pub const VIS_DQ: ::core::ffi::c_int = 0x200 as ::core::ffi::c_int;
 pub const VIS_SAFE: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
 
 pub const VIS_NOSLASH: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
+
+pub const VIS_SP: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
+
+pub const VIS_ALL: ::core::ffi::c_int = 0x400 as ::core::ffi::c_int;
+
+pub const VIS_GLOB: ::core::ffi::c_int = 0x100 as ::core::ffi::c_int;

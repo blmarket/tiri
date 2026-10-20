@@ -9,7 +9,6 @@ use tiri_rt::{AsyncRead as _, AsyncWrite as _};
 use super::acs::{tty_acs_needed, tty_acs_reverse_get};
 use super::draw::tty_draw_line;
 use super::keys::{tty_keys_build, tty_keys_free, tty_keys_next};
-use crate::ffi::resolv::b64_ntop;
 use crate::format::bytes::format_message_with;
 use crate::grid::grid_default_cell;
 use crate::log::{fatalx, log_cstr, log_debug};
@@ -40,6 +39,7 @@ use crate::shared::tty::{
 use crate::shared::utf8::UTF8_SIZE;
 use crate::shared::window::WindowRef;
 use crate::status::status_line_size;
+use crate::text::base64;
 use crate::text::utf8::utf8_set;
 use crate::tmux::setblocking;
 use crate::tty::features::tty_apply_features;
@@ -2003,18 +2003,9 @@ unsafe fn tty_selection_sequence(
     if tty_term_has(term, TTYC_MS) == 0 {
         return None;
     }
-    let size = 4usize
-        .wrapping_mul(data.len().wrapping_add(2) / 3)
-        .wrapping_add(1);
-    let mut encoded = vec![0u8; size];
-    b64_ntop(data.as_ptr(), data.len(), encoded.as_mut_ptr().cast(), size);
+    let encoded = std::ffi::CString::new(base64::encode(data)).expect("base64 has no NUL");
     terminal.flags |= TTY_NOBLOCK;
-    Some(tty_term_string_ss(
-        term,
-        TTYC_MS,
-        clip,
-        CStr::from_bytes_until_nul(&encoded).expect("b64_ntop leaves a NUL"),
-    ))
+    Some(tty_term_string_ss(term, TTYC_MS, clip, &encoded))
 }
 unsafe fn tty_cmd_rawstring(owner: &ClientRef, ctx: &tty_ctx) {
     {

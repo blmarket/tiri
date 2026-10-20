@@ -16,7 +16,7 @@ use crate::shared::posix_io::STDIN_FILENO;
 use crate::shared::tty::*;
 use crate::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::tty::features::{tty_apply_features, tty_parse_client_features};
-use libc::{fnmatch, strcmp, strlen};
+use libc::{fnmatch, strcmp};
 use std::ffi::{CStr, CString};
 
 pub(super) const TTYCODE_FLAG: tty_code_type = 3;
@@ -1091,13 +1091,18 @@ fn tty_term_override_next(s: &CStr, offset: &mut size_t) -> Option<CString> {
     }
     Some(CString::new(value).expect("override tokens are read up to the NUL"))
 }
-unsafe fn tty_term_override_value(source: &CStr) -> CString {
-    let mut decoded = source.to_bytes_with_nul().to_vec();
-    if strunvis(decoded.as_mut_ptr().cast(), source.as_ptr()) == -1 {
-        return source.to_owned();
-    }
-    decoded.truncate(strlen(decoded.as_ptr().cast()) + 1);
-    CString::from_vec_with_nul(decoded).expect("strunvis terminates its output")
+fn tty_term_override_value(source: &CStr) -> CString {
+    strunvis(source.to_bytes()).map_or_else(
+        || source.to_owned(),
+        |mut decoded| {
+            // The C caller read the result with strlen, so a decoded NUL
+            // (`\0`, `\^@`) ends the value.
+            if let Some(nul) = decoded.iter().position(|&byte| byte == 0) {
+                decoded.truncate(nul);
+            }
+            CString::new(decoded).expect("decoded value was cut at its first NUL")
+        },
+    )
 }
 pub(super) unsafe fn tty_term_apply(
     term: &mut tty_term,
@@ -1642,7 +1647,6 @@ pub(super) fn tty_term_flag(term: &tty_term, code: tty_code_code) -> ::core::ffi
     }
 }
 pub(super) unsafe fn tty_term_describe(term: &tty_term, code: tty_code_code) -> CString {
-    let mut escaped: [::core::ffi::c_char; 128] = [0; 128];
     match &(&term.codes)[code as usize] {
         tty_code::None => format_message_with(|out| {
             write!(out, "{:4}: ", { code })?;
@@ -1650,21 +1654,16 @@ pub(super) unsafe fn tty_term_describe(term: &tty_term, code: tty_code_code) -> 
             out.write_all(b": [missing]")
         }),
         tty_code::String(value) => {
-            strnvis(
-                &raw mut escaped as *mut ::core::ffi::c_char,
-                value.as_ptr(),
-                ::core::mem::size_of::<[::core::ffi::c_char; 128]>() as size_t,
+            let escaped = strnvis(
+                value.to_bytes(),
+                128,
                 VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL,
             );
             format_message_with(|out| {
                 write!(out, "{:4}: ", { code })?;
                 out.write_all(tty_term_codes[code as usize].name.to_bytes())?;
                 out.write_all(b": (string) ")?;
-                out.write_all(
-                    CStr::from_bytes_until_nul(&escaped.map(|c| c as u8))
-                        .expect("strnvis terminates its output")
-                        .to_bytes(),
-                )
+                out.write_all(&escaped)
             })
         }
         tty_code::Number(value) => format_message_with(|out| {
