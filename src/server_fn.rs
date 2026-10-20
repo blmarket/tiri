@@ -9,7 +9,7 @@ use crate::session::Session;
 use crate::shared::client::ClientRef;
 use crate::shared::session::SessionRef;
 use crate::shared::window::WindowRef;
-use crate::window::{winlink_find_by_index, winlink_find_by_window};
+use crate::window::{winlink_find_by_index, winlink_find_by_window, Window as _};
 use crate::window_pane::WindowPane as _;
 
 use crate::shared::abi::*;
@@ -95,6 +95,12 @@ pub unsafe fn server_redraw_window(window: &WindowRef) {
         if matches {
             server_redraw_client(client);
         }
+    }
+}
+/// Unzoom `window`, redrawing it when it was zoomed.
+pub unsafe fn server_unzoom_window(window: &WindowRef) {
+    if window.unzoom(true) {
+        server_redraw_window(window);
     }
 }
 pub unsafe fn server_redraw_window_menu(window_owner: &WindowRef) {
@@ -194,6 +200,7 @@ pub unsafe fn server_kill_window(owner: WindowRef, mut renumber: ::core::ffi::c_
     while !s.is_none() {
         let name = s.as_ref().expect("live session").name();
         if !(!s.as_ref().expect("live session").contains_window(&owner)) {
+            server_unzoom_window(&owner);
             loop {
                 wl = s.as_ref().expect("live session").with_winlinks(|links| {
                     winlink_find_by_window(links, &WindowRef::clone(&(owner)))

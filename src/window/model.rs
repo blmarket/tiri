@@ -25,6 +25,12 @@ pub struct window {
     /// Current pane identity; the pane index owns the allocation.
     pub(super) active: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
     pub(super) last_panes: PaneHistory,
+    /// The zoomed pane, which takes the whole window while the others are
+    /// hidden; empty when the window is not zoomed.
+    pub(super) zoomed: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
+    /// Whether the next `pop_zoom` zooms the active pane, as the last
+    /// `push_zoom` asked.
+    pub(super) was_zoomed: bool,
     /// The pane order.
     pub(super) panes: window_panes,
     /// The arrangement of the panes and its own record of each one; every
@@ -89,6 +95,8 @@ impl window {
             creation_time: UNIX_EPOCH,
             active: Default::default(),
             last_panes: Default::default(),
+            zoomed: Default::default(),
+            was_zoomed: Default::default(),
             panes: Default::default(),
             layout: Default::default(),
             sx: Default::default(),

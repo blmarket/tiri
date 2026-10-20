@@ -124,9 +124,9 @@ fn a_shrinking_strip_brings_the_view_back_over_its_panes() {
     let halves = ids(&pair);
     let client = pair.attach_terminal(80, 24);
     assert_eq!(client.offset(&pair), 0);
-    pair.success(&["resize-pane", "-Z", "-t", &halves[1]]);
+    pair.success(&["resize-pane", "-W", "-t", &halves[1]]);
     client.wait_offset(&pair, 40);
-    pair.success(&["resize-pane", "-Z", "-t", &halves[1]]);
+    pair.success(&["resize-pane", "-W", "-t", &halves[1]]);
     client.wait_offset(&pair, 0);
     assert_eq!(client.display(&pair, "#{window_bigger}"), "0");
     let server = strip(80, 4);
@@ -201,7 +201,7 @@ fn clients_of_different_widths_keep_their_own_views() {
 fn a_client_narrower_than_the_active_pane_follows_its_cursor() {
     let server = strip(80, 3);
     let ids = ids(&server);
-    server.success(&["resize-pane", "-Z", "-t", &ids[1]]);
+    server.success(&["resize-pane", "-W", "-t", &ids[1]]);
     assert_eq!(
         server
             .panes()

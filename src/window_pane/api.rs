@@ -18,6 +18,54 @@ use std::ffi::CStr;
 use std::os::fd::AsRawFd;
 use std::time::Duration;
 
+/// The size and offset of a pane placed in the layout rectangle `geometry` of
+/// `window`, with border status `status`: a row less for a status line at the
+/// window's edge, and less width for a scrollbar when `reserve`.
+unsafe fn window_pane_placement(
+    pane: &Rc<UnsafeCell<window_pane>>,
+    geometry: layout_geometry,
+    window: &WindowRef,
+    status: i32,
+    reserve: bool,
+) -> (u32, u32, i32, i32) {
+    let (mut sx, mut sy) = (geometry.sx, geometry.sy);
+    let (mut xoff, mut yoff) = (geometry.xoff, geometry.yoff);
+    let at_edge = match status {
+        PANE_STATUS_TOP => yoff == 0,
+        PANE_STATUS_BOTTOM => (yoff as u32).saturating_add(sy) >= window.size().1,
+        _ => false,
+    };
+    if at_edge && sy > 1 {
+        if status == PANE_STATUS_TOP {
+            yoff += 1;
+        }
+        sy -= 1;
+    }
+    if reserve {
+        let (width, pad) = {
+            let pane = &*pane.get();
+            (
+                pane.scrollbar_style.width.max(1),
+                pane.scrollbar_style.pad.max(0),
+            )
+        };
+        if window.scrollbar_position() == PANE_SCROLLBARS_LEFT {
+            if sx as i32 - width - pad < PANE_MINIMUM {
+                xoff += sx as i32 - PANE_MINIMUM;
+                sx = PANE_MINIMUM as u32;
+            } else {
+                sx = sx.wrapping_sub(width as u32).wrapping_sub(pad as u32);
+                xoff += width + pad;
+            }
+        } else if sx as i32 - width - pad < PANE_MINIMUM {
+            sx = PANE_MINIMUM as u32;
+        } else {
+            sx = sx.wrapping_sub(width as u32).wrapping_sub(pad as u32);
+        }
+    }
+    (sx, sy, xoff, yoff)
+}
+
 /// Access a pane without lending its model storage.
 ///
 /// Methods retain the legacy event-loop exclusivity and logical-lifetime
@@ -91,6 +139,12 @@ pub trait WindowPane {
     /// Clear complete history after retiring modes; optionally reset link identities.
     unsafe fn clear_history(&self, reset_links: bool);
     unsafe fn window_observer(&self) -> WindowWeak;
+    /// Whether the pane is shown in its window: false while the window is
+    /// zoomed to another pane, or once the pane has no window.
+    unsafe fn is_visible(&self) -> bool;
+    /// The size the pane has, or would have, in its place in the layout
+    /// with the window unzoomed.
+    unsafe fn unzoomed_size(&self) -> Option<(u32, u32)>;
     /// Move the parent identity and option inheritance together, before the
     /// caller publishes membership or dispatches move/layout notifications.
     unsafe fn reparent(&self, window: &WindowRef);
@@ -168,7 +222,7 @@ pub trait WindowPane {
 
     unsafe fn resize(&self, sx: u32, sy: u32);
     unsafe fn update_focus(&self, focused: bool);
-    /// Return 0 for a pane outside its window's strip, -1 for deferred drawing, or 1 after
+    /// Return 0 for a pane outside its window's strip or hidden by a zoom, -1 for deferred drawing, or 1 after
     /// installing pane offsets. Client applies terminal/status offsets afterward.
     /// With `window_redraw` false, the pane is never changed; a disposable context
     /// can therefore probe placement even when dirty drawing would be deferred.
@@ -791,43 +845,9 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         scrollbars: &crate::shared::window::WindowRef,
     ) -> bool {
         let old_geometry = self.geometry();
-        let (mut sx, mut sy) = (geometry.sx, geometry.sy);
-        let (mut xoff, mut yoff) = (geometry.xoff, geometry.yoff);
-        let status = self.border_status();
-        let at_edge = match status {
-            PANE_STATUS_TOP => yoff == 0,
-            PANE_STATUS_BOTTOM => (yoff as u32).saturating_add(sy) >= scrollbars.size().1,
-            _ => false,
-        };
-        if at_edge && sy > 1 {
-            if status == PANE_STATUS_TOP {
-                yoff += 1;
-            }
-            sy -= 1;
-        }
         let reserve = window_pane_scrollbar_reserve(&*self.get()) != 0;
-        if reserve {
-            let (width, pad) = {
-                let pane = &*self.get();
-                (
-                    pane.scrollbar_style.width.max(1),
-                    pane.scrollbar_style.pad.max(0),
-                )
-            };
-            if scrollbars.scrollbar_position() == PANE_SCROLLBARS_LEFT {
-                if sx as i32 - width - pad < PANE_MINIMUM {
-                    xoff += sx as i32 - PANE_MINIMUM;
-                    sx = PANE_MINIMUM as u32;
-                } else {
-                    sx = sx.wrapping_sub(width as u32).wrapping_sub(pad as u32);
-                    xoff += width + pad;
-                }
-            } else if sx as i32 - width - pad < PANE_MINIMUM {
-                sx = PANE_MINIMUM as u32;
-            } else {
-                sx = sx.wrapping_sub(width as u32).wrapping_sub(pad as u32);
-            }
-        }
+        let (sx, sy, xoff, yoff) =
+            window_pane_placement(self, geometry, scrollbars, self.border_status(), reserve);
         {
             let pane = &mut *self.get();
             pane.xoff = xoff;
@@ -916,6 +936,27 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
 
     unsafe fn window_observer(&self) -> WindowWeak {
         (*self.get()).window.clone()
+    }
+    unsafe fn is_visible(&self) -> bool {
+        self.window_observer().upgrade().is_some_and(|window| {
+            let zoomed = window.zoomed_pane();
+            zoomed.strong_count() == 0 || zoomed.ptr_eq(&Rc::downgrade(self))
+        })
+    }
+    unsafe fn unzoomed_size(&self) -> Option<(u32, u32)> {
+        let window = self.window_observer().upgrade()?;
+        let observer = Rc::downgrade(self);
+        let (_, cell) = window
+            .pane_cells()
+            .into_iter()
+            .find(|(pane, _)| pane.ptr_eq(&observer))?;
+        // Unzoomed, no mode hides the pane status line or the scrollbars:
+        // the pane reserves a scrollbar unless on its alternate screen.
+        let reserve = (*self.get()).base.saved_grid.is_none()
+            && window.scrollbar_mode() == PANE_SCROLLBARS_ALWAYS;
+        let (sx, sy, ..) =
+            window_pane_placement(self, cell, &window, window.pane_border_status(), reserve);
+        Some((sx, sy))
     }
     unsafe fn reparent(&self, window: &WindowRef) {
         let state = &mut *self.get();
@@ -1026,6 +1067,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         if !(*pane)
             .window_handle()
             .is_some_and(|window| window.contains_pane(&Rc::downgrade(self)))
+            || !self.is_visible()
         {
             return 0;
         }

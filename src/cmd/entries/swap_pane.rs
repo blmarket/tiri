@@ -19,12 +19,12 @@ pub static cmd_swap_pane_entry: cmd_entry = {
         name: c"swap-pane",
         alias: Some(c"swapp"),
         args: args_parse {
-            template: c"dDs:t:U",
+            template: c"dDs:t:UZ",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: c"[-dDU] [-s src-pane] [-t dst-pane]",
+        usage: c"[-dDUZ] [-s src-pane] [-t dst-pane]",
         source: cmd_entry_flag {
             flag: 's' as i32 as ::core::ffi::c_char,
             type_0: CMD_FIND_PANE,
@@ -54,8 +54,12 @@ unsafe fn cmd_swap_pane_exec(
 
     dst_idx = (target.winlink_handle()).get_unchecked().idx;
     let mut src_window_owner = source.w.upgrade().expect("live swap source window");
+    let zoom = args_has(args, b'Z') != 0;
     let result = (|| {
         let mut src_pane_owner = source.wp.upgrade().expect("live swap source pane");
+        if dst_window_owner.push_zoom(false, zoom) {
+            server_redraw_window(&dst_window_owner);
+        }
 
         src_idx = (source.winlink_handle()).get_unchecked().idx;
         if args_has(args, 'D' as i32 as u_char) != 0 {
@@ -74,6 +78,11 @@ unsafe fn cmd_swap_pane_exec(
                 .step_pane(Some(&Rc::downgrade(&dst_pane_owner)), true)
                 .upgrade()
                 .unwrap_or_else(|| dst_pane_owner.clone());
+        }
+        if !WindowRef::ptr_eq(&src_window_owner, &dst_window_owner)
+            && src_window_owner.push_zoom(false, zoom)
+        {
+            server_redraw_window(&src_window_owner);
         }
         if !Rc::ptr_eq(&src_pane_owner, &dst_pane_owner) {
             ClientRef::forget_pane(&src_pane_owner);
@@ -183,6 +192,12 @@ unsafe fn cmd_swap_pane_exec(
         }
         CmdOutcome::Normal
     })();
+    if src_window_owner.pop_zoom() {
+        server_redraw_window(&src_window_owner);
+    }
+    if !WindowRef::ptr_eq(&src_window_owner, &dst_window_owner) && dst_window_owner.pop_zoom() {
+        server_redraw_window(&dst_window_owner);
+    }
     drop(src_window_owner);
     drop(dst_window_owner);
     result

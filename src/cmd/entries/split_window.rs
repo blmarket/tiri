@@ -37,12 +37,12 @@ pub static cmd_new_pane_entry: cmd_entry = {
         name: c"new-pane",
         alias: Some(c"newp"),
         args: args_parse {
-            template: c"bc:de:EF:Ikm:PR:s:S:t:T:W",
+            template: c"bc:de:EF:Ikm:PR:s:S:t:T:WZ",
             lower: 0 as ::core::ffi::c_int,
             upper: -(1 as ::core::ffi::c_int),
             cb: None,
         },
-        usage: c"[-bdEIkPW] [-c start-directory] [-e environment] [-F format] [-m message] [-s style] [-S active-border-style] [-R inactive-border-style] [-T title] [-t target-pane] [shell-command [argument ...]]",
+        usage: c"[-bdEIkPWZ] [-c start-directory] [-e environment] [-F format] [-m message] [-s style] [-S active-border-style] [-R inactive-border-style] [-T title] [-t target-pane] [shell-command [argument ...]]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -64,12 +64,12 @@ pub static cmd_split_window_entry: cmd_entry = {
         name: c"split-window",
         alias: Some(c"splitw"),
         args: args_parse {
-            template: c"bc:de:EfF:hIkl:m:p:PR:s:S:t:T:vW",
+            template: c"bc:de:EfF:hIkl:m:p:PR:s:S:t:T:vWZ",
             lower: 0 as ::core::ffi::c_int,
             upper: -(1 as ::core::ffi::c_int),
             cb: None,
         },
-        usage: c"[-bdEfhIkPvW] [-c start-directory] [-e environment] [-F format] [-l size] [-m message] [-p percentage] [-s style] [-S active-border-style] [-R inactive-border-style] [-T title] [-t target-pane] [shell-command [argument ...]]",
+        usage: c"[-bdEfhIkPvWZ] [-c start-directory] [-e environment] [-F format] [-l size] [-m message] [-p percentage] [-s style] [-S active-border-style] [-R inactive-border-style] [-T title] [-t target-pane] [shell-command [argument ...]]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -118,6 +118,7 @@ unsafe fn cmd_split_window_exec(
     let result = (|| {
         let mut current_block: u64;
         let original_pane = target.pane_handle().expect("split target pane");
+        original_window.unzoom(true);
         let mut fs: cmd_find_state = cmd_find_state {
             flags: 0,
             s: Default::default(),
@@ -185,6 +186,9 @@ unsafe fn cmd_split_window_exec(
             .window_handle()
             .expect("target window")
             .clone();
+        // The new pane takes the zoom with -Z, as the active pane once it has
+        // started.
+        window_owner.push_zoom(true, args_has(args, 'Z' as i32 as u_char) != 0);
         let spawned_pane = match <std::rc::Rc<
             std::cell::UnsafeCell<crate::shared::pane::window_pane>,
         > as crate::window_pane::WindowPane>::spawn_process(
@@ -196,6 +200,7 @@ unsafe fn cmd_split_window_exec(
                     out.write_all(b"create pane failed: ")?;
                     write_cstr(out, cause.as_deref())
                 });
+                window_owner.pop_zoom();
                 drop(window_owner);
                 return CmdOutcome::Error;
             }
@@ -309,6 +314,7 @@ unsafe fn cmd_split_window_exec(
                                 0 as ::core::ffi::c_int,
                             );
                         }
+                        window_owner.pop_zoom();
                         server_redraw_window(&original_window);
                         server_redraw_session(s.as_ref().expect("live session"));
                         if args_has(args, 'P' as i32 as u_char) != 0 {
@@ -353,6 +359,7 @@ unsafe fn cmd_split_window_exec(
             ClientRef::forget_pane(new_pane);
             original_window.remove_pane(new_pane);
         }
+        window_owner.pop_zoom();
         drop(sc.environ.take());
         drop(window_owner);
         CmdOutcome::Error

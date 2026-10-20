@@ -1,4 +1,6 @@
-use crate::arguments::{args_create, args_has, args_parse, args_set_string, args_string};
+use crate::arguments::{
+    args_create, args_has, args_parse, args_set_flag, args_set_string, args_string,
+};
 use crate::cmd::cmd_get_args;
 use crate::shared::abi::*;
 use crate::shared::command::*;
@@ -11,12 +13,12 @@ pub static cmd_find_window_entry: cmd_entry = {
         name: c"find-window",
         alias: Some(c"findw"),
         args: args_parse {
-            template: c"CiNrt:T",
+            template: c"CiNrt:TZ",
             lower: 1 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: c"[-CiNrT] [-t target-pane] match-string",
+        usage: c"[-CiNrTZ] [-t target-pane] match-string",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -66,6 +68,9 @@ unsafe fn cmd_find_window_exec(
     }
     let filter_value: CString = find_window_filter(s, suffix, star, C != 0, N != 0, T != 0);
     let mut new_args = args_create();
+    if args_has(args, b'Z') != 0 {
+        args_set_flag(&mut new_args, b'Z', false);
+    }
     args_set_string(&mut new_args, b'f', filter_value);
     wp.as_ref().expect("mode target pane").set_mode(
         None,

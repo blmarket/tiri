@@ -369,6 +369,67 @@ fn window_has_pane(w: &window, pane: &std::rc::Weak<std::cell::UnsafeCell<window
     pane.strong_count() != 0 && w.panes.position(pane).is_some()
 }
 
+/// Whether `pane` is shown: every pane is, except while the window is zoomed,
+/// when only the zoomed pane is.
+fn window_pane_is_visible(w: &window, pane: &Weak<UnsafeCell<window_pane>>) -> bool {
+    w.zoomed.strong_count() == 0 || w.zoomed.ptr_eq(pane)
+}
+
+/// Zoom `pane`: it becomes the active pane and takes the whole window, and
+/// the other panes are hidden in their places. Refused, returning false,
+/// when the window is already zoomed or has a single pane.
+unsafe fn window_zoom(window: &WindowRef, pane: &Rc<UnsafeCell<window_pane>>) -> bool {
+    let w = window.get();
+    if (*w).zoomed.strong_count() != 0 || (*w).panes.storage.len() == 1 {
+        return false;
+    }
+    if !(*w).active.ptr_eq(&Rc::downgrade(pane)) {
+        window_set_active_pane(window, pane, 1);
+    }
+    (*w).zoomed = Rc::downgrade(pane);
+    (*w).invalidate_scene();
+    window_arrange(window);
+    events_fire_window(c"window-zoomed", window.clone());
+    events_fire_window(c"window-layout-changed", window.clone());
+    true
+}
+
+/// Show every pane in its place again. Returns false when the window was not
+/// zoomed.
+unsafe fn window_unzoom(window: &WindowRef, notify: bool) -> bool {
+    let w = window.get();
+    if (*w).zoomed.strong_count() == 0 {
+        return false;
+    }
+    (*w).zoomed = Weak::new();
+    (*w).invalidate_scene();
+    window_arrange(window);
+    if notify {
+        events_fire_window(c"window-unzoomed", window.clone());
+        events_fire_window(c"window-layout-changed", window.clone());
+    }
+    true
+}
+
+/// Unzoom for an operation that rearranges or selects panes, remembering to
+/// zoom again afterwards when `flag` asks and the window was zoomed, or
+/// whether or not it was with `always`. Returns whether the window unzoomed.
+unsafe fn window_push_zoom(window: &WindowRef, always: bool, flag: bool) -> bool {
+    let w = window.get();
+    (*w).was_zoomed = flag && (always || (*w).zoomed.strong_count() != 0);
+    window_unzoom(window, true)
+}
+
+/// After `window_push_zoom`, zoom the active pane when it said to. Returns
+/// whether the window zoomed.
+unsafe fn window_pop_zoom(window: &WindowRef) -> bool {
+    let w = window.get();
+    if !std::mem::take(&mut (*w).was_zoomed) {
+        return false;
+    }
+    (*w).active_pane().is_some_and(|active| window_zoom(window, &active))
+}
+
 unsafe fn window_update_focus(w_owner: Option<&WindowRef>) {
     if let Some(window) = w_owner {
         if let Some(pane) = window.active_pane().upgrade() {
@@ -387,6 +448,9 @@ unsafe fn window_set_active_pane(
     log_debug(format_args!("window_set_active_pane: pane %{}", pane.id()));
     if (*w).active.ptr_eq(&observer) {
         return 0;
+    }
+    if !window_pane_is_visible(&*w, &observer) {
+        window_unzoom(window, true);
     }
     let previous = window.active_pane().upgrade();
     (*w).last_panes.remove(&observer);
@@ -447,6 +511,9 @@ unsafe fn window_get_active_at(
     let mut sy: u_int = 0;
     let status = window_get_pane_status(&*w);
     for observer in (*w).panes.storage.clone() {
+        if !window_pane_is_visible(&*w, &observer) {
+            continue;
+        }
         let candidate = observer.upgrade().expect("live pane in ordering");
         (xoff, yoff, sx, sy) = candidate.outer_geometry();
         if (x as ::core::ffi::c_int) < xoff || x > (xoff as u_int).wrapping_add(sx) {
@@ -468,10 +535,12 @@ unsafe fn window_find_string(
     name: &CStr,
 ) -> Weak<std::cell::UnsafeCell<window_pane>> {
     let w = window_owner.get();
-    let (wsx, wsy) = (
-        layout::content_width(&window_arrangement(window_owner)),
-        (*w).sy,
-    );
+    let wsx = if (*w).zoomed.strong_count() != 0 {
+        (*w).sx
+    } else {
+        layout::content_width(&window_arrangement(window_owner))
+    };
+    let wsy = (*w).sy;
     let s = name.to_bytes();
     let mut x: u_int = 0;
     let mut y: u_int = 0;
@@ -518,9 +587,9 @@ unsafe fn window_find_string(
 /// the selection history, and an active pane that leaves hands over to the
 /// pane taking its place, or else to the last pane selected or its
 /// neighbour. A window without panes takes its first one as active, without
-/// selection callbacks. window-layout-changed fires when panes leave; a pane
-/// arriving is announced by its caller, once its process has started or its
-/// move has finished.
+/// selection callbacks. Any change to the list unzooms the window first.
+/// window-layout-changed fires when panes leave; a pane arriving is announced
+/// by its caller, once its process has started or its move has finished.
 unsafe fn window_rearrange_panes(
     window: &WindowRef,
     panes: &[Rc<UnsafeCell<window_pane>>],
@@ -546,6 +615,9 @@ unsafe fn window_rearrange_panes(
     }
     if !arrived.is_empty() {
         (*w).layout.admits(panes, window.size())?;
+    }
+    if old.len() != panes.len() || old.iter().zip(panes).any(|(a, b)| !Rc::ptr_eq(a, b)) {
+        window_unzoom(window, true);
     }
     for pane in &left {
         log_debug(format_args!(
@@ -641,10 +713,13 @@ unsafe fn window_pane_cells(
 }
 
 /// The arrange step: the only writer of pane geometry. Every operation that
-/// changes the pane order, the layout or its record of a pane, the window size
-/// or the options the layout reads ends here, and the clients showing the
-/// window follow the result.
+/// changes the pane order, the layout or its record of a pane, the zoom, the
+/// window size or the options the layout reads ends here, and the clients
+/// showing the window follow the result. A zoomed pane takes the whole
+/// window; the hidden panes keep their places in the layout.
 unsafe fn window_arrange(window: &WindowRef) {
+    let (sx, sy) = window.size();
+    let zoomed = (*window.get()).zoomed.clone();
     let cells = (*window.get())
         .panes
         .snapshot()
@@ -652,6 +727,16 @@ unsafe fn window_arrange(window: &WindowRef) {
         .zip(window_arrangement(window));
     let mut moved = false;
     for (pane, cell) in cells {
+        let cell = if zoomed.ptr_eq(&Rc::downgrade(&pane)) {
+            layout_geometry {
+                sx,
+                sy,
+                xoff: 0,
+                yoff: 0,
+            }
+        } else {
+            cell
+        };
         if window_has_pane(&*window.get(), &Rc::downgrade(&pane)) {
             moved |= pane.apply_layout(cell, window);
         }
@@ -701,6 +786,13 @@ pub unsafe fn window_printable_flags(
     }
     if server_check_marked() != 0 && wl == marked_pane.winlink_handle() {
         flags.push(b'M');
+    }
+    if wl
+        .get_unchecked()
+        .window_handle()
+        .is_some_and(|window| window.zoomed_pane().strong_count() != 0)
+    {
+        flags.push(b'Z');
     }
     std::ffi::CString::new(flags).expect("window flags contain no NUL")
 }

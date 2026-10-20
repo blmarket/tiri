@@ -63,6 +63,7 @@ use crate::server::{marked_pane, server_check_marked};
 use crate::server_client::Client;
 use crate::server_fn::{
     server_destroy_pane, server_kill_pane, server_redraw_window, server_redraw_window_borders,
+    server_unzoom_window,
     server_status_window,
 };
 use crate::shared::pane::window_pane_tree;
@@ -114,7 +115,10 @@ use crate::shared::spawn::spawn_editor_state;
 use crate::shared::status::status_prompt_input_cb;
 use crate::shared::style::*;
 pub use crate::shared::window::{window_mode, window_mode_entry, winlink};
-use crate::shared::window::{WINDOW_MODE_NO_STACK, WINDOW_PANE_NO_MODE};
+use crate::shared::window::{
+    WINDOW_MODE_HIDE_PANE_STATUS, WINDOW_MODE_HIDE_SCROLLBARS, WINDOW_MODE_NO_STACK, WINDOW_MODE_ZOOM,
+    WINDOW_PANE_NO_MODE,
+};
 use libc::{REG_EXTENDED, REG_ICASE, SIGHUP};
 
 struct window_pane_input_data {
@@ -400,6 +404,9 @@ unsafe fn window_pane_printable_flags(
     }
     if window.last_active_pane().ptr_eq(&Rc::downgrade(wp_owner)) {
         flags.push(b'-');
+    }
+    if window.zoomed_pane().ptr_eq(&Rc::downgrade(wp_owner)) {
+        flags.push(b'Z');
     }
     std::ffi::CString::new(flags).expect("pane flags contain no NUL")
 }
@@ -766,6 +773,7 @@ unsafe fn window_pane_set_mode(
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
     let mut name: *const ::core::ffi::c_char = mode.name.as_ptr();
     let mut oname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let mut entered_now = false;
     if let Some(active) = (*wp).active_mode() {
         if std::ptr::eq(active, mode) {
             return 1 as ::core::ffi::c_int;
@@ -794,6 +802,7 @@ unsafe fn window_pane_set_mode(
             data_owner: None,
             prefix: 1,
             kill: 0,
+            unzoom: false,
         });
         wme = window_pane_mode_push(&mut *wp, entry);
         let entered =
@@ -808,6 +817,7 @@ unsafe fn window_pane_set_mode(
             );
             return 1 as ::core::ffi::c_int;
         }
+        entered_now = true;
     }
     wme.get_mut_unchecked().kill = if let Some(args) = args {
         args_has(args, 'k' as i32 as u_char)
@@ -823,6 +833,18 @@ unsafe fn window_pane_set_mode(
     ((*wp).window_handle().as_ref())
         .expect("live window")
         .refit();
+    // A new mode zooms its pane with -Z, or without it for a mode that zooms
+    // by default, now that the mode is installed: the zoom resizes the pane,
+    // which reaches the mode.
+    let flag = args.is_some_and(|args| args_has(args, b'Z') != 0);
+    if entered_now && flag != (mode.flags & WINDOW_MODE_ZOOM != 0) {
+        let window = (*wp).window_handle().expect("live window");
+        let unzoom = window.zoomed_pane().strong_count() == 0;
+        wme.get_mut_unchecked().unzoom = unzoom;
+        if unzoom && window.zoom(pane_owner) {
+            server_redraw_window(&window);
+        }
+    }
     server_redraw_window_borders(((*wp).window_handle().as_ref()).expect("live window"));
     server_status_window(((*wp).window_handle().as_ref()).expect("live window"));
     window_fire_pane_mode_changed(
@@ -855,6 +877,7 @@ unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::UnsafeCell<window_pa
     wme = (*wp).active_mode_entry();
     p = wme.get_unchecked().mode.name.as_ptr();
     kill_0 = wme.get_unchecked().kill;
+    let unzoom = wme.get_unchecked().unzoom;
     let entry =
         window_pane_mode_remove(&mut *(wp), wme.clone()).expect("mode entry is owned by pane");
     next = (*wp).active_mode_entry();
@@ -867,6 +890,13 @@ unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::UnsafeCell<window_pa
         free(wme);
     }
     drop(entry);
+    // A mode that zoomed its window unzooms it once it is gone: the unzoom
+    // resizes the pane, which reaches the next mode.
+    if unzoom {
+        if let Some(window) = (*wp).window_handle() {
+            server_unzoom_window(&window);
+        }
+    }
     next = (*wp).active_mode_entry();
     (*wp).screen_source = if !next.is_alive() {
         PaneScreenSource::Base
@@ -1174,6 +1204,7 @@ unsafe fn window_pane_copy_paste(
             && (*loop_0).modes.is_empty()
             && (*loop_0).fd.is_some()
             && !(*loop_0).flags & PANE_INPUTOFF != 0
+            && pane_owner.is_visible()
             && options_get_number(&(*loop_0).borrow_options_mut(), c"synchronize-panes") != 0
         {
             log_debug(format_args!(
@@ -1205,6 +1236,7 @@ unsafe fn window_pane_copy_key(
             && (*loop_0).modes.is_empty()
             && (*loop_0).fd.is_some()
             && !(*loop_0).flags & PANE_INPUTOFF != 0
+            && pane_owner.is_visible()
             && options_get_number(&(*loop_0).borrow_options_mut(), c"synchronize-panes") != 0
         {
             input_key_pane(&pane_owner, key, None);
@@ -1550,6 +1582,15 @@ unsafe fn window_pane_show_scrollbar(wp: &window_pane) -> ::core::ffi::c_int {
         return 0;
     }
     let window = wp.window_handle().expect("live window");
+    if window.zoomed_pane().strong_count() != 0
+        && window.active_pane().upgrade().is_some_and(|active| {
+            (*active.get())
+                .active_mode()
+                .is_some_and(|mode| mode.flags & WINDOW_MODE_HIDE_SCROLLBARS != 0)
+        })
+    {
+        return 0;
+    }
     let mode = window.scrollbar_mode();
     (mode == PANE_SCROLLBARS_ALWAYS
         || mode == PANE_SCROLLBARS_AUTOHIDE
@@ -1938,9 +1979,15 @@ unsafe fn window_pane_status_get_range(
 }
 
 unsafe fn window_pane_get_pane_status(wp: &window_pane) -> ::core::ffi::c_int {
-    wp.window_handle()
-        .expect("pane window")
-        .pane_border_status()
+    let window = wp.window_handle().expect("pane window");
+    if wp
+        .active_mode()
+        .is_some_and(|mode| mode.flags & WINDOW_MODE_HIDE_PANE_STATUS != 0)
+        && window.zoomed_pane().as_ptr() == wp as *const window_pane as *const _
+    {
+        return PANE_STATUS_OFF;
+    }
+    window.pane_border_status()
 }
 
 unsafe fn window_pane_get_pane_lines(wp: &window_pane) -> pane_lines {

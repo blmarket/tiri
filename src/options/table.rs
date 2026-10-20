@@ -88,7 +88,7 @@ pub static options_other_names: [(&std::ffi::CStr, &std::ffi::CStr); 7] = [
 pub const TMUX_LOCK_CMD: &std::ffi::CStr = c"lock -np";
 pub const TMUX_TERM: &std::ffi::CStr = c"tmux-256color";
 pub const TMUX_MOUSE: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub static options_table: [options_table_entry; 265 + cfg!(target_os = "linux") as usize] = [
+pub static options_table: [options_table_entry; 267 + cfg!(target_os = "linux") as usize] = [
         options_table_entry {
             name: Some(c"backspace"),
             alternative_name: None,
@@ -2175,7 +2175,7 @@ pub static options_table: [options_table_entry; 265 + cfg!(target_os = "linux") 
             minimum: 0,
             maximum: 0,
             choices: &[],
-            default_str: Some(c"#[align=right]#{pane_width}x#{pane_height}"),
+            default_str: Some(c"#[align=right]#{pane_unzoomed_width}x#{pane_unzoomed_height}"),
             default_num: 0,
             default_arr: None,
             separator: None,
@@ -2515,7 +2515,7 @@ pub static options_table: [options_table_entry; 265 + cfg!(target_os = "linux") 
             minimum: 0,
             maximum: 0,
             choices: &[],
-            default_str: Some(c"#{?pane_active,#[reverse],}#{pane_index}#[default] \"#{pane_title}\"#{?#{mouse},#[align=right]#[range=control|9][x]#[norange],}"),
+            default_str: Some(c"#{?pane_active,#[reverse],}#{pane_index}#[default] \"#{pane_title}\"#{?#{mouse},#[align=right]#[range=control|8][#{?#{window_zoomed_flag},u,z}]#[norange]#[range=control|9][x]#[norange],}"),
             default_num: 0,
             default_arr: None,
             separator: None,
@@ -4580,6 +4580,40 @@ pub static options_table: [options_table_entry; 265 + cfg!(target_os = "linux") 
             separator: Some(c""),
             pattern: None,
             text: Some(c"Run when a window is resized. This may be after the client-resized hook is run."),
+            unit: None,
+        },
+        options_table_entry {
+            name: Some(c"window-unzoomed"),
+            alternative_name: None,
+            type_0: OPTIONS_TABLE_COMMAND,
+            scope: OPTIONS_TABLE_WINDOW,
+            flags: OPTIONS_TABLE_IS_ARRAY | OPTIONS_TABLE_IS_HOOK,
+            minimum: 0,
+            maximum: 0,
+            choices: &[],
+            default_str: Some(c""),
+            default_num: 0,
+            default_arr: None,
+            separator: Some(c""),
+            pattern: None,
+            text: Some(c"Run when a window is unzoomed."),
+            unit: None,
+        },
+        options_table_entry {
+            name: Some(c"window-zoomed"),
+            alternative_name: None,
+            type_0: OPTIONS_TABLE_COMMAND,
+            scope: OPTIONS_TABLE_WINDOW,
+            flags: OPTIONS_TABLE_IS_ARRAY | OPTIONS_TABLE_IS_HOOK,
+            minimum: 0,
+            maximum: 0,
+            choices: &[],
+            default_str: Some(c""),
+            default_num: 0,
+            default_arr: None,
+            separator: Some(c""),
+            pattern: None,
+            text: Some(c"Run when a window is zoomed."),
             unit: None,
         },
         options_table_entry {

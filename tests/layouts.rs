@@ -132,7 +132,7 @@ fn directions_cross_the_separators() {
 #[test]
 fn next_steps_through_every_layout() {
     let server = laid_out("scrolling", 81, 25, 2);
-    server.success(&["resize-pane", "-Z", "-t", &ids(&server)[0]]);
+    server.success(&["resize-pane", "-W", "-t", &ids(&server)[0]]);
     let mut seen = Vec::new();
     for _ in 0..6 {
         server.success(&["select-layout", "-n"]);

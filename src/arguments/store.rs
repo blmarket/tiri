@@ -141,7 +141,7 @@ pub fn args_set_string(args: &mut args, flag: u_char, value: CString) {
 }
 
 /// Add an occurrence of a flag that has no associated value.
-fn args_set_flag(args: &mut args, flag: u_char, optional: bool) {
+pub fn args_set_flag(args: &mut args, flag: u_char, optional: bool) {
     args_set_value(args, flag, None, optional);
 }
 

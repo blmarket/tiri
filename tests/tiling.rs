@@ -121,9 +121,10 @@ fn swap_and_rotate_move_panes_between_tiles() {
 #[test]
 fn widths_toggle_only_in_the_strip() {
     let server = tiled(80, 24, 2);
-    let refused = server.run(&["resize-pane", "-Z"]);
+    let refused = server.run(&["resize-pane", "-W"]);
     assert!(!refused.status.success());
-    assert!(String::from_utf8_lossy(&refused.stderr).contains("this layout can't zoom a pane"));
+    assert!(String::from_utf8_lossy(&refused.stderr)
+        .contains("this layout can't change a pane's width"));
 }
 
 #[test]

@@ -12,6 +12,7 @@ use crate::window::Window as _;
 use crate::server_client::Client as _;
 use crate::server_fn::{
     server_link_window, server_redraw_session, server_status_session_group, server_unlink_window,
+    server_unzoom_window,
 };
 use crate::session::Session;
 
@@ -107,6 +108,7 @@ unsafe fn cmd_break_pane_exec(
                 return CmdOutcome::Error;
             }
         }
+        server_unzoom_window(&source_window);
         if source_window.pane_snapshot().len() == 1 {
             if let Err(link_error) = server_link_window(
                 src_s.as_ref().expect("live session"),

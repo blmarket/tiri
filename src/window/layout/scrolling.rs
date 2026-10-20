@@ -73,13 +73,13 @@ impl Layout for Scrolling {
         (strip_length(widths, sx), sy)
     }
 
-    /// `resize-pane -Z` switches the pane to the other width.
+    /// `resize-pane -W` switches the pane to the other width.
     fn apply(
         action: LayoutAction,
         meta: Option<&dyn Any>,
     ) -> Result<Option<Box<dyn Any>>, &'static CStr> {
         match action {
-            LayoutAction::ToggleZoom => Ok(Some(Box::new(match width_of(meta) {
+            LayoutAction::ToggleWidth => Ok(Some(Box::new(match width_of(meta) {
                 Width::Half => Width::Full,
                 Width::Full => Width::Half,
             }))),

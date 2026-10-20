@@ -724,6 +724,7 @@ unsafe fn redraw_build_cells<'a>(
         .pane_snapshot()
         .iter()
         .filter_map(std::rc::Weak::upgrade)
+        .filter(|pane| pane.is_visible())
         .rev()
     {
         redraw_mark_pane(bctx, &pane_owner);
@@ -736,6 +737,7 @@ unsafe fn redraw_build_cells<'a>(
         .pane_snapshot()
         .iter()
         .filter_map(std::rc::Weak::upgrade)
+        .filter(|pane| pane.is_visible())
     {
         redraw_mark_border_status(bctx, &pane_owner);
     }
@@ -1540,6 +1542,7 @@ unsafe fn redraw_draw_scene(
                 .pane_snapshot()
                 .iter()
                 .filter_map(std::rc::Weak::upgrade)
+                .filter(|pane| pane.is_visible())
             {
                 pane.stop_sync(None);
                 pane.clear_sync_dirty();
@@ -1568,6 +1571,7 @@ unsafe fn redraw_draw_scene(
                 .pane_snapshot()
                 .iter()
                 .filter_map(std::rc::Weak::upgrade)
+                .filter(|pane| pane.is_visible())
             {
                 redraw_draw_pane_prompt(&mut dctx, &pane_owner);
             }

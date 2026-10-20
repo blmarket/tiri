@@ -65,7 +65,7 @@ unsafe fn control_window_layout_changed_cb(_name: &CStr, payload: &mut event_pay
         format_defaults(&mut *format, Some(client), Some(&session), link, None);
         let message = format_expand_cstring(
             &mut *format,
-            c"%layout-change #{window_id} #{window_layout} #{window_layout} #{window_raw_flags}",
+            c"%layout-change #{window_id} #{window_layout} #{window_visible_layout} #{window_raw_flags}",
         );
         drop(format);
         client.notify(|out| out.write_all(message.as_bytes()));

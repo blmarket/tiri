@@ -21,9 +21,8 @@ use std::rc::Rc;
 /// refuse.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum LayoutAction {
-    /// Switch a pane between its normal size and the whole window. In the
-    /// strip that is half and full width.
-    ToggleZoom,
+    /// Switch a pane between its two widths: in the strip, half and full.
+    ToggleWidth,
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
@@ -81,7 +80,7 @@ trait Layout {
         _meta: Option<&dyn Any>,
     ) -> Result<Option<Box<dyn Any>>, &'static CStr> {
         match action {
-            LayoutAction::ToggleZoom => Err(c"this layout can't zoom a pane"),
+            LayoutAction::ToggleWidth => Err(c"this layout can't change a pane's width"),
         }
     }
 

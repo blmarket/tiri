@@ -6,6 +6,7 @@ use crate::resize::recalculate_sizes;
 use crate::server_client::Client as _;
 use crate::server_fn::{
     server_kill_window, server_redraw_session, server_redraw_window, server_status_session,
+    server_unzoom_window,
 };
 use crate::window::Window as _;
 
@@ -73,6 +74,8 @@ unsafe fn cmd_join_pane_exec(
         let src_pane_owner = source.pane_handle().expect("join source pane");
         src_window = src_wl.get_unchecked().window_handle().cloned();
         let src_owner = src_window.as_ref().expect("live source window");
+        server_unzoom_window(&dst_window);
+        server_unzoom_window(src_owner);
         if std::rc::Rc::ptr_eq(&src_pane_owner, &dst_pane_owner) {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"source and target panes must be different")

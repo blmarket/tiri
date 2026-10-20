@@ -145,9 +145,16 @@ unsafe fn evaluate(key: &CStr, context: &mut format_tree) -> Option<FormatValue>
         b"pane_title" => format_cb_pane_title(context).map(FormatValue::String),
         b"pane_top" => format_cb_pane_top(context).map(FormatValue::String),
         b"pane_tty" => format_cb_pane_tty(context).map(FormatValue::String),
+        b"pane_unzoomed_height" => {
+            format_cb_pane_unzoomed_size(context, false).map(FormatValue::String)
+        }
+        b"pane_unzoomed_width" => {
+            format_cb_pane_unzoomed_size(context, true).map(FormatValue::String)
+        }
         b"pane_width" => format_cb_pane_width(context).map(FormatValue::String),
         b"pane_x" => format_cb_pane_x(context).map(FormatValue::String),
         b"pane_y" => format_cb_pane_y(context).map(FormatValue::String),
+        b"pane_zoomed_flag" => format_cb_pane_zoomed_flag(context).map(FormatValue::String),
         b"scroll_region_lower" => format_cb_scroll_region_lower(context).map(FormatValue::String),
         b"scroll_region_upper" => format_cb_scroll_region_upper(context).map(FormatValue::String),
         b"wrap_flag" => format_cb_wrap_flag(context).map(FormatValue::String),
@@ -1594,6 +1601,23 @@ unsafe fn format_cb_pane_tty(ft: &mut format_tree) -> Option<CString> {
         return Some((*format_pane).tty().to_owned());
     }
     None
+}
+
+/// The pane's width, or with `width` false its height, in its place in the
+/// layout with the window unzoomed.
+unsafe fn format_cb_pane_unzoomed_size(ft: &mut format_tree, width: bool) -> Option<CString> {
+    let (sx, sy) = ft.wp.upgrade()?.unzoomed_size()?;
+    Some(
+        CString::new(format!("{}", if width { sx } else { sy }))
+            .expect("formatted numbers contain no NUL"),
+    )
+}
+
+unsafe fn format_cb_pane_zoomed_flag(ft: &mut format_tree) -> Option<CString> {
+    let pane = ft.wp.upgrade()?;
+    let window = pane.window_observer().upgrade()?;
+    let zoomed = window.zoomed_pane().ptr_eq(&Rc::downgrade(&pane));
+    Some(if zoomed { c"1" } else { c"0" }.to_owned())
 }
 
 unsafe fn format_cb_pane_width(ft: &mut format_tree) -> Option<CString> {

@@ -1065,6 +1065,7 @@ mod match_tests {
             data_owner: None,
             prefix: 0,
             kill: 0,
+            unzoom: false,
         });
         let observer = mode.downgrade();
         drop(mode);

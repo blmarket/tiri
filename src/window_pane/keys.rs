@@ -44,7 +44,7 @@ pub(super) unsafe fn write_key(
 }
 
 unsafe fn write_mouse(pane: &Rc<UnsafeCell<window_pane>>, mouse: &mouse_event) {
-    if mouse.ignore != 0 {
+    if mouse.ignore != 0 || !pane.is_visible() {
         return;
     }
     let screen = pane.screen_mode(true);

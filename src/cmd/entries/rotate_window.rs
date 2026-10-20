@@ -12,12 +12,12 @@ pub static cmd_rotate_window_entry: cmd_entry = {
         name: c"rotate-window",
         alias: Some(c"rotatew"),
         args: args_parse {
-            template: c"Dt:U",
+            template: c"Dt:UZ",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: c"[-DU] [-t target-window]",
+        usage: c"[-DUZ] [-t target-window]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -45,6 +45,7 @@ unsafe fn cmd_rotate_window_exec(
     let window_owner = target.w.upgrade().expect("live rotation window");
     let result = {
         let down = args_has(args, b'D') != 0;
+        window_owner.push_zoom(false, args_has(args, b'Z') != 0);
         let mut order = window_owner
             .pane_snapshot()
             .iter()
@@ -69,6 +70,7 @@ unsafe fn cmd_rotate_window_exec(
             &selected_pane,
             0 as ::core::ffi::c_int,
         );
+        window_owner.pop_zoom();
         server_redraw_window(&(window_owner));
         CmdOutcome::Normal
     };

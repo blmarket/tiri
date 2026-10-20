@@ -35,7 +35,9 @@ use crate::shared::pane::window_pane;
 use crate::shared::screen::{screen, MODE_CURSOR};
 use crate::shared::screen_write::screen_write_ctx;
 use crate::shared::session::{SessionRef, SessionWeak};
-use crate::shared::window::WINDOW_MODE_NO_STACK;
+use crate::shared::window::{
+    WINDOW_MODE_HIDE_PANE_STATUS, WINDOW_MODE_HIDE_SCROLLBARS, WINDOW_MODE_NO_STACK, WINDOW_MODE_ZOOM,
+};
 use crate::shared::window::{window_mode, window_mode_entry, window_mode_screen_payload, winlink};
 use crate::shared::window::{WindowRef, WindowWeak};
 use crate::style::style_apply_with_options;
@@ -82,7 +84,11 @@ pub static window_panes_mode: window_mode = {
     window_mode {
         name: c"panes-mode",
         default_format: None,
-        flags: WINDOW_MODE_NO_STACK | WINDOW_MODE_FILL_WINDOW,
+        flags: WINDOW_MODE_HIDE_PANE_STATUS
+            | WINDOW_MODE_NO_STACK
+            | WINDOW_MODE_FILL_WINDOW
+            | WINDOW_MODE_HIDE_SCROLLBARS
+            | WINDOW_MODE_ZOOM,
         init: Some(
             window_panes_init
                 as unsafe fn(
@@ -1111,6 +1117,11 @@ unsafe fn window_panes_key(
         }
         return;
     }
+    mode_pane_owner
+        .window_observer()
+        .upgrade()
+        .expect("live pane parent")
+        .unzoom(true);
     window_panes_run_command(
         &mut window_panes_data(&wme).borrow_mut(),
         client_owner,

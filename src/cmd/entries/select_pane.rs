@@ -14,7 +14,9 @@ use crate::server::{
 };
 use crate::server_client::Client as _;
 use crate::server_client::ClientRegistry;
-use crate::server_fn::{server_redraw_client, server_redraw_window_borders, server_status_window};
+use crate::server_fn::{
+    server_redraw_client, server_redraw_window, server_redraw_window_borders, server_status_window,
+};
 use crate::session::Session;
 use crate::shared::client::ClientRef;
 use crate::shared::layout::Direction;
@@ -33,12 +35,12 @@ pub static cmd_select_pane_entry: cmd_entry = {
         name: c"select-pane",
         alias: Some(c"selectp"),
         args: args_parse {
-            template: c"DdegLlMmP:RT:t:U",
+            template: c"DdegLlMmP:RT:t:UZ",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: c"[-DdeLlMmRU] [-T title] [-t target-pane]",
+        usage: c"[-DdeLlMmRUZ] [-T title] [-t target-pane]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -58,12 +60,12 @@ pub static cmd_last_pane_entry: cmd_entry = {
         name: c"last-pane",
         alias: Some(c"lastp"),
         args: args_parse {
-            template: c"det:",
+            template: c"det:Z",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: c"[-de] [-t target-window]",
+        usage: c"[-deZ] [-t target-window]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -214,6 +216,7 @@ unsafe fn cmd_select_pane_exec(
     let session = target.session_handle();
     let original_pane = target.pane_handle().expect("select target pane");
     let window = target.w.upgrade().expect("select target window");
+    let zoom = args_has(arguments, b'Z') != 0;
     let result = (|| {
         if std::ptr::eq(entry, &cmd_last_pane_entry) || args_has(arguments, b'l') != 0 {
             let mut last = window.last_active_pane().upgrade();
@@ -233,11 +236,18 @@ unsafe fn cmd_select_pane_exec(
                 server_redraw_window_borders(&window);
                 server_status_window(&window);
             } else {
+                let visible = last.is_visible();
+                if !visible && window.push_zoom(false, zoom) {
+                    server_redraw_window(&window);
+                }
                 window.redraw_active_switch(Some(&last));
                 if window.select_pane(&last, true) != 0 {
                     *current.current.borrow_mut() =
                         cmd_find_state::find_from_winlink(link.clone(), 0);
                     cmd_select_pane_redraw(&window);
+                }
+                if !visible && window.pop_zoom() {
+                    server_redraw_window(&window);
                 }
             }
             return CmdOutcome::Normal;
@@ -272,10 +282,12 @@ unsafe fn cmd_select_pane_exec(
         .find(|&(flag, _)| args_has(arguments, flag) != 0)
         .map(|(_, direction)| direction);
         let pane = if let Some(direction) = direction {
-            let Some(selected) = window
+            window.push_zoom(false, true);
+            let selected = window
                 .pane_in_direction(&original_pane, direction)
-                .upgrade()
-            else {
+                .upgrade();
+            window.pop_zoom();
+            let Some(selected) = selected else {
                 return CmdOutcome::Normal;
             };
             selected
@@ -313,6 +325,10 @@ unsafe fn cmd_select_pane_exec(
         if window.active_pane().ptr_eq(&std::rc::Rc::downgrade(&pane)) {
             return CmdOutcome::Normal;
         }
+        let visible = pane.is_visible();
+        if !visible && window.push_zoom(false, zoom) {
+            server_redraw_window(&window);
+        }
         window.redraw_active_switch(Some(&pane));
         if window.select_pane(&pane, true) != 0 {
             *current.current.borrow_mut() =
@@ -325,6 +341,9 @@ unsafe fn cmd_select_pane_exec(
             |out| out.write_all(b"after-select-pane"),
         );
         cmd_select_pane_redraw(&window);
+        if !visible && window.pop_zoom() {
+            server_redraw_window(&window);
+        }
         CmdOutcome::Normal
     })();
     drop(window);

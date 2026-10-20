@@ -2,6 +2,7 @@ use crate::arguments::{args_has, args_parse, args_string};
 use crate::cmd::cmd_get_args;
 use crate::cmd::queue::cmdq_error;
 use crate::format::bytes::write_cstr;
+use crate::server_fn::server_unzoom_window;
 use crate::shared::abi::*;
 use crate::shared::command::*;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
@@ -42,6 +43,7 @@ unsafe fn cmd_select_layout_exec(
     let args = cmd_get_args(self_0.get_unchecked());
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let window_owner = target.w.upgrade().expect("live layout window");
+    server_unzoom_window(&window_owner);
     let current = window_owner.layout();
     let kind = if args_has(args, b'n') != 0 {
         Some(current.next())

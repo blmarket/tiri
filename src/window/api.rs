@@ -48,6 +48,24 @@ pub trait Window {
         action: LayoutAction,
     ) -> Result<(), &'static CStr>;
     unsafe fn layout(&self) -> LayoutKind;
+    /// The zoomed pane, which takes the whole window while the others are
+    /// hidden; empty when the window is not zoomed.
+    unsafe fn zoomed_pane(&self) -> Weak<UnsafeCell<window_pane>>;
+    /// Zoom `pane`, making it the active pane; window-layout-changed fires.
+    /// Refused, returning false, when the window is already zoomed or has a
+    /// single pane.
+    unsafe fn zoom(&self, pane: &Rc<UnsafeCell<window_pane>>) -> bool;
+    /// Show every pane again; window-layout-changed fires when `notify`.
+    /// Returns false when the window was not zoomed.
+    unsafe fn unzoom(&self, notify: bool) -> bool;
+    /// Unzoom around an operation on the panes; the matching `pop_zoom`
+    /// zooms the active pane again when `flag` is set and the window was
+    /// zoomed, or with `always` whether or not it was. Returns whether the
+    /// window unzoomed.
+    unsafe fn push_zoom(&self, always: bool, flag: bool) -> bool;
+    /// Zoom the active pane if the last `push_zoom` said to. Returns whether
+    /// the window zoomed.
+    unsafe fn pop_zoom(&self) -> bool;
     /// Arrange the panes in a fresh `kind` layout, in pane order, and redraw;
     /// window-layout-changed fires. A different layout forgets every pane's
     /// layout metadata; the current one keeps it.
@@ -64,11 +82,12 @@ pub trait Window {
     unsafe fn pane_cells(&self) -> Vec<(Weak<UnsafeCell<window_pane>>, layout_geometry)>;
     /// The area clients clip and pan across, as the layout computes it from
     /// the panes and the window size. A strip's width is its last pane's
-    /// first column plus the window width.
+    /// first column plus the window width; a zoomed window is its size.
     unsafe fn logical_size(&self) -> (u32, u32);
     /// The layout as a layout string. `legacy` selects the checksummed format
-    /// of older control clients.
-    unsafe fn layout_string(&self, legacy: bool) -> Option<CString>;
+    /// of older control clients. With `visible`, a zoomed window's layout is
+    /// its zoomed pane alone, filling the window.
+    unsafe fn layout_string(&self, legacy: bool, visible: bool) -> Option<CString>;
 
     unsafe fn id(&self) -> u32;
     /// Registry successor.
@@ -242,6 +261,21 @@ impl Window for WindowRef {
     unsafe fn layout(&self) -> LayoutKind {
         (*self.get()).layout
     }
+    unsafe fn zoomed_pane(&self) -> Weak<UnsafeCell<window_pane>> {
+        (*self.get()).zoomed.clone()
+    }
+    unsafe fn zoom(&self, pane: &Rc<UnsafeCell<window_pane>>) -> bool {
+        window_zoom(self, pane)
+    }
+    unsafe fn unzoom(&self, notify: bool) -> bool {
+        window_unzoom(self, notify)
+    }
+    unsafe fn push_zoom(&self, always: bool, flag: bool) -> bool {
+        window_push_zoom(self, always, flag)
+    }
+    unsafe fn pop_zoom(&self) -> bool {
+        window_pop_zoom(self)
+    }
     unsafe fn set_layout(&self, kind: LayoutKind) {
         let state = &mut *self.get();
         if state.layout != kind {
@@ -275,6 +309,9 @@ impl Window for WindowRef {
     }
     unsafe fn logical_size(&self) -> (u32, u32) {
         let state = &*self.get();
+        if state.zoomed.strong_count() != 0 {
+            return (state.sx, state.sy);
+        }
         state.layout.logical_size(
             state
                 .panes
@@ -284,10 +321,23 @@ impl Window for WindowRef {
             (state.sx, state.sy),
         )
     }
-    unsafe fn layout_string(&self, legacy: bool) -> Option<CString> {
+    unsafe fn layout_string(&self, legacy: bool, visible: bool) -> Option<CString> {
         let active = self.active_pane();
-        let entries = self
-            .pane_cells()
+        let zoomed = self.zoomed_pane();
+        let (sx, sy) = self.size();
+        let zoomed_view = visible && zoomed.strong_count() != 0;
+        let cells = if zoomed_view {
+            let window = layout_geometry {
+                sx,
+                sy,
+                xoff: 0,
+                yoff: 0,
+            };
+            vec![(zoomed, window)]
+        } else {
+            self.pane_cells()
+        };
+        let entries = cells
             .into_iter()
             .map(|(observer, geometry)| {
                 let pane = observer.upgrade().expect("laid out pane is live");
@@ -302,9 +352,12 @@ impl Window for WindowRef {
                 }
             })
             .collect::<Vec<_>>();
-        let size = self.size();
         let state = &*self.get();
-        let tree = state.layout.tree(&state.panes.snapshot(), size);
+        let tree = if zoomed_view {
+            Some(layout::LayoutNode::Pane(0))
+        } else {
+            state.layout.tree(&state.panes.snapshot(), (sx, sy))
+        };
         layout::layout_string(tree.as_ref(), &entries, legacy)
     }
 
@@ -735,7 +788,14 @@ unsafe fn resize_window(
     if sy > WINDOW_MAXIMUM as u_int {
         sy = WINDOW_MAXIMUM as u_int;
     }
+    let zoomed = (*w).zoomed.upgrade();
+    if zoomed.is_some() {
+        window_unzoom(w_owner, true);
+    }
     window_resize(w_owner, sx, sy, xpixel, ypixel);
+    if let Some(zoomed) = zoomed.filter(|pane| window_has_pane(&*w, &Rc::downgrade(pane))) {
+        window_zoom(w_owner, &zoomed);
+    }
     log_debug(format_args!(
         "{}: @{} resized to {}x{}",
         "resize_window",

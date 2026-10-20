@@ -1299,6 +1299,7 @@ unsafe fn server_client_update_scrollbar_hover(
             .pane_snapshot()
             .iter()
             .filter_map(std::rc::Weak::upgrade)
+            .filter(|pane| pane.is_visible())
         {
             pane_owner.update_scrollbar_hover(px, py);
         }
@@ -2588,10 +2589,12 @@ unsafe fn server_client_handle_key0(
                 .pane_snapshot()
                 .iter()
                 .filter_map(std::rc::Weak::upgrade)
-                .find(|pane| pane.prompt_position(true).is_some());
+                .find(|pane| pane.prompt_position(true).is_some() && pane.is_visible());
         }
         drop(prompt_window);
-        if let Some(pane_owner) = prompt_pane.filter(|pane| pane.prompt_position(true).is_some()) {
+        if let Some(pane_owner) =
+            prompt_pane.filter(|pane| pane.prompt_position(true).is_some() && pane.is_visible())
+        {
             match pane_owner.prompt_key(Some(owner), event.key, Some(&mut event.m))
                 as ::core::ffi::c_uint
             {

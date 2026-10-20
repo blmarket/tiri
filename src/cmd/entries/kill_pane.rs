@@ -7,7 +7,7 @@ use crate::shared::client::ClientRef;
 use crate::shared::window::WindowRef;
 use std::ffi::CStr;
 
-use crate::server_fn::{server_kill_pane, server_redraw_window};
+use crate::server_fn::{server_kill_pane, server_redraw_window, server_unzoom_window};
 use crate::shared::abi::*;
 use crate::shared::command::CMD_AFTERHOOK;
 use crate::shared::command::*;
@@ -74,6 +74,7 @@ unsafe fn cmd_kill_pane_all(
     let mut s: Option<SessionRef> = target.session_handle();
     let mut wl: refbox::Weak<winlink> = target.winlink_handle();
     let target_pane = target.pane_handle().expect("kill target pane");
+    server_unzoom_window((wl.get_unchecked().window_handle().as_ref()).expect("live window"));
     let panes = wl
         .get_unchecked()
         .window_handle()

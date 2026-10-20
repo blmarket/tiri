@@ -6,7 +6,9 @@ use crate::cmd::queue::{
 use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
 use crate::key_bindings::key_bindings_get_table;
+use crate::server_fn::server_redraw_window;
 use crate::window::Window as _;
+use crate::window_pane::WindowPane as _;
 use libc::{getuid, strcmp, strcspn};
 
 use crate::shared::abi::uid_t;
@@ -30,12 +32,12 @@ pub static cmd_switch_client_entry: cmd_entry = {
         name: c"switch-client",
         alias: Some(c"switchc"),
         args: args_parse {
-            template: c"c:EFlnO:pt:rT:",
+            template: c"c:EFlnO:pt:rT:Z",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: c"[-Elnpr] [-c target-client] [-t target-session] [-T key-table] [-O order]",
+        usage: c"[-ElnprZ] [-c target-client] [-t target-session] [-T key-table] [-O order]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -199,8 +201,15 @@ unsafe fn cmd_switch_client_exec(
                 .window_handle()
                 .cloned()
                 .expect("switch window");
+            let visible = pane.is_visible();
+            if !visible && window_owner.push_zoom(false, args_has(args, b'Z') != 0) {
+                server_redraw_window(&window_owner);
+            }
             window_owner.redraw_active_switch(wp.as_ref());
             window_owner.select_pane(pane, true);
+            if !visible && window_owner.pop_zoom() {
+                server_redraw_window(&window_owner);
+            }
             drop(window_owner);
         }
         if wl.is_alive() {

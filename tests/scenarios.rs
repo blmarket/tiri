@@ -96,7 +96,7 @@ fn a_full_width_pane_stays_full_when_moved_to_another_window_and_back() {
     let (a, p0) = first_window(&server);
     let p1 = new_pane(&server, &[]);
     let p2 = new_pane(&server, &[]);
-    server.success(&["resize-pane", "-Z", "-t", &p1]);
+    server.success(&["resize-pane", "-W", "-t", &p1]);
     assert_eq!(
         strip(&server, &a),
         expect(&[(&p0, 0, 40), (&p1, 41, 81), (&p2, 123, 40)])
@@ -121,7 +121,7 @@ fn a_moved_pane_is_sized_by_the_destination_window() {
     let (a, p0) = first_window(&server);
     let p1 = new_pane(&server, &[]);
     let p2 = new_pane(&server, &[]);
-    server.success(&["resize-pane", "-Z", "-t", &p1]);
+    server.success(&["resize-pane", "-W", "-t", &p1]);
 
     let (b, q0) = new_window(&server);
     server.success(&["resize-window", "-t", &b, "-x", "41"]);
@@ -141,7 +141,7 @@ fn a_pane_keeps_its_strip_width_through_a_tiling_window() {
     let server = Server::new();
     let (a, p0) = first_window(&server);
     let p1 = new_pane(&server, &[]);
-    server.success(&["resize-pane", "-Z", "-t", &p1]);
+    server.success(&["resize-pane", "-W", "-t", &p1]);
 
     let (b, q0) = new_window(&server);
     server.success(&["select-layout", "-t", &b, "tiling"]);
@@ -158,7 +158,7 @@ fn swapping_panes_across_windows_swaps_their_widths() {
     let (a, p0) = first_window(&server);
     let p1 = new_pane(&server, &[]);
     let p2 = new_pane(&server, &[]);
-    server.success(&["resize-pane", "-Z", "-t", &p1]);
+    server.success(&["resize-pane", "-W", "-t", &p1]);
     let (b, q0) = new_window(&server);
 
     server.success(&["swap-pane", "-s", &p1, "-t", &q0]);
@@ -174,7 +174,7 @@ fn break_pane_keeps_the_width_in_the_new_window() {
     let server = Server::new();
     let (a, p0) = first_window(&server);
     let p1 = new_pane(&server, &[]);
-    server.success(&["resize-pane", "-Z", "-t", &p1]);
+    server.success(&["resize-pane", "-W", "-t", &p1]);
 
     server.success(&["break-pane", "-s", &p1]);
     let c = server.display("#{window_id}");
@@ -192,7 +192,7 @@ fn a_move_the_strip_cannot_take_is_refused_and_nothing_changes() {
     let (b, q0) = new_window(&server);
     server.success(&["resize-window", "-t", &b, "-x", "5000"]);
     let q1 = new_pane(&server, &["-t", &q0]);
-    server.success(&["resize-pane", "-Z", "-t", &q1]);
+    server.success(&["resize-pane", "-W", "-t", &q1]);
     let b_before = strip(&server, &b);
     assert_eq!(b_before, expect(&[(&q0, 0, 2499), (&q1, 2500, 5000)]));
 
