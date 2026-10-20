@@ -1057,7 +1057,7 @@ fn tty_term_strip(s: &CStr) -> CString {
     }
     CString::new(stripped).expect("terminal capability C string contains no NUL")
 }
-unsafe fn tty_term_override_next(s: &CStr, offset: &mut size_t) -> Option<CString> {
+fn tty_term_override_next(s: &CStr, offset: &mut size_t) -> Option<CString> {
     let s = s.to_bytes_with_nul();
     let mut value = Vec::new();
     let mut n: size_t = 0 as size_t;
@@ -1684,28 +1684,26 @@ mod term_string_owner_tests {
 
     #[test]
     fn override_tokens_keep_escaping_limits_and_independent_storage() {
-        unsafe {
-            let source = c":clear=left::right:bel=\xff";
-            let mut offset = 0;
-            let empty = tty_term_override_next(&source, &mut offset).unwrap();
-            let first = tty_term_override_next(&source, &mut offset).unwrap();
-            let second = tty_term_override_next(&source, &mut offset).unwrap();
-            assert!(tty_term_override_next(&source, &mut offset).is_none());
-            assert_eq!(empty.as_c_str(), c"");
-            assert_eq!(first.as_c_str(), c"clear=left:right");
-            assert_eq!(second.as_c_str(), c"bel=\xff");
+        let source = c":clear=left::right:bel=\xff";
+        let mut offset = 0;
+        let empty = tty_term_override_next(&source, &mut offset).unwrap();
+        let first = tty_term_override_next(&source, &mut offset).unwrap();
+        let second = tty_term_override_next(&source, &mut offset).unwrap();
+        assert!(tty_term_override_next(&source, &mut offset).is_none());
+        assert_eq!(empty.as_c_str(), c"");
+        assert_eq!(first.as_c_str(), c"clear=left:right");
+        assert_eq!(second.as_c_str(), c"bel=\xff");
 
-            for (len, accepted) in [(8190, true), (8191, false), (8192, false)] {
-                let source = CString::new(format!("x:{}:next", "a".repeat(len))).unwrap();
-                let mut offset = 2;
-                let token = tty_term_override_next(&source, &mut offset);
-                assert_eq!(token.is_some(), accepted);
-                if let Some(token) = token {
-                    assert_eq!(token.as_bytes().len(), len);
-                    assert_eq!(offset, len + 3);
-                } else {
-                    assert_eq!(offset, 2);
-                }
+        for (len, accepted) in [(8190, true), (8191, false), (8192, false)] {
+            let source = CString::new(format!("x:{}:next", "a".repeat(len))).unwrap();
+            let mut offset = 2;
+            let token = tty_term_override_next(&source, &mut offset);
+            assert_eq!(token.is_some(), accepted);
+            if let Some(token) = token {
+                assert_eq!(token.as_bytes().len(), len);
+                assert_eq!(offset, len + 3);
+            } else {
+                assert_eq!(offset, 2);
             }
         }
     }

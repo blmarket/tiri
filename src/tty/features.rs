@@ -221,7 +221,7 @@ pub(super) unsafe fn tty_parse_client_features(
 ) {
     owner.parse_terminal_features(features, separators);
 }
-pub unsafe fn tty_parse_features(
+pub fn tty_parse_features(
     s: &CStr,
     sep: &CStr,
     enabled: &mut ::core::ffi::c_int,

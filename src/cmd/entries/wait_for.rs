@@ -385,7 +385,7 @@ unsafe fn cmd_wait_for_wake(args: &args, name: &CStr) -> CmdOutcome {
     }
     CmdOutcome::Normal
 }
-unsafe fn cmd_wait_for_signal(name: &CStr) -> CmdOutcome {
+fn cmd_wait_for_signal(name: &CStr) -> CmdOutcome {
     let waiters = WAIT_CHANNELS.with_borrow_mut(|channels| {
         let wc = cmd_wait_for_add(channels, name);
         cmd_wait_for_prune_expired(wc);
@@ -488,7 +488,7 @@ unsafe fn cmd_wait_for_unlock(
 }
 /// Continue and forget every waiter, locker and event waiter whose item
 /// belongs to a lost client, wherever that item is queued.
-pub unsafe fn cmd_wait_for_client_lost(c: &ClientRef) {
+pub fn cmd_wait_for_client_lost(c: &ClientRef) {
     let lost_waiter = |waiter: &CmdqWaiter| {
         waiter
             .client()
@@ -522,7 +522,7 @@ pub unsafe fn cmd_wait_for_client_lost(c: &ClientRef) {
     });
     wait_items_continue_all(waiters);
 }
-pub unsafe fn cmd_wait_for_flush() {
+pub fn cmd_wait_for_flush() {
     for wei in WAIT_EVENT_ITEMS.with_borrow_mut(std::mem::take) {
         wei.resume();
     }
@@ -629,30 +629,28 @@ mod tests {
         item
     }
 
-    unsafe fn signal(_: &Rc<std::cell::RefCell<cmdq_item>>, name: &CStr) -> CmdOutcome {
+    fn signal(_: &Rc<std::cell::RefCell<cmdq_item>>, name: &CStr) -> CmdOutcome {
         cmd_wait_for_signal(name)
     }
 
     #[test]
     fn signal_resumes_waiters_in_fifo_order() {
-        unsafe {
-            let (trace, locked) = Default::default();
-            let (waiters, _resumed) = recorded_waiters(128, &trace);
-            let (lockers, _locking) = recorded_waiters(4, &locked);
-            WAIT_CHANNELS.with_borrow_mut(|channels| {
-                let wc = cmd_wait_for_add(channels, c"fifo");
-                wc.waiters.extend(waiters);
-                wc.lockers.extend(lockers);
-            });
-            assert!(matches!(cmd_wait_for_signal(c"fifo"), CmdOutcome::Normal));
-            assert_eq!(*trace.borrow(), (0..128).collect::<Vec<_>>());
-            assert_eq!(
-                channel(c"fifo", |wc| (wc.waiters.len(), wc.woken)),
-                Some((0, 0))
-            );
-            assert!(locked.borrow().is_empty());
-            assert_eq!(channel(c"fifo", |wc| wc.lockers.len()), Some(4));
-        }
+        let (trace, locked) = Default::default();
+        let (waiters, _resumed) = recorded_waiters(128, &trace);
+        let (lockers, _locking) = recorded_waiters(4, &locked);
+        WAIT_CHANNELS.with_borrow_mut(|channels| {
+            let wc = cmd_wait_for_add(channels, c"fifo");
+            wc.waiters.extend(waiters);
+            wc.lockers.extend(lockers);
+        });
+        assert!(matches!(cmd_wait_for_signal(c"fifo"), CmdOutcome::Normal));
+        assert_eq!(*trace.borrow(), (0..128).collect::<Vec<_>>());
+        assert_eq!(
+            channel(c"fifo", |wc| (wc.waiters.len(), wc.woken)),
+            Some((0, 0))
+        );
+        assert!(locked.borrow().is_empty());
+        assert_eq!(channel(c"fifo", |wc| wc.lockers.len()), Some(4));
     }
 
     #[test]
@@ -780,7 +778,7 @@ mod tests {
         crate::events::events_fire(name, ep);
     }
 
-    unsafe fn event_sinks() -> Vec<EventSinkId> {
+    fn event_sinks() -> Vec<EventSinkId> {
         WAIT_EVENT_ITEMS.with_borrow(|items| items.iter().map(|wei| wei.sink.0).collect())
     }
 

@@ -94,7 +94,7 @@ fn style_hyperlinks(create: bool) -> Option<HyperlinksRef> {
         owner.clone()
     })
 }
-unsafe fn style_set_range_string(sy: &mut style, s: &CStr) {
+fn style_set_range_string(sy: &mut style, s: &CStr) {
     cstr_copy_into(&mut sy.range_string, s);
 }
 const STYLE_TOKEN_MAX: usize = 255;
@@ -394,7 +394,7 @@ pub unsafe fn style_parse(sy: &mut style, base: &grid_cell, in_0: &CStr) -> ::co
     style_copy(sy, &saved);
     -(1 as ::core::ffi::c_int)
 }
-pub unsafe fn style_tostring(sy: &style) -> CString {
+pub fn style_tostring(sy: &style) -> CString {
     let gc: &grid_cell = &sy.gc;
     let s = format_message_with(|out| {
         let b: Vec<u8>;
@@ -601,7 +601,7 @@ pub unsafe fn style_set(sy: &mut style, gc: &grid_cell) {
     *sy = style_default;
     sy.gc = *gc;
 }
-pub unsafe fn style_copy(dst: &mut style, src: &style) {
+pub fn style_copy(dst: &mut style, src: &style) {
     *dst = *src;
 }
 pub unsafe fn style_set_scrollbar_style_from_option(
@@ -650,10 +650,10 @@ pub unsafe fn style_set_scrollbar_style_from_option(
     }
     utf8_set(&mut sb_style.gc.data, PANE_SCROLLBARS_CHARACTER as u_char);
 }
-pub unsafe fn style_ranges_init(srs: &mut style_ranges) {
+pub fn style_ranges_init(srs: &mut style_ranges) {
     *srs = Vec::new();
 }
-pub unsafe fn style_ranges_clear(srs: &mut style_ranges) {
+pub fn style_ranges_clear(srs: &mut style_ranges) {
     srs.clear();
 }
 

@@ -164,7 +164,7 @@ unsafe fn sort_key_binding_cmp(
     }
     sort_ordering(result, sort_crit.reversed)
 }
-pub unsafe fn sort_next_order(criteria: &mut sort_criteria) {
+pub fn sort_next_order(criteria: &mut sort_criteria) {
     let sequence = criteria.order_seq;
     if sequence.is_empty() {
         return;
@@ -383,22 +383,20 @@ mod sequence_tests {
             reversed: 0,
             order_seq: &[SORT_NAME, SORT_SIZE],
         };
-        unsafe {
-            sort_next_order(&mut criteria);
-            assert_eq!(criteria.order, SORT_SIZE);
-            sort_next_order(&mut criteria);
-            assert_eq!(criteria.order, SORT_NAME);
-            criteria.order = SORT_ACTIVITY;
-            sort_next_order(&mut criteria);
-            assert_eq!(criteria.order, SORT_NAME);
-            criteria.order_seq = &[];
-            sort_next_order(&mut criteria);
-            assert_eq!(criteria.order, SORT_NAME);
-            criteria.order_seq = &[SORT_SIZE];
-            sort_next_order(&mut criteria);
-            sort_next_order(&mut criteria);
-            assert_eq!(criteria.order, SORT_SIZE);
-        }
+        sort_next_order(&mut criteria);
+        assert_eq!(criteria.order, SORT_SIZE);
+        sort_next_order(&mut criteria);
+        assert_eq!(criteria.order, SORT_NAME);
+        criteria.order = SORT_ACTIVITY;
+        sort_next_order(&mut criteria);
+        assert_eq!(criteria.order, SORT_NAME);
+        criteria.order_seq = &[];
+        sort_next_order(&mut criteria);
+        assert_eq!(criteria.order, SORT_NAME);
+        criteria.order_seq = &[SORT_SIZE];
+        sort_next_order(&mut criteria);
+        sort_next_order(&mut criteria);
+        assert_eq!(criteria.order, SORT_SIZE);
     }
 
     #[test]

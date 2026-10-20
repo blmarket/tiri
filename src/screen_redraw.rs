@@ -492,13 +492,13 @@ fn redraw_border_type(up: bool, down: bool, left: bool, right: bool) -> ::core::
         _ => CELL_UD,
     }
 }
-unsafe fn redraw_is_border(bctx: &mut redraw_build_ctx, x: u_int, y: u_int) -> bool {
+fn redraw_is_border(bctx: &mut redraw_build_ctx, x: u_int, y: u_int) -> bool {
     x < bctx.sx
         && y < bctx.sy
         && (*redraw_get_build_cell(bctx, x, y)).data.kind() == REDRAW_SPAN_BORDER
 }
 /// Give every separator cell its line, joining the separator cells beside it.
-unsafe fn redraw_set_border_types(bctx: &mut redraw_build_ctx) {
+fn redraw_set_border_types(bctx: &mut redraw_build_ctx) {
     for y in 0..bctx.sy {
         for x in 0..bctx.sx {
             if !redraw_is_border(bctx, x, y) {
@@ -624,7 +624,7 @@ unsafe fn redraw_mark_window_frame(bctx: &mut redraw_build_ctx) {
 }
 /// Make scene cell `at` a frame cell drawing `cell_type`, the border of the
 /// pane at scene cell `inside` if there is one.
-unsafe fn redraw_mark_frame_cell(
+fn redraw_mark_frame_cell(
     bctx: &mut redraw_build_ctx,
     (x, y): (u_int, u_int),
     inside: Option<(u_int, u_int)>,
@@ -993,7 +993,7 @@ fn redraw_get_pane_for_border_style(
         .upgrade()
         .or_else(|| border.right_wp.upgrade())
 }
-unsafe fn redraw_draw_border_arrow(
+fn redraw_draw_border_arrow(
     dctx: &mut redraw_draw_ctx<'_>,
     span: &redraw_span,
     gc: &mut grid_cell,

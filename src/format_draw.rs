@@ -39,7 +39,7 @@ pub const RIGHT: C2RustUnnamed_39 = 2;
 pub const CENTRE: C2RustUnnamed_39 = 1;
 pub const LEFT: C2RustUnnamed_39 = 0;
 pub type C2RustUnnamed_39 = ::core::ffi::c_uint;
-unsafe fn format_is_type(fr: &format_range, sy: &style) -> ::core::ffi::c_int {
+fn format_is_type(fr: &format_range, sy: &style) -> ::core::ffi::c_int {
     if fr.type_0 as ::core::ffi::c_uint != sy.range_type as ::core::ffi::c_uint {
         return 0 as ::core::ffi::c_int;
     }
@@ -56,7 +56,7 @@ unsafe fn format_is_type(fr: &format_range, sy: &style) -> ::core::ffi::c_int {
     }
     1 as ::core::ffi::c_int
 }
-unsafe fn format_update_ranges(
+fn format_update_ranges(
     frs: &mut format_ranges,
     index: u_int,
     mut offset: u_int,
@@ -1549,7 +1549,7 @@ pub fn format_width(expanded: &CStr) -> u_int {
     }
     width
 }
-pub(crate) unsafe fn format_trim_left_bytes(expanded: &CStr, mut limit: u_int) -> Vec<u8> {
+pub(crate) fn format_trim_left_bytes(expanded: &CStr, mut limit: u_int) -> Vec<u8> {
     let s = expanded.to_bytes();
     let mut out = Vec::<u8>::new();
     let mut width: u_int = 0 as u_int;
@@ -1626,7 +1626,7 @@ pub(crate) unsafe fn format_trim_left_bytes(expanded: &CStr, mut limit: u_int) -
     }
     out
 }
-pub(crate) unsafe fn format_trim_right_bytes(expanded: &CStr, mut limit: u_int) -> Vec<u8> {
+pub(crate) fn format_trim_right_bytes(expanded: &CStr, mut limit: u_int) -> Vec<u8> {
     let s = expanded.to_bytes();
     let mut out = Vec::<u8>::new();
     let mut width: u_int = 0 as u_int;

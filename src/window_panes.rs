@@ -115,7 +115,7 @@ pub static window_panes_mode: window_mode = {
         display_screen: Some(window_panes_get_screen),
     }
 };
-unsafe fn window_panes_session(source: &window_panes_source) -> Option<SessionRef> {
+fn window_panes_session(source: &window_panes_source) -> Option<SessionRef> {
     let owner = source.session.upgrade()?;
     if !owner.is_registered() {
         drop(owner);
@@ -162,7 +162,7 @@ unsafe fn window_panes_set_preview(data: &mut window_panes_modedata) {
     data.preview = Some(preview);
 }
 
-unsafe fn window_panes_free_areas(data: &mut window_panes_modedata) {
+fn window_panes_free_areas(data: &mut window_panes_modedata) {
     data.areas = Vec::new();
 }
 unsafe fn window_panes_add_area(
@@ -987,7 +987,7 @@ unsafe fn window_panes_run_command(
         }
     }
 }
-unsafe fn window_panes_find_pane(
+fn window_panes_find_pane(
     data: &window_panes_modedata,
     mut x: u_int,
     mut y: u_int,

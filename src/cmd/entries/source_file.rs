@@ -222,7 +222,7 @@ fn cmd_source_file_add(cdata: &mut cmd_source_file_data, path: &CStr) {
     ));
     cdata.files.push(path.to_owned());
 }
-unsafe fn cmd_source_file_quote_for_glob(path: &CStr) -> CString {
+fn cmd_source_file_quote_for_glob(path: &CStr) -> CString {
     let mut quoted = Vec::new();
     for &byte in path.to_bytes() {
         if byte < 128 && !byte.is_ascii_alphanumeric() && byte != b'/' {

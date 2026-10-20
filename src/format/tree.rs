@@ -15,7 +15,7 @@ pub(super) fn format_entry_tree_find<'a>(
 
 /// Evaluate without retaining an entry borrow: callbacks may replace or remove
 /// entries in this tree. As with the C API, callbacks must not destroy the tree.
-unsafe fn format_entry_ensure_value(ft: &mut format_tree, key: &CStr) {
+fn format_entry_ensure_value(ft: &mut format_tree, key: &CStr) {
     use std::sync::atomic::{AtomicU64, Ordering};
     static NEXT_EVALUATION: AtomicU64 = AtomicU64::new(0);
     let (evaluation, callback) = {
@@ -46,10 +46,7 @@ unsafe fn format_entry_ensure_value(ft: &mut format_tree, key: &CStr) {
 }
 
 /// Copy the resolved value after any lazy callback has finished mutating the tree.
-pub(super) unsafe fn format_entry_get_value(
-    ft: &mut format_tree,
-    key: &CStr,
-) -> Option<FormatValue> {
+pub(super) fn format_entry_get_value(ft: &mut format_tree, key: &CStr) -> Option<FormatValue> {
     let key = key.to_owned();
     format_entry_ensure_value(ft, &key);
     let entry = format_entry_tree_find(&ft.tree, &key)?;
@@ -61,7 +58,7 @@ pub(super) unsafe fn format_entry_get_value(
     }
 }
 
-unsafe fn format_entry_set(ft: &mut format_tree, key: &CStr, state: FormatEntryState) {
+fn format_entry_set(ft: &mut format_tree, key: &CStr, state: FormatEntryState) {
     use std::collections::btree_map::Entry;
 
     let key = key.to_owned();
@@ -75,7 +72,7 @@ unsafe fn format_entry_set(ft: &mut format_tree, key: &CStr, state: FormatEntryS
     drop(old);
 }
 
-pub unsafe fn format_merge(ft: &mut format_tree, from: &format_tree) {
+pub fn format_merge(ft: &mut format_tree, from: &format_tree) {
     let values: Vec<_> = from
         .tree
         .values()
@@ -181,7 +178,7 @@ pub unsafe fn format_each(ft: &mut format_tree, mut cb: impl FnMut(&CStr, &CStr)
         cb(&key, &value);
     }
 }
-pub unsafe fn format_add(
+pub fn format_add(
     ft: &mut format_tree,
     key: &CStr,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
@@ -191,15 +188,15 @@ pub unsafe fn format_add(
 }
 
 /// Insert literal text, copying the value into the format tree.
-pub unsafe fn format_add_cstr(ft: &mut format_tree, key: &CStr, value: &CStr) {
+pub fn format_add_cstr(ft: &mut format_tree, key: &CStr, value: &CStr) {
     format_add_value(ft, key, value.to_owned());
 }
 
-unsafe fn format_add_value(ft: &mut format_tree, key: &CStr, value: CString) {
+fn format_add_value(ft: &mut format_tree, key: &CStr, value: CString) {
     format_entry_set(ft, key, FormatEntryState::Text(value));
 }
 
-pub unsafe fn format_add_time(ft: &mut format_tree, key: &CStr, time: SystemTime) {
+pub fn format_add_time(ft: &mut format_tree, key: &CStr, time: SystemTime) {
     format_entry_set(
         ft,
         key,
@@ -208,7 +205,7 @@ pub unsafe fn format_add_time(ft: &mut format_tree, key: &CStr, time: SystemTime
 }
 
 /// Registers a lazy Rust callback that returns an owned cache value.
-pub unsafe fn format_add_owned_cb(
+pub fn format_add_owned_cb(
     ft: &mut format_tree,
     key: &CStr,
     cb: impl FnMut(&mut format_tree) -> Option<CString> + 'static,
@@ -227,7 +224,7 @@ mod tests {
         format_create(None, None, 0, 0)
     }
 
-    unsafe fn text_value(ft: &mut format_tree, key: &CStr) -> Option<CString> {
+    fn text_value(ft: &mut format_tree, key: &CStr) -> Option<CString> {
         match format_entry_get_value(ft, key) {
             Some(FormatValue::String(value)) => Some(value),
             _ => None,

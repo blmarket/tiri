@@ -186,7 +186,7 @@ pub unsafe fn status_init(sl: &mut status_line, width: u_int) {
     screen_init(&mut sl.screen, width, 1, 0);
     sl.active = None;
 }
-pub unsafe fn status_free(sl: &mut status_line) {
+pub fn status_free(sl: &mut status_line) {
     for entry in &mut sl.entries {
         drop(std::mem::take(&mut entry.ranges));
         entry.expanded = None;

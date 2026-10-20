@@ -4,7 +4,7 @@ use crate::shared::session::SessionRef;
 use crate::sort::{sort_by_criteria, sort_ordering};
 use std::cmp::Ordering;
 
-unsafe fn sort_session_cmp(sa: &session, sb: &session, sort_crit: &sort_criteria) -> Ordering {
+fn sort_session_cmp(sa: &session, sb: &session, sort_crit: &sort_criteria) -> Ordering {
     let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     match sort_crit.order as ::core::ffi::c_uint {
         2 => {

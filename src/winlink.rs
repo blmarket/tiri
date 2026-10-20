@@ -97,7 +97,7 @@ pub unsafe fn winlink_find_by_window_id(wwl: &winlinks, mut id: u_int) -> refbox
     refbox::Weak::new()
 }
 
-unsafe fn winlink_next_index(wwl: &winlinks, mut idx: ::core::ffi::c_int) -> ::core::ffi::c_int {
+fn winlink_next_index(wwl: &winlinks, mut idx: ::core::ffi::c_int) -> ::core::ffi::c_int {
     let mut i: ::core::ffi::c_int = 0;
     i = idx;
     loop {

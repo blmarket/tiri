@@ -207,37 +207,35 @@ mod input_buffer_ownership_tests {
 
     #[test]
     fn colon_parameter_survives_later_numeric_error_until_next_split() {
-        unsafe {
-            let mut ictx_owner = Box::new(input_ctx::new());
-            let ictx = &mut *ictx_owner;
-            let invalid = b"38:5:196;invalid\0";
-            (&mut ictx.param_buf)[..invalid.len()].copy_from_slice(invalid);
-            ictx.param_len = invalid.len() - 1;
-            assert_eq!(input_split(ictx), -1);
-            assert_eq!(ictx.param_list_len, 1);
-            assert_eq!(
-                match &ictx.param_list[0] {
-                    input_param::String(value) => value.as_c_str(),
-                    _ => panic!("expected string parameter"),
-                },
-                c"38:5:196"
-            );
+        let mut ictx_owner = Box::new(input_ctx::new());
+        let ictx = &mut *ictx_owner;
+        let invalid = b"38:5:196;invalid\0";
+        (&mut ictx.param_buf)[..invalid.len()].copy_from_slice(invalid);
+        ictx.param_len = invalid.len() - 1;
+        assert_eq!(input_split(ictx), -1);
+        assert_eq!(ictx.param_list_len, 1);
+        assert_eq!(
+            match &ictx.param_list[0] {
+                input_param::String(value) => value.as_c_str(),
+                _ => panic!("expected string parameter"),
+            },
+            c"38:5:196"
+        );
 
-            let next = b"48:5:25\0";
-            (&mut ictx.param_buf)[..next.len()].copy_from_slice(next);
-            ictx.param_len = next.len() - 1;
-            assert_eq!(input_split(ictx), 0);
-            assert_eq!(ictx.param_list_len, 1);
-            assert_eq!(
-                match &ictx.param_list[0] {
-                    input_param::String(value) => value.as_c_str(),
-                    _ => panic!("expected string parameter"),
-                },
-                c"48:5:25"
-            );
-            input_clear_params(ictx);
-            drop(ictx_owner);
-        }
+        let next = b"48:5:25\0";
+        (&mut ictx.param_buf)[..next.len()].copy_from_slice(next);
+        ictx.param_len = next.len() - 1;
+        assert_eq!(input_split(ictx), 0);
+        assert_eq!(ictx.param_list_len, 1);
+        assert_eq!(
+            match &ictx.param_list[0] {
+                input_param::String(value) => value.as_c_str(),
+                _ => panic!("expected string parameter"),
+            },
+            c"48:5:25"
+        );
+        input_clear_params(ictx);
+        drop(ictx_owner);
     }
 
     #[test]
@@ -2040,7 +2038,7 @@ unsafe fn input_start_ground_timer(ictx: &mut input_ctx) {
         .expect("arm timer"),
     );
 }
-unsafe fn input_reset_cell(ictx: &mut input_ctx) {
+fn input_reset_cell(ictx: &mut input_ctx) {
     ictx.cell.cell = grid_default_cell;
     ictx.cell.set = 0 as ::core::ffi::c_int;
     ictx.cell.g1set = 0 as ::core::ffi::c_int;
@@ -2049,7 +2047,7 @@ unsafe fn input_reset_cell(ictx: &mut input_ctx) {
     ictx.old_cx = 0 as u_int;
     ictx.old_cy = 0 as u_int;
 }
-unsafe fn input_save_state(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) {
+fn input_save_state(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) {
     ictx.old_cell = ictx.cell;
     ictx.old_cx = sctx.screen.cx;
     ictx.old_cy = sctx.screen.cy;
@@ -2265,7 +2263,7 @@ fn input_split_fields(buf: &mut [u8], delim: u8) -> impl Iterator<Item = &CStr> 
         .split_inclusive(|&byte| byte == 0)
         .map(|field| CStr::from_bytes_with_nul(field).expect("field is terminated"))
 }
-unsafe fn input_split(ictx: &mut input_ctx) -> ::core::ffi::c_int {
+fn input_split(ictx: &mut input_ctx) -> ::core::ffi::c_int {
     input_clear_params(ictx);
     ictx.param_list_len = 0 as u_int;
     if ictx.param_len == 0 as size_t {
@@ -2357,7 +2355,7 @@ unsafe fn input_clear(ictx: &mut input_ctx) {
     ictx.input_end = INPUT_END_ST;
     ictx.flags &= !INPUT_DISCARD;
 }
-unsafe fn input_ground(ictx: &mut input_ctx) {
+fn input_ground(ictx: &mut input_ctx) {
     drop(ictx.ground_timer.take());
     let len = evbuffer_get_length(&ictx.since_ground);
     evbuffer_drain(&mut ictx.since_ground, len);
@@ -2386,10 +2384,7 @@ unsafe fn input_print(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) -> ::co
         (ictx.cell.cell.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
     0 as ::core::ffi::c_int
 }
-unsafe fn input_intermediate(
-    ictx: &mut input_ctx,
-    _sctx: &mut screen_write_ctx,
-) -> ::core::ffi::c_int {
+fn input_intermediate(ictx: &mut input_ctx, _sctx: &mut screen_write_ctx) -> ::core::ffi::c_int {
     if ictx.interm_len == (::core::mem::size_of::<[u_char; 4]>() as usize).wrapping_sub(1_usize) {
         ictx.flags |= INPUT_DISCARD;
     } else {
@@ -2400,10 +2395,7 @@ unsafe fn input_intermediate(
     }
     0 as ::core::ffi::c_int
 }
-unsafe fn input_parameter(
-    ictx: &mut input_ctx,
-    _sctx: &mut screen_write_ctx,
-) -> ::core::ffi::c_int {
+fn input_parameter(ictx: &mut input_ctx, _sctx: &mut screen_write_ctx) -> ::core::ffi::c_int {
     if ictx.param_len == (::core::mem::size_of::<[u_char; 64]>() as usize).wrapping_sub(1_usize) {
         ictx.flags |= INPUT_DISCARD;
     } else {
@@ -3408,7 +3400,7 @@ unsafe fn input_csi_dispatch(
     ictx.flags &= !INPUT_LAST;
     0 as ::core::ffi::c_int
 }
-unsafe fn input_csi_dispatch_rm(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) {
+fn input_csi_dispatch_rm(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) {
     let mut i: u_int = 0;
     i = 0 as u_int;
     while i < ictx.param_list_len {
@@ -3513,7 +3505,7 @@ unsafe fn input_csi_dispatch_rm_private(ictx: &mut input_ctx, sctx: &mut screen_
         i = i.wrapping_add(1);
     }
 }
-unsafe fn input_csi_dispatch_sm(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) {
+fn input_csi_dispatch_sm(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) {
     let mut i: u_int = 0;
     i = 0 as u_int;
     while i < ictx.param_list_len {
@@ -3794,7 +3786,7 @@ unsafe fn input_csi_dispatch_winops(ictx: &mut input_ctx, sctx: &mut screen_writ
         drop(window);
     }
 }
-unsafe fn input_csi_dispatch_sgr_256_do(
+fn input_csi_dispatch_sgr_256_do(
     ictx: &mut input_ctx,
     mut fgbg: ::core::ffi::c_int,
     mut c: ::core::ffi::c_int,
@@ -3814,11 +3806,7 @@ unsafe fn input_csi_dispatch_sgr_256_do(
     }
     1 as ::core::ffi::c_int
 }
-unsafe fn input_csi_dispatch_sgr_256(
-    ictx: &mut input_ctx,
-    mut fgbg: ::core::ffi::c_int,
-    i: &mut u_int,
-) {
+fn input_csi_dispatch_sgr_256(ictx: &mut input_ctx, mut fgbg: ::core::ffi::c_int, i: &mut u_int) {
     let mut c: ::core::ffi::c_int = 0;
     c = input_get(
         ictx,
@@ -3830,7 +3818,7 @@ unsafe fn input_csi_dispatch_sgr_256(
         *i = i.wrapping_add(1);
     }
 }
-unsafe fn input_csi_dispatch_sgr_rgb_do(
+fn input_csi_dispatch_sgr_rgb_do(
     ictx: &mut input_ctx,
     mut fgbg: ::core::ffi::c_int,
     mut r: ::core::ffi::c_int,
@@ -3855,11 +3843,7 @@ unsafe fn input_csi_dispatch_sgr_rgb_do(
     }
     1 as ::core::ffi::c_int
 }
-unsafe fn input_csi_dispatch_sgr_rgb(
-    ictx: &mut input_ctx,
-    mut fgbg: ::core::ffi::c_int,
-    i: &mut u_int,
-) {
+fn input_csi_dispatch_sgr_rgb(ictx: &mut input_ctx, mut fgbg: ::core::ffi::c_int, i: &mut u_int) {
     let mut r: ::core::ffi::c_int = 0;
     let mut g: ::core::ffi::c_int = 0;
     let mut b: ::core::ffi::c_int = 0;
@@ -3885,7 +3869,7 @@ unsafe fn input_csi_dispatch_sgr_rgb(
         *i = i.wrapping_add(3 as u_int);
     }
 }
-unsafe fn input_csi_dispatch_sgr_colon(ictx: &mut input_ctx, mut i: u_int) {
+fn input_csi_dispatch_sgr_colon(ictx: &mut input_ctx, mut i: u_int) {
     let s = match &ictx.param_list[i as usize] {
         input_param::String(value) => value.as_c_str(),
         _ => panic!("SGR colon parser requires a string parameter"),
@@ -4030,7 +4014,7 @@ mod sgr_colon_tests {
         ictx.cell.cell.bg = 12;
         ictx.cell.cell.us = 13;
         ictx.cell.cell.attr = GRID_ATTR_UNDERSCORE_2 as u16;
-        unsafe { input_csi_dispatch_sgr_colon(&mut ictx, 0) };
+        input_csi_dispatch_sgr_colon(&mut ictx, 0);
         assert_eq!(
             match &ictx.param_list[0] {
                 input_param::String(value) => value.as_c_str(),
@@ -4067,7 +4051,7 @@ mod sgr_colon_tests {
         assert_eq!(parse(b"38:5:196\0:2:1:2:3\0").fg, 196 | COLOUR_FLAG_256);
     }
 }
-unsafe fn input_csi_dispatch_sgr(ictx: &mut input_ctx) {
+fn input_csi_dispatch_sgr(ictx: &mut input_ctx) {
     let mut i: u_int = 0;
     let mut link: u_int = 0;
     let mut n: ::core::ffi::c_int = 0;
@@ -4228,7 +4212,7 @@ unsafe fn input_csi_dispatch_sgr(ictx: &mut input_ctx) {
         i = i.wrapping_add(1);
     }
 }
-unsafe fn input_end_bel(ictx: &mut input_ctx, _sctx: &mut screen_write_ctx) -> ::core::ffi::c_int {
+fn input_end_bel(ictx: &mut input_ctx, _sctx: &mut screen_write_ctx) -> ::core::ffi::c_int {
     log_debug(format_args!("{}", "input_end_bel"));
     ictx.input_end = INPUT_END_BEL;
     0 as ::core::ffi::c_int
@@ -4743,7 +4727,7 @@ unsafe fn input_osc_4(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CSt
         screen_write_fullredraw(sctx);
     }
 }
-unsafe fn input_osc_8(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
+fn input_osc_8(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
     let hl = sctx
         .screen
         .hyperlinks

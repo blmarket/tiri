@@ -32,7 +32,7 @@ unsafe fn format_cb_host_short(_ft: &mut format_tree) -> Option<CString> {
     let short = host.split(|&byte| byte == b'.').next().unwrap_or(host);
     Some(CString::new(short).expect("hostname contains no NUL"))
 }
-unsafe fn format_cb_pid(_ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pid(_ft: &mut format_tree) -> Option<CString> {
     let mut value = None;
     value = Some(
         CString::new(format!("{}", std::process::id())).expect("formatted numbers contain no NUL"),
@@ -422,13 +422,13 @@ unsafe fn format_cb_alternate_saved_y(ft: &mut format_tree) -> Option<CString> {
 unsafe fn format_cb_bracket_paste_flag(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"bracket_paste_flag", ft)
 }
-unsafe fn format_cb_buffer_name(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_buffer_name(ft: &mut format_tree) -> Option<CString> {
     Some(paste_buffer_name(&*ft.pb.as_ref()?.try_borrow()?).to_owned())
 }
-unsafe fn format_cb_buffer_sample(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_buffer_sample(ft: &mut format_tree) -> Option<CString> {
     Some(paste_make_sample_cstring(&*ft.pb.as_ref()?.try_borrow()?))
 }
-unsafe fn format_cb_buffer_full(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_buffer_full(ft: &mut format_tree) -> Option<CString> {
     let buffer = ft.pb.as_ref()?.try_borrow()?;
     let bytes = paste_buffer_data(&buffer)?;
     let end = bytes
@@ -437,7 +437,7 @@ unsafe fn format_cb_buffer_full(ft: &mut format_tree) -> Option<CString> {
         .unwrap_or(bytes.len());
     Some(CString::new(&bytes[..end]).expect("bounded buffer contains no NUL"))
 }
-unsafe fn format_cb_buffer_size(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_buffer_size(ft: &mut format_tree) -> Option<CString> {
     let buffer = ft.pb.as_ref()?.try_borrow()?;
     Some(CString::new(buffer.size().to_string()).expect("formatted numbers contain no NUL"))
 }
@@ -779,7 +779,7 @@ unsafe fn format_cb_pane_command_duration(ft: &mut format_tree) -> Option<CStrin
 unsafe fn format_cb_pane_command_status(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_command_status", ft)
 }
-unsafe fn format_cb_pane_format(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_format(ft: &mut format_tree) -> Option<CString> {
     if ft.type_0 as ::core::ffi::c_uint
         == FORMAT_TYPE_PANE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
@@ -914,7 +914,7 @@ unsafe fn format_cb_session_attached(ft: &mut format_tree) -> Option<CString> {
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_session_format(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_session_format(ft: &mut format_tree) -> Option<CString> {
     if ft.type_0 as ::core::ffi::c_uint
         == FORMAT_TYPE_SESSION as ::core::ffi::c_int as ::core::ffi::c_uint
     {
@@ -1089,7 +1089,7 @@ unsafe fn format_cb_window_flags(ft: &mut format_tree) -> Option<CString> {
     }
     None
 }
-unsafe fn format_cb_window_format(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_format(ft: &mut format_tree) -> Option<CString> {
     if ft.type_0 as ::core::ffi::c_uint
         == FORMAT_TYPE_WINDOW as ::core::ffi::c_int as ::core::ffi::c_uint
     {
@@ -1313,7 +1313,7 @@ unsafe fn format_cb_window_manual_width(ft: &mut format_tree) -> Option<CString>
 unsafe fn format_cb_wrap_flag(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"wrap_flag", ft)
 }
-unsafe fn format_cb_buffer_created(ft: &mut format_tree) -> Option<time_t> {
+fn format_cb_buffer_created(ft: &mut format_tree) -> Option<time_t> {
     Some(paste_buffer_created(&*ft.pb.as_ref()?.try_borrow()?) as __time_t as time_t)
 }
 unsafe fn format_cb_client_activity(ft: &mut format_tree) -> Option<time_t> {

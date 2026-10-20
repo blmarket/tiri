@@ -345,7 +345,7 @@ unsafe fn cmd_show_options_print(
     cmdq_print(item_handle, |out| write_cstr(out, &*line));
 }
 
-unsafe fn show_hook_add_fire_formats(ft: &mut format_tree, count: u32, time: time_t) {
+fn show_hook_add_fire_formats(ft: &mut format_tree, count: u32, time: time_t) {
     format_add(ft, c"hook_fire_count", |out| write!(out, "{count}"));
     if time != 0 {
         let offset = Duration::from_secs(time.unsigned_abs());

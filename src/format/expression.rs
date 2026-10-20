@@ -95,7 +95,7 @@ pub(crate) unsafe fn format_pretty_time_cstring(mut t: time_t) -> CString {
         .unwrap_or_default()
         .to_owned()
 }
-pub(super) unsafe fn format_relative_time(mut t: time_t) -> Option<CString> {
+pub(super) fn format_relative_time(mut t: time_t) -> Option<CString> {
     let mut now: time_t = 0;
     let mut age: time_t = 0;
     let mut d: u_int = 0;
@@ -138,7 +138,7 @@ pub(super) unsafe fn format_relative_time(mut t: time_t) -> Option<CString> {
         }
     }))
 }
-unsafe fn format_time_difference(t: time_t) -> CString {
+fn format_time_difference(t: time_t) -> CString {
     CString::new((crate::shared::time::unix_seconds(std::time::SystemTime::now()) - t).to_string())
         .expect("time difference contains no NUL")
 }

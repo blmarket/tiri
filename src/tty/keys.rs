@@ -1222,7 +1222,7 @@ static mut tty_default_code_keys: [tty_default_key_code; 136] = [
             | KEYC_CTRL,
     },
 ];
-unsafe fn tty_keys_add(tty: &mut tty, bytes: &[u8], key: key_code) {
+fn tty_keys_add(tty: &mut tty, bytes: &[u8], key: key_code) {
     let key_string = key_string_format(key, true);
     let mut size = 0;
     if let Some(tk) = tty_keys_find_mut(tty.key_tree.as_deref_mut(), bytes, &mut size) {
@@ -1345,7 +1345,7 @@ pub unsafe fn tty_keys_build(tty: &mut tty) {
         );
     }
 }
-pub(super) unsafe fn tty_keys_free(tty: &mut tty) {
+pub(super) fn tty_keys_free(tty: &mut tty) {
     tty.key_tree = None;
 }
 
@@ -3443,16 +3443,14 @@ mod key_tree_tests {
     #[test]
     fn replacing_keys_preserves_existing_prefix_behavior() {
         let mut terminal = tty::default();
-        unsafe {
-            tty_keys_add(&mut terminal, b"ab", 1);
-            tty_keys_add(&mut terminal, b"ab", 2);
-            assert_eq!(lookup(&terminal.key_tree, b"ab"), (Some(2), 2));
-            tty_keys_add(&mut terminal, b"a", 3);
-            assert_eq!(lookup(&terminal.key_tree, b"a"), (Some(3), 1));
-            assert_eq!(lookup(&terminal.key_tree, b"ab"), (Some(2), 2));
-            tty_keys_add(&mut terminal, b"abc", 4);
-            assert_eq!(lookup(&terminal.key_tree, b"abc"), (Some(4), 2));
-        }
+        tty_keys_add(&mut terminal, b"ab", 1);
+        tty_keys_add(&mut terminal, b"ab", 2);
+        assert_eq!(lookup(&terminal.key_tree, b"ab"), (Some(2), 2));
+        tty_keys_add(&mut terminal, b"a", 3);
+        assert_eq!(lookup(&terminal.key_tree, b"a"), (Some(3), 1));
+        assert_eq!(lookup(&terminal.key_tree, b"ab"), (Some(2), 2));
+        tty_keys_add(&mut terminal, b"abc", 4);
+        assert_eq!(lookup(&terminal.key_tree, b"abc"), (Some(4), 2));
     }
 
     #[test]
@@ -3505,15 +3503,13 @@ mod key_tree_tests {
     #[test]
     fn clearing_is_repeatable_and_allows_repopulation() {
         let mut terminal = tty::default();
-        unsafe {
-            tty_keys_free(&mut terminal);
-            tty_keys_add(&mut terminal, b"old", 1);
-            tty_keys_free(&mut terminal);
-            assert!(terminal.key_tree.is_none());
-            tty_keys_free(&mut terminal);
-            tty_keys_add(&mut terminal, b"new", 2);
-            assert_eq!(lookup(&terminal.key_tree, b"new"), (Some(2), 3));
-            assert_eq!(lookup(&terminal.key_tree, b"old"), (None, 0));
-        }
+        tty_keys_free(&mut terminal);
+        tty_keys_add(&mut terminal, b"old", 1);
+        tty_keys_free(&mut terminal);
+        assert!(terminal.key_tree.is_none());
+        tty_keys_free(&mut terminal);
+        tty_keys_add(&mut terminal, b"new", 2);
+        assert_eq!(lookup(&terminal.key_tree, b"new"), (Some(2), 3));
+        assert_eq!(lookup(&terminal.key_tree, b"old"), (None, 0));
     }
 }

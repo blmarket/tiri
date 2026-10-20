@@ -4015,7 +4015,7 @@ unsafe fn window_customize_add_key(
         freecb,
     );
 }
-unsafe fn window_customize_unset_key(
+fn window_customize_unset_key(
     mode: &CustomizeMode,
     item: &ModeTreeItemSnapshot<window_customize_itemdata>,
 ) {
@@ -4032,7 +4032,7 @@ unsafe fn window_customize_unset_key(
     }
     key_bindings_remove(&name, item.key);
 }
-unsafe fn window_customize_reset_key(
+fn window_customize_reset_key(
     mode: &CustomizeMode,
     item: &ModeTreeItemSnapshot<window_customize_itemdata>,
 ) {
@@ -4582,7 +4582,7 @@ mod item_owner_tests {
 
     #[test]
     fn mode_list_keeps_items_stable_until_last_callback_reference() {
-        unsafe fn read_mode(
+        fn read_mode(
             _: Option<&ClientRef>,
             owner: &CustomizeMode,
             _: Option<&CStr>,

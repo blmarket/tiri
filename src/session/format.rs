@@ -354,7 +354,7 @@ unsafe fn format_cb_session_attached(ft: &mut format_tree) -> Option<CString> {
     None
 }
 
-unsafe fn format_cb_session_format(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_session_format(ft: &mut format_tree) -> Option<CString> {
     if ft.type_0 as ::core::ffi::c_uint
         == FORMAT_TYPE_SESSION as ::core::ffi::c_int as ::core::ffi::c_uint
     {
@@ -363,7 +363,7 @@ unsafe fn format_cb_session_format(ft: &mut format_tree) -> Option<CString> {
     Some(c"0".to_owned())
 }
 
-unsafe fn format_cb_session_group(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_session_group(ft: &mut format_tree) -> Option<CString> {
     let format_session_owner = ft.s.upgrade();
     let format_session = format_session_owner
         .as_ref()
@@ -414,7 +414,7 @@ unsafe fn format_cb_session_group_many_attached(ft: &mut format_tree) -> Option<
     None
 }
 
-unsafe fn format_cb_session_group_size(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_session_group_size(ft: &mut format_tree) -> Option<CString> {
     let format_session_owner = ft.s.upgrade();
     let format_session = format_session_owner
         .as_ref()
@@ -432,7 +432,7 @@ unsafe fn format_cb_session_group_size(ft: &mut format_tree) -> Option<CString> 
     None
 }
 
-unsafe fn format_cb_session_grouped(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_session_grouped(ft: &mut format_tree) -> Option<CString> {
     let format_session_owner = ft.s.upgrade();
     let format_session = format_session_owner
         .as_ref()

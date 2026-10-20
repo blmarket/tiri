@@ -146,7 +146,7 @@ pub unsafe fn menu_add_item(
     }
     menu.width = menu.width.max(width);
 }
-pub unsafe fn menu_create(title: &CStr) -> Box<menu> {
+pub fn menu_create(title: &CStr) -> Box<menu> {
     let title = title.to_owned();
     let width = format_width(&title);
 

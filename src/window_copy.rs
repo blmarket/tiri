@@ -557,7 +557,7 @@ pub(crate) unsafe fn window_copy_clone_screen(
 fn window_copy_sync_snapshot(data: &mut window_copy_mode_data, sync: (u_int, u_int, u_int)) {
     (data.sync_added, data.sync_collected, data.sync_generation) = sync;
 }
-pub(crate) unsafe fn window_copy_sync_screen(
+pub(crate) fn window_copy_sync_screen(
     source: &screen,
     target: &mut screen,
     sync: (u_int, u_int, u_int),
@@ -5852,7 +5852,7 @@ fn window_copy_find_cell_suffix(cells: &[Cow<'_, [u8]>], text: &[u8]) -> usize {
     }
     cells.len()
 }
-unsafe fn window_copy_move_left(
+fn window_copy_move_left(
     s: &screen,
     fx: &mut u_int,
     fy: &mut u_int,
@@ -5876,7 +5876,7 @@ unsafe fn window_copy_move_left(
         *fx = (*fx).wrapping_sub(1 as u_int);
     };
 }
-unsafe fn window_copy_move_right(
+fn window_copy_move_right(
     s: &screen,
     fx: &mut u_int,
     fy: &mut u_int,
@@ -6097,7 +6097,7 @@ unsafe fn window_copy_search_jump(
     }
     0 as ::core::ffi::c_int
 }
-unsafe fn window_copy_move_after_search_mark(
+fn window_copy_move_after_search_mark(
     data: &window_copy_mode_data,
     fx: &mut u_int,
     fy: &mut u_int,
@@ -6325,11 +6325,7 @@ unsafe fn window_copy_search(
     drop(ss);
     found
 }
-unsafe fn window_copy_visible_lines(
-    data: &window_copy_mode_data,
-    start: &mut u_int,
-    end: &mut u_int,
-) {
+fn window_copy_visible_lines(data: &window_copy_mode_data, start: &mut u_int, end: &mut u_int) {
     let gd = data.backing().grid();
     *start = gd.hsize.wrapping_sub(data.oy);
     while *start > 0 as u_int {
@@ -6343,7 +6339,7 @@ unsafe fn window_copy_visible_lines(
     }
     *end = gd.hsize.wrapping_sub(data.oy).wrapping_add(gd.sy);
 }
-unsafe fn window_copy_search_mark_at(
+fn window_copy_search_mark_at(
     data: &window_copy_mode_data,
     mut px: u_int,
     mut py: u_int,
@@ -6702,7 +6698,7 @@ unsafe fn window_copy_goto_line(mut wme: refbox::Weak<window_mode_entry>, linest
     );
     window_copy_redraw_screen(wme.clone());
 }
-unsafe fn window_copy_match_start_end(
+fn window_copy_match_start_end(
     data: &window_copy_mode_data,
     mut at: u_int,
     start: &mut u_int,
@@ -6802,7 +6798,7 @@ unsafe fn window_copy_match_at_cursor_cstring(data: &window_copy_mode_data) -> O
     }
     Some(CString::new(output).expect("format match contains no NUL"))
 }
-unsafe fn window_copy_update_style(
+fn window_copy_update_style(
     data: &window_copy_mode_data,
     styles: &window_copy_line_styles,
     mut fx: u_int,

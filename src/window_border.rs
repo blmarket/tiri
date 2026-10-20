@@ -74,7 +74,7 @@ pub(crate) unsafe fn window_render_fill_cell(
     (new_gc.data.width == 1).then_some(new_gc)
 }
 
-unsafe fn window_copy_fill_cell(gc: &mut grid_cell, fill: &grid_cell) {
+fn window_copy_fill_cell(gc: &mut grid_cell, fill: &grid_cell) {
     gc.data = utf8_copy(&fill.data);
     gc.attr = (gc.attr as ::core::ffi::c_int | fill.attr as ::core::ffi::c_int) as u_short;
     gc.flags = (gc.flags as ::core::ffi::c_int | fill.flags as ::core::ffi::c_int) as u_char;

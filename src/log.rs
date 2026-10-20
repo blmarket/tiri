@@ -36,7 +36,7 @@ pub fn log_add_level() {
 pub fn log_get_level() -> ::core::ffi::c_int {
     LOG_LEVEL.get()
 }
-pub unsafe fn log_open(name: &CStr) {
+pub fn log_open(name: &CStr) {
     if LOG_LEVEL.get() == 0 as ::core::ffi::c_int {
         return;
     }
@@ -53,7 +53,7 @@ pub unsafe fn log_open(name: &CStr) {
     };
     LOG_FILE.set(Some(file));
 }
-pub unsafe fn log_toggle(name: &CStr) {
+pub fn log_toggle(name: &CStr) {
     if LOG_LEVEL.get() == 0 as ::core::ffi::c_int {
         LOG_LEVEL.set(1 as ::core::ffi::c_int);
         log_open(name);
