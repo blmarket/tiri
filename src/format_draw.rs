@@ -1000,7 +1000,6 @@ pub unsafe fn format_draw(
         default_type: STYLE_DEFAULT_BASE,
         link: 0,
     };
-    let mut ud: *mut utf8_data = &raw mut sy.gc.data;
     let mut more: utf8_state = UTF8_MORE;
     let mut fr: Option<format_range> = None;
     let mut frs: format_ranges = Vec::new();
@@ -1060,13 +1059,13 @@ pub unsafe fn format_draw(
                     width[current as usize] =
                         width[current as usize].wrapping_add(n.wrapping_div(2 as u_int));
                     if even != 0 {
-                        utf8_set(&mut *ud, '[' as i32 as u_char);
+                        utf8_set(&mut sy.gc.data, '[' as i32 as u_char);
                         screen_write_cell(&mut ctx[current as usize], &sy.gc);
                         width[current as usize] = width[current as usize].wrapping_add(1);
                     }
                 }
             } else if at(cp) != b'#' || at(cp + 1) != b'[' || sy.ignore != 0 {
-                more = utf8_open(&mut *ud, bytes[cp]);
+                more = utf8_open(&mut sy.gc.data, bytes[cp]);
                 if more as ::core::ffi::c_uint
                     == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint
                 {
@@ -1078,12 +1077,12 @@ pub unsafe fn format_draw(
                         {
                             break;
                         }
-                        more = utf8_append(&mut *ud, bytes[cp]);
+                        more = utf8_append(&mut sy.gc.data, bytes[cp]);
                     }
                     if more as ::core::ffi::c_uint
                         != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
                     {
-                        cp -= (*ud).have as usize;
+                        cp -= sy.gc.data.have as usize;
                     }
                 }
                 if more as ::core::ffi::c_uint
@@ -1093,13 +1092,13 @@ pub unsafe fn format_draw(
                         cp += 1;
                         continue;
                     } else {
-                        utf8_set(&mut *ud, bytes[cp]);
+                        utf8_set(&mut sy.gc.data, bytes[cp]);
                         cp += 1;
                     }
                 }
                 screen_write_cell(&mut ctx[current as usize], &sy.gc);
                 width[current as usize] =
-                    width[current as usize].wrapping_add((*ud).width as u_int);
+                    width[current as usize].wrapping_add(sy.gc.data.width as u_int);
             } else {
                 let style_start = cp + 2;
                 let Some(style_len) = format_skip(&bytes[style_start..]) else {

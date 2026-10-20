@@ -37,7 +37,7 @@ pub(super) unsafe fn is_obscured(pane: &Rc<UnsafeCell<window_pane>>) -> bool {
 pub(super) unsafe fn alternate_screen_changed(pane: &Rc<UnsafeCell<window_pane>>, entered: bool) {
     let pending = !(*pane.get()).resize_queue.is_empty();
     if entered {
-        window_pane_clear_resizes(&mut *pane.get(), std::ptr::null_mut());
+        (*pane.get()).clear_resizes(false);
         drop((*pane.get()).resize_timer.take());
     }
     let window = pane.window_observer().upgrade().expect("live pane parent");
@@ -45,7 +45,7 @@ pub(super) unsafe fn alternate_screen_changed(pane: &Rc<UnsafeCell<window_pane>>
     if entered && (pending || !(*pane.get()).resize_queue.is_empty()) {
         let (sx, sy, _, _) = pane.geometry();
         window_pane_send_resize(&*pane.get(), sx, sy);
-        window_pane_clear_resizes(&mut *pane.get(), std::ptr::null_mut());
+        (*pane.get()).clear_resizes(false);
     }
     server_redraw_window_borders(&window);
     drop(window);
@@ -242,7 +242,6 @@ pub(super) unsafe fn draw_scrollbar(
         us: 0,
         link: 0,
     };
-    let mut gcp: *mut grid_cell = ::core::ptr::null_mut::<grid_cell>();
     let mut pct_view: ::core::ffi::c_double = 0.;
     let mut total_height: u_int = 0;
     let mut slider_h: u_int = 0;
@@ -317,12 +316,12 @@ pub(super) unsafe fn draw_scrollbar(
             current_block_40 = 7828949454673616476;
         }
         if current_block_40 == 7828949454673616476 {
-            if sb_y >= slider_y && sb_y < slider_y.wrapping_add(slider_h) {
-                gcp = &raw mut slgc;
+            let gcp = if sb_y >= slider_y && sb_y < slider_y.wrapping_add(slider_h) {
+                &slgc
             } else {
-                gcp = &raw mut gc;
-            }
-            tty_cell(client_owner, &*gcp, None);
+                &gc
+            };
+            tty_cell(client_owner, gcp, None);
         }
         i = i.wrapping_add(1);
     }

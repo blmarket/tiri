@@ -2276,8 +2276,7 @@ unsafe fn window_tree_key(
         tree_owner.clone(),
         Some(client_owner),
         &mut key,
-        m.as_deref_mut()
-            .map_or(std::ptr::null_mut(), std::ptr::from_mut),
+        m.as_deref(),
         Some(&mut x),
         Some(&mut y),
     );

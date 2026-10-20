@@ -1350,14 +1350,7 @@ fn mode_tree_prompt_accept(tree: Rc<RefCell<mode_tree_data>>) -> cmdq_cb {
             mtd.dead == 0 && mtd.prompt.is_some()
         };
         if live && c_owner.is_some() {
-            mode_tree_key(
-                tree.clone(),
-                c_owner.as_ref(),
-                &mut key,
-                std::ptr::null_mut(),
-                None,
-                None,
-            );
+            mode_tree_key(tree.clone(), c_owner.as_ref(), &mut key, None, None, None);
         }
         CmdOutcome::Normal
     }))
@@ -1881,7 +1874,7 @@ pub unsafe fn mode_tree_key(
     tree: std::rc::Rc<std::cell::RefCell<mode_tree_data>>,
     client_owner: Option<&ClientRef>,
     key: &mut key_code,
-    mut m: *mut mouse_event,
+    m: Option<&mouse_event>,
     xp: Option<&mut u_int>,
     yp: Option<&mut u_int>,
 ) -> ::core::ffi::c_int {
@@ -1924,13 +1917,13 @@ pub unsafe fn mode_tree_key(
                     <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
                         << 32 as ::core::ffi::c_int
         {
-            if m.is_null()
-                || (*m).b & MOUSE_MASK_BUTTONS as u_int != MOUSE_BUTTON_1 as u_int
-                || (*m).b & MOUSE_MASK_DRAG as u_int != 0
-                || (*m).b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int
-                || cmd_mouse_at(&mode_pane_owner, m, &mut x, &mut y, 0 as ::core::ffi::c_int)
-                    != 0 as ::core::ffi::c_int
-            {
+            if m.is_none_or(|m| {
+                m.b & MOUSE_MASK_BUTTONS as u_int != MOUSE_BUTTON_1 as u_int
+                    || m.b & MOUSE_MASK_DRAG as u_int != 0
+                    || m.b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int
+                    || cmd_mouse_at(&mode_pane_owner, m, &mut x, &mut y, 0 as ::core::ffi::c_int)
+                        != 0 as ::core::ffi::c_int
+            }) {
                 result = PROMPT_KEY_NOT_HANDLED;
             } else {
                 let mtd = tree.borrow();
@@ -2018,15 +2011,15 @@ pub unsafe fn mode_tree_key(
         *key = KEYC_NONE as ::core::ffi::c_ulong as key_code;
         return 0 as ::core::ffi::c_int;
     }
-    if (*key & KEYC_MASK_KEY == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
+    let is_mouse_key = *key & KEYC_MASK_KEY
+        == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
         || *key & KEYC_MASK_TYPE
             >= (KEYC_TYPE_MOUSEMOVE as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
                 << 32 as ::core::ffi::c_int
             && *key & KEYC_MASK_TYPE
                 <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
-                    << 32 as ::core::ffi::c_int)
-        && !m.is_null()
-    {
+                    << 32 as ::core::ffi::c_int;
+    if let Some(m) = m.filter(|_| is_mouse_key) {
         if cmd_mouse_at(&mode_pane_owner, m, &mut x, &mut y, 0 as ::core::ffi::c_int)
             != 0 as ::core::ffi::c_int
         {
@@ -2171,7 +2164,7 @@ pub unsafe fn mode_tree_key(
                     row.tagged = 0;
                 }
                 drop(row);
-                if !m.is_null() {
+                if m.is_some() {
                     tree.borrow_mut().down(0);
                 }
             }

@@ -293,20 +293,20 @@ pub unsafe fn winlinks_reindex(head: &winlinks, wl: refbox::Weak<winlink>, idx: 
     map.insert(idx, owner);
 }
 
-pub unsafe fn winlink_stack_push(stack: *mut winlink_stack, wl: refbox::Weak<winlink>) {
+pub unsafe fn winlink_stack_push(stack: &mut winlink_stack, wl: refbox::Weak<winlink>) {
     if !wl.is_alive() {
         return;
     }
     winlink_stack_remove(stack, wl.clone());
     let weak = winlink_weak(wl.clone());
-    (*stack).push_front(weak);
+    stack.push_front(weak);
 }
 
-pub unsafe fn winlink_stack_remove(stack: *mut winlink_stack, wl: refbox::Weak<winlink>) {
+pub fn winlink_stack_remove(stack: &mut winlink_stack, wl: refbox::Weak<winlink>) {
     if !wl.is_alive() {
         return;
     }
-    (*stack).retain(|link| *link != wl);
+    stack.retain(|link| *link != wl);
 }
 
 /// Append while rebuilding a session's saved visit order.

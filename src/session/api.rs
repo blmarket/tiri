@@ -274,7 +274,7 @@ impl Session for SessionRef {
         read(&(*self.get()).windows)
     }
     unsafe fn forget_winlink(&self, link: refbox::Weak<winlink>) {
-        winlink_stack_remove(&raw mut (*self.get()).lastw, link);
+        winlink_stack_remove(&mut (*self.get()).lastw, link);
     }
     unsafe fn shuffle_window(&self, link: refbox::Weak<winlink>, before: bool) -> i32 {
         if !link.is_alive() || link.get_unchecked().idx == i32::MAX {

@@ -1424,19 +1424,15 @@ unsafe fn finish_resize(owner: &Rc<UnsafeCell<window_pane>>) {
         let first = queue.front().expect("nonempty resize queue");
         let last = queue.back().expect("nonempty resize queue");
         if queue.len() == 1 || last.sx != first.osx || last.sy != first.osy {
-            (last.sx, last.sy, std::ptr::null_mut())
+            (last.sx, last.sy, false)
         } else {
             let previous = &queue[queue.len() - 2];
-            (
-                previous.sx,
-                previous.sy,
-                (&**last as *const window_pane_resize).cast_mut(),
-            )
+            (previous.sx, previous.sy, true)
         }
     };
     window_pane_send_resize(&*pane, sx, sy);
-    (*pane).clear_resizes_except(keep);
-    let delay = Duration::from_micros((if keep.is_null() { 250000 } else { 10000 }) as u64);
+    (*pane).clear_resizes(keep);
+    let delay = Duration::from_micros((if keep { 10000 } else { 250000 }) as u64);
     let observer = Rc::downgrade(owner);
     (*pane).resize_timer = Some(
         Timer::new(delay, move || {

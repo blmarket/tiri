@@ -1004,9 +1004,7 @@ unsafe fn window_customize_build_option(
                 .tableentry
                 .is_some_and(|entry| entry.flags & OPTIONS_TABLE_IS_ARRAY != 0);
             (
-                option.tableentry.map_or(std::ptr::null(), |entry| {
-                    entry as *const options_table_entry
-                }),
+                option.tableentry,
                 option.monitor_data.is_some(),
                 data.hide_default != 0
                     && window_customize_option_is_changed(name_owner, option, None) == 0,
@@ -1023,7 +1021,7 @@ unsafe fn window_customize_build_option(
     let mut is_monitor: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut is_user_hook: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut is_any_hook: ::core::ffi::c_int = 0;
-    if !oe.is_null() && (*oe).flags & OPTIONS_TABLE_IS_HOOK != 0 {
+    if oe.is_some_and(|oe| oe.flags & OPTIONS_TABLE_IS_HOOK != 0) {
         is_hook = 1 as ::core::ffi::c_int;
     }
     if has_monitor {
@@ -1044,7 +1042,7 @@ unsafe fn window_customize_build_option(
         }
         _ => {}
     }
-    if !oe.is_null() && (*oe).flags & OPTIONS_TABLE_IS_ARRAY != 0 {
+    if oe.is_some_and(|oe| oe.flags & OPTIONS_TABLE_IS_ARRAY != 0) {
         array = 1 as ::core::ffi::c_int;
     }
     if scope as ::core::ffi::c_uint
@@ -1078,8 +1076,8 @@ unsafe fn window_customize_build_option(
     let scope_text = window_customize_scope_text(scope, fs);
     format_add(ft, c"option_scope", |out| write_cstr(out, &*scope_text));
     drop(scope_text);
-    if !oe.is_null() && (*oe).unit.is_some() {
-        format_add(ft, c"option_unit", |out| write_cstr(out, (*oe).unit));
+    if let Some(oe_unit) = oe.and_then(|oe| oe.unit) {
+        format_add(ft, c"option_unit", |out| write_cstr(out, oe_unit));
     } else {
         format_add(ft, c"option_unit", |out| write_cstr(out, c""));
     }
@@ -1752,7 +1750,6 @@ unsafe fn window_customize_draw_option(
     let mut cy: u_int = ctx.screen.cy;
     let mut go: Option<OptionsScope> = None;
     let mut wo: Option<OptionsScope> = None;
-    let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -1808,30 +1805,26 @@ unsafe fn window_customize_draw_option(
     }) else {
         return;
     };
-    oe = tableentry.map_or(std::ptr::null(), |entry| {
-        entry as *const options_table_entry
-    });
-    is_hook = (!oe.is_null() && (*oe).flags & OPTIONS_TABLE_IS_HOOK != 0) as ::core::ffi::c_int;
+    let oe = tableentry;
+    is_hook = oe.is_some_and(|oe| oe.flags & OPTIONS_TABLE_IS_HOOK != 0) as ::core::ffi::c_int;
     is_monitor = has_monitor as ::core::ffi::c_int;
     is_user_hook =
         (name.to_bytes().first() == Some(&b'@') && hooks_is_event(name) != 0) as ::core::ffi::c_int;
     is_any_hook = (is_hook != 0 || is_monitor != 0 || is_user_hook != 0) as ::core::ffi::c_int;
-    if !oe.is_null() && (*oe).unit.is_some() {
+    if let Some(oe_unit) = oe.and_then(|oe| oe.unit) {
         space = c" ".as_ptr();
-        unit = (*oe).unit.map_or(std::ptr::null(), CStr::as_ptr);
+        unit = oe_unit.as_ptr();
     }
     let mut ft_owner = format_create_from_state(None, None, &fs);
     let ft = &mut *ft_owner;
-    if oe.is_null() || (*oe).text.is_none() {
-        if is_monitor != 0 {
-            text = c"This hook runs when a monitor changes.".as_ptr();
-        } else if is_user_hook != 0 {
-            text = c"This hook doesn't have a description.".as_ptr();
-        } else {
-            text = c"This option doesn't have a description.".as_ptr();
-        }
+    if let Some(oe_text) = oe.and_then(|oe| oe.text) {
+        text = oe_text.as_ptr();
+    } else if is_monitor != 0 {
+        text = c"This hook runs when a monitor changes.".as_ptr();
+    } else if is_user_hook != 0 {
+        text = c"This hook doesn't have a description.".as_ptr();
     } else {
-        text = (*oe).text.map_or(std::ptr::null(), CStr::as_ptr);
+        text = c"This option doesn't have a description.".as_ptr();
     }
     if !(screen_write_text(
         ctx,
@@ -1866,19 +1859,18 @@ unsafe fn window_customize_draw_option(
                     current_block = 14134146928577265803;
                 }
             } else {
-                if oe.is_null() {
-                    text = c"user".as_ptr();
-                } else if (*oe).scope & (OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE)
-                    == OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE
-                {
-                    text = c"window and pane".as_ptr();
-                } else if (*oe).scope & OPTIONS_TABLE_WINDOW != 0 {
-                    text = c"window".as_ptr();
-                } else if (*oe).scope & OPTIONS_TABLE_SESSION != 0 {
-                    text = c"session".as_ptr();
-                } else {
-                    text = c"server".as_ptr();
-                }
+                text = match oe.map(|oe| oe.scope) {
+                    None => c"user".as_ptr(),
+                    Some(scope)
+                        if scope & (OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE)
+                            == OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE =>
+                    {
+                        c"window and pane".as_ptr()
+                    }
+                    Some(scope) if scope & OPTIONS_TABLE_WINDOW != 0 => c"window".as_ptr(),
+                    Some(scope) if scope & OPTIONS_TABLE_SESSION != 0 => c"session".as_ptr(),
+                    Some(_) => c"server".as_ptr(),
+                };
                 if is_user_hook != 0 {
                     if screen_write_text(
                         ctx,
@@ -1956,7 +1948,7 @@ unsafe fn window_customize_draw_option(
                     match current_block {
                         4086289836260337793 => {}
                         _ => {
-                            if !oe.is_null() && (*oe).flags & OPTIONS_TABLE_IS_ARRAY != 0 {
+                            if oe.is_some_and(|oe| oe.flags & OPTIONS_TABLE_IS_ARRAY != 0) {
                                 if is_hook != 0 {
                                     if array_key.is_null() {
                                         if screen_write_text(
@@ -2045,8 +2037,8 @@ unsafe fn window_customize_draw_option(
                                     {
                                         value_owner = Some(option_value);
                                         value = value_owner.as_ref().unwrap().as_ptr().cast_mut();
-                                        if !oe.is_null() && array_key.is_null() {
-                                            let rendered = options_default_to_cstring(&*oe);
+                                        if let Some(oe) = oe.filter(|_| array_key.is_null()) {
+                                            let rendered = options_default_to_cstring(oe);
                                             if strcmp(rendered.as_ptr(), value)
                                                 != 0 as ::core::ffi::c_int
                                             {
@@ -2101,12 +2093,9 @@ unsafe fn window_customize_draw_option(
                                         match current_block {
                                             4086289836260337793 => {}
                                             _ => {
-                                                if oe.is_null()
-                                                    || (*oe).type_0 as ::core::ffi::c_uint
-                                                        == OPTIONS_TABLE_STRING
-                                                            as ::core::ffi::c_int
-                                                            as ::core::ffi::c_uint
-                                                {
+                                                if oe.is_none_or(|oe| {
+                                                    oe.type_0 == OPTIONS_TABLE_STRING
+                                                }) {
                                                     let expanded = format_expand_cstring(
                                                         ft,
                                                         CStr::from_ptr(value),
@@ -2145,13 +2134,10 @@ unsafe fn window_customize_draw_option(
                                                 match current_block {
                                                     4086289836260337793 => {}
                                                     _ => {
-                                                        if !oe.is_null()
-                                                            && (*oe).type_0 as ::core::ffi::c_uint
-                                                                == OPTIONS_TABLE_CHOICE
-                                                                    as ::core::ffi::c_int
-                                                                    as ::core::ffi::c_uint
-                                                        {
-                                                            for choice in (*oe).choices {
+                                                        if let Some(oe) = oe.filter(|oe| {
+                                                            oe.type_0 == OPTIONS_TABLE_CHOICE
+                                                        }) {
+                                                            for choice in oe.choices {
                                                                 cstr_append_into(
                                                                     &mut choices,
                                                                     choice,
@@ -2193,13 +2179,10 @@ unsafe fn window_customize_draw_option(
                                                         match current_block {
                                                             4086289836260337793 => {}
                                                             _ => {
-                                                                if !oe.is_null()
-                                                                    && (*oe).type_0
-                                                                        as ::core::ffi::c_uint
+                                                                if oe.is_some_and(|oe| {
+                                                                    oe.type_0
                                                                         == OPTIONS_TABLE_COLOUR
-                                                                            as ::core::ffi::c_int
-                                                                            as ::core::ffi::c_uint
-                                                                {
+                                                                }) {
                                                                     if screen_write_text(
                                                                         ctx,
                                                                         cx,
@@ -2263,8 +2246,7 @@ unsafe fn window_customize_draw_option(
                                                                 match current_block {
                                                                     4086289836260337793 => {}
                                                                     _ => {
-                                                                        if !oe.is_null()
-                                                                            && (*oe).flags & OPTIONS_TABLE_IS_COLOUR != 0
+                                                                        if oe.is_some_and(|oe| oe.flags & OPTIONS_TABLE_IS_COLOUR != 0)
                                                                         {
                                                                             if screen_write_text(ctx,
 cx,
@@ -2301,8 +2283,7 @@ out.write_all(b"EXAMPLE")
                                                                             4086289836260337793 => {
                                                                             }
                                                                             _ => {
-                                                                                if !oe.is_null()
-                                                                                    && (*oe).flags & OPTIONS_TABLE_IS_STYLE != 0
+                                                                                if oe.is_some_and(|oe| oe.flags & OPTIONS_TABLE_IS_STYLE != 0)
                                                                                 {
                                                                                     if screen_write_text(ctx,
 cx,
@@ -2368,8 +2349,7 @@ write_cstr(out, nullable_cstr(unit))
                                                                                                 );
                                                                                                 if !(ctx.screen.cy > cy.wrapping_add(sy).wrapping_sub(1 as u_int))
                                                                                                 {
-                                                                                                    if !oe.is_null()
-                                                                                                        && (*oe).flags & OPTIONS_TABLE_IS_ARRAY != 0
+                                                                                                    if oe.is_some_and(|oe| oe.flags & OPTIONS_TABLE_IS_ARRAY != 0)
                                                                                                     {
                                                                                                         wo = None;
                                                                                                         go = None;
@@ -3432,7 +3412,6 @@ unsafe fn window_customize_set_option(
     mut global: ::core::ffi::c_int,
     mut pane: ::core::ffi::c_int,
 ) {
-    let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
     let mut oo: Option<OptionsScope> = None;
     let mut flag: ::core::ffi::c_int = 0;
     let mut scope: window_customize_scope = WINDOW_CUSTOMIZE_NONE;
@@ -3461,13 +3440,11 @@ unsafe fn window_customize_set_option(
     else {
         return;
     };
-    oe = tableentry.map_or(std::ptr::null(), |entry| {
-        entry as *const options_table_entry
-    });
-    if !oe.is_null() && !(*oe).scope & OPTIONS_TABLE_PANE != 0 {
+    let oe = tableentry;
+    if oe.is_some_and(|oe| !oe.scope & OPTIONS_TABLE_PANE != 0) {
         pane = 0 as ::core::ffi::c_int;
     }
-    if !oe.is_null() && (*oe).flags & OPTIONS_TABLE_IS_ARRAY != 0 {
+    if oe.is_some_and(|oe| oe.flags & OPTIONS_TABLE_IS_ARRAY != 0) {
         scope = item.scope;
         oo = item.oo.clone();
     } else {
@@ -3519,20 +3496,14 @@ unsafe fn window_customize_set_option(
         }
     }
     let oo = oo.expect("option target scope");
-    if !oe.is_null()
-        && (*oe).type_0 as ::core::ffi::c_uint
-            == OPTIONS_TABLE_FLAG as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
+    if oe.is_some_and(|oe| oe.type_0 == OPTIONS_TABLE_FLAG) {
         flag = oo.with_local(|table| options_get_number(table, name)) as ::core::ffi::c_int;
         oo.with_local(|table| {
             options_set_number(table, name, (flag == 0) as i64);
         });
-    } else if !oe.is_null()
-        && (*oe).type_0 as ::core::ffi::c_uint
-            == OPTIONS_TABLE_CHOICE as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
+    } else if let Some(oe) = oe.filter(|oe| oe.type_0 == OPTIONS_TABLE_CHOICE) {
         choice = oo.with_local(|table| options_get_number(table, name)) as u_int;
-        let choices = &(*oe).choices;
+        let choices = &oe.choices;
         if choice as usize + 1 >= choices.len() {
             choice = 0 as u_int;
         } else {
@@ -3553,7 +3524,7 @@ unsafe fn window_customize_set_option(
         let mut prompt_bytes = Vec::new();
         prompt_bytes.extend_from_slice(b"(");
         prompt_bytes.extend_from_slice(name.to_bytes());
-        if !oe.is_null() && (*oe).flags & OPTIONS_TABLE_IS_ARRAY != 0 {
+        if oe.is_some_and(|oe| oe.flags & OPTIONS_TABLE_IS_ARRAY != 0) {
             if let Some(array_key) = array_key {
                 prompt_bytes.extend_from_slice(b"[");
                 prompt_bytes.extend_from_slice(array_key.to_bytes());
@@ -4337,8 +4308,7 @@ unsafe fn window_customize_key(
             tree_owner.clone(),
             Some(client_owner),
             &mut key,
-            m.as_deref_mut()
-                .map_or(std::ptr::null_mut(), std::ptr::from_mut),
+            m.as_deref(),
             None,
             None,
         );

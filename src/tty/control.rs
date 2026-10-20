@@ -138,17 +138,11 @@ pub unsafe fn tty_resize(owner: &ClientRef) {
     };
 }
 
-pub unsafe fn tty_set_size(
-    mut tty: *mut tty,
-    mut sx: u_int,
-    mut sy: u_int,
-    mut xpixel: u_int,
-    mut ypixel: u_int,
-) {
-    (*tty).sx = sx;
-    (*tty).sy = sy;
-    (*tty).xpixel = xpixel;
-    (*tty).ypixel = ypixel;
+pub fn tty_set_size(tty: &mut tty, sx: u_int, sy: u_int, xpixel: u_int, ypixel: u_int) {
+    tty.sx = sx;
+    tty.sy = sy;
+    tty.xpixel = xpixel;
+    tty.ypixel = ypixel;
 }
 unsafe fn tty_read_callback(owner: &ClientRef, result: std::io::Result<Vec<u8>>) {
     let name = owner.name();

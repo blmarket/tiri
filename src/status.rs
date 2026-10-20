@@ -179,39 +179,21 @@ pub(crate) unsafe fn status_pop_screen(client: &ClientRef) {
         drop(active);
     }
 }
-pub unsafe fn status_init(status: &mut status_line, width: u_int) {
-    let sl = status as *mut status_line;
-    let mut i: u_int = 0;
-    i = 0 as u_int;
-    while (i as usize)
-        < (::core::mem::size_of::<[style_line_entry; 5]>() as usize)
-            .wrapping_div(::core::mem::size_of::<style_line_entry>() as usize)
-    {
-        style_ranges_init(
-            &mut (*(&raw mut (*sl).entries as *mut style_line_entry).offset(i as isize)).ranges,
-        );
-        i = i.wrapping_add(1);
+pub unsafe fn status_init(sl: &mut status_line, width: u_int) {
+    for entry in &mut sl.entries {
+        style_ranges_init(&mut entry.ranges);
     }
-    screen_init(&mut (*sl).screen, width, 1, 0);
-    (*sl).active = None;
+    screen_init(&mut sl.screen, width, 1, 0);
+    sl.active = None;
 }
-pub unsafe fn status_free(status: &mut status_line) {
-    let sl = status as *mut status_line;
-    let mut i: u_int = 0;
-    i = 0 as u_int;
-    while (i as usize)
-        < (::core::mem::size_of::<[style_line_entry; 5]>() as usize)
-            .wrapping_div(::core::mem::size_of::<style_line_entry>() as usize)
-    {
-        drop(std::mem::take(&mut (*sl).entries[i as usize].ranges));
-        (*sl).entries[i as usize].expanded = None;
-        i = i.wrapping_add(1);
+pub unsafe fn status_free(sl: &mut status_line) {
+    for entry in &mut sl.entries {
+        drop(std::mem::take(&mut entry.ranges));
+        entry.expanded = None;
     }
-    drop((*sl).timer.take());
-    if let Some(mut active) = (*sl).active.take() {
-        drop(active);
-    }
-    drop(std::mem::take(&mut (*sl).screen));
+    drop(sl.timer.take());
+    drop(sl.active.take());
+    drop(std::mem::take(&mut sl.screen));
 }
 pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
     let mut c: Option<ClientRef> = Some(c_owner.clone());
@@ -270,14 +252,13 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
         gc.bg = bg;
     }
     {
-        let mut status = c_owner.borrow_status_mut();
-        let sl: *mut status_line = &mut *status;
-        if !grid_cells_equal(&gc, &(*sl).style) {
+        let mut sl = c_owner.borrow_status_mut();
+        if !grid_cells_equal(&gc, &sl.style) {
             force = 1 as ::core::ffi::c_int;
-            (*sl).style = gc;
+            sl.style = gc;
         }
-        if (*sl).screen.grid().sx != width || (*sl).screen.grid().sy != lines {
-            screen_resize(&mut (*sl).screen, width, lines, 0 as ::core::ffi::c_int);
+        if sl.screen.grid().sx != width || sl.screen.grid().sy != lines {
+            screen_resize(&mut sl.screen, width, lines, 0 as ::core::ffi::c_int);
             force = 1 as ::core::ffi::c_int;
             changed = force;
         }
@@ -506,12 +487,16 @@ pub unsafe fn status_message_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
     let msgfmt = msgfmt_session_value.as_deref().expect("option snapshot");
     let expanded = format_expand_time_cstring(ft, msgfmt);
     drop(ft_owner);
-    let mut status = c_owner.borrow_status_mut();
-    let sl: *mut status_line = &mut *status;
-    let mut ctx = screen_write_start(&mut *((*sl).active_screen()));
+    let sl = c_owner.borrow_status_mut();
+    // A shown message always has its own pushed screen over the base one.
+    let active = sl
+        .active
+        .as_deref_mut()
+        .expect("status message has a pushed screen");
+    let mut ctx = screen_write_start(active);
     screen_write_fast_copy(
         &mut ctx,
-        &(*sl).screen,
+        &sl.screen,
         0 as u_int,
         0 as u_int,
         terminal_width,
@@ -525,8 +510,7 @@ pub unsafe fn status_message_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
     );
     format_draw(&mut ctx, &gc, aw, &expanded, None, 0 as ::core::ffi::c_int);
     screen_write_stop(ctx);
-    let changed = grid_compare((*sl).active_screen().grid(), old_screen.grid()) != 0;
-    let _ = status;
+    let changed = grid_compare(sl.active_screen().grid(), old_screen.grid()) != 0;
     drop(old_screen);
     i32::from(changed)
 }

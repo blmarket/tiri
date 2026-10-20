@@ -976,7 +976,6 @@ impl cmd_find_state {
         let queue_client = cmdq_get_client(item.as_deref());
         let mut queue_client_ptr: Option<ClientRef> = queue_client.clone();
         let mut current_block: u64;
-        let mut m: *mut mouse_event = ::core::ptr::null_mut::<mouse_event>();
         let mut c: Option<ClientRef> = None;
         let s: &CStr;
         let mut window_only: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -1113,7 +1112,7 @@ impl cmd_find_state {
                     current_block = 5193823237153215208;
                 }
             } else if target == Some(c"=") || target == Some(c"{mouse}") {
-                m = &raw mut queue_event.m;
+                let m = &queue_event.m;
                 let mut current_block_56: u64;
                 match type_0 as ::core::ffi::c_uint {
                     0 => {
@@ -1121,7 +1120,7 @@ impl cmd_find_state {
                             let mut wl = refbox::Weak::new();
                             let mut mouse_session_owner = None;
                             mouse_pane_owner =
-                                cmd_mouse_pane(&*m, Some(&mut mouse_session_owner), Some(&mut wl));
+                                cmd_mouse_pane(m, Some(&mut mouse_session_owner), Some(&mut wl));
                             self.set_s(mouse_session_owner.as_ref());
                             self.set_wl(wl.clone());
                             self.set_wp(mouse_pane_owner.as_ref());
@@ -1143,7 +1142,7 @@ impl cmd_find_state {
                 if current_block_56 == 2308649987175926278 {
                     {
                         let mut mouse_session_owner = None;
-                        let wl = cmd_mouse_window(&*m, Some(&mut mouse_session_owner));
+                        let wl = cmd_mouse_window(m, Some(&mut mouse_session_owner));
                         self.set_s(mouse_session_owner.as_ref());
                         self.set_wl(wl.clone());
                     }

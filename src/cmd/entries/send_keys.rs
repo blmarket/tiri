@@ -19,7 +19,6 @@ use crate::shared::grid::*;
 use crate::shared::key::key_event;
 use crate::shared::key::*;
 use crate::shared::limits::UINT_MAX;
-use crate::shared::mouse::mouse_event;
 use crate::shared::session::SessionRef;
 use crate::shared::utf8::*;
 use crate::shared::window::{window_mode_entry, winlink};
@@ -227,9 +226,7 @@ unsafe fn cmd_send_keys_exec(
     let mut s: Option<SessionRef> = target.session_handle();
     let mut wl: refbox::Weak<winlink> = target.winlink_handle();
     let pane = target.pane_handle().expect("key target pane");
-    let mut event_snapshot = cmdq_get_event(&*(item));
-    let event: *mut key_event = &mut event_snapshot;
-    let mut m: *mut mouse_event = &raw mut (*event).m;
+    let mut event = cmdq_get_event(&*(item));
     let mut wme: refbox::Weak<window_mode_entry> = pane.mode_entry();
     let mut after = std::rc::Rc::downgrade(item_handle);
     let mut key: key_code = 0;
@@ -273,7 +270,11 @@ unsafe fn cmd_send_keys_exec(
             cmdq_error(item_handle, |out| out.write_all(b"not in a mode"));
             return CmdOutcome::Error;
         }
-        let m = if (*m).valid == 0 { None } else { Some(&mut *m) };
+        let m = if event.m.valid == 0 {
+            None
+        } else {
+            Some(&mut event.m)
+        };
         wme.get_unchecked()
             .mode
             .command
@@ -289,7 +290,7 @@ unsafe fn cmd_send_keys_exec(
     }
     if args_has(args, 'M' as i32 as u_char) != 0 {
         let mut mouse_session_owner = None;
-        mouse_pane_owner = cmd_mouse_pane(&*m, Some(&mut mouse_session_owner), None);
+        mouse_pane_owner = cmd_mouse_pane(&event.m, Some(&mut mouse_session_owner), None);
         s = mouse_session_owner.clone();
         if mouse_pane_owner.is_none() {
             cmdq_error(item_handle, |out| out.write_all(b"no mouse target"));
@@ -298,8 +299,8 @@ unsafe fn cmd_send_keys_exec(
         mouse_pane_owner.as_ref().expect("mouse target pane").key(
             tc_owner.as_ref(),
             wl.clone(),
-            (*m).key,
-            m.as_mut(),
+            event.m.key,
+            Some(&mut event.m),
         );
         return CmdOutcome::Normal;
     }
@@ -335,7 +336,7 @@ unsafe fn cmd_send_keys_exec(
         };
         while np != 0 as u_int {
             after =
-                cmd_send_keys_inject_key(item_handle, after.upgrade().as_ref(), args, (*event).key);
+                cmd_send_keys_inject_key(item_handle, after.upgrade().as_ref(), args, event.key);
             np = np.wrapping_sub(1);
         }
         return CmdOutcome::Normal;

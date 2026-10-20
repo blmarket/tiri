@@ -1358,13 +1358,13 @@ pub(super) unsafe fn tty_default_attributes(
     tty_attributes(client, &gc, style_ctx);
 }
 
-pub unsafe fn tty_set_progress_bar(client: &ClientRef, mut pb: *mut progress_bar) {
+pub unsafe fn tty_set_progress_bar(client: &ClientRef, pb: &progress_bar) {
     if tty_term_has(terminal_term(client), TTYC_SPB) != 0 {
         tty_putcode_ii(
             client,
             TTYC_SPB,
-            (*pb).state as ::core::ffi::c_int,
-            (*pb).progress,
+            pb.state as ::core::ffi::c_int,
+            pb.progress,
         );
     }
 }

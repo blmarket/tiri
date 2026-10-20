@@ -1326,7 +1326,6 @@ unsafe fn server_client_check_mouse(client_owner: &ClientRef, event: &mut key_ev
     let c = client_owner.get();
     let mut selected_pane = None;
     let mut last_pane = None;
-    let mut m: *mut mouse_event = &raw mut (*event).m;
     let Some(session_owner) = (*c).session.upgrade() else {
         return KEYC_UNKNOWN;
     };
@@ -1355,11 +1354,11 @@ unsafe fn server_client_check_mouse(client_owner: &ClientRef, event: &mut key_ev
         log_debug(format_args!(
             "{} mouse {:02x} at {},{} (last {},{}) ({})",
             log_cstr((*c).name.as_deref().unwrap_or(c"(null)")),
-            { (*m).b },
-            { (*m).x },
-            { (*m).y },
-            { (*m).lx },
-            { (*m).ly },
+            { event.m.b },
+            { event.m.x },
+            { event.m.y },
+            { event.m.lx },
+            { event.m.ly },
             { (*c).mouse_drag_flag }
         ));
         if (*c).mouse_last_pane != -(1 as ::core::ffi::c_int) {
@@ -1372,37 +1371,37 @@ unsafe fn server_client_check_mouse(client_owner: &ClientRef, event: &mut key_ev
                 ));
             }
         }
-        if (*event).key == KEYC_DOUBLECLICK as ::core::ffi::c_ulong as key_code {
+        if event.key == KEYC_DOUBLECLICK as ::core::ffi::c_ulong as key_code {
             type_0 = KEYC_TYPE_DOUBLECLICK;
-            x = (*m).x;
-            y = (*m).y;
-            b = (*m).b;
+            x = event.m.x;
+            y = event.m.y;
+            b = event.m.b;
             ignore = 1 as ::core::ffi::c_int;
             log_debug(format_args!(
                 "double-click at {},{}",
                 (x) as u32,
                 (y) as u32
             ));
-        } else if (*m).sgr_type != ' ' as i32 as u_int
-            && (*m).sgr_b & MOUSE_MASK_DRAG as u_int != 0
-            && (*m).sgr_b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int
-            || (*m).sgr_type == ' ' as i32 as u_int
-                && (*m).b & MOUSE_MASK_DRAG as u_int != 0
-                && (*m).b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int
-                && (*m).lb & MOUSE_MASK_BUTTONS as u_int == 3 as u_int
+        } else if event.m.sgr_type != ' ' as i32 as u_int
+            && event.m.sgr_b & MOUSE_MASK_DRAG as u_int != 0
+            && event.m.sgr_b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int
+            || event.m.sgr_type == ' ' as i32 as u_int
+                && event.m.b & MOUSE_MASK_DRAG as u_int != 0
+                && event.m.b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int
+                && event.m.lb & MOUSE_MASK_BUTTONS as u_int == 3 as u_int
         {
             type_0 = KEYC_TYPE_MOUSEMOVE;
-            x = (*m).x;
-            y = (*m).y;
+            x = event.m.x;
+            y = event.m.y;
             b = 0 as u_int;
             log_debug(format_args!("move at {},{}", (x) as u32, (y) as u32));
-        } else if (*m).b & MOUSE_MASK_DRAG as u_int != 0 {
+        } else if event.m.b & MOUSE_MASK_DRAG as u_int != 0 {
             type_0 = KEYC_TYPE_MOUSEDRAG;
             if (*c).mouse_drag_flag != 0 {
-                x = (*m).x;
-                y = (*m).y;
-                b = (*m).b;
-                if x == (*m).lx && y == (*m).ly {
+                x = event.m.x;
+                y = event.m.y;
+                b = event.m.b;
+                if x == event.m.lx && y == event.m.ly {
                     return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                 }
                 if (*c).mouse_drag_status != 0 {
@@ -1411,31 +1410,31 @@ unsafe fn server_client_check_mouse(client_owner: &ClientRef, event: &mut key_ev
                 }
                 log_debug(format_args!("drag update at {},{}", (x) as u32, (y) as u32));
             } else {
-                x = (*m).lx;
-                y = (*m).ly;
-                b = (*m).lb;
+                x = event.m.lx;
+                y = event.m.ly;
+                b = event.m.lb;
                 (*c).mouse_drag_status = 0;
                 log_debug(format_args!("drag start at {},{}", (x) as u32, (y) as u32));
             }
-        } else if (*m).b & MOUSE_MASK_BUTTONS as u_int == MOUSE_WHEEL_UP as u_int
-            || (*m).b & MOUSE_MASK_BUTTONS as u_int == MOUSE_WHEEL_DOWN as u_int
+        } else if event.m.b & MOUSE_MASK_BUTTONS as u_int == MOUSE_WHEEL_UP as u_int
+            || event.m.b & MOUSE_MASK_BUTTONS as u_int == MOUSE_WHEEL_DOWN as u_int
         {
-            if (*m).b & MOUSE_MASK_BUTTONS as u_int == MOUSE_WHEEL_UP as u_int {
+            if event.m.b & MOUSE_MASK_BUTTONS as u_int == MOUSE_WHEEL_UP as u_int {
                 type_0 = KEYC_TYPE_WHEELUP;
             } else {
                 type_0 = KEYC_TYPE_WHEELDOWN;
             }
-            x = (*m).x;
-            y = (*m).y;
-            b = (*m).b;
+            x = event.m.x;
+            y = event.m.y;
+            b = event.m.b;
             log_debug(format_args!("wheel at {},{}", (x) as u32, (y) as u32));
-        } else if (*m).b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int {
+        } else if event.m.b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int {
             type_0 = KEYC_TYPE_MOUSEUP;
-            x = (*m).x;
-            y = (*m).y;
-            b = (*m).lb;
-            if (*m).sgr_type == 'm' as i32 as u_int {
-                b = (*m).sgr_b;
+            x = event.m.x;
+            y = event.m.y;
+            b = event.m.lb;
+            if event.m.sgr_type == 'm' as i32 as u_int {
+                b = event.m.sgr_b;
             }
             log_debug(format_args!("up at {},{}", (x) as u32, (y) as u32));
         } else {
@@ -1443,9 +1442,9 @@ unsafe fn server_client_check_mouse(client_owner: &ClientRef, event: &mut key_ev
                 drop((*c).click_timer.take());
                 (*c).flags &= !CLIENT_DOUBLECLICK as uint64_t;
                 type_0 = KEYC_TYPE_SECONDCLICK;
-                x = (*m).x;
-                y = (*m).y;
-                b = (*m).b;
+                x = event.m.x;
+                y = event.m.y;
+                b = event.m.b;
                 log_debug(format_args!(
                     "second-click at {},{}",
                     (x) as u32,
@@ -1457,9 +1456,9 @@ unsafe fn server_client_check_mouse(client_owner: &ClientRef, event: &mut key_ev
                 drop((*c).click_timer.take());
                 (*c).flags &= !CLIENT_TRIPLECLICK as uint64_t;
                 type_0 = KEYC_TYPE_TRIPLECLICK;
-                x = (*m).x;
-                y = (*m).y;
-                b = (*m).b;
+                x = event.m.x;
+                y = event.m.y;
+                b = event.m.b;
                 log_debug(format_args!(
                     "triple-click at {},{}",
                     (x) as u32,
@@ -1476,9 +1475,9 @@ unsafe fn server_client_check_mouse(client_owner: &ClientRef, event: &mut key_ev
                         == KEYC_TYPE_NOTYPE as ::core::ffi::c_int as ::core::ffi::c_uint
                     {
                         type_0 = KEYC_TYPE_MOUSEDOWN;
-                        x = (*m).x;
-                        y = (*m).y;
-                        b = (*m).b;
+                        x = event.m.x;
+                        y = event.m.y;
+                        b = event.m.b;
                         log_debug(format_args!("down at {},{}", (x) as u32, (y) as u32));
                         (*c).flags |= CLIENT_DOUBLECLICK as uint64_t;
                     }
@@ -1490,21 +1489,21 @@ unsafe fn server_client_check_mouse(client_owner: &ClientRef, event: &mut key_ev
         {
             return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
         }
-        (*m).s = s.as_ref().expect("live session").id() as ::core::ffi::c_int;
-        (*m).w = -(1 as ::core::ffi::c_int);
-        (*m).wp = -(1 as ::core::ffi::c_int);
-        (*m).ignore = ignore;
-        (*m).statusat = status_at_line(client_owner);
-        (*m).statuslines = status_line_size(client_owner);
-        if (*m).statusat != -(1 as ::core::ffi::c_int)
-            && y >= (*m).statusat as u_int
-            && y < ((*m).statusat as u_int).wrapping_add((*m).statuslines)
+        event.m.s = s.as_ref().expect("live session").id() as ::core::ffi::c_int;
+        event.m.w = -(1 as ::core::ffi::c_int);
+        event.m.wp = -(1 as ::core::ffi::c_int);
+        event.m.ignore = ignore;
+        event.m.statusat = status_at_line(client_owner);
+        event.m.statuslines = status_line_size(client_owner);
+        if event.m.statusat != -(1 as ::core::ffi::c_int)
+            && y >= event.m.statusat as u_int
+            && y < (event.m.statusat as u_int).wrapping_add(event.m.statuslines)
         {
             if type_0 == KEYC_TYPE_MOUSEDRAG && (*c).mouse_drag_flag == 0 {
                 (*c).mouse_drag_status = 1;
             }
             if let Some(sr) =
-                status_get_range(client_owner, x, y.wrapping_sub((*m).statusat as u_int))
+                status_get_range(client_owner, x, y.wrapping_sub(event.m.statusat as u_int))
             {
                 match sr.type_0 as ::core::ffi::c_uint {
                     0 => return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code,
@@ -1520,8 +1519,8 @@ unsafe fn server_client_check_mouse(client_owner: &ClientRef, event: &mut key_ev
                         if Rc::<UnsafeCell<window_pane>>::find_by_id(sr.argument).is_none() {
                             return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                         }
-                        (*m).wp = sr.argument as ::core::ffi::c_int;
-                        log_debug(format_args!("mouse range: pane %{}", ((*m).wp) as u32));
+                        event.m.wp = sr.argument as ::core::ffi::c_int;
+                        log_debug(format_args!("mouse range: pane %{}", (event.m.wp) as u32));
                         loc = KEYC_MOUSE_LOCATION_STATUS;
                     }
                     4 => {
@@ -1531,18 +1530,18 @@ unsafe fn server_client_check_mouse(client_owner: &ClientRef, event: &mut key_ev
                         if !fwl.is_alive() {
                             return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                         }
-                        (*m).w = ((fwl.get_unchecked().window_handle().as_ref())
+                        event.m.w = ((fwl.get_unchecked().window_handle().as_ref())
                             .expect("live window"))
                         .id() as ::core::ffi::c_int;
-                        log_debug(format_args!("mouse range: window @{}", ((*m).w) as u32));
+                        log_debug(format_args!("mouse range: window @{}", (event.m.w) as u32));
                         loc = KEYC_MOUSE_LOCATION_STATUS;
                     }
                     5 => {
                         if crate::session::sessions::find_by_id(sr.argument).is_none() {
                             return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                         }
-                        (*m).s = sr.argument as ::core::ffi::c_int;
-                        log_debug(format_args!("mouse range: session ${}", ((*m).s) as u32));
+                        event.m.s = sr.argument as ::core::ffi::c_int;
+                        log_debug(format_args!("mouse range: session ${}", (event.m.s) as u32));
                         loc = KEYC_MOUSE_LOCATION_STATUS;
                     }
                     6 => {
@@ -1568,29 +1567,29 @@ unsafe fn server_client_check_mouse(client_owner: &ClientRef, event: &mut key_ev
         {
             if let Some(pane) = last_pane.as_ref() {
                 loc = KEYC_MOUSE_LOCATION_SCROLLBAR_SLIDER;
-                (*m).wp = pane.id() as ::core::ffi::c_int;
-                (*m).w = server_client_pane_window_id(pane) as ::core::ffi::c_int;
+                event.m.wp = pane.id() as ::core::ffi::c_int;
+                event.m.w = server_client_pane_window_id(pane) as ::core::ffi::c_int;
             }
         } else if loc as ::core::ffi::c_uint
             == KEYC_MOUSE_LOCATION_NOWHERE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             px = x;
-            if (*m).statusat == 0 as ::core::ffi::c_int && y >= (*m).statuslines {
-                py = y.wrapping_sub((*m).statuslines);
-            } else if (*m).statusat > 0 as ::core::ffi::c_int && y >= (*m).statusat as u_int {
-                py = ((*m).statusat - 1 as ::core::ffi::c_int) as u_int;
+            if event.m.statusat == 0 as ::core::ffi::c_int && y >= event.m.statuslines {
+                py = y.wrapping_sub(event.m.statuslines);
+            } else if event.m.statusat > 0 as ::core::ffi::c_int && y >= event.m.statusat as u_int {
+                py = (event.m.statusat - 1 as ::core::ffi::c_int) as u_int;
             } else {
                 py = y;
             }
             let view = tty_window_offset(&(*c).tty);
-            (*m).ox = view.ox;
-            (*m).oy = view.oy;
+            event.m.ox = view.ox;
+            event.m.oy = view.oy;
             let (sx, sy) = (view.sx, view.sy);
             log_debug(format_args!(
                 "mouse window @{} at {},{} ({}x{})",
                 { (window_owner).id() },
-                { (*m).ox },
-                { (*m).oy },
+                { event.m.ox },
+                { event.m.oy },
                 { sx },
                 { sy }
             ));
@@ -1603,8 +1602,8 @@ unsafe fn server_client_check_mouse(client_owner: &ClientRef, event: &mut key_ev
                 );
                 return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
             }
-            px = px.wrapping_add((*m).ox);
-            py = py.wrapping_add((*m).oy);
+            px = px.wrapping_add(event.m.ox);
+            py = py.wrapping_add(event.m.oy);
             server_client_update_scrollbar_hover(
                 client_owner,
                 type_0 as ::core::ffi::c_int,
@@ -1623,7 +1622,7 @@ unsafe fn server_client_check_mouse(client_owner: &ClientRef, event: &mut key_ev
             match &selected_pane {
                 None => {
                     loc = KEYC_MOUSE_LOCATION_EMPTY;
-                    (*m).w = (window_owner).id() as ::core::ffi::c_int;
+                    event.m.w = (window_owner).id() as ::core::ffi::c_int;
                     log_debug(format_args!(
                         "mouse {},{} on empty area",
                         (x) as u32,
@@ -1672,8 +1671,8 @@ unsafe fn server_client_check_mouse(client_owner: &ClientRef, event: &mut key_ev
                             pane_owner.id()
                         }));
                     }
-                    (*m).wp = pane_owner.id() as ::core::ffi::c_int;
-                    (*m).w = server_client_pane_window_id(pane_owner) as ::core::ffi::c_int;
+                    event.m.wp = pane_owner.id() as ::core::ffi::c_int;
+                    event.m.w = server_client_pane_window_id(pane_owner) as ::core::ffi::c_int;
                 }
             }
         } else {
@@ -1693,10 +1692,10 @@ unsafe fn server_client_check_mouse(client_owner: &ClientRef, event: &mut key_ev
         {
             if type_0 as ::core::ffi::c_uint
                 != KEYC_TYPE_MOUSEDOWN as ::core::ffi::c_int as ::core::ffi::c_uint
-                && ((*m).b != (*c).click_button
+                && (event.m.b != (*c).click_button
                     || loc as ::core::ffi::c_uint
                         != (*c).click_loc as key_code_mouse_location as ::core::ffi::c_uint
-                    || (*m).wp != (*c).click_wp)
+                    || event.m.wp != (*c).click_wp)
             {
                 type_0 = KEYC_TYPE_MOUSEDOWN;
                 log_debug(format_args!(
@@ -1711,14 +1710,10 @@ unsafe fn server_client_check_mouse(client_owner: &ClientRef, event: &mut key_ev
                 != KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int as ::core::ffi::c_uint
                 && KEYC_CLICK_TIMEOUT != 0 as ::core::ffi::c_int
             {
-                memcpy(
-                    &raw mut (*c).click_event as *mut ::core::ffi::c_void,
-                    m as *const ::core::ffi::c_void,
-                    ::core::mem::size_of::<mouse_event>() as size_t,
-                );
-                (*c).click_button = (*m).b;
+                (*c).click_event = event.m;
+                (*c).click_button = event.m.b;
                 (*c).click_loc = loc as ::core::ffi::c_int;
-                (*c).click_wp = (*m).wp;
+                (*c).click_wp = event.m.wp;
                 log_debug(format_args!("click timer started"));
                 let timeout = Duration::from_millis(KEYC_CLICK_TIMEOUT as u64);
                 drop((*c).click_timer.take());
@@ -1743,7 +1738,7 @@ unsafe fn server_client_check_mouse(client_owner: &ClientRef, event: &mut key_ev
             && (*c).mouse_drag_flag != 0 as ::core::ffi::c_int
         {
             if let Some(release) = (*c).mouse_drag_release.take() {
-                release(&mut *m);
+                release(&mut event.m);
             }
             (*c).mouse_drag_update = None;
             (*c).mouse_drag_release = None;
@@ -1805,9 +1800,9 @@ unsafe fn server_client_check_mouse(client_owner: &ClientRef, event: &mut key_ev
                         as ::core::ffi::c_uint
             {
                 (*c).mouse_scrolling_flag = 1 as ::core::ffi::c_int;
-                if (*m).statusat == 0 as ::core::ffi::c_int {
+                if event.m.statusat == 0 as ::core::ffi::c_int {
                     (*c).mouse_slider_mpos =
-                        sl_mpos.wrapping_add((*m).statuslines) as ::core::ffi::c_int;
+                        sl_mpos.wrapping_add(event.m.statuslines) as ::core::ffi::c_int;
                 } else {
                     (*c).mouse_slider_mpos = sl_mpos as ::core::ffi::c_int;
                 }
@@ -2032,10 +2027,9 @@ unsafe fn server_client_key_callback(
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let mut current_block: u64;
-    let mut event: *mut key_event = &raw mut *owned.0;
+    let event: &mut key_event = &mut owned.0;
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    let mut key: key_code = (*event).key;
-    let mut m: *mut mouse_event = &raw mut (*event).m;
+    let mut key: key_code = event.key;
     let mut s: Option<SessionRef> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut target_pane = None;
@@ -2058,7 +2052,7 @@ unsafe fn server_client_key_callback(
     let mut key0: key_code = 0;
     let mut prefix: key_code = 0;
     let mut prefix2: key_code = 0;
-    let c_owner = (*event).resolve_client(|| cmdq_get_client(Some(&*item)));
+    let c_owner = event.resolve_client(|| cmdq_get_client(Some(&*item)));
     let Some(c_owner) = c_owner else {
         return CmdOutcome::Normal;
     };
@@ -2072,31 +2066,31 @@ unsafe fn server_client_key_callback(
         (*c).last_activity_time = (*c).activity_time;
         (*c).activity_time = SystemTime::now();
         session.update_activity(Some((*c).activity_time));
-        (*m).valid = 0 as ::core::ffi::c_int;
+        event.m.valid = 0 as ::core::ffi::c_int;
         if key == KEYC_MOUSE as ::core::ffi::c_ulong as key_code
             || key == KEYC_DOUBLECLICK as ::core::ffi::c_ulong as key_code
         {
             if (*c).flags & CLIENT_READONLY as uint64_t != 0 {
                 current_block = 1578459965781631232;
             } else {
-                key = server_client_check_mouse(&c_owner, &mut *event);
+                key = server_client_check_mouse(&c_owner, event);
                 if key == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code {
                     current_block = 1578459965781631232;
                 } else {
-                    (*m).valid = 1 as ::core::ffi::c_int;
-                    (*m).key = key;
+                    event.m.valid = 1 as ::core::ffi::c_int;
+                    event.m.key = key;
                     if key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
                         == KEYC_DRAGGING as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
                     {
                         if let Some(mut update) = (*c).mouse_drag_update.take() {
-                            update(&mut *m);
+                            update(&mut event.m);
                             if (*c).mouse_drag_update.is_none() {
                                 (*c).mouse_drag_update = Some(update);
                             }
                         }
                         current_block = 1578459965781631232;
                     } else {
-                        (*event).key = key;
+                        event.key = key;
                         current_block = 4495394744059808450;
                     }
                 }
@@ -2117,7 +2111,7 @@ unsafe fn server_client_key_callback(
                                 as ::core::ffi::c_ulonglong)
                                 << 32 as ::core::ffi::c_int
                 {
-                    cmd_find_state::find_from_mouse(&*m)
+                    cmd_find_state::find_from_mouse(&event.m)
                 } else {
                     None
                 };
@@ -2429,7 +2423,7 @@ unsafe fn server_client_key_callback(
                             if (*c).flags & CLIENT_READONLY as uint64_t != 0 {
                                 current_block = 1578459965781631232;
                             } else {
-                                if let Some(bytes) = (*event).bytes_ptr_len() {
+                                if let Some(bytes) = event.bytes_ptr_len() {
                                     target_pane
                                         .as_ref()
                                         .expect("paste target pane")
@@ -2449,7 +2443,7 @@ unsafe fn server_client_key_callback(
                             && !((*c).flags & CLIENT_READONLY as uint64_t != 0)
                         {
                             if let Some(pane_owner) = pane_owner {
-                                pane_owner.key(Some(&c_owner), wl.clone(), key, m.as_mut());
+                                pane_owner.key(Some(&c_owner), wl.clone(), key, Some(&mut event.m));
                             }
                         }
                     }
@@ -2485,34 +2479,33 @@ unsafe fn server_client_handle_menu_key(
         )
     };
     let Some(menu) = menu else { return 0 };
-    let mut new_event = (*event).metadata_snapshot();
-    let mut m: *mut mouse_event = std::ptr::null_mut();
-    if (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
+    let mut new_event = event.metadata_snapshot();
+    if event.key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
         == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
-        || (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
+        || event.key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
             >= (KEYC_TYPE_MOUSEMOVE as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
                 << 32 as ::core::ffi::c_int
-            && (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
+            && event.key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
                 <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
                     << 32 as ::core::ffi::c_int
     {
-        m = &raw mut new_event.m;
-        (*m).statusat = status_at_line(owner);
-        (*m).statuslines = status_line_size(owner);
+        let m = &mut new_event.m;
+        m.statusat = status_at_line(owner);
+        m.statuslines = status_line_size(owner);
         let tty_window_view { ox, oy, .. } = tty_window_offset(&(*c).tty);
-        (*m).x = (*m).x.wrapping_add(ox);
-        if (*m).statusat == 0 as ::core::ffi::c_int {
-            if (*m).y < (*m).statuslines {
-                (*m).y = UINT_MAX as u_int;
-                (*m).x = (*m).y;
+        m.x = m.x.wrapping_add(ox);
+        if m.statusat == 0 as ::core::ffi::c_int {
+            if m.y < m.statuslines {
+                m.y = UINT_MAX as u_int;
+                m.x = m.y;
             } else {
-                (*m).y = (*m).y.wrapping_sub((*m).statuslines).wrapping_add(oy);
+                m.y = m.y.wrapping_sub(m.statuslines).wrapping_add(oy);
             }
-        } else if (*m).statusat > 0 as ::core::ffi::c_int && (*m).y >= (*m).statusat as u_int {
-            (*m).y = UINT_MAX as u_int;
-            (*m).x = (*m).y;
+        } else if m.statusat > 0 as ::core::ffi::c_int && m.y >= m.statusat as u_int {
+            m.y = UINT_MAX as u_int;
+            m.x = m.y;
         } else {
-            (*m).y = (*m).y.wrapping_add(oy);
+            m.y = m.y.wrapping_add(oy);
         }
     }
     if menu_key(Some(owner), &menu, &new_event) == 1 {
@@ -2527,17 +2520,17 @@ unsafe fn server_client_handle_key0(
     next: Option<&mut std::rc::Weak<std::cell::RefCell<cmdq_item>>>,
 ) -> ::core::ffi::c_int {
     let c = owner.get();
-    let event: *mut key_event = &raw mut *owned;
+    let event: &mut key_event = &mut owned;
     let mut s: Option<SessionRef> = (*c).session_handle();
     let item_allocation;
     if s.is_none() || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    if (*event).key == KEYC_REPORT_LIGHT_THEME as ::core::ffi::c_ulong as key_code {
+    if event.key == KEYC_REPORT_LIGHT_THEME as ::core::ffi::c_ulong as key_code {
         server_client_report_theme(owner, THEME_LIGHT);
         return 0 as ::core::ffi::c_int;
     }
-    if (*event).key == KEYC_REPORT_DARK_THEME as ::core::ffi::c_ulong as key_code {
+    if event.key == KEYC_REPORT_DARK_THEME as ::core::ffi::c_ulong as key_code {
         server_client_report_theme(owner, THEME_DARK);
         return 0 as ::core::ffi::c_int;
     }
@@ -2548,7 +2541,7 @@ unsafe fn server_client_handle_key0(
             }
             status_message_clear(owner);
         }
-        if let Some(result) = server_client_overlay_key(owner, &mut *event) {
+        if let Some(result) = server_client_overlay_key(owner, event) {
             match result {
                 0 => return 0 as ::core::ffi::c_int,
                 1 => {
@@ -2566,14 +2559,14 @@ unsafe fn server_client_handle_key0(
         .expect("live window"))
         .active_pane()
         .upgrade();
-        if server_client_handle_dead_key(active_pane_owner.as_ref(), (*event).key) != 0 {
+        if server_client_handle_dead_key(active_pane_owner.as_ref(), event.key) != 0 {
             return 0 as ::core::ffi::c_int;
         }
-        if server_client_handle_menu_key(owner, &*event) != 0 {
+        if server_client_handle_menu_key(owner, event) != 0 {
             return 0 as ::core::ffi::c_int;
         }
         if (*c).prompt.is_some() {
-            match status_prompt_key(owner, (*event).key, Some(&(*event).m)) as ::core::ffi::c_uint {
+            match status_prompt_key(owner, event.key, Some(&event.m)) as ::core::ffi::c_uint {
                 1 | 2 => return 0 as ::core::ffi::c_int,
                 _ => {}
             }
@@ -2599,17 +2592,17 @@ unsafe fn server_client_handle_key0(
         }
         drop(prompt_window);
         if let Some(pane_owner) = prompt_pane.filter(|pane| pane.prompt_position(true).is_some()) {
-            match pane_owner.prompt_key(Some(owner), (*event).key, Some(&mut (*event).m))
+            match pane_owner.prompt_key(Some(owner), event.key, Some(&mut event.m))
                 as ::core::ffi::c_uint
             {
                 1..=3 => return 0 as ::core::ffi::c_int,
-                0 if ((*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
+                0 if (event.key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
                     == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
-                    || (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
+                    || event.key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
                         >= (KEYC_TYPE_MOUSEMOVE as ::core::ffi::c_int
                             as ::core::ffi::c_ulonglong)
                             << 32 as ::core::ffi::c_int
-                        && (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
+                        && event.key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
                             <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int
                                 as ::core::ffi::c_ulonglong)
                                 << 32 as ::core::ffi::c_int) =>
@@ -2623,7 +2616,7 @@ unsafe fn server_client_handle_key0(
     let client_owner = if after_handle.is_none() {
         None
     } else {
-        (*event).client = std::rc::Rc::downgrade(owner);
+        event.client = std::rc::Rc::downgrade(owner);
         Some(owner.clone())
     };
     let queued_event = QueuedKeyEvent(owned, client_owner);
@@ -3412,7 +3405,7 @@ unsafe fn server_client_set_progress_bar(owner: &ClientRef) {
     let Some(active_owner) = server_client_active_pane(&*owner.get()) else {
         return;
     };
-    let mut pane_progress = active_owner.screen_progress();
+    let pane_progress = active_owner.screen_progress();
     {
         let state = &mut *owner.get();
         if pane_progress.state == state.progress_bar.state
@@ -3424,7 +3417,7 @@ unsafe fn server_client_set_progress_bar(owner: &ClientRef) {
     }
     {
         let terminal = &(owner);
-        tty_set_progress_bar(terminal, &mut pane_progress)
+        tty_set_progress_bar(terminal, &pane_progress)
     };
 }
 

@@ -224,22 +224,15 @@ impl window_pane {
 }
 
 impl window_pane {
-    /// Append a separately allocated resize and return its stable address.
-    pub(super) fn push_resize(&mut self, resize: window_pane_resize) -> *mut window_pane_resize {
-        let resize = Box::new(resize);
-        let pointer = (&*resize) as *const window_pane_resize as *mut window_pane_resize;
-        self.resize_queue.push_back(resize);
-        pointer
+    pub(super) fn push_resize(&mut self, resize: window_pane_resize) {
+        self.resize_queue.push_back(Box::new(resize));
     }
 
-    /// Retain only `except`; removed entry pointers are invalid after return.
-    pub(super) fn clear_resizes_except(&mut self, except: *mut window_pane_resize) {
-        if except.is_null() {
-            self.resize_queue = Default::default();
-            return;
-        }
-        self.resize_queue
-            .retain(|resize| std::ptr::eq(&**resize, except));
+    /// Drop queued resizes, optionally retaining the most recent one.
+    pub(super) fn clear_resizes(&mut self, keep_last: bool) {
+        let last = keep_last.then(|| self.resize_queue.pop_back()).flatten();
+        self.resize_queue = Default::default();
+        self.resize_queue.extend(last);
     }
 }
 

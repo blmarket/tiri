@@ -537,12 +537,12 @@ pub fn cmd_list_any_have(cmdlist: &cmd_list) -> ::core::ffi::c_int {
 }
 pub unsafe fn cmd_mouse_at(
     pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-    mouse: *mut mouse_event,
+    mouse: &mouse_event,
     x: &mut u_int,
     y: &mut u_int,
     last: i32,
 ) -> i32 {
-    let Some((mx, my)) = pane.mouse_position(&*mouse, last != 0) else {
+    let Some((mx, my)) = pane.mouse_position(mouse, last != 0) else {
         return -1;
     };
     *x = mx;

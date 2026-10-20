@@ -245,17 +245,16 @@ unsafe fn format_cb_history_bytes(ft: &mut format_tree) -> Option<CString> {
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = format_pane;
-    let mut gd: *mut grid = ::core::ptr::null_mut::<grid>();
     let mut size: size_t = 0 as size_t;
     let mut i: u_int = 0;
     let mut value = None;
     if wp.is_null() {
         return None;
     }
-    gd = (*wp).base.grid_mut();
+    let gd = (*wp).base.grid();
     i = 0 as u_int;
-    while i < (*gd).hsize.wrapping_add((*gd).sy) {
-        let gl = grid_get_line(&*gd, i);
+    while i < gd.hsize.wrapping_add(gd.sy) {
+        let gl = grid_get_line(gd, i);
         size = (size as ::core::ffi::c_ulong).wrapping_add(
             (gl.cellsize as usize).wrapping_mul(::core::mem::size_of::<grid_cell_entry>() as usize)
                 as ::core::ffi::c_ulong,
@@ -267,7 +266,7 @@ unsafe fn format_cb_history_bytes(ft: &mut format_tree) -> Option<CString> {
         i = i.wrapping_add(1);
     }
     size = (size as ::core::ffi::c_ulong).wrapping_add(
-        ((*gd).hsize.wrapping_add((*gd).sy) as usize)
+        (gd.hsize.wrapping_add(gd.sy) as usize)
             .wrapping_mul(::core::mem::size_of::<grid_line>() as usize)
             as ::core::ffi::c_ulong,
     ) as size_t as size_t;
@@ -283,7 +282,6 @@ unsafe fn format_cb_history_all_bytes(ft: &mut format_tree) -> Option<CString> {
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = format_pane;
-    let mut gd: *mut grid = ::core::ptr::null_mut::<grid>();
     let mut i: u_int = 0;
     let mut lines: u_int = 0;
     let mut cells: u_int = 0 as u_int;
@@ -292,11 +290,11 @@ unsafe fn format_cb_history_all_bytes(ft: &mut format_tree) -> Option<CString> {
     if wp.is_null() {
         return None;
     }
-    gd = (*wp).base.grid_mut();
-    lines = (*gd).hsize.wrapping_add((*gd).sy);
+    let gd = (*wp).base.grid();
+    lines = gd.hsize.wrapping_add(gd.sy);
     i = 0 as u_int;
     while i < lines {
-        let gl = grid_get_line(&*gd, i);
+        let gl = grid_get_line(gd, i);
         cells = cells.wrapping_add(gl.cellsize as u_int);
         extended_cells = extended_cells.wrapping_add(gl.extdsize);
         i = i.wrapping_add(1);

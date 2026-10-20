@@ -7,7 +7,6 @@ use crate::shared::client::ClientRef;
 use crate::shared::command::*;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::command::{CMD_AFTERHOOK, CMD_READONLY, CMD_TARGET_PANE_USAGE};
-use crate::shared::key::key_event;
 use crate::shared::key::*;
 use crate::shared::session::SessionRef;
 use crate::window::WindowPane;
@@ -72,8 +71,7 @@ unsafe fn cmd_copy_mode_exec(
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0.get_unchecked());
-    let mut event_snapshot = cmdq_get_event(&*(item));
-    let event: *mut key_event = &mut event_snapshot;
+    let mut event = cmdq_get_event(&*(item));
     let source = crate::cmd::queue::cmdq_get_source(&item);
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let c_owner = cmdq_get_client(Some(&*item));
@@ -87,7 +85,7 @@ unsafe fn cmd_copy_mode_exec(
     }
     if args_has(args, 'M' as i32 as u_char) != 0 {
         let mut mouse_session_owner = None;
-        let mouse_pane_owner = cmd_mouse_pane(&(*event).m, Some(&mut mouse_session_owner), None);
+        let mouse_pane_owner = cmd_mouse_pane(&event.m, Some(&mut mouse_session_owner), None);
         s = mouse_session_owner.clone();
         let Some(mouse_pane) = mouse_pane_owner else {
             return CmdOutcome::Normal;
@@ -116,15 +114,14 @@ unsafe fn cmd_copy_mode_exec(
         Some(pane_owner.clone())
     };
     line_numbers = 1 as ::core::ffi::c_int;
-    if !event.is_null()
-        && ((*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
-            == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
-            || (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
-                >= (KEYC_TYPE_MOUSEMOVE as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
+    if event.key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
+        == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
+        || event.key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
+            >= (KEYC_TYPE_MOUSEMOVE as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
+                << 32 as ::core::ffi::c_int
+            && event.key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
+                <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
                     << 32 as ::core::ffi::c_int
-                && (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
-                    <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
-                        << 32 as ::core::ffi::c_int)
     {
         line_numbers = 0 as ::core::ffi::c_int;
     }
@@ -138,7 +135,7 @@ unsafe fn cmd_copy_mode_exec(
     {
         window_copy_set_line_numbers(&pane_owner, line_numbers);
         if args_has(args, 'M' as i32 as u_char) != 0 {
-            window_copy_start_drag(c_owner.as_ref(), &mut (*event).m);
+            window_copy_start_drag(c_owner.as_ref(), &mut event.m);
         }
     } else {
         window_copy_set_line_numbers(&pane_owner, line_numbers);
@@ -158,7 +155,7 @@ unsafe fn cmd_copy_mode_exec(
         window_copy_scroll(
             &pane_owner,
             slider,
-            (*event).m.y,
+            event.m.y,
             tty_oy,
             args_has(args, 'e' as i32 as u_char),
         );

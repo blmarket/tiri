@@ -607,7 +607,7 @@ unsafe fn window_pane_destroy(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>
     drop((*wp).resize_timer.take());
     drop((*wp).sync_timer.take());
     drop((*wp).sb_auto_timer.take());
-    window_pane_clear_resizes(&mut *wp, ::core::ptr::null_mut::<window_pane_resize>());
+    (*wp).clear_resizes(false);
     drop(owner);
 }
 
@@ -623,7 +623,6 @@ unsafe fn window_pane_read_callback(owner: &Rc<std::cell::UnsafeCell<window_pane
             pane.pipe_fd.is_some(),
         )
     };
-    let mut wpo: *mut window_pane_offset = &raw mut (*wp).pipe_offset;
     let size = input.input_len().unwrap_or(0);
     if has_pipe {
         let data = input
@@ -634,7 +633,7 @@ unsafe fn window_pane_read_callback(owner: &Rc<std::cell::UnsafeCell<window_pane
         let new_size = data.len();
         if new_size > 0 as size_t {
             let _ = pipe.write(&data);
-            window_pane_update_used_data(owner, wpo, new_size);
+            window_pane_update_used_data(owner, |wp| &mut wp.pipe_offset, new_size);
         }
     }
     log_debug(format_args!("%{} has {} bytes", { (*wp).id }, { size }));
@@ -691,10 +690,6 @@ unsafe fn window_pane_set_event(wp_owner: &Rc<std::cell::UnsafeCell<window_pane>
     let _ = (*wp).event.with_ptr(|event| unsafe {
         bufferevent_enable(event, (EV_READ | EV_WRITE) as ::core::ffi::c_short);
     });
-}
-
-fn window_pane_clear_resizes(wp: &mut window_pane, mut except: *mut window_pane_resize) {
-    wp.clear_resizes_except(except);
 }
 
 unsafe fn window_pane_resize(
@@ -1513,11 +1508,11 @@ unsafe fn window_pane_start_input(
 
 unsafe fn window_pane_update_used_data(
     wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
-    mut wpo: *mut window_pane_offset,
+    offset: fn(&mut window_pane) -> &mut window_pane_offset,
     mut size: size_t,
 ) {
     let mut wp = wp_owner.get();
-    let used: size_t = (*wpo).used.wrapping_sub((*wp).base_offset);
+    let used: size_t = offset(&mut *wp).used.wrapping_sub((*wp).base_offset);
     let Some(available) = (*wp)
         .event
         .with_ptr(|event| unsafe { evbuffer_get_length(&(*event).input) })
@@ -1527,7 +1522,8 @@ unsafe fn window_pane_update_used_data(
     if size > available.saturating_sub(used) {
         size = available.saturating_sub(used);
     }
-    (*wpo).used = (*wpo).used.wrapping_add(size);
+    let wpo = offset(&mut *wp);
+    wpo.used = wpo.used.wrapping_add(size);
 }
 
 unsafe fn window_pane_default_cursor(wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {

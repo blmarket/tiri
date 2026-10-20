@@ -22,7 +22,6 @@ use crate::shared::event::*;
 use crate::shared::event::{EV_READ, EV_WRITE};
 use crate::shared::format::FORMAT_NONE;
 use crate::shared::pane::window_pane;
-use crate::shared::pane::window_pane_offset;
 use crate::shared::posix_io::{
     _PATH_BSHELL, _PATH_DEVNULL, O_WRONLY, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO,
 };
@@ -30,7 +29,7 @@ use crate::shared::session::SessionRef;
 use crate::shared::signal::{sigset_t, SIG_BLOCK, SIG_SETMASK};
 use crate::shared::window::winlink;
 use crate::tmux::setblocking;
-use libc::{_exit, execl, fork, memcpy, setpgid, sigfillset, sigprocmask};
+use libc::{_exit, execl, fork, setpgid, sigfillset, sigprocmask};
 use std::os::fd::{AsRawFd, IntoRawFd};
 pub(super) unsafe fn pipe_pane(
     pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
@@ -46,7 +45,6 @@ pub(super) unsafe fn pipe_pane(
     let wp = pane_owner.get();
     let mut s: Option<SessionRef> = target.session_handle();
     let mut wl: refbox::Weak<winlink> = target.winlink_handle();
-    let mut wpo: *mut window_pane_offset = &raw mut (*wp).pipe_offset;
     let had_pipe = (*wp).pipe_fd.is_some();
     let mut null_fd: ::core::ffi::c_int = 0;
     let mut in_0: ::core::ffi::c_int = 0;
@@ -191,11 +189,7 @@ pub(super) unsafe fn pipe_pane(
             );
             drop(child);
             (*wp).pipe_fd = Some(parent);
-            memcpy(
-                wpo as *mut ::core::ffi::c_void,
-                &raw mut (*wp).offset as *const ::core::ffi::c_void,
-                ::core::mem::size_of::<window_pane_offset>() as size_t,
-            );
+            (*wp).pipe_offset = (*wp).offset;
             setblocking(
                 (*wp).pipe_fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
                 0 as ::core::ffi::c_int,

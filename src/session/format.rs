@@ -730,7 +730,7 @@ mod tests {
                 .replace(Some(crate::options::options_create(None)));
             let mut link = winlink_add(&(*owner.get()).windows, 7);
             link.get_mut_unchecked().session = Rc::downgrade(&owner);
-            winlink_stack_push(&raw mut (*owner.get()).lastw, link.clone());
+            winlink_stack_push(&mut (*owner.get()).lastw, link.clone());
             let mut context = format_tree::default();
             context.s = Rc::downgrade(&other);
             context.wl = link.clone();
@@ -743,7 +743,7 @@ mod tests {
             assert!(context.s.ptr_eq(&Rc::downgrade(&other)));
             assert_eq!(context.wl, link);
 
-            winlink_stack_remove(&raw mut (*owner.get()).lastw, link.clone());
+            winlink_stack_remove(&mut (*owner.get()).lastw, link.clone());
             winlink_remove(&(*owner.get()).windows, link);
             drop((*other.get()).options.take().unwrap());
         }

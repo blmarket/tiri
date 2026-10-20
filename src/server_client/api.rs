@@ -485,7 +485,7 @@ impl Client for ClientRef {
         state.term_features & !state.term_nofeatures
     }
     unsafe fn set_control_size(&self, width: u32, height: u32) {
-        crate::tty::tty_set_size(&raw mut (*self.get()).tty, width, height, 0, 0);
+        crate::tty::tty_set_size(&mut (*self.get()).tty, width, height, 0, 0);
         (*self.get()).flags |= CLIENT_SIZECHANGED as u64;
     }
     unsafe fn reset_pan(&self, window: Option<&WindowRef>) {

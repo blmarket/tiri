@@ -27,7 +27,6 @@ use crate::shared::command::*;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CFLAG};
 use crate::shared::environment::environ;
-use crate::shared::key::key_event;
 use crate::shared::key::*;
 use crate::shared::layout::*;
 use crate::shared::limits::UINT_MAX;
@@ -154,8 +153,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
     let item = item_handle.borrow();
     let mut tc: Option<ClientRef> = Some(tc_owner.clone());
     let target = crate::cmd::queue::cmdq_get_target(&item);
-    let mut event_snapshot = cmdq_get_event(&*(item));
-    let event: *mut key_event = &mut event_snapshot;
+    let event = cmdq_get_event(&*(item));
     let mut s: Option<SessionRef> = tc
         .as_ref()
         .expect("live client")
@@ -177,13 +175,9 @@ unsafe fn cmd_display_menu_get_popup_pos(
     }
     let mut ft_owner = format_create_from_target(item_handle);
     let ft = &mut *ft_owner;
-    if (*event).m.valid != 0 {
-        format_add(ft, c"popup_mouse_x", |out| {
-            write!(out, "{}", { (*event).m.x })
-        });
-        format_add(ft, c"popup_mouse_y", |out| {
-            write!(out, "{}", { (*event).m.y })
-        });
+    if event.m.valid != 0 {
+        format_add(ft, c"popup_mouse_x", |out| write!(out, "{}", { event.m.x }));
+        format_add(ft, c"popup_mouse_y", |out| write!(out, "{}", { event.m.y }));
     }
     let (last_x, last_y) = target
         .window_handle()
@@ -293,8 +287,8 @@ unsafe fn cmd_display_menu_get_popup_pos(
             write!(out, "{}", (n) as ::core::ffi::c_long)
         });
     }
-    if (*event).m.valid != 0 {
-        n = (*event).m.x as ::core::ffi::c_long - w.wrapping_div(2 as u_int) as ::core::ffi::c_long;
+    if event.m.valid != 0 {
+        n = event.m.x as ::core::ffi::c_long - w.wrapping_div(2 as u_int) as ::core::ffi::c_long;
         if n < 0 as ::core::ffi::c_long {
             format_add(ft, c"popup_mouse_centre_x", |out| {
                 write!(out, "{}", (0 as ::core::ffi::c_int) as u32)
@@ -304,7 +298,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
                 write!(out, "{}", (n) as ::core::ffi::c_long)
             });
         }
-        n = (*event).m.y.wrapping_sub(h.wrapping_div(2 as u_int)) as ::core::ffi::c_long;
+        n = event.m.y.wrapping_sub(h.wrapping_div(2 as u_int)) as ::core::ffi::c_long;
         if n + h as ::core::ffi::c_long
             >= tc.as_ref().expect("live client").terminal_size().1 as ::core::ffi::c_long
         {
@@ -322,7 +316,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
                 write!(out, "{}", (n) as ::core::ffi::c_long)
             });
         }
-        n = (*event).m.y as ::core::ffi::c_long + h as ::core::ffi::c_long;
+        n = event.m.y as ::core::ffi::c_long + h as ::core::ffi::c_long;
         if n >= tc.as_ref().expect("live client").terminal_size().1 as ::core::ffi::c_long {
             format_add(ft, c"popup_mouse_top", |out| {
                 write!(out, "{}", {
@@ -338,7 +332,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
                 write!(out, "{}", (n) as ::core::ffi::c_long)
             });
         }
-        n = (*event).m.y.wrapping_sub(h) as ::core::ffi::c_long;
+        n = event.m.y.wrapping_sub(h) as ::core::ffi::c_long;
         if n < 0 as ::core::ffi::c_long {
             format_add(ft, c"popup_mouse_bottom", |out| {
                 write!(out, "{}", (0 as ::core::ffi::c_int) as u32)
@@ -485,8 +479,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
     let item = item_handle.borrow();
     let mut tc: Option<ClientRef> = Some(tc_owner.clone());
     let target = crate::cmd::queue::cmdq_get_target(&item);
-    let mut event_snapshot = cmdq_get_event(&*(item));
-    let event: *mut key_event = &mut event_snapshot;
+    let event = cmdq_get_event(&*(item));
     let mut s: Option<SessionRef> = tc
         .as_ref()
         .expect("live client")
@@ -511,24 +504,21 @@ unsafe fn cmd_display_menu_get_menu_pos(
     max_y = oy.wrapping_add(sy.saturating_sub(h)) as ::core::ffi::c_long;
     let mut ft_owner = format_create_from_target(item_handle);
     let ft = &mut *ft_owner;
-    if (*event).m.valid != 0 {
-        mouse_x = (*event).m.x.wrapping_add(ox) as ::core::ffi::c_long;
-        if (*event).m.statusat == 0 as ::core::ffi::c_int {
-            if (*event).m.y >= (*event).m.statuslines {
-                mouse_y = (*event)
-                    .m
-                    .y
-                    .wrapping_sub((*event).m.statuslines)
-                    .wrapping_add(oy) as ::core::ffi::c_long;
+    if event.m.valid != 0 {
+        mouse_x = event.m.x.wrapping_add(ox) as ::core::ffi::c_long;
+        if event.m.statusat == 0 as ::core::ffi::c_int {
+            if event.m.y >= event.m.statuslines {
+                mouse_y = event.m.y.wrapping_sub(event.m.statuslines).wrapping_add(oy)
+                    as ::core::ffi::c_long;
             } else {
                 mouse_y = oy as ::core::ffi::c_long;
             }
-        } else if (*event).m.statusat > 0 as ::core::ffi::c_int
-            && (*event).m.y >= (*event).m.statusat as u_int
+        } else if event.m.statusat > 0 as ::core::ffi::c_int
+            && event.m.y >= event.m.statusat as u_int
         {
             mouse_y = oy.wrapping_add(sy).wrapping_sub(1 as u_int) as ::core::ffi::c_long;
         } else {
-            mouse_y = (*event).m.y.wrapping_add(oy) as ::core::ffi::c_long;
+            mouse_y = event.m.y.wrapping_add(oy) as ::core::ffi::c_long;
         }
         format_add(ft, c"popup_mouse_x", |out| {
             write!(out, "{}", (mouse_x) as ::core::ffi::c_long)
@@ -599,7 +589,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
             write!(out, "{}", (n) as ::core::ffi::c_long)
         });
     }
-    if (*event).m.valid != 0 {
+    if event.m.valid != 0 {
         n = mouse_x - w.wrapping_div(2 as u_int) as ::core::ffi::c_long;
         if n < 0 as ::core::ffi::c_long {
             format_add(ft, c"popup_mouse_centre_x", |out| {
@@ -748,8 +738,7 @@ unsafe fn cmd_display_menu_exec(
     let args = cmd_get_args(self_0.get_unchecked());
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let target = &target_state;
-    let mut event_snapshot = cmdq_get_event(&*(item));
-    let event: *mut key_event = &mut event_snapshot;
+    let event = cmdq_get_event(&*(item));
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let style = args_get(args, b's');
@@ -858,14 +847,14 @@ unsafe fn cmd_display_menu_exec(
     if args_has(args, b'O') != 0 {
         flags |= MENU_STAYOPEN;
     }
-    if (*event).m.valid == 0 && args_has(args, b'M') == 0 {
+    if event.m.valid == 0 && args_has(args, b'M') == 0 {
         flags |= MENU_NOMOUSE;
     }
     menu_display(
         menu,
         flags,
         starting_choice,
-        Some(&*event),
+        Some(&event),
         px,
         py,
         tc_owner.as_ref(),

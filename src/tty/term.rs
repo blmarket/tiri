@@ -1287,7 +1287,6 @@ pub(super) unsafe fn tty_term_create(
     name: &CStr,
     caps: &[CString],
 ) -> Result<Box<tty_term>, CString> {
-    let mut term: *mut tty_term = ::core::ptr::null_mut::<tty_term>();
     let mut i: u_int = 0;
     log_debug(format_args!("adding term {}", log_cstr(name)));
     let mut owner = Box::new(tty_term {
@@ -1306,7 +1305,6 @@ pub(super) unsafe fn tty_term_create(
             identity: std::rc::Rc::downgrade(&owner.identity),
         },
     );
-    term = &raw mut *owner;
     for cap in caps {
         // Capabilities come from the client as "name=value"; ignore anything else.
         let Some(namelen) = cap.to_bytes().iter().position(|&b| b == b'=') else {
@@ -1322,17 +1320,17 @@ pub(super) unsafe fn tty_term_create(
             if ent.name.to_bytes() != cap_name {
                 continue;
             }
-            (&mut (*term).codes)[j] = tty_code::None;
+            (&mut owner.codes)[j] = tty_code::None;
             match ent.type_0 as ::core::ffi::c_uint {
                 1 => {
-                    (&mut (*term).codes)[j] = tty_code::String(tty_term_strip(value));
+                    (&mut owner.codes)[j] = tty_code::String(tty_term_strip(value));
                 }
                 2 => match strtonum(
                     value,
                     0 as ::core::ffi::c_longlong,
                     INT_MAX as ::core::ffi::c_longlong,
                 ) {
-                    Ok(n) => (&mut (*term).codes)[j] = tty_code::Number(n as ::core::ffi::c_int),
+                    Ok(n) => (&mut owner.codes)[j] = tty_code::Number(n as ::core::ffi::c_int),
                     Err(errstr) => log_debug(format_args!(
                         "{}: {}",
                         crate::log::log_bytes(ent.name.to_bytes()),
@@ -1340,7 +1338,7 @@ pub(super) unsafe fn tty_term_create(
                     )),
                 },
                 3 => {
-                    (&mut (*term).codes)[j] = tty_code::Flag(
+                    (&mut owner.codes)[j] = tty_code::Flag(
                         (value.to_bytes().first() == Some(&b'1')) as ::core::ffi::c_int,
                     );
                 }
@@ -1355,7 +1353,7 @@ pub(super) unsafe fn tty_term_create(
         if first.as_ref().is_some_and(|first| {
             fnmatch(
                 first.as_ptr(),
-                ((*term).name).as_ptr().cast_mut(),
+                (owner.name).as_ptr().cast_mut(),
                 0 as ::core::ffi::c_int,
             ) == 0
         }) {
@@ -1384,38 +1382,38 @@ pub(super) unsafe fn tty_term_create(
             }
         }
     }
-    tty_term_apply_overrides(&mut *term);
-    let error = if tty_term_has(&*term, TTYC_CLEAR) == 0 {
+    tty_term_apply_overrides(&mut owner);
+    let error = if tty_term_has(&owner, TTYC_CLEAR) == 0 {
         Some(c"terminal does not support clear".to_owned())
-    } else if tty_term_has(&*term, TTYC_CUP) == 0 {
+    } else if tty_term_has(&owner, TTYC_CUP) == 0 {
         Some(c"terminal does not support cup".to_owned())
     } else {
-        if tty_term_flag(&*term, TTYC_XT) != 0
-            || tty_term_string(&*term, TTYC_CLEAR)
+        if tty_term_flag(&owner, TTYC_XT) != 0
+            || tty_term_string(&owner, TTYC_CLEAR)
                 .to_bytes()
                 .starts_with(b"\x1B[")
         {
-            (*term).flags |= TERM_VT100LIKE;
+            owner.flags |= TERM_VT100LIKE;
             tty_parse_client_features(client_owner, c"bpaste,focus,title", c",");
         }
-        if (tty_term_flag(&*term, TTYC_TC) != 0 || tty_term_has(&*term, TTYC_RGB) != 0)
-            && (tty_term_has(&*term, TTYC_SETRGBF) == 0 || tty_term_has(&*term, TTYC_SETRGBB) == 0)
+        if (tty_term_flag(&owner, TTYC_TC) != 0 || tty_term_has(&owner, TTYC_RGB) != 0)
+            && (tty_term_has(&owner, TTYC_SETRGBF) == 0 || tty_term_has(&owner, TTYC_SETRGBB) == 0)
         {
             tty_parse_client_features(client_owner, c"RGB", c",");
         }
-        let applied = tty_apply_features(&mut *term, client_owner.terminal_feature_mask());
+        let applied = tty_apply_features(&mut owner, client_owner.terminal_feature_mask());
         if applied.enable_utf8 {
             client_owner.update_flags(crate::shared::client::CLIENT_UTF8 as u64, 0);
         }
         if applied.changed {
-            tty_term_apply_overrides(&mut *term);
+            tty_term_apply_overrides(&mut owner);
         }
         i = 0 as u_int;
         while i < tty_term_ncodes() {
             log_debug(format_args!(
                 "{}{}",
                 log_cstr(name),
-                log_cstr(&tty_term_describe(&*term, i as tty_code_code))
+                log_cstr(&tty_term_describe(&owner, i as tty_code_code))
             ));
             i = i.wrapping_add(1);
         }

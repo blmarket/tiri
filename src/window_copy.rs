@@ -562,19 +562,19 @@ pub(crate) unsafe fn window_copy_sync_screen(
     target: &mut screen,
     sync: (u_int, u_int, u_int),
 ) -> bool {
-    let sg: *const grid = source.grid();
-    let mut dg: *mut grid = target.grid_mut();
-    let mut sy: u_int = (*sg).sy;
-    let mut old_hsize: u_int = (*dg).hsize;
-    let mut new_hsize: u_int = (*sg).hsize;
+    let sg = source.grid();
+    let dg = target.grid_mut();
+    let mut sy: u_int = sg.sy;
+    let mut old_hsize: u_int = dg.hsize;
+    let mut new_hsize: u_int = sg.hsize;
     let mut added: u_int = 0;
     let mut collected: u_int = 0;
     let mut kept: u_int = 0;
-    if (*sg).sx != (*dg).sx || (*sg).sy != (*dg).sy || (*sg).scroll_generation != sync.2 {
+    if sg.sx != dg.sx || sg.sy != dg.sy || sg.scroll_generation != sync.2 {
         return false;
     }
-    added = (*sg).scroll_added.wrapping_sub(sync.0);
-    collected = (*sg).scroll_collected.wrapping_sub(sync.1);
+    added = sg.scroll_added.wrapping_sub(sync.0);
+    collected = sg.scroll_collected.wrapping_sub(sync.1);
     if added > INT_MAX as u_int
         || collected > INT_MAX as u_int
         || collected > old_hsize
@@ -585,24 +585,23 @@ pub(crate) unsafe fn window_copy_sync_screen(
     }
     kept = old_hsize.wrapping_sub(collected);
     if added == 0 as u_int && collected == 0 as u_int {
-        grid_duplicate_lines(&mut *dg, old_hsize, &*sg, new_hsize, sy);
+        grid_duplicate_lines(dg, old_hsize, sg, new_hsize, sy);
     } else {
         if collected > 0 as u_int {
-            grid_free_lines(&mut *dg, 0 as u_int, collected);
+            grid_free_lines(dg, 0 as u_int, collected);
             let live = old_hsize.wrapping_add(sy) as usize;
-            (&mut (*dg).linedata)[..live].rotate_left(collected as usize);
+            (&mut dg.linedata)[..live].rotate_left(collected as usize);
         }
-        (*dg)
-            .linedata
+        dg.linedata
             .resize_with(new_hsize.wrapping_add(sy) as usize, grid_line::default);
-        (*dg).hsize = new_hsize;
+        dg.hsize = new_hsize;
         if added > 0 as u_int {
-            grid_duplicate_lines(&mut *dg, kept, &*sg, kept, added);
+            grid_duplicate_lines(dg, kept, sg, kept, added);
         }
-        grid_duplicate_lines(&mut *dg, new_hsize, &*sg, new_hsize, sy);
+        grid_duplicate_lines(dg, new_hsize, sg, new_hsize, sy);
     }
-    (*dg).hscrolled = (*sg).hscrolled;
-    let last = (*dg).sy.wrapping_sub(1 as u_int);
+    dg.hscrolled = sg.hscrolled;
+    let last = dg.sy.wrapping_sub(1 as u_int);
     if source.cy > last {
         target.cx = 0 as u_int;
         target.cy = last;
@@ -5144,7 +5143,7 @@ unsafe fn window_copy_command(
         session_owner.as_ref(),
         wl.clone(),
         args,
-        m.map_or(std::ptr::null_mut(), std::ptr::from_mut),
+        m,
     );
     drop(session_owner);
 }
@@ -5155,7 +5154,7 @@ unsafe fn window_copy_command_with_session(
     s: Option<&SessionRef>,
     wl: refbox::Weak<winlink>,
     args: &args,
-    m: *mut mouse_event,
+    mut m: Option<&mut mouse_event>,
 ) {
     let mut c: Option<ClientRef> = client_owner.cloned();
     let mode_pane_owner = wme
@@ -5183,17 +5182,17 @@ unsafe fn window_copy_command_with_session(
         return;
     }
     command = args_string(args, 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
-    if !m.is_null()
-        && (*m).valid != 0
-        && !((*m).b & MOUSE_MASK_BUTTONS as u_int == MOUSE_WHEEL_UP as u_int
-            || (*m).b & MOUSE_MASK_BUTTONS as u_int == MOUSE_WHEEL_DOWN as u_int)
-    {
-        window_copy_move_mouse(&mut *m);
+    if let Some(m) = m.as_deref_mut().filter(|m| {
+        m.valid != 0
+            && !(m.b & MOUSE_MASK_BUTTONS as u_int == MOUSE_WHEEL_UP as u_int
+                || m.b & MOUSE_MASK_BUTTONS as u_int == MOUSE_WHEEL_DOWN as u_int)
+    }) {
+        window_copy_move_mouse(m);
     }
     cs.wme = wme.clone();
     cs.format_search = args_has(args, 'F' as i32 as u_char) != 0;
     cs.wargs = None;
-    cs.m = m.as_ref().copied();
+    cs.m = m.as_deref().copied();
     cs.c = client_owner;
     cs.s = s;
     cs.wl = wl.clone();

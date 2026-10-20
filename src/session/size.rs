@@ -26,16 +26,16 @@ pub(super) unsafe fn recalculate_size_state() {
     }
 }
 
-pub(super) unsafe fn status_update_cache(s_value: &mut session) {
-    let s: *mut session = s_value as *mut _;
-    (*s).statuslines = options_get_number(&(*s).borrow_options_mut(), c"status") as u_int;
-    if (*s).statuslines == 0 as u_int {
-        (*s).statusat = -(1 as ::core::ffi::c_int);
-    } else if options_get_number(&(*s).borrow_options_mut(), c"status-position")
+pub(super) unsafe fn status_update_cache(s: &mut session) {
+    let statuslines = options_get_number(&s.borrow_options_mut(), c"status") as u_int;
+    s.statuslines = statuslines;
+    if s.statuslines == 0 as u_int {
+        s.statusat = -(1 as ::core::ffi::c_int);
+    } else if options_get_number(&s.borrow_options_mut(), c"status-position")
         == 0 as ::core::ffi::c_longlong
     {
-        (*s).statusat = 0 as ::core::ffi::c_int;
+        s.statusat = 0 as ::core::ffi::c_int;
     } else {
-        (*s).statusat = 1 as ::core::ffi::c_int;
+        s.statusat = 1 as ::core::ffi::c_int;
     };
 }

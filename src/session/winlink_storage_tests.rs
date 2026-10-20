@@ -45,8 +45,8 @@ fn shuffle_moves_owners_without_losing_history_and_removal_clears_observers() {
             node.get_mut_unchecked().session = std::rc::Rc::downgrade(&session_owner);
             nodes.push(node);
         }
-        winlink_stack_push(&raw mut session.lastw, (nodes[0]).clone());
-        winlink_stack_push(&raw mut session.lastw, (nodes[1]).clone());
+        winlink_stack_push(&mut session.lastw, (nodes[0]).clone());
+        winlink_stack_push(&mut session.lastw, (nodes[1]).clone());
         let weak = session
             .windows
             .try_borrow_mut()

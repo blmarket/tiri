@@ -1,7 +1,7 @@
 use super::types::{
-    monitor_cb, monitor_change, monitor_item, monitor_items, monitor_pane, monitor_panes,
-    monitor_type, monitor_window, monitor_windows, MONITOR_ALL_PANES, MONITOR_ALL_WINDOWS,
-    MONITOR_NOTIFY_INITIAL, MONITOR_NOTIFY_TRUE, MONITOR_PANE, MONITOR_SESSION, MONITOR_WINDOW,
+    monitor_cb, monitor_change, monitor_item, monitor_items, monitor_pane, monitor_type,
+    monitor_window, MONITOR_ALL_PANES, MONITOR_ALL_WINDOWS, MONITOR_NOTIFY_INITIAL,
+    MONITOR_NOTIFY_TRUE, MONITOR_PANE, MONITOR_SESSION, MONITOR_WINDOW,
 };
 use crate::format::{format_create, format_defaults, format_expand_cstring, format_true};
 use crate::log::{log_cstr, log_debug};
@@ -171,36 +171,30 @@ unsafe fn monitor_check_value(
         let last = match target {
             MonitorValueTarget::Session => &mut item.last,
             MonitorValueTarget::Pane(pane, index) => {
-                let mut record = monitor_panes_find(&mut item.panes, pane, index);
-                if record.is_null() {
-                    let mut owner = Box::new(monitor_pane {
+                let record = item.panes.entry((pane, index)).or_insert_with(|| {
+                    Box::new(monitor_pane {
                         pane,
                         idx: index,
                         ..monitor_pane::empty()
-                    });
-                    record = &raw mut *owner;
-                    assert!(monitor_panes_insert(&mut item.panes, owner).is_ok());
-                }
+                    })
+                });
                 if let Some(generation) = generation {
-                    (*record).generation = generation;
+                    record.generation = generation;
                 }
-                &mut (*record).last
+                &mut record.last
             }
             MonitorValueTarget::Window(window, index) => {
-                let mut record = monitor_windows_find(&mut item.windows, window, index);
-                if record.is_null() {
-                    let mut owner = Box::new(monitor_window {
+                let record = item.windows.entry((window, index)).or_insert_with(|| {
+                    Box::new(monitor_window {
                         window,
                         idx: index,
                         ..monitor_window::empty()
-                    });
-                    record = &raw mut *owner;
-                    assert!(monitor_windows_insert(&mut item.windows, owner).is_ok());
-                }
+                    })
+                });
                 if let Some(generation) = generation {
-                    (*record).generation = generation;
+                    record.generation = generation;
                 }
-                &mut (*record).last
+                &mut record.last
             }
         };
         if last.as_deref() == Some(value) {
@@ -773,55 +767,14 @@ pub fn monitor_get_fire_time(monitor: &refbox::Weak<monitor_set>, name: &CStr) -
         .unwrap_or(0)
 }
 
+/// Insert `elm` unless its name is taken; a duplicate is handed back.
 fn monitor_items_insert(
     head: &mut monitor_items,
     elm: Box<monitor_item>,
-) -> Result<(), (*mut monitor_item, Box<monitor_item>)> {
+) -> Result<(), Box<monitor_item>> {
     let key = elm.name.clone();
     match head.entry(key) {
-        std::collections::btree_map::Entry::Occupied(mut entry) => {
-            Err((&raw mut **entry.get_mut(), elm))
-        }
-        std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(elm);
-            Ok(())
-        }
-    }
-}
-
-fn monitor_panes_find(head: &mut monitor_panes, pane: u32, idx: u32) -> *mut monitor_pane {
-    head.get_mut(&(pane, idx))
-        .map_or(std::ptr::null_mut(), |node| &raw mut **node)
-}
-fn monitor_panes_insert(
-    head: &mut monitor_panes,
-    elm: Box<monitor_pane>,
-) -> Result<(), (*mut monitor_pane, Box<monitor_pane>)> {
-    let key = (elm.pane, elm.idx);
-    match head.entry(key) {
-        std::collections::btree_map::Entry::Occupied(mut entry) => {
-            Err((&raw mut **entry.get_mut(), elm))
-        }
-        std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(elm);
-            Ok(())
-        }
-    }
-}
-
-fn monitor_windows_find(head: &mut monitor_windows, window: u32, idx: u32) -> *mut monitor_window {
-    head.get_mut(&(window, idx))
-        .map_or(std::ptr::null_mut(), |node| &raw mut **node)
-}
-fn monitor_windows_insert(
-    head: &mut monitor_windows,
-    elm: Box<monitor_window>,
-) -> Result<(), (*mut monitor_window, Box<monitor_window>)> {
-    let key = (elm.window, elm.idx);
-    match head.entry(key) {
-        std::collections::btree_map::Entry::Occupied(mut entry) => {
-            Err((&raw mut **entry.get_mut(), elm))
-        }
+        std::collections::btree_map::Entry::Occupied(_) => Err(elm),
         std::collections::btree_map::Entry::Vacant(entry) => {
             entry.insert(elm);
             Ok(())
@@ -1006,12 +959,15 @@ mod ownership_tests {
         }
 
         let mut head = monitor_items::new();
-        let mut first_owner = item("alpha");
-        let first = &raw mut *first_owner;
-        assert!(monitor_items_insert(&mut head, first_owner).is_ok());
+        let mut first = item("alpha");
+        first.id = 1;
+        assert!(monitor_items_insert(&mut head, first).is_ok());
         assert!(monitor_items_insert(&mut head, item("beta")).is_ok());
-        let (existing, _duplicate) = monitor_items_insert(&mut head, item("alpha"))
-            .expect_err("duplicate returned to caller");
-        assert_eq!(existing, first);
+        let mut second = item("alpha");
+        second.id = 2;
+        let duplicate =
+            monitor_items_insert(&mut head, second).expect_err("duplicate returned to caller");
+        assert_eq!(duplicate.id, 2);
+        assert_eq!(head[c"alpha"].id, 1);
     }
 }

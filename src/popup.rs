@@ -533,34 +533,34 @@ unsafe fn popup_resize(c_owner: &ClientRef, popup: &PopupGuard) {
         }
     }
 }
-unsafe fn popup_handle_drag(c_owner: &ClientRef, popup: &PopupGuard, mut m: *mut mouse_event) {
+unsafe fn popup_handle_drag(c_owner: &ClientRef, popup: &PopupGuard, m: &mouse_event) {
     let (terminal_sx, terminal_sy) = c_owner.terminal_size();
     let pd = popup.as_ptr();
     let mut px: u_int = 0;
     let mut py: u_int = 0;
-    if (*m).b & MOUSE_MASK_DRAG as u_int == 0 {
+    if m.b & MOUSE_MASK_DRAG as u_int == 0 {
         (*pd).dragging = OFF;
     } else if (*pd).dragging as ::core::ffi::c_uint
         == MOVE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        if (*m).x < (*pd).dx {
+        if m.x < (*pd).dx {
             px = 0 as u_int;
-        } else if (*m).x.wrapping_sub((*pd).dx).wrapping_add((*pd).sx) > terminal_sx {
+        } else if m.x.wrapping_sub((*pd).dx).wrapping_add((*pd).sx) > terminal_sx {
             px = terminal_sx.wrapping_sub((*pd).sx);
         } else {
-            px = (*m).x.wrapping_sub((*pd).dx);
+            px = m.x.wrapping_sub((*pd).dx);
         }
-        if (*m).y < (*pd).dy {
+        if m.y < (*pd).dy {
             py = 0 as u_int;
-        } else if (*m).y.wrapping_sub((*pd).dy).wrapping_add((*pd).sy) > terminal_sy {
+        } else if m.y.wrapping_sub((*pd).dy).wrapping_add((*pd).sy) > terminal_sy {
             py = terminal_sy.wrapping_sub((*pd).sy);
         } else {
-            py = (*m).y.wrapping_sub((*pd).dy);
+            py = m.y.wrapping_sub((*pd).dy);
         }
         (*pd).px = px;
         (*pd).py = py;
-        (*pd).dx = (*m).x.wrapping_sub((*pd).px);
-        (*pd).dy = (*m).y.wrapping_sub((*pd).py);
+        (*pd).dx = m.x.wrapping_sub((*pd).px);
+        (*pd).dy = m.y.wrapping_sub((*pd).py);
         (*pd).ppx = px;
         (*pd).ppy = py;
         c_owner.request_redraw(CLIENT_ALLREDRAWFLAGS as u64);
@@ -568,22 +568,22 @@ unsafe fn popup_handle_drag(c_owner: &ClientRef, popup: &PopupGuard, mut m: *mut
         == SIZE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         if (*pd).border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
-            if (*m).x < (*pd).px.wrapping_add(1 as u_int) {
+            if m.x < (*pd).px.wrapping_add(1 as u_int) {
                 return;
             }
-            if (*m).y < (*pd).py.wrapping_add(1 as u_int) {
+            if m.y < (*pd).py.wrapping_add(1 as u_int) {
                 return;
             }
         } else {
-            if (*m).x < (*pd).px.wrapping_add(3 as u_int) {
+            if m.x < (*pd).px.wrapping_add(3 as u_int) {
                 return;
             }
-            if (*m).y < (*pd).py.wrapping_add(3 as u_int) {
+            if m.y < (*pd).py.wrapping_add(3 as u_int) {
                 return;
             }
         }
-        (*pd).sx = (*m).x.wrapping_sub((*pd).px);
-        (*pd).sy = (*m).y.wrapping_sub((*pd).py);
+        (*pd).sx = m.x.wrapping_sub((*pd).px);
+        (*pd).sy = m.y.wrapping_sub((*pd).py);
         (*pd).psx = (*pd).sx;
         (*pd).psy = (*pd).sy;
         if (*pd).border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
@@ -612,7 +612,7 @@ unsafe fn popup_handle_drag(c_owner: &ClientRef, popup: &PopupGuard, mut m: *mut
 unsafe fn popup_key(c_owner: &ClientRef, popup: &PopupGuard, event: &mut key_event) -> i32 {
     let pd = popup.as_ptr();
     let mut current_block: u64;
-    let mut m: *mut mouse_event = &raw mut (*event).m;
+    let m = &event.m;
     let mut px: u_int = 0;
     let mut py: u_int = 0;
     let mut border: C2RustUnnamed_40 = NONE;
@@ -630,47 +630,47 @@ unsafe fn popup_key(c_owner: &ClientRef, popup: &PopupGuard, event: &mut key_eve
             popup_handle_drag(c_owner, popup, m);
             current_block = 9022331712714349549;
         } else {
-            if (*m).x < (*pd).px
-                || (*m).x > (*pd).px.wrapping_add((*pd).sx).wrapping_sub(1 as u_int)
-                || (*m).y < (*pd).py
-                || (*m).y > (*pd).py.wrapping_add((*pd).sy).wrapping_sub(1 as u_int)
+            if m.x < (*pd).px
+                || m.x > (*pd).px.wrapping_add((*pd).sx).wrapping_sub(1 as u_int)
+                || m.y < (*pd).py
+                || m.y > (*pd).py.wrapping_add((*pd).sy).wrapping_sub(1 as u_int)
             {
                 return 0 as ::core::ffi::c_int;
             }
             if (*pd).border_lines as ::core::ffi::c_int != BOX_LINES_NONE as ::core::ffi::c_int {
-                if (*m).x == (*pd).px {
+                if m.x == (*pd).px {
                     border = LEFT;
-                } else if (*m).x == (*pd).px.wrapping_add((*pd).sx).wrapping_sub(1 as u_int) {
+                } else if m.x == (*pd).px.wrapping_add((*pd).sx).wrapping_sub(1 as u_int) {
                     border = RIGHT;
-                } else if (*m).y == (*pd).py {
+                } else if m.y == (*pd).py {
                     border = TOP;
-                } else if (*m).y == (*pd).py.wrapping_add((*pd).sy).wrapping_sub(1 as u_int) {
+                } else if m.y == (*pd).py.wrapping_add((*pd).sy).wrapping_sub(1 as u_int) {
                     border = BOTTOM;
                 }
             }
-            if (*m).b & MOUSE_MASK_MODIFIERS as u_int == 0 as u_int
-                && (*m).b & MOUSE_MASK_BUTTONS as u_int == MOUSE_BUTTON_3 as u_int
+            if m.b & MOUSE_MASK_MODIFIERS as u_int == 0 as u_int
+                && m.b & MOUSE_MASK_BUTTONS as u_int == MOUSE_BUTTON_3 as u_int
                 && (border as ::core::ffi::c_uint
                     == LEFT as ::core::ffi::c_int as ::core::ffi::c_uint
                     || border as ::core::ffi::c_uint
                         == TOP as ::core::ffi::c_int as ::core::ffi::c_uint)
             {
                 current_block = 9022331712714349549;
-            } else if (*m).b & MOUSE_MASK_MODIFIERS as u_int == MOUSE_MASK_META as u_int
+            } else if m.b & MOUSE_MASK_MODIFIERS as u_int == MOUSE_MASK_META as u_int
                 || border as ::core::ffi::c_uint
                     != NONE as ::core::ffi::c_int as ::core::ffi::c_uint
-                    && (*m).lb & MOUSE_MASK_DRAG as u_int == 0
+                    && m.lb & MOUSE_MASK_DRAG as u_int == 0
             {
-                if (*m).b & MOUSE_MASK_DRAG as u_int == 0 {
+                if m.b & MOUSE_MASK_DRAG as u_int == 0 {
                     current_block = 9022331712714349549;
                 } else {
-                    if (*m).lb & MOUSE_MASK_BUTTONS as u_int == MOUSE_BUTTON_1 as u_int {
+                    if m.lb & MOUSE_MASK_BUTTONS as u_int == MOUSE_BUTTON_1 as u_int {
                         (*pd).dragging = MOVE;
-                    } else if (*m).lb & MOUSE_MASK_BUTTONS as u_int == MOUSE_BUTTON_3 as u_int {
+                    } else if m.lb & MOUSE_MASK_BUTTONS as u_int == MOUSE_BUTTON_3 as u_int {
                         (*pd).dragging = SIZE;
                     }
-                    (*pd).dx = (*m).lx.wrapping_sub((*pd).px);
-                    (*pd).dy = (*m).ly.wrapping_sub((*pd).py);
+                    (*pd).dx = m.lx.wrapping_sub((*pd).px);
+                    (*pd).dy = m.ly.wrapping_sub((*pd).py);
                     current_block = 9022331712714349549;
                 }
             } else {
@@ -680,9 +680,9 @@ unsafe fn popup_key(c_owner: &ClientRef, popup: &PopupGuard, event: &mut key_eve
         match current_block {
             13472856163611868459 => {}
             _ => {
-                (*pd).lx = (*m).x;
-                (*pd).ly = (*m).y;
-                (*pd).lb = (*m).b;
+                (*pd).lx = m.x;
+                (*pd).ly = m.y;
+                (*pd).lb = m.b;
                 return 0 as ::core::ffi::c_int;
             }
         }
@@ -725,13 +725,13 @@ unsafe fn popup_key(c_owner: &ClientRef, popup: &PopupGuard, event: &mut key_eve
                         << 32 as ::core::ffi::c_int
         {
             if (*pd).border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
-                px = (*m).x.wrapping_sub((*pd).px);
-                py = (*m).y.wrapping_sub((*pd).py);
+                px = m.x.wrapping_sub((*pd).px);
+                py = m.y.wrapping_sub((*pd).py);
             } else {
-                px = (*m).x.wrapping_sub((*pd).px).wrapping_sub(1 as u_int);
-                py = (*m).y.wrapping_sub((*pd).py).wrapping_sub(1 as u_int);
+                px = m.x.wrapping_sub((*pd).px).wrapping_sub(1 as u_int);
+                py = m.y.wrapping_sub((*pd).py).wrapping_sub(1 as u_int);
             }
-            let Some(buf) = input_key_get_mouse(ScreenMode::from(&(*pd).s), &*m, px, py) else {
+            let Some(buf) = input_key_get_mouse(ScreenMode::from(&(*pd).s), m, px, py) else {
                 return 0 as ::core::ffi::c_int;
             };
             bufferevent_write(job_get_event(&(*pd).job), &buf);

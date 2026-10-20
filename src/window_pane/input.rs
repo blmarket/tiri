@@ -2197,7 +2197,7 @@ pub(super) unsafe fn input_parse_pane(wp_owner: &std::rc::Rc<std::cell::UnsafeCe
         (*wp).last_output_time = crate::shared::time::unix_seconds(std::time::SystemTime::now());
     }
     input_parse_buffer(wp_owner, &data);
-    window_pane_update_used_data(wp_owner, &raw mut (*wp).offset, data.len());
+    window_pane_update_used_data(wp_owner, |wp| &mut wp.offset, data.len());
 }
 pub(super) unsafe fn input_parse_buffer(
     wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
@@ -2266,16 +2266,14 @@ fn input_split_fields(buf: &mut [u8], delim: u8) -> impl Iterator<Item = &CStr> 
         .map(|field| CStr::from_bytes_with_nul(field).expect("field is terminated"))
 }
 unsafe fn input_split(ictx: &mut input_ctx) -> ::core::ffi::c_int {
-    let mut ip: *mut input_param = ::core::ptr::null_mut::<input_param>();
-    let mut i: u_int = 0;
     input_clear_params(ictx);
     ictx.param_list_len = 0 as u_int;
     if ictx.param_len == 0 as size_t {
         return 0 as ::core::ffi::c_int;
     }
-    ip = (&raw mut ictx.param_list as *mut input_param).offset(0 as ::core::ffi::c_int as isize);
     let mut params = ictx.param_buf;
     for out in input_split_fields(&mut params, b';') {
+        let ip = &mut ictx.param_list[ictx.param_list_len as usize];
         if out.is_empty() {
             *ip = input_param::Missing;
         } else if out.to_bytes().contains(&b':') {
@@ -2287,49 +2285,36 @@ unsafe fn input_split(ictx: &mut input_ctx) -> ::core::ffi::c_int {
             *ip = input_param::Number(number as ::core::ffi::c_int);
         }
         ictx.param_list_len = ictx.param_list_len.wrapping_add(1);
-        ip = (&raw mut ictx.param_list as *mut input_param).offset(ictx.param_list_len as isize);
-        if ictx.param_list_len as usize
-            == (::core::mem::size_of::<[input_param; 24]>() as usize)
-                .wrapping_div(::core::mem::size_of::<input_param>() as usize)
-        {
+        if ictx.param_list_len as usize == ictx.param_list.len() {
             return -(1 as ::core::ffi::c_int);
         }
     }
-    i = 0 as u_int;
-    while i < ictx.param_list_len {
-        ip = (&raw mut ictx.param_list as *mut input_param).offset(i as isize);
-        match &*ip {
-            input_param::Missing => log_debug(format_args!("parameter {}: missing", (i) as u32)),
+    for (i, ip) in ictx.param_list[..ictx.param_list_len as usize]
+        .iter()
+        .enumerate()
+    {
+        match ip {
+            input_param::Missing => log_debug(format_args!("parameter {}: missing", i)),
             input_param::String(value) => {
-                log_debug(format_args!(
-                    "parameter {}: string {}",
-                    (i) as u32,
-                    log_cstr(value)
-                ));
+                log_debug(format_args!("parameter {}: string {}", i, log_cstr(value)));
             }
             input_param::Number(value) => {
-                log_debug(format_args!("parameter {}: number {}", (i) as u32, {
-                    *value
-                }))
+                log_debug(format_args!("parameter {}: number {}", i, value))
             }
         }
-        i = i.wrapping_add(1);
     }
     0 as ::core::ffi::c_int
 }
-unsafe fn input_get(
-    ictx: &mut input_ctx,
-    mut validx: u_int,
-    mut minval: ::core::ffi::c_int,
-    mut defval: ::core::ffi::c_int,
+fn input_get(
+    ictx: &input_ctx,
+    validx: u_int,
+    minval: ::core::ffi::c_int,
+    defval: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut ip: *mut input_param = ::core::ptr::null_mut::<input_param>();
-    let mut retval: ::core::ffi::c_int = 0;
     if validx >= ictx.param_list_len {
         return defval;
     }
-    ip = (&raw mut ictx.param_list as *mut input_param).offset(validx as isize);
-    retval = match &*ip {
+    let retval = match &ictx.param_list[validx as usize] {
         input_param::Missing => return defval,
         input_param::String(_) => return -1,
         input_param::Number(value) => *value,
@@ -3451,7 +3436,6 @@ unsafe fn input_csi_dispatch_rm_private(ictx: &mut input_ctx, sctx: &mut screen_
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
-    let mut gc: *mut grid_cell = &raw mut ictx.cell.cell;
     let mut i: u_int = 0;
     i = 0 as u_int;
     while i < ictx.param_list_len {
@@ -3467,7 +3451,7 @@ unsafe fn input_csi_dispatch_rm_private(ictx: &mut input_ctx, sctx: &mut screen_
                     0 as ::core::ffi::c_int,
                     1 as ::core::ffi::c_int,
                 );
-                screen_write_clearscreen(sctx, (*gc).bg as u_int);
+                screen_write_clearscreen(sctx, ictx.cell.cell.bg as u_int);
             }
             6 => {
                 screen_write_mode_clear(sctx, MODE_ORIGIN);
@@ -3501,10 +3485,10 @@ unsafe fn input_csi_dispatch_rm_private(ictx: &mut input_ctx, sctx: &mut screen_
                 screen_write_mode_clear(sctx, MODE_MOUSE_SGR);
             }
             47 | 1047 => {
-                screen_write_alternateoff(sctx, &mut *gc, 0 as ::core::ffi::c_int);
+                screen_write_alternateoff(sctx, &mut ictx.cell.cell, 0 as ::core::ffi::c_int);
             }
             1049 => {
-                screen_write_alternateoff(sctx, &mut *gc, 1 as ::core::ffi::c_int);
+                screen_write_alternateoff(sctx, &mut ictx.cell.cell, 1 as ::core::ffi::c_int);
             }
             2004 => {
                 screen_write_mode_clear(sctx, MODE_BRACKETPASTE);
@@ -3557,7 +3541,6 @@ unsafe fn input_csi_dispatch_sm_private(ictx: &mut input_ctx, sctx: &mut screen_
     let input_pane = input_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
-    let mut gc: *mut grid_cell = &raw mut ictx.cell.cell;
     let mut i: u_int = 0;
     i = 0 as u_int;
     while i < ictx.param_list_len {
@@ -3616,10 +3599,10 @@ unsafe fn input_csi_dispatch_sm_private(ictx: &mut input_ctx, sctx: &mut screen_
                 screen_write_mode_set(sctx, MODE_MOUSE_SGR);
             }
             47 | 1047 => {
-                screen_write_alternateon(sctx, &*gc, 0 as ::core::ffi::c_int);
+                screen_write_alternateon(sctx, &ictx.cell.cell, 0 as ::core::ffi::c_int);
             }
             1049 => {
-                screen_write_alternateon(sctx, &*gc, 1 as ::core::ffi::c_int);
+                screen_write_alternateon(sctx, &ictx.cell.cell, 1 as ::core::ffi::c_int);
             }
             2004 => {
                 screen_write_mode_set(sctx, MODE_BRACKETPASTE);
@@ -3816,19 +3799,18 @@ unsafe fn input_csi_dispatch_sgr_256_do(
     mut fgbg: ::core::ffi::c_int,
     mut c: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut gc: *mut grid_cell = &raw mut ictx.cell.cell;
     if c == -(1 as ::core::ffi::c_int) || c > 255 as ::core::ffi::c_int {
         if fgbg == 38 as ::core::ffi::c_int {
-            (*gc).fg = 8 as ::core::ffi::c_int;
+            ictx.cell.cell.fg = 8 as ::core::ffi::c_int;
         } else if fgbg == 48 as ::core::ffi::c_int {
-            (*gc).bg = 8 as ::core::ffi::c_int;
+            ictx.cell.cell.bg = 8 as ::core::ffi::c_int;
         }
     } else if fgbg == 38 as ::core::ffi::c_int {
-        (*gc).fg = c | COLOUR_FLAG_256;
+        ictx.cell.cell.fg = c | COLOUR_FLAG_256;
     } else if fgbg == 48 as ::core::ffi::c_int {
-        (*gc).bg = c | COLOUR_FLAG_256;
+        ictx.cell.cell.bg = c | COLOUR_FLAG_256;
     } else if fgbg == 58 as ::core::ffi::c_int {
-        (*gc).us = c | COLOUR_FLAG_256;
+        ictx.cell.cell.us = c | COLOUR_FLAG_256;
     }
     1 as ::core::ffi::c_int
 }
@@ -3855,7 +3837,6 @@ unsafe fn input_csi_dispatch_sgr_rgb_do(
     mut g: ::core::ffi::c_int,
     mut b: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut gc: *mut grid_cell = &raw mut ictx.cell.cell;
     if r == -(1 as ::core::ffi::c_int) || r > 255 as ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
@@ -3866,11 +3847,11 @@ unsafe fn input_csi_dispatch_sgr_rgb_do(
         return 0 as ::core::ffi::c_int;
     }
     if fgbg == 38 as ::core::ffi::c_int {
-        (*gc).fg = colour_join_rgb(r as u_char, g as u_char, b as u_char);
+        ictx.cell.cell.fg = colour_join_rgb(r as u_char, g as u_char, b as u_char);
     } else if fgbg == 48 as ::core::ffi::c_int {
-        (*gc).bg = colour_join_rgb(r as u_char, g as u_char, b as u_char);
+        ictx.cell.cell.bg = colour_join_rgb(r as u_char, g as u_char, b as u_char);
     } else if fgbg == 58 as ::core::ffi::c_int {
-        (*gc).us = colour_join_rgb(r as u_char, g as u_char, b as u_char);
+        ictx.cell.cell.us = colour_join_rgb(r as u_char, g as u_char, b as u_char);
     }
     1 as ::core::ffi::c_int
 }
@@ -3905,7 +3886,6 @@ unsafe fn input_csi_dispatch_sgr_rgb(
     }
 }
 unsafe fn input_csi_dispatch_sgr_colon(ictx: &mut input_ctx, mut i: u_int) {
-    let mut gc: *mut grid_cell = &raw mut ictx.cell.cell;
     let s = match &ictx.param_list[i as usize] {
         input_param::String(value) => value.as_c_str(),
         _ => panic!("SGR colon parser requires a string parameter"),
@@ -3960,33 +3940,38 @@ unsafe fn input_csi_dispatch_sgr_colon(ictx: &mut input_ctx, mut i: u_int) {
         }
         match p[1 as ::core::ffi::c_int as usize] {
             0 => {
-                (*gc).attr =
-                    ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_ALL_UNDERSCORE) as u_short;
+                ictx.cell.cell.attr = (ictx.cell.cell.attr as ::core::ffi::c_int
+                    & !GRID_ATTR_ALL_UNDERSCORE) as u_short;
             }
             1 => {
-                (*gc).attr =
-                    ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_ALL_UNDERSCORE) as u_short;
-                (*gc).attr = ((*gc).attr as ::core::ffi::c_int | GRID_ATTR_UNDERSCORE) as u_short;
+                ictx.cell.cell.attr = (ictx.cell.cell.attr as ::core::ffi::c_int
+                    & !GRID_ATTR_ALL_UNDERSCORE) as u_short;
+                ictx.cell.cell.attr =
+                    (ictx.cell.cell.attr as ::core::ffi::c_int | GRID_ATTR_UNDERSCORE) as u_short;
             }
             2 => {
-                (*gc).attr =
-                    ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_ALL_UNDERSCORE) as u_short;
-                (*gc).attr = ((*gc).attr as ::core::ffi::c_int | GRID_ATTR_UNDERSCORE_2) as u_short;
+                ictx.cell.cell.attr = (ictx.cell.cell.attr as ::core::ffi::c_int
+                    & !GRID_ATTR_ALL_UNDERSCORE) as u_short;
+                ictx.cell.cell.attr =
+                    (ictx.cell.cell.attr as ::core::ffi::c_int | GRID_ATTR_UNDERSCORE_2) as u_short;
             }
             3 => {
-                (*gc).attr =
-                    ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_ALL_UNDERSCORE) as u_short;
-                (*gc).attr = ((*gc).attr as ::core::ffi::c_int | GRID_ATTR_UNDERSCORE_3) as u_short;
+                ictx.cell.cell.attr = (ictx.cell.cell.attr as ::core::ffi::c_int
+                    & !GRID_ATTR_ALL_UNDERSCORE) as u_short;
+                ictx.cell.cell.attr =
+                    (ictx.cell.cell.attr as ::core::ffi::c_int | GRID_ATTR_UNDERSCORE_3) as u_short;
             }
             4 => {
-                (*gc).attr =
-                    ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_ALL_UNDERSCORE) as u_short;
-                (*gc).attr = ((*gc).attr as ::core::ffi::c_int | GRID_ATTR_UNDERSCORE_4) as u_short;
+                ictx.cell.cell.attr = (ictx.cell.cell.attr as ::core::ffi::c_int
+                    & !GRID_ATTR_ALL_UNDERSCORE) as u_short;
+                ictx.cell.cell.attr =
+                    (ictx.cell.cell.attr as ::core::ffi::c_int | GRID_ATTR_UNDERSCORE_4) as u_short;
             }
             5 => {
-                (*gc).attr =
-                    ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_ALL_UNDERSCORE) as u_short;
-                (*gc).attr = ((*gc).attr as ::core::ffi::c_int | GRID_ATTR_UNDERSCORE_5) as u_short;
+                ictx.cell.cell.attr = (ictx.cell.cell.attr as ::core::ffi::c_int
+                    & !GRID_ATTR_ALL_UNDERSCORE) as u_short;
+                ictx.cell.cell.attr =
+                    (ictx.cell.cell.attr as ::core::ffi::c_int | GRID_ATTR_UNDERSCORE_5) as u_short;
             }
             _ => {}
         }
@@ -4083,12 +4068,11 @@ mod sgr_colon_tests {
     }
 }
 unsafe fn input_csi_dispatch_sgr(ictx: &mut input_ctx) {
-    let mut gc: *mut grid_cell = &raw mut ictx.cell.cell;
     let mut i: u_int = 0;
     let mut link: u_int = 0;
     let mut n: ::core::ffi::c_int = 0;
     if ictx.param_list_len == 0 as u_int {
-        *gc = grid_default_cell;
+        ictx.cell.cell = grid_default_cell;
         return;
     }
     i = 0 as u_int;
@@ -4115,112 +4099,126 @@ unsafe fn input_csi_dispatch_sgr(ictx: &mut input_ctx) {
                 } else {
                     match n {
                         0 => {
-                            link = (*gc).link;
-                            *gc = grid_default_cell;
-                            (*gc).link = link;
+                            link = ictx.cell.cell.link;
+                            ictx.cell.cell = grid_default_cell;
+                            ictx.cell.cell.link = link;
                         }
                         1 => {
-                            (*gc).attr =
-                                ((*gc).attr as ::core::ffi::c_int | GRID_ATTR_BRIGHT) as u_short;
+                            ictx.cell.cell.attr = (ictx.cell.cell.attr as ::core::ffi::c_int
+                                | GRID_ATTR_BRIGHT)
+                                as u_short;
                         }
                         2 => {
-                            (*gc).attr =
-                                ((*gc).attr as ::core::ffi::c_int | GRID_ATTR_DIM) as u_short;
+                            ictx.cell.cell.attr = (ictx.cell.cell.attr as ::core::ffi::c_int
+                                | GRID_ATTR_DIM)
+                                as u_short;
                         }
                         3 => {
-                            (*gc).attr =
-                                ((*gc).attr as ::core::ffi::c_int | GRID_ATTR_ITALICS) as u_short;
+                            ictx.cell.cell.attr = (ictx.cell.cell.attr as ::core::ffi::c_int
+                                | GRID_ATTR_ITALICS)
+                                as u_short;
                         }
                         4 => {
-                            (*gc).attr = ((*gc).attr as ::core::ffi::c_int
+                            ictx.cell.cell.attr = (ictx.cell.cell.attr as ::core::ffi::c_int
                                 & !GRID_ATTR_ALL_UNDERSCORE)
                                 as u_short;
-                            (*gc).attr = ((*gc).attr as ::core::ffi::c_int | GRID_ATTR_UNDERSCORE)
+                            ictx.cell.cell.attr = (ictx.cell.cell.attr as ::core::ffi::c_int
+                                | GRID_ATTR_UNDERSCORE)
                                 as u_short;
                         }
                         5 | 6 => {
-                            (*gc).attr =
-                                ((*gc).attr as ::core::ffi::c_int | GRID_ATTR_BLINK) as u_short;
+                            ictx.cell.cell.attr = (ictx.cell.cell.attr as ::core::ffi::c_int
+                                | GRID_ATTR_BLINK)
+                                as u_short;
                         }
                         7 => {
-                            (*gc).attr =
-                                ((*gc).attr as ::core::ffi::c_int | GRID_ATTR_REVERSE) as u_short;
+                            ictx.cell.cell.attr = (ictx.cell.cell.attr as ::core::ffi::c_int
+                                | GRID_ATTR_REVERSE)
+                                as u_short;
                         }
                         8 => {
-                            (*gc).attr =
-                                ((*gc).attr as ::core::ffi::c_int | GRID_ATTR_HIDDEN) as u_short;
+                            ictx.cell.cell.attr = (ictx.cell.cell.attr as ::core::ffi::c_int
+                                | GRID_ATTR_HIDDEN)
+                                as u_short;
                         }
                         9 => {
-                            (*gc).attr = ((*gc).attr as ::core::ffi::c_int
+                            ictx.cell.cell.attr = (ictx.cell.cell.attr as ::core::ffi::c_int
                                 | GRID_ATTR_STRIKETHROUGH)
                                 as u_short;
                         }
                         21 => {
-                            (*gc).attr = ((*gc).attr as ::core::ffi::c_int
+                            ictx.cell.cell.attr = (ictx.cell.cell.attr as ::core::ffi::c_int
                                 & !GRID_ATTR_ALL_UNDERSCORE)
                                 as u_short;
-                            (*gc).attr = ((*gc).attr as ::core::ffi::c_int | GRID_ATTR_UNDERSCORE_2)
+                            ictx.cell.cell.attr = (ictx.cell.cell.attr as ::core::ffi::c_int
+                                | GRID_ATTR_UNDERSCORE_2)
                                 as u_short;
                         }
                         22 => {
-                            (*gc).attr = ((*gc).attr as ::core::ffi::c_int
+                            ictx.cell.cell.attr = (ictx.cell.cell.attr as ::core::ffi::c_int
                                 & !(GRID_ATTR_BRIGHT | GRID_ATTR_DIM))
                                 as u_short;
                         }
                         23 => {
-                            (*gc).attr =
-                                ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_ITALICS) as u_short;
+                            ictx.cell.cell.attr = (ictx.cell.cell.attr as ::core::ffi::c_int
+                                & !GRID_ATTR_ITALICS)
+                                as u_short;
                         }
                         24 => {
-                            (*gc).attr = ((*gc).attr as ::core::ffi::c_int
+                            ictx.cell.cell.attr = (ictx.cell.cell.attr as ::core::ffi::c_int
                                 & !GRID_ATTR_ALL_UNDERSCORE)
                                 as u_short;
                         }
                         25 => {
-                            (*gc).attr =
-                                ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_BLINK) as u_short;
+                            ictx.cell.cell.attr = (ictx.cell.cell.attr as ::core::ffi::c_int
+                                & !GRID_ATTR_BLINK)
+                                as u_short;
                         }
                         27 => {
-                            (*gc).attr =
-                                ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_REVERSE) as u_short;
+                            ictx.cell.cell.attr = (ictx.cell.cell.attr as ::core::ffi::c_int
+                                & !GRID_ATTR_REVERSE)
+                                as u_short;
                         }
                         28 => {
-                            (*gc).attr =
-                                ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_HIDDEN) as u_short;
+                            ictx.cell.cell.attr = (ictx.cell.cell.attr as ::core::ffi::c_int
+                                & !GRID_ATTR_HIDDEN)
+                                as u_short;
                         }
                         29 => {
-                            (*gc).attr = ((*gc).attr as ::core::ffi::c_int
+                            ictx.cell.cell.attr = (ictx.cell.cell.attr as ::core::ffi::c_int
                                 & !GRID_ATTR_STRIKETHROUGH)
                                 as u_short;
                         }
                         30..=37 => {
-                            (*gc).fg = n - 30 as ::core::ffi::c_int;
+                            ictx.cell.cell.fg = n - 30 as ::core::ffi::c_int;
                         }
                         39 => {
-                            (*gc).fg = 8 as ::core::ffi::c_int;
+                            ictx.cell.cell.fg = 8 as ::core::ffi::c_int;
                         }
                         40..=47 => {
-                            (*gc).bg = n - 40 as ::core::ffi::c_int;
+                            ictx.cell.cell.bg = n - 40 as ::core::ffi::c_int;
                         }
                         49 => {
-                            (*gc).bg = 8 as ::core::ffi::c_int;
+                            ictx.cell.cell.bg = 8 as ::core::ffi::c_int;
                         }
                         53 => {
-                            (*gc).attr =
-                                ((*gc).attr as ::core::ffi::c_int | GRID_ATTR_OVERLINE) as u_short;
+                            ictx.cell.cell.attr = (ictx.cell.cell.attr as ::core::ffi::c_int
+                                | GRID_ATTR_OVERLINE)
+                                as u_short;
                         }
                         55 => {
-                            (*gc).attr =
-                                ((*gc).attr as ::core::ffi::c_int & !GRID_ATTR_OVERLINE) as u_short;
+                            ictx.cell.cell.attr = (ictx.cell.cell.attr as ::core::ffi::c_int
+                                & !GRID_ATTR_OVERLINE)
+                                as u_short;
                         }
                         59 => {
-                            (*gc).us = 8 as ::core::ffi::c_int;
+                            ictx.cell.cell.us = 8 as ::core::ffi::c_int;
                         }
                         90..=97 => {
-                            (*gc).fg = n;
+                            ictx.cell.cell.fg = n;
                         }
                         100..=107 => {
-                            (*gc).bg = n - 10 as ::core::ffi::c_int;
+                            ictx.cell.cell.bg = n - 10 as ::core::ffi::c_int;
                         }
                         _ => {}
                     }
@@ -4579,18 +4577,17 @@ unsafe fn input_top_bit_set(
     ictx: &mut input_ctx,
     sctx: &mut screen_write_ctx,
 ) -> ::core::ffi::c_int {
-    let mut ud: *mut utf8_data = &raw mut ictx.utf8data;
     ictx.flags &= !INPUT_LAST;
     if ictx.utf8started == 0 {
         ictx.utf8started = 1 as ::core::ffi::c_int;
-        if utf8_open(&mut *ud, ictx.ch as u_char) as ::core::ffi::c_uint
+        if utf8_open(&mut ictx.utf8data, ictx.ch as u_char) as ::core::ffi::c_uint
             != UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             input_stop_utf8(ictx, sctx);
         }
         return 0 as ::core::ffi::c_int;
     }
-    match utf8_append(&mut *ud, ictx.ch as u_char) as ::core::ffi::c_uint {
+    match utf8_append(&mut ictx.utf8data, ictx.ch as u_char) as ::core::ffi::c_uint {
         0 => return 0 as ::core::ffi::c_int,
         2 => {
             input_stop_utf8(ictx, sctx);
@@ -4602,14 +4599,14 @@ unsafe fn input_top_bit_set(
     log_debug(format_args!(
         "{} {} '{}' (width {})",
         "input_top_bit_set",
-        ((*ud).size as ::core::ffi::c_int) as u8,
+        (ictx.utf8data.size as ::core::ffi::c_int) as u8,
         log_cstr_width(
-            CStr::from_bytes_until_nul(&(*ud).data).unwrap_or_default(),
-            (*ud).size as ::core::ffi::c_int,
+            CStr::from_bytes_until_nul(&ictx.utf8data.data).unwrap_or_default(),
+            ictx.utf8data.size as ::core::ffi::c_int,
         ),
-        ((*ud).width as ::core::ffi::c_int) as u8
+        (ictx.utf8data.width as ::core::ffi::c_int) as u8
     ));
-    ictx.cell.cell.data = utf8_copy(&*ud);
+    ictx.cell.cell.data = utf8_copy(&ictx.utf8data);
     screen_write_collect_add(sctx, &ictx.cell.cell);
     ictx.last = utf8_copy(&ictx.cell.cell.data);
     ictx.flags |= INPUT_LAST;
@@ -4752,7 +4749,6 @@ unsafe fn input_osc_8(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CSt
         .hyperlinks
         .as_ref()
         .expect("screen hyperlink table");
-    let mut gc: *mut grid_cell = &raw mut ictx.cell.cell;
     let bytes = p.to_bytes();
     let mut start = 0;
     let mut id: Option<std::ffi::CString> = None;
@@ -4780,21 +4776,21 @@ unsafe fn input_osc_8(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CSt
     };
     if let Some(uri) = uri {
         if uri.is_empty() {
-            (*gc).link = 0 as u_int;
+            ictx.cell.cell.link = 0 as u_int;
             return;
         }
-        (*gc).link = hyperlinks_put(hl, uri, id.as_deref());
+        ictx.cell.cell.link = hyperlinks_put(hl, uri, id.as_deref());
         match id.as_deref() {
             None => log_debug(format_args!(
                 "hyperlink (anonymous) {} = {}",
                 log_cstr(uri),
-                { (*gc).link }
+                { ictx.cell.cell.link }
             )),
             Some(id) => log_debug(format_args!(
                 "hyperlink (id={}) {} = {}",
                 log_cstr(id),
                 log_cstr(uri),
-                { (*gc).link }
+                { ictx.cell.cell.link }
             )),
         }
         return;
@@ -5148,16 +5144,18 @@ unsafe fn input_osc_133(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &C
         .as_ref()
         .map_or(std::ptr::null_mut(), |pane| pane.get());
     let mut wp: *mut window_pane = input_pane;
-    let mut gd: *mut grid = sctx.screen.grid_mut();
-    let mut line: u_int = sctx.screen.cy.wrapping_add((*gd).hsize);
+    let cx = sctx.screen.cx;
+    let cy = sctx.screen.cy;
+    let gd = sctx.screen.grid_mut();
+    let mut line: u_int = cy.wrapping_add(gd.hsize);
     let mut status: ::core::ffi::c_int = 0;
-    let line = (line < (*gd).hsize.wrapping_add((*gd).sy)).then_some(line);
+    let line = (line < gd.hsize.wrapping_add(gd.sy)).then_some(line);
     match p.to_bytes_with_nul()[0] as ::core::ffi::c_int {
         65 | 78 => {
             if let Some(line) = line {
-                let gl = grid_get_line_mut(&mut *gd, line);
+                let gl = grid_get_line_mut(gd, line);
                 gl.osc133_data = osc133_data::default();
-                gl.osc133_data.prompt_col = sctx.screen.cx as u_short;
+                gl.osc133_data.prompt_col = cx as u_short;
                 gl.flags = (gl.flags as ::core::ffi::c_int | GRID_LINE_START_PROMPT) as u_short;
             }
             if !wp.is_null() {
@@ -5171,7 +5169,7 @@ unsafe fn input_osc_133(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &C
         }
         80 => {
             if let Some(line) = line {
-                let gl = grid_get_line_mut(&mut *gd, line);
+                let gl = grid_get_line_mut(gd, line);
                 let bytes = p.to_bytes_with_nul();
                 if bytes
                     .windows(4)
@@ -5183,21 +5181,21 @@ unsafe fn input_osc_133(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &C
                 } else {
                     gl.flags = (gl.flags as ::core::ffi::c_int | GRID_LINE_START_PROMPT) as u_short;
                 }
-                gl.osc133_data.prompt_col = sctx.screen.cx as u_short;
+                gl.osc133_data.prompt_col = cx as u_short;
             }
         }
         66 | 73 => {
             if let Some(line) = line {
-                let gl = grid_get_line_mut(&mut *gd, line);
+                let gl = grid_get_line_mut(gd, line);
                 gl.flags = (gl.flags as ::core::ffi::c_int | GRID_LINE_START_COMMAND) as u_short;
-                gl.osc133_data.cmd_col = sctx.screen.cx as u_short;
+                gl.osc133_data.cmd_col = cx as u_short;
             }
         }
         67 => {
             if let Some(line) = line {
-                let gl = grid_get_line_mut(&mut *gd, line);
+                let gl = grid_get_line_mut(gd, line);
                 gl.flags = (gl.flags as ::core::ffi::c_int | GRID_LINE_START_OUTPUT) as u_short;
-                gl.osc133_data.out_start_col = sctx.screen.cx as u_short;
+                gl.osc133_data.out_start_col = cx as u_short;
             }
             if !wp.is_null() {
                 (*wp).cmd_start_time =
@@ -5224,9 +5222,9 @@ unsafe fn input_osc_133(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &C
                 );
             }
             if let Some(line) = line {
-                let gl = grid_get_line_mut(&mut *gd, line);
+                let gl = grid_get_line_mut(gd, line);
                 gl.flags = (gl.flags as ::core::ffi::c_int | GRID_LINE_END_OUTPUT) as u_short;
-                gl.osc133_data.out_end_col = sctx.screen.cx as u_short;
+                gl.osc133_data.out_end_col = cx as u_short;
                 gl.osc133_data.exit_status = status as u_char;
             }
         }

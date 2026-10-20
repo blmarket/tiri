@@ -388,7 +388,7 @@ unsafe fn session_detach(
     }
     wl.get_mut_unchecked().flags &= !WINLINK_ALERTFLAGS;
     events_fire_winlink(c"window-unlinked", wl.clone());
-    winlink_stack_remove(&raw mut (*s).lastw, wl.clone());
+    winlink_stack_remove(&mut (*s).lastw, wl.clone());
     winlink_remove(&(*s).windows, wl.clone());
     session_group_synchronize_from(s_owner);
     0 as ::core::ffi::c_int
@@ -546,8 +546,8 @@ unsafe fn session_set_current(
     if wl == (*s).current_winlink() {
         return 1 as ::core::ffi::c_int;
     }
-    winlink_stack_remove(&raw mut (*s).lastw, wl.clone());
-    winlink_stack_push(&raw mut (*s).lastw, ((*s).current_winlink()).clone());
+    winlink_stack_remove(&mut (*s).lastw, wl.clone());
+    winlink_stack_push(&mut (*s).lastw, ((*s).current_winlink()).clone());
     (*s).set_curw(wl.clone());
     if OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"focus-events")) != 0 {
         if old.is_alive() {
