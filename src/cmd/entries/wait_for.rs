@@ -18,21 +18,21 @@ use crate::shared::command::*;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::events::{event_payload, events_callback, EventSinkId};
 use crate::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
-use std::cell::UnsafeCell;
+use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 use std::rc::Weak;
 
 #[repr(C)]
 pub struct wait_channel {
-    pub name: std::ffi::CString,
     pub locked: ::core::ffi::c_int,
     pub woken: ::core::ffi::c_int,
     pub(crate) waiters: Vec<CmdqWaiter>,
     pub(crate) lockers: Vec<CmdqWaiter>,
 }
 
+/// Channels by name, ordered as tmux's strcmp tree.
 pub struct wait_channels {
-    entries: std::collections::BTreeMap<std::ffi::CString, Box<wait_channel>>,
+    entries: std::collections::BTreeMap<std::ffi::CString, wait_channel>,
 }
 
 #[repr(C)]
@@ -71,50 +71,19 @@ pub static cmd_wait_for_entry: cmd_entry = {
         exec: Some(cmd_wait_for_exec),
     }
 };
+// Each access borrows a registry only for its own duration; waiters are
+// resumed, and printing and format expansion run, after the borrow ends.
 thread_local! {
-    static WAIT_EVENT_ITEMS: UnsafeCell<Vec<wait_event_item>> = const { UnsafeCell::new(Vec::new()) };
-    static WAIT_CHANNELS: UnsafeCell<wait_channels> = const {
-        UnsafeCell::new(wait_channels {
+    static WAIT_EVENT_ITEMS: RefCell<Vec<wait_event_item>> = const { RefCell::new(Vec::new()) };
+    static WAIT_CHANNELS: RefCell<wait_channels> = const {
+        RefCell::new(wait_channels {
             entries: std::collections::BTreeMap::new(),
         })
     };
 }
-fn wait_event_items_ptr() -> *mut Vec<wait_event_item> {
-    WAIT_EVENT_ITEMS.with(UnsafeCell::get)
-}
-fn wait_channels_ptr() -> *mut wait_channels {
-    WAIT_CHANNELS.with(UnsafeCell::get)
-}
 
-fn wait_channels_find<'a>(
-    head: &'a mut wait_channels,
-    name: &CStr,
-) -> Option<&'a mut wait_channel> {
-    head.entries.get_mut(name).map(|owner| &mut **owner)
-}
-
-fn wait_channels_insert(
-    head: &mut wait_channels,
-    mut owner: Box<wait_channel>,
-) -> *mut wait_channel {
-    let key = owner.name.clone();
-    match head.entries.entry(key) {
-        std::collections::btree_map::Entry::Occupied(mut entry) => &raw mut **entry.get_mut(),
-        std::collections::btree_map::Entry::Vacant(entry) => {
-            let channel = &raw mut *owner;
-            entry.insert(owner);
-            channel
-        }
-    }
-}
-
-fn wait_channels_remove(head: &mut wait_channels, elm: &wait_channel) -> Option<Box<wait_channel>> {
-    let key = elm.name.clone();
-    head.entries.remove(&key)
-}
-
-unsafe fn wait_items_continue_all(list: *mut Vec<CmdqWaiter>) {
-    for waiter in std::mem::take(&mut *list) {
+fn wait_items_continue_all(list: Vec<CmdqWaiter>) {
+    for waiter in list {
         waiter.resume();
     }
 }
@@ -128,44 +97,43 @@ fn wait_event_items_position(
         .position(|owner| Weak::ptr_eq(&owner.item, item))
 }
 
-unsafe fn cmd_wait_for_add(name: &CStr) -> *mut wait_channel {
-    let name = name.to_owned();
-    let mut owner = Box::new(wait_channel {
-        name,
-        locked: 0,
-        woken: 0,
-        waiters: Vec::new(),
-        lockers: Vec::new(),
-    });
-    let wc = wait_channels_insert(&mut *wait_channels_ptr(), owner);
-    log_debug(format_args!("add wait channel {}", log_cstr(&(*wc).name)));
-    wc
+/// Find the channel `name`, adding it if missing.
+fn cmd_wait_for_add<'a>(channels: &'a mut wait_channels, name: &CStr) -> &'a mut wait_channel {
+    channels.entries.entry(name.to_owned()).or_insert_with(|| {
+        log_debug(format_args!("add wait channel {}", log_cstr(name)));
+        wait_channel {
+            locked: 0,
+            woken: 0,
+            waiters: Vec::new(),
+            lockers: Vec::new(),
+        }
+    })
 }
-unsafe fn cmd_wait_for_remove(mut wc: *mut wait_channel) {
-    if (*wc).locked != 0 {
+fn cmd_wait_for_remove(channels: &mut wait_channels, name: &CStr) {
+    let Some(wc) = channels.entries.get(name) else {
+        return;
+    };
+    if wc.locked != 0 {
         return;
     }
-    if !(*wc).waiters.is_empty() || (*wc).woken == 0 {
+    if !wc.waiters.is_empty() || wc.woken == 0 {
         return;
     }
-    log_debug(format_args!(
-        "remove wait channel {}",
-        log_cstr(&(*wc).name)
-    ));
-    drop(wait_channels_remove(&mut *wait_channels_ptr(), &*wc));
+    log_debug(format_args!("remove wait channel {}", log_cstr(name)));
+    channels.entries.remove(name);
 }
-unsafe fn cmd_wait_for_remove_empty(mut wc: *mut wait_channel) {
-    if (*wc).locked != 0 || (*wc).woken != 0 {
+fn cmd_wait_for_remove_empty(channels: &mut wait_channels, name: &CStr) {
+    let Some(wc) = channels.entries.get(name) else {
+        return;
+    };
+    if wc.locked != 0 || wc.woken != 0 {
         return;
     }
-    if !(*wc).waiters.is_empty() || !(*wc).lockers.is_empty() {
+    if !wc.waiters.is_empty() || !wc.lockers.is_empty() {
         return;
     }
-    log_debug(format_args!(
-        "remove empty wait channel {}",
-        log_cstr(&(*wc).name)
-    ));
-    drop(wait_channels_remove(&mut *wait_channels_ptr(), &*wc));
+    log_debug(format_args!("remove empty wait channel {}", log_cstr(name)));
+    channels.entries.remove(name);
 }
 
 unsafe fn cmd_wait_for_waiter_client_name(waiter: &CmdqWaiter) -> CString {
@@ -188,31 +156,22 @@ unsafe fn cmd_wait_for_exec(
     if args_has(args, 'E' as i32 as u_char) != 0 {
         return cmd_wait_for_event(item_handle, name, args);
     }
-    let wc = wait_channels_find(&mut *wait_channels_ptr(), name);
     if args_has(args, 'l' as i32 as u_char) != 0 {
-        return cmd_wait_for_list(item_handle, wc);
+        return cmd_wait_for_list(item_handle, name);
     }
     if args_has(args, 'w' as i32 as u_char) != 0 {
-        return cmd_wait_for_wake(args, wc.map_or(std::ptr::null_mut(), std::ptr::from_mut));
+        return cmd_wait_for_wake(args, name);
     }
     if args_has(args, 'S' as i32 as u_char) != 0 {
-        return cmd_wait_for_signal(name, wc.map_or(std::ptr::null_mut(), std::ptr::from_mut));
+        return cmd_wait_for_signal(name);
     }
     if args_has(args, 'L' as i32 as u_char) != 0 {
-        return cmd_wait_for_lock(item_handle, name, wc);
+        return cmd_wait_for_lock(item_handle, name);
     }
     if args_has(args, 'U' as i32 as u_char) != 0 {
-        return cmd_wait_for_unlock(
-            item_handle,
-            name,
-            wc.map_or(std::ptr::null_mut(), std::ptr::from_mut),
-        );
+        return cmd_wait_for_unlock(item_handle, name);
     }
-    cmd_wait_for_wait(
-        item_handle,
-        name,
-        wc.map_or(std::ptr::null_mut(), std::ptr::from_mut),
-    )
+    cmd_wait_for_wait(item_handle, name)
 }
 /// Print the payload to the waiting item's client, as cmdq_print would.
 unsafe fn cmd_wait_for_event_print(client: Option<&ClientRef>, ep: &event_payload) {
@@ -238,21 +197,22 @@ unsafe fn cmd_wait_for_event_cb(
     payload: &mut event_payload,
     key: &Weak<std::cell::RefCell<cmdq_item>>,
 ) {
-    let items = wait_event_items_ptr();
-    let Some(index) = wait_event_items_position(&*items, key) else {
+    let found = WAIT_EVENT_ITEMS.with_borrow_mut(|items| {
+        let index = wait_event_items_position(items, key)?;
+        let wei = &items[index];
+        if wei.waiter.is_cancelled() {
+            drop(items.remove(index));
+            return None;
+        }
+        Some((wei.verbose, wei.filter.clone(), wei.waiter.client()))
+    });
+    let Some((verbose, filter, queue_client)) = found else {
         return;
     };
-    let wei = &(&*items)[index];
-    if wei.waiter.is_cancelled() {
-        drop((&mut *items).remove(index));
-        return;
-    }
-    let (verbose, filter) = (wei.verbose, wei.filter.clone());
-    let queue_client = wei.waiter.client();
     let ep = &*payload;
     if verbose != 0 {
         cmd_wait_for_event_print(queue_client.as_ref(), ep);
-        if wait_event_items_position(&*items, key).is_none() {
+        if WAIT_EVENT_ITEMS.with_borrow(|items| wait_event_items_position(items, key).is_none()) {
             return;
         }
     }
@@ -277,8 +237,11 @@ unsafe fn cmd_wait_for_event_cb(
         }
     }
     drop(queue_client);
-    if let Some(index) = wait_event_items_position(&*items, key) {
-        (&mut *items).remove(index).resume();
+    let woken = WAIT_EVENT_ITEMS.with_borrow_mut(|items| {
+        wait_event_items_position(items, key).map(|index| items.remove(index))
+    });
+    if let Some(wei) = woken {
+        wei.resume();
     }
 }
 impl wait_event_item {
@@ -327,31 +290,30 @@ unsafe fn cmd_wait_for_event(
         events_callback(move |name, payload| unsafe { cmd_wait_for_event_cb(name, payload, &key) })
     }));
     let (waiter, retval) = cmdq_wait(item_handle);
-    wait_event_items_ptr()
-        .as_mut()
-        .unwrap()
-        .push(wait_event_item {
+    WAIT_EVENT_ITEMS.with_borrow_mut(|items| {
+        items.push(wait_event_item {
             item: key,
             waiter,
             sink,
             name: name.to_owned(),
             filter: filter.map(CStr::to_owned),
             verbose: args_has(args, 'v' as i32 as u_char),
-        });
+        })
+    });
     retval
 }
 unsafe fn cmd_wait_for_event_list(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     name: &CStr,
 ) -> CmdOutcome {
-    cmd_wait_for_event_prune_expired(&mut *wait_event_items_ptr());
-    let names = wait_event_items_ptr()
-        .as_ref()
-        .unwrap()
-        .iter()
-        .filter(|wei| wei.name.as_c_str() == name)
-        .map(|wei| cmd_wait_for_waiter_client_name(&wei.waiter))
-        .collect::<Vec<_>>();
+    let names = WAIT_EVENT_ITEMS.with_borrow_mut(|items| {
+        cmd_wait_for_event_prune_expired(items);
+        items
+            .iter()
+            .filter(|wei| wei.name.as_c_str() == name)
+            .map(|wei| cmd_wait_for_waiter_client_name(&wei.waiter))
+            .collect::<Vec<_>>()
+    });
     for owner in names {
         cmdq_print(item_handle, |out| write_cstr(out, owner.as_c_str()));
     }
@@ -362,22 +324,18 @@ unsafe fn cmd_wait_for_event_wake(
     name: &CStr,
     args: &args,
 ) -> CmdOutcome {
-    cmd_wait_for_event_prune_expired(&mut *wait_event_items_ptr());
     let mut client_name: &CStr = args_get(args, 'w' as i32 as u_char).expect("-w has a value");
-    let mut index = 0;
-    while index < wait_event_items_ptr().as_ref().unwrap().len() {
-        let wei = &wait_event_items_ptr().as_ref().unwrap()[index];
-        if wei.name.as_c_str() == name
-            && cmd_wait_for_waiter_client_name(&wei.waiter).as_c_str() == client_name
-        {
-            wait_event_items_ptr()
-                .as_mut()
-                .unwrap()
-                .remove(index)
-                .resume();
-            return CmdOutcome::Normal;
-        }
-        index += 1;
+    let woken = WAIT_EVENT_ITEMS.with_borrow_mut(|items| {
+        cmd_wait_for_event_prune_expired(items);
+        let index = items.iter().position(|wei| {
+            wei.name.as_c_str() == name
+                && cmd_wait_for_waiter_client_name(&wei.waiter).as_c_str() == client_name
+        })?;
+        Some(items.remove(index))
+    });
+    if let Some(wei) = woken {
+        wei.resume();
+        return CmdOutcome::Normal;
     }
     cmdq_error(item_handle, |out| {
         out.write_all(b"waiter ")?;
@@ -388,140 +346,143 @@ unsafe fn cmd_wait_for_event_wake(
 }
 unsafe fn cmd_wait_for_list(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
-    wc: Option<&mut wait_channel>,
+    name: &CStr,
 ) -> CmdOutcome {
-    let Some(wc) = wc else {
-        return CmdOutcome::Normal;
-    };
-    cmd_wait_for_prune_expired(wc);
-    for wi in &wc.waiters {
-        cmdq_print(item_handle, |out| {
-            write_cstr(out, &*(cmd_wait_for_waiter_client_name(wi)))
-        });
-    }
-    for wi in &wc.lockers {
-        cmdq_print(item_handle, |out| {
-            write_cstr(out, &*(cmd_wait_for_waiter_client_name(wi)))
-        });
+    let names = WAIT_CHANNELS.with_borrow_mut(|channels| {
+        let Some(wc) = channels.entries.get_mut(name) else {
+            return Vec::new();
+        };
+        cmd_wait_for_prune_expired(wc);
+        wc.waiters
+            .iter()
+            .chain(&wc.lockers)
+            .map(|wi| cmd_wait_for_waiter_client_name(wi))
+            .collect::<Vec<_>>()
+    });
+    for owner in names {
+        cmdq_print(item_handle, |out| write_cstr(out, owner.as_c_str()));
     }
     CmdOutcome::Normal
 }
-unsafe fn cmd_wait_for_wake(args: &args, mut wc: *mut wait_channel) -> CmdOutcome {
+unsafe fn cmd_wait_for_wake(args: &args, name: &CStr) -> CmdOutcome {
     let mut client_name: &CStr = args_get(args, 'w' as i32 as u_char).expect("-w has a value");
-    if !wc.is_null() {
-        cmd_wait_for_prune_expired(&mut *wc);
-        for list in [&raw mut (*wc).waiters, &raw mut (*wc).lockers] {
-            let mut index = 0;
-            while index < (*list).len() {
-                let name = cmd_wait_for_waiter_client_name(&(&*list)[index]);
-                if name.as_c_str() != client_name {
-                    index += 1;
-                } else {
-                    (&mut *list).remove(index).resume();
-                    cmd_wait_for_remove_empty(wc);
-                    return CmdOutcome::Normal;
-                }
-            }
-        }
+    let woken = WAIT_CHANNELS.with_borrow_mut(|channels| {
+        let wc = channels.entries.get_mut(name)?;
+        cmd_wait_for_prune_expired(wc);
+        let waiter = [&mut wc.waiters, &mut wc.lockers]
+            .into_iter()
+            .find_map(|list| {
+                let index = list
+                    .iter()
+                    .position(|wi| cmd_wait_for_waiter_client_name(wi).as_c_str() == client_name)?;
+                Some(list.remove(index))
+            })?;
+        cmd_wait_for_remove_empty(channels, name);
+        Some(waiter)
+    });
+    if let Some(waiter) = woken {
+        waiter.resume();
     }
     CmdOutcome::Normal
 }
-unsafe fn cmd_wait_for_signal(name: &CStr, mut wc: *mut wait_channel) -> CmdOutcome {
-    if wc.is_null() {
-        wc = cmd_wait_for_add(name);
-    }
-    cmd_wait_for_prune_expired(&mut *wc);
-    if (*wc).waiters.is_empty() && (*wc).woken == 0 {
+unsafe fn cmd_wait_for_signal(name: &CStr) -> CmdOutcome {
+    let waiters = WAIT_CHANNELS.with_borrow_mut(|channels| {
+        let wc = cmd_wait_for_add(channels, name);
+        cmd_wait_for_prune_expired(wc);
+        if wc.waiters.is_empty() && wc.woken == 0 {
+            log_debug(format_args!(
+                "signal wait channel {}, no waiters",
+                log_cstr(name)
+            ));
+            wc.woken = 1 as ::core::ffi::c_int;
+            return Vec::new();
+        }
         log_debug(format_args!(
-            "signal wait channel {}, no waiters",
-            log_cstr(&(*wc).name)
+            "signal wait channel {}, with waiters",
+            log_cstr(name)
         ));
-        (*wc).woken = 1 as ::core::ffi::c_int;
-        return CmdOutcome::Normal;
-    }
-    log_debug(format_args!(
-        "signal wait channel {}, with waiters",
-        log_cstr(&(*wc).name)
-    ));
-    wait_items_continue_all(&raw mut (*wc).waiters);
-    cmd_wait_for_remove(wc);
+        let waiters = std::mem::take(&mut wc.waiters);
+        cmd_wait_for_remove(channels, name);
+        waiters
+    });
+    wait_items_continue_all(waiters);
     CmdOutcome::Normal
 }
 unsafe fn cmd_wait_for_wait(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     name: &CStr,
-    mut wc: *mut wait_channel,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let c_owner = cmdq_get_client(Some(&*item));
-    let mut c: Option<ClientRef> = c_owner.clone();
-    if c.is_none() {
+    let Some(c) = cmdq_get_client(Some(&*item)) else {
         cmdq_error(item_handle, |out| out.write_all(b"not able to wait"));
         return CmdOutcome::Error;
-    }
-    if wc.is_null() {
-        wc = cmd_wait_for_add(name);
-    }
-    if (*wc).woken != 0 {
+    };
+    WAIT_CHANNELS.with_borrow_mut(|channels| {
+        let wc = cmd_wait_for_add(channels, name);
+        if wc.woken != 0 {
+            log_debug(format_args!(
+                "wait channel {} already woken ({})",
+                log_cstr(name),
+                log_pointer(std::rc::Rc::as_ptr(&c))
+            ));
+            cmd_wait_for_remove(channels, name);
+            return CmdOutcome::Normal;
+        }
         log_debug(format_args!(
-            "wait channel {} already woken ({})",
-            log_cstr(&(*wc).name),
-            log_pointer(std::rc::Rc::as_ptr(c.as_ref().expect("waiting client")))
+            "wait channel {} not woken ({})",
+            log_cstr(name),
+            log_pointer(std::rc::Rc::as_ptr(&c))
         ));
-        cmd_wait_for_remove(wc);
-        return CmdOutcome::Normal;
-    }
-    log_debug(format_args!(
-        "wait channel {} not woken ({})",
-        log_cstr(&(*wc).name),
-        log_pointer(std::rc::Rc::as_ptr(c.as_ref().expect("waiting client")))
-    ));
-    let (waiter, retval) = cmdq_wait(item_handle);
-    (*wc).waiters.push(waiter);
-    retval
+        let (waiter, retval) = cmdq_wait(item_handle);
+        wc.waiters.push(waiter);
+        retval
+    })
 }
 unsafe fn cmd_wait_for_lock(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     name: &CStr,
-    wc: Option<&mut wait_channel>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     if cmdq_get_client(Some(&*item)).is_none() {
         cmdq_error(item_handle, |out| out.write_all(b"not able to lock"));
         return CmdOutcome::Error;
     }
-    let wc = match wc {
-        Some(wc) => wc,
-        None => &mut *cmd_wait_for_add(name),
-    };
-    if wc.locked != 0 {
-        let (waiter, retval) = cmdq_wait(item_handle);
-        wc.lockers.push(waiter);
-        return retval;
-    }
-    wc.locked = 1 as ::core::ffi::c_int;
-    CmdOutcome::Normal
+    WAIT_CHANNELS.with_borrow_mut(|channels| {
+        let wc = cmd_wait_for_add(channels, name);
+        if wc.locked != 0 {
+            let (waiter, retval) = cmdq_wait(item_handle);
+            wc.lockers.push(waiter);
+            return retval;
+        }
+        wc.locked = 1 as ::core::ffi::c_int;
+        CmdOutcome::Normal
+    })
 }
 unsafe fn cmd_wait_for_unlock(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     name: &CStr,
-    mut wc: *mut wait_channel,
 ) -> CmdOutcome {
-    if wc.is_null() || (*wc).locked == 0 {
+    // None if the channel is not locked, else the locker the lock passes to.
+    let unlocked = WAIT_CHANNELS.with_borrow_mut(|channels| {
+        let wc = channels.entries.get_mut(name).filter(|wc| wc.locked != 0)?;
+        cmd_wait_for_prune_expired(wc);
+        if !wc.lockers.is_empty() {
+            return Some(Some(wc.lockers.remove(0)));
+        }
+        wc.locked = 0 as ::core::ffi::c_int;
+        cmd_wait_for_remove(channels, name);
+        Some(None)
+    });
+    let Some(next) = unlocked else {
         cmdq_error(item_handle, |out| {
             out.write_all(b"channel ")?;
             write_cstr(out, name)?;
             out.write_all(b" not locked")
         });
         return CmdOutcome::Error;
-    }
-    let lockers = &raw mut (*wc).lockers;
-    cmd_wait_for_prune_expired(&mut *wc);
-    if !(*lockers).is_empty() {
-        (&mut *lockers).remove(0).resume();
-    } else {
-        (*wc).locked = 0 as ::core::ffi::c_int;
-        cmd_wait_for_remove(wc);
+    };
+    if let Some(locker) = next {
+        locker.resume();
     }
     CmdOutcome::Normal
 }
@@ -533,56 +494,52 @@ pub unsafe fn cmd_wait_for_client_lost(c: &ClientRef) {
             .client()
             .is_some_and(|owner| std::rc::Rc::ptr_eq(&owner, c))
     };
-    let mut index = 0;
-    while index < wait_event_items_ptr().as_ref().unwrap().len() {
-        if !lost_waiter(&wait_event_items_ptr().as_ref().unwrap()[index].waiter) {
-            index += 1;
-            continue;
-        }
-        wait_event_items_ptr()
-            .as_mut()
-            .unwrap()
-            .remove(index)
-            .resume();
+    let events = WAIT_EVENT_ITEMS.with_borrow_mut(|items| {
+        let (resumed, kept) = std::mem::take(items)
+            .into_iter()
+            .partition::<Vec<_>, _>(|wei| lost_waiter(&wei.waiter));
+        *items = kept;
+        resumed
+    });
+    for wei in events {
+        wei.resume();
     }
-    let channels = wait_channels_ptr()
-        .as_mut()
-        .unwrap()
-        .entries
-        .values_mut()
-        .map(|owner| &raw mut **owner)
-        .collect::<Vec<_>>();
-    for wc in channels {
-        for list in [&raw mut (*wc).waiters, &raw mut (*wc).lockers] {
-            let (resumed, kept) = std::mem::take(&mut *list)
-                .into_iter()
-                .partition::<Vec<_>, _>(lost_waiter);
-            *list = kept;
-            for waiter in resumed {
-                waiter.resume();
+    let waiters = WAIT_CHANNELS.with_borrow_mut(|channels| {
+        let mut resumed = Vec::new();
+        let names = channels.entries.keys().cloned().collect::<Vec<_>>();
+        for name in names {
+            let wc = channels.entries.get_mut(&name).expect("listed channel");
+            for list in [&mut wc.waiters, &mut wc.lockers] {
+                let (lost, kept) = std::mem::take(list)
+                    .into_iter()
+                    .partition::<Vec<_>, _>(lost_waiter);
+                *list = kept;
+                resumed.extend(lost);
             }
+            cmd_wait_for_remove_empty(channels, &name);
         }
-        cmd_wait_for_remove_empty(wc);
-    }
+        resumed
+    });
+    wait_items_continue_all(waiters);
 }
 pub unsafe fn cmd_wait_for_flush() {
-    while !wait_event_items_ptr().as_ref().unwrap().is_empty() {
-        wait_event_items_ptr().as_mut().unwrap().remove(0).resume();
+    for wei in WAIT_EVENT_ITEMS.with_borrow_mut(std::mem::take) {
+        wei.resume();
     }
-    let channels = wait_channels_ptr()
-        .as_mut()
-        .unwrap()
-        .entries
-        .values_mut()
-        .map(|owner| &raw mut **owner)
-        .collect::<Vec<_>>();
-    for wc in channels {
-        wait_items_continue_all(&raw mut (*wc).waiters);
-        (*wc).woken = 1 as ::core::ffi::c_int;
-        wait_items_continue_all(&raw mut (*wc).lockers);
-        (*wc).locked = 0 as ::core::ffi::c_int;
-        cmd_wait_for_remove(wc);
-    }
+    let waiters = WAIT_CHANNELS.with_borrow_mut(|channels| {
+        let mut resumed = Vec::new();
+        let names = channels.entries.keys().cloned().collect::<Vec<_>>();
+        for name in names {
+            let wc = channels.entries.get_mut(&name).expect("listed channel");
+            resumed.append(&mut wc.waiters);
+            wc.woken = 1 as ::core::ffi::c_int;
+            resumed.append(&mut wc.lockers);
+            wc.locked = 0 as ::core::ffi::c_int;
+            cmd_wait_for_remove(channels, &name);
+        }
+        resumed
+    });
+    wait_items_continue_all(waiters);
 }
 
 #[cfg(test)]
@@ -596,18 +553,6 @@ mod tests {
     use std::future::Future;
     use std::rc::Rc;
 
-    fn test_channel(name: &CStr) -> Box<wait_channel> {
-        let name = name.to_owned();
-
-        Box::new(wait_channel {
-            name,
-            locked: 0,
-            woken: 0,
-            waiters: Vec::new(),
-            lockers: Vec::new(),
-        })
-    }
-
     #[test]
     fn wait_channels_match_c_string_tree_semantics() {
         let name_a = CString::new("a").unwrap();
@@ -619,32 +564,20 @@ mod tests {
         let mut channels = wait_channels {
             entries: std::collections::BTreeMap::new(),
         };
-        unsafe {
-            let a = wait_channels_insert(&mut channels, test_channel(&name_a));
-            let a0 = wait_channels_insert(&mut channels, test_channel(&name_a0));
-            let a_high = wait_channels_insert(&mut channels, test_channel(&name_a_high));
-            let z = wait_channels_insert(&mut channels, test_channel(&name_z));
-            assert!(!a.is_null() && !a0.is_null() && !a_high.is_null() && !z.is_null());
-            assert_eq!(
-                wait_channels_insert(&mut channels, test_channel(&name_a)),
-                a
-            );
-            assert_eq!(
-                wait_channels_find(&mut channels, lookup_a.as_c_str()).map(std::ptr::from_mut),
-                Some(a)
-            );
-
-            let ordered = channels
-                .entries
-                .values_mut()
-                .map(|owner| &raw mut **owner)
-                .collect::<Vec<_>>();
-            assert_eq!(ordered, vec![a, a0, a_high, z]);
-
-            let mut removed = wait_channels_remove(&mut channels, &*a_high).unwrap();
-            assert_eq!(&raw mut *removed, a_high);
-            assert!(wait_channels_find(&mut channels, name_a_high.as_c_str()).is_none());
+        for name in [&name_z, &name_a_high, &name_a0, &name_a] {
+            cmd_wait_for_add(&mut channels, name);
         }
+        cmd_wait_for_add(&mut channels, &name_a).locked = 1;
+        assert_eq!(cmd_wait_for_add(&mut channels, &lookup_a).locked, 1);
+        assert_eq!(
+            channels.entries.keys().collect::<Vec<_>>(),
+            [&name_a, &name_a0, &name_a_high, &name_z]
+        );
+
+        cmd_wait_for_add(&mut channels, &name_a_high).woken = 1;
+        cmd_wait_for_remove(&mut channels, &name_a_high);
+        assert!(!channels.entries.contains_key(name_a_high.as_c_str()));
+        assert_eq!(channels.entries.len(), 3);
     }
 
     /// Appends its index to the trace when woken.
@@ -676,9 +609,9 @@ mod tests {
             .unzip()
     }
 
-    unsafe fn channel(name: &CStr) -> *mut wait_channel {
-        wait_channels_find(&mut *wait_channels_ptr(), name)
-            .map_or(std::ptr::null_mut(), std::ptr::from_mut)
+    /// Read the channel `name`, if it exists.
+    fn channel<R>(name: &CStr, f: impl FnOnce(&wait_channel) -> R) -> Option<R> {
+        WAIT_CHANNELS.with_borrow(|channels| channels.entries.get(name).map(f))
     }
 
     /// Run `exec` as the next item of `owner`'s queue on the channel `name`.
@@ -686,33 +619,18 @@ mod tests {
     unsafe fn run_on(
         owner: &ClientRef,
         name: &'static CStr,
-        exec: unsafe fn(&Rc<std::cell::RefCell<cmdq_item>>, &CStr, *mut wait_channel) -> CmdOutcome,
+        exec: unsafe fn(&Rc<std::cell::RefCell<cmdq_item>>, &CStr) -> CmdOutcome,
     ) -> Weak<std::cell::RefCell<cmdq_item>> {
         let item = cmdq_append(
             Some(owner),
-            cmdq_get_callback_owned(
-                c"wait-for",
-                Some(Box::new(move |item| exec(item, name, channel(name)))),
-            ),
+            cmdq_get_callback_owned(c"wait-for", Some(Box::new(move |item| exec(item, name)))),
         );
         cmdq_next(Some(owner));
         item
     }
 
-    unsafe fn signal(
-        _: &Rc<std::cell::RefCell<cmdq_item>>,
-        name: &CStr,
-        wc: *mut wait_channel,
-    ) -> CmdOutcome {
-        cmd_wait_for_signal(name, wc)
-    }
-
-    unsafe fn lock(
-        item: &Rc<std::cell::RefCell<cmdq_item>>,
-        name: &CStr,
-        wc: *mut wait_channel,
-    ) -> CmdOutcome {
-        cmd_wait_for_lock(item, name, wc.as_mut())
+    unsafe fn signal(_: &Rc<std::cell::RefCell<cmdq_item>>, name: &CStr) -> CmdOutcome {
+        cmd_wait_for_signal(name)
     }
 
     #[test]
@@ -721,18 +639,19 @@ mod tests {
             let (trace, locked) = Default::default();
             let (waiters, _resumed) = recorded_waiters(128, &trace);
             let (lockers, _locking) = recorded_waiters(4, &locked);
-            let wc = cmd_wait_for_add(c"fifo");
-            (*wc).waiters.extend(waiters);
-            (*wc).lockers.extend(lockers);
-            assert!(matches!(
-                cmd_wait_for_signal(c"fifo", wc),
-                CmdOutcome::Normal
-            ));
+            WAIT_CHANNELS.with_borrow_mut(|channels| {
+                let wc = cmd_wait_for_add(channels, c"fifo");
+                wc.waiters.extend(waiters);
+                wc.lockers.extend(lockers);
+            });
+            assert!(matches!(cmd_wait_for_signal(c"fifo"), CmdOutcome::Normal));
             assert_eq!(*trace.borrow(), (0..128).collect::<Vec<_>>());
-            assert!((*wc).waiters.is_empty());
-            assert_eq!((*wc).woken, 0);
+            assert_eq!(
+                channel(c"fifo", |wc| (wc.waiters.len(), wc.woken)),
+                Some((0, 0))
+            );
             assert!(locked.borrow().is_empty());
-            assert_eq!((*wc).lockers.len(), 4);
+            assert_eq!(channel(c"fifo", |wc| wc.lockers.len()), Some(4));
         }
     }
 
@@ -740,9 +659,9 @@ mod tests {
     fn unlock_hands_the_lock_to_the_first_locker_only() {
         unsafe {
             let [holder, first, second] = [(); 3].map(|_| clients::with_queue());
-            assert!(run_on(&holder, c"l", lock).upgrade().is_none());
-            let first_item = run_on(&first, c"l", lock);
-            let second_item = run_on(&second, c"l", lock);
+            assert!(run_on(&holder, c"l", cmd_wait_for_lock).upgrade().is_none());
+            let first_item = run_on(&first, c"l", cmd_wait_for_lock);
+            let second_item = run_on(&second, c"l", cmd_wait_for_lock);
             assert!(first_item.upgrade().is_some() && second_item.upgrade().is_some());
 
             assert!(run_on(&holder, c"l", cmd_wait_for_unlock)
@@ -752,19 +671,19 @@ mod tests {
             cmdq_next(Some(&second));
             assert!(first_item.upgrade().is_none());
             assert!(second_item.upgrade().is_some());
-            assert_eq!((*channel(c"l")).locked, 1);
+            assert_eq!(channel(c"l", |wc| wc.locked), Some(1));
 
             assert!(run_on(&first, c"l", cmd_wait_for_unlock)
                 .upgrade()
                 .is_none());
             cmdq_next(Some(&second));
             assert!(second_item.upgrade().is_none());
-            assert_eq!((*channel(c"l")).locked, 1);
+            assert_eq!(channel(c"l", |wc| wc.locked), Some(1));
 
             assert!(run_on(&second, c"l", cmd_wait_for_unlock)
                 .upgrade()
                 .is_none());
-            assert_eq!((*channel(c"l")).locked, 0);
+            assert_eq!(channel(c"l", |wc| wc.locked), Some(0));
         }
     }
 
@@ -775,14 +694,14 @@ mod tests {
             let gone_item = run_on(&gone, c"c", cmd_wait_for_wait);
             drop(gone);
             assert!(gone_item.upgrade().is_none());
-            assert!((&(*channel(c"c")).waiters)[0].is_cancelled());
+            assert_eq!(channel(c"c", |wc| wc.waiters[0].is_cancelled()), Some(true));
 
             let other = clients::with_queue();
             assert!(run_on(&other, c"c", signal).upgrade().is_none());
-            assert!((*channel(c"c")).waiters.is_empty());
-            assert_eq!((*channel(c"c")).woken, 1);
+            assert_eq!(channel(c"c", |wc| wc.waiters.len()), Some(0));
+            assert_eq!(channel(c"c", |wc| wc.woken), Some(1));
             assert!(run_on(&other, c"c", cmd_wait_for_wait).upgrade().is_none());
-            assert!(channel(c"c").is_null());
+            assert!(channel(c"c", |_| ()).is_none());
         }
     }
 
@@ -792,23 +711,23 @@ mod tests {
             let [lost, kept, holder] = [(); 3].map(|_| clients::with_queue());
             let lost_waiter = run_on(&lost, c"c", cmd_wait_for_wait);
             let kept_waiter = run_on(&kept, c"c", cmd_wait_for_wait);
-            assert!(run_on(&holder, c"l", lock).upgrade().is_none());
+            assert!(run_on(&holder, c"l", cmd_wait_for_lock).upgrade().is_none());
 
             cmd_wait_for_client_lost(&lost);
             cmdq_next(Some(&lost));
             assert!(lost_waiter.upgrade().is_none());
             assert!(kept_waiter.upgrade().is_some());
-            assert_eq!((*channel(c"c")).waiters.len(), 1);
+            assert_eq!(channel(c"c", |wc| wc.waiters.len()), Some(1));
 
-            let lost_locker = run_on(&lost, c"l", lock);
-            let kept_locker = run_on(&holder, c"l", lock);
+            let lost_locker = run_on(&lost, c"l", cmd_wait_for_lock);
+            let kept_locker = run_on(&holder, c"l", cmd_wait_for_lock);
             cmd_wait_for_client_lost(&lost);
             cmdq_next(Some(&lost));
             assert!(lost_locker.upgrade().is_none());
             assert!(kept_locker.upgrade().is_some());
             assert!(kept_waiter.upgrade().is_some());
-            assert_eq!((*channel(c"l")).lockers.len(), 1);
-            assert_eq!((*channel(c"l")).locked, 1);
+            assert_eq!(channel(c"l", |wc| wc.lockers.len()), Some(1));
+            assert_eq!(channel(c"l", |wc| wc.locked), Some(1));
         }
     }
 
@@ -821,7 +740,7 @@ mod tests {
             cmd_wait_for_client_lost(&owner);
             cmdq_next(Some(&owner));
             assert!(head.upgrade().is_none());
-            assert!(channel(c"c").is_null());
+            assert!(channel(c"c", |_| ()).is_none());
             let client = Rc::downgrade(&owner);
             drop(owner);
             assert!(client.upgrade().is_none());
@@ -862,12 +781,7 @@ mod tests {
     }
 
     unsafe fn event_sinks() -> Vec<EventSinkId> {
-        wait_event_items_ptr()
-            .as_ref()
-            .unwrap()
-            .iter()
-            .map(|wei| wei.sink.0)
-            .collect()
+        WAIT_EVENT_ITEMS.with_borrow(|items| items.iter().map(|wei| wei.sink.0).collect())
     }
 
     /// Queue a callback behind the waiter that records whether it ran.
@@ -942,9 +856,7 @@ mod tests {
             };
             drop(owner);
             assert!(head.upgrade().is_none());
-            assert!(wait_event_items_ptr().as_ref().unwrap()[0]
-                .waiter
-                .is_cancelled());
+            assert!(WAIT_EVENT_ITEMS.with_borrow(|items| items[0].waiter.is_cancelled()));
 
             fire(c"@dropped", "");
             assert!(event_sinks().is_empty());
