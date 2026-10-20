@@ -209,7 +209,7 @@ unsafe fn cmd_select_pane_exec(
     let entry = cmd_get_entry(command.get_unchecked());
     let marked_command = command.clone();
     let arguments = cmd_get_args(command.get_unchecked());
-    let current = cmdq_get_state_owned(&*item);
+    let current = cmdq_get_state_owned(&item);
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let target = &mut target_state;
     let link = target.winlink_handle();

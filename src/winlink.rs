@@ -374,11 +374,11 @@ mod tests {
     fn winlink_index_keeps_order_and_weak_observers_across_moves() {
         unsafe {
             let mut head = Default::default();
-            let first = winlink_add(&mut head, 1);
-            let second = winlink_add(&mut head, 3);
+            let first = winlink_add(&head, 1);
+            let second = winlink_add(&head, 3);
             assert!(first.is_alive() && second.is_alive());
-            assert!(!winlink_add(&mut head, 1).is_alive());
-            winlinks_reindex(&mut head, (second).clone(), 2);
+            assert!(!winlink_add(&head, 1).is_alive());
+            winlinks_reindex(&head, (second).clone(), 2);
 
             let index_observer = first.get_unchecked().owner.clone();
             let node_observer = winlink_weak((first).clone());
@@ -387,14 +387,14 @@ mod tests {
             assert_eq!(winlinks_next(first.get_unchecked()), second);
             assert_eq!(second.get_unchecked().idx, 2);
 
-            winlink_remove(&mut moved, (first).clone());
+            winlink_remove(&moved, (first).clone());
             assert!(matches!(
                 node_observer.try_access_mut(|link| link.idx),
                 Err(refbox::BorrowError::Dropped)
             ));
             assert!(index_observer.try_borrow_mut().is_ok());
             let second_observer = winlink_weak((second).clone());
-            winlink_remove(&mut moved, (second).clone());
+            winlink_remove(&moved, (second).clone());
             drop(moved);
             assert!(matches!(
                 second_observer.try_access_mut(|link| link.idx),

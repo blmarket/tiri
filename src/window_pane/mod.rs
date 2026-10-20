@@ -63,8 +63,7 @@ use crate::server::{marked_pane, server_check_marked};
 use crate::server_client::Client;
 use crate::server_fn::{
     server_destroy_pane, server_kill_pane, server_redraw_window, server_redraw_window_borders,
-    server_unzoom_window,
-    server_status_window,
+    server_status_window, server_unzoom_window,
 };
 use crate::shared::pane::window_pane_tree;
 use crate::shared::prompt::prompt_create_data;
@@ -116,8 +115,8 @@ use crate::shared::status::status_prompt_input_cb;
 use crate::shared::style::*;
 pub use crate::shared::window::{window_mode, window_mode_entry, winlink};
 use crate::shared::window::{
-    WINDOW_MODE_HIDE_PANE_STATUS, WINDOW_MODE_HIDE_SCROLLBARS, WINDOW_MODE_NO_STACK, WINDOW_MODE_ZOOM,
-    WINDOW_PANE_NO_MODE,
+    WINDOW_MODE_HIDE_PANE_STATUS, WINDOW_MODE_HIDE_SCROLLBARS, WINDOW_MODE_NO_STACK,
+    WINDOW_MODE_ZOOM, WINDOW_PANE_NO_MODE,
 };
 use libc::{REG_EXTENDED, REG_ICASE, SIGHUP};
 
@@ -1972,7 +1971,6 @@ unsafe fn window_pane_status_get_range(
     (*wp)
         .border_status_line
         .ranges
-        .as_slice()
         .iter()
         .find(|range| x >= range.start && x < range.end)
         .map(|range| **range)

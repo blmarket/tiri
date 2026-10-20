@@ -411,26 +411,21 @@ unsafe fn window_buffer_init(
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
-    let format = if let Some(args) = args
-        .as_deref()
-        .filter(|args| args_has(args, 'F' as i32 as u_char) != 0)
-    {
+    let format = if let Some(args) = args.filter(|args| args_has(args, 'F' as i32 as u_char) != 0) {
         args_get(args, 'F' as i32 as u_char)
             .expect("argument is present")
             .to_owned()
     } else {
         WINDOW_BUFFER_DEFAULT_FORMAT.to_owned()
     };
-    let key_format = if let Some(args) = args
-        .as_deref()
-        .filter(|args| args_has(args, 'K' as i32 as u_char) != 0)
-    {
-        args_get(args, 'K' as i32 as u_char)
-            .expect("argument is present")
-            .to_owned()
-    } else {
-        WINDOW_BUFFER_DEFAULT_KEY_FORMAT.to_owned()
-    };
+    let key_format =
+        if let Some(args) = args.filter(|args| args_has(args, 'K' as i32 as u_char) != 0) {
+            args_get(args, 'K' as i32 as u_char)
+                .expect("argument is present")
+                .to_owned()
+        } else {
+            WINDOW_BUFFER_DEFAULT_KEY_FORMAT.to_owned()
+        };
     let command = if let Some(args) = args.filter(|args| args_count(args) != 0 as u_int) {
         args_string(args, 0 as u_int)
             .expect("argument is present")
@@ -454,7 +449,7 @@ unsafe fn window_buffer_init(
     let key_mode = wme.clone();
     let tree_owner = mode_tree_start(
         &mode_pane_owner,
-        args.as_deref().expect("mode arguments"),
+        args.expect("mode arguments"),
         Some(Box::new(move |sort, tag, filter| {
             let mut selected = tag.unwrap_or(::core::primitive::u64::MAX as uint64_t);
             let data = window_buffer_data(&build_mode);

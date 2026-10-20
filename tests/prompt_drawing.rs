@@ -10,7 +10,6 @@ use tiri::shared::display::{SCREEN_CURSOR_BLOCK, SCREEN_CURSOR_UNDERLINE};
 use tiri::shared::grid::{GRID_ATTR_UNDERSCORE, GRID_STRING_TRIM_SPACES};
 use tiri::shared::prompt::*;
 use tiri::shared::screen::{screen, MODE_CURSOR, MODE_CURSOR_BLINKING};
-use tiri::shared::screen_write::screen_write_ctx;
 use tiri::tmux::global_environ;
 
 #[test]

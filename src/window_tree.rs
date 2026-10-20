@@ -468,9 +468,7 @@ unsafe fn window_tree_build_window(
     while i < n {
         if !(window_tree_filter_pane(session_owner, wl.clone(), &l[i as usize], filter) == 0) {
             found = found.wrapping_add(1);
-            if !(data.hide_preview_this_pane != 0
-                && Rc::ptr_eq(&l[i as usize], &mode_pane_owner))
-            {
+            if !(data.hide_preview_this_pane != 0 && Rc::ptr_eq(&l[i as usize], &mode_pane_owner)) {
                 window_tree_build_pane(session_owner, wl.clone(), &l[i as usize], data, &mti);
             }
         }
@@ -578,7 +576,9 @@ unsafe fn window_tree_build_session(
         );
     }
 }
-fn window_tree_live_mode(observer: &std::rc::Weak<ModeCell<window_tree_modedata>>) -> Option<TreeMode> {
+fn window_tree_live_mode(
+    observer: &std::rc::Weak<ModeCell<window_tree_modedata>>,
+) -> Option<TreeMode> {
     observer.upgrade().filter(|mode| !mode.dead.get())
 }
 
@@ -1741,24 +1741,20 @@ unsafe fn window_tree_init(
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
-    let format = if let Some(args) = args
-        .as_deref()
-        .filter(|args| args_has(args, 'F' as i32 as u_char) != 0)
-    {
-        args_get(args, 'F' as i32 as u_char).expect("-F takes a value")
-    } else {
-        WINDOW_TREE_DEFAULT_FORMAT
-    }
-    .to_owned();
-    let key_format = if let Some(args) = args
-        .as_deref()
-        .filter(|args| args_has(args, 'K' as i32 as u_char) != 0)
-    {
-        args_get(args, 'K' as i32 as u_char).expect("-K takes a value")
-    } else {
-        WINDOW_TREE_DEFAULT_KEY_FORMAT
-    }
-    .to_owned();
+    let format =
+        if let Some(args) = args.filter(|args| args_has(args, 'F' as i32 as u_char) != 0) {
+            args_get(args, 'F' as i32 as u_char).expect("-F takes a value")
+        } else {
+            WINDOW_TREE_DEFAULT_FORMAT
+        }
+        .to_owned();
+    let key_format =
+        if let Some(args) = args.filter(|args| args_has(args, 'K' as i32 as u_char) != 0) {
+            args_get(args, 'K' as i32 as u_char).expect("-K takes a value")
+        } else {
+            WINDOW_TREE_DEFAULT_KEY_FORMAT
+        }
+        .to_owned();
     let command = if let Some(args) = args.filter(|args| args_count(args) != 0 as u_int) {
         args_string(args, 0 as u_int).expect("argument 0 exists")
     } else {
@@ -2000,10 +1996,7 @@ fn window_tree_command_done(mode: TreeMode) -> cmdq_cb {
         CmdOutcome::Normal
     }))
 }
-unsafe fn window_tree_enqueue_command_done(
-    client_owner: Option<&ClientRef>,
-    mode: &TreeMode,
-) {
+unsafe fn window_tree_enqueue_command_done(client_owner: Option<&ClientRef>, mode: &TreeMode) {
     let item_allocation = cmdq_get_callback_owned(
         c"window_tree_command_done",
         window_tree_command_done(mode.clone()),
@@ -2011,12 +2004,8 @@ unsafe fn window_tree_enqueue_command_done(
     cmdq_append(client_owner, item_allocation);
 }
 /// Prompt input handler that receives the live tree mode owner.
-type window_tree_prompt_fn = unsafe fn(
-    Option<&ClientRef>,
-    &TreeMode,
-    Option<&CStr>,
-    prompt_key_result,
-) -> prompt_result;
+type window_tree_prompt_fn =
+    unsafe fn(Option<&ClientRef>, &TreeMode, Option<&CStr>, prompt_key_result) -> prompt_result;
 
 fn window_tree_prompt_callbacks(
     mode: TreeMode,

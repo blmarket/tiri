@@ -230,7 +230,7 @@ pub unsafe fn cmd_pack_argv(
     *buf = '\0' as i32 as ::core::ffi::c_char;
     i = 0 as ::core::ffi::c_int;
     while (i as usize) < argv.len() {
-        let dst = std::slice::from_raw_parts_mut(buf.cast::<u8>(), len as usize);
+        let dst = std::slice::from_raw_parts_mut(buf.cast::<u8>(), len);
         if cstr_copy_into(dst, &argv[i as usize]) as size_t >= len {
             return -(1 as ::core::ffi::c_int);
         }
@@ -555,20 +555,20 @@ pub unsafe fn cmd_mouse_window(
 ) -> refbox::Weak<winlink> {
     let mut s: Option<SessionRef> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    if (*m).valid == 0 {
+    if m.valid == 0 {
         return refbox::Weak::new();
     }
-    if (*m).s == -1 {
+    if m.s == -1 {
         return refbox::Weak::new();
     }
-    let Some(session_owner) = crate::session::sessions::find_by_id((*m).s as u_int) else {
+    let Some(session_owner) = crate::session::sessions::find_by_id(m.s as u_int) else {
         return refbox::Weak::new();
     };
     s = Some(session_owner.clone());
-    if (*m).w == -(1 as ::core::ffi::c_int) {
+    if m.w == -(1 as ::core::ffi::c_int) {
         wl = s.as_ref().expect("live session").current_winlink();
     } else {
-        let Some(window) = crate::window::windows::resolve((*m).w as u_int) else {
+        let Some(window) = crate::window::windows::resolve(m.w as u_int) else {
             return refbox::Weak::new();
         };
         wl = s
@@ -592,10 +592,10 @@ pub unsafe fn cmd_mouse_pane(
         return None;
     }
     let window = link.get_unchecked().window_handle().expect("linked window");
-    let pane = if (*m).wp == -1 {
+    let pane = if m.wp == -1 {
         window.active_pane().upgrade()
     } else {
-        let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::find_by_id((*m).wp as u_int)?;
+        let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::find_by_id(m.wp as u_int)?;
         if !window.contains_pane(&std::rc::Rc::downgrade(&pane)) {
             return None;
         }

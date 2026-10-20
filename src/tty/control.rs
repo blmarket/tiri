@@ -72,7 +72,7 @@ pub unsafe fn tty_create_log() {
 }
 pub unsafe fn tty_init(owner: &ClientRef) -> ::core::ffi::c_int {
     let fd = owner.terminal_fd();
-    tty_initialize_component(&mut owner.borrow_terminal_mut(), fd)
+    tty_initialize_component(owner.borrow_terminal_mut(), fd)
 }
 
 unsafe fn tty_initialize_component(terminal: &mut tty, fd: i32) -> i32 {

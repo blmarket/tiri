@@ -156,8 +156,8 @@ fn publishing_does_not_override_context_entries_or_user_options() {
         });
         REGISTRY.with(|registry| add(&mut registry.borrow_mut(), "fake", VARIABLES).unwrap());
         let mut tree = format_create(None, None, 0, 0);
-        format_add_cstr(&mut *tree, c"test_state", c"context");
-        let expanded = format_expand_cstring(&mut *tree, c"#{test_state}:#{@test_state}");
+        format_add_cstr(&mut tree, c"test_state", c"context");
+        let expanded = format_expand_cstring(&mut tree, c"#{test_state}:#{@test_state}");
         assert_eq!(expanded, c"context:user");
         let mut enumerated = Vec::new();
         for (key, value) in each(None) {

@@ -70,7 +70,7 @@ pub(super) unsafe fn default_colours(pane: &Rc<UnsafeCell<window_pane>>) -> (gri
         (*pane.get()).flags &= !PANE_STYLECHANGED;
         let mut context =
             format_create(None, None, (FORMAT_PANE | pane.id()) as i32, FORMAT_NOJOBS);
-        format_defaults(&mut *context, None, None, refbox::Weak::new(), Some(pane));
+        format_defaults(&mut context, None, None, refbox::Weak::new(), Some(pane));
         for (key, active) in [(c"window-active-style", true), (c"window-style", false)] {
             let (fg, bg) = {
                 let palette = pane.borrow_palette();

@@ -595,7 +595,7 @@ unsafe fn session_synchronize_windows(source: &SessionRef, destination: &Session
         let index = link.get_unchecked().idx;
         let mut replacement = {
             let state = &mut *destination.get();
-            winlink_add(&mut state.windows, index)
+            winlink_add(&state.windows, index)
         };
         replacement.get_mut_unchecked().session = Rc::downgrade(destination);
         let window = link
@@ -647,7 +647,7 @@ unsafe fn session_synchronize_windows(source: &SessionRef, destination: &Session
         if !replacement.is_alive() {
             events_fire_winlink(c"window-unlinked", old.clone());
         }
-        winlink_remove(&mut old_windows, old);
+        winlink_remove(&old_windows, old);
     }
 }
 

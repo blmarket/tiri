@@ -2338,16 +2338,13 @@ unsafe fn screen_write_collect_flush_line(
         r,
     );
     let mut index = 0;
-    loop {
-        // Copy the item out: drawing it moves the cursor through `ctx`.
-        let Some((ci_x, ci_used, ci_type, ci_bg, ci_wrapped, ci_gc)) = ctx.screen.write_rows()
-            [y as usize]
-            .items
-            .get(index)
-            .map(|ci| (ci.x, ci.used, ci.type_0, ci.bg, ci.wrapped, ci.gc))
-        else {
-            break;
-        };
+    // Copy each item out: drawing it moves the cursor through `ctx`.
+    while let Some((ci_x, ci_used, ci_type, ci_bg, ci_wrapped, ci_gc)) = ctx.screen.write_rows()
+        [y as usize]
+        .items
+        .get(index)
+        .map(|ci| (ci.x, ci.used, ci.type_0, ci.bg, ci.wrapped, ci.gc))
+    {
         log_debug(format_args!(
             "collect list: x={} (last {}), y={}, used={}",
             { ci_x },

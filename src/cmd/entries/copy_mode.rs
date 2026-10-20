@@ -71,7 +71,7 @@ unsafe fn cmd_copy_mode_exec(
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0.get_unchecked());
-    let mut event = cmdq_get_event(&*(item));
+    let mut event = cmdq_get_event(&(item));
     let source = crate::cmd::queue::cmdq_get_source(&item);
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let c_owner = cmdq_get_client(Some(&*item));

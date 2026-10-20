@@ -217,10 +217,10 @@ fn options_add<'a>(oo: &'a mut options, name: &CStr) -> &'a mut options_entry {
         fire_time: 0,
     });
     match oo.tree.entry(name.to_owned()) {
-        btree_map::Entry::Vacant(slot) => &mut **slot.insert(owned),
+        btree_map::Entry::Vacant(slot) => slot.insert(owned),
         btree_map::Entry::Occupied(mut slot) => {
             drop(slot.insert(owned));
-            &mut **slot.into_mut()
+            slot.into_mut()
         }
     }
 }

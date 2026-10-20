@@ -22,6 +22,8 @@ use crate::shared::status::status_line;
 use crate::tty::tty;
 
 use crate::shared::client::*;
+pub type MouseDragUpdate = Box<dyn FnMut(&mut mouse_event)>;
+pub type MouseDragRelease = Box<dyn FnOnce(&mut mouse_event)>;
 pub struct client {
     pub(super) registry_next: ClientWeak,
     pub(super) name: Option<std::ffi::CString>,
@@ -58,8 +60,8 @@ pub struct client {
     pub(super) mouse_scrolling_flag: ::core::ffi::c_int,
     pub(super) mouse_slider_mpos: ::core::ffi::c_int,
     pub(super) mouse_last_pane: ::core::ffi::c_int,
-    pub(super) mouse_drag_update: Option<Box<dyn FnMut(&mut mouse_event)>>,
-    pub(super) mouse_drag_release: Option<Box<dyn FnOnce(&mut mouse_event)>>,
+    pub(super) mouse_drag_update: Option<MouseDragUpdate>,
+    pub(super) mouse_drag_release: Option<MouseDragRelease>,
     pub(super) written: size_t,
     pub(super) discarded: size_t,
     pub(super) redraw: size_t,

@@ -62,9 +62,9 @@ unsafe fn control_window_layout_changed_cb(_name: &CStr, payload: &mut event_pay
             return;
         }
         let mut format = format_create(Some(client), None, FORMAT_NONE, 0);
-        format_defaults(&mut *format, Some(client), Some(&session), link, None);
+        format_defaults(&mut format, Some(client), Some(&session), link, None);
         let message = format_expand_cstring(
-            &mut *format,
+            &mut format,
             c"%layout-change #{window_id} #{window_layout} #{window_visible_layout} #{window_raw_flags}",
         );
         drop(format);

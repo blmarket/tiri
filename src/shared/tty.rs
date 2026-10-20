@@ -249,21 +249,6 @@ pub const TTY_CTX_OVERLAY_SYNC: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
 pub const TTY_CTX_CELL_INVALIDATE: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
 pub const TTY_CTX_PANE_OBSCURED: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use ::core::mem::{align_of, size_of};
-
-    #[test]
-    fn tty_code_domain_matches_translated_c_baseline() {
-        assert_eq!(size_of::<tty_code_code>(), 4);
-        assert_eq!(align_of::<tty_code_code>(), 4);
-        assert_eq!(TTYC_ACSC, 0);
-        assert_eq!(TTYC_CLEAR, 9);
-        assert_eq!(TTYC_XT, 235);
-    }
-}
-
 /// Cached window coordinates and the size visible through a terminal.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct tty_window_view {
@@ -382,3 +367,18 @@ impl<'a> tty_command_data<'a> {
 pub type tty_ctx_set_client_cb = Option<Box<dyn FnMut(&mut tty_ctx, &ClientRef) -> i32>>;
 
 pub type tty_ctx_redraw_cb = Option<Box<dyn Fn(&tty_ctx)>>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ::core::mem::{align_of, size_of};
+
+    #[test]
+    fn tty_code_domain_matches_translated_c_baseline() {
+        assert_eq!(size_of::<tty_code_code>(), 4);
+        assert_eq!(align_of::<tty_code_code>(), 4);
+        assert_eq!(TTYC_ACSC, 0);
+        assert_eq!(TTYC_CLEAR, 9);
+        assert_eq!(TTYC_XT, 235);
+    }
+}

@@ -62,7 +62,7 @@ unsafe fn cmd_break_pane_exec(
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0.get_unchecked());
-    let current = cmdq_get_state_owned(&*(item));
+    let current = cmdq_get_state_owned(&(item));
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let source = crate::cmd::queue::cmdq_get_source(&item);
     let tc_owner = cmdq_get_target_client(Some(&*item));

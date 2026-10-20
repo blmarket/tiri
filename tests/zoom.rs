@@ -179,9 +179,11 @@ fn selecting_a_hidden_pane_unzooms() {
     assert_eq!(columns(&server), [(0, 20), (21, 20), (42, 20)]);
 }
 
+type PaneListChange = dyn Fn(&Server, &[String]);
+
 #[test]
 fn changing_the_pane_list_unzooms() {
-    let changes: [&dyn Fn(&Server, &[String]); 4] = [
+    let changes: [&PaneListChange; 4] = [
         &|server, _| {
             server.success(&["new-pane", "-d", "sleep 60"]);
         },
@@ -203,9 +205,11 @@ fn changing_the_pane_list_unzooms() {
     }
 }
 
+type PaneCommand = dyn Fn(&[String]) -> Vec<String>;
+
 #[test]
 fn layout_and_pane_moving_commands_unzoom() {
-    let commands: [&dyn Fn(&[String]) -> Vec<String>; 6] = [
+    let commands: [&PaneCommand; 6] = [
         &|_| vec!["select-layout".into()],
         &|_| vec!["kill-pane".into(), "-a".into(), "-f".into(), "0".into()],
         &|panes| {

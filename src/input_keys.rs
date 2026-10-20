@@ -533,22 +533,23 @@ unsafe fn input_key_extended(mut bev: *mut bufferevent, mut key: key_code) -> ::
     } else {
         key &= KEYC_MASK_KEY;
     }
-    let tmp;
-    if OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"extended-keys-format"))
+
+    let tmp = if OptionsScope::GlobalServer
+        .with_local(|oo| options_get_number(oo, c"extended-keys-format"))
         == 1 as ::core::ffi::c_longlong
     {
-        tmp = format_message_with(|out| {
+        format_message_with(|out| {
             out.write_all(b"\x1B[27;")?;
             out.write_all(&[modifier as u8])?;
             write!(out, ";{}~", key)
-        });
+        })
     } else {
-        tmp = format_message_with(|out| {
+        format_message_with(|out| {
             write!(out, "\x1B[{};", key)?;
             out.write_all(&[modifier as u8])?;
             out.write_all(b"u")
-        });
-    }
+        })
+    };
     input_key_write(c"input_key_extended", bev, tmp.to_bytes());
     0 as ::core::ffi::c_int
 }

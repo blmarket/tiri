@@ -141,7 +141,7 @@ unsafe fn monitor_create_formats(
     pane: Option<&Rc<UnsafeCell<window_pane>>>,
 ) -> Box<format_tree> {
     let mut formats = format_create(None, None, 0, FORMAT_NOJOBS);
-    format_defaults(&mut *formats, client, session, link, pane);
+    format_defaults(&mut formats, client, session, link, pane);
     formats
 }
 

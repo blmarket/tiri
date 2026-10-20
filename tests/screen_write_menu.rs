@@ -7,7 +7,6 @@ use tiri::screen_write::{screen_write_menu, screen_write_start, screen_write_sto
 use tiri::shared::grid::{grid_cell, GRID_ATTR_DIM};
 use tiri::shared::menu::{menu, MenuRow};
 use tiri::shared::screen::{screen, MODE_WRAP};
-use tiri::shared::screen_write::screen_write_ctx;
 
 unsafe fn cell_at(s: &screen, x: u32, y: u32) -> grid_cell {
     let mut cell = grid_default_cell;

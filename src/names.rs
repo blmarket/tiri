@@ -72,16 +72,16 @@ pub(crate) unsafe fn default_window_name_cstring(owner: &WindowRef) -> CString {
 }
 unsafe fn format_window_name(owner: &WindowRef) -> CString {
     let mut context = format_create(None, None, (FORMAT_WINDOW | owner.id()) as i32, 0);
-    format_defaults_window(&mut *context, Some(owner));
+    format_defaults_window(&mut context, Some(owner));
     format_defaults_pane(
-        &mut *context,
+        &mut context,
         &owner.active_pane().upgrade().expect("active pane"),
     );
     let format = crate::options::options_get_string_optional(
         &owner.borrow_options_mut(),
         c"automatic-rename-format",
     );
-    let name = format_expand_cstring(&mut *context, format.as_deref().unwrap_or(c""));
+    let name = format_expand_cstring(&mut context, format.as_deref().unwrap_or(c""));
     drop(context);
     name
 }
@@ -94,7 +94,7 @@ pub unsafe fn parse_window_name_cstring(in_0: &CStr) -> CString {
     if *name as ::core::ffi::c_int == '"' as i32 {
         name = name.offset(1);
     }
-    *name.offset(strcspn(name, c"\"".as_ptr()) as isize) = '\0' as i32 as ::core::ffi::c_char;
+    *name.add(strcspn(name, c"\"".as_ptr())) = '\0' as i32 as ::core::ffi::c_char;
     if strncmp(
         name,
         c"exec ".as_ptr(),

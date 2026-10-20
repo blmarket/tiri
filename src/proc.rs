@@ -413,6 +413,8 @@ pub unsafe fn proc_remove_peer(peer: *mut tmuxpeer) {
     proc_free_peer(owned_peer);
 }
 
+// Consumes the peer's owning box so the free stays explicit at the call site.
+#[allow(clippy::boxed_local)]
 fn proc_free_peer(owned_peer: Box<tmuxpeer>) {
     log_debug(format_args!("remove peer {}", log_pointer(&*owned_peer)));
 }

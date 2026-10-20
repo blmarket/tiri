@@ -101,7 +101,7 @@ unsafe fn format_draw_put(
         ocy as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    screen_write_fast_copy(&mut *octx, &*s, start, 0 as u_int, width, 1 as u_int);
+    screen_write_fast_copy(&mut *octx, s, start, 0 as u_int, width, 1 as u_int);
     format_update_ranges(frs, index, offset, start, width);
 }
 unsafe fn format_draw_put_list(
@@ -119,7 +119,7 @@ unsafe fn format_draw_put_list(
 ) {
     let mut start: u_int = 0;
     let mut focus_centre: u_int = 0;
-    if width >= (*list).cx {
+    if width >= list.cx {
         format_draw_put(octx, ocx, ocy, list, LIST, frs, offset, 0 as u_int, width);
         return;
     }
@@ -129,10 +129,10 @@ unsafe fn format_draw_put_list(
     } else {
         start = focus_centre.wrapping_sub(width.wrapping_div(2 as u_int));
     }
-    if start.wrapping_add(width) > (*list).cx {
-        start = (*list).cx.wrapping_sub(width);
+    if start.wrapping_add(width) > list.cx {
+        start = list.cx.wrapping_sub(width);
     }
-    if start != 0 as u_int && width > (*list_left).cx {
+    if start != 0 as u_int && width > list_left.cx {
         screen_write_cursormove(
             &mut *octx,
             ocx.wrapping_add(offset) as ::core::ffi::c_int,
@@ -141,34 +141,34 @@ unsafe fn format_draw_put_list(
         );
         screen_write_fast_copy(
             &mut *octx,
-            &*list_left,
+            list_left,
             0 as u_int,
             0 as u_int,
-            (*list_left).cx,
+            list_left.cx,
             1 as u_int,
         );
-        offset = offset.wrapping_add((*list_left).cx);
-        start = start.wrapping_add((*list_left).cx);
-        width = width.wrapping_sub((*list_left).cx);
+        offset = offset.wrapping_add(list_left.cx);
+        start = start.wrapping_add(list_left.cx);
+        width = width.wrapping_sub(list_left.cx);
     }
-    if start.wrapping_add(width) < (*list).cx && width > (*list_right).cx {
+    if start.wrapping_add(width) < list.cx && width > list_right.cx {
         screen_write_cursormove(
             &mut *octx,
             ocx.wrapping_add(offset)
                 .wrapping_add(width)
-                .wrapping_sub((*list_right).cx) as ::core::ffi::c_int,
+                .wrapping_sub(list_right.cx) as ::core::ffi::c_int,
             ocy as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
         screen_write_fast_copy(
             &mut *octx,
-            &*list_right,
+            list_right,
             0 as u_int,
             0 as u_int,
-            (*list_right).cx,
+            list_right.cx,
             1 as u_int,
         );
-        width = width.wrapping_sub((*list_right).cx);
+        width = width.wrapping_sub(list_right.cx);
     }
     format_draw_put(octx, ocx, ocy, list, LIST, frs, offset, start, width);
 }
@@ -187,10 +187,10 @@ unsafe fn format_draw_none(
     let mut width_centre: u_int = 0;
     let mut width_right: u_int = 0;
     let mut width_abs_centre: u_int = 0;
-    width_left = (*left).cx;
-    width_centre = (*centre).cx;
-    width_right = (*right).cx;
-    width_abs_centre = (*abs_centre).cx;
+    width_left = left.cx;
+    width_centre = centre.cx;
+    width_right = right.cx;
+    width_abs_centre = abs_centre.cx;
     while width_left
         .wrapping_add(width_centre)
         .wrapping_add(width_right)
@@ -215,7 +215,7 @@ unsafe fn format_draw_none(
         RIGHT,
         frs,
         available.wrapping_sub(width_right),
-        (*right).cx.wrapping_sub(width_right),
+        right.cx.wrapping_sub(width_right),
         width_right,
     );
     format_draw_put(
@@ -233,7 +233,7 @@ unsafe fn format_draw_none(
                     .wrapping_div(2 as u_int),
             )
             .wrapping_sub(width_centre.wrapping_div(2 as u_int)),
-        (*centre)
+        centre
             .cx
             .wrapping_div(2 as u_int)
             .wrapping_sub(width_centre.wrapping_div(2 as u_int)),
@@ -279,12 +279,12 @@ unsafe fn format_draw_left(
     let mut width_list: u_int = 0;
     let mut width_after: u_int = 0;
     let mut width_abs_centre: u_int = 0;
-    width_left = (*left).cx;
-    width_centre = (*centre).cx;
-    width_right = (*right).cx;
-    width_abs_centre = (*abs_centre).cx;
-    width_list = (*list).cx;
-    width_after = (*after).cx;
+    width_left = left.cx;
+    width_centre = centre.cx;
+    width_right = right.cx;
+    width_abs_centre = abs_centre.cx;
+    width_list = list.cx;
+    width_after = after.cx;
     while width_left
         .wrapping_add(width_centre)
         .wrapping_add(width_right)
@@ -308,7 +308,7 @@ unsafe fn format_draw_left(
         let mut ctx = screen_write_start(&mut *left);
         screen_write_fast_copy(
             &mut ctx,
-            &*after,
+            after,
             0 as u_int,
             0 as u_int,
             width_after,
@@ -331,7 +331,7 @@ unsafe fn format_draw_left(
         RIGHT,
         frs,
         available.wrapping_sub(width_right),
-        (*right).cx.wrapping_sub(width_right),
+        right.cx.wrapping_sub(width_right),
         width_right,
     );
     format_draw_put(
@@ -366,7 +366,7 @@ unsafe fn format_draw_left(
                     .wrapping_div(2 as u_int),
             )
             .wrapping_sub(width_centre.wrapping_div(2 as u_int)),
-        (*centre)
+        centre
             .cx
             .wrapping_div(2 as u_int)
             .wrapping_sub(width_centre.wrapping_div(2 as u_int)),
@@ -430,12 +430,12 @@ unsafe fn format_draw_centre(
     let mut width_list: u_int = 0;
     let mut width_after: u_int = 0;
     let mut width_abs_centre: u_int = 0;
-    width_left = (*left).cx;
-    width_centre = (*centre).cx;
-    width_right = (*right).cx;
-    width_abs_centre = (*abs_centre).cx;
-    width_list = (*list).cx;
-    width_after = (*after).cx;
+    width_left = left.cx;
+    width_centre = centre.cx;
+    width_right = right.cx;
+    width_abs_centre = abs_centre.cx;
+    width_list = list.cx;
+    width_after = after.cx;
     while width_left
         .wrapping_add(width_centre)
         .wrapping_add(width_right)
@@ -459,7 +459,7 @@ unsafe fn format_draw_centre(
         let mut ctx = screen_write_start(&mut *centre);
         screen_write_fast_copy(
             &mut ctx,
-            &*after,
+            after,
             0 as u_int,
             0 as u_int,
             width_after,
@@ -482,7 +482,7 @@ unsafe fn format_draw_centre(
         RIGHT,
         frs,
         available.wrapping_sub(width_right),
-        (*right).cx.wrapping_sub(width_right),
+        right.cx.wrapping_sub(width_right),
         width_right,
     );
     middle = width_left.wrapping_add(
@@ -518,7 +518,7 @@ unsafe fn format_draw_centre(
         width_after,
     );
     if focus_start == -(1 as ::core::ffi::c_int) || focus_end == -(1 as ::core::ffi::c_int) {
-        focus_end = (*list).cx.wrapping_div(2 as u_int) as ::core::ffi::c_int;
+        focus_end = list.cx.wrapping_div(2 as u_int) as ::core::ffi::c_int;
         focus_start = focus_end;
     }
     format_draw_put_list(
@@ -574,12 +574,12 @@ unsafe fn format_draw_right(
     let mut width_list: u_int = 0;
     let mut width_after: u_int = 0;
     let mut width_abs_centre: u_int = 0;
-    width_left = (*left).cx;
-    width_centre = (*centre).cx;
-    width_right = (*right).cx;
-    width_abs_centre = (*abs_centre).cx;
-    width_list = (*list).cx;
-    width_after = (*after).cx;
+    width_left = left.cx;
+    width_centre = centre.cx;
+    width_right = right.cx;
+    width_abs_centre = abs_centre.cx;
+    width_list = list.cx;
+    width_after = after.cx;
     while width_left
         .wrapping_add(width_centre)
         .wrapping_add(width_right)
@@ -603,7 +603,7 @@ unsafe fn format_draw_right(
         let mut ctx = screen_write_start(&mut *right);
         screen_write_fast_copy(
             &mut ctx,
-            &*after,
+            after,
             0 as u_int,
             0 as u_int,
             width_after,
@@ -626,7 +626,7 @@ unsafe fn format_draw_right(
         AFTER,
         frs,
         available.wrapping_sub(width_after),
-        (*after).cx.wrapping_sub(width_after),
+        after.cx.wrapping_sub(width_after),
         width_after,
     );
     format_draw_put(
@@ -660,7 +660,7 @@ unsafe fn format_draw_right(
                     .wrapping_div(2 as u_int),
             )
             .wrapping_sub(width_centre.wrapping_div(2 as u_int)),
-        (*centre)
+        centre
             .cx
             .wrapping_div(2 as u_int)
             .wrapping_sub(width_centre.wrapping_div(2 as u_int)),
@@ -725,12 +725,12 @@ unsafe fn format_draw_absolute_centre(
     let mut width_after: u_int = 0;
     let mut middle: u_int = 0;
     let mut abs_centre_offset: u_int = 0;
-    width_left = (*left).cx;
-    width_centre = (*centre).cx;
-    width_right = (*right).cx;
-    width_abs_centre = (*abs_centre).cx;
-    width_list = (*list).cx;
-    width_after = (*after).cx;
+    width_left = left.cx;
+    width_centre = centre.cx;
+    width_right = right.cx;
+    width_abs_centre = abs_centre.cx;
+    width_list = list.cx;
+    width_after = after.cx;
     while width_left
         .wrapping_add(width_centre)
         .wrapping_add(width_right)
@@ -768,7 +768,7 @@ unsafe fn format_draw_absolute_centre(
         RIGHT,
         frs,
         available.wrapping_sub(width_right),
-        (*right).cx.wrapping_sub(width_right),
+        right.cx.wrapping_sub(width_right),
         width_right,
     );
     middle = width_left.wrapping_add(
@@ -789,7 +789,7 @@ unsafe fn format_draw_absolute_centre(
         width_centre,
     );
     if focus_start == -(1 as ::core::ffi::c_int) || focus_end == -(1 as ::core::ffi::c_int) {
-        focus_end = (*list).cx.wrapping_div(2 as u_int) as ::core::ffi::c_int;
+        focus_end = list.cx.wrapping_div(2 as u_int) as ::core::ffi::c_int;
         focus_start = focus_end;
     }
     abs_centre_offset = available
@@ -1285,7 +1285,7 @@ pub unsafe fn format_draw(
                     "{}: width {} is {}",
                     "format_draw",
                     log_cstr(names[i]),
-                    (width[i]) as u32
+                    { width[i] }
                 ));
             }
         }

@@ -1414,31 +1414,6 @@ pub const KEYC_WHEELUP_STATUS_DEFAULT: key_code = 38654705668;
 pub const KEYC_WHEELUP_STATUS_LEFT: key_code = 38654705666;
 pub const KEYC_WHEELUP_STATUS_RIGHT: key_code = 38654705667;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use ::core::mem::{align_of, size_of};
-
-    #[test]
-    fn key_domains_match_translated_c_baseline() {
-        assert_eq!(size_of::<key_code>(), 8);
-        assert_eq!(align_of::<key_code>(), 8);
-        assert_eq!(size_of::<key_code_type>(), 4);
-        assert_eq!(align_of::<key_code_type>(), 4);
-        assert_eq!(size_of::<key_code_mouse_location>(), 4);
-        assert_eq!(align_of::<key_code_mouse_location>(), 4);
-        assert_eq!(KEYC_TYPE_UNICODE, 0);
-        assert_eq!(KEYC_TYPE_NOTYPE, 13);
-        assert_eq!(KEYC_F1, 8589934600);
-        assert_eq!(KEYC_META, 0x100000000000);
-        assert_eq!(KEYC_MASK_MODIFIERS, 0xff0000000000);
-        assert_eq!(KEYC_BUILD_MODIFIERS, 0x10000000000000);
-        assert_eq!(KEYC_NUSER, 1000);
-        assert_eq!(KEYC_MOUSE_LOCATION_PANE, 0);
-        assert_eq!(KEYC_MOUSE_LOCATION_NOWHERE, 20);
-    }
-}
-
 pub const KEY_BINDING_REPEAT: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 
 pub const MODEKEY_EMACS: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -1583,5 +1558,30 @@ pub struct KeyBindingCommand {
 impl KeyBindingCommand {
     pub fn cmdlist(&self) -> &std::rc::Rc<std::cell::RefCell<cmd_list>> {
         &self.commands
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ::core::mem::{align_of, size_of};
+
+    #[test]
+    fn key_domains_match_translated_c_baseline() {
+        assert_eq!(size_of::<key_code>(), 8);
+        assert_eq!(align_of::<key_code>(), 8);
+        assert_eq!(size_of::<key_code_type>(), 4);
+        assert_eq!(align_of::<key_code_type>(), 4);
+        assert_eq!(size_of::<key_code_mouse_location>(), 4);
+        assert_eq!(align_of::<key_code_mouse_location>(), 4);
+        assert_eq!(KEYC_TYPE_UNICODE, 0);
+        assert_eq!(KEYC_TYPE_NOTYPE, 13);
+        assert_eq!(KEYC_F1, 8589934600);
+        assert_eq!(KEYC_META, 0x100000000000);
+        assert_eq!(KEYC_MASK_MODIFIERS, 0xff0000000000);
+        assert_eq!(KEYC_BUILD_MODIFIERS, 0x10000000000000);
+        assert_eq!(KEYC_NUSER, 1000);
+        assert_eq!(KEYC_MOUSE_LOCATION_PANE, 0);
+        assert_eq!(KEYC_MOUSE_LOCATION_NOWHERE, 20);
     }
 }

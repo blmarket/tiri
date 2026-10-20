@@ -100,7 +100,7 @@ unsafe fn cmd_new_session_exec(
     let mut queue_client_ptr: Option<ClientRef> = queue_client.clone();
     let mut current_block: u64;
     let args = cmd_get_args(self_0.get_unchecked());
-    let current = cmdq_get_state_owned(&*(item));
+    let current = cmdq_get_state_owned(&(item));
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
@@ -638,7 +638,7 @@ unsafe fn cmd_new_session_exec(
                                                             c.clone()
                                                                 .expect("live client")
                                                                 .set_session(s.as_ref());
-                                                            if !cmdq_get_flags(&*(item))
+                                                            if !cmdq_get_flags(&(item))
                                                                 & CMDQ_STATE_REPEAT
                                                                 != 0
                                                             {

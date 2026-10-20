@@ -103,14 +103,14 @@ pub(super) unsafe fn make_status(
         .upgrade()
         .expect("live pane status session");
     format_defaults(
-        &mut *context,
+        &mut context,
         Some(client),
         Some(&session),
         session.current_winlink(),
         Some(pane),
     );
     let value = options_get_string(&pane.borrow_options_mut(), c"pane-border-format");
-    let expanded = format_expand_time_cstring(&mut *context, &value);
+    let expanded = format_expand_time_cstring(&mut context, &value);
     let mut cell = pane.border_style(client);
     let lines = pane.pane_lines();
     let window = pane

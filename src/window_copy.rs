@@ -5429,26 +5429,26 @@ unsafe fn window_copy_search_lr(
         us: 0,
         link: 0,
     };
-    endline = (*gd).hsize.wrapping_add((*gd).sy).wrapping_sub(1 as u_int);
+    endline = gd.hsize.wrapping_add(gd.sy).wrapping_sub(1 as u_int);
     ax = first;
     while ax < last {
         padding = 0 as u_int;
         bx = 0 as u_int;
-        while bx < (*sgd).sx {
+        while bx < sgd.sx {
             px = ax.wrapping_add(bx).wrapping_add(padding);
             pywrap = py;
-            while px >= (*gd).sx && pywrap < endline {
-                let gl = grid_get_line(&*gd, pywrap);
+            while px >= gd.sx && pywrap < endline {
+                let gl = grid_get_line(gd, pywrap);
                 if !(gl.flags as ::core::ffi::c_int) & GRID_LINE_WRAPPED != 0 {
                     break;
                 }
-                px = px.wrapping_sub((*gd).sx);
+                px = px.wrapping_sub(gd.sx);
                 pywrap = pywrap.wrapping_add(1);
             }
-            if px.wrapping_sub(padding) >= (*gd).sx {
+            if px.wrapping_sub(padding) >= gd.sx {
                 break;
             }
-            grid_get_cell(&*gd, px, pywrap, &mut gc);
+            grid_get_cell(gd, px, pywrap, &mut gc);
             if gc.flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
                 padding = padding.wrapping_add(
                     (gc.data.width as ::core::ffi::c_int - 1 as ::core::ffi::c_int) as u_int,
@@ -5460,7 +5460,7 @@ unsafe fn window_copy_search_lr(
             }
             bx = bx.wrapping_add(1);
         }
-        if bx == (*sgd).sx {
+        if bx == sgd.sx {
             *ppx = ax;
             return 1 as ::core::ffi::c_int;
         }
@@ -5498,29 +5498,29 @@ unsafe fn window_copy_search_rl(
         us: 0,
         link: 0,
     };
-    endline = (*gd).hsize.wrapping_add((*gd).sy).wrapping_sub(1 as u_int);
+    endline = gd.hsize.wrapping_add(gd.sy).wrapping_sub(1 as u_int);
     ax = last;
     while ax > first {
         padding = 0 as u_int;
         bx = 0 as u_int;
-        while bx < (*sgd).sx {
+        while bx < sgd.sx {
             px = ax
                 .wrapping_sub(1 as u_int)
                 .wrapping_add(bx)
                 .wrapping_add(padding);
             pywrap = py;
-            while px >= (*gd).sx && pywrap < endline {
-                let gl = grid_get_line(&*gd, pywrap);
+            while px >= gd.sx && pywrap < endline {
+                let gl = grid_get_line(gd, pywrap);
                 if !(gl.flags as ::core::ffi::c_int) & GRID_LINE_WRAPPED != 0 {
                     break;
                 }
-                px = px.wrapping_sub((*gd).sx);
+                px = px.wrapping_sub(gd.sx);
                 pywrap = pywrap.wrapping_add(1);
             }
-            if px.wrapping_sub(padding) >= (*gd).sx {
+            if px.wrapping_sub(padding) >= gd.sx {
                 break;
             }
-            grid_get_cell(&*gd, px, pywrap, &mut gc);
+            grid_get_cell(gd, px, pywrap, &mut gc);
             if gc.flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
                 padding = padding.wrapping_add(
                     (gc.data.width as ::core::ffi::c_int - 1 as ::core::ffi::c_int) as u_int,
@@ -5532,7 +5532,7 @@ unsafe fn window_copy_search_rl(
             }
             bx = bx.wrapping_add(1);
         }
-        if bx == (*sgd).sx {
+        if bx == sgd.sx {
             *ppx = ax.wrapping_sub(1 as u_int);
             return 1 as ::core::ffi::c_int;
         }
@@ -5986,7 +5986,7 @@ unsafe fn window_copy_search_jump(
     let mut regex_storage = RegexStorage::default();
     let regex_owner = if regex != 0 {
         let mut sbuf = vec![0u8];
-        window_copy_stringify(sgd, 0 as u_int, 0 as u_int, (*sgd).sx, &mut sbuf);
+        window_copy_stringify(sgd, 0 as u_int, 0 as u_int, sgd.sx, &mut sbuf);
         if cis != 0 {
             cflags |= REG_ICASE;
         }
@@ -6825,25 +6825,24 @@ fn window_copy_update_style(
         .wrapping_add(data.cy);
     if fy == cy {
         if clgc.fg != 8 as ::core::ffi::c_int {
-            (*gc).fg = clgc.fg;
+            gc.fg = clgc.fg;
         }
         if clgc.bg != 8 as ::core::ffi::c_int {
-            (*gc).bg = clgc.bg;
+            gc.bg = clgc.bg;
         }
-        (*gc).attr =
-            ((*gc).attr as ::core::ffi::c_int | clgc.attr as ::core::ffi::c_int) as u_short;
+        gc.attr = (gc.attr as ::core::ffi::c_int | clgc.attr as ::core::ffi::c_int) as u_short;
     }
     if data.showmark != 0 && fy == data.my {
-        (*gc).attr = mkgc.attr;
+        gc.attr = mkgc.attr;
         if fx == data.mx {
             inv = 1 as ::core::ffi::c_int;
         }
         if inv != 0 {
-            (*gc).fg = mkgc.bg;
-            (*gc).bg = mkgc.fg;
+            gc.fg = mkgc.bg;
+            gc.bg = mkgc.fg;
         } else {
-            (*gc).fg = mkgc.fg;
-            (*gc).bg = mkgc.bg;
+            gc.fg = mkgc.fg;
+            gc.bg = mkgc.bg;
         }
     }
     if data.searchmark.is_empty() {
@@ -6868,25 +6867,25 @@ fn window_copy_update_style(
         if found != 0 {
             window_copy_match_start_end(data, cursor, &mut start, &mut end);
             if current >= start && current <= end {
-                (*gc).attr = cgc.attr;
+                gc.attr = cgc.attr;
                 if inv != 0 {
-                    (*gc).fg = cgc.bg;
-                    (*gc).bg = cgc.fg;
+                    gc.fg = cgc.bg;
+                    gc.bg = cgc.fg;
                 } else {
-                    (*gc).fg = cgc.fg;
-                    (*gc).bg = cgc.bg;
+                    gc.fg = cgc.fg;
+                    gc.bg = cgc.bg;
                 }
                 return;
             }
         }
     }
-    (*gc).attr = mgc.attr;
+    gc.attr = mgc.attr;
     if inv != 0 {
-        (*gc).fg = mgc.bg;
-        (*gc).bg = mgc.fg;
+        gc.fg = mgc.bg;
+        gc.bg = mgc.fg;
     } else {
-        (*gc).fg = mgc.fg;
-        (*gc).bg = mgc.bg;
+        gc.fg = mgc.fg;
+        gc.bg = mgc.bg;
     };
 }
 unsafe fn window_copy_write_one(

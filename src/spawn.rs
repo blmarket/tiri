@@ -110,29 +110,28 @@ pub(crate) unsafe fn prepare_respawn_window(
         .cloned()
         .expect("live respawn window");
     let result = (|| {
-        if !sc.flags & SPAWN_KILL != 0 {
-            if window
+        if !sc.flags & SPAWN_KILL != 0
+            && window
                 .pane_snapshot()
                 .iter()
                 .filter_map(std::rc::Weak::upgrade)
                 .any(|pane| pane.has_tty())
-            {
-                set_spawn_cause(
-                    Some(&mut *cause),
-                    &[
-                        b"window ",
-                        sc.s.upgrade().expect("spawn session").name().as_bytes(),
-                        b":",
-                        (sc.winlink_handle())
-                            .get_unchecked()
-                            .idx
-                            .to_string()
-                            .as_bytes(),
-                        b" still active",
-                    ],
-                );
-                return false;
-            }
+        {
+            set_spawn_cause(
+                Some(&mut *cause),
+                &[
+                    b"window ",
+                    sc.s.upgrade().expect("spawn session").name().as_bytes(),
+                    b":",
+                    (sc.winlink_handle())
+                        .get_unchecked()
+                        .idx
+                        .to_string()
+                        .as_bytes(),
+                    b" still active",
+                ],
+            );
+            return false;
         }
         let source_pane_owner = window
             .step_pane(None, false)

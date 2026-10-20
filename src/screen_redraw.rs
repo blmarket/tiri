@@ -495,7 +495,7 @@ fn redraw_border_type(up: bool, down: bool, left: bool, right: bool) -> ::core::
 fn redraw_is_border(bctx: &mut redraw_build_ctx, x: u_int, y: u_int) -> bool {
     x < bctx.sx
         && y < bctx.sy
-        && (*redraw_get_build_cell(bctx, x, y)).data.kind() == REDRAW_SPAN_BORDER
+        && redraw_get_build_cell(bctx, x, y).data.kind() == REDRAW_SPAN_BORDER
 }
 /// Give every separator cell its line, joining the separator cells beside it.
 fn redraw_set_border_types(bctx: &mut redraw_build_ctx) {
@@ -510,7 +510,7 @@ fn redraw_set_border_types(bctx: &mut redraw_build_ctx) {
                 x > 0 && redraw_is_border(bctx, x - 1, y),
                 redraw_is_border(bctx, x + 1, y),
             );
-            (*redraw_get_build_cell(bctx, x, y))
+            redraw_get_build_cell(bctx, x, y)
                 .data
                 .border_mut()
                 .cell_type = cell_type;
@@ -631,13 +631,13 @@ fn redraw_mark_frame_cell(
     cell_type: ::core::ffi::c_int,
 ) {
     let owner = inside
-        .map(|(ix, iy)| &(*redraw_get_build_cell(bctx, ix, iy)).data)
+        .map(|(ix, iy)| &redraw_get_build_cell(bctx, ix, iy).data)
         .and_then(|data| match data {
             redraw_span_data::Pane(pane) => Some(pane.wp.clone()),
             _ => None,
         })
         .unwrap_or_default();
-    (*redraw_get_build_cell(bctx, x, y)).data = redraw_span_data::Border(RedrawBorderSpan {
+    redraw_get_build_cell(bctx, x, y).data = redraw_span_data::Border(RedrawBorderSpan {
         left_wp: owner,
         cell_type,
         ..Default::default()

@@ -48,22 +48,6 @@ pub const MSG_IDENTIFY_TERM: msgtype = 101;
 pub const MSG_IDENTIFY_FLAGS: msgtype = 100;
 pub const MSG_VERSION: msgtype = 12;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use ::core::mem::{align_of, size_of};
-
-    #[test]
-    fn message_domain_matches_translated_c_baseline() {
-        assert_eq!(size_of::<msgtype>(), 4);
-        assert_eq!(align_of::<msgtype>(), 4);
-        assert_eq!(MSG_VERSION, 12);
-        assert_eq!(MSG_IDENTIFY_FLAGS, 100);
-        assert_eq!(MSG_COMMAND, 200);
-        assert_eq!(MSG_WRITE_DONE, 308);
-    }
-}
-
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct imsg_hdr {
@@ -107,4 +91,20 @@ pub(crate) struct imsgbuf {
 #[repr(C)]
 pub(crate) struct msg_command {
     pub argc: ::core::ffi::c_int,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ::core::mem::{align_of, size_of};
+
+    #[test]
+    fn message_domain_matches_translated_c_baseline() {
+        assert_eq!(size_of::<msgtype>(), 4);
+        assert_eq!(align_of::<msgtype>(), 4);
+        assert_eq!(MSG_VERSION, 12);
+        assert_eq!(MSG_IDENTIFY_FLAGS, 100);
+        assert_eq!(MSG_COMMAND, 200);
+        assert_eq!(MSG_WRITE_DONE, 308);
+    }
 }

@@ -28,20 +28,6 @@ pub const OPTIONS_TABLE_STATUS_FORMAT1: &std::ffi::CStr = c"#[align=left range=l
 pub const OPTIONS_TABLE_STATUS_FORMAT2: &std::ffi::CStr = c"#[align=left]#{R: ,#{e|-:#{w;T;=/#{status-left-length}:status-left},3}}P: #[norange default]#[list=on align=#{status-justify}]#[list=left-marker]<#[list=right-marker]>#[list=on]#{P:#[range=pane|#{pane_id} #{E:pane-status-style}]#[push-default]#{T:window-pane-status-format}#[pop-default]#[norange list=on default]#{?loop_last_flag,,#{E:window-status-separator}},#[range=pane|#{pane_id} list=focus #{?#{!=:#{E:pane-status-current-style},default},#{E:pane-status-current-style},#{E:pane-status-style}}]#[push-default]#{T:window-pane-current-status-format}#[pop-default]#[norange list=on default]#{?loop_last_flag,,#{E:window-status-separator}}}";
 pub const OPTIONS_TABLE_STATUS_FORMAT3: &std::ffi::CStr = c"#[align=left]#{R: ,#{e|-:#{w;T;=/#{status-left-length}:status-left},3}}S: #[norange default]#[list=on align=#{status-justify}]#[list=left-marker]<#[list=right-marker]>#[list=on]#{S:#[range=session|#{session_id} #{E:session-status-style}]#[push-default]#S#{q/h:session_alert}#[pop-default]#[norange list=on default]  ,#[range=session|#{session_id} list=focus #{?#{!=:#{E:session-status-current-style},default},#{E:session-status-current-style},#{E:session-status-style}}]#[push-default]#S*#{q/h:session_alert}#[pop-default]#[norange list=on default] }";
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use ::core::mem::{align_of, size_of};
-
-    #[test]
-    fn option_table_domain_matches_translated_c_baseline() {
-        assert_eq!(size_of::<options_table_type>(), 4);
-        assert_eq!(align_of::<options_table_type>(), 4);
-        assert_eq!(OPTIONS_TABLE_STRING, 0);
-        assert_eq!(OPTIONS_TABLE_COMMAND, 6);
-    }
-}
-
 #[repr(C)]
 pub struct options {
     pub(crate) tree: BTreeMap<CString, Box<options_entry>>,
@@ -166,5 +152,19 @@ pub struct options_array {
 impl options_entry {
     pub fn tableentry_ptr(&self) -> Option<&'static options_table_entry> {
         self.tableentry
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ::core::mem::{align_of, size_of};
+
+    #[test]
+    fn option_table_domain_matches_translated_c_baseline() {
+        assert_eq!(size_of::<options_table_type>(), 4);
+        assert_eq!(align_of::<options_table_type>(), 4);
+        assert_eq!(OPTIONS_TABLE_STRING, 0);
+        assert_eq!(OPTIONS_TABLE_COMMAND, 6);
     }
 }

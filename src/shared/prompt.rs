@@ -41,25 +41,6 @@ pub type prompt_free_cb = Option<Box<dyn FnOnce()>>;
 pub type prompt_input_cb =
     Option<Box<dyn FnMut(Option<&CStr>, prompt_key_result) -> prompt_result>>;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use ::core::mem::{align_of, size_of};
-
-    #[test]
-    fn prompt_domains_match_translated_c_baseline() {
-        assert_eq!(size_of::<prompt_type>(), 4);
-        assert_eq!(align_of::<prompt_type>(), 4);
-        assert_eq!(size_of::<prompt_key_result>(), 4);
-        assert_eq!(align_of::<prompt_key_result>(), 4);
-        assert_eq!(PROMPT_TYPE_COMMAND, 0);
-        assert_eq!(PROMPT_TYPE_SEARCH, 1);
-        assert_eq!(PROMPT_TYPE_INVALID, 255);
-        assert_eq!(PROMPT_KEY_NOT_HANDLED, 0);
-        assert_eq!(PROMPT_KEY_MOVE, 3);
-    }
-}
-
 #[derive(Default)]
 pub struct prompt_completion {
     pub names: Vec<CString>,
@@ -128,4 +109,23 @@ pub struct prompt_draw_data {
     pub area_x: u_int,
     pub area_width: u_int,
     pub prompt_line: u_int,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ::core::mem::{align_of, size_of};
+
+    #[test]
+    fn prompt_domains_match_translated_c_baseline() {
+        assert_eq!(size_of::<prompt_type>(), 4);
+        assert_eq!(align_of::<prompt_type>(), 4);
+        assert_eq!(size_of::<prompt_key_result>(), 4);
+        assert_eq!(align_of::<prompt_key_result>(), 4);
+        assert_eq!(PROMPT_TYPE_COMMAND, 0);
+        assert_eq!(PROMPT_TYPE_SEARCH, 1);
+        assert_eq!(PROMPT_TYPE_INVALID, 255);
+        assert_eq!(PROMPT_KEY_NOT_HANDLED, 0);
+        assert_eq!(PROMPT_KEY_MOVE, 3);
+    }
 }

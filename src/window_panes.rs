@@ -35,11 +35,12 @@ use crate::shared::pane::window_pane;
 use crate::shared::screen::{screen, MODE_CURSOR};
 use crate::shared::screen_write::screen_write_ctx;
 use crate::shared::session::{SessionRef, SessionWeak};
-use crate::shared::window::{
-    WINDOW_MODE_HIDE_PANE_STATUS, WINDOW_MODE_HIDE_SCROLLBARS, WINDOW_MODE_NO_STACK, WINDOW_MODE_ZOOM,
-};
 use crate::shared::window::{window_mode, window_mode_entry, window_mode_screen_payload, winlink};
 use crate::shared::window::{WindowRef, WindowWeak};
+use crate::shared::window::{
+    WINDOW_MODE_HIDE_PANE_STATUS, WINDOW_MODE_HIDE_SCROLLBARS, WINDOW_MODE_NO_STACK,
+    WINDOW_MODE_ZOOM,
+};
 use crate::style::style_apply_with_options;
 use crate::text::utf8::utf8_set;
 use crate::window::winlink_find_by_window;

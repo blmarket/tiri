@@ -58,7 +58,7 @@ unsafe fn cmd_switch_client_exec(
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let args = cmd_get_args(self_0.get_unchecked());
-    let current = cmdq_get_state_owned(&*(item));
+    let current = cmdq_get_state_owned(&(item));
     let mut target: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -86,8 +86,7 @@ unsafe fn cmd_switch_client_exec(
     };
     let mut uid: uid_t = 0;
     if !tflag.is_null()
-        && (*tflag.offset(strcspn(tflag, c":.%".as_ptr()) as isize) as ::core::ffi::c_int
-            != '\0' as i32
+        && (*tflag.add(strcspn(tflag, c":.%".as_ptr())) as ::core::ffi::c_int != '\0' as i32
             || strcmp(tflag, c"=".as_ptr()) == 0 as ::core::ffi::c_int)
     {
         type_0 = CMD_FIND_PANE;
@@ -231,7 +230,7 @@ unsafe fn cmd_switch_client_exec(
             .update_environment(&source);
     }
     tc.clone().expect("live client").set_session(s.as_ref());
-    if !cmdq_get_flags(&*(item)) & CMDQ_STATE_REPEAT != 0 {
+    if !cmdq_get_flags(&(item)) & CMDQ_STATE_REPEAT != 0 {
         tc.clone().expect("live client").set_key_table(None);
     }
     CmdOutcome::Normal

@@ -147,7 +147,6 @@ pub unsafe fn status_get_range(c: &ClientRef, x: u_int, y: u_int) -> Option<styl
         .entries
         .get(y as usize)?
         .ranges
-        .as_slice()
         .iter()
         .find(|range| x >= range.start && x < range.end)
         .map(|range| **range)
@@ -722,7 +721,7 @@ pub unsafe fn status_prompt_key(
                 .prompt_observer()
                 .try_borrow_mut()
                 .expect("unborrowed prompt"),
-            (*m).x,
+            m.x,
             ax,
             aw,
             Some(&mut redraw),

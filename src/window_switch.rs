@@ -255,10 +255,7 @@ fn window_switch_set_current(data: &mut window_switch_modedata, mut current: u_i
     if data.current < data.offset {
         data.offset = data.current;
     } else if visible != 0 as u_int && data.current >= data.offset.wrapping_add(visible) {
-        data.offset = data
-            .current
-            .wrapping_sub(visible)
-            .wrapping_add(1 as u_int);
+        data.offset = data.current.wrapping_sub(visible).wrapping_add(1 as u_int);
     }
 }
 unsafe fn window_switch_data(
@@ -405,7 +402,7 @@ unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         }
         i = i.wrapping_add(1);
     }
-    if data.prompt.is_some() {
+    if let Some(prompt) = data.prompt.as_ref() {
         let pdd = prompt_draw_data {
             area_x: 0 as u_int,
             area_width: sx,
@@ -413,12 +410,7 @@ unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         };
         ctx.screen.mode |= MODE_CURSOR;
         data.prompt_cx = prompt_draw(
-            &data
-                .prompt
-                .as_ref()
-                .expect("active prompt")
-                .try_borrow_mut()
-                .expect("unborrowed prompt"),
+            &prompt.try_borrow_mut().expect("unborrowed prompt"),
             &mut ctx,
             pdd,
         );
@@ -443,15 +435,13 @@ unsafe fn window_switch_init(
         .upgrade()
         .expect("mode belongs to a live pane");
     let mut pd = prompt_create_data::default();
-    let format = if let Some(args) = args
-        .as_deref()
-        .filter(|args| args_has(args, 'F' as i32 as u_char) != 0)
-    {
-        args_get(args, 'F' as i32 as u_char).expect("-F takes a value")
-    } else {
-        WINDOW_SWITCH_DEFAULT_FORMAT
-    }
-    .to_owned();
+    let format =
+        if let Some(args) = args.filter(|args| args_has(args, 'F' as i32 as u_char) != 0) {
+            args_get(args, 'F' as i32 as u_char).expect("-F takes a value")
+        } else {
+            WINDOW_SWITCH_DEFAULT_FORMAT
+        }
+        .to_owned();
     let command = if let Some(args) = args.filter(|args| args_count(args) != 0 as u_int) {
         args_string(args, 0 as u_int).expect("argument 0 exists")
     } else {
@@ -688,9 +678,9 @@ unsafe fn window_switch_key(
         if let Some(prompt) = prompt.as_ref().filter(|_| {
             sy != 0 as u_int
                 && y == sy.wrapping_sub(1 as u_int)
-                && (*m).b & MOUSE_MASK_BUTTONS as u_int == MOUSE_BUTTON_1 as u_int
-                && (*m).b & MOUSE_MASK_DRAG as u_int == 0
-                && !((*m).b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int)
+                && m.b & MOUSE_MASK_BUTTONS as u_int == MOUSE_BUTTON_1 as u_int
+                && m.b & MOUSE_MASK_DRAG as u_int == 0
+                && !(m.b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int)
         }) {
             result = prompt_mouse(
                 &mut prompt.try_borrow_mut().expect("unborrowed prompt"),

@@ -427,7 +427,8 @@ unsafe fn window_pop_zoom(window: &WindowRef) -> bool {
     if !std::mem::take(&mut (*w).was_zoomed) {
         return false;
     }
-    (*w).active_pane().is_some_and(|active| window_zoom(window, &active))
+    (*w).active_pane()
+        .is_some_and(|active| window_zoom(window, &active))
 }
 
 unsafe fn window_update_focus(w_owner: Option<&WindowRef>) {

@@ -1478,10 +1478,7 @@ unsafe fn window_customize_pane(mode: &CustomizeMode) -> Option<Rc<UnsafeCell<wi
     Rc::<UnsafeCell<window_pane>>::from_observer(&mode.data.borrow().wp)
 }
 
-unsafe fn window_customize_build(
-    mode: &CustomizeMode,
-    filter: Option<&CStr>,
-) {
+unsafe fn window_customize_build(mode: &CustomizeMode, filter: Option<&CStr>) {
     let mut guard = mode.data.borrow_mut();
     let data = &mut *guard;
     let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&data.wp) else {
@@ -2662,10 +2659,7 @@ unsafe fn window_customize_init(
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
-    let format = if let Some(args) = args
-        .as_deref()
-        .filter(|args| args_has(args, 'F' as i32 as u_char) != 0)
-    {
+    let format = if let Some(args) = args.filter(|args| args_has(args, 'F' as i32 as u_char) != 0) {
         args_get(args, 'F' as i32 as u_char)
             .expect("argument is present")
             .to_owned()
@@ -3618,8 +3612,7 @@ unsafe fn window_customize_set_array_key(
     mode: &CustomizeMode,
     item: &window_customize_itemdata,
 ) {
-    if item.array_key.is_none()
-        || window_customize_check_item(&mode.data.borrow(), item, None) == 0
+    if item.array_key.is_none() || window_customize_check_item(&mode.data.borrow(), item, None) == 0
     {
         return;
     }
@@ -3719,12 +3712,8 @@ unsafe fn window_customize_unset_option(
     let _ = owner.remove_or_default(name, item.array_key.as_deref());
 }
 
-unsafe fn window_customize_reset_option(
-    mode: &CustomizeMode,
-    item: &window_customize_itemdata,
-) {
-    if window_customize_check_item(&mode.data.borrow(), item, None) == 0
-        || item.array_key.is_some()
+unsafe fn window_customize_reset_option(mode: &CustomizeMode, item: &window_customize_itemdata) {
+    if window_customize_check_item(&mode.data.borrow(), item, None) == 0 || item.array_key.is_some()
     {
         return;
     }

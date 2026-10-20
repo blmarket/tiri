@@ -81,7 +81,7 @@ unsafe fn cmd_find_inside_pane(
         });
         pane_id
             .as_deref()
-            .and_then(|id| std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::find_by_id_str(id))
+            .and_then(std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::find_by_id_str)
     });
     if let Some(pane) = inside.as_ref() {
         let terminal = pane.tty_name();
@@ -977,27 +977,27 @@ impl cmd_find_state {
         let mut queue_client_ptr: Option<ClientRef> = queue_client.clone();
         let mut current_block: u64;
         let mut c: Option<ClientRef> = None;
-        let s: &CStr;
+
         let mut window_only: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
         let mut pane_only: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
         if flags & CMD_FIND_CANFAIL != 0 {
             flags |= CMD_FIND_QUIET;
         }
-        if type_0 as ::core::ffi::c_uint
+        let s: &CStr = if type_0 as ::core::ffi::c_uint
             == CMD_FIND_PANE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            s = c"pane";
+            c"pane"
         } else if type_0 as ::core::ffi::c_uint
             == CMD_FIND_WINDOW as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            s = c"window";
+            c"window"
         } else if type_0 as ::core::ffi::c_uint
             == CMD_FIND_SESSION as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            s = c"session";
+            c"session"
         } else {
-            s = c"unknown";
-        }
+            c"unknown"
+        };
         let mut tmp = Vec::new();
         for (flag, name) in [
             (CMD_FIND_PREFER_UNATTACHED, b"PREFER_UNATTACHED,".as_slice()),
@@ -1488,10 +1488,10 @@ unsafe fn cmd_find_current_client(
             found = cmd_find_best_client(&session_owner);
         }
     }
-    if found.is_none() && item_handle.is_some() && quiet == 0 {
-        cmdq_error(item_handle.expect("command queue item"), |out| {
-            out.write_all(b"no current client")
-        });
+    if found.is_none() && quiet == 0 {
+        if let Some(item) = item_handle {
+            cmdq_error(item, |out| out.write_all(b"no current client"));
+        }
     }
     log_debug(format_args!(
         "{}: no target, return {}",

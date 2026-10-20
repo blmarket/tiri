@@ -64,8 +64,8 @@ unsafe fn cmd_new_window_exec(
     let args = cmd_get_args(self_0.get_unchecked());
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
-    let current = cmdq_get_state_owned(&*(item));
-    let target = cmdq_get_target(&*item).clone();
+    let current = cmdq_get_state_owned(&(item));
+    let target = cmdq_get_target(&item).clone();
     let mut sc: spawn_context = spawn_context {
         item: std::rc::Weak::new(),
         s: std::rc::Weak::new(),

@@ -38,7 +38,7 @@ pub(super) unsafe fn spawn_window(
             link.get_mut_unchecked().flags &= !WINLINK_ALERTFLAGS;
             events_fire_winlink(c"window-unlinked", link.clone());
             winlink_stack_remove(&mut (*s).lastw, link.clone());
-            winlink_remove(&mut (*s).windows, link.clone());
+            winlink_remove(&(*s).windows, link.clone());
             if (*s).curw == link {
                 (*s).curw = refbox::Weak::new();
                 sc.flags &= !SPAWN_DETACHED;
@@ -49,7 +49,7 @@ pub(super) unsafe fn spawn_window(
         if index == -1 {
             index = (-1i64 - options_get_number(&(*s).borrow_options_mut(), c"base-index")) as i32;
         }
-        sc.set_wl(winlink_add(&mut (*s).windows, index));
+        sc.set_wl(winlink_add(&(*s).windows, index));
         if !sc.winlink_handle().is_alive() {
             set_spawn_cause(
                 Some(cause),
@@ -86,7 +86,7 @@ pub(super) unsafe fn spawn_window(
         );
     if pane.is_none() {
         if sc.flags & SPAWN_RESPAWN == 0 {
-            winlink_remove(&mut (*s).windows, sc.winlink_handle());
+            winlink_remove(&(*s).windows, sc.winlink_handle());
         }
         return refbox::Weak::new();
     }

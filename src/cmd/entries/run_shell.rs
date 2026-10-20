@@ -315,9 +315,7 @@ unsafe fn cmd_run_shell_timer(
     let cmd = cdata.cmd.as_deref();
     let new_item_allocation;
     if cdata.state.is_none() {
-        if cmd.is_none() {
-            return None;
-        }
+        cmd?;
         let job = job_run(
             cmd,
             &Vec::new(),

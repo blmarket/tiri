@@ -118,7 +118,6 @@ pub unsafe fn load_cfg(
         },
     };
     let mut pr: cmd_parse_result = cmd_parse_result::empty();
-    let state;
 
     log_debug(format_args!("loading {}", log_cstr(path)));
     // tmux lexes the stream with `getc`, which reads an error as EOF: a
@@ -158,7 +157,7 @@ pub unsafe fn load_cfg(
         return 0 as ::core::ffi::c_int;
     }
 
-    state = cmdq_new_state(None, None, 0 as ::core::ffi::c_int);
+    let state = cmdq_new_state(None, None, 0 as ::core::ffi::c_int);
 
     cmdq_add_format(
         &state,
@@ -297,7 +296,7 @@ pub unsafe fn cfg_show_causes(s_owner: Option<&SessionRef>) {
             s = c
                 .as_ref()
                 .and_then(|c| c.attached_session().upgrade())
-                .or_else(|| sessions::first());
+                .or_else(sessions::first);
         }
         if s.is_none() || !s.as_ref().expect("live session").is_attached() {
             return;

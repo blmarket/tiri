@@ -23,12 +23,12 @@ fn style_appends_preserve_raw_range_bytes_and_numeric_fields() {
         value.width_percentage = 1;
         value.pad = 2;
         assert_eq!(
-            style_tostring(&mut value).to_bytes(),
+            style_tostring(&value).to_bytes(),
             b"list=on,range=user|\xff,align=right,dim=25%,width=75%,pad=2",
         );
         style_set(&mut value, &grid_default_cell);
         value.width = 3;
-        assert_eq!(style_tostring(&mut value).as_c_str(), c"width=3");
+        assert_eq!(style_tostring(&value).as_c_str(), c"width=3");
     }
 }
 

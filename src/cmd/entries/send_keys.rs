@@ -226,7 +226,7 @@ unsafe fn cmd_send_keys_exec(
     let mut s: Option<SessionRef> = target.session_handle();
     let mut wl: refbox::Weak<winlink> = target.winlink_handle();
     let pane = target.pane_handle().expect("key target pane");
-    let mut event = cmdq_get_event(&*(item));
+    let mut event = cmdq_get_event(&(item));
     let mut wme: refbox::Weak<window_mode_entry> = pane.mode_entry();
     let mut after = std::rc::Rc::downgrade(item_handle);
     let mut key: key_code = 0;

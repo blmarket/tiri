@@ -616,12 +616,12 @@ unsafe fn popup_key(c_owner: &ClientRef, popup: &PopupGuard, event: &mut key_eve
     let mut px: u_int = 0;
     let mut py: u_int = 0;
     let mut border: C2RustUnnamed_40 = NONE;
-    if (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
+    if event.key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
         == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
-        || (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
+        || event.key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
             >= (KEYC_TYPE_MOUSEMOVE as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
                 << 32 as ::core::ffi::c_int
-            && (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
+            && event.key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
                 <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
                     << 32 as ::core::ffi::c_int
     {
@@ -689,38 +689,38 @@ unsafe fn popup_key(c_owner: &ClientRef, popup: &PopupGuard, event: &mut key_eve
     }
     if ((*pd).flags & (POPUP_CLOSEEXIT | POPUP_CLOSEEXITZERO) == 0 as ::core::ffi::c_int
         || (*pd).job.is_empty())
-        && ((*event).key == '\u{1b}' as i32 as key_code
-            || (*event).key == 'c' as i32 as ::core::ffi::c_ulonglong | KEYC_CTRL)
+        && (event.key == '\u{1b}' as i32 as key_code
+            || event.key == 'c' as i32 as ::core::ffi::c_ulonglong | KEYC_CTRL)
     {
         return 1 as ::core::ffi::c_int;
     }
     if (*pd).job.is_empty()
         && (*pd).flags & POPUP_CLOSEANYKEY != 0
-        && !((*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
+        && !(event.key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
             == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
-            || (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
+            || event.key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
                 >= (KEYC_TYPE_MOUSEMOVE as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
                     << 32 as ::core::ffi::c_int
-                && (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
+                && event.key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
                     <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
                         << 32 as ::core::ffi::c_int)
-        && !((*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
+        && !(event.key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
             == (KEYC_TYPE_FUNCTION as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
                 << 32 as ::core::ffi::c_int
-            && ((*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
+            && (event.key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
                 == KEYC_PASTE_START as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
-                || (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
+                || event.key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
                     == KEYC_PASTE_END as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong))
     {
         return 1 as ::core::ffi::c_int;
     }
     if !(*pd).job.is_empty() {
-        if (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
+        if event.key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
             == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
-            || (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
+            || event.key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
                 >= (KEYC_TYPE_MOUSEMOVE as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
                     << 32 as ::core::ffi::c_int
-                && (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
+                && event.key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
                     <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
                         << 32 as ::core::ffi::c_int
         {
@@ -740,7 +740,7 @@ unsafe fn popup_key(c_owner: &ClientRef, popup: &PopupGuard, event: &mut key_eve
         input_key(
             ScreenMode::from(&(*pd).s),
             job_get_event(&(*pd).job),
-            (*event).key,
+            event.key,
         );
     }
     0 as ::core::ffi::c_int

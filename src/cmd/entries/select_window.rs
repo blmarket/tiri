@@ -122,7 +122,7 @@ unsafe fn cmd_select_window_exec(
     let args = cmd_get_args(self_0.get_unchecked());
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
-    let current = cmdq_get_state_owned(&*(item));
+    let current = cmdq_get_state_owned(&(item));
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let mut wl: refbox::Weak<winlink> = target.winlink_handle();
     let mut s: Option<SessionRef> = target.session_handle();

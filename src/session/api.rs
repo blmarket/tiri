@@ -291,7 +291,7 @@ impl Session for SessionRef {
         }
         while last > index {
             let link = winlink_find_by_index(&state.windows, last - 1);
-            crate::window::winlinks_reindex(&mut state.windows, link, last);
+            crate::window::winlinks_reindex(&state.windows, link, last);
             last -= 1;
         }
         index

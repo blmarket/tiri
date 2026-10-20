@@ -64,7 +64,7 @@ pub unsafe fn cmd_attach_session(
 ) -> CmdOutcome {
     let tflag: *const ::core::ffi::c_char = tflag.map_or(std::ptr::null(), CStr::as_ptr);
     let item = item_handle.borrow();
-    let current = cmdq_get_state_owned(&*(item));
+    let current = cmdq_get_state_owned(&(item));
     let mut target: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -97,8 +97,7 @@ pub unsafe fn cmd_attach_session(
         return CmdOutcome::Error;
     }
     if !tflag.is_null()
-        && *tflag.offset(strcspn(tflag, c":.".as_ptr()) as isize) as ::core::ffi::c_int
-            != '\0' as i32
+        && *tflag.add(strcspn(tflag, c":.".as_ptr())) as ::core::ffi::c_int != '\0' as i32
     {
         type_0 = CMD_FIND_PANE;
         flags = 0 as ::core::ffi::c_int;
@@ -210,7 +209,7 @@ pub unsafe fn cmd_attach_session(
                 .update_environment(&source);
         }
         c.clone().expect("live client").set_session(s.as_ref());
-        if !cmdq_get_flags(&*(item)) & CMDQ_STATE_REPEAT != 0 {
+        if !cmdq_get_flags(&(item)) & CMDQ_STATE_REPEAT != 0 {
             c.clone().expect("live client").set_key_table(None);
         }
     } else {

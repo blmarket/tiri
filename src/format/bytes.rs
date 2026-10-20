@@ -144,10 +144,19 @@ pub unsafe fn nullable_cstr<'a>(ptr: *const c_char) -> Option<&'a CStr> {
 mod tests {
     use super::*;
 
+    // (buffer, src, after copy, copy result, after append, append result)
+    type CopyCase = (
+        &'static [u8],
+        &'static CStr,
+        &'static [u8],
+        usize,
+        &'static [u8],
+        usize,
+    );
+
     #[test]
     fn copy_and_append_match_strlcpy_and_strlcat() {
-        // (buffer, src, after copy, copy result, after append, append result)
-        let cases: &[(&[u8], &CStr, &[u8], usize, &[u8], usize)] = &[
+        let cases: &[CopyCase] = &[
             (b"#", c"", b"\0", 0, b"#", 1),
             (b"########", c"abc", b"abc\0####", 3, b"########", 11),
             (b"####", c"abcdefgh", b"abc\0", 8, b"####", 12),

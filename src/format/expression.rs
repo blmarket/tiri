@@ -1093,16 +1093,16 @@ unsafe fn format_loop_emit_option(
         es.ft.flags,
     );
     for (key, value) in values {
-        format_add_cstr(&mut *context, key, &value);
+        format_add_cstr(&mut context, key, &value);
     }
     format_defaults(
-        &mut *context,
+        &mut context,
         client.as_ref(),
         session.as_ref(),
         es.ft.winlink_handle(),
         pane.as_ref(),
     );
-    let mut next = es.with_tree(&mut *context, 0);
+    let mut next = es.with_tree(&mut context, 0);
     let expanded = format_expand1_cstring(&mut next, fmt.to_bytes());
     drop(context);
     buffer.extend_from_slice(expanded.as_bytes());
@@ -1288,14 +1288,14 @@ pub(super) unsafe fn format_loop_environ(
             write_cstr(out, &*entry.name)
         });
         let mut context = format_create(client.as_ref(), item.as_ref(), FORMAT_NONE, es.ft.flags);
-        format_add_cstr(&mut *context, c"environ_name", &entry.name);
+        format_add_cstr(&mut context, c"environ_name", &entry.name);
         format_add_cstr(
-            &mut *context,
+            &mut context,
             c"environ_value",
             entry.value.as_deref().unwrap_or(c""),
         );
         format_add_cstr(
-            &mut *context,
+            &mut context,
             c"environ_hidden",
             if entry.flags & ENVIRON_HIDDEN != 0 {
                 c"1"
@@ -1304,26 +1304,26 @@ pub(super) unsafe fn format_loop_environ(
             },
         );
         format_add_cstr(
-            &mut *context,
+            &mut context,
             c"environ_removed",
             if entry.value.is_none() { c"1" } else { c"0" },
         );
         format_add_cstr(
-            &mut *context,
+            &mut context,
             c"loop_last_flag",
             if index + 1 == count { c"1" } else { c"0" },
         );
-        format_add(&mut *context, c"loop_index", |out| {
+        format_add(&mut context, c"loop_index", |out| {
             write!(out, "{}", index as u_int)
         });
         format_defaults(
-            &mut *context,
+            &mut context,
             format_client.as_ref(),
             session.as_ref(),
             es.ft.winlink_handle(),
             pane.as_ref(),
         );
-        let mut next = es.with_tree(&mut *context, 0);
+        let mut next = es.with_tree(&mut context, 0);
         let expanded = format_expand1_cstring(&mut next, fmt.to_bytes());
         drop(context);
         buffer.extend_from_slice(expanded.as_bytes());
@@ -1609,8 +1609,10 @@ pub(super) unsafe fn format_cycle(
         .start_time
         .wrapping_div(count.wrapping_mul(FORMAT_CYCLE_PERIOD as u_int) as uint64_t)
         .wrapping_rem(n as uint64_t) as usize;
-    if n > 1 as u_int && es.ft.client.is_some() {
-        format_cycle_start_timer(es.ft.client.as_ref().expect("format client"));
+    if n > 1 as u_int {
+        if let Some(client) = es.ft.client.as_ref() {
+            format_cycle_start_timer(client);
+        }
     }
     let frame = frames
         .split(|&byte| byte == b',')
@@ -2535,7 +2537,7 @@ pub(super) unsafe fn format_expand1_cstring(
                 }
                 if ch == b'#' {
                     output.resize(output.len() + n / 2, b'#');
-                    i = if n % 2 != 0 { ptr - 1 } else { ptr };
+                    i = if !n.is_multiple_of(2) { ptr - 1 } else { ptr };
                     continue;
                 }
             }

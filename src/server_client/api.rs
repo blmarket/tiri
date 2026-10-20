@@ -3,6 +3,7 @@
 use crate::options::OptionsScope;
 use crate::shared::window::WindowWeak;
 
+use super::model::{MouseDragRelease, MouseDragUpdate};
 use super::*;
 use crate::control::{control_get_window_size, control_write_output};
 use crate::reactor::BufferEvent;
@@ -92,11 +93,7 @@ pub trait Client {
     unsafe fn reset_mouse_drag(&self);
     unsafe fn mouse_drag_active(&self) -> bool;
     unsafe fn mouse_slider_position(&self) -> i32;
-    unsafe fn set_mouse_drag_callbacks(
-        &self,
-        update: Box<dyn FnMut(&mut mouse_event)>,
-        release: Box<dyn FnOnce(&mut mouse_event)>,
-    );
+    unsafe fn set_mouse_drag_callbacks(&self, update: MouseDragUpdate, release: MouseDragRelease);
     /// Terminfo construction may query Client; copy its source before starting.
     unsafe fn terminal_description_source(&self) -> (Option<CString>, Vec<CString>);
     unsafe fn parse_terminal_features(&self, features: &CStr, separators: &CStr);
@@ -394,11 +391,7 @@ impl Client for ClientRef {
     unsafe fn mouse_slider_position(&self) -> i32 {
         (*self.get()).mouse_slider_mpos
     }
-    unsafe fn set_mouse_drag_callbacks(
-        &self,
-        update: Box<dyn FnMut(&mut mouse_event)>,
-        release: Box<dyn FnOnce(&mut mouse_event)>,
-    ) {
+    unsafe fn set_mouse_drag_callbacks(&self, update: MouseDragUpdate, release: MouseDragRelease) {
         let state = &mut *self.get();
         state.mouse_drag_update = Some(update);
         state.mouse_drag_release = Some(release);

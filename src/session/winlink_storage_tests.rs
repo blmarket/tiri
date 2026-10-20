@@ -6,16 +6,16 @@ use refbox::BorrowError;
 fn moved_map_and_reindexed_owner_keep_identity_through_growth() {
     unsafe {
         let mut head = Default::default();
-        let first = winlink_add(&mut head, 0);
+        let first = winlink_add(&head, 0);
         let weak = head.try_borrow_mut().unwrap().get(&0).unwrap().downgrade();
         let mut old = std::mem::take(&mut head);
-        let replacement = winlink_add(&mut head, 0);
-        winlinks_reindex(&mut old, (first).clone(), 5);
+        let replacement = winlink_add(&head, 0);
+        winlinks_reindex(&old, (first).clone(), 5);
         assert_eq!(winlink_find_by_index(&old, 5), first);
         assert!(!winlink_find_by_index(&old, 0).is_alive());
         assert_eq!(weak.try_access_mut(|link| link.idx).unwrap(), 5);
         for idx in 6..134 {
-            assert!(winlink_add(&mut old, idx).is_alive());
+            assert!(winlink_add(&old, idx).is_alive());
         }
         assert_eq!(weak, first);
         assert_eq!(
@@ -25,11 +25,11 @@ fn moved_map_and_reindexed_owner_keep_identity_through_growth() {
         assert!(!winlinks_next(replacement.get_unchecked()).is_alive());
         while !crate::window::winlinks_is_empty(&old) {
             let node = winlinks_minmax(&old, -1);
-            winlink_remove(&mut old, (node).clone());
+            winlink_remove(&old, (node).clone());
         }
         assert_eq!(weak.try_borrow_mut().err(), Some(BorrowError::Dropped));
         assert_eq!(winlink_count(&head), 1);
-        winlink_remove(&mut head, (replacement).clone());
+        winlink_remove(&head, (replacement).clone());
         assert!(crate::window::winlinks_is_empty(&head));
     }
 }
@@ -76,7 +76,7 @@ fn detached_winlink_does_not_keep_session_alive_and_can_be_removed_after_expiry(
         let owner = session::new();
         let observer = std::rc::Rc::downgrade(&owner);
         let mut links = Default::default();
-        let mut link = winlink_add(&mut links, 1);
+        let mut link = winlink_add(&links, 1);
         link.get_mut_unchecked().session = observer.clone();
         assert!(std::rc::Rc::ptr_eq(
             &link.get_unchecked().session.upgrade().unwrap(),
@@ -84,7 +84,7 @@ fn detached_winlink_does_not_keep_session_alive_and_can_be_removed_after_expiry(
         ));
         drop(owner);
         assert!(link.get_unchecked().session.upgrade().is_none());
-        winlink_remove(&mut links, link.clone());
+        winlink_remove(&links, link.clone());
         assert!(crate::window::winlinks_is_empty(&links));
     }
 }

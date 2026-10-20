@@ -401,7 +401,7 @@ unsafe fn cmd_parse_build_commands(
                 cmd_list_move(result, &current);
             }
         }
-        let current = current.get_or_insert_with(|| cmd_list_new());
+        let current = current.get_or_insert_with(cmd_list_new);
         pi.line = cmd.line;
         line = pi.line;
         cmd_parse_build_command(cmd, pi, pr);

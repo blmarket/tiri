@@ -1315,8 +1315,11 @@ pub(super) unsafe fn tty_term_create(
         }
         let cap_name = &cap.to_bytes()[..namelen];
         let value = cstr_suffix(cap, namelen + 1);
-        for j in 0..tty_term_ncodes() as usize {
-            let ent = &tty_term_codes[j];
+        for (j, ent) in tty_term_codes
+            .iter()
+            .enumerate()
+            .take(tty_term_ncodes() as usize)
+        {
             if ent.name.to_bytes() != cap_name {
                 continue;
             }
@@ -1686,10 +1689,10 @@ mod term_string_owner_tests {
     fn override_tokens_keep_escaping_limits_and_independent_storage() {
         let source = c":clear=left::right:bel=\xff";
         let mut offset = 0;
-        let empty = tty_term_override_next(&source, &mut offset).unwrap();
-        let first = tty_term_override_next(&source, &mut offset).unwrap();
-        let second = tty_term_override_next(&source, &mut offset).unwrap();
-        assert!(tty_term_override_next(&source, &mut offset).is_none());
+        let empty = tty_term_override_next(source, &mut offset).unwrap();
+        let first = tty_term_override_next(source, &mut offset).unwrap();
+        let second = tty_term_override_next(source, &mut offset).unwrap();
+        assert!(tty_term_override_next(source, &mut offset).is_none());
         assert_eq!(empty.as_c_str(), c"");
         assert_eq!(first.as_c_str(), c"clear=left:right");
         assert_eq!(second.as_c_str(), c"bel=\xff");

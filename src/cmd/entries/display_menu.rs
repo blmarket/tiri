@@ -134,7 +134,7 @@ unsafe fn cmd_display_menu_status_position(
         .iter()
         .enumerate()
         .find_map(|(line, entry)| {
-            entry.ranges.as_slice().iter().find_map(|range| {
+            entry.ranges.iter().find_map(|range| {
                 (range.type_0 == STYLE_RANGE_WINDOW && range.argument == window_index)
                     .then_some((line as u_int, range.start))
             })
@@ -153,7 +153,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
     let item = item_handle.borrow();
     let mut tc: Option<ClientRef> = Some(tc_owner.clone());
     let target = crate::cmd::queue::cmdq_get_target(&item);
-    let event = cmdq_get_event(&*(item));
+    let event = cmdq_get_event(&(item));
     let mut s: Option<SessionRef> = tc
         .as_ref()
         .expect("live client")
@@ -479,7 +479,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
     let item = item_handle.borrow();
     let mut tc: Option<ClientRef> = Some(tc_owner.clone());
     let target = crate::cmd::queue::cmdq_get_target(&item);
-    let event = cmdq_get_event(&*(item));
+    let event = cmdq_get_event(&(item));
     let mut s: Option<SessionRef> = tc
         .as_ref()
         .expect("live client")
@@ -738,7 +738,7 @@ unsafe fn cmd_display_menu_exec(
     let args = cmd_get_args(self_0.get_unchecked());
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let target = &target_state;
-    let event = cmdq_get_event(&*(item));
+    let event = cmdq_get_event(&(item));
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let style = args_get(args, b's');

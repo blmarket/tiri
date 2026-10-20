@@ -686,9 +686,11 @@ unsafe fn cmdq_poll(queue: &QueueTarget, mut drain: Drain, open: bool) {
             "a queue drain never completes"
         );
         let polled = queue.try_with_queue(|queue| {
-            let head = (queue.head == HeadState::Suspended)
-                .then(|| queue.item.clone())
-                .unwrap_or_default();
+            let head = if queue.head == HeadState::Suspended {
+                queue.item.clone()
+            } else {
+                Default::default()
+            };
             let DrainSlot::Polling { rewoken } =
                 std::mem::replace(&mut queue.drain, DrainSlot::Polling { rewoken: false })
             else {

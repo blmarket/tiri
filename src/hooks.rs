@@ -366,8 +366,8 @@ pub unsafe fn hooks_run(
         expand: 0,
     };
     hd.fs.copy_from(target);
-    format_add(&mut *hd.formats, c"hook", |out| write_cstr(out, &*name));
-    format_log_debug(&mut *hd.formats, c"hooks_run");
+    format_add(&mut hd.formats, c"hook", |out| write_cstr(out, &*name));
+    format_log_debug(&mut hd.formats, c"hooks_run");
     hooks_insert(item_handle, &mut hd);
     drop(hd.formats);
 }

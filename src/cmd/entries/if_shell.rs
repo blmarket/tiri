@@ -104,7 +104,7 @@ unsafe fn cmd_if_shell_exec(
         let Some(cmdlist) = cmdlist else {
             return CmdOutcome::Error;
         };
-        new_item_allocation = cmdq_get_command(&cmdlist, (*item).state.as_ref());
+        new_item_allocation = cmdq_get_command(&cmdlist, item.state.as_ref());
         cmdq_insert_after(item_handle, new_item_allocation);
         drop(cmdlist);
         return CmdOutcome::Normal;

@@ -520,27 +520,27 @@ pub fn style_tostring(sy: &style) -> CString {
             write!(out, "dim={}%", { sy.dim })?;
             comma = b",";
         }
-        if (*gc).fg != 8 as ::core::ffi::c_int {
+        if gc.fg != 8 as ::core::ffi::c_int {
             out.write_all(comma)?;
             out.write_all(b"fg=")?;
-            out.write_all(colour_format((*gc).fg).to_bytes())?;
+            out.write_all(colour_format(gc.fg).to_bytes())?;
             comma = b",";
         }
-        if (*gc).bg != 8 as ::core::ffi::c_int {
+        if gc.bg != 8 as ::core::ffi::c_int {
             out.write_all(comma)?;
             out.write_all(b"bg=")?;
-            out.write_all(colour_format((*gc).bg).to_bytes())?;
+            out.write_all(colour_format(gc.bg).to_bytes())?;
             comma = b",";
         }
-        if (*gc).us != 8 as ::core::ffi::c_int {
+        if gc.us != 8 as ::core::ffi::c_int {
             out.write_all(comma)?;
             out.write_all(b"us=")?;
-            out.write_all(colour_format((*gc).us).to_bytes())?;
+            out.write_all(colour_format(gc.us).to_bytes())?;
             comma = b",";
         }
-        if (*gc).attr as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
+        if gc.attr as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
             out.write_all(comma)?;
-            out.write_all(attributes_format((*gc).attr as ::core::ffi::c_int).to_bytes())?;
+            out.write_all(attributes_format(gc.attr as ::core::ffi::c_int).to_bytes())?;
             comma = b",";
         }
         if sy.width >= 0 as ::core::ffi::c_int {

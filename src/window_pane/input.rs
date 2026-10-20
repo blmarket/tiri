@@ -187,7 +187,7 @@ mod input_buffer_ownership_tests {
             assert!(input.event.is_alive());
             bufferevent_free(stream);
             assert!(!input.event.is_alive());
-            input_send_reply(&mut *input, c"reply");
+            input_send_reply(&mut input, c"reply");
             drop(input);
         }
     }
@@ -4382,6 +4382,7 @@ unsafe fn input_exit_osc(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) {
     }
     // The OSC payload stays borrowed from `input_buf` while handlers take the
     // context; none of them touch `input_buf`, so view it through a raw place.
+    #[allow(clippy::deref_addrof)]
     let input = CStr::from_bytes_until_nul(&*(&raw const ictx.input_buf))
         .expect("input buffer has a terminator");
     let bytes = input.to_bytes();
