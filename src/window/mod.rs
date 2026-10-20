@@ -716,7 +716,8 @@ unsafe fn window_pane_cells(
 /// changes the pane order, the layout or its record of a pane, the zoom, the
 /// window size or the options the layout reads ends here, and the clients
 /// showing the window follow the result. A zoomed pane takes the whole
-/// window; the hidden panes keep their places in the layout.
+/// window; the hidden panes keep their places in the layout, and the size
+/// they had, until the window unzooms.
 unsafe fn window_arrange(window: &WindowRef) {
     let (sx, sy) = window.size();
     let zoomed = (*window.get()).zoomed.clone();
@@ -727,7 +728,9 @@ unsafe fn window_arrange(window: &WindowRef) {
         .zip(window_arrangement(window));
     let mut moved = false;
     for (pane, cell) in cells {
-        let cell = if zoomed.ptr_eq(&Rc::downgrade(&pane)) {
+        let cell = if zoomed.strong_count() == 0 {
+            cell
+        } else if zoomed.ptr_eq(&Rc::downgrade(&pane)) {
             layout_geometry {
                 sx,
                 sy,
@@ -735,7 +738,7 @@ unsafe fn window_arrange(window: &WindowRef) {
                 yoff: 0,
             }
         } else {
-            cell
+            continue;
         };
         if window_has_pane(&*window.get(), &Rc::downgrade(&pane)) {
             moved |= pane.apply_layout(cell, window);

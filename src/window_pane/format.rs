@@ -1031,11 +1031,10 @@ unsafe fn format_cb_pane_at_left(ft: &mut format_tree) -> Option<CString> {
 unsafe fn format_cb_pane_at_right(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
     Some(
-        if pane
-            .window_observer()
-            .upgrade()
-            .is_none_or(|window| window.step_pane(Some(&ft.wp), false).upgrade().is_none())
-        {
+        if pane.window_observer().upgrade().is_none_or(|window| {
+            window.zoomed_pane().ptr_eq(&ft.wp)
+                || window.step_pane(Some(&ft.wp), false).upgrade().is_none()
+        }) {
             c"1"
         } else {
             c"0"

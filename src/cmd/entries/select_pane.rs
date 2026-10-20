@@ -218,6 +218,9 @@ unsafe fn cmd_select_pane_exec(
     let window = target.w.upgrade().expect("select target window");
     let zoom = args_has(arguments, b'Z') != 0;
     let result = (|| {
+        if args_has(arguments, b'm') != 0 && !original_pane.is_visible() {
+            return CmdOutcome::Normal;
+        }
         if std::ptr::eq(entry, &cmd_last_pane_entry) || args_has(arguments, b'l') != 0 {
             let mut last = window.last_active_pane().upgrade();
             if last.is_none() && window.pane_snapshot().len() == 2 {
