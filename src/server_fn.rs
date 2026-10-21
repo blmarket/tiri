@@ -320,9 +320,11 @@ pub unsafe fn server_link_window(
     let attached = (dst.as_ref().expect("live session")).attach_window(&window_owner, dstidx);
     drop(window_owner);
     dstwl = attached?;
-    if marked_pane.winlink_handle() == srcwl {
-        marked_pane.set_wl((dstwl).clone());
-    }
+    marked_pane.with_borrow_mut(|marked| {
+        if marked.winlink_handle() == srcwl {
+            marked.set_wl((dstwl).clone());
+        }
+    });
     if selectflag != 0 {
         (dst.as_ref().expect("live session")).select_index(winlink_index(&dstwl));
     }

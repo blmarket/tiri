@@ -97,9 +97,11 @@ unsafe fn cmd_swap_window_exec(
     winlink_window(&wl_src)
         .expect("linked window")
         .add_winlink(wl_src.clone());
-    if marked_pane.winlink_handle() == wl_src {
-        marked_pane.set_wl((wl_dst).clone());
-    }
+    marked_pane.with_borrow_mut(|marked| {
+        if marked.winlink_handle() == wl_src {
+            marked.set_wl((wl_dst).clone());
+        }
+    });
     if args_has(args, 'd' as i32 as u_char) != 0 {
         (dst.as_ref().expect("live session")).select_index(winlink_index(&wl_dst));
         if !crate::shared::rc::same(src.as_ref(), dst.as_ref()) {

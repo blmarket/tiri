@@ -1272,7 +1272,9 @@ unsafe fn format_cb_window_linked_sessions(ft: &mut format_tree) -> Option<CStri
 }
 unsafe fn format_cb_window_marked_flag(ft: &mut format_tree) -> Option<CString> {
     if ft.winlink_handle().is_alive() {
-        if server_check_marked() != 0 && marked_pane.winlink_handle() == ft.winlink_handle() {
+        if server_check_marked() != 0
+            && marked_pane.with_borrow(|marked| marked.winlink_handle()) == ft.winlink_handle()
+        {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());

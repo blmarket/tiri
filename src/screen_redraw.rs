@@ -1373,10 +1373,12 @@ unsafe fn redraw_set_draw_context(scene: &redraw_scene) -> Option<redraw_draw_ct
     if server_is_marked(
         s.as_ref(),
         (s.as_ref().expect("live session").current_winlink()).clone(),
-        marked_pane.pane_handle().as_ref(),
+        marked_pane
+            .with_borrow(|marked| marked.pane_handle())
+            .as_ref(),
     ) != 0
     {
-        dctx.marked = marked_pane.wp.clone();
+        dctx.marked = marked_pane.with_borrow(|marked| marked.wp.clone());
     }
     if options_get_number(
         &s.as_ref().expect("live session").borrow_options_mut(),

@@ -683,7 +683,7 @@ unsafe fn session_renumber_windows(s_owner: &SessionRef) {
         winlink_set_window((wl_new).clone(), &winlink_window(&wl).expect("live window"));
         wl_new.try_borrow_mut().expect("live winlink").flags |=
             wl.try_borrow().expect("live winlink").flags & WINLINK_ALERTFLAGS;
-        if wl == marked_pane.winlink_handle() {
+        if wl == marked_pane.with_borrow(|marked| marked.winlink_handle()) {
             marked_idx = wl_new.try_borrow().expect("live winlink").idx;
         }
         if wl == (*s).current_winlink() {
@@ -706,8 +706,9 @@ unsafe fn session_renumber_windows(s_owner: &SessionRef) {
         }
     }
     if marked_idx != -(1 as ::core::ffi::c_int) {
-        marked_pane.set_wl((winlink_find_by_index(&(*s).windows, marked_idx)).clone());
-        if !marked_pane.winlink_handle().is_alive() {
+        let marked_wl = winlink_find_by_index(&(*s).windows, marked_idx);
+        marked_pane.with_borrow_mut(|marked| marked.set_wl(marked_wl.clone()));
+        if !marked_wl.is_alive() {
             server_clear_marked();
         }
     }

@@ -83,17 +83,19 @@ static mut server_client_flags: uint64_t = 0;
 static mut server_exit: ::core::ffi::c_int = 0;
 static mut server_accept_task: Option<tiri_rt::mio::Task> = None::<tiri_rt::mio::Task>;
 static mut server_ev_tidy: Option<Timer> = None;
-pub static mut marked_pane: cmd_find_state = cmd_find_state {
-    flags: 0,
-    s: std::rc::Weak::new(),
-    wl: refbox::Weak::new(),
-    w: WindowWeak::new(),
-    wp: std::rc::Weak::new(),
-    idx: 0,
-};
 static mut message_next: u_int = 0;
 pub static mut message_log: message_list = message_list::new();
 thread_local! {
+    pub static marked_pane: std::cell::RefCell<cmd_find_state> = const {
+        std::cell::RefCell::new(cmd_find_state {
+            flags: 0,
+            s: std::rc::Weak::new(),
+            wl: refbox::Weak::new(),
+            w: WindowWeak::new(),
+            wp: std::rc::Weak::new(),
+            idx: 0,
+        })
+    };
     static CURRENT_TIME: std::cell::Cell<time_t> = const { std::cell::Cell::new(0) };
 }
 /// The time sampled when the server loop started.
@@ -105,16 +107,17 @@ pub unsafe fn server_set_marked(
     mut wl: refbox::Weak<winlink>,
     wp_owner: Option<&std::rc::Rc<std::cell::RefCell<window_pane>>>,
 ) {
-    marked_pane = cmd_find_state::clear_state(0 as ::core::ffi::c_int);
-    marked_pane.set_s(s_owner);
-    marked_pane.set_wl(wl.clone());
+    let mut marked = cmd_find_state::clear_state(0 as ::core::ffi::c_int);
+    marked.set_s(s_owner);
+    marked.set_wl(wl.clone());
     if wl.is_alive() {
-        marked_pane.set_w(winlink_window(&wl).as_ref());
+        marked.set_w(winlink_window(&wl).as_ref());
     }
-    marked_pane.wp = wp_owner.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
+    marked.wp = wp_owner.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
+    marked_pane.set(marked);
 }
 pub unsafe fn server_clear_marked() {
-    marked_pane = cmd_find_state::clear_state(0 as ::core::ffi::c_int);
+    marked_pane.set(cmd_find_state::clear_state(0 as ::core::ffi::c_int));
 }
 pub unsafe fn server_is_marked(
     s_owner: Option<&SessionRef>,
@@ -124,23 +127,18 @@ pub unsafe fn server_is_marked(
     if s_owner.is_none() || !wl.is_alive() || wp_owner.is_none() {
         return 0 as ::core::ffi::c_int;
     }
-    if !marked_pane
-        .s
-        .ptr_eq(&std::rc::Rc::downgrade(s_owner.unwrap()))
-        || marked_pane.winlink_handle() != wl
-    {
+    let same = marked_pane.with_borrow(|marked| {
+        marked.s.ptr_eq(&std::rc::Rc::downgrade(s_owner.unwrap()))
+            && marked.winlink_handle() == wl
+            && marked.wp.ptr_eq(&std::rc::Rc::downgrade(wp_owner.unwrap()))
+    });
+    if !same {
         return 0 as ::core::ffi::c_int;
-    }
-    if !marked_pane
-        .wp
-        .ptr_eq(&std::rc::Rc::downgrade(wp_owner.unwrap()))
-    {
-        return 0;
     }
     server_check_marked()
 }
 pub unsafe fn server_check_marked() -> ::core::ffi::c_int {
-    marked_pane.is_valid() as ::core::ffi::c_int
+    marked_pane.with_borrow(|marked| marked.is_valid()) as ::core::ffi::c_int
 }
 pub unsafe fn server_create_socket(flags: uint64_t) -> Result<::core::ffi::c_int, CString> {
     server_create_listener(flags).map(IntoRawFd::into_raw_fd)

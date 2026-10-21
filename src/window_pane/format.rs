@@ -1379,7 +1379,7 @@ unsafe fn format_cb_pane_marked(ft: &mut format_tree) -> Option<CString> {
     if !format_pane.is_null() {
         if server_check_marked() != 0
             && marked_pane
-                .pane_handle()
+                .with_borrow(|marked| marked.pane_handle())
                 .as_ref()
                 .map_or(std::ptr::null_mut(), |owner| owner.as_ptr())
                 == format_pane

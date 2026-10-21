@@ -331,11 +331,10 @@ fn format_cb_session_many_attached(ft: &mut format_tree) -> Option<CString> {
 
 fn format_cb_session_marked(ft: &mut format_tree) -> Option<CString> {
     let owner = ft.s.upgrade()?;
-    // `marked_pane` is a `static mut` owned by the server.
     let marked = unsafe {
         server_check_marked() != 0
             && marked_pane
-                .session_handle()
+                .with_borrow(|marked| marked.session_handle())
                 .is_some_and(|marked| Rc::ptr_eq(&marked, &owner))
     };
     if marked {

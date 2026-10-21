@@ -1074,7 +1074,7 @@ impl cmd_find_state {
         let mut current_context: Option<cmd_find_state> = None;
         *self = Self::clear_state(flags);
         if server_check_marked() != 0 && flags & CMD_FIND_DEFAULT_MARKED != 0 {
-            current_context = Some(marked_pane.clone());
+            current_context = Some(marked_pane.with_borrow(Clone::clone));
             log_debug(format_args!(
                 "{}: current is marked pane",
                 "cmd_find_target"
@@ -1229,7 +1229,7 @@ impl cmd_find_state {
                     }
                     current_block = 5193823237153215208;
                 } else {
-                    self.copy_from(&marked_pane);
+                    marked_pane.with_borrow(|marked| self.copy_from(marked));
                     current_block = 15319680530019787978;
                 }
             } else {

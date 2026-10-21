@@ -626,7 +626,7 @@ unsafe fn window_rearrange_panes(
             pane.id()
         ));
         if marked_pane
-            .pane_handle()
+            .with_borrow(|marked| marked.pane_handle())
             .is_some_and(|marked| Rc::ptr_eq(&marked, pane))
         {
             server_clear_marked();
@@ -787,7 +787,8 @@ pub unsafe fn window_printable_flags(
     {
         flags.push(b'-');
     }
-    if server_check_marked() != 0 && wl == marked_pane.winlink_handle() {
+    if server_check_marked() != 0 && wl == marked_pane.with_borrow(|marked| marked.winlink_handle())
+    {
         flags.push(b'M');
     }
     if winlink_window(&wl).is_some_and(|window| window.zoomed_pane().strong_count() != 0) {

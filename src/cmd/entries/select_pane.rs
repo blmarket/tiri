@@ -154,7 +154,7 @@ unsafe fn cmd_select_pane_marked_pane(
     let link = target.winlink_handle();
     let session = target.session_handle();
     let previous = if server_check_marked() != 0 {
-        marked_pane.pane_handle()
+        marked_pane.with_borrow(|marked| marked.pane_handle())
     } else {
         None
     };
@@ -165,7 +165,7 @@ unsafe fn cmd_select_pane_marked_pane(
     } else {
         server_set_marked(session.as_ref(), link, Some(&pane));
     }
-    let marked = marked_pane.pane_handle();
+    let marked = marked_pane.with_borrow(|marked| marked.pane_handle());
     let mut find = cmd_find_state::default();
     let payload_pane = marked.as_ref().or(previous.as_ref()).unwrap_or(&pane);
     find = cmd_find_state::find_from_pane(payload_pane, 0)
