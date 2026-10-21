@@ -3,7 +3,6 @@ use crate::format::bytes::format_bytes;
 use crate::format::bytes::try_format_message_with;
 use crate::shared::errno::ErrorText;
 use crate::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
-use libc::exit;
 use std::cell::{Cell, RefCell};
 use std::ffi::{CStr, CString};
 use std::fmt;
@@ -119,14 +118,14 @@ pub fn log_debug(args: fmt::Arguments<'_>) {
     log_write(&message, b"");
 }
 
-pub unsafe fn fatal(
+pub fn fatal(
     error: &std::io::Error,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) -> ! {
     let prefix = CString::new(format!("fatal: {}: ", ErrorText(error)))
         .expect("strerror text contains no NUL");
     log_message(write, &prefix);
-    exit(1 as ::core::ffi::c_int);
+    std::process::exit(1);
 }
 pub fn fatalx(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) -> ! {
     log_message(write, c"fatal: ");

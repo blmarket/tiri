@@ -56,7 +56,7 @@ pub(super) fn clear_dirty(state: &mut window_pane) {
     state.sync_dirty_size = 0;
 }
 
-pub(super) unsafe fn should_draw_rows(
+pub(super) fn should_draw_rows(
     state: &mut window_pane,
     synchronized: bool,
     mut y: u32,

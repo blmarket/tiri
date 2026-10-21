@@ -85,7 +85,7 @@ impl Drop for screen {
         }
     }
 }
-pub unsafe fn screen_reset_tabs(s: &mut screen) {
+pub fn screen_reset_tabs(s: &mut screen) {
     let bytes = (s.grid().sx as usize).div_ceil(8);
     s.tabs.clear();
     if s.tabs.try_reserve_exact(bytes).is_err() {

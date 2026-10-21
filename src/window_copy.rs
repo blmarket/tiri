@@ -6432,7 +6432,7 @@ fn window_copy_clear_searchmark(data: &mut window_copy_mode_data) {
     data.searchmark.clear();
 }
 
-unsafe fn window_copy_replace_searchmark(data: &mut window_copy_mode_data, sx: u_int, sy: u_int) {
+fn window_copy_replace_searchmark(data: &mut window_copy_mode_data, sx: u_int, sy: u_int) {
     window_copy_clear_searchmark(data);
     if sx == 0 || sy == 0 {
         fatalx(|out| out.write_all(b"xcalloc: zero size"));
