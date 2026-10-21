@@ -38,6 +38,7 @@ use crate::events_payload::{
     event_payload_create, event_payload_set_int, event_payload_set_pane, event_payload_set_string,
     event_payload_set_target, event_payload_set_uint, event_payload_set_window,
 };
+use crate::ffi::fnmatch::fnmatch_matches;
 use crate::ffi::regex::RegexStorage;
 use crate::file::{file_cancel, file_read_wait, FileOutcome};
 use crate::format::bytes::write_cstr;
@@ -57,7 +58,7 @@ use crate::reactor::{
 };
 use crate::screen::{screen_init, screen_resize, screen_set_default_cursor, screen_set_title};
 pub use api::WindowPane;
-use libc::{fnmatch, gethostname, memset};
+use libc::{gethostname, memset};
 
 use crate::server::{marked_pane, server_check_marked};
 use crate::server_client::Client;
@@ -1414,13 +1415,11 @@ unsafe fn window_pane_search(
             log_bytes(&line)
         ));
         if regex == 0 {
-            found = (fnmatch(
-                glob.as_ref()
-                    .expect("nonregex search has a pattern")
-                    .as_ptr(),
-                line.as_ptr().cast::<::core::ffi::c_char>(),
+            found = fnmatch_matches(
+                glob.as_ref().expect("nonregex search has a pattern"),
+                CStr::from_bytes_with_nul(&line).expect("line truncated at its first NUL"),
                 flags,
-            ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
+            ) as ::core::ffi::c_int;
         } else {
             found = regex_owner
                 .as_ref()

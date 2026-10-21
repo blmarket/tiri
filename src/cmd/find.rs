@@ -2,6 +2,7 @@ use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_event, cmdq_get_st
 use crate::cmd::{cmd_mouse_pane, cmd_mouse_window};
 use crate::compat::strtonum::strtonum;
 use crate::environ::environ_find;
+use crate::ffi::fnmatch::fnmatch_matches;
 use crate::format::bytes::cstr_suffix;
 use crate::format::bytes::write_cstr;
 use crate::log::{fatalx, log_bytes, log_cstr, log_debug, log_pointer};
@@ -23,7 +24,6 @@ use crate::window::{
 };
 use crate::window_pane::WindowPane as _;
 use crate::winlink::winlink_window;
-use libc::fnmatch;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
 
@@ -263,7 +263,7 @@ impl cmd_find_state {
             while let Some(session) = cursor {
                 let name = session.name();
                 if if glob {
-                    fnmatch(target.as_ptr(), name.as_ptr(), 0) == 0
+                    fnmatch_matches(target, &name, 0)
                 } else {
                     name.as_bytes().starts_with(target.to_bytes())
                 } {
@@ -572,12 +572,11 @@ impl cmd_find_state {
             .expect("window target session")
             .with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
         while wl.is_alive() {
-            if fnmatch(
-                window.as_ptr(),
-                winlink_window(&wl).expect("linked window").name().as_ptr(),
-                0 as ::core::ffi::c_int,
-            ) == 0 as ::core::ffi::c_int
-            {
+            if fnmatch_matches(
+                window,
+                &winlink_window(&wl).expect("linked window").name(),
+                0,
+            ) {
                 if self.winlink_handle().is_alive() {
                     return -(1 as ::core::ffi::c_int);
                 }

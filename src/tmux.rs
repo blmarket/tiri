@@ -37,7 +37,7 @@ use crate::tty::tty_parse_features;
 use ::libc::nl_item;
 use libc::{
     access, clock_gettime, exit, getenv, getpwuid, getuid, nl_langinfo, setlocale, strcasecmp,
-    strcasestr, strcmp, strrchr, strstr,
+    strcasestr, strrchr, strstr,
 };
 use std::ffi::{CStr, CString, OsStr};
 use std::fmt;
@@ -98,7 +98,7 @@ unsafe fn getshell() -> CString {
     }
     c"/bin/sh".to_owned()
 }
-pub unsafe fn checkshell(shell: Option<&CStr>) -> ::core::ffi::c_int {
+pub fn checkshell(shell: Option<&CStr>) -> ::core::ffi::c_int {
     let Some(shell) = shell else {
         return 0 as ::core::ffi::c_int;
     };
@@ -108,28 +108,21 @@ pub unsafe fn checkshell(shell: Option<&CStr>) -> ::core::ffi::c_int {
     if areshell(shell) != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    if access(shell.as_ptr(), X_OK) != 0 as ::core::ffi::c_int {
+    // SAFETY: access only reads the NUL-terminated path.
+    if unsafe { access(shell.as_ptr(), X_OK) } != 0 as ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
     1 as ::core::ffi::c_int
 }
-unsafe fn areshell(shell: &CStr) -> ::core::ffi::c_int {
-    let mut progname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut ptr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    ptr = strrchr(shell.as_ptr(), '/' as i32);
-    if !ptr.is_null() {
-        ptr = ptr.offset(1);
-    } else {
-        ptr = shell.as_ptr();
-    }
-    progname = getprogname().as_ptr();
-    if *progname as ::core::ffi::c_int == '-' as i32 {
-        progname = progname.offset(1);
-    }
-    if strcmp(ptr, progname) == 0 as ::core::ffi::c_int {
-        return 1 as ::core::ffi::c_int;
-    }
-    0 as ::core::ffi::c_int
+fn areshell(shell: &CStr) -> ::core::ffi::c_int {
+    let name = shell
+        .to_bytes()
+        .rsplit(|&byte| byte == b'/')
+        .next()
+        .unwrap_or_default();
+    let progname = getprogname().to_bytes();
+    let progname = progname.strip_prefix(b"-").unwrap_or(progname);
+    (name == progname) as ::core::ffi::c_int
 }
 unsafe fn expand_path(path: &CStr, home: Option<&CStr>) -> Option<CString> {
     let mut value: Option<&environ_entry> = None;

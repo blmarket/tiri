@@ -3,10 +3,10 @@ use super::diagnostic::options_string_cause;
 use super::store::*;
 use super::types::*;
 use crate::compat::strtonum::strtonum;
+use crate::ffi::fnmatch::fnmatch_matches;
 use crate::format::bytes::write_cstr;
 use crate::grid::grid_default_cell;
 use crate::key_string::key_string_parse_cstr;
-use libc::fnmatch;
 
 use crate::style::colour::colour_parse_cstr;
 use crate::style::{style_parse, style_parse_colour};
@@ -17,7 +17,7 @@ use crate::shared::key::*;
 use crate::shared::style::*;
 use std::ffi::{CStr, CString};
 
-unsafe fn options_from_string_check(oe: &options_table_entry, value: &CStr) -> Result<(), CString> {
+fn options_from_string_check(oe: &options_table_entry, value: &CStr) -> Result<(), CString> {
     let mut sy: style = style {
         gc: grid_cell {
             data: utf8_data {
@@ -50,10 +50,10 @@ unsafe fn options_from_string_check(oe: &options_table_entry, value: &CStr) -> R
     if oe.name == Some(c"default-shell") && checkshell(Some(value)) == 0 {
         return Err(options_string_cause(c"not a suitable shell: %s", &[value]));
     }
-    if oe.pattern.is_some_and(|pattern| {
-        fnmatch(pattern.as_ptr(), value.as_ptr(), 0 as ::core::ffi::c_int)
-            != 0 as ::core::ffi::c_int
-    }) {
+    if oe
+        .pattern
+        .is_some_and(|pattern| !fnmatch_matches(pattern, value, 0))
+    {
         return Err(options_string_cause(c"value is invalid: %s", &[value]));
     }
     if oe.flags & OPTIONS_TABLE_IS_STYLE != 0
@@ -70,7 +70,7 @@ unsafe fn options_from_string_check(oe: &options_table_entry, value: &CStr) -> R
     }
     Ok(())
 }
-unsafe fn options_from_string_flag(
+fn options_from_string_flag(
     oo: &mut options,
     name: &CStr,
     value: Option<&CStr>,
@@ -98,7 +98,7 @@ pub fn options_find_choice(
         .map(|n| n as ::core::ffi::c_int)
         .ok_or_else(|| options_string_cause(c"unknown value: %s", &[value]))
 }
-unsafe fn options_from_string_choice(
+fn options_from_string_choice(
     oe: &options_table_entry,
     oo: &mut options,
     name: &CStr,
@@ -119,7 +119,7 @@ unsafe fn options_from_string_choice(
     Ok(())
 }
 /// Command options are parsed by `OptionsScope`, never through here.
-pub unsafe fn options_from_string(
+pub fn options_from_string(
     oo: &mut options,
     oe: &options_table_entry,
     name: &CStr,

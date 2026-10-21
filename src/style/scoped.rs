@@ -72,9 +72,7 @@ pub unsafe fn style_resolve_with_options(
 
 /// Literal values are parsed and cached in place; values containing `#{` are
 /// returned for expansion once option access is released.
-unsafe fn style_snapshot(
-    entry: &mut options_entry,
-) -> Option<Result<Option<style>, (CString, bool)>> {
+fn style_snapshot(entry: &mut options_entry) -> Option<Result<Option<style>, (CString, bool)>> {
     if options_is_string(entry) == 0 {
         return None;
     }
@@ -93,7 +91,7 @@ unsafe fn style_snapshot(
     Some(Ok(parsed))
 }
 
-unsafe fn style_parse_text(text: &CStr, colour: bool) -> Option<style> {
+fn style_parse_text(text: &CStr, colour: bool) -> Option<style> {
     let mut sy = style::default();
     style_set(&mut sy, &grid_default_cell);
     let failed = if colour {

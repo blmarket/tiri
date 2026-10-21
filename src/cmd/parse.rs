@@ -88,7 +88,7 @@ pub fn cmd_parse_error_uppercase_first(error: &mut Option<CString>) {
     }
     *cause = CString::from_vec_with_nul(bytes).expect("cause remains NUL terminated");
 }
-unsafe fn cmd_parse_print_commands(pi: &cmd_parse_input, cmdlist: &cmd_list) {
+fn cmd_parse_print_commands(pi: &cmd_parse_input, cmdlist: &cmd_list) {
     if !pi.flags & CMD_PARSE_VERBOSE != 0 {
         return;
     }
@@ -283,7 +283,7 @@ fn cmd_parse_log_commands(cmds: &cmd_parse_commands, prefix: &CStr) {
     }
 }
 
-unsafe fn cmd_parse_expand_alias(
+fn cmd_parse_expand_alias(
     cmd: &mut cmd_parse_command,
     pi: &mut cmd_parse_input,
     pr: &mut cmd_parse_result,
@@ -333,7 +333,7 @@ unsafe fn cmd_parse_expand_alias(
     true
 }
 
-unsafe fn cmd_parse_build_command(
+fn cmd_parse_build_command(
     cmd: &mut cmd_parse_command,
     pi: &mut cmd_parse_input,
     pr: &mut cmd_parse_result,
@@ -377,7 +377,7 @@ unsafe fn cmd_parse_build_command(
     }
 }
 
-unsafe fn cmd_parse_build_commands(
+fn cmd_parse_build_commands(
     cmds: &mut cmd_parse_commands,
     pi: &mut cmd_parse_input,
     pr: &mut cmd_parse_result,
@@ -459,10 +459,7 @@ pub unsafe fn cmd_parse_from_file(
     cmd_parse_build_commands(&mut cmds, pi, &mut pr);
     pr
 }
-pub unsafe fn cmd_parse_from_string(
-    s: &CStr,
-    pi: Option<&mut cmd_parse_input>,
-) -> cmd_parse_result {
+pub fn cmd_parse_from_string(s: &CStr, pi: Option<&mut cmd_parse_input>) -> cmd_parse_result {
     let mut input: cmd_parse_input = cmd_parse_input {
         flags: 0,
         file: None,
@@ -500,10 +497,7 @@ pub unsafe fn cmd_parse_and_append(
     drop(pr.cmdlist.take());
     Ok(pr.status)
 }
-pub unsafe fn cmd_parse_from_buffer(
-    buf: &[u8],
-    pi: Option<&mut cmd_parse_input>,
-) -> cmd_parse_result {
+pub fn cmd_parse_from_buffer(buf: &[u8], pi: Option<&mut cmd_parse_input>) -> cmd_parse_result {
     let mut input: cmd_parse_input = cmd_parse_input {
         flags: 0,
         file: None,

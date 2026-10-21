@@ -1907,7 +1907,7 @@ unsafe fn server_client_is_bracket_paste(c: &mut client, mut key: key_code) -> :
         == KEYC_PASTE_START as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
     {
         c.flags = (c.flags as ::core::ffi::c_ulonglong | CLIENT_BRACKETPASTING) as uint64_t;
-        c.paste_time = current_time;
+        c.paste_time = current_time();
         log_debug(format_args!(
             "{}: bracket paste on",
             log_cstr(c.name.as_deref().unwrap_or(c"(null)"))
@@ -1950,7 +1950,7 @@ unsafe fn server_client_is_assume_paste(c: &mut client) -> ::core::ffi::c_int {
             return 1 as ::core::ffi::c_int;
         }
         c.flags = (c.flags as ::core::ffi::c_ulonglong | CLIENT_ASSUMEPASTING) as uint64_t;
-        c.paste_time = current_time;
+        c.paste_time = current_time();
         log_debug(format_args!(
             "{}: assume paste on",
             log_cstr(c.name.as_deref().unwrap_or(c"(null)"))
@@ -3925,7 +3925,7 @@ unsafe fn server_client_dispatch_identify(
         events_fire_client(c"client-created", std::rc::Rc::clone(owner));
     }
     if (*c).flags as ::core::ffi::c_ulonglong & (CLIENT_BRACKETPASTING | CLIENT_ASSUMEPASTING) != 0
-        && current_time - (*c).paste_time > CLIENT_PASTE_TIME_LIMIT as time_t
+        && current_time() - (*c).paste_time > CLIENT_PASTE_TIME_LIMIT as time_t
     {
         log_debug(format_args!(
             "{}: paste time limit exceeded",

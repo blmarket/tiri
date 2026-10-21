@@ -145,7 +145,7 @@ unsafe fn cmd_display_message_exec(
     let ft = &mut *ft_owner;
     format_defaults(ft, c.as_ref(), s.as_ref(), wl.clone(), wp.as_ref());
     if args_has(args, 'a' as i32 as u_char) != 0 && args_has(args, 'j' as i32 as u_char) == 0 {
-        format_each(ft, |key, value| unsafe {
+        format_each(ft, |key, value| {
             cmdq_print(item_handle, |out| {
                 write_cstr(out, &*key)?;
                 out.write_all(b"=")?;

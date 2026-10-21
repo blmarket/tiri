@@ -1203,14 +1203,14 @@ pub unsafe fn cmdq_guard(
         control_write_guard(&c.clone().expect("live client"), guard, t, number, flags);
     }
 }
-pub unsafe fn cmdq_print_data(
+pub fn cmdq_print_data(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     mut evb: &mut SegmentedBuf,
 ) {
     let client = cmdq_get_client(Some(&item_handle.borrow()));
     ClientRef::print_to(client.as_ref(), (1 as ::core::ffi::c_int) != 0, evb);
 }
-pub unsafe fn cmdq_print(
+pub fn cmdq_print(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {

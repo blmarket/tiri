@@ -94,7 +94,13 @@ pub static mut marked_pane: cmd_find_state = cmd_find_state {
 };
 static mut message_next: u_int = 0;
 pub static mut message_log: message_list = message_list::new();
-pub static mut current_time: time_t = 0;
+thread_local! {
+    static CURRENT_TIME: std::cell::Cell<time_t> = const { std::cell::Cell::new(0) };
+}
+/// The time sampled when the server loop started.
+pub fn current_time() -> time_t {
+    CURRENT_TIME.get()
+}
 pub unsafe fn server_set_marked(
     s_owner: Option<&SessionRef>,
     mut wl: refbox::Weak<winlink>,
@@ -302,7 +308,9 @@ pub(crate) unsafe fn server_start(
 unsafe fn server_loop() -> ::core::ffi::c_int {
     let mut c: Option<ClientRef> = None;
     let mut items: u_int = 0;
-    current_time = crate::shared::time::unix_seconds(std::time::SystemTime::now());
+    CURRENT_TIME.set(crate::shared::time::unix_seconds(
+        std::time::SystemTime::now(),
+    ));
     loop {
         items = cmdq_next(None);
         let mut registry_c_owner = ClientRegistry::first();

@@ -2,6 +2,7 @@ use super::model::*;
 use crate::compat::strtonum::strtonum;
 use crate::compat::unvis::strunvis;
 use crate::compat::vis::strnvis;
+use crate::ffi::fnmatch::fnmatch_matches;
 use crate::ffi::ncurses::{
     cur_term, del_curterm, setupterm, tigetflag, tigetnum, tigetstr, tiparm_s,
 };
@@ -16,7 +17,7 @@ use crate::shared::posix_io::STDIN_FILENO;
 use crate::shared::tty::*;
 use crate::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::tty::features::{tty_apply_features, tty_parse_client_features};
-use libc::{fnmatch, strcmp};
+use libc::strcmp;
 use std::ffi::{CStr, CString};
 
 pub(super) const TTYCODE_FLAG: tty_code_type = 3;
@@ -1207,13 +1208,10 @@ pub(super) unsafe fn tty_term_apply_overrides(term: &mut tty_term) {
     for value in &values {
         let mut offset: size_t = 0;
         let first = tty_term_override_next(value, &mut offset);
-        if first.as_ref().is_some_and(|first| {
-            fnmatch(
-                first.as_ptr(),
-                (term.name).as_ptr().cast_mut(),
-                0 as ::core::ffi::c_int,
-            ) == 0
-        }) {
+        if first
+            .as_ref()
+            .is_some_and(|first| fnmatch_matches(first, &term.name, 0))
+        {
             tty_term_apply(
                 term,
                 cstr_suffix(value, offset).as_ptr(),
@@ -1358,13 +1356,10 @@ pub(super) unsafe fn tty_term_create(
     for value in &values {
         let mut offset: size_t = 0;
         let first = tty_term_override_next(value, &mut offset);
-        if first.as_ref().is_some_and(|first| {
-            fnmatch(
-                first.as_ptr(),
-                (owner.name).as_ptr().cast_mut(),
-                0 as ::core::ffi::c_int,
-            ) == 0
-        }) {
+        if first
+            .as_ref()
+            .is_some_and(|first| fnmatch_matches(first, &owner.name, 0))
+        {
             tty_parse_client_features(client_owner, cstr_suffix(value, offset), c":");
         }
     }

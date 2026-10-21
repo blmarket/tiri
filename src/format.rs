@@ -6,6 +6,7 @@ use crate::cmd::queue::{
 };
 use crate::compat::strtonum::strtonum;
 use crate::environ::{environ_find, environ_iter};
+use crate::ffi::fnmatch::fnmatch_matches;
 use crate::ffi::regex::RegexStorage;
 use crate::format::bytes::format_message_with;
 use crate::format::bytes::write_cstr;
@@ -27,7 +28,7 @@ use crate::server::{marked_pane, server_check_marked};
 use crate::shared::window::WindowWeak;
 use crate::window::Window as _;
 use crate::winlink::winlink_window;
-use libc::{ctime_r, dirname, fnmatch, gethostname, getpwuid, getuid, localtime_r, strftime};
+use libc::{ctime_r, dirname, gethostname, getpwuid, getuid, localtime_r, strftime};
 
 use crate::server_client::Client as _;
 use crate::server_fn::server_status_client;

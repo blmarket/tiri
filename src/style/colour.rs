@@ -398,7 +398,7 @@ pub(crate) fn colour_format_escape_resolved(
 }
 
 /// Return owned SGR text through the retained client, or default capabilities.
-pub unsafe fn colour_format_escape_for_client(
+pub fn colour_format_escape_for_client(
     client: Option<&ClientRef>,
     mut colour: i32,
     background: bool,

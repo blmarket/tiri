@@ -599,7 +599,7 @@ pub(super) unsafe fn format_match(fm: &format_modifier, pattern: &CStr, text: &C
         } else {
             0
         };
-        fnmatch(pattern.as_ptr(), text.as_ptr(), flags) == 0
+        fnmatch_matches(pattern, text, flags)
     };
     if matched {
         c"1".to_owned()

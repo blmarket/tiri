@@ -20,7 +20,7 @@ use std::ffi::{CStr, CString};
 pub const STYLE_WIDTH_DEFAULT: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
 pub const STYLE_PAD_DEFAULT: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
 
-pub(super) static mut style_default: style = style {
+pub(super) static style_default: style = style {
     gc: grid_cell {
         data: utf8_data {
             data: [
@@ -117,7 +117,7 @@ fn style_parse_number(
         .ok()
         .map(|n| n as u_int)
 }
-unsafe fn style_parse_token(sy: &mut style, base: &grid_cell, tmp: &[u8]) -> bool {
+fn style_parse_token(sy: &mut style, base: &grid_cell, tmp: &[u8]) -> bool {
     if tmp.eq_ignore_ascii_case(b"default") {
         sy.gc.fg = base.fg;
         sy.gc.bg = base.bg;
@@ -331,7 +331,7 @@ unsafe fn style_parse_token(sy: &mut style, base: &grid_cell, tmp: &[u8]) -> boo
     }
     true
 }
-pub unsafe fn style_parse(sy: &mut style, base: &grid_cell, in_0: &CStr) -> ::core::ffi::c_int {
+pub fn style_parse(sy: &mut style, base: &grid_cell, in_0: &CStr) -> ::core::ffi::c_int {
     const DELIMITERS: &[u8] = b" ,\n";
     let mut in_0 = in_0.to_bytes();
     let mut saved: style = style {
@@ -579,7 +579,7 @@ pub fn style_link(sy: &style) -> Option<Box<hyperlinks_uri>> {
     let entry = hyperlinks_get(&table, sy.link)?;
     Some(Box::new(entry.clone()))
 }
-pub unsafe fn style_parse_colour(sy: &mut style, base: &grid_cell, s: &CStr) -> ::core::ffi::c_int {
+pub fn style_parse_colour(sy: &mut style, base: &grid_cell, s: &CStr) -> ::core::ffi::c_int {
     let mut c: ::core::ffi::c_int = 0;
     style_set(sy, base);
     if s.is_empty() {
@@ -597,7 +597,7 @@ pub unsafe fn style_parse_colour(sy: &mut style, base: &grid_cell, s: &CStr) -> 
     }
     0 as ::core::ffi::c_int
 }
-pub unsafe fn style_set(sy: &mut style, gc: &grid_cell) {
+pub fn style_set(sy: &mut style, gc: &grid_cell) {
     *sy = style_default;
     sy.gc = *gc;
 }

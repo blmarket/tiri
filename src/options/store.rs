@@ -146,7 +146,7 @@ pub fn options_empty<'a>(
     }
     o
 }
-pub unsafe fn options_default<'a>(
+pub fn options_default<'a>(
     oo: &'a mut options,
     oe: &'static options_table_entry,
 ) -> &'a mut options_entry {
@@ -227,9 +227,9 @@ fn options_remove(entry: btree_map::OccupiedEntry<'_, CString, Box<options_entry
 pub fn options_get_monitor_data(o: &options_entry) -> Option<&crate::hooks::hooks_monitor> {
     o.monitor_data.as_deref()
 }
-pub unsafe fn options_hook_fired(o: &mut options_entry) {
+pub fn options_hook_fired(o: &mut options_entry) {
     o.fire_count = o.fire_count.wrapping_add(1);
-    o.fire_time = current_time;
+    o.fire_time = current_time();
 }
 pub fn options_get_fire_count(o: &options_entry) -> u_int {
     o.fire_count
@@ -308,7 +308,7 @@ impl options_array {
     }
 
     /// Set or, with no value, remove one item of an array defined by `oe`.
-    pub unsafe fn set(
+    pub fn set(
         &mut self,
         oe: &options_table_entry,
         key: &CStr,
@@ -357,7 +357,7 @@ impl options_array {
     }
 
     /// Append `s`, split by the separator of `oe`, at the next free indices.
-    pub unsafe fn assign(&mut self, oe: &options_table_entry, s: &CStr) -> Result<(), CString> {
+    pub fn assign(&mut self, oe: &options_table_entry, s: &CStr) -> Result<(), CString> {
         let separator = oe.separator.unwrap_or(c" ,").to_bytes();
         if s.is_empty() {
             return Ok(());
@@ -559,7 +559,7 @@ pub fn options_get_command(oo: &options) -> std::rc::Rc<std::cell::RefCell<cmd_l
 }
 /// Find the local entry, publishing a user option or the inherited built-in
 /// default when the table has none yet.
-unsafe fn options_local_or_default<'a>(oo: &'a mut options, name: &CStr) -> &'a mut options_entry {
+fn options_local_or_default<'a>(oo: &'a mut options, name: &CStr) -> &'a mut options_entry {
     if oo.tree.contains_key(name) {
         return oo.tree.get_mut(name).expect("local option entry");
     }
@@ -569,7 +569,7 @@ unsafe fn options_local_or_default<'a>(oo: &'a mut options, name: &CStr) -> &'a 
     let definition = options_parent_table_entry(oo, name).expect("static option definition");
     options_default(oo, definition)
 }
-pub unsafe fn options_set_string<'a>(
+pub fn options_set_string<'a>(
     oo: &'a mut options,
     name: &CStr,
     append: ::core::ffi::c_int,
@@ -616,7 +616,7 @@ pub unsafe fn options_set_string<'a>(
     o.style = None;
     o
 }
-pub unsafe fn options_set_number<'a>(
+pub fn options_set_number<'a>(
     oo: &'a mut options,
     name: &CStr,
     value: ::core::ffi::c_longlong,
@@ -648,7 +648,7 @@ pub unsafe fn options_set_number<'a>(
     o.value = options_value::Number(value);
     o
 }
-pub unsafe fn options_set_command<'a>(
+pub fn options_set_command<'a>(
     oo: &'a mut options,
     name: &CStr,
     value: Option<std::rc::Rc<std::cell::RefCell<cmd_list>>>,

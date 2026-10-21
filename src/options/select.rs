@@ -11,7 +11,7 @@ use crate::shared::command::cmd_find_state;
 use std::ffi::{CStr, CString};
 
 /// Select the options scope for `name`, returning the table kind and scope.
-pub unsafe fn options_scope_from_name(
+pub fn options_scope_from_name(
     args: &args,
     window: i32,
     name: &CStr,
@@ -34,7 +34,7 @@ pub unsafe fn options_scope_from_name(
     };
     options_select_scope(args, fs, kind)
 }
-pub unsafe fn options_scope_from_flags(
+pub fn options_scope_from_flags(
     args: &args,
     window: i32,
     fs: &cmd_find_state,
@@ -50,7 +50,7 @@ pub unsafe fn options_scope_from_flags(
     };
     options_select_scope(args, fs, kind)
 }
-unsafe fn options_select_scope(
+fn options_select_scope(
     args: &args,
     fs: &cmd_find_state,
     kind: i32,

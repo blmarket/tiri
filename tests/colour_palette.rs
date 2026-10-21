@@ -63,48 +63,46 @@ fn pane_colours(oo: &mut options) -> &mut options_entry {
 
 #[test]
 fn option_reload_replaces_defaults_without_changing_overrides() {
-    unsafe {
-        let scope = OptionsScope::GlobalWindow;
-        let definition = tiri::options::options_table
-            .iter()
-            .find(|oe| oe.name == Some(c"pane-colours"))
-            .unwrap();
-        scope.with_local(|oo| {
-            options_empty(oo, definition);
-        });
-        let mut p = colour_palette::default();
-        colour_palette_from_option(Some(&mut p), &scope);
-        assert!(p.default_palette.is_none());
-        assert_eq!(
-            scope.with_local(|oo| pane_colours(oo).value.array_mut().unwrap().set(
-                definition,
-                c"1",
-                Some(c"red"),
-                false
-            )),
-            Ok(())
-        );
-        colour_palette_from_option(Some(&mut p), &scope);
-        assert_eq!(colour_palette_get(Some(&p), 1), 1);
-        colour_palette_set(Some(&mut p), 1, 4);
-        scope.with_local(|oo| pane_colours(oo).value.array_mut().unwrap().clear());
-        assert_eq!(
-            scope.with_local(|oo| pane_colours(oo).value.array_mut().unwrap().set(
-                definition,
-                c"255",
-                Some(c"green"),
-                false
-            )),
-            Ok(())
-        );
-        colour_palette_from_option(Some(&mut p), &scope);
-        assert_eq!(colour_palette_get(Some(&p), 1), 4);
-        colour_palette_set(Some(&mut p), 1, -1);
-        assert_eq!(colour_palette_get(Some(&p), 1), -1);
-        assert_eq!(colour_palette_get(Some(&p), COLOUR_FLAG_256 | 255), 2);
-        scope.with_local(|oo| pane_colours(oo).value.array_mut().unwrap().clear());
-        colour_palette_from_option(Some(&mut p), &scope);
-        assert!(p.default_palette.is_none());
-        assert_eq!(colour_palette_get(Some(&p), COLOUR_FLAG_256 | 255), -1);
-    }
+    let scope = OptionsScope::GlobalWindow;
+    let definition = tiri::options::options_table
+        .iter()
+        .find(|oe| oe.name == Some(c"pane-colours"))
+        .unwrap();
+    scope.with_local(|oo| {
+        options_empty(oo, definition);
+    });
+    let mut p = colour_palette::default();
+    colour_palette_from_option(Some(&mut p), &scope);
+    assert!(p.default_palette.is_none());
+    assert_eq!(
+        scope.with_local(|oo| pane_colours(oo).value.array_mut().unwrap().set(
+            definition,
+            c"1",
+            Some(c"red"),
+            false
+        )),
+        Ok(())
+    );
+    colour_palette_from_option(Some(&mut p), &scope);
+    assert_eq!(colour_palette_get(Some(&p), 1), 1);
+    colour_palette_set(Some(&mut p), 1, 4);
+    scope.with_local(|oo| pane_colours(oo).value.array_mut().unwrap().clear());
+    assert_eq!(
+        scope.with_local(|oo| pane_colours(oo).value.array_mut().unwrap().set(
+            definition,
+            c"255",
+            Some(c"green"),
+            false
+        )),
+        Ok(())
+    );
+    colour_palette_from_option(Some(&mut p), &scope);
+    assert_eq!(colour_palette_get(Some(&p), 1), 4);
+    colour_palette_set(Some(&mut p), 1, -1);
+    assert_eq!(colour_palette_get(Some(&p), 1), -1);
+    assert_eq!(colour_palette_get(Some(&p), COLOUR_FLAG_256 | 255), 2);
+    scope.with_local(|oo| pane_colours(oo).value.array_mut().unwrap().clear());
+    colour_palette_from_option(Some(&mut p), &scope);
+    assert!(p.default_palette.is_none());
+    assert_eq!(colour_palette_get(Some(&p), COLOUR_FLAG_256 | 255), -1);
 }

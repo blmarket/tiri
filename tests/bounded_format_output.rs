@@ -11,25 +11,23 @@ use tiri::{
 
 #[test]
 fn style_appends_preserve_raw_range_bytes_and_numeric_fields() {
-    unsafe {
-        let mut value = style::default();
-        style_set(&mut value, &grid_default_cell);
-        value.list = STYLE_LIST_ON;
-        value.range_type = STYLE_RANGE_USER;
-        value.range_string[0] = 0xff;
-        value.align = STYLE_ALIGN_RIGHT;
-        value.dim = 25;
-        value.width = 75;
-        value.width_percentage = 1;
-        value.pad = 2;
-        assert_eq!(
-            style_tostring(&value).to_bytes(),
-            b"list=on,range=user|\xff,align=right,dim=25%,width=75%,pad=2",
-        );
-        style_set(&mut value, &grid_default_cell);
-        value.width = 3;
-        assert_eq!(style_tostring(&value).as_c_str(), c"width=3");
-    }
+    let mut value = style::default();
+    style_set(&mut value, &grid_default_cell);
+    value.list = STYLE_LIST_ON;
+    value.range_type = STYLE_RANGE_USER;
+    value.range_string[0] = 0xff;
+    value.align = STYLE_ALIGN_RIGHT;
+    value.dim = 25;
+    value.width = 75;
+    value.width_percentage = 1;
+    value.pad = 2;
+    assert_eq!(
+        style_tostring(&value).to_bytes(),
+        b"list=on,range=user|\xff,align=right,dim=25%,width=75%,pad=2",
+    );
+    style_set(&mut value, &grid_default_cell);
+    value.width = 3;
+    assert_eq!(style_tostring(&value).as_c_str(), c"width=3");
 }
 
 #[test]

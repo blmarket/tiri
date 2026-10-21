@@ -275,10 +275,11 @@ pub unsafe fn grid_line_time(gl: &grid_line) -> time_t {
     crate::shared::time::unix_seconds(start_time) + gl.time as time_t - 1
 }
 unsafe fn grid_line_set_time(gl: &mut grid_line) {
-    gl.time = if current_time == 0 {
+    let now = current_time();
+    gl.time = if now == 0 {
         0
     } else {
-        (current_time as __time_t - crate::shared::time::unix_seconds(start_time) + 1) as u_int
+        (now as __time_t - crate::shared::time::unix_seconds(start_time) + 1) as u_int
     };
 }
 pub fn grid_adjust_lines(gd: &mut grid, lines: u_int) {

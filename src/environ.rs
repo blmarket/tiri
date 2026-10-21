@@ -1,3 +1,4 @@
+use crate::ffi::fnmatch::fnmatch_matches;
 use crate::ffi::libc::environ;
 use crate::format::bytes::format_message_with;
 use crate::format::bytes::write_cstr;
@@ -7,7 +8,7 @@ use crate::session::Session;
 use crate::shared::session::SessionRef;
 use crate::tmux::{getversion, global_environ, socket_path_cstr};
 use crate::xmalloc::xcalloc;
-use libc::{fnmatch, free, setenv};
+use libc::{free, setenv};
 use std::ffi::{CStr, CString};
 
 struct ProcessEnvironmentSeed(*mut *mut ::core::ffi::c_char);
@@ -141,7 +142,7 @@ pub unsafe fn environ_update(scope: &OptionsScope, src: &environ, dst: &mut envi
     for pattern in patterns {
         let mut found = false;
         for entry in environ_iter(src) {
-            if fnmatch(pattern.as_ptr(), entry.name.as_ptr(), 0) == 0 {
+            if fnmatch_matches(&pattern, &entry.name, 0) {
                 environ_set(dst, &entry.name, 0, |out| {
                     write_cstr(out, entry.value.as_deref())
                 });

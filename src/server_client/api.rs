@@ -46,7 +46,7 @@ pub trait Client {
     ) -> Option<CString>
     where
         Self: Sized;
-    unsafe fn print_to(client: Option<&Self>, parse: bool, buffer: &mut SegmentedBuf)
+    fn print_to(client: Option<&Self>, parse: bool, buffer: &mut SegmentedBuf)
     where
         Self: Sized;
     unsafe fn forget_pane(pane: &Rc<RefCell<window_pane>>)
@@ -334,7 +334,7 @@ impl Client for ClientRef {
         server_client_get_cwd(client, fallback)
     }
 
-    unsafe fn print_to(client: Option<&Self>, parse: bool, buffer: &mut SegmentedBuf) {
+    fn print_to(client: Option<&Self>, parse: bool, buffer: &mut SegmentedBuf) {
         server_client_print(client, i32::from(parse), buffer);
     }
 

@@ -13,7 +13,7 @@ use std::collections::btree_map;
 use std::ffi::{CStr, CString};
 
 fn command_parser(value: &CStr) -> cmd_parse_result {
-    unsafe { cmd_parse_from_string(value, None) }
+    cmd_parse_from_string(value, None)
 }
 
 fn parse_commands(
@@ -32,7 +32,7 @@ fn parse_commands(
 
 impl OptionsScope {
     /// Set a scalar; command parsing finishes before any option component borrow.
-    pub unsafe fn set_from_string(
+    pub fn set_from_string(
         &self,
         definition: Option<&'static options_table_entry>,
         name: &CStr,
@@ -42,7 +42,7 @@ impl OptionsScope {
         self.set_from_string_with_parser(definition, name, value, append, &mut command_parser)
     }
 
-    unsafe fn set_from_string_with_parser(
+    fn set_from_string_with_parser(
         &self,
         definition: Option<&'static options_table_entry>,
         name: &CStr,
@@ -97,7 +97,7 @@ impl OptionsScope {
 
     /// Set/remove one item in an existing local array. A parser may consult any
     /// model; only the resulting owned command list reaches the publication step.
-    pub unsafe fn set_array_item(
+    pub fn set_array_item(
         &self,
         name: &CStr,
         key: &CStr,
@@ -107,7 +107,7 @@ impl OptionsScope {
         self.set_array_item_with_parser(name, key, value, append, &mut command_parser)
     }
 
-    unsafe fn set_array_item_with_parser(
+    fn set_array_item_with_parser(
         &self,
         name: &CStr,
         key: &CStr,
@@ -152,11 +152,11 @@ impl OptionsScope {
 
     /// Append split values incrementally. A later parse error preserves every
     /// preceding insertion and stops before parsing any following token.
-    pub unsafe fn assign_array(&self, name: &CStr, value: &CStr) -> Result<(), CString> {
+    pub fn assign_array(&self, name: &CStr, value: &CStr) -> Result<(), CString> {
         self.assign_array_with_parser(name, value, &mut command_parser)
     }
 
-    unsafe fn assign_array_with_parser(
+    fn assign_array_with_parser(
         &self,
         name: &CStr,
         value: &CStr,
@@ -209,11 +209,7 @@ impl OptionsScope {
 
     /// Remove a local entry/item or reset a global built-in to its default.
     /// False means no local entry existed and callers must not push changes.
-    pub unsafe fn remove_or_default(
-        &self,
-        name: &CStr,
-        key: Option<&CStr>,
-    ) -> Result<bool, CString> {
+    pub fn remove_or_default(&self, name: &CStr, key: Option<&CStr>) -> Result<bool, CString> {
         let Some(definition) = self.with_entry(name, |entry| entry.tableentry) else {
             return Ok(false);
         };
@@ -229,7 +225,7 @@ impl OptionsScope {
 
     /// Replace the local entry with the built-in default. A command default is
     /// parsed without the table borrowed, as parsing reads command aliases.
-    pub unsafe fn reset_default(&self, definition: &'static options_table_entry) {
+    pub fn reset_default(&self, definition: &'static options_table_entry) {
         self.reset_default_with_parser(definition, &mut command_parser);
     }
 
@@ -261,7 +257,7 @@ impl OptionsScope {
         true
     }
 
-    unsafe fn reset_default_with_parser(
+    fn reset_default_with_parser(
         &self,
         definition: &'static options_table_entry,
         parse: &mut impl FnMut(&CStr) -> cmd_parse_result,

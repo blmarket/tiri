@@ -208,7 +208,7 @@ unsafe fn monitor_check_value(
             return None;
         }
         item.fire_count = item.fire_count.wrapping_add(1);
-        item.fire_time = current_time;
+        item.fire_time = current_time();
         Some((item.name.clone(), previous))
     })
     .flatten();
@@ -864,7 +864,7 @@ mod ownership_tests {
             assert_eq!(monitor_get_fire_count(&owner.downgrade(), c"name"), 2);
             assert_eq!(
                 monitor_get_fire_time(&owner.downgrade(), c"name"),
-                current_time
+                current_time()
             );
             monitor_destroy(owner);
         }
