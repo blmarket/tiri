@@ -86,7 +86,7 @@ unsafe fn cmd_respawn_pane_exec(
     if args_has(args, 'k' as i32 as u_char) != 0 {
         sc.flags |= SPAWN_KILL;
     }
-    if <std::rc::Rc<std::cell::UnsafeCell<window_pane>> as WindowPane>::spawn_process(
+    if <std::rc::Rc<std::cell::RefCell<window_pane>> as WindowPane>::spawn_process(
         &mut sc, &mut cause,
     )
     .is_none()

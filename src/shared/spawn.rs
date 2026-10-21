@@ -28,14 +28,14 @@ pub struct EditorId(pub(crate) u64);
 /// Observe one pane-owned editor without keeping its Box alive. The identity
 /// prevents a delayed completion from clearing a replacement editor.
 pub struct EditorHandle {
-    pane: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
+    pane: std::rc::Weak<std::cell::RefCell<window_pane>>,
     id: EditorId,
 }
 
 impl EditorHandle {
     /// The editor pointer must be live and installed in this pane.
     pub unsafe fn new(
-        pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+        pane: &std::rc::Rc<std::cell::RefCell<window_pane>>,
         editor: std::ptr::NonNull<spawn_editor_state>,
     ) -> Self {
         assert_eq!(
@@ -81,7 +81,7 @@ pub struct spawn_context {
     pub wl: refbox::Weak<winlink>,
     /// Observe the target client; each spawn operation retains an upgrade while using it.
     pub tc: ClientWeak,
-    pub wp0: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
+    pub wp0: std::rc::Weak<std::cell::RefCell<window_pane>>,
     pub name: Option<std::ffi::CString>,
     pub argv: Vec<std::ffi::CString>,
     pub environ: Option<Box<environ>>,

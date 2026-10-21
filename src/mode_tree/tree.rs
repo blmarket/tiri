@@ -618,7 +618,7 @@ pub fn mode_tree_each_tagged(
     }
 }
 pub unsafe fn mode_tree_start(
-    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     args: &args,
     buildcb: mode_tree_build_cb,
     drawcb: mode_tree_draw_cb,
@@ -824,7 +824,7 @@ pub unsafe fn mode_tree_resize(
 ) {
     let Some(mode_pane_owner) = ({
         let mut mtd = tree_owner.borrow_mut();
-        let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&mtd.wp);
+        let pane = std::rc::Rc::<std::cell::RefCell<window_pane>>::from_observer(&mtd.wp);
         if pane.is_some() {
             screen_resize(&mut mtd.screen, sx, sy, 0 as ::core::ffi::c_int);
         }
@@ -859,7 +859,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<RefCell<mode_tree_data>>) {
         return;
     }
     let Some(mode_pane_owner) =
-        std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&mtd.wp)
+        std::rc::Rc::<std::cell::RefCell<window_pane>>::from_observer(&mtd.wp)
     else {
         return;
     };
@@ -1394,7 +1394,7 @@ pub unsafe fn mode_tree_set_prompt(
     mut freecb: prompt_free_cb,
 ) {
     let Some(mode_pane_owner) =
-        std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&tree.borrow().wp)
+        std::rc::Rc::<std::cell::RefCell<window_pane>>::from_observer(&tree.borrow().wp)
     else {
         if let Some(freecb) = freecb {
             freecb();
@@ -1509,7 +1509,7 @@ unsafe fn mode_tree_search_set(tree_owner: &Rc<RefCell<mode_tree_data>>) {
     let (pane, search_dir) = {
         let mtd = tree_owner.borrow();
         (
-            std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&mtd.wp),
+            std::rc::Rc::<std::cell::RefCell<window_pane>>::from_observer(&mtd.wp),
             mtd.search_dir,
         )
     };
@@ -1602,7 +1602,7 @@ unsafe fn mode_tree_filter_callback(
 ) -> prompt_result {
     let Some(mode_pane_owner) = ({
         let mut mtd = tree_owner.borrow_mut();
-        let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&mtd.wp);
+        let pane = std::rc::Rc::<std::cell::RefCell<window_pane>>::from_observer(&mtd.wp);
         if pane.is_some() && mtd.dead == 0 {
             mtd.filter = s
                 .filter(|text| !text.to_bytes().is_empty())
@@ -1624,7 +1624,7 @@ unsafe fn mode_tree_filter_callback(
 unsafe fn mode_tree_clear_filter(tree_owner: &Rc<RefCell<mode_tree_data>>) {
     let Some(mode_pane_owner) = ({
         let mut mtd = tree_owner.borrow_mut();
-        let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&mtd.wp);
+        let pane = std::rc::Rc::<std::cell::RefCell<window_pane>>::from_observer(&mtd.wp);
         if pane.is_some() {
             mtd.filter = None;
         }
@@ -1681,7 +1681,7 @@ unsafe fn mode_tree_display_menu(
     };
     let mtd = tree.borrow();
     let Some(mode_pane_owner) =
-        std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&mtd.wp)
+        std::rc::Rc::<std::cell::RefCell<window_pane>>::from_observer(&mtd.wp)
     else {
         return;
     };
@@ -1760,12 +1760,11 @@ unsafe fn mode_tree_draw_help_line(
     format_draw(ctx, gc, w, &expanded, None, 0 as ::core::ffi::c_int);
 }
 unsafe fn mode_tree_draw_help(
-    wp: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
+    wp: &std::rc::Weak<std::cell::RefCell<window_pane>>,
     helpcb: mode_tree_help_cb,
     ctx: &mut screen_write_ctx,
 ) {
-    let Some(mode_pane_owner) =
-        std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(wp)
+    let Some(mode_pane_owner) = std::rc::Rc::<std::cell::RefCell<window_pane>>::from_observer(wp)
     else {
         return;
     };
@@ -1870,7 +1869,7 @@ pub unsafe fn mode_tree_key(
     yp: Option<&mut u_int>,
 ) -> ::core::ffi::c_int {
     let Some(mode_pane_owner) =
-        std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&tree.borrow().wp)
+        std::rc::Rc::<std::cell::RefCell<window_pane>>::from_observer(&tree.borrow().wp)
     else {
         *key = KEYC_NONE;
         return 0;

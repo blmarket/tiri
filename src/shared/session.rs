@@ -3,9 +3,9 @@
 pub use crate::session::session;
 
 /// Retained Session identity. Logical destruction and deferred releases remain explicit.
-pub type SessionRef = std::rc::Rc<std::cell::UnsafeCell<session>>;
+pub type SessionRef = std::rc::Rc<std::cell::RefCell<session>>;
 /// Nonowning Session identity for callbacks, targets and membership.
-pub type SessionWeak = std::rc::Weak<std::cell::UnsafeCell<session>>;
+pub type SessionWeak = std::rc::Weak<std::cell::RefCell<session>>;
 /// Nonowning group handle; the group index holds the only owner. An empty
 /// handle stands for "no group".
 pub type SessionGroupWeak = refbox::Weak<session_group>;

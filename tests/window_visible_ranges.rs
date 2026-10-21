@@ -1,4 +1,4 @@
-use std::cell::UnsafeCell;
+use std::cell::RefCell;
 use std::rc::Rc;
 use tiri::shared::display::visible_range;
 use tiri::shared::pane::window_pane;
@@ -9,7 +9,7 @@ fn segments(ranges: &[visible_range]) -> Vec<(u32, u32)> {
 }
 
 unsafe fn calculate_ranges(
-    pane: Option<&Rc<UnsafeCell<window_pane>>>,
+    pane: Option<&Rc<RefCell<window_pane>>>,
     x: i32,
     y: i32,
     width: u32,

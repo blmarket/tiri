@@ -35,7 +35,7 @@ use crate::server_client::Client;
 use crate::server_fn::server_redraw_window;
 use crate::tmux::clean_name_cstring;
 use crate::tty::tty_update_window_offset;
-use std::cell::UnsafeCell;
+use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
 
@@ -70,7 +70,7 @@ impl windows {
     /// Register an observer, without adding a strong reference to the window.
     /// An existing live entry for the same id wins and is returned.
     pub fn insert(window: &WindowRef) -> Option<WindowRef> {
-        let id = unsafe { (*window.get()).id };
+        let id = unsafe { (*window.as_ptr()).id };
         WINDOWS.with_borrow_mut(|index| {
             if let Some(existing) = index.storage.get(&id).and_then(WindowWeak::upgrade) {
                 return Some(existing);
@@ -82,7 +82,7 @@ impl windows {
 
     /// Remove the matching observer without retaining or releasing the window.
     pub fn remove(window: &WindowRef) {
-        let id = unsafe { (*window.get()).id };
+        let id = unsafe { (*window.as_ptr()).id };
         WINDOWS.with_borrow_mut(|index| {
             if index
                 .storage
@@ -176,7 +176,7 @@ fn window_winlinks_remove(w: &mut window, wl: refbox::Weak<winlink>) {
 }
 
 unsafe fn window_fire_renamed(w_owner: &WindowRef, old_name: &CStr) {
-    let mut w = w_owner.get();
+    let mut w = w_owner.as_ptr();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: std::rc::Weak::new(),
@@ -198,8 +198,8 @@ unsafe fn window_fire_renamed(w_owner: &WindowRef, old_name: &CStr) {
 }
 unsafe fn window_fire_pane_changed(
     window: &WindowRef,
-    pane: &Rc<UnsafeCell<window_pane>>,
-    previous: Option<&Rc<UnsafeCell<window_pane>>>,
+    pane: &Rc<RefCell<window_pane>>,
+    previous: Option<&Rc<RefCell<window_pane>>>,
 ) {
     let mut find = cmd_find_state::default();
     let mut payload = event_payload_create();
@@ -232,7 +232,7 @@ pub fn window_find_by_id_str(s: &CStr) -> Option<WindowRef> {
     windows::resolve(id)
 }
 unsafe fn window_update_activity(w_owner: &WindowRef) {
-    let mut w = w_owner.get();
+    let mut w = w_owner.as_ptr();
     (*w).activity_time = SystemTime::now();
     alerts_queue(w_owner, WINDOW_ACTIVITY);
 }
@@ -240,7 +240,7 @@ unsafe fn window_update_activity(w_owner: &WindowRef) {
 /// Replace the window's owned name, returning the previous value for callers
 /// that need to keep it alive across synchronous callbacks.
 unsafe fn window_replace_name(w_owner: &WindowRef, name: CString) -> CString {
-    let mut w = w_owner.get();
+    let mut w = w_owner.as_ptr();
     ::core::mem::replace(&mut (*w).name, name)
 }
 /// Return one owned reference; callers must release it after linking the window.
@@ -257,7 +257,7 @@ pub unsafe fn window_create(
         ypixel = DEFAULT_YPIXEL as u_int;
     }
     let owner = window::new_ref();
-    let w = owner.get();
+    let w = owner.as_ptr();
     (*w).flags = 0 as ::core::ffi::c_int;
     (*w).panes = window_panes::default();
     (*w).last_panes = PaneHistory::default();
@@ -268,13 +268,12 @@ pub unsafe fn window_create(
     (*w).manual_sy = sy;
     (*w).xpixel = xpixel;
     (*w).ypixel = ypixel;
-    (*w).options
-        .replace(Some(crate::options::options_create(Some(
-            crate::options::OptionsScope::GlobalWindow,
-        ))));
+    (*w).options = Some(crate::options::options_create(Some(
+        crate::options::OptionsScope::GlobalWindow,
+    )));
     (*w).sb =
-        options_get_number(&(*w).borrow_options_mut(), c"pane-scrollbars") as ::core::ffi::c_int;
-    (*w).sb_pos = options_get_number(&(*w).borrow_options_mut(), c"pane-scrollbars-position")
+        options_get_number(&owner.borrow_options_mut(), c"pane-scrollbars") as ::core::ffi::c_int;
+    (*w).sb_pos = options_get_number(&owner.borrow_options_mut(), c"pane-scrollbars-position")
         as ::core::ffi::c_int;
     (*w).winlinks = Default::default();
     (*w).id = windows::alloc_id();
@@ -294,7 +293,7 @@ pub unsafe fn window_create(
 }
 
 unsafe fn window_destroy(w_owner: &WindowRef) {
-    let mut w = w_owner.get();
+    let mut w = w_owner.as_ptr();
     log_debug(format_args!("window @{} destroyed", { (*w).id }));
     windows::remove(w_owner);
     menu_destroy((*w).menu.take());
@@ -303,7 +302,7 @@ unsafe fn window_destroy(w_owner: &WindowRef) {
 }
 
 unsafe fn window_set_name(w_owner: &WindowRef, new_name: &CStr, mut untrusted: ::core::ffi::c_int) {
-    let _w = w_owner.get();
+    let _w = w_owner.as_ptr();
     if let Some(name) = clean_name_cstring(new_name, untrusted) {
         let last = window_replace_name(w_owner, name);
         window_fire_renamed(w_owner, &last);
@@ -316,7 +315,7 @@ unsafe fn window_resize(
     mut xpixel: ::core::ffi::c_int,
     mut ypixel: ::core::ffi::c_int,
 ) {
-    let mut w = w_owner.get();
+    let mut w = w_owner.as_ptr();
     if xpixel == 0 as ::core::ffi::c_int {
         xpixel = DEFAULT_XPIXEL;
     }
@@ -365,21 +364,21 @@ unsafe fn window_resize(
     (*w).invalidate_scene();
 }
 
-fn window_has_pane(w: &window, pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>) -> bool {
+fn window_has_pane(w: &window, pane: &std::rc::Weak<std::cell::RefCell<window_pane>>) -> bool {
     pane.strong_count() != 0 && w.panes.position(pane).is_some()
 }
 
 /// Whether `pane` is shown: every pane is, except while the window is zoomed,
 /// when only the zoomed pane is.
-fn window_pane_is_visible(w: &window, pane: &Weak<UnsafeCell<window_pane>>) -> bool {
+fn window_pane_is_visible(w: &window, pane: &Weak<RefCell<window_pane>>) -> bool {
     w.zoomed.strong_count() == 0 || w.zoomed.ptr_eq(pane)
 }
 
 /// Zoom `pane`: it becomes the active pane and takes the whole window, and
 /// the other panes are hidden in their places. Refused, returning false,
 /// when the window is already zoomed or has a single pane.
-unsafe fn window_zoom(window: &WindowRef, pane: &Rc<UnsafeCell<window_pane>>) -> bool {
-    let w = window.get();
+unsafe fn window_zoom(window: &WindowRef, pane: &Rc<RefCell<window_pane>>) -> bool {
+    let w = window.as_ptr();
     if (*w).zoomed.strong_count() != 0 || (*w).panes.storage.len() == 1 {
         return false;
     }
@@ -397,7 +396,7 @@ unsafe fn window_zoom(window: &WindowRef, pane: &Rc<UnsafeCell<window_pane>>) ->
 /// Show every pane in its place again. Returns false when the window was not
 /// zoomed.
 unsafe fn window_unzoom(window: &WindowRef, notify: bool) -> bool {
-    let w = window.get();
+    let w = window.as_ptr();
     if (*w).zoomed.strong_count() == 0 {
         return false;
     }
@@ -415,7 +414,7 @@ unsafe fn window_unzoom(window: &WindowRef, notify: bool) -> bool {
 /// zoom again afterwards when `flag` asks and the window was zoomed, or
 /// whether or not it was with `always`. Returns whether the window unzoomed.
 unsafe fn window_push_zoom(window: &WindowRef, always: bool, flag: bool) -> bool {
-    let w = window.get();
+    let w = window.as_ptr();
     (*w).was_zoomed = flag && (always || (*w).zoomed.strong_count() != 0);
     window_unzoom(window, true)
 }
@@ -423,7 +422,7 @@ unsafe fn window_push_zoom(window: &WindowRef, always: bool, flag: bool) -> bool
 /// After `window_push_zoom`, zoom the active pane when it said to. Returns
 /// whether the window zoomed.
 unsafe fn window_pop_zoom(window: &WindowRef) -> bool {
-    let w = window.get();
+    let w = window.as_ptr();
     if !std::mem::take(&mut (*w).was_zoomed) {
         return false;
     }
@@ -441,10 +440,10 @@ unsafe fn window_update_focus(w_owner: Option<&WindowRef>) {
 
 unsafe fn window_set_active_pane(
     window: &WindowRef,
-    pane: &Rc<UnsafeCell<window_pane>>,
+    pane: &Rc<RefCell<window_pane>>,
     notify: i32,
 ) -> i32 {
-    let w = window.get();
+    let w = window.as_ptr();
     let observer = Rc::downgrade(pane);
     log_debug(format_args!("window_set_active_pane: pane %{}", pane.id()));
     if (*w).active.ptr_eq(&observer) {
@@ -482,9 +481,9 @@ unsafe fn window_set_active_pane(
 }
 unsafe fn window_redraw_active_switch(
     window: &WindowRef,
-    previous: Option<&Rc<UnsafeCell<window_pane>>>,
+    previous: Option<&Rc<RefCell<window_pane>>>,
 ) {
-    let state = window.get();
+    let state = window.as_ptr();
     let active = (*state).active_pane();
     if previous.is_some_and(|pane| {
         active
@@ -504,13 +503,13 @@ unsafe fn window_get_active_at(
     window_owner: &WindowRef,
     mut x: u_int,
     mut y: u_int,
-) -> Weak<std::cell::UnsafeCell<window_pane>> {
-    let w = window_owner.get();
+) -> Weak<std::cell::RefCell<window_pane>> {
+    let w = window_owner.as_ptr();
     let mut xoff: ::core::ffi::c_int = 0;
     let mut yoff: ::core::ffi::c_int = 0;
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
-    let status = window_get_pane_status(&*w);
+    let status = window_get_pane_status(window_owner);
     for observer in (*w).panes.storage.clone() {
         if !window_pane_is_visible(&*w, &observer) {
             continue;
@@ -534,8 +533,8 @@ unsafe fn window_get_active_at(
 unsafe fn window_find_string(
     window_owner: &WindowRef,
     name: &CStr,
-) -> Weak<std::cell::UnsafeCell<window_pane>> {
-    let w = window_owner.get();
+) -> Weak<std::cell::RefCell<window_pane>> {
+    let w = window_owner.as_ptr();
     let wsx = if (*w).zoomed.strong_count() != 0 {
         (*w).sx
     } else {
@@ -549,7 +548,7 @@ unsafe fn window_find_string(
     let mut bottom: u_int = wsy.wrapping_sub(1 as u_int);
     x = wsx.wrapping_div(2 as u_int);
     y = wsy.wrapping_div(2 as u_int);
-    let status = window_get_pane_status(&*w);
+    let status = window_get_pane_status(window_owner);
     if status == PANE_STATUS_TOP {
         top = top.wrapping_add(1);
     } else if status == PANE_STATUS_BOTTOM {
@@ -593,11 +592,11 @@ unsafe fn window_find_string(
 /// by its caller, once its process has started or its move has finished.
 unsafe fn window_rearrange_panes(
     window: &WindowRef,
-    panes: &[Rc<UnsafeCell<window_pane>>],
+    panes: &[Rc<RefCell<window_pane>>],
 ) -> Result<(), &'static CStr> {
-    let w = window.get();
+    let w = window.as_ptr();
     let old = (*w).panes.snapshot();
-    let present = |list: &[Rc<UnsafeCell<window_pane>>], pane: &Rc<UnsafeCell<window_pane>>| {
+    let present = |list: &[Rc<RefCell<window_pane>>], pane: &Rc<RefCell<window_pane>>| {
         list.iter().any(|candidate| Rc::ptr_eq(candidate, pane))
     };
     let arrived = panes
@@ -687,8 +686,8 @@ unsafe fn window_rearrange_panes(
 }
 
 /// Take `pane` out of its window and destroy it.
-unsafe fn window_remove_pane(window: &WindowRef, pane: &Rc<UnsafeCell<window_pane>>) {
-    let rest = (*window.get())
+unsafe fn window_remove_pane(window: &WindowRef, pane: &Rc<RefCell<window_pane>>) {
+    let rest = (*window.as_ptr())
         .panes
         .snapshot()
         .into_iter()
@@ -701,15 +700,15 @@ unsafe fn window_remove_pane(window: &WindowRef, pane: &Rc<UnsafeCell<window_pan
 /// The layout's rectangles for the current panes, in pane order.
 unsafe fn window_arrangement(window: &WindowRef) -> Vec<layout_geometry> {
     let size = window.size();
-    let w = &*window.get();
+    let w = &*window.as_ptr();
     w.layout.arrange(&w.panes.snapshot(), size)
 }
 
 /// The rectangles for the current panes, in pane order.
 unsafe fn window_pane_cells(
     window: &WindowRef,
-) -> Vec<(Weak<UnsafeCell<window_pane>>, layout_geometry)> {
-    let panes = (*window.get()).panes.storage.clone();
+) -> Vec<(Weak<RefCell<window_pane>>, layout_geometry)> {
+    let panes = (*window.as_ptr()).panes.storage.clone();
     panes.into_iter().zip(window_arrangement(window)).collect()
 }
 
@@ -721,8 +720,8 @@ unsafe fn window_pane_cells(
 /// they had, until the window unzooms.
 unsafe fn window_arrange(window: &WindowRef) {
     let (sx, sy) = window.size();
-    let zoomed = (*window.get()).zoomed.clone();
-    let cells = (*window.get())
+    let zoomed = (*window.as_ptr()).zoomed.clone();
+    let cells = (*window.as_ptr())
         .panes
         .snapshot()
         .into_iter()
@@ -741,18 +740,18 @@ unsafe fn window_arrange(window: &WindowRef) {
         } else {
             continue;
         };
-        if window_has_pane(&*window.get(), &Rc::downgrade(&pane)) {
+        if window_has_pane(&*window.as_ptr(), &Rc::downgrade(&pane)) {
             moved |= pane.apply_layout(cell, window);
         }
     }
     if moved {
-        (*window.get()).invalidate_scene();
+        (*window.as_ptr()).invalidate_scene();
     }
     tty_update_window_offset(window);
 }
 
 unsafe fn window_destroy_panes(window: &WindowRef) {
-    let w = window.get();
+    let w = window.as_ptr();
     while let Some(pane) = window_pane_first(w.as_ref()) {
         (*w).panes.remove(&Rc::downgrade(&pane));
         pane.destroy();
@@ -801,14 +800,14 @@ pub unsafe fn window_printable_flags(
     std::ffi::CString::new(flags).expect("window flags contain no NUL")
 }
 
-fn window_pane_first(w: Option<&window>) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
+fn window_pane_first(w: Option<&window>) -> Option<Rc<std::cell::RefCell<window_pane>>> {
     Some(w?.panes.first()?.upgrade().expect("live pane in ordering"))
 }
 
-unsafe fn window_get_pane_status(w: &window) -> ::core::ffi::c_int {
+unsafe fn window_get_pane_status(w: &WindowRef) -> ::core::ffi::c_int {
     options_get_number(&w.borrow_options_mut(), c"pane-border-status") as ::core::ffi::c_int
 }
 
-unsafe fn window_get_pane_lines(w: &window) -> pane_lines {
+unsafe fn window_get_pane_lines(w: &WindowRef) -> pane_lines {
     options_get_number(&w.borrow_options_mut(), c"pane-border-lines") as pane_lines
 }

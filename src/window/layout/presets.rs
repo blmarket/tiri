@@ -75,12 +75,12 @@ impl Layout for Grid {
 mod tests {
     use super::super::{adjacent, Direction, LayoutKind};
     use crate::shared::pane::window_pane;
-    use std::cell::UnsafeCell;
+    use std::cell::RefCell;
     use std::rc::Rc;
 
-    fn panes(count: usize) -> Vec<Rc<UnsafeCell<window_pane>>> {
+    fn panes(count: usize) -> Vec<Rc<RefCell<window_pane>>> {
         (0..count)
-            .map(|_| Rc::new(UnsafeCell::new(window_pane::default())))
+            .map(|_| Rc::new(RefCell::new(window_pane::default())))
             .collect()
     }
 

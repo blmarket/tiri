@@ -2,7 +2,7 @@
 use super::{Host, PaneActivity, PaneId};
 use crate::shared::pane::{window_pane, window_pane_tree};
 use crate::window_pane::{observability, WindowPane};
-use std::cell::UnsafeCell;
+use std::cell::RefCell;
 use std::io;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -38,7 +38,7 @@ impl Host for ServerHost {
 
 pub(super) fn invalidate(id: PaneId) {
     unsafe {
-        let Some(pane) = <Rc<UnsafeCell<window_pane>>>::find_by_id(id.0) else {
+        let Some(pane) = <Rc<RefCell<window_pane>>>::find_by_id(id.0) else {
             return;
         };
         let window = pane.window_observer().upgrade();

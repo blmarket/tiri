@@ -66,7 +66,7 @@ const cmd_find_pane_table: &[(&CStr, &CStr)] = &[
 ];
 unsafe fn cmd_find_inside_pane(
     client: Option<&ClientRef>,
-) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
+) -> Option<std::rc::Rc<std::cell::RefCell<window_pane>>> {
     let client = client?;
     let terminal = client.tty_name();
     let indexed = terminal.as_deref().and_then(|name| {
@@ -81,7 +81,7 @@ unsafe fn cmd_find_inside_pane(
         });
         pane_id
             .as_deref()
-            .and_then(std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::find_by_id_str)
+            .and_then(std::rc::Rc::<std::cell::RefCell<window_pane>>::find_by_id_str)
     });
     if let Some(pane) = inside.as_ref() {
         let terminal = pane.tty_name();
@@ -558,8 +558,7 @@ impl cmd_find_state {
     ) -> ::core::ffi::c_int {
         log_debug(format_args!("{}: {}", "cmd_find_get_pane", log_cstr(pane)));
         if pane.to_bytes().first() == Some(&b'%') {
-            let pane_owner =
-                std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::find_by_id_str(pane);
+            let pane_owner = std::rc::Rc::<std::cell::RefCell<window_pane>>::find_by_id_str(pane);
             self.wp = pane_owner
                 .as_ref()
                 .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
@@ -596,8 +595,7 @@ impl cmd_find_state {
             log_cstr(pane)
         ));
         if pane.to_bytes().first() == Some(&b'%') {
-            let pane_owner =
-                std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::find_by_id_str(pane);
+            let pane_owner = std::rc::Rc::<std::cell::RefCell<window_pane>>::find_by_id_str(pane);
             self.wp = pane_owner
                 .as_ref()
                 .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
@@ -628,8 +626,7 @@ impl cmd_find_state {
         ));
         let first = pane.to_bytes().first().copied();
         if first == Some(b'%') {
-            let pane_owner =
-                std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::find_by_id_str(pane);
+            let pane_owner = std::rc::Rc::<std::cell::RefCell<window_pane>>::find_by_id_str(pane);
             self.wp = pane_owner
                 .as_ref()
                 .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
@@ -858,7 +855,7 @@ impl cmd_find_state {
     }
     pub unsafe fn find_from_winlink_pane(
         wl: refbox::Weak<winlink>,
-        wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+        wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
         flags: ::core::ffi::c_int,
     ) -> Self {
         let mut fs = Self::clear_state(flags);
@@ -871,7 +868,7 @@ impl cmd_find_state {
         fs
     }
     pub unsafe fn find_from_pane(
-        pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+        pane: &std::rc::Rc<std::cell::RefCell<window_pane>>,
         flags: ::core::ffi::c_int,
     ) -> Option<Self> {
         let window = pane.window_observer().upgrade().expect("pane window");

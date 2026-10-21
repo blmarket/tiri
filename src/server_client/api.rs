@@ -18,7 +18,7 @@ use crate::shared::session::{SessionRef, SessionWeak};
 use crate::shared::terminal::termios;
 use crate::shared::window::WindowRef;
 use crate::window::Window;
-use std::cell::UnsafeCell;
+use std::cell::RefCell;
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::rc::{Rc, Weak};
 use std::time::{Duration, SystemTime};
@@ -49,7 +49,7 @@ pub trait Client {
     unsafe fn print_to(client: Option<&Self>, parse: bool, buffer: &mut SegmentedBuf)
     where
         Self: Sized;
-    unsafe fn forget_pane(pane: &Rc<UnsafeCell<window_pane>>)
+    unsafe fn forget_pane(pane: &Rc<RefCell<window_pane>>)
     where
         Self: Sized;
     unsafe fn open_terminal(&self) -> Result<(), CString>;
@@ -207,7 +207,7 @@ pub trait Client {
         after: Option<&Rc<std::cell::RefCell<cmdq_item>>>,
         next: Option<&mut Weak<std::cell::RefCell<cmdq_item>>>,
     ) -> i32;
-    unsafe fn control_write_output(&self, pane: &Rc<UnsafeCell<window_pane>>);
+    unsafe fn control_write_output(&self, pane: &Rc<RefCell<window_pane>>);
     /// Scoped access to this control client's consumer offset. Call only for an
     /// attached control client; the bool is the existing output-disabled flag.
     /// Do not reenter models, release owners, or let the reference escape.
@@ -299,7 +299,7 @@ pub trait Client {
     unsafe fn prepare_pane_render(
         &self,
         context: &mut tty_ctx,
-        pane: &Rc<UnsafeCell<window_pane>>,
+        pane: &Rc<RefCell<window_pane>>,
     ) -> i32;
     unsafe fn format_value(
         &self,
@@ -338,7 +338,7 @@ impl Client for ClientRef {
         server_client_print(client, i32::from(parse), buffer);
     }
 
-    unsafe fn forget_pane(pane: &Rc<UnsafeCell<window_pane>>) {
+    unsafe fn forget_pane(pane: &Rc<RefCell<window_pane>>) {
         server_client_remove_pane(pane);
     }
 
@@ -983,7 +983,7 @@ impl Client for ClientRef {
         server_client_handle_key_after(self, event, after, next)
     }
 
-    unsafe fn control_write_output(&self, pane: &Rc<UnsafeCell<window_pane>>) {
+    unsafe fn control_write_output(&self, pane: &Rc<RefCell<window_pane>>) {
         if self.attached_session().upgrade().is_some() && self.is_control() {
             control_write_output(self, pane);
         }
@@ -1307,7 +1307,7 @@ impl Client for ClientRef {
     unsafe fn prepare_pane_render(
         &self,
         context: &mut tty_ctx,
-        pane: &Rc<UnsafeCell<window_pane>>,
+        pane: &Rc<RefCell<window_pane>>,
     ) -> i32 {
         use crate::window::WindowPane;
         let session = self

@@ -248,7 +248,7 @@ pub fn event_payload_set_window(ep: &mut event_payload, name: &CStr, owner: Wind
 pub fn event_payload_set_pane(
     ep: &mut event_payload,
     name: &CStr,
-    owner: std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    owner: std::rc::Rc<std::cell::RefCell<window_pane>>,
 ) {
     event_payload_set_item(ep, name, EventPayloadValue::Pane(owner));
 }
@@ -413,7 +413,7 @@ pub fn event_payload_get_window(ep: &event_payload) -> Option<&WindowRef> {
 }
 pub fn event_payload_get_pane(
     ep: &event_payload,
-) -> Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
+) -> Option<&std::rc::Rc<std::cell::RefCell<window_pane>>> {
     match event_payload_find(ep, c"pane").map(|item| &item.value) {
         Some(EventPayloadValue::Pane(value)) => Some(value),
         _ => None,

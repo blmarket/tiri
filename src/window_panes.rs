@@ -46,14 +46,14 @@ use crate::text::utf8::utf8_set;
 use crate::window::winlink_find_by_window;
 use crate::window::WindowPane;
 use crate::window_clock::window_clock_table;
-use std::cell::UnsafeCell;
+use std::cell::RefCell;
 use std::ffi::CString;
 use std::rc::{Rc, Weak};
 use std::time::Duration;
 
 /// The mode's own pane and session, and the window whose panes it shows.
 pub struct window_panes_source {
-    pub wp: Weak<UnsafeCell<window_pane>>,
+    pub wp: Weak<RefCell<window_pane>>,
     pub session: SessionWeak,
     pub source_session: u_int,
     pub source_window: u_int,
@@ -156,7 +156,7 @@ unsafe fn window_panes_get_source(
     Some(window)
 }
 unsafe fn window_panes_set_preview(data: &mut window_panes_modedata) {
-    let Some(pane) = Rc::<UnsafeCell<window_pane>>::from_observer(&data.source.wp) else {
+    let Some(pane) = Rc::<RefCell<window_pane>>::from_observer(&data.source.wp) else {
         return;
     };
     let (sx, sy) = pane.screen_size(false);
@@ -174,7 +174,7 @@ fn window_panes_free_areas(data: &mut window_panes_modedata) {
 }
 unsafe fn window_panes_add_area(
     areas: &mut Vec<window_panes_area>,
-    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     mut x: u_int,
     mut y: u_int,
     mut sx: u_int,
@@ -188,9 +188,7 @@ unsafe fn window_panes_add_area(
         sy,
     });
 }
-unsafe fn window_panes_pane_geometry(
-    pane: &Rc<UnsafeCell<window_pane>>,
-) -> Option<layout_geometry> {
+unsafe fn window_panes_pane_geometry(pane: &Rc<RefCell<window_pane>>) -> Option<layout_geometry> {
     let window = pane.window_observer().upgrade()?;
     window
         .pane_cells()
@@ -253,7 +251,7 @@ fn window_panes_scaled_geometry(
     Some((x, y, sx, sy))
 }
 unsafe fn window_panes_get_geometry(
-    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     mut osx: u_int,
     mut osy: u_int,
     mut dsx: u_int,
@@ -276,7 +274,7 @@ unsafe fn window_panes_get_geometry(
     1 as ::core::ffi::c_int
 }
 unsafe fn window_panes_get_border_cell(source: &window_panes_source, gc: &mut grid_cell) {
-    let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&source.wp) else {
+    let Some(mode_pane_owner) = Rc::<RefCell<window_pane>>::from_observer(&source.wp) else {
         return;
     };
     let session_owner = window_panes_session(source);
@@ -373,14 +371,14 @@ unsafe fn window_panes_draw_borders(
 unsafe fn window_panes_draw_format(
     source: &window_panes_source,
     mut ctx: &mut screen_write_ctx,
-    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     mut x: u_int,
     mut y: u_int,
     mut sx: u_int,
     gc: &grid_cell,
 ) {
     let mut source_session_owner = None;
-    let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&source.wp) else {
+    let Some(mode_pane_owner) = Rc::<RefCell<window_pane>>::from_observer(&source.wp) else {
         return;
     };
     let session_owner = window_panes_session(source);
@@ -441,7 +439,7 @@ unsafe fn window_panes_draw_format(
 unsafe fn window_panes_draw_number(
     source: &window_panes_source,
     mut ctx: &mut screen_write_ctx,
-    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     mut pane: u_int,
     mut x: u_int,
     mut y: u_int,
@@ -449,7 +447,7 @@ unsafe fn window_panes_draw_number(
     mut sy: u_int,
 ) {
     let mut source_session_owner = None;
-    let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&source.wp) else {
+    let Some(mode_pane_owner) = Rc::<RefCell<window_pane>>::from_observer(&source.wp) else {
         return;
     };
     let session_owner = window_panes_session(source);
@@ -647,13 +645,13 @@ unsafe fn window_panes_draw_pane(
     preview: Option<&screen>,
     areas: &mut Vec<window_panes_area>,
     mut ctx: &mut screen_write_ctx,
-    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     mut osx: u_int,
     mut osy: u_int,
     mut dsx: u_int,
     mut dsy: u_int,
 ) {
-    let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&source.wp) else {
+    let Some(mode_pane_owner) = Rc::<RefCell<window_pane>>::from_observer(&source.wp) else {
         return;
     };
     let _pane: u_int = 0;
@@ -718,8 +716,7 @@ unsafe fn window_panes_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
     let mut source_session_owner = None;
     let mut data = window_panes_data(&wme).borrow_mut();
     let data = &mut *data;
-    let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&data.source.wp)
-    else {
+    let Some(mode_pane_owner) = Rc::<RefCell<window_pane>>::from_observer(&data.source.wp) else {
         return;
     };
     let mut border_gc: grid_cell = grid_cell {
@@ -998,12 +995,12 @@ fn window_panes_find_pane(
     data: &window_panes_modedata,
     mut x: u_int,
     mut y: u_int,
-) -> Option<Rc<UnsafeCell<window_pane>>> {
+) -> Option<Rc<RefCell<window_pane>>> {
     for area in data.areas.iter().rev() {
         if !(x < area.x || x >= area.x.wrapping_add(area.sx))
             && !(y < area.y || y >= area.y.wrapping_add(area.sy))
         {
-            return Rc::<UnsafeCell<window_pane>>::find_by_id(area.id);
+            return Rc::<RefCell<window_pane>>::find_by_id(area.id);
         }
     }
     None
@@ -1011,7 +1008,7 @@ fn window_panes_find_pane(
 unsafe fn window_panes_key_pane(
     data: &window_panes_modedata,
     mut key: key_code,
-) -> Option<Rc<UnsafeCell<window_pane>>> {
+) -> Option<Rc<RefCell<window_pane>>> {
     let mut source_session_owner = None;
     let mut index: u_int = 0;
     if key >= '0' as i32 as key_code && key <= '9' as i32 as key_code {
@@ -1052,7 +1049,7 @@ unsafe fn window_panes_get_target(
     mut wme: refbox::Weak<window_mode_entry>,
     mut key: key_code,
     m: Option<&mut mouse_event>,
-) -> Option<Rc<UnsafeCell<window_pane>>> {
+) -> Option<Rc<RefCell<window_pane>>> {
     let mode_pane_owner = wme
         .get_unchecked()
         .wp

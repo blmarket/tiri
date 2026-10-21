@@ -5,7 +5,7 @@ use crate::shared::window::{WINDOW_ACTIVITY, WINDOW_ALERTFLAGS, WINDOW_BELL, WIN
 use std::time::Duration;
 
 pub(super) unsafe fn reset_timer(owner: &WindowRef) {
-    let w = owner.get();
+    let w = owner.as_ptr();
     (*w).flags &= !WINDOW_SILENCE;
     drop((*w).alerts_timer.take());
     let timeout = Duration::from_secs(
@@ -33,7 +33,7 @@ pub(super) unsafe fn reset_timer(owner: &WindowRef) {
 pub(super) unsafe fn queue(owner: &WindowRef, flags: i32) -> Option<bool> {
     assert_eq!(flags & !WINDOW_ALERTFLAGS, 0, "alert flags only");
     owner.reset_alert_timer();
-    let w = owner.get();
+    let w = owner.as_ptr();
     if (*w).flags & flags != flags {
         (*w).flags |= flags;
         log_debug(format_args!(

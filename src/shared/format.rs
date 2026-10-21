@@ -2,7 +2,7 @@
 use crate::shared::client::{ClientRef, ClientWeak};
 use crate::shared::session::SessionWeak;
 use crate::shared::window::WindowWeak;
-use std::cell::UnsafeCell;
+use std::cell::RefCell;
 
 use super::abi::{time_t, u_int};
 use super::command::cmdq_item;
@@ -126,7 +126,7 @@ pub struct format_tree {
     pub s: SessionWeak,
     pub wl: refbox::Weak<winlink>,
     pub w: WindowWeak,
-    pub wp: std::rc::Weak<UnsafeCell<window_pane>>,
+    pub wp: std::rc::Weak<RefCell<window_pane>>,
     pub pb: Option<PasteBufferRef>,
     /// Queue item used for verbose output, observed without retaining it.
     pub item: std::rc::Weak<std::cell::RefCell<cmdq_item>>,

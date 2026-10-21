@@ -621,7 +621,7 @@ pub(super) fn format_sub(
 
 pub(super) unsafe fn format_search(
     fm: &format_modifier,
-    pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    pane: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     s: &CStr,
 ) -> CString {
     let options = fm.argv.first().map_or(&[][..], |s| s.as_bytes());
@@ -2598,7 +2598,7 @@ pub(crate) unsafe fn format_single_cstring(
     c_owner: Option<&ClientRef>,
     s_owner: Option<&SessionRef>,
     mut wl: refbox::Weak<winlink>,
-    wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
+    wp_owner: Option<&std::rc::Rc<std::cell::RefCell<window_pane>>>,
 ) -> CString {
     let mut ft_owner = format_create_defaults(item_handle, c_owner, s_owner, wl.clone(), wp_owner);
     let ft = &mut *ft_owner;

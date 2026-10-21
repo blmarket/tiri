@@ -13,7 +13,7 @@ mod tiling;
 use crate::shared::layout::{layout_geometry, Direction};
 use crate::shared::pane::{window_pane, PANE_MINIMUM};
 use std::any::Any;
-use std::cell::UnsafeCell;
+use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
 
@@ -46,17 +46,14 @@ trait Layout {
 
     /// The panes' rectangles in list order: by default the shape, filling the
     /// window.
-    fn arrange(panes: &[Rc<UnsafeCell<window_pane>>], size: (u32, u32)) -> Vec<layout_geometry> {
+    fn arrange(panes: &[Rc<RefCell<window_pane>>], size: (u32, u32)) -> Vec<layout_geometry> {
         let tree = (!panes.is_empty()).then(|| Self::shape(panes.len(), size));
         place(tree, panes.len(), size)
     }
 
     /// Whether the layout takes the pane list in this window, or why not: by
     /// default while every pane stays inside the window.
-    fn admits(
-        panes: &[Rc<UnsafeCell<window_pane>>],
-        size: (u32, u32),
-    ) -> Result<(), &'static CStr> {
+    fn admits(panes: &[Rc<RefCell<window_pane>>], size: (u32, u32)) -> Result<(), &'static CStr> {
         fits(
             &Self::arrange(panes, size),
             size,
@@ -67,7 +64,7 @@ trait Layout {
     /// The area a view can scroll across: by default the window itself.
     /// Builds no rectangles.
     fn logical_size(
-        _panes: impl Iterator<Item = Rc<UnsafeCell<window_pane>>>,
+        _panes: impl Iterator<Item = Rc<RefCell<window_pane>>>,
         size: (u32, u32),
     ) -> (u32, u32) {
         size
@@ -163,7 +160,7 @@ impl LayoutKind {
     /// The panes as a split tree, for the layout string; none without panes.
     pub(super) fn tree(
         self,
-        panes: &[Rc<UnsafeCell<window_pane>>],
+        panes: &[Rc<RefCell<window_pane>>],
         size: (u32, u32),
     ) -> Option<LayoutNode> {
         (!panes.is_empty()).then(|| with_layout!(self, L => L::shape(panes.len(), size)))
@@ -172,7 +169,7 @@ impl LayoutKind {
     /// The panes' rectangles in list order.
     pub(super) fn arrange(
         self,
-        panes: &[Rc<UnsafeCell<window_pane>>],
+        panes: &[Rc<RefCell<window_pane>>],
         size: (u32, u32),
     ) -> Vec<layout_geometry> {
         with_layout!(self, L => L::arrange(panes, size))
@@ -183,7 +180,7 @@ impl LayoutKind {
     /// resize; only a change to the list is refused.
     pub(super) fn admits(
         self,
-        panes: &[Rc<UnsafeCell<window_pane>>],
+        panes: &[Rc<RefCell<window_pane>>],
         size: (u32, u32),
     ) -> Result<(), &'static CStr> {
         with_layout!(self, L => L::admits(panes, size))
@@ -194,7 +191,7 @@ impl LayoutKind {
     /// rectangles.
     pub(super) fn logical_size(
         self,
-        panes: impl Iterator<Item = Rc<UnsafeCell<window_pane>>>,
+        panes: impl Iterator<Item = Rc<RefCell<window_pane>>>,
         size: (u32, u32),
     ) -> (u32, u32) {
         with_layout!(self, L => L::logical_size(panes, size))

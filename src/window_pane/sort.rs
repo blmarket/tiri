@@ -7,13 +7,13 @@ use crate::shared::window::WindowWeak;
 use std::cmp::Ordering;
 
 pub(super) unsafe fn compare(
-    a: &Rc<UnsafeCell<window_pane>>,
-    b: &Rc<UnsafeCell<window_pane>>,
+    a: &Rc<RefCell<window_pane>>,
+    b: &Rc<RefCell<window_pane>>,
     criteria: &sort_criteria,
 ) -> Ordering {
     let (activity_a, id_a, size_a, parent_a, activity_b, id_b, size_b, parent_b, title_order) = {
-        let a = &*a.get();
-        let b = &*b.get();
+        let a = &*a.as_ptr();
+        let b = &*b.as_ptr();
         (
             a.active_point,
             a.id,
@@ -28,7 +28,7 @@ pub(super) unsafe fn compare(
                 .expect("displayed pane screens"),
         )
     };
-    let order_index = |parent: &WindowWeak, observer: &std::rc::Weak<UnsafeCell<window_pane>>| {
+    let order_index = |parent: &WindowWeak, observer: &std::rc::Weak<RefCell<window_pane>>| {
         let window = parent.upgrade()?;
         let index = window.pane_index(observer);
         drop(window);
@@ -59,10 +59,10 @@ mod tests {
         unsafe {
             let a = window_pane::new();
             let b = window_pane::new();
-            (*a.get()).id = 1;
-            (*b.get()).id = u32::MAX;
-            (*a.get()).base.title = CString::new("alpha").unwrap();
-            (*b.get()).base.title = CString::new("beta").unwrap();
+            (*a.as_ptr()).id = 1;
+            (*b.as_ptr()).id = u32::MAX;
+            (*a.as_ptr()).base.title = CString::new("alpha").unwrap();
+            (*b.as_ptr()).base.title = CString::new("beta").unwrap();
             for order in [
                 SORT_ACTIVITY,
                 SORT_CREATION,
@@ -79,7 +79,7 @@ mod tests {
                 criteria.reversed = 1;
                 assert_eq!(a.compare_for_sort(&b, &criteria), Ordering::Greater);
             }
-            (*a.get()).active_point = 1;
+            (*a.as_ptr()).active_point = 1;
             let criteria = sort_criteria {
                 order: SORT_ACTIVITY,
                 reversed: 0,

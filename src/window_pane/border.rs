@@ -17,7 +17,7 @@ use crate::style::{style_apply_with_options, style_ranges_clear};
 use crate::window_border::window_get_border_cell;
 
 pub(super) unsafe fn cell(
-    pane: &Rc<UnsafeCell<window_pane>>,
+    pane: &Rc<RefCell<window_pane>>,
     cell_type: ::core::ffi::c_int,
     cell: &mut grid_cell,
 ) {
@@ -28,7 +28,7 @@ pub(super) unsafe fn cell(
 }
 
 pub(super) unsafe fn border_style(
-    pane: &Rc<UnsafeCell<window_pane>>,
+    pane: &Rc<RefCell<window_pane>>,
     client: &ClientRef,
 ) -> grid_cell {
     let session = client
@@ -44,7 +44,7 @@ pub(super) unsafe fn border_style(
     let active = window.active_pane().ptr_eq(&Rc::downgrade(pane));
     drop(window);
     let cached = {
-        let state = &*pane.get();
+        let state = &*pane.as_ptr();
         if active {
             (state.active_border_gc_set != 0, state.active_border_gc)
         } else {
@@ -68,7 +68,7 @@ pub(super) unsafe fn border_style(
         &OptionsScope::Pane(Rc::downgrade(pane)),
     );
     drop(context);
-    let state = &mut *pane.get();
+    let state = &mut *pane.as_ptr();
     if active {
         state.active_border_gc = cell;
         state.active_border_gc_set = 1;
@@ -83,7 +83,7 @@ pub(super) unsafe fn border_style(
 /// the line its border cell draws, with `pane-border-format` drawn over them.
 /// Returns whether the line changed.
 pub(super) unsafe fn make_status(
-    pane: &Rc<UnsafeCell<window_pane>>,
+    pane: &Rc<RefCell<window_pane>>,
     client: &ClientRef,
     width: u32,
     spans: &redraw_spans,
@@ -120,7 +120,7 @@ pub(super) unsafe fn make_status(
     let index = window.pane_index(&Rc::downgrade(pane));
     drop(window);
     let (mut old, mut ranges) = {
-        let state = &mut *pane.get();
+        let state = &mut *pane.as_ptr();
         (
             std::mem::take(&mut state.status_screen),
             std::mem::take(&mut state.border_status_line.ranges),
@@ -144,7 +144,7 @@ pub(super) unsafe fn make_status(
     let changed = grid_compare(next.grid(), old.grid()) != 0;
     drop(old);
     {
-        let state = &mut *pane.get();
+        let state = &mut *pane.as_ptr();
         state.status_screen = next;
         state.border_status_line.ranges = ranges;
     }

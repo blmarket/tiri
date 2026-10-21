@@ -190,7 +190,7 @@ unsafe fn cmd_split_window_exec(
         // started.
         window_owner.push_zoom(true, args_has(args, 'Z' as i32 as u_char) != 0);
         let spawned_pane = match <std::rc::Rc<
-            std::cell::UnsafeCell<crate::shared::pane::window_pane>,
+            std::cell::RefCell<crate::shared::pane::window_pane>,
         > as crate::window_pane::WindowPane>::spawn_process(
             &mut sc, &mut cause
         ) {

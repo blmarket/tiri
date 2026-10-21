@@ -777,7 +777,7 @@ unsafe fn window_copy_view_init(
     true
 }
 pub unsafe fn window_copy_add(
-    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     mut parse: ::core::ffi::c_int,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
@@ -843,7 +843,7 @@ pub unsafe fn window_copy_add(
     );
 }
 pub unsafe fn window_copy_scroll(
-    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     mut sl_mpos: ::core::ffi::c_int,
     mut my: u_int,
     mut tty_oy: u_int,
@@ -858,7 +858,7 @@ pub unsafe fn window_copy_scroll(
 }
 unsafe fn window_copy_scroll1(
     mut wme: refbox::Weak<window_mode_entry>,
-    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     mut sl_mpos: ::core::ffi::c_int,
     mut my: u_int,
     mut tty_oy: u_int,
@@ -975,7 +975,7 @@ unsafe fn window_copy_scroll1(
     pane_owner.show_scrollbar();
     window_copy_redraw_screen(wme.clone());
 }
-pub unsafe fn window_copy_pageup(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
+pub unsafe fn window_copy_pageup(pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>) {
     let mut half_page: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     window_copy_pageup1(pane_owner.mode_entry(), half_page);
 }
@@ -1062,7 +1062,7 @@ unsafe fn window_copy_pageup1(
     window_copy_redraw_screen(wme.clone());
 }
 pub unsafe fn window_copy_pagedown(
-    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     mut scroll_exit: ::core::ffi::c_int,
 ) {
     let mut half_page: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -1196,7 +1196,7 @@ unsafe fn window_copy_next_paragraph(mut wme: refbox::Weak<window_mode_entry>) {
     window_copy_scroll_to(wme.clone(), ox, oy, 0 as ::core::ffi::c_int);
 }
 pub(crate) unsafe fn window_copy_get_word_cstring(
-    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     mut x: u_int,
     mut y: u_int,
 ) -> Option<CString> {
@@ -1206,7 +1206,7 @@ pub(crate) unsafe fn window_copy_get_word_cstring(
     crate::format::format_grid_word_cstring(gd, x, gd.hsize.wrapping_add(y).wrapping_sub(data.oy))
 }
 pub(crate) unsafe fn window_copy_get_line_cstring(
-    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     mut y: u_int,
 ) -> Option<CString> {
     let mut wme: refbox::Weak<window_mode_entry> = wp_owner.mode_entry();
@@ -1215,7 +1215,7 @@ pub(crate) unsafe fn window_copy_get_line_cstring(
     crate::format::format_grid_line_cstring(gd, gd.hsize.wrapping_add(y).wrapping_sub(data.oy))
 }
 pub(crate) unsafe fn window_copy_get_hyperlink_cstring(
-    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     mut x: u_int,
     mut y: u_int,
 ) -> Option<CString> {
@@ -7080,7 +7080,7 @@ unsafe fn window_copy_cursor_unoffset(
     vx
 }
 pub unsafe fn window_copy_set_line_numbers(
-    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     mut enabled: ::core::ffi::c_int,
 ) {
     let mut wme: refbox::Weak<window_mode_entry> = pane_owner.mode_entry();
@@ -7128,7 +7128,7 @@ unsafe fn window_copy_set_line_numbers1(
     window_copy_redraw_screen(wme.clone());
 }
 pub unsafe fn window_copy_get_current_offset(
-    pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    pane: &std::rc::Rc<std::cell::RefCell<window_pane>>,
 ) -> Option<(u_int, u_int)> {
     let entry = pane.mode_entry();
     if !entry.is_alive() {

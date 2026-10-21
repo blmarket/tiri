@@ -32,7 +32,7 @@ use crate::tmux::setblocking;
 use libc::{_exit, execl, fork, setpgid, sigfillset, sigprocmask};
 use std::os::fd::{AsRawFd, IntoRawFd};
 pub(super) unsafe fn pipe_pane(
-    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
@@ -42,7 +42,7 @@ pub(super) unsafe fn pipe_pane(
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
-    let wp = pane_owner.get();
+    let wp = pane_owner.as_ptr();
     let mut s: Option<SessionRef> = target.session_handle();
     let mut wl: refbox::Weak<winlink> = target.winlink_handle();
     let had_pipe = (*wp).pipe_fd.is_some();
@@ -231,11 +231,9 @@ pub(super) unsafe fn pipe_pane(
         }
     }
 }
-unsafe fn cmd_pipe_pane_read_callback(
-    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-) {
+unsafe fn cmd_pipe_pane_read_callback(pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>) {
     let (pipe, output, id) = {
-        let pane = &*pane_owner.get();
+        let pane = &*pane_owner.as_ptr();
         (pane.pipe_event.clone(), pane.event.clone(), pane.id)
     };
     if !pipe.is_alive() {
@@ -260,19 +258,15 @@ unsafe fn cmd_pipe_pane_read_callback(
         server_destroy_pane(pane_owner, 1);
     }
 }
-unsafe fn cmd_pipe_pane_write_callback(
-    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-) {
-    let wp = pane_owner.get();
+unsafe fn cmd_pipe_pane_write_callback(pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>) {
+    let wp = pane_owner.as_ptr();
     log_debug(format_args!("%{} pipe empty", { (*wp).id }));
     if window_pane_destroy_ready(pane_owner) != 0 {
         server_destroy_pane(pane_owner, 1);
     }
 }
-unsafe fn cmd_pipe_pane_error_callback(
-    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-) {
-    let wp = pane_owner.get();
+unsafe fn cmd_pipe_pane_error_callback(pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>) {
+    let wp = pane_owner.as_ptr();
     log_debug(format_args!("%{} pipe error", { (*wp).id }));
     std::mem::take(&mut (*wp).pipe_event).free();
     drop((*wp).pipe_fd.take());
@@ -296,14 +290,14 @@ mod pipe_stream_tests {
             let pane = window_pane::new();
             let (socket, _receiver) = UnixStream::pair().unwrap();
             let fd = socket.as_raw_fd();
-            (*pane.get()).pipe_fd = Some(socket.into());
+            (*pane.as_ptr()).pipe_fd = Some(socket.into());
             let stream = bufferevent_new(fd, None, None, None).unwrap();
-            (*pane.get()).pipe_event = crate::reactor::StreamHandle::from_ptr(stream);
-            let observer = (*pane.get()).pipe_event.clone();
+            (*pane.as_ptr()).pipe_event = crate::reactor::StreamHandle::from_ptr(stream);
+            let observer = (*pane.as_ptr()).pipe_event.clone();
 
             cmd_pipe_pane_error_callback(&pane);
 
-            assert!((*pane.get()).pipe_fd.is_none());
+            assert!((*pane.as_ptr()).pipe_fd.is_none());
             assert!(!observer.is_alive());
             assert_eq!(libc::fcntl(fd, libc::F_GETFD), -1);
             let replacement = std::fs::File::open("/dev/null").unwrap();
@@ -317,7 +311,7 @@ mod pipe_stream_tests {
     fn pipe_read_forwards_bytes_and_stream_handle_expires() {
         unsafe {
             let pane_owner = window_pane::new();
-            let wp = pane_owner.get();
+            let wp = pane_owner.as_ptr();
             (*wp).fd = None;
             (*wp).pipe_fd = None;
             let main = bufferevent_new(-1, None, None, None).unwrap();

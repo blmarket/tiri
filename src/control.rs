@@ -34,7 +34,7 @@ use crate::shared::pane::window_pane_offset;
 use crate::shared::session::SessionRef;
 use crate::tmux::get_timer;
 use crate::window::{winlink_find_by_window, Window, WindowPane};
-use std::cell::UnsafeCell;
+use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
@@ -193,18 +193,15 @@ fn control_discard_pane(cs: &mut control_state, pane: u_int) {
     }
 }
 
-unsafe fn control_session_has_pane(
-    session: &SessionRef,
-    pane: &Rc<UnsafeCell<window_pane>>,
-) -> bool {
+unsafe fn control_session_has_pane(session: &SessionRef, pane: &Rc<RefCell<window_pane>>) -> bool {
     let parent = pane.window_observer().upgrade().expect("live pane parent");
     let present = session.with_winlinks(|links| winlink_find_by_window(links, &parent).is_alive());
     drop(parent);
     present
 }
-unsafe fn control_window_pane(c: &ClientRef, pane: u_int) -> Option<Rc<UnsafeCell<window_pane>>> {
+unsafe fn control_window_pane(c: &ClientRef, pane: u_int) -> Option<Rc<RefCell<window_pane>>> {
     let session = c.attached_session().upgrade()?;
-    let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::find_by_id(pane)?;
+    let pane = std::rc::Rc::<std::cell::RefCell<window_pane>>::find_by_id(pane)?;
     control_session_has_pane(&session, &pane).then_some(pane)
 }
 pub unsafe fn control_reset_offsets(c: &ClientRef) {
@@ -242,7 +239,7 @@ pub fn control_pane_offset<'a>(
         >= CONTROL_BUFFER_LOW as size_t) as ::core::ffi::c_int;
     Some(&mut cp.offset)
 }
-pub unsafe fn control_set_pane_on(c: &ClientRef, pane: &Rc<UnsafeCell<window_pane>>) {
+pub unsafe fn control_set_pane_on(c: &ClientRef, pane: &Rc<RefCell<window_pane>>) {
     let (id, offset) = (pane.id(), pane.output_offset());
     let mut state = c.borrow_control_mut().expect("control client state");
     let Some(cp) = state.panes.get_mut(&id) else {
@@ -255,7 +252,7 @@ pub unsafe fn control_set_pane_on(c: &ClientRef, pane: &Rc<UnsafeCell<window_pan
     }
 }
 
-pub unsafe fn control_set_pane_off(c: &ClientRef, pane: &Rc<UnsafeCell<window_pane>>) {
+pub unsafe fn control_set_pane_off(c: &ClientRef, pane: &Rc<RefCell<window_pane>>) {
     let (id, offset) = (pane.id(), pane.output_offset());
     let mut state = c.borrow_control_mut().expect("control client state");
     let cs = &mut *state;
@@ -267,7 +264,7 @@ pub unsafe fn control_set_pane_off(c: &ClientRef, pane: &Rc<UnsafeCell<window_pa
     cp.flags |= CONTROL_PANE_OFF;
 }
 
-pub unsafe fn control_continue_pane(c: &ClientRef, pane: &Rc<UnsafeCell<window_pane>>) {
+pub unsafe fn control_continue_pane(c: &ClientRef, pane: &Rc<RefCell<window_pane>>) {
     let (id, offset) = (pane.id(), pane.output_offset());
     {
         let mut state = c.borrow_control_mut().expect("control client state");
@@ -284,7 +281,7 @@ pub unsafe fn control_continue_pane(c: &ClientRef, pane: &Rc<UnsafeCell<window_p
     control_notify_write(c, |out| write!(out, "%continue %{}", pane.id()));
 }
 
-pub unsafe fn control_pause_pane(c: &ClientRef, pane: &Rc<UnsafeCell<window_pane>>) {
+pub unsafe fn control_pause_pane(c: &ClientRef, pane: &Rc<RefCell<window_pane>>) {
     let (id, offset) = (pane.id(), pane.output_offset());
     {
         let mut state = c.borrow_control_mut().expect("control client state");
@@ -299,7 +296,7 @@ pub unsafe fn control_pause_pane(c: &ClientRef, pane: &Rc<UnsafeCell<window_pane
     control_notify_write(c, |out| write!(out, "%pause %{}", pane.id()));
 }
 
-pub unsafe fn control_reset_pane(c: &ClientRef, pane: &Rc<UnsafeCell<window_pane>>) {
+pub unsafe fn control_reset_pane(c: &ClientRef, pane: &Rc<RefCell<window_pane>>) {
     let (id, offset) = (pane.id(), pane.output_offset());
     let Some(mut state) = c.borrow_control_mut() else {
         return;
@@ -439,7 +436,7 @@ pub unsafe fn control_notify_write(
 }
 unsafe fn control_check_age(
     client: &ClientRef,
-    window_pane: &Rc<UnsafeCell<window_pane>>,
+    window_pane: &Rc<RefCell<window_pane>>,
     pane: u_int,
 ) -> i32 {
     let block = {
@@ -486,7 +483,7 @@ unsafe fn control_check_age(
     1
 }
 
-pub unsafe fn control_write_output(client: &ClientRef, wp: &Rc<UnsafeCell<window_pane>>) {
+pub unsafe fn control_write_output(client: &ClientRef, wp: &Rc<RefCell<window_pane>>) {
     let pane = wp.id();
     let session = client
         .attached_session()
@@ -721,7 +718,7 @@ unsafe fn control_append_data(
     offset: &mut window_pane_offset,
     mut age: uint64_t,
     message: Option<Box<SegmentedBuf>>,
-    wp_owner: &Rc<UnsafeCell<window_pane>>,
+    wp_owner: &Rc<RefCell<window_pane>>,
     mut size: size_t,
 ) -> Box<SegmentedBuf> {
     let mut c: Option<ClientRef> = Some(c_owner.clone());
@@ -1019,7 +1016,7 @@ unsafe fn control_sub_change(change: &monitor_change) {
     let wl = link
         .as_mut()
         .map_or(std::ptr::null_mut(), |link| &raw mut **link);
-    let pane_owner = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&change.wp);
+    let pane_owner = std::rc::Rc::<std::cell::RefCell<window_pane>>::from_observer(&change.wp);
     if !std::rc::Weak::ptr_eq(&change.wp, &std::rc::Weak::new()) && pane_owner.is_none() {
         drop(session_owner);
         drop(client_owner);

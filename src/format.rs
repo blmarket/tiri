@@ -117,7 +117,7 @@ pub(crate) fn format_is_builtin(key: &CStr) -> bool {
 }
 
 pub(super) unsafe fn format_plugin_pane(ft: &mut format_tree) -> Option<crate::plugin::PaneId> {
-    let pane = <std::rc::Rc<std::cell::UnsafeCell<window_pane>>>::from_observer(&ft.wp)?;
+    let pane = <std::rc::Rc<std::cell::RefCell<window_pane>>>::from_observer(&ft.wp)?;
     Some(crate::plugin::PaneId(pane.id()))
 }
 mod expression;
@@ -315,7 +315,7 @@ pub unsafe fn format_create_defaults(
     c_owner: Option<&ClientRef>,
     s_owner: Option<&SessionRef>,
     mut wl: refbox::Weak<winlink>,
-    wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
+    wp_owner: Option<&std::rc::Rc<std::cell::RefCell<window_pane>>>,
 ) -> Box<format_tree> {
     let queue_client = cmdq_get_client(item_handle.map(|item| item.borrow()).as_deref());
     let mut owner = format_create(
@@ -358,7 +358,7 @@ pub unsafe fn format_defaults(
     c_owner: Option<&ClientRef>,
     s_owner: Option<&SessionRef>,
     mut wl: refbox::Weak<winlink>,
-    wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
+    wp_owner: Option<&std::rc::Rc<std::cell::RefCell<window_pane>>>,
 ) {
     let mut c: Option<ClientRef> = c_owner.cloned();
     if let Some(name) = c.as_ref().and_then(|c| c.name()) {
@@ -462,7 +462,7 @@ unsafe fn format_defaults_winlink(ft: &mut format_tree, mut wl: refbox::Weak<win
 }
 pub unsafe fn format_defaults_pane(
     ft: &mut format_tree,
-    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
 ) {
     if ft.w.upgrade().is_none() {
         ft.w = wp_owner.window_observer();

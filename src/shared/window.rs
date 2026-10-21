@@ -61,9 +61,9 @@ pub type window_winlinks = Vec<refbox::Weak<winlink>>;
 #[repr(C)]
 pub struct window_mode_entry {
     /// The pane owns this entry; retaining it here would create a cycle.
-    pub wp: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
+    pub wp: std::rc::Weak<std::cell::RefCell<window_pane>>,
     /// Non-owning source; copy mode keeps an independent screen snapshot.
-    pub swp: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
+    pub swp: std::rc::Weak<std::cell::RefCell<window_pane>>,
     pub mode: &'static window_mode,
     /// Owns mode payloads that need a stable address but no shared ownership.
     pub boxed_data: Option<Box<dyn std::any::Any>>,

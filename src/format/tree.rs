@@ -87,9 +87,7 @@ pub fn format_merge(ft: &mut format_tree, from: &format_tree) {
         format_add_value(ft, &key, value);
     }
 }
-pub fn format_get_pane(
-    ft: &format_tree,
-) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
+pub fn format_get_pane(ft: &format_tree) -> Option<std::rc::Rc<std::cell::RefCell<window_pane>>> {
     ft.wp.upgrade()
 }
 pub(super) unsafe fn format_create_add_item(

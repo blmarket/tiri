@@ -39,14 +39,14 @@ use crate::spawn::{spawn_editor, spawn_editor_write};
 use crate::text::utf8::utf8_strvis;
 use crate::window_pane::WindowPane as _;
 use libc::{strcasestr, strstr};
-use std::cell::UnsafeCell;
+use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 use std::ptr::NonNull;
 use std::rc::{Rc, Weak};
 
 #[repr(C)]
 pub struct window_buffer_modedata {
-    pub wp: Weak<UnsafeCell<window_pane>>,
+    pub wp: Weak<RefCell<window_pane>>,
     pub fs: cmd_find_state,
     pub data: Option<std::rc::Rc<std::cell::RefCell<mode_tree_data>>>,
     pub editor: Option<EditorHandle>,
@@ -527,7 +527,7 @@ unsafe fn window_buffer_update(mut wme: refbox::Weak<window_mode_entry>) {
         (data.wp.clone(), data.tree_owner())
     };
     let Some(mode_pane_owner) =
-        std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&pane)
+        std::rc::Rc::<std::cell::RefCell<window_pane>>::from_observer(&pane)
     else {
         return;
     };
@@ -566,7 +566,7 @@ unsafe fn window_buffer_draw_waiting(data: &std::cell::RefCell<window_buffer_mod
         };
         (data.wp.clone(), editor.pid())
     };
-    let Some(pane) = Rc::<UnsafeCell<window_pane>>::from_observer(&pane) else {
+    let Some(pane) = Rc::<RefCell<window_pane>>::from_observer(&pane) else {
         return;
     };
     pane.draw_editor_waiting(pid);
@@ -577,7 +577,7 @@ unsafe fn window_buffer_edit_close_cb(
     ed: window_buffer_editdata,
 ) {
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
-    if let Some(pane) = Rc::<UnsafeCell<window_pane>>::find_by_id(ed.wp_id) {
+    if let Some(pane) = Rc::<RefCell<window_pane>>::find_by_id(ed.wp_id) {
         wme = pane.mode_entry();
         if !!wme.is_alive() && std::ptr::eq(wme.get_unchecked().mode, &window_buffer_mode) {
             let mut data = window_buffer_data(&wme).borrow_mut();
@@ -617,7 +617,7 @@ unsafe fn window_buffer_edit_close_cb(
         buf.truncate(len);
         paste_replace_owned(&pb, buf.into_boxed_slice());
     }
-    if let Some(pane) = Rc::<UnsafeCell<window_pane>>::find_by_id(ed.wp_id) {
+    if let Some(pane) = Rc::<RefCell<window_pane>>::find_by_id(ed.wp_id) {
         wme = pane.mode_entry();
         if !!wme.is_alive() && std::ptr::eq(wme.get_unchecked().mode, &window_buffer_mode) {
             let data = window_buffer_data(&wme);
@@ -639,7 +639,7 @@ unsafe fn window_buffer_start_edit(
         (data.wp.clone(), data.editor.is_some())
     };
     let Some(mode_pane_owner) =
-        std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&pane)
+        std::rc::Rc::<std::cell::RefCell<window_pane>>::from_observer(&pane)
     else {
         return;
     };

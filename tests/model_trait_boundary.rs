@@ -27,7 +27,7 @@ fn model_cell(ty: &Type, aliases: &HashSet<String>) -> bool {
     let Some(last) = path.path.segments.last() else {
         return false;
     };
-    if last.ident != "UnsafeCell" {
+    if last.ident != "UnsafeCell" && last.ident != "RefCell" {
         return false;
     }
     let syn::PathArguments::AngleBracketed(args) = &last.arguments else {
@@ -169,7 +169,7 @@ fn audit(source: &str, consumer: bool) -> Vec<String> {
 #[test]
 fn rejects_projection_references_pointer_helpers_and_representation_casts() {
     for source in [
-        "fn f(s: &Rc<UnsafeCell<session>>) { let s = s.get(); unsafe { use_it(&*s); } }",
+        "fn f(s: &Rc<UnsafeCell<client>>) { let s = s.get(); unsafe { use_it(&*s); } }",
         "fn f(s: &session) { helper(s); }",
         "fn f(s: *mut window) { unsafe { (*s).id = 1; } }",
         "fn f(s: &Rc<UnsafeCell<client>>) { let p = rc::as_ptr(s); }",
@@ -178,15 +178,16 @@ fn rejects_projection_references_pointer_helpers_and_representation_casts() {
         "fn f(window: &WindowRef) { let model = rc::as_ptr(window); }",
         "fn f(session: &SessionRef) { let model = session.get(); }",
         "fn f(session: &SessionWeak) { let model = session.upgrade().unwrap().get(); }",
-        "fn f(p: *mut window_pane) { let _ = p.cast::<UnsafeCell<window_pane>>(); }",
+        "fn f(p: *mut window_pane) { let _ = p.cast::<RefCell<window_pane>>(); }",
         "fn f(p: *mut u8) { let _ = p.cast::<Record>(); } use x::client as Record;",
-        "fn f(p: *mut u8) { let _ = p as *mut UnsafeCell<session>; }",
+        "fn f(p: *mut u8) { let _ = p as *mut RefCell<session>; }",
+        "fn f(p: *mut u8) { let _ = p as *mut UnsafeCell<client>; }",
     ] {
         assert!(!audit(source, true).is_empty(), "missed {source}");
     }
     for source in [
-        "fn f(s: &Rc<UnsafeCell<session>>) { let _ = Rc::as_ptr(s) as *mut session; }",
-        "fn f(s: &Weak<UnsafeCell<window>>) { let _ = s.as_ptr() as usize as *const window; }",
+        "fn f(s: &Rc<RefCell<session>>) { let _ = Rc::as_ptr(s) as *mut session; }",
+        "fn f(s: &Weak<RefCell<window>>) { let _ = s.as_ptr() as usize as *const window; }",
         "type Record = client; fn f(p: *mut u8) { let _ = p.cast::<Record>(); }",
         "fn f(window: &WindowRef) { let _ = Rc::as_ptr(window) as *mut window; }",
         "fn f(window: &WindowWeak) { let _ = window.as_ptr() as usize as *const window; }",
@@ -197,7 +198,7 @@ fn rejects_projection_references_pointer_helpers_and_representation_casts() {
         );
     }
     assert!(audit(
-        "fn f(s: &Rc<UnsafeCell<session>>) { s.name(); s.with_winlinks(|links| lookup(links)); }",
+        "fn f(s: &Rc<RefCell<session>>) { s.name(); s.with_winlinks(|links| lookup(links)); }",
         true
     )
     .is_empty());

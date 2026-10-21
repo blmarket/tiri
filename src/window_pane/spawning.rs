@@ -65,9 +65,9 @@ use crate::shared::spawn::EditorHandle;
 use crate::spawn::{set_spawn_cause, spawn_log, _PATH_DEFPATH, IUTF8};
 unsafe fn spawn_fire_pane_created(
     sc: &spawn_context,
-    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
 ) {
-    let mut wp = wp_owner.get();
+    let mut wp = wp_owner.as_ptr();
     let session_owner = sc.s.upgrade();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -142,7 +142,7 @@ unsafe fn spawn_fire_pane_created(
 unsafe fn place_new_pane(
     sc: &spawn_context,
     window: &WindowRef,
-) -> Result<std::rc::Rc<std::cell::UnsafeCell<window_pane>>, &'static CStr> {
+) -> Result<std::rc::Rc<std::cell::RefCell<window_pane>>, &'static CStr> {
     let mut panes = window
         .pane_snapshot()
         .iter()
@@ -180,11 +180,11 @@ unsafe fn place_new_pane(
 pub(super) unsafe fn spawn_pane(
     sc: &mut spawn_context,
     cause: &mut Option<CString>,
-) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
+) -> Option<std::rc::Rc<std::cell::RefCell<window_pane>>> {
     let source_pane_owner = sc.wp0.upgrade();
     let source_pane = source_pane_owner
         .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
     let item_owner = sc.item.upgrade();
     let mut c: Option<ClientRef> = None;
     let mut loop_0: Option<ClientRef> = None;
@@ -325,12 +325,12 @@ pub(super) unsafe fn spawn_pane(
                 loop_0 = registry_loop_0_owner.clone();
             }
             new_pane_owner = source_pane_owner.as_ref().expect("respawn pane").clone();
-            new_wp = new_pane_owner.get();
+            new_wp = new_pane_owner.as_ptr();
             (*new_wp).flags &= !PANE_STATUSDRAWN;
             (*new_wp).exit_status = None;
         } else {
             new_pane_owner = created_pane.expect("new pane placed");
-            new_wp = new_pane_owner.get();
+            new_wp = new_pane_owner.as_ptr();
         }
         if sc.argv.is_empty() {
             if sc.flags & SPAWN_RESPAWN == 0 {
@@ -642,8 +642,8 @@ pub(super) unsafe fn spawn_pane(
     drop(original_window);
     result
 }
-pub(super) unsafe fn finish_editing(wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
-    let mut wp = wp_owner.get();
+pub(super) unsafe fn finish_editing(wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>) {
+    let mut wp = wp_owner.as_ptr();
     let Some(mut owner) = (*wp).editor.take() else {
         return;
     };
@@ -669,13 +669,13 @@ pub(super) unsafe fn finish_editing(wp_owner: &std::rc::Rc<std::cell::UnsafeCell
     (*es).cb.take().expect("non-null editor callback")(std::ptr::NonNull::new(es).unwrap(), result);
 }
 pub(super) unsafe fn install_editor(
-    pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    pane: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     mut editor: Box<spawn_editor_state>,
 ) -> EditorHandle {
     options_set_number(&mut pane.borrow_options_mut(), c"remain-on-exit", 0);
     let pointer = std::ptr::NonNull::from(&mut *editor);
     {
-        let state = &mut *pane.get();
+        let state = &mut *pane.as_ptr();
         editor.pid = state.pid;
         state.editor = Some(editor);
     }
@@ -701,24 +701,24 @@ mod tests {
         let pane = window_pane::new();
         unsafe {
             let first = spawn_editor_state::new(c"".to_owned(), Some(Box::new(|_, _| {})));
-            (*pane.get()).editor = Some(first);
+            (*pane.as_ptr()).editor = Some(first);
             let first_ptr =
-                std::ptr::NonNull::from((*pane.get()).editor.as_mut().unwrap().as_mut());
+                std::ptr::NonNull::from((*pane.as_ptr()).editor.as_mut().unwrap().as_mut());
             let stale = EditorHandle::new(&pane, first_ptr);
-            let previous = (*pane.get()).editor.take();
+            let previous = (*pane.as_ptr()).editor.take();
             let second = spawn_editor_state::new(c"".to_owned(), Some(Box::new(|_, _| {})));
-            (*pane.get()).editor = Some(second);
+            (*pane.as_ptr()).editor = Some(second);
             let second_ptr =
-                std::ptr::NonNull::from((*pane.get()).editor.as_mut().unwrap().as_mut());
+                std::ptr::NonNull::from((*pane.as_ptr()).editor.as_mut().unwrap().as_mut());
             let current = EditorHandle::new(&pane, second_ptr);
 
             assert_eq!(stale.pid(), -1);
             assert!(!stale.matches(second_ptr.as_ref()));
             stale.cancel();
-            assert!((*pane.get()).editor.as_ref().unwrap().cb.is_some());
+            assert!((*pane.as_ptr()).editor.as_ref().unwrap().cb.is_some());
             assert!(current.matches(second_ptr.as_ref()));
             current.cancel();
-            assert!((*pane.get()).editor.as_ref().unwrap().cb.is_none());
+            assert!((*pane.as_ptr()).editor.as_ref().unwrap().cb.is_none());
             drop(previous);
             drop(pane);
             assert_eq!(current.pid(), -1);
@@ -799,7 +799,7 @@ mod tests {
                     capture_editor_result(result.downgrade()),
                 );
                 let pane_owner = window_pane::new();
-                let wp = pane_owner.get();
+                let wp = pane_owner.as_ptr();
                 (*wp).editor = Some(state);
                 (*wp).exit_status = Some(ExitStatus::from_raw(0));
                 spawn_editor_finish(&pane_owner);
@@ -819,7 +819,7 @@ mod tests {
                     capture_editor_result(result.downgrade()),
                 );
                 let pane_owner = window_pane::new();
-                let wp = pane_owner.get();
+                let wp = pane_owner.as_ptr();
                 (*wp).editor = Some(state);
                 (*wp).exit_status = Some(ExitStatus::from_raw(0));
                 spawn_editor_finish(&pane_owner);
@@ -839,7 +839,7 @@ mod tests {
                     capture_editor_result(result.downgrade()),
                 );
                 let pane_owner = window_pane::new();
-                let wp = pane_owner.get();
+                let wp = pane_owner.as_ptr();
                 (*wp).editor = Some(state);
                 (*wp).exit_status = Some(ExitStatus::from_raw(1 << 8));
                 spawn_editor_finish(&pane_owner);

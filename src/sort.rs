@@ -275,7 +275,7 @@ pub unsafe fn sort_get_sessions(criteria: &sort_criteria) -> Vec<SessionRef> {
 pub unsafe fn sort_get_panes_window(
     w: &WindowRef,
     sort_crit: &sort_criteria,
-) -> Vec<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
+) -> Vec<std::rc::Rc<std::cell::RefCell<window_pane>>> {
     let mut panes = w
         .pane_snapshot()
         .iter()

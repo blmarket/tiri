@@ -8,7 +8,7 @@
 use super::{fits, window_geometry, Layout, LayoutNode};
 use crate::shared::layout::layout_geometry;
 use crate::shared::pane::window_pane;
-use std::cell::UnsafeCell;
+use std::cell::RefCell;
 use std::ffi::CStr;
 use std::rc::Rc;
 
@@ -24,10 +24,7 @@ impl Layout for Tiling {
 
     /// Only a split adds a pane, so a list that does not fit is a pane too
     /// small to split.
-    fn admits(
-        panes: &[Rc<UnsafeCell<window_pane>>],
-        size: (u32, u32),
-    ) -> Result<(), &'static CStr> {
+    fn admits(panes: &[Rc<RefCell<window_pane>>], size: (u32, u32)) -> Result<(), &'static CStr> {
         fits(
             &Self::arrange(panes, size),
             size,
@@ -87,12 +84,12 @@ fn second_half(g: layout_geometry, across: bool) -> layout_geometry {
 mod tests {
     use super::super::LayoutKind;
     use crate::shared::pane::window_pane;
-    use std::cell::UnsafeCell;
+    use std::cell::RefCell;
     use std::rc::Rc;
 
-    fn panes(count: usize) -> Vec<Rc<UnsafeCell<window_pane>>> {
+    fn panes(count: usize) -> Vec<Rc<RefCell<window_pane>>> {
         (0..count)
-            .map(|_| Rc::new(UnsafeCell::new(window_pane::default())))
+            .map(|_| Rc::new(RefCell::new(window_pane::default())))
             .collect()
     }
 

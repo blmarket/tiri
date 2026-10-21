@@ -8,7 +8,7 @@ use crate::shared::window::WindowWeak;
 use crate::window::Window;
 use crate::window_pane::WindowPane;
 use std::rc::Weak;
-use std::{cell::UnsafeCell, ffi::CStr};
+use std::{cell::RefCell, ffi::CStr};
 
 /// A table's identity, independent of how its owning model stores state.
 /// It does not prolong model lifetime; existing logical lifetime guarantees apply.
@@ -19,7 +19,7 @@ pub enum OptionsScope {
     GlobalWindow,
     Session(SessionWeak),
     Window(WindowWeak),
-    Pane(Weak<UnsafeCell<window_pane>>),
+    Pane(Weak<RefCell<window_pane>>),
 }
 
 impl PartialEq for OptionsScope {

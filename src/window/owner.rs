@@ -5,19 +5,19 @@
 //! cleanup. Close callbacks only observe the window: nothing retains a strong
 //! owner past the notification, so it fires exactly once.
 use super::model::window;
-use std::cell::UnsafeCell;
+use std::cell::RefCell;
 use std::rc::{Rc, Weak};
 
 /// Retained Window identity.
-pub struct WindowRef(Rc<UnsafeCell<window>>);
+pub struct WindowRef(Rc<RefCell<window>>);
 
 /// Nonowning Window identity, including callback and parent links.
 #[derive(Clone, Default)]
-pub struct WindowWeak(Weak<UnsafeCell<window>>);
+pub struct WindowWeak(Weak<RefCell<window>>);
 
 impl WindowRef {
     pub(super) fn new(value: window) -> Self {
-        Self(Rc::new(UnsafeCell::new(value)))
+        Self(Rc::new(RefCell::new(value)))
     }
 
     pub fn downgrade(this: &Self) -> WindowWeak {
@@ -42,7 +42,7 @@ impl Clone for WindowRef {
 }
 
 impl std::ops::Deref for WindowRef {
-    type Target = UnsafeCell<window>;
+    type Target = RefCell<window>;
     fn deref(&self) -> &Self::Target {
         &self.0
     }

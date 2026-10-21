@@ -106,7 +106,8 @@ pub trait Session {
     unsafe fn on_attached(&self);
     unsafe fn theme_changed(&self);
     unsafe fn status_layout(&self) -> (i32, u32);
-    unsafe fn borrow_options_mut(&self) -> std::cell::RefMut<'_, options>;
+    /// Borrow the option table through the model. Borrowing it again while held panics.
+    fn borrow_options_mut(&self) -> std::cell::RefMut<'_, options>;
     unsafe fn with_environment_mut<R>(&self, edit: impl FnOnce(&mut environ) -> R) -> R;
     unsafe fn set_cwd(&self, cwd: Option<CString>);
     unsafe fn cwd(&self) -> Option<CString>;
@@ -170,17 +171,17 @@ impl Session for SessionRef {
     type Environment<'a> = &'a environ;
     type EnvironmentMut<'a> = &'a mut environ;
     unsafe fn borrow_environment(&self) -> Option<Self::Environment<'_>> {
-        (*self.get()).environ.as_deref()
+        (*self.as_ptr()).environ.as_deref()
     }
     unsafe fn borrow_environment_mut(&self) -> Option<Self::EnvironmentMut<'_>> {
-        (*self.get()).environ.as_deref_mut()
+        (*self.as_ptr()).environ.as_deref_mut()
     }
 
     unsafe fn update_environment(&self, source: &environ) {
         crate::environ::environ_update(
             &crate::options::OptionsScope::Session(Rc::downgrade(self)),
             source,
-            (*self.get())
+            (*self.as_ptr())
                 .environ
                 .as_deref_mut()
                 .expect("session environment"),
@@ -203,10 +204,10 @@ impl Session for SessionRef {
         false
     }
     unsafe fn id(&self) -> u32 {
-        (*self.get()).id
+        (*self.as_ptr()).id
     }
     unsafe fn name(&self) -> CString {
-        (*self.get()).name.clone()
+        (*self.as_ptr()).name.clone()
     }
 
     unsafe fn rename(&self, name: &CStr) -> Result<(), CString> {
@@ -245,7 +246,7 @@ impl Session for SessionRef {
             out.write_all(new_name.as_bytes())
         });
         let owner = sessions::remove(self).expect("registered session owner");
-        drop(session_replace_name(&mut *self.get(), new_name));
+        drop(session_replace_name(&mut *self.as_ptr(), new_name));
         sessions::insert(owner);
         crate::server_fn::server_status_session(self);
         events_fire(c"session-renamed", payload);
@@ -253,35 +254,35 @@ impl Session for SessionRef {
     }
 
     unsafe fn activity_time(&self) -> SystemTime {
-        (*self.get()).activity_time
+        (*self.as_ptr()).activity_time
     }
     unsafe fn is_attached(&self) -> bool {
-        (*self.get()).attached != 0
+        (*self.as_ptr()).attached != 0
     }
     unsafe fn attached_count(&self) -> u32 {
-        (*self.get()).attached
+        (*self.as_ptr()).attached
     }
     unsafe fn synchronize_windows_from(&self, source: &SessionRef) {
         session_synchronize_windows(source, self);
     }
     unsafe fn current_winlink(&self) -> refbox::Weak<winlink> {
-        (*self.get()).curw.clone()
+        (*self.as_ptr()).curw.clone()
     }
     unsafe fn last_winlink(&self) -> refbox::Weak<winlink> {
-        (*self.get()).lastw.front().cloned().unwrap_or_default()
+        (*self.as_ptr()).lastw.front().cloned().unwrap_or_default()
     }
     unsafe fn with_winlinks<R>(&self, read: impl FnOnce(&winlinks) -> R) -> R {
-        read(&(*self.get()).windows)
+        read(&(*self.as_ptr()).windows)
     }
     unsafe fn forget_winlink(&self, link: refbox::Weak<winlink>) {
-        winlink_stack_remove(&mut (*self.get()).lastw, link);
+        winlink_stack_remove(&mut (*self.as_ptr()).lastw, link);
     }
     unsafe fn shuffle_window(&self, link: refbox::Weak<winlink>, before: bool) -> i32 {
         if !link.is_alive() || link.get_unchecked().idx == i32::MAX {
             return -1;
         }
         let index = link.get_unchecked().idx + if before { 0 } else { 1 };
-        let state = &mut *self.get();
+        let state = &mut *self.as_ptr();
         let mut last = index;
         while last < i32::MAX && winlink_find_by_index(&state.windows, last).is_alive() {
             last += 1;
@@ -300,10 +301,10 @@ impl Session for SessionRef {
         events_fire_winlink(c"window-unlinked", link.clone());
         link.get_mut_unchecked().flags &= !WINLINK_ALERTFLAGS;
         self.forget_winlink(link.clone());
-        winlink_remove(&(*self.get()).windows, link.clone());
+        winlink_remove(&(*self.as_ptr()).windows, link.clone());
         let was_current = link == self.current_winlink();
         if was_current {
-            (*self.get()).curw = refbox::Weak::new();
+            (*self.as_ptr()).curw = refbox::Weak::new();
         }
         was_current
     }
@@ -340,39 +341,41 @@ impl Session for SessionRef {
         session_renumber_windows(self);
     }
     unsafe fn update_history(&self) {
-        session_update_history(&*self.get());
+        session_update_history(self);
     }
     unsafe fn update_activity(&self, from: Option<SystemTime>) {
         session_update_activity(self, from);
     }
     unsafe fn theme_changed(&self) {
-        session_theme_changed(Some(&*self.get()));
+        session_theme_changed(Some(&*self.as_ptr()));
     }
     unsafe fn on_attached(&self) {
         self.update_activity(None);
-        session_theme_changed(Some(&*self.get()));
-        (*self.get()).last_attached_time = SystemTime::now();
+        session_theme_changed(Some(&*self.as_ptr()));
+        (*self.as_ptr()).last_attached_time = SystemTime::now();
         self.current_winlink().get_mut_unchecked().flags &= !WINLINK_ALERTFLAGS;
         crate::alerts::alerts_check_session(self);
     }
     unsafe fn status_layout(&self) -> (i32, u32) {
-        ((*self.get()).statusat, (*self.get()).statuslines)
+        ((*self.as_ptr()).statusat, (*self.as_ptr()).statuslines)
     }
-    unsafe fn borrow_options_mut(&self) -> std::cell::RefMut<'_, options> {
-        (*self.get()).borrow_options_mut()
+    fn borrow_options_mut(&self) -> std::cell::RefMut<'_, options> {
+        std::cell::RefMut::map(std::cell::RefCell::borrow_mut(self), |model| {
+            model.options.as_mut().expect("live session options")
+        })
     }
     unsafe fn with_environment_mut<R>(&self, edit: impl FnOnce(&mut environ) -> R) -> R {
         let mut environment = self.borrow_environment_mut().expect("session environment");
         edit(environment)
     }
     unsafe fn set_cwd(&self, cwd: Option<CString>) {
-        session_set_cwd(&mut *self.get(), cwd);
+        session_set_cwd(&mut *self.as_ptr(), cwd);
     }
     unsafe fn cwd(&self) -> Option<CString> {
-        (*self.get()).cwd.clone()
+        (*self.as_ptr()).cwd.clone()
     }
     unsafe fn termios(&self) -> Option<termios> {
-        (*self.get()).tio.as_deref().copied()
+        (*self.as_ptr()).tio.as_deref().copied()
     }
     unsafe fn format_value(
         &self,
@@ -415,8 +418,8 @@ mod tests {
                     .unwrap();
                 crate::options::options_default(&mut options, definition);
             }
-            (*session.get()).options.replace(Some(options));
-            status_update_cache(&mut *session.get());
+            (*session.as_ptr()).options = Some(options);
+            status_update_cache(&session);
             let before = session.status_layout();
             {
                 let mut options = session.borrow_options_mut();
@@ -427,7 +430,7 @@ mod tests {
                 before,
                 "configuration edits do not publish the sizing cache"
             );
-            status_update_cache(&mut *session.get());
+            status_update_cache(&session);
             assert_eq!(session.status_layout(), (-1, 0));
         }
     }

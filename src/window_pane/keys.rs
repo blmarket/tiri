@@ -9,11 +9,11 @@ use crate::shared::mouse::mouse_event;
 use crate::shared::pane::window_pane;
 use crate::shared::screen::ALL_MOUSE_MODES;
 
-use std::cell::UnsafeCell;
+use std::cell::RefCell;
 use std::rc::Rc;
 
 pub(super) unsafe fn write_key(
-    pane: &Rc<UnsafeCell<window_pane>>,
+    pane: &Rc<RefCell<window_pane>>,
     key: key_code,
     mouse: Option<&mouse_event>,
 ) -> i32 {
@@ -37,18 +37,18 @@ pub(super) unsafe fn write_key(
         return 0;
     }
     let screen = pane.screen_mode(true);
-    let stream = (*pane.get()).event.clone();
+    let stream = (*pane.as_ptr()).event.clone();
     stream
         .with_ptr(|event| input_key(screen, event, key))
         .unwrap_or(0)
 }
 
-unsafe fn write_mouse(pane: &Rc<UnsafeCell<window_pane>>, mouse: &mouse_event) {
+unsafe fn write_mouse(pane: &Rc<RefCell<window_pane>>, mouse: &mouse_event) {
     if mouse.ignore != 0 || !pane.is_visible() {
         return;
     }
     let screen = pane.screen_mode(true);
-    let stream = (*pane.get()).event.clone();
+    let stream = (*pane.as_ptr()).event.clone();
     if screen.mode & ALL_MOUSE_MODES == 0 {
         return;
     }

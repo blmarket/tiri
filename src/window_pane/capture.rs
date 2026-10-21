@@ -22,7 +22,7 @@ use crate::style::colour::colour_format;
 use crate::text::utf8::utf8_strvis;
 use std::ffi::CString;
 use std::io::Write;
-use std::{cell::UnsafeCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
 #[derive(Clone, Copy)]
 enum CaptureBound {
@@ -64,17 +64,17 @@ fn resolve_bound(bound: CaptureBound, history: u32, height: u32, end: bool) -> u
 }
 
 pub(super) unsafe fn capture(
-    owner: &Rc<UnsafeCell<window_pane>>,
+    owner: &Rc<RefCell<window_pane>>,
     arguments: &args,
     item: &Rc<std::cell::RefCell<cmdq_item>>,
 ) -> Result<Vec<u8>, CString> {
     if args_has(arguments, b'R') != 0 {
-        return Ok(cmd_capture_pane_grid(&*owner.get()));
+        return Ok(cmd_capture_pane_grid(&*owner.as_ptr()));
     }
     if args_has(arguments, b'P') != 0 && args_has(arguments, b'H') == 0 {
-        return Ok(cmd_capture_pane_pending(arguments, &mut *owner.get()));
+        return Ok(cmd_capture_pane_pending(arguments, &mut *owner.as_ptr()));
     }
-    if args_has(arguments, b'a') != 0 && (*owner.get()).base.saved_grid.is_none() {
+    if args_has(arguments, b'a') != 0 && (*owner.as_ptr()).base.saved_grid.is_none() {
         return if args_has(arguments, b'q') == 0 {
             Err(c"no alternate screen".to_owned())
         } else {
@@ -85,14 +85,14 @@ pub(super) unsafe fn capture(
         parse_bound(arguments, item, b'S'),
         parse_bound(arguments, item, b'E'),
     );
-    let active = (*owner.get()).active_mode_entry();
+    let active = (*owner.as_ptr()).active_mode_entry();
     let get_screen =
         if args_has(arguments, b'a') == 0 && args_has(arguments, b'M') != 0 && active.is_alive() {
             active.get_unchecked().mode.get_screen
         } else {
             None
         };
-    let pane = &*owner.get();
+    let pane = &*owner.as_ptr();
     match get_screen {
         Some(get_screen) => window_mode_visit_screen(get_screen, active, |mode_screen| {
             cmd_capture_pane_history(arguments, pane, Some(mode_screen), bounds)
@@ -102,9 +102,9 @@ pub(super) unsafe fn capture(
     }
 }
 
-pub(super) unsafe fn clear_history(owner: &Rc<UnsafeCell<window_pane>>, reset_links: bool) {
+pub(super) unsafe fn clear_history(owner: &Rc<RefCell<window_pane>>, reset_links: bool) {
     owner.reset_all_modes();
-    let pane = &mut *owner.get();
+    let pane = &mut *owner.as_ptr();
     grid_clear_history(pane.base.grid_mut());
     if reset_links {
         pane.with_screen_mut(screen_reset_hyperlinks)

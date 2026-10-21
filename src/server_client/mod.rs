@@ -8,7 +8,7 @@ use crate::window::Window as _;
 use crate::window_pane::WindowPane as _;
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::time::{Duration, SystemTime};
-use std::{cell::UnsafeCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 mod api;
 mod client_overlay;
 mod format;
@@ -1308,7 +1308,7 @@ unsafe fn server_client_update_scrollbar_hover(
 }
 
 unsafe fn server_client_check_mouse_in_pane(
-    pane: &Rc<UnsafeCell<window_pane>>,
+    pane: &Rc<RefCell<window_pane>>,
     x: i32,
     y: i32,
     slider: &mut u32,
@@ -1316,7 +1316,7 @@ unsafe fn server_client_check_mouse_in_pane(
     pane.mouse_location(x, y, slider)
 }
 
-unsafe fn server_client_pane_window_id(pane: &Rc<UnsafeCell<window_pane>>) -> u32 {
+unsafe fn server_client_pane_window_id(pane: &Rc<RefCell<window_pane>>) -> u32 {
     let window = pane.window_observer().upgrade().expect("pane event window");
     let id = window.id();
     drop(window);
@@ -1363,7 +1363,7 @@ unsafe fn server_client_check_mouse(client_owner: &ClientRef, event: &mut key_ev
             { (*c).mouse_drag_flag }
         ));
         if (*c).mouse_last_pane != -(1 as ::core::ffi::c_int) {
-            last_pane = Rc::<UnsafeCell<window_pane>>::find_by_id((*c).mouse_last_pane as u_int);
+            last_pane = Rc::<RefCell<window_pane>>::find_by_id((*c).mouse_last_pane as u_int);
             if let Some(pane) = last_pane.as_ref() {
                 log_debug(format_args!(
                     "{} mouse last pane %{}",
@@ -1517,7 +1517,7 @@ unsafe fn server_client_check_mouse(client_owner: &ClientRef, event: &mut key_ev
                         loc = KEYC_MOUSE_LOCATION_STATUS_RIGHT;
                     }
                     3 => {
-                        if Rc::<UnsafeCell<window_pane>>::find_by_id(sr.argument).is_none() {
+                        if Rc::<RefCell<window_pane>>::find_by_id(sr.argument).is_none() {
                             return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                         }
                         event.m.wp = sr.argument as ::core::ffi::c_int;
@@ -2017,7 +2017,7 @@ unsafe fn server_client_repeat_time(c: &client, bd: &KeyBindingCommand) -> u_int
     repeat
 }
 unsafe fn server_client_handle_dead_key(
-    pane: Option<&Rc<UnsafeCell<window_pane>>>,
+    pane: Option<&Rc<RefCell<window_pane>>>,
     key: key_code,
 ) -> i32 {
     pane.is_some_and(|pane| pane.close_after_key(key)) as i32
@@ -2748,7 +2748,7 @@ struct PromptCursor {
 
 unsafe fn server_client_prompt_cursor(
     owner: &ClientRef,
-    pane: &Rc<UnsafeCell<window_pane>>,
+    pane: &Rc<RefCell<window_pane>>,
     mut cursor: PromptCursor,
 ) -> Option<PromptCursor> {
     let mut r = Vec::new();
@@ -3384,7 +3384,7 @@ unsafe fn server_client_set_title(client_owner: &ClientRef) {
 /// Raw relationship fields are accessed only while resolving the handle.
 unsafe fn server_client_active_pane(
     c: &client,
-) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
+) -> Option<std::rc::Rc<std::cell::RefCell<window_pane>>> {
     let session_owner = c.session.upgrade()?;
     let current = session_owner.current_winlink();
     let link = current.try_borrow_mut().ok()?;
@@ -4095,7 +4095,7 @@ fn server_client_get_flags(c: &client) -> CString {
     CString::new(s).expect("client flag names contain no NUL")
 }
 
-unsafe fn server_client_remove_pane(wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
+unsafe fn server_client_remove_pane(wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>) {
     let pane_id = wp_owner.id();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut registry_c_owner = ClientRegistry::first();
@@ -4349,7 +4349,7 @@ mod lost_queue_tests {
     unsafe fn suspend_holding_client<F: std::future::Future<Output = ()> + 'static>(
         future: impl FnOnce(ClientRef) -> F + 'static,
     ) -> (
-        std::rc::Weak<UnsafeCell<client>>,
+        std::rc::Weak<std::cell::UnsafeCell<client>>,
         std::rc::Weak<std::cell::RefCell<cmdq_item>>,
     ) {
         let owner = queue_test_clients::with_queue();

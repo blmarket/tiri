@@ -536,7 +536,7 @@ pub fn cmd_list_any_have(cmdlist: &cmd_list) -> ::core::ffi::c_int {
     0 as ::core::ffi::c_int
 }
 pub unsafe fn cmd_mouse_at(
-    pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    pane: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     mouse: &mouse_event,
     x: &mut u_int,
     y: &mut u_int,
@@ -586,7 +586,7 @@ pub unsafe fn cmd_mouse_pane(
     m: &mouse_event,
     sp: Option<&mut Option<SessionRef>>,
     wlp: Option<&mut refbox::Weak<winlink>>,
-) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
+) -> Option<std::rc::Rc<std::cell::RefCell<window_pane>>> {
     let link = cmd_mouse_window(m, sp);
     if !link.is_alive() {
         return None;
@@ -595,7 +595,7 @@ pub unsafe fn cmd_mouse_pane(
     let pane = if m.wp == -1 {
         window.active_pane().upgrade()
     } else {
-        let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::find_by_id(m.wp as u_int)?;
+        let pane = std::rc::Rc::<std::cell::RefCell<window_pane>>::find_by_id(m.wp as u_int)?;
         if !window.contains_pane(&std::rc::Rc::downgrade(&pane)) {
             return None;
         }

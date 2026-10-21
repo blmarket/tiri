@@ -62,13 +62,13 @@ use crate::window::Window;
 use crate::window::WindowPane;
 use crate::window::{winlink_count, winlink_find_by_index, winlinks_minmax, winlinks_next};
 use libc::{strcasestr, strstr};
-use std::cell::UnsafeCell;
+use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
 
 #[repr(C)]
 pub struct window_tree_modedata {
-    pub wp: Weak<UnsafeCell<window_pane>>,
+    pub wp: Weak<RefCell<window_pane>>,
     pub data: Option<std::rc::Rc<std::cell::RefCell<mode_tree_data>>>,
     pub format: CString,
     pub key_format: CString,
@@ -251,7 +251,7 @@ const window_tree_session_info_lines: [&CStr; 9] = [
 struct WindowTreeTarget {
     session: Option<SessionRef>,
     winlink: refbox::Weak<winlink>,
-    pane: Option<Rc<UnsafeCell<window_pane>>>,
+    pane: Option<Rc<RefCell<window_pane>>>,
 }
 
 unsafe fn window_tree_pull_item(item: &window_tree_itemdata) -> WindowTreeTarget {
@@ -275,7 +275,7 @@ unsafe fn window_tree_pull_item(item: &window_tree_itemdata) -> WindowTreeTarget
             .active_pane()
             .upgrade()
     } else {
-        let pane = Rc::<UnsafeCell<window_pane>>::find_by_id(item.pane as u_int);
+        let pane = Rc::<RefCell<window_pane>>::find_by_id(item.pane as u_int);
         if !pane.as_ref().is_some_and(|owner| {
             link.window_handle()
                 .expect("live window")
@@ -311,7 +311,7 @@ fn window_tree_remove_last_item(
     items.pop();
 }
 unsafe fn window_tree_preview(
-    pane: &Rc<UnsafeCell<window_pane>>,
+    pane: &Rc<RefCell<window_pane>>,
     ctx: &mut screen_write_ctx,
     sx: u32,
     sy: u32,
@@ -322,7 +322,7 @@ unsafe fn window_tree_preview(
     screen_write_preview(ctx, &snapshot, sx, sy);
     drop(snapshot);
 }
-unsafe fn window_tree_pane_index(pane: &Rc<UnsafeCell<window_pane>>) -> Option<u32> {
+unsafe fn window_tree_pane_index(pane: &Rc<RefCell<window_pane>>) -> Option<u32> {
     let window = pane.window_observer().upgrade()?;
     let index = window.pane_index(&Rc::downgrade(pane));
     drop(window);
@@ -331,7 +331,7 @@ unsafe fn window_tree_pane_index(pane: &Rc<UnsafeCell<window_pane>>) -> Option<u
 unsafe fn window_tree_build_pane(
     session_owner: &SessionRef,
     mut wl: refbox::Weak<winlink>,
-    pane_owner: &Rc<UnsafeCell<window_pane>>,
+    pane_owner: &Rc<RefCell<window_pane>>,
     data: &mut window_tree_modedata,
     parent: &ModeTreeItemRef,
 ) {
@@ -372,7 +372,7 @@ unsafe fn window_tree_build_pane(
 unsafe fn window_tree_filter_pane(
     session_owner: &SessionRef,
     mut wl: refbox::Weak<winlink>,
-    pane_owner: &Rc<UnsafeCell<window_pane>>,
+    pane_owner: &Rc<RefCell<window_pane>>,
     filter: Option<&CStr>,
 ) -> ::core::ffi::c_int {
     let Some(filter) = filter else {
@@ -397,7 +397,7 @@ unsafe fn window_tree_build_window(
     filter: Option<&CStr>,
 ) -> ::core::ffi::c_int {
     let s = Some(session_owner.clone());
-    let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&data.wp) else {
+    let Some(mode_pane_owner) = Rc::<RefCell<window_pane>>::from_observer(&data.wp) else {
         return 0;
     };
     let mut i: u_int = 0;
@@ -586,8 +586,8 @@ fn window_tree_tree(mode: &TreeMode) -> Rc<std::cell::RefCell<mode_tree_data>> {
     mode.data.borrow().tree_owner()
 }
 
-unsafe fn window_tree_pane(mode: &TreeMode) -> Option<Rc<UnsafeCell<window_pane>>> {
-    Rc::<UnsafeCell<window_pane>>::from_observer(&mode.data.borrow().wp)
+unsafe fn window_tree_pane(mode: &TreeMode) -> Option<Rc<RefCell<window_pane>>> {
+    Rc::<RefCell<window_pane>>::from_observer(&mode.data.borrow().wp)
 }
 
 unsafe fn window_tree_build(
@@ -756,7 +756,7 @@ unsafe fn window_tree_draw_session(
     mut sy: u_int,
 ) {
     let s = Some(session_owner.clone());
-    let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&data.wp) else {
+    let Some(mode_pane_owner) = Rc::<RefCell<window_pane>>::from_observer(&data.wp) else {
         return;
     };
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
@@ -1013,7 +1013,7 @@ unsafe fn window_tree_draw_window(
     mut sy: u_int,
 ) {
     let s = Some(session_owner.clone());
-    let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&data.wp) else {
+    let Some(mode_pane_owner) = Rc::<RefCell<window_pane>>::from_observer(&data.wp) else {
         return;
     };
     let window = wl
@@ -1283,7 +1283,7 @@ unsafe fn window_tree_draw_info(
     mut sx: u_int,
     mut sy: u_int,
 ) {
-    let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&data.wp) else {
+    let Some(mode_pane_owner) = Rc::<RefCell<window_pane>>::from_observer(&data.wp) else {
         return;
     };
     let mut sp: Option<SessionRef> = None;
@@ -1425,7 +1425,7 @@ unsafe fn window_tree_draw(
 ) {
     let mut guard = mode.data.borrow_mut();
     let data = &mut *guard;
-    let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&data.wp) else {
+    let Some(mode_pane_owner) = Rc::<RefCell<window_pane>>::from_observer(&data.wp) else {
         return;
     };
     let mut _sp: Option<SessionRef> = None;

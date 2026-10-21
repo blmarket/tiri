@@ -24,7 +24,7 @@ pub const INPUT_BUF_DEFAULT_SIZE: ::core::ffi::c_int = 1048576 as ::core::ffi::c
 pub enum InputPalette {
     #[default]
     None,
-    Pane(std::rc::Weak<std::cell::UnsafeCell<window_pane>>),
+    Pane(std::rc::Weak<std::cell::RefCell<window_pane>>),
     Popup(refbox::Weak<colour_palette>),
 }
 
@@ -55,7 +55,7 @@ pub type input_request_type = ::core::ffi::c_uint;
 #[repr(C)]
 pub struct input_ctx {
     /// Pane lifetime is owned by the pane index and retained event handlers.
-    pub wp: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
+    pub wp: std::rc::Weak<std::cell::RefCell<window_pane>>,
     pub event: crate::reactor::StreamHandle,
     pub palette: InputPalette,
     /// Client observation; request/context ownership does not retain the client.

@@ -4,7 +4,7 @@ use super::abi::{u_int, uint64_t};
 use super::pane::window_pane;
 use crate::shared::client::ClientWeak;
 use crate::shared::window::WindowWeak;
-use std::{cell::UnsafeCell, rc::Weak};
+use std::{cell::RefCell, rc::Weak};
 
 #[repr(C)]
 pub struct redraw_scene {
@@ -114,7 +114,7 @@ impl redraw_span_data {
 
 #[derive(Clone, Default)]
 pub struct RedrawPaneSpan {
-    pub wp: Weak<UnsafeCell<window_pane>>,
+    pub wp: Weak<RefCell<window_pane>>,
     pub px: u_int,
     pub py: u_int,
 }
@@ -124,9 +124,9 @@ pub struct RedrawPaneSpan {
 /// line it draws, a `CELL_*` kind from the separators it joins.
 #[derive(Clone, Default)]
 pub struct RedrawBorderSpan {
-    pub left_wp: Weak<UnsafeCell<window_pane>>,
-    pub right_wp: Weak<UnsafeCell<window_pane>>,
-    pub style_wp: Weak<UnsafeCell<window_pane>>,
+    pub left_wp: Weak<RefCell<window_pane>>,
+    pub right_wp: Weak<RefCell<window_pane>>,
+    pub style_wp: Weak<RefCell<window_pane>>,
     pub flags: ::core::ffi::c_int,
     pub cell_type: ::core::ffi::c_int,
 }
@@ -135,14 +135,14 @@ pub struct RedrawBorderSpan {
 /// over a separator cell that draws `cell_type`.
 #[derive(Clone, Default)]
 pub struct RedrawStatusSpan {
-    pub wp: Weak<UnsafeCell<window_pane>>,
+    pub wp: Weak<RefCell<window_pane>>,
     pub offset: u_int,
     pub cell_type: ::core::ffi::c_int,
 }
 
 #[derive(Clone, Default)]
 pub struct RedrawScrollbarSpan {
-    pub wp: Weak<UnsafeCell<window_pane>>,
+    pub wp: Weak<RefCell<window_pane>>,
     pub y: u_int,
     pub height: u_int,
     pub flags: ::core::ffi::c_int,

@@ -23,11 +23,11 @@ pub struct window {
     pub(super) activity_time: SystemTime,
     pub(super) creation_time: SystemTime,
     /// Current pane identity; the pane index owns the allocation.
-    pub(super) active: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
+    pub(super) active: std::rc::Weak<std::cell::RefCell<window_pane>>,
     pub(super) last_panes: PaneHistory,
     /// The zoomed pane, which takes the whole window while the others are
     /// hidden; empty when the window is not zoomed.
-    pub(super) zoomed: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
+    pub(super) zoomed: std::rc::Weak<std::cell::RefCell<window_pane>>,
     /// Whether the next `pop_zoom` zooms the active pane, as the last
     /// `push_zoom` asked.
     pub(super) was_zoomed: bool,
@@ -56,28 +56,22 @@ pub struct window {
     pub(super) outside_cell: grid_cell,
     pub(super) flags: ::core::ffi::c_int,
     pub(super) alerts_queued: ::core::ffi::c_int,
-    pub(super) options: std::cell::RefCell<Option<options>>,
+    pub(super) options: Option<options>,
     pub(super) winlinks: window_winlinks,
 }
 impl window {
-    /// Borrow the option table. Borrowing it again while held panics.
-    pub(super) fn borrow_options_mut(&self) -> std::cell::RefMut<'_, options> {
-        std::cell::RefMut::map(self.options.borrow_mut(), |table| {
-            table.as_mut().expect("live window options")
-        })
-    }
     pub(super) fn invalidate_scene(&mut self) {
         self.redraw_scene_generation = self.redraw_scene_generation.wrapping_add(1);
     }
     /// Retain the active pane for the current operation.
-    pub(super) fn active_pane(&self) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
+    pub(super) fn active_pane(&self) -> Option<std::rc::Rc<std::cell::RefCell<window_pane>>> {
         self.active.upgrade()
     }
 
     /// The caller supplies a live Rc-backed pane.
     pub(super) fn set_active(
         &mut self,
-        pane: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
+        pane: Option<&std::rc::Rc<std::cell::RefCell<window_pane>>>,
     ) {
         self.active = pane.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     }

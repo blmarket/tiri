@@ -60,8 +60,8 @@ pub const REDRAW_SPAN_PANE: redraw_span_type = 0;
 #[repr(C)]
 pub struct redraw_draw_ctx<'scene> {
     pub scene: &'scene redraw_scene,
-    pub active: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-    pub marked: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
+    pub active: std::rc::Weak<std::cell::RefCell<window_pane>>,
+    pub marked: std::rc::Weak<std::cell::RefCell<window_pane>>,
     pub status_lines: u_int,
     pub pane_lines: pane_lines,
     pub default_gc: grid_cell,
@@ -219,7 +219,7 @@ unsafe fn redraw_window_to_scene(
 }
 unsafe fn redraw_pane_to_scene(
     bctx: &mut redraw_build_ctx,
-    wp: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    wp: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     mut px: ::core::ffi::c_int,
     mut py: ::core::ffi::c_int,
     x: &mut u_int,
@@ -237,7 +237,7 @@ unsafe fn redraw_check_split_colours(w: &WindowRef) -> bool {
 
 unsafe fn redraw_mark_pane_inside(
     bctx: &mut redraw_build_ctx,
-    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
 ) {
     let wp = wp_owner;
     let mut px: u_int = 0;
@@ -270,7 +270,7 @@ unsafe fn redraw_mark_pane_inside(
 }
 unsafe fn redraw_mark_pane_scrollbar(
     bctx: &mut redraw_build_ctx,
-    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     mut sb_w: ::core::ffi::c_int,
     mut sb_left: ::core::ffi::c_int,
     mut overlay: ::core::ffi::c_int,
@@ -326,7 +326,7 @@ unsafe fn redraw_mark_pane_scrollbar(
 }
 fn redraw_data_has_pane(
     data: &redraw_span_data,
-    pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
+    pane: &std::rc::Weak<std::cell::RefCell<window_pane>>,
 ) -> bool {
     let border = data.border();
     border.left_wp.ptr_eq(pane) || border.right_wp.ptr_eq(pane)
@@ -337,7 +337,7 @@ unsafe fn redraw_mark_border_cell(
     bctx: &mut redraw_build_ctx,
     mut wx: ::core::ffi::c_int,
     mut wy: ::core::ffi::c_int,
-    wp: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    wp: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     after: bool,
 ) {
     let mut x: u_int = 0;
@@ -364,7 +364,7 @@ unsafe fn redraw_mark_border_cell(
 /// `right` beside `wp`.
 unsafe fn redraw_mark_border_arrows(
     bctx: &mut redraw_build_ctx,
-    wp: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    wp: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     mut left: ::core::ffi::c_int,
     mut right: ::core::ffi::c_int,
 ) {
@@ -394,7 +394,7 @@ unsafe fn redraw_mark_border_arrows(
 /// as every strip pane is, has none.
 unsafe fn redraw_mark_pane_borders(
     bctx: &mut redraw_build_ctx,
-    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     mut sb_w: ::core::ffi::c_int,
     mut sb_left: ::core::ffi::c_int,
 ) {
@@ -432,7 +432,7 @@ unsafe fn redraw_mark_pane_borders(
 /// it overlays the pane.
 unsafe fn redraw_scrollbar_extent(
     bctx: &mut redraw_build_ctx,
-    wp: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    wp: &std::rc::Rc<std::cell::RefCell<window_pane>>,
 ) -> (::core::ffi::c_int, ::core::ffi::c_int, ::core::ffi::c_int) {
     let mut sb_w: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut sb_left: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -458,7 +458,7 @@ unsafe fn redraw_scrollbar_extent(
 }
 unsafe fn redraw_mark_pane(
     bctx: &mut redraw_build_ctx,
-    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
 ) {
     let (sb_w, sb_left, overlay) = redraw_scrollbar_extent(bctx, wp_owner);
     redraw_mark_pane_inside(bctx, wp_owner);
@@ -521,7 +521,7 @@ fn redraw_set_border_types(bctx: &mut redraw_build_ctx) {
 /// it) from two columns in to its right edge, each keeping the line it draws.
 unsafe fn redraw_mark_border_status(
     bctx: &mut redraw_build_ctx,
-    wp: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    wp: &std::rc::Rc<std::cell::RefCell<window_pane>>,
 ) {
     let pane_status = wp.border_status();
     if pane_status == PANE_STATUS_OFF {
@@ -974,9 +974,9 @@ unsafe fn redraw_get_default_border_style(
     drop(window_owner);
 }
 fn redraw_get_pane_for_border_style(
-    active: Option<&std::rc::Weak<std::cell::UnsafeCell<window_pane>>>,
+    active: Option<&std::rc::Weak<std::cell::RefCell<window_pane>>>,
     span: &redraw_span,
-) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
+) -> Option<std::rc::Rc<std::cell::RefCell<window_pane>>> {
     let redraw_span_data::Border(border) = &span.data else {
         return None;
     };
@@ -1214,7 +1214,7 @@ unsafe fn redraw_draw_span(dctx: &mut redraw_draw_ctx<'_>, span: &redraw_span, m
 }
 unsafe fn redraw_draw_pane_lines(
     dctx: &mut redraw_draw_ctx<'_>,
-    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     flags: ::core::ffi::c_int,
 ) {
     let wp = wp_owner;
@@ -1289,7 +1289,7 @@ unsafe fn redraw_draw_menu_lines(dctx: &mut redraw_draw_ctx<'_>) {
 /// The scene row of `wp`'s status line, when it has one in view.
 unsafe fn redraw_pane_status_line(
     dctx: &redraw_draw_ctx<'_>,
-    wp: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    wp: &std::rc::Rc<std::cell::RefCell<window_pane>>,
 ) -> Option<u_int> {
     let scene = dctx.scene;
     let pane_status = wp.border_status();
@@ -1311,7 +1311,7 @@ unsafe fn redraw_pane_status_line(
 /// first of them that is `wp`'s.
 unsafe fn redraw_pane_status_width<'scene>(
     dctx: &redraw_draw_ctx<'scene>,
-    wp: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    wp: &std::rc::Rc<std::cell::RefCell<window_pane>>,
 ) -> Option<(u_int, &'scene redraw_spans, usize)> {
     let y = redraw_pane_status_line(dctx, wp)?;
     let spans = &dctx.scene.lines[y as usize][REDRAW_SPAN_STATUS as usize];
@@ -1401,13 +1401,13 @@ unsafe fn redraw_set_draw_context(scene: &redraw_scene) -> Option<redraw_draw_ct
 }
 unsafe fn redraw_draw_pane_prompt(
     dctx: &mut redraw_draw_ctx<'_>,
-    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
 ) {
     wp_owner.draw_prompt(dctx);
 }
 unsafe fn redraw_draw(
     client_owner: &ClientRef,
-    pane_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
+    pane_owner: Option<&std::rc::Rc<std::cell::RefCell<window_pane>>>,
     mut flags: ::core::ffi::c_int,
 ) {
     let mut c: Option<ClientRef> = Some(client_owner.clone());
@@ -1473,7 +1473,7 @@ unsafe fn redraw_draw(
 
 unsafe fn redraw_draw_scene(
     client_owner: &ClientRef,
-    pane_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
+    pane_owner: Option<&std::rc::Rc<std::cell::RefCell<window_pane>>>,
     mut flags: ::core::ffi::c_int,
     scene: &redraw_scene,
 ) {
@@ -1678,7 +1678,7 @@ pub unsafe fn redraw_screen(client_owner: &ClientRef) {
 }
 pub unsafe fn redraw_pane(
     client_owner: &ClientRef,
-    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
 ) {
     let mut c: Option<ClientRef> = Some(client_owner.clone());
     redraw_draw(
@@ -1705,7 +1705,7 @@ pub unsafe fn redraw_pane(
 }
 pub unsafe fn redraw_pane_scrollbar(
     client_owner: &ClientRef,
-    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
 ) {
     redraw_draw(client_owner, Some(pane_owner), REDRAW_PANE_SCROLLBAR);
 }

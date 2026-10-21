@@ -471,7 +471,7 @@ pub fn input_key_build() {
     }
 }
 pub unsafe fn input_key_pane(
-    pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    pane: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     key: key_code,
     mouse: Option<&mouse_event>,
 ) -> i32 {

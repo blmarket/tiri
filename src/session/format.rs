@@ -70,7 +70,7 @@ unsafe fn format_cb_session_attached_list(ft: &mut format_tree) -> Option<CStrin
     let format_session_owner = ft.s.upgrade();
     let format_session = format_session_owner
         .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
     let mut s: *mut session = format_session;
     let mut loop_0: Option<ClientRef> = None;
     if s.is_null() {
@@ -86,7 +86,7 @@ unsafe fn format_cb_session_attached_list(ft: &mut format_tree) -> Option<CStrin
             .attached_session()
             .upgrade()
             .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get())
+            .map_or(std::ptr::null_mut(), |owner| owner.as_ptr())
             == s
         {
             if !names.is_empty() {
@@ -116,7 +116,7 @@ unsafe fn format_cb_session_alert(ft: &mut format_tree) -> Option<CString> {
     let format_session_owner = ft.s.upgrade();
     let format_session = format_session_owner
         .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
     let mut s: *mut session = format_session;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut alerts = Vec::<u8>::new();
@@ -149,7 +149,7 @@ unsafe fn format_cb_session_alerts(ft: &mut format_tree) -> Option<CString> {
     let format_session_owner = ft.s.upgrade();
     let format_session = format_session_owner
         .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
     let mut s: *mut session = format_session;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut alerts = Vec::<u8>::new();
@@ -182,7 +182,7 @@ unsafe fn format_cb_session_stack(ft: &mut format_tree) -> Option<CString> {
     let format_session_owner = ft.s.upgrade();
     let format_session = format_session_owner
         .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
     let mut s: *mut session = format_session;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     if s.is_null() {
@@ -204,7 +204,7 @@ unsafe fn format_cb_session_group_list(ft: &mut format_tree) -> Option<CString> 
     let format_session_owner = ft.s.upgrade();
     let format_session = format_session_owner
         .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
     let mut s: *mut session = format_session;
     let mut sg = crate::shared::session::SessionGroupWeak::new();
     if s.is_null() {
@@ -219,7 +219,7 @@ unsafe fn format_cb_session_group_list(ft: &mut format_tree) -> Option<CString> 
         if !names.is_empty() {
             names.push(b',');
         }
-        names.extend_from_slice((*loop_0.get()).name.as_bytes());
+        names.extend_from_slice((*loop_0.as_ptr()).name.as_bytes());
     }
     if names.is_empty() {
         return None;
@@ -231,7 +231,7 @@ unsafe fn format_cb_session_group_attached_list(ft: &mut format_tree) -> Option<
     let format_session_owner = ft.s.upgrade();
     let format_session = format_session_owner
         .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
     let mut s: *mut session = format_session;
     let mut client_session: *mut session = ::core::ptr::null_mut::<session>();
     let _session_loop: *mut session = ::core::ptr::null_mut::<session>();
@@ -254,10 +254,10 @@ unsafe fn format_cb_session_group_attached_list(ft: &mut format_tree) -> Option<
             .attached_session()
             .upgrade()
             .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
+            .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
         if !client_session.is_null() {
             for session_loop in crate::session::session_group_members(&sg) {
-                if session_loop.get() == client_session {
+                if session_loop.as_ptr() == client_session {
                     if !names.is_empty() {
                         names.push(b',');
                     }
@@ -287,7 +287,7 @@ unsafe fn format_cb_session_active(ft: &mut format_tree) -> Option<CString> {
     let format_session_owner = ft.s.upgrade();
     let format_session = format_session_owner
         .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
     let format_client_owner = ft.c.upgrade();
     let mut format_client: Option<ClientRef> = format_client_owner.clone();
     if format_session.is_null() || format_client.is_none() {
@@ -299,7 +299,7 @@ unsafe fn format_cb_session_active(ft: &mut format_tree) -> Option<CString> {
         .attached_session()
         .upgrade()
         .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get())
+        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr())
         == format_session
     {
         return Some(c"1".to_owned());
@@ -314,7 +314,7 @@ unsafe fn format_session_winlink_flag(ft: &mut format_tree, flag: i32) -> Option
     let format_session_owner = ft.s.upgrade();
     let format_session = format_session_owner
         .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
     if format_session.is_null() {
         return None;
     }
@@ -344,7 +344,7 @@ unsafe fn format_cb_session_attached(ft: &mut format_tree) -> Option<CString> {
     let format_session_owner = ft.s.upgrade();
     let format_session = format_session_owner
         .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
     if !format_session.is_null() {
         return Some(
             CString::new(format!("{}", ((*format_session).attached) as u32))
@@ -367,7 +367,7 @@ fn format_cb_session_group(ft: &mut format_tree) -> Option<CString> {
     let format_session_owner = ft.s.upgrade();
     let format_session = format_session_owner
         .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
     let mut sg = crate::shared::session::SessionGroupWeak::new();
     if !format_session.is_null() && {
         sg = session_groups::for_session(&ft.s);
@@ -382,7 +382,7 @@ unsafe fn format_cb_session_group_attached(ft: &mut format_tree) -> Option<CStri
     let format_session_owner = ft.s.upgrade();
     let format_session = format_session_owner
         .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
     let mut sg = crate::shared::session::SessionGroupWeak::new();
     if !format_session.is_null() && {
         sg = session_groups::for_session(&ft.s);
@@ -400,7 +400,7 @@ unsafe fn format_cb_session_group_many_attached(ft: &mut format_tree) -> Option<
     let format_session_owner = ft.s.upgrade();
     let format_session = format_session_owner
         .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
     let mut sg = crate::shared::session::SessionGroupWeak::new();
     if !format_session.is_null() && {
         sg = session_groups::for_session(&ft.s);
@@ -418,7 +418,7 @@ fn format_cb_session_group_size(ft: &mut format_tree) -> Option<CString> {
     let format_session_owner = ft.s.upgrade();
     let format_session = format_session_owner
         .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
     let mut sg = crate::shared::session::SessionGroupWeak::new();
     if !format_session.is_null() && {
         sg = session_groups::for_session(&ft.s);
@@ -436,7 +436,7 @@ fn format_cb_session_grouped(ft: &mut format_tree) -> Option<CString> {
     let format_session_owner = ft.s.upgrade();
     let format_session = format_session_owner
         .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
     if !format_session.is_null() {
         if session_groups::for_session(&ft.s).is_alive() {
             return Some(c"1".to_owned());
@@ -450,7 +450,7 @@ unsafe fn format_cb_session_id(ft: &mut format_tree) -> Option<CString> {
     let format_session_owner = ft.s.upgrade();
     let format_session = format_session_owner
         .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
     if !format_session.is_null() {
         return Some(
             CString::new(format!("${}", ((*format_session).id) as u32))
@@ -464,7 +464,7 @@ unsafe fn format_cb_session_many_attached(ft: &mut format_tree) -> Option<CStrin
     let format_session_owner = ft.s.upgrade();
     let format_session = format_session_owner
         .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
     if !format_session.is_null() {
         if (*format_session).attached > 1 as u_int {
             return Some(c"1".to_owned());
@@ -478,13 +478,13 @@ unsafe fn format_cb_session_marked(ft: &mut format_tree) -> Option<CString> {
     let format_session_owner = ft.s.upgrade();
     let format_session = format_session_owner
         .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
     if !format_session.is_null() {
         if server_check_marked() != 0
             && marked_pane
                 .session_handle()
                 .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())
+                .map_or(std::ptr::null_mut(), |owner| owner.as_ptr())
                 == format_session
         {
             return Some(c"1".to_owned());
@@ -498,7 +498,7 @@ unsafe fn format_cb_session_name(ft: &mut format_tree) -> Option<CString> {
     let format_session_owner = ft.s.upgrade();
     let format_session = format_session_owner
         .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
     if !format_session.is_null() {
         return Some((*format_session).name.clone());
     }
@@ -509,7 +509,7 @@ unsafe fn format_cb_session_path(ft: &mut format_tree) -> Option<CString> {
     let format_session_owner = ft.s.upgrade();
     let format_session = format_session_owner
         .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
     if !format_session.is_null() {
         return Some(
             ((*format_session).cwd)
@@ -525,7 +525,7 @@ unsafe fn format_cb_session_windows(ft: &mut format_tree) -> Option<CString> {
     let format_session_owner = ft.s.upgrade();
     let format_session = format_session_owner
         .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
     if !format_session.is_null() {
         return Some(
             CString::new(format!(
@@ -542,7 +542,7 @@ unsafe fn format_cb_session_activity(ft: &mut format_tree) -> Option<time_t> {
     let format_session_owner = ft.s.upgrade();
     let format_session = format_session_owner
         .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
     if !format_session.is_null() {
         return Some(crate::shared::time::unix_seconds(
             (*format_session).activity_time,
@@ -555,7 +555,7 @@ unsafe fn format_cb_session_created(ft: &mut format_tree) -> Option<time_t> {
     let format_session_owner = ft.s.upgrade();
     let format_session = format_session_owner
         .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
     if !format_session.is_null() {
         return Some(crate::shared::time::unix_seconds(
             (*format_session).creation_time,
@@ -568,7 +568,7 @@ unsafe fn format_cb_session_last_attached(ft: &mut format_tree) -> Option<time_t
     let format_session_owner = ft.s.upgrade();
     let format_session = format_session_owner
         .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
     if !format_session.is_null() {
         return Some(crate::shared::time::unix_seconds(
             (*format_session).last_attached_time,
@@ -581,7 +581,7 @@ unsafe fn format_cb_active_window_index(ft: &mut format_tree) -> Option<CString>
     let format_session_owner = ft.s.upgrade();
     let format_session = format_session_owner
         .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
     if !format_session.is_null() {
         return Some(
             CString::new(format!(
@@ -598,7 +598,7 @@ unsafe fn format_cb_last_window_index(ft: &mut format_tree) -> Option<CString> {
     let format_session_owner = ft.s.upgrade();
     let format_session = format_session_owner
         .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     if !format_session.is_null() {
         wl = winlinks_minmax(&(*format_session).windows, RB_INF);
@@ -619,7 +619,7 @@ unsafe fn format_cb_window_stack_index(ft: &mut format_tree) -> Option<CString> 
         return None;
     }
     let session_owner = ft.s.upgrade()?;
-    s = session_owner.get();
+    s = session_owner.as_ptr();
     idx = 0 as u_int;
     wl = crate::window::winlink_stack_first(&(*s).lastw);
     while wl.is_alive() {
@@ -646,7 +646,7 @@ mod tests {
     fn session_formats_observe_context_session_without_retaining_it() {
         unsafe {
             let owner = session::new();
-            (*owner.get()).name = c"observed-session".to_owned();
+            (*owner.as_ptr()).name = c"observed-session".to_owned();
             let observer = std::rc::Rc::downgrade(&owner);
             let mut ft_owner = format_create(None, None, 0, 0);
             let ft = &mut *ft_owner;
@@ -668,7 +668,7 @@ mod tests {
     fn winlink_formats_expire_with_the_session_index_entry() {
         unsafe {
             let owner = session::new();
-            let session = owner.get();
+            let session = owner.as_ptr();
             let link = crate::window::winlink_add(&(*session).windows, 7);
             let mut ft_owner = format_create(None, None, 0, 0);
             let ft = &mut *ft_owner;
@@ -694,10 +694,8 @@ mod tests {
         unsafe {
             let session = session::new();
             let other = session::new();
-            (*session.get())
-                .options
-                .replace(Some(crate::options::options_create(None)));
-            (*session.get()).creation_time = UNIX_EPOCH + Duration::from_secs(123);
+            (*session.as_ptr()).options = Some(crate::options::options_create(None));
+            (*session.as_ptr()).creation_time = UNIX_EPOCH + Duration::from_secs(123);
             let mut context = format_tree::default();
             context.s = Rc::downgrade(&session);
             assert!(matches!(
@@ -716,7 +714,7 @@ mod tests {
                 .format_value(c"client_created", &mut context)
                 .is_none());
             assert!(context.s.ptr_eq(&Rc::downgrade(&session)));
-            drop((*session.get()).options.take().unwrap());
+            drop((*session.as_ptr()).options.take().unwrap());
         }
     }
 
@@ -725,12 +723,10 @@ mod tests {
         unsafe {
             let owner = session::new();
             let other = session::new();
-            (*other.get())
-                .options
-                .replace(Some(crate::options::options_create(None)));
-            let mut link = winlink_add(&(*owner.get()).windows, 7);
+            (*other.as_ptr()).options = Some(crate::options::options_create(None));
+            let mut link = winlink_add(&(*owner.as_ptr()).windows, 7);
             link.get_mut_unchecked().session = Rc::downgrade(&owner);
-            winlink_stack_push(&mut (*owner.get()).lastw, link.clone());
+            winlink_stack_push(&mut (*owner.as_ptr()).lastw, link.clone());
             let mut context = format_tree::default();
             context.s = Rc::downgrade(&other);
             context.wl = link.clone();
@@ -743,9 +739,9 @@ mod tests {
             assert!(context.s.ptr_eq(&Rc::downgrade(&other)));
             assert_eq!(context.wl, link);
 
-            winlink_stack_remove(&mut (*owner.get()).lastw, link.clone());
-            winlink_remove(&(*owner.get()).windows, link);
-            drop((*other.get()).options.take().unwrap());
+            winlink_stack_remove(&mut (*owner.as_ptr()).lastw, link.clone());
+            winlink_remove(&(*owner.as_ptr()).windows, link);
+            drop((*other.as_ptr()).options.take().unwrap());
         }
     }
 }

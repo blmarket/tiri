@@ -73,7 +73,7 @@ impl sessions {
     /// Index a session under its current name. An existing entry with the same
     /// name wins and is returned.
     pub fn insert(session: SessionRef) -> Option<SessionRef> {
-        let key = unsafe { (*session.get()).name.clone() };
+        let key = unsafe { (*session.as_ptr()).name.clone() };
         SESSIONS.with_borrow_mut(|index| match index.storage.entry(key) {
             std::collections::btree_map::Entry::Occupied(entry) => Some(entry.get().clone()),
             std::collections::btree_map::Entry::Vacant(entry) => {
@@ -85,7 +85,7 @@ impl sessions {
 
     /// Remove and return the index owner, only if `session` is the indexed one.
     pub fn remove(session: &SessionRef) -> Option<SessionRef> {
-        let key = unsafe { (*session.get()).name.as_c_str() };
+        let key = unsafe { (*session.as_ptr()).name.as_c_str() };
         SESSIONS.with_borrow_mut(|index| {
             if !index
                 .storage
@@ -124,7 +124,7 @@ impl sessions {
             index
                 .storage
                 .values()
-                .find(|owner| unsafe { (*owner.get()).id } == id)
+                .find(|owner| unsafe { (*owner.as_ptr()).id } == id)
                 .cloned()
         })
     }
@@ -195,15 +195,15 @@ unsafe fn session_create(
     tio: Option<&termios>,
 ) -> SessionRef {
     let owner = session::new();
-    let s = owner.get();
+    let s = owner.as_ptr();
     (*s).tio = tio.copied().map(Box::new);
     (*s).cwd = Some(cwd.to_owned());
 
     (*s).flags = 0 as ::core::ffi::c_int;
     (*s).lastw.clear();
     (*s).environ = Some(env);
-    (*s).options.replace(oo);
-    status_update_cache(&mut *(s));
+    (*s).options = oo;
+    status_update_cache(&owner);
     if let Some(name) = name {
         drop(session_replace_name(&mut *s, name.to_owned()));
         (*s).id = sessions::alloc_id();
@@ -240,7 +240,7 @@ unsafe fn session_create(
 unsafe fn session_remove_ref(s: SessionRef, from: &CStr) {
     log_debug(format_args!(
         "release session {} ({})",
-        log_bytes((*s.get()).name.as_bytes()),
+        log_bytes((*s.as_ptr()).name.as_bytes()),
         log_bytes(from.to_bytes())
     ));
     drop(s);
@@ -254,7 +254,7 @@ fn session_free(s: &mut session) {
     drop(s.options.take());
 }
 unsafe fn session_destroy(s_owner: &SessionRef, mut notify: ::core::ffi::c_int, from: &CStr) {
-    let s = s_owner.get();
+    let s = s_owner.as_ptr();
 
     log_debug(format_args!(
         "session {} destroyed ({})",
@@ -282,7 +282,7 @@ unsafe fn session_destroy(s_owner: &SessionRef, mut notify: ::core::ffi::c_int, 
     session_remove_ref(owner, c"session_destroy");
 }
 unsafe fn session_lock_timer(owner: &SessionRef) {
-    let session = &*owner.get();
+    let session = &*owner.as_ptr();
     if !owner.is_registered() || session.attached == 0 {
         return;
     }
@@ -295,7 +295,7 @@ unsafe fn session_lock_timer(owner: &SessionRef) {
     recalculate_sizes();
 }
 unsafe fn session_update_activity(owner: &SessionRef, from: Option<SystemTime>) {
-    let session = &mut *owner.get();
+    let session = &mut *owner.as_ptr();
     if let Some(from) = from {
         session.activity_time = from;
     } else {
@@ -315,7 +315,7 @@ unsafe fn session_update_activity(owner: &SessionRef, from: Option<SystemTime>) 
     drop(session.lock_timer.take());
     if session.attached != 0 {
         let timeout = Duration::from_secs(
-            (crate::options::options_get_number(&session.borrow_options_mut(), c"lock-after-time"))
+            (crate::options::options_get_number(&owner.borrow_options_mut(), c"lock-after-time"))
                 as u64,
         );
         if timeout.as_secs() != 0 {
@@ -355,7 +355,7 @@ unsafe fn session_attach(
     window_owner: &WindowRef,
     mut idx: ::core::ffi::c_int,
 ) -> Result<refbox::Weak<winlink>, std::ffi::CString> {
-    let s = s_owner.get();
+    let s = s_owner.as_ptr();
 
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     wl = winlink_add(&(*s).windows, idx);
@@ -373,7 +373,7 @@ unsafe fn session_detach(
     s_owner: &SessionRef,
     mut wl: refbox::Weak<winlink>,
 ) -> ::core::ffi::c_int {
-    let s = s_owner.get();
+    let s = s_owner.as_ptr();
 
     if winlinks_minmax(&(*s).windows, RB_NEGINF) == wl
         && winlinks_minmax(&(*s).windows, RB_INF) == wl
@@ -422,7 +422,7 @@ unsafe fn session_next_alert(mut wl: refbox::Weak<winlink>) -> refbox::Weak<winl
     wl
 }
 unsafe fn session_next(s_owner: &SessionRef, mut alert: ::core::ffi::c_int) -> ::core::ffi::c_int {
-    let s = s_owner.get();
+    let s = s_owner.as_ptr();
 
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     if !(*s).current_winlink().is_alive() {
@@ -456,7 +456,7 @@ unsafe fn session_previous(
     s_owner: &SessionRef,
     mut alert: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let s = s_owner.get();
+    let s = s_owner.as_ptr();
 
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     if !(*s).current_winlink().is_alive() {
@@ -478,7 +478,7 @@ unsafe fn session_previous(
     session_set_current(s_owner, wl.clone())
 }
 unsafe fn session_select(s_owner: &SessionRef, mut idx: ::core::ffi::c_int) -> ::core::ffi::c_int {
-    let s = s_owner.get();
+    let s = s_owner.as_ptr();
 
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     wl = winlink_find_by_index(&(*s).windows, idx);
@@ -537,7 +537,7 @@ unsafe fn session_set_current(
     s_owner: &SessionRef,
     mut wl: refbox::Weak<winlink>,
 ) -> ::core::ffi::c_int {
-    let s = s_owner.get();
+    let s = s_owner.as_ptr();
 
     let mut old: refbox::Weak<winlink> = (*s).current_winlink();
     if !wl.is_alive() {
@@ -589,12 +589,12 @@ unsafe fn session_synchronize_windows(source: &SessionRef, destination: &Session
         session_next(destination, 0);
     }
 
-    let mut old_windows = std::mem::take(&mut (*destination.get()).windows);
+    let mut old_windows = std::mem::take(&mut (*destination.as_ptr()).windows);
     let mut link = source.with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
     while link.is_alive() {
         let index = link.get_unchecked().idx;
         let mut replacement = {
-            let state = &mut *destination.get();
+            let state = &mut *destination.as_ptr();
             winlink_add(&state.windows, index)
         };
         replacement.get_mut_unchecked().session = Rc::downgrade(destination);
@@ -614,26 +614,26 @@ unsafe fn session_synchronize_windows(source: &SessionRef, destination: &Session
     if current.is_alive() {
         let index = current.get_unchecked().idx;
         let replacement = destination.with_winlinks(|links| winlink_find_by_index(links, index));
-        (*destination.get()).curw = replacement;
+        (*destination.as_ptr()).curw = replacement;
     } else {
         let current = source.current_winlink();
         if current.is_alive() {
             let index = current.get_unchecked().idx;
             let replacement =
                 destination.with_winlinks(|links| winlink_find_by_index(links, index));
-            (*destination.get()).curw = replacement;
+            (*destination.as_ptr()).curw = replacement;
         }
     }
     if !destination.current_winlink().is_alive() {
         let first = destination.with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
-        (*destination.get()).curw = first;
+        (*destination.as_ptr()).curw = first;
     }
 
-    let mut old_history = std::mem::take(&mut (*destination.get()).lastw);
+    let mut old_history = std::mem::take(&mut (*destination.as_ptr()).lastw);
     for index in crate::window::winlink_stack_indices(&old_history) {
         let replacement = destination.with_winlinks(|links| winlink_find_by_index(links, index));
         if replacement.is_alive() {
-            crate::window::winlink_stack_append(&mut (*destination.get()).lastw, replacement);
+            crate::window::winlink_stack_append(&mut (*destination.as_ptr()).lastw, replacement);
         }
     }
     while !crate::window::winlinks_is_empty(&old_windows) {
@@ -652,7 +652,7 @@ unsafe fn session_synchronize_windows(source: &SessionRef, destination: &Session
 }
 
 unsafe fn session_renumber_windows(s_owner: &SessionRef) {
-    let s = s_owner.get();
+    let s = s_owner.as_ptr();
 
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wl1: refbox::Weak<winlink> = refbox::Weak::new();
@@ -661,7 +661,8 @@ unsafe fn session_renumber_windows(s_owner: &SessionRef) {
     let mut new_idx: ::core::ffi::c_int = 0;
     let mut new_curw_idx: ::core::ffi::c_int = 0;
     let mut marked_idx: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-    new_idx = options_get_number(&(*s).borrow_options_mut(), c"base-index") as ::core::ffi::c_int;
+    new_idx =
+        options_get_number(&s_owner.borrow_options_mut(), c"base-index") as ::core::ffi::c_int;
     let n = winlink_count(&(*s).windows);
     if n > (i32::MAX as u_int) - (new_idx as u_int) + 1 {
         return;
@@ -737,9 +738,10 @@ unsafe fn session_theme_changed(session: Option<&session>) {
         link = winlinks_next(wl);
     }
 }
-unsafe fn session_update_history(session: &session) {
-    let limit = crate::options::options_get_number(&session.borrow_options_mut(), c"history-limit")
-        as u_int;
+unsafe fn session_update_history(owner: &SessionRef) {
+    let limit =
+        crate::options::options_get_number(&owner.borrow_options_mut(), c"history-limit") as u_int;
+    let session = &*owner.as_ptr();
     let mut link = winlinks_minmax(&session.windows, RB_NEGINF);
     while link.is_alive() {
         let wl = link.get_unchecked();
@@ -770,7 +772,7 @@ mod session_index_tests {
     fn current_winlink_observer_expires_when_index_removes_it() {
         unsafe {
             let owner = session::new();
-            let session = &mut *owner.get();
+            let session = &mut *owner.as_ptr();
             let link = winlink_add(&session.windows, 4);
             session.set_curw(link.clone());
             assert_eq!(session.current_winlink(), link);

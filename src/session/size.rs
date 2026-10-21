@@ -10,15 +10,15 @@ use crate::server_client::ClientRegistry;
 pub(super) unsafe fn recalculate_size_state() {
     let mut cursor = sessions::first();
     while let Some(owner) = cursor {
-        (*owner.get()).attached = 0;
-        status_update_cache(&mut *owner.get());
-        cursor = sessions::after((*owner.get()).name.as_c_str());
+        (*owner.as_ptr()).attached = 0;
+        status_update_cache(&owner);
+        cursor = sessions::after((*owner.as_ptr()).name.as_c_str());
     }
     let mut cursor = ClientRegistry::first();
     while let Some(owner) = cursor {
         if owner.counts_as_attached() {
             if let Some(session) = owner.attached_session().upgrade() {
-                let state = &mut *session.get();
+                let state = &mut *session.as_ptr();
                 state.attached = state.attached.wrapping_add(1);
             }
         }
@@ -26,16 +26,18 @@ pub(super) unsafe fn recalculate_size_state() {
     }
 }
 
-pub(super) unsafe fn status_update_cache(s: &mut session) {
-    let statuslines = options_get_number(&s.borrow_options_mut(), c"status") as u_int;
-    s.statuslines = statuslines;
-    if s.statuslines == 0 as u_int {
-        s.statusat = -(1 as ::core::ffi::c_int);
-    } else if options_get_number(&s.borrow_options_mut(), c"status-position")
+pub(super) unsafe fn status_update_cache(owner: &SessionRef) {
+    let statuslines = options_get_number(&owner.borrow_options_mut(), c"status") as u_int;
+    let statusat = if statuslines == 0 as u_int {
+        -(1 as ::core::ffi::c_int)
+    } else if options_get_number(&owner.borrow_options_mut(), c"status-position")
         == 0 as ::core::ffi::c_longlong
     {
-        s.statusat = 0 as ::core::ffi::c_int;
+        0 as ::core::ffi::c_int
     } else {
-        s.statusat = 1 as ::core::ffi::c_int;
+        1 as ::core::ffi::c_int
     };
+    let s = &mut *owner.as_ptr();
+    s.statuslines = statuslines;
+    s.statusat = statusat;
 }

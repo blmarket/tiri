@@ -11,7 +11,7 @@ use crate::window::Window as _;
 use crate::window_pane::WindowPane as _;
 use refbox::RefBox;
 use std::borrow::Cow;
-use std::cell::UnsafeCell;
+use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 use std::ptr::NonNull;
 use std::rc::{Rc, Weak};
@@ -103,7 +103,7 @@ fn window_customize_uppercase_cause(cause: &mut Option<CString>) {
 
 #[repr(C)]
 pub struct window_customize_modedata {
-    pub wp: Weak<UnsafeCell<window_pane>>,
+    pub wp: Weak<RefCell<window_pane>>,
     pub data: Option<std::rc::Rc<std::cell::RefCell<mode_tree_data>>>,
     pub editor: Option<EditorHandle>,
     pub format: CString,
@@ -448,7 +448,7 @@ unsafe fn window_customize_check_item(
     item: &window_customize_itemdata,
     output: Option<&mut cmd_find_state>,
 ) -> ::core::ffi::c_int {
-    let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&data.wp) else {
+    let Some(mode_pane_owner) = Rc::<RefCell<window_pane>>::from_observer(&data.wp) else {
         return 0;
     };
     let mut fallback = cmd_find_state::default();
@@ -625,7 +625,7 @@ unsafe fn window_customize_draw_waiting(mode: &CustomizeMode) {
         return;
     }
     let data = mode.data.borrow();
-    let Some(_mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&data.wp) else {
+    let Some(_mode_pane_owner) = Rc::<RefCell<window_pane>>::from_observer(&data.wp) else {
         return;
     };
     let tree_owner = data.tree_owner();
@@ -1474,14 +1474,14 @@ fn window_customize_tree(mode: &CustomizeMode) -> Rc<std::cell::RefCell<mode_tre
     mode.data.borrow().tree_owner()
 }
 
-unsafe fn window_customize_pane(mode: &CustomizeMode) -> Option<Rc<UnsafeCell<window_pane>>> {
-    Rc::<UnsafeCell<window_pane>>::from_observer(&mode.data.borrow().wp)
+unsafe fn window_customize_pane(mode: &CustomizeMode) -> Option<Rc<RefCell<window_pane>>> {
+    Rc::<RefCell<window_pane>>::from_observer(&mode.data.borrow().wp)
 }
 
 unsafe fn window_customize_build(mode: &CustomizeMode, filter: Option<&CStr>) {
     let mut guard = mode.data.borrow_mut();
     let data = &mut *guard;
-    let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&data.wp) else {
+    let Some(mode_pane_owner) = Rc::<RefCell<window_pane>>::from_observer(&data.wp) else {
         return;
     };
     let mut fs: cmd_find_state = cmd_find_state {
@@ -3221,7 +3221,7 @@ unsafe fn window_customize_edit_close_cb(
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
     let mut mode = None;
     let mut cause: Option<CString> = None;
-    let lookup_wp_owner = Rc::<UnsafeCell<window_pane>>::find_by_id(ed.wp_id);
+    let lookup_wp_owner = Rc::<RefCell<window_pane>>::find_by_id(ed.wp_id);
     if let Some(pane) = lookup_wp_owner.as_ref() {
         wme = pane.mode_entry();
         if !!wme.is_alive() && std::ptr::eq(wme.get_unchecked().mode, &window_customize_mode) {

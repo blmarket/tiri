@@ -6,7 +6,7 @@ use std::ffi::CStr;
 fn node(name: &CStr) -> SessionRef {
     let node = session::new();
     unsafe {
-        (*node.get()).name = name.to_owned();
+        (*node.as_ptr()).name = name.to_owned();
     }
     node
 }
@@ -20,12 +20,12 @@ fn saved_name_survives_removal_of_current_successor_and_entire_index() {
         sessions::insert(first.clone());
         sessions::insert(second.clone());
         sessions::insert(last.clone());
-        let name = (*first.get()).name.clone();
+        let name = (*first.as_ptr()).name.clone();
         assert_eq!(
-            sessions::after((*first.get()).name.as_c_str())
+            sessions::after((*first.as_ptr()).name.as_c_str())
                 .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()),
-            &mut *second.get() as *mut _
+                .map_or(std::ptr::null_mut(), |owner| owner.as_ptr()),
+            &mut *second.as_ptr() as *mut _
         );
 
         sessions::remove(&first);
@@ -35,11 +35,11 @@ fn saved_name_survives_removal_of_current_successor_and_entire_index() {
         assert_eq!(
             sessions::after(&name)
                 .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()),
-            &mut *last.get() as *mut _
+                .map_or(std::ptr::null_mut(), |owner| owner.as_ptr()),
+            &mut *last.as_ptr() as *mut _
         );
 
-        let last_name = (*last.get()).name.clone();
+        let last_name = (*last.as_ptr()).name.clone();
         sessions::remove(&last);
         drop(last);
         assert!(sessions::is_empty());
@@ -50,8 +50,8 @@ fn saved_name_survives_removal_of_current_successor_and_entire_index() {
         assert_eq!(
             sessions::after(&last_name)
                 .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()),
-            &mut *replacement.get() as *mut _
+                .map_or(std::ptr::null_mut(), |owner| owner.as_ptr()),
+            &mut *replacement.as_ptr() as *mut _
         );
         sessions::remove(&replacement);
     }

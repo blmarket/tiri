@@ -9,7 +9,7 @@ use crate::shared::pane::PANE_MINIMUM;
 use crate::shared::window::WINDOW_MAXIMUM;
 use crate::window_pane::WindowPane as _;
 use std::any::Any;
-use std::cell::UnsafeCell;
+use std::cell::RefCell;
 use std::ffi::CStr;
 use std::rc::Rc;
 
@@ -30,7 +30,7 @@ fn width_of(meta: Option<&dyn Any>) -> Width {
 }
 
 /// Every pane's width, in list order.
-fn widths(panes: &[Rc<UnsafeCell<window_pane>>]) -> Vec<Width> {
+fn widths(panes: &[Rc<RefCell<window_pane>>]) -> Vec<Width> {
     panes
         .iter()
         .map(|pane| unsafe { width_of(pane.borrow_layout_meta().as_deref()) })
@@ -47,16 +47,13 @@ impl Layout for Scrolling {
     }
 
     /// The strip of `panes` at their widths.
-    fn arrange(panes: &[Rc<UnsafeCell<window_pane>>], size: (u32, u32)) -> Vec<layout_geometry> {
+    fn arrange(panes: &[Rc<RefCell<window_pane>>], size: (u32, u32)) -> Vec<layout_geometry> {
         cells(&widths(panes), size)
     }
 
     /// The strip takes panes while its length stays within WINDOW_MAXIMUM
     /// columns.
-    fn admits(
-        panes: &[Rc<UnsafeCell<window_pane>>],
-        size: (u32, u32),
-    ) -> Result<(), &'static CStr> {
+    fn admits(panes: &[Rc<RefCell<window_pane>>], size: (u32, u32)) -> Result<(), &'static CStr> {
         if strip_length(widths(panes).into_iter(), size.0) <= WINDOW_MAXIMUM as u32 {
             Ok(())
         } else {
@@ -66,7 +63,7 @@ impl Layout for Scrolling {
 
     /// Columns a view of the strip can scroll across, by the window height.
     fn logical_size(
-        panes: impl Iterator<Item = Rc<UnsafeCell<window_pane>>>,
+        panes: impl Iterator<Item = Rc<RefCell<window_pane>>>,
         (sx, sy): (u32, u32),
     ) -> (u32, u32) {
         let widths = panes.map(|pane| unsafe { width_of(pane.borrow_layout_meta().as_deref()) });

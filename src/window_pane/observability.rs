@@ -6,7 +6,7 @@ use crate::plugin::PaneActivity;
 use crate::shared::display::{SCREEN_CURSOR_BAR, SCREEN_CURSOR_BLOCK, SCREEN_CURSOR_UNDERLINE};
 use crate::shared::grid::{grid, GRID_STRING_EMPTY_CELLS, GRID_STRING_TRIM_SPACES};
 use crate::shared::screen::{screen, MODE_CURSOR, MODE_CURSOR_BLINKING, MODE_CURSOR_BLINKING_SET};
-use std::cell::UnsafeCell;
+use std::cell::RefCell;
 use std::ffi::CString;
 use std::io;
 use std::os::fd::AsFd;
@@ -18,7 +18,7 @@ use tiri_agent::pane_class::{stringify_argv, PaneProcessProbe};
 
 struct PaneView {
     id: PaneId,
-    pane: Weak<UnsafeCell<window_pane>>,
+    pane: Weak<RefCell<window_pane>>,
 }
 
 impl PaneView {
@@ -33,7 +33,7 @@ impl PaneView {
             let live = window_pane_find_by_id(self.id.0)
                 .is_some_and(|current| Rc::ptr_eq(&current, &owner));
             if live {
-                Ok(read(&*owner.get()))
+                Ok(read(&*owner.as_ptr()))
             } else {
                 Err(io::Error::new(
                     io::ErrorKind::NotFound,
@@ -55,7 +55,7 @@ pub(crate) fn resolve(id: PaneId) -> Option<Rc<dyn PaneObservability>> {
 fn read_pane<T>(id: PaneId, read: impl FnOnce(&window_pane) -> T) -> Option<T> {
     unsafe {
         let owner = window_pane_find_by_id(id.0)?;
-        Some(read(&*owner.get()))
+        Some(read(&*owner.as_ptr()))
     }
 }
 

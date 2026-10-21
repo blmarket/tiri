@@ -91,7 +91,7 @@ unsafe fn cmd_run_shell_print(
     msg: &CStr,
 ) {
     let mut pane = if cdata.wp_id != -1 {
-        std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::find_by_id(cdata.wp_id as u32)
+        std::rc::Rc::<std::cell::RefCell<window_pane>>::find_by_id(cdata.wp_id as u32)
     } else {
         None
     };

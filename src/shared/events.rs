@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 pub struct event_payload {
     pub items: event_payload_tree,
     pub target: cmd_find_state,
-    pub target_pane: Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
+    pub target_pane: Option<std::rc::Rc<std::cell::RefCell<window_pane>>>,
     pub target_window: Option<WindowRef>,
     pub target_session: Option<SessionRef>,
 }
@@ -60,7 +60,7 @@ pub enum EventPayloadValue {
     Client(ClientRef),
     Session(SessionRef),
     Window(WindowRef),
-    Pane(std::rc::Rc<std::cell::UnsafeCell<window_pane>>),
+    Pane(std::rc::Rc<std::cell::RefCell<window_pane>>),
     Identity(EventPayloadIdentity),
 }
 impl EventPayloadValue {
@@ -119,7 +119,7 @@ impl EventPayloadValue {
         };
         value
     }
-    pub fn pane(&self) -> &std::rc::Rc<std::cell::UnsafeCell<window_pane>> {
+    pub fn pane(&self) -> &std::rc::Rc<std::cell::RefCell<window_pane>> {
         let Self::Pane(value) = self else {
             panic!("incorrect event payload type")
         };

@@ -227,10 +227,7 @@ pub unsafe fn events_fire_window(name: &CStr, owner: WindowRef) {
     event_payload_set_window(&mut ep, c"window", owner);
     events_fire(name, ep);
 }
-pub unsafe fn events_fire_pane(
-    name: &CStr,
-    owner: std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-) {
+pub unsafe fn events_fire_pane(name: &CStr, owner: std::rc::Rc<std::cell::RefCell<window_pane>>) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),

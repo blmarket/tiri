@@ -173,7 +173,7 @@ impl Drop for spawn_editor_state {
         }
     }
 }
-pub unsafe fn spawn_editor_finish(wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
+pub unsafe fn spawn_editor_finish(wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>) {
     wp_owner.finish_editing();
 }
 
@@ -241,7 +241,7 @@ pub(crate) unsafe fn spawn_editor(
         sc.environ = Some(environ_create());
         sc.idx = -(1 as ::core::ffi::c_int);
         sc.cwd = Some(c"/tmp/".to_owned());
-        let pane = <std::rc::Rc<std::cell::UnsafeCell<window_pane>> as WindowPane>::spawn_process(
+        let pane = <std::rc::Rc<std::cell::RefCell<window_pane>> as WindowPane>::spawn_process(
             &mut sc, &mut None,
         )?;
         Some(pane.install_editor(owner))

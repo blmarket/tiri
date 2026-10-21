@@ -24,7 +24,7 @@ use crate::shared::prompt::{
 };
 use crate::status::{status_prompt_set, status_prompt_update};
 use crate::window_pane::WindowPane as _;
-use std::cell::{RefCell, UnsafeCell};
+use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
 
@@ -36,7 +36,7 @@ pub struct cmd_command_prompt_cdata {
     pub state: Option<Box<args_command_state>>,
     pub flags: ::core::ffi::c_int,
     pub prompt_type: prompt_type,
-    pub wp: Weak<UnsafeCell<window_pane>>,
+    pub wp: Weak<RefCell<window_pane>>,
     pub prompts: Vec<cmd_command_prompt_prompt>,
     pub current: u_int,
     pub argv: Vec<CString>,
@@ -294,7 +294,7 @@ unsafe fn cmd_command_prompt_callback(
                     let (prompt, input) = (row.prompt.clone(), row.input.clone());
                     if !Weak::ptr_eq(&cdata.wp, &Weak::new()) {
                         let Some(pane) =
-                            std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(
+                            std::rc::Rc::<std::cell::RefCell<window_pane>>::from_observer(
                                 &cdata.wp,
                             )
                         else {

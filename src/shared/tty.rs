@@ -297,7 +297,7 @@ pub struct tty_style_ctx {
 pub enum PaletteSource {
     #[default]
     None,
-    Pane(std::rc::Weak<std::cell::UnsafeCell<window_pane>>),
+    Pane(std::rc::Weak<std::cell::RefCell<window_pane>>),
     Popup(refbox::Weak<colour_palette>),
     Snapshot(Box<colour_palette>),
 }

@@ -38,7 +38,7 @@ pub const CLEAR: screen_write_item_type = 1;
 pub struct screen_write_ctx<'s> {
     pub(crate) screen: &'s mut screen,
     /// Optional pane observer for redraw and terminal output.
-    pub wp: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
+    pub wp: std::rc::Weak<std::cell::RefCell<window_pane>>,
     pub flags: ::core::ffi::c_int,
     pub init_ctx_cb: screen_write_init_ctx_cb,
     /// The pending cell; `screen_write_stop` flushes and releases it.

@@ -170,8 +170,7 @@ unsafe fn cmd_refresh_client_update_offset(tc_owner: &ClientRef, value: &CStr) {
     let Some((pane, action)) = cmd_refresh_parse_pane(value) else {
         return;
     };
-    let Some(pane_owner) = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::find_by_id(pane)
-    else {
+    let Some(pane_owner) = std::rc::Rc::<std::cell::RefCell<window_pane>>::find_by_id(pane) else {
         return;
     };
     match action.to_bytes() {
@@ -187,8 +186,7 @@ unsafe fn cmd_refresh_report(client: &ClientRef, value: &CStr) {
     let Some((pane, report)) = cmd_refresh_parse_pane(value) else {
         return;
     };
-    let Some(pane_owner) = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::find_by_id(pane)
-    else {
+    let Some(pane_owner) = std::rc::Rc::<std::cell::RefCell<window_pane>>::find_by_id(pane) else {
         return;
     };
     let (mut fg, mut bg) = pane_owner.control_colours();

@@ -420,7 +420,7 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, fallback: &cmd_find_state, g
     let client_owner = change.c.upgrade();
     let session_owner = change.s.upgrade();
     let s = session_owner.clone();
-    let pane_owner = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&change.wp);
+    let pane_owner = std::rc::Rc::<std::cell::RefCell<window_pane>>::from_observer(&change.wp);
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),

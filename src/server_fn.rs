@@ -189,7 +189,7 @@ pub unsafe fn server_lock_client(client_owner: &ClientRef) {
     client_owner.lock(&command);
 }
 
-pub unsafe fn server_kill_pane(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
+pub unsafe fn server_kill_pane(pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>) {
     pane_owner.kill_process();
 }
 pub unsafe fn server_kill_window(owner: WindowRef, mut renumber: ::core::ffi::c_int) {
@@ -336,7 +336,7 @@ pub unsafe fn server_unlink_window(s_owner: &SessionRef, mut wl: refbox::Weak<wi
     };
 }
 pub unsafe fn server_destroy_pane(
-    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     mut notify: ::core::ffi::c_int,
 ) {
     pane_owner.finish_process(notify);

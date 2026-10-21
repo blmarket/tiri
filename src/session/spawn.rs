@@ -17,7 +17,7 @@ pub(super) unsafe fn spawn_window(
 ) -> refbox::Weak<winlink> {
     let session = sc.s.upgrade().expect("spawn context session");
     let target_client = sc.tc.upgrade();
-    let s = session.get();
+    let s = session.as_ptr();
     let mut index = sc.idx;
     let mut created_window = WindowWeak::new();
     spawn_log(c"spawn_window", sc);
@@ -47,7 +47,8 @@ pub(super) unsafe fn spawn_window(
     }
     if sc.flags & SPAWN_RESPAWN == 0 {
         if index == -1 {
-            index = (-1i64 - options_get_number(&(*s).borrow_options_mut(), c"base-index")) as i32;
+            index =
+                (-1i64 - options_get_number(&session.borrow_options_mut(), c"base-index")) as i32;
         }
         sc.set_wl(winlink_add(&(*s).windows, index));
         if !sc.winlink_handle().is_alive() {
@@ -81,7 +82,7 @@ pub(super) unsafe fn spawn_window(
 
     sc.flags |= SPAWN_NONOTIFY;
     let pane =
-        <Rc<std::cell::UnsafeCell<window_pane>> as crate::window_pane::WindowPane>::spawn_process(
+        <Rc<std::cell::RefCell<window_pane>> as crate::window_pane::WindowPane>::spawn_process(
             sc, cause,
         );
     if pane.is_none() {

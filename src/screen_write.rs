@@ -118,7 +118,7 @@ unsafe fn screen_write_set_cursor(
     wp.expect("write pane").schedule_offset_update();
 }
 fn screen_write_redraw_cb(
-    observer: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
+    observer: &std::rc::Weak<std::cell::RefCell<window_pane>>,
 ) -> tty_ctx_redraw_cb {
     let observer = observer.clone();
     Some(Box::new(move |_| unsafe {
@@ -129,7 +129,7 @@ fn screen_write_redraw_cb(
     }))
 }
 fn screen_write_set_client_cb(
-    observer: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
+    observer: &std::rc::Weak<std::cell::RefCell<window_pane>>,
 ) -> tty_ctx_set_client_cb {
     use crate::server_client::Client;
     let observer = observer.clone();
@@ -264,7 +264,7 @@ fn screen_write_init(s: &mut screen) -> screen_write_ctx<'_> {
 /// terminal output. Stop before replacing that screen, changing modes, or
 /// logically destroying the pane; the context does not own the pane.
 pub unsafe fn screen_write_start_pane<'s>(
-    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     s: &'s mut screen,
 ) -> screen_write_ctx<'s> {
     let mut ctx = screen_write_init(s);

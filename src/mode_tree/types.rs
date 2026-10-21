@@ -13,7 +13,7 @@ use crate::window_buffer::window_buffer_itemdata;
 use crate::window_client::window_client_itemdata;
 use crate::window_customize::window_customize_itemdata;
 use crate::window_tree::window_tree_itemdata;
-use std::cell::{RefCell, UnsafeCell};
+use std::cell::RefCell;
 use std::rc::{Rc, Weak};
 
 #[derive(Copy, Clone)]
@@ -25,7 +25,7 @@ pub struct mode_tree_help_info {
 
 pub struct mode_tree_data {
     pub dead: ::core::ffi::c_int,
-    pub wp: Weak<UnsafeCell<window_pane>>,
+    pub wp: Weak<RefCell<window_pane>>,
     pub menu: &'static [menu_item<'static>],
     pub sort_crit: sort_criteria,
     pub view_name: Option<&'static ::std::ffi::CStr>,

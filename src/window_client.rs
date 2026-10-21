@@ -43,13 +43,13 @@ use crate::status::{status_at_line, status_line_size};
 use crate::style::style_apply_with_options;
 use crate::window::Window as _;
 use crate::window_pane::WindowPane as _;
-use std::cell::UnsafeCell;
+use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
 
 #[repr(C)]
 pub struct window_client_modedata {
-    pub wp: Weak<UnsafeCell<window_pane>>,
+    pub wp: Weak<RefCell<window_pane>>,
     pub data: Option<std::rc::Rc<std::cell::RefCell<mode_tree_data>>>,
     pub format: CString,
     pub key_format: CString,
@@ -374,7 +374,7 @@ unsafe fn window_client_draw(
     mut sy: u_int,
 ) {
     let Some(mode_pane_owner) =
-        std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&data.wp)
+        std::rc::Rc::<std::cell::RefCell<window_pane>>::from_observer(&data.wp)
     else {
         return;
     };
@@ -715,7 +715,7 @@ unsafe fn window_client_update(mut wme: refbox::Weak<window_mode_entry>) {
         (data.wp.clone(), data.tree_owner())
     };
     let Some(mode_pane_owner) =
-        std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&pane)
+        std::rc::Rc::<std::cell::RefCell<window_pane>>::from_observer(&pane)
     else {
         return;
     };

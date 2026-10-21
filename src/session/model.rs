@@ -29,7 +29,7 @@ pub struct session {
     pub(super) windows: winlinks,
     pub(super) statusat: ::core::ffi::c_int,
     pub(super) statuslines: u_int,
-    pub(super) options: std::cell::RefCell<Option<options>>,
+    pub(super) options: Option<options>,
     pub(super) flags: ::core::ffi::c_int,
     pub(super) attached: u_int,
     pub(super) tio: Option<Box<termios>>,
@@ -37,12 +37,6 @@ pub struct session {
 }
 
 impl session {
-    /// Borrow the option table. Borrowing it again while held panics.
-    pub(super) fn borrow_options_mut(&self) -> std::cell::RefMut<'_, options> {
-        std::cell::RefMut::map(self.options.borrow_mut(), |table| {
-            table.as_mut().expect("live session options")
-        })
-    }
     /// Observe the current session-index winlink.
     pub(super) fn current_winlink(&self) -> refbox::Weak<winlink> {
         self.curw.clone()
@@ -54,7 +48,7 @@ impl session {
     }
 
     pub(super) fn new() -> SessionRef {
-        std::rc::Rc::new(std::cell::UnsafeCell::new(Self::empty()))
+        std::rc::Rc::new(std::cell::RefCell::new(Self::empty()))
     }
 
     pub(super) fn empty() -> Self {
@@ -97,8 +91,8 @@ mod retained_session_tests {
             let first = session::new();
             let expired = session::new();
             let last = session::new();
-            (*first.get()).attached = 2;
-            (*last.get()).attached = 3;
+            (*first.as_ptr()).attached = 2;
+            (*last.as_ptr()).attached = 3;
             let first_weak = Rc::downgrade(&first);
             let last_weak = Rc::downgrade(&last);
             let mut owner = session_group::new(c"model");

@@ -97,7 +97,7 @@ pub static mut current_time: time_t = 0;
 pub unsafe fn server_set_marked(
     s_owner: Option<&SessionRef>,
     mut wl: refbox::Weak<winlink>,
-    wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
+    wp_owner: Option<&std::rc::Rc<std::cell::RefCell<window_pane>>>,
 ) {
     marked_pane = cmd_find_state::clear_state(0 as ::core::ffi::c_int);
     marked_pane.set_s(s_owner);
@@ -113,7 +113,7 @@ pub unsafe fn server_clear_marked() {
 pub unsafe fn server_is_marked(
     s_owner: Option<&SessionRef>,
     mut wl: refbox::Weak<winlink>,
-    wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
+    wp_owner: Option<&std::rc::Rc<std::cell::RefCell<window_pane>>>,
 ) -> ::core::ffi::c_int {
     if s_owner.is_none() || !wl.is_alive() || wp_owner.is_none() {
         return 0 as ::core::ffi::c_int;

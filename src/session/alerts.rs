@@ -21,9 +21,9 @@ unsafe fn alerts_action_applies(
     let Some(session_owner) = wl.get_unchecked().session.upgrade() else {
         return 0;
     };
-    let s = session_owner.get();
+    let s = session_owner.as_ptr();
     let mut action: ::core::ffi::c_int = 0;
-    action = options_get_number(&(*s).borrow_options_mut(), name) as ::core::ffi::c_int;
+    action = options_get_number(&session_owner.borrow_options_mut(), name) as ::core::ffi::c_int;
     if action == ALERT_ANY {
         return 1 as ::core::ffi::c_int;
     }
@@ -56,7 +56,7 @@ unsafe fn alerts_check_bell(w_owner: &WindowRef) -> ::core::ffi::c_int {
     wl = w_owner.next_winlink(None);
     while wl.is_alive() {
         if let Some(session_owner) = wl.get_unchecked().session.upgrade() {
-            (*session_owner.get()).flags &= !SESSION_ALERTED;
+            (*session_owner.as_ptr()).flags &= !SESSION_ALERTED;
         }
         wl = w_owner.next_winlink(Some(wl.clone()));
     }
@@ -66,7 +66,7 @@ unsafe fn alerts_check_bell(w_owner: &WindowRef) -> ::core::ffi::c_int {
             wl = w_owner.next_winlink(Some(wl.clone()));
             continue;
         };
-        s = session_owner.get();
+        s = session_owner.as_ptr();
         if (*s).current_winlink() != wl || (*s).attached == 0 as u_int {
             wl.get_mut_unchecked().flags |= WINLINK_BELL;
             server_status_session(&session_owner);
@@ -95,7 +95,7 @@ unsafe fn alerts_check_activity(w_owner: &WindowRef) -> ::core::ffi::c_int {
     wl = w_owner.next_winlink(None);
     while wl.is_alive() {
         if let Some(session_owner) = wl.get_unchecked().session.upgrade() {
-            (*session_owner.get()).flags &= !SESSION_ALERTED;
+            (*session_owner.as_ptr()).flags &= !SESSION_ALERTED;
         }
         wl = w_owner.next_winlink(Some(wl.clone()));
     }
@@ -106,7 +106,7 @@ unsafe fn alerts_check_activity(w_owner: &WindowRef) -> ::core::ffi::c_int {
                 wl = w_owner.next_winlink(Some(wl.clone()));
                 continue;
             };
-            s = session_owner.get();
+            s = session_owner.as_ptr();
             if (*s).current_winlink() != wl || (*s).attached == 0 as u_int {
                 wl.get_mut_unchecked().flags |= WINLINK_ACTIVITY;
                 server_status_session(&session_owner);
@@ -138,7 +138,7 @@ unsafe fn alerts_check_silence(w_owner: &WindowRef) -> ::core::ffi::c_int {
     wl = w_owner.next_winlink(None);
     while wl.is_alive() {
         if let Some(session_owner) = wl.get_unchecked().session.upgrade() {
-            (*session_owner.get()).flags &= !SESSION_ALERTED;
+            (*session_owner.as_ptr()).flags &= !SESSION_ALERTED;
         }
         wl = w_owner.next_winlink(Some(wl.clone()));
     }
@@ -149,7 +149,7 @@ unsafe fn alerts_check_silence(w_owner: &WindowRef) -> ::core::ffi::c_int {
                 wl = w_owner.next_winlink(Some(wl.clone()));
                 continue;
             };
-            s = session_owner.get();
+            s = session_owner.as_ptr();
             if (*s).current_winlink() != wl || (*s).attached == 0 as u_int {
                 wl.get_mut_unchecked().flags |= WINLINK_SILENCE;
                 server_status_session(&session_owner);
@@ -171,8 +171,7 @@ unsafe fn alerts_set_message(mut wl: refbox::Weak<winlink>, type_0: &CStr, optio
     let Some(session_owner) = wl.get_unchecked().session.upgrade() else {
         return;
     };
-    let s = session_owner.get();
-    let visual = options_get_number(&(*s).borrow_options_mut(), option) as i32;
+    let visual = options_get_number(&session_owner.borrow_options_mut(), option) as i32;
     let mut cursor = ClientRegistry::first();
     while let Some(client) = cursor {
         if client

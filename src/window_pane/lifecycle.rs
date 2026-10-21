@@ -40,9 +40,9 @@ use crate::spawn::spawn_editor_finish;
 
 unsafe fn server_fire_pane_exit(
     name: &CStr,
-    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
 ) {
-    let mut wp = wp_owner.get();
+    let mut wp = wp_owner.as_ptr();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: std::rc::Weak::new(),
@@ -76,8 +76,8 @@ unsafe fn server_fire_pane_exit(
     );
     events_fire(name, ep);
 }
-pub(super) unsafe fn kill_process(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
-    let wp = pane_owner.get();
+pub(super) unsafe fn kill_process(pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>) {
+    let wp = pane_owner.as_ptr();
     let window_owner = pane_owner
         .window_observer()
         .upgrade()
@@ -94,10 +94,10 @@ pub(super) unsafe fn kill_process(pane_owner: &std::rc::Rc<std::cell::UnsafeCell
     };
 }
 pub(super) unsafe fn finish_process(
-    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     mut notify: ::core::ffi::c_int,
 ) {
-    let wp = pane_owner.get();
+    let wp = pane_owner.as_ptr();
     let window_owner = pane_owner
         .window_observer()
         .upgrade()
@@ -131,8 +131,8 @@ pub(super) unsafe fn finish_process(
         drop(window_owner);
         return;
     };
-    remain_on_exit =
-        options_get_number(&(*wp).borrow_options_mut(), c"remain-on-exit") as ::core::ffi::c_int;
+    remain_on_exit = options_get_number(&pane_owner.borrow_options_mut(), c"remain-on-exit")
+        as ::core::ffi::c_int;
     let mut current_block_37: u64;
     match remain_on_exit {
         2 | 4 => {
@@ -210,12 +210,12 @@ pub(super) unsafe fn finish_process(
     drop(window_owner);
 }
 pub(super) unsafe fn process_exited(
-    pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    pane: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     pid: pid_t,
     status: ExitStatus,
 ) -> bool {
     {
-        let state = &mut *pane.get();
+        let state = &mut *pane.as_ptr();
         if state.pid != pid {
             return false;
         }

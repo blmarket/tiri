@@ -102,7 +102,7 @@ unsafe fn cmd_kill_pane_filter(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     s_owner: &SessionRef,
     mut wl: refbox::Weak<winlink>,
-    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     filter: Option<&CStr>,
 ) -> ::core::ffi::c_int {
     let item = item_handle.borrow();

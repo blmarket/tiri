@@ -20,7 +20,7 @@ use crate::window::Window as _;
 use crate::window::{winlinks_minmax, winlinks_next};
 use crate::window_pane::WindowPane as _;
 use libc::sscanf;
-use std::cell::UnsafeCell;
+use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
 use std::time::Duration;
@@ -138,7 +138,7 @@ unsafe fn monitor_create_formats(
     client: Option<&ClientRef>,
     session: Option<&SessionRef>,
     link: refbox::Weak<winlink>,
-    pane: Option<&Rc<UnsafeCell<window_pane>>>,
+    pane: Option<&Rc<RefCell<window_pane>>>,
 ) -> Box<format_tree> {
     let mut formats = format_create(None, None, 0, FORMAT_NOJOBS);
     format_defaults(&mut formats, client, session, link, pane);
@@ -156,7 +156,7 @@ unsafe fn monitor_check_value(
     name: &CStr,
     session: Option<&SessionRef>,
     link: refbox::Weak<winlink>,
-    pane: Option<&Rc<UnsafeCell<window_pane>>>,
+    pane: Option<&Rc<RefCell<window_pane>>>,
     value: &CStr,
     target: MonitorValueTarget,
     generation: Option<u32>,
@@ -272,7 +272,7 @@ unsafe fn monitor_check_pane(monitor: &refbox::Weak<monitor_set>, name: &CStr) {
     let Some((client, session)) = monitor_context(monitor) else {
         return;
     };
-    let Some(pane) = Rc::<UnsafeCell<window_pane>>::find_by_id(target) else {
+    let Some(pane) = Rc::<RefCell<window_pane>>::find_by_id(target) else {
         return;
     };
     if !pane.has_tty() {
@@ -362,7 +362,7 @@ unsafe fn monitor_check_all_panes_one(
     name: &CStr,
     formats: &mut format_tree,
     link: refbox::Weak<winlink>,
-    pane: &Rc<UnsafeCell<window_pane>>,
+    pane: &Rc<RefCell<window_pane>>,
     generation: u32,
 ) {
     let Some((_client, session)) = monitor_context(monitor) else {

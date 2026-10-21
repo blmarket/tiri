@@ -2,7 +2,7 @@
 pub use crate::window_pane::window_pane;
 
 use crate::shared::client::ClientWeak;
-use std::cell::UnsafeCell;
+use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Weak;
 
@@ -95,52 +95,49 @@ pub type window_pane_modes = Vec<refbox::RefBox<window_mode_entry>>;
 /// alive; this collection only records order.
 #[derive(Default)]
 pub struct window_panes {
-    pub storage: Vec<std::rc::Weak<std::cell::UnsafeCell<window_pane>>>,
+    pub storage: Vec<std::rc::Weak<std::cell::RefCell<window_pane>>>,
 }
 
 impl window_panes {
     /// Retain every pane in display order for operations that may outlive membership.
-    pub fn snapshot(&self) -> Vec<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
+    pub fn snapshot(&self) -> Vec<std::rc::Rc<std::cell::RefCell<window_pane>>> {
         self.storage
             .iter()
             .map(|observer| observer.upgrade().expect("live pane in ordering"))
             .collect()
     }
 
-    pub fn first(&self) -> Option<std::rc::Weak<std::cell::UnsafeCell<window_pane>>> {
+    pub fn first(&self) -> Option<std::rc::Weak<std::cell::RefCell<window_pane>>> {
         self.storage.first().cloned()
     }
 
     pub fn next(
         &self,
-        pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-    ) -> Option<std::rc::Weak<std::cell::UnsafeCell<window_pane>>> {
+        pane: &std::rc::Weak<std::cell::RefCell<window_pane>>,
+    ) -> Option<std::rc::Weak<std::cell::RefCell<window_pane>>> {
         let position = self.position(pane)?;
         self.storage.get(position + 1).cloned()
     }
 
-    pub fn last(&self) -> Option<std::rc::Weak<std::cell::UnsafeCell<window_pane>>> {
+    pub fn last(&self) -> Option<std::rc::Weak<std::cell::RefCell<window_pane>>> {
         self.storage.last().cloned()
     }
 
     pub fn previous(
         &self,
-        pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-    ) -> Option<std::rc::Weak<std::cell::UnsafeCell<window_pane>>> {
+        pane: &std::rc::Weak<std::cell::RefCell<window_pane>>,
+    ) -> Option<std::rc::Weak<std::cell::RefCell<window_pane>>> {
         self.position(pane)
             .and_then(|position| position.checked_sub(1))
             .and_then(|position| self.storage.get(position))
             .cloned()
     }
 
-    pub fn position(
-        &self,
-        pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-    ) -> Option<usize> {
+    pub fn position(&self, pane: &std::rc::Weak<std::cell::RefCell<window_pane>>) -> Option<usize> {
         self.storage.iter().position(|weak| weak.ptr_eq(pane))
     }
 
-    pub fn remove(&mut self, pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>) -> bool {
+    pub fn remove(&mut self, pane: &std::rc::Weak<std::cell::RefCell<window_pane>>) -> bool {
         let storage = &mut self.storage;
         let Some(position) = storage.iter().position(|weak| weak.ptr_eq(pane)) else {
             return false;
@@ -153,25 +150,25 @@ impl window_panes {
 /// Most-recently-visited pane handles, with the newest pane at the front.
 #[derive(Default)]
 pub struct PaneHistory {
-    panes: VecDeque<Weak<UnsafeCell<window_pane>>>,
+    panes: VecDeque<Weak<RefCell<window_pane>>>,
 }
 
 impl PaneHistory {
-    pub fn first(&self) -> Weak<UnsafeCell<window_pane>> {
+    pub fn first(&self) -> Weak<RefCell<window_pane>> {
         self.panes.front().cloned().unwrap_or_default()
     }
 
-    pub fn position(&self, pane: &Weak<UnsafeCell<window_pane>>) -> Option<usize> {
+    pub fn position(&self, pane: &Weak<RefCell<window_pane>>) -> Option<usize> {
         self.panes.iter().position(|weak| weak.ptr_eq(pane))
     }
 
-    pub fn push(&mut self, pane: Weak<UnsafeCell<window_pane>>) {
+    pub fn push(&mut self, pane: Weak<RefCell<window_pane>>) {
         assert!(pane.strong_count() != 0, "live pane for insertion");
         self.remove(&pane);
         self.panes.push_front(pane);
     }
 
-    pub fn remove(&mut self, pane: &Weak<UnsafeCell<window_pane>>) {
+    pub fn remove(&mut self, pane: &Weak<RefCell<window_pane>>) {
         self.panes.retain(|weak| !weak.ptr_eq(pane));
     }
 }
@@ -179,5 +176,5 @@ impl PaneHistory {
 #[repr(C)]
 pub struct window_pane_tree {
     /// The global pane index owns both its map and the Rc pane records.
-    pub storage: std::collections::BTreeMap<u_int, std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
+    pub storage: std::collections::BTreeMap<u_int, std::rc::Rc<std::cell::RefCell<window_pane>>>,
 }

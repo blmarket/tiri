@@ -12,14 +12,14 @@ pub fn window_position_is_visible(ranges: &[visible_range], px: u_int) -> bool {
 /// coordinates, retaining its allocation. Callers may reuse the buffer once its
 /// previous result is consumed; nested queries need a separate buffer.
 pub unsafe fn window_visible_ranges(
-    pane: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
+    pane: Option<&std::rc::Rc<std::cell::RefCell<window_pane>>>,
     x: i32,
     y: i32,
     width: u32,
     ranges: &mut Vec<visible_range>,
 ) {
     use crate::window::WindowPane;
-    <std::rc::Rc<std::cell::UnsafeCell<window_pane>> as WindowPane>::visible_ranges(
+    <std::rc::Rc<std::cell::RefCell<window_pane>> as WindowPane>::visible_ranges(
         pane, x, y, width, ranges,
     );
 }

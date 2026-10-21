@@ -153,7 +153,7 @@ pub struct cmd_find_state {
     pub s: SessionWeak,
     pub wl: refbox::Weak<winlink>,
     pub w: WindowWeak,
-    pub wp: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
+    pub wp: std::rc::Weak<std::cell::RefCell<window_pane>>,
     pub idx: ::core::ffi::c_int,
 }
 
@@ -185,11 +185,11 @@ impl cmd_find_state {
     }
 
     /// Retain the target allocation; callbacks may still invalidate it logically.
-    pub fn pane_handle(&self) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
+    pub fn pane_handle(&self) -> Option<std::rc::Rc<std::cell::RefCell<window_pane>>> {
         self.wp.upgrade()
     }
 
-    pub fn set_wp(&mut self, value: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>) {
+    pub fn set_wp(&mut self, value: Option<&std::rc::Rc<std::cell::RefCell<window_pane>>>) {
         self.wp = value.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     }
 
