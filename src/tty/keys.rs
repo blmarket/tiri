@@ -1541,11 +1541,7 @@ unsafe fn tty_keys_winsz(
     }
     log_debug(format_args!(
         "{}: unrecognized window size sequence: {}",
-        log_cstr(
-            unsafe { terminal_client_owner.name() }
-                .as_deref()
-                .unwrap_or(c"(null)")
-        ),
+        log_cstr(terminal_client_owner.name().as_deref().unwrap_or(c"(null)")),
         log_bytes(params)
     ));
     -(1 as ::core::ffi::c_int)
@@ -2636,11 +2632,7 @@ unsafe fn tty_keys_device_attributes(
         for &p in features {
             log_debug(format_args!(
                 "{}: DA feature: {}",
-                log_cstr(
-                    unsafe { terminal_client_owner.name() }
-                        .as_deref()
-                        .unwrap_or(c"(null)")
-                ),
+                log_cstr(terminal_client_owner.name().as_deref().unwrap_or(c"(null)")),
                 p as ::core::ffi::c_int
             ));
             let feature = match p {
@@ -2655,11 +2647,7 @@ unsafe fn tty_keys_device_attributes(
     }
     log_debug(format_args!(
         "{}: received primary DA {}",
-        log_cstr(
-            unsafe { terminal_client_owner.name() }
-                .as_deref()
-                .unwrap_or(c"(null)")
-        ),
+        log_cstr(terminal_client_owner.name().as_deref().unwrap_or(c"(null)")),
         log_cstr_n(&bytes[..*size])
     ));
     unsafe {
@@ -2708,11 +2696,7 @@ unsafe fn tty_keys_sync(
     *size = i;
     log_debug(format_args!(
         "{}: received DECRPM {}",
-        log_cstr(
-            unsafe { terminal_client_owner.name() }
-                .as_deref()
-                .unwrap_or(c"(null)")
-        ),
+        log_cstr(terminal_client_owner.name().as_deref().unwrap_or(c"(null)")),
         log_cstr_n(&bytes[..*size])
     ));
     if let 1..=3 = status {
@@ -2749,11 +2733,7 @@ unsafe fn tty_keys_device_attributes2(
     }
     log_debug(format_args!(
         "{}: received secondary DA {}",
-        log_cstr(
-            unsafe { terminal_client_owner.name() }
-                .as_deref()
-                .unwrap_or(c"(null)")
-        ),
+        log_cstr(terminal_client_owner.name().as_deref().unwrap_or(c"(null)")),
         log_cstr_n(&bytes[..*size])
     ));
     unsafe {
@@ -2843,11 +2823,7 @@ unsafe fn tty_keys_extended_device_attributes(
     }
     log_debug(format_args!(
         "{}: received extended DA {}",
-        log_cstr(
-            unsafe { terminal_client_owner.name() }
-                .as_deref()
-                .unwrap_or(c"(null)")
-        ),
+        log_cstr(terminal_client_owner.name().as_deref().unwrap_or(c"(null)")),
         log_cstr_n(&bytes[..*size])
     ));
     unsafe {

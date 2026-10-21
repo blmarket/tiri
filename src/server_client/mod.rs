@@ -209,8 +209,8 @@ fn server_client_set_term_type(c: &mut client, term_type: Option<CString>) {
     c.term_type = term_type;
 }
 
-unsafe fn server_client_ensure_term_name(c: &mut client) {
-    if c.term_name.is_none() || *c.term_name.as_ref().unwrap().as_ptr() == 0 {
+fn server_client_ensure_term_name(c: &mut client) {
+    if c.term_name.as_deref().is_none_or(|name| name.is_empty()) {
         server_client_set_term_name(c, Some(CString::new("unknown").unwrap()));
     }
 }
@@ -615,7 +615,6 @@ use crate::shared::pane::{
     window_pane_offset, PANE_SCROLLBARS_AUTOHIDE, PANE_SCROLLBARS_LEFT, PANE_SCROLLBARS_MODAL,
 };
 use crate::shared::posix_io::{_PATH_BSHELL, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, X_OK};
-use crate::shared::process::tmuxpeer;
 use crate::shared::screen::{
     ScreenMode, ALL_MOUSE_MODES, CURSOR_MODES, MODE_BRACKETPASTE, MODE_CURSOR, MODE_MOUSE_ALL,
     MODE_MOUSE_BUTTON, MODE_SYNC,
@@ -792,17 +791,16 @@ unsafe fn server_client_overlay_check(
     Some(result)
 }
 
-unsafe fn server_client_check_nested(c: &client) -> ::core::ffi::c_int {
+fn server_client_check_nested(c: &client) -> ::core::ffi::c_int {
     let mut envent: Option<&environ_entry> = None;
     envent = environ_find(c.environ.as_deref().expect("environment"), c"TMUX");
     if envent.is_none()
-        || *envent
+        || envent
             .unwrap()
             .value
             .as_ref()
             .expect("environment value is present")
-            .as_ptr() as ::core::ffi::c_int
-            == '\0' as i32
+            .is_empty()
     {
         return 0 as ::core::ffi::c_int;
     }
@@ -857,11 +855,8 @@ fn server_client_get_key_table(c: &client) -> std::ffi::CString {
         name
     }
 }
-unsafe fn server_client_is_default_key_table(c: &client, table: &key_table) -> ::core::ffi::c_int {
-    (strcmp(
-        (table.name).as_ptr().cast_mut(),
-        server_client_get_key_table(c).as_ptr(),
-    ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int
+fn server_client_is_default_key_table(c: &client, table: &key_table) -> ::core::ffi::c_int {
+    (table.name == server_client_get_key_table(c)) as ::core::ffi::c_int
 }
 fn server_client_timer(
     client: &ClientRef,
@@ -1202,8 +1197,8 @@ unsafe fn server_client_lost(client_owner: &ClientRef) {
     }
     format_lost_client(client_owner);
     drop((*c).environ.take());
-    proc_remove_peer((*c).peer);
-    (*c).peer = ::core::ptr::null_mut::<tmuxpeer>();
+    proc_remove_peer(&(*c).peer);
+    (*c).peer = refbox::Weak::new();
     drop((*c).out_fd.take());
     drop((*c).fd.take());
     server_client_retire(registry_owner);
@@ -1236,7 +1231,7 @@ unsafe fn server_client_suspend(c_owner: &ClientRef) {
     }
     tty_stop_tty(c_owner);
     (*c).flags |= CLIENT_SUSPENDED as uint64_t;
-    proc_send((*c).peer, MSG_SUSPEND, None, &[]);
+    proc_send(&(*c).peer, MSG_SUSPEND, None, &[]);
 }
 unsafe fn server_client_detach(c_owner: &ClientRef, mut msgtype: msgtype) {
     let mut c = c_owner.as_ptr();
@@ -1272,7 +1267,7 @@ unsafe fn server_client_exec(c_owner: &ClientRef, cmd: &CStr) {
     let mut msg = Vec::with_capacity(cmd_bytes.len() + shell_bytes.len());
     msg.extend_from_slice(cmd_bytes);
     msg.extend_from_slice(shell_bytes);
-    proc_send((*c).peer, MSG_EXEC, None, &msg);
+    proc_send(&(*c).peer, MSG_EXEC, None, &msg);
 }
 
 unsafe fn server_client_update_scrollbar_hover(
@@ -3028,15 +3023,11 @@ unsafe fn server_client_click_timer(owner: &ClientRef) {
     }
     (*c).flags &= !(CLIENT_DOUBLECLICK | CLIENT_TRIPLECLICK) as uint64_t;
 }
-unsafe fn server_client_start_exit_timer(owner: &ClientRef) {
-    let c = &mut *owner.as_ptr();
+fn server_client_start_exit_timer(owner: &ClientRef) {
     let timeout = Duration::from_secs(10);
-    if c.exit_timer.is_none() {
-        c.exit_timer = Some(server_client_timer(
-            owner,
-            timeout,
-            server_client_exit_timer,
-        ));
+    if owner.borrow().exit_timer.is_none() {
+        let timer = server_client_timer(owner, timeout, server_client_exit_timer);
+        owner.borrow_mut().exit_timer = Some(timer);
     }
 }
 unsafe fn server_client_exit_timer(owner: &ClientRef) {
@@ -3098,14 +3089,14 @@ unsafe fn server_client_check_exit(client_owner: &ClientRef, force: ::core::ffi:
                         .to_bytes_with_nul(),
                 );
             }
-            proc_send((*c).peer, MSG_EXIT, None, &data);
+            proc_send(&(*c).peer, MSG_EXIT, None, &data);
         }
         1 => {
-            proc_send((*c).peer, MSG_SHUTDOWN, None, &[]);
+            proc_send(&(*c).peer, MSG_SHUTDOWN, None, &[]);
         }
         2 => {
             proc_send(
-                (*c).peer,
+                &(*c).peer,
                 (*c).exit_msgtype,
                 None,
                 (*c).exit_session
@@ -3508,7 +3499,7 @@ unsafe fn server_client_dispatch(
                 server_client_set_session(owner, None);
                 recalculate_sizes();
                 tty_close(owner);
-                proc_send((*c).peer, MSG_EXITED, None, &[]);
+                proc_send(&(*c).peer, MSG_EXITED, None, &[]);
                 current_block = 14945149239039849694;
             }
         }
@@ -3579,7 +3570,7 @@ unsafe fn server_client_dispatch(
                 log_pointer(c),
                 (imsg.hdr.type_0) as i32
             ));
-            proc_kill_peer((*c).peer);
+            proc_kill_peer(&(*c).peer);
         }
     }
 }
@@ -3960,8 +3951,8 @@ unsafe fn server_client_dispatch_shell(c: &client) -> ::core::ffi::c_int {
     if checkshell(Some(shell)) == 0 {
         shell = _PATH_BSHELL;
     }
-    proc_send(c.peer, MSG_SHELL, None, shell.to_bytes_with_nul());
-    proc_kill_peer(c.peer);
+    proc_send(&c.peer, MSG_SHELL, None, shell.to_bytes_with_nul());
+    proc_kill_peer(&c.peer);
     0 as ::core::ffi::c_int
 }
 /// Copy the selected directory while any observed startup client is retained.
@@ -4049,7 +4040,7 @@ unsafe fn server_client_set_flags(c_owner: &ClientRef, flags: &CStr) {
             control_reset_offsets(c_owner);
         }
     }
-    proc_send((*c).peer, MSG_FLAGS, None, bytes_of(&(*c).flags));
+    proc_send(&(*c).peer, MSG_FLAGS, None, bytes_of(&(*c).flags));
 }
 fn server_client_get_flags(c: &client) -> CString {
     let mut s: Vec<u8> = Vec::new();

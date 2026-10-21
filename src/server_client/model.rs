@@ -27,7 +27,7 @@ pub type MouseDragRelease = Box<dyn FnOnce(&mut mouse_event)>;
 pub struct client {
     pub(super) registry_next: ClientWeak,
     pub(super) name: Option<std::ffi::CString>,
-    pub(super) peer: *mut tmuxpeer,
+    pub(super) peer: refbox::Weak<tmuxpeer>,
     pub(super) user: Option<std::ffi::CString>,
     pub(super) queue: Option<Box<cmdq_list>>,
     pub(super) control_state: Option<Box<control_state>>,

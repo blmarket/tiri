@@ -57,16 +57,14 @@ impl EditorHandle {
         let Some(pane) = self.pane.upgrade() else {
             return;
         };
-        unsafe {
-            pane.cancel_editor(self.id);
-        }
+        pane.cancel_editor(self.id);
     }
 
     pub fn pid(&self) -> pid_t {
         let Some(pane) = self.pane.upgrade() else {
             return -1;
         };
-        unsafe { pane.editor_process_id(self.id) }
+        pane.editor_process_id(self.id)
     }
 }
 

@@ -13,12 +13,10 @@ pub(super) struct ServerHost;
 
 impl ServerObservability for ServerHost {
     fn pane_ids(&self) -> io::Result<Vec<PaneId>> {
-        unsafe {
-            Ok(window_pane_tree::snapshot()
-                .into_iter()
-                .map(|pane| PaneId(pane.id()))
-                .collect())
-        }
+        Ok(window_pane_tree::snapshot()
+            .into_iter()
+            .map(|pane| PaneId(pane.id()))
+            .collect())
     }
 
     fn resolve_pane(&self, id: PaneId) -> io::Result<Option<Rc<dyn PaneObservability>>> {

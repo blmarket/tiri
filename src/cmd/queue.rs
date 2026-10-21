@@ -311,7 +311,7 @@ impl QueueTarget {
     }
 }
 
-unsafe fn cmdq_name(c: Option<&ClientRef>) -> CString {
+fn cmdq_name(c: Option<&ClientRef>) -> CString {
     let Some(c) = c else {
         return c"<global>".to_owned();
     };
@@ -327,7 +327,7 @@ unsafe fn cmdq_name(c: Option<&ClientRef>) -> CString {
     })
 }
 
-unsafe fn cmdq_queue_name(queue: &QueueTarget) -> CString {
+fn cmdq_queue_name(queue: &QueueTarget) -> CString {
     match queue {
         QueueTarget::Global => cmdq_name(None),
         QueueTarget::Client(observer) => cmdq_name(observer.upgrade().as_ref()),
@@ -758,7 +758,7 @@ impl CmdqWaiter {
     }
     /// Report `status` as the return value of a client without a session at
     /// this moment, then resume (tmux's popup_free_cb, window_pane_wait_finish).
-    pub(crate) unsafe fn finish(self, status: i32) {
+    pub(crate) fn finish(self, status: i32) {
         if let Some(client) = self.client() {
             if client.attached_session().upgrade().is_none() {
                 client.set_return_value(status);

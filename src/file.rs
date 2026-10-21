@@ -199,12 +199,12 @@ unsafe fn file_get_path(c: Option<&ClientRef>, file: &CStr) -> CString {
 unsafe fn file_send(file: &client_file, kind: msgtype, fd: Option<OwnedFd>, data: &[u8]) -> i32 {
     match file.c.as_ref() {
         Some(client) => client.send_message(kind, fd, data),
-        None => proc_send(file.peer, kind, fd, data),
+        None => proc_send(&file.peer, kind, fd, data),
     }
 }
 
 unsafe fn file_create_with_peer(
-    mut peer: *mut tmuxpeer,
+    peer: &refbox::Weak<tmuxpeer>,
     mut stream: ::core::ffi::c_int,
     mut cb: client_file_cb,
 ) -> Rc<RefCell<client_file>> {
@@ -214,7 +214,7 @@ unsafe fn file_create_with_peer(
         cf.c = None;
         cf.stream = stream;
         cf.cb = cb;
-        cf.peer = peer;
+        cf.peer = peer.clone();
     }
     crate::client::client_register_file(&owner);
     owner
@@ -825,7 +825,7 @@ unsafe fn file_write_callback(owner: &Rc<RefCell<client_file>>) {
     }
 }
 pub unsafe fn file_write_open(
-    mut peer: *mut tmuxpeer,
+    peer: &refbox::Weak<tmuxpeer>,
     imsg: &imsg,
     mut close_received: ::core::ffi::c_int,
     mut cb: client_file_cb,
@@ -1024,7 +1024,7 @@ unsafe fn file_read_callback(owner: &Rc<RefCell<client_file>>) {
     }
 }
 pub unsafe fn file_read_open(
-    mut peer: *mut tmuxpeer,
+    peer: &refbox::Weak<tmuxpeer>,
     imsg: &imsg,
     mut close_received: ::core::ffi::c_int,
     mut cb: client_file_cb,

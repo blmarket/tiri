@@ -105,11 +105,11 @@ pub unsafe fn screen_reset_tabs(s: &mut screen) {
 pub(crate) fn screen_share_hyperlinks(dst: &mut screen, src: &screen) {
     dst.hyperlinks = src.hyperlinks.clone();
 }
-pub(crate) unsafe fn screen_has_tab(s: &screen, column: u_int) -> bool {
-    *s.tabs.get_unchecked(column as usize / 8) & (1 << (column % 8)) != 0
+pub(crate) fn screen_has_tab(s: &screen, column: u_int) -> bool {
+    s.tabs[column as usize / 8] & (1 << (column % 8)) != 0
 }
-pub(crate) unsafe fn screen_set_tab(s: &mut screen, column: u_int, set: bool) {
-    let byte = s.tabs.get_unchecked_mut(column as usize / 8);
+pub(crate) fn screen_set_tab(s: &mut screen, column: u_int, set: bool) {
+    let byte = &mut s.tabs[column as usize / 8];
     let mask = 1 << (column % 8);
     if set {
         *byte |= mask;

@@ -17,7 +17,7 @@ pub(super) enum FileRegistration {
 
 pub struct client_file {
     pub(super) c: Option<ClientRef>,
-    pub(super) peer: *mut tmuxpeer,
+    pub(super) peer: refbox::Weak<tmuxpeer>,
     pub(super) stream: ::core::ffi::c_int,
     pub(super) path: Option<std::ffi::CString>,
     pub(super) buffer: SegmentedBuf,

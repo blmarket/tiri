@@ -62,13 +62,13 @@ pub trait Session {
     /// Registry liveness is distinct from retained allocation liveness.
     fn is_registered(&self) -> bool;
     unsafe fn contains_window(&self, window: &WindowRef) -> bool;
-    unsafe fn id(&self) -> u32;
-    unsafe fn name(&self) -> CString;
+    fn id(&self) -> u32;
+    fn name(&self) -> CString;
     unsafe fn rename(&self, name: &CStr) -> Result<(), CString>;
-    unsafe fn activity_time(&self) -> SystemTime;
-    unsafe fn is_attached(&self) -> bool;
+    fn activity_time(&self) -> SystemTime;
+    fn is_attached(&self) -> bool;
     /// Number of attached clients, including multiple clients of one group member.
-    unsafe fn attached_count(&self) -> u32;
+    fn attached_count(&self) -> u32;
     /// Rebuild this Session's owned winlinks from a distinct, live source.
     /// The caller must pass different source and destination identities.
     /// Live source traversal, selection/history remapping and link notifications
@@ -77,9 +77,9 @@ pub trait Session {
     /// Linked callbacks must preserve the current source and replacement links
     /// through the subsequent alert copy, as required by their logical lifetimes.
     unsafe fn synchronize_windows_from(&self, source: &SessionRef);
-    unsafe fn current_winlink(&self) -> refbox::Weak<winlink>;
+    fn current_winlink(&self) -> refbox::Weak<winlink>;
     /// Observe MRU history without selecting it (notably command target `!`).
-    unsafe fn last_winlink(&self) -> refbox::Weak<winlink>;
+    fn last_winlink(&self) -> refbox::Weak<winlink>;
     /// Read only. Do not mutate entries, reenter, or let references/pointers escape.
     unsafe fn with_winlinks<R>(&self, read: impl FnOnce(&winlinks) -> R) -> R;
     /// Remove only MRU membership, before releasing a link's window.
@@ -105,13 +105,13 @@ pub trait Session {
     unsafe fn update_history(&self);
     unsafe fn on_attached(&self);
     unsafe fn theme_changed(&self);
-    unsafe fn status_layout(&self) -> (i32, u32);
+    fn status_layout(&self) -> (i32, u32);
     /// Borrow the option table through the model. Borrowing it again while held panics.
     fn borrow_options_mut(&self) -> std::cell::RefMut<'_, options>;
     unsafe fn with_environment_mut<R>(&self, edit: impl FnOnce(&mut environ) -> R) -> R;
     unsafe fn set_cwd(&self, cwd: Option<CString>);
-    unsafe fn cwd(&self) -> Option<CString>;
-    unsafe fn termios(&self) -> Option<termios>;
+    fn cwd(&self) -> Option<CString>;
+    fn termios(&self) -> Option<termios>;
     /// Evaluate a session builtin in a context already targeting this holder.
     unsafe fn format_value(
         &self,
@@ -203,11 +203,11 @@ impl Session for SessionRef {
         }
         false
     }
-    unsafe fn id(&self) -> u32 {
-        (*self.as_ptr()).id
+    fn id(&self) -> u32 {
+        self.borrow().id
     }
-    unsafe fn name(&self) -> CString {
-        (*self.as_ptr()).name.clone()
+    fn name(&self) -> CString {
+        self.borrow().name.clone()
     }
 
     unsafe fn rename(&self, name: &CStr) -> Result<(), CString> {
@@ -253,23 +253,23 @@ impl Session for SessionRef {
         Ok(())
     }
 
-    unsafe fn activity_time(&self) -> SystemTime {
-        (*self.as_ptr()).activity_time
+    fn activity_time(&self) -> SystemTime {
+        self.borrow().activity_time
     }
-    unsafe fn is_attached(&self) -> bool {
-        (*self.as_ptr()).attached != 0
+    fn is_attached(&self) -> bool {
+        self.borrow().attached != 0
     }
-    unsafe fn attached_count(&self) -> u32 {
-        (*self.as_ptr()).attached
+    fn attached_count(&self) -> u32 {
+        self.borrow().attached
     }
     unsafe fn synchronize_windows_from(&self, source: &SessionRef) {
         session_synchronize_windows(source, self);
     }
-    unsafe fn current_winlink(&self) -> refbox::Weak<winlink> {
-        (*self.as_ptr()).curw.clone()
+    fn current_winlink(&self) -> refbox::Weak<winlink> {
+        self.borrow().curw.clone()
     }
-    unsafe fn last_winlink(&self) -> refbox::Weak<winlink> {
-        (*self.as_ptr()).lastw.front().cloned().unwrap_or_default()
+    fn last_winlink(&self) -> refbox::Weak<winlink> {
+        self.borrow().lastw.front().cloned().unwrap_or_default()
     }
     unsafe fn with_winlinks<R>(&self, read: impl FnOnce(&winlinks) -> R) -> R {
         read(&(*self.as_ptr()).windows)
@@ -356,8 +356,8 @@ impl Session for SessionRef {
         self.current_winlink().get_mut_unchecked().flags &= !WINLINK_ALERTFLAGS;
         crate::alerts::alerts_check_session(self);
     }
-    unsafe fn status_layout(&self) -> (i32, u32) {
-        ((*self.as_ptr()).statusat, (*self.as_ptr()).statuslines)
+    fn status_layout(&self) -> (i32, u32) {
+        (self.borrow().statusat, self.borrow().statuslines)
     }
     fn borrow_options_mut(&self) -> std::cell::RefMut<'_, options> {
         std::cell::RefMut::map(std::cell::RefCell::borrow_mut(self), |model| {
@@ -371,11 +371,11 @@ impl Session for SessionRef {
     unsafe fn set_cwd(&self, cwd: Option<CString>) {
         session_set_cwd(&mut *self.as_ptr(), cwd);
     }
-    unsafe fn cwd(&self) -> Option<CString> {
-        (*self.as_ptr()).cwd.clone()
+    fn cwd(&self) -> Option<CString> {
+        self.borrow().cwd.clone()
     }
-    unsafe fn termios(&self) -> Option<termios> {
-        (*self.as_ptr()).tio.as_deref().copied()
+    fn termios(&self) -> Option<termios> {
+        self.borrow().tio.as_deref().copied()
     }
     unsafe fn format_value(
         &self,

@@ -47,10 +47,10 @@ pub trait Window {
         pane: &Rc<RefCell<window_pane>>,
         action: LayoutAction,
     ) -> Result<(), &'static CStr>;
-    unsafe fn layout(&self) -> LayoutKind;
+    fn layout(&self) -> LayoutKind;
     /// The zoomed pane, which takes the whole window while the others are
     /// hidden; empty when the window is not zoomed.
-    unsafe fn zoomed_pane(&self) -> Weak<RefCell<window_pane>>;
+    fn zoomed_pane(&self) -> Weak<RefCell<window_pane>>;
     /// Zoom `pane`, making it the active pane; window-layout-changed fires.
     /// Refused, returning false, when the window is already zoomed or has a
     /// single pane.
@@ -89,7 +89,7 @@ pub trait Window {
     /// its zoomed pane alone, filling the window.
     unsafe fn layout_string(&self, legacy: bool, visible: bool) -> Option<CString>;
 
-    unsafe fn id(&self) -> u32;
+    fn id(&self) -> u32;
     /// Registry successor.
     unsafe fn next_window(&self) -> WindowWeak;
     /// Live association traversal; callbacks may change the list between calls.
@@ -99,7 +99,7 @@ pub trait Window {
     unsafe fn remove_winlink(&self, link: refbox::Weak<winlink>);
     unsafe fn contains_pane(&self, pane: &Weak<RefCell<window_pane>>) -> bool;
     /// Only alert bits, never the window's other bookkeeping flags.
-    unsafe fn pending_alerts(&self) -> i32;
+    fn pending_alerts(&self) -> i32;
     unsafe fn reset_alert_timer(&self);
     /// Record flags and claim queue membership. Some(true) transfers one release duty
     /// to the alert queue. None means disabled; Some(false) means already queued.
@@ -107,12 +107,12 @@ pub trait Window {
     /// Called after delivery, while the queue still retains this window.
     unsafe fn finish_alerts(&self);
     /// Clear pending flag bits without changing alert-queue membership.
-    unsafe fn clear_alert_flags(&self);
+    fn clear_alert_flags(&self);
 
     /// Name a new window without a rename event; an explicit name disables
     /// automatic naming. Creation notification belongs to the caller.
     unsafe fn initialize_name(&self, name: CString, explicit: bool);
-    unsafe fn name(&self) -> CString;
+    fn name(&self) -> CString;
     unsafe fn rename(&self, name: &CStr, untrusted: bool);
     /// Commit a due automatic-name check, or queue its remaining delay. No
     /// formatting or pane callbacks execute while the timer state is borrowed.
@@ -121,13 +121,13 @@ pub trait Window {
     /// The timer observes this window weakly; dispatch borrows only on demand.
     unsafe fn schedule_offset_update(&self);
     /// Copy identity without upgrading it or changing pane ownership.
-    unsafe fn active_pane(&self) -> Weak<RefCell<window_pane>>;
+    fn active_pane(&self) -> Weak<RefCell<window_pane>>;
     /// Most recently active pane from selection history.
-    unsafe fn last_active_pane(&self) -> Weak<RefCell<window_pane>>;
+    fn last_active_pane(&self) -> Weak<RefCell<window_pane>>;
     /// Copy the current pane order without retaining a Window borrow, for
     /// sorting, rendering and other walks that may reenter the Window. Walks
     /// resolve each pane as they reach it.
-    unsafe fn pane_snapshot(&self) -> Vec<Weak<RefCell<window_pane>>>;
+    fn pane_snapshot(&self) -> Vec<Weak<RefCell<window_pane>>>;
     /// The pane before or after `from` in pane order, without wrapping; `None`
     /// gives the first or last pane. Empty past either end, or when `from` is
     /// not in this window.
@@ -136,8 +136,8 @@ pub trait Window {
         after: Option<&Weak<RefCell<window_pane>>>,
         reverse: bool,
     ) -> Weak<RefCell<window_pane>>;
-    unsafe fn scrollbar_mode(&self) -> i32;
-    unsafe fn scrollbar_position(&self) -> i32;
+    fn scrollbar_mode(&self) -> i32;
+    fn scrollbar_position(&self) -> i32;
     /// Refresh cached scrollbar policy after options change. Pane resizing is
     /// performed by the caller after this borrow ends.
     unsafe fn refresh_scrollbars(&self);
@@ -154,10 +154,10 @@ pub trait Window {
         count: u32,
         reverse: bool,
     ) -> Weak<RefCell<window_pane>>;
-    unsafe fn creation_time(&self) -> SystemTime;
-    unsafe fn activity_time(&self) -> SystemTime;
+    fn creation_time(&self) -> SystemTime;
+    fn activity_time(&self) -> SystemTime;
     unsafe fn select_pane(&self, pane: &Rc<RefCell<window_pane>>, notify: bool) -> i32;
-    unsafe fn size(&self) -> (u32, u32);
+    fn size(&self) -> (u32, u32);
     unsafe fn manual_size(&self) -> (u32, u32);
     /// Select manual sizing and record both requested dimensions together.
     unsafe fn set_manual_size(&self, sx: u32, sy: u32);
@@ -165,7 +165,7 @@ pub trait Window {
     unsafe fn apply_pending_resize(&self);
     unsafe fn defer_resize(&self, sx: u32, sy: u32, xpixel: u32, ypixel: u32);
     /// Pixel dimensions of a terminal cell, for the pane's PTY resize protocol.
-    unsafe fn cell_size(&self) -> (u32, u32);
+    fn cell_size(&self) -> (u32, u32);
     unsafe fn resize(&self, sx: u32, sy: u32, xpixel: i32, ypixel: i32);
     /// Arrange the layout again after options or pane modes it reads changed.
     /// Silent; returns whether any pane moved.
@@ -174,7 +174,7 @@ pub trait Window {
     /// Return whether the identity changed. Attachment and input dispatch have
     /// different notifications and keep that orchestration in their callers.
     unsafe fn set_latest_client(&self, client: Option<&ClientRef>) -> bool;
-    unsafe fn is_latest_client(&self, client: &ClientRef) -> bool;
+    fn is_latest_client(&self, client: &ClientRef) -> bool;
     /// Window-owned menu/selection policy used when a pane's focus changes.
     unsafe fn pane_is_focused(&self, pane: &Rc<RefCell<window_pane>>) -> bool;
     /// Observe the independently owned menu; no Window/component pointer escapes.
@@ -194,7 +194,7 @@ pub trait Window {
     unsafe fn place_menu(&self, position: (u32, u32), size: (u32, u32)) -> (u32, u32);
     unsafe fn last_menu_position(&self) -> (u32, u32);
     unsafe fn invalidate_scene(&self);
-    unsafe fn scene_generation(&self) -> u64;
+    fn scene_generation(&self) -> u64;
     /// Render each fill cell outside the Window borrow, publishing its fallback
     /// first, in inside/outside order as observed by format callbacks.
     unsafe fn refresh_fill_cells(&self);
@@ -259,11 +259,11 @@ impl Window for WindowRef {
         events_fire_window(c"window-layout-changed", self.clone());
         Ok(())
     }
-    unsafe fn layout(&self) -> LayoutKind {
-        (*self.as_ptr()).layout
+    fn layout(&self) -> LayoutKind {
+        self.borrow().layout
     }
-    unsafe fn zoomed_pane(&self) -> Weak<RefCell<window_pane>> {
-        (*self.as_ptr()).zoomed.clone()
+    fn zoomed_pane(&self) -> Weak<RefCell<window_pane>> {
+        self.borrow().zoomed.clone()
     }
     unsafe fn zoom(&self, pane: &Rc<RefCell<window_pane>>) -> bool {
         window_zoom(self, pane)
@@ -449,8 +449,8 @@ impl Window for WindowRef {
     unsafe fn invalidate_scene(&self) {
         (*self.as_ptr()).invalidate_scene();
     }
-    unsafe fn scene_generation(&self) -> u64 {
-        (*self.as_ptr()).redraw_scene_generation
+    fn scene_generation(&self) -> u64 {
+        self.borrow().redraw_scene_generation
     }
     unsafe fn add_winlink(&self, link: refbox::Weak<winlink>) {
         window_winlinks_append(&mut *self.as_ptr(), link);
@@ -471,8 +471,8 @@ impl Window for WindowRef {
     unsafe fn contains_pane(&self, pane: &Weak<RefCell<window_pane>>) -> bool {
         window_has_pane(&*self.as_ptr(), pane)
     }
-    unsafe fn pending_alerts(&self) -> i32 {
-        (*self.as_ptr()).flags & crate::shared::window::WINDOW_ALERTFLAGS
+    fn pending_alerts(&self) -> i32 {
+        self.borrow().flags & crate::shared::window::WINDOW_ALERTFLAGS
     }
     unsafe fn reset_alert_timer(&self) {
         super::alerts::reset_timer(self);
@@ -484,12 +484,12 @@ impl Window for WindowRef {
         (*self.as_ptr()).alerts_queued = 0;
         (*self.as_ptr()).flags &= !crate::shared::window::WINDOW_ALERTFLAGS;
     }
-    unsafe fn clear_alert_flags(&self) {
-        (*self.as_ptr()).flags &= !crate::shared::window::WINDOW_ALERTFLAGS;
+    fn clear_alert_flags(&self) {
+        self.borrow_mut().flags &= !crate::shared::window::WINDOW_ALERTFLAGS;
     }
 
-    unsafe fn id(&self) -> u32 {
-        (*self.as_ptr()).id
+    fn id(&self) -> u32 {
+        self.borrow().id
     }
     unsafe fn initialize_name(&self, name: CString, explicit: bool) {
         drop(window_replace_name(self, name));
@@ -500,8 +500,8 @@ impl Window for WindowRef {
             }
         }
     }
-    unsafe fn name(&self) -> CString {
-        (*self.as_ptr()).name.clone()
+    fn name(&self) -> CString {
+        self.borrow().name.clone()
     }
     unsafe fn rename(&self, name: &CStr, untrusted: bool) {
         window_set_name(self, name, untrusted as i32);
@@ -556,14 +556,14 @@ impl Window for WindowRef {
             );
         }
     }
-    unsafe fn active_pane(&self) -> Weak<RefCell<window_pane>> {
-        (*self.as_ptr()).active.clone()
+    fn active_pane(&self) -> Weak<RefCell<window_pane>> {
+        self.borrow().active.clone()
     }
-    unsafe fn last_active_pane(&self) -> Weak<RefCell<window_pane>> {
-        (*self.as_ptr()).last_panes.first()
+    fn last_active_pane(&self) -> Weak<RefCell<window_pane>> {
+        self.borrow().last_panes.first()
     }
-    unsafe fn pane_snapshot(&self) -> Vec<Weak<RefCell<window_pane>>> {
-        (*self.as_ptr()).panes.storage.clone()
+    fn pane_snapshot(&self) -> Vec<Weak<RefCell<window_pane>>> {
+        self.borrow().panes.storage.clone()
     }
     unsafe fn step_pane(
         &self,
@@ -579,11 +579,11 @@ impl Window for WindowRef {
         }
         .unwrap_or_default()
     }
-    unsafe fn scrollbar_mode(&self) -> i32 {
-        (*self.as_ptr()).sb
+    fn scrollbar_mode(&self) -> i32 {
+        self.borrow().sb
     }
-    unsafe fn scrollbar_position(&self) -> i32 {
-        (*self.as_ptr()).sb_pos
+    fn scrollbar_position(&self) -> i32 {
+        self.borrow().sb_pos
     }
     unsafe fn refresh_scrollbars(&self) {
         let (sb, sb_pos) = {
@@ -647,11 +647,11 @@ impl Window for WindowRef {
         }
         current.unwrap_or_default()
     }
-    unsafe fn creation_time(&self) -> SystemTime {
-        (*self.as_ptr()).creation_time
+    fn creation_time(&self) -> SystemTime {
+        self.borrow().creation_time
     }
-    unsafe fn activity_time(&self) -> SystemTime {
-        (*self.as_ptr()).activity_time
+    fn activity_time(&self) -> SystemTime {
+        self.borrow().activity_time
     }
     unsafe fn select_pane(&self, pane: &Rc<RefCell<window_pane>>, notify: bool) -> i32 {
         assert!(
@@ -660,8 +660,8 @@ impl Window for WindowRef {
         );
         window_set_active_pane(self, pane, notify as i32)
     }
-    unsafe fn size(&self) -> (u32, u32) {
-        ((*self.as_ptr()).sx, (*self.as_ptr()).sy)
+    fn size(&self) -> (u32, u32) {
+        (self.borrow().sx, self.borrow().sy)
     }
     unsafe fn manual_size(&self) -> (u32, u32) {
         let state = &*self.as_ptr();
@@ -700,8 +700,8 @@ impl Window for WindowRef {
         state.new_ypixel = ypixel;
         state.flags |= WINDOW_RESIZE;
     }
-    unsafe fn cell_size(&self) -> (u32, u32) {
-        ((*self.as_ptr()).xpixel, (*self.as_ptr()).ypixel)
+    fn cell_size(&self) -> (u32, u32) {
+        (self.borrow().xpixel, self.borrow().ypixel)
     }
     unsafe fn resize(&self, sx: u32, sy: u32, xpixel: i32, ypixel: i32) {
         resize_window(self, sx, sy, xpixel, ypixel);
@@ -720,8 +720,8 @@ impl Window for WindowRef {
         (*self.as_ptr()).latest = latest;
         true
     }
-    unsafe fn is_latest_client(&self, client: &ClientRef) -> bool {
-        (*self.as_ptr()).latest.ptr_eq(&Rc::downgrade(client))
+    fn is_latest_client(&self, client: &ClientRef) -> bool {
+        self.borrow().latest.ptr_eq(&Rc::downgrade(client))
     }
     unsafe fn pane_is_focused(&self, pane: &Rc<RefCell<window_pane>>) -> bool {
         use crate::server_client::Client;

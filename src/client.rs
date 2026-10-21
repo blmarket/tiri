@@ -54,7 +54,7 @@ use tiri_rt::Runtime as _;
 pub use ::libc::{CREAD, CS8, ECONNREFUSED, HUPCL, IXANY, LOCK_EX, LOCK_NB, TCSAFLUSH};
 
 static mut client_proc: *mut tmuxproc = ::core::ptr::null::<tmuxproc>() as *mut tmuxproc;
-static mut client_peer: *mut tmuxpeer = ::core::ptr::null::<tmuxpeer>() as *mut tmuxpeer;
+static mut client_peer: refbox::Weak<tmuxpeer> = refbox::Weak::new();
 static mut client_flags: uint64_t = 0;
 static mut client_suspended: ::core::ffi::c_int = 0;
 static mut client_exitreason: client_exit_reason = CLIENT_EXIT_NONE;
@@ -361,14 +361,14 @@ pub unsafe fn client_main(
                 eprintln!("command too long");
                 return 1 as ::core::ffi::c_int;
             }
-            if proc_send(client_peer, msg, None, &data) != 0 as ::core::ffi::c_int {
+            if proc_send(&client_peer, msg, None, &data) != 0 as ::core::ffi::c_int {
                 eprintln!("failed to send command");
                 return 1 as ::core::ffi::c_int;
             }
         } else if msg as ::core::ffi::c_uint
             == MSG_SHELL as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            proc_send(client_peer, msg, None, &[]);
+            proc_send(&client_peer, msg, None, &[]);
         }
         proc_loop(client_proc, runtime, None);
         if client_exittype as ::core::ffi::c_uint
@@ -429,7 +429,7 @@ pub unsafe fn client_main(
         client_exitval
     })();
     drop(process_owner);
-    client_peer = std::ptr::null_mut();
+    client_peer = refbox::Weak::new();
     client_proc = std::ptr::null_mut();
     result
 }
@@ -442,30 +442,35 @@ unsafe fn client_send_identify(
 ) {
     let mut flags: uint64_t = client_flags;
     let mut pid: pid_t = 0;
-    proc_send(client_peer, MSG_IDENTIFY_LONGFLAGS, None, bytes_of(&flags));
+    proc_send(&client_peer, MSG_IDENTIFY_LONGFLAGS, None, bytes_of(&flags));
     proc_send(
-        client_peer,
+        &client_peer,
         MSG_IDENTIFY_LONGFLAGS,
         None,
         bytes_of(&client_flags),
     );
     proc_send(
-        client_peer,
+        &client_peer,
         MSG_IDENTIFY_TERM,
         None,
         termname.to_bytes_with_nul(),
     );
-    proc_send(client_peer, MSG_IDENTIFY_FEATURES, None, bytes_of(&feat));
+    proc_send(&client_peer, MSG_IDENTIFY_FEATURES, None, bytes_of(&feat));
     proc_send(
-        client_peer,
+        &client_peer,
         MSG_IDENTIFY_TTYNAME,
         None,
         ttynam.to_bytes_with_nul(),
     );
-    proc_send(client_peer, MSG_IDENTIFY_CWD, None, cwd.to_bytes_with_nul());
+    proc_send(
+        &client_peer,
+        MSG_IDENTIFY_CWD,
+        None,
+        cwd.to_bytes_with_nul(),
+    );
     for cap in caps {
         proc_send(
-            client_peer,
+            &client_peer,
             MSG_IDENTIFY_TERMINFO,
             None,
             cap.as_bytes_with_nul(),
@@ -475,21 +480,21 @@ unsafe fn client_send_identify(
         .as_fd()
         .try_clone_to_owned()
         .unwrap_or_else(|error| fatal(&error, |out| out.write_all(b"dup failed")));
-    proc_send(client_peer, MSG_IDENTIFY_STDIN, Some(fd), &[]);
+    proc_send(&client_peer, MSG_IDENTIFY_STDIN, Some(fd), &[]);
     let fd = io::stdout()
         .as_fd()
         .try_clone_to_owned()
         .unwrap_or_else(|error| fatal(&error, |out| out.write_all(b"dup failed")));
-    proc_send(client_peer, MSG_IDENTIFY_STDOUT, Some(fd), &[]);
+    proc_send(&client_peer, MSG_IDENTIFY_STDOUT, Some(fd), &[]);
     pid = std::process::id() as pid_t;
-    proc_send(client_peer, MSG_IDENTIFY_CLIENTPID, None, bytes_of(&pid));
+    proc_send(&client_peer, MSG_IDENTIFY_CLIENTPID, None, bytes_of(&pid));
     for var in process_environment() {
         let var = var.as_bytes_with_nul();
         if var.len() <= (MAX_IMSGSIZE as usize).wrapping_sub(IMSG_HEADER_SIZE) {
-            proc_send(client_peer, MSG_IDENTIFY_ENVIRON, None, var);
+            proc_send(&client_peer, MSG_IDENTIFY_ENVIRON, None, var);
         }
     }
-    proc_send(client_peer, MSG_IDENTIFY_DONE, None, &[]);
+    proc_send(&client_peer, MSG_IDENTIFY_DONE, None, &[]);
 }
 unsafe fn client_exec(shell: &CStr, shellcmd: &CStr) -> ! {
     log_debug(format_args!(
@@ -548,17 +553,17 @@ unsafe fn client_signal(sig: ProcessSignal) {
             ProcessSignal::Hangup => {
                 client_exitreason = CLIENT_EXIT_LOST_TTY;
                 client_exitval = 1 as ::core::ffi::c_int;
-                proc_send(client_peer, MSG_EXITING, None, &[]);
+                proc_send(&client_peer, MSG_EXITING, None, &[]);
             }
             ProcessSignal::Terminate => {
                 if client_suspended == 0 {
                     client_exitreason = CLIENT_EXIT_TERMINATED;
                 }
                 client_exitval = 1 as ::core::ffi::c_int;
-                proc_send(client_peer, MSG_EXITING, None, &[]);
+                proc_send(&client_peer, MSG_EXITING, None, &[]);
             }
             ProcessSignal::WindowChange => {
-                proc_send(client_peer, MSG_RESIZE, None, &[]);
+                proc_send(&client_peer, MSG_RESIZE, None, &[]);
             }
             ProcessSignal::Continue => {
                 memset(
@@ -579,7 +584,7 @@ unsafe fn client_signal(sig: ProcessSignal) {
                         out.write_all(b"sigaction failed")
                     });
                 }
-                proc_send(client_peer, MSG_WAKEUP, None, &[]);
+                proc_send(&client_peer, MSG_WAKEUP, None, &[]);
                 client_suspended = 0 as ::core::ffi::c_int;
             }
             _ => {}
@@ -655,7 +660,7 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
                 fatalx(|out| out.write_all(b"bad MSG_READY size"));
             }
             client_attached = 1 as ::core::ffi::c_int;
-            proc_send(client_peer, MSG_RESIZE, None, &[]);
+            proc_send(&client_peer, MSG_RESIZE, None, &[]);
         }
         MSG_VERSION => {
             if datalen != 0 as ssize_t {
@@ -689,14 +694,14 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
             client_exec(shell, command);
         }
         MSG_DETACH | MSG_DETACHKILL => {
-            proc_send(client_peer, MSG_EXITING, None, &[]);
+            proc_send(&client_peer, MSG_EXITING, None, &[]);
         }
         MSG_EXITED => {
             proc_exit(client_proc);
         }
         MSG_READ_OPEN => {
             file_read_open(
-                client_peer,
+                &client_peer,
                 imsg,
                 (client_flags & CLIENT_CONTROL as uint64_t == 0) as ::core::ffi::c_int,
                 Some(Box::new(|_| unsafe { client_file_check_cb() })),
@@ -707,7 +712,7 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
         }
         MSG_WRITE_OPEN => {
             file_write_open(
-                client_peer,
+                &client_peer,
                 imsg,
                 (client_flags & CLIENT_CONTROL as uint64_t == 0) as ::core::ffi::c_int,
                 Some(Box::new(|_| unsafe { client_file_check_cb() })),
@@ -756,7 +761,7 @@ unsafe fn client_dispatch_attached(imsg: &mut imsg) {
             } else {
                 client_exitreason = CLIENT_EXIT_DETACHED;
             }
-            proc_send(client_peer, MSG_EXITING, None, &[]);
+            proc_send(&client_peer, MSG_EXITING, None, &[]);
         }
         MSG_EXEC => {
             let Some(command) = imsg_string(imsg)
@@ -768,7 +773,7 @@ unsafe fn client_dispatch_attached(imsg: &mut imsg) {
                 .expect("the payload ends in a NUL");
             client_exec_payload = Some((shell.to_owned(), command.to_owned()));
             client_exittype = imsg.hdr.type_0;
-            proc_send(client_peer, MSG_EXITING, None, &[]);
+            proc_send(&client_peer, MSG_EXITING, None, &[]);
         }
         MSG_EXIT => {
             client_dispatch_exit_message(data, datalen as size_t);
@@ -777,7 +782,7 @@ unsafe fn client_dispatch_attached(imsg: &mut imsg) {
             {
                 client_exitreason = CLIENT_EXIT_EXITED;
             }
-            proc_send(client_peer, MSG_EXITING, None, &[]);
+            proc_send(&client_peer, MSG_EXITING, None, &[]);
         }
         MSG_EXITED => {
             if datalen != 0 as ssize_t {
@@ -789,7 +794,7 @@ unsafe fn client_dispatch_attached(imsg: &mut imsg) {
             if datalen != 0 as ssize_t {
                 fatalx(|out| out.write_all(b"bad MSG_SHUTDOWN size"));
             }
-            proc_send(client_peer, MSG_EXITING, None, &[]);
+            proc_send(&client_peer, MSG_EXITING, None, &[]);
             client_exitreason = CLIENT_EXIT_SERVER_EXITED;
             client_exitval = 1 as ::core::ffi::c_int;
         }
@@ -826,7 +831,7 @@ unsafe fn client_dispatch_attached(imsg: &mut imsg) {
                 fatalx(|out| out.write_all(b"bad MSG_LOCK string"));
             }
             system(data);
-            proc_send(client_peer, MSG_UNLOCK, None, &[]);
+            proc_send(&client_peer, MSG_UNLOCK, None, &[]);
         }
         _ => {
             log_debug(format_args!("unknown message type {}", { imsg.hdr.type_0 }));

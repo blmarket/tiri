@@ -136,7 +136,7 @@ fn cmd_wait_for_remove_empty(channels: &mut wait_channels, name: &CStr) {
     channels.entries.remove(name);
 }
 
-unsafe fn cmd_wait_for_waiter_client_name(waiter: &CmdqWaiter) -> CString {
+fn cmd_wait_for_waiter_client_name(waiter: &CmdqWaiter) -> CString {
     waiter
         .client()
         .and_then(|owner| owner.name())
@@ -356,7 +356,7 @@ unsafe fn cmd_wait_for_list(
         wc.waiters
             .iter()
             .chain(&wc.lockers)
-            .map(|wi| cmd_wait_for_waiter_client_name(wi))
+            .map(cmd_wait_for_waiter_client_name)
             .collect::<Vec<_>>()
     });
     for owner in names {
@@ -364,7 +364,7 @@ unsafe fn cmd_wait_for_list(
     }
     CmdOutcome::Normal
 }
-unsafe fn cmd_wait_for_wake(args: &args, name: &CStr) -> CmdOutcome {
+fn cmd_wait_for_wake(args: &args, name: &CStr) -> CmdOutcome {
     let mut client_name: &CStr = args_get(args, 'w' as i32 as u_char).expect("-w has a value");
     let woken = WAIT_CHANNELS.with_borrow_mut(|channels| {
         let wc = channels.entries.get_mut(name)?;

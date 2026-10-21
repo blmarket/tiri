@@ -968,7 +968,7 @@ fn window_pane_prompt_input_callback(
         };
         // A lost client stays upgradable until its deferred free.
         (
-            state.c.upgrade().filter(|c| unsafe { !c.is_dead() }),
+            state.c.upgrade().filter(|c| !c.is_dead()),
             state.inputcb.take(),
         )
     };

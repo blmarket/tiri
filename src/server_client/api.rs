@@ -84,24 +84,24 @@ pub trait Client {
     unsafe fn borrow_terminal_mut(&self) -> Self::TerminalMut<'_>;
     /// Enqueue terminal bytes and account for output within one model borrow.
     unsafe fn write_terminal(&self, bytes: &[u8]);
-    unsafe fn terminal_fd(&self) -> i32;
-    unsafe fn record_terminal_discard(&self, bytes: usize);
+    fn terminal_fd(&self) -> i32;
+    fn record_terminal_discard(&self, bytes: usize);
     /// Some(0) completes the redraw write; backpressure starts on a later write.
-    unsafe fn acknowledge_terminal_redraw(&self, bytes: usize) -> Option<usize>;
-    unsafe fn terminal_theme_colour(&self, index: usize) -> i32;
+    fn acknowledge_terminal_redraw(&self, bytes: usize) -> Option<usize>;
+    fn terminal_theme_colour(&self, index: usize) -> i32;
     /// Forget any drag in progress and its callbacks.
-    unsafe fn reset_mouse_drag(&self);
-    unsafe fn mouse_drag_active(&self) -> bool;
-    unsafe fn mouse_slider_position(&self) -> i32;
-    unsafe fn set_mouse_drag_callbacks(&self, update: MouseDragUpdate, release: MouseDragRelease);
+    fn reset_mouse_drag(&self);
+    fn mouse_drag_active(&self) -> bool;
+    fn mouse_slider_position(&self) -> i32;
+    fn set_mouse_drag_callbacks(&self, update: MouseDragUpdate, release: MouseDragRelease);
     /// Terminfo construction may query Client; copy its source before starting.
-    unsafe fn terminal_description_source(&self) -> (Option<CString>, Vec<CString>);
-    unsafe fn parse_terminal_features(&self, features: &CStr, separators: &CStr);
-    unsafe fn terminal_feature_mask(&self) -> i32;
-    unsafe fn record_terminal_type(&self, name: &CStr);
+    fn terminal_description_source(&self) -> (Option<CString>, Vec<CString>);
+    fn parse_terminal_features(&self, features: &CStr, separators: &CStr);
+    fn terminal_feature_mask(&self) -> i32;
+    fn record_terminal_type(&self, name: &CStr);
     unsafe fn set_control_size(&self, width: u32, height: u32);
     /// Clear explicit panning; given a window, only panning of that window.
-    unsafe fn reset_pan(&self, window: Option<&WindowRef>);
+    fn reset_pan(&self, window: Option<&WindowRef>);
     /// Apply and clamp this window's explicit pan, if active, to a viewport.
     /// Window dimensions are read before borrowing Client state.
     unsafe fn apply_pan(&self, window: &WindowRef, view: &mut tty_window_view) -> bool;
@@ -123,76 +123,76 @@ pub trait Client {
     unsafe fn borrow_control_mut(&self) -> Option<Self::ControlMut<'_>>;
     unsafe fn start_control(&self);
     unsafe fn stop_control(&self);
-    unsafe fn control_pause_after(&self) -> Option<u64>;
+    fn control_pause_after(&self) -> Option<u64>;
     /// Check reply pressure and publish exit/discard state before discarding
     /// pending pane output. Returns false for a stopped or discarding client.
     unsafe fn accept_control_reply(&self, added: usize) -> bool;
-    unsafe fn attached_session(&self) -> SessionWeak;
+    fn attached_session(&self) -> SessionWeak;
     unsafe fn set_session(&self, session: Option<&SessionRef>);
     unsafe fn reattach_after_session_destroy(&self, target: Option<&SessionRef>);
-    unsafe fn is_dead(&self) -> bool;
-    unsafe fn is_control(&self) -> bool;
-    unsafe fn is_read_only(&self) -> bool;
+    fn is_dead(&self) -> bool;
+    fn is_control(&self) -> bool;
+    fn is_read_only(&self) -> bool;
     unsafe fn exec(&self, command: &CStr);
     /// Whether this client currently receives control protocol notifications.
-    unsafe fn receives_notifications(&self) -> bool;
+    fn receives_notifications(&self) -> bool;
     /// Formatting runs without a client borrow and may reenter the client.
     unsafe fn notify(&self, write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>);
-    unsafe fn name(&self) -> Option<CString>;
+    fn name(&self) -> Option<CString>;
     /// Observe the complete protocol/state flag word for legacy mask decisions.
-    unsafe fn flags(&self) -> u64;
+    fn flags(&self) -> u64;
     /// Apply an immediate flag transition, setting bits before clearing bits.
-    unsafe fn update_flags(&self, set: u64, clear: u64);
-    unsafe fn activity_time(&self) -> SystemTime;
-    unsafe fn creation_time(&self) -> SystemTime;
-    unsafe fn tty_name(&self) -> Option<CString>;
-    unsafe fn terminal_theme(&self) -> crate::shared::colour::client_theme;
-    unsafe fn colour_escape(&self, colour: i32, background: bool) -> Option<CString>;
-    unsafe fn is_nested(&self) -> bool;
-    unsafe fn peer_uid(&self) -> uid_t;
-    unsafe fn peer_gid(&self) -> gid_t;
+    fn update_flags(&self, set: u64, clear: u64);
+    fn activity_time(&self) -> SystemTime;
+    fn creation_time(&self) -> SystemTime;
+    fn tty_name(&self) -> Option<CString>;
+    fn terminal_theme(&self) -> crate::shared::colour::client_theme;
+    fn colour_escape(&self, colour: i32, background: bool) -> Option<CString>;
+    fn is_nested(&self) -> bool;
+    fn peer_uid(&self) -> uid_t;
+    fn peer_gid(&self) -> gid_t;
     /// Publish readiness at the caller's existing point in attachment ordering.
-    unsafe fn send_ready(&self);
+    fn send_ready(&self);
     /// Copy a protocol message into the peer's output queue. This never exposes
     /// the peer or retains a model borrow during protocol processing.
-    unsafe fn send_message(
+    fn send_message(
         &self,
         kind: crate::compat::imsg::msgtype,
         fd: Option<OwnedFd>,
         data: &[u8],
     ) -> i32;
-    unsafe fn register_file(&self, file: &Rc<std::cell::RefCell<crate::file::client_file>>);
-    unsafe fn unregister_file(&self, stream: i32, identity: *const crate::file::client_file);
+    fn register_file(&self, file: &Rc<std::cell::RefCell<crate::file::client_file>>);
+    fn unregister_file(&self, stream: i32, identity: *const crate::file::client_file);
     /// Stream-ordered observations; each yield resolves the current holder.
-    unsafe fn file_handles(
+    fn file_handles(
         &self,
     ) -> impl std::iter::FusedIterator<Item = Weak<std::cell::RefCell<crate::file::client_file>>> + 'static;
-    unsafe fn find_file(&self, stream: i32) -> Weak<std::cell::RefCell<crate::file::client_file>>;
+    fn find_file(&self, stream: i32) -> Weak<std::cell::RefCell<crate::file::client_file>>;
     /// Observe a request owned by input_ctx. Its owner must explicitly retire
     /// this observation before freeing the request.
-    unsafe fn observe_input_request(&self, request: &mut crate::shared::input::input_request);
-    unsafe fn forget_input_request(&self, request: &crate::shared::input::input_request);
-    unsafe fn has_input_requests(&self) -> bool;
+    fn observe_input_request(&self, request: &mut crate::shared::input::input_request);
+    fn forget_input_request(&self, request: &crate::shared::input::input_request);
+    fn has_input_requests(&self) -> bool;
     /// Select in client-index order; no Client borrow spans parser replies or
     /// explicit request cleanup (which itself removes index observations).
     unsafe fn reply_input_request(&self, reply: crate::input::InputRequestReply<'_>);
     unsafe fn cancel_input_requests(&self);
-    unsafe fn remember_session(&self);
-    unsafe fn previous_session(&self) -> SessionWeak;
-    unsafe fn has_input_fd(&self) -> bool;
+    fn remember_session(&self);
+    fn previous_session(&self) -> SessionWeak;
+    fn has_input_fd(&self) -> bool;
     /// Capture terminal attributes before attaching; retain the existing fatal error policy.
     unsafe fn capture_termios(&self) -> termios;
     /// Reserve nesting before starting a source-file chain. Completion or
     /// cancellation must explicitly balance a successful reservation.
-    unsafe fn enter_source_file(&self, limit: u32) -> Option<u32>;
-    unsafe fn leave_source_file(&self) -> u32;
+    fn enter_source_file(&self, limit: u32) -> Option<u32>;
+    fn leave_source_file(&self) -> u32;
 
     /// Attachment accounting excludes suspended, dead and exiting clients.
-    unsafe fn counts_as_attached(&self) -> bool;
+    fn counts_as_attached(&self) -> bool;
     /// Deliver the audible/visual part after Session has deduplicated the alert.
     unsafe fn alert(&self, kind: &CStr, visual: i32, current: bool, index: i32);
 
-    unsafe fn uses_legacy_layout_format(&self) -> bool;
+    fn uses_legacy_layout_format(&self) -> bool;
     unsafe fn focuses_window(&self, window: &WindowRef) -> bool;
     unsafe fn participates_in_window_sizing(&self) -> bool;
     unsafe fn window_size(&self, window: Option<&WindowRef>) -> (u32, u32, u32, u32);
@@ -216,9 +216,9 @@ pub trait Client {
         pane: u32,
         read: impl FnOnce(Option<&mut window_pane_offset>, bool) -> R,
     ) -> R;
-    unsafe fn set_return_value(&self, value: i32);
-    unsafe fn request_exit(&self, value: i32);
-    unsafe fn exit_with_message(&self, message: CString, return_value: Option<i32>);
+    fn set_return_value(&self, value: i32);
+    fn request_exit(&self, value: i32);
+    fn exit_with_message(&self, message: CString, return_value: Option<i32>);
     /// Preserve shutdown's immediate loss of suspended clients and otherwise
     /// queue the shutdown reason, then clear attachment without notifications.
     unsafe fn shutdown(&self);
@@ -228,11 +228,11 @@ pub trait Client {
     unsafe fn cwd(&self, fallback: Option<&SessionRef>) -> Option<CString>;
     unsafe fn set_key_table(&self, name: Option<&CStr>);
     /// Switch to an already resolved table without refreshing its activity time.
-    unsafe fn select_key_table(&self, table: Rc<std::cell::RefCell<key_table>>);
-    unsafe fn uses_key_table(&self, table: &Rc<std::cell::RefCell<key_table>>) -> bool;
+    fn select_key_table(&self, table: Rc<std::cell::RefCell<key_table>>);
+    fn uses_key_table(&self, table: &Rc<std::cell::RefCell<key_table>>) -> bool;
     /// Observe the separately owned prompt, then borrow it only while needed.
     /// A callback may retire it and install another prompt on this client.
-    unsafe fn prompt_observer(&self) -> refbox::Weak<crate::shared::prompt::prompt>;
+    fn prompt_observer(&self) -> refbox::Weak<crate::shared::prompt::prompt>;
     unsafe fn install_prompt(
         &self,
         prompt: refbox::RefBox<crate::shared::prompt::prompt>,
@@ -240,7 +240,7 @@ pub trait Client {
     );
     unsafe fn clear_prompt(&self);
     unsafe fn clear_status_message(&self);
-    unsafe fn redraw_status_if_unobscured(&self);
+    fn redraw_status_if_unobscured(&self);
     unsafe fn show_status_message(
         &self,
         message: CString,
@@ -249,17 +249,17 @@ pub trait Client {
         ignore_keys: i32,
         no_freeze: i32,
     );
-    unsafe fn status_message_text(&self) -> (Option<CString>, bool);
+    fn status_message_text(&self) -> (Option<CString>, bool);
     /// Install callbacks and typed payload as one owned overlay. Callback
     /// retirement remains explicit and runs without a live client borrow.
     unsafe fn set_overlay(&self, overlay: Overlay);
     unsafe fn clear_overlay(&self);
-    unsafe fn has_overlay(&self) -> bool;
-    unsafe fn clips_terminal_output(&self) -> bool;
+    fn has_overlay(&self) -> bool;
+    fn clips_terminal_output(&self) -> bool;
     unsafe fn draw_overlay(&self);
     unsafe fn overlay_ranges(&self, px: u_int, py: u_int, nx: u_int) -> Option<visible_ranges>;
     /// Return only the popup's nonowning identity; acquire its state afterwards.
-    unsafe fn popup_overlay(&self) -> Option<crate::popup::PopupHandle>;
+    fn popup_overlay(&self) -> Option<crate::popup::PopupHandle>;
     /// Temporarily remove clipping for an overlay's own output. Restore only if
     /// callbacks did not retire/replace the overlay during `draw`; no model
     /// borrow spans that closure. The supplied callback replaces the old one.
@@ -268,13 +268,13 @@ pub trait Client {
         restore: overlay_check_cb,
         draw: impl FnOnce() -> R,
     ) -> R;
-    unsafe fn terminal_size(&self) -> (u32, u32);
-    unsafe fn terminal_started(&self) -> bool;
+    fn terminal_size(&self) -> (u32, u32);
+    fn terminal_started(&self) -> bool;
     unsafe fn terminal_view(&self) -> crate::shared::tty::tty_window_view;
     /// An active render owns its scene across formatting and overlay callbacks.
-    unsafe fn take_redraw_scene(&self) -> Option<Box<crate::shared::redraw::redraw_scene>>;
+    fn take_redraw_scene(&self) -> Option<Box<crate::shared::redraw::redraw_scene>>;
     /// Keep a replacement installed by a nested render, if one exists.
-    unsafe fn restore_redraw_scene(&self, scene: Box<crate::shared::redraw::redraw_scene>);
+    fn restore_redraw_scene(&self, scene: Box<crate::shared::redraw::redraw_scene>);
     unsafe fn schedule_format_cycle(&self, interval_ms: i32);
     unsafe fn refresh_terminal_size(&self);
     /// Query the owned descriptor without exposing it to terminal consumers.
@@ -358,24 +358,24 @@ impl Client for ClientRef {
         server_client_handle_key(self, event)
     }
 
-    unsafe fn terminal_fd(&self) -> i32 {
-        (*self.as_ptr()).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd)
+    fn terminal_fd(&self) -> i32 {
+        self.borrow().fd.as_ref().map_or(-1, AsRawFd::as_raw_fd)
     }
-    unsafe fn record_terminal_discard(&self, bytes: usize) {
-        let discarded = &mut (*self.as_ptr()).discarded;
-        *discarded = discarded.wrapping_add(bytes);
+    fn record_terminal_discard(&self, bytes: usize) {
+        let mut client = self.borrow_mut();
+        client.discarded = client.discarded.wrapping_add(bytes);
     }
-    unsafe fn acknowledge_terminal_redraw(&self, bytes: usize) -> Option<usize> {
-        let redraw = &mut (*self.as_ptr()).redraw;
-        if *redraw == 0 {
+    fn acknowledge_terminal_redraw(&self, bytes: usize) -> Option<usize> {
+        let mut client = self.borrow_mut();
+        if client.redraw == 0 {
             return None;
         }
-        *redraw = redraw.saturating_sub(bytes);
-        Some(*redraw)
+        client.redraw = client.redraw.saturating_sub(bytes);
+        Some(client.redraw)
     }
-    unsafe fn reset_mouse_drag(&self) {
+    fn reset_mouse_drag(&self) {
         let (update, release) = {
-            let state = &mut *self.as_ptr();
+            let mut state = self.borrow_mut();
             state.mouse_drag_flag = 0;
             (
                 state.mouse_drag_update.take(),
@@ -385,19 +385,24 @@ impl Client for ClientRef {
         drop(update);
         drop(release);
     }
-    unsafe fn mouse_drag_active(&self) -> bool {
-        (*self.as_ptr()).mouse_drag_flag != 0
+    fn mouse_drag_active(&self) -> bool {
+        self.borrow().mouse_drag_flag != 0
     }
-    unsafe fn mouse_slider_position(&self) -> i32 {
-        (*self.as_ptr()).mouse_slider_mpos
+    fn mouse_slider_position(&self) -> i32 {
+        self.borrow().mouse_slider_mpos
     }
-    unsafe fn set_mouse_drag_callbacks(&self, update: MouseDragUpdate, release: MouseDragRelease) {
-        let state = &mut *self.as_ptr();
-        state.mouse_drag_update = Some(update);
-        state.mouse_drag_release = Some(release);
+    fn set_mouse_drag_callbacks(&self, update: MouseDragUpdate, release: MouseDragRelease) {
+        let replaced = {
+            let mut state = self.borrow_mut();
+            (
+                state.mouse_drag_update.replace(update),
+                state.mouse_drag_release.replace(release),
+            )
+        };
+        drop(replaced);
     }
-    unsafe fn terminal_theme_colour(&self, index: usize) -> i32 {
-        (*self.as_ptr())
+    fn terminal_theme_colour(&self, index: usize) -> i32 {
+        self.borrow()
             .theme_colours
             .get(index)
             .copied()
@@ -408,22 +413,23 @@ impl Client for ClientRef {
     unsafe fn borrow_format_jobs_mut(&self) -> Self::FormatJobsMut<'_> {
         &mut (*self.as_ptr()).jobs
     }
-    unsafe fn record_terminal_type(&self, name: &CStr) {
-        server_client_set_term_type(&mut *self.as_ptr(), Some(name.to_owned()));
+    fn record_terminal_type(&self, name: &CStr) {
+        server_client_set_term_type(&mut self.borrow_mut(), Some(name.to_owned()));
     }
-    unsafe fn observe_input_request(&self, request: &mut crate::shared::input::input_request) {
-        (*self.as_ptr()).input_requests.push(request);
+    fn observe_input_request(&self, request: &mut crate::shared::input::input_request) {
+        self.borrow_mut().input_requests.push(request);
     }
-    unsafe fn forget_input_request(&self, request: &crate::shared::input::input_request) {
-        let requests = &mut (*self.as_ptr()).input_requests;
+    fn forget_input_request(&self, request: &crate::shared::input::input_request) {
+        let mut state = self.borrow_mut();
+        let requests = &mut state.input_requests;
         let index = requests
             .iter()
             .position(|candidate| std::ptr::eq(*candidate, request))
             .expect("request missing from its client handle collection");
         requests.remove(index);
     }
-    unsafe fn has_input_requests(&self) -> bool {
-        !(*self.as_ptr()).input_requests.is_empty()
+    fn has_input_requests(&self) -> bool {
+        !self.borrow().input_requests.is_empty()
     }
     unsafe fn reply_input_request(&self, reply: crate::input::InputRequestReply<'_>) {
         let requests = (*self.as_ptr()).input_requests.clone();
@@ -460,12 +466,13 @@ impl Client for ClientRef {
             bytes,
         );
     }
-    unsafe fn terminal_description_source(&self) -> (Option<CString>, Vec<CString>) {
-        let state = &*self.as_ptr();
+    fn terminal_description_source(&self) -> (Option<CString>, Vec<CString>) {
+        let state = self.borrow();
         (state.term_name.clone(), state.term_caps.clone())
     }
-    unsafe fn parse_terminal_features(&self, features: &CStr, separators: &CStr) {
-        let state = &mut *self.as_ptr();
+    fn parse_terminal_features(&self, features: &CStr, separators: &CStr) {
+        let mut state = self.borrow_mut();
+        let state = &mut *state;
         crate::tty::tty_parse_features(
             features,
             separators,
@@ -473,16 +480,16 @@ impl Client for ClientRef {
             Some(&mut state.term_nofeatures),
         );
     }
-    unsafe fn terminal_feature_mask(&self) -> i32 {
-        let state = &*self.as_ptr();
+    fn terminal_feature_mask(&self) -> i32 {
+        let state = self.borrow();
         state.term_features & !state.term_nofeatures
     }
     unsafe fn set_control_size(&self, width: u32, height: u32) {
         crate::tty::tty_set_size(&mut (*self.as_ptr()).tty, width, height, 0, 0);
         (*self.as_ptr()).flags |= CLIENT_SIZECHANGED as u64;
     }
-    unsafe fn reset_pan(&self, window: Option<&WindowRef>) {
-        let state = &mut *self.as_ptr();
+    fn reset_pan(&self, window: Option<&WindowRef>) {
+        let mut state = self.borrow_mut();
         if window.is_none_or(|window| state.pan_window.ptr_eq(&WindowRef::downgrade(window))) {
             state.pan_window = WindowWeak::new();
         }
@@ -570,17 +577,17 @@ impl Client for ClientRef {
     unsafe fn borrow_status_mut(&self) -> Self::StatusMut<'_> {
         &mut (*self.as_ptr()).status
     }
-    unsafe fn terminal_started(&self) -> bool {
-        (*self.as_ptr()).tty.is_started()
+    fn terminal_started(&self) -> bool {
+        self.borrow().tty.is_started()
     }
     unsafe fn terminal_view(&self) -> crate::shared::tty::tty_window_view {
         tty_window_offset(&(*self.as_ptr()).tty)
     }
-    unsafe fn take_redraw_scene(&self) -> Option<Box<crate::shared::redraw::redraw_scene>> {
-        (*self.as_ptr()).redraw_scene.take()
+    fn take_redraw_scene(&self) -> Option<Box<crate::shared::redraw::redraw_scene>> {
+        self.borrow_mut().redraw_scene.take()
     }
-    unsafe fn restore_redraw_scene(&self, scene: Box<crate::shared::redraw::redraw_scene>) {
-        let state = &mut *self.as_ptr();
+    fn restore_redraw_scene(&self, scene: Box<crate::shared::redraw::redraw_scene>) {
+        let mut state = self.borrow_mut();
         if state.redraw_scene.is_none() {
             state.redraw_scene = Some(scene);
         }
@@ -589,8 +596,8 @@ impl Client for ClientRef {
     unsafe fn borrow_control_mut(&self) -> Option<Self::ControlMut<'_>> {
         (*self.as_ptr()).control_state.as_deref_mut()
     }
-    unsafe fn control_pause_after(&self) -> Option<u64> {
-        let state = &*self.as_ptr();
+    fn control_pause_after(&self) -> Option<u64> {
+        let state = self.borrow();
         (state.flags & CLIENT_CONTROL_PAUSEAFTER != 0).then_some(state.pause_age as u64)
     }
     unsafe fn start_control(&self) {
@@ -709,34 +716,35 @@ impl Client for ClientRef {
     unsafe fn notify(&self, write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) {
         crate::control::control_notify_write(self, write);
     }
-    unsafe fn receives_notifications(&self) -> bool {
-        let state = &*self.as_ptr();
+    fn receives_notifications(&self) -> bool {
+        let state = self.borrow();
         state.flags & CLIENT_CONTROL as u64 != 0
             && state.flags & CLIENT_EXIT as u64 == 0
             && state.control_state.is_some()
     }
-    unsafe fn flags(&self) -> u64 {
-        (*self.as_ptr()).flags
+    fn flags(&self) -> u64 {
+        self.borrow().flags
     }
-    unsafe fn update_flags(&self, set: u64, clear: u64) {
-        (*self.as_ptr()).flags = ((*self.as_ptr()).flags | set) & !clear;
+    fn update_flags(&self, set: u64, clear: u64) {
+        let mut client = self.borrow_mut();
+        client.flags = (client.flags | set) & !clear;
     }
-    unsafe fn activity_time(&self) -> SystemTime {
-        (*self.as_ptr()).activity_time
+    fn activity_time(&self) -> SystemTime {
+        self.borrow().activity_time
     }
-    unsafe fn creation_time(&self) -> SystemTime {
-        (*self.as_ptr()).creation_time
+    fn creation_time(&self) -> SystemTime {
+        self.borrow().creation_time
     }
-    unsafe fn tty_name(&self) -> Option<CString> {
-        (*self.as_ptr()).ttyname.clone()
+    fn tty_name(&self) -> Option<CString> {
+        self.borrow().ttyname.clone()
     }
-    unsafe fn terminal_theme(&self) -> crate::shared::colour::client_theme {
-        (*self.as_ptr()).theme
+    fn terminal_theme(&self) -> crate::shared::colour::client_theme {
+        self.borrow().theme
     }
-    unsafe fn colour_escape(&self, mut colour: i32, background: bool) -> Option<CString> {
+    fn colour_escape(&self, mut colour: i32, background: bool) -> Option<CString> {
         use crate::shared::colour::{COLOUR_FLAG_THEME, COLOUR_THEME_COUNT};
         let flags = {
-            let state = &*self.as_ptr();
+            let state = self.borrow();
             if colour & COLOUR_FLAG_THEME != 0 {
                 let index = (colour & 0xff) as usize;
                 colour = if index < COLOUR_THEME_COUNT as usize {
@@ -749,73 +757,73 @@ impl Client for ClientRef {
         };
         crate::style::colour::colour_format_escape_resolved(colour, background, flags)
     }
-    unsafe fn is_nested(&self) -> bool {
-        server_client_check_nested(&*self.as_ptr()) != 0
+    fn is_nested(&self) -> bool {
+        server_client_check_nested(&self.borrow()) != 0
     }
-    unsafe fn peer_uid(&self) -> uid_t {
-        crate::proc::proc_get_peer_uid((*self.as_ptr()).peer)
+    fn peer_uid(&self) -> uid_t {
+        crate::proc::proc_get_peer_uid(&self.borrow().peer.clone())
     }
-    unsafe fn peer_gid(&self) -> gid_t {
-        crate::proc::proc_get_peer_gid((*self.as_ptr()).peer)
+    fn peer_gid(&self) -> gid_t {
+        crate::proc::proc_get_peer_gid(&self.borrow().peer.clone())
     }
-    unsafe fn send_ready(&self) {
-        let peer = (*self.as_ptr()).peer;
-        proc_send(peer, MSG_READY, None, &[]);
+    fn send_ready(&self) {
+        let peer = self.borrow().peer.clone();
+        proc_send(&peer, MSG_READY, None, &[]);
     }
-    unsafe fn send_message(
+    fn send_message(
         &self,
         kind: crate::compat::imsg::msgtype,
         fd: Option<OwnedFd>,
         data: &[u8],
     ) -> i32 {
-        let peer = (*self.as_ptr()).peer;
-        proc_send(peer, kind, fd, data)
+        let peer = self.borrow().peer.clone();
+        proc_send(&peer, kind, fd, data)
     }
-    unsafe fn register_file(&self, file: &Rc<std::cell::RefCell<crate::file::client_file>>) {
-        crate::file::client_files_insert(&mut (*self.as_ptr()).files, file.clone());
+    fn register_file(&self, file: &Rc<std::cell::RefCell<crate::file::client_file>>) {
+        crate::file::client_files_insert(&mut self.borrow_mut().files, file.clone());
     }
-    unsafe fn unregister_file(&self, stream: i32, identity: *const crate::file::client_file) {
+    fn unregister_file(&self, stream: i32, identity: *const crate::file::client_file) {
         let removed = crate::file::client_files_remove_identity(
-            &mut (*self.as_ptr()).files,
+            &mut self.borrow_mut().files,
             stream,
             identity,
         );
         drop(removed);
     }
-    unsafe fn file_handles(
+    fn file_handles(
         &self,
     ) -> impl std::iter::FusedIterator<Item = Weak<std::cell::RefCell<crate::file::client_file>>> + 'static
     {
-        crate::file::client_files_iter(&(*self.as_ptr()).files)
+        crate::file::client_files_iter(&self.borrow().files)
     }
-    unsafe fn find_file(&self, stream: i32) -> Weak<std::cell::RefCell<crate::file::client_file>> {
-        (*self.as_ptr())
+    fn find_file(&self, stream: i32) -> Weak<std::cell::RefCell<crate::file::client_file>> {
+        self.borrow()
             .files
             .get(&stream)
             .map_or_else(Weak::new, Rc::downgrade)
     }
-    unsafe fn remember_session(&self) {
-        let state = &mut *self.as_ptr();
+    fn remember_session(&self) {
+        let mut state = self.borrow_mut();
         state.last_session = state.session.clone();
     }
-    unsafe fn previous_session(&self) -> SessionWeak {
-        (*self.as_ptr()).last_session.clone()
+    fn previous_session(&self) -> SessionWeak {
+        self.borrow().last_session.clone()
     }
-    unsafe fn has_input_fd(&self) -> bool {
-        (*self.as_ptr()).fd.is_some()
+    fn has_input_fd(&self) -> bool {
+        self.borrow().fd.is_some()
     }
-    unsafe fn enter_source_file(&self, limit: u32) -> Option<u32> {
-        let depth = &mut (*self.as_ptr()).source_file_depth;
-        if *depth >= limit {
+    fn enter_source_file(&self, limit: u32) -> Option<u32> {
+        let mut state = self.borrow_mut();
+        if state.source_file_depth >= limit {
             return None;
         }
-        *depth = depth.wrapping_add(1);
-        Some(*depth)
+        state.source_file_depth = state.source_file_depth.wrapping_add(1);
+        Some(state.source_file_depth)
     }
-    unsafe fn leave_source_file(&self) -> u32 {
-        let depth = &mut (*self.as_ptr()).source_file_depth;
-        *depth = depth.wrapping_sub(1);
-        *depth
+    fn leave_source_file(&self) -> u32 {
+        let mut state = self.borrow_mut();
+        state.source_file_depth = state.source_file_depth.wrapping_sub(1);
+        state.source_file_depth
     }
     unsafe fn capture_termios(&self) -> termios {
         crate::shared::terminal::read_attributes(
@@ -823,11 +831,11 @@ impl Client for ClientRef {
         )
         .unwrap_or_else(|error| fatal(&error, |out| out.write_all(b"tcgetattr failed")))
     }
-    unsafe fn name(&self) -> Option<CString> {
-        (*self.as_ptr()).name.clone()
+    fn name(&self) -> Option<CString> {
+        self.borrow().name.clone()
     }
-    unsafe fn counts_as_attached(&self) -> bool {
-        (*self.as_ptr()).flags & crate::shared::client::CLIENT_UNATTACHEDFLAGS as u64 == 0
+    fn counts_as_attached(&self) -> bool {
+        self.borrow().flags & crate::shared::client::CLIENT_UNATTACHEDFLAGS as u64 == 0
     }
     unsafe fn alert(&self, kind: &CStr, visual: i32, current: bool, index: i32) {
         use crate::shared::alerts::{VISUAL_BOTH, VISUAL_OFF};
@@ -846,8 +854,8 @@ impl Client for ClientRef {
         }
     }
 
-    unsafe fn attached_session(&self) -> SessionWeak {
-        (*self.as_ptr()).session.clone()
+    fn attached_session(&self) -> SessionWeak {
+        self.borrow().session.clone()
     }
 
     unsafe fn set_session(&self, session: Option<&SessionRef>) {
@@ -863,22 +871,22 @@ impl Client for ClientRef {
         }
     }
 
-    unsafe fn is_dead(&self) -> bool {
-        (*self.as_ptr()).flags & CLIENT_DEAD as u64 != 0
+    fn is_dead(&self) -> bool {
+        self.borrow().flags & CLIENT_DEAD as u64 != 0
     }
 
-    unsafe fn is_read_only(&self) -> bool {
-        (*self.as_ptr()).flags & CLIENT_READONLY as u64 != 0
+    fn is_read_only(&self) -> bool {
+        self.borrow().flags & CLIENT_READONLY as u64 != 0
     }
     unsafe fn exec(&self, command: &CStr) {
         server_client_exec(self, command);
     }
-    unsafe fn is_control(&self) -> bool {
-        (*self.as_ptr()).flags & CLIENT_CONTROL as u64 != 0
+    fn is_control(&self) -> bool {
+        self.borrow().flags & CLIENT_CONTROL as u64 != 0
     }
 
-    unsafe fn uses_legacy_layout_format(&self) -> bool {
-        self.is_control() && (*self.as_ptr()).flags & CLIENT_CONTROL_NEWLAYOUTS == 0
+    fn uses_legacy_layout_format(&self) -> bool {
+        self.is_control() && self.borrow().flags & CLIENT_CONTROL_NEWLAYOUTS == 0
     }
 
     unsafe fn focuses_window(&self, window: &WindowRef) -> bool {
@@ -1014,16 +1022,16 @@ impl Client for ClientRef {
         read(offset, off != 0)
     }
 
-    unsafe fn set_return_value(&self, value: i32) {
-        (*self.as_ptr()).retval = value;
+    fn set_return_value(&self, value: i32) {
+        self.borrow_mut().retval = value;
     }
 
-    unsafe fn request_exit(&self, value: i32) {
+    fn request_exit(&self, value: i32) {
         self.set_return_value(value);
-        (*self.as_ptr()).flags |= CLIENT_EXIT as u64;
+        self.update_flags(CLIENT_EXIT as u64, 0);
     }
-    unsafe fn exit_with_message(&self, message: CString, return_value: Option<i32>) {
-        let state = &mut *self.as_ptr();
+    fn exit_with_message(&self, message: CString, return_value: Option<i32>) {
+        let mut state = self.borrow_mut();
         state.exit_message = Some(message);
         if let Some(value) = return_value {
             state.retval = value;
@@ -1070,17 +1078,18 @@ impl Client for ClientRef {
     unsafe fn set_key_table(&self, name: Option<&CStr>) {
         server_client_set_key_table(self, name);
     }
-    unsafe fn select_key_table(&self, table: Rc<std::cell::RefCell<key_table>>) {
-        (*self.as_ptr()).keytable = Some(table);
+    fn select_key_table(&self, table: Rc<std::cell::RefCell<key_table>>) {
+        let old = self.borrow_mut().keytable.replace(table);
+        drop(old);
     }
-    unsafe fn uses_key_table(&self, table: &Rc<std::cell::RefCell<key_table>>) -> bool {
-        (*self.as_ptr())
+    fn uses_key_table(&self, table: &Rc<std::cell::RefCell<key_table>>) -> bool {
+        self.borrow()
             .keytable
             .as_ref()
             .is_some_and(|current| Rc::ptr_eq(current, table))
     }
-    unsafe fn prompt_observer(&self) -> refbox::Weak<crate::shared::prompt::prompt> {
-        (*self.as_ptr())
+    fn prompt_observer(&self) -> refbox::Weak<crate::shared::prompt::prompt> {
+        self.borrow()
             .prompt
             .as_ref()
             .map_or_else(refbox::Weak::new, |prompt| prompt.downgrade())
@@ -1126,14 +1135,14 @@ impl Client for ClientRef {
         }
         crate::status::status_pop_screen(self);
     }
-    unsafe fn redraw_status_if_unobscured(&self) {
-        let state = &mut *self.as_ptr();
+    fn redraw_status_if_unobscured(&self) {
+        let mut state = self.borrow_mut();
         if state.message_string.is_none() && state.prompt.is_none() {
             state.flags |= CLIENT_REDRAWSTATUS as u64;
         }
     }
-    unsafe fn status_message_text(&self) -> (Option<CString>, bool) {
-        let state = &*self.as_ptr();
+    fn status_message_text(&self) -> (Option<CString>, bool) {
+        let state = self.borrow();
         (
             state.message_string.clone(),
             state.message_ignore_styles != 0,
@@ -1198,14 +1207,14 @@ impl Client for ClientRef {
     unsafe fn clear_overlay(&self) {
         server_client_clear_overlay(self);
     }
-    unsafe fn has_overlay(&self) -> bool {
-        (*self.as_ptr())
+    fn has_overlay(&self) -> bool {
+        self.borrow()
             .overlay
             .as_ref()
             .is_some_and(|overlay| overlay.draw.is_some())
     }
-    unsafe fn clips_terminal_output(&self) -> bool {
-        (*self.as_ptr())
+    fn clips_terminal_output(&self) -> bool {
+        self.borrow()
             .overlay
             .as_ref()
             .is_some_and(|overlay| overlay.check.is_some())
@@ -1218,8 +1227,8 @@ impl Client for ClientRef {
         server_client_overlay_check(self, px, py, nx)
     }
 
-    unsafe fn popup_overlay(&self) -> Option<crate::popup::PopupHandle> {
-        (*self.as_ptr()).overlay.as_ref()?.popup_handle()
+    fn popup_overlay(&self) -> Option<crate::popup::PopupHandle> {
+        self.borrow().overlay.as_ref()?.popup_handle()
     }
 
     unsafe fn with_overlay_check_disabled<R>(
@@ -1244,8 +1253,8 @@ impl Client for ClientRef {
         result
     }
 
-    unsafe fn terminal_size(&self) -> (u32, u32) {
-        (*self.as_ptr()).tty.size()
+    fn terminal_size(&self) -> (u32, u32) {
+        self.borrow().tty.size()
     }
 
     unsafe fn query_terminal_size(&self) -> Option<crate::shared::posix_terminal::winsize> {
@@ -1403,8 +1412,8 @@ impl Client for ClientRef {
         }
         crate::tty::tty_lock(self);
         self.update_flags(CLIENT_SUSPENDED as u64, 0);
-        let peer = (*self.as_ptr()).peer;
-        proc_send(peer, MSG_LOCK, None, command.to_bytes_with_nul());
+        let peer = self.borrow().peer.clone();
+        proc_send(&peer, MSG_LOCK, None, command.to_bytes_with_nul());
     }
 
     unsafe fn lost(&self) {
@@ -1444,15 +1453,13 @@ mod tests {
 
     #[test]
     fn source_file_reservations_preserve_limit_and_explicit_completion() {
-        unsafe {
-            let owner = client::new();
-            assert_eq!(owner.enter_source_file(2), Some(1));
-            assert_eq!(owner.enter_source_file(2), Some(2));
-            assert_eq!(owner.enter_source_file(2), None);
-            assert_eq!(owner.leave_source_file(), 1);
-            assert_eq!(owner.enter_source_file(2), Some(2));
-            assert_eq!(owner.leave_source_file(), 1);
-            assert_eq!(owner.leave_source_file(), 0);
-        }
+        let owner = client::new();
+        assert_eq!(owner.enter_source_file(2), Some(1));
+        assert_eq!(owner.enter_source_file(2), Some(2));
+        assert_eq!(owner.enter_source_file(2), None);
+        assert_eq!(owner.leave_source_file(), 1);
+        assert_eq!(owner.enter_source_file(2), Some(2));
+        assert_eq!(owner.leave_source_file(), 1);
+        assert_eq!(owner.leave_source_file(), 0);
     }
 }

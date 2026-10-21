@@ -1641,7 +1641,7 @@ fn mode_tree_menu_callback(
     client: ClientWeak,
     line: u_int,
 ) -> menu_choice_cb {
-    Some(Box::new(move |selection| unsafe {
+    Some(Box::new(move |selection| {
         let MenuSelection::Selected { key, .. } = selection else {
             return;
         };

@@ -93,13 +93,13 @@ unsafe fn cmd_find_inside_pane(
     }
     inside
 }
-unsafe fn cmd_find_client_better(c: &ClientRef, than: Option<&ClientRef>) -> bool {
+fn cmd_find_client_better(c: &ClientRef, than: Option<&ClientRef>) -> bool {
     than.is_none_or(|than| {
         let (c, than) = (c.activity_time(), than.activity_time());
         c > than
     })
 }
-pub unsafe fn cmd_find_best_client(s: &SessionRef) -> Option<ClientRef> {
+pub fn cmd_find_best_client(s: &SessionRef) -> Option<ClientRef> {
     let mut best: Option<ClientRef> = None;
     let mut cursor = ClientRegistry::first();
     while let Some(owner) = cursor {
@@ -116,7 +116,7 @@ pub unsafe fn cmd_find_best_client(s: &SessionRef) -> Option<ClientRef> {
     }
     best
 }
-unsafe fn cmd_find_session_better(s: &SessionRef, than: Option<&SessionRef>, flags: i32) -> bool {
+fn cmd_find_session_better(s: &SessionRef, than: Option<&SessionRef>, flags: i32) -> bool {
     let Some(than) = than else { return true };
     if flags & CMD_FIND_PREFER_UNATTACHED != 0 {
         if than.is_attached() && !s.is_attached() {
