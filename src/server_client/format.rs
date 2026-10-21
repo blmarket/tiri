@@ -35,7 +35,7 @@ pub(super) unsafe fn value(
         b"client_readonly" => boolean(owner.is_read_only()),
         b"client_utf8" => boolean(owner.flags() & CLIENT_UTF8 as u64 != 0),
         b"client_key_table" => {
-            let table = (*owner.get()).keytable.clone().expect("key table");
+            let table = (*owner.as_ptr()).keytable.clone().expect("key table");
             let name = table.borrow().name.clone();
             name
         }
@@ -45,7 +45,7 @@ pub(super) unsafe fn value(
                 .map(|session| options_get_string(&session.borrow_options_mut(), c"key-table"))
                 .filter(|name| !name.as_bytes().is_empty())
                 .unwrap_or_else(|| c"root".to_owned());
-            let table = (*owner.get()).keytable.clone().expect("key table");
+            let table = (*owner.as_ptr()).keytable.clone().expect("key table");
             let differs = table.borrow().name != default;
             boolean(differs)
         }
@@ -57,7 +57,7 @@ pub(super) unsafe fn value(
             number(uid)
         }
         b"client_user" => {
-            if let Some(name) = (*owner.get()).user.clone() {
+            if let Some(name) = (*owner.as_ptr()).user.clone() {
                 return Some(FormatValue::String(name));
             }
             let uid = owner.peer_uid();
@@ -69,24 +69,24 @@ pub(super) unsafe fn value(
                 return None;
             }
             let name = CStr::from_ptr((*passwd).pw_name).to_owned();
-            (*owner.get()).user = Some(name.clone());
+            (*owner.as_ptr()).user = Some(name.clone());
             name
         }
-        b"client_flags" => server_client_get_flags(&*owner.get()),
-        b"client_pid" => number((*owner.get()).pid),
-        b"client_discarded" => number((*owner.get()).discarded),
-        b"client_written" => number((*owner.get()).written),
-        b"client_termfeatures" => tty_get_features((*owner.get()).term_features),
-        b"client_termname" => (*owner.get()).term_name.clone()?,
-        b"client_termtype" => (*owner.get()).term_type.clone().unwrap_or_default(),
-        b"client_theme" => match (*owner.get()).theme {
+        b"client_flags" => server_client_get_flags(&*owner.as_ptr()),
+        b"client_pid" => number((*owner.as_ptr()).pid),
+        b"client_discarded" => number((*owner.as_ptr()).discarded),
+        b"client_written" => number((*owner.as_ptr()).written),
+        b"client_termfeatures" => tty_get_features((*owner.as_ptr()).term_features),
+        b"client_termname" => (*owner.as_ptr()).term_name.clone()?,
+        b"client_termtype" => (*owner.as_ptr()).term_type.clone().unwrap_or_default(),
+        b"client_theme" => match (*owner.as_ptr()).theme {
             1 => c"light".to_owned(),
             2 => c"dark".to_owned(),
             _ => return None,
         },
         b"client_width" => number(owner.terminal_size().0),
         b"client_height" | b"client_cell_width" | b"client_cell_height" | b"client_colours" => {
-            let tty = &(*owner.get()).tty;
+            let tty = &(*owner.as_ptr()).tty;
             if !tty.is_started() {
                 return None;
             }
@@ -122,8 +122,8 @@ mod tests {
     fn values_own_bytes_and_preserve_unstarted_terminal_behavior() {
         unsafe {
             let owner = client::new();
-            (*owner.get()).name = Some(CString::new(b"client-\xff".to_vec()).unwrap());
-            crate::tty::tty_set_size(&mut (*owner.get()).tty, 91, 27, 0, 0);
+            (*owner.as_ptr()).name = Some(CString::new(b"client-\xff".to_vec()).unwrap());
+            crate::tty::tty_set_size(&mut (*owner.as_ptr()).tty, 91, 27, 0, 0);
             let mut context = format_create(None, None, 0, 0);
             context.c = Rc::downgrade(&owner);
             let Some(FormatValue::String(name)) = owner.format_value(c"client_name", &mut context)
@@ -137,15 +137,15 @@ mod tests {
             };
             assert_eq!(width.as_c_str(), c"91");
             assert!(owner.format_value(c"client_height", &mut context).is_none());
-            (*owner.get()).tty.set_started_for_test(true);
+            (*owner.as_ptr()).tty.set_started_for_test(true);
             let Some(FormatValue::String(height)) =
                 owner.format_value(c"client_height", &mut context)
             else {
                 panic!("started terminal height");
             };
             assert_eq!(height.as_c_str(), c"27");
-            (*owner.get()).tty.set_started_for_test(false);
-            (*owner.get()).name = Some(c"renamed".to_owned());
+            (*owner.as_ptr()).tty.set_started_for_test(false);
+            (*owner.as_ptr()).name = Some(c"renamed".to_owned());
             assert_eq!(name.as_bytes(), b"client-\xff");
             context.c = std::rc::Weak::new();
             assert!(owner.format_value(c"client_name", &mut context).is_none());

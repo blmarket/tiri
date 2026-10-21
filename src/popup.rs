@@ -49,7 +49,7 @@ pub use crate::shared::tty::{tty_ctx, tty_style_ctx};
 use crate::style::colour::{colour_palette_from_option, colour_palette_init};
 use crate::style::{style_apply_with_options, style_parse, style_set};
 use crate::window::Window;
-use std::cell::UnsafeCell;
+use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 use std::os::unix::process::ExitStatusExt;
 use std::rc::Rc;
@@ -124,7 +124,7 @@ impl popup_data {
 }
 
 pub(crate) struct PopupState {
-    data: UnsafeCell<Box<popup_data>>,
+    data: RefCell<Box<popup_data>>,
 }
 
 #[derive(Clone)]
@@ -154,7 +154,7 @@ impl PopupHandle {
 
 impl PopupGuard<'_> {
     unsafe fn as_ptr(&self) -> *mut popup_data {
-        Box::as_mut_ptr(&mut *self.state.data.get())
+        Box::as_mut_ptr(&mut *self.state.data.as_ptr())
     }
 
     fn handle(&self) -> PopupHandle {
@@ -984,7 +984,7 @@ pub(crate) unsafe fn popup_display(
     data.style = popup_optional_string(style);
     data.border_style = popup_optional_string(border_style);
     let owner = refbox::RefBox::new(PopupState {
-        data: UnsafeCell::new(data),
+        data: RefCell::new(data),
     });
     let handle = PopupHandle(owner.downgrade());
     let popup = handle.upgrade().expect("new popup");

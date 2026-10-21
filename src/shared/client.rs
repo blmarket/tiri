@@ -1,5 +1,5 @@
 //! Authoritative client objects, file transfers, overlays, and scalar domains.
-use std::cell::UnsafeCell;
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use super::abi::u_int;
@@ -88,9 +88,9 @@ pub use crate::server_client::client;
 
 /// Retained Client identity. Consumers use Client operations and bounded
 /// component borrows; the cell representation is selected here.
-pub type ClientRef = Rc<UnsafeCell<client>>;
+pub type ClientRef = Rc<RefCell<client>>;
 /// Nonowning Client identity retained by callbacks and back references.
-pub type ClientWeak = std::rc::Weak<UnsafeCell<client>>;
+pub type ClientWeak = std::rc::Weak<RefCell<client>>;
 
 pub use crate::file::{client_file, client_file_cb, client_files};
 

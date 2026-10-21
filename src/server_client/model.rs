@@ -109,7 +109,7 @@ impl client {
     #[cfg(test)]
     pub(super) unsafe fn with_session_for_test(session: Option<&SessionRef>) -> ClientRef {
         let owner = Self::new();
-        (*owner.get()).set_session(session);
+        (*owner.as_ptr()).set_session(session);
         owner
     }
 
@@ -212,8 +212,8 @@ impl client {
         session: Option<&SessionRef>,
     ) -> ClientRef {
         let owner = Self::with_session_for_test(session);
-        (*owner.get()).name = name.map(ToOwned::to_owned);
-        (*owner.get()).control_state =
+        (*owner.as_ptr()).name = name.map(ToOwned::to_owned);
+        (*owner.as_ptr()).control_state =
             Some(Box::new(crate::shared::control::control_state::empty()));
         owner
     }

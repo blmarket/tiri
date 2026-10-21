@@ -3,13 +3,7 @@
 //! Ownership is kept in Rc values. Callback observers use Weak handles derived
 //! from those owners; borrowed raw addresses never represent strong references.
 
-use std::cell::UnsafeCell;
 use std::rc::Rc;
-
-/// Borrow the model pointer without deriving it from a reference to the value.
-pub fn as_ptr<T>(owner: &Rc<UnsafeCell<T>>) -> *mut T {
-    owner.get()
-}
 
 /// Retained handles compared by allocation identity.
 pub trait SameAllocation {
@@ -34,7 +28,7 @@ pub fn same<P: SameAllocation>(a: Option<&P>, b: Option<&P>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::Cell;
+    use std::cell::{Cell, RefCell};
 
     struct Value(Rc<Cell<usize>>);
 
@@ -47,13 +41,13 @@ mod tests {
     #[test]
     fn final_release_cleans_once_and_expires_weak_observers() {
         let calls = Rc::new(Cell::new(0));
-        let owner = Rc::new(UnsafeCell::new(Value(calls.clone())));
-        let ptr = as_ptr(&owner);
+        let owner = Rc::new(RefCell::new(Value(calls.clone())));
+        let ptr = owner.as_ptr();
         let weak = Rc::downgrade(&owner);
         let retained = owner.clone();
         drop(owner);
         assert_eq!(calls.get(), 0);
-        assert_eq!(as_ptr(&weak.upgrade().unwrap()), ptr);
+        assert_eq!(weak.upgrade().unwrap().as_ptr(), ptr);
         drop(retained);
         assert_eq!(calls.get(), 1);
         assert!(weak.upgrade().is_none());

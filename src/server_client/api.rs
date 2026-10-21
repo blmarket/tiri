@@ -359,14 +359,14 @@ impl Client for ClientRef {
     }
 
     unsafe fn terminal_fd(&self) -> i32 {
-        (*self.get()).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd)
+        (*self.as_ptr()).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd)
     }
     unsafe fn record_terminal_discard(&self, bytes: usize) {
-        let discarded = &mut (*self.get()).discarded;
+        let discarded = &mut (*self.as_ptr()).discarded;
         *discarded = discarded.wrapping_add(bytes);
     }
     unsafe fn acknowledge_terminal_redraw(&self, bytes: usize) -> Option<usize> {
-        let redraw = &mut (*self.get()).redraw;
+        let redraw = &mut (*self.as_ptr()).redraw;
         if *redraw == 0 {
             return None;
         }
@@ -375,7 +375,7 @@ impl Client for ClientRef {
     }
     unsafe fn reset_mouse_drag(&self) {
         let (update, release) = {
-            let state = &mut *self.get();
+            let state = &mut *self.as_ptr();
             state.mouse_drag_flag = 0;
             (
                 state.mouse_drag_update.take(),
@@ -386,18 +386,18 @@ impl Client for ClientRef {
         drop(release);
     }
     unsafe fn mouse_drag_active(&self) -> bool {
-        (*self.get()).mouse_drag_flag != 0
+        (*self.as_ptr()).mouse_drag_flag != 0
     }
     unsafe fn mouse_slider_position(&self) -> i32 {
-        (*self.get()).mouse_slider_mpos
+        (*self.as_ptr()).mouse_slider_mpos
     }
     unsafe fn set_mouse_drag_callbacks(&self, update: MouseDragUpdate, release: MouseDragRelease) {
-        let state = &mut *self.get();
+        let state = &mut *self.as_ptr();
         state.mouse_drag_update = Some(update);
         state.mouse_drag_release = Some(release);
     }
     unsafe fn terminal_theme_colour(&self, index: usize) -> i32 {
-        (*self.get())
+        (*self.as_ptr())
             .theme_colours
             .get(index)
             .copied()
@@ -406,16 +406,16 @@ impl Client for ClientRef {
 
     type FormatJobsMut<'a> = &'a mut crate::shared::format::format_job_tree;
     unsafe fn borrow_format_jobs_mut(&self) -> Self::FormatJobsMut<'_> {
-        &mut (*self.get()).jobs
+        &mut (*self.as_ptr()).jobs
     }
     unsafe fn record_terminal_type(&self, name: &CStr) {
-        server_client_set_term_type(&mut *self.get(), Some(name.to_owned()));
+        server_client_set_term_type(&mut *self.as_ptr(), Some(name.to_owned()));
     }
     unsafe fn observe_input_request(&self, request: &mut crate::shared::input::input_request) {
-        (*self.get()).input_requests.push(request);
+        (*self.as_ptr()).input_requests.push(request);
     }
     unsafe fn forget_input_request(&self, request: &crate::shared::input::input_request) {
-        let requests = &mut (*self.get()).input_requests;
+        let requests = &mut (*self.as_ptr()).input_requests;
         let index = requests
             .iter()
             .position(|candidate| std::ptr::eq(*candidate, request))
@@ -423,10 +423,10 @@ impl Client for ClientRef {
         requests.remove(index);
     }
     unsafe fn has_input_requests(&self) -> bool {
-        !(*self.get()).input_requests.is_empty()
+        !(*self.as_ptr()).input_requests.is_empty()
     }
     unsafe fn reply_input_request(&self, reply: crate::input::InputRequestReply<'_>) {
-        let requests = (*self.get()).input_requests.clone();
+        let requests = (*self.as_ptr()).input_requests.clone();
         for request in requests {
             if crate::input::input_request_matches(&*request, reply) {
                 crate::input::input_complete_request(request, reply);
@@ -436,7 +436,7 @@ impl Client for ClientRef {
         }
     }
     unsafe fn cancel_input_requests(&self) {
-        let requests = std::mem::take(&mut (*self.get()).input_requests);
+        let requests = std::mem::take(&mut (*self.as_ptr()).input_requests);
         for request in requests {
             (*request).c = Weak::new();
             crate::input::input_free_request(request);
@@ -445,13 +445,13 @@ impl Client for ClientRef {
     type Terminal<'a> = &'a tty;
     type TerminalMut<'a> = &'a mut tty;
     unsafe fn borrow_terminal(&self) -> Self::Terminal<'_> {
-        &(*self.get()).tty
+        &(*self.as_ptr()).tty
     }
     unsafe fn borrow_terminal_mut(&self) -> Self::TerminalMut<'_> {
-        &mut (*self.get()).tty
+        &mut (*self.as_ptr()).tty
     }
     unsafe fn write_terminal(&self, bytes: &[u8]) {
-        let state = &mut *self.get();
+        let state = &mut *self.as_ptr();
         crate::tty::tty_enqueue_bytes(
             Rc::downgrade(self),
             &mut state.tty,
@@ -461,11 +461,11 @@ impl Client for ClientRef {
         );
     }
     unsafe fn terminal_description_source(&self) -> (Option<CString>, Vec<CString>) {
-        let state = &*self.get();
+        let state = &*self.as_ptr();
         (state.term_name.clone(), state.term_caps.clone())
     }
     unsafe fn parse_terminal_features(&self, features: &CStr, separators: &CStr) {
-        let state = &mut *self.get();
+        let state = &mut *self.as_ptr();
         crate::tty::tty_parse_features(
             features,
             separators,
@@ -474,15 +474,15 @@ impl Client for ClientRef {
         );
     }
     unsafe fn terminal_feature_mask(&self) -> i32 {
-        let state = &*self.get();
+        let state = &*self.as_ptr();
         state.term_features & !state.term_nofeatures
     }
     unsafe fn set_control_size(&self, width: u32, height: u32) {
-        crate::tty::tty_set_size(&mut (*self.get()).tty, width, height, 0, 0);
-        (*self.get()).flags |= CLIENT_SIZECHANGED as u64;
+        crate::tty::tty_set_size(&mut (*self.as_ptr()).tty, width, height, 0, 0);
+        (*self.as_ptr()).flags |= CLIENT_SIZECHANGED as u64;
     }
     unsafe fn reset_pan(&self, window: Option<&WindowRef>) {
-        let state = &mut *self.get();
+        let state = &mut *self.as_ptr();
         if window.is_none_or(|window| state.pan_window.ptr_eq(&WindowRef::downgrade(window))) {
             state.pan_window = WindowWeak::new();
         }
@@ -490,7 +490,7 @@ impl Client for ClientRef {
     unsafe fn apply_pan(&self, window: &WindowRef, view: &mut tty_window_view) -> bool {
         let (sx, sy) = window.logical_size();
         let observer = WindowRef::downgrade(window);
-        let state = &mut *self.get();
+        let state = &mut *self.as_ptr();
         if !state.pan_window.ptr_eq(&observer) {
             return false;
         }
@@ -511,7 +511,7 @@ impl Client for ClientRef {
     unsafe fn pan_window(&self, window: &WindowRef, direction: Direction, amount: u32) {
         let (width, height) = window.logical_size();
         let observer = WindowRef::downgrade(window);
-        let state = &mut *self.get();
+        let state = &mut *self.as_ptr();
         if !state.pan_window.ptr_eq(&observer) {
             state.pan_window = observer;
             let view = tty_window_offset(&state.tty);
@@ -537,15 +537,15 @@ impl Client for ClientRef {
         }
     }
     unsafe fn schedule_format_cycle(&self, interval_ms: i32) {
-        if (*self.get()).cycle_timer.is_some() {
+        if (*self.as_ptr()).cycle_timer.is_some() {
             return;
         }
         let timeout = Duration::from_millis(interval_ms.max(0) as u64);
         let observer = Rc::downgrade(self);
-        (*self.get()).cycle_timer = Some(
+        (*self.as_ptr()).cycle_timer = Some(
             Timer::new(timeout, move || {
                 if let Some(owner) = observer.upgrade() {
-                    let state = &mut *owner.get();
+                    let state = &mut *owner.as_ptr();
                     drop(state.cycle_timer.take());
                     if state.message_string.is_none() && state.prompt.is_none() {
                         state.flags |= CLIENT_REDRAWSTATUS as u64;
@@ -557,7 +557,7 @@ impl Client for ClientRef {
     }
     type QueueMut<'a> = &'a mut crate::cmd::queue::cmdq_list;
     unsafe fn borrow_queue_mut(&self) -> Self::QueueMut<'_> {
-        (*self.get())
+        (*self.as_ptr())
             .queue
             .as_deref_mut()
             .expect("client command queue")
@@ -565,32 +565,32 @@ impl Client for ClientRef {
     type Status<'a> = &'a crate::shared::status::status_line;
     type StatusMut<'a> = &'a mut crate::shared::status::status_line;
     unsafe fn borrow_status(&self) -> Self::Status<'_> {
-        &(*self.get()).status
+        &(*self.as_ptr()).status
     }
     unsafe fn borrow_status_mut(&self) -> Self::StatusMut<'_> {
-        &mut (*self.get()).status
+        &mut (*self.as_ptr()).status
     }
     unsafe fn terminal_started(&self) -> bool {
-        (*self.get()).tty.is_started()
+        (*self.as_ptr()).tty.is_started()
     }
     unsafe fn terminal_view(&self) -> crate::shared::tty::tty_window_view {
-        tty_window_offset(&(*self.get()).tty)
+        tty_window_offset(&(*self.as_ptr()).tty)
     }
     unsafe fn take_redraw_scene(&self) -> Option<Box<crate::shared::redraw::redraw_scene>> {
-        (*self.get()).redraw_scene.take()
+        (*self.as_ptr()).redraw_scene.take()
     }
     unsafe fn restore_redraw_scene(&self, scene: Box<crate::shared::redraw::redraw_scene>) {
-        let state = &mut *self.get();
+        let state = &mut *self.as_ptr();
         if state.redraw_scene.is_none() {
             state.redraw_scene = Some(scene);
         }
     }
     type ControlMut<'a> = &'a mut control_state;
     unsafe fn borrow_control_mut(&self) -> Option<Self::ControlMut<'_>> {
-        (*self.get()).control_state.as_deref_mut()
+        (*self.as_ptr()).control_state.as_deref_mut()
     }
     unsafe fn control_pause_after(&self) -> Option<u64> {
-        let state = &*self.get();
+        let state = &*self.as_ptr();
         (state.flags & CLIENT_CONTROL_PAUSEAFTER != 0).then_some(state.pause_age as u64)
     }
     unsafe fn start_control(&self) {
@@ -598,15 +598,18 @@ impl Client for ClientRef {
             bufferevent_new, bufferevent_setwatermark, bufferevent_write, StreamHandle,
         };
         let control_control = self.flags() & CLIENT_CONTROLCONTROL as u64 != 0;
-        let fd = (*self.get()).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd);
-        let out_fd = (*self.get()).out_fd.as_ref().map_or(-1, AsRawFd::as_raw_fd);
+        let fd = (*self.as_ptr()).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd);
+        let out_fd = (*self.as_ptr())
+            .out_fd
+            .as_ref()
+            .map_or(-1, AsRawFd::as_raw_fd);
         if control_control {
-            drop((*self.get()).out_fd.take());
+            drop((*self.as_ptr()).out_fd.take());
         } else {
             setblocking(out_fd, 0);
         }
         setblocking(fd, 0);
-        (*self.get()).control_state = Some(Box::new(control_state::empty()));
+        (*self.as_ptr()).control_state = Some(Box::new(control_state::empty()));
         let subs = crate::control::control_subscriptions(self);
         self.borrow_control_mut()
             .expect("control client state")
@@ -669,11 +672,11 @@ impl Client for ClientRef {
             )
         };
         input.free();
-        drop((*self.get()).control_state.take());
+        drop((*self.as_ptr()).control_state.take());
     }
     unsafe fn accept_control_reply(&self, added: usize) -> bool {
         use crate::shared::client::CLIENT_CONTROL_DISCARD;
-        let state = &mut *self.get();
+        let state = &mut *self.as_ptr();
         let Some(control) = state.control_state.as_deref_mut() else {
             return false;
         };
@@ -707,33 +710,33 @@ impl Client for ClientRef {
         crate::control::control_notify_write(self, write);
     }
     unsafe fn receives_notifications(&self) -> bool {
-        let state = &*self.get();
+        let state = &*self.as_ptr();
         state.flags & CLIENT_CONTROL as u64 != 0
             && state.flags & CLIENT_EXIT as u64 == 0
             && state.control_state.is_some()
     }
     unsafe fn flags(&self) -> u64 {
-        (*self.get()).flags
+        (*self.as_ptr()).flags
     }
     unsafe fn update_flags(&self, set: u64, clear: u64) {
-        (*self.get()).flags = ((*self.get()).flags | set) & !clear;
+        (*self.as_ptr()).flags = ((*self.as_ptr()).flags | set) & !clear;
     }
     unsafe fn activity_time(&self) -> SystemTime {
-        (*self.get()).activity_time
+        (*self.as_ptr()).activity_time
     }
     unsafe fn creation_time(&self) -> SystemTime {
-        (*self.get()).creation_time
+        (*self.as_ptr()).creation_time
     }
     unsafe fn tty_name(&self) -> Option<CString> {
-        (*self.get()).ttyname.clone()
+        (*self.as_ptr()).ttyname.clone()
     }
     unsafe fn terminal_theme(&self) -> crate::shared::colour::client_theme {
-        (*self.get()).theme
+        (*self.as_ptr()).theme
     }
     unsafe fn colour_escape(&self, mut colour: i32, background: bool) -> Option<CString> {
         use crate::shared::colour::{COLOUR_FLAG_THEME, COLOUR_THEME_COUNT};
         let flags = {
-            let state = &*self.get();
+            let state = &*self.as_ptr();
             if colour & COLOUR_FLAG_THEME != 0 {
                 let index = (colour & 0xff) as usize;
                 colour = if index < COLOUR_THEME_COUNT as usize {
@@ -747,16 +750,16 @@ impl Client for ClientRef {
         crate::style::colour::colour_format_escape_resolved(colour, background, flags)
     }
     unsafe fn is_nested(&self) -> bool {
-        server_client_check_nested(&*self.get()) != 0
+        server_client_check_nested(&*self.as_ptr()) != 0
     }
     unsafe fn peer_uid(&self) -> uid_t {
-        crate::proc::proc_get_peer_uid((*self.get()).peer)
+        crate::proc::proc_get_peer_uid((*self.as_ptr()).peer)
     }
     unsafe fn peer_gid(&self) -> gid_t {
-        crate::proc::proc_get_peer_gid((*self.get()).peer)
+        crate::proc::proc_get_peer_gid((*self.as_ptr()).peer)
     }
     unsafe fn send_ready(&self) {
-        let peer = (*self.get()).peer;
+        let peer = (*self.as_ptr()).peer;
         proc_send(peer, MSG_READY, None, &[]);
     }
     unsafe fn send_message(
@@ -765,41 +768,44 @@ impl Client for ClientRef {
         fd: Option<OwnedFd>,
         data: &[u8],
     ) -> i32 {
-        let peer = (*self.get()).peer;
+        let peer = (*self.as_ptr()).peer;
         proc_send(peer, kind, fd, data)
     }
     unsafe fn register_file(&self, file: &Rc<std::cell::RefCell<crate::file::client_file>>) {
-        crate::file::client_files_insert(&mut (*self.get()).files, file.clone());
+        crate::file::client_files_insert(&mut (*self.as_ptr()).files, file.clone());
     }
     unsafe fn unregister_file(&self, stream: i32, identity: *const crate::file::client_file) {
-        let removed =
-            crate::file::client_files_remove_identity(&mut (*self.get()).files, stream, identity);
+        let removed = crate::file::client_files_remove_identity(
+            &mut (*self.as_ptr()).files,
+            stream,
+            identity,
+        );
         drop(removed);
     }
     unsafe fn file_handles(
         &self,
     ) -> impl std::iter::FusedIterator<Item = Weak<std::cell::RefCell<crate::file::client_file>>> + 'static
     {
-        crate::file::client_files_iter(&(*self.get()).files)
+        crate::file::client_files_iter(&(*self.as_ptr()).files)
     }
     unsafe fn find_file(&self, stream: i32) -> Weak<std::cell::RefCell<crate::file::client_file>> {
-        (*self.get())
+        (*self.as_ptr())
             .files
             .get(&stream)
             .map_or_else(Weak::new, Rc::downgrade)
     }
     unsafe fn remember_session(&self) {
-        let state = &mut *self.get();
+        let state = &mut *self.as_ptr();
         state.last_session = state.session.clone();
     }
     unsafe fn previous_session(&self) -> SessionWeak {
-        (*self.get()).last_session.clone()
+        (*self.as_ptr()).last_session.clone()
     }
     unsafe fn has_input_fd(&self) -> bool {
-        (*self.get()).fd.is_some()
+        (*self.as_ptr()).fd.is_some()
     }
     unsafe fn enter_source_file(&self, limit: u32) -> Option<u32> {
-        let depth = &mut (*self.get()).source_file_depth;
+        let depth = &mut (*self.as_ptr()).source_file_depth;
         if *depth >= limit {
             return None;
         }
@@ -807,21 +813,21 @@ impl Client for ClientRef {
         Some(*depth)
     }
     unsafe fn leave_source_file(&self) -> u32 {
-        let depth = &mut (*self.get()).source_file_depth;
+        let depth = &mut (*self.as_ptr()).source_file_depth;
         *depth = depth.wrapping_sub(1);
         *depth
     }
     unsafe fn capture_termios(&self) -> termios {
         crate::shared::terminal::read_attributes(
-            (*self.get()).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
+            (*self.as_ptr()).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
         )
         .unwrap_or_else(|error| fatal(&error, |out| out.write_all(b"tcgetattr failed")))
     }
     unsafe fn name(&self) -> Option<CString> {
-        (*self.get()).name.clone()
+        (*self.as_ptr()).name.clone()
     }
     unsafe fn counts_as_attached(&self) -> bool {
-        (*self.get()).flags & crate::shared::client::CLIENT_UNATTACHEDFLAGS as u64 == 0
+        (*self.as_ptr()).flags & crate::shared::client::CLIENT_UNATTACHEDFLAGS as u64 == 0
     }
     unsafe fn alert(&self, kind: &CStr, visual: i32, current: bool, index: i32) {
         use crate::shared::alerts::{VISUAL_BOTH, VISUAL_OFF};
@@ -841,7 +847,7 @@ impl Client for ClientRef {
     }
 
     unsafe fn attached_session(&self) -> SessionWeak {
-        (*self.get()).session.clone()
+        (*self.as_ptr()).session.clone()
     }
 
     unsafe fn set_session(&self, session: Option<&SessionRef>) {
@@ -849,36 +855,36 @@ impl Client for ClientRef {
     }
 
     unsafe fn reattach_after_session_destroy(&self, target: Option<&SessionRef>) {
-        (*self.get()).session = Weak::new();
-        (*self.get()).last_session = Weak::new();
+        (*self.as_ptr()).session = Weak::new();
+        (*self.as_ptr()).last_session = Weak::new();
         self.set_session(target);
         if target.is_none() {
-            (*self.get()).flags |= CLIENT_EXIT as u64;
+            (*self.as_ptr()).flags |= CLIENT_EXIT as u64;
         }
     }
 
     unsafe fn is_dead(&self) -> bool {
-        (*self.get()).flags & CLIENT_DEAD as u64 != 0
+        (*self.as_ptr()).flags & CLIENT_DEAD as u64 != 0
     }
 
     unsafe fn is_read_only(&self) -> bool {
-        (*self.get()).flags & CLIENT_READONLY as u64 != 0
+        (*self.as_ptr()).flags & CLIENT_READONLY as u64 != 0
     }
     unsafe fn exec(&self, command: &CStr) {
         server_client_exec(self, command);
     }
     unsafe fn is_control(&self) -> bool {
-        (*self.get()).flags & CLIENT_CONTROL as u64 != 0
+        (*self.as_ptr()).flags & CLIENT_CONTROL as u64 != 0
     }
 
     unsafe fn uses_legacy_layout_format(&self) -> bool {
-        self.is_control() && (*self.get()).flags & CLIENT_CONTROL_NEWLAYOUTS == 0
+        self.is_control() && (*self.as_ptr()).flags & CLIENT_CONTROL_NEWLAYOUTS == 0
     }
 
     unsafe fn focuses_window(&self, window: &WindowRef) -> bool {
-        let flags = (*self.get()).flags;
+        let flags = (*self.as_ptr()).flags;
         if flags & CLIENT_FOCUSED as u64 == 0
-            || (*self.get())
+            || (*self.as_ptr())
                 .overlay
                 .as_ref()
                 .is_some_and(|overlay| overlay.draw.is_some())
@@ -898,7 +904,7 @@ impl Client for ClientRef {
     }
 
     unsafe fn participates_in_window_sizing(&self) -> bool {
-        let client = &*self.get();
+        let client = &*self.as_ptr();
         if client.session.upgrade().is_none() || client.flags & CLIENT_NOSIZEFLAGS as u64 != 0 {
             return false;
         }
@@ -906,7 +912,7 @@ impl Client for ClientRef {
             let mut next = ClientRegistry::first();
             while let Some(owner) = next {
                 next = ClientRegistry::next(&owner);
-                let other = &*owner.get();
+                let other = &*owner.as_ptr();
                 if other.session.upgrade().is_some()
                     && other.flags & (CLIENT_NOSIZEFLAGS | CLIENT_IGNORESIZE) as u64 == 0
                 {
@@ -925,7 +931,7 @@ impl Client for ClientRef {
         });
         if !overridden {
             let status_lines =
-                if (*self.get()).flags & (CLIENT_STATUSOFF | CLIENT_CONTROL) as u64 != 0 {
+                if (*self.as_ptr()).flags & (CLIENT_STATUSOFF | CLIENT_CONTROL) as u64 != 0 {
                     0
                 } else if let Some(session) = self.attached_session().upgrade() {
                     session.status_layout().1
@@ -933,22 +939,22 @@ impl Client for ClientRef {
                     OptionsScope::GlobalSession.with_local(|oo| options_get_number(oo, c"status"))
                         as u32
                 };
-            (sx, sy) = (*self.get()).tty.size();
+            (sx, sy) = (*self.as_ptr()).tty.size();
             sy = sy.wrapping_sub(status_lines);
         }
-        let (xpixel, ypixel) = (*self.get()).tty.pixel_size();
+        let (xpixel, ypixel) = (*self.as_ptr()).tty.pixel_size();
         (sx, sy, xpixel, ypixel)
     }
 
     unsafe fn constrain_window_size(&self, window: &WindowRef, sx: &mut u32, sy: &mut u32) {
-        if (*self.get()).flags & CLIENT_WINDOWSIZECHANGED == 0 {
+        if (*self.as_ptr()).flags & CLIENT_WINDOWSIZECHANGED == 0 {
             return;
         }
         let (mut cx, mut cy) = (0, 0);
         if control_get_window_size(self, window.id(), &mut cx, &mut cy) != 0 {
             log_debug(format_args!(
                 "clients_calculate_size: {} size for @{} is {}x{}",
-                log_cstr((*self.get()).name.as_deref().unwrap_or(c"(null)")),
+                log_cstr((*self.as_ptr()).name.as_deref().unwrap_or(c"(null)")),
                 window.id(),
                 cx,
                 cy,
@@ -971,7 +977,7 @@ impl Client for ClientRef {
             0,
             "only redraw flags may be requested"
         );
-        (*self.get()).flags |= flags;
+        (*self.as_ptr()).flags |= flags;
     }
 
     unsafe fn handle_key_after(
@@ -994,7 +1000,7 @@ impl Client for ClientRef {
         pane: u32,
         read: impl FnOnce(Option<&mut window_pane_offset>, bool) -> R,
     ) -> R {
-        let client = &mut *self.get();
+        let client = &mut *self.as_ptr();
         let mut off = 0;
         let offset = control_pane_offset(
             client
@@ -1009,15 +1015,15 @@ impl Client for ClientRef {
     }
 
     unsafe fn set_return_value(&self, value: i32) {
-        (*self.get()).retval = value;
+        (*self.as_ptr()).retval = value;
     }
 
     unsafe fn request_exit(&self, value: i32) {
         self.set_return_value(value);
-        (*self.get()).flags |= CLIENT_EXIT as u64;
+        (*self.as_ptr()).flags |= CLIENT_EXIT as u64;
     }
     unsafe fn exit_with_message(&self, message: CString, return_value: Option<i32>) {
-        let state = &mut *self.get();
+        let state = &mut *self.as_ptr();
         state.exit_message = Some(message);
         if let Some(value) = return_value {
             state.retval = value;
@@ -1028,25 +1034,25 @@ impl Client for ClientRef {
         if self.flags() & CLIENT_SUSPENDED as u64 != 0 {
             self.lost();
         } else {
-            let state = &mut *self.get();
+            let state = &mut *self.as_ptr();
             state.flags |= CLIENT_EXIT as u64;
             state.exit_type = CLIENT_EXIT_SHUTDOWN;
         }
-        (*self.get()).set_session(None);
+        (*self.as_ptr()).set_session(None);
     }
 
     unsafe fn with_environment<R>(&self, read: impl FnOnce(Option<&environ>) -> R) -> R {
-        read((*self.get()).environ.as_deref())
+        read((*self.as_ptr()).environ.as_deref())
     }
 
     unsafe fn cwd(&self, fallback: Option<&SessionRef>) -> Option<CString> {
         if cfg_finished == 0 {
             if let Some(startup) = cfg_client.upgrade() {
-                return (*startup.get()).cwd.clone();
+                return (*startup.as_ptr()).cwd.clone();
             }
         }
-        if self.attached_session().upgrade().is_none() && (*self.get()).cwd.is_some() {
-            return (*self.get()).cwd.clone();
+        if self.attached_session().upgrade().is_none() && (*self.as_ptr()).cwd.is_some() {
+            return (*self.as_ptr()).cwd.clone();
         }
         if let Some(path) = fallback.and_then(|session| session.cwd()) {
             return Some(path);
@@ -1065,16 +1071,16 @@ impl Client for ClientRef {
         server_client_set_key_table(self, name);
     }
     unsafe fn select_key_table(&self, table: Rc<std::cell::RefCell<key_table>>) {
-        (*self.get()).keytable = Some(table);
+        (*self.as_ptr()).keytable = Some(table);
     }
     unsafe fn uses_key_table(&self, table: &Rc<std::cell::RefCell<key_table>>) -> bool {
-        (*self.get())
+        (*self.as_ptr())
             .keytable
             .as_ref()
             .is_some_and(|current| Rc::ptr_eq(current, table))
     }
     unsafe fn prompt_observer(&self) -> refbox::Weak<crate::shared::prompt::prompt> {
-        (*self.get())
+        (*self.as_ptr())
             .prompt
             .as_ref()
             .map_or_else(refbox::Weak::new, |prompt| prompt.downgrade())
@@ -1085,7 +1091,7 @@ impl Client for ClientRef {
         flags: i32,
     ) {
         use crate::shared::prompt::{PROMPT_INCREMENTAL, PROMPT_NOFREEZE};
-        let state = &mut *self.get();
+        let state = &mut *self.as_ptr();
         state.prompt = Some(prompt);
         if flags & (PROMPT_INCREMENTAL | PROMPT_NOFREEZE) == 0 {
             state.tty.set_frozen(true);
@@ -1094,7 +1100,7 @@ impl Client for ClientRef {
     }
     unsafe fn clear_prompt(&self) {
         let prompt = {
-            let state = &mut *self.get();
+            let state = &mut *self.as_ptr();
             let Some(prompt) = state.prompt.take() else {
                 return;
             };
@@ -1108,7 +1114,7 @@ impl Client for ClientRef {
     }
     unsafe fn clear_status_message(&self) {
         {
-            let state = &mut *self.get();
+            let state = &mut *self.as_ptr();
             if state.message_string.take().is_none() {
                 return;
             }
@@ -1121,13 +1127,13 @@ impl Client for ClientRef {
         crate::status::status_pop_screen(self);
     }
     unsafe fn redraw_status_if_unobscured(&self) {
-        let state = &mut *self.get();
+        let state = &mut *self.as_ptr();
         if state.message_string.is_none() && state.prompt.is_none() {
             state.flags |= CLIENT_REDRAWSTATUS as u64;
         }
     }
     unsafe fn status_message_text(&self) -> (Option<CString>, bool) {
-        let state = &*self.get();
+        let state = &*self.as_ptr();
         (
             state.message_string.clone(),
             state.message_ignore_styles != 0,
@@ -1143,7 +1149,7 @@ impl Client for ClientRef {
     ) {
         self.clear_status_message();
         crate::status::status_push_screen(self);
-        (*self.get()).message_string = Some(message.clone());
+        (*self.as_ptr()).message_string = Some(message.clone());
         let name = self.name();
         crate::server::server_add_message(|out| {
             write_cstr(out, name.as_deref())?;
@@ -1161,7 +1167,7 @@ impl Client for ClientRef {
             ) as i32;
         }
         let observer = Rc::downgrade(self);
-        let state = &mut *self.get();
+        let state = &mut *self.as_ptr();
         if delay > 0 {
             let timeout = Duration::from_millis(delay as u64);
             drop(state.message_timer.take());
@@ -1193,13 +1199,13 @@ impl Client for ClientRef {
         server_client_clear_overlay(self);
     }
     unsafe fn has_overlay(&self) -> bool {
-        (*self.get())
+        (*self.as_ptr())
             .overlay
             .as_ref()
             .is_some_and(|overlay| overlay.draw.is_some())
     }
     unsafe fn clips_terminal_output(&self) -> bool {
-        (*self.get())
+        (*self.as_ptr())
             .overlay
             .as_ref()
             .is_some_and(|overlay| overlay.check.is_some())
@@ -1213,7 +1219,7 @@ impl Client for ClientRef {
     }
 
     unsafe fn popup_overlay(&self) -> Option<crate::popup::PopupHandle> {
-        (*self.get()).overlay.as_ref()?.popup_handle()
+        (*self.as_ptr()).overlay.as_ref()?.popup_handle()
     }
 
     unsafe fn with_overlay_check_disabled<R>(
@@ -1221,28 +1227,32 @@ impl Client for ClientRef {
         restore: overlay_check_cb,
         draw: impl FnOnce() -> R,
     ) -> R {
-        let generation = (*self.get()).overlay_generation;
-        let displaced = (*self.get())
+        let generation = (*self.as_ptr()).overlay_generation;
+        let displaced = (*self.as_ptr())
             .overlay
             .as_mut()
             .and_then(|overlay| overlay.check.take());
         drop(displaced);
         let result = draw();
-        if (*self.get()).overlay_generation == generation && (*self.get()).overlay.is_some() {
-            let displaced =
-                std::mem::replace(&mut (*self.get()).overlay.as_mut().unwrap().check, restore);
+        if (*self.as_ptr()).overlay_generation == generation && (*self.as_ptr()).overlay.is_some() {
+            let displaced = std::mem::replace(
+                &mut (*self.as_ptr()).overlay.as_mut().unwrap().check,
+                restore,
+            );
             drop(displaced);
         }
         result
     }
 
     unsafe fn terminal_size(&self) -> (u32, u32) {
-        (*self.get()).tty.size()
+        (*self.as_ptr()).tty.size()
     }
 
     unsafe fn query_terminal_size(&self) -> Option<crate::shared::posix_terminal::winsize> {
-        crate::shared::terminal::read_size((*self.get()).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd))
-            .ok()
+        crate::shared::terminal::read_size(
+            (*self.as_ptr()).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
+        )
+        .ok()
     }
 
     unsafe fn refresh_terminal_size(&self) {
@@ -1291,7 +1301,7 @@ impl Client for ClientRef {
     }
 
     unsafe fn prepare_overlay_render(&self, context: &mut tty_ctx, x: u32, y: u32) -> bool {
-        if (*self.get()).flags & CLIENT_REDRAWOVERLAY as u64 != 0 {
+        if (*self.as_ptr()).flags & CLIENT_REDRAWOVERLAY as u64 != 0 {
             return false;
         }
         context.wox = 0;
@@ -1344,12 +1354,12 @@ impl Client for ClientRef {
         }
         let result = pane.prepare_render(
             context,
-            (*self.get()).flags & CLIENT_REDRAWWINDOW as u64 != 0,
+            (*self.as_ptr()).flags & CLIENT_REDRAWWINDOW as u64 != 0,
         );
         if result != 1 {
             return result;
         }
-        let view = tty_window_offset(&(*self.get()).tty);
+        let view = tty_window_offset(&(*self.as_ptr()).tty);
         context.wox = view.ox;
         context.woy = view.oy;
         context.wsx = view.sx;
@@ -1359,7 +1369,7 @@ impl Client for ClientRef {
         } else {
             context.flags &= !TTY_CTX_WINDOW_BIGGER;
         }
-        if (*self.get()).flags & (CLIENT_STATUSOFF | CLIENT_CONTROL) as u64 == 0 {
+        if (*self.as_ptr()).flags & (CLIENT_STATUSOFF | CLIENT_CONTROL) as u64 == 0 {
             let (position, lines) = session.status_layout();
             if position == 0 {
                 context.yoff = (context.yoff as u32).wrapping_add(lines) as i32;
@@ -1393,7 +1403,7 @@ impl Client for ClientRef {
         }
         crate::tty::tty_lock(self);
         self.update_flags(CLIENT_SUSPENDED as u64, 0);
-        let peer = (*self.get()).peer;
+        let peer = (*self.as_ptr()).peer;
         proc_send(peer, MSG_LOCK, None, command.to_bytes_with_nul());
     }
 
@@ -1410,7 +1420,7 @@ mod tests {
         unsafe {
             for exiting in [false, true] {
                 let owner = client::with_control_for_test(None, None);
-                (*owner.get()).exit_message = Some(c"previous".to_owned());
+                (*owner.as_ptr()).exit_message = Some(c"previous".to_owned());
                 if exiting {
                     owner.update_flags(CLIENT_EXIT as u64, 0);
                 }
@@ -1419,7 +1429,7 @@ mod tests {
                 assert!(owner.accept_control_reply(0));
                 assert!(!owner.accept_control_reply(1));
                 assert_eq!(
-                    (*owner.get()).exit_message.as_deref(),
+                    (*owner.as_ptr()).exit_message.as_deref(),
                     Some(if exiting {
                         c"previous"
                     } else {
