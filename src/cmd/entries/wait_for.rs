@@ -705,16 +705,17 @@ mod tests {
     // `resume`. These wakes do so synchronously, pinning that every resume
     // runs after the WAIT_CHANNELS borrow ends.
 
-    /// The item a wake ran, once it has.
-    type Reentered = Rc<std::cell::OnceCell<Weak<std::cell::RefCell<cmdq_item>>>>;
-
     /// Register a waiter whose wake runs `exec` as the next item of `owner`'s
     /// queue on `name`; the cell receives that item.
     fn reenter_on_wake(
         owner: &ClientRef,
         name: &'static CStr,
         exec: unsafe fn(&Rc<std::cell::RefCell<cmdq_item>>, &CStr) -> CmdOutcome,
-    ) -> (CmdqWaiter, tiri_rt::oneshot::Receiver<()>, Reentered) {
+    ) -> (
+        CmdqWaiter,
+        tiri_rt::oneshot::Receiver<()>,
+        Rc<std::cell::OnceCell<Weak<std::cell::RefCell<cmdq_item>>>>,
+    ) {
         let reentered = Rc::new(std::cell::OnceCell::new());
         let (owner, cell) = (owner.clone(), reentered.clone());
         let (waiter, resumed) = waiter_on_wake(move || {
