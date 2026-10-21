@@ -14,6 +14,7 @@ use crate::session::Session;
 use crate::shared::client::ClientRef;
 use crate::shared::session::SessionRef;
 use crate::window::{Window, WindowPane, WindowRef};
+use crate::winlink::winlink_window;
 use std::collections::btree_map;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
@@ -785,16 +786,10 @@ pub(super) unsafe fn format_window_name(
         .expect("format session")
         .with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
     while wl.is_alive() {
-        if wl
-            .get_unchecked()
-            .window_handle()
-            .expect("linked window")
-            .name()
-            == name
-        {
+        if winlink_window(&wl).expect("linked window").name() == name {
             return Some(c"1".to_owned());
         }
-        wl = winlinks_next(wl.get_unchecked());
+        wl = winlink_next(&wl);
     }
     Some(c"0".to_owned())
 }
@@ -807,7 +802,11 @@ pub(super) unsafe fn format_add_window_neighbour(
     let prefix = prefix.to_bytes();
     let key = CString::new([prefix, b"_window_index"].concat()).expect("C string key");
     format_add(nft, &key, |out| {
-        write!(out, "{}", (wl.get_unchecked().idx) as u32)
+        write!(
+            out,
+            "{}",
+            (wl.try_borrow().expect("live winlink").idx) as u32
+        )
     });
     let key = CString::new([prefix, b"_window_active"].concat()).expect("C string key");
     format_add(nft, &key, |out| {
@@ -816,8 +815,7 @@ pub(super) unsafe fn format_add_window_neighbour(
         })
     });
     let entries = crate::options::options_iter(
-        &wl.get_unchecked()
-            .window_handle()
+        &winlink_window(&wl)
             .expect("neighbour window")
             .borrow_options_mut(),
     )
@@ -859,16 +857,12 @@ pub(super) unsafe fn format_loop_windows(
     i = 0 as ::core::ffi::c_int;
     while i < n {
         wl = l[i as usize].clone();
-        let window_id = wl
-            .get_unchecked()
-            .window_handle()
-            .expect("format loop window")
-            .id();
+        let window_id = winlink_window(&wl).expect("format loop window").id();
         format_log1(es, c"format_loop_windows".as_ptr(), |out| {
             write!(
                 out,
                 "window loop: {} @{}",
-                (wl.get_unchecked().idx) as u32,
+                (wl.try_borrow().expect("live winlink").idx) as u32,
                 { window_id }
             )
         });

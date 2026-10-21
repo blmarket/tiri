@@ -439,7 +439,7 @@ pub unsafe fn cmdq_merge_formats(
         (item.command_handle(), cmdq_get_state_owned(&item))
     };
     if command.is_alive() {
-        let entry = cmd_get_entry(command.get_unchecked());
+        let entry = cmd_get_entry(&command.try_borrow().expect("live command"));
         format_add(ft, c"command", |out| write_cstr(out, &*entry.name));
     }
     let mut formats = state.formats.borrow_mut();
@@ -525,7 +525,8 @@ pub unsafe fn cmdq_insert_hook(
         let item = item_handle.borrow();
         (item.command_handle(), cmdq_get_flags(&item))
     };
-    let args_0 = cmd_get_args(cmd.get_unchecked());
+    let cmd_ref = cmd.try_borrow().expect("live command");
+    let args_0 = cmd_get_args(&cmd_ref);
     let mut i: u_int = 0;
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if flags & CMDQ_STATE_NOHOOKS != 0 {
@@ -824,7 +825,8 @@ pub unsafe fn cmdq_get_command(
     let mut remaining = None;
     for command in cmdlist.list.iter().rev() {
         let cmd = command.downgrade();
-        let owner = cmdq_new_named_item(cmd_get_entry(cmd.get_unchecked()).name);
+        let owner =
+            cmdq_new_named_item(cmd_get_entry(&cmd.try_borrow().expect("live command")).name);
         {
             let mut item = owner.borrow_mut();
             item.group = cmd_get_group(cmd.clone());
@@ -861,7 +863,13 @@ unsafe fn cmdq_find_flag(
         return CmdOutcome::Normal;
     }
     value = args_get(
-        cmd_get_args(item_handle.borrow().command_handle().get_unchecked()),
+        cmd_get_args(
+            &item_handle
+                .borrow()
+                .command_handle()
+                .try_borrow()
+                .expect("live command"),
+        ),
         flag.flag as u_char,
     )
     .map_or(std::ptr::null(), |value| value.as_ptr());
@@ -889,7 +897,7 @@ unsafe fn cmdq_add_message(item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_ite
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut uid: uid_t = 0;
     let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
-    let tmp = cmd_print_cstring(command.get_unchecked());
+    let tmp = cmd_print_cstring(&command.try_borrow().expect("live command"));
     if let Some(c_value) = c.as_ref() {
         uid = c_value.peer_uid();
         let user: CString = if uid != -(1 as ::core::ffi::c_int) as uid_t && uid != getuid() {
@@ -949,8 +957,9 @@ unsafe fn cmdq_fire_command(
         )
     };
     let name = cmdq_name(saved_client.as_ref());
-    let args = cmd_get_args(cmd.get_unchecked());
-    let entry = cmd_get_entry(cmd.get_unchecked());
+    let cmd_ref = cmd.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
+    let entry = cmd_get_entry(&cmd_ref);
     let mut tc = None;
     let mut retval: CmdOutcome = CmdOutcome::Normal;
     let mut fsp: Option<&cmd_find_state> = None;
@@ -973,7 +982,7 @@ unsafe fn cmdq_fire_command(
         cmdq_add_message(item_handle);
     }
     if log_get_level() > 1 as ::core::ffi::c_int {
-        let tmp = cmd_print_cstring(cmd.get_unchecked());
+        let tmp = cmd_print_cstring(&cmd_ref);
         log_debug(format_args!(
             "{} {}: ({}) {}",
             "cmdq_fire_command",
@@ -1228,7 +1237,8 @@ pub unsafe fn cmdq_error(
     ));
     match c.as_ref() {
         None => {
-            let (source, source_line) = cmd_get_source(cmd.get_unchecked());
+            let cmd_ref = cmd.try_borrow().expect("live command");
+            let (source, source_line) = cmd_get_source(&cmd_ref);
             file = source.map_or(std::ptr::null(), |file| file.as_ptr());
             line = source_line;
             if cfg_finished == 0 {

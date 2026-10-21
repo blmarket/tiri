@@ -60,7 +60,8 @@ pub unsafe fn args_make_commands_prepare(
     mut expand: ::core::ffi::c_int,
 ) -> Box<args_command_state> {
     let item = item_handle.borrow();
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut state = Box::new(args_command_state::empty());
@@ -88,7 +89,8 @@ pub unsafe fn args_make_commands_prepare(
     if wait != 0 {
         state.pi.set_item(Some(item_handle));
     }
-    let (source, line) = cmd_get_source(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let (source, line) = cmd_get_source(&cmd_ref);
     state.pi.line = line;
     if let Some(file) = source {
         state.file = Some(file.to_owned());

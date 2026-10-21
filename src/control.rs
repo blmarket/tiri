@@ -1007,15 +1007,12 @@ unsafe fn control_sub_change(change: &monitor_change) {
         drop(client_owner);
         return;
     };
-    let mut link = change.wl.try_borrow_mut().ok();
+    let link = change.wl.try_borrow().ok();
     if !change.wl.is_empty() && link.is_none() {
         drop(session_owner);
         drop(client_owner);
         return;
     }
-    let wl = link
-        .as_mut()
-        .map_or(std::ptr::null_mut(), |link| &raw mut **link);
     let pane_owner = std::rc::Rc::<std::cell::RefCell<window_pane>>::from_observer(&change.wp);
     if !std::rc::Weak::ptr_eq(&change.wp, &std::rc::Weak::new()) && pane_owner.is_none() {
         drop(session_owner);
@@ -1023,7 +1020,7 @@ unsafe fn control_sub_change(change: &monitor_change) {
         return;
     }
     let session_id = session_owner.id();
-    let location = if !wl.is_null() {
+    let location = if let Some(wl) = link.as_deref() {
         let (window_id, pane_id) = if let Some(pane) = pane_owner.as_ref() {
             let window = pane
                 .window_observer()
@@ -1034,14 +1031,11 @@ unsafe fn control_sub_change(change: &monitor_change) {
             (id, Some(pane.id()))
         } else {
             (
-                (*wl)
-                    .window_handle()
-                    .expect("live subscription window")
-                    .id(),
+                wl.window_handle().expect("live subscription window").id(),
                 None,
             )
         };
-        Some((window_id, (*wl).idx as u32, pane_id))
+        Some((window_id, wl.idx as u32, pane_id))
     } else {
         None
     };

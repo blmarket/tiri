@@ -2,6 +2,7 @@ use crate::paste::paste_walk;
 use crate::server_client::Client as _;
 use crate::server_client::ClientRegistry;
 use crate::session::sessions;
+use crate::winlink::winlink_window;
 use libc::{strcasecmp, strcmp};
 use std::ffi::CStr;
 
@@ -23,7 +24,7 @@ use crate::window::Window as _;
 use crate::window_pane::WindowPane as _;
 use std::cmp::Ordering;
 
-use crate::window::{winlinks_minmax, winlinks_next};
+use crate::window::{winlink_next, winlinks_minmax};
 
 pub(super) fn sort_ordering(result: ::core::ffi::c_int, reversed: ::core::ffi::c_int) -> Ordering {
     let ordering = result.cmp(&0);
@@ -97,10 +98,13 @@ unsafe fn sort_winlink_cmp(
     wlb: refbox::Weak<winlink>,
     sort_crit: &sort_criteria,
 ) -> Ordering {
-    let a = wla.get_unchecked().window_handle().expect("linked window");
-    let b = wlb.get_unchecked().window_handle().expect("linked window");
+    let a = winlink_window(&wla).expect("linked window");
+    let b = winlink_window(&wlb).expect("linked window");
     let mut result = match sort_crit.order {
-        2 => wla.get_unchecked().idx - wlb.get_unchecked().idx,
+        2 => {
+            wla.try_borrow().expect("live winlink").idx
+                - wlb.try_borrow().expect("live winlink").idx
+        }
         1 => {
             let (a, b) = (a.creation_time(), b.creation_time());
             a.cmp(&b) as i32
@@ -296,7 +300,7 @@ pub unsafe fn sort_get_winlinks(sort_crit: &sort_criteria) -> Vec<refbox::Weak<w
             .with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
         while wl.is_alive() {
             links.push(wl.clone());
-            wl = winlinks_next(wl.get_unchecked());
+            wl = winlink_next(&wl);
         }
         s_owner = sessions::after(s_owner.as_ref().expect("live session").name().as_c_str());
     }
@@ -313,7 +317,7 @@ pub unsafe fn sort_get_winlinks_session(
     let mut wl = s_owner.with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
     while wl.is_alive() {
         l.push(wl.clone());
-        wl = winlinks_next(wl.get_unchecked());
+        wl = winlink_next(&wl);
     }
     sort_by_criteria(&mut l, sort_crit, |a, b, criteria| unsafe {
         sort_winlink_cmp((*a).clone(), (*b).clone(), criteria)

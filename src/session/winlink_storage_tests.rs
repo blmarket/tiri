@@ -19,10 +19,10 @@ fn moved_map_and_reindexed_owner_keep_identity_through_growth() {
         }
         assert_eq!(weak, first);
         assert_eq!(
-            winlinks_next(first.get_unchecked()),
+            winlinks_next(&first.try_borrow().expect("live winlink")),
             winlink_find_by_index(&old, 6)
         );
-        assert!(!winlinks_next(replacement.get_unchecked()).is_alive());
+        assert!(!winlinks_next(&replacement.try_borrow().expect("live winlink")).is_alive());
         while !crate::window::winlinks_is_empty(&old) {
             let node = winlinks_minmax(&old, -1);
             winlink_remove(&old, (node).clone());
@@ -42,7 +42,8 @@ fn shuffle_moves_owners_without_losing_history_and_removal_clears_observers() {
         let mut nodes = Vec::new();
         for idx in 1..=3 {
             let mut node = winlink_add(&session.windows, idx);
-            node.get_mut_unchecked().session = std::rc::Rc::downgrade(&session_owner);
+            node.try_borrow_mut().expect("live winlink").session =
+                std::rc::Rc::downgrade(&session_owner);
             nodes.push(node);
         }
         winlink_stack_push(&mut session.lastw, (nodes[0]).clone());
@@ -77,13 +78,23 @@ fn detached_winlink_does_not_keep_session_alive_and_can_be_removed_after_expiry(
         let observer = std::rc::Rc::downgrade(&owner);
         let mut links = Default::default();
         let mut link = winlink_add(&links, 1);
-        link.get_mut_unchecked().session = observer.clone();
+        link.try_borrow_mut().expect("live winlink").session = observer.clone();
         assert!(std::rc::Rc::ptr_eq(
-            &link.get_unchecked().session.upgrade().unwrap(),
+            &link
+                .try_borrow()
+                .expect("live winlink")
+                .session
+                .upgrade()
+                .unwrap(),
             &owner
         ));
         drop(owner);
-        assert!(link.get_unchecked().session.upgrade().is_none());
+        assert!(link
+            .try_borrow()
+            .expect("live winlink")
+            .session
+            .upgrade()
+            .is_none());
         winlink_remove(&links, link.clone());
         assert!(crate::window::winlinks_is_empty(&links));
     }

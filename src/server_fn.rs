@@ -11,6 +11,7 @@ use crate::shared::session::SessionRef;
 use crate::shared::window::WindowRef;
 use crate::window::{winlink_find_by_index, winlink_find_by_window, Window as _};
 use crate::window_pane::WindowPane as _;
+use crate::winlink::{winlink_index, winlink_window};
 
 use crate::shared::abi::*;
 use crate::shared::client::{
@@ -87,7 +88,7 @@ pub unsafe fn server_redraw_window(window: &WindowRef) {
             .and_then(|session| {
                 session
                     .current_winlink()
-                    .try_borrow_mut()
+                    .try_borrow()
                     .ok()
                     .and_then(|link| link.window_owner.clone())
             })
@@ -114,7 +115,7 @@ pub unsafe fn server_redraw_window_menu(window_owner: &WindowRef) {
             .and_then(|session| {
                 session
                     .current_winlink()
-                    .try_borrow_mut()
+                    .try_borrow()
                     .ok()
                     .and_then(|link| link.window_owner.clone())
             })
@@ -135,7 +136,7 @@ pub unsafe fn server_redraw_window_borders(window: &WindowRef) {
             .and_then(|session| {
                 session
                     .current_winlink()
-                    .try_borrow_mut()
+                    .try_borrow()
                     .ok()
                     .and_then(|link| link.window_owner.clone())
             })
@@ -292,8 +293,8 @@ pub unsafe fn server_link_window(
     }
     if dstwl.is_alive() {
         if crate::shared::rc::same(
-            dstwl.get_unchecked().window_handle(),
-            srcwl.get_unchecked().window_handle(),
+            winlink_window(&dstwl).as_ref(),
+            winlink_window(&srcwl).as_ref(),
         ) {
             return Err(std::ffi::CString::new(format!("same index: {dstidx}"))
                 .expect("numeric diagnostic contains no NUL"));
@@ -310,7 +311,8 @@ pub unsafe fn server_link_window(
             )) as ::core::ffi::c_int;
     }
     let window_owner = srcwl
-        .get_unchecked()
+        .try_borrow()
+        .expect("live winlink")
         .window_owner
         .as_ref()
         .expect("source window")
@@ -322,7 +324,7 @@ pub unsafe fn server_link_window(
         marked_pane.set_wl((dstwl).clone());
     }
     if selectflag != 0 {
-        (dst.as_ref().expect("live session")).select_index(dstwl.get_unchecked().idx);
+        (dst.as_ref().expect("live session")).select_index(winlink_index(&dstwl));
     }
     server_redraw_session_group(dst.as_ref().expect("live session"));
     Ok(())

@@ -5,6 +5,7 @@ use super::table::options_table;
 use super::types::*;
 use crate::arguments::{args, args_get, args_has};
 use crate::shared::window::WindowRef;
+use crate::winlink::winlink_window;
 
 use crate::shared::command::cmd_find_state;
 use std::ffi::{CStr, CString};
@@ -66,10 +67,7 @@ unsafe fn options_select_scope(
         OPTIONS_TABLE_WINDOW => {
             let scope = if fs.wl.is_alive() {
                 Some(OptionsScope::Window(WindowRef::downgrade(
-                    fs.wl
-                        .get_unchecked()
-                        .window_handle()
-                        .expect("option window"),
+                    &winlink_window(&fs.wl).expect("option window"),
                 )))
             } else {
                 None

@@ -7,6 +7,7 @@ use crate::shared::client::ClientRef;
 use crate::shared::rc::same;
 use crate::shared::session::SessionRef;
 use crate::shared::window::WindowRef;
+use crate::winlink::winlink_window;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
 
@@ -65,7 +66,7 @@ unsafe fn format_cb_session_stack(ft: &mut format_tree) -> Option<CString> {
 }
 unsafe fn format_cb_window_stack_index(ft: &mut format_tree) -> Option<CString> {
     let link = ft.winlink_handle();
-    let owner = link.try_borrow_mut().ok()?.session.upgrade()?;
+    let owner = link.try_borrow().ok()?.session.upgrade()?;
     let mut context = format_tree::default();
     context.s = Rc::downgrade(&owner);
     context.wl = link;
@@ -79,11 +80,12 @@ unsafe fn format_cb_window_linked_sessions_list(ft: &mut format_tree) -> Option<
     if !link.is_alive() {
         return None;
     }
-    let window = link.get_unchecked().window_handle().expect("linked window");
+    let window = winlink_window(&link).expect("linked window");
     let mut names = Vec::new();
     let mut cursor = window.next_winlink(None);
     while cursor.is_alive() {
-        if let Some(session) = cursor.get_unchecked().session.upgrade() {
+        let session = cursor.try_borrow().expect("live winlink").session.upgrade();
+        if let Some(session) = session {
             if !names.is_empty() {
                 names.push(b',');
             }
@@ -102,11 +104,12 @@ unsafe fn format_cb_window_active_sessions(ft: &mut format_tree) -> Option<CStri
     if !link.is_alive() {
         return None;
     }
-    let window = link.get_unchecked().window_handle().expect("linked window");
+    let window = winlink_window(&link).expect("linked window");
     let mut count = 0u32;
     let mut cursor = window.next_winlink(None);
     while cursor.is_alive() {
-        if let Some(session) = cursor.get_unchecked().session.upgrade() {
+        let session = cursor.try_borrow().expect("live winlink").session.upgrade();
+        if let Some(session) = session {
             if session.current_winlink() == cursor {
                 count = count.wrapping_add(1);
             }
@@ -121,11 +124,12 @@ unsafe fn format_cb_window_active_sessions_list(ft: &mut format_tree) -> Option<
     if !link.is_alive() {
         return None;
     }
-    let window = link.get_unchecked().window_handle().expect("linked window");
+    let window = winlink_window(&link).expect("linked window");
     let mut names = Vec::new();
     let mut cursor = window.next_winlink(None);
     while cursor.is_alive() {
-        if let Some(session) = cursor.get_unchecked().session.upgrade() {
+        let session = cursor.try_borrow().expect("live winlink").session.upgrade();
+        if let Some(session) = session {
             if session.current_winlink() == cursor {
                 if !names.is_empty() {
                     names.push(b',');
@@ -146,14 +150,14 @@ unsafe fn format_cb_window_active_clients(ft: &mut format_tree) -> Option<CStrin
     if !link.is_alive() {
         return None;
     }
-    let window = link.get_unchecked().window_handle();
+    let window = winlink_window(&link);
     let mut count = 0u32;
     let mut cursor = ClientRegistry::first();
     while let Some(client) = cursor {
         if let Some(session) = client.attached_session().upgrade() {
             if same(
-                window,
-                session.current_winlink().get_unchecked().window_handle(),
+                window.as_ref(),
+                winlink_window(&session.current_winlink()).as_ref(),
             ) {
                 count = count.wrapping_add(1);
             }
@@ -168,14 +172,14 @@ unsafe fn format_cb_window_active_clients_list(ft: &mut format_tree) -> Option<C
     if !link.is_alive() {
         return None;
     }
-    let window = link.get_unchecked().window_handle();
+    let window = winlink_window(&link);
     let mut names = Vec::new();
     let mut cursor = ClientRegistry::first();
     while let Some(client) = cursor {
         if let Some(session) = client.attached_session().upgrade() {
             if same(
-                window,
-                session.current_winlink().get_unchecked().window_handle(),
+                window.as_ref(),
+                winlink_window(&session.current_winlink()).as_ref(),
             ) {
                 if !names.is_empty() {
                     names.push(b',');
@@ -1041,7 +1045,11 @@ unsafe fn format_cb_last_window_index(ft: &mut format_tree) -> Option<CString> {
 }
 unsafe fn format_cb_window_active(ft: &mut format_tree) -> Option<CString> {
     if ft.winlink_handle().is_alive() {
-        let session_owner = (ft.winlink_handle()).get_unchecked().session.upgrade()?;
+        let session_owner = (ft.winlink_handle())
+            .try_borrow()
+            .expect("live winlink")
+            .session
+            .upgrade()?;
         if ft.winlink_handle() == session_owner.current_winlink() {
             return Some(c"1".to_owned());
         }
@@ -1051,7 +1059,13 @@ unsafe fn format_cb_window_active(ft: &mut format_tree) -> Option<CString> {
 }
 unsafe fn format_cb_window_activity_flag(ft: &mut format_tree) -> Option<CString> {
     if ft.winlink_handle().is_alive() {
-        if (ft.winlink_handle()).get_unchecked().flags & WINLINK_ACTIVITY != 0 {
+        if (ft.winlink_handle())
+            .try_borrow()
+            .expect("live winlink")
+            .flags
+            & WINLINK_ACTIVITY
+            != 0
+        {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());
@@ -1060,7 +1074,13 @@ unsafe fn format_cb_window_activity_flag(ft: &mut format_tree) -> Option<CString
 }
 unsafe fn format_cb_window_bell_flag(ft: &mut format_tree) -> Option<CString> {
     if ft.winlink_handle().is_alive() {
-        if (ft.winlink_handle()).get_unchecked().flags & WINLINK_BELL != 0 {
+        if (ft.winlink_handle())
+            .try_borrow()
+            .expect("live winlink")
+            .flags
+            & WINLINK_BELL
+            != 0
+        {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());
@@ -1092,7 +1112,11 @@ unsafe fn format_cb_window_cell_width(ft: &mut format_tree) -> Option<CString> {
 
 unsafe fn format_cb_window_end_flag(ft: &mut format_tree) -> Option<CString> {
     if ft.winlink_handle().is_alive() {
-        let session_owner = (ft.winlink_handle()).get_unchecked().session.upgrade()?;
+        let session_owner = (ft.winlink_handle())
+            .try_borrow()
+            .expect("live winlink")
+            .session
+            .upgrade()?;
         if ft.winlink_handle()
             == session_owner.with_winlinks(|links| winlinks_minmax(links, RB_INF))
         {
@@ -1149,15 +1173,24 @@ unsafe fn format_cb_window_id(ft: &mut format_tree) -> Option<CString> {
 unsafe fn format_cb_window_index(ft: &mut format_tree) -> Option<CString> {
     if ft.winlink_handle().is_alive() {
         return Some(
-            CString::new(format!("{}", { (ft.winlink_handle()).get_unchecked().idx }))
-                .expect("formatted numbers contain no NUL"),
+            CString::new(format!("{}", {
+                (ft.winlink_handle())
+                    .try_borrow()
+                    .expect("live winlink")
+                    .idx
+            }))
+            .expect("formatted numbers contain no NUL"),
         );
     }
     None
 }
 unsafe fn format_cb_window_last_flag(ft: &mut format_tree) -> Option<CString> {
     if ft.winlink_handle().is_alive() {
-        let session_owner = (ft.winlink_handle()).get_unchecked().session.upgrade()?;
+        let session_owner = (ft.winlink_handle())
+            .try_borrow()
+            .expect("live winlink")
+            .session
+            .upgrade()?;
         if ft.winlink_handle() == session_owner.last_winlink() {
             return Some(c"1".to_owned());
         }
@@ -1179,15 +1212,15 @@ unsafe fn format_cb_window_linked(ft: &mut format_tree) -> Option<CString> {
                 .with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
             while wl.is_alive() {
                 if same(
-                    wl.get_unchecked().window_handle(),
-                    ft.winlink_handle().get_unchecked().window_handle(),
+                    winlink_window(&wl).as_ref(),
+                    winlink_window(&ft.winlink_handle()).as_ref(),
                 ) {
                     if found != 0 {
                         return Some(c"1".to_owned());
                     }
                     found = 1 as ::core::ffi::c_int;
                 }
-                wl = winlinks_next(wl.get_unchecked());
+                wl = winlink_next(&wl);
             }
             s_owner = sessions::after(s.as_ref().expect("live session").name().as_c_str());
             s = s_owner.clone();
@@ -1203,10 +1236,7 @@ unsafe fn format_cb_window_linked_sessions(ft: &mut format_tree) -> Option<CStri
     if !ft.winlink_handle().is_alive() {
         return None;
     }
-    let window = ft
-        .winlink_handle()
-        .get_unchecked()
-        .window_handle()
+    let window = winlink_window(&ft.winlink_handle())
         .expect("linked window")
         .clone();
     sg = session_groups::minmax();
@@ -1292,7 +1322,13 @@ unsafe fn format_cb_window_raw_flags(ft: &mut format_tree) -> Option<CString> {
 }
 unsafe fn format_cb_window_silence_flag(ft: &mut format_tree) -> Option<CString> {
     if ft.winlink_handle().is_alive() {
-        if (ft.winlink_handle()).get_unchecked().flags & WINLINK_SILENCE != 0 {
+        if (ft.winlink_handle())
+            .try_borrow()
+            .expect("live winlink")
+            .flags
+            & WINLINK_SILENCE
+            != 0
+        {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());
@@ -1301,7 +1337,11 @@ unsafe fn format_cb_window_silence_flag(ft: &mut format_tree) -> Option<CString>
 }
 unsafe fn format_cb_window_start_flag(ft: &mut format_tree) -> Option<CString> {
     if ft.winlink_handle().is_alive() {
-        let session_owner = (ft.winlink_handle()).get_unchecked().session.upgrade()?;
+        let session_owner = (ft.winlink_handle())
+            .try_borrow()
+            .expect("live winlink")
+            .session
+            .upgrade()?;
         if ft.winlink_handle()
             == session_owner.with_winlinks(|links| winlinks_minmax(links, RB_NEGINF))
         {

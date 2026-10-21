@@ -39,7 +39,8 @@ unsafe fn cmd_unbind_key_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let mut key: key_code = 0;
     let mut tablename: &CStr = c"";
     let mut keystr: Option<&CStr> = args_string(args, 0 as u_int);

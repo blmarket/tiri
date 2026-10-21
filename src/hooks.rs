@@ -40,6 +40,7 @@ use crate::shared::pane::window_pane;
 use crate::shared::session::SessionRef;
 use crate::shared::window::{WindowRef, WindowWeak};
 use crate::window::WindowPane;
+use crate::winlink::winlink_window;
 use std::ffi::{CStr, CString};
 
 #[derive(Default)]
@@ -155,7 +156,7 @@ unsafe fn hooks_insert(
             source = OptionsScope::Pane(fs.wp.clone()).resolve(name, false);
         }
         if source.is_none() && fs.wl.is_alive() {
-            let link = fs.wl.get_unchecked();
+            let link = fs.wl.try_borrow().expect("live winlink");
             let window = link.window_handle().expect("hook window");
             source = OptionsScope::Window(WindowRef::downgrade(window)).resolve(name, false);
         }
@@ -439,9 +440,8 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, fallback: &cmd_find_state, g
     if let Some(pane) = pane_owner.as_ref().filter(|pane| {
         wl.is_alive()
             && pane.window_observer().ptr_eq(
-                &wl.get_unchecked()
-                    .window_handle()
-                    .map_or_else(WindowWeak::new, WindowRef::downgrade),
+                &winlink_window(&wl)
+                    .map_or_else(WindowWeak::new, |window| WindowRef::downgrade(&window)),
             )
     }) {
         fs = cmd_find_state::find_from_winlink_pane(wl.clone(), pane, 0 as ::core::ffi::c_int);
@@ -474,16 +474,21 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, fallback: &cmd_find_state, g
     }
     if wl.is_alive() {
         if s.is_none() {
-            if let Some(session_owner) = wl.get_unchecked().session.upgrade() {
+            let session_owner = wl.try_borrow().expect("live winlink").session.upgrade();
+            if let Some(session_owner) = session_owner {
                 event_payload_set_session(&mut ep, c"session", session_owner.clone());
             }
         }
         event_payload_set_window(
             &mut ep,
             c"window",
-            WindowRef::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
+            winlink_window(&wl).expect("live window"),
         );
-        event_payload_set_int(&mut ep, c"window_index", wl.get_unchecked().idx);
+        event_payload_set_int(
+            &mut ep,
+            c"window_index",
+            wl.try_borrow().expect("live winlink").idx,
+        );
     }
     if let Some(pane_owner_value) = pane_owner.as_ref() {
         event_payload_set_pane(&mut ep, c"pane", pane_owner_value.clone());

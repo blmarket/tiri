@@ -199,7 +199,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
             &s.as_ref().expect("live session").borrow_options_mut(),
             c"status-position",
         ) as u_int;
-        let index = wl.get_unchecked().idx as u_int;
+        let index = wl.try_borrow().expect("live winlink").idx as u_int;
         if let Some((line, start)) =
             cmd_display_menu_status_position(tc.as_ref().expect("live client"), lines, index)
         {
@@ -541,7 +541,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
     if status_at_line(tc.as_ref().expect("live client")) != -(1 as ::core::ffi::c_int)
         && lines != 0 as u_int
     {
-        let index = wl.get_unchecked().idx as u_int;
+        let index = wl.try_borrow().expect("live winlink").idx as u_int;
         if let Some((_line, start)) =
             cmd_display_menu_status_position(tc.as_ref().expect("live client"), lines, index)
         {
@@ -735,7 +735,8 @@ unsafe fn cmd_display_menu_exec(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let target = &target_state;
     let event = cmdq_get_event(&(item));
@@ -876,7 +877,8 @@ unsafe fn cmd_display_popup_exec(
 
     let item = item_handle.borrow();
     let mut current_block: u64;
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let mut s: Option<SessionRef> = target.session_handle();
     let tc_owner = cmdq_get_target_client(Some(&*item));

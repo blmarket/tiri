@@ -12,6 +12,7 @@ use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::window::winlink;
 use crate::tmux::check_name;
 use crate::window::Window;
+use crate::winlink::winlink_window;
 pub static cmd_rename_window_entry: cmd_entry = {
     cmd_entry {
         name: c"rename-window",
@@ -42,7 +43,8 @@ unsafe fn cmd_rename_window_exec(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let mut wl: refbox::Weak<winlink> = target.winlink_handle();
     let name = format_single_from_target_cstring(
@@ -56,17 +58,11 @@ unsafe fn cmd_rename_window_exec(
         });
         return CmdOutcome::Error;
     }
-    let window = wl
-        .get_unchecked()
-        .window_handle()
-        .expect("target window")
-        .clone();
+    let window = winlink_window(&wl).expect("target window").clone();
     window.rename(&name, false);
     options_set_number(&mut window.borrow_options_mut(), c"automatic-rename", 0);
-    server_redraw_window_borders(
-        (wl.get_unchecked().window_handle().as_ref()).expect("live window"),
-    );
-    server_status_window((wl.get_unchecked().window_handle().as_ref()).expect("live window"));
+    server_redraw_window_borders((winlink_window(&wl).as_ref()).expect("live window"));
+    server_status_window((winlink_window(&wl).as_ref()).expect("live window"));
     drop(window);
     CmdOutcome::Normal
 }

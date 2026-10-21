@@ -26,6 +26,7 @@ use crate::regsub::regsub_cstring;
 use crate::server::{marked_pane, server_check_marked};
 use crate::shared::window::WindowWeak;
 use crate::window::Window as _;
+use crate::winlink::winlink_window;
 use libc::{ctime_r, dirname, fnmatch, gethostname, getpwuid, getuid, localtime_r, strftime};
 
 use crate::server_client::Client as _;
@@ -42,7 +43,7 @@ use crate::status::status_get_range;
 use crate::style::colour::{colour_force_rgb, colour_format_escape_for_client, colour_parse_cstr};
 use crate::text::utf8::{utf8_cstrhas, utf8_pad_cstring, utf8_set, utf8_tocstr_cstring};
 use crate::tmux::{get_timer, getversion, global_environ, socket_path_cstr, start_time};
-use crate::window::{winlink_find_by_window, winlinks_minmax, winlinks_next};
+use crate::window::{winlink_find_by_window, winlink_next, winlinks_minmax};
 use crate::window_buffer::window_buffer_mode;
 use crate::window_client::window_client_mode;
 use crate::window_pane::WindowPane as _;
@@ -375,7 +376,7 @@ pub unsafe fn format_defaults(
         log_debug(format_args!(
             "{}: wl={}",
             "format_defaults",
-            (wl.get_unchecked().idx) as u32
+            (wl.try_borrow().expect("live winlink").idx) as u32
         ));
     } else {
         log_debug(format_args!("{}: wl=none", "format_defaults"));
@@ -419,7 +420,7 @@ pub unsafe fn format_defaults(
             .map_or_else(refbox::Weak::new, |owner| owner.current_winlink());
     }
     let pane_owner = wp_owner.cloned().or_else(|| {
-        wl.try_borrow_mut().ok().and_then(|link| {
+        wl.try_borrow().ok().and_then(|link| {
             link.window_owner
                 .as_ref()
                 .and_then(|owner| owner.active_pane().upgrade())
@@ -456,7 +457,7 @@ pub fn format_defaults_window(ft: &mut format_tree, w_owner: Option<&WindowRef>)
 }
 unsafe fn format_defaults_winlink(ft: &mut format_tree, mut wl: refbox::Weak<winlink>) {
     if ft.w.upgrade().is_none() {
-        format_defaults_window(ft, wl.get_unchecked().window_owner.as_ref());
+        format_defaults_window(ft, winlink_window(&wl).as_ref());
     }
     ft.wl = wl;
 }

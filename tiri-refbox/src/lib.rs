@@ -19,12 +19,11 @@
 //!
 //! ## Tradeoffs
 //!
-//! A RefBox does not differentiate between strong and weak pointers and
-//! immutable and mutable borrows. There is always a *single* strong pointer,
-//! zero, one or many weak pointers, and all borrows are mutable. This means
-//! there can only be one borrow active at any given time. In return,
-//! RefBox uses less memory, is faster to borrow from, and a Weak does not need
-//! to be upgraded to access the data.
+//! A RefBox does not differentiate between strong and weak pointers. There is
+//! always a *single* strong pointer and zero, one or many weak pointers.
+//! Like a `RefCell`, the data can either be borrowed mutably once or
+//! immutably many times. In return, RefBox uses less memory, is faster to
+//! borrow from, and a Weak does not need to be upgraded to access the data.
 //!
 //! # Rc + Refcell vs. RefBox
 //!
@@ -35,10 +34,10 @@
 //! | Up-/Downgrading  | `Rc` is downgradable, `Weak` is upgradable                     | `RefBox` is downgradable                        |
 //! | Data access through strong pointer | `RefCell::try_borrow_mut`                    | `RefBox::try_borrow_mut`                        |
 //! | Data access through weak pointer | 1. `Weak::upgrade`<br>2. `RefCell::try_borrow_mut`<br>3. Drop temporary `Rc` | `Weak::try_borrow_mut` |
-//! | Simultaneous borrows | One mutable OR multiple immutable                          | One (mutable or immutable)                      |
+//! | Simultaneous borrows | One mutable OR multiple immutable                          | One mutable OR multiple immutable               |
 //! | `T::drop` happens when | When all `Rc`s are dropped                               | When the single `RefBox` is dropped             |
 //! | Max number of `Weak` pointers | `usize::MAX`                                      | `u32::MAX`                                      |
-//! | Heap overhead | 64-bit: 24 bytes<br>32-bit: 12 bytes | 8 bytes<br>With cyclic_stable enabled on 64-bit: 24 bytes<br>With cyclic_stable enabled on 32-bit: 12 bytes |
+//! | Heap overhead | 64-bit: 24 bytes<br>32-bit: 12 bytes | 12 bytes<br>With cyclic_stable enabled on 64-bit: 32 bytes<br>With cyclic_stable enabled on 32-bit: 20 bytes |
 //! | Performance      | Cloning is fast, mutating is slow                        | Cloning is a tiny bit slower, mutating is much faster |
 //!
 //! # Examples
@@ -157,11 +156,11 @@ macro_rules! coerce_weak {
 ///
 /// # Accessing the data behind the RefBox
 ///
-/// See [`RefBox::try_borrow_mut`], [`RefBox::try_borrow_mut_or_else`] and
-/// [`RefBox::try_access_mut`].
+/// See [`RefBox::try_borrow`], [`RefBox::try_borrow_mut`],
+/// [`RefBox::try_borrow_mut_or_else`] and [`RefBox::try_access_mut`].
 ///
-/// Note: because all borrows are guarded by a single flag, only one borrow is possible at a time
-/// and all borrows are mutable.
+/// Note: like a `RefCell`, either one mutable borrow or many immutable borrows
+/// can be active at a time.
 pub struct RefBox<T: ?Sized> {
     ptr: NonNull<RefBoxHeap<T>>,
     /// A RefBox owns the data and may call `T::drop`.
@@ -178,7 +177,7 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for RefBox<T> {
     /// Tries to access the data and write a debug representation of it.
     /// If accessing fails, it only writes the pointer value.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.try_borrow_mut() {
+        match self.try_borrow() {
             Ok(this) => f
                 .debug_tuple("RefBox")
                 .field(&self.ptr)
@@ -279,8 +278,29 @@ impl<T: ?Sized> RefBox<T> {
     ) -> Result<Borrow<'_, T>, E> {
         match self.heap().status() {
             Status::Available => Ok(unsafe { Borrow::new(self.ptr.as_ref()) }),
-            Status::Borrowed => Err(err_borrowed()),
-            Status::Dropped | Status::DroppedWhileBorrowed => unreachable!(),
+            Status::Borrowed | Status::Shared(_) => Err(err_borrowed()),
+            Status::Dropped | Status::DroppedWhileBorrowed | Status::DroppedWhileShared(_) => {
+                unreachable!()
+            }
+        }
+    }
+
+    /// Tries to borrow the data immutably.
+    ///
+    /// Any number of immutable borrows may be active at the same time, but
+    /// not together with a mutable borrow.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Ref)` if the borrow was successful
+    /// * `Err(BorrowError::Borrowed)` if the data was already mutably borrowed
+    pub fn try_borrow(&self) -> Result<Ref<'_, T>, BorrowError> {
+        match self.heap().status() {
+            Status::Available | Status::Shared(_) => Ok(unsafe { Ref::new(self.ptr.as_ref()) }),
+            Status::Borrowed => Err(BorrowError::Borrowed),
+            Status::Dropped | Status::DroppedWhileBorrowed | Status::DroppedWhileShared(_) => {
+                unreachable!()
+            }
         }
     }
 
@@ -328,26 +348,6 @@ impl<T: ?Sized> RefBox<T> {
     /// Returns the number of [`Weak`]s pointing to this RefBox.
     pub fn weak_count(&self) -> WeakCount {
         self.heap().weak_count()
-    }
-
-    /// Returns an immutable reference to the data without checking if
-    /// the data is already mutably borrowed.
-    ///
-    /// # Safety
-    ///
-    /// Ensure there are no mutable references to `T`.
-    pub unsafe fn get_unchecked(&self) -> &T {
-        unsafe { self.ptr.as_ref().data_ref() }
-    }
-
-    /// Returns a mutable reference to the data without checking if
-    /// the data is already mutably borrowed.
-    ///
-    /// # Safety
-    ///
-    /// Ensure there are no other references to `T`.
-    pub unsafe fn get_mut_unchecked(&mut self) -> &mut T {
-        unsafe { &mut *self.ptr.as_ref().data.get() }
     }
 
     /// Returns a raw pointer to `T`.
@@ -404,11 +404,11 @@ impl<T: ?Sized> RefBox<T> {
 ///
 /// # Accessing the data behind the Weak
 ///
-/// See [`Weak::try_borrow_mut`], [`Weak::try_borrow_mut_or_else`] and
-/// [`Weak::try_access_mut`].
+/// See [`Weak::try_borrow`], [`Weak::try_borrow_mut`],
+/// [`Weak::try_borrow_mut_or_else`] and [`Weak::try_access_mut`].
 ///
-/// Note: because all borrows are guarded by a single flag, only one borrow is possible at a time
-/// and all borrows are mutable.
+/// Note: like a `RefCell`, either one mutable borrow or many immutable borrows
+/// can be active at a time.
 pub struct Weak<T: ?Sized> {
     ptr: NonNull<RefBoxHeap<T>>,
 }
@@ -527,8 +527,30 @@ impl<T: ?Sized> Weak<T> {
     ) -> Result<Borrow<'_, T>, E> {
         match self.heap().map_or(Status::Dropped, RefBoxHeapInner::status) {
             Status::Available => Ok(unsafe { Borrow::new(self.ptr.as_ref()) }),
-            Status::Borrowed => Err(err_borrowed()),
-            Status::Dropped | Status::DroppedWhileBorrowed => Err(err_dropped()),
+            Status::Borrowed | Status::Shared(_) => Err(err_borrowed()),
+            Status::Dropped | Status::DroppedWhileBorrowed | Status::DroppedWhileShared(_) => {
+                Err(err_dropped())
+            }
+        }
+    }
+
+    /// Tries to borrow the data immutably.
+    ///
+    /// Any number of immutable borrows may be active at the same time, but
+    /// not together with a mutable borrow.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Ref)` if the borrow was successful
+    /// * `Err(BorrowError::Borrowed)` if the data was already mutably borrowed
+    /// * `Err(BorrowError::Dropped)` if empty or the owning [`RefBox`] was dropped
+    pub fn try_borrow(&self) -> Result<Ref<'_, T>, BorrowError> {
+        match self.heap().map_or(Status::Dropped, RefBoxHeapInner::status) {
+            Status::Available | Status::Shared(_) => Ok(unsafe { Ref::new(self.ptr.as_ref()) }),
+            Status::Borrowed => Err(BorrowError::Borrowed),
+            Status::Dropped | Status::DroppedWhileBorrowed | Status::DroppedWhileShared(_) => {
+                Err(BorrowError::Dropped)
+            }
         }
     }
 
@@ -584,48 +606,6 @@ impl<T: ?Sized> Weak<T> {
     /// Returns true if this `Weak` and the supplied [`RefBox`] point to the same instance.
     pub fn is(&self, owner: &RefBox<T>) -> bool {
         std::ptr::addr_eq(self.ptr.as_ptr(), owner.ptr.as_ptr())
-    }
-
-    /// Returns an immutable reference to the data without checking if
-    /// the data is already mutably borrowed.
-    ///
-    /// # Panics
-    ///
-    /// Panics if this weak reference is empty or its owner has been dropped,
-    /// including when an active borrow is delaying payload destruction.
-    ///
-    /// # Safety
-    ///
-    /// 1. Ensure there are no mutable references to `T`.
-    /// 2. Ensure `T` is fully initialized (don't use this in
-    ///    `RefBox::new_cyclic`).
-    /// 3. Ensure the owning `RefBox` is alive for the entire lifetime
-    ///    of the returned reference.
-    #[track_caller]
-    pub unsafe fn get_unchecked(&self) -> &T {
-        assert!(self.is_alive(), "RefBox Weak access requires a live owner");
-        unsafe { self.ptr.as_ref().data_ref() }
-    }
-
-    /// Returns a mutable reference to the data without checking if
-    /// the data is already mutably borrowed.
-    ///
-    /// # Panics
-    ///
-    /// Panics if this weak reference is empty or its owner has been dropped,
-    /// including when an active borrow is delaying payload destruction.
-    ///
-    /// # Safety
-    ///
-    /// 1. Ensure there are no other references to `T`.
-    /// 2. Ensure `T` is fully initialized (don't use this in
-    ///    `RefBox::new_cyclic`).
-    /// 3. Ensure the owning `RefBox` is alive for the entire lifetime
-    ///    of the returned reference.
-    #[track_caller]
-    pub unsafe fn get_mut_unchecked(&mut self) -> &mut T {
-        assert!(self.is_alive(), "RefBox Weak access requires a live owner");
-        unsafe { &mut *self.ptr.as_ref().data.get() }
     }
 
     /// Returns a raw pointer to `T`.
@@ -730,6 +710,47 @@ impl<'ptr, T: ?Sized + fmt::Debug> fmt::Debug for Borrow<'ptr, T> {
     }
 }
 
+/// An immutable borrow as a RAII-guard of a [`RefBox`] or [`Weak`].
+///
+/// See the [module](crate) documentation for more information.
+pub struct Ref<'ptr, T: ?Sized> {
+    pub(crate) heap: &'ptr RefBoxHeap<T>,
+    /// A ref is a shared reference to the data.
+    pub(crate) _p: PhantomData<&'ptr T>,
+}
+
+impl<'ptr, T: ?Sized> Ref<'ptr, T> {
+    /// Creates a new shared borrow.
+    #[inline]
+    fn new(heap: &'ptr RefBoxHeap<T>) -> Self {
+        heap.inner.start_shared_borrow();
+        Self {
+            heap,
+            _p: PhantomData,
+        }
+    }
+}
+
+impl<'ptr, T: ?Sized> Drop for Ref<'ptr, T> {
+    fn drop(&mut self) {
+        unsafe { internals::drop_shared_borrow(self.heap) };
+    }
+}
+
+impl<'ptr, T: ?Sized> Deref for Ref<'ptr, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { self.heap.data_ref() }
+    }
+}
+
+impl<'ptr, T: ?Sized + fmt::Debug> fmt::Debug for Ref<'ptr, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Ref").field(&self.deref()).finish()
+    }
+}
+
 /// An error that may occur during borrowing of [`RefBox`] or [`Weak`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BorrowError {
@@ -752,13 +773,13 @@ impl error::Error for BorrowError {}
 mod tests {
     use std::panic;
 
-    use crate::RefBox;
     use crate::internals::{RefBoxHeap, Status};
+    use crate::{BorrowError, RefBox};
 
     #[test]
     fn ref_box_new() {
         let ref_box = RefBox::new(123456);
-        assert_eq!(unsafe { *ref_box.get_unchecked() }, 123456);
+        assert_eq!(*ref_box.try_borrow().unwrap(), 123456);
         drop(ref_box);
     }
 
@@ -774,7 +795,7 @@ mod tests {
     #[cfg(any(feature = "cyclic", feature = "cyclic_stable"))]
     fn ref_box_new_cyclic() {
         let ref_box = RefBox::new_cyclic(|_weak| 13579);
-        assert_eq!(unsafe { *ref_box.get_unchecked() }, 13579);
+        assert_eq!(*ref_box.try_borrow().unwrap(), 13579);
         drop(ref_box);
     }
 
@@ -924,57 +945,14 @@ mod tests {
     }
 
     #[test]
-    fn weak_unchecked_access_requires_live_owner() {
-        use std::panic::{AssertUnwindSafe, catch_unwind};
-
-        let owner = RefBox::new(7);
-        let expired = owner.downgrade();
-        drop(owner);
-        for mut weak in [crate::Weak::<i32>::new(), expired] {
-            assert!(
-                catch_unwind(AssertUnwindSafe(|| unsafe {
-                    let _ = weak.get_unchecked();
-                }))
-                .is_err()
-            );
-            assert!(
-                catch_unwind(AssertUnwindSafe(|| unsafe {
-                    let _ = weak.get_mut_unchecked();
-                }))
-                .is_err()
-            );
-        }
-
-        let owner = RefBox::new(7);
-        let mut weak = owner.downgrade();
-        unsafe {
-            assert_eq!(*weak.get_unchecked(), 7);
-            *weak.get_mut_unchecked() = 9;
-            assert_eq!(*weak.get_unchecked(), 9);
-        }
-    }
-
-    #[test]
-    fn weak_unchecked_access_rejects_owner_dropped_during_borrow() {
-        use std::panic::{AssertUnwindSafe, catch_unwind};
-
+    fn weak_borrows_reject_owner_dropped_during_borrow() {
         let owner = RefBox::new(7);
         let borrowed_weak = owner.downgrade();
-        let mut weak = owner.downgrade();
+        let weak = owner.downgrade();
         let borrow = borrowed_weak.try_borrow_mut().unwrap();
         drop(owner);
-        assert!(
-            catch_unwind(AssertUnwindSafe(|| unsafe {
-                let _ = weak.get_unchecked();
-            }))
-            .is_err()
-        );
-        assert!(
-            catch_unwind(AssertUnwindSafe(|| unsafe {
-                let _ = weak.get_mut_unchecked();
-            }))
-            .is_err()
-        );
+        assert!(matches!(weak.try_borrow(), Err(BorrowError::Dropped)));
+        assert!(matches!(weak.try_borrow_mut(), Err(BorrowError::Dropped)));
         assert_eq!(*borrow, 7);
     }
 
@@ -1074,6 +1052,56 @@ mod tests {
     }
 
     #[test]
+    fn shared_borrows_coexist_and_exclude_mutable_borrow() {
+        let ref_box = RefBox::new(123456);
+        let weak = ref_box.downgrade();
+        let first = ref_box.try_borrow().unwrap();
+        let second = weak.try_borrow().unwrap();
+        assert_eq!(ref_box.status(), Status::Shared(2));
+        assert_eq!(*first + *second, 246912);
+        assert!(!weak.is_borrowed());
+        assert!(matches!(weak.try_borrow_mut(), Err(BorrowError::Borrowed)));
+        assert!(matches!(
+            ref_box.try_borrow_mut(),
+            Err(BorrowError::Borrowed)
+        ));
+        drop(first);
+        assert_eq!(ref_box.status(), Status::Shared(1));
+        drop(second);
+        assert_eq!(ref_box.status(), Status::Available);
+
+        let borrow = weak.try_borrow_mut().unwrap();
+        assert!(matches!(weak.try_borrow(), Err(BorrowError::Borrowed)));
+        assert!(matches!(ref_box.try_borrow(), Err(BorrowError::Borrowed)));
+        drop(borrow);
+        assert_eq!(*ref_box.try_borrow().unwrap(), 123456);
+    }
+
+    #[test]
+    fn dropping_owner_while_shared_borrowed_delays_drops() {
+        let ref_box = RefBox::new(123456);
+        let first_weak = ref_box.downgrade();
+        let second_weak = ref_box.downgrade();
+        let first = first_weak.try_borrow().unwrap();
+        let second = second_weak.try_borrow().unwrap();
+        drop(ref_box);
+        assert_eq!(first_weak.status(), Status::DroppedWhileShared(2));
+        assert!(!first_weak.is_alive());
+        assert!(matches!(first_weak.try_borrow(), Err(BorrowError::Dropped)));
+        drop(first);
+        assert_eq!(first_weak.status(), Status::DroppedWhileShared(1));
+        assert_eq!(*second, 123456);
+        drop(second);
+        assert_eq!(first_weak.status(), Status::Dropped);
+    }
+
+    #[test]
+    fn empty_weak_is_not_shared_borrowable() {
+        let weak = crate::Weak::<i32>::new();
+        assert!(matches!(weak.try_borrow(), Err(BorrowError::Dropped)));
+    }
+
+    #[test]
     fn dropping_owner_changes_status() {
         let ref_box = RefBox::new(123456);
         let weak = RefBox::downgrade(&ref_box);
@@ -1165,41 +1193,41 @@ mod tests {
         drop(ref_box);
     }
 
-    /// Test if the overhead of the heap part is 8 bytes when 'cyclic_stable' feature is not enabled.
+    /// Test if the overhead of the heap part is 12 bytes when 'cyclic_stable' feature is not enabled.
     #[test]
     #[cfg(not(feature = "cyclic_stable"))]
     fn heap_overhead() {
         let layout = std::alloc::Layout::new::<RefBoxHeap<()>>();
-        assert_eq!(layout.size(), 8);
+        assert_eq!(layout.size(), 12);
     }
 
-    /// Test if the overhead of the heap part is 12 bytes when 'cyclic_stable' feature is enabled
+    /// Test if the overhead of the heap part is 16 bytes when 'cyclic_stable' feature is enabled
     /// and the pointer size is 16 bits.
     #[test]
     #[cfg(feature = "cyclic_stable")]
     #[cfg(target_pointer_width = "16")]
     fn heap_overhead_cyclic_stable_16bit() {
         let layout = std::alloc::Layout::new::<RefBoxHeap<()>>();
-        assert_eq!(layout.size(), 12);
+        assert_eq!(layout.size(), 16);
     }
 
-    /// Test if the overhead of the heap part is 16 bytes when 'cyclic_stable' feature is enabled
+    /// Test if the overhead of the heap part is 20 bytes when 'cyclic_stable' feature is enabled
     /// and the pointer size is 32 bits.
     #[test]
     #[cfg(feature = "cyclic_stable")]
     #[cfg(target_pointer_width = "32")]
     fn heap_overhead_cyclic_stable_32bit() {
         let layout = std::alloc::Layout::new::<RefBoxHeap<()>>();
-        assert_eq!(layout.size(), 16);
+        assert_eq!(layout.size(), 20);
     }
 
-    /// Test if the overhead of the heap part is 24 bytes when 'cyclic_stable' feature is enabled
+    /// Test if the overhead of the heap part is 32 bytes when 'cyclic_stable' feature is enabled
     /// and the pointer size is 64 bits.
     #[test]
     #[cfg(feature = "cyclic_stable")]
     #[cfg(target_pointer_width = "64")]
     fn heap_overhead_cyclic_stable_64bit() {
         let layout = std::alloc::Layout::new::<RefBoxHeap<()>>();
-        assert_eq!(layout.size(), 24);
+        assert_eq!(layout.size(), 32);
     }
 }

@@ -15,6 +15,7 @@ use crate::shared::window::{
 use crate::tty::tty_update_window_offset;
 use crate::window::windows;
 use crate::window::Window as _;
+use crate::winlink::winlink_window;
 use libc::sscanf;
 
 pub unsafe fn resize_window(window: &WindowRef, sx: u_int, sy: u_int, xpixel: i32, ypixel: i32) {
@@ -392,11 +393,8 @@ pub unsafe fn recalculate_size(w_owner: &WindowRef, mut now: ::core::ffi::c_int)
                 return true;
             }
             if current != 0 {
-                session
-                    .current_winlink()
-                    .get_unchecked()
-                    .window_handle()
-                    .is_none_or(|current| !WindowRef::ptr_eq(current, w_owner))
+                winlink_window(&session.current_winlink())
+                    .is_none_or(|current| !WindowRef::ptr_eq(&current, w_owner))
             } else {
                 !session.contains_window(w_owner)
             }

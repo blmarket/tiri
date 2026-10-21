@@ -43,6 +43,7 @@ use crate::tty::{
 };
 use crate::window::windows;
 use crate::window::Window as _;
+use crate::winlink::winlink_window;
 
 use crate::window::WindowPane;
 use crate::window_border::{window_get_border_cell, window_get_fill_cell};
@@ -750,13 +751,7 @@ unsafe fn redraw_make_scene(client_owner: &ClientRef) -> Option<Box<redraw_scene
         .expect("live client")
         .attached_session()
         .upgrade();
-    let window_owner = s
-        .as_ref()
-        .expect("live session")
-        .current_winlink()
-        .get_unchecked()
-        .window_handle()
-        .cloned()
+    let window_owner = winlink_window(&s.as_ref().expect("live session").current_winlink())
         .expect("current window");
     let mut bctx: redraw_build_ctx = redraw_build_ctx {
         w: &window_owner,
@@ -861,16 +856,14 @@ pub unsafe fn redraw_invalidate_all_scenes() {
 }
 unsafe fn redraw_get_scene(client_owner: &ClientRef) -> Option<Box<redraw_scene>> {
     let mut c: Option<ClientRef> = Some(client_owner.clone());
-    let window_owner = (c
-        .as_ref()
-        .expect("live client")
-        .attached_session()
-        .upgrade()
-        .expect("live session")
-        .current_winlink())
-    .get_unchecked()
-    .window_handle()
-    .cloned()
+    let window_owner = winlink_window(
+        &c.as_ref()
+            .expect("live client")
+            .attached_session()
+            .upgrade()
+            .expect("live session")
+            .current_winlink(),
+    )
     .expect("current window");
     let tty_window_view { ox, oy, sx, sy, .. } = redraw_get_window_offset(client_owner);
     let scene = client_owner.take_redraw_scene();
@@ -1454,11 +1447,8 @@ unsafe fn redraw_draw(
                     .unwrap_or(c"(null)")
             ),
             {
-                (((s.as_ref().expect("live session").current_winlink())
-                    .get_unchecked()
-                    .window_handle()
-                    .as_ref())
-                .expect("live window"))
+                ((winlink_window(&s.as_ref().expect("live session").current_winlink()).as_ref())
+                    .expect("live window"))
                 .id()
             },
             log_cstr(&redraw_flags_to_string(flags))
@@ -1655,15 +1645,14 @@ pub unsafe fn redraw_screen(client_owner: &ClientRef) {
         if c.as_ref().expect("live client").flags() & CLIENT_REDRAWMENU as uint64_t != 0 {
             flags |= REDRAW_MENU;
         }
-        if (c
-            .as_ref()
-            .expect("live client")
-            .attached_session()
-            .upgrade()
-            .expect("live session")
-            .current_winlink())
-        .get_unchecked()
-        .window_handle()
+        if winlink_window(
+            &c.as_ref()
+                .expect("live client")
+                .attached_session()
+                .upgrade()
+                .expect("live session")
+                .current_winlink(),
+        )
         .as_ref()
         .expect("current window")
         .menu_observer()
@@ -1686,15 +1675,14 @@ pub unsafe fn redraw_pane(
         Some(pane_owner),
         REDRAW_PANE | REDRAW_PANE_SCROLLBAR,
     );
-    if (c
-        .as_ref()
-        .expect("live client")
-        .attached_session()
-        .upgrade()
-        .expect("live session")
-        .current_winlink())
-    .get_unchecked()
-    .window_handle()
+    if winlink_window(
+        &c.as_ref()
+            .expect("live client")
+            .attached_session()
+            .upgrade()
+            .expect("live session")
+            .current_winlink(),
+    )
     .as_ref()
     .expect("current window")
     .menu_observer()

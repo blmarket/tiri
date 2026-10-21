@@ -17,8 +17,9 @@ use crate::shared::session::SessionRef;
 use crate::shared::tree::RB_NEGINF;
 use crate::shared::window::winlink;
 use crate::window::Window as _;
-use crate::window::{winlinks_minmax, winlinks_next};
+use crate::window::{winlink_next, winlinks_minmax};
 use crate::window_pane::WindowPane as _;
+use crate::winlink::winlink_window;
 use libc::sscanf;
 use std::cell::RefCell;
 use std::ffi::{CStr, CString};
@@ -284,7 +285,8 @@ unsafe fn monitor_check_pane(monitor: &refbox::Weak<monitor_set>, name: &CStr) {
     let mut link = window.next_winlink(None);
     while link.is_alive() && monitor_with_item(monitor, name, |_| ()).is_some() {
         let matches = link
-            .get_unchecked()
+            .try_borrow()
+            .expect("live winlink")
             .session
             .ptr_eq(&Rc::downgrade(&session));
         if matches {
@@ -294,7 +296,7 @@ unsafe fn monitor_check_pane(monitor: &refbox::Weak<monitor_set>, name: &CStr) {
             drop(formats);
             let Some(value) = value else { break };
             if link.is_alive() {
-                let index = link.get_unchecked().idx as u32;
+                let index = link.try_borrow().expect("live winlink").idx as u32;
                 monitor_check_value(
                     monitor,
                     name,
@@ -327,7 +329,8 @@ unsafe fn monitor_check_window(monitor: &refbox::Weak<monitor_set>, name: &CStr)
     let mut link = window.next_winlink(None);
     while link.is_alive() && monitor_with_item(monitor, name, |_| ()).is_some() {
         let matches = link
-            .get_unchecked()
+            .try_borrow()
+            .expect("live winlink")
             .session
             .ptr_eq(&Rc::downgrade(&session));
         if matches {
@@ -337,7 +340,7 @@ unsafe fn monitor_check_window(monitor: &refbox::Weak<monitor_set>, name: &CStr)
             drop(formats);
             let Some(value) = value else { break };
             if link.is_alive() {
-                let index = link.get_unchecked().idx as u32;
+                let index = link.try_borrow().expect("live winlink").idx as u32;
                 monitor_check_value(
                     monitor,
                     name,
@@ -374,7 +377,7 @@ unsafe fn monitor_check_all_panes_one(
     if !link.is_alive() {
         return;
     }
-    let index = link.get_unchecked().idx as u32;
+    let index = link.try_borrow().expect("live winlink").idx as u32;
     monitor_check_value(
         monitor,
         name,
@@ -403,7 +406,7 @@ unsafe fn monitor_check_all_windows_one(
         return;
     }
     let (index, window) = {
-        let target = link.get_unchecked();
+        let target = link.try_borrow().expect("live winlink");
         (
             target.idx as u32,
             target.window_handle().expect("monitor link window").id(),
@@ -457,7 +460,7 @@ unsafe fn monitor_check_all_panes(monitor: &refbox::Weak<monitor_set>) {
     };
     let mut link = session.with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
     while link.is_alive() && monitor.is_alive() {
-        let window = link.get_unchecked().window_handle().cloned();
+        let window = winlink_window(&link);
         let mut cursor = window
             .as_ref()
             .and_then(|window| window.step_pane(None, false).upgrade());
@@ -496,7 +499,7 @@ unsafe fn monitor_check_all_panes(monitor: &refbox::Weak<monitor_set>) {
         if !link.is_alive() {
             break;
         }
-        link = winlinks_next(link.get_unchecked());
+        link = winlink_next(&link);
     }
     monitor_visit(monitor, |name, kind| {
         if kind == MONITOR_ALL_PANES {
@@ -535,7 +538,7 @@ unsafe fn monitor_check_all_windows(monitor: &refbox::Weak<monitor_set>) {
         if !link.is_alive() {
             break;
         }
-        link = winlinks_next(link.get_unchecked());
+        link = winlink_next(&link);
     }
     monitor_visit(monitor, |name, kind| {
         if kind == MONITOR_ALL_WINDOWS {

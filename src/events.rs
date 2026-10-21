@@ -15,6 +15,7 @@ use crate::shared::session::SessionRef;
 use crate::shared::window::winlink;
 use crate::shared::window::WindowRef;
 use crate::window_pane::WindowPane as _;
+use crate::winlink::winlink_window;
 use std::ffi::CStr;
 
 /// The sink registry. Callbacks may add or remove sinks while an event is
@@ -184,7 +185,10 @@ pub unsafe fn events_fire_client(name: &CStr, owner: ClientRef) {
         event_payload_set_int(
             &mut ep,
             c"window_index",
-            (fs.winlink_handle()).get_unchecked().idx,
+            (fs.winlink_handle())
+                .try_borrow()
+                .expect("live winlink")
+                .idx,
         );
     } else if fs.idx != -(1 as ::core::ffi::c_int) {
         event_payload_set_int(&mut ep, c"window_index", fs.idx);
@@ -260,15 +264,20 @@ pub unsafe fn events_fire_winlink(name: &CStr, mut wl: refbox::Weak<winlink>) {
     let mut ep = event_payload_create();
     fs = cmd_find_state::find_from_winlink(wl.clone(), 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut ep, &fs);
-    if let Some(session_owner) = wl.get_unchecked().session.upgrade() {
+    let session_owner = wl.try_borrow().expect("live winlink").session.upgrade();
+    if let Some(session_owner) = session_owner {
         event_payload_set_session(&mut ep, c"session", session_owner.clone());
     }
     event_payload_set_window(
         &mut ep,
         c"window",
-        WindowRef::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
+        winlink_window(&wl).expect("live window"),
     );
-    event_payload_set_int(&mut ep, c"window_index", wl.get_unchecked().idx);
+    event_payload_set_int(
+        &mut ep,
+        c"window_index",
+        wl.try_borrow().expect("live winlink").idx,
+    );
     events_fire(name, ep);
 }
 

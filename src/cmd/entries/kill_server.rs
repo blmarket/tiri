@@ -60,7 +60,7 @@ unsafe fn cmd_kill_server_exec(
     _item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     if std::ptr::eq(
-        cmd_get_entry(self_0.get_unchecked()),
+        cmd_get_entry(&self_0.try_borrow().expect("live command")),
         &cmd_kill_server_entry,
     ) {
         kill(std::process::id() as libc::pid_t, SIGTERM);

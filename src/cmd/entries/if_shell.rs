@@ -68,7 +68,8 @@ unsafe fn cmd_if_shell_exec(
     let item = item_handle.borrow();
     let queue_client = cmdq_get_client(Some(&*item));
     let mut queue_client_ptr: Option<ClientRef> = queue_client.clone();
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let new_item_allocation;
     let tc_owner = cmdq_get_target_client(Some(&*item));

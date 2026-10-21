@@ -37,12 +37,15 @@ use crate::shared::session::SessionRef;
 use crate::shared::sort::sort_criteria;
 use crate::shared::sort::*;
 use crate::shared::window::WindowRef;
-use crate::shared::window::{window_mode, window_mode_entry, window_mode_screen_payload, winlink};
+use crate::shared::window::{
+    window_mode, window_mode_entry, window_mode_screen_payload, winlink, ModeDataRef,
+};
 use crate::sort::sort_get_clients;
 use crate::status::{status_at_line, status_line_size};
 use crate::style::style_apply_with_options;
 use crate::window::Window as _;
 use crate::window_pane::WindowPane as _;
+use crate::winlink::winlink_window;
 use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
@@ -287,13 +290,13 @@ unsafe fn window_client_draw_info(
 ) {
     let c = item.client();
     let options_window = WindowRef::downgrade(
-        c.attached_session()
-            .upgrade()
-            .expect("live session")
-            .current_winlink()
-            .get_unchecked()
-            .window_handle()
-            .expect("live window"),
+        &winlink_window(
+            &c.attached_session()
+                .upgrade()
+                .expect("live session")
+                .current_winlink(),
+        )
+        .expect("live window"),
     );
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -405,12 +408,7 @@ unsafe fn window_client_draw(
         window_client_draw_info(item, ctx, sx, sy);
         return;
     }
-    let window_owner = session
-        .as_ref()
-        .expect("live session")
-        .current_winlink()
-        .get_unchecked()
-        .window_handle()
+    let window_owner = winlink_window(&session.as_ref().expect("live session").current_winlink())
         .expect("live window")
         .clone();
     let options_window = WindowRef::downgrade(&window_owner);
@@ -522,7 +520,7 @@ unsafe fn window_client_menu(
     if !wme.is_alive() {
         return;
     }
-    let Some(mode_pane_owner) = wme.get_unchecked().wp.upgrade() else {
+    let Some(mode_pane_owner) = wme.try_borrow().expect("live mode entry").wp.upgrade() else {
         return;
     };
     if mode_pane_owner.mode_entry().as_ptr() != wme.as_ptr() {
@@ -581,10 +579,8 @@ fn window_client_help() -> mode_tree_help_info {
 }
 unsafe fn window_client_data(
     wme: &refbox::Weak<window_mode_entry>,
-) -> &std::cell::RefCell<window_client_modedata> {
-    wme.get_unchecked()
-        .boxed_data_cell::<window_client_modedata>()
-        .expect("client mode payload")
+) -> ModeDataRef<'_, window_client_modedata> {
+    ModeDataRef::new(wme.try_borrow().expect("live mode entry")).expect("client mode payload")
 }
 
 unsafe fn window_client_init(
@@ -594,7 +590,8 @@ unsafe fn window_client_init(
     args: Option<&args>,
 ) -> bool {
     let mode_pane_owner = wme
-        .get_unchecked()
+        .try_borrow()
+        .expect("live mode entry")
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
@@ -631,7 +628,7 @@ unsafe fn window_client_init(
         preview_is_info,
         items: Vec::new(),
     }));
-    wme.get_mut_unchecked().boxed_data = Some(owner);
+    wme.try_borrow_mut().expect("live mode entry").boxed_data = Some(owner);
     let build_mode = wme.clone();
     let draw_mode = wme.clone();
     let menu_mode = wme.clone();
@@ -648,7 +645,8 @@ unsafe fn window_client_init(
         Some(Box::new(move |itemdata, ctx, sx, sy| {
             let item = itemdata.as_client().expect("client row payload");
             let data = window_client_data(&draw_mode);
-            window_client_draw(&data.borrow(), &item, ctx, sx, sy)
+            let data = data.borrow();
+            window_client_draw(&data, &item, ctx, sx, sy)
         })),
         None,
         Some(Box::new(move |client, key| {
@@ -658,7 +656,8 @@ unsafe fn window_client_init(
         Some(Box::new(move |itemdata, line| {
             let item = itemdata.as_client().expect("client row payload");
             let data = window_client_data(&key_mode);
-            window_client_get_key(&data.borrow(), &item, line)
+            let data = data.borrow();
+            window_client_get_key(&data, &item, line)
         })),
         None,
         Some(window_client_sort),
@@ -679,22 +678,20 @@ unsafe fn window_client_get_screen(
     wme: refbox::Weak<window_mode_entry>,
     visit: &mut dyn FnMut(&mut screen),
 ) {
-    let Some(data) = wme
-        .get_unchecked()
-        .boxed_data_cell::<window_client_modedata>()
+    let Some(data) =
+        ModeDataRef::<window_client_modedata>::new(wme.try_borrow().expect("live mode entry"))
     else {
         return;
     };
-    let tree_owner = window_mode_screen_payload(data, |data| data.data.clone());
+    let tree_owner = window_mode_screen_payload(&data, |data| data.data.clone());
     if let Some(tree_owner) = tree_owner {
         mode_tree_visit_screen(&tree_owner, visit);
     }
 }
 
 unsafe fn window_client_free(wme: refbox::Weak<window_mode_entry>) {
-    let Some(data) = wme
-        .get_unchecked()
-        .boxed_data_cell::<window_client_modedata>()
+    let Some(data) =
+        ModeDataRef::<window_client_modedata>::new(wme.try_borrow().expect("live mode entry"))
     else {
         return;
     };
@@ -711,7 +708,8 @@ unsafe fn window_client_resize(
 }
 unsafe fn window_client_update(mut wme: refbox::Weak<window_mode_entry>) {
     let (pane, tree_owner) = {
-        let data = window_client_data(&wme).borrow();
+        let data_cell = window_client_data(&wme);
+        let data = data_cell.borrow();
         (data.wp.clone(), data.tree_owner())
     };
     let Some(mode_pane_owner) =
@@ -747,7 +745,8 @@ unsafe fn window_client_key(
     mut m: Option<&mut mouse_event>,
 ) {
     let mode_pane_owner = wme
-        .get_unchecked()
+        .try_borrow()
+        .expect("live mode entry")
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");

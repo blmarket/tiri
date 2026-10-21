@@ -34,7 +34,8 @@ unsafe fn cmd_rename_session_exec(
     item: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     use crate::session::Session;
-    let arguments = cmd_get_args(command.get_unchecked());
+    let cmd_ref = command.try_borrow().expect("live command");
+    let arguments = cmd_get_args(&cmd_ref);
     let name = args_string(arguments, 0).expect("rename-session argument");
     let expanded = format_single_from_target_cstring(item, name);
     let target = crate::cmd::queue::cmdq_get_target(&item.borrow()).clone();

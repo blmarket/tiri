@@ -196,7 +196,12 @@ impl Session for SessionRef {
         let observer = Rc::downgrade(self);
         let mut link = window.next_winlink(None);
         while link.is_alive() {
-            if link.get_unchecked().session.ptr_eq(&observer) {
+            if link
+                .try_borrow()
+                .expect("live winlink")
+                .session
+                .ptr_eq(&observer)
+            {
                 return true;
             }
             link = window.next_winlink(Some(link));
@@ -278,10 +283,10 @@ impl Session for SessionRef {
         winlink_stack_remove(&mut (*self.as_ptr()).lastw, link);
     }
     unsafe fn shuffle_window(&self, link: refbox::Weak<winlink>, before: bool) -> i32 {
-        if !link.is_alive() || link.get_unchecked().idx == i32::MAX {
+        if !link.is_alive() || link.try_borrow().expect("live winlink").idx == i32::MAX {
             return -1;
         }
-        let index = link.get_unchecked().idx + if before { 0 } else { 1 };
+        let index = link.try_borrow().expect("live winlink").idx + if before { 0 } else { 1 };
         let state = &mut *self.as_ptr();
         let mut last = index;
         while last < i32::MAX && winlink_find_by_index(&state.windows, last).is_alive() {
@@ -299,7 +304,7 @@ impl Session for SessionRef {
     }
     unsafe fn remove_replaced_window(&self, mut link: refbox::Weak<winlink>) -> bool {
         events_fire_winlink(c"window-unlinked", link.clone());
-        link.get_mut_unchecked().flags &= !WINLINK_ALERTFLAGS;
+        link.try_borrow_mut().expect("live winlink").flags &= !WINLINK_ALERTFLAGS;
         self.forget_winlink(link.clone());
         winlink_remove(&(*self.as_ptr()).windows, link.clone());
         let was_current = link == self.current_winlink();
@@ -353,7 +358,10 @@ impl Session for SessionRef {
         self.update_activity(None);
         session_theme_changed(Some(&*self.as_ptr()));
         (*self.as_ptr()).last_attached_time = SystemTime::now();
-        self.current_winlink().get_mut_unchecked().flags &= !WINLINK_ALERTFLAGS;
+        self.current_winlink()
+            .try_borrow_mut()
+            .expect("live winlink")
+            .flags &= !WINLINK_ALERTFLAGS;
         crate::alerts::alerts_check_session(self);
     }
     fn status_layout(&self) -> (i32, u32) {

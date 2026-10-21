@@ -11,6 +11,7 @@ use crate::paste::paste_add_owned;
 use crate::reactor::Timer;
 use crate::server_client::Client as _;
 use crate::window::Window as _;
+use crate::winlink::winlink_window;
 
 use super::control::tty_update_features;
 use super::model::*;
@@ -2223,9 +2224,7 @@ pub(super) unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core:
 unsafe fn tty_keys_update_focus(client: &ClientRef) {
     let window = {
         let session = client.attached_session().upgrade().expect("live session");
-        let link = session.current_winlink();
-        let window = link.get_unchecked().window_handle().cloned();
-        window
+        winlink_window(&session.current_winlink())
     };
     if let Some(window) = window {
         window.update_focus();

@@ -9,6 +9,7 @@ use crate::server_fn::{
     server_unzoom_window,
 };
 use crate::window::Window as _;
+use crate::winlink::winlink_window;
 
 use crate::session::Session;
 use crate::shared::abi::*;
@@ -51,7 +52,8 @@ unsafe fn cmd_join_pane_exec(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let current = cmdq_get_state_owned(&(item));
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let source = crate::cmd::queue::cmdq_get_source(&item);
@@ -62,17 +64,13 @@ unsafe fn cmd_join_pane_exec(
     dst_s = target.session_handle();
     dst_wl = target.winlink_handle();
     let dst_pane_owner = target.pane_handle().expect("join target pane");
-    let dst_window = dst_wl
-        .get_unchecked()
-        .window_handle()
-        .cloned()
-        .expect("live window");
+    let dst_window = winlink_window(&dst_wl).expect("live window");
     let mut src_window = None;
     let result = (|| {
-        dst_idx = dst_wl.get_unchecked().idx;
+        dst_idx = dst_wl.try_borrow().expect("live winlink").idx;
         src_wl = source.winlink_handle();
         let src_pane_owner = source.pane_handle().expect("join source pane");
-        src_window = src_wl.get_unchecked().window_handle().cloned();
+        src_window = winlink_window(&src_wl);
         let src_owner = src_window.as_ref().expect("live source window");
         server_unzoom_window(&dst_window);
         server_unzoom_window(src_owner);
@@ -131,7 +129,8 @@ unsafe fn cmd_join_pane_exec(
         } else {
             server_status_session(dst_s.as_ref().expect("live session"));
         }
-        src_pane_owner.notify_moved(src_owner, src_wl.get_unchecked().idx, &dst_window, dst_idx);
+        let src_idx = src_wl.try_borrow().expect("live winlink").idx;
+        src_pane_owner.notify_moved(src_owner, src_idx, &dst_window, dst_idx);
         cmd_join_pane_finish(src_window.take().expect("live source window"), &dst_window);
         CmdOutcome::Normal
     })();

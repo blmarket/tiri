@@ -99,7 +99,8 @@ unsafe fn cmd_new_session_exec(
     let queue_client = cmdq_get_client(Some(&*item));
     let mut queue_client_ptr: Option<ClientRef> = queue_client.clone();
     let mut current_block: u64;
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let current = cmdq_get_state_owned(&(item));
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let c_owner = cmdq_get_client(Some(&*item));
@@ -150,10 +151,7 @@ unsafe fn cmd_new_session_exec(
         wp: Default::default(),
         idx: 0,
     };
-    if std::ptr::eq(
-        cmd_get_entry(self_0.get_unchecked()),
-        &cmd_has_session_entry,
-    ) {
+    if std::ptr::eq(cmd_get_entry(&cmd_ref), &cmd_has_session_entry) {
         return CmdOutcome::Normal;
     }
     if args_has(args, 't' as i32 as u_char) != 0
@@ -590,7 +588,8 @@ unsafe fn cmd_new_session_exec(
                                                                                 links, RB_NEGINF,
                                                                             )
                                                                         }))
-                                                                    .get_unchecked()
+                                                                    .try_borrow()
+                                                                    .expect("live winlink")
                                                                     .idx,
                                                                 );
                                                         }

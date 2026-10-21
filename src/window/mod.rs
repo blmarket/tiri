@@ -761,18 +761,18 @@ pub unsafe fn window_printable_flags(
     mut wl: refbox::Weak<winlink>,
     escape: bool,
 ) -> std::ffi::CString {
-    let session_owner = wl.get_unchecked().session.upgrade();
+    let session_owner = wl.try_borrow().expect("live winlink").session.upgrade();
     let mut flags = Vec::new();
-    if wl.get_unchecked().flags & WINLINK_ACTIVITY != 0 {
+    if wl.try_borrow().expect("live winlink").flags & WINLINK_ACTIVITY != 0 {
         flags.push(b'#');
         if escape {
             flags.push(b'#');
         }
     }
-    if wl.get_unchecked().flags & WINLINK_BELL != 0 {
+    if wl.try_borrow().expect("live winlink").flags & WINLINK_BELL != 0 {
         flags.push(b'!');
     }
-    if wl.get_unchecked().flags & WINLINK_SILENCE != 0 {
+    if wl.try_borrow().expect("live winlink").flags & WINLINK_SILENCE != 0 {
         flags.push(b'~');
     }
     if session_owner
@@ -790,11 +790,7 @@ pub unsafe fn window_printable_flags(
     if server_check_marked() != 0 && wl == marked_pane.winlink_handle() {
         flags.push(b'M');
     }
-    if wl
-        .get_unchecked()
-        .window_handle()
-        .is_some_and(|window| window.zoomed_pane().strong_count() != 0)
-    {
+    if winlink_window(&wl).is_some_and(|window| window.zoomed_pane().strong_count() != 0) {
         flags.push(b'Z');
     }
     std::ffi::CString::new(flags).expect("window flags contain no NUL")

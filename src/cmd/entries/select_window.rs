@@ -5,6 +5,7 @@ use crate::resize::recalculate_sizes;
 use crate::server_client::Client as _;
 use crate::server_fn::server_redraw_session;
 use crate::session::Session;
+use crate::winlink::{winlink_index, winlink_window};
 
 use crate::shared::abi::*;
 use crate::shared::client::ClientRef;
@@ -119,7 +120,8 @@ unsafe fn cmd_select_window_exec(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     let current = cmdq_get_state_owned(&(item));
@@ -130,24 +132,16 @@ unsafe fn cmd_select_window_exec(
     let mut previous: ::core::ffi::c_int = 0;
     let mut last: ::core::ffi::c_int = 0;
     let mut activity: ::core::ffi::c_int = 0;
-    next = (std::ptr::eq(
-        cmd_get_entry(self_0.get_unchecked()),
-        &cmd_next_window_entry,
-    )) as ::core::ffi::c_int;
+    next = (std::ptr::eq(cmd_get_entry(&cmd_ref), &cmd_next_window_entry)) as ::core::ffi::c_int;
     if args_has(args, 'n' as i32 as u_char) != 0 {
         next = 1 as ::core::ffi::c_int;
     }
-    previous = (std::ptr::eq(
-        cmd_get_entry(self_0.get_unchecked()),
-        &cmd_previous_window_entry,
-    )) as ::core::ffi::c_int;
+    previous =
+        (std::ptr::eq(cmd_get_entry(&cmd_ref), &cmd_previous_window_entry)) as ::core::ffi::c_int;
     if args_has(args, 'p' as i32 as u_char) != 0 {
         previous = 1 as ::core::ffi::c_int;
     }
-    last = (std::ptr::eq(
-        cmd_get_entry(self_0.get_unchecked()),
-        &cmd_last_window_entry,
-    )) as ::core::ffi::c_int;
+    last = (std::ptr::eq(cmd_get_entry(&cmd_ref), &cmd_last_window_entry)) as ::core::ffi::c_int;
     if args_has(args, 'l' as i32 as u_char) != 0 {
         last = 1 as ::core::ffi::c_int;
     }
@@ -202,7 +196,7 @@ unsafe fn cmd_select_window_exec(
                 );
             }
             server_redraw_session(s.as_ref().expect("live session"));
-        } else if (s.as_ref().expect("live session")).select_index(wl.get_unchecked().idx)
+        } else if (s.as_ref().expect("live session")).select_index(winlink_index(&wl))
             == 0 as ::core::ffi::c_int
         {
             *current.current.borrow_mut() = cmd_find_state::find_from_session(
@@ -226,11 +220,7 @@ unsafe fn cmd_select_window_exec(
             .upgrade()
             .is_none()
     {
-        s.as_ref()
-            .expect("live session")
-            .current_winlink()
-            .get_unchecked()
-            .window_handle()
+        winlink_window(&s.as_ref().expect("live session").current_winlink())
             .expect("live window")
             .set_latest_client(c.as_ref());
     }

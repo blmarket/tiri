@@ -39,7 +39,9 @@ use crate::shared::session::SessionRef;
 use crate::shared::sort::sort_criteria;
 use crate::shared::sort::*;
 
-use crate::shared::window::{window_mode, window_mode_entry, window_mode_screen_payload, winlink};
+use crate::shared::window::{
+    window_mode, window_mode_entry, window_mode_screen_payload, winlink, ModeDataRef,
+};
 use crate::sort::{sort_get_sessions, sort_get_winlinks};
 use crate::status::status_message_set;
 use crate::style::style_apply_with_options;
@@ -159,7 +161,7 @@ unsafe fn window_switch_add_window(
     mut wl: refbox::Weak<winlink>,
     order: &mut u_int,
 ) {
-    let Some(session_owner) = wl.get_unchecked().session.upgrade() else {
+    let Some(session_owner) = wl.try_borrow().expect("live winlink").session.upgrade() else {
         return;
     };
     let mut ft_owner = format_create(None, None, FORMAT_NONE, 0 as ::core::ffi::c_int);
@@ -169,7 +171,7 @@ unsafe fn window_switch_add_window(
         data,
         WINDOW_SWITCH_TYPE_WINDOW,
         session_owner.id() as ::core::ffi::c_int,
-        wl.get_unchecked().idx,
+        wl.try_borrow().expect("live winlink").idx,
         order,
         ft,
     );
@@ -260,19 +262,19 @@ fn window_switch_set_current(data: &mut window_switch_modedata, mut current: u_i
 }
 unsafe fn window_switch_data(
     wme: &refbox::Weak<window_mode_entry>,
-) -> &std::cell::RefCell<window_switch_modedata> {
-    wme.get_unchecked()
-        .boxed_data_cell::<window_switch_modedata>()
-        .expect("switch mode payload")
+) -> ModeDataRef<'_, window_switch_modedata> {
+    ModeDataRef::new(wme.try_borrow().expect("live mode entry")).expect("switch mode payload")
 }
 
 unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
     let mode_pane_owner = wme
-        .get_unchecked()
+        .try_borrow()
+        .expect("live mode entry")
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
-    let mut guard = window_switch_data(&wme).borrow_mut();
+    let guard_cell = window_switch_data(&wme);
+    let mut guard = guard_cell.borrow_mut();
     let data = &mut *guard;
     let mut sx: u_int = data.screen.grid().sx;
     let mut i: u_int = 0;
@@ -430,7 +432,8 @@ unsafe fn window_switch_init(
     args: Option<&args>,
 ) -> bool {
     let mode_pane_owner = wme
-        .get_unchecked()
+        .try_borrow()
+        .expect("live mode entry")
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
@@ -466,7 +469,7 @@ unsafe fn window_switch_init(
         current: 0,
         offset: 0,
     }));
-    wme.get_mut_unchecked().boxed_data = Some(owner);
+    wme.try_borrow_mut().expect("live mode entry").boxed_data = Some(owner);
     prompt_set_options(&mut pd, fs.expect("mode target").session_handle().as_ref());
     pd.fs = fs;
     pd.prompt = c"(search) ";
@@ -480,7 +483,8 @@ unsafe fn window_switch_init(
     let prompt = prompt_create(pd);
     let prompt_observer = prompt.downgrade();
     {
-        let mut data = window_switch_data(&wme).borrow_mut();
+        let data_cell = window_switch_data(&wme);
+        let mut data = data_cell.borrow_mut();
         data.prompt = Some(prompt);
         prompt_update(
             &mut prompt_observer
@@ -502,7 +506,8 @@ unsafe fn window_switch_get_screen(
     visit: &mut dyn FnMut(&mut screen),
 ) {
     if let Some(data) = wme
-        .get_unchecked()
+        .try_borrow()
+        .expect("live mode entry")
         .boxed_data_cell::<window_switch_modedata>()
     {
         window_mode_screen_payload(data, |data| visit(&mut data.screen));
@@ -515,7 +520,8 @@ unsafe fn window_switch_resize(
     mut sy: u_int,
 ) {
     {
-        let mut data = window_switch_data(&wme).borrow_mut();
+        let data_cell = window_switch_data(&wme);
+        let mut data = data_cell.borrow_mut();
         screen_resize(&mut data.screen, sx, sy, 0 as ::core::ffi::c_int);
         window_switch_build(&mut data);
         let current = data.current;
@@ -565,7 +571,11 @@ unsafe fn window_switch_run_command(
                     let mut bytes = Vec::from(b"=".as_slice());
                     bytes.extend_from_slice(s_value.name().as_bytes());
                     bytes.push(b':');
-                    bytes.extend_from_slice((wl.get_unchecked().idx as u32).to_string().as_bytes());
+                    bytes.extend_from_slice(
+                        (wl.try_borrow().expect("live winlink").idx as u32)
+                            .to_string()
+                            .as_bytes(),
+                    );
                     bytes.push(b'.');
                     target = Some(CString::new(bytes).expect("window target contains no NUL"));
                     fs = cmd_find_state::find_from_winlink(wl.clone(), 0 as ::core::ffi::c_int);
@@ -620,7 +630,8 @@ unsafe fn window_switch_prompt_callback(
     } else {
         value
     };
-    let mut data = window_switch_data(&mode).borrow_mut();
+    let data_cell = window_switch_data(&mode);
+    let mut data = data_cell.borrow_mut();
     data.filter = CString::new(value).expect("prompt input contains no NUL");
     window_switch_build(&mut data);
     data.current = 0 as u_int;
@@ -635,7 +646,8 @@ unsafe fn window_switch_key(
     m: Option<&mut mouse_event>,
 ) {
     let mode_pane_owner = wme
-        .get_unchecked()
+        .try_borrow()
+        .expect("live mode entry")
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
@@ -715,7 +727,7 @@ unsafe fn window_switch_key(
                 }
                 set_current(offset.wrapping_add(y));
                 if key == KEYC_DOUBLECLICK1_PANE as ::core::ffi::c_ulong as key_code {
-                    if window_switch_run_command(cell, Some(client_owner)) != 0 {
+                    if window_switch_run_command(&cell, Some(client_owner)) != 0 {
                         mode_pane_owner.reset_mode();
                     }
                     return;
@@ -735,7 +747,7 @@ unsafe fn window_switch_key(
         }
         match key {
             13 => {
-                if window_switch_run_command(cell, Some(client_owner)) != 0 {
+                if window_switch_run_command(&cell, Some(client_owner)) != 0 {
                     mode_pane_owner.reset_mode();
                 }
                 return;

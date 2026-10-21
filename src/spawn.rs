@@ -6,6 +6,7 @@ use crate::options::options_get_string;
 use crate::options::OptionsScope;
 use crate::server_client::Client as _;
 use crate::window::Window as _;
+use crate::winlink::winlink_window;
 use libc::{mkstemp, unlink};
 
 use crate::session::Session;
@@ -70,8 +71,15 @@ pub(crate) unsafe fn spawn_log(from: &CStr, sc: &spawn_context) {
         log_hex(((sc.flags) as u32) as u64)
     ));
     let tmp = format_message_with(|out| match (wl.is_alive(), wp0_owner.as_ref()) {
-        (true, Some(wp0)) => write!(out, "wl={} wp0=%{}", { wl.get_unchecked().idx }, wp0.id()),
-        (true, None) => write!(out, "wl={} wp0=none", { wl.get_unchecked().idx }),
+        (true, Some(wp0)) => write!(
+            out,
+            "wl={} wp0=%{}",
+            { wl.try_borrow().expect("live winlink").idx },
+            wp0.id()
+        ),
+        (true, None) => write!(out, "wl={} wp0=none", {
+            wl.try_borrow().expect("live winlink").idx
+        }),
         (false, Some(wp0)) => write!(out, "wl=none wp0=%{}", wp0.id()),
         (false, None) => out.write_all(b"wl=none wp0=none"),
     });
@@ -103,12 +111,7 @@ pub(crate) unsafe fn prepare_respawn_window(
     sc: &mut spawn_context,
     cause: &mut Option<CString>,
 ) -> bool {
-    let window = sc
-        .winlink_handle()
-        .get_unchecked()
-        .window_handle()
-        .cloned()
-        .expect("live respawn window");
+    let window = winlink_window(&sc.winlink_handle()).expect("live respawn window");
     let result = (|| {
         if !sc.flags & SPAWN_KILL != 0
             && window
@@ -124,7 +127,8 @@ pub(crate) unsafe fn prepare_respawn_window(
                     sc.s.upgrade().expect("spawn session").name().as_bytes(),
                     b":",
                     (sc.winlink_handle())
-                        .get_unchecked()
+                        .try_borrow()
+                        .expect("live winlink")
                         .idx
                         .to_string()
                         .as_bytes(),
@@ -204,11 +208,7 @@ pub(crate) unsafe fn spawn_editor(
         flags: 0,
     };
     let mut wl: refbox::Weak<winlink> = session_owner.current_winlink();
-    let original_window = wl
-        .get_unchecked()
-        .window_handle()
-        .cloned()
-        .expect("editor window");
+    let original_window = winlink_window(&wl).expect("editor window");
     let result = (|| {
         let mut path: [u8; 19] = *b"/tmp/tmux.XXXXXXXX\0";
         let mut fd: ::core::ffi::c_int = 0;

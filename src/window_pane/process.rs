@@ -38,7 +38,8 @@ pub(super) unsafe fn pipe_pane(
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let queue_client = cmdq_get_client(Some(&*item));
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();

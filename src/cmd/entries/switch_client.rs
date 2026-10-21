@@ -9,6 +9,7 @@ use crate::key_bindings::key_bindings_get_table;
 use crate::server_fn::server_redraw_window;
 use crate::window::Window as _;
 use crate::window_pane::WindowPane as _;
+use crate::winlink::winlink_window;
 use libc::{getuid, strcmp, strcspn};
 
 use crate::shared::abi::uid_t;
@@ -57,7 +58,8 @@ unsafe fn cmd_switch_client_exec(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let current = cmdq_get_state_owned(&(item));
     let mut target: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -188,18 +190,12 @@ unsafe fn cmd_switch_client_exec(
         }
         if let Some(pane) = wp.as_ref().filter(|pane| {
             wl.is_alive()
-                && !wl
-                    .get_unchecked()
-                    .window_handle()
+                && !winlink_window(&wl)
                     .expect("live window")
                     .active_pane()
                     .ptr_eq(&std::rc::Rc::downgrade(pane))
         }) {
-            let window_owner = wl
-                .get_unchecked()
-                .window_handle()
-                .cloned()
-                .expect("switch window");
+            let window_owner = winlink_window(&wl).expect("switch window");
             let visible = pane.is_visible();
             if !visible && window_owner.push_zoom(false, args_has(args, b'Z') != 0) {
                 server_redraw_window(&window_owner);

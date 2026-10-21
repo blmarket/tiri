@@ -70,7 +70,8 @@ unsafe fn cmd_move_window_exec(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let source = crate::cmd::queue::cmdq_get_source(&item);
     let mut target: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -152,10 +153,7 @@ unsafe fn cmd_move_window_exec(
         cmdq_error(item_handle, |out| write_cstr(out, &*cause));
         return CmdOutcome::Error;
     }
-    if std::ptr::eq(
-        cmd_get_entry(self_0.get_unchecked()),
-        &cmd_move_window_entry,
-    ) {
+    if std::ptr::eq(cmd_get_entry(&cmd_ref), &cmd_move_window_entry) {
         server_unlink_window(src.as_ref().expect("live session"), wl.clone());
     }
     if sflag == 0

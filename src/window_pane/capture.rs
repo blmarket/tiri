@@ -88,7 +88,11 @@ pub(super) unsafe fn capture(
     let active = (*owner.as_ptr()).active_mode_entry();
     let get_screen =
         if args_has(arguments, b'a') == 0 && args_has(arguments, b'M') != 0 && active.is_alive() {
-            active.get_unchecked().mode.get_screen
+            active
+                .try_borrow()
+                .expect("live mode entry")
+                .mode
+                .get_screen
         } else {
             None
         };

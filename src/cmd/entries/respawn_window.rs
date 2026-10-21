@@ -13,6 +13,7 @@ use crate::shared::spawn::spawn_context;
 use crate::shared::spawn::{SPAWN_EMPTY, SPAWN_KILL, SPAWN_RESPAWN};
 use crate::shared::window::winlink;
 use crate::spawn::spawn_window;
+use crate::winlink::winlink_window;
 pub static cmd_respawn_window_entry: cmd_entry = {
     cmd_entry {
         name: c"respawn-window",
@@ -43,7 +44,8 @@ unsafe fn cmd_respawn_window_exec(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let mut sc: spawn_context = spawn_context {
         item: std::rc::Weak::new(),
@@ -97,7 +99,7 @@ unsafe fn cmd_respawn_window_exec(
         drop(sc.environ.take());
         return CmdOutcome::Error;
     }
-    server_redraw_window((wl.get_unchecked().window_handle().as_ref()).expect("live window"));
+    server_redraw_window((winlink_window(&wl).as_ref()).expect("live window"));
     drop(sc.environ.take());
     CmdOutcome::Normal
 }

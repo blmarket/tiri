@@ -4,7 +4,8 @@ use crate::session::Session;
 use crate::shared::session::SessionRef;
 use crate::shared::tree::RB_NEGINF;
 use crate::shared::window::WindowRef;
-use crate::window::{windows, winlinks_minmax, winlinks_next, Window};
+use crate::window::{windows, winlink_next, winlinks_minmax, Window};
+use crate::winlink::winlink_window;
 use std::collections::VecDeque;
 
 /// Windows waiting for alert delivery and the task that drains them.
@@ -82,10 +83,8 @@ unsafe fn alerts_callback() {
 pub unsafe fn alerts_check_session(session: &SessionRef) {
     let mut link = session.with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
     while link.is_alive() {
-        SessionRef::deliver_window_alerts(
-            link.get_unchecked().window_handle().expect("linked window"),
-        );
-        link = winlinks_next(link.get_unchecked());
+        SessionRef::deliver_window_alerts(&winlink_window(&link).expect("linked window"));
+        link = winlink_next(&link);
     }
 }
 

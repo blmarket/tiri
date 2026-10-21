@@ -16,6 +16,7 @@ use crate::shared::session::SessionRef;
 use crate::shared::window::WindowRef;
 use crate::shared::window::WindowWeak;
 use crate::window::{winlink_find_by_index, Window};
+use crate::winlink::winlink_window;
 use crate::{server_client::Client, session::Session, window::WindowPane};
 use std::ffi::{CStr, CString};
 use tiri_buffer::SegmentedBuf;
@@ -100,7 +101,7 @@ pub unsafe fn event_payload_set_target(ep: &mut event_payload, fs: &cmd_find_sta
     if ep.target_window.is_some() {
         target.w = fs.w.clone();
     }
-    let link = match fs.wl.try_borrow_mut() {
+    let link = match fs.wl.try_borrow() {
         Ok(link) => Some(link),
         Err(refbox::BorrowError::Dropped) => None,
         Err(refbox::BorrowError::Borrowed) => panic!("event target winlink already borrowed"),
@@ -141,10 +142,7 @@ pub unsafe fn event_payload_get_target(ep: &event_payload, fs: &mut cmd_find_sta
             if session.is_registered() {
                 link = session.with_winlinks(|links| winlink_find_by_index(links, target.idx));
                 if link.is_alive()
-                    && !link
-                        .get_unchecked()
-                        .window_handle()
-                        .is_some_and(|owner| WindowRef::ptr_eq(owner, window))
+                    && !winlink_window(&link).is_some_and(|owner| WindowRef::ptr_eq(&owner, window))
                 {
                     link = refbox::Weak::new();
                 }
@@ -157,7 +155,7 @@ pub unsafe fn event_payload_get_target(ep: &event_payload, fs: &mut cmd_find_sta
     fs.wp = target.wp.clone();
     fs.set_wl(link.clone());
     fs.idx = if link.is_alive() {
-        link.get_unchecked().idx
+        link.try_borrow().expect("live winlink").idx
     } else {
         -1
     };
@@ -166,9 +164,7 @@ pub unsafe fn event_payload_get_target(ep: &event_payload, fs: &mut cmd_find_sta
     }
     if let Some(pane) = pane.as_ref() {
         if link.is_alive()
-            && link
-                .get_unchecked()
-                .window_handle()
+            && winlink_window(&link)
                 .expect("linked window")
                 .contains_pane(&target.wp)
         {

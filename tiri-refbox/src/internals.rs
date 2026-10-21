@@ -12,13 +12,20 @@ use std::alloc::Layout;
 /// The reference counter.
 pub(crate) type WeakCount = u32;
 
+/// The number of active shared borrows.
+pub(crate) type SharedCount = u32;
+
 /// The current status of a `RefBox`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Status {
     Available,
+    /// Mutably borrowed by a single `Borrow`.
     Borrowed,
+    /// Immutably borrowed by the given (non-zero) number of `Ref`s.
+    Shared(SharedCount),
     Dropped,
     DroppedWhileBorrowed,
+    DroppedWhileShared(SharedCount),
 }
 
 /// The status part of the RefBoxHeap.
@@ -114,10 +121,13 @@ impl RefBoxHeapInner {
     /// Returns true if the owner is alive.
     #[inline]
     pub(crate) fn is_alive(&self) -> bool {
-        matches!(self.status(), Status::Available | Status::Borrowed)
+        matches!(
+            self.status(),
+            Status::Available | Status::Borrowed | Status::Shared(_)
+        )
     }
 
-    /// Returns true if the data is currently borrowed.
+    /// Returns true if the data is currently mutably borrowed.
     #[inline]
     pub(crate) fn is_borrowed(&self) -> bool {
         matches!(self.status(), Status::Borrowed)
@@ -127,6 +137,24 @@ impl RefBoxHeapInner {
     #[inline]
     pub(crate) fn start_borrow(&self) {
         self.status.set(Status::Borrowed);
+    }
+
+    /// Adds one shared borrow to an `Available` or `Shared` status.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the number of shared borrows overflows `SharedCount::MAX`.
+    #[inline]
+    pub(crate) fn start_shared_borrow(&self) {
+        let count = match self.status() {
+            Status::Available => 0,
+            Status::Shared(count) => count,
+            _ => unreachable!(),
+        };
+        if count == SharedCount::MAX {
+            cold_panic();
+        }
+        self.status.set(Status::Shared(count + 1));
     }
 }
 
@@ -261,7 +289,13 @@ pub(crate) unsafe fn drop_ref_box<T: ?Sized>(heap: NonNull<RefBoxHeap<T>>) {
                 .status
                 .set(Status::DroppedWhileBorrowed);
         }
-        Status::DroppedWhileBorrowed | Status::Dropped => {
+        Status::Shared(count) => {
+            unsafe { heap.as_ref() }
+                .inner
+                .status
+                .set(Status::DroppedWhileShared(count));
+        }
+        Status::DroppedWhileBorrowed | Status::DroppedWhileShared(_) | Status::Dropped => {
             unsafe { std::hint::unreachable_unchecked() };
         }
     }
@@ -287,7 +321,29 @@ pub(crate) unsafe fn drop_borrow<T: ?Sized>(heap: &RefBoxHeap<T>) {
         Status::DroppedWhileBorrowed => {
             unsafe { heap.drop_data() };
         }
-        Status::Available | Status::Dropped => {
+        Status::Available | Status::Shared(_) | Status::Dropped | Status::DroppedWhileShared(_) => {
+            unsafe { std::hint::unreachable_unchecked() };
+        }
+    }
+}
+
+/// Called when a Ref is dropped.
+#[inline]
+pub(crate) unsafe fn drop_shared_borrow<T: ?Sized>(heap: &RefBoxHeap<T>) {
+    match heap.inner.status() {
+        Status::Shared(1) => {
+            heap.inner.status.set(Status::Available);
+        }
+        Status::Shared(count) => {
+            heap.inner.status.set(Status::Shared(count - 1));
+        }
+        Status::DroppedWhileShared(1) => {
+            unsafe { heap.drop_data() };
+        }
+        Status::DroppedWhileShared(count) => {
+            heap.inner.status.set(Status::DroppedWhileShared(count - 1));
+        }
+        Status::Available | Status::Borrowed | Status::Dropped | Status::DroppedWhileBorrowed => {
             unsafe { std::hint::unreachable_unchecked() };
         }
     }

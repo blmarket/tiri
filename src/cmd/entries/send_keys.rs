@@ -120,7 +120,14 @@ unsafe fn cmd_send_keys_inject_key(
         return std::rc::Rc::downgrade(item_handle);
     }
     wme = pane.mode_entry();
-    if !wme.is_alive() || wme.get_unchecked().mode.key_table.is_none() {
+    if !wme.is_alive()
+        || wme
+            .try_borrow()
+            .expect("live mode entry")
+            .mode
+            .key_table
+            .is_none()
+    {
         if target.pane_handle().expect("key target pane").key(
             tc_owner.as_ref(),
             wl.clone(),
@@ -132,14 +139,14 @@ unsafe fn cmd_send_keys_inject_key(
         }
         return std::rc::Rc::downgrade(item_handle);
     }
-    let table = key_bindings_get_table(
-        wme.get_unchecked()
-            .mode
-            .key_table
-            .expect("non-null function pointer")(wme),
-        1 as ::core::ffi::c_int,
-    )
-    .expect("created key table");
+    let key_table = wme
+        .try_borrow()
+        .expect("live mode entry")
+        .mode
+        .key_table
+        .expect("non-null function pointer");
+    let table =
+        key_bindings_get_table(key_table(wme), 1 as ::core::ffi::c_int).expect("created key table");
     let command = key_bindings_get(&table.borrow(), key & !KEYC_MASK_FLAGS).map(|bd| bd.command());
     if let Some(command) = command {
         after = key_bindings_dispatch(command, after.upgrade().as_ref(), tc.as_ref(), None, target);
@@ -219,7 +226,8 @@ unsafe fn cmd_send_keys_exec(
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let mouse_pane_owner;
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
@@ -258,15 +266,28 @@ unsafe fn cmd_send_keys_exec(
             }
         };
         if !!wme.is_alive() && (args_has(args, 'X' as i32 as u_char) != 0 || count == 0 as u_int) {
-            if wme.get_unchecked().mode.command.is_none() {
+            if wme
+                .try_borrow()
+                .expect("live mode entry")
+                .mode
+                .command
+                .is_none()
+            {
                 cmdq_error(item_handle, |out| out.write_all(b"not in a mode"));
                 return CmdOutcome::Error;
             }
-            wme.get_mut_unchecked().prefix = np;
+            wme.try_borrow_mut().expect("live mode entry").prefix = np;
         }
     }
     if args_has(args, 'X' as i32 as u_char) != 0 {
-        if !wme.is_alive() || wme.get_unchecked().mode.command.is_none() {
+        if !wme.is_alive()
+            || wme
+                .try_borrow()
+                .expect("live mode entry")
+                .mode
+                .command
+                .is_none()
+        {
             cmdq_error(item_handle, |out| out.write_all(b"not in a mode"));
             return CmdOutcome::Error;
         }
@@ -275,10 +296,13 @@ unsafe fn cmd_send_keys_exec(
         } else {
             Some(&mut event.m)
         };
-        wme.get_unchecked()
+        let command = wme
+            .try_borrow()
+            .expect("live mode entry")
             .mode
             .command
-            .expect("non-null function pointer")(
+            .expect("non-null function pointer");
+        command(
             wme,
             tc_owner.as_ref(),
             target.s.upgrade().as_ref(),
@@ -304,10 +328,7 @@ unsafe fn cmd_send_keys_exec(
         );
         return CmdOutcome::Normal;
     }
-    if std::ptr::eq(
-        cmd_get_entry(self_0.get_unchecked()),
-        &cmd_send_prefix_entry,
-    ) {
+    if std::ptr::eq(cmd_get_entry(&cmd_ref), &cmd_send_prefix_entry) {
         if args_has(args, '2' as i32 as u_char) != 0 {
             key = options_get_number(
                 &s.as_ref().expect("live session").borrow_options_mut(),

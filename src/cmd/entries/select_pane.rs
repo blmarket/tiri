@@ -23,6 +23,7 @@ use crate::shared::layout::Direction;
 use crate::shared::window::WindowRef;
 use crate::tty::tty_window_bigger;
 use crate::window::Window as _;
+use crate::winlink::winlink_window;
 
 use crate::window_pane::WindowPane as _;
 
@@ -93,30 +94,28 @@ unsafe fn cmd_select_pane_redraw(w_owner: &WindowRef) {
             .is_none()
             || c.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0)
         {
-            if (c
-                .as_ref()
-                .expect("live client")
-                .attached_session()
-                .upgrade()
-                .expect("live session")
-                .current_winlink())
-            .get_unchecked()
-            .window_handle()
-            .is_some_and(|owner| WindowRef::ptr_eq(owner, w_owner))
-                && tty_window_bigger(c.as_ref().expect("live client")) != 0
-            {
-                server_redraw_client(c.as_ref().expect("live client"));
-            } else {
-                if (c
-                    .as_ref()
+            if winlink_window(
+                &c.as_ref()
                     .expect("live client")
                     .attached_session()
                     .upgrade()
                     .expect("live session")
-                    .current_winlink())
-                .get_unchecked()
-                .window_handle()
-                .is_some_and(|owner| WindowRef::ptr_eq(owner, w_owner))
+                    .current_winlink(),
+            )
+            .is_some_and(|owner| WindowRef::ptr_eq(&owner, w_owner))
+                && tty_window_bigger(c.as_ref().expect("live client")) != 0
+            {
+                server_redraw_client(c.as_ref().expect("live client"));
+            } else {
+                if winlink_window(
+                    &c.as_ref()
+                        .expect("live client")
+                        .attached_session()
+                        .upgrade()
+                        .expect("live session")
+                        .current_winlink(),
+                )
+                .is_some_and(|owner| WindowRef::ptr_eq(&owner, w_owner))
                 {
                     c.as_ref()
                         .expect("live client")
@@ -147,7 +146,8 @@ unsafe fn cmd_select_pane_marked_pane(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let arguments = cmd_get_args(command.get_unchecked());
+    let cmd_ref = command.try_borrow().expect("live command");
+    let arguments = cmd_get_args(&cmd_ref);
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let target = &mut target_state;
     let pane = target.pane_handle().expect("marked target pane");
@@ -206,9 +206,10 @@ unsafe fn cmd_select_pane_exec(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let entry = cmd_get_entry(command.get_unchecked());
+    let entry = cmd_get_entry(&command.try_borrow().expect("live command"));
     let marked_command = command.clone();
-    let arguments = cmd_get_args(command.get_unchecked());
+    let cmd_ref = command.try_borrow().expect("live command");
+    let arguments = cmd_get_args(&cmd_ref);
     let current = cmdq_get_state_owned(&item);
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let target = &mut target_state;

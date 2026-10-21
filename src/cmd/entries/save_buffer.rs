@@ -89,7 +89,8 @@ unsafe fn cmd_save_buffer_exec(
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let queue_client = cmdq_get_client(Some(&*item));
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     let pb;
@@ -111,10 +112,7 @@ unsafe fn cmd_save_buffer_exec(
         }
     }
     let pb = pb.expect("buffer lookup checked above");
-    let show_buffer = std::ptr::eq(
-        cmd_get_entry(self_0.get_unchecked()),
-        &cmd_show_buffer_entry,
-    );
+    let show_buffer = std::ptr::eq(cmd_get_entry(&cmd_ref), &cmd_show_buffer_entry);
     if show_buffer
         && (!c
             .as_ref()

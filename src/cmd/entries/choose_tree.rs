@@ -190,7 +190,8 @@ unsafe fn cmd_choose_tree_exec(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let wp = target.pane_handle();
 
@@ -204,40 +205,26 @@ unsafe fn cmd_choose_tree_exec(
         cmdq_error(item_handle, |out| out.write_all(b"invalid sort order"));
         return CmdOutcome::Error;
     }
-    let mode: &'static window_mode = if std::ptr::eq(
-        cmd_get_entry(self_0.get_unchecked()),
-        &cmd_choose_buffer_entry,
-    ) {
-        if paste_is_empty() != 0 {
-            return CmdOutcome::Normal;
-        }
-        &window_buffer_mode
-    } else if std::ptr::eq(
-        cmd_get_entry(self_0.get_unchecked()),
-        &cmd_choose_client_entry,
-    ) {
-        if ClientRef::attached_count() == 0 as u_int {
-            return CmdOutcome::Normal;
-        }
-        &window_client_mode
-    } else if std::ptr::eq(
-        cmd_get_entry(self_0.get_unchecked()),
-        &cmd_customize_mode_entry,
-    ) {
-        &window_customize_mode
-    } else if std::ptr::eq(
-        cmd_get_entry(self_0.get_unchecked()),
-        &cmd_switch_mode_entry,
-    ) {
-        &window_switch_mode
-    } else if std::ptr::eq(
-        cmd_get_entry(self_0.get_unchecked()),
-        &cmd_display_panes_entry,
-    ) {
-        &window_panes_mode
-    } else {
-        &window_tree_mode
-    };
+    let mode: &'static window_mode =
+        if std::ptr::eq(cmd_get_entry(&cmd_ref), &cmd_choose_buffer_entry) {
+            if paste_is_empty() != 0 {
+                return CmdOutcome::Normal;
+            }
+            &window_buffer_mode
+        } else if std::ptr::eq(cmd_get_entry(&cmd_ref), &cmd_choose_client_entry) {
+            if ClientRef::attached_count() == 0 as u_int {
+                return CmdOutcome::Normal;
+            }
+            &window_client_mode
+        } else if std::ptr::eq(cmd_get_entry(&cmd_ref), &cmd_customize_mode_entry) {
+            &window_customize_mode
+        } else if std::ptr::eq(cmd_get_entry(&cmd_ref), &cmd_switch_mode_entry) {
+            &window_switch_mode
+        } else if std::ptr::eq(cmd_get_entry(&cmd_ref), &cmd_display_panes_entry) {
+            &window_panes_mode
+        } else {
+            &window_tree_mode
+        };
     wp.as_ref().expect("mode target pane").set_mode(
         None,
         mode,

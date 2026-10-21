@@ -92,6 +92,34 @@ impl window_mode_entry {
     }
 }
 
+/// Shared borrow of a mode entry that dereferences to its boxed payload, so
+/// the payload cannot outlive the entry borrow.
+pub struct ModeDataRef<'a, T> {
+    entry: refbox::Ref<'a, window_mode_entry>,
+    _payload: std::marker::PhantomData<T>,
+}
+
+impl<'a, T: std::any::Any> ModeDataRef<'a, T> {
+    /// Returns `None` unless the entry's boxed payload is a `RefCell<T>`.
+    pub fn new(entry: refbox::Ref<'a, window_mode_entry>) -> Option<Self> {
+        entry.boxed_data_cell::<T>()?;
+        Some(Self {
+            entry,
+            _payload: std::marker::PhantomData,
+        })
+    }
+}
+
+impl<T: std::any::Any> std::ops::Deref for ModeDataRef<'_, T> {
+    type Target = std::cell::RefCell<T>;
+
+    fn deref(&self) -> &Self::Target {
+        self.entry
+            .boxed_data_cell::<T>()
+            .expect("payload type checked on borrow")
+    }
+}
+
 /// Rc-backed mode payload; `dead` lives outside the RefCell so `free` can
 /// mark the mode dead while a caller further up the stack holds a borrow.
 pub struct ModeCell<T> {

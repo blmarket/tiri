@@ -54,7 +54,8 @@ unsafe fn cmd_show_environment_print(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     envent: &environ_entry,
 ) {
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     if args_has(args, 'h' as i32 as u_char) == 0 && envent.flags & ENVIRON_HIDDEN != 0 {
         return;
     }
@@ -99,7 +100,8 @@ unsafe fn cmd_show_environment_exec(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let target = crate::cmd::queue::cmdq_get_target(&item);
 
     let mut envent: Option<&environ_entry> = None;

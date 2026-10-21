@@ -91,12 +91,12 @@ unsafe fn cmd_lock_server_exec(
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     if std::ptr::eq(
-        cmd_get_entry(self_0.get_unchecked()),
+        cmd_get_entry(&self_0.try_borrow().expect("live command")),
         &cmd_lock_server_entry,
     ) {
         server_lock();
     } else if std::ptr::eq(
-        cmd_get_entry(self_0.get_unchecked()),
+        cmd_get_entry(&self_0.try_borrow().expect("live command")),
         &cmd_lock_session_entry,
     ) {
         server_lock_session(&target.s.upgrade().expect("live target session"));

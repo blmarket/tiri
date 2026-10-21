@@ -33,7 +33,9 @@ use crate::shared::sort::sort_criteria;
 use crate::shared::sort::*;
 use crate::shared::spawn::{spawn_editor_state, EditorHandle};
 use crate::shared::vis::{VIS_CSTYLE, VIS_OCTAL, VIS_TAB};
-use crate::shared::window::{window_mode, window_mode_entry, window_mode_screen_payload, winlink};
+use crate::shared::window::{
+    window_mode, window_mode_entry, window_mode_screen_payload, winlink, ModeDataRef,
+};
 use crate::sort::sort_get_buffers;
 use crate::spawn::{spawn_editor, spawn_editor_write};
 use crate::text::utf8::utf8_strvis;
@@ -330,7 +332,7 @@ unsafe fn window_buffer_menu(
     if !wme.is_alive() {
         return;
     }
-    let Some(mode_pane_owner) = wme.get_unchecked().wp.upgrade() else {
+    let Some(mode_pane_owner) = wme.try_borrow().expect("live mode entry").wp.upgrade() else {
         return;
     };
     if mode_pane_owner.mode_entry().as_ptr() != wme.as_ptr() {
@@ -394,10 +396,8 @@ fn window_buffer_help() -> mode_tree_help_info {
 }
 unsafe fn window_buffer_data(
     wme: &refbox::Weak<window_mode_entry>,
-) -> &std::cell::RefCell<window_buffer_modedata> {
-    wme.get_unchecked()
-        .boxed_data_cell::<window_buffer_modedata>()
-        .expect("buffer mode payload")
+) -> ModeDataRef<'_, window_buffer_modedata> {
+    ModeDataRef::new(wme.try_borrow().expect("live mode entry")).expect("buffer mode payload")
 }
 
 unsafe fn window_buffer_init(
@@ -407,7 +407,8 @@ unsafe fn window_buffer_init(
     args: Option<&args>,
 ) -> bool {
     let mode_pane_owner = wme
-        .get_unchecked()
+        .try_borrow()
+        .expect("live mode entry")
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
@@ -443,7 +444,7 @@ unsafe fn window_buffer_init(
         key_format,
         item_list: Vec::new(),
     }));
-    wme.get_mut_unchecked().boxed_data = Some(owner);
+    wme.try_borrow_mut().expect("live mode entry").boxed_data = Some(owner);
     let build_mode = wme.clone();
     let menu_mode = wme.clone();
     let key_mode = wme.clone();
@@ -471,7 +472,8 @@ unsafe fn window_buffer_init(
         Some(Box::new(move |itemdata, line| {
             let item = itemdata.as_buffer().expect("buffer row payload");
             let data = window_buffer_data(&key_mode);
-            window_buffer_get_key(&data.borrow(), &item, line)
+            let data = data.borrow();
+            window_buffer_get_key(&data, &item, line)
         })),
         None,
         Some(window_buffer_sort),
@@ -487,22 +489,20 @@ unsafe fn window_buffer_get_screen(
     wme: refbox::Weak<window_mode_entry>,
     visit: &mut dyn FnMut(&mut screen),
 ) {
-    let Some(data) = wme
-        .get_unchecked()
-        .boxed_data_cell::<window_buffer_modedata>()
+    let Some(data) =
+        ModeDataRef::<window_buffer_modedata>::new(wme.try_borrow().expect("live mode entry"))
     else {
         return;
     };
-    let tree_owner = window_mode_screen_payload(data, |data| data.data.clone());
+    let tree_owner = window_mode_screen_payload(&data, |data| data.data.clone());
     if let Some(tree_owner) = tree_owner {
         mode_tree_visit_screen(&tree_owner, visit);
     }
 }
 
 unsafe fn window_buffer_free(wme: refbox::Weak<window_mode_entry>) {
-    let Some(data) = wme
-        .get_unchecked()
-        .boxed_data_cell::<window_buffer_modedata>()
+    let Some(data) =
+        ModeDataRef::<window_buffer_modedata>::new(wme.try_borrow().expect("live mode entry"))
     else {
         return;
     };
@@ -533,7 +533,7 @@ unsafe fn window_buffer_update(mut wme: refbox::Weak<window_mode_entry>) {
     };
     mode_tree_build(&tree_owner);
     mode_tree_draw(&tree_owner);
-    window_buffer_draw_waiting(data);
+    window_buffer_draw_waiting(&data);
     mode_pane_owner.request_redraw(false);
 }
 unsafe fn window_buffer_do_delete(
@@ -579,8 +579,14 @@ unsafe fn window_buffer_edit_close_cb(
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
     if let Some(pane) = Rc::<RefCell<window_pane>>::find_by_id(ed.wp_id) {
         wme = pane.mode_entry();
-        if !!wme.is_alive() && std::ptr::eq(wme.get_unchecked().mode, &window_buffer_mode) {
-            let mut data = window_buffer_data(&wme).borrow_mut();
+        if !!wme.is_alive()
+            && std::ptr::eq(
+                wme.try_borrow().expect("live mode entry").mode,
+                &window_buffer_mode,
+            )
+        {
+            let data_cell = window_buffer_data(&wme);
+            let mut data = data_cell.borrow_mut();
             if data
                 .editor
                 .as_ref()
@@ -619,12 +625,17 @@ unsafe fn window_buffer_edit_close_cb(
     }
     if let Some(pane) = Rc::<RefCell<window_pane>>::find_by_id(ed.wp_id) {
         wme = pane.mode_entry();
-        if !!wme.is_alive() && std::ptr::eq(wme.get_unchecked().mode, &window_buffer_mode) {
+        if !!wme.is_alive()
+            && std::ptr::eq(
+                wme.try_borrow().expect("live mode entry").mode,
+                &window_buffer_mode,
+            )
+        {
             let data = window_buffer_data(&wme);
             let tree_owner = data.borrow().tree_owner();
             mode_tree_build(&tree_owner);
             mode_tree_draw(&tree_owner);
-            window_buffer_draw_waiting(data);
+            window_buffer_draw_waiting(&data);
         }
         pane.request_redraw(false);
     }
@@ -672,7 +683,8 @@ unsafe fn window_buffer_key(
     mut m: Option<&mut mouse_event>,
 ) {
     let mode_pane_owner = wme
-        .get_unchecked()
+        .try_borrow()
+        .expect("live mode entry")
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
@@ -706,7 +718,7 @@ unsafe fn window_buffer_key(
             101 => {
                 let item_owner = tree_owner.borrow().get_current();
                 if let Some(item) = item_owner.as_buffer() {
-                    window_buffer_start_edit(data, &item, client_owner);
+                    window_buffer_start_edit(&data, &item, client_owner);
                 }
             }
             100 => {
@@ -763,7 +775,7 @@ unsafe fn window_buffer_key(
         mode_pane_owner.reset_mode();
     } else {
         mode_tree_draw(&tree_owner);
-        window_buffer_draw_waiting(data);
+        window_buffer_draw_waiting(&data);
         mode_pane_owner.request_redraw(false);
     };
 }

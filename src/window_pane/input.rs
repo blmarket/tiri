@@ -5121,7 +5121,10 @@ unsafe fn input_fire_command_event(
         event_payload_set_int(
             &mut ep,
             c"window_index",
-            (fs.winlink_handle()).get_unchecked().idx,
+            (fs.winlink_handle())
+                .try_borrow()
+                .expect("live winlink")
+                .idx,
         );
     }
     event_payload_set_window(

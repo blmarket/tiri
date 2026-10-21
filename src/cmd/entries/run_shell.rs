@@ -21,6 +21,7 @@ use crate::reactor::{
     evbuffer_add, evbuffer_add_formatted, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
     evbuffer_readln,
 };
+use crate::winlink::winlink_window;
 
 use crate::server_client::Client as _;
 
@@ -108,10 +109,7 @@ unsafe fn cmd_run_shell_print(
             .as_ref()
             .and_then(|client| client.attached_session().upgrade())
             .and_then(|session| {
-                session
-                    .current_winlink()
-                    .get_unchecked()
-                    .window_handle()
+                winlink_window(&session.current_winlink())
                     .expect("live window")
                     .active_pane()
                     .upgrade()
@@ -146,7 +144,8 @@ unsafe fn cmd_run_shell_exec(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();

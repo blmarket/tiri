@@ -20,6 +20,7 @@ use crate::server_client::Client as _;
 use crate::server_client::ClientRegistry;
 use crate::shared::window::WindowWeak;
 use crate::window::Window as _;
+use crate::winlink::winlink_window;
 use libc::{exit, kill, killpg, sigfillset, sigprocmask, strsignal, umask, waitpid};
 use std::fs;
 #[cfg(target_os = "linux")]
@@ -103,7 +104,7 @@ pub unsafe fn server_set_marked(
     marked_pane.set_s(s_owner);
     marked_pane.set_wl(wl.clone());
     if wl.is_alive() {
-        marked_pane.set_w(wl.get_unchecked().window_handle());
+        marked_pane.set_w(winlink_window(&wl).as_ref());
     }
     marked_pane.wp = wp_owner.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
 }

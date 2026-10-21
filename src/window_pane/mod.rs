@@ -542,7 +542,8 @@ unsafe fn window_pane_free_modes(pane_owner: &Rc<std::cell::RefCell<window_pane>
         } else {
             PaneScreenSource::Mode((*wp).active_mode_entry())
         };
-        if let Some(free) = wme.get_unchecked().mode.free {
+        let free = wme.try_borrow().expect("live mode entry").mode.free;
+        if let Some(free) = free {
             free(wme);
         }
         drop(entry);
@@ -735,11 +736,13 @@ unsafe fn window_pane_resize(
     let reflow = (*wp).base.saved_grid.is_none() as ::core::ffi::c_int;
     screen_resize(&mut (*wp).base, sx, sy, reflow);
     wme = (*wp).active_mode_entry();
-    if wme.is_alive() && wme.get_unchecked().mode.resize.is_some() {
-        wme.get_unchecked()
-            .mode
-            .resize
-            .expect("non-null function pointer")(wme, sx, sy);
+    let resize = if wme.is_alive() {
+        wme.try_borrow().expect("live mode entry").mode.resize
+    } else {
+        None
+    };
+    if let Some(resize) = resize {
+        resize(wme, sx, sy);
     }
     let mut ep = event_payload_create();
     fs = cmd_find_state::find_from_pane(pane_owner, 0 as ::core::ffi::c_int)
@@ -785,7 +788,7 @@ unsafe fn window_pane_set_mode(
     let existing = (*wp)
         .modes
         .iter()
-        .find(|entry| std::ptr::eq(entry.get_unchecked().mode, mode))
+        .find(|entry| std::ptr::eq(entry.try_borrow().expect("live mode entry").mode, mode))
         .map_or_else(refbox::Weak::new, refbox::RefBox::downgrade);
     if existing.is_alive() {
         wme = existing.clone();
@@ -802,11 +805,13 @@ unsafe fn window_pane_set_mode(
             unzoom: false,
         });
         wme = window_pane_mode_push(&mut *wp, entry);
-        let entered =
-            wme.get_unchecked()
-                .mode
-                .init
-                .expect("non-null function pointer")(wme.clone(), item_handle, fs, args);
+        let init = wme
+            .try_borrow()
+            .expect("live mode entry")
+            .mode
+            .init
+            .expect("non-null function pointer");
+        let entered = init(wme.clone(), item_handle, fs, args);
         if !entered {
             drop(
                 window_pane_mode_remove(&mut *(wp), wme.clone())
@@ -816,7 +821,7 @@ unsafe fn window_pane_set_mode(
         }
         entered_now = true;
     }
-    wme.get_mut_unchecked().kill = if let Some(args) = args {
+    wme.try_borrow_mut().expect("live mode entry").kill = if let Some(args) = args {
         args_has(args, 'k' as i32 as u_char)
     } else {
         0 as ::core::ffi::c_int
@@ -837,7 +842,7 @@ unsafe fn window_pane_set_mode(
     if entered_now && flag != (mode.flags & WINDOW_MODE_ZOOM != 0) {
         let window = (*wp).window_handle().expect("live window");
         let unzoom = window.zoomed_pane().strong_count() == 0;
-        wme.get_mut_unchecked().unzoom = unzoom;
+        wme.try_borrow_mut().expect("live mode entry").unzoom = unzoom;
         if unzoom && window.zoom(pane_owner) {
             server_redraw_window(&window);
         }
@@ -872,9 +877,14 @@ unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::RefCell<window_pane>
         return;
     }
     wme = (*wp).active_mode_entry();
-    p = wme.get_unchecked().mode.name.as_ptr();
-    kill_0 = wme.get_unchecked().kill;
-    let unzoom = wme.get_unchecked().unzoom;
+    p = wme
+        .try_borrow()
+        .expect("live mode entry")
+        .mode
+        .name
+        .as_ptr();
+    kill_0 = wme.try_borrow().expect("live mode entry").kill;
+    let unzoom = wme.try_borrow().expect("live mode entry").unzoom;
     let entry =
         window_pane_mode_remove(&mut *(wp), wme.clone()).expect("mode entry is owned by pane");
     next = (*wp).active_mode_entry();
@@ -883,7 +893,8 @@ unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::RefCell<window_pane>
     } else {
         PaneScreenSource::Mode((*wp).active_mode_entry())
     };
-    if let Some(free) = wme.get_unchecked().mode.free {
+    let free = wme.try_borrow().expect("live mode entry").mode.free;
+    if let Some(free) = free {
         free(wme);
     }
     drop(entry);
@@ -907,23 +918,31 @@ unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::RefCell<window_pane>
         log_debug(format_args!(
             "{}: next mode is {}",
             "window_pane_reset_mode",
-            crate::log::log_bytes(next.get_unchecked().mode.name.to_bytes())
+            crate::log::log_bytes(
+                next.try_borrow()
+                    .expect("live mode entry")
+                    .mode
+                    .name
+                    .to_bytes()
+            )
         ));
         assert!(
             (*wp).with_screen(|_| ()).is_some(),
             "restored mode has a screen"
         );
-        if next.get_unchecked().mode.resize.is_some() {
-            next.get_unchecked()
-                .mode
-                .resize
-                .expect("non-null function pointer")(next.clone(), (*wp).sx, (*wp).sy);
+        let resize = next.try_borrow().expect("live mode entry").mode.resize;
+        if let Some(resize) = resize {
+            resize(next.clone(), (*wp).sx, (*wp).sy);
         }
     }
     name = if !next.is_alive() {
         ::core::ptr::null::<::core::ffi::c_char>()
     } else {
-        next.get_unchecked().mode.name.as_ptr()
+        next.try_borrow()
+            .expect("live mode entry")
+            .mode
+            .name
+            .as_ptr()
     };
     (*wp).flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR | PANE_CHANGED;
     ((*wp).window_handle().as_ref())
@@ -1307,7 +1326,8 @@ unsafe fn window_pane_key(
         {
             return 0 as ::core::ffi::c_int;
         }
-        if let (Some(callback), Some(client)) = (wme.get_unchecked().mode.key, client_owner) {
+        let callback = wme.try_borrow().expect("live mode entry").mode.key;
+        if let (Some(callback), Some(client)) = (callback, client_owner) {
             key &= !KEYC_MASK_FLAGS;
             callback(wme, client, wl, key, m);
         }

@@ -27,7 +27,8 @@ use crate::shared::window::winlink;
 use crate::spawn::spawn_window;
 use crate::tmux::{check_name, clean_name_cstring};
 use crate::window::Window as _;
-use crate::window::{winlink_find_by_index, winlink_shuffle_up, winlinks_minmax, winlinks_next};
+use crate::window::{winlink_find_by_index, winlink_next, winlink_shuffle_up, winlinks_minmax};
+use crate::winlink::winlink_window;
 use std::ffi::{CStr, CString};
 
 pub const NEW_WINDOW_TEMPLATE: &std::ffi::CStr = c"#{session_name}:#{window_index}.#{pane_index}";
@@ -61,7 +62,8 @@ unsafe fn cmd_new_window_exec(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     let current = cmdq_get_state_owned(&(item));
@@ -152,13 +154,7 @@ unsafe fn cmd_new_window_exec(
                 .expect("live session")
                 .with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
             while wl.is_alive() {
-                if wl
-                    .get_unchecked()
-                    .window_handle()
-                    .expect("live window")
-                    .name()
-                    == expanded
-                {
+                if winlink_window(&wl).expect("live window").name() == expanded {
                     if !new_wl.is_alive() {
                         new_wl = wl.clone();
                     } else {
@@ -169,7 +165,7 @@ unsafe fn cmd_new_window_exec(
                         return CmdOutcome::Error;
                     }
                 }
-                wl = winlinks_next(wl.get_unchecked());
+                wl = winlink_next(&wl);
             }
         }
     }
@@ -190,11 +186,7 @@ unsafe fn cmd_new_window_exec(
                 .upgrade()
                 .is_none()
         {
-            s.as_ref()
-                .expect("live session")
-                .current_winlink()
-                .get_unchecked()
-                .window_handle()
+            winlink_window(&s.as_ref().expect("live session").current_winlink())
                 .expect("live window")
                 .set_latest_client(c.as_ref());
         }
@@ -267,7 +259,7 @@ unsafe fn cmd_new_window_exec(
                 tc_owner.as_ref(),
                 Some(&session_owner),
                 (new_wl).clone(),
-                (((new_wl.get_unchecked().window_handle().as_ref()).expect("live window"))
+                (((winlink_window(&new_wl).as_ref()).expect("live window"))
                     .active_pane()
                     .upgrade())
                 .as_ref(),

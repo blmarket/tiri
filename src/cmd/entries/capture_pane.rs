@@ -68,7 +68,8 @@ unsafe fn cmd_capture_pane_exec(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
@@ -76,10 +77,7 @@ unsafe fn cmd_capture_pane_exec(
     let mut buf: Vec<u8>;
     let mut cause: Option<CString> = None;
     let mut bufname: Option<&CStr> = None;
-    if std::ptr::eq(
-        cmd_get_entry(self_0.get_unchecked()),
-        &cmd_clear_history_entry,
-    ) {
+    if std::ptr::eq(cmd_get_entry(&cmd_ref), &cmd_clear_history_entry) {
         pane_owner.clear_history(args_has(args, b'H') != 0);
         let window = pane_owner
             .window_observer()

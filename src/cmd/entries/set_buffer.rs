@@ -67,16 +67,14 @@ unsafe fn cmd_set_buffer_exec(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut bufname = args_get(args, b'b').map(CStr::to_owned);
     let mut pb = bufname.as_deref().and_then(paste_get_name);
     let mut cause = None;
-    let deleting = std::ptr::eq(
-        cmd_get_entry(self_0.get_unchecked()),
-        &cmd_delete_buffer_entry,
-    );
+    let deleting = std::ptr::eq(cmd_get_entry(&cmd_ref), &cmd_delete_buffer_entry);
     if deleting || args_has(args, b'n') != 0 {
         if pb.is_none() {
             if let Some(name) = bufname.as_ref() {

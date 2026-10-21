@@ -65,10 +65,11 @@ unsafe fn cmd_detach_client_exec(
     item: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let suspend = std::ptr::eq(
-        cmd_get_entry(command.get_unchecked()),
+        cmd_get_entry(&command.try_borrow().expect("live command")),
         &cmd_suspend_client_entry,
     );
-    let args = cmd_get_args(command.get_unchecked());
+    let cmd_ref = command.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let source = cmdq_get_source(&item.borrow()).clone();
     let client = cmdq_get_client(Some(&item.borrow()));
     let target = cmdq_get_target_client(Some(&item.borrow())).expect("target client");

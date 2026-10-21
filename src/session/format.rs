@@ -126,21 +126,23 @@ unsafe fn format_cb_session_alert(ft: &mut format_tree) -> Option<CString> {
     }
     wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
     while wl.is_alive() {
-        if !(wl.get_unchecked().flags & WINLINK_ALERTFLAGS == 0 as ::core::ffi::c_int) {
-            if !alerted & wl.get_unchecked().flags & WINLINK_ACTIVITY != 0 {
+        if !(wl.try_borrow().expect("live winlink").flags & WINLINK_ALERTFLAGS
+            == 0 as ::core::ffi::c_int)
+        {
+            if !alerted & wl.try_borrow().expect("live winlink").flags & WINLINK_ACTIVITY != 0 {
                 alerts.push(b'#');
                 alerted |= WINLINK_ACTIVITY;
             }
-            if !alerted & wl.get_unchecked().flags & WINLINK_BELL != 0 {
+            if !alerted & wl.try_borrow().expect("live winlink").flags & WINLINK_BELL != 0 {
                 alerts.push(b'!');
                 alerted |= WINLINK_BELL;
             }
-            if !alerted & wl.get_unchecked().flags & WINLINK_SILENCE != 0 {
+            if !alerted & wl.try_borrow().expect("live winlink").flags & WINLINK_SILENCE != 0 {
                 alerts.push(b'~');
                 alerted |= WINLINK_SILENCE;
             }
         }
-        wl = winlinks_next(wl.get_unchecked());
+        wl = winlink_next(&wl);
     }
     Some(CString::new(alerts).expect("callback bytes contain no NUL"))
 }
@@ -158,22 +160,29 @@ unsafe fn format_cb_session_alerts(ft: &mut format_tree) -> Option<CString> {
     }
     wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
     while wl.is_alive() {
-        if !(wl.get_unchecked().flags & WINLINK_ALERTFLAGS == 0 as ::core::ffi::c_int) {
+        if !(wl.try_borrow().expect("live winlink").flags & WINLINK_ALERTFLAGS
+            == 0 as ::core::ffi::c_int)
+        {
             if !alerts.is_empty() {
                 alerts.push(b',');
             }
-            write!(alerts, "{}", (wl.get_unchecked().idx) as u32).expect("write to Vec");
-            if wl.get_unchecked().flags & WINLINK_ACTIVITY != 0 {
+            write!(
+                alerts,
+                "{}",
+                (wl.try_borrow().expect("live winlink").idx) as u32
+            )
+            .expect("write to Vec");
+            if wl.try_borrow().expect("live winlink").flags & WINLINK_ACTIVITY != 0 {
                 alerts.push(b'#');
             }
-            if wl.get_unchecked().flags & WINLINK_BELL != 0 {
+            if wl.try_borrow().expect("live winlink").flags & WINLINK_BELL != 0 {
                 alerts.push(b'!');
             }
-            if wl.get_unchecked().flags & WINLINK_SILENCE != 0 {
+            if wl.try_borrow().expect("live winlink").flags & WINLINK_SILENCE != 0 {
                 alerts.push(b'~');
             }
         }
-        wl = winlinks_next(wl.get_unchecked());
+        wl = winlink_next(&wl);
     }
     Some(CString::new(alerts).expect("callback bytes contain no NUL"))
 }
@@ -190,11 +199,19 @@ unsafe fn format_cb_session_stack(ft: &mut format_tree) -> Option<CString> {
     }
     let mut result = format_bytes(format_args!(
         "{}",
-        (((*s).current_winlink()).get_unchecked().idx) as u32
+        (((*s).current_winlink())
+            .try_borrow()
+            .expect("live winlink")
+            .idx) as u32
     ));
     wl = crate::window::winlink_stack_first(&(*s).lastw);
     while wl.is_alive() {
-        write!(result, ",{}", (wl.get_unchecked().idx) as u32).expect("write to Vec");
+        write!(
+            result,
+            ",{}",
+            (wl.try_borrow().expect("live winlink").idx) as u32
+        )
+        .expect("write to Vec");
         wl = crate::window::winlink_stack_next(&(*s).lastw, wl.clone());
     }
     Some(CString::new(result).expect("callback bytes contain no NUL"))
@@ -320,10 +337,10 @@ unsafe fn format_session_winlink_flag(ft: &mut format_tree, flag: i32) -> Option
     }
     let mut wl = winlinks_minmax(&(*format_session).windows, RB_NEGINF);
     while wl.is_alive() {
-        if wl.get_unchecked().flags & flag != 0 {
+        if wl.try_borrow().expect("live winlink").flags & flag != 0 {
             return Some(c"1".to_owned());
         }
-        wl = winlinks_next(wl.get_unchecked());
+        wl = winlink_next(&wl);
     }
     Some(c"0".to_owned())
 }
@@ -586,7 +603,10 @@ unsafe fn format_cb_active_window_index(ft: &mut format_tree) -> Option<CString>
         return Some(
             CString::new(format!(
                 "{}",
-                (((*format_session).current_winlink()).get_unchecked().idx) as u32
+                (((*format_session).current_winlink())
+                    .try_borrow()
+                    .expect("live winlink")
+                    .idx) as u32
             ))
             .expect("formatted numbers contain no NUL"),
         );
@@ -603,8 +623,11 @@ unsafe fn format_cb_last_window_index(ft: &mut format_tree) -> Option<CString> {
     if !format_session.is_null() {
         wl = winlinks_minmax(&(*format_session).windows, RB_INF);
         return Some(
-            CString::new(format!("{}", (wl.get_unchecked().idx) as u32))
-                .expect("formatted numbers contain no NUL"),
+            CString::new(format!(
+                "{}",
+                (wl.try_borrow().expect("live winlink").idx) as u32
+            ))
+            .expect("formatted numbers contain no NUL"),
         );
     }
     None
@@ -725,7 +748,7 @@ mod tests {
             let other = session::new();
             (*other.as_ptr()).options = Some(crate::options::options_create(None));
             let mut link = winlink_add(&(*owner.as_ptr()).windows, 7);
-            link.get_mut_unchecked().session = Rc::downgrade(&owner);
+            link.try_borrow_mut().expect("live winlink").session = Rc::downgrade(&owner);
             winlink_stack_push(&mut (*owner.as_ptr()).lastw, link.clone());
             let mut context = format_tree::default();
             context.s = Rc::downgrade(&other);

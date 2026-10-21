@@ -13,6 +13,7 @@ use crate::shared::session::SessionRef;
 use crate::shared::window::winlink;
 use crate::shared::window::{WINDOW_MAXIMUM, WINDOW_MINIMUM, WINDOW_SIZE_LARGEST};
 use crate::window::Window as _;
+use crate::winlink::winlink_window;
 
 pub const WINDOW_SIZE_SMALLEST: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub static cmd_resize_window_entry: cmd_entry = {
@@ -45,14 +46,11 @@ unsafe fn cmd_resize_window_exec(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let mut wl: refbox::Weak<winlink> = target.winlink_handle();
-    let window_owner = wl
-        .get_unchecked()
-        .window_handle()
-        .cloned()
-        .expect("resize target window");
+    let window_owner = winlink_window(&wl).expect("resize target window");
     let result = (|| {
         let mut s: Option<SessionRef> = target.session_handle();
         let mut adjust: u_int = 0;

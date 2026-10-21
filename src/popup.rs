@@ -16,6 +16,7 @@ use crate::screen_write::{
     screen_write_start, screen_write_stop,
 };
 use crate::window::WindowRef;
+use crate::winlink::winlink_window;
 
 use crate::server_client::{Client, Overlay};
 use crate::session::Session;
@@ -225,11 +226,7 @@ unsafe fn popup_reapply_styles(popup: &PopupGuard) {
         return;
     };
     let link = session.current_winlink();
-    let window = link
-        .get_unchecked()
-        .window_handle()
-        .cloned()
-        .expect("popup window");
+    let window = winlink_window(&link).expect("popup window");
     let mut sytmp: style = style {
         gc: grid_cell {
             data: utf8_data {
@@ -951,11 +948,7 @@ pub(crate) unsafe fn popup_display(
         .or_else(|| c_owner.attached_session().upgrade())
         .expect("popup session");
     let link = session.current_winlink();
-    let window = link
-        .get_unchecked()
-        .window_handle()
-        .cloned()
-        .expect("popup window");
+    let window = winlink_window(&link).expect("popup window");
     if lines == BOX_LINES_DEFAULT {
         lines =
             options_get_number(&window.borrow_options_mut(), c"popup-border-lines") as box_lines;

@@ -6,6 +6,7 @@ use crate::shared::session::SessionRef;
 use crate::shared::window::WindowRef;
 use crate::window::Window as _;
 use crate::window_pane::WindowPane as _;
+use crate::winlink::winlink_window;
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::time::{Duration, SystemTime};
 use std::{cell::RefCell, rc::Rc};
@@ -655,7 +656,8 @@ unsafe fn server_client_update_overlay_focus(owner: &ClientRef) {
         return;
     };
     let link = session.current_winlink();
-    if let Some(window) = link.get_unchecked().window_handle().cloned() {
+    let window = winlink_window(&link);
+    if let Some(window) = window {
         window.update_focus();
         drop(window);
     }
@@ -955,10 +957,8 @@ unsafe fn server_client_attached_lost(c_owner: &ClientRef) {
                 s = (*loop_0).session_handle();
                 if !(loop_0 == c
                     || s.is_none()
-                    || (s.as_ref().expect("live session").current_winlink())
-                        .get_unchecked()
-                        .window_handle()
-                        .is_none_or(|current| !WindowRef::ptr_eq(current, &window_owner)))
+                    || winlink_window(&s.as_ref().expect("live session").current_winlink())
+                        .is_none_or(|current| !WindowRef::ptr_eq(&current, &window_owner)))
                     && found.as_ref().is_none_or(|owner| {
                         (*loop_0).activity_time > (*owner.as_ptr()).activity_time
                     })
@@ -1022,7 +1022,10 @@ unsafe fn server_client_fire_session_changed(c_owner: &ClientRef, old_owner: Opt
         event_payload_set_int(
             &mut ep,
             c"window_index",
-            (fs.winlink_handle()).get_unchecked().idx,
+            (fs.winlink_handle())
+                .try_borrow()
+                .expect("live winlink")
+                .idx,
         );
     } else if fs.idx != -(1 as ::core::ffi::c_int) {
         event_payload_set_int(&mut ep, c"window_index", fs.idx);
@@ -1069,7 +1072,10 @@ unsafe fn server_client_fire_resized(c_owner: &ClientRef, mut old_sx: u_int, mut
         event_payload_set_int(
             &mut ep,
             c"window_index",
-            (fs.winlink_handle()).get_unchecked().idx,
+            (fs.winlink_handle())
+                .try_borrow()
+                .expect("live winlink")
+                .idx,
         );
     } else if fs.idx != -(1 as ::core::ffi::c_int) {
         event_payload_set_int(&mut ep, c"window_index", fs.idx);
@@ -1109,7 +1115,8 @@ unsafe fn server_client_set_session(c_owner: &ClientRef, s_owner: Option<&Sessio
     if let Some(old) = old.as_ref() {
         let link = old.current_winlink();
         if link.is_alive() {
-            if let Some(window) = link.get_unchecked().window_handle().cloned() {
+            let window = winlink_window(&link);
+            if let Some(window) = window {
                 window.update_focus();
                 drop(window);
             }
@@ -1119,19 +1126,17 @@ unsafe fn server_client_set_session(c_owner: &ClientRef, s_owner: Option<&Sessio
         {
             let link = session.current_winlink();
             let window = link
-                .get_unchecked()
+                .try_borrow()
+                .expect("live winlink")
                 .window_handle()
+                .cloned()
                 .expect("attached session window");
             window.set_latest_client(Some(c_owner));
         }
         recalculate_sizes();
         {
             let link = session.current_winlink();
-            let window = link
-                .get_unchecked()
-                .window_handle()
-                .cloned()
-                .expect("attached session window");
+            let window = winlink_window(&link).expect("attached session window");
             window.update_focus();
             drop(window);
         }
@@ -1281,7 +1286,8 @@ unsafe fn server_client_update_scrollbar_hover(
         return;
     };
     let window_owner = (session_owner.current_winlink())
-        .get_unchecked()
+        .try_borrow()
+        .expect("live winlink")
         .window_owner
         .as_ref()
         .expect("hover window")
@@ -1327,7 +1333,8 @@ unsafe fn server_client_check_mouse(client_owner: &ClientRef, event: &mut key_ev
     };
     let s = Some(session_owner.clone());
     let window_owner = (s.as_ref().expect("live session").current_winlink())
-        .get_unchecked()
+        .try_borrow()
+        .expect("live winlink")
         .window_owner
         .as_ref()
         .expect("mouse window")
@@ -1526,9 +1533,8 @@ unsafe fn server_client_check_mouse(client_owner: &ClientRef, event: &mut key_ev
                         if !fwl.is_alive() {
                             return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                         }
-                        event.m.w = ((fwl.get_unchecked().window_handle().as_ref())
-                            .expect("live window"))
-                        .id() as ::core::ffi::c_int;
+                        event.m.w = ((winlink_window(&fwl).as_ref()).expect("live window")).id()
+                            as ::core::ffi::c_int;
                         log_debug(format_args!("mouse range: window @{}", (event.m.w) as u32));
                         loc = KEYC_MOUSE_LOCATION_STATUS;
                     }
@@ -1968,11 +1974,7 @@ unsafe fn server_client_update_latest(c_owner: &ClientRef) {
         return;
     };
     let link = session.current_winlink();
-    let window = link
-        .get_unchecked()
-        .window_handle()
-        .cloned()
-        .expect("attached session window");
+    let window = winlink_window(&link).expect("attached session window");
     if !window.set_latest_client(Some(c_owner)) {
         drop(window);
         return;
@@ -2160,17 +2162,21 @@ unsafe fn server_client_key_callback(
                                 wme = target_pane.as_ref().expect("key pane").mode_entry();
                                 wme.is_alive()
                             }
-                            && wme.get_unchecked().mode.key_table.is_some()
+                            && wme
+                                .try_borrow()
+                                .expect("live mode entry")
+                                .mode
+                                .key_table
+                                .is_some()
                         {
-                            table_owner = key_bindings_get_table(
-                                wme.get_unchecked()
-                                    .mode
-                                    .key_table
-                                    .expect("non-null function pointer")(
-                                    wme
-                                ),
-                                1 as ::core::ffi::c_int,
-                            );
+                            let key_table = wme
+                                .try_borrow()
+                                .expect("live mode entry")
+                                .mode
+                                .key_table
+                                .expect("non-null function pointer");
+                            table_owner =
+                                key_bindings_get_table(key_table(wme), 1 as ::core::ffi::c_int);
                         } else {
                             table_owner = (*c).keytable.clone();
                         }
@@ -2461,14 +2467,13 @@ unsafe fn server_client_handle_menu_key(
 ) -> ::core::ffi::c_int {
     let c = owner.as_ptr();
     let (window, menu) = {
-        let retained = (*c)
-            .session_handle()
-            .expect("live session")
-            .current_winlink()
-            .get_unchecked()
-            .window_handle()
-            .cloned()
-            .expect("current window");
+        let retained = winlink_window(
+            &(*c)
+                .session_handle()
+                .expect("live session")
+                .current_winlink(),
+        )
+        .expect("current window");
         (
             crate::shared::window::WindowRef::downgrade(&retained),
             retained.menu_observer(),
@@ -2548,13 +2553,11 @@ unsafe fn server_client_handle_key0(
             }
         }
         server_client_clear_overlay(owner);
-        let active_pane_owner = (((s.as_ref().expect("live session").current_winlink())
-            .get_unchecked()
-            .window_handle()
-            .as_ref())
-        .expect("live window"))
-        .active_pane()
-        .upgrade();
+        let active_pane_owner =
+            ((winlink_window(&s.as_ref().expect("live session").current_winlink()).as_ref())
+                .expect("live window"))
+            .active_pane()
+            .upgrade();
         if server_client_handle_dead_key(active_pane_owner.as_ref(), event.key) != 0 {
             return 0 as ::core::ffi::c_int;
         }
@@ -2567,13 +2570,7 @@ unsafe fn server_client_handle_key0(
                 _ => {}
             }
         }
-        let prompt_window = s
-            .as_ref()
-            .expect("live session")
-            .current_winlink()
-            .get_unchecked()
-            .window_handle()
-            .cloned()
+        let prompt_window = winlink_window(&s.as_ref().expect("live session").current_winlink())
             .expect("prompt window");
         let mut prompt_pane = prompt_window.active_pane().upgrade();
         if !prompt_pane
@@ -2715,7 +2712,8 @@ unsafe fn server_client_check_window_resize(owner: &WindowRef) {
     wl = owner.next_winlink(None);
     while wl.is_alive() {
         if wl
-            .get_unchecked()
+            .try_borrow()
+            .expect("live winlink")
             .session
             .upgrade()
             .is_some_and(|owner| owner.is_attached() && owner.current_winlink() == wl)
@@ -2781,7 +2779,7 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
         return;
     };
     let current_link = session_owner.current_winlink();
-    let Ok(link) = current_link.try_borrow_mut() else {
+    let Ok(link) = current_link.try_borrow() else {
         return;
     };
     let window_owner = link
@@ -3117,7 +3115,7 @@ unsafe fn server_client_check_modes(client_owner: &ClientRef) {
         return;
     };
     let current_link = session_owner.current_winlink();
-    let Ok(link) = current_link.try_borrow_mut() else {
+    let Ok(link) = current_link.try_borrow() else {
         return;
     };
     let window_owner = link
@@ -3140,7 +3138,7 @@ unsafe fn server_client_check_modes(client_owner: &ClientRef) {
         {
             let wme = pane_owner.mode_entry();
             let update = if wme.is_alive() {
-                wme.try_borrow_mut()
+                wme.try_borrow()
                     .expect("mode update not borrowed")
                     .mode
                     .update
@@ -3170,7 +3168,7 @@ unsafe fn server_client_check_redraw(client_owner: &ClientRef) {
         return;
     };
     let current_link = session_owner.current_winlink();
-    let Ok(link) = current_link.try_borrow_mut() else {
+    let Ok(link) = current_link.try_borrow() else {
         return;
     };
     let window_owner = link
@@ -3378,7 +3376,7 @@ unsafe fn server_client_active_pane(
 ) -> Option<std::rc::Rc<std::cell::RefCell<window_pane>>> {
     let session_owner = c.session.upgrade()?;
     let current = session_owner.current_winlink();
-    let link = current.try_borrow_mut().ok()?;
+    let link = current.try_borrow().ok()?;
     link.window_owner.as_ref()?.active_pane().upgrade()
 }
 
@@ -4153,17 +4151,17 @@ unsafe fn server_client_print(
                 });
             }
         } else {
-            let pane_owner = (*c)
-                .session_handle()
-                .expect("live session")
-                .current_winlink()
-                .get_unchecked()
-                .window_handle()
-                .as_ref()
-                .expect("live window")
-                .active_pane()
-                .upgrade()
-                .expect("view-mode pane");
+            let pane_owner = winlink_window(
+                &(*c)
+                    .session_handle()
+                    .expect("live session")
+                    .current_winlink(),
+            )
+            .as_ref()
+            .expect("live window")
+            .active_pane()
+            .upgrade()
+            .expect("view-mode pane");
             if !pane_owner.is_mode(&window_view_mode) {
                 pane_owner.set_mode(None, &window_view_mode, None, None, None);
             }

@@ -5,6 +5,7 @@ use crate::format::{format_create, format_defaults, format_expand_cstring, forma
 use crate::server_fn::{server_destroy_session, server_redraw_session};
 use crate::session::sessions;
 use crate::session::Session;
+use crate::winlink::winlink_window;
 use std::ffi::CStr;
 
 use crate::shared::abi::*;
@@ -16,7 +17,7 @@ use crate::shared::tree::RB_NEGINF;
 use crate::shared::window::winlink;
 use crate::shared::window::WINLINK_ALERTFLAGS;
 use crate::window::Window as _;
-use crate::window::{winlinks_minmax, winlinks_next};
+use crate::window::{winlink_next, winlinks_minmax};
 pub static cmd_kill_session_entry: cmd_entry = {
     cmd_entry {
         name: c"kill-session",
@@ -47,7 +48,8 @@ unsafe fn cmd_kill_session_exec(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let source = target.s.upgrade().expect("live target session");
     let mut sg = crate::shared::session::SessionGroupWeak::new();
@@ -62,12 +64,11 @@ unsafe fn cmd_kill_session_exec(
     if args_has(args, 'C' as i32 as u_char) != 0 {
         wl = source.with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
         while wl.is_alive() {
-            wl.get_unchecked()
-                .window_handle()
+            winlink_window(&wl)
                 .expect("live window")
                 .clear_alert_flags();
-            wl.get_mut_unchecked().flags &= !WINLINK_ALERTFLAGS;
-            wl = winlinks_next(wl.get_unchecked());
+            wl.try_borrow_mut().expect("live winlink").flags &= !WINLINK_ALERTFLAGS;
+            wl = winlink_next(&wl);
         }
         server_redraw_session(&source);
     } else if args_has(args, 'a' as i32 as u_char) != 0 {

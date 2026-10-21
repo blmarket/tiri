@@ -117,7 +117,8 @@ unsafe fn cmd_set_hook_event_exec(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let mut c: Option<ClientRef> = None;
     if args_count(args) == 0 as u_int {
@@ -163,7 +164,10 @@ unsafe fn cmd_set_hook_event_exec(
         event_payload_set_int(
             &mut ep,
             c"window_index",
-            (target.winlink_handle()).get_unchecked().idx,
+            (target.winlink_handle())
+                .try_borrow()
+                .expect("live winlink")
+                .idx,
         );
     } else if target.idx != -(1 as ::core::ffi::c_int) {
         event_payload_set_int(&mut ep, c"window_index", target.idx);
@@ -300,16 +304,14 @@ unsafe fn cmd_set_option_exec(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let mut target_state = crate::cmd::queue::cmdq_get_target(&item).clone();
     let target = &mut target_state;
-    let window = std::ptr::eq(
-        cmd_get_entry(self_0.get_unchecked()),
-        &cmd_set_window_option_entry,
-    ) as i32;
-    let set_hook = std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_set_hook_entry);
+    let window = std::ptr::eq(cmd_get_entry(&cmd_ref), &cmd_set_window_option_entry) as i32;
+    let set_hook = std::ptr::eq(cmd_get_entry(&cmd_ref), &cmd_set_hook_entry);
     if set_hook && args_has(args, b'E') != 0 {
-        return cmd_set_hook_event_exec(self_0, item_handle);
+        return cmd_set_hook_event_exec(self_0.clone(), item_handle);
     }
     if set_hook && args_has(args, b'B') != 0 {
         return cmd_set_hook_monitor_exec(item_handle, args, window);

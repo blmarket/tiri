@@ -41,7 +41,8 @@ unsafe fn cmd_resize_pane_exec(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let pane_owner = target.wp.upgrade().expect("live resize target pane");
     if args_has(args, b'Z') != 0 && args_has(args, b'T') == 0 {

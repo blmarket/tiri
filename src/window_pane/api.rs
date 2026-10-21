@@ -497,7 +497,7 @@ impl WindowPane for Rc<RefCell<window_pane>> {
             return;
         }
         let callback = entry
-            .try_borrow_mut()
+            .try_borrow()
             .expect("style mode not borrowed")
             .mode
             .style_changed;
@@ -1325,13 +1325,13 @@ impl WindowPane for Rc<RefCell<window_pane>> {
     }
     unsafe fn is_mode(&self, mode: &'static window_mode) -> bool {
         let entry = self.mode_entry();
-        entry.is_alive() && std::ptr::eq(entry.get_unchecked().mode, mode)
+        entry.is_alive() && std::ptr::eq(entry.try_borrow().expect("live mode entry").mode, mode)
     }
     unsafe fn add_mode_formats(&self, context: &mut crate::shared::format::format_tree) {
         let entry = self.mode_entry();
         let callback = entry
             .is_alive()
-            .then(|| entry.get_unchecked().mode.formats)
+            .then(|| entry.try_borrow().expect("live mode entry").mode.formats)
             .flatten();
         if let Some(callback) = callback {
             callback(entry, context);

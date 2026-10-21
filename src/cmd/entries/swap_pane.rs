@@ -44,7 +44,8 @@ unsafe fn cmd_swap_pane_exec(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let source = crate::cmd::queue::cmdq_get_source(&item);
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let mut src_idx: ::core::ffi::c_int = 0;
@@ -52,7 +53,10 @@ unsafe fn cmd_swap_pane_exec(
     let dst_window_owner = target.w.upgrade().expect("live swap target window");
     let dst_pane_owner = target.wp.upgrade().expect("live swap target pane");
 
-    dst_idx = (target.winlink_handle()).get_unchecked().idx;
+    dst_idx = (target.winlink_handle())
+        .try_borrow()
+        .expect("live winlink")
+        .idx;
     let mut src_window_owner = source.w.upgrade().expect("live swap source window");
     let zoom = args_has(args, b'Z') != 0;
     let result = (|| {
@@ -61,7 +65,10 @@ unsafe fn cmd_swap_pane_exec(
             server_redraw_window(&dst_window_owner);
         }
 
-        src_idx = (source.winlink_handle()).get_unchecked().idx;
+        src_idx = (source.winlink_handle())
+            .try_borrow()
+            .expect("live winlink")
+            .idx;
         if args_has(args, 'D' as i32 as u_char) != 0 {
             let previous = std::mem::replace(&mut src_window_owner, dst_window_owner.clone());
             drop(previous);

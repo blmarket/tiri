@@ -56,14 +56,10 @@ pub unsafe fn winlink_find_by_window(wwl: &winlinks, w_owner: &WindowRef) -> ref
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     wl = winlinks_minmax(wwl, RB_NEGINF);
     while wl.is_alive() {
-        if wl
-            .get_unchecked()
-            .window_handle()
-            .is_some_and(|window| WindowRef::ptr_eq(window, w_owner))
-        {
+        if winlink_window(&wl).is_some_and(|window| WindowRef::ptr_eq(&window, w_owner)) {
             return wl;
         }
-        wl = winlinks_next(wl.get_unchecked());
+        wl = winlink_next(&wl);
     }
     refbox::Weak::new()
 }
@@ -83,16 +79,10 @@ pub unsafe fn winlink_find_by_window_id(wwl: &winlinks, mut id: u_int) -> refbox
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     wl = winlinks_minmax(wwl, RB_NEGINF);
     while wl.is_alive() {
-        if wl
-            .get_unchecked()
-            .window_handle()
-            .expect("indexed window")
-            .id()
-            == id
-        {
+        if winlink_window(&wl).expect("indexed window").id() == id {
             return wl;
         }
-        wl = winlinks_next(wl.get_unchecked());
+        wl = winlink_next(&wl);
     }
     refbox::Weak::new()
 }
@@ -159,34 +149,40 @@ pub unsafe fn winlink_add(wwl: &winlinks, mut idx: ::core::ffi::c_int) -> refbox
             unreachable!("winlink index was checked above")
         }
     }
-    wl.get_mut_unchecked().owner = observer;
+    wl.try_borrow_mut().expect("live winlink").owner = observer;
     wl
 }
 
-unsafe fn winlink_release_window(mut wl: refbox::Weak<winlink>) {
-    let field = &raw mut wl.get_mut_unchecked().window_owner;
-    assert!((*field).is_some(), "winlink window reference");
-    *field = None;
+unsafe fn winlink_release_window(wl: refbox::Weak<winlink>) {
+    let previous = wl
+        .try_borrow_mut()
+        .expect("live winlink")
+        .window_owner
+        .take();
+    assert!(previous.is_some(), "winlink window reference");
 }
 
-pub unsafe fn winlink_set_window(mut wl: refbox::Weak<winlink>, w_owner: &WindowRef) {
-    if let Some(previous) = wl.get_unchecked().window_handle() {
+pub unsafe fn winlink_set_window(wl: refbox::Weak<winlink>, w_owner: &WindowRef) {
+    let previous = winlink_window(&wl);
+    if let Some(previous) = previous {
         previous.remove_winlink(wl.clone());
         winlink_release_window(wl.clone());
     }
-    wl.get_mut_unchecked().window_owner = Some(w_owner.clone());
+    wl.try_borrow_mut().expect("live winlink").window_owner = Some(w_owner.clone());
     w_owner.add_winlink(wl);
 }
 
-pub unsafe fn winlink_remove(wwl: &winlinks, mut wl: refbox::Weak<winlink>) {
-    if let Some(session_owner) = wl.get_unchecked().session.upgrade() {
+pub unsafe fn winlink_remove(wwl: &winlinks, wl: refbox::Weak<winlink>) {
+    let session_owner = wl.try_borrow().expect("live winlink").session.upgrade();
+    if let Some(session_owner) = session_owner {
         session_owner.forget_winlink(wl.clone());
     }
-    if let Some(window) = wl.get_unchecked().window_handle() {
+    let window = winlink_window(&wl);
+    if let Some(window) = window {
         window.remove_winlink(wl.clone());
         winlink_release_window(wl.clone());
     }
-    let idx = wl.get_unchecked().idx;
+    let idx = wl.try_borrow().expect("live winlink").idx;
     let owner = {
         let storage = wwl;
         let mut map = storage
@@ -202,12 +198,25 @@ pub unsafe fn winlink_remove(wwl: &winlinks, mut wl: refbox::Weak<winlink>) {
     drop(owner);
 }
 
-pub unsafe fn winlink_next(mut wl: refbox::Weak<winlink>) -> refbox::Weak<winlink> {
-    winlinks_next(wl.get_unchecked())
+/// The linked window; the winlink borrow ends before the caller uses it.
+pub fn winlink_window(wl: &refbox::Weak<winlink>) -> Option<WindowRef> {
+    wl.try_borrow()
+        .expect("live winlink")
+        .window_handle()
+        .cloned()
 }
 
-pub unsafe fn winlink_previous(mut wl: refbox::Weak<winlink>) -> refbox::Weak<winlink> {
-    winlinks_prev(wl.get_unchecked())
+/// The winlink index; the winlink borrow ends before the caller uses it.
+pub fn winlink_index(wl: &refbox::Weak<winlink>) -> ::core::ffi::c_int {
+    wl.try_borrow().expect("live winlink").idx
+}
+
+pub fn winlink_next(wl: &refbox::Weak<winlink>) -> refbox::Weak<winlink> {
+    winlinks_next(&wl.try_borrow().expect("live winlink"))
+}
+
+pub fn winlink_previous(wl: &refbox::Weak<winlink>) -> refbox::Weak<winlink> {
+    winlinks_prev(&wl.try_borrow().expect("live winlink"))
 }
 
 pub unsafe fn winlink_next_by_number(
@@ -217,7 +226,7 @@ pub unsafe fn winlink_next_by_number(
 ) -> refbox::Weak<winlink> {
     let s = Some(s_owner.clone());
     while n > 0 as ::core::ffi::c_int {
-        wl = winlinks_next(wl.get_unchecked());
+        wl = winlink_next(&wl);
         if !wl.is_alive() {
             wl = s
                 .as_ref()
@@ -236,7 +245,7 @@ pub unsafe fn winlink_previous_by_number(
 ) -> refbox::Weak<winlink> {
     let s = Some(s_owner.clone());
     while n > 0 as ::core::ffi::c_int {
-        wl = winlinks_prev(wl.get_unchecked());
+        wl = winlink_previous(&wl);
         if !wl.is_alive() {
             wl = s
                 .as_ref()
@@ -251,12 +260,12 @@ pub unsafe fn winlink_previous_by_number(
 /// Borrow the owner through the existing window index. The raw pointer remains
 /// a compatibility view; neither it nor its address is a separate ownership key.
 unsafe fn winlink_weak(wl: refbox::Weak<winlink>) -> refbox::Weak<winlink> {
-    let owner = &wl.get_unchecked().owner;
+    let owner = &wl.try_borrow().expect("live winlink").owner;
     let map = owner
         .try_borrow_mut()
         .expect("winlink index already borrowed");
     let owner = map
-        .get(&wl.get_unchecked().idx)
+        .get(&wl.try_borrow().expect("live winlink").idx)
         .expect("visited winlink must have an owner");
     assert_eq!(
         owner.downgrade(),
@@ -273,7 +282,7 @@ pub unsafe fn winlinks_reindex(head: &winlinks, wl: refbox::Weak<winlink>, idx: 
     let mut map = owner
         .try_borrow_mut()
         .expect("winlink index already borrowed");
-    let old_idx = wl.get_unchecked().idx;
+    let old_idx = wl.try_borrow().expect("live winlink").idx;
     assert_eq!(
         map.get(&old_idx).map(|owner| owner.downgrade()),
         Some(wl.clone()),
@@ -319,7 +328,7 @@ pub fn winlink_stack_indices(stack: &winlink_stack) -> Vec<::core::ffi::c_int> {
     let storage = &stack;
     storage
         .iter()
-        .map(|link| match link.try_access_mut(|node| node.idx) {
+        .map(|link| match link.try_borrow().map(|node| node.idx) {
             Ok(idx) => idx,
             Err(refbox::BorrowError::Dropped) => {
                 panic!("visited winlink owner was dropped before observer teardown")
@@ -345,13 +354,14 @@ pub fn winlink_stack_next(
 }
 
 pub unsafe fn winlink_clear_flags(mut wl: refbox::Weak<winlink>) {
-    let window = wl.get_unchecked().window_handle().expect("linked window");
+    let window = winlink_window(&wl).expect("linked window");
     window.clear_alert_flags();
     let mut cursor = window.next_winlink(None);
     while cursor.is_alive() {
-        if cursor.get_unchecked().flags & WINLINK_ALERTFLAGS != 0 {
-            cursor.get_mut_unchecked().flags &= !WINLINK_ALERTFLAGS;
-            if let Some(session) = cursor.get_unchecked().session.upgrade() {
+        if cursor.try_borrow().expect("live winlink").flags & WINLINK_ALERTFLAGS != 0 {
+            cursor.try_borrow_mut().expect("live winlink").flags &= !WINLINK_ALERTFLAGS;
+            let session = cursor.try_borrow().expect("live winlink").session.upgrade();
+            if let Some(session) = session {
                 server_status_session(&session);
             }
         }
@@ -380,12 +390,15 @@ mod tests {
             assert!(!winlink_add(&head, 1).is_alive());
             winlinks_reindex(&head, (second).clone(), 2);
 
-            let index_observer = first.get_unchecked().owner.clone();
+            let index_observer = first.try_borrow().expect("live winlink").owner.clone();
             let node_observer = winlink_weak((first).clone());
             let mut moved = head;
             assert_eq!(winlinks_minmax(&moved, RB_NEGINF), first);
-            assert_eq!(winlinks_next(first.get_unchecked()), second);
-            assert_eq!(second.get_unchecked().idx, 2);
+            assert_eq!(
+                winlinks_next(&first.try_borrow().expect("live winlink")),
+                second
+            );
+            assert_eq!(second.try_borrow().expect("live winlink").idx, 2);
 
             winlink_remove(&moved, (first).clone());
             assert!(matches!(

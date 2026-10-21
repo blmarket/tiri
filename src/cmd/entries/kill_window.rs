@@ -4,6 +4,7 @@ use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::format::{format_create, format_defaults, format_expand_cstring, format_true};
 use crate::resize::recalculate_sizes;
 use crate::server_fn::{server_kill_window, server_renumber_all, server_unlink_window};
+use crate::winlink::winlink_window;
 use std::ffi::CStr;
 
 use crate::session::Session;
@@ -14,7 +15,7 @@ use crate::shared::format::FORMAT_NONE;
 use crate::shared::session::SessionRef;
 use crate::shared::tree::RB_NEGINF;
 use crate::shared::window::winlink;
-use crate::window::{winlinks_minmax, winlinks_next, winlinks_prev};
+use crate::window::{winlink_next, winlinks_minmax, winlinks_next, winlinks_prev};
 pub static cmd_kill_window_entry: cmd_entry = {
     cmd_entry {
         name: c"kill-window",
@@ -70,7 +71,8 @@ unsafe fn cmd_kill_window_exec(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let mut wl: refbox::Weak<winlink> = target.winlink_handle();
     let mut s: Option<SessionRef> = target.session_handle();
@@ -79,14 +81,11 @@ unsafe fn cmd_kill_window_exec(
         cmdq_error(item_handle, |out| out.write_all(b"-f only valid with -a"));
         return CmdOutcome::Error;
     }
-    if std::ptr::eq(
-        cmd_get_entry(self_0.get_unchecked()),
-        &cmd_unlink_window_entry,
-    ) {
+    if std::ptr::eq(cmd_get_entry(&cmd_ref), &cmd_unlink_window_entry) {
         if args_has(args, 'k' as i32 as u_char) == 0
             && (crate::shared::session::SessionRef::window_linked_outside_group(
                 s.as_ref(),
-                wl.get_unchecked().window_handle().expect("live window"),
+                &winlink_window(&wl).expect("live window"),
             ) as i32)
                 == 0
         {
@@ -103,11 +102,7 @@ unsafe fn cmd_kill_window_exec(
         return cmd_kill_window_all(item_handle, filter);
     }
     server_kill_window(
-        wl.get_unchecked()
-            .window_owner
-            .as_ref()
-            .expect("winlink window")
-            .clone(),
+        winlink_window(&wl).expect("winlink window"),
         1 as ::core::ffi::c_int,
     );
     CmdOutcome::Normal
@@ -123,8 +118,8 @@ unsafe fn cmd_kill_window_all(
     let mut loop_0: refbox::Weak<winlink> = refbox::Weak::new();
     let mut found: u_int = 0;
     let mut kill_current: u_int = 0;
-    if !winlinks_prev(wl.get_unchecked()).is_alive()
-        && !winlinks_next(wl.get_unchecked()).is_alive()
+    if !winlinks_prev(&wl.try_borrow().expect("live winlink")).is_alive()
+        && !winlinks_next(&wl.try_borrow().expect("live winlink")).is_alive()
     {
         return CmdOutcome::Normal;
     }
@@ -136,8 +131,8 @@ unsafe fn cmd_kill_window_all(
             .with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
         while loop_0.is_alive() {
             if !crate::shared::rc::same(
-                loop_0.get_unchecked().window_handle(),
-                wl.get_unchecked().window_handle(),
+                winlink_window(&loop_0).as_ref(),
+                winlink_window(&wl).as_ref(),
             ) && cmd_kill_window_filter(
                 item_handle,
                 s.as_ref().expect("live session"),
@@ -146,18 +141,13 @@ unsafe fn cmd_kill_window_all(
             ) != 0
             {
                 server_kill_window(
-                    loop_0
-                        .get_unchecked()
-                        .window_owner
-                        .as_ref()
-                        .expect("winlink window")
-                        .clone(),
+                    winlink_window(&loop_0).expect("winlink window"),
                     0 as ::core::ffi::c_int,
                 );
                 found = found.wrapping_add(1);
                 break;
             } else {
-                loop_0 = winlinks_next(loop_0.get_unchecked());
+                loop_0 = winlink_next(&loop_0);
             }
         }
         if !(found != 0 as u_int) {
@@ -172,8 +162,8 @@ unsafe fn cmd_kill_window_all(
         .with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
     while loop_0.is_alive() {
         if crate::shared::rc::same(
-            loop_0.get_unchecked().window_handle(),
-            wl.get_unchecked().window_handle(),
+            winlink_window(&loop_0).as_ref(),
+            winlink_window(&wl).as_ref(),
         ) {
             found = found.wrapping_add(1);
             if cmd_kill_window_filter(
@@ -186,15 +176,11 @@ unsafe fn cmd_kill_window_all(
                 kill_current = 1 as u_int;
             }
         }
-        loop_0 = winlinks_next(loop_0.get_unchecked());
+        loop_0 = winlink_next(&loop_0);
     }
     if kill_current != 0 && found > 1 as u_int {
         server_kill_window(
-            wl.get_unchecked()
-                .window_owner
-                .as_ref()
-                .expect("winlink window")
-                .clone(),
+            winlink_window(&wl).expect("winlink window"),
             0 as ::core::ffi::c_int,
         );
     }

@@ -60,7 +60,8 @@ use crate::sort::{
 use crate::style::style_apply_with_options;
 use crate::window::Window;
 use crate::window::WindowPane;
-use crate::window::{winlink_count, winlink_find_by_index, winlinks_minmax, winlinks_next};
+use crate::window::{winlink_count, winlink_find_by_index, winlink_next, winlinks_minmax};
+use crate::winlink::winlink_window;
 use libc::{strcasestr, strstr};
 use std::cell::RefCell;
 use std::ffi::{CStr, CString};
@@ -266,7 +267,7 @@ unsafe fn window_tree_pull_item(item: &window_tree_itemdata) -> WindowTreeTarget
             .expect("live session")
             .with_winlinks(|links| winlink_find_by_index(links, item.winlink))
     };
-    let Ok(link) = wl.try_borrow_mut() else {
+    let Ok(link) = wl.try_borrow() else {
         return WindowTreeTarget::default();
     };
     let pane = if item.type_0 == WINDOW_TREE_SESSION || item.type_0 == WINDOW_TREE_WINDOW {
@@ -344,7 +345,7 @@ unsafe fn window_tree_build_pane(
         window_tree_itemdata {
             type_0: WINDOW_TREE_PANE,
             session: s.as_ref().expect("live session").id() as ::core::ffi::c_int,
-            winlink: wl.get_unchecked().idx,
+            winlink: wl.try_borrow().expect("live winlink").idx,
             pane: pane_owner.id() as ::core::ffi::c_int,
         },
     );
@@ -409,19 +410,18 @@ unsafe fn window_tree_build_window(
         window_tree_itemdata {
             type_0: WINDOW_TREE_WINDOW,
             session: s.as_ref().expect("live session").id() as ::core::ffi::c_int,
-            winlink: wl.get_unchecked().idx,
+            winlink: wl.try_borrow().expect("live winlink").idx,
             pane: -(1 as ::core::ffi::c_int),
         },
     );
-    if !wl.get_unchecked().window_handle().is_none()
-        && !((wl.get_unchecked().window_handle().as_ref()).expect("live window"))
+    if !winlink_window(&wl).is_none()
+        && !((winlink_window(&wl).as_ref()).expect("live window"))
             .active_pane()
             .upgrade()
             .is_none()
     {
         tag = (FORMAT_PANE
-            | wl.get_unchecked()
-                .window_handle()
+            | winlink_window(&wl)
                 .expect("live window")
                 .active_pane()
                 .upgrade()
@@ -437,7 +437,7 @@ unsafe fn window_tree_build_window(
     let ft = &mut *ft_owner;
     format_defaults(ft, None, s.as_ref(), wl.clone(), None);
     let text = format_expand_cstring(ft, &data.format);
-    let name = CString::new((wl.get_unchecked().idx as u_int).to_string())
+    let name = CString::new((wl.try_borrow().expect("live winlink").idx as u_int).to_string())
         .expect("window index contains NUL");
     drop(ft_owner);
     if data.type_0 as ::core::ffi::c_uint
@@ -458,10 +458,7 @@ unsafe fn window_tree_build_window(
         expanded,
     );
     mode_tree_align(&mti);
-    let l = sort_get_panes_window(
-        wl.get_unchecked().window_handle().expect("linked window"),
-        sort_crit,
-    );
+    let l = sort_get_panes_window(&winlink_window(&wl).expect("linked window"), sort_crit);
     let n = u_int::try_from(l.len()).expect("too many panes in window tree");
     found = 0 as u_int;
     i = 0 as u_int;
@@ -508,15 +505,14 @@ unsafe fn window_tree_build_session(
         },
     );
     if wl.is_alive()
-        && !wl.get_unchecked().window_handle().is_none()
-        && !((wl.get_unchecked().window_handle().as_ref()).expect("live window"))
+        && !winlink_window(&wl).is_none()
+        && !((winlink_window(&wl).as_ref()).expect("live window"))
             .active_pane()
             .upgrade()
             .is_none()
     {
         tag = (FORMAT_PANE
-            | wl.get_unchecked()
-                .window_handle()
+            | winlink_window(&wl)
                 .expect("live window")
                 .active_pane()
                 .upgrade()
@@ -653,11 +649,7 @@ unsafe fn window_tree_build(
             }
         }
         3 => {
-            if data
-                .fs
-                .winlink_handle()
-                .get_unchecked()
-                .window_handle()
+            if winlink_window(&data.fs.winlink_handle())
                 .expect("live window")
                 .pane_snapshot()
                 .len()
@@ -825,7 +817,7 @@ unsafe fn window_tree_draw_session(
             break;
         }
         current = current.wrapping_add(1);
-        wl = winlinks_next(wl.get_unchecked());
+        wl = winlink_next(&wl);
     }
     if current < visible {
         start = 0 as u_int;
@@ -925,11 +917,7 @@ unsafe fn window_tree_draw_session(
         if loop_0 < start {
             loop_0 = loop_0.wrapping_add(1);
         } else {
-            let window = wl
-                .get_unchecked()
-                .window_handle()
-                .cloned()
-                .expect("preview window");
+            let window = winlink_window(&wl).expect("preview window");
             let mut ft_owner = format_create(
                 None,
                 None,
@@ -1001,7 +989,7 @@ unsafe fn window_tree_draw_session(
             loop_0 = loop_0.wrapping_add(1);
             i = i.wrapping_add(1);
         }
-        wl = winlinks_next(wl.get_unchecked());
+        wl = winlink_next(&wl);
     }
 }
 unsafe fn window_tree_draw_window(
@@ -1016,11 +1004,7 @@ unsafe fn window_tree_draw_window(
     let Some(mode_pane_owner) = Rc::<RefCell<window_pane>>::from_observer(&data.wp) else {
         return;
     };
-    let window = wl
-        .get_unchecked()
-        .window_handle()
-        .cloned()
-        .expect("preview window");
+    let window = winlink_window(&wl).expect("preview window");
     (|| {
         let mut cx: u_int = ctx.screen.cx;
         let mut cy: u_int = ctx.screen.cy;
@@ -1522,8 +1506,7 @@ unsafe fn window_tree_search(
             }
             if icase != 0 {
                 return (strcasestr(
-                    wl.get_unchecked()
-                        .window_handle()
+                    winlink_window(&wl)
                         .expect("live window")
                         .name()
                         .as_ptr()
@@ -1533,8 +1516,7 @@ unsafe fn window_tree_search(
                     as ::core::ffi::c_int;
             }
             return (strstr(
-                wl.get_unchecked()
-                    .window_handle()
+                winlink_window(&wl)
                     .expect("live window")
                     .name()
                     .as_ptr()
@@ -1572,7 +1554,8 @@ unsafe fn window_tree_menu(mode: &TreeMode, c: &ClientRef, mut key: key_code) {
     wme = mode_pane_owner.mode_entry();
     if !wme.is_alive()
         || !wme
-            .get_unchecked()
+            .try_borrow()
+            .expect("live mode entry")
             .data_owner
             .as_ref()
             .is_some_and(|owner| std::ptr::addr_eq(Rc::as_ptr(owner), Rc::as_ptr(mode)))
@@ -1652,30 +1635,28 @@ unsafe fn window_tree_swap(
     if sort_would_window_tree_swap(sort_crit, (cur_winlink).clone(), (other_winlink).clone()) != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    other_winlink
-        .get_unchecked()
-        .window_handle()
+    winlink_window(&other_winlink)
         .expect("linked window")
         .remove_winlink(other_winlink.clone());
-    cur_winlink
-        .get_unchecked()
-        .window_handle()
+    winlink_window(&cur_winlink)
         .expect("linked window")
         .remove_winlink(cur_winlink.clone());
     if other_winlink != cur_winlink {
         std::mem::swap(
-            &mut other_winlink.get_mut_unchecked().window_owner,
-            &mut cur_winlink.get_mut_unchecked().window_owner,
+            &mut other_winlink
+                .try_borrow_mut()
+                .expect("live winlink")
+                .window_owner,
+            &mut cur_winlink
+                .try_borrow_mut()
+                .expect("live winlink")
+                .window_owner,
         );
     }
-    other_winlink
-        .get_unchecked()
-        .window_handle()
+    winlink_window(&other_winlink)
         .expect("linked window")
         .add_winlink(other_winlink.clone());
-    cur_winlink
-        .get_unchecked()
-        .window_handle()
+    winlink_window(&cur_winlink)
         .expect("linked window")
         .add_winlink(cur_winlink.clone());
     if cur_session
@@ -1737,7 +1718,8 @@ unsafe fn window_tree_init(
     args: Option<&args>,
 ) -> bool {
     let mode_pane_owner = wme
-        .get_unchecked()
+        .try_borrow()
+        .expect("live mode entry")
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
@@ -1795,7 +1777,7 @@ unsafe fn window_tree_init(
     }));
     let mode = owner.clone();
     let build_mode = Rc::downgrade(&owner);
-    wme.get_mut_unchecked().data_owner = Some(owner);
+    wme.try_borrow_mut().expect("live mode entry").data_owner = Some(owner);
     let draw_mode = build_mode.clone();
     let menu_mode = build_mode.clone();
     let key_mode = build_mode.clone();
@@ -1859,7 +1841,8 @@ unsafe fn window_tree_get_screen(
     visit: &mut dyn FnMut(&mut screen),
 ) {
     let Some(mode) = wme
-        .get_unchecked()
+        .try_borrow()
+        .expect("live mode entry")
         .retained_data::<ModeCell<window_tree_modedata>>()
     else {
         return;
@@ -1872,7 +1855,8 @@ unsafe fn window_tree_get_screen(
 
 unsafe fn window_tree_free(wme: refbox::Weak<window_mode_entry>) {
     let Some(mode_owner) = wme
-        .get_unchecked()
+        .try_borrow()
+        .expect("live mode entry")
         .retained_data::<ModeCell<window_tree_modedata>>()
     else {
         return;
@@ -1887,7 +1871,8 @@ unsafe fn window_tree_resize(
     mut sy: u_int,
 ) {
     let Some(mode_owner) = wme
-        .get_unchecked()
+        .try_borrow()
+        .expect("live mode entry")
         .retained_data::<ModeCell<window_tree_modedata>>()
     else {
         return;
@@ -1899,7 +1884,8 @@ unsafe fn window_tree_resize(
 }
 unsafe fn window_tree_update(mut wme: refbox::Weak<window_mode_entry>) {
     let Some(mode_owner) = wme
-        .get_unchecked()
+        .try_borrow()
+        .expect("live mode entry")
         .retained_data::<ModeCell<window_tree_modedata>>()
     else {
         return;
@@ -1923,7 +1909,7 @@ unsafe fn window_tree_get_target(
     fs: &mut cmd_find_state,
 ) -> Option<CString> {
     let resolved = window_tree_pull_item(item);
-    let link_index = match resolved.winlink.try_borrow_mut() {
+    let link_index = match resolved.winlink.try_borrow() {
         Ok(link) => Some(link.idx),
         Err(refbox::BorrowError::Dropped) => None,
         Err(refbox::BorrowError::Borrowed) => panic!("tree target winlink already borrowed"),
@@ -2065,7 +2051,7 @@ unsafe fn window_tree_kill_each(item: &window_tree_itemdata) {
             }
         }
         WINDOW_TREE_WINDOW => {
-            let window_owner = match target.winlink.try_borrow_mut() {
+            let window_owner = match target.winlink.try_borrow() {
                 Ok(link) => link.window_owner.clone(),
                 Err(refbox::BorrowError::Dropped) => None,
                 Err(refbox::BorrowError::Borrowed) => {
@@ -2186,7 +2172,7 @@ unsafe fn window_tree_mouse(
                 break;
             }
             loop_0 = loop_0.wrapping_add(1);
-            wl = winlinks_next(wl.get_unchecked());
+            wl = winlink_next(&wl);
         }
         if wl.is_alive() {
             window_tree_tree(mode_owner)
@@ -2206,11 +2192,7 @@ unsafe fn window_tree_mouse(
             return KEYC_NONE;
         }
         let wl = target.winlink.clone();
-        let window = wl
-            .get_unchecked()
-            .window_handle()
-            .expect("tree target window")
-            .clone();
+        let window = winlink_window(&wl).expect("tree target window").clone();
         let pane = window
             .pane_snapshot()
             .get(mode_owner.data.borrow().start.wrapping_add(x) as usize)
@@ -2233,12 +2215,14 @@ unsafe fn window_tree_key(
     mut m: Option<&mut mouse_event>,
 ) {
     let mode_pane_owner = wme
-        .get_unchecked()
+        .try_borrow()
+        .expect("live mode entry")
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
     let mode_owner = wme
-        .get_unchecked()
+        .try_borrow()
+        .expect("live mode entry")
         .retained_data::<ModeCell<window_tree_modedata>>()
         .expect("live mode payload");
     let (tree_owner, prompt_flags) = {
@@ -2372,7 +2356,7 @@ unsafe fn window_tree_key(
                         Some(
                             CString::new(format!(
                                 "Kill window {}? ",
-                                nwl.get_unchecked().idx as u32
+                                nwl.try_borrow().expect("live winlink").idx as u32
                             ))
                             .expect("window index contains no NUL"),
                         )

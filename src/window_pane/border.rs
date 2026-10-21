@@ -36,11 +36,7 @@ pub(super) unsafe fn border_style(
         .upgrade()
         .expect("live border session");
     let link = session.current_winlink();
-    let window = link
-        .get_unchecked()
-        .window_handle()
-        .expect("live border window")
-        .clone();
+    let window = winlink_window(&link).expect("live border window").clone();
     let active = window.active_pane().ptr_eq(&Rc::downgrade(pane));
     drop(window);
     let cached = {

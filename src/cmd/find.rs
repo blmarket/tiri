@@ -18,10 +18,11 @@ use crate::shared::window::WindowRef;
 use crate::shared::window::WindowWeak;
 use crate::window::Window;
 use crate::window::{
-    winlink_find_by_index, winlink_next_by_number, winlink_previous_by_number, winlinks_minmax,
-    winlinks_next,
+    winlink_find_by_index, winlink_next, winlink_next_by_number, winlink_previous_by_number,
+    winlinks_minmax,
 };
 use crate::window_pane::WindowPane as _;
+use crate::winlink::winlink_window;
 use libc::fnmatch;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
@@ -137,9 +138,12 @@ unsafe fn cmd_find_session_valid(s: &SessionRef) -> i32 {
     if !link.is_alive() {
         return 0;
     }
-    link.get_unchecked()
+    let has_pane = link
+        .try_borrow()
+        .expect("live winlink")
         .window_handle()
-        .is_some_and(|window| window.active_pane().upgrade().is_some()) as i32
+        .is_some_and(|window| window.active_pane().upgrade().is_some());
+    has_pane as i32
 }
 unsafe fn cmd_find_best_session(
     candidates: Option<&[SessionRef]>,
@@ -206,16 +210,16 @@ impl cmd_find_state {
         ));
         let current = session.current_winlink();
         let mut selected = refbox::Weak::new();
-        if current.is_alive() && same(current.get_unchecked().window_handle(), Some(&window)) {
+        if current.is_alive() && same(winlink_window(&current).as_ref(), Some(&window)) {
             selected = current;
         } else {
             let mut candidate = session.with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
             while candidate.is_alive() {
-                if same(candidate.get_unchecked().window_handle(), Some(&window)) {
+                if same(winlink_window(&candidate).as_ref(), Some(&window)) {
                     selected = candidate;
                     break;
                 }
-                candidate = winlinks_next(candidate.get_unchecked());
+                candidate = winlink_next(&candidate);
             }
         }
         drop(window);
@@ -223,7 +227,11 @@ impl cmd_find_state {
             return -1;
         }
         self.set_wl(selected);
-        self.idx = self.winlink_handle().get_unchecked().idx;
+        self.idx = self
+            .winlink_handle()
+            .try_borrow()
+            .expect("live winlink")
+            .idx;
         0
     }
     unsafe fn get_session(&mut self, target: &CStr) -> i32 {
@@ -310,9 +318,12 @@ impl cmd_find_state {
                     .current_winlink())
                 .clone(),
             );
-            self.set_w((self.winlink_handle()).get_unchecked().window_handle());
+            self.set_w(winlink_window(&self.winlink_handle()).as_ref());
             if !self.flags & CMD_FIND_WINDOW_INDEX != 0 {
-                self.idx = (self.winlink_handle()).get_unchecked().idx;
+                self.idx = (self.winlink_handle())
+                    .try_borrow()
+                    .expect("live winlink")
+                    .idx;
             }
             return 0 as ::core::ffi::c_int;
         }
@@ -336,7 +347,7 @@ impl cmd_find_state {
                 .current_winlink())
             .clone(),
         );
-        self.set_w((self.winlink_handle()).get_unchecked().window_handle());
+        self.set_w(winlink_window(&self.winlink_handle()).as_ref());
         let first = window.to_bytes().first().copied();
         if first == Some(b'@') {
             let window_owner = crate::window::window_find_by_id_str(window);
@@ -374,15 +385,33 @@ impl cmd_find_state {
             let s = self.session_handle().expect("target session");
             if self.flags & CMD_FIND_WINDOW_INDEX != 0 {
                 if first == Some(b'+') {
-                    if INT_MAX - (s.current_winlink()).get_unchecked().idx < n {
+                    if INT_MAX
+                        - (s.current_winlink())
+                            .try_borrow()
+                            .expect("live winlink")
+                            .idx
+                        < n
+                    {
                         return -(1 as ::core::ffi::c_int);
                     }
-                    self.idx = (s.current_winlink()).get_unchecked().idx + n;
+                    self.idx = (s.current_winlink())
+                        .try_borrow()
+                        .expect("live winlink")
+                        .idx
+                        + n;
                 } else {
-                    if n > (s.current_winlink()).get_unchecked().idx {
+                    if n > (s.current_winlink())
+                        .try_borrow()
+                        .expect("live winlink")
+                        .idx
+                    {
                         return -(1 as ::core::ffi::c_int);
                     }
-                    self.idx = (s.current_winlink()).get_unchecked().idx - n;
+                    self.idx = (s.current_winlink())
+                        .try_borrow()
+                        .expect("live winlink")
+                        .idx
+                        - n;
                 }
                 return 0 as ::core::ffi::c_int;
             }
@@ -394,8 +423,11 @@ impl cmd_find_state {
                 );
             }
             if self.winlink_handle().is_alive() {
-                self.idx = (self.winlink_handle()).get_unchecked().idx;
-                self.set_w((self.winlink_handle()).get_unchecked().window_handle());
+                self.idx = (self.winlink_handle())
+                    .try_borrow()
+                    .expect("live winlink")
+                    .idx;
+                self.set_w(winlink_window(&self.winlink_handle()).as_ref());
                 return 0 as ::core::ffi::c_int;
             }
         }
@@ -406,8 +438,11 @@ impl cmd_find_state {
                 if !self.winlink_handle().is_alive() {
                     return -(1 as ::core::ffi::c_int);
                 }
-                self.idx = (self.winlink_handle()).get_unchecked().idx;
-                self.set_w((self.winlink_handle()).get_unchecked().window_handle());
+                self.idx = (self.winlink_handle())
+                    .try_borrow()
+                    .expect("live winlink")
+                    .idx;
+                self.set_w(winlink_window(&self.winlink_handle()).as_ref());
                 return 0 as ::core::ffi::c_int;
             } else if window == c"^" {
                 self.set_wl(
@@ -420,8 +455,11 @@ impl cmd_find_state {
                 if !self.winlink_handle().is_alive() {
                     return -(1 as ::core::ffi::c_int);
                 }
-                self.idx = (self.winlink_handle()).get_unchecked().idx;
-                self.set_w((self.winlink_handle()).get_unchecked().window_handle());
+                self.idx = (self.winlink_handle())
+                    .try_borrow()
+                    .expect("live winlink")
+                    .idx;
+                self.set_w(winlink_window(&self.winlink_handle()).as_ref());
                 return 0 as ::core::ffi::c_int;
             } else if window == c"$" {
                 self.set_wl(
@@ -434,8 +472,11 @@ impl cmd_find_state {
                 if !self.winlink_handle().is_alive() {
                     return -(1 as ::core::ffi::c_int);
                 }
-                self.idx = (self.winlink_handle()).get_unchecked().idx;
-                self.set_w((self.winlink_handle()).get_unchecked().window_handle());
+                self.idx = (self.winlink_handle())
+                    .try_borrow()
+                    .expect("live winlink")
+                    .idx;
+                self.set_w(winlink_window(&self.winlink_handle()).as_ref());
                 return 0 as ::core::ffi::c_int;
             }
         }
@@ -455,8 +496,11 @@ impl cmd_find_state {
                     .clone(),
                 );
                 if self.winlink_handle().is_alive() {
-                    self.idx = (self.winlink_handle()).get_unchecked().idx;
-                    self.set_w((self.winlink_handle()).get_unchecked().window_handle());
+                    self.idx = (self.winlink_handle())
+                        .try_borrow()
+                        .expect("live winlink")
+                        .idx;
+                    self.set_w(winlink_window(&self.winlink_handle()).as_ref());
                     return 0 as ::core::ffi::c_int;
                 }
                 if self.flags & CMD_FIND_WINDOW_INDEX != 0 {
@@ -472,9 +516,7 @@ impl cmd_find_state {
             .with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
         while wl.is_alive() {
             if window
-                == wl
-                    .get_unchecked()
-                    .window_handle()
+                == winlink_window(&wl)
                     .expect("linked window")
                     .name()
                     .as_c_str()
@@ -484,11 +526,14 @@ impl cmd_find_state {
                 }
                 self.set_wl(wl.clone());
             }
-            wl = winlinks_next(wl.get_unchecked());
+            wl = winlink_next(&wl);
         }
         if self.winlink_handle().is_alive() {
-            self.idx = (self.winlink_handle()).get_unchecked().idx;
-            self.set_w((self.winlink_handle()).get_unchecked().window_handle());
+            self.idx = (self.winlink_handle())
+                .try_borrow()
+                .expect("live winlink")
+                .idx;
+            self.set_w(winlink_window(&self.winlink_handle()).as_ref());
             return 0 as ::core::ffi::c_int;
         }
         if exact != 0 {
@@ -500,9 +545,7 @@ impl cmd_find_state {
             .expect("window target session")
             .with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
         while wl.is_alive() {
-            if wl
-                .get_unchecked()
-                .window_handle()
+            if winlink_window(&wl)
                 .expect("linked window")
                 .name()
                 .as_bytes()
@@ -513,11 +556,14 @@ impl cmd_find_state {
                 }
                 self.set_wl(wl.clone());
             }
-            wl = winlinks_next(wl.get_unchecked());
+            wl = winlink_next(&wl);
         }
         if self.winlink_handle().is_alive() {
-            self.idx = (self.winlink_handle()).get_unchecked().idx;
-            self.set_w((self.winlink_handle()).get_unchecked().window_handle());
+            self.idx = (self.winlink_handle())
+                .try_borrow()
+                .expect("live winlink")
+                .idx;
+            self.set_w(winlink_window(&self.winlink_handle()).as_ref());
             return 0 as ::core::ffi::c_int;
         }
         self.set_wl((refbox::Weak::new()).clone());
@@ -528,11 +574,7 @@ impl cmd_find_state {
         while wl.is_alive() {
             if fnmatch(
                 window.as_ptr(),
-                wl.get_unchecked()
-                    .window_handle()
-                    .expect("linked window")
-                    .name()
-                    .as_ptr(),
+                winlink_window(&wl).expect("linked window").name().as_ptr(),
                 0 as ::core::ffi::c_int,
             ) == 0 as ::core::ffi::c_int
             {
@@ -541,11 +583,14 @@ impl cmd_find_state {
                 }
                 self.set_wl(wl.clone());
             }
-            wl = winlinks_next(wl.get_unchecked());
+            wl = winlink_next(&wl);
         }
         if self.winlink_handle().is_alive() {
-            self.idx = (self.winlink_handle()).get_unchecked().idx;
-            self.set_w((self.winlink_handle()).get_unchecked().window_handle());
+            self.idx = (self.winlink_handle())
+                .try_borrow()
+                .expect("live winlink")
+                .idx;
+            self.set_w(winlink_window(&self.winlink_handle()).as_ref());
             return 0 as ::core::ffi::c_int;
         }
         -(1 as ::core::ffi::c_int)
@@ -612,8 +657,11 @@ impl cmd_find_state {
                 .current_winlink())
             .clone(),
         );
-        self.idx = (self.winlink_handle()).get_unchecked().idx;
-        self.set_w((self.winlink_handle()).get_unchecked().window_handle());
+        self.idx = (self.winlink_handle())
+            .try_borrow()
+            .expect("live winlink")
+            .idx;
+        self.set_w(winlink_window(&self.winlink_handle()).as_ref());
         self.get_pane_with_window(pane)
     }
     unsafe fn get_pane_with_window(&mut self, pane: &CStr) -> ::core::ffi::c_int {
@@ -718,7 +766,7 @@ impl cmd_find_state {
         else {
             return false;
         };
-        let Ok(wl) = self.wl.try_borrow_mut() else {
+        let Ok(wl) = self.wl.try_borrow() else {
             return false;
         };
         if sessions::resolve(&self.s).is_none()
@@ -757,9 +805,12 @@ impl cmd_find_state {
             log_debug(format_args!(
                 "{}: wl={} {} w=@{} {}",
                 log_cstr(prefix),
-                self.winlink_handle().get_unchecked().idx as u32,
+                self.winlink_handle()
+                    .try_borrow()
+                    .expect("live winlink")
+                    .idx as u32,
                 same(
-                    self.winlink_handle().get_unchecked().window_handle(),
+                    winlink_window(&self.winlink_handle()).as_ref(),
                     self.window_handle().as_ref(),
                 ) as ::core::ffi::c_int,
                 { ((self.window_handle().as_ref()).expect("live window")).id() },
@@ -798,7 +849,7 @@ impl cmd_find_state {
         let mut fs = Self::clear_state(flags);
         fs.set_s(Some(s_owner));
         fs.set_wl(s_owner.current_winlink().clone());
-        fs.set_w(fs.winlink_handle().get_unchecked().window_handle());
+        fs.set_w(winlink_window(&fs.winlink_handle()).as_ref());
         fs.set_wp(
             fs.window_handle()
                 .expect("live window")
@@ -811,11 +862,10 @@ impl cmd_find_state {
     }
     pub unsafe fn find_from_winlink(wl: refbox::Weak<winlink>, flags: ::core::ffi::c_int) -> Self {
         let mut fs = Self::clear_state(flags);
-        fs.s = wl.get_unchecked().session.clone();
-        fs.set_w(wl.get_unchecked().window_handle());
+        fs.s = wl.try_borrow().expect("live winlink").session.clone();
+        fs.set_w(winlink_window(&wl).as_ref());
         fs.set_wp(
-            wl.get_unchecked()
-                .window_handle()
+            winlink_window(&wl)
                 .expect("live window")
                 .active_pane()
                 .upgrade()
@@ -859,9 +909,9 @@ impl cmd_find_state {
         flags: ::core::ffi::c_int,
     ) -> Self {
         let mut fs = Self::clear_state(flags);
-        fs.s = wl.get_unchecked().session.clone();
-        fs.idx = wl.get_unchecked().idx;
-        fs.set_w(wl.get_unchecked().window_handle());
+        fs.s = wl.try_borrow().expect("live winlink").session.clone();
+        fs.idx = wl.try_borrow().expect("live winlink").idx;
+        fs.set_w(winlink_window(&wl).as_ref());
         fs.set_wl(wl);
         fs.set_wp(Some(wp_owner));
         fs.log_state(c"cmd_find_from_winlink_pane");
@@ -883,8 +933,8 @@ impl cmd_find_state {
         let session = cmd_find_best_session(None, flags)?;
         fs.set_s(Some(&session));
         fs.set_wl(session.current_winlink().clone());
-        fs.idx = fs.winlink_handle().get_unchecked().idx;
-        fs.set_w(fs.winlink_handle().get_unchecked().window_handle());
+        fs.idx = fs.winlink_handle().try_borrow().expect("live winlink").idx;
+        fs.set_w(winlink_window(&fs.winlink_handle()).as_ref());
         fs.set_wp(
             fs.window_handle()
                 .expect("live window")
@@ -907,7 +957,7 @@ impl cmd_find_state {
         fs.set_s(mouse_session_owner.as_ref());
         fs.set_wl(wl);
         fs.set_wp(mouse_pane_owner.as_ref());
-        fs.set_w(fs.winlink_handle().get_unchecked().window_handle());
+        fs.set_w(winlink_window(&fs.winlink_handle()).as_ref());
         fs.log_state(c"cmd_find_from_mouse");
         Some(fs)
     }
@@ -920,9 +970,7 @@ impl cmd_find_state {
         };
         if let Some(session) = c.attached_session().upgrade() {
             let wl = session.current_winlink().clone();
-            let Some(pane) = wl
-                .get_unchecked()
-                .window_handle()
+            let Some(pane) = winlink_window(&wl)
                 .expect("live window")
                 .active_pane()
                 .upgrade()
@@ -931,7 +979,7 @@ impl cmd_find_state {
             };
             let mut fs = Self::clear_state(flags);
             fs.set_s(Some(&session));
-            fs.set_w(wl.get_unchecked().window_handle());
+            fs.set_w(winlink_window(&wl).as_ref());
             fs.set_wl(wl);
             fs.set_wp(Some(&pane));
             fs.log_state(c"cmd_find_from_client");
@@ -947,7 +995,7 @@ impl cmd_find_state {
                         .current_winlink()
                         .clone(),
                 );
-                fs.set_w(fs.winlink_handle().get_unchecked().window_handle());
+                fs.set_w(winlink_window(&fs.winlink_handle()).as_ref());
                 fs.set_wp(
                     fs.window_handle()
                         .expect("live window")
@@ -1079,13 +1127,13 @@ impl cmd_find_state {
                         .clone(),
                     );
                     self.set_wp(
-                        ((((client
-                            .attached_session()
-                            .upgrade()
-                            .expect("live session")
-                            .current_winlink())
-                        .get_unchecked()
-                        .window_handle()
+                        (((winlink_window(
+                            &client
+                                .attached_session()
+                                .upgrade()
+                                .expect("live session")
+                                .current_winlink(),
+                        )
                         .as_ref())
                         .expect("live window"))
                         .active_pane()
@@ -1093,13 +1141,14 @@ impl cmd_find_state {
                         .as_ref(),
                     );
                     self.set_w(
-                        (client
-                            .attached_session()
-                            .upgrade()
-                            .expect("live session")
-                            .current_winlink())
-                        .get_unchecked()
-                        .window_handle(),
+                        winlink_window(
+                            &client
+                                .attached_session()
+                                .upgrade()
+                                .expect("live session")
+                                .current_winlink(),
+                        )
+                        .as_ref(),
                     );
                     current_block = 15319680530019787978;
                 } else {
@@ -1123,7 +1172,7 @@ impl cmd_find_state {
                             self.set_wp(mouse_pane_owner.as_ref());
                         }
                         if !self.pane_handle().is_none() {
-                            self.set_w((self.winlink_handle()).get_unchecked().window_handle());
+                            self.set_w(winlink_window(&self.winlink_handle()).as_ref());
                             current_block_56 = 7343950298149844727;
                         } else {
                             current_block_56 = 2308649987175926278;
@@ -1153,7 +1202,7 @@ impl cmd_find_state {
                         );
                     }
                     if self.winlink_handle().is_alive() {
-                        self.set_w((self.winlink_handle()).get_unchecked().window_handle());
+                        self.set_w(winlink_window(&self.winlink_handle()).as_ref());
                         self.set_wp(
                             (((self.window_handle().as_ref()).expect("live window"))
                                 .active_pane()
@@ -1290,7 +1339,7 @@ impl cmd_find_state {
                                 .clone(),
                             );
                             self.idx = -(1 as ::core::ffi::c_int);
-                            self.set_w((self.winlink_handle()).get_unchecked().window_handle());
+                            self.set_w(winlink_window(&self.winlink_handle()).as_ref());
                             self.set_wp(
                                 (((self.window_handle().as_ref()).expect("live window"))
                                     .active_pane()
@@ -1305,11 +1354,8 @@ impl cmd_find_state {
                             } else {
                                 if self.winlink_handle().is_alive() {
                                     self.set_wp(
-                                        ((((self.winlink_handle())
-                                            .get_unchecked()
-                                            .window_handle()
-                                            .as_ref())
-                                        .expect("live window"))
+                                        (((winlink_window(&self.winlink_handle()).as_ref())
+                                            .expect("live window"))
                                         .active_pane()
                                         .upgrade())
                                         .as_ref(),
@@ -1353,11 +1399,8 @@ impl cmd_find_state {
                             } else {
                                 if self.winlink_handle().is_alive() {
                                     self.set_wp(
-                                        ((((self.winlink_handle())
-                                            .get_unchecked()
-                                            .window_handle()
-                                            .as_ref())
-                                        .expect("live window"))
+                                        (((winlink_window(&self.winlink_handle()).as_ref())
+                                            .expect("live window"))
                                         .active_pane()
                                         .upgrade())
                                         .as_ref(),

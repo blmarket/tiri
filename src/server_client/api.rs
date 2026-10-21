@@ -906,9 +906,12 @@ impl Client for ClientRef {
             return false;
         }
         let link = session.current_winlink();
-        link.get_unchecked()
+        let shows_window = link
+            .try_borrow()
+            .expect("live winlink")
             .window_handle()
-            .is_some_and(|owner| WindowRef::ptr_eq(owner, window))
+            .is_some_and(|owner| WindowRef::ptr_eq(owner, window));
+        shows_window
     }
 
     unsafe fn participates_in_window_sizing(&self) -> bool {
@@ -1340,22 +1343,26 @@ impl Client for ClientRef {
                 let mut link =
                     crate::window::winlinks_minmax(links, crate::shared::tree::RB_NEGINF);
                 while link.is_alive() {
-                    let entry = link.get_unchecked();
-                    if entry
+                    if link
+                        .try_borrow()
+                        .expect("live winlink")
                         .window_handle()
                         .is_some_and(|owner| WindowRef::ptr_eq(owner, &window))
                     {
                         return true;
                     }
-                    link = crate::window::winlinks_next(entry);
+                    link = crate::window::winlink_next(&link);
                 }
                 false
             })
         } else {
             let link = session.current_winlink();
-            link.get_unchecked()
+            let shows_window = link
+                .try_borrow()
+                .expect("live winlink")
                 .window_handle()
-                .is_some_and(|owner| WindowRef::ptr_eq(owner, &window))
+                .is_some_and(|owner| WindowRef::ptr_eq(owner, &window));
+            shows_window
         };
         drop(window);
         if invisible || !matches {

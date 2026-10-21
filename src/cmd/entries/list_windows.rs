@@ -50,7 +50,8 @@ unsafe fn cmd_list_windows_exec(
 ) -> CmdOutcome {
     let item = item_handle.borrow();
     let queue_client = cmdq_get_client(Some(&*item));
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
@@ -91,7 +92,7 @@ unsafe fn cmd_list_windows_exec(
     i = 0 as u_int;
     while i < n {
         wl = winlinks[i as usize].clone();
-        let Some(session_owner) = wl.get_unchecked().session.upgrade() else {
+        let Some(session_owner) = wl.try_borrow().expect("live winlink").session.upgrade() else {
             i += 1;
             continue;
         };

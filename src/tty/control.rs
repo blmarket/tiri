@@ -4,6 +4,7 @@ use super::output::*;
 use crate::options::OptionsScope;
 use crate::reactor::Timer;
 use crate::server_client::ClientRegistry;
+use crate::winlink::winlink_window;
 use tiri_rt::{AsyncRead as _, AsyncWrite as _};
 
 use super::acs::{tty_acs_needed, tty_acs_reverse_get};
@@ -798,11 +799,7 @@ unsafe fn tty_window_frame(owner: &ClientRef, window: &WindowRef) -> (u32, u32) 
 pub unsafe fn tty_window_bigger(owner: &ClientRef) -> ::core::ffi::c_int {
     let session = owner.attached_session().upgrade().expect("live session");
     let link = session.current_winlink();
-    let window = link
-        .get_unchecked()
-        .window_handle()
-        .cloned()
-        .expect("current window");
+    let window = winlink_window(&link).expect("current window");
     let (sx, sy) = window.logical_size();
     let (fx, fy) = tty_window_frame(owner, &window);
     (fx < sx || fy < sy) as i32
@@ -854,11 +851,7 @@ fn tty_follow_cell(
 unsafe fn tty_window_offset1(owner: &ClientRef) -> tty_window_view {
     let session = owner.attached_session().upgrade().expect("live session");
     let link = session.current_winlink();
-    let window = link
-        .get_unchecked()
-        .window_handle()
-        .cloned()
-        .expect("current window");
+    let window = winlink_window(&link).expect("current window");
     let (sx, sy) = window.logical_size();
     let (fx, fy) = tty_window_frame(owner, &window);
     if fx >= sx && fy >= sy {
@@ -939,16 +932,15 @@ pub unsafe fn tty_update_window_offset(w_owner: &WindowRef) {
                 .expect("live session")
                 .current_winlink()
                 .is_alive()
-            && (c
-                .as_ref()
-                .expect("live client")
-                .attached_session()
-                .upgrade()
-                .expect("live session")
-                .current_winlink())
-            .get_unchecked()
-            .window_handle()
-            .is_some_and(|owner| WindowRef::ptr_eq(owner, w_owner))
+            && winlink_window(
+                &c.as_ref()
+                    .expect("live client")
+                    .attached_session()
+                    .upgrade()
+                    .expect("live session")
+                    .current_winlink(),
+            )
+            .is_some_and(|owner| WindowRef::ptr_eq(&owner, w_owner))
         {
             tty_update_client_offset(&c.clone().expect("live client"));
         }

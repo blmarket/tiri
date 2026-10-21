@@ -35,7 +35,9 @@ use crate::shared::pane::window_pane;
 use crate::shared::screen::{screen, MODE_CURSOR};
 use crate::shared::screen_write::screen_write_ctx;
 use crate::shared::session::{SessionRef, SessionWeak};
-use crate::shared::window::{window_mode, window_mode_entry, window_mode_screen_payload, winlink};
+use crate::shared::window::{
+    window_mode, window_mode_entry, window_mode_screen_payload, winlink, ModeDataRef,
+};
 use crate::shared::window::{WindowRef, WindowWeak};
 use crate::shared::window::{
     WINDOW_MODE_HIDE_PANE_STATUS, WINDOW_MODE_HIDE_SCROLLBARS, WINDOW_MODE_NO_STACK,
@@ -706,15 +708,14 @@ unsafe fn window_panes_draw_pane(
 }
 unsafe fn window_panes_data(
     wme: &refbox::Weak<window_mode_entry>,
-) -> &std::cell::RefCell<window_panes_modedata> {
-    wme.get_unchecked()
-        .boxed_data_cell::<window_panes_modedata>()
-        .expect("panes mode payload")
+) -> ModeDataRef<'_, window_panes_modedata> {
+    ModeDataRef::new(wme.try_borrow().expect("live mode entry")).expect("panes mode payload")
 }
 
 unsafe fn window_panes_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
     let mut source_session_owner = None;
-    let mut data = window_panes_data(&wme).borrow_mut();
+    let data_cell = window_panes_data(&wme);
+    let mut data = data_cell.borrow_mut();
     let data = &mut *data;
     let Some(mode_pane_owner) = Rc::<RefCell<window_pane>>::from_observer(&data.source.wp) else {
         return;
@@ -798,7 +799,8 @@ unsafe fn window_panes_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
 }
 unsafe fn window_panes_timer_callback(wme: refbox::Weak<window_mode_entry>) {
     let mode_pane_owner = wme
-        .get_unchecked()
+        .try_borrow()
+        .expect("live mode entry")
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
@@ -811,7 +813,8 @@ unsafe fn window_panes_init(
     args: Option<&args>,
 ) -> bool {
     let mode_pane_owner = wme
-        .get_unchecked()
+        .try_borrow()
+        .expect("live mode entry")
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
@@ -888,8 +891,9 @@ unsafe fn window_panes_init(
         ignore_keys: args_has(args, 'N' as i32 as u_char),
         areas: Vec::new(),
     }));
-    wme.get_mut_unchecked().boxed_data = Some(owner);
-    let mut data = window_panes_data(&wme).borrow_mut();
+    wme.try_borrow_mut().expect("live mode entry").boxed_data = Some(owner);
+    let data_cell = window_panes_data(&wme);
+    let mut data = data_cell.borrow_mut();
     screen_init(&mut data.screen, sx, sy, 0 as u_int);
     data.screen.mode &= !MODE_CURSOR;
     window_panes_set_preview(&mut data);
@@ -898,7 +902,7 @@ unsafe fn window_panes_init(
         let mode_observer = wme.clone();
         data.timer = Some(
             Timer::new(timeout, move || unsafe {
-                let live = match mode_observer.try_borrow_mut() {
+                let live = match mode_observer.try_borrow() {
                     Ok(_) => true,
                     Err(refbox::BorrowError::Dropped) => false,
                     Err(refbox::BorrowError::Borrowed) => {
@@ -921,7 +925,8 @@ unsafe fn window_panes_get_screen(
     visit: &mut dyn FnMut(&mut screen),
 ) {
     if let Some(data) = wme
-        .get_unchecked()
+        .try_borrow()
+        .expect("live mode entry")
         .boxed_data_cell::<window_panes_modedata>()
     {
         window_mode_screen_payload(data, |data| visit(&mut data.screen));
@@ -930,7 +935,8 @@ unsafe fn window_panes_get_screen(
 
 unsafe fn window_panes_free(wme: refbox::Weak<window_mode_entry>) {
     let mode_pane_owner = wme
-        .get_unchecked()
+        .try_borrow()
+        .expect("live mode entry")
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
@@ -1051,11 +1057,13 @@ unsafe fn window_panes_get_target(
     m: Option<&mut mouse_event>,
 ) -> Option<Rc<RefCell<window_pane>>> {
     let mode_pane_owner = wme
-        .get_unchecked()
+        .try_borrow()
+        .expect("live mode entry")
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
-    let data = window_panes_data(&wme).borrow();
+    let data_cell = window_panes_data(&wme);
+    let data = data_cell.borrow();
     let mut x: u_int = 0;
     let mut y: u_int = 0;
     if data.ignore_keys != 0 {
@@ -1090,7 +1098,8 @@ unsafe fn window_panes_key(
     m: Option<&mut mouse_event>,
 ) {
     let mode_pane_owner = wme
-        .get_unchecked()
+        .try_borrow()
+        .expect("live mode entry")
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");

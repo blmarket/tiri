@@ -8,6 +8,7 @@ use crate::names::default_window_name_cstring;
 use crate::options::{options_get_number, options_set_number};
 use crate::shared::window::WindowRef;
 use crate::window::Window as _;
+use crate::winlink::winlink_window;
 
 use crate::server_client::Client as _;
 use crate::server_fn::{
@@ -61,7 +62,8 @@ unsafe fn cmd_break_pane_exec(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let current = cmdq_get_state_owned(&(item));
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let source = crate::cmd::queue::cmdq_get_source(&item);
@@ -71,16 +73,12 @@ unsafe fn cmd_break_pane_exec(
     let mut src_s: Option<SessionRef> = source.session_handle();
     let mut dst_s: Option<SessionRef> = target.session_handle();
     let pane_owner = source.pane_handle().expect("live break pane");
-    let source_window = wl
-        .get_unchecked()
-        .window_handle()
-        .cloned()
-        .expect("live source window");
+    let source_window = winlink_window(&wl).expect("live source window");
     let result = (|| {
         let _cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
         let mut idx: ::core::ffi::c_int = target.idx;
         let mut before: ::core::ffi::c_int = 0;
-        let mut old_idx: ::core::ffi::c_int = wl.get_unchecked().idx;
+        let mut old_idx: ::core::ffi::c_int = wl.try_borrow().expect("live winlink").idx;
         let mut name: Option<&CStr> = args_get(args, 'n' as i32 as u_char);
         if name.is_some_and(|name| !check_name(name)) {
             cmdq_error(item_handle, |out| {
@@ -137,12 +135,8 @@ unsafe fn cmd_break_pane_exec(
             if !wl.is_alive() {
                 return CmdOutcome::Error;
             }
-            pane_owner.notify_moved(
-                &source_window,
-                old_idx,
-                &source_window,
-                wl.get_unchecked().idx,
-            );
+            let new_idx = wl.try_borrow().expect("live winlink").idx;
+            pane_owner.notify_moved(&source_window, old_idx, &source_window, new_idx);
         } else {
             if idx != -(1 as ::core::ffi::c_int)
                 && dst_s
@@ -208,14 +202,15 @@ unsafe fn cmd_break_pane_exec(
                 c"window-created",
                 destination.upgrade().expect("live destination window"),
             );
+            let new_idx = wl.try_borrow().expect("live winlink").idx;
             pane_owner.notify_moved(
                 &source_window,
                 old_idx,
                 &destination.upgrade().expect("live destination window"),
-                wl.get_unchecked().idx,
+                new_idx,
             );
             if args_has(args, 'd' as i32 as u_char) == 0 {
-                (dst_s.as_ref().expect("live session")).select_index(wl.get_unchecked().idx);
+                (dst_s.as_ref().expect("live session")).select_index(new_idx);
                 *current.current.borrow_mut() = cmd_find_state::find_from_session(
                     dst_s.as_ref().expect("live session"),
                     0 as ::core::ffi::c_int,

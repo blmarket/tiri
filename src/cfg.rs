@@ -13,6 +13,7 @@ use crate::prompt_history::prompt_load_history;
 use crate::server_client::Client as _;
 use crate::server_client::ClientRegistry;
 use crate::session::sessions;
+use crate::winlink::winlink_window;
 
 use crate::session::Session as _;
 use crate::shared::abi::*;
@@ -301,12 +302,7 @@ pub unsafe fn cfg_show_causes(s_owner: Option<&SessionRef>) {
         if s.is_none() || !s.as_ref().expect("live session").is_attached() {
             return;
         }
-        let pane_owner = s
-            .as_ref()
-            .expect("live session")
-            .current_winlink()
-            .get_unchecked()
-            .window_handle()
+        let pane_owner = winlink_window(&s.as_ref().expect("live session").current_winlink())
             .expect("live window")
             .active_pane()
             .upgrade()

@@ -203,7 +203,7 @@ impl window_pane {
         let entry = self.modes.last()?;
         Some(
             entry
-                .try_borrow_mut()
+                .try_borrow()
                 .expect("active pane mode already borrowed")
                 .mode,
         )
@@ -239,7 +239,8 @@ unsafe fn visit_mode_screen<R>(
         return None;
     }
     let display = entry
-        .get_unchecked()
+        .try_borrow()
+        .expect("live mode entry")
         .mode
         .display_screen
         .expect("mode display screen getter");

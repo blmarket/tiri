@@ -4,7 +4,7 @@ use crate::cmd::queue::{cmdq_error, cmdq_get_client};
 use crate::format::{format_create, format_defaults, format_expand_cstring, format_true};
 use crate::server_client::Client as _;
 use crate::shared::client::ClientRef;
-use crate::shared::window::WindowRef;
+use crate::winlink::winlink_window;
 use std::ffi::CStr;
 
 use crate::server_fn::{server_kill_pane, server_redraw_window, server_unzoom_window};
@@ -47,7 +47,8 @@ unsafe fn cmd_kill_pane_exec(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let pane_owner = target.wp.upgrade();
     let mut filter: Option<&CStr> = args_get(args, 'f' as i32 as u_char);
@@ -74,10 +75,8 @@ unsafe fn cmd_kill_pane_all(
     let mut s: Option<SessionRef> = target.session_handle();
     let mut wl: refbox::Weak<winlink> = target.winlink_handle();
     let target_pane = target.pane_handle().expect("kill target pane");
-    server_unzoom_window((wl.get_unchecked().window_handle().as_ref()).expect("live window"));
-    let panes = wl
-        .get_unchecked()
-        .window_handle()
+    server_unzoom_window((winlink_window(&wl).as_ref()).expect("live window"));
+    let panes = winlink_window(&wl)
         .map(|window| window.pane_snapshot())
         .unwrap_or_default();
     for pane_owner in panes.iter().filter_map(std::rc::Weak::upgrade) {
@@ -91,11 +90,12 @@ unsafe fn cmd_kill_pane_all(
             ) != 0
         {
             ClientRef::forget_pane(&pane_owner);
-            WindowRef::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window"))
+            winlink_window(&wl)
+                .expect("live window")
                 .remove_pane(&pane_owner);
         }
     }
-    server_redraw_window((wl.get_unchecked().window_handle().as_ref()).expect("live window"));
+    server_redraw_window((winlink_window(&wl).as_ref()).expect("live window"));
     CmdOutcome::Normal
 }
 unsafe fn cmd_kill_pane_filter(

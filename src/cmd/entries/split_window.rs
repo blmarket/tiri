@@ -16,6 +16,7 @@ use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
 use crate::format::{format_single_cstring, format_single_from_target_cstring};
 use crate::options::{options_set_number, options_set_string};
+use crate::winlink::winlink_window;
 
 use crate::server_client::Client as _;
 use crate::server_fn::{server_redraw_session, server_redraw_window};
@@ -89,7 +90,8 @@ unsafe fn cmd_split_window_exec(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let current = cmdq_get_state_owned(&(item));
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let mut sc: spawn_context = spawn_context {
@@ -110,11 +112,7 @@ unsafe fn cmd_split_window_exec(
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut s: Option<SessionRef> = target.session_handle();
     let mut wl: refbox::Weak<winlink> = target.winlink_handle();
-    let original_window = wl
-        .get_unchecked()
-        .window_handle()
-        .cloned()
-        .expect("split target window");
+    let original_window = winlink_window(&wl).expect("split target window");
     let result = (|| {
         let mut current_block: u64;
         let original_pane = target.pane_handle().expect("split target pane");
@@ -181,11 +179,7 @@ unsafe fn cmd_split_window_exec(
         sc.idx = -(1 as ::core::ffi::c_int);
         sc.cwd = args_get(args, 'c' as i32 as u_char).map(|value| value.to_owned());
         sc.flags = flags;
-        let window_owner = wl
-            .get_unchecked()
-            .window_handle()
-            .expect("target window")
-            .clone();
+        let window_owner = winlink_window(&wl).expect("target window").clone();
         // The new pane takes the zoom with -Z, as the active pane once it has
         // started.
         window_owner.push_zoom(true, args_has(args, 'Z' as i32 as u_char) != 0);

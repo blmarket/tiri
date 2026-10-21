@@ -13,6 +13,7 @@ use crate::shared::command::{CMD_AFTERHOOK, CMD_FIND_DEFAULT_MARKED};
 use crate::shared::session::SessionRef;
 use crate::shared::window::winlink;
 use crate::window::Window as _;
+use crate::winlink::{winlink_index, winlink_window};
 
 pub static cmd_swap_window_entry: cmd_entry = {
     cmd_entry {
@@ -44,7 +45,8 @@ unsafe fn cmd_swap_window_exec(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let source = crate::cmd::queue::cmdq_get_source(&item);
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let mut src: Option<SessionRef> = source.session_handle();
@@ -72,44 +74,36 @@ unsafe fn cmd_swap_window_exec(
         return CmdOutcome::Error;
     }
     if crate::shared::rc::same(
-        wl_dst.get_unchecked().window_handle(),
-        wl_src.get_unchecked().window_handle(),
+        winlink_window(&wl_dst).as_ref(),
+        winlink_window(&wl_src).as_ref(),
     ) {
         return CmdOutcome::Normal;
     }
-    wl_dst
-        .get_unchecked()
-        .window_handle()
+    winlink_window(&wl_dst)
         .expect("linked window")
         .remove_winlink(wl_dst.clone());
-    wl_src
-        .get_unchecked()
-        .window_handle()
+    winlink_window(&wl_src)
         .expect("linked window")
         .remove_winlink(wl_src.clone());
     if wl_dst != wl_src {
         std::mem::swap(
-            &mut wl_dst.get_mut_unchecked().window_owner,
-            &mut wl_src.get_mut_unchecked().window_owner,
+            &mut wl_dst.try_borrow_mut().expect("live winlink").window_owner,
+            &mut wl_src.try_borrow_mut().expect("live winlink").window_owner,
         );
     }
-    wl_dst
-        .get_unchecked()
-        .window_handle()
+    winlink_window(&wl_dst)
         .expect("linked window")
         .add_winlink(wl_dst.clone());
-    wl_src
-        .get_unchecked()
-        .window_handle()
+    winlink_window(&wl_src)
         .expect("linked window")
         .add_winlink(wl_src.clone());
     if marked_pane.winlink_handle() == wl_src {
         marked_pane.set_wl((wl_dst).clone());
     }
     if args_has(args, 'd' as i32 as u_char) != 0 {
-        (dst.as_ref().expect("live session")).select_index(wl_dst.get_unchecked().idx);
+        (dst.as_ref().expect("live session")).select_index(winlink_index(&wl_dst));
         if !crate::shared::rc::same(src.as_ref(), dst.as_ref()) {
-            (src.as_ref().expect("live session")).select_index(wl_src.get_unchecked().idx);
+            (src.as_ref().expect("live session")).select_index(winlink_index(&wl_src));
         }
     }
     session_group_synchronize_from(src.as_ref().expect("live session"));

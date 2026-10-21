@@ -81,6 +81,7 @@ use crate::format::bytes::cstr_copy_into;
 use crate::log::{fatalx, log_bytes, log_debug};
 use crate::options::OptionsScope;
 use crate::window::Window as _;
+use crate::winlink::winlink_window;
 
 use crate::session::Session;
 use crate::shared::abi::*;
@@ -267,13 +268,13 @@ pub fn cmd_get_args(cmd: &cmd) -> &args {
     &cmd.args
 }
 pub unsafe fn cmd_get_group(cmd: refbox::Weak<cmd>) -> u_int {
-    cmd.get_unchecked().group
+    cmd.try_borrow().expect("live command").group
 }
 pub fn cmd_get_source(cmd: &cmd) -> (Option<&CStr>, u32) {
     (cmd.file.as_deref(), cmd.line)
 }
 pub unsafe fn cmd_get_parse_flags(cmd: refbox::Weak<cmd>) -> ::core::ffi::c_int {
-    cmd.get_unchecked().parse_flags
+    cmd.try_borrow().expect("live command").parse_flags
 }
 pub fn cmd_get_alias(name: &CStr) -> Option<CString> {
     OptionsScope::GlobalServer
@@ -470,7 +471,7 @@ pub fn cmd_list_copy(
     let owner = cmd_list_new();
 
     for command in &cmdlist.list {
-        let cmd = command.try_borrow_mut().expect("command is not borrowed");
+        let cmd = command.try_borrow().expect("command is not borrowed");
         if cmd.group != group {
             owner.borrow_mut().group = cmd_list_next_group();
             group = cmd.group;
@@ -490,12 +491,12 @@ pub(crate) fn cmd_list_print_cstring(cmdlist: &cmd_list, flags: i32) -> CString 
     let mut buf = Vec::new();
     let commands = &cmdlist.list;
     for (index, owner) in commands.iter().enumerate() {
-        let cmd = owner.try_borrow_mut().expect("command is not borrowed");
+        let cmd = owner.try_borrow().expect("command is not borrowed");
         let this = cmd_print_cstring(&cmd);
         buf.extend_from_slice(this.as_bytes());
 
         if let Some(next) = commands.get(index + 1) {
-            let next = next.try_borrow_mut().expect("command is not borrowed");
+            let next = next.try_borrow().expect("command is not borrowed");
             let grouped = flags & CMD_LIST_PRINT_NO_GROUPS == 0 && cmd.group != next.group;
             let separator: &[u8] = match (flags & CMD_LIST_PRINT_ESCAPED != 0, grouped) {
                 (false, false) => b" ; ",
@@ -509,16 +510,16 @@ pub(crate) fn cmd_list_print_cstring(cmdlist: &cmd_list, flags: i32) -> CString 
     CString::new(buf).expect("command list contains no interior NUL")
 }
 
-pub fn cmd_list_first(cmdlist: &cmd_list) -> Option<refbox::Borrow<'_, cmd>> {
+pub fn cmd_list_first(cmdlist: &cmd_list) -> Option<refbox::Ref<'_, cmd>> {
     cmdlist
         .list
         .first()
-        .map(|owner| owner.try_borrow_mut().expect("command is not borrowed"))
+        .map(|owner| owner.try_borrow().expect("command is not borrowed"))
 }
 pub fn cmd_list_all_have(cmdlist: &cmd_list) -> ::core::ffi::c_int {
     let mut flag: ::core::ffi::c_int = CMD_READONLY;
     for owner in &cmdlist.list {
-        let cmd = owner.try_borrow_mut().expect("command is not borrowed");
+        let cmd = owner.try_borrow().expect("command is not borrowed");
         if !cmd.entry.flags & flag != 0 {
             return 0 as ::core::ffi::c_int;
         }
@@ -528,7 +529,7 @@ pub fn cmd_list_all_have(cmdlist: &cmd_list) -> ::core::ffi::c_int {
 pub fn cmd_list_any_have(cmdlist: &cmd_list) -> ::core::ffi::c_int {
     let mut flag: ::core::ffi::c_int = CMD_STARTSERVER;
     for owner in &cmdlist.list {
-        let cmd = owner.try_borrow_mut().expect("command is not borrowed");
+        let cmd = owner.try_borrow().expect("command is not borrowed");
         if cmd.entry.flags & flag != 0 {
             return 1 as ::core::ffi::c_int;
         }
@@ -591,7 +592,7 @@ pub unsafe fn cmd_mouse_pane(
     if !link.is_alive() {
         return None;
     }
-    let window = link.get_unchecked().window_handle().expect("linked window");
+    let window = winlink_window(&link).expect("linked window");
     let pane = if m.wp == -1 {
         window.active_pane().upgrade()
     } else {

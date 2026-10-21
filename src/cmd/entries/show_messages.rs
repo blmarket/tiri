@@ -45,7 +45,8 @@ unsafe fn cmd_show_messages_terminals(
     mut blank: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let item = item_handle.borrow();
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let target = if args_has(args, b't') != 0 {
         tc_owner.as_ref()
@@ -77,7 +78,8 @@ unsafe fn cmd_show_messages_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let mut done: ::core::ffi::c_int = 0;
     let mut blank: ::core::ffi::c_int = 0;
     blank = 0 as ::core::ffi::c_int;

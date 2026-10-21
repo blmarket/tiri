@@ -615,7 +615,7 @@ pub unsafe fn menu_display(
             .upgrade()
             .expect("live session")
             .current_winlink();
-        let link = link_handle.try_borrow_mut().expect("current menu link");
+        let link = link_handle.try_borrow().expect("current menu link");
         link.window_owner
             .as_ref()
             .expect("current link has a window")

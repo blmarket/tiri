@@ -498,7 +498,10 @@ unsafe fn window_customize_scope_text(
         }
         6 => CString::new(format!(
             "window {}",
-            (fs.winlink_handle()).get_unchecked().idx
+            (fs.winlink_handle())
+                .try_borrow()
+                .expect("live winlink")
+                .idx
         ))
         .expect("window index contains no NUL"),
         _ => CString::new(Vec::new()).expect("empty scope text"),
@@ -2371,7 +2374,7 @@ write_cstr(out, nullable_cstr(unit))
                                                                                                         if let Some(parent_value) = parent_value {
                                                                                                             value_owner = Some(parent_value);
                                                                                                             value = value_owner.as_ref().unwrap().as_ptr().cast_mut();
-                                                                                                            let label = format_message_with(|out| write!(out, "Window value (from window {}): ", (fs.winlink_handle()).get_unchecked().idx));
+                                                                                                            let label = format_message_with(|out| write!(out, "Window value (from window {}): ", (fs.winlink_handle()).try_borrow().expect("live winlink").idx));
                                                                                                             if window_customize_write_value(ctx,
 ctx.screen.cx,
 sx,
@@ -2615,7 +2618,8 @@ unsafe fn window_customize_menu(mode: &CustomizeMode, c: &ClientRef, mut key: ke
     wme = mode_pane_owner.mode_entry();
     if !wme.is_alive()
         || !wme
-            .get_unchecked()
+            .try_borrow()
+            .expect("live mode entry")
             .data_owner
             .as_ref()
             .is_some_and(|owner| std::ptr::addr_eq(Rc::as_ptr(owner), Rc::as_ptr(mode)))
@@ -2655,7 +2659,8 @@ unsafe fn window_customize_init(
     args: Option<&args>,
 ) -> bool {
     let mode_pane_owner = wme
-        .get_unchecked()
+        .try_borrow()
+        .expect("live mode entry")
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
@@ -2685,7 +2690,7 @@ unsafe fn window_customize_init(
     }));
     let mode = owner.clone();
     let build_mode = Rc::downgrade(&owner);
-    wme.get_mut_unchecked().data_owner = Some(owner);
+    wme.try_borrow_mut().expect("live mode entry").data_owner = Some(owner);
     let draw_mode = build_mode.clone();
     let menu_mode = build_mode.clone();
     let tree_owner = mode_tree_start(
@@ -2732,7 +2737,8 @@ unsafe fn window_customize_get_screen(
     visit: &mut dyn FnMut(&mut screen),
 ) {
     let Some(mode) = wme
-        .get_unchecked()
+        .try_borrow()
+        .expect("live mode entry")
         .retained_data::<ModeCell<window_customize_modedata>>()
     else {
         return;
@@ -2745,7 +2751,8 @@ unsafe fn window_customize_get_screen(
 
 unsafe fn window_customize_free(wme: refbox::Weak<window_mode_entry>) {
     let Some(mode) = wme
-        .get_unchecked()
+        .try_borrow()
+        .expect("live mode entry")
         .retained_data::<ModeCell<window_customize_modedata>>()
     else {
         return;
@@ -2763,7 +2770,8 @@ unsafe fn window_customize_resize(
     mut sy: u_int,
 ) {
     let Some(mode) = wme
-        .get_unchecked()
+        .try_borrow()
+        .expect("live mode entry")
         .retained_data::<ModeCell<window_customize_modedata>>()
     else {
         return;
@@ -2775,7 +2783,8 @@ unsafe fn window_customize_resize(
 }
 unsafe fn window_customize_update(mut wme: refbox::Weak<window_mode_entry>) {
     let Some(mode) = wme
-        .get_unchecked()
+        .try_borrow()
+        .expect("live mode entry")
         .retained_data::<ModeCell<window_customize_modedata>>()
     else {
         return;
@@ -3224,9 +3233,15 @@ unsafe fn window_customize_edit_close_cb(
     let lookup_wp_owner = Rc::<RefCell<window_pane>>::find_by_id(ed.wp_id);
     if let Some(pane) = lookup_wp_owner.as_ref() {
         wme = pane.mode_entry();
-        if !!wme.is_alive() && std::ptr::eq(wme.get_unchecked().mode, &window_customize_mode) {
+        if !!wme.is_alive()
+            && std::ptr::eq(
+                wme.try_borrow().expect("live mode entry").mode,
+                &window_customize_mode,
+            )
+        {
             mode = wme
-                .get_unchecked()
+                .try_borrow()
+                .expect("live mode entry")
                 .retained_data::<ModeCell<window_customize_modedata>>();
             if let Some(owner) = mode.as_ref() {
                 let mut data = owner.data.borrow_mut();
@@ -4269,12 +4284,14 @@ unsafe fn window_customize_key(
     mut m: Option<&mut mouse_event>,
 ) {
     let mode_pane_owner = wme
-        .get_unchecked()
+        .try_borrow()
+        .expect("live mode entry")
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
     let mode = wme
-        .get_unchecked()
+        .try_borrow()
+        .expect("live mode entry")
         .retained_data::<ModeCell<window_customize_modedata>>()
         .expect("live mode payload");
     let (editing, tree_owner, prompt_flags) = {

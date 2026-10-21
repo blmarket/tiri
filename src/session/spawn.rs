@@ -1,6 +1,7 @@
 //! Session-owned window creation/replacement transaction. Link index, current
 //! selection, MRU removal, and group synchronization remain inside Session.
 use crate::shared::window::{WindowRef, WindowWeak};
+use crate::winlink::winlink_index;
 
 use super::*;
 use crate::events::events_fire_window;
@@ -35,7 +36,7 @@ pub(super) unsafe fn spawn_window(
             return refbox::Weak::new();
         }
         if link.is_alive() {
-            link.get_mut_unchecked().flags &= !WINLINK_ALERTFLAGS;
+            link.try_borrow_mut().expect("live winlink").flags &= !WINLINK_ALERTFLAGS;
             events_fire_winlink(c"window-unlinked", link.clone());
             winlink_stack_remove(&mut (*s).lastw, link.clone());
             winlink_remove(&(*s).windows, link.clone());
@@ -74,7 +75,10 @@ pub(super) unsafe fn spawn_window(
         if !(*s).curw.is_alive() {
             (*s).curw = sc.winlink_handle();
         }
-        sc.winlink_handle().get_mut_unchecked().session = Rc::downgrade(&session);
+        sc.winlink_handle()
+            .try_borrow_mut()
+            .expect("live winlink")
+            .session = Rc::downgrade(&session);
         window.set_latest_client(target_client.as_ref());
         winlink_set_window(sc.winlink_handle(), &window);
         drop(window);
@@ -99,7 +103,7 @@ pub(super) unsafe fn spawn_window(
         drop(window);
     }
     if sc.flags & SPAWN_DETACHED == 0 {
-        session_select(&session, sc.winlink_handle().get_unchecked().idx);
+        session_select(&session, winlink_index(&sc.winlink_handle()));
     }
     if sc.flags & SPAWN_RESPAWN == 0 {
         let window = created_window

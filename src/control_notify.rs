@@ -14,6 +14,7 @@ use crate::shared::client::ClientRef;
 use crate::shared::events::{event_payload, events_callback};
 use crate::shared::format::FORMAT_NONE;
 use crate::window::{winlink_find_by_window_id, Window, WindowPane};
+use crate::winlink::winlink_window;
 use std::{ffi::CStr, rc::Rc};
 
 #[derive(Copy, Clone)]
@@ -192,7 +193,7 @@ unsafe fn control_session_window_changed_cb(_name: &CStr, payload: &mut event_pa
     recipients(|client| {
         client.notify(|out| {
             let link = session.current_winlink();
-            let window = link.get_unchecked().window_handle().expect("linked window");
+            let window = winlink_window(&link).expect("linked window");
             write!(
                 out,
                 "%session-window-changed ${} @{}",

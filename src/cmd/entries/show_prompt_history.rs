@@ -65,15 +65,13 @@ unsafe fn cmd_show_prompt_history_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let typestr: Option<&CStr> = args_get(args, 'T' as i32 as u_char);
     let mut type_0: prompt_type = PROMPT_TYPE_COMMAND;
     let mut t: u_int = 0;
     let mut h: u_int = 0;
-    if std::ptr::eq(
-        cmd_get_entry(self_0.get_unchecked()),
-        &cmd_clear_prompt_history_entry,
-    ) {
+    if std::ptr::eq(cmd_get_entry(&cmd_ref), &cmd_clear_prompt_history_entry) {
         if let Some(typestr) = typestr {
             type_0 = prompt_type(typestr);
             if type_0 as ::core::ffi::c_uint

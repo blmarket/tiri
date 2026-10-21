@@ -11,6 +11,7 @@ use crate::format::bytes::write_cstr;
 use crate::log::{log_cstr, log_debug};
 use crate::monitor::monitor_parse_owned;
 use crate::resize::recalculate_sizes_now;
+use crate::winlink::winlink_window;
 use libc::sscanf;
 
 use crate::server_client::Client as _;
@@ -73,7 +74,8 @@ unsafe fn cmd_refresh_client_control_client_size(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut size: *const ::core::ffi::c_char =
@@ -201,7 +203,8 @@ unsafe fn cmd_refresh_client_exec(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
-    let args = cmd_get_args(self_0.get_unchecked());
+    let cmd_ref = self_0.try_borrow().expect("live command");
+    let args = cmd_get_args(&cmd_ref);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut adjust: u_int = 0;
@@ -232,15 +235,14 @@ unsafe fn cmd_refresh_client_exec(
         if args_has(args, b'c') != 0 {
             client.reset_pan(None);
         } else {
-            let window = client
-                .attached_session()
-                .upgrade()
-                .expect("live session")
-                .current_winlink()
-                .get_unchecked()
-                .window_handle()
-                .cloned()
-                .expect("current window");
+            let window = winlink_window(
+                &client
+                    .attached_session()
+                    .upgrade()
+                    .expect("live session")
+                    .current_winlink(),
+            )
+            .expect("current window");
             let direction = if args_has(args, b'L') != 0 {
                 Direction::Left
             } else if args_has(args, b'R') != 0 {
