@@ -523,13 +523,13 @@ pub(super) unsafe fn spawn_pane(
                     _exit(1 as ::core::ffi::c_int);
                 }
                 proc_clear_signals(server_proc, 1 as ::core::ffi::c_int);
+                log_close();
                 tiri_rt::unix::close_from(STDERR_FILENO + 1 as ::core::ffi::c_int);
                 sigprocmask(
                     SIG_SETMASK,
                     &raw mut oldset,
                     ::core::ptr::null_mut::<sigset_t>(),
                 );
-                log_close();
                 environ_push(child);
                 drop(child_owner.take());
                 if (*new_wp).argv.len() > 1 {
