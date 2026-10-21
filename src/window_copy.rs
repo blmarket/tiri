@@ -235,7 +235,7 @@ fn window_copy_separators(data: &window_copy_mode_data) -> Option<&CStr> {
     data.separators.as_deref()
 }
 
-unsafe fn window_copy_snapshot_separators(scope: &OptionsScope) -> Option<CString> {
+fn window_copy_snapshot_separators(scope: &OptionsScope) -> Option<CString> {
     scope.with_local(|oo| crate::options::options_get_string_optional(oo, c"word-separators"))
 }
 

@@ -276,7 +276,7 @@ pub trait WindowPane {
     unsafe fn window_size(&self) -> (u32, u32);
     unsafe fn schedule_offset_update(&self);
     unsafe fn output_suppressed(&self) -> bool;
-    unsafe fn alternate_screen_allowed(&self) -> bool;
+    fn alternate_screen_allowed(&self) -> bool;
     unsafe fn alternate_screen_changed(&self, entered: bool);
     /// Draw with screen ownership temporarily removed from pane storage, from
     /// the status line when `status`, else the displayed screen.
@@ -672,7 +672,7 @@ impl WindowPane for Rc<RefCell<window_pane>> {
     unsafe fn output_suppressed(&self) -> bool {
         (*self.as_ptr()).flags & (PANE_REDRAW | PANE_DROP) != 0
     }
-    unsafe fn alternate_screen_allowed(&self) -> bool {
+    fn alternate_screen_allowed(&self) -> bool {
         options_get_number(&self.borrow_options_mut(), c"alternate-screen") != 0
     }
     unsafe fn alternate_screen_changed(&self, entered: bool) {

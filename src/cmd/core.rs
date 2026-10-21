@@ -275,7 +275,7 @@ pub fn cmd_get_source(cmd: &cmd) -> (Option<&CStr>, u32) {
 pub unsafe fn cmd_get_parse_flags(cmd: refbox::Weak<cmd>) -> ::core::ffi::c_int {
     cmd.get_unchecked().parse_flags
 }
-pub unsafe fn cmd_get_alias(name: &CStr) -> Option<CString> {
+pub fn cmd_get_alias(name: &CStr) -> Option<CString> {
     OptionsScope::GlobalServer
         .with_entry(c"command-alias", |entry| {
             entry

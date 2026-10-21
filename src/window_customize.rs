@@ -378,7 +378,7 @@ const CUSTOMIZE_SESSION_ENVIRONMENT: u_int = 7;
 
 /// Resolve `name` and read its entry. The entry is not returned, as callers
 /// go on to borrow or modify the same table.
-unsafe fn window_customize_find_option<R>(
+fn window_customize_find_option<R>(
     scope: &OptionsScope,
     name: &CStr,
     read: impl FnOnce(&options_entry) -> R,
@@ -1130,7 +1130,7 @@ unsafe fn window_customize_build_option(
         data, &top, scope, owner, name_owner, ft,
     ))
 }
-unsafe fn window_customize_find_user_options(scope: &OptionsScope, list: &mut Vec<CString>) {
+fn window_customize_find_user_options(scope: &OptionsScope, list: &mut Vec<CString>) {
     let names = scope.with_local(|table| {
         crate::options::options_iter(table)
             .map(|(name, _)| name.to_owned())

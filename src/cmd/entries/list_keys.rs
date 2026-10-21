@@ -55,7 +55,7 @@ pub static cmd_list_keys_entry: cmd_entry = {
         exec: Some(cmd_list_keys_exec),
     }
 };
-unsafe fn cmd_list_keys_get_prefix(args: &args) -> CString {
+fn cmd_list_keys_get_prefix(args: &args) -> CString {
     let mut prefix: key_code = 0;
     if args_has(args, 'P' as i32 as u_char) != 0 {
         return args_get(args, 'P' as i32 as u_char)

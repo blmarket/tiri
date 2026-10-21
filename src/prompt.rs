@@ -583,7 +583,7 @@ unsafe fn prompt_layout(
     pl.cursor_x = pl.cursor_x.wrapping_add(pl.content_x);
     (pl, expanded)
 }
-unsafe fn prompt_mouse_complete(
+fn prompt_mouse_complete(
     pr: &mut prompt,
     mut x: u_int,
     mut cx: u_int,
@@ -1076,10 +1076,7 @@ fn prompt_paste(pr: &mut prompt) -> ::core::ffi::c_int {
     }
     1
 }
-unsafe fn prompt_replace_complete(
-    pr: &mut prompt,
-    replacement: Option<&CStr>,
-) -> ::core::ffi::c_int {
+fn prompt_replace_complete(pr: &mut prompt, replacement: Option<&CStr>) -> ::core::ffi::c_int {
     let mut word = [0_u8; 64];
     let size = utf8_strlen(&pr.buffer);
     let index = pr.index.saturating_sub(1);
@@ -1225,7 +1222,7 @@ fn prompt_done(
 ) -> PromptCallbackResult {
     prompt_fire_callback(pr, text, PROMPT_KEY_CLOSE, Some(redraw))
 }
-unsafe fn prompt_done_with_history(
+fn prompt_done_with_history(
     pr: &refbox::Weak<crate::shared::prompt::prompt>,
     redraw: &mut ::core::ffi::c_int,
 ) -> prompt_key_result {
@@ -1271,7 +1268,7 @@ enum PromptEditAction {
 
 /// Edit cells without invoking an input callback. The caller releases this
 /// borrow before dispatching actions which may close or replace the prompt.
-unsafe fn prompt_edit_key(pr: &mut prompt, key: key_code) -> PromptEditAction {
+fn prompt_edit_key(pr: &mut prompt, key: key_code) -> PromptEditAction {
     let size = utf8_strlen(&pr.buffer);
     match key {
         k if k == KEYC_LEFT || k == KEYC_CTRL | b'b' as key_code => {
@@ -1438,7 +1435,7 @@ fn prompt_append_key(pr: &mut prompt, key: key_code) -> bool {
     true
 }
 
-pub unsafe fn prompt_key(
+pub fn prompt_key(
     pr: &refbox::Weak<crate::shared::prompt::prompt>,
     mut key: key_code,
     redraw: &mut ::core::ffi::c_int,
@@ -1567,7 +1564,7 @@ fn prompt_complete_add(list: &mut Vec<CString>, s: &CStr) {
         list.push(s.to_owned());
     }
 }
-unsafe fn prompt_complete_commands(s: &CStr) -> Vec<CString> {
+fn prompt_complete_commands(s: &CStr) -> Vec<CString> {
     let mut list = Vec::new();
     let prefix = s.to_bytes();
     for &entry in &cmd_table {
@@ -1627,7 +1624,7 @@ fn prompt_store_complete(pr: &mut prompt, list: Vec<CString>) {
     }
     pr.completion.display = Some(CString::new(display).expect("names contain no NUL"));
 }
-unsafe fn prompt_complete(pr: &mut prompt, word: &CStr, mut offset: u_int) -> Option<CString> {
+fn prompt_complete(pr: &mut prompt, word: &CStr, mut offset: u_int) -> Option<CString> {
     let mut list: Vec<CString>;
     let mut i: u_int = 0;
     if pr.type_0 as ::core::ffi::c_uint
@@ -1833,32 +1830,30 @@ mod prompt_buffer_tests {
         let mut pr = make_prompt(&input, 7, None);
         pr.buffer.push(cell(b'!'));
 
-        unsafe {
-            assert_eq!(prompt_replace_complete(&mut pr, Some(&replacement)), 1);
-            assert_eq!(utf8_tocstr_cstring(&pr.buffer).as_bytes(), b"cmd \xff tail");
-            assert_eq!(pr.index, 5);
-            assert_eq!(pr.buffer.len(), utf8_strlen(&pr.buffer) + 1);
+        assert_eq!(prompt_replace_complete(&mut pr, Some(&replacement)), 1);
+        assert_eq!(utf8_tocstr_cstring(&pr.buffer).as_bytes(), b"cmd \xff tail");
+        assert_eq!(pr.index, 5);
+        assert_eq!(pr.buffer.len(), utf8_strlen(&pr.buffer) + 1);
 
-            for (input, index, replaced, expected, next) in [
-                (c"", 0, 1, c"new ", 4),
-                (c"cmd old tail", 0, 1, c"new  old tail", 4),
-                (c"cmd old tail", 4, 0, c"cmd old tail", 4),
-                (c"cmd old tail", 5, 1, c"cmd new  tail", 8),
-                (c"cmd old tail", 12, 1, c"cmd old new ", 12),
-                (c"   ", 0, 0, c"   ", 0),
-                (c"   ", 3, 0, c"   ", 3),
-                (c"é漢 old", 1, 1, c"new  old", 4),
-            ] {
-                let mut pr = make_prompt(input, index, None);
-                assert_eq!(prompt_replace_complete(&mut pr, Some(c"new ")), replaced);
-                assert_eq!(utf8_tocstr_cstring(&pr.buffer).as_c_str(), expected);
-                assert_eq!(pr.index, next);
-            }
-            let long = CString::new(vec![b'x'; 64]).unwrap();
-            let mut pr = make_prompt(&long, 64, None);
-            assert_eq!(prompt_replace_complete(&mut pr, Some(c"new ")), 1);
-            assert_eq!(utf8_tocstr_cstring(&pr.buffer).as_c_str(), c"new ");
+        for (input, index, replaced, expected, next) in [
+            (c"", 0, 1, c"new ", 4),
+            (c"cmd old tail", 0, 1, c"new  old tail", 4),
+            (c"cmd old tail", 4, 0, c"cmd old tail", 4),
+            (c"cmd old tail", 5, 1, c"cmd new  tail", 8),
+            (c"cmd old tail", 12, 1, c"cmd old new ", 12),
+            (c"   ", 0, 0, c"   ", 0),
+            (c"   ", 3, 0, c"   ", 3),
+            (c"é漢 old", 1, 1, c"new  old", 4),
+        ] {
+            let mut pr = make_prompt(input, index, None);
+            assert_eq!(prompt_replace_complete(&mut pr, Some(c"new ")), replaced);
+            assert_eq!(utf8_tocstr_cstring(&pr.buffer).as_c_str(), expected);
+            assert_eq!(pr.index, next);
         }
+        let long = CString::new(vec![b'x'; 64]).unwrap();
+        let mut pr = make_prompt(&long, 64, None);
+        assert_eq!(prompt_replace_complete(&mut pr, Some(c"new ")), 1);
+        assert_eq!(utf8_tocstr_cstring(&pr.buffer).as_c_str(), c"new ");
     }
 
     #[test]
@@ -1877,16 +1872,14 @@ mod prompt_buffer_tests {
             (b'S' as key_code, c"", 0, false),
         ] {
             let mut redraw = 0;
-            unsafe {
-                assert_eq!(
-                    prompt_key(&pr.downgrade(), key, &mut redraw),
-                    PROMPT_KEY_HANDLED
-                );
-                assert_eq!(
-                    utf8_tocstr_cstring(&pr.try_borrow_mut().unwrap().buffer).as_c_str(),
-                    expected
-                );
-            }
+            assert_eq!(
+                prompt_key(&pr.downgrade(), key, &mut redraw),
+                PROMPT_KEY_HANDLED
+            );
+            assert_eq!(
+                utf8_tocstr_cstring(&pr.try_borrow_mut().unwrap().buffer).as_c_str(),
+                expected
+            );
             assert_eq!(redraw, 1);
             assert_eq!(pr.try_borrow_mut().unwrap().index, index);
             assert_eq!(
@@ -1929,16 +1922,14 @@ mod prompt_buffer_tests {
         for (index, expected, next) in [(0, c"é漢Z", 0), (1, c"漢éZ", 2), (3, c"éZ漢", 3)] {
             let pr = make_prompt_owner(c"é漢Z", index);
             let mut redraw = 0;
-            unsafe {
-                assert_eq!(
-                    prompt_key(&pr.downgrade(), KEYC_CTRL | b't' as key_code, &mut redraw),
-                    PROMPT_KEY_HANDLED
-                );
-                assert_eq!(
-                    utf8_tocstr_cstring(&pr.try_borrow_mut().unwrap().buffer).as_c_str(),
-                    expected
-                );
-            }
+            assert_eq!(
+                prompt_key(&pr.downgrade(), KEYC_CTRL | b't' as key_code, &mut redraw),
+                PROMPT_KEY_HANDLED
+            );
+            assert_eq!(
+                utf8_tocstr_cstring(&pr.try_borrow_mut().unwrap().buffer).as_c_str(),
+                expected
+            );
             assert_eq!(pr.try_borrow_mut().unwrap().index, next);
             assert_eq!(pr.try_borrow_mut().unwrap().buffer.len(), 4);
             assert_eq!(pr.try_borrow_mut().unwrap().buffer[3].size, 0);
@@ -1962,12 +1953,10 @@ mod prompt_buffer_tests {
             let pr = make_prompt_owner(c"ab,é漢 Z", index);
             pr.try_borrow_mut().unwrap().word_separators = c",".to_owned();
             let mut redraw = 0;
-            unsafe {
-                assert_eq!(
-                    prompt_key(&pr.downgrade(), key, &mut redraw),
-                    PROMPT_KEY_HANDLED
-                );
-            }
+            assert_eq!(
+                prompt_key(&pr.downgrade(), key, &mut redraw),
+                PROMPT_KEY_HANDLED
+            );
             assert_eq!(
                 utf8_tocstr_cstring(&pr.try_borrow_mut().unwrap().buffer).as_c_str(),
                 expected
@@ -1992,9 +1981,7 @@ mod prompt_buffer_tests {
                     pr.try_borrow_mut().unwrap().copied.as_ref().unwrap().len(),
                     copied.to_str().unwrap().chars().count() + 1
                 );
-                unsafe {
-                    prompt_key(&pr.downgrade(), KEYC_CTRL | b'y' as key_code, &mut redraw);
-                }
+                prompt_key(&pr.downgrade(), KEYC_CTRL | b'y' as key_code, &mut redraw);
                 assert_eq!(
                     utf8_tocstr_cstring(&pr.try_borrow_mut().unwrap().buffer).as_c_str(),
                     c"ab,é漢 Z"
@@ -2038,12 +2025,10 @@ mod prompt_buffer_tests {
             ),
         ] {
             let mut redraw = 0;
-            unsafe {
-                assert_eq!(
-                    prompt_key(&pr.downgrade(), key, &mut redraw),
-                    PROMPT_KEY_HANDLED
-                );
-            }
+            assert_eq!(
+                prompt_key(&pr.downgrade(), key, &mut redraw),
+                PROMPT_KEY_HANDLED
+            );
             assert_eq!(
                 utf8_tocstr_cstring(&pr.try_borrow_mut().unwrap().buffer).as_c_str(),
                 expected
@@ -2128,28 +2113,26 @@ mod prompt_buffer_tests {
                 let free_events = events.clone();
                 let pr = make_prompt_owner(c"", 0);
                 let weak = pr.downgrade();
-                unsafe {
-                    pr.try_borrow_mut().unwrap().flags = flags;
-                    let free_prompt = weak.clone();
-                    pr.try_borrow_mut().unwrap().freecb = Some(Box::new(move || {
-                        let pr = free_prompt.clone();
-                        free_events.borrow_mut().push("freed");
-                        prompt_free(&pr);
-                    }));
-                    let input_prompt = weak.clone();
-                    pr.try_borrow_mut().unwrap().inputcb = Some(Box::new(move |input, result| {
-                        let pr = input_prompt.clone();
-                        assert_eq!(input, text);
-                        assert_eq!(result, kind);
-                        callback_events.borrow_mut().push("start");
-                        prompt_free(&pr);
-                        assert_eq!(&*callback_events.borrow(), &["start"]);
-                        assert_ne!(pr.try_borrow_mut().unwrap().flags & PROMPT_FREE_PENDING, 0);
-                        callback_events.borrow_mut().push("end");
-                        callback_result
-                    }));
-                    assert_eq!(prompt_key(&pr.downgrade(), key, &mut 0), expected);
-                }
+                pr.try_borrow_mut().unwrap().flags = flags;
+                let free_prompt = weak.clone();
+                pr.try_borrow_mut().unwrap().freecb = Some(Box::new(move || {
+                    let pr = free_prompt.clone();
+                    free_events.borrow_mut().push("freed");
+                    prompt_free(&pr);
+                }));
+                let input_prompt = weak.clone();
+                pr.try_borrow_mut().unwrap().inputcb = Some(Box::new(move |input, result| {
+                    let pr = input_prompt.clone();
+                    assert_eq!(input, text);
+                    assert_eq!(result, kind);
+                    callback_events.borrow_mut().push("start");
+                    prompt_free(&pr);
+                    assert_eq!(&*callback_events.borrow(), &["start"]);
+                    assert_ne!(pr.try_borrow_mut().unwrap().flags & PROMPT_FREE_PENDING, 0);
+                    callback_events.borrow_mut().push("end");
+                    callback_result
+                }));
+                assert_eq!(prompt_key(&pr.downgrade(), key, &mut 0), expected);
                 assert_ne!(pr.try_borrow_mut().unwrap().flags & PROMPT_FREEING, 0);
                 assert!(pr.try_borrow_mut().unwrap().inputcb.is_none());
                 drop(pr);
@@ -2168,44 +2151,42 @@ mod prompt_buffer_tests {
             let callback_events = events.clone();
             let pr = make_prompt_owner(c"", 0);
             let weak = pr.downgrade();
-            unsafe {
-                pr.try_borrow_mut().unwrap().flags = PROMPT_SINGLE | PROMPT_INCREMENTAL;
-                let input_prompt = weak.clone();
-                pr.try_borrow_mut().unwrap().inputcb = Some(Box::new(move |input, kind| {
-                    let pr = input_prompt.clone();
-                    callback_events
-                        .borrow_mut()
-                        .push((input.unwrap().to_owned(), kind));
-                    if kind == PROMPT_KEY_CLOSE {
-                        pr.try_borrow_mut().unwrap().buffer = utf8_fromcstr_vec(c"é漢");
-                        pr.try_borrow_mut().unwrap().index = 2;
-                    }
-                    callback_result
-                }));
-                let mut redraw = 0;
-                let expected = if callback_result == PROMPT_CLOSE {
-                    PROMPT_KEY_CLOSE
-                } else {
-                    PROMPT_KEY_HANDLED
-                };
-                assert_eq!(
-                    prompt_key(&pr.downgrade(), b'a' as key_code, &mut redraw),
-                    expected
-                );
-                assert_eq!(redraw, 1);
-                assert_eq!(
-                    utf8_tocstr_cstring(&pr.try_borrow_mut().unwrap().buffer).as_c_str(),
-                    c"é漢"
-                );
-                assert_eq!(
-                    &*events.borrow(),
-                    &[
-                        (c"a".to_owned(), PROMPT_KEY_CLOSE),
-                        (c"=é漢".to_owned(), PROMPT_KEY_HANDLED)
-                    ]
-                );
-                prompt_free(&pr.downgrade());
-            }
+            pr.try_borrow_mut().unwrap().flags = PROMPT_SINGLE | PROMPT_INCREMENTAL;
+            let input_prompt = weak.clone();
+            pr.try_borrow_mut().unwrap().inputcb = Some(Box::new(move |input, kind| {
+                let pr = input_prompt.clone();
+                callback_events
+                    .borrow_mut()
+                    .push((input.unwrap().to_owned(), kind));
+                if kind == PROMPT_KEY_CLOSE {
+                    pr.try_borrow_mut().unwrap().buffer = utf8_fromcstr_vec(c"é漢");
+                    pr.try_borrow_mut().unwrap().index = 2;
+                }
+                callback_result
+            }));
+            let mut redraw = 0;
+            let expected = if callback_result == PROMPT_CLOSE {
+                PROMPT_KEY_CLOSE
+            } else {
+                PROMPT_KEY_HANDLED
+            };
+            assert_eq!(
+                prompt_key(&pr.downgrade(), b'a' as key_code, &mut redraw),
+                expected
+            );
+            assert_eq!(redraw, 1);
+            assert_eq!(
+                utf8_tocstr_cstring(&pr.try_borrow_mut().unwrap().buffer).as_c_str(),
+                c"é漢"
+            );
+            assert_eq!(
+                &*events.borrow(),
+                &[
+                    (c"a".to_owned(), PROMPT_KEY_CLOSE),
+                    (c"=é漢".to_owned(), PROMPT_KEY_HANDLED)
+                ]
+            );
+            prompt_free(&pr.downgrade());
             drop(pr);
             assert!(!weak.is_alive());
             assert_eq!(Rc::strong_count(&events), 1);
@@ -2253,13 +2234,10 @@ mod prompt_buffer_tests {
                 free_events.borrow_mut().push("cleanup");
             }));
             *slot.borrow_mut() = Some(prompt);
-            assert_eq!(unsafe { prompt_key(&observer, key, &mut 0) }, expected);
+            assert_eq!(prompt_key(&observer, key, &mut 0), expected);
             assert!(!observer.is_alive());
             assert_eq!(&*events.borrow(), &["input", "returned", "cleanup"]);
-            assert_eq!(
-                unsafe { prompt_key(&observer, key, &mut 0) },
-                PROMPT_KEY_CLOSE
-            );
+            assert_eq!(prompt_key(&observer, key, &mut 0), PROMPT_KEY_CLOSE);
             assert_eq!(Rc::strong_count(&events), 1);
         }
     }
@@ -2316,16 +2294,14 @@ mod prompt_buffer_tests {
             free_events.borrow_mut().push("freed");
         }));
         *owner.borrow_mut() = Some(pr);
-        unsafe {
-            assert_eq!(
-                prompt_key(&weak, b'x' as key_code, &mut 0),
-                PROMPT_KEY_CLOSE
-            );
-            assert_eq!(
-                prompt_key(&weak, b'y' as key_code, &mut 0),
-                PROMPT_KEY_CLOSE
-            );
-        }
+        assert_eq!(
+            prompt_key(&weak, b'x' as key_code, &mut 0),
+            PROMPT_KEY_CLOSE
+        );
+        assert_eq!(
+            prompt_key(&weak, b'y' as key_code, &mut 0),
+            PROMPT_KEY_CLOSE
+        );
         assert_eq!(&*events.borrow(), &["replacing", "freed"]);
         let replacement = owner.borrow_mut().take().unwrap();
         assert!(!weak.is(&replacement));

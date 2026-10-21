@@ -43,10 +43,7 @@ impl OptionsArrayKey {
     }
 }
 
-unsafe fn options_parent_table_entry(
-    oo: &options,
-    name: &CStr,
-) -> Option<&'static options_table_entry> {
+fn options_parent_table_entry(oo: &options, name: &CStr) -> Option<&'static options_table_entry> {
     let parent = oo.parent.clone().unwrap_or_else(|| {
         fatalx(|out| {
             out.write_all(b"no parent options for ")?;
@@ -126,7 +123,7 @@ pub fn options_local_entry<'a>(
 /// Read an entry synchronously, copying the result before an inherited table's
 /// guard is returned. The visitor must not reenter models or return observers.
 /// Prefer OptionsScope::resolve/with_entry for work spanning callbacks.
-pub unsafe fn options_read_entry<R>(
+pub fn options_read_entry<R>(
     table: &options,
     name: &CStr,
     read: impl FnOnce(&options_entry) -> R,
@@ -487,11 +484,11 @@ pub fn options_match_owned(s: &CStr) -> Result<OwnedOptionName, OptionMatchFailu
     }
 }
 /// Copy an initialized string; no pointer into an inherited model escapes.
-pub unsafe fn options_get_string(oo: &options, name: &CStr) -> CString {
+pub fn options_get_string(oo: &options, name: &CStr) -> CString {
     options_get_string_optional(oo, name).expect("initialized string option")
 }
 /// Preserve the Empty value used while publishing a new option.
-pub unsafe fn options_get_string_optional(oo: &options, name: &CStr) -> Option<CString> {
+pub fn options_get_string_optional(oo: &options, name: &CStr) -> Option<CString> {
     options_read_entry(oo, name, |entry| {
         if entry
             .tableentry
@@ -515,7 +512,7 @@ pub unsafe fn options_get_string_optional(oo: &options, name: &CStr) -> Option<C
 /// Read a numeric option without borrowing the option tree mutably.
 ///
 /// Parent models are accessed through their trait and only copied values escape.
-pub unsafe fn options_get_number(table: &options, name: &CStr) -> ::core::ffi::c_longlong {
+pub fn options_get_number(table: &options, name: &CStr) -> ::core::ffi::c_longlong {
     options_read_entry(table, name, |entry| {
         if !entry.tableentry.is_some_and(|table| {
             matches!(
@@ -543,7 +540,7 @@ pub unsafe fn options_get_number(table: &options, name: &CStr) -> ::core::ffi::c
     })
 }
 
-pub unsafe fn options_get_command(oo: &options) -> std::rc::Rc<std::cell::RefCell<cmd_list>> {
+pub fn options_get_command(oo: &options) -> std::rc::Rc<std::cell::RefCell<cmd_list>> {
     let name = c"default-client-command";
     options_read_entry(oo, name, |entry| {
         if !entry

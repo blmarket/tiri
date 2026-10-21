@@ -3641,7 +3641,7 @@ pub fn colour_palette_set(
     palette[n as usize] = c;
     1
 }
-pub unsafe fn colour_palette_from_option(p: Option<&mut colour_palette>, scope: &OptionsScope) {
+pub fn colour_palette_from_option(p: Option<&mut colour_palette>, scope: &OptionsScope) {
     let Some(p) = p else {
         return;
     };

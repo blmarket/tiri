@@ -846,7 +846,7 @@ fn server_client_key_table_activity_diff(c: &client) -> uint64_t {
         .as_millis()
         .min(u64::MAX as u128) as u64
 }
-unsafe fn server_client_get_key_table(c: &client) -> std::ffi::CString {
+fn server_client_get_key_table(c: &client) -> std::ffi::CString {
     let Some(session) = c.session_handle() else {
         return c"root".to_owned();
     };
@@ -1991,7 +1991,7 @@ unsafe fn server_client_update_latest(c_owner: &ClientRef) {
     events_fire_client(c"client-active", c_owner.clone());
 }
 
-unsafe fn server_client_repeat_time(c: &client, bd: &KeyBindingCommand) -> u_int {
+fn server_client_repeat_time(c: &client, bd: &KeyBindingCommand) -> u_int {
     let mut s: Option<SessionRef> = (*c).session_handle();
     let mut repeat: u_int = 0;
     let mut initial: u_int = 0;

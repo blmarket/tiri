@@ -142,8 +142,8 @@ pub trait Window {
     /// performed by the caller after this borrow ends.
     unsafe fn refresh_scrollbars(&self);
     /// The window's pane-border-status: off, top or bottom.
-    unsafe fn pane_border_status(&self) -> i32;
-    unsafe fn pane_border_lines(&self) -> pane_lines;
+    fn pane_border_status(&self) -> i32;
+    fn pane_border_lines(&self) -> pane_lines;
     unsafe fn pane_at_index(&self, index: u32) -> Weak<RefCell<window_pane>>;
     unsafe fn pane_index(&self, pane: &Weak<RefCell<window_pane>>) -> Option<u32>;
     unsafe fn pane_history_index(&self, pane: &Weak<RefCell<window_pane>>) -> Option<u32>;
@@ -596,10 +596,10 @@ impl Window for WindowRef {
         (*self.as_ptr()).sb = sb;
         (*self.as_ptr()).sb_pos = sb_pos;
     }
-    unsafe fn pane_border_status(&self) -> i32 {
+    fn pane_border_status(&self) -> i32 {
         window_get_pane_status(self)
     }
-    unsafe fn pane_border_lines(&self) -> pane_lines {
+    fn pane_border_lines(&self) -> pane_lines {
         window_get_pane_lines(self)
     }
     unsafe fn pane_at_index(&self, index: u32) -> Weak<RefCell<window_pane>> {

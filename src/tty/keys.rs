@@ -1264,7 +1264,7 @@ fn tty_keys_add1(tree: &mut Option<Box<tty_key>>, bytes: &[u8], key: key_code) {
     }
 }
 
-pub unsafe fn tty_keys_build(tty: &mut tty) {
+pub fn tty_keys_build(tty: &mut tty) {
     let mut i: u_int = 0;
     let mut j: u_int = 0;
     let mut key: key_code = 0;

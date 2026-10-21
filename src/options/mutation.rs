@@ -79,7 +79,7 @@ impl OptionsScope {
     }
 
     /// Publish an empty local array before parsing its first supplied item.
-    pub unsafe fn ensure_array(&self, definition: &'static options_table_entry) {
+    pub fn ensure_array(&self, definition: &'static options_table_entry) {
         assert!(definition.flags & OPTIONS_TABLE_IS_ARRAY != 0);
         let name = definition.name.expect("named array definition");
         if self.with_entry(name, |_| ()).is_none() {
@@ -89,7 +89,7 @@ impl OptionsScope {
         }
     }
 
-    pub unsafe fn clear_array(&self, name: &CStr) {
+    pub fn clear_array(&self, name: &CStr) {
         self.with_entry(name, |entry| {
             entry.value.array_mut().map(options_array::clear)
         });
@@ -235,11 +235,11 @@ impl OptionsScope {
 
     /// Leave the emptied entry published while its monitor is destroyed, then
     /// unlink that same identity. A reentrant replacement belongs to its caller.
-    unsafe fn remove_entry(&self, name: &CStr) -> bool {
+    fn remove_entry(&self, name: &CStr) -> bool {
         self.remove_entry_with_cleanup(name, drop)
     }
 
-    unsafe fn remove_entry_with_cleanup(
+    fn remove_entry_with_cleanup(
         &self,
         name: &CStr,
         cleanup: impl FnOnce(Option<Box<crate::hooks::hooks_monitor>>),

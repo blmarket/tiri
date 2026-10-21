@@ -211,7 +211,7 @@ unsafe fn show_options_scope_error(
 
 /// Capture the defining scope once. A later local override must not redirect an
 /// inherited array scan to a different owner after a formatting callback.
-unsafe fn show_options_resolve(
+fn show_options_resolve(
     scope: &OptionsScope,
     name: &CStr,
     include_parent: bool,

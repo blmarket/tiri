@@ -1985,7 +1985,7 @@ unsafe fn window_pane_get_pane_status(
     window.pane_border_status()
 }
 
-unsafe fn window_pane_get_pane_lines(wp: &window_pane) -> pane_lines {
+fn window_pane_get_pane_lines(wp: &window_pane) -> pane_lines {
     wp.window_handle().expect("pane window").pane_border_lines()
 }
 

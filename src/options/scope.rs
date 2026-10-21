@@ -48,8 +48,7 @@ impl OptionsScope {
     /// Run `visit` on this table, retaining its model until it returns.
     /// Borrowing the same table again inside `visit` panics, so `visit` must
     /// not reenter callbacks, format/parse commands or monitor release.
-    /// Unsafe only for model access: no `&mut` to the owning model may be live.
-    pub unsafe fn with_local<R>(&self, visit: impl FnOnce(&mut options) -> R) -> R {
+    pub fn with_local<R>(&self, visit: impl FnOnce(&mut options) -> R) -> R {
         match self {
             Self::GlobalServer => with_global_options(|oo| visit(oo)),
             Self::GlobalSession => with_global_s_options(|oo| visit(oo)),
@@ -72,13 +71,13 @@ impl OptionsScope {
         }
     }
 
-    pub unsafe fn parent(&self) -> Option<Self> {
+    pub fn parent(&self) -> Option<Self> {
         self.with_local(|table| table.parent.clone())
     }
 
     /// Resolve once, then retain the resulting identity across callbacks. A new
     /// override or changed parent must not redirect an in-flight entry operation.
-    pub unsafe fn resolve(&self, name: &CStr, local_only: bool) -> Option<Self> {
+    pub fn resolve(&self, name: &CStr, local_only: bool) -> Option<Self> {
         let mut scope = self.clone();
         loop {
             if scope.with_entry(name, |_| ()).is_some() {
@@ -93,7 +92,7 @@ impl OptionsScope {
 
     /// Run `visit` on a local entry, without resolving inheritance again. The
     /// same contract as `with_local` applies.
-    pub unsafe fn with_entry<R>(
+    pub fn with_entry<R>(
         &self,
         name: &CStr,
         visit: impl FnOnce(&mut options_entry) -> R,

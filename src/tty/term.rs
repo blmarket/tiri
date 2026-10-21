@@ -1189,7 +1189,7 @@ pub(super) unsafe fn tty_term_apply(
 }
 /// Copy out a global array option's string values; the loops that use them
 /// apply terminal changes which may read options again.
-unsafe fn global_array_strings(name: &CStr) -> Vec<CString> {
+fn global_array_strings(name: &CStr) -> Vec<CString> {
     OptionsScope::GlobalServer
         .with_entry(name, |entry| {
             entry

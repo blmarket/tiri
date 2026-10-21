@@ -35,7 +35,7 @@ unsafe fn prompt_find_history_file() -> Option<CString> {
     path.extend_from_slice(&history_file.as_bytes()[1..]);
     Some(CString::new(path).expect("C string paths contain no interior NUL"))
 }
-unsafe fn prompt_add_typed_history(line: &CStr) {
+fn prompt_add_typed_history(line: &CStr) {
     let bytes = line.to_bytes();
     if let Some(colon) = bytes.iter().position(|&byte| byte == b':') {
         let prefix = &bytes[..colon];
@@ -151,7 +151,7 @@ pub fn prompt_down_history(
     })
 }
 
-pub unsafe fn prompt_add_history(line: &CStr, kind: prompt_type) {
+pub fn prompt_add_history(line: &CStr, kind: prompt_type) {
     if kind >= PROMPT_NTYPES as prompt_type {
         return;
     }

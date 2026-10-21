@@ -41,9 +41,8 @@ pub fn utf8_update_width_cache() {
         .lock()
         .expect("UTF-8 width cache poisoned")
         .reset_defaults();
-    // SAFETY: the visitor only copies strings out and does not reenter options.
-    let values = unsafe {
-        OptionsScope::GlobalServer.with_entry(c"codepoint-widths", |entry| {
+    let values = OptionsScope::GlobalServer
+        .with_entry(c"codepoint-widths", |entry| {
             entry
                 .value
                 .array()
@@ -52,8 +51,7 @@ pub fn utf8_update_width_cache() {
                 .map(|item| item.value.string_ptr().expect("width override").to_owned())
                 .collect::<Vec<_>>()
         })
-    }
-    .expect("codepoint-widths option");
+        .expect("codepoint-widths option");
     for value in values {
         utf8_add_to_width_cache(&value);
     }

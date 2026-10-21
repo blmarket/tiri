@@ -804,10 +804,10 @@ fn window_pane_first(w: Option<&window>) -> Option<Rc<std::cell::RefCell<window_
     Some(w?.panes.first()?.upgrade().expect("live pane in ordering"))
 }
 
-unsafe fn window_get_pane_status(w: &WindowRef) -> ::core::ffi::c_int {
+fn window_get_pane_status(w: &WindowRef) -> ::core::ffi::c_int {
     options_get_number(&w.borrow_options_mut(), c"pane-border-status") as ::core::ffi::c_int
 }
 
-unsafe fn window_get_pane_lines(w: &WindowRef) -> pane_lines {
+fn window_get_pane_lines(w: &WindowRef) -> pane_lines {
     options_get_number(&w.borrow_options_mut(), c"pane-border-lines") as pane_lines
 }

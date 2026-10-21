@@ -1555,7 +1555,7 @@ unsafe fn format_cb_pane_search_string(ft: &mut format_tree) -> Option<CString> 
     None
 }
 
-unsafe fn format_cb_pane_synchronized(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_synchronized(ft: &mut format_tree) -> Option<CString> {
     let format_pane_owner = ft.wp.upgrade();
     if let Some(format_pane) = format_pane_owner.as_ref() {
         if options_get_number(&format_pane.borrow_options_mut(), c"synchronize-panes") != 0 {

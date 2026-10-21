@@ -381,7 +381,7 @@ impl Drop for hooks_monitor {
         }
     }
 }
-pub unsafe fn hooks_monitor_remove(scope: &OptionsScope, name: &CStr) {
+pub fn hooks_monitor_remove(scope: &OptionsScope, name: &CStr) {
     let old = scope
         .with_entry(name, |entry| entry.monitor_data.take())
         .flatten();

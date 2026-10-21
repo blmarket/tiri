@@ -31,29 +31,27 @@ fn overrides_fall_back_to_defaults_and_clear_preserves_defaults() {
 
 #[test]
 fn indices_are_normalized_and_invalid_indices_are_rejected() {
-    unsafe {
-        let mut p = colour_palette::default();
-        assert_eq!(colour_palette_set(Some(&mut p), 0, -1), 0);
-        assert!(p.palette.is_none());
-        for n in [0, 7, 8, 15, 255] {
-            assert_eq!(colour_palette_set(Some(&mut p), n, n + 100), 1);
-            assert_eq!(colour_palette_get(Some(&p), COLOUR_FLAG_256 | n), n + 100);
-        }
-        assert_eq!(colour_palette_get(Some(&p), 0), 100);
-        assert_eq!(colour_palette_get(Some(&p), 7), 107);
-        assert_eq!(colour_palette_get(Some(&p), 90), 108);
-        assert_eq!(colour_palette_get(Some(&p), 97), 115);
-        for n in [-1, i32::MIN, 8, 255, COLOUR_FLAG_256 | 256, i32::MAX] {
-            assert_eq!(colour_palette_get(Some(&p), n), -1);
-        }
-        for n in [-1, 256, i32::MAX] {
-            assert_eq!(colour_palette_set(Some(&mut p), n, 1), 0);
-        }
-        assert_eq!(colour_palette_get(None, 0), -1);
-        assert_eq!(colour_palette_set(None, 0, 1), 0);
-        colour_palette_clear(None);
-        colour_palette_from_option(None, &OptionsScope::GlobalWindow);
+    let mut p = colour_palette::default();
+    assert_eq!(colour_palette_set(Some(&mut p), 0, -1), 0);
+    assert!(p.palette.is_none());
+    for n in [0, 7, 8, 15, 255] {
+        assert_eq!(colour_palette_set(Some(&mut p), n, n + 100), 1);
+        assert_eq!(colour_palette_get(Some(&p), COLOUR_FLAG_256 | n), n + 100);
     }
+    assert_eq!(colour_palette_get(Some(&p), 0), 100);
+    assert_eq!(colour_palette_get(Some(&p), 7), 107);
+    assert_eq!(colour_palette_get(Some(&p), 90), 108);
+    assert_eq!(colour_palette_get(Some(&p), 97), 115);
+    for n in [-1, i32::MIN, 8, 255, COLOUR_FLAG_256 | 256, i32::MAX] {
+        assert_eq!(colour_palette_get(Some(&p), n), -1);
+    }
+    for n in [-1, 256, i32::MAX] {
+        assert_eq!(colour_palette_set(Some(&mut p), n, 1), 0);
+    }
+    assert_eq!(colour_palette_get(None, 0), -1);
+    assert_eq!(colour_palette_set(None, 0, 1), 0);
+    colour_palette_clear(None);
+    colour_palette_from_option(None, &OptionsScope::GlobalWindow);
 }
 
 fn pane_colours(oo: &mut options) -> &mut options_entry {
