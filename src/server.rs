@@ -290,6 +290,7 @@ pub(crate) unsafe fn server_start(
     server_add_accept(0 as ::core::ffi::c_int);
     let mut loop_callback = || unsafe { server_loop() == 0 };
     proc_loop(server_proc, runtime, Some(&mut loop_callback));
+    server_destroy_sessions(false);
     crate::plugin::shutdown();
     crate::cmd::queue::cmdq_cancel_background();
     job_kill_all();
@@ -355,7 +356,6 @@ unsafe fn server_loop() -> ::core::ffi::c_int {
     1 as ::core::ffi::c_int
 }
 unsafe fn server_send_exit() {
-    let mut s: Option<SessionRef> = None;
     cmd_wait_for_flush();
     let mut registry_c_owner = ClientRegistry::first();
     while let Some(client_owner) = registry_c_owner {
@@ -363,14 +363,14 @@ unsafe fn server_send_exit() {
         registry_c_owner = ClientRegistry::next(&client_owner);
         client_owner.shutdown();
     }
+    server_destroy_sessions(true);
+}
+unsafe fn server_destroy_sessions(notify: bool) {
     let mut s_owner = sessions::first();
-    s = s_owner.clone();
-    while !s.is_none() {
-        let name = s.as_ref().expect("live session").name();
-        (s_owner.as_ref().expect("registered session"))
-            .destroy((1 as ::core::ffi::c_int) != 0, c"server_send_exit");
+    while let Some(s) = s_owner {
+        let name = s.name();
+        s.destroy(notify, c"server_destroy_sessions");
         s_owner = sessions::after(&name);
-        s = s_owner.clone();
     }
 }
 pub unsafe fn server_update_socket() {
