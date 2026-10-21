@@ -378,7 +378,7 @@ pub trait WindowPane {
     /// Encode a key or mouse report for this pane's process stream.
     unsafe fn write_key(&self, key: key_code, mouse: Option<&mouse_event>) -> i32;
     /// Compare the active mode with its immutable descriptor.
-    unsafe fn is_mode(&self, mode: &'static window_mode) -> bool;
+    fn is_mode(&self, mode: &'static window_mode) -> bool;
     /// Invoke the active mode's format callback after releasing pane storage.
     unsafe fn add_mode_formats(&self, context: &mut crate::shared::format::format_tree);
     /// Reset palette/parser state and invalidate pane styling as one operation.
@@ -1323,7 +1323,7 @@ impl WindowPane for Rc<RefCell<window_pane>> {
     unsafe fn write_key(&self, key: key_code, mouse: Option<&mouse_event>) -> i32 {
         super::keys::write_key(self, key, mouse)
     }
-    unsafe fn is_mode(&self, mode: &'static window_mode) -> bool {
+    fn is_mode(&self, mode: &'static window_mode) -> bool {
         let entry = self.mode_entry();
         entry.is_alive() && std::ptr::eq(entry.try_borrow().expect("live mode entry").mode, mode)
     }

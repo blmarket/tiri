@@ -4104,12 +4104,11 @@ unsafe fn server_client_remove_pane(wp_owner: &std::rc::Rc<std::cell::RefCell<wi
             .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
     }
 }
-unsafe fn server_client_print(
+fn server_client_print(
     client_owner: Option<&ClientRef>,
     mut parse: ::core::ffi::c_int,
     mut evb: &mut SegmentedBuf,
 ) {
-    let c = client_owner.map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
     let escaped;
     let msg: &CStr = if parse == 0 {
         let input = evbuffer_pullup(evb, -1).map_or(&[][..], |bytes| &*bytes);
@@ -4126,64 +4125,74 @@ unsafe fn server_client_print(
         })
     };
     log_debug(format_args!("{}: {}", "server_client_print", log_cstr(msg)));
-    if !c.is_null() {
-        if (*c).session_handle().is_none() || (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-            if !(*c).flags & CLIENT_UTF8 as uint64_t != 0 {
+    if let Some(client) = client_owner {
+        let flags = client.flags();
+        let view_session = client
+            .borrow()
+            .session_handle()
+            .filter(|_| flags & CLIENT_CONTROL as uint64_t == 0);
+        if let Some(session) = view_session {
+            let pane_owner = winlink_window(&session.current_winlink())
+                .as_ref()
+                .expect("live window")
+                .active_pane()
+                .upgrade()
+                .expect("view-mode pane");
+            // SAFETY (set_mode, window_copy_add): `pane_owner` is the live active
+            // pane of the client's session and no pane or client borrow is held
+            // across these calls. Entering view mode first gives window_copy_add
+            // the copy-mode data it requires.
+            if !pane_owner.is_mode(&window_view_mode) {
+                unsafe { pane_owner.set_mode(None, &window_view_mode, None, None, None) };
+            }
+            if parse != 0 {
+                while let Some(line) = evbuffer_readln(evb) {
+                    unsafe {
+                        window_copy_add(&pane_owner, 1 as ::core::ffi::c_int, |out| {
+                            write_cstr(
+                                out,
+                                CStr::from_bytes_until_nul(&line).expect("readln appends a NUL"),
+                            )
+                        })
+                    };
+                }
+                let size = evbuffer_get_length(&*(evb));
+                if size != 0 as size_t {
+                    let rest = evbuffer_pullup(evb, -1).expect("nonempty buffer");
+                    unsafe {
+                        window_copy_add(&pane_owner, 1 as ::core::ffi::c_int, |out| {
+                            out.write_all(rest)
+                        })
+                    };
+                }
+            } else {
+                unsafe {
+                    window_copy_add(&pane_owner, 0 as ::core::ffi::c_int, |out| {
+                        write_cstr(out, msg)
+                    })
+                };
+            }
+        } else {
+            if !flags & CLIENT_UTF8 as uint64_t != 0 {
                 let sanitized = utf8_sanitize_cstring(msg);
-                if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-                    control_write(client_owner.expect("live client"), |out| {
-                        write_cstr(out, &*sanitized)
-                    });
+                if flags & CLIENT_CONTROL as uint64_t != 0 {
+                    // SAFETY: no client borrow is held, so the control state is
+                    // not aliased while the line is queued.
+                    unsafe { control_write(client, |out| write_cstr(out, &*sanitized)) };
                 } else {
                     file_print(client_owner, |out| {
                         write_cstr(out, &*sanitized)?;
                         out.write_all(b"\n")
                     });
                 }
-            } else if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-                control_write(client_owner.expect("live client"), |out| {
-                    write_cstr(out, msg)
-                });
+            } else if flags & CLIENT_CONTROL as uint64_t != 0 {
+                // SAFETY: no client borrow is held, so the control state is not
+                // aliased while the line is queued.
+                unsafe { control_write(client, |out| write_cstr(out, msg)) };
             } else {
                 file_print(client_owner, |out| {
                     write_cstr(out, msg)?;
                     out.write_all(b"\n")
-                });
-            }
-        } else {
-            let pane_owner = winlink_window(
-                &(*c)
-                    .session_handle()
-                    .expect("live session")
-                    .current_winlink(),
-            )
-            .as_ref()
-            .expect("live window")
-            .active_pane()
-            .upgrade()
-            .expect("view-mode pane");
-            if !pane_owner.is_mode(&window_view_mode) {
-                pane_owner.set_mode(None, &window_view_mode, None, None, None);
-            }
-            if parse != 0 {
-                while let Some(line) = evbuffer_readln(evb) {
-                    window_copy_add(&pane_owner, 1 as ::core::ffi::c_int, |out| {
-                        write_cstr(
-                            out,
-                            CStr::from_bytes_until_nul(&line).expect("readln appends a NUL"),
-                        )
-                    });
-                }
-                let size = evbuffer_get_length(&*(evb));
-                if size != 0 as size_t {
-                    let rest = evbuffer_pullup(evb, -1).expect("nonempty buffer");
-                    window_copy_add(&pane_owner, 1 as ::core::ffi::c_int, |out| {
-                        out.write_all(rest)
-                    });
-                }
-            } else {
-                window_copy_add(&pane_owner, 0 as ::core::ffi::c_int, |out| {
-                    write_cstr(out, msg)
                 });
             }
         }

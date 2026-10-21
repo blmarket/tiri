@@ -196,7 +196,7 @@ unsafe fn file_get_path(c: Option<&ClientRef>, file: &CStr) -> CString {
 }
 /// Client-backed transfers resolve protocol delivery through the model. A
 /// standalone peer transfer retains its existing explicit peer lifetime.
-unsafe fn file_send(file: &client_file, kind: msgtype, fd: Option<OwnedFd>, data: &[u8]) -> i32 {
+fn file_send(file: &client_file, kind: msgtype, fd: Option<OwnedFd>, data: &[u8]) -> i32 {
     match file.c.as_ref() {
         Some(client) => client.send_message(kind, fd, data),
         None => proc_send(&file.peer, kind, fd, data),
@@ -219,7 +219,7 @@ unsafe fn file_create_with_peer(
     crate::client::client_register_file(&owner);
     owner
 }
-unsafe fn file_create_with_client(
+fn file_create_with_client(
     client_owner: Option<&ClientRef>,
     stream: ::core::ffi::c_int,
     cb: client_file_cb,
@@ -279,7 +279,7 @@ unsafe fn file_fire_done_cb(owner: &Rc<RefCell<client_file>>) {
         let _ = waiter.send(outcome);
     }
 }
-unsafe fn file_fire_done(owner: &Rc<RefCell<client_file>>) {
+fn file_fire_done(owner: &Rc<RefCell<client_file>>) {
     let wake = {
         let mut file = owner.borrow_mut();
         if file.completed {
@@ -338,11 +338,11 @@ unsafe fn file_fire_read(file_owner: &Rc<RefCell<client_file>>) {
     }
 }
 
-pub unsafe fn file_can_print(c: Option<&ClientRef>) -> ::core::ffi::c_int {
+pub fn file_can_print(c: Option<&ClientRef>) -> ::core::ffi::c_int {
     c.is_some_and(|c| c.flags() & (CLIENT_ATTACHED | CLIENT_DEAD | CLIENT_CONTROL) as uint64_t == 0)
         as ::core::ffi::c_int
 }
-pub unsafe fn file_print(
+pub fn file_print(
     client_owner: Option<&ClientRef>,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
@@ -661,7 +661,7 @@ unsafe fn file_push_cb(owner: &Rc<RefCell<client_file>>) {
         file_push(owner);
     }
 }
-unsafe fn file_push(file_owner: &Rc<RefCell<client_file>>) {
+fn file_push(file_owner: &Rc<RefCell<client_file>>) {
     let mut guard = file_owner.borrow_mut();
     let cf = &mut *guard;
     drop(cf.push_task.take());
