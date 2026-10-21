@@ -581,12 +581,33 @@ mod tests {
         assert_eq!(channels.entries.len(), 3);
     }
 
-    /// Appends its index to the trace when woken.
-    struct Record(usize, Rc<RefCell<Vec<usize>>>);
-    impl std::task::LocalWake for Record {
+    /// Runs its callback, at most once, synchronously inside the waking
+    /// `resume`.
+    struct OnWake(std::cell::Cell<Option<Box<dyn FnOnce()>>>);
+    impl std::task::LocalWake for OnWake {
         fn wake(self: Rc<Self>) {
-            self.1.borrow_mut().push(self.0);
+            if let Some(on_wake) = self.0.take() {
+                on_wake();
+            }
         }
+    }
+
+    /// A detached waiter whose resume runs `on_wake` before returning; the
+    /// receiver must outlive the resume.
+    fn waiter_on_wake(
+        on_wake: impl FnOnce() + 'static,
+    ) -> (CmdqWaiter, tiri_rt::oneshot::Receiver<()>) {
+        let (waiter, mut resumed) = CmdqWaiter::detached(Weak::new());
+        let waker = std::task::LocalWaker::from(Rc::new(OnWake(std::cell::Cell::new(Some(
+            Box::new(on_wake),
+        )))));
+        let mut context = std::task::ContextBuilder::from_waker(std::task::Waker::noop())
+            .local_waker(&waker)
+            .build();
+        assert!(std::pin::Pin::new(&mut resumed)
+            .poll(&mut context)
+            .is_pending());
+        (waiter, resumed)
     }
 
     /// Detached waiters whose resumes append their index to `trace`; the
@@ -597,15 +618,8 @@ mod tests {
     ) -> (Vec<CmdqWaiter>, Vec<tiri_rt::oneshot::Receiver<()>>) {
         (0..count)
             .map(|index| {
-                let (waiter, mut resumed) = CmdqWaiter::detached(Weak::new());
-                let waker = std::task::LocalWaker::from(Rc::new(Record(index, trace.clone())));
-                let mut context = std::task::ContextBuilder::from_waker(std::task::Waker::noop())
-                    .local_waker(&waker)
-                    .build();
-                assert!(std::pin::Pin::new(&mut resumed)
-                    .poll(&mut context)
-                    .is_pending());
-                (waiter, resumed)
+                let trace = trace.clone();
+                waiter_on_wake(move || trace.borrow_mut().push(index))
             })
             .unzip()
     }
@@ -684,6 +698,169 @@ mod tests {
                 .is_none());
             assert_eq!(channel(c"l", |wc| wc.locked), Some(0));
         }
+    }
+
+    // A queued item's own wake only polls that item, and the next command
+    // waits for `cmdq_next`, so the queue never re-enters a channel from
+    // `resume`. These wakes do so synchronously, pinning that every resume
+    // runs after the WAIT_CHANNELS borrow ends.
+
+    /// The item a wake ran, once it has.
+    type Reentered = Rc<std::cell::OnceCell<Weak<std::cell::RefCell<cmdq_item>>>>;
+
+    /// Register a waiter whose wake runs `exec` as the next item of `owner`'s
+    /// queue on `name`; the cell receives that item.
+    fn reenter_on_wake(
+        owner: &ClientRef,
+        name: &'static CStr,
+        exec: unsafe fn(&Rc<std::cell::RefCell<cmdq_item>>, &CStr) -> CmdOutcome,
+    ) -> (CmdqWaiter, tiri_rt::oneshot::Receiver<()>, Reentered) {
+        let reentered = Rc::new(std::cell::OnceCell::new());
+        let (owner, cell) = (owner.clone(), reentered.clone());
+        let (waiter, resumed) = waiter_on_wake(move || {
+            assert!(cell.set(unsafe { run_on(&owner, name, exec) }).is_ok());
+        });
+        (waiter, resumed, reentered)
+    }
+
+    #[test]
+    fn a_waiter_woken_by_signal_can_wait_again_on_the_same_channel() {
+        unsafe {
+            let owner = clients::with_queue();
+            let (waiter, _resumed, rewaited) =
+                reenter_on_wake(&owner, c"rewait", cmd_wait_for_wait);
+            WAIT_CHANNELS.with_borrow_mut(|channels| {
+                cmd_wait_for_add(channels, c"rewait").waiters.push(waiter)
+            });
+
+            assert!(matches!(cmd_wait_for_signal(c"rewait"), CmdOutcome::Normal));
+            let item = rewaited.get().expect("signal woke the waiter");
+            assert!(item.upgrade().is_some());
+            assert_eq!(
+                channel(c"rewait", |wc| (wc.waiters.len(), wc.woken)),
+                Some((1, 0))
+            );
+
+            assert!(matches!(cmd_wait_for_signal(c"rewait"), CmdOutcome::Normal));
+            cmdq_next(Some(&owner));
+            assert!(item.upgrade().is_none());
+        }
+    }
+
+    #[test]
+    fn a_waiter_woken_by_signal_can_signal_the_same_channel_again() {
+        let trace = Default::default();
+        let (resignaller, _resignalled) = waiter_on_wake(|| {
+            assert!(matches!(
+                cmd_wait_for_signal(c"resignal"),
+                CmdOutcome::Normal
+            ));
+        });
+        let (waiters, _resumed) = recorded_waiters(1, &trace);
+        WAIT_CHANNELS.with_borrow_mut(|channels| {
+            let wc = cmd_wait_for_add(channels, c"resignal");
+            wc.waiters.push(resignaller);
+            wc.waiters.extend(waiters);
+        });
+
+        assert!(matches!(
+            cmd_wait_for_signal(c"resignal"),
+            CmdOutcome::Normal
+        ));
+        // The nested signal found no waiters left, so it made the channel
+        // sticky; the outer signal still resumed the rest.
+        assert_eq!(*trace.borrow(), [0]);
+        assert_eq!(
+            channel(c"resignal", |wc| (wc.waiters.len(), wc.woken)),
+            Some((0, 1))
+        );
+    }
+
+    #[test]
+    fn unlock_hands_the_lock_to_a_locker_that_unlocks_on_wake() {
+        unsafe {
+            let [holder, relay] = [(); 2].map(|_| clients::with_queue());
+            assert!(run_on(&holder, c"relay", cmd_wait_for_lock)
+                .upgrade()
+                .is_none());
+            let (unlocker, _unlocking, unlocked) =
+                reenter_on_wake(&relay, c"relay", cmd_wait_for_unlock);
+            let trace = Default::default();
+            let (next, _locking) = recorded_waiters(1, &trace);
+            WAIT_CHANNELS.with_borrow_mut(|channels| {
+                let wc = cmd_wait_for_add(channels, c"relay");
+                wc.lockers.push(unlocker);
+                wc.lockers.extend(next);
+            });
+
+            assert!(run_on(&holder, c"relay", cmd_wait_for_unlock)
+                .upgrade()
+                .is_none());
+            let item = unlocked.get().expect("unlock handed over the lock");
+            assert!(item.upgrade().is_none());
+            assert_eq!(*trace.borrow(), [0]);
+            assert_eq!(
+                channel(c"relay", |wc| (wc.locked, wc.lockers.len())),
+                Some((1, 0))
+            );
+        }
+    }
+
+    #[test]
+    fn unlock_hands_the_lock_to_a_locker_that_relocks_on_wake() {
+        unsafe {
+            let [holder, relocker] = [(); 2].map(|_| clients::with_queue());
+            assert!(run_on(&holder, c"relock", cmd_wait_for_lock)
+                .upgrade()
+                .is_none());
+            let (locker, _locking, relocked) =
+                reenter_on_wake(&relocker, c"relock", cmd_wait_for_lock);
+            WAIT_CHANNELS.with_borrow_mut(|channels| {
+                cmd_wait_for_add(channels, c"relock").lockers.push(locker)
+            });
+
+            assert!(run_on(&holder, c"relock", cmd_wait_for_unlock)
+                .upgrade()
+                .is_none());
+            // The woken locker holds the lock, so the relock queues behind it.
+            let item = relocked.get().expect("unlock handed over the lock");
+            assert!(item.upgrade().is_some());
+            assert_eq!(
+                channel(c"relock", |wc| (wc.locked, wc.lockers.len())),
+                Some((1, 1))
+            );
+
+            assert!(run_on(&holder, c"relock", cmd_wait_for_unlock)
+                .upgrade()
+                .is_none());
+            cmdq_next(Some(&relocker));
+            assert!(item.upgrade().is_none());
+            assert_eq!(
+                channel(c"relock", |wc| (wc.locked, wc.lockers.len())),
+                Some((1, 0))
+            );
+        }
+    }
+
+    #[test]
+    fn flush_survives_a_locker_that_relocks_on_wake() {
+        let relocker = clients::with_queue();
+        let (locker, _locking, relocked) =
+            reenter_on_wake(&relocker, c"flushed", cmd_wait_for_lock);
+        WAIT_CHANNELS.with_borrow_mut(|channels| {
+            let wc = cmd_wait_for_add(channels, c"flushed");
+            wc.locked = 1;
+            wc.lockers.push(locker);
+        });
+
+        cmd_wait_for_flush();
+        // Flush removed the unlocked channel; the relock made it afresh.
+        let item = relocked.get().expect("flush woke the locker");
+        assert!(item.upgrade().is_none());
+        assert_eq!(
+            channel(c"flushed", |wc| (wc.locked, wc.woken, wc.lockers.len())),
+            Some((1, 0, 0))
+        );
     }
 
     #[test]

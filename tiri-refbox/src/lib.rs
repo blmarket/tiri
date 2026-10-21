@@ -771,7 +771,9 @@ impl error::Error for BorrowError {}
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
     use std::panic;
+    use std::rc::Rc;
 
     use crate::internals::{RefBoxHeap, Status};
     use crate::{BorrowError, RefBox};
@@ -1109,6 +1111,144 @@ mod tests {
         drop(ref_box);
         assert_eq!(weak.status(), Status::Dropped);
         drop(weak);
+    }
+
+    /// Counts how many times the payload was dropped.
+    struct DropCount(Rc<Cell<usize>>);
+    impl Drop for DropCount {
+        fn drop(&mut self) {
+            self.0.set(self.0.get() + 1);
+        }
+    }
+
+    fn counted() -> (RefBox<DropCount>, Rc<Cell<usize>>) {
+        let drops = Rc::new(Cell::new(0));
+        (RefBox::new(DropCount(drops.clone())), drops)
+    }
+
+    #[test]
+    fn dropping_owner_while_borrowed_drops_data_once_at_release() {
+        let (ref_box, drops) = counted();
+        let weak = ref_box.downgrade();
+        let borrow = weak.try_borrow_mut().unwrap();
+        drop(ref_box);
+        assert_eq!(drops.get(), 0);
+        drop(borrow);
+        assert_eq!(drops.get(), 1);
+        drop(weak);
+        assert_eq!(drops.get(), 1);
+    }
+
+    #[test]
+    fn dropping_owner_while_shared_drops_data_once_at_last_release() {
+        let (ref_box, drops) = counted();
+        let weak = ref_box.downgrade();
+        let first = weak.try_borrow().unwrap();
+        let second = weak.try_borrow().unwrap();
+        drop(ref_box);
+        drop(first);
+        assert_eq!(drops.get(), 0);
+        drop(second);
+        assert_eq!(drops.get(), 1);
+        drop(weak);
+        assert_eq!(drops.get(), 1);
+    }
+
+    #[test]
+    fn weak_is_not_mutably_borrowable_if_owner_dropped_while_shared() {
+        let ref_box = RefBox::new(123456);
+        let weak = ref_box.downgrade();
+        let shared = weak.try_borrow().unwrap();
+        drop(ref_box);
+        assert_eq!(weak.status(), Status::DroppedWhileShared(1));
+        assert!(matches!(weak.try_borrow_mut(), Err(BorrowError::Dropped)));
+        assert!(matches!(
+            weak.try_access_mut(|_| unreachable!()),
+            Err(BorrowError::Dropped)
+        ));
+        drop(shared);
+        assert!(matches!(weak.try_borrow_mut(), Err(BorrowError::Dropped)));
+    }
+
+    /// Unwinding drops the guard, so a panic while borrowed does not leave the
+    /// box poisoned or stuck borrowed.
+    #[test]
+    fn panicking_while_borrowed_releases_the_borrow() {
+        let ref_box = RefBox::new(123456);
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            let mut borrow = ref_box.try_borrow_mut().unwrap();
+            *borrow = 654321;
+            panic!("panic while borrowed");
+        }));
+        assert!(result.is_err());
+        assert_eq!(ref_box.status(), Status::Available);
+        assert_eq!(*ref_box.try_borrow_mut().unwrap(), 654321);
+    }
+
+    #[test]
+    fn panicking_while_shared_releases_the_shared_borrow() {
+        let ref_box = RefBox::new(123456);
+        let weak = ref_box.downgrade();
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            let _first = ref_box.try_borrow().unwrap();
+            let _second = weak.try_borrow().unwrap();
+            panic!("panic while shared");
+        }));
+        assert!(result.is_err());
+        assert_eq!(ref_box.status(), Status::Available);
+        assert!(weak.try_borrow_mut().is_ok());
+    }
+
+    #[test]
+    fn panicking_in_access_mut_releases_the_borrow() {
+        let ref_box = RefBox::new(123456);
+        let weak = ref_box.downgrade();
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            weak.try_access_mut(|_| panic!("panic in accessor"))
+        }));
+        assert!(result.is_err());
+        assert_eq!(weak.status(), Status::Available);
+        assert_eq!(weak.try_access_mut(|value| *value), Ok(123456));
+    }
+
+    #[test]
+    fn reborrowing_inside_access_mut_is_rejected() {
+        let ref_box = RefBox::new(123456);
+        let weak = ref_box.downgrade();
+        let reentered = weak.try_access_mut(|value| {
+            assert!(matches!(
+                ref_box.try_borrow_mut(),
+                Err(BorrowError::Borrowed)
+            ));
+            assert!(matches!(ref_box.try_borrow(), Err(BorrowError::Borrowed)));
+            assert!(matches!(weak.try_borrow(), Err(BorrowError::Borrowed)));
+            assert_eq!(
+                weak.try_access_mut(|_| unreachable!()),
+                Err(BorrowError::Borrowed)
+            );
+            assert_eq!(
+                ref_box.try_access_mut(|_| unreachable!()),
+                Err(BorrowError::Borrowed)
+            );
+            *value = 654321;
+        });
+        assert_eq!(reentered, Ok(()));
+        assert_eq!(*ref_box.try_borrow().unwrap(), 654321);
+    }
+
+    #[test]
+    fn dropping_owner_inside_access_mut_delays_drop_until_return() {
+        let (ref_box, drops) = counted();
+        let weak = ref_box.downgrade();
+        let accessed = weak.try_access_mut(|_| {
+            drop(ref_box);
+            assert_eq!(drops.get(), 0);
+            assert_eq!(weak.status(), Status::DroppedWhileBorrowed);
+            assert!(matches!(weak.try_borrow(), Err(BorrowError::Dropped)));
+        });
+        assert_eq!(accessed, Ok(()));
+        assert_eq!(drops.get(), 1);
+        assert_eq!(weak.status(), Status::Dropped);
     }
 
     #[test]
