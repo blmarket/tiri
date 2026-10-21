@@ -1,7 +1,7 @@
 //! Session-owned window creation/replacement transaction. Link index, current
 //! selection, MRU removal, and group synchronization remain inside Session.
 use crate::shared::window::{WindowRef, WindowWeak};
-use crate::winlink::winlink_index;
+use crate::winlink::{winlink_index, winlink_window};
 
 use super::*;
 use crate::events::events_fire_window;
@@ -21,6 +21,9 @@ pub(super) unsafe fn spawn_window(
     let s = session.as_ptr();
     let mut index = sc.idx;
     let mut created_window = WindowWeak::new();
+    // A replaced window is released only once its replacement is current, so
+    // its window-closed hook resolves a target as it does in tmux.
+    let mut replaced_window = None;
     spawn_log(c"spawn_window", sc);
 
     if sc.flags & SPAWN_RESPAWN != 0 && !prepare_respawn_window(sc, cause) {
@@ -39,6 +42,7 @@ pub(super) unsafe fn spawn_window(
             link.try_borrow_mut().expect("live winlink").flags &= !WINLINK_ALERTFLAGS;
             events_fire_winlink(c"window-unlinked", link.clone());
             winlink_stack_remove(&mut (*s).lastw, link.clone());
+            replaced_window = winlink_window(&link);
             winlink_remove(&(*s).windows, link.clone());
             if (*s).curw == link {
                 (*s).curw = refbox::Weak::new();
@@ -105,6 +109,7 @@ pub(super) unsafe fn spawn_window(
     if sc.flags & SPAWN_DETACHED == 0 {
         session_select(&session, winlink_index(&sc.winlink_handle()));
     }
+    drop(replaced_window);
     if sc.flags & SPAWN_RESPAWN == 0 {
         let window = created_window
             .upgrade()
