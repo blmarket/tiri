@@ -368,8 +368,7 @@ impl Window for WindowRef {
             fallback.attr |= crate::shared::grid::GRID_ATTR_CHARSET as u16;
             crate::text::utf8::utf8_set(
                 &mut fallback.data,
-                crate::shared::borders::CELL_BORDERS[crate::shared::borders::CELL_NONE as usize]
-                    as u8,
+                crate::shared::borders::CELL_BORDERS[crate::shared::borders::CELL_NONE as usize],
             );
             {
                 let state = &mut *self.as_ptr();

@@ -71,7 +71,7 @@ use crate::tmux::get_timer;
 use crate::tty::tty_acs_get;
 use crate::window::Window as _;
 use crate::window_pane::WindowPane as _;
-use libc::{abs, strcasecmp, strchr, strcmp, strncmp};
+use libc::{abs, strcasecmp, strcmp, strncmp};
 use libc::{REG_EXTENDED, REG_ICASE};
 use std::borrow::Cow;
 use std::ffi::{CStr, CString};
@@ -2338,20 +2338,19 @@ unsafe fn window_copy_cmd_middle_line(cs: &mut window_copy_cmd_state) -> window_
     );
     WINDOW_COPY_CMD_REDRAW
 }
+/// Matching bracket pairs: `BRACKETS_OPEN[i]` pairs with `BRACKETS_CLOSE[i]`.
+const BRACKETS_OPEN: &[u8] = b"{[(";
+const BRACKETS_CLOSE: &[u8] = b"}])";
 unsafe fn window_copy_cmd_previous_matching_bracket(
     cs: &mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: refbox::Weak<window_mode_entry> = cs.mode_handle();
     let mut np: u_int = wme.try_borrow().expect("live mode entry").prefix;
     let data = window_copy_data(&wme);
-    let mut open: [::core::ffi::c_char; 4] =
-        ::core::mem::transmute::<[u8; 4], [::core::ffi::c_char; 4]>(*b"{[(\0");
-    let mut close: [::core::ffi::c_char; 4] =
-        ::core::mem::transmute::<[u8; 4], [::core::ffi::c_char; 4]>(*b"}])\0");
     let mut tried: ::core::ffi::c_char = 0;
-    let mut found: ::core::ffi::c_char = 0;
-    let mut start: ::core::ffi::c_char = 0;
-    let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut found: u_char = 0;
+    let mut start: u_char = 0;
+    let mut idx: Option<usize> = None;
     let mut px: u_int = 0;
     let mut py: u_int = 0;
     let mut xx: u_int = 0;
@@ -2389,15 +2388,12 @@ unsafe fn window_copy_cmd_previous_matching_bracket(
                 if gc.data.size as ::core::ffi::c_int != 1 as ::core::ffi::c_int
                     || gc.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0
                 {
-                    cp = ::core::ptr::null_mut::<::core::ffi::c_char>();
+                    idx = None;
                 } else {
-                    found = *(&raw mut gc.data.data as *mut u_char) as ::core::ffi::c_char;
-                    cp = strchr(
-                        &raw mut close as *mut ::core::ffi::c_char,
-                        found as ::core::ffi::c_int,
-                    );
+                    found = gc.data.data[0];
+                    idx = BRACKETS_CLOSE.iter().position(|&c| c == found);
                 }
-                if cp.is_null() {
+                if idx.is_none() {
                     if !(data.modekeys == MODEKEY_EMACS) {
                         break;
                     }
@@ -2409,8 +2405,7 @@ unsafe fn window_copy_cmd_previous_matching_bracket(
                         break;
                     }
                 } else {
-                    start = open[cp.offset_from(&raw mut close as *mut ::core::ffi::c_char)
-                        as ::core::ffi::c_long as usize];
+                    start = BRACKETS_OPEN[idx.expect("bracket index")];
                     n = 1 as u_int;
                     failed = 0 as ::core::ffi::c_int;
                     loop {
@@ -2440,13 +2435,9 @@ unsafe fn window_copy_cmd_previous_matching_bracket(
                         if gc.data.size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
                             && !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0
                         {
-                            if *(&raw mut gc.data.data as *mut u_char) as ::core::ffi::c_int
-                                == found as ::core::ffi::c_int
-                            {
+                            if gc.data.data[0] == found {
                                 n = n.wrapping_add(1);
-                            } else if *(&raw mut gc.data.data as *mut u_char) as ::core::ffi::c_int
-                                == start as ::core::ffi::c_int
-                            {
+                            } else if gc.data.data[0] == start {
                                 n = n.wrapping_sub(1);
                             }
                         }
@@ -2481,14 +2472,10 @@ unsafe fn window_copy_cmd_next_matching_bracket(
     let mut wme: refbox::Weak<window_mode_entry> = cs.mode_handle();
     let mut np: u_int = wme.try_borrow().expect("live mode entry").prefix;
     let data = window_copy_data(&wme);
-    let mut open: [::core::ffi::c_char; 4] =
-        ::core::mem::transmute::<[u8; 4], [::core::ffi::c_char; 4]>(*b"{[(\0");
-    let mut close: [::core::ffi::c_char; 4] =
-        ::core::mem::transmute::<[u8; 4], [::core::ffi::c_char; 4]>(*b"}])\0");
     let mut tried: ::core::ffi::c_char = 0;
-    let mut found: ::core::ffi::c_char = 0;
-    let mut end: ::core::ffi::c_char = 0;
-    let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut found: u_char = 0;
+    let mut end: u_char = 0;
+    let mut idx: Option<usize> = None;
     let mut px: u_int = 0;
     let mut py: u_int = 0;
     let mut xx: u_int = 0;
@@ -2533,26 +2520,20 @@ unsafe fn window_copy_cmd_next_matching_bracket(
                 if gc.data.size as ::core::ffi::c_int != 1 as ::core::ffi::c_int
                     || gc.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0
                 {
-                    cp = ::core::ptr::null_mut::<::core::ffi::c_char>();
+                    idx = None;
                 } else {
-                    found = *(&raw mut gc.data.data as *mut u_char) as ::core::ffi::c_char;
-                    cp = strchr(
-                        &raw mut close as *mut ::core::ffi::c_char,
-                        found as ::core::ffi::c_int,
-                    );
-                    if !cp.is_null() && data.modekeys == MODEKEY_VI {
+                    found = gc.data.data[0];
+                    idx = BRACKETS_CLOSE.iter().position(|&c| c == found);
+                    if idx.is_some() && data.modekeys == MODEKEY_VI {
                         sx = data.cx;
                         sy = s.grid().hsize.wrapping_add(data.cy).wrapping_sub(data.oy);
                         action = BracketMove::Close;
                         break;
                     } else {
-                        cp = strchr(
-                            &raw mut open as *mut ::core::ffi::c_char,
-                            found as ::core::ffi::c_int,
-                        );
+                        idx = BRACKETS_OPEN.iter().position(|&c| c == found);
                     }
                 }
-                if cp.is_null() {
+                if idx.is_none() {
                     if data.modekeys == MODEKEY_EMACS {
                         if tried == 0 && px <= xx {
                             px = px.wrapping_add(1);
@@ -2579,8 +2560,7 @@ unsafe fn window_copy_cmd_next_matching_bracket(
                         px = px.wrapping_add(1);
                     }
                 } else {
-                    end = close[cp.offset_from(&raw mut open as *mut ::core::ffi::c_char)
-                        as ::core::ffi::c_long as usize];
+                    end = BRACKETS_CLOSE[idx.expect("bracket index")];
                     n = 1 as u_int;
                     failed = 0 as ::core::ffi::c_int;
                     loop {
@@ -2600,13 +2580,9 @@ unsafe fn window_copy_cmd_next_matching_bracket(
                         if gc.data.size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
                             && !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0
                         {
-                            if *(&raw mut gc.data.data as *mut u_char) as ::core::ffi::c_int
-                                == found as ::core::ffi::c_int
-                            {
+                            if gc.data.data[0] == found {
                                 n = n.wrapping_add(1);
-                            } else if *(&raw mut gc.data.data as *mut u_char) as ::core::ffi::c_int
-                                == end as ::core::ffi::c_int
-                            {
+                            } else if gc.data.data[0] == end {
                                 n = n.wrapping_sub(1);
                             }
                         }
@@ -2634,11 +2610,7 @@ unsafe fn window_copy_cmd_next_matching_bracket(
                     grid_get_cell(s.grid(), px, py, &mut gc);
                     gc.data.size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
                         && !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0
-                        && !strchr(
-                            &raw mut close as *mut ::core::ffi::c_char,
-                            *(&raw mut gc.data.data as *mut u_char) as ::core::ffi::c_int,
-                        )
-                        .is_null()
+                        && BRACKETS_CLOSE.contains(&gc.data.data[0])
                 };
                 if unmatched {
                     window_copy_scroll_to(wme.clone(), sx, sy, 0 as ::core::ffi::c_int);

@@ -333,11 +333,8 @@ unsafe fn window_panes_draw_borders(
     let mut vertical = *gc;
     vertical.attr = (vertical.attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
     let mut horizontal = vertical;
-    utf8_set(&mut vertical.data, CELL_BORDERS[CELL_UD as usize] as u_char);
-    utf8_set(
-        &mut horizontal.data,
-        CELL_BORDERS[CELL_LR as usize] as u_char,
-    );
+    utf8_set(&mut vertical.data, CELL_BORDERS[CELL_UD as usize]);
+    utf8_set(&mut horizontal.data, CELL_BORDERS[CELL_LR as usize]);
     let cells = w_owner.pane_cells();
     let right_edge = cells
         .iter()

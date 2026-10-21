@@ -131,7 +131,7 @@ pub fn window_get_border_cell(
         }
         3 => {
             gc.attr = (gc.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
-            utf8_set(&mut gc.data, SIMPLE_BORDERS[cell_type as usize] as u_char);
+            utf8_set(&mut gc.data, SIMPLE_BORDERS[cell_type as usize]);
         }
         6 | 5 => {
             gc.attr = (gc.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
@@ -139,7 +139,7 @@ pub fn window_get_border_cell(
         }
         _ => {
             gc.attr = (gc.attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
-            utf8_set(&mut gc.data, CELL_BORDERS[cell_type as usize] as u_char);
+            utf8_set(&mut gc.data, CELL_BORDERS[cell_type as usize]);
         }
     };
 }

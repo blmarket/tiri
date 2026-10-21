@@ -55,8 +55,7 @@ use crate::window::WindowPane;
 use crate::window_visible::window_position_is_visible;
 use std::ffi::CStr;
 
-pub const PADDED_BORDERS: [::core::ffi::c_char; 14] =
-    unsafe { ::core::mem::transmute::<[u8; 14], [::core::ffi::c_char; 14]>(*b"             \0") };
+pub const PADDED_BORDERS: &[u8; 13] = b"             ";
 pub const SCREEN_WRITE_SYNC: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const SCREEN_WRITE_OBSCURED: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const SCREEN_WRITE_CHECKED_IF_OBSCURED: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
@@ -640,15 +639,15 @@ fn screen_write_box_border_set(
         }
         3 => {
             gc.attr = (gc.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
-            utf8_set(&mut gc.data, SIMPLE_BORDERS[cell_type as usize] as u_char);
+            utf8_set(&mut gc.data, SIMPLE_BORDERS[cell_type as usize]);
         }
         5 => {
             gc.attr = (gc.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
-            utf8_set(&mut gc.data, PADDED_BORDERS[cell_type as usize] as u_char);
+            utf8_set(&mut gc.data, PADDED_BORDERS[cell_type as usize]);
         }
         0 | -1 => {
             gc.attr = (gc.attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
-            utf8_set(&mut gc.data, CELL_BORDERS[cell_type as usize] as u_char);
+            utf8_set(&mut gc.data, CELL_BORDERS[cell_type as usize]);
         }
         _ => {}
     };

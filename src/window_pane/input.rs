@@ -68,7 +68,7 @@ use crate::tmux::{get_timer, getversion};
 use crate::tty::tty_set_selection;
 use crate::window::Window as _;
 use crate::window::WindowPane;
-use libc::{strncmp, strtol};
+use libc::strtol;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 use std::time::Duration;
@@ -4328,10 +4328,7 @@ unsafe fn input_dcs_dispatch(
     let mut wp: *mut window_pane = input_pane;
     let mut buf: *mut u_char = ictx.input_buf.as_mut_ptr();
     let mut len: size_t = ictx.input_len;
-    let prefix: [::core::ffi::c_char; 6] =
-        ::core::mem::transmute::<[u8; 6], [::core::ffi::c_char; 6]>(*b"tmux;\0");
-    let prefixlen: u_int = (::core::mem::size_of::<[::core::ffi::c_char; 6]>() as usize)
-        .wrapping_sub(1_usize) as u_int;
+    const PREFIX: &[u8] = b"tmux;";
     let mut allow_passthrough: ::core::ffi::c_longlong = 0 as ::core::ffi::c_longlong;
     if ictx.flags & INPUT_DISCARD != 0 {
         log_debug(format_args!(
@@ -4367,16 +4364,10 @@ unsafe fn input_dcs_dispatch(
         "input_dcs_dispatch",
         log_bytes(&ictx.input_buf)
     ));
-    if len >= prefixlen as size_t
-        && strncmp(
-            buf as *const ::core::ffi::c_char,
-            &raw const prefix as *const ::core::ffi::c_char,
-            prefixlen as size_t,
-        ) == 0 as ::core::ffi::c_int
-    {
+    if ictx.input_buf[..len].starts_with(PREFIX) {
         screen_write_rawstring(
             sctx,
-            &(&ictx.input_buf)[prefixlen as usize..len],
+            &(&ictx.input_buf)[PREFIX.len()..len],
             (allow_passthrough == 2 as ::core::ffi::c_longlong) as ::core::ffi::c_int,
         );
     }

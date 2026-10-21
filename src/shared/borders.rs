@@ -24,8 +24,6 @@ pub const CELL_LRUD: ::core::ffi::c_int = 11 as ::core::ffi::c_int;
 
 pub const CELL_NONE: ::core::ffi::c_int = 12 as ::core::ffi::c_int;
 
-pub const CELL_BORDERS: [::core::ffi::c_char; 14] =
-    unsafe { ::core::mem::transmute::<[u8; 14], [::core::ffi::c_char; 14]>(*b" xqlkmjwvtun~\0") };
+pub const CELL_BORDERS: &[u8; 13] = b" xqlkmjwvtun~";
 
-pub const SIMPLE_BORDERS: [::core::ffi::c_char; 14] =
-    unsafe { ::core::mem::transmute::<[u8; 14], [::core::ffi::c_char; 14]>(*b" |-+++++++++.\0") };
+pub const SIMPLE_BORDERS: &[u8; 13] = b" |-+++++++++.";
