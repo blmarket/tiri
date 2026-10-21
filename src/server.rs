@@ -9,7 +9,7 @@ use crate::hooks::hooks_build_events;
 use crate::input_keys::input_key_build;
 use crate::job::{job_check_died, job_kill_all, job_still_running};
 use crate::key_bindings::key_bindings_init;
-use crate::log::{fatal, log_cstr, log_debug, log_get_level};
+use crate::log::{fatal, log_cstr, log_debug};
 use crate::options::OptionsScope;
 use crate::options::{options_get_number, options_set_number};
 use crate::proc::{proc_fork_and_daemon, proc_loop, proc_set_signals, proc_start, proc_toggle_log};
@@ -40,7 +40,6 @@ use crate::shared::session::SessionRef;
 use crate::shared::status::message_list;
 use crate::text::utf8::utf8_update_width_cache;
 use crate::tmux::{get_timer, socket_path_cstr, start_time};
-use crate::tty::tty_create_log;
 
 use crate::window::windows;
 use crate::window_pane::WindowPane as _;
@@ -226,9 +225,6 @@ pub(crate) unsafe fn server_start(
         &raw mut oldset,
         ::core::ptr::null_mut::<sigset_t>(),
     );
-    if log_get_level() > 1 as ::core::ffi::c_int {
-        tty_create_log();
-    }
     if 0 as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
         fatal(&std::io::Error::last_os_error(), |out| {
             out.write_all(b"pledge failed")

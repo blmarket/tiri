@@ -17,7 +17,6 @@ use crate::shared::posix_io::STDIN_FILENO;
 use crate::shared::tty::*;
 use crate::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::tty::features::{tty_apply_features, tty_parse_client_features};
-use libc::strcmp;
 use std::ffi::{CStr, CString};
 
 pub(super) const TTYCODE_FLAG: tty_code_type = 3;
@@ -37,7 +36,10 @@ struct TerminalRegistration {
     identity: std::rc::Weak<()>,
 }
 
-static mut tty_terms: Vec<TerminalRegistration> = Vec::new();
+thread_local! {
+    static tty_terms: std::cell::RefCell<Vec<TerminalRegistration>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
 
 pub(crate) struct TerminalDescription {
     pub name: CString,
@@ -51,7 +53,7 @@ pub(crate) unsafe fn tty_term_descriptions(
 ) -> impl Iterator<Item = TerminalDescription> {
     let target = target.map(std::rc::Rc::downgrade);
     tty_terms
-        .clone()
+        .with_borrow(Clone::clone)
         .into_iter()
         .filter_map(move |registration| {
             if target
@@ -81,7 +83,7 @@ pub(crate) unsafe fn tty_term_descriptions(
         })
 }
 
-static mut tty_term_codes: [tty_term_code_entry; 236] = [
+static tty_term_codes: [tty_term_code_entry; 236] = [
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
         name: c"acsc",
@@ -1105,16 +1107,15 @@ fn tty_term_override_value(source: &CStr) -> CString {
         },
     )
 }
-pub(super) unsafe fn tty_term_apply(
+pub(super) fn tty_term_apply(
     term: &mut tty_term,
-    mut capabilities: *const ::core::ffi::c_char,
+    capabilities: &CStr,
     mut quiet: ::core::ffi::c_int,
     flags: ::core::ffi::c_int,
 ) {
     let mut offset: size_t = 0 as size_t;
     let mut i: u_int = 0;
     let mut n: ::core::ffi::c_int = 0;
-    let capabilities = CStr::from_ptr(capabilities);
     while let Some(token) = tty_term_override_next(capabilities, &mut offset) {
         if token.is_empty() {
             continue;
@@ -1212,12 +1213,7 @@ pub(super) unsafe fn tty_term_apply_overrides(term: &mut tty_term) {
             .as_ref()
             .is_some_and(|first| fnmatch_matches(first, &term.name, 0))
         {
-            tty_term_apply(
-                term,
-                cstr_suffix(value, offset).as_ptr(),
-                0 as ::core::ffi::c_int,
-                0,
-            );
+            tty_term_apply(term, cstr_suffix(value, offset), 0 as ::core::ffi::c_int, 0);
         }
     }
     log_debug(format_args!(
@@ -1301,13 +1297,15 @@ pub(super) unsafe fn tty_term_create(
         identity: std::rc::Rc::new(()),
         registered: true,
     });
-    tty_terms.insert(
-        0,
-        TerminalRegistration {
-            client: std::rc::Rc::downgrade(client_owner),
-            identity: std::rc::Rc::downgrade(&owner.identity),
-        },
-    );
+    tty_terms.with_borrow_mut(|terms| {
+        terms.insert(
+            0,
+            TerminalRegistration {
+                client: std::rc::Rc::downgrade(client_owner),
+                identity: std::rc::Rc::downgrade(&owner.identity),
+            },
+        )
+    });
     for cap in caps {
         // Capabilities come from the client as "name=value"; ignore anything else.
         let Some(namelen) = cap.to_bytes().iter().position(|&b| b == b'=') else {
@@ -1431,14 +1429,17 @@ impl Drop for tty_term {
         if !self.registered {
             return;
         }
-        unsafe {
-            log_debug(format_args!(
-                "removing term {}",
-                crate::log::log_bytes(self.name.as_bytes())
-            ));
-            let identity = std::rc::Rc::downgrade(&self.identity);
-            tty_terms.retain(|entry| !entry.identity.ptr_eq(&identity));
-        }
+        log_debug(format_args!(
+            "removing term {}",
+            crate::log::log_bytes(self.name.as_bytes())
+        ));
+        let identity = std::rc::Rc::downgrade(&self.identity);
+        // The registry may already be gone when a terminal drops during thread exit.
+        let _ = tty_terms.try_with(|terms| {
+            terms
+                .borrow_mut()
+                .retain(|entry| !entry.identity.ptr_eq(&identity))
+        });
     }
 }
 
@@ -1532,13 +1533,11 @@ pub(super) fn tty_term_owner_ptr(owner: &Option<Box<tty_term>>) -> Option<&tty_t
 pub(super) fn tty_term_has(term: &tty_term, mut code: tty_code_code) -> ::core::ffi::c_int {
     (!matches!((&term.codes)[code as usize], tty_code::None)) as ::core::ffi::c_int
 }
-pub(super) unsafe fn tty_term_has_name(term: &tty_term, name: &CStr) -> ::core::ffi::c_int {
+pub(super) fn tty_term_has_name(term: &tty_term, name: &CStr) -> ::core::ffi::c_int {
     let mut i: u_int = 0;
     i = 0 as u_int;
     while i < tty_term_ncodes() {
-        if strcmp(tty_term_codes[i as usize].name.as_ptr(), name.as_ptr())
-            == 0 as ::core::ffi::c_int
-        {
+        if tty_term_codes[i as usize].name == name {
             return tty_term_has(term, i as tty_code_code);
         }
         i = i.wrapping_add(1);
@@ -1552,7 +1551,7 @@ pub(super) fn tty_term_string(term: &tty_term, code: tty_code_code) -> &std::ffi
         _ => fatalx(|out| write!(out, "not a string: {}", (code) as i32)),
     }
 }
-unsafe fn tty_term_expanded(code: tty_code_code, s: Option<&CStr>) -> CString {
+fn tty_term_expanded(code: tty_code_code, s: Option<&CStr>) -> CString {
     let Some(s) = s else {
         log_debug(format_args!(
             "could not expand {}",
@@ -1641,7 +1640,7 @@ pub(super) fn tty_term_flag(term: &tty_term, code: tty_code_code) -> ::core::ffi
         _ => fatalx(|out| write!(out, "not a flag: {}", (code) as i32)),
     }
 }
-pub(super) unsafe fn tty_term_describe(term: &tty_term, code: tty_code_code) -> CString {
+pub(super) fn tty_term_describe(term: &tty_term, code: tty_code_code) -> CString {
     match &(&term.codes)[code as usize] {
         tty_code::None => format_message_with(|out| {
             write!(out, "{:4}: ", { code })?;

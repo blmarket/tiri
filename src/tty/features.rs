@@ -214,11 +214,7 @@ static tty_features: [&tty_feature; 23] = {
         &tty_feature_utf8,
     ]
 };
-pub(super) unsafe fn tty_parse_client_features(
-    owner: &ClientRef,
-    features: &CStr,
-    separators: &CStr,
-) {
+pub(super) fn tty_parse_client_features(owner: &ClientRef, features: &CStr, separators: &CStr) {
     owner.parse_terminal_features(features, separators);
 }
 pub fn tty_parse_features(
@@ -282,11 +278,7 @@ pub fn tty_get_features(feat: ::core::ffi::c_int) -> CString {
     }
     CString::new(names).expect("feature names contain no NUL")
 }
-pub(super) unsafe fn tty_feature_present(
-    term: &tty_term,
-    name: &CStr,
-    utf8: bool,
-) -> ::core::ffi::c_int {
+pub(super) fn tty_feature_present(term: &tty_term, name: &CStr, utf8: bool) -> ::core::ffi::c_int {
     let mut tf: Option<&tty_feature> = None;
     let mut i: u_int = 0;
     if name == c"utf8" {
@@ -340,7 +332,7 @@ pub(super) struct AppliedFeatures {
     pub enable_utf8: bool,
 }
 
-pub(super) unsafe fn tty_apply_features(term: &mut tty_term, feat: i32) -> AppliedFeatures {
+pub(super) fn tty_apply_features(term: &mut tty_term, feat: i32) -> AppliedFeatures {
     let mut result = AppliedFeatures::default();
     let mut i: u_int = 0;
     if feat == 0 as ::core::ffi::c_int {
@@ -366,7 +358,7 @@ pub(super) unsafe fn tty_apply_features(term: &mut tty_term, feat: i32) -> Appli
                         "adding capability: {}",
                         crate::log::log_bytes(capability.to_bytes())
                     ));
-                    tty_term_apply(term, capability.as_ptr(), 1 as ::core::ffi::c_int, tf.flags);
+                    tty_term_apply(term, capability, 1 as ::core::ffi::c_int, tf.flags);
                 }
             }
             term.flags |= tf.flags & !TERM_NOREPLACE;
@@ -384,7 +376,7 @@ pub(super) unsafe fn tty_apply_features(term: &mut tty_term, feat: i32) -> Appli
     result
 }
 
-pub(super) unsafe fn tty_default_features(owner: &ClientRef, name: &CStr) {
+pub(super) fn tty_default_features(owner: &ClientRef, name: &CStr) {
     static table: [C2RustUnnamed_35; 9] = [
         C2RustUnnamed_35 {
             name: c"mintty",

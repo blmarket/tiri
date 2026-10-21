@@ -1474,7 +1474,7 @@ fn tty_keys_next1(
 /// the old fixed copy ran out.
 const KEY_PARAMS_END: size_t = 64;
 
-unsafe fn tty_keys_winsz(
+fn tty_keys_winsz(
     terminal_client_owner: &ClientRef,
     bytes: &[u8],
     size: &mut size_t,
@@ -2612,7 +2612,7 @@ fn tty_keys_da_params(bytes: &[u8], marker: u8) -> Result<&[u8], ::core::ffi::c_
     }
     Ok(&bytes[3..3 + i])
 }
-unsafe fn tty_keys_device_attributes(
+fn tty_keys_device_attributes(
     terminal_client_owner: &ClientRef,
     bytes: &[u8],
     size: &mut size_t,
@@ -2641,7 +2641,7 @@ unsafe fn tty_keys_device_attributes(
                 52 => c"clipboard",
                 _ => continue,
             };
-            unsafe { tty_parse_client_features(terminal_client_owner, feature, c",") };
+            tty_parse_client_features(terminal_client_owner, feature, c",");
         }
     }
     log_debug(format_args!(
@@ -2655,7 +2655,7 @@ unsafe fn tty_keys_device_attributes(
     }
     0 as ::core::ffi::c_int
 }
-unsafe fn tty_keys_sync(
+fn tty_keys_sync(
     terminal_client_owner: &ClientRef,
     bytes: &[u8],
     size: &mut size_t,
@@ -2707,7 +2707,7 @@ unsafe fn tty_keys_sync(
     unsafe { terminal_client_owner.borrow_terminal_mut() }.flags |= TTY_HAVESYNC;
     0 as ::core::ffi::c_int
 }
-unsafe fn tty_keys_device_attributes2(
+fn tty_keys_device_attributes2(
     terminal_client_owner: &ClientRef,
     bytes: &[u8],
     size: &mut size_t,
@@ -2728,7 +2728,7 @@ unsafe fn tty_keys_device_attributes2(
         _ => None,
     };
     if let Some(terminal) = terminal {
-        unsafe { tty_default_features(terminal_client_owner, terminal) };
+        tty_default_features(terminal_client_owner, terminal);
     }
     log_debug(format_args!(
         "{}: received secondary DA {}",
@@ -2774,7 +2774,7 @@ fn tty_keys_reply_text_len(
     }
     Ok(i)
 }
-unsafe fn tty_keys_extended_device_attributes(
+fn tty_keys_extended_device_attributes(
     terminal_client_owner: &ClientRef,
     bytes: &[u8],
     size: &mut size_t,
@@ -2818,7 +2818,7 @@ unsafe fn tty_keys_extended_device_attributes(
         .iter()
         .find(|(prefix, _)| text.starts_with(prefix))
     {
-        unsafe { tty_default_features(terminal_client_owner, name) };
+        tty_default_features(terminal_client_owner, name);
     }
     log_debug(format_args!(
         "{}: received extended DA {}",
@@ -3316,7 +3316,7 @@ mod reply_parser_tests {
         }
     }
 
-    unsafe fn winsz(owner: &ClientRef, bytes: &[u8]) -> (i32, size_t) {
+    fn winsz(owner: &ClientRef, bytes: &[u8]) -> (i32, size_t) {
         let mut size = 99;
         (tty_keys_winsz(owner, bytes, &mut size), size)
     }
@@ -3578,10 +3578,7 @@ mod reply_parser_tests {
 
     fn da(owner: &ClientRef, bytes: &[u8]) -> (i32, size_t) {
         let mut size = 99;
-        (
-            unsafe { tty_keys_device_attributes(owner, bytes, &mut size) },
-            size,
-        )
+        (tty_keys_device_attributes(owner, bytes, &mut size), size)
     }
 
     unsafe fn da_features(params: &[u8]) -> i32 {
@@ -3665,10 +3662,7 @@ mod reply_parser_tests {
 
     fn da2(owner: &ClientRef, bytes: &[u8]) -> (i32, size_t) {
         let mut size = 99;
-        (
-            unsafe { tty_keys_device_attributes2(owner, bytes, &mut size) },
-            size,
-        )
+        (tty_keys_device_attributes2(owner, bytes, &mut size), size)
     }
 
     #[test]
@@ -3713,7 +3707,7 @@ mod reply_parser_tests {
     fn xda(owner: &ClientRef, bytes: &[u8]) -> (i32, size_t) {
         let mut size = 99;
         (
-            unsafe { tty_keys_extended_device_attributes(owner, bytes, &mut size) },
+            tty_keys_extended_device_attributes(owner, bytes, &mut size),
             size,
         )
     }
@@ -3784,7 +3778,7 @@ mod reply_parser_tests {
 
     fn sync(owner: &ClientRef, bytes: &[u8]) -> (i32, size_t) {
         let mut size = 99;
-        (unsafe { tty_keys_sync(owner, bytes, &mut size) }, size)
+        (tty_keys_sync(owner, bytes, &mut size), size)
     }
 
     #[test]

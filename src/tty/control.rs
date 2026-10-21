@@ -28,7 +28,6 @@ use crate::shared::client::{
 use crate::shared::display::*;
 use crate::shared::grid::*;
 use crate::shared::limits::UINT_MAX;
-use crate::shared::posix_io::{O_CREAT, O_TRUNC, O_WRONLY};
 use crate::shared::posix_terminal::{ICRNL, ONLCR, OPOST, TCSANOW, VMIN, VTIME};
 use crate::shared::screen::screen;
 use crate::shared::terminal::*;
@@ -59,18 +58,6 @@ use ::libc::{
     ISIG, ISTRIP, IXOFF, IXON, OCRNL, ONLRET, TCOFLUSH,
 };
 
-pub(super) static mut tty_log: Option<(tiri_rt::mio::Runtime, tiri_rt::mio::Io)> = None;
-pub unsafe fn tty_create_log() {
-    let name = format_message_with(|out| write!(out, "tmux-out-{}.log", std::process::id()));
-    use tiri_rt::Runtime as _;
-    tty_log = (|| -> std::io::Result<_> {
-        let file = tiri_rt::unix::open(&name, O_WRONLY | O_CREAT | O_TRUNC, 0o644)?;
-        let runtime = tiri_rt::mio::Runtime::new()?;
-        let source = runtime.enter(|| tiri_rt::mio::Io::new(file))?;
-        Ok((runtime, source))
-    })()
-    .ok();
-}
 pub unsafe fn tty_init(owner: &ClientRef) -> ::core::ffi::c_int {
     let fd = owner.terminal_fd();
     tty_initialize_component(owner.borrow_terminal_mut(), fd)
@@ -1428,14 +1415,14 @@ pub(super) fn tty_check_codeset(utf8: bool, gc: &grid_cell) -> grid_cell {
     new.data.data[..new.data.size as usize].fill(b'_');
     new
 }
-unsafe fn tty_check_overlay(owner: &ClientRef, px: u_int, py: u_int) -> bool {
+fn tty_check_overlay(owner: &ClientRef, px: u_int, py: u_int) -> bool {
     let mut ranges = tty_check_overlay_range(owner, px, py, 1);
     !ranges.is_empty()
 }
 
 /// Return owned clipping geometry. Overlay callbacks run without a terminal
 /// borrow, and nested output cannot replace the caller's ranges in place.
-pub unsafe fn tty_check_overlay_range(
+pub fn tty_check_overlay_range(
     owner: &ClientRef,
     px: u_int,
     py: u_int,
@@ -2113,10 +2100,10 @@ impl tty {
     pub fn has(&self, code: tty_code_code) -> bool {
         tty_term_has(self.opened_term(), code) != 0
     }
-    pub unsafe fn has_capability_name(&self, name: &CStr) -> bool {
+    pub fn has_capability_name(&self, name: &CStr) -> bool {
         super::term::tty_term_has_name(self.opened_term(), name) != 0
     }
-    pub unsafe fn has_feature(&self, name: &CStr, utf8: bool) -> bool {
+    pub fn has_feature(&self, name: &CStr, utf8: bool) -> bool {
         super::features::tty_feature_present(self.opened_term(), name, utf8) != 0
     }
     pub fn clipboard_invalid(&self) -> bool {

@@ -1,9 +1,8 @@
 //! Terminal output operates on the retained client holder. Each terminal
 //! access ends before nested output, so no model borrow spans those operations.
-use super::control::{tty_log, tty_start_write};
+use super::control::tty_start_write;
 use super::model::*;
 use crate::options::OptionsScope;
-use tiri_rt::AsyncWrite as _;
 
 use super::acs::{tty_acs_get, tty_acs_needed};
 use crate::format::bytes::{format_cstring, format_message_with};
@@ -38,7 +37,6 @@ use crate::tty::term::{
     tty_term_flag, tty_term_has, tty_term_number, tty_term_string, tty_term_string_i,
     tty_term_string_ii, tty_term_string_iii, tty_term_string_s, tty_term_string_ss,
 };
-use libc::{abs, strcmp, strncmp};
 
 use std::ffi::CStr;
 
@@ -51,7 +49,7 @@ pub(super) unsafe fn terminal_term(owner: &ClientRef) -> &tty_term {
     std::ptr::NonNull::from(term).as_ref()
 }
 
-static mut tty_default_style_ctx: tty_style_ctx = {
+const tty_default_style_ctx: tty_style_ctx = {
     tty_style_ctx {
         defaults: grid_default_cell,
         palette: crate::shared::tty::PaletteSource::None,
@@ -131,7 +129,7 @@ pub(super) unsafe fn tty_add(client: &ClientRef, buf: &[u8]) {
     client.write_terminal(buf);
 }
 
-pub(crate) unsafe fn tty_enqueue_bytes(
+pub(crate) fn tty_enqueue_bytes(
     observer: ClientWeak,
     tty: &mut tty,
     name: Option<&CStr>,
@@ -153,9 +151,6 @@ pub(crate) unsafe fn tty_enqueue_bytes(
         log_cstr_n(&buf[..len])
     ));
     *written = written.wrapping_add(len);
-    if let Some((runtime, source)) = tty_log.as_mut() {
-        let _ = runtime.block_on(source.write(&[std::io::IoSlice::new(buf)], None));
-    }
     if tty.flags & TTY_STARTED != 0 {
         tty_start_write(tty, observer);
     }
@@ -235,14 +230,11 @@ pub(super) unsafe fn tty_putn(client: &ClientRef, buf: &[u8], mut width: u_int) 
 }
 
 pub(super) unsafe fn tty_set_italics(client: &ClientRef) {
-    let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if tty_term_has(terminal_term(client), TTYC_SITM) != 0 {
         let terminal =
             OptionsScope::GlobalServer.with_local(|oo| options_get_string(oo, c"default-terminal"));
-        s = terminal.as_ptr();
-        if strcmp(s, c"screen".as_ptr()) != 0 as ::core::ffi::c_int
-            && strncmp(s, c"screen-".as_ptr(), 7 as size_t) != 0 as ::core::ffi::c_int
-        {
+        let s = terminal.to_bytes();
+        if s != b"screen" && !s.starts_with(b"screen-") {
             tty_putcode(client, TTYC_SITM);
             return;
         }
@@ -758,7 +750,7 @@ pub unsafe fn tty_cursor(client: &ClientRef, mut cx: u_int, mut cy: u_int) {
             current_block = 5411263895410993842;
         } else {
             change = thisx.wrapping_sub(cx) as ::core::ffi::c_int;
-            if abs(change) as u_int > cx && tty_term_has(terminal_term(client), TTYC_HPA) != 0 {
+            if change.unsigned_abs() > cx && tty_term_has(terminal_term(client), TTYC_HPA) != 0 {
                 tty_putcode_i(client, TTYC_HPA, cx as ::core::ffi::c_int);
                 current_block = 5411263895410993842;
             } else if change > 0 as ::core::ffi::c_int
@@ -799,7 +791,7 @@ pub unsafe fn tty_cursor(client: &ClientRef, mut cx: u_int, mut cy: u_int) {
             current_block = 5411263895410993842;
         } else {
             change = thisy.wrapping_sub(cy) as ::core::ffi::c_int;
-            if abs(change) as u_int > cy
+            if change.unsigned_abs() > cy
                 || change < 0 as ::core::ffi::c_int
                     && cy.wrapping_sub(change as u_int) > terminal_value!(client, rlower)
                 || change > 0 as ::core::ffi::c_int
@@ -904,7 +896,8 @@ pub(super) unsafe fn tty_attributes(
 ) {
     let mut gc2 = *gc;
     let mut changed: ::core::ffi::c_int = 0;
-    let style_ctx = style_ctx.unwrap_or(&tty_default_style_ctx);
+    let default_style_ctx = tty_default_style_ctx;
+    let style_ctx = style_ctx.unwrap_or(&default_style_ctx);
     let palette = &style_ctx.palette;
     if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_NOPALETTE != 0 {
         if gc2.fg == 8 as ::core::ffi::c_int {
@@ -1071,7 +1064,7 @@ pub(super) unsafe fn tty_colours(client: &ClientRef, gc: &grid_cell) {
     }
 }
 
-pub(super) unsafe fn tty_map_theme_colour(client: &ClientRef, colour: i32) -> i32 {
+pub(super) fn tty_map_theme_colour(client: &ClientRef, colour: i32) -> i32 {
     if colour & COLOUR_FLAG_THEME == 0 {
         return colour;
     }
