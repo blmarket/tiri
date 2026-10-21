@@ -56,7 +56,6 @@ use crate::shared::spawn::spawn_editor_state;
 use crate::shared::spawn::{
     SPAWN_BEFORE, SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_KILL, SPAWN_NONOTIFY, SPAWN_RESPAWN,
 };
-use crate::shared::terminal::*;
 
 use std::os::fd::{FromRawFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
@@ -456,13 +455,7 @@ pub(super) unsafe fn spawn_pane(
                 }
             }
             let mut master = -1;
-            (*new_wp).pid = fdforkpty(
-                ptm_fd,
-                &raw mut master,
-                (*new_wp).tty.as_mut_ptr().cast(),
-                ::core::ptr::null_mut::<termios>(),
-                &raw mut ws,
-            );
+            (*new_wp).pid = fdforkpty(ptm_fd, &mut master, &mut (*new_wp).tty, &ws);
             if (*new_wp).pid == -(1 as ::core::ffi::c_int) {
                 let error = ErrorText(&std::io::Error::last_os_error()).to_string();
                 set_spawn_cause(Some(&mut *cause), &[b"fork failed: ", error.as_bytes()]);

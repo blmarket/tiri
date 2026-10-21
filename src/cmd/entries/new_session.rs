@@ -111,8 +111,7 @@ unsafe fn cmd_new_session_exec(
     let mut groupwith_owner = None;
     let mut env: Option<Box<environ>> = None;
     let mut oo: Option<options> = None;
-    let mut tio: termios = unsafe { ::core::mem::zeroed() };
-    let mut tiop: *mut termios = ::core::ptr::null_mut::<termios>();
+    let mut tio: Option<termios> = None;
     let mut sg = crate::shared::session::SessionGroupWeak::new();
     let mut group: Option<&CStr> = None;
     let mut cause: Option<std::ffi::CString> = None;
@@ -315,12 +314,11 @@ unsafe fn cmd_new_session_exec(
                             });
                             current_block = 5193972633326621385;
                         } else {
-                            tio = c.as_ref().expect("live client").capture_termios();
-                            tiop = &raw mut tio;
+                            tio = Some(c.as_ref().expect("live client").capture_termios());
                             current_block = 6545907279487748450;
                         }
                     } else {
-                        tiop = ::core::ptr::null_mut::<termios>();
+                        tio = None;
                         current_block = 6545907279487748450;
                     }
                     match current_block {
@@ -527,7 +525,7 @@ unsafe fn cmd_new_session_exec(
                                                         );
                                                     }
                                                     let session_owner = crate::shared::session::SessionRef::create(prefix.as_deref(), sname_owned.as_deref(), cwd.as_deref().expect("client working directory is set at identify"), env.take()
-                                                            .expect("new session environment"), oo.take(), tiop.as_ref());
+                                                            .expect("new session environment"), oo.take(), tio.as_ref());
                                                     s = Some(session_owner.clone());
                                                     sc.item = std::rc::Rc::downgrade(item_handle);
                                                     sc.s = std::rc::Rc::downgrade(&session_owner);

@@ -31,7 +31,6 @@ use crate::shared::posix_io::{
 use crate::shared::posix_terminal::winsize;
 use crate::shared::session::SessionRef;
 use crate::shared::signal::{sigset_t, SIGCONT, SIGTERM, SIGTTIN, SIGTTOU, SIG_BLOCK, SIG_SETMASK};
-use crate::shared::terminal::*;
 use crate::tmux::{checkshell, find_home_cstr, ptm_fd, setblocking, shell_argv0_cstring};
 use libc::{
     _exit, chdir, execl, execvp, fork, kill, killpg, memset, setenv, sigfillset, sigprocmask,
@@ -125,7 +124,7 @@ pub unsafe fn job_run(
     };
     let mut argvp: *mut *mut ::core::ffi::c_char =
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
-    let mut tty: [::core::ffi::c_char; 32] = [0; 32];
+    let mut tty = [0u8; 32];
     let mut env_owner = Some(environ_for_session(
         s_owner,
         (cfg_finished == 0) as ::core::ffi::c_int,
@@ -162,13 +161,7 @@ pub unsafe fn job_run(
         );
         ws.ws_col = sx as ::core::ffi::c_ushort;
         ws.ws_row = sy as ::core::ffi::c_ushort;
-        pid = fdforkpty(
-            ptm_fd,
-            &raw mut master,
-            &raw mut tty as *mut ::core::ffi::c_char,
-            ::core::ptr::null_mut::<termios>(),
-            &raw mut ws,
-        );
+        pid = fdforkpty(ptm_fd, &mut master, &mut tty, &ws);
         current_block = 224731115979188411;
     } else if let Ok((parent, child)) = tiri_rt::unix::socket_pair() {
         out_owner = Some([parent, child]);

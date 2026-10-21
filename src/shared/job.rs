@@ -24,7 +24,7 @@ pub struct job {
     pub flags: ::core::ffi::c_int,
     pub cmd: Option<std::ffi::CString>,
     pub pid: pid_t,
-    pub tty: [::core::ffi::c_char; 32],
+    pub tty: [u8; 32],
     pub status: std::process::ExitStatus,
     pub fd: Option<std::os::fd::OwnedFd>,
     pub event: crate::reactor::StreamHandle,

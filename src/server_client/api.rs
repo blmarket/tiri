@@ -19,7 +19,7 @@ use crate::shared::terminal::termios;
 use crate::shared::window::WindowRef;
 use crate::window::Window;
 use std::cell::RefCell;
-use std::os::fd::{AsRawFd, OwnedFd};
+use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use std::rc::{Rc, Weak};
 use std::time::{Duration, SystemTime};
 
@@ -181,7 +181,7 @@ pub trait Client {
     fn previous_session(&self) -> SessionWeak;
     fn has_input_fd(&self) -> bool;
     /// Capture terminal attributes before attaching; retain the existing fatal error policy.
-    unsafe fn capture_termios(&self) -> termios;
+    fn capture_termios(&self) -> termios;
     /// Reserve nesting before starting a source-file chain. Completion or
     /// cancellation must explicitly balance a successful reservation.
     fn enter_source_file(&self, limit: u32) -> Option<u32>;
@@ -823,11 +823,14 @@ impl Client for ClientRef {
         state.source_file_depth = state.source_file_depth.wrapping_sub(1);
         state.source_file_depth
     }
-    unsafe fn capture_termios(&self) -> termios {
-        crate::shared::terminal::read_attributes(
-            (*self.as_ptr()).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
-        )
-        .unwrap_or_else(|error| fatal(&error, |out| out.write_all(b"tcgetattr failed")))
+    fn capture_termios(&self) -> termios {
+        let state = self.borrow();
+        state
+            .fd
+            .as_ref()
+            .ok_or_else(|| std::io::Error::from_raw_os_error(libc::EBADF))
+            .and_then(|fd| tiri_rt::unix::terminal_attributes(fd.as_fd()))
+            .unwrap_or_else(|error| fatal(&error, |out| out.write_all(b"tcgetattr failed")))
     }
     fn name(&self) -> Option<CString> {
         self.borrow().name.clone()
