@@ -107,9 +107,9 @@ pub struct client {
 
 impl client {
     #[cfg(test)]
-    pub(super) unsafe fn with_session_for_test(session: Option<&SessionRef>) -> ClientRef {
+    pub(super) fn with_session_for_test(session: Option<&SessionRef>) -> ClientRef {
         let owner = Self::new();
-        (*owner.as_ptr()).set_session(session);
+        owner.borrow_mut().set_session(session);
         owner
     }
 
@@ -207,14 +207,16 @@ impl client {
 impl client {
     /// No descriptors or monitors are installed; tests explicitly stop control
     /// after populating the component through its borrow API.
-    pub(super) unsafe fn with_control_for_test(
+    pub(super) fn with_control_for_test(
         name: Option<&std::ffi::CStr>,
         session: Option<&SessionRef>,
     ) -> ClientRef {
         let owner = Self::with_session_for_test(session);
-        (*owner.as_ptr()).name = name.map(ToOwned::to_owned);
-        (*owner.as_ptr()).control_state =
-            Some(Box::new(crate::shared::control::control_state::empty()));
+        {
+            let mut c = owner.borrow_mut();
+            c.name = name.map(ToOwned::to_owned);
+            c.control_state = Some(Box::new(crate::shared::control::control_state::empty()));
+        }
         owner
     }
 }

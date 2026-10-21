@@ -349,14 +349,12 @@ impl PopupRenderSnapshot {
         ttyctx.redraw_cb = Some(Box::new(move |_| {
             if redraw.popup.0.is_alive() {
                 if let Some(client) = redraw.client.upgrade() {
-                    unsafe {
-                        client.request_redraw(CLIENT_REDRAWOVERLAY as u64);
-                    }
+                    client.request_redraw(CLIENT_REDRAWOVERLAY as u64);
                 }
             }
         }));
         let set_client = self.clone();
-        ttyctx.set_client_cb = Some(Box::new(move |ttyctx, c| unsafe {
+        ttyctx.set_client_cb = Some(Box::new(move |ttyctx, c| {
             if !set_client.popup.0.is_alive() {
                 return 0;
             }

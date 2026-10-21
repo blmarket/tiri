@@ -53,6 +53,25 @@ pub(crate) fn integer_prefix(input: &[u8], radix: u32) -> IntegerPrefix {
     }
 }
 
+/// strtoul's result: `ULONG_MAX` on overflow, the magnitude negated
+/// modulo 2^64 after a minus sign.
+pub(crate) fn unsigned_long(prefix: &IntegerPrefix) -> u64 {
+    match prefix.magnitude {
+        None => u64::MAX,
+        Some(magnitude) if prefix.negative => magnitude.wrapping_neg(),
+        Some(magnitude) => magnitude,
+    }
+}
+
+/// glibc `%u`: optional whitespace and sign, at least one digit, read
+/// as `unsigned long` and stored truncated to 32 bits, so a number past
+/// `u64` saturates to `u32::MAX` and anything shorter wraps modulo
+/// 2^32. Returns the value and the bytes consumed.
+pub(crate) fn scan_u32(field: &[u8]) -> Option<(u32, usize)> {
+    let prefix = integer_prefix(field, 10);
+    (prefix.consumed != 0).then(|| (unsigned_long(&prefix) as u32, prefix.consumed))
+}
+
 /// Keep strtoull's optional whitespace, sign, and 0x prefix semantics, and
 /// return the unconsumed suffix as a borrow of the original C string.
 pub(crate) fn hexadecimal_prefix(input: &CStr) -> Option<(u64, &CStr)> {

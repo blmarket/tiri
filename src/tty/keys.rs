@@ -2965,31 +2965,12 @@ fn tty_keys_palette(
 /// Byte-slice forms of the C conversions the reply parsers once ran on
 /// NUL-terminated copies of the reply.
 mod scan {
-    use crate::text::numbers::{integer_prefix, IntegerPrefix};
+    use crate::text::numbers::{integer_prefix, scan_u32, unsigned_long};
 
     /// The bytes before the first NUL: what a C string function reading a
     /// copy of `text` saw.
     pub(super) fn until_nul(text: &[u8]) -> &[u8] {
         text.split(|&byte| byte == 0).next().unwrap_or(text)
-    }
-
-    /// strtoul's result: `ULONG_MAX` on overflow, the magnitude negated
-    /// modulo 2^64 after a minus sign.
-    fn unsigned_long(prefix: &IntegerPrefix) -> u64 {
-        match prefix.magnitude {
-            None => u64::MAX,
-            Some(magnitude) if prefix.negative => magnitude.wrapping_neg(),
-            Some(magnitude) => magnitude,
-        }
-    }
-
-    /// glibc `%u`: optional whitespace and sign, at least one digit, read
-    /// as `unsigned long` and stored truncated to 32 bits, so a number past
-    /// `u64` saturates to `u32::MAX` and anything shorter wraps modulo
-    /// 2^32. Returns the value and the bytes consumed.
-    pub(super) fn scan_u32(field: &[u8]) -> Option<(u32, usize)> {
-        let prefix = integer_prefix(field, 10);
-        (prefix.consumed != 0).then(|| (unsigned_long(&prefix) as u32, prefix.consumed))
     }
 
     /// `sscanf(text, "<literal>%u;%u")` returning 2; bytes after the second

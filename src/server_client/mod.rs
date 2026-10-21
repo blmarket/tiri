@@ -65,7 +65,7 @@ use crate::server::{current_time, server_add_accept, server_proc, server_update_
 use crate::server_fn::{
     server_check_unattached, server_redraw_window_borders, server_status_window,
 };
-use libc::{access, memcpy, sscanf, strcmp};
+use libc::{access, memcpy, strcmp};
 
 use crate::shared::command::unpack_argv;
 use crate::status::{
@@ -76,6 +76,7 @@ use crate::status::{
 use crate::style::colour::{
     colour_parse_cstr, colour_theme_option, colour_theme_terminal_colour, colour_totheme,
 };
+use crate::text::numbers::scan_u32;
 use crate::text::utf8::{utf8_sanitize_cstring, utf8_stravisx_bytes};
 use crate::tmux::{checkshell, find_home_cstr, setblocking};
 use crate::tty::tty_get_features;
@@ -628,24 +629,17 @@ use crate::tty::tty;
 use libc::EINTR;
 
 pub const _PATH_TTY: &std::ffi::CStr = c"/dev/tty";
-unsafe fn server_client_how_many() -> u_int {
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
+fn server_client_how_many() -> u_int {
     let mut n: u_int = 0;
-    n = 0 as u_int;
     let mut registry_c_owner = ClientRegistry::first();
-    c = registry_c_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    while !c.is_null() {
-        if !(*c).session_handle().is_none() && !(*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0
+    while let Some(owner) = registry_c_owner {
         {
-            n = n.wrapping_add(1);
+            let c = owner.borrow();
+            if c.session_handle().is_some() && !c.flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0 {
+                n = n.wrapping_add(1);
+            }
         }
-        registry_c_owner =
-            ClientRegistry::next(registry_c_owner.as_ref().expect("current registry client"));
-        c = registry_c_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
+        registry_c_owner = ClientRegistry::next(&owner);
     }
     n
 }
@@ -664,46 +658,53 @@ unsafe fn server_client_update_overlay_focus(owner: &ClientRef) {
 }
 
 unsafe fn server_client_set_overlay(c_owner: &ClientRef, overlay: Overlay) {
-    let c = c_owner.as_ptr();
-    while (*c).overlay.is_some() {
+    while c_owner.borrow().overlay.is_some() {
         server_client_clear_overlay(c_owner);
     }
-    (*c).overlay_generation = (*c)
-        .overlay_generation
-        .checked_add(1)
-        .expect("overlay generation exhausted");
-    if overlay.check.is_none() {
-        (*c).tty.set_frozen(true);
+    {
+        let mut c = c_owner.borrow_mut();
+        c.overlay_generation = c
+            .overlay_generation
+            .checked_add(1)
+            .expect("overlay generation exhausted");
+        if overlay.check.is_none() {
+            c.tty.set_frozen(true);
+        }
+        if overlay.mode.is_none() {
+            c.tty.set_cursor_hidden(true);
+        }
+        c.overlay = Some(overlay);
     }
-    if overlay.mode.is_none() {
-        (*c).tty.set_cursor_hidden(true);
-    }
-    (*c).overlay = Some(overlay);
     server_client_update_overlay_focus(c_owner);
     c_owner.request_redraw(CLIENT_ALLREDRAWFLAGS as u64);
 }
 unsafe fn server_client_clear_overlay(c_owner: &ClientRef) {
-    let c = c_owner.as_ptr();
-    let Some(overlay) = (*c).overlay.take() else {
-        return;
+    let (overlay, generation) = {
+        let mut c = c_owner.borrow_mut();
+        let Some(overlay) = c.overlay.take() else {
+            return;
+        };
+        c.overlay_generation = c
+            .overlay_generation
+            .checked_add(1)
+            .expect("overlay generation exhausted");
+        (overlay, c.overlay_generation)
     };
-    (*c).overlay_generation = (*c)
-        .overlay_generation
-        .checked_add(1)
-        .expect("overlay generation exhausted");
-    let generation = (*c).overlay_generation;
     drop(overlay);
-    if (*c).overlay_generation == generation {
-        (*c).tty.set_frozen(false);
-        (*c).tty.set_cursor_hidden(false);
+    {
+        let mut c = c_owner.borrow_mut();
+        if c.overlay_generation == generation {
+            c.tty.set_frozen(false);
+            c.tty.set_cursor_hidden(false);
+        }
     }
     server_client_update_overlay_focus(c_owner);
     c_owner.request_redraw(CLIENT_ALLREDRAWFLAGS as u64);
 }
-unsafe fn server_client_overlay_draw(c_owner: &ClientRef) {
-    let c = c_owner.as_ptr();
-    let generation = (*c).overlay_generation;
-    let Some(mut callback) = (*c)
+fn server_client_overlay_draw(c_owner: &ClientRef) {
+    let generation = c_owner.borrow().overlay_generation;
+    let Some(mut callback) = c_owner
+        .borrow_mut()
         .overlay
         .as_mut()
         .and_then(|overlay| overlay.draw.take())
@@ -711,8 +712,9 @@ unsafe fn server_client_overlay_draw(c_owner: &ClientRef) {
         return;
     };
     callback(c_owner);
-    if (*c).overlay_generation == generation {
-        if let Some(overlay) = (*c).overlay.as_mut() {
+    let mut c = c_owner.borrow_mut();
+    if c.overlay_generation == generation {
+        if let Some(overlay) = c.overlay.as_mut() {
             if overlay.draw.is_none() {
                 overlay.draw = Some(callback);
             }
@@ -720,15 +722,15 @@ unsafe fn server_client_overlay_draw(c_owner: &ClientRef) {
     }
 }
 
-unsafe fn server_client_overlay_key(c_owner: &ClientRef, event: &mut key_event) -> Option<i32> {
-    let c = c_owner.as_ptr();
-    let generation = (*c).overlay_generation;
-    let mut callback = (*c).overlay.as_mut()?.key.take()?;
+fn server_client_overlay_key(c_owner: &ClientRef, event: &mut key_event) -> Option<i32> {
+    let generation = c_owner.borrow().overlay_generation;
+    let mut callback = c_owner.borrow_mut().overlay.as_mut()?.key.take()?;
     let result = callback(c_owner, event);
-    if (*c).overlay_generation != generation {
+    let mut c = c_owner.borrow_mut();
+    if c.overlay_generation != generation {
         return Some(0);
     }
-    if let Some(overlay) = (*c).overlay.as_mut() {
+    if let Some(overlay) = c.overlay.as_mut() {
         if overlay.key.is_none() {
             overlay.key = Some(callback);
         }
@@ -736,15 +738,15 @@ unsafe fn server_client_overlay_key(c_owner: &ClientRef, event: &mut key_event) 
     Some(result)
 }
 
-unsafe fn server_client_overlay_mode(c_owner: &ClientRef) -> Option<(ScreenMode, u_int, u_int)> {
-    let c = c_owner.as_ptr();
-    let generation = (*c).overlay_generation;
-    let mut callback = (*c).overlay.as_mut()?.mode.take()?;
+fn server_client_overlay_mode(c_owner: &ClientRef) -> Option<(ScreenMode, u_int, u_int)> {
+    let generation = c_owner.borrow().overlay_generation;
+    let mut callback = c_owner.borrow_mut().overlay.as_mut()?.mode.take()?;
     let result = callback(c_owner);
-    if (*c).overlay_generation != generation {
+    let mut c = c_owner.borrow_mut();
+    if c.overlay_generation != generation {
         return None;
     }
-    if let Some(overlay) = (*c).overlay.as_mut() {
+    if let Some(overlay) = c.overlay.as_mut() {
         if overlay.mode.is_none() {
             overlay.mode = Some(callback);
         }
@@ -752,10 +754,10 @@ unsafe fn server_client_overlay_mode(c_owner: &ClientRef) -> Option<(ScreenMode,
     result
 }
 
-unsafe fn server_client_overlay_resize(c_owner: &ClientRef) {
-    let c = c_owner.as_ptr();
-    let generation = (*c).overlay_generation;
-    let Some(mut callback) = (*c)
+fn server_client_overlay_resize(c_owner: &ClientRef) {
+    let generation = c_owner.borrow().overlay_generation;
+    let Some(mut callback) = c_owner
+        .borrow_mut()
         .overlay
         .as_mut()
         .and_then(|overlay| overlay.resize.take())
@@ -763,8 +765,9 @@ unsafe fn server_client_overlay_resize(c_owner: &ClientRef) {
         return;
     };
     callback(c_owner);
-    if (*c).overlay_generation == generation {
-        if let Some(overlay) = (*c).overlay.as_mut() {
+    let mut c = c_owner.borrow_mut();
+    if c.overlay_generation == generation {
+        if let Some(overlay) = c.overlay.as_mut() {
             if overlay.resize.is_none() {
                 overlay.resize = Some(callback);
             }
@@ -772,20 +775,20 @@ unsafe fn server_client_overlay_resize(c_owner: &ClientRef) {
     }
 }
 
-unsafe fn server_client_overlay_check(
+fn server_client_overlay_check(
     c_owner: &ClientRef,
     px: u_int,
     py: u_int,
     nx: u_int,
 ) -> Option<visible_ranges> {
-    let c = c_owner.as_ptr();
-    let generation = (*c).overlay_generation;
-    let mut callback = (*c).overlay.as_mut()?.check.take()?;
+    let generation = c_owner.borrow().overlay_generation;
+    let mut callback = c_owner.borrow_mut().overlay.as_mut()?.check.take()?;
     let result = callback(c_owner, px, py, nx);
-    if (*c).overlay_generation != generation {
+    let mut c = c_owner.borrow_mut();
+    if c.overlay_generation != generation {
         return None;
     }
-    if let Some(overlay) = (*c).overlay.as_mut() {
+    if let Some(overlay) = c.overlay.as_mut() {
         if overlay.check.is_none() {
             overlay.check = Some(callback);
         }
@@ -815,19 +818,21 @@ fn server_client_check_nested(c: &client) -> ::core::ffi::c_int {
     }
     0 as ::core::ffi::c_int
 }
-unsafe fn server_client_set_key_table(c_owner: &ClientRef, name: Option<&CStr>) {
-    let mut c = c_owner.as_ptr();
+fn server_client_set_key_table(c_owner: &ClientRef, name: Option<&CStr>) {
     let default_name;
     let name = match name {
         Some(name) => name,
         None => {
-            default_name = server_client_get_key_table(&*c);
+            default_name = server_client_get_key_table(&c_owner.borrow());
             &default_name
         }
     };
-    drop((*c).keytable.take());
-    (*c).keytable = key_bindings_get_table(name, 1);
-    (*c).keytable
+    let old = c_owner.borrow_mut().keytable.take();
+    drop(old);
+    let table = key_bindings_get_table(name, 1);
+    let mut c = c_owner.borrow_mut();
+    c.keytable = table;
+    c.keytable
         .as_ref()
         .expect("key table")
         .borrow_mut()
@@ -1238,23 +1243,22 @@ unsafe fn server_client_suspend(c_owner: &ClientRef) {
     (*c).flags |= CLIENT_SUSPENDED as uint64_t;
     proc_send(&(*c).peer, MSG_SUSPEND, None, &[]);
 }
-unsafe fn server_client_detach(c_owner: &ClientRef, mut msgtype: msgtype) {
-    let mut c = c_owner.as_ptr();
-    let mut s: Option<SessionRef> = (*c).session_handle();
-    if s.is_none() || (*c).flags & CLIENT_NODETACHFLAGS as uint64_t != 0 {
+fn server_client_detach(c_owner: &ClientRef, mut msgtype: msgtype) {
+    let mut c = c_owner.borrow_mut();
+    let mut s: Option<SessionRef> = c.session_handle();
+    if s.is_none() || c.flags & CLIENT_NODETACHFLAGS as uint64_t != 0 {
         return;
     }
-    (*c).flags |= CLIENT_EXIT as uint64_t;
-    (*c).exit_type = CLIENT_EXIT_DETACH;
-    (*c).exit_msgtype = msgtype;
+    c.flags |= CLIENT_EXIT as uint64_t;
+    c.exit_type = CLIENT_EXIT_DETACH;
+    c.exit_msgtype = msgtype;
     server_client_set_exit_session(
-        &mut *c,
+        &mut c,
         Some(s.as_ref().expect("live session").name().clone()),
     );
 }
-unsafe fn server_client_exec(c_owner: &ClientRef, cmd: &CStr) {
-    let mut c = c_owner.as_ptr();
-    let mut s: Option<SessionRef> = (*c).session_handle();
+fn server_client_exec(c_owner: &ClientRef, cmd: &CStr) {
+    let mut s: Option<SessionRef> = c_owner.borrow().session_handle();
     if cmd.is_empty() {
         return;
     }
@@ -1272,7 +1276,7 @@ unsafe fn server_client_exec(c_owner: &ClientRef, cmd: &CStr) {
     let mut msg = Vec::with_capacity(cmd_bytes.len() + shell_bytes.len());
     msg.extend_from_slice(cmd_bytes);
     msg.extend_from_slice(shell_bytes);
-    proc_send(&(*c).peer, MSG_EXEC, None, &msg);
+    c_owner.send_message(MSG_EXEC, None, &msg);
 }
 
 unsafe fn server_client_update_scrollbar_hover(
@@ -1317,7 +1321,7 @@ unsafe fn server_client_check_mouse_in_pane(
     pane.mouse_location(x, y, slider)
 }
 
-unsafe fn server_client_pane_window_id(pane: &Rc<RefCell<window_pane>>) -> u32 {
+fn server_client_pane_window_id(pane: &Rc<RefCell<window_pane>>) -> u32 {
     let window = pane.window_observer().upgrade().expect("pane event window");
     let id = window.id();
     drop(window);
@@ -1902,7 +1906,7 @@ unsafe fn server_client_update_theme_colours(c_owner: Option<&ClientRef>) {
     }
     drop(ft_owner);
 }
-unsafe fn server_client_is_bracket_paste(c: &mut client, mut key: key_code) -> ::core::ffi::c_int {
+fn server_client_is_bracket_paste(c: &mut client, mut key: key_code) -> ::core::ffi::c_int {
     if key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
         == KEYC_PASTE_START as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
     {
@@ -1926,7 +1930,7 @@ unsafe fn server_client_is_bracket_paste(c: &mut client, mut key: key_code) -> :
     }
     (c.flags as ::core::ffi::c_ulonglong & CLIENT_BRACKETPASTING != 0) as ::core::ffi::c_int
 }
-unsafe fn server_client_is_assume_paste(c: &mut client) -> ::core::ffi::c_int {
+fn server_client_is_assume_paste(c: &mut client) -> ::core::ffi::c_int {
     let mut s: Option<SessionRef> = (*c).session_handle();
     let mut t: ::core::ffi::c_int = 0;
     if c.flags as ::core::ffi::c_ulonglong & CLIENT_BRACKETPASTING != 0 {
@@ -2997,29 +3001,27 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
     })();
     drop(window_owner);
 }
-unsafe fn server_client_repeat_timer(owner: &ClientRef) {
-    let c = owner.as_ptr();
-    if (*c).flags & CLIENT_REPEAT as uint64_t != 0 {
-        server_client_set_key_table(
-            owner,
-            nullable_cstr(::core::ptr::null::<::core::ffi::c_char>()),
-        );
-        (*c).flags &= !CLIENT_REPEAT as uint64_t;
-        (*c).flags |= CLIENT_REDRAWSTATUS as u64;
+fn server_client_repeat_timer(owner: &ClientRef) {
+    if owner.flags() & CLIENT_REPEAT as uint64_t != 0 {
+        server_client_set_key_table(owner, None);
+        owner.update_flags(CLIENT_REDRAWSTATUS as u64, CLIENT_REPEAT as uint64_t);
     }
 }
 unsafe fn server_client_click_timer(owner: &ClientRef) {
-    let c = owner.as_ptr();
     log_debug(format_args!("click timer expired"));
-    if (*c).flags & CLIENT_TRIPLECLICK as uint64_t != 0 {
+    let (flags, click_event) = {
+        let c = owner.borrow();
+        (c.flags, c.click_event)
+    };
+    if flags & CLIENT_TRIPLECLICK as uint64_t != 0 {
         let event = key_event::new(
             KEYC_DOUBLECLICK as ::core::ffi::c_ulong as key_code,
-            (*c).click_event,
+            click_event,
             None,
         );
         server_client_handle_key(owner, event);
     }
-    (*c).flags &= !(CLIENT_DOUBLECLICK | CLIENT_TRIPLECLICK) as uint64_t;
+    owner.borrow_mut().flags &= !(CLIENT_DOUBLECLICK | CLIENT_TRIPLECLICK) as uint64_t;
 }
 fn server_client_start_exit_timer(owner: &ClientRef) {
     let timeout = Duration::from_secs(10);
@@ -3029,23 +3031,24 @@ fn server_client_start_exit_timer(owner: &ClientRef) {
     }
 }
 unsafe fn server_client_exit_timer(owner: &ClientRef) {
-    let c = owner.as_ptr();
-    drop((*c).exit_timer.take());
-    if (*c).flags & (CLIENT_DEAD | CLIENT_SUSPENDED) as uint64_t != 0 {
+    let timer = owner.borrow_mut().exit_timer.take();
+    drop(timer);
+    let flags = owner.flags();
+    if flags & (CLIENT_DEAD | CLIENT_SUSPENDED) as uint64_t != 0 {
         return;
     }
-    if (*c).flags & CLIENT_EXITED as uint64_t != 0 {
+    if flags & CLIENT_EXITED as uint64_t != 0 {
         log_debug(format_args!(
             "{}: {} took too long to exit",
             "server_client_exit_timer",
-            log_cstr((*c).name.as_deref().unwrap_or(c"(null)"))
+            log_cstr(owner.borrow().name.as_deref().unwrap_or(c"(null)"))
         ));
         server_client_lost(owner);
-    } else if (*c).flags & CLIENT_EXIT as uint64_t != 0 {
+    } else if flags & CLIENT_EXIT as uint64_t != 0 {
         log_debug(format_args!(
             "{}: {} took too long to flush",
             "server_client_exit_timer",
-            log_cstr((*c).name.as_deref().unwrap_or(c"(null)"))
+            log_cstr(owner.borrow().name.as_deref().unwrap_or(c"(null)"))
         ));
         server_client_check_exit(owner, 1 as ::core::ffi::c_int);
     }
@@ -3152,7 +3155,7 @@ unsafe fn server_client_check_modes(client_owner: &ClientRef) {
     })();
     drop(window_owner);
 }
-unsafe fn server_client_any_pane_redraw(c: &client, window: &WindowRef) -> bool {
+fn server_client_any_pane_redraw(c: &client, window: &WindowRef) -> bool {
     if c.flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
         return true;
     }
@@ -3371,9 +3374,7 @@ unsafe fn server_client_set_title(client_owner: &ClientRef) {
 }
 /// Acquire the current active pane for an immediate client operation.
 /// Raw relationship fields are accessed only while resolving the handle.
-unsafe fn server_client_active_pane(
-    c: &client,
-) -> Option<std::rc::Rc<std::cell::RefCell<window_pane>>> {
+fn server_client_active_pane(c: &client) -> Option<std::rc::Rc<std::cell::RefCell<window_pane>>> {
     let session_owner = c.session.upgrade()?;
     let current = session_owner.current_winlink();
     let link = current.try_borrow().ok()?;
@@ -3942,7 +3943,7 @@ unsafe fn server_client_dispatch_identify(
     }
     0 as ::core::ffi::c_int
 }
-unsafe fn server_client_dispatch_shell(c: &client) -> ::core::ffi::c_int {
+fn server_client_dispatch_shell(c: &client) -> ::core::ffi::c_int {
     let shell_value =
         OptionsScope::GlobalSession.with_local(|oo| options_get_string(oo, c"default-shell"));
     let mut shell: &CStr = &shell_value;
@@ -3971,19 +3972,17 @@ unsafe fn server_client_get_cwd(c: Option<&ClientRef>, s: Option<&SessionRef>) -
     }
     Some(find_home_cstr().unwrap_or(c"/").to_owned())
 }
-unsafe fn server_client_control_flags(c_owner: &ClientRef, next: &CStr) -> uint64_t {
-    let mut c = c_owner.as_ptr();
+fn server_client_control_flags(c_owner: &ClientRef, next: &CStr) -> uint64_t {
     if next == c"pause-after" {
-        (*c).pause_age = 0 as u_int;
+        c_owner.borrow_mut().pause_age = 0 as u_int;
         return 0x100000000 as uint64_t;
     }
-    if sscanf(
-        next.as_ptr(),
-        c"pause-after=%u".as_ptr(),
-        &raw mut (*c).pause_age,
-    ) == 1 as ::core::ffi::c_int
+    if let Some((pause_age, _)) = next
+        .to_bytes()
+        .strip_prefix(b"pause-after=")
+        .and_then(scan_u32)
     {
-        (*c).pause_age = (*c).pause_age.wrapping_mul(1000 as u_int);
+        c_owner.borrow_mut().pause_age = pause_age.wrapping_mul(1000 as u_int);
         return 0x100000000 as uint64_t;
     }
     if next == c"no-output" {
@@ -3998,7 +3997,6 @@ unsafe fn server_client_control_flags(c_owner: &ClientRef, next: &CStr) -> uint6
     0 as uint64_t
 }
 unsafe fn server_client_set_flags(c_owner: &ClientRef, flags: &CStr) {
-    let mut c = c_owner.as_ptr();
     let mut flag: uint64_t = 0;
     for token in flags.to_bytes().split(|&b| b == b',') {
         let (not, name) = match token.strip_prefix(b"!") {
@@ -4006,7 +4004,7 @@ unsafe fn server_client_set_flags(c_owner: &ClientRef, flags: &CStr) {
             None => (false, token),
         };
         let next = CString::new(name).expect("a flag from a C string contains no NUL");
-        if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
+        if c_owner.flags() & CLIENT_CONTROL as uint64_t != 0 {
             flag = server_client_control_flags(c_owner, &next);
         } else {
             flag = 0 as uint64_t;
@@ -4023,22 +4021,25 @@ unsafe fn server_client_set_flags(c_owner: &ClientRef, flags: &CStr) {
         }
         log_debug(format_args!(
             "client {} set flag {}",
-            log_cstr((*c).name.as_deref().unwrap_or(c"(null)")),
+            log_cstr(c_owner.name().as_deref().unwrap_or(c"(null)")),
             log_cstr(&next)
         ));
-        if not {
-            if (*c).flags & CLIENT_READONLY as uint64_t != 0 {
-                flag &= !CLIENT_READONLY as uint64_t;
+        {
+            let mut c = c_owner.borrow_mut();
+            if not {
+                if c.flags & CLIENT_READONLY as uint64_t != 0 {
+                    flag &= !CLIENT_READONLY as uint64_t;
+                }
+                c.flags &= !flag;
+            } else {
+                c.flags |= flag;
             }
-            (*c).flags &= !flag;
-        } else {
-            (*c).flags |= flag;
         }
         if flag == CLIENT_CONTROL_NOOUTPUT as uint64_t {
             control_reset_offsets(c_owner);
         }
     }
-    proc_send(&(*c).peer, MSG_FLAGS, None, bytes_of(&(*c).flags));
+    c_owner.send_message(MSG_FLAGS, None, bytes_of(&c_owner.flags()));
 }
 fn server_client_get_flags(c: &client) -> CString {
     let mut s: Vec<u8> = Vec::new();
@@ -4084,24 +4085,22 @@ fn server_client_get_flags(c: &client) -> CString {
     CString::new(s).expect("client flag names contain no NUL")
 }
 
-unsafe fn server_client_remove_pane(wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>) {
+fn server_client_remove_pane(wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>) {
     let pane_id = wp_owner.id();
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut registry_c_owner = ClientRegistry::first();
-    c = registry_c_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    while !c.is_null() {
-        if (*c).mouse_last_pane == pane_id as ::core::ffi::c_int {
-            (*c).mouse_last_pane = -(1 as ::core::ffi::c_int);
-            (*c).mouse_drag_update = None;
-            (*c).mouse_scrolling_flag = 0 as ::core::ffi::c_int;
-        }
-        registry_c_owner =
-            ClientRegistry::next(registry_c_owner.as_ref().expect("current registry client"));
-        c = registry_c_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
+    while let Some(owner) = registry_c_owner {
+        let update = {
+            let mut c = owner.borrow_mut();
+            if c.mouse_last_pane == pane_id as ::core::ffi::c_int {
+                c.mouse_last_pane = -(1 as ::core::ffi::c_int);
+                c.mouse_scrolling_flag = 0 as ::core::ffi::c_int;
+                c.mouse_drag_update.take()
+            } else {
+                None
+            }
+        };
+        drop(update);
+        registry_c_owner = ClientRegistry::next(&owner);
     }
 }
 fn server_client_print(
@@ -4256,19 +4255,19 @@ pub(crate) mod queue_test_clients {
     use super::*;
 
     /// A client owning only a command queue.
-    pub(crate) unsafe fn with_queue() -> ClientRef {
+    pub(crate) fn with_queue() -> ClientRef {
         let owner = client::new();
-        (*owner.as_ptr()).queue = Some(cmdq_new());
+        owner.borrow_mut().queue = Some(cmdq_new());
         owner
     }
 
     /// Attach or detach without the server's side effects.
-    pub(crate) unsafe fn attach(owner: &ClientRef, session: Option<&SessionRef>) {
-        (*owner.as_ptr()).set_session(session);
+    pub(crate) fn attach(owner: &ClientRef, session: Option<&SessionRef>) {
+        owner.borrow_mut().set_session(session);
     }
 
-    pub(crate) unsafe fn return_value(owner: &ClientRef) -> i32 {
-        (*owner.as_ptr()).retval
+    pub(crate) fn return_value(owner: &ClientRef) -> i32 {
+        owner.borrow().retval
     }
 }
 
@@ -4488,7 +4487,7 @@ mod lost_queue_tests {
     fn a_client_retired_inside_a_callback_is_freed_from_dispatch() {
         use tiri_rt::{Handle as _, Runtime as _};
         let mut runtime = tiri_rt::mio::Runtime::new().unwrap();
-        let owner = unsafe { queue_test_clients::with_queue() };
+        let owner = queue_test_clients::with_queue();
         let client = Rc::downgrade(&owner);
         let inside = client.clone();
         let returned = Rc::new(Cell::new(false));
