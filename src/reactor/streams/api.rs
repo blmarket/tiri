@@ -59,9 +59,6 @@ pub trait BufferEvent {
 impl StreamHandle {
     fn access<R>(&self, f: impl FnOnce(&mut bufferevent) -> StreamResult<R>) -> StreamResult<R> {
         let owner = self.0.upgrade().ok_or(StreamError::Freed)?;
-        if !owner.live.get() {
-            return Err(StreamError::Freed);
-        }
         let mut slot = owner.stream.borrow_mut();
         f(slot.as_deref_mut().ok_or(StreamError::Freed)?)
     }
@@ -69,7 +66,9 @@ impl StreamHandle {
 
 impl BufferEvent for StreamHandle {
     fn is_alive(&self) -> bool {
-        self.0.upgrade().is_some_and(|state| state.live.get())
+        self.0
+            .upgrade()
+            .is_some_and(|state| state.stream.borrow().is_some())
     }
 
     fn free(self) {
@@ -124,7 +123,7 @@ impl BufferEvent for StreamHandle {
         self.access(|stream| {
             let count = count.min(stream.input.remaining());
             stream.input.advance(count);
-            state(stream).wake();
+            stream.state.wake();
             Ok(count)
         })
     }
@@ -132,7 +131,7 @@ impl BufferEvent for StreamHandle {
     fn write(&self, bytes: &[u8]) -> StreamResult<()> {
         self.access(|stream| {
             stream.output.put_slice(bytes);
-            state(stream).wake();
+            stream.state.wake();
             Ok(())
         })
     }

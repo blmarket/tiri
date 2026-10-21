@@ -13,11 +13,11 @@ use tiri_buffer::{Buf, BufMut, SegmentedBuf};
 use tiri_rt::Handle as _;
 use tiri_rt::{AsyncRead as _, AsyncWrite as _};
 pub(crate) struct StreamState {
+    /// Present until free; observers treat None as released.
     stream: RefCell<Option<Box<bufferevent>>>,
     fd: c_int,
     was_nonblocking: bool,
     pid: u32,
-    live: Cell<bool>,
     generation: Cell<u64>,
     write_requested: Cell<bool>,
     wake: RefCell<Option<LocalWaker>>,
@@ -34,17 +34,12 @@ impl StreamHandle {
         if stream.is_null() {
             return Self::default();
         }
-        Self(Rc::downgrade(
-            (*stream).state.as_ref().expect("registered stream"),
-        ))
+        Self(Rc::downgrade(&(*stream).state))
     }
 
     /// Keep the stream's allocation slot borrowed for one synchronous operation.
     pub fn with_ptr<R>(&self, access: impl FnOnce(*mut bufferevent) -> R) -> Option<R> {
         let owner = self.0.upgrade()?;
-        if !owner.live.get() {
-            return None;
-        }
         let slot = owner.stream.borrow();
         let stream = slot.as_ref()?;
         Some(access((&**stream as *const bufferevent).cast_mut()))
@@ -66,7 +61,7 @@ fn live_states() -> Vec<Rc<StreamState>> {
         streams
             .iter()
             .filter_map(Weak::upgrade)
-            .filter(|s| s.live.get())
+            .filter(|s| s.stream.borrow().is_some())
             .collect()
     })
 }
@@ -83,9 +78,6 @@ impl StreamState {
             wake.wake();
         }
     }
-}
-fn state(stream: &bufferevent) -> Rc<StreamState> {
-    stream.state.as_ref().expect("live stream").clone()
 }
 pub(super) fn clear() {
     for state in live_states() {
@@ -109,12 +101,9 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
         }
         let mut prefer_write = false;
         loop {
-            if !s.live.get() {
-                break;
-            }
             let (count, output, write, generation) = {
                 let mut slot = s.stream.borrow_mut();
-                let b = slot.as_deref_mut().expect("live stream");
+                let Some(b) = slot.as_deref_mut() else { break };
                 let count = if b.enabled & 2 == 0 {
                     0
                 } else if b.wm_read.high == 0 {
@@ -141,7 +130,7 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
                 let mut writer = pin!(source.write(&buffers, None));
                 poll_fn(|cx| {
                     *s.wake.borrow_mut() = Some(cx.local_waker().clone());
-                    if !s.live.get() || s.generation.get() != generation {
+                    if s.stream.borrow().is_none() || s.generation.get() != generation {
                         return Poll::Ready(Completion::Changed);
                     }
                     for writing in [prefer_write, !prefer_write] {
@@ -159,12 +148,9 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
                 })
                 .await
             };
-            if !s.live.get() {
-                break;
-            }
             let (stream, data, error) = {
                 let mut slot = s.stream.borrow_mut();
-                let b = slot.as_deref_mut().expect("live stream");
+                let Some(b) = slot.as_deref_mut() else { break };
                 let (data, error) = match completion {
                     Completion::Changed => continue,
                     Completion::Read(Ok(received)) if received.bytes > 0 => {
@@ -226,30 +212,30 @@ pub unsafe fn bufferevent_new(
     } else {
         tiri_rt::unix::set_nonblocking(std::os::fd::BorrowedFd::borrow_raw(fd), true)?
     };
-    let mut owner = Box::new(bufferevent {
-        readcb,
-        writecb,
-        errorcb,
-        enabled: 4,
-        ..Default::default()
-    });
-    let stream = &raw mut *owner;
     let s = Rc::new(StreamState {
-        stream: RefCell::new(Some(owner)),
+        stream: RefCell::new(None),
         fd,
         was_nonblocking,
         pid: std::process::id(),
-        live: Cell::new(true),
         generation: Cell::new(0),
         write_requested: Cell::new(false),
         wake: RefCell::new(None),
         task: RefCell::new(None),
     });
-    s.stream
-        .borrow_mut()
-        .as_deref_mut()
-        .expect("new stream")
-        .state = Some(s.clone());
+    // The stream owns its state until free breaks this cycle.
+    let mut owner = Box::new(bufferevent {
+        state: s.clone(),
+        input: Default::default(),
+        output: Default::default(),
+        wm_read: Default::default(),
+        wm_write: Default::default(),
+        readcb,
+        writecb,
+        errorcb,
+        enabled: 4,
+    });
+    let stream = &raw mut *owner;
+    *s.stream.borrow_mut() = Some(owner);
     LIVE_STREAMS.with(|streams| {
         let mut streams = streams.borrow_mut();
         streams.retain(|stream| stream.strong_count() != 0);
@@ -267,42 +253,37 @@ pub unsafe fn bufferevent_new(
     Ok(stream)
 }
 /// Invalidate observers and release the stream. A released stream is ignored.
+/// The caller's reference keeps the state alive once the stream is dropped.
 fn free(s: &StreamState) {
-    let Some(s) = s
-        .stream
-        .borrow_mut()
-        .as_deref_mut()
-        .and_then(|stream| stream.state.take())
-    else {
+    let Some(stream) = s.stream.borrow_mut().take() else {
         return;
     };
-    s.live.set(false);
     drop(s.task.take());
     if s.fd != -1 && s.pid == std::process::id() && !s.was_nonblocking {
         // The fd is owned by the caller and outlives the stream.
         let fd = unsafe { std::os::fd::BorrowedFd::borrow_raw(s.fd) };
         let _ = tiri_rt::unix::set_nonblocking(fd, false);
     }
-    drop(s.stream.take());
+    drop(stream);
 }
 
 /// Schedule an I/O recheck before lending input for synchronous consumption.
 /// The local task runs after the caller returns to the reactor, so it observes
 /// the updated length and can resume reads paused at the high watermark.
 pub fn bufferevent_get_input(stream: &mut bufferevent) -> &mut SegmentedBuf {
-    state(stream).wake();
+    stream.state.wake();
     &mut stream.input
 }
 /// Schedule an I/O recheck before lending output for synchronous mutation.
 /// Callers must finish modifying the buffer before returning to the reactor.
 pub fn bufferevent_get_output(stream: &mut bufferevent) -> &mut SegmentedBuf {
-    state(stream).wake();
+    stream.state.wake();
     &mut stream.output
 }
 pub unsafe fn bufferevent_enable(stream: *mut bufferevent, flags: c_short) -> c_int {
     let previous = (*stream).enabled;
     (*stream).enabled |= flags;
-    let s = state(&*stream);
+    let s = &(*stream).state;
     if flags & 4 != 0 {
         s.write_requested.set(true);
     }
@@ -315,7 +296,7 @@ pub unsafe fn bufferevent_disable(stream: *mut bufferevent, flags: c_short) -> c
     let previous = (*stream).enabled;
     (*stream).enabled &= !flags;
     if previous != (*stream).enabled {
-        state(&*stream).wake();
+        (*stream).state.wake();
     }
     0
 }
@@ -332,14 +313,14 @@ pub unsafe fn bufferevent_write_buffer(
         return -1;
     }
     (*(*stream).output).put(buffer);
-    state(&*stream).wake();
+    (*stream).state.wake();
     0
 }
 pub unsafe fn bufferevent_setwatermark(stream: *mut bufferevent) {
     (*stream).wm_write.low = CONTROL_BUFFER_LOW as usize;
     (*stream).wm_write.high = 0;
 
-    state(&*stream).wake();
+    (*stream).state.wake();
 }
 
 #[cfg(test)]
@@ -352,7 +333,7 @@ mod tests {
             let stream = bufferevent_new(-1, None, None, None).unwrap();
             let mut handle = StreamHandle::from_ptr(stream);
             let observer = handle.clone();
-            let state = state(&*stream);
+            let state = (*stream).state.clone();
             let generation = state.generation.get();
             bufferevent_write(stream, b"abc");
             assert!(state.generation.get() > generation);
@@ -365,7 +346,6 @@ mod tests {
             handle.free();
             assert!(!observer.is_alive());
             assert!(state.stream.borrow().is_none());
-            assert!(!state.live.get());
             drop(state);
             assert!(observer.0.upgrade().is_none());
         }

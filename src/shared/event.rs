@@ -7,10 +7,9 @@ use super::abi::*;
 pub use crate::reactor::Timer;
 use tiri_buffer::SegmentedBuf;
 
-#[derive(Default)]
 #[repr(C)]
 pub struct bufferevent {
-    pub(crate) state: Option<std::rc::Rc<crate::reactor::StreamState>>,
+    pub(crate) state: std::rc::Rc<crate::reactor::StreamState>,
     pub input: Box<SegmentedBuf>,
     pub output: Box<SegmentedBuf>,
     pub wm_read: event_watermark,
