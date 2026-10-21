@@ -89,14 +89,7 @@ fn state(stream: &bufferevent) -> Rc<StreamState> {
 }
 pub(super) fn clear() {
     for state in live_states() {
-        let stream = state
-            .stream
-            .borrow()
-            .as_ref()
-            .map(|s| (&**s as *const bufferevent).cast_mut());
-        if let Some(stream) = stream {
-            unsafe { bufferevent_free(stream) };
-        }
+        free(&state);
     }
     LIVE_STREAMS.with(|streams| streams.borrow_mut().clear());
 }
@@ -119,7 +112,7 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
             if !s.live.get() {
                 break;
             }
-            let (stream, count, output, write, generation) = {
+            let (count, output, write, generation) = {
                 let mut slot = s.stream.borrow_mut();
                 let b = slot.as_deref_mut().expect("live stream");
                 let count = if b.enabled & 2 == 0 {
@@ -139,13 +132,7 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
                 } else {
                     Vec::new()
                 };
-                (
-                    b as *mut bufferevent,
-                    count,
-                    output,
-                    write,
-                    s.generation.get(),
-                )
+                (count, output, write, s.generation.get())
             };
             let mut input = vec![0; count];
             let buffers = [std::io::IoSlice::new(&output)];
@@ -175,55 +162,52 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
             if !s.live.get() {
                 break;
             }
-            unsafe {
+            let (stream, data, error) = {
+                let mut slot = s.stream.borrow_mut();
+                let b = slot.as_deref_mut().expect("live stream");
                 let (data, error) = match completion {
                     Completion::Changed => continue,
                     Completion::Read(Ok(received)) if received.bytes > 0 => {
                         input.truncate(received.bytes);
-                        (*stream).input.put(SegmentedBuf::from(input));
+                        b.input.put(SegmentedBuf::from(input));
                         prefer_write = true;
-                        let cb = ((*stream).input.remaining() >= (*stream).wm_read.low)
-                            .then(|| (*stream).readcb.clone())
+                        let cb = (b.input.remaining() >= b.wm_read.low)
+                            .then(|| b.readcb.clone())
                             .flatten();
                         (cb, None)
                     }
                     Completion::Read(result) => {
-                        (*stream).enabled &= !2;
+                        b.enabled &= !2;
                         let event = match result {
                             Err(error) => (1 | 0x20, Some(error)),
                             Ok(_) => (1 | 0x10, None),
                         };
-                        (None, Some(event))
+                        (None, Some((b.errorcb.clone(), event)))
                     }
                     Completion::Write(Ok(n)) if n > 0 || output.is_empty() => {
-                        (*stream).output.advance(n);
+                        b.output.advance(n);
                         s.write_requested.set(false);
                         prefer_write = false;
-                        let cb = ((*stream).output.remaining() <= (*stream).wm_write.low)
-                            .then(|| (*stream).writecb.clone())
+                        let cb = (b.output.remaining() <= b.wm_write.low)
+                            .then(|| b.writecb.clone())
                             .flatten();
                         (cb, None)
                     }
                     Completion::Write(result) => {
-                        (*stream).enabled &= !4;
+                        b.enabled &= !4;
                         let error = result
                             .err()
                             .unwrap_or_else(|| std::io::Error::from_raw_os_error(libc::EIO));
-                        (None, Some((2 | 0x20, Some(error))))
+                        (None, Some((b.errorcb.clone(), (2 | 0x20, Some(error)))))
                     }
                 };
-                if let Some(cb) = data {
-                    (*cb.borrow_mut())(std::ptr::NonNull::new(stream).expect("live stream"));
-                } else if let Some((flags, error)) = error {
-                    let cb = (*stream).errorcb.clone();
-                    if let Some(cb) = cb {
-                        (*cb.borrow_mut())(
-                            std::ptr::NonNull::new(stream).expect("live stream"),
-                            flags,
-                            error.as_ref(),
-                        );
-                    }
-                }
+                (std::ptr::NonNull::from(b), data, error)
+            };
+            // Callbacks may reenter the stream, so the slot is no longer borrowed.
+            if let Some(cb) = data {
+                (*cb.borrow_mut())(stream);
+            } else if let Some((Some(cb), (flags, error))) = error {
+                (*cb.borrow_mut())(stream, flags, error.as_ref());
             }
             super::yield_now().await;
         }
@@ -261,14 +245,18 @@ pub unsafe fn bufferevent_new(
         wake: RefCell::new(None),
         task: RefCell::new(None),
     });
-    (*stream).state = Some(s.clone());
+    s.stream
+        .borrow_mut()
+        .as_deref_mut()
+        .expect("new stream")
+        .state = Some(s.clone());
     LIVE_STREAMS.with(|streams| {
         let mut streams = streams.borrow_mut();
         streams.retain(|stream| stream.strong_count() != 0);
         streams.push(Rc::downgrade(&s));
     });
     if let Err(error) = start(&s) {
-        bufferevent_free(stream);
+        free(&s);
         // File peers receive the raw errno; report an unsupported
         // descriptor as EOPNOTSUPP.
         if error.kind() == std::io::ErrorKind::Unsupported {
@@ -278,20 +266,24 @@ pub unsafe fn bufferevent_new(
     }
     Ok(stream)
 }
-pub unsafe fn bufferevent_free(stream: *mut bufferevent) {
-    if stream.is_null() {
+/// Invalidate observers and release the stream. A released stream is ignored.
+fn free(s: &StreamState) {
+    let Some(s) = s
+        .stream
+        .borrow_mut()
+        .as_deref_mut()
+        .and_then(|stream| stream.state.take())
+    else {
         return;
+    };
+    s.live.set(false);
+    drop(s.task.take());
+    if s.fd != -1 && s.pid == std::process::id() && !s.was_nonblocking {
+        // The fd is owned by the caller and outlives the stream.
+        let fd = unsafe { std::os::fd::BorrowedFd::borrow_raw(s.fd) };
+        let _ = tiri_rt::unix::set_nonblocking(fd, false);
     }
-    let s = (*stream).state.take();
-    if let Some(s) = s {
-        s.live.set(false);
-        drop(s.task.take());
-        if s.fd != -1 && s.pid == std::process::id() && !s.was_nonblocking {
-            let _ =
-                tiri_rt::unix::set_nonblocking(std::os::fd::BorrowedFd::borrow_raw(s.fd), false);
-        }
-        drop(s.stream.take());
-    }
+    drop(s.stream.take());
 }
 
 /// Schedule an I/O recheck before lending input for synchronous consumption.

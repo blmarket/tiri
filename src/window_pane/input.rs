@@ -159,7 +159,7 @@ fn input_clear_params(ictx: &mut input_ctx) {
 #[cfg(test)]
 mod input_buffer_ownership_tests {
     use super::*;
-    use crate::reactor::{bufferevent_free, bufferevent_new};
+    use crate::reactor::{bufferevent_new, StreamHandle};
 
     #[test]
     fn palette_source_observes_pane_or_popup_owner() {
@@ -185,7 +185,7 @@ mod input_buffer_ownership_tests {
             let stream = bufferevent_new(-1, None, None, None).unwrap();
             let mut input = input_init(None, stream, Default::default(), None);
             assert!(input.event.is_alive());
-            bufferevent_free(stream);
+            StreamHandle::from_ptr(stream).free();
             assert!(!input.event.is_alive());
             input_send_reply(&mut input, c"reply");
             drop(input);

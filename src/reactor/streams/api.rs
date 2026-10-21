@@ -73,8 +73,9 @@ impl BufferEvent for StreamHandle {
     }
 
     fn free(self) {
-        let stream = self.ptr();
-        unsafe { bufferevent_free(stream) };
+        if let Some(state) = self.0.upgrade() {
+            super::free(&state);
+        }
     }
 
     fn enable(&self, interests: Interests) -> StreamResult<()> {
