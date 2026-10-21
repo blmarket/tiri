@@ -44,12 +44,12 @@ pub static cmd_break_pane_entry: cmd_entry = {
         },
         usage: c"[-abdP] [-F format] [-n window-name] [-s src-pane] [-t dst-window]",
         source: cmd_entry_flag {
-            flag: 's' as i32 as ::core::ffi::c_char,
+            flag: b's',
             type_0: CMD_FIND_PANE,
             flags: 0 as ::core::ffi::c_int,
         },
         target: cmd_entry_flag {
-            flag: 't' as i32 as ::core::ffi::c_char,
+            flag: b't',
             type_0: CMD_FIND_WINDOW,
             flags: CMD_FIND_WINDOW_INDEX,
         },

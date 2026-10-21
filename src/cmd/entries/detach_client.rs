@@ -22,7 +22,7 @@ pub static cmd_detach_client_entry: cmd_entry = {
         },
         usage: c"[-aP] [-E shell-command] [-s target-session] [-t target-client]",
         source: cmd_entry_flag {
-            flag: 's' as i32 as ::core::ffi::c_char,
+            flag: b's',
             type_0: CMD_FIND_SESSION,
             flags: CMD_FIND_CANFAIL,
         },

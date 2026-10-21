@@ -27,12 +27,12 @@ pub static cmd_swap_window_entry: cmd_entry = {
         },
         usage: c"[-d] [-s src-window] [-t dst-window]",
         source: cmd_entry_flag {
-            flag: 's' as i32 as ::core::ffi::c_char,
+            flag: b's',
             type_0: CMD_FIND_WINDOW,
             flags: CMD_FIND_DEFAULT_MARKED,
         },
         target: cmd_entry_flag {
-            flag: 't' as i32 as ::core::ffi::c_char,
+            flag: b't',
             type_0: CMD_FIND_WINDOW,
             flags: 0 as ::core::ffi::c_int,
         },

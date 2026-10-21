@@ -27,7 +27,7 @@ pub static cmd_move_window_entry: cmd_entry = {
         },
         usage: c"[-abdkr] [-s src-window] [-t dst-window]",
         source: cmd_entry_flag {
-            flag: 's' as i32 as ::core::ffi::c_char,
+            flag: b's',
             type_0: CMD_FIND_WINDOW,
             flags: 0 as ::core::ffi::c_int,
         },
@@ -52,7 +52,7 @@ pub static cmd_link_window_entry: cmd_entry = {
         },
         usage: c"[-abdk] [-s src-window] [-t dst-window]",
         source: cmd_entry_flag {
-            flag: 's' as i32 as ::core::ffi::c_char,
+            flag: b's',
             type_0: CMD_FIND_WINDOW,
             flags: 0 as ::core::ffi::c_int,
         },

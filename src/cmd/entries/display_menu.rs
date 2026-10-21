@@ -60,7 +60,7 @@ pub static cmd_display_menu_entry: cmd_entry = {
             flags: 0,
         },
         target: cmd_entry_flag {
-            flag: 't' as i32 as ::core::ffi::c_char,
+            flag: b't',
             type_0: CMD_FIND_PANE,
             flags: 0 as ::core::ffi::c_int,
         },
@@ -85,7 +85,7 @@ pub static cmd_display_popup_entry: cmd_entry = {
             flags: 0,
         },
         target: cmd_entry_flag {
-            flag: 't' as i32 as ::core::ffi::c_char,
+            flag: b't',
             type_0: CMD_FIND_PANE,
             flags: 0 as ::core::ffi::c_int,
         },

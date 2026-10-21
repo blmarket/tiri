@@ -48,7 +48,7 @@ pub static cmd_select_pane_entry: cmd_entry = {
             flags: 0,
         },
         target: cmd_entry_flag {
-            flag: 't' as i32 as ::core::ffi::c_char,
+            flag: b't',
             type_0: CMD_FIND_PANE,
             flags: 0 as ::core::ffi::c_int,
         },
@@ -73,7 +73,7 @@ pub static cmd_last_pane_entry: cmd_entry = {
             flags: 0,
         },
         target: cmd_entry_flag {
-            flag: 't' as i32 as ::core::ffi::c_char,
+            flag: b't',
             type_0: CMD_FIND_WINDOW,
             flags: 0 as ::core::ffi::c_int,
         },

@@ -26,12 +26,12 @@ pub static cmd_swap_pane_entry: cmd_entry = {
         },
         usage: c"[-dDUZ] [-s src-pane] [-t dst-pane]",
         source: cmd_entry_flag {
-            flag: 's' as i32 as ::core::ffi::c_char,
+            flag: b's',
             type_0: CMD_FIND_PANE,
             flags: CMD_FIND_DEFAULT_MARKED,
         },
         target: cmd_entry_flag {
-            flag: 't' as i32 as ::core::ffi::c_char,
+            flag: b't',
             type_0: CMD_FIND_PANE,
             flags: 0 as ::core::ffi::c_int,
         },

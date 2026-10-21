@@ -226,7 +226,7 @@ pub struct cmd {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct cmd_entry_flag {
-    pub flag: ::core::ffi::c_char,
+    pub flag: u8,
     pub type_0: cmd_find_type,
     pub flags: ::core::ffi::c_int,
 }

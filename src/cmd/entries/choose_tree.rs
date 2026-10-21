@@ -42,7 +42,7 @@ pub static cmd_choose_tree_entry: cmd_entry = {
             flags: 0,
         },
         target: cmd_entry_flag {
-            flag: 't' as i32 as ::core::ffi::c_char,
+            flag: b't',
             type_0: CMD_FIND_PANE,
             flags: 0 as ::core::ffi::c_int,
         },
@@ -69,7 +69,7 @@ pub static cmd_choose_client_entry: cmd_entry = {
             flags: 0,
         },
         target: cmd_entry_flag {
-            flag: 't' as i32 as ::core::ffi::c_char,
+            flag: b't',
             type_0: CMD_FIND_PANE,
             flags: 0 as ::core::ffi::c_int,
         },
@@ -96,7 +96,7 @@ pub static cmd_choose_buffer_entry: cmd_entry = {
             flags: 0,
         },
         target: cmd_entry_flag {
-            flag: 't' as i32 as ::core::ffi::c_char,
+            flag: b't',
             type_0: CMD_FIND_PANE,
             flags: 0 as ::core::ffi::c_int,
         },
@@ -121,7 +121,7 @@ pub static cmd_customize_mode_entry: cmd_entry = {
             flags: 0,
         },
         target: cmd_entry_flag {
-            flag: 't' as i32 as ::core::ffi::c_char,
+            flag: b't',
             type_0: CMD_FIND_PANE,
             flags: 0 as ::core::ffi::c_int,
         },
@@ -146,7 +146,7 @@ pub static cmd_switch_mode_entry: cmd_entry = {
             flags: 0,
         },
         target: cmd_entry_flag {
-            flag: 't' as i32 as ::core::ffi::c_char,
+            flag: b't',
             type_0: CMD_FIND_PANE,
             flags: 0 as ::core::ffi::c_int,
         },
@@ -166,12 +166,12 @@ pub static cmd_display_panes_entry: cmd_entry = {
         },
         usage: c"[-kNZ] [-d duration] [-s source-window] [-t target-pane] [template]",
         source: cmd_entry_flag {
-            flag: 's' as i32 as ::core::ffi::c_char,
+            flag: b's',
             type_0: CMD_FIND_WINDOW,
             flags: 0 as ::core::ffi::c_int,
         },
         target: cmd_entry_flag {
-            flag: 't' as i32 as ::core::ffi::c_char,
+            flag: b't',
             type_0: CMD_FIND_PANE,
             flags: 0 as ::core::ffi::c_int,
         },

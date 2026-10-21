@@ -856,7 +856,7 @@ unsafe fn cmdq_find_flag(
     flag: &cmd_entry_flag,
 ) -> CmdOutcome {
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    if flag.flag as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
+    if flag.flag == 0 {
         let target_client = cmdq_get_target_client(Some(&item_handle.borrow()));
         *fs = cmd_find_state::find_from_client(target_client.as_ref(), 0 as ::core::ffi::c_int)
             .unwrap_or_else(|| cmd_find_state::clear_state(0 as ::core::ffi::c_int));
@@ -870,7 +870,7 @@ unsafe fn cmdq_find_flag(
                 .try_borrow()
                 .expect("live command"),
         ),
-        flag.flag as u_char,
+        flag.flag,
     )
     .map_or(std::ptr::null(), |value| value.as_ptr());
     if fs.find_target(

@@ -45,7 +45,7 @@ pub static cmd_set_option_entry: cmd_entry = {
             flags: 0,
         },
         target: cmd_entry_flag {
-            flag: 't' as i32 as ::core::ffi::c_char,
+            flag: b't',
             type_0: CMD_FIND_PANE,
             flags: CMD_FIND_CANFAIL,
         },
@@ -70,7 +70,7 @@ pub static cmd_set_window_option_entry: cmd_entry = {
             flags: 0,
         },
         target: cmd_entry_flag {
-            flag: 't' as i32 as ::core::ffi::c_char,
+            flag: b't',
             type_0: CMD_FIND_WINDOW,
             flags: CMD_FIND_CANFAIL,
         },
@@ -95,7 +95,7 @@ pub static cmd_set_hook_entry: cmd_entry = {
             flags: 0,
         },
         target: cmd_entry_flag {
-            flag: 't' as i32 as ::core::ffi::c_char,
+            flag: b't',
             type_0: CMD_FIND_PANE,
             flags: CMD_FIND_CANFAIL,
         },
