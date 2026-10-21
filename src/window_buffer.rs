@@ -394,7 +394,7 @@ fn window_buffer_help() -> mode_tree_help_info {
         lines: window_buffer_help_lines,
     }
 }
-unsafe fn window_buffer_data(
+fn window_buffer_data(
     wme: &refbox::Weak<window_mode_entry>,
 ) -> ModeDataRef<'_, window_buffer_modedata> {
     ModeDataRef::new(wme.try_borrow().expect("live mode entry")).expect("buffer mode payload")

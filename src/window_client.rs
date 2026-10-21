@@ -577,7 +577,7 @@ fn window_client_help() -> mode_tree_help_info {
         lines: window_client_help_lines,
     }
 }
-unsafe fn window_client_data(
+fn window_client_data(
     wme: &refbox::Weak<window_mode_entry>,
 ) -> ModeDataRef<'_, window_client_modedata> {
     ModeDataRef::new(wme.try_borrow().expect("live mode entry")).expect("client mode payload")

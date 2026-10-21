@@ -260,7 +260,7 @@ fn window_switch_set_current(data: &mut window_switch_modedata, mut current: u_i
         data.offset = data.current.wrapping_sub(visible).wrapping_add(1 as u_int);
     }
 }
-unsafe fn window_switch_data(
+fn window_switch_data(
     wme: &refbox::Weak<window_mode_entry>,
 ) -> ModeDataRef<'_, window_switch_modedata> {
     ModeDataRef::new(wme.try_borrow().expect("live mode entry")).expect("switch mode payload")

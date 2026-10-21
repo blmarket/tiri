@@ -113,7 +113,7 @@ pub unsafe fn status_at_line(c: &ClientRef) -> ::core::ffi::c_int {
     }
     c.terminal_size().1.wrapping_sub(status_line_size(c)) as ::core::ffi::c_int
 }
-pub unsafe fn status_line_size(c: &ClientRef) -> u_int {
+pub fn status_line_size(c: &ClientRef) -> u_int {
     use crate::session::Session;
     if c.flags() & (CLIENT_STATUSOFF | CLIENT_CONTROL) as uint64_t != 0 {
         return 0;

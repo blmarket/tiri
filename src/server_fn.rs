@@ -23,10 +23,10 @@ use crate::shared::sort::sort_criteria;
 use crate::shared::sort::*;
 use crate::shared::window::winlink;
 
-pub unsafe fn server_redraw_client(c: &ClientRef) {
+pub fn server_redraw_client(c: &ClientRef) {
     c.request_redraw(CLIENT_ALLREDRAWFLAGS as u64);
 }
-pub unsafe fn server_status_client(c: &ClientRef) {
+pub fn server_status_client(c: &ClientRef) {
     c.request_redraw(CLIENT_REDRAWSTATUS as u64);
 }
 pub unsafe fn server_redraw_session(session: &SessionRef) {
@@ -53,7 +53,7 @@ pub unsafe fn server_redraw_session_group(session: &SessionRef) {
     }
 }
 
-pub unsafe fn server_status_session(session: &SessionRef) {
+pub fn server_status_session(session: &SessionRef) {
     let mut next = ClientRegistry::first();
     while let Some(client_owner) = next {
         next = ClientRegistry::next(&client_owner);
@@ -104,7 +104,7 @@ pub unsafe fn server_unzoom_window(window: &WindowRef) {
         server_redraw_window(window);
     }
 }
-pub unsafe fn server_redraw_window_menu(window_owner: &WindowRef) {
+pub fn server_redraw_window_menu(window_owner: &WindowRef) {
     let mut next = ClientRegistry::first();
     while let Some(client_owner) = next {
         next = ClientRegistry::next(&client_owner);
@@ -125,7 +125,7 @@ pub unsafe fn server_redraw_window_menu(window_owner: &WindowRef) {
         }
     }
 }
-pub unsafe fn server_redraw_window_borders(window: &WindowRef) {
+pub fn server_redraw_window_borders(window: &WindowRef) {
     let mut next = ClientRegistry::first();
     while let Some(client_owner) = next {
         next = ClientRegistry::next(&client_owner);
@@ -367,7 +367,7 @@ unsafe fn server_destroy_session_group(s_owner: &SessionRef) {
         }
     };
 }
-unsafe fn server_find_session(
+fn server_find_session(
     excluded: &SessionRef,
     mut choose: impl FnMut(&SessionRef, Option<&SessionRef>) -> bool,
 ) -> Option<SessionRef> {
@@ -381,12 +381,12 @@ unsafe fn server_find_session(
     }
     selected
 }
-unsafe fn server_newer_session(s: &SessionRef, other: Option<&SessionRef>) -> bool {
+fn server_newer_session(s: &SessionRef, other: Option<&SessionRef>) -> bool {
     let Some(other) = other else { return true };
     let (a, b) = (s.activity_time(), other.activity_time());
     a > b
 }
-unsafe fn server_newer_detached_session(s: &SessionRef, other: Option<&SessionRef>) -> bool {
+fn server_newer_detached_session(s: &SessionRef, other: Option<&SessionRef>) -> bool {
     !s.is_attached() && server_newer_session(s, other)
 }
 pub unsafe fn server_destroy_session(source: &SessionRef) {

@@ -23,7 +23,7 @@ pub struct C2RustUnnamed_35 {
     pub cb: unsafe fn(&CStr, &mut event_payload),
 }
 
-unsafe fn recipients(mut visit: impl FnMut(&ClientRef)) {
+fn recipients(mut visit: impl FnMut(&ClientRef)) {
     let mut cursor = ClientRegistry::first();
     while let Some(client) = cursor {
         if client.receives_notifications() {

@@ -204,7 +204,7 @@ pub fn session_group_count(group: &SessionGroupWeak) -> u_int {
     })
 }
 
-pub unsafe fn session_group_attached_count(group: &SessionGroupWeak) -> u_int {
+pub fn session_group_attached_count(group: &SessionGroupWeak) -> u_int {
     session_group_members(group)
         .iter()
         .fold(0, |count, member| {

@@ -86,7 +86,7 @@ impl server_acl_entries {
     }
 }
 
-unsafe fn server_acl_check(c: &ClientRef) -> Option<server_acl_entry> {
+fn server_acl_check(c: &ClientRef) -> Option<server_acl_entry> {
     let uid: uid_t = c.peer_uid();
     if uid == -(1 as ::core::ffi::c_int) as uid_t {
         return None;

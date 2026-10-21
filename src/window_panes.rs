@@ -706,7 +706,7 @@ unsafe fn window_panes_draw_pane(
     }
     window_panes_draw_number(source, ctx, wp_owner, pane, x, y, sx, sy);
 }
-unsafe fn window_panes_data(
+fn window_panes_data(
     wme: &refbox::Weak<window_mode_entry>,
 ) -> ModeDataRef<'_, window_panes_modedata> {
     ModeDataRef::new(wme.try_borrow().expect("live mode entry")).expect("panes mode payload")

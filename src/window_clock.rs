@@ -592,7 +592,7 @@ pub static mut window_clock_table: [[[::core::ffi::c_char; 5]; 5]; 14] = [
         ],
     ],
 ];
-unsafe fn window_clock_data(
+fn window_clock_data(
     wme: &refbox::Weak<window_mode_entry>,
 ) -> ModeDataRef<'_, window_clock_mode_data> {
     ModeDataRef::new(wme.try_borrow().expect("live mode entry")).expect("clock mode payload")

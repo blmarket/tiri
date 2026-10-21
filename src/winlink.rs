@@ -52,7 +52,7 @@ pub fn winlinks_prev(elm: &winlink) -> refbox::Weak<winlink> {
         .map_or(refbox::Weak::new(), |(_, owner)| owner.downgrade())
 }
 
-pub unsafe fn winlink_find_by_window(wwl: &winlinks, w_owner: &WindowRef) -> refbox::Weak<winlink> {
+pub fn winlink_find_by_window(wwl: &winlinks, w_owner: &WindowRef) -> refbox::Weak<winlink> {
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     wl = winlinks_minmax(wwl, RB_NEGINF);
     while wl.is_alive() {
@@ -75,7 +75,7 @@ pub fn winlink_find_by_index(wwl: &winlinks, idx: ::core::ffi::c_int) -> refbox:
         .map_or(refbox::Weak::new(), |owner| owner.downgrade())
 }
 
-pub unsafe fn winlink_find_by_window_id(wwl: &winlinks, mut id: u_int) -> refbox::Weak<winlink> {
+pub fn winlink_find_by_window_id(wwl: &winlinks, mut id: u_int) -> refbox::Weak<winlink> {
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     wl = winlinks_minmax(wwl, RB_NEGINF);
     while wl.is_alive() {
@@ -118,7 +118,7 @@ pub fn winlinks_is_empty(wwl: &winlinks) -> bool {
         .is_empty()
 }
 
-pub unsafe fn winlink_add(wwl: &winlinks, mut idx: ::core::ffi::c_int) -> refbox::Weak<winlink> {
+pub fn winlink_add(wwl: &winlinks, mut idx: ::core::ffi::c_int) -> refbox::Weak<winlink> {
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     if idx < 0 as ::core::ffi::c_int {
         idx = winlink_next_index(wwl, -(idx + 1));
@@ -153,7 +153,7 @@ pub unsafe fn winlink_add(wwl: &winlinks, mut idx: ::core::ffi::c_int) -> refbox
     wl
 }
 
-unsafe fn winlink_release_window(wl: refbox::Weak<winlink>) {
+fn winlink_release_window(wl: refbox::Weak<winlink>) {
     let previous = wl
         .try_borrow_mut()
         .expect("live winlink")
@@ -259,7 +259,7 @@ pub unsafe fn winlink_previous_by_number(
 
 /// Borrow the owner through the existing window index. The raw pointer remains
 /// a compatibility view; neither it nor its address is a separate ownership key.
-unsafe fn winlink_weak(wl: refbox::Weak<winlink>) -> refbox::Weak<winlink> {
+fn winlink_weak(wl: refbox::Weak<winlink>) -> refbox::Weak<winlink> {
     let owner = &wl.try_borrow().expect("live winlink").owner;
     let map = owner
         .try_borrow_mut()

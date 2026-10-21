@@ -634,7 +634,7 @@ unsafe fn window_copy_sync_backing(wme: refbox::Weak<window_mode_entry>) -> ::co
 }
 /// Callers take scoped borrows and release them before calling back into
 /// copy mode; a redraw reads the payload while it writes `screen`.
-unsafe fn window_copy_data(
+fn window_copy_data(
     wme: &refbox::Weak<window_mode_entry>,
 ) -> ModeDataRef<'_, window_copy_mode_data> {
     ModeDataRef::new(wme.try_borrow().expect("live mode entry")).expect("copy mode payload")
