@@ -113,7 +113,7 @@ pub trait Session {
     fn cwd(&self) -> Option<CString>;
     fn termios(&self) -> Option<termios>;
     /// Evaluate a session builtin in a context already targeting this holder.
-    unsafe fn format_value(
+    fn format_value(
         &self,
         key: &CStr,
         context: &mut crate::shared::format::format_tree,
@@ -385,7 +385,7 @@ impl Session for SessionRef {
     fn termios(&self) -> Option<termios> {
         self.borrow().tio.as_deref().copied()
     }
-    unsafe fn format_value(
+    fn format_value(
         &self,
         key: &CStr,
         context: &mut crate::shared::format::format_tree,
