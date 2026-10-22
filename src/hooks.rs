@@ -174,7 +174,7 @@ fn hooks_insert(
         return;
     };
     source
-        .with_entry(name, |entry| options_hook_fired(entry))
+        .with_entry(name, options_hook_fired)
         .expect("resolved hook");
     let event = item_handle.map(|item| cmdq_get_event(&item.borrow()));
     let state = cmdq_new_state(Some(&fs), event.as_ref(), CMDQ_STATE_NOHOOKS);
@@ -323,7 +323,7 @@ pub fn hooks_add_event(name: &CStr) {
 
     events_add_sink(
         event_name,
-        events_callback(|name, payload| CString_cb(name, payload)),
+        events_callback(CString_cb),
     );
     CStrings.with_borrow_mut(|events| events.insert(event_name.to_owned()));
 }

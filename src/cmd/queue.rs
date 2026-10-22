@@ -303,7 +303,7 @@ impl QueueTarget {
             Self::Client(observer) => {
                 let owner = observer.upgrade()?;
                 let mut queue = owner.borrow_queue_mut();
-                Some(operation(&mut *queue))
+                Some(operation(&mut queue))
             }
         }
     }
@@ -1234,7 +1234,7 @@ pub fn cmdq_error(
                 if let Some(file) = file {
                     cfg_add_cause(|out| {
                         write_cstr(out, file)?;
-                        write!(out, ":{}: ", (line) as u32)?;
+                        write!(out, ":{}: ", { (line) })?;
                         write_cstr(out, &*msg)
                     });
                 } else {
@@ -1244,7 +1244,7 @@ pub fn cmdq_error(
                 server_add_message(|out| {
                     out.write_all(b"message: ")?;
                     write_cstr(out, file)?;
-                    write!(out, ":{}: ", (line) as u32)?;
+                    write!(out, ":{}: ", { (line) })?;
                     write_cstr(out, &*msg)
                 });
             } else {

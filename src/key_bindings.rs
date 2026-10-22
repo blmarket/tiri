@@ -577,7 +577,7 @@ pub fn key_bindings_dispatch(
     if readonly == 0 {
         new_item_allocation = cmdq_get_callback_owned(
             c"key_bindings_read_only",
-            Some(Box::new(|item| key_bindings_read_only(item))),
+            Some(Box::new(key_bindings_read_only)),
         );
     } else {
         if bd.flags & KEY_BINDING_REPEAT != 0 {

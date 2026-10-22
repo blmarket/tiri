@@ -77,11 +77,10 @@ pub fn decode(text: &[u8]) -> Option<Vec<u8>> {
     let mut rest = rest.copied().skip_while(|&byte| is_space(byte));
     match state {
         0 | 1 => return None,
-        2 => {
-            if rest.next() != Some(PAD) {
+        2
+            if rest.next() != Some(PAD) => {
                 return None;
             }
-        }
         _ => {}
     }
     (rest.all(is_space) && pending == 0).then_some(out)

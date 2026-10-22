@@ -308,7 +308,7 @@ fn window_pane_destroy_ready(wp_owner: &Rc<std::cell::RefCell<window_pane>>) -> 
     if wp.pipe_fd.is_some()
         && wp
             .pipe_event
-            .with_stream(|event| evbuffer_get_length(&(*event).output) != 0 as size_t)
+            .with_stream(|event| evbuffer_get_length(&event.output) != 0 as size_t)
             .unwrap_or(false)
     {
         return 0 as ::core::ffi::c_int;
@@ -638,7 +638,7 @@ unsafe fn window_pane_read_callback(owner: &Rc<std::cell::RefCell<window_pane>>)
     let size = input.input_len().unwrap_or(0);
     if has_pipe {
         let data = input
-            .with_stream(|event| pane_output_data(&mut (*event).input, base, &pipe_offset).to_vec())
+            .with_stream(|event| pane_output_data(&mut event.input, base, &pipe_offset).to_vec())
             .unwrap_or_default();
         let new_size = data.len();
         if new_size > 0 as size_t {
@@ -1581,7 +1581,7 @@ fn window_pane_update_used_data(
     let used: size_t = offset(&mut wp).used.wrapping_sub(wp.base_offset);
     let Some(available) = wp
         .event
-        .with_stream(|event| evbuffer_get_length(&(*event).input))
+        .with_stream(|event| evbuffer_get_length(&event.input))
     else {
         return;
     };

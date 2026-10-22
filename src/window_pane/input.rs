@@ -2178,7 +2178,7 @@ pub(super) unsafe fn input_parse_pane(wp_owner: &std::rc::Rc<std::cell::RefCell<
         (pane.event.clone(), pane.base_offset, pane.offset)
     };
     let data = stream
-        .with_stream(|event| window_pane_get_new_data(&mut (*event).input, base, &offset).to_vec())
+        .with_stream(|event| window_pane_get_new_data(&mut event.input, base, &offset).to_vec())
         .unwrap_or_default();
     if !data.is_empty() {
         wp_owner.borrow_mut().last_output_time =

@@ -55,7 +55,7 @@ pub fn style_resolve_with_options(
 ) -> Option<style> {
     let resolved = scope
         .resolve(key, false)?
-        .with_entry(key, |entry| style_snapshot(entry))
+        .with_entry(key, style_snapshot)
         .expect("resolved style entry remains live")?;
     match resolved {
         Ok(parsed) => parsed,

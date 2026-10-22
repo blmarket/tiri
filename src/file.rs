@@ -730,7 +730,7 @@ pub fn file_write_left(files: &client_files) -> ::core::ffi::c_int {
         let cf = file.borrow();
         if let Some(remaining) = cf
             .event
-            .with_stream(|stream| evbuffer_get_length(&(*stream).output))
+            .with_stream(|stream| evbuffer_get_length(&stream.output))
         {
             left = remaining;
             if left != 0 as size_t {
@@ -811,7 +811,7 @@ unsafe fn file_write_callback(owner: &Rc<RefCell<client_file>>) {
         log_debug(format_args!("write check file {}", { cf.stream }));
         let remaining = cf
             .event
-            .with_stream(|stream| evbuffer_get_length(&(*stream).output))
+            .with_stream(|stream| evbuffer_get_length(&stream.output))
             .unwrap_or(0);
         cf.closed != 0 && remaining == 0 as size_t
     };
@@ -957,7 +957,7 @@ pub unsafe fn file_write_close(imsg: &imsg) {
         log_debug(format_args!("close file {}", { cf.stream }));
         cf.closed = 1 as ::core::ffi::c_int;
         cf.event
-            .with_stream(|stream| evbuffer_get_length(&(*stream).output))
+            .with_stream(|stream| evbuffer_get_length(&stream.output))
             .unwrap_or(0)
     };
     if remaining == 0 as size_t {
@@ -988,7 +988,7 @@ fn file_read_callback(owner: &Rc<RefCell<client_file>>) {
     let mut msg = Vec::<u8>::new();
     let header_len = ::core::mem::size_of::<msg_read_data>();
     while let Some(chunk) = cf.event.with_stream(|stream| {
-        let input = &mut *(*stream).input;
+        let input = &mut *stream.input;
         let bsize = evbuffer_get_length(input).min(
             (MAX_IMSGSIZE as usize)
                 .wrapping_sub(IMSG_HEADER_SIZE)

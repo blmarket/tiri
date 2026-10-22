@@ -620,7 +620,7 @@ impl Client for ClientRef {
         self.borrow_control_mut()
             .expect("control client state")
             .write_event = output.clone();
-        let _ = output.with_stream(|stream| bufferevent_setwatermark(stream));
+        let _ = output.with_stream(bufferevent_setwatermark);
         if control_control {
             let _ = output.with_stream(|stream| {
                 bufferevent_write(stream, b"\x1bP1000p");
@@ -676,7 +676,7 @@ impl Client for ClientRef {
         }
         let size = control
             .write_event
-            .with_stream(|stream| crate::reactor::evbuffer_get_length(&(*stream).output))
+            .with_stream(|stream| crate::reactor::evbuffer_get_length(&stream.output))
             .unwrap_or(0)
             .wrapping_add(control.queued_reply_bytes)
             .wrapping_add(added);
@@ -830,16 +830,14 @@ impl Client for ClientRef {
             crate::tty::tty_bell(self);
         }
         if visual != VISUAL_OFF {
-            {
-                crate::status::status_message_set(Some(self), -1, 1, 0, 0, |out| {
+            crate::status::status_message_set(Some(self), -1, 1, 0, 0, |out| {
                     out.write_all(kind.to_bytes())?;
                     if current {
                         out.write_all(b" in current window")
                     } else {
                         write!(out, " in window {}", index)
                     }
-                })
-            };
+                });
         }
     }
 
@@ -1155,13 +1153,11 @@ impl Client for ClientRef {
         crate::status::status_push_screen(self);
         self.borrow_mut().message_string = Some(message.clone());
         let name = self.name();
-        {
-            crate::server::server_add_message(|out| {
+        crate::server::server_add_message(|out| {
                 write_cstr(out, name.as_deref())?;
                 out.write_all(b" message: ")?;
                 out.write_all(message.as_bytes())
-            })
-        };
+            });
         if delay == -1 {
             delay = options_get_number(
                 &self
@@ -1277,8 +1273,7 @@ impl Client for ClientRef {
         style: &tty_style_ctx,
     ) {
         for row in 0..sy {
-            {
-                crate::tty::tty_draw_line(
+            crate::tty::tty_draw_line(
                     self,
                     source,
                     0,
@@ -1287,8 +1282,7 @@ impl Client for ClientRef {
                     x,
                     y.wrapping_add(row),
                     Some(style),
-                )
-            };
+                );
         }
     }
 

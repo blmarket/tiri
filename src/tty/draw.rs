@@ -43,7 +43,7 @@ fn tty_draw_line_clear(
     if !client.clips_terminal_output()
         && wrapped == 0
         && nx >= 10 as u_int
-        && tty_fake_bce(&*client.borrow_terminal(), defaults, bg) == 0
+        && tty_fake_bce(&client.borrow_terminal(), defaults, bg) == 0
     {
         if px.wrapping_add(nx) >= terminal_value!(client, sx)
             && tty_term_has(&terminal_term(client), TTYC_EL) != 0

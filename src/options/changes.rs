@@ -113,7 +113,7 @@ pub fn options_push_changes(name: &CStr) {
             {
                 let mut terminal = loop_0.as_ref().expect("live client").borrow_terminal_mut();
                 if terminal.is_opened() {
-                    tty_keys_build(&mut *terminal);
+                    tty_keys_build(&mut terminal);
                 }
             }
             registry_loop_0_owner = ClientRegistry::next(

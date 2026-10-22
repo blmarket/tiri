@@ -320,7 +320,7 @@ pub(crate) fn event_payload_item_print_owned(epi: &event_payload_item) -> Vec<u8
 }
 
 pub(crate) fn event_payload_print_owned(ep: &event_payload) -> Option<Vec<u8>> {
-    event_payload_find(ep, c"pane").map(|item| event_payload_item_print_owned(item))
+    event_payload_find(ep, c"pane").map(event_payload_item_print_owned)
 }
 pub fn event_payload_add_formats(ep: &event_payload, ft: &mut format_tree, prefix: Option<&CStr>) {
     let prefix = prefix.unwrap_or(c"").to_bytes();

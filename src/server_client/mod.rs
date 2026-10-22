@@ -957,7 +957,7 @@ fn server_client_attached_lost(c_owner: &ClientRef) {
     let mut s: Option<SessionRef> = None;
     log_debug(format_args!(
         "lost attached client {}",
-        log_pointer(Rc::as_ptr(&c_owner))
+        log_pointer(Rc::as_ptr(c_owner))
     ));
     let mut window_cursor = windows::first();
     while let Some(window_owner) = window_cursor.take() {
@@ -1167,7 +1167,7 @@ fn server_client_lost(client_owner: &ClientRef) {
         ClientRegistry::remove(&Rc::downgrade(client_owner)).expect("registered client owner");
     log_debug(format_args!(
         "lost client {}",
-        log_pointer(Rc::as_ptr(&client_owner))
+        log_pointer(Rc::as_ptr(client_owner))
     ));
     cmd_wait_for_client_lost(client_owner);
     cmdq_next(Some(client_owner));
@@ -3634,7 +3634,7 @@ unsafe fn server_client_dispatch(
         _ => {
             log_debug(format_args!(
                 "client {} invalid message type {}",
-                log_pointer(Rc::as_ptr(&owner)),
+                log_pointer(Rc::as_ptr(owner)),
                 (imsg.hdr.type_0) as i32
             ));
             proc_kill_peer(&owner.borrow().peer);
@@ -3657,7 +3657,7 @@ fn server_client_default_command(
     {
         new_item_allocation = cmdq_get_callback_owned(
             c"server_client_read_only",
-            Some(Box::new(|item| server_client_read_only(item))),
+            Some(Box::new(server_client_read_only)),
         );
     } else {
         new_item_allocation = cmdq_get_command(&cmdlist, None);
@@ -3718,7 +3718,7 @@ fn server_client_dispatch_command(owner: &ClientRef, imsg: &mut imsg) -> ::core:
         if argc == 0 as ::core::ffi::c_int {
             new_item_allocation = Some(cmdq_get_callback_owned(
                 c"server_client_default_command",
-                Some(Box::new(|item| server_client_default_command(item))),
+                Some(Box::new(server_client_default_command)),
             ));
             current_block = 13472856163611868459;
         } else {
@@ -3737,7 +3737,7 @@ fn server_client_dispatch_command(owner: &ClientRef, imsg: &mut imsg) -> ::core:
                     {
                         new_item_allocation = Some(cmdq_get_callback_owned(
                             c"server_client_read_only",
-                            Some(Box::new(|item| server_client_read_only(item))),
+                            Some(Box::new(server_client_read_only)),
                         ));
                     } else {
                         new_item_allocation = Some(cmdq_get_command(
@@ -3761,7 +3761,7 @@ fn server_client_dispatch_command(owner: &ClientRef, imsg: &mut imsg) -> ::core:
                     Some(owner),
                     cmdq_get_callback_owned(
                         c"server_client_command_done",
-                        Some(Box::new(|item| server_client_command_done(item))),
+                        Some(Box::new(server_client_command_done)),
                     ),
                 );
                 return 0 as ::core::ffi::c_int;
@@ -3800,7 +3800,7 @@ unsafe fn server_client_dispatch_identify(
             owner.borrow_mut().term_features |= feat;
             log_debug(format_args!(
                 "client {} IDENTIFY_FEATURES {}",
-                log_pointer(Rc::as_ptr(&owner)),
+                log_pointer(Rc::as_ptr(owner)),
                 log_cstr(&tty_get_features(feat))
             ));
         }
@@ -3814,7 +3814,7 @@ unsafe fn server_client_dispatch_identify(
             owner.borrow_mut().flags |= flags as uint64_t;
             log_debug(format_args!(
                 "client {} IDENTIFY_FLAGS {}",
-                log_pointer(Rc::as_ptr(&owner)),
+                log_pointer(Rc::as_ptr(owner)),
                 log_hex(((flags) as u32) as u64)
             ));
         }
@@ -3826,7 +3826,7 @@ unsafe fn server_client_dispatch_identify(
             owner.borrow_mut().flags |= longflags;
             log_debug(format_args!(
                 "client {} IDENTIFY_LONGFLAGS {}",
-                log_pointer(Rc::as_ptr(&owner)),
+                log_pointer(Rc::as_ptr(owner)),
                 log_hex(longflags as ::core::ffi::c_ulonglong)
             ));
         }
@@ -3837,7 +3837,7 @@ unsafe fn server_client_dispatch_identify(
             server_client_set_term_name(&mut owner.borrow_mut(), Some(data.to_owned()));
             log_debug(format_args!(
                 "client {} IDENTIFY_TERM {}",
-                log_pointer(Rc::as_ptr(&owner)),
+                log_pointer(Rc::as_ptr(owner)),
                 log_cstr(data)
             ));
         }
@@ -3848,7 +3848,7 @@ unsafe fn server_client_dispatch_identify(
             server_client_add_term_cap(&mut owner.borrow_mut(), data);
             log_debug(format_args!(
                 "client {} IDENTIFY_TERMINFO {}",
-                log_pointer(Rc::as_ptr(&owner)),
+                log_pointer(Rc::as_ptr(owner)),
                 log_cstr(data)
             ));
         }
@@ -3859,7 +3859,7 @@ unsafe fn server_client_dispatch_identify(
             server_client_set_ttyname(&mut owner.borrow_mut(), Some(data.to_owned()));
             log_debug(format_args!(
                 "client {} IDENTIFY_TTYNAME {}",
-                log_pointer(Rc::as_ptr(&owner)),
+                log_pointer(Rc::as_ptr(owner)),
                 log_cstr(data)
             ));
         }
@@ -3881,7 +3881,7 @@ unsafe fn server_client_dispatch_identify(
             }
             log_debug(format_args!(
                 "client {} IDENTIFY_CWD {}",
-                log_pointer(Rc::as_ptr(&owner)),
+                log_pointer(Rc::as_ptr(owner)),
                 log_cstr(data)
             ));
         }
@@ -3892,7 +3892,7 @@ unsafe fn server_client_dispatch_identify(
             owner.borrow_mut().fd = imsg_get_fd(imsg);
             log_debug(format_args!(
                 "client {} IDENTIFY_STDIN {}",
-                log_pointer(Rc::as_ptr(&owner)),
+                log_pointer(Rc::as_ptr(owner)),
                 owner.borrow().fd.as_ref().map_or(-1, AsRawFd::as_raw_fd)
             ));
         }
@@ -3903,7 +3903,7 @@ unsafe fn server_client_dispatch_identify(
             owner.borrow_mut().out_fd = imsg_get_fd(imsg);
             log_debug(format_args!(
                 "client {} IDENTIFY_STDOUT {}",
-                log_pointer(Rc::as_ptr(&owner)),
+                log_pointer(Rc::as_ptr(owner)),
                 owner
                     .borrow()
                     .out_fd
@@ -3928,7 +3928,7 @@ unsafe fn server_client_dispatch_identify(
             }
             log_debug(format_args!(
                 "client {} IDENTIFY_ENVIRON {}",
-                log_pointer(Rc::as_ptr(&owner)),
+                log_pointer(Rc::as_ptr(owner)),
                 log_cstr(data)
             ));
         }
@@ -3941,7 +3941,7 @@ unsafe fn server_client_dispatch_identify(
             owner.borrow_mut().pid = pid_t::from_ne_bytes(pid_bytes);
             log_debug(format_args!(
                 "client {} IDENTIFY_CLIENTPID {}",
-                log_pointer(Rc::as_ptr(&owner)),
+                log_pointer(Rc::as_ptr(owner)),
                 owner.borrow().pid as ::core::ffi::c_long
             ));
         }
@@ -3973,7 +3973,7 @@ unsafe fn server_client_dispatch_identify(
     }
     log_debug(format_args!(
         "client {} name is {}",
-        log_pointer(Rc::as_ptr(&owner)),
+        log_pointer(Rc::as_ptr(owner)),
         log_cstr(owner.borrow().name.as_deref().unwrap_or(c"(null)"))
     ));
     if owner.borrow().flags & CLIENT_CONTROL as uint64_t != 0 {

@@ -255,7 +255,7 @@ fn cmd_pipe_pane_read_callback(pane_owner: &std::rc::Rc<std::cell::RefCell<windo
     }
     let data = pipe
         .with_stream(|event| {
-            let evb = &mut *(*event).input;
+            let evb = &mut *event.input;
             let available = evbuffer_get_length(evb);
             evbuffer_pullup(evb, -1).map_or_else(Vec::new, |bytes| bytes[..available].to_vec())
         })

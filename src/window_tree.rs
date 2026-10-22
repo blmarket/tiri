@@ -2314,7 +2314,7 @@ fn window_tree_key(
                         || !_target_owners_11
                             .pane
                             .as_ref()
-                            .and_then(|pane| window_tree_pane_index(pane))
+                            .and_then(window_tree_pane_index)
                             .map(|value| {
                                 idx = value;
                             })

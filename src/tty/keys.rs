@@ -1817,7 +1817,7 @@ pub(super) unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core:
                                                                 terminal_client_owner
                                                                     .borrow_terminal_mut();
                                                             tty_keys_mouse(
-                                                                &mut *terminal,
+                                                                &mut terminal,
                                                                 diagnostic_name.as_deref(),
                                                                 bytes,
                                                                 &mut size,
@@ -1878,7 +1878,7 @@ pub(super) unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core:
                                                                         terminal_client_owner
                                                                             .borrow_terminal();
                                                                     tty_keys_extended_key(
-                                                                        &*terminal,
+                                                                        &terminal,
                                                                         diagnostic_name.as_deref(),
                                                                         bytes,
                                                                         &mut size,
@@ -1961,7 +1961,7 @@ pub(super) unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core:
         match current_block {
             12077302897653652224 => {
                 n = tty_keys_next1(
-                    &*terminal_client_owner.borrow_terminal(),
+                    &terminal_client_owner.borrow_terminal(),
                     diagnostic_name.as_deref(),
                     bytes,
                     &mut key,
@@ -1978,7 +1978,7 @@ pub(super) unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core:
                 }
                 if bytes[0] == b'\x1b' && len > 1 as size_t {
                     n = tty_keys_next1(
-                        &*terminal_client_owner.borrow_terminal(),
+                        &terminal_client_owner.borrow_terminal(),
                         diagnostic_name.as_deref(),
                         &bytes[1..],
                         &mut key,

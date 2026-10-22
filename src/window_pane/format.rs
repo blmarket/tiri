@@ -193,9 +193,7 @@ fn format_cb_start_path(ft: &mut format_tree) -> Option<CString> {
 fn format_cb_current_command(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
     let wp = pane.borrow();
-    if wp.shell.is_none() {
-        return None;
-    }
+    wp.shell.as_ref()?;
     if let Some(cmd) = wp
         .fd
         .as_ref()
@@ -403,7 +401,7 @@ fn format_cb_alternate_saved_x(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
     let wp = pane.borrow();
     Some(
-        CString::new(format!("{}", (wp.base.saved_cx) as u32))
+        CString::new(format!("{}", { (wp.base.saved_cx) }))
             .expect("formatted numbers contain no NUL"),
     )
 }
@@ -412,7 +410,7 @@ fn format_cb_alternate_saved_y(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
     let wp = pane.borrow();
     Some(
-        CString::new(format!("{}", (wp.base.saved_cy) as u32))
+        CString::new(format!("{}", { (wp.base.saved_cy) }))
             .expect("formatted numbers contain no NUL"),
     )
 }
@@ -438,16 +436,16 @@ fn format_cb_cursor_shape(ft: &mut format_tree) -> Option<CString> {
     let screen = ft.wp.upgrade()?.screen_mode(true)?;
     match screen.cstyle as ::core::ffi::c_uint {
         1 => {
-            return Some(c"block".to_owned());
+            Some(c"block".to_owned())
         }
         2 => {
-            return Some(c"underline".to_owned());
+            Some(c"underline".to_owned())
         }
         3 => {
-            return Some(c"bar".to_owned());
+            Some(c"bar".to_owned())
         }
         _ => {
-            return Some(c"default".to_owned());
+            Some(c"default".to_owned())
         }
     }
 }
@@ -464,7 +462,7 @@ fn format_cb_cursor_x(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
     let wp = pane.borrow();
     Some(
-        CString::new(format!("{}", (wp.base.cx) as u32)).expect("formatted numbers contain no NUL"),
+        CString::new(format!("{}", { (wp.base.cx) })).expect("formatted numbers contain no NUL"),
     )
 }
 
@@ -472,7 +470,7 @@ fn format_cb_cursor_y(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
     let wp = pane.borrow();
     Some(
-        CString::new(format!("{}", (wp.base.cy) as u32)).expect("formatted numbers contain no NUL"),
+        CString::new(format!("{}", { (wp.base.cy) })).expect("formatted numbers contain no NUL"),
     )
 }
 
@@ -488,7 +486,7 @@ fn format_cb_history_added(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
     let wp = pane.borrow();
     Some(
-        CString::new(format!("{}", (wp.base.grid().scroll_added) as u32))
+        CString::new(format!("{}", { (wp.base.grid().scroll_added) }))
             .expect("formatted numbers contain no NUL"),
     )
 }
@@ -497,7 +495,7 @@ fn format_cb_history_collected(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
     let wp = pane.borrow();
     Some(
-        CString::new(format!("{}", (wp.base.grid().scroll_collected) as u32))
+        CString::new(format!("{}", { (wp.base.grid().scroll_collected) }))
             .expect("formatted numbers contain no NUL"),
     )
 }
@@ -506,7 +504,7 @@ fn format_cb_history_generation(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
     let wp = pane.borrow();
     Some(
-        CString::new(format!("{}", (wp.base.grid().scroll_generation) as u32))
+        CString::new(format!("{}", { (wp.base.grid().scroll_generation) }))
             .expect("formatted numbers contain no NUL"),
     )
 }
@@ -515,7 +513,7 @@ fn format_cb_history_limit(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
     let wp = pane.borrow();
     Some(
-        CString::new(format!("{}", (wp.base.grid().hlimit) as u32))
+        CString::new(format!("{}", { (wp.base.grid().hlimit) }))
             .expect("formatted numbers contain no NUL"),
     )
 }
@@ -524,7 +522,7 @@ fn format_cb_history_size(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
     let wp = pane.borrow();
     Some(
-        CString::new(format!("{}", (wp.base.grid().hsize) as u32))
+        CString::new(format!("{}", { (wp.base.grid().hsize) }))
             .expect("formatted numbers contain no NUL"),
     )
 }
@@ -751,7 +749,7 @@ fn format_cb_pane_bottom(ft: &mut format_tree) -> Option<CString> {
     Some(
         CString::new(format!(
             "{}",
-            (wp.yoff + wp.sy as ::core::ffi::c_int - 1 as ::core::ffi::c_int) as i32
+            { (wp.yoff + wp.sy as ::core::ffi::c_int - 1 as ::core::ffi::c_int) }
         ))
         .expect("formatted numbers contain no NUL"),
     )
@@ -841,7 +839,7 @@ fn format_cb_pane_command_running(ft: &mut format_tree) -> Option<CString> {
     Some(
         CString::new(format!(
             "{}",
-            ((wp.flags & PANE_CMDRUNNING != 0) as ::core::ffi::c_int) as i32
+            { ((wp.flags & PANE_CMDRUNNING != 0) as ::core::ffi::c_int) }
         ))
         .expect("formatted numbers contain no NUL"),
     )
@@ -876,7 +874,7 @@ fn format_cb_pane_command_status(ft: &mut format_tree) -> Option<CString> {
     let wp = pane.borrow();
     if wp.cmd_status != -(1 as ::core::ffi::c_int) {
         return Some(
-            CString::new(format!("{}", (wp.cmd_status) as i32))
+            CString::new(format!("{}", { (wp.cmd_status) }))
                 .expect("formatted numbers contain no NUL"),
         );
     }
@@ -886,13 +884,13 @@ fn format_cb_pane_command_status(ft: &mut format_tree) -> Option<CString> {
 fn format_cb_pane_height(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
     let wp = pane.borrow();
-    Some(CString::new(format!("{}", (wp.sy) as u32)).expect("formatted numbers contain no NUL"))
+    Some(CString::new(format!("{}", { (wp.sy) })).expect("formatted numbers contain no NUL"))
 }
 
 fn format_cb_pane_id(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
     let wp = pane.borrow();
-    Some(CString::new(format!("%{}", (wp.id) as u32)).expect("formatted numbers contain no NUL"))
+    Some(CString::new(format!("%{}", { (wp.id) })).expect("formatted numbers contain no NUL"))
 }
 
 fn format_cb_pane_index(ft: &mut format_tree) -> Option<CString> {
@@ -923,13 +921,13 @@ fn format_cb_pane_key_mode(ft: &mut format_tree) -> Option<CString> {
     let screen = ft.wp.upgrade()?.screen_mode(true)?;
     match screen.mode & EXTENDED_KEY_MODES {
         MODE_KEYS_EXTENDED => {
-            return Some(c"Ext 1".to_owned());
+            Some(c"Ext 1".to_owned())
         }
         MODE_KEYS_EXTENDED_2 => {
-            return Some(c"Ext 2".to_owned());
+            Some(c"Ext 2".to_owned())
         }
         _ => {
-            return Some(c"VT10x".to_owned());
+            Some(c"VT10x".to_owned())
         }
     }
 }
@@ -948,7 +946,7 @@ fn format_cb_pane_last(ft: &mut format_tree) -> Option<CString> {
 fn format_cb_pane_left(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
     let wp = pane.borrow();
-    Some(CString::new(format!("{}", (wp.xoff) as i32)).expect("formatted numbers contain no NUL"))
+    Some(CString::new(format!("{}", { (wp.xoff) })).expect("formatted numbers contain no NUL"))
 }
 
 fn format_cb_pane_marked(ft: &mut format_tree) -> Option<CString> {
@@ -981,7 +979,7 @@ fn format_cb_pane_mode(ft: &mut format_tree) -> Option<CString> {
 fn format_cb_pane_path(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
     let wp = pane.borrow();
-    return Some(wp.base.path.clone().unwrap_or_else(|| c"".to_owned()));
+    Some(wp.base.path.clone().unwrap_or_else(|| c"".to_owned()))
 }
 
 fn format_cb_pane_pid(ft: &mut format_tree) -> Option<CString> {
@@ -1027,7 +1025,7 @@ fn format_cb_pane_pipe_pid(ft: &mut format_tree) -> Option<CString> {
 fn format_cb_pane_pb_progress(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
     let progress = pane.borrow().base.progress_bar.progress;
-    Some(CString::new(format!("{}", progress as i32)).expect("formatted numbers contain no NUL"))
+    Some(CString::new(format!("{}", { progress })).expect("formatted numbers contain no NUL"))
 }
 
 fn format_cb_pane_pb_state(ft: &mut format_tree) -> Option<CString> {
@@ -1060,7 +1058,7 @@ fn format_cb_pane_right(ft: &mut format_tree) -> Option<CString> {
     Some(
         CString::new(format!(
             "{}",
-            (wp.xoff + wp.sx as ::core::ffi::c_int - 1 as ::core::ffi::c_int) as i32
+            { (wp.xoff + wp.sx as ::core::ffi::c_int - 1 as ::core::ffi::c_int) }
         ))
         .expect("formatted numbers contain no NUL"),
     )
@@ -1095,7 +1093,7 @@ fn format_cb_pane_title(ft: &mut format_tree) -> Option<CString> {
 fn format_cb_pane_top(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
     let wp = pane.borrow();
-    Some(CString::new(format!("{}", (wp.yoff) as i32)).expect("formatted numbers contain no NUL"))
+    Some(CString::new(format!("{}", { (wp.yoff) })).expect("formatted numbers contain no NUL"))
 }
 
 fn format_cb_pane_tty(ft: &mut format_tree) -> Option<CString> {
@@ -1124,26 +1122,26 @@ fn format_cb_pane_zoomed_flag(ft: &mut format_tree) -> Option<CString> {
 fn format_cb_pane_width(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
     let wp = pane.borrow();
-    Some(CString::new(format!("{}", (wp.sx) as u32)).expect("formatted numbers contain no NUL"))
+    Some(CString::new(format!("{}", { (wp.sx) })).expect("formatted numbers contain no NUL"))
 }
 
 fn format_cb_pane_x(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
     let wp = pane.borrow();
-    Some(CString::new(format!("{}", (wp.xoff) as i32)).expect("formatted numbers contain no NUL"))
+    Some(CString::new(format!("{}", { (wp.xoff) })).expect("formatted numbers contain no NUL"))
 }
 
 fn format_cb_pane_y(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
     let wp = pane.borrow();
-    Some(CString::new(format!("{}", (wp.yoff) as i32)).expect("formatted numbers contain no NUL"))
+    Some(CString::new(format!("{}", { (wp.yoff) })).expect("formatted numbers contain no NUL"))
 }
 
 fn format_cb_scroll_region_lower(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
     let wp = pane.borrow();
     Some(
-        CString::new(format!("{}", (wp.base.rlower) as u32))
+        CString::new(format!("{}", { (wp.base.rlower) }))
             .expect("formatted numbers contain no NUL"),
     )
 }
@@ -1152,7 +1150,7 @@ fn format_cb_scroll_region_upper(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
     let wp = pane.borrow();
     Some(
-        CString::new(format!("{}", (wp.base.rupper) as u32))
+        CString::new(format!("{}", { (wp.base.rupper) }))
             .expect("formatted numbers contain no NUL"),
     )
 }

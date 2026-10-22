@@ -47,7 +47,7 @@ fn job_completion(job: &job) -> JobCompletion {
     let output = job
         .event
         .with_stream(|stream| {
-            evbuffer_pullup(&mut (*stream).input, -1)
+            evbuffer_pullup(&mut stream.input, -1)
                 .unwrap_or_default()
                 .to_vec()
         })
@@ -478,7 +478,7 @@ fn job_write_callback(handle: &Weak<job>) {
     };
     let Some(len) = job
         .event
-        .with_stream(|stream| evbuffer_get_length(&(*stream).output))
+        .with_stream(|stream| evbuffer_get_length(&stream.output))
     else {
         return;
     };

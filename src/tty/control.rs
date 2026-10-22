@@ -61,7 +61,7 @@ use ::libc::{
 pub fn tty_init(owner: &ClientRef) -> ::core::ffi::c_int {
     let fd = owner.terminal_fd();
     tty_initialize_component(
-        &mut *owner.borrow_terminal_mut(),
+        &mut owner.borrow_terminal_mut(),
         (fd >= 0).then(|| unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) }),
     )
 }
@@ -122,7 +122,7 @@ pub fn tty_resize(owner: &ClientRef) {
             xpixel,
             ypixel
         ));
-        tty_set_size(&mut *terminal.borrow_terminal_mut(), sx, sy, xpixel, ypixel);
+        tty_set_size(&mut terminal.borrow_terminal_mut(), sx, sy, xpixel, ypixel);
         tty_invalidate(terminal);
     };
 }
@@ -297,7 +297,7 @@ fn tty_write_callback(owner: &ClientRef, result: std::io::Result<usize>) {
         ) != 0
         {
             tty_start_write(
-                &mut *terminal.borrow_terminal_mut(),
+                &mut terminal.borrow_terminal_mut(),
                 std::rc::Rc::downgrade(terminal),
             );
         }
@@ -387,7 +387,7 @@ pub fn tty_open(owner: &ClientRef) -> Result<(), std::ffi::CString> {
         terminal_set!(terminal, out, =, Some(evbuffer_new()));
     };
     tty_start_tty(owner);
-    tty_keys_build(&mut *owner.borrow_terminal_mut());
+    tty_keys_build(&mut owner.borrow_terminal_mut());
     Ok(())
 }
 fn tty_start_timer_callback(owner: &ClientRef) {
@@ -426,7 +426,7 @@ pub fn tty_start_tty(owner: &ClientRef) {
         let mut tio: termios = unsafe { ::core::mem::zeroed() };
         let mut i: u_int = 0;
         setblocking(fd, 0 as ::core::ffi::c_int);
-        tty_start_read(&mut *tty.borrow_terminal_mut(), std::rc::Rc::downgrade(tty));
+        tty_start_read(&mut tty.borrow_terminal_mut(), std::rc::Rc::downgrade(tty));
         tio = terminal_value!(tty, tio).0;
         tio.c_iflag &= !(IXON | IXOFF | ICRNL | INLCR | IGNCR | IMAXBEL | ISTRIP) as tcflag_t;
         tio.c_iflag |= IGNBRK as tcflag_t;
@@ -670,7 +670,7 @@ pub fn tty_close(owner: &ClientRef) {
         drop(term);
     }
     let mut terminal = owner.borrow_terminal_mut();
-    tty_keys_free(&mut *terminal);
+    tty_keys_free(&mut terminal);
     terminal.flags &= !TTY_OPENED;
 }
 pub(super) fn tty_update_features(owner: &ClientRef) {
@@ -857,7 +857,7 @@ fn tty_window_offset1(owner: &ClientRef) -> tty_window_view {
         return view;
     }
     owner.reset_pan(None);
-    let previous = tty_window_offset(&*owner.borrow_terminal());
+    let previous = tty_window_offset(&owner.borrow_terminal());
     let cells = window.pane_cells();
     let strip = cells
         .iter()
@@ -939,7 +939,7 @@ pub fn tty_update_client_offset(owner: &ClientRef) {
     let old = {
         let mut terminal = owner.borrow_terminal_mut();
         terminal.oflag = view.bigger as i32;
-        tty_window_offset(&*terminal)
+        tty_window_offset(&terminal)
     };
     if view.ox == old.ox && view.oy == old.oy && view.sx == old.sx && view.sy == old.sy {
         return;
@@ -1087,7 +1087,7 @@ fn tty_clear_line(
         return;
     }
     let complete = (|tty: &ClientRef| {
-        if !tty.clips_terminal_output() && tty_fake_bce(&*tty.borrow_terminal(), defaults, bg) == 0
+        if !tty.clips_terminal_output() && tty_fake_bce(&tty.borrow_terminal(), defaults, bg) == 0
         {
             if px.wrapping_add(nx) >= terminal_value!(tty, sx)
                 && tty_term_has(&terminal_term(tty), TTYC_EL) != 0
@@ -1242,7 +1242,7 @@ fn tty_clear_area(
     }
     let defaults = &ctx.style_ctx.defaults;
     let complete = (|tty: &ClientRef| {
-        if !tty.clips_terminal_output() && tty_fake_bce(&*tty.borrow_terminal(), defaults, bg) == 0
+        if !tty.clips_terminal_output() && tty_fake_bce(&tty.borrow_terminal(), defaults, bg) == 0
         {
             if px == 0 as u_int
                 && px.wrapping_add(nx) >= terminal_value!(tty, sx)
@@ -1521,7 +1521,7 @@ fn tty_cmd_insertcharacter(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
     let complete = (|tty: &ClientRef| {
         if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
             || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= terminal_value!(tty, sx))
-            || tty_fake_bce(&*tty.borrow_terminal(), &ctx.style_ctx.defaults, ctx.bg) != 0
+            || tty_fake_bce(&tty.borrow_terminal(), &ctx.style_ctx.defaults, ctx.bg) != 0
             || tty_term_has(&terminal_term(tty), TTYC_ICH) == 0
                 && tty_term_has(&terminal_term(tty), TTYC_ICH1) == 0
             || tty.clips_terminal_output()
@@ -1542,7 +1542,7 @@ fn tty_cmd_deletecharacter(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
     let complete = (|tty: &ClientRef| {
         if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
             || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= terminal_value!(tty, sx))
-            || tty_fake_bce(&*tty.borrow_terminal(), &ctx.style_ctx.defaults, ctx.bg) != 0
+            || tty_fake_bce(&tty.borrow_terminal(), &ctx.style_ctx.defaults, ctx.bg) != 0
             || tty_term_has(&terminal_term(tty), TTYC_DCH) == 0
                 && tty_term_has(&terminal_term(tty), TTYC_DCH1) == 0
             || tty.clips_terminal_output()
@@ -1571,7 +1571,7 @@ fn tty_cmd_insertline(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
     let complete = (|tty: &ClientRef| {
         if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
             || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= terminal_value!(tty, sx))
-            || tty_fake_bce(&*tty.borrow_terminal(), &ctx.style_ctx.defaults, ctx.bg) != 0
+            || tty_fake_bce(&tty.borrow_terminal(), &ctx.style_ctx.defaults, ctx.bg) != 0
             || tty_term_has(&terminal_term(tty), TTYC_CSR) == 0
             || tty_term_has(&terminal_term(tty), TTYC_IL1) == 0
             || ctx.sx == 1 as u_int
@@ -1598,7 +1598,7 @@ fn tty_cmd_deleteline(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
     let complete = (|tty: &ClientRef| {
         if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
             || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= terminal_value!(tty, sx))
-            || tty_fake_bce(&*tty.borrow_terminal(), &ctx.style_ctx.defaults, ctx.bg) != 0
+            || tty_fake_bce(&tty.borrow_terminal(), &ctx.style_ctx.defaults, ctx.bg) != 0
             || tty_term_has(&terminal_term(tty), TTYC_CSR) == 0
             || tty_term_has(&terminal_term(tty), TTYC_DL1) == 0
             || ctx.sx == 1 as u_int
@@ -1629,7 +1629,7 @@ fn tty_cmd_reverseindex(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
         if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
             || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= terminal_value!(tty, sx))
                 && terminal_term(tty).flags & TERM_DECSLRM == 0
-            || tty_fake_bce(&*tty.borrow_terminal(), &ctx.style_ctx.defaults, 8 as u_int) != 0
+            || tty_fake_bce(&tty.borrow_terminal(), &ctx.style_ctx.defaults, 8 as u_int) != 0
             || tty_term_has(&terminal_term(tty), TTYC_CSR) == 0
             || tty_term_has(&terminal_term(tty), TTYC_RI) == 0
                 && tty_term_has(&terminal_term(tty), TTYC_RIN) == 0
@@ -1661,7 +1661,7 @@ fn tty_cmd_scrollup(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
         if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
             || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= terminal_value!(tty, sx))
                 && terminal_term(tty).flags & TERM_DECSLRM == 0
-            || tty_fake_bce(&*tty.borrow_terminal(), &ctx.style_ctx.defaults, 8 as u_int) != 0
+            || tty_fake_bce(&tty.borrow_terminal(), &ctx.style_ctx.defaults, 8 as u_int) != 0
             || tty_term_has(&terminal_term(tty), TTYC_CSR) == 0
             || ctx.sx == 1 as u_int
             || ctx.sy == 1 as u_int
@@ -1708,7 +1708,7 @@ fn tty_cmd_scrolldown(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
         if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
             || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= terminal_value!(tty, sx))
                 && terminal_term(tty).flags & TERM_DECSLRM == 0
-            || tty_fake_bce(&*tty.borrow_terminal(), &ctx.style_ctx.defaults, 8 as u_int) != 0
+            || tty_fake_bce(&tty.borrow_terminal(), &ctx.style_ctx.defaults, 8 as u_int) != 0
             || tty_term_has(&terminal_term(tty), TTYC_CSR) == 0
             || tty_term_has(&terminal_term(tty), TTYC_RI) == 0
                 && tty_term_has(&terminal_term(tty), TTYC_RIN) == 0
@@ -1960,7 +1960,7 @@ fn tty_cmd_setselection(owner: &ClientRef, ctx: &tty_ctx) {
 pub fn tty_set_selection(owner: &ClientRef, clip: &CStr, data: &[u8]) {
     let sequence = {
         let mut terminal = owner.borrow_terminal_mut();
-        tty_selection_sequence(&mut *terminal, clip, data)
+        tty_selection_sequence(&mut terminal, clip, data)
     };
     if let Some(sequence) = sequence.filter(|sequence| !sequence.is_empty()) {
         owner.write_terminal(sequence.to_bytes());

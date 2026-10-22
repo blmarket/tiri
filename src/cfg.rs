@@ -112,7 +112,7 @@ pub fn start_cfg() {
             registry_c_owner.as_ref(),
             cmdq_get_callback_owned(
                 c"cfg_client_done",
-                Some(Box::new(|item| cfg_client_done(item))),
+                Some(Box::new(cfg_client_done)),
             ),
         );
     }

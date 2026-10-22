@@ -58,7 +58,7 @@ impl JobCache {
             Self::Client(observer) => {
                 let client = observer.upgrade()?;
                 let mut cache = client.borrow_format_jobs_mut();
-                Some(edit(&mut *cache))
+                Some(edit(&mut cache))
             }
         }
     }
