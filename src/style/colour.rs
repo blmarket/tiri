@@ -8,7 +8,7 @@ use crate::shared::client::ClientRef;
 use crate::shared::colour::*;
 use crate::shared::colour::{COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME};
 use crate::tty::{TERM_256COLOURS, TERM_RGBCOLOURS};
-use libc::{sscanf, strcasecmp, strcmp, strlen, strncasecmp};
+use libc::sscanf;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -449,6 +449,10 @@ pub fn colour_totheme(mut c: ::core::ffi::c_int) -> client_theme {
     }
     THEME_UNKNOWN
 }
+fn starts_with_ignore_ascii_case(s: &[u8], prefix: &[u8]) -> bool {
+    s.get(..prefix.len())
+        .is_some_and(|head| head.eq_ignore_ascii_case(prefix))
+}
 unsafe fn colour_fromstring_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
     let s = input.as_ptr();
     let mut cp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -457,7 +461,8 @@ unsafe fn colour_fromstring_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
     let mut g: u_char = 0;
     let mut b: u_char = 0;
     let mut i: u_int = 0;
-    if *s as ::core::ffi::c_int == '#' as i32 && strlen(s) == 7 as size_t {
+    let bytes = input.to_bytes();
+    if bytes.len() == 7 && bytes[0] == b'#' {
         cp = s.offset(1 as ::core::ffi::c_int as isize);
         while (*cp as u_char).is_ascii_hexdigit() {
             cp = cp.offset(1);
@@ -477,12 +482,7 @@ unsafe fn colour_fromstring_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
         }
         return colour_join_rgb(r, g, b);
     }
-    if strncasecmp(
-        s,
-        c"colour".as_ptr(),
-        (::core::mem::size_of::<[::core::ffi::c_char; 7]>() as size_t).wrapping_sub(1 as size_t),
-    ) == 0 as ::core::ffi::c_int
-    {
+    if starts_with_ignore_ascii_case(bytes, b"colour") {
         let parsed = strtonum(
             cstr_suffix(input, 6),
             0 as ::core::ffi::c_longlong,
@@ -494,12 +494,7 @@ unsafe fn colour_fromstring_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
         }
         return n | COLOUR_FLAG_256;
     }
-    if strncasecmp(
-        s,
-        c"color".as_ptr(),
-        (::core::mem::size_of::<[::core::ffi::c_char; 6]>() as size_t).wrapping_sub(1 as size_t),
-    ) == 0 as ::core::ffi::c_int
-    {
+    if starts_with_ignore_ascii_case(bytes, b"color") {
         let parsed = strtonum(
             cstr_suffix(input, 5),
             0 as ::core::ffi::c_longlong,
@@ -511,10 +506,10 @@ unsafe fn colour_fromstring_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
         }
         return n | COLOUR_FLAG_256;
     }
-    if strcasecmp(s, c"default".as_ptr()) == 0 as ::core::ffi::c_int {
+    if bytes.eq_ignore_ascii_case(b"default") {
         return 8 as ::core::ffi::c_int;
     }
-    if strcasecmp(s, c"terminal".as_ptr()) == 0 as ::core::ffi::c_int {
+    if bytes.eq_ignore_ascii_case(b"terminal") {
         return 9 as ::core::ffi::c_int;
     }
     i = 0 as u_int;
@@ -522,89 +517,57 @@ unsafe fn colour_fromstring_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
         < (::core::mem::size_of::<[C2RustUnnamed_36; 10]>() as usize)
             .wrapping_div(::core::mem::size_of::<C2RustUnnamed_36>() as usize)
     {
-        if strcasecmp(s, colour_theme_table[i as usize].name.as_ptr()) == 0 as ::core::ffi::c_int {
+        if bytes.eq_ignore_ascii_case(colour_theme_table[i as usize].name.to_bytes()) {
             return (i | COLOUR_FLAG_THEME as u_int) as ::core::ffi::c_int;
         }
         i = i.wrapping_add(1);
     }
-    if strcasecmp(s, c"black".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcmp(s, c"0".as_ptr()) == 0 as ::core::ffi::c_int
-    {
+    if bytes.eq_ignore_ascii_case(b"black") || bytes == b"0" {
         return 0 as ::core::ffi::c_int;
     }
-    if strcasecmp(s, c"red".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcmp(s, c"1".as_ptr()) == 0 as ::core::ffi::c_int
-    {
+    if bytes.eq_ignore_ascii_case(b"red") || bytes == b"1" {
         return 1 as ::core::ffi::c_int;
     }
-    if strcasecmp(s, c"green".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcmp(s, c"2".as_ptr()) == 0 as ::core::ffi::c_int
-    {
+    if bytes.eq_ignore_ascii_case(b"green") || bytes == b"2" {
         return 2 as ::core::ffi::c_int;
     }
-    if strcasecmp(s, c"yellow".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcmp(s, c"3".as_ptr()) == 0 as ::core::ffi::c_int
-    {
+    if bytes.eq_ignore_ascii_case(b"yellow") || bytes == b"3" {
         return 3 as ::core::ffi::c_int;
     }
-    if strcasecmp(s, c"blue".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcmp(s, c"4".as_ptr()) == 0 as ::core::ffi::c_int
-    {
+    if bytes.eq_ignore_ascii_case(b"blue") || bytes == b"4" {
         return 4 as ::core::ffi::c_int;
     }
-    if strcasecmp(s, c"magenta".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcmp(s, c"5".as_ptr()) == 0 as ::core::ffi::c_int
-    {
+    if bytes.eq_ignore_ascii_case(b"magenta") || bytes == b"5" {
         return 5 as ::core::ffi::c_int;
     }
-    if strcasecmp(s, c"cyan".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcmp(s, c"6".as_ptr()) == 0 as ::core::ffi::c_int
-    {
+    if bytes.eq_ignore_ascii_case(b"cyan") || bytes == b"6" {
         return 6 as ::core::ffi::c_int;
     }
-    if strcasecmp(s, c"white".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcmp(s, c"7".as_ptr()) == 0 as ::core::ffi::c_int
-    {
+    if bytes.eq_ignore_ascii_case(b"white") || bytes == b"7" {
         return 7 as ::core::ffi::c_int;
     }
-    if strcasecmp(s, c"brightblack".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcmp(s, c"90".as_ptr()) == 0 as ::core::ffi::c_int
-    {
+    if bytes.eq_ignore_ascii_case(b"brightblack") || bytes == b"90" {
         return 90 as ::core::ffi::c_int;
     }
-    if strcasecmp(s, c"brightred".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcmp(s, c"91".as_ptr()) == 0 as ::core::ffi::c_int
-    {
+    if bytes.eq_ignore_ascii_case(b"brightred") || bytes == b"91" {
         return 91 as ::core::ffi::c_int;
     }
-    if strcasecmp(s, c"brightgreen".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcmp(s, c"92".as_ptr()) == 0 as ::core::ffi::c_int
-    {
+    if bytes.eq_ignore_ascii_case(b"brightgreen") || bytes == b"92" {
         return 92 as ::core::ffi::c_int;
     }
-    if strcasecmp(s, c"brightyellow".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcmp(s, c"93".as_ptr()) == 0 as ::core::ffi::c_int
-    {
+    if bytes.eq_ignore_ascii_case(b"brightyellow") || bytes == b"93" {
         return 93 as ::core::ffi::c_int;
     }
-    if strcasecmp(s, c"brightblue".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcmp(s, c"94".as_ptr()) == 0 as ::core::ffi::c_int
-    {
+    if bytes.eq_ignore_ascii_case(b"brightblue") || bytes == b"94" {
         return 94 as ::core::ffi::c_int;
     }
-    if strcasecmp(s, c"brightmagenta".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcmp(s, c"95".as_ptr()) == 0 as ::core::ffi::c_int
-    {
+    if bytes.eq_ignore_ascii_case(b"brightmagenta") || bytes == b"95" {
         return 95 as ::core::ffi::c_int;
     }
-    if strcasecmp(s, c"brightcyan".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcmp(s, c"96".as_ptr()) == 0 as ::core::ffi::c_int
-    {
+    if bytes.eq_ignore_ascii_case(b"brightcyan") || bytes == b"96" {
         return 96 as ::core::ffi::c_int;
     }
-    if strcasecmp(s, c"brightwhite".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcmp(s, c"97".as_ptr()) == 0 as ::core::ffi::c_int
-    {
+    if bytes.eq_ignore_ascii_case(b"brightwhite") || bytes == b"97" {
         return 97 as ::core::ffi::c_int;
     }
     colour_byname_impl(input)
@@ -1132,7 +1095,6 @@ pub fn colour_256to16(mut c: ::core::ffi::c_int) -> ::core::ffi::c_int {
     ANSI_TABLE[(c & 0xff as ::core::ffi::c_int) as usize] as ::core::ffi::c_int
 }
 unsafe fn colour_byname_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
-    let name = input.as_ptr();
     const colours: [C2RustUnnamed_37; 578] = [
         C2RustUnnamed_37 {
             name: c"AliceBlue",
@@ -3449,10 +3411,11 @@ unsafe fn colour_byname_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
     ];
     let mut i: u_int = 0;
     let mut c: ::core::ffi::c_int = 0;
-    if strncasecmp(name, c"grey".as_ptr(), 4 as size_t) == 0 as ::core::ffi::c_int
-        || strncasecmp(name, c"gray".as_ptr(), 4 as size_t) == 0 as ::core::ffi::c_int
+    let bytes = input.to_bytes();
+    if starts_with_ignore_ascii_case(bytes, b"grey")
+        || starts_with_ignore_ascii_case(bytes, b"gray")
     {
-        if *name.offset(4 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '\0' as i32 {
+        if bytes.len() == 4 {
             return 0xbebebe as ::core::ffi::c_int | COLOUR_FLAG_RGB;
         }
         let parsed = strtonum(
@@ -3475,7 +3438,11 @@ unsafe fn colour_byname_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
         < (::core::mem::size_of::<[C2RustUnnamed_37; 578]>() as usize)
             .wrapping_div(::core::mem::size_of::<C2RustUnnamed_37>() as usize)
     {
-        if strcasecmp(colours[i as usize].name.as_ptr(), name) == 0 as ::core::ffi::c_int {
+        if colours[i as usize]
+            .name
+            .to_bytes()
+            .eq_ignore_ascii_case(bytes)
+        {
             return colours[i as usize].c | COLOUR_FLAG_RGB;
         }
         i = i.wrapping_add(1);

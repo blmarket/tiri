@@ -50,7 +50,7 @@ use crate::shared::prompt::{
 };
 use crate::shared::screen::{screen, MODE_CURSOR};
 use crate::shared::screen_write::screen_write_ctx;
-use libc::{strcasestr, strstr};
+use crate::text::search::contains;
 
 use crate::sort::{sort_next_order, sort_order_from_string, sort_order_to_string};
 use crate::status::status_message_set;
@@ -1492,10 +1492,8 @@ unsafe fn mode_tree_search(
                 tree.searchcb = Some(callback);
             }
             matched
-        } else if icase {
-            !strcasestr(name.as_ptr(), search.as_ptr()).is_null()
         } else {
-            !strstr(name.as_ptr(), search.as_ptr()).is_null()
+            contains(name.to_bytes(), search.to_bytes(), icase)
         };
         if tree_owner.borrow().dead != 0 || !item.is_alive() || !last.is_alive() {
             return None;

@@ -58,7 +58,7 @@ use crate::reactor::{
 };
 use crate::screen::{screen_init, screen_resize, screen_set_default_cursor, screen_set_title};
 pub use api::WindowPane;
-use libc::{gethostname, memset};
+use libc::gethostname;
 
 use crate::server::{marked_pane, server_check_marked};
 use crate::server_client::Client;
@@ -368,11 +368,7 @@ unsafe fn window_pane_send_resize(wp: &window_pane, sx: u_int, sy: u_int) {
         { sx },
         { sy }
     ));
-    memset(
-        &raw mut ws as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<winsize>() as size_t,
-    );
+    ws = ::core::mem::zeroed();
     ws.ws_col = sx as ::core::ffi::c_ushort;
     ws.ws_row = sy as ::core::ffi::c_ushort;
     let parent = wp.window.upgrade().expect("live pane parent");

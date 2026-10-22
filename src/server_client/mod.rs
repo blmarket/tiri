@@ -65,7 +65,7 @@ use crate::server::{current_time, server_add_accept, server_proc, server_update_
 use crate::server_fn::{
     server_check_unattached, server_redraw_window_borders, server_status_window,
 };
-use libc::{access, memcpy, strcmp};
+use libc::access;
 
 use crate::shared::command::unpack_argv;
 use crate::status::{
@@ -2242,10 +2242,7 @@ unsafe fn server_client_key_callback(
                                 || key0
                                     == prefix2 as ::core::ffi::c_ulonglong
                                         & (KEYC_MASK_KEY | KEYC_MASK_MODIFIERS))
-                                && strcmp(
-                                    (table.borrow().name).as_ptr().cast_mut(),
-                                    c"prefix".as_ptr(),
-                                ) != 0 as ::core::ffi::c_int
+                                && table.borrow().name.as_c_str() != c"prefix"
                             {
                                 server_client_set_key_table(&c_owner, Some(c"prefix"));
                                 c_owner.borrow_mut().flags |= CLIENT_REDRAWSTATUS as u64;
@@ -2278,10 +2275,7 @@ unsafe fn server_client_key_callback(
                                         .with_local(|oo| options_get_number(oo, c"prefix-timeout"))
                                         as uint64_t;
                                     if prefix_delay > 0 as uint64_t
-                                        && strcmp(
-                                            (table.borrow().name).as_ptr().cast_mut(),
-                                            c"prefix".as_ptr(),
-                                        ) == 0 as ::core::ffi::c_int
+                                        && table.borrow().name.as_c_str() == c"prefix"
                                         && server_client_key_table_activity_diff(&c_owner.borrow())
                                             > prefix_delay
                                     {
@@ -3796,7 +3790,6 @@ unsafe fn server_client_dispatch_identify(
     owner: &ClientRef,
     imsg: &mut imsg,
 ) -> ::core::ffi::c_int {
-    let mut data: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut datalen: size_t = 0;
     let mut flags: ::core::ffi::c_int = 0;
     let mut feat: ::core::ffi::c_int = 0;
@@ -3804,17 +3797,14 @@ unsafe fn server_client_dispatch_identify(
     if owner.borrow().flags & CLIENT_IDENTIFIED as uint64_t != 0 {
         return -(1 as ::core::ffi::c_int);
     }
-    data = imsg.data.as_ptr().cast::<::core::ffi::c_char>();
     datalen = imsg.data.len();
     match imsg.hdr.type_0 {
         MSG_IDENTIFY_FEATURES => {
             if datalen != ::core::mem::size_of::<::core::ffi::c_int>() as usize {
                 return -(1 as ::core::ffi::c_int);
             }
-            memcpy(
-                &raw mut feat as *mut ::core::ffi::c_void,
-                data as *const ::core::ffi::c_void,
-                ::core::mem::size_of::<::core::ffi::c_int>() as size_t,
+            feat = ::core::ffi::c_int::from_ne_bytes(
+                imsg.data[..].try_into().expect("checked length"),
             );
             owner.borrow_mut().term_features |= feat;
             log_debug(format_args!(
@@ -3827,10 +3817,8 @@ unsafe fn server_client_dispatch_identify(
             if datalen != ::core::mem::size_of::<::core::ffi::c_int>() as usize {
                 return -(1 as ::core::ffi::c_int);
             }
-            memcpy(
-                &raw mut flags as *mut ::core::ffi::c_void,
-                data as *const ::core::ffi::c_void,
-                ::core::mem::size_of::<::core::ffi::c_int>() as size_t,
+            flags = ::core::ffi::c_int::from_ne_bytes(
+                imsg.data[..].try_into().expect("checked length"),
             );
             owner.borrow_mut().flags |= flags as uint64_t;
             log_debug(format_args!(
@@ -3843,11 +3831,7 @@ unsafe fn server_client_dispatch_identify(
             if datalen != ::core::mem::size_of::<uint64_t>() as usize {
                 return -(1 as ::core::ffi::c_int);
             }
-            memcpy(
-                &raw mut longflags as *mut ::core::ffi::c_void,
-                data as *const ::core::ffi::c_void,
-                ::core::mem::size_of::<uint64_t>() as size_t,
-            );
+            longflags = uint64_t::from_ne_bytes(imsg.data[..].try_into().expect("checked length"));
             owner.borrow_mut().flags |= longflags;
             log_debug(format_args!(
                 "client {} IDENTIFY_LONGFLAGS {}",

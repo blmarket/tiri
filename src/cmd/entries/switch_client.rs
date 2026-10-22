@@ -10,7 +10,7 @@ use crate::server_fn::server_redraw_window;
 use crate::window::Window as _;
 use crate::window_pane::WindowPane as _;
 use crate::winlink::winlink_window;
-use libc::{getuid, strcmp, strcspn};
+use libc::getuid;
 
 use crate::shared::abi::uid_t;
 use crate::shared::abi::*;
@@ -87,10 +87,13 @@ unsafe fn cmd_switch_client_exec(
         order_seq: &[],
     };
     let mut uid: uid_t = 0;
-    if !tflag.is_null()
-        && (*tflag.add(strcspn(tflag, c":.%".as_ptr())) as ::core::ffi::c_int != '\0' as i32
-            || strcmp(tflag, c"=".as_ptr()) == 0 as ::core::ffi::c_int)
-    {
+    if nullable_cstr(tflag).is_some_and(|target| {
+        let target = target.to_bytes();
+        target
+            .iter()
+            .any(|&byte| matches!(byte, b':' | b'.' | b'%'))
+            || target == b"="
+    }) {
         type_0 = CMD_FIND_PANE;
         flags = 0 as ::core::ffi::c_int;
     } else {

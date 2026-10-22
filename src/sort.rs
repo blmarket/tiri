@@ -3,7 +3,6 @@ use crate::server_client::Client as _;
 use crate::server_client::ClientRegistry;
 use crate::session::sessions;
 use crate::winlink::winlink_window;
-use libc::{strcasecmp, strcmp};
 use std::ffi::CStr;
 
 use crate::session::Session;
@@ -113,7 +112,7 @@ unsafe fn sort_winlink_cmp(
             let (a, b) = (a.activity_time(), b.activity_time());
             b.cmp(&a) as i32
         }
-        4 => strcmp(a.name().as_ptr(), b.name().as_ptr()),
+        4 => a.name().cmp(&b.name()) as i32,
         6 => {
             let (ax, ay) = a.size();
             let (bx, by) = b.size();
@@ -122,9 +121,17 @@ unsafe fn sort_winlink_cmp(
         _ => 0,
     };
     if result == 0 {
-        result = strcmp(a.name().as_ptr(), b.name().as_ptr());
+        result = a.name().cmp(&b.name()) as i32;
     }
     sort_ordering(result, sort_crit.reversed)
+}
+/// Compare table names as strcasecmp(3) does in the UTF-8 locale: ASCII letters fold.
+fn sort_key_binding_table_cmp(a: &key_binding, b: &key_binding) -> ::core::ffi::c_int {
+    let a = a.tablename.as_deref().expect("sorted binding table");
+    let b = b.tablename.as_deref().expect("sorted binding table");
+    let (a, b) = (a.to_bytes().iter(), b.to_bytes().iter());
+    a.map(u8::to_ascii_lowercase)
+        .cmp(b.map(u8::to_ascii_lowercase)) as ::core::ffi::c_int
 }
 unsafe fn sort_key_binding_cmp(
     a: &key_binding,
@@ -142,26 +149,12 @@ unsafe fn sort_key_binding_cmp(
             result = ak.cmp(&bk) as ::core::ffi::c_int;
         }
         4 => {
-            result = strcasecmp(
-                a.tablename
-                    .as_ref()
-                    .map_or(::core::ptr::null(), |s| s.as_ptr()),
-                b.tablename
-                    .as_ref()
-                    .map_or(::core::ptr::null(), |s| s.as_ptr()),
-            );
+            result = sort_key_binding_table_cmp(a, b);
         }
         _ => {}
     }
     if result == 0 as ::core::ffi::c_int {
-        result = strcasecmp(
-            a.tablename
-                .as_ref()
-                .map_or(::core::ptr::null(), |s| s.as_ptr()),
-            b.tablename
-                .as_ref()
-                .map_or(::core::ptr::null(), |s| s.as_ptr()),
-        );
+        result = sort_key_binding_table_cmp(a, b);
     }
     if result == 0 as ::core::ffi::c_int {
         result = a.key.cmp(&b.key) as ::core::ffi::c_int;

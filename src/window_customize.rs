@@ -89,7 +89,6 @@ use crate::shared::window::{
 use crate::spawn::{spawn_editor, spawn_editor_write};
 use crate::status::status_message_set;
 use crate::tmux::global_environ;
-use libc::{strcmp, strlen};
 
 fn window_customize_uppercase_cause(cause: &mut Option<CString>) {
     if let Some(message) = cause.take() {
@@ -1629,8 +1628,10 @@ unsafe fn window_customize_draw_key(
     if note.is_null() {
         note = c"There is no note for this key.".as_ptr();
     }
-    if *note as ::core::ffi::c_int != '\0' as i32
-        && *note.add(strlen(note).wrapping_sub(1 as size_t)) as ::core::ffi::c_int != '.' as i32
+    if CStr::from_ptr(note)
+        .to_bytes()
+        .last()
+        .is_some_and(|&last| last != b'.')
     {
         period = c".".as_ptr();
     }
@@ -2033,9 +2034,7 @@ unsafe fn window_customize_draw_option(
                                         value = value_owner.as_ref().unwrap().as_ptr().cast_mut();
                                         if let Some(oe) = oe.filter(|_| array_key.is_null()) {
                                             let rendered = options_default_to_cstring(oe);
-                                            if strcmp(rendered.as_ptr(), value)
-                                                != 0 as ::core::ffi::c_int
-                                            {
+                                            if rendered.as_c_str() != CStr::from_ptr(value) {
                                                 default_value = Some(rendered);
                                             }
                                         }
@@ -2094,8 +2093,7 @@ unsafe fn window_customize_draw_option(
                                                         ft,
                                                         CStr::from_ptr(value),
                                                     );
-                                                    if strcmp(expanded.as_ptr(), value)
-                                                        != 0 as ::core::ffi::c_int
+                                                    if expanded.as_c_str() != CStr::from_ptr(value)
                                                     {
                                                         if window_customize_write_value(
                                                             ctx,
@@ -2141,12 +2139,12 @@ unsafe fn window_customize_draw_option(
                                                                     c", ",
                                                                 );
                                                             }
-                                                            choices[strlen(
-                                                                &raw mut choices
-                                                                    as *mut ::core::ffi::c_char,
+                                                            let len = CStr::from_bytes_until_nul(
+                                                                &choices,
                                                             )
-                                                            .wrapping_sub(2 as size_t)
-                                                                as usize] = 0;
+                                                            .expect("terminated choices")
+                                                            .count_bytes();
+                                                            choices[len.wrapping_sub(2)] = 0;
                                                             if window_customize_write_value(
                                                                 ctx,
                                                                 cx,

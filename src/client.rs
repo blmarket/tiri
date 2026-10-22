@@ -42,7 +42,7 @@ use crate::tmux::{
 use crate::tty::tty_term_read_list;
 use libc::{
     cfgetispeed, cfgetospeed, cfmakeraw, cfsetispeed, cfsetospeed, execl, getenv, getppid, kill,
-    memset, setenv, sigaction, sigemptyset, strsignal, system, unlink, waitpid,
+    setenv, sigaction, sigemptyset, strsignal, system, unlink, waitpid,
 };
 use libc::{EAGAIN, ECHILD, ENAMETOOLONG, ENOENT};
 use std::ffi::{CStr, CString, OsStr};
@@ -566,11 +566,7 @@ unsafe fn client_signal(sig: ProcessSignal) {
                 proc_send(&client_peer, MSG_RESIZE, None, &[]);
             }
             ProcessSignal::Continue => {
-                memset(
-                    &raw mut sigact as *mut ::core::ffi::c_void,
-                    0 as ::core::ffi::c_int,
-                    ::core::mem::size_of::<sigaction>() as size_t,
-                );
+                sigact = ::core::mem::zeroed();
                 sigemptyset(&raw mut sigact.sa_mask);
                 sigact.sa_flags = SA_RESTART;
                 sigact.sa_sigaction = SIG_IGN;
@@ -802,11 +798,7 @@ unsafe fn client_dispatch_attached(imsg: &mut imsg) {
             if datalen != 0 as ssize_t {
                 fatalx(|out| out.write_all(b"bad MSG_SUSPEND size"));
             }
-            memset(
-                &raw mut sigact as *mut ::core::ffi::c_void,
-                0 as ::core::ffi::c_int,
-                ::core::mem::size_of::<sigaction>() as size_t,
-            );
+            sigact = ::core::mem::zeroed();
             sigemptyset(&raw mut sigact.sa_mask);
             sigact.sa_flags = SA_RESTART;
             sigact.sa_sigaction = SIG_DFL;

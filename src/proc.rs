@@ -21,7 +21,7 @@ pub use crate::shared::signal::{
 };
 use crate::tmux::{getversion, socket_path_cstr};
 use libc::utsname;
-use libc::{daemon, fork, memset, sigaction, sigemptyset, uname};
+use libc::{daemon, fork, sigaction, sigemptyset, uname};
 use std::ffi::CStr;
 use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use tiri_rt::{AsyncRead as _, AsyncWrite as _, Runtime as _, Signals as _};
@@ -252,11 +252,7 @@ pub unsafe fn proc_start(name: &CStr) -> Box<tmuxproc> {
         out.write_all(b")")
     });
     if uname(&raw mut u) < 0 as ::core::ffi::c_int {
-        memset(
-            &raw mut u as *mut ::core::ffi::c_void,
-            0 as ::core::ffi::c_int,
-            ::core::mem::size_of::<utsname>() as size_t,
-        );
+        u = ::core::mem::zeroed();
     }
     log_debug(format_args!(
         "{} started ({}): version {}, socket {}, protocol {}",
@@ -345,11 +341,6 @@ pub unsafe fn proc_set_signals(
 ) {
     let mut sa: sigaction = unsafe { ::core::mem::zeroed() };
     (*tp).signalcb = signalcb;
-    memset(
-        &raw mut sa as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<sigaction>() as size_t,
-    );
     sigemptyset(&raw mut sa.sa_mask);
     sa.sa_flags = SA_RESTART;
     sa.sa_sigaction = SIG_IGN;
@@ -374,11 +365,6 @@ pub unsafe fn proc_set_signals(
 }
 pub unsafe fn proc_clear_signals(mut tp: *mut tmuxproc, mut defaults: ::core::ffi::c_int) {
     let mut sa: sigaction = unsafe { ::core::mem::zeroed() };
-    memset(
-        &raw mut sa as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<sigaction>() as size_t,
-    );
     sigemptyset(&raw mut sa.sa_mask);
     sa.sa_flags = SA_RESTART;
     sa.sa_sigaction = SIG_DFL;

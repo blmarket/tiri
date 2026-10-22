@@ -9,7 +9,7 @@ use crate::format::bytes::write_cstr;
 use crate::format::format_single_cstring;
 use crate::server_client::ClientRegistry;
 use crate::window::Window as _;
-use libc::{getuid, strcspn};
+use libc::getuid;
 use std::ffi::CStr;
 
 use crate::session::sessions;
@@ -96,9 +96,12 @@ pub unsafe fn cmd_attach_session(
         });
         return CmdOutcome::Error;
     }
-    if !tflag.is_null()
-        && *tflag.add(strcspn(tflag, c":.".as_ptr())) as ::core::ffi::c_int != '\0' as i32
-    {
+    if nullable_cstr(tflag).is_some_and(|target| {
+        target
+            .to_bytes()
+            .iter()
+            .any(|&byte| matches!(byte, b':' | b'.'))
+    }) {
         type_0 = CMD_FIND_PANE;
         flags = 0 as ::core::ffi::c_int;
     } else {

@@ -38,9 +38,9 @@ use crate::shared::window::{
 };
 use crate::sort::sort_get_buffers;
 use crate::spawn::{spawn_editor, spawn_editor_write};
+use crate::text::search::contains;
 use crate::text::utf8::utf8_strvis;
 use crate::window_pane::WindowPane as _;
-use libc::{strcasestr, strstr};
 use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 use std::ptr::NonNull;
@@ -294,27 +294,13 @@ unsafe fn window_buffer_draw(
     }
 }
 fn window_buffer_find(data: &[u8], find: &[u8], icase: bool) -> bool {
-    if find.is_empty() {
-        return false;
-    }
-    data.windows(find.len()).any(|candidate| {
-        if icase {
-            candidate.eq_ignore_ascii_case(find)
-        } else {
-            candidate == find
-        }
-    })
+    !find.is_empty() && contains(data, find, icase)
 }
 unsafe fn window_buffer_search(item: &window_buffer_itemdata, search: &CStr, icase: bool) -> bool {
     let Some(buffer) = paste_get_name(&item.name) else {
         return false;
     };
-    let name_match = if icase {
-        strcasestr(item.name.as_ptr(), search.as_ptr())
-    } else {
-        strstr(item.name.as_ptr(), search.as_ptr())
-    };
-    if !name_match.is_null() {
+    if contains(item.name.to_bytes(), search.to_bytes(), icase) {
         return true;
     }
     let buffer = buffer.borrow();

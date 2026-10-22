@@ -15,7 +15,6 @@ use crate::reactor::{
     bufferevent_enable, bufferevent_get_input, bufferevent_new, bufferevent_write, evbuffer_add,
     evbuffer_add_formatted, evbuffer_drain, evbuffer_get_length, evbuffer_pullup,
 };
-use libc::{memcpy, strlen};
 
 use crate::server_client::Client as _;
 use crate::shared::abi::ssize_t;
@@ -522,13 +521,13 @@ unsafe fn file_write_impl(
     }
     if current_block == 8821498768635335055 {
         evbuffer_add(&mut cf.buffer, bdata);
-        msglen = strlen(
-            cf.path
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        )
-        .wrapping_add(1 as size_t)
-        .wrapping_add(::core::mem::size_of::<msg_write_open>() as size_t);
+        msglen = cf
+            .path
+            .as_deref()
+            .expect("file path")
+            .to_bytes_with_nul()
+            .len()
+            + ::core::mem::size_of::<msg_write_open>();
         if msglen > (MAX_IMSGSIZE as usize).wrapping_sub(IMSG_HEADER_SIZE) {
             cf.error = E2BIG;
         } else {
@@ -623,11 +622,7 @@ unsafe fn file_read_impl(
                 fd,
             };
             let mut msg = vec![0; msglen];
-            memcpy(
-                msg.as_mut_ptr().cast(),
-                (&raw const header).cast(),
-                header_len,
-            );
+            msg[..header_len].copy_from_slice(bytes_of(&header));
             msg[header_len..].copy_from_slice(path);
             if file_send(cf, MSG_READ_OPEN, None, &msg[..msglen]) != 0 as ::core::ffi::c_int {
                 cf.error = EINVAL;
@@ -1011,11 +1006,7 @@ unsafe fn file_read_callback(owner: &Rc<RefCell<client_file>>) {
         let msglen = header_len + bsize;
         msg.resize(msglen, 0);
         let header = msg_read_data { stream: cf.stream };
-        memcpy(
-            msg.as_mut_ptr().cast(),
-            (&raw const header).cast(),
-            header_len,
-        );
+        msg[..header_len].copy_from_slice(bytes_of(&header));
         msg[header_len..].copy_from_slice(&chunk);
         file_send(&cf, MSG_READ, None, &msg[..msglen]);
         let _ = cf.event.with_ptr(|stream| unsafe {

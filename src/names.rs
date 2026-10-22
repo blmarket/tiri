@@ -5,13 +5,11 @@ use crate::format::{
 use crate::log::log_debug;
 use crate::options::options_get_number;
 use crate::server_fn::{server_redraw_window_borders, server_status_window};
-use crate::shared::abi::*;
 use crate::shared::format::FORMAT_WINDOW;
 use crate::shared::window::WindowRef;
 use crate::tmux::clean_name_cstring;
 use crate::window::Window as _;
 use crate::window::WindowPane as _;
-use libc::{strchr, strcspn, strlen, strncmp};
 use std::ffi::{CStr, CString};
 use std::time::{Duration, Instant};
 
@@ -87,49 +85,33 @@ unsafe fn format_window_name(owner: &WindowRef) -> CString {
 }
 
 pub unsafe fn parse_window_name_cstring(in_0: &CStr) -> CString {
-    let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut ptr: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut copy = in_0.to_bytes_with_nul().to_vec();
-    name = copy.as_mut_ptr().cast();
-    if *name as ::core::ffi::c_int == '"' as i32 {
-        name = name.offset(1);
+    let mut name = in_0.to_bytes();
+    if let Some(rest) = name.strip_prefix(b"\"") {
+        name = rest;
     }
-    *name.add(strcspn(name, c"\"".as_ptr())) = '\0' as i32 as ::core::ffi::c_char;
-    if strncmp(
-        name,
-        c"exec ".as_ptr(),
-        (::core::mem::size_of::<[::core::ffi::c_char; 6]>() as size_t).wrapping_sub(1 as size_t),
-    ) == 0 as ::core::ffi::c_int
-    {
-        name = name
-            .add(::core::mem::size_of::<[::core::ffi::c_char; 6]>() as usize)
-            .offset(-(1 as ::core::ffi::c_int as isize));
+    if let Some(end) = name.iter().position(|&byte| byte == b'"') {
+        name = &name[..end];
     }
-    while *name as ::core::ffi::c_int == ' ' as i32 || *name as ::core::ffi::c_int == '-' as i32 {
-        name = name.offset(1);
+    if let Some(rest) = name.strip_prefix(b"exec ") {
+        name = rest;
     }
-    ptr = strchr(name, ' ' as i32);
-    if !ptr.is_null() {
-        *ptr = '\0' as i32 as ::core::ffi::c_char;
+    while let [b' ' | b'-', rest @ ..] = name {
+        name = rest;
     }
-    if *name as ::core::ffi::c_int != '\0' as i32 {
-        ptr = name
-            .add(strlen(name))
-            .offset(-(1 as ::core::ffi::c_int as isize));
-        while ptr > name
-            && !(*ptr as u_char).is_ascii_alphanumeric()
-            && !(*ptr as u_char).is_ascii_punctuation()
-        {
-            let fresh0 = ptr;
-            ptr = ptr.offset(-1);
-            *fresh0 = '\0' as i32 as ::core::ffi::c_char;
+    if let Some(end) = name.iter().position(|&byte| byte == b' ') {
+        name = &name[..end];
+    }
+    while let [_, .., last] = name {
+        if last.is_ascii_alphanumeric() || last.is_ascii_punctuation() {
+            break;
         }
+        name = &name[..name.len() - 1];
     }
-    let name = CStr::from_ptr(name);
+    let name = CString::new(name).expect("window name has no NUL");
     let name = if name.to_bytes().first() == Some(&b'/') {
-        cstr_basename(name)
+        cstr_basename(&name)
     } else {
-        name.to_owned()
+        name
     };
     clean_name_cstring(&name, 0).unwrap_or_else(|| c"".to_owned())
 }

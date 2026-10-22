@@ -32,13 +32,11 @@ use crate::shared::key::{MODEKEY_EMACS, MODEKEY_VI};
 use crate::shared::posix_io::X_OK;
 use crate::shared::time::{timespec, CLOCK_REALTIME};
 use crate::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
+use crate::text::search::contains;
 use crate::text::utf8::{utf8_isvalid, utf8_stravis_cstring};
 use crate::tty::tty_parse_features;
 use ::libc::nl_item;
-use libc::{
-    access, clock_gettime, exit, getenv, getpwuid, getuid, nl_langinfo, setlocale, strcasecmp,
-    strcasestr, strrchr, strstr,
-};
+use libc::{access, clock_gettime, exit, getenv, getpwuid, getuid, nl_langinfo, setlocale};
 use std::ffi::{CStr, CString, OsStr};
 use std::fmt;
 use std::fs;
@@ -384,9 +382,8 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
             die(1, format_args!("invalid LC_ALL, LC_CTYPE or LANG"));
         }
         s = nl_langinfo(CODESET as ::core::ffi::c_int as nl_item);
-        if strcasecmp(s, c"UTF-8".as_ptr()) != 0 as ::core::ffi::c_int
-            && strcasecmp(s, c"UTF8".as_ptr()) != 0 as ::core::ffi::c_int
-        {
+        let codeset = CStr::from_ptr(s).to_bytes();
+        if !codeset.eq_ignore_ascii_case(b"UTF-8") && !codeset.eq_ignore_ascii_case(b"UTF8") {
             die(
                 1,
                 format_args!(
@@ -516,8 +513,8 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
         if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 {
             s = c"".as_ptr();
         }
-        if !strcasestr(s, c"UTF-8".as_ptr()).is_null() || !strcasestr(s, c"UTF8".as_ptr()).is_null()
-        {
+        let lang = CStr::from_ptr(s).to_bytes();
+        if contains(lang, b"UTF-8", true) || contains(lang, b"UTF8", true) {
             flags |= CLIENT_UTF8 as uint64_t;
         }
     }
@@ -550,10 +547,9 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
                 write_cstr(out, nullable_cstr(s))
             });
         });
-        if !strrchr(s, '/' as i32).is_null() {
-            s = strrchr(s, '/' as i32).offset(1 as ::core::ffi::c_int as isize);
-        }
-        if !strstr(s, c"vi".as_ptr()).is_null() {
+        let editor = CStr::from_ptr(s).to_bytes();
+        let base = editor.rsplit(|&byte| byte == b'/').next().unwrap_or(editor);
+        if contains(base, b"vi", false) {
             keys = MODEKEY_VI;
         } else {
             keys = MODEKEY_EMACS;

@@ -24,7 +24,7 @@ use crate::shared::window::{
 };
 use crate::style::style_apply_with_options;
 use crate::window::Window as _;
-use libc::{gmtime_r, localtime, strftime, strlen};
+use libc::{gmtime_r, localtime, strftime};
 
 use crate::window_pane::WindowPane as _;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -812,17 +812,16 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
             tm,
         );
     }
+    let tim_len = std::ffi::CStr::from_bytes_until_nul(&tim)
+        .expect("clock text is terminated")
+        .count_bytes();
     screen_write_clearscreen(&mut ctx, 8 as u_int);
-    if (ctx.screen.grid().sx as size_t)
-        < (6 as size_t).wrapping_mul(strlen(&raw mut tim as *mut ::core::ffi::c_char))
+    if (ctx.screen.grid().sx as size_t) < (6 as size_t).wrapping_mul(tim_len)
         || ctx.screen.grid().sy < 6 as u_int
     {
-        if ctx.screen.grid().sx as size_t >= strlen(&raw mut tim as *mut ::core::ffi::c_char)
-            && ctx.screen.grid().sy != 0 as u_int
-        {
-            x = (ctx.screen.grid().sx.wrapping_div(2 as u_int) as size_t).wrapping_sub(
-                strlen(&raw mut tim as *mut ::core::ffi::c_char).wrapping_div(2 as size_t),
-            ) as u_int;
+        if ctx.screen.grid().sx as size_t >= tim_len && ctx.screen.grid().sy != 0 as u_int {
+            x = (ctx.screen.grid().sx.wrapping_div(2 as u_int) as size_t)
+                .wrapping_sub(tim_len.wrapping_div(2 as size_t)) as u_int;
             y = ctx.screen.grid().sy.wrapping_div(2 as u_int);
             screen_write_cursormove(
                 &mut ctx,
@@ -844,8 +843,7 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         return;
     }
     x = (ctx.screen.grid().sx.wrapping_div(2 as u_int) as size_t)
-        .wrapping_sub((3 as size_t).wrapping_mul(strlen(&raw mut tim as *mut ::core::ffi::c_char)))
-        as u_int;
+        .wrapping_sub((3 as size_t).wrapping_mul(tim_len)) as u_int;
     y = ctx
         .screen
         .grid()

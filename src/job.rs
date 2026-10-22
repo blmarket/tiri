@@ -32,9 +32,7 @@ use crate::shared::posix_terminal::winsize;
 use crate::shared::session::SessionRef;
 use crate::shared::signal::{sigset_t, SIGCONT, SIGTERM, SIGTTIN, SIGTTOU, SIG_BLOCK, SIG_SETMASK};
 use crate::tmux::{checkshell, find_home_cstr, ptm_fd, setblocking, shell_argv0_cstring};
-use libc::{
-    _exit, chdir, execl, execvp, fork, kill, killpg, memset, setenv, sigfillset, sigprocmask,
-};
+use libc::{_exit, chdir, execl, execvp, fork, kill, killpg, setenv, sigfillset, sigprocmask};
 use refbox::{RefBox, Weak};
 use std::ffi::{CStr, CString};
 use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
@@ -154,11 +152,7 @@ pub unsafe fn job_run(
     sigfillset(&raw mut set);
     sigprocmask(SIG_BLOCK, &raw mut set, &raw mut oldset);
     if flags & JOB_PTY != 0 {
-        memset(
-            &raw mut ws as *mut ::core::ffi::c_void,
-            0 as ::core::ffi::c_int,
-            ::core::mem::size_of::<winsize>() as size_t,
-        );
+        ws = ::core::mem::zeroed();
         ws.ws_col = sx as ::core::ffi::c_ushort;
         ws.ws_row = sy as ::core::ffi::c_ushort;
         pid = fdforkpty(ptm_fd, &mut master, &mut tty, &ws);

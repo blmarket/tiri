@@ -31,7 +31,7 @@ use crate::server_client::ClientRegistry;
 use crate::shared::errno::ErrorText;
 use crate::window::Window as _;
 use crate::winlink::winlink_window;
-use libc::{_exit, chdir, execl, execvp, getcwd, memset, sigfillset, sigprocmask};
+use libc::{_exit, chdir, execl, execvp, getcwd, sigfillset, sigprocmask};
 
 use crate::session::Session;
 use crate::shared::client::ClientRef;
@@ -408,11 +408,7 @@ pub(super) unsafe fn spawn_pane(
             write_cstr(out, c"spawn_pane")?;
             out.write_all(b": environment ")
         });
-        memset(
-            &raw mut ws as *mut ::core::ffi::c_void,
-            0 as ::core::ffi::c_int,
-            ::core::mem::size_of::<winsize>() as size_t,
-        );
+        ws = ::core::mem::zeroed();
         ws.ws_col = (*new_wp).base.grid().sx as ::core::ffi::c_ushort;
         ws.ws_row = (*new_wp).base.grid().sy as ::core::ffi::c_ushort;
         ws.ws_xpixel = ((winlink_window(&sc.winlink_handle()).as_ref()).expect("live window"))

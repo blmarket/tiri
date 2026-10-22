@@ -5,6 +5,7 @@ use crate::events::events_fire_pane;
 use crate::ffi::regex::{CompiledRegex, RegexMatch, RegexStorage};
 use crate::format::bytes::cstr_suffix;
 use crate::format::bytes::format_message_with;
+use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
 use crate::format::{
     format_add, format_add_owned_cb, format_create_defaults, format_expand_cstring,
@@ -71,7 +72,7 @@ use crate::tmux::get_timer;
 use crate::tty::tty_acs_get;
 use crate::window::Window as _;
 use crate::window_pane::WindowPane as _;
-use libc::{abs, strcasecmp, strcmp, strncmp};
+use libc::abs;
 use libc::{REG_EXTENDED, REG_ICASE};
 use std::borrow::Cow;
 use std::ffi::{CStr, CString};
@@ -2708,23 +2709,20 @@ unsafe fn window_copy_cmd_selection_mode(cs: &mut window_copy_cmd_state) -> wind
     let mut fy: u_int = 0;
     let mut x: u_int = 0;
     let mut y: u_int = 0;
-    if s.is_null()
-        || strcasecmp(s, c"char".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcasecmp(s, c"c".as_ptr()) == 0 as ::core::ffi::c_int
-    {
+    let mode = nullable_cstr(s).map(CStr::to_bytes);
+    let mode_is = |long: &[u8], short: &[u8]| {
+        mode.is_some_and(|mode| mode.eq_ignore_ascii_case(long) || mode.eq_ignore_ascii_case(short))
+    };
+    if mode.is_none() || mode_is(b"char", b"c") {
         data.borrow_mut().selflag = SEL_CHAR;
-    } else if strcasecmp(s, c"word".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcasecmp(s, c"w".as_ptr()) == 0 as ::core::ffi::c_int
-    {
+    } else if mode_is(b"word", b"w") {
         let separators = window_copy_snapshot_separators(&OptionsScope::Session(
             std::rc::Rc::downgrade(&cs.session_handle().expect("live session")),
         ));
         let mut data = data.borrow_mut();
         data.separators = separators;
         data.selflag = SEL_WORD;
-    } else if strcasecmp(s, c"line".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcasecmp(s, c"l".as_ptr()) == 0 as ::core::ffi::c_int
-    {
+    } else if mode_is(b"line", b"l") {
         let start_drag = {
             let mut data = data.borrow_mut();
             data.selflag = SEL_LINE;
@@ -5247,9 +5245,7 @@ unsafe fn window_copy_command_with_session(
         < (::core::mem::size_of::<[C2RustUnnamed_46; 99]>() as usize)
             .wrapping_div(::core::mem::size_of::<C2RustUnnamed_46>() as usize)
     {
-        if strcmp(window_copy_cmd_table[i as usize].command.as_ptr(), command)
-            == 0 as ::core::ffi::c_int
-        {
+        if window_copy_cmd_table[i as usize].command == CStr::from_ptr(command) {
             flags = window_copy_cmd_table[i as usize].flags;
             if !c.is_none()
                 && c.as_ref().expect("live client").flags() & CLIENT_READONLY as uint64_t != 0
@@ -5283,7 +5279,7 @@ unsafe fn window_copy_command_with_session(
             i = i.wrapping_add(1);
         }
     }
-    if strncmp(command, c"search-".as_ptr(), 7 as size_t) != 0 as ::core::ffi::c_int
+    if !CStr::from_ptr(command).to_bytes().starts_with(b"search-")
         && !window_copy_data(&wme).borrow().searchmark.is_empty()
     {
         keys = options_get_number(

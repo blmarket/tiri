@@ -58,11 +58,11 @@ use crate::sort::{
     sort_would_window_tree_swap,
 };
 use crate::style::style_apply_with_options;
+use crate::text::search::contains;
 use crate::window::Window;
 use crate::window::WindowPane;
 use crate::window::{winlink_count, winlink_find_by_index, winlink_next, winlinks_minmax};
 use crate::winlink::winlink_window;
-use libc::{strcasestr, strstr};
 use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
@@ -1471,10 +1471,9 @@ unsafe fn window_tree_search(
     search: &CStr,
     mut icase: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let ss = search.as_ptr();
+    let icase = icase != 0;
     let mut s: Option<SessionRef> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut retval: ::core::ffi::c_int = 0;
     let _target_owners_3 = window_tree_pull_item(item);
     s = _target_owners_3.session;
     wl = _target_owners_3.winlink.clone();
@@ -1484,45 +1483,15 @@ unsafe fn window_tree_search(
             if s.is_none() {
                 return 0 as ::core::ffi::c_int;
             }
-            if icase != 0 {
-                return (strcasestr(
-                    (s.as_ref().expect("live session").name())
-                        .as_ptr()
-                        .cast_mut(),
-                    ss,
-                ) != NULL as *mut ::core::ffi::c_char)
-                    as ::core::ffi::c_int;
-            }
-            return (strstr(
-                (s.as_ref().expect("live session").name())
-                    .as_ptr()
-                    .cast_mut(),
-                ss,
-            ) != NULL as *mut ::core::ffi::c_char) as ::core::ffi::c_int;
+            let name = s.as_ref().expect("live session").name();
+            return contains(name.to_bytes(), search.to_bytes(), icase) as ::core::ffi::c_int;
         }
         2 => {
             if s.is_none() || !wl.is_alive() {
                 return 0 as ::core::ffi::c_int;
             }
-            if icase != 0 {
-                return (strcasestr(
-                    winlink_window(&wl)
-                        .expect("live window")
-                        .name()
-                        .as_ptr()
-                        .cast_mut(),
-                    ss,
-                ) != NULL as *mut ::core::ffi::c_char)
-                    as ::core::ffi::c_int;
-            }
-            return (strstr(
-                winlink_window(&wl)
-                    .expect("live window")
-                    .name()
-                    .as_ptr()
-                    .cast_mut(),
-                ss,
-            ) != NULL as *mut ::core::ffi::c_char) as ::core::ffi::c_int;
+            let name = winlink_window(&wl).expect("live window").name();
+            return contains(name.to_bytes(), search.to_bytes(), icase) as ::core::ffi::c_int;
         }
         3 if !(s.is_none() || !wl.is_alive() || _target_owners_3.pane.is_none()) => {
             let Some(cmd) = _target_owners_3
@@ -1533,14 +1502,7 @@ unsafe fn window_tree_search(
             else {
                 return 0 as ::core::ffi::c_int;
             };
-            if icase != 0 {
-                retval = (strcasestr(cmd.as_ptr(), ss) != NULL as *mut ::core::ffi::c_char)
-                    as ::core::ffi::c_int;
-            } else {
-                retval = (strstr(cmd.as_ptr(), ss) != NULL as *mut ::core::ffi::c_char)
-                    as ::core::ffi::c_int;
-            }
-            return retval;
+            return contains(cmd.to_bytes(), search.to_bytes(), icase) as ::core::ffi::c_int;
         }
         _ => {}
     }
