@@ -10,15 +10,15 @@ use crate::server_client::ClientRegistry;
 pub(super) unsafe fn recalculate_size_state() {
     let mut cursor = sessions::first();
     while let Some(owner) = cursor {
-        (*owner.as_ptr()).attached = 0;
+        owner.borrow_mut().attached = 0;
         status_update_cache(&owner);
-        cursor = sessions::after((*owner.as_ptr()).name.as_c_str());
+        cursor = sessions::after(owner.borrow().name.as_c_str());
     }
     let mut cursor = ClientRegistry::first();
     while let Some(owner) = cursor {
         if owner.counts_as_attached() {
             if let Some(session) = owner.attached_session().upgrade() {
-                let state = &mut *session.as_ptr();
+                let mut state = session.borrow_mut();
                 state.attached = state.attached.wrapping_add(1);
             }
         }
@@ -37,7 +37,7 @@ pub(super) unsafe fn status_update_cache(owner: &SessionRef) {
     } else {
         1 as ::core::ffi::c_int
     };
-    let s = &mut *owner.as_ptr();
+    let mut s = owner.borrow_mut();
     s.statuslines = statuslines;
     s.statusat = statusat;
 }

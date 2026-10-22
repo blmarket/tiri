@@ -163,31 +163,19 @@ unsafe fn evaluate(key: &CStr, context: &mut format_tree) -> Option<FormatValue>
 }
 
 unsafe fn format_cb_start_command(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    let mut wp: *mut window_pane = format_pane;
-    if wp.is_null() {
-        return None;
-    }
-    cmd_stringify_argv_cstring(&(*wp).argv)
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    cmd_stringify_argv_cstring(&wp.argv)
 }
 
 unsafe fn format_cb_start_command_list(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    let mut wp: *mut window_pane = format_pane;
-    if wp.is_null() {
-        return None;
-    }
-    if (*wp).argv.is_empty() {
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    if wp.argv.is_empty() {
         return Some(c"".to_owned());
     }
     let mut command = Vec::<u8>::new();
-    for (i, arg) in (*wp).argv.iter().enumerate() {
+    for (i, arg) in wp.argv.iter().enumerate() {
         let quoted = format_quote_shell_single(arg.as_c_str());
         if i != 0 {
             command.push(b' ');
@@ -198,67 +186,46 @@ unsafe fn format_cb_start_command_list(ft: &mut format_tree) -> Option<CString> 
 }
 
 unsafe fn format_cb_start_path(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    let mut wp: *mut window_pane = format_pane;
-    if wp.is_null() {
-        return None;
-    }
-    if (*wp).cwd.is_none() {
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    if wp.cwd.is_none() {
         return Some(c"".to_owned());
     }
-    (*wp).cwd.clone()
+    wp.cwd.clone()
 }
 
 unsafe fn format_cb_current_command(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    let mut wp: *mut window_pane = format_pane;
-    if wp.is_null() || (*wp).shell.is_none() {
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    if wp.shell.is_none() {
         return None;
     }
-    if let Some(cmd) = osdep_get_name_cstring((*wp).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd)) {
+    if let Some(cmd) = osdep_get_name_cstring(wp.fd.as_ref().map_or(-1, AsRawFd::as_raw_fd)) {
         let value = parse_window_name_cstring(cmd.as_c_str());
         return Some(value);
     }
-    let argv = cmd_stringify_argv_cstring(&(*wp).argv);
+    let argv = cmd_stringify_argv_cstring(&wp.argv);
     let source = argv
         .as_ref()
         .filter(|text| !text.as_bytes().is_empty())
-        .map_or((*wp).shell.as_deref().unwrap(), |text| text.as_c_str());
+        .map_or(wp.shell.as_deref().unwrap(), |text| text.as_c_str());
     let value = parse_window_name_cstring(source);
     Some(value)
 }
 
 unsafe fn format_cb_current_path(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    let mut wp: *mut window_pane = format_pane;
-    if wp.is_null() {
-        return None;
-    }
-    osdep_get_cwd((*wp).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd))
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    osdep_get_cwd(wp.fd.as_ref().map_or(-1, AsRawFd::as_raw_fd))
 }
 
 unsafe fn format_cb_history_bytes(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    let mut wp: *mut window_pane = format_pane;
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
     let mut size: size_t = 0 as size_t;
     let mut i: u_int = 0;
     let mut value = None;
-    if wp.is_null() {
-        return None;
-    }
-    let gd = (*wp).base.grid();
+    let gd = wp.base.grid();
     i = 0 as u_int;
     while i < gd.hsize.wrapping_add(gd.sy) {
         let gl = grid_get_line(gd, i);
@@ -284,20 +251,14 @@ unsafe fn format_cb_history_bytes(ft: &mut format_tree) -> Option<CString> {
 }
 
 unsafe fn format_cb_history_all_bytes(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    let mut wp: *mut window_pane = format_pane;
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
     let mut i: u_int = 0;
     let mut lines: u_int = 0;
     let mut cells: u_int = 0 as u_int;
     let mut extended_cells: u_int = 0 as u_int;
     let mut value = None;
-    if wp.is_null() {
-        return None;
-    }
-    let gd = (*wp).base.grid();
+    let gd = wp.base.grid();
     lines = gd.hsize.wrapping_add(gd.sy);
     i = 0 as u_int;
     while i < lines {
@@ -325,19 +286,13 @@ unsafe fn format_cb_history_all_bytes(ft: &mut format_tree) -> Option<CString> {
 }
 
 unsafe fn format_cb_pane_tabs(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    let mut wp: *mut window_pane = format_pane;
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
     let mut i: u_int = 0;
-    if wp.is_null() {
-        return None;
-    }
     let mut tabs = String::new();
     i = 0 as u_int;
-    while i < (*wp).base.grid().sx {
-        if crate::screen::screen_has_tab(&(*wp).base, i) {
+    while i < wp.base.grid().sx {
+        if crate::screen::screen_has_tab(&wp.base, i) {
             if !tabs.is_empty() {
                 tabs.push(',');
             }
@@ -352,106 +307,32 @@ unsafe fn format_cb_pane_tabs(ft: &mut format_tree) -> Option<CString> {
 }
 
 unsafe fn format_cb_pane_fg(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    let mut wp: *mut window_pane = format_pane;
-    let mut gc: grid_cell = grid_cell {
-        data: utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        },
-        attr: 0,
-        flags: 0,
-        fg: 0,
-        bg: 0,
-        us: 0,
-        link: 0,
-    };
-    if wp.is_null() {
-        return None;
-    }
-    gc = format_pane_owner
-        .as_ref()
-        .expect("live pane")
-        .default_colours()
-        .0;
-    Some(colour_format(gc.fg))
+    let pane = ft.wp.upgrade()?;
+    Some(colour_format(pane.default_colours().0.fg))
 }
 
 unsafe fn format_cb_pane_flags(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        return Some(window_pane_printable_flags(
-            format_pane_owner.as_ref().expect("live pane"),
-        ));
-    }
-    None
+    let pane = ft.wp.upgrade()?;
+    Some(window_pane_printable_flags(&pane))
 }
 
 unsafe fn format_cb_pane_bg(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    let mut wp: *mut window_pane = format_pane;
-    let mut gc: grid_cell = grid_cell {
-        data: utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        },
-        attr: 0,
-        flags: 0,
-        fg: 0,
-        bg: 0,
-        us: 0,
-        link: 0,
-    };
-    if wp.is_null() {
-        return None;
-    }
-    gc = format_pane_owner
-        .as_ref()
-        .expect("live pane")
-        .default_colours()
-        .0;
-    Some(colour_format(gc.bg))
+    let pane = ft.wp.upgrade()?;
+    Some(colour_format(pane.default_colours().0.bg))
 }
 
 unsafe fn format_cb_pane_in_mode(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let pane = &*format_pane_owner?.as_ptr();
+    let owner = ft.wp.upgrade()?;
+    let pane = owner.borrow();
     let count = pane.modes.len();
     Some(CString::new(format!("{count}")).expect("formatted numbers contain no NUL"))
 }
 
 unsafe fn format_cb_pane_at_top(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    let mut wp: *mut window_pane = format_pane;
-    let mut flag: ::core::ffi::c_int = 0;
-    let mut value = None;
-    if wp.is_null() {
-        return None;
-    }
-    let top = i32::from(
-        window_pane_get_pane_status(format_pane_owner.as_ref().expect("live pane"))
-            == PANE_STATUS_TOP,
-    );
-    flag = ((*wp).yoff == top) as ::core::ffi::c_int;
-    value =
-        Some(CString::new(format!("{}", (flag) as i32)).expect("formatted numbers contain no NUL"));
-    value
+    let pane = ft.wp.upgrade()?;
+    let top = i32::from(window_pane_get_pane_status(&pane) == PANE_STATUS_TOP);
+    let flag = i32::from(pane.borrow().yoff == top);
+    Some(CString::new(format!("{flag}")).expect("formatted numbers contain no NUL"))
 }
 
 unsafe fn format_cb_pane_at_bottom(ft: &mut format_tree) -> Option<CString> {
@@ -471,11 +352,8 @@ unsafe fn format_cb_pane_at_bottom(ft: &mut format_tree) -> Option<CString> {
 }
 
 unsafe fn format_cb_cursor_character(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    let mut wp: *mut window_pane = format_pane;
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -491,10 +369,7 @@ unsafe fn format_cb_cursor_character(ft: &mut format_tree) -> Option<CString> {
         link: 0,
     };
     let mut value = None;
-    if wp.is_null() {
-        return None;
-    }
-    grid_view_get_cell((*wp).base.grid(), (*wp).base.cx, (*wp).base.cy, &mut gc);
+    grid_view_get_cell(wp.base.grid(), wp.base.cx, wp.base.cy, &mut gc);
     if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0 {
         let data = &gc.data.data[..gc.data.size as usize];
         let len = data
@@ -507,20 +382,8 @@ unsafe fn format_cb_cursor_character(ft: &mut format_tree) -> Option<CString> {
 }
 
 /// Display state of the format pane's displayed screen, copied out of its owner.
-unsafe fn format_pane_screen_mode(
-    format_pane: *mut window_pane,
-) -> Option<crate::shared::screen::ScreenMode> {
-    format_pane
-        .as_ref()?
-        .with_screen(|screen| crate::shared::screen::ScreenMode::from(screen))
-}
-
 unsafe fn format_cb_cursor_colour(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    let screen = format_pane_screen_mode(format_pane)?;
+    let screen = ft.wp.upgrade()?.screen_mode(true)?;
     if screen.ccolour != -(1 as ::core::ffi::c_int) {
         return Some(colour_format(screen.ccolour));
     }
@@ -528,389 +391,246 @@ unsafe fn format_cb_cursor_colour(ft: &mut format_tree) -> Option<CString> {
 }
 
 unsafe fn format_cb_alternate_on(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        if (*format_pane).base.saved_grid.is_some() {
-            return Some(c"1".to_owned());
-        }
-        return Some(c"0".to_owned());
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    if wp.base.saved_grid.is_some() {
+        return Some(c"1".to_owned());
     }
-    None
+    Some(c"0".to_owned())
 }
 
 unsafe fn format_cb_alternate_saved_x(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        return Some(
-            CString::new(format!("{}", ((*format_pane).base.saved_cx) as u32))
-                .expect("formatted numbers contain no NUL"),
-        );
-    }
-    None
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    Some(
+        CString::new(format!("{}", (wp.base.saved_cx) as u32))
+            .expect("formatted numbers contain no NUL"),
+    )
 }
 
 unsafe fn format_cb_alternate_saved_y(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        return Some(
-            CString::new(format!("{}", ((*format_pane).base.saved_cy) as u32))
-                .expect("formatted numbers contain no NUL"),
-        );
-    }
-    None
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    Some(
+        CString::new(format!("{}", (wp.base.saved_cy) as u32))
+            .expect("formatted numbers contain no NUL"),
+    )
 }
 
 unsafe fn format_cb_bracket_paste_flag(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if let Some(screen) = format_pane_screen_mode(format_pane) {
-        if screen.mode & MODE_BRACKETPASTE != 0 {
-            return Some(c"1".to_owned());
-        }
-        return Some(c"0".to_owned());
+    let screen = ft.wp.upgrade()?.screen_mode(true)?;
+    if screen.mode & MODE_BRACKETPASTE != 0 {
+        return Some(c"1".to_owned());
     }
-    None
+    Some(c"0".to_owned())
 }
 
 unsafe fn format_cb_cursor_flag(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        if (*format_pane).base.mode & MODE_CURSOR != 0 {
-            return Some(c"1".to_owned());
-        }
-        return Some(c"0".to_owned());
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    if wp.base.mode & MODE_CURSOR != 0 {
+        return Some(c"1".to_owned());
     }
-    None
+    Some(c"0".to_owned())
 }
 
 unsafe fn format_cb_cursor_shape(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if let Some(screen) = format_pane_screen_mode(format_pane) {
-        match screen.cstyle as ::core::ffi::c_uint {
-            1 => {
-                return Some(c"block".to_owned());
-            }
-            2 => {
-                return Some(c"underline".to_owned());
-            }
-            3 => {
-                return Some(c"bar".to_owned());
-            }
-            _ => {
-                return Some(c"default".to_owned());
-            }
+    let screen = ft.wp.upgrade()?.screen_mode(true)?;
+    match screen.cstyle as ::core::ffi::c_uint {
+        1 => {
+            return Some(c"block".to_owned());
+        }
+        2 => {
+            return Some(c"underline".to_owned());
+        }
+        3 => {
+            return Some(c"bar".to_owned());
+        }
+        _ => {
+            return Some(c"default".to_owned());
         }
     }
-    None
 }
 
 unsafe fn format_cb_cursor_very_visible(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if let Some(screen) = format_pane_screen_mode(format_pane) {
-        if screen.mode & MODE_CURSOR_VERY_VISIBLE != 0 {
-            return Some(c"1".to_owned());
-        }
-        return Some(c"0".to_owned());
+    let screen = ft.wp.upgrade()?.screen_mode(true)?;
+    if screen.mode & MODE_CURSOR_VERY_VISIBLE != 0 {
+        return Some(c"1".to_owned());
     }
-    None
+    Some(c"0".to_owned())
 }
 
 unsafe fn format_cb_cursor_x(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        return Some(
-            CString::new(format!("{}", ((*format_pane).base.cx) as u32))
-                .expect("formatted numbers contain no NUL"),
-        );
-    }
-    None
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    Some(
+        CString::new(format!("{}", (wp.base.cx) as u32)).expect("formatted numbers contain no NUL"),
+    )
 }
 
 unsafe fn format_cb_cursor_y(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        return Some(
-            CString::new(format!("{}", ((*format_pane).base.cy) as u32))
-                .expect("formatted numbers contain no NUL"),
-        );
-    }
-    None
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    Some(
+        CString::new(format!("{}", (wp.base.cy) as u32)).expect("formatted numbers contain no NUL"),
+    )
 }
 
 unsafe fn format_cb_cursor_blinking(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if let Some(screen) = format_pane_screen_mode(format_pane) {
-        if screen.mode & MODE_CURSOR_BLINKING != 0 {
-            return Some(c"1".to_owned());
-        }
-        return Some(c"0".to_owned());
+    let screen = ft.wp.upgrade()?.screen_mode(true)?;
+    if screen.mode & MODE_CURSOR_BLINKING != 0 {
+        return Some(c"1".to_owned());
     }
-    None
+    Some(c"0".to_owned())
 }
 
 unsafe fn format_cb_history_added(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        return Some(
-            CString::new(format!(
-                "{}",
-                ((*format_pane).base.grid().scroll_added) as u32
-            ))
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    Some(
+        CString::new(format!("{}", (wp.base.grid().scroll_added) as u32))
             .expect("formatted numbers contain no NUL"),
-        );
-    }
-    None
+    )
 }
 
 unsafe fn format_cb_history_collected(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    let mut wp: *mut window_pane = format_pane;
-    if !wp.is_null() {
-        return Some(
-            CString::new(format!("{}", ((*wp).base.grid().scroll_collected) as u32))
-                .expect("formatted numbers contain no NUL"),
-        );
-    }
-    None
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    Some(
+        CString::new(format!("{}", (wp.base.grid().scroll_collected) as u32))
+            .expect("formatted numbers contain no NUL"),
+    )
 }
 
 unsafe fn format_cb_history_generation(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    let mut wp: *mut window_pane = format_pane;
-    if !wp.is_null() {
-        return Some(
-            CString::new(format!("{}", ((*wp).base.grid().scroll_generation) as u32))
-                .expect("formatted numbers contain no NUL"),
-        );
-    }
-    None
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    Some(
+        CString::new(format!("{}", (wp.base.grid().scroll_generation) as u32))
+            .expect("formatted numbers contain no NUL"),
+    )
 }
 
 unsafe fn format_cb_history_limit(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        return Some(
-            CString::new(format!("{}", ((*format_pane).base.grid().hlimit) as u32))
-                .expect("formatted numbers contain no NUL"),
-        );
-    }
-    None
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    Some(
+        CString::new(format!("{}", (wp.base.grid().hlimit) as u32))
+            .expect("formatted numbers contain no NUL"),
+    )
 }
 
 unsafe fn format_cb_history_size(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        return Some(
-            CString::new(format!("{}", ((*format_pane).base.grid().hsize) as u32))
-                .expect("formatted numbers contain no NUL"),
-        );
-    }
-    None
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    Some(
+        CString::new(format!("{}", (wp.base.grid().hsize) as u32))
+            .expect("formatted numbers contain no NUL"),
+    )
 }
 
 unsafe fn format_cb_insert_flag(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        if (*format_pane).base.mode & MODE_INSERT != 0 {
-            return Some(c"1".to_owned());
-        }
-        return Some(c"0".to_owned());
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    if wp.base.mode & MODE_INSERT != 0 {
+        return Some(c"1".to_owned());
     }
-    None
+    Some(c"0".to_owned())
 }
 
 unsafe fn format_cb_keypad_cursor_flag(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        if (*format_pane).base.mode & MODE_KCURSOR != 0 {
-            return Some(c"1".to_owned());
-        }
-        return Some(c"0".to_owned());
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    if wp.base.mode & MODE_KCURSOR != 0 {
+        return Some(c"1".to_owned());
     }
-    None
+    Some(c"0".to_owned())
 }
 
 unsafe fn format_cb_keypad_flag(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        if (*format_pane).base.mode & MODE_KKEYPAD != 0 {
-            return Some(c"1".to_owned());
-        }
-        return Some(c"0".to_owned());
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    if wp.base.mode & MODE_KKEYPAD != 0 {
+        return Some(c"1".to_owned());
     }
-    None
+    Some(c"0".to_owned())
 }
 
 unsafe fn format_cb_mouse_all_flag(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        if (*format_pane).base.mode & MODE_MOUSE_ALL != 0 {
-            return Some(c"1".to_owned());
-        }
-        return Some(c"0".to_owned());
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    if wp.base.mode & MODE_MOUSE_ALL != 0 {
+        return Some(c"1".to_owned());
     }
-    None
+    Some(c"0".to_owned())
 }
 
 unsafe fn format_cb_mouse_any_flag(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        if (*format_pane).base.mode & ALL_MOUSE_MODES != 0 {
-            return Some(c"1".to_owned());
-        }
-        return Some(c"0".to_owned());
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    if wp.base.mode & ALL_MOUSE_MODES != 0 {
+        return Some(c"1".to_owned());
     }
-    None
+    Some(c"0".to_owned())
 }
 
 unsafe fn format_cb_mouse_button_flag(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        if (*format_pane).base.mode & MODE_MOUSE_BUTTON != 0 {
-            return Some(c"1".to_owned());
-        }
-        return Some(c"0".to_owned());
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    if wp.base.mode & MODE_MOUSE_BUTTON != 0 {
+        return Some(c"1".to_owned());
     }
-    None
+    Some(c"0".to_owned())
 }
 
 unsafe fn format_cb_mouse_sgr_flag(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        if (*format_pane).base.mode & MODE_MOUSE_SGR != 0 {
-            return Some(c"1".to_owned());
-        }
-        return Some(c"0".to_owned());
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    if wp.base.mode & MODE_MOUSE_SGR != 0 {
+        return Some(c"1".to_owned());
     }
-    None
+    Some(c"0".to_owned())
 }
 
 unsafe fn format_cb_mouse_standard_flag(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        if (*format_pane).base.mode & MODE_MOUSE_STANDARD != 0 {
-            return Some(c"1".to_owned());
-        }
-        return Some(c"0".to_owned());
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    if wp.base.mode & MODE_MOUSE_STANDARD != 0 {
+        return Some(c"1".to_owned());
     }
-    None
+    Some(c"0".to_owned())
 }
 
 unsafe fn format_cb_mouse_utf8_flag(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        if (*format_pane).base.mode & MODE_MOUSE_UTF8 != 0 {
-            return Some(c"1".to_owned());
-        }
-        return Some(c"0".to_owned());
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    if wp.base.mode & MODE_MOUSE_UTF8 != 0 {
+        return Some(c"1".to_owned());
     }
-    None
+    Some(c"0".to_owned())
 }
 
 unsafe fn format_cb_origin_flag(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        if (*format_pane).base.mode & MODE_ORIGIN != 0 {
-            return Some(c"1".to_owned());
-        }
-        return Some(c"0".to_owned());
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    if wp.base.mode & MODE_ORIGIN != 0 {
+        return Some(c"1".to_owned());
     }
-    None
+    Some(c"0".to_owned())
 }
 
 unsafe fn format_cb_synchronized_output_flag(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        if (*format_pane).base.mode & MODE_SYNC != 0 {
-            return Some(c"1".to_owned());
-        }
-        return Some(c"0".to_owned());
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    if wp.base.mode & MODE_SYNC != 0 {
+        return Some(c"1".to_owned());
     }
-    None
+    Some(c"0".to_owned())
 }
 
 unsafe fn format_cb_pane_private_modes(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
     static mut table: [C2RustUnnamed_43; 14] = [
         C2RustUnnamed_43 {
             mode: MODE_KCURSOR,
@@ -972,10 +692,7 @@ unsafe fn format_cb_pane_private_modes(ft: &mut format_tree) -> Option<CString> 
     let mut mode: ::core::ffi::c_int = 0;
     let mut value = String::new();
     let mut i: u_int = 0;
-    if format_pane.is_null() {
-        return None;
-    }
-    mode = (*format_pane).base.mode;
+    mode = wp.base.mode;
     i = 0 as u_int;
     while (i as usize)
         < (::core::mem::size_of::<[C2RustUnnamed_43; 14]>() as usize)
@@ -998,37 +715,19 @@ unsafe fn format_cb_pane_private_modes(ft: &mut format_tree) -> Option<CString> 
 }
 
 unsafe fn format_cb_pane_active(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        if format_pane
-            == (((*format_pane).window_handle().as_ref()).expect("live window"))
-                .active_pane()
-                .upgrade()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.as_ptr())
-        {
-            return Some(c"1".to_owned());
-        }
-        return Some(c"0".to_owned());
-    }
-    None
+    let pane = ft.wp.upgrade()?;
+    let window = pane.window_observer().upgrade().expect("live window");
+    let active = window.active_pane().ptr_eq(&ft.wp);
+    Some(if active { c"1" } else { c"0" }.to_owned())
 }
 
 unsafe fn format_cb_pane_at_left(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        if (*format_pane).xoff == 0 as ::core::ffi::c_int {
-            return Some(c"1".to_owned());
-        }
-        return Some(c"0".to_owned());
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    if wp.xoff == 0 as ::core::ffi::c_int {
+        return Some(c"1".to_owned());
     }
-    None
+    Some(c"0".to_owned())
 }
 
 unsafe fn format_cb_pane_at_right(ft: &mut format_tree) -> Option<CString> {
@@ -1047,202 +746,137 @@ unsafe fn format_cb_pane_at_right(ft: &mut format_tree) -> Option<CString> {
 }
 
 unsafe fn format_cb_pane_bottom(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    let mut wp: *mut window_pane = format_pane;
-    if !wp.is_null() {
-        return Some(
-            CString::new(format!(
-                "{}",
-                ((*wp).yoff + (*wp).sy as ::core::ffi::c_int - 1 as ::core::ffi::c_int) as i32
-            ))
-            .expect("formatted numbers contain no NUL"),
-        );
-    }
-    None
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    Some(
+        CString::new(format!(
+            "{}",
+            (wp.yoff + wp.sy as ::core::ffi::c_int - 1 as ::core::ffi::c_int) as i32
+        ))
+        .expect("formatted numbers contain no NUL"),
+    )
 }
 
 unsafe fn format_cb_pane_dead(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    let mut wp: *mut window_pane = format_pane;
-    if !wp.is_null() {
-        if (*wp).fd.is_none() && (*wp).exit_status.is_some() {
-            return Some(c"1".to_owned());
-        }
-        return Some(c"0".to_owned());
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    if wp.fd.is_none() && wp.exit_status.is_some() {
+        return Some(c"1".to_owned());
     }
-    None
+    Some(c"0".to_owned())
 }
 
 unsafe fn format_cb_pane_dead_signal(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    let mut wp: *mut window_pane = format_pane;
-    if !wp.is_null() {
-        return (*wp)
-            .exit_status
-            .and_then(|status| status.signal())
-            .map(sig2name);
-    }
-    None
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    wp.exit_status
+        .and_then(|status| status.signal())
+        .map(sig2name)
 }
 
 unsafe fn format_cb_pane_dead_status(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    let mut wp: *mut window_pane = format_pane;
-    if !wp.is_null() {
-        return (*wp)
-            .exit_status
-            .and_then(|status| status.code())
-            .map(|code| {
-                CString::new(format!("{}", code)).expect("formatted numbers contain no NUL")
-            });
-    }
-    None
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    wp.exit_status
+        .and_then(|status| status.code())
+        .map(|code| CString::new(format!("{}", code)).expect("formatted numbers contain no NUL"))
 }
 
 unsafe fn format_cb_pane_dead_time(ft: &mut format_tree) -> Option<time_t> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    let mut wp: *mut window_pane = format_pane;
-    if !wp.is_null() {
-        if (*wp).flags & PANE_STATUSDRAWN != 0 {
-            return Some(crate::shared::time::unix_seconds((*wp).dead_time));
-        }
-        return None;
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    if wp.flags & PANE_STATUSDRAWN != 0 {
+        return Some(crate::shared::time::unix_seconds(wp.dead_time));
     }
     None
 }
 
 unsafe fn format_cb_pane_last_output_time(ft: &mut format_tree) -> Option<time_t> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    let mut wp: *mut window_pane = format_pane;
-    if !wp.is_null() && (*wp).last_output_time != 0 as time_t {
-        return Some((*wp).last_output_time as __time_t as time_t);
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    if wp.last_output_time != 0 as time_t {
+        return Some(wp.last_output_time as __time_t as time_t);
     }
     None
 }
 
 unsafe fn format_cb_pane_output_generation(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
     let mut value: ::core::ffi::c_ulonglong = 0;
-    if !format_pane.is_null() {
-        value = (*format_pane).output_generation as ::core::ffi::c_ulonglong;
-        return Some(
-            CString::new(format!("{}", (value) as u64)).expect("formatted numbers contain no NUL"),
-        );
-    }
-    None
+    value = wp.output_generation as ::core::ffi::c_ulonglong;
+    Some(CString::new(format!("{}", (value) as u64)).expect("formatted numbers contain no NUL"))
 }
 
 unsafe fn format_cb_pane_last_prompt_time(ft: &mut format_tree) -> Option<time_t> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    let mut wp: *mut window_pane = format_pane;
-    if !wp.is_null() && (*wp).last_prompt_time != 0 as time_t {
-        return Some((*wp).last_prompt_time as __time_t as time_t);
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    if wp.last_prompt_time != 0 as time_t {
+        return Some(wp.last_prompt_time as __time_t as time_t);
     }
     None
 }
 
 unsafe fn format_cb_pane_command_start_time(ft: &mut format_tree) -> Option<time_t> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    let mut wp: *mut window_pane = format_pane;
-    if !wp.is_null() && (*wp).cmd_start_time != 0 as time_t {
-        return Some((*wp).cmd_start_time as __time_t as time_t);
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    if wp.cmd_start_time != 0 as time_t {
+        return Some(wp.cmd_start_time as __time_t as time_t);
     }
     None
 }
 
 unsafe fn format_cb_pane_command_end_time(ft: &mut format_tree) -> Option<time_t> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    let mut wp: *mut window_pane = format_pane;
-    if !wp.is_null() && (*wp).cmd_end_time != 0 as time_t {
-        return Some((*wp).cmd_end_time as __time_t as time_t);
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    if wp.cmd_end_time != 0 as time_t {
+        return Some(wp.cmd_end_time as __time_t as time_t);
     }
     None
 }
 
 unsafe fn format_cb_pane_command_running(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    let mut wp: *mut window_pane = format_pane;
-    if !wp.is_null() {
-        return Some(
-            CString::new(format!(
-                "{}",
-                (((*wp).flags & PANE_CMDRUNNING != 0) as ::core::ffi::c_int) as i32
-            ))
-            .expect("formatted numbers contain no NUL"),
-        );
-    }
-    None
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    Some(
+        CString::new(format!(
+            "{}",
+            ((wp.flags & PANE_CMDRUNNING != 0) as ::core::ffi::c_int) as i32
+        ))
+        .expect("formatted numbers contain no NUL"),
+    )
 }
 
 unsafe fn format_cb_pane_command_duration(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    let mut wp: *mut window_pane = format_pane;
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
     let mut end: time_t = 0;
-    if wp.is_null() || (*wp).cmd_start_time == 0 as time_t {
+    if wp.cmd_start_time == 0 as time_t {
         return None;
     }
-    if (*wp).flags & PANE_CMDRUNNING != 0 {
+    if wp.flags & PANE_CMDRUNNING != 0 {
         end = crate::shared::time::unix_seconds(std::time::SystemTime::now());
     } else {
-        end = (*wp).cmd_end_time;
+        end = wp.cmd_end_time;
     }
-    if end < (*wp).cmd_start_time {
-        end = (*wp).cmd_start_time;
+    if end < wp.cmd_start_time {
+        end = wp.cmd_start_time;
     }
     Some(
         CString::new(format!(
             "{}",
-            ((end - (*wp).cmd_start_time) as ::core::ffi::c_longlong) as i64
+            ((end - wp.cmd_start_time) as ::core::ffi::c_longlong) as i64
         ))
         .expect("formatted numbers contain no NUL"),
     )
 }
 
 unsafe fn format_cb_pane_command_status(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    let mut wp: *mut window_pane = format_pane;
-    if !wp.is_null() && (*wp).cmd_status != -(1 as ::core::ffi::c_int) {
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    if wp.cmd_status != -(1 as ::core::ffi::c_int) {
         return Some(
-            CString::new(format!("{}", ((*wp).cmd_status) as i32))
+            CString::new(format!("{}", (wp.cmd_status) as i32))
                 .expect("formatted numbers contain no NUL"),
         );
     }
@@ -1250,100 +884,54 @@ unsafe fn format_cb_pane_command_status(ft: &mut format_tree) -> Option<CString>
 }
 
 unsafe fn format_cb_pane_height(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        return Some(
-            CString::new(format!("{}", ((*format_pane).sy) as u32))
-                .expect("formatted numbers contain no NUL"),
-        );
-    }
-    None
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    Some(CString::new(format!("{}", (wp.sy) as u32)).expect("formatted numbers contain no NUL"))
 }
 
 unsafe fn format_cb_pane_id(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        return Some(
-            CString::new(format!("%{}", ((*format_pane).id) as u32))
-                .expect("formatted numbers contain no NUL"),
-        );
-    }
-    None
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    Some(CString::new(format!("%{}", (wp.id) as u32)).expect("formatted numbers contain no NUL"))
 }
 
 unsafe fn format_cb_pane_index(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    let mut idx: u_int = 0;
-    if !format_pane.is_null()
-        && window_pane_index(format_pane_owner.as_ref().expect("live pane"))
-            .map(|value| {
-                idx = value;
-            })
-            .is_some()
-    {
-        return Some(
-            CString::new(format!("{}", (idx) as u32)).expect("formatted numbers contain no NUL"),
-        );
-    }
-    None
+    let pane = ft.wp.upgrade()?;
+    let idx = window_pane_index(&pane)?;
+    Some(CString::new(format!("{idx}")).expect("formatted numbers contain no NUL"))
 }
 
 unsafe fn format_cb_pane_input_off(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        if (*format_pane).flags & PANE_INPUTOFF != 0 {
-            return Some(c"1".to_owned());
-        }
-        return Some(c"0".to_owned());
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    if wp.flags & PANE_INPUTOFF != 0 {
+        return Some(c"1".to_owned());
     }
-    None
+    Some(c"0".to_owned())
 }
 
 unsafe fn format_cb_pane_unseen_changes(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        if (*format_pane).flags & PANE_UNSEENCHANGES != 0 {
-            return Some(c"1".to_owned());
-        }
-        return Some(c"0".to_owned());
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    if wp.flags & PANE_UNSEENCHANGES != 0 {
+        return Some(c"1".to_owned());
     }
-    None
+    Some(c"0".to_owned())
 }
 
 unsafe fn format_cb_pane_key_mode(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if let Some(screen) = format_pane_screen_mode(format_pane) {
-        match screen.mode & EXTENDED_KEY_MODES {
-            MODE_KEYS_EXTENDED => {
-                return Some(c"Ext 1".to_owned());
-            }
-            MODE_KEYS_EXTENDED_2 => {
-                return Some(c"Ext 2".to_owned());
-            }
-            _ => {
-                return Some(c"VT10x".to_owned());
-            }
+    let screen = ft.wp.upgrade()?.screen_mode(true)?;
+    match screen.mode & EXTENDED_KEY_MODES {
+        MODE_KEYS_EXTENDED => {
+            return Some(c"Ext 1".to_owned());
+        }
+        MODE_KEYS_EXTENDED_2 => {
+            return Some(c"Ext 2".to_owned());
+        }
+        _ => {
+            return Some(c"VT10x".to_owned());
         }
     }
-    None
 }
 
 unsafe fn format_cb_pane_last(ft: &mut format_tree) -> Option<CString> {
@@ -1358,86 +946,52 @@ unsafe fn format_cb_pane_last(ft: &mut format_tree) -> Option<CString> {
 }
 
 unsafe fn format_cb_pane_left(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        return Some(
-            CString::new(format!("{}", ((*format_pane).xoff) as i32))
-                .expect("formatted numbers contain no NUL"),
-        );
-    }
-    None
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    Some(CString::new(format!("{}", (wp.xoff) as i32)).expect("formatted numbers contain no NUL"))
 }
 
 unsafe fn format_cb_pane_marked(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        if server_check_marked() != 0
-            && marked_pane
-                .with_borrow(|marked| marked.pane_handle())
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.as_ptr())
-                == format_pane
-        {
-            return Some(c"1".to_owned());
-        }
-        return Some(c"0".to_owned());
-    }
-    None
+    let pane = ft.wp.upgrade()?;
+    let marked = server_check_marked() != 0
+        && marked_pane
+            .with_borrow(|marked| marked.pane_handle())
+            .is_some_and(|owner| Rc::ptr_eq(&owner, &pane));
+    Some(if marked { c"1" } else { c"0" }.to_owned())
 }
 
 unsafe fn format_cb_pane_marked_set(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
+    ft.wp.upgrade()?;
+    Some(
         if server_check_marked() != 0 {
-            return Some(c"1".to_owned());
+            c"1"
+        } else {
+            c"0"
         }
-        return Some(c"0".to_owned());
-    }
-    None
+        .to_owned(),
+    )
 }
 
 unsafe fn format_cb_pane_mode(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let pane = &*format_pane_owner?.as_ptr();
+    let owner = ft.wp.upgrade()?;
+    let pane = owner.borrow();
     pane.active_mode().map(|mode| mode.name.to_owned())
 }
 
 unsafe fn format_cb_pane_path(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        return Some(
-            (*format_pane)
-                .base
-                .path
-                .clone()
-                .unwrap_or_else(|| c"".to_owned()),
-        );
-    }
-    None
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    return Some(wp.base.path.clone().unwrap_or_else(|| c"".to_owned()));
 }
 
 unsafe fn format_cb_pane_pid(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() && (*format_pane).fd.is_some() {
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    if wp.fd.is_some() {
         return Some(
             CString::new(format!(
                 "{}",
-                ((*format_pane).pid as ::core::ffi::c_long) as ::core::ffi::c_long
+                (wp.pid as ::core::ffi::c_long) as ::core::ffi::c_long
             ))
             .expect("formatted numbers contain no NUL"),
         );
@@ -1446,30 +1000,23 @@ unsafe fn format_cb_pane_pid(ft: &mut format_tree) -> Option<CString> {
 }
 
 unsafe fn format_cb_pane_pipe(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        if (*format_pane).pipe_fd.is_some() {
-            return Some(c"1".to_owned());
-        }
-        return Some(c"0".to_owned());
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    if wp.pipe_fd.is_some() {
+        return Some(c"1".to_owned());
     }
-    None
+    Some(c"0".to_owned())
 }
 
 unsafe fn format_cb_pane_pipe_pid(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
     let mut value = None;
-    if !format_pane.is_null() && (*format_pane).pipe_fd.is_some() {
+    if wp.pipe_fd.is_some() {
         value = Some(
             CString::new(format!(
                 "{}",
-                ((*format_pane).pipe_pid as ::core::ffi::c_long) as ::core::ffi::c_long
+                (wp.pipe_pid as ::core::ffi::c_long) as ::core::ffi::c_long
             ))
             .expect("formatted numbers contain no NUL"),
         );
@@ -1478,81 +1025,54 @@ unsafe fn format_cb_pane_pipe_pid(ft: &mut format_tree) -> Option<CString> {
 }
 
 unsafe fn format_cb_pane_pb_progress(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    let mut value = None;
-    if !format_pane.is_null() {
-        value = Some(
-            CString::new(format!(
-                "{}",
-                ((*format_pane).base.progress_bar.progress) as i32
-            ))
-            .expect("formatted numbers contain no NUL"),
-        );
-    }
-    value
+    let pane = ft.wp.upgrade()?;
+    let progress = pane.borrow().base.progress_bar.progress;
+    Some(CString::new(format!("{}", progress as i32)).expect("formatted numbers contain no NUL"))
 }
 
 unsafe fn format_cb_pane_pb_state(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        match (*format_pane).base.progress_bar.state as ::core::ffi::c_uint {
-            0 => {
-                return Some(c"hidden".to_owned());
-            }
-            1 => {
-                return Some(c"normal".to_owned());
-            }
-            2 => {
-                return Some(c"error".to_owned());
-            }
-            3 => {
-                return Some(c"indeterminate".to_owned());
-            }
-            4 => {
-                return Some(c"paused".to_owned());
-            }
-            _ => {}
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    match wp.base.progress_bar.state as ::core::ffi::c_uint {
+        0 => {
+            return Some(c"hidden".to_owned());
         }
+        1 => {
+            return Some(c"normal".to_owned());
+        }
+        2 => {
+            return Some(c"error".to_owned());
+        }
+        3 => {
+            return Some(c"indeterminate".to_owned());
+        }
+        4 => {
+            return Some(c"paused".to_owned());
+        }
+        _ => {}
     }
     None
 }
 
 unsafe fn format_cb_pane_right(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    let mut wp: *mut window_pane = format_pane;
-    if !wp.is_null() {
-        return Some(
-            CString::new(format!(
-                "{}",
-                ((*wp).xoff + (*wp).sx as ::core::ffi::c_int - 1 as ::core::ffi::c_int) as i32
-            ))
-            .expect("formatted numbers contain no NUL"),
-        );
-    }
-    None
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    Some(
+        CString::new(format!(
+            "{}",
+            (wp.xoff + wp.sx as ::core::ffi::c_int - 1 as ::core::ffi::c_int) as i32
+        ))
+        .expect("formatted numbers contain no NUL"),
+    )
 }
 
 unsafe fn format_cb_pane_search_string(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        if (*format_pane).searchstr.is_none() {
-            return Some(c"".to_owned());
-        }
-        return (*format_pane).searchstr.clone();
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    if wp.searchstr.is_none() {
+        return Some(c"".to_owned());
     }
-    None
+    wp.searchstr.clone()
 }
 
 fn format_cb_pane_synchronized(ft: &mut format_tree) -> Option<CString> {
@@ -1567,39 +1087,21 @@ fn format_cb_pane_synchronized(ft: &mut format_tree) -> Option<CString> {
 }
 
 unsafe fn format_cb_pane_title(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        return Some((*format_pane).base.title.clone());
-    }
-    None
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    Some(wp.base.title.clone())
 }
 
 unsafe fn format_cb_pane_top(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        return Some(
-            CString::new(format!("{}", ((*format_pane).yoff) as i32))
-                .expect("formatted numbers contain no NUL"),
-        );
-    }
-    None
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    Some(CString::new(format!("{}", (wp.yoff) as i32)).expect("formatted numbers contain no NUL"))
 }
 
 unsafe fn format_cb_pane_tty(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        return Some((*format_pane).tty().to_owned());
-    }
-    None
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    Some(wp.tty().to_owned())
 }
 
 /// The pane's width, or with `width` false its height, in its place in the
@@ -1620,87 +1122,48 @@ unsafe fn format_cb_pane_zoomed_flag(ft: &mut format_tree) -> Option<CString> {
 }
 
 unsafe fn format_cb_pane_width(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        return Some(
-            CString::new(format!("{}", ((*format_pane).sx) as u32))
-                .expect("formatted numbers contain no NUL"),
-        );
-    }
-    None
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    Some(CString::new(format!("{}", (wp.sx) as u32)).expect("formatted numbers contain no NUL"))
 }
 
 unsafe fn format_cb_pane_x(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        return Some(
-            CString::new(format!("{}", ((*format_pane).xoff) as i32))
-                .expect("formatted numbers contain no NUL"),
-        );
-    }
-    None
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    Some(CString::new(format!("{}", (wp.xoff) as i32)).expect("formatted numbers contain no NUL"))
 }
 
 unsafe fn format_cb_pane_y(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        return Some(
-            CString::new(format!("{}", ((*format_pane).yoff) as i32))
-                .expect("formatted numbers contain no NUL"),
-        );
-    }
-    None
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    Some(CString::new(format!("{}", (wp.yoff) as i32)).expect("formatted numbers contain no NUL"))
 }
 
 unsafe fn format_cb_scroll_region_lower(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        return Some(
-            CString::new(format!("{}", ((*format_pane).base.rlower) as u32))
-                .expect("formatted numbers contain no NUL"),
-        );
-    }
-    None
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    Some(
+        CString::new(format!("{}", (wp.base.rlower) as u32))
+            .expect("formatted numbers contain no NUL"),
+    )
 }
 
 unsafe fn format_cb_scroll_region_upper(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        return Some(
-            CString::new(format!("{}", ((*format_pane).base.rupper) as u32))
-                .expect("formatted numbers contain no NUL"),
-        );
-    }
-    None
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    Some(
+        CString::new(format!("{}", (wp.base.rupper) as u32))
+            .expect("formatted numbers contain no NUL"),
+    )
 }
 
 unsafe fn format_cb_wrap_flag(ft: &mut format_tree) -> Option<CString> {
-    let format_pane_owner = ft.wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
-    if !format_pane.is_null() {
-        if (*format_pane).base.mode & MODE_WRAP != 0 {
-            return Some(c"1".to_owned());
-        }
-        return Some(c"0".to_owned());
+    let pane = ft.wp.upgrade()?;
+    let wp = pane.borrow();
+    if wp.base.mode & MODE_WRAP != 0 {
+        return Some(c"1".to_owned());
     }
-    None
+    Some(c"0".to_owned())
 }
 
 unsafe fn mouse_value(
@@ -1709,9 +1172,9 @@ unsafe fn mouse_value(
     context: &mut format_tree,
 ) -> Option<CString> {
     let (x, y) = owner.mouse_position(&context.m, false)?;
-    let has_modes = !(*owner.as_ptr()).modes.is_empty();
+    let has_modes = !owner.borrow().modes.is_empty();
     if has_modes {
-        if window_pane_mode(&*owner.as_ptr()) == WINDOW_PANE_NO_MODE {
+        if window_pane_mode(&owner.borrow()) == WINDOW_PANE_NO_MODE {
             return None;
         }
         return match key.to_bytes() {
@@ -1723,7 +1186,7 @@ unsafe fn mouse_value(
             _ => None,
         };
     }
-    let pane = &*owner.as_ptr();
+    let pane = owner.borrow();
     let grid = pane.base.grid();
     let row = grid.hsize.wrapping_add(y);
     match key.to_bytes() {

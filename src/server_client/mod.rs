@@ -912,7 +912,10 @@ unsafe fn server_client_create(fd: OwnedFd) -> ClientRef {
         c.click_wp = -(1 as ::core::ffi::c_int);
     }
     ClientRegistry::push_back(owner.clone());
-    log_debug(format_args!("new client {}", log_pointer(owner.as_ptr())));
+    log_debug(format_args!(
+        "new client {}",
+        log_pointer(Rc::as_ptr(&owner))
+    ));
     owner
 }
 unsafe fn server_client_open(owner: &ClientRef) -> Result<(), CString> {
@@ -952,7 +955,7 @@ unsafe fn server_client_attached_lost(c_owner: &ClientRef) {
     let mut s: Option<SessionRef> = None;
     log_debug(format_args!(
         "lost attached client {}",
-        log_pointer(c_owner.as_ptr())
+        log_pointer(Rc::as_ptr(&c_owner))
     ));
     let mut window_cursor = windows::first();
     while let Some(window_owner) = window_cursor.take() {
@@ -1164,7 +1167,7 @@ unsafe fn server_client_lost(client_owner: &ClientRef) {
         ClientRegistry::remove(&Rc::downgrade(client_owner)).expect("registered client owner");
     log_debug(format_args!(
         "lost client {}",
-        log_pointer(client_owner.as_ptr())
+        log_pointer(Rc::as_ptr(&client_owner))
     ));
     cmd_wait_for_client_lost(client_owner);
     cmdq_next(Some(client_owner));
@@ -1243,7 +1246,7 @@ fn server_client_retire(registry_owner: ClientRef) {
         if holders != 0 {
             log_debug(format_args!(
                 "client {} retained by {} references",
-                log_pointer(registry_owner.as_ptr()),
+                log_pointer(Rc::as_ptr(&registry_owner)),
                 holders
             ));
         }
@@ -2862,7 +2865,7 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
             .as_ref()
             .filter(|_| client_owner.borrow().prompt.is_none())
         {
-            s = Some(active.screen_mode(true));
+            s = Some(active.screen_mode(true).expect("displayed pane screen"));
         } else {
             s = Some(ScreenMode::from(
                 &*client_owner.borrow_mut().status.active_screen(),
@@ -3010,7 +3013,13 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
                     .iter()
                     .filter_map(std::rc::Weak::upgrade)
                 {
-                    if pane_owner.screen_mode(true).mode & MODE_MOUSE_ALL != 0 {
+                    if pane_owner
+                        .screen_mode(true)
+                        .expect("displayed pane screen")
+                        .mode
+                        & MODE_MOUSE_ALL
+                        != 0
+                    {
                         mode |= MODE_MOUSE_ALL;
                     }
                 }
@@ -3636,7 +3645,7 @@ unsafe fn server_client_dispatch(
         _ => {
             log_debug(format_args!(
                 "client {} invalid message type {}",
-                log_pointer(owner.as_ptr()),
+                log_pointer(Rc::as_ptr(&owner)),
                 (imsg.hdr.type_0) as i32
             ));
             proc_kill_peer(&owner.borrow().peer);
@@ -3810,7 +3819,7 @@ unsafe fn server_client_dispatch_identify(
             owner.borrow_mut().term_features |= feat;
             log_debug(format_args!(
                 "client {} IDENTIFY_FEATURES {}",
-                log_pointer(owner.as_ptr()),
+                log_pointer(Rc::as_ptr(&owner)),
                 log_cstr(&tty_get_features(feat))
             ));
         }
@@ -3826,7 +3835,7 @@ unsafe fn server_client_dispatch_identify(
             owner.borrow_mut().flags |= flags as uint64_t;
             log_debug(format_args!(
                 "client {} IDENTIFY_FLAGS {}",
-                log_pointer(owner.as_ptr()),
+                log_pointer(Rc::as_ptr(&owner)),
                 log_hex(((flags) as u32) as u64)
             ));
         }
@@ -3842,7 +3851,7 @@ unsafe fn server_client_dispatch_identify(
             owner.borrow_mut().flags |= longflags;
             log_debug(format_args!(
                 "client {} IDENTIFY_LONGFLAGS {}",
-                log_pointer(owner.as_ptr()),
+                log_pointer(Rc::as_ptr(&owner)),
                 log_hex(longflags as ::core::ffi::c_ulonglong)
             ));
         }
@@ -3853,7 +3862,7 @@ unsafe fn server_client_dispatch_identify(
             server_client_set_term_name(&mut owner.borrow_mut(), Some(data.to_owned()));
             log_debug(format_args!(
                 "client {} IDENTIFY_TERM {}",
-                log_pointer(owner.as_ptr()),
+                log_pointer(Rc::as_ptr(&owner)),
                 log_cstr(data)
             ));
         }
@@ -3864,7 +3873,7 @@ unsafe fn server_client_dispatch_identify(
             server_client_add_term_cap(&mut owner.borrow_mut(), data);
             log_debug(format_args!(
                 "client {} IDENTIFY_TERMINFO {}",
-                log_pointer(owner.as_ptr()),
+                log_pointer(Rc::as_ptr(&owner)),
                 log_cstr(data)
             ));
         }
@@ -3875,7 +3884,7 @@ unsafe fn server_client_dispatch_identify(
             server_client_set_ttyname(&mut owner.borrow_mut(), Some(data.to_owned()));
             log_debug(format_args!(
                 "client {} IDENTIFY_TTYNAME {}",
-                log_pointer(owner.as_ptr()),
+                log_pointer(Rc::as_ptr(&owner)),
                 log_cstr(data)
             ));
         }
@@ -3897,7 +3906,7 @@ unsafe fn server_client_dispatch_identify(
             }
             log_debug(format_args!(
                 "client {} IDENTIFY_CWD {}",
-                log_pointer(owner.as_ptr()),
+                log_pointer(Rc::as_ptr(&owner)),
                 log_cstr(data)
             ));
         }
@@ -3908,7 +3917,7 @@ unsafe fn server_client_dispatch_identify(
             owner.borrow_mut().fd = imsg_get_fd(imsg);
             log_debug(format_args!(
                 "client {} IDENTIFY_STDIN {}",
-                log_pointer(owner.as_ptr()),
+                log_pointer(Rc::as_ptr(&owner)),
                 owner.borrow().fd.as_ref().map_or(-1, AsRawFd::as_raw_fd)
             ));
         }
@@ -3919,7 +3928,7 @@ unsafe fn server_client_dispatch_identify(
             owner.borrow_mut().out_fd = imsg_get_fd(imsg);
             log_debug(format_args!(
                 "client {} IDENTIFY_STDOUT {}",
-                log_pointer(owner.as_ptr()),
+                log_pointer(Rc::as_ptr(&owner)),
                 owner
                     .borrow()
                     .out_fd
@@ -3944,7 +3953,7 @@ unsafe fn server_client_dispatch_identify(
             }
             log_debug(format_args!(
                 "client {} IDENTIFY_ENVIRON {}",
-                log_pointer(owner.as_ptr()),
+                log_pointer(Rc::as_ptr(&owner)),
                 log_cstr(data)
             ));
         }
@@ -3957,7 +3966,7 @@ unsafe fn server_client_dispatch_identify(
             owner.borrow_mut().pid = pid_t::from_ne_bytes(pid_bytes);
             log_debug(format_args!(
                 "client {} IDENTIFY_CLIENTPID {}",
-                log_pointer(owner.as_ptr()),
+                log_pointer(Rc::as_ptr(&owner)),
                 owner.borrow().pid as ::core::ffi::c_long
             ));
         }
@@ -3989,7 +3998,7 @@ unsafe fn server_client_dispatch_identify(
     }
     log_debug(format_args!(
         "client {} name is {}",
-        log_pointer(owner.as_ptr()),
+        log_pointer(Rc::as_ptr(&owner)),
         log_cstr(owner.borrow().name.as_deref().unwrap_or(c"(null)"))
     ));
     if owner.borrow().flags & CLIENT_CONTROL as uint64_t != 0 {

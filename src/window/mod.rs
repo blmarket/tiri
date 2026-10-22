@@ -302,7 +302,6 @@ unsafe fn window_destroy(w_owner: &WindowRef) {
 }
 
 unsafe fn window_set_name(w_owner: &WindowRef, new_name: &CStr, mut untrusted: ::core::ffi::c_int) {
-    let _w = w_owner.as_ptr();
     if let Some(name) = clean_name_cstring(new_name, untrusted) {
         let last = window_replace_name(w_owner, name);
         window_fire_renamed(w_owner, &last);

@@ -428,7 +428,7 @@ impl Client for ClientRef {
         !self.borrow().input_requests.is_empty()
     }
     unsafe fn reply_input_request(&self, reply: crate::input::InputRequestReply<'_>) {
-        let requests = (*self.as_ptr()).input_requests.clone();
+        let requests = self.borrow().input_requests.clone();
         for request in requests {
             if crate::input::input_request_matches(&*request, reply) {
                 crate::input::input_complete_request(request, reply);
@@ -438,7 +438,7 @@ impl Client for ClientRef {
         }
     }
     unsafe fn cancel_input_requests(&self) {
-        let requests = std::mem::take(&mut (*self.as_ptr()).input_requests);
+        let requests = std::mem::take(&mut self.borrow_mut().input_requests);
         for request in requests {
             (*request).c = Weak::new();
             crate::input::input_free_request(request);
@@ -453,7 +453,8 @@ impl Client for ClientRef {
         &mut (*self.as_ptr()).tty
     }
     unsafe fn write_terminal(&self, bytes: &[u8]) {
-        let state = &mut *self.as_ptr();
+        let mut state = self.borrow_mut();
+        let state = &mut *state;
         crate::tty::tty_enqueue_bytes(
             Rc::downgrade(self),
             &mut state.tty,
@@ -494,7 +495,8 @@ impl Client for ClientRef {
     unsafe fn apply_pan(&self, window: &WindowRef, view: &mut tty_window_view) -> bool {
         let (sx, sy) = window.logical_size();
         let observer = WindowRef::downgrade(window);
-        let state = &mut *self.as_ptr();
+        let mut state = self.borrow_mut();
+        let state = &mut *state;
         if !state.pan_window.ptr_eq(&observer) {
             return false;
         }
@@ -515,7 +517,8 @@ impl Client for ClientRef {
     unsafe fn pan_window(&self, window: &WindowRef, direction: Direction, amount: u32) {
         let (width, height) = window.logical_size();
         let observer = WindowRef::downgrade(window);
-        let state = &mut *self.as_ptr();
+        let mut state = self.borrow_mut();
+        let state = &mut *state;
         if !state.pan_window.ptr_eq(&observer) {
             state.pan_window = observer;
             let view = tty_window_offset(&state.tty);
@@ -603,18 +606,16 @@ impl Client for ClientRef {
             bufferevent_new, bufferevent_setwatermark, bufferevent_write, StreamHandle,
         };
         let control_control = self.flags() & CLIENT_CONTROLCONTROL as u64 != 0;
-        let fd = (*self.as_ptr()).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd);
-        let out_fd = (*self.as_ptr())
-            .out_fd
-            .as_ref()
-            .map_or(-1, AsRawFd::as_raw_fd);
+        let fd = self.borrow().fd.as_ref().map_or(-1, AsRawFd::as_raw_fd);
+        let out_fd = self.borrow().out_fd.as_ref().map_or(-1, AsRawFd::as_raw_fd);
         if control_control {
-            drop((*self.as_ptr()).out_fd.take());
+            let out_fd = self.borrow_mut().out_fd.take();
+            drop(out_fd);
         } else {
             setblocking(out_fd, 0);
         }
         setblocking(fd, 0);
-        (*self.as_ptr()).control_state = Some(Box::new(control_state::empty()));
+        self.borrow_mut().control_state = Some(Box::new(control_state::empty()));
         let subs = crate::control::control_subscriptions(self);
         self.borrow_control_mut()
             .expect("control client state")
@@ -677,11 +678,13 @@ impl Client for ClientRef {
             )
         };
         input.free();
-        drop((*self.as_ptr()).control_state.take());
+        let control_state = self.borrow_mut().control_state.take();
+        drop(control_state);
     }
     unsafe fn accept_control_reply(&self, added: usize) -> bool {
         use crate::shared::client::CLIENT_CONTROL_DISCARD;
-        let state = &mut *self.as_ptr();
+        let mut state = self.borrow_mut();
+        let state = &mut *state;
         let Some(control) = state.control_state.as_deref_mut() else {
             return false;
         };
@@ -946,31 +949,31 @@ impl Client for ClientRef {
             control_get_window_size(self, window.id(), &mut sx, &mut sy) != 0 && sx != 0 && sy != 0
         });
         if !overridden {
-            let status_lines =
-                if (*self.as_ptr()).flags & (CLIENT_STATUSOFF | CLIENT_CONTROL) as u64 != 0 {
-                    0
-                } else if let Some(session) = self.attached_session().upgrade() {
-                    session.status_layout().1
-                } else {
-                    OptionsScope::GlobalSession.with_local(|oo| options_get_number(oo, c"status"))
-                        as u32
-                };
-            (sx, sy) = (*self.as_ptr()).tty.size();
+            let status_lines = if self.flags() & (CLIENT_STATUSOFF | CLIENT_CONTROL) as u64 != 0 {
+                0
+            } else if let Some(session) = self.attached_session().upgrade() {
+                session.status_layout().1
+            } else {
+                OptionsScope::GlobalSession.with_local(|oo| options_get_number(oo, c"status"))
+                    as u32
+            };
+            (sx, sy) = self.terminal_size();
             sy = sy.wrapping_sub(status_lines);
         }
-        let (xpixel, ypixel) = (*self.as_ptr()).tty.pixel_size();
+        let (xpixel, ypixel) = self.borrow().tty.pixel_size();
         (sx, sy, xpixel, ypixel)
     }
 
     unsafe fn constrain_window_size(&self, window: &WindowRef, sx: &mut u32, sy: &mut u32) {
-        if (*self.as_ptr()).flags & CLIENT_WINDOWSIZECHANGED == 0 {
+        if self.flags() & CLIENT_WINDOWSIZECHANGED == 0 {
             return;
         }
         let (mut cx, mut cy) = (0, 0);
         if control_get_window_size(self, window.id(), &mut cx, &mut cy) != 0 {
+            let name = self.name();
             log_debug(format_args!(
                 "clients_calculate_size: {} size for @{} is {}x{}",
-                log_cstr((*self.as_ptr()).name.as_deref().unwrap_or(c"(null)")),
+                log_cstr(name.as_deref().unwrap_or(c"(null)")),
                 window.id(),
                 cx,
                 cy,
@@ -1065,11 +1068,11 @@ impl Client for ClientRef {
     unsafe fn cwd(&self, fallback: Option<&SessionRef>) -> Option<CString> {
         if cfg_finished == 0 {
             if let Some(startup) = cfg_client.upgrade() {
-                return (*startup.as_ptr()).cwd.clone();
+                return startup.borrow().cwd.clone();
             }
         }
-        if self.attached_session().upgrade().is_none() && (*self.as_ptr()).cwd.is_some() {
-            return (*self.as_ptr()).cwd.clone();
+        if self.attached_session().upgrade().is_none() && self.borrow().cwd.is_some() {
+            return self.borrow().cwd.clone();
         }
         if let Some(path) = fallback.and_then(|session| session.cwd()) {
             return Some(path);
@@ -1116,7 +1119,7 @@ impl Client for ClientRef {
     }
     unsafe fn clear_prompt(&self) {
         let prompt = {
-            let state = &mut *self.as_ptr();
+            let mut state = self.borrow_mut();
             let Some(prompt) = state.prompt.take() else {
                 return;
             };
@@ -1130,7 +1133,7 @@ impl Client for ClientRef {
     }
     unsafe fn clear_status_message(&self) {
         {
-            let state = &mut *self.as_ptr();
+            let mut state = self.borrow_mut();
             if state.message_string.take().is_none() {
                 return;
             }
@@ -1165,7 +1168,7 @@ impl Client for ClientRef {
     ) {
         self.clear_status_message();
         crate::status::status_push_screen(self);
-        (*self.as_ptr()).message_string = Some(message.clone());
+        self.borrow_mut().message_string = Some(message.clone());
         let name = self.name();
         crate::server::server_add_message(|out| {
             write_cstr(out, name.as_deref())?;
@@ -1183,11 +1186,11 @@ impl Client for ClientRef {
             ) as i32;
         }
         let observer = Rc::downgrade(self);
-        let state = &mut *self.as_ptr();
+        let mut state = self.borrow_mut();
+        let mut replaced = None;
         if delay > 0 {
             let timeout = Duration::from_millis(delay as u64);
-            drop(state.message_timer.take());
-            state.message_timer = Some(
+            replaced = state.message_timer.replace(
                 Timer::new(timeout, move || unsafe {
                     if let Some(owner) = observer.upgrade() {
                         owner.clear_status_message();
@@ -1205,6 +1208,8 @@ impl Client for ClientRef {
         }
         state.tty.set_cursor_hidden(true);
         state.flags |= CLIENT_REDRAWSTATUS as u64;
+        drop(state);
+        drop(replaced);
     }
 
     unsafe fn set_overlay(&self, overlay: Overlay) {
@@ -1267,10 +1272,8 @@ impl Client for ClientRef {
     }
 
     unsafe fn query_terminal_size(&self) -> Option<crate::shared::posix_terminal::winsize> {
-        crate::shared::terminal::read_size(
-            (*self.as_ptr()).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
-        )
-        .ok()
+        let fd = self.borrow().fd.as_ref().map_or(-1, AsRawFd::as_raw_fd);
+        crate::shared::terminal::read_size(fd).ok()
     }
 
     unsafe fn refresh_terminal_size(&self) {
@@ -1374,14 +1377,12 @@ impl Client for ClientRef {
         if invisible || !matches {
             return i32::from(matches);
         }
-        let result = pane.prepare_render(
-            context,
-            (*self.as_ptr()).flags & CLIENT_REDRAWWINDOW as u64 != 0,
-        );
+        let redraw_window = self.flags() & CLIENT_REDRAWWINDOW as u64 != 0;
+        let result = pane.prepare_render(context, redraw_window);
         if result != 1 {
             return result;
         }
-        let view = tty_window_offset(&(*self.as_ptr()).tty);
+        let view = self.terminal_view();
         context.wox = view.ox;
         context.woy = view.oy;
         context.wsx = view.sx;
@@ -1391,7 +1392,7 @@ impl Client for ClientRef {
         } else {
             context.flags &= !TTY_CTX_WINDOW_BIGGER;
         }
-        if (*self.as_ptr()).flags & (CLIENT_STATUSOFF | CLIENT_CONTROL) as u64 == 0 {
+        if self.flags() & (CLIENT_STATUSOFF | CLIENT_CONTROL) as u64 == 0 {
             let (position, lines) = session.status_layout();
             if position == 0 {
                 context.yoff = (context.yoff as u32).wrapping_add(lines) as i32;

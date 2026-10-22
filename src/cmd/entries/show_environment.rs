@@ -132,7 +132,9 @@ unsafe fn cmd_show_environment_exec(
             return CmdOutcome::Error;
         }
         let session = target.session_handle().expect("target session");
-        session.borrow_environment().expect("environment").clone()
+        session
+            .with_environment_mut(|env| env.clone())
+            .expect("environment")
     };
     if let Some(name) = name {
         envent = environ_find(&env, name);

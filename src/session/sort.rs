@@ -30,11 +30,11 @@ pub(super) unsafe fn sort_get_sessions(sort_crit: &sort_criteria) -> Vec<Session
     let mut sessions_sorted = Vec::new();
     let mut current = sessions::first();
     while let Some(owner) = current {
-        current = sessions::after((*owner.as_ptr()).name.as_c_str());
+        current = sessions::after(owner.borrow().name.as_c_str());
         sessions_sorted.push(owner);
     }
-    sort_by_criteria(&mut sessions_sorted, sort_crit, |a, b, criteria| unsafe {
-        sort_session_cmp(&*a.as_ptr(), &*b.as_ptr(), criteria)
+    sort_by_criteria(&mut sessions_sorted, sort_crit, |a, b, criteria| {
+        sort_session_cmp(&a.borrow(), &b.borrow(), criteria)
     });
     sessions_sorted
 }

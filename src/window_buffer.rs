@@ -335,7 +335,7 @@ unsafe fn window_buffer_menu(
     let Some(mode_pane_owner) = wme.try_borrow().expect("live mode entry").wp.upgrade() else {
         return;
     };
-    if mode_pane_owner.mode_entry().as_ptr() != wme.as_ptr() {
+    if mode_pane_owner.mode_entry() != *wme {
         return;
     }
     window_buffer_key(wme.clone(), c, (refbox::Weak::new()).clone(), key, None);

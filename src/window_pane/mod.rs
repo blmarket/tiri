@@ -1209,7 +1209,6 @@ unsafe fn window_pane_copy_paste(
     owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     bytes: &[u8],
 ) {
-    let wp = owner.as_ptr();
     let window_owner = owner.window_observer().upgrade().expect("pane window");
     for pane_owner in window_owner
         .pane_snapshot()
@@ -1217,7 +1216,7 @@ unsafe fn window_pane_copy_paste(
         .filter_map(std::rc::Weak::upgrade)
     {
         let loop_0 = pane_owner.as_ptr();
-        if loop_0 != wp
+        if !Rc::ptr_eq(&pane_owner, owner)
             && (*loop_0).modes.is_empty()
             && (*loop_0).fd.is_some()
             && !(*loop_0).flags & PANE_INPUTOFF != 0
@@ -1241,7 +1240,6 @@ unsafe fn window_pane_copy_key(
     owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     key: key_code,
 ) {
-    let wp = owner.as_ptr();
     let window_owner = owner.window_observer().upgrade().expect("pane window");
     for pane_owner in window_owner
         .pane_snapshot()
@@ -1249,7 +1247,7 @@ unsafe fn window_pane_copy_key(
         .filter_map(std::rc::Weak::upgrade)
     {
         let loop_0 = pane_owner.as_ptr();
-        if loop_0 != wp
+        if !Rc::ptr_eq(&pane_owner, owner)
             && (*loop_0).modes.is_empty()
             && (*loop_0).fd.is_some()
             && !(*loop_0).flags & PANE_INPUTOFF != 0
@@ -1281,7 +1279,12 @@ unsafe fn window_pane_paste(
             == KEYC_PASTE_START as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
             || key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
                 == KEYC_PASTE_END as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong)
-        && !pane_owner.screen_mode(true).mode & MODE_BRACKETPASTE != 0
+        && !pane_owner
+            .screen_mode(true)
+            .expect("displayed pane screen")
+            .mode
+            & MODE_BRACKETPASTE
+            != 0
     {
         return;
     }
@@ -1465,12 +1468,12 @@ unsafe fn window_pane_input_callback(cdata: &window_pane_input_data, buffer: &mu
     let buf = evbuffer_pullup(buffer, -1).map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr());
     let len = evbuffer_get_length(buffer);
     let lookup_wp_owner = window_pane_find_by_id(cdata.wp);
-    let wp = lookup_wp_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr());
     let file = cdata.file.upgrade();
-    if let Some(cancelled) = file.as_ref().filter(|_| wp.is_null() || client.is_dead()) {
-        if wp.is_null() {
+    if let Some(cancelled) = file
+        .as_ref()
+        .filter(|_| lookup_wp_owner.is_none() || client.is_dead())
+    {
+        if lookup_wp_owner.is_none() {
             client.request_exit(1);
         }
         file_cancel(&mut cancelled.borrow_mut());
@@ -1922,7 +1925,13 @@ unsafe fn window_pane_send_theme_update(pane_owner: &Rc<std::cell::RefCell<windo
     if !(*wp).flags & PANE_THEMECHANGED != 0 {
         return;
     }
-    if !pane_owner.screen_mode(true).mode & MODE_THEME_UPDATES != 0 {
+    if !pane_owner
+        .screen_mode(true)
+        .expect("displayed pane screen")
+        .mode
+        & MODE_THEME_UPDATES
+        != 0
+    {
         return;
     }
     theme = window_pane_get_theme(Some(pane_owner));

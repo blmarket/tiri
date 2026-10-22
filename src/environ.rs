@@ -220,7 +220,9 @@ pub unsafe fn environ_for_session(
         &mut env,
     );
     if let Some(session) = s_owner {
-        session.with_environment_mut(|source| environ_copy(source, &mut env));
+        session
+            .with_environment_mut(|source| environ_copy(source, &mut env))
+            .expect("session environment");
     }
     if no_TERM == 0 {
         let terminal =

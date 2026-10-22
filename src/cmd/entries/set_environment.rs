@@ -117,7 +117,8 @@ unsafe fn cmd_set_environment_exec(
         session
             .as_ref()
             .expect("target session")
-            .with_environment_mut(edit);
+            .with_environment_mut(edit)
+            .expect("session environment");
     }
     CmdOutcome::Normal
 }

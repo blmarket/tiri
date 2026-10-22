@@ -237,7 +237,7 @@ impl cmdq_list {
 
 fn cmdq_new_named_item(label: &'static CStr) -> std::rc::Rc<std::cell::RefCell<cmdq_item>> {
     let owner = std::rc::Rc::new(std::cell::RefCell::new(cmdq_item::empty()));
-    let address = owner.as_ptr();
+    let address = std::rc::Rc::as_ptr(&owner);
     owner.borrow_mut().name = Some(format_message_with(|out| {
         out.write_all(b"[")?;
         out.write_all(label.to_bytes())?;

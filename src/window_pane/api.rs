@@ -163,7 +163,8 @@ pub trait WindowPane {
     fn mode_entry(&self) -> refbox::Weak<window_mode_entry>;
     unsafe fn notify_style_changed(&self);
     fn needs_redraw(&self, scrollbar: bool) -> bool;
-    unsafe fn screen_mode(&self, displayed: bool) -> crate::shared::screen::ScreenMode;
+    /// `None` when the displayed mode has no screen; the base screen always has one.
+    unsafe fn screen_mode(&self, displayed: bool) -> Option<crate::shared::screen::ScreenMode>;
     unsafe fn prompt_position(&self, top: bool) -> Option<(i32, i32)>;
     fn screen_path(&self) -> CString;
     fn screen_progress(&self) -> crate::shared::display::progress_bar;
@@ -514,13 +515,12 @@ impl WindowPane for Rc<RefCell<window_pane>> {
             }
             != 0
     }
-    unsafe fn screen_mode(&self, displayed: bool) -> crate::shared::screen::ScreenMode {
-        let pane = &*self.as_ptr();
+    unsafe fn screen_mode(&self, displayed: bool) -> Option<crate::shared::screen::ScreenMode> {
+        let pane = self.borrow();
         if displayed {
             pane.with_screen(|screen| crate::shared::screen::ScreenMode::from(screen))
-                .expect("displayed pane screen")
         } else {
-            crate::shared::screen::ScreenMode::from(&pane.base)
+            Some(crate::shared::screen::ScreenMode::from(&pane.base))
         }
     }
     unsafe fn prompt_position(&self, top: bool) -> Option<(i32, i32)> {

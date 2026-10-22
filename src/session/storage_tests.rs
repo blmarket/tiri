@@ -2,59 +2,42 @@ use crate::session::sessions;
 use crate::shared::session::session;
 use crate::shared::session::SessionRef;
 use std::ffi::CStr;
+use std::rc::Rc;
 
 fn node(name: &CStr) -> SessionRef {
     let node = session::new();
-    unsafe {
-        (*node.as_ptr()).name = name.to_owned();
-    }
+    node.borrow_mut().name = name.to_owned();
     node
 }
 
 #[test]
 fn saved_name_survives_removal_of_current_successor_and_entire_index() {
-    unsafe {
-        let first = node(c"a1");
-        let second = node(c"a2");
-        let last = node(c"b1");
-        sessions::insert(first.clone());
-        sessions::insert(second.clone());
-        sessions::insert(last.clone());
-        let name = (*first.as_ptr()).name.clone();
-        assert_eq!(
-            sessions::after((*first.as_ptr()).name.as_c_str())
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.as_ptr()),
-            &mut *second.as_ptr() as *mut _
-        );
+    let first = node(c"a1");
+    let second = node(c"a2");
+    let last = node(c"b1");
+    sessions::insert(first.clone());
+    sessions::insert(second.clone());
+    sessions::insert(last.clone());
+    let name = first.borrow().name.clone();
+    assert!(sessions::after(first.borrow().name.as_c_str())
+        .is_some_and(|owner| Rc::ptr_eq(&owner, &second)));
 
-        sessions::remove(&first);
-        sessions::remove(&second);
-        drop(first);
-        drop(second);
-        assert_eq!(
-            sessions::after(&name)
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.as_ptr()),
-            &mut *last.as_ptr() as *mut _
-        );
+    sessions::remove(&first);
+    sessions::remove(&second);
+    drop(first);
+    drop(second);
+    assert!(sessions::after(&name).is_some_and(|owner| Rc::ptr_eq(&owner, &last)));
 
-        let last_name = (*last.as_ptr()).name.clone();
-        sessions::remove(&last);
-        drop(last);
-        assert!(sessions::is_empty());
-        assert!(sessions::after(&last_name).is_none());
+    let last_name = last.borrow().name.clone();
+    sessions::remove(&last);
+    drop(last);
+    assert!(sessions::is_empty());
+    assert!(sessions::after(&last_name).is_none());
 
-        let replacement = node(c"z1");
-        sessions::insert(replacement.clone());
-        assert_eq!(
-            sessions::after(&last_name)
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.as_ptr()),
-            &mut *replacement.as_ptr() as *mut _
-        );
-        sessions::remove(&replacement);
-    }
+    let replacement = node(c"z1");
+    sessions::insert(replacement.clone());
+    assert!(sessions::after(&last_name).is_some_and(|owner| Rc::ptr_eq(&owner, &replacement)));
+    sessions::remove(&replacement);
 }
 
 #[test]

@@ -206,9 +206,11 @@ pub(super) unsafe fn format_find(
                         let entry = format_session_owner
                             .as_ref()
                             .and_then(|session| {
-                                session.with_environment_mut(|environment| {
-                                    environ_find(environment, key).cloned()
-                                })
+                                session
+                                    .with_environment_mut(|environment| {
+                                        environ_find(environment, key).cloned()
+                                    })
+                                    .expect("session environment")
                             })
                             .or_else(|| {
                                 environ_find(global_environ.as_deref().expect("environment"), key)
@@ -1251,7 +1253,9 @@ pub(super) unsafe fn format_loop_environ(
     let mut access = |read: &mut dyn FnMut(&environ)| {
         if flags == c"s" {
             if let Some(session) = session.as_ref() {
-                session.with_environment_mut(|environment| read(environment));
+                session
+                    .with_environment_mut(|environment| read(environment))
+                    .expect("session environment");
             }
         } else if flags == c"g" {
             if let Some(environment) = global_environ.as_deref() {

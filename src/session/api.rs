@@ -45,17 +45,6 @@ pub trait Session {
     unsafe fn window_linked_outside_group(session: Option<&Self>, window: &WindowRef) -> bool
     where
         Self: Sized;
-    type Environment<'a>: std::ops::Deref<Target = environ>
-    where
-        Self: 'a;
-    type EnvironmentMut<'a>: std::ops::DerefMut<Target = environ>
-    where
-        Self: 'a;
-    /// Scoped component borrows. Release the guard before model calls, callbacks,
-    /// or environment replacement. These may become Ref/RefMut::map of Session.
-    unsafe fn borrow_environment(&self) -> Option<Self::Environment<'_>>;
-    unsafe fn borrow_environment_mut(&self) -> Option<Self::EnvironmentMut<'_>>;
-
     /// Apply update-environment patterns without exposing either component.
     unsafe fn update_environment(&self, source: &environ);
 
@@ -108,7 +97,9 @@ pub trait Session {
     fn status_layout(&self) -> (i32, u32);
     /// Borrow the option table through the model. Borrowing it again while held panics.
     fn borrow_options_mut(&self) -> std::cell::RefMut<'_, options>;
-    unsafe fn with_environment_mut<R>(&self, edit: impl FnOnce(&mut environ) -> R) -> R;
+    /// Edit the environment with the session borrowed; `None` once it is released.
+    /// The closure must not reach back into the session.
+    unsafe fn with_environment_mut<R>(&self, edit: impl FnOnce(&mut environ) -> R) -> Option<R>;
     unsafe fn set_cwd(&self, cwd: Option<CString>);
     fn cwd(&self) -> Option<CString>;
     fn termios(&self) -> Option<termios>;
@@ -166,15 +157,6 @@ impl Session for SessionRef {
 
     unsafe fn window_linked_outside_group(session: Option<&Self>, window: &WindowRef) -> bool {
         session_is_linked(session, window)
-    }
-
-    type Environment<'a> = &'a environ;
-    type EnvironmentMut<'a> = &'a mut environ;
-    unsafe fn borrow_environment(&self) -> Option<Self::Environment<'_>> {
-        (*self.as_ptr()).environ.as_deref()
-    }
-    unsafe fn borrow_environment_mut(&self) -> Option<Self::EnvironmentMut<'_>> {
-        (*self.as_ptr()).environ.as_deref_mut()
     }
 
     unsafe fn update_environment(&self, source: &environ) {
@@ -372,9 +354,8 @@ impl Session for SessionRef {
             model.options.as_mut().expect("live session options")
         })
     }
-    unsafe fn with_environment_mut<R>(&self, edit: impl FnOnce(&mut environ) -> R) -> R {
-        let mut environment = self.borrow_environment_mut().expect("session environment");
-        edit(environment)
+    unsafe fn with_environment_mut<R>(&self, edit: impl FnOnce(&mut environ) -> R) -> Option<R> {
+        self.borrow_mut().environ.as_deref_mut().map(edit)
     }
     unsafe fn set_cwd(&self, cwd: Option<CString>) {
         session_set_cwd(&mut *self.as_ptr(), cwd);

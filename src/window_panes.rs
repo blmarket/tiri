@@ -164,7 +164,7 @@ unsafe fn window_panes_set_preview(data: &mut window_panes_modedata) {
     let (sx, sy) = pane.screen_size(false);
     let mut preview = Box::new(screen::empty());
     pane.copy_screen(&mut preview, 0, 0, sx, sy, false);
-    let mode = pane.screen_mode(false);
+    let mode = pane.screen_mode(false).expect("base pane screen");
     preview.mode = mode.mode;
     preview.cx = mode.cx;
     preview.cy = mode.cy;

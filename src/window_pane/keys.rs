@@ -36,7 +36,7 @@ pub(super) unsafe fn write_key(
         }
         return 0;
     }
-    let screen = pane.screen_mode(true);
+    let screen = pane.screen_mode(true).expect("displayed pane screen");
     let stream = (*pane.as_ptr()).event.clone();
     stream
         .with_ptr(|event| input_key(screen, event, key))
@@ -47,7 +47,7 @@ unsafe fn write_mouse(pane: &Rc<RefCell<window_pane>>, mouse: &mouse_event) {
     if mouse.ignore != 0 || !pane.is_visible() {
         return;
     }
-    let screen = pane.screen_mode(true);
+    let screen = pane.screen_mode(true).expect("displayed pane screen");
     let stream = (*pane.as_ptr()).event.clone();
     if screen.mode & ALL_MOUSE_MODES == 0 {
         return;

@@ -197,10 +197,7 @@ impl CustomizeEnvironmentBorrow {
     unsafe fn read<R>(&self, read: impl FnOnce(&environ) -> R) -> Option<R> {
         match self {
             Self::Global => global_environ.as_deref().map(read),
-            Self::Session(owner) => {
-                let env = owner.borrow_environment()?;
-                Some(read(env))
-            }
+            Self::Session(owner) => owner.with_environment_mut(|env| read(env)),
         }
     }
 
@@ -219,10 +216,7 @@ impl CustomizeEnvironmentBorrow {
     unsafe fn edit<R>(&self, edit: impl FnOnce(&mut environ) -> R) -> Option<R> {
         match self {
             Self::Global => global_environ.as_deref_mut().map(edit),
-            Self::Session(owner) => {
-                let mut env = owner.borrow_environment_mut()?;
-                Some(edit(env))
-            }
+            Self::Session(owner) => owner.with_environment_mut(edit),
         }
     }
 }

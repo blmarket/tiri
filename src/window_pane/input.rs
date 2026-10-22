@@ -2632,9 +2632,6 @@ unsafe fn input_csi_dispatch(
     sctx: &mut screen_write_ctx,
 ) -> ::core::ffi::c_int {
     let input_pane_owner = ictx.wp.upgrade();
-    let input_pane = input_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |pane| pane.as_ptr());
     let mut i: ::core::ffi::c_int = 0;
     let mut n: ::core::ffi::c_int = 0;
     let mut m: ::core::ffi::c_int = 0;
@@ -3006,7 +3003,7 @@ unsafe fn input_csi_dispatch(
                             2 as ::core::ffi::c_int
                         };
                     } else {
-                        p = if !input_pane.is_null() {
+                        p = if input_pane_owner.is_some() {
                             options_get_number(
                                 &input_pane_owner
                                     .as_ref()
@@ -3631,10 +3628,6 @@ unsafe fn input_csi_dispatch_sm_private(ictx: &mut input_ctx, sctx: &mut screen_
 fn input_csi_dispatch_sm_graphics() {}
 unsafe fn input_csi_dispatch_winops(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) {
     let input_pane_owner = ictx.wp.upgrade();
-    let input_pane = input_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |pane| pane.as_ptr());
-    let mut wp: *mut window_pane = input_pane;
     let mut x: u_int = sctx.screen.grid().sx;
     let mut y: u_int = sctx.screen.grid().sy;
     let mut n: ::core::ffi::c_int = 0;
@@ -3750,7 +3743,7 @@ unsafe fn input_csi_dispatch_winops(ictx: &mut input_ctx, sctx: &mut screen_writ
                     -1 => break,
                     0 | 2 => {
                         screen_pop_title(&mut *sctx.screen);
-                        if !wp.is_null() {
+                        if input_pane_owner.is_some() {
                             input_fire_pane_title_changed(
                                 input_pane_owner.as_ref().expect("live pane"),
                                 &(sctx.screen.title),
@@ -4234,10 +4227,6 @@ unsafe fn input_handle_decrqss(
     sctx: &mut screen_write_ctx,
 ) -> ::core::ffi::c_int {
     let input_pane_owner = ictx.wp.upgrade();
-    let input_pane = input_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |pane| pane.as_ptr());
-    let mut wp: *mut window_pane = input_pane;
     let mut buf: *mut u_char = ictx.input_buf.as_mut_ptr();
     let mut len: size_t = ictx.input_len;
     let mut ps: ::core::ffi::c_int = 0;
@@ -4288,7 +4277,7 @@ unsafe fn input_handle_decrqss(
                 }
             }
         } else {
-            opt_ps = if !wp.is_null() {
+            opt_ps = if input_pane_owner.is_some() {
                 options_get_number(
                     &input_pane_owner
                         .as_ref()
@@ -4322,10 +4311,6 @@ unsafe fn input_dcs_dispatch(
     sctx: &mut screen_write_ctx,
 ) -> ::core::ffi::c_int {
     let input_pane_owner = ictx.wp.upgrade();
-    let input_pane = input_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |pane| pane.as_ptr());
-    let mut wp: *mut window_pane = input_pane;
     let mut buf: *mut u_char = ictx.input_buf.as_mut_ptr();
     let mut len: size_t = ictx.input_len;
     const PREFIX: &[u8] = b"tmux;";
@@ -4345,7 +4330,7 @@ unsafe fn input_dcs_dispatch(
     {
         return input_handle_decrqss(ictx, sctx);
     }
-    allow_passthrough = if wp.is_null() {
+    allow_passthrough = if input_pane_owner.is_none() {
         OptionsScope::GlobalWindow.with_local(|oo| options_get_number(oo, c"allow-passthrough"))
     } else {
         options_get_number(
@@ -4991,13 +4976,9 @@ unsafe fn input_osc_111(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &C
 }
 unsafe fn input_osc_12(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
     let input_pane_owner = ictx.wp.upgrade();
-    let input_pane = input_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |pane| pane.as_ptr());
-    let mut wp: *mut window_pane = input_pane;
     let mut c: ::core::ffi::c_int = 0;
     if p == c"?" {
-        if !wp.is_null() {
+        if input_pane_owner.is_some() {
             c = sctx.screen.ccolour;
             if c == -(1 as ::core::ffi::c_int) {
                 c = sctx.screen.default_ccolour;
@@ -5314,16 +5295,12 @@ unsafe fn input_osc_52_parse(
 }
 unsafe fn input_osc_52(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
     let input_pane_owner = ictx.wp.upgrade();
-    let input_pane = input_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |pane| pane.as_ptr());
-    let mut wp: *mut window_pane = input_pane;
     let mut clip = [0u8; 13];
     let Some(out) = input_osc_52_parse(ictx, p, &mut clip) else {
         return;
     };
     let clip = std::ffi::CStr::from_bytes_until_nul(&clip).expect("terminated clipboard selectors");
-    if wp.is_null() {
+    if input_pane_owner.is_none() {
         let Some(client) = ictx.c.upgrade() else {
             return;
         };
@@ -5501,14 +5478,10 @@ unsafe fn input_add_request(
     mut idx: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let input_pane_owner = ictx.wp.upgrade();
-    let input_pane = input_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |pane| pane.as_ptr());
-    let mut wp: *mut window_pane = input_pane;
     let mut c: Option<ClientRef> = None;
     let mut loop_0: Option<ClientRef> = None;
     let mut ir: *mut input_request = ::core::ptr::null_mut::<input_request>();
-    if wp.is_null() {
+    if input_pane_owner.is_none() {
         return -(1 as ::core::ffi::c_int);
     }
     let window = input_pane_owner

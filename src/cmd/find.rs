@@ -1064,7 +1064,7 @@ impl cmd_find_state {
             "cmd_find_target",
             log_cstr(target.unwrap_or(c"none")),
             log_cstr(s),
-            log_pointer(item_handle.map_or(std::ptr::null(), |item| item.as_ptr())),
+            log_pointer(item_handle.map_or(std::ptr::null(), std::rc::Rc::as_ptr)),
             log_bytes(&tmp)
         ));
         let item = item.expect("command queue item");

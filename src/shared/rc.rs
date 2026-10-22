@@ -42,12 +42,11 @@ mod tests {
     fn final_release_cleans_once_and_expires_weak_observers() {
         let calls = Rc::new(Cell::new(0));
         let owner = Rc::new(RefCell::new(Value(calls.clone())));
-        let ptr = owner.as_ptr();
         let weak = Rc::downgrade(&owner);
         let retained = owner.clone();
         drop(owner);
         assert_eq!(calls.get(), 0);
-        assert_eq!(weak.upgrade().unwrap().as_ptr(), ptr);
+        assert!(Rc::ptr_eq(&weak.upgrade().unwrap(), &retained));
         drop(retained);
         assert_eq!(calls.get(), 1);
         assert!(weak.upgrade().is_none());
