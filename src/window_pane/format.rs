@@ -401,7 +401,7 @@ fn format_cb_alternate_saved_x(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
     let wp = pane.borrow();
     Some(
-        CString::new(format!("{}", { (wp.base.saved_cx) }))
+        CString::new(format!("{}", { wp.base.saved_cx }))
             .expect("formatted numbers contain no NUL"),
     )
 }
@@ -435,18 +435,10 @@ fn format_cb_cursor_flag(ft: &mut format_tree) -> Option<CString> {
 fn format_cb_cursor_shape(ft: &mut format_tree) -> Option<CString> {
     let screen = ft.wp.upgrade()?.screen_mode(true)?;
     match screen.cstyle as ::core::ffi::c_uint {
-        1 => {
-            Some(c"block".to_owned())
-        }
-        2 => {
-            Some(c"underline".to_owned())
-        }
-        3 => {
-            Some(c"bar".to_owned())
-        }
-        _ => {
-            Some(c"default".to_owned())
-        }
+        1 => Some(c"block".to_owned()),
+        2 => Some(c"underline".to_owned()),
+        3 => Some(c"bar".to_owned()),
+        _ => Some(c"default".to_owned()),
     }
 }
 
@@ -461,17 +453,13 @@ fn format_cb_cursor_very_visible(ft: &mut format_tree) -> Option<CString> {
 fn format_cb_cursor_x(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
     let wp = pane.borrow();
-    Some(
-        CString::new(format!("{}", { (wp.base.cx) })).expect("formatted numbers contain no NUL"),
-    )
+    Some(CString::new(format!("{}", { (wp.base.cx) })).expect("formatted numbers contain no NUL"))
 }
 
 fn format_cb_cursor_y(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
     let wp = pane.borrow();
-    Some(
-        CString::new(format!("{}", { (wp.base.cy) })).expect("formatted numbers contain no NUL"),
-    )
+    Some(CString::new(format!("{}", { (wp.base.cy) })).expect("formatted numbers contain no NUL"))
 }
 
 fn format_cb_cursor_blinking(ft: &mut format_tree) -> Option<CString> {
@@ -747,10 +735,9 @@ fn format_cb_pane_bottom(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
     let wp = pane.borrow();
     Some(
-        CString::new(format!(
-            "{}",
-            { (wp.yoff + wp.sy as ::core::ffi::c_int - 1 as ::core::ffi::c_int) }
-        ))
+        CString::new(format!("{}", {
+            (wp.yoff + wp.sy as ::core::ffi::c_int - 1 as ::core::ffi::c_int)
+        }))
         .expect("formatted numbers contain no NUL"),
     )
 }
@@ -837,10 +824,9 @@ fn format_cb_pane_command_running(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
     let wp = pane.borrow();
     Some(
-        CString::new(format!(
-            "{}",
-            { ((wp.flags & PANE_CMDRUNNING != 0) as ::core::ffi::c_int) }
-        ))
+        CString::new(format!("{}", {
+            ((wp.flags & PANE_CMDRUNNING != 0) as ::core::ffi::c_int)
+        }))
         .expect("formatted numbers contain no NUL"),
     )
 }
@@ -920,15 +906,9 @@ fn format_cb_pane_unseen_changes(ft: &mut format_tree) -> Option<CString> {
 fn format_cb_pane_key_mode(ft: &mut format_tree) -> Option<CString> {
     let screen = ft.wp.upgrade()?.screen_mode(true)?;
     match screen.mode & EXTENDED_KEY_MODES {
-        MODE_KEYS_EXTENDED => {
-            Some(c"Ext 1".to_owned())
-        }
-        MODE_KEYS_EXTENDED_2 => {
-            Some(c"Ext 2".to_owned())
-        }
-        _ => {
-            Some(c"VT10x".to_owned())
-        }
+        MODE_KEYS_EXTENDED => Some(c"Ext 1".to_owned()),
+        MODE_KEYS_EXTENDED_2 => Some(c"Ext 2".to_owned()),
+        _ => Some(c"VT10x".to_owned()),
     }
 }
 
@@ -1056,10 +1036,9 @@ fn format_cb_pane_right(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
     let wp = pane.borrow();
     Some(
-        CString::new(format!(
-            "{}",
-            { (wp.xoff + wp.sx as ::core::ffi::c_int - 1 as ::core::ffi::c_int) }
-        ))
+        CString::new(format!("{}", {
+            (wp.xoff + wp.sx as ::core::ffi::c_int - 1 as ::core::ffi::c_int)
+        }))
         .expect("formatted numbers contain no NUL"),
     )
 }

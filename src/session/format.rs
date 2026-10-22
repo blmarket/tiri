@@ -255,7 +255,7 @@ fn format_cb_session_silence_flag(ft: &mut format_tree) -> Option<CString> {
 fn format_cb_session_attached(ft: &mut format_tree) -> Option<CString> {
     let owner = ft.s.upgrade()?;
     Some(
-        CString::new(format!("{}", { (owner.borrow().attached) }))
+        CString::new(format!("{}", { owner.borrow().attached }))
             .expect("formatted numbers contain no NUL"),
     )
 }
@@ -316,7 +316,7 @@ fn format_cb_session_grouped(ft: &mut format_tree) -> Option<CString> {
 fn format_cb_session_id(ft: &mut format_tree) -> Option<CString> {
     let owner = ft.s.upgrade()?;
     Some(
-        CString::new(format!("${}", { (owner.borrow().id) }))
+        CString::new(format!("${}", { owner.borrow().id }))
             .expect("formatted numbers contain no NUL"),
     )
 }

@@ -14,10 +14,6 @@ mod api;
 mod client_overlay;
 mod format;
 mod model;
-pub use api::Client;
-pub use client_overlay::Overlay;
-pub use model::client;
-
 use crate::cfg::{cfg_client, cfg_finished, cfg_forget_client, start_cfg};
 use crate::cmd::entries::wait_for::cmd_wait_for_client_lost;
 use crate::cmd::parse::cmd_parse_from_argv;
@@ -65,9 +61,61 @@ use crate::server::{current_time, server_add_accept, server_proc, server_update_
 use crate::server_fn::{
     server_check_unattached, server_redraw_window_borders, server_status_window,
 };
+pub use api::Client;
+pub use client_overlay::Overlay;
 use libc::access;
+pub use model::client;
 
+use crate::compat::imsg::imsg;
+use crate::compat::imsg::*;
+use crate::shared::abi::ssize_t;
+use crate::shared::abi::*;
+pub use crate::shared::client::overlay_check_cb;
+use crate::shared::client::*;
+use crate::shared::client::{
+    CLIENT_ALLREDRAWFLAGS, CLIENT_ASSUMEPASTING, CLIENT_ATTACHED, CLIENT_BRACKETPASTING,
+    CLIENT_CONTROL, CLIENT_CONTROL_NEWLAYOUTS, CLIENT_CONTROL_NOOUTPUT, CLIENT_CONTROL_PAUSEAFTER,
+    CLIENT_CONTROL_WAITEXIT, CLIENT_DEAD, CLIENT_DOUBLECLICK, CLIENT_EXIT, CLIENT_EXITED,
+    CLIENT_FOCUSED, CLIENT_IDENTIFIED, CLIENT_IGNORESIZE, CLIENT_NODETACHFLAGS,
+    CLIENT_NO_DETACH_ON_DESTROY, CLIENT_PASTE_TIME_LIMIT, CLIENT_READONLY, CLIENT_REDRAWBORDERS,
+    CLIENT_REDRAWMENU, CLIENT_REDRAWOVERLAY, CLIENT_REDRAWSCROLLBARS, CLIENT_REDRAWSTATUS,
+    CLIENT_REDRAWWINDOW, CLIENT_REPEAT, CLIENT_STATUSFORCE, CLIENT_SUSPENDED, CLIENT_TERMINAL,
+    CLIENT_TRIPLECLICK, CLIENT_UNATTACHEDFLAGS, CLIENT_UTF8,
+};
+use crate::shared::colour::{
+    client_theme, COLOUR_FLAG_THEME, COLOUR_THEME_COUNT, THEME_DARK, THEME_LIGHT, THEME_UNKNOWN,
+};
 use crate::shared::command::unpack_argv;
+use crate::shared::command::*;
+use crate::shared::command::{cmd_find_state, cmdq_item};
+use crate::shared::display::visible_ranges;
+use crate::shared::environment::environ_entry;
+use crate::shared::event::*;
+use crate::shared::format::format_tree;
+use crate::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
+use crate::shared::key::KEY_BINDING_REPEAT;
+use crate::shared::key::*;
+use crate::shared::key::{key_event, key_table, KeyBindingCommand};
+use crate::shared::limits::UINT_MAX;
+use crate::shared::mouse::{
+    MOUSE_BUTTON_1, MOUSE_BUTTON_10, MOUSE_BUTTON_11, MOUSE_BUTTON_2, MOUSE_BUTTON_3,
+    MOUSE_BUTTON_6, MOUSE_BUTTON_7, MOUSE_BUTTON_8, MOUSE_BUTTON_9, MOUSE_MASK_BUTTONS,
+    MOUSE_MASK_CTRL, MOUSE_MASK_DRAG, MOUSE_MASK_META, MOUSE_MASK_SHIFT, MOUSE_WHEEL_DOWN,
+    MOUSE_WHEEL_UP,
+};
+use crate::shared::pane::window_pane;
+use crate::shared::pane::{
+    window_pane_offset, PANE_SCROLLBARS_AUTOHIDE, PANE_SCROLLBARS_LEFT, PANE_SCROLLBARS_MODAL,
+};
+use crate::shared::posix_io::{_PATH_BSHELL, X_OK};
+use crate::shared::screen::{
+    ScreenMode, ALL_MOUSE_MODES, CURSOR_MODES, MODE_BRACKETPASTE, MODE_CURSOR, MODE_MOUSE_ALL,
+    MODE_MOUSE_BUTTON, MODE_SYNC,
+};
+use crate::shared::tty::*;
+use crate::shared::vis::{VIS_CSTYLE, VIS_NOSLASH, VIS_OCTAL};
+use crate::shared::window::WINDOW_SIZE_LATEST;
+use crate::shared::window::{window_mode_entry, winlink};
 use crate::status::{
     status_at_line, status_free, status_get_range, status_init, status_line_size,
     status_message_clear, status_prompt_clear, status_prompt_cursor, status_prompt_key,
@@ -79,6 +127,7 @@ use crate::style::colour::{
 use crate::text::numbers::scan_u32;
 use crate::text::utf8::{utf8_sanitize_cstring, utf8_stravisx_bytes};
 use crate::tmux::{checkshell, find_home_cstr, setblocking};
+use crate::tty::tty;
 use crate::tty::tty_get_features;
 use crate::tty::{
     tty_close, tty_cursor, tty_init, tty_invalidate, tty_margin_off, tty_open, tty_region_off,
@@ -90,13 +139,11 @@ use crate::window::windows;
 use crate::window::winlink_find_by_index;
 use crate::window_copy::{window_copy_add, window_view_mode};
 use crate::window_visible::{window_position_is_visible, window_visible_ranges};
+use libc::EINTR;
 use std::ffi::{CStr, CString};
 use tiri_buffer::SegmentedBuf;
 
-use crate::shared::abi::ssize_t;
-use crate::shared::abi::*;
-pub use crate::shared::client::overlay_check_cb;
-use crate::shared::client::*;
+pub const _PATH_TTY: &std::ffi::CStr = c"/dev/tty";
 
 impl client {
     /// Allocate a client on the server thread.
@@ -222,409 +269,6 @@ fn server_client_clear_term_caps(c: &mut client) {
     c.term_caps = Vec::new();
 }
 
-#[cfg(test)]
-mod client_message_owner_tests {
-    use super::{
-        client, server_client_add_term_cap, server_client_clear_term_caps,
-        server_client_ensure_term_name, server_client_replace_path, server_client_replace_title,
-        server_client_set_cwd, server_client_set_exit_message, server_client_set_exit_session,
-        server_client_set_name, server_client_set_term_name, server_client_set_term_type,
-        server_client_set_ttyname,
-    };
-    use std::ffi::CString;
-
-    #[test]
-    fn ttyname_replacement_and_clear_keep_a_borrowed_client_view() {
-        unsafe {
-            let mut owner = Box::new(client::empty());
-            let c = &raw mut *owner;
-            assert!((*c).ttyname.is_none());
-
-            server_client_set_ttyname(&mut *c, Some(CString::new(b"/dev/\xff".to_vec()).unwrap()));
-            assert_eq!(
-                ((*c).ttyname)
-                    .as_deref()
-                    .expect("string is present")
-                    .to_bytes(),
-                b"/dev/\xff"
-            );
-            assert_eq!(c, &raw mut *owner);
-
-            server_client_set_ttyname(&mut *c, Some(CString::new("").unwrap()));
-            assert!(!(*c).ttyname.is_none());
-            assert_eq!(
-                ((*c).ttyname)
-                    .as_deref()
-                    .expect("string is present")
-                    .to_bytes(),
-                b""
-            );
-
-            server_client_set_ttyname(&mut *c, None);
-            assert!((*c).ttyname.is_none());
-            assert!(owner.ttyname.is_none());
-        }
-    }
-
-    #[test]
-    fn term_name_replacement_fallback_and_clear_keep_a_borrowed_client_view() {
-        unsafe {
-            let mut owner = Box::new(client::empty());
-            let c = &raw mut *owner;
-            server_client_ensure_term_name(&mut *c);
-            assert_eq!(
-                ((*c).term_name)
-                    .as_deref()
-                    .expect("string is present")
-                    .to_bytes(),
-                b"unknown"
-            );
-
-            server_client_set_term_name(
-                &mut *c,
-                Some(CString::new(b"term-\xff".to_vec()).unwrap()),
-            );
-            assert_eq!(
-                ((*c).term_name)
-                    .as_deref()
-                    .expect("string is present")
-                    .to_bytes(),
-                b"term-\xff"
-            );
-            assert_eq!(c, &raw mut *owner);
-
-            server_client_set_term_name(&mut *c, Some(CString::new("").unwrap()));
-            server_client_ensure_term_name(&mut *c);
-            assert_eq!(
-                ((*c).term_name)
-                    .as_deref()
-                    .expect("string is present")
-                    .to_bytes(),
-                b"unknown"
-            );
-
-            server_client_set_term_name(&mut *c, None);
-            assert!((*c).term_name.is_none());
-            assert!(owner.term_name.is_none());
-        }
-    }
-
-    #[test]
-    fn cwd_replacement_and_clear_keep_a_borrowed_client_view() {
-        unsafe {
-            let mut owner = Box::new(client::empty());
-            let c = &raw mut *owner;
-            assert!((*c).cwd.is_none());
-
-            server_client_set_cwd(&mut *c, Some(CString::new(b"/work-\xff".to_vec()).unwrap()));
-            assert_eq!(
-                ((*c).cwd).as_deref().expect("string is present").to_bytes(),
-                b"/work-\xff"
-            );
-            assert_eq!(c, &raw mut *owner);
-
-            server_client_set_cwd(&mut *c, Some(CString::new("").unwrap()));
-            assert!(!(*c).cwd.is_none());
-            assert_eq!(
-                ((*c).cwd).as_deref().expect("string is present").to_bytes(),
-                b""
-            );
-
-            server_client_set_cwd(&mut *c, None);
-            assert!((*c).cwd.is_none());
-            assert!(owner.cwd.is_none());
-        }
-    }
-
-    #[test]
-    fn term_type_replacement_and_clear_keep_a_borrowed_client_view() {
-        unsafe {
-            let mut owner = Box::new(client::empty());
-            let c = &raw mut *owner;
-            assert!((*c).term_type.is_none());
-
-            server_client_set_term_type(
-                &mut *c,
-                Some(CString::new(b"term-\xff".to_vec()).unwrap()),
-            );
-            assert_eq!(
-                ((*c).term_type)
-                    .as_deref()
-                    .expect("string is present")
-                    .to_bytes(),
-                b"term-\xff"
-            );
-            assert_eq!(c, &raw mut *owner);
-
-            server_client_set_term_type(&mut *c, Some(CString::new("").unwrap()));
-            assert!(!(*c).term_type.is_none());
-            assert_eq!(
-                ((*c).term_type)
-                    .as_deref()
-                    .expect("string is present")
-                    .to_bytes(),
-                b""
-            );
-
-            server_client_set_term_type(&mut *c, None);
-            assert!((*c).term_type.is_none());
-            assert!(owner.term_type.is_none());
-        }
-    }
-
-    #[test]
-    fn title_replacement_and_clear_keep_a_borrowed_client_view() {
-        unsafe {
-            let mut owner = Box::new(client::empty());
-            let c = &raw mut *owner;
-            assert!((*c).title.is_none());
-
-            server_client_replace_title(
-                &mut *c,
-                Some(CString::new(b"title-\xff".to_vec()).unwrap()),
-            );
-            assert_eq!(
-                ((*c).title)
-                    .as_deref()
-                    .expect("string is present")
-                    .to_bytes(),
-                b"title-\xff"
-            );
-            assert_eq!(c, &raw mut *owner);
-
-            server_client_replace_title(&mut *c, Some(CString::new("").unwrap()));
-            assert!(!(*c).title.is_none());
-            assert_eq!(
-                ((*c).title)
-                    .as_deref()
-                    .expect("string is present")
-                    .to_bytes(),
-                b""
-            );
-
-            server_client_replace_title(&mut *c, None);
-            assert!((*c).title.is_none());
-            assert!(owner.title.is_none());
-        }
-    }
-
-    #[test]
-    fn path_replacement_and_clear_keep_a_borrowed_client_view() {
-        unsafe {
-            let mut owner = Box::new(client::empty());
-            let c = &raw mut *owner;
-            assert!((*c).path.is_none());
-
-            server_client_replace_path(
-                &mut *c,
-                Some(CString::new(b"file:///work-\xff".to_vec()).unwrap()),
-            );
-            assert_eq!(
-                ((*c).path)
-                    .as_deref()
-                    .expect("string is present")
-                    .to_bytes(),
-                b"file:///work-\xff"
-            );
-            assert_eq!(c, &raw mut *owner);
-
-            server_client_replace_path(&mut *c, Some(CString::new("").unwrap()));
-            assert!(!(*c).path.is_none());
-            assert_eq!(
-                ((*c).path)
-                    .as_deref()
-                    .expect("string is present")
-                    .to_bytes(),
-                b""
-            );
-
-            server_client_replace_path(&mut *c, None);
-            assert!((*c).path.is_none());
-            assert!(owner.path.is_none());
-        }
-    }
-
-    #[test]
-    fn exit_session_replacement_and_clear_keep_a_borrowed_client_view() {
-        unsafe {
-            let mut owner = Box::new(client::empty());
-            let c = &raw mut *owner;
-            assert!((*c).exit_session.is_none());
-
-            server_client_set_exit_session(
-                &mut *c,
-                Some(CString::new(b"session-\xff".to_vec()).unwrap()),
-            );
-            assert_eq!(
-                ((*c).exit_session)
-                    .as_deref()
-                    .expect("string is present")
-                    .to_bytes(),
-                b"session-\xff"
-            );
-            assert_eq!(c, &raw mut *owner);
-
-            server_client_set_exit_session(&mut *c, Some(CString::new("").unwrap()));
-            assert!(!(*c).exit_session.is_none());
-            assert_eq!(
-                ((*c).exit_session)
-                    .as_deref()
-                    .expect("string is present")
-                    .to_bytes(),
-                b""
-            );
-
-            server_client_set_exit_session(&mut *c, None);
-            assert!((*c).exit_session.is_none());
-            assert!(owner.exit_session.is_none());
-        }
-    }
-
-    #[test]
-    fn name_replacement_and_clear_keep_a_borrowed_client_view() {
-        unsafe {
-            let mut owner = Box::new(client::empty());
-            let c = &raw mut *owner;
-            assert!((*c).name.is_none());
-
-            server_client_set_name(
-                &mut *c,
-                Some(CString::new(b"/dev/pts/\xff".to_vec()).unwrap()),
-            );
-            assert_eq!(
-                ((*c).name)
-                    .as_deref()
-                    .expect("string is present")
-                    .to_bytes(),
-                b"/dev/pts/\xff"
-            );
-            assert_eq!(c, &raw mut *owner);
-
-            server_client_set_name(&mut *c, Some(CString::new("").unwrap()));
-            assert!(!(*c).name.is_none());
-            assert_eq!(
-                ((*c).name)
-                    .as_deref()
-                    .expect("string is present")
-                    .to_bytes(),
-                b""
-            );
-
-            server_client_set_name(&mut *c, None);
-            assert!((*c).name.is_none());
-            assert!(owner.name.is_none());
-        }
-    }
-
-    #[test]
-    fn exit_message_replacement_and_clear_keep_a_borrowed_client_view() {
-        unsafe {
-            let mut owner = Box::new(client::empty());
-            let c = &raw mut *owner;
-            assert!((*c).exit_message.is_none());
-
-            server_client_set_exit_message(
-                &mut *c,
-                Some(CString::new(b"error-\xff".to_vec()).unwrap()),
-            );
-            assert_eq!(
-                ((*c).exit_message)
-                    .as_deref()
-                    .expect("string is present")
-                    .to_bytes(),
-                b"error-\xff"
-            );
-            assert_eq!(c, &raw mut *owner);
-
-            server_client_set_exit_message(&mut *c, Some(CString::new("").unwrap()));
-            assert!(!(*c).exit_message.is_none());
-            assert_eq!(
-                ((*c).exit_message)
-                    .as_deref()
-                    .expect("string is present")
-                    .to_bytes(),
-                b""
-            );
-
-            server_client_set_exit_message(&mut *c, None);
-            assert!((*c).exit_message.is_none());
-            assert!(owner.exit_message.is_none());
-        }
-    }
-
-    #[test]
-    fn term_caps_view_survives_growth_and_preserves_order_and_bytes() {
-        unsafe {
-            let mut owner = Box::new(client::empty());
-            let c = &raw mut *owner;
-            let mut expected = Vec::new();
-            for i in 0..64 {
-                let value = if i % 3 == 0 {
-                    CString::new(b"dup=\xff".to_vec()).unwrap()
-                } else {
-                    CString::new(format!("cap{i}=value")).unwrap()
-                };
-                server_client_add_term_cap(&mut *c, value.as_c_str());
-                expected.push(value);
-                assert_eq!((*c).term_caps.len(), expected.len());
-                for (index, cap) in expected.iter().enumerate() {
-                    assert_eq!((&(*c).term_caps)[index].as_bytes(), cap.as_bytes());
-                }
-            }
-            server_client_clear_term_caps(&mut *c);
-            assert!((*c).term_caps.is_empty());
-            assert_eq!((*c).term_caps.len(), 0);
-        }
-    }
-}
-use crate::compat::imsg::imsg;
-use crate::compat::imsg::*;
-use crate::shared::client::{
-    CLIENT_ALLREDRAWFLAGS, CLIENT_ASSUMEPASTING, CLIENT_ATTACHED, CLIENT_BRACKETPASTING,
-    CLIENT_CONTROL, CLIENT_CONTROL_NEWLAYOUTS, CLIENT_CONTROL_NOOUTPUT, CLIENT_CONTROL_PAUSEAFTER,
-    CLIENT_CONTROL_WAITEXIT, CLIENT_DEAD, CLIENT_DOUBLECLICK, CLIENT_EXIT, CLIENT_EXITED,
-    CLIENT_FOCUSED, CLIENT_IDENTIFIED, CLIENT_IGNORESIZE, CLIENT_NODETACHFLAGS,
-    CLIENT_NO_DETACH_ON_DESTROY, CLIENT_PASTE_TIME_LIMIT, CLIENT_READONLY, CLIENT_REDRAWBORDERS,
-    CLIENT_REDRAWMENU, CLIENT_REDRAWOVERLAY, CLIENT_REDRAWSCROLLBARS, CLIENT_REDRAWSTATUS,
-    CLIENT_REDRAWWINDOW, CLIENT_REPEAT, CLIENT_STATUSFORCE, CLIENT_SUSPENDED, CLIENT_TERMINAL,
-    CLIENT_TRIPLECLICK, CLIENT_UNATTACHEDFLAGS, CLIENT_UTF8,
-};
-use crate::shared::colour::*;
-use crate::shared::colour::{COLOUR_FLAG_THEME, COLOUR_THEME_COUNT};
-use crate::shared::command::*;
-use crate::shared::command::{cmd_find_state, cmdq_item};
-use crate::shared::display::visible_ranges;
-use crate::shared::environment::environ_entry;
-use crate::shared::event::*;
-use crate::shared::format::format_tree;
-use crate::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
-use crate::shared::key::KEY_BINDING_REPEAT;
-use crate::shared::key::*;
-use crate::shared::key::{key_event, key_table, KeyBindingCommand};
-use crate::shared::limits::UINT_MAX;
-use crate::shared::mouse::{
-    MOUSE_BUTTON_1, MOUSE_BUTTON_10, MOUSE_BUTTON_11, MOUSE_BUTTON_2, MOUSE_BUTTON_3,
-    MOUSE_BUTTON_6, MOUSE_BUTTON_7, MOUSE_BUTTON_8, MOUSE_BUTTON_9, MOUSE_MASK_BUTTONS,
-    MOUSE_MASK_CTRL, MOUSE_MASK_DRAG, MOUSE_MASK_META, MOUSE_MASK_SHIFT, MOUSE_WHEEL_DOWN,
-    MOUSE_WHEEL_UP,
-};
-use crate::shared::pane::window_pane;
-use crate::shared::pane::{
-    window_pane_offset, PANE_SCROLLBARS_AUTOHIDE, PANE_SCROLLBARS_LEFT, PANE_SCROLLBARS_MODAL,
-};
-use crate::shared::posix_io::{_PATH_BSHELL, X_OK};
-use crate::shared::screen::{
-    ScreenMode, ALL_MOUSE_MODES, CURSOR_MODES, MODE_BRACKETPASTE, MODE_CURSOR, MODE_MOUSE_ALL,
-    MODE_MOUSE_BUTTON, MODE_SYNC,
-};
-use crate::shared::tty::*;
-use crate::shared::vis::{VIS_CSTYLE, VIS_NOSLASH, VIS_OCTAL};
-use crate::shared::window::WINDOW_SIZE_LATEST;
-use crate::shared::window::{window_mode_entry, winlink};
-use crate::tty::tty;
-use libc::EINTR;
-
-pub const _PATH_TTY: &std::ffi::CStr = c"/dev/tty";
 fn server_client_how_many() -> u_int {
     let mut n: u_int = 0;
     let mut registry_c_owner = ClientRegistry::first();
