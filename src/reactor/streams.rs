@@ -15,7 +15,7 @@ use tiri_rt::{AsyncRead as _, AsyncWrite as _};
 pub(crate) struct StreamState {
     /// Present until free; observers treat None as released.
     stream: RefCell<Option<Box<bufferevent>>>,
-    fd: Option<std::os::fd::OwnedFd>,
+    fd: c_int,
     was_nonblocking: bool,
     pid: u32,
     generation: Cell<u64>,
@@ -79,10 +79,10 @@ pub(super) fn clear() {
 }
 
 fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
-    let Some(fd) = state.fd.as_ref() else {
+    if state.fd == -1 {
         return Ok(());
-    };
-    let source = io(std::os::fd::AsFd::as_fd(fd))?;
+    }
+    let source = io(unsafe { std::os::fd::BorrowedFd::borrow_raw(state.fd) })?;
     let s = state.clone();
     let handle = tiri_rt::mio::Handle::current();
     let task = handle.spawn(async move {
@@ -193,18 +193,17 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
     *state.task.borrow_mut() = Some(task);
     Ok(())
 }
-/// The stream keeps its own duplicate of `fd` until it is freed.
-pub fn bufferevent_new(
+pub unsafe fn bufferevent_new(
     fd: Option<std::os::fd::BorrowedFd<'_>>,
     readcb: bufferevent_data_cb,
     writecb: bufferevent_data_cb,
     errorcb: bufferevent_event_cb,
 ) -> std::io::Result<StreamHandle> {
-    let fd = fd.map(|fd| fd.try_clone_to_owned()).transpose()?;
-    let was_nonblocking = match &fd {
+    let was_nonblocking = match fd {
         None => true,
-        Some(fd) => tiri_rt::unix::set_nonblocking(std::os::fd::AsFd::as_fd(fd), true)?,
+        Some(fd) => tiri_rt::unix::set_nonblocking(fd, true)?,
     };
+    let fd = fd.map_or(-1, |fd| std::os::fd::AsRawFd::as_raw_fd(&fd));
     let s = Rc::new(StreamState {
         stream: RefCell::new(None),
         fd,
@@ -251,10 +250,10 @@ fn free(s: &StreamState) {
         return;
     };
     drop(s.task.take());
-    if let Some(fd) = s.fd.as_ref() {
-        if s.pid == std::process::id() && !s.was_nonblocking {
-            let _ = tiri_rt::unix::set_nonblocking(std::os::fd::AsFd::as_fd(fd), false);
-        }
+    if s.fd != -1 && s.pid == std::process::id() && !s.was_nonblocking {
+        // The fd is owned by the caller and outlives the stream.
+        let fd = unsafe { std::os::fd::BorrowedFd::borrow_raw(s.fd) };
+        let _ = tiri_rt::unix::set_nonblocking(fd, false);
     }
     drop(stream);
 }
@@ -314,7 +313,7 @@ mod tests {
 
     #[test]
     fn stream_buffer_access_wakes_and_explicit_free_invalidates_handles() {
-        let handle = bufferevent_new(None, None, None, None).unwrap();
+        let handle = unsafe { bufferevent_new(None, None, None, None) }.unwrap();
         let observer = handle.clone();
         handle.with_stream(|stream| {
             let state = stream.state.clone();
@@ -338,8 +337,8 @@ mod tests {
 
     #[test]
     fn runtime_clear_frees_streams_without_tasks() {
-        let first = bufferevent_new(None, None, None, None).unwrap();
-        let second = bufferevent_new(None, None, None, None).unwrap();
+        let first = unsafe { bufferevent_new(None, None, None, None) }.unwrap();
+        let second = unsafe { bufferevent_new(None, None, None, None) }.unwrap();
         assert!(first.is_alive());
         assert!(second.is_alive());
         clear();

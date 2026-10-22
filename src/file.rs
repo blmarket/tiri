@@ -904,10 +904,10 @@ pub unsafe fn file_write_open(
                             client_files_remove(cf);
                         }
                         Ok(stream) => {
+                            cf.event = stream.clone();
                             let _ = stream.with_stream(|stream| {
                                 bufferevent_enable(stream, EV_WRITE as ::core::ffi::c_short)
                             });
-                            cf.event = stream;
                         }
                     }
                 }
@@ -1093,10 +1093,10 @@ pub unsafe fn file_read_open(
                             client_files_remove(cf);
                         }
                         Ok(stream) => {
+                            cf.event = stream.clone();
                             let _ = stream.with_stream(|stream| {
                                 bufferevent_enable(stream, EV_READ as ::core::ffi::c_short)
                             });
-                            cf.event = stream;
                             return;
                         }
                     }

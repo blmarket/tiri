@@ -1343,17 +1343,9 @@ impl WindowPane for Rc<RefCell<window_pane>> {
     }
     fn reset_input(&self) {
         crate::style::colour::colour_palette_clear(Some(&mut self.borrow_mut().palette));
-        let context = self
-            .borrow()
-            .ictx
-            .as_ref()
-            .expect("pane input context")
-            .downgrade();
-        super::input::input_reset(
-            &mut context
-                .try_borrow_mut()
-                .expect("pane input context already borrowed"),
-        );
+        // The reset writes the screen through the pane, so no guard is held.
+        let context = unsafe { (*self.as_ptr()).ictx.as_deref_mut() }.expect("pane input context");
+        super::input::input_reset(context, 1);
         self.borrow_mut().flags |= PANE_STYLECHANGED | PANE_THEMECHANGED | PANE_REDRAW;
     }
     fn screen_size(&self, displayed: bool) -> (u32, u32) {
@@ -1597,7 +1589,7 @@ mod tests {
         let pane = window_pane::new();
         pane.borrow_mut().fd = None;
         pane.borrow_mut().pipe_fd = None;
-        let stream = bufferevent_new(None, None, None, None).unwrap();
+        let stream = unsafe { bufferevent_new(None, None, None, None) }.unwrap();
         stream.with_stream(|stream| evbuffer_add(&mut stream.input, bytes));
         pane.borrow_mut().event = stream;
         pane

@@ -82,7 +82,9 @@ use crate::shared::prompt::{
 use crate::shared::screen::screen;
 use crate::shared::screen_write::screen_write_ctx;
 use crate::shared::spawn::{spawn_editor_state, EditorHandle};
-use crate::shared::window::{window_mode, window_mode_entry, winlink, ModeCell};
+use crate::shared::window::{
+    window_mode, window_mode_entry, window_mode_screen_payload, winlink, ModeCell,
+};
 use crate::spawn::{spawn_editor, spawn_editor_write};
 use crate::status::status_message_set;
 use crate::tmux::{global_environ, global_environ_mut};
@@ -2703,9 +2705,9 @@ fn window_customize_get_screen(
     else {
         return;
     };
-    let tree_owner = mode.data.borrow().data.clone();
+    let tree_owner = unsafe { window_mode_screen_payload(&mode.data, |data| data.data.clone()) };
     if let Some(tree_owner) = tree_owner {
-        mode_tree_visit_screen(&tree_owner, visit);
+        unsafe { mode_tree_visit_screen(&tree_owner, visit) };
     }
 }
 

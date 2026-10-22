@@ -12,9 +12,7 @@ use crate::key_bindings::key_bindings_init;
 use crate::log::{fatal, log_cstr, log_debug};
 use crate::options::OptionsScope;
 use crate::options::{options_get_number, options_set_number};
-use crate::proc::{
-    proc_finish, proc_fork_and_daemon, proc_loop, proc_set_signals, proc_start, proc_toggle_log,
-};
+use crate::proc::{proc_fork_and_daemon, proc_loop, proc_set_signals, proc_start, proc_toggle_log};
 use crate::prompt_history::prompt_save_history;
 use crate::reactor;
 use crate::server_acl::{server_acl_init, server_acl_join};
@@ -63,6 +61,7 @@ use crate::shared::errno::ErrorText;
 use crate::shared::event::*;
 use crate::shared::pane::window_pane;
 use crate::shared::posix_io::{S_IRWXU, WAIT_ANY, WNOHANG};
+use crate::shared::process::tmuxproc;
 use crate::shared::signal::{
     sigset_t, ProcessSignal, SIGCONT, SIGTTIN, SIGTTOU, SIG_BLOCK, SIG_SETMASK,
 };
@@ -78,6 +77,7 @@ pub use ::libc::{
     S_IXUSR, WUNTRACED,
 };
 
+pub static mut server_proc: *mut tmuxproc = ::core::ptr::null::<tmuxproc>() as *mut tmuxproc;
 thread_local! {
     static SERVER_FD: std::cell::RefCell<Option<UnixListener>> = const { std::cell::RefCell::new(None) };
     static SERVER_CLIENT_FLAGS: std::cell::Cell<uint64_t> = const { std::cell::Cell::new(0) };
@@ -219,8 +219,12 @@ pub(crate) unsafe fn server_start(
     }
     SERVER_CLIENT_FLAGS.set(flags);
     let runtime = tiri_rt::mio::Runtime::new().expect("tiri-rt initialization");
-    proc_start(c"server");
-    proc_set_signals(Some(Box::new(|sig| unsafe { server_signal(sig) })));
+    let mut process_owner = proc_start(c"server");
+    server_proc = &raw mut *process_owner;
+    proc_set_signals(
+        server_proc,
+        Some(Box::new(|sig| unsafe { server_signal(sig) })),
+    );
     sigprocmask(
         SIG_SETMASK,
         &raw mut oldset,
@@ -280,7 +284,8 @@ pub(crate) unsafe fn server_start(
         } else {
             let message = [cause.as_bytes(), b"\n"].concat();
             let _ = io::Write::write_all(&mut io::stderr(), &message);
-            proc_finish();
+            drop(process_owner);
+            server_proc = std::ptr::null_mut();
             crate::plugin::shutdown();
             reactor::shutdown_runtime(runtime);
             exit(1 as ::core::ffi::c_int);
@@ -293,13 +298,14 @@ pub(crate) unsafe fn server_start(
     server_acl_init();
     server_add_accept(0 as ::core::ffi::c_int);
     let mut loop_callback = || server_loop() == 0;
-    proc_loop(runtime, Some(&mut loop_callback));
+    proc_loop(server_proc, runtime, Some(&mut loop_callback));
     server_destroy_sessions(false);
     crate::plugin::shutdown();
     crate::cmd::queue::cmdq_cancel_background();
     job_kill_all();
     prompt_save_history();
-    proc_finish();
+    drop(process_owner);
+    server_proc = std::ptr::null_mut();
     exit(0 as ::core::ffi::c_int);
 }
 fn server_loop() -> ::core::ffi::c_int {
@@ -499,7 +505,7 @@ unsafe fn server_signal(sig: ProcessSignal) {
             server_add_accept(0 as ::core::ffi::c_int);
         }
         ProcessSignal::User2 => {
-            proc_toggle_log();
+            proc_toggle_log(server_proc);
         }
         _ => {}
     };

@@ -177,11 +177,12 @@ pub(super) fn finish_process(
             let format =
                 options_get_string(&pane_owner.borrow_options_mut(), c"remain-on-exit-format");
             if !format.is_empty() {
-                // The write context reaches the pane (geometry, sync state)
-                // and the format reads `base`, so each write takes `base` out
-                // of the pane and puts it back before the format expands.
-                let mut base = std::mem::take(&mut pane_owner.borrow_mut().base);
-                let mut ctx = screen_write_start_pane(pane_owner, &mut base);
+                // The write context reaches the pane while it holds `base`
+                // (geometry, sync state, format expansion), so the pane cannot
+                // be borrowed for its lifetime.
+                let mut ctx = screen_write_start_pane(pane_owner, unsafe {
+                    &mut (*pane_owner.as_ptr()).base
+                });
                 screen_write_scrollregion(&mut ctx, 0 as u_int, sy.wrapping_sub(1 as u_int));
                 screen_write_cursormove(
                     &mut ctx,
@@ -190,8 +191,6 @@ pub(super) fn finish_process(
                     0 as ::core::ffi::c_int,
                 );
                 screen_write_linefeed(&mut ctx, 1 as ::core::ffi::c_int, 8 as u_int);
-                screen_write_stop(ctx);
-                pane_owner.borrow_mut().base = base;
                 gc = grid_default_cell;
                 let expanded = format_single_cstring(
                     None,
@@ -201,11 +200,8 @@ pub(super) fn finish_process(
                     (refbox::Weak::new()).clone(),
                     Some(pane_owner),
                 );
-                let mut base = std::mem::take(&mut pane_owner.borrow_mut().base);
-                let mut ctx = screen_write_start_pane(pane_owner, &mut base);
                 format_draw(&mut ctx, &gc, sx, &expanded, None, 0 as ::core::ffi::c_int);
                 screen_write_stop(ctx);
-                pane_owner.borrow_mut().base = base;
             }
             {
                 let mut wp = pane_owner.borrow_mut();

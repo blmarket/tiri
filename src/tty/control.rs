@@ -62,7 +62,7 @@ pub fn tty_init(owner: &ClientRef) -> ::core::ffi::c_int {
     let fd = owner.terminal_fd();
     tty_initialize_component(
         &mut *owner.borrow_terminal_mut(),
-        fd.as_ref().map(std::os::fd::AsFd::as_fd),
+        (fd >= 0).then(|| unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) }),
     )
 }
 
@@ -305,9 +305,9 @@ fn tty_write_callback(owner: &ClientRef, result: std::io::Result<usize>) {
 }
 
 fn tty_start_read(terminal: &mut tty, observer: ClientWeak) {
-    let fd = std::os::fd::AsFd::as_fd(terminal.io_fd.as_ref().expect("open TTY descriptor"));
+    let fd = terminal.io_fd.expect("open TTY descriptor");
     crate::reactor::task_start(&mut terminal.read_task, move || {
-        let source = reactor::io(fd)?;
+        let source = reactor::io(unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) })?;
         Ok(async move {
             loop {
                 let mut bytes = vec![0; 65536];
@@ -331,9 +331,9 @@ pub(super) fn tty_start_write(terminal: &mut tty, observer: ClientWeak) {
     if terminal.write_task.is_some() {
         return;
     }
-    let fd = std::os::fd::AsFd::as_fd(terminal.io_fd.as_ref().expect("open TTY descriptor"));
+    let fd = terminal.io_fd.expect("open TTY descriptor");
     crate::reactor::task_start(&mut terminal.write_task, move || {
-        let source = reactor::io(fd)?;
+        let source = reactor::io(unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) })?;
         Ok(async move {
             let bytes = {
                 let Some(owner) = observer.upgrade() else {
@@ -382,7 +382,7 @@ pub fn tty_open(owner: &ClientRef) -> Result<(), std::ffi::CString> {
         terminal_set!(terminal, flags, |=, TTY_OPENED);
         terminal_set!(terminal, flags, &=, !(TTY_NOCURSOR | TTY_FREEZE | TTY_BLOCK | TTY_TIMER));
         let fd = terminal.terminal_fd();
-        terminal_set!(terminal, io_fd, =, fd);
+        terminal_set!(terminal, io_fd, =, Some(fd));
         terminal_set!(terminal, in_0, =, Some(Box::new(TerminalInput::default())));
         terminal_set!(terminal, out, =, Some(evbuffer_new()));
     };
@@ -421,14 +421,11 @@ pub fn tty_start_tty(owner: &ClientRef) {
     {
         let tty = owner;
 
-        let fd = tty.terminal_fd();
-        let fd = fd.as_ref().map(std::os::fd::AsFd::as_fd);
+        let fd = unsafe { std::os::fd::BorrowedFd::borrow_raw(tty.terminal_fd()) };
 
         let mut tio: termios = unsafe { ::core::mem::zeroed() };
         let mut i: u_int = 0;
-        if let Some(fd) = fd {
-            setblocking(fd, 0 as ::core::ffi::c_int);
-        }
+        setblocking(fd, 0 as ::core::ffi::c_int);
         tty_start_read(&mut *tty.borrow_terminal_mut(), std::rc::Rc::downgrade(tty));
         tio = terminal_value!(tty, tio).0;
         tio.c_iflag &= !(IXON | IXOFF | ICRNL | INLCR | IGNCR | IMAXBEL | ISTRIP) as tcflag_t;
@@ -439,10 +436,8 @@ pub fn tty_start_tty(owner: &ClientRef) {
                 as tcflag_t;
         tio.c_cc[VMIN] = 1 as cc_t;
         tio.c_cc[VTIME] = 0 as cc_t;
-        if let Some(fd) = fd {
-            if crate::shared::terminal::set_attributes(fd, TCSANOW, &tio).is_ok() {
-                let _ = tiri_rt::unix::discard_terminal(fd, TCOFLUSH);
-            }
+        if crate::shared::terminal::set_attributes(fd, TCSANOW, &tio).is_ok() {
+            let _ = tiri_rt::unix::discard_terminal(fd, TCOFLUSH);
         }
         if OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"clear-on-attach"))
             != 0
@@ -568,7 +563,7 @@ pub fn tty_repeat_requests(tty: &ClientRef, mut force: ::core::ffi::c_int) {
 }
 pub fn tty_stop_tty(owner: &ClientRef) {
     (|tty: &ClientRef| {
-        let fd = tty.terminal_fd();
+        let fd = unsafe { std::os::fd::BorrowedFd::borrow_raw(tty.terminal_fd()) };
 
         if terminal_value!(tty, flags) & TTY_STARTED == 0 {
             return;
@@ -581,9 +576,6 @@ pub fn tty_stop_tty(owner: &ClientRef) {
         terminal_set!(tty, flags, &=, !TTY_BLOCK);
         drop(tty.borrow_terminal_mut().read_task.take());
         drop(tty.borrow_terminal_mut().write_task.take());
-        let Some(fd) = fd.as_ref().map(std::os::fd::AsFd::as_fd) else {
-            return;
-        };
         let Ok(ws) = crate::shared::terminal::read_size(fd) else {
             return;
         };
@@ -723,12 +715,10 @@ pub(super) fn tty_update_features(owner: &ClientRef) {
 /// Stop the terminal and clear it before an external lock command runs.
 pub fn tty_lock(owner: &ClientRef) {
     tty_stop_tty(owner);
-    let Some(fd) = owner.terminal_fd() else {
-        return;
-    };
+    let fd = unsafe { std::os::fd::BorrowedFd::borrow_raw(owner.terminal_fd()) };
     for code in [TTYC_SMCUP, TTYC_CLEAR, TTYC_E3] {
         let output = tty_term_string(&terminal_term(owner), code).to_owned();
-        tty_raw(std::os::fd::AsFd::as_fd(&fd), &output);
+        tty_raw(fd, &output);
     }
 }
 pub fn tty_bell(owner: &ClientRef) {

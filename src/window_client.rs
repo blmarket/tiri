@@ -37,7 +37,9 @@ use crate::shared::session::SessionRef;
 use crate::shared::sort::sort_criteria;
 use crate::shared::sort::*;
 use crate::shared::window::WindowRef;
-use crate::shared::window::{window_mode, window_mode_entry, winlink, ModeDataRef};
+use crate::shared::window::{
+    window_mode, window_mode_entry, window_mode_screen_payload, winlink, ModeDataRef,
+};
 use crate::sort::sort_get_clients;
 use crate::status::{status_at_line, status_line_size};
 use crate::style::style_apply_with_options;
@@ -655,9 +657,9 @@ fn window_client_get_screen(
     else {
         return;
     };
-    let tree_owner = data.borrow().data.clone();
+    let tree_owner = unsafe { window_mode_screen_payload(&data, |data| data.data.clone()) };
     if let Some(tree_owner) = tree_owner {
-        mode_tree_visit_screen(&tree_owner, visit);
+        unsafe { mode_tree_visit_screen(&tree_owner, visit) };
     }
 }
 

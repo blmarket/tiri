@@ -11,6 +11,7 @@ use crate::reactor::{
     bufferevent_enable, bufferevent_get_input, bufferevent_new, bufferevent_write, evbuffer_drain,
     evbuffer_get_length, evbuffer_pullup,
 };
+use crate::server::server_proc;
 use crate::server_fn::server_destroy_pane;
 use crate::shared::abi::*;
 use crate::shared::client::ClientRef;
@@ -122,7 +123,7 @@ pub(super) fn pipe_pane(
                 CmdOutcome::Error
             }
             0 => {
-                proc_clear_signals(1 as ::core::ffi::c_int);
+                proc_clear_signals(server_proc, 1 as ::core::ffi::c_int);
                 sigprocmask(
                     SIG_SETMASK,
                     &raw mut oldset,
@@ -330,8 +331,8 @@ mod pipe_stream_tests {
     #[test]
     fn pipe_read_forwards_bytes_and_stream_handle_expires() {
         let pane_owner = window_pane::new();
-        let main = bufferevent_new(None, None, None, None).unwrap();
-        let pipe = bufferevent_new(None, None, None, None).unwrap();
+        let main = unsafe { bufferevent_new(None, None, None, None) }.unwrap();
+        let pipe = unsafe { bufferevent_new(None, None, None, None) }.unwrap();
         let stale = {
             let mut wp = pane_owner.borrow_mut();
             wp.fd = None;

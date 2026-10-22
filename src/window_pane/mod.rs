@@ -677,29 +677,26 @@ fn window_pane_set_event(wp_owner: &Rc<std::cell::RefCell<window_pane>>) {
     if let Some(fd) = fd {
         setblocking(fd, 0 as ::core::ffi::c_int);
     }
-    let stream = bufferevent_new(
-        fd,
-        bufferevent_data_callback(move || unsafe {
-            if let Some(owner) = read_observer.upgrade() {
-                window_pane_read_callback(&owner);
-            }
-        }),
-        None,
-        bufferevent_event_callback(move |_, _| {
-            if let Some(owner) = error_observer.upgrade() {
-                window_pane_error_callback(&owner);
-            }
-        }),
-    )
-    .unwrap_or_else(|_| fatalx(|out| out.write_all(b"out of memory")));
+    let read = bufferevent_data_callback(move || unsafe {
+        if let Some(owner) = read_observer.upgrade() {
+            window_pane_read_callback(&owner);
+        }
+    });
+    let error = bufferevent_event_callback(move |_, _| {
+        if let Some(owner) = error_observer.upgrade() {
+            window_pane_error_callback(&owner);
+        }
+    });
+    let stream = unsafe { bufferevent_new(fd, read, None, error) }
+        .unwrap_or_else(|_| fatalx(|out| out.write_all(b"out of memory")));
     drop(pane);
     wp_owner.borrow_mut().event = stream.clone();
-    let ictx = refbox::RefBox::new(input_init(
+    let ictx = input_init(
         Some(wp_owner),
         stream,
         crate::shared::input::InputPalette::Pane(std::rc::Rc::downgrade(wp_owner)),
         None,
-    ));
+    );
     // A replaced input context's drop reaches the pane.
     let old = wp_owner.borrow_mut().ictx.replace(ictx);
     drop(old);
@@ -1597,15 +1594,10 @@ fn window_pane_update_used_data(
 
 fn window_pane_default_cursor(wp_owner: &Rc<std::cell::RefCell<window_pane>>) {
     let scope = OptionsScope::Pane(Rc::downgrade(wp_owner));
-    let mut displayed = wp_owner
-        .borrow_mut()
-        .with_screen_mut(std::mem::take)
-        .expect("displayed pane screen");
-    screen_set_default_cursor(&mut displayed, &scope);
-    wp_owner
-        .borrow_mut()
-        .with_screen_mut(|screen| *screen = displayed)
-        .expect("displayed pane screen");
+    unsafe {
+        (*wp_owner.as_ptr()).with_screen_mut(|screen| screen_set_default_cursor(screen, &scope))
+    }
+    .expect("displayed pane screen");
 }
 
 fn window_pane_mode(wp: &window_pane) -> ::core::ffi::c_int {

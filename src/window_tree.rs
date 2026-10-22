@@ -50,7 +50,9 @@ use crate::shared::sort::sort_criteria;
 use crate::shared::sort::*;
 use crate::shared::tree::RB_NEGINF;
 use crate::shared::window::WindowRef;
-use crate::shared::window::{window_mode, window_mode_entry, winlink, ModeCell};
+use crate::shared::window::{
+    window_mode, window_mode_entry, window_mode_screen_payload, winlink, ModeCell,
+};
 use crate::sort::{
     sort_get_panes_window, sort_get_sessions, sort_get_winlinks_session,
     sort_would_window_tree_swap,
@@ -1797,9 +1799,9 @@ fn window_tree_get_screen(
     else {
         return;
     };
-    let tree_owner = mode.data.borrow().data.clone();
+    let tree_owner = unsafe { window_mode_screen_payload(&mode.data, |data| data.data.clone()) };
     if let Some(tree_owner) = tree_owner {
-        mode_tree_visit_screen(&tree_owner, visit);
+        unsafe { mode_tree_visit_screen(&tree_owner, visit) };
     }
 }
 

@@ -15,8 +15,8 @@ use crate::file::{
 use crate::format::bytes::nullable_cstr;
 use crate::log::{fatal, fatalx, log_cstr, log_debug, log_hex};
 use crate::proc::{
-    bytes_of, imsg_string, proc_add_peer, proc_clear_signals, proc_exit, proc_finish, proc_loop,
-    proc_send, proc_set_signals, proc_start,
+    bytes_of, imsg_string, proc_add_peer, proc_clear_signals, proc_exit, proc_loop, proc_send,
+    proc_set_signals, proc_start,
 };
 use crate::server::server_start;
 use crate::shared::abi::*;
@@ -32,7 +32,7 @@ use crate::shared::command::*;
 use crate::shared::errno::ErrorText;
 use crate::shared::posix_io::{STDERR_FILENO, STDIN_FILENO, WAIT_ANY, WNOHANG};
 use crate::shared::posix_terminal::{ICRNL, ONLCR, OPOST, TCSANOW, VMIN, VTIME};
-use crate::shared::process::tmuxpeer;
+use crate::shared::process::{tmuxpeer, tmuxproc};
 pub use crate::shared::signal::{ProcessSignal, SA_RESTART, SIGHUP, SIGTSTP, SIG_DFL, SIG_IGN};
 use crate::shared::terminal::*;
 use crate::tmux::{
@@ -53,6 +53,7 @@ use tiri_rt::Runtime as _;
 
 pub use ::libc::{CREAD, CS8, ECONNREFUSED, HUPCL, IXANY, LOCK_EX, LOCK_NB, TCSAFLUSH};
 
+static mut client_proc: *mut tmuxproc = ::core::ptr::null::<tmuxproc>() as *mut tmuxproc;
 static mut client_peer: refbox::Weak<tmuxpeer> = refbox::Weak::new();
 static mut client_flags: uint64_t = 0;
 static mut client_suspended: ::core::ffi::c_int = 0;
@@ -195,7 +196,7 @@ unsafe fn client_exit_message() -> CString {
 }
 unsafe fn client_exit() {
     if file_write_left(&client_files) == 0 {
-        proc_exit();
+        proc_exit(client_proc);
     }
 }
 pub unsafe fn client_main(
@@ -229,7 +230,8 @@ pub unsafe fn client_main(
             drop(pr.cmdlist.take());
         }
     }
-    proc_start(c"client");
+    let mut process_owner = proc_start(c"client");
+    client_proc = &raw mut *process_owner;
     let result = (|| {
         client_flags = (flags as ::core::ffi::c_ulonglong | CLIENT_WRITE_ACK) as uint64_t;
         log_debug(format_args!(
@@ -274,9 +276,16 @@ pub unsafe fn client_main(
             }
         };
         let runtime = tiri_rt::mio::Runtime::new().expect("tiri-rt initialization");
-        proc_set_signals(Some(Box::new(|sig| unsafe { client_signal(sig) })));
+        proc_set_signals(
+            client_proc,
+            Some(Box::new(|sig| unsafe { client_signal(sig) })),
+        );
         client_signal(ProcessSignal::Child);
-        client_peer = proc_add_peer(fd, Box::new(|message| unsafe { client_dispatch(message) }));
+        client_peer = proc_add_peer(
+            client_proc,
+            fd,
+            Box::new(|message| unsafe { client_dispatch(message) }),
+        );
         let cwd = find_cwd().unwrap_or_else(|| find_home_cstr().unwrap_or(c"/").to_owned());
         let ttynam =
             tiri_rt::unix::terminal_name(std::os::fd::BorrowedFd::borrow_raw(STDIN_FILENO))
@@ -361,7 +370,7 @@ pub unsafe fn client_main(
         {
             proc_send(&client_peer, msg, None, &[]);
         }
-        proc_loop(runtime, None);
+        proc_loop(client_proc, runtime, None);
         if client_exittype as ::core::ffi::c_uint
             == MSG_EXEC as ::core::ffi::c_int as ::core::ffi::c_uint
         {
@@ -425,8 +434,9 @@ pub unsafe fn client_main(
         client_exitsession.take();
         client_exitval
     })();
-    proc_finish();
+    drop(process_owner);
     client_peer = refbox::Weak::new();
+    client_proc = std::ptr::null_mut();
     result
 }
 unsafe fn client_send_identify(
@@ -500,7 +510,7 @@ unsafe fn client_exec(shell: &CStr, shellcmd: &CStr) -> ! {
     ));
     let argv0 = shell_argv0_cstring(shell, client_flags & CLIENT_LOGIN as uint64_t != 0);
     setenv(c"SHELL".as_ptr(), shell.as_ptr(), 1 as ::core::ffi::c_int);
-    proc_clear_signals(1 as ::core::ffi::c_int);
+    proc_clear_signals(client_proc, 1 as ::core::ffi::c_int);
     setblocking(io::stdin().as_fd(), 1 as ::core::ffi::c_int);
     setblocking(io::stdout().as_fd(), 1 as ::core::ffi::c_int);
     setblocking(io::stderr().as_fd(), 1 as ::core::ffi::c_int);
@@ -542,7 +552,7 @@ unsafe fn client_signal(sig: ProcessSignal) {
         }
     } else if client_attached == 0 {
         if sig == ProcessSignal::Terminate || sig == ProcessSignal::Hangup {
-            proc_exit();
+            proc_exit(client_proc);
         }
     } else {
         match sig {
@@ -595,7 +605,7 @@ unsafe fn client_dispatch(message: crate::shared::process::PeerMessage<'_>) {
                 client_exitreason = CLIENT_EXIT_LOST_SERVER;
                 client_exitval = 1 as ::core::ffi::c_int;
             }
-            proc_exit();
+            proc_exit(client_proc);
             return;
         }
         crate::shared::process::PeerMessage::Message(imsg) => imsg,
@@ -664,7 +674,7 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
                 imsg.hdr.peerid & 0xff as uint32_t,
             );
             client_exitval = 1 as ::core::ffi::c_int;
-            proc_exit();
+            proc_exit(client_proc);
         }
         MSG_FLAGS => {
             if datalen as usize != ::core::mem::size_of::<uint64_t>() as usize {
@@ -689,7 +699,7 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
             proc_send(&client_peer, MSG_EXITING, None, &[]);
         }
         MSG_EXITED => {
-            proc_exit();
+            proc_exit(client_proc);
         }
         MSG_READ_OPEN => {
             file_read_open(
@@ -718,7 +728,7 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
         }
         MSG_STDERR | MSG_STDIN | MSG_STDOUT => {
             eprintln!("server version is too old for client");
-            proc_exit();
+            proc_exit(client_proc);
         }
         _ => {
             log_debug(format_args!("unknown message type {}", { imsg.hdr.type_0 }));
@@ -780,7 +790,7 @@ unsafe fn client_dispatch_attached(imsg: &mut imsg) {
             if datalen != 0 as ssize_t {
                 fatalx(|out| out.write_all(b"bad MSG_EXITED size"));
             }
-            proc_exit();
+            proc_exit(client_proc);
         }
         MSG_SHUTDOWN => {
             if datalen != 0 as ssize_t {

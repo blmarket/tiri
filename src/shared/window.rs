@@ -148,6 +148,20 @@ pub type window_mode_init_cb = fn(
 /// the payload has one. The borrow ends when the visitor returns.
 pub type window_mode_screen_cb = fn(refbox::Weak<window_mode_entry>, &mut dyn FnMut(&mut screen));
 
+/// Borrow a mode payload for its `get_screen` callback. Sorting and format
+/// expansion reach `get_screen` for the mode's own pane while a build or draw
+/// further up the stack holds the payload; as in `mode_tree_visit_screen`,
+/// that reentrant visit goes through the cell and sees the payload mid-update.
+pub unsafe fn window_mode_screen_payload<T, R>(
+    cell: &std::cell::RefCell<T>,
+    visit: impl FnOnce(&mut T) -> R,
+) -> R {
+    match cell.try_borrow_mut() {
+        Ok(mut data) => visit(&mut data),
+        Err(_) => visit(&mut *cell.as_ptr()),
+    }
+}
+
 /// Run `visit` on the screen `cb` exposes; `None` when the mode has no screen.
 pub fn window_mode_visit_screen<R>(
     cb: window_mode_screen_cb,

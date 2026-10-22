@@ -19,7 +19,11 @@ pub(super) fn start(pane: &Rc<RefCell<window_pane>>, base: &mut screen) {
             let timer = pane.borrow_mut().sync_timer.take();
             drop(timer);
             if pane.is_synchronized() {
-                flush_base(&pane);
+                unsafe {
+                    let base = &mut (*pane.as_ptr()).base;
+                    base.mode &= !MODE_SYNC;
+                    flush_dirty(&pane, base);
+                }
             }
         }
     })
@@ -33,22 +37,17 @@ pub(super) fn start(pane: &Rc<RefCell<window_pane>>, base: &mut screen) {
 }
 
 pub(super) fn stop(pane: &Rc<RefCell<window_pane>>, writing: Option<&mut screen>) {
-    let synchronized = match &writing {
-        Some(base) => base.mode & MODE_SYNC != 0,
-        None => pane.is_synchronized(),
+    let base = match writing {
+        Some(base) => base,
+        None => unsafe { &mut (*pane.as_ptr()).base },
     };
-    if !synchronized {
+    if base.mode & MODE_SYNC == 0 {
         return;
     }
     let timer = pane.borrow_mut().sync_timer.take();
     drop(timer);
-    match writing {
-        Some(base) => {
-            base.mode &= !MODE_SYNC;
-            flush_dirty(pane, base);
-        }
-        None => flush_base(pane),
-    }
+    base.mode &= !MODE_SYNC;
+    flush_dirty(pane, base);
     log_debug(format_args!(
         "screen_write_stop_sync: %{} stopped sync mode",
         pane.id()
@@ -99,15 +98,6 @@ pub(super) fn should_draw_rows(
         dirty[(row >> 3) as usize] |= 1 << (row & 7);
     }
     false
-}
-
-/// Leave sync mode with no write context open, taking `base` out of the pane
-/// so the renderer can reach the pane while it draws; put it back afterwards.
-fn flush_base(pane: &Rc<RefCell<window_pane>>) {
-    let mut base = std::mem::take(&mut pane.borrow_mut().base);
-    base.mode &= !MODE_SYNC;
-    flush_dirty(pane, &mut base);
-    pane.borrow_mut().base = base;
 }
 
 /// Draw the rows marked while synchronized; `base` is the pane's base screen.

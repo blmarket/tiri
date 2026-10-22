@@ -47,7 +47,7 @@ pub struct window_pane {
     pub(super) resize_queue: window_pane_resizes,
     pub(super) resize_timer: Option<Timer>,
     pub(super) sync_timer: Option<Timer>,
-    pub(super) ictx: Option<refbox::RefBox<input_ctx>>,
+    pub(super) ictx: Option<Box<input_ctx>>,
     pub(super) cached_gc: grid_cell,
     pub(super) cached_active_gc: grid_cell,
     pub(super) cached_dim: u_int,

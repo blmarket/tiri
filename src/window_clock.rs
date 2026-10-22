@@ -19,7 +19,9 @@ use crate::shared::key::*;
 use crate::shared::mouse::mouse_event;
 use crate::shared::screen::{screen, MODE_CURSOR};
 use crate::shared::time::{format_strftime, local_time, tm};
-use crate::shared::window::{window_mode, window_mode_entry, winlink, ModeDataRef};
+use crate::shared::window::{
+    window_mode, window_mode_entry, window_mode_screen_payload, winlink, ModeDataRef,
+};
 use crate::style::style_apply_with_options;
 use crate::window::Window as _;
 use libc::gmtime_r;
@@ -662,7 +664,7 @@ fn window_clock_get_screen(
         .expect("live mode entry")
         .boxed_data_cell::<window_clock_mode_data>()
     {
-        visit(&mut data.borrow_mut().screen);
+        unsafe { window_mode_screen_payload(data, |data| visit(&mut data.screen)) };
     }
 }
 

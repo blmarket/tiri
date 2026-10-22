@@ -1060,12 +1060,12 @@ pub(crate) unsafe fn popup_display(
     if (*pd).job.is_empty() {
         return -(1 as ::core::ffi::c_int);
     }
-    (*pd).ictx = Some(Box::new(input_init(
+    (*pd).ictx = Some(input_init(
         None,
         job_get_event(&(*pd).job),
         crate::shared::input::InputPalette::Popup((*pd).palette.downgrade()),
         (*pd).c.as_ref(),
-    )));
+    ));
     (*pd).waiter = Some(wait());
     let check_cb = popup_check_callback(PopupHandle(owner.downgrade()));
     let mode = PopupHandle(owner.downgrade());

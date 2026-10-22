@@ -81,8 +81,7 @@ pub trait Client {
     fn borrow_terminal_mut(&self) -> Self::TerminalMut<'_>;
     /// Enqueue terminal bytes and account for output within one model borrow.
     fn write_terminal(&self, bytes: &[u8]);
-    /// A duplicate of the terminal descriptor, independent of later client borrows.
-    fn terminal_fd(&self) -> Option<OwnedFd>;
+    fn terminal_fd(&self) -> i32;
     fn record_terminal_discard(&self, bytes: usize);
     /// Some(0) completes the redraw write; backpressure starts on a later write.
     fn acknowledge_terminal_redraw(&self, bytes: usize) -> Option<usize>;
@@ -168,8 +167,8 @@ pub trait Client {
     fn find_file(&self, stream: i32) -> Weak<std::cell::RefCell<crate::file::client_file>>;
     /// Observe a request owned by input_ctx. Its owner must explicitly retire
     /// this observation before freeing the request.
-    fn observe_input_request(&self, request: refbox::Weak<crate::shared::input::input_request>);
-    fn forget_input_request(&self, request: &refbox::Weak<crate::shared::input::input_request>);
+    fn observe_input_request(&self, request: &mut crate::shared::input::input_request);
+    fn forget_input_request(&self, request: &crate::shared::input::input_request);
     fn has_input_requests(&self) -> bool;
     /// Select in client-index order; no Client borrow spans parser replies or
     /// explicit request cleanup (which itself removes index observations).
@@ -345,8 +344,8 @@ impl Client for ClientRef {
         server_client_handle_key(self, event)
     }
 
-    fn terminal_fd(&self) -> Option<OwnedFd> {
-        self.borrow().fd.as_ref().and_then(|fd| fd.try_clone().ok())
+    fn terminal_fd(&self) -> i32 {
+        self.borrow().fd.as_ref().map_or(-1, AsRawFd::as_raw_fd)
     }
     fn record_terminal_discard(&self, bytes: usize) {
         let mut client = self.borrow_mut();
@@ -403,15 +402,15 @@ impl Client for ClientRef {
     fn record_terminal_type(&self, name: &CStr) {
         server_client_set_term_type(&mut self.borrow_mut(), Some(name.to_owned()));
     }
-    fn observe_input_request(&self, request: refbox::Weak<crate::shared::input::input_request>) {
+    fn observe_input_request(&self, request: &mut crate::shared::input::input_request) {
         self.borrow_mut().input_requests.push(request);
     }
-    fn forget_input_request(&self, request: &refbox::Weak<crate::shared::input::input_request>) {
+    fn forget_input_request(&self, request: &crate::shared::input::input_request) {
         let mut state = self.borrow_mut();
         let requests = &mut state.input_requests;
         let index = requests
             .iter()
-            .position(|candidate| candidate == request)
+            .position(|candidate| std::ptr::eq(*candidate, request))
             .expect("request missing from its client handle collection");
         requests.remove(index);
     }
@@ -605,12 +604,12 @@ impl Client for ClientRef {
             for fd in [out_fd, fd].into_iter().flatten() {
                 setblocking(fd, 0);
             }
-            let input = bufferevent_new(fd, read, write.clone(), error.clone())
+            let input = unsafe { bufferevent_new(fd, read, write.clone(), error.clone()) }
                 .unwrap_or_else(|_| crate::log::fatalx(|out| out.write_all(b"out of memory")));
             let output = if control_control {
                 input.clone()
             } else {
-                bufferevent_new(out_fd, None, write, error)
+                unsafe { bufferevent_new(out_fd, None, write, error) }
                     .unwrap_or_else(|_| crate::log::fatalx(|out| out.write_all(b"out of memory")))
             };
             (input, output)

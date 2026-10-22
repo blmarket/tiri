@@ -39,7 +39,9 @@ use crate::shared::session::SessionRef;
 use crate::shared::sort::sort_criteria;
 use crate::shared::sort::*;
 
-use crate::shared::window::{window_mode, window_mode_entry, winlink, ModeDataRef};
+use crate::shared::window::{
+    window_mode, window_mode_entry, window_mode_screen_payload, winlink, ModeDataRef,
+};
 use crate::sort::{sort_get_sessions, sort_get_winlinks};
 use crate::status::status_message_set;
 use crate::style::style_apply_with_options;
@@ -480,7 +482,7 @@ fn window_switch_get_screen(
         .expect("live mode entry")
         .boxed_data_cell::<window_switch_modedata>()
     {
-        visit(&mut data.borrow_mut().screen);
+        unsafe { window_mode_screen_payload(data, |data| visit(&mut data.screen)) };
     }
 }
 

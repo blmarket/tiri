@@ -14,6 +14,7 @@ use crate::reactor::BufferEvent;
 use crate::reactor::{
     bufferevent_disable, bufferevent_enable, bufferevent_new, evbuffer_get_length, evbuffer_pullup,
 };
+use crate::server::server_proc;
 use crate::session::Session as _;
 use crate::shared::abi::*;
 use crate::shared::command::cmdq_item;
@@ -195,7 +196,7 @@ pub fn job_run(
                     if let Some(pair) = out_owner.take() {
                         out = pair.map(IntoRawFd::into_raw_fd);
                     }
-                    proc_clear_signals(1 as ::core::ffi::c_int);
+                    proc_clear_signals(server_proc, 1 as ::core::ffi::c_int);
                     sigprocmask(
                         SIG_SETMASK,
                         &raw mut oldset,
@@ -363,10 +364,10 @@ pub fn job_run(
                         bufferevent_event_callback(move |_, _| job_error_callback(&error_job)),
                     )
                     .unwrap_or_else(|_| fatalx(|out| out.write_all(b"out of memory")));
+                    job.try_borrow_mut().expect("registered job").event = stream.clone();
                     let _ = stream.with_stream(|stream| {
                         bufferevent_enable(stream, (EV_READ | EV_WRITE) as ::core::ffi::c_short)
                     });
-                    job.try_borrow_mut().expect("registered job").event = stream;
                     {
                         let value = job.try_borrow_mut().expect("registered job");
                         log_debug(format_args!(
@@ -733,7 +734,7 @@ mod job_stream_tests {
 
     #[test]
     fn completion_reads_a_live_stream_and_skips_one_after_free() {
-        let stream = bufferevent_new(None, None, None, None).unwrap();
+        let stream = unsafe { bufferevent_new(None, None, None, None) }.unwrap();
         let owner = RefBox::new(job {
             event: stream.clone(),
             ..idle_job()

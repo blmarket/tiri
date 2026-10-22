@@ -386,12 +386,19 @@ fn mode_tree_alloc_data() -> std::rc::Rc<std::cell::RefCell<mode_tree_data>> {
     Rc::new(RefCell::new(mode_tree_data::default()))
 }
 
-/// Visit the tree's screen for the pane.
-pub fn mode_tree_visit_screen(
+/// Visit the tree's screen for the pane. `mode_tree_draw` holds the tree
+/// borrow while it expands formats for this same pane, and those formats read
+/// the displayed screen's mode and cursor state. Such a reentrant visit sees
+/// the screen in its mid-draw state through the cell, as the pane always has;
+/// every other visit goes through the borrow.
+pub unsafe fn mode_tree_visit_screen(
     owner: &Rc<RefCell<mode_tree_data>>,
     visit: &mut dyn FnMut(&mut screen),
 ) {
-    visit(&mut owner.borrow_mut().screen);
+    match owner.try_borrow_mut() {
+        Ok(mut mtd) => visit(&mut mtd.screen),
+        Err(_) => visit(&mut (*owner.as_ptr()).screen),
+    }
 }
 
 fn mode_tree_build_lines(

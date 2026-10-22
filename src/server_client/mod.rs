@@ -61,7 +61,7 @@ use crate::reactor::{
 use crate::resize::{recalculate_size, recalculate_sizes};
 use crate::screen::screen_mode_display;
 use crate::screen_redraw::{redraw_pane, redraw_pane_scrollbar, redraw_screen};
-use crate::server::{current_time, server_add_accept, server_update_socket};
+use crate::server::{current_time, server_add_accept, server_proc, server_update_socket};
 use crate::server_fn::{
     server_check_unattached, server_redraw_window_borders, server_status_window,
 };
@@ -879,14 +879,13 @@ fn server_client_create(fd: OwnedFd) -> ClientRef {
     setblocking(fd.as_fd(), 0);
     let mut owner = client::new();
     let peer_observer = std::rc::Rc::downgrade(&owner);
-    let peer = proc_add_peer(
-        fd,
+    let dispatch: Box<dyn for<'a> FnMut(crate::shared::process::PeerMessage<'a>)> =
         Box::new(move |message| unsafe {
             if let Some(owner) = peer_observer.upgrade() {
                 server_client_dispatch(&owner, message);
             }
-        }),
-    );
+        });
+    let peer = unsafe { proc_add_peer(server_proc, fd, dispatch) };
     let keytable = key_bindings_get_table(c"root", 1);
     {
         let mut c = owner.borrow_mut();
@@ -1225,7 +1224,7 @@ fn server_client_lost(client_owner: &ClientRef) {
     let environ = client_owner.borrow_mut().environ.take();
     drop(environ);
     let peer = std::mem::replace(&mut client_owner.borrow_mut().peer, refbox::Weak::new());
-    proc_remove_peer(&peer);
+    unsafe { proc_remove_peer(&peer) };
     let (out_fd, fd) = {
         let mut c = client_owner.borrow_mut();
         (c.out_fd.take(), c.fd.take())

@@ -61,7 +61,9 @@ use crate::shared::screen::screen;
 use crate::shared::screen_write::screen_write_ctx;
 use crate::shared::session::SessionRef;
 pub use crate::shared::window::{window_mode, window_mode_entry, winlink};
-use crate::shared::window::{window_mode_screen_cb, ModeDataRef, WindowRef};
+use crate::shared::window::{
+    window_mode_screen_cb, window_mode_screen_payload, ModeDataRef, WindowRef,
+};
 use crate::status::status_message_set;
 use crate::style::style_apply_with_options;
 use crate::text::utf8::{utf8_copy, utf8_fromcstr_vec, utf8_set, utf8_to_data};
@@ -719,12 +721,12 @@ fn window_copy_view_init(
     data.line_numbers = 0 as ::core::ffi::c_int;
     data.backing = Some(Box::new(screen::empty()));
     screen_init(data.backing_mut(), sx, sy, UINT_MAX);
-    data.ictx = Some(Box::new(input_init(
+    data.ictx = Some(input_init(
         None,
         Default::default(),
         Default::default(),
         None,
-    )));
+    ));
     data.mx = data.cx;
     data.my = data
         .backing()
@@ -1188,18 +1190,24 @@ pub(crate) fn window_copy_get_hyperlink_cstring(
     let data_cell = window_copy_data(&wme);
     let data = data_cell.borrow();
     // The mode screen is the pane's displayed screen, which owns the links.
-    let screen = data.screen.borrow();
-    let gd = screen.grid();
-    format_grid_hyperlink_cstring(gd, x, gd.hsize.wrapping_add(y), &screen)
+    unsafe {
+        window_mode_screen_payload(&data.screen, |screen| {
+            let gd = screen.grid();
+            format_grid_hyperlink_cstring(gd, x, gd.hsize.wrapping_add(y), screen)
+        })
+    }
 }
 fn window_copy_cursor_hyperlink_cb(ft: &format_tree) -> Option<CString> {
     let pane_owner = format_get_pane(ft)?;
     let mut wme: refbox::Weak<window_mode_entry> = pane_owner.mode_entry();
     let data_cell = window_copy_data(&wme);
     let data = data_cell.borrow();
-    let screen = data.screen.borrow();
-    let gd = screen.grid();
-    format_grid_hyperlink_cstring(gd, data.cx, gd.hsize.wrapping_add(data.cy), &screen)
+    unsafe {
+        window_mode_screen_payload(&data.screen, |screen| {
+            let gd = screen.grid();
+            format_grid_hyperlink_cstring(gd, data.cx, gd.hsize.wrapping_add(data.cy), screen)
+        })
+    }
 }
 fn window_copy_cursor_word_cb(ft: &format_tree) -> Option<CString> {
     let pane_owner = format_get_pane(ft)?;
@@ -1274,7 +1282,7 @@ fn window_copy_formats(mut wme: refbox::Weak<window_mode_entry>, ft: &mut format
     format_add(ft, c"copy_cursor_y", |out| {
         write!(out, "{}", (data.cy) as i32)
     });
-    if data.screen.borrow().sel.is_some() {
+    if unsafe { window_mode_screen_payload(&data.screen, |screen| screen.sel.is_some()) } {
         format_add(ft, c"selection_start_x", |out| {
             write!(out, "{}", (data.selx) as i32)
         });
@@ -1342,8 +1350,9 @@ fn window_copy_get_screen(
     wme: refbox::Weak<window_mode_entry>,
     visit: &mut dyn FnMut(&mut screen),
 ) {
-    let data = window_copy_data(&wme);
-    visit(data.borrow_mut().backing_mut());
+    unsafe {
+        window_mode_screen_payload(&window_copy_data(&wme), |data| visit(data.backing_mut()))
+    };
 }
 fn window_copy_display_screen(
     wme: refbox::Weak<window_mode_entry>,
@@ -1355,7 +1364,7 @@ fn window_copy_display_screen(
         .boxed_data_cell::<window_copy_mode_data>()
     {
         let data = data.borrow();
-        visit(&mut data.screen.borrow_mut());
+        unsafe { window_mode_screen_payload(&data.screen, |screen| visit(screen)) };
     }
 }
 fn window_copy_size_changed(mut wme: refbox::Weak<window_mode_entry>) {
@@ -7366,7 +7375,6 @@ fn window_copy_redraw_lines(
     {
         let data_cell = window_copy_data(&wme);
         let data = data_cell.borrow();
-        let _ = mode_pane_owner.default_colours();
         let mut screen = data.screen.borrow_mut();
         let mut ctx = if res {
             screen_write_start(&mut screen)
@@ -7584,7 +7592,6 @@ fn window_copy_update_cursor(
             return;
         }
         let data = data.borrow();
-        let _ = mode_pane_owner.default_colours();
         let mut screen = data.screen.borrow_mut();
         let mut ctx = screen_write_start_pane(&mode_pane_owner, &mut screen);
         let cursor_x = window_copy_cursor_offset(wme.clone(), data.cx, ctx.screen.grid().sx)
@@ -7610,7 +7617,6 @@ fn window_copy_update_cursor(
         window_copy_redraw_lines(wme.clone(), cy, 1 as u_int);
     } else {
         let data = data.borrow();
-        let _ = mode_pane_owner.default_colours();
         let mut screen = data.screen.borrow_mut();
         let mut ctx = screen_write_start_pane(&mode_pane_owner, &mut screen);
         let cursor_x = window_copy_cursor_offset(wme.clone(), data.cx, ctx.screen.grid().sx)
@@ -8075,7 +8081,6 @@ fn window_copy_copy_buffer(
         {
             let data_cell = window_copy_data(&wme);
             let data = data_cell.borrow();
-            let _ = mode_pane_owner.default_colours();
             let mut screen = data.screen.borrow_mut();
             let mut ctx = screen_write_start_pane(&mode_pane_owner, &mut screen);
             screen_write_setselection(&mut ctx, c"", &buf);
@@ -8174,7 +8179,6 @@ fn window_copy_append_selection(mut wme: refbox::Weak<window_mode_entry>) {
         {
             let data_cell = window_copy_data(&wme);
             let data = data_cell.borrow();
-            let _ = mode_pane_owner.default_colours();
             let mut screen = data.screen.borrow_mut();
             let mut ctx = screen_write_start_pane(&mode_pane_owner, &mut screen);
             screen_write_setselection(&mut ctx, c"", &buf);
@@ -9325,7 +9329,6 @@ fn window_copy_scroll_up(mut wme: refbox::Weak<window_mode_entry>, mut ny: u_int
     let styles = window_copy_line_styles(wme.clone(), true);
     {
         let data = data.borrow();
-        let _ = mode_pane_owner.default_colours();
         let mut screen = data.screen.borrow_mut();
         let mut ctx = if line_numbers || res {
             screen_write_start(&mut screen)
@@ -9424,7 +9427,6 @@ fn window_copy_scroll_down(mut wme: refbox::Weak<window_mode_entry>, mut ny: u_i
     let styles = window_copy_line_styles(wme.clone(), true);
     {
         let data = data.borrow();
-        let _ = mode_pane_owner.default_colours();
         let mut screen = data.screen.borrow_mut();
         let mut ctx = if line_numbers || res {
             screen_write_start(&mut screen)
