@@ -141,7 +141,7 @@ unsafe fn cmd_join_pane_exec(
     result
 }
 
-unsafe fn cmd_join_pane_finish(source: WindowRef, destination: &WindowRef) {
+fn cmd_join_pane_finish(source: WindowRef, destination: &WindowRef) {
     if source.pane_snapshot().is_empty() {
         server_kill_window(source, 1);
     } else {

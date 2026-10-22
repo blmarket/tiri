@@ -188,7 +188,7 @@ fn session_find_by_id_str(s: &CStr) -> Option<SessionRef> {
     }
     sessions::find_by_id(id)
 }
-unsafe fn session_create(
+fn session_create(
     prefix: Option<&CStr>,
     name: Option<&CStr>,
     cwd: &CStr,
@@ -246,7 +246,7 @@ unsafe fn session_create(
     owner
 }
 /// Consume one session owner; the final owner performs cleanup immediately.
-unsafe fn session_remove_ref(s: SessionRef, from: &CStr) {
+fn session_remove_ref(s: SessionRef, from: &CStr) {
     log_debug(format_args!(
         "release session {} ({})",
         log_bytes(s.name().as_bytes()),
@@ -262,7 +262,7 @@ fn session_free(s: &mut session) {
     drop(s.environ.take());
     drop(s.options.take());
 }
-unsafe fn session_destroy(s_owner: &SessionRef, mut notify: ::core::ffi::c_int, from: &CStr) {
+fn session_destroy(s_owner: &SessionRef, mut notify: ::core::ffi::c_int, from: &CStr) {
     log_debug(format_args!(
         "session {} destroyed ({})",
         log_bytes(s_owner.name().as_bytes()),
@@ -287,12 +287,12 @@ unsafe fn session_destroy(s_owner: &SessionRef, mut notify: ::core::ffi::c_int, 
     while !s_owner.with_winlinks(crate::window::winlinks_is_empty) {
         let wl = s_owner.with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
         events_fire_winlink(c"window-unlinked", wl.clone());
-        session_winlink_remove(s_owner, wl.clone());
+        winlink_remove(wl.clone());
     }
     session_set_cwd(&mut s_owner.borrow_mut(), None);
     session_remove_ref(owner, c"session_destroy");
 }
-unsafe fn session_lock_timer(owner: &SessionRef) {
+fn session_lock_timer(owner: &SessionRef) {
     if !owner.is_registered() || !owner.is_attached() {
         return;
     }
@@ -304,7 +304,7 @@ unsafe fn session_lock_timer(owner: &SessionRef) {
     server_lock_session(owner);
     recalculate_sizes();
 }
-unsafe fn session_update_activity(owner: &SessionRef, from: Option<SystemTime>) {
+fn session_update_activity(owner: &SessionRef, from: Option<SystemTime>) {
     let lock_timer = {
         let mut session = owner.borrow_mut();
         if let Some(from) = from {
@@ -333,7 +333,7 @@ unsafe fn session_update_activity(owner: &SessionRef, from: Option<SystemTime>) 
         );
         if timeout.as_secs() != 0 {
             let observer = Rc::downgrade(owner);
-            let timer = Timer::new(timeout, move || unsafe {
+            let timer = Timer::new(timeout, move || {
                 if let Some(owner) = observer.upgrade() {
                     session_lock_timer(&owner);
                 }
@@ -343,7 +343,7 @@ unsafe fn session_update_activity(owner: &SessionRef, from: Option<SystemTime>) 
         }
     }
 }
-unsafe fn session_adjacent(
+fn session_adjacent(
     s: Option<&SessionRef>,
     sort_crit: &sort_criteria,
     previous: bool,
@@ -362,7 +362,7 @@ unsafe fn session_adjacent(
     };
     Some(sorted[selected].clone())
 }
-unsafe fn session_attach(
+fn session_attach(
     s_owner: &SessionRef,
     window_owner: &WindowRef,
     mut idx: ::core::ffi::c_int,
@@ -379,10 +379,7 @@ unsafe fn session_attach(
     session_group_synchronize_from(s_owner);
     Ok(wl)
 }
-unsafe fn session_detach(
-    s_owner: &SessionRef,
-    mut wl: refbox::Weak<winlink>,
-) -> ::core::ffi::c_int {
+fn session_detach(s_owner: &SessionRef, mut wl: refbox::Weak<winlink>) -> ::core::ffi::c_int {
     if s_owner.with_winlinks(|links| {
         winlinks_minmax(links, RB_NEGINF) == wl && winlinks_minmax(links, RB_INF) == wl
     }) {
@@ -397,12 +394,12 @@ unsafe fn session_detach(
     wl.try_borrow_mut().expect("live winlink").flags &= !WINLINK_ALERTFLAGS;
     events_fire_winlink(c"window-unlinked", wl.clone());
     winlink_stack_remove(&mut s_owner.borrow_mut().lastw, wl.clone());
-    session_winlink_remove(s_owner, wl.clone());
+    winlink_remove(wl.clone());
     session_group_synchronize_from(s_owner);
     0 as ::core::ffi::c_int
 }
 
-unsafe fn session_is_linked(s: Option<&SessionRef>, w: &WindowRef) -> bool {
+fn session_is_linked(s: Option<&SessionRef>, w: &WindowRef) -> bool {
     let mut next = w.next_winlink(None);
     let mut n = 0;
     while next.is_alive() {
@@ -420,7 +417,7 @@ unsafe fn session_is_linked(s: Option<&SessionRef>, w: &WindowRef) -> bool {
     n != session_group_count(&group)
 }
 
-unsafe fn session_next_alert(mut wl: refbox::Weak<winlink>) -> refbox::Weak<winlink> {
+fn session_next_alert(mut wl: refbox::Weak<winlink>) -> refbox::Weak<winlink> {
     while wl.is_alive() {
         if wl.try_borrow().expect("live winlink").flags & WINLINK_ALERTFLAGS != 0 {
             break;
@@ -429,7 +426,7 @@ unsafe fn session_next_alert(mut wl: refbox::Weak<winlink>) -> refbox::Weak<winl
     }
     wl
 }
-unsafe fn session_next(s_owner: &SessionRef, mut alert: ::core::ffi::c_int) -> ::core::ffi::c_int {
+fn session_next(s_owner: &SessionRef, mut alert: ::core::ffi::c_int) -> ::core::ffi::c_int {
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     if !s_owner.current_winlink().is_alive() {
         return -(1 as ::core::ffi::c_int);
@@ -449,7 +446,7 @@ unsafe fn session_next(s_owner: &SessionRef, mut alert: ::core::ffi::c_int) -> :
     }
     session_set_current(s_owner, wl.clone())
 }
-unsafe fn session_previous_alert(mut wl: refbox::Weak<winlink>) -> refbox::Weak<winlink> {
+fn session_previous_alert(mut wl: refbox::Weak<winlink>) -> refbox::Weak<winlink> {
     while wl.is_alive() {
         if wl.try_borrow().expect("live winlink").flags & WINLINK_ALERTFLAGS != 0 {
             break;
@@ -458,10 +455,7 @@ unsafe fn session_previous_alert(mut wl: refbox::Weak<winlink>) -> refbox::Weak<
     }
     wl
 }
-unsafe fn session_previous(
-    s_owner: &SessionRef,
-    mut alert: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
+fn session_previous(s_owner: &SessionRef, mut alert: ::core::ffi::c_int) -> ::core::ffi::c_int {
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     if !s_owner.current_winlink().is_alive() {
         return -(1 as ::core::ffi::c_int);
@@ -481,12 +475,12 @@ unsafe fn session_previous(
     }
     session_set_current(s_owner, wl.clone())
 }
-unsafe fn session_select(s_owner: &SessionRef, mut idx: ::core::ffi::c_int) -> ::core::ffi::c_int {
+fn session_select(s_owner: &SessionRef, mut idx: ::core::ffi::c_int) -> ::core::ffi::c_int {
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     wl = s_owner.with_winlinks(|links| winlink_find_by_index(links, idx));
     session_set_current(s_owner, wl.clone())
 }
-unsafe fn session_last(s_owner: &SessionRef) -> ::core::ffi::c_int {
+fn session_last(s_owner: &SessionRef) -> ::core::ffi::c_int {
     let wl = s_owner.last_winlink();
     if !wl.is_alive() {
         return -(1 as ::core::ffi::c_int);
@@ -496,7 +490,7 @@ unsafe fn session_last(s_owner: &SessionRef) -> ::core::ffi::c_int {
     }
     s_owner.select_winlink(wl)
 }
-unsafe fn session_fire_window_changed(
+fn session_fire_window_changed(
     s_owner: &SessionRef,
     mut wl: refbox::Weak<winlink>,
     mut old: refbox::Weak<winlink>,
@@ -547,10 +541,7 @@ unsafe fn session_fire_window_changed(
     }
     events_fire(c"session-window-changed", ep);
 }
-unsafe fn session_set_current(
-    s_owner: &SessionRef,
-    mut wl: refbox::Weak<winlink>,
-) -> ::core::ffi::c_int {
+fn session_set_current(s_owner: &SessionRef, mut wl: refbox::Weak<winlink>) -> ::core::ffi::c_int {
     let mut old: refbox::Weak<winlink> = s_owner.current_winlink();
     if !wl.is_alive() {
         return -(1 as ::core::ffi::c_int);
@@ -582,14 +573,9 @@ unsafe fn session_set_current(
     session_fire_window_changed(s_owner, wl.clone(), (old).clone());
     0 as ::core::ffi::c_int
 }
-/// `winlink_remove` reaches back through `Session::forget_winlink`, so the
-/// index is lent from the cell pointer rather than a `borrow()` guard.
-unsafe fn session_winlink_remove(s_owner: &SessionRef, wl: refbox::Weak<winlink>) {
-    winlink_remove(&(*s_owner.as_ptr()).windows, wl);
-}
 /// Rebuild Session-owned associations. Group membership and group traversal are
 /// deliberately outside this operation. Each model loan ends before notification.
-unsafe fn session_synchronize_windows(source: &SessionRef, destination: &SessionRef) {
+fn session_synchronize_windows(source: &SessionRef, destination: &SessionRef) {
     assert!(
         !Rc::ptr_eq(source, destination),
         "synchronized sessions must be distinct"
@@ -658,11 +644,11 @@ unsafe fn session_synchronize_windows(source: &SessionRef, destination: &Session
         if !replacement.is_alive() {
             events_fire_winlink(c"window-unlinked", old.clone());
         }
-        winlink_remove(&old_windows, old);
+        winlink_remove(old);
     }
 }
 
-unsafe fn session_renumber_windows(s_owner: &SessionRef) {
+fn session_renumber_windows(s_owner: &SessionRef) {
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wl1: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wl_new: refbox::Weak<winlink> = refbox::Weak::new();
@@ -722,11 +708,11 @@ unsafe fn session_renumber_windows(s_owner: &SessionRef) {
         wl1 = winlinks_next(&wl.try_borrow().expect("live winlink"));
         1 as ::core::ffi::c_int != 0
     } {
-        winlink_remove(&old_wins, wl.clone());
+        winlink_remove(wl.clone());
         wl = wl1;
     }
 }
-unsafe fn session_theme_changed(owner: &SessionRef) {
+fn session_theme_changed(owner: &SessionRef) {
     let mut link = owner.with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
     while link.is_alive() {
         let panes = link
@@ -741,7 +727,7 @@ unsafe fn session_theme_changed(owner: &SessionRef) {
         link = winlink_next(&link);
     }
 }
-unsafe fn session_update_history(owner: &SessionRef) {
+fn session_update_history(owner: &SessionRef) {
     let limit =
         crate::options::options_get_number(&owner.borrow_options_mut(), c"history-limit") as u_int;
     let mut link = owner.with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
@@ -771,18 +757,16 @@ mod session_index_tests {
 
     #[test]
     fn current_winlink_observer_expires_when_index_removes_it() {
-        unsafe {
-            let owner = session::new();
-            let mut session = owner.borrow_mut();
-            let link = winlink_add(&session.windows, 4);
-            session.set_curw(link.clone());
-            assert_eq!(session.current_winlink(), link);
-            winlink_remove(&session.windows, link.clone());
-            assert!(!session.current_winlink().is_alive());
-            assert!(!session.curw.is_empty());
-            session.set_curw(refbox::Weak::new());
-            assert!(session.curw.is_empty());
-        }
+        let owner = session::new();
+        let mut session = owner.borrow_mut();
+        let link = winlink_add(&session.windows, 4);
+        session.set_curw(link.clone());
+        assert_eq!(session.current_winlink(), link);
+        winlink_remove(link.clone());
+        assert!(!session.current_winlink().is_alive());
+        assert!(!session.curw.is_empty());
+        session.set_curw(refbox::Weak::new());
+        assert!(session.curw.is_empty());
     }
 }
 

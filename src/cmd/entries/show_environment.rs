@@ -49,7 +49,7 @@ fn cmd_show_environment_escape(value: &CStr) -> CString {
     }
     CString::new(escaped).expect("environment value was truncated at its first NUL")
 }
-unsafe fn cmd_show_environment_print(
+fn cmd_show_environment_print(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     envent: &environ_entry,
@@ -116,7 +116,7 @@ unsafe fn cmd_show_environment_exec(
         return CmdOutcome::Error;
     }
     let env: environ = if args_has(args, 'g' as i32 as u_char) != 0 {
-        global_environ.as_deref().expect("environment").clone()
+        global_environ(Clone::clone)
     } else {
         if target.session_handle().is_none() {
             tflag = args_get(args, 't' as i32 as u_char)

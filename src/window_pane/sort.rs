@@ -6,7 +6,7 @@ use crate::shared::sort::{
 use crate::shared::window::WindowWeak;
 use std::cmp::Ordering;
 
-pub(super) unsafe fn compare(
+pub(super) fn compare(
     a: &Rc<RefCell<window_pane>>,
     b: &Rc<RefCell<window_pane>>,
     criteria: &sort_criteria,
@@ -56,36 +56,34 @@ mod tests {
 
     #[test]
     fn comparison_orders_whole_keys_title_ties_and_reverse() {
-        unsafe {
-            let a = window_pane::new();
-            let b = window_pane::new();
-            a.borrow_mut().id = 1;
-            b.borrow_mut().id = u32::MAX;
-            a.borrow_mut().base.title = CString::new("alpha").unwrap();
-            b.borrow_mut().base.title = CString::new("beta").unwrap();
-            for order in [
-                SORT_ACTIVITY,
-                SORT_CREATION,
-                SORT_SIZE,
-                SORT_INDEX,
-                SORT_NAME,
-            ] {
-                let mut criteria = sort_criteria {
-                    order,
-                    reversed: 0,
-                    order_seq: &[],
-                };
-                assert_eq!(a.compare_for_sort(&b, &criteria), Ordering::Less);
-                criteria.reversed = 1;
-                assert_eq!(a.compare_for_sort(&b, &criteria), Ordering::Greater);
-            }
-            a.borrow_mut().active_point = 1;
-            let criteria = sort_criteria {
-                order: SORT_ACTIVITY,
+        let a = window_pane::new();
+        let b = window_pane::new();
+        a.borrow_mut().id = 1;
+        b.borrow_mut().id = u32::MAX;
+        a.borrow_mut().base.title = CString::new("alpha").unwrap();
+        b.borrow_mut().base.title = CString::new("beta").unwrap();
+        for order in [
+            SORT_ACTIVITY,
+            SORT_CREATION,
+            SORT_SIZE,
+            SORT_INDEX,
+            SORT_NAME,
+        ] {
+            let mut criteria = sort_criteria {
+                order,
                 reversed: 0,
                 order_seq: &[],
             };
+            assert_eq!(a.compare_for_sort(&b, &criteria), Ordering::Less);
+            criteria.reversed = 1;
             assert_eq!(a.compare_for_sort(&b, &criteria), Ordering::Greater);
         }
+        a.borrow_mut().active_point = 1;
+        let criteria = sort_criteria {
+            order: SORT_ACTIVITY,
+            reversed: 0,
+            order_seq: &[],
+        };
+        assert_eq!(a.compare_for_sort(&b, &criteria), Ordering::Greater);
     }
 }

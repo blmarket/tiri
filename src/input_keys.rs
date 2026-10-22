@@ -470,18 +470,18 @@ pub fn input_key_build() {
         ));
     }
 }
-pub unsafe fn input_key_pane(
+pub fn input_key_pane(
     pane: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     key: key_code,
     mouse: Option<&mouse_event>,
 ) -> i32 {
     pane.write_key(key, mouse)
 }
-unsafe fn input_key_write(from: &CStr, bev: *mut bufferevent, data: &[u8]) {
+fn input_key_write(from: &CStr, bev: &mut bufferevent, data: &[u8]) {
     log_debug(format_args!("{}: {}", log_cstr(from), log_cstr_n(data)));
     bufferevent_write(bev, data);
 }
-unsafe fn input_key_extended(mut bev: *mut bufferevent, mut key: key_code) -> ::core::ffi::c_int {
+fn input_key_extended(bev: &mut bufferevent, mut key: key_code) -> ::core::ffi::c_int {
     let mut modifier: ::core::ffi::c_char = 0;
     let mut ud: utf8_data = utf8_data {
         data: [0; 32],
@@ -553,7 +553,7 @@ unsafe fn input_key_extended(mut bev: *mut bufferevent, mut key: key_code) -> ::
     input_key_write(c"input_key_extended", bev, tmp.to_bytes());
     0 as ::core::ffi::c_int
 }
-unsafe fn input_key_vt10x(mut bev: *mut bufferevent, mut key: key_code) -> ::core::ffi::c_int {
+fn input_key_vt10x(bev: &mut bufferevent, mut key: key_code) -> ::core::ffi::c_int {
     let mut ud: utf8_data = utf8_data {
         data: [0; 32],
         have: 0,
@@ -599,7 +599,7 @@ unsafe fn input_key_vt10x(mut bev: *mut bufferevent, mut key: key_code) -> ::cor
     input_key_write(c"input_key_vt10x", bev, &ud.data[..1]);
     0 as ::core::ffi::c_int
 }
-unsafe fn input_key_mode1(mut bev: *mut bufferevent, mut key: key_code) -> ::core::ffi::c_int {
+fn input_key_mode1(bev: &mut bufferevent, mut key: key_code) -> ::core::ffi::c_int {
     let mut onlykey: key_code = 0;
     log_debug(format_args!("{}: key in {:x}", "input_key_mode1", key));
     if key as ::core::ffi::c_ulonglong & (KEYC_CTRL | KEYC_META) == KEYC_META {
@@ -618,11 +618,7 @@ unsafe fn input_key_mode1(mut bev: *mut bufferevent, mut key: key_code) -> ::cor
     }
     -(1 as ::core::ffi::c_int)
 }
-pub unsafe fn input_key(
-    s: ScreenMode,
-    mut bev: *mut bufferevent,
-    mut key: key_code,
-) -> ::core::ffi::c_int {
+pub fn input_key(s: ScreenMode, bev: &mut bufferevent, mut key: key_code) -> ::core::ffi::c_int {
     let mut newkey: key_code = 0;
     let mut ud: utf8_data = utf8_data {
         data: [0; 32],

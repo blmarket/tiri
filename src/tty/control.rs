@@ -58,17 +58,18 @@ use ::libc::{
     ISIG, ISTRIP, IXOFF, IXON, OCRNL, ONLRET, TCOFLUSH,
 };
 
-pub unsafe fn tty_init(owner: &ClientRef) -> ::core::ffi::c_int {
+pub fn tty_init(owner: &ClientRef) -> ::core::ffi::c_int {
     let fd = owner.terminal_fd();
-    tty_initialize_component(owner.borrow_terminal_mut(), fd)
+    tty_initialize_component(
+        &mut *owner.borrow_terminal_mut(),
+        fd.as_ref().map(std::os::fd::AsFd::as_fd),
+    )
 }
 
-unsafe fn tty_initialize_component(terminal: &mut tty, fd: i32) -> i32 {
-    if fd < 0
-        || tiri_rt::unix::terminal_attributes(std::os::fd::BorrowedFd::borrow_raw(fd)).is_err()
-    {
+fn tty_initialize_component(terminal: &mut tty, fd: Option<std::os::fd::BorrowedFd<'_>>) -> i32 {
+    let Some(fd) = fd.filter(|&fd| tiri_rt::unix::terminal_attributes(fd).is_ok()) else {
         return -1;
-    }
+    };
     *terminal = tty::empty();
     terminal.cstyle = SCREEN_CURSOR_DEFAULT;
     terminal.ccolour = -1;
@@ -81,7 +82,7 @@ unsafe fn tty_initialize_component(terminal: &mut tty, fd: i32) -> i32 {
     terminal.r.ensure(1);
     0
 }
-pub unsafe fn tty_resize(owner: &ClientRef) {
+pub fn tty_resize(owner: &ClientRef) {
     let size = owner.query_terminal_size();
     let name = owner.name();
     {
@@ -170,7 +171,7 @@ unsafe fn tty_read_callback(owner: &ClientRef, result: std::io::Result<Vec<u8>>)
     ));
     while tty_keys_next(owner) != 0 {}
 }
-unsafe fn tty_timer_callback(owner: &ClientRef) {
+fn tty_timer_callback(owner: &ClientRef) {
     let name = owner.name();
     let discarded = owner.borrow_terminal().discarded;
     log_debug(format_args!(
@@ -202,7 +203,7 @@ unsafe fn tty_timer_callback(owner: &ClientRef) {
     })(owner);
 }
 
-unsafe fn tty_block_maybe(terminal: &ClientRef) -> bool {
+fn tty_block_maybe(terminal: &ClientRef) -> bool {
     let size = evbuffer_get_length(
         terminal
             .borrow_terminal_mut()
@@ -254,7 +255,7 @@ unsafe fn tty_block_maybe(terminal: &ClientRef) -> bool {
     true
 }
 
-unsafe fn tty_write_callback(owner: &ClientRef, result: std::io::Result<usize>) {
+fn tty_write_callback(owner: &ClientRef, result: std::io::Result<usize>) {
     (|terminal: &ClientRef| {
         let size = evbuffer_get_length(
             terminal
@@ -304,9 +305,9 @@ unsafe fn tty_write_callback(owner: &ClientRef, result: std::io::Result<usize>) 
 }
 
 fn tty_start_read(terminal: &mut tty, observer: ClientWeak) {
-    let fd = terminal.io_fd.expect("open TTY descriptor");
+    let fd = std::os::fd::AsFd::as_fd(terminal.io_fd.as_ref().expect("open TTY descriptor"));
     crate::reactor::task_start(&mut terminal.read_task, move || {
-        let source = reactor::io(unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) })?;
+        let source = reactor::io(fd)?;
         Ok(async move {
             loop {
                 let mut bytes = vec![0; 65536];
@@ -330,24 +331,22 @@ pub(super) fn tty_start_write(terminal: &mut tty, observer: ClientWeak) {
     if terminal.write_task.is_some() {
         return;
     }
-    let fd = terminal.io_fd.expect("open TTY descriptor");
+    let fd = std::os::fd::AsFd::as_fd(terminal.io_fd.as_ref().expect("open TTY descriptor"));
     crate::reactor::task_start(&mut terminal.write_task, move || {
-        let source = reactor::io(unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) })?;
+        let source = reactor::io(fd)?;
         Ok(async move {
             let bytes = {
                 let Some(owner) = observer.upgrade() else {
                     return;
                 };
-                let terminal = unsafe { owner.borrow_terminal() };
+                let terminal = owner.borrow_terminal();
                 reactor::buffer_prefix(terminal.out.as_deref().expect("open TTY buffer"), 65536)
             };
             let buffers = [std::io::IoSlice::new(&bytes)];
             let result = source.write(&buffers, None).await;
             if let Some(owner) = observer.upgrade() {
-                unsafe {
-                    drop(owner.borrow_terminal_mut().write_task.take());
-                    tty_write_callback(&owner, result);
-                }
+                drop(owner.borrow_terminal_mut().write_task.take());
+                tty_write_callback(&owner, result);
             }
         })
     })
@@ -366,7 +365,7 @@ pub(super) fn tty_client_timer_callback(
     }
 }
 
-pub unsafe fn tty_open(owner: &ClientRef) -> Result<(), std::ffi::CString> {
+pub fn tty_open(owner: &ClientRef) -> Result<(), std::ffi::CString> {
     let (name, caps) = owner.terminal_description_source();
     let name = name.expect("terminal name is set during identify");
     let term = match tty_term_create(owner, &name, &caps) {
@@ -383,7 +382,7 @@ pub unsafe fn tty_open(owner: &ClientRef) -> Result<(), std::ffi::CString> {
         terminal_set!(terminal, flags, |=, TTY_OPENED);
         terminal_set!(terminal, flags, &=, !(TTY_NOCURSOR | TTY_FREEZE | TTY_BLOCK | TTY_TIMER));
         let fd = terminal.terminal_fd();
-        terminal_set!(terminal, io_fd, =, Some(fd));
+        terminal_set!(terminal, io_fd, =, fd);
         terminal_set!(terminal, in_0, =, Some(Box::new(TerminalInput::default())));
         terminal_set!(terminal, out, =, Some(evbuffer_new()));
     };
@@ -391,7 +390,7 @@ pub unsafe fn tty_open(owner: &ClientRef) -> Result<(), std::ffi::CString> {
     tty_keys_build(&mut *owner.borrow_terminal_mut());
     Ok(())
 }
-unsafe fn tty_start_timer_callback(owner: &ClientRef) {
+fn tty_start_timer_callback(owner: &ClientRef) {
     let name = owner.name();
     log_debug(format_args!(
         "{}: start timer fired",
@@ -406,7 +405,7 @@ unsafe fn tty_start_timer_callback(owner: &ClientRef) {
     terminal.flags |= TTY_ALL_REQUEST_FLAGS;
     terminal.flags &= !(TTY_WAITBG | TTY_WAITFG);
 }
-unsafe fn tty_start_start_timer(tty: &ClientRef) {
+fn tty_start_start_timer(tty: &ClientRef) {
     let tv = Duration::from_secs(TTY_QUERY_TIMEOUT as u64);
     log_debug(format_args!(
         "{}: start timer started",
@@ -418,15 +417,18 @@ unsafe fn tty_start_start_timer(tty: &ClientRef) {
             .expect("arm timer"),
     );
 }
-pub unsafe fn tty_start_tty(owner: &ClientRef) {
+pub fn tty_start_tty(owner: &ClientRef) {
     {
         let tty = owner;
 
         let fd = tty.terminal_fd();
+        let fd = fd.as_ref().map(std::os::fd::AsFd::as_fd);
 
         let mut tio: termios = unsafe { ::core::mem::zeroed() };
         let mut i: u_int = 0;
-        setblocking(fd, 0 as ::core::ffi::c_int);
+        if let Some(fd) = fd {
+            setblocking(fd, 0 as ::core::ffi::c_int);
+        }
         tty_start_read(&mut *tty.borrow_terminal_mut(), std::rc::Rc::downgrade(tty));
         tio = terminal_value!(tty, tio).0;
         tio.c_iflag &= !(IXON | IXOFF | ICRNL | INLCR | IGNCR | IMAXBEL | ISTRIP) as tcflag_t;
@@ -437,9 +439,10 @@ pub unsafe fn tty_start_tty(owner: &ClientRef) {
                 as tcflag_t;
         tio.c_cc[VMIN] = 1 as cc_t;
         tio.c_cc[VTIME] = 0 as cc_t;
-        if crate::shared::terminal::set_attributes(fd, TCSANOW, &tio).is_ok() {
-            let _ =
-                tiri_rt::unix::discard_terminal(std::os::fd::BorrowedFd::borrow_raw(fd), TCOFLUSH);
+        if let Some(fd) = fd {
+            if crate::shared::terminal::set_attributes(fd, TCSANOW, &tio).is_ok() {
+                let _ = tiri_rt::unix::discard_terminal(fd, TCOFLUSH);
+            }
         }
         if OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"clear-on-attach"))
             != 0
@@ -459,13 +462,13 @@ pub unsafe fn tty_start_tty(owner: &ClientRef) {
                 0 as ::core::ffi::c_int,
                 terminal_value!(tty, sy).wrapping_sub(1 as u_int) as ::core::ffi::c_int,
             );
-            if tty_term_has(terminal_term(tty), TTYC_INDN) != 0 {
+            if tty_term_has(&terminal_term(tty), TTYC_INDN) != 0 {
                 tty_putcode_i(
                     tty,
                     TTYC_INDN,
                     terminal_value!(tty, sy).wrapping_add(1 as u_int) as ::core::ffi::c_int,
                 );
-            } else if tty_term_has(terminal_term(tty), TTYC_IND) != 0 {
+            } else if tty_term_has(&terminal_term(tty), TTYC_IND) != 0 {
                 i = 0 as u_int;
                 while i < terminal_value!(tty, sy).wrapping_add(1 as u_int) {
                     tty_putcode(tty, TTYC_IND);
@@ -478,7 +481,7 @@ pub unsafe fn tty_start_tty(owner: &ClientRef) {
         tty_putcode(tty, TTYC_SMKX);
         if {
             let utf8 = tty.flags() & CLIENT_UTF8 as u64 != 0;
-            tty_acs_needed(Some(tty.borrow_terminal()), utf8)
+            tty_acs_needed(Some(&*tty.borrow_terminal()), utf8)
         } != 0
         {
             log_debug(format_args!(
@@ -493,11 +496,11 @@ pub unsafe fn tty_start_tty(owner: &ClientRef) {
             ));
         }
         tty_putcode(tty, TTYC_CNORM);
-        if tty_term_has(terminal_term(tty), TTYC_KMOUS) != 0 {
+        if tty_term_has(&terminal_term(tty), TTYC_KMOUS) != 0 {
             tty_puts(tty, c"\x1B[?1000l\x1B[?1002l\x1B[?1003l");
             tty_puts(tty, c"\x1B[?1006l\x1B[?1005l");
         }
-        if tty_term_has(terminal_term(tty), TTYC_ENBP) != 0 {
+        if tty_term_has(&terminal_term(tty), TTYC_ENBP) != 0 {
             tty_putcode(tty, TTYC_ENBP);
         }
         if terminal_term(tty).flags & TERM_VT100LIKE != 0 {
@@ -512,7 +515,7 @@ pub unsafe fn tty_start_tty(owner: &ClientRef) {
     };
     owner.reset_mouse_drag();
 }
-pub unsafe fn tty_send_requests(tty: &ClientRef) {
+pub fn tty_send_requests(tty: &ClientRef) {
     if !terminal_value!(tty, flags) & TTY_STARTED != 0 {
         return;
     }
@@ -536,7 +539,7 @@ pub unsafe fn tty_send_requests(tty: &ClientRef) {
     }
     terminal_set!(tty, last_requests, =, crate::shared::time::unix_seconds(std::time::SystemTime::now()));
 }
-pub unsafe fn tty_repeat_requests(tty: &ClientRef, mut force: ::core::ffi::c_int) {
+pub fn tty_repeat_requests(tty: &ClientRef, mut force: ::core::ffi::c_int) {
     let mut t: time_t = crate::shared::time::unix_seconds(std::time::SystemTime::now());
     let mut n: u_int = (t - terminal_value!(tty, last_requests)) as u_int;
     if !terminal_value!(tty, flags) & TTY_STARTED != 0 {
@@ -563,7 +566,7 @@ pub unsafe fn tty_repeat_requests(tty: &ClientRef, mut force: ::core::ffi::c_int
     }
     tty_start_start_timer(tty);
 }
-pub unsafe fn tty_stop_tty(owner: &ClientRef) {
+pub fn tty_stop_tty(owner: &ClientRef) {
     (|tty: &ClientRef| {
         let fd = tty.terminal_fd();
 
@@ -578,6 +581,9 @@ pub unsafe fn tty_stop_tty(owner: &ClientRef) {
         terminal_set!(tty, flags, &=, !TTY_BLOCK);
         drop(tty.borrow_terminal_mut().read_task.take());
         drop(tty.borrow_terminal_mut().write_task.take());
+        let Some(fd) = fd.as_ref().map(std::os::fd::AsFd::as_fd) else {
+            return;
+        };
         let Ok(ws) = crate::shared::terminal::read_size(fd) else {
             return;
         };
@@ -588,7 +594,7 @@ pub unsafe fn tty_stop_tty(owner: &ClientRef) {
         tty_raw(
             fd,
             &tty_term_string_ii(
-                terminal_term(tty),
+                &terminal_term(tty),
                 TTYC_CSR,
                 0 as ::core::ffi::c_int,
                 ws.ws_row as ::core::ffi::c_int - 1 as ::core::ffi::c_int,
@@ -596,53 +602,53 @@ pub unsafe fn tty_stop_tty(owner: &ClientRef) {
         );
         if {
             let utf8 = tty.flags() & CLIENT_UTF8 as u64 != 0;
-            tty_acs_needed(Some(tty.borrow_terminal()), utf8)
+            tty_acs_needed(Some(&*tty.borrow_terminal()), utf8)
         } != 0
         {
-            tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_RMACS));
+            tty_raw(fd, tty_term_string(&terminal_term(tty), TTYC_RMACS));
         }
-        tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_SGR0));
-        tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_RMKX));
+        tty_raw(fd, tty_term_string(&terminal_term(tty), TTYC_SGR0));
+        tty_raw(fd, tty_term_string(&terminal_term(tty), TTYC_RMKX));
         if OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"clear-on-attach"))
             != 0
         {
-            tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_CLEAR));
+            tty_raw(fd, tty_term_string(&terminal_term(tty), TTYC_CLEAR));
         }
         if terminal_value!(tty, cstyle) as ::core::ffi::c_uint
             != SCREEN_CURSOR_DEFAULT as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            if tty_term_has(terminal_term(tty), TTYC_SE) != 0 {
-                tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_SE));
-            } else if tty_term_has(terminal_term(tty), TTYC_SS) != 0 {
+            if tty_term_has(&terminal_term(tty), TTYC_SE) != 0 {
+                tty_raw(fd, tty_term_string(&terminal_term(tty), TTYC_SE));
+            } else if tty_term_has(&terminal_term(tty), TTYC_SS) != 0 {
                 tty_raw(
                     fd,
-                    &tty_term_string_i(terminal_term(tty), TTYC_SS, 0 as ::core::ffi::c_int),
+                    &tty_term_string_i(&terminal_term(tty), TTYC_SS, 0 as ::core::ffi::c_int),
                 );
             }
         }
         if terminal_value!(tty, ccolour) != -(1 as ::core::ffi::c_int) {
-            tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_CR));
+            tty_raw(fd, tty_term_string(&terminal_term(tty), TTYC_CR));
         }
-        tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_CNORM));
-        if tty_term_has(terminal_term(tty), TTYC_KMOUS) != 0 {
+        tty_raw(fd, tty_term_string(&terminal_term(tty), TTYC_CNORM));
+        if tty_term_has(&terminal_term(tty), TTYC_KMOUS) != 0 {
             tty_raw(fd, c"\x1B[?1000l\x1B[?1002l\x1B[?1003l");
             tty_raw(fd, c"\x1B[?1006l\x1B[?1005l");
         }
-        if tty_term_has(terminal_term(tty), TTYC_DSBP) != 0 {
-            tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_DSBP));
+        if tty_term_has(&terminal_term(tty), TTYC_DSBP) != 0 {
+            tty_raw(fd, tty_term_string(&terminal_term(tty), TTYC_DSBP));
         }
-        tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_DSESC));
-        tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_DSFCS));
-        tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_DSEKS));
+        tty_raw(fd, tty_term_string(&terminal_term(tty), TTYC_DSESC));
+        tty_raw(fd, tty_term_string(&terminal_term(tty), TTYC_DSFCS));
+        tty_raw(fd, tty_term_string(&terminal_term(tty), TTYC_DSEKS));
         if terminal_term(tty).flags & TERM_DECSLRM != 0 {
-            tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_DSMG));
+            tty_raw(fd, tty_term_string(&terminal_term(tty), TTYC_DSMG));
         }
         if OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"clear-on-attach"))
             != 0
         {
-            tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_RMCUP));
+            tty_raw(fd, tty_term_string(&terminal_term(tty), TTYC_RMCUP));
         } else {
-            tty_raw(fd, tty_term_string(terminal_term(tty), TTYC_CLEAR));
+            tty_raw(fd, tty_term_string(&terminal_term(tty), TTYC_CLEAR));
         }
         if terminal_term(tty).flags & TERM_VT100LIKE != 0 {
             tty_raw(fd, c"\x1B[?2031l");
@@ -650,7 +656,7 @@ pub unsafe fn tty_stop_tty(owner: &ClientRef) {
         setblocking(fd, 1 as ::core::ffi::c_int);
     })(owner);
 }
-pub unsafe fn tty_close(owner: &ClientRef) {
+pub fn tty_close(owner: &ClientRef) {
     {
         let mut terminal = owner.borrow_terminal_mut();
         drop(terminal.key_timer.take());
@@ -675,7 +681,7 @@ pub unsafe fn tty_close(owner: &ClientRef) {
     tty_keys_free(&mut *terminal);
     terminal.flags &= !TTY_OPENED;
 }
-pub(super) unsafe fn tty_update_features(owner: &ClientRef) {
+pub(super) fn tty_update_features(owner: &ClientRef) {
     let features = owner.terminal_feature_mask();
     let applied = {
         let mut terminal = owner.borrow_terminal_mut();
@@ -703,39 +709,38 @@ pub(super) unsafe fn tty_update_features(owner: &ClientRef) {
         }
         if OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"extended-keys")) != 0
         {
-            tty_puts(tty, tty_term_string(terminal_term(tty), TTYC_ENEKS));
+            tty_putcode(tty, TTYC_ENEKS);
         }
         if OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"focus-events")) != 0
         {
-            tty_puts(tty, tty_term_string(terminal_term(tty), TTYC_ENFCS));
+            tty_putcode(tty, TTYC_ENFCS);
         }
-        tty_puts(tty, tty_term_string(terminal_term(tty), TTYC_ENESC));
+        tty_putcode(tty, TTYC_ENESC);
     };
     server_redraw_client(owner);
     tty_invalidate(owner);
 }
 /// Stop the terminal and clear it before an external lock command runs.
-pub unsafe fn tty_lock(owner: &ClientRef) {
+pub fn tty_lock(owner: &ClientRef) {
     tty_stop_tty(owner);
-    let fd = owner.terminal_fd();
+    let Some(fd) = owner.terminal_fd() else {
+        return;
+    };
     for code in [TTYC_SMCUP, TTYC_CLEAR, TTYC_E3] {
-        let output = tty_term_string(terminal_term(owner), code).to_owned();
-        tty_raw(fd, &output);
+        let output = tty_term_string(&terminal_term(owner), code).to_owned();
+        tty_raw(std::os::fd::AsFd::as_fd(&fd), &output);
     }
 }
-pub unsafe fn tty_bell(owner: &ClientRef) {
+pub fn tty_bell(owner: &ClientRef) {
     tty_putcode(owner, TTYC_BEL);
 }
-unsafe fn tty_raw(fd: i32, text: &CStr) {
+fn tty_raw(fd: std::os::fd::BorrowedFd<'_>, text: &CStr) {
     use std::future::{poll_fn, Future};
     use std::pin::pin;
     use std::task::Poll;
     use tiri_rt::Runtime as _;
-    if fd < 0 {
-        return;
-    }
     let bytes = text.to_bytes();
-    let borrowed = std::os::fd::BorrowedFd::borrow_raw(fd);
+    let borrowed = fd;
     let Ok(was_nonblocking) = tiri_rt::unix::set_nonblocking(borrowed, true) else {
         return;
     };
@@ -778,12 +783,12 @@ unsafe fn tty_raw(fd: i32, text: &CStr) {
 
 /// The part of the terminal that shows `window`: the window's size, cut to the
 /// terminal. A larger terminal shows the outside fill beyond it, as tmux does.
-unsafe fn tty_window_frame(owner: &ClientRef, window: &WindowRef) -> (u32, u32) {
+fn tty_window_frame(owner: &ClientRef, window: &WindowRef) -> (u32, u32) {
     let (wx, wy) = window.size();
     let (tx, ty) = owner.terminal_size();
     (tx.min(wx), ty.wrapping_sub(status_line_size(owner)).min(wy))
 }
-pub unsafe fn tty_window_bigger(owner: &ClientRef) -> ::core::ffi::c_int {
+pub fn tty_window_bigger(owner: &ClientRef) -> ::core::ffi::c_int {
     let session = owner.attached_session().upgrade().expect("live session");
     let link = session.current_winlink();
     let window = winlink_window(&link).expect("current window");
@@ -835,7 +840,7 @@ fn tty_follow_cell(
     }
     offset.clamp(first, final_offset)
 }
-unsafe fn tty_window_offset1(owner: &ClientRef) -> tty_window_view {
+fn tty_window_offset1(owner: &ClientRef) -> tty_window_view {
     let session = owner.attached_session().upgrade().expect("live session");
     let link = session.current_winlink();
     let window = winlink_window(&link).expect("current window");
@@ -862,7 +867,7 @@ unsafe fn tty_window_offset1(owner: &ClientRef) -> tty_window_view {
         return view;
     }
     owner.reset_pan(None);
-    let previous = tty_window_offset(owner.borrow_terminal());
+    let previous = tty_window_offset(&*owner.borrow_terminal());
     let cells = window.pane_cells();
     let strip = cells
         .iter()
@@ -901,7 +906,7 @@ unsafe fn tty_window_offset1(owner: &ClientRef) -> tty_window_view {
     view.bigger = view.ox != 0 || view.oy != 0 || strip > view.sx || sy > view.sy;
     view
 }
-pub unsafe fn tty_update_window_offset(w_owner: &WindowRef) {
+pub fn tty_update_window_offset(w_owner: &WindowRef) {
     let mut c: Option<ClientRef> = None;
     let mut registry_c_owner = ClientRegistry::first();
     c = registry_c_owner.clone();
@@ -936,7 +941,7 @@ pub unsafe fn tty_update_window_offset(w_owner: &WindowRef) {
         c = registry_c_owner.clone();
     }
 }
-pub unsafe fn tty_update_client_offset(owner: &ClientRef) {
+pub fn tty_update_client_offset(owner: &ClientRef) {
     if owner.flags() & CLIENT_TERMINAL as u64 == 0 {
         return;
     }
@@ -944,7 +949,7 @@ pub unsafe fn tty_update_client_offset(owner: &ClientRef) {
     let old = {
         let mut terminal = owner.borrow_terminal_mut();
         terminal.oflag = view.bigger as i32;
-        tty_window_offset(terminal)
+        tty_window_offset(&*terminal)
     };
     if view.ox == old.ox && view.oy == old.oy && view.sx == old.sx && view.sy == old.sy {
         return;
@@ -988,7 +993,7 @@ pub(super) fn tty_fake_bce(tty: &tty, gc: &grid_cell, mut bg: u_int) -> ::core::
     }
     0 as ::core::ffi::c_int
 }
-unsafe fn tty_redraw_region(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
+fn tty_redraw_region(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
     let name = owner.name();
     let mut i: u_int = 0;
     if tty_large_region(ctx) != 0 || ctx.flags & TTY_CTX_PANE_OBSCURED != 0 {
@@ -1072,7 +1077,7 @@ fn tty_clamp_line(ctx: &tty_ctx, px: u_int, py: u_int, nx: u_int) -> Option<tty_
     }
     Some(tty_clamped_line { skip, x, y, width })
 }
-unsafe fn tty_clear_line(
+fn tty_clear_line(
     owner: &ClientRef,
     defaults: &grid_cell,
     py: u_int,
@@ -1092,20 +1097,21 @@ unsafe fn tty_clear_line(
         return;
     }
     let complete = (|tty: &ClientRef| {
-        if !tty.clips_terminal_output() && tty_fake_bce(tty.borrow_terminal(), defaults, bg) == 0 {
+        if !tty.clips_terminal_output() && tty_fake_bce(&*tty.borrow_terminal(), defaults, bg) == 0
+        {
             if px.wrapping_add(nx) >= terminal_value!(tty, sx)
-                && tty_term_has(terminal_term(tty), TTYC_EL) != 0
+                && tty_term_has(&terminal_term(tty), TTYC_EL) != 0
             {
                 tty_cursor(tty, px, py);
                 tty_putcode(tty, TTYC_EL);
                 return true;
             }
-            if px == 0 as u_int && tty_term_has(terminal_term(tty), TTYC_EL1) != 0 {
+            if px == 0 as u_int && tty_term_has(&terminal_term(tty), TTYC_EL1) != 0 {
                 tty_cursor(tty, px.wrapping_add(nx).wrapping_sub(1 as u_int), py);
                 tty_putcode(tty, TTYC_EL1);
                 return true;
             }
-            if tty_term_has(terminal_term(tty), TTYC_ECH) != 0 {
+            if tty_term_has(&terminal_term(tty), TTYC_ECH) != 0 {
                 tty_cursor(tty, px, py);
                 tty_putcode_i(tty, TTYC_ECH, nx as ::core::ffi::c_int);
                 return true;
@@ -1129,7 +1135,7 @@ unsafe fn tty_clear_line(
         }
     };
 }
-unsafe fn tty_clear_pane_line(
+fn tty_clear_pane_line(
     owner: &ClientRef,
     ctx: &tty_ctx,
     py: u_int,
@@ -1223,7 +1229,7 @@ fn tty_clamp_area(
         height,
     })
 }
-unsafe fn tty_clear_area(
+fn tty_clear_area(
     owner: &ClientRef,
     ctx: &tty_ctx,
     py: u_int,
@@ -1246,11 +1252,12 @@ unsafe fn tty_clear_area(
     }
     let defaults = &ctx.style_ctx.defaults;
     let complete = (|tty: &ClientRef| {
-        if !tty.clips_terminal_output() && tty_fake_bce(tty.borrow_terminal(), defaults, bg) == 0 {
+        if !tty.clips_terminal_output() && tty_fake_bce(&*tty.borrow_terminal(), defaults, bg) == 0
+        {
             if px == 0 as u_int
                 && px.wrapping_add(nx) >= terminal_value!(tty, sx)
                 && py.wrapping_add(ny) >= terminal_value!(tty, sy)
-                && tty_term_has(terminal_term(tty), TTYC_ED) != 0
+                && tty_term_has(&terminal_term(tty), TTYC_ED) != 0
             {
                 tty_cursor(tty, 0 as u_int, py);
                 tty_putcode(tty, TTYC_ED);
@@ -1275,8 +1282,8 @@ unsafe fn tty_clear_area(
             if px == 0 as u_int
                 && px.wrapping_add(nx) >= terminal_value!(tty, sx)
                 && ny > 2 as u_int
-                && tty_term_has(terminal_term(tty), TTYC_CSR) != 0
-                && tty_term_has(terminal_term(tty), TTYC_INDN) != 0
+                && tty_term_has(&terminal_term(tty), TTYC_CSR) != 0
+                && tty_term_has(&terminal_term(tty), TTYC_INDN) != 0
             {
                 tty_region(tty, py, py.wrapping_add(ny).wrapping_sub(1 as u_int));
                 tty_margin_off(tty);
@@ -1285,9 +1292,9 @@ unsafe fn tty_clear_area(
             }
             if nx > 2 as u_int
                 && ny > 2 as u_int
-                && tty_term_has(terminal_term(tty), TTYC_CSR) != 0
+                && tty_term_has(&terminal_term(tty), TTYC_CSR) != 0
                 && terminal_term(tty).flags & TERM_DECSLRM != 0
-                && tty_term_has(terminal_term(tty), TTYC_INDN) != 0
+                && tty_term_has(&terminal_term(tty), TTYC_INDN) != 0
             {
                 tty_region(tty, py, py.wrapping_add(ny).wrapping_sub(1 as u_int));
                 tty_margin(tty, px, px.wrapping_add(nx).wrapping_sub(1 as u_int));
@@ -1307,7 +1314,7 @@ unsafe fn tty_clear_area(
         yy = yy.wrapping_add(1);
     }
 }
-unsafe fn tty_clear_pane_area(
+fn tty_clear_pane_area(
     owner: &ClientRef,
     ctx: &tty_ctx,
     mut py: u_int,
@@ -1320,7 +1327,7 @@ unsafe fn tty_clear_pane_area(
         tty_clear_area(owner, ctx, area.y, area.height, area.x, area.width, bg);
     }
 }
-unsafe fn tty_draw_pane(owner: &ClientRef, ctx: &tty_ctx, s: &screen, py: u_int) {
+fn tty_draw_pane(owner: &ClientRef, ctx: &tty_ctx, s: &screen, py: u_int) {
     let name = owner.name();
     log_debug(format_args!(
         "tty_draw_pane: {} {}",
@@ -1360,7 +1367,7 @@ unsafe fn tty_draw_pane(owner: &ClientRef, ctx: &tty_ctx, s: &screen, py: u_int)
         }
     };
 }
-unsafe fn tty_cmd_redrawline(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
+fn tty_cmd_redrawline(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
     if let Some(line) = tty_clamp_line(ctx, ctx.ocx, ctx.ocy, ctx.data.count()) {
         let ranges = tty_check_overlay_range(owner, line.x, line.y, line.width);
         {
@@ -1439,7 +1446,7 @@ pub fn tty_check_overlay_range(
     }
 }
 
-unsafe fn tty_client_ready(ctx: &tty_ctx, owner: &ClientRef) -> bool {
+fn tty_client_ready(ctx: &tty_ctx, owner: &ClientRef) -> bool {
     if owner.attached_session().upgrade().is_none() {
         return false;
     }
@@ -1475,7 +1482,7 @@ pub enum TtyCmd<'a> {
     Cells(&'a screen, &'a grid_cell),
 }
 
-unsafe fn tty_cmd(owner: &ClientRef, ctx: &tty_ctx, cmd: TtyCmd<'_>) {
+fn tty_cmd(owner: &ClientRef, ctx: &tty_ctx, cmd: TtyCmd<'_>) {
     match cmd {
         TtyCmd::SyncStart => tty_cmd_syncstart(owner, ctx),
         TtyCmd::AlignmentTest => tty_cmd_alignmenttest(owner, ctx),
@@ -1498,7 +1505,7 @@ unsafe fn tty_cmd(owner: &ClientRef, ctx: &tty_ctx, cmd: TtyCmd<'_>) {
     }
 }
 
-pub unsafe fn tty_write(cmd: TtyCmd<'_>, ctx: &mut tty_ctx) {
+pub fn tty_write(cmd: TtyCmd<'_>, ctx: &mut tty_ctx) {
     let Some(mut set_client_cb) = ctx.set_client_cb.take() else {
         return;
     };
@@ -1520,13 +1527,13 @@ pub unsafe fn tty_write(cmd: TtyCmd<'_>, ctx: &mut tty_ctx) {
     }
 }
 
-unsafe fn tty_cmd_insertcharacter(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
+fn tty_cmd_insertcharacter(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
     let complete = (|tty: &ClientRef| {
         if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
             || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= terminal_value!(tty, sx))
-            || tty_fake_bce(tty.borrow_terminal(), &ctx.style_ctx.defaults, ctx.bg) != 0
-            || tty_term_has(terminal_term(tty), TTYC_ICH) == 0
-                && tty_term_has(terminal_term(tty), TTYC_ICH1) == 0
+            || tty_fake_bce(&*tty.borrow_terminal(), &ctx.style_ctx.defaults, ctx.bg) != 0
+            || tty_term_has(&terminal_term(tty), TTYC_ICH) == 0
+                && tty_term_has(&terminal_term(tty), TTYC_ICH1) == 0
             || tty.clips_terminal_output()
         {
             return false;
@@ -1541,13 +1548,13 @@ unsafe fn tty_cmd_insertcharacter(owner: &ClientRef, ctx: &tty_ctx, s: &screen) 
         tty_draw_pane(owner, ctx, s, ctx.ocy);
     }
 }
-unsafe fn tty_cmd_deletecharacter(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
+fn tty_cmd_deletecharacter(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
     let complete = (|tty: &ClientRef| {
         if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
             || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= terminal_value!(tty, sx))
-            || tty_fake_bce(tty.borrow_terminal(), &ctx.style_ctx.defaults, ctx.bg) != 0
-            || tty_term_has(terminal_term(tty), TTYC_DCH) == 0
-                && tty_term_has(terminal_term(tty), TTYC_DCH1) == 0
+            || tty_fake_bce(&*tty.borrow_terminal(), &ctx.style_ctx.defaults, ctx.bg) != 0
+            || tty_term_has(&terminal_term(tty), TTYC_DCH) == 0
+                && tty_term_has(&terminal_term(tty), TTYC_DCH1) == 0
             || tty.clips_terminal_output()
         {
             return false;
@@ -1562,7 +1569,7 @@ unsafe fn tty_cmd_deletecharacter(owner: &ClientRef, ctx: &tty_ctx, s: &screen) 
         tty_draw_pane(owner, ctx, s, ctx.ocy);
     }
 }
-unsafe fn tty_cmd_clearcharacter(owner: &ClientRef, ctx: &tty_ctx) {
+fn tty_cmd_clearcharacter(owner: &ClientRef, ctx: &tty_ctx) {
     {
         let tty = owner;
 
@@ -1570,13 +1577,13 @@ unsafe fn tty_cmd_clearcharacter(owner: &ClientRef, ctx: &tty_ctx) {
     };
     tty_clear_pane_line(owner, ctx, ctx.ocy, ctx.ocx, ctx.data.count(), ctx.bg);
 }
-unsafe fn tty_cmd_insertline(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
+fn tty_cmd_insertline(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
     let complete = (|tty: &ClientRef| {
         if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
             || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= terminal_value!(tty, sx))
-            || tty_fake_bce(tty.borrow_terminal(), &ctx.style_ctx.defaults, ctx.bg) != 0
-            || tty_term_has(terminal_term(tty), TTYC_CSR) == 0
-            || tty_term_has(terminal_term(tty), TTYC_IL1) == 0
+            || tty_fake_bce(&*tty.borrow_terminal(), &ctx.style_ctx.defaults, ctx.bg) != 0
+            || tty_term_has(&terminal_term(tty), TTYC_CSR) == 0
+            || tty_term_has(&terminal_term(tty), TTYC_IL1) == 0
             || ctx.sx == 1 as u_int
             || ctx.sy == 1 as u_int
             || tty.clips_terminal_output()
@@ -1597,13 +1604,13 @@ unsafe fn tty_cmd_insertline(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
         tty_redraw_region(owner, ctx, s);
     }
 }
-unsafe fn tty_cmd_deleteline(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
+fn tty_cmd_deleteline(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
     let complete = (|tty: &ClientRef| {
         if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
             || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= terminal_value!(tty, sx))
-            || tty_fake_bce(tty.borrow_terminal(), &ctx.style_ctx.defaults, ctx.bg) != 0
-            || tty_term_has(terminal_term(tty), TTYC_CSR) == 0
-            || tty_term_has(terminal_term(tty), TTYC_DL1) == 0
+            || tty_fake_bce(&*tty.borrow_terminal(), &ctx.style_ctx.defaults, ctx.bg) != 0
+            || tty_term_has(&terminal_term(tty), TTYC_CSR) == 0
+            || tty_term_has(&terminal_term(tty), TTYC_DL1) == 0
             || ctx.sx == 1 as u_int
             || ctx.sy == 1 as u_int
             || tty.clips_terminal_output()
@@ -1624,7 +1631,7 @@ unsafe fn tty_cmd_deleteline(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
         tty_redraw_region(owner, ctx, s);
     }
 }
-unsafe fn tty_cmd_reverseindex(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
+fn tty_cmd_reverseindex(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
     let complete = (|tty: &ClientRef| {
         if ctx.ocy != ctx.orupper {
             return true;
@@ -1632,10 +1639,10 @@ unsafe fn tty_cmd_reverseindex(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
         if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
             || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= terminal_value!(tty, sx))
                 && terminal_term(tty).flags & TERM_DECSLRM == 0
-            || tty_fake_bce(tty.borrow_terminal(), &ctx.style_ctx.defaults, 8 as u_int) != 0
-            || tty_term_has(terminal_term(tty), TTYC_CSR) == 0
-            || tty_term_has(terminal_term(tty), TTYC_RI) == 0
-                && tty_term_has(terminal_term(tty), TTYC_RIN) == 0
+            || tty_fake_bce(&*tty.borrow_terminal(), &ctx.style_ctx.defaults, 8 as u_int) != 0
+            || tty_term_has(&terminal_term(tty), TTYC_CSR) == 0
+            || tty_term_has(&terminal_term(tty), TTYC_RI) == 0
+                && tty_term_has(&terminal_term(tty), TTYC_RIN) == 0
             || ctx.sx == 1 as u_int
             || ctx.sy == 1 as u_int
             || tty.clips_terminal_output()
@@ -1646,7 +1653,7 @@ unsafe fn tty_cmd_reverseindex(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
         tty_region_pane(tty, ctx, ctx.orupper, ctx.orlower);
         tty_margin_pane(tty, ctx);
         tty_cursor_pane(tty, ctx, ctx.ocx, ctx.orupper);
-        if tty_term_has(terminal_term(tty), TTYC_RI) != 0 {
+        if tty_term_has(&terminal_term(tty), TTYC_RI) != 0 {
             tty_putcode(tty, TTYC_RI);
         } else {
             tty_putcode_i(tty, TTYC_RIN, 1 as ::core::ffi::c_int);
@@ -1658,14 +1665,14 @@ unsafe fn tty_cmd_reverseindex(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
         tty_redraw_region(owner, ctx, s);
     }
 }
-unsafe fn tty_cmd_scrollup(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
+fn tty_cmd_scrollup(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
     let complete = (|tty: &ClientRef| {
         let mut i: u_int = 0;
         if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
             || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= terminal_value!(tty, sx))
                 && terminal_term(tty).flags & TERM_DECSLRM == 0
-            || tty_fake_bce(tty.borrow_terminal(), &ctx.style_ctx.defaults, 8 as u_int) != 0
-            || tty_term_has(terminal_term(tty), TTYC_CSR) == 0
+            || tty_fake_bce(&*tty.borrow_terminal(), &ctx.style_ctx.defaults, 8 as u_int) != 0
+            || tty_term_has(&terminal_term(tty), TTYC_CSR) == 0
             || ctx.sx == 1 as u_int
             || ctx.sy == 1 as u_int
             || tty.clips_terminal_output()
@@ -1675,7 +1682,7 @@ unsafe fn tty_cmd_scrollup(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
         tty_default_attributes(tty, ctx.bg, Some(&ctx.style_ctx));
         tty_region_pane(tty, ctx, ctx.orupper, ctx.orlower);
         tty_margin_pane(tty, ctx);
-        if ctx.data.count() == 1 as u_int || tty_term_has(terminal_term(tty), TTYC_INDN) == 0 {
+        if ctx.data.count() == 1 as u_int || tty_term_has(&terminal_term(tty), TTYC_INDN) == 0 {
             if terminal_term(tty).flags & TERM_DECSLRM == 0 {
                 tty_cursor(tty, 0 as u_int, terminal_value!(tty, rlower));
             } else {
@@ -1705,16 +1712,16 @@ unsafe fn tty_cmd_scrollup(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
         tty_redraw_region(owner, ctx, s);
     }
 }
-unsafe fn tty_cmd_scrolldown(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
+fn tty_cmd_scrolldown(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
     let complete = (|tty: &ClientRef| {
         let mut i: u_int = 0;
         if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
             || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= terminal_value!(tty, sx))
                 && terminal_term(tty).flags & TERM_DECSLRM == 0
-            || tty_fake_bce(tty.borrow_terminal(), &ctx.style_ctx.defaults, 8 as u_int) != 0
-            || tty_term_has(terminal_term(tty), TTYC_CSR) == 0
-            || tty_term_has(terminal_term(tty), TTYC_RI) == 0
-                && tty_term_has(terminal_term(tty), TTYC_RIN) == 0
+            || tty_fake_bce(&*tty.borrow_terminal(), &ctx.style_ctx.defaults, 8 as u_int) != 0
+            || tty_term_has(&terminal_term(tty), TTYC_CSR) == 0
+            || tty_term_has(&terminal_term(tty), TTYC_RI) == 0
+                && tty_term_has(&terminal_term(tty), TTYC_RIN) == 0
             || ctx.sx == 1 as u_int
             || ctx.sy == 1 as u_int
             || tty.clips_terminal_output()
@@ -1725,7 +1732,7 @@ unsafe fn tty_cmd_scrolldown(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
         tty_region_pane(tty, ctx, ctx.orupper, ctx.orlower);
         tty_margin_pane(tty, ctx);
         tty_cursor_pane(tty, ctx, ctx.ocx, ctx.orupper);
-        if tty_term_has(terminal_term(tty), TTYC_RIN) != 0 {
+        if tty_term_has(&terminal_term(tty), TTYC_RIN) != 0 {
             tty_putcode_i(tty, TTYC_RIN, ctx.data.count() as ::core::ffi::c_int);
         } else {
             i = 0 as u_int;
@@ -1741,7 +1748,7 @@ unsafe fn tty_cmd_scrolldown(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
         tty_redraw_region(owner, ctx, s);
     }
 }
-unsafe fn tty_cmd_clearendofscreen(owner: &ClientRef, ctx: &tty_ctx) {
+fn tty_cmd_clearendofscreen(owner: &ClientRef, ctx: &tty_ctx) {
     let mut px: u_int = 0;
     let mut py: u_int = 0;
     let mut nx: u_int = 0;
@@ -1763,7 +1770,7 @@ unsafe fn tty_cmd_clearendofscreen(owner: &ClientRef, ctx: &tty_ctx) {
     py = ctx.ocy;
     tty_clear_pane_line(owner, ctx, py, px, nx, ctx.bg);
 }
-unsafe fn tty_cmd_clearstartofscreen(owner: &ClientRef, ctx: &tty_ctx) {
+fn tty_cmd_clearstartofscreen(owner: &ClientRef, ctx: &tty_ctx) {
     let mut px: u_int = 0;
     let mut py: u_int = 0;
     let mut nx: u_int = 0;
@@ -1785,7 +1792,7 @@ unsafe fn tty_cmd_clearstartofscreen(owner: &ClientRef, ctx: &tty_ctx) {
     py = ctx.ocy;
     tty_clear_pane_line(owner, ctx, py, px, nx, ctx.bg);
 }
-unsafe fn tty_cmd_clearscreen(owner: &ClientRef, ctx: &tty_ctx) {
+fn tty_cmd_clearscreen(owner: &ClientRef, ctx: &tty_ctx) {
     let mut px: u_int = 0;
     let mut py: u_int = 0;
     let mut nx: u_int = 0;
@@ -1803,7 +1810,7 @@ unsafe fn tty_cmd_clearscreen(owner: &ClientRef, ctx: &tty_ctx) {
     ny = ctx.sy;
     tty_clear_pane_area(owner, ctx, py, ny, px, nx, ctx.bg);
 }
-unsafe fn tty_cmd_alignmenttest(owner: &ClientRef, ctx: &tty_ctx) {
+fn tty_cmd_alignmenttest(owner: &ClientRef, ctx: &tty_ctx) {
     let complete = (|tty: &ClientRef| {
         let mut i: u_int = 0;
         let mut j: u_int = 0;
@@ -1830,7 +1837,7 @@ unsafe fn tty_cmd_alignmenttest(owner: &ClientRef, ctx: &tty_ctx) {
         ctx.redraw_cb.as_ref().expect("non-null redraw callback")(ctx);
     }
 }
-unsafe fn tty_cmd_cell(owner: &ClientRef, ctx: &tty_ctx, s: &screen, gc: &grid_cell) {
+fn tty_cmd_cell(owner: &ClientRef, ctx: &tty_ctx, s: &screen, gc: &grid_cell) {
     let px = (ctx.xoff as u_int)
         .wrapping_add(ctx.ocx)
         .wrapping_sub(ctx.wox);
@@ -1890,7 +1897,7 @@ unsafe fn tty_cmd_cell(owner: &ClientRef, ctx: &tty_ctx, s: &screen, gc: &grid_c
     }
 }
 
-unsafe fn tty_cmd_cells(owner: &ClientRef, ctx: &tty_ctx, s: &screen, gc: &grid_cell) {
+fn tty_cmd_cells(owner: &ClientRef, ctx: &tty_ctx, s: &screen, gc: &grid_cell) {
     let data = ctx.data.bytes();
     let n = data.len();
     if tty_is_visible(ctx, ctx.ocx, ctx.ocy, n as u_int, 1) == 0 {
@@ -1955,22 +1962,22 @@ unsafe fn tty_cmd_cells(owner: &ClientRef, ctx: &tty_ctx, s: &screen, gc: &grid_
     };
 }
 
-unsafe fn tty_cmd_setselection(owner: &ClientRef, ctx: &tty_ctx) {
+fn tty_cmd_setselection(owner: &ClientRef, ctx: &tty_ctx) {
     let (clip, data) = ctx.data.selection();
     tty_set_selection(owner, clip, data);
 }
 
-pub unsafe fn tty_set_selection(owner: &ClientRef, clip: &CStr, data: &[u8]) {
+pub fn tty_set_selection(owner: &ClientRef, clip: &CStr, data: &[u8]) {
     let sequence = {
         let mut terminal = owner.borrow_terminal_mut();
-        tty_selection_sequence(terminal, clip, data)
+        tty_selection_sequence(&mut *terminal, clip, data)
     };
     if let Some(sequence) = sequence.filter(|sequence| !sequence.is_empty()) {
         owner.write_terminal(sequence.to_bytes());
     }
 }
 
-unsafe fn tty_selection_sequence(
+fn tty_selection_sequence(
     terminal: &mut tty,
     clip: &CStr,
     data: &[u8],
@@ -1986,7 +1993,7 @@ unsafe fn tty_selection_sequence(
     terminal.flags |= TTY_NOBLOCK;
     Some(tty_term_string_ss(term, TTYC_MS, clip, &encoded))
 }
-unsafe fn tty_cmd_rawstring(owner: &ClientRef, ctx: &tty_ctx) {
+fn tty_cmd_rawstring(owner: &ClientRef, ctx: &tty_ctx) {
     {
         let terminal = owner;
 
@@ -1995,7 +2002,7 @@ unsafe fn tty_cmd_rawstring(owner: &ClientRef, ctx: &tty_ctx) {
         tty_invalidate(terminal);
     };
 }
-unsafe fn tty_cmd_syncstart(owner: &ClientRef, ctx: &tty_ctx) {
+fn tty_cmd_syncstart(owner: &ClientRef, ctx: &tty_ctx) {
     let sync = if ctx.flags & TTY_CTX_OVERLAY_SYNC != 0 {
         ctx.flags & TTY_CTX_SYNC != 0
     } else {
@@ -2006,7 +2013,7 @@ unsafe fn tty_cmd_syncstart(owner: &ClientRef, ctx: &tty_ctx) {
     }
 }
 
-pub unsafe fn tty_cell(owner: &ClientRef, gc: &grid_cell, style_ctx: Option<&tty_style_ctx>) {
+pub fn tty_cell(owner: &ClientRef, gc: &grid_cell, style_ctx: Option<&tty_style_ctx>) {
     let cursor = {
         let terminal = owner.borrow_terminal();
         if terminal
@@ -2042,17 +2049,17 @@ pub unsafe fn tty_cell(owner: &ClientRef, gc: &grid_cell, style_ctx: Option<&tty
     })(owner);
 }
 
-unsafe fn tty_clipboard_query_callback(owner: &ClientRef) {
+fn tty_clipboard_query_callback(owner: &ClientRef) {
     owner.borrow_terminal_mut().flags &= !TTY_OSC52QUERY;
 }
 /// Ask the terminal for its clipboard contents on behalf of a pane.
-pub unsafe fn tty_request_clipboard(owner: &ClientRef) {
-    let query = tty_term_string_ss(terminal_term(owner), TTYC_MS, c"", c"?");
+pub fn tty_request_clipboard(owner: &ClientRef) {
+    let query = tty_term_string_ss(&terminal_term(owner), TTYC_MS, c"", c"?");
     if !query.is_empty() {
         owner.write_terminal(query.to_bytes());
     }
 }
-pub unsafe fn tty_clipboard_query(owner: &ClientRef) {
+pub fn tty_clipboard_query(owner: &ClientRef) {
     {
         let tty = owner.borrow_terminal();
         if tty.flags & TTY_STARTED == 0 || tty.flags & TTY_OSC52QUERY != 0 {
@@ -2073,7 +2080,7 @@ pub unsafe fn tty_clipboard_query(owner: &ClientRef) {
 }
 
 /// Parse a control client's colour report; returns 0 when `fg`/`bg` were updated.
-pub unsafe fn tty_parse_colour_report(
+pub fn tty_parse_colour_report(
     owner: &ClientRef,
     report: &[u8],
     fg: &mut i32,

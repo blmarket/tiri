@@ -1094,7 +1094,7 @@ pub fn colour_256to16(mut c: ::core::ffi::c_int) -> ::core::ffi::c_int {
     ];
     ANSI_TABLE[(c & 0xff as ::core::ffi::c_int) as usize] as ::core::ffi::c_int
 }
-unsafe fn colour_byname_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
+fn colour_byname_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
     const colours: [C2RustUnnamed_37; 578] = [
         C2RustUnnamed_37 {
             name: c"AliceBlue",

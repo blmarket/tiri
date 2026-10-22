@@ -90,7 +90,7 @@ pub fn format_merge(ft: &mut format_tree, from: &format_tree) {
 pub fn format_get_pane(ft: &format_tree) -> Option<std::rc::Rc<std::cell::RefCell<window_pane>>> {
     ft.wp.upgrade()
 }
-pub(super) unsafe fn format_create_add_item(
+pub(super) fn format_create_add_item(
     ft: &mut format_tree,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) {
@@ -100,7 +100,7 @@ pub(super) unsafe fn format_create_add_item(
 }
 /// Construct the sole owner of a format tree, retaining the supplied client
 /// handle and merging the command item's formats when one is given.
-pub unsafe fn format_create(
+pub fn format_create(
     c: Option<&ClientRef>,
     item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     tag: ::core::ffi::c_int,
@@ -129,7 +129,7 @@ impl Drop for format_tree {
     }
 }
 
-pub unsafe fn format_log_debug(ft: &mut format_tree, prefix: &CStr) {
+pub fn format_log_debug(ft: &mut format_tree, prefix: &CStr) {
     if log_get_level() == 0 as ::core::ffi::c_int {
         return;
     }
@@ -142,7 +142,7 @@ pub unsafe fn format_log_debug(ft: &mut format_tree, prefix: &CStr) {
         ));
     });
 }
-pub unsafe fn format_each(ft: &mut format_tree, mut cb: impl FnMut(&CStr, &CStr)) {
+pub fn format_each(ft: &mut format_tree, mut cb: impl FnMut(&CStr, &CStr)) {
     for entry in &FORMAT_TABLE {
         let Some(value) = entry.get(ft) else { continue };
         let value = match value {
@@ -218,7 +218,7 @@ mod tests {
     use std::rc::Rc;
     use std::time::{Duration, UNIX_EPOCH};
 
-    unsafe fn tree() -> Box<format_tree> {
+    fn tree() -> Box<format_tree> {
         format_create(None, None, 0, 0)
     }
 
@@ -231,132 +231,126 @@ mod tests {
 
     #[test]
     fn owned_callbacks_cache_values_and_absence_until_replaced() {
-        unsafe {
-            let mut ft_owner = tree();
-            let ft = &mut *ft_owner;
-            let calls = Rc::new(Cell::new(0));
-            let observed = calls.clone();
-            format_add_owned_cb(ft, c"owned", move |_| {
-                observed.set(observed.get() + 1);
-                Some(CString::new(b"cached\xff".to_vec()).unwrap())
-            });
-            for _ in 0..2 {
-                assert_eq!(text_value(ft, c"owned").unwrap().as_bytes(), b"cached\xff");
-            }
-            assert_eq!(calls.get(), 1);
-            let observed = calls.clone();
-            format_add_owned_cb(ft, c"owned", move |_| {
-                observed.set(observed.get() + 1);
-                None
-            });
-            for _ in 0..2 {
-                assert_eq!(text_value(ft, c"owned").unwrap().as_c_str(), c"");
-            }
-            assert_eq!(calls.get(), 2);
-            format_add_cstr(ft, c"owned", c"literal");
-            assert_eq!(text_value(ft, c"owned").unwrap().as_c_str(), c"literal");
-            let time = UNIX_EPOCH + Duration::from_secs(123);
-            format_add_time(ft, c"owned", time);
-            assert!(matches!(
-                format_entry_get_value(ft, c"owned"),
-                Some(FormatValue::Time(123))
-            ));
-            assert_eq!(calls.get(), 2);
-            drop(ft_owner);
+        let mut ft_owner = tree();
+        let ft = &mut *ft_owner;
+        let calls = Rc::new(Cell::new(0));
+        let observed = calls.clone();
+        format_add_owned_cb(ft, c"owned", move |_| {
+            observed.set(observed.get() + 1);
+            Some(CString::new(b"cached\xff".to_vec()).unwrap())
+        });
+        for _ in 0..2 {
+            assert_eq!(text_value(ft, c"owned").unwrap().as_bytes(), b"cached\xff");
         }
+        assert_eq!(calls.get(), 1);
+        let observed = calls.clone();
+        format_add_owned_cb(ft, c"owned", move |_| {
+            observed.set(observed.get() + 1);
+            None
+        });
+        for _ in 0..2 {
+            assert_eq!(text_value(ft, c"owned").unwrap().as_c_str(), c"");
+        }
+        assert_eq!(calls.get(), 2);
+        format_add_cstr(ft, c"owned", c"literal");
+        assert_eq!(text_value(ft, c"owned").unwrap().as_c_str(), c"literal");
+        let time = UNIX_EPOCH + Duration::from_secs(123);
+        format_add_time(ft, c"owned", time);
+        assert!(matches!(
+            format_entry_get_value(ft, c"owned"),
+            Some(FormatValue::Time(123))
+        ));
+        assert_eq!(calls.get(), 2);
+        drop(ft_owner);
     }
 
     #[test]
     fn boxed_entries_preserve_identity_during_replacement() {
-        unsafe {
-            let mut ft_owner = tree();
-            let ft = &mut *ft_owner;
-            let key = CString::new(b"custom\xff".to_vec()).unwrap();
-            let first = CString::new(b"first\xff".to_vec()).unwrap();
-            format_add_cstr(ft, &key, &first);
-            let address = format_entry_tree_find(&ft.tree, &key).unwrap() as *const _ as usize;
-            for i in 0..128 {
-                let key = CString::new(format!("extra-{i}")).unwrap();
-                format_add_cstr(ft, &key, c"extra");
-            }
-            let previous = format_entry_tree_find(&ft.tree, &key)
-                .unwrap()
-                .state
-                .text()
-                .unwrap()
-                .to_owned();
-            format_add(ft, &key, |out| {
-                out.write_all(previous.to_bytes())?;
-                out.write_all(b"-next")
-            });
-            assert_eq!(text_value(ft, &key).unwrap().as_bytes(), b"first\xff-next");
-            assert_eq!(
-                format_entry_tree_find(&ft.tree, &key).unwrap() as *const _ as usize,
-                address
-            );
-            let entry = ft.tree.remove(&key).unwrap();
-            drop(ft_owner);
-            assert_eq!(entry.key, key);
-            assert_eq!(entry.state.text().unwrap().to_bytes(), b"first\xff-next");
+        let mut ft_owner = tree();
+        let ft = &mut *ft_owner;
+        let key = CString::new(b"custom\xff".to_vec()).unwrap();
+        let first = CString::new(b"first\xff".to_vec()).unwrap();
+        format_add_cstr(ft, &key, &first);
+        let address = format_entry_tree_find(&ft.tree, &key).unwrap() as *const _ as usize;
+        for i in 0..128 {
+            let key = CString::new(format!("extra-{i}")).unwrap();
+            format_add_cstr(ft, &key, c"extra");
         }
+        let previous = format_entry_tree_find(&ft.tree, &key)
+            .unwrap()
+            .state
+            .text()
+            .unwrap()
+            .to_owned();
+        format_add(ft, &key, |out| {
+            out.write_all(previous.to_bytes())?;
+            out.write_all(b"-next")
+        });
+        assert_eq!(text_value(ft, &key).unwrap().as_bytes(), b"first\xff-next");
+        assert_eq!(
+            format_entry_tree_find(&ft.tree, &key).unwrap() as *const _ as usize,
+            address
+        );
+        let entry = ft.tree.remove(&key).unwrap();
+        drop(ft_owner);
+        assert_eq!(entry.key, key);
+        assert_eq!(entry.state.text().unwrap().to_bytes(), b"first\xff-next");
     }
 
     #[test]
     fn lazy_callbacks_can_replace_remove_and_reinsert_their_own_entry() {
-        unsafe {
-            let mut ft_owner = tree();
-            let ft = &mut *ft_owner;
-            format_add_owned_cb(ft, c"owned", |ft| {
-                format_add_cstr(ft, c"owned", c"replacement");
-                Some(c"stale".to_owned())
-            });
-            assert_eq!(text_value(ft, c"owned").unwrap().as_c_str(), c"replacement");
+        let mut ft_owner = tree();
+        let ft = &mut *ft_owner;
+        format_add_owned_cb(ft, c"owned", |ft| {
+            format_add_cstr(ft, c"owned", c"replacement");
+            Some(c"stale".to_owned())
+        });
+        assert_eq!(text_value(ft, c"owned").unwrap().as_c_str(), c"replacement");
 
-            format_add_owned_cb(ft, c"owned", |ft| {
-                let removed = ft.tree.remove(c"owned");
-                drop(removed);
-                Some(c"stale".to_owned())
+        format_add_owned_cb(ft, c"owned", |ft| {
+            let removed = ft.tree.remove(c"owned");
+            drop(removed);
+            Some(c"stale".to_owned())
+        });
+        assert!(text_value(ft, c"owned").is_none());
+        assert!(format_entry_tree_find(&ft.tree, c"owned").is_none());
+
+        let replacement_calls = Rc::new(Cell::new(0));
+        let observed = replacement_calls.clone();
+        format_add_owned_cb(ft, c"owned", move |ft| {
+            let removed = ft.tree.remove(c"owned");
+            drop(removed);
+            let observed = observed.clone();
+            format_add_owned_cb(ft, c"owned", move |_| {
+                observed.set(observed.get() + 1);
+                Some(c"new callback".to_owned())
             });
+            Some(c"stale".to_owned())
+        });
+        assert!(text_value(ft, c"owned").is_none());
+        assert_eq!(replacement_calls.get(), 0);
+        assert_eq!(
+            text_value(ft, c"owned").unwrap().as_c_str(),
+            c"new callback"
+        );
+        assert_eq!(replacement_calls.get(), 1);
+
+        format_add_owned_cb(ft, c"owned", |ft| {
             assert!(text_value(ft, c"owned").is_none());
-            assert!(format_entry_tree_find(&ft.tree, c"owned").is_none());
-
-            let replacement_calls = Rc::new(Cell::new(0));
-            let observed = replacement_calls.clone();
-            format_add_owned_cb(ft, c"owned", move |ft| {
-                let removed = ft.tree.remove(c"owned");
-                drop(removed);
-                let observed = observed.clone();
-                format_add_owned_cb(ft, c"owned", move |_| {
-                    observed.set(observed.get() + 1);
-                    Some(c"new callback".to_owned())
-                });
-                Some(c"stale".to_owned())
-            });
-            assert!(text_value(ft, c"owned").is_none());
-            assert_eq!(replacement_calls.get(), 0);
-            assert_eq!(
-                text_value(ft, c"owned").unwrap().as_c_str(),
-                c"new callback"
-            );
-            assert_eq!(replacement_calls.get(), 1);
-
-            format_add_owned_cb(ft, c"owned", |ft| {
-                assert!(text_value(ft, c"owned").is_none());
-                for i in 0..128 {
-                    let key = CString::new(format!("extra-{i}")).unwrap();
-                    format_add_cstr(ft, &key, c"extra");
-                }
-                Some(c"recursive".to_owned())
-            });
-            assert_eq!(text_value(ft, c"owned").unwrap().as_c_str(), c"recursive");
-            drop(ft_owner);
-        }
+            for i in 0..128 {
+                let key = CString::new(format!("extra-{i}")).unwrap();
+                format_add_cstr(ft, &key, c"extra");
+            }
+            Some(c"recursive".to_owned())
+        });
+        assert_eq!(text_value(ft, c"owned").unwrap().as_c_str(), c"recursive");
+        drop(ft_owner);
     }
 
     #[test]
     fn stale_evaluation_cannot_cache_into_a_reinserted_entry_after_unwind() {
         use std::panic::{catch_unwind, AssertUnwindSafe};
-        unsafe {
+        {
             let mut ft_owner = tree();
             let ft = &mut *ft_owner;
             format_add_owned_cb(ft, c"owned", |ft| {
@@ -378,19 +372,17 @@ mod tests {
 
     #[test]
     fn expansion_resolves_the_entry_again_after_a_callback_removes_it() {
-        unsafe {
-            let mut ft_owner = tree();
-            let ft = &mut *ft_owner;
-            format_add_owned_cb(ft, c"custom_removed_entry", |ft| {
-                drop(ft.tree.remove(c"custom_removed_entry"));
-                Some(c"stale".to_owned())
-            });
-            assert_eq!(
-                format_expand_cstring(ft, c"before#{custom_removed_entry}after").as_c_str(),
-                c"beforeafter"
-            );
-            drop(ft_owner);
-        }
+        let mut ft_owner = tree();
+        let ft = &mut *ft_owner;
+        format_add_owned_cb(ft, c"custom_removed_entry", |ft| {
+            drop(ft.tree.remove(c"custom_removed_entry"));
+            Some(c"stale".to_owned())
+        });
+        assert_eq!(
+            format_expand_cstring(ft, c"before#{custom_removed_entry}after").as_c_str(),
+            c"beforeafter"
+        );
+        drop(ft_owner);
     }
 
     struct RecordDrop(u8, Rc<RefCell<Vec<u8>>>);
@@ -402,24 +394,22 @@ mod tests {
 
     #[test]
     fn cached_captures_drop_on_replacement_and_remaining_entries_drop_in_key_order() {
-        unsafe {
-            let mut ft_owner = tree();
-            let ft = &mut *ft_owner;
-            let drops = Rc::new(RefCell::new(Vec::new()));
-            for (key, id) in [(c"beta", 2), (c"alpha", 1), (c"replace", 3)] {
-                let record = RecordDrop(id, drops.clone());
-                format_add_owned_cb(ft, key, move |_| {
-                    let _keep_capture = &record;
-                    Some(c"cached".to_owned())
-                });
-                assert_eq!(text_value(ft, key).unwrap().as_c_str(), c"cached");
-            }
-            assert!(drops.borrow().is_empty());
-            format_add_cstr(ft, c"replace", c"literal");
-            assert_eq!(*drops.borrow(), [3]);
-            drop(ft_owner);
-            assert_eq!(*drops.borrow(), [3, 1, 2]);
+        let mut ft_owner = tree();
+        let ft = &mut *ft_owner;
+        let drops = Rc::new(RefCell::new(Vec::new()));
+        for (key, id) in [(c"beta", 2), (c"alpha", 1), (c"replace", 3)] {
+            let record = RecordDrop(id, drops.clone());
+            format_add_owned_cb(ft, key, move |_| {
+                let _keep_capture = &record;
+                Some(c"cached".to_owned())
+            });
+            assert_eq!(text_value(ft, key).unwrap().as_c_str(), c"cached");
         }
+        assert!(drops.borrow().is_empty());
+        format_add_cstr(ft, c"replace", c"literal");
+        assert_eq!(*drops.borrow(), [3]);
+        drop(ft_owner);
+        assert_eq!(*drops.borrow(), [3, 1, 2]);
     }
 
     #[test]
@@ -431,75 +421,71 @@ mod tests {
             }
         }
         for owned in [false, true] {
-            unsafe {
-                let mut owner = if owned {
-                    format_create(None, None, FORMAT_NONE, 0)
-                } else {
-                    tree()
-                };
-                let ft = &mut *owner;
-                let calls = Rc::new(Cell::new(0));
-                for replace in [true, false] {
-                    let capture = CountDrop(calls.clone());
-                    format_add_owned_cb(ft, c"capture", move |_| {
-                        let _keep_capture = &capture;
-                        None
-                    });
-                    if replace {
-                        format_add_cstr(ft, c"capture", c"replacement");
-                        assert_eq!(calls.get(), 1);
-                        assert_eq!(
-                            text_value(ft, c"capture").unwrap().as_c_str(),
-                            c"replacement"
-                        );
-                        format_add_cstr(ft, c"after-drop", c"created");
-                        assert_eq!(
-                            text_value(ft, c"after-drop").unwrap().as_c_str(),
-                            c"created"
-                        );
-                    }
+            let mut owner = if owned {
+                format_create(None, None, FORMAT_NONE, 0)
+            } else {
+                tree()
+            };
+            let ft = &mut *owner;
+            let calls = Rc::new(Cell::new(0));
+            for replace in [true, false] {
+                let capture = CountDrop(calls.clone());
+                format_add_owned_cb(ft, c"capture", move |_| {
+                    let _keep_capture = &capture;
+                    None
+                });
+                if replace {
+                    format_add_cstr(ft, c"capture", c"replacement");
+                    assert_eq!(calls.get(), 1);
+                    assert_eq!(
+                        text_value(ft, c"capture").unwrap().as_c_str(),
+                        c"replacement"
+                    );
+                    format_add_cstr(ft, c"after-drop", c"created");
+                    assert_eq!(
+                        text_value(ft, c"after-drop").unwrap().as_c_str(),
+                        c"created"
+                    );
                 }
-                assert_eq!(calls.get(), 1);
-                drop(owner);
-                assert_eq!(calls.get(), 2);
             }
+            assert_eq!(calls.get(), 1);
+            drop(owner);
+            assert_eq!(calls.get(), 2);
         }
     }
     #[test]
     fn merge_copies_only_materialized_values_and_overwrites_existing_entries() {
-        unsafe {
-            let mut source_owner = tree();
-            let source = &mut *source_owner;
-            let mut destination_owner = tree();
-            let destination = &mut *destination_owner;
-            format_add_cstr(source, c"literal", c"text");
-            format_add_owned_cb(source, c"cached", |_| Some(c"value".to_owned()));
-            assert_eq!(text_value(source, c"cached").unwrap().as_c_str(), c"value");
-            format_add_owned_cb(source, c"lazy", |_| {
-                panic!("merge must not evaluate callbacks")
-            });
-            let time = UNIX_EPOCH + Duration::from_secs(123);
-            format_add_time(source, c"time", time);
-            format_add_cstr(destination, c"literal", c"old");
-            format_merge(destination, source);
-            assert_eq!(
-                text_value(destination, c"literal").unwrap().as_c_str(),
-                c"text"
-            );
-            assert_eq!(
-                text_value(destination, c"cached").unwrap().as_c_str(),
-                c"value"
-            );
-            assert!(format_entry_tree_find(&destination.tree, c"lazy").is_none());
-            assert!(format_entry_tree_find(&destination.tree, c"time").is_none());
-            format_merge(destination, source);
-            assert_eq!(
-                text_value(destination, c"cached").unwrap().as_c_str(),
-                c"value"
-            );
-            assert_eq!(destination.tree.len(), 2);
-            drop(source_owner);
-            drop(destination_owner);
-        }
+        let mut source_owner = tree();
+        let source = &mut *source_owner;
+        let mut destination_owner = tree();
+        let destination = &mut *destination_owner;
+        format_add_cstr(source, c"literal", c"text");
+        format_add_owned_cb(source, c"cached", |_| Some(c"value".to_owned()));
+        assert_eq!(text_value(source, c"cached").unwrap().as_c_str(), c"value");
+        format_add_owned_cb(source, c"lazy", |_| {
+            panic!("merge must not evaluate callbacks")
+        });
+        let time = UNIX_EPOCH + Duration::from_secs(123);
+        format_add_time(source, c"time", time);
+        format_add_cstr(destination, c"literal", c"old");
+        format_merge(destination, source);
+        assert_eq!(
+            text_value(destination, c"literal").unwrap().as_c_str(),
+            c"text"
+        );
+        assert_eq!(
+            text_value(destination, c"cached").unwrap().as_c_str(),
+            c"value"
+        );
+        assert!(format_entry_tree_find(&destination.tree, c"lazy").is_none());
+        assert!(format_entry_tree_find(&destination.tree, c"time").is_none());
+        format_merge(destination, source);
+        assert_eq!(
+            text_value(destination, c"cached").unwrap().as_c_str(),
+            c"value"
+        );
+        assert_eq!(destination.tree.len(), 2);
+        drop(source_owner);
+        drop(destination_owner);
     }
 }

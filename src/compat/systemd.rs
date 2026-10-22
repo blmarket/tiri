@@ -2,7 +2,7 @@ use crate::format::bytes::{format_message_with, write_cstr};
 use crate::server::server_create_socket;
 use crate::shared::abi::uint64_t;
 use crate::shared::errno::ErrorText;
-use crate::tmux::socket_path;
+use crate::tmux::set_socket_path;
 use ::systemd::daemon::{self, Listening, SocketType};
 use ::systemd::id128::Id128;
 use ::systemd::login::{self, UnitType};
@@ -49,7 +49,7 @@ pub unsafe fn systemd_create_socket(
         } else {
             match tiri_rt::unix::socket_path(std::os::fd::BorrowedFd::borrow_raw(fd)) {
                 Ok(path) => {
-                    socket_path = Some(path.unwrap_or_default());
+                    set_socket_path(path.unwrap_or_default());
                     return Ok(fd);
                 }
                 Err(error) => error.raw_os_error().unwrap_or(libc::EIO),

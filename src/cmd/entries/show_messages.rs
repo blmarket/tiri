@@ -39,7 +39,7 @@ pub static cmd_show_messages_entry: cmd_entry = {
         exec: Some(cmd_show_messages_exec),
     }
 };
-unsafe fn cmd_show_messages_terminals(
+fn cmd_show_messages_terminals(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     mut blank: ::core::ffi::c_int,
@@ -74,7 +74,7 @@ unsafe fn cmd_show_messages_terminals(
     i32::from(n != 0)
 }
 
-unsafe fn cmd_show_messages_exec(
+fn cmd_show_messages_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
@@ -97,12 +97,14 @@ unsafe fn cmd_show_messages_exec(
     }
     let mut ft_owner = format_create_from_target(item_handle);
     let ft = &mut *ft_owner;
-    for msg in message_log.iter_rev() {
-        format_add(ft, c"message_text", |out| write_cstr(out, &*msg.msg));
-        format_add(ft, c"message_number", |out| {
-            write!(out, "{}", { msg.msg_num })
-        });
-        let msg_time = msg.msg_time;
+    let messages: Vec<_> = message_log.with_borrow(|log| {
+        log.iter_rev()
+            .map(|msg| (msg.msg.clone(), msg.msg_num, msg.msg_time))
+            .collect()
+    });
+    for (text, number, msg_time) in messages {
+        format_add(ft, c"message_text", |out| write_cstr(out, &*text));
+        format_add(ft, c"message_number", |out| write!(out, "{}", number));
         format_add_time(ft, c"message_time", msg_time);
         let s = format_expand_cstring(ft, SHOW_MESSAGES_TEMPLATE);
         cmdq_print(item_handle, |out| write_cstr(out, &*s));

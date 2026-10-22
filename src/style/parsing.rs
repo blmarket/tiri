@@ -604,7 +604,7 @@ pub fn style_set(sy: &mut style, gc: &grid_cell) {
 pub fn style_copy(dst: &mut style, src: &style) {
     *dst = *src;
 }
-pub unsafe fn style_set_scrollbar_style_from_option(
+pub fn style_set_scrollbar_style_from_option(
     sb_style: &mut style,
     scope: &crate::options::OptionsScope,
 ) {

@@ -146,25 +146,10 @@ pub type window_mode_init_cb = unsafe fn(
 ) -> bool;
 /// Visits a screen owned by the mode payload, calling the visitor once when
 /// the payload has one. The borrow ends when the visitor returns.
-pub type window_mode_screen_cb =
-    unsafe fn(refbox::Weak<window_mode_entry>, &mut dyn FnMut(&mut screen));
-
-/// Borrow a mode payload for its `get_screen` callback. Sorting and format
-/// expansion reach `get_screen` for the mode's own pane while a build or draw
-/// further up the stack holds the payload; as in `mode_tree_visit_screen`,
-/// that reentrant visit goes through the cell and sees the payload mid-update.
-pub unsafe fn window_mode_screen_payload<T, R>(
-    cell: &std::cell::RefCell<T>,
-    visit: impl FnOnce(&mut T) -> R,
-) -> R {
-    match cell.try_borrow_mut() {
-        Ok(mut data) => visit(&mut data),
-        Err(_) => visit(&mut *cell.as_ptr()),
-    }
-}
+pub type window_mode_screen_cb = fn(refbox::Weak<window_mode_entry>, &mut dyn FnMut(&mut screen));
 
 /// Run `visit` on the screen `cb` exposes; `None` when the mode has no screen.
-pub unsafe fn window_mode_visit_screen<R>(
+pub fn window_mode_visit_screen<R>(
     cb: window_mode_screen_cb,
     wme: refbox::Weak<window_mode_entry>,
     visit: impl FnOnce(&mut screen) -> R,
@@ -177,7 +162,7 @@ pub unsafe fn window_mode_visit_screen<R>(
     result
 }
 /// Resizes a mode's screen to the given width and height.
-pub type window_mode_resize_cb = unsafe fn(refbox::Weak<window_mode_entry>, u_int, u_int);
+pub type window_mode_resize_cb = fn(refbox::Weak<window_mode_entry>, u_int, u_int);
 /// Handles a key from a client in the mode's winlink.
 pub type window_mode_key_cb = unsafe fn(
     refbox::Weak<window_mode_entry>,
@@ -203,14 +188,14 @@ pub struct window_mode {
     pub default_format: Option<&'static std::ffi::CStr>,
     pub flags: ::core::ffi::c_int,
     pub init: Option<window_mode_init_cb>,
-    pub free: Option<unsafe fn(refbox::Weak<window_mode_entry>) -> ()>,
+    pub free: Option<fn(refbox::Weak<window_mode_entry>)>,
     pub resize: Option<window_mode_resize_cb>,
-    pub update: Option<unsafe fn(refbox::Weak<window_mode_entry>) -> ()>,
-    pub style_changed: Option<unsafe fn(refbox::Weak<window_mode_entry>) -> ()>,
+    pub update: Option<fn(refbox::Weak<window_mode_entry>)>,
+    pub style_changed: Option<fn(refbox::Weak<window_mode_entry>)>,
     pub key: Option<window_mode_key_cb>,
-    pub key_table: Option<unsafe fn(refbox::Weak<window_mode_entry>) -> &'static std::ffi::CStr>,
+    pub key_table: Option<fn(refbox::Weak<window_mode_entry>) -> &'static std::ffi::CStr>,
     pub command: Option<window_mode_command_cb>,
-    pub formats: Option<unsafe fn(refbox::Weak<window_mode_entry>, &mut format_tree) -> ()>,
+    pub formats: Option<fn(refbox::Weak<window_mode_entry>, &mut format_tree)>,
     /// The mode's source screen, for `capture-pane -M`.
     pub get_screen: Option<window_mode_screen_cb>,
     /// The screen the pane shows while this mode is selected.

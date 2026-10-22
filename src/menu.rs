@@ -50,16 +50,12 @@ impl menu {
         index
     }
 }
-pub unsafe fn menu_add_items(
-    menu: &mut menu,
-    items: &[menu_item<'_>],
-    client_owner: Option<&ClientRef>,
-) {
+pub fn menu_add_items(menu: &mut menu, items: &[menu_item<'_>], client_owner: Option<&ClientRef>) {
     for item in items {
         menu_add_item(menu, Some(item), None, client_owner, None);
     }
 }
-pub unsafe fn menu_add_item(
+pub fn menu_add_item(
     menu: &mut menu,
     item: Option<&menu_item<'_>>,
     qitem_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
@@ -156,7 +152,7 @@ pub fn menu_create(title: &CStr) -> Box<menu> {
         width,
     })
 }
-unsafe fn menu_reapply_styles(md: &mut menu_data) {
+fn menu_reapply_styles(md: &mut menu_data) {
     let Some(window) = md.w.upgrade() else {
         return;
     };
@@ -201,7 +197,7 @@ unsafe fn menu_reapply_styles(md: &mut menu_data) {
     drop(window);
 }
 
-pub unsafe fn menu_update(md: &mut menu_data) {
+pub fn menu_update(md: &mut menu_data) {
     if md.closed {
         return;
     }
@@ -241,7 +237,7 @@ fn menu_free_data(owner: refbox::RefBox<crate::shared::menu::menu_data>) {
     }
 }
 
-pub unsafe fn menu_close(
+pub fn menu_close(
     window: &WindowWeak,
     expected: Option<&refbox::Weak<crate::shared::menu::menu_data>>,
 ) {
@@ -496,7 +492,7 @@ fn menu_handle_key(md: &mut menu_data, event: &key_event) -> MenuKeyAction {
     MenuKeyAction::Redraw
 }
 
-pub unsafe fn menu_key(
+pub fn menu_key(
     client_owner: Option<&ClientRef>,
     owner: &refbox::Weak<crate::shared::menu::menu_data>,
     event: &key_event,
@@ -591,7 +587,7 @@ pub fn menu_resize(md: &mut menu_data, window_width: u_int, window_height: u_int
     md.px = nx;
     md.py = ny;
 }
-pub unsafe fn menu_display(
+pub fn menu_display(
     menu: Box<menu>,
     flags: ::core::ffi::c_int,
     starting_choice: ::core::ffi::c_int,
@@ -862,17 +858,11 @@ mod tests {
             callback_called.set(true);
         }));
         *slot.borrow_mut() = Some(md);
-        assert_eq!(
-            unsafe { menu_key(None, &weak, &event(b'a' as key_code)) },
-            1
-        );
+        assert_eq!({ menu_key(None, &weak, &event(b'a' as key_code)) }, 1);
         assert!(called.get());
         assert!(slot.borrow().is_none());
         assert!(!weak.is_alive());
-        assert_eq!(
-            unsafe { menu_key(None, &weak, &event(b'a' as key_code)) },
-            1
-        );
+        assert_eq!({ menu_key(None, &weak, &event(b'a' as key_code)) }, 1);
     }
     #[test]
     fn cancellation_keeps_screen_alive_until_callback_returns() {
@@ -892,7 +882,7 @@ mod tests {
                 borrowed.choice = -1;
             }
             assert_eq!(
-                unsafe { menu_key(None, &callback_observer, &event(b'a' as key_code),) },
+                { menu_key(None, &callback_observer, &event(b'a' as key_code),) },
                 1
             );
         }));

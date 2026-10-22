@@ -18,10 +18,7 @@ use crate::window::Window as _;
 
 /// Render `fill-character` into the cell that fills whatever no pane, scrollbar
 /// or separator covers, inside the window's extent or outside it.
-pub(crate) unsafe fn window_render_fill_cell(
-    w_owner: &WindowRef,
-    inside: bool,
-) -> Option<grid_cell> {
+pub(crate) fn window_render_fill_cell(w_owner: &WindowRef, inside: bool) -> Option<grid_cell> {
     let mut s: screen = screen::empty();
     let mut new_gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -88,11 +85,7 @@ fn window_copy_fill_cell(gc: &mut grid_cell, fill: &grid_cell) {
         gc.us = fill.us;
     }
 }
-pub unsafe fn window_get_fill_cell(
-    owner: &WindowRef,
-    inside: ::core::ffi::c_int,
-    gc: &mut grid_cell,
-) {
+pub fn window_get_fill_cell(owner: &WindowRef, inside: ::core::ffi::c_int, gc: &mut grid_cell) {
     let fill = owner.fill_cell(inside != 0);
     window_copy_fill_cell(gc, &fill);
 }

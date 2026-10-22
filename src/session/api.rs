@@ -9,14 +9,14 @@ use std::time::SystemTime;
 /// lifetime rules. No model/component reference may survive a callback.
 pub trait Session {
     /// Publish attachment counts and status caches before the size pass.
-    unsafe fn recalculate_attachment_status()
+    fn recalculate_attachment_status()
     where
         Self: Sized;
     /// Deliver one window's alerts across its linked sessions.
-    unsafe fn deliver_window_alerts(window: &WindowRef) -> i32
+    fn deliver_window_alerts(window: &WindowRef) -> i32
     where
         Self: Sized;
-    unsafe fn create(
+    fn create(
         prefix: Option<&CStr>,
         name: Option<&CStr>,
         cwd: &CStr,
@@ -29,31 +29,31 @@ pub trait Session {
     fn find_by_id_str(id: &CStr) -> Option<Self>
     where
         Self: Sized;
-    unsafe fn sorted(criteria: &sort_criteria) -> Vec<Self>
+    fn sorted(criteria: &sort_criteria) -> Vec<Self>
     where
         Self: Sized;
     /// Release this owner now, preserving the release diagnostics.
-    unsafe fn release(self, from: &CStr)
+    fn release(self, from: &CStr)
     where
         Self: Sized;
-    unsafe fn adjacent_session(&self, criteria: &sort_criteria, previous: bool) -> Option<Self>
+    fn adjacent_session(&self, criteria: &sort_criteria, previous: bool) -> Option<Self>
     where
         Self: Sized;
-    unsafe fn select_index(&self, index: i32) -> i32;
-    unsafe fn select_adjacent_window(&self, previous: bool, alert: bool) -> i32;
-    unsafe fn select_last_window(&self) -> i32;
-    unsafe fn window_linked_outside_group(session: Option<&Self>, window: &WindowRef) -> bool
+    fn select_index(&self, index: i32) -> i32;
+    fn select_adjacent_window(&self, previous: bool, alert: bool) -> i32;
+    fn select_last_window(&self) -> i32;
+    fn window_linked_outside_group(session: Option<&Self>, window: &WindowRef) -> bool
     where
         Self: Sized;
     /// Apply update-environment patterns without exposing either component.
-    unsafe fn update_environment(&self, source: &environ);
+    fn update_environment(&self, source: &environ);
 
     /// Registry liveness is distinct from retained allocation liveness.
     fn is_registered(&self) -> bool;
-    unsafe fn contains_window(&self, window: &WindowRef) -> bool;
+    fn contains_window(&self, window: &WindowRef) -> bool;
     fn id(&self) -> u32;
     fn name(&self) -> CString;
-    unsafe fn rename(&self, name: &CStr) -> Result<(), CString>;
+    fn rename(&self, name: &CStr) -> Result<(), CString>;
     fn activity_time(&self) -> SystemTime;
     fn is_attached(&self) -> bool;
     /// Number of attached clients, including multiple clients of one group member.
@@ -65,22 +65,22 @@ pub trait Session {
     /// neither Session is borrowed during callbacks or old-window cleanup.
     /// Linked callbacks must preserve the current source and replacement links
     /// through the subsequent alert copy, as required by their logical lifetimes.
-    unsafe fn synchronize_windows_from(&self, source: &SessionRef);
+    fn synchronize_windows_from(&self, source: &SessionRef);
     fn current_winlink(&self) -> refbox::Weak<winlink>;
     /// Observe MRU history without selecting it (notably command target `!`).
     fn last_winlink(&self) -> refbox::Weak<winlink>;
     /// Read only. Do not mutate entries, reenter, or let references/pointers escape.
-    unsafe fn with_winlinks<R>(&self, read: impl FnOnce(&winlinks) -> R) -> R;
+    fn with_winlinks<R>(&self, read: impl FnOnce(&winlinks) -> R) -> R;
     /// Remove only MRU membership, before releasing a link's window.
-    unsafe fn forget_winlink(&self, link: refbox::Weak<winlink>);
+    fn forget_winlink(&self, link: refbox::Weak<winlink>);
     /// Reserve an index adjacent to a link by shifting consecutive indices.
-    unsafe fn shuffle_window(&self, link: refbox::Weak<winlink>, before: bool) -> i32;
+    fn shuffle_window(&self, link: refbox::Weak<winlink>, before: bool) -> i32;
     /// Remove a replaced link without selecting a successor; return whether it was current.
-    unsafe fn remove_replaced_window(&self, link: refbox::Weak<winlink>) -> bool;
-    unsafe fn select_winlink(&self, link: refbox::Weak<winlink>) -> i32;
-    unsafe fn detach_window(&self, link: refbox::Weak<winlink>) -> i32;
+    fn remove_replaced_window(&self, link: refbox::Weak<winlink>) -> bool;
+    fn select_winlink(&self, link: refbox::Weak<winlink>) -> i32;
+    fn detach_window(&self, link: refbox::Weak<winlink>) -> i32;
     /// Adopt an existing window, including break-pane's already-running pane.
-    unsafe fn attach_window(
+    fn attach_window(
         &self,
         window: &WindowRef,
         index: i32,
@@ -89,18 +89,18 @@ pub trait Session {
         &self,
         context: &mut spawn_context,
     ) -> Result<refbox::Weak<winlink>, CString>;
-    unsafe fn renumber_windows(&self);
-    unsafe fn update_activity(&self, from: Option<SystemTime>);
-    unsafe fn update_history(&self);
-    unsafe fn on_attached(&self);
-    unsafe fn theme_changed(&self);
+    fn renumber_windows(&self);
+    fn update_activity(&self, from: Option<SystemTime>);
+    fn update_history(&self);
+    fn on_attached(&self);
+    fn theme_changed(&self);
     fn status_layout(&self) -> (i32, u32);
     /// Borrow the option table through the model. Borrowing it again while held panics.
     fn borrow_options_mut(&self) -> std::cell::RefMut<'_, options>;
     /// Edit the environment with the session borrowed; `None` once it is released.
     /// The closure must not reach back into the session.
-    unsafe fn with_environment_mut<R>(&self, edit: impl FnOnce(&mut environ) -> R) -> Option<R>;
-    unsafe fn set_cwd(&self, cwd: Option<CString>);
+    fn with_environment_mut<R>(&self, edit: impl FnOnce(&mut environ) -> R) -> Option<R>;
+    fn set_cwd(&self, cwd: Option<CString>);
     fn cwd(&self) -> Option<CString>;
     fn termios(&self) -> Option<termios>;
     /// Evaluate a session builtin in a context already targeting this holder.
@@ -109,17 +109,17 @@ pub trait Session {
         key: &CStr,
         context: &mut crate::shared::format::format_tree,
     ) -> Option<crate::format::FormatValue>;
-    unsafe fn destroy(&self, notify: bool, from: &CStr);
+    fn destroy(&self, notify: bool, from: &CStr);
 }
 
 impl Session for SessionRef {
-    unsafe fn recalculate_attachment_status() {
+    fn recalculate_attachment_status() {
         recalculate_size_state();
     }
-    unsafe fn deliver_window_alerts(window: &WindowRef) -> i32 {
+    fn deliver_window_alerts(window: &WindowRef) -> i32 {
         alerts_check_all(window)
     }
-    unsafe fn create(
+    fn create(
         prefix: Option<&CStr>,
         name: Option<&CStr>,
         cwd: &CStr,
@@ -132,34 +132,34 @@ impl Session for SessionRef {
     fn find_by_id_str(id: &CStr) -> Option<Self> {
         session_find_by_id_str(id)
     }
-    unsafe fn sorted(criteria: &sort_criteria) -> Vec<Self> {
+    fn sorted(criteria: &sort_criteria) -> Vec<Self> {
         sort_get_sessions(criteria)
     }
-    unsafe fn release(self, from: &CStr) {
+    fn release(self, from: &CStr) {
         session_remove_ref(self, from);
     }
-    unsafe fn adjacent_session(&self, criteria: &sort_criteria, previous: bool) -> Option<Self> {
+    fn adjacent_session(&self, criteria: &sort_criteria, previous: bool) -> Option<Self> {
         session_adjacent(Some(self), criteria, previous)
     }
-    unsafe fn select_index(&self, index: i32) -> i32 {
+    fn select_index(&self, index: i32) -> i32 {
         session_select(self, index)
     }
-    unsafe fn select_adjacent_window(&self, previous: bool, alert: bool) -> i32 {
+    fn select_adjacent_window(&self, previous: bool, alert: bool) -> i32 {
         if previous {
             session_previous(self, alert as i32)
         } else {
             session_next(self, alert as i32)
         }
     }
-    unsafe fn select_last_window(&self) -> i32 {
+    fn select_last_window(&self) -> i32 {
         session_last(self)
     }
 
-    unsafe fn window_linked_outside_group(session: Option<&Self>, window: &WindowRef) -> bool {
+    fn window_linked_outside_group(session: Option<&Self>, window: &WindowRef) -> bool {
         session_is_linked(session, window)
     }
 
-    unsafe fn update_environment(&self, source: &environ) {
+    fn update_environment(&self, source: &environ) {
         // The patterns are read through this session's options, so the
         // environment is lent out of the model for the update.
         let mut environment = self
@@ -178,7 +178,7 @@ impl Session for SessionRef {
     fn is_registered(&self) -> bool {
         sessions::resolve(&Rc::downgrade(self)).is_some()
     }
-    unsafe fn contains_window(&self, window: &WindowRef) -> bool {
+    fn contains_window(&self, window: &WindowRef) -> bool {
         use crate::window::Window;
         let observer = Rc::downgrade(self);
         let mut link = window.next_winlink(None);
@@ -202,7 +202,7 @@ impl Session for SessionRef {
         self.borrow().name.clone()
     }
 
-    unsafe fn rename(&self, name: &CStr) -> Result<(), CString> {
+    fn rename(&self, name: &CStr) -> Result<(), CString> {
         use crate::tmux::{check_name, clean_name_cstring};
         if !check_name(name) {
             let mut message = b"invalid session name: ".to_vec();
@@ -255,7 +255,7 @@ impl Session for SessionRef {
     fn attached_count(&self) -> u32 {
         self.borrow().attached
     }
-    unsafe fn synchronize_windows_from(&self, source: &SessionRef) {
+    fn synchronize_windows_from(&self, source: &SessionRef) {
         session_synchronize_windows(source, self);
     }
     fn current_winlink(&self) -> refbox::Weak<winlink> {
@@ -264,13 +264,13 @@ impl Session for SessionRef {
     fn last_winlink(&self) -> refbox::Weak<winlink> {
         self.borrow().lastw.front().cloned().unwrap_or_default()
     }
-    unsafe fn with_winlinks<R>(&self, read: impl FnOnce(&winlinks) -> R) -> R {
+    fn with_winlinks<R>(&self, read: impl FnOnce(&winlinks) -> R) -> R {
         read(&self.borrow().windows)
     }
-    unsafe fn forget_winlink(&self, link: refbox::Weak<winlink>) {
-        winlink_stack_remove(&mut (*self.as_ptr()).lastw, link);
+    fn forget_winlink(&self, link: refbox::Weak<winlink>) {
+        winlink_stack_remove(&mut self.borrow_mut().lastw, link);
     }
-    unsafe fn shuffle_window(&self, link: refbox::Weak<winlink>, before: bool) -> i32 {
+    fn shuffle_window(&self, link: refbox::Weak<winlink>, before: bool) -> i32 {
         if !link.is_alive() || link.try_borrow().expect("live winlink").idx == i32::MAX {
             return -1;
         }
@@ -290,24 +290,24 @@ impl Session for SessionRef {
         }
         index
     }
-    unsafe fn remove_replaced_window(&self, mut link: refbox::Weak<winlink>) -> bool {
+    fn remove_replaced_window(&self, mut link: refbox::Weak<winlink>) -> bool {
         events_fire_winlink(c"window-unlinked", link.clone());
         link.try_borrow_mut().expect("live winlink").flags &= !WINLINK_ALERTFLAGS;
         self.forget_winlink(link.clone());
-        session_winlink_remove(self, link.clone());
+        winlink_remove(link.clone());
         let was_current = link == self.current_winlink();
         if was_current {
             self.borrow_mut().curw = refbox::Weak::new();
         }
         was_current
     }
-    unsafe fn select_winlink(&self, link: refbox::Weak<winlink>) -> i32 {
+    fn select_winlink(&self, link: refbox::Weak<winlink>) -> i32 {
         session_set_current(self, link)
     }
-    unsafe fn detach_window(&self, link: refbox::Weak<winlink>) -> i32 {
+    fn detach_window(&self, link: refbox::Weak<winlink>) -> i32 {
         session_detach(self, link)
     }
-    unsafe fn attach_window(
+    fn attach_window(
         &self,
         window: &WindowRef,
         index: i32,
@@ -330,19 +330,19 @@ impl Session for SessionRef {
             Err(cause.expect("failed window spawn supplies a cause"))
         }
     }
-    unsafe fn renumber_windows(&self) {
+    fn renumber_windows(&self) {
         session_renumber_windows(self);
     }
-    unsafe fn update_history(&self) {
+    fn update_history(&self) {
         session_update_history(self);
     }
-    unsafe fn update_activity(&self, from: Option<SystemTime>) {
+    fn update_activity(&self, from: Option<SystemTime>) {
         session_update_activity(self, from);
     }
-    unsafe fn theme_changed(&self) {
+    fn theme_changed(&self) {
         session_theme_changed(self);
     }
-    unsafe fn on_attached(&self) {
+    fn on_attached(&self) {
         self.update_activity(None);
         session_theme_changed(self);
         self.borrow_mut().last_attached_time = SystemTime::now();
@@ -360,10 +360,10 @@ impl Session for SessionRef {
             model.options.as_mut().expect("live session options")
         })
     }
-    unsafe fn with_environment_mut<R>(&self, edit: impl FnOnce(&mut environ) -> R) -> Option<R> {
+    fn with_environment_mut<R>(&self, edit: impl FnOnce(&mut environ) -> R) -> Option<R> {
         self.borrow_mut().environ.as_deref_mut().map(edit)
     }
-    unsafe fn set_cwd(&self, cwd: Option<CString>) {
+    fn set_cwd(&self, cwd: Option<CString>) {
         session_set_cwd(&mut self.borrow_mut(), cwd);
     }
     fn cwd(&self) -> Option<CString> {
@@ -379,7 +379,7 @@ impl Session for SessionRef {
     ) -> Option<crate::format::FormatValue> {
         super::format::format_value(self, key, context)
     }
-    unsafe fn destroy(&self, notify: bool, from: &CStr) {
+    fn destroy(&self, notify: bool, from: &CStr) {
         session_destroy(self, notify as i32, from);
     }
 }
@@ -390,43 +390,39 @@ mod tests {
 
     #[test]
     fn rename_rejects_invalid_utf8_before_touching_the_registry() {
-        unsafe {
-            let session = session::new();
-            let invalid = CString::new(vec![0xff]).unwrap();
-            assert_eq!(
-                session.rename(&invalid).unwrap_err().as_bytes(),
-                b"invalid session name: \xff"
-            );
-            assert_eq!(session.name().as_bytes(), b"");
-        }
+        let session = session::new();
+        let invalid = CString::new(vec![0xff]).unwrap();
+        assert_eq!(
+            session.rename(&invalid).unwrap_err().as_bytes(),
+            b"invalid session name: \xff"
+        );
+        assert_eq!(session.name().as_bytes(), b"");
     }
 
     #[test]
     fn status_layout_is_cached_until_the_sizing_pass_publishes_it() {
-        unsafe {
-            let session = session::new();
-            let mut options = crate::options::options_create(None);
-            for key in [c"status", c"status-position"] {
-                let definition = crate::options::options_table
-                    .iter()
-                    .find(|definition| definition.name == Some(key))
-                    .unwrap();
-                crate::options::options_default(&mut options, definition);
-            }
-            session.borrow_mut().options = Some(options);
-            status_update_cache(&session);
-            let before = session.status_layout();
-            {
-                let mut options = session.borrow_options_mut();
-                crate::options::options_set_number(&mut options, c"status", 0);
-            }
-            assert_eq!(
-                session.status_layout(),
-                before,
-                "configuration edits do not publish the sizing cache"
-            );
-            status_update_cache(&session);
-            assert_eq!(session.status_layout(), (-1, 0));
+        let session = session::new();
+        let mut options = crate::options::options_create(None);
+        for key in [c"status", c"status-position"] {
+            let definition = crate::options::options_table
+                .iter()
+                .find(|definition| definition.name == Some(key))
+                .unwrap();
+            crate::options::options_default(&mut options, definition);
         }
+        session.borrow_mut().options = Some(options);
+        status_update_cache(&session);
+        let before = session.status_layout();
+        {
+            let mut options = session.borrow_options_mut();
+            crate::options::options_set_number(&mut options, c"status", 0);
+        }
+        assert_eq!(
+            session.status_layout(),
+            before,
+            "configuration edits do not publish the sizing cache"
+        );
+        status_update_cache(&session);
+        assert_eq!(session.status_layout(), (-1, 0));
     }
 }

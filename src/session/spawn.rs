@@ -42,7 +42,7 @@ pub(super) unsafe fn spawn_window(
             events_fire_winlink(c"window-unlinked", link.clone());
             winlink_stack_remove(&mut session.borrow_mut().lastw, link.clone());
             replaced_window = winlink_window(&link);
-            session_winlink_remove(&session, link.clone());
+            winlink_remove(link.clone());
             if session.current_winlink() == link {
                 session.borrow_mut().curw = refbox::Weak::new();
                 sc.flags &= !SPAWN_DETACHED;
@@ -94,7 +94,7 @@ pub(super) unsafe fn spawn_window(
         );
     if pane.is_none() {
         if sc.flags & SPAWN_RESPAWN == 0 {
-            session_winlink_remove(&session, sc.winlink_handle());
+            winlink_remove(sc.winlink_handle());
         }
         return refbox::Weak::new();
     }

@@ -18,11 +18,11 @@ use crate::window::Window as _;
 use crate::winlink::winlink_window;
 use libc::sscanf;
 
-pub unsafe fn resize_window(window: &WindowRef, sx: u_int, sy: u_int, xpixel: i32, ypixel: i32) {
+pub fn resize_window(window: &WindowRef, sx: u_int, sy: u_int, xpixel: i32, ypixel: i32) {
     use crate::window::Window;
     window.resize(sx, sy, xpixel, ypixel);
 }
-unsafe fn clients_with_window(w_owner: &WindowRef) -> u_int {
+fn clients_with_window(w_owner: &WindowRef) -> u_int {
     let mut loop_0: Option<ClientRef> = None;
     let mut n: u_int = 0 as u_int;
     let mut registry_loop_0_owner = ClientRegistry::first();
@@ -55,7 +55,7 @@ unsafe fn clients_with_window(w_owner: &WindowRef) -> u_int {
     }
     n
 }
-unsafe fn clients_calculate_size(
+fn clients_calculate_size(
     mut type_0: ::core::ffi::c_int,
     c_owner: Option<&ClientRef>,
     w_owner: Option<&WindowRef>,
@@ -294,7 +294,7 @@ pub unsafe fn default_window_size(
             type_0,
             c.as_ref(),
             w_owner,
-            |candidate| unsafe {
+            |candidate| {
                 (w_owner.is_some()
                     && (candidate
                         .attached_session()
@@ -356,7 +356,7 @@ pub unsafe fn default_window_size(
         { *sy }
     ));
 }
-pub unsafe fn recalculate_size(w_owner: &WindowRef, mut now: ::core::ffi::c_int) {
+pub fn recalculate_size(w_owner: &WindowRef, mut now: ::core::ffi::c_int) {
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     let mut xpixel: u_int = 0 as u_int;
@@ -385,7 +385,7 @@ pub unsafe fn recalculate_size(w_owner: &WindowRef, mut now: ::core::ffi::c_int)
         type_0,
         None,
         Some(w_owner),
-        |candidate| unsafe {
+        |candidate| {
             let Some(session) = candidate.attached_session().upgrade() else {
                 return true;
             };
@@ -440,10 +440,10 @@ pub unsafe fn recalculate_size(w_owner: &WindowRef, mut now: ::core::ffi::c_int)
         tty_update_window_offset(w_owner);
     };
 }
-pub unsafe fn recalculate_sizes() {
+pub fn recalculate_sizes() {
     recalculate_sizes_now(0 as ::core::ffi::c_int);
 }
-pub unsafe fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
+pub fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
     let mut _s: Option<SessionRef> = None;
     let mut c: Option<ClientRef> = None;
     crate::shared::session::SessionRef::recalculate_attachment_status();

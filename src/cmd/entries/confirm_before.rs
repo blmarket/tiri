@@ -7,7 +7,6 @@ use crate::cmd::queue::{
     cmdq_insert_after, cmdq_resumed,
 };
 use crate::cmd::{cmd_get_args, cmd_list_first};
-use crate::format::bytes::nullable_cstr;
 use crate::server_client::Client as _;
 use crate::shared::abi::*;
 use crate::shared::client::ClientRef;
@@ -139,7 +138,7 @@ unsafe fn cmd_confirm_before_exec(
         &tc.clone().expect("live client"),
         Some(target),
         &new_prompt,
-        nullable_cstr(::core::ptr::null::<::core::ffi::c_char>()),
+        None,
         inputcb,
         None,
         PROMPT_SINGLE,
@@ -165,7 +164,7 @@ async fn cmd_confirm_before_wait(
         drop(cmdlist);
         return std::future::pending().await;
     };
-    unsafe {
+    {
         let item = cmdq_resumed(&item);
         if confirmed {
             let new_item_allocation = cmdq_get_command(&cmdlist, item.borrow().state.as_ref());
@@ -179,7 +178,7 @@ async fn cmd_confirm_before_wait(
         }
     }
 }
-unsafe fn cmd_confirm_before_callback(
+fn cmd_confirm_before_callback(
     c_owner: &ClientRef,
     cdata: &mut cmd_confirm_before_data,
     s: Option<&CStr>,
@@ -208,7 +207,7 @@ unsafe fn cmd_confirm_before_callback(
 }
 impl cmd_confirm_before_data {
     fn into_callback(mut self: Box<Self>) -> crate::shared::status::status_prompt_input_cb {
-        Some(Box::new(move |client, text, _key| unsafe {
+        Some(Box::new(move |client, text, _key| {
             cmd_confirm_before_callback(client.expect("live client"), &mut self, text)
         }))
     }
@@ -225,7 +224,7 @@ mod tests {
     /// Queue an item on `owner` that waits for the answer to a prompt, as
     /// cmd_confirm_before_exec does; return the item, the prompt's data and
     /// the command list the continuation owns.
-    unsafe fn append_wait(
+    fn append_wait(
         owner: &ClientRef,
         default_yes: bool,
     ) -> (
@@ -259,7 +258,7 @@ mod tests {
     }
 
     /// Queue a callback that records whether it ran.
-    unsafe fn append_flag(owner: &ClientRef) -> Rc<Cell<bool>> {
+    fn append_flag(owner: &ClientRef) -> Rc<Cell<bool>> {
         let ran = Rc::new(Cell::new(false));
         let flag = ran.clone();
         cmdq_append(
@@ -277,83 +276,75 @@ mod tests {
 
     #[test]
     fn the_answer_acts_inside_the_send() {
-        unsafe {
-            for (default_yes, answer, confirmed) in [
-                (false, Some(c"y"), true),
-                (false, Some(c"n"), false),
-                (false, Some(c"\r"), false),
-                (true, Some(c"\r"), true),
-                (true, None, false),
-            ] {
-                let owner = clients::with_queue();
-                let (head, mut cdata, list) = append_wait(&owner, default_yes);
-                let ran = append_flag(&owner);
-                owner.set_return_value(-1);
-                assert_eq!(
-                    cmd_confirm_before_callback(&owner, &mut cdata, answer),
-                    PROMPT_CLOSE
-                );
-                assert_eq!(clients::return_value(&owner), (!confirmed).into());
-                assert!(list.upgrade().is_none(), "the continuation finished");
-                assert!(head.upgrade().is_some() && !ran.get());
-                assert_eq!(cmdq_next(Some(&owner)), u_int::from(confirmed) + 1);
-                assert!(head.upgrade().is_none() && ran.get());
-                cmd_confirm_before_callback(&owner, &mut cdata, Some(c"y"));
-                assert_eq!(cmdq_next(Some(&owner)), 0);
-            }
+        for (default_yes, answer, confirmed) in [
+            (false, Some(c"y"), true),
+            (false, Some(c"n"), false),
+            (false, Some(c"\r"), false),
+            (true, Some(c"\r"), true),
+            (true, None, false),
+        ] {
+            let owner = clients::with_queue();
+            let (head, mut cdata, list) = append_wait(&owner, default_yes);
+            let ran = append_flag(&owner);
+            owner.set_return_value(-1);
+            assert_eq!(
+                cmd_confirm_before_callback(&owner, &mut cdata, answer),
+                PROMPT_CLOSE
+            );
+            assert_eq!(clients::return_value(&owner), (!confirmed).into());
+            assert!(list.upgrade().is_none(), "the continuation finished");
+            assert!(head.upgrade().is_some() && !ran.get());
+            assert_eq!(cmdq_next(Some(&owner)), u_int::from(confirmed) + 1);
+            assert!(head.upgrade().is_none() && ran.get());
+            cmd_confirm_before_callback(&owner, &mut cdata, Some(c"y"));
+            assert_eq!(cmdq_next(Some(&owner)), 0);
         }
     }
 
     #[test]
     fn a_prompt_freed_unanswered_releases_the_data_and_parks() {
-        unsafe {
-            let owner = clients::with_queue();
-            let (head, cdata, list) = append_wait(&owner, false);
-            let ran = append_flag(&owner);
-            owner.set_return_value(-1);
-            drop(cdata);
-            assert!(list.upgrade().is_none(), "the command list is released");
-            assert_eq!(cmdq_next(Some(&owner)), 0);
-            assert!(head.upgrade().is_some() && !ran.get());
-            assert_eq!(clients::return_value(&owner), -1);
-            owner.update_flags(CLIENT_DEAD as u64, 0);
-            drop(owner);
-            assert!(head.upgrade().is_none());
-        }
+        let owner = clients::with_queue();
+        let (head, cdata, list) = append_wait(&owner, false);
+        let ran = append_flag(&owner);
+        owner.set_return_value(-1);
+        drop(cdata);
+        assert!(list.upgrade().is_none(), "the command list is released");
+        assert_eq!(cmdq_next(Some(&owner)), 0);
+        assert!(head.upgrade().is_some() && !ran.get());
+        assert_eq!(clients::return_value(&owner), -1);
+        owner.update_flags(CLIENT_DEAD as u64, 0);
+        drop(owner);
+        assert!(head.upgrade().is_none());
     }
 
     #[test]
     fn an_answer_after_the_waiting_client_is_freed_queues_nothing() {
-        unsafe {
-            let owner = clients::with_queue();
-            let answering = clients::with_queue();
-            let (head, mut cdata, list) = append_wait(&owner, false);
-            owner.update_flags(CLIENT_DEAD as u64, 0);
-            let client = Rc::downgrade(&owner);
-            drop(owner);
-            assert!(client.upgrade().is_none());
-            assert!(head.upgrade().is_none() && list.upgrade().is_none());
-            assert_eq!(
-                cmd_confirm_before_callback(&answering, &mut cdata, Some(c"y")),
-                PROMPT_CLOSE
-            );
-            assert_eq!(cmdq_next(Some(&answering)), 0);
-        }
+        let owner = clients::with_queue();
+        let answering = clients::with_queue();
+        let (head, mut cdata, list) = append_wait(&owner, false);
+        owner.update_flags(CLIENT_DEAD as u64, 0);
+        let client = Rc::downgrade(&owner);
+        drop(owner);
+        assert!(client.upgrade().is_none());
+        assert!(head.upgrade().is_none() && list.upgrade().is_none());
+        assert_eq!(
+            cmd_confirm_before_callback(&answering, &mut cdata, Some(c"y")),
+            PROMPT_CLOSE
+        );
+        assert_eq!(cmdq_next(Some(&answering)), 0);
     }
 
     #[test]
     fn a_background_confirmation_is_appended_to_the_answering_client() {
-        unsafe {
-            for (answer, queued) in [(c"n", 0), (c"y", 1)] {
-                let answering = clients::with_queue();
-                let mut cdata = Box::new(cmd_confirm_before_data {
-                    reply: Some(cmd_confirm_before_reply::Background(cmd_list_new())),
-                    confirm_key: b'y',
-                    default_yes: 0,
-                });
-                cmd_confirm_before_callback(&answering, &mut cdata, Some(answer));
-                assert_eq!(cmdq_next(Some(&answering)), queued);
-            }
+        for (answer, queued) in [(c"n", 0), (c"y", 1)] {
+            let answering = clients::with_queue();
+            let mut cdata = Box::new(cmd_confirm_before_data {
+                reply: Some(cmd_confirm_before_reply::Background(cmd_list_new())),
+                confirm_key: b'y',
+                default_yes: 0,
+            });
+            cmd_confirm_before_callback(&answering, &mut cdata, Some(answer));
+            assert_eq!(cmdq_next(Some(&answering)), queued);
         }
     }
 }

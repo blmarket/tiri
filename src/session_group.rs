@@ -126,7 +126,7 @@ pub fn session_group_name(group: &SessionGroupWeak) -> std::ffi::CString {
     access(group, |group| group.name.clone())
 }
 
-unsafe fn session_group_fire(name: &CStr, group: &SessionGroupWeak, owner: &SessionRef) {
+fn session_group_fire(name: &CStr, group: &SessionGroupWeak, owner: &SessionRef) {
     let mut target = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -149,14 +149,14 @@ unsafe fn session_group_fire(name: &CStr, group: &SessionGroupWeak, owner: &Sess
     events_fire(name, payload);
 }
 
-pub unsafe fn session_group_add(group: &SessionGroupWeak, owner: &SessionRef) {
+pub fn session_group_add(group: &SessionGroupWeak, owner: &SessionRef) {
     if !session_groups::for_session(&Rc::downgrade(owner)).is_alive() {
         access(group, |group| group.members.push(Rc::downgrade(owner)));
         session_group_fire(c"session-added-to-group", group, owner);
     }
 }
 
-pub(crate) unsafe fn session_group_remove(owner: &SessionRef) {
+pub(crate) fn session_group_remove(owner: &SessionRef) {
     let group = session_groups::for_session(&Rc::downgrade(owner));
     if !group.is_alive() {
         return;
@@ -212,7 +212,7 @@ pub fn session_group_attached_count(group: &SessionGroupWeak) -> u_int {
         })
 }
 
-pub unsafe fn session_group_synchronize_to(owner: &SessionRef) {
+pub fn session_group_synchronize_to(owner: &SessionRef) {
     let group = session_groups::for_session(&Rc::downgrade(owner));
     if !group.is_alive() {
         return;
@@ -225,7 +225,7 @@ pub unsafe fn session_group_synchronize_to(owner: &SessionRef) {
     }
 }
 
-pub unsafe fn session_group_synchronize_from(source: &SessionRef) {
+pub fn session_group_synchronize_from(source: &SessionRef) {
     let group = session_groups::for_session(&Rc::downgrade(source));
     if !group.is_alive() {
         return;

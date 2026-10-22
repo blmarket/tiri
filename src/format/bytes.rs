@@ -246,8 +246,7 @@ mod tests {
                 format_bytes_with(|out| write_cstr(out, nullable_cstr(raw.as_ptr().cast())))
                     .unwrap();
             assert_eq!(actual, b"\xffx");
-            let actual =
-                format_bytes_with(|out| write_cstr(out, nullable_cstr(std::ptr::null()))).unwrap();
+            let actual = format_bytes_with(|out| write_cstr(out, None)).unwrap();
             assert_eq!(actual, b"(null)");
         }
     }

@@ -9,10 +9,10 @@ pub fn grid_reader_start(gd: &grid, cx: u_int, cy: u_int) -> grid_reader<'_> {
 pub fn grid_reader_get_cursor(gr: &grid_reader<'_>) -> (u_int, u_int) {
     (gr.cx, gr.cy)
 }
-pub unsafe fn grid_reader_line_length(gr: &grid_reader<'_>) -> u_int {
+pub fn grid_reader_line_length(gr: &grid_reader<'_>) -> u_int {
     grid_line_length(gr.gd, gr.cy)
 }
-pub unsafe fn grid_reader_cursor_right(
+pub fn grid_reader_cursor_right(
     gr: &mut grid_reader<'_>,
     mut wrap: ::core::ffi::c_int,
     mut all: ::core::ffi::c_int,
@@ -57,7 +57,7 @@ pub unsafe fn grid_reader_cursor_right(
         }
     }
 }
-pub unsafe fn grid_reader_cursor_left(gr: &mut grid_reader<'_>, mut wrap: ::core::ffi::c_int) {
+pub fn grid_reader_cursor_left(gr: &mut grid_reader<'_>, mut wrap: ::core::ffi::c_int) {
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -93,7 +93,7 @@ pub unsafe fn grid_reader_cursor_left(gr: &mut grid_reader<'_>, mut wrap: ::core
         gr.cx = gr.cx.wrapping_sub(1);
     }
 }
-pub unsafe fn grid_reader_cursor_down(gr: &mut grid_reader<'_>) {
+pub fn grid_reader_cursor_down(gr: &mut grid_reader<'_>) {
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -119,7 +119,7 @@ pub unsafe fn grid_reader_cursor_down(gr: &mut grid_reader<'_>) {
         gr.cx = gr.cx.wrapping_sub(1);
     }
 }
-pub unsafe fn grid_reader_cursor_up(gr: &mut grid_reader<'_>) {
+pub fn grid_reader_cursor_up(gr: &mut grid_reader<'_>) {
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -157,7 +157,7 @@ pub fn grid_reader_cursor_start_of_line(gr: &mut grid_reader<'_>, mut wrap: ::co
     }
     gr.cx = 0 as u_int;
 }
-pub unsafe fn grid_reader_cursor_end_of_line(
+pub fn grid_reader_cursor_end_of_line(
     gr: &mut grid_reader<'_>,
     mut wrap: ::core::ffi::c_int,
     mut all: ::core::ffi::c_int,
@@ -177,7 +177,7 @@ pub unsafe fn grid_reader_cursor_end_of_line(
         gr.cx = grid_reader_line_length(gr);
     };
 }
-unsafe fn grid_reader_handle_wrap(
+fn grid_reader_handle_wrap(
     gr: &mut grid_reader<'_>,
     xx: &mut u_int,
     yy: &mut u_int,
@@ -196,10 +196,10 @@ unsafe fn grid_reader_handle_wrap(
     }
     1 as ::core::ffi::c_int
 }
-pub unsafe fn grid_reader_in_set(gr: &grid_reader<'_>, set: &CStr) -> ::core::ffi::c_int {
+pub fn grid_reader_in_set(gr: &grid_reader<'_>, set: &CStr) -> ::core::ffi::c_int {
     grid_in_set(gr.gd, gr.cx, gr.cy, set)
 }
-pub unsafe fn grid_reader_cursor_next_word(gr: &mut grid_reader<'_>, separators: &CStr) {
+pub fn grid_reader_cursor_next_word(gr: &mut grid_reader<'_>, separators: &CStr) {
     let mut xx: u_int = 0;
     let mut yy: u_int = 0;
     let mut width: u_int = 0;
@@ -242,7 +242,7 @@ pub unsafe fn grid_reader_cursor_next_word(gr: &mut grid_reader<'_>, separators:
         gr.cx = gr.cx.wrapping_add(width);
     }
 }
-pub unsafe fn grid_reader_cursor_next_word_end(gr: &mut grid_reader<'_>, separators: &CStr) {
+pub fn grid_reader_cursor_next_word_end(gr: &mut grid_reader<'_>, separators: &CStr) {
     let mut xx: u_int = 0;
     let mut yy: u_int = 0;
     if gr.gd.linedata[(gr.cy) as usize].flags as ::core::ffi::c_int & GRID_LINE_WRAPPED != 0 {
@@ -279,7 +279,7 @@ pub unsafe fn grid_reader_cursor_next_word_end(gr: &mut grid_reader<'_>, separat
         }
     }
 }
-pub unsafe fn grid_reader_cursor_previous_word(
+pub fn grid_reader_cursor_previous_word(
     gr: &mut grid_reader<'_>,
     separators: &CStr,
     mut already: ::core::ffi::c_int,
@@ -361,10 +361,7 @@ fn grid_reader_cell_equals_data(gc: &grid_cell, ud: &utf8_data) -> bool {
     }
     gc.data.size == ud.size && gc.data.data[..ud.size as usize] == ud.data[..ud.size as usize]
 }
-pub unsafe fn grid_reader_cursor_jump(
-    gr: &mut grid_reader<'_>,
-    jc: &utf8_data,
-) -> ::core::ffi::c_int {
+pub fn grid_reader_cursor_jump(gr: &mut grid_reader<'_>, jc: &utf8_data) -> ::core::ffi::c_int {
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -407,7 +404,7 @@ pub unsafe fn grid_reader_cursor_jump(
     }
     0 as ::core::ffi::c_int
 }
-pub unsafe fn grid_reader_cursor_jump_back(
+pub fn grid_reader_cursor_jump_back(
     gr: &mut grid_reader<'_>,
     jc: &utf8_data,
 ) -> ::core::ffi::c_int {
@@ -458,7 +455,7 @@ pub unsafe fn grid_reader_cursor_jump_back(
     }
     0 as ::core::ffi::c_int
 }
-pub unsafe fn grid_reader_cursor_back_to_indentation(gr: &mut grid_reader<'_>) {
+pub fn grid_reader_cursor_back_to_indentation(gr: &mut grid_reader<'_>) {
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -517,7 +514,7 @@ mod tests {
     };
     use crate::text::utf8::utf8_fromcstr_vec;
 
-    unsafe fn sample_grid() -> Box<grid> {
+    fn sample_grid() -> Box<grid> {
         let mut owner = grid_create(8, 4, 0);
         for (row, text) in [c"ab   中,", c"  cd", c"  tail", c""].iter().enumerate() {
             let mut column = 0;
@@ -546,48 +543,44 @@ mod tests {
 
     #[test]
     fn borrowed_reader_keeps_padding_and_wrapped_line_boundaries() {
-        unsafe {
-            let owner = sample_grid();
-            let mut reader = grid_reader_start(&owner, 2, 0);
-            grid_reader_cursor_right(&mut reader, 1, 0, 0);
-            assert_eq!(grid_reader_get_cursor(&reader), (5, 0));
-            grid_reader_cursor_right(&mut reader, 1, 0, 0);
-            assert_eq!(grid_reader_get_cursor(&reader), (7, 0));
-            grid_reader_cursor_right(&mut reader, 1, 0, 0);
-            assert_eq!(grid_reader_get_cursor(&reader), (0, 1));
-            grid_reader_cursor_left(&mut reader, 0);
-            assert_eq!(grid_reader_get_cursor(&reader), (8, 0));
-            grid_reader_cursor_end_of_line(&mut reader, 1, 0);
-            assert_eq!(grid_reader_get_cursor(&reader), (4, 1));
-            grid_reader_cursor_start_of_line(&mut reader, 1);
-            assert_eq!(grid_reader_get_cursor(&reader), (0, 0));
+        let owner = sample_grid();
+        let mut reader = grid_reader_start(&owner, 2, 0);
+        grid_reader_cursor_right(&mut reader, 1, 0, 0);
+        assert_eq!(grid_reader_get_cursor(&reader), (5, 0));
+        grid_reader_cursor_right(&mut reader, 1, 0, 0);
+        assert_eq!(grid_reader_get_cursor(&reader), (7, 0));
+        grid_reader_cursor_right(&mut reader, 1, 0, 0);
+        assert_eq!(grid_reader_get_cursor(&reader), (0, 1));
+        grid_reader_cursor_left(&mut reader, 0);
+        assert_eq!(grid_reader_get_cursor(&reader), (8, 0));
+        grid_reader_cursor_end_of_line(&mut reader, 1, 0);
+        assert_eq!(grid_reader_get_cursor(&reader), (4, 1));
+        grid_reader_cursor_start_of_line(&mut reader, 1);
+        assert_eq!(grid_reader_get_cursor(&reader), (0, 0));
 
-            let mut independent = grid_reader_start(&owner, 6, 2);
-            grid_reader_cursor_back_to_indentation(&mut independent);
-            assert_eq!(grid_reader_get_cursor(&independent), (2, 2));
-            assert_eq!(grid_reader_get_cursor(&reader), (0, 0));
-        }
+        let mut independent = grid_reader_start(&owner, 6, 2);
+        grid_reader_cursor_back_to_indentation(&mut independent);
+        assert_eq!(grid_reader_get_cursor(&independent), (2, 2));
+        assert_eq!(grid_reader_get_cursor(&reader), (0, 0));
     }
 
     #[test]
     fn borrowed_jump_targets_match_tabs_and_wide_cells_without_crossing_newlines() {
-        unsafe {
-            let owner = sample_grid();
-            let mut reader = grid_reader_start(&owner, 0, 0);
-            for (text, expected) in [(c"\t", (2, 0)), (c"中", (5, 0)), (c"c", (2, 1))] {
-                let target = utf8_fromcstr_vec(text)[0];
-                assert_eq!(grid_reader_cursor_jump(&mut reader, &target), 1);
-                assert_eq!(grid_reader_get_cursor(&reader), expected);
-            }
-            let target = utf8_fromcstr_vec(c"t")[0];
-            assert_eq!(grid_reader_cursor_jump(&mut reader, &target), 0);
-            assert_eq!(grid_reader_get_cursor(&reader), (2, 1));
-            let target = utf8_fromcstr_vec(c"中")[0];
-            assert_eq!(grid_reader_cursor_jump_back(&mut reader, &target), 1);
-            assert_eq!(grid_reader_get_cursor(&reader), (5, 0));
-            let target = utf8_fromcstr_vec(c"!")[0];
-            assert_eq!(grid_reader_cursor_jump_back(&mut reader, &target), 0);
-            assert_eq!(grid_reader_get_cursor(&reader), (5, 0));
+        let owner = sample_grid();
+        let mut reader = grid_reader_start(&owner, 0, 0);
+        for (text, expected) in [(c"\t", (2, 0)), (c"中", (5, 0)), (c"c", (2, 1))] {
+            let target = utf8_fromcstr_vec(text)[0];
+            assert_eq!(grid_reader_cursor_jump(&mut reader, &target), 1);
+            assert_eq!(grid_reader_get_cursor(&reader), expected);
         }
+        let target = utf8_fromcstr_vec(c"t")[0];
+        assert_eq!(grid_reader_cursor_jump(&mut reader, &target), 0);
+        assert_eq!(grid_reader_get_cursor(&reader), (2, 1));
+        let target = utf8_fromcstr_vec(c"中")[0];
+        assert_eq!(grid_reader_cursor_jump_back(&mut reader, &target), 1);
+        assert_eq!(grid_reader_get_cursor(&reader), (5, 0));
+        let target = utf8_fromcstr_vec(c"!")[0];
+        assert_eq!(grid_reader_cursor_jump_back(&mut reader, &target), 0);
+        assert_eq!(grid_reader_get_cursor(&reader), (5, 0));
     }
 }

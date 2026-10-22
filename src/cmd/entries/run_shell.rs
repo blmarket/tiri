@@ -126,7 +126,7 @@ unsafe fn cmd_run_shell_print(
     if !pane.is_mode(&window_view_mode) {
         pane.set_mode(None, &window_view_mode, None, None, None);
     }
-    window_copy_add(&pane, 1, |out| write_cstr(out, nullable_cstr(msg.as_ptr())));
+    window_copy_add(&pane, 1, |out| write_cstr(out, Some(&*msg)));
 }
 fn cmd_run_shell_status_message(cmd: &CStr, suffix: &[u8], code: ::core::ffi::c_int) -> CString {
     let cmd = cmd.to_bytes();
@@ -453,15 +453,13 @@ unsafe fn cmd_run_shell_callback(
 }
 impl Drop for cmd_run_shell_data {
     fn drop(&mut self) {
-        unsafe {
-            if let Some(session) = self.s.take() {
-                (session).release(c"cmd_run_shell_data::drop");
-            }
-            if let Some(client) = self.client.take() {
-                drop(client);
-            }
-            drop(self.state.take());
+        if let Some(session) = self.s.take() {
+            (session).release(c"cmd_run_shell_data::drop");
         }
+        if let Some(client) = self.client.take() {
+            drop(client);
+        }
+        drop(self.state.take());
     }
 }
 
@@ -490,7 +488,7 @@ mod tests {
     }
 
     /// Queue an item that suspends on `suspend`, after `owner`'s other items.
-    unsafe fn append(
+    fn append(
         owner: Option<&ClientRef>,
         suspend: impl FnOnce(&Rc<std::cell::RefCell<cmdq_item>>) -> CmdOutcome + 'static,
     ) -> Weak<std::cell::RefCell<cmdq_item>> {
@@ -501,7 +499,7 @@ mod tests {
     }
 
     /// Queue a callback that records whether it ran.
-    unsafe fn append_flag(owner: Option<&ClientRef>) -> Rc<Cell<bool>> {
+    fn append_flag(owner: Option<&ClientRef>) -> Rc<Cell<bool>> {
         let ran = Rc::new(Cell::new(false));
         let flag = ran.clone();
         append(owner, move |_| {
@@ -513,7 +511,7 @@ mod tests {
 
     /// Queue an item whose continuation waits for a job completion on the
     /// returned sender, as the completecb that cmd_run_shell_wait installs.
-    unsafe fn append_job_wait(
+    fn append_job_wait(
         owner: &ClientRef,
         cdata: Box<cmd_run_shell_data>,
     ) -> (
@@ -542,7 +540,7 @@ mod tests {
     #[test]
     fn a_zero_delay_runs_the_timer_body_one_runtime_turn_later() {
         let mut runtime = tiri_rt::mio::Runtime::new().unwrap();
-        unsafe {
+        {
             let head = append(None, |item| {
                 cmd_run_shell_wait(item, data(None, None), Duration::ZERO)
             });
@@ -562,7 +560,7 @@ mod tests {
     #[test]
     fn a_delay_resumes_at_its_deadline() {
         let mut runtime = tiri_rt::mio::Runtime::new().unwrap();
-        unsafe {
+        {
             let delay = Duration::from_millis(50);
             let start = Instant::now();
             let head = append(None, move |item| {
@@ -586,7 +584,7 @@ mod tests {
     #[test]
     fn dropping_the_item_during_the_delay_cancels_the_timer() {
         let mut runtime = tiri_rt::mio::Runtime::new().unwrap();
-        unsafe {
+        {
             let owner = clients::with_queue();
             let other = clients::with_queue();
             let cdata = data(Some(other.clone()), Some(c"true"));
@@ -607,48 +605,42 @@ mod tests {
 
     #[test]
     fn job_completion_runs_the_callback_body_inside_the_send() {
-        unsafe {
-            let owner = clients::with_queue();
-            owner.set_return_value(7);
-            let (head, done) = append_job_wait(&owner, data(Some(owner.clone()), Some(c"true")));
-            let ran = append_flag(Some(&owner));
-            assert!(head.upgrade().is_some());
-            assert!(done.send(exited(0)).is_ok());
-            assert_eq!(clients::return_value(&owner), 0);
-            assert!(head.upgrade().is_some() && !ran.get());
-            cmdq_next(Some(&owner));
-            assert!(head.upgrade().is_none());
-            assert!(ran.get());
-        }
+        let owner = clients::with_queue();
+        owner.set_return_value(7);
+        let (head, done) = append_job_wait(&owner, data(Some(owner.clone()), Some(c"true")));
+        let ran = append_flag(Some(&owner));
+        assert!(head.upgrade().is_some());
+        assert!(done.send(exited(0)).is_ok());
+        assert_eq!(clients::return_value(&owner), 0);
+        assert!(head.upgrade().is_some() && !ran.get());
+        cmdq_next(Some(&owner));
+        assert!(head.upgrade().is_none());
+        assert!(ran.get());
     }
 
     #[test]
     fn a_lost_client_is_freed_once_its_job_completes() {
-        unsafe {
-            let owner = clients::with_queue();
-            let (head, done) = append_job_wait(&owner, data(Some(owner.clone()), Some(c"true")));
-            owner.update_flags(CLIENT_DEAD as u64, 0);
-            let client = Rc::downgrade(&owner);
-            drop(owner);
-            assert!(client.upgrade().is_some());
-            assert!(done.send(exited(0)).is_ok());
-            assert!(client.upgrade().is_none());
-            assert!(head.upgrade().is_none());
-        }
+        let owner = clients::with_queue();
+        let (head, done) = append_job_wait(&owner, data(Some(owner.clone()), Some(c"true")));
+        owner.update_flags(CLIENT_DEAD as u64, 0);
+        let client = Rc::downgrade(&owner);
+        drop(owner);
+        assert!(client.upgrade().is_some());
+        assert!(done.send(exited(0)).is_ok());
+        assert!(client.upgrade().is_none());
+        assert!(head.upgrade().is_none());
     }
 
     #[test]
     fn a_job_freed_unfinished_releases_the_data_and_parks() {
-        unsafe {
-            let owner = clients::with_queue();
-            let (head, done) = append_job_wait(&owner, data(Some(owner.clone()), None));
-            owner.update_flags(CLIENT_DEAD as u64, 0);
-            let client = Rc::downgrade(&owner);
-            drop(owner);
-            assert!(client.upgrade().is_some());
-            drop(done);
-            assert!(client.upgrade().is_none());
-            assert!(head.upgrade().is_none());
-        }
+        let owner = clients::with_queue();
+        let (head, done) = append_job_wait(&owner, data(Some(owner.clone()), None));
+        owner.update_flags(CLIENT_DEAD as u64, 0);
+        let client = Rc::downgrade(&owner);
+        drop(owner);
+        assert!(client.upgrade().is_some());
+        drop(done);
+        assert!(client.upgrade().is_none());
+        assert!(head.upgrade().is_none());
     }
 }

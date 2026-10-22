@@ -124,7 +124,7 @@ fn cmd_display_menu_args_parse(args: &args, idx: u_int) -> Result<args_parse_typ
     }
     Ok(type_0)
 }
-unsafe fn cmd_display_menu_status_position(
+fn cmd_display_menu_status_position(
     client: &ClientRef,
     lines: u_int,
     window_index: u_int,

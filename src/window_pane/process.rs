@@ -11,7 +11,6 @@ use crate::reactor::{
     bufferevent_enable, bufferevent_get_input, bufferevent_new, bufferevent_write, evbuffer_drain,
     evbuffer_get_length, evbuffer_pullup,
 };
-use crate::server::server_proc;
 use crate::server_fn::server_destroy_pane;
 use crate::shared::abi::*;
 use crate::shared::client::ClientRef;
@@ -30,7 +29,7 @@ use crate::shared::signal::{sigset_t, SIG_BLOCK, SIG_SETMASK};
 use crate::shared::window::winlink;
 use crate::tmux::setblocking;
 use libc::{_exit, execl, fork, setpgid, sigfillset, sigprocmask};
-use std::os::fd::{AsRawFd, IntoRawFd};
+use std::os::fd::{AsFd, IntoRawFd};
 pub(super) unsafe fn pipe_pane(
     pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     self_0: refbox::Weak<cmd>,
@@ -119,7 +118,7 @@ pub(super) unsafe fn pipe_pane(
             CmdOutcome::Error
         }
         0 => {
-            proc_clear_signals(server_proc, 1 as ::core::ffi::c_int);
+            proc_clear_signals(1 as ::core::ffi::c_int);
             sigprocmask(
                 SIG_SETMASK,
                 &raw mut oldset,
@@ -193,44 +192,43 @@ pub(super) unsafe fn pipe_pane(
                 ::core::ptr::null_mut::<sigset_t>(),
             );
             drop(child);
-            let pipe_fd = parent.as_raw_fd();
-            {
-                let mut pane = pane_owner.borrow_mut();
-                pane.pipe_fd = Some(parent);
-                pane.pipe_offset = pane.offset;
-            }
-            setblocking(pipe_fd, 0 as ::core::ffi::c_int);
+            setblocking(parent.as_fd(), 0 as ::core::ffi::c_int);
             let read_observer = std::rc::Rc::downgrade(pane_owner);
             let write_observer = read_observer.clone();
             let error_observer = read_observer.clone();
             let stream = bufferevent_new(
-                pipe_fd,
-                bufferevent_data_callback(move |_| unsafe {
+                Some(parent.as_fd()),
+                bufferevent_data_callback(move || {
                     if let Some(owner) = read_observer.upgrade() {
                         cmd_pipe_pane_read_callback(&owner);
                     }
                 }),
-                bufferevent_data_callback(move |_| unsafe {
+                bufferevent_data_callback(move || {
                     if let Some(owner) = write_observer.upgrade() {
                         cmd_pipe_pane_write_callback(&owner);
                     }
                 }),
-                bufferevent_event_callback(move |_, _, _| unsafe {
+                bufferevent_event_callback(move |_, _| {
                     if let Some(owner) = error_observer.upgrade() {
                         cmd_pipe_pane_error_callback(&owner);
                     }
                 }),
             )
             .unwrap_or_else(|_| fatalx(|out| out.write_all(b"out of memory")));
-            let pipe_event = crate::reactor::StreamHandle::from_ptr(stream);
+            {
+                let mut pane = pane_owner.borrow_mut();
+                pane.pipe_fd = Some(parent);
+                pane.pipe_offset = pane.offset;
+            }
+            let pipe_event = stream;
             pane_owner.borrow_mut().pipe_event = pipe_event.clone();
             if out != 0 {
-                let _ = pipe_event.with_ptr(|event| unsafe {
+                let _ = pipe_event.with_stream(|event| {
                     bufferevent_enable(event, EV_WRITE as ::core::ffi::c_short);
                 });
             }
             if in_0 != 0 {
-                let _ = pipe_event.with_ptr(|event| unsafe {
+                let _ = pipe_event.with_stream(|event| {
                     bufferevent_enable(event, EV_READ as ::core::ffi::c_short);
                 });
             }
@@ -238,7 +236,7 @@ pub(super) unsafe fn pipe_pane(
         }
     }
 }
-unsafe fn cmd_pipe_pane_read_callback(pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>) {
+fn cmd_pipe_pane_read_callback(pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>) {
     let (pipe, output, id) = {
         let pane = pane_owner.borrow();
         (pane.pipe_event.clone(), pane.event.clone(), pane.id)
@@ -247,7 +245,7 @@ unsafe fn cmd_pipe_pane_read_callback(pane_owner: &std::rc::Rc<std::cell::RefCel
         return;
     }
     let data = pipe
-        .with_ptr(|event| unsafe {
+        .with_stream(|event| {
             let evb = &mut *(*event).input;
             let available = evbuffer_get_length(evb);
             evbuffer_pullup(evb, -1).map_or_else(Vec::new, |bytes| bytes[..available].to_vec())
@@ -255,23 +253,23 @@ unsafe fn cmd_pipe_pane_read_callback(pane_owner: &std::rc::Rc<std::cell::RefCel
         .unwrap_or_default();
     let available = data.len();
     log_debug(format_args!("%{} pipe read {}", id, { available }));
-    let _ = output.with_ptr(|event| unsafe {
+    let _ = output.with_stream(|event| {
         bufferevent_write(event, &data[..available]);
     });
-    let _ = pipe.with_ptr(|event| unsafe {
+    let _ = pipe.with_stream(|event| {
         evbuffer_drain(bufferevent_get_input(&mut *event), available);
     });
     if window_pane_destroy_ready(pane_owner) != 0 {
         server_destroy_pane(pane_owner, 1);
     }
 }
-unsafe fn cmd_pipe_pane_write_callback(pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>) {
+fn cmd_pipe_pane_write_callback(pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>) {
     log_debug(format_args!("%{} pipe empty", pane_owner.borrow().id));
     if window_pane_destroy_ready(pane_owner) != 0 {
         server_destroy_pane(pane_owner, 1);
     }
 }
-unsafe fn cmd_pipe_pane_error_callback(pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>) {
+fn cmd_pipe_pane_error_callback(pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>) {
     let (id, pipe_event, pipe_fd) = {
         let mut pane = pane_owner.borrow_mut();
         (
@@ -292,6 +290,7 @@ unsafe fn cmd_pipe_pane_error_callback(pane_owner: &std::rc::Rc<std::cell::RefCe
 mod pipe_stream_tests {
     use super::*;
     use crate::reactor::{evbuffer_add, shutdown_runtime};
+    use std::os::fd::AsRawFd;
 
     #[test]
     fn pipe_error_closes_descriptor_while_pane_remains_alive() {
@@ -303,9 +302,9 @@ mod pipe_stream_tests {
             let pane = window_pane::new();
             let (socket, _receiver) = UnixStream::pair().unwrap();
             let fd = socket.as_raw_fd();
+            let stream = bufferevent_new(Some(socket.as_fd()), None, None, None).unwrap();
             pane.borrow_mut().pipe_fd = Some(socket.into());
-            let stream = bufferevent_new(fd, None, None, None).unwrap();
-            pane.borrow_mut().pipe_event = crate::reactor::StreamHandle::from_ptr(stream);
+            pane.borrow_mut().pipe_event = stream;
             let observer = pane.borrow().pipe_event.clone();
 
             cmd_pipe_pane_error_callback(&pane);
@@ -322,38 +321,39 @@ mod pipe_stream_tests {
 
     #[test]
     fn pipe_read_forwards_bytes_and_stream_handle_expires() {
-        unsafe {
-            let pane_owner = window_pane::new();
-            let main = bufferevent_new(-1, None, None, None).unwrap();
-            let pipe = bufferevent_new(-1, None, None, None).unwrap();
-            let stale = {
-                let mut wp = pane_owner.borrow_mut();
-                wp.fd = None;
-                wp.pipe_fd = None;
-                wp.event = crate::reactor::StreamHandle::from_ptr(main);
-                wp.pipe_event = crate::reactor::StreamHandle::from_ptr(pipe);
-                wp.pipe_event.clone()
-            };
-            let bytes = b"pipe output";
-            evbuffer_add(&mut (*pipe).input, bytes);
+        let pane_owner = window_pane::new();
+        let main = bufferevent_new(None, None, None, None).unwrap();
+        let pipe = bufferevent_new(None, None, None, None).unwrap();
+        let stale = {
+            let mut wp = pane_owner.borrow_mut();
+            wp.fd = None;
+            wp.pipe_fd = None;
+            wp.event = main;
+            wp.pipe_event = pipe;
+            wp.pipe_event.clone()
+        };
+        let bytes = b"pipe output";
+        stale.with_stream(|stream| evbuffer_add(&mut stream.input, bytes));
 
-            cmd_pipe_pane_read_callback(&pane_owner);
+        cmd_pipe_pane_read_callback(&pane_owner);
 
-            assert_eq!(
-                pane_owner
-                    .borrow()
-                    .event
-                    .with_ptr(|event| evbuffer_get_length(&(*event).output)),
-                Some(bytes.len())
-            );
-            assert_eq!(evbuffer_get_length(&(*pipe).input), 0);
-            let pipe_event = std::mem::take(&mut pane_owner.borrow_mut().pipe_event);
-            pipe_event.free();
-            assert!(!stale.is_alive());
-            assert!(!pane_owner.borrow().pipe_event.is_alive());
-            let event = std::mem::take(&mut pane_owner.borrow_mut().event);
-            event.free();
-            drop(pane_owner);
-        }
+        assert_eq!(
+            pane_owner
+                .borrow()
+                .event
+                .with_stream(|event| evbuffer_get_length(&(*event).output)),
+            Some(bytes.len())
+        );
+        assert_eq!(
+            stale.with_stream(|stream| evbuffer_get_length(&stream.input)),
+            Some(0)
+        );
+        let pipe_event = std::mem::take(&mut pane_owner.borrow_mut().pipe_event);
+        pipe_event.free();
+        assert!(!stale.is_alive());
+        assert!(!pane_owner.borrow().pipe_event.is_alive());
+        let event = std::mem::take(&mut pane_owner.borrow_mut().event);
+        event.free();
+        drop(pane_owner);
     }
 }

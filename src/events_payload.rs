@@ -32,7 +32,7 @@ pub fn event_payload_items(ep: &event_payload) -> impl Iterator<Item = &event_pa
     ep.items.values().map(Box::as_ref)
 }
 
-unsafe fn event_payload_free_target(ep: &mut event_payload) {
+fn event_payload_free_target(ep: &mut event_payload) {
     let target = &mut ep.target;
     if let Some(session) = ep.target_session.take() {
         session.release(c"event_payload_free_target");
@@ -49,7 +49,7 @@ impl Drop for event_payload_item {
             &mut self.value,
             EventPayloadValue::String(Default::default()),
         );
-        unsafe {
+        {
             match value {
                 EventPayloadValue::Client(client) => drop(client),
                 EventPayloadValue::Session(session) => session.release(c"event_payload_free_value"),
@@ -86,11 +86,11 @@ pub fn event_payload_create() -> Box<event_payload> {
 impl Drop for event_payload {
     fn drop(&mut self) {
         drop(std::mem::take(&mut self.items));
-        unsafe { event_payload_free_target(self) };
+        event_payload_free_target(self);
     }
 }
 
-pub unsafe fn event_payload_set_target(ep: &mut event_payload, fs: &cmd_find_state) {
+pub fn event_payload_set_target(ep: &mut event_payload, fs: &cmd_find_state) {
     event_payload_free_target(ep);
     let target = &mut ep.target;
     ep.target_session = fs.s.upgrade();
@@ -130,7 +130,7 @@ pub unsafe fn event_payload_set_target(ep: &mut event_payload, fs: &cmd_find_sta
         target.wp = fs.wp.clone();
     }
 }
-pub unsafe fn event_payload_get_target(ep: &event_payload, fs: &mut cmd_find_state) -> i32 {
+pub fn event_payload_get_target(ep: &event_payload, fs: &mut cmd_find_state) -> i32 {
     let target = &ep.target;
     let session = target.s.upgrade();
     let window = target.w.upgrade();
@@ -261,7 +261,7 @@ pub fn event_payload_get_string(ep: &event_payload) -> Option<&CStr> {
         _ => None,
     }
 }
-unsafe fn event_payload_add_item(epi: &event_payload_item, evb: &mut SegmentedBuf) {
+fn event_payload_add_item(epi: &event_payload_item, evb: &mut SegmentedBuf) {
     match epi.type_0() as ::core::ffi::c_uint {
         0 => {
             evbuffer_add_formatted(evb, |out| out.write_all(epi.value.string().to_bytes()));
@@ -308,7 +308,7 @@ unsafe fn event_payload_add_item(epi: &event_payload_item, evb: &mut SegmentedBu
 }
 /// Printed payload bytes with one trailing NUL for synchronous C consumers.
 /// The bytes before that terminator may themselves contain NULs.
-pub(crate) unsafe fn event_payload_item_print_owned(epi: &event_payload_item) -> Vec<u8> {
+pub(crate) fn event_payload_item_print_owned(epi: &event_payload_item) -> Vec<u8> {
     let mut size: size_t = 0;
     let mut evb = evbuffer_new();
     event_payload_add_item(epi, &mut evb);
@@ -319,14 +319,10 @@ pub(crate) unsafe fn event_payload_item_print_owned(epi: &event_payload_item) ->
     value
 }
 
-pub(crate) unsafe fn event_payload_print_owned(ep: &event_payload) -> Option<Vec<u8>> {
+pub(crate) fn event_payload_print_owned(ep: &event_payload) -> Option<Vec<u8>> {
     event_payload_find(ep, c"pane").map(|item| event_payload_item_print_owned(item))
 }
-pub unsafe fn event_payload_add_formats(
-    ep: &event_payload,
-    ft: &mut format_tree,
-    prefix: Option<&CStr>,
-) {
+pub fn event_payload_add_formats(ep: &event_payload, ft: &mut format_tree, prefix: Option<&CStr>) {
     let prefix = prefix.unwrap_or(c"").to_bytes();
     for epi in event_payload_items(ep) {
         let key_bytes = epi.name.to_bytes();
@@ -366,7 +362,7 @@ pub fn event_payload_item_name(epi: &event_payload_item) -> &CStr {
     &epi.name
 }
 
-pub unsafe fn event_payload_log(
+pub fn event_payload_log(
     ep: &event_payload,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {

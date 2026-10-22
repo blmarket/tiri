@@ -76,7 +76,7 @@ fn fuzzy_decode_one<'a>(input: &'a [u8], ud: &mut utf8_data) -> &'a [u8] {
     utf8_set(ud, input[0]);
     &input[1..]
 }
-unsafe fn fuzzy_scan(text: &CStr, widths: &mut [u_int; 5]) -> Vec<fuzzy_char> {
+fn fuzzy_scan(text: &CStr, widths: &mut [u_int; 5]) -> Vec<fuzzy_char> {
     let mut cs = Vec::new();
     let mut current: style_align = STYLE_ALIGN_LEFT;
     let mut sy: style = style {
@@ -411,7 +411,7 @@ fn fuzzy_match_group(
     }
     any.then_some(score)
 }
-pub(crate) unsafe fn fuzzy_match_owned(
+pub(crate) fn fuzzy_match_owned(
     pattern: &CStr,
     text: &CStr,
     mut width: u_int,
@@ -557,120 +557,110 @@ mod tests {
 
     #[test]
     fn scores_preserve_ties_inverse_terms_and_negative_matches() {
-        unsafe {
-            for (pattern, text, expected_mask, expected_score) in [
-                (c"abc", c"abc", 0b111, 24),
-                (c"abc", c"aabcbc", 0b001110, 11),
-                (c"'ab", c"xx ab ab", 0b00011000, 1014),
-                (c"^ab", c"abcd", 0b11, 1224),
-                (c"ab$", c"zz ab", 0b11000, 1117),
-                (c"^ab$", c"ab", 0b11, 1324),
-                (c"!ab", c"axb", 0, 0),
-                (c"ab | 'z", c"abz", 0b100, 1004),
-                (c"a b", c"ab", 0b11, 11),
-                (c"b | a", c"xa xb", 0b10, 0),
-                (c" ", c"anything", 0, 0),
-            ] {
-                let mut score = u32::MAX;
-                let mask = fuzzy_match_owned(pattern, text, 8, Some(&mut score)).unwrap();
-                assert_eq!(
-                    (mask[0], score),
-                    (expected_mask, expected_score),
-                    "{pattern:?} {text:?}"
-                );
-            }
-            for (pattern, text, width) in [(c"missing", c"abc", 8), (c"a", c"a", 0)] {
-                let mut score = 123;
-                assert!(fuzzy_match_owned(pattern, text, width, Some(&mut score)).is_none());
-                assert_eq!(score, 123);
-            }
+        for (pattern, text, expected_mask, expected_score) in [
+            (c"abc", c"abc", 0b111, 24),
+            (c"abc", c"aabcbc", 0b001110, 11),
+            (c"'ab", c"xx ab ab", 0b00011000, 1014),
+            (c"^ab", c"abcd", 0b11, 1224),
+            (c"ab$", c"zz ab", 0b11000, 1117),
+            (c"^ab$", c"ab", 0b11, 1324),
+            (c"!ab", c"axb", 0, 0),
+            (c"ab | 'z", c"abz", 0b100, 1004),
+            (c"a b", c"ab", 0b11, 11),
+            (c"b | a", c"xa xb", 0b10, 0),
+            (c" ", c"anything", 0, 0),
+        ] {
+            let mut score = u32::MAX;
+            let mask = fuzzy_match_owned(pattern, text, 8, Some(&mut score)).unwrap();
+            assert_eq!(
+                (mask[0], score),
+                (expected_mask, expected_score),
+                "{pattern:?} {text:?}"
+            );
+        }
+        for (pattern, text, width) in [(c"missing", c"abc", 8), (c"a", c"a", 0)] {
+            let mut score = 123;
+            assert!(fuzzy_match_owned(pattern, text, width, Some(&mut score)).is_none());
+            assert_eq!(score, 123);
         }
     }
 
     #[test]
     fn decoded_terms_reuse_only_the_initialized_prefix() {
-        unsafe {
-            for (pattern, text, mask) in [
-                (c"^longterm$ | ^a$", c"a", Some(1)),
-                (c"^a$ | ^longterm$", c"longterm", Some(255)),
-                (c"'\xc3 | ^a$", c"a", Some(1)),
-                (c"^a$", c"\xe2\x82a", Some(1)),
-                (c"^a$", c"\xc3a", Some(1)),
-                (c"^a$", c"a\xf0\x9f", Some(1)),
-                (c"!a b", c"ab", None),
-                (c"a missing | b", c"ab", Some(2)),
-            ] {
-                assert_eq!(
-                    fuzzy_match_owned(pattern, text, 8, None).map(|bits| bits[0]),
-                    mask,
-                    "{pattern:?} {text:?}"
-                );
-            }
+        for (pattern, text, mask) in [
+            (c"^longterm$ | ^a$", c"a", Some(1)),
+            (c"^a$ | ^longterm$", c"longterm", Some(255)),
+            (c"'\xc3 | ^a$", c"a", Some(1)),
+            (c"^a$", c"\xe2\x82a", Some(1)),
+            (c"^a$", c"\xc3a", Some(1)),
+            (c"^a$", c"a\xf0\x9f", Some(1)),
+            (c"!a b", c"ab", None),
+            (c"a missing | b", c"ab", Some(2)),
+        ] {
+            assert_eq!(
+                fuzzy_match_owned(pattern, text, 8, None).map(|bits| bits[0]),
+                mask,
+                "{pattern:?} {text:?}"
+            );
         }
     }
 
     #[test]
     fn borrowed_terms_preserve_operators_and_group_boundaries() {
-        unsafe {
-            for (pattern, text, expected) in [
-                (c"^ab$", c"ab", Some(0b11)),
-                (c"^ab$", c"abc", None),
-                (c"'ab", c"axb", None),
-                (c"!ab", c"axb", Some(0)),
-                (c"!ab", c"zab", None),
-                (c"!^ab$", c"abc", Some(0)),
-                (c"!^ab$", c"ab", None),
-                (c"  ^ab  cd$ | missing ", c"abcd", Some(0b1111)),
-                (c"missing||^ab$|", c"ab", Some(0b11)),
-                (c"^é$", c"é", Some(1)),
-                (c"^\xff$", c"\xff", None),
-                (c" | ", c"ab", Some(0)),
-            ] {
-                let mask = fuzzy_match_owned(pattern, text, 8, None);
-                assert_eq!(mask.map(|mask| mask[0]), expected, "{pattern:?}");
-            }
-            for pattern in [c"!", c"'", c"^", c"$", c"!^$", c"'$", c"ab ^"] {
-                assert!(fuzzy_match_owned(pattern, c"ab", 8, None).is_none());
-            }
+        for (pattern, text, expected) in [
+            (c"^ab$", c"ab", Some(0b11)),
+            (c"^ab$", c"abc", None),
+            (c"'ab", c"axb", None),
+            (c"!ab", c"axb", Some(0)),
+            (c"!ab", c"zab", None),
+            (c"!^ab$", c"abc", Some(0)),
+            (c"!^ab$", c"ab", None),
+            (c"  ^ab  cd$ | missing ", c"abcd", Some(0b1111)),
+            (c"missing||^ab$|", c"ab", Some(0b11)),
+            (c"^é$", c"é", Some(1)),
+            (c"^\xff$", c"\xff", None),
+            (c" | ", c"ab", Some(0)),
+        ] {
+            let mask = fuzzy_match_owned(pattern, text, 8, None);
+            assert_eq!(mask.map(|mask| mask[0]), expected, "{pattern:?}");
+        }
+        for pattern in [c"!", c"'", c"^", c"$", c"!^$", c"'$", c"ab ^"] {
+            assert!(fuzzy_match_owned(pattern, c"ab", 8, None).is_none());
         }
     }
 
     #[test]
     fn bracketed_style_controls_fuzzy_match_columns() {
-        unsafe {
-            let pattern = c"R";
-            let right = c"L#[align=right]R";
-            let mask = fuzzy_match_owned(pattern, right, 8, None);
-            assert_eq!(mask.unwrap()[0], 1 << 7);
+        let pattern = c"R";
+        let right = c"L#[align=right]R";
+        let mask = fuzzy_match_owned(pattern, right, 8, None);
+        assert_eq!(mask.unwrap()[0], 1 << 7);
 
-            let invalid = c"L#[align=bogus]R";
-            let mask = fuzzy_match_owned(pattern, invalid, 8, None);
-            assert_eq!(mask.unwrap()[0], 1 << 1);
+        let invalid = c"L#[align=bogus]R";
+        let mask = fuzzy_match_owned(pattern, invalid, 8, None);
+        assert_eq!(mask.unwrap()[0], 1 << 1);
 
-            let incomplete = c"L#[align=right R";
-            let mask = fuzzy_match_owned(pattern, incomplete, 8, None);
-            assert!(mask.is_none());
-        }
+        let incomplete = c"L#[align=right R";
+        let mask = fuzzy_match_owned(pattern, incomplete, 8, None);
+        assert!(mask.is_none());
     }
 
     #[test]
     fn fuzzy_match_backtracks_and_resets_between_alternatives() {
-        unsafe {
-            let mask = fuzzy_match_owned(c"q|abc", c"aabcbc", 6, None);
-            assert_eq!(mask.unwrap()[0], 0b001110);
+        let mask = fuzzy_match_owned(c"q|abc", c"aabcbc", 6, None);
+        assert_eq!(mask.unwrap()[0], 0b001110);
 
-            let mask = fuzzy_match_owned(c"abc|q", c"aabcbc", 6, None);
-            assert_eq!(mask.unwrap()[0], 0b001110);
+        let mask = fuzzy_match_owned(c"abc|q", c"aabcbc", 6, None);
+        assert_eq!(mask.unwrap()[0], 0b001110);
 
-            assert!(fuzzy_match_owned(c"abc", c"abx", 3, None).is_none());
-        }
+        assert!(fuzzy_match_owned(c"abc", c"abx", 3, None).is_none());
     }
 
     #[test]
     fn fuzzy_match_crosses_scan_growth_boundary_and_stops_at_nul() {
         let text = format!("{}zy\0q", "a".repeat(63));
         let text = CStr::from_bytes_until_nul(text.as_bytes()).unwrap();
-        unsafe {
+        {
             let mask = fuzzy_match_owned(c"zy", text, 65, None);
             let mask = mask.unwrap();
             assert_eq!(mask.as_slice(), &[0, 0, 0, 0, 0, 0, 0, 0x80, 1]);

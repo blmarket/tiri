@@ -84,7 +84,7 @@ fn screen_write_recycle_items(items: &mut screen_write_items) {
         screen_write_free_citem(item);
     }
 }
-unsafe fn screen_write_set_cursor(
+fn screen_write_set_cursor(
     ctx: &mut screen_write_ctx,
     mut cx: ::core::ffi::c_int,
     mut cy: ::core::ffi::c_int,
@@ -120,7 +120,7 @@ fn screen_write_redraw_cb(
     observer: &std::rc::Weak<std::cell::RefCell<window_pane>>,
 ) -> tty_ctx_redraw_cb {
     let observer = observer.clone();
-    Some(Box::new(move |_| unsafe {
+    Some(Box::new(move |_| {
         if let Some(owner) = observer.upgrade() {
             use crate::window::WindowPane;
             owner.request_redraw(false);
@@ -132,7 +132,7 @@ fn screen_write_set_client_cb(
 ) -> tty_ctx_set_client_cb {
     use crate::server_client::Client;
     let observer = observer.clone();
-    Some(Box::new(move |ttyctx, client| unsafe {
+    Some(Box::new(move |ttyctx, client| {
         let Some(pane) = observer.upgrade() else {
             return 0;
         };
@@ -140,7 +140,7 @@ fn screen_write_set_client_cb(
     }))
 }
 
-unsafe fn screen_write_pane_is_obscured(ctx: &mut screen_write_ctx) -> ::core::ffi::c_int {
+fn screen_write_pane_is_obscured(ctx: &mut screen_write_ctx) -> ::core::ffi::c_int {
     let Some(pane) = ctx.wp.upgrade() else {
         return 0;
     };
@@ -152,7 +152,7 @@ unsafe fn screen_write_pane_is_obscured(ctx: &mut screen_write_ctx) -> ::core::f
     }
     (ctx.flags & SCREEN_WRITE_OBSCURED != 0) as i32
 }
-unsafe fn screen_write_should_draw_lines(ctx: &mut screen_write_ctx, y: u_int, ny: u_int) -> i32 {
+fn screen_write_should_draw_lines(ctx: &mut screen_write_ctx, y: u_int, ny: u_int) -> i32 {
     let screen = &*ctx.screen;
     let synchronized = screen.mode & MODE_SYNC != 0;
     let height = screen.grid().sy;
@@ -161,13 +161,10 @@ unsafe fn screen_write_should_draw_lines(ctx: &mut screen_write_ctx, y: u_int, n
         None => (!synchronized) as i32,
     }
 }
-unsafe fn screen_write_should_draw_line(
-    ctx: &mut screen_write_ctx,
-    mut y: u_int,
-) -> ::core::ffi::c_int {
+fn screen_write_should_draw_line(ctx: &mut screen_write_ctx, mut y: u_int) -> ::core::ffi::c_int {
     screen_write_should_draw_lines(ctx, y, 1 as u_int)
 }
-pub(crate) unsafe fn screen_write_initctx(
+pub(crate) fn screen_write_initctx(
     ctx: &mut screen_write_ctx,
     ttyctx: &mut tty_ctx,
     mut is_sync: ::core::ffi::c_int,
@@ -262,7 +259,7 @@ fn screen_write_init(s: &mut screen) -> screen_write_ctx<'_> {
 /// Start writing a pane's screen: the pane observes the write for redraw and
 /// terminal output. Stop before replacing that screen, changing modes, or
 /// logically destroying the pane; the context does not own the pane.
-pub unsafe fn screen_write_start_pane<'s>(
+pub fn screen_write_start_pane<'s>(
     pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     s: &'s mut screen,
 ) -> screen_write_ctx<'s> {
@@ -310,12 +307,12 @@ pub fn screen_write_start(s: &mut screen) -> screen_write_ctx<'_> {
     ctx
 }
 /// Flush pending output and end the write, releasing the screen borrow.
-pub unsafe fn screen_write_stop(mut ctx: screen_write_ctx<'_>) {
+pub fn screen_write_stop(mut ctx: screen_write_ctx<'_>) {
     screen_write_collect_end(&mut ctx);
     screen_write_collect_flush(&mut ctx, 0 as ::core::ffi::c_int, "screen_write_stop");
     screen_write_free_citem(ctx.item.take().expect("active screen write context"));
 }
-pub unsafe fn screen_write_reset(ctx: &mut screen_write_ctx) {
+pub fn screen_write_reset(ctx: &mut screen_write_ctx) {
     screen_reset_tabs(&mut *ctx.screen);
     screen_write_scrollregion(
         ctx,
@@ -331,7 +328,7 @@ pub unsafe fn screen_write_reset(ctx: &mut screen_write_ctx) {
     screen_write_clearscreen(ctx, 8 as u_int);
     screen_write_set_cursor(ctx, 0 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
 }
-pub unsafe fn screen_write_putc(ctx: &mut screen_write_ctx, gcp: &grid_cell, ch: u_char) {
+pub fn screen_write_putc(ctx: &mut screen_write_ctx, gcp: &grid_cell, ch: u_char) {
     let mut gc = *gcp;
     utf8_set(&mut gc.data, ch);
     screen_write_cell(ctx, &gc);
@@ -367,7 +364,7 @@ pub fn screen_write_strlen(msg: &CStr) -> size_t {
     }
     size
 }
-pub unsafe fn screen_write_text(
+pub fn screen_write_text(
     ctx: &mut screen_write_ctx,
     mut cx: u_int,
     mut width: u_int,
@@ -471,14 +468,14 @@ pub unsafe fn screen_write_text(
     1 as ::core::ffi::c_int
 }
 
-pub unsafe fn screen_write_puts(
+pub fn screen_write_puts(
     ctx: &mut screen_write_ctx,
     gcp: &grid_cell,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     screen_write_nputs(ctx, -1, gcp, write);
 }
-pub unsafe fn screen_write_nputs(
+pub fn screen_write_nputs(
     ctx: &mut screen_write_ctx,
     maxlen: ssize_t,
     gcp: &grid_cell,
@@ -531,7 +528,7 @@ pub unsafe fn screen_write_nputs(
         }
     }
 }
-pub unsafe fn screen_write_fast_copy(
+pub fn screen_write_fast_copy(
     ctx: &mut screen_write_ctx,
     src: &screen,
     mut px: u_int,
@@ -652,7 +649,7 @@ fn screen_write_box_border_set(
         _ => {}
     };
 }
-pub unsafe fn screen_write_hline(
+pub fn screen_write_hline(
     ctx: &mut screen_write_ctx,
     mut nx: u_int,
     mut left: ::core::ffi::c_int,
@@ -687,11 +684,7 @@ pub unsafe fn screen_write_hline(
     screen_write_cell(ctx, &gc);
     screen_write_set_cursor(ctx, cx as ::core::ffi::c_int, cy as ::core::ffi::c_int);
 }
-pub unsafe fn screen_write_vline(
-    ctx: &mut screen_write_ctx,
-    mut ny: u_int,
-    gcp: Option<&grid_cell>,
-) {
+pub fn screen_write_vline(ctx: &mut screen_write_ctx, mut ny: u_int, gcp: Option<&grid_cell>) {
     let mut gc = gcp.copied().unwrap_or(grid_default_cell);
     let mut cx: u_int = 0;
     let mut cy: u_int = 0;
@@ -718,7 +711,7 @@ pub unsafe fn screen_write_vline(
     screen_write_putc(ctx, &gc, ('x' as i32) as u_char);
     screen_write_set_cursor(ctx, cx as ::core::ffi::c_int, cy as ::core::ffi::c_int);
 }
-pub unsafe fn screen_write_menu(
+pub fn screen_write_menu(
     ctx: &mut screen_write_ctx,
     menu: &menu,
     choice: ::core::ffi::c_int,
@@ -778,7 +771,7 @@ pub unsafe fn screen_write_menu(
     }
     screen_write_set_cursor(ctx, cx as ::core::ffi::c_int, cy as ::core::ffi::c_int);
 }
-pub unsafe fn screen_write_box(
+pub fn screen_write_box(
     ctx: &mut screen_write_ctx,
     mut nx: u_int,
     mut ny: u_int,
@@ -855,7 +848,7 @@ pub unsafe fn screen_write_box(
     }
     screen_write_set_cursor(ctx, cx as ::core::ffi::c_int, cy as ::core::ffi::c_int);
 }
-pub unsafe fn screen_write_preview(
+pub fn screen_write_preview(
     ctx: &mut screen_write_ctx,
     src: &screen,
     mut nx: u_int,
@@ -946,14 +939,14 @@ pub fn screen_write_mode_clear(ctx: &mut screen_write_ctx, mut mode: ::core::ffi
 }
 /// Leave the observing pane's sync mode; `ctx` is writing that pane's base
 /// screen, so sync state is read and drawn through the context's borrow.
-pub unsafe fn screen_write_end_sync(ctx: &mut screen_write_ctx) {
+pub fn screen_write_end_sync(ctx: &mut screen_write_ctx) {
     let Some(pane) = ctx.wp.upgrade() else { return };
     if ctx.screen.mode & MODE_SYNC != 0 {
         screen_write_collect_flush(ctx, 0, "screen_write_end_sync");
     }
     pane.stop_sync(Some(&mut *ctx.screen));
 }
-pub unsafe fn screen_write_cursorup(ctx: &mut screen_write_ctx, mut ny: u_int) {
+pub fn screen_write_cursorup(ctx: &mut screen_write_ctx, mut ny: u_int) {
     let mut cx: u_int = ctx.screen.cx;
     let mut cy: u_int = ctx.screen.cy;
     if ny == 0 as u_int {
@@ -972,7 +965,7 @@ pub unsafe fn screen_write_cursorup(ctx: &mut screen_write_ctx, mut ny: u_int) {
     cy = cy.wrapping_sub(ny);
     screen_write_set_cursor(ctx, cx as ::core::ffi::c_int, cy as ::core::ffi::c_int);
 }
-pub unsafe fn screen_write_cursordown(ctx: &mut screen_write_ctx, mut ny: u_int) {
+pub fn screen_write_cursordown(ctx: &mut screen_write_ctx, mut ny: u_int) {
     let mut cx: u_int = ctx.screen.cx;
     let mut cy: u_int = ctx.screen.cy;
     if ny == 0 as u_int {
@@ -1005,7 +998,7 @@ pub unsafe fn screen_write_cursordown(ctx: &mut screen_write_ctx, mut ny: u_int)
     cy = cy.wrapping_add(ny);
     screen_write_set_cursor(ctx, cx as ::core::ffi::c_int, cy as ::core::ffi::c_int);
 }
-pub unsafe fn screen_write_cursorright(ctx: &mut screen_write_ctx, mut nx: u_int) {
+pub fn screen_write_cursorright(ctx: &mut screen_write_ctx, mut nx: u_int) {
     let mut cx: u_int = ctx.screen.cx;
     let mut cy: u_int = ctx.screen.cy;
     if nx == 0 as u_int {
@@ -1032,7 +1025,7 @@ pub unsafe fn screen_write_cursorright(ctx: &mut screen_write_ctx, mut nx: u_int
     cx = cx.wrapping_add(nx);
     screen_write_set_cursor(ctx, cx as ::core::ffi::c_int, cy as ::core::ffi::c_int);
 }
-pub unsafe fn screen_write_cursorleft(ctx: &mut screen_write_ctx, mut nx: u_int) {
+pub fn screen_write_cursorleft(ctx: &mut screen_write_ctx, mut nx: u_int) {
     let mut cx: u_int = ctx.screen.cx;
     let mut cy: u_int = ctx.screen.cy;
     if nx == 0 as u_int {
@@ -1047,7 +1040,7 @@ pub unsafe fn screen_write_cursorleft(ctx: &mut screen_write_ctx, mut nx: u_int)
     cx = cx.wrapping_sub(nx);
     screen_write_set_cursor(ctx, cx as ::core::ffi::c_int, cy as ::core::ffi::c_int);
 }
-pub unsafe fn screen_write_backspace(ctx: &mut screen_write_ctx) {
+pub fn screen_write_backspace(ctx: &mut screen_write_ctx) {
     let mut cx: u_int = ctx.screen.cx;
     let mut cy: u_int = ctx.screen.cy;
     if cx == 0 as u_int {
@@ -1079,7 +1072,7 @@ fn screen_write_cell_is_single(gc: &grid_cell) -> ::core::ffi::c_int {
         && gc.flags as ::core::ffi::c_int & (GRID_FLAG_CLEARED | GRID_FLAG_PADDING | GRID_FLAG_TAB)
             == 0) as ::core::ffi::c_int
 }
-pub(crate) unsafe fn screen_write_redraw_line(
+pub(crate) fn screen_write_redraw_line(
     ctx: &mut screen_write_ctx,
     ttyctx: &mut tty_ctx,
     mut yy: u_int,
@@ -1168,7 +1161,7 @@ pub(crate) unsafe fn screen_write_redraw_line(
     }
 }
 
-unsafe fn screen_write_redraw_pane(ctx: &mut screen_write_ctx, ttyctx: &mut tty_ctx) {
+fn screen_write_redraw_pane(ctx: &mut screen_write_ctx, ttyctx: &mut tty_ctx) {
     let mut r = Vec::new();
     let mut yy: u_int = 0;
     yy = 0 as u_int;
@@ -1177,7 +1170,7 @@ unsafe fn screen_write_redraw_pane(ctx: &mut screen_write_ctx, ttyctx: &mut tty_
         yy = yy.wrapping_add(1);
     }
 }
-pub unsafe fn screen_write_alignmenttest(ctx: &mut screen_write_ctx) {
+pub fn screen_write_alignmenttest(ctx: &mut screen_write_ctx) {
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
     let mut ttyctx = tty_ctx::default();
@@ -1231,11 +1224,7 @@ pub unsafe fn screen_write_alignmenttest(ctx: &mut screen_write_ctx) {
     }
     screen_write_redraw_pane(ctx, &mut ttyctx);
 }
-pub unsafe fn screen_write_insertcharacter(
-    ctx: &mut screen_write_ctx,
-    mut nx: u_int,
-    mut bg: u_int,
-) {
+pub fn screen_write_insertcharacter(ctx: &mut screen_write_ctx, mut nx: u_int, mut bg: u_int) {
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
     let mut r = Vec::new();
@@ -1272,11 +1261,7 @@ pub unsafe fn screen_write_insertcharacter(
     }
     screen_write_redraw_line(ctx, &mut ttyctx, ctx.screen.cy, &mut r);
 }
-pub unsafe fn screen_write_deletecharacter(
-    ctx: &mut screen_write_ctx,
-    mut nx: u_int,
-    mut bg: u_int,
-) {
+pub fn screen_write_deletecharacter(ctx: &mut screen_write_ctx, mut nx: u_int, mut bg: u_int) {
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
     let mut r = Vec::new();
@@ -1313,11 +1298,7 @@ pub unsafe fn screen_write_deletecharacter(
     }
     screen_write_redraw_line(ctx, &mut ttyctx, ctx.screen.cy, &mut r);
 }
-pub unsafe fn screen_write_clearcharacter(
-    ctx: &mut screen_write_ctx,
-    mut nx: u_int,
-    mut bg: u_int,
-) {
+pub fn screen_write_clearcharacter(ctx: &mut screen_write_ctx, mut nx: u_int, mut bg: u_int) {
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
     let mut r = Vec::new();
@@ -1361,7 +1342,7 @@ pub unsafe fn screen_write_clearcharacter(
     }
     screen_write_redraw_line(ctx, &mut ttyctx, ctx.screen.cy, &mut r);
 }
-pub unsafe fn screen_write_insertline(ctx: &mut screen_write_ctx, mut ny: u_int, mut bg: u_int) {
+pub fn screen_write_insertline(ctx: &mut screen_write_ctx, mut ny: u_int, mut bg: u_int) {
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
     let mut ttyctx = tty_ctx::default();
@@ -1446,7 +1427,7 @@ pub unsafe fn screen_write_insertline(ctx: &mut screen_write_ctx, mut ny: u_int,
     }
     screen_write_redraw_pane(ctx, &mut ttyctx);
 }
-pub unsafe fn screen_write_deleteline(ctx: &mut screen_write_ctx, mut ny: u_int, mut bg: u_int) {
+pub fn screen_write_deleteline(ctx: &mut screen_write_ctx, mut ny: u_int, mut bg: u_int) {
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
     let mut ttyctx = tty_ctx::default();
@@ -1524,7 +1505,7 @@ pub unsafe fn screen_write_deleteline(ctx: &mut screen_write_ctx, mut ny: u_int,
     }
     screen_write_redraw_pane(ctx, &mut ttyctx);
 }
-pub unsafe fn screen_write_clearline(ctx: &mut screen_write_ctx, mut bg: u_int) {
+pub fn screen_write_clearline(ctx: &mut screen_write_ctx, mut bg: u_int) {
     let mut sx: u_int = ctx.screen.grid().sx;
     let mut flags: u_int = 0;
     let gl = grid_get_line(
@@ -1563,7 +1544,7 @@ pub unsafe fn screen_write_clearline(ctx: &mut screen_write_ctx, mut bg: u_int) 
         .push_back(ctx.item.take().expect("active screen write context"));
     ctx.item = Some(screen_write_get_citem());
 }
-pub unsafe fn screen_write_clearendofline(ctx: &mut screen_write_ctx, mut bg: u_int) {
+pub fn screen_write_clearendofline(ctx: &mut screen_write_ctx, mut bg: u_int) {
     let mut sx: u_int = ctx.screen.grid().sx;
     if ctx.screen.cx == 0 as u_int {
         screen_write_clearline(ctx, bg);
@@ -1594,7 +1575,7 @@ pub unsafe fn screen_write_clearendofline(ctx: &mut screen_write_ctx, mut bg: u_
     ci.bg = bg;
     screen_write_collect_insert(ctx);
 }
-pub unsafe fn screen_write_clearstartofline(ctx: &mut screen_write_ctx, mut bg: u_int) {
+pub fn screen_write_clearstartofline(ctx: &mut screen_write_ctx, mut bg: u_int) {
     let mut sx: u_int = ctx.screen.grid().sx;
     if ctx.screen.cx >= sx.wrapping_sub(1 as u_int) {
         screen_write_clearline(ctx, bg);
@@ -1628,7 +1609,7 @@ pub unsafe fn screen_write_clearstartofline(ctx: &mut screen_write_ctx, mut bg: 
     ci.bg = bg;
     screen_write_collect_insert(ctx);
 }
-pub unsafe fn screen_write_cursormove(
+pub fn screen_write_cursormove(
     ctx: &mut screen_write_ctx,
     mut px: ::core::ffi::c_int,
     mut py: ::core::ffi::c_int,
@@ -1662,7 +1643,7 @@ pub unsafe fn screen_write_cursormove(
     ));
     screen_write_set_cursor(ctx, px, py);
 }
-pub unsafe fn screen_write_reverseindex(ctx: &mut screen_write_ctx, mut bg: u_int) {
+pub fn screen_write_reverseindex(ctx: &mut screen_write_ctx, mut bg: u_int) {
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
     let mut ttyctx = tty_ctx::default();
@@ -1701,11 +1682,7 @@ pub unsafe fn screen_write_reverseindex(ctx: &mut screen_write_ctx, mut bg: u_in
     }
     screen_write_redraw_pane(ctx, &mut ttyctx);
 }
-pub unsafe fn screen_write_scrollregion(
-    ctx: &mut screen_write_ctx,
-    mut rupper: u_int,
-    mut rlower: u_int,
-) {
+pub fn screen_write_scrollregion(ctx: &mut screen_write_ctx, mut rupper: u_int, mut rlower: u_int) {
     if rupper > ctx.screen.grid().sy.wrapping_sub(1 as u_int) {
         rupper = ctx.screen.grid().sy.wrapping_sub(1 as u_int);
     }
@@ -1720,7 +1697,7 @@ pub unsafe fn screen_write_scrollregion(
     ctx.screen.rupper = rupper;
     ctx.screen.rlower = rlower;
 }
-pub unsafe fn screen_write_linefeed(
+pub fn screen_write_linefeed(
     ctx: &mut screen_write_ctx,
     mut wrapped: ::core::ffi::c_int,
     mut bg: u_int,
@@ -1759,7 +1736,7 @@ pub unsafe fn screen_write_linefeed(
     screen_write_collect_scroll(ctx, bg);
     ctx.scrolled = ctx.scrolled.wrapping_add(1);
 }
-pub unsafe fn screen_write_scrollup(ctx: &mut screen_write_ctx, mut lines: u_int, mut bg: u_int) {
+pub fn screen_write_scrollup(ctx: &mut screen_write_ctx, mut lines: u_int, mut bg: u_int) {
     let mut i: u_int = 0;
     if lines == 0 as u_int {
         lines = 1 as u_int;
@@ -1789,7 +1766,7 @@ pub unsafe fn screen_write_scrollup(ctx: &mut screen_write_ctx, mut lines: u_int
     }
     ctx.scrolled = ctx.scrolled.wrapping_add(lines);
 }
-pub unsafe fn screen_write_scrolldown(ctx: &mut screen_write_ctx, mut lines: u_int, mut bg: u_int) {
+pub fn screen_write_scrolldown(ctx: &mut screen_write_ctx, mut lines: u_int, mut bg: u_int) {
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
     let mut ttyctx = tty_ctx::default();
@@ -1839,10 +1816,10 @@ pub unsafe fn screen_write_scrolldown(ctx: &mut screen_write_ctx, mut lines: u_i
     }
     screen_write_redraw_pane(ctx, &mut ttyctx);
 }
-pub unsafe fn screen_write_carriagereturn(ctx: &mut screen_write_ctx) {
+pub fn screen_write_carriagereturn(ctx: &mut screen_write_ctx) {
     screen_write_set_cursor(ctx, 0 as ::core::ffi::c_int, -(1 as ::core::ffi::c_int));
 }
-pub unsafe fn screen_write_clearendofscreen(ctx: &mut screen_write_ctx, mut bg: u_int) {
+pub fn screen_write_clearendofscreen(ctx: &mut screen_write_ctx, mut bg: u_int) {
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
     let mut r = Vec::new();
@@ -1959,7 +1936,7 @@ pub unsafe fn screen_write_clearendofscreen(ctx: &mut screen_write_ctx, mut bg: 
     }
     screen_write_set_cursor(ctx, ocx as ::core::ffi::c_int, ocy as ::core::ffi::c_int);
 }
-pub unsafe fn screen_write_clearstartofscreen(ctx: &mut screen_write_ctx, mut bg: u_int) {
+pub fn screen_write_clearstartofscreen(ctx: &mut screen_write_ctx, mut bg: u_int) {
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
     let mut r = Vec::new();
@@ -2075,7 +2052,7 @@ pub unsafe fn screen_write_clearstartofscreen(ctx: &mut screen_write_ctx, mut bg
     }
     screen_write_set_cursor(ctx, ocx as ::core::ffi::c_int, ocy as ::core::ffi::c_int);
 }
-pub unsafe fn screen_write_clearscreen(ctx: &mut screen_write_ctx, mut bg: u_int) {
+pub fn screen_write_clearscreen(ctx: &mut screen_write_ctx, mut bg: u_int) {
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
     let mut r = Vec::new();
@@ -2148,7 +2125,7 @@ pub unsafe fn screen_write_clearscreen(ctx: &mut screen_write_ctx, mut bg: u_int
 pub fn screen_write_clearhistory(ctx: &mut screen_write_ctx) {
     grid_clear_history(&mut *(ctx.screen.grid_mut()));
 }
-pub unsafe fn screen_write_fullredraw(ctx: &mut screen_write_ctx) {
+pub fn screen_write_fullredraw(ctx: &mut screen_write_ctx) {
     let mut ttyctx = tty_ctx::default();
     screen_write_collect_flush(ctx, 0 as ::core::ffi::c_int, "screen_write_fullredraw");
     screen_write_initctx(
@@ -2233,7 +2210,7 @@ fn screen_write_collect_scroll(ctx: &mut screen_write_ctx, bg: u_int) {
         .items
         .push_back(item);
 }
-unsafe fn screen_write_collect_flush_scrolled(ctx: &mut screen_write_ctx) -> ::core::ffi::c_int {
+fn screen_write_collect_flush_scrolled(ctx: &mut screen_write_ctx) -> ::core::ffi::c_int {
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
     let wp = write_pane;
@@ -2292,7 +2269,7 @@ unsafe fn screen_write_collect_flush_scrolled(ctx: &mut screen_write_ctx) -> ::c
     }
     1 as ::core::ffi::c_int
 }
-unsafe fn screen_write_collect_flush_line(
+fn screen_write_collect_flush_line(
     ctx: &mut screen_write_ctx,
     mut y: u_int,
     r: &mut Vec<visible_range>,
@@ -2438,7 +2415,7 @@ unsafe fn screen_write_collect_flush_line(
     }
     items
 }
-unsafe fn screen_write_collect_flush(
+fn screen_write_collect_flush(
     ctx: &mut screen_write_ctx,
     scroll_only: ::core::ffi::c_int,
     from: &str,
@@ -2446,7 +2423,7 @@ unsafe fn screen_write_collect_flush(
     screen_write_collect_flush_with_ranges(ctx, scroll_only, from, &mut Vec::new());
 }
 
-unsafe fn screen_write_collect_flush_with_ranges(
+fn screen_write_collect_flush_with_ranges(
     ctx: &mut screen_write_ctx,
     scroll_only: ::core::ffi::c_int,
     from: &str,
@@ -2556,7 +2533,7 @@ fn screen_write_collect_insert_clear(
         screen_write_collect_insert(ctx);
     }
 }
-unsafe fn screen_write_clear_cell(gd: &mut grid, px: u_int, py: u_int) {
+fn screen_write_clear_cell(gd: &mut grid, px: u_int, py: u_int) {
     let mut gc = grid_default_cell;
     grid_view_get_cell(gd, px, py, &mut gc);
     let bg = gc.bg;
@@ -2564,7 +2541,7 @@ unsafe fn screen_write_clear_cell(gd: &mut grid, px: u_int, py: u_int) {
     gc.bg = bg;
     grid_view_set_cell(gd, px, py, &gc);
 }
-unsafe fn screen_write_insert_clears(ctx: &mut screen_write_ctx, mut px: u_int, mut nx: u_int) {
+fn screen_write_insert_clears(ctx: &mut screen_write_ctx, mut px: u_int, mut nx: u_int) {
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -2610,7 +2587,7 @@ unsafe fn screen_write_insert_clears(ctx: &mut screen_write_ctx, mut px: u_int, 
     ));
     screen_write_collect_insert_clear(ctx, start, xx.wrapping_sub(start), bg as u_int);
 }
-pub unsafe fn screen_write_collect_end(ctx: &mut screen_write_ctx) {
+pub fn screen_write_collect_end(ctx: &mut screen_write_ctx) {
     let row = ctx.screen.cy as usize;
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -2727,7 +2704,7 @@ pub unsafe fn screen_write_collect_end(ctx: &mut screen_write_ctx) {
         screen_write_insert_clears(ctx, ctx.screen.cx, xx.wrapping_sub(ctx.screen.cx));
     }
 }
-pub unsafe fn screen_write_collect_add(ctx: &mut screen_write_ctx, gc: &grid_cell) {
+pub fn screen_write_collect_add(ctx: &mut screen_write_ctx, gc: &grid_cell) {
     let mut sx: u_int = ctx.screen.grid().sx;
     let mut collect: ::core::ffi::c_int = 0;
     collect = 1 as ::core::ffi::c_int;
@@ -2782,7 +2759,7 @@ pub unsafe fn screen_write_collect_add(ctx: &mut screen_write_ctx, gc: &grid_cel
     ci.used = used.wrapping_add(1);
     row.data[cx.wrapping_add(used) as usize] = gc.data.data[0];
 }
-pub unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cell) {
+pub fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cell) {
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
     let mut r = Vec::new();
@@ -2911,12 +2888,12 @@ pub unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cell) {
             if gce.flags as ::core::ffi::c_int & GRID_FLAG_EXTENDED != 0
                 || (gc.flags as ::core::ffi::c_int != gce.flags as ::core::ffi::c_int)
                 || (gc.attr as ::core::ffi::c_int
-                    != gce.c2rust_unnamed.data.attr as ::core::ffi::c_int)
-                || (gc.fg != gce.c2rust_unnamed.data.fg as ::core::ffi::c_int)
-                || (gc.bg != gce.c2rust_unnamed.data.bg as ::core::ffi::c_int)
+                    != gce.c2rust_unnamed.data().attr as ::core::ffi::c_int)
+                || (gc.fg != gce.c2rust_unnamed.data().fg as ::core::ffi::c_int)
+                || (gc.bg != gce.c2rust_unnamed.data().bg as ::core::ffi::c_int)
                 || (gc.data.width as ::core::ffi::c_int != 1 as ::core::ffi::c_int)
                 || (gc.data.size as ::core::ffi::c_int != 1 as ::core::ffi::c_int)
-                || (gce.c2rust_unnamed.data.data as ::core::ffi::c_int
+                || (gce.c2rust_unnamed.data().data as ::core::ffi::c_int
                     != gc.data.data[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int)
             {
                 skip = 0 as ::core::ffi::c_int;
@@ -3018,7 +2995,7 @@ pub unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cell) {
         i = i.wrapping_add(1);
     }
 }
-unsafe fn screen_write_combine(ctx: &mut screen_write_ctx, gc: &grid_cell) -> ::core::ffi::c_int {
+fn screen_write_combine(ctx: &mut screen_write_ctx, gc: &grid_cell) -> ::core::ffi::c_int {
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref();
     let mut r = Vec::new();
@@ -3176,7 +3153,7 @@ unsafe fn screen_write_combine(ctx: &mut screen_write_ctx, gc: &grid_cell) -> ::
     screen_write_set_cursor(ctx, cx as ::core::ffi::c_int, cy as ::core::ffi::c_int);
     1 as ::core::ffi::c_int
 }
-unsafe fn screen_write_overwrite(
+fn screen_write_overwrite(
     gd: &mut grid,
     cx: u_int,
     cy: u_int,
@@ -3253,7 +3230,7 @@ unsafe fn screen_write_overwrite(
     }
     done
 }
-pub unsafe fn screen_write_setselection(ctx: &mut screen_write_ctx, clip: &CStr, data: &[u8]) {
+pub fn screen_write_setselection(ctx: &mut screen_write_ctx, clip: &CStr, data: &[u8]) {
     let mut ttyctx = tty_ctx::default();
     screen_write_initctx(
         ctx,
@@ -3264,7 +3241,7 @@ pub unsafe fn screen_write_setselection(ctx: &mut screen_write_ctx, clip: &CStr,
     ttyctx.data = tty_command_data::Selection { clip, data };
     tty_write(TtyCmd::SetSelection, &mut ttyctx);
 }
-pub unsafe fn screen_write_rawstring(
+pub fn screen_write_rawstring(
     ctx: &mut screen_write_ctx,
     data: &[u8],
     mut allow_invisible_panes: ::core::ffi::c_int,
@@ -3282,7 +3259,7 @@ pub unsafe fn screen_write_rawstring(
     ttyctx.data = tty_command_data::Bytes(data);
     tty_write(TtyCmd::RawString, &mut ttyctx);
 }
-pub unsafe fn screen_write_alternateon(
+pub fn screen_write_alternateon(
     ctx: &mut screen_write_ctx,
     gc: &grid_cell,
     cursor: ::core::ffi::c_int,
@@ -3314,7 +3291,7 @@ pub unsafe fn screen_write_alternateon(
         redraw_cb(&ttyctx);
     }
 }
-pub unsafe fn screen_write_alternateoff(
+pub fn screen_write_alternateoff(
     ctx: &mut screen_write_ctx,
     gc: &mut grid_cell,
     cursor: ::core::ffi::c_int,
@@ -3363,111 +3340,105 @@ mod write_ctx_tests {
 
     #[test]
     fn stopping_a_context_releases_its_callback() {
-        unsafe {
-            let mut s = screen::empty();
-            s.grid = Some(crate::grid::grid_create(8, 2, 0));
-            let drops = Rc::new(Cell::new(0));
-            for pass in 0..3 {
-                let owner = DropCounter(drops.clone());
-                let mut ctx = screen_write_start_callback(
-                    &mut s,
-                    Some(Box::new(move |_| {
-                        let _ = &owner;
-                    })),
-                );
-                assert_eq!(drops.get(), pass);
-                assert!(ctx.item.is_some());
-                assert_eq!(ctx.bg, 8);
-                screen_write_collect_add(&mut ctx, &grid_default_cell);
-                screen_write_stop(ctx);
-                assert_eq!(drops.get(), pass + 1);
-            }
-            let ctx = screen_write_start(&mut s);
-            assert!(ctx.init_ctx_cb.is_none());
+        let mut s = screen::empty();
+        s.grid = Some(crate::grid::grid_create(8, 2, 0));
+        let drops = Rc::new(Cell::new(0));
+        for pass in 0..3 {
+            let owner = DropCounter(drops.clone());
+            let mut ctx = screen_write_start_callback(
+                &mut s,
+                Some(Box::new(move |_| {
+                    let _ = &owner;
+                })),
+            );
+            assert_eq!(drops.get(), pass);
+            assert!(ctx.item.is_some());
+            assert_eq!(ctx.bg, 8);
+            screen_write_collect_add(&mut ctx, &grid_default_cell);
             screen_write_stop(ctx);
-            assert_eq!(drops.get(), 3);
-            assert_eq!(s.cx, 3);
+            assert_eq!(drops.get(), pass + 1);
         }
+        let ctx = screen_write_start(&mut s);
+        assert!(ctx.init_ctx_cb.is_none());
+        screen_write_stop(ctx);
+        assert_eq!(drops.get(), 3);
+        assert_eq!(s.cx, 3);
     }
 
     #[test]
     fn callback_defaults_and_palette_fallback_share_the_owned_style_cell() {
-        unsafe {
-            let mut s = screen::empty();
-            s.grid = Some(crate::grid::grid_create(8, 2, 0));
-            let palette = refbox::RefBox::new(colour_palette {
-                fg: 3,
-                bg: 4,
-                ..Default::default()
-            });
-            let palette_observer = palette.downgrade();
-            let mut ctx = screen_write_start_callback(
-                &mut s,
-                Some(Box::new(move |ttyctx| {
-                    ttyctx.style_ctx.defaults.fg = 7;
-                    ttyctx.style_ctx.palette =
-                        crate::shared::tty::PaletteSource::Popup(palette_observer.clone());
-                })),
-            );
-            ctx.flags = SCREEN_WRITE_SYNC;
-            let mut ttyctx = tty_ctx::default();
-            screen_write_initctx(&mut ctx, &mut ttyctx, 0, 0);
-            assert_eq!(
-                (ttyctx.style_ctx.defaults.fg, ttyctx.style_ctx.defaults.bg),
-                (7, 4)
-            );
-            let previous = std::hint::black_box(ttyctx);
-            palette.try_borrow_mut().unwrap().bg = 6;
-            ttyctx = tty_ctx::default();
-            screen_write_initctx(&mut ctx, &mut ttyctx, 0, 0);
-            assert_eq!(
-                (ttyctx.style_ctx.defaults.fg, ttyctx.style_ctx.defaults.bg),
-                (7, 6)
-            );
-            assert_eq!(
-                (
-                    previous.style_ctx.defaults.fg,
-                    previous.style_ctx.defaults.bg
-                ),
-                (7, 4)
-            );
-            screen_write_stop(ctx);
-        }
+        let mut s = screen::empty();
+        s.grid = Some(crate::grid::grid_create(8, 2, 0));
+        let palette = refbox::RefBox::new(colour_palette {
+            fg: 3,
+            bg: 4,
+            ..Default::default()
+        });
+        let palette_observer = palette.downgrade();
+        let mut ctx = screen_write_start_callback(
+            &mut s,
+            Some(Box::new(move |ttyctx| {
+                ttyctx.style_ctx.defaults.fg = 7;
+                ttyctx.style_ctx.palette =
+                    crate::shared::tty::PaletteSource::Popup(palette_observer.clone());
+            })),
+        );
+        ctx.flags = SCREEN_WRITE_SYNC;
+        let mut ttyctx = tty_ctx::default();
+        screen_write_initctx(&mut ctx, &mut ttyctx, 0, 0);
+        assert_eq!(
+            (ttyctx.style_ctx.defaults.fg, ttyctx.style_ctx.defaults.bg),
+            (7, 4)
+        );
+        let previous = std::hint::black_box(ttyctx);
+        palette.try_borrow_mut().unwrap().bg = 6;
+        ttyctx = tty_ctx::default();
+        screen_write_initctx(&mut ctx, &mut ttyctx, 0, 0);
+        assert_eq!(
+            (ttyctx.style_ctx.defaults.fg, ttyctx.style_ctx.defaults.bg),
+            (7, 6)
+        );
+        assert_eq!(
+            (
+                previous.style_ctx.defaults.fg,
+                previous.style_ctx.defaults.bg
+            ),
+            (7, 4)
+        );
+        screen_write_stop(ctx);
     }
 
     #[test]
     fn resetting_a_terminal_context_drops_both_owned_callbacks() {
-        unsafe {
-            let mut s = screen::empty();
-            s.grid = Some(crate::grid::grid_create(8, 2, 0));
-            s.cx = 3;
-            s.cy = 1;
-            s.rlower = 1;
-            let mut ctx = screen_write_start(&mut s);
-            ctx.flags = SCREEN_WRITE_SYNC;
-            let drops = Rc::new(Cell::new(0));
-            let mut ttyctx = tty_ctx::default();
-            for reset in 1..=3 {
-                let redraw_owner = DropCounter(drops.clone());
-                ttyctx.redraw_cb = Some(Box::new(move |_| {
-                    let _ = &redraw_owner;
-                }));
-                let client_owner = DropCounter(drops.clone());
-                ttyctx.set_client_cb = Some(Box::new(move |_, _| {
-                    let _ = &client_owner;
-                    0
-                }));
-                screen_write_initctx(&mut ctx, &mut ttyctx, 0, 0);
-                assert_eq!(drops.get(), reset * 2);
-                assert_eq!((ttyctx.sx, ttyctx.sy, ttyctx.ocx, ttyctx.ocy), (8, 2, 3, 1));
-                assert!(grid_cells_equal(
-                    &ttyctx.style_ctx.defaults,
-                    &grid_default_cell
-                ));
-                assert!(ttyctx.set_client_cb.is_none());
-            }
-            screen_write_stop(ctx);
+        let mut s = screen::empty();
+        s.grid = Some(crate::grid::grid_create(8, 2, 0));
+        s.cx = 3;
+        s.cy = 1;
+        s.rlower = 1;
+        let mut ctx = screen_write_start(&mut s);
+        ctx.flags = SCREEN_WRITE_SYNC;
+        let drops = Rc::new(Cell::new(0));
+        let mut ttyctx = tty_ctx::default();
+        for reset in 1..=3 {
+            let redraw_owner = DropCounter(drops.clone());
+            ttyctx.redraw_cb = Some(Box::new(move |_| {
+                let _ = &redraw_owner;
+            }));
+            let client_owner = DropCounter(drops.clone());
+            ttyctx.set_client_cb = Some(Box::new(move |_, _| {
+                let _ = &client_owner;
+                0
+            }));
+            screen_write_initctx(&mut ctx, &mut ttyctx, 0, 0);
+            assert_eq!(drops.get(), reset * 2);
+            assert_eq!((ttyctx.sx, ttyctx.sy, ttyctx.ocx, ttyctx.ocy), (8, 2, 3, 1));
+            assert!(grid_cells_equal(
+                &ttyctx.style_ctx.defaults,
+                &grid_default_cell
+            ));
+            assert!(ttyctx.set_client_cb.is_none());
         }
+        screen_write_stop(ctx);
     }
 }
 
@@ -3478,54 +3449,52 @@ mod write_cell_tests {
 
     #[test]
     fn overwriting_wide_cells_clears_surrounding_padding_and_preserves_backgrounds() {
-        unsafe {
-            for (cx, width, cleared) in [
-                (1, 3, vec![0, 1, 4]),
-                (0, 1, vec![1]),
-                (3, 1, vec![4]),
-                (2, 3, vec![]),
-            ] {
-                let mut gd = grid_create(8, 1, 0);
-                for x in 0..8 {
+        for (cx, width, cleared) in [
+            (1, 3, vec![0, 1, 4]),
+            (0, 1, vec![1]),
+            (3, 1, vec![4]),
+            (2, 3, vec![]),
+        ] {
+            let mut gd = grid_create(8, 1, 0);
+            for x in 0..8 {
+                let mut cell = grid_default_cell;
+                cell.data.data[0] = b'A' + x as u8;
+                cell.bg = 100 + x as i32;
+                grid_view_set_cell(&mut gd, x, 0, &cell);
+            }
+            for x in [0, 3] {
+                let mut cell = grid_default_cell;
+                cell.data.data[..3].copy_from_slice("漢".as_bytes());
+                cell.data.size = 3;
+                cell.data.width = 2;
+                cell.bg = 200 + x as i32;
+                grid_view_set_cell(&mut gd, x, 0, &cell);
+                grid_view_set_padding(&mut gd, x + 1, 0, cell.bg);
+            }
+            let before: Vec<_> = (0..8)
+                .map(|x| {
                     let mut cell = grid_default_cell;
-                    cell.data.data[0] = b'A' + x as u8;
-                    cell.bg = 100 + x as i32;
-                    grid_view_set_cell(&mut gd, x, 0, &cell);
+                    grid_view_get_cell(&gd, x, 0, &mut cell);
+                    cell
+                })
+                .collect();
+            assert_eq!(
+                screen_write_overwrite(&mut gd, cx, 0, &before[cx as usize], width),
+                (!cleared.is_empty()) as i32,
+            );
+            for x in 0..8 {
+                let mut after = grid_default_cell;
+                grid_view_get_cell(&gd, x, 0, &mut after);
+                let mut expected = before[x as usize];
+                if cleared.contains(&x) {
+                    let bg = expected.bg;
+                    expected = grid_default_cell;
+                    expected.bg = bg;
                 }
-                for x in [0, 3] {
-                    let mut cell = grid_default_cell;
-                    cell.data.data[..3].copy_from_slice("漢".as_bytes());
-                    cell.data.size = 3;
-                    cell.data.width = 2;
-                    cell.bg = 200 + x as i32;
-                    grid_view_set_cell(&mut gd, x, 0, &cell);
-                    grid_view_set_padding(&mut gd, x + 1, 0, cell.bg);
-                }
-                let before: Vec<_> = (0..8)
-                    .map(|x| {
-                        let mut cell = grid_default_cell;
-                        grid_view_get_cell(&gd, x, 0, &mut cell);
-                        cell
-                    })
-                    .collect();
-                assert_eq!(
-                    screen_write_overwrite(&mut gd, cx, 0, &before[cx as usize], width),
-                    (!cleared.is_empty()) as i32,
+                assert!(
+                    grid_cells_equal(&after, &expected),
+                    "cursor {cx}, width {width}, cell {x}"
                 );
-                for x in 0..8 {
-                    let mut after = grid_default_cell;
-                    grid_view_get_cell(&gd, x, 0, &mut after);
-                    let mut expected = before[x as usize];
-                    if cleared.contains(&x) {
-                        let bg = expected.bg;
-                        expected = grid_default_cell;
-                        expected.bg = bg;
-                    }
-                    assert!(
-                        grid_cells_equal(&after, &expected),
-                        "cursor {cx}, width {width}, cell {x}"
-                    );
-                }
             }
         }
     }
@@ -3537,115 +3506,111 @@ mod write_row_tests {
 
     #[test]
     fn scrolling_a_region_moves_rows_and_resize_rebuilds_the_owned_slice() {
-        unsafe {
-            let mut s = screen::empty();
-            s.grid = Some(crate::grid::grid_create(4, 5, 0));
-            s.rupper = 1;
-            s.rlower = 3;
-            screen_write_make_list(&mut s);
-            let mut allocations = Vec::new();
-            for (index, row) in s.write_rows_mut().iter_mut().enumerate() {
-                row.data.resize_with(4, || b'A' + index as u8);
-                allocations.push(row.data.as_ptr());
-                let mut item = screen_write_get_citem();
-                item.bg = index as u_int;
-                row.items.push_back(item);
-            }
-            let mut ctx = screen_write_start(&mut s);
-            screen_write_collect_scroll(&mut ctx, 99);
-            allocations[1..=3].rotate_left(1);
-            for (index, &expected) in [0, 2, 3, 99, 4].iter().enumerate() {
-                let row = &mut ctx.screen.write_rows_mut()[index];
-                assert_eq!(row.data.as_ptr(), allocations[index]);
-                let item = row.items.front().unwrap();
-                assert_eq!(item.bg, expected);
-                assert!(row.items.get(1).is_none());
-            }
-            assert_eq!(ctx.screen.write_rows()[3].data[0], b'B');
-            let item = ctx.screen.write_rows()[3].items.front().unwrap();
-            assert_eq!((item.x, item.used, item.type_0), (0, 4, CLEAR));
-
-            ctx.screen.rupper = 2;
-            ctx.screen.rlower = 2;
-            screen_write_collect_scroll(&mut ctx, 100);
-            assert_eq!(ctx.screen.write_rows()[2].data.as_ptr(), allocations[2]);
-            assert_eq!(ctx.screen.write_rows()[2].items.front().unwrap().bg, 100);
-
-            screen_write_stop(ctx);
-
-            crate::screen::screen_resize(&mut s, 6, 3, 0);
-            assert_eq!(s.write_rows().len(), 3);
-            assert!(s
-                .write_rows()
-                .iter()
-                .all(|row| row.data.is_empty() && row.items.is_empty()));
-            screen_write_free_list(&mut s);
-            assert!(s.write_list.is_none());
-
-            screen_write_make_list(&mut s);
-            s.write_rows_mut()[0].data.resize_with(6, || 1);
-            s.write_rows_mut()[0]
-                .items
-                .push_back(screen_write_get_citem());
-            let moved = s;
-            drop(moved);
+        let mut s = screen::empty();
+        s.grid = Some(crate::grid::grid_create(4, 5, 0));
+        s.rupper = 1;
+        s.rlower = 3;
+        screen_write_make_list(&mut s);
+        let mut allocations = Vec::new();
+        for (index, row) in s.write_rows_mut().iter_mut().enumerate() {
+            row.data.resize_with(4, || b'A' + index as u8);
+            allocations.push(row.data.as_ptr());
+            let mut item = screen_write_get_citem();
+            item.bg = index as u_int;
+            row.items.push_back(item);
         }
+        let mut ctx = screen_write_start(&mut s);
+        screen_write_collect_scroll(&mut ctx, 99);
+        allocations[1..=3].rotate_left(1);
+        for (index, &expected) in [0, 2, 3, 99, 4].iter().enumerate() {
+            let row = &mut ctx.screen.write_rows_mut()[index];
+            assert_eq!(row.data.as_ptr(), allocations[index]);
+            let item = row.items.front().unwrap();
+            assert_eq!(item.bg, expected);
+            assert!(row.items.get(1).is_none());
+        }
+        assert_eq!(ctx.screen.write_rows()[3].data[0], b'B');
+        let item = ctx.screen.write_rows()[3].items.front().unwrap();
+        assert_eq!((item.x, item.used, item.type_0), (0, 4, CLEAR));
+
+        ctx.screen.rupper = 2;
+        ctx.screen.rlower = 2;
+        screen_write_collect_scroll(&mut ctx, 100);
+        assert_eq!(ctx.screen.write_rows()[2].data.as_ptr(), allocations[2]);
+        assert_eq!(ctx.screen.write_rows()[2].items.front().unwrap().bg, 100);
+
+        screen_write_stop(ctx);
+
+        crate::screen::screen_resize(&mut s, 6, 3, 0);
+        assert_eq!(s.write_rows().len(), 3);
+        assert!(s
+            .write_rows()
+            .iter()
+            .all(|row| row.data.is_empty() && row.items.is_empty()));
+        screen_write_free_list(&mut s);
+        assert!(s.write_list.is_none());
+
+        screen_write_make_list(&mut s);
+        s.write_rows_mut()[0].data.resize_with(6, || 1);
+        s.write_rows_mut()[0]
+            .items
+            .push_back(screen_write_get_citem());
+        let moved = s;
+        drop(moved);
     }
 
     #[test]
     fn scroll_moves_text_owners_and_tears_down_rows() {
-        unsafe {
-            let mut s: screen = screen::empty();
-            s.grid = Some(crate::grid::grid_create(4, 3, 0));
-            s.rupper = 0;
-            s.rlower = 2;
-            screen_write_make_list(&mut s);
-            let mut pointers = Vec::new();
-            for y in 0..3 {
-                let row = &mut s.write_rows_mut()[y];
-                row.data.resize_with(4, || b'A' + y as u8);
-                pointers.push(row.data.as_ptr());
-            }
-            let mut ctx = screen_write_start(&mut s);
-            for _ in 0..4 {
-                screen_write_collect_scroll(&mut ctx, 8);
-                pointers.rotate_left(1);
-                for (y, pointer) in pointers.iter().enumerate() {
-                    assert_eq!(ctx.screen.write_rows()[y].data.as_ptr(), *pointer);
-                }
-            }
-            screen_write_recycle_items(&mut ctx.screen.write_rows_mut()[0].items);
-            for (x, used, wrapped) in [(0, 10, 1), (3, 3, 0)] {
-                let item = screen_write_current_item(&mut ctx.item);
-                item.x = x;
-                item.used = used;
-                item.wrapped = wrapped;
-                screen_write_collect_insert(&mut ctx);
-            }
-            let mut intervals = Vec::new();
-            let mut index = 0;
-            while let Some(item) = ctx.screen.write_rows()[0].items.get(index) {
-                intervals.push((item.x, item.used, item.wrapped));
-                index += 1;
-            }
-            assert_eq!(intervals, [(0, 3, 1), (3, 3, 0), (6, 4, 0)]);
-            let items = &mut ctx.screen.write_rows_mut()[0].items;
-            let (tail, wrapped) = screen_write_collect_trim(items, 0, 8);
-            assert!(wrapped);
-            assert_eq!(
-                (items.get(tail).unwrap().x, items.get(tail).unwrap().used),
-                (8, 2)
-            );
-            screen_write_collect_trim(items, 9, 1);
-            assert_eq!(
-                (items.get(tail).unwrap().x, items.get(tail).unwrap().used),
-                (8, 1)
-            );
-            screen_write_collect_trim(items, 0, 20);
-            assert!(items.is_empty());
-            screen_write_stop(ctx);
-            screen_write_free_list(&mut s);
-            assert!(s.write_list.is_none());
+        let mut s: screen = screen::empty();
+        s.grid = Some(crate::grid::grid_create(4, 3, 0));
+        s.rupper = 0;
+        s.rlower = 2;
+        screen_write_make_list(&mut s);
+        let mut pointers = Vec::new();
+        for y in 0..3 {
+            let row = &mut s.write_rows_mut()[y];
+            row.data.resize_with(4, || b'A' + y as u8);
+            pointers.push(row.data.as_ptr());
         }
+        let mut ctx = screen_write_start(&mut s);
+        for _ in 0..4 {
+            screen_write_collect_scroll(&mut ctx, 8);
+            pointers.rotate_left(1);
+            for (y, pointer) in pointers.iter().enumerate() {
+                assert_eq!(ctx.screen.write_rows()[y].data.as_ptr(), *pointer);
+            }
+        }
+        screen_write_recycle_items(&mut ctx.screen.write_rows_mut()[0].items);
+        for (x, used, wrapped) in [(0, 10, 1), (3, 3, 0)] {
+            let item = screen_write_current_item(&mut ctx.item);
+            item.x = x;
+            item.used = used;
+            item.wrapped = wrapped;
+            screen_write_collect_insert(&mut ctx);
+        }
+        let mut intervals = Vec::new();
+        let mut index = 0;
+        while let Some(item) = ctx.screen.write_rows()[0].items.get(index) {
+            intervals.push((item.x, item.used, item.wrapped));
+            index += 1;
+        }
+        assert_eq!(intervals, [(0, 3, 1), (3, 3, 0), (6, 4, 0)]);
+        let items = &mut ctx.screen.write_rows_mut()[0].items;
+        let (tail, wrapped) = screen_write_collect_trim(items, 0, 8);
+        assert!(wrapped);
+        assert_eq!(
+            (items.get(tail).unwrap().x, items.get(tail).unwrap().used),
+            (8, 2)
+        );
+        screen_write_collect_trim(items, 9, 1);
+        assert_eq!(
+            (items.get(tail).unwrap().x, items.get(tail).unwrap().used),
+            (8, 1)
+        );
+        screen_write_collect_trim(items, 0, 20);
+        assert!(items.is_empty());
+        screen_write_stop(ctx);
+        screen_write_free_list(&mut s);
+        assert!(s.write_list.is_none());
     }
 }

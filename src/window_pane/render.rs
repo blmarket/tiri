@@ -16,13 +16,13 @@ use crate::tty::tty_draw_line;
 use crate::tty::{tty_cell, tty_cursor};
 use crate::window_copy::window_copy_get_current_offset;
 
-pub(super) unsafe fn refresh_scrollbar_style(pane: &Rc<RefCell<window_pane>>) {
+pub(super) fn refresh_scrollbar_style(pane: &Rc<RefCell<window_pane>>) {
     let mut updated = pane.borrow().scrollbar_style;
     style_set_scrollbar_style_from_option(&mut updated, &OptionsScope::Pane(Rc::downgrade(pane)));
     pane.borrow_mut().scrollbar_style = updated;
 }
 
-pub(super) unsafe fn is_obscured(pane: &Rc<RefCell<window_pane>>) -> bool {
+pub(super) fn is_obscured(pane: &Rc<RefCell<window_pane>>) -> bool {
     let (sx, sy, xoff, yoff) = pane.geometry();
     let window = pane.window_observer().upgrade().expect("live pane parent");
     let (wsx, wsy) = window.logical_size();
@@ -34,7 +34,7 @@ pub(super) unsafe fn is_obscured(pane: &Rc<RefCell<window_pane>>) -> bool {
     outside
 }
 
-pub(super) unsafe fn alternate_screen_changed(pane: &Rc<RefCell<window_pane>>, entered: bool) {
+pub(super) fn alternate_screen_changed(pane: &Rc<RefCell<window_pane>>, entered: bool) {
     let pending = !pane.borrow().resize_queue.is_empty();
     if entered {
         let timer = {
@@ -68,7 +68,7 @@ fn apply_style(cell: &mut grid_cell, parsed: style) {
     cell.attr |= parsed.gc.attr;
 }
 
-pub(super) unsafe fn default_colours(pane: &Rc<RefCell<window_pane>>) -> (grid_cell, u32) {
+pub(super) fn default_colours(pane: &Rc<RefCell<window_pane>>) -> (grid_cell, u32) {
     if pane.borrow().flags & PANE_STYLECHANGED != 0 {
         log_debug(format_args!("%{}: style changed", pane.id()));
         pane.borrow_mut().flags &= !PANE_STYLECHANGED;
@@ -140,7 +140,7 @@ pub(super) unsafe fn default_colours(pane: &Rc<RefCell<window_pane>>) -> (grid_c
     )
 }
 
-pub(super) unsafe fn draw_line(
+pub(super) fn draw_line(
     pane: &Rc<RefCell<window_pane>>,
     client: &ClientRef,
     source: (u32, u32),
@@ -194,7 +194,7 @@ pub(super) unsafe fn draw_line(
     }
 }
 
-pub(super) unsafe fn draw_scrollbar(
+pub(super) fn draw_scrollbar(
     pane_owner: &Rc<RefCell<window_pane>>,
     client_owner: &ClientRef,
     span: &redraw_span,
@@ -335,10 +335,7 @@ pub(super) unsafe fn draw_scrollbar(
     }
 }
 
-pub(super) unsafe fn draw_prompt(
-    wp_owner: &Rc<RefCell<window_pane>>,
-    dctx: &mut redraw_draw_ctx<'_>,
-) {
+pub(super) fn draw_prompt(wp_owner: &Rc<RefCell<window_pane>>, dctx: &mut redraw_draw_ctx<'_>) {
     let prompt = wp_owner
         .borrow()
         .prompt
@@ -426,7 +423,7 @@ pub(super) unsafe fn draw_prompt(
     drop(screen);
 }
 
-pub(super) unsafe fn visible_ranges(
+pub(super) fn visible_ranges(
     base_wp: Option<&Rc<RefCell<window_pane>>>,
     mut px: ::core::ffi::c_int,
     py: ::core::ffi::c_int,

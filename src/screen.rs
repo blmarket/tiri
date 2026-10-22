@@ -28,7 +28,7 @@ use std::ffi::{CStr, CString};
 fn screen_free_titles(s: &mut screen) {
     s.titles = VecDeque::new();
 }
-pub unsafe fn screen_init(s: &mut screen, mut sx: u_int, mut sy: u_int, mut hlimit: u_int) {
+pub fn screen_init(s: &mut screen, mut sx: u_int, mut sy: u_int, mut hlimit: u_int) {
     s.grid = Some(grid_create(sx, sy, hlimit));
     s.saved_grid = None;
     s.title = CString::default();
@@ -46,7 +46,7 @@ pub unsafe fn screen_init(s: &mut screen, mut sx: u_int, mut sy: u_int, mut hlim
     s.hyperlinks = None;
     screen_reinit(s);
 }
-pub unsafe fn screen_reinit(s: &mut screen) {
+pub fn screen_reinit(s: &mut screen) {
     s.cx = 0 as u_int;
     s.cy = 0 as u_int;
     s.rupper = 0 as u_int;
@@ -120,7 +120,7 @@ pub(crate) fn screen_set_tab(s: &mut screen, column: u_int, set: bool) {
 pub(crate) fn screen_clear_tabs(s: &mut screen) {
     s.tabs.fill(0);
 }
-pub unsafe fn screen_set_default_cursor(s: &mut screen, scope: &OptionsScope) {
+pub fn screen_set_default_cursor(s: &mut screen, scope: &OptionsScope) {
     let mut gc = grid_default_cell;
     style_apply_with_options(&mut gc, c"cursor-colour", None, scope);
     s.default_ccolour = gc.fg;
@@ -221,7 +221,7 @@ pub fn screen_set_progress_bar(s: &mut screen, pbs: progress_bar_state, p: ::cor
         s.progress_bar.progress = p;
     }
 }
-pub unsafe fn screen_resize_cursor(
+pub fn screen_resize_cursor(
     s: &mut screen,
     mut sx: u_int,
     mut sy: u_int,
@@ -284,7 +284,7 @@ pub unsafe fn screen_resize_cursor(
         screen_write_make_list(s);
     }
 }
-pub unsafe fn screen_resize(s: &mut screen, sx: u_int, sy: u_int, reflow: ::core::ffi::c_int) {
+pub fn screen_resize(s: &mut screen, sx: u_int, sy: u_int, reflow: ::core::ffi::c_int) {
     screen_resize_cursor(
         s,
         sx,
@@ -294,7 +294,7 @@ pub unsafe fn screen_resize(s: &mut screen, sx: u_int, sy: u_int, reflow: ::core
         1 as ::core::ffi::c_int,
     );
 }
-unsafe fn screen_resize_y(
+fn screen_resize_y(
     s: &mut screen,
     sy: u_int,
     eat_empty: ::core::ffi::c_int,
@@ -520,7 +520,7 @@ pub fn screen_select_cell(s: &screen, src: &grid_cell) -> Option<grid_cell> {
     }
     Some(dst)
 }
-unsafe fn screen_reflow(
+fn screen_reflow(
     s: &mut screen,
     new_x: u_int,
     mut cx: u_int,
@@ -555,7 +555,7 @@ unsafe fn screen_reflow(
     };
     (cx, cy)
 }
-pub unsafe fn screen_alternate_on(
+pub fn screen_alternate_on(
     s: &mut screen,
     gc: &grid_cell,
     cursor: ::core::ffi::c_int,
@@ -587,7 +587,7 @@ pub unsafe fn screen_alternate_on(
     s.grid_mut().flags &= !GRID_HISTORY;
     1 as ::core::ffi::c_int
 }
-pub unsafe fn screen_alternate_off(
+pub fn screen_alternate_off(
     s: &mut screen,
     gc: Option<&mut grid_cell>,
     cursor: ::core::ffi::c_int,

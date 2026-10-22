@@ -7,7 +7,7 @@ use crate::server_client::ClientRegistry;
 /// passes. A removed Session can still be retained by a closing client: preserve
 /// the legacy accumulation for that Session without refreshing its cached layout.
 /// Neither registry traversal nor numeric option lookup invokes callbacks.
-pub(super) unsafe fn recalculate_size_state() {
+pub(super) fn recalculate_size_state() {
     let mut cursor = sessions::first();
     while let Some(owner) = cursor {
         owner.borrow_mut().attached = 0;
@@ -26,7 +26,7 @@ pub(super) unsafe fn recalculate_size_state() {
     }
 }
 
-pub(super) unsafe fn status_update_cache(owner: &SessionRef) {
+pub(super) fn status_update_cache(owner: &SessionRef) {
     let statuslines = options_get_number(&owner.borrow_options_mut(), c"status") as u_int;
     let statusat = if statuslines == 0 as u_int {
         -(1 as ::core::ffi::c_int)

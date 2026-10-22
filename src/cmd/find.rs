@@ -65,7 +65,7 @@ const cmd_find_pane_table: &[(&CStr, &CStr)] = &[
     (c"{up-of}", c"{up-of}"),
     (c"{down-of}", c"{down-of}"),
 ];
-unsafe fn cmd_find_inside_pane(
+fn cmd_find_inside_pane(
     client: Option<&ClientRef>,
 ) -> Option<std::rc::Rc<std::cell::RefCell<window_pane>>> {
     let client = client?;
@@ -145,7 +145,7 @@ fn cmd_find_session_valid(s: &SessionRef) -> i32 {
         .is_some_and(|window| window.active_pane().upgrade().is_some());
     has_pane as i32
 }
-unsafe fn cmd_find_best_session(
+fn cmd_find_best_session(
     candidates: Option<&[SessionRef]>,
     flags: ::core::ffi::c_int,
 ) -> Option<SessionRef> {
@@ -182,7 +182,7 @@ fn cmd_find_map_table<'a>(table: &[(&'static CStr, &'static CStr)], target: &'a 
         .unwrap_or(target)
 }
 impl cmd_find_state {
-    unsafe fn best_session_with_window(&mut self) -> ::core::ffi::c_int {
+    fn best_session_with_window(&mut self) -> ::core::ffi::c_int {
         let Some(window_owner) = self.w.upgrade() else {
             return -1;
         };
@@ -200,7 +200,7 @@ impl cmd_find_state {
         self.s = std::rc::Rc::downgrade(&best);
         self.best_winlink_with_window()
     }
-    unsafe fn best_winlink_with_window(&mut self) -> ::core::ffi::c_int {
+    fn best_winlink_with_window(&mut self) -> ::core::ffi::c_int {
         let session = self.session_handle().expect("window target session");
         let window = self.window_handle().expect("target window");
         log_debug(format_args!(
@@ -329,7 +329,7 @@ impl cmd_find_state {
         }
         -(1 as ::core::ffi::c_int)
     }
-    unsafe fn get_window_with_session(&mut self, window: &CStr) -> ::core::ffi::c_int {
+    fn get_window_with_session(&mut self, window: &CStr) -> ::core::ffi::c_int {
         let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
         let mut idx: ::core::ffi::c_int = 0;
         let mut n: ::core::ffi::c_int = 0;
@@ -632,7 +632,7 @@ impl cmd_find_state {
         }
         -(1 as ::core::ffi::c_int)
     }
-    unsafe fn get_pane_with_session(&mut self, pane: &CStr) -> ::core::ffi::c_int {
+    fn get_pane_with_session(&mut self, pane: &CStr) -> ::core::ffi::c_int {
         log_debug(format_args!(
             "{}: {}",
             "cmd_find_get_pane_with_session",
@@ -663,7 +663,7 @@ impl cmd_find_state {
         self.set_w(winlink_window(&self.winlink_handle()).as_ref());
         self.get_pane_with_window(pane)
     }
-    unsafe fn get_pane_with_window(&mut self, pane: &CStr) -> ::core::ffi::c_int {
+    fn get_pane_with_window(&mut self, pane: &CStr) -> ::core::ffi::c_int {
         let mut idx: ::core::ffi::c_int = 0;
         let mut n: u_int = 0;
         log_debug(format_args!(
@@ -760,7 +760,7 @@ impl cmd_find_state {
         }
         -(1 as ::core::ffi::c_int)
     }
-    pub unsafe fn is_valid(&self) -> bool {
+    pub fn is_valid(&self) -> bool {
         let (Some(s), Some(w), Some(_wp)) = (self.s.upgrade(), self.w.upgrade(), self.wp.upgrade())
         else {
             return false;
@@ -789,7 +789,7 @@ impl cmd_find_state {
         self.w = source.w;
         self.wp = source.wp;
     }
-    unsafe fn log_state(&self, prefix: &CStr) {
+    fn log_state(&self, prefix: &CStr) {
         if !self.session_handle().is_none() {
             log_debug(format_args!(
                 "{}: s=${} {}",
@@ -844,7 +844,7 @@ impl cmd_find_state {
             && self.w.ptr_eq(&WindowWeak::new())
             && self.wp.ptr_eq(&std::rc::Weak::new())
     }
-    pub unsafe fn find_from_session(s_owner: &SessionRef, flags: ::core::ffi::c_int) -> Self {
+    pub fn find_from_session(s_owner: &SessionRef, flags: ::core::ffi::c_int) -> Self {
         let mut fs = Self::clear_state(flags);
         fs.set_s(Some(s_owner));
         fs.set_wl(s_owner.current_winlink().clone());
@@ -859,7 +859,7 @@ impl cmd_find_state {
         fs.log_state(c"cmd_find_from_session");
         fs
     }
-    pub unsafe fn find_from_winlink(wl: refbox::Weak<winlink>, flags: ::core::ffi::c_int) -> Self {
+    pub fn find_from_winlink(wl: refbox::Weak<winlink>, flags: ::core::ffi::c_int) -> Self {
         let mut fs = Self::clear_state(flags);
         fs.s = wl.try_borrow().expect("live winlink").session.clone();
         fs.set_w(winlink_window(&wl).as_ref());
@@ -874,7 +874,7 @@ impl cmd_find_state {
         fs.log_state(c"cmd_find_from_winlink");
         fs
     }
-    pub unsafe fn find_from_session_window(
+    pub fn find_from_session_window(
         s_owner: &SessionRef,
         w_owner: &WindowRef,
         flags: ::core::ffi::c_int,
@@ -889,7 +889,7 @@ impl cmd_find_state {
         fs.log_state(c"cmd_find_from_session_window");
         Some(fs)
     }
-    pub unsafe fn find_from_window(w_owner: &WindowRef, flags: ::core::ffi::c_int) -> Option<Self> {
+    pub fn find_from_window(w_owner: &WindowRef, flags: ::core::ffi::c_int) -> Option<Self> {
         let mut fs = Self::clear_state(flags);
         fs.set_w(Some(w_owner));
         if fs.best_session_with_window() != 0 {
@@ -902,7 +902,7 @@ impl cmd_find_state {
         fs.log_state(c"cmd_find_from_window");
         Some(fs)
     }
-    pub unsafe fn find_from_winlink_pane(
+    pub fn find_from_winlink_pane(
         wl: refbox::Weak<winlink>,
         wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
         flags: ::core::ffi::c_int,
@@ -916,7 +916,7 @@ impl cmd_find_state {
         fs.log_state(c"cmd_find_from_winlink_pane");
         fs
     }
-    pub unsafe fn find_from_pane(
+    pub fn find_from_pane(
         pane: &std::rc::Rc<std::cell::RefCell<window_pane>>,
         flags: ::core::ffi::c_int,
     ) -> Option<Self> {
@@ -927,7 +927,7 @@ impl cmd_find_state {
         fs.log_state(c"cmd_find_from_pane");
         Some(fs)
     }
-    pub unsafe fn find_from_nothing(flags: ::core::ffi::c_int) -> Option<Self> {
+    pub fn find_from_nothing(flags: ::core::ffi::c_int) -> Option<Self> {
         let mut fs = Self::clear_state(flags);
         let session = cmd_find_best_session(None, flags)?;
         fs.set_s(Some(&session));
@@ -944,7 +944,7 @@ impl cmd_find_state {
         fs.log_state(c"cmd_find_from_nothing");
         Some(fs)
     }
-    pub unsafe fn find_from_mouse(m: &mouse_event) -> Option<Self> {
+    pub fn find_from_mouse(m: &mouse_event) -> Option<Self> {
         if m.valid == 0 {
             return None;
         }
@@ -960,7 +960,7 @@ impl cmd_find_state {
         fs.log_state(c"cmd_find_from_mouse");
         Some(fs)
     }
-    pub unsafe fn find_from_client(
+    pub fn find_from_client(
         c_owner: Option<&ClientRef>,
         flags: ::core::ffi::c_int,
     ) -> Option<Self> {

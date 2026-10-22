@@ -159,8 +159,8 @@ fn grid_storage_roles_have_only_authoritative_definitions() {
         }
     }
     assert_eq!(
-        count, 2,
-        "both authoritative storage roles must be inventoried"
+        count, 1,
+        "the cell data role must be inventoried and no storage union may remain"
     );
 }
 

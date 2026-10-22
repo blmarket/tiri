@@ -79,14 +79,14 @@ impl BufferEvent for StreamHandle {
 
     fn enable(&self, interests: Interests) -> StreamResult<()> {
         self.access(|stream| {
-            unsafe { bufferevent_enable(stream, interests.0) };
+            bufferevent_enable(stream, interests.0);
             Ok(())
         })
     }
 
     fn disable(&self, interests: Interests) -> StreamResult<()> {
         self.access(|stream| {
-            unsafe { bufferevent_disable(stream, interests.0) };
+            bufferevent_disable(stream, interests.0);
             Ok(())
         })
     }

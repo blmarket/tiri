@@ -100,7 +100,7 @@ fn server_acl_check(c: &ClientRef) -> Option<server_acl_entry> {
     }
     server_acl_entries::find(gid as id_t, SERVER_ACL_IS_GROUP)
 }
-unsafe fn server_acl_update() {
+fn server_acl_update() {
     let mut c: Option<ClientRef> = None;
     let mut registry_c_owner = ClientRegistry::first();
     c = registry_c_owner.clone();
@@ -189,22 +189,22 @@ pub fn server_acl_allow(mut id: id_t, mut flags: ::core::ffi::c_int) {
         flags: flags & SERVER_ACL_IS_GROUP,
     });
 }
-pub unsafe fn server_acl_deny(mut id: id_t, mut flags: ::core::ffi::c_int) {
+pub fn server_acl_deny(mut id: id_t, mut flags: ::core::ffi::c_int) {
     if server_acl_entries::remove(id, flags) {
         server_acl_update();
     }
 }
-pub unsafe fn server_acl_allow_write(mut id: id_t, mut flags: ::core::ffi::c_int) {
+pub fn server_acl_allow_write(mut id: id_t, mut flags: ::core::ffi::c_int) {
     if server_acl_entries::update(id, flags, |entry| entry.flags &= !SERVER_ACL_READONLY) {
         server_acl_update();
     }
 }
-pub unsafe fn server_acl_deny_write(mut id: id_t, mut flags: ::core::ffi::c_int) {
+pub fn server_acl_deny_write(mut id: id_t, mut flags: ::core::ffi::c_int) {
     if server_acl_entries::update(id, flags, |entry| entry.flags |= SERVER_ACL_READONLY) {
         server_acl_update();
     }
 }
-pub unsafe fn server_acl_join(c: &ClientRef) -> ::core::ffi::c_int {
+pub fn server_acl_join(c: &ClientRef) -> ::core::ffi::c_int {
     let Some(entry) = server_acl_check(c) else {
         return 0 as ::core::ffi::c_int;
     };

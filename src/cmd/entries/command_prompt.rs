@@ -264,13 +264,13 @@ async fn cmd_command_prompt_wait(
     let Some(cmdlist) = answered.await else {
         return;
     };
-    unsafe {
+    {
         let item = cmdq_resumed(&item);
         let new_item_allocation = cmdq_get_command(&cmdlist, item.borrow().state.as_ref());
         cmdq_insert_after(&item, new_item_allocation);
     }
 }
-unsafe fn cmd_command_prompt_callback(
+fn cmd_command_prompt_callback(
     c_owner: Option<&ClientRef>,
     cdata: &mut cmd_command_prompt_cdata,
     mut s: Option<&CStr>,
@@ -359,7 +359,7 @@ unsafe fn cmd_command_prompt_callback(
 }
 impl cmd_command_prompt_cdata {
     fn into_callback(mut self: Box<Self>) -> crate::shared::status::status_prompt_input_cb {
-        Some(Box::new(move |client, text, key| unsafe {
+        Some(Box::new(move |client, text, key| {
             cmd_command_prompt_callback(client, &mut self, text, key)
         }))
     }

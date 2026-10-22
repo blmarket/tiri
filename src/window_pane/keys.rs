@@ -12,7 +12,7 @@ use crate::shared::screen::ALL_MOUSE_MODES;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-pub(super) unsafe fn write_key(
+pub(super) fn write_key(
     pane: &Rc<RefCell<window_pane>>,
     key: key_code,
     mouse: Option<&mouse_event>,
@@ -39,11 +39,11 @@ pub(super) unsafe fn write_key(
     let screen = pane.screen_mode(true).expect("displayed pane screen");
     let stream = pane.borrow().event.clone();
     stream
-        .with_ptr(|event| input_key(screen, event, key))
+        .with_stream(|event| input_key(screen, event, key))
         .unwrap_or(0)
 }
 
-unsafe fn write_mouse(pane: &Rc<RefCell<window_pane>>, mouse: &mouse_event) {
+fn write_mouse(pane: &Rc<RefCell<window_pane>>, mouse: &mouse_event) {
     if mouse.ignore != 0 || !pane.is_visible() {
         return;
     }

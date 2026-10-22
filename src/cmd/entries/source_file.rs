@@ -38,7 +38,9 @@ pub struct cmd_source_file_data {
 }
 
 pub use ::libc::{GLOB_NOMATCH, GLOB_NOSPACE};
-static mut cmd_source_file_depth: u_int = 0;
+thread_local! {
+    static SOURCE_FILE_DEPTH: std::cell::Cell<u_int> = const { std::cell::Cell::new(0) };
+}
 pub static cmd_source_file_entry: cmd_entry = {
     cmd_entry {
         name: c"source-file",
@@ -73,13 +75,14 @@ impl cmd_source_file_data {
         if !std::mem::replace(&mut self.depth_active, false) {
             return;
         }
-        unsafe {
+        {
             let depth = if let Some(client) = &self.client {
                 client.leave_source_file()
             } else {
                 {
-                    cmd_source_file_depth = cmd_source_file_depth.wrapping_sub(1);
-                    cmd_source_file_depth
+                    let depth = SOURCE_FILE_DEPTH.get().wrapping_sub(1);
+                    SOURCE_FILE_DEPTH.set(depth);
+                    depth
                 }
             };
             log_debug(format_args!(
@@ -100,7 +103,7 @@ impl Drop for cmd_source_file_data {
     }
 }
 
-unsafe fn cmd_source_file_complete_cb(
+fn cmd_source_file_complete_cb(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     mut cdata: cmd_source_file_data,
 ) -> CmdOutcome {
@@ -109,12 +112,12 @@ unsafe fn cmd_source_file_complete_cb(
     CmdOutcome::Normal
 }
 
-unsafe fn cmd_source_file_complete(
+fn cmd_source_file_complete(
     mut cdata: Box<cmd_source_file_data>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) {
     let c = cdata.client_handle();
-    if cfg_finished == 0 {
+    if !cfg_finished() {
         cdata.depth_active = false;
         return;
     }
@@ -131,14 +134,14 @@ unsafe fn cmd_source_file_complete(
         .unwrap_or_else(|| Rc::clone(item_handle));
     let new_item_allocation = cmdq_get_callback_owned(
         c"cmd_source_file_complete_cb",
-        Some(Box::new(move |item| unsafe {
+        Some(Box::new(move |item| {
             cmd_source_file_complete_cb(item, *cdata)
         })),
     );
     cmdq_insert_after(&after_owner, new_item_allocation);
 }
 
-unsafe fn cmd_source_file_read(cdata: &cmd_source_file_data) -> FileWait {
+fn cmd_source_file_read(cdata: &cmd_source_file_data) -> FileWait {
     let path = &cdata.files[cdata.current as usize];
     file_read_wait(cdata.client.as_ref(), path, |_| None)
 }
@@ -158,15 +161,15 @@ async fn cmd_source_file_chain(
             drop(cdata);
             return std::future::pending().await;
         };
-        let item_owner = unsafe { cmdq_resumed(&item) };
+        let item_owner = cmdq_resumed(&item);
         unsafe { cmd_source_file_done(&mut cdata, &item_owner, read) };
         cdata.current = cdata.current.wrapping_add(1);
         if (cdata.current as usize) >= cdata.files.len() {
-            unsafe { cmd_source_file_complete(cdata, &item_owner) };
+            cmd_source_file_complete(cdata, &item_owner);
             return;
         }
         drop(item_owner);
-        outcome = unsafe { cmd_source_file_read(&cdata) }.await;
+        outcome = cmd_source_file_read(&cdata).await;
     }
 }
 
@@ -247,14 +250,16 @@ unsafe fn cmd_source_file_exec(
     let mut j: u_int = 0;
     match &c {
         None => {
-            if cmd_source_file_depth >= CMD_SOURCE_FILE_DEPTH_LIMIT as u_int {
+            if SOURCE_FILE_DEPTH.get() >= CMD_SOURCE_FILE_DEPTH_LIMIT as u_int {
                 cmdq_error(item_handle, |out| out.write_all(b"too many nested files"));
                 return CmdOutcome::Error;
             }
-            cmd_source_file_depth = cmd_source_file_depth.wrapping_add(1);
-            log_debug(format_args!("{}: depth now {}", "cmd_source_file_exec", {
-                cmd_source_file_depth
-            }));
+            let depth = SOURCE_FILE_DEPTH.get().wrapping_add(1);
+            SOURCE_FILE_DEPTH.set(depth);
+            log_debug(format_args!(
+                "{}: depth now {}",
+                "cmd_source_file_exec", depth
+            ));
         }
         Some(client) => {
             let Some(depth) = client.enter_source_file(CMD_SOURCE_FILE_DEPTH_LIMIT as u32) else {

@@ -33,19 +33,16 @@ pub struct EditorHandle {
 }
 
 impl EditorHandle {
-    /// The editor pointer must be live and installed in this pane.
-    pub unsafe fn new(
-        pane: &std::rc::Rc<std::cell::RefCell<window_pane>>,
-        editor: std::ptr::NonNull<spawn_editor_state>,
-    ) -> Self {
+    /// The editor must be installed in this pane.
+    pub fn new(pane: &std::rc::Rc<std::cell::RefCell<window_pane>>, id: EditorId) -> Self {
         assert_eq!(
             pane.editor_identity(),
-            Some(editor.as_ref().id),
+            Some(id),
             "editor must belong to the pane",
         );
         Self {
             pane: std::rc::Rc::downgrade(pane),
-            id: editor.as_ref().id,
+            id,
         }
     }
 
@@ -69,8 +66,7 @@ impl EditorHandle {
 }
 
 /// Rust-only callback so the editor result can move as owned binary bytes.
-pub type spawn_finish_edit_cb =
-    Option<Box<dyn FnOnce(std::ptr::NonNull<spawn_editor_state>, Option<Vec<u8>>)>>;
+pub type spawn_finish_edit_cb = Option<Box<dyn FnOnce(&spawn_editor_state, Option<Vec<u8>>)>>;
 
 #[repr(C)]
 pub struct spawn_context {

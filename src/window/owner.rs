@@ -53,7 +53,7 @@ impl Drop for WindowRef {
         if Rc::strong_count(&self.0) != 1 {
             return;
         }
-        unsafe {
+        {
             crate::events::events_fire_window(c"window-closed", self.clone());
             assert_eq!(
                 Rc::strong_count(&self.0),

@@ -106,7 +106,7 @@ async fn cmd_load_buffer_complete(
     };
     unsafe { cmd_load_buffer_done(&cmdq_resumed(&item), cdata, outcome) };
 }
-unsafe fn cmd_load_buffer_exec(
+fn cmd_load_buffer_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
@@ -153,7 +153,7 @@ mod tests {
     }
 
     /// Queue a head on `owner` that suspends until `done` reports the file.
-    unsafe fn append_load(
+    fn append_load(
         owner: &ClientRef,
         done: impl std::future::Future<Output = Option<FileOutcome>> + 'static,
         cdata: cmd_load_buffer_data,
@@ -177,32 +177,30 @@ mod tests {
 
     #[test]
     fn a_reported_file_is_stored_inside_the_send() {
-        unsafe {
-            let owner = clients::with_queue();
-            let (tx, rx) = tiri_rt::oneshot::channel();
-            let cdata = cmd_load_buffer_data {
-                client: None,
-                name: Some(c"loaded".to_owned()),
-            };
-            let head = append_load(&owner, rx, cdata);
-            assert!(buffer(c"loaded").is_none());
-            let outcome = FileOutcome {
-                path: Some(c"input".to_owned()),
-                error: 0,
-                buffer: SegmentedBuf::from(b"hello".to_vec()),
-            };
-            assert!(tx.send(outcome).is_ok());
-            assert_eq!(buffer(c"loaded").as_deref(), Some(&b"hello"[..]));
-            cmdq_next(Some(&owner));
-            assert!(head.upgrade().is_none());
-        }
+        let owner = clients::with_queue();
+        let (tx, rx) = tiri_rt::oneshot::channel();
+        let cdata = cmd_load_buffer_data {
+            client: None,
+            name: Some(c"loaded".to_owned()),
+        };
+        let head = append_load(&owner, rx, cdata);
+        assert!(buffer(c"loaded").is_none());
+        let outcome = FileOutcome {
+            path: Some(c"input".to_owned()),
+            error: 0,
+            buffer: SegmentedBuf::from(b"hello".to_vec()),
+        };
+        assert!(tx.send(outcome).is_ok());
+        assert_eq!(buffer(c"loaded").as_deref(), Some(&b"hello"[..]));
+        cmdq_next(Some(&owner));
+        assert!(head.upgrade().is_none());
     }
 
     #[test]
     fn a_local_file_is_stored_one_runtime_turn_later() {
         use tiri_rt::Runtime as _;
         let mut runtime = tiri_rt::mio::Runtime::new().unwrap();
-        unsafe {
+        {
             let path = std::env::temp_dir().join(format!("tiri-load-{}", std::process::id()));
             std::fs::write(&path, b"local").unwrap();
             let path = CString::new(path.into_os_string().into_encoded_bytes()).unwrap();
@@ -224,23 +222,21 @@ mod tests {
 
     #[test]
     fn a_dead_file_client_releases_the_target_client_and_parks() {
-        unsafe {
-            let owner = clients::with_queue();
-            let (tx, rx) = tiri_rt::oneshot::channel();
-            let cdata = cmd_load_buffer_data {
-                client: Some(owner.clone()),
-                name: Some(c"lost".to_owned()),
-            };
-            let head = append_load(&owner, rx, cdata);
-            drop(tx);
-            assert_eq!(Rc::strong_count(&owner), 1, "the data is released");
-            assert_eq!(cmdq_next(Some(&owner)), 0);
-            assert!(head.upgrade().is_some(), "the command stays blocked");
-            let client = Rc::downgrade(&owner);
-            drop(owner);
-            assert!(client.upgrade().is_none());
-            assert!(head.upgrade().is_none());
-            assert!(buffer(c"lost").is_none(), "the body does not run");
-        }
+        let owner = clients::with_queue();
+        let (tx, rx) = tiri_rt::oneshot::channel();
+        let cdata = cmd_load_buffer_data {
+            client: Some(owner.clone()),
+            name: Some(c"lost".to_owned()),
+        };
+        let head = append_load(&owner, rx, cdata);
+        drop(tx);
+        assert_eq!(Rc::strong_count(&owner), 1, "the data is released");
+        assert_eq!(cmdq_next(Some(&owner)), 0);
+        assert!(head.upgrade().is_some(), "the command stays blocked");
+        let client = Rc::downgrade(&owner);
+        drop(owner);
+        assert!(client.upgrade().is_none());
+        assert!(head.upgrade().is_none());
+        assert!(buffer(c"lost").is_none(), "the body does not run");
     }
 }

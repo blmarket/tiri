@@ -48,7 +48,7 @@ pub(crate) struct TerminalDescription {
     pub codes: Vec<CString>,
 }
 
-pub(crate) unsafe fn tty_term_descriptions(
+pub(crate) fn tty_term_descriptions(
     target: Option<&ClientRef>,
 ) -> impl Iterator<Item = TerminalDescription> {
     let target = target.map(std::rc::Rc::downgrade);
@@ -1204,7 +1204,7 @@ fn global_array_strings(name: &CStr) -> Vec<CString> {
         })
         .unwrap_or_default()
 }
-pub(super) unsafe fn tty_term_apply_overrides(term: &mut tty_term) {
+pub(super) fn tty_term_apply_overrides(term: &mut tty_term) {
     let values = global_array_strings(c"terminal-overrides");
     for value in &values {
         let mut offset: size_t = 0;
@@ -1268,7 +1268,7 @@ pub(super) unsafe fn tty_term_apply_overrides(term: &mut tty_term) {
     term.acs = table;
     tty_term_validate(term);
 }
-unsafe fn tty_term_validate(term: &mut tty_term) {
+fn tty_term_validate(term: &mut tty_term) {
     if !matches!((&term.codes)[TTYC_MS as usize], tty_code::String(_)) {
         return;
     }
@@ -1281,7 +1281,7 @@ unsafe fn tty_term_validate(term: &mut tty_term) {
     term.flags |= TERM_INVALIDMS;
     (&mut term.codes)[TTYC_MS as usize] = tty_code::None;
 }
-pub(super) unsafe fn tty_term_create(
+pub(super) fn tty_term_create(
     client_owner: &ClientRef,
     name: &CStr,
     caps: &[CString],
@@ -1361,7 +1361,7 @@ pub(super) unsafe fn tty_term_create(
             tty_parse_client_features(client_owner, cstr_suffix(value, offset), c":");
         }
     }
-    del_curterm(cur_term);
+    unsafe { del_curterm(cur_term) };
     let colour_term = client_owner.with_environment(|env| {
         env.and_then(|env| env.find(c"COLORTERM"))
             .map(|entry| entry.value.clone())
@@ -1561,70 +1561,55 @@ fn tty_term_expanded(code: tty_code_code, s: Option<&CStr>) -> CString {
     };
     s.to_owned()
 }
-pub(super) unsafe fn tty_term_string_i(
+/// tiparm_s checks the capability against the declared parameter count and
+/// string mask, and its result is copied before the next expansion.
+pub(super) fn tty_term_string_i(
     term: &tty_term,
-    mut code: tty_code_code,
-    mut a: ::core::ffi::c_int,
+    code: tty_code_code,
+    a: ::core::ffi::c_int,
 ) -> std::ffi::CString {
-    let mut x: *const ::core::ffi::c_char = tty_term_string(term, code).as_ptr();
-    let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    s = tiparm_s(1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int, x, a);
-    tty_term_expanded(code, nullable_cstr(s))
+    let x = tty_term_string(term, code).as_ptr();
+    tty_term_expanded(code, unsafe { nullable_cstr(tiparm_s(1, 0, x, a)) })
 }
-pub(super) unsafe fn tty_term_string_ii(
+pub(super) fn tty_term_string_ii(
     term: &tty_term,
-    mut code: tty_code_code,
-    mut a: ::core::ffi::c_int,
-    mut b: ::core::ffi::c_int,
+    code: tty_code_code,
+    a: ::core::ffi::c_int,
+    b: ::core::ffi::c_int,
 ) -> std::ffi::CString {
-    let mut x: *const ::core::ffi::c_char = tty_term_string(term, code).as_ptr();
-    let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    s = tiparm_s(2 as ::core::ffi::c_int, 0 as ::core::ffi::c_int, x, a, b);
-    tty_term_expanded(code, nullable_cstr(s))
+    let x = tty_term_string(term, code).as_ptr();
+    tty_term_expanded(code, unsafe { nullable_cstr(tiparm_s(2, 0, x, a, b)) })
 }
-pub(super) unsafe fn tty_term_string_iii(
+pub(super) fn tty_term_string_iii(
     term: &tty_term,
-    mut code: tty_code_code,
-    mut a: ::core::ffi::c_int,
-    mut b: ::core::ffi::c_int,
-    mut c: ::core::ffi::c_int,
+    code: tty_code_code,
+    a: ::core::ffi::c_int,
+    b: ::core::ffi::c_int,
+    c: ::core::ffi::c_int,
 ) -> std::ffi::CString {
-    let mut x: *const ::core::ffi::c_char = tty_term_string(term, code).as_ptr();
-    let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    s = tiparm_s(3 as ::core::ffi::c_int, 0 as ::core::ffi::c_int, x, a, b, c);
-    tty_term_expanded(code, nullable_cstr(s))
+    let x = tty_term_string(term, code).as_ptr();
+    tty_term_expanded(code, unsafe { nullable_cstr(tiparm_s(3, 0, x, a, b, c)) })
 }
-pub(super) unsafe fn tty_term_string_s(
+pub(super) fn tty_term_string_s(
     term: &tty_term,
-    mut code: tty_code_code,
+    code: tty_code_code,
     a: &CStr,
 ) -> std::ffi::CString {
-    let mut x: *const ::core::ffi::c_char = tty_term_string(term, code).as_ptr();
-    let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    s = tiparm_s(
-        1 as ::core::ffi::c_int,
-        1 as ::core::ffi::c_int,
-        x,
-        a.as_ptr(),
-    );
-    tty_term_expanded(code, nullable_cstr(s))
+    let x = tty_term_string(term, code).as_ptr();
+    tty_term_expanded(code, unsafe {
+        nullable_cstr(tiparm_s(1, 1, x, a.as_ptr()))
+    })
 }
-pub(super) unsafe fn tty_term_string_ss(
+pub(super) fn tty_term_string_ss(
     term: &tty_term,
-    mut code: tty_code_code,
+    code: tty_code_code,
     a: &CStr,
     b: &CStr,
 ) -> std::ffi::CString {
-    let mut x: *const ::core::ffi::c_char = tty_term_string(term, code).as_ptr();
-    let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    s = tiparm_s(
-        2 as ::core::ffi::c_int,
-        3 as ::core::ffi::c_int,
-        x,
-        a.as_ptr(),
-        b.as_ptr(),
-    );
-    tty_term_expanded(code, nullable_cstr(s))
+    let x = tty_term_string(term, code).as_ptr();
+    tty_term_expanded(code, unsafe {
+        nullable_cstr(tiparm_s(2, 3, x, a.as_ptr(), b.as_ptr()))
+    })
 }
 pub(super) fn tty_term_number(term: &tty_term, code: tty_code_code) -> ::core::ffi::c_int {
     match &(&term.codes)[code as usize] {

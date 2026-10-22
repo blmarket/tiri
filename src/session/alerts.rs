@@ -23,10 +23,7 @@ fn session_alerted_first(owner: &SessionRef) -> bool {
     first
 }
 
-unsafe fn alerts_action_applies(
-    mut wl: refbox::Weak<winlink>,
-    name: &'static CStr,
-) -> ::core::ffi::c_int {
+fn alerts_action_applies(mut wl: refbox::Weak<winlink>, name: &'static CStr) -> ::core::ffi::c_int {
     let Some(session_owner) = wl.try_borrow().expect("live winlink").session.upgrade() else {
         return 0;
     };
@@ -44,7 +41,7 @@ unsafe fn alerts_action_applies(
     0 as ::core::ffi::c_int
 }
 
-pub(super) unsafe fn alerts_check_all(w_owner: &WindowRef) -> ::core::ffi::c_int {
+pub(super) fn alerts_check_all(w_owner: &WindowRef) -> ::core::ffi::c_int {
     let mut alerts: ::core::ffi::c_int = 0;
     alerts = alerts_check_bell(w_owner);
     alerts |= alerts_check_activity(w_owner);
@@ -52,7 +49,7 @@ pub(super) unsafe fn alerts_check_all(w_owner: &WindowRef) -> ::core::ffi::c_int
     alerts
 }
 
-unsafe fn alerts_check_bell(w_owner: &WindowRef) -> ::core::ffi::c_int {
+fn alerts_check_bell(w_owner: &WindowRef) -> ::core::ffi::c_int {
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     if !w_owner.pending_alerts() & WINDOW_BELL != 0 {
         return 0 as ::core::ffi::c_int;
@@ -89,7 +86,7 @@ unsafe fn alerts_check_bell(w_owner: &WindowRef) -> ::core::ffi::c_int {
     0x1 as ::core::ffi::c_int
 }
 
-unsafe fn alerts_check_activity(w_owner: &WindowRef) -> ::core::ffi::c_int {
+fn alerts_check_activity(w_owner: &WindowRef) -> ::core::ffi::c_int {
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     if !w_owner.pending_alerts() & WINDOW_ACTIVITY != 0 {
         return 0 as ::core::ffi::c_int;
@@ -129,7 +126,7 @@ unsafe fn alerts_check_activity(w_owner: &WindowRef) -> ::core::ffi::c_int {
     0x2 as ::core::ffi::c_int
 }
 
-unsafe fn alerts_check_silence(w_owner: &WindowRef) -> ::core::ffi::c_int {
+fn alerts_check_silence(w_owner: &WindowRef) -> ::core::ffi::c_int {
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     if !w_owner.pending_alerts() & WINDOW_SILENCE != 0 {
         return 0 as ::core::ffi::c_int;
@@ -171,7 +168,7 @@ unsafe fn alerts_check_silence(w_owner: &WindowRef) -> ::core::ffi::c_int {
     0x4 as ::core::ffi::c_int
 }
 
-unsafe fn alerts_set_message(mut wl: refbox::Weak<winlink>, type_0: &CStr, option: &'static CStr) {
+fn alerts_set_message(mut wl: refbox::Weak<winlink>, type_0: &CStr, option: &'static CStr) {
     let Some(session_owner) = wl.try_borrow().expect("live winlink").session.upgrade() else {
         return;
     };

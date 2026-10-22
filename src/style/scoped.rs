@@ -18,7 +18,7 @@ use std::ffi::{CStr, CString};
 /// option-style evaluator. No entry pointer escapes; the resolved owner
 /// identifies an inherited entry even if a callback adds an override or changes
 /// the receiver's parent.
-pub unsafe fn style_apply_with_options(
+pub fn style_apply_with_options(
     cell: &mut grid_cell,
     key: &CStr,
     context: Option<&mut format_tree>,
@@ -48,7 +48,7 @@ pub unsafe fn style_apply_with_options(
 }
 
 /// Resolve a style to a value, releasing option access before format evaluation.
-pub unsafe fn style_resolve_with_options(
+pub fn style_resolve_with_options(
     key: &CStr,
     context: Option<&mut format_tree>,
     scope: &OptionsScope,

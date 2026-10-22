@@ -11,7 +11,7 @@ use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
 use crate::shared::environment::environ;
 use crate::shared::environment::ENVIRON_HIDDEN;
-use crate::tmux::global_environ;
+use crate::tmux::global_environ_mut;
 use std::ffi::CStr;
 pub static cmd_set_environment_entry: cmd_entry = {
     cmd_entry {
@@ -112,7 +112,7 @@ unsafe fn cmd_set_environment_exec(
         }
     };
     if global {
-        edit(global_environ.as_deref_mut().expect("environment"));
+        global_environ_mut(edit);
     } else {
         session
             .as_ref()

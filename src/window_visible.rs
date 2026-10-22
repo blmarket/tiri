@@ -11,7 +11,7 @@ pub fn window_position_is_visible(ranges: &[visible_range], px: u_int) -> bool {
 /// Replace `ranges` with the unobstructed parts of a horizontal span in window
 /// coordinates, retaining its allocation. Callers may reuse the buffer once its
 /// previous result is consumed; nested queries need a separate buffer.
-pub unsafe fn window_visible_ranges(
+pub fn window_visible_ranges(
     pane: Option<&std::rc::Rc<std::cell::RefCell<window_pane>>>,
     x: i32,
     y: i32,

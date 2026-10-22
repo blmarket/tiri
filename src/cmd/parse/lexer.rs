@@ -418,13 +418,14 @@ impl<'a, 'input> Lexer<'a, 'input> {
             name.push(ch as u8);
         }
         let name = finish(name);
-        unsafe {
-            let entry = environ_find(global_environ.as_deref().expect("environment"), &name);
-            if let Some(entry) = entry {
-                if let Some(value) = &entry.value {
+        {
+            global_environ(|environment| {
+                if let Some(value) =
+                    environ_find(environment, &name).and_then(|entry| entry.value.as_ref())
+                {
                     bytes.extend_from_slice(value.as_bytes());
                 }
-            }
+            });
         }
         Ok(())
     }
@@ -445,7 +446,8 @@ impl<'a, 'input> Lexer<'a, 'input> {
         let name = finish(name);
         unsafe {
             let pw = if name.is_empty() {
-                let entry = environ_find(global_environ.as_deref().expect("environment"), c"HOME");
+                let entry =
+                    global_environ(|environment| environ_find(environment, c"HOME").cloned());
                 if let Some(entry) = entry {
                     if let Some(home) = &entry.value {
                         if !home.is_empty() {

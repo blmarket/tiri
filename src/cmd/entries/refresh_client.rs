@@ -56,7 +56,7 @@ pub static cmd_refresh_client_entry: cmd_entry = {
         exec: Some(cmd_refresh_client_exec),
     }
 };
-unsafe fn cmd_refresh_client_update_subscription(tc_owner: &ClientRef, value: &CStr) {
+fn cmd_refresh_client_update_subscription(tc_owner: &ClientRef, value: &CStr) {
     let Some(parsed) = monitor_parse_owned(value) else {
         control_remove_sub(tc_owner, value);
         return;
@@ -168,7 +168,7 @@ fn cmd_refresh_parse_pane(value: &CStr) -> Option<(u_int, &CStr)> {
     (matched == 1).then_some((pane, suffix))
 }
 
-unsafe fn cmd_refresh_client_update_offset(tc_owner: &ClientRef, value: &CStr) {
+fn cmd_refresh_client_update_offset(tc_owner: &ClientRef, value: &CStr) {
     let Some((pane, action)) = cmd_refresh_parse_pane(value) else {
         return;
     };
@@ -184,7 +184,7 @@ unsafe fn cmd_refresh_client_update_offset(tc_owner: &ClientRef, value: &CStr) {
     }
 }
 
-unsafe fn cmd_refresh_report(client: &ClientRef, value: &CStr) {
+fn cmd_refresh_report(client: &ClientRef, value: &CStr) {
     let Some((pane, report)) = cmd_refresh_parse_pane(value) else {
         return;
     };

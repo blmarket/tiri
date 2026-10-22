@@ -126,7 +126,7 @@ mod retained_session_tests {
     #[test]
     fn removing_typed_reference_preserves_other_owners() {
         use std::rc::Rc;
-        unsafe {
+        {
             let owner = session::new();
             let observer = Rc::downgrade(&owner);
             crate::session::session_remove_ref(owner.clone(), c"typed-owner-test");
@@ -139,7 +139,7 @@ mod retained_session_tests {
     #[test]
     fn final_reference_release_cleans_up_synchronously() {
         use std::rc::Rc;
-        unsafe {
+        {
             let owner = session::new();
             let observer = Rc::downgrade(&owner);
             crate::session::session_remove_ref(owner, c"owner-test");

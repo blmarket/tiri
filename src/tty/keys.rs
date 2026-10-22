@@ -1481,7 +1481,7 @@ fn tty_keys_winsz(
 ) -> ::core::ffi::c_int {
     let len: size_t = bytes.len();
     *size = 0 as size_t;
-    if unsafe { terminal_client_owner.borrow_terminal() }.flags & TTY_WINSIZEQUERY == 0 {
+    if terminal_client_owner.borrow_terminal().flags & TTY_WINSIZEQUERY == 0 {
         return -(1 as ::core::ffi::c_int);
     }
     if bytes[0] != b'\x1b' {
@@ -1514,14 +1514,14 @@ fn tty_keys_winsz(
     }
     let params = &bytes[2..end];
     if let Some((sy, sx)) = scan::scan_u32_pair(params, b"8;") {
-        let terminal = unsafe { terminal_client_owner.borrow_terminal_mut() };
+        let mut terminal = terminal_client_owner.borrow_terminal_mut();
         terminal.sx = sx;
         terminal.sy = sy;
         *size = end + 1;
         return 0 as ::core::ffi::c_int;
     } else if let Some((ypixel, xpixel)) = scan::scan_u32_pair(params, b"4;") {
         {
-            let terminal = unsafe { terminal_client_owner.borrow_terminal_mut() };
+            let mut terminal = terminal_client_owner.borrow_terminal_mut();
             terminal.xpixel = if xpixel != 0 && terminal.sx != 0 {
                 xpixel / terminal.sx
             } else {
@@ -1533,7 +1533,7 @@ fn tty_keys_winsz(
                 0
             };
         }
-        unsafe {
+        {
             tty_invalidate(terminal_client_owner);
             terminal_client_owner.borrow_terminal_mut().flags &= !TTY_WINSIZEQUERY;
         }
@@ -1878,7 +1878,7 @@ pub(super) unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core:
                                                                         terminal_client_owner
                                                                             .borrow_terminal();
                                                                     tty_keys_extended_key(
-                                                                        terminal,
+                                                                        &*terminal,
                                                                         diagnostic_name.as_deref(),
                                                                         bytes,
                                                                         &mut size,
@@ -1961,7 +1961,7 @@ pub(super) unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core:
         match current_block {
             12077302897653652224 => {
                 n = tty_keys_next1(
-                    terminal_client_owner.borrow_terminal(),
+                    &*terminal_client_owner.borrow_terminal(),
                     diagnostic_name.as_deref(),
                     bytes,
                     &mut key,
@@ -1978,7 +1978,7 @@ pub(super) unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core:
                 }
                 if bytes[0] == b'\x1b' && len > 1 as size_t {
                     n = tty_keys_next1(
-                        terminal_client_owner.borrow_terminal(),
+                        &*terminal_client_owner.borrow_terminal(),
                         diagnostic_name.as_deref(),
                         &bytes[1..],
                         &mut key,
@@ -2221,7 +2221,7 @@ pub(super) unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core:
         }
     }
 }
-unsafe fn tty_keys_update_focus(client: &ClientRef) {
+fn tty_keys_update_focus(client: &ClientRef) {
     let window = {
         let session = client.attached_session().upgrade().expect("live session");
         winlink_window(&session.current_winlink())
@@ -2618,7 +2618,7 @@ fn tty_keys_device_attributes(
     size: &mut size_t,
 ) -> ::core::ffi::c_int {
     *size = 0 as size_t;
-    if unsafe { terminal_client_owner.borrow_terminal() }.flags & TTY_HAVEDA != 0 {
+    if terminal_client_owner.borrow_terminal().flags & TTY_HAVEDA != 0 {
         return -(1 as ::core::ffi::c_int);
     }
     let params = match tty_keys_da_params(bytes, b'?') {
@@ -2649,7 +2649,7 @@ fn tty_keys_device_attributes(
         log_cstr(terminal_client_owner.name().as_deref().unwrap_or(c"(null)")),
         log_cstr_n(&bytes[..*size])
     ));
-    unsafe {
+    {
         tty_update_features(terminal_client_owner);
         terminal_client_owner.borrow_terminal_mut().flags |= TTY_HAVEDA;
     }
@@ -2663,7 +2663,7 @@ fn tty_keys_sync(
     let len: size_t = bytes.len();
     let prefix = b"\x1B[?2026;";
     *size = 0 as size_t;
-    if unsafe { terminal_client_owner.borrow_terminal() }.flags & TTY_HAVESYNC != 0 {
+    if terminal_client_owner.borrow_terminal().flags & TTY_HAVESYNC != 0 {
         return -(1 as ::core::ffi::c_int);
     }
     for (i, &expected) in prefix.iter().enumerate() {
@@ -2699,12 +2699,10 @@ fn tty_keys_sync(
         log_cstr_n(&bytes[..*size])
     ));
     if let 1..=3 = status {
-        unsafe {
-            tty_parse_client_features(terminal_client_owner, c"sync", c",");
-            tty_update_features(terminal_client_owner);
-        }
+        tty_parse_client_features(terminal_client_owner, c"sync", c",");
+        tty_update_features(terminal_client_owner);
     }
-    unsafe { terminal_client_owner.borrow_terminal_mut() }.flags |= TTY_HAVESYNC;
+    terminal_client_owner.borrow_terminal_mut().flags |= TTY_HAVESYNC;
     0 as ::core::ffi::c_int
 }
 fn tty_keys_device_attributes2(
@@ -2713,7 +2711,7 @@ fn tty_keys_device_attributes2(
     size: &mut size_t,
 ) -> ::core::ffi::c_int {
     *size = 0 as size_t;
-    if unsafe { terminal_client_owner.borrow_terminal() }.flags & TTY_HAVEDA2 != 0 {
+    if terminal_client_owner.borrow_terminal().flags & TTY_HAVEDA2 != 0 {
         return -(1 as ::core::ffi::c_int);
     }
     let params = match tty_keys_da_params(bytes, b'>') {
@@ -2735,7 +2733,7 @@ fn tty_keys_device_attributes2(
         log_cstr(terminal_client_owner.name().as_deref().unwrap_or(c"(null)")),
         log_cstr_n(&bytes[..*size])
     ));
-    unsafe {
+    {
         tty_update_features(terminal_client_owner);
         terminal_client_owner.borrow_terminal_mut().flags |= TTY_HAVEDA2;
     }
@@ -2793,7 +2791,7 @@ fn tty_keys_extended_device_attributes(
     ];
     let len: size_t = bytes.len();
     *size = 0 as size_t;
-    if unsafe { terminal_client_owner.borrow_terminal() }.flags & TTY_HAVEXDA != 0 {
+    if terminal_client_owner.borrow_terminal().flags & TTY_HAVEXDA != 0 {
         return -(1 as ::core::ffi::c_int);
     }
     for (i, &expected) in b"\x1bP>|".iter().enumerate() {
@@ -2825,7 +2823,7 @@ fn tty_keys_extended_device_attributes(
         log_cstr(terminal_client_owner.name().as_deref().unwrap_or(c"(null)")),
         log_cstr_n(&bytes[..*size])
     ));
-    unsafe {
+    {
         terminal_client_owner.record_terminal_type(&terminal_type);
         tty_update_features(terminal_client_owner);
         terminal_client_owner.borrow_terminal_mut().flags |= TTY_HAVEXDA;
@@ -3239,7 +3237,7 @@ mod reply_parser_tests {
 
     /// A client with an open terminal that has no capabilities, so feature
     /// updates run without a real terminal behind them.
-    unsafe fn client() -> ClientRef {
+    fn client() -> ClientRef {
         for name in [c"extended-keys", c"focus-events"] {
             let definition = crate::options::options_table
                 .iter()
@@ -3253,13 +3251,15 @@ mod reply_parser_tests {
             c"cup=\x1b[%i%p1%d;%p2%dH".to_owned(),
         ];
         let term = super::super::term::tty_term_create(&owner, c"reply-test", &caps).unwrap();
-        let terminal = owner.borrow_terminal_mut();
-        terminal.term = Some(term);
-        terminal.out = Some(Box::default());
+        {
+            let mut terminal = owner.borrow_terminal_mut();
+            terminal.term = Some(term);
+            terminal.out = Some(Box::default());
+        }
         owner
     }
 
-    unsafe fn features_of(name: &CStr) -> i32 {
+    fn features_of(name: &CStr) -> i32 {
         let owner = client();
         tty_default_features(&owner, name);
         owner.terminal_feature_mask()
@@ -3267,7 +3267,7 @@ mod reply_parser_tests {
 
     /// The feature mask of a fresh client with `features` added to what
     /// its terminal already brings.
-    unsafe fn features_with(features: &CStr) -> i32 {
+    fn features_with(features: &CStr) -> i32 {
         let owner = client();
         if !features.is_empty() {
             tty_parse_client_features(&owner, features, c",");
@@ -3275,7 +3275,7 @@ mod reply_parser_tests {
         owner.terminal_feature_mask()
     }
 
-    unsafe fn term_type(owner: &ClientRef) -> CString {
+    fn term_type(owner: &ClientRef) -> CString {
         let mut context = format_create(None, None, 0, 0);
         context.c = std::rc::Rc::downgrade(owner);
         let Some(crate::format::FormatValue::String(value)) =
@@ -3323,56 +3323,54 @@ mod reply_parser_tests {
 
     #[test]
     fn window_size_reports() {
-        unsafe {
-            let owner = client();
-            assert_eq!(winsz(&owner, b"\x1b[8;24;80t"), (-1, 0));
-            owner.borrow_terminal_mut().flags |= TTY_WINSIZEQUERY;
-            assert_prefixes_wait(|b, s| tty_keys_winsz(&owner, b, s), b"\x1b[8;24;80t");
-            assert_header_rejects(|b, s| tty_keys_winsz(&owner, b, s), b"\x1b[8;24;80t", 2);
-            assert_eq!(winsz(&owner, b"\x1b[8;24;80t"), (0, 10));
-            assert_eq!(
-                (owner.borrow_terminal().sy, owner.borrow_terminal().sx),
-                (24, 80)
-            );
-            assert_eq!(winsz(&owner, b"\x1b[8;24;80tx"), (0, 10));
-            assert_eq!(winsz(&owner, b"\x1b[8;;80t"), (-1, 0));
-            assert_eq!(winsz(&owner, b"\x1b[8;24t"), (-1, 0));
-            assert_eq!(winsz(&owner, b"\x1b[8;24;80;5t"), (0, 12));
-            assert_eq!(winsz(&owner, b"\x1b[8;24;80x"), (-1, 0));
+        let owner = client();
+        assert_eq!(winsz(&owner, b"\x1b[8;24;80t"), (-1, 0));
+        owner.borrow_terminal_mut().flags |= TTY_WINSIZEQUERY;
+        assert_prefixes_wait(|b, s| tty_keys_winsz(&owner, b, s), b"\x1b[8;24;80t");
+        assert_header_rejects(|b, s| tty_keys_winsz(&owner, b, s), b"\x1b[8;24;80t", 2);
+        assert_eq!(winsz(&owner, b"\x1b[8;24;80t"), (0, 10));
+        assert_eq!(
+            (owner.borrow_terminal().sy, owner.borrow_terminal().sx),
+            (24, 80)
+        );
+        assert_eq!(winsz(&owner, b"\x1b[8;24;80tx"), (0, 10));
+        assert_eq!(winsz(&owner, b"\x1b[8;;80t"), (-1, 0));
+        assert_eq!(winsz(&owner, b"\x1b[8;24t"), (-1, 0));
+        assert_eq!(winsz(&owner, b"\x1b[8;24;80;5t"), (0, 12));
+        assert_eq!(winsz(&owner, b"\x1b[8;24;80x"), (-1, 0));
 
-            assert_eq!(winsz(&owner, b"\x1b[8;4294967297;80t"), (0, 18));
-            assert_eq!(owner.borrow_terminal().sy, 1);
-            assert_eq!(winsz(&owner, b"\x1b[8;999999999999999999999;80t"), (0, 29));
-            assert_eq!(owner.borrow_terminal().sy, u32::MAX);
+        assert_eq!(winsz(&owner, b"\x1b[8;4294967297;80t"), (0, 18));
+        assert_eq!(owner.borrow_terminal().sy, 1);
+        assert_eq!(winsz(&owner, b"\x1b[8;999999999999999999999;80t"), (0, 29));
+        assert_eq!(owner.borrow_terminal().sy, u32::MAX);
 
-            owner.borrow_terminal_mut().sx = 80;
-            owner.borrow_terminal_mut().sy = 24;
-            assert_eq!(winsz(&owner, b"\x1b[4;480;800t"), (0, 12));
-            {
-                let terminal = owner.borrow_terminal();
-                assert_eq!((terminal.xpixel, terminal.ypixel), (10, 20));
-                assert_eq!(terminal.flags & TTY_WINSIZEQUERY, 0);
-            }
-            assert_eq!(winsz(&owner, b"\x1b[4;480;800t"), (-1, 0));
-            owner.borrow_terminal_mut().flags |= TTY_WINSIZEQUERY;
-            owner.borrow_terminal_mut().sx = 0;
-            assert_eq!(winsz(&owner, b"\x1b[4;480;800t"), (0, 12));
-            {
-                let terminal = owner.borrow_terminal();
-                assert_eq!((terminal.xpixel, terminal.ypixel), (0, 20));
-            }
-            owner.borrow_terminal_mut().flags |= TTY_WINSIZEQUERY;
-
-            // The parameters end before byte 64.
-            let mut report = b"\x1b[8;24;".to_vec();
-            report.resize(61, b'0');
-            report.extend_from_slice(b"80t");
-            assert_eq!(winsz(&owner, &report), (0, 64));
-            report.insert(7, b'0');
-            assert_eq!(winsz(&owner, &report), (-1, 0));
-            assert_eq!(winsz(&owner, &report[..64]), (1, 0));
-            assert_eq!(winsz(&owner, &report[..65]), (-1, 0));
+        owner.borrow_terminal_mut().sx = 80;
+        owner.borrow_terminal_mut().sy = 24;
+        assert_eq!(winsz(&owner, b"\x1b[4;480;800t"), (0, 12));
+        {
+            let terminal = owner.borrow_terminal();
+            assert_eq!((terminal.xpixel, terminal.ypixel), (10, 20));
+            assert_eq!(terminal.flags & TTY_WINSIZEQUERY, 0);
         }
+        assert_eq!(winsz(&owner, b"\x1b[4;480;800t"), (-1, 0));
+        owner.borrow_terminal_mut().flags |= TTY_WINSIZEQUERY;
+        owner.borrow_terminal_mut().sx = 0;
+        assert_eq!(winsz(&owner, b"\x1b[4;480;800t"), (0, 12));
+        {
+            let terminal = owner.borrow_terminal();
+            assert_eq!((terminal.xpixel, terminal.ypixel), (0, 20));
+        }
+        owner.borrow_terminal_mut().flags |= TTY_WINSIZEQUERY;
+
+        // The parameters end before byte 64.
+        let mut report = b"\x1b[8;24;".to_vec();
+        report.resize(61, b'0');
+        report.extend_from_slice(b"80t");
+        assert_eq!(winsz(&owner, &report), (0, 64));
+        report.insert(7, b'0');
+        assert_eq!(winsz(&owner, &report), (-1, 0));
+        assert_eq!(winsz(&owner, &report[..64]), (1, 0));
+        assert_eq!(winsz(&owner, &report[..65]), (-1, 0));
     }
 
     fn extended_key(tty: &tty, bytes: &[u8]) -> (i32, size_t, key_code) {
@@ -3581,7 +3579,7 @@ mod reply_parser_tests {
         (tty_keys_device_attributes(owner, bytes, &mut size), size)
     }
 
-    unsafe fn da_features(params: &[u8]) -> i32 {
+    fn da_features(params: &[u8]) -> i32 {
         let owner = client();
         let mut report = b"\x1b[?".to_vec();
         report.extend_from_slice(params);
@@ -3592,72 +3590,70 @@ mod reply_parser_tests {
 
     #[test]
     fn primary_device_attributes() {
-        unsafe {
-            let owner = client();
-            let sequence = b"\x1b[?64;4;21;28;52c";
-            assert_prefixes_wait(|b, s| tty_keys_device_attributes(&owner, b, s), sequence);
-            assert_header_rejects(|b, s| tty_keys_device_attributes(&owner, b, s), sequence, 3);
-            assert_eq!(da(&owner, b"\x1b[?64;4x"), (-1, 0));
-            assert_eq!(da(&owner, b"\x1b[?64;4cX"), (0, 8));
-            assert_eq!(owner.terminal_feature_mask(), features_with(c"sixel"));
-            assert_eq!(owner.borrow_terminal().flags & TTY_HAVEDA, TTY_HAVEDA);
-            assert_eq!(da(&owner, sequence), (-1, 0));
+        let owner = client();
+        let sequence = b"\x1b[?64;4;21;28;52c";
+        assert_prefixes_wait(|b, s| tty_keys_device_attributes(&owner, b, s), sequence);
+        assert_header_rejects(|b, s| tty_keys_device_attributes(&owner, b, s), sequence, 3);
+        assert_eq!(da(&owner, b"\x1b[?64;4x"), (-1, 0));
+        assert_eq!(da(&owner, b"\x1b[?64;4cX"), (0, 8));
+        assert_eq!(owner.terminal_feature_mask(), features_with(c"sixel"));
+        assert_eq!(owner.borrow_terminal().flags & TTY_HAVEDA, TTY_HAVEDA);
+        assert_eq!(da(&owner, sequence), (-1, 0));
 
-            let none = features_with(c"");
-            let sixel = features_with(c"sixel");
-            assert_eq!(
-                da_features(b"64;4;21;28;52"),
-                features_with(c"clipboard,margins,rectfill,sixel")
-            );
-            assert_eq!(da_features(b"62;4"), sixel);
-            assert_eq!(da_features(b"60;4"), none);
-            assert_eq!(da_features(b"66;4"), none);
-            assert_eq!(da_features(b""), none);
-            assert_eq!(da_features(b"64"), none);
-            for (field, has_sixel) in [
-                (b" 4".as_slice(), true),
-                (b"+4", true),
-                (b"\t4", true),
-                (b"04", true),
-                (b"260", true),
-                (b"-252", true),
-                (b"-1", false),
-                (b"4 ", false),
-                (b"4X", false),
-                (b"", false),
-                (b"+", false),
-                (b"9999999999999999999999999", false),
-                (b"18446744073709551620", false),
-                (b"18446744073709551364", true),
-            ] {
-                let mut params = b"64;".to_vec();
-                params.extend_from_slice(field);
-                assert_eq!(da_features(&params) == sixel, has_sixel, "{field:?}");
-            }
-            assert_eq!(da_features(b" 64;4"), sixel);
-            assert_eq!(da_features(b"64;1\0;4"), none);
-            assert_eq!(da_features(b"64;1;4\0"), sixel);
-
-            let mut params = b"64".to_vec();
-            for _ in 0..30 {
-                params.extend_from_slice(b";1");
-            }
-            params.extend_from_slice(b";4");
-            assert_eq!(da_features(&params), sixel);
-            params.insert(3, b'1');
-            params.insert(3, b';');
-            assert_eq!(da_features(&params), none);
-
-            let owner = client();
-            let mut report = b"\x1b[?".to_vec();
-            report.resize(130, b'1');
-            assert_eq!(da(&owner, &report), (1, 0));
-            report.push(b'1');
-            assert_eq!(da(&owner, &report), (-1, 0));
-            report.truncate(130);
-            report.push(b'c');
-            assert_eq!(da(&owner, &report), (0, 131));
+        let none = features_with(c"");
+        let sixel = features_with(c"sixel");
+        assert_eq!(
+            da_features(b"64;4;21;28;52"),
+            features_with(c"clipboard,margins,rectfill,sixel")
+        );
+        assert_eq!(da_features(b"62;4"), sixel);
+        assert_eq!(da_features(b"60;4"), none);
+        assert_eq!(da_features(b"66;4"), none);
+        assert_eq!(da_features(b""), none);
+        assert_eq!(da_features(b"64"), none);
+        for (field, has_sixel) in [
+            (b" 4".as_slice(), true),
+            (b"+4", true),
+            (b"\t4", true),
+            (b"04", true),
+            (b"260", true),
+            (b"-252", true),
+            (b"-1", false),
+            (b"4 ", false),
+            (b"4X", false),
+            (b"", false),
+            (b"+", false),
+            (b"9999999999999999999999999", false),
+            (b"18446744073709551620", false),
+            (b"18446744073709551364", true),
+        ] {
+            let mut params = b"64;".to_vec();
+            params.extend_from_slice(field);
+            assert_eq!(da_features(&params) == sixel, has_sixel, "{field:?}");
         }
+        assert_eq!(da_features(b" 64;4"), sixel);
+        assert_eq!(da_features(b"64;1\0;4"), none);
+        assert_eq!(da_features(b"64;1;4\0"), sixel);
+
+        let mut params = b"64".to_vec();
+        for _ in 0..30 {
+            params.extend_from_slice(b";1");
+        }
+        params.extend_from_slice(b";4");
+        assert_eq!(da_features(&params), sixel);
+        params.insert(3, b'1');
+        params.insert(3, b';');
+        assert_eq!(da_features(&params), none);
+
+        let owner = client();
+        let mut report = b"\x1b[?".to_vec();
+        report.resize(130, b'1');
+        assert_eq!(da(&owner, &report), (1, 0));
+        report.push(b'1');
+        assert_eq!(da(&owner, &report), (-1, 0));
+        report.truncate(130);
+        report.push(b'c');
+        assert_eq!(da(&owner, &report), (0, 131));
     }
 
     fn da2(owner: &ClientRef, bytes: &[u8]) -> (i32, size_t) {
@@ -3667,41 +3663,39 @@ mod reply_parser_tests {
 
     #[test]
     fn secondary_device_attributes() {
-        unsafe {
+        let owner = client();
+        let sequence = b"\x1b[>84;0;0c";
+        assert_prefixes_wait(|b, s| tty_keys_device_attributes2(&owner, b, s), sequence);
+        assert_header_rejects(
+            |b, s| tty_keys_device_attributes2(&owner, b, s),
+            sequence,
+            3,
+        );
+        assert_eq!(da2(&owner, sequence), (0, 10));
+        assert_eq!(owner.terminal_feature_mask(), features_of(c"tmux"));
+        assert_eq!(da2(&owner, sequence), (-1, 0));
+        for (report, name) in [
+            (b"\x1b[>77;20005;0c".as_slice(), Some(c"mintty")),
+            (b"\x1b[>85;95;0c", Some(c"rxvt-unicode")),
+            (b"\x1b[> 85c", Some(c"rxvt-unicode")),
+            (b"\x1b[>341;85c", Some(c"rxvt-unicode")),
+            (b"\x1b[>1;2c", None),
+            (b"\x1b[>c", None),
+        ] {
             let owner = client();
-            let sequence = b"\x1b[>84;0;0c";
-            assert_prefixes_wait(|b, s| tty_keys_device_attributes2(&owner, b, s), sequence);
-            assert_header_rejects(
-                |b, s| tty_keys_device_attributes2(&owner, b, s),
-                sequence,
-                3,
-            );
-            assert_eq!(da2(&owner, sequence), (0, 10));
-            assert_eq!(owner.terminal_feature_mask(), features_of(c"tmux"));
-            assert_eq!(da2(&owner, sequence), (-1, 0));
-            for (report, name) in [
-                (b"\x1b[>77;20005;0c".as_slice(), Some(c"mintty")),
-                (b"\x1b[>85;95;0c", Some(c"rxvt-unicode")),
-                (b"\x1b[> 85c", Some(c"rxvt-unicode")),
-                (b"\x1b[>341;85c", Some(c"rxvt-unicode")),
-                (b"\x1b[>1;2c", None),
-                (b"\x1b[>c", None),
-            ] {
-                let owner = client();
-                assert_eq!(da2(&owner, report), (0, report.len()), "{report:?}");
-                let expected = name.map_or_else(|| features_with(c""), |name| features_of(name));
-                assert_eq!(owner.terminal_feature_mask(), expected, "{report:?}");
-                assert_eq!(owner.borrow_terminal().flags & TTY_HAVEDA2, TTY_HAVEDA2);
-            }
-            let owner = client();
-            assert_eq!(da2(&owner, b"\x1b[>85x"), (-1, 0));
-            assert_eq!(da2(&owner, b"\x1b[>85x;0c"), (-1, 0));
-            let mut report = b"\x1b[>".to_vec();
-            report.resize(130, b'1');
-            assert_eq!(da2(&owner, &report), (1, 0));
-            report.push(b'1');
-            assert_eq!(da2(&owner, &report), (-1, 0));
+            assert_eq!(da2(&owner, report), (0, report.len()), "{report:?}");
+            let expected = name.map_or_else(|| features_with(c""), |name| features_of(name));
+            assert_eq!(owner.terminal_feature_mask(), expected, "{report:?}");
+            assert_eq!(owner.borrow_terminal().flags & TTY_HAVEDA2, TTY_HAVEDA2);
         }
+        let owner = client();
+        assert_eq!(da2(&owner, b"\x1b[>85x"), (-1, 0));
+        assert_eq!(da2(&owner, b"\x1b[>85x;0c"), (-1, 0));
+        let mut report = b"\x1b[>".to_vec();
+        report.resize(130, b'1');
+        assert_eq!(da2(&owner, &report), (1, 0));
+        report.push(b'1');
+        assert_eq!(da2(&owner, &report), (-1, 0));
     }
 
     fn xda(owner: &ClientRef, bytes: &[u8]) -> (i32, size_t) {
@@ -3714,66 +3708,64 @@ mod reply_parser_tests {
 
     #[test]
     fn extended_device_attributes() {
-        unsafe {
-            let owner = client();
-            let sequence = b"\x1bP>|foot(1.16.2)\x1b\\";
-            assert_prefixes_wait(
-                |b, s| tty_keys_extended_device_attributes(&owner, b, s),
-                sequence,
-            );
-            assert_header_rejects(
-                |b, s| tty_keys_extended_device_attributes(&owner, b, s),
-                sequence,
-                4,
-            );
-            assert_eq!(xda(&owner, sequence), (0, 18));
-            assert_eq!(owner.terminal_feature_mask(), features_of(c"foot"));
-            assert_eq!(term_type(&owner).as_c_str(), c"foot(1.16.2)");
-            assert_eq!(xda(&owner, sequence), (-1, 0));
-            for (text, name) in [
-                (b"iTerm2 3.5".as_slice(), Some(c"iTerm2")),
-                (b"tmux 3.5", Some(c"tmux")),
-                (b"XTerm(390)", Some(c"XTerm")),
-                (b"mintty 3.7", Some(c"mintty")),
-                (b"foot(1.0)", Some(c"foot")),
-                (b"WezTerm 2024", Some(c"WezTerm")),
-                (b"WezTermx", Some(c"WezTerm")),
-                (b"ghostty 1.0", Some(c"ghostty")),
-                (b"Rio 0.2", Some(c"Rio")),
-                (b"iTerm2", None),
-                (b"tmux", None),
-                (b"kitty(0.36)", None),
-                (b"", None),
-                (b"tmux \0x", Some(c"tmux")),
-                (b"tm\0ux 3.5", None),
-            ] {
-                let owner = client();
-                let mut report = b"\x1bP>|".to_vec();
-                report.extend_from_slice(text);
-                report.extend_from_slice(b"\x1b\\");
-                assert_eq!(xda(&owner, &report), (0, report.len()), "{text:?}");
-                let expected = name.map_or_else(|| features_with(c""), |name| features_of(name));
-                assert_eq!(owner.terminal_feature_mask(), expected, "{text:?}");
-                let shown = text.split(|&b| b == 0).next().unwrap();
-                assert_eq!(term_type(&owner).as_bytes(), shown);
-                assert_eq!(owner.borrow_terminal().flags & TTY_HAVEXDA, TTY_HAVEXDA);
-            }
-            let owner = client();
-            assert_eq!(xda(&owner, b"\x1bP>|a\x07b\x1b\\"), (0, 9));
-            assert_eq!(term_type(&owner).as_bytes(), b"a\x07b");
+        let owner = client();
+        let sequence = b"\x1bP>|foot(1.16.2)\x1b\\";
+        assert_prefixes_wait(
+            |b, s| tty_keys_extended_device_attributes(&owner, b, s),
+            sequence,
+        );
+        assert_header_rejects(
+            |b, s| tty_keys_extended_device_attributes(&owner, b, s),
+            sequence,
+            4,
+        );
+        assert_eq!(xda(&owner, sequence), (0, 18));
+        assert_eq!(owner.terminal_feature_mask(), features_of(c"foot"));
+        assert_eq!(term_type(&owner).as_c_str(), c"foot(1.16.2)");
+        assert_eq!(xda(&owner, sequence), (-1, 0));
+        for (text, name) in [
+            (b"iTerm2 3.5".as_slice(), Some(c"iTerm2")),
+            (b"tmux 3.5", Some(c"tmux")),
+            (b"XTerm(390)", Some(c"XTerm")),
+            (b"mintty 3.7", Some(c"mintty")),
+            (b"foot(1.0)", Some(c"foot")),
+            (b"WezTerm 2024", Some(c"WezTerm")),
+            (b"WezTermx", Some(c"WezTerm")),
+            (b"ghostty 1.0", Some(c"ghostty")),
+            (b"Rio 0.2", Some(c"Rio")),
+            (b"iTerm2", None),
+            (b"tmux", None),
+            (b"kitty(0.36)", None),
+            (b"", None),
+            (b"tmux \0x", Some(c"tmux")),
+            (b"tm\0ux 3.5", None),
+        ] {
             let owner = client();
             let mut report = b"\x1bP>|".to_vec();
-            report.resize(130, b'a');
-            assert_eq!(xda(&owner, &report), (1, 0));
-            report.push(b'a');
-            assert_eq!(xda(&owner, &report), (-1, 0));
-            report.truncate(129);
+            report.extend_from_slice(text);
             report.extend_from_slice(b"\x1b\\");
-            assert_eq!(xda(&owner, &report), (0, 131));
-            report.truncate(129);
-            report.extend_from_slice(b"a\x1b\\");
-            assert_eq!(xda(&owner, &report), (-1, 0));
+            assert_eq!(xda(&owner, &report), (0, report.len()), "{text:?}");
+            let expected = name.map_or_else(|| features_with(c""), |name| features_of(name));
+            assert_eq!(owner.terminal_feature_mask(), expected, "{text:?}");
+            let shown = text.split(|&b| b == 0).next().unwrap();
+            assert_eq!(term_type(&owner).as_bytes(), shown);
+            assert_eq!(owner.borrow_terminal().flags & TTY_HAVEXDA, TTY_HAVEXDA);
         }
+        let owner = client();
+        assert_eq!(xda(&owner, b"\x1bP>|a\x07b\x1b\\"), (0, 9));
+        assert_eq!(term_type(&owner).as_bytes(), b"a\x07b");
+        let owner = client();
+        let mut report = b"\x1bP>|".to_vec();
+        report.resize(130, b'a');
+        assert_eq!(xda(&owner, &report), (1, 0));
+        report.push(b'a');
+        assert_eq!(xda(&owner, &report), (-1, 0));
+        report.truncate(129);
+        report.extend_from_slice(b"\x1b\\");
+        assert_eq!(xda(&owner, &report), (0, 131));
+        report.truncate(129);
+        report.extend_from_slice(b"a\x1b\\");
+        assert_eq!(xda(&owner, &report), (-1, 0));
     }
 
     fn sync(owner: &ClientRef, bytes: &[u8]) -> (i32, size_t) {
@@ -3783,27 +3775,25 @@ mod reply_parser_tests {
 
     #[test]
     fn synchronized_output_reports() {
-        unsafe {
+        let owner = client();
+        let sequence = b"\x1b[?2026;2$y";
+        assert_prefixes_wait(|b, s| tty_keys_sync(&owner, b, s), sequence);
+        assert_header_rejects(|b, s| tty_keys_sync(&owner, b, s), sequence, 8);
+        assert_eq!(sync(&owner, b"\x1b[?2026;5$y"), (-1, 0));
+        assert_eq!(sync(&owner, b"\x1b[?2026;2xy"), (-1, 0));
+        assert_eq!(sync(&owner, b"\x1b[?2026;2$x"), (-1, 0));
+        for status in b'0'..=b'4' {
             let owner = client();
-            let sequence = b"\x1b[?2026;2$y";
-            assert_prefixes_wait(|b, s| tty_keys_sync(&owner, b, s), sequence);
-            assert_header_rejects(|b, s| tty_keys_sync(&owner, b, s), sequence, 8);
-            assert_eq!(sync(&owner, b"\x1b[?2026;5$y"), (-1, 0));
-            assert_eq!(sync(&owner, b"\x1b[?2026;2xy"), (-1, 0));
-            assert_eq!(sync(&owner, b"\x1b[?2026;2$x"), (-1, 0));
-            for status in b'0'..=b'4' {
-                let owner = client();
-                let report = [b"\x1b[?2026;".as_slice(), &[status], b"$yz"].concat();
-                assert_eq!(sync(&owner, &report), (0, 11));
-                let enabled = matches!(status, b'1'..=b'3');
-                assert_eq!(
-                    owner.terminal_feature_mask() == features_with(c"sync"),
-                    enabled,
-                    "{status}"
-                );
-                assert_eq!(owner.borrow_terminal().flags & TTY_HAVESYNC, TTY_HAVESYNC);
-                assert_eq!(sync(&owner, &report), (-1, 0));
-            }
+            let report = [b"\x1b[?2026;".as_slice(), &[status], b"$yz"].concat();
+            assert_eq!(sync(&owner, &report), (0, 11));
+            let enabled = matches!(status, b'1'..=b'3');
+            assert_eq!(
+                owner.terminal_feature_mask() == features_with(c"sync"),
+                enabled,
+                "{status}"
+            );
+            assert_eq!(owner.borrow_terminal().flags & TTY_HAVESYNC, TTY_HAVESYNC);
+            assert_eq!(sync(&owner, &report), (-1, 0));
         }
     }
 
@@ -3940,28 +3930,26 @@ mod reply_parser_tests {
 
     #[test]
     fn key_tables_and_utf8_keys() {
-        unsafe {
-            let owner = client();
-            tty_keys_build(owner.borrow_terminal_mut());
-            let terminal = owner.borrow_terminal();
-            let next1 = |bytes: &[u8], expired| {
-                let (mut key, mut size) = (0, 99);
-                let n = tty_keys_next1(terminal, None, bytes, &mut key, &mut size, expired);
-                (n, size, key)
-            };
-            assert_eq!(
-                next1(b"\x1b[1;5P", 0),
-                (0, 6, KEYC_F1 as key_code | KEYC_CTRL)
-            );
-            assert_eq!(next1(b"\x1bO[", 0), (0, 3, '\x1b' as key_code));
-            assert_eq!(next1(b"\x1b[1;5", 0), (-1, 5, 0));
-            let (n, size, key) = next1("é".as_bytes(), 0);
-            assert_eq!((n, size), (0, 2));
-            assert_eq!(next1(b"\xc3\xa9x", 0), (0, 2, key));
-            assert_eq!(next1(b"\xc3", 0), (1, 2, 0));
-            assert_eq!(next1(b"\xc3", 1), (-1, 2, 0));
-            assert_eq!(next1(b"\xc3A", 0).0, -1);
-            assert_eq!(next1(b"\x80", 0), (-1, 0, 0));
-        }
+        let owner = client();
+        tty_keys_build(&mut owner.borrow_terminal_mut());
+        let terminal = &*owner.borrow_terminal();
+        let next1 = |bytes: &[u8], expired| {
+            let (mut key, mut size) = (0, 99);
+            let n = tty_keys_next1(terminal, None, bytes, &mut key, &mut size, expired);
+            (n, size, key)
+        };
+        assert_eq!(
+            next1(b"\x1b[1;5P", 0),
+            (0, 6, KEYC_F1 as key_code | KEYC_CTRL)
+        );
+        assert_eq!(next1(b"\x1bO[", 0), (0, 3, '\x1b' as key_code));
+        assert_eq!(next1(b"\x1b[1;5", 0), (-1, 5, 0));
+        let (n, size, key) = next1("é".as_bytes(), 0);
+        assert_eq!((n, size), (0, 2));
+        assert_eq!(next1(b"\xc3\xa9x", 0), (0, 2, key));
+        assert_eq!(next1(b"\xc3", 0), (1, 2, 0));
+        assert_eq!(next1(b"\xc3", 1), (-1, 2, 0));
+        assert_eq!(next1(b"\xc3A", 0).0, -1);
+        assert_eq!(next1(b"\x80", 0), (-1, 0, 0));
     }
 }

@@ -272,7 +272,7 @@ fn enabled_names(value: Option<&OsStr>) -> Vec<String> {
 }
 
 /// Called in the server after fork and before configuration is loaded.
-pub(crate) unsafe fn init() {
+pub(crate) fn init() {
     let enabled = enabled_names(std::env::var_os("TMUX_C2RS_PLUGINS").as_deref());
     let builtins: [Box<dyn Plugin>; 2] = [
         Box::new(agent::AgentPlugin::new()),

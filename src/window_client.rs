@@ -37,9 +37,7 @@ use crate::shared::session::SessionRef;
 use crate::shared::sort::sort_criteria;
 use crate::shared::sort::*;
 use crate::shared::window::WindowRef;
-use crate::shared::window::{
-    window_mode, window_mode_entry, window_mode_screen_payload, winlink, ModeDataRef,
-};
+use crate::shared::window::{window_mode, window_mode_entry, winlink, ModeDataRef};
 use crate::sort::sort_get_clients;
 use crate::status::{status_at_line, status_line_size};
 use crate::style::style_apply_with_options;
@@ -173,11 +171,9 @@ pub static window_client_mode: window_mode = {
                     Option<&args>,
                 ) -> bool,
         ),
-        free: Some(window_client_free as unsafe fn(refbox::Weak<window_mode_entry>) -> ()),
-        resize: Some(
-            window_client_resize as unsafe fn(refbox::Weak<window_mode_entry>, u_int, u_int) -> (),
-        ),
-        update: Some(window_client_update as unsafe fn(refbox::Weak<window_mode_entry>) -> ()),
+        free: Some(window_client_free),
+        resize: Some(window_client_resize),
+        update: Some(window_client_update),
         style_changed: None,
         key: Some(
             window_client_key
@@ -198,17 +194,14 @@ pub static window_client_mode: window_mode = {
 };
 static window_client_order_seq: [sort_order; 4] =
     [SORT_NAME, SORT_SIZE, SORT_CREATION, SORT_ACTIVITY];
-unsafe fn window_client_add_item(
-    items: &mut Vec<refbox::RefBox<window_client_itemdata>>,
-    c: &ClientRef,
-) {
+fn window_client_add_item(items: &mut Vec<refbox::RefBox<window_client_itemdata>>, c: &ClientRef) {
     let ttyname = c.tty_name().expect("attached client has a terminal name");
     items.push(refbox::RefBox::new(window_client_itemdata::new(
         c, &ttyname,
     )));
 }
 
-unsafe fn window_client_build(
+fn window_client_build(
     data: &mut window_client_modedata,
     sort_crit: &sort_criteria,
     filter: Option<&CStr>,
@@ -282,7 +275,7 @@ unsafe fn window_client_build(
         i = i.wrapping_add(1);
     }
 }
-unsafe fn window_client_draw_info(
+fn window_client_draw_info(
     item: &window_client_itemdata,
     ctx: &mut screen_write_ctx,
     mut sx: u_int,
@@ -369,7 +362,7 @@ unsafe fn window_client_draw_info(
     }
     drop(ft_owner);
 }
-unsafe fn window_client_draw(
+fn window_client_draw(
     data: &window_client_modedata,
     item: &window_client_itemdata,
     ctx: &mut screen_write_ctx,
@@ -502,7 +495,7 @@ unsafe fn window_client_draw(
     screen_write_fast_copy(ctx, &preview, 0, 0, sx, lines);
     drop(preview);
 }
-unsafe fn window_client_status_snapshot(c: &ClientRef, lines: u32) -> screen {
+fn window_client_status_snapshot(c: &ClientRef, lines: u32) -> screen {
     let status = c.borrow_status();
     let source = status.screen.grid();
     let rows = lines.min(source.hsize.wrapping_add(source.sy));
@@ -528,7 +521,7 @@ unsafe fn window_client_menu(
     }
     window_client_key(wme.clone(), c, (refbox::Weak::new()).clone(), key, None);
 }
-unsafe fn window_client_get_key(
+fn window_client_get_key(
     data: &window_client_modedata,
     item: &window_client_itemdata,
     mut line: u_int,
@@ -674,7 +667,7 @@ unsafe fn window_client_init(
     mode_tree_draw(&tree_owner);
     true
 }
-unsafe fn window_client_get_screen(
+fn window_client_get_screen(
     wme: refbox::Weak<window_mode_entry>,
     visit: &mut dyn FnMut(&mut screen),
 ) {
@@ -683,13 +676,13 @@ unsafe fn window_client_get_screen(
     else {
         return;
     };
-    let tree_owner = window_mode_screen_payload(&data, |data| data.data.clone());
+    let tree_owner = data.borrow().data.clone();
     if let Some(tree_owner) = tree_owner {
         mode_tree_visit_screen(&tree_owner, visit);
     }
 }
 
-unsafe fn window_client_free(wme: refbox::Weak<window_mode_entry>) {
+fn window_client_free(wme: refbox::Weak<window_mode_entry>) {
     let Some(data) =
         ModeDataRef::<window_client_modedata>::new(wme.try_borrow().expect("live mode entry"))
     else {
@@ -698,15 +691,11 @@ unsafe fn window_client_free(wme: refbox::Weak<window_mode_entry>) {
     let tree_owner = data.borrow_mut().data.take().expect("mode tree owner");
     mode_tree_free(tree_owner);
 }
-unsafe fn window_client_resize(
-    mut wme: refbox::Weak<window_mode_entry>,
-    mut sx: u_int,
-    mut sy: u_int,
-) {
+fn window_client_resize(mut wme: refbox::Weak<window_mode_entry>, mut sx: u_int, mut sy: u_int) {
     let tree_owner = window_client_data(&wme).borrow().tree_owner();
     mode_tree_resize(&tree_owner, sx, sy);
 }
-unsafe fn window_client_update(mut wme: refbox::Weak<window_mode_entry>) {
+fn window_client_update(mut wme: refbox::Weak<window_mode_entry>) {
     let (pane, tree_owner) = {
         let data_cell = window_client_data(&wme);
         let data = data_cell.borrow();
@@ -721,7 +710,7 @@ unsafe fn window_client_update(mut wme: refbox::Weak<window_mode_entry>) {
     mode_tree_draw(&tree_owner);
     mode_pane_owner.request_redraw(false);
 }
-unsafe fn window_client_do_detach(
+fn window_client_do_detach(
     tree_owner: &Rc<std::cell::RefCell<mode_tree_data>>,
     item: &ModeTreeItemSnapshot<window_client_itemdata>,
     mut key: key_code,
@@ -772,7 +761,7 @@ unsafe fn window_client_key(
         68 | 88 | 90 => {
             mode_tree_each_tagged(
                 &tree_owner,
-                |row, key| unsafe {
+                |row, key| {
                     let itemdata = row.borrow().itemdata.clone();
                     window_client_do_detach(
                         &tree_owner,

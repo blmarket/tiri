@@ -7,7 +7,7 @@ use crate::shared::screen::MODE_SYNC;
 use crate::shared::tty::tty_ctx;
 use std::time::Duration;
 
-pub(super) unsafe fn start(pane: &Rc<RefCell<window_pane>>, base: &mut screen) {
+pub(super) fn start(pane: &Rc<RefCell<window_pane>>, base: &mut screen) {
     base.mode |= MODE_SYNC;
     let observer = Rc::downgrade(pane);
     let timer = Timer::new(Duration::from_secs(1), move || {
@@ -19,9 +19,7 @@ pub(super) unsafe fn start(pane: &Rc<RefCell<window_pane>>, base: &mut screen) {
             let timer = pane.borrow_mut().sync_timer.take();
             drop(timer);
             if pane.is_synchronized() {
-                let base = &mut (*pane.as_ptr()).base;
-                base.mode &= !MODE_SYNC;
-                flush_dirty(&pane, base);
+                flush_base(&pane);
             }
         }
     })
@@ -34,18 +32,23 @@ pub(super) unsafe fn start(pane: &Rc<RefCell<window_pane>>, base: &mut screen) {
     ));
 }
 
-pub(super) unsafe fn stop(pane: &Rc<RefCell<window_pane>>, writing: Option<&mut screen>) {
-    let base = match writing {
-        Some(base) => base,
-        None => &mut (*pane.as_ptr()).base,
+pub(super) fn stop(pane: &Rc<RefCell<window_pane>>, writing: Option<&mut screen>) {
+    let synchronized = match &writing {
+        Some(base) => base.mode & MODE_SYNC != 0,
+        None => pane.is_synchronized(),
     };
-    if base.mode & MODE_SYNC == 0 {
+    if !synchronized {
         return;
     }
     let timer = pane.borrow_mut().sync_timer.take();
     drop(timer);
-    base.mode &= !MODE_SYNC;
-    flush_dirty(pane, base);
+    match writing {
+        Some(base) => {
+            base.mode &= !MODE_SYNC;
+            flush_dirty(pane, base);
+        }
+        None => flush_base(pane),
+    }
     log_debug(format_args!(
         "screen_write_stop_sync: %{} stopped sync mode",
         pane.id()
@@ -98,8 +101,17 @@ pub(super) fn should_draw_rows(
     false
 }
 
+/// Leave sync mode with no write context open, taking `base` out of the pane
+/// so the renderer can reach the pane while it draws; put it back afterwards.
+fn flush_base(pane: &Rc<RefCell<window_pane>>) {
+    let mut base = std::mem::take(&mut pane.borrow_mut().base);
+    base.mode &= !MODE_SYNC;
+    flush_dirty(pane, &mut base);
+    pane.borrow_mut().base = base;
+}
+
 /// Draw the rows marked while synchronized; `base` is the pane's base screen.
-unsafe fn flush_dirty(pane: &Rc<RefCell<window_pane>>, base: &mut screen) {
+fn flush_dirty(pane: &Rc<RefCell<window_pane>>, base: &mut screen) {
     let mut r = Vec::new();
     let mut ttyctx = tty_ctx::default();
     let mut y: u_int = 0;

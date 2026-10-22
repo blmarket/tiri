@@ -12,7 +12,9 @@ use crate::key_bindings::key_bindings_init;
 use crate::log::{fatal, log_cstr, log_debug};
 use crate::options::OptionsScope;
 use crate::options::{options_get_number, options_set_number};
-use crate::proc::{proc_fork_and_daemon, proc_loop, proc_set_signals, proc_start, proc_toggle_log};
+use crate::proc::{
+    proc_finish, proc_fork_and_daemon, proc_loop, proc_set_signals, proc_start, proc_toggle_log,
+};
 use crate::prompt_history::prompt_save_history;
 use crate::reactor;
 use crate::server_acl::{server_acl_init, server_acl_join};
@@ -39,7 +41,7 @@ use crate::shared::client::ClientRef;
 use crate::shared::session::SessionRef;
 use crate::shared::status::message_list;
 use crate::text::utf8::utf8_update_width_cache;
-use crate::tmux::{get_timer, socket_path_cstr, start_time};
+use crate::tmux::{get_timer, set_start_time, socket_path_cstr};
 
 use crate::window::windows;
 use crate::window_pane::WindowPane as _;
@@ -49,8 +51,8 @@ use tiri_rt::{AsyncAccept as _, Runtime as _};
 use std::ffi::{CStr, CString, OsStr};
 use std::io;
 
-unsafe fn server_clear_messages() {
-    message_log.clear();
+fn server_clear_messages() {
+    message_log.with_borrow_mut(message_list::clear);
 }
 
 use crate::shared::abi::__mode_t;
@@ -61,7 +63,6 @@ use crate::shared::errno::ErrorText;
 use crate::shared::event::*;
 use crate::shared::pane::window_pane;
 use crate::shared::posix_io::{S_IRWXU, WAIT_ANY, WNOHANG};
-use crate::shared::process::tmuxproc;
 use crate::shared::signal::{
     sigset_t, ProcessSignal, SIGCONT, SIGTTIN, SIGTTOU, SIG_BLOCK, SIG_SETMASK,
 };
@@ -77,15 +78,18 @@ pub use ::libc::{
     S_IXUSR, WUNTRACED,
 };
 
-pub static mut server_proc: *mut tmuxproc = ::core::ptr::null::<tmuxproc>() as *mut tmuxproc;
-static mut server_fd: Option<UnixListener> = None;
-static mut server_client_flags: uint64_t = 0;
-static mut server_exit: ::core::ffi::c_int = 0;
-static mut server_accept_task: Option<tiri_rt::mio::Task> = None::<tiri_rt::mio::Task>;
-static mut server_ev_tidy: Option<Timer> = None;
-static mut message_next: u_int = 0;
-pub static mut message_log: message_list = message_list::new();
 thread_local! {
+    static SERVER_FD: std::cell::RefCell<Option<UnixListener>> = const { std::cell::RefCell::new(None) };
+    static SERVER_CLIENT_FLAGS: std::cell::Cell<uint64_t> = const { std::cell::Cell::new(0) };
+    static SERVER_EXIT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static SERVER_ACCEPT_TASK: std::cell::RefCell<Option<tiri_rt::mio::Task>> = const {
+        std::cell::RefCell::new(None)
+    };
+    static SERVER_EV_TIDY: std::cell::RefCell<Option<Timer>> = const { std::cell::RefCell::new(None) };
+    static message_next: std::cell::Cell<u_int> = const { std::cell::Cell::new(0) };
+    pub static message_log: std::cell::RefCell<message_list> = const {
+        std::cell::RefCell::new(message_list::new())
+    };
     pub static marked_pane: std::cell::RefCell<cmd_find_state> = const {
         std::cell::RefCell::new(cmd_find_state {
             flags: 0,
@@ -102,7 +106,7 @@ thread_local! {
 pub fn current_time() -> time_t {
     CURRENT_TIME.get()
 }
-pub unsafe fn server_set_marked(
+pub fn server_set_marked(
     s_owner: Option<&SessionRef>,
     mut wl: refbox::Weak<winlink>,
     wp_owner: Option<&std::rc::Rc<std::cell::RefCell<window_pane>>>,
@@ -116,10 +120,10 @@ pub unsafe fn server_set_marked(
     marked.wp = wp_owner.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     marked_pane.set(marked);
 }
-pub unsafe fn server_clear_marked() {
+pub fn server_clear_marked() {
     marked_pane.set(cmd_find_state::clear_state(0 as ::core::ffi::c_int));
 }
-pub unsafe fn server_is_marked(
+pub fn server_is_marked(
     s_owner: Option<&SessionRef>,
     mut wl: refbox::Weak<winlink>,
     wp_owner: Option<&std::rc::Rc<std::cell::RefCell<window_pane>>>,
@@ -137,7 +141,7 @@ pub unsafe fn server_is_marked(
     }
     server_check_marked()
 }
-pub unsafe fn server_check_marked() -> ::core::ffi::c_int {
+pub fn server_check_marked() -> ::core::ffi::c_int {
     marked_pane.with_borrow(|marked| marked.is_valid()) as ::core::ffi::c_int
 }
 pub unsafe fn server_create_socket(flags: uint64_t) -> Result<::core::ffi::c_int, CString> {
@@ -145,7 +149,8 @@ pub unsafe fn server_create_socket(flags: uint64_t) -> Result<::core::ffi::c_int
 }
 
 unsafe fn server_create_listener(flags: uint64_t) -> Result<UnixListener, CString> {
-    let path = socket_path_cstr().to_bytes();
+    let path = socket_path_cstr();
+    let path = path.to_bytes();
     let result = (|| {
         if path.len() >= 108 {
             return Err(io::Error::from_raw_os_error(ENAMETOOLONG));
@@ -184,7 +189,9 @@ unsafe fn server_tidy_event() {
         "server_tidy_event",
         get_timer().wrapping_sub(t) as ::core::ffi::c_ulonglong
     ));
-    server_ev_tidy = Some(Timer::new(tv, || unsafe { server_tidy_event() }).expect("arm timer"));
+    SERVER_EV_TIDY.set(Some(
+        Timer::new(tv, || unsafe { server_tidy_event() }).expect("arm timer"),
+    ));
 }
 pub(crate) unsafe fn server_start(
     mut flags: uint64_t,
@@ -210,14 +217,10 @@ pub(crate) unsafe fn server_start(
         }
         fd = Some(socket);
     }
-    server_client_flags = flags;
+    SERVER_CLIENT_FLAGS.set(flags);
     let runtime = tiri_rt::mio::Runtime::new().expect("tiri-rt initialization");
-    let mut process_owner = proc_start(c"server");
-    server_proc = &raw mut *process_owner;
-    proc_set_signals(
-        server_proc,
-        Some(Box::new(|sig| unsafe { server_signal(sig) })),
-    );
+    proc_start(c"server");
+    proc_set_signals(Some(Box::new(|sig| unsafe { server_signal(sig) })));
     sigprocmask(
         SIG_SETMASK,
         &raw mut oldset,
@@ -234,7 +237,7 @@ pub(crate) unsafe fn server_start(
     control_build_events();
     hooks_build_events();
     server_clear_messages();
-    start_time = SystemTime::now();
+    set_start_time(SystemTime::now());
     crate::plugin::init();
     #[cfg(target_os = "linux")]
     let listener = if systemd_activated() {
@@ -246,11 +249,11 @@ pub(crate) unsafe fn server_start(
     let listener = server_create_listener(flags);
     match listener {
         Ok(socket) => {
-            server_fd = Some(socket);
+            SERVER_FD.set(Some(socket));
             server_update_socket();
         }
         Err(error) => {
-            server_fd = None;
+            SERVER_FD.set(None);
             cause = Some(error);
         }
     }
@@ -277,29 +280,29 @@ pub(crate) unsafe fn server_start(
         } else {
             let message = [cause.as_bytes(), b"\n"].concat();
             let _ = io::Write::write_all(&mut io::stderr(), &message);
-            drop(process_owner);
-            server_proc = std::ptr::null_mut();
+            proc_finish();
             crate::plugin::shutdown();
             reactor::shutdown_runtime(runtime);
             exit(1 as ::core::ffi::c_int);
         }
     }
     drop(c);
-    server_ev_tidy = Some(Timer::new(tv, || unsafe { server_tidy_event() }).expect("arm timer"));
+    SERVER_EV_TIDY.set(Some(
+        Timer::new(tv, || unsafe { server_tidy_event() }).expect("arm timer"),
+    ));
     server_acl_init();
     server_add_accept(0 as ::core::ffi::c_int);
-    let mut loop_callback = || unsafe { server_loop() == 0 };
-    proc_loop(server_proc, runtime, Some(&mut loop_callback));
+    let mut loop_callback = || server_loop() == 0;
+    proc_loop(runtime, Some(&mut loop_callback));
     server_destroy_sessions(false);
     crate::plugin::shutdown();
     crate::cmd::queue::cmdq_cancel_background();
     job_kill_all();
     prompt_save_history();
-    drop(process_owner);
-    server_proc = std::ptr::null_mut();
+    proc_finish();
     exit(0 as ::core::ffi::c_int);
 }
-unsafe fn server_loop() -> ::core::ffi::c_int {
+fn server_loop() -> ::core::ffi::c_int {
     let mut c: Option<ClientRef> = None;
     let mut items: u_int = 0;
     CURRENT_TIME.set(crate::shared::time::unix_seconds(
@@ -323,7 +326,7 @@ unsafe fn server_loop() -> ::core::ffi::c_int {
     }
     ClientRef::run_cycle();
     if OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"exit-empty")) == 0
-        && server_exit == 0
+        && !SERVER_EXIT.get()
     {
         return 0 as ::core::ffi::c_int;
     }
@@ -357,7 +360,7 @@ unsafe fn server_loop() -> ::core::ffi::c_int {
     }
     1 as ::core::ffi::c_int
 }
-unsafe fn server_send_exit() {
+fn server_send_exit() {
     cmd_wait_for_flush();
     let mut registry_c_owner = ClientRegistry::first();
     while let Some(client_owner) = registry_c_owner {
@@ -367,7 +370,7 @@ unsafe fn server_send_exit() {
     }
     server_destroy_sessions(true);
 }
-unsafe fn server_destroy_sessions(notify: bool) {
+fn server_destroy_sessions(notify: bool) {
     let mut s_owner = sessions::first();
     while let Some(s) = s_owner {
         let name = s.name();
@@ -375,9 +378,11 @@ unsafe fn server_destroy_sessions(notify: bool) {
         s_owner = sessions::after(&name);
     }
 }
-pub unsafe fn server_update_socket() {
+pub fn server_update_socket() {
     let mut s: Option<SessionRef> = None;
-    static mut last: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
+    thread_local! {
+        static LAST: std::cell::Cell<::core::ffi::c_int> = const { std::cell::Cell::new(-1) };
+    }
     let mut n: ::core::ffi::c_int = 0;
     n = 0 as ::core::ffi::c_int;
     let mut s_owner = sessions::first();
@@ -391,9 +396,9 @@ pub unsafe fn server_update_socket() {
             s = s_owner.clone();
         }
     }
-    if n != last {
-        last = n;
-        let path = std::path::Path::new(OsStr::from_bytes(socket_path_cstr().to_bytes()));
+    if LAST.replace(n) != n {
+        let path = socket_path_cstr();
+        let path = std::path::Path::new(OsStr::from_bytes(path.to_bytes()));
         let Ok(sb) = fs::metadata(path) else {
             return;
         };
@@ -416,7 +421,7 @@ pub unsafe fn server_update_socket() {
         let _ = fs::set_permissions(path, fs::Permissions::from_mode(mode.into()));
     }
 }
-unsafe fn server_accept(result: io::Result<OwnedFd>) {
+fn server_accept(result: io::Result<OwnedFd>) {
     server_add_accept(0);
     let socket = match result {
         Ok(socket) => socket,
@@ -429,7 +434,7 @@ unsafe fn server_accept(result: io::Result<OwnedFd>) {
             _ => fatal(&error, |out| out.write_all(b"accept failed")),
         },
     };
-    if server_exit != 0 {
+    if SERVER_EXIT.get() {
         return;
     }
     let c = Some(ClientRef::create(socket));
@@ -439,33 +444,36 @@ unsafe fn server_accept(result: io::Result<OwnedFd>) {
             .exit_with_message(CString::new("access not allowed").unwrap(), Some(1));
     }
 }
-pub unsafe fn server_add_accept(mut timeout: ::core::ffi::c_int) {
+pub fn server_add_accept(mut timeout: ::core::ffi::c_int) {
     let tv = Duration::from_secs(timeout as u64);
-    drop(server_accept_task.take());
-    let Some(socket) = server_fd.as_ref() else {
+    drop(SERVER_ACCEPT_TASK.take());
+    let Some(socket) = SERVER_FD.with_borrow(|socket| socket.as_ref().map(UnixListener::try_clone))
+    else {
         return;
     };
-    if timeout == 0 as ::core::ffi::c_int {
-        crate::reactor::task_start(&mut server_accept_task, move || {
-            let source = tiri_rt::mio::Listener::new(socket.try_clone()?)?;
-            Ok(async move {
-                let accepted = source.accept().await;
-                unsafe { server_accept(accepted) };
+    SERVER_ACCEPT_TASK.with_borrow_mut(|task| {
+        if timeout == 0 as ::core::ffi::c_int {
+            crate::reactor::task_start(task, move || {
+                let source = tiri_rt::mio::Listener::new(socket?)?;
+                Ok(async move {
+                    let accepted = source.accept().await;
+                    server_accept(accepted);
+                })
             })
-        })
-        .expect("start accept wait");
-    } else {
-        let now = std::time::Instant::now();
-        let deadline = now.checked_add(tv).unwrap_or(now);
-        crate::reactor::task_start(&mut server_accept_task, move || {
-            let wait = tiri_rt::mio::Sleep::new(deadline);
-            Ok(async move {
-                wait.await.expect("accept backoff wait");
-                unsafe { server_add_accept(0) };
+            .expect("start accept wait");
+        } else {
+            let now = std::time::Instant::now();
+            let deadline = now.checked_add(tv).unwrap_or(now);
+            crate::reactor::task_start(task, move || {
+                let wait = tiri_rt::mio::Sleep::new(deadline);
+                Ok(async move {
+                    wait.await.expect("accept backoff wait");
+                    server_add_accept(0);
+                })
             })
-        })
-        .expect("start accept backoff");
-    };
+            .expect("start accept backoff");
+        }
+    });
 }
 unsafe fn server_signal(sig: ProcessSignal) {
     let _fd: ::core::ffi::c_int = 0;
@@ -476,22 +484,22 @@ unsafe fn server_signal(sig: ProcessSignal) {
     ));
     match sig {
         ProcessSignal::Interrupt | ProcessSignal::Terminate => {
-            server_exit = 1 as ::core::ffi::c_int;
+            SERVER_EXIT.set(true);
             server_send_exit();
         }
         ProcessSignal::Child => {
             server_child_signal();
         }
         ProcessSignal::User1 => {
-            drop(server_accept_task.take());
-            if let Ok(listener) = server_create_listener(server_client_flags) {
-                server_fd = Some(listener);
+            drop(SERVER_ACCEPT_TASK.take());
+            if let Ok(listener) = server_create_listener(SERVER_CLIENT_FLAGS.get()) {
+                SERVER_FD.set(Some(listener));
                 server_update_socket();
             }
             server_add_accept(0 as ::core::ffi::c_int);
         }
         ProcessSignal::User2 => {
-            proc_toggle_log(server_proc);
+            proc_toggle_log();
         }
         _ => {}
     };
@@ -557,17 +565,17 @@ unsafe fn server_child_stopped(pid: pid_t, status: ExitStatus) {
     }
     job_check_died(pid, status);
 }
-pub unsafe fn server_add_message(
-    write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
-) {
+pub fn server_add_message(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) {
     let mut limit: u_int = 0;
     let s = format_message_with(write);
     log_debug(format_args!("message: {}", log_cstr(&s)));
-    let fresh0 = message_next;
-    message_next = message_next.wrapping_add(1);
+    let fresh0 = message_next.get();
+    message_next.set(fresh0.wrapping_add(1));
     let msg_time = SystemTime::now();
-    message_log.push_back(s, fresh0, msg_time);
     limit = OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"message-limit"))
         as u_int;
-    message_log.trim(message_next, limit);
+    message_log.with_borrow_mut(|log| {
+        log.push_back(s, fresh0, msg_time);
+        log.trim(message_next.get(), limit);
+    });
 }

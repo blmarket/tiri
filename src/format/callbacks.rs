@@ -11,9 +11,9 @@ use crate::winlink::winlink_window;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
 
-unsafe fn format_cb_host(_ft: &mut format_tree) -> Option<CString> {
+fn format_cb_host(_ft: &mut format_tree) -> Option<CString> {
     let mut host: [u8; 65] = [0; 65];
-    if gethostname(host.as_mut_ptr().cast(), host.len()) != 0 as ::core::ffi::c_int {
+    if unsafe { gethostname(host.as_mut_ptr().cast(), host.len()) } != 0 as ::core::ffi::c_int {
         return Some(c"".to_owned());
     }
     Some(
@@ -22,9 +22,9 @@ unsafe fn format_cb_host(_ft: &mut format_tree) -> Option<CString> {
             .to_owned(),
     )
 }
-unsafe fn format_cb_host_short(_ft: &mut format_tree) -> Option<CString> {
+fn format_cb_host_short(_ft: &mut format_tree) -> Option<CString> {
     let mut host: [u8; 65] = [0; 65];
-    if gethostname(host.as_mut_ptr().cast(), host.len()) != 0 as ::core::ffi::c_int {
+    if unsafe { gethostname(host.as_mut_ptr().cast(), host.len()) } != 0 as ::core::ffi::c_int {
         return Some(c"".to_owned());
     }
     let host = CStr::from_bytes_until_nul(&host)
@@ -40,31 +40,31 @@ fn format_cb_pid(_ft: &mut format_tree) -> Option<CString> {
     );
     value
 }
-unsafe fn format_cb_session_attached_list(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_session_attached_list(ft: &mut format_tree) -> Option<CString> {
     match ft.s.upgrade()?.format_value(c"session_attached_list", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_session_alert(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_session_alert(ft: &mut format_tree) -> Option<CString> {
     match ft.s.upgrade()?.format_value(c"session_alert", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_session_alerts(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_session_alerts(ft: &mut format_tree) -> Option<CString> {
     match ft.s.upgrade()?.format_value(c"session_alerts", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_session_stack(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_session_stack(ft: &mut format_tree) -> Option<CString> {
     match ft.s.upgrade()?.format_value(c"session_stack", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_window_stack_index(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_stack_index(ft: &mut format_tree) -> Option<CString> {
     let link = ft.winlink_handle();
     let owner = link.try_borrow().ok()?.session.upgrade()?;
     let mut context = format_tree::default();
@@ -75,7 +75,7 @@ unsafe fn format_cb_window_stack_index(ft: &mut format_tree) -> Option<CString> 
         FormatValue::Time(_) => unreachable!("window_stack_index is a string builtin"),
     }
 }
-unsafe fn format_cb_window_linked_sessions_list(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_linked_sessions_list(ft: &mut format_tree) -> Option<CString> {
     let link = ft.winlink_handle();
     if !link.is_alive() {
         return None;
@@ -99,7 +99,7 @@ unsafe fn format_cb_window_linked_sessions_list(ft: &mut format_tree) -> Option<
     Some(CString::new(names).expect("callback bytes contain no NUL"))
 }
 
-unsafe fn format_cb_window_active_sessions(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_active_sessions(ft: &mut format_tree) -> Option<CString> {
     let link = ft.winlink_handle();
     if !link.is_alive() {
         return None;
@@ -119,7 +119,7 @@ unsafe fn format_cb_window_active_sessions(ft: &mut format_tree) -> Option<CStri
     Some(CString::new(count.to_string()).expect("formatted number contains no NUL"))
 }
 
-unsafe fn format_cb_window_active_sessions_list(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_active_sessions_list(ft: &mut format_tree) -> Option<CString> {
     let link = ft.winlink_handle();
     if !link.is_alive() {
         return None;
@@ -145,7 +145,7 @@ unsafe fn format_cb_window_active_sessions_list(ft: &mut format_tree) -> Option<
     Some(CString::new(names).expect("callback bytes contain no NUL"))
 }
 
-unsafe fn format_cb_window_active_clients(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_active_clients(ft: &mut format_tree) -> Option<CString> {
     let link = ft.winlink_handle();
     if !link.is_alive() {
         return None;
@@ -167,7 +167,7 @@ unsafe fn format_cb_window_active_clients(ft: &mut format_tree) -> Option<CStrin
     Some(CString::new(count.to_string()).expect("formatted number contains no NUL"))
 }
 
-unsafe fn format_cb_window_active_clients_list(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_active_clients_list(ft: &mut format_tree) -> Option<CString> {
     let link = ft.winlink_handle();
     if !link.is_alive() {
         return None;
@@ -195,7 +195,7 @@ unsafe fn format_cb_window_active_clients_list(ft: &mut format_tree) -> Option<C
     Some(CString::new(names).expect("callback bytes contain no NUL"))
 }
 
-unsafe fn format_cb_window_layout(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_layout(ft: &mut format_tree) -> Option<CString> {
     let window = ft.w.upgrade()?;
     let legacy = client_handle(&ft.client)
         .as_ref()
@@ -205,7 +205,7 @@ unsafe fn format_cb_window_layout(ft: &mut format_tree) -> Option<CString> {
     value
 }
 
-unsafe fn format_cb_window_visible_layout(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_visible_layout(ft: &mut format_tree) -> Option<CString> {
     let window = ft.w.upgrade()?;
     let legacy = client_handle(&ft.client)
         .as_ref()
@@ -216,75 +216,75 @@ unsafe fn format_cb_window_visible_layout(ft: &mut format_tree) -> Option<CStrin
 }
 
 /// The name of the window's layout, as `select-layout` takes it.
-unsafe fn format_cb_window_layout_name(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_layout_name(ft: &mut format_tree) -> Option<CString> {
     let window = ft.w.upgrade()?;
     let name = window.layout().name().to_owned();
     drop(window);
     Some(name)
 }
 
-unsafe fn pane_format_value(key: &CStr, context: &mut format_tree) -> Option<FormatValue> {
+fn pane_format_value(key: &CStr, context: &mut format_tree) -> Option<FormatValue> {
     match context.wp.upgrade() {
         Some(pane) => pane.format_value(key, context),
         None => crate::window_pane::format_without_pane(key, context),
     }
 }
 
-unsafe fn pane_format_string(key: &CStr, ft: &mut format_tree) -> Option<CString> {
+fn pane_format_string(key: &CStr, ft: &mut format_tree) -> Option<CString> {
     match pane_format_value(key, ft)? {
         FormatValue::String(value) => Some(value),
         _ => unreachable!("string builtin value"),
     }
 }
 
-unsafe fn pane_format_time(key: &CStr, ft: &mut format_tree) -> Option<time_t> {
+fn pane_format_time(key: &CStr, ft: &mut format_tree) -> Option<time_t> {
     match pane_format_value(key, ft)? {
         FormatValue::Time(value) => Some(value),
         _ => unreachable!("time builtin value"),
     }
 }
 
-unsafe fn format_cb_start_command(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_start_command(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_start_command", ft)
 }
-unsafe fn format_cb_start_command_list(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_start_command_list(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_start_command_list", ft)
 }
-unsafe fn format_cb_start_path(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_start_path(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_start_path", ft)
 }
-unsafe fn format_cb_current_command(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_current_command(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_current_command", ft)
 }
-unsafe fn format_cb_current_path(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_current_path(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_current_path", ft)
 }
-unsafe fn format_cb_history_bytes(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_history_bytes(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"history_bytes", ft)
 }
-unsafe fn format_cb_history_all_bytes(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_history_all_bytes(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"history_all_bytes", ft)
 }
-unsafe fn format_cb_pane_tabs(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_tabs(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_tabs", ft)
 }
-unsafe fn format_cb_pane_fg(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_fg(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_fg", ft)
 }
-unsafe fn format_cb_pane_flags(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_flags(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_flags", ft)
 }
 
-unsafe fn format_cb_pane_bg(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_bg(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_bg", ft)
 }
-unsafe fn format_cb_session_group_list(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_session_group_list(ft: &mut format_tree) -> Option<CString> {
     match ft.s.upgrade()?.format_value(c"session_group_list", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_session_group_attached_list(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_session_group_attached_list(ft: &mut format_tree) -> Option<CString> {
     match ft
         .s
         .upgrade()?
@@ -294,23 +294,23 @@ unsafe fn format_cb_session_group_attached_list(ft: &mut format_tree) -> Option<
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_pane_in_mode(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_in_mode(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_in_mode", ft)
 }
-unsafe fn format_cb_pane_at_top(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_at_top(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_at_top", ft)
 }
-unsafe fn format_cb_pane_at_bottom(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_at_bottom(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_at_bottom", ft)
 }
 
-unsafe fn format_cb_cursor_character(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_cursor_character(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"cursor_character", ft)
 }
-unsafe fn format_cb_cursor_colour(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_cursor_colour(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"cursor_colour", ft)
 }
-unsafe fn format_cb_mouse_word(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_mouse_word(ft: &mut format_tree) -> Option<CString> {
     if ft.m.valid == 0 {
         return None;
     }
@@ -320,7 +320,7 @@ unsafe fn format_cb_mouse_word(ft: &mut format_tree) -> Option<CString> {
         _ => unreachable!("mouse builtin string"),
     }
 }
-unsafe fn format_cb_mouse_hyperlink(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_mouse_hyperlink(ft: &mut format_tree) -> Option<CString> {
     if ft.m.valid == 0 {
         return None;
     }
@@ -330,7 +330,7 @@ unsafe fn format_cb_mouse_hyperlink(ft: &mut format_tree) -> Option<CString> {
         _ => unreachable!("mouse builtin string"),
     }
 }
-unsafe fn format_cb_mouse_line(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_mouse_line(ft: &mut format_tree) -> Option<CString> {
     if ft.m.valid == 0 {
         return None;
     }
@@ -340,7 +340,7 @@ unsafe fn format_cb_mouse_line(ft: &mut format_tree) -> Option<CString> {
         _ => unreachable!("mouse builtin string"),
     }
 }
-unsafe fn format_cb_mouse_status_line(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_mouse_status_line(ft: &mut format_tree) -> Option<CString> {
     let format_client_owner = ft.c.upgrade();
     let mut format_client: Option<ClientRef> = format_client_owner.clone();
     let mut value = None;
@@ -367,7 +367,7 @@ unsafe fn format_cb_mouse_status_line(ft: &mut format_tree) -> Option<CString> {
         Some(CString::new(format!("{}", (y) as u32)).expect("formatted numbers contain no NUL"));
     value
 }
-unsafe fn format_cb_mouse_status_range(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_mouse_status_range(ft: &mut format_tree) -> Option<CString> {
     let format_client_owner = ft.c.upgrade();
     let mut format_client: Option<ClientRef> = format_client_owner.clone();
     let mut x: u_int = 0;
@@ -424,16 +424,16 @@ unsafe fn format_cb_mouse_status_range(ft: &mut format_tree) -> Option<CString> 
     }
     None
 }
-unsafe fn format_cb_alternate_on(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_alternate_on(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"alternate_on", ft)
 }
-unsafe fn format_cb_alternate_saved_x(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_alternate_saved_x(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"alternate_saved_x", ft)
 }
-unsafe fn format_cb_alternate_saved_y(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_alternate_saved_y(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"alternate_saved_y", ft)
 }
-unsafe fn format_cb_bracket_paste_flag(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_bracket_paste_flag(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"bracket_paste_flag", ft)
 }
 fn format_cb_buffer_name(ft: &mut format_tree) -> Option<CString> {
@@ -455,145 +455,145 @@ fn format_cb_buffer_size(ft: &mut format_tree) -> Option<CString> {
     let buffer = ft.pb.as_ref()?.try_borrow()?;
     Some(CString::new(buffer.size().to_string()).expect("formatted numbers contain no NUL"))
 }
-unsafe fn format_cb_client_cell_height(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_client_cell_height(ft: &mut format_tree) -> Option<CString> {
     match ft.c.upgrade()?.format_value(c"client_cell_height", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_client_cell_width(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_client_cell_width(ft: &mut format_tree) -> Option<CString> {
     match ft.c.upgrade()?.format_value(c"client_cell_width", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_client_colours(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_client_colours(ft: &mut format_tree) -> Option<CString> {
     match ft.c.upgrade()?.format_value(c"client_colours", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_client_control_mode(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_client_control_mode(ft: &mut format_tree) -> Option<CString> {
     match ft.c.upgrade()?.format_value(c"client_control_mode", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_client_discarded(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_client_discarded(ft: &mut format_tree) -> Option<CString> {
     match ft.c.upgrade()?.format_value(c"client_discarded", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_client_flags(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_client_flags(ft: &mut format_tree) -> Option<CString> {
     match ft.c.upgrade()?.format_value(c"client_flags", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_client_height(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_client_height(ft: &mut format_tree) -> Option<CString> {
     match ft.c.upgrade()?.format_value(c"client_height", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_client_key_table(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_client_key_table(ft: &mut format_tree) -> Option<CString> {
     match ft.c.upgrade()?.format_value(c"client_key_table", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_client_last_session(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_client_last_session(ft: &mut format_tree) -> Option<CString> {
     match ft.c.upgrade()?.format_value(c"client_last_session", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_client_name(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_client_name(ft: &mut format_tree) -> Option<CString> {
     match ft.c.upgrade()?.format_value(c"client_name", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_client_pid(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_client_pid(ft: &mut format_tree) -> Option<CString> {
     match ft.c.upgrade()?.format_value(c"client_pid", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_client_prefix(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_client_prefix(ft: &mut format_tree) -> Option<CString> {
     match ft.c.upgrade()?.format_value(c"client_prefix", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_client_readonly(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_client_readonly(ft: &mut format_tree) -> Option<CString> {
     match ft.c.upgrade()?.format_value(c"client_readonly", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_client_session(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_client_session(ft: &mut format_tree) -> Option<CString> {
     match ft.c.upgrade()?.format_value(c"client_session", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_client_termfeatures(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_client_termfeatures(ft: &mut format_tree) -> Option<CString> {
     match ft.c.upgrade()?.format_value(c"client_termfeatures", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_client_termname(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_client_termname(ft: &mut format_tree) -> Option<CString> {
     match ft.c.upgrade()?.format_value(c"client_termname", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_client_termtype(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_client_termtype(ft: &mut format_tree) -> Option<CString> {
     match ft.c.upgrade()?.format_value(c"client_termtype", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_client_tty(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_client_tty(ft: &mut format_tree) -> Option<CString> {
     match ft.c.upgrade()?.format_value(c"client_tty", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_client_uid(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_client_uid(ft: &mut format_tree) -> Option<CString> {
     match ft.c.upgrade()?.format_value(c"client_uid", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_client_user(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_client_user(ft: &mut format_tree) -> Option<CString> {
     match ft.c.upgrade()?.format_value(c"client_user", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_client_utf8(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_client_utf8(ft: &mut format_tree) -> Option<CString> {
     match ft.c.upgrade()?.format_value(c"client_utf8", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_client_width(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_client_width(ft: &mut format_tree) -> Option<CString> {
     match ft.c.upgrade()?.format_value(c"client_width", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_client_written(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_client_written(ft: &mut format_tree) -> Option<CString> {
     match ft.c.upgrade()?.format_value(c"client_written", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_client_theme(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_client_theme(ft: &mut format_tree) -> Option<CString> {
     match ft.c.upgrade()?.format_value(c"client_theme", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
@@ -609,74 +609,74 @@ fn format_cb_config_files(_ft: &mut format_tree) -> Option<CString> {
     }
     Some(CString::new(paths).expect("callback bytes contain no NUL"))
 }
-unsafe fn format_cb_cursor_flag(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_cursor_flag(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"cursor_flag", ft)
 }
-unsafe fn format_cb_cursor_shape(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_cursor_shape(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"cursor_shape", ft)
 }
-unsafe fn format_cb_cursor_very_visible(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_cursor_very_visible(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"cursor_very_visible", ft)
 }
-unsafe fn format_cb_cursor_x(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_cursor_x(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"cursor_x", ft)
 }
-unsafe fn format_cb_cursor_y(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_cursor_y(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"cursor_y", ft)
 }
-unsafe fn format_cb_cursor_blinking(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_cursor_blinking(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"cursor_blinking", ft)
 }
-unsafe fn format_cb_history_added(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_history_added(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"history_added", ft)
 }
-unsafe fn format_cb_history_collected(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_history_collected(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"history_collected", ft)
 }
-unsafe fn format_cb_history_generation(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_history_generation(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"history_generation", ft)
 }
-unsafe fn format_cb_history_limit(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_history_limit(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"history_limit", ft)
 }
-unsafe fn format_cb_history_size(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_history_size(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"history_size", ft)
 }
-unsafe fn format_cb_insert_flag(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_insert_flag(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"insert_flag", ft)
 }
-unsafe fn format_cb_keypad_cursor_flag(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_keypad_cursor_flag(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"keypad_cursor_flag", ft)
 }
-unsafe fn format_cb_keypad_flag(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_keypad_flag(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"keypad_flag", ft)
 }
-unsafe fn format_cb_mouse_all_flag(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_mouse_all_flag(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"mouse_all_flag", ft)
 }
-unsafe fn format_cb_mouse_any_flag(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_mouse_any_flag(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"mouse_any_flag", ft)
 }
-unsafe fn format_cb_mouse_button_flag(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_mouse_button_flag(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"mouse_button_flag", ft)
 }
-unsafe fn format_cb_mouse_pane(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_mouse_pane(ft: &mut format_tree) -> Option<CString> {
     if ft.m.valid == 0 {
         return None;
     }
     let pane = cmd_mouse_pane(&ft.m, None, None)?;
     Some(CString::new(format!("%{}", pane.id())).expect("numeric pane identity"))
 }
-unsafe fn format_cb_mouse_sgr_flag(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_mouse_sgr_flag(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"mouse_sgr_flag", ft)
 }
-unsafe fn format_cb_mouse_standard_flag(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_mouse_standard_flag(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"mouse_standard_flag", ft)
 }
-unsafe fn format_cb_mouse_utf8_flag(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_mouse_utf8_flag(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"mouse_utf8_flag", ft)
 }
-unsafe fn format_cb_mouse_x(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_mouse_x(ft: &mut format_tree) -> Option<CString> {
     if ft.m.valid == 0 {
         return None;
     }
@@ -703,7 +703,7 @@ unsafe fn format_cb_mouse_x(ft: &mut format_tree) -> Option<CString> {
     }
     None
 }
-unsafe fn format_cb_mouse_y(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_mouse_y(ft: &mut format_tree) -> Option<CString> {
     if ft.m.valid == 0 {
         return None;
     }
@@ -736,61 +736,61 @@ fn format_cb_next_session_id(_ft: &mut format_tree) -> Option<CString> {
             .expect("formatted numbers contain no NUL"),
     )
 }
-unsafe fn format_cb_origin_flag(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_origin_flag(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"origin_flag", ft)
 }
-unsafe fn format_cb_synchronized_output_flag(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_synchronized_output_flag(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"synchronized_output_flag", ft)
 }
-unsafe fn format_cb_pane_private_modes(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_private_modes(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_private_modes", ft)
 }
-unsafe fn format_cb_pane_active(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_active(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_active", ft)
 }
-unsafe fn format_cb_pane_at_left(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_at_left(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_at_left", ft)
 }
-unsafe fn format_cb_pane_at_right(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_at_right(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_at_right", ft)
 }
-unsafe fn format_cb_pane_bottom(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_bottom(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_bottom", ft)
 }
-unsafe fn format_cb_pane_dead(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_dead(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_dead", ft)
 }
-unsafe fn format_cb_pane_dead_signal(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_dead_signal(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_dead_signal", ft)
 }
-unsafe fn format_cb_pane_dead_status(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_dead_status(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_dead_status", ft)
 }
-unsafe fn format_cb_pane_dead_time(ft: &mut format_tree) -> Option<time_t> {
+fn format_cb_pane_dead_time(ft: &mut format_tree) -> Option<time_t> {
     pane_format_time(c"pane_dead_time", ft)
 }
-unsafe fn format_cb_pane_last_output_time(ft: &mut format_tree) -> Option<time_t> {
+fn format_cb_pane_last_output_time(ft: &mut format_tree) -> Option<time_t> {
     pane_format_time(c"pane_last_output_time", ft)
 }
-unsafe fn format_cb_pane_output_generation(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_output_generation(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_output_generation", ft)
 }
-unsafe fn format_cb_pane_last_prompt_time(ft: &mut format_tree) -> Option<time_t> {
+fn format_cb_pane_last_prompt_time(ft: &mut format_tree) -> Option<time_t> {
     pane_format_time(c"pane_last_prompt_time", ft)
 }
-unsafe fn format_cb_pane_command_start_time(ft: &mut format_tree) -> Option<time_t> {
+fn format_cb_pane_command_start_time(ft: &mut format_tree) -> Option<time_t> {
     pane_format_time(c"pane_command_start_time", ft)
 }
-unsafe fn format_cb_pane_command_end_time(ft: &mut format_tree) -> Option<time_t> {
+fn format_cb_pane_command_end_time(ft: &mut format_tree) -> Option<time_t> {
     pane_format_time(c"pane_command_end_time", ft)
 }
-unsafe fn format_cb_pane_command_running(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_command_running(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_command_running", ft)
 }
-unsafe fn format_cb_pane_command_duration(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_command_duration(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_command_duration", ft)
 }
-unsafe fn format_cb_pane_command_status(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_command_status(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_command_status", ft)
 }
 fn format_cb_pane_format(ft: &mut format_tree) -> Option<CString> {
@@ -801,104 +801,104 @@ fn format_cb_pane_format(ft: &mut format_tree) -> Option<CString> {
     }
     Some(c"0".to_owned())
 }
-unsafe fn format_cb_pane_height(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_height(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_height", ft)
 }
-unsafe fn format_cb_pane_id(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_id(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_id", ft)
 }
-unsafe fn format_cb_pane_index(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_index(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_index", ft)
 }
-unsafe fn format_cb_pane_input_off(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_input_off(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_input_off", ft)
 }
-unsafe fn format_cb_pane_unseen_changes(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_unseen_changes(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_unseen_changes", ft)
 }
-unsafe fn format_cb_pane_key_mode(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_key_mode(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_key_mode", ft)
 }
-unsafe fn format_cb_pane_last(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_last(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_last", ft)
 }
 
-unsafe fn format_cb_pane_left(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_left(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_left", ft)
 }
-unsafe fn format_cb_pane_marked(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_marked(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_marked", ft)
 }
-unsafe fn format_cb_pane_marked_set(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_marked_set(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_marked_set", ft)
 }
-unsafe fn format_cb_pane_mode(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_mode(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_mode", ft)
 }
-unsafe fn format_cb_pane_path(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_path(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_path", ft)
 }
-unsafe fn format_cb_pane_pid(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_pid(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_pid", ft)
 }
-unsafe fn format_cb_pane_pipe(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_pipe(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_pipe", ft)
 }
-unsafe fn format_cb_pane_pipe_pid(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_pipe_pid(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_pipe_pid", ft)
 }
-unsafe fn format_cb_pane_pb_progress(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_pb_progress(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_pb_progress", ft)
 }
-unsafe fn format_cb_pane_pb_state(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_pb_state(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_pb_state", ft)
 }
-unsafe fn format_cb_pane_right(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_right(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_right", ft)
 }
-unsafe fn format_cb_pane_search_string(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_search_string(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_search_string", ft)
 }
-unsafe fn format_cb_pane_synchronized(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_synchronized(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_synchronized", ft)
 }
-unsafe fn format_cb_pane_title(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_title(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_title", ft)
 }
-unsafe fn format_cb_pane_top(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_top(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_top", ft)
 }
-unsafe fn format_cb_pane_tty(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_tty(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_tty", ft)
 }
-unsafe fn format_cb_pane_unzoomed_height(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_unzoomed_height(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_unzoomed_height", ft)
 }
 
-unsafe fn format_cb_pane_unzoomed_width(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_unzoomed_width(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_unzoomed_width", ft)
 }
 
-unsafe fn format_cb_pane_width(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_width(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_width", ft)
 }
 
-unsafe fn format_cb_pane_zoomed_flag(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_zoomed_flag(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_zoomed_flag", ft)
 }
-unsafe fn format_cb_pane_x(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_x(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_x", ft)
 }
-unsafe fn format_cb_pane_y(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_pane_y(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_y", ft)
 }
-unsafe fn format_cb_scroll_region_lower(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_scroll_region_lower(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"scroll_region_lower", ft)
 }
-unsafe fn format_cb_scroll_region_upper(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_scroll_region_upper(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"scroll_region_upper", ft)
 }
-unsafe fn format_cb_server_sessions(_ft: &mut format_tree) -> Option<CString> {
+fn format_cb_server_sessions(_ft: &mut format_tree) -> Option<CString> {
     let mut s: Option<SessionRef> = None;
     let mut n: u_int = 0 as u_int;
     let mut s_owner = sessions::first();
@@ -910,31 +910,31 @@ unsafe fn format_cb_server_sessions(_ft: &mut format_tree) -> Option<CString> {
     }
     Some(CString::new(format!("{}", (n) as u32)).expect("formatted numbers contain no NUL"))
 }
-unsafe fn format_cb_session_active(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_session_active(ft: &mut format_tree) -> Option<CString> {
     match ft.s.upgrade()?.format_value(c"session_active", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_session_activity_flag(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_session_activity_flag(ft: &mut format_tree) -> Option<CString> {
     match ft.s.upgrade()?.format_value(c"session_activity_flag", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_session_bell_flag(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_session_bell_flag(ft: &mut format_tree) -> Option<CString> {
     match ft.s.upgrade()?.format_value(c"session_bell_flag", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_session_silence_flag(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_session_silence_flag(ft: &mut format_tree) -> Option<CString> {
     match ft.s.upgrade()?.format_value(c"session_silence_flag", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_session_attached(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_session_attached(ft: &mut format_tree) -> Option<CString> {
     match ft.s.upgrade()?.format_value(c"session_attached", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
@@ -948,13 +948,13 @@ fn format_cb_session_format(ft: &mut format_tree) -> Option<CString> {
     }
     Some(c"0".to_owned())
 }
-unsafe fn format_cb_session_group(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_session_group(ft: &mut format_tree) -> Option<CString> {
     match ft.s.upgrade()?.format_value(c"session_group", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_session_group_attached(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_session_group_attached(ft: &mut format_tree) -> Option<CString> {
     match ft
         .s
         .upgrade()?
@@ -964,7 +964,7 @@ unsafe fn format_cb_session_group_attached(ft: &mut format_tree) -> Option<CStri
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_session_group_many_attached(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_session_group_many_attached(ft: &mut format_tree) -> Option<CString> {
     match ft
         .s
         .upgrade()?
@@ -974,55 +974,55 @@ unsafe fn format_cb_session_group_many_attached(ft: &mut format_tree) -> Option<
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_session_group_size(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_session_group_size(ft: &mut format_tree) -> Option<CString> {
     match ft.s.upgrade()?.format_value(c"session_group_size", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_session_grouped(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_session_grouped(ft: &mut format_tree) -> Option<CString> {
     match ft.s.upgrade()?.format_value(c"session_grouped", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_session_id(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_session_id(ft: &mut format_tree) -> Option<CString> {
     match ft.s.upgrade()?.format_value(c"session_id", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_session_many_attached(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_session_many_attached(ft: &mut format_tree) -> Option<CString> {
     match ft.s.upgrade()?.format_value(c"session_many_attached", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_session_marked(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_session_marked(ft: &mut format_tree) -> Option<CString> {
     match ft.s.upgrade()?.format_value(c"session_marked", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_session_name(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_session_name(ft: &mut format_tree) -> Option<CString> {
     match ft.s.upgrade()?.format_value(c"session_name", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_session_path(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_session_path(ft: &mut format_tree) -> Option<CString> {
     match ft.s.upgrade()?.format_value(c"session_path", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_session_windows(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_session_windows(ft: &mut format_tree) -> Option<CString> {
     match ft.s.upgrade()?.format_value(c"session_windows", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_socket_path(_ft: &mut format_tree) -> Option<CString> {
+fn format_cb_socket_path(_ft: &mut format_tree) -> Option<CString> {
     Some(socket_path_cstr().to_owned())
 }
 fn format_cb_version(_ft: &mut format_tree) -> Option<CString> {
@@ -1031,19 +1031,19 @@ fn format_cb_version(_ft: &mut format_tree) -> Option<CString> {
 fn format_cb_sixel_support(_ft: &mut format_tree) -> Option<CString> {
     Some(c"0".to_owned())
 }
-unsafe fn format_cb_active_window_index(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_active_window_index(ft: &mut format_tree) -> Option<CString> {
     match ft.s.upgrade()?.format_value(c"active_window_index", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_last_window_index(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_last_window_index(ft: &mut format_tree) -> Option<CString> {
     match ft.s.upgrade()?.format_value(c"last_window_index", ft)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_window_active(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_active(ft: &mut format_tree) -> Option<CString> {
     if ft.winlink_handle().is_alive() {
         let session_owner = (ft.winlink_handle())
             .try_borrow()
@@ -1057,7 +1057,7 @@ unsafe fn format_cb_window_active(ft: &mut format_tree) -> Option<CString> {
     }
     None
 }
-unsafe fn format_cb_window_activity_flag(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_activity_flag(ft: &mut format_tree) -> Option<CString> {
     if ft.winlink_handle().is_alive() {
         if (ft.winlink_handle())
             .try_borrow()
@@ -1072,7 +1072,7 @@ unsafe fn format_cb_window_activity_flag(ft: &mut format_tree) -> Option<CString
     }
     None
 }
-unsafe fn format_cb_window_bell_flag(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_bell_flag(ft: &mut format_tree) -> Option<CString> {
     if ft.winlink_handle().is_alive() {
         if (ft.winlink_handle())
             .try_borrow()
@@ -1087,14 +1087,14 @@ unsafe fn format_cb_window_bell_flag(ft: &mut format_tree) -> Option<CString> {
     }
     None
 }
-unsafe fn format_cb_window_bigger(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_bigger(ft: &mut format_tree) -> Option<CString> {
     let format_client_owner = ft.c.upgrade();
     let mut format_client: Option<ClientRef> = format_client_owner.clone();
     let c = format_client.as_ref()?;
     let view = c.terminal_view();
     Some(if view.bigger { c"1" } else { c"0" }.to_owned())
 }
-unsafe fn format_cb_window_cell_height(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_cell_height(ft: &mut format_tree) -> Option<CString> {
     let window = ft.w.upgrade()?;
     let value =
         CString::new(window.cell_size().1.to_string()).expect("formatted number contains no NUL");
@@ -1102,7 +1102,7 @@ unsafe fn format_cb_window_cell_height(ft: &mut format_tree) -> Option<CString> 
     Some(value)
 }
 
-unsafe fn format_cb_window_cell_width(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_cell_width(ft: &mut format_tree) -> Option<CString> {
     let window = ft.w.upgrade()?;
     let value =
         CString::new(window.cell_size().0.to_string()).expect("formatted number contains no NUL");
@@ -1110,7 +1110,7 @@ unsafe fn format_cb_window_cell_width(ft: &mut format_tree) -> Option<CString> {
     Some(value)
 }
 
-unsafe fn format_cb_window_end_flag(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_end_flag(ft: &mut format_tree) -> Option<CString> {
     if ft.winlink_handle().is_alive() {
         let session_owner = (ft.winlink_handle())
             .try_borrow()
@@ -1126,7 +1126,7 @@ unsafe fn format_cb_window_end_flag(ft: &mut format_tree) -> Option<CString> {
     }
     None
 }
-unsafe fn format_cb_window_flags(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_flags(ft: &mut format_tree) -> Option<CString> {
     if ft.winlink_handle().is_alive() {
         return Some(crate::window::window_printable_flags(
             (ft.winlink_handle()).clone(),
@@ -1143,7 +1143,7 @@ fn format_cb_window_format(ft: &mut format_tree) -> Option<CString> {
     }
     Some(c"0".to_owned())
 }
-unsafe fn format_cb_window_height(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_height(ft: &mut format_tree) -> Option<CString> {
     let window = ft.w.upgrade()?;
     let value =
         CString::new(window.size().1.to_string()).expect("formatted number contains no NUL");
@@ -1151,7 +1151,7 @@ unsafe fn format_cb_window_height(ft: &mut format_tree) -> Option<CString> {
     Some(value)
 }
 
-unsafe fn format_cb_window_manual_height(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_manual_height(ft: &mut format_tree) -> Option<CString> {
     let window = ft.w.upgrade()?;
     let manual =
         options_get_number(&window.borrow_options_mut(), c"window-size") == WINDOW_SIZE_MANUAL as _;
@@ -1163,14 +1163,14 @@ unsafe fn format_cb_window_manual_height(ft: &mut format_tree) -> Option<CString
     drop(window);
     Some(value)
 }
-unsafe fn format_cb_window_id(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_id(ft: &mut format_tree) -> Option<CString> {
     let window = ft.w.upgrade()?;
     let value = CString::new(format!("@{}", window.id())).expect("formatted ID contains no NUL");
     drop(window);
     Some(value)
 }
 
-unsafe fn format_cb_window_index(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_index(ft: &mut format_tree) -> Option<CString> {
     if ft.winlink_handle().is_alive() {
         return Some(
             CString::new(format!("{}", {
@@ -1184,7 +1184,7 @@ unsafe fn format_cb_window_index(ft: &mut format_tree) -> Option<CString> {
     }
     None
 }
-unsafe fn format_cb_window_last_flag(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_last_flag(ft: &mut format_tree) -> Option<CString> {
     if ft.winlink_handle().is_alive() {
         let session_owner = (ft.winlink_handle())
             .try_borrow()
@@ -1198,7 +1198,7 @@ unsafe fn format_cb_window_last_flag(ft: &mut format_tree) -> Option<CString> {
     }
     None
 }
-unsafe fn format_cb_window_linked(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_linked(ft: &mut format_tree) -> Option<CString> {
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut s: Option<SessionRef> = None;
     let mut found: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -1229,7 +1229,7 @@ unsafe fn format_cb_window_linked(ft: &mut format_tree) -> Option<CString> {
     }
     None
 }
-unsafe fn format_cb_window_linked_sessions(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_linked_sessions(ft: &mut format_tree) -> Option<CString> {
     let mut sg = crate::shared::session::SessionGroupWeak::new();
     let mut s: Option<SessionRef> = None;
     let mut n: u_int = 0 as u_int;
@@ -1270,7 +1270,7 @@ unsafe fn format_cb_window_linked_sessions(ft: &mut format_tree) -> Option<CStri
     drop(window);
     Some(CString::new(format!("{}", (n) as u32)).expect("formatted numbers contain no NUL"))
 }
-unsafe fn format_cb_window_marked_flag(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_marked_flag(ft: &mut format_tree) -> Option<CString> {
     if ft.winlink_handle().is_alive() {
         if server_check_marked() != 0
             && marked_pane.with_borrow(|marked| marked.winlink_handle()) == ft.winlink_handle()
@@ -1282,14 +1282,14 @@ unsafe fn format_cb_window_marked_flag(ft: &mut format_tree) -> Option<CString> 
     None
 }
 
-unsafe fn format_cb_window_name(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_name(ft: &mut format_tree) -> Option<CString> {
     let window = ft.w.upgrade()?;
     let value = window.name();
     drop(window);
     Some(value)
 }
 
-unsafe fn format_cb_window_offset_x(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_offset_x(ft: &mut format_tree) -> Option<CString> {
     let format_client_owner = ft.c.upgrade();
     let mut format_client: Option<ClientRef> = format_client_owner.clone();
     let c = format_client.as_ref()?;
@@ -1297,7 +1297,7 @@ unsafe fn format_cb_window_offset_x(ft: &mut format_tree) -> Option<CString> {
     view.bigger
         .then(|| CString::new(view.ox.to_string()).expect("formatted number contains no NUL"))
 }
-unsafe fn format_cb_window_offset_y(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_offset_y(ft: &mut format_tree) -> Option<CString> {
     let format_client_owner = ft.c.upgrade();
     let mut format_client: Option<ClientRef> = format_client_owner.clone();
     let c = format_client.as_ref()?;
@@ -1305,7 +1305,7 @@ unsafe fn format_cb_window_offset_y(ft: &mut format_tree) -> Option<CString> {
     view.bigger
         .then(|| CString::new(view.oy.to_string()).expect("formatted number contains no NUL"))
 }
-unsafe fn format_cb_window_panes(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_panes(ft: &mut format_tree) -> Option<CString> {
     let window = ft.w.upgrade()?;
     let value = CString::new(window.pane_snapshot().len().to_string())
         .expect("formatted number contains no NUL");
@@ -1313,7 +1313,7 @@ unsafe fn format_cb_window_panes(ft: &mut format_tree) -> Option<CString> {
     Some(value)
 }
 
-unsafe fn format_cb_window_raw_flags(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_raw_flags(ft: &mut format_tree) -> Option<CString> {
     if ft.winlink_handle().is_alive() {
         return Some(crate::window::window_printable_flags(
             (ft.winlink_handle()).clone(),
@@ -1322,7 +1322,7 @@ unsafe fn format_cb_window_raw_flags(ft: &mut format_tree) -> Option<CString> {
     }
     None
 }
-unsafe fn format_cb_window_silence_flag(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_silence_flag(ft: &mut format_tree) -> Option<CString> {
     if ft.winlink_handle().is_alive() {
         if (ft.winlink_handle())
             .try_borrow()
@@ -1337,7 +1337,7 @@ unsafe fn format_cb_window_silence_flag(ft: &mut format_tree) -> Option<CString>
     }
     None
 }
-unsafe fn format_cb_window_start_flag(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_start_flag(ft: &mut format_tree) -> Option<CString> {
     if ft.winlink_handle().is_alive() {
         let session_owner = (ft.winlink_handle())
             .try_borrow()
@@ -1353,7 +1353,7 @@ unsafe fn format_cb_window_start_flag(ft: &mut format_tree) -> Option<CString> {
     }
     None
 }
-unsafe fn format_cb_window_width(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_width(ft: &mut format_tree) -> Option<CString> {
     let window = ft.w.upgrade()?;
     let value =
         CString::new(window.size().0.to_string()).expect("formatted number contains no NUL");
@@ -1361,14 +1361,14 @@ unsafe fn format_cb_window_width(ft: &mut format_tree) -> Option<CString> {
     Some(value)
 }
 
-unsafe fn format_cb_window_zoomed_flag(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_zoomed_flag(ft: &mut format_tree) -> Option<CString> {
     let window = ft.w.upgrade()?;
     let zoomed = window.zoomed_pane().strong_count() != 0;
     drop(window);
     Some(if zoomed { c"1" } else { c"0" }.to_owned())
 }
 
-unsafe fn format_cb_window_manual_width(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_window_manual_width(ft: &mut format_tree) -> Option<CString> {
     let window = ft.w.upgrade()?;
     let manual =
         options_get_number(&window.borrow_options_mut(), c"window-size") == WINDOW_SIZE_MANUAL as _;
@@ -1381,46 +1381,46 @@ unsafe fn format_cb_window_manual_width(ft: &mut format_tree) -> Option<CString>
     Some(value)
 }
 
-unsafe fn format_cb_wrap_flag(ft: &mut format_tree) -> Option<CString> {
+fn format_cb_wrap_flag(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"wrap_flag", ft)
 }
 fn format_cb_buffer_created(ft: &mut format_tree) -> Option<time_t> {
     Some(paste_buffer_created(&*ft.pb.as_ref()?.try_borrow()?) as __time_t as time_t)
 }
-unsafe fn format_cb_client_activity(ft: &mut format_tree) -> Option<time_t> {
+fn format_cb_client_activity(ft: &mut format_tree) -> Option<time_t> {
     match ft.c.upgrade()?.format_value(c"client_activity", ft)? {
         FormatValue::Time(value) => Some(value),
         FormatValue::String(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_client_created(ft: &mut format_tree) -> Option<time_t> {
+fn format_cb_client_created(ft: &mut format_tree) -> Option<time_t> {
     match ft.c.upgrade()?.format_value(c"client_created", ft)? {
         FormatValue::Time(value) => Some(value),
         FormatValue::String(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_session_activity(ft: &mut format_tree) -> Option<time_t> {
+fn format_cb_session_activity(ft: &mut format_tree) -> Option<time_t> {
     match ft.s.upgrade()?.format_value(c"session_activity", ft)? {
         FormatValue::Time(value) => Some(value),
         FormatValue::String(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_session_created(ft: &mut format_tree) -> Option<time_t> {
+fn format_cb_session_created(ft: &mut format_tree) -> Option<time_t> {
     match ft.s.upgrade()?.format_value(c"session_created", ft)? {
         FormatValue::Time(value) => Some(value),
         FormatValue::String(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_session_last_attached(ft: &mut format_tree) -> Option<time_t> {
+fn format_cb_session_last_attached(ft: &mut format_tree) -> Option<time_t> {
     match ft.s.upgrade()?.format_value(c"session_last_attached", ft)? {
         FormatValue::Time(value) => Some(value),
         FormatValue::String(_) => unreachable!("builtin value type"),
     }
 }
-unsafe fn format_cb_start_time(_ft: &mut format_tree) -> Option<time_t> {
-    Some(crate::shared::time::unix_seconds(start_time))
+fn format_cb_start_time(_ft: &mut format_tree) -> Option<time_t> {
+    Some(crate::shared::time::unix_seconds(start_time()))
 }
-unsafe fn format_cb_window_activity(ft: &mut format_tree) -> Option<time_t> {
+fn format_cb_window_activity(ft: &mut format_tree) -> Option<time_t> {
     let window = ft.w.upgrade()?;
     let value = crate::shared::time::unix_seconds(window.activity_time());
     drop(window);
@@ -1451,25 +1451,24 @@ fn format_cb_tree_mode_format(_ft: &mut format_tree) -> Option<CString> {
             .to_owned(),
     )
 }
-unsafe fn format_cb_uid(_ft: &mut format_tree) -> Option<CString> {
+fn format_cb_uid(_ft: &mut format_tree) -> Option<CString> {
     Some(
-        CString::new(format!(
-            "{}",
-            (getuid() as ::core::ffi::c_long) as ::core::ffi::c_long
-        ))
-        .expect("formatted numbers contain no NUL"),
+        CString::new(format!("{}", unsafe { getuid() } as ::core::ffi::c_long))
+            .expect("formatted numbers contain no NUL"),
     )
 }
-unsafe fn format_cb_user(_ft: &mut format_tree) -> Option<CString> {
+fn format_cb_user(_ft: &mut format_tree) -> Option<CString> {
     static CACHED: std::sync::OnceLock<CString> = std::sync::OnceLock::new();
     if let Some(name) = CACHED.get() {
         return Some(name.clone());
     }
-    let pw = getpwuid(getuid());
-    if pw.is_null() {
-        return None;
-    }
-    let name = CStr::from_ptr((*pw).pw_name).to_owned();
+    let name = unsafe {
+        let pw = getpwuid(getuid());
+        if pw.is_null() {
+            return None;
+        }
+        CStr::from_ptr((*pw).pw_name).to_owned()
+    };
     let _ = CACHED.set(name);
     CACHED.get().cloned()
 }
@@ -1478,15 +1477,15 @@ pub enum FormatValue {
     Time(time_t),
 }
 pub(super) enum FormatCallback {
-    String(unsafe fn(&mut format_tree) -> Option<CString>),
-    Time(unsafe fn(&mut format_tree) -> Option<time_t>),
+    String(fn(&mut format_tree) -> Option<CString>),
+    Time(fn(&mut format_tree) -> Option<time_t>),
 }
 pub(super) struct FormatTableEntry {
     pub key: &'static CStr,
     callback: FormatCallback,
 }
 impl FormatTableEntry {
-    pub unsafe fn get(&self, ft: &mut format_tree) -> Option<FormatValue> {
+    pub fn get(&self, ft: &mut format_tree) -> Option<FormatValue> {
         use crate::server_client::Client;
         use crate::session::Session;
         use crate::window::{Window, WindowPane};
@@ -1512,7 +1511,7 @@ impl FormatTableEntry {
         self.evaluate(ft)
     }
 
-    unsafe fn evaluate(&self, ft: &mut format_tree) -> Option<FormatValue> {
+    fn evaluate(&self, ft: &mut format_tree) -> Option<FormatValue> {
         match self.callback {
             FormatCallback::String(cb) => cb(ft).map(FormatValue::String),
             FormatCallback::Time(cb) => cb(ft).map(FormatValue::Time),
@@ -1524,7 +1523,7 @@ fn model_key(key: &CStr, prefix: &[u8]) -> bool {
     key.to_bytes().starts_with(prefix) && !key.to_bytes().ends_with(b"_mode_format")
 }
 
-pub(crate) unsafe fn window_format_value(
+pub(crate) fn window_format_value(
     owner: &WindowRef,
     key: &CStr,
     context: &mut format_tree,
@@ -2396,7 +2395,7 @@ mod owned_callback_tests {
     fn buffer_formats_preserve_missing_empty_and_logical_binary_lengths() {
         let owner = refbox::RefBox::new(crate::shared::paste::paste_buffer::empty());
         let buffer = crate::shared::paste::PasteBufferRef::observe(&owner);
-        unsafe {
+        {
             let mut ft_owner = format_create(None, None, 0, 0);
             let ft = &mut *ft_owner;
             ft.pb = Some(buffer.clone());
@@ -2428,25 +2427,23 @@ mod owned_callback_tests {
 
     #[test]
     fn builtin_lookup_preserves_sorted_keys_and_missing_results() {
-        unsafe {
-            assert!(FORMAT_TABLE
-                .windows(2)
-                .all(|pair| pair[0].key < pair[1].key));
-            for entry in &FORMAT_TABLE {
-                assert!(std::ptr::eq(format_table_get(entry.key).unwrap(), entry));
-            }
-            assert!(format_table_get(c"not_a_builtin").is_none());
-            let mut ft_owner = format_create(None, None, 0, 0);
-            let ft = &mut *ft_owner;
-            for key in [
-                c"buffer_full",
-                c"client_created",
-                c"session_created",
-                c"pane_dead_time",
-            ] {
-                assert!(format_table_get(key).unwrap().get(ft).is_none());
-            }
-            drop(ft_owner);
+        assert!(FORMAT_TABLE
+            .windows(2)
+            .all(|pair| pair[0].key < pair[1].key));
+        for entry in &FORMAT_TABLE {
+            assert!(std::ptr::eq(format_table_get(entry.key).unwrap(), entry));
         }
+        assert!(format_table_get(c"not_a_builtin").is_none());
+        let mut ft_owner = format_create(None, None, 0, 0);
+        let ft = &mut *ft_owner;
+        for key in [
+            c"buffer_full",
+            c"client_created",
+            c"session_created",
+            c"pane_dead_time",
+        ] {
+            assert!(format_table_get(key).unwrap().get(ft).is_none());
+        }
+        drop(ft_owner);
     }
 }

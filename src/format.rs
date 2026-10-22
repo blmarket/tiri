@@ -28,7 +28,7 @@ use crate::server::{marked_pane, server_check_marked};
 use crate::shared::window::WindowWeak;
 use crate::window::Window as _;
 use crate::winlink::winlink_window;
-use libc::{ctime_r, dirname, gethostname, getpwuid, getuid, localtime_r, strftime};
+use libc::{ctime_r, dirname, gethostname, getpwuid, getuid};
 
 use crate::server_client::Client as _;
 use crate::server_fn::server_status_client;
@@ -118,7 +118,7 @@ pub(crate) fn format_is_builtin(key: &CStr) -> bool {
     format_table_get(key).is_some()
 }
 
-pub(super) unsafe fn format_plugin_pane(ft: &mut format_tree) -> Option<crate::plugin::PaneId> {
+pub(super) fn format_plugin_pane(ft: &mut format_tree) -> Option<crate::plugin::PaneId> {
     let pane = <std::rc::Rc<std::cell::RefCell<window_pane>>>::from_observer(&ft.wp)?;
     Some(crate::plugin::PaneId(pane.id()))
 }
@@ -170,7 +170,7 @@ impl<'a> format_expand_state<'a> {
         format_expand_state {
             ft,
             loop_0: 0,
-            start_time: unsafe { get_timer() },
+            start_time: get_timer(),
             flags,
             time: 0,
             tm: unsafe { ::core::mem::zeroed() },
@@ -289,9 +289,9 @@ fn format_logging(ft: &format_tree) -> ::core::ffi::c_int {
     (log_get_level() != 0 as ::core::ffi::c_int || ft.flags & FORMAT_VERBOSE != 0)
         as ::core::ffi::c_int
 }
-unsafe fn format_log1(
+fn format_log1(
     es: &format_expand_state<'_>,
-    mut from: *const ::core::ffi::c_char,
+    from: &CStr,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let ft = &*es.ft;
@@ -299,11 +299,7 @@ unsafe fn format_log1(
         return;
     }
     let s = format_message_with(write);
-    log_debug(format_args!(
-        "{}: {}",
-        log_cstr(CStr::from_ptr(from)),
-        log_cstr(&s)
-    ));
+    log_debug(format_args!("{}: {}", log_cstr(from), log_cstr(&s)));
     if let Some(item) = ft.item.upgrade().filter(|_| ft.flags & FORMAT_VERBOSE != 0) {
         cmdq_print(&item, |out| {
             out.write_all(b"#")?;
@@ -312,7 +308,7 @@ unsafe fn format_log1(
         });
     }
 }
-pub unsafe fn format_create_defaults(
+pub fn format_create_defaults(
     item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     c_owner: Option<&ClientRef>,
     s_owner: Option<&SessionRef>,
@@ -330,7 +326,7 @@ pub unsafe fn format_create_defaults(
     format_defaults(ft, c_owner, s_owner, wl.clone(), wp_owner);
     owner
 }
-pub unsafe fn format_create_from_state(
+pub fn format_create_from_state(
     item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     c_owner: Option<&ClientRef>,
     fs: &cmd_find_state,
@@ -343,7 +339,7 @@ pub unsafe fn format_create_from_state(
         fs.wp.upgrade().as_ref(),
     )
 }
-pub unsafe fn format_create_from_target(
+pub fn format_create_from_target(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> Box<format_tree> {
     let (tc, target) = {
@@ -355,7 +351,7 @@ pub unsafe fn format_create_from_target(
     };
     format_create_from_state(Some(item_handle), tc.as_ref(), &target)
 }
-pub unsafe fn format_defaults(
+pub fn format_defaults(
     ft: &mut format_tree,
     c_owner: Option<&ClientRef>,
     s_owner: Option<&SessionRef>,
@@ -462,7 +458,7 @@ fn format_defaults_winlink(ft: &mut format_tree, mut wl: refbox::Weak<winlink>) 
     }
     ft.wl = wl;
 }
-pub unsafe fn format_defaults_pane(
+pub fn format_defaults_pane(
     ft: &mut format_tree,
     wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
 ) {
@@ -484,11 +480,7 @@ fn format_is_word_separator(ws: &CStr, gc: &grid_cell) -> bool {
     }
     gc.data.size as ::core::ffi::c_int == 1 as ::core::ffi::c_int && gc.data.data[0] == b' '
 }
-pub(crate) unsafe fn format_grid_word_cstring(
-    gd: &grid,
-    mut x: u_int,
-    mut y: u_int,
-) -> Option<CString> {
+pub(crate) fn format_grid_word_cstring(gd: &grid, mut x: u_int, mut y: u_int) -> Option<CString> {
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -573,7 +565,7 @@ pub(crate) unsafe fn format_grid_word_cstring(
     }
     s
 }
-pub(crate) unsafe fn format_grid_line_cstring(gd: &grid, mut y: u_int) -> Option<CString> {
+pub(crate) fn format_grid_line_cstring(gd: &grid, mut y: u_int) -> Option<CString> {
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -617,7 +609,7 @@ pub(crate) unsafe fn format_grid_line_cstring(gd: &grid, mut y: u_int) -> Option
     }
     s
 }
-pub(crate) unsafe fn format_grid_hyperlink_cstring(
+pub(crate) fn format_grid_hyperlink_cstring(
     gd: &grid,
     mut x: u_int,
     mut y: u_int,

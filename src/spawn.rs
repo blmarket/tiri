@@ -59,7 +59,7 @@ pub const _PATH_DEFPATH: &std::ffi::CStr = c"/usr/bin:/bin";
 
 pub const _PATH_TMP: &std::ffi::CStr = c"/tmp/";
 
-pub(crate) unsafe fn spawn_log(from: &CStr, sc: &spawn_context) {
+pub(crate) fn spawn_log(from: &CStr, sc: &spawn_context) {
     let session_owner = sc.s.upgrade().expect("spawn context session");
     let mut wl: refbox::Weak<winlink> = sc.winlink_handle();
     let wp0_owner = sc.wp0.upgrade();
@@ -107,10 +107,7 @@ pub unsafe fn spawn_window(
 }
 /// Reset an existing window's panes before its process is respawned.
 /// Session link mutation remains in the Session-owned spawn transaction.
-pub(crate) unsafe fn prepare_respawn_window(
-    sc: &mut spawn_context,
-    cause: &mut Option<CString>,
-) -> bool {
+pub(crate) fn prepare_respawn_window(sc: &mut spawn_context, cause: &mut Option<CString>) -> bool {
     let window = winlink_window(&sc.winlink_handle()).expect("live respawn window");
     let result = (|| {
         if !sc.flags & SPAWN_KILL != 0
@@ -162,7 +159,7 @@ pub(crate) unsafe fn prepare_respawn_window(
 }
 /// Initialize the newly-created window's name and fill cells without emitting
 /// a rename notification (the window-created notification follows spawning).
-pub(crate) unsafe fn initialize_spawned_window(sc: &spawn_context, window: &WindowRef) {
+pub(crate) fn initialize_spawned_window(sc: &spawn_context, window: &WindowRef) {
     if let Some(name) = sc.name.as_ref() {
         window.initialize_name(name.clone(), true);
     } else {
@@ -177,7 +174,7 @@ impl Drop for spawn_editor_state {
         }
     }
 }
-pub unsafe fn spawn_editor_finish(wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>) {
+pub fn spawn_editor_finish(wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>) {
     wp_owner.finish_editing();
 }
 

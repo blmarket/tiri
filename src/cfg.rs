@@ -6,7 +6,6 @@ use crate::cmd::queue::{
 };
 use crate::control::control_notify_write;
 use crate::format::bytes::format_message_with;
-use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
 use crate::log::{log_cstr, log_debug};
 use crate::prompt_history::prompt_load_history;
@@ -32,12 +31,15 @@ use std::collections::VecDeque;
 use std::ffi::{CStr, CString, OsStr};
 use std::os::unix::ffi::OsStrExt;
 use std::sync::{Mutex, OnceLock};
-pub static mut cfg_client: ClientWeak = std::rc::Weak::new();
-pub static mut cfg_finished: ::core::ffi::c_int = 0;
+thread_local! {
+    static CFG_CLIENT: std::cell::Cell<ClientWeak> = const { std::cell::Cell::new(std::rc::Weak::new()) };
+    static CFG_FINISHED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static CFG_QUIET: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
+    /// Resumes the startup client's `cfg_client_done` once the configuration is loaded.
+    static CFG_WAITER: std::cell::RefCell<Option<CmdqWaiter>> = const { std::cell::RefCell::new(None) };
+}
 static CFG_CAUSES: Mutex<VecDeque<CString>> = Mutex::new(VecDeque::new());
 /// Resumes the startup client's `cfg_client_done` once the configuration is loaded.
-static mut CFG_WAITER: Option<CmdqWaiter> = None;
-pub static mut cfg_quiet: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 static CFG_FILES: OnceLock<Vec<CString>> = OnceLock::new();
 
 pub(crate) fn cfg_set_files(files: Vec<CString>) {
@@ -50,44 +52,71 @@ pub(crate) fn cfg_set_files(files: Vec<CString>) {
 pub(crate) fn cfg_files() -> &'static [CString] {
     CFG_FILES.get().map_or(&[], Vec::as_slice)
 }
-unsafe fn cfg_client_done(item: &std::rc::Rc<std::cell::RefCell<cmdq_item>>) -> CmdOutcome {
-    if cfg_finished == 0 {
+
+/// Report missing configuration files instead of skipping them silently.
+pub(crate) fn cfg_report_missing() {
+    CFG_QUIET.set(false);
+}
+
+pub(crate) fn cfg_finished() -> bool {
+    CFG_FINISHED.get()
+}
+
+/// The client whose startup waits on the configuration, while it lives.
+pub(crate) fn cfg_client() -> Option<ClientRef> {
+    let observer = CFG_CLIENT.take();
+    let client = observer.upgrade();
+    CFG_CLIENT.set(observer);
+    client
+}
+
+pub(crate) fn cfg_forget_client(client: &ClientRef) {
+    let observer = CFG_CLIENT.take();
+    if !observer.ptr_eq(&std::rc::Rc::downgrade(client)) {
+        CFG_CLIENT.set(observer);
+    }
+}
+fn cfg_client_done(item: &std::rc::Rc<std::cell::RefCell<cmdq_item>>) -> CmdOutcome {
+    if !cfg_finished() {
         let (waiter, retval) = cmdq_wait(item);
-        drop(CFG_WAITER.replace(waiter));
+        drop(CFG_WAITER.replace(Some(waiter)));
         return retval;
     }
     CmdOutcome::Normal
 }
 unsafe fn cfg_done() -> CmdOutcome {
-    if cfg_finished != 0 {
+    if cfg_finished() {
         return CmdOutcome::Normal;
     }
-    cfg_finished = 1 as ::core::ffi::c_int;
+    CFG_FINISHED.set(true);
     cfg_show_causes(None);
-    if let Some(waiter) = CFG_WAITER.take() {
+    let waiter = CFG_WAITER.take();
+    if let Some(waiter) = waiter {
         waiter.resume();
     }
     prompt_load_history();
     CmdOutcome::Normal
 }
-pub unsafe fn start_cfg() {
+pub fn start_cfg() {
     let mut c: Option<ClientRef> = None;
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut registry_c_owner = ClientRegistry::first();
     c = registry_c_owner.clone();
-    cfg_client = registry_c_owner
-        .as_ref()
-        .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
+    CFG_CLIENT.set(
+        registry_c_owner
+            .as_ref()
+            .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
+    );
     if !c.is_none() {
         cmdq_append(
             registry_c_owner.as_ref(),
             cmdq_get_callback_owned(
                 c"cfg_client_done",
-                Some(Box::new(|item| unsafe { cfg_client_done(item) })),
+                Some(Box::new(|item| cfg_client_done(item))),
             ),
         );
     }
-    if cfg_quiet != 0 {
+    if CFG_QUIET.get() {
         flags = CMD_PARSE_QUIET;
     }
     for path in cfg_files() {
@@ -98,7 +127,7 @@ pub unsafe fn start_cfg() {
         cmdq_get_callback_owned(c"cfg_done", Some(Box::new(|_| unsafe { cfg_done() }))),
     );
 }
-pub unsafe fn load_cfg(
+pub fn load_cfg(
     path: &CStr,
     c: Option<&ClientRef>,
     mut flags: ::core::ffi::c_int,
@@ -134,7 +163,7 @@ pub unsafe fn load_cfg(
                 return 0 as ::core::ffi::c_int;
             }
             cfg_add_cause(|out| {
-                write_cstr(out, nullable_cstr(path.as_ptr()))?;
+                write_cstr(out, Some(&*path))?;
                 out.write_all(b": ")?;
                 write!(out, "{}", ErrorText(&error))
             });
@@ -176,7 +205,7 @@ pub unsafe fn load_cfg(
 
     0 as ::core::ffi::c_int
 }
-pub unsafe fn load_cfg_from_buffer(
+pub fn load_cfg_from_buffer(
     buf: &[u8],
     path: &CStr,
     c: Option<&ClientRef>,
@@ -261,7 +290,7 @@ fn cfg_drain_causes(mut deliver: impl FnMut(&CStr)) {
     }
 }
 
-pub unsafe fn cfg_print_causes(item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>) {
+pub fn cfg_print_causes(item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>) {
     let item = item_handle.borrow();
     let c_owner = cmdq_get_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
@@ -333,21 +362,19 @@ mod cfg_wait_tests {
     /// `cfg_done`.
     struct Options;
     impl Options {
-        unsafe fn new() -> Self {
+        fn new() -> Self {
             let entry = options_table
                 .iter()
                 .find(|entry| entry.name == Some(c"history-file"))
                 .unwrap();
             OptionsScope::GlobalServer.reset_default(entry);
-            cfg_finished = 0;
+            CFG_FINISHED.set(false);
             Self
         }
     }
     impl Drop for Options {
         fn drop(&mut self) {
-            unsafe {
-                drop(CFG_WAITER.take());
-            }
+            drop(CFG_WAITER.take());
         }
     }
 
@@ -360,7 +387,7 @@ mod cfg_wait_tests {
 
     /// Queue `cfg_client_done` on `owner`, then an item recording whether it
     /// ran or was released.
-    unsafe fn startup_queue(
+    fn startup_queue(
         owner: &ClientRef,
         ran: &Rc<Cell<bool>>,
         released: &Rc<Cell<bool>>,
@@ -369,7 +396,7 @@ mod cfg_wait_tests {
             Some(owner),
             cmdq_get_callback_owned(
                 c"cfg_client_done",
-                Some(Box::new(|item| unsafe { cfg_client_done(item) })),
+                Some(Box::new(|item| cfg_client_done(item))),
             ),
         );
         let (ran, capture) = (ran.clone(), SetOnDrop(released.clone()));
@@ -395,12 +422,14 @@ mod cfg_wait_tests {
             let (ran, released) = (Rc::new(Cell::new(false)), Rc::new(Cell::new(false)));
             let head = startup_queue(&owner, &ran, &released);
             assert_eq!(cmdq_next(Some(&owner)), 0);
-            assert!(CFG_WAITER.as_ref().is_some_and(|w| !w.is_cancelled()));
+            assert!(
+                CFG_WAITER.with_borrow(|waiter| waiter.as_ref().is_some_and(|w| !w.is_cancelled()))
+            );
             assert!(!ran.get());
 
             assert!(matches!(cfg_done(), CmdOutcome::Normal));
-            assert_eq!(cfg_finished, 1);
-            assert!(CFG_WAITER.is_none());
+            assert!(cfg_finished());
+            assert!(CFG_WAITER.with_borrow(Option::is_none));
             assert!(!ran.get());
             assert_eq!(cmdq_next(Some(&owner)), 1);
             assert!(head.upgrade().is_none());
@@ -410,16 +439,14 @@ mod cfg_wait_tests {
 
     #[test]
     fn the_startup_client_does_not_wait_for_a_finished_config() {
-        unsafe {
-            let _options = Options::new();
-            cfg_finished = 1;
-            let owner = clients::with_queue();
-            let (ran, released) = (Rc::new(Cell::new(false)), Rc::new(Cell::new(false)));
-            startup_queue(&owner, &ran, &released);
-            assert_eq!(cmdq_next(Some(&owner)), 2);
-            assert!(ran.get());
-            assert!(CFG_WAITER.is_none());
-        }
+        let _options = Options::new();
+        CFG_FINISHED.set(true);
+        let owner = clients::with_queue();
+        let (ran, released) = (Rc::new(Cell::new(false)), Rc::new(Cell::new(false)));
+        startup_queue(&owner, &ran, &released);
+        assert_eq!(cmdq_next(Some(&owner)), 2);
+        assert!(ran.get());
+        assert!(CFG_WAITER.with_borrow(Option::is_none));
     }
 
     #[test]
@@ -438,10 +465,11 @@ mod cfg_wait_tests {
             assert!(client.upgrade().is_none());
             assert!(head.upgrade().is_none());
             assert!(released.get());
-            assert!(CFG_WAITER.as_ref().is_some_and(CmdqWaiter::is_cancelled));
+            assert!(CFG_WAITER
+                .with_borrow(|waiter| waiter.as_ref().is_some_and(CmdqWaiter::is_cancelled)));
 
             let _ = cfg_done();
-            assert!(CFG_WAITER.is_none());
+            assert!(CFG_WAITER.with_borrow(Option::is_none));
             assert!(!ran.get());
         }
     }

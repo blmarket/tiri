@@ -6,7 +6,7 @@
     unused_assignments,
     unused_mut
 )]
-use crate::cfg::{cfg_quiet, cfg_set_files};
+use crate::cfg::{cfg_report_missing, cfg_set_files};
 use crate::client::client_main;
 use crate::compat::fdforkpty::getptmfd;
 use crate::compat::getopt::Getopt;
@@ -50,14 +50,51 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub use ::libc::{CLOCK_MONOTONIC, CODESET, LC_CTYPE, LC_TIME};
 
 pub const TMUX_SOCK_PERM: ::core::ffi::c_int = 7 as ::core::ffi::c_int;
-pub static mut global_environ: Option<Box<environ>> = None;
-pub static mut start_time: SystemTime = UNIX_EPOCH;
-pub static mut socket_path: Option<CString> = None;
-pub static mut ptm_fd: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-pub static mut shell_command: Option<CString> = None;
+thread_local! {
+    static SHELL_COMMAND: std::cell::RefCell<Option<CString>> = const { std::cell::RefCell::new(None) };
+    static GLOBAL_ENVIRON: std::cell::RefCell<Option<Box<environ>>> = const {
+        std::cell::RefCell::new(None)
+    };
+    static START_TIME: std::cell::Cell<SystemTime> = const { std::cell::Cell::new(UNIX_EPOCH) };
+    static PTM_FD: std::cell::Cell<::core::ffi::c_int> = const { std::cell::Cell::new(-1) };
+    static SOCKET_PATH: std::cell::RefCell<Option<CString>> = const { std::cell::RefCell::new(None) };
+}
 /// The socket path chosen at startup (or by systemd activation).
-pub unsafe fn socket_path_cstr() -> &'static CStr {
-    socket_path.as_deref().expect("socket path is set")
+pub fn socket_path_cstr() -> CString {
+    SOCKET_PATH
+        .with_borrow(|path| path.clone())
+        .expect("socket path is set")
+}
+pub(crate) fn set_socket_path(path: CString) {
+    SOCKET_PATH.set(Some(path));
+}
+/// The command given with -c, if any.
+pub fn shell_command() -> Option<CString> {
+    SHELL_COMMAND.with_borrow(Clone::clone)
+}
+/// Install a global environment, returning the one it replaces.
+pub fn replace_global_environ(environment: Option<Box<environ>>) -> Option<Box<environ>> {
+    GLOBAL_ENVIRON.replace(environment)
+}
+/// Read the global environment; `read` must not reach it again.
+pub fn global_environ<R>(read: impl FnOnce(&environ) -> R) -> R {
+    GLOBAL_ENVIRON.with_borrow(|environment| read(environment.as_deref().expect("environment")))
+}
+/// Edit the global environment; `edit` must not reach it again.
+pub fn global_environ_mut<R>(edit: impl FnOnce(&mut environ) -> R) -> R {
+    GLOBAL_ENVIRON
+        .with_borrow_mut(|environment| edit(environment.as_deref_mut().expect("environment")))
+}
+/// When the server started.
+pub fn start_time() -> SystemTime {
+    START_TIME.get()
+}
+pub(crate) fn set_start_time(time: SystemTime) {
+    START_TIME.set(time);
+}
+/// The descriptor fdforkpty opens new terminals through, or -1.
+pub fn ptm_fd() -> ::core::ffi::c_int {
+    PTM_FD.get()
 }
 fn usage(status: i32) -> ! {
     let message = [
@@ -122,8 +159,8 @@ fn areshell(shell: &CStr) -> ::core::ffi::c_int {
     let progname = progname.strip_prefix(b"-").unwrap_or(progname);
     (name == progname) as ::core::ffi::c_int
 }
-unsafe fn expand_path(path: &CStr, home: Option<&CStr>) -> Option<CString> {
-    let mut value: Option<&environ_entry> = None;
+fn expand_path(path: &CStr, home: Option<&CStr>) -> Option<CString> {
+    let mut value: Option<environ_entry> = None;
     let path_bytes = path.to_bytes();
     if path_bytes.starts_with(b"~/") {
         let mut expanded = home?.to_bytes().to_vec();
@@ -135,12 +172,12 @@ unsafe fn expand_path(path: &CStr, home: Option<&CStr>) -> Option<CString> {
         let name_end = slash.unwrap_or(path_bytes.len());
         let name =
             CString::new(&path_bytes[1..name_end]).expect("variable name comes from a C string");
-        value = environ_find(global_environ.as_deref().expect("environment"), &name);
-        value?;
-        let mut expanded = if value.unwrap().value.is_none() {
+        value = global_environ(|environment| environ_find(environment, &name).cloned());
+        let value = value?;
+        let mut expanded = if value.value.is_none() {
             b"(null)".to_vec()
         } else {
-            (value.unwrap().value)
+            (value.value)
                 .as_deref()
                 .expect("string is present")
                 .to_bytes()
@@ -159,7 +196,7 @@ fn cstr_path(path: &CStr) -> &Path {
 fn path_cstring(path: PathBuf) -> CString {
     CString::new(path.into_os_string().into_vec()).expect("a Unix path contains no NUL")
 }
-unsafe fn expand_paths(s: &CStr, no_realpath: bool) -> Vec<CString> {
+fn expand_paths(s: &CStr, no_realpath: bool) -> Vec<CString> {
     let home = find_home_cstr();
     let mut paths = Vec::new();
     for next in s.to_bytes().split(|&b| b == b':') {
@@ -279,18 +316,18 @@ pub(crate) fn shell_argv0_cstring(shell: &CStr, is_login: bool) -> CString {
     argv0.extend_from_slice(name);
     CString::new(argv0).expect("shell path contains no NUL")
 }
-pub unsafe fn setblocking(fd: ::core::ffi::c_int, state: ::core::ffi::c_int) {
-    if fd >= 0 {
-        let _ = tiri_rt::unix::set_nonblocking(std::os::fd::BorrowedFd::borrow_raw(fd), state == 0);
-    }
+pub fn setblocking(fd: std::os::fd::BorrowedFd<'_>, state: ::core::ffi::c_int) {
+    let _ = tiri_rt::unix::set_nonblocking(fd, state == 0);
 }
-pub unsafe fn get_timer() -> uint64_t {
+pub fn get_timer() -> uint64_t {
     let mut ts: timespec = timespec {
         tv_sec: 0,
         tv_nsec: 0,
     };
-    if clock_gettime(CLOCK_MONOTONIC, &raw mut ts) != 0 as ::core::ffi::c_int {
-        clock_gettime(CLOCK_REALTIME, &raw mut ts);
+    unsafe {
+        if clock_gettime(CLOCK_MONOTONIC, &raw mut ts) != 0 as ::core::ffi::c_int {
+            clock_gettime(CLOCK_REALTIME, &raw mut ts);
+        }
     }
     (ts.tv_sec as ::core::ffi::c_ulonglong)
         .wrapping_mul(1000 as ::core::ffi::c_ulonglong)
@@ -344,22 +381,22 @@ pub unsafe fn find_cwd() -> Option<CString> {
 }
 /// Return the cached home directory as a borrowed C string. A missing result
 /// is retried on the next call, matching the old null-sentinel cache behavior.
-pub(crate) unsafe fn find_home_cstr() -> Option<&'static CStr> {
-    let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
+pub(crate) fn find_home_cstr() -> Option<&'static CStr> {
     static HOME: OnceLock<CString> = OnceLock::new();
     if let Some(home) = HOME.get() {
         return Some(home.as_c_str());
     }
-    let mut home = getenv(c"HOME".as_ptr());
-    if home.is_null() || *home as ::core::ffi::c_int == '\0' as i32 {
-        pw = getpwuid(getuid());
-        if !pw.is_null() {
+    let owned = unsafe {
+        let mut home = getenv(c"HOME".as_ptr());
+        if home.is_null() || *home as ::core::ffi::c_int == '\0' as i32 {
+            let pw: *mut passwd = getpwuid(getuid());
+            if pw.is_null() {
+                return None;
+            }
             home = (*pw).pw_dir;
-        } else {
-            return None;
         }
-    }
-    let owned = CStr::from_ptr(home).to_owned();
+        CStr::from_ptr(home).to_owned()
+    };
     let _ = HOME.set(owned);
     HOME.get().map(CString::as_c_str)
 }
@@ -398,21 +435,18 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
     if args.first().and_then(|arg| arg.as_bytes().first()) == Some(&b'-') {
         flags = CLIENT_LOGIN as uint64_t;
     }
-    global_environ = Some(environ_create());
-    for var in process_environment() {
-        environ_put(
-            global_environ.as_deref_mut().expect("environment"),
-            &var,
-            0 as ::core::ffi::c_int,
-        );
-    }
+    drop(replace_global_environ(Some(environ_create())));
+    global_environ_mut(|environment| {
+        for var in process_environment() {
+            environ_put(environment, &var, 0 as ::core::ffi::c_int);
+        }
+    });
     if let Some(cwd) = find_cwd() {
-        environ_set(
-            global_environ.as_deref_mut().expect("environment"),
-            c"PWD",
-            0 as ::core::ffi::c_int,
-            |out| out.write_all(cwd.as_bytes()),
-        );
+        global_environ_mut(|environment| {
+            environ_set(environment, c"PWD", 0 as ::core::ffi::c_int, |out| {
+                out.write_all(cwd.as_bytes())
+            })
+        });
     }
     let mut config_paths = expand_paths(TMUX_CONF, true);
     let mut getopt = Getopt::new(args, b"2c:CDdf:hlL:NqS:T:uUvV");
@@ -432,7 +466,7 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
                 tty_parse_features(c"256", c":,", &mut feat, None);
             }
             b'c' => {
-                shell_command = Some(optarg().to_owned());
+                SHELL_COMMAND.set(Some(optarg().to_owned()));
             }
             b'D' => {
                 flags |= CLIENT_NOFORK as uint64_t;
@@ -450,7 +484,7 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
                     config_paths.clear();
                 }
                 config_paths.push(optarg().to_owned());
-                cfg_quiet = 0 as ::core::ffi::c_int;
+                cfg_report_missing();
             }
             b'h' => {
                 usage(0);
@@ -489,14 +523,14 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
     }
     cfg_set_files(config_paths);
     let command_argv = getopt.remaining().to_vec();
-    if shell_command.is_some() && !command_argv.is_empty() {
+    if shell_command().is_some() && !command_argv.is_empty() {
         usage(1);
     }
     if flags & CLIENT_NOFORK as uint64_t != 0 && !command_argv.is_empty() {
         usage(1);
     }
-    ptm_fd = getptmfd();
-    if ptm_fd == -(1 as ::core::ffi::c_int) {
+    PTM_FD.set(getptmfd());
+    if ptm_fd() == -(1 as ::core::ffi::c_int) {
         let error = io::Error::last_os_error();
         die(1, format_args!("getptmfd: {}", ErrorText(&error)));
     }
@@ -586,7 +620,7 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
         });
         flags |= CLIENT_DEFAULTSOCKET as uint64_t;
     }
-    socket_path = Some(path.expect("socket path was selected"));
+    set_socket_path(path.expect("socket path was selected"));
     exit(client_main(&command_argv, flags, feat));
 }
 pub const TMUX_CONF: &std::ffi::CStr =

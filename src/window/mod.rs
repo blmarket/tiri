@@ -1,5 +1,4 @@
 use crate::format::bytes::cstr_suffix;
-use crate::format::bytes::nullable_cstr;
 use crate::options::OptionsScope;
 use crate::server_client::ClientRegistry;
 use crate::session::Session;
@@ -175,7 +174,7 @@ fn window_winlinks_remove(w: &mut window, wl: refbox::Weak<winlink>) {
     links.remove(position);
 }
 
-unsafe fn window_fire_renamed(w_owner: &WindowRef, old_name: &CStr) {
+fn window_fire_renamed(w_owner: &WindowRef, old_name: &CStr) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: std::rc::Weak::new(),
@@ -190,13 +189,13 @@ unsafe fn window_fire_renamed(w_owner: &WindowRef, old_name: &CStr) {
     event_payload_set_target(&mut ep, &fs);
     event_payload_set_window(&mut ep, c"window", WindowRef::clone(w_owner));
     event_payload_set_string(&mut ep, c"old_name", |out| {
-        write_cstr(out, nullable_cstr(old_name.as_ptr()))
+        write_cstr(out, Some(&*old_name))
     });
     let new_name = w_owner.name();
     event_payload_set_string(&mut ep, c"new_name", |out| write_cstr(out, &*new_name));
     events_fire(c"window-renamed", ep);
 }
-unsafe fn window_fire_pane_changed(
+fn window_fire_pane_changed(
     window: &WindowRef,
     pane: &Rc<RefCell<window_pane>>,
     previous: Option<&Rc<RefCell<window_pane>>>,
@@ -231,18 +230,18 @@ pub fn window_find_by_id_str(s: &CStr) -> Option<WindowRef> {
     }
     windows::resolve(id)
 }
-unsafe fn window_update_activity(w_owner: &WindowRef) {
+fn window_update_activity(w_owner: &WindowRef) {
     w_owner.borrow_mut().activity_time = SystemTime::now();
     alerts_queue(w_owner, WINDOW_ACTIVITY);
 }
 
 /// Replace the window's owned name, returning the previous value for callers
 /// that need to keep it alive across synchronous callbacks.
-unsafe fn window_replace_name(w_owner: &WindowRef, name: CString) -> CString {
+fn window_replace_name(w_owner: &WindowRef, name: CString) -> CString {
     ::core::mem::replace(&mut w_owner.borrow_mut().name, name)
 }
 /// Return one owned reference; callers must release it after linking the window.
-pub unsafe fn window_create(
+pub fn window_create(
     mut sx: u_int,
     mut sy: u_int,
     mut xpixel: u_int,
@@ -297,7 +296,7 @@ pub unsafe fn window_create(
     owner
 }
 
-unsafe fn window_destroy(w_owner: &WindowRef) {
+fn window_destroy(w_owner: &WindowRef) {
     log_debug(format_args!("window @{} destroyed", { w_owner.id() }));
     windows::remove(w_owner);
     let menu = w_owner.borrow_mut().menu.take();
@@ -307,13 +306,13 @@ unsafe fn window_destroy(w_owner: &WindowRef) {
     drop(options);
 }
 
-unsafe fn window_set_name(w_owner: &WindowRef, new_name: &CStr, mut untrusted: ::core::ffi::c_int) {
+fn window_set_name(w_owner: &WindowRef, new_name: &CStr, mut untrusted: ::core::ffi::c_int) {
     if let Some(name) = clean_name_cstring(new_name, untrusted) {
         let last = window_replace_name(w_owner, name);
         window_fire_renamed(w_owner, &last);
     }
 }
-unsafe fn window_resize(
+fn window_resize(
     w_owner: &WindowRef,
     mut sx: u_int,
     mut sy: u_int,
@@ -387,7 +386,7 @@ fn window_pane_is_visible(w: &window, pane: &Weak<RefCell<window_pane>>) -> bool
 /// Zoom `pane`: it becomes the active pane and takes the whole window, and
 /// the other panes are hidden in their places. Refused, returning false,
 /// when the window is already zoomed or has a single pane.
-unsafe fn window_zoom(window: &WindowRef, pane: &Rc<RefCell<window_pane>>) -> bool {
+fn window_zoom(window: &WindowRef, pane: &Rc<RefCell<window_pane>>) -> bool {
     {
         let w = window.borrow();
         if w.zoomed.strong_count() != 0 || w.panes.storage.len() == 1 {
@@ -410,7 +409,7 @@ unsafe fn window_zoom(window: &WindowRef, pane: &Rc<RefCell<window_pane>>) -> bo
 
 /// Show every pane in its place again. Returns false when the window was not
 /// zoomed.
-unsafe fn window_unzoom(window: &WindowRef, notify: bool) -> bool {
+fn window_unzoom(window: &WindowRef, notify: bool) -> bool {
     {
         let mut w = window.borrow_mut();
         if w.zoomed.strong_count() == 0 {
@@ -430,7 +429,7 @@ unsafe fn window_unzoom(window: &WindowRef, notify: bool) -> bool {
 /// Unzoom for an operation that rearranges or selects panes, remembering to
 /// zoom again afterwards when `flag` asks and the window was zoomed, or
 /// whether or not it was with `always`. Returns whether the window unzoomed.
-unsafe fn window_push_zoom(window: &WindowRef, always: bool, flag: bool) -> bool {
+fn window_push_zoom(window: &WindowRef, always: bool, flag: bool) -> bool {
     {
         let mut w = window.borrow_mut();
         w.was_zoomed = flag && (always || w.zoomed.strong_count() != 0);
@@ -440,7 +439,7 @@ unsafe fn window_push_zoom(window: &WindowRef, always: bool, flag: bool) -> bool
 
 /// After `window_push_zoom`, zoom the active pane when it said to. Returns
 /// whether the window zoomed.
-unsafe fn window_pop_zoom(window: &WindowRef) -> bool {
+fn window_pop_zoom(window: &WindowRef) -> bool {
     let was_zoomed = std::mem::take(&mut window.borrow_mut().was_zoomed);
     if !was_zoomed {
         return false;
@@ -451,7 +450,7 @@ unsafe fn window_pop_zoom(window: &WindowRef) -> bool {
         .is_some_and(|active| window_zoom(window, &active))
 }
 
-unsafe fn window_update_focus(w_owner: Option<&WindowRef>) {
+fn window_update_focus(w_owner: Option<&WindowRef>) {
     if let Some(window) = w_owner {
         if let Some(pane) = window.active_pane().upgrade() {
             pane.update_focus(window.pane_is_focused(&pane));
@@ -459,11 +458,7 @@ unsafe fn window_update_focus(w_owner: Option<&WindowRef>) {
     }
 }
 
-unsafe fn window_set_active_pane(
-    window: &WindowRef,
-    pane: &Rc<RefCell<window_pane>>,
-    notify: i32,
-) -> i32 {
+fn window_set_active_pane(window: &WindowRef, pane: &Rc<RefCell<window_pane>>, notify: i32) -> i32 {
     let observer = Rc::downgrade(pane);
     log_debug(format_args!("window_set_active_pane: pane %{}", pane.id()));
     if window.active_pane().ptr_eq(&observer) {
@@ -503,10 +498,7 @@ unsafe fn window_set_active_pane(
     }
     1
 }
-unsafe fn window_redraw_active_switch(
-    window: &WindowRef,
-    previous: Option<&Rc<RefCell<window_pane>>>,
-) {
+fn window_redraw_active_switch(window: &WindowRef, previous: Option<&Rc<RefCell<window_pane>>>) {
     let active = window.active_pane().upgrade();
     if previous.is_some_and(|pane| {
         active
@@ -522,7 +514,7 @@ unsafe fn window_redraw_active_switch(
         active.redraw_selection_change();
     }
 }
-unsafe fn window_get_active_at(
+fn window_get_active_at(
     window_owner: &WindowRef,
     mut x: u_int,
     mut y: u_int,
@@ -553,7 +545,7 @@ unsafe fn window_get_active_at(
     }
     Weak::new()
 }
-unsafe fn window_find_string(
+fn window_find_string(
     window_owner: &WindowRef,
     name: &CStr,
 ) -> Weak<std::cell::RefCell<window_pane>> {
@@ -612,7 +604,7 @@ unsafe fn window_find_string(
 /// selection callbacks. Any change to the list unzooms the window first.
 /// window-layout-changed fires when panes leave; a pane arriving is announced
 /// by its caller, once its process has started or its move has finished.
-unsafe fn window_rearrange_panes(
+fn window_rearrange_panes(
     window: &WindowRef,
     panes: &[Rc<RefCell<window_pane>>],
 ) -> Result<(), &'static CStr> {
@@ -710,7 +702,7 @@ unsafe fn window_rearrange_panes(
 }
 
 /// Take `pane` out of its window and destroy it.
-unsafe fn window_remove_pane(window: &WindowRef, pane: &Rc<RefCell<window_pane>>) {
+fn window_remove_pane(window: &WindowRef, pane: &Rc<RefCell<window_pane>>) {
     let panes = window.borrow().panes.snapshot();
     let rest = panes
         .into_iter()
@@ -721,16 +713,14 @@ unsafe fn window_remove_pane(window: &WindowRef, pane: &Rc<RefCell<window_pane>>
 }
 
 /// The layout's rectangles for the current panes, in pane order.
-unsafe fn window_arrangement(window: &WindowRef) -> Vec<layout_geometry> {
+fn window_arrangement(window: &WindowRef) -> Vec<layout_geometry> {
     let size = window.size();
     let w = window.borrow();
     w.layout.arrange(&w.panes.snapshot(), size)
 }
 
 /// The rectangles for the current panes, in pane order.
-unsafe fn window_pane_cells(
-    window: &WindowRef,
-) -> Vec<(Weak<RefCell<window_pane>>, layout_geometry)> {
+fn window_pane_cells(window: &WindowRef) -> Vec<(Weak<RefCell<window_pane>>, layout_geometry)> {
     let panes = window.pane_snapshot();
     panes.into_iter().zip(window_arrangement(window)).collect()
 }
@@ -741,7 +731,7 @@ unsafe fn window_pane_cells(
 /// showing the window follow the result. A zoomed pane takes the whole
 /// window; the hidden panes keep their places in the layout, and the size
 /// they had, until the window unzooms.
-unsafe fn window_arrange(window: &WindowRef) {
+fn window_arrange(window: &WindowRef) {
     let (sx, sy) = window.size();
     let zoomed = window.zoomed_pane();
     let panes = window.borrow().panes.snapshot();
@@ -770,7 +760,7 @@ unsafe fn window_arrange(window: &WindowRef) {
     tty_update_window_offset(window);
 }
 
-unsafe fn window_destroy_panes(window: &WindowRef) {
+fn window_destroy_panes(window: &WindowRef) {
     loop {
         let first = window.borrow().panes.first();
         let Some(first) = first else {
@@ -781,10 +771,7 @@ unsafe fn window_destroy_panes(window: &WindowRef) {
         pane.destroy();
     }
 }
-pub unsafe fn window_printable_flags(
-    mut wl: refbox::Weak<winlink>,
-    escape: bool,
-) -> std::ffi::CString {
+pub fn window_printable_flags(mut wl: refbox::Weak<winlink>, escape: bool) -> std::ffi::CString {
     let session_owner = wl.try_borrow().expect("live winlink").session.upgrade();
     let mut flags = Vec::new();
     if wl.try_borrow().expect("live winlink").flags & WINLINK_ACTIVITY != 0 {

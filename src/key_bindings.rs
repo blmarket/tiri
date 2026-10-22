@@ -190,7 +190,7 @@ pub fn key_bindings_reset(name: &CStr, key: key_code) {
     bd.flags = dd.flags;
 }
 
-pub unsafe fn key_bindings_remove_table(name: &CStr) {
+pub fn key_bindings_remove_table(name: &CStr) {
     let mut c: Option<ClientRef> = None;
     if let Some(owner) = key_bindings_get_table(name, 0) {
         let detached = key_tables::remove(&owner);
@@ -226,7 +226,7 @@ fn key_bindings_init_done() -> CmdOutcome {
     CmdOutcome::Normal
 }
 
-pub unsafe fn key_bindings_init() {
+pub fn key_bindings_init() {
     static defaults: [&CStr; 295] = [
         c"bind -N 'Send the prefix key' C-b { send-prefix }",
         c"bind -N 'Rotate through the panes' C-o { rotate-window }",
@@ -559,7 +559,7 @@ unsafe fn key_bindings_read_only(
     cmdq_error(item_handle, |out| out.write_all(b"client is read-only"));
     CmdOutcome::Error
 }
-pub unsafe fn key_bindings_dispatch(
+pub fn key_bindings_dispatch(
     bd: KeyBindingCommand,
     item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     c_owner: Option<&ClientRef>,
@@ -675,79 +675,75 @@ mod ownership_tests {
 
     #[test]
     fn defaults_restore_notes_flags_and_command_ownership() {
-        unsafe {
-            let name = c"binding-owner-defaults";
-            let original = cmd_list_new();
-            let original_lifetime = std::rc::Rc::downgrade(&original);
-            key_bindings_add(name, 65, Some(c"original"), 1, Some(original));
-            let table_owner = key_bindings_get_table(name, 0).unwrap();
-            let _ = key_bindings_init_done();
-            assert_eq!(original_lifetime.strong_count(), 2);
-            let replacement = cmd_list_new();
-            let replacement_lifetime = std::rc::Rc::downgrade(&replacement);
-            key_bindings_add(name, 65, Some(c"replacement"), 0, Some(replacement));
-            assert_eq!(original_lifetime.strong_count(), 1);
-            key_bindings_reset(name, 65);
-            assert!(replacement_lifetime.upgrade().is_none());
-            let table_borrow = table_owner.borrow();
-            let bd = key_bindings_get(&table_borrow, 65).unwrap();
-            assert_eq!(bd.note.as_deref(), Some(c"original"));
-            assert_eq!(bd.flags, KEY_BINDING_REPEAT);
-            assert!(std::rc::Weak::ptr_eq(
-                &std::rc::Rc::downgrade(bd.cmdlist()),
-                &original_lifetime
-            ));
-            assert_eq!(original_lifetime.strong_count(), 2);
-            drop(table_borrow);
-            key_bindings_add(name, 65, Some(c"note only"), 0, None);
-            assert!(std::rc::Weak::ptr_eq(
-                &std::rc::Rc::downgrade(
-                    key_bindings_get(&table_owner.borrow(), 65)
-                        .unwrap()
-                        .cmdlist()
-                ),
-                &original_lifetime
-            ));
-            assert_eq!(original_lifetime.strong_count(), 2);
-            key_bindings_add(name, 66, None, 0, Some(cmd_list_new()));
-            key_bindings_reset(name, 66);
-            assert!(key_bindings_get(&table_owner.borrow(), 66).is_none());
-            drop(table_owner);
-            key_bindings_remove_table(name);
-            assert!(original_lifetime.upgrade().is_none());
-        }
+        let name = c"binding-owner-defaults";
+        let original = cmd_list_new();
+        let original_lifetime = std::rc::Rc::downgrade(&original);
+        key_bindings_add(name, 65, Some(c"original"), 1, Some(original));
+        let table_owner = key_bindings_get_table(name, 0).unwrap();
+        let _ = key_bindings_init_done();
+        assert_eq!(original_lifetime.strong_count(), 2);
+        let replacement = cmd_list_new();
+        let replacement_lifetime = std::rc::Rc::downgrade(&replacement);
+        key_bindings_add(name, 65, Some(c"replacement"), 0, Some(replacement));
+        assert_eq!(original_lifetime.strong_count(), 1);
+        key_bindings_reset(name, 65);
+        assert!(replacement_lifetime.upgrade().is_none());
+        let table_borrow = table_owner.borrow();
+        let bd = key_bindings_get(&table_borrow, 65).unwrap();
+        assert_eq!(bd.note.as_deref(), Some(c"original"));
+        assert_eq!(bd.flags, KEY_BINDING_REPEAT);
+        assert!(std::rc::Weak::ptr_eq(
+            &std::rc::Rc::downgrade(bd.cmdlist()),
+            &original_lifetime
+        ));
+        assert_eq!(original_lifetime.strong_count(), 2);
+        drop(table_borrow);
+        key_bindings_add(name, 65, Some(c"note only"), 0, None);
+        assert!(std::rc::Weak::ptr_eq(
+            &std::rc::Rc::downgrade(
+                key_bindings_get(&table_owner.borrow(), 65)
+                    .unwrap()
+                    .cmdlist()
+            ),
+            &original_lifetime
+        ));
+        assert_eq!(original_lifetime.strong_count(), 2);
+        key_bindings_add(name, 66, None, 0, Some(cmd_list_new()));
+        key_bindings_reset(name, 66);
+        assert!(key_bindings_get(&table_owner.borrow(), 66).is_none());
+        drop(table_owner);
+        key_bindings_remove_table(name);
+        assert!(original_lifetime.upgrade().is_none());
     }
 
     #[test]
     fn dispatch_snapshot_survives_binding_replacement_and_table_removal() {
-        unsafe {
-            let name = c"binding-owner-dispatch";
-            let original = cmd_list_new();
-            let original_lifetime = std::rc::Rc::downgrade(&original);
-            key_bindings_add(name, 65, None, 1, Some(original));
-            let table_owner = key_bindings_get_table(name, 0).unwrap();
-            let table_lifetime = Rc::downgrade(&table_owner);
-            let retained_table = table_lifetime.upgrade().unwrap();
-            let command = key_bindings_get(&table_owner.borrow(), 65)
-                .unwrap()
-                .command();
-            key_bindings_add(name, 65, None, 0, Some(cmd_list_new()));
-            assert!(std::rc::Weak::ptr_eq(
-                &std::rc::Rc::downgrade(command.cmdlist()),
-                &original_lifetime
-            ));
-            assert_eq!(command.key, 65);
-            assert_eq!(command.flags, KEY_BINDING_REPEAT);
-            assert_eq!(original_lifetime.strong_count(), 1);
-            drop(table_owner);
-            key_bindings_remove_table(name);
-            assert!(key_bindings_get_table(name, 0).is_none());
-            assert!(table_lifetime.upgrade().is_some());
-            drop(retained_table);
-            assert!(table_lifetime.upgrade().is_none());
-            assert!(original_lifetime.upgrade().is_some());
-            drop(command);
-            assert!(original_lifetime.upgrade().is_none());
-        }
+        let name = c"binding-owner-dispatch";
+        let original = cmd_list_new();
+        let original_lifetime = std::rc::Rc::downgrade(&original);
+        key_bindings_add(name, 65, None, 1, Some(original));
+        let table_owner = key_bindings_get_table(name, 0).unwrap();
+        let table_lifetime = Rc::downgrade(&table_owner);
+        let retained_table = table_lifetime.upgrade().unwrap();
+        let command = key_bindings_get(&table_owner.borrow(), 65)
+            .unwrap()
+            .command();
+        key_bindings_add(name, 65, None, 0, Some(cmd_list_new()));
+        assert!(std::rc::Weak::ptr_eq(
+            &std::rc::Rc::downgrade(command.cmdlist()),
+            &original_lifetime
+        ));
+        assert_eq!(command.key, 65);
+        assert_eq!(command.flags, KEY_BINDING_REPEAT);
+        assert_eq!(original_lifetime.strong_count(), 1);
+        drop(table_owner);
+        key_bindings_remove_table(name);
+        assert!(key_bindings_get_table(name, 0).is_none());
+        assert!(table_lifetime.upgrade().is_some());
+        drop(retained_table);
+        assert!(table_lifetime.upgrade().is_none());
+        assert!(original_lifetime.upgrade().is_some());
+        drop(command);
+        assert!(original_lifetime.upgrade().is_none());
     }
 }

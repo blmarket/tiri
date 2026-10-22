@@ -7,7 +7,7 @@ use crate::shared::window::WindowRef;
 use crate::window::Window as _;
 use crate::window_pane::WindowPane as _;
 use crate::winlink::winlink_window;
-use std::os::fd::{AsRawFd, OwnedFd};
+use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use std::time::{Duration, SystemTime};
 use std::{cell::RefCell, rc::Rc};
 mod api;
@@ -18,7 +18,7 @@ pub use api::Client;
 pub use client_overlay::Overlay;
 pub use model::client;
 
-use crate::cfg::{cfg_client, cfg_finished, start_cfg};
+use crate::cfg::{cfg_client, cfg_finished, cfg_forget_client, start_cfg};
 use crate::cmd::entries::wait_for::cmd_wait_for_client_lost;
 use crate::cmd::parse::cmd_parse_from_argv;
 use crate::cmd::queue::{
@@ -61,7 +61,7 @@ use crate::reactor::{
 use crate::resize::{recalculate_size, recalculate_sizes};
 use crate::screen::screen_mode_display;
 use crate::screen_redraw::{redraw_pane, redraw_pane_scrollbar, redraw_screen};
-use crate::server::{current_time, server_add_accept, server_proc, server_update_socket};
+use crate::server::{current_time, server_add_accept, server_update_socket};
 use crate::server_fn::{
     server_check_unattached, server_redraw_window_borders, server_status_window,
 };
@@ -612,7 +612,7 @@ use crate::shared::pane::window_pane;
 use crate::shared::pane::{
     window_pane_offset, PANE_SCROLLBARS_AUTOHIDE, PANE_SCROLLBARS_LEFT, PANE_SCROLLBARS_MODAL,
 };
-use crate::shared::posix_io::{_PATH_BSHELL, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, X_OK};
+use crate::shared::posix_io::{_PATH_BSHELL, X_OK};
 use crate::shared::screen::{
     ScreenMode, ALL_MOUSE_MODES, CURSOR_MODES, MODE_BRACKETPASTE, MODE_CURSOR, MODE_MOUSE_ALL,
     MODE_MOUSE_BUTTON, MODE_SYNC,
@@ -639,7 +639,7 @@ fn server_client_how_many() -> u_int {
     }
     n
 }
-unsafe fn server_client_update_overlay_focus(owner: &ClientRef) {
+fn server_client_update_overlay_focus(owner: &ClientRef) {
     use crate::session::Session;
     use crate::window::Window;
     let Some(session) = owner.attached_session().upgrade() else {
@@ -653,7 +653,7 @@ unsafe fn server_client_update_overlay_focus(owner: &ClientRef) {
     }
 }
 
-unsafe fn server_client_set_overlay(c_owner: &ClientRef, overlay: Overlay) {
+fn server_client_set_overlay(c_owner: &ClientRef, overlay: Overlay) {
     while c_owner.borrow().overlay.is_some() {
         server_client_clear_overlay(c_owner);
     }
@@ -674,7 +674,7 @@ unsafe fn server_client_set_overlay(c_owner: &ClientRef, overlay: Overlay) {
     server_client_update_overlay_focus(c_owner);
     c_owner.request_redraw(CLIENT_ALLREDRAWFLAGS as u64);
 }
-unsafe fn server_client_clear_overlay(c_owner: &ClientRef) {
+fn server_client_clear_overlay(c_owner: &ClientRef) {
     let (overlay, generation) = {
         let mut c = c_owner.borrow_mut();
         let Some(overlay) = c.overlay.take() else {
@@ -874,13 +874,12 @@ fn server_client_timer(
     })
     .expect("arm timer")
 }
-unsafe fn server_client_create(fd: OwnedFd) -> ClientRef {
+fn server_client_create(fd: OwnedFd) -> ClientRef {
     let mut i: u_int = 0;
-    setblocking(fd.as_raw_fd(), 0);
+    setblocking(fd.as_fd(), 0);
     let mut owner = client::new();
     let peer_observer = std::rc::Rc::downgrade(&owner);
     let peer = proc_add_peer(
-        server_proc,
         fd,
         Box::new(move |message| unsafe {
             if let Some(owner) = peer_observer.upgrade() {
@@ -918,7 +917,7 @@ unsafe fn server_client_create(fd: OwnedFd) -> ClientRef {
     ));
     owner
 }
-unsafe fn server_client_open(owner: &ClientRef) -> Result<(), CString> {
+fn server_client_open(owner: &ClientRef) -> Result<(), CString> {
     let (flags, ttyname) = {
         let c = owner.borrow();
         (c.flags, c.ttyname.clone())
@@ -928,13 +927,17 @@ unsafe fn server_client_open(owner: &ClientRef) -> Result<(), CString> {
     }
     let client_name = ttyname.as_deref();
     if client_name == Some(c"/dev/tty")
-        || [STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO]
-            .into_iter()
-            .any(|fd| {
-                tiri_rt::unix::terminal_name(std::os::fd::BorrowedFd::borrow_raw(fd))
-                    .ok()
-                    .is_some_and(|name| Some(name.as_c_str()) == client_name)
-            })
+        || [
+            std::io::stdin().as_fd(),
+            std::io::stdout().as_fd(),
+            std::io::stderr().as_fd(),
+        ]
+        .into_iter()
+        .any(|fd| {
+            tiri_rt::unix::terminal_name(fd)
+                .ok()
+                .is_some_and(|name| Some(name.as_c_str()) == client_name)
+        })
     {
         let mut message = b"can't use ".to_vec();
         message.extend_from_slice(
@@ -951,7 +954,7 @@ unsafe fn server_client_open(owner: &ClientRef) -> Result<(), CString> {
     server_client_update_theme_colours(Some(owner));
     Ok(())
 }
-unsafe fn server_client_attached_lost(c_owner: &ClientRef) {
+fn server_client_attached_lost(c_owner: &ClientRef) {
     let mut s: Option<SessionRef> = None;
     log_debug(format_args!(
         "lost attached client {}",
@@ -984,7 +987,7 @@ unsafe fn server_client_attached_lost(c_owner: &ClientRef) {
         drop(window_owner);
     }
 }
-unsafe fn server_client_fire_session_changed(c_owner: &ClientRef, old_owner: Option<&SessionRef>) {
+fn server_client_fire_session_changed(c_owner: &ClientRef, old_owner: Option<&SessionRef>) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -1041,7 +1044,7 @@ unsafe fn server_client_fire_session_changed(c_owner: &ClientRef, old_owner: Opt
     }
     events_fire(c"client-session-changed", ep);
 }
-unsafe fn server_client_fire_resized(c_owner: &ClientRef, mut old_sx: u_int, mut old_sy: u_int) {
+fn server_client_fire_resized(c_owner: &ClientRef, mut old_sx: u_int, mut old_sy: u_int) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -1095,7 +1098,7 @@ unsafe fn server_client_fire_resized(c_owner: &ClientRef, mut old_sx: u_int, mut
     event_payload_set_uint(&mut ep, c"old_height", old_sy);
     events_fire(c"client-resized", ep);
 }
-unsafe fn server_client_set_session(c_owner: &ClientRef, s_owner: Option<&SessionRef>) {
+fn server_client_set_session(c_owner: &ClientRef, s_owner: Option<&SessionRef>) {
     use crate::session::Session;
     use crate::window::Window;
 
@@ -1153,10 +1156,8 @@ unsafe fn server_client_set_session(c_owner: &ClientRef, s_owner: Option<&Sessio
     server_update_socket();
 }
 
-unsafe fn server_client_lost(client_owner: &ClientRef) {
-    if cfg_client.ptr_eq(&Rc::downgrade(client_owner)) {
-        cfg_client = std::rc::Weak::new();
-    }
+fn server_client_lost(client_owner: &ClientRef) {
+    cfg_forget_client(client_owner);
     client_owner.borrow_mut().flags |= CLIENT_DEAD as uint64_t;
     server_client_clear_overlay(client_owner);
     status_prompt_clear(client_owner);
@@ -1253,7 +1254,7 @@ fn server_client_retire(registry_owner: ClientRef) {
         drop(registry_owner);
     });
 }
-unsafe fn server_client_suspend(c_owner: &ClientRef) {
+fn server_client_suspend(c_owner: &ClientRef) {
     let (s, flags) = {
         let c = c_owner.borrow();
         (c.session_handle(), c.flags)
@@ -1305,7 +1306,7 @@ fn server_client_exec(c_owner: &ClientRef, cmd: &CStr) {
     c_owner.send_message(MSG_EXEC, None, &msg);
 }
 
-unsafe fn server_client_update_scrollbar_hover(
+fn server_client_update_scrollbar_hover(
     client_owner: &ClientRef,
     mut type_0: ::core::ffi::c_int,
     mut px: ::core::ffi::c_int,
@@ -1337,7 +1338,7 @@ unsafe fn server_client_update_scrollbar_hover(
     drop(window_owner);
 }
 
-unsafe fn server_client_check_mouse_in_pane(
+fn server_client_check_mouse_in_pane(
     pane: &Rc<RefCell<window_pane>>,
     x: i32,
     y: i32,
@@ -1353,7 +1354,7 @@ fn server_client_pane_window_id(pane: &Rc<RefCell<window_pane>>) -> u32 {
     id
 }
 
-unsafe fn server_client_check_mouse(client_owner: &ClientRef, event: &mut key_event) -> key_code {
+fn server_client_check_mouse(client_owner: &ClientRef, event: &mut key_event) -> key_code {
     let mut selected_pane = None;
     let mut last_pane = None;
     let Some(session_owner) = client_owner.borrow().session.upgrade() else {
@@ -1888,7 +1889,7 @@ unsafe fn server_client_check_mouse(client_owner: &ClientRef, event: &mut key_ev
     drop(window_owner);
     result
 }
-unsafe fn server_client_update_theme_colours(c_owner: Option<&ClientRef>) {
+fn server_client_update_theme_colours(c_owner: Option<&ClientRef>) {
     let mut theme: client_theme = THEME_UNKNOWN;
     let mut i: u_int = 0;
     let mut colour: ::core::ffi::c_int = 0;
@@ -2001,7 +2002,7 @@ fn server_client_is_assume_paste(c: &mut client) -> ::core::ffi::c_int {
     }
     0 as ::core::ffi::c_int
 }
-unsafe fn server_client_update_latest(c_owner: &ClientRef) {
+fn server_client_update_latest(c_owner: &ClientRef) {
     use crate::session::Session;
     use crate::window::Window;
 
@@ -2048,10 +2049,7 @@ fn server_client_repeat_time(c: &client, bd: &KeyBindingCommand) -> u_int {
     }
     repeat
 }
-unsafe fn server_client_handle_dead_key(
-    pane: Option<&Rc<RefCell<window_pane>>>,
-    key: key_code,
-) -> i32 {
+fn server_client_handle_dead_key(pane: Option<&Rc<RefCell<window_pane>>>, key: key_code) -> i32 {
     pane.is_some_and(|pane| pane.close_after_key(key)) as i32
 }
 unsafe fn server_client_key_callback(
@@ -2455,10 +2453,7 @@ unsafe fn server_client_key_callback(
                             1578459965781631232 => {}
                             15469183920764600035 => {}
                             _ => {
-                                server_client_set_key_table(
-                                    &c_owner,
-                                    nullable_cstr(::core::ptr::null::<::core::ffi::c_char>()),
-                                );
+                                server_client_set_key_table(&c_owner, None);
                                 c_owner.borrow_mut().flags |= CLIENT_REDRAWSTATUS as u64;
                                 current_block = 1578459965781631232;
                             }
@@ -2507,10 +2502,7 @@ unsafe fn server_client_key_callback(
 
 struct QueuedKeyEvent(Box<key_event>, Option<ClientRef>);
 
-unsafe fn server_client_handle_menu_key(
-    owner: &ClientRef,
-    event: &key_event,
-) -> ::core::ffi::c_int {
+fn server_client_handle_menu_key(owner: &ClientRef, event: &key_event) -> ::core::ffi::c_int {
     let (window, menu) = {
         let session = owner.borrow().session_handle().expect("live session");
         let retained = winlink_window(&session.current_winlink()).expect("current window");
@@ -2554,7 +2546,7 @@ unsafe fn server_client_handle_menu_key(
     }
     1 as ::core::ffi::c_int
 }
-unsafe fn server_client_handle_key0(
+fn server_client_handle_key0(
     owner: &ClientRef,
     mut owned: Box<key_event>,
     after_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
@@ -2670,10 +2662,10 @@ unsafe fn server_client_handle_key0(
     cmdq_append(Some(owner), item_allocation);
     1 as ::core::ffi::c_int
 }
-unsafe fn server_client_handle_key(owner: &ClientRef, event: Box<key_event>) -> ::core::ffi::c_int {
+fn server_client_handle_key(owner: &ClientRef, event: Box<key_event>) -> ::core::ffi::c_int {
     server_client_handle_key0(owner, event, None, None)
 }
-unsafe fn server_client_handle_key_after(
+fn server_client_handle_key_after(
     owner: &ClientRef,
     event: Box<key_event>,
     after_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
@@ -2681,7 +2673,7 @@ unsafe fn server_client_handle_key_after(
 ) -> ::core::ffi::c_int {
     server_client_handle_key0(owner, event, after_handle, next)
 }
-unsafe fn server_client_loop() {
+fn server_client_loop() {
     let mut window_cursor = windows::first();
     while let Some(window_owner) = window_cursor.take() {
         server_client_check_window_resize(&window_owner);
@@ -2737,7 +2729,7 @@ unsafe fn server_client_loop() {
         drop(window_owner);
     }
 }
-unsafe fn server_client_check_window_resize(owner: &WindowRef) {
+fn server_client_check_window_resize(owner: &WindowRef) {
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     if owner.pending_resize().is_none() {
         return;
@@ -2772,7 +2764,7 @@ struct PromptCursor {
     cy: u_int,
 }
 
-unsafe fn server_client_prompt_cursor(
+fn server_client_prompt_cursor(
     owner: &ClientRef,
     pane: &Rc<RefCell<window_pane>>,
     mut cursor: PromptCursor,
@@ -2806,7 +2798,7 @@ unsafe fn server_client_prompt_cursor(
     Some(cursor)
 }
 
-unsafe fn server_client_reset_state(client_owner: &ClientRef) {
+fn server_client_reset_state(client_owner: &ClientRef) {
     let Some(session_owner) = client_owner.borrow().session.upgrade() else {
         return;
     };
@@ -3052,7 +3044,7 @@ fn server_client_repeat_timer(owner: &ClientRef) {
         owner.update_flags(CLIENT_REDRAWSTATUS as u64, CLIENT_REPEAT as uint64_t);
     }
 }
-unsafe fn server_client_click_timer(owner: &ClientRef) {
+fn server_client_click_timer(owner: &ClientRef) {
     log_debug(format_args!("click timer expired"));
     let (flags, click_event) = {
         let c = owner.borrow();
@@ -3075,7 +3067,7 @@ fn server_client_start_exit_timer(owner: &ClientRef) {
         owner.borrow_mut().exit_timer = Some(timer);
     }
 }
-unsafe fn server_client_exit_timer(owner: &ClientRef) {
+fn server_client_exit_timer(owner: &ClientRef) {
     let timer = owner.borrow_mut().exit_timer.take();
     drop(timer);
     let flags = owner.flags();
@@ -3098,7 +3090,7 @@ unsafe fn server_client_exit_timer(owner: &ClientRef) {
         server_client_check_exit(owner, 1 as ::core::ffi::c_int);
     }
 }
-unsafe fn server_client_check_exit(client_owner: &ClientRef, force: ::core::ffi::c_int) {
+fn server_client_check_exit(client_owner: &ClientRef, force: ::core::ffi::c_int) {
     let flags = client_owner.borrow().flags;
     if flags & (CLIENT_DEAD | CLIENT_EXITED) as uint64_t != 0 {
         return;
@@ -3162,7 +3154,7 @@ unsafe fn server_client_check_exit(client_owner: &ClientRef, force: ::core::ffi:
 fn server_client_redraw_timer() {
     log_debug(format_args!("redraw timer fired"));
 }
-unsafe fn server_client_check_modes(client_owner: &ClientRef) {
+fn server_client_check_modes(client_owner: &ClientRef) {
     let Some(session_owner) = client_owner.borrow().session.upgrade() else {
         return;
     };
@@ -3214,7 +3206,7 @@ fn server_client_any_pane_redraw(c: &client, window: &WindowRef) -> bool {
         .filter_map(std::rc::Weak::upgrade)
         .any(|pane| pane.needs_redraw(false) || pane.needs_redraw(true))
 }
-unsafe fn server_client_check_redraw(client_owner: &ClientRef) {
+fn server_client_check_redraw(client_owner: &ClientRef) {
     let Some(session_owner) = client_owner.borrow().session.upgrade() else {
         return;
     };
@@ -3233,7 +3225,11 @@ unsafe fn server_client_check_redraw(client_owner: &ClientRef) {
         let mut needed: ::core::ffi::c_int = 0;
         let mut mode: ::core::ffi::c_int = client_owner.borrow().tty.mode();
         let timeout = Duration::from_micros(1000);
-        static mut ev: Option<Timer> = None;
+        thread_local! {
+            static REDRAW_TIMER: std::cell::RefCell<Option<Timer>> = const {
+                std::cell::RefCell::new(None)
+            };
+        }
         let mut n: size_t = 0;
         if client_owner.borrow().flags & (CLIENT_CONTROL | CLIENT_SUSPENDED) as uint64_t != 0 {
             return;
@@ -3305,15 +3301,15 @@ unsafe fn server_client_check_redraw(client_owner: &ClientRef) {
                     log_cstr(client_owner.borrow().name.as_deref().unwrap_or(c"(null)"))
                 ));
             }
-            if ev.is_none() {
+            if REDRAW_TIMER.with_borrow(Option::is_none) {
                 log_debug(format_args!("redraw timer started"));
-                ev = Some(
-                    Timer::new(timeout, || unsafe {
-                        drop(ev.take());
+                REDRAW_TIMER.set(Some(
+                    Timer::new(timeout, || {
+                        drop(REDRAW_TIMER.take());
                         server_client_redraw_timer();
                     })
                     .expect("arm timer"),
-                );
+                ));
             }
             for pane_owner in window_owner
                 .pane_snapshot()
@@ -3399,7 +3395,7 @@ unsafe fn server_client_check_redraw(client_owner: &ClientRef) {
     })();
     drop(window_owner);
 }
-unsafe fn server_client_set_title(client_owner: &ClientRef) {
+fn server_client_set_title(client_owner: &ClientRef) {
     let mut template_session_value: Option<std::ffi::CString> = None;
 
     let Some(session_owner) = client_owner.borrow().session.upgrade() else {
@@ -3449,7 +3445,7 @@ fn server_client_active_pane(c: &client) -> Option<std::rc::Rc<std::cell::RefCel
     link.window_owner.as_ref()?.active_pane().upgrade()
 }
 
-unsafe fn server_client_set_path(owner: &ClientRef) {
+fn server_client_set_path(owner: &ClientRef) {
     let Some(active_owner) = server_client_active_pane(&owner.borrow()) else {
         return;
     };
@@ -3462,7 +3458,7 @@ unsafe fn server_client_set_path(owner: &ClientRef) {
         };
     }
 }
-unsafe fn server_client_set_progress_bar(owner: &ClientRef) {
+fn server_client_set_progress_bar(owner: &ClientRef) {
     let Some(active_owner) = server_client_active_pane(&owner.borrow()) else {
         return;
     };
@@ -3652,7 +3648,7 @@ unsafe fn server_client_read_only(
     cmdq_error(item_handle, |out| out.write_all(b"client is read-only"));
     CmdOutcome::Error
 }
-unsafe fn server_client_default_command(
+fn server_client_default_command(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
@@ -3672,7 +3668,7 @@ unsafe fn server_client_default_command(
     cmdq_insert_after(item_handle, new_item_allocation);
     CmdOutcome::Normal
 }
-unsafe fn server_client_command_done(
+fn server_client_command_done(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
     let item = item_handle.borrow();
@@ -3691,7 +3687,7 @@ unsafe fn server_client_command_done(
     }
     CmdOutcome::Normal
 }
-unsafe fn server_client_dispatch_command(owner: &ClientRef, imsg: &mut imsg) -> ::core::ffi::c_int {
+fn server_client_dispatch_command(owner: &ClientRef, imsg: &mut imsg) -> ::core::ffi::c_int {
     let mut current_block: u64;
     let mut data: msg_command = msg_command { argc: 0 };
     let mut len: size_t = 0;
@@ -3725,9 +3721,7 @@ unsafe fn server_client_dispatch_command(owner: &ClientRef, imsg: &mut imsg) -> 
         if argc == 0 as ::core::ffi::c_int {
             new_item_allocation = Some(cmdq_get_callback_owned(
                 c"server_client_default_command",
-                Some(Box::new(|item| unsafe {
-                    server_client_default_command(item)
-                })),
+                Some(Box::new(|item| server_client_default_command(item))),
             ));
             current_block = 13472856163611868459;
         } else {
@@ -3770,7 +3764,7 @@ unsafe fn server_client_dispatch_command(owner: &ClientRef, imsg: &mut imsg) -> 
                     Some(owner),
                     cmdq_get_callback_owned(
                         c"server_client_command_done",
-                        Some(Box::new(|item| unsafe { server_client_command_done(item) })),
+                        Some(Box::new(|item| server_client_command_done(item))),
                     ),
                 );
                 return 0 as ::core::ffi::c_int;
@@ -4015,7 +4009,7 @@ unsafe fn server_client_dispatch_identify(
             & !(CLIENT_BRACKETPASTING | CLIENT_ASSUMEPASTING)) as uint64_t;
     }
     if !owner.borrow().flags & CLIENT_EXIT as uint64_t != 0
-        && cfg_finished == 0
+        && !cfg_finished()
         && ClientRegistry::first().is_some_and(|first| Rc::ptr_eq(&first, owner))
     {
         start_cfg();
@@ -4034,13 +4028,13 @@ fn server_client_dispatch_shell(c: &client) -> ::core::ffi::c_int {
     0 as ::core::ffi::c_int
 }
 /// Copy the selected directory while any observed startup client is retained.
-unsafe fn server_client_get_cwd(c: Option<&ClientRef>, s: Option<&SessionRef>) -> Option<CString> {
+fn server_client_get_cwd(c: Option<&ClientRef>, s: Option<&SessionRef>) -> Option<CString> {
     use crate::session::Session;
     if let Some(client) = c {
         return client.cwd(s);
     }
-    if cfg_finished == 0 {
-        if let Some(owner) = cfg_client.upgrade() {
+    if !cfg_finished() {
+        if let Some(owner) = cfg_client() {
             return owner.borrow().cwd.clone();
         }
     }
@@ -4075,7 +4069,7 @@ fn server_client_control_flags(c_owner: &ClientRef, next: &CStr) -> uint64_t {
     }
     0 as uint64_t
 }
-unsafe fn server_client_set_flags(c_owner: &ClientRef, flags: &CStr) {
+fn server_client_set_flags(c_owner: &ClientRef, flags: &CStr) {
     let mut flag: uint64_t = 0;
     for token in flags.to_bytes().split(|&b| b == b',') {
         let (not, name) = match token.strip_prefix(b"!") {
@@ -4256,7 +4250,7 @@ fn server_client_print(
                 if flags & CLIENT_CONTROL as uint64_t != 0 {
                     // SAFETY: no client borrow is held, so the control state is
                     // not aliased while the line is queued.
-                    unsafe { control_write(client, |out| write_cstr(out, &*sanitized)) };
+                    control_write(client, |out| write_cstr(out, &*sanitized));
                 } else {
                     file_print(client_owner, |out| {
                         write_cstr(out, &*sanitized)?;
@@ -4266,7 +4260,7 @@ fn server_client_print(
             } else if flags & CLIENT_CONTROL as uint64_t != 0 {
                 // SAFETY: no client borrow is held, so the control state is not
                 // aliased while the line is queued.
-                unsafe { control_write(client, |out| write_cstr(out, msg)) };
+                control_write(client, |out| write_cstr(out, msg));
             } else {
                 file_print(client_owner, |out| {
                     write_cstr(out, msg)?;
@@ -4276,7 +4270,7 @@ fn server_client_print(
         }
     }
 }
-unsafe fn server_client_report_theme(c_owner: &ClientRef, mut theme: client_theme) {
+fn server_client_report_theme(c_owner: &ClientRef, mut theme: client_theme) {
     let mut old: client_theme = c_owner.borrow().theme;
     if theme as ::core::ffi::c_uint == THEME_LIGHT as ::core::ffi::c_int as ::core::ffi::c_uint {
         c_owner.borrow_mut().theme = THEME_LIGHT;
@@ -4363,7 +4357,7 @@ mod lost_queue_tests {
     }
 
     /// Queue a suffix item that records whether it ran or was released.
-    unsafe fn append_suffix(owner: &ClientRef, ran: &Rc<Cell<bool>>, released: &Rc<Cell<bool>>) {
+    fn append_suffix(owner: &ClientRef, ran: &Rc<Cell<bool>>, released: &Rc<Cell<bool>>) {
         let ran = ran.clone();
         let capture = SetOnDrop(released.clone());
         cmdq_append(
@@ -4381,47 +4375,44 @@ mod lost_queue_tests {
 
     #[test]
     fn dropping_a_lost_client_drops_its_suspended_future() {
-        unsafe {
-            let owner = queue_test_clients::with_queue();
-            let (tx, rx) = tiri_rt::oneshot::channel::<()>();
-            let (body_ran, future_released) =
-                (Rc::new(Cell::new(false)), Rc::new(Cell::new(false)));
-            let (body, guard) = (body_ran.clone(), SetOnDrop(future_released.clone()));
-            let head = cmdq_append(
-                Some(&owner),
-                cmdq_get_callback_owned(
-                    c"suspended head",
-                    Some(Box::new(move |_| {
-                        CmdOutcome::Suspend(Box::pin(async move {
-                            let _guard = guard;
-                            let _ = rx.await;
-                            body.set(true);
-                        }))
-                    })),
-                ),
-            );
-            let (ran, released) = (Rc::new(Cell::new(false)), Rc::new(Cell::new(false)));
-            append_suffix(&owner, &ran, &released);
-            assert_eq!(cmdq_next(Some(&owner)), 0);
-            owner.borrow_mut().flags |= CLIENT_DEAD as uint64_t;
-            assert_eq!(cmdq_next(Some(&owner)), 0);
+        let owner = queue_test_clients::with_queue();
+        let (tx, rx) = tiri_rt::oneshot::channel::<()>();
+        let (body_ran, future_released) = (Rc::new(Cell::new(false)), Rc::new(Cell::new(false)));
+        let (body, guard) = (body_ran.clone(), SetOnDrop(future_released.clone()));
+        let head = cmdq_append(
+            Some(&owner),
+            cmdq_get_callback_owned(
+                c"suspended head",
+                Some(Box::new(move |_| {
+                    CmdOutcome::Suspend(Box::pin(async move {
+                        let _guard = guard;
+                        let _ = rx.await;
+                        body.set(true);
+                    }))
+                })),
+            ),
+        );
+        let (ran, released) = (Rc::new(Cell::new(false)), Rc::new(Cell::new(false)));
+        append_suffix(&owner, &ran, &released);
+        assert_eq!(cmdq_next(Some(&owner)), 0);
+        owner.borrow_mut().flags |= CLIENT_DEAD as uint64_t;
+        assert_eq!(cmdq_next(Some(&owner)), 0);
 
-            let client = Rc::downgrade(&owner);
-            drop(owner);
-            assert!(client.upgrade().is_none());
-            assert!(head.upgrade().is_none());
-            assert!(future_released.get());
-            assert!(tx.is_closed());
-            assert!(tx.send(()).is_err());
-            assert!(!body_ran.get());
-            assert!(released.get());
-            assert!(!ran.get());
-        }
+        let client = Rc::downgrade(&owner);
+        drop(owner);
+        assert!(client.upgrade().is_none());
+        assert!(head.upgrade().is_none());
+        assert!(future_released.get());
+        assert!(tx.is_closed());
+        assert!(tx.send(()).is_err());
+        assert!(!body_ran.get());
+        assert!(released.get());
+        assert!(!ran.get());
     }
 
     /// Queue a head that suspends on `future` built from a strong client
     /// reference, then release the test's own reference.
-    unsafe fn suspend_holding_client<F: std::future::Future<Output = ()> + 'static>(
+    fn suspend_holding_client<F: std::future::Future<Output = ()> + 'static>(
         future: impl FnOnce(ClientRef) -> F + 'static,
     ) -> (
         std::rc::Weak<std::cell::RefCell<client>>,
@@ -4447,49 +4438,44 @@ mod lost_queue_tests {
 
     #[test]
     fn a_completed_future_may_release_its_own_client() {
-        unsafe {
-            let (tx, mut rx) = tiri_rt::oneshot::channel::<()>();
-            let ran = Rc::new(Cell::new(false));
-            let body = ran.clone();
-            let (client, head) = suspend_holding_client(move |held| {
-                std::future::poll_fn(move |cx| {
-                    let _ = &held;
-                    std::future::Future::poll(std::pin::Pin::new(&mut rx), cx)
-                        .map(|_| body.set(true))
-                })
-            });
-            tx.send(()).unwrap();
-            assert!(ran.get());
-            assert!(client.upgrade().is_none());
-            assert!(head.upgrade().is_none());
-        }
+        let (tx, mut rx) = tiri_rt::oneshot::channel::<()>();
+        let ran = Rc::new(Cell::new(false));
+        let body = ran.clone();
+        let (client, head) = suspend_holding_client(move |held| {
+            std::future::poll_fn(move |cx| {
+                let _ = &held;
+                std::future::Future::poll(std::pin::Pin::new(&mut rx), cx).map(|_| body.set(true))
+            })
+        });
+        tx.send(()).unwrap();
+        assert!(ran.get());
+        assert!(client.upgrade().is_none());
+        assert!(head.upgrade().is_none());
     }
 
     #[test]
     fn a_body_may_release_its_own_client_while_polled() {
-        unsafe {
-            let (tx, rx) = tiri_rt::oneshot::channel::<()>();
-            let ran = Rc::new(Cell::new(false));
-            let body = ran.clone();
-            let (client, head) = suspend_holding_client(move |held| async move {
-                let _ = rx.await;
-                let client = Rc::downgrade(&held);
-                drop(held);
-                assert!(client.upgrade().is_none(), "the queue is freed mid-poll");
-                body.set(true);
-            });
-            tx.send(()).unwrap();
-            assert!(ran.get());
-            assert!(client.upgrade().is_none());
-            assert!(head.upgrade().is_none());
-        }
+        let (tx, rx) = tiri_rt::oneshot::channel::<()>();
+        let ran = Rc::new(Cell::new(false));
+        let body = ran.clone();
+        let (client, head) = suspend_holding_client(move |held| async move {
+            let _ = rx.await;
+            let client = Rc::downgrade(&held);
+            drop(held);
+            assert!(client.upgrade().is_none(), "the queue is freed mid-poll");
+            body.set(true);
+        });
+        tx.send(()).unwrap();
+        assert!(ran.get());
+        assert!(client.upgrade().is_none());
+        assert!(head.upgrade().is_none());
     }
 
     #[test]
     fn dropping_a_lost_client_cancels_a_file_backed_wait() {
         use tiri_rt::Runtime as _;
         let runtime = tiri_rt::mio::Runtime::new().unwrap();
-        unsafe {
+        {
             let owner = queue_test_clients::with_queue();
             let cancelled = Rc::new(Cell::new(false));
             let mut capture = Some(SetOnDrop(cancelled.clone()));
@@ -4538,7 +4524,7 @@ mod lost_queue_tests {
 
     /// Queue a suspended head whose future records its release, then mark the
     /// client lost the way `server_client_lost` does before retiring it.
-    unsafe fn lose_with_suspended_head(
+    fn lose_with_suspended_head(
         owner: &ClientRef,
     ) -> (std::rc::Weak<std::cell::RefCell<cmdq_item>>, Rc<Cell<bool>>) {
         let released = Rc::new(Cell::new(false));
@@ -4587,7 +4573,7 @@ mod lost_queue_tests {
     fn retiring_a_lost_client_cancels_its_suspended_item_from_dispatch() {
         use tiri_rt::Runtime as _;
         let mut runtime = tiri_rt::mio::Runtime::new().unwrap();
-        unsafe {
+        {
             let owner = queue_test_clients::with_queue();
             let (head, released) = lose_with_suspended_head(&owner);
             let client = Rc::downgrade(&owner);
@@ -4606,7 +4592,7 @@ mod lost_queue_tests {
     fn runtime_shutdown_releases_a_pending_retirement() {
         use tiri_rt::Runtime as _;
         let runtime = tiri_rt::mio::Runtime::new().unwrap();
-        unsafe {
+        {
             let owner = queue_test_clients::with_queue();
             let (head, released) = lose_with_suspended_head(&owner);
             let client = Rc::downgrade(&owner);

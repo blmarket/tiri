@@ -25,7 +25,6 @@ use crate::options::{options_get_number, options_get_string, options_set_number}
 use crate::proc::proc_clear_signals;
 use crate::reactor::BufferEvent;
 use crate::screen::screen_reinit;
-use crate::server::server_proc;
 use crate::server_client::Client;
 use crate::server_client::ClientRegistry;
 use crate::shared::errno::ErrorText;
@@ -48,7 +47,7 @@ use crate::shared::command::cmd_find_state;
 use crate::shared::key::*;
 use crate::shared::pane::window_pane;
 use crate::shared::pane::{PANE_EMPTY, PANE_EXITED, PANE_STATUSDRAWN};
-use crate::shared::posix_io::{_PATH_BSHELL, STDERR_FILENO, STDIN_FILENO};
+use crate::shared::posix_io::{_PATH_BSHELL, STDERR_FILENO};
 use crate::shared::posix_terminal::{winsize, TCSANOW, VERASE};
 use crate::shared::screen::{MODE_CRLF, MODE_CURSOR};
 use crate::shared::signal::{sigset_t, SIGHUP, SIG_BLOCK, SIG_SETMASK};
@@ -63,7 +62,7 @@ use std::os::unix::process::ExitStatusExt;
 
 use crate::shared::spawn::EditorHandle;
 use crate::spawn::{set_spawn_cause, spawn_log, _PATH_DEFPATH, IUTF8};
-unsafe fn spawn_fire_pane_created(
+fn spawn_fire_pane_created(
     sc: &spawn_context,
     wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
 ) {
@@ -454,7 +453,7 @@ pub(super) unsafe fn spawn_pane(
             }
             let mut master = -1;
             let mut tty = new_pane_owner.borrow().tty;
-            let pid = fdforkpty(ptm_fd, &mut master, &mut tty, &ws);
+            let pid = fdforkpty(ptm_fd(), &mut master, &mut tty, &ws);
             {
                 let mut pane = new_pane_owner.borrow_mut();
                 pane.tty = tty;
@@ -506,7 +505,9 @@ pub(super) unsafe fn spawn_pane(
                         write_cstr(out, nullable_cstr(actual_cwd))
                     });
                 }
-                let Ok(mut now) = crate::shared::terminal::read_attributes(STDIN_FILENO) else {
+                let Ok(mut now) = crate::shared::terminal::read_attributes(
+                    std::os::fd::AsFd::as_fd(&std::io::stdin()),
+                ) else {
                     _exit(1 as ::core::ffi::c_int);
                 };
                 if let Some(terminal) = session_owner.termios() {
@@ -521,10 +522,16 @@ pub(super) unsafe fn spawn_pane(
                     now.c_cc[VERASE] = key as cc_t;
                 }
                 now.c_iflag |= IUTF8 as tcflag_t;
-                if crate::shared::terminal::set_attributes(STDIN_FILENO, TCSANOW, &now).is_err() {
+                if crate::shared::terminal::set_attributes(
+                    std::os::fd::AsFd::as_fd(&std::io::stdin()),
+                    TCSANOW,
+                    &now,
+                )
+                .is_err()
+                {
                     _exit(1 as ::core::ffi::c_int);
                 }
-                proc_clear_signals(server_proc, 1 as ::core::ffi::c_int);
+                proc_clear_signals(1 as ::core::ffi::c_int);
                 log_close();
                 tiri_rt::unix::close_from(STDERR_FILENO + 1 as ::core::ffi::c_int);
                 sigprocmask(
@@ -610,11 +617,10 @@ pub(super) unsafe fn spawn_pane(
     drop(original_window);
     result
 }
-pub(super) unsafe fn finish_editing(wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>) {
+pub(super) fn finish_editing(wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>) {
     let Some(mut owner) = wp_owner.borrow_mut().editor.take() else {
         return;
     };
-    let es = &raw mut *owner;
     let exit_status = wp_owner.borrow().exit_status;
     let status = match exit_status {
         Some(exit_status) => exit_status
@@ -623,32 +629,29 @@ pub(super) unsafe fn finish_editing(wp_owner: &std::rc::Rc<std::cell::RefCell<wi
             .unwrap_or(0),
         None => 128 + SIGHUP,
     };
-    if (*es).cb.is_none() {
+    let Some(cb) = owner.cb.take() else {
         return;
-    }
+    };
     if status != 0 as ::core::ffi::c_int {
-        (*es).cb.take().expect("non-null editor callback")(
-            std::ptr::NonNull::new(es).unwrap(),
-            None,
-        );
+        cb(&owner, None);
         return;
     }
-    let result = std::fs::read(OsStr::from_bytes((*es).path.to_bytes())).ok();
-    (*es).cb.take().expect("non-null editor callback")(std::ptr::NonNull::new(es).unwrap(), result);
+    let result = std::fs::read(OsStr::from_bytes(owner.path.to_bytes())).ok();
+    cb(&owner, result);
 }
-pub(super) unsafe fn install_editor(
+pub(super) fn install_editor(
     pane: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     mut editor: Box<spawn_editor_state>,
 ) -> EditorHandle {
     options_set_number(&mut pane.borrow_options_mut(), c"remain-on-exit", 0);
-    let pointer = std::ptr::NonNull::from(&mut *editor);
+    let id = editor.id;
     let previous = {
         let mut state = pane.borrow_mut();
         editor.pid = state.pid;
         state.editor.replace(editor)
     };
     drop(previous);
-    EditorHandle::new(pane, pointer)
+    EditorHandle::new(pane, id)
 }
 #[cfg(test)]
 mod tests {
@@ -668,24 +671,20 @@ mod tests {
     #[test]
     fn stale_editor_handle_does_not_cancel_replacement() {
         let pane = window_pane::new();
-        unsafe {
+        {
             let first = spawn_editor_state::new(c"".to_owned(), Some(Box::new(|_, _| {})));
             pane.borrow_mut().editor = Some(first);
-            let first_ptr =
-                std::ptr::NonNull::from(pane.borrow_mut().editor.as_mut().unwrap().as_mut());
-            let stale = EditorHandle::new(&pane, first_ptr);
+            let stale = EditorHandle::new(&pane, pane.editor_identity().unwrap());
             let previous = pane.borrow_mut().editor.take();
             let second = spawn_editor_state::new(c"".to_owned(), Some(Box::new(|_, _| {})));
             pane.borrow_mut().editor = Some(second);
-            let second_ptr =
-                std::ptr::NonNull::from(pane.borrow_mut().editor.as_mut().unwrap().as_mut());
-            let current = EditorHandle::new(&pane, second_ptr);
+            let current = EditorHandle::new(&pane, pane.editor_identity().unwrap());
 
             assert_eq!(stale.pid(), -1);
-            assert!(!stale.matches(second_ptr.as_ref()));
+            assert!(!stale.matches(pane.borrow().editor.as_ref().unwrap()));
             stale.cancel();
             assert!(pane.borrow().editor.as_ref().unwrap().cb.is_some());
-            assert!(current.matches(second_ptr.as_ref()));
+            assert!(current.matches(pane.borrow().editor.as_ref().unwrap()));
             current.cancel();
             assert!(pane.borrow().editor.as_ref().unwrap().cb.is_none());
             drop(previous);

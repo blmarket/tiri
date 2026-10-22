@@ -15,7 +15,7 @@ use tiri_rt::{AsyncRead as _, AsyncWrite as _};
 pub(crate) struct StreamState {
     /// Present until free; observers treat None as released.
     stream: RefCell<Option<Box<bufferevent>>>,
-    fd: c_int,
+    fd: Option<std::os::fd::OwnedFd>,
     was_nonblocking: bool,
     pid: u32,
     generation: Cell<u64>,
@@ -28,27 +28,19 @@ pub(crate) struct StreamState {
 #[derive(Clone, Default)]
 pub struct StreamHandle(Weak<StreamState>);
 
+impl PartialEq for StreamHandle {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.ptr_eq(&other.0)
+    }
+}
+
 impl StreamHandle {
-    /// The pointer must be null or refer to a stream registered by bufferevent_new.
-    pub unsafe fn from_ptr(stream: *mut bufferevent) -> Self {
-        if stream.is_null() {
-            return Self::default();
-        }
-        Self(Rc::downgrade(&(*stream).state))
-    }
-
-    /// Keep the stream's allocation slot borrowed for one synchronous operation.
-    pub fn with_ptr<R>(&self, access: impl FnOnce(*mut bufferevent) -> R) -> Option<R> {
+    /// Borrow the live stream for one synchronous operation that does not
+    /// reenter this stream.
+    pub fn with_stream<R>(&self, access: impl FnOnce(&mut bufferevent) -> R) -> Option<R> {
         let owner = self.0.upgrade()?;
-        let slot = owner.stream.borrow();
-        let stream = slot.as_ref()?;
-        Some(access((&**stream as *const bufferevent).cast_mut()))
-    }
-
-    /// Legacy pointer view. The caller must keep the stream registered through use.
-    pub fn ptr(&self) -> *mut bufferevent {
-        self.with_ptr(|stream| stream)
-            .unwrap_or(std::ptr::null_mut())
+        let mut slot = owner.stream.borrow_mut();
+        Some(access(slot.as_deref_mut()?))
     }
 }
 thread_local! {
@@ -87,10 +79,10 @@ pub(super) fn clear() {
 }
 
 fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
-    if state.fd == -1 {
+    let Some(fd) = state.fd.as_ref() else {
         return Ok(());
-    }
-    let source = io(unsafe { std::os::fd::BorrowedFd::borrow_raw(state.fd) })?;
+    };
+    let source = io(std::os::fd::AsFd::as_fd(fd))?;
     let s = state.clone();
     let handle = tiri_rt::mio::Handle::current();
     let task = handle.spawn(async move {
@@ -148,7 +140,7 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
                 })
                 .await
             };
-            let (stream, data, error) = {
+            let (data, error) = {
                 let mut slot = s.stream.borrow_mut();
                 let Some(b) = slot.as_deref_mut() else { break };
                 let (data, error) = match completion {
@@ -187,13 +179,13 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
                         (None, Some((b.errorcb.clone(), (2 | 0x20, Some(error)))))
                     }
                 };
-                (std::ptr::NonNull::from(b), data, error)
+                (data, error)
             };
             // Callbacks may reenter the stream, so the slot is no longer borrowed.
             if let Some(cb) = data {
-                (*cb.borrow_mut())(stream);
+                (*cb.borrow_mut())();
             } else if let Some((Some(cb), (flags, error))) = error {
-                (*cb.borrow_mut())(stream, flags, error.as_ref());
+                (*cb.borrow_mut())(flags, error.as_ref());
             }
             super::yield_now().await;
         }
@@ -201,16 +193,17 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
     *state.task.borrow_mut() = Some(task);
     Ok(())
 }
-pub unsafe fn bufferevent_new(
-    fd: c_int,
+/// The stream keeps its own duplicate of `fd` until it is freed.
+pub fn bufferevent_new(
+    fd: Option<std::os::fd::BorrowedFd<'_>>,
     readcb: bufferevent_data_cb,
     writecb: bufferevent_data_cb,
     errorcb: bufferevent_event_cb,
-) -> std::io::Result<*mut bufferevent> {
-    let was_nonblocking = if fd == -1 {
-        true
-    } else {
-        tiri_rt::unix::set_nonblocking(std::os::fd::BorrowedFd::borrow_raw(fd), true)?
+) -> std::io::Result<StreamHandle> {
+    let fd = fd.map(|fd| fd.try_clone_to_owned()).transpose()?;
+    let was_nonblocking = match &fd {
+        None => true,
+        Some(fd) => tiri_rt::unix::set_nonblocking(std::os::fd::AsFd::as_fd(fd), true)?,
     };
     let s = Rc::new(StreamState {
         stream: RefCell::new(None),
@@ -223,7 +216,7 @@ pub unsafe fn bufferevent_new(
         task: RefCell::new(None),
     });
     // The stream owns its state until free breaks this cycle.
-    let mut owner = Box::new(bufferevent {
+    let owner = Box::new(bufferevent {
         state: s.clone(),
         input: Default::default(),
         output: Default::default(),
@@ -234,7 +227,6 @@ pub unsafe fn bufferevent_new(
         errorcb,
         enabled: 4,
     });
-    let stream = &raw mut *owner;
     *s.stream.borrow_mut() = Some(owner);
     LIVE_STREAMS.with(|streams| {
         let mut streams = streams.borrow_mut();
@@ -250,7 +242,7 @@ pub unsafe fn bufferevent_new(
         }
         return Err(error);
     }
-    Ok(stream)
+    Ok(StreamHandle(Rc::downgrade(&s)))
 }
 /// Invalidate observers and release the stream. A released stream is ignored.
 /// The caller's reference keeps the state alive once the stream is dropped.
@@ -259,10 +251,10 @@ fn free(s: &StreamState) {
         return;
     };
     drop(s.task.take());
-    if s.fd != -1 && s.pid == std::process::id() && !s.was_nonblocking {
-        // The fd is owned by the caller and outlives the stream.
-        let fd = unsafe { std::os::fd::BorrowedFd::borrow_raw(s.fd) };
-        let _ = tiri_rt::unix::set_nonblocking(fd, false);
+    if let Some(fd) = s.fd.as_ref() {
+        if s.pid == std::process::id() && !s.was_nonblocking {
+            let _ = tiri_rt::unix::set_nonblocking(std::os::fd::AsFd::as_fd(fd), false);
+        }
     }
     drop(stream);
 }
@@ -280,47 +272,40 @@ pub fn bufferevent_get_output(stream: &mut bufferevent) -> &mut SegmentedBuf {
     stream.state.wake();
     &mut stream.output
 }
-pub unsafe fn bufferevent_enable(stream: *mut bufferevent, flags: c_short) -> c_int {
-    let previous = (*stream).enabled;
-    (*stream).enabled |= flags;
-    let s = &(*stream).state;
+pub fn bufferevent_enable(stream: &mut bufferevent, flags: c_short) -> c_int {
+    let previous = stream.enabled;
+    stream.enabled |= flags;
     if flags & 4 != 0 {
-        s.write_requested.set(true);
+        stream.state.write_requested.set(true);
     }
-    if previous != (*stream).enabled || flags & 4 != 0 {
-        s.wake();
-    }
-    0
-}
-pub unsafe fn bufferevent_disable(stream: *mut bufferevent, flags: c_short) -> c_int {
-    let previous = (*stream).enabled;
-    (*stream).enabled &= !flags;
-    if previous != (*stream).enabled {
-        (*stream).state.wake();
+    if previous != stream.enabled || flags & 4 != 0 {
+        stream.state.wake();
     }
     0
 }
-pub unsafe fn bufferevent_write(stream: *mut bufferevent, data: &[u8]) -> c_int {
-    super::evbuffer_add(bufferevent_get_output(&mut *stream), data)
+pub fn bufferevent_disable(stream: &mut bufferevent, flags: c_short) -> c_int {
+    let previous = stream.enabled;
+    stream.enabled &= !flags;
+    if previous != stream.enabled {
+        stream.state.wake();
+    }
+    0
+}
+pub fn bufferevent_write(stream: &mut bufferevent, data: &[u8]) -> c_int {
+    super::evbuffer_add(bufferevent_get_output(stream), data)
 }
 /// Move bytes into output. If the source belongs to another stream, obtain it
 /// through bufferevent_get_input/output so that stream also rechecks its I/O.
-pub unsafe fn bufferevent_write_buffer(
-    stream: *mut bufferevent,
-    buffer: &mut SegmentedBuf,
-) -> c_int {
-    if std::ptr::eq(buffer, &raw const *(*stream).output) {
-        return -1;
-    }
-    (*(*stream).output).put(buffer);
-    (*stream).state.wake();
+pub fn bufferevent_write_buffer(stream: &mut bufferevent, buffer: &mut SegmentedBuf) -> c_int {
+    stream.output.put(buffer);
+    stream.state.wake();
     0
 }
-pub unsafe fn bufferevent_setwatermark(stream: *mut bufferevent) {
-    (*stream).wm_write.low = CONTROL_BUFFER_LOW as usize;
-    (*stream).wm_write.high = 0;
+pub fn bufferevent_setwatermark(stream: &mut bufferevent) {
+    stream.wm_write.low = CONTROL_BUFFER_LOW as usize;
+    stream.wm_write.high = 0;
 
-    (*stream).state.wake();
+    stream.state.wake();
 }
 
 #[cfg(test)]
@@ -329,40 +314,38 @@ mod tests {
 
     #[test]
     fn stream_buffer_access_wakes_and_explicit_free_invalidates_handles() {
-        unsafe {
-            let stream = bufferevent_new(-1, None, None, None).unwrap();
-            let mut handle = StreamHandle::from_ptr(stream);
-            let observer = handle.clone();
-            let state = (*stream).state.clone();
+        let handle = bufferevent_new(None, None, None, None).unwrap();
+        let observer = handle.clone();
+        handle.with_stream(|stream| {
+            let state = stream.state.clone();
             let generation = state.generation.get();
             bufferevent_write(stream, b"abc");
             assert!(state.generation.get() > generation);
-            assert_eq!((*stream).output.remaining(), 3);
+            assert_eq!(stream.output.remaining(), 3);
             let generation = state.generation.get();
-            super::super::evbuffer_add(&mut (*stream).input, b"x");
+            super::super::evbuffer_add(&mut stream.input, b"x");
             assert_eq!(state.generation.get(), generation);
-            super::super::evbuffer_drain(bufferevent_get_input(&mut *stream), 1);
+            super::super::evbuffer_drain(bufferevent_get_input(stream), 1);
             assert_eq!(state.generation.get(), generation + 1);
-            handle.free();
-            assert!(!observer.is_alive());
-            assert!(state.stream.borrow().is_none());
-            drop(state);
-            assert!(observer.0.upgrade().is_none());
-        }
+        });
+        let state = handle.0.upgrade().unwrap();
+        handle.free();
+        assert!(!observer.is_alive());
+        assert!(state.stream.borrow().is_none());
+        drop(state);
+        assert!(observer.0.upgrade().is_none());
     }
 
     #[test]
     fn runtime_clear_frees_streams_without_tasks() {
-        unsafe {
-            let first = StreamHandle::from_ptr(bufferevent_new(-1, None, None, None).unwrap());
-            let second = StreamHandle::from_ptr(bufferevent_new(-1, None, None, None).unwrap());
-            assert!(first.is_alive());
-            assert!(second.is_alive());
-            clear();
-            assert!(!first.is_alive());
-            assert!(!second.is_alive());
-            assert!(first.0.upgrade().is_none());
-            assert!(second.0.upgrade().is_none());
-        }
+        let first = bufferevent_new(None, None, None, None).unwrap();
+        let second = bufferevent_new(None, None, None, None).unwrap();
+        assert!(first.is_alive());
+        assert!(second.is_alive());
+        clear();
+        assert!(!first.is_alive());
+        assert!(!second.is_alive());
+        assert!(first.0.upgrade().is_none());
+        assert!(second.0.upgrade().is_none());
     }
 }

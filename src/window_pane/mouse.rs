@@ -2,7 +2,7 @@
 use super::*;
 use crate::shared::pane::PANE_SCROLLBARS_RIGHT;
 
-pub(super) unsafe fn in_scrollbar_area(
+pub(super) fn in_scrollbar_area(
     pane: &Rc<RefCell<window_pane>>,
     mut px: ::core::ffi::c_int,
     mut py: ::core::ffi::c_int,
@@ -42,7 +42,7 @@ pub(super) unsafe fn in_scrollbar_area(
     (px >= start && px <= end) as ::core::ffi::c_int
 }
 
-pub(super) unsafe fn mouse_location(
+pub(super) fn mouse_location(
     pane: &Rc<RefCell<window_pane>>,
     x: i32,
     y: i32,
@@ -54,7 +54,7 @@ pub(super) unsafe fn mouse_location(
     location
 }
 
-unsafe fn mouse_location_in(
+fn mouse_location_in(
     pane_owner: &Rc<RefCell<window_pane>>,
     window_owner: &WindowRef,
     mut px: ::core::ffi::c_int,

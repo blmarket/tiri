@@ -126,7 +126,7 @@ pub fn args_strtonum_result(
 ///
 /// # Safety
 /// `item` must be valid for format expansion.
-pub unsafe fn args_strtonum_and_expand_result(
+pub fn args_strtonum_and_expand_result(
     args: &args,
     flag: u_char,
     minval: ::core::ffi::c_longlong,

@@ -52,9 +52,9 @@ unsafe fn cmd_server_access_deny(
 ) -> CmdOutcome {
     if server_acl_find(id, flags) == 0 {
         cmdq_error(item_handle, |out| {
-            write_cstr(out, nullable_cstr(type_0.as_ptr()))?;
+            write_cstr(out, Some(&*type_0))?;
             out.write_all(b" ")?;
-            write_cstr(out, nullable_cstr(name.as_ptr()))?;
+            write_cstr(out, Some(&*name))?;
             out.write_all(b" not found")
         });
         return CmdOutcome::Error;

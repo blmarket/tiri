@@ -198,7 +198,7 @@ fn paste_next_order_take() -> u_int {
     })
 }
 
-unsafe fn paste_fire_event(
+fn paste_fire_event(
     name: &CStr,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
@@ -252,7 +252,7 @@ fn paste_is_registered(pb: &PasteBufferRef) -> bool {
     pb.try_borrow()
         .is_some_and(|buffer| paste_get_name(&buffer.name).is_some_and(|current| current == *pb))
 }
-pub unsafe fn paste_free(pb: &PasteBufferRef) {
+pub fn paste_free(pb: &PasteBufferRef) {
     if !paste_is_registered(pb) {
         return;
     }
@@ -269,7 +269,7 @@ pub unsafe fn paste_free(pb: &PasteBufferRef) {
         paste_automatic_count_decrement();
     }
 }
-pub(crate) unsafe fn paste_add_owned(prefix: Option<CString>, data: Box<[u8]>) {
+pub(crate) fn paste_add_owned(prefix: Option<CString>, data: Box<[u8]>) {
     if data.is_empty() {
         return;
     }
@@ -318,7 +318,7 @@ pub(crate) unsafe fn paste_add_owned(prefix: Option<CString>, data: Box<[u8]>) {
         out.write_all(pb.borrow().name.as_bytes())
     });
 }
-pub unsafe fn paste_rename(
+pub fn paste_rename(
     oldname: Option<&CStr>,
     newname: Option<&CStr>,
     mut cause: Option<&mut Option<CString>>,
@@ -372,7 +372,7 @@ pub unsafe fn paste_rename(
     });
     0
 }
-pub(crate) unsafe fn paste_set_owned(
+pub(crate) fn paste_set_owned(
     data: Box<[u8]>,
     name: Option<&CStr>,
     mut cause: Option<&mut Option<CString>>,
@@ -415,7 +415,7 @@ pub(crate) unsafe fn paste_set_owned(
     0
 }
 /// Replace the bytes while preserving the buffer identity and creation order.
-pub(crate) unsafe fn paste_replace_owned(pb: &PasteBufferRef, data: Box<[u8]>) {
+pub(crate) fn paste_replace_owned(pb: &PasteBufferRef, data: Box<[u8]>) {
     let Some(mut buffer) = pb.try_borrow() else {
         return;
     };
@@ -452,58 +452,56 @@ mod tests {
 
     #[test]
     fn invalid_names_return_owned_diagnostics() {
-        unsafe {
-            let mut cause: Option<CString> = Some(c"stale".to_owned());
-            assert_eq!(
-                paste_set_owned(
-                    b"payload".to_vec().into_boxed_slice(),
-                    Some(c""),
-                    Some(&mut cause),
-                ),
-                -1
-            );
-            assert_eq!(cause.as_ref().unwrap().as_c_str(), c"empty buffer name");
+        let mut cause: Option<CString> = Some(c"stale".to_owned());
+        assert_eq!(
+            paste_set_owned(
+                b"payload".to_vec().into_boxed_slice(),
+                Some(c""),
+                Some(&mut cause),
+            ),
+            -1
+        );
+        assert_eq!(cause.as_ref().unwrap().as_c_str(), c"empty buffer name");
 
-            cause = Some(c"stale".to_owned());
-            let name = c"owned-cause-success";
-            assert_eq!(
-                paste_set_owned(
-                    b"payload".to_vec().into_boxed_slice(),
-                    Some(name),
-                    Some(&mut cause),
-                ),
-                0
-            );
-            assert!(cause.is_none());
-            paste_free(&paste_get_name(name).unwrap());
+        cause = Some(c"stale".to_owned());
+        let name = c"owned-cause-success";
+        assert_eq!(
+            paste_set_owned(
+                b"payload".to_vec().into_boxed_slice(),
+                Some(name),
+                Some(&mut cause),
+            ),
+            0
+        );
+        assert!(cause.is_none());
+        paste_free(&paste_get_name(name).unwrap());
 
-            cause = Some(c"stale".to_owned());
-            assert_eq!(
-                paste_set_owned(Box::<[u8]>::default(), None, Some(&mut cause),),
-                0
-            );
-            assert!(cause.is_none(), "empty-data success clears the cause");
+        cause = Some(c"stale".to_owned());
+        assert_eq!(
+            paste_set_owned(Box::<[u8]>::default(), None, Some(&mut cause),),
+            0
+        );
+        assert!(cause.is_none(), "empty-data success clears the cause");
 
-            assert_eq!(
-                paste_set_owned(b"payload".to_vec().into_boxed_slice(), Some(c""), None,),
-                -1,
-                "failure can discard its diagnostic"
-            );
-            assert_eq!(
-                paste_set_owned(
-                    b"payload".to_vec().into_boxed_slice(),
-                    Some(c"owned-cause-none"),
-                    None,
-                ),
-                0,
-                "success can discard its diagnostic"
-            );
-            paste_free(&paste_get_name(c"owned-cause-none").unwrap());
+        assert_eq!(
+            paste_set_owned(b"payload".to_vec().into_boxed_slice(), Some(c""), None,),
+            -1,
+            "failure can discard its diagnostic"
+        );
+        assert_eq!(
+            paste_set_owned(
+                b"payload".to_vec().into_boxed_slice(),
+                Some(c"owned-cause-none"),
+                None,
+            ),
+            0,
+            "success can discard its diagnostic"
+        );
+        paste_free(&paste_get_name(c"owned-cause-none").unwrap());
 
-            cause = Some(c"stale".to_owned());
-            assert_eq!(paste_rename(None, Some(c"renamed"), Some(&mut cause)), -1);
-            assert_eq!(cause.as_ref().unwrap().as_c_str(), c"no buffer");
-        }
+        cause = Some(c"stale".to_owned());
+        assert_eq!(paste_rename(None, Some(c"renamed"), Some(&mut cause)), -1);
+        assert_eq!(cause.as_ref().unwrap().as_c_str(), c"no buffer");
     }
 
     fn named_buffer(name: &CString) -> RefBox<paste_buffer> {
@@ -637,7 +635,7 @@ mod tests {
         use crate::events::{events_add_sink, events_remove_sink};
         use crate::events_payload::event_payload_get_string;
         let seen = Rc::new(RefCell::new(Vec::new()));
-        unsafe {
+        {
             let mut sinks = Vec::new();
             for event in [c"paste-buffer-changed", c"paste-buffer-deleted"] {
                 let seen = seen.clone();

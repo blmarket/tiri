@@ -39,9 +39,7 @@ use crate::shared::session::SessionRef;
 use crate::shared::sort::sort_criteria;
 use crate::shared::sort::*;
 
-use crate::shared::window::{
-    window_mode, window_mode_entry, window_mode_screen_payload, winlink, ModeDataRef,
-};
+use crate::shared::window::{window_mode, window_mode_entry, winlink, ModeDataRef};
 use crate::sort::{sort_get_sessions, sort_get_winlinks};
 use crate::status::status_message_set;
 use crate::style::style_apply_with_options;
@@ -95,9 +93,7 @@ pub static window_switch_mode: window_mode = {
                 ) -> bool,
         ),
         free: None,
-        resize: Some(
-            window_switch_resize as unsafe fn(refbox::Weak<window_mode_entry>, u_int, u_int) -> (),
-        ),
+        resize: Some(window_switch_resize),
         update: None,
         style_changed: None,
         key: Some(
@@ -117,7 +113,7 @@ pub static window_switch_mode: window_mode = {
         display_screen: Some(window_switch_get_screen),
     }
 };
-unsafe fn window_switch_add_item(
+fn window_switch_add_item(
     data: &mut window_switch_modedata,
     type_0: window_switch_type,
     session: ::core::ffi::c_int,
@@ -138,7 +134,7 @@ unsafe fn window_switch_add_item(
         order: fresh,
     });
 }
-unsafe fn window_switch_add_session(
+fn window_switch_add_session(
     data: &mut window_switch_modedata,
     s_owner: &SessionRef,
     order: &mut u_int,
@@ -156,7 +152,7 @@ unsafe fn window_switch_add_session(
     );
     drop(ft_owner);
 }
-unsafe fn window_switch_add_window(
+fn window_switch_add_window(
     data: &mut window_switch_modedata,
     mut wl: refbox::Weak<winlink>,
     order: &mut u_int,
@@ -188,7 +184,7 @@ fn window_switch_matches(
         item.match_mask = if filter.is_empty() {
             None
         } else {
-            unsafe { fuzzy_match_owned(filter, &item.text, width, Some(&mut item.score)) }
+            fuzzy_match_owned(filter, &item.text, width, Some(&mut item.score))
         };
         if filter.is_empty() || item.match_mask.is_some() {
             matches.push(index);
@@ -203,7 +199,7 @@ fn window_switch_matches(
     matches
 }
 
-unsafe fn window_switch_build(data: &mut window_switch_modedata) {
+fn window_switch_build(data: &mut window_switch_modedata) {
     let mut i: u_int = 0;
     let mut order: u_int = 0 as u_int;
     let mut sx: u_int = data.screen.grid().sx;
@@ -266,7 +262,7 @@ fn window_switch_data(
     ModeDataRef::new(wme.try_borrow().expect("live mode entry")).expect("switch mode payload")
 }
 
-unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
+fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
     let mode_pane_owner = wme
         .try_borrow()
         .expect("live mode entry")
@@ -324,7 +320,7 @@ unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         us: 0,
         link: 0,
     };
-    let dgc = &raw const grid_default_cell;
+    let dgc = &grid_default_cell;
     visible = window_switch_visible(data);
     let mut ctx = screen_write_start(&mut data.screen);
     screen_write_clearscreen(&mut ctx, 8 as u_int);
@@ -359,14 +355,7 @@ unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
             0 as ::core::ffi::c_int,
         );
         if idx != data.current {
-            format_draw(
-                &mut ctx,
-                &*dgc,
-                sx,
-                &item.text,
-                None,
-                0 as ::core::ffi::c_int,
-            );
+            format_draw(&mut ctx, dgc, sx, &item.text, None, 0 as ::core::ffi::c_int);
         } else {
             screen_write_clearendofline(&mut ctx, sgc.bg as u_int);
             format_draw(
@@ -378,12 +367,10 @@ unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
                 0 as ::core::ffi::c_int,
             );
         }
-        let match_mask = item.match_mask.as_ref().map(|mask| mask.as_ptr());
-        if let Some(match_mask) = match_mask {
+        if let Some(match_mask) = item.match_mask.as_deref() {
             j = 0 as u_int;
             while j < sx {
-                if !(*match_mask.offset((j >> 3 as ::core::ffi::c_int) as isize)
-                    as ::core::ffi::c_int
+                if !(match_mask[(j >> 3 as ::core::ffi::c_int) as usize] as ::core::ffi::c_int
                     & (1 as ::core::ffi::c_int) << (j & 0x7 as u_int)
                     == 0)
                 {
@@ -425,7 +412,7 @@ unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
     }
     screen_write_stop(ctx);
 }
-unsafe fn window_switch_init(
+fn window_switch_init(
     mut wme: refbox::Weak<window_mode_entry>,
     _item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     fs: Option<&cmd_find_state>,
@@ -477,7 +464,7 @@ unsafe fn window_switch_init(
     pd.type_0 = PROMPT_TYPE_SEARCH;
     pd.flags = PROMPT_INCREMENTAL | PROMPT_NOFORMAT | PROMPT_ISMODE | PROMPT_EDITARROWS;
     let prompt_mode = wme.clone();
-    pd.inputcb = Some(Box::new(move |s, key| unsafe {
+    pd.inputcb = Some(Box::new(move |s, key| {
         window_switch_prompt_callback(prompt_mode.clone(), s, key)
     }));
     let prompt = prompt_create(pd);
@@ -501,7 +488,7 @@ unsafe fn window_switch_init(
     window_switch_draw_screen(wme.clone());
     true
 }
-unsafe fn window_switch_get_screen(
+fn window_switch_get_screen(
     wme: refbox::Weak<window_mode_entry>,
     visit: &mut dyn FnMut(&mut screen),
 ) {
@@ -510,15 +497,11 @@ unsafe fn window_switch_get_screen(
         .expect("live mode entry")
         .boxed_data_cell::<window_switch_modedata>()
     {
-        window_mode_screen_payload(data, |data| visit(&mut data.screen));
+        visit(&mut data.borrow_mut().screen);
     }
 }
 
-unsafe fn window_switch_resize(
-    mut wme: refbox::Weak<window_mode_entry>,
-    mut sx: u_int,
-    mut sy: u_int,
-) {
+fn window_switch_resize(mut wme: refbox::Weak<window_mode_entry>, mut sx: u_int, mut sy: u_int) {
     {
         let data_cell = window_switch_data(&wme);
         let mut data = data_cell.borrow_mut();
@@ -529,7 +512,7 @@ unsafe fn window_switch_resize(
     }
     window_switch_draw_screen(wme.clone());
 }
-unsafe fn window_switch_run_command(
+fn window_switch_run_command(
     cell: &std::cell::RefCell<window_switch_modedata>,
     client_owner: Option<&ClientRef>,
 ) -> ::core::ffi::c_int {
@@ -612,7 +595,7 @@ unsafe fn window_switch_run_command(
     }
     1 as ::core::ffi::c_int
 }
-unsafe fn window_switch_prompt_callback(
+fn window_switch_prompt_callback(
     mode: refbox::Weak<window_mode_entry>,
     s: Option<&CStr>,
     mut key: prompt_key_result,
@@ -1072,7 +1055,7 @@ mod match_tests {
         let observer = mode.downgrade();
         drop(mode);
         assert_eq!(
-            unsafe { window_switch_prompt_callback(observer, Some(c"query"), PROMPT_KEY_HANDLED) },
+            window_switch_prompt_callback(observer, Some(c"query"), PROMPT_KEY_HANDLED),
             PROMPT_CLOSE,
         );
     }

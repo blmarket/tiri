@@ -10,15 +10,13 @@ use tiri::shared::display::{SCREEN_CURSOR_BLOCK, SCREEN_CURSOR_UNDERLINE};
 use tiri::shared::grid::{GRID_ATTR_UNDERSCORE, GRID_STRING_TRIM_SPACES};
 use tiri::shared::prompt::*;
 use tiri::shared::screen::{screen, MODE_CURSOR, MODE_CURSOR_BLINKING};
-use tiri::tmux::global_environ;
+use tiri::tmux::replace_global_environ;
 
 #[test]
 fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {
     unsafe {
         assert!(!libc::setlocale(libc::LC_CTYPE, c"C.UTF-8".as_ptr()).is_null());
-        let saved = std::ptr::replace(&raw mut global_environ, None);
-        let environment = environ_create();
-        global_environ = Some(environment);
+        let saved = replace_global_environ(Some(environ_create()));
         let definition = options_table
             .iter()
             .find(|entry| entry.name == Some(c"extended-keys"))
@@ -218,6 +216,6 @@ fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {
             drop(s);
             prompt_free(&prompt.downgrade());
         }
-        global_environ = saved;
+        drop(replace_global_environ(saved));
     }
 }

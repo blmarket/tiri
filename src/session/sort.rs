@@ -26,7 +26,7 @@ fn sort_session_cmp(sa: &session, sb: &session, sort_crit: &sort_criteria) -> Or
     }
     sort_ordering(result, sort_crit.reversed)
 }
-pub(super) unsafe fn sort_get_sessions(sort_crit: &sort_criteria) -> Vec<SessionRef> {
+pub(super) fn sort_get_sessions(sort_crit: &sort_criteria) -> Vec<SessionRef> {
     let mut sessions_sorted = Vec::new();
     let mut current = sessions::first();
     while let Some(owner) = current {

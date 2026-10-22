@@ -65,7 +65,7 @@ fn sort_buffer_cmp(pa: &paste_buffer, pb: &paste_buffer, sort_crit: &sort_criter
         order
     }
 }
-unsafe fn sort_client_cmp(ca: &ClientRef, cb: &ClientRef, sort_crit: &sort_criteria) -> Ordering {
+fn sort_client_cmp(ca: &ClientRef, cb: &ClientRef, sort_crit: &sort_criteria) -> Ordering {
     let order = match sort_crit.order {
         SORT_SIZE => {
             let (a, b) = (ca.terminal_size(), cb.terminal_size());
@@ -92,7 +92,7 @@ unsafe fn sort_client_cmp(ca: &ClientRef, cb: &ClientRef, sort_crit: &sort_crite
         order
     }
 }
-unsafe fn sort_winlink_cmp(
+fn sort_winlink_cmp(
     wla: refbox::Weak<winlink>,
     wlb: refbox::Weak<winlink>,
     sort_crit: &sort_criteria,
@@ -133,11 +133,7 @@ fn sort_key_binding_table_cmp(a: &key_binding, b: &key_binding) -> ::core::ffi::
     a.map(u8::to_ascii_lowercase)
         .cmp(b.map(u8::to_ascii_lowercase)) as ::core::ffi::c_int
 }
-unsafe fn sort_key_binding_cmp(
-    a: &key_binding,
-    b: &key_binding,
-    sort_crit: &sort_criteria,
-) -> Ordering {
+fn sort_key_binding_cmp(a: &key_binding, b: &key_binding, sort_crit: &sort_criteria) -> Ordering {
     let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     match sort_crit.order as ::core::ffi::c_uint {
         2 => {
@@ -220,7 +216,7 @@ pub fn sort_order_to_string(order: sort_order) -> Option<&'static CStr> {
     }
     None
 }
-pub unsafe fn sort_would_window_tree_swap(
+pub fn sort_would_window_tree_swap(
     sort_crit: &sort_criteria,
     mut wla: refbox::Weak<winlink>,
     mut wlb: refbox::Weak<winlink>,
@@ -249,7 +245,7 @@ pub fn sort_get_buffers(sort_crit: &sort_criteria) -> Vec<PasteBufferRef> {
     });
     buffers
 }
-pub unsafe fn sort_get_clients(sort_crit: &sort_criteria) -> Vec<ClientRef> {
+pub fn sort_get_clients(sort_crit: &sort_criteria) -> Vec<ClientRef> {
     let mut clients_sorted = Vec::new();
     let mut current = ClientRegistry::first();
     while let Some(owner) = current {
@@ -261,15 +257,15 @@ pub unsafe fn sort_get_clients(sort_crit: &sort_criteria) -> Vec<ClientRef> {
             clients_sorted.push(owner);
         }
     }
-    sort_by_criteria(&mut clients_sorted, sort_crit, |a, b, criteria| unsafe {
+    sort_by_criteria(&mut clients_sorted, sort_crit, |a, b, criteria| {
         sort_client_cmp(a, b, criteria)
     });
     clients_sorted
 }
-pub unsafe fn sort_get_sessions(criteria: &sort_criteria) -> Vec<SessionRef> {
+pub fn sort_get_sessions(criteria: &sort_criteria) -> Vec<SessionRef> {
     SessionRef::sorted(criteria)
 }
-pub unsafe fn sort_get_panes_window(
+pub fn sort_get_panes_window(
     w: &WindowRef,
     sort_crit: &sort_criteria,
 ) -> Vec<std::rc::Rc<std::cell::RefCell<window_pane>>> {
@@ -278,12 +274,12 @@ pub unsafe fn sort_get_panes_window(
         .iter()
         .filter_map(std::rc::Weak::upgrade)
         .collect::<Vec<_>>();
-    sort_by_criteria(&mut panes, sort_crit, |a, b, criteria| unsafe {
+    sort_by_criteria(&mut panes, sort_crit, |a, b, criteria| {
         a.compare_for_sort(b, criteria)
     });
     panes
 }
-pub unsafe fn sort_get_winlinks(sort_crit: &sort_criteria) -> Vec<refbox::Weak<winlink>> {
+pub fn sort_get_winlinks(sort_crit: &sort_criteria) -> Vec<refbox::Weak<winlink>> {
     let mut links = Vec::new();
     let mut s_owner = sessions::first();
     while s_owner.is_some() {
@@ -297,12 +293,12 @@ pub unsafe fn sort_get_winlinks(sort_crit: &sort_criteria) -> Vec<refbox::Weak<w
         }
         s_owner = sessions::after(s_owner.as_ref().expect("live session").name().as_c_str());
     }
-    sort_by_criteria(&mut links, sort_crit, |a, b, criteria| unsafe {
+    sort_by_criteria(&mut links, sort_crit, |a, b, criteria| {
         sort_winlink_cmp((*a).clone(), (*b).clone(), criteria)
     });
     links
 }
-pub unsafe fn sort_get_winlinks_session(
+pub fn sort_get_winlinks_session(
     s_owner: &SessionRef,
     sort_crit: &sort_criteria,
 ) -> Vec<refbox::Weak<winlink>> {
@@ -312,7 +308,7 @@ pub unsafe fn sort_get_winlinks_session(
         l.push(wl.clone());
         wl = winlink_next(&wl);
     }
-    sort_by_criteria(&mut l, sort_crit, |a, b, criteria| unsafe {
+    sort_by_criteria(&mut l, sort_crit, |a, b, criteria| {
         sort_winlink_cmp((*a).clone(), (*b).clone(), criteria)
     });
     l
@@ -325,7 +321,7 @@ pub fn sort_get_key_bindings<'a>(
         .iter()
         .flat_map(|table| table.key_bindings.iter())
         .collect();
-    sort_by_criteria(&mut bindings, sort_crit, |a, b, criteria| unsafe {
+    sort_by_criteria(&mut bindings, sort_crit, |a, b, criteria| {
         sort_key_binding_cmp(a, b, criteria)
     });
     bindings
@@ -339,7 +335,7 @@ pub fn sort_get_key_bindings_table<'a>(
         .into_iter()
         .flat_map(|table| table.key_bindings.iter())
         .collect();
-    sort_by_criteria(&mut bindings, sort_crit, |a, b, criteria| unsafe {
+    sort_by_criteria(&mut bindings, sort_crit, |a, b, criteria| {
         sort_key_binding_cmp(a, b, criteria)
     });
     bindings

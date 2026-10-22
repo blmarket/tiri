@@ -46,7 +46,7 @@ unsafe fn control_pane_mode_changed_cb(_name: &CStr, payload: &mut event_payload
     }
 }
 
-unsafe fn control_window_layout_changed_cb(_name: &CStr, payload: &mut event_payload) {
+fn control_window_layout_changed_cb(_name: &CStr, payload: &mut event_payload) {
     let Some(window) = event_payload_get_window(payload) else {
         return;
     };
@@ -73,7 +73,7 @@ unsafe fn control_window_layout_changed_cb(_name: &CStr, payload: &mut event_pay
     });
 }
 
-unsafe fn control_window_pane_changed_cb(_name: &CStr, payload: &mut event_payload) {
+fn control_window_pane_changed_cb(_name: &CStr, payload: &mut event_payload) {
     let Some(window) = event_payload_get_window(payload) else {
         return;
     };
@@ -92,7 +92,7 @@ unsafe fn control_window_pane_changed_cb(_name: &CStr, payload: &mut event_paylo
     });
 }
 
-unsafe fn control_window_membership(payload: &event_payload, action: &str, renamed: bool) {
+fn control_window_membership(payload: &event_payload, action: &str, renamed: bool) {
     let Some(window) = event_payload_get_window(payload) else {
         return;
     };
@@ -119,17 +119,17 @@ unsafe fn control_window_membership(payload: &event_payload, action: &str, renam
     });
 }
 
-unsafe fn control_window_unlinked_cb(_name: &CStr, payload: &mut event_payload) {
+fn control_window_unlinked_cb(_name: &CStr, payload: &mut event_payload) {
     control_window_membership(payload, "close", false);
 }
-unsafe fn control_window_linked_cb(_name: &CStr, payload: &mut event_payload) {
+fn control_window_linked_cb(_name: &CStr, payload: &mut event_payload) {
     control_window_membership(payload, "add", false);
 }
-unsafe fn control_window_renamed_cb(_name: &CStr, payload: &mut event_payload) {
+fn control_window_renamed_cb(_name: &CStr, payload: &mut event_payload) {
     control_window_membership(payload, "renamed", true);
 }
 
-unsafe fn control_client_session_changed_cb(_name: &CStr, payload: &mut event_payload) {
+fn control_client_session_changed_cb(_name: &CStr, payload: &mut event_payload) {
     let Some(changed) = event_payload_get_client(payload) else {
         return;
     };
@@ -154,7 +154,7 @@ unsafe fn control_client_session_changed_cb(_name: &CStr, payload: &mut event_pa
     });
 }
 
-unsafe fn control_client_detached_cb(_name: &CStr, payload: &mut event_payload) {
+fn control_client_detached_cb(_name: &CStr, payload: &mut event_payload) {
     let Some(changed) = event_payload_get_client(payload) else {
         return;
     };
@@ -166,7 +166,7 @@ unsafe fn control_client_detached_cb(_name: &CStr, payload: &mut event_payload) 
     });
 }
 
-unsafe fn control_session_renamed_cb(_name: &CStr, payload: &mut event_payload) {
+fn control_session_renamed_cb(_name: &CStr, payload: &mut event_payload) {
     let Some(session) = event_payload_get_session(payload) else {
         return;
     };
@@ -177,13 +177,13 @@ unsafe fn control_session_renamed_cb(_name: &CStr, payload: &mut event_payload) 
         })
     });
 }
-unsafe fn control_session_created_cb(_name: &CStr, _payload: &mut event_payload) {
+fn control_session_created_cb(_name: &CStr, _payload: &mut event_payload) {
     recipients(|client| client.notify(|out| out.write_all(b"%sessions-changed")));
 }
-unsafe fn control_session_closed_cb(_name: &CStr, _payload: &mut event_payload) {
+fn control_session_closed_cb(_name: &CStr, _payload: &mut event_payload) {
     recipients(|client| client.notify(|out| out.write_all(b"%sessions-changed")));
 }
-unsafe fn control_session_window_changed_cb(_name: &CStr, payload: &mut event_payload) {
+fn control_session_window_changed_cb(_name: &CStr, payload: &mut event_payload) {
     let Some(session) = event_payload_get_session(payload) else {
         return;
     };
@@ -203,7 +203,7 @@ unsafe fn control_session_window_changed_cb(_name: &CStr, payload: &mut event_pa
         })
     });
 }
-unsafe fn control_paste_buffer_changed_cb(_name: &CStr, payload: &mut event_payload) {
+fn control_paste_buffer_changed_cb(_name: &CStr, payload: &mut event_payload) {
     let Some(name) = event_payload_get_string(payload) else {
         return;
     };
@@ -214,7 +214,7 @@ unsafe fn control_paste_buffer_changed_cb(_name: &CStr, payload: &mut event_payl
         })
     });
 }
-unsafe fn control_paste_buffer_deleted_cb(_name: &CStr, payload: &mut event_payload) {
+fn control_paste_buffer_deleted_cb(_name: &CStr, payload: &mut event_payload) {
     let Some(name) = event_payload_get_string(payload) else {
         return;
     };
@@ -225,7 +225,7 @@ unsafe fn control_paste_buffer_deleted_cb(_name: &CStr, payload: &mut event_payl
         })
     });
 }
-pub unsafe fn control_build_events() {
+pub fn control_build_events() {
     static events: [C2RustUnnamed_35; 14] = {
         [
             C2RustUnnamed_35 {

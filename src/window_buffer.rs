@@ -33,9 +33,7 @@ use crate::shared::sort::sort_criteria;
 use crate::shared::sort::*;
 use crate::shared::spawn::{spawn_editor_state, EditorHandle};
 use crate::shared::vis::{VIS_CSTYLE, VIS_OCTAL, VIS_TAB};
-use crate::shared::window::{
-    window_mode, window_mode_entry, window_mode_screen_payload, winlink, ModeDataRef,
-};
+use crate::shared::window::{window_mode, window_mode_entry, winlink, ModeDataRef};
 use crate::sort::sort_get_buffers;
 use crate::spawn::{spawn_editor, spawn_editor_write};
 use crate::text::search::contains;
@@ -43,7 +41,6 @@ use crate::text::utf8::utf8_strvis;
 use crate::window_pane::WindowPane as _;
 use std::cell::RefCell;
 use std::ffi::{CStr, CString};
-use std::ptr::NonNull;
 use std::rc::{Rc, Weak};
 
 #[repr(C)]
@@ -153,11 +150,9 @@ pub static window_buffer_mode: window_mode = {
                     Option<&args>,
                 ) -> bool,
         ),
-        free: Some(window_buffer_free as unsafe fn(refbox::Weak<window_mode_entry>) -> ()),
-        resize: Some(
-            window_buffer_resize as unsafe fn(refbox::Weak<window_mode_entry>, u_int, u_int) -> (),
-        ),
-        update: Some(window_buffer_update as unsafe fn(refbox::Weak<window_mode_entry>) -> ()),
+        free: Some(window_buffer_free),
+        resize: Some(window_buffer_resize),
+        update: Some(window_buffer_update),
         style_changed: None,
         key: Some(
             window_buffer_key
@@ -196,7 +191,7 @@ fn window_buffer_add_item(
 fn window_buffer_clear_items(items: &mut Vec<refbox::RefBox<window_buffer_itemdata>>) {
     items.clear();
 }
-unsafe fn window_buffer_build(
+fn window_buffer_build(
     data: &mut window_buffer_modedata,
     sort_crit: &sort_criteria,
     filter: Option<&CStr>,
@@ -263,7 +258,7 @@ unsafe fn window_buffer_build(
         i = i.wrapping_add(1);
     }
 }
-unsafe fn window_buffer_draw(
+fn window_buffer_draw(
     item: &window_buffer_itemdata,
     ctx: &mut screen_write_ctx,
     mut sx: u_int,
@@ -296,7 +291,7 @@ unsafe fn window_buffer_draw(
 fn window_buffer_find(data: &[u8], find: &[u8], icase: bool) -> bool {
     !find.is_empty() && contains(data, find, icase)
 }
-unsafe fn window_buffer_search(item: &window_buffer_itemdata, search: &CStr, icase: bool) -> bool {
+fn window_buffer_search(item: &window_buffer_itemdata, search: &CStr, icase: bool) -> bool {
     let Some(buffer) = paste_get_name(&item.name) else {
         return false;
     };
@@ -326,7 +321,7 @@ unsafe fn window_buffer_menu(
     }
     window_buffer_key(wme.clone(), c, (refbox::Weak::new()).clone(), key, None);
 }
-unsafe fn window_buffer_get_key(
+fn window_buffer_get_key(
     data: &window_buffer_modedata,
     item: &window_buffer_itemdata,
     mut line: u_int,
@@ -471,7 +466,7 @@ unsafe fn window_buffer_init(
     mode_tree_draw(&tree_owner);
     true
 }
-unsafe fn window_buffer_get_screen(
+fn window_buffer_get_screen(
     wme: refbox::Weak<window_mode_entry>,
     visit: &mut dyn FnMut(&mut screen),
 ) {
@@ -480,13 +475,13 @@ unsafe fn window_buffer_get_screen(
     else {
         return;
     };
-    let tree_owner = window_mode_screen_payload(&data, |data| data.data.clone());
+    let tree_owner = data.borrow().data.clone();
     if let Some(tree_owner) = tree_owner {
         mode_tree_visit_screen(&tree_owner, visit);
     }
 }
 
-unsafe fn window_buffer_free(wme: refbox::Weak<window_mode_entry>) {
+fn window_buffer_free(wme: refbox::Weak<window_mode_entry>) {
     let Some(data) =
         ModeDataRef::<window_buffer_modedata>::new(wme.try_borrow().expect("live mode entry"))
     else {
@@ -498,15 +493,11 @@ unsafe fn window_buffer_free(wme: refbox::Weak<window_mode_entry>) {
     }
     mode_tree_free(data.data.take().expect("mode tree owner"));
 }
-unsafe fn window_buffer_resize(
-    mut wme: refbox::Weak<window_mode_entry>,
-    mut sx: u_int,
-    mut sy: u_int,
-) {
+fn window_buffer_resize(mut wme: refbox::Weak<window_mode_entry>, mut sx: u_int, mut sy: u_int) {
     let tree_owner = window_buffer_data(&wme).borrow().tree_owner();
     mode_tree_resize(&tree_owner, sx, sy);
 }
-unsafe fn window_buffer_update(mut wme: refbox::Weak<window_mode_entry>) {
+fn window_buffer_update(mut wme: refbox::Weak<window_mode_entry>) {
     let data = window_buffer_data(&wme);
     let (pane, tree_owner) = {
         let data = data.borrow();
@@ -522,7 +513,7 @@ unsafe fn window_buffer_update(mut wme: refbox::Weak<window_mode_entry>) {
     window_buffer_draw_waiting(&data);
     mode_pane_owner.request_redraw(false);
 }
-unsafe fn window_buffer_do_delete(
+fn window_buffer_do_delete(
     tree_owner: &Rc<std::cell::RefCell<mode_tree_data>>,
     item: &ModeTreeItemSnapshot<window_buffer_itemdata>,
 ) {
@@ -535,16 +526,12 @@ unsafe fn window_buffer_do_delete(
         paste_free(&pb);
     }
 }
-unsafe fn window_buffer_do_paste(
-    command: &CStr,
-    item: &window_buffer_itemdata,
-    client_owner: &ClientRef,
-) {
+fn window_buffer_do_paste(command: &CStr, item: &window_buffer_itemdata, client_owner: &ClientRef) {
     if paste_get_name(&item.name).is_some() {
         mode_tree_run_command(Some(client_owner), None, command, &item.name);
     }
 }
-unsafe fn window_buffer_draw_waiting(data: &std::cell::RefCell<window_buffer_modedata>) {
+fn window_buffer_draw_waiting(data: &std::cell::RefCell<window_buffer_modedata>) {
     let (pane, pid) = {
         let data = data.borrow();
         let Some(editor) = data.editor.as_ref() else {
@@ -557,8 +544,8 @@ unsafe fn window_buffer_draw_waiting(data: &std::cell::RefCell<window_buffer_mod
     };
     pane.draw_editor_waiting(pid);
 }
-unsafe fn window_buffer_edit_close_cb(
-    editor: NonNull<spawn_editor_state>,
+fn window_buffer_edit_close_cb(
+    editor: &spawn_editor_state,
     buf: Option<Vec<u8>>,
     ed: window_buffer_editdata,
 ) {
@@ -576,7 +563,7 @@ unsafe fn window_buffer_edit_close_cb(
             if data
                 .editor
                 .as_ref()
-                .is_some_and(|handle| handle.matches(editor.as_ref()))
+                .is_some_and(|handle| handle.matches(editor))
             {
                 data.editor = None;
             }
@@ -655,7 +642,7 @@ unsafe fn window_buffer_start_edit(
     let editor = spawn_editor(
         client_owner,
         |stream| spawn_editor_write(stream, paste_buffer_data(&pb.borrow()).unwrap_or_default()),
-        Some(Box::new(move |editor, buf| unsafe {
+        Some(Box::new(move |editor, buf| {
             window_buffer_edit_close_cb(editor, buf, ed)
         })),
     );
@@ -717,7 +704,7 @@ unsafe fn window_buffer_key(
             68 => {
                 mode_tree_each_tagged(
                     &tree_owner,
-                    |row, _| unsafe {
+                    |row, _| {
                         let itemdata = row.borrow().itemdata.clone();
                         window_buffer_do_delete(
                             &tree_owner,
@@ -733,7 +720,7 @@ unsafe fn window_buffer_key(
                 let command = data.borrow().command.clone();
                 mode_tree_each_tagged(
                     &tree_owner,
-                    |row, _| unsafe {
+                    |row, _| {
                         let itemdata = row.borrow().itemdata.clone();
                         window_buffer_do_paste(
                             &command,

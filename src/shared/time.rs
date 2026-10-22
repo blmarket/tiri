@@ -15,6 +15,18 @@ pub fn unix_seconds(time: SystemTime) -> super::abi::time_t {
     }
 }
 
+/// Local calendar time, or `None` when `t` cannot be represented.
+pub fn local_time(t: super::abi::time_t) -> Option<tm> {
+    let mut result: tm = unsafe { ::core::mem::zeroed() };
+    let converted = unsafe { ::libc::localtime_r(&t, &mut result) };
+    (!converted.is_null()).then_some(result)
+}
+
+/// `strftime` into `buf`; 0 when the result does not fit.
+pub fn format_strftime(buf: &mut [u8], fmt: &std::ffi::CStr, tm: &tm) -> usize {
+    unsafe { ::libc::strftime(buf.as_mut_ptr().cast(), buf.len(), fmt.as_ptr(), tm) }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

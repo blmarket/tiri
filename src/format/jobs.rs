@@ -52,13 +52,13 @@ impl JobCache {
 
     /// Only immediate cache edits. The closure must not expand formats, launch
     /// or free processes, notify clients, or return borrowed components.
-    unsafe fn with_cache<R>(&self, edit: impl FnOnce(&mut format_job_tree) -> R) -> Option<R> {
+    fn with_cache<R>(&self, edit: impl FnOnce(&mut format_job_tree) -> R) -> Option<R> {
         match self {
             Self::Global => Some(FORMAT_JOBS.with_borrow_mut(edit)),
             Self::Client(observer) => {
                 let client = observer.upgrade()?;
                 let mut cache = client.borrow_format_jobs_mut();
-                Some(edit(cache))
+                Some(edit(&mut *cache))
             }
         }
     }
@@ -71,7 +71,7 @@ impl JobCache {
         }
     }
 
-    unsafe fn entry(&self, tag: u_int, command: &CStr) -> JobEntry {
+    fn entry(&self, tag: u_int, command: &CStr) -> JobEntry {
         let key = (tag, command.to_bytes().to_vec());
         let identity = self
             .with_cache(|cache| {
@@ -95,7 +95,7 @@ struct JobEntry {
 }
 
 impl JobEntry {
-    unsafe fn with_record<R>(&self, edit: impl FnOnce(&mut format_job) -> R) -> Option<R> {
+    fn with_record<R>(&self, edit: impl FnOnce(&mut format_job) -> R) -> Option<R> {
         self.cache
             .with_cache(|cache| {
                 let record = cache.get_mut(&self.key)?;
@@ -108,15 +108,17 @@ impl JobEntry {
     }
 }
 
-unsafe fn format_job_update(job: &refbox::Weak<job>, entry: &JobEntry) {
-    let line = {
-        let buffer = crate::reactor::bufferevent_get_input(&mut *job_get_event(job));
-        let mut line = None;
-        while let Some(next) = evbuffer_readline(buffer) {
-            line = Some(next);
-        }
-        line
-    };
+fn format_job_update(job: &refbox::Weak<job>, entry: &JobEntry) {
+    let line = job_get_event(job)
+        .with_stream(|stream| {
+            let buffer = crate::reactor::bufferevent_get_input(stream);
+            let mut line = None;
+            while let Some(next) = evbuffer_readline(buffer) {
+                line = Some(next);
+            }
+            line
+        })
+        .flatten();
     let Some(line) = line else { return };
     let Some((status, last)) = entry.with_record(|record| {
         record.updated = 1;
@@ -140,7 +142,7 @@ unsafe fn format_job_update(job: &refbox::Weak<job>, entry: &JobEntry) {
     }
 }
 
-unsafe fn format_job_complete(completion: JobCompletion, entry: &JobEntry) {
+fn format_job_complete(completion: JobCompletion, entry: &JobEntry) {
     let mut buffer = evbuffer_new();
     if !completion.output.is_empty() {
         evbuffer_add(&mut buffer, &completion.output);
@@ -187,7 +189,7 @@ unsafe fn format_job_complete(completion: JobCompletion, entry: &JobEntry) {
     }
 }
 
-pub(super) unsafe fn format_job_get(es: &mut format_expand_state<'_>, command: &CStr) -> CString {
+pub(super) fn format_job_get(es: &mut format_expand_state<'_>, command: &CStr) -> CString {
     let (flags, tag, client) = (es.ft.flags, es.ft.tag, es.ft.client.clone());
     let cache = JobCache::for_client(client.as_ref());
     let entry = cache.entry(tag, command);
@@ -224,8 +226,8 @@ pub(super) unsafe fn format_job_get(es: &mut format_expand_state<'_>, command: &
             None,
             None,
             cwd.as_deref(),
-            job_update_callback(move |job| unsafe { format_job_update(job, &update_entry) }),
-            Some(Box::new(move |completion| unsafe {
+            job_update_callback(move |job| format_job_update(job, &update_entry)),
+            Some(Box::new(move |completion| {
                 format_job_complete(completion, &complete_entry)
             })),
             None,
@@ -290,7 +292,7 @@ fn format_job_find_or_insert<'a>(
         })
 }
 
-unsafe fn format_job_tidy_at(cache: &JobCache, force: i32, now: time_t) {
+fn format_job_tidy_at(cache: &JobCache, force: i32, now: time_t) {
     let expired = cache
         .with_cache(|cache| {
             cache
@@ -325,7 +327,7 @@ unsafe fn format_job_tidy_at(cache: &JobCache, force: i32, now: time_t) {
     }
 }
 
-pub unsafe fn format_tidy_jobs() {
+pub fn format_tidy_jobs() {
     format_job_tidy_at(
         &JobCache::Global,
         0,
@@ -342,7 +344,7 @@ pub unsafe fn format_tidy_jobs() {
     }
 }
 
-pub unsafe fn format_lost_client(client: &ClientRef) {
+pub fn format_lost_client(client: &ClientRef) {
     let cache = JobCache::for_client(Some(client));
     format_job_tidy_at(
         &cache,

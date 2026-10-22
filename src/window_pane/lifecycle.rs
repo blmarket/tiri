@@ -38,10 +38,7 @@ use crate::server_fn::{server_kill_window, server_redraw_window};
 use crate::shared::pane::PANE_EXITED;
 use crate::spawn::spawn_editor_finish;
 
-unsafe fn server_fire_pane_exit(
-    name: &CStr,
-    wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
-) {
+fn server_fire_pane_exit(name: &CStr, wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: std::rc::Weak::new(),
@@ -72,7 +69,7 @@ unsafe fn server_fire_pane_exit(
     );
     events_fire(name, ep);
 }
-pub(super) unsafe fn kill_process(pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>) {
+pub(super) fn kill_process(pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>) {
     let window_owner = pane_owner
         .window_observer()
         .upgrade()
@@ -88,7 +85,7 @@ pub(super) unsafe fn kill_process(pane_owner: &std::rc::Rc<std::cell::RefCell<wi
         server_redraw_window(&window);
     };
 }
-pub(super) unsafe fn finish_process(
+pub(super) fn finish_process(
     pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     mut notify: ::core::ffi::c_int,
 ) {
@@ -180,10 +177,11 @@ pub(super) unsafe fn finish_process(
             let format =
                 options_get_string(&pane_owner.borrow_options_mut(), c"remain-on-exit-format");
             if !format.is_empty() {
-                // The write context reaches the pane while it holds `base`
-                // (geometry, sync state, format expansion), so the pane cannot
-                // be borrowed for its lifetime.
-                let mut ctx = screen_write_start_pane(pane_owner, &mut (*pane_owner.as_ptr()).base);
+                // The write context reaches the pane (geometry, sync state)
+                // and the format reads `base`, so each write takes `base` out
+                // of the pane and puts it back before the format expands.
+                let mut base = std::mem::take(&mut pane_owner.borrow_mut().base);
+                let mut ctx = screen_write_start_pane(pane_owner, &mut base);
                 screen_write_scrollregion(&mut ctx, 0 as u_int, sy.wrapping_sub(1 as u_int));
                 screen_write_cursormove(
                     &mut ctx,
@@ -192,6 +190,8 @@ pub(super) unsafe fn finish_process(
                     0 as ::core::ffi::c_int,
                 );
                 screen_write_linefeed(&mut ctx, 1 as ::core::ffi::c_int, 8 as u_int);
+                screen_write_stop(ctx);
+                pane_owner.borrow_mut().base = base;
                 gc = grid_default_cell;
                 let expanded = format_single_cstring(
                     None,
@@ -201,8 +201,11 @@ pub(super) unsafe fn finish_process(
                     (refbox::Weak::new()).clone(),
                     Some(pane_owner),
                 );
+                let mut base = std::mem::take(&mut pane_owner.borrow_mut().base);
+                let mut ctx = screen_write_start_pane(pane_owner, &mut base);
                 format_draw(&mut ctx, &gc, sx, &expanded, None, 0 as ::core::ffi::c_int);
                 screen_write_stop(ctx);
+                pane_owner.borrow_mut().base = base;
             }
             {
                 let mut wp = pane_owner.borrow_mut();
@@ -226,7 +229,7 @@ pub(super) unsafe fn finish_process(
     };
     drop(window_owner);
 }
-pub(super) unsafe fn process_exited(
+pub(super) fn process_exited(
     pane: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     pid: pid_t,
     status: ExitStatus,

@@ -9,7 +9,7 @@ use crate::shared::abi::{pid_t, size_t, ssize_t, u_int};
 use crate::shared::layout::BOX_LINES_DEFAULT;
 use std::{cell::RefCell, rc::Rc};
 
-pub(super) unsafe fn draw_editor_waiting(owner: &Rc<RefCell<window_pane>>, pid: pid_t) {
+pub(super) fn draw_editor_waiting(owner: &Rc<RefCell<window_pane>>, pid: pid_t) {
     owner
         .borrow_mut()
         .with_screen_mut(|s| {

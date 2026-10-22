@@ -66,7 +66,7 @@ unsafe fn cmd_kill_pane_exec(
     server_kill_pane(&pane_owner);
     CmdOutcome::Normal
 }
-unsafe fn cmd_kill_pane_all(
+fn cmd_kill_pane_all(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     filter: Option<&CStr>,
 ) -> CmdOutcome {
@@ -98,7 +98,7 @@ unsafe fn cmd_kill_pane_all(
     server_redraw_window((winlink_window(&wl).as_ref()).expect("live window"));
     CmdOutcome::Normal
 }
-unsafe fn cmd_kill_pane_filter(
+fn cmd_kill_pane_filter(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     s_owner: &SessionRef,
     mut wl: refbox::Weak<winlink>,

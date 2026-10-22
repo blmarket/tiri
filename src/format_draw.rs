@@ -84,7 +84,7 @@ fn format_update_ranges(
         true
     });
 }
-unsafe fn format_draw_put(
+fn format_draw_put(
     mut octx: &mut screen_write_ctx,
     mut ocx: u_int,
     mut ocy: u_int,
@@ -104,7 +104,7 @@ unsafe fn format_draw_put(
     screen_write_fast_copy(&mut *octx, s, start, 0 as u_int, width, 1 as u_int);
     format_update_ranges(frs, index, offset, start, width);
 }
-unsafe fn format_draw_put_list(
+fn format_draw_put_list(
     mut octx: &mut screen_write_ctx,
     mut ocx: u_int,
     mut ocy: u_int,
@@ -172,7 +172,7 @@ unsafe fn format_draw_put_list(
     }
     format_draw_put(octx, ocx, ocy, list, LIST, frs, offset, start, width);
 }
-unsafe fn format_draw_none(
+fn format_draw_none(
     mut octx: &mut screen_write_ctx,
     mut available: u_int,
     mut ocx: u_int,
@@ -256,7 +256,7 @@ unsafe fn format_draw_none(
         width_abs_centre,
     );
 }
-unsafe fn format_draw_left(
+fn format_draw_left(
     mut octx: &mut screen_write_ctx,
     mut available: u_int,
     mut ocx: u_int,
@@ -406,7 +406,7 @@ unsafe fn format_draw_left(
         width_abs_centre,
     );
 }
-unsafe fn format_draw_centre(
+fn format_draw_centre(
     mut octx: &mut screen_write_ctx,
     mut available: u_int,
     mut ocx: u_int,
@@ -551,7 +551,7 @@ unsafe fn format_draw_centre(
         width_abs_centre,
     );
 }
-unsafe fn format_draw_right(
+fn format_draw_right(
     mut octx: &mut screen_write_ctx,
     mut available: u_int,
     mut ocx: u_int,
@@ -700,7 +700,7 @@ unsafe fn format_draw_right(
         width_abs_centre,
     );
 }
-unsafe fn format_draw_absolute_centre(
+fn format_draw_absolute_centre(
     mut octx: &mut screen_write_ctx,
     mut available: u_int,
     mut ocx: u_int,
@@ -848,7 +848,7 @@ fn format_leading_hashes(s: &[u8]) -> (usize, u_int, u_int) {
     }
     (if n % 2 == 0 { n } else { n - 1 }, count, count / 2)
 }
-unsafe fn format_draw_many(mut ctx: &mut screen_write_ctx, sy: &mut style, mut n: u_int) {
+fn format_draw_many(mut ctx: &mut screen_write_ctx, sy: &mut style, mut n: u_int) {
     let mut i: u_int = 0;
     utf8_set(&mut sy.gc.data, b'#');
     i = 0 as u_int;
@@ -857,7 +857,7 @@ unsafe fn format_draw_many(mut ctx: &mut screen_write_ctx, sy: &mut style, mut n
         i = i.wrapping_add(1);
     }
 }
-pub unsafe fn format_draw(
+pub fn format_draw(
     mut octx: &mut screen_write_ctx,
     base: &grid_cell,
     mut available: u_int,
@@ -1722,49 +1722,47 @@ mod range_tests {
 
     #[test]
     fn rendered_ranges_follow_their_alignment_and_clipping() {
-        unsafe {
-            OptionsScope::GlobalServer.reset_default(
-                options_table
-                    .iter()
-                    .find(|entry| entry.name == Some(c"extended-keys"))
-                    .unwrap(),
+        OptionsScope::GlobalServer.reset_default(
+            options_table
+                .iter()
+                .find(|entry| entry.name == Some(c"extended-keys"))
+                .unwrap(),
+        );
+        for (width, expected) in [
+            (
+                20,
+                vec![("left", 0, 2), ("centre", 9, 11), ("right", 18, 20)],
+            ),
+            (3, vec![("left", 0, 2), ("right", 2, 3)]),
+        ] {
+            let mut output = screen::default();
+            screen_init(&mut output, width, 1, 0);
+            let mut ranges = style_ranges::default();
+            let mut ctx = screen_write_start(&mut output);
+            format_draw(
+                &mut ctx,
+                &grid_default_cell,
+                width,
+                c"#[align=left,range=user|left]LL#[norange]#[align=centre,range=user|centre]CC#[norange]#[align=right,range=user|right]RR#[norange]",
+                Some(&mut ranges),
+                0,
             );
-            for (width, expected) in [
-                (
-                    20,
-                    vec![("left", 0, 2), ("centre", 9, 11), ("right", 18, 20)],
-                ),
-                (3, vec![("left", 0, 2), ("right", 2, 3)]),
-            ] {
-                let mut output = screen::default();
-                screen_init(&mut output, width, 1, 0);
-                let mut ranges = style_ranges::default();
-                let mut ctx = screen_write_start(&mut output);
-                format_draw(
-                    &mut ctx,
-                    &grid_default_cell,
-                    width,
-                    c"#[align=left,range=user|left]LL#[norange]#[align=centre,range=user|centre]CC#[norange]#[align=right,range=user|right]RR#[norange]",
-                    Some(&mut ranges),
-                    0,
-                );
-                screen_write_stop(ctx);
-                let actual: Vec<_> = ranges
-                    .iter()
-                    .map(|range| {
-                        (
-                            CStr::from_bytes_until_nul(&range.string)
-                                .unwrap()
-                                .to_str()
-                                .unwrap(),
-                            range.start,
-                            range.end,
-                        )
-                    })
-                    .collect();
-                drop(output);
-                assert_eq!(actual, expected, "available width {width}");
-            }
+            screen_write_stop(ctx);
+            let actual: Vec<_> = ranges
+                .iter()
+                .map(|range| {
+                    (
+                        CStr::from_bytes_until_nul(&range.string)
+                            .unwrap()
+                            .to_str()
+                            .unwrap(),
+                        range.start,
+                        range.end,
+                    )
+                })
+                .collect();
+            drop(output);
+            assert_eq!(actual, expected, "available width {width}");
         }
     }
 }

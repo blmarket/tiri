@@ -112,11 +112,7 @@ fn cmd_list_keys_filter_key_list(
         (filter_key == 0 || only == key) && (filter_notes == 0 || !bd.note.is_none())
     });
 }
-unsafe fn cmd_list_keys_format_add_key_binding(
-    ft: &mut format_tree,
-    bd: &key_binding,
-    prefix: &CStr,
-) {
+fn cmd_list_keys_format_add_key_binding(ft: &mut format_tree, bd: &key_binding, prefix: &CStr) {
     if bd.flags & KEY_BINDING_REPEAT != 0 {
         format_add(ft, c"key_repeat", |out| out.write_all(b"1"));
     } else {
@@ -128,9 +124,7 @@ unsafe fn cmd_list_keys_format_add_key_binding(
         format_add(ft, c"key_note", |out| write_cstr(out, c""));
     }
     let key_string = key_string_format(bd.key, false);
-    format_add(ft, c"key_prefix", |out| {
-        write_cstr(out, nullable_cstr(prefix.as_ptr()))
-    });
+    format_add(ft, c"key_prefix", |out| write_cstr(out, Some(&*prefix)));
     format_add(ft, c"key_table", |out| {
         write_cstr(out, bd.tablename.as_deref())
     });

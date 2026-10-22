@@ -162,7 +162,7 @@ fn winlink_release_window(wl: refbox::Weak<winlink>) {
     assert!(previous.is_some(), "winlink window reference");
 }
 
-pub unsafe fn winlink_set_window(wl: refbox::Weak<winlink>, w_owner: &WindowRef) {
+pub fn winlink_set_window(wl: refbox::Weak<winlink>, w_owner: &WindowRef) {
     let previous = winlink_window(&wl);
     if let Some(previous) = previous {
         previous.remove_winlink(wl.clone());
@@ -172,7 +172,7 @@ pub unsafe fn winlink_set_window(wl: refbox::Weak<winlink>, w_owner: &WindowRef)
     w_owner.add_winlink(wl);
 }
 
-pub unsafe fn winlink_remove(wwl: &winlinks, wl: refbox::Weak<winlink>) {
+pub fn winlink_remove(wl: refbox::Weak<winlink>) {
     let session_owner = wl.try_borrow().expect("live winlink").session.upgrade();
     if let Some(session_owner) = session_owner {
         session_owner.forget_winlink(wl.clone());
@@ -182,16 +182,18 @@ pub unsafe fn winlink_remove(wwl: &winlinks, wl: refbox::Weak<winlink>) {
         window.remove_winlink(wl.clone());
         winlink_release_window(wl.clone());
     }
-    let idx = wl.try_borrow().expect("live winlink").idx;
+    let (idx, index) = {
+        let link = wl.try_borrow().expect("live winlink");
+        (link.idx, link.owner.clone())
+    };
     let owner = {
-        let storage = wwl;
-        let mut map = storage
+        let mut map = index
             .try_borrow_mut()
             .expect("winlink index already borrowed");
         assert_eq!(
             map.get(&idx).map(|owner| owner.downgrade()),
             Some(wl.clone()),
-            "removed winlink must belong to this index"
+            "removed winlink must belong to its index"
         );
         map.remove(&idx).expect("winlink must have an owner")
     };
@@ -219,7 +221,7 @@ pub fn winlink_previous(wl: &refbox::Weak<winlink>) -> refbox::Weak<winlink> {
     winlinks_prev(&wl.try_borrow().expect("live winlink"))
 }
 
-pub unsafe fn winlink_next_by_number(
+pub fn winlink_next_by_number(
     mut wl: refbox::Weak<winlink>,
     s_owner: &SessionRef,
     mut n: ::core::ffi::c_int,
@@ -238,7 +240,7 @@ pub unsafe fn winlink_next_by_number(
     wl
 }
 
-pub unsafe fn winlink_previous_by_number(
+pub fn winlink_previous_by_number(
     mut wl: refbox::Weak<winlink>,
     s_owner: &SessionRef,
     mut n: ::core::ffi::c_int,
@@ -277,7 +279,7 @@ fn winlink_weak(wl: refbox::Weak<winlink>) -> refbox::Weak<winlink> {
 
 /// Move the owner between keys without invalidating the winlink or its observers.
 /// The caller must supply a live member of `head` and an unused destination index.
-pub unsafe fn winlinks_reindex(head: &winlinks, wl: refbox::Weak<winlink>, idx: i32) {
+pub fn winlinks_reindex(head: &winlinks, wl: refbox::Weak<winlink>, idx: i32) {
     let owner = head;
     let mut map = owner
         .try_borrow_mut()
@@ -302,7 +304,7 @@ pub unsafe fn winlinks_reindex(head: &winlinks, wl: refbox::Weak<winlink>, idx: 
     map.insert(idx, owner);
 }
 
-pub unsafe fn winlink_stack_push(stack: &mut winlink_stack, wl: refbox::Weak<winlink>) {
+pub fn winlink_stack_push(stack: &mut winlink_stack, wl: refbox::Weak<winlink>) {
     if !wl.is_alive() {
         return;
     }
@@ -319,7 +321,7 @@ pub fn winlink_stack_remove(stack: &mut winlink_stack, wl: refbox::Weak<winlink>
 }
 
 /// Append while rebuilding a session's saved visit order.
-pub unsafe fn winlink_stack_append(stack: &mut winlink_stack, wl: refbox::Weak<winlink>) {
+pub fn winlink_stack_append(stack: &mut winlink_stack, wl: refbox::Weak<winlink>) {
     let weak = winlink_weak(wl.clone());
     stack.push_back(weak);
 }
@@ -353,7 +355,7 @@ pub fn winlink_stack_next(
     queue.get(position + 1).cloned().unwrap_or_default()
 }
 
-pub unsafe fn winlink_clear_flags(mut wl: refbox::Weak<winlink>) {
+pub fn winlink_clear_flags(mut wl: refbox::Weak<winlink>) {
     let window = winlink_window(&wl).expect("linked window");
     window.clear_alert_flags();
     let mut cursor = window.next_winlink(None);
@@ -369,11 +371,7 @@ pub unsafe fn winlink_clear_flags(mut wl: refbox::Weak<winlink>) {
     }
 }
 
-pub unsafe fn winlink_shuffle_up(
-    session: &SessionRef,
-    link: refbox::Weak<winlink>,
-    before: i32,
-) -> i32 {
+pub fn winlink_shuffle_up(session: &SessionRef, link: refbox::Weak<winlink>, before: i32) -> i32 {
     session.shuffle_window(link, before != 0)
 }
 
@@ -382,41 +380,39 @@ mod tests {
     use super::*;
     #[test]
     fn winlink_index_keeps_order_and_weak_observers_across_moves() {
-        unsafe {
-            let mut head = Default::default();
-            let first = winlink_add(&head, 1);
-            let second = winlink_add(&head, 3);
-            assert!(first.is_alive() && second.is_alive());
-            assert!(!winlink_add(&head, 1).is_alive());
-            winlinks_reindex(&head, (second).clone(), 2);
+        let mut head = Default::default();
+        let first = winlink_add(&head, 1);
+        let second = winlink_add(&head, 3);
+        assert!(first.is_alive() && second.is_alive());
+        assert!(!winlink_add(&head, 1).is_alive());
+        winlinks_reindex(&head, (second).clone(), 2);
 
-            let index_observer = first.try_borrow().expect("live winlink").owner.clone();
-            let node_observer = winlink_weak((first).clone());
-            let mut moved = head;
-            assert_eq!(winlinks_minmax(&moved, RB_NEGINF), first);
-            assert_eq!(
-                winlinks_next(&first.try_borrow().expect("live winlink")),
-                second
-            );
-            assert_eq!(second.try_borrow().expect("live winlink").idx, 2);
+        let index_observer = first.try_borrow().expect("live winlink").owner.clone();
+        let node_observer = winlink_weak((first).clone());
+        let mut moved = head;
+        assert_eq!(winlinks_minmax(&moved, RB_NEGINF), first);
+        assert_eq!(
+            winlinks_next(&first.try_borrow().expect("live winlink")),
+            second
+        );
+        assert_eq!(second.try_borrow().expect("live winlink").idx, 2);
 
-            winlink_remove(&moved, (first).clone());
-            assert!(matches!(
-                node_observer.try_access_mut(|link| link.idx),
-                Err(refbox::BorrowError::Dropped)
-            ));
-            assert!(index_observer.try_borrow_mut().is_ok());
-            let second_observer = winlink_weak((second).clone());
-            winlink_remove(&moved, (second).clone());
-            drop(moved);
-            assert!(matches!(
-                second_observer.try_access_mut(|link| link.idx),
-                Err(refbox::BorrowError::Dropped)
-            ));
-            assert!(matches!(
-                index_observer.try_borrow_mut(),
-                Err(refbox::BorrowError::Dropped)
-            ));
-        }
+        winlink_remove((first).clone());
+        assert!(matches!(
+            node_observer.try_access_mut(|link| link.idx),
+            Err(refbox::BorrowError::Dropped)
+        ));
+        assert!(index_observer.try_borrow_mut().is_ok());
+        let second_observer = winlink_weak((second).clone());
+        winlink_remove((second).clone());
+        drop(moved);
+        assert!(matches!(
+            second_observer.try_access_mut(|link| link.idx),
+            Err(refbox::BorrowError::Dropped)
+        ));
+        assert!(matches!(
+            index_observer.try_borrow_mut(),
+            Err(refbox::BorrowError::Dropped)
+        ));
     }
 }

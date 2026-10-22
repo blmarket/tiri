@@ -96,7 +96,7 @@ fn prompt_write_flags(
     }
     Ok(())
 }
-pub unsafe fn prompt_set_options(pd: &mut prompt_create_data<'_>, session: Option<&SessionRef>) {
+pub fn prompt_set_options(pd: &mut prompt_create_data<'_>, session: Option<&SessionRef>) {
     let scope = match session {
         Some(session) => OptionsScope::Session(Rc::downgrade(session)),
         None => OptionsScope::GlobalSession,
@@ -132,9 +132,7 @@ pub unsafe fn prompt_set_options(pd: &mut prompt_create_data<'_>, session: Optio
     pd.keys = read_number(c"status-keys") as i32;
     pd.word_separators = read_string(c"word-separators");
 }
-pub unsafe fn prompt_create(
-    pd: prompt_create_data<'_>,
-) -> refbox::RefBox<crate::shared::prompt::prompt> {
+pub fn prompt_create(pd: prompt_create_data<'_>) -> refbox::RefBox<crate::shared::prompt::prompt> {
     let owner = refbox::RefBox::new(prompt::default());
     let mut pr = owner.try_borrow_mut().expect("live unborrowed prompt");
     let mut ft_owner = if let Some(fs) = pd.fs {
@@ -319,7 +317,7 @@ fn prompt_incremental_input(pr: &prompt, prefix: u8) -> CString {
     bytes.extend_from_slice(input.as_bytes());
     CString::new(bytes).expect("the first NUL ends the prompt input")
 }
-pub unsafe fn prompt_update(pr: &mut prompt, msg: &CStr, input: Option<&CStr>) {
+pub fn prompt_update(pr: &mut prompt, msg: &CStr, input: Option<&CStr>) {
     let mut ft_owner = if pr.state.is_valid() {
         format_create_from_state(None, None, &pr.state)
     } else {
@@ -343,7 +341,7 @@ pub unsafe fn prompt_update(pr: &mut prompt, msg: &CStr, input: Option<&CStr>) {
 pub fn prompt_closed(pr: &prompt) -> ::core::ffi::c_int {
     pr.closed
 }
-unsafe fn prompt_redraw_character(
+fn prompt_redraw_character(
     ctx: &mut screen_write_ctx,
     mut offset: u_int,
     mut pwidth: u_int,
@@ -384,7 +382,7 @@ unsafe fn prompt_redraw_character(
     screen_write_cell(ctx, gc);
     1 as ::core::ffi::c_int
 }
-unsafe fn prompt_redraw_quote(
+fn prompt_redraw_quote(
     pr: &prompt,
     mut pcursor: u_int,
     mut input_x: u_int,
@@ -409,7 +407,7 @@ unsafe fn prompt_redraw_quote(
     }
     1 as ::core::ffi::c_int
 }
-unsafe fn prompt_draw_complete(
+fn prompt_draw_complete(
     pr: &prompt,
     ctx: &mut screen_write_ctx,
     mut ax: u_int,
@@ -449,7 +447,7 @@ unsafe fn prompt_draw_complete(
         width = width.wrapping_add(cell.width as u_int);
     }
 }
-unsafe fn prompt_format_tree(pr: &prompt) -> Box<format_tree> {
+fn prompt_format_tree(pr: &prompt) -> Box<format_tree> {
     let mut owner;
     if pr.state.is_valid() {
         owner = format_create_from_state(None, None, &pr.state);
@@ -470,12 +468,12 @@ unsafe fn prompt_format_tree(pr: &prompt) -> Box<format_tree> {
     }
     owner
 }
-unsafe fn prompt_expand1(pr: &prompt, ft: &mut format_tree) -> CString {
+fn prompt_expand1(pr: &prompt, ft: &mut format_tree) -> CString {
     let prompt = format_expand_time_cstring(ft, &pr.string);
     format_add(ft, c"message", |out| write_cstr(out, &*prompt));
     format_expand_time_cstring(ft, &pr.message_format)
 }
-unsafe fn prompt_effective_style(pr: &prompt, sy: &mut style, ft: &mut format_tree) {
+fn prompt_effective_style(pr: &prompt, sy: &mut style, ft: &mut format_tree) {
     let (text, cell) = if pr.flags & PROMPT_COMMANDMODE != 0 {
         (&pr.command_style_str, &pr.command_style)
     } else {
@@ -487,7 +485,7 @@ unsafe fn prompt_effective_style(pr: &prompt, sy: &mut style, ft: &mut format_tr
         style_set(sy, cell);
     }
 }
-unsafe fn prompt_layout(
+fn prompt_layout(
     pr: &prompt,
     mut ax: u_int,
     mut aw: u_int,
@@ -659,7 +657,7 @@ pub(crate) fn prompt_draw_cursor_style(pr: &prompt, s: &mut screen) {
 }
 
 /// Expand formats before borrowing the destination model's screen.
-pub(crate) unsafe fn prompt_prepare_draw(pr: &prompt, ax: u_int, aw: u_int) -> PreparedPromptDraw {
+pub(crate) fn prompt_prepare_draw(pr: &prompt, ax: u_int, aw: u_int) -> PreparedPromptDraw {
     let mut sy: style = style {
         gc: grid_cell {
             data: utf8_data {
@@ -698,7 +696,7 @@ pub(crate) unsafe fn prompt_prepare_draw(pr: &prompt, ax: u_int, aw: u_int) -> P
 }
 
 /// Draw already-expanded text; this stage does not invoke format callbacks.
-pub(crate) unsafe fn prompt_draw_prepared(
+pub(crate) fn prompt_draw_prepared(
     pr: &prompt,
     ctx: &mut screen_write_ctx,
     pd: prompt_draw_data,
@@ -798,12 +796,12 @@ pub(crate) unsafe fn prompt_draw_prepared(
     pl.cursor_x
 }
 
-pub unsafe fn prompt_draw(pr: &prompt, ctx: &mut screen_write_ctx, pd: prompt_draw_data) -> u_int {
+pub fn prompt_draw(pr: &prompt, ctx: &mut screen_write_ctx, pd: prompt_draw_data) -> u_int {
     prompt_draw_cursor_style(pr, &mut *ctx.screen);
     let prepared = prompt_prepare_draw(pr, pd.area_x, pd.area_width);
     prompt_draw_prepared(pr, ctx, pd, prepared)
 }
-pub unsafe fn prompt_mouse(
+pub fn prompt_mouse(
     pr: &mut prompt,
     mut x: u_int,
     mut ax: u_int,

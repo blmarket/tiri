@@ -6,9 +6,7 @@ use crate::input_keys::{input_key, input_key_get_mouse};
 use crate::job::{job_free, job_get_event, job_resize, job_run};
 use crate::options::options_get_number;
 use crate::options::OptionsScope;
-use crate::reactor::{
-    bufferevent_get_input, bufferevent_write, evbuffer_drain, evbuffer_get_length, evbuffer_pullup,
-};
+use crate::reactor::{bufferevent_get_input, bufferevent_write, evbuffer_drain, evbuffer_pullup};
 use crate::screen::screen_share_hyperlinks;
 use crate::screen::{screen_init, screen_resize, screen_set_default_cursor};
 use crate::screen_write::{
@@ -55,7 +53,6 @@ use std::ffi::{CStr, CString};
 use std::os::unix::process::ExitStatusExt;
 use std::rc::Rc;
 use std::rc::Weak;
-use tiri_buffer::SegmentedBuf;
 
 pub struct popup_data {
     /// The waiting command, stored only once the overlay is published.
@@ -196,26 +193,24 @@ pub const LEFT: C2RustUnnamed_40 = 1;
 
 impl Drop for popup_data {
     fn drop(&mut self) {
-        unsafe {
-            if let Some(waiter) = self.waiter.take() {
-                waiter.finish(self.status);
-            }
-            if let Some(client) = self.c.take() {
-                drop(client);
-            }
-            if !self.job.is_empty() {
-                job_free(&self.job);
-            }
-            drop(self.ictx.take());
-            drop(std::mem::take(&mut self.s));
-            {
-                let mut palette = self
-                    .palette
-                    .try_borrow_mut()
-                    .expect("unborrowed popup palette");
-                palette.palette = None;
-                palette.default_palette = None;
-            }
+        if let Some(waiter) = self.waiter.take() {
+            waiter.finish(self.status);
+        }
+        if let Some(client) = self.c.take() {
+            drop(client);
+        }
+        if !self.job.is_empty() {
+            job_free(&self.job);
+        }
+        drop(self.ictx.take());
+        drop(std::mem::take(&mut self.s));
+        {
+            let mut palette = self
+                .palette
+                .try_borrow_mut()
+                .expect("unborrowed popup palette");
+            palette.palette = None;
+            palette.default_palette = None;
         }
     }
 }
@@ -729,26 +724,25 @@ unsafe fn popup_key(c_owner: &ClientRef, popup: &PopupGuard, event: &mut key_eve
             let Some(buf) = input_key_get_mouse(ScreenMode::from(&(*pd).s), m, px, py) else {
                 return 0 as ::core::ffi::c_int;
             };
-            bufferevent_write(job_get_event(&(*pd).job), &buf);
+            let _ = job_get_event(&(*pd).job).with_stream(|stream| bufferevent_write(stream, &buf));
             return 0 as ::core::ffi::c_int;
         }
-        input_key(
-            ScreenMode::from(&(*pd).s),
-            job_get_event(&(*pd).job),
-            event.key,
-        );
+        let mode = ScreenMode::from(&(*pd).s);
+        let _ = job_get_event(&(*pd).job).with_stream(|stream| input_key(mode, stream, event.key));
     }
     0 as ::core::ffi::c_int
 }
 unsafe fn popup_job_update_cb(job: &refbox::Weak<job>, popup: &PopupGuard) {
     let pd = popup.as_ptr();
-    let evb: &mut SegmentedBuf = bufferevent_get_input(&mut *job_get_event(job));
+    let stream = job_get_event(job);
+    let data = stream
+        .with_stream(|stream| {
+            evbuffer_pullup(bufferevent_get_input(stream), -1)
+                .map_or_else(Vec::new, |bytes| bytes.to_vec())
+        })
+        .unwrap_or_default();
     let client = (*pd).c.as_ref().expect("popup client");
-    let mut data: *mut ::core::ffi::c_void = evbuffer_pullup(evb, -1)
-        .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
-        as *mut ::core::ffi::c_void;
-    let mut size: size_t = evbuffer_get_length(&*(evb));
-    if size == 0 as size_t {
+    if data.is_empty() {
         return;
     }
     let render = PopupRenderSnapshot::new(popup);
@@ -757,10 +751,10 @@ unsafe fn popup_job_update_cb(job: &refbox::Weak<job>, popup: &PopupGuard) {
             (*pd).ictx.as_deref_mut().expect("input context"),
             &mut (*pd).s,
             Some(Box::new(move |ttyctx| render.init_ctx(ttyctx))),
-            std::slice::from_raw_parts(data as *const u8, size as usize),
+            &data,
         )
     });
-    evbuffer_drain(evb, size);
+    let _ = stream.with_stream(|stream| evbuffer_drain(bufferevent_get_input(stream), data.len()));
 }
 unsafe fn popup_job_complete_cb(completion: JobCompletion, popup: &PopupGuard) {
     let pd = popup.as_ptr();
@@ -779,7 +773,7 @@ unsafe fn popup_job_complete_cb(completion: JobCompletion, popup: &PopupGuard) {
         }
     }
 }
-pub unsafe fn popup_present(client: &ClientRef) -> i32 {
+pub fn popup_present(client: &ClientRef) -> i32 {
     client.popup_overlay().is_some() as i32
 }
 pub unsafe fn popup_modify(
@@ -1113,7 +1107,7 @@ mod waiter_tests {
 
     /// Queue on `owner` a head that waits and an item recording that it ran;
     /// return the head's waiter once it is suspended.
-    unsafe fn waiting_head(
+    fn waiting_head(
         owner: &ClientRef,
         ran: &Rc<Cell<bool>>,
     ) -> (CmdqWaiter, Weak<std::cell::RefCell<cmdq_item>>) {
@@ -1154,79 +1148,71 @@ mod waiter_tests {
 
     #[test]
     fn freeing_a_published_popup_reports_its_status_to_a_sessionless_waiter_only() {
-        unsafe {
-            let owner = clients::with_queue();
-            let ran = Rc::new(Cell::new(false));
-            let (waiter, head) = waiting_head(&owner, &ran);
-            drop(published(waiter, 5));
-            assert_eq!(clients::return_value(&owner), 5);
-            assert!(!ran.get());
-            assert_eq!(cmdq_next(Some(&owner)), 1);
-            assert!(head.upgrade().is_none());
-            assert!(ran.get());
+        let owner = clients::with_queue();
+        let ran = Rc::new(Cell::new(false));
+        let (waiter, head) = waiting_head(&owner, &ran);
+        drop(published(waiter, 5));
+        assert_eq!(clients::return_value(&owner), 5);
+        assert!(!ran.get());
+        assert_eq!(cmdq_next(Some(&owner)), 1);
+        assert!(head.upgrade().is_none());
+        assert!(ran.get());
 
-            let (waiter, head) = waiting_head(&owner, &ran);
-            let session = session_new_for_test();
-            clients::attach(&owner, Some(&session));
-            ran.set(false);
-            drop(published(waiter, 9));
-            assert_eq!(clients::return_value(&owner), 5);
-            assert_eq!(cmdq_next(Some(&owner)), 1);
-            assert!(head.upgrade().is_none());
-            assert!(ran.get());
-            clients::attach(&owner, None);
-        }
+        let (waiter, head) = waiting_head(&owner, &ran);
+        let session = session_new_for_test();
+        clients::attach(&owner, Some(&session));
+        ran.set(false);
+        drop(published(waiter, 9));
+        assert_eq!(clients::return_value(&owner), 5);
+        assert_eq!(cmdq_next(Some(&owner)), 1);
+        assert!(head.upgrade().is_none());
+        assert!(ran.get());
+        clients::attach(&owner, None);
     }
 
     #[test]
     fn freeing_an_unpublished_popup_resumes_nothing() {
-        unsafe {
-            let owner = clients::with_queue();
-            let ran = Rc::new(Cell::new(false));
-            let (waiter, head) = waiting_head(&owner, &ran);
-            let mut data = popup_data::empty();
-            data.status = 5;
-            drop(data);
-            assert_eq!(clients::return_value(&owner), 0);
-            assert_eq!(cmdq_next(Some(&owner)), 0);
-            assert!(head.upgrade().is_some());
-            assert!(!ran.get());
-            drop(waiter);
-        }
+        let owner = clients::with_queue();
+        let ran = Rc::new(Cell::new(false));
+        let (waiter, head) = waiting_head(&owner, &ran);
+        let mut data = popup_data::empty();
+        data.status = 5;
+        drop(data);
+        assert_eq!(clients::return_value(&owner), 0);
+        assert_eq!(cmdq_next(Some(&owner)), 0);
+        assert!(head.upgrade().is_some());
+        assert!(!ran.get());
+        drop(waiter);
     }
 
     #[test]
     fn a_popup_holding_its_waiting_client_frees_it_when_freed() {
-        unsafe {
-            let owner = clients::with_queue();
-            let ran = Rc::new(Cell::new(false));
-            let (waiter, head) = waiting_head(&owner, &ran);
-            let mut data = published(waiter, 3);
-            data.c = Some(owner.clone());
-            let client = Rc::downgrade(&owner);
-            drop(owner);
-            assert!(client.upgrade().is_some());
-            drop(data);
-            assert!(client.upgrade().is_none());
-            assert!(head.upgrade().is_none());
-            assert!(!ran.get());
-        }
+        let owner = clients::with_queue();
+        let ran = Rc::new(Cell::new(false));
+        let (waiter, head) = waiting_head(&owner, &ran);
+        let mut data = published(waiter, 3);
+        data.c = Some(owner.clone());
+        let client = Rc::downgrade(&owner);
+        drop(owner);
+        assert!(client.upgrade().is_some());
+        drop(data);
+        assert!(client.upgrade().is_none());
+        assert!(head.upgrade().is_none());
+        assert!(!ran.get());
     }
 
     #[test]
     fn a_waiting_client_freed_before_its_popup_cancels_the_wait() {
-        unsafe {
-            let owner = clients::with_queue();
-            let ran = Rc::new(Cell::new(false));
-            let (waiter, head) = waiting_head(&owner, &ran);
-            let data = published(waiter, 3);
-            let client = Rc::downgrade(&owner);
-            drop(owner);
-            assert!(client.upgrade().is_none());
-            assert!(head.upgrade().is_none());
-            assert!(data.waiter.as_ref().is_some_and(CmdqWaiter::is_cancelled));
-            drop(data);
-            assert!(!ran.get());
-        }
+        let owner = clients::with_queue();
+        let ran = Rc::new(Cell::new(false));
+        let (waiter, head) = waiting_head(&owner, &ran);
+        let data = published(waiter, 3);
+        let client = Rc::downgrade(&owner);
+        drop(owner);
+        assert!(client.upgrade().is_none());
+        assert!(head.upgrade().is_none());
+        assert!(data.waiter.as_ref().is_some_and(CmdqWaiter::is_cancelled));
+        drop(data);
+        assert!(!ran.get());
     }
 }

@@ -81,7 +81,7 @@ pub static cmd_last_pane_entry: cmd_entry = {
         exec: Some(cmd_select_pane_exec),
     }
 };
-unsafe fn cmd_select_pane_redraw(w_owner: &WindowRef) {
+fn cmd_select_pane_redraw(w_owner: &WindowRef) {
     let mut c: Option<ClientRef> = None;
     let mut registry_c_owner = ClientRegistry::first();
     c = registry_c_owner.clone();
@@ -141,7 +141,7 @@ unsafe fn cmd_select_pane_redraw(w_owner: &WindowRef) {
         c = registry_c_owner.clone();
     }
 }
-unsafe fn cmd_select_pane_marked_pane(
+fn cmd_select_pane_marked_pane(
     mut command: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {

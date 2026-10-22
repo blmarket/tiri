@@ -119,16 +119,29 @@ pub struct grid_extd_entry {
 
 pub type utf8_char = u_int;
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union grid_cell_entry_storage {
-    pub offset: u_int,
-    pub data: grid_cell_entry_data,
-}
+/// Either an extended-cell offset or packed cell data, in the same four bytes.
+#[derive(Copy, Clone, Default)]
+#[repr(transparent)]
+pub struct grid_cell_entry_storage(u_int);
 
-impl Default for grid_cell_entry_storage {
-    fn default() -> Self {
-        Self { offset: 0 }
+impl grid_cell_entry_storage {
+    pub const fn from_offset(offset: u_int) -> Self {
+        Self(offset)
+    }
+
+    pub const fn from_data(data: grid_cell_entry_data) -> Self {
+        Self(u_int::from_ne_bytes([
+            data.attr, data.fg, data.bg, data.data,
+        ]))
+    }
+
+    pub fn offset(self) -> u_int {
+        self.0
+    }
+
+    pub fn data(self) -> grid_cell_entry_data {
+        let [attr, fg, bg, data] = self.0.to_ne_bytes();
+        grid_cell_entry_data { attr, fg, bg, data }
     }
 }
 

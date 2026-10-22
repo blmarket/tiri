@@ -695,7 +695,7 @@ unsafe fn cmd_new_session_exec(
                                                                 out.write_all(b"after-new-session")
                                                             },
                                                         );
-                                                        if cfg_finished != 0 {
+                                                        if cfg_finished() {
                                                             cfg_show_causes(s.as_ref());
                                                         }
                                                         return CmdOutcome::Normal;

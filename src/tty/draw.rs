@@ -28,7 +28,7 @@ pub(super) const TTY_DRAW_LINE_FLUSH: tty_draw_line_state = 1;
 pub(super) const TTY_DRAW_LINE_FIRST: tty_draw_line_state = 0;
 const TTY_DRAW_LINE_STATES: [&str; 7] = ["FIRST", "FLUSH", "NEW1", "NEW2", "EMPTY", "SAME", "DONE"];
 
-unsafe fn tty_draw_line_clear(
+fn tty_draw_line_clear(
     client: &ClientRef,
     mut px: u_int,
     mut py: u_int,
@@ -43,21 +43,21 @@ unsafe fn tty_draw_line_clear(
     if !client.clips_terminal_output()
         && wrapped == 0
         && nx >= 10 as u_int
-        && tty_fake_bce(client.borrow_terminal(), defaults, bg) == 0
+        && tty_fake_bce(&*client.borrow_terminal(), defaults, bg) == 0
     {
         if px.wrapping_add(nx) >= terminal_value!(client, sx)
-            && tty_term_has(terminal_term(client), TTYC_EL) != 0
+            && tty_term_has(&terminal_term(client), TTYC_EL) != 0
         {
             tty_cursor(client, px, py);
             tty_putcode(client, TTYC_EL);
             return;
         }
-        if px == 0 as u_int && tty_term_has(terminal_term(client), TTYC_EL1) != 0 {
+        if px == 0 as u_int && tty_term_has(&terminal_term(client), TTYC_EL1) != 0 {
             tty_cursor(client, px.wrapping_add(nx).wrapping_sub(1 as u_int), py);
             tty_putcode(client, TTYC_EL1);
             return;
         }
-        if tty_term_has(terminal_term(client), TTYC_ECH) != 0 {
+        if tty_term_has(&terminal_term(client), TTYC_ECH) != 0 {
             tty_cursor(client, px, py);
             tty_putcode_i(client, TTYC_ECH, nx as ::core::ffi::c_int);
             return;
@@ -100,7 +100,7 @@ fn tty_draw_line_get_empty(gc: &grid_cell, last: &grid_cell, mut nx: u_int) -> u
     }
     empty
 }
-pub unsafe fn tty_draw_line(
+pub fn tty_draw_line(
     client: &ClientRef,
     s: &screen,
     mut px: u_int,

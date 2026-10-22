@@ -82,8 +82,12 @@ pub struct hooks_monitor {
     pub format: CString,
 }
 
-static mut CStrings: HooksEvents = HooksEvents { events: Vec::new() };
-unsafe fn hooks_insert_one(
+thread_local! {
+    static CStrings: std::cell::RefCell<HooksEvents> = const {
+        std::cell::RefCell::new(HooksEvents { events: Vec::new() })
+    };
+}
+fn hooks_insert_one(
     item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     hd: &hooks_data,
     commands: Option<&std::rc::Rc<std::cell::RefCell<cmd_list>>>,
@@ -107,7 +111,7 @@ unsafe fn hooks_insert_one(
     }
     cmdq_append(None, new_item_allocation)
 }
-unsafe fn hooks_parse(hd: &mut hooks_data, fs: &cmd_find_state, value: &CStr) -> cmd_parse_result {
+fn hooks_parse(hd: &mut hooks_data, fs: &cmd_find_state, value: &CStr) -> cmd_parse_result {
     if hd.expand == 0 {
         return cmd_parse_from_string(value, None);
     }
@@ -311,10 +315,9 @@ unsafe fn CString_cb(name: &CStr, payload: &mut event_payload) {
         hooks_insert_event(None, name, ep, None, 0 as ::core::ffi::c_int);
     }
 }
-pub unsafe fn hooks_add_event(name: &CStr) {
+pub fn hooks_add_event(name: &CStr) {
     let event_name = name;
-    let events = &raw const CStrings;
-    if (*events).contains(event_name) {
+    if CStrings.with_borrow(|events| events.contains(event_name)) {
         return;
     }
 
@@ -322,12 +325,10 @@ pub unsafe fn hooks_add_event(name: &CStr) {
         event_name,
         events_callback(|name, payload| unsafe { CString_cb(name, payload) }),
     );
-    let events = &raw mut CStrings;
-    (*events).insert(event_name.to_owned());
+    CStrings.with_borrow_mut(|events| events.insert(event_name.to_owned()));
 }
-pub unsafe fn hooks_is_event(name: &CStr) -> ::core::ffi::c_int {
-    let events = &raw const CStrings;
-    (*events).contains(name) as ::core::ffi::c_int
+pub fn hooks_is_event(name: &CStr) -> ::core::ffi::c_int {
+    CStrings.with_borrow(|events| events.contains(name)) as ::core::ffi::c_int
 }
 pub fn hooks_valid_event_name(name: &CStr) -> ::core::ffi::c_int {
     if name.to_bytes().first() == Some(&b'@') {
@@ -336,7 +337,7 @@ pub fn hooks_valid_event_name(name: &CStr) -> ::core::ffi::c_int {
     options_search(name).is_some_and(|oe| oe.flags & OPTIONS_TABLE_IS_HOOK != 0)
         as ::core::ffi::c_int
 }
-pub unsafe fn hooks_build_events() {
+pub fn hooks_build_events() {
     for oe in options_table
         .iter()
         .take_while(|entry| entry.name.is_some())
@@ -374,11 +375,9 @@ pub unsafe fn hooks_run(
 }
 impl Drop for hooks_monitor {
     fn drop(&mut self) {
-        unsafe {
-            events_remove_sink(self.sink);
-            if let Some(set) = self.set.take() {
-                crate::monitor::monitor_destroy(set);
-            }
+        events_remove_sink(self.sink);
+        if let Some(set) = self.set.take() {
+            crate::monitor::monitor_destroy(set);
         }
     }
 }
@@ -416,7 +415,7 @@ unsafe fn hooks_monitor_hook_cb(
         1,
     );
 }
-unsafe fn hooks_monitor_cb(change: &monitor_change, fallback: &cmd_find_state, generation: usize) {
+fn hooks_monitor_cb(change: &monitor_change, fallback: &cmd_find_state, generation: usize) {
     let wl = change.wl.clone();
     let client_owner = change.c.upgrade();
     let session_owner = change.s.upgrade();

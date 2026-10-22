@@ -38,7 +38,7 @@ pub static cmd_list_commands_entry: cmd_entry = {
         exec: Some(cmd_list_commands),
     }
 };
-unsafe fn cmd_list_single_command(
+fn cmd_list_single_command(
     entry: &cmd_entry,
     ft: &mut format_tree,
     template: &CStr,

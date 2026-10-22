@@ -87,7 +87,7 @@ unsafe fn cmd_kill_session_exec(
     }
     CmdOutcome::Normal
 }
-unsafe fn cmd_kill_session_all(
+fn cmd_kill_session_all(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     filter: Option<&CStr>,
 ) -> CmdOutcome {
@@ -114,7 +114,7 @@ unsafe fn cmd_kill_session_all(
     }
     CmdOutcome::Normal
 }
-unsafe fn cmd_kill_session_filter(
+fn cmd_kill_session_filter(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     s_owner: &SessionRef,
     filter: Option<&CStr>,

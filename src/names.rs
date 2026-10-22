@@ -22,7 +22,7 @@ pub(crate) fn name_time_left(previous: Option<Instant>, now: Instant) -> Duratio
     NAME_INTERVAL.saturating_sub(now.saturating_duration_since(previous))
 }
 
-pub unsafe fn check_window_name(owner: &WindowRef) {
+pub fn check_window_name(owner: &WindowRef) {
     if owner.active_pane().upgrade().is_none() {
         return;
     }
@@ -62,13 +62,13 @@ pub unsafe fn check_window_name(owner: &WindowRef) {
     }
 }
 
-pub(crate) unsafe fn default_window_name_cstring(owner: &WindowRef) -> CString {
+pub(crate) fn default_window_name_cstring(owner: &WindowRef) -> CString {
     owner
         .active_pane()
         .upgrade()
         .map_or_else(|| c"".to_owned(), |pane| pane.default_window_name())
 }
-unsafe fn format_window_name(owner: &WindowRef) -> CString {
+fn format_window_name(owner: &WindowRef) -> CString {
     let mut context = format_create(None, None, (FORMAT_WINDOW | owner.id()) as i32, 0);
     format_defaults_window(&mut context, Some(owner));
     format_defaults_pane(
@@ -84,7 +84,7 @@ unsafe fn format_window_name(owner: &WindowRef) -> CString {
     name
 }
 
-pub unsafe fn parse_window_name_cstring(in_0: &CStr) -> CString {
+pub fn parse_window_name_cstring(in_0: &CStr) -> CString {
     let mut name = in_0.to_bytes();
     if let Some(rest) = name.strip_prefix(b"\"") {
         name = rest;

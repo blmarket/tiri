@@ -120,7 +120,7 @@ pub fn environ_unset(env: &mut environ, name: &CStr) {
     env.unset_cstr(name);
 }
 
-pub unsafe fn environ_update(scope: &OptionsScope, src: &environ, dst: &mut environ) {
+pub fn environ_update(scope: &OptionsScope, src: &environ, dst: &mut environ) {
     let Some(patterns) = scope.with_local(|oo| {
         crate::options::options_read_entry(oo, c"update-environment", |entry| {
             entry
@@ -208,17 +208,14 @@ pub unsafe fn environ_log(
         }
     }
 }
-pub unsafe fn environ_for_session(
+pub fn environ_for_session(
     s_owner: Option<&SessionRef>,
     mut no_TERM: ::core::ffi::c_int,
 ) -> Box<environ> {
     let _value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut idx: ::core::ffi::c_int = 0;
     let mut env = environ_create();
-    environ_copy(
-        global_environ.as_deref().expect("global environment"),
-        &mut env,
-    );
+    global_environ(|environment| environ_copy(environment, &mut env));
     if let Some(session) = s_owner {
         session
             .with_environment_mut(|source| environ_copy(source, &mut env))

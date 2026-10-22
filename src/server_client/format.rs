@@ -126,36 +126,32 @@ mod tests {
 
     #[test]
     fn values_own_bytes_and_preserve_unstarted_terminal_behavior() {
-        unsafe {
-            let owner = client::new();
-            owner.borrow_mut().name = Some(CString::new(b"client-\xff".to_vec()).unwrap());
-            crate::tty::tty_set_size(&mut owner.borrow_mut().tty, 91, 27, 0, 0);
-            let mut context = format_create(None, None, 0, 0);
-            context.c = Rc::downgrade(&owner);
-            let Some(FormatValue::String(name)) = owner.format_value(c"client_name", &mut context)
-            else {
-                panic!("client name builtin");
-            };
-            let Some(FormatValue::String(width)) =
-                owner.format_value(c"client_width", &mut context)
-            else {
-                panic!("width is available before terminal startup");
-            };
-            assert_eq!(width.as_c_str(), c"91");
-            assert!(owner.format_value(c"client_height", &mut context).is_none());
-            owner.borrow_mut().tty.set_started_for_test(true);
-            let Some(FormatValue::String(height)) =
-                owner.format_value(c"client_height", &mut context)
-            else {
-                panic!("started terminal height");
-            };
-            assert_eq!(height.as_c_str(), c"27");
-            owner.borrow_mut().tty.set_started_for_test(false);
-            owner.borrow_mut().name = Some(c"renamed".to_owned());
-            assert_eq!(name.as_bytes(), b"client-\xff");
-            context.c = std::rc::Weak::new();
-            assert!(owner.format_value(c"client_name", &mut context).is_none());
-            drop(context);
-        }
+        let owner = client::new();
+        owner.borrow_mut().name = Some(CString::new(b"client-\xff".to_vec()).unwrap());
+        crate::tty::tty_set_size(&mut owner.borrow_mut().tty, 91, 27, 0, 0);
+        let mut context = format_create(None, None, 0, 0);
+        context.c = Rc::downgrade(&owner);
+        let Some(FormatValue::String(name)) = owner.format_value(c"client_name", &mut context)
+        else {
+            panic!("client name builtin");
+        };
+        let Some(FormatValue::String(width)) = owner.format_value(c"client_width", &mut context)
+        else {
+            panic!("width is available before terminal startup");
+        };
+        assert_eq!(width.as_c_str(), c"91");
+        assert!(owner.format_value(c"client_height", &mut context).is_none());
+        owner.borrow_mut().tty.set_started_for_test(true);
+        let Some(FormatValue::String(height)) = owner.format_value(c"client_height", &mut context)
+        else {
+            panic!("started terminal height");
+        };
+        assert_eq!(height.as_c_str(), c"27");
+        owner.borrow_mut().tty.set_started_for_test(false);
+        owner.borrow_mut().name = Some(c"renamed".to_owned());
+        assert_eq!(name.as_bytes(), b"client-\xff");
+        context.c = std::rc::Weak::new();
+        assert!(owner.format_value(c"client_name", &mut context).is_none());
+        drop(context);
     }
 }

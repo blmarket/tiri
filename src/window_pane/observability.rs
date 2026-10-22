@@ -23,23 +23,21 @@ struct PaneView {
 
 impl PaneView {
     fn read<T>(&self, read: impl FnOnce(&window_pane) -> T) -> io::Result<T> {
-        unsafe {
-            let Some(owner) = window_pane_upgrade(&self.pane) else {
-                return Err(io::Error::new(
-                    io::ErrorKind::NotFound,
-                    "pane was destroyed",
-                ));
-            };
-            let live = window_pane_find_by_id(self.id.0)
-                .is_some_and(|current| Rc::ptr_eq(&current, &owner));
-            if live {
-                Ok(read(&owner.borrow()))
-            } else {
-                Err(io::Error::new(
-                    io::ErrorKind::NotFound,
-                    "pane is no longer registered",
-                ))
-            }
+        let Some(owner) = window_pane_upgrade(&self.pane) else {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "pane was destroyed",
+            ));
+        };
+        let live =
+            window_pane_find_by_id(self.id.0).is_some_and(|current| Rc::ptr_eq(&current, &owner));
+        if live {
+            Ok(read(&owner.borrow()))
+        } else {
+            Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "pane is no longer registered",
+            ))
         }
     }
 }
@@ -164,7 +162,7 @@ fn cursor_shape(screen: &screen) -> u8 {
 
 fn row_text(grid: &grid, row: u32, trim: bool) -> Vec<u8> {
     let flags = GRID_STRING_EMPTY_CELLS | if trim { GRID_STRING_TRIM_SPACES } else { 0 };
-    unsafe { grid_string_cells_bytes(grid, 0, row, grid.sx, None, flags, None) }
+    grid_string_cells_bytes(grid, 0, row, grid.sx, None, flags, None)
 }
 
 fn screen_text(grid: &grid, lines: usize) -> CString {

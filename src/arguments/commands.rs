@@ -51,7 +51,7 @@ pub unsafe fn args_make_commands_now(
         }
     }
 }
-pub unsafe fn args_make_commands_prepare(
+pub fn args_make_commands_prepare(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     mut idx: u_int,
@@ -103,7 +103,7 @@ pub unsafe fn args_make_commands_prepare(
     state.pi.fs.copy_from(target);
     state
 }
-pub unsafe fn args_make_commands(
+pub fn args_make_commands(
     state: &mut args_command_state,
     argv: &Vec<CString>,
 ) -> Result<Rc<std::cell::RefCell<cmd_list>>, Option<CString>> {

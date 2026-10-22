@@ -35,15 +35,13 @@ impl Host for ServerHost {
 }
 
 pub(super) fn invalidate(id: PaneId) {
-    unsafe {
-        let Some(pane) = <Rc<RefCell<window_pane>>>::find_by_id(id.0) else {
-            return;
-        };
-        let window = pane.window_observer().upgrade();
-        drop(pane);
-        if let Some(window) = window {
-            crate::server_fn::server_status_window(&window);
-            drop(window);
-        }
+    let Some(pane) = <Rc<RefCell<window_pane>>>::find_by_id(id.0) else {
+        return;
+    };
+    let window = pane.window_observer().upgrade();
+    drop(pane);
+    if let Some(window) = window {
+        crate::server_fn::server_status_window(&window);
+        drop(window);
     }
 }

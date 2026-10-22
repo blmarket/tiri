@@ -1,6 +1,7 @@
 //! Authoritative terminal ABI declarations.
 
 pub use ::libc::termios;
+use std::os::fd::BorrowedFd;
 
 /// Terminal attributes owned by a model record. libc's termios has no
 /// Default; the zeroed record is the translated model's initial value.
@@ -13,36 +14,27 @@ impl Default for TerminalAttributes {
     }
 }
 
-/// Borrow a raw descriptor that may be negative; a negative one reports EBADF
-/// the way the termios calls would.
-unsafe fn borrow_terminal(fd: i32) -> std::io::Result<std::os::fd::BorrowedFd<'static>> {
-    if fd < 0 {
-        return Err(std::io::Error::from_raw_os_error(libc::EBADF));
-    }
-    Ok(std::os::fd::BorrowedFd::borrow_raw(fd))
+pub(crate) fn read_attributes(fd: BorrowedFd<'_>) -> std::io::Result<termios> {
+    tiri_rt::unix::terminal_attributes(fd)
 }
 
-pub(crate) unsafe fn read_attributes(fd: i32) -> std::io::Result<termios> {
-    tiri_rt::unix::terminal_attributes(borrow_terminal(fd)?)
-}
-
-pub(crate) unsafe fn set_attributes(
-    fd: i32,
+pub(crate) fn set_attributes(
+    fd: BorrowedFd<'_>,
     action: i32,
     attributes: &termios,
 ) -> std::io::Result<()> {
-    tiri_rt::unix::set_terminal_attributes(borrow_terminal(fd)?, action, attributes)
+    tiri_rt::unix::set_terminal_attributes(fd, action, attributes)
 }
 
-pub(crate) unsafe fn read_size(fd: i32) -> std::io::Result<super::posix_terminal::winsize> {
-    tiri_rt::unix::terminal_size(borrow_terminal(fd)?)
+pub(crate) fn read_size(fd: BorrowedFd<'_>) -> std::io::Result<super::posix_terminal::winsize> {
+    tiri_rt::unix::terminal_size(fd)
 }
 
-pub(crate) unsafe fn set_size(
-    fd: i32,
+pub(crate) fn set_size(
+    fd: BorrowedFd<'_>,
     size: &super::posix_terminal::winsize,
 ) -> std::io::Result<()> {
-    tiri_rt::unix::set_terminal_size(borrow_terminal(fd)?, size)
+    tiri_rt::unix::set_terminal_size(fd, size)
 }
 
 #[derive(Copy, Clone)]

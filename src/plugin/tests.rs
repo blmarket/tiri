@@ -149,7 +149,7 @@ fn selection_matches_tiri_environment_semantics() {
 fn publishing_does_not_override_context_entries_or_user_options() {
     use crate::format::{format_add_cstr, format_create, format_expand_cstring};
     use crate::options::options_set_string;
-    unsafe {
+    {
         shutdown();
         OptionsScope::GlobalSession.with_local(|oo| {
             options_set_string(oo, c"@test_state", 0, |out| out.write_all(b"user"));

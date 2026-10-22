@@ -33,7 +33,7 @@ fn width_of(meta: Option<&dyn Any>) -> Width {
 fn widths(panes: &[Rc<RefCell<window_pane>>]) -> Vec<Width> {
     panes
         .iter()
-        .map(|pane| unsafe { width_of(pane.borrow_layout_meta().as_deref()) })
+        .map(|pane| width_of(pane.borrow_layout_meta().as_deref()))
         .collect()
 }
 
@@ -66,7 +66,7 @@ impl Layout for Scrolling {
         panes: impl Iterator<Item = Rc<RefCell<window_pane>>>,
         (sx, sy): (u32, u32),
     ) -> (u32, u32) {
-        let widths = panes.map(|pane| unsafe { width_of(pane.borrow_layout_meta().as_deref()) });
+        let widths = panes.map(|pane| width_of(pane.borrow_layout_meta().as_deref()));
         (strip_length(widths, sx), sy)
     }
 

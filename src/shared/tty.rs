@@ -305,14 +305,14 @@ pub enum PaletteSource {
 impl PaletteSource {
     /// The callback must not reenter the pane, dispatch model callbacks, or
     /// retain any pointer/reference into the palette after returning.
-    pub unsafe fn with_palette<R>(&self, read: impl FnOnce(Option<&colour_palette>) -> R) -> R {
+    pub fn with_palette<R>(&self, read: impl FnOnce(Option<&colour_palette>) -> R) -> R {
         use crate::window::WindowPane;
         match self {
             Self::None => read(None),
             Self::Pane(observer) => {
                 let owner = observer.upgrade();
                 let palette = owner.as_ref().map(|pane| pane.borrow_palette());
-                read(palette)
+                read(palette.as_deref())
             }
             Self::Popup(palette) => match palette.try_borrow_mut() {
                 Ok(borrowed) => read(Some(&borrowed)),

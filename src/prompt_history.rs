@@ -18,7 +18,7 @@ thread_local! {
         const { RefCell::new([Vec::new(), Vec::new()]) };
 }
 
-unsafe fn prompt_find_history_file() -> Option<CString> {
+fn prompt_find_history_file() -> Option<CString> {
     let history_file =
         OptionsScope::GlobalServer.with_local(|oo| options_get_string(oo, c"history-file"));
     if history_file.as_bytes().is_empty() {
@@ -54,7 +54,7 @@ fn prompt_add_typed_history(line: &CStr) {
     }
     prompt_add_history(line, PROMPT_TYPE_COMMAND);
 }
-pub unsafe fn prompt_load_history() {
+pub fn prompt_load_history() {
     let history_file = match prompt_find_history_file() {
         Some(path) => path,
         None => return,
@@ -81,7 +81,7 @@ pub unsafe fn prompt_load_history() {
         prompt_add_typed_history(line);
     }
 }
-pub unsafe fn prompt_save_history() {
+pub fn prompt_save_history() {
     let history_file = match prompt_find_history_file() {
         Some(path) => path,
         None => return,

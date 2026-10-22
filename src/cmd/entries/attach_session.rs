@@ -272,7 +272,7 @@ pub unsafe fn cmd_attach_session(
             .expect("live client")
             .update_flags(CLIENT_ATTACHED as uint64_t, 0);
     }
-    if cfg_finished != 0 {
+    if cfg_finished() {
         cfg_show_causes(s.as_ref());
     }
     CmdOutcome::Normal

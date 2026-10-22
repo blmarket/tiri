@@ -61,7 +61,7 @@ fn alerts_pop_front<T>(queue: &mut VecDeque<T>) -> Option<(T, bool)> {
     Some((item, !queue.is_empty()))
 }
 
-unsafe fn alerts_callback() {
+fn alerts_callback() {
     loop {
         let Some((owner, has_next)) = alerts::pop_front() else {
             break;
@@ -80,7 +80,7 @@ unsafe fn alerts_callback() {
     }
 }
 
-pub unsafe fn alerts_check_session(session: &SessionRef) {
+pub fn alerts_check_session(session: &SessionRef) {
     let mut link = session.with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
     while link.is_alive() {
         SessionRef::deliver_window_alerts(&winlink_window(&link).expect("linked window"));
@@ -88,7 +88,7 @@ pub unsafe fn alerts_check_session(session: &SessionRef) {
     }
 }
 
-pub unsafe fn alerts_reset_all() {
+pub fn alerts_reset_all() {
     let mut cursor = windows::first();
     while let Some(owner) = cursor {
         owner.reset_alert_timer();
@@ -97,7 +97,7 @@ pub unsafe fn alerts_reset_all() {
     }
 }
 
-unsafe fn schedule(id: u32) {
+fn schedule(id: u32) {
     if !alerts::is_scheduled() {
         log_debug(format_args!("alerts check queued (by @{})", id));
         let mut task = None;
@@ -117,7 +117,7 @@ unsafe fn schedule(id: u32) {
     }
 }
 
-pub unsafe fn alerts_queue(owner: &WindowRef, flags: i32) {
+pub fn alerts_queue(owner: &WindowRef, flags: i32) {
     if let Some(newly_queued) = owner.queue_alerts(flags) {
         if newly_queued {
             alerts::push_back(owner.clone());

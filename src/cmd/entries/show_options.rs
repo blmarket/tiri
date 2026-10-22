@@ -223,7 +223,7 @@ fn show_options_resolve(
         .map(|parent| (parent, 1))
 }
 
-unsafe fn cmd_show_options_print(
+fn cmd_show_options_print(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     scope: &OptionsScope,
@@ -357,7 +357,7 @@ fn show_hook_add_fire_formats(ft: &mut format_tree, count: u32, time: time_t) {
     }
 }
 
-unsafe fn cmd_show_hooks_print_monitor(
+fn cmd_show_hooks_print_monitor(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     scope: &OptionsScope,
@@ -421,7 +421,7 @@ unsafe fn cmd_show_hooks_print_monitor(
     print.is_some()
 }
 
-unsafe fn cmd_show_options_all(
+fn cmd_show_options_all(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     scope: i32,

@@ -150,23 +150,21 @@ impl std::task::LocalWake for QueueWake {
         self.wake_by_ref();
     }
     fn wake_by_ref(self: &std::rc::Rc<Self>) {
-        unsafe {
-            let drain = self.0.try_with_queue(|queue| {
-                if queue.head != HeadState::Suspended {
-                    return None;
-                }
-                match std::mem::replace(&mut queue.drain, DrainSlot::Polling { rewoken: false }) {
-                    DrainSlot::Parked(drain) => Some(drain),
-                    DrainSlot::Polling { .. } => {
-                        queue.drain = DrainSlot::Polling { rewoken: true };
-                        None
-                    }
-                    DrainSlot::Unstarted => unreachable!("a suspended head has a drain"),
-                }
-            });
-            if let Some(Some(drain)) = drain {
-                cmdq_poll(&self.0, drain, false);
+        let drain = self.0.try_with_queue(|queue| {
+            if queue.head != HeadState::Suspended {
+                return None;
             }
+            match std::mem::replace(&mut queue.drain, DrainSlot::Polling { rewoken: false }) {
+                DrainSlot::Parked(drain) => Some(drain),
+                DrainSlot::Polling { .. } => {
+                    queue.drain = DrainSlot::Polling { rewoken: true };
+                    None
+                }
+                DrainSlot::Unstarted => unreachable!("a suspended head has a drain"),
+            }
+        });
+        if let Some(Some(drain)) = drain {
+            cmdq_poll(&self.0, drain, false);
         }
     }
 }
@@ -247,7 +245,7 @@ fn cmdq_new_named_item(label: &'static CStr) -> std::rc::Rc<std::cell::RefCell<c
     owner
 }
 
-pub(crate) unsafe fn cmdq_background(
+pub(crate) fn cmdq_background(
     delay: std::time::Duration,
     callback: impl FnOnce() + 'static,
 ) -> std::io::Result<()> {
@@ -256,7 +254,7 @@ pub(crate) unsafe fn cmdq_background(
         queue.next_background_id = id.checked_add(1).expect("background command ID overflow");
         id
     });
-    let timer = crate::reactor::Timer::new(delay, move || unsafe {
+    let timer = crate::reactor::Timer::new(delay, move || {
         let timer = QueueTarget::Global.with_queue(|queue| queue.background.remove(&id));
         drop(timer);
         callback();
@@ -266,7 +264,7 @@ pub(crate) unsafe fn cmdq_background(
 }
 
 /// Release detached command captures outside the queue borrow during shutdown.
-pub(crate) unsafe fn cmdq_cancel_background() {
+pub(crate) fn cmdq_cancel_background() {
     let background = QueueTarget::Global.with_queue(|queue| std::mem::take(&mut queue.background));
     drop(background);
 }
@@ -289,13 +287,13 @@ impl QueueTarget {
     /// Only immediate deque operations belong in this scope. In particular,
     /// dispatch and explicit item removal (which can invoke cancellation) must
     /// happen after it returns. Results must own their data.
-    unsafe fn with_queue<R>(&self, operation: impl FnOnce(&mut cmdq_list) -> R) -> R {
+    fn with_queue<R>(&self, operation: impl FnOnce(&mut cmdq_list) -> R) -> R {
         self.try_with_queue(operation)
             .expect("live command queue owner")
     }
 
     /// As `with_queue`, but `None` once a client queue has been freed.
-    unsafe fn try_with_queue<R>(&self, operation: impl FnOnce(&mut cmdq_list) -> R) -> Option<R> {
+    fn try_with_queue<R>(&self, operation: impl FnOnce(&mut cmdq_list) -> R) -> Option<R> {
         thread_local! {
             static GLOBAL_QUEUE: std::cell::RefCell<Box<cmdq_list>> =
                 std::cell::RefCell::new(cmdq_new());
@@ -305,7 +303,7 @@ impl QueueTarget {
             Self::Client(observer) => {
                 let owner = observer.upgrade()?;
                 let mut queue = owner.borrow_queue_mut();
-                Some(operation(queue))
+                Some(operation(&mut *queue))
             }
         }
     }
@@ -378,7 +376,7 @@ pub fn cmdq_get_state_owned(item: &cmdq_item) -> std::rc::Rc<cmdq_state> {
 pub fn cmdq_get_flags(item: &cmdq_item) -> ::core::ffi::c_int {
     cmdq_get_state(item).expect("command queue state").flags
 }
-pub unsafe fn cmdq_new_state(
+pub fn cmdq_new_state(
     current: Option<&cmd_find_state>,
     event: Option<&key_event>,
     mut flags: ::core::ffi::c_int,
@@ -406,7 +404,7 @@ pub unsafe fn cmdq_new_state(
         current: std::cell::RefCell::new(target),
     })
 }
-pub unsafe fn cmdq_copy_state(
+pub fn cmdq_copy_state(
     state: &cmdq_state,
     current: Option<&cmd_find_state>,
 ) -> std::rc::Rc<cmdq_state> {
@@ -418,19 +416,19 @@ pub unsafe fn cmdq_copy_state(
     cmdq_new_state(Some(&current), Some(&event), state.flags)
 }
 /// Copy a literal key and value into the command queue state's formats.
-pub unsafe fn cmdq_add_format(state: &cmdq_state, key: &CStr, value: &CStr) {
+pub fn cmdq_add_format(state: &cmdq_state, key: &CStr, value: &CStr) {
     let mut formats = state.formats.borrow_mut();
     let formats = formats
         .get_or_insert_with(|| format_create(None, None, FORMAT_NONE, 0 as ::core::ffi::c_int));
     format_add_cstr(formats, key, value);
 }
-pub unsafe fn cmdq_add_formats(state: &cmdq_state, ft: &format_tree) {
+pub fn cmdq_add_formats(state: &cmdq_state, ft: &format_tree) {
     let mut formats = state.formats.borrow_mut();
     let formats = formats
         .get_or_insert_with(|| format_create(None, None, FORMAT_NONE, 0 as ::core::ffi::c_int));
     format_merge(formats, ft);
 }
-pub unsafe fn cmdq_merge_formats(
+pub fn cmdq_merge_formats(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     ft: &mut format_tree,
 ) {
@@ -448,7 +446,7 @@ pub unsafe fn cmdq_merge_formats(
     }
 }
 /// Consume a detached chain, moving its owners into the queue in order.
-pub unsafe fn cmdq_append(
+pub fn cmdq_append(
     owner: Option<&ClientRef>,
     item: std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> std::rc::Weak<std::cell::RefCell<cmdq_item>> {
@@ -477,7 +475,7 @@ pub unsafe fn cmdq_append(
 }
 
 /// Consume a detached chain and return the final queued insertion anchor.
-pub unsafe fn cmdq_insert_after(
+pub fn cmdq_insert_after(
     after: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     item: std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> std::rc::Weak<std::cell::RefCell<cmdq_item>> {
@@ -583,7 +581,7 @@ pub unsafe fn cmdq_insert_hook(
 }
 /// Retain the item from inside its continuation. Only valid while it is
 /// polled; drop the handle before the next `.await`.
-pub(crate) unsafe fn cmdq_resumed(
+pub(crate) fn cmdq_resumed(
     item: &std::rc::Weak<std::cell::RefCell<cmdq_item>>,
 ) -> std::rc::Rc<std::cell::RefCell<cmdq_item>> {
     let owner = item.upgrade().expect("polled command item");
@@ -597,7 +595,7 @@ pub(crate) unsafe fn cmdq_resumed(
     owner
 }
 /// The head once a `cmdq_next` polls the drain; new items start only there.
-async unsafe fn cmdq_next_head(queue: &QueueTarget) -> std::rc::Rc<std::cell::RefCell<cmdq_item>> {
+async fn cmdq_next_head(queue: &QueueTarget) -> std::rc::Rc<std::cell::RefCell<cmdq_item>> {
     std::future::poll_fn(|_| {
         if !CMDQ_LOOP.get() {
             return std::task::Poll::Pending;
@@ -612,8 +610,10 @@ async unsafe fn cmdq_next_head(queue: &QueueTarget) -> std::rc::Rc<std::cell::Re
 /// Start each head in turn. A suspended head's continuation is awaited here,
 /// so a wake polls it at once; its completion waits for a `cmdq_next` before
 /// the item is removed. No strong item handle is held across an `.await`.
-async unsafe fn cmdq_drain(queue: QueueTarget) {
-    static mut number: u_int = 0;
+async fn cmdq_drain(queue: QueueTarget) {
+    thread_local! {
+        static NUMBER: std::cell::Cell<u_int> = const { std::cell::Cell::new(0) };
+    }
     loop {
         let item_owner = cmdq_next_head(&queue).await;
         let start = {
@@ -629,7 +629,8 @@ async unsafe fn cmdq_drain(queue: QueueTarget) {
             queue.item = std::rc::Rc::downgrade(&item_owner);
             queue.head = HeadState::Running;
         });
-        number = number.wrapping_add(1);
+        let number = NUMBER.get().wrapping_add(1);
+        NUMBER.set(number);
         {
             let mut item = item_owner.borrow_mut();
             item.time = crate::shared::time::unix_seconds(std::time::SystemTime::now());
@@ -675,7 +676,7 @@ async unsafe fn cmdq_drain(queue: QueueTarget) {
 /// Poll `queue`'s drain outside any queue borrow, again while it is woken
 /// during the poll, then park it. `open` opens the loop gate (`cmdq_next`).
 /// A continuation may free its own client queue; the drain is then dropped.
-unsafe fn cmdq_poll(queue: &QueueTarget, mut drain: Drain, open: bool) {
+fn cmdq_poll(queue: &QueueTarget, mut drain: Drain, open: bool) {
     let _gate = LoopGate::enter(open);
     let waker = std::task::LocalWaker::from(std::rc::Rc::new(QueueWake(queue.clone())));
     let mut context = std::task::ContextBuilder::from_waker(std::task::Waker::noop())
@@ -781,7 +782,7 @@ fn cmdq_remove(item_handle: std::rc::Rc<std::cell::RefCell<cmdq_item>>) {
         "command item removal requires its sole strong owner"
     );
 }
-unsafe fn cmdq_remove_group(item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>) {
+fn cmdq_remove_group(item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>) {
     let (group, queue) = {
         let item = item_handle.borrow();
         (item.group, item.queue.clone())
@@ -808,7 +809,7 @@ unsafe fn cmdq_remove_group(item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_it
     }
 }
 #[must_use = "enqueue the detached command chain"]
-pub unsafe fn cmdq_get_command(
+pub fn cmdq_get_command(
     commands: &std::rc::Rc<std::cell::RefCell<cmd_list>>,
     state: Option<&std::rc::Rc<cmdq_state>>,
 ) -> std::rc::Rc<std::cell::RefCell<cmdq_item>> {
@@ -978,7 +979,7 @@ unsafe fn cmdq_fire_command(
     if client_freed || saved_client.as_ref().is_some_and(|c| c.is_dead()) {
         return CmdOutcome::Error;
     }
-    if cfg_finished != 0 {
+    if cfg_finished() {
         cmdq_add_message(item_handle);
     }
     if log_get_level() > 1 as ::core::ffi::c_int {
@@ -994,11 +995,7 @@ unsafe fn cmdq_fire_command(
     flags = (state.flags & CMDQ_STATE_CONTROL != 0) as ::core::ffi::c_int;
     cmdq_guard(item_handle, c"begin", flags);
     if item_handle.borrow().client.upgrade().is_none() {
-        let context = cmd_find_client(
-            Some(item_handle),
-            nullable_cstr(::core::ptr::null::<::core::ffi::c_char>()),
-            1 as ::core::ffi::c_int,
-        );
+        let context = cmd_find_client(Some(item_handle), None, 1 as ::core::ffi::c_int);
         let mut item = item_handle.borrow_mut();
         item.client = context
             .as_ref()
@@ -1040,11 +1037,7 @@ unsafe fn cmdq_fire_command(
             current_block = 18317007320854588510;
         }
     } else {
-        tc = cmd_find_client(
-            Some(item_handle),
-            nullable_cstr(::core::ptr::null::<::core::ffi::c_char>()),
-            1 as ::core::ffi::c_int,
-        );
+        tc = cmd_find_client(Some(item_handle), None, 1 as ::core::ffi::c_int);
         current_block = 18317007320854588510;
     }
     if current_block == 18317007320854588510 {
@@ -1127,7 +1120,7 @@ unsafe fn cmdq_fire_command(
     retval
 }
 #[must_use = "enqueue the detached command chain"]
-pub unsafe fn cmdq_get_callback_owned(
+pub fn cmdq_get_callback_owned(
     name: &'static CStr,
     cb: cmdq_cb,
 ) -> std::rc::Rc<std::cell::RefCell<cmdq_item>> {
@@ -1142,7 +1135,7 @@ pub unsafe fn cmdq_get_callback_owned(
 }
 
 #[must_use = "enqueue the detached command chain"]
-pub unsafe fn cmdq_get_error(error: &CStr) -> std::rc::Rc<std::cell::RefCell<cmdq_item>> {
+pub fn cmdq_get_error(error: &CStr) -> std::rc::Rc<std::cell::RefCell<cmdq_item>> {
     let error = error.to_owned();
     cmdq_get_callback_owned(
         c"cmdq_error_callback",
@@ -1154,7 +1147,7 @@ pub unsafe fn cmdq_get_error(error: &CStr) -> std::rc::Rc<std::cell::RefCell<cmd
 }
 /// Run the queue until it is empty or its head suspends, and return how many
 /// items finished. Re-entered while its drain is polled, it runs nothing.
-pub unsafe fn cmdq_next(owner: Option<&ClientRef>) -> u_int {
+pub fn cmdq_next(owner: Option<&ClientRef>) -> u_int {
     let queue = QueueTarget::for_client(owner);
     log_debug(format_args!(
         "cmdq_next {}: enter",
@@ -1182,13 +1175,13 @@ pub unsafe fn cmdq_next(owner: Option<&ClientRef>) -> u_int {
 /// The global queue's current item while its command or callback runs, or
 /// after it completed until it is removed. None while it is suspended,
 /// including while its continuation runs, as tmux hides a waiting item.
-pub unsafe fn cmdq_running() -> std::rc::Weak<std::cell::RefCell<cmdq_item>> {
+pub fn cmdq_running() -> std::rc::Weak<std::cell::RefCell<cmdq_item>> {
     QueueTarget::Global.with_queue(|queue| match queue.head {
         HeadState::Suspended => std::rc::Weak::new(),
         HeadState::Idle | HeadState::Running => queue.item.clone(),
     })
 }
-pub unsafe fn cmdq_guard(
+pub fn cmdq_guard(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     guard: &CStr,
     mut flags: ::core::ffi::c_int,
@@ -1241,7 +1234,7 @@ pub unsafe fn cmdq_error(
             let (source, source_line) = cmd_get_source(&cmd_ref);
             file = source.map_or(std::ptr::null(), |file| file.as_ptr());
             line = source_line;
-            if cfg_finished == 0 {
+            if !cfg_finished() {
                 if !file.is_null() {
                     cfg_add_cause(|out| {
                         write_cstr(out, nullable_cstr(file))?;
@@ -1317,7 +1310,7 @@ mod lifecycle_tests {
     }
 
     /// A callback item whose callback sets `released` when freed.
-    unsafe fn tracked_item(
+    fn tracked_item(
         name: &'static CStr,
         released: &Rc<Cell<bool>>,
     ) -> std::rc::Rc<std::cell::RefCell<cmdq_item>> {
@@ -1333,59 +1326,52 @@ mod lifecycle_tests {
 
     #[test]
     fn removal_rejects_an_extra_strong_owner_before_cleanup() {
-        unsafe {
-            let released = Rc::new(Cell::new(false));
-            let item = tracked_item(c"extra owner", &released);
-            let observer = Rc::downgrade(&item);
-            let guard = item.clone();
-            let owner = item;
-            let result =
-                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| cmdq_remove(owner)));
-            assert!(result.is_err());
-            assert!(!released.get());
-            cmdq_remove(guard);
-            assert!(released.get());
-            assert!(observer.upgrade().is_none());
-        }
+        let released = Rc::new(Cell::new(false));
+        let item = tracked_item(c"extra owner", &released);
+        let observer = Rc::downgrade(&item);
+        let guard = item.clone();
+        let owner = item;
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| cmdq_remove(owner)));
+        assert!(result.is_err());
+        assert!(!released.get());
+        cmdq_remove(guard);
+        assert!(released.get());
+        assert!(observer.upgrade().is_none());
     }
 
     #[test]
     fn dropping_an_unqueued_item_releases_its_callback() {
-        unsafe {
-            let released = Rc::new(Cell::new(false));
-            let item = tracked_item(c"unqueued item", &released);
-            let observer = Rc::downgrade(&item);
-            drop(item);
-            assert!(released.get());
-            assert!(observer.upgrade().is_none());
-        }
+        let released = Rc::new(Cell::new(false));
+        let item = tracked_item(c"unqueued item", &released);
+        let observer = Rc::downgrade(&item);
+        drop(item);
+        assert!(released.get());
+        assert!(observer.upgrade().is_none());
     }
 
     #[test]
     fn running_global_callback_item_is_visible() {
-        unsafe {
-            let ran = Rc::new(Cell::new(false));
-            let observed = ran.clone();
-            let item = cmdq_append(
-                None,
-                cmdq_get_callback_owned(
-                    c"running callback",
-                    Some(Box::new(move |item| {
-                        assert!(cmdq_running().ptr_eq(&Rc::downgrade(item)));
-                        observed.set(true);
-                        CmdOutcome::Normal
-                    })),
-                ),
-            );
-            assert_eq!(cmdq_next(None), 1);
-            assert!(ran.get());
-            assert!(item.upgrade().is_none());
-            assert!(cmdq_running().upgrade().is_none());
-        }
+        let ran = Rc::new(Cell::new(false));
+        let observed = ran.clone();
+        let item = cmdq_append(
+            None,
+            cmdq_get_callback_owned(
+                c"running callback",
+                Some(Box::new(move |item| {
+                    assert!(cmdq_running().ptr_eq(&Rc::downgrade(item)));
+                    observed.set(true);
+                    CmdOutcome::Normal
+                })),
+            ),
+        );
+        assert_eq!(cmdq_next(None), 1);
+        assert!(ran.get());
+        assert!(item.upgrade().is_none());
+        assert!(cmdq_running().upgrade().is_none());
     }
 
     /// Append a global callback item that records `tag` when it runs.
-    pub(super) unsafe fn append_recording(
+    pub(super) fn append_recording(
         name: &'static CStr,
         trace: &Rc<std::cell::RefCell<Vec<&'static str>>>,
         tag: &'static str,
@@ -1406,30 +1392,28 @@ mod lifecycle_tests {
 
     #[test]
     fn reentrant_next_during_exec_returns_without_removing() {
-        unsafe {
-            let trace = Rc::new(std::cell::RefCell::new(Vec::new()));
-            let reentered = Rc::new(Cell::new(None));
-            let observed = reentered.clone();
-            let inner_trace = trace.clone();
-            let head = cmdq_append(
-                None,
-                cmdq_get_callback_owned(
-                    c"reentrant head",
-                    Some(Box::new(move |item| {
-                        observed.set(Some(cmdq_next(None)));
-                        assert!(inner_trace.borrow().is_empty());
-                        assert!(cmdq_running().ptr_eq(&Rc::downgrade(item)));
-                        CmdOutcome::Normal
-                    })),
-                ),
-            );
-            let next = append_recording(c"next item", &trace, "next", CmdOutcome::Normal);
-            assert_eq!(cmdq_next(None), 2);
-            assert_eq!(reentered.get(), Some(0));
-            assert!(head.upgrade().is_none());
-            assert!(next.upgrade().is_none());
-            assert_eq!(*trace.borrow(), ["next"]);
-        }
+        let trace = Rc::new(std::cell::RefCell::new(Vec::new()));
+        let reentered = Rc::new(Cell::new(None));
+        let observed = reentered.clone();
+        let inner_trace = trace.clone();
+        let head = cmdq_append(
+            None,
+            cmdq_get_callback_owned(
+                c"reentrant head",
+                Some(Box::new(move |item| {
+                    observed.set(Some(cmdq_next(None)));
+                    assert!(inner_trace.borrow().is_empty());
+                    assert!(cmdq_running().ptr_eq(&Rc::downgrade(item)));
+                    CmdOutcome::Normal
+                })),
+            ),
+        );
+        let next = append_recording(c"next item", &trace, "next", CmdOutcome::Normal);
+        assert_eq!(cmdq_next(None), 2);
+        assert_eq!(reentered.get(), Some(0));
+        assert!(head.upgrade().is_none());
+        assert!(next.upgrade().is_none());
+        assert_eq!(*trace.borrow(), ["next"]);
     }
 }
 
@@ -1446,7 +1430,7 @@ mod suspend_tests {
     type Trace = Rc<RefCell<Vec<&'static str>>>;
 
     /// Append a global callback item that suspends on `future`.
-    unsafe fn append_suspended(
+    fn append_suspended(
         name: &'static CStr,
         future: impl Future<Output = ()> + 'static,
     ) -> Weak<std::cell::RefCell<cmdq_item>> {
@@ -1461,214 +1445,200 @@ mod suspend_tests {
 
     #[test]
     fn send_runs_the_body_inside_send_and_the_next_pass_moves_on() {
-        unsafe {
-            let trace: Trace = Default::default();
-            let (tx, rx) = channel::<()>();
-            let body = trace.clone();
-            let head = append_suspended(c"suspended head", async move {
-                assert_eq!(rx.await, Some(()));
-                body.borrow_mut().push("body");
-            });
-            let next = append_recording(c"next item", &trace, "next", CmdOutcome::Normal);
-            assert_eq!(cmdq_next(None), 0, "the first poll is pending");
-            assert_eq!(cmdq_next(None), 0, "a suspended head blocks its queue");
-            assert!(trace.borrow().is_empty());
-            tx.send(()).unwrap();
-            assert_eq!(*trace.borrow(), ["body"], "the body runs inside send");
-            assert!(head.upgrade().is_some(), "removal waits for cmdq_next");
-            assert_eq!(cmdq_next(None), 1);
-            assert!(head.upgrade().is_none());
-            assert!(next.upgrade().is_none());
-            assert_eq!(*trace.borrow(), ["body", "next"]);
-        }
+        let trace: Trace = Default::default();
+        let (tx, rx) = channel::<()>();
+        let body = trace.clone();
+        let head = append_suspended(c"suspended head", async move {
+            assert_eq!(rx.await, Some(()));
+            body.borrow_mut().push("body");
+        });
+        let next = append_recording(c"next item", &trace, "next", CmdOutcome::Normal);
+        assert_eq!(cmdq_next(None), 0, "the first poll is pending");
+        assert_eq!(cmdq_next(None), 0, "a suspended head blocks its queue");
+        assert!(trace.borrow().is_empty());
+        tx.send(()).unwrap();
+        assert_eq!(*trace.borrow(), ["body"], "the body runs inside send");
+        assert!(head.upgrade().is_some(), "removal waits for cmdq_next");
+        assert_eq!(cmdq_next(None), 1);
+        assert!(head.upgrade().is_none());
+        assert!(next.upgrade().is_none());
+        assert_eq!(*trace.borrow(), ["body", "next"]);
     }
 
     #[test]
     fn send_during_exec_completes_in_the_same_pass() {
-        unsafe {
-            let trace: Trace = Default::default();
-            let body = trace.clone();
-            let head = cmdq_append(
-                None,
-                cmdq_get_callback_owned(
-                    c"sent during exec",
-                    Some(Box::new(move |_| {
-                        let (tx, rx) = channel::<()>();
-                        let inner = body.clone();
-                        let retval = CmdOutcome::Suspend(Box::pin(async move {
-                            assert_eq!(rx.await, Some(()));
-                            inner.borrow_mut().push("body");
-                        }));
-                        tx.send(()).unwrap();
-                        assert!(body.borrow().is_empty(), "the first poll follows exec");
-                        retval
-                    })),
-                ),
-            );
-            let next = append_recording(c"next item", &trace, "next", CmdOutcome::Normal);
-            assert_eq!(cmdq_next(None), 2);
-            assert!(head.upgrade().is_none());
-            assert!(next.upgrade().is_none());
-            assert_eq!(*trace.borrow(), ["body", "next"]);
-        }
+        let trace: Trace = Default::default();
+        let body = trace.clone();
+        let head = cmdq_append(
+            None,
+            cmdq_get_callback_owned(
+                c"sent during exec",
+                Some(Box::new(move |_| {
+                    let (tx, rx) = channel::<()>();
+                    let inner = body.clone();
+                    let retval = CmdOutcome::Suspend(Box::pin(async move {
+                        assert_eq!(rx.await, Some(()));
+                        inner.borrow_mut().push("body");
+                    }));
+                    tx.send(()).unwrap();
+                    assert!(body.borrow().is_empty(), "the first poll follows exec");
+                    retval
+                })),
+            ),
+        );
+        let next = append_recording(c"next item", &trace, "next", CmdOutcome::Normal);
+        assert_eq!(cmdq_next(None), 2);
+        assert!(head.upgrade().is_none());
+        assert!(next.upgrade().is_none());
+        assert_eq!(*trace.borrow(), ["body", "next"]);
     }
 
     #[test]
     fn running_is_none_inside_the_body_and_the_head_once_ready() {
-        unsafe {
-            let (tx, rx) = channel::<()>();
-            let ran = Rc::new(Cell::new(false));
-            let body = ran.clone();
-            let head = cmdq_append(
-                None,
-                cmdq_get_callback_owned(
-                    c"observed body",
-                    Some(Box::new(move |item| {
-                        let observer = Rc::downgrade(item);
-                        CmdOutcome::Suspend(Box::pin(async move {
-                            assert!(cmdq_running().upgrade().is_none(), "first poll");
-                            assert_eq!(rx.await, Some(()));
-                            let item = cmdq_resumed(&observer);
-                            assert!(cmdq_running().upgrade().is_none(), "body");
-                            assert!(cmdq_get_state(&item.borrow()).is_some());
-                            drop(item);
-                            body.set(true);
-                        }))
-                    })),
-                ),
-            );
-            assert_eq!(cmdq_next(None), 0);
-            assert!(cmdq_running().upgrade().is_none());
-            tx.send(()).unwrap();
-            assert!(ran.get());
-            assert!(cmdq_running().ptr_eq(&head), "completed until removed");
-            assert_eq!(cmdq_next(None), 0);
-            assert!(head.upgrade().is_none());
-            assert!(cmdq_running().upgrade().is_none());
-        }
+        let (tx, rx) = channel::<()>();
+        let ran = Rc::new(Cell::new(false));
+        let body = ran.clone();
+        let head = cmdq_append(
+            None,
+            cmdq_get_callback_owned(
+                c"observed body",
+                Some(Box::new(move |item| {
+                    let observer = Rc::downgrade(item);
+                    CmdOutcome::Suspend(Box::pin(async move {
+                        assert!(cmdq_running().upgrade().is_none(), "first poll");
+                        assert_eq!(rx.await, Some(()));
+                        let item = cmdq_resumed(&observer);
+                        assert!(cmdq_running().upgrade().is_none(), "body");
+                        assert!(cmdq_get_state(&item.borrow()).is_some());
+                        drop(item);
+                        body.set(true);
+                    }))
+                })),
+            ),
+        );
+        assert_eq!(cmdq_next(None), 0);
+        assert!(cmdq_running().upgrade().is_none());
+        tx.send(()).unwrap();
+        assert!(ran.get());
+        assert!(cmdq_running().ptr_eq(&head), "completed until removed");
+        assert_eq!(cmdq_next(None), 0);
+        assert!(head.upgrade().is_none());
+        assert!(cmdq_running().upgrade().is_none());
     }
 
     #[test]
     fn retaining_the_item_across_an_await_trips_the_post_poll_assert() {
-        unsafe {
-            let (_tx, rx) = channel::<()>();
-            cmdq_append(
-                None,
-                cmdq_get_callback_owned(
-                    c"retaining body",
-                    Some(Box::new(move |item| {
-                        let observer = Rc::downgrade(item);
-                        CmdOutcome::Suspend(Box::pin(async move {
-                            let item = cmdq_resumed(&observer);
-                            let _ = rx.await;
-                            drop(item);
-                        }))
-                    })),
-                ),
-            );
-            let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| cmdq_next(None)))
-                .unwrap_err();
-            let message = panic
-                .downcast_ref::<&str>()
-                .copied()
-                .or_else(|| panic.downcast_ref::<String>().map(String::as_str))
-                .unwrap();
-            assert!(
-                message.contains("retained its item across a poll"),
-                "{message}"
-            );
-        }
+        let (_tx, rx) = channel::<()>();
+        cmdq_append(
+            None,
+            cmdq_get_callback_owned(
+                c"retaining body",
+                Some(Box::new(move |item| {
+                    let observer = Rc::downgrade(item);
+                    CmdOutcome::Suspend(Box::pin(async move {
+                        let item = cmdq_resumed(&observer);
+                        let _ = rx.await;
+                        drop(item);
+                    }))
+                })),
+            ),
+        );
+        let panic =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| cmdq_next(None))).unwrap_err();
+        let message = panic
+            .downcast_ref::<&str>()
+            .copied()
+            .or_else(|| panic.downcast_ref::<String>().map(String::as_str))
+            .unwrap();
+        assert!(
+            message.contains("retained its item across a poll"),
+            "{message}"
+        );
     }
 
     #[test]
     #[should_panic(expected = "command item resumed outside its poll")]
     fn resuming_outside_a_poll_panics() {
-        unsafe {
-            cmdq_append(
-                None,
-                cmdq_get_callback_owned(
-                    c"resumed during exec",
-                    Some(Box::new(|item| {
-                        drop(cmdq_resumed(&Rc::downgrade(item)));
-                        CmdOutcome::Normal
-                    })),
-                ),
-            );
-            cmdq_next(None);
-        }
+        cmdq_append(
+            None,
+            cmdq_get_callback_owned(
+                c"resumed during exec",
+                Some(Box::new(|item| {
+                    drop(cmdq_resumed(&Rc::downgrade(item)));
+                    CmdOutcome::Normal
+                })),
+            ),
+        );
+        cmdq_next(None);
     }
 
     #[test]
     fn reentrant_next_from_inside_a_body_returns_zero() {
-        unsafe {
-            let trace: Trace = Default::default();
-            let reentered = Rc::new(RefCell::new(Vec::new()));
-            let observed = reentered.clone();
-            let (tx, rx) = channel::<()>();
-            let head = append_suspended(c"reentrant body", async move {
-                let items = cmdq_next(None);
-                observed.borrow_mut().push(items);
-                assert_eq!(rx.await, Some(()));
-                let items = cmdq_next(None);
-                observed.borrow_mut().push(items);
-            });
-            let next = append_recording(c"next item", &trace, "next", CmdOutcome::Normal);
-            assert_eq!(cmdq_next(None), 0);
-            tx.send(()).unwrap();
-            assert_eq!(*reentered.borrow(), [0, 0]);
-            assert!(trace.borrow().is_empty());
-            assert!(head.upgrade().is_some());
-            assert_eq!(cmdq_next(None), 1);
-            assert!(head.upgrade().is_none());
-            assert!(next.upgrade().is_none());
-            assert_eq!(*trace.borrow(), ["next"]);
-        }
+        let trace: Trace = Default::default();
+        let reentered = Rc::new(RefCell::new(Vec::new()));
+        let observed = reentered.clone();
+        let (tx, rx) = channel::<()>();
+        let head = append_suspended(c"reentrant body", async move {
+            let items = cmdq_next(None);
+            observed.borrow_mut().push(items);
+            assert_eq!(rx.await, Some(()));
+            let items = cmdq_next(None);
+            observed.borrow_mut().push(items);
+        });
+        let next = append_recording(c"next item", &trace, "next", CmdOutcome::Normal);
+        assert_eq!(cmdq_next(None), 0);
+        tx.send(()).unwrap();
+        assert_eq!(*reentered.borrow(), [0, 0]);
+        assert!(trace.borrow().is_empty());
+        assert!(head.upgrade().is_some());
+        assert_eq!(cmdq_next(None), 1);
+        assert!(head.upgrade().is_none());
+        assert!(next.upgrade().is_none());
+        assert_eq!(*trace.borrow(), ["next"]);
     }
 
     #[test]
     fn a_wake_from_another_queues_dispatch_runs_the_body_before_that_exec_returns() {
-        unsafe {
-            let trace: Trace = Default::default();
-            let (tx, rx) = channel::<()>();
-            let body = trace.clone();
-            let head = append_suspended(c"global head", async move {
-                assert_eq!(rx.await, Some(()));
-                body.borrow_mut().push("body");
-            });
-            let next = append_recording(c"global next", &trace, "next", CmdOutcome::Normal);
-            assert_eq!(cmdq_next(None), 0);
-            let owner = crate::server_client::queue_test_clients::with_queue();
-            let exec = trace.clone();
-            let sender = cmdq_append(
-                Some(&owner),
-                cmdq_get_callback_owned(
-                    c"client sender",
-                    Some(Box::new(move |_| {
-                        tx.send(()).unwrap();
-                        exec.borrow_mut().push("sent");
-                        CmdOutcome::Normal
-                    })),
-                ),
-            );
-            assert_eq!(cmdq_next(Some(&owner)), 1);
-            assert!(sender.upgrade().is_none());
-            assert_eq!(*trace.borrow(), ["body", "sent"]);
-            assert!(
-                head.upgrade().is_some(),
-                "the global queue moves on at its pass"
-            );
-            assert_eq!(cmdq_next(None), 1);
-            assert!(head.upgrade().is_none());
-            assert!(next.upgrade().is_none());
-            assert_eq!(*trace.borrow(), ["body", "sent", "next"]);
-        }
+        let trace: Trace = Default::default();
+        let (tx, rx) = channel::<()>();
+        let body = trace.clone();
+        let head = append_suspended(c"global head", async move {
+            assert_eq!(rx.await, Some(()));
+            body.borrow_mut().push("body");
+        });
+        let next = append_recording(c"global next", &trace, "next", CmdOutcome::Normal);
+        assert_eq!(cmdq_next(None), 0);
+        let owner = crate::server_client::queue_test_clients::with_queue();
+        let exec = trace.clone();
+        let sender = cmdq_append(
+            Some(&owner),
+            cmdq_get_callback_owned(
+                c"client sender",
+                Some(Box::new(move |_| {
+                    tx.send(()).unwrap();
+                    exec.borrow_mut().push("sent");
+                    CmdOutcome::Normal
+                })),
+            ),
+        );
+        assert_eq!(cmdq_next(Some(&owner)), 1);
+        assert!(sender.upgrade().is_none());
+        assert_eq!(*trace.borrow(), ["body", "sent"]);
+        assert!(
+            head.upgrade().is_some(),
+            "the global queue moves on at its pass"
+        );
+        assert_eq!(cmdq_next(None), 1);
+        assert!(head.upgrade().is_none());
+        assert!(next.upgrade().is_none());
+        assert_eq!(*trace.borrow(), ["body", "sent", "next"]);
     }
 
     #[test]
     fn send_after_runtime_shutdown_completes_the_item() {
         use tiri_rt::Runtime as _;
         let runtime = tiri_rt::mio::Runtime::new().unwrap();
-        unsafe {
+        {
             let trace: Trace = Default::default();
             let (tx, rx) = channel::<()>();
             let body = trace.clone();
@@ -1704,10 +1674,7 @@ mod wait_tests {
     type Slot = Rc<RefCell<Option<CmdqWaiter>>>;
 
     /// A callback item that waits and leaves its waiter in `slot`.
-    unsafe fn waiting(
-        name: &'static CStr,
-        slot: &Slot,
-    ) -> std::rc::Rc<std::cell::RefCell<cmdq_item>> {
+    fn waiting(name: &'static CStr, slot: &Slot) -> std::rc::Rc<std::cell::RefCell<cmdq_item>> {
         let slot = slot.clone();
         cmdq_get_callback_owned(
             name,
@@ -1740,121 +1707,111 @@ mod wait_tests {
 
     #[test]
     fn a_clientless_item_records_no_client_while_exec_sees_the_lent_one() {
-        unsafe {
-            let lent = clients::with_queue();
-            let slot: Slot = Default::default();
-            let (stored, substitute) = (slot.clone(), lent.clone());
-            let head = cmdq_append(
-                None,
-                cmdq_get_callback_owned(
-                    c"lent waiter",
-                    Some(Box::new(move |item| {
-                        with_lent_client(item, &substitute, || {
-                            let c = cmdq_get_client(Some(&item.borrow()));
-                            assert!(c.is_some_and(|c| Rc::ptr_eq(&c, &substitute)));
-                            let (waiter, retval) = cmdq_wait(item);
-                            *stored.borrow_mut() = Some(waiter);
-                            retval
-                        })
-                    })),
-                ),
-            );
-            assert_eq!(cmdq_next(None), 0);
-            let waiter = slot.take().unwrap();
-            assert!(waiter.client().is_none());
-            waiter.finish(5);
-            assert_eq!(clients::return_value(&lent), 0);
-            assert_eq!(cmdq_next(None), 0);
-            assert!(head.upgrade().is_none());
-        }
+        let lent = clients::with_queue();
+        let slot: Slot = Default::default();
+        let (stored, substitute) = (slot.clone(), lent.clone());
+        let head = cmdq_append(
+            None,
+            cmdq_get_callback_owned(
+                c"lent waiter",
+                Some(Box::new(move |item| {
+                    with_lent_client(item, &substitute, || {
+                        let c = cmdq_get_client(Some(&item.borrow()));
+                        assert!(c.is_some_and(|c| Rc::ptr_eq(&c, &substitute)));
+                        let (waiter, retval) = cmdq_wait(item);
+                        *stored.borrow_mut() = Some(waiter);
+                        retval
+                    })
+                })),
+            ),
+        );
+        assert_eq!(cmdq_next(None), 0);
+        let waiter = slot.take().unwrap();
+        assert!(waiter.client().is_none());
+        waiter.finish(5);
+        assert_eq!(clients::return_value(&lent), 0);
+        assert_eq!(cmdq_next(None), 0);
+        assert!(head.upgrade().is_none());
     }
 
     #[test]
     fn a_client_queue_item_records_its_client() {
-        unsafe {
-            let owner = clients::with_queue();
-            let slot: Slot = Default::default();
-            let head = cmdq_append(Some(&owner), waiting(c"client waiter", &slot));
-            assert_eq!(cmdq_next(Some(&owner)), 0);
-            let waiter = slot.take().unwrap();
-            assert!(waiter.client().is_some_and(|c| Rc::ptr_eq(&c, &owner)));
-            waiter.resume();
-            assert_eq!(cmdq_next(Some(&owner)), 0);
-            assert!(head.upgrade().is_none());
-        }
+        let owner = clients::with_queue();
+        let slot: Slot = Default::default();
+        let head = cmdq_append(Some(&owner), waiting(c"client waiter", &slot));
+        assert_eq!(cmdq_next(Some(&owner)), 0);
+        let waiter = slot.take().unwrap();
+        assert!(waiter.client().is_some_and(|c| Rc::ptr_eq(&c, &owner)));
+        waiter.resume();
+        assert_eq!(cmdq_next(Some(&owner)), 0);
+        assert!(head.upgrade().is_none());
     }
 
     #[test]
     fn an_item_inserted_behind_a_lent_item_records_the_lent_client() {
-        unsafe {
-            let lent = clients::with_queue();
-            let slot: Slot = Default::default();
-            let (inserted, substitute) = (slot.clone(), lent.clone());
-            let head = cmdq_append(
-                None,
-                cmdq_get_callback_owned(
-                    c"lent head",
-                    Some(Box::new(move |item| {
-                        with_lent_client(item, &substitute, || {
-                            cmdq_insert_after(item, waiting(c"inserted waiter", &inserted));
-                            CmdOutcome::Normal
-                        })
-                    })),
-                ),
-            );
-            assert_eq!(cmdq_next(None), 1);
-            assert!(head.upgrade().is_none());
-            let waiter = slot.take().unwrap();
-            assert!(waiter.client().is_some_and(|c| Rc::ptr_eq(&c, &lent)));
-            waiter.finish(3);
-            assert_eq!(clients::return_value(&lent), 3);
-            assert_eq!(cmdq_next(None), 0);
-        }
+        let lent = clients::with_queue();
+        let slot: Slot = Default::default();
+        let (inserted, substitute) = (slot.clone(), lent.clone());
+        let head = cmdq_append(
+            None,
+            cmdq_get_callback_owned(
+                c"lent head",
+                Some(Box::new(move |item| {
+                    with_lent_client(item, &substitute, || {
+                        cmdq_insert_after(item, waiting(c"inserted waiter", &inserted));
+                        CmdOutcome::Normal
+                    })
+                })),
+            ),
+        );
+        assert_eq!(cmdq_next(None), 1);
+        assert!(head.upgrade().is_none());
+        let waiter = slot.take().unwrap();
+        assert!(waiter.client().is_some_and(|c| Rc::ptr_eq(&c, &lent)));
+        waiter.finish(3);
+        assert_eq!(clients::return_value(&lent), 3);
+        assert_eq!(cmdq_next(None), 0);
     }
 
     #[test]
     fn finish_reports_the_status_only_to_a_client_sessionless_at_finish() {
-        unsafe {
-            let owner = clients::with_queue();
-            let session = session_new_for_test();
-            clients::attach(&owner, Some(&session));
-            let (first, second): (Slot, Slot) = Default::default();
-            let first_item = cmdq_append(Some(&owner), waiting(c"first waiter", &first));
-            let second_item = cmdq_append(Some(&owner), waiting(c"second waiter", &second));
-            assert_eq!(cmdq_next(Some(&owner)), 0);
-            clients::attach(&owner, None);
-            first.take().unwrap().finish(7);
-            assert_eq!(clients::return_value(&owner), 7);
-            assert_eq!(cmdq_next(Some(&owner)), 0);
-            assert!(first_item.upgrade().is_none());
-            clients::attach(&owner, Some(&session));
-            second.take().unwrap().finish(9);
-            assert_eq!(clients::return_value(&owner), 7);
-            assert_eq!(cmdq_next(Some(&owner)), 0);
-            assert!(second_item.upgrade().is_none());
-            clients::attach(&owner, None);
-        }
+        let owner = clients::with_queue();
+        let session = session_new_for_test();
+        clients::attach(&owner, Some(&session));
+        let (first, second): (Slot, Slot) = Default::default();
+        let first_item = cmdq_append(Some(&owner), waiting(c"first waiter", &first));
+        let second_item = cmdq_append(Some(&owner), waiting(c"second waiter", &second));
+        assert_eq!(cmdq_next(Some(&owner)), 0);
+        clients::attach(&owner, None);
+        first.take().unwrap().finish(7);
+        assert_eq!(clients::return_value(&owner), 7);
+        assert_eq!(cmdq_next(Some(&owner)), 0);
+        assert!(first_item.upgrade().is_none());
+        clients::attach(&owner, Some(&session));
+        second.take().unwrap().finish(9);
+        assert_eq!(clients::return_value(&owner), 7);
+        assert_eq!(cmdq_next(Some(&owner)), 0);
+        assert!(second_item.upgrade().is_none());
+        clients::attach(&owner, None);
     }
 
     #[test]
     fn a_waiter_is_cancelled_once_its_item_drops() {
-        unsafe {
-            let owner = clients::with_queue();
-            let slot: Slot = Default::default();
-            let head = cmdq_append(Some(&owner), waiting(c"cancelled waiter", &slot));
-            assert_eq!(cmdq_next(Some(&owner)), 0);
-            let waiter = slot.take().unwrap();
-            assert!(!waiter.is_cancelled());
-            let client = Rc::downgrade(&owner);
-            drop(owner);
-            assert!(
-                client.upgrade().is_none(),
-                "a waiter does not retain its client"
-            );
-            assert!(head.upgrade().is_none());
-            assert!(waiter.is_cancelled());
-            assert!(waiter.client().is_none());
-            waiter.resume();
-        }
+        let owner = clients::with_queue();
+        let slot: Slot = Default::default();
+        let head = cmdq_append(Some(&owner), waiting(c"cancelled waiter", &slot));
+        assert_eq!(cmdq_next(Some(&owner)), 0);
+        let waiter = slot.take().unwrap();
+        assert!(!waiter.is_cancelled());
+        let client = Rc::downgrade(&owner);
+        drop(owner);
+        assert!(
+            client.upgrade().is_none(),
+            "a waiter does not retain its client"
+        );
+        assert!(head.upgrade().is_none());
+        assert!(waiter.is_cancelled());
+        assert!(waiter.client().is_none());
+        waiter.resume();
     }
 }

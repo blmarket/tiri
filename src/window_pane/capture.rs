@@ -30,7 +30,7 @@ enum CaptureBound {
     Value(i32),
     Default,
 }
-unsafe fn parse_bound(
+fn parse_bound(
     arguments: &args,
     item: &Rc<std::cell::RefCell<cmdq_item>>,
     flag: u8,
@@ -124,7 +124,7 @@ fn cmd_capture_pane_colour(value: ::core::ffi::c_int) -> CString {
     bytes.extend_from_slice(format!("[{:x}]", value as u32).as_bytes());
     CString::new(bytes).expect("colour text and hexadecimal suffix contain no NUL")
 }
-unsafe fn cmd_capture_pane_cell(s: &screen, xx: u_int, yy: u_int) -> CString {
+fn cmd_capture_pane_cell(s: &screen, xx: u_int, yy: u_int) -> CString {
     let gd = s.grid();
     let hl = s.hyperlinks.as_ref();
     let mut gc: grid_cell = grid_cell {
@@ -205,7 +205,7 @@ unsafe fn cmd_capture_pane_cell(s: &screen, xx: u_int, yy: u_int) -> CString {
     line.push(b'\n');
     CString::new(line).expect("cell fields contain no NUL")
 }
-unsafe fn cmd_capture_pane_grid(wp: &window_pane) -> Vec<u8> {
+fn cmd_capture_pane_grid(wp: &window_pane) -> Vec<u8> {
     let s = &wp.base;
     let gd = s.grid();
     let mut buf = Vec::new();
@@ -291,7 +291,7 @@ unsafe fn cmd_capture_pane_pending(args: &args, wp: &mut window_pane) -> Vec<u8>
     }
     buf
 }
-unsafe fn cmd_capture_pane_hyperlinks(
+fn cmd_capture_pane_hyperlinks(
     gd: &grid,
     s: &screen,
     mut py: u_int,
@@ -339,7 +339,7 @@ unsafe fn cmd_capture_pane_hyperlinks(
     }
     line
 }
-unsafe fn cmd_capture_pane_history(
+fn cmd_capture_pane_history(
     args: &args,
     wp: &window_pane,
     mode_screen: Option<&screen>,

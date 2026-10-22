@@ -66,7 +66,7 @@ fn monitor_with_item<R>(
     let mut state = monitor_borrow(observer)?;
     state.items.get_mut(name).map(|item| operation(item))
 }
-unsafe fn monitor_expand(
+fn monitor_expand(
     monitor: &refbox::Weak<monitor_set>,
     name: &CStr,
     formats: &mut format_tree,
@@ -100,12 +100,12 @@ fn monitor_visit(
 fn monitor_has_client(monitor: &refbox::Weak<monitor_set>) -> bool {
     monitor_borrow(monitor).is_some_and(|state| !state.client.ptr_eq(&Weak::new()))
 }
-unsafe fn monitor_client(monitor: &refbox::Weak<monitor_set>) -> Option<ClientRef> {
+fn monitor_client(monitor: &refbox::Weak<monitor_set>) -> Option<ClientRef> {
     let observer = monitor_borrow(monitor)?.client.clone();
     let client = observer.upgrade()?;
     (!client.is_dead()).then_some(client)
 }
-unsafe fn monitor_get_session(
+fn monitor_get_session(
     monitor: &refbox::Weak<monitor_set>,
     client: Option<&ClientRef>,
 ) -> Option<SessionRef> {
@@ -122,9 +122,7 @@ unsafe fn monitor_get_session(
     let indexed = crate::session::sessions::find_by_id(session.id())?;
     Rc::ptr_eq(&session, &indexed).then_some(indexed)
 }
-unsafe fn monitor_context(
-    monitor: &refbox::Weak<monitor_set>,
-) -> Option<(Option<ClientRef>, SessionRef)> {
+fn monitor_context(monitor: &refbox::Weak<monitor_set>) -> Option<(Option<ClientRef>, SessionRef)> {
     if !monitor.is_alive() {
         return None;
     }
@@ -135,7 +133,7 @@ unsafe fn monitor_context(
     let session = monitor_get_session(monitor, client.as_ref())?;
     Some((client, session))
 }
-unsafe fn monitor_create_formats(
+fn monitor_create_formats(
     client: Option<&ClientRef>,
     session: Option<&SessionRef>,
     link: refbox::Weak<winlink>,
@@ -152,7 +150,7 @@ enum MonitorValueTarget {
     Pane(u32, u32),
     Window(u32, u32),
 }
-unsafe fn monitor_check_value(
+fn monitor_check_value(
     monitor: &refbox::Weak<monitor_set>,
     name: &CStr,
     session: Option<&SessionRef>,
@@ -244,7 +242,7 @@ unsafe fn monitor_check_value(
     };
     callback(&change);
 }
-unsafe fn monitor_check_session(
+fn monitor_check_session(
     monitor: &refbox::Weak<monitor_set>,
     name: &CStr,
     formats: &mut format_tree,
@@ -266,7 +264,7 @@ unsafe fn monitor_check_session(
         None,
     );
 }
-unsafe fn monitor_check_pane(monitor: &refbox::Weak<monitor_set>, name: &CStr) {
+fn monitor_check_pane(monitor: &refbox::Weak<monitor_set>, name: &CStr) {
     let Some(target) = monitor_with_item(monitor, name, |item| item.id) else {
         return;
     };
@@ -316,7 +314,7 @@ unsafe fn monitor_check_pane(monitor: &refbox::Weak<monitor_set>, name: &CStr) {
     }
     drop(window);
 }
-unsafe fn monitor_check_window(monitor: &refbox::Weak<monitor_set>, name: &CStr) {
+fn monitor_check_window(monitor: &refbox::Weak<monitor_set>, name: &CStr) {
     let Some(target) = monitor_with_item(monitor, name, |item| item.id) else {
         return;
     };
@@ -360,7 +358,7 @@ unsafe fn monitor_check_window(monitor: &refbox::Weak<monitor_set>, name: &CStr)
     }
     drop(window);
 }
-unsafe fn monitor_check_all_panes_one(
+fn monitor_check_all_panes_one(
     monitor: &refbox::Weak<monitor_set>,
     name: &CStr,
     formats: &mut format_tree,
@@ -389,7 +387,7 @@ unsafe fn monitor_check_all_panes_one(
         Some(generation),
     );
 }
-unsafe fn monitor_check_all_windows_one(
+fn monitor_check_all_windows_one(
     monitor: &refbox::Weak<monitor_set>,
     name: &CStr,
     formats: &mut format_tree,
@@ -431,7 +429,7 @@ fn monitor_sweep_all_windows(item: &mut monitor_item, generation: u32) {
     item.windows
         .retain(|_, record| record.generation == generation);
 }
-unsafe fn monitor_check_sessions(monitor: &refbox::Weak<monitor_set>) {
+fn monitor_check_sessions(monitor: &refbox::Weak<monitor_set>) {
     let Some((client, session)) = monitor_context(monitor) else {
         return;
     };
@@ -444,14 +442,14 @@ unsafe fn monitor_check_sessions(monitor: &refbox::Weak<monitor_set>) {
     });
     drop(formats);
 }
-unsafe fn monitor_check_panes_windows(monitor: &refbox::Weak<monitor_set>) {
+fn monitor_check_panes_windows(monitor: &refbox::Weak<monitor_set>) {
     monitor_visit(monitor, |name, kind| match kind {
         MONITOR_PANE => monitor_check_pane(monitor, &name),
         MONITOR_WINDOW => monitor_check_window(monitor, &name),
         _ => {}
     });
 }
-unsafe fn monitor_check_all_panes(monitor: &refbox::Weak<monitor_set>) {
+fn monitor_check_all_panes(monitor: &refbox::Weak<monitor_set>) {
     let Some((client, session)) = monitor_context(monitor) else {
         return;
     };
@@ -512,7 +510,7 @@ unsafe fn monitor_check_all_panes(monitor: &refbox::Weak<monitor_set>) {
         }
     });
 }
-unsafe fn monitor_check_all_windows(monitor: &refbox::Weak<monitor_set>) {
+fn monitor_check_all_windows(monitor: &refbox::Weak<monitor_set>) {
     let Some((client, session)) = monitor_context(monitor) else {
         return;
     };
@@ -551,7 +549,7 @@ unsafe fn monitor_check_all_windows(monitor: &refbox::Weak<monitor_set>) {
         }
     });
 }
-unsafe fn monitor_timer(monitor: &refbox::Weak<monitor_set>) {
+fn monitor_timer(monitor: &refbox::Weak<monitor_set>) {
     if let Some(mut state) = monitor_borrow(monitor) {
         drop(state.timer.take());
     }
@@ -635,7 +633,7 @@ pub fn monitor_create_session(
     owner.try_borrow_mut().expect("new monitor").session = session.cloned();
     owner
 }
-pub unsafe fn monitor_destroy(owner: refbox::RefBox<monitor_set>) {
+pub fn monitor_destroy(owner: refbox::RefBox<monitor_set>) {
     let (session, callback) = {
         let mut state = owner
             .try_borrow_mut()
@@ -712,7 +710,7 @@ pub fn monitor_parse_owned(value: &CStr) -> Option<ParsedMonitor> {
     unsafe { monitor_parse_parts(value) }
 }
 
-pub unsafe fn monitor_add(
+pub fn monitor_add(
     monitor: &refbox::Weak<monitor_set>,
     name: &CStr,
     type_0: monitor_type,
@@ -793,7 +791,7 @@ mod ownership_tests {
     #[test]
     fn traversal_preserves_prefetched_successor_order_and_resolves_live_names() {
         let _runtime = tiri_rt::mio::Runtime::new().unwrap();
-        unsafe {
+        {
             let owner = monitor_create(Rc::new(|_| {}));
             for name in [c"a", c"c", c"e"] {
                 monitor_add(&owner.downgrade(), name, MONITOR_SESSION, -1, c"", 0);
@@ -825,7 +823,7 @@ mod ownership_tests {
     fn notify_true_updates_last_without_firing_until_truth_changes() {
         use std::cell::RefCell;
         let _runtime = tiri_rt::mio::Runtime::new().unwrap();
-        unsafe {
+        {
             let changes = Rc::new(RefCell::new(Vec::new()));
             let callback_changes = changes.clone();
             let owner = monitor_create(Rc::new(move |change| {
@@ -880,7 +878,7 @@ mod ownership_tests {
     #[test]
     fn changed_value_survives_reentrant_item_removal() {
         let _runtime = tiri_rt::mio::Runtime::new().unwrap();
-        unsafe {
+        {
             let capture = std::rc::Rc::new(std::cell::RefCell::new(Capture {
                 set: refbox::Weak::new(),
                 name: Vec::new(),

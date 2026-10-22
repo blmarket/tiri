@@ -19,7 +19,7 @@ use crate::shared::command::{
 use crate::shared::environment::ENVIRON_HIDDEN;
 use crate::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
 use crate::shared::limits::UINT_MAX;
-use crate::tmux::global_environ;
+use crate::tmux::global_environ_mut;
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
@@ -128,37 +128,35 @@ impl tiri_cmdparse::Context for ParserContext<'_, '_> {
     }
 
     fn expand_format(&mut self, token: tiri_cmdparse::TokenText) -> tiri_cmdparse::TokenText {
-        unsafe {
-            let mut session = self.0.borrow_mut();
-            let pi = &mut *session.input;
-            let client_owner = pi.c.upgrade();
-            let mut fs: cmd_find_state = Default::default();
-            let fsp = if pi.fs.is_valid() {
-                &pi.fs
-            } else {
-                fs = cmd_find_state::find_from_client(client_owner.as_ref(), 0)
-                    .unwrap_or_else(|| cmd_find_state::clear_state(0));
-                &fs
-            };
-            let item_owner = pi.item.upgrade();
-            let mut ft_owner = format_create(
-                client_owner.as_ref(),
-                item_owner.as_ref(),
-                FORMAT_NONE,
-                FORMAT_NOJOBS,
-            );
-            let ft = &mut *ft_owner;
-            format_defaults(
-                ft,
-                client_owner.as_ref(),
-                fsp.session_handle().as_ref(),
-                (fsp.winlink_handle()).clone(),
-                fsp.pane_handle().as_ref(),
-            );
-            let expanded = format_expand_cstring(ft, token.as_c_str());
-            drop(ft_owner);
-            take_parser_token(expanded)
-        }
+        let mut session = self.0.borrow_mut();
+        let pi = &mut *session.input;
+        let client_owner = pi.c.upgrade();
+        let mut fs: cmd_find_state = Default::default();
+        let fsp = if pi.fs.is_valid() {
+            &pi.fs
+        } else {
+            fs = cmd_find_state::find_from_client(client_owner.as_ref(), 0)
+                .unwrap_or_else(|| cmd_find_state::clear_state(0));
+            &fs
+        };
+        let item_owner = pi.item.upgrade();
+        let mut ft_owner = format_create(
+            client_owner.as_ref(),
+            item_owner.as_ref(),
+            FORMAT_NONE,
+            FORMAT_NOJOBS,
+        );
+        let ft = &mut *ft_owner;
+        format_defaults(
+            ft,
+            client_owner.as_ref(),
+            fsp.session_handle().as_ref(),
+            (fsp.winlink_handle()).clone(),
+            fsp.pane_handle().as_ref(),
+        );
+        let expanded = format_expand_cstring(ft, token.as_c_str());
+        drop(ft_owner);
+        take_parser_token(expanded)
     }
 
     fn put_environ(
@@ -167,7 +165,7 @@ impl tiri_cmdparse::Context for ParserContext<'_, '_> {
         hidden: bool,
         active: bool,
     ) -> Result<(), tiri_cmdparse::LexError> {
-        unsafe {
+        {
             if token.as_c_str().to_bytes().len() > CMD_PARSE_MAX_ENVIRON_LEN as usize {
                 self.0
                     .borrow_mut()
@@ -175,11 +173,13 @@ impl tiri_cmdparse::Context for ParserContext<'_, '_> {
                 return Err(tiri_cmdparse::LexError);
             }
             if self.0.borrow().input.flags & CMD_PARSE_PARSEONLY == 0 && active {
-                environ_put(
-                    global_environ.as_deref_mut().expect("environment"),
-                    token.as_c_str(),
-                    if hidden { ENVIRON_HIDDEN } else { 0 },
-                );
+                global_environ_mut(|environment| {
+                    environ_put(
+                        environment,
+                        token.as_c_str(),
+                        if hidden { ENVIRON_HIDDEN } else { 0 },
+                    )
+                });
             }
         }
         Ok(())
@@ -427,10 +427,7 @@ fn cmd_parse_build_commands(
     pr.cmdlist = Some(result_owner);
 }
 /// Parse file contents already read into memory.
-pub unsafe fn cmd_parse_from_file(
-    bytes: &[u8],
-    pi: Option<&mut cmd_parse_input>,
-) -> cmd_parse_result {
+pub fn cmd_parse_from_file(bytes: &[u8], pi: Option<&mut cmd_parse_input>) -> cmd_parse_result {
     let mut input: cmd_parse_input = cmd_parse_input {
         flags: 0,
         file: None,
@@ -479,7 +476,7 @@ pub fn cmd_parse_from_string(s: &CStr, pi: Option<&mut cmd_parse_input>) -> cmd_
     pi.flags |= CMD_PARSE_ONEGROUP;
     cmd_parse_from_buffer(s.to_bytes(), Some(pi))
 }
-pub unsafe fn cmd_parse_and_append(
+pub fn cmd_parse_and_append(
     s: &CStr,
     owner: Option<&ClientRef>,
     state: Option<&std::rc::Rc<cmdq_state>>,
@@ -532,7 +529,7 @@ pub fn cmd_parse_from_buffer(buf: &[u8], pi: Option<&mut cmd_parse_input>) -> cm
     pr
 }
 /// Parse argv while borrowing its strings for the duration of the parser call.
-pub unsafe fn cmd_parse_from_argv(argv: &[CString]) -> cmd_parse_result {
+pub fn cmd_parse_from_argv(argv: &[CString]) -> cmd_parse_result {
     let values: Vec<ParseValue> = argv
         .iter()
         .map(|string| ParseValue::String(string))
@@ -540,7 +537,7 @@ pub unsafe fn cmd_parse_from_argv(argv: &[CString]) -> cmd_parse_result {
     cmd_parse_from_arguments(&values, None)
 }
 
-pub unsafe fn cmd_parse_from_arguments(
+pub fn cmd_parse_from_arguments(
     values: &[ParseValue<'_>],
     pi: Option<&mut cmd_parse_input>,
 ) -> cmd_parse_result {
@@ -638,7 +635,7 @@ mod parser_collection_tests {
         cmd
     }
 
-    unsafe fn compiled_commands(source: &CStr) -> Rc<std::cell::RefCell<cmd_list>> {
+    fn compiled_commands(source: &CStr) -> Rc<std::cell::RefCell<cmd_list>> {
         let mut input = cmd_parse_input {
             flags: CMD_PARSE_NOALIAS,
             ..Default::default()
@@ -650,107 +647,102 @@ mod parser_collection_tests {
 
     #[test]
     fn nested_parser_boxes_release_compiled_payloads_after_ownership_transfer() {
-        unsafe {
-            let first = compiled_commands(c"display-message first");
-            let second = compiled_commands(c"display-message second");
-            let first_observer = Rc::downgrade(&first);
-            let second_observer = Rc::downgrade(&second);
-            let mut nested = cmd_parse_new_commands();
-            let mut inner = cmd_parse_new_command(1);
-            inner
-                .arguments
-                .push_back(Box::new(cmd_parse_argument::ParsedCommands(first)));
-            nested.items.push(inner);
-            let mut outer = cmd_parse_new_command(2);
-            outer
-                .arguments
-                .push_back(Box::new(cmd_parse_argument::Commands(nested)));
-            outer
-                .arguments
-                .push_back(Box::new(cmd_parse_argument::ParsedCommands(second)));
-            let mut source = cmd_parse_new_commands();
-            source.items.push(outer);
-            let address =
-                source.items[0].arguments[0].as_ref() as *const cmd_parse_argument as usize;
-            let mut destination = cmd_parse_new_commands();
-            destination.items.push(source.items.pop().unwrap());
-            drop(source);
-            assert_eq!(
-                destination.items[0].arguments[0].as_ref() as *const cmd_parse_argument as usize,
-                address
-            );
-            assert_eq!(first_observer.strong_count(), 1);
-            assert_eq!(second_observer.strong_count(), 1);
-            drop(destination);
-            assert!(first_observer.upgrade().is_none());
-            assert!(second_observer.upgrade().is_none());
-        }
+        let first = compiled_commands(c"display-message first");
+        let second = compiled_commands(c"display-message second");
+        let first_observer = Rc::downgrade(&first);
+        let second_observer = Rc::downgrade(&second);
+        let mut nested = cmd_parse_new_commands();
+        let mut inner = cmd_parse_new_command(1);
+        inner
+            .arguments
+            .push_back(Box::new(cmd_parse_argument::ParsedCommands(first)));
+        nested.items.push(inner);
+        let mut outer = cmd_parse_new_command(2);
+        outer
+            .arguments
+            .push_back(Box::new(cmd_parse_argument::Commands(nested)));
+        outer
+            .arguments
+            .push_back(Box::new(cmd_parse_argument::ParsedCommands(second)));
+        let mut source = cmd_parse_new_commands();
+        source.items.push(outer);
+        let address = source.items[0].arguments[0].as_ref() as *const cmd_parse_argument as usize;
+        let mut destination = cmd_parse_new_commands();
+        destination.items.push(source.items.pop().unwrap());
+        drop(source);
+        assert_eq!(
+            destination.items[0].arguments[0].as_ref() as *const cmd_parse_argument as usize,
+            address
+        );
+        assert_eq!(first_observer.strong_count(), 1);
+        assert_eq!(second_observer.strong_count(), 1);
+        drop(destination);
+        assert!(first_observer.upgrade().is_none());
+        assert!(second_observer.upgrade().is_none());
     }
 
     #[test]
     fn built_commands_outlive_parser_boxes_and_errors_release_temporary_references() {
-        unsafe {
-            for fail_nested in [false, true] {
-                let compiled = compiled_commands(c"display-message -p nested");
-                let observer = Rc::downgrade(&compiled);
-                let mut command = string_command(1, &[c"if-shell", c"-F", c"1"]);
+        for fail_nested in [false, true] {
+            let compiled = compiled_commands(c"display-message -p nested");
+            let observer = Rc::downgrade(&compiled);
+            let mut command = string_command(1, &[c"if-shell", c"-F", c"1"]);
+            command
+                .arguments
+                .push_back(Box::new(cmd_parse_argument::ParsedCommands(compiled)));
+            if fail_nested {
+                let mut nested = cmd_parse_new_commands();
+                nested
+                    .items
+                    .push(string_command(7, &[c"unknown-parser-owner-command"]));
                 command
                     .arguments
-                    .push_back(Box::new(cmd_parse_argument::ParsedCommands(compiled)));
-                if fail_nested {
-                    let mut nested = cmd_parse_new_commands();
-                    nested
-                        .items
-                        .push(string_command(7, &[c"unknown-parser-owner-command"]));
-                    command
-                        .arguments
-                        .push_back(Box::new(cmd_parse_argument::Commands(nested)));
-                }
-                let mut commands = cmd_parse_new_commands();
-                commands.items.push(command);
-                let mut input = cmd_parse_input {
-                    flags: CMD_PARSE_NOALIAS,
-                    file: Some(c"nested.conf".to_owned()),
-                    ..Default::default()
-                };
-                let mut result = cmd_parse_result::empty();
-                cmd_parse_build_commands(&mut commands, &mut input, &mut result);
-                if fail_nested {
-                    assert_eq!(result.status, CMD_PARSE_ERROR);
-                    assert_eq!(
-                        result.error.as_deref(),
-                        Some(c"nested.conf:7: unknown command: unknown-parser-owner-command")
-                    );
-                    assert_eq!(
-                        observer.strong_count(),
-                        1,
-                        "failed build retained a temporary command value"
-                    );
-                    drop(commands);
-                    assert!(observer.upgrade().is_none());
-                } else {
-                    assert_eq!(result.status, CMD_PARSE_SUCCESS, "{:?}", result.error);
-                    drop(commands);
-                    assert_eq!(
-                        observer.strong_count(),
-                        1,
-                        "built command must retain its nested command list"
-                    );
-                    assert_eq!(
-                        cmd_list_print_cstring(
-                            &result
-                                .cmdlist
-                                .as_ref()
-                                .expect("parsed command list")
-                                .borrow(),
-                            0
-                        )
-                        .as_bytes(),
-                        b"if-shell -F 1 { display-message -p nested }"
-                    );
-                    drop(result.cmdlist.take());
-                    assert!(observer.upgrade().is_none());
-                }
+                    .push_back(Box::new(cmd_parse_argument::Commands(nested)));
+            }
+            let mut commands = cmd_parse_new_commands();
+            commands.items.push(command);
+            let mut input = cmd_parse_input {
+                flags: CMD_PARSE_NOALIAS,
+                file: Some(c"nested.conf".to_owned()),
+                ..Default::default()
+            };
+            let mut result = cmd_parse_result::empty();
+            cmd_parse_build_commands(&mut commands, &mut input, &mut result);
+            if fail_nested {
+                assert_eq!(result.status, CMD_PARSE_ERROR);
+                assert_eq!(
+                    result.error.as_deref(),
+                    Some(c"nested.conf:7: unknown command: unknown-parser-owner-command")
+                );
+                assert_eq!(
+                    observer.strong_count(),
+                    1,
+                    "failed build retained a temporary command value"
+                );
+                drop(commands);
+                assert!(observer.upgrade().is_none());
+            } else {
+                assert_eq!(result.status, CMD_PARSE_SUCCESS, "{:?}", result.error);
+                drop(commands);
+                assert_eq!(
+                    observer.strong_count(),
+                    1,
+                    "built command must retain its nested command list"
+                );
+                assert_eq!(
+                    cmd_list_print_cstring(
+                        &result
+                            .cmdlist
+                            .as_ref()
+                            .expect("parsed command list")
+                            .borrow(),
+                        0
+                    )
+                    .as_bytes(),
+                    b"if-shell -F 1 { display-message -p nested }"
+                );
+                drop(result.cmdlist.take());
+                assert!(observer.upgrade().is_none());
             }
         }
     }

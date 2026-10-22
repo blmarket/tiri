@@ -4,7 +4,7 @@ use crate::shared::window::WindowRef;
 use crate::shared::window::{WINDOW_ACTIVITY, WINDOW_ALERTFLAGS, WINDOW_BELL, WINDOW_SILENCE};
 use std::time::Duration;
 
-pub(super) unsafe fn reset_timer(owner: &WindowRef) {
+pub(super) fn reset_timer(owner: &WindowRef) {
     let timer = {
         let mut w = owner.borrow_mut();
         w.flags &= !WINDOW_SILENCE;
@@ -32,7 +32,7 @@ pub(super) unsafe fn reset_timer(owner: &WindowRef) {
     }
 }
 
-pub(super) unsafe fn queue(owner: &WindowRef, flags: i32) -> Option<bool> {
+pub(super) fn queue(owner: &WindowRef, flags: i32) -> Option<bool> {
     assert_eq!(flags & !WINDOW_ALERTFLAGS, 0, "alert flags only");
     owner.reset_alert_timer();
     let added = {

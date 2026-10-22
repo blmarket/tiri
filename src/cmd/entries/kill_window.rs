@@ -107,7 +107,7 @@ unsafe fn cmd_kill_window_exec(
     );
     CmdOutcome::Normal
 }
-unsafe fn cmd_kill_window_all(
+fn cmd_kill_window_all(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     filter: Option<&CStr>,
 ) -> CmdOutcome {
@@ -187,7 +187,7 @@ unsafe fn cmd_kill_window_all(
     server_renumber_all();
     CmdOutcome::Normal
 }
-unsafe fn cmd_kill_window_filter(
+fn cmd_kill_window_filter(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     s_owner: &SessionRef,
     mut wl: refbox::Weak<winlink>,

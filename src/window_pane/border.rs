@@ -16,7 +16,7 @@ use crate::shared::redraw::redraw_spans;
 use crate::style::{style_apply_with_options, style_ranges_clear};
 use crate::window_border::window_get_border_cell;
 
-pub(super) unsafe fn cell(
+pub(super) fn cell(
     pane: &Rc<RefCell<window_pane>>,
     cell_type: ::core::ffi::c_int,
     cell: &mut grid_cell,
@@ -27,10 +27,7 @@ pub(super) unsafe fn cell(
     window_get_border_cell(index, pane.pane_lines(), cell_type, cell);
 }
 
-pub(super) unsafe fn border_style(
-    pane: &Rc<RefCell<window_pane>>,
-    client: &ClientRef,
-) -> grid_cell {
+pub(super) fn border_style(pane: &Rc<RefCell<window_pane>>, client: &ClientRef) -> grid_cell {
     let session = client
         .attached_session()
         .upgrade()
@@ -78,7 +75,7 @@ pub(super) unsafe fn border_style(
 /// Build the pane's status line: the separator glyphs of its status row, each
 /// the line its border cell draws, with `pane-border-format` drawn over them.
 /// Returns whether the line changed.
-pub(super) unsafe fn make_status(
+pub(super) fn make_status(
     pane: &Rc<RefCell<window_pane>>,
     client: &ClientRef,
     width: u32,

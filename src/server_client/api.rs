@@ -1,5 +1,5 @@
-//! Operations on retained clients. Legacy dispatch remains explicitly unsafe:
-//! an Rc keeps storage alive, but does not make reentrant model borrows exclusive.
+//! Operations on retained clients. Component guards are RefCell borrows of the
+//! client, so a reentrant borrow while one is held panics instead of aliasing.
 use crate::options::OptionsScope;
 use crate::shared::window::WindowWeak;
 
@@ -19,7 +19,7 @@ use crate::shared::terminal::termios;
 use crate::shared::window::WindowRef;
 use crate::window::Window;
 use std::cell::RefCell;
-use std::os::fd::{AsFd, AsRawFd, OwnedFd};
+use std::os::fd::{AsFd, OwnedFd};
 use std::rc::{Rc, Weak};
 use std::time::{Duration, SystemTime};
 
@@ -28,22 +28,19 @@ use std::time::{Duration, SystemTime};
 /// explicit owner-release sites must still release their retained reference.
 pub trait Client {
     /// Create and register a protocol client, preserving the registry's owner.
-    unsafe fn create(fd: OwnedFd) -> Self
+    fn create(fd: OwnedFd) -> Self
     where
         Self: Sized;
     fn attached_count() -> u32
     where
         Self: Sized;
     /// Run the existing server-cycle checks over the retained client registry.
-    unsafe fn run_cycle()
+    fn run_cycle()
     where
         Self: Sized;
     /// Select the directory for an optional client using startup and session
     /// precedence. The returned value owns its bytes across owner release.
-    unsafe fn working_directory(
-        client: Option<&Self>,
-        fallback: Option<&SessionRef>,
-    ) -> Option<CString>
+    fn working_directory(client: Option<&Self>, fallback: Option<&SessionRef>) -> Option<CString>
     where
         Self: Sized;
     fn print_to(client: Option<&Self>, parse: bool, buffer: &mut SegmentedBuf)
@@ -52,10 +49,10 @@ pub trait Client {
     fn forget_pane(pane: &Rc<RefCell<window_pane>>)
     where
         Self: Sized;
-    unsafe fn open_terminal(&self) -> Result<(), CString>;
-    unsafe fn parse_flags(&self, flags: &CStr);
-    unsafe fn update_theme_colours(&self);
-    unsafe fn handle_key(&self, event: Box<key_event>) -> i32;
+    fn open_terminal(&self) -> Result<(), CString>;
+    fn parse_flags(&self, flags: &CStr);
+    fn update_theme_colours(&self);
+    fn handle_key(&self, event: Box<key_event>) -> i32;
 
     type FormatJobsMut<'a>: std::ops::DerefMut<Target = crate::shared::format::format_job_tree>
     where
@@ -63,13 +60,13 @@ pub trait Client {
     /// Immediate cache edits only. Release before expansion, process startup,
     /// job_free, or status notification. Callback identity must not be a pointer
     /// into this cache; removed entries retain their explicit cleanup duty.
-    unsafe fn borrow_format_jobs_mut(&self) -> Self::FormatJobsMut<'_>;
+    fn borrow_format_jobs_mut(&self) -> Self::FormatJobsMut<'_>;
     type QueueMut<'a>: std::ops::DerefMut<Target = crate::cmd::queue::cmdq_list>
     where
         Self: 'a;
     /// Release before executing commands, invoking cancellation, or releasing
     /// queued owners. Queue identity must never be a pointer into this borrow.
-    unsafe fn borrow_queue_mut(&self) -> Self::QueueMut<'_>;
+    fn borrow_queue_mut(&self) -> Self::QueueMut<'_>;
     type Terminal<'a>: std::ops::Deref<Target = tty>
     where
         Self: 'a;
@@ -78,13 +75,14 @@ pub trait Client {
         Self: 'a;
     /// Read terminal properties within the guard; release it before model calls,
     /// terminal mutation, formatting, or callback dispatch.
-    unsafe fn borrow_terminal(&self) -> Self::Terminal<'_>;
+    fn borrow_terminal(&self) -> Self::Terminal<'_>;
     /// Only component-only helpers may run under this guard. Release before
     /// terminal IO helpers that query Client, callback dispatch, or model calls.
-    unsafe fn borrow_terminal_mut(&self) -> Self::TerminalMut<'_>;
+    fn borrow_terminal_mut(&self) -> Self::TerminalMut<'_>;
     /// Enqueue terminal bytes and account for output within one model borrow.
-    unsafe fn write_terminal(&self, bytes: &[u8]);
-    fn terminal_fd(&self) -> i32;
+    fn write_terminal(&self, bytes: &[u8]);
+    /// A duplicate of the terminal descriptor, independent of later client borrows.
+    fn terminal_fd(&self) -> Option<OwnedFd>;
     fn record_terminal_discard(&self, bytes: usize);
     /// Some(0) completes the redraw write; backpressure starts on a later write.
     fn acknowledge_terminal_redraw(&self, bytes: usize) -> Option<usize>;
@@ -104,8 +102,8 @@ pub trait Client {
     fn reset_pan(&self, window: Option<&WindowRef>);
     /// Apply and clamp this window's explicit pan, if active, to a viewport.
     /// Window dimensions are read before borrowing Client state.
-    unsafe fn apply_pan(&self, window: &WindowRef, view: &mut tty_window_view) -> bool;
-    unsafe fn pan_window(&self, window: &WindowRef, direction: Direction, amount: u32);
+    fn apply_pan(&self, window: &WindowRef, view: &mut tty_window_view) -> bool;
+    fn pan_window(&self, window: &WindowRef, direction: Direction, amount: u32);
     type Status<'a>: std::ops::Deref<Target = crate::shared::status::status_line>
     where
         Self: 'a;
@@ -113,23 +111,23 @@ pub trait Client {
     where
         Self: 'a;
     /// Release before formatting, querying Client, callbacks or screen replacement.
-    unsafe fn borrow_status(&self) -> Self::Status<'_>;
-    unsafe fn borrow_status_mut(&self) -> Self::StatusMut<'_>;
+    fn borrow_status(&self) -> Self::Status<'_>;
+    fn borrow_status_mut(&self) -> Self::StatusMut<'_>;
     type ControlMut<'a>: std::ops::DerefMut<Target = control_state>
     where
         Self: 'a;
     /// Release before calling models, formatting, dispatching callbacks, or
     /// stopping control mode. No component pointer may escape the guard.
-    unsafe fn borrow_control_mut(&self) -> Option<Self::ControlMut<'_>>;
-    unsafe fn start_control(&self);
-    unsafe fn stop_control(&self);
+    fn borrow_control_mut(&self) -> Option<Self::ControlMut<'_>>;
+    fn start_control(&self);
+    fn stop_control(&self);
     fn control_pause_after(&self) -> Option<u64>;
     /// Check reply pressure and publish exit/discard state before discarding
     /// pending pane output. Returns false for a stopped or discarding client.
-    unsafe fn accept_control_reply(&self, added: usize) -> bool;
+    fn accept_control_reply(&self, added: usize) -> bool;
     fn attached_session(&self) -> SessionWeak;
-    unsafe fn set_session(&self, session: Option<&SessionRef>);
-    unsafe fn reattach_after_session_destroy(&self, target: Option<&SessionRef>);
+    fn set_session(&self, session: Option<&SessionRef>);
+    fn reattach_after_session_destroy(&self, target: Option<&SessionRef>);
     fn is_dead(&self) -> bool;
     fn is_control(&self) -> bool;
     fn is_read_only(&self) -> bool;
@@ -137,7 +135,7 @@ pub trait Client {
     /// Whether this client currently receives control protocol notifications.
     fn receives_notifications(&self) -> bool;
     /// Formatting runs without a client borrow and may reenter the client.
-    unsafe fn notify(&self, write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>);
+    fn notify(&self, write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>);
     fn name(&self) -> Option<CString>;
     /// Observe the complete protocol/state flag word for legacy mask decisions.
     fn flags(&self) -> u64;
@@ -175,8 +173,8 @@ pub trait Client {
     fn has_input_requests(&self) -> bool;
     /// Select in client-index order; no Client borrow spans parser replies or
     /// explicit request cleanup (which itself removes index observations).
-    unsafe fn reply_input_request(&self, reply: crate::input::InputRequestReply<'_>);
-    unsafe fn cancel_input_requests(&self);
+    fn reply_input_request(&self, reply: crate::input::InputRequestReply<'_>);
+    fn cancel_input_requests(&self);
     fn remember_session(&self);
     fn previous_session(&self) -> SessionWeak;
     fn has_input_fd(&self) -> bool;
@@ -190,24 +188,24 @@ pub trait Client {
     /// Attachment accounting excludes suspended, dead and exiting clients.
     fn counts_as_attached(&self) -> bool;
     /// Deliver the audible/visual part after Session has deduplicated the alert.
-    unsafe fn alert(&self, kind: &CStr, visual: i32, current: bool, index: i32);
+    fn alert(&self, kind: &CStr, visual: i32, current: bool, index: i32);
 
     fn uses_legacy_layout_format(&self) -> bool;
     fn focuses_window(&self, window: &WindowRef) -> bool;
     fn participates_in_window_sizing(&self) -> bool;
-    unsafe fn window_size(&self, window: Option<&WindowRef>) -> (u32, u32, u32, u32);
-    unsafe fn constrain_window_size(&self, window: &WindowRef, sx: &mut u32, sy: &mut u32);
+    fn window_size(&self, window: Option<&WindowRef>) -> (u32, u32, u32, u32);
+    fn constrain_window_size(&self, window: &WindowRef, sx: &mut u32, sy: &mut u32);
     /// `flags` contains only CLIENT_*REDRAW* bits, including status-force.
     fn request_redraw(&self, flags: u64);
     /// Ordered injection used by send-keys -K. The queue insertion point must
     /// survive until dispatch finishes, under the existing command lifetime rules.
-    unsafe fn handle_key_after(
+    fn handle_key_after(
         &self,
         event: Box<key_event>,
         after: Option<&Rc<std::cell::RefCell<cmdq_item>>>,
         next: Option<&mut Weak<std::cell::RefCell<cmdq_item>>>,
     ) -> i32;
-    unsafe fn control_write_output(&self, pane: &Rc<RefCell<window_pane>>);
+    fn control_write_output(&self, pane: &Rc<RefCell<window_pane>>);
     /// Scoped access to this control client's consumer offset. Call only for an
     /// attached control client; the bool is the existing output-disabled flag.
     /// Do not reenter models, release owners, or let the reference escape.
@@ -221,11 +219,11 @@ pub trait Client {
     fn exit_with_message(&self, message: CString, return_value: Option<i32>);
     /// Preserve shutdown's immediate loss of suspended clients and otherwise
     /// queue the shutdown reason, then clear attachment without notifications.
-    unsafe fn shutdown(&self);
+    fn shutdown(&self);
     /// The closure cannot reenter models, destroy owners, or leak component
     /// references. Clone the environment before invoking another entity.
     fn with_environment<R>(&self, read: impl FnOnce(Option<&environ>) -> R) -> R;
-    unsafe fn cwd(&self, fallback: Option<&SessionRef>) -> Option<CString>;
+    fn cwd(&self, fallback: Option<&SessionRef>) -> Option<CString>;
     fn set_key_table(&self, name: Option<&CStr>);
     /// Switch to an already resolved table without refreshing its activity time.
     fn select_key_table(&self, table: Rc<std::cell::RefCell<key_table>>);
@@ -234,10 +232,10 @@ pub trait Client {
     /// A callback may retire it and install another prompt on this client.
     fn prompt_observer(&self) -> refbox::Weak<crate::shared::prompt::prompt>;
     fn install_prompt(&self, prompt: refbox::RefBox<crate::shared::prompt::prompt>, flags: i32);
-    unsafe fn clear_prompt(&self);
-    unsafe fn clear_status_message(&self);
+    fn clear_prompt(&self);
+    fn clear_status_message(&self);
     fn redraw_status_if_unobscured(&self);
-    unsafe fn show_status_message(
+    fn show_status_message(
         &self,
         message: CString,
         delay: i32,
@@ -248,8 +246,8 @@ pub trait Client {
     fn status_message_text(&self) -> (Option<CString>, bool);
     /// Install callbacks and typed payload as one owned overlay. Callback
     /// retirement remains explicit and runs without a live client borrow.
-    unsafe fn set_overlay(&self, overlay: Overlay);
-    unsafe fn clear_overlay(&self);
+    fn set_overlay(&self, overlay: Overlay);
+    fn clear_overlay(&self);
     fn has_overlay(&self) -> bool;
     fn clips_terminal_output(&self) -> bool;
     fn draw_overlay(&self);
@@ -272,10 +270,10 @@ pub trait Client {
     /// Keep a replacement installed by a nested render, if one exists.
     fn restore_redraw_scene(&self, scene: Box<crate::shared::redraw::redraw_scene>);
     fn schedule_format_cycle(&self, interval_ms: i32);
-    unsafe fn refresh_terminal_size(&self);
+    fn refresh_terminal_size(&self);
     /// Query the owned descriptor without exposing it to terminal consumers.
-    unsafe fn query_terminal_size(&self) -> Option<crate::shared::posix_terminal::winsize>;
-    unsafe fn draw_overlay_screen(
+    fn query_terminal_size(&self) -> Option<crate::shared::posix_terminal::winsize>;
+    fn draw_overlay_screen(
         &self,
         screen: &screen,
         x: u32,
@@ -286,32 +284,28 @@ pub trait Client {
     );
     /// Draw from the current status screen and terminal under one Client borrow.
     /// Clipping/overlay callbacks must have completed before calling this.
-    unsafe fn draw_status_line(&self, row: u32, x: u32, width: u32, y: u32);
+    fn draw_status_line(&self, row: u32, x: u32, width: u32, y: u32);
     /// Prepare direct overlay output, deferring it when a full overlay redraw
     /// is already pending. Coordinates refer to the complete terminal.
     fn prepare_overlay_render(&self, context: &mut tty_ctx, x: u32, y: u32) -> bool;
     /// Select this client's view of a pane for a terminal command: 0 skips it,
     /// -1 defers to full redraw, and 1 permits immediate output.
-    unsafe fn prepare_pane_render(
-        &self,
-        context: &mut tty_ctx,
-        pane: &Rc<RefCell<window_pane>>,
-    ) -> i32;
+    fn prepare_pane_render(&self, context: &mut tty_ctx, pane: &Rc<RefCell<window_pane>>) -> i32;
     fn format_value(
         &self,
         key: &CStr,
         context: &mut format_tree,
     ) -> Option<crate::format::FormatValue>;
     fn detach(&self, message: msgtype);
-    unsafe fn suspend(&self);
+    fn suspend(&self);
     /// Stop terminal output, restore the lock screen, publish suspension, then
     /// send the lock command. The caller selects and snapshots the command.
-    unsafe fn lock(&self, command: &CStr);
-    unsafe fn lost(&self);
+    fn lock(&self, command: &CStr);
+    fn lost(&self);
 }
 
 impl Client for ClientRef {
-    unsafe fn create(fd: OwnedFd) -> Self {
+    fn create(fd: OwnedFd) -> Self {
         server_client_create(fd)
     }
 
@@ -319,14 +313,11 @@ impl Client for ClientRef {
         server_client_how_many()
     }
 
-    unsafe fn run_cycle() {
+    fn run_cycle() {
         server_client_loop();
     }
 
-    unsafe fn working_directory(
-        client: Option<&Self>,
-        fallback: Option<&SessionRef>,
-    ) -> Option<CString> {
+    fn working_directory(client: Option<&Self>, fallback: Option<&SessionRef>) -> Option<CString> {
         server_client_get_cwd(client, fallback)
     }
 
@@ -338,24 +329,24 @@ impl Client for ClientRef {
         server_client_remove_pane(pane);
     }
 
-    unsafe fn open_terminal(&self) -> Result<(), CString> {
+    fn open_terminal(&self) -> Result<(), CString> {
         server_client_open(self)
     }
 
-    unsafe fn parse_flags(&self, flags: &CStr) {
+    fn parse_flags(&self, flags: &CStr) {
         server_client_set_flags(self, flags);
     }
 
-    unsafe fn update_theme_colours(&self) {
+    fn update_theme_colours(&self) {
         server_client_update_theme_colours(Some(self));
     }
 
-    unsafe fn handle_key(&self, event: Box<key_event>) -> i32 {
+    fn handle_key(&self, event: Box<key_event>) -> i32 {
         server_client_handle_key(self, event)
     }
 
-    fn terminal_fd(&self) -> i32 {
-        self.borrow().fd.as_ref().map_or(-1, AsRawFd::as_raw_fd)
+    fn terminal_fd(&self) -> Option<OwnedFd> {
+        self.borrow().fd.as_ref().and_then(|fd| fd.try_clone().ok())
     }
     fn record_terminal_discard(&self, bytes: usize) {
         let mut client = self.borrow_mut();
@@ -405,9 +396,9 @@ impl Client for ClientRef {
             .unwrap_or(-1)
     }
 
-    type FormatJobsMut<'a> = &'a mut crate::shared::format::format_job_tree;
-    unsafe fn borrow_format_jobs_mut(&self) -> Self::FormatJobsMut<'_> {
-        &mut (*self.as_ptr()).jobs
+    type FormatJobsMut<'a> = std::cell::RefMut<'a, crate::shared::format::format_job_tree>;
+    fn borrow_format_jobs_mut(&self) -> Self::FormatJobsMut<'_> {
+        std::cell::RefMut::map(self.borrow_mut(), |state| &mut state.jobs)
     }
     fn record_terminal_type(&self, name: &CStr) {
         server_client_set_term_type(&mut self.borrow_mut(), Some(name.to_owned()));
@@ -427,32 +418,23 @@ impl Client for ClientRef {
     fn has_input_requests(&self) -> bool {
         !self.borrow().input_requests.is_empty()
     }
-    unsafe fn reply_input_request(&self, reply: crate::input::InputRequestReply<'_>) {
+    fn reply_input_request(&self, reply: crate::input::InputRequestReply<'_>) {
         let requests = self.borrow().input_requests.clone();
-        for request in requests {
-            if crate::input::input_request_matches(&*request, reply) {
-                crate::input::input_complete_request(request, reply);
-                return;
-            }
-            crate::input::input_free_request(request);
-        }
+        crate::input::input_reply_observed_requests(requests, reply);
     }
-    unsafe fn cancel_input_requests(&self) {
+    fn cancel_input_requests(&self) {
         let requests = std::mem::take(&mut self.borrow_mut().input_requests);
-        for request in requests {
-            (*request).c = Weak::new();
-            crate::input::input_free_request(request);
-        }
+        crate::input::input_cancel_observed_requests(requests);
     }
-    type Terminal<'a> = &'a tty;
-    type TerminalMut<'a> = &'a mut tty;
-    unsafe fn borrow_terminal(&self) -> Self::Terminal<'_> {
-        &(*self.as_ptr()).tty
+    type Terminal<'a> = std::cell::Ref<'a, tty>;
+    type TerminalMut<'a> = std::cell::RefMut<'a, tty>;
+    fn borrow_terminal(&self) -> Self::Terminal<'_> {
+        std::cell::Ref::map(self.borrow(), |state| &state.tty)
     }
-    unsafe fn borrow_terminal_mut(&self) -> Self::TerminalMut<'_> {
-        &mut (*self.as_ptr()).tty
+    fn borrow_terminal_mut(&self) -> Self::TerminalMut<'_> {
+        std::cell::RefMut::map(self.borrow_mut(), |state| &mut state.tty)
     }
-    unsafe fn write_terminal(&self, bytes: &[u8]) {
+    fn write_terminal(&self, bytes: &[u8]) {
         let mut state = self.borrow_mut();
         let state = &mut *state;
         crate::tty::tty_enqueue_bytes(
@@ -492,7 +474,7 @@ impl Client for ClientRef {
             state.pan_window = WindowWeak::new();
         }
     }
-    unsafe fn apply_pan(&self, window: &WindowRef, view: &mut tty_window_view) -> bool {
+    fn apply_pan(&self, window: &WindowRef, view: &mut tty_window_view) -> bool {
         let (sx, sy) = window.logical_size();
         let observer = WindowRef::downgrade(window);
         let mut state = self.borrow_mut();
@@ -514,7 +496,7 @@ impl Client for ClientRef {
         view.oy = state.pan_oy;
         true
     }
-    unsafe fn pan_window(&self, window: &WindowRef, direction: Direction, amount: u32) {
+    fn pan_window(&self, window: &WindowRef, direction: Direction, amount: u32) {
         let (width, height) = window.logical_size();
         let observer = WindowRef::downgrade(window);
         let mut state = self.borrow_mut();
@@ -563,20 +545,19 @@ impl Client for ClientRef {
         .expect("arm timer");
         self.borrow_mut().cycle_timer = Some(timer);
     }
-    type QueueMut<'a> = &'a mut crate::cmd::queue::cmdq_list;
-    unsafe fn borrow_queue_mut(&self) -> Self::QueueMut<'_> {
-        (*self.as_ptr())
-            .queue
-            .as_deref_mut()
-            .expect("client command queue")
+    type QueueMut<'a> = std::cell::RefMut<'a, crate::cmd::queue::cmdq_list>;
+    fn borrow_queue_mut(&self) -> Self::QueueMut<'_> {
+        std::cell::RefMut::map(self.borrow_mut(), |state| {
+            state.queue.as_deref_mut().expect("client command queue")
+        })
     }
-    type Status<'a> = &'a crate::shared::status::status_line;
-    type StatusMut<'a> = &'a mut crate::shared::status::status_line;
-    unsafe fn borrow_status(&self) -> Self::Status<'_> {
-        &(*self.as_ptr()).status
+    type Status<'a> = std::cell::Ref<'a, crate::shared::status::status_line>;
+    type StatusMut<'a> = std::cell::RefMut<'a, crate::shared::status::status_line>;
+    fn borrow_status(&self) -> Self::Status<'_> {
+        std::cell::Ref::map(self.borrow(), |state| &state.status)
     }
-    unsafe fn borrow_status_mut(&self) -> Self::StatusMut<'_> {
-        &mut (*self.as_ptr()).status
+    fn borrow_status_mut(&self) -> Self::StatusMut<'_> {
+        std::cell::RefMut::map(self.borrow_mut(), |state| &mut state.status)
     }
     fn terminal_started(&self) -> bool {
         self.borrow().tty.is_started()
@@ -593,59 +574,62 @@ impl Client for ClientRef {
             state.redraw_scene = Some(scene);
         }
     }
-    type ControlMut<'a> = &'a mut control_state;
-    unsafe fn borrow_control_mut(&self) -> Option<Self::ControlMut<'_>> {
-        (*self.as_ptr()).control_state.as_deref_mut()
+    type ControlMut<'a> = std::cell::RefMut<'a, control_state>;
+    fn borrow_control_mut(&self) -> Option<Self::ControlMut<'_>> {
+        std::cell::RefMut::filter_map(self.borrow_mut(), |state| {
+            state.control_state.as_deref_mut()
+        })
+        .ok()
     }
     fn control_pause_after(&self) -> Option<u64> {
         let state = self.borrow();
         (state.flags & CLIENT_CONTROL_PAUSEAFTER != 0).then_some(state.pause_age as u64)
     }
-    unsafe fn start_control(&self) {
-        use crate::reactor::{
-            bufferevent_new, bufferevent_setwatermark, bufferevent_write, StreamHandle,
-        };
+    fn start_control(&self) {
+        use crate::reactor::{bufferevent_new, bufferevent_setwatermark, bufferevent_write};
         let control_control = self.flags() & CLIENT_CONTROLCONTROL as u64 != 0;
-        let fd = self.borrow().fd.as_ref().map_or(-1, AsRawFd::as_raw_fd);
-        let out_fd = self.borrow().out_fd.as_ref().map_or(-1, AsRawFd::as_raw_fd);
         if control_control {
             let out_fd = self.borrow_mut().out_fd.take();
             drop(out_fd);
-        } else {
-            setblocking(out_fd, 0);
         }
-        setblocking(fd, 0);
         self.borrow_mut().control_state = Some(Box::new(control_state::empty()));
         let subs = crate::control::control_subscriptions(self);
         self.borrow_control_mut()
             .expect("control client state")
             .subs = Some(subs);
         let (read, write, error) = crate::control::control_stream_callbacks(self);
-        let input = bufferevent_new(fd, read, write.clone(), error.clone())
-            .unwrap_or_else(|_| crate::log::fatalx(|out| out.write_all(b"out of memory")));
-        let input = StreamHandle::from_ptr(input);
-        self.borrow_control_mut()
-            .expect("control client state")
-            .read_event = input.clone();
-        let output = if control_control {
-            input
-        } else {
-            let output = bufferevent_new(out_fd, None, write, error)
+        let (input, output) = {
+            let state = self.borrow();
+            let fd = state.fd.as_ref().map(AsFd::as_fd);
+            let out_fd = state.out_fd.as_ref().map(AsFd::as_fd);
+            for fd in [out_fd, fd].into_iter().flatten() {
+                setblocking(fd, 0);
+            }
+            let input = bufferevent_new(fd, read, write.clone(), error.clone())
                 .unwrap_or_else(|_| crate::log::fatalx(|out| out.write_all(b"out of memory")));
-            StreamHandle::from_ptr(output)
+            let output = if control_control {
+                input.clone()
+            } else {
+                bufferevent_new(out_fd, None, write, error)
+                    .unwrap_or_else(|_| crate::log::fatalx(|out| out.write_all(b"out of memory")))
+            };
+            (input, output)
         };
         self.borrow_control_mut()
             .expect("control client state")
+            .read_event = input;
+        self.borrow_control_mut()
+            .expect("control client state")
             .write_event = output.clone();
-        let _ = output.with_ptr(|stream| bufferevent_setwatermark(stream));
+        let _ = output.with_stream(|stream| bufferevent_setwatermark(stream));
         if control_control {
-            let _ = output.with_ptr(|stream| {
+            let _ = output.with_stream(|stream| {
                 bufferevent_write(stream, b"\x1bP1000p");
                 bufferevent_enable(stream, EV_WRITE as i16)
             });
         }
     }
-    unsafe fn stop_control(&self) {
+    fn stop_control(&self) {
         let subs = {
             let Some(mut state) = self.borrow_control_mut() else {
                 return;
@@ -681,7 +665,7 @@ impl Client for ClientRef {
         let control_state = self.borrow_mut().control_state.take();
         drop(control_state);
     }
-    unsafe fn accept_control_reply(&self, added: usize) -> bool {
+    fn accept_control_reply(&self, added: usize) -> bool {
         use crate::shared::client::CLIENT_CONTROL_DISCARD;
         let mut state = self.borrow_mut();
         let state = &mut *state;
@@ -693,7 +677,7 @@ impl Client for ClientRef {
         }
         let size = control
             .write_event
-            .with_ptr(|stream| crate::reactor::evbuffer_get_length(&(*stream).output))
+            .with_stream(|stream| crate::reactor::evbuffer_get_length(&(*stream).output))
             .unwrap_or(0)
             .wrapping_add(control.queued_reply_bytes)
             .wrapping_add(added);
@@ -714,7 +698,7 @@ impl Client for ClientRef {
         false
     }
 
-    unsafe fn notify(&self, write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) {
+    fn notify(&self, write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) {
         crate::control::control_notify_write(self, write);
     }
     fn receives_notifications(&self) -> bool {
@@ -841,20 +825,22 @@ impl Client for ClientRef {
     fn counts_as_attached(&self) -> bool {
         self.borrow().flags & crate::shared::client::CLIENT_UNATTACHEDFLAGS as u64 == 0
     }
-    unsafe fn alert(&self, kind: &CStr, visual: i32, current: bool, index: i32) {
+    fn alert(&self, kind: &CStr, visual: i32, current: bool, index: i32) {
         use crate::shared::alerts::{VISUAL_BOTH, VISUAL_OFF};
         if visual == VISUAL_OFF || visual == VISUAL_BOTH {
             crate::tty::tty_bell(self);
         }
         if visual != VISUAL_OFF {
-            crate::status::status_message_set(Some(self), -1, 1, 0, 0, |out| {
-                out.write_all(kind.to_bytes())?;
-                if current {
-                    out.write_all(b" in current window")
-                } else {
-                    write!(out, " in window {}", index)
-                }
-            });
+            {
+                crate::status::status_message_set(Some(self), -1, 1, 0, 0, |out| {
+                    out.write_all(kind.to_bytes())?;
+                    if current {
+                        out.write_all(b" in current window")
+                    } else {
+                        write!(out, " in window {}", index)
+                    }
+                })
+            };
         }
     }
 
@@ -862,11 +848,11 @@ impl Client for ClientRef {
         self.borrow().session.clone()
     }
 
-    unsafe fn set_session(&self, session: Option<&SessionRef>) {
+    fn set_session(&self, session: Option<&SessionRef>) {
         server_client_set_session(self, session);
     }
 
-    unsafe fn reattach_after_session_destroy(&self, target: Option<&SessionRef>) {
+    fn reattach_after_session_destroy(&self, target: Option<&SessionRef>) {
         {
             let mut state = self.borrow_mut();
             state.session = Weak::new();
@@ -943,7 +929,7 @@ impl Client for ClientRef {
             || client.flags & (CLIENT_SIZECHANGED as u64 | CLIENT_WINDOWSIZECHANGED) != 0
     }
 
-    unsafe fn window_size(&self, window: Option<&WindowRef>) -> (u32, u32, u32, u32) {
+    fn window_size(&self, window: Option<&WindowRef>) -> (u32, u32, u32, u32) {
         let (mut sx, mut sy) = (0, 0);
         let overridden = window.is_some_and(|window| {
             control_get_window_size(self, window.id(), &mut sx, &mut sy) != 0 && sx != 0 && sy != 0
@@ -964,7 +950,7 @@ impl Client for ClientRef {
         (sx, sy, xpixel, ypixel)
     }
 
-    unsafe fn constrain_window_size(&self, window: &WindowRef, sx: &mut u32, sy: &mut u32) {
+    fn constrain_window_size(&self, window: &WindowRef, sx: &mut u32, sy: &mut u32) {
         if self.flags() & CLIENT_WINDOWSIZECHANGED == 0 {
             return;
         }
@@ -999,7 +985,7 @@ impl Client for ClientRef {
         self.borrow_mut().flags |= flags;
     }
 
-    unsafe fn handle_key_after(
+    fn handle_key_after(
         &self,
         event: Box<key_event>,
         after: Option<&Rc<std::cell::RefCell<cmdq_item>>>,
@@ -1008,7 +994,7 @@ impl Client for ClientRef {
         server_client_handle_key_after(self, event, after, next)
     }
 
-    unsafe fn control_write_output(&self, pane: &Rc<RefCell<window_pane>>) {
+    fn control_write_output(&self, pane: &Rc<RefCell<window_pane>>) {
         if self.attached_session().upgrade().is_some() && self.is_control() {
             control_write_output(self, pane);
         }
@@ -1050,7 +1036,7 @@ impl Client for ClientRef {
         }
         state.flags |= CLIENT_EXIT as u64;
     }
-    unsafe fn shutdown(&self) {
+    fn shutdown(&self) {
         if self.flags() & CLIENT_SUSPENDED as u64 != 0 {
             self.lost();
         } else {
@@ -1065,9 +1051,9 @@ impl Client for ClientRef {
         read(self.borrow().environ.as_deref())
     }
 
-    unsafe fn cwd(&self, fallback: Option<&SessionRef>) -> Option<CString> {
-        if cfg_finished == 0 {
-            if let Some(startup) = cfg_client.upgrade() {
+    fn cwd(&self, fallback: Option<&SessionRef>) -> Option<CString> {
+        if !cfg_finished() {
+            if let Some(startup) = cfg_client() {
                 return startup.borrow().cwd.clone();
             }
         }
@@ -1117,7 +1103,7 @@ impl Client for ClientRef {
         drop(state);
         drop(replaced);
     }
-    unsafe fn clear_prompt(&self) {
+    fn clear_prompt(&self) {
         let prompt = {
             let mut state = self.borrow_mut();
             let Some(prompt) = state.prompt.take() else {
@@ -1131,7 +1117,7 @@ impl Client for ClientRef {
         crate::status::status_pop_screen(self);
         crate::prompt::prompt_free(&prompt.downgrade());
     }
-    unsafe fn clear_status_message(&self) {
+    fn clear_status_message(&self) {
         {
             let mut state = self.borrow_mut();
             if state.message_string.take().is_none() {
@@ -1158,7 +1144,7 @@ impl Client for ClientRef {
             state.message_ignore_styles != 0,
         )
     }
-    unsafe fn show_status_message(
+    fn show_status_message(
         &self,
         message: CString,
         mut delay: i32,
@@ -1170,11 +1156,13 @@ impl Client for ClientRef {
         crate::status::status_push_screen(self);
         self.borrow_mut().message_string = Some(message.clone());
         let name = self.name();
-        crate::server::server_add_message(|out| {
-            write_cstr(out, name.as_deref())?;
-            out.write_all(b" message: ")?;
-            out.write_all(message.as_bytes())
-        });
+        {
+            crate::server::server_add_message(|out| {
+                write_cstr(out, name.as_deref())?;
+                out.write_all(b" message: ")?;
+                out.write_all(message.as_bytes())
+            })
+        };
         if delay == -1 {
             delay = options_get_number(
                 &self
@@ -1191,7 +1179,7 @@ impl Client for ClientRef {
         if delay > 0 {
             let timeout = Duration::from_millis(delay as u64);
             replaced = state.message_timer.replace(
-                Timer::new(timeout, move || unsafe {
+                Timer::new(timeout, move || {
                     if let Some(owner) = observer.upgrade() {
                         owner.clear_status_message();
                     }
@@ -1212,11 +1200,11 @@ impl Client for ClientRef {
         drop(replaced);
     }
 
-    unsafe fn set_overlay(&self, overlay: Overlay) {
+    fn set_overlay(&self, overlay: Overlay) {
         server_client_set_overlay(self, overlay);
     }
 
-    unsafe fn clear_overlay(&self) {
+    fn clear_overlay(&self) {
         server_client_clear_overlay(self);
     }
     fn has_overlay(&self) -> bool {
@@ -1271,16 +1259,16 @@ impl Client for ClientRef {
         self.borrow().tty.size()
     }
 
-    unsafe fn query_terminal_size(&self) -> Option<crate::shared::posix_terminal::winsize> {
-        let fd = self.borrow().fd.as_ref().map_or(-1, AsRawFd::as_raw_fd);
-        crate::shared::terminal::read_size(fd).ok()
+    fn query_terminal_size(&self) -> Option<crate::shared::posix_terminal::winsize> {
+        let state = self.borrow();
+        crate::shared::terminal::read_size(state.fd.as_ref()?.as_fd()).ok()
     }
 
-    unsafe fn refresh_terminal_size(&self) {
+    fn refresh_terminal_size(&self) {
         tty_resize(self);
     }
 
-    unsafe fn draw_overlay_screen(
+    fn draw_overlay_screen(
         &self,
         source: &screen,
         x: u32,
@@ -1290,20 +1278,22 @@ impl Client for ClientRef {
         style: &tty_style_ctx,
     ) {
         for row in 0..sy {
-            crate::tty::tty_draw_line(
-                self,
-                source,
-                0,
-                row,
-                sx,
-                x,
-                y.wrapping_add(row),
-                Some(style),
-            );
+            {
+                crate::tty::tty_draw_line(
+                    self,
+                    source,
+                    0,
+                    row,
+                    sx,
+                    x,
+                    y.wrapping_add(row),
+                    Some(style),
+                )
+            };
         }
     }
 
-    unsafe fn draw_status_line(&self, row: u32, x: u32, width: u32, y: u32) {
+    fn draw_status_line(&self, row: u32, x: u32, width: u32, y: u32) {
         let (source, active) = {
             let mut status = self.borrow_status_mut();
             if let Some(screen) = status.active.as_deref_mut() {
@@ -1335,11 +1325,7 @@ impl Client for ClientRef {
         true
     }
 
-    unsafe fn prepare_pane_render(
-        &self,
-        context: &mut tty_ctx,
-        pane: &Rc<RefCell<window_pane>>,
-    ) -> i32 {
+    fn prepare_pane_render(&self, context: &mut tty_ctx, pane: &Rc<RefCell<window_pane>>) -> i32 {
         use crate::window::WindowPane;
         let session = self
             .attached_session()
@@ -1413,11 +1399,11 @@ impl Client for ClientRef {
         server_client_detach(self, message);
     }
 
-    unsafe fn suspend(&self) {
+    fn suspend(&self) {
         server_client_suspend(self);
     }
 
-    unsafe fn lock(&self, command: &CStr) {
+    fn lock(&self, command: &CStr) {
         if command.to_bytes().is_empty()
             || command.to_bytes_with_nul().len()
                 > crate::compat::imsg::MAX_IMSGSIZE as usize - crate::compat::imsg::IMSG_HEADER_SIZE
@@ -1430,7 +1416,7 @@ impl Client for ClientRef {
         proc_send(&peer, MSG_LOCK, None, command.to_bytes_with_nul());
     }
 
-    unsafe fn lost(&self) {
+    fn lost(&self) {
         server_client_lost(self);
     }
 }
@@ -1440,7 +1426,7 @@ mod tests {
     #[test]
     fn reply_limit_preserves_an_existing_exit_reason_only_after_exit_started() {
         use super::*;
-        unsafe {
+        {
             for exiting in [false, true] {
                 let owner = client::with_control_for_test(None, None);
                 owner.borrow_mut().exit_message = Some(c"previous".to_owned());

@@ -132,7 +132,7 @@ pub(crate) fn events_has_sink(id: EventSinkId) -> bool {
             .any(|sink| sink.id == id && sink.dead == 0)
     })
 }
-pub unsafe fn events_fire(name: &CStr, mut ep: Box<event_payload>) {
+pub fn events_fire(name: &CStr, mut ep: Box<event_payload>) {
     event_payload_set_string(&mut ep, c"event", |out| write_cstr(out, &*name));
     if log_get_level() != 0 as ::core::ffi::c_int {
         event_payload_log(&ep, |out| {
@@ -153,7 +153,7 @@ pub unsafe fn events_fire(name: &CStr, mut ep: Box<event_payload>) {
     drop(events::end_dispatch());
     drop(ep);
 }
-pub unsafe fn events_fire_client(name: &CStr, owner: ClientRef) {
+pub fn events_fire_client(name: &CStr, owner: ClientRef) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -198,7 +198,7 @@ pub unsafe fn events_fire_client(name: &CStr, owner: ClientRef) {
     }
     events_fire(name, ep);
 }
-pub unsafe fn events_fire_session(name: &CStr, owner: SessionRef) {
+pub fn events_fire_session(name: &CStr, owner: SessionRef) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -215,7 +215,7 @@ pub unsafe fn events_fire_session(name: &CStr, owner: SessionRef) {
     event_payload_set_session(&mut ep, c"session", owner);
     events_fire(name, ep);
 }
-pub unsafe fn events_fire_window(name: &CStr, owner: WindowRef) {
+pub fn events_fire_window(name: &CStr, owner: WindowRef) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -231,7 +231,7 @@ pub unsafe fn events_fire_window(name: &CStr, owner: WindowRef) {
     event_payload_set_window(&mut ep, c"window", owner);
     events_fire(name, ep);
 }
-pub unsafe fn events_fire_pane(name: &CStr, owner: std::rc::Rc<std::cell::RefCell<window_pane>>) {
+pub fn events_fire_pane(name: &CStr, owner: std::rc::Rc<std::cell::RefCell<window_pane>>) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -252,7 +252,7 @@ pub unsafe fn events_fire_pane(name: &CStr, owner: std::rc::Rc<std::cell::RefCel
     event_payload_set_window(&mut ep, c"window", window);
     events_fire(name, ep);
 }
-pub unsafe fn events_fire_winlink(name: &CStr, mut wl: refbox::Weak<winlink>) {
+pub fn events_fire_winlink(name: &CStr, mut wl: refbox::Weak<winlink>) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -290,46 +290,44 @@ mod tests {
 
     #[test]
     fn callbacks_may_add_and_remove_sinks_during_dispatch() {
-        unsafe {
-            let calls = Rc::new(RefCell::new(Vec::new()));
-            let added = Rc::new(Cell::new(EventSinkId::default()));
-            let victim = {
-                let calls = calls.clone();
-                events_add_sink(
-                    c"test-event",
-                    events_callback(move |_, _| calls.borrow_mut().push("victim")),
-                )
-            };
-            let first = {
-                let calls = calls.clone();
-                let added = added.clone();
-                events_add_sink(
-                    c"test-event",
-                    events_callback(move |_, _| {
-                        calls.borrow_mut().push("first");
-                        events_remove_sink(victim);
-                        if added.get() == EventSinkId::default() {
-                            let calls = calls.clone();
-                            added.set(events_add_sink(
-                                c"test-event",
-                                events_callback(move |_, _| calls.borrow_mut().push("added")),
-                            ));
-                        }
-                    }),
-                )
-            };
-            events_fire(c"test-event", event_payload_create());
-            assert_eq!(*calls.borrow(), ["victim", "first"]);
-            assert_eq!(EVENTS.with_borrow(|events| events.sinks.len()), 2);
-            assert_eq!(EVENTS.with_borrow(|events| events.dispatching), 0);
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let added = Rc::new(Cell::new(EventSinkId::default()));
+        let victim = {
+            let calls = calls.clone();
+            events_add_sink(
+                c"test-event",
+                events_callback(move |_, _| calls.borrow_mut().push("victim")),
+            )
+        };
+        let first = {
+            let calls = calls.clone();
+            let added = added.clone();
+            events_add_sink(
+                c"test-event",
+                events_callback(move |_, _| {
+                    calls.borrow_mut().push("first");
+                    events_remove_sink(victim);
+                    if added.get() == EventSinkId::default() {
+                        let calls = calls.clone();
+                        added.set(events_add_sink(
+                            c"test-event",
+                            events_callback(move |_, _| calls.borrow_mut().push("added")),
+                        ));
+                    }
+                }),
+            )
+        };
+        events_fire(c"test-event", event_payload_create());
+        assert_eq!(*calls.borrow(), ["victim", "first"]);
+        assert_eq!(EVENTS.with_borrow(|events| events.sinks.len()), 2);
+        assert_eq!(EVENTS.with_borrow(|events| events.dispatching), 0);
 
-            calls.borrow_mut().clear();
-            events_fire(c"test-event", event_payload_create());
-            assert_eq!(*calls.borrow(), ["first", "added"]);
+        calls.borrow_mut().clear();
+        events_fire(c"test-event", event_payload_create());
+        assert_eq!(*calls.borrow(), ["first", "added"]);
 
-            events_remove_sink(first);
-            events_remove_sink(added.get());
-            assert!(EVENTS.with_borrow(|events| events.sinks.is_empty()));
-        }
+        events_remove_sink(first);
+        events_remove_sink(added.get());
+        assert!(EVENTS.with_borrow(|events| events.sinks.is_empty()));
     }
 }

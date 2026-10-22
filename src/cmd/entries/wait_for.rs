@@ -175,7 +175,7 @@ unsafe fn cmd_wait_for_exec(
     cmd_wait_for_wait(item_handle, name)
 }
 /// Print the payload to the waiting item's client, as cmdq_print would.
-unsafe fn cmd_wait_for_event_print(client: Option<&ClientRef>, ep: &event_payload) {
+fn cmd_wait_for_event_print(client: Option<&ClientRef>, ep: &event_payload) {
     for epi in event_payload_items(ep) {
         let key = event_payload_item_name(epi);
         if key.to_bytes().first() != Some(&b'_') {
@@ -193,7 +193,7 @@ unsafe fn cmd_wait_for_event_print(client: Option<&ClientRef>, ep: &event_payloa
         }
     }
 }
-unsafe fn cmd_wait_for_event_cb(
+fn cmd_wait_for_event_cb(
     _name: &CStr,
     payload: &mut event_payload,
     key: &Weak<std::cell::RefCell<cmdq_item>>,
@@ -288,7 +288,7 @@ unsafe fn cmd_wait_for_event(
     let key = std::rc::Rc::downgrade(item_handle);
     let sink = wait_event_sink(events_add_sink(name, {
         let key = key.clone();
-        events_callback(move |name, payload| unsafe { cmd_wait_for_event_cb(name, payload, &key) })
+        events_callback(move |name, payload| cmd_wait_for_event_cb(name, payload, &key))
     }));
     let (waiter, retval) = cmdq_wait(item_handle);
     WAIT_EVENT_ITEMS.with_borrow_mut(|items| {
@@ -303,7 +303,7 @@ unsafe fn cmd_wait_for_event(
     });
     retval
 }
-unsafe fn cmd_wait_for_event_list(
+fn cmd_wait_for_event_list(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     name: &CStr,
 ) -> CmdOutcome {
@@ -345,7 +345,7 @@ unsafe fn cmd_wait_for_event_wake(
     });
     CmdOutcome::Error
 }
-unsafe fn cmd_wait_for_list(
+fn cmd_wait_for_list(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     name: &CStr,
 ) -> CmdOutcome {
@@ -726,26 +726,22 @@ mod tests {
 
     #[test]
     fn a_waiter_woken_by_signal_can_wait_again_on_the_same_channel() {
-        unsafe {
-            let owner = clients::with_queue();
-            let (waiter, _resumed, rewaited) =
-                reenter_on_wake(&owner, c"rewait", cmd_wait_for_wait);
-            WAIT_CHANNELS.with_borrow_mut(|channels| {
-                cmd_wait_for_add(channels, c"rewait").waiters.push(waiter)
-            });
+        let owner = clients::with_queue();
+        let (waiter, _resumed, rewaited) = reenter_on_wake(&owner, c"rewait", cmd_wait_for_wait);
+        WAIT_CHANNELS
+            .with_borrow_mut(|channels| cmd_wait_for_add(channels, c"rewait").waiters.push(waiter));
 
-            assert!(matches!(cmd_wait_for_signal(c"rewait"), CmdOutcome::Normal));
-            let item = rewaited.get().expect("signal woke the waiter");
-            assert!(item.upgrade().is_some());
-            assert_eq!(
-                channel(c"rewait", |wc| (wc.waiters.len(), wc.woken)),
-                Some((1, 0))
-            );
+        assert!(matches!(cmd_wait_for_signal(c"rewait"), CmdOutcome::Normal));
+        let item = rewaited.get().expect("signal woke the waiter");
+        assert!(item.upgrade().is_some());
+        assert_eq!(
+            channel(c"rewait", |wc| (wc.waiters.len(), wc.woken)),
+            Some((1, 0))
+        );
 
-            assert!(matches!(cmd_wait_for_signal(c"rewait"), CmdOutcome::Normal));
-            cmdq_next(Some(&owner));
-            assert!(item.upgrade().is_none());
-        }
+        assert!(matches!(cmd_wait_for_signal(c"rewait"), CmdOutcome::Normal));
+        cmdq_next(Some(&owner));
+        assert!(item.upgrade().is_none());
     }
 
     #[test]
@@ -949,7 +945,7 @@ mod tests {
         item
     }
 
-    unsafe fn fire(name: &CStr, value: &str) {
+    fn fire(name: &CStr, value: &str) {
         let mut ep = crate::events_payload::event_payload_create();
         crate::events_payload::event_payload_set_string(&mut ep, c"value", |out| {
             out.write_all(value.as_bytes())
@@ -962,7 +958,7 @@ mod tests {
     }
 
     /// Queue a callback behind the waiter that records whether it ran.
-    unsafe fn append_flag(owner: &ClientRef) -> Rc<std::cell::Cell<bool>> {
+    fn append_flag(owner: &ClientRef) -> Rc<std::cell::Cell<bool>> {
         let ran = Rc::new(std::cell::Cell::new(false));
         let flag = ran.clone();
         cmdq_append(

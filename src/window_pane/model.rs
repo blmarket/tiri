@@ -167,7 +167,7 @@ impl window_pane {
 
     /// Visit the displayed screen: the base screen, or the selected mode's.
     /// `None` when the selected mode has no screen.
-    pub(super) unsafe fn with_screen<R>(&self, visit: impl FnOnce(&screen) -> R) -> Option<R> {
+    pub(super) fn with_screen<R>(&self, visit: impl FnOnce(&screen) -> R) -> Option<R> {
         match &self.screen_source {
             PaneScreenSource::Base => Some(visit(&self.base)),
             PaneScreenSource::Mode(entry) => visit_mode_screen(entry, |screen| visit(screen)),
@@ -175,10 +175,7 @@ impl window_pane {
     }
 
     /// Mutable form of [`Self::with_screen`].
-    pub(super) unsafe fn with_screen_mut<R>(
-        &mut self,
-        visit: impl FnOnce(&mut screen) -> R,
-    ) -> Option<R> {
+    pub(super) fn with_screen_mut<R>(&mut self, visit: impl FnOnce(&mut screen) -> R) -> Option<R> {
         match &self.screen_source {
             PaneScreenSource::Base => Some(visit(&mut self.base)),
             PaneScreenSource::Mode(entry) => visit_mode_screen(entry, visit),
@@ -231,7 +228,7 @@ impl window_pane {
 }
 
 /// The selected mode's screen lives in the mode payload, not in the pane.
-unsafe fn visit_mode_screen<R>(
+fn visit_mode_screen<R>(
     entry: &refbox::Weak<window_mode_entry>,
     visit: impl FnOnce(&mut screen) -> R,
 ) -> Option<R> {

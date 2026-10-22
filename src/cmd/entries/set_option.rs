@@ -272,7 +272,7 @@ unsafe fn set_option_error(
 
 /// Pane traversal remains live between removals; a monitor teardown may change
 /// membership. Each successor is selected from the current pane's parent.
-unsafe fn unset_window_panes(
+fn unset_window_panes(
     target: &cmd_find_state,
     name: &CStr,
     array_key: Option<&CStr>,

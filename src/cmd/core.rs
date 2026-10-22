@@ -267,13 +267,13 @@ pub fn cmd_get_entry(cmd: &cmd) -> &'static cmd_entry {
 pub fn cmd_get_args(cmd: &cmd) -> &args {
     &cmd.args
 }
-pub unsafe fn cmd_get_group(cmd: refbox::Weak<cmd>) -> u_int {
+pub fn cmd_get_group(cmd: refbox::Weak<cmd>) -> u_int {
     cmd.try_borrow().expect("live command").group
 }
 pub fn cmd_get_source(cmd: &cmd) -> (Option<&CStr>, u32) {
     (cmd.file.as_deref(), cmd.line)
 }
-pub unsafe fn cmd_get_parse_flags(cmd: refbox::Weak<cmd>) -> ::core::ffi::c_int {
+pub fn cmd_get_parse_flags(cmd: refbox::Weak<cmd>) -> ::core::ffi::c_int {
     cmd.try_borrow().expect("live command").parse_flags
 }
 pub fn cmd_get_alias(name: &CStr) -> Option<CString> {
@@ -536,7 +536,7 @@ pub fn cmd_list_any_have(cmdlist: &cmd_list) -> ::core::ffi::c_int {
     }
     0 as ::core::ffi::c_int
 }
-pub unsafe fn cmd_mouse_at(
+pub fn cmd_mouse_at(
     pane: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     mouse: &mouse_event,
     x: &mut u_int,
@@ -550,7 +550,7 @@ pub unsafe fn cmd_mouse_at(
     *y = my;
     0
 }
-pub unsafe fn cmd_mouse_window(
+pub fn cmd_mouse_window(
     m: &mouse_event,
     sp: Option<&mut Option<SessionRef>>,
 ) -> refbox::Weak<winlink> {
@@ -583,7 +583,7 @@ pub unsafe fn cmd_mouse_window(
     }
     wl
 }
-pub unsafe fn cmd_mouse_pane(
+pub fn cmd_mouse_pane(
     m: &mouse_event,
     sp: Option<&mut Option<SessionRef>>,
     wlp: Option<&mut refbox::Weak<winlink>>,
