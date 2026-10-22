@@ -28,50 +28,163 @@ fn borrow_stress() {
     let tty = term.tty.clone();
 
     step(&server, "all formats", &["display-message", "-p", ALL]);
-    step(&server, "all formats list-panes", &["list-panes", "-a", "-F", ALL]);
-    step(&server, "set-environment", &["set-environment", "FOO", "bar"]);
+    step(
+        &server,
+        "all formats list-panes",
+        &["list-panes", "-a", "-F", ALL],
+    );
+    step(
+        &server,
+        "set-environment",
+        &["set-environment", "FOO", "bar"],
+    );
     step(&server, "show-environment", &["show-environment"]);
-    step(&server, "show-environment name", &["show-environment", "FOO"]);
-    step(&server, "env format", &["display-message", "-p", "#{FOO} #{HOME}"]);
-    step(&server, "env loop", &["display-message", "-p", "#{V:#{environ_name}=#{environ_value}#{FOO} }"]);
-    step(&server, "env loop g", &["display-message", "-p", "#{V/g:#{environ_name} }"]);
-    step(&server, "env loop c", &["display-message", "-p", "-c", &tty, "#{V/c:#{environ_name} }"]);
-    step(&server, "status env", &["set", "-g", "status-right", "#{FOO} #{pane_current_command} #{cursor_shape} #{V:#{environ_name}}"]);
-    step(&server, "status msg", &["display-message", "-c", &tty, "-d", "200", "hello #{FOO} #{pane_title}"]);
+    step(
+        &server,
+        "show-environment name",
+        &["show-environment", "FOO"],
+    );
+    step(
+        &server,
+        "env format",
+        &["display-message", "-p", "#{FOO} #{HOME}"],
+    );
+    step(
+        &server,
+        "env loop",
+        &[
+            "display-message",
+            "-p",
+            "#{V:#{environ_name}=#{environ_value}#{FOO} }",
+        ],
+    );
+    step(
+        &server,
+        "env loop g",
+        &["display-message", "-p", "#{V/g:#{environ_name} }"],
+    );
+    step(
+        &server,
+        "env loop c",
+        &[
+            "display-message",
+            "-p",
+            "-c",
+            &tty,
+            "#{V/c:#{environ_name} }",
+        ],
+    );
+    step(
+        &server,
+        "status env",
+        &[
+            "set",
+            "-g",
+            "status-right",
+            "#{FOO} #{pane_current_command} #{cursor_shape} #{V:#{environ_name}}",
+        ],
+    );
+    step(
+        &server,
+        "status msg",
+        &[
+            "display-message",
+            "-c",
+            &tty,
+            "-d",
+            "200",
+            "hello #{FOO} #{pane_title}",
+        ],
+    );
     std::thread::sleep(Duration::from_millis(300));
     alive(&server, "status msg timeout");
-    step(&server, "status msg 0", &["display-message", "-c", &tty, "-d", "0", "x"]);
+    step(
+        &server,
+        "status msg 0",
+        &["display-message", "-c", &tty, "-d", "0", "x"],
+    );
     term.send(b"q");
     alive(&server, "status msg key");
 
     step(&server, "copy-mode", &["copy-mode"]);
-    step(&server, "copy-mode formats", &["display-message", "-p", ALL]);
-    step(&server, "copy-mode search", &["send-keys", "-X", "search-backward", "x"]);
+    step(
+        &server,
+        "copy-mode formats",
+        &["display-message", "-p", ALL],
+    );
+    step(
+        &server,
+        "copy-mode search",
+        &["send-keys", "-X", "search-backward", "x"],
+    );
     step(&server, "copy-mode formats 2", &["list-panes", "-F", ALL]);
-    step(&server, "pane-border-format", &["set", "-g", "pane-border-status", "top"]);
-    step(&server, "pane-border-format 2", &["set", "-g", "pane-border-format", "#{pane_current_command} #{cursor_shape} #{pane_in_mode} #{pane_mode} #{FOO}"]);
+    step(
+        &server,
+        "pane-border-format",
+        &["set", "-g", "pane-border-status", "top"],
+    );
+    step(
+        &server,
+        "pane-border-format 2",
+        &[
+            "set",
+            "-g",
+            "pane-border-format",
+            "#{pane_current_command} #{cursor_shape} #{pane_in_mode} #{pane_mode} #{FOO}",
+        ],
+    );
     term.drain();
     step(&server, "copy cancel", &["send-keys", "-X", "cancel"]);
 
-    for mode in [["choose-tree", ""], ["choose-client", ""], ["choose-buffer", ""], ["customize-mode", ""], ["clock-mode", ""]] {
+    for mode in [
+        ["choose-tree", ""],
+        ["choose-client", ""],
+        ["choose-buffer", ""],
+        ["customize-mode", ""],
+        ["clock-mode", ""],
+    ] {
         step(&server, mode[0], &[mode[0]]);
-        step(&server, &format!("{} formats", mode[0]), &["display-message", "-p", ALL]);
+        step(
+            &server,
+            &format!("{} formats", mode[0]),
+            &["display-message", "-p", ALL],
+        );
         term.drain();
         term.send(b"q");
         alive(&server, &format!("{} quit", mode[0]));
     }
 
-    step(&server, "command-prompt", &["command-prompt", "-b", "-t", &tty]);
+    step(
+        &server,
+        "command-prompt",
+        &["command-prompt", "-b", "-t", &tty],
+    );
     term.drain();
     term.send(b"\x1b");
     alive(&server, "prompt escape");
-    step(&server, "command-prompt 2", &["command-prompt", "-b", "-t", &tty, "-p", "#{FOO}"]);
+    step(
+        &server,
+        "command-prompt 2",
+        &["command-prompt", "-b", "-t", &tty, "-p", "#{FOO}"],
+    );
     term.send(b"display-message hi\r");
     alive(&server, "prompt enter");
 
-    step(&server, "osc 4 query", &["send-keys", "printf '\\033]4;1;?\\033\\\\'", "Enter"]);
-    step(&server, "osc 52", &["send-keys", "printf '\\033]52;c;aGVsbG8=\\007'", "Enter"]);
-    step(&server, "osc 11 query", &["send-keys", "printf '\\033]11;?\\033\\\\'", "Enter"]);
+    step(
+        &server,
+        "osc 4 query",
+        &["send-keys", "printf '\\033]4;1;?\\033\\\\'", "Enter"],
+    );
+    step(
+        &server,
+        "osc 52",
+        &["send-keys", "printf '\\033]52;c;aGVsbG8=\\007'", "Enter"],
+    );
+    step(
+        &server,
+        "osc 11 query",
+        &["send-keys", "printf '\\033]11;?\\033\\\\'", "Enter"],
+    );
     term.drain();
 
     step(&server, "pan", &["refresh-client", "-t", &tty, "-R", "5"]);
@@ -82,7 +195,11 @@ fn borrow_stress() {
 
     let control = server.attach_control(80, 24);
     alive(&server, "control attach");
-    step(&server, "control output", &["send-keys", "seq 1 2000", "Enter"]);
+    step(
+        &server,
+        "control output",
+        &["send-keys", "seq 1 2000", "Enter"],
+    );
     step(&server, "control formats", &["display-message", "-p", ALL]);
     drop(control);
     alive(&server, "control detach");
