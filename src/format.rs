@@ -446,7 +446,7 @@ pub unsafe fn format_defaults(
 fn format_defaults_session(ft: &mut format_tree, s_owner: &SessionRef) {
     ft.s = std::rc::Rc::downgrade(s_owner);
 }
-unsafe fn format_defaults_client(ft: &mut format_tree, c_owner: &ClientRef) {
+fn format_defaults_client(ft: &mut format_tree, c_owner: &ClientRef) {
     let _c: Option<ClientRef> = Some(c_owner.clone());
     if ft.s.upgrade().is_none() {
         ft.s = c_owner.attached_session();
@@ -456,7 +456,7 @@ unsafe fn format_defaults_client(ft: &mut format_tree, c_owner: &ClientRef) {
 pub fn format_defaults_window(ft: &mut format_tree, w_owner: Option<&WindowRef>) {
     ft.w = w_owner.map_or_else(WindowWeak::new, WindowRef::downgrade);
 }
-unsafe fn format_defaults_winlink(ft: &mut format_tree, mut wl: refbox::Weak<winlink>) {
+fn format_defaults_winlink(ft: &mut format_tree, mut wl: refbox::Weak<winlink>) {
     if ft.w.upgrade().is_none() {
         format_defaults_window(ft, winlink_window(&wl).as_ref());
     }

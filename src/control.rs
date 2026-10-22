@@ -584,7 +584,7 @@ unsafe fn control_error(
     cmdq_guard(item_handle, c"error", 1 as ::core::ffi::c_int);
     CmdOutcome::Normal
 }
-unsafe fn control_error_callback(owner: &ClientRef) {
+fn control_error_callback(owner: &ClientRef) {
     let mut c: Option<ClientRef> = Some(owner.clone());
     c.as_ref()
         .expect("live client")
@@ -1078,7 +1078,7 @@ pub(crate) fn control_stream_callbacks(
         }),
         bufferevent_event_callback(move |_, _, _| {
             if let Some(owner) = error.upgrade() {
-                unsafe { control_error_callback(&owner) };
+                control_error_callback(&owner);
             }
         }),
     )

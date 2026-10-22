@@ -162,7 +162,7 @@ impl PopupGuard<'_> {
         self.handle.clone()
     }
 
-    unsafe fn is_current(&self, client: &ClientRef) -> bool {
+    fn is_current(&self, client: &ClientRef) -> bool {
         self.handle.0.is_alive()
             && client
                 .popup_overlay()

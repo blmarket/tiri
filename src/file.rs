@@ -646,7 +646,7 @@ pub unsafe fn file_cancel(cf: &mut client_file) {
     msg.stream = cf.stream;
     file_send(cf, MSG_READ_CANCEL, None, bytes_of(&msg));
 }
-unsafe fn file_push_cb(owner: &Rc<RefCell<client_file>>) {
+fn file_push_cb(owner: &Rc<RefCell<client_file>>) {
     let alive = owner
         .borrow()
         .c
@@ -704,7 +704,7 @@ fn file_push(file_owner: &Rc<RefCell<client_file>>) {
         crate::reactor::task_start(&mut cf.push_task, move || {
             Ok(async move {
                 if let Some(owner) = observer.upgrade() {
-                    unsafe { file_push_cb(&owner) };
+                    file_push_cb(&owner);
                 }
             })
         })
@@ -1298,7 +1298,7 @@ pub(crate) fn client_files_has_pending_data(files: &client_files) -> bool {
     })
 }
 
-pub(crate) unsafe fn client_files_interrupt(
+pub(crate) fn client_files_interrupt(
     files: impl Iterator<Item = Weak<RefCell<client_file>>>,
     error: i32,
 ) {

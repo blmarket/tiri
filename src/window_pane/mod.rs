@@ -380,7 +380,7 @@ unsafe fn window_pane_index(pane: &Rc<std::cell::RefCell<window_pane>>) -> Optio
     window.pane_index(&Rc::downgrade(pane))
 }
 
-unsafe fn window_pane_printable_flags(
+fn window_pane_printable_flags(
     wp_owner: &Rc<std::cell::RefCell<window_pane>>,
 ) -> std::ffi::CString {
     let window = wp_owner.borrow().window_handle().expect("live window");
@@ -1846,7 +1846,7 @@ unsafe fn window_get_bg_client(
     -(1 as ::core::ffi::c_int)
 }
 
-unsafe fn window_pane_get_bg_control_client(
+fn window_pane_get_bg_control_client(
     pane: &Rc<std::cell::RefCell<window_pane>>,
 ) -> ::core::ffi::c_int {
     let colour = pane.borrow().control_bg;

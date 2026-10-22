@@ -232,7 +232,7 @@ unsafe fn redraw_pane_to_scene(
 }
 /// Whether the window's layout splits the colour of a separator between two
 /// panes.
-unsafe fn redraw_check_split_colours(w: &WindowRef) -> bool {
+fn redraw_check_split_colours(w: &WindowRef) -> bool {
     w.layout().splits_separator_colours(w.pane_snapshot().len())
 }
 

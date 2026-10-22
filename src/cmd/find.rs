@@ -130,7 +130,7 @@ fn cmd_find_session_better(s: &SessionRef, than: Option<&SessionRef>, flags: i32
     let (s, than) = (s.activity_time(), than.activity_time());
     s > than
 }
-unsafe fn cmd_find_session_valid(s: &SessionRef) -> i32 {
+fn cmd_find_session_valid(s: &SessionRef) -> i32 {
     if !s.is_registered() {
         return 0;
     }

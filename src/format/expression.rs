@@ -1587,7 +1587,7 @@ pub(super) unsafe fn format_replace_expression(
     }
     None
 }
-pub(super) unsafe fn format_cycle_start_timer(client: &ClientRef) {
+pub(super) fn format_cycle_start_timer(client: &ClientRef) {
     client.schedule_format_cycle(FORMAT_CYCLE_PERIOD);
 }
 pub(super) unsafe fn format_cycle(
