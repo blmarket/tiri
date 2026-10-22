@@ -3642,9 +3642,7 @@ unsafe fn server_client_dispatch(
         }
     }
 }
-unsafe fn server_client_read_only(
-    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
-) -> CmdOutcome {
+fn server_client_read_only(item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>) -> CmdOutcome {
     cmdq_error(item_handle, |out| out.write_all(b"client is read-only"));
     CmdOutcome::Error
 }
@@ -3660,7 +3658,7 @@ fn server_client_default_command(
     {
         new_item_allocation = cmdq_get_callback_owned(
             c"server_client_read_only",
-            Some(Box::new(|item| unsafe { server_client_read_only(item) })),
+            Some(Box::new(|item| server_client_read_only(item))),
         );
     } else {
         new_item_allocation = cmdq_get_command(&cmdlist, None);
@@ -3740,7 +3738,7 @@ fn server_client_dispatch_command(owner: &ClientRef, imsg: &mut imsg) -> ::core:
                     {
                         new_item_allocation = Some(cmdq_get_callback_owned(
                             c"server_client_read_only",
-                            Some(Box::new(|item| unsafe { server_client_read_only(item) })),
+                            Some(Box::new(|item| server_client_read_only(item))),
                         ));
                     } else {
                         new_item_allocation = Some(cmdq_get_command(
@@ -4215,7 +4213,7 @@ fn server_client_print(
             // across these calls. Entering view mode first gives window_copy_add
             // the copy-mode data it requires.
             if !pane_owner.is_mode(&window_view_mode) {
-                unsafe { pane_owner.set_mode(None, &window_view_mode, None, None, None) };
+                pane_owner.set_mode(None, &window_view_mode, None, None, None);
             }
             if parse != 0 {
                 while let Some(line) = evbuffer_readln(evb) {

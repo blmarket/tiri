@@ -29,7 +29,7 @@ pub static cmd_rename_session_entry: cmd_entry = {
         exec: Some(cmd_rename_session_exec),
     }
 };
-unsafe fn cmd_rename_session_exec(
+fn cmd_rename_session_exec(
     mut command: refbox::Weak<cmd>,
     item: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {

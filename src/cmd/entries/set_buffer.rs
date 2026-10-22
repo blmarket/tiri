@@ -62,7 +62,7 @@ pub static cmd_delete_buffer_entry: cmd_entry = {
         exec: Some(cmd_set_buffer_exec),
     }
 };
-unsafe fn cmd_set_buffer_exec(
+fn cmd_set_buffer_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {

@@ -24,7 +24,7 @@ use crate::shared::abi::*;
 use crate::window::{windows, Window, WindowPane};
 use std::ffi::CStr;
 
-pub unsafe fn options_push_changes(name: &CStr) {
+pub fn options_push_changes(name: &CStr) {
     let mut loop_0: Option<ClientRef> = None;
     let mut s: Option<SessionRef> = None;
     log_debug(format_args!(

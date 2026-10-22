@@ -36,7 +36,7 @@ impl args_command_state {
     }
 }
 
-pub unsafe fn args_make_commands_now(
+pub fn args_make_commands_now(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     idx: u_int,

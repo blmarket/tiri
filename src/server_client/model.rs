@@ -76,7 +76,7 @@ pub struct client {
     pub(super) status: status_line,
     pub(super) cycle_timer: Option<Timer>,
     pub(super) theme: client_theme,
-    pub(super) input_requests: Vec<*mut crate::shared::input::input_request>,
+    pub(super) input_requests: Vec<refbox::Weak<crate::shared::input::input_request>>,
     pub(super) flags: uint64_t,
     pub(super) exit_type: client_exit_type,
     pub(super) exit_msgtype: msgtype,

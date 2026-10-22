@@ -138,7 +138,7 @@ impl<T> ModeCell<T> {
 
 /// Enters a mode for an entry, optionally on behalf of a queue item; returns
 /// whether the mode now owns a screen to draw to.
-pub type window_mode_init_cb = unsafe fn(
+pub type window_mode_init_cb = fn(
     refbox::Weak<window_mode_entry>,
     Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     Option<&cmd_find_state>,
@@ -164,7 +164,7 @@ pub fn window_mode_visit_screen<R>(
 /// Resizes a mode's screen to the given width and height.
 pub type window_mode_resize_cb = fn(refbox::Weak<window_mode_entry>, u_int, u_int);
 /// Handles a key from a client in the mode's winlink.
-pub type window_mode_key_cb = unsafe fn(
+pub type window_mode_key_cb = fn(
     refbox::Weak<window_mode_entry>,
     &ClientRef,
     refbox::Weak<winlink>,
@@ -172,7 +172,7 @@ pub type window_mode_key_cb = unsafe fn(
     Option<&mut mouse_event>,
 );
 /// Runs a mode command (send-keys -X) with its arguments.
-pub type window_mode_command_cb = unsafe fn(
+pub type window_mode_command_cb = fn(
     refbox::Weak<window_mode_entry>,
     Option<&ClientRef>,
     Option<&SessionRef>,

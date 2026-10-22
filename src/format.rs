@@ -28,7 +28,7 @@ use crate::server::{marked_pane, server_check_marked};
 use crate::shared::window::WindowWeak;
 use crate::window::Window as _;
 use crate::winlink::winlink_window;
-use libc::{ctime_r, dirname, gethostname, getpwuid, getuid};
+use libc::{ctime_r, dirname, getpwuid, getuid};
 
 use crate::server_client::Client as _;
 use crate::server_fn::server_status_client;

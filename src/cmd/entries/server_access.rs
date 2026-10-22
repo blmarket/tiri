@@ -43,7 +43,7 @@ pub static cmd_server_access_entry: cmd_entry = {
         exec: Some(cmd_server_access_exec),
     }
 };
-unsafe fn cmd_server_access_deny(
+fn cmd_server_access_deny(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     mut id: id_t,
     mut flags: ::core::ffi::c_int,

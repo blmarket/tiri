@@ -43,7 +43,7 @@ pub static cmd_bind_key_entry: cmd_entry = {
 fn cmd_bind_key_args_parse(_args: &args, _idx: u_int) -> Result<args_parse_type, ArgsParseError> {
     Ok(ARGS_PARSE_COMMANDS_OR_STRING)
 }
-unsafe fn cmd_bind_key_exec(
+fn cmd_bind_key_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {

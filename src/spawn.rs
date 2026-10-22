@@ -7,7 +7,7 @@ use crate::options::OptionsScope;
 use crate::server_client::Client as _;
 use crate::window::Window as _;
 use crate::winlink::winlink_window;
-use libc::{mkstemp, unlink};
+use std::os::unix::ffi::OsStrExt as _;
 
 use crate::session::Session;
 use crate::shared::client::ClientRef;
@@ -35,7 +35,6 @@ use crate::shared::window::winlink;
 
 use std::fs::File;
 use std::io::Write as _;
-use std::os::fd::{FromRawFd, OwnedFd};
 
 impl spawn_editor_state {
     pub(crate) fn new(path: CString, cb: spawn_finish_edit_cb) -> Box<Self> {
@@ -169,9 +168,7 @@ pub(crate) fn initialize_spawned_window(sc: &spawn_context, window: &WindowRef) 
 }
 impl Drop for spawn_editor_state {
     fn drop(&mut self) {
-        unsafe {
-            unlink(self.path.as_ptr());
-        }
+        let _ = std::fs::remove_file(std::ffi::OsStr::from_bytes(self.path.to_bytes()));
     }
 }
 pub fn spawn_editor_finish(wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>) {
@@ -184,13 +181,12 @@ pub(crate) fn spawn_editor_write(stream: &mut File, bytes: &[u8]) -> bool {
     !bytes.is_empty() && stream.write_all(bytes).is_ok()
 }
 
-pub(crate) unsafe fn spawn_editor(
+pub(crate) fn spawn_editor(
     client_owner: &ClientRef,
     write: impl FnOnce(&mut File) -> bool,
     mut cb: spawn_finish_edit_cb,
 ) -> Option<crate::shared::spawn::EditorHandle> {
     let session_owner = client_owner.attached_session().upgrade()?;
-    let mut es: *mut spawn_editor_state = ::core::ptr::null_mut::<spawn_editor_state>();
     let mut sc: spawn_context = spawn_context {
         item: std::rc::Weak::new(),
         s: std::rc::Weak::new(),
@@ -208,22 +204,16 @@ pub(crate) unsafe fn spawn_editor(
     let original_window = winlink_window(&wl).expect("editor window");
     let result = (|| {
         let mut path: [u8; 19] = *b"/tmp/tmux.XXXXXXXX\0";
-        let mut fd: ::core::ffi::c_int = 0;
         let editor = OptionsScope::GlobalServer.with_local(|oo| options_get_string(oo, c"editor"));
-        fd = mkstemp(path.as_mut_ptr().cast());
-        if fd == -(1 as ::core::ffi::c_int) {
-            return None;
-        }
-        let mut stream = File::from(OwnedFd::from_raw_fd(fd));
+        let mut stream = File::from(tiri_rt::unix::make_temporary(&mut path).ok()?);
+        let path = CStr::from_bytes_with_nul(&path).expect("temporary path is terminated");
         if !write(&mut stream) {
             drop(stream);
-            unlink(path.as_ptr().cast());
+            let _ = std::fs::remove_file(std::ffi::OsStr::from_bytes(path.to_bytes()));
             return None;
         }
         drop(stream);
-        let path = CStr::from_bytes_with_nul(&path).expect("temporary path is terminated");
         let mut owner = spawn_editor_state::new(path.to_owned(), cb);
-        es = &raw mut *owner;
         let source = original_window
             .active_pane()
             .upgrade()

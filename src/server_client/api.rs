@@ -168,8 +168,8 @@ pub trait Client {
     fn find_file(&self, stream: i32) -> Weak<std::cell::RefCell<crate::file::client_file>>;
     /// Observe a request owned by input_ctx. Its owner must explicitly retire
     /// this observation before freeing the request.
-    fn observe_input_request(&self, request: &mut crate::shared::input::input_request);
-    fn forget_input_request(&self, request: &crate::shared::input::input_request);
+    fn observe_input_request(&self, request: refbox::Weak<crate::shared::input::input_request>);
+    fn forget_input_request(&self, request: &refbox::Weak<crate::shared::input::input_request>);
     fn has_input_requests(&self) -> bool;
     /// Select in client-index order; no Client borrow spans parser replies or
     /// explicit request cleanup (which itself removes index observations).
@@ -403,15 +403,15 @@ impl Client for ClientRef {
     fn record_terminal_type(&self, name: &CStr) {
         server_client_set_term_type(&mut self.borrow_mut(), Some(name.to_owned()));
     }
-    fn observe_input_request(&self, request: &mut crate::shared::input::input_request) {
+    fn observe_input_request(&self, request: refbox::Weak<crate::shared::input::input_request>) {
         self.borrow_mut().input_requests.push(request);
     }
-    fn forget_input_request(&self, request: &crate::shared::input::input_request) {
+    fn forget_input_request(&self, request: &refbox::Weak<crate::shared::input::input_request>) {
         let mut state = self.borrow_mut();
         let requests = &mut state.input_requests;
         let index = requests
             .iter()
-            .position(|candidate| std::ptr::eq(*candidate, request))
+            .position(|candidate| candidate == request)
             .expect("request missing from its client handle collection");
         requests.remove(index);
     }

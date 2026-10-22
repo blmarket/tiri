@@ -130,13 +130,13 @@ pub trait WindowPane {
     fn update_prompt(&self, message: &CStr, input: Option<&CStr>);
     /// Write a paste buffer to the pane stream with explicit line separators.
     fn paste_buffer(&self, bytes: &[u8], separator: &[u8], bracket: bool, raw: bool);
-    unsafe fn capture(
+    fn capture(
         &self,
         arguments: &args,
         item: &Rc<std::cell::RefCell<cmdq_item>>,
     ) -> Result<Vec<u8>, CString>;
     /// Clear complete history after retiring modes; optionally reset link identities.
-    unsafe fn clear_history(&self, reset_links: bool);
+    fn clear_history(&self, reset_links: bool);
     fn window_observer(&self) -> WindowWeak;
     /// Whether the pane is shown in its window: false while the window is
     /// zoomed to another pane, or once the pane has no window.
@@ -239,7 +239,7 @@ pub trait WindowPane {
     fn redraw_scrollbar(&self);
     fn hide_scrollbar(&self);
     fn refresh_scrollbar_style(&self);
-    unsafe fn reset_default_cursor(&self);
+    fn reset_default_cursor(&self);
     /// Record the pane in utmp while it runs a command and the server option
     /// allows it; otherwise drop its record. Closing the pty drops it too.
     fn refresh_utmp(&self);
@@ -297,7 +297,7 @@ pub trait WindowPane {
 
     /// Normal selection records activity; fallback selection only marks change.
     fn on_selected(&self, record_activity: bool);
-    unsafe fn key(
+    fn key(
         &self,
         client: Option<&ClientRef>,
         link: refbox::Weak<winlink>,
@@ -305,7 +305,7 @@ pub trait WindowPane {
         mouse: Option<&mut mouse_event>,
     ) -> i32;
     fn paste(&self, key: key_code, bytes: &[u8]);
-    unsafe fn set_mode(
+    fn set_mode(
         &self,
         source: Option<&Rc<RefCell<window_pane>>>,
         mode: &'static window_mode,
@@ -313,8 +313,8 @@ pub trait WindowPane {
         find: Option<&cmd_find_state>,
         arguments: Option<&args>,
     ) -> i32;
-    unsafe fn reset_mode(&self);
-    unsafe fn reset_all_modes(&self);
+    fn reset_mode(&self);
+    fn reset_all_modes(&self);
     /// Replace destination with an independent rectangular copy. Coordinates
     /// are relative to the visible screen, excluding history. `displayed`
     /// selects the active mode screen; false selects the process's base screen.
@@ -342,7 +342,7 @@ pub trait WindowPane {
         context: &mut crate::shared::format::format_tree,
     ) -> Option<crate::format::FormatValue>;
     /// Execute pipe-pane while process descriptors and callbacks stay owned here.
-    unsafe fn pipe(
+    fn pipe(
         &self,
         command: refbox::Weak<cmd>,
         item: &Rc<std::cell::RefCell<cmdq_item>>,
@@ -358,7 +358,7 @@ pub trait WindowPane {
     /// start its process; with SPAWN_RESPAWN restart the context's source
     /// pane instead. The layout's refusal or the spawn's failure comes back
     /// in `cause`; a refusal comes before any side effect.
-    unsafe fn spawn_process(
+    fn spawn_process(
         context: &mut crate::shared::spawn::spawn_context,
         cause: &mut Option<CString>,
     ) -> Option<Self>
@@ -379,7 +379,7 @@ pub trait WindowPane {
     /// Invoke the active mode's format callback after releasing pane storage.
     fn add_mode_formats(&self, context: &mut crate::shared::format::format_tree);
     /// Reset palette/parser state and invalidate pane styling as one operation.
-    unsafe fn reset_input(&self);
+    fn reset_input(&self);
     fn screen_size(&self, displayed: bool) -> (u32, u32);
     fn clone_history(
         &self,
@@ -574,7 +574,7 @@ impl WindowPane for Rc<RefCell<window_pane>> {
     fn refresh_scrollbar_style(&self) {
         super::render::refresh_scrollbar_style(self);
     }
-    unsafe fn reset_default_cursor(&self) {
+    fn reset_default_cursor(&self) {
         window_pane_default_cursor(self);
     }
 
@@ -769,14 +769,14 @@ impl WindowPane for Rc<RefCell<window_pane>> {
             write(b"\x1b[201~");
         }
     }
-    unsafe fn capture(
+    fn capture(
         &self,
         arguments: &args,
         item: &Rc<std::cell::RefCell<cmdq_item>>,
     ) -> Result<Vec<u8>, CString> {
         super::capture::capture(self, arguments, item)
     }
-    unsafe fn clear_history(&self, reset_links: bool) {
+    fn clear_history(&self, reset_links: bool) {
         super::capture::clear_history(self, reset_links);
     }
     fn refresh_palette(&self) {
@@ -1101,7 +1101,7 @@ impl WindowPane for Rc<RefCell<window_pane>> {
         }
     }
 
-    unsafe fn key(
+    fn key(
         &self,
         client: Option<&ClientRef>,
         link: refbox::Weak<winlink>,
@@ -1115,7 +1115,7 @@ impl WindowPane for Rc<RefCell<window_pane>> {
         window_pane_paste(self, key, bytes);
     }
 
-    unsafe fn set_mode(
+    fn set_mode(
         &self,
         source: Option<&Rc<RefCell<window_pane>>>,
         mode: &'static window_mode,
@@ -1126,10 +1126,10 @@ impl WindowPane for Rc<RefCell<window_pane>> {
         window_pane_set_mode(self, source, mode, item, find, arguments)
     }
 
-    unsafe fn reset_mode(&self) {
+    fn reset_mode(&self) {
         window_pane_reset_mode(self);
     }
-    unsafe fn reset_all_modes(&self) {
+    fn reset_all_modes(&self) {
         window_pane_reset_mode_all(self);
     }
 
@@ -1274,7 +1274,7 @@ impl WindowPane for Rc<RefCell<window_pane>> {
         super::format::format_value(self, key, context)
     }
 
-    unsafe fn pipe(
+    fn pipe(
         &self,
         command: refbox::Weak<cmd>,
         item: &Rc<std::cell::RefCell<cmdq_item>>,
@@ -1293,7 +1293,7 @@ impl WindowPane for Rc<RefCell<window_pane>> {
     fn finish_process(&self, notify: i32) {
         lifecycle::finish_process(self, notify)
     }
-    unsafe fn spawn_process(
+    fn spawn_process(
         context: &mut crate::shared::spawn::spawn_context,
         cause: &mut Option<CString>,
     ) -> Option<Self> {
@@ -1341,14 +1341,19 @@ impl WindowPane for Rc<RefCell<window_pane>> {
             callback(entry, context);
         }
     }
-    unsafe fn reset_input(&self) {
+    fn reset_input(&self) {
         crate::style::colour::colour_palette_clear(Some(&mut self.borrow_mut().palette));
-        // The reset writes the screen through the pane, so no guard is held.
-        let context = (*self.as_ptr())
+        let context = self
+            .borrow()
             .ictx
-            .as_deref_mut()
-            .expect("pane input context");
-        super::input::input_reset(context, 1);
+            .as_ref()
+            .expect("pane input context")
+            .downgrade();
+        super::input::input_reset(
+            &mut context
+                .try_borrow_mut()
+                .expect("pane input context already borrowed"),
+        );
         self.borrow_mut().flags |= PANE_STYLECHANGED | PANE_THEMECHANGED | PANE_REDRAW;
     }
     fn screen_size(&self, displayed: bool) -> (u32, u32) {

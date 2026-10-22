@@ -4,7 +4,6 @@ use crate::arguments::{
 };
 use crate::cmd::queue::cmdq_error;
 use crate::cmd::{cmd_get_args, cmd_get_entry};
-use crate::format::bytes::nullable_cstr;
 use crate::paste::paste_is_empty;
 use crate::server_client::Client as _;
 use crate::shared::client::ClientRef;
@@ -185,7 +184,7 @@ fn cmd_choose_tree_args_parse(
 ) -> Result<args_parse_type, ArgsParseError> {
     Ok(ARGS_PARSE_COMMANDS_OR_STRING)
 }
-unsafe fn cmd_choose_tree_exec(
+fn cmd_choose_tree_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
@@ -196,9 +195,7 @@ unsafe fn cmd_choose_tree_exec(
     let wp = target.pane_handle();
 
     let mut order: sort_order = SORT_ACTIVITY;
-    order = sort_order_from_string(nullable_cstr(
-        args_get(args, 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
-    ));
+    order = sort_order_from_string(args_get(args, 'O' as i32 as u_char));
     if order as ::core::ffi::c_uint == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0
     {

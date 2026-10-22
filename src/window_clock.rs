@@ -38,29 +38,12 @@ pub static window_clock_mode: window_mode = {
         name: c"clock-mode",
         default_format: None,
         flags: 0,
-        init: Some(
-            window_clock_init
-                as unsafe fn(
-                    refbox::Weak<window_mode_entry>,
-                    Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
-                    Option<&cmd_find_state>,
-                    Option<&args>,
-                ) -> bool,
-        ),
+        init: Some(window_clock_init),
         free: None,
         resize: Some(window_clock_resize),
         update: None,
         style_changed: None,
-        key: Some(
-            window_clock_key
-                as unsafe fn(
-                    refbox::Weak<window_mode_entry>,
-                    &ClientRef,
-                    refbox::Weak<winlink>,
-                    key_code,
-                    Option<&mut mouse_event>,
-                ) -> (),
-        ),
+        key: Some(window_clock_key),
         key_table: None,
         command: None,
         formats: None,
@@ -692,7 +675,7 @@ fn window_clock_resize(mut wme: refbox::Weak<window_mode_entry>, mut sx: u_int, 
     );
     window_clock_draw_screen(wme.clone());
 }
-unsafe fn window_clock_key(
+fn window_clock_key(
     mut wme: refbox::Weak<window_mode_entry>,
     _client_owner: &ClientRef,
     _wl: refbox::Weak<winlink>,

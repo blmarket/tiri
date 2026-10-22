@@ -234,7 +234,7 @@ impl cmd_find_state {
             .idx;
         0
     }
-    unsafe fn get_session(&mut self, target: &CStr) -> i32 {
+    fn get_session(&mut self, target: &CStr) -> i32 {
         log_debug(format_args!("cmd_find_get_session: {}", log_cstr(target)));
         if target.to_bytes().first() == Some(&b'$') {
             self.set_s(crate::shared::session::SessionRef::find_by_id_str(target).as_ref());
@@ -281,7 +281,7 @@ impl cmd_find_state {
         }
         -1
     }
-    unsafe fn get_window(
+    fn get_window(
         &mut self,
         window: &CStr,
         mut only: ::core::ffi::c_int,
@@ -594,7 +594,7 @@ impl cmd_find_state {
         }
         -(1 as ::core::ffi::c_int)
     }
-    unsafe fn get_pane(
+    fn get_pane(
         &mut self,
         pane: &CStr,
         mut only: ::core::ffi::c_int,
@@ -1008,7 +1008,7 @@ impl cmd_find_state {
         }
         Self::find_from_nothing(flags)
     }
-    pub unsafe fn find_target(
+    pub fn find_target(
         &mut self,
         item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
         target: Option<&CStr>,
@@ -1476,7 +1476,7 @@ impl cmd_find_state {
         -(1 as ::core::ffi::c_int)
     }
 }
-unsafe fn cmd_find_current_client(
+fn cmd_find_current_client(
     item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     mut quiet: ::core::ffi::c_int,
 ) -> Option<ClientRef> {
@@ -1539,7 +1539,7 @@ unsafe fn cmd_find_current_client(
     ));
     found
 }
-pub unsafe fn cmd_find_client(
+pub fn cmd_find_client(
     item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     target: Option<&CStr>,
     mut quiet: ::core::ffi::c_int,

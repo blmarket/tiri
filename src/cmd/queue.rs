@@ -1139,7 +1139,7 @@ pub fn cmdq_get_error(error: &CStr) -> std::rc::Rc<std::cell::RefCell<cmdq_item>
     let error = error.to_owned();
     cmdq_get_callback_owned(
         c"cmdq_error_callback",
-        Some(Box::new(move |item| unsafe {
+        Some(Box::new(move |item| {
             cmdq_error(item, |out| write_cstr(out, &*error));
             CmdOutcome::Normal
         })),
@@ -1211,7 +1211,7 @@ pub fn cmdq_print(
     evbuffer_add_formatted(&mut evb, write);
     cmdq_print_data(item_handle, &mut evb);
 }
-pub unsafe fn cmdq_error(
+pub fn cmdq_error(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
@@ -1220,8 +1220,6 @@ pub unsafe fn cmdq_error(
         (cmdq_get_client(Some(&item)), item.command_handle())
     };
     let mut c: Option<ClientRef> = c_owner.clone();
-    let mut file: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut line: u_int = 0;
     let mut msg = format_message_with(write);
     log_debug(format_args!(
         "{}: {}",
@@ -1231,23 +1229,21 @@ pub unsafe fn cmdq_error(
     match c.as_ref() {
         None => {
             let cmd_ref = cmd.try_borrow().expect("live command");
-            let (source, source_line) = cmd_get_source(&cmd_ref);
-            file = source.map_or(std::ptr::null(), |file| file.as_ptr());
-            line = source_line;
+            let (file, line) = cmd_get_source(&cmd_ref);
             if !cfg_finished() {
-                if !file.is_null() {
+                if let Some(file) = file {
                     cfg_add_cause(|out| {
-                        write_cstr(out, nullable_cstr(file))?;
+                        write_cstr(out, file)?;
                         write!(out, ":{}: ", (line) as u32)?;
                         write_cstr(out, &*msg)
                     });
                 } else {
                     cfg_add_cause(|out| write_cstr(out, &*msg));
                 }
-            } else if !file.is_null() {
+            } else if let Some(file) = file {
                 server_add_message(|out| {
                     out.write_all(b"message: ")?;
-                    write_cstr(out, nullable_cstr(file))?;
+                    write_cstr(out, file)?;
                     write!(out, ":{}: ", (line) as u32)?;
                     write_cstr(out, &*msg)
                 });
@@ -1283,7 +1279,7 @@ pub unsafe fn cmdq_error(
         Some(_) => {
             let mut bytes = msg.into_bytes_with_nul();
             bytes[0] = bytes[0].to_ascii_uppercase();
-            msg = CString::from_vec_with_nul_unchecked(bytes);
+            msg = CString::from_vec_with_nul(bytes).expect("message has one terminator");
             status_message_set(
                 c.as_ref(),
                 -(1 as ::core::ffi::c_int),

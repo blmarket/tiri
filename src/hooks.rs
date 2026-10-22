@@ -131,7 +131,7 @@ fn hooks_parse(hd: &mut hooks_data, fs: &cmd_find_state, value: &CStr) -> cmd_pa
     drop(client_owner);
     pr
 }
-unsafe fn hooks_insert(
+fn hooks_insert(
     item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     hd: &mut hooks_data,
 ) {
@@ -262,7 +262,7 @@ unsafe fn hooks_insert(
         }
     }
 }
-unsafe fn hooks_insert_event(
+fn hooks_insert_event(
     item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     name: &CStr,
     ep: &event_payload,
@@ -290,7 +290,7 @@ unsafe fn hooks_insert_event(
     hooks_insert(item_handle, &mut hd);
     drop(hd.formats);
 }
-unsafe fn CString_cb(name: &CStr, payload: &mut event_payload) {
+fn CString_cb(name: &CStr, payload: &mut event_payload) {
     let ep = &*payload;
     if matches!(
         event_payload_get_identity(ep, c"_hooks_monitor"),
@@ -323,7 +323,7 @@ pub fn hooks_add_event(name: &CStr) {
 
     events_add_sink(
         event_name,
-        events_callback(|name, payload| unsafe { CString_cb(name, payload) }),
+        events_callback(|name, payload| CString_cb(name, payload)),
     );
     CStrings.with_borrow_mut(|events| events.insert(event_name.to_owned()));
 }
@@ -347,10 +347,7 @@ pub fn hooks_build_events() {
         }
     }
 }
-pub unsafe fn hooks_run(
-    item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
-    name: &CStr,
-) {
+pub fn hooks_run(item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>, name: &CStr) {
     let (mut target_state, client) = {
         let item = item_handle.expect("command queue item").borrow();
         (
@@ -387,7 +384,7 @@ pub fn hooks_monitor_remove(scope: &OptionsScope, name: &CStr) {
         .flatten();
     drop(old);
 }
-unsafe fn hooks_monitor_hook_cb(
+fn hooks_monitor_hook_cb(
     name: &CStr,
     payload: &mut event_payload,
     scope: &OptionsScope,
@@ -507,7 +504,7 @@ fn hooks_monitor_cb(change: &monitor_change, fallback: &cmd_find_state, generati
     drop(session_owner);
     drop(client_owner);
 }
-pub unsafe fn hooks_monitor_add(
+pub fn hooks_monitor_add(
     scope: &OptionsScope,
     name: &CStr,
     type_0: monitor_type,

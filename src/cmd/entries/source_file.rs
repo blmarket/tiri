@@ -162,7 +162,7 @@ async fn cmd_source_file_chain(
             return std::future::pending().await;
         };
         let item_owner = cmdq_resumed(&item);
-        unsafe { cmd_source_file_done(&mut cdata, &item_owner, read) };
+        cmd_source_file_done(&mut cdata, &item_owner, read);
         cdata.current = cdata.current.wrapping_add(1);
         if (cdata.current as usize) >= cdata.files.len() {
             cmd_source_file_complete(cdata, &item_owner);
@@ -173,7 +173,7 @@ async fn cmd_source_file_chain(
     }
 }
 
-unsafe fn cmd_source_file_done(
+fn cmd_source_file_done(
     cdata: &mut cmd_source_file_data,
     item_owner: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     mut read: FileOutcome,

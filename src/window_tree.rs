@@ -183,29 +183,12 @@ pub static window_tree_mode: window_mode = {
         name: c"tree-mode",
         default_format: Some(WINDOW_TREE_DEFAULT_FORMAT),
         flags: 0,
-        init: Some(
-            window_tree_init
-                as unsafe fn(
-                    refbox::Weak<window_mode_entry>,
-                    Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
-                    Option<&cmd_find_state>,
-                    Option<&args>,
-                ) -> bool,
-        ),
+        init: Some(window_tree_init),
         free: Some(window_tree_free),
         resize: Some(window_tree_resize),
         update: Some(window_tree_update),
         style_changed: None,
-        key: Some(
-            window_tree_key
-                as unsafe fn(
-                    refbox::Weak<window_mode_entry>,
-                    &ClientRef,
-                    refbox::Weak<winlink>,
-                    key_code,
-                    Option<&mut mouse_event>,
-                ) -> (),
-        ),
+        key: Some(window_tree_key),
         key_table: None,
         command: None,
         formats: None,
@@ -1513,7 +1496,7 @@ fn window_tree_search(
     }
     0 as ::core::ffi::c_int
 }
-unsafe fn window_tree_menu(mode: &TreeMode, c: &ClientRef, mut key: key_code) {
+fn window_tree_menu(mode: &TreeMode, c: &ClientRef, mut key: key_code) {
     let Some(mode_pane_owner) = window_tree_pane(mode) else {
         return;
     };
@@ -1678,7 +1661,7 @@ fn window_tree_help() -> mode_tree_help_info {
         lines: window_tree_help_lines,
     }
 }
-unsafe fn window_tree_init(
+fn window_tree_init(
     mut wme: refbox::Weak<window_mode_entry>,
     _item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     fs: Option<&cmd_find_state>,
@@ -2167,7 +2150,7 @@ fn window_tree_mouse(
     }
     KEYC_NONE as ::core::ffi::c_ulong as key_code
 }
-unsafe fn window_tree_key(
+fn window_tree_key(
     mut wme: refbox::Weak<window_mode_entry>,
     client_owner: &ClientRef,
     _wl: refbox::Weak<winlink>,

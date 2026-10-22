@@ -83,29 +83,12 @@ pub static window_switch_mode: window_mode = {
         name: c"switch-mode",
         default_format: Some(WINDOW_SWITCH_DEFAULT_FORMAT),
         flags: 0,
-        init: Some(
-            window_switch_init
-                as unsafe fn(
-                    refbox::Weak<window_mode_entry>,
-                    Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
-                    Option<&cmd_find_state>,
-                    Option<&args>,
-                ) -> bool,
-        ),
+        init: Some(window_switch_init),
         free: None,
         resize: Some(window_switch_resize),
         update: None,
         style_changed: None,
-        key: Some(
-            window_switch_key
-                as unsafe fn(
-                    refbox::Weak<window_mode_entry>,
-                    &ClientRef,
-                    refbox::Weak<winlink>,
-                    key_code,
-                    Option<&mut mouse_event>,
-                ) -> (),
-        ),
+        key: Some(window_switch_key),
         key_table: None,
         command: None,
         formats: None,
@@ -621,7 +604,7 @@ fn window_switch_prompt_callback(
     data.offset = 0 as u_int;
     PROMPT_CONTINUE
 }
-unsafe fn window_switch_key(
+fn window_switch_key(
     mut wme: refbox::Weak<window_mode_entry>,
     client_owner: &ClientRef,
     _wl: refbox::Weak<winlink>,

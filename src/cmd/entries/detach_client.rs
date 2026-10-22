@@ -60,7 +60,7 @@ pub static cmd_suspend_client_entry: cmd_entry = {
         exec: Some(cmd_detach_client_exec),
     }
 };
-unsafe fn cmd_detach_client_exec(
+fn cmd_detach_client_exec(
     mut command: refbox::Weak<cmd>,
     item: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {

@@ -1,5 +1,4 @@
 //! Pane implementation. Window state is accessed through the Window trait.
-use crate::format::bytes::nullable_cstr;
 use crate::options::OptionsScope;
 use crate::server_client::ClientRegistry;
 use crate::session::Session;
@@ -58,7 +57,6 @@ use crate::reactor::{
 };
 use crate::screen::{screen_init, screen_resize, screen_set_default_cursor, screen_set_title};
 pub use api::WindowPane;
-use libc::gethostname;
 
 use crate::server::{marked_pane, server_check_marked};
 use crate::server_client::Client;
@@ -246,15 +244,13 @@ fn window_fire_pane_moved(
     events_fire(c"pane-moved", ep);
 }
 
-unsafe fn window_fire_pane_mode_changed(
+fn window_fire_pane_mode_changed(
     name: &CStr,
     wp_owner: &Rc<std::cell::RefCell<window_pane>>,
     previous: Option<&CStr>,
     current: Option<&CStr>,
     mut entered: ::core::ffi::c_int,
 ) {
-    let current: *const ::core::ffi::c_char = current.map_or(std::ptr::null(), CStr::as_ptr);
-    let previous: *const ::core::ffi::c_char = previous.map_or(std::ptr::null(), CStr::as_ptr);
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: std::rc::Weak::new(),
@@ -270,15 +266,11 @@ unsafe fn window_fire_pane_mode_changed(
     event_payload_set_pane(&mut ep, c"pane", std::rc::Rc::clone(wp_owner));
     let window = wp_owner.borrow().window_handle().expect("live window");
     event_payload_set_window(&mut ep, c"window", window);
-    if !current.is_null() {
-        event_payload_set_string(&mut ep, c"current_mode", |out| {
-            write_cstr(out, nullable_cstr(current))
-        });
+    if let Some(current) = current {
+        event_payload_set_string(&mut ep, c"current_mode", |out| write_cstr(out, current));
     }
-    if !previous.is_null() {
-        event_payload_set_string(&mut ep, c"previous_mode", |out| {
-            write_cstr(out, nullable_cstr(previous))
-        });
+    if let Some(previous) = previous {
+        event_payload_set_string(&mut ep, c"previous_mode", |out| write_cstr(out, previous));
     }
     event_payload_set_int(&mut ep, c"mode_entered", entered);
     events_fire(name, ep);
@@ -450,13 +442,12 @@ fn window_pane_mode_promote(wp: &mut window_pane, wme: refbox::Weak<window_mode_
     window_pane_mode_push(wp, entry);
 }
 
-unsafe fn window_pane_create(
+fn window_pane_create(
     w_owner: &WindowRef,
     mut sx: u_int,
     mut sy: u_int,
     mut hlimit: u_int,
 ) -> Rc<std::cell::RefCell<window_pane>> {
-    let mut host: [u8; 65] = [0; 65];
     let owner = window_pane::new();
     {
         let mut wp = owner.borrow_mut();
@@ -499,10 +490,8 @@ unsafe fn window_pane_create(
     let mut wp = owner.borrow_mut();
     screen_init(&mut wp.status_screen, 1 as u_int, 1 as u_int, 0 as u_int);
     style_ranges_init(&mut wp.border_status_line.ranges);
-    if gethostname(host.as_mut_ptr().cast(), host.len()) == 0 as ::core::ffi::c_int {
-        if let Ok(host) = CStr::from_bytes_until_nul(&host) {
-            screen_set_title(&mut wp.base, host, 0 as ::core::ffi::c_int);
-        }
+    if let Ok(host) = tiri_rt::unix::host_name() {
+        screen_set_title(&mut wp.base, &host, 0 as ::core::ffi::c_int);
     }
     drop(wp);
     owner
@@ -680,7 +669,7 @@ fn window_pane_error_callback(owner: &Rc<std::cell::RefCell<window_pane>>) {
     }
 }
 
-unsafe fn window_pane_set_event(wp_owner: &Rc<std::cell::RefCell<window_pane>>) {
+fn window_pane_set_event(wp_owner: &Rc<std::cell::RefCell<window_pane>>) {
     let read_observer = std::rc::Rc::downgrade(wp_owner);
     let error_observer = read_observer.clone();
     let pane = wp_owner.borrow();
@@ -705,12 +694,12 @@ unsafe fn window_pane_set_event(wp_owner: &Rc<std::cell::RefCell<window_pane>>) 
     .unwrap_or_else(|_| fatalx(|out| out.write_all(b"out of memory")));
     drop(pane);
     wp_owner.borrow_mut().event = stream.clone();
-    let ictx = input_init(
+    let ictx = refbox::RefBox::new(input_init(
         Some(wp_owner),
         stream,
         crate::shared::input::InputPalette::Pane(std::rc::Rc::downgrade(wp_owner)),
         None,
-    );
+    ));
     // A replaced input context's drop reaches the pane.
     let old = wp_owner.borrow_mut().ictx.replace(ictx);
     drop(old);
@@ -783,7 +772,7 @@ fn window_pane_resize(pane_owner: &Rc<std::cell::RefCell<window_pane>>, sx: u_in
     events_fire(c"pane-resized", ep);
 }
 
-unsafe fn window_pane_set_mode(
+fn window_pane_set_mode(
     pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     source_owner: Option<&std::rc::Rc<std::cell::RefCell<window_pane>>>,
     mode: &'static window_mode,
@@ -792,8 +781,8 @@ unsafe fn window_pane_set_mode(
     args: Option<&args>,
 ) -> ::core::ffi::c_int {
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
-    let mut name: *const ::core::ffi::c_char = mode.name.as_ptr();
-    let mut oname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let name = Some(mode.name);
+    let mut oname: Option<&'static CStr> = None;
     let mut entered_now = false;
     let active = pane_owner.borrow().active_mode();
     if let Some(active) = active {
@@ -806,7 +795,7 @@ unsafe fn window_pane_set_mode(
     }
     let active = pane_owner.borrow().active_mode();
     if let Some(active) = active {
-        oname = active.name.as_ptr();
+        oname = Some(active.name);
     }
     let existing = pane_owner
         .borrow()
@@ -874,36 +863,29 @@ unsafe fn window_pane_set_mode(
     window_fire_pane_mode_changed(
         c"pane-mode-entered",
         pane_owner,
-        nullable_cstr(oname),
-        nullable_cstr(name),
+        oname,
+        name,
         1 as ::core::ffi::c_int,
     );
     window_fire_pane_mode_changed(
         c"pane-mode-changed",
         pane_owner,
-        nullable_cstr(oname),
-        nullable_cstr(name),
+        oname,
+        name,
         1 as ::core::ffi::c_int,
     );
     0 as ::core::ffi::c_int
 }
 
-unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::RefCell<window_pane>>) {
+fn window_pane_reset_mode(pane_owner: &Rc<std::cell::RefCell<window_pane>>) {
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
     let mut next: refbox::Weak<window_mode_entry> = refbox::Weak::new();
     let mut kill_0: ::core::ffi::c_int = 0;
-    let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut p: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if pane_owner.borrow().modes.is_empty() {
         return;
     }
     wme = pane_owner.borrow().active_mode_entry();
-    p = wme
-        .try_borrow()
-        .expect("live mode entry")
-        .mode
-        .name
-        .as_ptr();
+    let p = wme.try_borrow().expect("live mode entry").mode.name;
     kill_0 = wme.try_borrow().expect("live mode entry").kill;
     let unzoom = wme.try_borrow().expect("live mode entry").unzoom;
     // The mode's free callback and the entry's drop may reach the pane, so
@@ -970,15 +952,9 @@ unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::RefCell<window_pane>
             resize(next.clone(), sx, sy);
         }
     }
-    name = if !next.is_alive() {
-        ::core::ptr::null::<::core::ffi::c_char>()
-    } else {
-        next.try_borrow()
-            .expect("live mode entry")
-            .mode
-            .name
-            .as_ptr()
-    };
+    let name = next
+        .is_alive()
+        .then(|| next.try_borrow().expect("live mode entry").mode.name);
     pane_owner.borrow_mut().flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR | PANE_CHANGED;
     let window = pane_owner.borrow().window_handle().expect("live window");
     window.refit();
@@ -988,15 +964,15 @@ unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::RefCell<window_pane>
     window_fire_pane_mode_changed(
         c"pane-mode-exited",
         pane_owner,
-        nullable_cstr(p),
-        nullable_cstr(name),
+        Some(p),
+        name,
         0 as ::core::ffi::c_int,
     );
     window_fire_pane_mode_changed(
         c"pane-mode-changed",
         pane_owner,
-        nullable_cstr(p),
-        nullable_cstr(name),
+        Some(p),
+        name,
         0 as ::core::ffi::c_int,
     );
     if kill_0 != 0 {
@@ -1004,7 +980,7 @@ unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::RefCell<window_pane>
     }
 }
 
-unsafe fn window_pane_reset_mode_all(pane_owner: &Rc<std::cell::RefCell<window_pane>>) {
+fn window_pane_reset_mode_all(pane_owner: &Rc<std::cell::RefCell<window_pane>>) {
     while !pane_owner.borrow().modes.is_empty() {
         window_pane_reset_mode(pane_owner);
     }
@@ -1343,7 +1319,7 @@ fn window_pane_paste(
     }
 }
 
-unsafe fn window_pane_key(
+fn window_pane_key(
     pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     client_owner: Option<&ClientRef>,
     mut wl: refbox::Weak<winlink>,
@@ -1619,10 +1595,16 @@ fn window_pane_update_used_data(
     wpo.used = wpo.used.wrapping_add(size);
 }
 
-unsafe fn window_pane_default_cursor(wp_owner: &Rc<std::cell::RefCell<window_pane>>) {
+fn window_pane_default_cursor(wp_owner: &Rc<std::cell::RefCell<window_pane>>) {
     let scope = OptionsScope::Pane(Rc::downgrade(wp_owner));
-    (*wp_owner.as_ptr())
-        .with_screen_mut(|screen| screen_set_default_cursor(screen, &scope))
+    let mut displayed = wp_owner
+        .borrow_mut()
+        .with_screen_mut(std::mem::take)
+        .expect("displayed pane screen");
+    screen_set_default_cursor(&mut displayed, &scope);
+    wp_owner
+        .borrow_mut()
+        .with_screen_mut(|screen| *screen = displayed)
         .expect("displayed pane screen");
 }
 

@@ -75,7 +75,7 @@ pub static cmd_send_prefix_entry: cmd_entry = {
         exec: Some(cmd_send_keys_exec),
     }
 };
-unsafe fn cmd_send_keys_inject_key(
+fn cmd_send_keys_inject_key(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     after_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     args: &args,

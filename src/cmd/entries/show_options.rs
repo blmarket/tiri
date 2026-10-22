@@ -107,7 +107,7 @@ pub static cmd_show_hooks_entry: cmd_entry = {
         exec: Some(cmd_show_options_exec),
     }
 };
-unsafe fn cmd_show_options_exec(
+fn cmd_show_options_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
@@ -195,7 +195,7 @@ unsafe fn cmd_show_options_exec(
     CmdOutcome::Normal
 }
 
-unsafe fn show_options_scope_error(
+fn show_options_scope_error(
     item: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     quiet: bool,
     cause: &CStr,

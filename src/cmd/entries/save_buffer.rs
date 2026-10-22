@@ -66,7 +66,7 @@ pub static cmd_show_buffer_entry: cmd_entry = {
         exec: Some(cmd_save_buffer_exec),
     }
 };
-unsafe fn cmd_save_buffer_done(
+fn cmd_save_buffer_done(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     outcome: &FileOutcome,
 ) {
@@ -83,7 +83,7 @@ unsafe fn cmd_save_buffer_done(
         });
     }
 }
-unsafe fn cmd_save_buffer_exec(
+fn cmd_save_buffer_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {

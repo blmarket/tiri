@@ -178,7 +178,7 @@ unsafe fn cmd_set_hook_event_exec(
     events_fire(&argument, ep);
     CmdOutcome::Normal
 }
-unsafe fn cmd_set_hook_monitor_exec(
+fn cmd_set_hook_monitor_exec(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     args: &args,
     window: i32,
@@ -262,10 +262,7 @@ unsafe fn cmd_set_hook_monitor_exec(
     CmdOutcome::Normal
 }
 
-unsafe fn set_option_error(
-    item: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
-    cause: &CStr,
-) -> CmdOutcome {
+fn set_option_error(item: &std::rc::Rc<std::cell::RefCell<cmdq_item>>, cause: &CStr) -> CmdOutcome {
     cmdq_error(item, |out| write_cstr(out, &*cause));
     CmdOutcome::Error
 }

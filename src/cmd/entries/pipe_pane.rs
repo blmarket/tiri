@@ -27,7 +27,7 @@ pub static cmd_pipe_pane_entry: cmd_entry = {
         exec: Some(cmd_pipe_pane_exec),
     }
 };
-unsafe fn cmd_pipe_pane_exec(
+fn cmd_pipe_pane_exec(
     command: refbox::Weak<cmd>,
     item: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {

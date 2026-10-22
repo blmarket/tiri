@@ -63,7 +63,7 @@ pub static cmd_clear_history_entry: cmd_entry = {
         exec: Some(cmd_capture_pane_exec),
     }
 };
-unsafe fn cmd_capture_pane_exec(
+fn cmd_capture_pane_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {

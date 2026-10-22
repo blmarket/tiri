@@ -553,9 +553,7 @@ pub fn key_bindings_init() {
         ),
     );
 }
-unsafe fn key_bindings_read_only(
-    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
-) -> CmdOutcome {
+fn key_bindings_read_only(item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>) -> CmdOutcome {
     cmdq_error(item_handle, |out| out.write_all(b"client is read-only"));
     CmdOutcome::Error
 }
@@ -579,7 +577,7 @@ pub fn key_bindings_dispatch(
     if readonly == 0 {
         new_item_allocation = cmdq_get_callback_owned(
             c"key_bindings_read_only",
-            Some(Box::new(|item| unsafe { key_bindings_read_only(item) })),
+            Some(Box::new(|item| key_bindings_read_only(item))),
         );
     } else {
         if bd.flags & KEY_BINDING_REPEAT != 0 {

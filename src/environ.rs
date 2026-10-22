@@ -192,13 +192,13 @@ pub unsafe fn environ_push(env: &environ) {
     }
     drop(seed_owner);
 }
-pub unsafe fn environ_log(
+pub fn environ_log(
     env: &environ,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let prefix = format_message_with(write);
     for envent in environ_iter(env) {
-        if !envent.value.is_none() && *envent.name.as_ptr() as ::core::ffi::c_int != '\0' as i32 {
+        if !envent.value.is_none() && !envent.name.is_empty() {
             log_debug(format_args!(
                 "{}{}={}",
                 log_cstr(&prefix),

@@ -162,29 +162,12 @@ pub static window_client_mode: window_mode = {
         name: c"client-mode",
         default_format: Some(WINDOW_CLIENT_DEFAULT_FORMAT),
         flags: 0,
-        init: Some(
-            window_client_init
-                as unsafe fn(
-                    refbox::Weak<window_mode_entry>,
-                    Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
-                    Option<&cmd_find_state>,
-                    Option<&args>,
-                ) -> bool,
-        ),
+        init: Some(window_client_init),
         free: Some(window_client_free),
         resize: Some(window_client_resize),
         update: Some(window_client_update),
         style_changed: None,
-        key: Some(
-            window_client_key
-                as unsafe fn(
-                    refbox::Weak<window_mode_entry>,
-                    &ClientRef,
-                    refbox::Weak<winlink>,
-                    key_code,
-                    Option<&mut mouse_event>,
-                ) -> (),
-        ),
+        key: Some(window_client_key),
         key_table: None,
         command: None,
         formats: None,
@@ -505,11 +488,7 @@ fn window_client_status_snapshot(c: &ClientRef, lines: u32) -> screen {
     snapshot
 }
 
-unsafe fn window_client_menu(
-    wme: &refbox::Weak<window_mode_entry>,
-    c: &ClientRef,
-    mut key: key_code,
-) {
+fn window_client_menu(wme: &refbox::Weak<window_mode_entry>, c: &ClientRef, mut key: key_code) {
     if !wme.is_alive() {
         return;
     }
@@ -576,7 +555,7 @@ fn window_client_data(
     ModeDataRef::new(wme.try_borrow().expect("live mode entry")).expect("client mode payload")
 }
 
-unsafe fn window_client_init(
+fn window_client_init(
     mut wme: refbox::Weak<window_mode_entry>,
     _item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     _fs: Option<&cmd_find_state>,
@@ -726,7 +705,7 @@ fn window_client_do_detach(
         (item.client()).suspend();
     }
 }
-unsafe fn window_client_key(
+fn window_client_key(
     mut wme: refbox::Weak<window_mode_entry>,
     client_owner: &ClientRef,
     _wl: refbox::Weak<winlink>,

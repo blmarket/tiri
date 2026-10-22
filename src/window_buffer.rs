@@ -141,29 +141,12 @@ pub static window_buffer_mode: window_mode = {
         name: c"buffer-mode",
         default_format: Some(WINDOW_BUFFER_DEFAULT_FORMAT),
         flags: 0,
-        init: Some(
-            window_buffer_init
-                as unsafe fn(
-                    refbox::Weak<window_mode_entry>,
-                    Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
-                    Option<&cmd_find_state>,
-                    Option<&args>,
-                ) -> bool,
-        ),
+        init: Some(window_buffer_init),
         free: Some(window_buffer_free),
         resize: Some(window_buffer_resize),
         update: Some(window_buffer_update),
         style_changed: None,
-        key: Some(
-            window_buffer_key
-                as unsafe fn(
-                    refbox::Weak<window_mode_entry>,
-                    &ClientRef,
-                    refbox::Weak<winlink>,
-                    key_code,
-                    Option<&mut mouse_event>,
-                ) -> (),
-        ),
+        key: Some(window_buffer_key),
         key_table: None,
         command: None,
         formats: None,
@@ -305,11 +288,7 @@ fn window_buffer_search(item: &window_buffer_itemdata, search: &CStr, icase: boo
         icase,
     )
 }
-unsafe fn window_buffer_menu(
-    wme: &refbox::Weak<window_mode_entry>,
-    c: &ClientRef,
-    mut key: key_code,
-) {
+fn window_buffer_menu(wme: &refbox::Weak<window_mode_entry>, c: &ClientRef, mut key: key_code) {
     if !wme.is_alive() {
         return;
     }
@@ -381,7 +360,7 @@ fn window_buffer_data(
     ModeDataRef::new(wme.try_borrow().expect("live mode entry")).expect("buffer mode payload")
 }
 
-unsafe fn window_buffer_init(
+fn window_buffer_init(
     mut wme: refbox::Weak<window_mode_entry>,
     _item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     fs: Option<&cmd_find_state>,
@@ -613,7 +592,7 @@ fn window_buffer_edit_close_cb(
         pane.request_redraw(false);
     }
 }
-unsafe fn window_buffer_start_edit(
+fn window_buffer_start_edit(
     data: &std::cell::RefCell<window_buffer_modedata>,
     item: &window_buffer_itemdata,
     client_owner: &ClientRef,
@@ -648,7 +627,7 @@ unsafe fn window_buffer_start_edit(
     );
     data.borrow_mut().editor = editor;
 }
-unsafe fn window_buffer_key(
+fn window_buffer_key(
     mut wme: refbox::Weak<window_mode_entry>,
     client_owner: &ClientRef,
     _wl: refbox::Weak<winlink>,

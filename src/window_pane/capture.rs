@@ -7,7 +7,7 @@ use crate::grid::{
 };
 use crate::hyperlinks::hyperlinks_get;
 use crate::input::input_pending;
-use crate::reactor::{evbuffer_get_length, evbuffer_pullup};
+use crate::reactor::evbuffer_pullup;
 use crate::screen::screen_reset_hyperlinks;
 use crate::shared::abi::*;
 use crate::shared::colour::COLOUR_FLAG_256;
@@ -63,7 +63,7 @@ fn resolve_bound(bound: CaptureBound, history: u32, height: u32, end: bool) -> u
     line.min(last)
 }
 
-pub(super) unsafe fn capture(
+pub(super) fn capture(
     owner: &Rc<RefCell<window_pane>>,
     arguments: &args,
     item: &Rc<std::cell::RefCell<cmdq_item>>,
@@ -106,7 +106,7 @@ pub(super) unsafe fn capture(
     }
 }
 
-pub(super) unsafe fn clear_history(owner: &Rc<RefCell<window_pane>>, reset_links: bool) {
+pub(super) fn clear_history(owner: &Rc<RefCell<window_pane>>, reset_links: bool) {
     owner.reset_all_modes();
     let mut pane = owner.borrow_mut();
     grid_clear_history(pane.base.grid_mut());
@@ -262,32 +262,28 @@ fn cmd_capture_pane_grid(wp: &window_pane) -> Vec<u8> {
     }
     buf
 }
-unsafe fn cmd_capture_pane_pending(args: &args, wp: &mut window_pane) -> Vec<u8> {
+fn cmd_capture_pane_pending(args: &args, wp: &mut window_pane) -> Vec<u8> {
     let mut buf = Vec::new();
-    let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut linelen: size_t = 0;
-    let mut i: u_int = 0;
-    let pending = input_pending(wp.ictx.as_deref_mut().expect("pane input context"));
-    line = evbuffer_pullup(pending, -1).map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
-        as *mut ::core::ffi::c_char;
-    linelen = evbuffer_get_length(&*pending);
+    let mut ictx = wp
+        .ictx
+        .as_ref()
+        .expect("pane input context")
+        .try_borrow_mut()
+        .expect("pane input context already borrowed");
+    let pending = input_pending(&mut ictx);
+    let line: &[u8] = evbuffer_pullup(pending, -1).map_or(&[], |bytes| &*bytes);
     if args_has(args, 'C' as i32 as u_char) != 0 {
-        i = 0 as u_int;
-        while (i as size_t) < linelen {
-            if *line.offset(i as isize) as ::core::ffi::c_int >= ' ' as i32
-                && *line.offset(i as isize) as ::core::ffi::c_int != '\\' as i32
+        for &byte in line {
+            if byte as ::core::ffi::c_char as ::core::ffi::c_int >= ' ' as i32
+                && byte as ::core::ffi::c_int != '\\' as i32
             {
-                buf.push(*line.offset(i as isize) as u8);
+                buf.push(byte);
             } else {
-                write!(&mut buf, "\\{:03o}", *line.offset(i as isize) as u8)
-                    .expect("writing to a byte vector succeeds");
+                write!(&mut buf, "\\{:03o}", byte).expect("writing to a byte vector succeeds");
             }
-            i = i.wrapping_add(1);
         }
-    } else {
-        if linelen != 0 {
-            cmd_capture_pane_append(&mut buf, std::slice::from_raw_parts(line.cast(), linelen));
-        }
+    } else if !line.is_empty() {
+        cmd_capture_pane_append(&mut buf, line);
     }
     buf
 }

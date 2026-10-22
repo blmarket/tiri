@@ -202,6 +202,25 @@ pub fn terminal_name(fd: BorrowedFd<'_>) -> io::Result<CString> {
     }
 }
 
+/// Create and open a unique file from `template`, a NUL-terminated path
+/// ending in `XXXXXX`, which is rewritten to the name created.
+pub fn make_temporary(template: &mut [u8]) -> io::Result<OwnedFd> {
+    if !template.ends_with(b"XXXXXX\0") {
+        return Err(io::ErrorKind::InvalidInput.into());
+    }
+    let fd = check(unsafe { libc::mkstemp(template.as_mut_ptr().cast()) })?;
+    Ok(unsafe { OwnedFd::from_raw_fd(fd) })
+}
+
+/// The host name, truncated to the 64 bytes tmux keeps.
+pub fn host_name() -> io::Result<CString> {
+    let mut bytes = [0u8; 65];
+    check(unsafe { libc::gethostname(bytes.as_mut_ptr().cast(), bytes.len()) })?;
+    CStr::from_bytes_until_nul(&bytes)
+        .map(CStr::to_owned)
+        .map_err(|_| io::ErrorKind::InvalidData.into())
+}
+
 /// Duplicate a live descriptor onto a stdio number in a pre-exec child.
 ///
 /// # Safety

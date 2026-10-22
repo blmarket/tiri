@@ -38,7 +38,7 @@ pub static cmd_rename_window_entry: cmd_entry = {
         exec: Some(cmd_rename_window_exec),
     }
 };
-unsafe fn cmd_rename_window_exec(
+fn cmd_rename_window_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {

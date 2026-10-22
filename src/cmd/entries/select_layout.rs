@@ -35,7 +35,7 @@ pub static cmd_select_layout_entry: cmd_entry = {
 
 /// Arrange the window in the named layout, the next one with -n, or afresh
 /// in its current one.
-unsafe fn cmd_select_layout_exec(
+fn cmd_select_layout_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {

@@ -40,7 +40,7 @@ pub static cmd_swap_window_entry: cmd_entry = {
         exec: Some(cmd_swap_window_exec),
     }
 };
-unsafe fn cmd_swap_window_exec(
+fn cmd_swap_window_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {

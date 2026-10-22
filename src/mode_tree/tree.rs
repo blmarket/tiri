@@ -8,7 +8,6 @@ use crate::arguments::{args, args_get, args_has};
 use crate::cmd::parse::{cmd_parse_and_append, cmd_parse_error_uppercase_first};
 use crate::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_get_client, cmdq_new_state};
 use crate::cmd::{cmd_mouse_at, cmd_template_replace_cstring};
-use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
 use crate::format::{format_add, format_create_defaults, format_expand_cstring};
 use crate::format_draw::{format_draw, format_width};
@@ -610,7 +609,7 @@ pub fn mode_tree_each_tagged(
         cb(&item, key);
     }
 }
-pub unsafe fn mode_tree_start(
+pub fn mode_tree_start(
     pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     args: &args,
     buildcb: mode_tree_build_cb,
@@ -638,9 +637,7 @@ pub unsafe fn mode_tree_start(
     } else {
         mtd.preview = MODE_TREE_PREVIEW_NORMAL as ::core::ffi::c_int;
     }
-    mtd.sort_crit.order = sort_order_from_string(nullable_cstr(
-        args_get(args, 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
-    ));
+    mtd.sort_crit.order = sort_order_from_string(args_get(args, 'O' as i32 as u_char));
     mtd.sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
     if args_has(args, 'f' as i32 as u_char) != 0 {
         mtd.filter = Some(

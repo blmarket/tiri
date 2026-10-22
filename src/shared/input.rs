@@ -80,17 +80,19 @@ pub struct input_ctx {
     pub last: utf8_data,
     pub state: &'static input_state,
     pub flags: ::core::ffi::c_int,
-    pub(crate) requests: VecDeque<Box<input_request>>,
+    pub(crate) requests: VecDeque<refbox::RefBox<input_request>>,
     pub request_timer: Option<Timer>,
     pub since_ground: Box<SegmentedBuf>,
-    pub ground_timer: Option<Timer>,
+    /// When an unfinished sequence times out; the next parse returns to ground.
+    pub ground_timer: Option<std::time::Instant>,
 }
 
 #[repr(C)]
 pub struct input_request {
     /// Client observation; request/context ownership does not retain the client.
     pub c: ClientWeak,
-    pub ictx: *mut input_ctx,
+    /// The pane input context that owns this request.
+    pub ictx: refbox::Weak<input_ctx>,
     pub type_0: input_request_type,
     pub t: uint64_t,
     pub end: input_end_type,

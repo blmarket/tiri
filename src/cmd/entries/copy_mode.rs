@@ -65,7 +65,7 @@ pub static cmd_clock_mode_entry: cmd_entry = {
         exec: Some(cmd_copy_mode_exec),
     }
 };
-unsafe fn cmd_copy_mode_exec(
+fn cmd_copy_mode_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {

@@ -58,7 +58,7 @@ fn cmd_list_single_command(
         cmdq_print(item_handle, |out| write_cstr(out, &*line));
     }
 }
-unsafe fn cmd_list_commands(
+fn cmd_list_commands(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {

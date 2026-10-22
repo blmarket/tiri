@@ -147,7 +147,7 @@ fn cmd_wait_for_prune_expired(wc: &mut wait_channel) {
     wc.waiters.retain(|waiter| !waiter.is_cancelled());
     wc.lockers.retain(|waiter| !waiter.is_cancelled());
 }
-unsafe fn cmd_wait_for_exec(
+fn cmd_wait_for_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
@@ -261,7 +261,7 @@ impl Drop for wait_event_sink {
 fn cmd_wait_for_event_prune_expired(items: &mut Vec<wait_event_item>) {
     items.retain(|owner| !owner.waiter.is_cancelled());
 }
-unsafe fn cmd_wait_for_event(
+fn cmd_wait_for_event(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     name: &CStr,
     args: &args,
@@ -320,7 +320,7 @@ fn cmd_wait_for_event_list(
     }
     CmdOutcome::Normal
 }
-unsafe fn cmd_wait_for_event_wake(
+fn cmd_wait_for_event_wake(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     name: &CStr,
     args: &args,
@@ -409,7 +409,7 @@ fn cmd_wait_for_signal(name: &CStr) -> CmdOutcome {
     wait_items_continue_all(waiters);
     CmdOutcome::Normal
 }
-unsafe fn cmd_wait_for_wait(
+fn cmd_wait_for_wait(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     name: &CStr,
 ) -> CmdOutcome {
@@ -439,7 +439,7 @@ unsafe fn cmd_wait_for_wait(
         retval
     })
 }
-unsafe fn cmd_wait_for_lock(
+fn cmd_wait_for_lock(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     name: &CStr,
 ) -> CmdOutcome {
@@ -459,7 +459,7 @@ unsafe fn cmd_wait_for_lock(
         CmdOutcome::Normal
     })
 }
-unsafe fn cmd_wait_for_unlock(
+fn cmd_wait_for_unlock(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     name: &CStr,
 ) -> CmdOutcome {
@@ -922,7 +922,7 @@ mod tests {
 
     /// Run `wait-for -E <flags> <name>` as the next item of `owner`'s queue.
     /// The returned item stays queued while it waits.
-    unsafe fn wait_event(
+    fn wait_event(
         owner: &ClientRef,
         name: &'static CStr,
         flags: &[&CStr],
@@ -976,147 +976,133 @@ mod tests {
 
     #[test]
     fn an_accepted_event_resumes_the_event_waiter() {
-        unsafe {
-            let owner = clients::with_queue();
-            let head = wait_event(&owner, c"@accepted", &[c"-F", c"#{==:#{value},y}"]);
-            let ran = append_flag(&owner);
-            let [sink] = event_sinks()[..] else {
-                panic!("one event waiter")
-            };
-            assert!(head.upgrade().is_some());
+        let owner = clients::with_queue();
+        let head = wait_event(&owner, c"@accepted", &[c"-F", c"#{==:#{value},y}"]);
+        let ran = append_flag(&owner);
+        let [sink] = event_sinks()[..] else {
+            panic!("one event waiter")
+        };
+        assert!(head.upgrade().is_some());
 
-            fire(c"@accepted", "y");
-            assert!(event_sinks().is_empty());
-            assert!(!crate::events::events_has_sink(sink));
-            cmdq_next(Some(&owner));
-            assert!(head.upgrade().is_none());
-            assert!(ran.get());
-        }
+        fire(c"@accepted", "y");
+        assert!(event_sinks().is_empty());
+        assert!(!crate::events::events_has_sink(sink));
+        cmdq_next(Some(&owner));
+        assert!(head.upgrade().is_none());
+        assert!(ran.get());
     }
 
     #[test]
     fn a_rejected_event_keeps_the_event_waiter_suspended() {
-        unsafe {
-            let owner = clients::with_queue();
-            let head = wait_event(&owner, c"@rejected", &[c"-F", c"#{==:#{value},y}"]);
-            let ran = append_flag(&owner);
-            let [sink] = event_sinks()[..] else {
-                panic!("one event waiter")
-            };
+        let owner = clients::with_queue();
+        let head = wait_event(&owner, c"@rejected", &[c"-F", c"#{==:#{value},y}"]);
+        let ran = append_flag(&owner);
+        let [sink] = event_sinks()[..] else {
+            panic!("one event waiter")
+        };
 
-            fire(c"@rejected", "x");
-            cmdq_next(Some(&owner));
-            assert!(head.upgrade().is_some());
-            assert!(!ran.get());
-            assert_eq!(event_sinks(), [sink]);
-            assert!(crate::events::events_has_sink(sink));
+        fire(c"@rejected", "x");
+        cmdq_next(Some(&owner));
+        assert!(head.upgrade().is_some());
+        assert!(!ran.get());
+        assert_eq!(event_sinks(), [sink]);
+        assert!(crate::events::events_has_sink(sink));
 
-            fire(c"@rejected", "y");
-            cmdq_next(Some(&owner));
-            assert!(head.upgrade().is_none());
-            assert!(ran.get());
-            assert!(!crate::events::events_has_sink(sink));
-        }
+        fire(c"@rejected", "y");
+        cmdq_next(Some(&owner));
+        assert!(head.upgrade().is_none());
+        assert!(ran.get());
+        assert!(!crate::events::events_has_sink(sink));
     }
 
     #[test]
     fn a_dropped_event_waiter_is_pruned_by_the_next_event() {
-        unsafe {
-            let owner = clients::with_queue();
-            let head = wait_event(&owner, c"@dropped", &[]);
-            let [sink] = event_sinks()[..] else {
-                panic!("one event waiter")
-            };
-            drop(owner);
-            assert!(head.upgrade().is_none());
-            assert!(WAIT_EVENT_ITEMS.with_borrow(|items| items[0].waiter.is_cancelled()));
+        let owner = clients::with_queue();
+        let head = wait_event(&owner, c"@dropped", &[]);
+        let [sink] = event_sinks()[..] else {
+            panic!("one event waiter")
+        };
+        drop(owner);
+        assert!(head.upgrade().is_none());
+        assert!(WAIT_EVENT_ITEMS.with_borrow(|items| items[0].waiter.is_cancelled()));
 
-            fire(c"@dropped", "");
-            assert!(event_sinks().is_empty());
-            assert!(!crate::events::events_has_sink(sink));
-        }
+        fire(c"@dropped", "");
+        assert!(event_sinks().is_empty());
+        assert!(!crate::events::events_has_sink(sink));
     }
 
     #[test]
     fn wake_resumes_the_first_matching_event_waiter_only() {
-        unsafe {
-            let [first, second, waker] = [(); 3].map(|_| clients::with_queue());
-            let first_item = wait_event(&first, c"@wake", &[]);
-            let second_item = wait_event(&second, c"@wake", &[]);
-            let [first_sink, second_sink] = event_sinks()[..] else {
-                panic!("two event waiters")
-            };
-            assert!(wait_event(&waker, c"@wake", &[c"-w", c""])
-                .upgrade()
-                .is_none());
-            cmdq_next(Some(&first));
-            cmdq_next(Some(&second));
-            assert!(first_item.upgrade().is_none());
-            assert!(second_item.upgrade().is_some());
-            assert!(!crate::events::events_has_sink(first_sink));
-            assert_eq!(event_sinks(), [second_sink]);
-        }
+        let [first, second, waker] = [(); 3].map(|_| clients::with_queue());
+        let first_item = wait_event(&first, c"@wake", &[]);
+        let second_item = wait_event(&second, c"@wake", &[]);
+        let [first_sink, second_sink] = event_sinks()[..] else {
+            panic!("two event waiters")
+        };
+        assert!(wait_event(&waker, c"@wake", &[c"-w", c""])
+            .upgrade()
+            .is_none());
+        cmdq_next(Some(&first));
+        cmdq_next(Some(&second));
+        assert!(first_item.upgrade().is_none());
+        assert!(second_item.upgrade().is_some());
+        assert!(!crate::events::events_has_sink(first_sink));
+        assert_eq!(event_sinks(), [second_sink]);
     }
 
     #[test]
     fn client_lost_resumes_only_the_lost_clients_event_waiters() {
-        unsafe {
-            let [lost, kept] = [(); 2].map(|_| clients::with_queue());
-            let lost_item = wait_event(&lost, c"@lost", &[]);
-            let kept_item = wait_event(&kept, c"@lost", &[]);
-            let [lost_sink, kept_sink] = event_sinks()[..] else {
-                panic!("two event waiters")
-            };
+        let [lost, kept] = [(); 2].map(|_| clients::with_queue());
+        let lost_item = wait_event(&lost, c"@lost", &[]);
+        let kept_item = wait_event(&kept, c"@lost", &[]);
+        let [lost_sink, kept_sink] = event_sinks()[..] else {
+            panic!("two event waiters")
+        };
 
-            cmd_wait_for_client_lost(&lost);
-            cmdq_next(Some(&lost));
-            cmdq_next(Some(&kept));
-            assert!(lost_item.upgrade().is_none());
-            assert!(kept_item.upgrade().is_some());
-            assert!(!crate::events::events_has_sink(lost_sink));
-            assert_eq!(event_sinks(), [kept_sink]);
-        }
+        cmd_wait_for_client_lost(&lost);
+        cmdq_next(Some(&lost));
+        cmdq_next(Some(&kept));
+        assert!(lost_item.upgrade().is_none());
+        assert!(kept_item.upgrade().is_some());
+        assert!(!crate::events::events_has_sink(lost_sink));
+        assert_eq!(event_sinks(), [kept_sink]);
     }
 
     #[test]
     fn flush_resumes_every_event_waiter() {
-        unsafe {
-            let [first, second] = [(); 2].map(|_| clients::with_queue());
-            let items = [
-                wait_event(&first, c"@flush", &[]),
-                wait_event(&second, c"@flush", &[c"-F", c"0"]),
-            ];
-            let sinks = event_sinks();
-            assert_eq!(sinks.len(), 2);
+        let [first, second] = [(); 2].map(|_| clients::with_queue());
+        let items = [
+            wait_event(&first, c"@flush", &[]),
+            wait_event(&second, c"@flush", &[c"-F", c"0"]),
+        ];
+        let sinks = event_sinks();
+        assert_eq!(sinks.len(), 2);
 
-            cmd_wait_for_flush();
-            assert!(event_sinks().is_empty());
-            for sink in sinks {
-                assert!(!crate::events::events_has_sink(sink));
-            }
-            cmdq_next(Some(&first));
-            cmdq_next(Some(&second));
-            assert!(items.iter().all(|item| item.upgrade().is_none()));
+        cmd_wait_for_flush();
+        assert!(event_sinks().is_empty());
+        for sink in sinks {
+            assert!(!crate::events::events_has_sink(sink));
         }
+        cmdq_next(Some(&first));
+        cmdq_next(Some(&second));
+        assert!(items.iter().all(|item| item.upgrade().is_none()));
     }
 
     #[test]
     fn a_lost_client_waiting_for_an_event_is_freed() {
-        unsafe {
-            let owner = clients::with_queue();
-            let head = wait_event(&owner, c"@freed", &[]);
-            let [sink] = event_sinks()[..] else {
-                panic!("one event waiter")
-            };
-            owner.update_flags(CLIENT_DEAD as u64, 0);
-            cmd_wait_for_client_lost(&owner);
-            cmdq_next(Some(&owner));
-            assert!(head.upgrade().is_none());
-            assert!(event_sinks().is_empty());
-            assert!(!crate::events::events_has_sink(sink));
-            let client = Rc::downgrade(&owner);
-            drop(owner);
-            assert!(client.upgrade().is_none());
-        }
+        let owner = clients::with_queue();
+        let head = wait_event(&owner, c"@freed", &[]);
+        let [sink] = event_sinks()[..] else {
+            panic!("one event waiter")
+        };
+        owner.update_flags(CLIENT_DEAD as u64, 0);
+        cmd_wait_for_client_lost(&owner);
+        cmdq_next(Some(&owner));
+        assert!(head.upgrade().is_none());
+        assert!(event_sinks().is_empty());
+        assert!(!crate::events::events_has_sink(sink));
+        let client = Rc::downgrade(&owner);
+        drop(owner);
+        assert!(client.upgrade().is_none());
     }
 }

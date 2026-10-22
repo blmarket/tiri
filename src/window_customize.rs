@@ -325,29 +325,12 @@ pub static window_customize_mode: window_mode = {
         name: c"options-mode",
         default_format: Some(WINDOW_CUSTOMIZE_DEFAULT_FORMAT),
         flags: 0,
-        init: Some(
-            window_customize_init
-                as unsafe fn(
-                    refbox::Weak<window_mode_entry>,
-                    Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
-                    Option<&cmd_find_state>,
-                    Option<&args>,
-                ) -> bool,
-        ),
+        init: Some(window_customize_init),
         free: Some(window_customize_free),
         resize: Some(window_customize_resize),
         update: Some(window_customize_update),
         style_changed: None,
-        key: Some(
-            window_customize_key
-                as unsafe fn(
-                    refbox::Weak<window_mode_entry>,
-                    &ClientRef,
-                    refbox::Weak<winlink>,
-                    key_code,
-                    Option<&mut mouse_event>,
-                ) -> (),
-        ),
+        key: Some(window_customize_key),
         key_table: None,
         command: None,
         formats: None,
@@ -1598,7 +1581,7 @@ fn window_customize_build(mode: &CustomizeMode, filter: Option<&CStr>) {
     }
     drop(ft_owner);
 }
-unsafe fn window_customize_draw_key(
+fn window_customize_draw_key(
     item: &window_customize_itemdata,
     mut ctx: &mut screen_write_ctx,
     mut sx: u_int,
@@ -1606,26 +1589,20 @@ unsafe fn window_customize_draw_key(
 ) {
     let mut cx: u_int = ctx.screen.cx;
     let mut cy: u_int = ctx.screen.cy;
-    let mut note: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut period: *const ::core::ffi::c_char = c"".as_ptr();
     let Some(table) = window_customize_get_key_table(item) else {
         return;
     };
     let kt = table.borrow();
     let bd = kt.key_bindings.get(item.key).expect("live binding");
-    note = (bd.note)
-        .as_ref()
-        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
-    if note.is_null() {
-        note = c"There is no note for this key.".as_ptr();
-    }
-    if CStr::from_ptr(note)
-        .to_bytes()
-        .last()
-        .is_some_and(|&last| last != b'.')
-    {
-        period = c".".as_ptr();
-    }
+    let note = bd
+        .note
+        .as_deref()
+        .unwrap_or(c"There is no note for this key.");
+    let period = if note.to_bytes().last().is_some_and(|&last| last != b'.') {
+        c"."
+    } else {
+        c""
+    };
     if screen_write_text(
         ctx,
         cx,
@@ -1634,8 +1611,8 @@ unsafe fn window_customize_draw_key(
         0 as ::core::ffi::c_int,
         &grid_default_cell,
         |out| {
-            write_cstr(out, nullable_cstr(note))?;
-            write_cstr(out, nullable_cstr(period))
+            write_cstr(out, note)?;
+            write_cstr(out, period)
         },
     ) == 0
     {
@@ -1676,11 +1653,11 @@ unsafe fn window_customize_draw_key(
         |out| {
             write_cstr(
                 out,
-                nullable_cstr(if bd.flags & KEY_BINDING_REPEAT != 0 {
-                    c"on".as_ptr()
+                if bd.flags & KEY_BINDING_REPEAT != 0 {
+                    c"on"
                 } else {
-                    c"off".as_ptr()
-                }),
+                    c"off"
+                },
             )
         },
     ) == 0
@@ -1724,7 +1701,7 @@ unsafe fn window_customize_draw_key(
         {}
     }
 }
-unsafe fn window_customize_draw_option(
+fn window_customize_draw_option(
     data: &window_customize_modedata,
     item: &window_customize_itemdata,
     mut ctx: &mut screen_write_ctx,
@@ -1750,11 +1727,8 @@ unsafe fn window_customize_draw_option(
         us: 0,
         link: 0,
     };
-    let mut text: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut array_key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut space: *const ::core::ffi::c_char = c"".as_ptr();
-    let mut unit: *const ::core::ffi::c_char = c"".as_ptr();
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut space = c"";
+    let mut unit = c"";
     let mut value_owner: Option<CString> = None;
     let mut default_value: Option<CString> = None;
     let mut choices: [u8; 256] = [0; 256];
@@ -1774,9 +1748,7 @@ unsafe fn window_customize_draw_option(
         return;
     }
     let name = item.name.as_deref().expect("option item has a name");
-    array_key = (item.array_key)
-        .as_ref()
-        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
+    let array_key = item.array_key.as_deref();
     let Some(owner) = item.oo.as_ref().expect("option scope").resolve(name, false) else {
         return;
     };
@@ -1798,20 +1770,20 @@ unsafe fn window_customize_draw_option(
         (name.to_bytes().first() == Some(&b'@') && hooks_is_event(name) != 0) as ::core::ffi::c_int;
     is_any_hook = (is_hook != 0 || is_monitor != 0 || is_user_hook != 0) as ::core::ffi::c_int;
     if let Some(oe_unit) = oe.and_then(|oe| oe.unit) {
-        space = c" ".as_ptr();
-        unit = oe_unit.as_ptr();
+        space = c" ";
+        unit = oe_unit;
     }
     let mut ft_owner = format_create_from_state(None, None, &fs);
     let ft = &mut *ft_owner;
-    if let Some(oe_text) = oe.and_then(|oe| oe.text) {
-        text = oe_text.as_ptr();
+    let mut text = if let Some(oe_text) = oe.and_then(|oe| oe.text) {
+        oe_text
     } else if is_monitor != 0 {
-        text = c"This hook runs when a monitor changes.".as_ptr();
+        c"This hook runs when a monitor changes."
     } else if is_user_hook != 0 {
-        text = c"This hook doesn't have a description.".as_ptr();
+        c"This hook doesn't have a description."
     } else {
-        text = c"This option doesn't have a description.".as_ptr();
-    }
+        c"This option doesn't have a description."
+    };
     if !(screen_write_text(
         ctx,
         cx,
@@ -1819,7 +1791,7 @@ unsafe fn window_customize_draw_option(
         sy,
         0 as ::core::ffi::c_int,
         &grid_default_cell,
-        |out| write_cstr(out, nullable_cstr(text)),
+        |out| write_cstr(out, text),
     ) == 0)
     {
         screen_write_cursormove(
@@ -1846,16 +1818,16 @@ unsafe fn window_customize_draw_option(
                 }
             } else {
                 text = match oe.map(|oe| oe.scope) {
-                    None => c"user".as_ptr(),
+                    None => c"user",
                     Some(scope)
                         if scope & (OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE)
                             == OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE =>
                     {
-                        c"window and pane".as_ptr()
+                        c"window and pane"
                     }
-                    Some(scope) if scope & OPTIONS_TABLE_WINDOW != 0 => c"window".as_ptr(),
-                    Some(scope) if scope & OPTIONS_TABLE_SESSION != 0 => c"session".as_ptr(),
-                    Some(_) => c"server".as_ptr(),
+                    Some(scope) if scope & OPTIONS_TABLE_WINDOW != 0 => c"window",
+                    Some(scope) if scope & OPTIONS_TABLE_SESSION != 0 => c"session",
+                    Some(_) => c"server",
                 };
                 if is_user_hook != 0 {
                     if screen_write_text(
@@ -1882,7 +1854,7 @@ unsafe fn window_customize_draw_option(
                         &grid_default_cell,
                         |out| {
                             out.write_all(b"This is a ")?;
-                            write_cstr(out, nullable_cstr(text))?;
+                            write_cstr(out, text)?;
                             out.write_all(b" hook.")
                         },
                     ) == 0
@@ -1900,7 +1872,7 @@ unsafe fn window_customize_draw_option(
                     &grid_default_cell,
                     |out| {
                         out.write_all(b"This is a ")?;
-                        write_cstr(out, nullable_cstr(text))?;
+                        write_cstr(out, text)?;
                         out.write_all(b" option.")
                     },
                 ) == 0
@@ -1936,7 +1908,7 @@ unsafe fn window_customize_draw_option(
                         _ => {
                             if oe.is_some_and(|oe| oe.flags & OPTIONS_TABLE_IS_ARRAY != 0) {
                                 if is_hook != 0 {
-                                    if array_key.is_null() {
+                                    if array_key.is_none() {
                                         if screen_write_text(
                                             ctx,
                                             cx,
@@ -1962,7 +1934,7 @@ unsafe fn window_customize_draw_option(
                                     } else {
                                         current_block = 168769493162332264;
                                     }
-                                } else if !array_key.is_null() {
+                                } else if array_key.is_some() {
                                     if screen_write_text(
                                         ctx,
                                         cx,
@@ -1972,7 +1944,7 @@ unsafe fn window_customize_draw_option(
                                         &grid_default_cell,
                                         |out| {
                                             out.write_all(b"This is an array option, key ")?;
-                                            write_cstr(out, nullable_cstr(array_key))?;
+                                            write_cstr(out, array_key)?;
                                             out.write_all(b".")
                                         },
                                     ) == 0
@@ -1998,7 +1970,7 @@ unsafe fn window_customize_draw_option(
                                 match current_block {
                                     4086289836260337793 => {}
                                     _ => {
-                                        if array_key.is_null() {
+                                        if array_key.is_none() {
                                             current_block = 4086289836260337793;
                                         } else {
                                             current_block = 8835654301469918283;
@@ -2022,10 +1994,10 @@ unsafe fn window_customize_draw_option(
                                         >= cy.wrapping_add(sy).wrapping_sub(1 as u_int))
                                     {
                                         value_owner = Some(option_value);
-                                        value = value_owner.as_ref().unwrap().as_ptr().cast_mut();
-                                        if let Some(oe) = oe.filter(|_| array_key.is_null()) {
+                                        let value = value_owner.as_deref().expect("option value");
+                                        if let Some(oe) = oe.filter(|_| array_key.is_none()) {
                                             let rendered = options_default_to_cstring(oe);
-                                            if rendered.as_c_str() != CStr::from_ptr(value) {
+                                            if rendered.as_c_str() != value {
                                                 default_value = Some(rendered);
                                             }
                                         }
@@ -2038,9 +2010,9 @@ unsafe fn window_customize_draw_option(
                                                 0 as ::core::ffi::c_int,
                                                 c"Hook command: ",
                                                 |out| {
-                                                    write_cstr(out, nullable_cstr(value))?;
-                                                    write_cstr(out, nullable_cstr(space))?;
-                                                    write_cstr(out, nullable_cstr(unit))
+                                                    write_cstr(out, value)?;
+                                                    write_cstr(out, space)?;
+                                                    write_cstr(out, unit)
                                                 },
                                             ) == 0
                                                 || (window_customize_write_hook_fire(
@@ -2064,9 +2036,9 @@ unsafe fn window_customize_draw_option(
                                             0 as ::core::ffi::c_int,
                                             c"Option value: ",
                                             |out| {
-                                                write_cstr(out, nullable_cstr(value))?;
-                                                write_cstr(out, nullable_cstr(space))?;
-                                                write_cstr(out, nullable_cstr(unit))
+                                                write_cstr(out, value)?;
+                                                write_cstr(out, space)?;
+                                                write_cstr(out, unit)
                                             },
                                         ) == 0
                                         {
@@ -2080,12 +2052,8 @@ unsafe fn window_customize_draw_option(
                                                 if oe.is_none_or(|oe| {
                                                     oe.type_0 == OPTIONS_TABLE_STRING
                                                 }) {
-                                                    let expanded = format_expand_cstring(
-                                                        ft,
-                                                        CStr::from_ptr(value),
-                                                    );
-                                                    if expanded.as_c_str() != CStr::from_ptr(value)
-                                                    {
+                                                    let expanded = format_expand_cstring(ft, value);
+                                                    if expanded.as_c_str() != value {
                                                         if window_customize_write_value(
                                                             ctx,
                                                             cx,
@@ -2146,8 +2114,15 @@ unsafe fn window_customize_draw_option(
                                                                 0 as ::core::ffi::c_int,
                                                                 c"Available values are: ",
                                                                 |out| {
-                                                                    write_cstr(out, nullable_cstr(&raw mut choices
-                                                                    as *mut ::core::ffi::c_char))
+                                                                    write_cstr(
+                                                                        out,
+                                                                        CStr::from_bytes_until_nul(
+                                                                            &choices,
+                                                                        )
+                                                                        .expect(
+                                                                            "terminated choices",
+                                                                        ),
+                                                                    )
                                                                 },
                                                             ) == 0
                                                             {
@@ -2311,8 +2286,8 @@ sy.wrapping_sub(ctx.screen.cy.wrapping_sub(cy)),
 c"The default is: ",
 |out| {
 write_cstr(out, default_value.as_c_str())?;
-write_cstr(out, nullable_cstr(space))?;
-write_cstr(out, nullable_cstr(unit))
+write_cstr(out, space)?;
+write_cstr(out, unit)
 }) == 0
                                                                                             {
                                                                                                 current_block = 4086289836260337793;
@@ -2356,7 +2331,7 @@ write_cstr(out, nullable_cstr(unit))
                                                                                                         let parent_value = wo.as_ref().expect("parent scope").with_entry(name, |entry| options_to_cstring(entry, None, 0));
                                                                                                         if let Some(parent_value) = parent_value {
                                                                                                             value_owner = Some(parent_value);
-                                                                                                            value = value_owner.as_ref().unwrap().as_ptr().cast_mut();
+                                                                                                            let value = value_owner.as_deref().expect("option value");
                                                                                                             let label = format_message_with(|out| write!(out, "Window value (from window {}): ", (fs.winlink_handle()).try_borrow().expect("live winlink").idx));
                                                                                                             if window_customize_write_value(ctx,
 ctx.screen.cx,
@@ -2365,9 +2340,9 @@ sy.wrapping_sub(ctx.screen.cy.wrapping_sub(cy)),
 0 as ::core::ffi::c_int,
 &label,
 |out| {
-write_cstr(out, nullable_cstr(value))?;
-write_cstr(out, nullable_cstr(space))?;
-write_cstr(out, nullable_cstr(unit))
+write_cstr(out, value)?;
+write_cstr(out, space)?;
+write_cstr(out, unit)
 }) == 0
                                                                                                             {
                                                                                                                 current_block = 4086289836260337793;
@@ -2387,7 +2362,7 @@ write_cstr(out, nullable_cstr(unit))
                                                                                                                 let parent_value = go.as_ref().expect("parent scope").with_entry(name, |entry| options_to_cstring(entry, None, 0));
                                                                                                                 if let Some(parent_value) = parent_value {
                                                                                                                     value_owner = Some(parent_value);
-                                                                                                                    value = value_owner.as_ref().unwrap().as_ptr().cast_mut();
+                                                                                                                    let value = value_owner.as_deref().expect("option value");
                                                                                                                     window_customize_write_value(ctx,
 ctx.screen.cx,
 sx,
@@ -2395,9 +2370,9 @@ sy.wrapping_sub(ctx.screen.cy.wrapping_sub(cy)),
 0 as ::core::ffi::c_int,
 c"Global value: ",
 |out| {
-write_cstr(out, nullable_cstr(value))?;
-write_cstr(out, nullable_cstr(space))?;
-write_cstr(out, nullable_cstr(unit))
+write_cstr(out, value)?;
+write_cstr(out, space)?;
+write_cstr(out, unit)
 });
                                                                                                                 }
                                                                                                             }
@@ -2430,7 +2405,7 @@ write_cstr(out, nullable_cstr(unit))
     drop(default_value);
     drop(ft_owner);
 }
-unsafe fn window_customize_draw_environment(
+fn window_customize_draw_environment(
     data: &window_customize_modedata,
     item: &window_customize_itemdata,
     mut ctx: &mut screen_write_ctx,
@@ -2460,7 +2435,6 @@ unsafe fn window_customize_draw_environment(
         wp: Default::default(),
         idx: 0,
     };
-    let mut text: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if window_customize_check_item(data, item, Some(&mut fs)) == 0 {
         return;
     }
@@ -2468,13 +2442,13 @@ unsafe fn window_customize_draw_environment(
     if envent.is_none() {
         return;
     }
-    if item.scope as ::core::ffi::c_uint
+    let text = if item.scope as ::core::ffi::c_uint
         == WINDOW_CUSTOMIZE_GLOBAL_ENVIRONMENT as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        text = c"global".as_ptr();
+        c"global"
     } else {
-        text = c"session".as_ptr();
-    }
+        c"session"
+    };
     if screen_write_text(
         ctx,
         cx,
@@ -2484,7 +2458,7 @@ unsafe fn window_customize_draw_environment(
         &grid_default_cell,
         |out| {
             out.write_all(b"This is a ")?;
-            write_cstr(out, nullable_cstr(text))?;
+            write_cstr(out, text)?;
             out.write_all(b" environment variable.")
         },
     ) == 0
@@ -2576,7 +2550,7 @@ unsafe fn window_customize_draw_environment(
     {
     }
 }
-unsafe fn window_customize_draw(
+fn window_customize_draw(
     mode: &CustomizeMode,
     item: &window_customize_itemdata,
     ctx: &mut screen_write_ctx,
@@ -2596,7 +2570,7 @@ unsafe fn window_customize_draw(
         window_customize_draw_option(&data, item, ctx, sx, sy);
     };
 }
-unsafe fn window_customize_menu(mode: &CustomizeMode, c: &ClientRef, mut key: key_code) {
+fn window_customize_menu(mode: &CustomizeMode, c: &ClientRef, mut key: key_code) {
     let Some(mode_pane_owner) = window_customize_pane(mode) else {
         return;
     };
@@ -2638,7 +2612,7 @@ fn window_customize_help() -> mode_tree_help_info {
         lines: window_customize_help_lines,
     }
 }
-unsafe fn window_customize_init(
+fn window_customize_init(
     mut wme: refbox::Weak<window_mode_entry>,
     _item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     fs: Option<&cmd_find_state>,
@@ -3302,7 +3276,7 @@ unsafe fn window_customize_edit_close_cb(
     }
     drop(value);
 }
-unsafe fn window_customize_start_edit(
+fn window_customize_start_edit(
     mode: &CustomizeMode,
     item: &window_customize_itemdata,
     client_owner: Option<&ClientRef>,
@@ -3555,7 +3529,7 @@ fn window_customize_set_option(
         );
     };
 }
-unsafe fn window_customize_set_array_key_callback(
+fn window_customize_set_array_key_callback(
     c: Option<&ClientRef>,
     owner: &CustomizePromptItem,
     value: Option<&CStr>,
@@ -4040,7 +4014,7 @@ fn window_customize_reset_key(
     }
     key_bindings_reset(&name, item.key);
 }
-unsafe fn window_customize_change_each(
+fn window_customize_change_each(
     mode: &CustomizeMode,
     item: &ModeTreeItemSnapshot<window_customize_itemdata>,
 ) {
@@ -4091,7 +4065,7 @@ unsafe fn window_customize_change_each(
         options_push_changes(name.as_deref().expect("option name was copied"));
     }
 }
-unsafe fn window_customize_change_current_callback(
+fn window_customize_change_current_callback(
     _c: Option<&ClientRef>,
     owner: &CustomizeMode,
     s: Option<&CStr>,
@@ -4141,7 +4115,7 @@ fn window_customize_change_tagged_callback(
     }
     mode_tree_each_tagged(
         &window_customize_tree(mode),
-        |row, _| unsafe {
+        |row, _| {
             let itemdata = row.borrow().itemdata.clone();
             window_customize_change_each(
                 owner,
@@ -4254,7 +4228,7 @@ fn window_customize_add_current(
     }
     0 as ::core::ffi::c_int
 }
-unsafe fn window_customize_key(
+fn window_customize_key(
     mut wme: refbox::Weak<window_mode_entry>,
     client_owner: &ClientRef,
     _wl: refbox::Weak<winlink>,

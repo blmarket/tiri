@@ -90,29 +90,12 @@ pub static window_panes_mode: window_mode = {
             | WINDOW_MODE_FILL_WINDOW
             | WINDOW_MODE_HIDE_SCROLLBARS
             | WINDOW_MODE_ZOOM,
-        init: Some(
-            window_panes_init
-                as unsafe fn(
-                    refbox::Weak<window_mode_entry>,
-                    Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
-                    Option<&cmd_find_state>,
-                    Option<&args>,
-                ) -> bool,
-        ),
+        init: Some(window_panes_init),
         free: Some(window_panes_free),
         resize: Some(window_panes_resize),
         update: None,
         style_changed: None,
-        key: Some(
-            window_panes_key
-                as unsafe fn(
-                    refbox::Weak<window_mode_entry>,
-                    &ClientRef,
-                    refbox::Weak<winlink>,
-                    key_code,
-                    Option<&mut mouse_event>,
-                ) -> (),
-        ),
+        key: Some(window_panes_key),
         key_table: None,
         command: None,
         formats: None,
@@ -786,7 +769,7 @@ fn window_panes_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         drop(owner);
     }
 }
-unsafe fn window_panes_timer_callback(wme: refbox::Weak<window_mode_entry>) {
+fn window_panes_timer_callback(wme: refbox::Weak<window_mode_entry>) {
     let mode_pane_owner = wme
         .try_borrow()
         .expect("live mode entry")
@@ -795,7 +778,7 @@ unsafe fn window_panes_timer_callback(wme: refbox::Weak<window_mode_entry>) {
         .expect("mode belongs to a live pane");
     mode_pane_owner.reset_mode();
 }
-unsafe fn window_panes_init(
+fn window_panes_init(
     mut wme: refbox::Weak<window_mode_entry>,
     item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     _fs: Option<&cmd_find_state>,
@@ -890,7 +873,7 @@ unsafe fn window_panes_init(
         let timeout = Duration::from_millis(data.delay as u64);
         let mode_observer = wme.clone();
         data.timer = Some(
-            Timer::new(timeout, move || unsafe {
+            Timer::new(timeout, move || {
                 let live = match mode_observer.try_borrow() {
                     Ok(_) => true,
                     Err(refbox::BorrowError::Dropped) => false,
@@ -1067,7 +1050,7 @@ fn window_panes_get_target(
     }
     window_panes_key_pane(&data, key)
 }
-unsafe fn window_panes_key(
+fn window_panes_key(
     mut wme: refbox::Weak<window_mode_entry>,
     client_owner: &ClientRef,
     _wl: refbox::Weak<winlink>,

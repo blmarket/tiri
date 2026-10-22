@@ -1,7 +1,6 @@
 use crate::arguments::{args, args_get, args_has, args_parse, args_string};
 use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_print};
 use crate::cmd::{cmd_get_args, cmd_list_print_cstring};
-use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
 use crate::format::{format_add, format_create, format_defaults, format_expand_cstring};
 use crate::key_bindings::{key_bindings_get_table, key_bindings_has_repeat, key_tables};
@@ -135,7 +134,7 @@ fn cmd_list_keys_format_add_key_binding(ft: &mut format_tree, bd: &key_binding, 
     );
     format_add(ft, c"key_command", |out| write_cstr(out, &*command));
 }
-unsafe fn cmd_list_keys_exec(
+fn cmd_list_keys_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
@@ -168,9 +167,7 @@ unsafe fn cmd_list_keys_exec(
         }
         only &= KEYC_MASK_KEY | KEYC_MASK_MODIFIERS;
     }
-    sort_crit.order = sort_order_from_string(nullable_cstr(
-        args_get(args, 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
-    ));
+    sort_crit.order = sort_order_from_string(args_get(args, 'O' as i32 as u_char));
     if sort_crit.order as ::core::ffi::c_uint
         == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0

@@ -12,24 +12,11 @@ use std::ffi::{CStr, CString};
 use std::rc::Rc;
 
 fn format_cb_host(_ft: &mut format_tree) -> Option<CString> {
-    let mut host: [u8; 65] = [0; 65];
-    if unsafe { gethostname(host.as_mut_ptr().cast(), host.len()) } != 0 as ::core::ffi::c_int {
-        return Some(c"".to_owned());
-    }
-    Some(
-        CStr::from_bytes_until_nul(&host)
-            .expect("hostname is terminated")
-            .to_owned(),
-    )
+    Some(tiri_rt::unix::host_name().unwrap_or_default())
 }
 fn format_cb_host_short(_ft: &mut format_tree) -> Option<CString> {
-    let mut host: [u8; 65] = [0; 65];
-    if unsafe { gethostname(host.as_mut_ptr().cast(), host.len()) } != 0 as ::core::ffi::c_int {
-        return Some(c"".to_owned());
-    }
-    let host = CStr::from_bytes_until_nul(&host)
-        .expect("hostname is terminated")
-        .to_bytes();
+    let host = tiri_rt::unix::host_name().unwrap_or_default();
+    let host = host.as_bytes();
     let short = host.split(|&byte| byte == b'.').next().unwrap_or(host);
     Some(CString::new(short).expect("hostname contains no NUL"))
 }
