@@ -38,17 +38,17 @@ fn moved_map_and_reindexed_owner_keep_identity_through_growth() {
 fn shuffle_moves_owners_without_losing_history_and_removal_clears_observers() {
     unsafe {
         let session_owner = session::new();
-        let session = &mut *session_owner.as_ptr();
         let mut nodes = Vec::new();
         for idx in 1..=3 {
-            let mut node = winlink_add(&session.windows, idx);
+            let mut node = winlink_add(&session_owner.borrow().windows, idx);
             node.try_borrow_mut().expect("live winlink").session =
                 std::rc::Rc::downgrade(&session_owner);
             nodes.push(node);
         }
-        winlink_stack_push(&mut session.lastw, (nodes[0]).clone());
-        winlink_stack_push(&mut session.lastw, (nodes[1]).clone());
-        let weak = session
+        winlink_stack_push(&mut session_owner.borrow_mut().lastw, (nodes[0]).clone());
+        winlink_stack_push(&mut session_owner.borrow_mut().lastw, (nodes[1]).clone());
+        let weak = session_owner
+            .borrow()
             .windows
             .try_borrow_mut()
             .unwrap()
@@ -56,18 +56,23 @@ fn shuffle_moves_owners_without_losing_history_and_removal_clears_observers() {
             .unwrap()
             .downgrade();
         assert_eq!(winlink_shuffle_up(&session_owner, (nodes[0]).clone(), 1), 1);
-        assert!(!winlink_find_by_index(&session.windows, 1).is_alive());
+        assert!(!winlink_find_by_index(&session_owner.borrow().windows, 1).is_alive());
         for (node, idx) in nodes.iter().zip(2..=4) {
-            assert_eq!(winlink_find_by_index(&session.windows, idx), *node);
+            assert_eq!(
+                winlink_find_by_index(&session_owner.borrow().windows, idx),
+                *node
+            );
         }
-        assert_eq!(winlink_stack_indices(&session.lastw), [3, 2]);
+        assert_eq!(winlink_stack_indices(&session_owner.borrow().lastw), [3, 2]);
         assert_eq!(weak, nodes[0]);
         for node in nodes {
-            winlink_remove(&session.windows, (node).clone());
+            super::session_winlink_remove(&session_owner, (node).clone());
         }
-        assert!(winlink_stack_indices(&session.lastw).is_empty());
+        assert!(winlink_stack_indices(&session_owner.borrow().lastw).is_empty());
         assert_eq!(weak.try_borrow_mut().err(), Some(BorrowError::Dropped));
-        assert!(crate::window::winlinks_is_empty(&session.windows));
+        assert!(crate::window::winlinks_is_empty(
+            &session_owner.borrow().windows
+        ));
     }
 }
 

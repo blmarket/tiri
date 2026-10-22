@@ -12,8 +12,8 @@ pub(super) unsafe fn compare(
     criteria: &sort_criteria,
 ) -> Ordering {
     let (activity_a, id_a, size_a, parent_a, activity_b, id_b, size_b, parent_b, title_order) = {
-        let a = &*a.as_ptr();
-        let b = &*b.as_ptr();
+        let a = a.borrow();
+        let b = b.borrow();
         (
             a.active_point,
             a.id,
@@ -59,10 +59,10 @@ mod tests {
         unsafe {
             let a = window_pane::new();
             let b = window_pane::new();
-            (*a.as_ptr()).id = 1;
-            (*b.as_ptr()).id = u32::MAX;
-            (*a.as_ptr()).base.title = CString::new("alpha").unwrap();
-            (*b.as_ptr()).base.title = CString::new("beta").unwrap();
+            a.borrow_mut().id = 1;
+            b.borrow_mut().id = u32::MAX;
+            a.borrow_mut().base.title = CString::new("alpha").unwrap();
+            b.borrow_mut().base.title = CString::new("beta").unwrap();
             for order in [
                 SORT_ACTIVITY,
                 SORT_CREATION,
@@ -79,7 +79,7 @@ mod tests {
                 criteria.reversed = 1;
                 assert_eq!(a.compare_for_sort(&b, &criteria), Ordering::Greater);
             }
-            (*a.as_ptr()).active_point = 1;
+            a.borrow_mut().active_point = 1;
             let criteria = sort_criteria {
                 order: SORT_ACTIVITY,
                 reversed: 0,

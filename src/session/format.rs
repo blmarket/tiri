@@ -438,7 +438,7 @@ mod tests {
     fn session_formats_observe_context_session_without_retaining_it() {
         unsafe {
             let owner = session::new();
-            (*owner.as_ptr()).name = c"observed-session".to_owned();
+            owner.borrow_mut().name = c"observed-session".to_owned();
             let observer = std::rc::Rc::downgrade(&owner);
             let mut ft_owner = format_create(None, None, 0, 0);
             let ft = &mut *ft_owner;
@@ -460,8 +460,7 @@ mod tests {
     fn winlink_formats_expire_with_the_session_index_entry() {
         unsafe {
             let owner = session::new();
-            let session = owner.as_ptr();
-            let link = crate::window::winlink_add(&(*session).windows, 7);
+            let link = crate::window::winlink_add(&owner.borrow().windows, 7);
             let mut ft_owner = format_create(None, None, 0, 0);
             let ft = &mut *ft_owner;
             ft.wl = link.clone();
@@ -470,7 +469,7 @@ mod tests {
                 crate::format::format_expand_cstring(ft, c"#{window_index}").as_c_str(),
                 c"7"
             );
-            crate::window::winlink_remove(&(*session).windows, link.clone());
+            crate::window::winlink_remove(&owner.borrow().windows, link.clone());
             assert!(!ft.winlink_handle().is_alive());
             assert_eq!(
                 crate::format::format_expand_cstring(ft, c"#{window_index}").as_c_str(),
@@ -486,8 +485,8 @@ mod tests {
         unsafe {
             let session = session::new();
             let other = session::new();
-            (*session.as_ptr()).options = Some(crate::options::options_create(None));
-            (*session.as_ptr()).creation_time = UNIX_EPOCH + Duration::from_secs(123);
+            session.borrow_mut().options = Some(crate::options::options_create(None));
+            session.borrow_mut().creation_time = UNIX_EPOCH + Duration::from_secs(123);
             let mut context = format_tree::default();
             context.s = Rc::downgrade(&session);
             assert!(matches!(
@@ -506,7 +505,8 @@ mod tests {
                 .format_value(c"client_created", &mut context)
                 .is_none());
             assert!(context.s.ptr_eq(&Rc::downgrade(&session)));
-            drop((*session.as_ptr()).options.take().unwrap());
+            let options = session.borrow_mut().options.take().unwrap();
+            drop(options);
         }
     }
 
@@ -515,10 +515,10 @@ mod tests {
         unsafe {
             let owner = session::new();
             let other = session::new();
-            (*other.as_ptr()).options = Some(crate::options::options_create(None));
-            let mut link = winlink_add(&(*owner.as_ptr()).windows, 7);
+            other.borrow_mut().options = Some(crate::options::options_create(None));
+            let mut link = winlink_add(&owner.borrow().windows, 7);
             link.try_borrow_mut().expect("live winlink").session = Rc::downgrade(&owner);
-            winlink_stack_push(&mut (*owner.as_ptr()).lastw, link.clone());
+            winlink_stack_push(&mut owner.borrow_mut().lastw, link.clone());
             let mut context = format_tree::default();
             context.s = Rc::downgrade(&other);
             context.wl = link.clone();
@@ -531,9 +531,10 @@ mod tests {
             assert!(context.s.ptr_eq(&Rc::downgrade(&other)));
             assert_eq!(context.wl, link);
 
-            winlink_stack_remove(&mut (*owner.as_ptr()).lastw, link.clone());
-            winlink_remove(&(*owner.as_ptr()).windows, link);
-            drop((*other.as_ptr()).options.take().unwrap());
+            winlink_stack_remove(&mut owner.borrow_mut().lastw, link.clone());
+            session_winlink_remove(&owner, link);
+            let options = other.borrow_mut().options.take().unwrap();
+            drop(options);
         }
     }
 }

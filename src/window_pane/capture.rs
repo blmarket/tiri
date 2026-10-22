@@ -69,12 +69,12 @@ pub(super) unsafe fn capture(
     item: &Rc<std::cell::RefCell<cmdq_item>>,
 ) -> Result<Vec<u8>, CString> {
     if args_has(arguments, b'R') != 0 {
-        return Ok(cmd_capture_pane_grid(&*owner.as_ptr()));
+        return Ok(cmd_capture_pane_grid(&owner.borrow()));
     }
     if args_has(arguments, b'P') != 0 && args_has(arguments, b'H') == 0 {
-        return Ok(cmd_capture_pane_pending(arguments, &mut *owner.as_ptr()));
+        return Ok(cmd_capture_pane_pending(arguments, &mut owner.borrow_mut()));
     }
-    if args_has(arguments, b'a') != 0 && (*owner.as_ptr()).base.saved_grid.is_none() {
+    if args_has(arguments, b'a') != 0 && owner.borrow().base.saved_grid.is_none() {
         return if args_has(arguments, b'q') == 0 {
             Err(c"no alternate screen".to_owned())
         } else {
@@ -85,7 +85,7 @@ pub(super) unsafe fn capture(
         parse_bound(arguments, item, b'S'),
         parse_bound(arguments, item, b'E'),
     );
-    let active = (*owner.as_ptr()).active_mode_entry();
+    let active = owner.mode_entry();
     let get_screen =
         if args_has(arguments, b'a') == 0 && args_has(arguments, b'M') != 0 && active.is_alive() {
             active
@@ -96,19 +96,19 @@ pub(super) unsafe fn capture(
         } else {
             None
         };
-    let pane = &*owner.as_ptr();
+    let pane = owner.borrow();
     match get_screen {
         Some(get_screen) => window_mode_visit_screen(get_screen, active, |mode_screen| {
-            cmd_capture_pane_history(arguments, pane, Some(mode_screen), bounds)
+            cmd_capture_pane_history(arguments, &pane, Some(mode_screen), bounds)
         })
-        .unwrap_or_else(|| cmd_capture_pane_history(arguments, pane, None, bounds)),
-        None => cmd_capture_pane_history(arguments, pane, None, bounds),
+        .unwrap_or_else(|| cmd_capture_pane_history(arguments, &pane, None, bounds)),
+        None => cmd_capture_pane_history(arguments, &pane, None, bounds),
     }
 }
 
 pub(super) unsafe fn clear_history(owner: &Rc<RefCell<window_pane>>, reset_links: bool) {
     owner.reset_all_modes();
-    let pane = &mut *owner.as_ptr();
+    let mut pane = owner.borrow_mut();
     grid_clear_history(pane.base.grid_mut());
     if reset_links {
         pane.with_screen_mut(screen_reset_hyperlinks)

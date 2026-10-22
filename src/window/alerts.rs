@@ -5,9 +5,12 @@ use crate::shared::window::{WINDOW_ACTIVITY, WINDOW_ALERTFLAGS, WINDOW_BELL, WIN
 use std::time::Duration;
 
 pub(super) unsafe fn reset_timer(owner: &WindowRef) {
-    let w = owner.as_ptr();
-    (*w).flags &= !WINDOW_SILENCE;
-    drop((*w).alerts_timer.take());
+    let timer = {
+        let mut w = owner.borrow_mut();
+        w.flags &= !WINDOW_SILENCE;
+        w.alerts_timer.take()
+    };
+    drop(timer);
     let timeout = Duration::from_secs(
         (options_get_number(&owner.borrow_options_mut(), c"monitor-silence")) as u64,
     );
@@ -18,24 +21,27 @@ pub(super) unsafe fn reset_timer(owner: &WindowRef) {
     ));
     if timeout.as_secs() != 0 {
         let observer = WindowRef::downgrade(owner);
-        (*w).alerts_timer = Some(
-            Timer::new(timeout, move || {
-                if let Some(owner) = observer.upgrade() {
-                    log_debug(format_args!("@{} alerts timer expired", owner.id()));
-                    crate::alerts::alerts_queue(&owner, WINDOW_SILENCE);
-                }
-            })
-            .expect("arm timer"),
-        );
+        let timer = Timer::new(timeout, move || {
+            if let Some(owner) = observer.upgrade() {
+                log_debug(format_args!("@{} alerts timer expired", owner.id()));
+                crate::alerts::alerts_queue(&owner, WINDOW_SILENCE);
+            }
+        })
+        .expect("arm timer");
+        owner.borrow_mut().alerts_timer = Some(timer);
     }
 }
 
 pub(super) unsafe fn queue(owner: &WindowRef, flags: i32) -> Option<bool> {
     assert_eq!(flags & !WINDOW_ALERTFLAGS, 0, "alert flags only");
     owner.reset_alert_timer();
-    let w = owner.as_ptr();
-    if (*w).flags & flags != flags {
-        (*w).flags |= flags;
+    let added = {
+        let mut w = owner.borrow_mut();
+        let added = w.flags & flags != flags;
+        w.flags |= flags;
+        added
+    };
+    if added {
         log_debug(format_args!(
             "@{} alerts flags added {}",
             owner.id(),
@@ -54,9 +60,10 @@ pub(super) unsafe fn queue(owner: &WindowRef, flags: i32) -> Option<bool> {
     if !enabled {
         return None;
     }
-    if (*w).alerts_queued != 0 {
+    let mut w = owner.borrow_mut();
+    if w.alerts_queued != 0 {
         return Some(false);
     }
-    (*w).alerts_queued = 1;
+    w.alerts_queued = 1;
     Some(true)
 }

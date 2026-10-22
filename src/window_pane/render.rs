@@ -17,9 +17,9 @@ use crate::tty::{tty_cell, tty_cursor};
 use crate::window_copy::window_copy_get_current_offset;
 
 pub(super) unsafe fn refresh_scrollbar_style(pane: &Rc<RefCell<window_pane>>) {
-    let mut updated = (*pane.as_ptr()).scrollbar_style;
+    let mut updated = pane.borrow().scrollbar_style;
     style_set_scrollbar_style_from_option(&mut updated, &OptionsScope::Pane(Rc::downgrade(pane)));
-    (*pane.as_ptr()).scrollbar_style = updated;
+    pane.borrow_mut().scrollbar_style = updated;
 }
 
 pub(super) unsafe fn is_obscured(pane: &Rc<RefCell<window_pane>>) -> bool {
@@ -35,17 +35,21 @@ pub(super) unsafe fn is_obscured(pane: &Rc<RefCell<window_pane>>) -> bool {
 }
 
 pub(super) unsafe fn alternate_screen_changed(pane: &Rc<RefCell<window_pane>>, entered: bool) {
-    let pending = !(*pane.as_ptr()).resize_queue.is_empty();
+    let pending = !pane.borrow().resize_queue.is_empty();
     if entered {
-        (*pane.as_ptr()).clear_resizes(false);
-        drop((*pane.as_ptr()).resize_timer.take());
+        let timer = {
+            let mut state = pane.borrow_mut();
+            state.clear_resizes(false);
+            state.resize_timer.take()
+        };
+        drop(timer);
     }
     let window = pane.window_observer().upgrade().expect("live pane parent");
     window.refit();
-    if entered && (pending || !(*pane.as_ptr()).resize_queue.is_empty()) {
+    if entered && (pending || !pane.borrow().resize_queue.is_empty()) {
         let (sx, sy, _, _) = pane.geometry();
-        window_pane_send_resize(&*pane.as_ptr(), sx, sy);
-        (*pane.as_ptr()).clear_resizes(false);
+        window_pane_send_resize(&pane.borrow(), sx, sy);
+        pane.borrow_mut().clear_resizes(false);
     }
     server_redraw_window_borders(&window);
     drop(window);
@@ -65,9 +69,9 @@ fn apply_style(cell: &mut grid_cell, parsed: style) {
 }
 
 pub(super) unsafe fn default_colours(pane: &Rc<RefCell<window_pane>>) -> (grid_cell, u32) {
-    if (*pane.as_ptr()).flags & PANE_STYLECHANGED != 0 {
+    if pane.borrow().flags & PANE_STYLECHANGED != 0 {
         log_debug(format_args!("%{}: style changed", pane.id()));
-        (*pane.as_ptr()).flags &= !PANE_STYLECHANGED;
+        pane.borrow_mut().flags &= !PANE_STYLECHANGED;
         let mut context =
             format_create(None, None, (FORMAT_PANE | pane.id()) as i32, FORMAT_NOJOBS);
         format_defaults(&mut context, None, None, refbox::Weak::new(), Some(pane));
@@ -82,7 +86,7 @@ pub(super) unsafe fn default_colours(pane: &Rc<RefCell<window_pane>>) -> (grid_c
                 ..grid_default_cell
             };
             {
-                let state = &mut *pane.as_ptr();
+                let mut state = pane.borrow_mut();
                 if active {
                     state.cached_active_gc = cell;
                 } else {
@@ -100,7 +104,7 @@ pub(super) unsafe fn default_colours(pane: &Rc<RefCell<window_pane>>) -> (grid_c
                 style
             });
             apply_style(&mut cell, parsed);
-            let state = &mut *pane.as_ptr();
+            let mut state = pane.borrow_mut();
             if active {
                 state.cached_active_gc = cell;
                 state.cached_active_dim = parsed.dim as u32;
@@ -114,7 +118,7 @@ pub(super) unsafe fn default_colours(pane: &Rc<RefCell<window_pane>>) -> (grid_c
     let window = pane.window_observer().upgrade().expect("live pane parent");
     let active = window.active_pane().ptr_eq(&Rc::downgrade(pane));
     drop(window);
-    let state = &*pane.as_ptr();
+    let state = pane.borrow();
     let mut cell = grid_default_cell;
     cell.fg = if active && state.cached_active_gc.fg != 8 {
         state.cached_active_gc.fg
@@ -153,9 +157,9 @@ pub(super) unsafe fn draw_line(
     // pane while it draws; put it back afterwards.
     let take = |screen: &mut screen| std::mem::take(screen);
     let selected = if status {
-        take(&mut (*pane.as_ptr()).status_screen)
+        take(&mut pane.borrow_mut().status_screen)
     } else {
-        (*pane.as_ptr())
+        pane.borrow_mut()
             .with_screen_mut(take)
             .expect("displayed pane screen")
     };
@@ -182,9 +186,9 @@ pub(super) unsafe fn draw_line(
     }
     let put = |screen: &mut screen| *screen = selected;
     if status {
-        put(&mut (*pane.as_ptr()).status_screen);
+        put(&mut pane.borrow_mut().status_screen);
     } else {
-        (*pane.as_ptr())
+        pane.borrow_mut()
             .with_screen_mut(put)
             .expect("displayed pane screen");
     }
@@ -198,8 +202,7 @@ pub(super) unsafe fn draw_scrollbar(
     mut y: u32,
     mut n: u32,
 ) {
-    let wp = pane_owner.as_ptr();
-    let sb_style = (*wp).scrollbar_style;
+    let sb_style = pane_owner.borrow().scrollbar_style;
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -252,8 +255,10 @@ pub(super) unsafe fn draw_scrollbar(
     let mut off: u_int = 0;
     let mut sb_w: u_int = 0;
     let mut sb_pad: u_int = 0;
-    if window_pane_mode(&*wp) == WINDOW_PANE_NO_MODE {
-        total_height = (*wp)
+    let mode = window_pane_mode(&pane_owner.borrow());
+    if mode == WINDOW_PANE_NO_MODE {
+        total_height = pane_owner
+            .borrow()
             .with_screen(|screen| screen.grid().sy.wrapping_add(screen.grid().hsize))
             .expect("displayed pane screen");
         if total_height == 0 as u_int {
@@ -263,7 +268,7 @@ pub(super) unsafe fn draw_scrollbar(
         slider_h = (sb_h as ::core::ffi::c_double * pct_view) as u_int;
         slider_y = sb_h.wrapping_sub(slider_h);
     } else {
-        if (*wp).modes.is_empty() {
+        if pane_owner.borrow().modes.is_empty() {
             return;
         }
         let Some((cm_y, cm_size)) = window_copy_get_current_offset(pane_owner) else {
@@ -285,8 +290,11 @@ pub(super) unsafe fn draw_scrollbar(
     if slider_y >= sb_h {
         slider_y = sb_h.wrapping_sub(1 as u_int);
     }
-    (*wp).sb_slider_y = slider_y;
-    (*wp).sb_slider_h = slider_h;
+    {
+        let mut pane = pane_owner.borrow_mut();
+        pane.sb_slider_y = slider_y;
+        pane.sb_slider_h = slider_h;
+    }
     gc = sb_style.gc;
     slgc = gc;
     slgc.fg = gc.bg;
@@ -331,8 +339,11 @@ pub(super) unsafe fn draw_prompt(
     wp_owner: &Rc<RefCell<window_pane>>,
     dctx: &mut redraw_draw_ctx<'_>,
 ) {
-    let wp = wp_owner.as_ptr();
-    let prompt = (*wp).prompt.as_ref().map(|prompt| prompt.downgrade());
+    let prompt = wp_owner
+        .borrow()
+        .prompt
+        .as_ref()
+        .map(|prompt| prompt.downgrade());
     let (pane_width, pane_height, xoff, yoff) = wp_owner.geometry();
     let scene = dctx.scene;
     let Some(client_owner) = scene.c.upgrade() else {
@@ -397,7 +408,7 @@ pub(super) unsafe fn draw_prompt(
         &mut ctx,
         pdd,
     );
-    (*wp).prompt_cx = prompt_cx;
+    wp_owner.borrow_mut().prompt_cx = prompt_cx;
     screen_write_stop(ctx);
     {
         let terminal = &(client_owner);

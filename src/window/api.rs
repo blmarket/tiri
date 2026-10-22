@@ -222,9 +222,9 @@ impl Window for WindowRef {
         window_find_string(self, name)
     }
 
-    type PaneHistoryMut<'a> = &'a mut PaneHistory;
+    type PaneHistoryMut<'a> = std::cell::RefMut<'a, PaneHistory>;
     unsafe fn borrow_pane_history_mut(&self) -> Self::PaneHistoryMut<'_> {
-        &mut (*self.as_ptr()).last_panes
+        std::cell::RefMut::map(self.borrow_mut(), |state| &mut state.last_panes)
     }
     unsafe fn rearrange_panes(
         &self,
@@ -240,20 +240,18 @@ impl Window for WindowRef {
         pane: &Rc<RefCell<window_pane>>,
         action: LayoutAction,
     ) -> Result<(), &'static CStr> {
-        let state = &*self.as_ptr();
-        let meta = state
-            .layout
-            .apply(action, pane.borrow_layout_meta().as_deref())?;
-        let panes = state.panes.snapshot();
-        let admitted = state.layout.admits(&panes, self.size()).is_ok();
+        let layout = self.layout();
+        let meta = layout.apply(action, pane.borrow_layout_meta().as_deref())?;
+        let panes = self.borrow().panes.snapshot();
+        let admitted = layout.admits(&panes, self.size()).is_ok();
         let old = std::mem::replace(&mut *pane.borrow_layout_meta(), meta);
-        if let Err(reason) = state.layout.admits(&panes, self.size()) {
+        if let Err(reason) = layout.admits(&panes, self.size()) {
             if admitted {
                 *pane.borrow_layout_meta() = old;
                 return Err(reason);
             }
         }
-        (*self.as_ptr()).invalidate_scene();
+        self.borrow_mut().invalidate_scene();
         window_arrange(self);
         server_redraw_window(self);
         events_fire_window(c"window-layout-changed", self.clone());
@@ -278,14 +276,16 @@ impl Window for WindowRef {
         window_pop_zoom(self)
     }
     unsafe fn set_layout(&self, kind: LayoutKind) {
-        let state = &mut *self.as_ptr();
-        if state.layout != kind {
-            for pane in state.panes.snapshot() {
-                *pane.borrow_layout_meta() = None;
+        {
+            let mut state = self.borrow_mut();
+            if state.layout != kind {
+                for pane in state.panes.snapshot() {
+                    *pane.borrow_layout_meta() = None;
+                }
             }
+            state.layout = kind;
+            state.invalidate_scene();
         }
-        state.layout = kind;
-        state.invalidate_scene();
         window_arrange(self);
         server_redraw_window(self);
         events_fire_window(c"window-layout-changed", self.clone());
@@ -309,7 +309,7 @@ impl Window for WindowRef {
         window_pane_cells(self)
     }
     unsafe fn logical_size(&self) -> (u32, u32) {
-        let state = &*self.as_ptr();
+        let state = self.borrow();
         if state.zoomed.strong_count() != 0 {
             return (state.sx, state.sy);
         }
@@ -353,10 +353,10 @@ impl Window for WindowRef {
                 }
             })
             .collect::<Vec<_>>();
-        let state = &*self.as_ptr();
         let tree = if zoomed_view {
             Some(layout::LayoutNode::Pane(0))
         } else {
+            let state = self.borrow();
             state.layout.tree(&state.panes.snapshot(), (sx, sy))
         };
         layout::layout_string(tree.as_ref(), &entries, legacy)
@@ -371,7 +371,7 @@ impl Window for WindowRef {
                 crate::shared::borders::CELL_BORDERS[crate::shared::borders::CELL_NONE as usize],
             );
             {
-                let state = &mut *self.as_ptr();
+                let mut state = self.borrow_mut();
                 if inside {
                     state.inside_cell = fallback;
                 } else {
@@ -379,7 +379,7 @@ impl Window for WindowRef {
                 }
             }
             if let Some(rendered) = crate::window_border::window_render_fill_cell(self, inside) {
-                let state = &mut *self.as_ptr();
+                let mut state = self.borrow_mut();
                 if inside {
                     state.inside_cell = rendered;
                 } else {
@@ -389,7 +389,7 @@ impl Window for WindowRef {
         }
     }
     unsafe fn fill_cell(&self, inside: bool) -> grid_cell {
-        let state = &*self.as_ptr();
+        let state = self.borrow();
         if inside {
             state.inside_cell
         } else {
@@ -398,16 +398,13 @@ impl Window for WindowRef {
     }
 
     unsafe fn menu_observer(&self) -> Option<refbox::Weak<menu_data>> {
-        (*self.as_ptr())
-            .menu
-            .as_ref()
-            .map(refbox::RefBox::downgrade)
+        self.borrow().menu.as_ref().map(refbox::RefBox::downgrade)
     }
     unsafe fn take_menu(
         &self,
         expected: Option<&refbox::Weak<menu_data>>,
     ) -> Option<refbox::RefBox<menu_data>> {
-        let state = &mut *self.as_ptr();
+        let mut state = self.borrow_mut();
         if expected.is_some_and(|expected| {
             !state
                 .menu
@@ -422,11 +419,10 @@ impl Window for WindowRef {
         &self,
         menu: refbox::RefBox<menu_data>,
     ) -> Option<refbox::RefBox<menu_data>> {
-        (*self.as_ptr()).menu.replace(menu)
+        self.borrow_mut().menu.replace(menu)
     }
     unsafe fn place_menu(&self, (mut px, mut py): (u32, u32), (sx, sy): (u32, u32)) -> (u32, u32) {
         let (wsx, wsy) = self.logical_size();
-        let state = &mut *self.as_ptr();
         if sx >= wsx {
             px = 0;
         } else if px.wrapping_add(sx) > wsx {
@@ -437,38 +433,39 @@ impl Window for WindowRef {
         } else if py.wrapping_add(sy) > wsy {
             py = wsy.wrapping_sub(sy);
         }
+        let mut state = self.borrow_mut();
         state.menu_last_px = px;
         state.menu_last_py = py;
         (px, py)
     }
     unsafe fn last_menu_position(&self) -> (u32, u32) {
-        let state = &*self.as_ptr();
+        let state = self.borrow();
         (state.menu_last_px, state.menu_last_py)
     }
     unsafe fn invalidate_scene(&self) {
-        (*self.as_ptr()).invalidate_scene();
+        self.borrow_mut().invalidate_scene();
     }
     fn scene_generation(&self) -> u64 {
         self.borrow().redraw_scene_generation
     }
     unsafe fn add_winlink(&self, link: refbox::Weak<winlink>) {
-        window_winlinks_append(&mut *self.as_ptr(), link);
+        window_winlinks_append(&mut self.borrow_mut(), link);
     }
     unsafe fn remove_winlink(&self, link: refbox::Weak<winlink>) {
-        window_winlinks_remove(&mut *self.as_ptr(), link);
+        window_winlinks_remove(&mut self.borrow_mut(), link);
     }
     unsafe fn next_window(&self) -> WindowWeak {
-        windows::next(&*self.as_ptr())
+        windows::next(&self.borrow())
     }
     unsafe fn next_winlink(&self, after: Option<refbox::Weak<winlink>>) -> refbox::Weak<winlink> {
         if let Some(after) = after {
-            window_winlinks_next(&*self.as_ptr(), after)
+            window_winlinks_next(&self.borrow(), after)
         } else {
-            window_winlinks_first(&*self.as_ptr())
+            window_winlinks_first(&self.borrow())
         }
     }
     unsafe fn contains_pane(&self, pane: &Weak<RefCell<window_pane>>) -> bool {
-        window_has_pane(&*self.as_ptr(), pane)
+        window_has_pane(&self.borrow(), pane)
     }
     fn pending_alerts(&self) -> i32 {
         self.borrow().flags & crate::shared::window::WINDOW_ALERTFLAGS
@@ -480,8 +477,9 @@ impl Window for WindowRef {
         super::alerts::queue(self, flags)
     }
     unsafe fn finish_alerts(&self) {
-        (*self.as_ptr()).alerts_queued = 0;
-        (*self.as_ptr()).flags &= !crate::shared::window::WINDOW_ALERTFLAGS;
+        let mut state = self.borrow_mut();
+        state.alerts_queued = 0;
+        state.flags &= !crate::shared::window::WINDOW_ALERTFLAGS;
     }
     fn clear_alert_flags(&self) {
         self.borrow_mut().flags &= !crate::shared::window::WINDOW_ALERTFLAGS;
@@ -506,7 +504,7 @@ impl Window for WindowRef {
         window_set_name(self, name, untrusted as i32);
     }
     unsafe fn begin_name_check(&self, now: Instant) -> bool {
-        let state = &mut *self.as_ptr();
+        let mut state = self.borrow_mut();
         let left = crate::names::name_time_left(state.name_time, now);
         if !left.is_zero() {
             if state.name_event.is_none() {
@@ -519,7 +517,8 @@ impl Window for WindowRef {
                 state.name_event = Some(
                     Timer::new(left, move || {
                         if let Some(owner) = observer.upgrade() {
-                            drop((*owner.as_ptr()).name_event.take());
+                            let timer = owner.borrow_mut().name_event.take();
+                            drop(timer);
                             log_debug(format_args!("@{} name timer expired", owner.id()));
                         }
                     })
@@ -535,18 +534,21 @@ impl Window for WindowRef {
             return false;
         }
         state.name_time = Some(now);
-        drop(state.name_event.take());
+        let timer = state.name_event.take();
+        drop(state);
+        drop(timer);
         true
     }
     unsafe fn schedule_offset_update(&self) {
-        let state = &mut *self.as_ptr();
+        let mut state = self.borrow_mut();
         if state.offset_timer.is_none() {
             let delay = Duration::from_micros(10_000);
             let observer = WindowRef::downgrade(self);
             state.offset_timer = Some(
                 Timer::new(delay, move || {
                     if let Some(window) = observer.upgrade() {
-                        drop((*window.as_ptr()).offset_timer.take());
+                        let timer = window.borrow_mut().offset_timer.take();
+                        drop(timer);
                         crate::tty::tty_update_window_offset(&window);
                         drop(window);
                     }
@@ -569,7 +571,8 @@ impl Window for WindowRef {
         after: Option<&Weak<RefCell<window_pane>>>,
         reverse: bool,
     ) -> Weak<RefCell<window_pane>> {
-        let panes = &(*self.as_ptr()).panes;
+        let state = self.borrow();
+        let panes = &state.panes;
         match (after, reverse) {
             (None, false) => panes.first(),
             (None, true) => panes.last(),
@@ -592,8 +595,9 @@ impl Window for WindowRef {
                 options_get_number(&options, c"pane-scrollbars-position") as i32,
             )
         };
-        (*self.as_ptr()).sb = sb;
-        (*self.as_ptr()).sb_pos = sb_pos;
+        let mut state = self.borrow_mut();
+        state.sb = sb;
+        state.sb_pos = sb_pos;
     }
     fn pane_border_status(&self) -> i32 {
         window_get_pane_status(self)
@@ -603,7 +607,7 @@ impl Window for WindowRef {
     }
     unsafe fn pane_at_index(&self, index: u32) -> Weak<RefCell<window_pane>> {
         let base = options_get_number(&self.borrow_options_mut(), c"pane-base-index") as u32;
-        let state = &mut *self.as_ptr();
+        let state = self.borrow();
         state
             .panes
             .storage
@@ -613,14 +617,14 @@ impl Window for WindowRef {
     }
     unsafe fn pane_index(&self, pane: &Weak<RefCell<window_pane>>) -> Option<u32> {
         let base = options_get_number(&self.borrow_options_mut(), c"pane-base-index") as u32;
-        let state = &mut *self.as_ptr();
+        let state = self.borrow();
         state
             .panes
             .position(pane)
             .map(|index| base.wrapping_add(index as u32))
     }
     unsafe fn pane_history_index(&self, pane: &Weak<RefCell<window_pane>>) -> Option<u32> {
-        (*self.as_ptr())
+        self.borrow()
             .last_panes
             .position(pane)
             .map(|index| index as u32)
@@ -631,7 +635,8 @@ impl Window for WindowRef {
         count: u32,
         reverse: bool,
     ) -> Weak<RefCell<window_pane>> {
-        let panes = &(*self.as_ptr()).panes;
+        let state = self.borrow();
+        let panes = &state.panes;
         let mut current = pane.map(Rc::downgrade);
         for _ in 0..count {
             current = current
@@ -654,7 +659,7 @@ impl Window for WindowRef {
     }
     unsafe fn select_pane(&self, pane: &Rc<RefCell<window_pane>>, notify: bool) -> i32 {
         assert!(
-            window_has_pane(&*self.as_ptr(), &Rc::downgrade(pane)),
+            window_has_pane(&self.borrow(), &Rc::downgrade(pane)),
             "pane belongs to window"
         );
         window_set_active_pane(self, pane, notify as i32)
@@ -663,7 +668,7 @@ impl Window for WindowRef {
         (self.borrow().sx, self.borrow().sy)
     }
     unsafe fn manual_size(&self) -> (u32, u32) {
-        let state = &*self.as_ptr();
+        let state = self.borrow();
         (state.manual_sx, state.manual_sy)
     }
     unsafe fn set_manual_size(&self, sx: u32, sy: u32) {
@@ -672,27 +677,30 @@ impl Window for WindowRef {
             c"window-size",
             crate::shared::window::WINDOW_SIZE_MANUAL as _,
         );
-        let state = &mut *self.as_ptr();
+        let mut state = self.borrow_mut();
         state.manual_sx = sx;
         state.manual_sy = sy;
     }
     unsafe fn pending_resize(&self) -> Option<(u32, u32)> {
-        let state = &*self.as_ptr();
+        let state = self.borrow();
         (state.flags & WINDOW_RESIZE != 0).then_some((state.new_sx, state.new_sy))
     }
     unsafe fn apply_pending_resize(&self) {
-        if (*self.as_ptr()).flags & WINDOW_RESIZE != 0 {
-            resize_window(
-                self,
-                (*self.as_ptr()).new_sx,
-                (*self.as_ptr()).new_sy,
-                (*self.as_ptr()).new_xpixel as i32,
-                (*self.as_ptr()).new_ypixel as i32,
-            );
+        let pending = {
+            let state = self.borrow();
+            (state.flags & WINDOW_RESIZE != 0).then_some((
+                state.new_sx,
+                state.new_sy,
+                state.new_xpixel as i32,
+                state.new_ypixel as i32,
+            ))
+        };
+        if let Some((sx, sy, xpixel, ypixel)) = pending {
+            resize_window(self, sx, sy, xpixel, ypixel);
         }
     }
     unsafe fn defer_resize(&self, sx: u32, sy: u32, xpixel: u32, ypixel: u32) {
-        let state = &mut *self.as_ptr();
+        let mut state = self.borrow_mut();
         state.new_sx = sx;
         state.new_sy = sy;
         state.new_xpixel = xpixel;
@@ -713,10 +721,11 @@ impl Window for WindowRef {
     }
     unsafe fn set_latest_client(&self, client: Option<&ClientRef>) -> bool {
         let latest = client.map_or_else(Weak::new, Rc::downgrade);
-        if (*self.as_ptr()).latest.ptr_eq(&latest) {
+        let mut state = self.borrow_mut();
+        if state.latest.ptr_eq(&latest) {
             return false;
         }
-        (*self.as_ptr()).latest = latest;
+        state.latest = latest;
         true
     }
     fn is_latest_client(&self, client: &ClientRef) -> bool {
@@ -724,7 +733,7 @@ impl Window for WindowRef {
     }
     unsafe fn pane_is_focused(&self, pane: &Rc<RefCell<window_pane>>) -> bool {
         use crate::server_client::Client;
-        if (*self.as_ptr()).menu.is_some() || !self.active_pane().ptr_eq(&Rc::downgrade(pane)) {
+        if self.borrow().menu.is_some() || !self.active_pane().ptr_eq(&Rc::downgrade(pane)) {
             return false;
         }
         let mut cursor = ClientRegistry::first();
@@ -751,7 +760,6 @@ impl Window for WindowRef {
 }
 
 unsafe fn resize_fire_window_resized(w_owner: &WindowRef, mut old_sx: u_int, mut old_sy: u_int) {
-    let mut w = w_owner.as_ptr();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -765,8 +773,9 @@ unsafe fn resize_fire_window_resized(w_owner: &WindowRef, mut old_sx: u_int, mut
         .unwrap_or_else(|| cmd_find_state::clear_state(0 as ::core::ffi::c_int));
     event_payload_set_target(&mut ep, &fs);
     event_payload_set_window(&mut ep, c"window", WindowRef::clone(w_owner));
-    event_payload_set_uint(&mut ep, c"width", (*w).sx);
-    event_payload_set_uint(&mut ep, c"height", (*w).sy);
+    let (sx, sy) = w_owner.size();
+    event_payload_set_uint(&mut ep, c"width", sx);
+    event_payload_set_uint(&mut ep, c"height", sy);
     event_payload_set_uint(&mut ep, c"old_width", old_sx);
     event_payload_set_uint(&mut ep, c"old_height", old_sy);
     events_fire(c"window-resized", ep);
@@ -778,9 +787,7 @@ unsafe fn resize_window(
     mut xpixel: ::core::ffi::c_int,
     mut ypixel: ::core::ffi::c_int,
 ) {
-    let mut w = w_owner.as_ptr();
-    let mut old_sx: u_int = (*w).sx;
-    let mut old_sy: u_int = (*w).sy;
+    let (mut old_sx, mut old_sy) = w_owner.size();
     if sx < WINDOW_MINIMUM as u_int {
         sx = WINDOW_MINIMUM as u_int;
     }
@@ -793,25 +800,25 @@ unsafe fn resize_window(
     if sy > WINDOW_MAXIMUM as u_int {
         sy = WINDOW_MAXIMUM as u_int;
     }
-    let zoomed = (*w).zoomed.upgrade();
+    let zoomed = w_owner.zoomed_pane().upgrade();
     if zoomed.is_some() {
         window_unzoom(w_owner, true);
     }
     window_resize(w_owner, sx, sy, xpixel, ypixel);
-    if let Some(zoomed) = zoomed.filter(|pane| window_has_pane(&*w, &Rc::downgrade(pane))) {
+    if let Some(zoomed) = zoomed.filter(|pane| w_owner.contains_pane(&Rc::downgrade(pane))) {
         window_zoom(w_owner, &zoomed);
     }
     log_debug(format_args!(
         "{}: @{} resized to {}x{}",
         "resize_window",
-        { (*w).id },
+        { w_owner.id() },
         { sx },
         { sy }
     ));
     server_redraw_window(w_owner);
     events_fire_window(c"window-layout-changed", WindowRef::clone(w_owner));
     resize_fire_window_resized(w_owner, old_sx, old_sy);
-    (*w).flags &= !WINDOW_RESIZE;
+    w_owner.borrow_mut().flags &= !WINDOW_RESIZE;
 }
 
 #[cfg(test)]
@@ -836,7 +843,7 @@ mod tests {
                 .find(|entry| entry.name == Some(c"fill-character"))
                 .unwrap();
             crate::options::options_default(&mut options, entry);
-            (*owner.as_ptr()).options = Some(options);
+            owner.borrow_mut().options = Some(options);
             {
                 let mut options = owner.borrow_options_mut();
                 crate::options::options_set_string(&mut options, c"fill-character", 0, |out| {

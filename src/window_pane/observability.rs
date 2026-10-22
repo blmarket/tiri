@@ -33,7 +33,7 @@ impl PaneView {
             let live = window_pane_find_by_id(self.id.0)
                 .is_some_and(|current| Rc::ptr_eq(&current, &owner));
             if live {
-                Ok(read(&*owner.as_ptr()))
+                Ok(read(&owner.borrow()))
             } else {
                 Err(io::Error::new(
                     io::ErrorKind::NotFound,
@@ -53,10 +53,9 @@ pub(crate) fn resolve(id: PaneId) -> Option<Rc<dyn PaneObservability>> {
 }
 
 fn read_pane<T>(id: PaneId, read: impl FnOnce(&window_pane) -> T) -> Option<T> {
-    unsafe {
-        let owner = window_pane_find_by_id(id.0)?;
-        Some(read(&*owner.as_ptr()))
-    }
+    let owner = window_pane_find_by_id(id.0)?;
+    let value = read(&owner.borrow());
+    Some(value)
 }
 
 pub(crate) fn activity(id: PaneId) -> Option<PaneActivity> {

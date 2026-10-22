@@ -18,7 +18,6 @@ pub(super) unsafe fn spawn_window(
 ) -> refbox::Weak<winlink> {
     let session = sc.s.upgrade().expect("spawn context session");
     let target_client = sc.tc.upgrade();
-    let s = session.as_ptr();
     let mut index = sc.idx;
     let mut created_window = WindowWeak::new();
     // A replaced window is released only once its replacement is current, so
@@ -30,7 +29,7 @@ pub(super) unsafe fn spawn_window(
         return refbox::Weak::new();
     }
     if sc.flags & SPAWN_RESPAWN == 0 && index != -1 {
-        let mut link = winlink_find_by_index(&(*s).windows, index);
+        let mut link = session.with_winlinks(|links| winlink_find_by_index(links, index));
         if link.is_alive() && sc.flags & SPAWN_KILL == 0 {
             set_spawn_cause(
                 Some(cause),
@@ -41,11 +40,11 @@ pub(super) unsafe fn spawn_window(
         if link.is_alive() {
             link.try_borrow_mut().expect("live winlink").flags &= !WINLINK_ALERTFLAGS;
             events_fire_winlink(c"window-unlinked", link.clone());
-            winlink_stack_remove(&mut (*s).lastw, link.clone());
+            winlink_stack_remove(&mut session.borrow_mut().lastw, link.clone());
             replaced_window = winlink_window(&link);
-            winlink_remove(&(*s).windows, link.clone());
-            if (*s).curw == link {
-                (*s).curw = refbox::Weak::new();
+            session_winlink_remove(&session, link.clone());
+            if session.current_winlink() == link {
+                session.borrow_mut().curw = refbox::Weak::new();
                 sc.flags &= !SPAWN_DETACHED;
             }
         }
@@ -55,7 +54,7 @@ pub(super) unsafe fn spawn_window(
             index =
                 (-1i64 - options_get_number(&session.borrow_options_mut(), c"base-index")) as i32;
         }
-        sc.set_wl(winlink_add(&(*s).windows, index));
+        sc.set_wl(winlink_add(&session.borrow().windows, index));
         if !sc.winlink_handle().is_alive() {
             set_spawn_cause(
                 Some(cause),
@@ -76,8 +75,8 @@ pub(super) unsafe fn spawn_window(
         );
         let window = crate::window::window_create(sx, sy, xpixel, ypixel);
         created_window = WindowRef::downgrade(&window);
-        if !(*s).curw.is_alive() {
-            (*s).curw = sc.winlink_handle();
+        if !session.current_winlink().is_alive() {
+            session.borrow_mut().curw = sc.winlink_handle();
         }
         sc.winlink_handle()
             .try_borrow_mut()
@@ -95,7 +94,7 @@ pub(super) unsafe fn spawn_window(
         );
     if pane.is_none() {
         if sc.flags & SPAWN_RESPAWN == 0 {
-            winlink_remove(&(*s).windows, sc.winlink_handle());
+            session_winlink_remove(&session, sc.winlink_handle());
         }
         return refbox::Weak::new();
     }

@@ -70,7 +70,7 @@ impl windows {
     /// Register an observer, without adding a strong reference to the window.
     /// An existing live entry for the same id wins and is returned.
     pub fn insert(window: &WindowRef) -> Option<WindowRef> {
-        let id = unsafe { (*window.as_ptr()).id };
+        let id = window.id();
         WINDOWS.with_borrow_mut(|index| {
             if let Some(existing) = index.storage.get(&id).and_then(WindowWeak::upgrade) {
                 return Some(existing);
@@ -82,7 +82,7 @@ impl windows {
 
     /// Remove the matching observer without retaining or releasing the window.
     pub fn remove(window: &WindowRef) {
-        let id = unsafe { (*window.as_ptr()).id };
+        let id = window.id();
         WINDOWS.with_borrow_mut(|index| {
             if index
                 .storage
@@ -176,7 +176,6 @@ fn window_winlinks_remove(w: &mut window, wl: refbox::Weak<winlink>) {
 }
 
 unsafe fn window_fire_renamed(w_owner: &WindowRef, old_name: &CStr) {
-    let mut w = w_owner.as_ptr();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: std::rc::Weak::new(),
@@ -193,7 +192,8 @@ unsafe fn window_fire_renamed(w_owner: &WindowRef, old_name: &CStr) {
     event_payload_set_string(&mut ep, c"old_name", |out| {
         write_cstr(out, nullable_cstr(old_name.as_ptr()))
     });
-    event_payload_set_string(&mut ep, c"new_name", |out| write_cstr(out, &*((*w).name)));
+    let new_name = w_owner.name();
+    event_payload_set_string(&mut ep, c"new_name", |out| write_cstr(out, &*new_name));
     events_fire(c"window-renamed", ep);
 }
 unsafe fn window_fire_pane_changed(
@@ -232,16 +232,14 @@ pub fn window_find_by_id_str(s: &CStr) -> Option<WindowRef> {
     windows::resolve(id)
 }
 unsafe fn window_update_activity(w_owner: &WindowRef) {
-    let mut w = w_owner.as_ptr();
-    (*w).activity_time = SystemTime::now();
+    w_owner.borrow_mut().activity_time = SystemTime::now();
     alerts_queue(w_owner, WINDOW_ACTIVITY);
 }
 
 /// Replace the window's owned name, returning the previous value for callers
 /// that need to keep it alive across synchronous callbacks.
 unsafe fn window_replace_name(w_owner: &WindowRef, name: CString) -> CString {
-    let mut w = w_owner.as_ptr();
-    ::core::mem::replace(&mut (*w).name, name)
+    ::core::mem::replace(&mut w_owner.borrow_mut().name, name)
 }
 /// Return one owned reference; callers must release it after linking the window.
 pub unsafe fn window_create(
@@ -257,48 +255,56 @@ pub unsafe fn window_create(
         ypixel = DEFAULT_YPIXEL as u_int;
     }
     let owner = window::new_ref();
-    let w = owner.as_ptr();
-    (*w).flags = 0 as ::core::ffi::c_int;
-    (*w).panes = window_panes::default();
-    (*w).last_panes = PaneHistory::default();
-    (*w).set_active(None);
-    (*w).sx = sx;
-    (*w).sy = sy;
-    (*w).manual_sx = sx;
-    (*w).manual_sy = sy;
-    (*w).xpixel = xpixel;
-    (*w).ypixel = ypixel;
-    (*w).options = Some(crate::options::options_create(Some(
-        crate::options::OptionsScope::GlobalWindow,
-    )));
-    (*w).sb =
+    let options = crate::options::options_create(Some(crate::options::OptionsScope::GlobalWindow));
+    {
+        let mut w = owner.borrow_mut();
+        w.flags = 0 as ::core::ffi::c_int;
+        w.panes = window_panes::default();
+        w.last_panes = PaneHistory::default();
+        w.set_active(None);
+        w.sx = sx;
+        w.sy = sy;
+        w.manual_sx = sx;
+        w.manual_sy = sy;
+        w.xpixel = xpixel;
+        w.ypixel = ypixel;
+        w.options = Some(options);
+    }
+    let sb =
         options_get_number(&owner.borrow_options_mut(), c"pane-scrollbars") as ::core::ffi::c_int;
-    (*w).sb_pos = options_get_number(&owner.borrow_options_mut(), c"pane-scrollbars-position")
+    let sb_pos = options_get_number(&owner.borrow_options_mut(), c"pane-scrollbars-position")
         as ::core::ffi::c_int;
-    (*w).winlinks = Default::default();
-    (*w).id = windows::alloc_id();
+    {
+        let mut w = owner.borrow_mut();
+        w.sb = sb;
+        w.sb_pos = sb_pos;
+        w.winlinks = Default::default();
+        w.id = windows::alloc_id();
+    }
     windows::insert(&owner);
-    (*w).creation_time = SystemTime::now();
+    owner.borrow_mut().creation_time = SystemTime::now();
     window_update_activity(&owner);
+    let (xpixel, ypixel) = owner.cell_size();
     log_debug(format_args!(
         "{}: @{} create {}x{} ({}x{})",
         "window_create",
-        { (*w).id },
+        { owner.id() },
         { sx },
         { sy },
-        { (*w).xpixel },
-        { (*w).ypixel }
+        { xpixel },
+        { ypixel }
     ));
     owner
 }
 
 unsafe fn window_destroy(w_owner: &WindowRef) {
-    let mut w = w_owner.as_ptr();
-    log_debug(format_args!("window @{} destroyed", { (*w).id }));
+    log_debug(format_args!("window @{} destroyed", { w_owner.id() }));
     windows::remove(w_owner);
-    menu_destroy((*w).menu.take());
+    let menu = w_owner.borrow_mut().menu.take();
+    menu_destroy(menu);
     window_destroy_panes(w_owner);
-    drop((*w).options.take());
+    let options = w_owner.borrow_mut().options.take();
+    drop(options);
 }
 
 unsafe fn window_set_name(w_owner: &WindowRef, new_name: &CStr, mut untrusted: ::core::ffi::c_int) {
@@ -314,38 +320,42 @@ unsafe fn window_resize(
     mut xpixel: ::core::ffi::c_int,
     mut ypixel: ::core::ffi::c_int,
 ) {
-    let mut w = w_owner.as_ptr();
     if xpixel == 0 as ::core::ffi::c_int {
         xpixel = DEFAULT_XPIXEL;
     }
     if ypixel == 0 as ::core::ffi::c_int {
         ypixel = DEFAULT_YPIXEL;
     }
+    let (old_xpixel, old_ypixel) = w_owner.cell_size();
     log_debug(format_args!(
         "{}: @{} resize {}x{} ({}x{})",
         "window_resize",
-        { (*w).id },
+        { w_owner.id() },
         { sx },
         { sy },
         {
             if xpixel == -(1 as ::core::ffi::c_int) {
-                (*w).xpixel
+                old_xpixel
             } else {
                 xpixel as u_int
             }
         },
         {
             if ypixel == -(1 as ::core::ffi::c_int) {
-                (*w).ypixel
+                old_ypixel
             } else {
                 ypixel as u_int
             }
         }
     ));
-    (*w).sx = sx;
-    (*w).sy = sy;
+    {
+        let mut w = w_owner.borrow_mut();
+        w.sx = sx;
+        w.sy = sy;
+    }
     window_arrange(w_owner);
-    if let Some(menu) = (*w).menu.as_ref().map(|menu| menu.downgrade()) {
+    let menu = w_owner.menu_observer();
+    if let Some(menu) = menu {
         let (menu_sx, menu_sy) = w_owner.logical_size();
         menu_resize(
             &mut menu.try_borrow_mut().expect("live unborrowed menu"),
@@ -354,13 +364,14 @@ unsafe fn window_resize(
         );
         server_redraw_window(w_owner);
     }
+    let mut w = w_owner.borrow_mut();
     if xpixel != -(1 as ::core::ffi::c_int) {
-        (*w).xpixel = xpixel as u_int;
+        w.xpixel = xpixel as u_int;
     }
     if ypixel != -(1 as ::core::ffi::c_int) {
-        (*w).ypixel = ypixel as u_int;
+        w.ypixel = ypixel as u_int;
     }
-    (*w).invalidate_scene();
+    w.invalidate_scene();
 }
 
 fn window_has_pane(w: &window, pane: &std::rc::Weak<std::cell::RefCell<window_pane>>) -> bool {
@@ -377,15 +388,20 @@ fn window_pane_is_visible(w: &window, pane: &Weak<RefCell<window_pane>>) -> bool
 /// the other panes are hidden in their places. Refused, returning false,
 /// when the window is already zoomed or has a single pane.
 unsafe fn window_zoom(window: &WindowRef, pane: &Rc<RefCell<window_pane>>) -> bool {
-    let w = window.as_ptr();
-    if (*w).zoomed.strong_count() != 0 || (*w).panes.storage.len() == 1 {
-        return false;
+    {
+        let w = window.borrow();
+        if w.zoomed.strong_count() != 0 || w.panes.storage.len() == 1 {
+            return false;
+        }
     }
-    if !(*w).active.ptr_eq(&Rc::downgrade(pane)) {
+    if !window.active_pane().ptr_eq(&Rc::downgrade(pane)) {
         window_set_active_pane(window, pane, 1);
     }
-    (*w).zoomed = Rc::downgrade(pane);
-    (*w).invalidate_scene();
+    {
+        let mut w = window.borrow_mut();
+        w.zoomed = Rc::downgrade(pane);
+        w.invalidate_scene();
+    }
     window_arrange(window);
     events_fire_window(c"window-zoomed", window.clone());
     events_fire_window(c"window-layout-changed", window.clone());
@@ -395,12 +411,14 @@ unsafe fn window_zoom(window: &WindowRef, pane: &Rc<RefCell<window_pane>>) -> bo
 /// Show every pane in its place again. Returns false when the window was not
 /// zoomed.
 unsafe fn window_unzoom(window: &WindowRef, notify: bool) -> bool {
-    let w = window.as_ptr();
-    if (*w).zoomed.strong_count() == 0 {
-        return false;
+    {
+        let mut w = window.borrow_mut();
+        if w.zoomed.strong_count() == 0 {
+            return false;
+        }
+        w.zoomed = Weak::new();
+        w.invalidate_scene();
     }
-    (*w).zoomed = Weak::new();
-    (*w).invalidate_scene();
     window_arrange(window);
     if notify {
         events_fire_window(c"window-unzoomed", window.clone());
@@ -413,19 +431,23 @@ unsafe fn window_unzoom(window: &WindowRef, notify: bool) -> bool {
 /// zoom again afterwards when `flag` asks and the window was zoomed, or
 /// whether or not it was with `always`. Returns whether the window unzoomed.
 unsafe fn window_push_zoom(window: &WindowRef, always: bool, flag: bool) -> bool {
-    let w = window.as_ptr();
-    (*w).was_zoomed = flag && (always || (*w).zoomed.strong_count() != 0);
+    {
+        let mut w = window.borrow_mut();
+        w.was_zoomed = flag && (always || w.zoomed.strong_count() != 0);
+    }
     window_unzoom(window, true)
 }
 
 /// After `window_push_zoom`, zoom the active pane when it said to. Returns
 /// whether the window zoomed.
 unsafe fn window_pop_zoom(window: &WindowRef) -> bool {
-    let w = window.as_ptr();
-    if !std::mem::take(&mut (*w).was_zoomed) {
+    let was_zoomed = std::mem::take(&mut window.borrow_mut().was_zoomed);
+    if !was_zoomed {
         return false;
     }
-    (*w).active_pane()
+    window
+        .active_pane()
+        .upgrade()
         .is_some_and(|active| window_zoom(window, &active))
 }
 
@@ -442,21 +464,24 @@ unsafe fn window_set_active_pane(
     pane: &Rc<RefCell<window_pane>>,
     notify: i32,
 ) -> i32 {
-    let w = window.as_ptr();
     let observer = Rc::downgrade(pane);
     log_debug(format_args!("window_set_active_pane: pane %{}", pane.id()));
-    if (*w).active.ptr_eq(&observer) {
+    if window.active_pane().ptr_eq(&observer) {
         return 0;
     }
-    if !window_pane_is_visible(&*w, &observer) {
+    let visible = window_pane_is_visible(&window.borrow(), &observer);
+    if !visible {
         window_unzoom(window, true);
     }
     let previous = window.active_pane().upgrade();
-    (*w).last_panes.remove(&observer);
-    if let Some(previous) = previous.as_ref() {
-        (*w).last_panes.push(Rc::downgrade(previous));
+    {
+        let mut w = window.borrow_mut();
+        w.last_panes.remove(&observer);
+        if let Some(previous) = previous.as_ref() {
+            w.last_panes.push(Rc::downgrade(previous));
+        }
+        w.active = observer;
     }
-    (*w).active = observer;
     let mut client = ClientRegistry::first();
     while let Some(current) = client {
         current.reset_pan(Some(window));
@@ -482,8 +507,7 @@ unsafe fn window_redraw_active_switch(
     window: &WindowRef,
     previous: Option<&Rc<RefCell<window_pane>>>,
 ) {
-    let state = window.as_ptr();
-    let active = (*state).active_pane();
+    let active = window.active_pane().upgrade();
     if previous.is_some_and(|pane| {
         active
             .as_ref()
@@ -503,14 +527,14 @@ unsafe fn window_get_active_at(
     mut x: u_int,
     mut y: u_int,
 ) -> Weak<std::cell::RefCell<window_pane>> {
-    let w = window_owner.as_ptr();
     let mut xoff: ::core::ffi::c_int = 0;
     let mut yoff: ::core::ffi::c_int = 0;
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     let status = window_get_pane_status(window_owner);
-    for observer in (*w).panes.storage.clone() {
-        if !window_pane_is_visible(&*w, &observer) {
+    for observer in window_owner.pane_snapshot() {
+        let visible = window_pane_is_visible(&window_owner.borrow(), &observer);
+        if !visible {
             continue;
         }
         let candidate = observer.upgrade().expect("live pane in ordering");
@@ -533,13 +557,12 @@ unsafe fn window_find_string(
     window_owner: &WindowRef,
     name: &CStr,
 ) -> Weak<std::cell::RefCell<window_pane>> {
-    let w = window_owner.as_ptr();
-    let wsx = if (*w).zoomed.strong_count() != 0 {
-        (*w).sx
+    let (sx, wsy) = window_owner.size();
+    let wsx = if window_owner.zoomed_pane().strong_count() != 0 {
+        sx
     } else {
         layout::content_width(&window_arrangement(window_owner))
     };
-    let wsy = (*w).sy;
     let s = name.to_bytes();
     let mut x: u_int = 0;
     let mut y: u_int = 0;
@@ -593,8 +616,7 @@ unsafe fn window_rearrange_panes(
     window: &WindowRef,
     panes: &[Rc<RefCell<window_pane>>],
 ) -> Result<(), &'static CStr> {
-    let w = window.as_ptr();
-    let old = (*w).panes.snapshot();
+    let old = window.borrow().panes.snapshot();
     let present = |list: &[Rc<RefCell<window_pane>>], pane: &Rc<RefCell<window_pane>>| {
         list.iter().any(|candidate| Rc::ptr_eq(candidate, pane))
     };
@@ -613,7 +635,7 @@ unsafe fn window_rearrange_panes(
         );
     }
     if !arrived.is_empty() {
-        (*w).layout.admits(panes, window.size())?;
+        window.layout().admits(panes, window.size())?;
     }
     if old.len() != panes.len() || old.iter().zip(panes).any(|(a, b)| !Rc::ptr_eq(a, b)) {
         window_unzoom(window, true);
@@ -630,9 +652,9 @@ unsafe fn window_rearrange_panes(
         {
             server_clear_marked();
         }
-        (*w).last_panes.remove(&Rc::downgrade(pane));
+        window.borrow_mut().last_panes.remove(&Rc::downgrade(pane));
     }
-    let previous_active = (*w).active_pane();
+    let previous_active = window.active_pane().upgrade();
     let replacement = match previous_active.as_ref() {
         Some(active) if !present(panes, active) => {
             let slot = old
@@ -643,7 +665,7 @@ unsafe fn window_rearrange_panes(
                 .get(slot)
                 .filter(|pane| present(&arrived.iter().cloned().cloned().collect::<Vec<_>>(), pane))
                 .cloned()
-                .or_else(|| (*w).last_panes.first().upgrade())
+                .or_else(|| window.last_active_pane().upgrade())
                 .or_else(|| {
                     old[..slot]
                         .iter()
@@ -656,9 +678,9 @@ unsafe fn window_rearrange_panes(
         Some(_) => None,
         None => None,
     };
-    (*w).panes.storage = panes.iter().map(Rc::downgrade).collect();
+    window.borrow_mut().panes.storage = panes.iter().map(Rc::downgrade).collect();
     if previous_active.is_none() {
-        (*w).active = panes.first().map_or_else(Weak::new, Rc::downgrade);
+        window.borrow_mut().active = panes.first().map_or_else(Weak::new, Rc::downgrade);
         if let Some(first) = panes.first() {
             first.on_selected(true);
         }
@@ -666,13 +688,16 @@ unsafe fn window_rearrange_panes(
         .as_ref()
         .is_some_and(|active| !present(panes, active))
     {
-        (*w).active = replacement.as_ref().map_or_else(Weak::new, Rc::downgrade);
+        window.borrow_mut().active = replacement.as_ref().map_or_else(Weak::new, Rc::downgrade);
         if let Some(replacement) = replacement.as_ref() {
-            (*w).last_panes.remove(&Rc::downgrade(replacement));
+            window
+                .borrow_mut()
+                .last_panes
+                .remove(&Rc::downgrade(replacement));
             replacement.on_selected(false);
         }
     }
-    (*w).invalidate_scene();
+    window.borrow_mut().invalidate_scene();
     window_arrange(window);
     if !left.is_empty() {
         events_fire_window(c"window-layout-changed", window.clone());
@@ -686,9 +711,8 @@ unsafe fn window_rearrange_panes(
 
 /// Take `pane` out of its window and destroy it.
 unsafe fn window_remove_pane(window: &WindowRef, pane: &Rc<RefCell<window_pane>>) {
-    let rest = (*window.as_ptr())
-        .panes
-        .snapshot()
+    let panes = window.borrow().panes.snapshot();
+    let rest = panes
         .into_iter()
         .filter(|candidate| !Rc::ptr_eq(candidate, pane))
         .collect::<Vec<_>>();
@@ -699,7 +723,7 @@ unsafe fn window_remove_pane(window: &WindowRef, pane: &Rc<RefCell<window_pane>>
 /// The layout's rectangles for the current panes, in pane order.
 unsafe fn window_arrangement(window: &WindowRef) -> Vec<layout_geometry> {
     let size = window.size();
-    let w = &*window.as_ptr();
+    let w = window.borrow();
     w.layout.arrange(&w.panes.snapshot(), size)
 }
 
@@ -707,7 +731,7 @@ unsafe fn window_arrangement(window: &WindowRef) -> Vec<layout_geometry> {
 unsafe fn window_pane_cells(
     window: &WindowRef,
 ) -> Vec<(Weak<RefCell<window_pane>>, layout_geometry)> {
-    let panes = (*window.as_ptr()).panes.storage.clone();
+    let panes = window.pane_snapshot();
     panes.into_iter().zip(window_arrangement(window)).collect()
 }
 
@@ -719,12 +743,9 @@ unsafe fn window_pane_cells(
 /// they had, until the window unzooms.
 unsafe fn window_arrange(window: &WindowRef) {
     let (sx, sy) = window.size();
-    let zoomed = (*window.as_ptr()).zoomed.clone();
-    let cells = (*window.as_ptr())
-        .panes
-        .snapshot()
-        .into_iter()
-        .zip(window_arrangement(window));
+    let zoomed = window.zoomed_pane();
+    let panes = window.borrow().panes.snapshot();
+    let cells = panes.into_iter().zip(window_arrangement(window));
     let mut moved = false;
     for (pane, cell) in cells {
         let cell = if zoomed.strong_count() == 0 {
@@ -739,20 +760,24 @@ unsafe fn window_arrange(window: &WindowRef) {
         } else {
             continue;
         };
-        if window_has_pane(&*window.as_ptr(), &Rc::downgrade(&pane)) {
+        if window.contains_pane(&Rc::downgrade(&pane)) {
             moved |= pane.apply_layout(cell, window);
         }
     }
     if moved {
-        (*window.as_ptr()).invalidate_scene();
+        window.borrow_mut().invalidate_scene();
     }
     tty_update_window_offset(window);
 }
 
 unsafe fn window_destroy_panes(window: &WindowRef) {
-    let w = window.as_ptr();
-    while let Some(pane) = window_pane_first(w.as_ref()) {
-        (*w).panes.remove(&Rc::downgrade(&pane));
+    loop {
+        let first = window.borrow().panes.first();
+        let Some(first) = first else {
+            break;
+        };
+        let pane = first.upgrade().expect("live pane in ordering");
+        window.borrow_mut().panes.remove(&first);
         pane.destroy();
     }
 }
@@ -794,10 +819,6 @@ pub unsafe fn window_printable_flags(
         flags.push(b'Z');
     }
     std::ffi::CString::new(flags).expect("window flags contain no NUL")
-}
-
-fn window_pane_first(w: Option<&window>) -> Option<Rc<std::cell::RefCell<window_pane>>> {
-    Some(w?.panes.first()?.upgrade().expect("live pane in ordering"))
 }
 
 fn window_get_pane_status(w: &WindowRef) -> ::core::ffi::c_int {

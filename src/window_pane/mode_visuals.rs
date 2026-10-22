@@ -10,7 +10,8 @@ use crate::shared::layout::BOX_LINES_DEFAULT;
 use std::{cell::RefCell, rc::Rc};
 
 pub(super) unsafe fn draw_editor_waiting(owner: &Rc<RefCell<window_pane>>, pid: pid_t) {
-    (*owner.as_ptr())
+    owner
+        .borrow_mut()
         .with_screen_mut(|s| {
             let mut gc = grid_default_cell;
             let mut sx: u_int = 0;

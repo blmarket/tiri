@@ -167,7 +167,7 @@ mod input_buffer_ownership_tests {
         let pane = window_pane::new();
         let pane_source = InputPalette::Pane(std::rc::Rc::downgrade(&pane));
         pane_source.with_mut(|palette| palette.fg = 17);
-        assert_eq!(unsafe { (*pane.as_ptr()).palette.fg }, 17);
+        assert_eq!(pane.borrow().palette.fg, 17);
         drop(pane);
         assert!(pane_source.with_mut(|palette| palette.fg).is_none());
 
@@ -1995,7 +1995,6 @@ unsafe fn input_fire_pane_title_changed(
     wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     title: &CStr,
 ) {
-    let mut wp = wp_owner.as_ptr();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -2012,7 +2011,7 @@ unsafe fn input_fire_pane_title_changed(
     event_payload_set_window(
         &mut ep,
         c"window",
-        WindowRef::clone(((*wp).window_handle().as_ref()).expect("live window")),
+        wp_owner.window_observer().upgrade().expect("live window"),
     );
     event_payload_set_string(&mut ep, c"new_title", |out| {
         write_cstr(out, nullable_cstr(title.as_ptr()))
@@ -2181,9 +2180,8 @@ unsafe fn input_parse(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, buf: &[
     }
 }
 pub(super) unsafe fn input_parse_pane(wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>) {
-    let mut wp = wp_owner.as_ptr();
     let (stream, base, offset) = {
-        let pane = &*wp_owner.as_ptr();
+        let pane = wp_owner.borrow();
         (pane.event.clone(), pane.base_offset, pane.offset)
     };
     let data = stream
@@ -2192,7 +2190,8 @@ pub(super) unsafe fn input_parse_pane(wp_owner: &std::rc::Rc<std::cell::RefCell<
         })
         .unwrap_or_default();
     if !data.is_empty() {
-        (*wp).last_output_time = crate::shared::time::unix_seconds(std::time::SystemTime::now());
+        wp_owner.borrow_mut().last_output_time =
+            crate::shared::time::unix_seconds(std::time::SystemTime::now());
     }
     input_parse_buffer(wp_owner, &data);
     window_pane_update_used_data(wp_owner, |wp| &mut wp.offset, data.len());
@@ -2428,10 +2427,6 @@ unsafe fn input_c0_dispatch(
     sctx: &mut screen_write_ctx,
 ) -> ::core::ffi::c_int {
     let input_pane_owner = ictx.wp.upgrade();
-    let input_pane = input_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |pane| pane.as_ptr());
-    let mut wp: *mut window_pane = input_pane;
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -2473,13 +2468,10 @@ unsafe fn input_c0_dispatch(
     match ictx.ch {
         0 => {}
         7 => {
-            if !wp.is_null() {
-                events_fire_pane(
-                    c"pane-bell",
-                    std::rc::Rc::clone(input_pane_owner.as_ref().expect("live pane")),
-                );
+            if let Some(pane) = input_pane_owner.as_ref() {
+                events_fire_pane(c"pane-bell", std::rc::Rc::clone(pane));
                 alerts_queue(
-                    &WindowRef::clone(((*wp).window_handle().as_ref()).expect("live window")),
+                    &pane.window_observer().upgrade().expect("live window"),
                     WINDOW_BELL,
                 );
             }
@@ -3428,9 +3420,6 @@ fn input_csi_dispatch_rm(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) {
 }
 unsafe fn input_csi_dispatch_rm_private(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) {
     let input_pane_owner = ictx.wp.upgrade();
-    let input_pane = input_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |pane| pane.as_ptr());
     let mut i: u_int = 0;
     i = 0 as u_int;
     while i < ictx.param_list_len {
@@ -3493,8 +3482,8 @@ unsafe fn input_csi_dispatch_rm_private(ictx: &mut input_ctx, sctx: &mut screen_
             }
             2031 => {
                 screen_write_mode_clear(sctx, MODE_THEME_UPDATES);
-                if !input_pane.is_null() {
-                    (*input_pane).flags &= !PANE_THEMECHANGED;
+                if let Some(pane) = input_pane_owner.as_ref() {
+                    pane.borrow_mut().flags &= !PANE_THEMECHANGED;
                 }
             }
             _ => {
@@ -3533,9 +3522,6 @@ fn input_csi_dispatch_sm(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) {
 }
 unsafe fn input_csi_dispatch_sm_private(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) {
     let input_pane_owner = ictx.wp.upgrade();
-    let input_pane = input_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |pane| pane.as_ptr());
     let mut i: u_int = 0;
     i = 0 as u_int;
     while i < ictx.param_list_len {
@@ -3604,9 +3590,11 @@ unsafe fn input_csi_dispatch_sm_private(ictx: &mut input_ctx, sctx: &mut screen_
             }
             2031 => {
                 screen_write_mode_set(sctx, MODE_THEME_UPDATES);
-                if !input_pane.is_null() {
-                    (*input_pane).last_theme = window_pane_get_theme(input_pane_owner.as_ref());
-                    (*input_pane).flags &= !PANE_THEMECHANGED;
+                if let Some(pane) = input_pane_owner.as_ref() {
+                    let theme = window_pane_get_theme(Some(pane));
+                    let mut state = pane.borrow_mut();
+                    state.last_theme = theme;
+                    state.flags &= !PANE_THEMECHANGED;
                 }
             }
             2026 => {
@@ -4366,10 +4354,6 @@ unsafe fn input_enter_osc(ictx: &mut input_ctx) {
 }
 unsafe fn input_exit_osc(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) {
     let input_pane_owner = ictx.wp.upgrade();
-    let input_pane = input_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |pane| pane.as_ptr());
-    let mut wp: *mut window_pane = input_pane;
     let mut option: u_int = 0;
     if ictx.flags & INPUT_DISCARD != 0 {
         return;
@@ -4414,32 +4398,27 @@ unsafe fn input_exit_osc(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) {
     let p = cstr_suffix(input, offset);
     match option {
         0 | 2 => {
-            if !wp.is_null()
-                && options_get_number(
-                    &input_pane_owner
-                        .as_ref()
-                        .expect("live pane")
-                        .borrow_options_mut(),
-                    c"allow-set-title",
-                ) != 0
-                && screen_set_title(&mut *sctx.screen, p, 1 as ::core::ffi::c_int) != 0
-            {
-                input_fire_pane_title_changed(input_pane_owner.as_ref().expect("live pane"), p);
-                server_redraw_window_borders(
-                    ((*wp).window_handle().as_ref()).expect("live window"),
-                );
-                server_status_window(((*wp).window_handle().as_ref()).expect("live window"));
+            if let Some(pane) = input_pane_owner.as_ref().filter(|pane| {
+                options_get_number(&pane.borrow_options_mut(), c"allow-set-title") != 0
+                    && screen_set_title(&mut *sctx.screen, p, 1 as ::core::ffi::c_int) != 0
+            }) {
+                input_fire_pane_title_changed(pane, p);
+                let window = pane.window_observer().upgrade().expect("live window");
+                server_redraw_window_borders(&window);
+                server_status_window(&window);
             }
         }
         4 => {
             input_osc_4(ictx, sctx, p);
         }
         7 => {
-            if !wp.is_null() && screen_set_path(&mut *sctx.screen, p) != 0 {
-                server_redraw_window_borders(
-                    ((*wp).window_handle().as_ref()).expect("live window"),
-                );
-                server_status_window(((*wp).window_handle().as_ref()).expect("live window"));
+            if let Some(pane) = input_pane_owner
+                .as_ref()
+                .filter(|_| screen_set_path(&mut *sctx.screen, p) != 0)
+            {
+                let window = pane.window_observer().upgrade().expect("live window");
+                server_redraw_window_borders(&window);
+                server_status_window(&window);
             }
         }
         8 => {
@@ -4492,10 +4471,6 @@ unsafe fn input_enter_apc(ictx: &mut input_ctx) {
 }
 unsafe fn input_exit_apc(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) {
     let input_pane_owner = ictx.wp.upgrade();
-    let input_pane = input_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |pane| pane.as_ptr());
-    let mut wp: *mut window_pane = input_pane;
     if ictx.flags & INPUT_DISCARD != 0 {
         return;
     }
@@ -4505,19 +4480,14 @@ unsafe fn input_exit_apc(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) {
         log_bytes(&ictx.input_buf)
     ));
     let title = CStr::from_bytes_until_nul(&ictx.input_buf).expect("input buffer has a terminator");
-    if !wp.is_null()
-        && options_get_number(
-            &input_pane_owner
-                .as_ref()
-                .expect("live pane")
-                .borrow_options_mut(),
-            c"allow-set-title",
-        ) != 0
-        && screen_set_title(&mut *sctx.screen, title, 1 as ::core::ffi::c_int) != 0
-    {
-        input_fire_pane_title_changed(input_pane_owner.as_ref().expect("live pane"), title);
-        server_redraw_window_borders(((*wp).window_handle().as_ref()).expect("live window"));
-        server_status_window(((*wp).window_handle().as_ref()).expect("live window"));
+    if let Some(pane) = input_pane_owner.as_ref().filter(|pane| {
+        options_get_number(&pane.borrow_options_mut(), c"allow-set-title") != 0
+            && screen_set_title(&mut *sctx.screen, title, 1 as ::core::ffi::c_int) != 0
+    }) {
+        input_fire_pane_title_changed(pane, title);
+        let window = pane.window_observer().upgrade().expect("live window");
+        server_redraw_window_borders(&window);
+        server_status_window(&window);
     }
 }
 unsafe fn input_enter_rename(ictx: &mut input_ctx) {
@@ -4795,15 +4765,11 @@ unsafe fn input_set_progress_bar(
     mut p: ::core::ffi::c_int,
 ) {
     let input_pane_owner = ictx.wp.upgrade();
-    let input_pane = input_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |pane| pane.as_ptr());
     screen_set_progress_bar(&mut *sctx.screen, state, p);
-    if !input_pane.is_null() {
-        server_redraw_window_borders(
-            ((*input_pane).window_handle().as_ref()).expect("live window"),
-        );
-        server_status_window(((*input_pane).window_handle().as_ref()).expect("live window"));
+    if let Some(pane) = input_pane_owner.as_ref() {
+        let window = pane.window_observer().upgrade().expect("live window");
+        server_redraw_window_borders(&window);
+        server_status_window(&window);
     }
 }
 unsafe fn input_osc_9(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
@@ -4842,10 +4808,6 @@ unsafe fn input_osc_9(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CSt
 }
 unsafe fn input_osc_10(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
     let input_pane_owner = ictx.wp.upgrade();
-    let input_pane = input_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |pane| pane.as_ptr());
-    let mut wp: *mut window_pane = input_pane;
     let mut defaults: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -4862,7 +4824,7 @@ unsafe fn input_osc_10(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CS
     };
     let mut c: ::core::ffi::c_int = 0;
     if p == c"?" {
-        if wp.is_null() {
+        if input_pane_owner.is_none() {
             return;
         }
         c = window_pane_get_fg_control_client(input_pane_owner.as_ref().expect("live pane"));
@@ -4894,18 +4856,14 @@ unsafe fn input_osc_10(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CS
         return;
     }
     if ictx.palette.with_mut(|palette| palette.fg = c).is_some() {
-        if !wp.is_null() {
-            (*wp).flags |= PANE_STYLECHANGED;
+        if let Some(pane) = input_pane_owner.as_ref() {
+            pane.borrow_mut().flags |= PANE_STYLECHANGED;
         }
         screen_write_fullredraw(sctx);
     }
 }
 unsafe fn input_osc_110(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
     let input_pane_owner = ictx.wp.upgrade();
-    let input_pane = input_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |pane| pane.as_ptr());
-    let mut wp: *mut window_pane = input_pane;
     if !p.is_empty() {
         return;
     }
@@ -4914,21 +4872,17 @@ unsafe fn input_osc_110(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &C
         .with_mut(|palette| palette.fg = 8 as ::core::ffi::c_int)
         .is_some()
     {
-        if !wp.is_null() {
-            (*wp).flags |= PANE_STYLECHANGED;
+        if let Some(pane) = input_pane_owner.as_ref() {
+            pane.borrow_mut().flags |= PANE_STYLECHANGED;
         }
         screen_write_fullredraw(sctx);
     }
 }
 unsafe fn input_osc_11(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
     let input_pane_owner = ictx.wp.upgrade();
-    let input_pane = input_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |pane| pane.as_ptr());
-    let mut wp: *mut window_pane = input_pane;
     let mut c: ::core::ffi::c_int = 0;
     if p == c"?" {
-        if wp.is_null() {
+        if input_pane_owner.is_none() {
             return;
         }
         c = window_pane_get_bg(input_pane_owner.as_ref().expect("live pane"));
@@ -4948,18 +4902,14 @@ unsafe fn input_osc_11(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CS
         return;
     }
     if ictx.palette.with_mut(|palette| palette.bg = c).is_some() {
-        if !wp.is_null() {
-            (*wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
+        if let Some(pane) = input_pane_owner.as_ref() {
+            pane.borrow_mut().flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
         }
         screen_write_fullredraw(sctx);
     }
 }
 unsafe fn input_osc_111(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
     let input_pane_owner = ictx.wp.upgrade();
-    let input_pane = input_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |pane| pane.as_ptr());
-    let mut wp: *mut window_pane = input_pane;
     if !p.is_empty() {
         return;
     }
@@ -4968,8 +4918,8 @@ unsafe fn input_osc_111(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &C
         .with_mut(|palette| palette.bg = 8 as ::core::ffi::c_int)
         .is_some()
     {
-        if !wp.is_null() {
-            (*wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
+        if let Some(pane) = input_pane_owner.as_ref() {
+            pane.borrow_mut().flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
         }
         screen_write_fullredraw(sctx);
     }
@@ -5066,7 +5016,6 @@ unsafe fn input_fire_command_event(
     wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     name: &CStr,
 ) {
-    let mut wp = wp_owner.as_ptr();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -5075,9 +5024,9 @@ unsafe fn input_fire_command_event(
         wp: Default::default(),
         idx: 0,
     };
-    let mut tstart: time_t = (*wp).cmd_start_time;
+    let mut tstart: time_t = wp_owner.borrow().cmd_start_time;
     let mut end: time_t = 0;
-    let mut tend: time_t = (*wp).cmd_end_time;
+    let mut tend: time_t = wp_owner.borrow().cmd_end_time;
     let mut ep = event_payload_create();
     fs = cmd_find_state::find_from_pane(wp_owner, 0 as ::core::ffi::c_int)
         .unwrap_or_else(|| cmd_find_state::clear_state(0 as ::core::ffi::c_int));
@@ -5102,11 +5051,12 @@ unsafe fn input_fire_command_event(
     event_payload_set_window(
         &mut ep,
         c"window",
-        WindowRef::clone(((*wp).window_handle().as_ref()).expect("live window")),
+        wp_owner.window_observer().upgrade().expect("live window"),
     );
     event_payload_set_pane(&mut ep, c"pane", std::rc::Rc::clone(wp_owner));
-    if (*wp).cmd_status != -(1 as ::core::ffi::c_int) {
-        event_payload_set_int(&mut ep, c"command_status", (*wp).cmd_status);
+    let cmd_status = wp_owner.borrow().cmd_status;
+    if cmd_status != -(1 as ::core::ffi::c_int) {
+        event_payload_set_int(&mut ep, c"command_status", cmd_status);
     }
     if tstart != 0 as time_t {
         event_payload_set_time(&mut ep, c"command_start_time", tstart);
@@ -5115,7 +5065,7 @@ unsafe fn input_fire_command_event(
         event_payload_set_time(&mut ep, c"command_end_time", tend);
     }
     if tstart != 0 as time_t {
-        if (*wp).flags & PANE_CMDRUNNING != 0 {
+        if wp_owner.borrow().flags & PANE_CMDRUNNING != 0 {
             end = crate::shared::time::unix_seconds(std::time::SystemTime::now());
         } else {
             end = tend;
@@ -5130,10 +5080,6 @@ unsafe fn input_fire_command_event(
 }
 unsafe fn input_osc_133(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
     let input_pane_owner = ictx.wp.upgrade();
-    let input_pane = input_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |pane| pane.as_ptr());
-    let mut wp: *mut window_pane = input_pane;
     let cx = sctx.screen.cx;
     let cy = sctx.screen.cy;
     let gd = sctx.screen.grid_mut();
@@ -5148,13 +5094,10 @@ unsafe fn input_osc_133(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &C
                 gl.osc133_data.prompt_col = cx as u_short;
                 gl.flags = (gl.flags as ::core::ffi::c_int | GRID_LINE_START_PROMPT) as u_short;
             }
-            if !wp.is_null() {
-                (*wp).last_prompt_time =
+            if let Some(pane) = input_pane_owner.as_ref() {
+                pane.borrow_mut().last_prompt_time =
                     crate::shared::time::unix_seconds(std::time::SystemTime::now());
-                events_fire_pane(
-                    c"pane-shell-prompt",
-                    std::rc::Rc::clone(input_pane_owner.as_ref().expect("live pane")),
-                );
+                events_fire_pane(c"pane-shell-prompt", std::rc::Rc::clone(pane));
             }
         }
         80 => {
@@ -5187,29 +5130,29 @@ unsafe fn input_osc_133(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &C
                 gl.flags = (gl.flags as ::core::ffi::c_int | GRID_LINE_START_OUTPUT) as u_short;
                 gl.osc133_data.out_start_col = cx as u_short;
             }
-            if !wp.is_null() {
-                (*wp).cmd_start_time =
-                    crate::shared::time::unix_seconds(std::time::SystemTime::now());
-                (*wp).cmd_end_time = 0 as time_t;
-                (*wp).flags |= PANE_CMDRUNNING;
-                (*wp).cmd_status = -(1 as ::core::ffi::c_int);
-                input_fire_command_event(
-                    input_pane_owner.as_ref().expect("live pane"),
-                    c"pane-command-started",
-                );
+            if let Some(pane) = input_pane_owner.as_ref() {
+                {
+                    let mut state = pane.borrow_mut();
+                    state.cmd_start_time =
+                        crate::shared::time::unix_seconds(std::time::SystemTime::now());
+                    state.cmd_end_time = 0 as time_t;
+                    state.flags |= PANE_CMDRUNNING;
+                    state.cmd_status = -(1 as ::core::ffi::c_int);
+                }
+                input_fire_command_event(pane, c"pane-command-started");
             }
         }
         68 => {
             status = input_osc_133_exit_status(p);
-            if !wp.is_null() {
-                (*wp).cmd_end_time =
-                    crate::shared::time::unix_seconds(std::time::SystemTime::now());
-                (*wp).flags &= !PANE_CMDRUNNING;
-                (*wp).cmd_status = status;
-                input_fire_command_event(
-                    input_pane_owner.as_ref().expect("live pane"),
-                    c"pane-command-finished",
-                );
+            if let Some(pane) = input_pane_owner.as_ref() {
+                {
+                    let mut state = pane.borrow_mut();
+                    state.cmd_end_time =
+                        crate::shared::time::unix_seconds(std::time::SystemTime::now());
+                    state.flags &= !PANE_CMDRUNNING;
+                    state.cmd_status = status;
+                }
+                input_fire_command_event(pane, c"pane-command-finished");
             }
             if let Some(line) = line {
                 let gl = grid_get_line_mut(gd, line);
@@ -5639,19 +5582,19 @@ pub(crate) unsafe fn input_complete_request(
 }
 unsafe fn input_report_current_theme(ictx: &mut input_ctx) {
     let input_pane_owner = ictx.wp.upgrade();
-    let input_pane = input_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |pane| pane.as_ptr());
-    let mut wp: *mut window_pane = input_pane;
-    if !wp.is_null() {
-        (*wp).last_theme = window_pane_get_theme(input_pane_owner.as_ref());
-        (*wp).flags &= !PANE_THEMECHANGED;
-        match (*wp).last_theme as ::core::ffi::c_uint {
+    if let Some(pane) = input_pane_owner.as_ref() {
+        let theme = window_pane_get_theme(Some(pane));
+        let id = {
+            let mut state = pane.borrow_mut();
+            state.last_theme = theme;
+            state.flags &= !PANE_THEMECHANGED;
+            state.id
+        };
+        match theme as ::core::ffi::c_uint {
             2 => {
                 log_debug(format_args!(
                     "{}: %{} dark theme",
-                    "input_report_current_theme",
-                    ((*wp).id) as u32
+                    "input_report_current_theme", id
                 ));
                 input_reply(ictx, 0 as ::core::ffi::c_int, |out| {
                     out.write_all(b"\x1B[?997;1n")
@@ -5660,8 +5603,7 @@ unsafe fn input_report_current_theme(ictx: &mut input_ctx) {
             1 => {
                 log_debug(format_args!(
                     "{}: %{} light theme",
-                    "input_report_current_theme",
-                    ((*wp).id) as u32
+                    "input_report_current_theme", id
                 ));
                 input_reply(ictx, 0 as ::core::ffi::c_int, |out| {
                     out.write_all(b"\x1B[?997;2n")
@@ -5670,8 +5612,7 @@ unsafe fn input_report_current_theme(ictx: &mut input_ctx) {
             0 => {
                 log_debug(format_args!(
                     "{}: %{} unknown theme",
-                    "input_report_current_theme",
-                    ((*wp).id) as u32
+                    "input_report_current_theme", id
                 ));
             }
             _ => {}

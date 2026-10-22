@@ -160,14 +160,19 @@ impl Session for SessionRef {
     }
 
     unsafe fn update_environment(&self, source: &environ) {
+        // The patterns are read through this session's options, so the
+        // environment is lent out of the model for the update.
+        let mut environment = self
+            .borrow_mut()
+            .environ
+            .take()
+            .expect("session environment");
         crate::environ::environ_update(
             &crate::options::OptionsScope::Session(Rc::downgrade(self)),
             source,
-            (*self.as_ptr())
-                .environ
-                .as_deref_mut()
-                .expect("session environment"),
+            &mut environment,
         );
+        self.borrow_mut().environ = Some(environment);
     }
 
     fn is_registered(&self) -> bool {
@@ -233,7 +238,8 @@ impl Session for SessionRef {
             out.write_all(new_name.as_bytes())
         });
         let owner = sessions::remove(self).expect("registered session owner");
-        drop(session_replace_name(&mut *self.as_ptr(), new_name));
+        let replaced = session_replace_name(&mut self.borrow_mut(), new_name);
+        drop(replaced);
         sessions::insert(owner);
         crate::server_fn::server_status_session(self);
         events_fire(c"session-renamed", payload);
@@ -259,7 +265,7 @@ impl Session for SessionRef {
         self.borrow().lastw.front().cloned().unwrap_or_default()
     }
     unsafe fn with_winlinks<R>(&self, read: impl FnOnce(&winlinks) -> R) -> R {
-        read(&(*self.as_ptr()).windows)
+        read(&self.borrow().windows)
     }
     unsafe fn forget_winlink(&self, link: refbox::Weak<winlink>) {
         winlink_stack_remove(&mut (*self.as_ptr()).lastw, link);
@@ -269,7 +275,7 @@ impl Session for SessionRef {
             return -1;
         }
         let index = link.try_borrow().expect("live winlink").idx + if before { 0 } else { 1 };
-        let state = &mut *self.as_ptr();
+        let state = self.borrow();
         let mut last = index;
         while last < i32::MAX && winlink_find_by_index(&state.windows, last).is_alive() {
             last += 1;
@@ -288,10 +294,10 @@ impl Session for SessionRef {
         events_fire_winlink(c"window-unlinked", link.clone());
         link.try_borrow_mut().expect("live winlink").flags &= !WINLINK_ALERTFLAGS;
         self.forget_winlink(link.clone());
-        winlink_remove(&(*self.as_ptr()).windows, link.clone());
+        session_winlink_remove(self, link.clone());
         let was_current = link == self.current_winlink();
         if was_current {
-            (*self.as_ptr()).curw = refbox::Weak::new();
+            self.borrow_mut().curw = refbox::Weak::new();
         }
         was_current
     }
@@ -334,12 +340,12 @@ impl Session for SessionRef {
         session_update_activity(self, from);
     }
     unsafe fn theme_changed(&self) {
-        session_theme_changed(Some(&*self.as_ptr()));
+        session_theme_changed(self);
     }
     unsafe fn on_attached(&self) {
         self.update_activity(None);
-        session_theme_changed(Some(&*self.as_ptr()));
-        (*self.as_ptr()).last_attached_time = SystemTime::now();
+        session_theme_changed(self);
+        self.borrow_mut().last_attached_time = SystemTime::now();
         self.current_winlink()
             .try_borrow_mut()
             .expect("live winlink")
@@ -358,7 +364,7 @@ impl Session for SessionRef {
         self.borrow_mut().environ.as_deref_mut().map(edit)
     }
     unsafe fn set_cwd(&self, cwd: Option<CString>) {
-        session_set_cwd(&mut *self.as_ptr(), cwd);
+        session_set_cwd(&mut self.borrow_mut(), cwd);
     }
     fn cwd(&self) -> Option<CString> {
         self.borrow().cwd.clone()
@@ -407,7 +413,7 @@ mod tests {
                     .unwrap();
                 crate::options::options_default(&mut options, definition);
             }
-            (*session.as_ptr()).options = Some(options);
+            session.borrow_mut().options = Some(options);
             status_update_cache(&session);
             let before = session.status_layout();
             {

@@ -18,7 +18,7 @@ use crate::screen_write::{
 };
 use crate::server_client::Client;
 use crate::shared::client::ClientRef;
-use crate::shared::window::{WindowRef, WindowWeak};
+use crate::shared::window::WindowWeak;
 use crate::tmux::sig2name;
 use crate::window::Window as _;
 use crate::window_pane::WindowPane as _;
@@ -42,7 +42,6 @@ unsafe fn server_fire_pane_exit(
     name: &CStr,
     wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
 ) {
-    let mut wp = wp_owner.as_ptr();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: std::rc::Weak::new(),
@@ -51,17 +50,14 @@ unsafe fn server_fire_pane_exit(
         wp: std::rc::Weak::new(),
         idx: 0,
     };
-    let status = (*wp).exit_status.unwrap_or_default();
+    let status = wp_owner.borrow().exit_status.unwrap_or_default();
     let mut ep = event_payload_create();
     fs = cmd_find_state::find_from_pane(wp_owner, 0 as ::core::ffi::c_int)
         .unwrap_or_else(|| cmd_find_state::clear_state(0 as ::core::ffi::c_int));
     event_payload_set_target(&mut ep, &fs);
     event_payload_set_pane(&mut ep, c"pane", std::rc::Rc::clone(wp_owner));
-    event_payload_set_window(
-        &mut ep,
-        c"window",
-        WindowRef::clone(((*wp).window_handle().as_ref()).expect("live window")),
-    );
+    let window = wp_owner.borrow().window_handle().expect("live window");
+    event_payload_set_window(&mut ep, c"window", window);
     if let Some(code) = status.code() {
         event_payload_set_int(&mut ep, c"exit_status", code);
     } else if let Some(signal) = status.signal() {
@@ -77,7 +73,6 @@ unsafe fn server_fire_pane_exit(
     events_fire(name, ep);
 }
 pub(super) unsafe fn kill_process(pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>) {
-    let wp = pane_owner.as_ptr();
     let window_owner = pane_owner
         .window_observer()
         .upgrade()
@@ -88,16 +83,15 @@ pub(super) unsafe fn kill_process(pane_owner: &std::rc::Rc<std::cell::RefCell<wi
     } else {
         drop(window_owner);
         ClientRef::forget_pane(pane_owner);
-        WindowRef::clone(((*wp).window_handle().as_ref()).expect("live window"))
-            .remove_pane(pane_owner);
-        server_redraw_window(((*wp).window_handle().as_ref()).expect("live window"));
+        let window = pane_owner.borrow().window_handle().expect("live window");
+        window.remove_pane(pane_owner);
+        server_redraw_window(&window);
     };
 }
 pub(super) unsafe fn finish_process(
     pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     mut notify: ::core::ffi::c_int,
 ) {
-    let wp = pane_owner.as_ptr();
     let window_owner = pane_owner
         .window_observer()
         .upgrade()
@@ -117,17 +111,35 @@ pub(super) unsafe fn finish_process(
         link: 0,
     };
     let mut remain_on_exit: ::core::ffi::c_int = 0;
-    let mut sx: u_int = (*wp).base.grid().sx;
-    let mut sy: u_int = (*wp).base.grid().sy;
-    if (*wp).fd.is_some() {
-        std::mem::take(&mut (*wp).event).free();
-        drop((*wp).fd.take());
+    let (mut sx, mut sy, exit_status, event, pipe) = {
+        let mut wp = pane_owner.borrow_mut();
+        let event = if wp.fd.is_some() {
+            Some((std::mem::take(&mut wp.event), wp.fd.take()))
+        } else {
+            None
+        };
+        let pipe = if wp.pipe_fd.is_some() {
+            Some((std::mem::take(&mut wp.pipe_event), wp.pipe_fd.take()))
+        } else {
+            None
+        };
+        (
+            wp.base.grid().sx,
+            wp.base.grid().sy,
+            wp.exit_status,
+            event,
+            pipe,
+        )
+    };
+    if let Some((event, fd)) = event {
+        event.free();
+        drop(fd);
     }
-    if (*wp).pipe_fd.is_some() {
-        std::mem::take(&mut (*wp).pipe_event).free();
-        drop((*wp).pipe_fd.take());
+    if let Some((pipe_event, pipe_fd)) = pipe {
+        pipe_event.free();
+        drop(pipe_fd);
     }
-    let Some(exit_status) = (*wp).exit_status else {
+    let Some(exit_status) = exit_status else {
         drop(window_owner);
         return;
     };
@@ -152,19 +164,26 @@ pub(super) unsafe fn finish_process(
     match current_block_37 {
         3275366147856559585 => {}
         _ => {
-            if (*wp).flags & PANE_STATUSDRAWN != 0 {
-                drop(window_owner);
-                return;
+            {
+                let mut wp = pane_owner.borrow_mut();
+                if wp.flags & PANE_STATUSDRAWN != 0 {
+                    drop(wp);
+                    drop(window_owner);
+                    return;
+                }
+                wp.flags |= PANE_STATUSDRAWN;
+                wp.dead_time = SystemTime::now();
             }
-            (*wp).flags |= PANE_STATUSDRAWN;
-            (*wp).dead_time = SystemTime::now();
             if notify != 0 {
                 server_fire_pane_exit(c"pane-died", pane_owner);
             }
             let format =
                 options_get_string(&pane_owner.borrow_options_mut(), c"remain-on-exit-format");
             if !format.is_empty() {
-                let mut ctx = screen_write_start_pane(pane_owner, &mut (*wp).base);
+                // The write context reaches the pane while it holds `base`
+                // (geometry, sync state, format expansion), so the pane cannot
+                // be borrowed for its lifetime.
+                let mut ctx = screen_write_start_pane(pane_owner, &mut (*pane_owner.as_ptr()).base);
                 screen_write_scrollregion(&mut ctx, 0 as u_int, sy.wrapping_sub(1 as u_int));
                 screen_write_cursormove(
                     &mut ctx,
@@ -185,8 +204,11 @@ pub(super) unsafe fn finish_process(
                 format_draw(&mut ctx, &gc, sx, &expanded, None, 0 as ::core::ffi::c_int);
                 screen_write_stop(ctx);
             }
-            (*wp).base.mode &= !MODE_CURSOR;
-            (*wp).flags |= PANE_REDRAW;
+            {
+                let mut wp = pane_owner.borrow_mut();
+                wp.base.mode &= !MODE_CURSOR;
+                wp.flags |= PANE_REDRAW;
+            }
             drop(window_owner);
             return;
         }
@@ -195,17 +217,12 @@ pub(super) unsafe fn finish_process(
         server_fire_pane_exit(c"pane-exited", pane_owner);
     }
     ClientRef::forget_pane(pane_owner);
-    WindowRef::clone(((*wp).window_handle().as_ref()).expect("live window"))
-        .remove_pane(pane_owner);
+    let window = pane_owner.borrow().window_handle().expect("live window");
+    window.remove_pane(pane_owner);
     if window_owner.pane_snapshot().is_empty() {
-        server_kill_window(
-            WindowRef::downgrade(((*wp).window_handle().as_ref()).expect("live window"))
-                .upgrade()
-                .expect("live pane window"),
-            1,
-        );
+        server_kill_window(window, 1);
     } else {
-        server_redraw_window(((*wp).window_handle().as_ref()).expect("live window"));
+        server_redraw_window(&window);
     };
     drop(window_owner);
 }
@@ -215,7 +232,7 @@ pub(super) unsafe fn process_exited(
     status: ExitStatus,
 ) -> bool {
     {
-        let state = &mut *pane.as_ptr();
+        let mut state = pane.borrow_mut();
         if state.pid != pid {
             return false;
         }

@@ -40,7 +40,7 @@ pub(super) unsafe fn border_style(
     let active = window.active_pane().ptr_eq(&Rc::downgrade(pane));
     drop(window);
     let cached = {
-        let state = &*pane.as_ptr();
+        let state = pane.borrow();
         if active {
             (state.active_border_gc_set != 0, state.active_border_gc)
         } else {
@@ -64,7 +64,7 @@ pub(super) unsafe fn border_style(
         &OptionsScope::Pane(Rc::downgrade(pane)),
     );
     drop(context);
-    let state = &mut *pane.as_ptr();
+    let mut state = pane.borrow_mut();
     if active {
         state.active_border_gc = cell;
         state.active_border_gc_set = 1;
@@ -116,7 +116,7 @@ pub(super) unsafe fn make_status(
     let index = window.pane_index(&Rc::downgrade(pane));
     drop(window);
     let (mut old, mut ranges) = {
-        let state = &mut *pane.as_ptr();
+        let mut state = pane.borrow_mut();
         (
             std::mem::take(&mut state.status_screen),
             std::mem::take(&mut state.border_status_line.ranges),
@@ -140,7 +140,7 @@ pub(super) unsafe fn make_status(
     let changed = grid_compare(next.grid(), old.grid()) != 0;
     drop(old);
     {
-        let state = &mut *pane.as_ptr();
+        let mut state = pane.borrow_mut();
         state.status_screen = next;
         state.border_status_line.ranges = ranges;
     }
