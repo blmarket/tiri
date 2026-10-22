@@ -604,12 +604,12 @@ impl Client for ClientRef {
             for fd in [out_fd, fd].into_iter().flatten() {
                 setblocking(fd, 0);
             }
-            let input = unsafe { bufferevent_new(fd, read, write.clone(), error.clone()) }
+            let input = bufferevent_new(fd, read, write.clone(), error.clone())
                 .unwrap_or_else(|_| crate::log::fatalx(|out| out.write_all(b"out of memory")));
             let output = if control_control {
                 input.clone()
             } else {
-                unsafe { bufferevent_new(out_fd, None, write, error) }
+                bufferevent_new(out_fd, None, write, error)
                     .unwrap_or_else(|_| crate::log::fatalx(|out| out.write_all(b"out of memory")))
             };
             (input, output)

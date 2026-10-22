@@ -1589,7 +1589,7 @@ mod tests {
         let pane = window_pane::new();
         pane.borrow_mut().fd = None;
         pane.borrow_mut().pipe_fd = None;
-        let stream = unsafe { bufferevent_new(None, None, None, None) }.unwrap();
+        let stream = bufferevent_new(None, None, None, None).unwrap();
         stream.with_stream(|stream| evbuffer_add(&mut stream.input, bytes));
         pane.borrow_mut().event = stream;
         pane

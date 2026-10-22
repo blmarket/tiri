@@ -687,7 +687,7 @@ fn window_pane_set_event(wp_owner: &Rc<std::cell::RefCell<window_pane>>) {
             window_pane_error_callback(&owner);
         }
     });
-    let stream = unsafe { bufferevent_new(fd, read, None, error) }
+    let stream = bufferevent_new(fd, read, None, error)
         .unwrap_or_else(|_| fatalx(|out| out.write_all(b"out of memory")));
     drop(pane);
     wp_owner.borrow_mut().event = stream.clone();

@@ -180,7 +180,7 @@ mod input_buffer_ownership_tests {
 
     #[test]
     fn input_reply_skips_a_freed_stream() {
-        let stream = unsafe { bufferevent_new(None, None, None, None) }.unwrap();
+        let stream = bufferevent_new(None, None, None, None).unwrap();
         let mut input = input_init(None, stream.clone(), Default::default(), None);
         assert!(input.event.is_alive());
         stream.free();

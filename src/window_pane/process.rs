@@ -331,8 +331,8 @@ mod pipe_stream_tests {
     #[test]
     fn pipe_read_forwards_bytes_and_stream_handle_expires() {
         let pane_owner = window_pane::new();
-        let main = unsafe { bufferevent_new(None, None, None, None) }.unwrap();
-        let pipe = unsafe { bufferevent_new(None, None, None, None) }.unwrap();
+        let main = { bufferevent_new(None, None, None, None) }.unwrap();
+        let pipe = { bufferevent_new(None, None, None, None) }.unwrap();
         let stale = {
             let mut wp = pane_owner.borrow_mut();
             wp.fd = None;

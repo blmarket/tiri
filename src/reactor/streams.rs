@@ -193,7 +193,7 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
     *state.task.borrow_mut() = Some(task);
     Ok(())
 }
-pub unsafe fn bufferevent_new(
+pub fn bufferevent_new(
     fd: Option<std::os::fd::BorrowedFd<'_>>,
     readcb: bufferevent_data_cb,
     writecb: bufferevent_data_cb,
@@ -313,7 +313,7 @@ mod tests {
 
     #[test]
     fn stream_buffer_access_wakes_and_explicit_free_invalidates_handles() {
-        let handle = unsafe { bufferevent_new(None, None, None, None) }.unwrap();
+        let handle = { bufferevent_new(None, None, None, None) }.unwrap();
         let observer = handle.clone();
         handle.with_stream(|stream| {
             let state = stream.state.clone();
@@ -337,8 +337,8 @@ mod tests {
 
     #[test]
     fn runtime_clear_frees_streams_without_tasks() {
-        let first = unsafe { bufferevent_new(None, None, None, None) }.unwrap();
-        let second = unsafe { bufferevent_new(None, None, None, None) }.unwrap();
+        let first = { bufferevent_new(None, None, None, None) }.unwrap();
+        let second = { bufferevent_new(None, None, None, None) }.unwrap();
         assert!(first.is_alive());
         assert!(second.is_alive());
         clear();

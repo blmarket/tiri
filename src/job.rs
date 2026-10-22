@@ -734,7 +734,7 @@ mod job_stream_tests {
 
     #[test]
     fn completion_reads_a_live_stream_and_skips_one_after_free() {
-        let stream = unsafe { bufferevent_new(None, None, None, None) }.unwrap();
+        let stream = { bufferevent_new(None, None, None, None) }.unwrap();
         let owner = RefBox::new(job {
             event: stream.clone(),
             ..idle_job()
