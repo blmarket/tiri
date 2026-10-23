@@ -11,7 +11,6 @@ use crate::cmd::queue::{
 };
 use crate::compat::strtod::strtod;
 use crate::format::bytes::format_message_with;
-use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
 use crate::format::{
     format_add, format_create_from_target, format_expand_cstring, format_single_from_target_cstring,
@@ -139,7 +138,7 @@ fn cmd_run_shell_status_message(cmd: &CStr, suffix: &[u8], code: ::core::ffi::c_
     CString::new(message).expect("run-shell command and status text contain no NUL")
 }
 
-unsafe fn cmd_run_shell_exec(
+fn cmd_run_shell_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
@@ -194,14 +193,7 @@ unsafe fn cmd_run_shell_exec(
             i = 1 as u_int;
             while i < args_count(args) {
                 let key = format_message_with(|out| write!(out, "{}", i));
-                format_add(ft, &key, |out| {
-                    write_cstr(
-                        out,
-                        nullable_cstr(
-                            args_string(args, i).map_or(std::ptr::null(), |value| value.as_ptr()),
-                        ),
-                    )
-                });
+                format_add(ft, &key, |out| write_cstr(out, args_string(args, i)));
                 i = i.wrapping_add(1);
             }
             cdata.cmd = Some(format_expand_cstring(ft, cmd));
@@ -276,7 +268,7 @@ fn cmd_run_shell_wait(
             return std::future::pending().await;
         }
         drop(timer);
-        let Some(job) = (unsafe { cmd_run_shell_timer(&mut cdata, Some(&item)) }) else {
+        let Some(job) = cmd_run_shell_timer(&mut cdata, Some(&item)) else {
             return;
         };
         let (done, completed) = tiri_rt::oneshot::channel();
@@ -306,7 +298,7 @@ async fn cmd_run_shell_complete(
 /// Start the command, or queue the -C commands. Returns a started job for the
 /// caller to install its completion; job_run does not dispatch callbacks
 /// before returning.
-unsafe fn cmd_run_shell_timer(
+fn cmd_run_shell_timer(
     cdata: &mut cmd_run_shell_data,
     item: Option<&Weak<std::cell::RefCell<cmdq_item>>>,
 ) -> Option<refbox::Weak<job>> {
@@ -359,13 +351,9 @@ unsafe fn cmd_run_shell_timer(
             if item.is_none() {
                 cmd_parse_error_uppercase_first(&mut error);
             }
-            let error_ptr = error
-                .as_ref()
-                .map_or(::core::ptr::null(), |cause| cause.as_ptr());
+            let error = error.as_deref();
             if let Some(item) = item {
-                cmdq_error(&cmdq_resumed(item), |out| {
-                    write_cstr(out, nullable_cstr(error_ptr))
-                });
+                cmdq_error(&cmdq_resumed(item), |out| write_cstr(out, error));
             } else {
                 status_message_set(
                     c,
@@ -373,7 +361,7 @@ unsafe fn cmd_run_shell_timer(
                     1 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
-                    |out| write_cstr(out, nullable_cstr(error_ptr)),
+                    |out| write_cstr(out, error),
                 );
             }
         }

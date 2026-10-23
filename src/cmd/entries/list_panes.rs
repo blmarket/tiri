@@ -1,7 +1,6 @@
 use crate::arguments::{args_get, args_has, args_parse};
 use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print};
-use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
 use crate::format::{
     format_add, format_create, format_defaults, format_expand_cstring, format_true,
@@ -48,7 +47,7 @@ pub static cmd_list_panes_entry: cmd_entry = {
         exec: Some(cmd_list_panes_exec),
     }
 };
-unsafe fn cmd_list_panes_exec(
+fn cmd_list_panes_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
@@ -59,9 +58,7 @@ unsafe fn cmd_list_panes_exec(
     let mut s: Option<SessionRef> = target.session_handle();
     let mut wl: refbox::Weak<winlink> = target.winlink_handle();
     let mut order: sort_order = SORT_ACTIVITY;
-    order = sort_order_from_string(nullable_cstr(
-        args_get(args, 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
-    ));
+    order = sort_order_from_string(args_get(args, 'O' as i32 as u_char));
     if order as ::core::ffi::c_uint == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0
     {
@@ -88,7 +85,7 @@ unsafe fn cmd_list_panes_exec(
     }
     CmdOutcome::Normal
 }
-unsafe fn cmd_list_panes_server(
+fn cmd_list_panes_server(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) {
@@ -106,7 +103,7 @@ unsafe fn cmd_list_panes_server(
         s = s_owner.clone();
     }
 }
-unsafe fn cmd_list_panes_session(
+fn cmd_list_panes_session(
     self_0: refbox::Weak<cmd>,
     s_owner: &SessionRef,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
@@ -123,7 +120,7 @@ unsafe fn cmd_list_panes_session(
         wl = winlink_next(&wl);
     }
 }
-unsafe fn cmd_list_panes_window(
+fn cmd_list_panes_window(
     self_0: refbox::Weak<cmd>,
     s_owner: &SessionRef,
     mut wl: refbox::Weak<winlink>,
@@ -150,9 +147,7 @@ unsafe fn cmd_list_panes_window(
         _ => c"",
     });
     let filter = args_get(args, 'f' as i32 as u_char);
-    sort_crit.order = sort_order_from_string(nullable_cstr(
-        args_get(args, 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
-    ));
+    sort_crit.order = sort_order_from_string(args_get(args, 'O' as i32 as u_char));
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
     let l = sort_get_panes_window(&winlink_window(&wl).expect("linked window"), &sort_crit);
     let n = u_int::try_from(l.len()).expect("too many panes to list");

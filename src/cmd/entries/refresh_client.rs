@@ -202,7 +202,7 @@ fn cmd_refresh_report(client: &ClientRef, value: &CStr) {
     pane_owner.update_control_colours(fg, bg);
 }
 
-unsafe fn cmd_refresh_client_exec(
+fn cmd_refresh_client_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {

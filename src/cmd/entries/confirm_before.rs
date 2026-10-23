@@ -65,7 +65,7 @@ fn cmd_confirm_before_args_parse(
 ) -> Result<args_parse_type, ArgsParseError> {
     Ok(ARGS_PARSE_COMMANDS_OR_STRING)
 }
-unsafe fn cmd_confirm_before_exec(
+fn cmd_confirm_before_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
@@ -75,7 +75,6 @@ unsafe fn cmd_confirm_before_exec(
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let target = crate::cmd::queue::cmdq_get_target(&item);
-    let mut confirm_key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut wait: ::core::ffi::c_int =
         (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
     let Some(cmdlist) = args_make_commands_now(self_0.clone(), item_handle, 0, 1) else {
@@ -87,17 +86,9 @@ unsafe fn cmd_confirm_before_exec(
         default_yes: 0,
     });
     cdata.default_yes = args_has(args, 'y' as i32 as u_char);
-    confirm_key =
-        args_get(args, 'c' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if !confirm_key.is_null() {
-        if *confirm_key.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
-            == '\0' as i32
-            && *confirm_key.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
-                > 31 as ::core::ffi::c_int
-            && (*confirm_key.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int)
-                < 127 as ::core::ffi::c_int
-        {
-            cdata.confirm_key = *confirm_key.offset(0 as ::core::ffi::c_int as isize) as u_char;
+    if let Some(confirm_key) = args_get(args, 'c' as i32 as u_char) {
+        if let &[key @ 32..=126] = confirm_key.to_bytes() {
+            cdata.confirm_key = key;
         } else {
             cmdq_error(item_handle, |out| out.write_all(b"invalid confirm key"));
             return CmdOutcome::Error;

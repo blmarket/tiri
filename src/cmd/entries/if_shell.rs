@@ -9,7 +9,6 @@ use crate::cmd::queue::{
     cmdq_append, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_target_client,
     cmdq_insert_after, cmdq_resumed,
 };
-use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
 use crate::format::format_single_from_target_cstring;
 use crate::job::job_run;
@@ -61,7 +60,7 @@ fn cmd_if_shell_args_parse(_args: &args, idx: u_int) -> Result<args_parse_type, 
     }
     Ok(ARGS_PARSE_STRING)
 }
-unsafe fn cmd_if_shell_exec(
+fn cmd_if_shell_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
@@ -83,9 +82,7 @@ unsafe fn cmd_if_shell_exec(
         args_string(args, 0 as u_int).unwrap_or(c""),
     );
     if args_has(args, 'F' as i32 as u_char) != 0 {
-        let cmdlist = if *shellcmd.as_ptr() as ::core::ffi::c_int != '0' as i32
-            && *shellcmd.as_ptr() as ::core::ffi::c_int != '\0' as i32
-        {
+        let cmdlist = if !matches!(shellcmd.as_bytes().first(), None | Some(b'0')) {
             args_make_commands_now(
                 self_0.clone(),
                 item_handle,
@@ -162,7 +159,7 @@ unsafe fn cmd_if_shell_exec(
     if wait == 0 {
         job.try_borrow_mut()
             .expect("newly registered job")
-            .completecb = Some(Box::new(move |completion| unsafe {
+            .completecb = Some(Box::new(move |completion| {
             cmd_if_shell_callback(completion, &mut cdata, None);
         }));
         return CmdOutcome::Normal;
@@ -192,9 +189,9 @@ async fn cmd_if_shell_complete(
         drop(cdata);
         return std::future::pending().await;
     };
-    unsafe { cmd_if_shell_callback(completion, &mut cdata, Some(&item)) };
+    cmd_if_shell_callback(completion, &mut cdata, Some(&item));
 }
-unsafe fn cmd_if_shell_callback(
+fn cmd_if_shell_callback(
     completion: JobCompletion,
     cdata: &mut cmd_if_shell_data,
     item: Option<&Weak<std::cell::RefCell<cmdq_item>>>,
@@ -212,13 +209,9 @@ unsafe fn cmd_if_shell_callback(
                 if item.is_none() {
                     cmd_parse_error_uppercase_first(&mut error);
                 }
-                let error_ptr = error
-                    .as_ref()
-                    .map_or(::core::ptr::null(), |cause| cause.as_ptr());
+                let error = error.as_deref();
                 if let Some(item) = item {
-                    cmdq_error(&cmdq_resumed(item), |out| {
-                        write_cstr(out, nullable_cstr(error_ptr))
-                    });
+                    cmdq_error(&cmdq_resumed(item), |out| write_cstr(out, error));
                 } else {
                     status_message_set(
                         c,
@@ -226,7 +219,7 @@ unsafe fn cmd_if_shell_callback(
                         1 as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
-                        |out| write_cstr(out, nullable_cstr(error_ptr)),
+                        |out| write_cstr(out, error),
                     );
                 }
             }

@@ -351,12 +351,7 @@ pub unsafe fn client_main(
             let mut data = vec![0u8; header_size + size];
             let argc = ::core::ffi::c_int::try_from(argv.len()).expect("argv length exceeds c_int");
             data[..header_size].copy_from_slice(&argc.to_ne_bytes());
-            if cmd_pack_argv(
-                argv,
-                data[header_size..].as_mut_ptr() as *mut ::core::ffi::c_char,
-                size,
-            ) != 0 as ::core::ffi::c_int
-            {
+            if cmd_pack_argv(argv, &mut data[header_size..]) != 0 as ::core::ffi::c_int {
                 eprintln!("command too long");
                 return 1 as ::core::ffi::c_int;
             }

@@ -22,9 +22,9 @@ use crate::shared::limits::UINT_MAX;
 use crate::shared::session::SessionRef;
 use crate::shared::utf8::*;
 use crate::shared::window::{window_mode_entry, winlink};
+use crate::text::numbers::strtol_prefix;
 use crate::text::utf8::{utf8_from_data, utf8_fromcstr_vec};
 use crate::window::WindowPane;
-use libc::strtol;
 pub static cmd_send_keys_entry: cmd_entry = {
     cmd_entry {
         name: c"send-keys",
@@ -153,7 +153,7 @@ fn cmd_send_keys_inject_key(
     }
     after
 }
-unsafe fn cmd_send_keys_inject_string(
+fn cmd_send_keys_inject_string(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     after_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
     args: &args,
@@ -163,15 +163,15 @@ unsafe fn cmd_send_keys_inject_string(
     let mut s: &std::ffi::CStr = args_string(args, i as u_int).expect("argument is present");
     let mut uc: utf8_char = 0;
     let mut key: key_code = 0;
-    let mut endptr: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut n: ::core::ffi::c_long = 0;
     let mut literal: ::core::ffi::c_int = 0;
     if args_has(args, 'H' as i32 as u_char) != 0 {
-        n = strtol(s.as_ptr(), &raw mut endptr, 16 as ::core::ffi::c_int);
+        let consumed;
+        (n, consumed) = strtol_prefix(s.to_bytes(), 16);
         if s.is_empty()
             || n < 0 as ::core::ffi::c_long
             || n > 0xff as ::core::ffi::c_long
-            || *endptr as ::core::ffi::c_int != '\0' as i32
+            || consumed != s.to_bytes().len()
         {
             return std::rc::Rc::downgrade(item_handle);
         }
@@ -220,7 +220,7 @@ unsafe fn cmd_send_keys_inject_string(
     }
     after
 }
-unsafe fn cmd_send_keys_exec(
+fn cmd_send_keys_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {

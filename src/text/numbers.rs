@@ -84,11 +84,11 @@ pub(crate) fn scan_u32_pair(text: &[u8], literal: &[u8], separator: &[u8]) -> Op
     Some((first, second))
 }
 
-/// `strtol(text, &end, 10)` cast to `int`, with the bytes consumed (0
-/// when there are no digits, where `end` is `text`). The `long` result
-/// saturates first, so `LONG_MAX` becomes -1 and `LONG_MIN` becomes 0.
-pub(crate) fn strtol_prefix(text: &[u8]) -> (i32, usize) {
-    let prefix = integer_prefix(text, 10);
+/// `strtol(text, &end, radix)`, with the bytes consumed (0 when there are
+/// no digits, where `end` is `text`). Overflow saturates to `LONG_MAX` or
+/// `LONG_MIN`.
+pub(crate) fn strtol_prefix(text: &[u8], radix: u32) -> (i64, usize) {
+    let prefix = integer_prefix(text, radix);
     let long = match prefix.magnitude {
         Some(magnitude) if prefix.negative => {
             0i64.checked_sub_unsigned(magnitude).unwrap_or(i64::MIN)
@@ -97,15 +97,15 @@ pub(crate) fn strtol_prefix(text: &[u8]) -> (i32, usize) {
         None if prefix.negative => i64::MIN,
         None => i64::MAX,
     };
-    (long as i32, prefix.consumed)
+    (long, prefix.consumed)
 }
 
 /// glibc `%d`: optional whitespace and sign, at least one digit, read as
 /// `long` by strtol and stored truncated to `int`. Returns the value and
 /// the bytes consumed.
 pub(crate) fn scan_i32(field: &[u8]) -> Option<(i32, usize)> {
-    let (value, consumed) = strtol_prefix(field);
-    (consumed != 0).then_some((value, consumed))
+    let (value, consumed) = strtol_prefix(field, 10);
+    (consumed != 0).then_some((value as i32, consumed))
 }
 
 fn c_space_count(input: &[u8]) -> usize {

@@ -112,7 +112,7 @@ fn cmd_set_option_args_parse(args: &args, idx: u_int) -> Result<args_parse_type,
     }
     Ok(ARGS_PARSE_STRING)
 }
-unsafe fn cmd_set_hook_event_exec(
+fn cmd_set_hook_event_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
@@ -133,7 +133,7 @@ unsafe fn cmd_set_hook_event_exec(
         item_handle,
         args_string(args, 0 as u_int).unwrap_or(c""),
     );
-    if *argument.as_ptr() as ::core::ffi::c_int != '@' as i32 {
+    if argument.as_bytes().first() != Some(&b'@') {
         cmdq_error(item_handle, |out| {
             out.write_all(b"event name must start with @")
         });
@@ -296,7 +296,7 @@ fn unset_window_panes(
     Ok(())
 }
 
-unsafe fn cmd_set_option_exec(
+fn cmd_set_option_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {

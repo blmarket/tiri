@@ -15,7 +15,7 @@ use crate::log::{log_cstr, log_debug};
 use crate::menu::{menu_add_item, menu_create, menu_display};
 use crate::options::{options_find_choice, options_get_number, options_get_string};
 use crate::popup::{popup_display, popup_modify, popup_present};
-use libc::strtol;
+use crate::text::numbers::strtol_prefix;
 use std::ffi::CStr;
 
 use crate::server_client::Client as _;
@@ -141,7 +141,7 @@ fn cmd_display_menu_status_position(
         })
 }
 
-unsafe fn cmd_display_menu_get_popup_pos(
+fn cmd_display_menu_get_popup_pos(
     tc_owner: &ClientRef,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     args: &args,
@@ -396,11 +396,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
         _ => xp,
     };
     let p = format_expand_cstring(ft, xp);
-    n = strtol(
-        p.as_ptr(),
-        ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
-        10 as ::core::ffi::c_int,
-    );
+    n = strtol_prefix(p.as_bytes(), 10).0;
     if n + w as ::core::ffi::c_long
         >= tc.as_ref().expect("live client").terminal_size().0 as ::core::ffi::c_long
     {
@@ -433,11 +429,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
         _ => yp,
     };
     let p = format_expand_cstring(ft, yp);
-    n = strtol(
-        p.as_ptr(),
-        ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
-        10 as ::core::ffi::c_int,
-    );
+    n = strtol_prefix(p.as_bytes(), 10).0;
     if n < h as ::core::ffi::c_long {
         n = 0 as ::core::ffi::c_long;
     } else {
@@ -467,7 +459,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
     drop(ft_owner);
     1 as ::core::ffi::c_int
 }
-unsafe fn cmd_display_menu_get_menu_pos(
+fn cmd_display_menu_get_menu_pos(
     tc_owner: &ClientRef,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     args: &args,
@@ -670,11 +662,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
         _ => xp,
     };
     let p = format_expand_cstring(ft, xp);
-    n = strtol(
-        p.as_ptr(),
-        ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
-        10 as ::core::ffi::c_int,
-    );
+    n = strtol_prefix(p.as_bytes(), 10).0;
     if n < ox as ::core::ffi::c_long {
         n = ox as ::core::ffi::c_long;
     }
@@ -701,11 +689,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
         _ => yp,
     };
     let p = format_expand_cstring(ft, yp);
-    n = strtol(
-        p.as_ptr(),
-        ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
-        10 as ::core::ffi::c_int,
-    );
+    n = strtol_prefix(p.as_bytes(), 10).0;
     if n < h as ::core::ffi::c_long {
         n = 0 as ::core::ffi::c_long;
     } else {
@@ -730,7 +714,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
     drop(window);
     1 as ::core::ffi::c_int
 }
-unsafe fn cmd_display_menu_exec(
+fn cmd_display_menu_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {

@@ -2,7 +2,6 @@ use crate::arguments::{args_get, args_has, args_parse, args_string};
 use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{cmdq_error, cmdq_print};
 use crate::environ::{environ_find, environ_iter};
-use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
 use crate::session::Session;
 use crate::shared::abi::*;
@@ -95,7 +94,7 @@ fn cmd_show_environment_print(
         });
     };
 }
-unsafe fn cmd_show_environment_exec(
+fn cmd_show_environment_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
@@ -105,13 +104,12 @@ unsafe fn cmd_show_environment_exec(
     let target = crate::cmd::queue::cmdq_get_target(&item);
 
     let mut envent: Option<&environ_entry> = None;
-    let mut tflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut name: Option<&CStr> = args_string(args, 0 as u_int);
-    tflag = args_get(args, 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if !tflag.is_null() && target.session_handle().is_none() {
+    let tflag = args_get(args, 't' as i32 as u_char);
+    if tflag.is_some() && target.session_handle().is_none() {
         cmdq_error(item_handle, |out| {
             out.write_all(b"no such session: ")?;
-            write_cstr(out, nullable_cstr(tflag))
+            write_cstr(out, tflag)
         });
         return CmdOutcome::Error;
     }
@@ -119,12 +117,10 @@ unsafe fn cmd_show_environment_exec(
         global_environ(Clone::clone)
     } else {
         if target.session_handle().is_none() {
-            tflag = args_get(args, 't' as i32 as u_char)
-                .map_or(std::ptr::null(), |value| value.as_ptr());
-            if !tflag.is_null() {
+            if tflag.is_some() {
                 cmdq_error(item_handle, |out| {
                     out.write_all(b"no such session: ")?;
-                    write_cstr(out, nullable_cstr(tflag))
+                    write_cstr(out, tflag)
                 });
             } else {
                 cmdq_error(item_handle, |out| out.write_all(b"no current session"));

@@ -5,7 +5,7 @@ use crate::file::{file_read_wait, FileOutcome};
 use crate::format::bytes::write_cstr;
 use crate::format::format_single_from_target_cstring;
 use crate::paste::paste_set_owned;
-use crate::reactor::{evbuffer_get_length, evbuffer_pullup};
+use crate::reactor::evbuffer_pullup;
 use crate::shared::errno::ErrorText;
 
 use crate::server_client::Client as _;
@@ -49,7 +49,7 @@ pub static cmd_load_buffer_entry: cmd_entry = {
         exec: Some(cmd_load_buffer_exec),
     }
 };
-unsafe fn cmd_load_buffer_done(
+fn cmd_load_buffer_done(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     mut cdata: cmd_load_buffer_data,
     mut outcome: FileOutcome,
@@ -58,10 +58,7 @@ unsafe fn cmd_load_buffer_done(
     let path = outcome.path.as_deref();
     let error = outcome.error;
     let buffer = &mut outcome.buffer;
-    let mut bdata: *mut ::core::ffi::c_void = evbuffer_pullup(buffer, -1)
-        .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
-        as *mut ::core::ffi::c_void;
-    let mut bsize: size_t = evbuffer_get_length(&*(buffer));
+    let bdata: &[u8] = evbuffer_pullup(buffer, -1).map_or(&[], |bytes| bytes);
     let mut cause: Option<CString> = None;
     if error != 0 as ::core::ffi::c_int {
         cmdq_error(item_handle, |out| {
@@ -73,8 +70,8 @@ unsafe fn cmd_load_buffer_done(
             out.write_all(b": ")?;
             write_cstr(out, path)
         });
-    } else if bsize != 0 as size_t {
-        let owned: Box<[u8]> = std::slice::from_raw_parts(bdata.cast::<u8>(), bsize).into();
+    } else if !bdata.is_empty() {
+        let owned: Box<[u8]> = bdata.into();
         if paste_set_owned(owned, cdata.name.as_deref(), Some(&mut cause))
             != 0 as ::core::ffi::c_int
         {
@@ -84,11 +81,7 @@ unsafe fn cmd_load_buffer_done(
         } else if tc.is_some_and(|client| {
             client.attached_session().upgrade().is_some() && !client.is_dead()
         }) {
-            tty_set_selection(
-                tc.expect("selection client"),
-                c"",
-                std::slice::from_raw_parts(bdata.cast(), bsize),
-            );
+            tty_set_selection(tc.expect("selection client"), c"", bdata);
         }
     }
 }
@@ -104,7 +97,7 @@ async fn cmd_load_buffer_complete(
         drop(cdata);
         return std::future::pending().await;
     };
-    unsafe { cmd_load_buffer_done(&cmdq_resumed(&item), cdata, outcome) };
+    cmd_load_buffer_done(&cmdq_resumed(&item), cdata, outcome);
 }
 fn cmd_load_buffer_exec(
     self_0: refbox::Weak<cmd>,

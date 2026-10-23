@@ -201,7 +201,7 @@ fn cmd_select_pane_marked_pane(
     }
     CmdOutcome::Normal
 }
-unsafe fn cmd_select_pane_exec(
+fn cmd_select_pane_exec(
     mut command: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {

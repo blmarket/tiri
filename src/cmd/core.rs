@@ -217,28 +217,17 @@ pub fn cmd_log_argv(argv: &[CString], prefix: &CStr) {
 pub(crate) fn cmd_append_argv(argv: &mut Vec<CString>, arg: &CStr) {
     argv.push(arg.to_owned());
 }
-pub unsafe fn cmd_pack_argv(
-    argv: &[CString],
-    mut buf: *mut ::core::ffi::c_char,
-    mut len: size_t,
-) -> ::core::ffi::c_int {
-    let mut arglen: size_t = 0;
-    let mut i: ::core::ffi::c_int = 0;
+pub fn cmd_pack_argv(argv: &[CString], mut buf: &mut [u8]) -> ::core::ffi::c_int {
     if argv.is_empty() {
         return 0 as ::core::ffi::c_int;
     }
     cmd_log_argv(argv, c"cmd_pack_argv");
-    *buf = '\0' as i32 as ::core::ffi::c_char;
-    i = 0 as ::core::ffi::c_int;
-    while (i as usize) < argv.len() {
-        let dst = std::slice::from_raw_parts_mut(buf.cast::<u8>(), len);
-        if cstr_copy_into(dst, &argv[i as usize]) as size_t >= len {
+    buf[0] = 0;
+    for arg in argv {
+        if cstr_copy_into(buf, arg) >= buf.len() {
             return -(1 as ::core::ffi::c_int);
         }
-        arglen = argv[i as usize].as_bytes_with_nul().len() as size_t;
-        buf = buf.add(arglen);
-        len = len.wrapping_sub(arglen);
-        i += 1;
+        buf = &mut buf[arg.as_bytes_with_nul().len()..];
     }
     0 as ::core::ffi::c_int
 }

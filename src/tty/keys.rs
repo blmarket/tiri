@@ -2954,7 +2954,8 @@ fn tty_keys_palette(
         return 0 as ::core::ffi::c_int;
     }
     let text = tty_keys_colour_text(&bytes[4..4 + i]);
-    let (idx, consumed) = strtol_prefix(text);
+    let (idx, consumed) = strtol_prefix(text, 10);
+    let idx = idx as i32;
     if text.get(consumed) != Some(&b';') {
         return -(1 as ::core::ffi::c_int);
     }
@@ -3033,6 +3034,14 @@ mod scan {
             b"-18446744073709551616",
             b"99999999999999999999999999",
             b"-99999999999999999999999999",
+            b"ff",
+            b"0xff",
+            b"0XfF;",
+            b"-0x1",
+            b"0x",
+            b"0xg",
+            b"8000000000000000",
+            b"-8000000000000001",
         ];
 
         #[test]
@@ -3053,9 +3062,17 @@ mod scan {
                     let value = libc::strtol(text.as_ptr(), &mut end, 10);
                     let consumed = end.offset_from(text.as_ptr()) as usize;
                     assert_eq!(
-                        strtol_prefix(input),
-                        (value as ::core::ffi::c_int, consumed),
+                        strtol_prefix(input, 10),
+                        (value, consumed),
                         "strtol {input:?}"
+                    );
+
+                    let value = libc::strtol(text.as_ptr(), &mut end, 16);
+                    let consumed = end.offset_from(text.as_ptr()) as usize;
+                    assert_eq!(
+                        strtol_prefix(input, 16),
+                        (value, consumed),
+                        "strtol base 16 {input:?}"
                     );
                 }
             }

@@ -12,7 +12,6 @@ use crate::events_payload::{
 };
 use crate::file::file_error;
 use crate::format::bytes::format_message_with;
-use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
 use crate::format::{format_add, format_add_cstr, format_create, format_merge};
 use crate::key_string::key_string_format;
@@ -513,7 +512,7 @@ pub fn cmdq_insert_after(
     }
     last
 }
-pub unsafe fn cmdq_insert_hook(
+pub fn cmdq_insert_hook(
     _s_owner: Option<&SessionRef>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     current: Option<&cmd_find_state>,
@@ -526,7 +525,6 @@ pub unsafe fn cmdq_insert_hook(
     let cmd_ref = cmd.try_borrow().expect("live command");
     let args_0 = cmd_get_args(&cmd_ref);
     let mut i: u_int = 0;
-    let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if flags & CMDQ_STATE_NOHOOKS != 0 {
         return;
     }
@@ -545,26 +543,19 @@ pub unsafe fn cmdq_insert_hook(
     i = 0 as u_int;
     while i < args_count(args_0) {
         let key = format_message_with(|out| write!(out, "argument_{}", i));
-        event_payload_set_string(&mut ep, &key, |out| {
-            write_cstr(
-                out,
-                nullable_cstr(
-                    args_string(args_0, i).map_or(std::ptr::null(), |value| value.as_ptr()),
-                ),
-            )
-        });
+        event_payload_set_string(&mut ep, &key, |out| write_cstr(out, args_string(args_0, i)));
         i = i.wrapping_add(1);
     }
     for flag in args_flags(args_0) {
-        value = args_get(args_0, flag as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+        let value = args_get(args_0, flag as u_char);
         let key = format_message_with(|out| {
             out.write_all(b"flag_")?;
             out.write_all(&[flag])
         });
-        if value.is_null() {
+        if value.is_none() {
             event_payload_set_string(&mut ep, &key, |out| out.write_all(b"1"));
         } else {
-            event_payload_set_string(&mut ep, &key, |out| write_cstr(out, nullable_cstr(value)));
+            event_payload_set_string(&mut ep, &key, |out| write_cstr(out, value));
         }
         i = 0 as u_int;
         for av in args_flag_values(args_0, flag as u_char) {
@@ -841,7 +832,7 @@ pub fn cmdq_get_command(
     remaining.expect("nonempty command list")
 }
 /// Resolve `flag` outside any item borrow, then store it in the `slot` state.
-unsafe fn cmdq_find_flag_into(
+fn cmdq_find_flag_into(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     flag: &cmd_entry_flag,
     slot: impl FnOnce(&mut cmdq_item) -> &mut cmd_find_state,
@@ -851,32 +842,22 @@ unsafe fn cmdq_find_flag_into(
     *slot(&mut item_handle.borrow_mut()) = fs;
     retval
 }
-unsafe fn cmdq_find_flag(
+fn cmdq_find_flag(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     fs: &mut cmd_find_state,
     flag: &cmd_entry_flag,
 ) -> CmdOutcome {
-    let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if flag.flag == 0 {
         let target_client = cmdq_get_target_client(Some(&item_handle.borrow()));
         *fs = cmd_find_state::find_from_client(target_client.as_ref(), 0 as ::core::ffi::c_int)
             .unwrap_or_else(|| cmd_find_state::clear_state(0 as ::core::ffi::c_int));
         return CmdOutcome::Normal;
     }
-    value = args_get(
-        cmd_get_args(
-            &item_handle
-                .borrow()
-                .command_handle()
-                .try_borrow()
-                .expect("live command"),
-        ),
-        flag.flag,
-    )
-    .map_or(std::ptr::null(), |value| value.as_ptr());
+    let command = item_handle.borrow().command_handle();
+    let cmd_ref = command.try_borrow().expect("live command");
     if fs.find_target(
         Some(item_handle),
-        nullable_cstr(value),
+        args_get(cmd_get_args(&cmd_ref), flag.flag),
         flag.type_0,
         flag.flags,
     ) != 0 as ::core::ffi::c_int
@@ -1009,10 +990,7 @@ unsafe fn cmdq_fire_command(
     if entry.flags & CMD_CLIENT_CFLAG != 0 {
         tc = cmd_find_client(
             Some(item_handle),
-            nullable_cstr(
-                args_get(args, 'c' as i32 as u_char)
-                    .map_or(std::ptr::null(), |value| value.as_ptr()),
-            ),
+            args_get(args, 'c' as i32 as u_char),
             quiet,
         );
         if tc.is_none() && quiet == 0 {
@@ -1024,10 +1002,7 @@ unsafe fn cmdq_fire_command(
     } else if entry.flags & CMD_CLIENT_TFLAG != 0 {
         tc = cmd_find_client(
             Some(item_handle),
-            nullable_cstr(
-                args_get(args, 't' as i32 as u_char)
-                    .map_or(std::ptr::null(), |value| value.as_ptr()),
-            ),
+            args_get(args, 't' as i32 as u_char),
             quiet,
         );
         if tc.is_none() && quiet == 0 {

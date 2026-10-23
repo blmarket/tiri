@@ -3,7 +3,6 @@ use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{
     cmdq_error, cmdq_get_client, cmdq_get_flags, cmdq_get_state_owned, cmdq_get_target_client,
 };
-use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
 use crate::key_bindings::key_bindings_get_table;
 use crate::server_fn::server_redraw_window;
@@ -69,8 +68,7 @@ unsafe fn cmd_switch_client_exec(
         wp: Default::default(),
         idx: 0,
     };
-    let mut tflag: *const ::core::ffi::c_char =
-        args_get(args, 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    let tflag = args_get(args, 't' as i32 as u_char);
     let mut type_0: cmd_find_type = CMD_FIND_PANE;
     let mut flags: ::core::ffi::c_int = 0;
     let c_owner = cmdq_get_client(Some(&*item));
@@ -87,7 +85,7 @@ unsafe fn cmd_switch_client_exec(
         order_seq: &[],
     };
     let mut uid: uid_t = 0;
-    if nullable_cstr(tflag).is_some_and(|target| {
+    if tflag.is_some_and(|target| {
         let target = target.to_bytes();
         target
             .iter()
@@ -100,9 +98,7 @@ unsafe fn cmd_switch_client_exec(
         type_0 = CMD_FIND_SESSION;
         flags = CMD_FIND_PREFER_UNATTACHED;
     }
-    if target.find_target(Some(item_handle), nullable_cstr(tflag), type_0, flags)
-        != 0 as ::core::ffi::c_int
-    {
+    if target.find_target(Some(item_handle), tflag, type_0, flags) != 0 as ::core::ffi::c_int {
         return CmdOutcome::Error;
     }
     selected_session = target.session_handle();
@@ -139,9 +135,7 @@ unsafe fn cmd_switch_client_exec(
         tc.as_ref().expect("target client").select_key_table(table);
         return CmdOutcome::Normal;
     }
-    sort_crit.order = sort_order_from_string(nullable_cstr(
-        args_get(args, 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
-    ));
+    sort_crit.order = sort_order_from_string(args_get(args, 'O' as i32 as u_char));
     if sort_crit.order as ::core::ffi::c_uint
         == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0

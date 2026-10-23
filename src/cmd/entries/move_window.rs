@@ -1,7 +1,6 @@
 use crate::arguments::{args_get, args_has, args_parse};
 use crate::cmd::queue::cmdq_error;
 use crate::cmd::{cmd_get_args, cmd_get_entry};
-use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
 use crate::options::options_get_number;
 use crate::resize::recalculate_sizes;
@@ -65,7 +64,7 @@ pub static cmd_link_window_entry: cmd_entry = {
         exec: Some(cmd_move_window_exec),
     }
 };
-unsafe fn cmd_move_window_exec(
+fn cmd_move_window_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
@@ -81,8 +80,7 @@ unsafe fn cmd_move_window_exec(
         wp: Default::default(),
         idx: 0,
     };
-    let mut tflag: *const ::core::ffi::c_char =
-        args_get(args, 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    let tflag = args_get(args, 't' as i32 as u_char);
     let mut src: Option<SessionRef> = source.session_handle();
     let mut dst: Option<SessionRef> = None;
     let mut wl: refbox::Weak<winlink> = source.winlink_handle();
@@ -92,12 +90,8 @@ unsafe fn cmd_move_window_exec(
     let mut sflag: ::core::ffi::c_int = 0;
     let mut before: ::core::ffi::c_int = 0;
     if args_has(args, 'r' as i32 as u_char) != 0 {
-        if target.find_target(
-            Some(item_handle),
-            nullable_cstr(tflag),
-            CMD_FIND_SESSION,
-            CMD_FIND_QUIET,
-        ) != 0 as ::core::ffi::c_int
+        if target.find_target(Some(item_handle), tflag, CMD_FIND_SESSION, CMD_FIND_QUIET)
+            != 0 as ::core::ffi::c_int
         {
             return CmdOutcome::Error;
         }
@@ -111,7 +105,7 @@ unsafe fn cmd_move_window_exec(
     }
     if target.find_target(
         Some(item_handle),
-        nullable_cstr(tflag),
+        tflag,
         CMD_FIND_WINDOW,
         CMD_FIND_WINDOW_INDEX,
     ) != 0 as ::core::ffi::c_int

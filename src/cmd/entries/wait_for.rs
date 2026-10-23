@@ -631,10 +631,10 @@ mod tests {
 
     /// Run `exec` as the next item of `owner`'s queue on the channel `name`.
     /// The returned item stays queued while it waits.
-    unsafe fn run_on(
+    fn run_on(
         owner: &ClientRef,
         name: &'static CStr,
-        exec: unsafe fn(&Rc<std::cell::RefCell<cmdq_item>>, &CStr) -> CmdOutcome,
+        exec: fn(&Rc<std::cell::RefCell<cmdq_item>>, &CStr) -> CmdOutcome,
     ) -> Weak<std::cell::RefCell<cmdq_item>> {
         let item = cmdq_append(
             Some(owner),
@@ -670,34 +670,32 @@ mod tests {
 
     #[test]
     fn unlock_hands_the_lock_to_the_first_locker_only() {
-        unsafe {
-            let [holder, first, second] = [(); 3].map(|_| clients::with_queue());
-            assert!(run_on(&holder, c"l", cmd_wait_for_lock).upgrade().is_none());
-            let first_item = run_on(&first, c"l", cmd_wait_for_lock);
-            let second_item = run_on(&second, c"l", cmd_wait_for_lock);
-            assert!(first_item.upgrade().is_some() && second_item.upgrade().is_some());
+        let [holder, first, second] = [(); 3].map(|_| clients::with_queue());
+        assert!(run_on(&holder, c"l", cmd_wait_for_lock).upgrade().is_none());
+        let first_item = run_on(&first, c"l", cmd_wait_for_lock);
+        let second_item = run_on(&second, c"l", cmd_wait_for_lock);
+        assert!(first_item.upgrade().is_some() && second_item.upgrade().is_some());
 
-            assert!(run_on(&holder, c"l", cmd_wait_for_unlock)
-                .upgrade()
-                .is_none());
-            cmdq_next(Some(&first));
-            cmdq_next(Some(&second));
-            assert!(first_item.upgrade().is_none());
-            assert!(second_item.upgrade().is_some());
-            assert_eq!(channel(c"l", |wc| wc.locked), Some(1));
+        assert!(run_on(&holder, c"l", cmd_wait_for_unlock)
+            .upgrade()
+            .is_none());
+        cmdq_next(Some(&first));
+        cmdq_next(Some(&second));
+        assert!(first_item.upgrade().is_none());
+        assert!(second_item.upgrade().is_some());
+        assert_eq!(channel(c"l", |wc| wc.locked), Some(1));
 
-            assert!(run_on(&first, c"l", cmd_wait_for_unlock)
-                .upgrade()
-                .is_none());
-            cmdq_next(Some(&second));
-            assert!(second_item.upgrade().is_none());
-            assert_eq!(channel(c"l", |wc| wc.locked), Some(1));
+        assert!(run_on(&first, c"l", cmd_wait_for_unlock)
+            .upgrade()
+            .is_none());
+        cmdq_next(Some(&second));
+        assert!(second_item.upgrade().is_none());
+        assert_eq!(channel(c"l", |wc| wc.locked), Some(1));
 
-            assert!(run_on(&second, c"l", cmd_wait_for_unlock)
-                .upgrade()
-                .is_none());
-            assert_eq!(channel(c"l", |wc| wc.locked), Some(0));
-        }
+        assert!(run_on(&second, c"l", cmd_wait_for_unlock)
+            .upgrade()
+            .is_none());
+        assert_eq!(channel(c"l", |wc| wc.locked), Some(0));
     }
 
     // A queued item's own wake only polls that item, and the next command
@@ -710,7 +708,7 @@ mod tests {
     fn reenter_on_wake(
         owner: &ClientRef,
         name: &'static CStr,
-        exec: unsafe fn(&Rc<std::cell::RefCell<cmdq_item>>, &CStr) -> CmdOutcome,
+        exec: fn(&Rc<std::cell::RefCell<cmdq_item>>, &CStr) -> CmdOutcome,
     ) -> (
         CmdqWaiter,
         tiri_rt::oneshot::Receiver<()>,
@@ -719,7 +717,7 @@ mod tests {
         let reentered = Rc::new(std::cell::OnceCell::new());
         let (owner, cell) = (owner.clone(), reentered.clone());
         let (waiter, resumed) = waiter_on_wake(move || {
-            assert!(cell.set(unsafe { run_on(&owner, name, exec) }).is_ok());
+            assert!(cell.set(run_on(&owner, name, exec)).is_ok());
         });
         (waiter, resumed, reentered)
     }
@@ -775,68 +773,62 @@ mod tests {
 
     #[test]
     fn unlock_hands_the_lock_to_a_locker_that_unlocks_on_wake() {
-        unsafe {
-            let [holder, relay] = [(); 2].map(|_| clients::with_queue());
-            assert!(run_on(&holder, c"relay", cmd_wait_for_lock)
-                .upgrade()
-                .is_none());
-            let (unlocker, _unlocking, unlocked) =
-                reenter_on_wake(&relay, c"relay", cmd_wait_for_unlock);
-            let trace = Default::default();
-            let (next, _locking) = recorded_waiters(1, &trace);
-            WAIT_CHANNELS.with_borrow_mut(|channels| {
-                let wc = cmd_wait_for_add(channels, c"relay");
-                wc.lockers.push(unlocker);
-                wc.lockers.extend(next);
-            });
+        let [holder, relay] = [(); 2].map(|_| clients::with_queue());
+        assert!(run_on(&holder, c"relay", cmd_wait_for_lock)
+            .upgrade()
+            .is_none());
+        let (unlocker, _unlocking, unlocked) =
+            reenter_on_wake(&relay, c"relay", cmd_wait_for_unlock);
+        let trace = Default::default();
+        let (next, _locking) = recorded_waiters(1, &trace);
+        WAIT_CHANNELS.with_borrow_mut(|channels| {
+            let wc = cmd_wait_for_add(channels, c"relay");
+            wc.lockers.push(unlocker);
+            wc.lockers.extend(next);
+        });
 
-            assert!(run_on(&holder, c"relay", cmd_wait_for_unlock)
-                .upgrade()
-                .is_none());
-            let item = unlocked.get().expect("unlock handed over the lock");
-            assert!(item.upgrade().is_none());
-            assert_eq!(*trace.borrow(), [0]);
-            assert_eq!(
-                channel(c"relay", |wc| (wc.locked, wc.lockers.len())),
-                Some((1, 0))
-            );
-        }
+        assert!(run_on(&holder, c"relay", cmd_wait_for_unlock)
+            .upgrade()
+            .is_none());
+        let item = unlocked.get().expect("unlock handed over the lock");
+        assert!(item.upgrade().is_none());
+        assert_eq!(*trace.borrow(), [0]);
+        assert_eq!(
+            channel(c"relay", |wc| (wc.locked, wc.lockers.len())),
+            Some((1, 0))
+        );
     }
 
     #[test]
     fn unlock_hands_the_lock_to_a_locker_that_relocks_on_wake() {
-        unsafe {
-            let [holder, relocker] = [(); 2].map(|_| clients::with_queue());
-            assert!(run_on(&holder, c"relock", cmd_wait_for_lock)
-                .upgrade()
-                .is_none());
-            let (locker, _locking, relocked) =
-                reenter_on_wake(&relocker, c"relock", cmd_wait_for_lock);
-            WAIT_CHANNELS.with_borrow_mut(|channels| {
-                cmd_wait_for_add(channels, c"relock").lockers.push(locker)
-            });
+        let [holder, relocker] = [(); 2].map(|_| clients::with_queue());
+        assert!(run_on(&holder, c"relock", cmd_wait_for_lock)
+            .upgrade()
+            .is_none());
+        let (locker, _locking, relocked) = reenter_on_wake(&relocker, c"relock", cmd_wait_for_lock);
+        WAIT_CHANNELS
+            .with_borrow_mut(|channels| cmd_wait_for_add(channels, c"relock").lockers.push(locker));
 
-            assert!(run_on(&holder, c"relock", cmd_wait_for_unlock)
-                .upgrade()
-                .is_none());
-            // The woken locker holds the lock, so the relock queues behind it.
-            let item = relocked.get().expect("unlock handed over the lock");
-            assert!(item.upgrade().is_some());
-            assert_eq!(
-                channel(c"relock", |wc| (wc.locked, wc.lockers.len())),
-                Some((1, 1))
-            );
+        assert!(run_on(&holder, c"relock", cmd_wait_for_unlock)
+            .upgrade()
+            .is_none());
+        // The woken locker holds the lock, so the relock queues behind it.
+        let item = relocked.get().expect("unlock handed over the lock");
+        assert!(item.upgrade().is_some());
+        assert_eq!(
+            channel(c"relock", |wc| (wc.locked, wc.lockers.len())),
+            Some((1, 1))
+        );
 
-            assert!(run_on(&holder, c"relock", cmd_wait_for_unlock)
-                .upgrade()
-                .is_none());
-            cmdq_next(Some(&relocker));
-            assert!(item.upgrade().is_none());
-            assert_eq!(
-                channel(c"relock", |wc| (wc.locked, wc.lockers.len())),
-                Some((1, 0))
-            );
-        }
+        assert!(run_on(&holder, c"relock", cmd_wait_for_unlock)
+            .upgrade()
+            .is_none());
+        cmdq_next(Some(&relocker));
+        assert!(item.upgrade().is_none());
+        assert_eq!(
+            channel(c"relock", |wc| (wc.locked, wc.lockers.len())),
+            Some((1, 0))
+        );
     }
 
     #[test]
@@ -862,62 +854,56 @@ mod tests {
 
     #[test]
     fn signal_skips_a_cancelled_waiter_and_stays_sticky() {
-        unsafe {
-            let gone = clients::with_queue();
-            let gone_item = run_on(&gone, c"c", cmd_wait_for_wait);
-            drop(gone);
-            assert!(gone_item.upgrade().is_none());
-            assert_eq!(channel(c"c", |wc| wc.waiters[0].is_cancelled()), Some(true));
+        let gone = clients::with_queue();
+        let gone_item = run_on(&gone, c"c", cmd_wait_for_wait);
+        drop(gone);
+        assert!(gone_item.upgrade().is_none());
+        assert_eq!(channel(c"c", |wc| wc.waiters[0].is_cancelled()), Some(true));
 
-            let other = clients::with_queue();
-            assert!(run_on(&other, c"c", signal).upgrade().is_none());
-            assert_eq!(channel(c"c", |wc| wc.waiters.len()), Some(0));
-            assert_eq!(channel(c"c", |wc| wc.woken), Some(1));
-            assert!(run_on(&other, c"c", cmd_wait_for_wait).upgrade().is_none());
-            assert!(channel(c"c", |_| ()).is_none());
-        }
+        let other = clients::with_queue();
+        assert!(run_on(&other, c"c", signal).upgrade().is_none());
+        assert_eq!(channel(c"c", |wc| wc.waiters.len()), Some(0));
+        assert_eq!(channel(c"c", |wc| wc.woken), Some(1));
+        assert!(run_on(&other, c"c", cmd_wait_for_wait).upgrade().is_none());
+        assert!(channel(c"c", |_| ()).is_none());
     }
 
     #[test]
     fn client_lost_resumes_only_the_lost_clients_waiters() {
-        unsafe {
-            let [lost, kept, holder] = [(); 3].map(|_| clients::with_queue());
-            let lost_waiter = run_on(&lost, c"c", cmd_wait_for_wait);
-            let kept_waiter = run_on(&kept, c"c", cmd_wait_for_wait);
-            assert!(run_on(&holder, c"l", cmd_wait_for_lock).upgrade().is_none());
+        let [lost, kept, holder] = [(); 3].map(|_| clients::with_queue());
+        let lost_waiter = run_on(&lost, c"c", cmd_wait_for_wait);
+        let kept_waiter = run_on(&kept, c"c", cmd_wait_for_wait);
+        assert!(run_on(&holder, c"l", cmd_wait_for_lock).upgrade().is_none());
 
-            cmd_wait_for_client_lost(&lost);
-            cmdq_next(Some(&lost));
-            assert!(lost_waiter.upgrade().is_none());
-            assert!(kept_waiter.upgrade().is_some());
-            assert_eq!(channel(c"c", |wc| wc.waiters.len()), Some(1));
+        cmd_wait_for_client_lost(&lost);
+        cmdq_next(Some(&lost));
+        assert!(lost_waiter.upgrade().is_none());
+        assert!(kept_waiter.upgrade().is_some());
+        assert_eq!(channel(c"c", |wc| wc.waiters.len()), Some(1));
 
-            let lost_locker = run_on(&lost, c"l", cmd_wait_for_lock);
-            let kept_locker = run_on(&holder, c"l", cmd_wait_for_lock);
-            cmd_wait_for_client_lost(&lost);
-            cmdq_next(Some(&lost));
-            assert!(lost_locker.upgrade().is_none());
-            assert!(kept_locker.upgrade().is_some());
-            assert!(kept_waiter.upgrade().is_some());
-            assert_eq!(channel(c"l", |wc| wc.lockers.len()), Some(1));
-            assert_eq!(channel(c"l", |wc| wc.locked), Some(1));
-        }
+        let lost_locker = run_on(&lost, c"l", cmd_wait_for_lock);
+        let kept_locker = run_on(&holder, c"l", cmd_wait_for_lock);
+        cmd_wait_for_client_lost(&lost);
+        cmdq_next(Some(&lost));
+        assert!(lost_locker.upgrade().is_none());
+        assert!(kept_locker.upgrade().is_some());
+        assert!(kept_waiter.upgrade().is_some());
+        assert_eq!(channel(c"l", |wc| wc.lockers.len()), Some(1));
+        assert_eq!(channel(c"l", |wc| wc.locked), Some(1));
     }
 
     #[test]
     fn a_lost_client_waiting_in_wait_for_is_freed() {
-        unsafe {
-            let owner = clients::with_queue();
-            let head = run_on(&owner, c"c", cmd_wait_for_wait);
-            owner.update_flags(CLIENT_DEAD as u64, 0);
-            cmd_wait_for_client_lost(&owner);
-            cmdq_next(Some(&owner));
-            assert!(head.upgrade().is_none());
-            assert!(channel(c"c", |_| ()).is_none());
-            let client = Rc::downgrade(&owner);
-            drop(owner);
-            assert!(client.upgrade().is_none());
-        }
+        let owner = clients::with_queue();
+        let head = run_on(&owner, c"c", cmd_wait_for_wait);
+        owner.update_flags(CLIENT_DEAD as u64, 0);
+        cmd_wait_for_client_lost(&owner);
+        cmdq_next(Some(&owner));
+        assert!(head.upgrade().is_none());
+        assert!(channel(c"c", |_| ()).is_none());
+        let client = Rc::downgrade(&owner);
+        drop(owner);
+        assert!(client.upgrade().is_none());
     }
 
     /// Run `wait-for -E <flags> <name>` as the next item of `owner`'s queue.

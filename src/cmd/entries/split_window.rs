@@ -12,7 +12,6 @@ use crate::events_payload::{
     event_payload_create, event_payload_set_pane, event_payload_set_string,
     event_payload_set_target, event_payload_set_window,
 };
-use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
 use crate::format::{format_single_cstring, format_single_from_target_cstring};
 use crate::options::{options_set_number, options_set_string};
@@ -85,7 +84,7 @@ pub static cmd_split_window_entry: cmd_entry = {
         exec: Some(cmd_split_window_exec),
     }
 };
-unsafe fn cmd_split_window_exec(
+fn cmd_split_window_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
@@ -138,9 +137,9 @@ unsafe fn cmd_split_window_exec(
         input = args_has(args, 'I' as i32 as u_char);
         if input != 0
             || count == 1 as u_int
-                && *args_string(args, 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())
-                    as ::core::ffi::c_int
-                    == '\0' as i32
+                && args_string(args, 0 as u_int)
+                    .expect("argument is present")
+                    .is_empty()
         {
             empty = 1 as ::core::ffi::c_int;
         } else {
@@ -149,9 +148,9 @@ unsafe fn cmd_split_window_exec(
         if empty != 0
             && count != 0 as u_int
             && (count != 1 as u_int
-                || *args_string(args, 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())
-                    as ::core::ffi::c_int
-                    != '\0' as i32)
+                || !args_string(args, 0 as u_int)
+                    .expect("argument is present")
+                    .is_empty())
         {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"command cannot be given for empty pane")
@@ -239,15 +238,7 @@ unsafe fn cmd_split_window_exec(
                         &mut new_pane.borrow_options_mut(),
                         c"remain-on-exit-format",
                         0 as ::core::ffi::c_int,
-                        |out| {
-                            write_cstr(
-                                out,
-                                nullable_cstr(
-                                    args_get(args, 'm' as i32 as u_char)
-                                        .map_or(std::ptr::null(), |value| value.as_ptr()),
-                                ),
-                            )
-                        },
+                        |out| write_cstr(out, args_get(args, 'm' as i32 as u_char)),
                     );
                 }
             }

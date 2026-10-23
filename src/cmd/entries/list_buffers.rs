@@ -1,7 +1,6 @@
 use crate::arguments::{args_get, args_has, args_parse};
 use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print};
-use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
 use crate::format::{
     format_create, format_defaults_paste_buffer, format_expand_cstring, format_true,
@@ -42,7 +41,7 @@ pub static cmd_list_buffers_entry: cmd_entry = {
         exec: Some(cmd_list_buffers_exec),
     }
 };
-unsafe fn cmd_list_buffers_exec(
+fn cmd_list_buffers_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
@@ -57,9 +56,7 @@ unsafe fn cmd_list_buffers_exec(
     };
     let template = args_get(args, 'F' as i32 as u_char).unwrap_or(LIST_BUFFERS_TEMPLATE);
     let filter = args_get(args, 'f' as i32 as u_char);
-    sort_crit.order = sort_order_from_string(nullable_cstr(
-        args_get(args, 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
-    ));
+    sort_crit.order = sort_order_from_string(args_get(args, 'O' as i32 as u_char));
     if sort_crit.order as ::core::ffi::c_uint
         == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0

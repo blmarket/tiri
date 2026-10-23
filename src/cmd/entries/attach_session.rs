@@ -4,7 +4,6 @@ use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_flags, cmdq_get_state_owned};
 use crate::compat::imsg::*;
 use crate::events::events_fire_client;
-use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
 use crate::format::format_single_cstring;
 use crate::server_client::ClientRegistry;
@@ -62,7 +61,6 @@ pub unsafe fn cmd_attach_session(
     mut Eflag: ::core::ffi::c_int,
     fflag: Option<&CStr>,
 ) -> CmdOutcome {
-    let tflag: *const ::core::ffi::c_char = tflag.map_or(std::ptr::null(), CStr::as_ptr);
     let item = item_handle.borrow();
     let current = cmdq_get_state_owned(&(item));
     let mut target: cmd_find_state = cmd_find_state {
@@ -96,7 +94,7 @@ pub unsafe fn cmd_attach_session(
         });
         return CmdOutcome::Error;
     }
-    if nullable_cstr(tflag).is_some_and(|target| {
+    if tflag.is_some_and(|target| {
         target
             .to_bytes()
             .iter()
@@ -108,9 +106,7 @@ pub unsafe fn cmd_attach_session(
         type_0 = CMD_FIND_SESSION;
         flags = CMD_FIND_PREFER_UNATTACHED;
     }
-    if target.find_target(Some(item_handle), nullable_cstr(tflag), type_0, flags)
-        != 0 as ::core::ffi::c_int
-    {
+    if target.find_target(Some(item_handle), tflag, type_0, flags) != 0 as ::core::ffi::c_int {
         return CmdOutcome::Error;
     }
     s = target.session_handle();
@@ -285,18 +281,12 @@ unsafe fn cmd_attach_session_exec(
     let args = cmd_get_args(&cmd_ref);
     cmd_attach_session(
         item_handle,
-        nullable_cstr(
-            args_get(args, 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
-        ),
+        args_get(args, 't' as i32 as u_char),
         args_has(args, 'd' as i32 as u_char),
         args_has(args, 'x' as i32 as u_char),
         args_has(args, 'r' as i32 as u_char),
-        nullable_cstr(
-            args_get(args, 'c' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
-        ),
+        args_get(args, 'c' as i32 as u_char),
         args_has(args, 'E' as i32 as u_char),
-        nullable_cstr(
-            args_get(args, 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
-        ),
+        args_get(args, 'f' as i32 as u_char),
     )
 }

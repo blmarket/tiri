@@ -102,9 +102,9 @@ unsafe fn cmd_new_window_exec(
     if args_has(args, 'E' as i32 as u_char) != 0
         && count != 0 as ::core::ffi::c_int
         && (count != 1 as ::core::ffi::c_int
-            || *args_string(args, 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())
-                as ::core::ffi::c_int
-                != '\0' as i32)
+            || !args_string(args, 0 as u_int)
+                .expect("argument is present")
+                .is_empty())
     {
         cmdq_error(item_handle, |out| {
             out.write_all(b"command cannot be given for empty pane")
@@ -219,9 +219,9 @@ unsafe fn cmd_new_window_exec(
     sc.flags = 0 as ::core::ffi::c_int;
     if args_has(args, 'E' as i32 as u_char) != 0
         || count == 1 as ::core::ffi::c_int
-            && *args_string(args, 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())
-                as ::core::ffi::c_int
-                == '\0' as i32
+            && args_string(args, 0 as u_int)
+                .expect("argument is present")
+                .is_empty()
     {
         sc.flags |= SPAWN_EMPTY;
     }
