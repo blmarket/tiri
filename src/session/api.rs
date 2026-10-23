@@ -85,7 +85,7 @@ pub trait Session {
         window: &WindowRef,
         index: i32,
     ) -> Result<refbox::Weak<winlink>, CString>;
-    unsafe fn spawn_window(
+    fn spawn_window(
         &self,
         context: &mut spawn_context,
     ) -> Result<refbox::Weak<winlink>, CString>;
@@ -314,7 +314,7 @@ impl Session for SessionRef {
     ) -> Result<refbox::Weak<winlink>, CString> {
         session_attach(self, window, index)
     }
-    unsafe fn spawn_window(
+    fn spawn_window(
         &self,
         context: &mut spawn_context,
     ) -> Result<refbox::Weak<winlink>, CString> {

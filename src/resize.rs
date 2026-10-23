@@ -256,7 +256,7 @@ fn clients_calculate_size(
     }
     (*sx != UINT_MAX && *sy != UINT_MAX) as ::core::ffi::c_int
 }
-pub unsafe fn default_window_size(
+pub fn default_window_size(
     c_owner: Option<&ClientRef>,
     s_owner: &SessionRef,
     w_owner: Option<&WindowRef>,
