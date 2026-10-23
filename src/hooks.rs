@@ -321,10 +321,7 @@ pub fn hooks_add_event(name: &CStr) {
         return;
     }
 
-    events_add_sink(
-        event_name,
-        events_callback(CString_cb),
-    );
+    events_add_sink(event_name, events_callback(CString_cb));
     CStrings.with_borrow_mut(|events| events.insert(event_name.to_owned()));
 }
 pub fn hooks_is_event(name: &CStr) -> ::core::ffi::c_int {

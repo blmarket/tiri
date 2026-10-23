@@ -110,10 +110,7 @@ pub fn start_cfg() {
     if !c.is_none() {
         cmdq_append(
             registry_c_owner.as_ref(),
-            cmdq_get_callback_owned(
-                c"cfg_client_done",
-                Some(Box::new(cfg_client_done)),
-            ),
+            cmdq_get_callback_owned(c"cfg_client_done", Some(Box::new(cfg_client_done))),
         );
     }
     if CFG_QUIET.get() {

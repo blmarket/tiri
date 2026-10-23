@@ -12,11 +12,11 @@ use crate::shared::window::WindowRef;
 use crate::shared::window::{
     WINDOW_MAXIMUM, WINDOW_MINIMUM, WINDOW_SIZE_LARGEST, WINDOW_SIZE_LATEST, WINDOW_SIZE_MANUAL,
 };
+use crate::text::numbers::scan_u32_pair;
 use crate::tty::tty_update_window_offset;
 use crate::window::windows;
 use crate::window::Window as _;
 use crate::winlink::winlink_window;
-use crate::text::numbers::scan_u32_pair;
 
 pub fn resize_window(window: &WindowRef, sx: u_int, sy: u_int, xpixel: i32, ypixel: i32) {
     use crate::window::Window;

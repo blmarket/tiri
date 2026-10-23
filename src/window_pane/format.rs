@@ -1119,19 +1119,13 @@ fn format_cb_pane_y(ft: &mut format_tree) -> Option<CString> {
 fn format_cb_scroll_region_lower(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
     let wp = pane.borrow();
-    Some(
-        CString::new(format!("{}", { wp.base.rlower }))
-            .expect("formatted numbers contain no NUL"),
-    )
+    Some(CString::new(format!("{}", { wp.base.rlower })).expect("formatted numbers contain no NUL"))
 }
 
 fn format_cb_scroll_region_upper(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
     let wp = pane.borrow();
-    Some(
-        CString::new(format!("{}", { wp.base.rupper }))
-            .expect("formatted numbers contain no NUL"),
-    )
+    Some(CString::new(format!("{}", { wp.base.rupper })).expect("formatted numbers contain no NUL"))
 }
 
 fn format_cb_wrap_flag(ft: &mut format_tree) -> Option<CString> {

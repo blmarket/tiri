@@ -831,13 +831,13 @@ impl Client for ClientRef {
         }
         if visual != VISUAL_OFF {
             crate::status::status_message_set(Some(self), -1, 1, 0, 0, |out| {
-                    out.write_all(kind.to_bytes())?;
-                    if current {
-                        out.write_all(b" in current window")
-                    } else {
-                        write!(out, " in window {}", index)
-                    }
-                });
+                out.write_all(kind.to_bytes())?;
+                if current {
+                    out.write_all(b" in current window")
+                } else {
+                    write!(out, " in window {}", index)
+                }
+            });
         }
     }
 
@@ -1154,10 +1154,10 @@ impl Client for ClientRef {
         self.borrow_mut().message_string = Some(message.clone());
         let name = self.name();
         crate::server::server_add_message(|out| {
-                write_cstr(out, name.as_deref())?;
-                out.write_all(b" message: ")?;
-                out.write_all(message.as_bytes())
-            });
+            write_cstr(out, name.as_deref())?;
+            out.write_all(b" message: ")?;
+            out.write_all(message.as_bytes())
+        });
         if delay == -1 {
             delay = options_get_number(
                 &self
@@ -1274,15 +1274,15 @@ impl Client for ClientRef {
     ) {
         for row in 0..sy {
             crate::tty::tty_draw_line(
-                    self,
-                    source,
-                    0,
-                    row,
-                    sx,
-                    x,
-                    y.wrapping_add(row),
-                    Some(style),
-                );
+                self,
+                source,
+                0,
+                row,
+                sx,
+                x,
+                y.wrapping_add(row),
+                Some(style),
+            );
         }
     }
 

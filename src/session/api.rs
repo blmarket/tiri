@@ -85,10 +85,7 @@ pub trait Session {
         window: &WindowRef,
         index: i32,
     ) -> Result<refbox::Weak<winlink>, CString>;
-    fn spawn_window(
-        &self,
-        context: &mut spawn_context,
-    ) -> Result<refbox::Weak<winlink>, CString>;
+    fn spawn_window(&self, context: &mut spawn_context) -> Result<refbox::Weak<winlink>, CString>;
     fn renumber_windows(&self);
     fn update_activity(&self, from: Option<SystemTime>);
     fn update_history(&self);
@@ -314,10 +311,7 @@ impl Session for SessionRef {
     ) -> Result<refbox::Weak<winlink>, CString> {
         session_attach(self, window, index)
     }
-    fn spawn_window(
-        &self,
-        context: &mut spawn_context,
-    ) -> Result<refbox::Weak<winlink>, CString> {
+    fn spawn_window(&self, context: &mut spawn_context) -> Result<refbox::Weak<winlink>, CString> {
         assert!(
             context.s.ptr_eq(&Rc::downgrade(self)),
             "spawn context session must match receiver"

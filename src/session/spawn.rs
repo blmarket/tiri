@@ -12,9 +12,7 @@ use crate::shared::spawn::{
 use crate::spawn::{initialize_spawned_window, prepare_respawn_window, spawn_cause, spawn_log};
 use crate::window::Window;
 
-pub(super) fn spawn_window(
-    sc: &mut spawn_context,
-) -> Result<refbox::Weak<winlink>, CString> {
+pub(super) fn spawn_window(sc: &mut spawn_context) -> Result<refbox::Weak<winlink>, CString> {
     let session = sc.s.upgrade().expect("spawn context session");
     let target_client = sc.tc.upgrade();
     let mut index = sc.idx;

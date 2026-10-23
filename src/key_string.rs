@@ -8,8 +8,8 @@ use crate::shared::control_character::{
 use crate::shared::grid::*;
 use crate::shared::key::*;
 use crate::shared::utf8::*;
-use crate::text::utf8::{utf8_append, utf8_from_data, utf8_fromcstr_vec, utf8_open, utf8_to_data};
 use crate::text::numbers::{scan_hex_u32, scan_u32, Scan};
+use crate::text::utf8::{utf8_append, utf8_from_data, utf8_fromcstr_vec, utf8_open, utf8_to_data};
 use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone)]

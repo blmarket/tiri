@@ -1091,10 +1091,7 @@ pub fn control_start(owner: &ClientRef) {
 pub(crate) fn control_subscriptions(
     owner: &ClientRef,
 ) -> refbox::RefBox<crate::monitor::monitor_set> {
-    monitor_create_client_owned(
-        Some(owner),
-        monitor_callback(control_sub_change),
-    )
+    monitor_create_client_owned(Some(owner), monitor_callback(control_sub_change))
 }
 
 pub fn control_ready(c: &ClientRef) {
