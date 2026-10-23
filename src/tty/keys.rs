@@ -1725,21 +1725,20 @@ pub(super) unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core:
                                     5025795842197473417 => {}
                                     16977559109335092698 => {}
                                     _ => {
-                                        let res = {
+                                        let (res, report) = tty_keys_colours(
+                                            Some(diagnostic_name.as_deref().unwrap_or(c"(null)")),
+                                            bytes,
+                                            &mut size,
+                                        );
+                                        if let Some(report) = report {
                                             let mut terminal =
                                                 terminal_client_owner.borrow_terminal_mut();
-                                            let tty { flags, fg, bg, .. } = &mut *terminal;
-                                            tty_keys_colours(
-                                                flags,
-                                                Some(
-                                                    diagnostic_name.as_deref().unwrap_or(c"(null)"),
-                                                ),
-                                                bytes,
-                                                &mut size,
-                                                fg,
-                                                bg,
-                                            )
-                                        };
+                                            match report {
+                                                ColourReport::Fg(n) => terminal.fg = n,
+                                                ColourReport::Bg(n) => terminal.bg = n,
+                                            }
+                                            terminal.flags &= !report.wait_flag();
+                                        }
                                         match res {
                                             0 => {
                                                 key = KEYC_UNKNOWN as ::core::ffi::c_ulong
@@ -2835,58 +2834,70 @@ fn tty_keys_extended_device_attributes(
 fn tty_keys_colour_text(text: &[u8]) -> &[u8] {
     scan::until_nul(text.strip_suffix(b"\x1b").unwrap_or(text))
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ColourReport {
+    Fg(i32),
+    Bg(i32),
+}
+
+impl ColourReport {
+    pub fn wait_flag(self) -> i32 {
+        match self {
+            ColourReport::Fg(_) => TTY_WAITFG,
+            ColourReport::Bg(_) => TTY_WAITBG,
+        }
+    }
+}
+
 pub(super) fn tty_keys_colours(
-    flags: &mut i32,
     diagnostic_name: Option<&std::ffi::CStr>,
     bytes: &[u8],
     size: &mut size_t,
-    fg: &mut i32,
-    bg: &mut i32,
-) -> ::core::ffi::c_int {
+) -> (::core::ffi::c_int, Option<ColourReport>) {
     let len: size_t = bytes.len();
     *size = 0 as size_t;
     if bytes[0] != b'\x1b' {
-        return -(1 as ::core::ffi::c_int);
+        return (-(1 as ::core::ffi::c_int), None);
     }
     if len == 1 as size_t {
-        return 1 as ::core::ffi::c_int;
+        return (1 as ::core::ffi::c_int, None);
     }
     if bytes[1] != b']' {
-        return -(1 as ::core::ffi::c_int);
+        return (-(1 as ::core::ffi::c_int), None);
     }
     if len == 2 as size_t {
-        return 1 as ::core::ffi::c_int;
+        return (1 as ::core::ffi::c_int, None);
     }
     if bytes[2] != b'1' {
-        return -(1 as ::core::ffi::c_int);
+        return (-(1 as ::core::ffi::c_int), None);
     }
     if len == 3 as size_t {
-        return 1 as ::core::ffi::c_int;
+        return (1 as ::core::ffi::c_int, None);
     }
     if bytes[3] != b'0' && bytes[3] != b'1' {
-        return -(1 as ::core::ffi::c_int);
+        return (-(1 as ::core::ffi::c_int), None);
     }
     if len == 4 as size_t {
-        return 1 as ::core::ffi::c_int;
+        return (1 as ::core::ffi::c_int, None);
     }
     if bytes[4] != b';' {
-        return -(1 as ::core::ffi::c_int);
+        return (-(1 as ::core::ffi::c_int), None);
     }
     if len == 5 as size_t {
-        return 1 as ::core::ffi::c_int;
+        return (1 as ::core::ffi::c_int, None);
     }
     let i = match tty_keys_reply_text_len(bytes, 5, true) {
         Ok(i) => i,
-        Err(n) => return n,
+        Err(n) => return (n, None),
     };
     *size = 6 + i;
     if i == 0 {
-        return 0 as ::core::ffi::c_int;
+        return (0 as ::core::ffi::c_int, None);
     }
     let text =
         CString::new(tty_keys_colour_text(&bytes[5..5 + i])).expect("colour reply stops at a NUL");
     let Some(n) = colour_parse_x11_logged(&text) else {
-        return 0 as ::core::ffi::c_int;
+        return (0 as ::core::ffi::c_int, None);
     };
     if bytes[3] == b'0' {
         if let Some(name) = diagnostic_name {
@@ -2901,8 +2912,7 @@ pub(super) fn tty_keys_colours(
                 crate::log::log_bytes(colour_format(n).as_bytes())
             ));
         }
-        *fg = n;
-        *flags &= !TTY_WAITFG;
+        (0 as ::core::ffi::c_int, Some(ColourReport::Fg(n)))
     } else {
         if let Some(name) = diagnostic_name {
             log_debug(format_args!(
@@ -2916,10 +2926,8 @@ pub(super) fn tty_keys_colours(
                 crate::log::log_bytes(colour_format(n).as_bytes())
             ));
         }
-        *bg = n;
-        *flags &= !TTY_WAITBG;
+        (0 as ::core::ffi::c_int, Some(ColourReport::Bg(n)))
     }
-    0 as ::core::ffi::c_int
 }
 fn tty_keys_palette(
     bytes: &[u8],
@@ -3797,58 +3805,45 @@ mod reply_parser_tests {
         }
     }
 
-    fn colours(flags: &mut i32, bytes: &[u8]) -> (i32, size_t, i32, i32) {
+    fn colours(bytes: &[u8]) -> (i32, size_t, Option<ColourReport>) {
         let mut size = 99;
-        let (mut fg, mut bg) = (-5, -5);
-        let n = tty_keys_colours(flags, None, bytes, &mut size, &mut fg, &mut bg);
-        (n, size, fg, bg)
+        let (n, report) = tty_keys_colours(None, bytes, &mut size);
+        (n, size, report)
     }
 
     #[test]
     fn colour_reports() {
         let red = colour_parse_x11_logged(c"rgb:ff/00/00").unwrap();
-        let waiting = TTY_WAITFG | TTY_WAITBG;
         let sequence = b"\x1b]10;rgb:ff/00/00\x07";
-        assert_prefixes_wait(
-            |b, s| tty_keys_colours(&mut 0, None, b, s, &mut 0, &mut 0),
-            sequence,
-        );
-        assert_header_rejects(
-            |b, s| tty_keys_colours(&mut 0, None, b, s, &mut 0, &mut 0),
-            sequence,
-            5,
-        );
-        let mut flags = waiting;
-        assert_eq!(colours(&mut flags, sequence), (0, 18, red, -5));
-        assert_eq!(flags, TTY_WAITBG);
-        let mut flags = waiting;
+        assert_prefixes_wait(|b, s| tty_keys_colours(None, b, s).0, sequence);
+        assert_header_rejects(|b, s| tty_keys_colours(None, b, s).0, sequence, 5);
+        assert_eq!(colours(sequence), (0, 18, Some(ColourReport::Fg(red))));
+        assert_eq!(ColourReport::Fg(red).wait_flag(), TTY_WAITFG);
         assert_eq!(
-            colours(&mut flags, b"\x1b]11;rgb:ff/00/00\x1b\\"),
-            (0, 19, -5, red)
+            colours(b"\x1b]11;rgb:ff/00/00\x1b\\"),
+            (0, 19, Some(ColourReport::Bg(red)))
         );
-        assert_eq!(flags, TTY_WAITFG);
-        let mut flags = waiting;
+        assert_eq!(ColourReport::Bg(red).wait_flag(), TTY_WAITBG);
         assert_eq!(
-            colours(&mut flags, b"\x1b]11;rgb:ff/00/00\x1b\x07"),
-            (0, 19, -5, red)
+            colours(b"\x1b]11;rgb:ff/00/00\x1b\x07"),
+            (0, 19, Some(ColourReport::Bg(red)))
         );
-        assert_eq!(colours(&mut flags, b"\x1b]10;bogus\x07"), (0, 11, -5, -5));
-        assert_eq!(colours(&mut flags, b"\x1b]10;\x07"), (0, 6, -5, -5));
-        assert_eq!(colours(&mut flags, b"\x1b]12;rgb:ff/00/00\x07").0, -1);
+        assert_eq!(colours(b"\x1b]10;bogus\x07"), (0, 11, None));
+        assert_eq!(colours(b"\x1b]10;\x07"), (0, 6, None));
+        assert_eq!(colours(b"\x1b]12;rgb:ff/00/00\x07").0, -1);
         assert_eq!(
-            colours(&mut flags, b"\x1b]10;rgb:ff/00/00\0junk\x07"),
-            (0, 23, red, -5)
+            colours(b"\x1b]10;rgb:ff/00/00\0junk\x07"),
+            (0, 23, Some(ColourReport::Fg(red)))
         );
-        assert_eq!(flags, 0);
 
         let mut report = b"\x1b]10;".to_vec();
         report.resize(131, b'a');
-        assert_eq!(colours(&mut flags, &report).0, 1);
+        assert_eq!(colours(&report).0, 1);
         report.push(b'a');
-        assert_eq!(colours(&mut flags, &report).0, -1);
+        assert_eq!(colours(&report).0, -1);
         report.truncate(131);
         report.push(b'\x07');
-        assert_eq!(colours(&mut flags, &report), (0, 132, -5, -5));
+        assert_eq!(colours(&report), (0, 132, None));
     }
 
     fn palette(bytes: &[u8]) -> (i32, size_t, Option<(i32, i32)>) {

@@ -322,13 +322,7 @@ impl Session for SessionRef {
             context.s.ptr_eq(&Rc::downgrade(self)),
             "spawn context session must match receiver"
         );
-        let mut cause = None;
-        let link = super::spawn::spawn_window(context, &mut cause);
-        if link.is_alive() {
-            Ok(link)
-        } else {
-            Err(cause.expect("failed window spawn supplies a cause"))
-        }
+        super::spawn::spawn_window(context)
     }
     fn renumber_windows(&self) {
         session_renumber_windows(self);

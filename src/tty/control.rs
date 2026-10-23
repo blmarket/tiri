@@ -9,7 +9,7 @@ use tiri_rt::{AsyncRead as _, AsyncWrite as _};
 
 use super::acs::{tty_acs_needed, tty_acs_reverse_get};
 use super::draw::tty_draw_line;
-use super::keys::{tty_keys_build, tty_keys_free, tty_keys_next};
+use super::keys::{tty_keys_build, tty_keys_free, tty_keys_next, ColourReport};
 use crate::format::bytes::format_message_with;
 use crate::grid::grid_default_cell;
 use crate::log::{fatalx, log_cstr, log_debug};
@@ -2072,24 +2072,15 @@ pub fn tty_clipboard_query(owner: &ClientRef) {
     );
 }
 
-/// Parse a control client's colour report; returns 0 when `fg`/`bg` were updated.
-pub fn tty_parse_colour_report(
-    owner: &ClientRef,
-    report: &[u8],
-    fg: &mut i32,
-    bg: &mut i32,
-) -> ::core::ffi::c_int {
+/// Parse a control client's colour report. The client stops waiting for the
+/// reported colour, as for a reply from its own terminal.
+pub fn tty_parse_colour_report(owner: &ClientRef, report: &[u8]) -> Option<ColourReport> {
     let name = owner.name();
     let mut size: size_t = 0;
-    let mut terminal = owner.borrow_terminal_mut();
-    super::keys::tty_keys_colours(
-        &mut terminal.flags,
-        name.as_deref(),
-        report,
-        &mut size,
-        fg,
-        bg,
-    )
+    let (status, colour) = super::keys::tty_keys_colours(name.as_deref(), report, &mut size);
+    let colour = colour.filter(|_| status == 0)?;
+    owner.borrow_terminal_mut().flags &= !colour.wait_flag();
+    Some(colour)
 }
 
 /// Capability queries; the terminal must be open.

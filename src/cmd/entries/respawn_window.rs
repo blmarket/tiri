@@ -4,6 +4,7 @@ use crate::cmd::queue::{cmdq_error, cmdq_get_target_client};
 use crate::environ::{environ_create, environ_put};
 use crate::format::bytes::write_cstr;
 use crate::server_fn::server_redraw_window;
+use crate::session::Session as _;
 use crate::shared::abi::*;
 use crate::shared::client::ClientRef;
 use crate::shared::command::*;
@@ -12,7 +13,6 @@ use crate::shared::session::SessionRef;
 use crate::shared::spawn::spawn_context;
 use crate::shared::spawn::{SPAWN_EMPTY, SPAWN_KILL, SPAWN_RESPAWN};
 use crate::shared::window::winlink;
-use crate::spawn::spawn_window;
 use crate::winlink::winlink_window;
 pub static cmd_respawn_window_entry: cmd_entry = {
     cmd_entry {
@@ -65,7 +65,6 @@ unsafe fn cmd_respawn_window_exec(
     let mut _tc: Option<ClientRef> = tc_owner.clone();
     let mut s: Option<SessionRef> = target.session_handle();
     let mut wl: refbox::Weak<winlink> = target.winlink_handle();
-    let mut cause: Option<std::ffi::CString> = None;
     sc.item = std::rc::Rc::downgrade(item_handle);
     sc.s = std::rc::Rc::downgrade(s.as_ref().expect("live session"));
     sc.set_wl(wl.clone());
@@ -91,10 +90,10 @@ unsafe fn cmd_respawn_window_exec(
     if args_has(args, 'k' as i32 as u_char) != 0 {
         sc.flags |= SPAWN_KILL;
     }
-    if !spawn_window(&mut sc, &mut cause).is_alive() {
+    if let Err(cause) = s.as_ref().expect("live session").spawn_window(&mut sc) {
         cmdq_error(item_handle, |out| {
             out.write_all(b"respawn window failed: ")?;
-            write_cstr(out, cause.as_deref())
+            write_cstr(out, cause.as_c_str())
         });
         drop(sc.environ.take());
         return CmdOutcome::Error;

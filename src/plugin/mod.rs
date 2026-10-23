@@ -138,54 +138,59 @@ struct Registry {
 }
 
 impl Registry {
-    fn insert(&mut self, prepared: &mut Option<Slot>) -> io::Result<()> {
-        let slot = prepared.as_ref().expect("prepared plugin");
+    fn insert(&mut self, slot: Slot) -> Result<(), (io::Error, Slot)> {
         let variables = slot.variables;
-        if self
-            .slots
-            .iter()
-            .any(|registered| registered.name == slot.name)
-        {
-            return Err(io::Error::new(
-                io::ErrorKind::AlreadyExists,
-                "plugin already registered",
-            ));
-        }
-        let mut declared = BTreeSet::new();
-        for variable in variables {
-            let bytes = variable.name.to_bytes();
-            if bytes.is_empty()
-                || !bytes
-                    .iter()
-                    .all(|b| b.is_ascii_alphanumeric() || *b == b'_')
-                || bytes[0].is_ascii_digit()
-            {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "invalid plugin variable name",
-                ));
-            }
-            if !declared.insert(variable.name)
-                || self.names.contains_key(variable.name)
-                || crate::format::format_is_builtin(variable.name)
-                || crate::options::options_table
-                    .iter()
-                    .any(|entry| entry.name == Some(variable.name))
+        let checked = (|| {
+            if self
+                .slots
+                .iter()
+                .any(|registered| registered.name == slot.name)
             {
                 return Err(io::Error::new(
                     io::ErrorKind::AlreadyExists,
-                    format!(
-                        "format name already owned: {}",
-                        variable.name.to_string_lossy()
-                    ),
+                    "plugin already registered",
                 ));
             }
+            let mut declared = BTreeSet::new();
+            for variable in variables {
+                let bytes = variable.name.to_bytes();
+                if bytes.is_empty()
+                    || !bytes
+                        .iter()
+                        .all(|b| b.is_ascii_alphanumeric() || *b == b'_')
+                    || bytes[0].is_ascii_digit()
+                {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "invalid plugin variable name",
+                    ));
+                }
+                if !declared.insert(variable.name)
+                    || self.names.contains_key(variable.name)
+                    || crate::format::format_is_builtin(variable.name)
+                    || crate::options::options_table
+                        .iter()
+                        .any(|entry| entry.name == Some(variable.name))
+                {
+                    return Err(io::Error::new(
+                        io::ErrorKind::AlreadyExists,
+                        format!(
+                            "format name already owned: {}",
+                            variable.name.to_string_lossy()
+                        ),
+                    ));
+                }
+            }
+            Ok(())
+        })();
+        if let Err(error) = checked {
+            return Err((error, slot));
         }
         let index = self.slots.len();
         for variable in variables {
             self.names.insert(variable.name, (index, variable.default));
         }
-        self.slots.push(prepared.take().expect("prepared plugin"));
+        self.slots.push(slot);
         Ok(())
     }
 
@@ -227,8 +232,13 @@ thread_local! {
 /// Call on the initialized server thread, after the daemon fork. Provider
 /// observations require exclusive access to tmux's process-global model state.
 pub fn register(plugin: Box<dyn Plugin>) -> io::Result<()> {
-    let mut prepared = Some(Slot::new(plugin)?);
-    REGISTRY.with(|registry| registry.borrow_mut().insert(&mut prepared))?;
+    let slot = Slot::new(plugin)?;
+    REGISTRY
+        .with(|registry| registry.borrow_mut().insert(slot))
+        .map_err(|(error, slot)| {
+            drop(slot);
+            error
+        })?;
     arm_next();
     Ok(())
 }

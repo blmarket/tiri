@@ -62,7 +62,7 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::process::ExitStatusExt;
 
 use crate::shared::spawn::EditorHandle;
-use crate::spawn::{set_spawn_cause, spawn_log, _PATH_DEFPATH, IUTF8};
+use crate::spawn::{spawn_cause, spawn_log, _PATH_DEFPATH, IUTF8};
 fn spawn_fire_pane_created(
     sc: &spawn_context,
     wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
@@ -180,8 +180,7 @@ fn place_new_pane(
 /// ordinary code until it execs.
 pub(super) fn spawn_pane(
     sc: &mut spawn_context,
-    cause: &mut Option<CString>,
-) -> Option<std::rc::Rc<std::cell::RefCell<window_pane>>> {
+) -> Result<std::rc::Rc<std::cell::RefCell<window_pane>>, CString> {
     unsafe {
         let source_pane_owner = sc.wp0.upgrade();
         let item_owner = sc.item.upgrade();
@@ -195,10 +194,7 @@ pub(super) fn spawn_pane(
             } else {
                 match place_new_pane(sc, &original_window) {
                     Ok(pane) => Some(pane),
-                    Err(reason) => {
-                        set_spawn_cause(Some(&mut *cause), &[reason.to_bytes()]);
-                        return None;
-                    }
+                    Err(reason) => return Err(reason.to_owned()),
                 }
             };
             let target_session_owner;
@@ -274,24 +270,20 @@ pub(super) fn spawn_pane(
                 let source = source_pane_owner.as_ref().expect("respawn pane");
                 if source.borrow().fd.is_some() && !sc.flags & SPAWN_KILL != 0 {
                     idx = window_pane_index(source).expect("pane belongs to window ordering");
-                    set_spawn_cause(
-                        Some(&mut *cause),
-                        &[
-                            b"pane ",
-                            session_owner.name().as_bytes(),
-                            b":",
-                            (sc.winlink_handle())
-                                .try_borrow()
-                                .expect("live winlink")
-                                .idx
-                                .to_string()
-                                .as_bytes(),
-                            b".",
-                            idx.to_string().as_bytes(),
-                            b" still active",
-                        ],
-                    );
-                    return None;
+                    return Err(spawn_cause(&[
+                        b"pane ",
+                        session_owner.name().as_bytes(),
+                        b":",
+                        (sc.winlink_handle())
+                            .try_borrow()
+                            .expect("live winlink")
+                            .idx
+                            .to_string()
+                            .as_bytes(),
+                        b".",
+                        idx.to_string().as_bytes(),
+                        b" still active",
+                    ]));
                 }
                 let (event, fd) = {
                     let mut pane = source.borrow_mut();
@@ -471,7 +463,7 @@ pub(super) fn spawn_pane(
                 }
                 if pid == -(1 as ::core::ffi::c_int) {
                     let error = ErrorText(&std::io::Error::last_os_error()).to_string();
-                    set_spawn_cause(Some(&mut *cause), &[b"fork failed: ", error.as_bytes()]);
+                    let cause = spawn_cause(&[b"fork failed: ", error.as_bytes()]);
                     let fd = new_pane_owner.borrow_mut().fd.take();
                     drop(fd);
                     if !sc.flags & SPAWN_RESPAWN != 0 {
@@ -485,7 +477,7 @@ pub(super) fn spawn_pane(
                         &raw mut oldset,
                         ::core::ptr::null_mut::<sigset_t>(),
                     );
-                    return None;
+                    return Err(cause);
                 }
                 if pid != 0 as ::core::ffi::c_int {
                     let previous = new_pane_owner
@@ -602,7 +594,7 @@ pub(super) fn spawn_pane(
             drop(child_owner.take());
             spawn_fire_pane_created(sc, &new_pane_owner);
             if sc.flags & SPAWN_RESPAWN != 0 {
-                return Some(new_pane_owner);
+                return Ok(new_pane_owner);
             }
             if !sc.flags & SPAWN_DETACHED != 0
                 || ((winlink_window(&sc.winlink_handle()).as_ref()).expect("live window"))
@@ -626,7 +618,7 @@ pub(super) fn spawn_pane(
                     winlink_window(&sc.winlink_handle()).expect("live window"),
                 );
             }
-            Some(new_pane_owner)
+            Ok(new_pane_owner)
         })();
         drop(original_window);
         result

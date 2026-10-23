@@ -26,8 +26,8 @@ fn add(
     name: &'static str,
     variables: &'static [Variable],
 ) -> io::Result<()> {
-    let mut prepared = Some(Slot::new(Box::new(Fake { name, variables }))?);
-    registry.insert(&mut prepared)
+    let slot = Slot::new(Box::new(Fake { name, variables }))?;
+    registry.insert(slot).map_err(|(error, _)| error)
 }
 
 const VARIABLES: &[Variable] = &[

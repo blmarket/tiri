@@ -116,27 +116,22 @@ fn window_panes_session(source: &window_panes_source) -> Option<SessionRef> {
 
 fn window_panes_get_source(
     source: &window_panes_source,
-    wlp: Option<&mut refbox::Weak<winlink>>,
-    session_owner: &mut Option<SessionRef>,
-) -> Option<WindowWeak> {
+) -> Option<(WindowWeak, refbox::Weak<winlink>, Option<SessionRef>)> {
     let window_owner = crate::window::windows::resolve(source.source_window)?;
     let mut link = refbox::Weak::new();
-    *session_owner = crate::session::sessions::find_by_id(source.source_session);
+    let mut session_owner = crate::session::sessions::find_by_id(source.source_session);
     if let Some(session) = session_owner.as_ref() {
         link = session.with_winlinks(|links| winlink_find_by_window(links, &window_owner));
     }
     if !link.is_alive() {
-        *session_owner = window_panes_session(source);
+        session_owner = window_panes_session(source);
     }
     if let Some(session) = session_owner.as_ref() {
         link = session.with_winlinks(|links| winlink_find_by_window(links, &window_owner));
     }
-    if let Some(wlp) = wlp {
-        *wlp = link;
-    }
     let window = WindowRef::downgrade(&window_owner);
     drop(window_owner);
-    Some(window)
+    Some((window, link, session_owner))
 }
 fn window_panes_set_preview(data: &mut window_panes_modedata) {
     let Some(pane) = Rc::<RefCell<window_pane>>::from_observer(&data.source.wp) else {
@@ -357,7 +352,6 @@ fn window_panes_draw_format(
     mut sx: u_int,
     gc: &grid_cell,
 ) {
-    let mut source_session_owner = None;
     let Some(mode_pane_owner) = Rc::<RefCell<window_pane>>::from_observer(&source.wp) else {
         return;
     };
@@ -386,14 +380,12 @@ fn window_panes_draw_format(
         }
         return;
     }
-    if window_panes_get_source(source, Some(&mut wl), &mut source_session_owner).is_some() {
-        s = source_session_owner.clone();
+    if let Some((_, link, session)) = window_panes_get_source(source) {
+        wl = link;
+        s = session;
     }
     if s.is_none() {
         if let Some(owner) = session_owner {
-            drop(owner);
-        }
-        if let Some(owner) = source_session_owner {
             drop(owner);
         }
         return;
@@ -412,9 +404,6 @@ fn window_panes_draw_format(
     if let Some(owner) = session_owner {
         drop(owner);
     }
-    if let Some(owner) = source_session_owner {
-        drop(owner);
-    }
 }
 fn window_panes_draw_number(
     source: &window_panes_source,
@@ -426,7 +415,6 @@ fn window_panes_draw_number(
     mut sx: u_int,
     mut sy: u_int,
 ) {
-    let mut source_session_owner = None;
     let Some(mode_pane_owner) = Rc::<RefCell<window_pane>>::from_observer(&source.wp) else {
         return;
     };
@@ -488,8 +476,9 @@ fn window_panes_draw_number(
         }
         return;
     }
-    if window_panes_get_source(source, Some(&mut wl), &mut source_session_owner).is_some() {
-        s = source_session_owner.clone();
+    if let Some((_, link, session)) = window_panes_get_source(source) {
+        wl = link;
+        s = session;
     }
     if let Some(session) = s.as_ref().filter(|_| !wl.is_alive()) {
         wl = session.current_winlink();
@@ -560,9 +549,6 @@ fn window_panes_draw_number(
         if let Some(owner) = session_owner {
             drop(owner);
         }
-        if let Some(owner) = source_session_owner {
-            drop(owner);
-        }
         return;
     }
     px = (sx as size_t).wrapping_sub(width).wrapping_div(2 as size_t) as u_int;
@@ -594,9 +580,6 @@ fn window_panes_draw_number(
         if let Some(owner) = session_owner {
             drop(owner);
         }
-        if let Some(owner) = source_session_owner {
-            drop(owner);
-        }
         return;
     }
     window_panes_draw_format(source, ctx, wp_owner, x, y, sx, &fgc);
@@ -614,9 +597,6 @@ fn window_panes_draw_number(
         screen_write_puts(ctx, &fgc, |out| out.write_all(&lbuf));
     }
     if let Some(owner) = session_owner {
-        drop(owner);
-    }
-    if let Some(owner) = source_session_owner {
         drop(owner);
     }
 }
@@ -691,7 +671,6 @@ fn window_panes_data(
 }
 
 fn window_panes_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
-    let mut source_session_owner = None;
     let data_cell = window_panes_data(&wme);
     let mut data = data_cell.borrow_mut();
     let data = &mut *data;
@@ -716,15 +695,11 @@ fn window_panes_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
     let mut osy: u_int = 0;
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
-    let source_window = window_panes_get_source(&data.source, None, &mut source_session_owner);
-    if source_window.is_none() {
-        if let Some(owner) = source_session_owner {
-            drop(owner);
-        }
+    let Some((source_window, _, source_session_owner)) = window_panes_get_source(&data.source)
+    else {
         return;
-    }
+    };
     let window = source_window
-        .unwrap()
         .upgrade()
         .expect("source window remains owned");
     (|| {
@@ -981,7 +956,6 @@ fn window_panes_key_pane(
     data: &window_panes_modedata,
     mut key: key_code,
 ) -> Option<Rc<RefCell<window_pane>>> {
-    let mut source_session_owner = None;
     let mut index: u_int = 0;
     if key >= '0' as i32 as key_code && key <= '9' as i32 as key_code {
         index = key.wrapping_sub('0' as i32 as key_code) as u_int;
@@ -995,15 +969,8 @@ fn window_panes_key_pane(
     } else {
         return None;
     }
-    let source_window = window_panes_get_source(&data.source, None, &mut source_session_owner);
-    if source_window.is_none() {
-        if let Some(owner) = source_session_owner {
-            drop(owner);
-        }
-        return None;
-    }
+    let (source_window, _, source_session_owner) = window_panes_get_source(&data.source)?;
     let window_owner = source_window
-        .unwrap()
         .upgrade()
         .expect("source window remains owned");
     let result = window_owner.pane_at_index(index).upgrade();

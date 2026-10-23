@@ -34,7 +34,6 @@ use crate::shared::spawn::spawn_context;
 use crate::shared::terminal::*;
 use crate::shared::tree::RB_NEGINF;
 use crate::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
-use crate::spawn::spawn_window;
 use crate::text::utf8::utf8_stravis_cstring;
 use crate::tmux::{check_name, clean_name_cstring};
 use crate::window::winlinks_minmax;
@@ -114,7 +113,6 @@ unsafe fn cmd_new_session_exec(
     let mut tio: Option<termios> = None;
     let mut sg = crate::shared::session::SessionGroupWeak::new();
     let mut group: Option<&CStr> = None;
-    let mut cause: Option<std::ffi::CString> = None;
     let mut cwd: Option<CString> = None;
     let mut wname_owned: Option<CString> = None;
     let mut sname_owned: Option<CString> = None;
@@ -542,7 +540,8 @@ unsafe fn cmd_new_session_exec(
                                                     sc.cwd = args_get(args, 'c' as i32 as u_char)
                                                         .map(CStr::to_owned);
                                                     sc.flags = 0 as ::core::ffi::c_int;
-                                                    if !spawn_window(&mut sc, &mut cause).is_alive()
+                                                    if let Err(cause) =
+                                                        session_owner.spawn_window(&mut sc)
                                                     {
                                                         s.clone().expect("live session").destroy(
                                                             (0 as ::core::ffi::c_int) != 0,
@@ -552,7 +551,7 @@ unsafe fn cmd_new_session_exec(
                                                             out.write_all(
                                                                 b"create window failed: ",
                                                             )?;
-                                                            write_cstr(out, cause.as_deref())
+                                                            write_cstr(out, cause.as_c_str())
                                                         });
                                                     } else {
                                                         if let Some(group) = group {

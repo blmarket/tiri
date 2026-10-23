@@ -63,7 +63,6 @@ fn cmd_respawn_pane_exec(
     let mut s: Option<SessionRef> = target.session_handle();
     let mut wl: refbox::Weak<winlink> = target.winlink_handle();
     let wp = target.pane_handle();
-    let mut cause: Option<std::ffi::CString> = None;
     sc.item = std::rc::Rc::downgrade(item_handle);
     sc.s = std::rc::Rc::downgrade(s.as_ref().expect("live session"));
     sc.set_wl(wl.clone());
@@ -87,14 +86,12 @@ fn cmd_respawn_pane_exec(
     if args_has(args, 'k' as i32 as u_char) != 0 {
         sc.flags |= SPAWN_KILL;
     }
-    if <std::rc::Rc<std::cell::RefCell<window_pane>> as WindowPane>::spawn_process(
-        &mut sc, &mut cause,
-    )
-    .is_none()
+    if let Err(cause) =
+        <std::rc::Rc<std::cell::RefCell<window_pane>> as WindowPane>::spawn_process(&mut sc)
     {
         cmdq_error(item_handle, |out| {
             out.write_all(b"respawn pane failed: ")?;
-            write_cstr(out, cause.as_deref())
+            write_cstr(out, cause.as_c_str())
         });
         drop(sc.environ.take());
         return CmdOutcome::Error;

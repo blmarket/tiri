@@ -162,8 +162,7 @@ unsafe fn client_connect(path: &CStr, flags: uint64_t) -> io::Result<OwnedFd> {
                     return Err(error);
                 }
             }
-            let fd = server_start(flags, &mut lockfd, &mut lockfile);
-            drop(lockfd);
+            let fd = server_start(flags, lockfd, lockfile);
             setblocking(fd.as_fd(), 0);
             return Ok(fd);
         }
@@ -243,7 +242,7 @@ pub unsafe fn client_main(
         #[cfg(not(target_os = "linux"))]
         let activated = false;
         let connection = if activated {
-            Ok(server_start(flags, &mut None, &mut None))
+            Ok(server_start(flags, None, None))
         } else {
             client_connect(&socket_path_cstr(), client_flags)
         };

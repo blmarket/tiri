@@ -17,15 +17,12 @@ use crate::shared::window::WindowRef;
 use crate::window_pane::WindowPane;
 use std::ffi::{CStr, CString};
 
-pub(crate) fn set_spawn_cause(cause: Option<&mut Option<CString>>, parts: &[&[u8]]) {
-    let Some(cause) = cause else {
-        return;
-    };
+pub(crate) fn spawn_cause(parts: &[&[u8]]) -> CString {
     let mut bytes = Vec::with_capacity(parts.iter().map(|part| part.len()).sum());
     for part in parts {
         bytes.extend_from_slice(part);
     }
-    *cause = Some(CString::new(bytes).expect("spawn diagnostic contains no NUL"));
+    CString::new(bytes).expect("spawn diagnostic contains no NUL")
 }
 
 use crate::shared::pane::window_pane;
@@ -91,22 +88,9 @@ pub(crate) fn spawn_log(from: &CStr, sc: &spawn_context) {
     ));
 }
 
-pub unsafe fn spawn_window(
-    sc: &mut spawn_context,
-    cause: &mut Option<CString>,
-) -> refbox::Weak<winlink> {
-    let session = sc.s.upgrade().expect("spawn context session");
-    match session.spawn_window(sc) {
-        Ok(link) => link,
-        Err(error) => {
-            *cause = Some(error);
-            refbox::Weak::new()
-        }
-    }
-}
 /// Reset an existing window's panes before its process is respawned.
 /// Session link mutation remains in the Session-owned spawn transaction.
-pub(crate) fn prepare_respawn_window(sc: &mut spawn_context, cause: &mut Option<CString>) -> bool {
+pub(crate) fn prepare_respawn_window(sc: &mut spawn_context) -> Result<(), CString> {
     let window = winlink_window(&sc.winlink_handle()).expect("live respawn window");
     let result = (|| {
         if !sc.flags & SPAWN_KILL != 0
@@ -116,22 +100,18 @@ pub(crate) fn prepare_respawn_window(sc: &mut spawn_context, cause: &mut Option<
                 .filter_map(std::rc::Weak::upgrade)
                 .any(|pane| pane.has_tty())
         {
-            set_spawn_cause(
-                Some(&mut *cause),
-                &[
-                    b"window ",
-                    sc.s.upgrade().expect("spawn session").name().as_bytes(),
-                    b":",
-                    (sc.winlink_handle())
-                        .try_borrow()
-                        .expect("live winlink")
-                        .idx
-                        .to_string()
-                        .as_bytes(),
-                    b" still active",
-                ],
-            );
-            return false;
+            return Err(spawn_cause(&[
+                b"window ",
+                sc.s.upgrade().expect("spawn session").name().as_bytes(),
+                b":",
+                (sc.winlink_handle())
+                    .try_borrow()
+                    .expect("live winlink")
+                    .idx
+                    .to_string()
+                    .as_bytes(),
+                b" still active",
+            ]));
         }
         let source_pane_owner = window
             .step_pane(None, false)
@@ -151,7 +131,7 @@ pub(crate) fn prepare_respawn_window(sc: &mut spawn_context, cause: &mut Option<
             pane.destroy();
         }
         window.select_pane(&source_pane_owner, false);
-        true
+        Ok(())
     })();
     drop(window);
     result
@@ -228,9 +208,9 @@ pub(crate) fn spawn_editor(
         sc.environ = Some(environ_create());
         sc.idx = -(1 as ::core::ffi::c_int);
         sc.cwd = Some(c"/tmp/".to_owned());
-        let pane = <std::rc::Rc<std::cell::RefCell<window_pane>> as WindowPane>::spawn_process(
-            &mut sc, &mut None,
-        )?;
+        let pane =
+            <std::rc::Rc<std::cell::RefCell<window_pane>> as WindowPane>::spawn_process(&mut sc)
+                .ok()?;
         Some(pane.install_editor(owner))
     })();
     drop(original_window);

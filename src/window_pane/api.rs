@@ -357,11 +357,8 @@ pub trait WindowPane {
     /// SPAWN_BEFORE), or as the first pane of an empty window, place it and
     /// start its process; with SPAWN_RESPAWN restart the context's source
     /// pane instead. The layout's refusal or the spawn's failure comes back
-    /// in `cause`; a refusal comes before any side effect.
-    fn spawn_process(
-        context: &mut crate::shared::spawn::spawn_context,
-        cause: &mut Option<CString>,
-    ) -> Option<Self>
+    /// as the error; a refusal comes before any side effect.
+    fn spawn_process(context: &mut crate::shared::spawn::spawn_context) -> Result<Self, CString>
     where
         Self: Sized;
     fn install_editor(
@@ -1293,11 +1290,8 @@ impl WindowPane for Rc<RefCell<window_pane>> {
     fn finish_process(&self, notify: i32) {
         lifecycle::finish_process(self, notify)
     }
-    fn spawn_process(
-        context: &mut crate::shared::spawn::spawn_context,
-        cause: &mut Option<CString>,
-    ) -> Option<Self> {
-        spawning::spawn_pane(context, cause)
+    fn spawn_process(context: &mut crate::shared::spawn::spawn_context) -> Result<Self, CString> {
+        spawning::spawn_pane(context)
     }
     fn install_editor(
         &self,

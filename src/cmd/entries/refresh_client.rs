@@ -28,7 +28,9 @@ use crate::shared::limits::INT_MAX;
 use crate::shared::pane::window_pane;
 use crate::shared::window::{WINDOW_MAXIMUM, WINDOW_MINIMUM};
 
-use crate::tty::{tty_clipboard_query, tty_parse_colour_report, tty_update_client_offset};
+use crate::tty::{
+    tty_clipboard_query, tty_parse_colour_report, tty_update_client_offset, ColourReport,
+};
 use crate::window_pane::WindowPane as _;
 use std::ffi::{CStr, CString};
 pub static cmd_refresh_client_entry: cmd_entry = {
@@ -191,11 +193,15 @@ fn cmd_refresh_report(client: &ClientRef, value: &CStr) {
     let Some(pane_owner) = std::rc::Rc::<std::cell::RefCell<window_pane>>::find_by_id(pane) else {
         return;
     };
+    let Some(colour) = tty_parse_colour_report(client, report.to_bytes()) else {
+        return;
+    };
     let (mut fg, mut bg) = pane_owner.control_colours();
-    let parsed = tty_parse_colour_report(client, report.to_bytes(), &mut fg, &mut bg);
-    if parsed == 0 {
-        pane_owner.update_control_colours(fg, bg);
+    match colour {
+        ColourReport::Fg(n) => fg = n,
+        ColourReport::Bg(n) => bg = n,
     }
+    pane_owner.update_control_colours(fg, bg);
 }
 
 unsafe fn cmd_refresh_client_exec(

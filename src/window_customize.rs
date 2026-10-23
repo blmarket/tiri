@@ -685,14 +685,13 @@ fn window_customize_draw_waiting(mode: &CustomizeMode) {
 unsafe fn window_customize_set_option_value(
     item: &window_customize_itemdata,
     value: Option<&CStr>,
-    cause: *mut Option<CString>,
-) -> ::core::ffi::c_int {
+) -> Result<(), Option<CString>> {
     let scope = item.oo.as_ref().expect("option row has a scope");
     let name = item.name.as_deref().expect("option row has a name");
     let Some((owner, tableentry)) =
         window_customize_find_option(scope, name, |option| option.tableentry)
     else {
-        return -1;
+        return Err(None);
     };
     let result =
         if tableentry.is_some_and(|definition| definition.flags & OPTIONS_TABLE_IS_ARRAY != 0) {
@@ -720,17 +719,12 @@ unsafe fn window_customize_set_option_value(
         } else {
             scope.set_from_string(tableentry, name, value, false)
         };
-    if let Err(error) = result {
-        if !cause.is_null() {
-            *cause = Some(error);
-        }
-        return -1;
-    }
+    result.map_err(Some)?;
     if item.option_type == WINDOW_CUSTOMIZE_HOOKS && name.to_bytes().first() == Some(&b'@') {
         hooks_add_event(name);
     }
     options_push_changes(name);
-    0
+    Ok(())
 }
 
 fn window_customize_option_editable(
@@ -757,25 +751,21 @@ fn window_customize_option_editable(
 unsafe fn window_customize_set_command_value(
     item: &window_customize_itemdata,
     s: &CStr,
-    cause: *mut Option<CString>,
-) -> ::core::ffi::c_int {
+) -> Result<(), Option<CString>> {
     let Some(table) = window_customize_get_key_table(item) else {
-        return -(1 as ::core::ffi::c_int);
+        return Err(None);
     };
     let mut kt = table.borrow_mut();
     let mut pr = cmd_parse_from_string(s, None);
     if pr.status == CMD_PARSE_ERROR {
-        if !cause.is_null() {
-            *cause = pr.error;
-        }
-        return -(1 as ::core::ffi::c_int);
+        return Err(pr.error);
     }
     let Some(bd) = kt.key_bindings.get_mut(item.key) else {
         drop(pr.cmdlist.take());
-        return -1;
+        return Err(None);
     };
     bd.commands = pr.cmdlist.take().expect("successful command parse");
-    0 as ::core::ffi::c_int
+    Ok(())
 }
 fn window_customize_set_note_value(
     item: &window_customize_itemdata,
@@ -2813,8 +2803,7 @@ unsafe fn window_customize_set_option_callback(
     if mode.dead.get() || window_customize_check_item(&mode.data.borrow(), item, None) == 0 {
         return PROMPT_CLOSE;
     }
-    let mut cause = None;
-    if window_customize_set_option_value(item, Some(value), &mut cause) != 0 {
+    if let Err(mut cause) = window_customize_set_option_value(item, Some(value)) {
         window_customize_uppercase_cause(&mut cause);
         if let Some(cause_value) = cause.as_ref() {
             status_message_set(c, -1, 1, 0, 0, |out| {
@@ -3183,11 +3172,9 @@ unsafe fn window_customize_edit_close_cb(
     buf: Option<Vec<u8>>,
     ed: window_customize_editdata,
 ) {
-    let mut current_block: u64;
     let item = &*ed.item;
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
     let mut mode = None;
-    let mut cause: Option<CString> = None;
     let lookup_wp_owner = Rc::<RefCell<window_pane>>::find_by_id(ed.wp_id);
     if let Some(pane) = lookup_wp_owner.as_ref() {
         wme = pane.mode_entry();
@@ -3228,47 +3215,24 @@ unsafe fn window_customize_edit_close_cb(
     }
     value.push(0);
     let value_str = CStr::from_bytes_until_nul(&value).expect("edited value is NUL-terminated");
-    match ed.edit_type as ::core::ffi::c_uint {
+    let updated = match ed.edit_type as ::core::ffi::c_uint {
         0 => {
             let editable = window_customize_option_editable(&mode.data.borrow(), item) != 0;
-            if editable
-                && window_customize_set_option_value(item, Some(value_str), &raw mut cause)
-                    != 0 as ::core::ffi::c_int
-            {
-                current_block = 8846462416050848735;
-            } else {
-                current_block = 1608152415753874203;
-            }
+            !editable || window_customize_set_option_value(item, Some(value_str)).is_ok()
         }
-        1 => {
-            if window_customize_set_command_value(item, value_str, &raw mut cause)
-                != 0 as ::core::ffi::c_int
-            {
-                current_block = 8846462416050848735;
-            } else {
-                current_block = 1608152415753874203;
-            }
-        }
-        2 => {
-            if window_customize_set_note_value(item, value_str) != 0 as ::core::ffi::c_int {
-                current_block = 8846462416050848735;
-            } else {
-                current_block = 1608152415753874203;
-            }
-        }
+        1 => window_customize_set_command_value(item, value_str).is_ok(),
+        2 => window_customize_set_note_value(item, value_str) == 0,
         3 => {
             if window_customize_check_item(&mode.data.borrow(), item, None) == 0 {
-                current_block = 8846462416050848735;
+                false
             } else {
                 window_customize_set_environment_value(item, value_str);
-                current_block = 1608152415753874203;
+                true
             }
         }
-        _ => {
-            current_block = 1608152415753874203;
-        }
-    }
-    if current_block == 1608152415753874203 {
+        _ => true,
+    };
+    if updated {
         mode_tree_build(&window_customize_tree(mode));
         mode_tree_draw(&window_customize_tree(mode));
         lookup_wp_owner

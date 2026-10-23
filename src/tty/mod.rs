@@ -20,7 +20,7 @@ pub use control::{
 };
 pub use draw::tty_draw_line;
 pub use features::{tty_get_features, tty_parse_features};
-pub use keys::tty_keys_build;
+pub use keys::{tty_keys_build, ColourReport};
 pub use model::{tty, TERM_256COLOURS, TERM_RGBCOLOURS};
 pub use output::*;
 pub(crate) use term::{tty_term_descriptions, tty_term_read_list};

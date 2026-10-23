@@ -128,7 +128,6 @@ unsafe fn cmd_split_window_exec(
         let mut input: ::core::ffi::c_int = 0;
         let mut empty: ::core::ffi::c_int = 0;
         let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-        let mut cause: Option<std::ffi::CString> = None;
         let mut count: u_int = args_count(args);
         if args_has(args, 'b' as i32 as u_char) != 0 {
             flags |= SPAWN_BEFORE;
@@ -185,167 +184,161 @@ unsafe fn cmd_split_window_exec(
         window_owner.push_zoom(true, args_has(args, 'Z' as i32 as u_char) != 0);
         let spawned_pane = match <std::rc::Rc<
             std::cell::RefCell<crate::shared::pane::window_pane>,
-        > as crate::window_pane::WindowPane>::spawn_process(
-            &mut sc, &mut cause
-        ) {
-            Some(pane) => Some(pane),
-            None => {
+        > as crate::window_pane::WindowPane>::spawn_process(&mut sc)
+        {
+            Ok(pane) => Some(pane),
+            Err(cause) => {
                 cmdq_error(item_handle, |out| {
                     out.write_all(b"create pane failed: ")?;
-                    write_cstr(out, cause.as_deref())
+                    write_cstr(out, cause.as_c_str())
                 });
                 window_owner.pop_zoom();
                 drop(window_owner);
                 return CmdOutcome::Error;
             }
         };
-        match spawned_pane.as_ref() {
-            None => {
-                cmdq_error(item_handle, |out| write_cstr(out, cause.as_deref()));
-            }
-            Some(new_pane) => {
-                if let Some(style) = args_get(args, b's') {
-                    {
-                        let mut options = new_pane.borrow_options_mut();
-                        options_set_string(&mut options, c"window-style", 0, |out| {
-                            write_cstr(out, style)
-                        });
-                        options_set_string(&mut options, c"window-active-style", 0, |out| {
-                            write_cstr(out, style)
-                        });
-                    }
-                    new_pane.invalidate_style();
-                }
-                if let Some(style) = args_get(args, b'S') {
-                    options_set_string(
-                        &mut new_pane.borrow_options_mut(),
-                        c"pane-active-border-style",
-                        0,
-                        |out| write_cstr(out, style),
-                    );
-                }
-                if let Some(style) = args_get(args, b'R') {
-                    options_set_string(
-                        &mut new_pane.borrow_options_mut(),
-                        c"pane-border-style",
-                        0,
-                        |out| write_cstr(out, style),
-                    );
-                }
-                if args_has(args, 'k' as i32 as u_char) != 0
-                    || args_has(args, 'm' as i32 as u_char) != 0
+        if let Some(new_pane) = spawned_pane.as_ref() {
+            if let Some(style) = args_get(args, b's') {
                 {
-                    options_set_number(
+                    let mut options = new_pane.borrow_options_mut();
+                    options_set_string(&mut options, c"window-style", 0, |out| {
+                        write_cstr(out, style)
+                    });
+                    options_set_string(&mut options, c"window-active-style", 0, |out| {
+                        write_cstr(out, style)
+                    });
+                }
+                new_pane.invalidate_style();
+            }
+            if let Some(style) = args_get(args, b'S') {
+                options_set_string(
+                    &mut new_pane.borrow_options_mut(),
+                    c"pane-active-border-style",
+                    0,
+                    |out| write_cstr(out, style),
+                );
+            }
+            if let Some(style) = args_get(args, b'R') {
+                options_set_string(
+                    &mut new_pane.borrow_options_mut(),
+                    c"pane-border-style",
+                    0,
+                    |out| write_cstr(out, style),
+                );
+            }
+            if args_has(args, 'k' as i32 as u_char) != 0
+                || args_has(args, 'm' as i32 as u_char) != 0
+            {
+                options_set_number(
+                    &mut new_pane.borrow_options_mut(),
+                    c"remain-on-exit",
+                    3 as ::core::ffi::c_longlong,
+                );
+                if args_has(args, 'm' as i32 as u_char) != 0 {
+                    options_set_string(
                         &mut new_pane.borrow_options_mut(),
-                        c"remain-on-exit",
-                        3 as ::core::ffi::c_longlong,
+                        c"remain-on-exit-format",
+                        0 as ::core::ffi::c_int,
+                        |out| {
+                            write_cstr(
+                                out,
+                                nullable_cstr(
+                                    args_get(args, 'm' as i32 as u_char)
+                                        .map_or(std::ptr::null(), |value| value.as_ptr()),
+                                ),
+                            )
+                        },
                     );
-                    if args_has(args, 'm' as i32 as u_char) != 0 {
-                        options_set_string(
-                            &mut new_pane.borrow_options_mut(),
-                            c"remain-on-exit-format",
-                            0 as ::core::ffi::c_int,
-                            |out| {
-                                write_cstr(
-                                    out,
-                                    nullable_cstr(
-                                        args_get(args, 'm' as i32 as u_char)
-                                            .map_or(std::ptr::null(), |value| value.as_ptr()),
-                                    ),
-                                )
-                            },
-                        );
+                }
+            }
+            if args_has(args, 'T' as i32 as u_char) != 0 {
+                let title = format_single_from_target_cstring(
+                    item_handle,
+                    args_get(args, 'T' as i32 as u_char).unwrap_or(c""),
+                );
+                new_pane.set_title(&title);
+                let mut ep = event_payload_create();
+                fs = cmd_find_state::find_from_pane(new_pane, 0 as ::core::ffi::c_int)
+                    .unwrap_or_else(|| cmd_find_state::clear_state(0 as ::core::ffi::c_int));
+                event_payload_set_target(&mut ep, &fs);
+                event_payload_set_pane(&mut ep, c"pane", std::rc::Rc::clone(new_pane));
+                event_payload_set_window(
+                    &mut ep,
+                    c"window",
+                    new_pane
+                        .window_observer()
+                        .upgrade()
+                        .expect("spawned pane window"),
+                );
+                event_payload_set_string(&mut ep, c"new_title", |out| write_cstr(out, &*title));
+                events_fire(c"pane-title-changed", ep);
+            }
+            let mut pane_input = None;
+            if input != 0 {
+                match new_pane.start_input(item_handle) {
+                    Err(error) => {
+                        cmdq_error(item_handle, |out| write_cstr(out, &*error));
+                        current_block = 9814746494299271243;
+                    }
+                    Ok(None) => {
+                        input = 0;
+                        current_block = 12543410360505780601;
+                    }
+                    Ok(Some(wait)) => {
+                        pane_input = Some(wait);
+                        current_block = 12543410360505780601;
                     }
                 }
-                if args_has(args, 'T' as i32 as u_char) != 0 {
-                    let title = format_single_from_target_cstring(
-                        item_handle,
-                        args_get(args, 'T' as i32 as u_char).unwrap_or(c""),
-                    );
-                    new_pane.set_title(&title);
-                    let mut ep = event_payload_create();
-                    fs = cmd_find_state::find_from_pane(new_pane, 0 as ::core::ffi::c_int)
-                        .unwrap_or_else(|| cmd_find_state::clear_state(0 as ::core::ffi::c_int));
-                    event_payload_set_target(&mut ep, &fs);
-                    event_payload_set_pane(&mut ep, c"pane", std::rc::Rc::clone(new_pane));
-                    event_payload_set_window(
-                        &mut ep,
-                        c"window",
-                        new_pane
-                            .window_observer()
-                            .upgrade()
-                            .expect("spawned pane window"),
-                    );
-                    event_payload_set_string(&mut ep, c"new_title", |out| write_cstr(out, &*title));
-                    events_fire(c"pane-title-changed", ep);
-                }
-                let mut pane_input = None;
-                if input != 0 {
-                    match new_pane.start_input(item_handle) {
-                        Err(error) => {
-                            cmdq_error(item_handle, |out| write_cstr(out, &*error));
-                            current_block = 9814746494299271243;
-                        }
-                        Ok(None) => {
-                            input = 0;
-                            current_block = 12543410360505780601;
-                        }
-                        Ok(Some(wait)) => {
-                            pane_input = Some(wait);
-                            current_block = 12543410360505780601;
-                        }
-                    }
-                } else {
-                    current_block = 12543410360505780601;
-                }
-                match current_block {
-                    9814746494299271243 => {}
-                    _ => {
-                        if !flags & SPAWN_DETACHED != 0 {
-                            *current.current.borrow_mut() = cmd_find_state::find_from_winlink_pane(
-                                wl.clone(),
-                                new_pane,
-                                0 as ::core::ffi::c_int,
-                            );
-                        }
-                        window_owner.pop_zoom();
-                        server_redraw_window(&original_window);
-                        server_redraw_session(s.as_ref().expect("live session"));
-                        if args_has(args, 'P' as i32 as u_char) != 0 {
-                            let template = args_get(args, 'F' as i32 as u_char)
-                                .unwrap_or(SPLIT_WINDOW_TEMPLATE);
-                            let cp = format_single_cstring(
-                                Some(item_handle),
-                                template,
-                                tc.as_ref(),
-                                s.as_ref(),
-                                wl.clone(),
-                                Some(new_pane),
-                            );
-                            cmdq_print(item_handle, |out| write_cstr(out, &*cp));
-                        }
-                        fs = cmd_find_state::find_from_winlink_pane(
+            } else {
+                current_block = 12543410360505780601;
+            }
+            match current_block {
+                9814746494299271243 => {}
+                _ => {
+                    if !flags & SPAWN_DETACHED != 0 {
+                        *current.current.borrow_mut() = cmd_find_state::find_from_winlink_pane(
                             wl.clone(),
                             new_pane,
                             0 as ::core::ffi::c_int,
                         );
-                        cmdq_insert_hook(s.as_ref(), item_handle, Some(&fs), |out| {
-                            out.write_all(b"after-split-window")
-                        });
-                        drop(sc.environ.take());
-                        if let Some(wait) = pane_input {
-                            drop(window_owner);
-                            return CmdOutcome::Suspend(Box::pin(wait));
-                        }
-                        if args_has(args, 'W' as i32 as u_char) != 0 {
-                            let (waiter, retval) = cmdq_wait(item_handle);
-                            new_pane.wait_until_close(waiter);
-                            drop(window_owner);
-                            return retval;
-                        }
-                        drop(window_owner);
-                        return CmdOutcome::Normal;
                     }
+                    window_owner.pop_zoom();
+                    server_redraw_window(&original_window);
+                    server_redraw_session(s.as_ref().expect("live session"));
+                    if args_has(args, 'P' as i32 as u_char) != 0 {
+                        let template =
+                            args_get(args, 'F' as i32 as u_char).unwrap_or(SPLIT_WINDOW_TEMPLATE);
+                        let cp = format_single_cstring(
+                            Some(item_handle),
+                            template,
+                            tc.as_ref(),
+                            s.as_ref(),
+                            wl.clone(),
+                            Some(new_pane),
+                        );
+                        cmdq_print(item_handle, |out| write_cstr(out, &*cp));
+                    }
+                    fs = cmd_find_state::find_from_winlink_pane(
+                        wl.clone(),
+                        new_pane,
+                        0 as ::core::ffi::c_int,
+                    );
+                    cmdq_insert_hook(s.as_ref(), item_handle, Some(&fs), |out| {
+                        out.write_all(b"after-split-window")
+                    });
+                    drop(sc.environ.take());
+                    if let Some(wait) = pane_input {
+                        drop(window_owner);
+                        return CmdOutcome::Suspend(Box::pin(wait));
+                    }
+                    if args_has(args, 'W' as i32 as u_char) != 0 {
+                        let (waiter, retval) = cmdq_wait(item_handle);
+                        new_pane.wait_until_close(waiter);
+                        drop(window_owner);
+                        return retval;
+                    }
+                    drop(window_owner);
+                    return CmdOutcome::Normal;
                 }
             }
         }

@@ -195,8 +195,8 @@ unsafe fn server_tidy_event() {
 }
 pub(crate) unsafe fn server_start(
     mut flags: uint64_t,
-    lockfd: &mut Option<OwnedFd>,
-    lockfile: &mut Option<CString>,
+    lockfd: Option<OwnedFd>,
+    lockfile: Option<CString>,
 ) -> OwnedFd {
     let mut fd = None;
     let mut set: sigset_t = unsafe { ::core::mem::zeroed() };
@@ -272,11 +272,11 @@ pub(crate) unsafe fn server_start(
             None
         }
     };
-    if lockfd.is_some() {
-        if let Some(path) = lockfile.take() {
+    if let Some(lockfd) = lockfd {
+        if let Some(path) = lockfile {
             let _ = fs::remove_file(std::path::Path::new(OsStr::from_bytes(path.to_bytes())));
         }
-        drop(lockfd.take());
+        drop(lockfd);
     }
     if let Some(cause) = cause {
         if let Some(c_value) = c.as_ref() {

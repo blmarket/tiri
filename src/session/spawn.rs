@@ -9,13 +9,12 @@ use crate::resize::default_window_size;
 use crate::shared::spawn::{
     spawn_context, SPAWN_DETACHED, SPAWN_KILL, SPAWN_NONOTIFY, SPAWN_RESPAWN,
 };
-use crate::spawn::{initialize_spawned_window, prepare_respawn_window, set_spawn_cause, spawn_log};
+use crate::spawn::{initialize_spawned_window, prepare_respawn_window, spawn_cause, spawn_log};
 use crate::window::Window;
 
 pub(super) unsafe fn spawn_window(
     sc: &mut spawn_context,
-    cause: &mut Option<CString>,
-) -> refbox::Weak<winlink> {
+) -> Result<refbox::Weak<winlink>, CString> {
     let session = sc.s.upgrade().expect("spawn context session");
     let target_client = sc.tc.upgrade();
     let mut index = sc.idx;
@@ -25,17 +24,17 @@ pub(super) unsafe fn spawn_window(
     let mut replaced_window = None;
     spawn_log(c"spawn_window", sc);
 
-    if sc.flags & SPAWN_RESPAWN != 0 && !prepare_respawn_window(sc, cause) {
-        return refbox::Weak::new();
+    if sc.flags & SPAWN_RESPAWN != 0 {
+        prepare_respawn_window(sc)?;
     }
     if sc.flags & SPAWN_RESPAWN == 0 && index != -1 {
         let mut link = session.with_winlinks(|links| winlink_find_by_index(links, index));
         if link.is_alive() && sc.flags & SPAWN_KILL == 0 {
-            set_spawn_cause(
-                Some(cause),
-                &[b"index ", index.to_string().as_bytes(), b" in use"],
-            );
-            return refbox::Weak::new();
+            return Err(spawn_cause(&[
+                b"index ",
+                index.to_string().as_bytes(),
+                b" in use",
+            ]));
         }
         if link.is_alive() {
             link.try_borrow_mut().expect("live winlink").flags &= !WINLINK_ALERTFLAGS;
@@ -56,11 +55,10 @@ pub(super) unsafe fn spawn_window(
         }
         sc.set_wl(winlink_add(&session.borrow().windows, index));
         if !sc.winlink_handle().is_alive() {
-            set_spawn_cause(
-                Some(cause),
-                &[b"couldn't add window ", index.to_string().as_bytes()],
-            );
-            return refbox::Weak::new();
+            return Err(spawn_cause(&[
+                b"couldn't add window ",
+                index.to_string().as_bytes(),
+            ]));
         }
         let (mut sx, mut sy, mut xpixel, mut ypixel) = (0, 0, 0, 0);
         default_window_size(
@@ -88,15 +86,13 @@ pub(super) unsafe fn spawn_window(
     }
 
     sc.flags |= SPAWN_NONOTIFY;
-    let pane =
-        <Rc<std::cell::RefCell<window_pane>> as crate::window_pane::WindowPane>::spawn_process(
-            sc, cause,
-        );
-    if pane.is_none() {
+    if let Err(cause) =
+        <Rc<std::cell::RefCell<window_pane>> as crate::window_pane::WindowPane>::spawn_process(sc)
+    {
         if sc.flags & SPAWN_RESPAWN == 0 {
             winlink_remove(sc.winlink_handle());
         }
-        return refbox::Weak::new();
+        return Err(cause);
     }
     if sc.flags & SPAWN_RESPAWN == 0 {
         let window = created_window
@@ -117,5 +113,5 @@ pub(super) unsafe fn spawn_window(
         events_fire_winlink(c"window-linked", sc.winlink_handle());
     }
     session_group_synchronize_from(&session);
-    sc.winlink_handle()
+    Ok(sc.winlink_handle())
 }

@@ -24,7 +24,6 @@ use crate::shared::spawn::spawn_context;
 use crate::shared::spawn::{SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_KILL};
 use crate::shared::tree::RB_NEGINF;
 use crate::shared::window::winlink;
-use crate::spawn::spawn_window;
 use crate::tmux::{check_name, clean_name_cstring};
 use crate::window::Window as _;
 use crate::window::{winlink_find_by_index, winlink_next, winlink_shuffle_up, winlinks_minmax};
@@ -91,7 +90,6 @@ unsafe fn cmd_new_window_exec(
     let mut idx: ::core::ffi::c_int = target.idx;
     let mut before: ::core::ffi::c_int = 0;
     let mut count: ::core::ffi::c_int = args_count(args) as ::core::ffi::c_int;
-    let mut cause: Option<std::ffi::CString> = None;
     let mut wname_owned: Option<CString> = None;
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -233,44 +231,45 @@ unsafe fn cmd_new_window_exec(
     if args_has(args, 'k' as i32 as u_char) != 0 {
         sc.flags |= SPAWN_KILL;
     }
-    new_wl = spawn_window(&mut sc, &mut cause);
-    if !new_wl.is_alive() {
-        cmdq_error(item_handle, |out| {
-            out.write_all(b"create window failed: ")?;
-            write_cstr(out, cause.as_deref())
-        });
-        drop(sc.environ.take());
-        CmdOutcome::Error
-    } else {
-        if args_has(args, 'd' as i32 as u_char) == 0
-            || new_wl == s.as_ref().expect("live session").current_winlink()
-        {
-            *current.current.borrow_mut() =
-                cmd_find_state::find_from_winlink((new_wl).clone(), 0 as ::core::ffi::c_int);
-            server_redraw_session_group(s.as_ref().expect("live session"));
-        } else {
-            server_status_session_group(s.as_ref().expect("live session"));
+    match session_owner.spawn_window(&mut sc) {
+        Ok(link) => new_wl = link,
+        Err(cause) => {
+            cmdq_error(item_handle, |out| {
+                out.write_all(b"create window failed: ")?;
+                write_cstr(out, cause.as_c_str())
+            });
+            drop(sc.environ.take());
+            return CmdOutcome::Error;
         }
-        if args_has(args, 'P' as i32 as u_char) != 0 {
-            let template = args_get(args, 'F' as i32 as u_char).unwrap_or(NEW_WINDOW_TEMPLATE);
-            let cp = format_single_cstring(
-                Some(item_handle),
-                template,
-                tc_owner.as_ref(),
-                Some(&session_owner),
-                (new_wl).clone(),
-                (((winlink_window(&new_wl).as_ref()).expect("live window"))
-                    .active_pane()
-                    .upgrade())
-                .as_ref(),
-            );
-            cmdq_print(item_handle, |out| out.write_all(cp.as_bytes()));
-        }
-        fs = cmd_find_state::find_from_winlink((new_wl).clone(), 0 as ::core::ffi::c_int);
-        cmdq_insert_hook(Some(&session_owner), item_handle, Some(&fs), |out| {
-            out.write_all(b"after-new-window")
-        });
-        drop(sc.environ.take());
-        CmdOutcome::Normal
     }
+    if args_has(args, 'd' as i32 as u_char) == 0
+        || new_wl == s.as_ref().expect("live session").current_winlink()
+    {
+        *current.current.borrow_mut() =
+            cmd_find_state::find_from_winlink((new_wl).clone(), 0 as ::core::ffi::c_int);
+        server_redraw_session_group(s.as_ref().expect("live session"));
+    } else {
+        server_status_session_group(s.as_ref().expect("live session"));
+    }
+    if args_has(args, 'P' as i32 as u_char) != 0 {
+        let template = args_get(args, 'F' as i32 as u_char).unwrap_or(NEW_WINDOW_TEMPLATE);
+        let cp = format_single_cstring(
+            Some(item_handle),
+            template,
+            tc_owner.as_ref(),
+            Some(&session_owner),
+            (new_wl).clone(),
+            (((winlink_window(&new_wl).as_ref()).expect("live window"))
+                .active_pane()
+                .upgrade())
+            .as_ref(),
+        );
+        cmdq_print(item_handle, |out| out.write_all(cp.as_bytes()));
+    }
+    fs = cmd_find_state::find_from_winlink((new_wl).clone(), 0 as ::core::ffi::c_int);
+    cmdq_insert_hook(Some(&session_owner), item_handle, Some(&fs), |out| {
+        out.write_all(b"after-new-window")
+    });
+    drop(sc.environ.take());
+    CmdOutcome::Normal
 }
