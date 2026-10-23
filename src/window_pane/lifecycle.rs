@@ -128,7 +128,7 @@ pub(super) fn finish_process(
         event.free();
         drop(fd);
     }
-    drop(pipe.free());
+    pipe.free();
     let Some(exit_status) = exit_status else {
         drop(window_owner);
         return;

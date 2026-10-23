@@ -30,7 +30,7 @@ use libc::{E2BIG, EINVAL, ENOMEM};
 use std::cell::RefCell;
 use std::ffi::{CStr, CString, OsStr};
 use std::io::{self, Write as _};
-use std::os::fd::{AsFd, IntoRawFd, OwnedFd};
+use std::os::fd::{AsFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt as _;
 use std::rc::{Rc, Weak};
@@ -768,13 +768,7 @@ unsafe fn file_write_finished(owner: &Rc<RefCell<client_file>>) {
             stream: 0,
             error: 0,
         };
-        if let Some(fd) = std::mem::take(&mut cf.event).free() {
-            if let Err(error) = tiri_rt::unix::close(fd.into_raw_fd()) {
-                if cf.error == 0 {
-                    cf.error = error.raw_os_error().unwrap_or(libc::EIO);
-                }
-            }
-        }
+        std::mem::take(&mut cf.event).free();
         msg.stream = cf.stream;
         msg.error = cf.error;
         file_send(cf, MSG_WRITE_DONE, None, bytes_of(&msg));
@@ -795,7 +789,7 @@ unsafe fn file_write_error_callback(
             .unwrap_or(EIO);
         log_debug(format_args!("write error file {}", { cf.stream }));
         cf.error = error;
-        drop(std::mem::take(&mut cf.event).free());
+        std::mem::take(&mut cf.event).free();
         cf.closed != 0
     };
     if closed {
@@ -976,7 +970,7 @@ fn file_read_error_callback(mut what: ::core::ffi::c_short, owner: &Rc<RefCell<c
         0 as ::core::ffi::c_int
     };
     file_send(cf, MSG_READ_DONE, None, bytes_of(&msg));
-    drop(std::mem::take(&mut cf.event).free());
+    std::mem::take(&mut cf.event).free();
     client_files_remove(cf);
 }
 fn file_read_callback(owner: &Rc<RefCell<client_file>>) {

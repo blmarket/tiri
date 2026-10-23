@@ -601,7 +601,7 @@ fn window_pane_destroy(pane_owner: &Rc<std::cell::RefCell<window_pane>>) {
     if let Some(ictx) = ictx {
         drop(ictx);
     }
-    drop(pipe.free());
+    pipe.free();
     let timers = {
         let mut wp = pane_owner.borrow_mut();
         let timers = [

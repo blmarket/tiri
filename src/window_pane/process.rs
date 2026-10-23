@@ -61,7 +61,7 @@ pub(super) fn pipe_pane(
         }
         if had_pipe {
             let pipe_event = std::mem::take(&mut pane_owner.borrow_mut().pipe_event);
-            drop(pipe_event.free());
+            pipe_event.free();
             if window_pane_destroy_ready(pane_owner) != 0 {
                 server_destroy_pane(pane_owner, 1);
                 return CmdOutcome::Normal;
@@ -279,7 +279,7 @@ fn cmd_pipe_pane_error_callback(pane_owner: &std::rc::Rc<std::cell::RefCell<wind
         (pane.id, std::mem::take(&mut pane.pipe_event))
     };
     log_debug(format_args!("%{} pipe error", id));
-    drop(pipe_event.free());
+    pipe_event.free();
     if window_pane_destroy_ready(pane_owner) != 0 {
         server_destroy_pane(pane_owner, 1);
     }

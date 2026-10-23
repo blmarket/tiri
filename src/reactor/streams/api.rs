@@ -41,10 +41,9 @@ pub type StreamResult<T> = Result<T, StreamError>;
 /// the logical owner must call free at its existing teardown point.
 pub trait BufferEvent {
     fn is_alive(&self) -> bool;
-    /// Consume this handle, invalidate all observers, and release the stream.
-    /// Returns the owned descriptor, if any, so the caller decides when it
-    /// closes. An already invalidated handle is harmless and returns None.
-    fn free(self) -> Option<std::os::fd::OwnedFd>;
+    /// Consume this handle, invalidate all observers, and release the stream,
+    /// closing its descriptor. An already invalidated handle is harmless.
+    fn free(self);
     /// Enabling WRITE also requests an empty-output write callback opportunity.
     fn enable(&self, interests: Interests) -> StreamResult<()>;
     fn disable(&self, interests: Interests) -> StreamResult<()>;
@@ -72,9 +71,10 @@ impl BufferEvent for StreamHandle {
             .is_some_and(|state| state.stream.borrow().is_some())
     }
 
-    fn free(self) -> Option<std::os::fd::OwnedFd> {
-        let state = self.0.upgrade()?;
-        super::free(&state)
+    fn free(self) {
+        if let Some(state) = self.0.upgrade() {
+            super::free(&state);
+        }
     }
 
     fn enable(&self, interests: Interests) -> StreamResult<()> {

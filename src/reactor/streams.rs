@@ -240,20 +240,20 @@ pub fn bufferevent_new(
     }
     Ok(StreamHandle(Rc::downgrade(&s)))
 }
-/// Invalidate observers, release the stream, and return its descriptor with
-/// the original blocking mode. A released stream is ignored.
+/// Invalidate observers, restore the descriptor's blocking mode, and release
+/// the stream, closing its descriptor. A released stream is ignored.
 /// The caller's reference keeps the state alive once the stream is dropped.
-fn free(s: &StreamState) -> Option<std::os::fd::OwnedFd> {
-    let mut stream = s.stream.borrow_mut().take()?;
+fn free(s: &StreamState) {
+    let Some(stream) = s.stream.borrow_mut().take() else {
+        return;
+    };
     drop(s.task.take());
-    let fd = stream.fd.take();
-    if let Some(fd) = &fd {
+    if let Some(fd) = &stream.fd {
         if s.pid == std::process::id() && !s.was_nonblocking {
             let _ = tiri_rt::unix::set_nonblocking(fd.as_fd(), false);
         }
     }
     drop(stream);
-    fd
 }
 
 /// Schedule an I/O recheck before lending input for synchronous consumption.
