@@ -768,8 +768,7 @@ unsafe fn file_write_finished(owner: &Rc<RefCell<client_file>>) {
             stream: 0,
             error: 0,
         };
-        std::mem::take(&mut cf.event).free();
-        if let Some(fd) = cf.fd.take() {
+        if let Some(fd) = std::mem::take(&mut cf.event).free() {
             if let Err(error) = tiri_rt::unix::close(fd.into_raw_fd()) {
                 if cf.error == 0 {
                     cf.error = error.raw_os_error().unwrap_or(libc::EIO);
@@ -796,8 +795,7 @@ unsafe fn file_write_error_callback(
             .unwrap_or(EIO);
         log_debug(format_args!("write error file {}", { cf.stream }));
         cf.error = error;
-        std::mem::take(&mut cf.event).free();
-        drop(cf.fd.take());
+        drop(std::mem::take(&mut cf.event).free());
         cf.closed != 0
     };
     if closed {
@@ -881,11 +879,10 @@ pub unsafe fn file_write_open(
             match fd {
                 Err(open_error) => error = open_error.raw_os_error().unwrap_or(::libc::EIO),
                 Ok(fd) => {
-                    cf.fd = Some(fd);
                     let data_observer = Rc::downgrade(&transfer_owner);
                     let error_observer = data_observer.clone();
                     let stream = bufferevent_new(
-                        cf.fd.as_ref().map(AsFd::as_fd),
+                        Some(fd),
                         None,
                         bufferevent_data_callback(move || unsafe {
                             if let Some(owner) = data_observer.upgrade() {
@@ -901,7 +898,6 @@ pub unsafe fn file_write_open(
                     match stream {
                         Err(stream_error) => {
                             error = stream_error.raw_os_error().unwrap_or(EIO);
-                            drop(cf.fd.take());
                             client_files_remove(cf);
                         }
                         Ok(stream) => {
@@ -980,8 +976,7 @@ fn file_read_error_callback(mut what: ::core::ffi::c_short, owner: &Rc<RefCell<c
         0 as ::core::ffi::c_int
     };
     file_send(cf, MSG_READ_DONE, None, bytes_of(&msg));
-    std::mem::take(&mut cf.event).free();
-    drop(cf.fd.take());
+    drop(std::mem::take(&mut cf.event).free());
     client_files_remove(cf);
 }
 fn file_read_callback(owner: &Rc<RefCell<client_file>>) {
@@ -1070,11 +1065,10 @@ pub unsafe fn file_read_open(
             match fd {
                 Err(open_error) => error = open_error.raw_os_error().unwrap_or(::libc::EIO),
                 Ok(fd) => {
-                    cf.fd = Some(fd);
                     let data_observer = Rc::downgrade(&transfer_owner);
                     let error_observer = data_observer.clone();
                     let stream = bufferevent_new(
-                        cf.fd.as_ref().map(AsFd::as_fd),
+                        Some(fd),
                         bufferevent_data_callback(move || {
                             if let Some(owner) = data_observer.upgrade() {
                                 file_read_callback(&owner);
@@ -1090,7 +1084,6 @@ pub unsafe fn file_read_open(
                     match stream {
                         Err(stream_error) => {
                             error = stream_error.raw_os_error().unwrap_or(EIO);
-                            drop(cf.fd.take());
                             client_files_remove(cf);
                         }
                         Ok(stream) => {

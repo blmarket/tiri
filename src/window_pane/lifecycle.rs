@@ -115,11 +115,7 @@ pub(super) fn finish_process(
         } else {
             None
         };
-        let pipe = if wp.pipe_fd.is_some() {
-            Some((std::mem::take(&mut wp.pipe_event), wp.pipe_fd.take()))
-        } else {
-            None
-        };
+        let pipe = std::mem::take(&mut wp.pipe_event);
         (
             wp.base.grid().sx,
             wp.base.grid().sy,
@@ -132,10 +128,7 @@ pub(super) fn finish_process(
         event.free();
         drop(fd);
     }
-    if let Some((pipe_event, pipe_fd)) = pipe {
-        pipe_event.free();
-        drop(pipe_fd);
-    }
+    drop(pipe.free());
     let Some(exit_status) = exit_status else {
         drop(window_owner);
         return;

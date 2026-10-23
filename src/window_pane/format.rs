@@ -980,7 +980,7 @@ fn format_cb_pane_pid(ft: &mut format_tree) -> Option<CString> {
 fn format_cb_pane_pipe(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
     let wp = pane.borrow();
-    if wp.pipe_fd.is_some() {
+    if wp.pipe_event.is_alive() {
         return Some(c"1".to_owned());
     }
     Some(c"0".to_owned())
@@ -990,7 +990,7 @@ fn format_cb_pane_pipe_pid(ft: &mut format_tree) -> Option<CString> {
     let pane = ft.wp.upgrade()?;
     let wp = pane.borrow();
     let mut value = None;
-    if wp.pipe_fd.is_some() {
+    if wp.pipe_event.is_alive() {
         value = Some(
             CString::new(format!(
                 "{}",

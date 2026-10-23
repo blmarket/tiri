@@ -49,7 +49,7 @@ pub(super) fn pipe_pane(
         let mut tc: Option<ClientRef> = tc_owner.clone();
         let mut s: Option<SessionRef> = target.session_handle();
         let mut wl: refbox::Weak<winlink> = target.winlink_handle();
-        let had_pipe = pane_owner.borrow().pipe_fd.is_some();
+        let had_pipe = pane_owner.borrow().pipe_event.is_alive();
         let mut null_fd: ::core::ffi::c_int = 0;
         let mut in_0: ::core::ffi::c_int = 0;
         let mut out: ::core::ffi::c_int = 0;
@@ -60,12 +60,8 @@ pub(super) fn pipe_pane(
             return CmdOutcome::Error;
         }
         if had_pipe {
-            let (pipe_event, pipe_fd) = {
-                let mut pane = pane_owner.borrow_mut();
-                (std::mem::take(&mut pane.pipe_event), pane.pipe_fd.take())
-            };
-            pipe_event.free();
-            drop(pipe_fd);
+            let pipe_event = std::mem::take(&mut pane_owner.borrow_mut().pipe_event);
+            drop(pipe_event.free());
             if window_pane_destroy_ready(pane_owner) != 0 {
                 server_destroy_pane(pane_owner, 1);
                 return CmdOutcome::Normal;
@@ -205,7 +201,7 @@ pub(super) fn pipe_pane(
                 let write_observer = read_observer.clone();
                 let error_observer = read_observer.clone();
                 let stream = bufferevent_new(
-                    Some(parent.as_fd()),
+                    Some(parent),
                     bufferevent_data_callback(move || {
                         if let Some(owner) = read_observer.upgrade() {
                             cmd_pipe_pane_read_callback(&owner);
@@ -225,7 +221,6 @@ pub(super) fn pipe_pane(
                 .unwrap_or_else(|_| fatalx(|out| out.write_all(b"out of memory")));
                 {
                     let mut pane = pane_owner.borrow_mut();
-                    pane.pipe_fd = Some(parent);
                     pane.pipe_offset = pane.offset;
                 }
                 let pipe_event = stream;
@@ -279,17 +274,12 @@ fn cmd_pipe_pane_write_callback(pane_owner: &std::rc::Rc<std::cell::RefCell<wind
     }
 }
 fn cmd_pipe_pane_error_callback(pane_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>) {
-    let (id, pipe_event, pipe_fd) = {
+    let (id, pipe_event) = {
         let mut pane = pane_owner.borrow_mut();
-        (
-            pane.id,
-            std::mem::take(&mut pane.pipe_event),
-            pane.pipe_fd.take(),
-        )
+        (pane.id, std::mem::take(&mut pane.pipe_event))
     };
     log_debug(format_args!("%{} pipe error", id));
-    pipe_event.free();
-    drop(pipe_fd);
+    drop(pipe_event.free());
     if window_pane_destroy_ready(pane_owner) != 0 {
         server_destroy_pane(pane_owner, 1);
     }
@@ -311,14 +301,13 @@ mod pipe_stream_tests {
             let pane = window_pane::new();
             let (socket, _receiver) = UnixStream::pair().unwrap();
             let fd = socket.as_raw_fd();
-            let stream = bufferevent_new(Some(socket.as_fd()), None, None, None).unwrap();
-            pane.borrow_mut().pipe_fd = Some(socket.into());
+            let stream = bufferevent_new(Some(socket.into()), None, None, None).unwrap();
             pane.borrow_mut().pipe_event = stream;
             let observer = pane.borrow().pipe_event.clone();
 
             cmd_pipe_pane_error_callback(&pane);
 
-            assert!(pane.borrow().pipe_fd.is_none());
+            assert!(!pane.borrow().pipe_event.is_alive());
             assert!(!observer.is_alive());
             assert_eq!(libc::fcntl(fd, libc::F_GETFD), -1);
             let replacement = std::fs::File::open("/dev/null").unwrap();
@@ -336,7 +325,6 @@ mod pipe_stream_tests {
         let stale = {
             let mut wp = pane_owner.borrow_mut();
             wp.fd = None;
-            wp.pipe_fd = None;
             wp.event = main;
             wp.pipe_event = pipe;
             wp.pipe_event.clone()

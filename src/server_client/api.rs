@@ -598,11 +598,12 @@ impl Client for ClientRef {
             .subs = Some(subs);
         let (read, write, error) = crate::control::control_stream_callbacks(self);
         let (input, output) = {
-            let state = self.borrow();
-            let fd = state.fd.as_ref().map(AsFd::as_fd);
-            let out_fd = state.out_fd.as_ref().map(AsFd::as_fd);
-            for fd in [out_fd, fd].into_iter().flatten() {
-                setblocking(fd, 0);
+            let (fd, out_fd) = {
+                let mut state = self.borrow_mut();
+                (state.fd.take(), state.out_fd.take())
+            };
+            for fd in [&out_fd, &fd].into_iter().flatten() {
+                setblocking(fd.as_fd(), 0);
             }
             let input = bufferevent_new(fd, read, write.clone(), error.clone())
                 .unwrap_or_else(|_| crate::log::fatalx(|out| out.write_all(b"out of memory")));

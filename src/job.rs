@@ -341,24 +341,20 @@ pub fn job_run(
                     if flags & JOB_PTY != 0 {
                         value.tty = tty;
                     }
-                    if flags & JOB_PTY == 0 {
+                    let fd = if flags & JOB_PTY == 0 {
                         let [parent, child] = out_owner.take().expect("job socket pair");
                         drop(child);
-                        value.fd = Some(parent);
+                        parent
                     } else {
-                        value.fd = Some(OwnedFd::from_raw_fd(master));
-                    }
-                    setblocking(value.fd.as_ref().expect("job descriptor").as_fd(), 0);
+                        OwnedFd::from_raw_fd(master)
+                    };
+                    setblocking(fd.as_fd(), 0);
                     let job = jobs::insert(RefBox::new(value));
                     let read_job = job.clone();
                     let write_job = job.clone();
                     let error_job = job.clone();
                     let stream = bufferevent_new(
-                        job.try_borrow_mut()
-                            .expect("registered job")
-                            .fd
-                            .as_ref()
-                            .map(AsFd::as_fd),
+                        Some(fd),
                         bufferevent_data_callback(move || job_read_callback(&read_job)),
                         bufferevent_data_callback(move || job_write_callback(&write_job)),
                         bufferevent_event_callback(move |_, _| job_error_callback(&error_job)),
@@ -435,19 +431,21 @@ pub fn job_free(handle: &Weak<job>) {
 
 pub fn job_resize(handle: &Weak<job>, sx: u_int, sy: u_int) {
     let job = handle.try_borrow_mut().expect("live popup job");
-    if job.fd.is_none() || job.flags & JOB_PTY == 0 {
+    if job.flags & JOB_PTY == 0 {
         return;
     }
-    log_debug(format_args!("resize job: {}x{}", sx, sy));
     let ws = winsize {
         ws_row: sy as _,
         ws_col: sx as _,
         ws_xpixel: 0,
         ws_ypixel: 0,
     };
-    if let Err(error) =
-        crate::shared::terminal::set_size(job.fd.as_ref().expect("job PTY").as_fd(), &ws)
-    {
+    let resized = job.event.with_stream(|stream| {
+        let fd = stream.fd.as_ref()?;
+        log_debug(format_args!("resize job: {}x{}", sx, sy));
+        Some(crate::shared::terminal::set_size(fd.as_fd(), &ws))
+    });
+    if let Some(Some(Err(error))) = resized {
         fatal(&error, |out| out.write_all(b"ioctl failed"));
     }
 }
@@ -485,10 +483,9 @@ fn job_write_callback(handle: &Weak<job>) {
     job_log("write", &job);
     log_debug(format_args!("job output left {}", len));
     if len == 0 && job.flags & JOB_KEEPWRITE == 0 {
-        let _ = tiri_rt::unix::shutdown_write(std::os::fd::AsFd::as_fd(
-            job.fd.as_ref().expect("job descriptor"),
-        ));
         job.event.with_stream(|stream| {
+            let _ =
+                tiri_rt::unix::shutdown_write(stream.fd.as_ref().expect("job descriptor").as_fd());
             bufferevent_disable(stream, EV_WRITE as _);
         });
     }
@@ -593,7 +590,10 @@ pub fn job_print_summary(
             let job = handle.try_borrow_mut().expect("registered job");
             (
                 job.cmd.clone(),
-                job.fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
+                job.event
+                    .with_stream(|stream| stream.fd.as_ref().map(AsRawFd::as_raw_fd))
+                    .flatten()
+                    .unwrap_or(-1),
                 job.pid,
                 job.status,
             )
@@ -627,7 +627,6 @@ mod job_stream_tests {
     fn idle_job() -> job {
         job {
             pid: -1,
-            fd: None,
             ..job::empty()
         }
     }
@@ -643,9 +642,8 @@ mod job_stream_tests {
             let second_observer = second.clone();
             let (socket, remote) = UnixStream::pair().unwrap();
             let fd = socket.as_raw_fd();
-            let stream = bufferevent_new(Some(socket.as_fd()), None, None, None).unwrap();
+            let stream = bufferevent_new(Some(socket.into()), None, None, None).unwrap();
             let first = jobs::insert(RefBox::new(job {
-                fd: Some(socket.into()),
                 event: stream.clone(),
                 ..idle_job()
             }));
@@ -656,14 +654,8 @@ mod job_stream_tests {
             first.try_borrow_mut().unwrap().freecb = Some(Box::new(move || {
                 assert_eq!(jobs::snapshot(), vec![second.clone()]);
                 assert_eq!(
-                    callback_first
-                        .try_borrow_mut()
-                        .unwrap()
-                        .fd
-                        .as_ref()
-                        .unwrap()
-                        .as_raw_fd(),
-                    fd
+                    callback_event.with_stream(|stream| stream.fd.as_ref().unwrap().as_raw_fd()),
+                    Some(fd)
                 );
                 assert!(callback_event == stream);
                 assert!(::libc::fcntl(fd, ::libc::F_GETFD) >= 0);

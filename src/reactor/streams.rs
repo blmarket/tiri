@@ -6,6 +6,7 @@ pub use api::*;
 use std::cell::{Cell, RefCell};
 use std::ffi::{c_int, c_short};
 use std::future::{poll_fn, Future};
+use std::os::fd::AsFd as _;
 use std::pin::pin;
 use std::rc::{Rc, Weak};
 use std::task::{LocalWaker, Poll};
@@ -15,7 +16,6 @@ use tiri_rt::{AsyncRead as _, AsyncWrite as _};
 pub(crate) struct StreamState {
     /// Present until free; observers treat None as released.
     stream: RefCell<Option<Box<bufferevent>>>,
-    fd: c_int,
     was_nonblocking: bool,
     pid: u32,
     generation: Cell<u64>,
@@ -78,11 +78,7 @@ pub(super) fn clear() {
     LIVE_STREAMS.with(|streams| streams.borrow_mut().clear());
 }
 
-fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
-    if state.fd == -1 {
-        return Ok(());
-    }
-    let source = io(unsafe { std::os::fd::BorrowedFd::borrow_raw(state.fd) })?;
+fn start(state: &Rc<StreamState>, source: tiri_rt::mio::Io) -> std::io::Result<()> {
     let s = state.clone();
     let handle = tiri_rt::mio::Handle::current();
     let task = handle.spawn(async move {
@@ -194,19 +190,18 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
     Ok(())
 }
 pub fn bufferevent_new(
-    fd: Option<std::os::fd::BorrowedFd<'_>>,
+    fd: Option<std::os::fd::OwnedFd>,
     readcb: bufferevent_data_cb,
     writecb: bufferevent_data_cb,
     errorcb: bufferevent_event_cb,
 ) -> std::io::Result<StreamHandle> {
-    let was_nonblocking = match fd {
+    let was_nonblocking = match &fd {
         None => true,
-        Some(fd) => tiri_rt::unix::set_nonblocking(fd, true)?,
+        Some(fd) => tiri_rt::unix::set_nonblocking(fd.as_fd(), true)?,
     };
-    let fd = fd.map_or(-1, |fd| std::os::fd::AsRawFd::as_raw_fd(&fd));
+    let source = fd.as_ref().map(|fd| io(fd.as_fd())).transpose();
     let s = Rc::new(StreamState {
         stream: RefCell::new(None),
-        fd,
         was_nonblocking,
         pid: std::process::id(),
         generation: Cell::new(0),
@@ -217,6 +212,7 @@ pub fn bufferevent_new(
     // The stream owns its state until free breaks this cycle.
     let owner = Box::new(bufferevent {
         state: s.clone(),
+        fd,
         input: Default::default(),
         output: Default::default(),
         wm_read: Default::default(),
@@ -232,7 +228,8 @@ pub fn bufferevent_new(
         streams.retain(|stream| stream.strong_count() != 0);
         streams.push(Rc::downgrade(&s));
     });
-    if let Err(error) = start(&s) {
+    let started = source.and_then(|source| source.map_or(Ok(()), |source| start(&s, source)));
+    if let Err(error) = started {
         free(&s);
         // File peers receive the raw errno; report an unsupported
         // descriptor as EOPNOTSUPP.
@@ -243,19 +240,20 @@ pub fn bufferevent_new(
     }
     Ok(StreamHandle(Rc::downgrade(&s)))
 }
-/// Invalidate observers and release the stream. A released stream is ignored.
+/// Invalidate observers, release the stream, and return its descriptor with
+/// the original blocking mode. A released stream is ignored.
 /// The caller's reference keeps the state alive once the stream is dropped.
-fn free(s: &StreamState) {
-    let Some(stream) = s.stream.borrow_mut().take() else {
-        return;
-    };
+fn free(s: &StreamState) -> Option<std::os::fd::OwnedFd> {
+    let mut stream = s.stream.borrow_mut().take()?;
     drop(s.task.take());
-    if s.fd != -1 && s.pid == std::process::id() && !s.was_nonblocking {
-        // The fd is owned by the caller and outlives the stream.
-        let fd = unsafe { std::os::fd::BorrowedFd::borrow_raw(s.fd) };
-        let _ = tiri_rt::unix::set_nonblocking(fd, false);
+    let fd = stream.fd.take();
+    if let Some(fd) = &fd {
+        if s.pid == std::process::id() && !s.was_nonblocking {
+            let _ = tiri_rt::unix::set_nonblocking(fd.as_fd(), false);
+        }
     }
     drop(stream);
+    fd
 }
 
 /// Schedule an I/O recheck before lending input for synchronous consumption.

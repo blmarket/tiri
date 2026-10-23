@@ -1492,7 +1492,7 @@ fn finish_buffer(owner: &Rc<RefCell<window_pane>>) {
     let mut minimum = {
         let pane = owner.borrow();
         let mut minimum = pane.offset.used;
-        if pane.pipe_fd.is_some() {
+        if pane.pipe_event.is_alive() {
             minimum = minimum.min(pane.pipe_offset.used);
         }
         minimum
@@ -1537,7 +1537,7 @@ fn finish_buffer(owner: &Rc<RefCell<window_pane>>) {
             {
                 let mut pane = owner.borrow_mut();
                 pane.offset.used = pane.offset.used.wrapping_sub(base);
-                if pane.pipe_fd.is_some() {
+                if pane.pipe_event.is_alive() {
                     pane.pipe_offset.used = pane.pipe_offset.used.wrapping_sub(base);
                 }
             }
@@ -1582,7 +1582,6 @@ mod tests {
     fn buffered_pane(bytes: &[u8]) -> Rc<RefCell<window_pane>> {
         let pane = window_pane::new();
         pane.borrow_mut().fd = None;
-        pane.borrow_mut().pipe_fd = None;
         let stream = bufferevent_new(None, None, None, None).unwrap();
         stream.with_stream(|stream| evbuffer_add(&mut stream.input, bytes));
         pane.borrow_mut().event = stream;
@@ -1593,7 +1592,6 @@ mod tests {
     fn fallback_selection_preserves_the_last_activity_point() {
         let pane = window_pane::new();
         pane.borrow_mut().fd = None;
-        pane.borrow_mut().pipe_fd = None;
         let previous = window_pane_tree::peek_active_point();
         pane.on_selected(true);
         assert_eq!(pane.borrow().active_point, previous);
@@ -1649,7 +1647,6 @@ mod tests {
         OptionsScope::GlobalServer.reset_default(definition);
         let pane = window_pane::new();
         pane.borrow_mut().fd = None;
-        pane.borrow_mut().pipe_fd = None;
         {
             let mut state = pane.borrow_mut();
             let source = &mut state.base;

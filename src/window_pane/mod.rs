@@ -305,7 +305,7 @@ fn window_fire_pane_prompt(
 
 fn window_pane_destroy_ready(wp_owner: &Rc<std::cell::RefCell<window_pane>>) -> ::core::ffi::c_int {
     let wp = wp_owner.borrow();
-    if wp.pipe_fd.is_some()
+    if wp.pipe_event.is_alive()
         && wp
             .pipe_event
             .with_stream(|event| evbuffer_get_length(&event.output) != 0 as size_t)
@@ -467,7 +467,6 @@ fn window_pane_create(
         wp.resize_queue = window_pane_resizes::default();
         wp.sx = sx;
         wp.sy = sy;
-        wp.pipe_fd = None;
         wp.control_bg = -(1 as ::core::ffi::c_int);
         wp.control_fg = -(1 as ::core::ffi::c_int);
     }
@@ -594,11 +593,7 @@ fn window_pane_destroy(pane_owner: &Rc<std::cell::RefCell<window_pane>>) {
         let event = std::mem::take(&mut wp.event);
         let fd = wp.fd.take();
         let ictx = wp.ictx.take();
-        let pipe = if wp.pipe_fd.is_some() {
-            Some((std::mem::take(&mut wp.pipe_event), wp.pipe_fd.take()))
-        } else {
-            None
-        };
+        let pipe = std::mem::take(&mut wp.pipe_event);
         (event, fd, ictx, pipe)
     };
     event.free();
@@ -606,10 +601,7 @@ fn window_pane_destroy(pane_owner: &Rc<std::cell::RefCell<window_pane>>) {
     if let Some(ictx) = ictx {
         drop(ictx);
     }
-    if let Some((pipe_event, pipe_fd)) = pipe {
-        pipe_event.free();
-        drop(pipe_fd);
-    }
+    drop(pipe.free());
     let timers = {
         let mut wp = pane_owner.borrow_mut();
         let timers = [
@@ -632,7 +624,7 @@ unsafe fn window_pane_read_callback(owner: &Rc<std::cell::RefCell<window_pane>>)
             pane.pipe_event.clone(),
             pane.base_offset,
             pane.pipe_offset,
-            pane.pipe_fd.is_some(),
+            pane.pipe_event.is_alive(),
         )
     };
     let size = input.input_len().unwrap_or(0);
@@ -673,10 +665,15 @@ fn window_pane_set_event(wp_owner: &Rc<std::cell::RefCell<window_pane>>) {
     let read_observer = std::rc::Rc::downgrade(wp_owner);
     let error_observer = read_observer.clone();
     let pane = wp_owner.borrow();
-    let fd = pane.fd.as_ref().map(AsFd::as_fd);
-    if let Some(fd) = fd {
-        setblocking(fd, 0 as ::core::ffi::c_int);
+    if let Some(pty) = &pane.fd {
+        setblocking(pty.as_fd(), 0 as ::core::ffi::c_int);
     }
+    let fd = pane
+        .fd
+        .as_ref()
+        .map(|pty| pty.as_fd().try_clone_to_owned())
+        .transpose()
+        .unwrap_or_else(|error| fatal(&error, |out| out.write_all(b"dup failed")));
     let read = bufferevent_data_callback(move || unsafe {
         if let Some(owner) = read_observer.upgrade() {
             window_pane_read_callback(&owner);
@@ -2142,7 +2139,6 @@ mod wait_close_tests {
         {
             let mut state = pane.borrow_mut();
             state.fd = Some(pty::PanePty::new(output.into()));
-            state.pipe_fd = None;
             state.pid = pid;
         }
         window_pane_tree::insert(Rc::clone(&pane));
@@ -2201,7 +2197,6 @@ mod wait_close_tests {
         {
             let mut state = pane.borrow_mut();
             state.fd = None;
-            state.pipe_fd = None;
             state.flags |= PANE_EXITED;
         }
         window_pane_tree::insert(Rc::clone(&pane));

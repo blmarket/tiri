@@ -155,7 +155,6 @@ mod tests {
                 let mut state = pane.borrow_mut();
                 state.base.grid = Some(crate::grid::grid_create(8, 2, 0));
                 state.fd = None;
-                state.pipe_fd = None;
             }
             let observer = Rc::downgrade(&pane);
             let pending = || pane.borrow().sync_timer.is_some();

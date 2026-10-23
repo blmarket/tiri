@@ -55,9 +55,8 @@ pub struct window_pane {
     pub(super) palette: colour_palette,
     pub(super) last_theme: client_theme,
     pub(super) border_status_line: style_line_entry,
-    pub(super) pipe_fd: Option<std::os::fd::OwnedFd>,
     pub(super) pipe_pid: pid_t,
-    /// Observes the runtime-owned pipe stream; pipe_fd controls its lifetime.
+    /// Observes the runtime-owned pipe stream, which owns the pipe descriptor.
     pub(super) pipe_event: crate::reactor::StreamHandle,
     pub(super) pipe_offset: window_pane_offset,
     pub(super) screen_source: PaneScreenSource,
@@ -130,7 +129,6 @@ impl Default for window_pane {
             palette: Default::default(),
             last_theme: Default::default(),
             border_status_line: Default::default(),
-            pipe_fd: Default::default(),
             pipe_pid: Default::default(),
             pipe_event: Default::default(),
             pipe_offset: Default::default(),

@@ -10,6 +10,7 @@ use tiri_buffer::SegmentedBuf;
 #[repr(C)]
 pub struct bufferevent {
     pub(crate) state: std::rc::Rc<crate::reactor::StreamState>,
+    pub fd: Option<std::os::fd::OwnedFd>,
     pub input: Box<SegmentedBuf>,
     pub output: Box<SegmentedBuf>,
     pub wm_read: event_watermark,
