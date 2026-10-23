@@ -165,12 +165,8 @@ fn file_wait(
     let unlinked = matches!(file.borrow().registration, FileRegistration::Unlinked);
     let local = unlinked.then(|| {
         assert!(file.borrow().completed, "local transfers complete at once");
-        let mut task = None;
-        crate::reactor::task_start(&mut task, move || {
-            Ok(async move { file_fire_done_cb(&file) })
-        })
-        .expect("schedule local file completion");
-        task.expect("started task")
+        crate::reactor::task_start(move || Ok(async move { file_fire_done_cb(&file) }))
+            .expect("schedule local file completion")
     });
     FileWait {
         done,
@@ -297,7 +293,8 @@ fn file_fire_done(owner: &Rc<RefCell<client_file>>) {
         return;
     }
     let file = Rc::downgrade(owner);
-    crate::reactor::task_start(&mut owner.borrow_mut().done_task, move || {
+    drop(owner.borrow_mut().done_task.take());
+    let task = crate::reactor::task_start(move || {
         Ok(async move {
             if let Some(file) = file.upgrade() {
                 let task = file.borrow_mut().done_task.take();
@@ -309,6 +306,7 @@ fn file_fire_done(owner: &Rc<RefCell<client_file>>) {
         })
     })
     .expect("schedule file completion");
+    owner.borrow_mut().done_task = Some(task);
 }
 fn file_fire_read(file_owner: &Rc<RefCell<client_file>>) {
     let (mut callback, mut buffer, path, error, was_waiting) = {
@@ -703,14 +701,17 @@ fn file_push(file_owner: &Rc<RefCell<client_file>>) {
     let mut done = false;
     if left != 0 as size_t {
         let observer = Rc::downgrade(file_owner);
-        crate::reactor::task_start(&mut cf.push_task, move || {
-            Ok(async move {
-                if let Some(owner) = observer.upgrade() {
-                    file_push_cb(&owner);
-                }
+        drop(cf.push_task.take());
+        cf.push_task = Some(
+            crate::reactor::task_start(move || {
+                Ok(async move {
+                    if let Some(owner) = observer.upgrade() {
+                        file_push_cb(&owner);
+                    }
+                })
             })
-        })
-        .expect("retry file output");
+            .expect("retry file output"),
+        );
     } else if cf.stream > 2 as ::core::ffi::c_int {
         close_0.stream = cf.stream;
         file_send(cf, MSG_WRITE_CLOSE, None, bytes_of(&close_0));

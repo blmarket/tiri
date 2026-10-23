@@ -123,7 +123,7 @@ pub(super) fn pipe_pane(
                 CmdOutcome::Error
             }
             0 => {
-                proc_clear_signals(server_proc, 1 as ::core::ffi::c_int);
+                proc_clear_signals(&server_proc, 1 as ::core::ffi::c_int);
                 sigprocmask(
                     SIG_SETMASK,
                     &raw mut oldset,

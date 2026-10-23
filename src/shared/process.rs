@@ -14,7 +14,7 @@ pub type peer_dispatch_cb = Box<dyn for<'a> FnMut(PeerMessage<'a>)>;
 /// Owned by the parent process's peer list until `proc_remove_peer`. Clients
 /// and transfers hold weak handles; each access borrows for a single step.
 pub struct tmuxpeer {
-    pub parent: *mut tmuxproc,
+    pub parent: refbox::Weak<tmuxproc>,
     /// Declared before `ibuf` so the task is cancelled before the socket closes.
     pub io_task: Option<tiri_rt::mio::Task>,
     pub(crate) ibuf: imsgbuf,
@@ -28,7 +28,7 @@ pub struct tmuxpeer {
 impl Default for tmuxpeer {
     fn default() -> Self {
         Self {
-            parent: std::ptr::null_mut(),
+            parent: refbox::Weak::new(),
             ibuf: imsgbuf::default(),
             io_task: None,
             io_writable: false,

@@ -306,25 +306,28 @@ fn tty_write_callback(owner: &ClientRef, result: std::io::Result<usize>) {
 
 fn tty_start_read(terminal: &mut tty, observer: ClientWeak) {
     let fd = terminal.io_fd.expect("open TTY descriptor");
-    crate::reactor::task_start(&mut terminal.read_task, move || {
-        let source = reactor::io(unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) })?;
-        Ok(async move {
-            loop {
-                let mut bytes = vec![0; 65536];
-                let result = source.read(&mut bytes).await.map(|received| {
-                    bytes.truncate(received.bytes);
-                    bytes
-                });
-                let Some(owner) = observer.upgrade() else {
-                    return;
-                };
-                unsafe { tty_read_callback(&owner, result) };
-                drop(owner);
-                reactor::yield_now().await;
-            }
+    drop(terminal.read_task.take());
+    terminal.read_task = Some(
+        crate::reactor::task_start(move || {
+            let source = reactor::io(unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) })?;
+            Ok(async move {
+                loop {
+                    let mut bytes = vec![0; 65536];
+                    let result = source.read(&mut bytes).await.map(|received| {
+                        bytes.truncate(received.bytes);
+                        bytes
+                    });
+                    let Some(owner) = observer.upgrade() else {
+                        return;
+                    };
+                    unsafe { tty_read_callback(&owner, result) };
+                    drop(owner);
+                    reactor::yield_now().await;
+                }
+            })
         })
-    })
-    .expect("start TTY input");
+        .expect("start TTY input"),
+    );
 }
 
 pub(super) fn tty_start_write(terminal: &mut tty, observer: ClientWeak) {
@@ -332,25 +335,27 @@ pub(super) fn tty_start_write(terminal: &mut tty, observer: ClientWeak) {
         return;
     }
     let fd = terminal.io_fd.expect("open TTY descriptor");
-    crate::reactor::task_start(&mut terminal.write_task, move || {
-        let source = reactor::io(unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) })?;
-        Ok(async move {
-            let bytes = {
-                let Some(owner) = observer.upgrade() else {
-                    return;
+    terminal.write_task = Some(
+        crate::reactor::task_start(move || {
+            let source = reactor::io(unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) })?;
+            Ok(async move {
+                let bytes = {
+                    let Some(owner) = observer.upgrade() else {
+                        return;
+                    };
+                    let terminal = owner.borrow_terminal();
+                    reactor::buffer_prefix(terminal.out.as_deref().expect("open TTY buffer"), 65536)
                 };
-                let terminal = owner.borrow_terminal();
-                reactor::buffer_prefix(terminal.out.as_deref().expect("open TTY buffer"), 65536)
-            };
-            let buffers = [std::io::IoSlice::new(&bytes)];
-            let result = source.write(&buffers, None).await;
-            if let Some(owner) = observer.upgrade() {
-                drop(owner.borrow_terminal_mut().write_task.take());
-                tty_write_callback(&owner, result);
-            }
+                let buffers = [std::io::IoSlice::new(&bytes)];
+                let result = source.write(&buffers, None).await;
+                if let Some(owner) = observer.upgrade() {
+                    drop(owner.borrow_terminal_mut().write_task.take());
+                    tty_write_callback(&owner, result);
+                }
+            })
         })
-    })
-    .expect("start TTY output");
+        .expect("start TTY output"),
+    );
 }
 
 pub(super) fn tty_client_timer_callback(
@@ -1087,8 +1092,7 @@ fn tty_clear_line(
         return;
     }
     let complete = (|tty: &ClientRef| {
-        if !tty.clips_terminal_output() && tty_fake_bce(&tty.borrow_terminal(), defaults, bg) == 0
-        {
+        if !tty.clips_terminal_output() && tty_fake_bce(&tty.borrow_terminal(), defaults, bg) == 0 {
             if px.wrapping_add(nx) >= terminal_value!(tty, sx)
                 && tty_term_has(&terminal_term(tty), TTYC_EL) != 0
             {
@@ -1242,8 +1246,7 @@ fn tty_clear_area(
     }
     let defaults = &ctx.style_ctx.defaults;
     let complete = (|tty: &ClientRef| {
-        if !tty.clips_terminal_output() && tty_fake_bce(&tty.borrow_terminal(), defaults, bg) == 0
-        {
+        if !tty.clips_terminal_output() && tty_fake_bce(&tty.borrow_terminal(), defaults, bg) == 0 {
             if px == 0 as u_int
                 && px.wrapping_add(nx) >= terminal_value!(tty, sx)
                 && py.wrapping_add(ny) >= terminal_value!(tty, sy)

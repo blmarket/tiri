@@ -100,19 +100,20 @@ pub fn alerts_reset_all() {
 fn schedule(id: u32) {
     if !alerts::is_scheduled() {
         log_debug(format_args!("alerts check queued (by @{})", id));
-        let mut task = None;
-        crate::reactor::task_start(&mut task, || {
-            Ok(async {
-                loop {
-                    alerts_callback();
-                    if alerts::finish_if_idle() {
-                        break;
+        let task = Some(
+            crate::reactor::task_start(|| {
+                Ok(async {
+                    loop {
+                        alerts_callback();
+                        if alerts::finish_if_idle() {
+                            break;
+                        }
+                        crate::reactor::yield_now().await;
                     }
-                    crate::reactor::yield_now().await;
-                }
+                })
             })
-        })
-        .expect("start alert dispatch");
+            .expect("start alert dispatch"),
+        );
         alerts::set_task(task);
     }
 }

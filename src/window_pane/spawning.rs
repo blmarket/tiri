@@ -542,7 +542,7 @@ pub(super) fn spawn_pane(
                     {
                         _exit(1 as ::core::ffi::c_int);
                     }
-                    proc_clear_signals(server_proc, 1 as ::core::ffi::c_int);
+                    proc_clear_signals(&server_proc, 1 as ::core::ffi::c_int);
                     log_close();
                     tiri_rt::unix::close_from(STDERR_FILENO + 1 as ::core::ffi::c_int);
                     sigprocmask(

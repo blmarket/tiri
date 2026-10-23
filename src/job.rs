@@ -196,7 +196,7 @@ pub fn job_run(
                     if let Some(pair) = out_owner.take() {
                         out = pair.map(IntoRawFd::into_raw_fd);
                     }
-                    proc_clear_signals(server_proc, 1 as ::core::ffi::c_int);
+                    proc_clear_signals(&server_proc, 1 as ::core::ffi::c_int);
                     sigprocmask(
                         SIG_SETMASK,
                         &raw mut oldset,

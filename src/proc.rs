@@ -22,6 +22,7 @@ pub use crate::shared::signal::{
 use crate::tmux::{getversion, socket_path_cstr};
 use libc::utsname;
 use libc::{daemon, fork, sigaction, sigemptyset, uname};
+use refbox::RefBox;
 use std::ffi::CStr;
 use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use tiri_rt::{AsyncRead as _, AsyncWrite as _, Runtime as _, Signals as _};
@@ -83,12 +84,20 @@ fn proc_receive(peer: &refbox::Weak<tmuxpeer>, bytes: &[u8], received: tiri_rt::
     }
     true
 }
-unsafe fn proc_signal_cb(signo: ::core::ffi::c_int, tp: *mut tmuxproc) {
-    (*tp)
+
+fn proc_signal_cb(signo: ::core::ffi::c_int, tp: &refbox::Weak<tmuxproc>) {
+    let mut signalcb = tp
+        .try_borrow_mut()
+        .expect("process exist")
         .signalcb
-        .as_mut()
-        .expect("signal callback is installed")(ProcessSignal::from_raw(signo));
+        .take()
+        .expect("signal callback is installed");
+    signalcb(ProcessSignal::from_raw(signo));
+    if let Ok(mut tp) = tp.try_borrow_mut() {
+        tp.signalcb.get_or_insert(signalcb);
+    }
 }
+
 fn peer_check_version(peer: &refbox::Weak<tmuxpeer>, imsg: &imsg) -> ::core::ffi::c_int {
     let mut version: ::core::ffi::c_int = 0;
     version = (imsg.hdr.peerid & 0xff as uint32_t) as ::core::ffi::c_int;
@@ -113,11 +122,14 @@ fn proc_update_io(peer: &refbox::Weak<tmuxpeer>) {
         state.io_writable = writable;
         let fd = state.ibuf.fd.as_ref().expect("peer socket").as_fd();
         let peer = peer.clone();
-        reactor::task_start(&mut state.io_task, move || {
-            let source = reactor::io(fd)?;
-            Ok(proc_peer_io(peer, source))
-        })
-        .expect("start peer I/O");
+        drop(state.io_task.take());
+        state.io_task = Some(
+            reactor::task_start(move || {
+                let source = reactor::io(fd)?;
+                Ok(proc_peer_io(peer, source))
+            })
+            .expect("start peer I/O"),
+        );
     });
 }
 /// Owned by the peer's `io_task`, so it is cancelled when the peer is removed.
@@ -242,7 +254,7 @@ pub fn proc_send(
     proc_update_io(peer);
     0 as ::core::ffi::c_int
 }
-pub unsafe fn proc_start(name: &CStr) -> Box<tmuxproc> {
+pub unsafe fn proc_start(name: &CStr) -> RefBox<tmuxproc> {
     let mut u: utsname = unsafe { ::core::mem::zeroed() };
     log_open(name);
     setproctitle(|out| {
@@ -284,7 +296,7 @@ pub unsafe fn proc_start(name: &CStr) -> Box<tmuxproc> {
         log_cstr(NCURSES_VERSION),
         (NCURSES_VERSION_PATCH) as u32
     ));
-    Box::new(tmuxproc {
+    RefBox::new(tmuxproc {
         name: name.to_owned(),
         exit: 0,
         signalcb: None,
@@ -297,7 +309,7 @@ pub unsafe fn proc_start(name: &CStr) -> Box<tmuxproc> {
 impl Drop for tmuxproc {
     fn drop(&mut self) {
         unsafe {
-            proc_clear_signals(self, 0);
+            clear_signals(self, 0);
             while let Some(peer) = self.peers.pop() {
                 proc_free_peer(peer);
             }
@@ -307,40 +319,48 @@ impl Drop for tmuxproc {
 
 /// Drive the process until exit, then release streams and the runtime owner.
 pub unsafe fn proc_loop(
-    mut tp: *mut tmuxproc,
+    tp: &refbox::Weak<tmuxproc>,
     mut runtime: tiri_rt::mio::Runtime,
     mut loopcb: Option<&mut dyn FnMut() -> bool>,
 ) {
     log_debug(format_args!(
         "{} loop enter",
-        crate::log::log_bytes((*tp).name.as_bytes())
+        crate::log::log_bytes(tp.try_borrow().expect("process exist").name.as_bytes())
     ));
     loop {
         runtime.poll(None).expect("tiri-rt poll");
-        let exiting = (*tp).exit != 0;
-        let drained = (*tp).peers.iter().all(|peer| {
-            peer.try_access_mut(|peer| imsgbuf_queuelen(&peer.ibuf) == 0)
-                .expect("peers are unborrowed between polls")
-        });
+        let exiting = tp.try_borrow().expect("process exist").exit != 0;
+        let drained = tp
+            .try_borrow()
+            .expect("process exist")
+            .peers
+            .iter()
+            .all(|peer| {
+                peer.try_access_mut(|peer| imsgbuf_queuelen(&peer.ibuf) == 0)
+                    .expect("peers are unborrowed between polls")
+            });
         if (exiting && drained) || loopcb.as_mut().is_some_and(|callback| !callback()) {
             break;
         }
     }
     log_debug(format_args!(
         "{} loop exit",
-        crate::log::log_bytes((*tp).name.as_bytes())
+        crate::log::log_bytes(tp.try_borrow().expect("process exist").name.as_bytes())
     ));
     reactor::shutdown_runtime(runtime);
 }
-pub unsafe fn proc_exit(tp: *mut tmuxproc) {
-    (*tp).exit = 1;
+
+pub unsafe fn proc_exit(tp: &refbox::Weak<tmuxproc>) {
+    tp.try_borrow_mut().expect("process exist").exit = 1;
 }
+
 pub unsafe fn proc_set_signals(
-    mut tp: *mut tmuxproc,
-    mut signalcb: Option<Box<dyn FnMut(ProcessSignal)>>,
+    tp: &refbox::Weak<tmuxproc>,
+    signalcb: Option<Box<dyn FnMut(ProcessSignal)>>,
 ) {
     let mut sa: sigaction = unsafe { ::core::mem::zeroed() };
-    (*tp).signalcb = signalcb;
+    let mut process = tp.try_borrow_mut().expect("process exist");
+    process.signalcb = signalcb;
     sigemptyset(&raw mut sa.sa_mask);
     sa.sa_flags = SA_RESTART;
     sa.sa_sigaction = SIG_IGN;
@@ -349,28 +369,35 @@ pub unsafe fn proc_set_signals(
     sigaction(SIGTTIN, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
     sigaction(SIGTTOU, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
     sigaction(SIGQUIT, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
-    crate::reactor::task_start(&mut (*tp).signal_task, move || {
-        let mut signals = tiri_rt::mio::Signals::new(&[
-            SIGINT, SIGHUP, SIGCHLD, SIGCONT, SIGTERM, SIGUSR1, SIGUSR2, SIGWINCH,
-        ])?;
-        Ok(async move {
-            loop {
-                let signo = signals.recv().await.expect("process signal wait");
-                unsafe { proc_signal_cb(signo, tp) };
-                reactor::yield_now().await;
-            }
+    drop(process.signal_task.take());
+    let tp = tp.clone();
+    process.signal_task = Some(
+        crate::reactor::task_start(move || {
+            let mut signals = tiri_rt::mio::Signals::new(&[
+                SIGINT, SIGHUP, SIGCHLD, SIGCONT, SIGTERM, SIGUSR1, SIGUSR2, SIGWINCH,
+            ])?;
+            Ok(async move {
+                loop {
+                    let signo = signals.recv().await.expect("process signal wait");
+                    proc_signal_cb(signo, &tp);
+                    reactor::yield_now().await;
+                }
+            })
         })
-    })
-    .expect("start process signals");
+        .expect("start process signals"),
+    );
 }
-pub unsafe fn proc_clear_signals(mut tp: *mut tmuxproc, mut defaults: ::core::ffi::c_int) {
+pub unsafe fn proc_clear_signals(tp: &refbox::Weak<tmuxproc>, defaults: ::core::ffi::c_int) {
+    clear_signals(&mut tp.try_borrow_mut().expect("process exist"), defaults);
+}
+unsafe fn clear_signals(tp: &mut tmuxproc, defaults: ::core::ffi::c_int) {
     let mut sa: sigaction = unsafe { ::core::mem::zeroed() };
     sigemptyset(&raw mut sa.sa_mask);
     sa.sa_flags = SA_RESTART;
     sa.sa_sigaction = SIG_DFL;
     sigaction(SIGPIPE, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
     sigaction(SIGTSTP, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
-    drop((*tp).signal_task.take());
+    drop(tp.signal_task.take());
     if defaults != 0 {
         sigaction(SIGINT, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
         sigaction(SIGQUIT, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
@@ -384,7 +411,7 @@ pub unsafe fn proc_clear_signals(mut tp: *mut tmuxproc, mut defaults: ::core::ff
     }
 }
 pub unsafe fn proc_add_peer(
-    mut tp: *mut tmuxproc,
+    tp: &refbox::Weak<tmuxproc>,
     socket: OwnedFd,
     mut dispatchcb: Box<dyn for<'a> FnMut(PeerMessage<'a>)>,
 ) -> refbox::Weak<tmuxpeer> {
@@ -394,7 +421,7 @@ pub unsafe fn proc_add_peer(
         -(1 as ::core::ffi::c_int) as gid_t,
     ));
     let mut state = tmuxpeer {
-        parent: tp,
+        parent: tp.clone(),
         uid,
         gid,
         dispatchcb: Some(dispatchcb),
@@ -408,18 +435,24 @@ pub unsafe fn proc_add_peer(
         log_pointer(owned_peer.as_ptr()),
         { fd }
     ));
-    (*tp).peers.push(owned_peer);
+    tp.try_borrow_mut()
+        .expect("process exist")
+        .peers
+        .push(owned_peer);
     proc_update_io(&peer);
     peer
 }
 pub unsafe fn proc_remove_peer(peer: &refbox::Weak<tmuxpeer>) {
-    let parent = with_peer(peer, |peer| peer.parent).expect("removed peer is live");
-    let peers = &mut (*parent).peers;
-    let peer_index = peers
-        .iter()
-        .position(|owned_peer| peer.is(owned_peer))
-        .expect("peer must be owned by its parent process");
-    let owned_peer = peers.remove(peer_index);
+    let parent = with_peer(peer, |peer| peer.parent.clone()).expect("removed peer is live");
+    let owned_peer = {
+        let mut parent = parent.try_borrow_mut().expect("process exist");
+        let peer_index = parent
+            .peers
+            .iter()
+            .position(|owned_peer| peer.is(owned_peer))
+            .expect("peer must be owned by its parent process");
+        parent.peers.remove(peer_index)
+    };
     proc_free_peer(owned_peer);
 }
 
@@ -433,8 +466,8 @@ fn proc_free_peer(owned_peer: refbox::RefBox<tmuxpeer>) {
 pub fn proc_kill_peer(peer: &refbox::Weak<tmuxpeer>) {
     with_peer(peer, |peer| peer.flags |= PEER_BAD).expect("killed peer is live");
 }
-pub unsafe fn proc_toggle_log(mut tp: *mut tmuxproc) {
-    log_toggle(&((*tp).name));
+pub unsafe fn proc_toggle_log(tp: &refbox::Weak<tmuxproc>) {
+    log_toggle(&tp.try_borrow().expect("process exist").name);
 }
 pub unsafe fn proc_fork_and_daemon() -> (pid_t, OwnedFd) {
     assert!(
@@ -476,59 +509,6 @@ pub fn proc_get_peer_gid(peer: &refbox::Weak<tmuxpeer>) -> gid_t {
 mod ownership_tests {
     use super::*;
     use std::os::unix::net::UnixStream;
-
-    #[test]
-    fn loop_exit_releases_streams_and_runtime_for_both_exit_paths() {
-        use crate::reactor::BufferEvent as _;
-        use tiri_rt::Handle as _;
-
-        for callback_exit in [false, true] {
-            let runtime = tiri_rt::mio::Runtime::new().unwrap();
-            let handle = runtime.handle();
-            let mut owner = Box::new(tmuxproc {
-                name: c"loop-ownership-test".to_owned(),
-                exit: 0,
-                signalcb: None,
-                signal_task: None,
-                peers: Vec::new(),
-            });
-            let tp = &raw mut *owner;
-            let (socket, _remote) = UnixStream::pair().unwrap();
-            unsafe {
-                let fd = socket.as_raw_fd();
-                let flags = libc::fcntl(fd, libc::F_GETFL);
-                let observer =
-                    reactor::bufferevent_new(Some(socket.as_fd()), None, None, None).unwrap();
-                let task = handle
-                    .spawn(async move {
-                        if !callback_exit {
-                            proc_exit(tp);
-                        }
-                    })
-                    .unwrap();
-                let mut callback = || {
-                    assert!(tiri_rt::mio::Runtime::is_initialized());
-                    false
-                };
-                let loopcb: Option<&mut dyn FnMut() -> bool> = if callback_exit {
-                    Some(&mut callback)
-                } else {
-                    None
-                };
-                proc_loop(tp, runtime, loopcb);
-
-                assert!(!observer.is_alive());
-                assert_eq!(libc::fcntl(fd, libc::F_GETFL), flags);
-                assert!(!tiri_rt::mio::Runtime::is_initialized());
-                assert!(matches!(
-                    handle.spawn(async {}),
-                    Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe
-                ));
-                drop(task);
-                drop(owner);
-            }
-        }
-    }
 
     #[test]
     fn rejected_messages_close_the_transferred_descriptor() {

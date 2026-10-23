@@ -529,7 +529,7 @@ fn server_client_create(fd: OwnedFd) -> ClientRef {
                 server_client_dispatch(&owner, message);
             }
         });
-    let peer = unsafe { proc_add_peer(server_proc, fd, dispatch) };
+    let peer = unsafe { proc_add_peer(&server_proc, fd, dispatch) };
     let keytable = key_bindings_get_table(c"root", 1);
     {
         let mut c = owner.borrow_mut();

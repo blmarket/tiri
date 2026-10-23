@@ -77,7 +77,7 @@ pub use ::libc::{
     S_IXUSR, WUNTRACED,
 };
 
-pub static mut server_proc: *mut tmuxproc = ::core::ptr::null::<tmuxproc>() as *mut tmuxproc;
+pub static mut server_proc: refbox::Weak<tmuxproc> = refbox::Weak::new();
 thread_local! {
     static SERVER_FD: std::cell::RefCell<Option<UnixListener>> = const { std::cell::RefCell::new(None) };
     static SERVER_CLIENT_FLAGS: std::cell::Cell<uint64_t> = const { std::cell::Cell::new(0) };
@@ -220,9 +220,9 @@ pub(crate) unsafe fn server_start(
     SERVER_CLIENT_FLAGS.set(flags);
     let runtime = tiri_rt::mio::Runtime::new().expect("tiri-rt initialization");
     let mut process_owner = proc_start(c"server");
-    server_proc = &raw mut *process_owner;
+    server_proc = process_owner.downgrade();
     proc_set_signals(
-        server_proc,
+        &server_proc,
         Some(Box::new(|sig| unsafe { server_signal(sig) })),
     );
     sigprocmask(
@@ -285,7 +285,7 @@ pub(crate) unsafe fn server_start(
             let message = [cause.as_bytes(), b"\n"].concat();
             let _ = io::Write::write_all(&mut io::stderr(), &message);
             drop(process_owner);
-            server_proc = std::ptr::null_mut();
+            server_proc = refbox::Weak::new();
             crate::plugin::shutdown();
             reactor::shutdown_runtime(runtime);
             exit(1 as ::core::ffi::c_int);
@@ -298,14 +298,14 @@ pub(crate) unsafe fn server_start(
     server_acl_init();
     server_add_accept(0 as ::core::ffi::c_int);
     let mut loop_callback = || server_loop() == 0;
-    proc_loop(server_proc, runtime, Some(&mut loop_callback));
+    proc_loop(&server_proc, runtime, Some(&mut loop_callback));
     server_destroy_sessions(false);
     crate::plugin::shutdown();
     crate::cmd::queue::cmdq_cancel_background();
     job_kill_all();
     prompt_save_history();
     drop(process_owner);
-    server_proc = std::ptr::null_mut();
+    server_proc = refbox::Weak::new();
     exit(0 as ::core::ffi::c_int);
 }
 fn server_loop() -> ::core::ffi::c_int {
@@ -459,25 +459,29 @@ pub fn server_add_accept(mut timeout: ::core::ffi::c_int) {
     };
     SERVER_ACCEPT_TASK.with_borrow_mut(|task| {
         if timeout == 0 as ::core::ffi::c_int {
-            crate::reactor::task_start(task, move || {
-                let source = tiri_rt::mio::Listener::new(socket?)?;
-                Ok(async move {
-                    let accepted = source.accept().await;
-                    server_accept(accepted);
+            *task = Some(
+                crate::reactor::task_start(move || {
+                    let source = tiri_rt::mio::Listener::new(socket?)?;
+                    Ok(async move {
+                        let accepted = source.accept().await;
+                        server_accept(accepted);
+                    })
                 })
-            })
-            .expect("start accept wait");
+                .expect("start accept wait"),
+            );
         } else {
             let now = std::time::Instant::now();
             let deadline = now.checked_add(tv).unwrap_or(now);
-            crate::reactor::task_start(task, move || {
-                let wait = tiri_rt::mio::Sleep::new(deadline);
-                Ok(async move {
-                    wait.await.expect("accept backoff wait");
-                    server_add_accept(0);
+            *task = Some(
+                crate::reactor::task_start(move || {
+                    let wait = tiri_rt::mio::Sleep::new(deadline);
+                    Ok(async move {
+                        wait.await.expect("accept backoff wait");
+                        server_add_accept(0);
+                    })
                 })
-            })
-            .expect("start accept backoff");
+                .expect("start accept backoff"),
+            );
         }
     });
 }
@@ -505,7 +509,7 @@ unsafe fn server_signal(sig: ProcessSignal) {
             server_add_accept(0 as ::core::ffi::c_int);
         }
         ProcessSignal::User2 => {
-            proc_toggle_log(server_proc);
+            proc_toggle_log(&server_proc);
         }
         _ => {}
     };
