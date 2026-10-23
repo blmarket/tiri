@@ -20,7 +20,7 @@ use crate::window::Window as _;
 use crate::window::{winlink_next, winlinks_minmax};
 use crate::window_pane::WindowPane as _;
 use crate::winlink::winlink_window;
-use libc::sscanf;
+use crate::text::numbers::{scan_i32, Scan};
 use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
@@ -666,7 +666,7 @@ pub struct ParsedMonitor {
     pub format: CString,
 }
 
-unsafe fn monitor_parse_parts(value: &CStr) -> Option<ParsedMonitor> {
+fn monitor_parse_parts(value: &CStr) -> Option<ParsedMonitor> {
     let value_bytes = value.to_bytes();
     let mut type_0;
     let mut id = -1;
@@ -684,17 +684,21 @@ unsafe fn monitor_parse_parts(value: &CStr) -> Option<ParsedMonitor> {
     } else if target_bytes.is_empty() {
         type_0 = MONITOR_SESSION;
     } else {
-        let target = CString::new(target_bytes).expect("monitor target contains no NUL");
-        if sscanf(target.as_ptr(), c"%%%d".as_ptr(), &raw mut id) == 1 as ::core::ffi::c_int
-            && id >= 0 as ::core::ffi::c_int
+        let mut pane = Scan::new(target_bytes);
+        if let Some(pane_id) = pane
+            .percent()
+            .and_then(|()| pane.conversion(scan_i32))
+            .filter(|&pane_id| pane_id >= 0)
         {
             type_0 = MONITOR_PANE;
-        } else if sscanf(target.as_ptr(), c"@%d".as_ptr(), &raw mut id) == 1 as ::core::ffi::c_int
-            && id >= 0 as ::core::ffi::c_int
-        {
-            type_0 = MONITOR_WINDOW;
+            id = pane_id;
         } else {
-            return None;
+            let mut window = Scan::new(target_bytes);
+            id = window
+                .literal(b"@")
+                .and_then(|()| window.conversion(scan_i32))
+                .filter(|&window_id| window_id >= 0)?;
+            type_0 = MONITOR_WINDOW;
         }
     }
 
@@ -707,7 +711,7 @@ unsafe fn monitor_parse_parts(value: &CStr) -> Option<ParsedMonitor> {
 }
 
 pub fn monitor_parse_owned(value: &CStr) -> Option<ParsedMonitor> {
-    unsafe { monitor_parse_parts(value) }
+    monitor_parse_parts(value)
 }
 
 pub fn monitor_add(

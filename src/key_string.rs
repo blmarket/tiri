@@ -9,7 +9,7 @@ use crate::shared::grid::*;
 use crate::shared::key::*;
 use crate::shared::utf8::*;
 use crate::text::utf8::{utf8_append, utf8_from_data, utf8_fromcstr_vec, utf8_open, utf8_to_data};
-use libc::sscanf;
+use crate::text::numbers::{scan_hex_u32, scan_u32, Scan};
 use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone)]
@@ -5539,23 +5539,22 @@ static key_string_table: [C2RustUnnamed_1; 1379] = [
 
 /// Search the static key names, ignoring ASCII case.
 fn key_string_search_table(input: &CStr) -> key_code {
-    let mut user: u_int = 0;
-
-    unsafe {
-        for entry in &key_string_table {
-            if input
-                .to_bytes()
-                .eq_ignore_ascii_case(entry.string.to_bytes())
-            {
-                return entry.key;
-            }
-        }
-        if sscanf(input.as_ptr(), c"User%u".as_ptr(), &raw mut user) == 1 as ::core::ffi::c_int
-            && user <= KEYC_NUSER as u_int
+    for entry in &key_string_table {
+        if input
+            .to_bytes()
+            .eq_ignore_ascii_case(entry.string.to_bytes())
         {
-            return (KEYC_USER as ::core::ffi::c_ulong).wrapping_add(user as ::core::ffi::c_ulong)
-                as key_code;
+            return entry.key;
         }
+    }
+    let mut name = Scan::new(input.to_bytes());
+    if let Some(user) = name
+        .literal(b"User")
+        .and_then(|()| name.conversion(scan_u32))
+        .filter(|&user| user <= KEYC_NUSER as u_int)
+    {
+        return (KEYC_USER as ::core::ffi::c_ulong).wrapping_add(user as ::core::ffi::c_ulong)
+            as key_code;
     }
 
     KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code
@@ -5583,17 +5582,7 @@ fn key_string_lowercase_byte(byte: u8) -> key_code {
 }
 
 fn key_string_parse_numeric(input: &CStr) -> Option<key_code> {
-    let mut value: u_int = 0;
-    let parsed = unsafe {
-        sscanf(
-            cstr_suffix(input, 2).as_ptr(),
-            c"%x".as_ptr(),
-            &raw mut value,
-        )
-    };
-    if parsed != 1 as ::core::ffi::c_int {
-        return None;
-    }
+    let (value, _) = scan_hex_u32(cstr_suffix(input, 2).to_bytes())?;
     if value < 32 as u_int {
         return Some(value as key_code);
     }

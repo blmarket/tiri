@@ -14,7 +14,7 @@ use crate::format::bytes::write_cstr;
 use crate::format::format_single_cstring;
 use crate::options::{options_get_number, options_get_string, options_set_string, OptionsScope};
 use crate::server_client::Client as _;
-use libc::sscanf;
+use crate::text::numbers::scan_u32_pair;
 
 use crate::options::options;
 use crate::session::Session;
@@ -440,16 +440,12 @@ unsafe fn cmd_new_session_exec(
                                                                     )
                                                                 },
                                                             );
-                                                        if sscanf(
-                                                            default_size.as_ptr(),
-                                                            c"%ux%u".as_ptr(),
-                                                            &raw mut sx,
-                                                            &raw mut sy,
-                                                        ) != 2 as ::core::ffi::c_int
-                                                        {
-                                                            sx = dsx;
-                                                            sy = dsy;
-                                                        } else {
+                                                        if let Some(size) = scan_u32_pair(
+                                                            default_size.to_bytes(),
+                                                            b"",
+                                                            b"x",
+                                                        ) {
+                                                            (sx, sy) = size;
                                                             if args_has(args, 'x' as i32 as u_char)
                                                                 != 0
                                                             {
@@ -460,6 +456,9 @@ unsafe fn cmd_new_session_exec(
                                                             {
                                                                 sy = dsy;
                                                             }
+                                                        } else {
+                                                            sx = dsx;
+                                                            sy = dsy;
                                                         }
                                                     }
                                                     if sx == 0 as u_int {

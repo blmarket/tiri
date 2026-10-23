@@ -7,8 +7,8 @@ use crate::shared::abi::*;
 use crate::shared::client::ClientRef;
 use crate::shared::colour::*;
 use crate::shared::colour::{COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME};
+use crate::text::numbers::{scan_f64, scan_hex_u32_width, scan_i32, Scan};
 use crate::tty::{TERM_256COLOURS, TERM_RGBCOLOURS};
-use libc::sscanf;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -449,38 +449,23 @@ pub fn colour_totheme(mut c: ::core::ffi::c_int) -> client_theme {
     }
     THEME_UNKNOWN
 }
+fn hex_digit(byte: u8) -> u_char {
+    (byte as char).to_digit(16).unwrap_or(0) as u_char
+}
 fn starts_with_ignore_ascii_case(s: &[u8], prefix: &[u8]) -> bool {
     s.get(..prefix.len())
         .is_some_and(|head| head.eq_ignore_ascii_case(prefix))
 }
-unsafe fn colour_fromstring_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
-    let s = input.as_ptr();
-    let mut cp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+fn colour_fromstring_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
     let mut n: ::core::ffi::c_int = 0;
-    let mut r: u_char = 0;
-    let mut g: u_char = 0;
-    let mut b: u_char = 0;
     let mut i: u_int = 0;
     let bytes = input.to_bytes();
     if bytes.len() == 7 && bytes[0] == b'#' {
-        cp = s.offset(1 as ::core::ffi::c_int as isize);
-        while (*cp as u_char).is_ascii_hexdigit() {
-            cp = cp.offset(1);
-        }
-        if *cp as ::core::ffi::c_int != '\0' as i32 {
+        if !bytes[1..].iter().all(u8::is_ascii_hexdigit) {
             return -(1 as ::core::ffi::c_int);
         }
-        n = sscanf(
-            s.offset(1 as ::core::ffi::c_int as isize),
-            c"%2hhx%2hhx%2hhx".as_ptr(),
-            &raw mut r,
-            &raw mut g,
-            &raw mut b,
-        );
-        if n != 3 as ::core::ffi::c_int {
-            return -(1 as ::core::ffi::c_int);
-        }
-        return colour_join_rgb(r, g, b);
+        let hex = |at: usize| (hex_digit(bytes[at]) << 4) | hex_digit(bytes[at + 1]);
+        return colour_join_rgb(hex(1), hex(3), hex(5));
     }
     if starts_with_ignore_ascii_case(bytes, b"colour") {
         let parsed = strtonum(
@@ -3449,109 +3434,75 @@ fn colour_byname_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
     }
     -(1 as ::core::ffi::c_int)
 }
-unsafe fn colour_parseX11_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
-    let p = input.as_ptr();
-    let mut c: ::core::ffi::c_double = 0.;
-    let mut m: ::core::ffi::c_double = 0.;
-    let mut y: ::core::ffi::c_double = 0.;
-    let mut k: ::core::ffi::c_double = 0 as ::core::ffi::c_int as ::core::ffi::c_double;
-    let mut r: u_int = 0;
-    let mut g: u_int = 0;
-    let mut b: u_int = 0;
-    let mut len: size_t = input.to_bytes().len();
-    let mut colour: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-    if len == 12 as size_t
-        && sscanf(
-            p,
-            c"rgb:%02x/%02x/%02x".as_ptr(),
-            &raw mut r,
-            &raw mut g,
-            &raw mut b,
-        ) == 3 as ::core::ffi::c_int
-        || len == 7 as size_t
-            && sscanf(
-                p,
-                c"#%02x%02x%02x".as_ptr(),
-                &raw mut r,
-                &raw mut g,
-                &raw mut b,
-            ) == 3 as ::core::ffi::c_int
-        || sscanf(p, c"%d,%d,%d".as_ptr(), &raw mut r, &raw mut g, &raw mut b)
-            == 3 as ::core::ffi::c_int
-    {
-        colour = colour_join_rgb(r as u_char, g as u_char, b as u_char);
-    } else if len == 18 as size_t
-        && sscanf(
-            p,
-            c"rgb:%04x/%04x/%04x".as_ptr(),
-            &raw mut r,
-            &raw mut g,
-            &raw mut b,
-        ) == 3 as ::core::ffi::c_int
-        || len == 13 as size_t
-            && sscanf(
-                p,
-                c"#%04x%04x%04x".as_ptr(),
-                &raw mut r,
-                &raw mut g,
-                &raw mut b,
-            ) == 3 as ::core::ffi::c_int
-    {
-        colour = colour_join_rgb(
-            (r >> 8 as ::core::ffi::c_int) as u_char,
-            (g >> 8 as ::core::ffi::c_int) as u_char,
-            (b >> 8 as ::core::ffi::c_int) as u_char,
-        );
-    } else if (sscanf(
-        p,
-        c"cmyk:%lf/%lf/%lf/%lf".as_ptr(),
-        &raw mut c,
-        &raw mut m,
-        &raw mut y,
-        &raw mut k,
-    ) == 4 as ::core::ffi::c_int
-        || sscanf(
-            p,
-            c"cmy:%lf/%lf/%lf".as_ptr(),
-            &raw mut c,
-            &raw mut m,
-            &raw mut y,
-        ) == 3 as ::core::ffi::c_int)
-        && c >= 0 as ::core::ffi::c_int as ::core::ffi::c_double
-        && c <= 1 as ::core::ffi::c_int as ::core::ffi::c_double
-        && m >= 0 as ::core::ffi::c_int as ::core::ffi::c_double
-        && m <= 1 as ::core::ffi::c_int as ::core::ffi::c_double
-        && y >= 0 as ::core::ffi::c_int as ::core::ffi::c_double
-        && y <= 1 as ::core::ffi::c_int as ::core::ffi::c_double
-        && k >= 0 as ::core::ffi::c_int as ::core::ffi::c_double
-        && k <= 1 as ::core::ffi::c_int as ::core::ffi::c_double
-    {
-        colour = colour_join_rgb(
-            ((1 as ::core::ffi::c_int as ::core::ffi::c_double - c)
-                * (1 as ::core::ffi::c_int as ::core::ffi::c_double - k)
-                * 255 as ::core::ffi::c_int as ::core::ffi::c_double) as u_char,
-            ((1 as ::core::ffi::c_int as ::core::ffi::c_double - m)
-                * (1 as ::core::ffi::c_int as ::core::ffi::c_double - k)
-                * 255 as ::core::ffi::c_int as ::core::ffi::c_double) as u_char,
-            ((1 as ::core::ffi::c_int as ::core::ffi::c_double - y)
-                * (1 as ::core::ffi::c_int as ::core::ffi::c_double - k)
-                * 255 as ::core::ffi::c_int as ::core::ffi::c_double) as u_char,
-        );
-    } else {
-        let bytes = input.to_bytes();
-        let mut start = 0;
-        while start < bytes.len() && bytes[start] == b' ' {
-            start += 1;
+fn scan_fields<T: Copy + Default, const N: usize>(
+    input: &[u8],
+    prefix: &[u8],
+    separator: &[u8],
+    scan: impl Fn(&[u8]) -> Option<(T, usize)>,
+) -> Option<[T; N]> {
+    let mut input = Scan::new(input);
+    input.literal(prefix)?;
+    let mut values = [T::default(); N];
+    for (index, value) in values.iter_mut().enumerate() {
+        if index != 0 {
+            input.literal(separator)?;
         }
-        len = bytes.len() - start;
-        while len != 0 as size_t && bytes[start + len - 1] == b' ' {
-            len = len.wrapping_sub(1);
-        }
-        let trimmed = &bytes[start..start + len];
-        let copy = std::ffi::CString::new(trimmed).expect("trimmed C string contains NUL");
-        colour = colour_byname_impl(&copy);
+        *value = input.conversion(&scan)?;
     }
-    colour
+    Some(values)
+}
+fn colour_parseX11_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
+    let bytes = input.to_bytes();
+    let len = bytes.len();
+    let hex2 = |field: &[u8]| scan_hex_u32_width(field, 2);
+    let hex4 = |field: &[u8]| scan_hex_u32_width(field, 4);
+    let rgb8 = (len == 12)
+        .then(|| scan_fields(bytes, b"rgb:", b"/", hex2))
+        .flatten()
+        .or_else(|| {
+            (len == 7)
+                .then(|| scan_fields(bytes, b"#", b"", hex2))
+                .flatten()
+        })
+        .or_else(|| {
+            scan_fields(bytes, b"", b",", |field| {
+                scan_i32(field).map(|(value, consumed)| (value as u_int, consumed))
+            })
+        });
+    if let Some([r, g, b]) = rgb8 {
+        return colour_join_rgb(r as u_char, g as u_char, b as u_char);
+    }
+    let rgb16 = (len == 18)
+        .then(|| scan_fields(bytes, b"rgb:", b"/", hex4))
+        .flatten()
+        .or_else(|| {
+            (len == 13)
+                .then(|| scan_fields(bytes, b"#", b"", hex4))
+                .flatten()
+        });
+    if let Some([r, g, b]) = rgb16 {
+        return colour_join_rgb((r >> 8) as u_char, (g >> 8) as u_char, (b >> 8) as u_char);
+    }
+    let cmyk = scan_fields(bytes, b"cmyk:", b"/", scan_f64)
+        .or_else(|| scan_fields(bytes, b"cmy:", b"/", scan_f64).map(|[c, m, y]| [c, m, y, 0.0]));
+    if let Some([c, m, y, k]) = cmyk.filter(|values| values.iter().all(|v| (0.0..=1.0).contains(v)))
+    {
+        return colour_join_rgb(
+            ((1.0 - c) * (1.0 - k) * 255.0) as u_char,
+            ((1.0 - m) * (1.0 - k) * 255.0) as u_char,
+            ((1.0 - y) * (1.0 - k) * 255.0) as u_char,
+        );
+    }
+    let start = bytes.iter().take_while(|&&byte| byte == b' ').count();
+    let trimmed = &bytes[start..];
+    let trimmed = &trimmed[..trimmed.len()
+        - trimmed
+            .iter()
+            .rev()
+            .take_while(|&&byte| byte == b' ')
+            .count()];
+    let copy = std::ffi::CString::new(trimmed).expect("trimmed C string contains NUL");
+    colour_byname_impl(&copy)
 }
 pub fn colour_palette_init(p: &mut colour_palette) {
     *p = colour_palette {
@@ -3639,15 +3590,15 @@ pub fn colour_palette_from_option(p: Option<&mut colour_palette>, scope: &Option
     }
 }
 
-/// Bounded C string entry point. Locale-sensitive operations remain in libc.
+/// Bounded C string entry point.
 pub fn colour_parse_cstr(input: &std::ffi::CStr) -> Option<i32> {
-    let value = unsafe { colour_fromstring_impl(input) };
+    let value = colour_fromstring_impl(input);
     (value != -1).then_some(value)
 }
 
-/// Bounded C string entry point. Locale-sensitive operations remain in libc.
+/// Bounded C string entry point.
 pub fn colour_parse_x11_cstr(input: &std::ffi::CStr) -> Option<i32> {
-    let value = unsafe { colour_parseX11_impl(input) };
+    let value = colour_parseX11_impl(input);
     (value != -1).then_some(value)
 }
 
@@ -3663,4 +3614,23 @@ pub fn colour_parse_x11_logged(input: &std::ffi::CStr) -> Option<i32> {
         log_cstr(&formatted)
     ));
     value
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hex_colour_from_string() {
+        assert_eq!(
+            colour_fromstring_impl(c"#ff8000"),
+            colour_join_rgb(0xff, 0x80, 0)
+        );
+        assert_eq!(
+            colour_fromstring_impl(c"#Ab01cD"),
+            colour_join_rgb(0xab, 0x01, 0xcd)
+        );
+        assert_eq!(colour_fromstring_impl(c"#ff80zz"), -1);
+        assert_eq!(colour_fromstring_impl(c"#ff80 0"), -1);
+    }
 }

@@ -16,7 +16,7 @@ use crate::tty::tty_update_window_offset;
 use crate::window::windows;
 use crate::window::Window as _;
 use crate::winlink::winlink_window;
-use libc::sscanf;
+use crate::text::numbers::scan_u32_pair;
 
 pub fn resize_window(window: &WindowRef, sx: u_int, sy: u_int, xpixel: i32, ypixel: i32) {
     use crate::window::Window;
@@ -318,16 +318,7 @@ pub unsafe fn default_window_size(
             {
                 let options = s_owner.borrow_options_mut();
                 let value = options_get_string(&options, c"default-size");
-                if sscanf(
-                    value.as_ptr(),
-                    c"%ux%u".as_ptr(),
-                    &raw mut *sx,
-                    &raw mut *sy,
-                ) != 2
-                {
-                    *sx = 80;
-                    *sy = 24;
-                }
+                (*sx, *sy) = scan_u32_pair(value.to_bytes(), b"", b"x").unwrap_or((80, 24));
             }
             log_debug(format_args!(
                 "{}: using {}x{} from default-size",

@@ -11,8 +11,8 @@ use crate::format::bytes::write_cstr;
 use crate::log::{log_cstr, log_debug};
 use crate::monitor::monitor_parse_owned;
 use crate::resize::recalculate_sizes_now;
+use crate::text::numbers::{scan_u32, scan_u32_pair, Scan};
 use crate::winlink::winlink_window;
-use libc::sscanf;
 
 use crate::server_client::Client as _;
 use crate::server_fn::{server_redraw_client, server_status_client};
@@ -32,7 +32,7 @@ use crate::tty::{
     tty_clipboard_query, tty_parse_colour_report, tty_update_client_offset, ColourReport,
 };
 use crate::window_pane::WindowPane as _;
-use std::ffi::{CStr, CString};
+use std::ffi::CStr;
 pub static cmd_refresh_client_entry: cmd_entry = {
     cmd_entry {
         name: c"refresh-client",
@@ -71,7 +71,7 @@ fn cmd_refresh_client_update_subscription(tc_owner: &ClientRef, value: &CStr) {
         &parsed.format,
     );
 }
-unsafe fn cmd_refresh_client_control_client_size(
+fn cmd_refresh_client_control_client_size(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
@@ -80,19 +80,11 @@ unsafe fn cmd_refresh_client_control_client_size(
     let args = cmd_get_args(&cmd_ref);
     let tc_owner = cmdq_get_target_client(Some(&*item));
     let mut tc: Option<ClientRef> = tc_owner.clone();
-    let mut size: *const ::core::ffi::c_char =
-        args_get(args, 'C' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    let mut w: u_int = 0;
-    let mut x: u_int = 0;
-    let mut y: u_int = 0;
-    if sscanf(
-        size,
-        c"@%u:%ux%u".as_ptr(),
-        &raw mut w,
-        &raw mut x,
-        &raw mut y,
-    ) == 3 as ::core::ffi::c_int
-    {
+    let size = args_get(args, 'C' as i32 as u_char)
+        .expect("-C takes a value")
+        .to_bytes();
+    let window = cmd_refresh_parse_window(size);
+    if let Some((w, Some((x, y)))) = window {
         if x < WINDOW_MINIMUM as u_int
             || x > WINDOW_MAXIMUM as u_int
             || y < WINDOW_MINIMUM as u_int
@@ -111,9 +103,9 @@ unsafe fn cmd_refresh_client_control_client_size(
                     .as_deref()
                     .unwrap_or(c"(null)")
             ),
-            (w) as u32,
-            (x) as u32,
-            (y) as u32
+            w,
+            x,
+            y
         ));
         control_set_window_size(tc.as_ref().expect("live client"), w, x, y);
         tc.as_ref()
@@ -122,7 +114,7 @@ unsafe fn cmd_refresh_client_control_client_size(
         recalculate_sizes_now(1 as ::core::ffi::c_int);
         return CmdOutcome::Normal;
     }
-    if sscanf(size, c"@%u:".as_ptr(), &raw mut w) == 1 as ::core::ffi::c_int {
+    if let Some((w, None)) = window {
         log_debug(format_args!(
             "{}: client {} window @{}: no size",
             "cmd_refresh_client_control_client_size",
@@ -131,18 +123,17 @@ unsafe fn cmd_refresh_client_control_client_size(
                     .as_deref()
                     .unwrap_or(c"(null)")
             ),
-            (w) as u32
+            w
         ));
         control_clear_window_size(tc.as_ref().expect("live client"), w);
         recalculate_sizes_now(1 as ::core::ffi::c_int);
         return CmdOutcome::Normal;
     }
-    if sscanf(size, c"%u,%u".as_ptr(), &raw mut x, &raw mut y) != 2 as ::core::ffi::c_int
-        && sscanf(size, c"%ux%u".as_ptr(), &raw mut x, &raw mut y) != 2 as ::core::ffi::c_int
-    {
+    let Some((x, y)) = scan_u32_pair(size, b"", b",").or_else(|| scan_u32_pair(size, b"", b"x"))
+    else {
         cmdq_error(item_handle, |out| out.write_all(b"bad size argument"));
         return CmdOutcome::Error;
-    }
+    };
     if x < WINDOW_MINIMUM as u_int
         || x > WINDOW_MAXIMUM as u_int
         || y < WINDOW_MINIMUM as u_int
@@ -157,17 +148,24 @@ unsafe fn cmd_refresh_client_control_client_size(
     recalculate_sizes_now(1 as ::core::ffi::c_int);
     CmdOutcome::Normal
 }
+/// `@%u:%ux%u`, or `@%u:` without the size.
+fn cmd_refresh_parse_window(size: &[u8]) -> Option<(u_int, Option<(u_int, u_int)>)> {
+    let mut size = Scan::new(size);
+    size.literal(b"@")?;
+    let w = size.conversion(scan_u32)?;
+    Some((w, scan_u32_pair(size.rest(), b":", b"x")))
+}
 fn cmd_refresh_parse_pane(value: &CStr) -> Option<(u_int, &CStr)> {
     let bytes = value.to_bytes();
     if bytes.first() != Some(&b'%') {
         return None;
     }
     let colon = bytes.iter().position(|&byte| byte == b':')?;
-    let prefix = CString::new(&bytes[..colon]).expect("CStr prefix contains no NUL");
     let suffix = cstr_suffix(value, colon + 1);
-    let mut pane = 0;
-    let matched = unsafe { sscanf(prefix.as_ptr(), c"%%%u".as_ptr(), &mut pane) };
-    (matched == 1).then_some((pane, suffix))
+    let mut prefix = Scan::new(&bytes[..colon]);
+    prefix.percent()?;
+    let pane = prefix.conversion(scan_u32)?;
+    Some((pane, suffix))
 }
 
 fn cmd_refresh_client_update_offset(tc_owner: &ClientRef, value: &CStr) {
@@ -329,6 +327,7 @@ unsafe fn cmd_refresh_client_exec(
 #[cfg(test)]
 mod ownership_tests {
     use super::*;
+    use std::ffi::CString;
 
     #[test]
     fn pane_argument_keeps_scanf_and_byte_boundaries() {

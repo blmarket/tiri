@@ -34,6 +34,7 @@ use crate::shared::tty::*;
 use crate::shared::utf8::wchar_t;
 use crate::shared::utf8::*;
 use crate::style::colour::{colour_format, colour_parse_x11_logged};
+use crate::text::numbers::{scan_u32_pair, strtol_prefix};
 use crate::text::utf8::{utf8_append, utf8_from_data, utf8_fromwc, utf8_open};
 use crate::tty::features::{tty_default_features, tty_parse_client_features};
 use crate::tty::term::tty_term_owner_ptr;
@@ -1513,13 +1514,13 @@ fn tty_keys_winsz(
         return -(1 as ::core::ffi::c_int);
     }
     let params = &bytes[2..end];
-    if let Some((sy, sx)) = scan::scan_u32_pair(params, b"8;") {
+    if let Some((sy, sx)) = scan_u32_pair(params, b"8;", b";") {
         let mut terminal = terminal_client_owner.borrow_terminal_mut();
         terminal.sx = sx;
         terminal.sy = sy;
         *size = end + 1;
         return 0 as ::core::ffi::c_int;
-    } else if let Some((ypixel, xpixel)) = scan::scan_u32_pair(params, b"4;") {
+    } else if let Some((ypixel, xpixel)) = scan_u32_pair(params, b"4;", b";") {
         {
             let mut terminal = terminal_client_owner.borrow_terminal_mut();
             terminal.xpixel = if xpixel != 0 && terminal.sx != 0 {
@@ -2288,9 +2289,9 @@ fn tty_keys_extended_key(
     }
     let params = &bytes[2..end];
     let parsed = if bytes[end] == b'~' {
-        scan::scan_u32_pair(params, b"27;").map(|(modifiers, number)| (number, modifiers))
+        scan_u32_pair(params, b"27;", b";").map(|(modifiers, number)| (number, modifiers))
     } else {
-        scan::scan_u32_pair(params, b"")
+        scan_u32_pair(params, b"", b";")
     };
     let Some((number, mut modifiers)) = parsed else {
         return -(1 as ::core::ffi::c_int);
@@ -2953,7 +2954,7 @@ fn tty_keys_palette(
         return 0 as ::core::ffi::c_int;
     }
     let text = tty_keys_colour_text(&bytes[4..4 + i]);
-    let (idx, consumed) = scan::strtol_prefix(text);
+    let (idx, consumed) = strtol_prefix(text);
     if text.get(consumed) != Some(&b';') {
         return -(1 as ::core::ffi::c_int);
     }
@@ -2971,22 +2972,12 @@ fn tty_keys_palette(
 /// Byte-slice forms of the C conversions the reply parsers once ran on
 /// NUL-terminated copies of the reply.
 mod scan {
-    use crate::text::numbers::{integer_prefix, scan_u32, unsigned_long};
+    use crate::text::numbers::{integer_prefix, unsigned_long};
 
     /// The bytes before the first NUL: what a C string function reading a
     /// copy of `text` saw.
     pub(super) fn until_nul(text: &[u8]) -> &[u8] {
         text.split(|&byte| byte == 0).next().unwrap_or(text)
-    }
-
-    /// `sscanf(text, "<literal>%u;%u")` returning 2; bytes after the second
-    /// number are ignored.
-    pub(super) fn scan_u32_pair(text: &[u8], literal: &[u8]) -> Option<(u32, u32)> {
-        let text = text.strip_prefix(literal)?;
-        let (first, consumed) = scan_u32(text)?;
-        let text = text[consumed..].strip_prefix(b";")?;
-        let (second, _) = scan_u32(text)?;
-        Some((first, second))
     }
 
     /// `strtoul(field, &end, 10)` cast to `char`, or 0 when `end` stops
@@ -2999,25 +2990,10 @@ mod scan {
         unsigned_long(&prefix) as i8
     }
 
-    /// `strtol(text, &end, 10)` cast to `int`, with the bytes consumed (0
-    /// when there are no digits, where `end` is `text`). The `long` result
-    /// saturates first, so `LONG_MAX` becomes -1 and `LONG_MIN` becomes 0.
-    pub(super) fn strtol_prefix(text: &[u8]) -> (i32, usize) {
-        let prefix = integer_prefix(text, 10);
-        let long = match prefix.magnitude {
-            Some(magnitude) if prefix.negative => {
-                0i64.checked_sub_unsigned(magnitude).unwrap_or(i64::MIN)
-            }
-            Some(magnitude) => i64::try_from(magnitude).unwrap_or(i64::MAX),
-            None if prefix.negative => i64::MIN,
-            None => i64::MAX,
-        };
-        (long as i32, prefix.consumed)
-    }
-
     #[cfg(test)]
     mod tests {
         use super::*;
+        use crate::text::numbers::strtol_prefix;
         use std::ffi::CString;
 
         const INPUTS: &[&[u8]] = &[
@@ -3081,37 +3057,7 @@ mod scan {
                         (value as ::core::ffi::c_int, consumed),
                         "strtol {input:?}"
                     );
-
-                    let mut value: ::core::ffi::c_uint = 0;
-                    let mut consumed: ::core::ffi::c_int = 0;
-                    let n =
-                        libc::sscanf(text.as_ptr(), c"%u%n".as_ptr(), &mut value, &mut consumed);
-                    let expected = (n == 1).then_some((value, consumed as usize));
-                    assert_eq!(scan_u32(input), expected, "%u {input:?}");
                 }
-            }
-        }
-
-        #[test]
-        fn pairs_match_sscanf() {
-            for &input in &[
-                b"8;24;80".as_slice(),
-                b"8;24;80;5",
-                b"8;24;80x",
-                b"8;24",
-                b"8;;80",
-                b"8; 24;+80",
-                b"8;24 ;80",
-                b"88;24;80",
-                b"4;4294967297;99999999999999999999999",
-            ] {
-                let text = CString::new(input).unwrap();
-                let (mut first, mut second): (::core::ffi::c_uint, ::core::ffi::c_uint) = (0, 0);
-                let n = unsafe {
-                    libc::sscanf(text.as_ptr(), c"8;%u;%u".as_ptr(), &mut first, &mut second)
-                };
-                let expected = (n == 2).then_some((first, second));
-                assert_eq!(scan_u32_pair(input, b"8;"), expected, "{input:?}");
             }
         }
 
