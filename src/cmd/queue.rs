@@ -1234,7 +1234,7 @@ pub fn cmdq_error(
                 if let Some(file) = file {
                     cfg_add_cause(|out| {
                         write_cstr(out, file)?;
-                        write!(out, ":{}: ", { (line) })?;
+                        write!(out, ":{}: ", { line })?;
                         write_cstr(out, &*msg)
                     });
                 } else {
@@ -1244,7 +1244,7 @@ pub fn cmdq_error(
                 server_add_message(|out| {
                     out.write_all(b"message: ")?;
                     write_cstr(out, file)?;
-                    write!(out, ":{}: ", { (line) })?;
+                    write!(out, ":{}: ", { line })?;
                     write_cstr(out, &*msg)
                 });
             } else {
