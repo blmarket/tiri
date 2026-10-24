@@ -30,7 +30,7 @@ use crate::shared::signal::{sigset_t, SIG_BLOCK, SIG_SETMASK};
 use crate::shared::window::winlink;
 use crate::tmux::setblocking;
 use libc::{_exit, execl, fork, setpgid, sigfillset, sigprocmask};
-use std::os::fd::{AsFd, IntoRawFd};
+use std::os::fd::{AsFd, AsRawFd, IntoRawFd};
 /// Start or stop piping the pane's output through a shell command. The
 /// server is single-threaded, so the forked child may run ordinary code until
 /// it execs.
@@ -126,7 +126,6 @@ pub(super) fn pipe_pane(
                     ::core::ptr::null_mut::<sigset_t>(),
                 );
                 drop(parent);
-                let child_fd = child.into_raw_fd();
                 if setpgid(0 as __pid_t, 0 as __pid_t) == -(1 as ::core::ffi::c_int) {
                     _exit(1 as ::core::ffi::c_int);
                 }
@@ -135,12 +134,7 @@ pub(super) fn pipe_pane(
                     Err(_) => -1,
                 };
                 if out != 0 {
-                    if tiri_rt::unix::redirect(
-                        std::os::fd::BorrowedFd::borrow_raw(child_fd),
-                        STDIN_FILENO,
-                    )
-                    .is_err()
-                    {
+                    if tiri_rt::unix::redirect(child.as_fd(), STDIN_FILENO).is_err() {
                         _exit(1 as ::core::ffi::c_int);
                     }
                 } else if tiri_rt::unix::redirect(
@@ -152,16 +146,13 @@ pub(super) fn pipe_pane(
                     _exit(1 as ::core::ffi::c_int);
                 }
                 if in_0 != 0 {
-                    if tiri_rt::unix::redirect(
-                        std::os::fd::BorrowedFd::borrow_raw(child_fd),
-                        STDOUT_FILENO,
-                    )
-                    .is_err()
-                    {
+                    if tiri_rt::unix::redirect(child.as_fd(), STDOUT_FILENO).is_err() {
                         _exit(1 as ::core::ffi::c_int);
                     }
-                    if child_fd != STDOUT_FILENO {
-                        let _ = tiri_rt::unix::close(child_fd);
+                    if child.as_raw_fd() == STDOUT_FILENO {
+                        let _ = child.into_raw_fd();
+                    } else {
+                        drop(child);
                     }
                 } else if tiri_rt::unix::redirect(
                     std::os::fd::BorrowedFd::borrow_raw(null_fd),

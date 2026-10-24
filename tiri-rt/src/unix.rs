@@ -45,16 +45,6 @@ pub fn open(path: &CStr, flags: libc::c_int, mode: libc::mode_t) -> io::Result<O
     Ok(unsafe { OwnedFd::from_raw_fd(raw) })
 }
 
-/// Report close errors without retrying a descriptor number that may have been
-/// released. Accepts inherited raw descriptors as well as released OwnedFds.
-///
-/// # Safety
-/// Cancel descriptor I/O first and relinquish any Rust owner with into_raw_fd.
-/// No observer may use or close the descriptor after this call, even on error.
-pub unsafe fn close(fd: RawFd) -> io::Result<()> {
-    check(unsafe { libc::close(fd) }).map(|_| ())
-}
-
 /// Close inherited descriptors before exec without allocating or running drops.
 ///
 /// # Safety
@@ -72,7 +62,7 @@ pub unsafe fn close_from(lowest: RawFd) {
     {
         let end = unsafe { libc::getdtablesize() };
         for fd in lowest.max(0)..end {
-            let _ = unsafe { close(fd) };
+            unsafe { libc::close(fd) };
         }
     }
 }

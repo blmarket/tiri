@@ -36,8 +36,7 @@ use crate::shared::process::{tmuxpeer, tmuxproc};
 pub use crate::shared::signal::{ProcessSignal, SA_RESTART, SIGHUP, SIGTSTP, SIG_DFL, SIG_IGN};
 use crate::shared::terminal::*;
 use crate::tmux::{
-    find_cwd, find_home_cstr, ptm_fd, setblocking, shell_argv0_cstring, shell_command,
-    socket_path_cstr,
+    find_cwd, find_home_cstr, setblocking, shell_argv0_cstring, shell_command, socket_path_cstr,
 };
 use crate::tty::tty_term_read_list;
 use libc::{
@@ -306,9 +305,6 @@ pub unsafe fn client_main(
                     return 1 as ::core::ffi::c_int;
                 }
             }
-        }
-        if ptm_fd() != -(1 as ::core::ffi::c_int) {
-            let _ = tiri_rt::unix::close(ptm_fd());
         }
         if client_flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {
             saved_tio = match crate::shared::terminal::read_attributes(io::stdin().as_fd()) {

@@ -108,8 +108,6 @@ pub fn job_run(
 
         let mut current_block: u64;
         let mut pid: pid_t = 0;
-        let mut nullfd: ::core::ffi::c_int = 0;
-        let mut out: [::core::ffi::c_int; 2] = [0; 2];
         let mut out_owner = None;
         let mut master: ::core::ffi::c_int = 0;
         let mut do_close: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
@@ -193,9 +191,6 @@ pub fn job_run(
                     drop(out_owner.take());
                 }
                 0 => {
-                    if let Some(pair) = out_owner.take() {
-                        out = pair.map(IntoRawFd::into_raw_fd);
-                    }
                     proc_clear_signals(&server_proc, 1 as ::core::ffi::c_int);
                     sigprocmask(
                         SIG_SETMASK,
@@ -225,70 +220,42 @@ pub fn job_run(
                     environ_push(env);
                     drop(env_owner.take());
                     if !flags & JOB_PTY != 0 {
-                        if tiri_rt::unix::redirect(
-                            std::os::fd::BorrowedFd::borrow_raw(
-                                out[1 as ::core::ffi::c_int as usize],
-                            ),
-                            STDIN_FILENO,
-                        )
-                        .is_err()
-                        {
+                        let [parent, child] = out_owner.take().expect("job socket pair");
+                        if tiri_rt::unix::redirect(child.as_fd(), STDIN_FILENO).is_err() {
                             _exit(1 as ::core::ffi::c_int);
                         }
-                        do_close = (do_close != 0
-                            && out[1 as ::core::ffi::c_int as usize] != STDIN_FILENO)
+                        do_close = (do_close != 0 && child.as_raw_fd() != STDIN_FILENO)
                             as ::core::ffi::c_int;
-                        if tiri_rt::unix::redirect(
-                            std::os::fd::BorrowedFd::borrow_raw(
-                                out[1 as ::core::ffi::c_int as usize],
-                            ),
-                            STDOUT_FILENO,
-                        )
-                        .is_err()
-                        {
+                        if tiri_rt::unix::redirect(child.as_fd(), STDOUT_FILENO).is_err() {
                             _exit(1 as ::core::ffi::c_int);
                         }
-                        do_close = (do_close != 0
-                            && out[1 as ::core::ffi::c_int as usize] != STDOUT_FILENO)
+                        do_close = (do_close != 0 && child.as_raw_fd() != STDOUT_FILENO)
                             as ::core::ffi::c_int;
                         if flags & JOB_SHOWSTDERR != 0 {
-                            if tiri_rt::unix::redirect(
-                                std::os::fd::BorrowedFd::borrow_raw(
-                                    out[1 as ::core::ffi::c_int as usize],
-                                ),
-                                STDERR_FILENO,
-                            )
-                            .is_err()
-                            {
+                            if tiri_rt::unix::redirect(child.as_fd(), STDERR_FILENO).is_err() {
                                 _exit(1 as ::core::ffi::c_int);
                             }
-                            do_close = (do_close != 0
-                                && out[1 as ::core::ffi::c_int as usize] != STDERR_FILENO)
+                            do_close = (do_close != 0 && child.as_raw_fd() != STDERR_FILENO)
                                 as ::core::ffi::c_int;
                         } else {
-                            nullfd = match tiri_rt::unix::open(_PATH_DEVNULL, O_RDWR, 0) {
-                                Ok(fd) => fd.into_raw_fd(),
-                                Err(_) => -1,
+                            let Ok(nullfd) = tiri_rt::unix::open(_PATH_DEVNULL, O_RDWR, 0) else {
+                                _exit(1 as ::core::ffi::c_int);
                             };
-                            if nullfd == -(1 as ::core::ffi::c_int) {
+                            if tiri_rt::unix::redirect(nullfd.as_fd(), STDERR_FILENO).is_err() {
                                 _exit(1 as ::core::ffi::c_int);
                             }
-                            if tiri_rt::unix::redirect(
-                                std::os::fd::BorrowedFd::borrow_raw(nullfd),
-                                STDERR_FILENO,
-                            )
-                            .is_err()
-                            {
-                                _exit(1 as ::core::ffi::c_int);
-                            }
-                            if nullfd != STDERR_FILENO {
-                                let _ = tiri_rt::unix::close(nullfd);
+                            if nullfd.as_raw_fd() == STDERR_FILENO {
+                                let _ = nullfd.into_raw_fd();
+                            } else {
+                                drop(nullfd);
                             }
                         }
                         if do_close != 0 {
-                            let _ = tiri_rt::unix::close(out[1 as ::core::ffi::c_int as usize]);
+                            drop(child);
+                        } else {
+                            let _ = child.into_raw_fd();
                         }
-                        let _ = tiri_rt::unix::close(out[0 as ::core::ffi::c_int as usize]);
+                        drop(parent);
                     }
                     tiri_rt::unix::close_from(STDERR_FILENO + 1 as ::core::ffi::c_int);
                     if let Some(cmd) = cmd {

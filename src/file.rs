@@ -30,7 +30,7 @@ use libc::{E2BIG, EINVAL, ENOMEM};
 use std::cell::RefCell;
 use std::ffi::{CStr, CString, OsStr};
 use std::io::{self, Write as _};
-use std::os::fd::{AsFd, OwnedFd};
+use std::os::fd::{AsFd, FromRawFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt as _;
 use std::rc::{Rc, Weak};
@@ -866,7 +866,7 @@ pub unsafe fn file_write_open(
                     _ => Err(io::Error::from_raw_os_error(EBADF)),
                 };
                 if close_received != 0 && (msg.fd == STDOUT_FILENO || msg.fd == STDERR_FILENO) {
-                    let _ = tiri_rt::unix::close(msg.fd);
+                    drop(OwnedFd::from_raw_fd(msg.fd));
                 }
                 duplicate
             };
@@ -1052,7 +1052,7 @@ pub unsafe fn file_read_open(
                     _ => Err(io::Error::from_raw_os_error(EBADF)),
                 };
                 if close_received != 0 && (msg.fd == STDIN_FILENO) {
-                    let _ = tiri_rt::unix::close(msg.fd);
+                    drop(OwnedFd::from_raw_fd(msg.fd));
                 }
                 duplicate
             };

@@ -1,5 +1,5 @@
 use std::io::{IoSlice, Read, Write};
-use std::os::fd::{AsFd, AsRawFd, IntoRawFd};
+use std::os::fd::{AsFd, AsRawFd};
 use std::os::unix::net::UnixStream;
 use std::time::{Duration, Instant};
 use tiri_rt::{AsyncRead, AsyncWrite, Handle, Runtime, mio, unix};
@@ -46,7 +46,7 @@ fn borrowed_driver_waits_for_io_and_timers_without_retaining_its_future() {
 }
 
 #[test]
-fn shutdown_write_preserves_incoming_data_and_close_consumes_ownership() {
+fn shutdown_write_preserves_incoming_data() {
     let (socket, peer) = unix::socket_pair().unwrap();
     assert!(!unix::set_nonblocking(socket.as_fd(), true).unwrap());
     let mut peer = UnixStream::from(peer);
@@ -72,9 +72,6 @@ fn shutdown_write_preserves_incoming_data_and_close_consumes_ownership() {
     );
     assert_eq!(&reply, b"reply");
     drop(source);
-    let raw = socket.into_raw_fd();
-    unsafe { unix::close(raw) }.unwrap();
-    assert_eq!(unsafe { libc::fcntl(raw, libc::F_GETFD) }, -1);
 }
 
 #[test]
