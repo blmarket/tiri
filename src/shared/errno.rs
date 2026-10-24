@@ -1,6 +1,5 @@
 //! errno helpers; the errno constants themselves come from `libc`.
 
-use std::ffi::CStr;
 use std::fmt;
 use std::io;
 
@@ -13,13 +12,9 @@ impl fmt::Display for ErrorText<'_> {
         let Some(code) = self.0.raw_os_error() else {
             return fmt::Display::fmt(self.0, f);
         };
-        let mut text = [0 as ::core::ffi::c_char; 128];
-        // SAFETY: the XSI strerror_r writes a NUL-terminated string of at
-        // most `text.len()` bytes into `text` when it succeeds.
-        if unsafe { libc::strerror_r(code, text.as_mut_ptr(), text.len()) } != 0 {
+        let Some(text) = tiri_rt::unix::error_description(code) else {
             return write!(f, "Unknown error {code}");
-        }
-        let text = unsafe { CStr::from_ptr(text.as_ptr()) };
+        };
         f.write_str(&text.to_string_lossy())
     }
 }

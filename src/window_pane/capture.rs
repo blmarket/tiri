@@ -356,8 +356,6 @@ fn cmd_capture_pane_history(
     let mut bottom: u_int = 0;
     let mut tmp: u_int = 0;
     let mut buf = Vec::new();
-    let _Sflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let _Eflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     sx = wp.base.grid().sx;
     let (gd, s) = if args_has(args, b'a') != 0 {
         let Some(saved) = wp.base.saved_grid.as_deref() else {

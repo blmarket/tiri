@@ -64,16 +64,7 @@ pub(super) fn value(
             if uid == !0 {
                 return None;
             }
-            // SAFETY: getpwuid's result is either null or a record in static
-            // storage that stays valid until the next lookup on this thread;
-            // the name is copied out before anything else can run.
-            let name = unsafe {
-                let passwd = libc::getpwuid(uid);
-                if passwd.is_null() {
-                    return None;
-                }
-                CStr::from_ptr((*passwd).pw_name).to_owned()
-            };
+            let name = tiri_rt::unix::user_name(uid)?;
             owner.borrow_mut().user = Some(name.clone());
             name
         }

@@ -216,7 +216,6 @@ mod tests {
         }
 
         assert_eq!(spans[0].as_ref() as *const redraw_span, first);
-        assert_eq!(unsafe { (*first).x }, 10);
         assert_eq!(spans.first().unwrap().x, 10);
         assert_eq!(spans.last().unwrap().x, 127);
         let xs = spans.iter().map(|span| span.x).collect::<Vec<_>>();

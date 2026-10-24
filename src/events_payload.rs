@@ -428,24 +428,21 @@ mod tests {
     use std::ffi::CString;
 
     #[test]
-    fn replacement_accepts_the_previous_items_borrowed_name() {
-        unsafe {
-            let mut ep = event_payload_create();
-            let name = CString::new(vec![b'k', 0xff]).unwrap();
-            event_payload_set_string(&mut ep, &name, |out| write_cstr(out, c"old"));
-            let old_name =
-                event_payload_item_name(event_payload_items(&ep).next().unwrap()).as_ptr();
-            event_payload_set_int(&mut ep, CStr::from_ptr(old_name), 42);
+    fn replacement_by_the_existing_name_keeps_one_item() {
+        let mut ep = event_payload_create();
+        let name = CString::new(vec![b'k', 0xff]).unwrap();
+        event_payload_set_string(&mut ep, &name, |out| write_cstr(out, c"old"));
+        let old_name = event_payload_item_name(event_payload_items(&ep).next().unwrap()).to_owned();
+        event_payload_set_int(&mut ep, &old_name, 42);
 
-            let replacement = event_payload_items(&ep).next().unwrap();
-            assert_eq!(
-                event_payload_item_name(replacement).to_bytes(),
-                name.as_bytes()
-            );
-            assert_eq!(replacement.value.number(), 42);
-            assert_eq!(event_payload_items(&ep).count(), 1);
-            drop(ep);
-        }
+        let replacement = event_payload_items(&ep).next().unwrap();
+        assert_eq!(
+            event_payload_item_name(replacement).to_bytes(),
+            name.as_bytes()
+        );
+        assert_eq!(replacement.value.number(), 42);
+        assert_eq!(event_payload_items(&ep).count(), 1);
+        drop(ep);
     }
 
     #[test]

@@ -2,11 +2,10 @@ use super::model::*;
 use crate::compat::strtonum::strtonum;
 use crate::compat::unvis::strunvis;
 use crate::compat::vis::strnvis;
-use crate::ffi::fnmatch::fnmatch_matches;
 use crate::ffi::ncurses::{
-    cur_term, del_curterm, setupterm, tigetflag, tigetnum, tigetstr, tiparm_s,
+    self, expand_numbers, expand_strings, release_current_terminal, with_terminfo,
 };
-use crate::format::bytes::{cstr_suffix, format_message_with, nullable_cstr};
+use crate::format::bytes::{cstr_suffix, format_message_with};
 use crate::log::{fatalx, log_bytes, log_cstr, log_debug};
 use crate::options::OptionsScope;
 use crate::server_client::Client as _;
@@ -18,6 +17,7 @@ use crate::shared::tty::*;
 use crate::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::tty::features::{tty_apply_features, tty_parse_client_features};
 use std::ffi::{CStr, CString};
+use tiri_rt::unix::fnmatch;
 
 pub(super) const TTYCODE_FLAG: tty_code_type = 3;
 pub(super) const TTYCODE_NUMBER: tty_code_type = 2;
@@ -1211,7 +1211,7 @@ pub(super) fn tty_term_apply_overrides(term: &mut tty_term) {
         let first = tty_term_override_next(value, &mut offset);
         if first
             .as_ref()
-            .is_some_and(|first| fnmatch_matches(first, &term.name, 0))
+            .is_some_and(|first| fnmatch(first, &term.name, 0))
         {
             tty_term_apply(term, cstr_suffix(value, offset), 0 as ::core::ffi::c_int, 0);
         }
@@ -1356,12 +1356,12 @@ pub(super) fn tty_term_create(
         let first = tty_term_override_next(value, &mut offset);
         if first
             .as_ref()
-            .is_some_and(|first| fnmatch_matches(first, &owner.name, 0))
+            .is_some_and(|first| fnmatch(first, &owner.name, 0))
         {
             tty_parse_client_features(client_owner, cstr_suffix(value, offset), c":");
         }
     }
-    unsafe { del_curterm(cur_term) };
+    release_current_terminal();
     let colour_term = client_owner.with_environment(|env| {
         env.and_then(|env| env.find(c"COLORTERM"))
             .map(|entry| entry.value.clone())
@@ -1443,15 +1443,30 @@ impl Drop for tty_term {
     }
 }
 
-pub(crate) unsafe fn tty_term_read_list(name: &CStr) -> Result<Vec<CString>, CString> {
-    let fd: ::core::ffi::c_int = STDIN_FILENO;
-    let mut error: ::core::ffi::c_int = 0;
-    let mut n: ::core::ffi::c_int = 0;
-    let mut i: u_int = 0;
-    let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut number = CString::default();
-    let mut caps = Vec::new();
-    if setupterm(name.as_ptr().cast_mut(), fd, &raw mut error) != OK {
+pub(crate) fn tty_term_read_list(name: &CStr) -> Result<Vec<CString>, CString> {
+    let read = with_terminfo(name, STDIN_FILENO, || {
+        let mut caps = Vec::new();
+        for ent in tty_term_codes.iter().take(tty_term_ncodes() as usize) {
+            let value = match ent.type_0 as ::core::ffi::c_uint {
+                0 => None,
+                1 => ncurses::string(ent.name),
+                2 => ncurses::number(ent.name)
+                    .map(|n| format_message_with(|out| write!(out, "{}", n))),
+                3 => ncurses::flag(ent.name).map(|flag| if flag { c"1" } else { c"0" }.to_owned()),
+                _ => fatalx(|out| out.write_all(b"unknown capability type")),
+            };
+            if let Some(value) = value {
+                let name = ent.name.to_bytes();
+                let mut cap = Vec::with_capacity(name.len() + 1 + value.count_bytes());
+                cap.extend_from_slice(name);
+                cap.push(b'=');
+                cap.extend_from_slice(value.to_bytes());
+                caps.push(CString::new(cap).expect("C strings contain no interior NUL"));
+            }
+        }
+        caps
+    });
+    read.map_err(|error| {
         let (message, with_name): (&[u8], bool) = match error {
             1 => (b"can't use hardcopy terminal: ", true),
             0 => (b"missing or unsuitable terminal: ", true),
@@ -1462,67 +1477,8 @@ pub(crate) unsafe fn tty_term_read_list(name: &CStr) -> Result<Vec<CString>, CSt
         if with_name {
             cause.extend_from_slice(name.to_bytes());
         }
-        return Err(CString::new(cause).expect("C strings contain no interior NUL"));
-    }
-    let terminal = cur_term;
-    let mut current_block_23: u64;
-    i = 0 as u_int;
-    while i < tty_term_ncodes() {
-        let ent = &tty_term_codes[i as usize];
-        match ent.type_0 as ::core::ffi::c_uint {
-            0 => {
-                current_block_23 = 1856101646708284338;
-            }
-            1 => {
-                s = tigetstr(ent.name.as_ptr().cast_mut());
-                if s.is_null()
-                    || std::ptr::eq(s, -(1 as ::core::ffi::c_int) as *mut ::core::ffi::c_char)
-                {
-                    current_block_23 = 1856101646708284338;
-                } else {
-                    current_block_23 = 14763689060501151050;
-                }
-            }
-            2 => {
-                n = tigetnum(ent.name.as_ptr().cast_mut());
-                if n == -(1 as ::core::ffi::c_int) || n == -(2 as ::core::ffi::c_int) {
-                    current_block_23 = 1856101646708284338;
-                } else {
-                    number = format_message_with(|out| write!(out, "{}", n));
-                    s = number.as_ptr();
-                    current_block_23 = 14763689060501151050;
-                }
-            }
-            3 => {
-                n = tigetflag(ent.name.as_ptr().cast_mut());
-                if n == -(1 as ::core::ffi::c_int) {
-                    current_block_23 = 1856101646708284338;
-                } else {
-                    if n != 0 {
-                        s = c"1".as_ptr();
-                    } else {
-                        s = c"0".as_ptr();
-                    }
-                    current_block_23 = 14763689060501151050;
-                }
-            }
-            _ => {
-                fatalx(|out| out.write_all(b"unknown capability type"));
-            }
-        }
-        if current_block_23 == 14763689060501151050 {
-            let name = ent.name.to_bytes();
-            let value = CStr::from_ptr(s).to_bytes();
-            let mut cap = Vec::with_capacity(name.len() + 1 + value.len());
-            cap.extend_from_slice(name);
-            cap.push(b'=');
-            cap.extend_from_slice(value);
-            caps.push(CString::new(cap).expect("C strings contain no interior NUL"));
-        }
-        i = i.wrapping_add(1);
-    }
-    del_curterm(terminal);
-    Ok(caps)
+        CString::new(cause).expect("C strings contain no interior NUL")
+    })
 }
 
 /// Read-only legacy projection; ownership stays with the TTY.
@@ -1551,7 +1507,7 @@ pub(super) fn tty_term_string(term: &tty_term, code: tty_code_code) -> &std::ffi
         _ => fatalx(|out| write!(out, "not a string: {}", (code) as i32)),
     }
 }
-fn tty_term_expanded(code: tty_code_code, s: Option<&CStr>) -> CString {
+fn tty_term_expanded(code: tty_code_code, s: Option<CString>) -> CString {
     let Some(s) = s else {
         log_debug(format_args!(
             "could not expand {}",
@@ -1559,17 +1515,14 @@ fn tty_term_expanded(code: tty_code_code, s: Option<&CStr>) -> CString {
         ));
         return CString::default();
     };
-    s.to_owned()
+    s
 }
-/// tiparm_s checks the capability against the declared parameter count and
-/// string mask, and its result is copied before the next expansion.
 pub(super) fn tty_term_string_i(
     term: &tty_term,
     code: tty_code_code,
     a: ::core::ffi::c_int,
 ) -> std::ffi::CString {
-    let x = tty_term_string(term, code).as_ptr();
-    tty_term_expanded(code, unsafe { nullable_cstr(tiparm_s(1, 0, x, a)) })
+    tty_term_expanded(code, expand_numbers(tty_term_string(term, code), &[a]))
 }
 pub(super) fn tty_term_string_ii(
     term: &tty_term,
@@ -1577,8 +1530,7 @@ pub(super) fn tty_term_string_ii(
     a: ::core::ffi::c_int,
     b: ::core::ffi::c_int,
 ) -> std::ffi::CString {
-    let x = tty_term_string(term, code).as_ptr();
-    tty_term_expanded(code, unsafe { nullable_cstr(tiparm_s(2, 0, x, a, b)) })
+    tty_term_expanded(code, expand_numbers(tty_term_string(term, code), &[a, b]))
 }
 pub(super) fn tty_term_string_iii(
     term: &tty_term,
@@ -1587,18 +1539,17 @@ pub(super) fn tty_term_string_iii(
     b: ::core::ffi::c_int,
     c: ::core::ffi::c_int,
 ) -> std::ffi::CString {
-    let x = tty_term_string(term, code).as_ptr();
-    tty_term_expanded(code, unsafe { nullable_cstr(tiparm_s(3, 0, x, a, b, c)) })
+    tty_term_expanded(
+        code,
+        expand_numbers(tty_term_string(term, code), &[a, b, c]),
+    )
 }
 pub(super) fn tty_term_string_s(
     term: &tty_term,
     code: tty_code_code,
     a: &CStr,
 ) -> std::ffi::CString {
-    let x = tty_term_string(term, code).as_ptr();
-    tty_term_expanded(code, unsafe {
-        nullable_cstr(tiparm_s(1, 1, x, a.as_ptr()))
-    })
+    tty_term_expanded(code, expand_strings(tty_term_string(term, code), &[a]))
 }
 pub(super) fn tty_term_string_ss(
     term: &tty_term,
@@ -1606,10 +1557,7 @@ pub(super) fn tty_term_string_ss(
     a: &CStr,
     b: &CStr,
 ) -> std::ffi::CString {
-    let x = tty_term_string(term, code).as_ptr();
-    tty_term_expanded(code, unsafe {
-        nullable_cstr(tiparm_s(2, 3, x, a.as_ptr(), b.as_ptr()))
-    })
+    tty_term_expanded(code, expand_strings(tty_term_string(term, code), &[a, b]))
 }
 pub(super) fn tty_term_number(term: &tty_term, code: tty_code_code) -> ::core::ffi::c_int {
     match &(&term.codes)[code as usize] {

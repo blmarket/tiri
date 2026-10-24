@@ -1,4 +1,3 @@
-use crate::format::bytes::nullable_cstr;
 use crate::options::OptionsScope;
 use crate::session::Session as _;
 use crate::shared::client::{ClientRef, ClientWeak};
@@ -63,7 +62,6 @@ use crate::server_fn::{
 };
 pub use api::Client;
 pub use client_overlay::Overlay;
-use libc::access;
 pub use model::client;
 
 use crate::compat::imsg::imsg;
@@ -505,13 +503,9 @@ fn server_client_get_key_table(c: &client) -> std::ffi::CString {
 fn server_client_is_default_key_table(c: &client, table: &key_table) -> ::core::ffi::c_int {
     (table.name == server_client_get_key_table(c)) as ::core::ffi::c_int
 }
-fn server_client_timer(
-    client: &ClientRef,
-    delay: Duration,
-    callback: unsafe fn(&ClientRef),
-) -> Timer {
+fn server_client_timer(client: &ClientRef, delay: Duration, callback: fn(&ClientRef)) -> Timer {
     let observer = Rc::downgrade(client);
-    Timer::new(delay, move || unsafe {
+    Timer::new(delay, move || {
         if let Some(owner) = observer.upgrade() {
             callback(&owner);
         }
@@ -524,12 +518,12 @@ fn server_client_create(fd: OwnedFd) -> ClientRef {
     let mut owner = client::new();
     let peer_observer = std::rc::Rc::downgrade(&owner);
     let dispatch: Box<dyn for<'a> FnMut(crate::shared::process::PeerMessage<'a>)> =
-        Box::new(move |message| unsafe {
+        Box::new(move |message| {
             if let Some(owner) = peer_observer.upgrade() {
                 server_client_dispatch(&owner, message);
             }
         });
-    let peer = unsafe { proc_add_peer(&server_proc, fd, dispatch) };
+    let peer = proc_add_peer(&server_proc(), fd, dispatch);
     let keytable = key_bindings_get_table(c"root", 1);
     {
         let mut c = owner.borrow_mut();
@@ -868,7 +862,7 @@ fn server_client_lost(client_owner: &ClientRef) {
     let environ = client_owner.borrow_mut().environ.take();
     drop(environ);
     let peer = std::mem::replace(&mut client_owner.borrow_mut().peer, refbox::Weak::new());
-    unsafe { proc_remove_peer(&peer) };
+    proc_remove_peer(&peer);
     let (out_fd, fd) = {
         let mut c = client_owner.borrow_mut();
         (c.out_fd.take(), c.fd.take())
@@ -1695,7 +1689,7 @@ fn server_client_repeat_time(c: &client, bd: &KeyBindingCommand) -> u_int {
 fn server_client_handle_dead_key(pane: Option<&Rc<RefCell<window_pane>>>, key: key_code) -> i32 {
     pane.is_some_and(|pane| pane.close_after_key(key)) as i32
 }
-unsafe fn server_client_key_callback(
+fn server_client_key_callback(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     mut owned: QueuedKeyEvent,
 ) -> CmdOutcome {
@@ -1930,13 +1924,7 @@ unsafe fn server_client_key_callback(
                                             ));
                                         } else {
                                             log_debug(format_args!("prefix timeout exceeded"));
-                                            server_client_set_key_table(
-                                                &c_owner,
-                                                nullable_cstr(::core::ptr::null::<
-                                                    ::core::ffi::c_char,
-                                                >(
-                                                )),
-                                            );
+                                            server_client_set_key_table(&c_owner, None);
                                             table_owner = c_owner.borrow().keytable.clone();
                                             table =
                                                 table_owner.as_ref().expect("key table").clone();
@@ -2037,13 +2025,7 @@ unsafe fn server_client_key_callback(
                                         } else {
                                             c_owner.borrow_mut().flags &=
                                                 !CLIENT_REPEAT as uint64_t;
-                                            server_client_set_key_table(
-                                                &c_owner,
-                                                nullable_cstr(::core::ptr::null::<
-                                                    ::core::ffi::c_char,
-                                                >(
-                                                )),
-                                            );
+                                            server_client_set_key_table(&c_owner, None);
                                         }
                                         c_owner.borrow_mut().flags |= CLIENT_REDRAWSTATUS as u64;
                                         key_bindings_dispatch(
@@ -2058,12 +2040,7 @@ unsafe fn server_client_key_callback(
                                     }
                                     13484060386966298149 => {
                                         log_debug(format_args!("trying in root table"));
-                                        server_client_set_key_table(
-                                            &c_owner,
-                                            nullable_cstr(
-                                                ::core::ptr::null::<::core::ffi::c_char>(),
-                                            ),
-                                        );
+                                        server_client_set_key_table(&c_owner, None);
                                         table_owner = c_owner.borrow().keytable.clone();
                                         table = table_owner.as_ref().expect("key table").clone();
                                         if c_owner.borrow().flags & CLIENT_REPEAT as uint64_t != 0 {
@@ -2077,12 +2054,7 @@ unsafe fn server_client_key_callback(
                                             "found in key table {} (not repeating)",
                                             log_cstr(&table.borrow().name)
                                         ));
-                                        server_client_set_key_table(
-                                            &c_owner,
-                                            nullable_cstr(
-                                                ::core::ptr::null::<::core::ffi::c_char>(),
-                                            ),
-                                        );
+                                        server_client_set_key_table(&c_owner, None);
                                         table_owner = c_owner.borrow().keytable.clone();
                                         table = table_owner.as_ref().expect("key table").clone();
                                         first = table.clone();
@@ -2291,7 +2263,7 @@ fn server_client_handle_key0(
     let queued_event = QueuedKeyEvent(owned, client_owner);
     item_allocation = cmdq_get_callback_owned(
         c"server_client_key_callback",
-        Some(Box::new(move |_item| unsafe {
+        Some(Box::new(move |_item| {
             server_client_key_callback(_item, queued_event)
         })),
     );
@@ -3121,10 +3093,7 @@ fn server_client_set_progress_bar(owner: &ClientRef) {
     };
 }
 
-unsafe fn server_client_dispatch(
-    owner: &ClientRef,
-    message: crate::shared::process::PeerMessage<'_>,
-) {
+fn server_client_dispatch(owner: &ClientRef, message: crate::shared::process::PeerMessage<'_>) {
     let mut current_block: u64;
     let mut datalen: ssize_t = 0;
     let mut s: Option<SessionRef> = None;
@@ -3421,10 +3390,7 @@ fn server_client_dispatch_command(owner: &ClientRef, imsg: &mut imsg) -> ::core:
     owner.borrow_mut().flags |= CLIENT_EXIT as uint64_t;
     0 as ::core::ffi::c_int
 }
-unsafe fn server_client_dispatch_identify(
-    owner: &ClientRef,
-    imsg: &mut imsg,
-) -> ::core::ffi::c_int {
+fn server_client_dispatch_identify(owner: &ClientRef, imsg: &mut imsg) -> ::core::ffi::c_int {
     let mut datalen: size_t = 0;
     let mut flags: ::core::ffi::c_int = 0;
     let mut feat: ::core::ffi::c_int = 0;
@@ -3511,7 +3477,7 @@ unsafe fn server_client_dispatch_identify(
             let Some(data) = imsg_string(imsg) else {
                 return -(1 as ::core::ffi::c_int);
             };
-            if access(data.as_ptr(), X_OK) == 0 as ::core::ffi::c_int {
+            if tiri_rt::unix::accessible(data, X_OK) {
                 server_client_set_cwd(&mut owner.borrow_mut(), Some(data.to_owned()));
             } else {
                 if let Some(home) = find_home_cstr() {
@@ -3753,7 +3719,7 @@ fn server_client_set_flags(c_owner: &ClientRef, flags: &CStr) {
             control_reset_offsets(c_owner);
         }
     }
-    c_owner.send_message(MSG_FLAGS, None, bytes_of(&c_owner.flags()));
+    c_owner.send_message(MSG_FLAGS, None, &bytes_of(&c_owner.flags()));
 }
 fn server_client_get_flags(c: &client) -> CString {
     let mut s: Vec<u8> = Vec::new();
@@ -3860,30 +3826,24 @@ fn server_client_print(
             }
             if parse != 0 {
                 while let Some(line) = evbuffer_readln(evb) {
-                    unsafe {
-                        window_copy_add(&pane_owner, 1 as ::core::ffi::c_int, |out| {
-                            write_cstr(
-                                out,
-                                CStr::from_bytes_until_nul(&line).expect("readln appends a NUL"),
-                            )
-                        })
-                    };
+                    window_copy_add(&pane_owner, 1 as ::core::ffi::c_int, |out| {
+                        write_cstr(
+                            out,
+                            CStr::from_bytes_until_nul(&line).expect("readln appends a NUL"),
+                        )
+                    });
                 }
                 let size = evbuffer_get_length(&*(evb));
                 if size != 0 as size_t {
                     let rest = evbuffer_pullup(evb, -1).expect("nonempty buffer");
-                    unsafe {
-                        window_copy_add(&pane_owner, 1 as ::core::ffi::c_int, |out| {
-                            out.write_all(rest)
-                        })
-                    };
+                    window_copy_add(&pane_owner, 1 as ::core::ffi::c_int, |out| {
+                        out.write_all(rest)
+                    });
                 }
             } else {
-                unsafe {
-                    window_copy_add(&pane_owner, 0 as ::core::ffi::c_int, |out| {
-                        write_cstr(out, msg)
-                    })
-                };
+                window_copy_add(&pane_owner, 0 as ::core::ffi::c_int, |out| {
+                    write_cstr(out, msg)
+                });
             }
         } else {
             if !flags & CLIENT_UTF8 as uint64_t != 0 {

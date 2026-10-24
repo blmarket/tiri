@@ -9,7 +9,7 @@ use crate::compat::imsg::imsg;
 use crate::compat::imsg::*;
 use crate::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE};
 use crate::log::{fatalx, log_cstr, log_debug};
-use crate::proc::{bytes_of, proc_send};
+use crate::proc::{bytes_of, int_message, proc_send, read_plain};
 use crate::reactor::BufferEvent;
 use crate::reactor::{
     bufferevent_enable, bufferevent_get_input, bufferevent_new, bufferevent_write, evbuffer_add,
@@ -30,7 +30,7 @@ use libc::{E2BIG, EINVAL, ENOMEM};
 use std::cell::RefCell;
 use std::ffi::{CStr, CString, OsStr};
 use std::io::{self, Write as _};
-use std::os::fd::{AsFd, FromRawFd, OwnedFd};
+use std::os::fd::{AsFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt as _;
 use std::rc::{Rc, Weak};
@@ -89,11 +89,16 @@ pub struct msg_write_done {
 
 pub use ::libc::{EBADF, EIO};
 
-unsafe fn read_imsg_payload<T: Copy>(imsg: &imsg) -> Option<T> {
-    if imsg.data.len() < ::core::mem::size_of::<T>() {
-        return None;
-    }
-    Some(::core::ptr::read_unaligned(imsg.data.as_ptr().cast::<T>()))
+int_message! {
+    msg_read_open { stream, fd }
+    msg_read_data { stream }
+    msg_read_done { stream, error }
+    msg_read_cancel { stream }
+    msg_write_open { stream, fd, flags }
+    msg_write_data { stream }
+    msg_write_ready { stream, error }
+    msg_write_close { stream }
+    msg_write_done { stream, error }
 }
 
 pub const BEV_EVENT_ERROR: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
@@ -200,7 +205,7 @@ fn file_send(file: &client_file, kind: msgtype, fd: Option<OwnedFd>, data: &[u8]
     }
 }
 
-unsafe fn file_create_with_peer(
+fn file_create_with_peer(
     peer: &refbox::Weak<tmuxpeer>,
     mut stream: ::core::ffi::c_int,
     mut cb: client_file_cb,
@@ -262,7 +267,7 @@ fn file_fire_done_cb(owner: &Rc<RefCell<client_file>>) {
         }
     }
     drop(callback);
-    client_files_remove(&mut owner.borrow_mut());
+    client_files_remove(owner, &mut owner.borrow_mut());
     if let Some(waiter) = waiter.filter(|_| !dead) {
         let outcome = {
             let mut file = owner.borrow_mut();
@@ -369,7 +374,7 @@ pub fn file_print(
             msg.stream = 1 as ::core::ffi::c_int;
             msg.fd = STDOUT_FILENO;
             msg.flags = 0 as ::core::ffi::c_int;
-            client_owner.send_message(MSG_WRITE_OPEN, None, bytes_of(&msg));
+            client_owner.send_message(MSG_WRITE_OPEN, None, &bytes_of(&msg));
         }
         Some(file_owner) => {
             evbuffer_add_formatted(&mut file_owner.borrow_mut().buffer, write);
@@ -402,7 +407,7 @@ pub fn file_print_buffer(client_owner: Option<&ClientRef>, data: &[u8]) {
             msg.stream = 1 as ::core::ffi::c_int;
             msg.fd = STDOUT_FILENO;
             msg.flags = 0 as ::core::ffi::c_int;
-            client_owner.send_message(MSG_WRITE_OPEN, None, bytes_of(&msg));
+            client_owner.send_message(MSG_WRITE_OPEN, None, &bytes_of(&msg));
         }
         Some(file_owner) => {
             evbuffer_add(&mut file_owner.borrow_mut().buffer, data);
@@ -438,7 +443,7 @@ pub fn file_error(
             msg.stream = 2 as ::core::ffi::c_int;
             msg.fd = STDERR_FILENO;
             msg.flags = 0 as ::core::ffi::c_int;
-            client_owner.send_message(MSG_WRITE_OPEN, None, bytes_of(&msg));
+            client_owner.send_message(MSG_WRITE_OPEN, None, &bytes_of(&msg));
         }
         Some(file_owner) => {
             evbuffer_add_formatted(&mut file_owner.borrow_mut().buffer, write);
@@ -538,7 +543,7 @@ fn file_write_impl(
                 flags,
             };
             let (head, path) = msg.split_at_mut(::core::mem::size_of::<msg_write_open>());
-            head.copy_from_slice(bytes_of(&header));
+            head.copy_from_slice(&bytes_of(&header));
             path.copy_from_slice(cf.path.as_ref().expect("file path").to_bytes_with_nul());
             if file_send(cf, MSG_WRITE_OPEN, None, &msg[..msglen]) != 0 as ::core::ffi::c_int {
                 cf.error = EINVAL;
@@ -622,7 +627,7 @@ fn file_read_impl(
                 fd,
             };
             let mut msg = vec![0; msglen];
-            msg[..header_len].copy_from_slice(bytes_of(&header));
+            msg[..header_len].copy_from_slice(&bytes_of(&header));
             msg[header_len..].copy_from_slice(path);
             if file_send(cf, MSG_READ_OPEN, None, &msg[..msglen]) != 0 as ::core::ffi::c_int {
                 cf.error = EINVAL;
@@ -644,7 +649,7 @@ pub fn file_cancel(cf: &mut client_file) {
     }
     cf.closed = 1 as ::core::ffi::c_int;
     msg.stream = cf.stream;
-    file_send(cf, MSG_READ_CANCEL, None, bytes_of(&msg));
+    file_send(cf, MSG_READ_CANCEL, None, &bytes_of(&msg));
 }
 fn file_push_cb(owner: &Rc<RefCell<client_file>>) {
     let alive = owner
@@ -681,7 +686,7 @@ fn file_push(file_owner: &Rc<RefCell<client_file>>) {
         let msglen = header_len + sent;
         msg.resize(msglen, 0);
         let header = msg_write_data { stream: cf.stream };
-        msg[..header_len].copy_from_slice(bytes_of(&header));
+        msg[..header_len].copy_from_slice(&bytes_of(&header));
         msg[header_len..].copy_from_slice(
             evbuffer_pullup(&mut cf.buffer, sent as ssize_t)
                 .map_or(&[][..], |bytes| &bytes[..sent]),
@@ -714,7 +719,7 @@ fn file_push(file_owner: &Rc<RefCell<client_file>>) {
         );
     } else if cf.stream > 2 as ::core::ffi::c_int {
         close_0.stream = cf.stream;
-        file_send(cf, MSG_WRITE_CLOSE, None, bytes_of(&close_0));
+        file_send(cf, MSG_WRITE_CLOSE, None, &bytes_of(&close_0));
         done =
             cf.c.as_ref()
                 .is_none_or(|owner| owner.flags() & CLIENT_WRITE_ACK as uint64_t == 0);
@@ -760,7 +765,7 @@ fn file_notify_closed(owner: &Rc<RefCell<client_file>>) {
     }
     owner.borrow_mut().cb = callback;
 }
-unsafe fn file_write_finished(owner: &Rc<RefCell<client_file>>) {
+fn file_write_finished(owner: &Rc<RefCell<client_file>>) {
     {
         let mut guard = owner.borrow_mut();
         let cf = &mut *guard;
@@ -771,15 +776,12 @@ unsafe fn file_write_finished(owner: &Rc<RefCell<client_file>>) {
         std::mem::take(&mut cf.event).free();
         msg.stream = cf.stream;
         msg.error = cf.error;
-        file_send(cf, MSG_WRITE_DONE, None, bytes_of(&msg));
+        file_send(cf, MSG_WRITE_DONE, None, &bytes_of(&msg));
     }
     file_notify_closed(owner);
-    client_files_remove(&mut owner.borrow_mut());
+    client_files_remove(owner, &mut owner.borrow_mut());
 }
-unsafe fn file_write_error_callback(
-    stream_error: Option<&io::Error>,
-    owner: &Rc<RefCell<client_file>>,
-) {
+fn file_write_error_callback(stream_error: Option<&io::Error>, owner: &Rc<RefCell<client_file>>) {
     let closed = {
         let mut guard = owner.borrow_mut();
         let cf = &mut *guard;
@@ -798,7 +800,7 @@ unsafe fn file_write_error_callback(
         file_notify_closed(owner);
     }
 }
-unsafe fn file_write_callback(owner: &Rc<RefCell<client_file>>) {
+fn file_write_callback(owner: &Rc<RefCell<client_file>>) {
     let finished = {
         let cf = owner.borrow();
         log_debug(format_args!("write check file {}", { cf.stream }));
@@ -814,7 +816,7 @@ unsafe fn file_write_callback(owner: &Rc<RefCell<client_file>>) {
         file_notify_closed(owner);
     }
 }
-pub unsafe fn file_write_open(
+pub fn file_write_open(
     peer: &refbox::Weak<tmuxpeer>,
     imsg: &imsg,
     mut close_received: ::core::ffi::c_int,
@@ -825,7 +827,7 @@ pub unsafe fn file_write_open(
     if msglen < ::core::mem::size_of::<msg_write_open>() {
         fatalx(|out| out.write_all(b"bad MSG_WRITE_OPEN size"));
     }
-    let msg = read_imsg_payload::<msg_write_open>(imsg).unwrap();
+    let msg = read_plain::<msg_write_open>(&imsg.data).unwrap();
     let mut reply: msg_write_ready = msg_write_ready {
         stream: 0,
         error: 0,
@@ -866,7 +868,7 @@ pub unsafe fn file_write_open(
                     _ => Err(io::Error::from_raw_os_error(EBADF)),
                 };
                 if close_received != 0 && (msg.fd == STDOUT_FILENO || msg.fd == STDERR_FILENO) {
-                    drop(OwnedFd::from_raw_fd(msg.fd));
+                    let _ = tiri_rt::unix::release_standard_stream(msg.fd);
                 }
                 duplicate
             };
@@ -878,12 +880,12 @@ pub unsafe fn file_write_open(
                     let stream = bufferevent_new(
                         Some(fd),
                         None,
-                        bufferevent_data_callback(move || unsafe {
+                        bufferevent_data_callback(move || {
                             if let Some(owner) = data_observer.upgrade() {
                                 file_write_callback(&owner);
                             }
                         }),
-                        bufferevent_event_callback(move |_, stream_error| unsafe {
+                        bufferevent_event_callback(move |_, stream_error| {
                             if let Some(owner) = error_observer.upgrade() {
                                 file_write_error_callback(stream_error, &owner);
                             }
@@ -892,7 +894,7 @@ pub unsafe fn file_write_open(
                     match stream {
                         Err(stream_error) => {
                             error = stream_error.raw_os_error().unwrap_or(EIO);
-                            client_files_remove(cf);
+                            client_files_remove(&transfer_owner, cf);
                         }
                         Ok(stream) => {
                             cf.event = stream.clone();
@@ -907,14 +909,14 @@ pub unsafe fn file_write_open(
     }
     reply.stream = msg.stream;
     reply.error = error;
-    proc_send(peer, MSG_WRITE_READY, None, bytes_of(&reply));
+    proc_send(peer, MSG_WRITE_READY, None, &bytes_of(&reply));
 }
-pub unsafe fn file_write_data(imsg: &imsg) {
+pub fn file_write_data(imsg: &imsg) {
     let msglen = imsg.data.len();
     if msglen < ::core::mem::size_of::<msg_write_data>() {
         fatalx(|out| out.write_all(b"bad MSG_WRITE size"));
     }
-    let msg = read_imsg_payload::<msg_write_data>(imsg).unwrap();
+    let msg = read_plain::<msg_write_data>(&imsg.data).unwrap();
     let mut find: client_file = client_file::empty();
     let size = msglen - ::core::mem::size_of::<msg_write_data>();
     find.stream = msg.stream;
@@ -932,12 +934,12 @@ pub unsafe fn file_write_data(imsg: &imsg) {
         )
     });
 }
-pub unsafe fn file_write_close(imsg: &imsg) {
+pub fn file_write_close(imsg: &imsg) {
     let msglen = imsg.data.len();
     if msglen != ::core::mem::size_of::<msg_write_close>() {
         fatalx(|out| out.write_all(b"bad MSG_WRITE_CLOSE size"));
     }
-    let msg = read_imsg_payload::<msg_write_close>(imsg).unwrap();
+    let msg = read_plain::<msg_write_close>(&imsg.data).unwrap();
     let mut find: client_file = client_file::empty();
     find.stream = msg.stream;
     let Some(file_owner) = crate::client::client_find_file(find.stream) else {
@@ -969,9 +971,9 @@ fn file_read_error_callback(mut what: ::core::ffi::c_short, owner: &Rc<RefCell<c
     } else {
         0 as ::core::ffi::c_int
     };
-    file_send(cf, MSG_READ_DONE, None, bytes_of(&msg));
+    file_send(cf, MSG_READ_DONE, None, &bytes_of(&msg));
     std::mem::take(&mut cf.event).free();
-    client_files_remove(cf);
+    client_files_remove(owner, cf);
 }
 fn file_read_callback(owner: &Rc<RefCell<client_file>>) {
     let cf = owner.borrow();
@@ -997,7 +999,7 @@ fn file_read_callback(owner: &Rc<RefCell<client_file>>) {
         let msglen = header_len + bsize;
         msg.resize(msglen, 0);
         let header = msg_read_data { stream: cf.stream };
-        msg[..header_len].copy_from_slice(bytes_of(&header));
+        msg[..header_len].copy_from_slice(&bytes_of(&header));
         msg[header_len..].copy_from_slice(&chunk);
         file_send(&cf, MSG_READ, None, &msg[..msglen]);
         let _ = cf
@@ -1005,7 +1007,7 @@ fn file_read_callback(owner: &Rc<RefCell<client_file>>) {
             .with_stream(|stream| evbuffer_drain(bufferevent_get_input(&mut *stream), bsize));
     }
 }
-pub unsafe fn file_read_open(
+pub fn file_read_open(
     peer: &refbox::Weak<tmuxpeer>,
     imsg: &imsg,
     mut close_received: ::core::ffi::c_int,
@@ -1016,7 +1018,7 @@ pub unsafe fn file_read_open(
     if msglen < ::core::mem::size_of::<msg_read_open>() {
         fatalx(|out| out.write_all(b"bad MSG_READ_OPEN size"));
     }
-    let msg = read_imsg_payload::<msg_read_open>(imsg).unwrap();
+    let msg = read_plain::<msg_read_open>(&imsg.data).unwrap();
     let mut reply: msg_read_done = msg_read_done {
         stream: 0,
         error: 0,
@@ -1052,7 +1054,7 @@ pub unsafe fn file_read_open(
                     _ => Err(io::Error::from_raw_os_error(EBADF)),
                 };
                 if close_received != 0 && (msg.fd == STDIN_FILENO) {
-                    drop(OwnedFd::from_raw_fd(msg.fd));
+                    let _ = tiri_rt::unix::release_standard_stream(msg.fd);
                 }
                 duplicate
             };
@@ -1078,7 +1080,7 @@ pub unsafe fn file_read_open(
                     match stream {
                         Err(stream_error) => {
                             error = stream_error.raw_os_error().unwrap_or(EIO);
-                            client_files_remove(cf);
+                            client_files_remove(&transfer_owner, cf);
                         }
                         Ok(stream) => {
                             cf.event = stream.clone();
@@ -1094,14 +1096,14 @@ pub unsafe fn file_read_open(
     }
     reply.stream = msg.stream;
     reply.error = error;
-    proc_send(peer, MSG_READ_DONE, None, bytes_of(&reply));
+    proc_send(peer, MSG_READ_DONE, None, &bytes_of(&reply));
 }
-pub unsafe fn file_read_cancel(imsg: &imsg) {
+pub fn file_read_cancel(imsg: &imsg) {
     let msglen = imsg.data.len();
     if msglen != ::core::mem::size_of::<msg_read_cancel>() {
         fatalx(|out| out.write_all(b"bad MSG_READ_CANCEL size"));
     }
-    let msg = read_imsg_payload::<msg_read_cancel>(imsg).unwrap();
+    let msg = read_plain::<msg_read_cancel>(&imsg.data).unwrap();
     let mut find: client_file = client_file::empty();
     find.stream = msg.stream;
     let Some(file_owner) = crate::client::client_find_file(find.stream) else {
@@ -1112,12 +1114,12 @@ pub unsafe fn file_read_cancel(imsg: &imsg) {
     }));
     file_read_error_callback(0, &file_owner);
 }
-pub unsafe fn file_write_ready(client: &ClientRef, imsg: &imsg) -> ::core::ffi::c_int {
+pub fn file_write_ready(client: &ClientRef, imsg: &imsg) -> ::core::ffi::c_int {
     let msglen = imsg.data.len();
     if msglen != ::core::mem::size_of::<msg_write_ready>() {
         return -1;
     }
-    let msg = read_imsg_payload::<msg_write_ready>(imsg).unwrap();
+    let msg = read_plain::<msg_write_ready>(&imsg.data).unwrap();
     let mut find: client_file = client_file::empty();
     find.stream = msg.stream;
     let Some(file_owner) = client.find_file(find.stream).upgrade() else {
@@ -1131,12 +1133,12 @@ pub unsafe fn file_write_ready(client: &ClientRef, imsg: &imsg) -> ::core::ffi::
     }
     0 as ::core::ffi::c_int
 }
-pub unsafe fn file_write_done(client: &ClientRef, imsg: &imsg) -> ::core::ffi::c_int {
+pub fn file_write_done(client: &ClientRef, imsg: &imsg) -> ::core::ffi::c_int {
     let msglen = imsg.data.len();
     if msglen != ::core::mem::size_of::<msg_write_done>() {
         return -1;
     }
-    let msg = read_imsg_payload::<msg_write_done>(imsg).unwrap();
+    let msg = read_plain::<msg_write_done>(&imsg.data).unwrap();
     let mut find: client_file = client_file::empty();
     find.stream = msg.stream;
     let Some(file_owner) = client.find_file(find.stream).upgrade() else {
@@ -1157,12 +1159,12 @@ pub unsafe fn file_write_done(client: &ClientRef, imsg: &imsg) -> ::core::ffi::c
     file_fire_done(&file_owner);
     0 as ::core::ffi::c_int
 }
-pub unsafe fn file_read_data(client: &ClientRef, imsg: &imsg) -> ::core::ffi::c_int {
+pub fn file_read_data(client: &ClientRef, imsg: &imsg) -> ::core::ffi::c_int {
     let msglen = imsg.data.len();
     if msglen < ::core::mem::size_of::<msg_read_data>() {
         return -1;
     }
-    let msg = read_imsg_payload::<msg_read_data>(imsg).unwrap();
+    let msg = read_plain::<msg_read_data>(&imsg.data).unwrap();
     let mut find: client_file = client_file::empty();
     let bdata = &imsg.data[::core::mem::size_of::<msg_read_data>()..msglen];
     let bsize = bdata.len();
@@ -1192,12 +1194,12 @@ pub unsafe fn file_read_data(client: &ClientRef, imsg: &imsg) -> ::core::ffi::c_
     }
     0 as ::core::ffi::c_int
 }
-pub unsafe fn file_read_done(client: &ClientRef, imsg: &imsg) -> ::core::ffi::c_int {
+pub fn file_read_done(client: &ClientRef, imsg: &imsg) -> ::core::ffi::c_int {
     let msglen = imsg.data.len();
     if msglen != ::core::mem::size_of::<msg_read_done>() {
         return -1;
     }
-    let msg = read_imsg_payload::<msg_read_done>(imsg).unwrap();
+    let msg = read_plain::<msg_read_done>(&imsg.data).unwrap();
     let mut find: client_file = client_file::empty();
     find.stream = msg.stream;
     let Some(file_owner) = client.find_file(find.stream).upgrade() else {
@@ -1243,21 +1245,20 @@ pub(crate) fn client_files_insert(
     None
 }
 
-/// Retire a stream through its existing holder, before releasing file resources.
-fn client_files_remove(elm: &mut client_file) {
+/// Retire `owner`'s stream through its existing holder, before releasing file
+/// resources; `elm` is `owner`'s borrowed record. A registered file is held by
+/// its index, so it is always retired here before it can be dropped.
+fn client_files_remove(owner: &Rc<RefCell<client_file>>, elm: &mut client_file) {
     let registration = std::mem::take(&mut elm.registration);
     let stream = elm.stream;
-    let identity = std::ptr::from_ref(elm);
-    unsafe {
-        match registration {
-            FileRegistration::Unlinked => {}
-            FileRegistration::Client => elm
-                .c
-                .as_ref()
-                .expect("registered client file retains its client")
-                .unregister_file(stream, identity),
-            FileRegistration::Peer => crate::client::client_remove_file(stream, identity),
-        }
+    match registration {
+        FileRegistration::Unlinked => {}
+        FileRegistration::Client => elm
+            .c
+            .as_ref()
+            .expect("registered client file retains its client")
+            .unregister_file(stream, owner),
+        FileRegistration::Peer => crate::client::client_remove_file(stream, owner),
     }
 }
 
@@ -1265,11 +1266,11 @@ fn client_files_remove(elm: &mut client_file) {
 pub(crate) fn client_files_remove_identity(
     files: &mut client_files,
     stream: i32,
-    identity: *const client_file,
+    identity: &Rc<RefCell<client_file>>,
 ) -> Option<Rc<RefCell<client_file>>> {
     if files
         .get(&stream)
-        .is_some_and(|file| std::ptr::eq(file.as_ptr(), identity))
+        .is_some_and(|file| Rc::ptr_eq(file, identity))
     {
         files.remove(&stream)
     } else {
@@ -1312,22 +1313,14 @@ pub fn client_files_iter(
             return false;
         };
         let file = owner.borrow();
-        unsafe {
-            match file.registration {
-                FileRegistration::Unlinked => false,
-                FileRegistration::Client => file
-                    .c
-                    .as_ref()
-                    .is_some_and(|client| client.find_file(file.stream).ptr_eq(entry)),
-                FileRegistration::Peer => crate::client::client_find_file(file.stream)
-                    .is_some_and(|indexed| Rc::ptr_eq(&indexed, &owner)),
-            }
+        match file.registration {
+            FileRegistration::Unlinked => false,
+            FileRegistration::Client => file
+                .c
+                .as_ref()
+                .is_some_and(|client| client.find_file(file.stream).ptr_eq(entry)),
+            FileRegistration::Peer => crate::client::client_find_file(file.stream)
+                .is_some_and(|indexed| Rc::ptr_eq(&indexed, &owner)),
         }
     })
-}
-
-impl Drop for client_file {
-    fn drop(&mut self) {
-        client_files_remove(self);
-    }
 }

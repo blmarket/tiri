@@ -24,7 +24,6 @@ pub mod compat {
     pub mod fdforkpty;
     pub mod getopt;
     pub mod getprogname;
-    pub mod glob;
     pub mod imsg;
     pub mod setproctitle;
     pub mod strtod;
@@ -97,6 +96,5 @@ pub mod window_switch;
 pub mod window_tree;
 pub mod window_visible;
 pub mod winlink;
-pub mod xmalloc;
 
 pub mod reactor;

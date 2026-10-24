@@ -21,12 +21,8 @@ fn process_name(progname: &[u8], formatted: &[u8]) -> Vec<u8> {
 pub fn setproctitle(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) {
     let formatted = crate::format::bytes::format_message_with(write);
     let name = process_name(getprogname().to_bytes(), formatted.as_bytes());
-    let mut comm = [0u8; 16];
-    comm[..name.len()].copy_from_slice(&name);
-    // SAFETY: PR_SET_NAME reads a NUL-terminated name of at most 16 bytes.
-    unsafe {
-        ::libc::prctl(::libc::PR_SET_NAME, comm.as_ptr());
-    }
+    let name = std::ffi::CString::new(name).expect("process name has no NUL");
+    let _ = tiri_rt::unix::set_thread_name(&name);
 }
 // Like tmux's compat fallback, platforms without PR_SET_NAME keep their title.
 #[cfg(not(target_os = "linux"))]

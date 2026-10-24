@@ -713,7 +713,7 @@ fn control_flush_all_blocks(client: &ClientRef) {
         control_free_block(&mut state, &block);
     }
 }
-unsafe fn control_append_data(
+fn control_append_data(
     c_owner: &ClientRef,
     offset: &mut window_pane_offset,
     mut age: uint64_t,
@@ -723,10 +723,6 @@ unsafe fn control_append_data(
 ) -> Box<SegmentedBuf> {
     let mut c: Option<ClientRef> = Some(c_owner.clone());
 
-    let mut new_data: *mut u_char = ::core::ptr::null_mut::<u_char>();
-    let mut new_size: size_t = 0;
-    let mut start: size_t = 0;
-    let mut i: u_int = 0;
     let mut message = message.unwrap_or_else(|| {
         let mut message = evbuffer_new();
         if c.as_ref().expect("live client").flags() as ::core::ffi::c_ulonglong
@@ -745,9 +741,8 @@ unsafe fn control_append_data(
         }
         message
     });
-    let mut data = vec![0; size];
-    new_size = wp_owner.copy_output(offset, &mut data);
-    new_data = data.as_ptr().cast_mut();
+    let mut data = vec![0u8; size];
+    let new_size = wp_owner.copy_output(offset, &mut data);
     if new_size < size {
         fatalx(|out| {
             write!(out, "not enough data: {} < {}", (new_size) as usize, {
@@ -755,37 +750,20 @@ unsafe fn control_append_data(
             })
         });
     }
-    i = 0 as u_int;
-    while (i as size_t) < size {
-        if (*new_data.offset(i as isize) as ::core::ffi::c_int) < ' ' as i32
-            || *new_data.offset(i as isize) as ::core::ffi::c_int == '\\' as i32
-        {
-            evbuffer_add_formatted(&mut message, |out| {
-                write!(
-                    out,
-                    "\\{:03o}",
-                    (*new_data.offset(i as isize) as ::core::ffi::c_int) as u32
-                )
-            });
+    let escaped = |byte: u8| byte < b' ' || byte == b'\\';
+    let mut i = 0;
+    while i < size {
+        if escaped(data[i]) {
+            evbuffer_add_formatted(&mut message, |out| write!(out, "\\{:03o}", data[i] as u32));
+            i += 1;
         } else {
-            start = i as size_t;
-            while (i.wrapping_add(1 as u_int) as size_t) < size
-                && *new_data.offset(i.wrapping_add(1 as u_int) as isize) as ::core::ffi::c_int
-                    >= ' ' as i32
-                && *new_data.offset(i.wrapping_add(1 as u_int) as isize) as ::core::ffi::c_int
-                    != '\\' as i32
-            {
-                i = i.wrapping_add(1);
-            }
-            evbuffer_add(
-                &mut message,
-                std::slice::from_raw_parts(
-                    new_data.add(start).cast(),
-                    (i as size_t).wrapping_sub(start).wrapping_add(1 as size_t),
-                ),
-            );
+            let end = data[i..]
+                .iter()
+                .position(|&byte| escaped(byte))
+                .map_or(size, |run| i + run);
+            evbuffer_add(&mut message, &data[i..end]);
+            i = end;
         }
-        i = i.wrapping_add(1);
     }
     wp_owner.advance_output(offset, size);
     message
@@ -813,7 +791,7 @@ fn control_write_data(c_owner: &ClientRef, mut message: Box<SegmentedBuf>) {
     };
     let _ = stream.with_stream(|stream| bufferevent_write_buffer(stream, &mut message));
 }
-unsafe fn control_write_pending(client: &ClientRef, pane: u_int, limit: size_t) -> i32 {
+fn control_write_pending(client: &ClientRef, pane: u_int, limit: size_t) -> i32 {
     let now = get_timer();
     let owner = control_window_pane(client, pane);
     if owner.as_ref().is_none_or(|pane| !pane.has_tty()) {
@@ -921,7 +899,7 @@ unsafe fn control_write_pending(client: &ClientRef, pane: u_int, limit: size_t) 
         .is_empty()) as i32
 }
 
-unsafe fn control_write_callback(owner: &ClientRef) {
+fn control_write_callback(owner: &ClientRef) {
     if owner.borrow_control_mut().is_none() {
         return;
     }
@@ -1073,7 +1051,7 @@ pub(crate) fn control_stream_callbacks(
         }),
         bufferevent_data_callback(move || {
             if let Some(owner) = write.upgrade() {
-                unsafe { control_write_callback(&owner) };
+                control_write_callback(&owner);
             }
         }),
         bufferevent_event_callback(move |_, _| {

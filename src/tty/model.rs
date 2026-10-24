@@ -87,7 +87,7 @@ pub struct tty {
     pub(super) read_task: Option<tiri_rt::mio::Task>,
     pub(super) in_0: Option<Box<super::input::TerminalInput>>,
     pub(super) write_task: Option<tiri_rt::mio::Task>,
-    pub(super) io_fd: Option<i32>,
+    pub(super) io_fd: Option<std::os::fd::OwnedFd>,
     pub(super) out: Option<Box<SegmentedBuf>>,
     pub(super) timer: Option<Timer>,
     pub(super) discarded: size_t,

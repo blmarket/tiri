@@ -18,7 +18,7 @@ fn cstring_until_nul(input: &[u8]) -> CString {
     CString::new(&input[..end]).expect("test input prefix has no NUL")
 }
 
-unsafe fn run_match(input: &[u8]) -> MatchOutcome {
+fn run_match(input: &[u8]) -> MatchOutcome {
     let input = CString::new(input).expect("test input has no embedded NUL");
     match options_match_owned(input.as_c_str()) {
         Ok(parsed) => MatchOutcome {
@@ -103,7 +103,7 @@ const CASES: &[MatchCase] = &[
 #[test]
 fn options_match_owned_cases() {
     for &(input, name, key, ambiguous) in CASES {
-        let actual = unsafe { run_match(input) };
+        let actual = run_match(input);
         assert_eq!(
             actual,
             MatchOutcome {

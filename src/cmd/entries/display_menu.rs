@@ -852,7 +852,7 @@ fn cmd_display_menu_exec(
     );
     CmdOutcome::Normal
 }
-unsafe fn cmd_display_popup_exec(
+fn cmd_display_popup_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {

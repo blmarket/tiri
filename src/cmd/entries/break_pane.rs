@@ -75,7 +75,6 @@ fn cmd_break_pane_exec(
     let pane_owner = source.pane_handle().expect("live break pane");
     let source_window = winlink_window(&wl).expect("live source window");
     let result = (|| {
-        let _cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
         let mut idx: ::core::ffi::c_int = target.idx;
         let mut before: ::core::ffi::c_int = 0;
         let mut old_idx: ::core::ffi::c_int = wl.try_borrow().expect("live winlink").idx;

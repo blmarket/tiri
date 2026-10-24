@@ -400,7 +400,7 @@ fn prompt_redraw_quote(
     };
     if pr.flags & PROMPT_QUOTENEXT != 0
         && pcursor >= offset
-        && ctx.screen.cx == input_x.wrapping_add(pcursor).wrapping_sub(offset)
+        && ctx.with_screen(|s| s.cx) == input_x.wrapping_add(pcursor).wrapping_sub(offset)
     {
         utf8_set(&mut ud, '^' as i32 as u_char);
         return prompt_redraw_character(ctx, offset, pw, w, gc, &ud);
@@ -797,7 +797,7 @@ pub(crate) fn prompt_draw_prepared(
 }
 
 pub fn prompt_draw(pr: &prompt, ctx: &mut screen_write_ctx, pd: prompt_draw_data) -> u_int {
-    prompt_draw_cursor_style(pr, &mut *ctx.screen);
+    ctx.with_screen_mut(|s| prompt_draw_cursor_style(pr, &mut *s));
     let prepared = prompt_prepare_draw(pr, pd.area_x, pd.area_width);
     prompt_draw_prepared(pr, ctx, pd, prepared)
 }
@@ -2338,36 +2338,33 @@ mod prompt_buffer_tests {
 
     #[test]
     fn paste_decoding_preserves_utf8_and_stops_at_control_or_invalid_bytes() {
-        unsafe {
-            assert!(!libc::setlocale(libc::LC_CTYPE, c"C.UTF-8".as_ptr()).is_null());
-            for (input, expected, count) in [
-                (&b""[..], &b""[..], 0),
-                (&b"ab"[..], &b"ab"[..], 2),
-                ("Aé漢Z".as_bytes(), "Aé漢Z".as_bytes(), 4),
-                ("éZ".as_bytes(), "éZ".as_bytes(), 3),
-                (&b"abc\nignored"[..], &b"abc"[..], 3),
-                (&b"abc\tignored"[..], &b"abc"[..], 3),
-                (&b"ab\0ignored"[..], &b"ab"[..], 2),
-                (&b"x\x7fz"[..], &b"x"[..], 1),
-                (&b"x\x1bz"[..], &b"x"[..], 1),
-                (&b"x\xffz"[..], &b"x"[..], 1),
-                (&b"x\xc0\xafz"[..], &b"x"[..], 1),
-                (&b"x\xe2(\xa1Z"[..], &b"x"[..], 1),
-                (&b"x\xe2\x82"[..], &b"x"[..], 1),
-                (&b"x\xf0\x9f"[..], &b"x"[..], 1),
-                (&b"x\xed\xa0\x80Z"[..], &b"x"[..], 1),
-                (&b"x\xf4\x90\x80\x80z"[..], &b"x"[..], 1),
-            ] {
-                let cells = prompt_decode_paste(input);
-                assert_eq!(
-                    utf8_tocstr_cstring(&cells).as_bytes(),
-                    expected,
-                    "{input:?}"
-                );
-                assert_eq!(utf8_strlen(&cells), count, "{input:?}");
-                assert_eq!(cells.len(), count + 1);
-                assert_eq!(cells.last().unwrap().size, 0);
-            }
+        for (input, expected, count) in [
+            (&b""[..], &b""[..], 0),
+            (&b"ab"[..], &b"ab"[..], 2),
+            ("Aé漢Z".as_bytes(), "Aé漢Z".as_bytes(), 4),
+            ("éZ".as_bytes(), "éZ".as_bytes(), 3),
+            (&b"abc\nignored"[..], &b"abc"[..], 3),
+            (&b"abc\tignored"[..], &b"abc"[..], 3),
+            (&b"ab\0ignored"[..], &b"ab"[..], 2),
+            (&b"x\x7fz"[..], &b"x"[..], 1),
+            (&b"x\x1bz"[..], &b"x"[..], 1),
+            (&b"x\xffz"[..], &b"x"[..], 1),
+            (&b"x\xc0\xafz"[..], &b"x"[..], 1),
+            (&b"x\xe2(\xa1Z"[..], &b"x"[..], 1),
+            (&b"x\xe2\x82"[..], &b"x"[..], 1),
+            (&b"x\xf0\x9f"[..], &b"x"[..], 1),
+            (&b"x\xed\xa0\x80Z"[..], &b"x"[..], 1),
+            (&b"x\xf4\x90\x80\x80z"[..], &b"x"[..], 1),
+        ] {
+            let cells = prompt_decode_paste(input);
+            assert_eq!(
+                utf8_tocstr_cstring(&cells).as_bytes(),
+                expected,
+                "{input:?}"
+            );
+            assert_eq!(utf8_strlen(&cells), count, "{input:?}");
+            assert_eq!(cells.len(), count + 1);
+            assert_eq!(cells.last().unwrap().size, 0);
         }
     }
 }

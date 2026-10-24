@@ -30,13 +30,13 @@ use crate::server_client::ClientRegistry;
 use crate::shared::errno::ErrorText;
 use crate::window::Window as _;
 use crate::winlink::winlink_window;
-use tiri_rt::unix::{block_signals, exec, exec_path, exit_now, set_signal_mask};
+use tiri_rt::unix::{block_signals, close_on_exec_from, exec, exit_now, set_signal_mask, Program};
 
 use crate::session::Session;
 use crate::shared::client::ClientRef;
 use crate::shared::spawn::spawn_context;
 use crate::shared::window::WindowRef;
-use crate::tmux::{checkshell, find_home_cstr, ptm_fd};
+use crate::tmux::{checkshell, find_home_cstr};
 
 use crate::window_pane::WindowPane as _;
 use std::ffi::{CStr, CString, OsStr};
@@ -56,7 +56,6 @@ use crate::shared::spawn::{
     SPAWN_BEFORE, SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_KILL, SPAWN_NONOTIFY, SPAWN_RESPAWN,
 };
 
-use std::os::fd::{FromRawFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::process::ExitStatusExt;
 
@@ -434,16 +433,19 @@ pub(super) fn spawn_pane(
                         actual_cwd = Some(c"/");
                     }
                 }
-                let mut master = -1;
                 let mut tty = new_pane_owner.borrow().tty;
-                let pid = unsafe { fdforkpty(ptm_fd(), &mut master, &mut tty, &ws) };
+                let forked = fdforkpty(&mut tty, &ws);
                 {
                     let mut pane = new_pane_owner.borrow_mut();
                     pane.tty = tty;
-                    pane.pid = pid;
+                    pane.pid = match &forked {
+                        Ok(Some((pid, _))) => *pid,
+                        Ok(None) => 0,
+                        Err(_) => -1,
+                    };
                 }
-                if pid == -(1 as ::core::ffi::c_int) {
-                    let error = ErrorText(&std::io::Error::last_os_error()).to_string();
+                if let Err(error) = &forked {
+                    let error = ErrorText(error).to_string();
                     let cause = spawn_cause(&[b"fork failed: ", error.as_bytes()]);
                     let fd = new_pane_owner.borrow_mut().fd.take();
                     drop(fd);
@@ -456,11 +458,8 @@ pub(super) fn spawn_pane(
                     set_signal_mask(&oldset);
                     return Err(cause);
                 }
-                if pid != 0 as ::core::ffi::c_int {
-                    let previous = new_pane_owner
-                        .borrow_mut()
-                        .fd
-                        .replace(PanePty::new(unsafe { OwnedFd::from_raw_fd(master) }));
+                if let Ok(Some((_, master))) = forked {
+                    let previous = new_pane_owner.borrow_mut().fd.replace(PanePty::new(master));
                     drop(previous);
                     if actual_cwd.is_some()
                         && !path
@@ -512,15 +511,15 @@ pub(super) fn spawn_pane(
                     {
                         exit_now(1 as ::core::ffi::c_int);
                     }
-                    unsafe { proc_clear_signals(&server_proc, 1 as ::core::ffi::c_int) };
+                    proc_clear_signals(&server_proc(), 1 as ::core::ffi::c_int);
                     log_close();
-                    unsafe { tiri_rt::unix::close_from(STDERR_FILENO + 1 as ::core::ffi::c_int) };
+                    close_on_exec_from(STDERR_FILENO + 1 as ::core::ffi::c_int);
                     set_signal_mask(&oldset);
-                    unsafe { environ_push(child) };
+                    environ_push(child);
                     drop(child_owner.take());
                     if pane_argv.len() > 1 {
                         let argv: Vec<&CStr> = pane_argv.iter().map(CString::as_c_str).collect();
-                        exec_path(&argv);
+                        exec(Program::Search(&argv));
                         exit_now(1 as ::core::ffi::c_int);
                     }
                     let shell = pane_shell.as_deref().expect("pane shell");
@@ -531,13 +530,13 @@ pub(super) fn spawn_pane(
                         _ => shell,
                     };
                     if pane_argv.len() == 1 {
-                        exec(shell, &[shell_name, c"-c", &pane_argv[0]]);
+                        exec(Program::Path(shell, &[shell_name, c"-c", &pane_argv[0]]));
                         exit_now(1 as ::core::ffi::c_int);
                     }
                     let mut login_name = vec![b'-'];
                     login_name.extend_from_slice(shell_name.to_bytes());
                     let argv0 = CString::new(login_name).expect("shell name contains no NUL");
-                    exec(shell, &[&argv0]);
+                    exec(Program::Path(shell, &[&argv0]));
                     exit_now(1 as ::core::ffi::c_int);
                 }
             }
@@ -682,7 +681,7 @@ mod tests {
         assert!(status.success(), "isolated test exited with {status}");
     }
 
-    fn create_temp_file() -> (OwnedFd, std::ffi::CString) {
+    fn create_temp_file() -> (std::os::fd::OwnedFd, std::ffi::CString) {
         let mut template = b"/tmp/tiri-editor-owner-XXXXXX\0".to_vec();
         let fd = tiri_rt::unix::make_temporary(&mut template)
             .unwrap_or_else(|error| panic!("mkstemp failed: {error}"));

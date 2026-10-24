@@ -881,9 +881,9 @@ pub fn format_draw(
     let bytes = expanded.to_bytes();
     let mut size: size_t = bytes.len();
     let mut s: [screen; 8] = std::array::from_fn(|_| screen::empty());
-    let hl = octx.screen.hyperlinks.clone();
-    let mut ocx: u_int = octx.screen.cx;
-    let mut ocy: u_int = octx.screen.cy;
+    let hl = octx.with_screen(|s| s.hyperlinks.clone());
+    let mut ocx: u_int = octx.with_screen(|s| s.cx);
+    let mut ocy: u_int = octx.with_screen(|s| s.cy);
     let mut n: u_int = 0;
     let mut i: u_int = 0;
     let mut width: [u_int; 8] = [0; 8];
@@ -1174,7 +1174,8 @@ pub fn format_draw(
                                 if focus_start != -(1 as ::core::ffi::c_int)
                                     && focus_end == -(1 as ::core::ffi::c_int)
                                 {
-                                    focus_end = ctx[LIST as ::core::ffi::c_int as usize].screen.cx
+                                    focus_end = ctx[LIST as ::core::ffi::c_int as usize]
+                                        .with_screen(|s| s.cx)
                                         as ::core::ffi::c_int;
                                 }
                                 current = LIST;
@@ -1183,7 +1184,8 @@ pub fn format_draw(
                                 if !(list_state != 0 as ::core::ffi::c_int)
                                     && focus_start == -(1 as ::core::ffi::c_int)
                                 {
-                                    focus_start = ctx[LIST as ::core::ffi::c_int as usize].screen.cx
+                                    focus_start = ctx[LIST as ::core::ffi::c_int as usize]
+                                        .with_screen(|s| s.cx)
                                         as ::core::ffi::c_int;
                                 }
                             }
@@ -1193,9 +1195,9 @@ pub fn format_draw(
                                     if focus_start != -(1 as ::core::ffi::c_int)
                                         && focus_end == -(1 as ::core::ffi::c_int)
                                     {
-                                        focus_end =
-                                            ctx[LIST as ::core::ffi::c_int as usize].screen.cx
-                                                as ::core::ffi::c_int;
+                                        focus_end = ctx[LIST as ::core::ffi::c_int as usize]
+                                            .with_screen(|s| s.cx)
+                                            as ::core::ffi::c_int;
                                     }
                                     map[list_align as usize] = AFTER as ::core::ffi::c_int as u_int;
                                     if list_align as ::core::ffi::c_uint
@@ -1211,7 +1213,8 @@ pub fn format_draw(
                             }
                             3 => {
                                 if !(list_state != 0 as ::core::ffi::c_int)
-                                    && !(ctx[LIST_LEFT as ::core::ffi::c_int as usize].screen.cx
+                                    && !(ctx[LIST_LEFT as ::core::ffi::c_int as usize]
+                                        .with_screen(|s| s.cx)
                                         != 0 as u_int)
                                 {
                                     fr = None;
@@ -1225,7 +1228,8 @@ pub fn format_draw(
                                 }
                             }
                             4 if !(list_state != 0 as ::core::ffi::c_int)
-                                && !(ctx[LIST_RIGHT as ::core::ffi::c_int as usize].screen.cx
+                                && !(ctx[LIST_RIGHT as ::core::ffi::c_int as usize]
+                                    .with_screen(|s| s.cx)
                                     != 0 as u_int) =>
                             {
                                 fr = None;
@@ -1254,8 +1258,8 @@ pub fn format_draw(
                                 .is_some_and(|pending| format_is_type(pending, &sy) == 0)
                             {
                                 let mut finished = fr.take().unwrap();
-                                if ctx[current as usize].screen.cx != finished.start {
-                                    finished.end = ctx[current as usize].screen.cx;
+                                if ctx[current as usize].with_screen(|s| s.cx) != finished.start {
+                                    finished.end = ctx[current as usize].with_screen(|s| s.cx);
                                     frs.push(finished);
                                 }
                             }
@@ -1265,7 +1269,7 @@ pub fn format_draw(
                             {
                                 fr = Some(format_range {
                                     index: current as u_int,
-                                    start: ctx[current as usize].screen.cx,
+                                    start: ctx[current as usize].with_screen(|s| s.cx),
                                     end: 0,
                                     type_0: sy.range_type,
                                     argument: sy.range_argument,

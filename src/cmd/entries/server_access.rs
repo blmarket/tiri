@@ -1,7 +1,6 @@
 use crate::arguments::{args_count, args_has, args_parse, args_string};
 use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{cmdq_error, cmdq_get_target_client};
-use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
 use crate::format::format_single_cstring;
 use crate::server_acl::{
@@ -10,14 +9,13 @@ use crate::server_acl::{
 };
 use crate::shared::abi::id_t;
 use crate::shared::abi::*;
-use crate::shared::account::{group, passwd};
 use crate::shared::client::ClientRef;
 use crate::shared::command::CMD_CLIENT_CANFAIL;
 use crate::shared::command::*;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::server_acl::SERVER_ACL_IS_GROUP;
-use libc::{getgrnam, getpwnam, getuid};
 use std::ffi::CStr;
+use tiri_rt::unix::{group_id_by_name, user_id, user_id_by_name};
 pub static cmd_server_access_entry: cmd_entry = {
     cmd_entry {
         name: c"server-access",
@@ -62,7 +60,7 @@ fn cmd_server_access_deny(
     server_acl_deny(id, flags);
     CmdOutcome::Normal
 }
-unsafe fn cmd_server_access_exec(
+fn cmd_server_access_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
@@ -71,10 +69,8 @@ unsafe fn cmd_server_access_exec(
     let args = cmd_get_args(&cmd_ref);
     let c_owner = cmdq_get_target_client(Some(&*item));
     let mut c: Option<ClientRef> = c_owner.clone();
-    let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let mut name: Option<std::ffi::CString> = None;
     let mut type_0: &CStr = c"";
-    let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
-    let mut gr: *mut group = ::core::ptr::null_mut::<group>();
     let mut id: id_t = 0;
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if args_has(args, 'l' as i32 as u_char) != 0 {
@@ -97,21 +93,19 @@ unsafe fn cmd_server_access_exec(
     );
     if args_has(args, 'g' as i32 as u_char) != 0 {
         type_0 = c"group";
-        gr = getgrnam(arg.as_ptr());
-        if !gr.is_null() {
-            id = (*gr).gr_gid as id_t;
-            name = (*gr).gr_name;
+        if let Some(gid) = group_id_by_name(&arg) {
+            id = gid as id_t;
+            name = Some(arg.clone());
             flags |= SERVER_ACL_IS_GROUP;
         }
     } else {
         type_0 = c"user";
-        pw = getpwnam(arg.as_ptr());
-        if !pw.is_null() {
-            id = (*pw).pw_uid as id_t;
-            name = (*pw).pw_name;
+        if let Some(uid) = user_id_by_name(&arg) {
+            id = uid as id_t;
+            name = Some(arg.clone());
         }
     }
-    if name.is_null() {
+    let Some(name) = name else {
         cmdq_error(item_handle, |out| {
             out.write_all(b"unknown ")?;
             write_cstr(out, type_0)?;
@@ -119,10 +113,10 @@ unsafe fn cmd_server_access_exec(
             write_cstr(out, &*arg)
         });
         return CmdOutcome::Error;
-    }
-    if !flags & SERVER_ACL_IS_GROUP != 0 && (id == 0 as id_t || id == getuid()) {
+    };
+    if !flags & SERVER_ACL_IS_GROUP != 0 && (id == 0 as id_t || id == user_id()) {
         cmdq_error(item_handle, |out| {
-            write_cstr(out, nullable_cstr(name))?;
+            write_cstr(out, name.as_c_str())?;
             out.write_all(b" owns the server, can't change access")
         });
         return CmdOutcome::Error;
@@ -140,14 +134,14 @@ unsafe fn cmd_server_access_exec(
         return CmdOutcome::Error;
     }
     if args_has(args, 'd' as i32 as u_char) != 0 {
-        return cmd_server_access_deny(item_handle, id, flags, type_0, CStr::from_ptr(name));
+        return cmd_server_access_deny(item_handle, id, flags, type_0, &name);
     }
     if args_has(args, 'a' as i32 as u_char) != 0 {
         if server_acl_find(id, flags) != 0 {
             cmdq_error(item_handle, |out| {
                 write_cstr(out, type_0)?;
                 out.write_all(b" ")?;
-                write_cstr(out, nullable_cstr(name))?;
+                write_cstr(out, name.as_c_str())?;
                 out.write_all(b" is already added")
             });
             return CmdOutcome::Error;
@@ -164,7 +158,7 @@ unsafe fn cmd_server_access_exec(
             cmdq_error(item_handle, |out| {
                 write_cstr(out, type_0)?;
                 out.write_all(b" ")?;
-                write_cstr(out, nullable_cstr(name))?;
+                write_cstr(out, name.as_c_str())?;
                 out.write_all(b" not found")
             });
             return CmdOutcome::Error;
@@ -177,7 +171,7 @@ unsafe fn cmd_server_access_exec(
             cmdq_error(item_handle, |out| {
                 write_cstr(out, type_0)?;
                 out.write_all(b" ")?;
-                write_cstr(out, nullable_cstr(name))?;
+                write_cstr(out, name.as_c_str())?;
                 out.write_all(b" not found")
             });
             return CmdOutcome::Error;

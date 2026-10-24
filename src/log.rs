@@ -137,7 +137,7 @@ mod tests {
     use super::*;
     use libc::snprintf;
     use std::io::{Read, Seek, SeekFrom};
-    use std::os::fd::FromRawFd;
+    use std::os::unix::ffi::OsStrExt;
 
     macro_rules! legacy_message {
         ($format:expr $(, $arg:expr)* $(,)?) => {{
@@ -272,25 +272,22 @@ mod tests {
 
     #[test]
     fn debug_sink_writes_one_escaped_line_and_preserves_nul_truncation() {
-        unsafe {
-            let file = libc::tmpfile();
-            assert!(!file.is_null());
-            let fd = libc::dup(libc::fileno(file));
-            assert!(fd >= 0);
-            libc::fclose(file);
-            let mut reader = File::from_raw_fd(fd);
-            let writer = reader.try_clone().unwrap();
-            let _restore = RestoreLog(LOG_FILE.replace(Some(writer)));
-            log_debug(format_args!("packet: {}", log_bytes(b"\x80\n\\")));
-            log_debug(format_args!("stop{}ignored", log_byte(0)));
-            reader.seek(SeekFrom::Start(0)).unwrap();
-            let mut output = Vec::new();
-            reader.read_to_end(&mut output).unwrap();
-            let lines: Vec<_> = output.split(|&byte| byte == b'\n').collect();
-            assert_eq!(lines.len(), 3);
-            assert!(lines[0].ends_with(b" packet: \\200\\n\\\\"));
-            assert!(lines[1].ends_with(b" stop"));
-            assert!(lines[2].is_empty());
-        }
+        let mut template = b"/tmp/tiri-log-XXXXXX\0".to_vec();
+        let fd = tiri_rt::unix::make_temporary(&mut template).unwrap();
+        let path = CStr::from_bytes_until_nul(&template).unwrap();
+        std::fs::remove_file(std::ffi::OsStr::from_bytes(path.to_bytes())).unwrap();
+        let mut reader = File::from(fd);
+        let writer = reader.try_clone().unwrap();
+        let _restore = RestoreLog(LOG_FILE.replace(Some(writer)));
+        log_debug(format_args!("packet: {}", log_bytes(b"\x80\n\\")));
+        log_debug(format_args!("stop{}ignored", log_byte(0)));
+        reader.seek(SeekFrom::Start(0)).unwrap();
+        let mut output = Vec::new();
+        reader.read_to_end(&mut output).unwrap();
+        let lines: Vec<_> = output.split(|&byte| byte == b'\n').collect();
+        assert_eq!(lines.len(), 3);
+        assert!(lines[0].ends_with(b" packet: \\200\\n\\\\"));
+        assert!(lines[1].ends_with(b" stop"));
+        assert!(lines[2].is_empty());
     }
 }

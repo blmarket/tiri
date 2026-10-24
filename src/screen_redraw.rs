@@ -1524,7 +1524,7 @@ fn redraw_draw_scene(
     }
     if flags & REDRAW_PANE != 0 {
         if let Some(pane) = pane_owner {
-            pane.stop_sync(None);
+            pane.stop_sync();
             pane.clear_sync_dirty();
         } else {
             for pane in window_owner
@@ -1533,7 +1533,7 @@ fn redraw_draw_scene(
                 .filter_map(std::rc::Weak::upgrade)
                 .filter(|pane| pane.is_visible())
             {
-                pane.stop_sync(None);
+                pane.stop_sync();
                 pane.clear_sync_dirty();
             }
         }

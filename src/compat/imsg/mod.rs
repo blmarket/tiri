@@ -82,14 +82,16 @@ pub(crate) fn imsgbuf_get(buffer: &mut imsgbuf) -> Option<imsg> {
 }
 
 /// Snapshot a bounded write, stopping before a second message carrying an FD.
-/// The descriptor remains owned by the queue until written or explicitly cleared.
-pub(crate) fn imsgbuf_output(buffer: &imsgbuf) -> (Vec<u8>, Option<RawFd>) {
+/// The queue keeps its descriptor until written or cleared; the snapshot sends
+/// a duplicate, so a pending write never outlives the queued descriptor.
+pub(crate) fn imsgbuf_output(buffer: &imsgbuf) -> std::io::Result<(Vec<u8>, Option<OwnedFd>)> {
     let mut bytes = Vec::new();
     let fd = buffer
         .outgoing
         .front()
         .and_then(|message| message.fd.as_ref())
-        .map(AsRawFd::as_raw_fd);
+        .map(OwnedFd::try_clone)
+        .transpose()?;
     for message in &buffer.outgoing {
         if !bytes.is_empty() && message.fd.is_some() {
             break;
@@ -101,7 +103,7 @@ pub(crate) fn imsgbuf_output(buffer: &imsgbuf) -> (Vec<u8>, Option<RawFd>) {
             break;
         }
     }
-    (bytes, fd)
+    Ok((bytes, fd))
 }
 
 /// A positive write transfers the attached FD even when its bytes are partial.

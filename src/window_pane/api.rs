@@ -207,14 +207,15 @@ pub trait WindowPane {
     /// Whether the pane still has a PTY, including an exited process being drained.
     fn has_tty(&self) -> bool;
     fn is_synchronized(&self) -> bool;
-    /// Enter sync mode on `base`, the pane's base screen as borrowed by the
-    /// write that requested it.
-    fn start_sync(&self, base: &mut screen);
+    /// Read the base screen; the pane stays borrowed until `read` returns.
+    fn read_base<R>(&self, read: impl FnOnce(&screen) -> R) -> R;
+    /// Mutable form of [`Self::read_base`].
+    fn write_base<R>(&self, write: impl FnOnce(&mut screen) -> R) -> R;
+    /// Enter sync mode on the pane's base screen.
+    fn start_sync(&self);
     /// Cancel the timer and leave sync mode before drawing the accumulated rows.
-    /// `writing` is the pane's base screen when a write context currently
-    /// borrows it; `None` reaches it through the pane. No pane reference is
-    /// retained during terminal callbacks.
-    fn stop_sync(&self, writing: Option<&mut screen>);
+    /// No pane reference is retained during terminal callbacks.
+    fn stop_sync(&self);
     fn clear_sync_dirty(&self);
     /// Decide whether a screen write draws immediately; synchronized writes
     /// mark rows in the pane-owned bitmap, including resize invalidation.
@@ -913,11 +914,17 @@ impl WindowPane for Rc<RefCell<window_pane>> {
     fn is_synchronized(&self) -> bool {
         self.borrow().base.mode & MODE_SYNC != 0
     }
-    fn start_sync(&self, base: &mut screen) {
-        super::pane_sync::start(self, base);
+    fn read_base<R>(&self, read: impl FnOnce(&screen) -> R) -> R {
+        read(&self.borrow().base)
     }
-    fn stop_sync(&self, writing: Option<&mut screen>) {
-        super::pane_sync::stop(self, writing);
+    fn write_base<R>(&self, write: impl FnOnce(&mut screen) -> R) -> R {
+        write(&mut self.borrow_mut().base)
+    }
+    fn start_sync(&self) {
+        super::pane_sync::start(self);
+    }
+    fn stop_sync(&self) {
+        super::pane_sync::stop(self);
     }
     fn clear_sync_dirty(&self) {
         super::pane_sync::clear_dirty(&mut self.borrow_mut());

@@ -35,9 +35,7 @@ use crate::shared::pane::window_pane;
 use crate::shared::screen::{screen, MODE_CURSOR};
 use crate::shared::screen_write::screen_write_ctx;
 use crate::shared::session::{SessionRef, SessionWeak};
-use crate::shared::window::{
-    window_mode, window_mode_entry, window_mode_screen_payload, winlink, ModeDataRef,
-};
+use crate::shared::window::{window_mode, window_mode_entry, winlink, ModeDataRef};
 use crate::shared::window::{WindowRef, WindowWeak};
 use crate::shared::window::{
     WINDOW_MODE_HIDE_PANE_STATUS, WINDOW_MODE_HIDE_SCROLLBARS, WINDOW_MODE_NO_STACK,
@@ -878,7 +876,9 @@ fn window_panes_get_screen(
         .expect("live mode entry")
         .boxed_data_cell::<window_panes_modedata>()
     {
-        unsafe { window_mode_screen_payload(data, |data| visit(&mut data.screen)) };
+        if let Ok(mut data) = data.try_borrow_mut() {
+            visit(&mut data.screen);
+        }
     }
 }
 

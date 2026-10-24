@@ -1440,8 +1440,11 @@ fn format_cb_tree_mode_format(_ft: &mut format_tree) -> Option<CString> {
 }
 fn format_cb_uid(_ft: &mut format_tree) -> Option<CString> {
     Some(
-        CString::new(format!("{}", unsafe { getuid() } as ::core::ffi::c_long))
-            .expect("formatted numbers contain no NUL"),
+        CString::new(format!(
+            "{}",
+            tiri_rt::unix::user_id() as ::core::ffi::c_long
+        ))
+        .expect("formatted numbers contain no NUL"),
     )
 }
 fn format_cb_user(_ft: &mut format_tree) -> Option<CString> {
@@ -1449,13 +1452,7 @@ fn format_cb_user(_ft: &mut format_tree) -> Option<CString> {
     if let Some(name) = CACHED.get() {
         return Some(name.clone());
     }
-    let name = unsafe {
-        let pw = getpwuid(getuid());
-        if pw.is_null() {
-            return None;
-        }
-        CStr::from_ptr((*pw).pw_name).to_owned()
-    };
+    let name = tiri_rt::unix::user_name(tiri_rt::unix::user_id())?;
     let _ = CACHED.set(name);
     CACHED.get().cloned()
 }

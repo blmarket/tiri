@@ -4,7 +4,6 @@ use crate::shared::command::CMD_STARTSERVER;
 use crate::shared::command::*;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::signal::SIGTERM;
-use libc::kill;
 pub static cmd_kill_server_entry: cmd_entry = {
     cmd_entry {
         name: c"kill-server",
@@ -55,7 +54,7 @@ pub static cmd_start_server_entry: cmd_entry = {
         exec: Some(cmd_kill_server_exec),
     }
 };
-unsafe fn cmd_kill_server_exec(
+fn cmd_kill_server_exec(
     self_0: refbox::Weak<cmd>,
     _item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
@@ -63,7 +62,7 @@ unsafe fn cmd_kill_server_exec(
         cmd_get_entry(&self_0.try_borrow().expect("live command")),
         &cmd_kill_server_entry,
     ) {
-        kill(std::process::id() as libc::pid_t, SIGTERM);
+        let _ = tiri_rt::unix::send_signal(std::process::id() as libc::pid_t, SIGTERM);
     }
     CmdOutcome::Normal
 }

@@ -39,9 +39,7 @@ use crate::shared::session::SessionRef;
 use crate::shared::sort::sort_criteria;
 use crate::shared::sort::*;
 
-use crate::shared::window::{
-    window_mode, window_mode_entry, window_mode_screen_payload, winlink, ModeDataRef,
-};
+use crate::shared::window::{window_mode, window_mode_entry, winlink, ModeDataRef};
 use crate::sort::{sort_get_sessions, sort_get_winlinks};
 use crate::status::status_message_set;
 use crate::style::style_apply_with_options;
@@ -359,7 +357,7 @@ fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
                     & (1 as ::core::ffi::c_int) << (j & 0x7 as u_int)
                     == 0)
                 {
-                    grid_get_cell(ctx.screen.grid(), j, i, &mut gc);
+                    ctx.with_screen(|s| grid_get_cell(s.grid(), j, i, &mut gc));
                     gc.attr = mgc.attr;
                     gc.fg = mgc.fg;
                     gc.bg = mgc.bg;
@@ -382,7 +380,7 @@ fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
             area_width: sx,
             prompt_line: sy.wrapping_sub(1 as u_int),
         };
-        ctx.screen.mode |= MODE_CURSOR;
+        ctx.with_screen_mut(|s| s.mode |= MODE_CURSOR);
         data.prompt_cx = prompt_draw(
             &prompt.try_borrow_mut().expect("unborrowed prompt"),
             &mut ctx,
@@ -482,7 +480,9 @@ fn window_switch_get_screen(
         .expect("live mode entry")
         .boxed_data_cell::<window_switch_modedata>()
     {
-        unsafe { window_mode_screen_payload(data, |data| visit(&mut data.screen)) };
+        if let Ok(mut data) = data.try_borrow_mut() {
+            visit(&mut data.screen);
+        }
     }
 }
 

@@ -14,7 +14,7 @@ use crate::reactor::BufferEvent;
 use crate::resize::recalculate_sizes;
 use crate::screen_write::{
     screen_write_cursormove, screen_write_linefeed, screen_write_scrollregion,
-    screen_write_start_pane, screen_write_stop,
+    screen_write_start_base, screen_write_stop,
 };
 use crate::server_client::Client;
 use crate::shared::client::ClientRef;
@@ -170,12 +170,7 @@ pub(super) fn finish_process(
             let format =
                 options_get_string(&pane_owner.borrow_options_mut(), c"remain-on-exit-format");
             if !format.is_empty() {
-                // The write context reaches the pane while it holds `base`
-                // (geometry, sync state, format expansion), so the pane cannot
-                // be borrowed for its lifetime.
-                let mut ctx = screen_write_start_pane(pane_owner, unsafe {
-                    &mut (*pane_owner.as_ptr()).base
-                });
+                let mut ctx = screen_write_start_base(pane_owner, true);
                 screen_write_scrollregion(&mut ctx, 0 as u_int, sy.wrapping_sub(1 as u_int));
                 screen_write_cursormove(
                     &mut ctx,

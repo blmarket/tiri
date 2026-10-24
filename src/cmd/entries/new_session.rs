@@ -90,7 +90,7 @@ pub static cmd_has_session_entry: cmd_entry = {
         exec: Some(cmd_new_session_exec),
     }
 };
-unsafe fn cmd_new_session_exec(
+fn cmd_new_session_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {

@@ -21,7 +21,6 @@ use crate::server::server_add_message;
 use crate::server_client::Client as _;
 use crate::shared::abi::*;
 use crate::shared::abi::{__uid_t, uid_t};
-use crate::shared::account::passwd;
 use crate::shared::client::{ClientRef, ClientWeak};
 use crate::shared::client::{CLIENT_CONTROL, CLIENT_UTF8};
 use crate::shared::command::*;
@@ -37,9 +36,9 @@ use crate::shared::key::*;
 use crate::shared::session::SessionRef;
 use crate::status::status_message_set;
 use crate::text::utf8::utf8_sanitize_cstring;
-use libc::{getpwuid, getuid};
 use std::ffi::{CStr, CString};
 use tiri_buffer::SegmentedBuf;
+use tiri_rt::unix::{user_id, user_name};
 
 /// Queue-created command state. Only this module may construct or remove it.
 ///
@@ -190,7 +189,7 @@ impl cmdq_item {
             target: Default::default(),
             cmdlist: Default::default(),
             cmd: Default::default(),
-            start: Some(Box::new(|item| unsafe { cmdq_fire_command(item) })),
+            start: Some(Box::new(cmdq_fire_command)),
         }
     }
 }
@@ -867,7 +866,7 @@ fn cmdq_find_flag(
     }
     CmdOutcome::Normal
 }
-unsafe fn cmdq_add_message(item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>) {
+fn cmdq_add_message(item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>) {
     let (c_owner, state, command) = {
         let item = item_handle.borrow();
         (
@@ -878,14 +877,12 @@ unsafe fn cmdq_add_message(item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_ite
     };
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut uid: uid_t = 0;
-    let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
     let tmp = cmd_print_cstring(&command.try_borrow().expect("live command"));
     if let Some(c_value) = c.as_ref() {
         uid = c_value.peer_uid();
-        let user: CString = if uid != -(1 as ::core::ffi::c_int) as uid_t && uid != getuid() {
-            pw = getpwuid(uid as __uid_t);
-            if !pw.is_null() {
-                let name = CStr::from_ptr((*pw).pw_name).to_bytes();
+        let user: CString = if uid != -(1 as ::core::ffi::c_int) as uid_t && uid != user_id() {
+            if let Some(name) = user_name(uid as __uid_t) {
+                let name = name.to_bytes();
                 let mut bytes = Vec::with_capacity(name.len() + 2);
                 bytes.push(b'[');
                 bytes.extend_from_slice(name);
@@ -924,9 +921,7 @@ unsafe fn cmdq_add_message(item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_ite
         });
     }
 }
-unsafe fn cmdq_fire_command(
-    item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
-) -> CmdOutcome {
+fn cmdq_fire_command(item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>) -> CmdOutcome {
     let mut current_block: u64;
     let (saved_client, state, cmd, saved, group) = {
         let item = item_handle.borrow();

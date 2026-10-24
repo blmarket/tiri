@@ -12,8 +12,9 @@ impl TerminalInput {
     pub fn len(&self) -> usize {
         self.buffer.remaining()
     }
-    pub fn append(&mut self, bytes: Vec<u8>) {
-        self.buffer.put(SegmentedBuf::from(bytes));
+    /// Append bytes that arrived after this buffer's remaining bytes.
+    pub fn append(&mut self, bytes: impl Into<SegmentedBuf>) {
+        self.buffer.put(bytes.into());
     }
     /// Borrow the buffer's allocation, coalescing segments only when necessary.
     pub fn bytes(&mut self) -> &[u8] {
@@ -22,6 +23,12 @@ impl TerminalInput {
     pub fn drain(&mut self, count: usize) {
         let count = count.min(self.len());
         self.buffer.advance(count);
+    }
+}
+
+impl From<TerminalInput> for SegmentedBuf {
+    fn from(input: TerminalInput) -> Self {
+        input.buffer
     }
 }
 

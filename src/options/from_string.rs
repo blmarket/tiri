@@ -3,10 +3,10 @@ use super::diagnostic::options_string_cause;
 use super::store::*;
 use super::types::*;
 use crate::compat::strtonum::strtonum;
-use crate::ffi::fnmatch::fnmatch_matches;
 use crate::format::bytes::write_cstr;
 use crate::grid::grid_default_cell;
 use crate::key_string::key_string_parse_cstr;
+use tiri_rt::unix::fnmatch;
 
 use crate::style::colour::colour_parse_cstr;
 use crate::style::{style_parse, style_parse_colour};
@@ -52,7 +52,7 @@ fn options_from_string_check(oe: &options_table_entry, value: &CStr) -> Result<(
     }
     if oe
         .pattern
-        .is_some_and(|pattern| !fnmatch_matches(pattern, value, 0))
+        .is_some_and(|pattern| !fnmatch(pattern, value, 0))
     {
         return Err(options_string_cause(c"value is invalid: %s", &[value]));
     }

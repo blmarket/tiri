@@ -22,15 +22,15 @@ use crate::shared::event::*;
 use crate::shared::event::{EV_READ, EV_WRITE};
 use crate::shared::format::FORMAT_NONE;
 use crate::shared::pane::window_pane;
-use crate::shared::posix_io::{
-    _PATH_BSHELL, _PATH_DEVNULL, O_WRONLY, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO,
-};
+use crate::shared::posix_io::{_PATH_BSHELL, _PATH_DEVNULL, O_WRONLY, STDERR_FILENO};
 use crate::shared::session::SessionRef;
 use crate::shared::window::winlink;
 use crate::tmux::setblocking;
-use libc::fork;
-use std::os::fd::{AsFd, AsRawFd, IntoRawFd};
-use tiri_rt::unix::{block_signals, exec, exit_now, lead_process_group, set_signal_mask};
+use std::os::fd::AsFd;
+use tiri_rt::unix::{
+    block_signals, close_on_exec_from, exec_with_stdio, exit_now, fork, lead_process_group,
+    set_signal_mask, Program,
+};
 /// Start or stop piping the pane's output through a shell command. The
 /// server is single-threaded, so the forked child may run ordinary code until
 /// it execs.
@@ -97,53 +97,48 @@ pub(super) fn pipe_pane(
         let cmd = format_expand_time_cstring(ft, args_string(args, 0 as u_int).unwrap_or(c""));
         drop(ft_owner);
         let oldset = block_signals();
-        let pipe_pid = unsafe { fork() } as pid_t;
-        pane_owner.borrow_mut().pipe_pid = pipe_pid;
-        match pipe_pid {
-            -1 => {
+        let forked = fork();
+        pane_owner.borrow_mut().pipe_pid = match forked {
+            Ok(Some(pid)) => pid,
+            Ok(None) => 0,
+            Err(_) => -1,
+        };
+        match forked {
+            Err(error) => {
                 set_signal_mask(&oldset);
                 cmdq_error(item_handle, |out| {
                     out.write_all(b"fork error: ")?;
-                    write!(out, "{}", ErrorText(&std::io::Error::last_os_error()))
+                    write!(out, "{}", ErrorText(&error))
                 });
                 CmdOutcome::Error
             }
-            0 => {
-                unsafe { proc_clear_signals(&server_proc, 1 as ::core::ffi::c_int) };
+            Ok(None) => {
+                proc_clear_signals(&server_proc(), 1 as ::core::ffi::c_int);
                 set_signal_mask(&oldset);
                 drop(parent);
                 if lead_process_group().is_err() {
                     exit_now(1 as ::core::ffi::c_int);
                 }
-                let null = tiri_rt::unix::open(_PATH_DEVNULL, O_WRONLY, 0).ok();
-                let redirect = |fd: Option<std::os::fd::BorrowedFd<'_>>, target| {
-                    if !fd.is_some_and(|fd| unsafe { tiri_rt::unix::redirect(fd, target) }.is_ok())
-                    {
-                        exit_now(1 as ::core::ffi::c_int);
-                    }
+                let Ok(null) = tiri_rt::unix::open(_PATH_DEVNULL, O_WRONLY, 0) else {
+                    exit_now(1 as ::core::ffi::c_int);
                 };
-                if out != 0 {
-                    redirect(Some(child.as_fd()), STDIN_FILENO);
+                let stdin = if out != 0 {
+                    child.as_fd()
                 } else {
-                    redirect(null.as_ref().map(AsFd::as_fd), STDIN_FILENO);
-                }
-                if in_0 != 0 {
-                    redirect(Some(child.as_fd()), STDOUT_FILENO);
-                    if child.as_raw_fd() == STDOUT_FILENO {
-                        let _ = child.into_raw_fd();
-                    } else {
-                        drop(child);
-                    }
+                    null.as_fd()
+                };
+                let stdout = if in_0 != 0 {
+                    child.as_fd()
                 } else {
-                    redirect(null.as_ref().map(AsFd::as_fd), STDOUT_FILENO);
-                }
-                redirect(null.as_ref().map(AsFd::as_fd), STDERR_FILENO);
-                let _ = null.map(IntoRawFd::into_raw_fd);
-                unsafe { tiri_rt::unix::close_from(STDERR_FILENO + 1 as ::core::ffi::c_int) };
-                exec(_PATH_BSHELL, &[c"sh", c"-c", &cmd]);
-                exit_now(1 as ::core::ffi::c_int);
+                    null.as_fd()
+                };
+                close_on_exec_from(STDERR_FILENO + 1 as ::core::ffi::c_int);
+                exec_with_stdio(
+                    [stdin, stdout, null.as_fd()],
+                    Program::Path(_PATH_BSHELL, &[c"sh", c"-c", &cmd]),
+                );
             }
-            _ => {
+            Ok(Some(_)) => {
                 set_signal_mask(&oldset);
                 drop(child);
                 setblocking(parent.as_fd(), 0 as ::core::ffi::c_int);

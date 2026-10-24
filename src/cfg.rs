@@ -84,7 +84,7 @@ fn cfg_client_done(item: &std::rc::Rc<std::cell::RefCell<cmdq_item>>) -> CmdOutc
     }
     CmdOutcome::Normal
 }
-unsafe fn cfg_done() -> CmdOutcome {
+fn cfg_done() -> CmdOutcome {
     if cfg_finished() {
         return CmdOutcome::Normal;
     }
@@ -121,7 +121,7 @@ pub fn start_cfg() {
     }
     cmdq_append(
         None,
-        cmdq_get_callback_owned(c"cfg_done", Some(Box::new(|_| unsafe { cfg_done() }))),
+        cmdq_get_callback_owned(c"cfg_done", Some(Box::new(|_| cfg_done()))),
     );
 }
 pub fn load_cfg(
@@ -304,7 +304,7 @@ pub fn cfg_print_causes(item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>
         }
     });
 }
-pub unsafe fn cfg_show_causes(s_owner: Option<&SessionRef>) {
+pub fn cfg_show_causes(s_owner: Option<&SessionRef>) {
     let mut s = s_owner.cloned();
     let mut registry_c_owner = ClientRegistry::first();
     let mut c: Option<ClientRef> = registry_c_owner.clone();
@@ -413,25 +413,21 @@ mod cfg_wait_tests {
 
     #[test]
     fn cfg_done_resumes_the_waiting_startup_client() {
-        unsafe {
-            let _options = Options::new();
-            let owner = clients::with_queue();
-            let (ran, released) = (Rc::new(Cell::new(false)), Rc::new(Cell::new(false)));
-            let head = startup_queue(&owner, &ran, &released);
-            assert_eq!(cmdq_next(Some(&owner)), 0);
-            assert!(
-                CFG_WAITER.with_borrow(|waiter| waiter.as_ref().is_some_and(|w| !w.is_cancelled()))
-            );
-            assert!(!ran.get());
+        let _options = Options::new();
+        let owner = clients::with_queue();
+        let (ran, released) = (Rc::new(Cell::new(false)), Rc::new(Cell::new(false)));
+        let head = startup_queue(&owner, &ran, &released);
+        assert_eq!(cmdq_next(Some(&owner)), 0);
+        assert!(CFG_WAITER.with_borrow(|waiter| waiter.as_ref().is_some_and(|w| !w.is_cancelled())));
+        assert!(!ran.get());
 
-            assert!(matches!(cfg_done(), CmdOutcome::Normal));
-            assert!(cfg_finished());
-            assert!(CFG_WAITER.with_borrow(Option::is_none));
-            assert!(!ran.get());
-            assert_eq!(cmdq_next(Some(&owner)), 1);
-            assert!(head.upgrade().is_none());
-            assert!(ran.get());
-        }
+        assert!(matches!(cfg_done(), CmdOutcome::Normal));
+        assert!(cfg_finished());
+        assert!(CFG_WAITER.with_borrow(Option::is_none));
+        assert!(!ran.get());
+        assert_eq!(cmdq_next(Some(&owner)), 1);
+        assert!(head.upgrade().is_none());
+        assert!(ran.get());
     }
 
     #[test]
@@ -448,26 +444,25 @@ mod cfg_wait_tests {
 
     #[test]
     fn a_freed_startup_client_is_not_retained_and_cfg_done_skips_it() {
-        unsafe {
-            let _options = Options::new();
-            let owner = clients::with_queue();
-            let (ran, released) = (Rc::new(Cell::new(false)), Rc::new(Cell::new(false)));
-            let head = startup_queue(&owner, &ran, &released);
-            assert_eq!(cmdq_next(Some(&owner)), 0);
-            owner.update_flags(CLIENT_DEAD as u64, 0);
-            assert_eq!(cmdq_next(Some(&owner)), 0);
+        let _options = Options::new();
+        let owner = clients::with_queue();
+        let (ran, released) = (Rc::new(Cell::new(false)), Rc::new(Cell::new(false)));
+        let head = startup_queue(&owner, &ran, &released);
+        assert_eq!(cmdq_next(Some(&owner)), 0);
+        owner.update_flags(CLIENT_DEAD as u64, 0);
+        assert_eq!(cmdq_next(Some(&owner)), 0);
 
-            let client = Rc::downgrade(&owner);
-            drop(owner);
-            assert!(client.upgrade().is_none());
-            assert!(head.upgrade().is_none());
-            assert!(released.get());
-            assert!(CFG_WAITER
-                .with_borrow(|waiter| waiter.as_ref().is_some_and(CmdqWaiter::is_cancelled)));
+        let client = Rc::downgrade(&owner);
+        drop(owner);
+        assert!(client.upgrade().is_none());
+        assert!(head.upgrade().is_none());
+        assert!(released.get());
+        assert!(
+            CFG_WAITER.with_borrow(|waiter| waiter.as_ref().is_some_and(CmdqWaiter::is_cancelled))
+        );
 
-            let _ = cfg_done();
-            assert!(CFG_WAITER.with_borrow(Option::is_none));
-            assert!(!ran.get());
-        }
+        let _ = cfg_done();
+        assert!(CFG_WAITER.with_borrow(Option::is_none));
+        assert!(!ran.get());
     }
 }

@@ -13,7 +13,7 @@
 //! assert_eq!(value.as_bytes(), b"client 7: \xffx (002a)");
 //! ```
 
-use std::ffi::{c_char, CStr, CString, NulError};
+use std::ffi::{CStr, CString, NulError};
 use std::fmt;
 use std::io::{self, Write};
 
@@ -114,6 +114,32 @@ pub fn cstr_append_into(dst: &mut [u8], src: &CStr) -> usize {
 
 /// POSIX `basename`: trailing slashes are ignored, an all-slash path is `/`
 /// and an empty path is `.`.
+/// The directory part of `path`, as glibc's `dirname` computes it.
+pub fn cstr_dirname(path: &CStr) -> CString {
+    let path = path.to_bytes();
+    let leading = |end: usize| {
+        path[..end]
+            .iter()
+            .rposition(|&byte| byte != b'/')
+            .map(|i| i + 1)
+    };
+    let mut last = path.iter().rposition(|&byte| byte == b'/');
+    if let Some(slash) = last.filter(|&slash| slash != 0 && slash + 1 == path.len()) {
+        if let Some(run) = leading(slash) {
+            last = path[..run].iter().rposition(|&byte| byte == b'/');
+        }
+    }
+    let Some(slash) = last else {
+        return c".".to_owned();
+    };
+    let end = match leading(slash) {
+        Some(run) => run,
+        None if slash == 1 => 2,
+        None => 1,
+    };
+    CString::new(&path[..end]).expect("a part of a C string has no NUL")
+}
+
 pub fn cstr_basename(path: &CStr) -> CString {
     let path = path.to_bytes();
     let base: &[u8] = if path.is_empty() {
@@ -129,15 +155,6 @@ pub fn cstr_basename(path: &CStr) -> CString {
         b"/"
     };
     CString::new(base).expect("a part of a C string has no NUL")
-}
-
-/// Borrow a C string pointer from code that has not moved to `&CStr` yet.
-///
-/// # Safety
-/// A non-null pointer must reference a readable NUL-terminated string that
-/// outlives the returned borrow.
-pub unsafe fn nullable_cstr<'a>(ptr: *const c_char) -> Option<&'a CStr> {
-    (!ptr.is_null()).then(|| CStr::from_ptr(ptr))
 }
 
 #[cfg(test)]
@@ -205,18 +222,7 @@ mod tests {
     fn mixed_output_matches_c_bytes_characters_and_widths() {
         let value = CString::new(b"name\xff".as_slice()).unwrap();
         for byte in [0u8, b'M', 0x80, 0xff] {
-            let mut expected = [0u8; 64];
-            let count = unsafe {
-                libc::snprintf(
-                    expected.as_mut_ptr().cast(),
-                    expected.len(),
-                    c"%4u: %s:%c:%u".as_ptr(),
-                    7u32,
-                    value.as_ptr(),
-                    byte as std::ffi::c_int,
-                    u32::MAX,
-                )
-            };
+            let expected = [b"   7: name\xff:".as_slice(), &[byte], b":4294967295"].concat();
             let actual = format_bytes_with(|out| {
                 write!(out, "{:4}: ", 7u32)?;
                 out.write_all(value.as_bytes())?;
@@ -224,8 +230,7 @@ mod tests {
                 write!(out, "{}", u32::MAX)
             })
             .unwrap();
-            assert_eq!(actual.len(), count as usize);
-            assert_eq!(actual, &expected[..count as usize]);
+            assert_eq!(actual, expected);
         }
     }
 
@@ -239,15 +244,40 @@ mod tests {
     }
 
     #[test]
-    fn raw_c_strings_stop_at_nul_and_keep_legacy_null_text() {
-        unsafe {
-            let raw = [0xffu8, b'x', 0, b'y', 0];
-            let actual =
-                format_bytes_with(|out| write_cstr(out, nullable_cstr(raw.as_ptr().cast())))
-                    .unwrap();
-            assert_eq!(actual, b"\xffx");
-            let actual = format_bytes_with(|out| write_cstr(out, None)).unwrap();
-            assert_eq!(actual, b"(null)");
+    fn c_strings_stop_at_nul_and_keep_legacy_null_text() {
+        let raw = [0xffu8, b'x', 0, b'y', 0];
+        let raw = CStr::from_bytes_until_nul(&raw).unwrap();
+        let actual = format_bytes_with(|out| write_cstr(out, raw)).unwrap();
+        assert_eq!(actual, b"\xffx");
+        let actual = format_bytes_with(|out| write_cstr(out, None)).unwrap();
+        assert_eq!(actual, b"(null)");
+    }
+
+    #[test]
+    fn dirname_matches_glibc() {
+        for (path, expected) in [
+            ("", "."),
+            ("a", "."),
+            ("/", "/"),
+            ("//", "//"),
+            ("/a", "/"),
+            ("//a", "//"),
+            ("///a", "/"),
+            ("a/", "."),
+            ("a/b", "a"),
+            ("a/b/", "a"),
+            ("a//b", "a"),
+            ("//a/b", "//a"),
+            ("/a//", "/"),
+            ("a/b/c//", "a/b"),
+            ("////a//b//", "////a"),
+        ] {
+            let path = std::ffi::CString::new(path).unwrap();
+            assert_eq!(
+                cstr_dirname(&path).as_bytes(),
+                expected.as_bytes(),
+                "{path:?}"
+            );
         }
     }
 }

@@ -33,9 +33,7 @@ use crate::shared::sort::sort_criteria;
 use crate::shared::sort::*;
 use crate::shared::spawn::{spawn_editor_state, EditorHandle};
 use crate::shared::vis::{VIS_CSTYLE, VIS_OCTAL, VIS_TAB};
-use crate::shared::window::{
-    window_mode, window_mode_entry, window_mode_screen_payload, winlink, ModeDataRef,
-};
+use crate::shared::window::{window_mode, window_mode_entry, winlink, ModeDataRef};
 use crate::sort::sort_get_buffers;
 use crate::spawn::{spawn_editor, spawn_editor_write};
 use crate::text::search::contains;
@@ -249,8 +247,8 @@ fn window_buffer_draw(
     mut sx: u_int,
     mut sy: u_int,
 ) {
-    let cx = ctx.screen.cx;
-    let cy = ctx.screen.cy;
+    let cx = ctx.with_screen(|s| s.cx);
+    let cy = ctx.with_screen(|s| s.cy);
     let Some(pb) = paste_get_name(&item.name) else {
         return;
     };
@@ -456,9 +454,9 @@ fn window_buffer_get_screen(
     else {
         return;
     };
-    let tree_owner = unsafe { window_mode_screen_payload(&data, |data| data.data.clone()) };
+    let tree_owner = data.try_borrow().ok().and_then(|data| data.data.clone());
     if let Some(tree_owner) = tree_owner {
-        unsafe { mode_tree_visit_screen(&tree_owner, visit) };
+        mode_tree_visit_screen(&tree_owner, visit);
     }
 }
 
@@ -740,9 +738,6 @@ mod tests {
 
     #[test]
     fn buffer_search_matches_binary_substrings_without_unicode_case_folding() {
-        unsafe {
-            assert!(!libc::setlocale(libc::LC_CTYPE, c"C.UTF-8".as_ptr()).is_null());
-        }
         let bytes = b"\xffA\0ZbA\n";
         for (find, sensitive, insensitive) in [
             (&b""[..], false, false),
@@ -784,11 +779,11 @@ mod tests {
         }
 
         assert!(first.is(&items[0]));
+        assert_eq!(first.try_borrow_mut().unwrap().name.as_ptr(), first_name);
         assert_eq!(
-            unsafe { CStr::from_ptr(first_name).to_bytes() },
+            first.try_borrow_mut().unwrap().name.as_bytes(),
             b"\xffbuffer"
         );
-        assert_eq!(first.try_borrow_mut().unwrap().name.as_ptr(), first_name);
         assert_eq!(empty_item.try_borrow_mut().unwrap().name.as_bytes(), b"");
 
         let selected = ModeTreeItemData::Buffer(first.clone());

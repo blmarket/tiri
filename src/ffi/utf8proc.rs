@@ -10,7 +10,12 @@ pub type utf8proc_category_t = ::core::ffi::c_uint;
 extern "C" {
     pub fn utf8proc_category(codepoint: utf8proc_int32_t) -> utf8proc_category_t;
     pub fn utf8proc_charwidth(codepoint: utf8proc_int32_t) -> ::core::ffi::c_int;
-    pub fn utf8proc_version() -> *const ::core::ffi::c_char;
+    fn utf8proc_version() -> *const ::core::ffi::c_char;
+}
+
+/// The linked utf8proc's version string.
+pub(crate) fn version() -> &'static std::ffi::CStr {
+    unsafe { std::ffi::CStr::from_ptr(utf8proc_version()) }
 }
 
 const UTF8PROC_CATEGORY_CO: utf8proc_category_t = 29;

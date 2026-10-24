@@ -147,10 +147,6 @@ mod tests {
             let length = buffer.remaining();
             let pointer = buffer.pullup(length).unwrap().as_ptr();
             assert_eq!(
-                unsafe { std::ffi::CStr::from_ptr(pointer.cast()) }.to_bytes(),
-                buffer.chunk()
-            );
-            assert_eq!(
                 buffer.chunk(),
                 format!("{}:-7:42", "x".repeat(size)).as_bytes()
             );

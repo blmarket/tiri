@@ -2,12 +2,12 @@
 
 #![cfg(unix)]
 
+mod common;
+
 use std::fs::{self, File};
 use std::io::{ErrorKind, Read};
-use std::os::fd::{AsRawFd, FromRawFd};
-use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
-use std::process::{Command, Output};
+use std::process::{Child, Command, Output};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -62,49 +62,28 @@ impl Drop for Server {
 
 struct AttachedClient {
     master: File,
-    pid: libc::pid_t,
+    child: Child,
 }
 
 impl AttachedClient {
     fn new(server: &Server) -> Self {
-        let mut fd = -1;
-        let mut size = libc::winsize {
+        let size = libc::winsize {
             ws_row: 24,
             ws_col: 80,
             ws_xpixel: 0,
             ws_ypixel: 0,
         };
-        let pid = unsafe {
-            libc::forkpty(
-                &mut fd,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-                &raw mut size,
-            )
-        };
-        assert!(pid >= 0, "forkpty: {}", std::io::Error::last_os_error());
-        if pid == 0 {
-            let error = Command::new(env!("CARGO_BIN_EXE_tiri"))
-                .args(["-f", "/dev/null", "-S"])
-                .arg(&server.socket)
-                .args(["attach-session", "-t", "preview"])
-                .env("TERM", "xterm-256color")
-                .env("SHELL", "/bin/sh")
-                .env("LC_ALL", "C")
-                .env_remove("TMUX")
-                .exec();
-            eprintln!("attach-session exec failed: {error}");
-            unsafe { libc::_exit(127) };
-        }
-        let master = unsafe { File::from_raw_fd(fd) };
-        let flags = unsafe { libc::fcntl(master.as_raw_fd(), libc::F_GETFL) };
-        assert!(flags >= 0, "get PTY flags");
-        assert!(
-            unsafe { libc::fcntl(master.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) }
-                >= 0,
-            "set PTY nonblocking"
-        );
-        Self { master, pid }
+        let mut command = Command::new(env!("CARGO_BIN_EXE_tiri"));
+        command
+            .args(["-f", "/dev/null", "-S"])
+            .arg(&server.socket)
+            .args(["attach-session", "-t", "preview"])
+            .env("TERM", "xterm-256color")
+            .env("SHELL", "/bin/sh")
+            .env("LC_ALL", "C")
+            .env_remove("TMUX");
+        let (master, child) = common::spawn_on_terminal(command, size);
+        Self { master, child }
     }
 
     fn read_until(&mut self, expected: &[&[u8]]) -> Vec<u8> {
@@ -138,9 +117,9 @@ impl AttachedClient {
 
 impl Drop for AttachedClient {
     fn drop(&mut self) {
-        unsafe { libc::kill(self.pid, libc::SIGTERM) };
+        let _ = tiri_rt::unix::send_signal(self.child.id() as libc::pid_t, libc::SIGTERM);
         let mut chunk = [0; 8192];
-        while unsafe { libc::waitpid(self.pid, std::ptr::null_mut(), libc::WNOHANG) } == 0 {
+        while matches!(self.child.try_wait(), Ok(None)) {
             let _ = self.master.read(&mut chunk);
             thread::sleep(Duration::from_millis(10));
         }

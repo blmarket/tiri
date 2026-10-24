@@ -37,8 +37,6 @@ use crate::events_payload::{
     event_payload_create, event_payload_set_int, event_payload_set_pane, event_payload_set_string,
     event_payload_set_target, event_payload_set_uint, event_payload_set_window,
 };
-use crate::ffi::fnmatch::fnmatch_matches;
-use crate::ffi::regex::RegexStorage;
 use crate::file::{file_cancel, file_read_wait, FileOutcome};
 use crate::format::bytes::write_cstr;
 use crate::grid::grid_cells_look_equal;
@@ -60,6 +58,8 @@ use crate::screen::{
     screen_set_title,
 };
 pub use api::WindowPane;
+use tiri_rt::unix::fnmatch;
+use tiri_rt::unix::regex::RegexStorage;
 
 use crate::server::{marked_pane, server_check_marked};
 use crate::server_client::Client;
@@ -722,7 +722,7 @@ fn window_pane_resize(pane_owner: &Rc<std::cell::RefCell<window_pane>>, sx: u_in
             return;
         }
     }
-    pane_owner.stop_sync(None);
+    pane_owner.stop_sync();
     let (old_sx, old_sy) = {
         let mut wp = pane_owner.borrow_mut();
         let old_sx = wp.sx;
@@ -1435,7 +1435,7 @@ fn window_pane_search(
             log_bytes(&line)
         ));
         if regex == 0 {
-            found = fnmatch_matches(
+            found = fnmatch(
                 glob.as_ref().expect("nonregex search has a pattern"),
                 CStr::from_bytes_with_nul(&line).expect("line truncated at its first NUL"),
                 flags,

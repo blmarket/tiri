@@ -37,9 +37,7 @@ use crate::shared::session::SessionRef;
 use crate::shared::sort::sort_criteria;
 use crate::shared::sort::*;
 use crate::shared::window::WindowRef;
-use crate::shared::window::{
-    window_mode, window_mode_entry, window_mode_screen_payload, winlink, ModeDataRef,
-};
+use crate::shared::window::{window_mode, window_mode_entry, winlink, ModeDataRef};
 use crate::sort::sort_get_clients;
 use crate::status::{status_at_line, status_line_size};
 use crate::style::style_apply_with_options;
@@ -290,8 +288,8 @@ fn window_client_draw_info(
         us: 0,
         link: 0,
     };
-    let mut cx: u_int = ctx.screen.cx;
-    let mut cy: u_int = ctx.screen.cy;
+    let mut cx: u_int = ctx.with_screen(|s| s.cx);
+    let mut cy: u_int = ctx.with_screen(|s| s.cy);
     let mut i: u_int = 0;
     let mut ft_owner =
         format_create_defaults(None, Some(c), None, (refbox::Weak::new()).clone(), None);
@@ -375,8 +373,8 @@ fn window_client_draw(
         us: 0,
         link: 0,
     };
-    let mut cx: u_int = ctx.screen.cx;
-    let mut cy: u_int = ctx.screen.cy;
+    let mut cx: u_int = ctx.with_screen(|s| s.cx);
+    let mut cy: u_int = ctx.with_screen(|s| s.cy);
     let mut lines: u_int = 0;
     let mut at: u_int = 0;
     if session.is_none() || c.flags() & CLIENT_UNATTACHEDFLAGS as uint64_t != 0 {
@@ -657,9 +655,9 @@ fn window_client_get_screen(
     else {
         return;
     };
-    let tree_owner = unsafe { window_mode_screen_payload(&data, |data| data.data.clone()) };
+    let tree_owner = data.try_borrow().ok().and_then(|data| data.data.clone());
     if let Some(tree_owner) = tree_owner {
-        unsafe { mode_tree_visit_screen(&tree_owner, visit) };
+        mode_tree_visit_screen(&tree_owner, visit);
     }
 }
 

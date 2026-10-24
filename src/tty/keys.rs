@@ -1,3 +1,4 @@
+use super::input::TerminalInput;
 use crate::bracketed_paste::{
     match_bracketed_paste_boundary, BracketedPasteBoundary, BracketedPasteBoundaryMatch,
 };
@@ -1548,10 +1549,31 @@ fn tty_keys_winsz(
     ));
     -(1 as ::core::ffi::c_int)
 }
-pub(super) unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c_int {
+/// Parse one key from the TTY input. The buffer is moved out of the terminal
+/// while it is parsed, so its bytes stay borrowed while the terminal is taken
+/// again; it is put back unless the TTY closed in the meantime.
+pub(super) fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c_int {
+    let mut input = {
+        let mut terminal = terminal_client_owner.borrow_terminal_mut();
+        std::mem::take(terminal.in_0.as_deref_mut().expect("open TTY buffer"))
+    };
+    let result = tty_keys_next_input(terminal_client_owner, &mut input);
+    if let Some(slot) = terminal_client_owner
+        .borrow_terminal_mut()
+        .in_0
+        .as_deref_mut()
+    {
+        let later = std::mem::replace(slot, input);
+        slot.append(later);
+    }
+    result
+}
+fn tty_keys_next_input(
+    terminal_client_owner: &ClientRef,
+    input: &mut TerminalInput,
+) -> ::core::ffi::c_int {
     let mut current_block: u64;
     let diagnostic_name = terminal_client_owner.name();
-    let mut buf: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut len: size_t = 0;
     let mut size: size_t = 0;
     let mut bspace: cc_t = 0;
@@ -1583,28 +1605,11 @@ pub(super) unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core:
         sgr_type: 0,
         sgr_b: 0,
     };
-    (buf, len) = {
-        let mut terminal = terminal_client_owner.borrow_terminal_mut();
-        let bytes = terminal
-            .in_0
-            .as_deref_mut()
-            .expect("open TTY buffer")
-            .bytes();
-        (bytes.as_ptr().cast(), bytes.len())
-    };
+    let bytes: &[u8] = input.bytes();
+    len = bytes.len();
     if len == 0 as size_t {
         return 0 as ::core::ffi::c_int;
     }
-    // SAFETY: `bytes` is the input buffer's storage, kept past the terminal
-    // borrow that produced it while the code below takes the terminal again,
-    // mutably too. The storage stays put while `bytes` is read: only the
-    // read callback appends to the buffer and it does not run inside this
-    // call, nothing here coalesces the buffer again, and each `drain` follows
-    // the last read of `bytes` on its path (a complete key copies its bytes
-    // into the event before replies and key dispatch run). The reply parsers
-    // read `bytes` only before their first mutable terminal borrow, direct or
-    // through `tty_update_features` and `tty_invalidate`.
-    let bytes: &[u8] = ::core::slice::from_raw_parts(buf.cast(), len);
     log_debug(format_args!(
         "{}: keys are {} ({})",
         log_cstr(
@@ -1623,11 +1628,8 @@ pub(super) unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core:
         let mut terminal = terminal_client_owner.borrow_terminal_mut();
         drop(terminal.key_timer.take());
         terminal.flags &= !TTY_TIMER;
-        terminal
-            .in_0
-            .as_deref_mut()
-            .expect("open TTY buffer")
-            .drain(len);
+        drop(terminal);
+        input.drain(len);
         return 1 as ::core::ffi::c_int;
     }
     match tty_keys_clipboard(bytes, &mut size, &mut clipboard_reply) {
@@ -1852,12 +1854,7 @@ pub(super) unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core:
                                                                     ),
                                                                     log_hex((key) as u64)
                                                                 ));
-                                                                terminal_client_owner
-                                                                    .borrow_terminal_mut()
-                                                                    .in_0
-                                                                    .as_deref_mut()
-                                                                    .expect("open TTY buffer")
-                                                                    .drain(size);
+                                                                input.drain(size);
                                                                 return 1 as ::core::ffi::c_int;
                                                             }
                                                             1 => {
@@ -2122,12 +2119,7 @@ pub(super) unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core:
                 if let Some(event) = event {
                     terminal_client_owner.handle_key(event);
                 }
-                terminal_client_owner
-                    .borrow_terminal_mut()
-                    .in_0
-                    .as_deref_mut()
-                    .expect("open TTY buffer")
-                    .drain(size);
+                input.drain(size);
                 return 1 as ::core::ffi::c_int;
             }
             _ => {
@@ -2232,7 +2224,7 @@ fn tty_keys_update_focus(client: &ClientRef) {
     }
 }
 
-unsafe fn tty_keys_callback(owner: &ClientRef) {
+fn tty_keys_callback(owner: &ClientRef) {
     drop(owner.borrow_terminal_mut().key_timer.take());
     let timer_active = owner.borrow_terminal().flags & TTY_TIMER != 0;
     if timer_active {

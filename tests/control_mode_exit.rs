@@ -8,7 +8,6 @@ mod common;
 use common::Server;
 use std::fs::File;
 use std::io::{ErrorKind, Read as _, Write as _};
-use std::os::fd::FromRawFd as _;
 use std::process::Stdio;
 
 #[test]
@@ -36,19 +35,8 @@ fn control_client_ends_with_exit_line() {
 fn control_control_client_ends_with_exit_line_and_string_terminator() {
     let server = Server::new();
     server.success(&["new-session", "-d"]);
-    let (mut master, mut slave) = (-1, -1);
-    let opened = unsafe {
-        libc::openpty(
-            &mut master,
-            &mut slave,
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-        )
-    };
-    assert_eq!(opened, 0, "openpty: {}", std::io::Error::last_os_error());
-    let mut master = unsafe { File::from_raw_fd(master) };
-    let slave = unsafe { File::from_raw_fd(slave) };
+    let (master, slave) = tiri_rt::unix::open_pty(None).expect("open terminal");
+    let (mut master, slave) = (File::from(master), File::from(slave));
     let mut child = server
         .command()
         .args(["-CC", "attach"])

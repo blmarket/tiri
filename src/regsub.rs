@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
-use crate::ffi::regex::{RegexMatch, RegexStorage};
 use std::ffi::{CStr, CString};
+use tiri_rt::unix::regex::{RegexMatch, RegexStorage};
 
 fn regsub_copy(buf: &mut Vec<u8>, text: &[u8], start: usize, end: usize) {
     buf.extend_from_slice(&text[start..end]);

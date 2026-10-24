@@ -21,16 +21,17 @@ use crate::server_client::ClientRegistry;
 use crate::shared::window::WindowWeak;
 use crate::window::Window as _;
 use crate::winlink::winlink_window;
-use libc::{exit, kill, killpg, sigfillset, sigprocmask, strsignal, umask, waitpid};
 use std::fs;
-#[cfg(target_os = "linux")]
-use std::os::fd::FromRawFd;
-use std::os::fd::{IntoRawFd, OwnedFd};
+use std::os::fd::OwnedFd;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
 use std::os::unix::net::UnixListener;
 use std::os::unix::process::ExitStatusExt;
 use std::process::ExitStatus;
+use tiri_rt::unix::{
+    block_signals, send_group_signal, send_signal, set_signal_mask, set_umask, signal_description,
+    trim_heap, wait_child,
+};
 
 use crate::session::sessions;
 use crate::session::Session;
@@ -46,7 +47,7 @@ use crate::window_pane::WindowPane as _;
 use std::time::{Duration, SystemTime};
 use tiri_rt::{AsyncAccept as _, Runtime as _};
 
-use std::ffi::{CStr, CString, OsStr};
+use std::ffi::{CString, OsStr};
 use std::io;
 
 fn server_clear_messages() {
@@ -62,9 +63,7 @@ use crate::shared::event::*;
 use crate::shared::pane::window_pane;
 use crate::shared::posix_io::{S_IRWXU, WAIT_ANY, WNOHANG};
 use crate::shared::process::tmuxproc;
-use crate::shared::signal::{
-    sigset_t, ProcessSignal, SIGCONT, SIGTTIN, SIGTTOU, SIG_BLOCK, SIG_SETMASK,
-};
+use crate::shared::signal::{ProcessSignal, SIGCONT, SIGTTIN, SIGTTOU};
 use crate::shared::window::winlink;
 use libc::{EAGAIN, ECHILD, EINTR, ENAMETOOLONG};
 
@@ -77,8 +76,10 @@ pub use ::libc::{
     S_IXUSR, WUNTRACED,
 };
 
-pub static mut server_proc: refbox::Weak<tmuxproc> = refbox::Weak::new();
 thread_local! {
+    static SERVER_PROC: std::cell::RefCell<refbox::Weak<tmuxproc>> = const {
+        std::cell::RefCell::new(refbox::Weak::new())
+    };
     static SERVER_FD: std::cell::RefCell<Option<UnixListener>> = const { std::cell::RefCell::new(None) };
     static SERVER_CLIENT_FLAGS: std::cell::Cell<uint64_t> = const { std::cell::Cell::new(0) };
     static SERVER_EXIT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -101,6 +102,10 @@ thread_local! {
         })
     };
     static CURRENT_TIME: std::cell::Cell<time_t> = const { std::cell::Cell::new(0) };
+}
+/// The server process, while the server runs.
+pub fn server_proc() -> refbox::Weak<tmuxproc> {
+    SERVER_PROC.with_borrow(Clone::clone)
 }
 /// The time sampled when the server loop started.
 pub fn current_time() -> time_t {
@@ -144,11 +149,7 @@ pub fn server_is_marked(
 pub fn server_check_marked() -> ::core::ffi::c_int {
     marked_pane.with_borrow(|marked| marked.is_valid()) as ::core::ffi::c_int
 }
-pub unsafe fn server_create_socket(flags: uint64_t) -> Result<::core::ffi::c_int, CString> {
-    server_create_listener(flags).map(IntoRawFd::into_raw_fd)
-}
-
-unsafe fn server_create_listener(flags: uint64_t) -> Result<UnixListener, CString> {
+pub(crate) fn server_create_listener(flags: uint64_t) -> Result<UnixListener, CString> {
     let path = socket_path_cstr();
     let path = path.to_bytes();
     let result = (|| {
@@ -157,12 +158,12 @@ unsafe fn server_create_listener(flags: uint64_t) -> Result<UnixListener, CStrin
         }
         let _ = fs::remove_file(std::path::Path::new(OsStr::from_bytes(path)));
         let mask = if flags & CLIENT_DEFAULTSOCKET as uint64_t != 0 {
-            umask((S_IXUSR | S_IXGRP | S_IRWXO) as __mode_t)
+            set_umask((S_IXUSR | S_IXGRP | S_IRWXO) as __mode_t)
         } else {
-            umask((S_IXUSR | S_IRWXG | S_IRWXO) as __mode_t)
+            set_umask((S_IXUSR | S_IRWXG | S_IRWXO) as __mode_t)
         };
         let listener = tiri_rt::unix::listen(std::path::Path::new(OsStr::from_bytes(path)), 128);
-        umask(mask);
+        set_umask(mask);
         let listener = listener?;
         Ok(listener)
     })();
@@ -178,41 +179,31 @@ unsafe fn server_create_listener(flags: uint64_t) -> Result<UnixListener, CStrin
         CString::new(message).expect("C strings contain no interior NUL")
     })
 }
-unsafe fn server_tidy_event() {
+fn server_tidy_event() {
     let tv = Duration::from_secs(3600);
-    let mut t: uint64_t = get_timer();
+    let t: uint64_t = get_timer();
     format_tidy_jobs();
-    #[cfg(all(target_os = "linux", target_env = "gnu"))]
-    libc::malloc_trim(0 as size_t);
+    trim_heap();
     log_debug(format_args!(
         "{}: took {} milliseconds",
         "server_tidy_event",
         get_timer().wrapping_sub(t) as ::core::ffi::c_ulonglong
     ));
-    SERVER_EV_TIDY.set(Some(
-        Timer::new(tv, || unsafe { server_tidy_event() }).expect("arm timer"),
-    ));
+    SERVER_EV_TIDY.set(Some(Timer::new(tv, server_tidy_event).expect("arm timer")));
 }
-pub(crate) unsafe fn server_start(
+pub(crate) fn server_start(
     mut flags: uint64_t,
     lockfd: Option<OwnedFd>,
     lockfile: Option<CString>,
 ) -> OwnedFd {
     let mut fd = None;
-    let mut set: sigset_t = unsafe { ::core::mem::zeroed() };
-    let mut oldset: sigset_t = unsafe { ::core::mem::zeroed() };
     let mut cause: Option<CString> = None;
     let tv = Duration::from_secs(3600);
-    sigfillset(&raw mut set);
-    sigprocmask(SIG_BLOCK, &raw mut set, &raw mut oldset);
+    let oldset = block_signals();
     if !flags & CLIENT_NOFORK as uint64_t != 0 {
         let (pid, socket) = proc_fork_and_daemon();
         if pid != 0 {
-            sigprocmask(
-                SIG_SETMASK,
-                &raw mut oldset,
-                ::core::ptr::null_mut::<sigset_t>(),
-            );
+            set_signal_mask(&oldset);
             return socket;
         }
         fd = Some(socket);
@@ -220,21 +211,9 @@ pub(crate) unsafe fn server_start(
     SERVER_CLIENT_FLAGS.set(flags);
     let runtime = tiri_rt::mio::Runtime::new().expect("tiri-rt initialization");
     let mut process_owner = proc_start(c"server");
-    server_proc = process_owner.downgrade();
-    proc_set_signals(
-        &server_proc,
-        Some(Box::new(|sig| unsafe { server_signal(sig) })),
-    );
-    sigprocmask(
-        SIG_SETMASK,
-        &raw mut oldset,
-        ::core::ptr::null_mut::<sigset_t>(),
-    );
-    if 0 as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
-        fatal(&std::io::Error::last_os_error(), |out| {
-            out.write_all(b"pledge failed")
-        });
-    }
+    SERVER_PROC.set(process_owner.downgrade());
+    proc_set_signals(&server_proc(), Some(Box::new(server_signal)));
+    set_signal_mask(&oldset);
     input_key_build();
     utf8_update_width_cache();
     key_bindings_init();
@@ -245,7 +224,7 @@ pub(crate) unsafe fn server_start(
     crate::plugin::init();
     #[cfg(target_os = "linux")]
     let listener = if systemd_activated() {
-        systemd_create_socket(flags as ::core::ffi::c_int).map(|fd| UnixListener::from_raw_fd(fd))
+        systemd_create_socket(flags)
     } else {
         server_create_listener(flags)
     };
@@ -285,28 +264,26 @@ pub(crate) unsafe fn server_start(
             let message = [cause.as_bytes(), b"\n"].concat();
             let _ = io::Write::write_all(&mut io::stderr(), &message);
             drop(process_owner);
-            server_proc = refbox::Weak::new();
+            SERVER_PROC.set(refbox::Weak::new());
             crate::plugin::shutdown();
             reactor::shutdown_runtime(runtime);
-            exit(1 as ::core::ffi::c_int);
+            std::process::exit(1);
         }
     }
     drop(c);
-    SERVER_EV_TIDY.set(Some(
-        Timer::new(tv, || unsafe { server_tidy_event() }).expect("arm timer"),
-    ));
+    SERVER_EV_TIDY.set(Some(Timer::new(tv, server_tidy_event).expect("arm timer")));
     server_acl_init();
     server_add_accept(0 as ::core::ffi::c_int);
     let mut loop_callback = || server_loop() == 0;
-    proc_loop(&server_proc, runtime, Some(&mut loop_callback));
+    proc_loop(&server_proc(), runtime, Some(&mut loop_callback));
     server_destroy_sessions(false);
     crate::plugin::shutdown();
     crate::cmd::queue::cmdq_cancel_background();
     job_kill_all();
     prompt_save_history();
     drop(process_owner);
-    server_proc = refbox::Weak::new();
-    exit(0 as ::core::ffi::c_int);
+    SERVER_PROC.set(refbox::Weak::new());
+    std::process::exit(0);
 }
 fn server_loop() -> ::core::ffi::c_int {
     let mut c: Option<ClientRef> = None;
@@ -485,12 +462,11 @@ pub fn server_add_accept(mut timeout: ::core::ffi::c_int) {
         }
     });
 }
-unsafe fn server_signal(sig: ProcessSignal) {
-    let _fd: ::core::ffi::c_int = 0;
+fn server_signal(sig: ProcessSignal) {
     log_debug(format_args!(
         "{}: {}",
         "server_signal",
-        log_cstr(CStr::from_ptr(strsignal(sig.as_raw())))
+        log_cstr(&signal_description(sig.as_raw()))
     ));
     match sig {
         ProcessSignal::Interrupt | ProcessSignal::Terminate => {
@@ -509,28 +485,19 @@ unsafe fn server_signal(sig: ProcessSignal) {
             server_add_accept(0 as ::core::ffi::c_int);
         }
         ProcessSignal::User2 => {
-            proc_toggle_log(&server_proc);
+            proc_toggle_log(&server_proc());
         }
         _ => {}
     };
 }
-unsafe fn server_child_signal() {
-    let mut status: ::core::ffi::c_int = 0;
-    let mut pid: pid_t = 0;
+fn server_child_signal() {
     loop {
-        pid = waitpid(WAIT_ANY, &raw mut status, WNOHANG | WUNTRACED) as pid_t;
-        match pid {
-            -1 => {
-                let error = io::Error::last_os_error();
-                if error.raw_os_error() == Some(ECHILD) {
-                    return;
-                }
-                fatal(&error, |out| out.write_all(b"waitpid failed"));
-            }
-            0 => return,
-            _ => {}
-        }
-        let status = ExitStatus::from_raw(status);
+        let (pid, status) = match wait_child(WAIT_ANY, WNOHANG | WUNTRACED) {
+            Ok(Some(child)) => child,
+            Ok(None) => return,
+            Err(error) if error.raw_os_error() == Some(ECHILD) => return,
+            Err(error) => fatal(&error, |out| out.write_all(b"waitpid failed")),
+        };
         if status.stopped_signal().is_some() {
             server_child_stopped(pid, status);
         } else if status.code().is_some() || status.signal().is_some() {
@@ -538,7 +505,7 @@ unsafe fn server_child_signal() {
         }
     }
 }
-unsafe fn server_child_exited(pid: pid_t, status: ExitStatus) {
+fn server_child_exited(pid: pid_t, status: ExitStatus) {
     let mut window_cursor = windows::first();
     while let Some(window_owner) = window_cursor.take() {
         window_cursor = window_owner.next_window().upgrade();
@@ -555,7 +522,7 @@ unsafe fn server_child_exited(pid: pid_t, status: ExitStatus) {
     }
     job_check_died(pid, status);
 }
-unsafe fn server_child_stopped(pid: pid_t, status: ExitStatus) {
+fn server_child_stopped(pid: pid_t, status: ExitStatus) {
     if matches!(status.stopped_signal(), Some(SIGTTIN | SIGTTOU)) {
         return;
     }
@@ -566,8 +533,8 @@ unsafe fn server_child_stopped(pid: pid_t, status: ExitStatus) {
             .iter()
             .filter_map(std::rc::Weak::upgrade)
         {
-            if pane_owner.process_id() == pid && killpg(pid as __pid_t, SIGCONT) != 0 {
-                kill(pid as __pid_t, SIGCONT);
+            if pane_owner.process_id() == pid && send_group_signal(pid, SIGCONT).is_err() {
+                let _ = send_signal(pid, SIGCONT);
             }
         }
         window_cursor = window_owner.next_window().upgrade();

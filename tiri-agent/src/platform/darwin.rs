@@ -331,17 +331,14 @@ fn parse_procargs2(buffer: &[u8]) -> Vec<OsString> {
 #[cfg(test)]
 mod tests {
     use std::fs::{self, File};
-    use std::os::fd::{AsFd, FromRawFd, OwnedFd, RawFd};
+    use std::os::fd::AsFd;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
 
     #[test]
     fn pane_cwd_absent_for_non_tty() {
-        let mut fds = [0 as RawFd; 2];
-        assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
-        let read = unsafe { OwnedFd::from_raw_fd(fds[0]) };
-        let _write = unsafe { OwnedFd::from_raw_fd(fds[1]) };
+        let (read, _write) = std::io::pipe().unwrap();
         assert!(Darwin::pane_cwd(read.as_fd()).is_none());
     }
 

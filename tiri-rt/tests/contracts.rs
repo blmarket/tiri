@@ -4,7 +4,7 @@
 use std::cell::{Cell, RefCell};
 use std::future::{Future, poll_fn};
 use std::io::{self, IoSlice, Read, Write};
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::os::fd::{AsRawFd, OwnedFd};
 use std::os::unix::net::UnixStream;
 use std::pin::Pin;
 use std::rc::Rc;
@@ -268,14 +268,19 @@ fn dropping_io_deregisters_before_closing_the_fd() {
     let retained = fd.try_clone().unwrap();
     let source = mio::Io::new(fd).unwrap();
     drop(source);
-    assert_eq!(unsafe { libc::fcntl(raw, libc::F_GETFD) }, -1);
-    assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::EBADF));
+    assert!(!tiri_rt::unix::is_open(raw));
     tick(&mut runtime);
 
-    let duplicate = unsafe { libc::fcntl(retained.as_raw_fd(), libc::F_DUPFD_CLOEXEC, raw) };
-    assert!(duplicate >= 0, "{}", io::Error::last_os_error());
-    let fd = unsafe { OwnedFd::from_raw_fd(duplicate) };
-    assert_eq!(fd.as_raw_fd(), raw);
+    let mut lower = Vec::new();
+    let fd = loop {
+        let fd = retained.try_clone().unwrap();
+        match fd.as_raw_fd().cmp(&raw) {
+            std::cmp::Ordering::Less => lower.push(fd),
+            std::cmp::Ordering::Equal => break fd,
+            std::cmp::Ordering::Greater => panic!("descriptor {raw} was reused elsewhere"),
+        }
+    };
+    drop(lower);
     let source = mio::Io::new(fd).unwrap();
     writer.write_all(b"new").unwrap();
     tick(&mut runtime);

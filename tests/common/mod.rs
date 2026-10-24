@@ -4,7 +4,7 @@
 
 use std::fs::{self, File};
 use std::io::{ErrorKind, Read as _, Write as _};
-use std::os::fd::{AsRawFd as _, FromRawFd as _};
+use std::os::fd::AsFd as _;
 use std::os::unix::process::CommandExt as _;
 use std::path::PathBuf;
 use std::process::{Child, Command, Output, Stdio};
@@ -499,6 +499,28 @@ impl Screen {
 }
 
 /// A client attached on a pseudo-terminal, as a user's terminal would be.
+/// Spawn `command` as a session leader whose controlling terminal is a new
+/// pseudo-terminal of `size`, returning the nonblocking master with the child.
+pub fn spawn_on_terminal(mut command: Command, size: libc::winsize) -> (File, Child) {
+    let (master, slave) = tiri_rt::unix::open_pty(Some(&size)).expect("open terminal");
+    let (master, slave) = (File::from(master), File::from(slave));
+    command
+        .stdin(slave.try_clone().expect("clone terminal"))
+        .stdout(slave.try_clone().expect("clone terminal"))
+        .stderr(slave);
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() == -1 || libc::ioctl(0, libc::TIOCSCTTY as _, 0) == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let child = command.spawn().expect("spawn terminal client");
+    tiri_rt::unix::set_nonblocking(master.as_fd(), true).expect("nonblocking terminal");
+    (master, child)
+}
+
 pub struct TerminalClient {
     master: File,
     child: Child,
@@ -509,45 +531,15 @@ pub struct TerminalClient {
 
 impl TerminalClient {
     fn new(server: &Server, width: u16, height: u16) -> Self {
-        let mut size = libc::winsize {
+        let size = libc::winsize {
             ws_row: height,
             ws_col: width,
             ws_xpixel: 0,
             ws_ypixel: 0,
         };
-        let (mut master, mut slave) = (-1, -1);
-        let opened = unsafe {
-            libc::openpty(
-                &mut master,
-                &mut slave,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-                &raw mut size,
-            )
-        };
-        assert_eq!(opened, 0, "openpty: {}", std::io::Error::last_os_error());
-        let master = unsafe { File::from_raw_fd(master) };
-        let slave = unsafe { File::from_raw_fd(slave) };
         let mut command = server.command();
-        command
-            .arg("attach-session")
-            .stdin(slave.try_clone().expect("clone terminal"))
-            .stdout(slave.try_clone().expect("clone terminal"))
-            .stderr(slave);
-        unsafe {
-            command.pre_exec(|| {
-                if libc::setsid() == -1 || libc::ioctl(0, libc::TIOCSCTTY as _, 0) == -1 {
-                    return Err(std::io::Error::last_os_error());
-                }
-                Ok(())
-            });
-        }
-        let child = command.spawn().expect("spawn terminal client");
-        let flags = unsafe { libc::fcntl(master.as_raw_fd(), libc::F_GETFL) };
-        assert_ne!(
-            unsafe { libc::fcntl(master.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) },
-            -1
-        );
+        command.arg("attach-session");
+        let (master, child) = spawn_on_terminal(command, size);
         let mut client = Self {
             master,
             child,

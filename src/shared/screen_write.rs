@@ -5,6 +5,7 @@ use super::grid::{grid_cell, GridArray};
 use super::pane::window_pane;
 use super::screen::screen;
 use super::tty::tty_ctx;
+use crate::window::WindowPane;
 use std::collections::VecDeque;
 
 /// Element of the screen-owned boxed write-list slice.
@@ -32,11 +33,18 @@ pub type screen_write_items = VecDeque<Box<screen_write_citem>>;
 pub type screen_write_item_type = ::core::ffi::c_uint;
 pub const CLEAR: screen_write_item_type = 1;
 
+/// The screen a write changes. A pane's base screen stays in the pane and is
+/// borrowed through it for each step, so callbacks that reach the pane during
+/// the write see it as it is.
+pub(crate) enum WriteTarget<'s> {
+    Screen(&'s mut screen),
+    PaneBase(std::rc::Rc<std::cell::RefCell<window_pane>>),
+}
+
 /// A write into one screen, from `screen_write_start*` until
-/// `screen_write_stop` consumes it. The context borrows its target for that
-/// whole span.
+/// `screen_write_stop` consumes it.
 pub struct screen_write_ctx<'s> {
-    pub(crate) screen: &'s mut screen,
+    pub(crate) target: WriteTarget<'s>,
     /// Optional pane observer for redraw and terminal output.
     pub wp: std::rc::Weak<std::cell::RefCell<window_pane>>,
     pub flags: ::core::ffi::c_int,
@@ -53,6 +61,25 @@ impl Drop for screen_write_ctx<'_> {
             self.item.is_none() || std::thread::panicking(),
             "screen write context dropped without screen_write_stop"
         );
+    }
+}
+
+impl screen_write_ctx<'_> {
+    /// Read the written screen. A pane's base screen is borrowed through the
+    /// pane until `read` returns, so `read` must not reach the pane.
+    pub(crate) fn with_screen<R>(&self, read: impl FnOnce(&screen) -> R) -> R {
+        match &self.target {
+            WriteTarget::Screen(screen) => read(screen),
+            WriteTarget::PaneBase(pane) => pane.read_base(read),
+        }
+    }
+
+    /// Mutable form of [`Self::with_screen`].
+    pub(crate) fn with_screen_mut<R>(&mut self, write: impl FnOnce(&mut screen) -> R) -> R {
+        match &mut self.target {
+            WriteTarget::Screen(screen) => write(screen),
+            WriteTarget::PaneBase(pane) => pane.write_base(write),
+        }
     }
 }
 

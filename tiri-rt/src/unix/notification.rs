@@ -1,7 +1,9 @@
 //! Coalescing notifications, distinct from byte-stream writes: saturation is
 //! successful notification, and clearing an empty descriptor never waits.
 use std::io;
-use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
+#[cfg(target_os = "linux")]
+use std::os::fd::FromRawFd;
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd};
 
 pub trait Notify: AsFd + Send + Sync {
     fn wake(&self) -> io::Result<()>;
@@ -28,17 +30,13 @@ impl Notification {
         }
         #[cfg(not(target_os = "linux"))]
         {
-            let mut fds = [-1; 2];
-            super::check(unsafe { libc::pipe(fds.as_mut_ptr()) })?;
+            let (read, write) = io::pipe()?;
             let result = Self {
-                read: unsafe { OwnedFd::from_raw_fd(fds[0]) },
-                write: unsafe { OwnedFd::from_raw_fd(fds[1]) },
+                read: read.into(),
+                write: write.into(),
             };
             for fd in [&result.read, &result.write] {
                 super::set_nonblocking(fd.as_fd(), true)?;
-                super::check(unsafe {
-                    libc::fcntl(fd.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC)
-                })?;
             }
             result.wake()?;
             Ok(result)

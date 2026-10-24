@@ -1,7 +1,7 @@
 //! FD passing is part of ordinary I/O, including one-way adapters.
 use std::future::{Future, poll_fn};
 use std::io::{self, IoSlice, Read, Write};
-use std::os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd};
+use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use std::os::unix::net::UnixStream;
 use std::pin::{Pin, pin};
 use std::task::{Context, Poll, Waker};
@@ -259,51 +259,22 @@ fn disconnected_socket_reports_error_and_shutdown_invalidates_pending_read() {
 }
 
 fn nonblocking(fd: &OwnedFd) {
-    let flags = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFL) };
-    assert!(flags >= 0);
-    assert_eq!(
-        unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) },
-        0
-    );
+    tiri_rt::unix::set_nonblocking(fd.as_fd(), true).unwrap();
 }
 
 fn pipe() -> (OwnedFd, OwnedFd) {
-    let mut fds = [-1; 2];
-    assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
-    let (reader, writer) = unsafe { (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])) };
+    let (reader, writer) = std::io::pipe().unwrap();
+    let (reader, writer) = (OwnedFd::from(reader), OwnedFd::from(writer));
     nonblocking(&reader);
     nonblocking(&writer);
     (writer, reader)
 }
 
 fn pty() -> (OwnedFd, OwnedFd) {
-    let (mut master, mut slave) = (-1, -1);
-    assert_eq!(
-        unsafe {
-            libc::openpty(
-                &mut master,
-                &mut slave,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-            )
-        },
-        0
-    );
-    let (master, slave) = unsafe { (OwnedFd::from_raw_fd(master), OwnedFd::from_raw_fd(slave)) };
-    let mut termios = std::mem::MaybeUninit::<libc::termios>::uninit();
-    assert_eq!(
-        unsafe { libc::tcgetattr(slave.as_raw_fd(), termios.as_mut_ptr()) },
-        0
-    );
-    let mut termios = unsafe { termios.assume_init() };
-    unsafe {
-        libc::cfmakeraw(&mut termios);
-        assert_eq!(
-            libc::tcsetattr(slave.as_raw_fd(), libc::TCSANOW, &termios),
-            0
-        );
-    }
+    let (master, slave) = tiri_rt::unix::open_pty(None).unwrap();
+    let mut termios = tiri_rt::unix::terminal_attributes(slave.as_fd()).unwrap();
+    tiri_rt::unix::make_raw(&mut termios);
+    tiri_rt::unix::set_terminal_attributes(slave.as_fd(), libc::TCSANOW, &termios).unwrap();
     nonblocking(&master);
     nonblocking(&slave);
     (master, slave)

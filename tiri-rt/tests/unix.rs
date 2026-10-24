@@ -75,24 +75,34 @@ fn shutdown_write_preserves_incoming_data() {
 }
 
 #[test]
-fn redirecting_onto_the_same_descriptor_clears_close_on_exec() {
+fn close_on_exec_from_marks_without_closing() {
     let fd = unix::open(c"/dev/null", libc::O_WRONLY, 0).unwrap();
-    assert_ne!(
-        unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFD) } & libc::FD_CLOEXEC,
-        0
-    );
-    unsafe { unix::redirect(fd.as_fd(), fd.as_raw_fd()) }.unwrap();
+    let duplicate = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_DUPFD, 100) };
+    assert!(duplicate >= 100);
     assert_eq!(
-        unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFD) } & libc::FD_CLOEXEC,
+        unsafe { libc::fcntl(duplicate, libc::F_GETFD) } & libc::FD_CLOEXEC,
         0
     );
+    unix::close_on_exec_from(100);
+    assert_ne!(
+        unsafe { libc::fcntl(duplicate, libc::F_GETFD) } & libc::FD_CLOEXEC,
+        0
+    );
+    assert!(unix::is_open(duplicate));
+    unsafe { libc::close(duplicate) };
+}
+
+#[test]
+fn exec_rejects_an_empty_argument_vector() {
+    let error = unix::exec(unix::Program::Search(&[]));
+    assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
 }
 
 #[test]
 fn socket_paths_and_terminal_queries_retain_borrowed_descriptors() {
-    use std::ffi::{CStr, CString};
-    use std::os::fd::{FromRawFd, OwnedFd};
+    use std::ffi::CString;
     use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::fs::MetadataExt;
     let path = std::env::temp_dir().join(format!("tiri-rt-path-{}", std::process::id()));
     let listener = unix::listen(&path, 8).unwrap();
     std::fs::remove_file(&path).unwrap();
@@ -105,24 +115,53 @@ fn socket_paths_and_terminal_queries_retain_borrowed_descriptors() {
     assert!(unix::terminal_name(socket.as_fd()).is_err());
     assert!(unix::terminal_foreground_group(socket.as_fd()).is_err());
 
-    let (mut master, mut slave) = (-1, -1);
-    let mut name = [0; 1024];
-    assert_eq!(
-        unsafe {
-            libc::openpty(
-                &mut master,
-                &mut slave,
-                name.as_mut_ptr(),
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-            )
-        },
-        0
-    );
-    let (_master, slave) = unsafe { (OwnedFd::from_raw_fd(master), OwnedFd::from_raw_fd(slave)) };
-    let name = unsafe { CStr::from_ptr(name.as_ptr()) };
+    let (_master, slave) = unix::open_pty(None).unwrap();
     let owned = unix::terminal_name(slave.as_fd()).unwrap();
-    assert_eq!(owned, name);
+    let named = std::fs::metadata(std::ffi::OsStr::from_bytes(owned.to_bytes())).unwrap();
+    let opened = std::fs::File::from(slave.try_clone().unwrap())
+        .metadata()
+        .unwrap();
+    assert_eq!(named.rdev(), opened.rdev());
     assert!(unix::terminal_attributes(slave.as_fd()).is_ok());
     assert_eq!(unix::terminal_name(slave.as_fd()).unwrap(), owned);
+}
+
+#[test]
+fn user_and_group_lookups_round_trip_by_name() {
+    let uid = unix::user_id();
+    let name = unix::user_name(uid).expect("current user has a record");
+    assert_eq!(unix::user_id_by_name(&name), Some(uid));
+    assert_eq!(unix::user_home_by_name(&name), unix::user_home(uid));
+    assert!(unix::user_id_by_name(c"tiri-no-such-user-name").is_none());
+    let group = unix::group_name(0).expect("group 0 has a record");
+    assert_eq!(unix::group_id_by_name(&group), Some(0));
+}
+
+#[test]
+fn temporary_files_get_distinct_private_names() {
+    use std::os::unix::fs::PermissionsExt;
+    let directory = std::env::temp_dir();
+    let template = format!("{}/tiri-rt-temporary-XXXXXX\0", directory.display());
+    let mut names = Vec::new();
+    for _ in 0..3 {
+        let mut path = template.clone().into_bytes();
+        let fd = unix::make_temporary(&mut path).unwrap();
+        let name = std::ffi::CStr::from_bytes_until_nul(&path)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
+        assert!(!name.ends_with("XXXXXX"));
+        let metadata = std::fs::File::from(fd).metadata().unwrap();
+        assert_eq!(metadata.permissions().mode() & 0o777, 0o600);
+        names.push(name);
+    }
+    for name in &names {
+        std::fs::remove_file(name).unwrap();
+    }
+    names.sort();
+    names.dedup();
+    assert_eq!(names.len(), 3);
+    let mut bad = b"no-suffix\0".to_vec();
+    assert!(unix::make_temporary(&mut bad).is_err());
 }

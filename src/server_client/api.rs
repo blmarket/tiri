@@ -81,7 +81,8 @@ pub trait Client {
     fn borrow_terminal_mut(&self) -> Self::TerminalMut<'_>;
     /// Enqueue terminal bytes and account for output within one model borrow.
     fn write_terminal(&self, bytes: &[u8]);
-    fn terminal_fd(&self) -> i32;
+    /// A duplicate of the client's terminal descriptor.
+    fn terminal_fd(&self) -> Option<std::os::fd::OwnedFd>;
     fn record_terminal_discard(&self, bytes: usize);
     /// Some(0) completes the redraw write; backpressure starts on a later write.
     fn acknowledge_terminal_redraw(&self, bytes: usize) -> Option<usize>;
@@ -159,7 +160,11 @@ pub trait Client {
         data: &[u8],
     ) -> i32;
     fn register_file(&self, file: &Rc<std::cell::RefCell<crate::file::client_file>>);
-    fn unregister_file(&self, stream: i32, identity: *const crate::file::client_file);
+    fn unregister_file(
+        &self,
+        stream: i32,
+        identity: &Rc<std::cell::RefCell<crate::file::client_file>>,
+    );
     /// Stream-ordered observations; each yield resolves the current holder.
     fn file_handles(
         &self,
@@ -344,8 +349,8 @@ impl Client for ClientRef {
         server_client_handle_key(self, event)
     }
 
-    fn terminal_fd(&self) -> i32 {
-        self.borrow().fd.as_ref().map_or(-1, AsRawFd::as_raw_fd)
+    fn terminal_fd(&self) -> Option<std::os::fd::OwnedFd> {
+        self.borrow().fd.as_ref().and_then(|fd| fd.try_clone().ok())
     }
     fn record_terminal_discard(&self, bytes: usize) {
         let mut client = self.borrow_mut();
@@ -767,7 +772,11 @@ impl Client for ClientRef {
     fn register_file(&self, file: &Rc<std::cell::RefCell<crate::file::client_file>>) {
         crate::file::client_files_insert(&mut self.borrow_mut().files, file.clone());
     }
-    fn unregister_file(&self, stream: i32, identity: *const crate::file::client_file) {
+    fn unregister_file(
+        &self,
+        stream: i32,
+        identity: &Rc<std::cell::RefCell<crate::file::client_file>>,
+    ) {
         let removed = crate::file::client_files_remove_identity(
             &mut self.borrow_mut().files,
             stream,

@@ -153,8 +153,8 @@ impl PopupHandle {
 }
 
 impl PopupGuard<'_> {
-    unsafe fn as_ptr(&self) -> *mut popup_data {
-        Box::as_mut_ptr(&mut *self.state.data.as_ptr())
+    fn data(&self) -> std::cell::RefMut<'_, Box<popup_data>> {
+        self.state.data.borrow_mut()
     }
 
     fn handle(&self) -> PopupHandle {
@@ -173,7 +173,7 @@ fn popup_check_callback(handle: PopupHandle) -> overlay_check_cb {
     Some(Box::new(move |_, px, py, nx| {
         handle
             .upgrade()
-            .map_or_else(visible_ranges::default, |popup| unsafe {
+            .map_or_else(visible_ranges::default, |popup| {
                 popup_check(&popup, px, py, nx)
             })
     }))
@@ -216,9 +216,10 @@ impl Drop for popup_data {
         }
     }
 }
-unsafe fn popup_reapply_styles(popup: &PopupGuard) {
-    let pd = popup.as_ptr();
-    let client = (*pd).c.as_ref().expect("popup client");
+fn popup_reapply_styles(popup: &PopupGuard) {
+    let mut data_guard = popup.data();
+    let pd: &mut popup_data = &mut data_guard;
+    let client = pd.c.as_ref().expect("popup client");
     let Some(session) = client.attached_session().upgrade() else {
         return;
     };
@@ -255,46 +256,46 @@ unsafe fn popup_reapply_styles(popup: &PopupGuard) {
     };
     let mut ft_owner = format_create_defaults(None, Some(client), Some(&session), link, None);
     let ft = &mut *ft_owner;
-    (*pd).defaults = grid_default_cell;
+    pd.defaults = grid_default_cell;
     style_apply_with_options(
-        &mut (*pd).defaults,
+        &mut pd.defaults,
         c"popup-style",
         Some(&mut *ft),
         &OptionsScope::Window(WindowRef::downgrade(&window)),
     );
-    if !(*pd).style.is_none() {
+    if !pd.style.is_none() {
         style_set(&mut sytmp, &grid_default_cell);
         if style_parse(
             &mut sytmp,
-            &(*pd).defaults,
-            ((*pd).style).as_deref().unwrap_or(c""),
+            &pd.defaults,
+            (pd.style).as_deref().unwrap_or(c""),
         ) == 0 as ::core::ffi::c_int
         {
-            (*pd).defaults.fg = sytmp.gc.fg;
-            (*pd).defaults.bg = sytmp.gc.bg;
+            pd.defaults.fg = sytmp.gc.fg;
+            pd.defaults.bg = sytmp.gc.bg;
         }
     }
-    (*pd).defaults.attr = 0 as u_short;
-    (*pd).border_cell = grid_default_cell;
+    pd.defaults.attr = 0 as u_short;
+    pd.border_cell = grid_default_cell;
     style_apply_with_options(
-        &mut (*pd).border_cell,
+        &mut pd.border_cell,
         c"popup-border-style",
         Some(&mut *ft),
         &OptionsScope::Window(WindowRef::downgrade(&window)),
     );
-    if !(*pd).border_style.is_none() {
+    if !pd.border_style.is_none() {
         style_set(&mut sytmp, &grid_default_cell);
         if style_parse(
             &mut sytmp,
-            &(*pd).border_cell,
-            ((*pd).border_style).as_deref().unwrap_or(c""),
+            &pd.border_cell,
+            (pd.border_style).as_deref().unwrap_or(c""),
         ) == 0 as ::core::ffi::c_int
         {
-            (*pd).border_cell.fg = sytmp.gc.fg;
-            (*pd).border_cell.bg = sytmp.gc.bg;
+            pd.border_cell.fg = sytmp.gc.fg;
+            pd.border_cell.bg = sytmp.gc.bg;
         }
     }
-    (*pd).border_cell.attr = 0 as u_short;
+    pd.border_cell.attr = 0 as u_short;
     drop(window);
     drop(ft_owner);
 }
@@ -312,16 +313,15 @@ struct PopupRenderSnapshot {
 }
 
 impl PopupRenderSnapshot {
-    unsafe fn new(popup: &PopupGuard<'_>) -> Self {
-        let pd = popup.as_ptr();
-        let border = u_int::from((*pd).border_lines != BOX_LINES_NONE);
+    fn new(popup: PopupHandle, pd: &popup_data) -> Self {
+        let border = u_int::from(pd.border_lines != BOX_LINES_NONE);
         Self {
-            popup: popup.handle(),
-            client: (*pd).c.as_ref().map_or_else(Weak::new, Rc::downgrade),
-            palette: (*pd).palette.downgrade(),
-            defaults: (*pd).defaults,
-            xoff: (*pd).px.wrapping_add(border),
-            yoff: (*pd).py.wrapping_add(border),
+            popup,
+            client: pd.c.as_ref().map_or_else(Weak::new, Rc::downgrade),
+            palette: pd.palette.downgrade(),
+            defaults: pd.defaults,
+            xoff: pd.px.wrapping_add(border),
+            yoff: pd.py.wrapping_add(border),
         }
     }
 
@@ -366,34 +366,38 @@ impl PopupRenderSnapshot {
     }
 }
 
-unsafe fn popup_mode(popup: &PopupGuard) -> Option<(ScreenMode, u_int, u_int)> {
-    let pd = popup.as_ptr();
-    if (*pd).border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
+fn popup_mode(popup: &PopupGuard) -> Option<(ScreenMode, u_int, u_int)> {
+    let mut data_guard = popup.data();
+    let pd: &mut popup_data = &mut data_guard;
+    if pd.border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
         Some((
-            ScreenMode::from(&(*pd).s),
-            (*pd).px.wrapping_add((*pd).s.cx),
-            (*pd).py.wrapping_add((*pd).s.cy),
+            ScreenMode::from(&pd.s),
+            pd.px.wrapping_add(pd.s.cx),
+            pd.py.wrapping_add(pd.s.cy),
         ))
     } else {
         Some((
-            ScreenMode::from(&(*pd).s),
-            (*pd).px.wrapping_add(1).wrapping_add((*pd).s.cx),
-            (*pd).py.wrapping_add(1).wrapping_add((*pd).s.cy),
+            ScreenMode::from(&pd.s),
+            pd.px.wrapping_add(1).wrapping_add(pd.s.cx),
+            pd.py.wrapping_add(1).wrapping_add(pd.s.cy),
         ))
     }
 }
-unsafe fn popup_check(popup: &PopupGuard, px: u_int, py: u_int, nx: u_int) -> visible_ranges {
-    let pd = popup.as_ptr();
+fn popup_check(popup: &PopupGuard, px: u_int, py: u_int, nx: u_int) -> visible_ranges {
+    let mut data_guard = popup.data();
+    let pd: &mut popup_data = &mut data_guard;
     let mut ranges = visible_ranges::default();
-    ranges.exclude_box(((*pd).px, (*pd).py, (*pd).sx, (*pd).sy), (px, py, nx));
+    ranges.exclude_box((pd.px, pd.py, pd.sx, pd.sy), (px, py, nx));
     ranges
 }
-unsafe fn popup_draw(c_owner: &ClientRef, popup: &PopupGuard) {
-    let pd = popup.as_ptr();
+fn popup_draw(c_owner: &ClientRef, popup: &PopupGuard) {
+    popup_reapply_styles(popup);
+    let data_guard = popup.data();
+    let pd: &popup_data = &data_guard;
     let mut s: screen = screen::empty();
     let _i: u_int = 0;
-    let mut px: u_int = (*pd).px;
-    let mut py: u_int = (*pd).py;
+    let mut px: u_int = pd.px;
+    let mut py: u_int = pd.py;
     let mut defaults: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -414,36 +418,28 @@ unsafe fn popup_draw(c_owner: &ClientRef, popup: &PopupGuard) {
         dim: 0,
         hyperlinks: None,
     };
-    popup_reapply_styles(popup);
-    screen_init(&mut s, (*pd).sx, (*pd).sy, 0 as u_int);
-    if (*pd).s.hyperlinks.is_some() {
-        screen_share_hyperlinks(&mut s, &(*pd).s);
+    screen_init(&mut s, pd.sx, pd.sy, 0 as u_int);
+    if pd.s.hyperlinks.is_some() {
+        screen_share_hyperlinks(&mut s, &pd.s);
     }
     let mut ctx = screen_write_start(&mut s);
     screen_write_clearscreen(&mut ctx, 8 as u_int);
-    if (*pd).border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
+    if pd.border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
         screen_write_cursormove(
             &mut ctx,
             0 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        screen_write_fast_copy(
-            &mut ctx,
-            &(*pd).s,
-            0 as u_int,
-            0 as u_int,
-            (*pd).sx,
-            (*pd).sy,
-        );
-    } else if (*pd).sx > 2 as u_int && (*pd).sy > 2 as u_int {
+        screen_write_fast_copy(&mut ctx, &pd.s, 0 as u_int, 0 as u_int, pd.sx, pd.sy);
+    } else if pd.sx > 2 as u_int && pd.sy > 2 as u_int {
         screen_write_box(
             &mut ctx,
-            (*pd).sx,
-            (*pd).sy,
-            (*pd).border_lines,
-            Some(&(*pd).border_cell),
-            (*pd).title.as_deref(),
+            pd.sx,
+            pd.sy,
+            pd.border_lines,
+            Some(&pd.border_cell),
+            pd.title.as_deref(),
         );
         screen_write_cursormove(
             &mut ctx,
@@ -453,16 +449,16 @@ unsafe fn popup_draw(c_owner: &ClientRef, popup: &PopupGuard) {
         );
         screen_write_fast_copy(
             &mut ctx,
-            &(*pd).s,
+            &pd.s,
             0 as u_int,
             0 as u_int,
-            (*pd).sx.wrapping_sub(2 as u_int),
-            (*pd).sy.wrapping_sub(2 as u_int),
+            pd.sx.wrapping_sub(2 as u_int),
+            pd.sy.wrapping_sub(2 as u_int),
         );
     }
     screen_write_stop(ctx);
-    defaults = (*pd).defaults;
-    let mut palette = (*pd)
+    defaults = pd.defaults;
+    let mut palette = pd
         .palette
         .try_borrow_mut()
         .expect("unborrowed popup palette");
@@ -473,136 +469,137 @@ unsafe fn popup_draw(c_owner: &ClientRef, popup: &PopupGuard) {
         defaults.bg = palette.bg;
     }
     style_ctx.defaults = defaults;
-    style_ctx.palette = crate::shared::tty::PaletteSource::Popup((*pd).palette.downgrade());
+    style_ctx.palette = crate::shared::tty::PaletteSource::Popup(pd.palette.downgrade());
     drop(palette);
     style_ctx.dim = 0 as u_int;
     style_ctx.hyperlinks = s.hyperlinks.clone();
     c_owner.with_overlay_check_disabled(popup_check_callback(popup.handle()), || {
-        c_owner.draw_overlay_screen(&s, px, py, (*pd).sx, (*pd).sy, &style_ctx);
+        c_owner.draw_overlay_screen(&s, px, py, pd.sx, pd.sy, &style_ctx);
     });
 }
-unsafe fn popup_resize(c_owner: &ClientRef, popup: &PopupGuard) {
+fn popup_resize(c_owner: &ClientRef, popup: &PopupGuard) {
     let (terminal_sx, terminal_sy) = c_owner.terminal_size();
-    let pd = popup.as_ptr();
-    if (*pd).psy > terminal_sy {
-        (*pd).sy = terminal_sy;
+    let mut data_guard = popup.data();
+    let pd: &mut popup_data = &mut data_guard;
+    if pd.psy > terminal_sy {
+        pd.sy = terminal_sy;
     } else {
-        (*pd).sy = (*pd).psy;
+        pd.sy = pd.psy;
     }
-    if (*pd).psx > terminal_sx {
-        (*pd).sx = terminal_sx;
+    if pd.psx > terminal_sx {
+        pd.sx = terminal_sx;
     } else {
-        (*pd).sx = (*pd).psx;
+        pd.sx = pd.psx;
     }
-    if (*pd).ppy.wrapping_add((*pd).sy) > terminal_sy {
-        (*pd).py = terminal_sy.wrapping_sub((*pd).sy);
+    if pd.ppy.wrapping_add(pd.sy) > terminal_sy {
+        pd.py = terminal_sy.wrapping_sub(pd.sy);
     } else {
-        (*pd).py = (*pd).ppy;
+        pd.py = pd.ppy;
     }
-    if (*pd).ppx.wrapping_add((*pd).sx) > terminal_sx {
-        (*pd).px = terminal_sx.wrapping_sub((*pd).sx);
+    if pd.ppx.wrapping_add(pd.sx) > terminal_sx {
+        pd.px = terminal_sx.wrapping_sub(pd.sx);
     } else {
-        (*pd).px = (*pd).ppx;
+        pd.px = pd.ppx;
     }
-    if (*pd).border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
-        screen_resize(&mut (*pd).s, (*pd).sx, (*pd).sy, 0 as ::core::ffi::c_int);
-        if !(*pd).job.is_empty() {
-            job_resize(&(*pd).job, (*pd).sx, (*pd).sy);
+    if pd.border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
+        screen_resize(&mut pd.s, pd.sx, pd.sy, 0 as ::core::ffi::c_int);
+        if !pd.job.is_empty() {
+            job_resize(&pd.job, pd.sx, pd.sy);
         }
-    } else if (*pd).sx > 2 as u_int && (*pd).sy > 2 as u_int {
+    } else if pd.sx > 2 as u_int && pd.sy > 2 as u_int {
         screen_resize(
-            &mut (*pd).s,
-            (*pd).sx.wrapping_sub(2 as u_int),
-            (*pd).sy.wrapping_sub(2 as u_int),
+            &mut pd.s,
+            pd.sx.wrapping_sub(2 as u_int),
+            pd.sy.wrapping_sub(2 as u_int),
             0 as ::core::ffi::c_int,
         );
-        if !(*pd).job.is_empty() {
+        if !pd.job.is_empty() {
             job_resize(
-                &(*pd).job,
-                (*pd).sx.wrapping_sub(2 as u_int),
-                (*pd).sy.wrapping_sub(2 as u_int),
+                &pd.job,
+                pd.sx.wrapping_sub(2 as u_int),
+                pd.sy.wrapping_sub(2 as u_int),
             );
         }
     }
 }
-unsafe fn popup_handle_drag(c_owner: &ClientRef, popup: &PopupGuard, m: &mouse_event) {
+fn popup_handle_drag(c_owner: &ClientRef, pd: &mut popup_data, m: &mouse_event) {
     let (terminal_sx, terminal_sy) = c_owner.terminal_size();
-    let pd = popup.as_ptr();
     let mut px: u_int = 0;
     let mut py: u_int = 0;
     if m.b & MOUSE_MASK_DRAG as u_int == 0 {
-        (*pd).dragging = OFF;
-    } else if (*pd).dragging as ::core::ffi::c_uint
+        pd.dragging = OFF;
+    } else if pd.dragging as ::core::ffi::c_uint
         == MOVE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        if m.x < (*pd).dx {
+        if m.x < pd.dx {
             px = 0 as u_int;
-        } else if m.x.wrapping_sub((*pd).dx).wrapping_add((*pd).sx) > terminal_sx {
-            px = terminal_sx.wrapping_sub((*pd).sx);
+        } else if m.x.wrapping_sub(pd.dx).wrapping_add(pd.sx) > terminal_sx {
+            px = terminal_sx.wrapping_sub(pd.sx);
         } else {
-            px = m.x.wrapping_sub((*pd).dx);
+            px = m.x.wrapping_sub(pd.dx);
         }
-        if m.y < (*pd).dy {
+        if m.y < pd.dy {
             py = 0 as u_int;
-        } else if m.y.wrapping_sub((*pd).dy).wrapping_add((*pd).sy) > terminal_sy {
-            py = terminal_sy.wrapping_sub((*pd).sy);
+        } else if m.y.wrapping_sub(pd.dy).wrapping_add(pd.sy) > terminal_sy {
+            py = terminal_sy.wrapping_sub(pd.sy);
         } else {
-            py = m.y.wrapping_sub((*pd).dy);
+            py = m.y.wrapping_sub(pd.dy);
         }
-        (*pd).px = px;
-        (*pd).py = py;
-        (*pd).dx = m.x.wrapping_sub((*pd).px);
-        (*pd).dy = m.y.wrapping_sub((*pd).py);
-        (*pd).ppx = px;
-        (*pd).ppy = py;
+        pd.px = px;
+        pd.py = py;
+        pd.dx = m.x.wrapping_sub(pd.px);
+        pd.dy = m.y.wrapping_sub(pd.py);
+        pd.ppx = px;
+        pd.ppy = py;
         c_owner.request_redraw(CLIENT_ALLREDRAWFLAGS as u64);
-    } else if (*pd).dragging as ::core::ffi::c_uint
+    } else if pd.dragging as ::core::ffi::c_uint
         == SIZE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        if (*pd).border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
-            if m.x < (*pd).px.wrapping_add(1 as u_int) {
+        if pd.border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
+            if m.x < pd.px.wrapping_add(1 as u_int) {
                 return;
             }
-            if m.y < (*pd).py.wrapping_add(1 as u_int) {
+            if m.y < pd.py.wrapping_add(1 as u_int) {
                 return;
             }
         } else {
-            if m.x < (*pd).px.wrapping_add(3 as u_int) {
+            if m.x < pd.px.wrapping_add(3 as u_int) {
                 return;
             }
-            if m.y < (*pd).py.wrapping_add(3 as u_int) {
+            if m.y < pd.py.wrapping_add(3 as u_int) {
                 return;
             }
         }
-        (*pd).sx = m.x.wrapping_sub((*pd).px);
-        (*pd).sy = m.y.wrapping_sub((*pd).py);
-        (*pd).psx = (*pd).sx;
-        (*pd).psy = (*pd).sy;
-        if (*pd).border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
-            screen_resize(&mut (*pd).s, (*pd).sx, (*pd).sy, 0 as ::core::ffi::c_int);
-            if !(*pd).job.is_empty() {
-                job_resize(&(*pd).job, (*pd).sx, (*pd).sy);
+        pd.sx = m.x.wrapping_sub(pd.px);
+        pd.sy = m.y.wrapping_sub(pd.py);
+        pd.psx = pd.sx;
+        pd.psy = pd.sy;
+        if pd.border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
+            screen_resize(&mut pd.s, pd.sx, pd.sy, 0 as ::core::ffi::c_int);
+            if !pd.job.is_empty() {
+                job_resize(&pd.job, pd.sx, pd.sy);
             }
         } else {
             screen_resize(
-                &mut (*pd).s,
-                (*pd).sx.wrapping_sub(2 as u_int),
-                (*pd).sy.wrapping_sub(2 as u_int),
+                &mut pd.s,
+                pd.sx.wrapping_sub(2 as u_int),
+                pd.sy.wrapping_sub(2 as u_int),
                 0 as ::core::ffi::c_int,
             );
-            if !(*pd).job.is_empty() {
+            if !pd.job.is_empty() {
                 job_resize(
-                    &(*pd).job,
-                    (*pd).sx.wrapping_sub(2 as u_int),
-                    (*pd).sy.wrapping_sub(2 as u_int),
+                    &pd.job,
+                    pd.sx.wrapping_sub(2 as u_int),
+                    pd.sy.wrapping_sub(2 as u_int),
                 );
             }
         }
         c_owner.request_redraw(CLIENT_ALLREDRAWFLAGS as u64);
     }
 }
-unsafe fn popup_key(c_owner: &ClientRef, popup: &PopupGuard, event: &mut key_event) -> i32 {
-    let pd = popup.as_ptr();
+fn popup_key(c_owner: &ClientRef, popup: &PopupGuard, event: &mut key_event) -> i32 {
+    let mut data_guard = popup.data();
+    let pd: &mut popup_data = &mut data_guard;
     let mut current_block: u64;
     let m = &event.m;
     let mut px: u_int = 0;
@@ -617,26 +614,25 @@ unsafe fn popup_key(c_owner: &ClientRef, popup: &PopupGuard, event: &mut key_eve
                 <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
                     << 32 as ::core::ffi::c_int
     {
-        if (*pd).dragging as ::core::ffi::c_uint != OFF as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
-            popup_handle_drag(c_owner, popup, m);
+        if pd.dragging as ::core::ffi::c_uint != OFF as ::core::ffi::c_int as ::core::ffi::c_uint {
+            popup_handle_drag(c_owner, pd, m);
             current_block = 9022331712714349549;
         } else {
-            if m.x < (*pd).px
-                || m.x > (*pd).px.wrapping_add((*pd).sx).wrapping_sub(1 as u_int)
-                || m.y < (*pd).py
-                || m.y > (*pd).py.wrapping_add((*pd).sy).wrapping_sub(1 as u_int)
+            if m.x < pd.px
+                || m.x > pd.px.wrapping_add(pd.sx).wrapping_sub(1 as u_int)
+                || m.y < pd.py
+                || m.y > pd.py.wrapping_add(pd.sy).wrapping_sub(1 as u_int)
             {
                 return 0 as ::core::ffi::c_int;
             }
-            if (*pd).border_lines as ::core::ffi::c_int != BOX_LINES_NONE as ::core::ffi::c_int {
-                if m.x == (*pd).px {
+            if pd.border_lines as ::core::ffi::c_int != BOX_LINES_NONE as ::core::ffi::c_int {
+                if m.x == pd.px {
                     border = LEFT;
-                } else if m.x == (*pd).px.wrapping_add((*pd).sx).wrapping_sub(1 as u_int) {
+                } else if m.x == pd.px.wrapping_add(pd.sx).wrapping_sub(1 as u_int) {
                     border = RIGHT;
-                } else if m.y == (*pd).py {
+                } else if m.y == pd.py {
                     border = TOP;
-                } else if m.y == (*pd).py.wrapping_add((*pd).sy).wrapping_sub(1 as u_int) {
+                } else if m.y == pd.py.wrapping_add(pd.sy).wrapping_sub(1 as u_int) {
                     border = BOTTOM;
                 }
             }
@@ -657,12 +653,12 @@ unsafe fn popup_key(c_owner: &ClientRef, popup: &PopupGuard, event: &mut key_eve
                     current_block = 9022331712714349549;
                 } else {
                     if m.lb & MOUSE_MASK_BUTTONS as u_int == MOUSE_BUTTON_1 as u_int {
-                        (*pd).dragging = MOVE;
+                        pd.dragging = MOVE;
                     } else if m.lb & MOUSE_MASK_BUTTONS as u_int == MOUSE_BUTTON_3 as u_int {
-                        (*pd).dragging = SIZE;
+                        pd.dragging = SIZE;
                     }
-                    (*pd).dx = m.lx.wrapping_sub((*pd).px);
-                    (*pd).dy = m.ly.wrapping_sub((*pd).py);
+                    pd.dx = m.lx.wrapping_sub(pd.px);
+                    pd.dy = m.ly.wrapping_sub(pd.py);
                     current_block = 9022331712714349549;
                 }
             } else {
@@ -672,22 +668,22 @@ unsafe fn popup_key(c_owner: &ClientRef, popup: &PopupGuard, event: &mut key_eve
         match current_block {
             13472856163611868459 => {}
             _ => {
-                (*pd).lx = m.x;
-                (*pd).ly = m.y;
-                (*pd).lb = m.b;
+                pd.lx = m.x;
+                pd.ly = m.y;
+                pd.lb = m.b;
                 return 0 as ::core::ffi::c_int;
             }
         }
     }
-    if ((*pd).flags & (POPUP_CLOSEEXIT | POPUP_CLOSEEXITZERO) == 0 as ::core::ffi::c_int
-        || (*pd).job.is_empty())
+    if (pd.flags & (POPUP_CLOSEEXIT | POPUP_CLOSEEXITZERO) == 0 as ::core::ffi::c_int
+        || pd.job.is_empty())
         && (event.key == '\u{1b}' as i32 as key_code
             || event.key == 'c' as i32 as ::core::ffi::c_ulonglong | KEYC_CTRL)
     {
         return 1 as ::core::ffi::c_int;
     }
-    if (*pd).job.is_empty()
-        && (*pd).flags & POPUP_CLOSEANYKEY != 0
+    if pd.job.is_empty()
+        && pd.flags & POPUP_CLOSEANYKEY != 0
         && !(event.key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
             == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
             || event.key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
@@ -706,7 +702,7 @@ unsafe fn popup_key(c_owner: &ClientRef, popup: &PopupGuard, event: &mut key_eve
     {
         return 1 as ::core::ffi::c_int;
     }
-    if !(*pd).job.is_empty() {
+    if !pd.job.is_empty() {
         if event.key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
             == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
             || event.key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
@@ -716,26 +712,27 @@ unsafe fn popup_key(c_owner: &ClientRef, popup: &PopupGuard, event: &mut key_eve
                     <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
                         << 32 as ::core::ffi::c_int
         {
-            if (*pd).border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
-                px = m.x.wrapping_sub((*pd).px);
-                py = m.y.wrapping_sub((*pd).py);
+            if pd.border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
+                px = m.x.wrapping_sub(pd.px);
+                py = m.y.wrapping_sub(pd.py);
             } else {
-                px = m.x.wrapping_sub((*pd).px).wrapping_sub(1 as u_int);
-                py = m.y.wrapping_sub((*pd).py).wrapping_sub(1 as u_int);
+                px = m.x.wrapping_sub(pd.px).wrapping_sub(1 as u_int);
+                py = m.y.wrapping_sub(pd.py).wrapping_sub(1 as u_int);
             }
-            let Some(buf) = input_key_get_mouse(ScreenMode::from(&(*pd).s), m, px, py) else {
+            let Some(buf) = input_key_get_mouse(ScreenMode::from(&pd.s), m, px, py) else {
                 return 0 as ::core::ffi::c_int;
             };
-            let _ = job_get_event(&(*pd).job).with_stream(|stream| bufferevent_write(stream, &buf));
+            let _ = job_get_event(&pd.job).with_stream(|stream| bufferevent_write(stream, &buf));
             return 0 as ::core::ffi::c_int;
         }
-        let mode = ScreenMode::from(&(*pd).s);
-        let _ = job_get_event(&(*pd).job).with_stream(|stream| input_key(mode, stream, event.key));
+        let mode = ScreenMode::from(&pd.s);
+        let _ = job_get_event(&pd.job).with_stream(|stream| input_key(mode, stream, event.key));
     }
     0 as ::core::ffi::c_int
 }
-unsafe fn popup_job_update_cb(job: &refbox::Weak<job>, popup: &PopupGuard) {
-    let pd = popup.as_ptr();
+fn popup_job_update_cb(job: &refbox::Weak<job>, popup: &PopupGuard) {
+    let mut data_guard = popup.data();
+    let pd: &mut popup_data = &mut data_guard;
     let stream = job_get_event(job);
     let data = stream
         .with_stream(|stream| {
@@ -743,39 +740,41 @@ unsafe fn popup_job_update_cb(job: &refbox::Weak<job>, popup: &PopupGuard) {
                 .map_or_else(Vec::new, |bytes| bytes.to_vec())
         })
         .unwrap_or_default();
-    let client = (*pd).c.as_ref().expect("popup client");
     if data.is_empty() {
         return;
     }
-    let render = PopupRenderSnapshot::new(popup);
+    let render = PopupRenderSnapshot::new(popup.handle(), pd);
+    let client = pd.c.as_ref().expect("popup client");
     client.with_overlay_check_disabled(popup_check_callback(popup.handle()), || {
         input_parse_screen(
-            &mut (*pd)
+            &mut pd
                 .ictx
                 .as_ref()
                 .expect("input context")
                 .try_borrow_mut()
                 .expect("input context not already borrowed"),
-            &mut (*pd).s,
+            &mut pd.s,
             Some(Box::new(move |ttyctx| render.init_ctx(ttyctx))),
             &data,
         )
     });
     let _ = stream.with_stream(|stream| evbuffer_drain(bufferevent_get_input(stream), data.len()));
 }
-unsafe fn popup_job_complete_cb(completion: JobCompletion, popup: &PopupGuard) {
-    let pd = popup.as_ptr();
-    (*pd).status = completion
+fn popup_job_complete_cb(completion: JobCompletion, popup: &PopupGuard) {
+    let mut data_guard = popup.data();
+    let pd: &mut popup_data = &mut data_guard;
+    pd.status = completion
         .status
         .code()
         .or(completion.status.signal())
         .unwrap_or(0);
-    (*pd).job = refbox::Weak::new();
-    if (*pd).flags & POPUP_CLOSEEXIT != 0
-        || (*pd).flags & POPUP_CLOSEEXITZERO != 0 && (*pd).status == 0 as ::core::ffi::c_int
+    pd.job = refbox::Weak::new();
+    if pd.flags & POPUP_CLOSEEXIT != 0
+        || pd.flags & POPUP_CLOSEEXITZERO != 0 && pd.status == 0 as ::core::ffi::c_int
     {
-        let client = (*pd).c.as_ref().expect("popup client");
-        if popup.is_current(client) {
+        let client = pd.c.clone().expect("popup client");
+        drop(data_guard);
+        if popup.is_current(&client) {
             client.clear_overlay();
         }
     }
@@ -783,7 +782,7 @@ unsafe fn popup_job_complete_cb(completion: JobCompletion, popup: &PopupGuard) {
 pub fn popup_present(client: &ClientRef) -> i32 {
     client.popup_overlay().is_some() as i32
 }
-pub unsafe fn popup_modify(
+pub fn popup_modify(
     c_owner: &ClientRef,
     title: Option<&CStr>,
     style: Option<&CStr>,
@@ -797,7 +796,8 @@ pub unsafe fn popup_modify(
     let Some(popup) = handle.upgrade() else {
         return -1;
     };
-    let pd = popup.as_ptr();
+    let mut data_guard = popup.data();
+    let pd: &mut popup_data = &mut data_guard;
     let mut sytmp: style = style {
         gc: grid_cell {
             data: utf8_data {
@@ -829,71 +829,71 @@ pub unsafe fn popup_modify(
     };
     if title.is_some() {
         let updated = popup_optional_string(title);
-        (*pd).title = updated;
+        pd.title = updated;
     }
     if border_style.is_some() {
         let updated = popup_optional_string(border_style);
-        (*pd).border_style = updated;
+        pd.border_style = updated;
 
-        style_set(&mut sytmp, &(*pd).border_cell);
+        style_set(&mut sytmp, &pd.border_cell);
         if style_parse(
             &mut sytmp,
-            &(*pd).border_cell,
-            ((*pd).border_style).as_deref().unwrap_or(c""),
+            &pd.border_cell,
+            (pd.border_style).as_deref().unwrap_or(c""),
         ) == 0 as ::core::ffi::c_int
         {
-            (*pd).border_cell.fg = sytmp.gc.fg;
-            (*pd).border_cell.bg = sytmp.gc.bg;
+            pd.border_cell.fg = sytmp.gc.fg;
+            pd.border_cell.bg = sytmp.gc.bg;
         }
     }
     if style.is_some() {
         let updated = popup_optional_string(style);
-        (*pd).style = updated;
+        pd.style = updated;
 
-        style_set(&mut sytmp, &(*pd).defaults);
+        style_set(&mut sytmp, &pd.defaults);
         if style_parse(
             &mut sytmp,
-            &(*pd).defaults,
-            ((*pd).style).as_deref().unwrap_or(c""),
+            &pd.defaults,
+            (pd.style).as_deref().unwrap_or(c""),
         ) == 0 as ::core::ffi::c_int
         {
-            (*pd).defaults.fg = sytmp.gc.fg;
-            (*pd).defaults.bg = sytmp.gc.bg;
+            pd.defaults.fg = sytmp.gc.fg;
+            pd.defaults.bg = sytmp.gc.bg;
         }
     }
     if lines as ::core::ffi::c_int != BOX_LINES_DEFAULT as ::core::ffi::c_int {
         if lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int
-            && (*pd).border_lines as ::core::ffi::c_int != lines as ::core::ffi::c_int
+            && pd.border_lines as ::core::ffi::c_int != lines as ::core::ffi::c_int
         {
-            screen_resize(&mut (*pd).s, (*pd).sx, (*pd).sy, 1 as ::core::ffi::c_int);
-            job_resize(&(*pd).job, (*pd).sx, (*pd).sy);
-        } else if (*pd).border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int
-            && (*pd).border_lines as ::core::ffi::c_int != lines as ::core::ffi::c_int
+            screen_resize(&mut pd.s, pd.sx, pd.sy, 1 as ::core::ffi::c_int);
+            job_resize(&pd.job, pd.sx, pd.sy);
+        } else if pd.border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int
+            && pd.border_lines as ::core::ffi::c_int != lines as ::core::ffi::c_int
         {
             screen_resize(
-                &mut (*pd).s,
-                (*pd).sx.wrapping_sub(2 as u_int),
-                (*pd).sy.wrapping_sub(2 as u_int),
+                &mut pd.s,
+                pd.sx.wrapping_sub(2 as u_int),
+                pd.sy.wrapping_sub(2 as u_int),
                 1 as ::core::ffi::c_int,
             );
             job_resize(
-                &(*pd).job,
-                (*pd).sx.wrapping_sub(2 as u_int),
-                (*pd).sy.wrapping_sub(2 as u_int),
+                &pd.job,
+                pd.sx.wrapping_sub(2 as u_int),
+                pd.sy.wrapping_sub(2 as u_int),
             );
         }
-        (*pd).border_lines = lines;
+        pd.border_lines = lines;
         c_owner.refresh_terminal_size();
     }
     if flags != -(1 as ::core::ffi::c_int) {
-        (*pd).flags = flags;
+        pd.flags = flags;
     }
     c_owner.request_redraw(CLIENT_ALLREDRAWFLAGS as u64);
     0 as ::core::ffi::c_int
 }
 /// Show a popup on `c_owner`. `wait` is called only once the popup is
 /// published, and its waiter is finished with the popup's status when freed.
-pub(crate) unsafe fn popup_display(
+pub(crate) fn popup_display(
     mut flags: ::core::ffi::c_int,
     mut lines: box_lines,
     wait: impl FnOnce() -> CmdqWaiter,
@@ -980,14 +980,15 @@ pub(crate) unsafe fn popup_display(
     });
     let handle = PopupHandle(owner.downgrade());
     let popup = handle.upgrade().expect("new popup");
-    let pd = popup.as_ptr();
-    (*pd).flags = flags;
-    (*pd).c = Some(c_owner.clone());
-    (*pd).status = 128 as ::core::ffi::c_int + SIGHUP;
-    (*pd).border_lines = lines;
-    (*pd).border_cell = grid_default_cell;
+    let mut data_guard = popup.data();
+    let pd: &mut popup_data = &mut data_guard;
+    pd.flags = flags;
+    pd.c = Some(c_owner.clone());
+    pd.status = 128 as ::core::ffi::c_int + SIGHUP;
+    pd.border_lines = lines;
+    pd.border_cell = grid_default_cell;
     style_apply_with_options(
-        &mut (*pd).border_cell,
+        &mut pd.border_cell,
         c"popup-border-style",
         None,
         &OptionsScope::Window(WindowRef::downgrade(&window)),
@@ -996,28 +997,28 @@ pub(crate) unsafe fn popup_display(
         style_set(&mut sytmp, &grid_default_cell);
         if style_parse(
             &mut sytmp,
-            &(*pd).border_cell,
-            ((*pd).border_style).as_deref().unwrap_or(c""),
+            &pd.border_cell,
+            (pd.border_style).as_deref().unwrap_or(c""),
         ) == 0 as ::core::ffi::c_int
         {
-            (*pd).border_cell.fg = sytmp.gc.fg;
-            (*pd).border_cell.bg = sytmp.gc.bg;
+            pd.border_cell.fg = sytmp.gc.fg;
+            pd.border_cell.bg = sytmp.gc.bg;
         }
     }
-    (*pd).border_cell.attr = 0 as u_short;
-    screen_init(&mut (*pd).s, jx, jy, 0 as u_int);
+    pd.border_cell.attr = 0 as u_short;
+    screen_init(&mut pd.s, jx, jy, 0 as u_int);
     screen_set_default_cursor(
-        &mut (*pd).s,
+        &mut pd.s,
         screen_get_default_cursor(&OptionsScope::GlobalWindow),
     );
     {
-        let mut palette = (*pd).palette.try_borrow_mut().expect("new popup palette");
+        let mut palette = pd.palette.try_borrow_mut().expect("new popup palette");
         colour_palette_init(&mut palette);
         colour_palette_from_option(Some(&mut palette), &OptionsScope::GlobalWindow);
     }
-    (*pd).defaults = grid_default_cell;
+    pd.defaults = grid_default_cell;
     style_apply_with_options(
-        &mut (*pd).defaults,
+        &mut pd.defaults,
         c"popup-style",
         None,
         &OptionsScope::Window(WindowRef::downgrade(&window)),
@@ -1027,37 +1028,37 @@ pub(crate) unsafe fn popup_display(
         style_set(&mut sytmp, &grid_default_cell);
         if style_parse(
             &mut sytmp,
-            &(*pd).defaults,
-            ((*pd).style).as_deref().unwrap_or(c""),
+            &pd.defaults,
+            (pd.style).as_deref().unwrap_or(c""),
         ) == 0 as ::core::ffi::c_int
         {
-            (*pd).defaults.fg = sytmp.gc.fg;
-            (*pd).defaults.bg = sytmp.gc.bg;
+            pd.defaults.fg = sytmp.gc.fg;
+            pd.defaults.bg = sytmp.gc.bg;
         }
     }
-    (*pd).defaults.attr = 0 as u_short;
-    (*pd).px = px;
-    (*pd).py = py;
-    (*pd).sx = sx;
-    (*pd).sy = sy;
-    (*pd).ppx = px;
-    (*pd).ppy = py;
-    (*pd).psx = sx;
-    (*pd).psy = sy;
+    pd.defaults.attr = 0 as u_short;
+    pd.px = px;
+    pd.py = py;
+    pd.sx = sx;
+    pd.sy = sy;
+    pd.ppx = px;
+    pd.ppy = py;
+    pd.psx = sx;
+    pd.psy = sy;
     let update = PopupHandle(owner.downgrade());
     let complete = PopupHandle(owner.downgrade());
-    (*pd).job = job_run(
+    pd.job = job_run(
         shellcmd,
         argv,
         env,
         s_owner,
         cwd,
-        job_update_callback(move |job| unsafe {
+        job_update_callback(move |job| {
             if let Some(popup) = update.upgrade() {
                 popup_job_update_cb(job, &popup);
             }
         }),
-        Some(Box::new(move |completion| unsafe {
+        Some(Box::new(move |completion| {
             if let Some(popup) = complete.upgrade() {
                 popup_job_complete_cb(completion, &popup);
             }
@@ -1067,38 +1068,38 @@ pub(crate) unsafe fn popup_display(
         jx as ::core::ffi::c_int,
         jy as ::core::ffi::c_int,
     );
-    if (*pd).job.is_empty() {
+    if pd.job.is_empty() {
         return -(1 as ::core::ffi::c_int);
     }
-    (*pd).ictx = Some(input_init(
+    pd.ictx = Some(input_init(
         None,
-        job_get_event(&(*pd).job),
-        crate::shared::input::InputPalette::Popup((*pd).palette.downgrade()),
-        (*pd).c.as_ref(),
+        job_get_event(&pd.job),
+        crate::shared::input::InputPalette::Popup(pd.palette.downgrade()),
+        pd.c.as_ref(),
     ));
-    (*pd).waiter = Some(wait());
+    pd.waiter = Some(wait());
     let check_cb = popup_check_callback(PopupHandle(owner.downgrade()));
     let mode = PopupHandle(owner.downgrade());
     let mode_cb: overlay_mode_cb = Some(Box::new(move |_| {
-        mode.upgrade()
-            .and_then(|popup| unsafe { popup_mode(&popup) })
+        mode.upgrade().and_then(|popup| popup_mode(&popup))
     }));
     let draw = PopupHandle(owner.downgrade());
-    let draw_cb: overlay_draw_cb = Some(Box::new(move |c| unsafe {
+    let draw_cb: overlay_draw_cb = Some(Box::new(move |c| {
         if let Some(popup) = draw.upgrade() {
             popup_draw(c, &popup);
         }
     }));
     let key = PopupHandle(owner.downgrade());
-    let key_cb: overlay_key_cb = Some(Box::new(move |c, event| unsafe {
+    let key_cb: overlay_key_cb = Some(Box::new(move |c, event| {
         key.upgrade().map_or(0, |popup| popup_key(c, &popup, event))
     }));
     let resize = PopupHandle(owner.downgrade());
-    let resize_cb: overlay_resize_cb = Some(Box::new(move |c| unsafe {
+    let resize_cb: overlay_resize_cb = Some(Box::new(move |c| {
         if let Some(popup) = resize.upgrade() {
             popup_resize(c, &popup);
         }
     }));
+    drop(data_guard);
     drop(popup);
     c_owner.set_overlay(Overlay::popup(
         owner, check_cb, mode_cb, draw_cb, key_cb, resize_cb,

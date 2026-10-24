@@ -247,7 +247,7 @@ pub struct cmd_entry {
 /// Command entry point; the dispatching queue item retains the command-list
 /// owner for the duration of the call.
 pub type cmd_exec_fn =
-    unsafe fn(refbox::Weak<cmd>, &std::rc::Rc<std::cell::RefCell<cmdq_item>>) -> CmdOutcome;
+    fn(refbox::Weak<cmd>, &std::rc::Rc<std::cell::RefCell<cmdq_item>>) -> CmdOutcome;
 
 #[repr(C)]
 /// Queue items and callers share ownership through ordinary Rc handles.

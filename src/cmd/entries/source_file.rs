@@ -4,7 +4,6 @@ use crate::cmd::queue::{
     cmdq_error, cmdq_get_callback_owned, cmdq_get_client, cmdq_insert_after, cmdq_resumed,
 };
 use crate::cmd::{cmd_get_args, cmd_get_parse_flags};
-use crate::compat::glob::GlobResult;
 use crate::file::{file_read_wait, FileOutcome, FileWait};
 use crate::format::bytes::write_cstr;
 use crate::format::format_single_from_target_cstring;
@@ -12,7 +11,6 @@ use crate::log::{log_cstr, log_debug};
 use crate::reactor::evbuffer_pullup;
 use crate::server_client::Client as _;
 
-use crate::shared::abi::__size_t;
 use crate::shared::abi::*;
 use crate::shared::client::ClientRef;
 use crate::shared::client::CLIENT_CONTROL;
@@ -235,7 +233,7 @@ fn cmd_source_file_quote_for_glob(path: &CStr) -> CString {
     }
     CString::new(quoted).expect("C string path has no interior NUL")
 }
-unsafe fn cmd_source_file_exec(
+fn cmd_source_file_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
@@ -247,7 +245,6 @@ unsafe fn cmd_source_file_exec(
     let mut failed = false;
     let mut parse_flags: ::core::ffi::c_int = 0;
     let mut i: u_int = 0;
-    let mut j: u_int = 0;
     match &c {
         None => {
             if SOURCE_FILE_DEPTH.get() >= CMD_SOURCE_FILE_DEPTH_LIMIT as u_int {
@@ -326,36 +323,35 @@ unsafe fn cmd_source_file_exec(
                 "cmd_source_file_exec",
                 log_cstr(&pattern)
             ));
-            let (matches, result) = GlobResult::run(pattern.as_c_str());
-            if result != 0 as ::core::ffi::c_int {
-                if result != GLOB_NOMATCH || !cdata.flags & CMD_PARSE_QUIET != 0 {
-                    let error = if result == GLOB_NOMATCH {
-                        ENOENT
-                    } else if result == GLOB_NOSPACE {
-                        ENOMEM
-                    } else {
-                        EINVAL
-                    };
-                    cmdq_error(item_handle, |out| {
-                        write!(
-                            out,
-                            "{}",
-                            ErrorText(&std::io::Error::from_raw_os_error(error))
-                        )?;
-                        out.write_all(b": ")?;
-                        write_cstr(out, path)
-                    });
-                    failed = true;
+            match tiri_rt::unix::glob(pattern.as_c_str()) {
+                Err(result) => {
+                    if result != GLOB_NOMATCH || !cdata.flags & CMD_PARSE_QUIET != 0 {
+                        let error = if result == GLOB_NOMATCH {
+                            ENOENT
+                        } else if result == GLOB_NOSPACE {
+                            ENOMEM
+                        } else {
+                            EINVAL
+                        };
+                        cmdq_error(item_handle, |out| {
+                            write!(
+                                out,
+                                "{}",
+                                ErrorText(&std::io::Error::from_raw_os_error(error))
+                            )?;
+                            out.write_all(b": ")?;
+                            write_cstr(out, path)
+                        });
+                        failed = true;
+                    }
                 }
-                drop(pattern);
-            } else {
-                drop(pattern);
-                j = 0 as u_int;
-                while (j as __size_t) < matches.len() {
-                    cmd_source_file_add(&mut cdata, matches.path(j as usize));
-                    j = j.wrapping_add(1);
+                Ok(matches) => {
+                    for path in &matches {
+                        cmd_source_file_add(&mut cdata, path);
+                    }
                 }
             }
+            drop(pattern);
         }
         i = i.wrapping_add(1);
     }

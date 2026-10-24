@@ -8,12 +8,9 @@
 )]
 use crate::cfg::{cfg_report_missing, cfg_set_files};
 use crate::client::client_main;
-use crate::compat::fdforkpty::getptmfd;
 use crate::compat::getopt::Getopt;
 use crate::compat::getprogname::getprogname;
 use crate::environ::{environ_create, environ_find, environ_put, environ_set, process_environment};
-use crate::ffi::libc::tzset;
-use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
 use crate::log::{log_add_level, log_cstr, log_debug};
 use crate::options::options_table;
@@ -21,7 +18,6 @@ use crate::options::{options_set_number, options_set_string, OptionsScope};
 use crate::options::{OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION, OPTIONS_TABLE_WINDOW};
 use crate::shared::abi::uid_t;
 use crate::shared::abi::*;
-use crate::shared::account::passwd;
 use crate::shared::client::{
     CLIENT_CONTROL, CLIENT_CONTROLCONTROL, CLIENT_DEFAULTSOCKET, CLIENT_LOGIN, CLIENT_NOFORK,
     CLIENT_NOSTARTSERVER, CLIENT_UTF8,
@@ -30,13 +26,11 @@ use crate::shared::environment::{environ, environ_entry};
 use crate::shared::errno::ErrorText;
 use crate::shared::key::{MODEKEY_EMACS, MODEKEY_VI};
 use crate::shared::posix_io::X_OK;
-use crate::shared::time::{timespec, CLOCK_REALTIME};
+use crate::shared::time::CLOCK_REALTIME;
 use crate::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::text::search::contains;
 use crate::text::utf8::{utf8_isvalid, utf8_stravis_cstring};
 use crate::tty::tty_parse_features;
-use ::libc::nl_item;
-use libc::{access, clock_gettime, exit, getenv, getpwuid, getuid, nl_langinfo, setlocale};
 use std::ffi::{CStr, CString, OsStr};
 use std::fmt;
 use std::fs;
@@ -46,6 +40,8 @@ use std::os::unix::fs::{DirBuilderExt, MetadataExt};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tiri_rt::unix::reset_timezone;
+use tiri_rt::unix::{locale_codeset, set_locale};
 
 pub use ::libc::{CLOCK_MONOTONIC, CODESET, LC_CTYPE, LC_TIME};
 
@@ -56,7 +52,6 @@ thread_local! {
         std::cell::RefCell::new(None)
     };
     static START_TIME: std::cell::Cell<SystemTime> = const { std::cell::Cell::new(UNIX_EPOCH) };
-    static PTM_FD: std::cell::Cell<::core::ffi::c_int> = const { std::cell::Cell::new(-1) };
     static SOCKET_PATH: std::cell::RefCell<Option<CString>> = const { std::cell::RefCell::new(None) };
 }
 /// The socket path chosen at startup (or by systemd activation).
@@ -92,10 +87,6 @@ pub fn start_time() -> SystemTime {
 pub(crate) fn set_start_time(time: SystemTime) {
     START_TIME.set(time);
 }
-/// The descriptor fdforkpty opens new terminals through, or -1.
-pub fn ptm_fd() -> ::core::ffi::c_int {
-    PTM_FD.get()
-}
 fn usage(status: i32) -> ! {
     let message = [
         b"usage: ".as_slice(),
@@ -118,20 +109,20 @@ fn die(status: i32, message: fmt::Arguments<'_>) -> ! {
     let _ = writeln!(stderr, ": {message}");
     std::process::exit(status);
 }
-unsafe fn getshell() -> CString {
-    let shell = nullable_cstr(getenv(c"SHELL".as_ptr()));
-    if let Some(shell) = shell.filter(|shell| checkshell(Some(shell)) != 0) {
-        return shell.to_owned();
+fn getshell() -> CString {
+    if let Some(shell) = env_cstring("SHELL").filter(|shell| checkshell(Some(shell)) != 0) {
+        return shell;
     }
-    let pw = getpwuid(getuid());
-    if !pw.is_null() {
-        if let Some(shell) =
-            nullable_cstr((*pw).pw_shell).filter(|shell| checkshell(Some(shell)) != 0)
-        {
-            return shell.to_owned();
-        }
+    if let Some(shell) = tiri_rt::unix::user_shell(tiri_rt::unix::user_id())
+        .filter(|shell| checkshell(Some(shell)) != 0)
+    {
+        return shell;
     }
     c"/bin/sh".to_owned()
+}
+/// The value of an environment variable as a C string.
+pub(crate) fn env_cstring(name: &str) -> Option<CString> {
+    std::env::var_os(name).and_then(|value| CString::new(value.into_vec()).ok())
 }
 pub fn checkshell(shell: Option<&CStr>) -> ::core::ffi::c_int {
     let Some(shell) = shell else {
@@ -144,7 +135,7 @@ pub fn checkshell(shell: Option<&CStr>) -> ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
     // SAFETY: access only reads the NUL-terminated path.
-    if unsafe { access(shell.as_ptr(), X_OK) } != 0 as ::core::ffi::c_int {
+    if !tiri_rt::unix::accessible(shell, X_OK) {
         return 0 as ::core::ffi::c_int;
     }
     1 as ::core::ffi::c_int
@@ -249,9 +240,8 @@ fn make_label_cause(parts: &[&[u8]]) -> CString {
     CString::new(bytes).expect("socket label cause contains no NUL")
 }
 
-unsafe fn make_label(label: Option<&CStr>) -> Result<CString, CString> {
-    let mut uid: uid_t = 0;
-    uid = getuid() as uid_t;
+fn make_label(label: Option<&CStr>) -> Result<CString, CString> {
+    let uid: uid_t = tiri_rt::unix::user_id();
     let paths = expand_paths(c"$TMUX_TMPDIR:/tmp/", false);
     if paths.is_empty() {
         return Err(c"no suitable socket path".to_owned());
@@ -320,21 +310,10 @@ pub fn setblocking(fd: std::os::fd::BorrowedFd<'_>, state: ::core::ffi::c_int) {
     let _ = tiri_rt::unix::set_nonblocking(fd, state == 0);
 }
 pub fn get_timer() -> uint64_t {
-    let mut ts: timespec = timespec {
-        tv_sec: 0,
-        tv_nsec: 0,
-    };
-    unsafe {
-        if clock_gettime(CLOCK_MONOTONIC, &raw mut ts) != 0 as ::core::ffi::c_int {
-            clock_gettime(CLOCK_REALTIME, &raw mut ts);
-        }
-    }
-    (ts.tv_sec as ::core::ffi::c_ulonglong)
-        .wrapping_mul(1000 as ::core::ffi::c_ulonglong)
-        .wrapping_add(
-            (ts.tv_nsec as ::core::ffi::c_ulonglong)
-                .wrapping_div(1000000 as ::core::ffi::c_ulonglong),
-        ) as uint64_t
+    let time = tiri_rt::unix::clock_time(CLOCK_MONOTONIC)
+        .or_else(|_| tiri_rt::unix::clock_time(CLOCK_REALTIME))
+        .unwrap_or_default();
+    time.as_millis() as uint64_t
 }
 /// Escape a validated name once before moving it into its Rust owner.
 pub fn clean_name_cstring(name: &CStr, untrusted: ::core::ffi::c_int) -> Option<CString> {
@@ -360,24 +339,24 @@ pub fn check_name(name: &CStr) -> bool {
 pub fn sig2name(signo: ::core::ffi::c_int) -> CString {
     CString::new(signo.to_string()).expect("decimal number has no NUL")
 }
-pub unsafe fn find_cwd() -> Option<CString> {
+pub fn find_cwd() -> Option<CString> {
     // tmux reads the directory into a PATH_MAX buffer, so a longer one is
     // not found at all.
     let cwd = std::env::current_dir()
         .ok()
         .filter(|cwd| cwd.as_os_str().len() < libc::PATH_MAX as usize)?;
-    let Some(pwd) = nullable_cstr(getenv(c"PWD".as_ptr())) else {
+    let Some(pwd) = env_cstring("PWD") else {
         return Some(path_cstring(cwd));
     };
     let same = !pwd.is_empty()
         && matches!(
-            (fs::canonicalize(cstr_path(pwd)), fs::canonicalize(&cwd)),
+            (fs::canonicalize(cstr_path(&pwd)), fs::canonicalize(&cwd)),
             (Ok(resolved1), Ok(resolved2)) if resolved1 == resolved2
         );
     if !same {
         return Some(path_cstring(cwd));
     }
-    Some(pwd.to_owned())
+    Some(pwd)
 }
 /// Return the cached home directory as a borrowed C string. A missing result
 /// is retried on the next call, matching the old null-sentinel cache behavior.
@@ -386,16 +365,9 @@ pub(crate) fn find_home_cstr() -> Option<&'static CStr> {
     if let Some(home) = HOME.get() {
         return Some(home.as_c_str());
     }
-    let owned = unsafe {
-        let mut home = getenv(c"HOME".as_ptr());
-        if home.is_null() || *home as ::core::ffi::c_int == '\0' as i32 {
-            let pw: *mut passwd = getpwuid(getuid());
-            if pw.is_null() {
-                return None;
-            }
-            home = (*pw).pw_dir;
-        }
-        CStr::from_ptr(home).to_owned()
+    let owned = match env_cstring("HOME").filter(|home| !home.is_empty()) {
+        Some(home) => home,
+        None => tiri_rt::unix::user_home(tiri_rt::unix::user_id())?,
     };
     let _ = HOME.set(owned);
     HOME.get().map(CString::as_c_str)
@@ -404,34 +376,31 @@ pub(crate) fn find_home_cstr() -> Option<&'static CStr> {
 pub fn getversion() -> &'static CStr {
     c"3.8"
 }
-unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
+fn main_0(args: &[CString]) -> ::core::ffi::c_int {
     let mut path: Option<CString> = None;
     let mut label: Option<&CStr> = None;
-    let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut keys: ::core::ffi::c_int = 0;
     let mut feat: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut fflag: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut flags: uint64_t = 0 as uint64_t;
-    if setlocale(LC_CTYPE, c"en_US.UTF-8".as_ptr()).is_null()
-        && setlocale(LC_CTYPE, c"C.UTF-8".as_ptr()).is_null()
-    {
-        if setlocale(LC_CTYPE, c"".as_ptr()).is_null() {
+    if set_locale(LC_CTYPE, c"en_US.UTF-8").is_err() && set_locale(LC_CTYPE, c"C.UTF-8").is_err() {
+        if set_locale(LC_CTYPE, c"").is_err() {
             die(1, format_args!("invalid LC_ALL, LC_CTYPE or LANG"));
         }
-        s = nl_langinfo(CODESET as ::core::ffi::c_int as nl_item);
-        let codeset = CStr::from_ptr(s).to_bytes();
-        if !codeset.eq_ignore_ascii_case(b"UTF-8") && !codeset.eq_ignore_ascii_case(b"UTF8") {
+        let codeset = locale_codeset();
+        let bytes = codeset.to_bytes();
+        if !bytes.eq_ignore_ascii_case(b"UTF-8") && !bytes.eq_ignore_ascii_case(b"UTF8") {
             die(
                 1,
                 format_args!(
                     "need UTF-8 locale (LC_CTYPE) but have {}",
-                    CStr::from_ptr(s).to_string_lossy()
+                    codeset.to_string_lossy()
                 ),
             );
         }
     }
-    setlocale(LC_TIME, c"".as_ptr());
-    tzset();
+    let _ = set_locale(LC_TIME, c"");
+    let _ = reset_timezone();
     if args.first().and_then(|arg| arg.as_bytes().first()) == Some(&b'-') {
         flags = CLIENT_LOGIN as uint64_t;
     }
@@ -529,25 +498,14 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
     if flags & CLIENT_NOFORK as uint64_t != 0 && !command_argv.is_empty() {
         usage(1);
     }
-    PTM_FD.set(getptmfd());
-    if ptm_fd() == -(1 as ::core::ffi::c_int) {
-        let error = io::Error::last_os_error();
-        die(1, format_args!("getptmfd: {}", ErrorText(&error)));
-    }
-    if !getenv(c"TMUX".as_ptr()).is_null() {
+    if std::env::var_os("TMUX").is_some() {
         flags |= CLIENT_UTF8 as uint64_t;
     } else {
-        s = getenv(c"LC_ALL".as_ptr());
-        if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 {
-            s = getenv(c"LC_CTYPE".as_ptr());
-        }
-        if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 {
-            s = getenv(c"LANG".as_ptr());
-        }
-        if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 {
-            s = c"".as_ptr();
-        }
-        let lang = CStr::from_ptr(s).to_bytes();
+        let lang = ["LC_ALL", "LC_CTYPE", "LANG"]
+            .into_iter()
+            .find_map(|name| env_cstring(name).filter(|value| !value.is_empty()))
+            .unwrap_or_default();
+        let lang = lang.as_bytes();
         if contains(lang, b"UTF-8", true) || contains(lang, b"UTF8", true) {
             flags |= CLIENT_UTF8 as uint64_t;
         }
@@ -571,17 +529,13 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
             out.write_all(getshell().as_bytes())
         });
     });
-    s = getenv(c"VISUAL".as_ptr());
-    if !s.is_null() || {
-        s = getenv(c"EDITOR".as_ptr());
-        !s.is_null()
-    } {
+    if let Some(editor) = env_cstring("VISUAL").or_else(|| env_cstring("EDITOR")) {
         OptionsScope::GlobalServer.with_local(|oo| {
             options_set_string(oo, c"editor", 0 as ::core::ffi::c_int, |out| {
-                write_cstr(out, nullable_cstr(s))
+                write_cstr(out, editor.as_c_str())
             });
         });
-        let editor = CStr::from_ptr(s).to_bytes();
+        let editor = editor.as_bytes();
         let base = editor.rsplit(|&byte| byte == b'/').next().unwrap_or(editor);
         if contains(base, b"vi", false) {
             keys = MODEKEY_VI;
@@ -596,12 +550,10 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
         });
     }
     if path.is_none() && label.is_none() {
-        s = getenv(c"TMUX".as_ptr());
-        if !s.is_null()
-            && *s as ::core::ffi::c_int != '\0' as i32
-            && *s as ::core::ffi::c_int != ',' as i32
+        if let Some(tmux) =
+            env_cstring("TMUX").filter(|tmux| !matches!(tmux.as_bytes().first(), None | Some(b',')))
         {
-            let tmux = CStr::from_ptr(s).to_bytes();
+            let tmux = tmux.as_bytes();
             let end = tmux
                 .iter()
                 .position(|byte| *byte == b',')
@@ -615,13 +567,13 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
             Err(cause) => {
                 let _ = io::stderr().write_all(&[cause.as_bytes(), b"\n"].concat());
                 drop(cause);
-                exit(1 as ::core::ffi::c_int);
+                std::process::exit(1);
             }
         });
         flags |= CLIENT_DEFAULTSOCKET as uint64_t;
     }
     set_socket_path(path.expect("socket path was selected"));
-    exit(client_main(&command_argv, flags, feat));
+    std::process::exit(client_main(&command_argv, flags, feat));
 }
 pub const TMUX_CONF: &std::ffi::CStr =
     c"/etc/tmux.conf:~/.tmux.conf:$XDG_CONFIG_HOME/tmux/tmux.conf:~/.config/tmux/tmux.conf";
@@ -632,5 +584,5 @@ pub fn main() {
                 .expect("Failed to convert argument into CString.")
         })
         .collect();
-    unsafe { ::std::process::exit(main_0(&args_strings) as i32) }
+    ::std::process::exit(main_0(&args_strings) as i32)
 }

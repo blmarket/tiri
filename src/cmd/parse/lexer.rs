@@ -4,9 +4,9 @@ use super::{ParseSession, RefCell};
 use crate::environ::environ_find;
 use crate::shared::stdio::EOF;
 use crate::tmux::global_environ;
-use libc::{getpwnam, getpwuid, getuid};
 use std::ffi::{c_char, CStr, CString};
 use tiri_cmdparse::{Token, TokenText};
+use tiri_rt::unix::{user_home, user_home_by_name, user_id};
 
 type LocatedToken = (usize, Token, usize);
 
@@ -444,27 +444,24 @@ impl<'a, 'input> Lexer<'a, 'input> {
             name.push(ch as u8);
         }
         let name = finish(name);
-        unsafe {
-            let pw = if name.is_empty() {
-                let entry =
-                    global_environ(|environment| environ_find(environment, c"HOME").cloned());
-                if let Some(entry) = entry {
-                    if let Some(home) = &entry.value {
-                        if !home.is_empty() {
-                            bytes.extend_from_slice(home.as_bytes());
-                            return Ok(());
-                        }
+        let home = if name.is_empty() {
+            let entry = global_environ(|environment| environ_find(environment, c"HOME").cloned());
+            if let Some(entry) = entry {
+                if let Some(home) = &entry.value {
+                    if !home.is_empty() {
+                        bytes.extend_from_slice(home.as_bytes());
+                        return Ok(());
                     }
                 }
-                getpwuid(getuid())
-            } else {
-                getpwnam(name.as_ptr())
-            };
-            if pw.is_null() || (*pw).pw_dir.is_null() {
-                return Err(LexError::Syntax);
             }
-            bytes.extend_from_slice(CStr::from_ptr((*pw).pw_dir).to_bytes());
-        }
+            user_home(user_id())
+        } else {
+            user_home_by_name(&name)
+        };
+        let Some(home) = home else {
+            return Err(LexError::Syntax);
+        };
+        bytes.extend_from_slice(home.to_bytes());
         Ok(())
     }
 }

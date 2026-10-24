@@ -6,7 +6,6 @@ use crate::compat::imsg::{
     imsgbuf_receive, imsgbuf_written,
 };
 use crate::compat::setproctitle::setproctitle;
-use crate::ffi::utf8proc::utf8proc_version;
 use crate::format::bytes::write_cstr;
 use crate::log::{fatal, log_cstr, log_debug, log_open, log_pointer, log_toggle};
 use crate::reactor;
@@ -20,11 +19,10 @@ pub use crate::shared::signal::{
     SIGUSR2, SIGWINCH, SIG_DFL, SIG_IGN,
 };
 use crate::tmux::{getversion, socket_path_cstr};
-use libc::utsname;
-use libc::{daemon, fork, sigaction, sigemptyset, uname};
 use refbox::RefBox;
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 use std::os::fd::{AsFd, AsRawFd, OwnedFd};
+use tiri_rt::unix::{set_signal_disposition, SignalDisposition};
 use tiri_rt::{AsyncRead as _, AsyncWrite as _, Runtime as _, Signals as _};
 
 pub use ::libc::{SIGPIPE, SIGQUIT};
@@ -143,9 +141,13 @@ async fn proc_peer_io(peer: refbox::Weak<tmuxpeer>, source: tiri_rt::mio::Io) {
     }
     let mut prefer_write = false;
     loop {
-        let Some((reading, (output, raw_fd))) = with_peer(&peer, |peer| {
+        let Some((reading, output)) = with_peer(&peer, |peer| {
             (peer.flags & PEER_BAD == 0, imsgbuf_output(&peer.ibuf))
         }) else {
+            return;
+        };
+        let Ok((output, fd)) = output else {
+            proc_disconnect(&peer);
             return;
         };
         if !reading && output.is_empty() {
@@ -155,7 +157,7 @@ async fn proc_peer_io(peer: refbox::Weak<tmuxpeer>, source: tiri_rt::mio::Io) {
         let mut input = vec![0; 65536];
         let buffers = [std::io::IoSlice::new(&output)];
         let completion = {
-            let fd = raw_fd.map(|raw| unsafe { std::os::fd::BorrowedFd::borrow_raw(raw) });
+            let fd = fd.as_ref().map(AsFd::as_fd);
             let mut reader = pin!(source.read(&mut input));
             let mut writer = pin!(source.write(&buffers, fd));
             poll_fn(|cx| {
@@ -217,9 +219,61 @@ pub fn imsg_string(imsg: &imsg) -> Option<&CStr> {
     }
     CStr::from_bytes_until_nul(&imsg.data).ok()
 }
-/// The bytes of a plain message struct, as sent on the wire.
-pub fn bytes_of<T: Copy>(value: &T) -> &[u8] {
-    unsafe { std::slice::from_raw_parts((value as *const T).cast::<u8>(), size_of::<T>()) }
+/// A value sent on the wire as its in-memory layout: its fields' native-endian
+/// bytes in order, `SIZE` bytes in all.
+pub trait PlainMessage: Sized {
+    const SIZE: usize;
+    fn write_to(&self, out: &mut [u8]);
+    fn read_from(data: &[u8]) -> Self;
+}
+impl PlainMessage for i32 {
+    const SIZE: usize = size_of::<i32>();
+    fn write_to(&self, out: &mut [u8]) {
+        out.copy_from_slice(&self.to_ne_bytes());
+    }
+    fn read_from(data: &[u8]) -> Self {
+        Self::from_ne_bytes(data.try_into().expect("message field size"))
+    }
+}
+impl PlainMessage for u64 {
+    const SIZE: usize = size_of::<u64>();
+    fn write_to(&self, out: &mut [u8]) {
+        out.copy_from_slice(&self.to_ne_bytes());
+    }
+    fn read_from(data: &[u8]) -> Self {
+        Self::from_ne_bytes(data.try_into().expect("message field size"))
+    }
+}
+/// Implement [`PlainMessage`] for `repr(C)` structs of `c_int` fields, whose
+/// layout has no padding.
+macro_rules! int_message {
+    ($($message:ident { $($field:ident),+ })+) => {$(
+        impl $crate::proc::PlainMessage for $message {
+            const SIZE: usize = [$(stringify!($field)),+].len() * size_of::<::core::ffi::c_int>();
+            fn write_to(&self, out: &mut [u8]) {
+                let mut fields = out.chunks_exact_mut(size_of::<::core::ffi::c_int>());
+                $($crate::proc::PlainMessage::write_to(&self.$field, fields.next().expect("message field"));)+
+            }
+            fn read_from(data: &[u8]) -> Self {
+                let mut fields = data.chunks_exact(size_of::<::core::ffi::c_int>());
+                Self {
+                    $($field: $crate::proc::PlainMessage::read_from(fields.next().expect("message field")),)+
+                }
+            }
+        }
+        const _: () = assert!(<$message as $crate::proc::PlainMessage>::SIZE == size_of::<$message>());
+    )+};
+}
+pub(crate) use int_message;
+/// The bytes of a plain message, as sent on the wire.
+pub fn bytes_of<T: PlainMessage>(value: &T) -> Vec<u8> {
+    let mut bytes = vec![0; T::SIZE];
+    value.write_to(&mut bytes);
+    bytes
+}
+/// A plain message from the start of `data`, if it is long enough.
+pub fn read_plain<T: PlainMessage>(data: &[u8]) -> Option<T> {
+    data.get(..T::SIZE).map(T::read_from)
 }
 pub fn proc_send(
     peer: &refbox::Weak<tmuxpeer>,
@@ -254,8 +308,7 @@ pub fn proc_send(
     proc_update_io(peer);
     0 as ::core::ffi::c_int
 }
-pub unsafe fn proc_start(name: &CStr) -> RefBox<tmuxproc> {
-    let mut u: utsname = unsafe { ::core::mem::zeroed() };
+pub fn proc_start(name: &CStr) -> RefBox<tmuxproc> {
     log_open(name);
     setproctitle(|out| {
         write_cstr(out, &*name)?;
@@ -263,9 +316,6 @@ pub unsafe fn proc_start(name: &CStr) -> RefBox<tmuxproc> {
         out.write_all(socket_path_cstr().to_bytes())?;
         out.write_all(b")")
     });
-    if uname(&raw mut u) < 0 as ::core::ffi::c_int {
-        u = ::core::mem::zeroed();
-    }
     log_debug(format_args!(
         "{} started ({}): version {}, socket {}, protocol {}",
         log_cstr(name),
@@ -274,22 +324,28 @@ pub unsafe fn proc_start(name: &CStr) -> RefBox<tmuxproc> {
         log_cstr(&socket_path_cstr()),
         { PROTOCOL_VERSION }
     ));
+    let field = |field: &[::core::ffi::c_char]| {
+        let bytes: Vec<u8> = field
+            .iter()
+            .map(|&byte| byte as u8)
+            .take_while(|&byte| byte != 0)
+            .collect();
+        CString::new(bytes).expect("bytes before NUL")
+    };
+    let (sysname, release, version) = match tiri_rt::unix::uname() {
+        Ok(u) => (field(&u.sysname), field(&u.release), field(&u.version)),
+        Err(_) => Default::default(),
+    };
     log_debug(format_args!(
         "on {} {} {}",
-        log_cstr(CStr::from_ptr(
-            &raw mut u.sysname as *mut ::core::ffi::c_char
-        )),
-        log_cstr(CStr::from_ptr(
-            &raw mut u.release as *mut ::core::ffi::c_char
-        )),
-        log_cstr(CStr::from_ptr(
-            &raw mut u.version as *mut ::core::ffi::c_char
-        ))
+        log_cstr(&sysname),
+        log_cstr(&release),
+        log_cstr(&version)
     ));
     log_debug(format_args!("using runtime tiri-rt mio"));
     log_debug(format_args!(
         "using utf8proc {}",
-        log_cstr(CStr::from_ptr(utf8proc_version()))
+        log_cstr(crate::ffi::utf8proc::version())
     ));
     log_debug(format_args!(
         "using ncurses {} {:06}",
@@ -308,17 +364,15 @@ pub unsafe fn proc_start(name: &CStr) -> RefBox<tmuxproc> {
 /// Drop only after dispatch has returned and no further process use is possible.
 impl Drop for tmuxproc {
     fn drop(&mut self) {
-        unsafe {
-            clear_signals(self, 0);
-            while let Some(peer) = self.peers.pop() {
-                proc_free_peer(peer);
-            }
+        clear_signals(self, 0);
+        while let Some(peer) = self.peers.pop() {
+            proc_free_peer(peer);
         }
     }
 }
 
 /// Drive the process until exit, then release streams and the runtime owner.
-pub unsafe fn proc_loop(
+pub fn proc_loop(
     tp: &refbox::Weak<tmuxproc>,
     mut runtime: tiri_rt::mio::Runtime,
     mut loopcb: Option<&mut dyn FnMut() -> bool>,
@@ -350,25 +404,19 @@ pub unsafe fn proc_loop(
     reactor::shutdown_runtime(runtime);
 }
 
-pub unsafe fn proc_exit(tp: &refbox::Weak<tmuxproc>) {
+pub fn proc_exit(tp: &refbox::Weak<tmuxproc>) {
     tp.try_borrow_mut().expect("process exist").exit = 1;
 }
 
-pub unsafe fn proc_set_signals(
+pub fn proc_set_signals(
     tp: &refbox::Weak<tmuxproc>,
     signalcb: Option<Box<dyn FnMut(ProcessSignal)>>,
 ) {
-    let mut sa: sigaction = unsafe { ::core::mem::zeroed() };
     let mut process = tp.try_borrow_mut().expect("process exist");
     process.signalcb = signalcb;
-    sigemptyset(&raw mut sa.sa_mask);
-    sa.sa_flags = SA_RESTART;
-    sa.sa_sigaction = SIG_IGN;
-    sigaction(SIGPIPE, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
-    sigaction(SIGTSTP, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
-    sigaction(SIGTTIN, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
-    sigaction(SIGTTOU, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
-    sigaction(SIGQUIT, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
+    for signal in [SIGPIPE, SIGTSTP, SIGTTIN, SIGTTOU, SIGQUIT] {
+        let _ = set_signal_disposition(signal, SignalDisposition::Ignore);
+    }
     drop(process.signal_task.take());
     let tp = tp.clone();
     process.signal_task = Some(
@@ -387,30 +435,23 @@ pub unsafe fn proc_set_signals(
         .expect("start process signals"),
     );
 }
-pub unsafe fn proc_clear_signals(tp: &refbox::Weak<tmuxproc>, defaults: ::core::ffi::c_int) {
+pub fn proc_clear_signals(tp: &refbox::Weak<tmuxproc>, defaults: ::core::ffi::c_int) {
     clear_signals(&mut tp.try_borrow_mut().expect("process exist"), defaults);
 }
-unsafe fn clear_signals(tp: &mut tmuxproc, defaults: ::core::ffi::c_int) {
-    let mut sa: sigaction = unsafe { ::core::mem::zeroed() };
-    sigemptyset(&raw mut sa.sa_mask);
-    sa.sa_flags = SA_RESTART;
-    sa.sa_sigaction = SIG_DFL;
-    sigaction(SIGPIPE, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
-    sigaction(SIGTSTP, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
+fn clear_signals(tp: &mut tmuxproc, defaults: ::core::ffi::c_int) {
+    for signal in [SIGPIPE, SIGTSTP] {
+        let _ = set_signal_disposition(signal, SignalDisposition::Default);
+    }
     drop(tp.signal_task.take());
     if defaults != 0 {
-        sigaction(SIGINT, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
-        sigaction(SIGQUIT, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
-        sigaction(SIGHUP, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
-        sigaction(SIGCHLD, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
-        sigaction(SIGCONT, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
-        sigaction(SIGTERM, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
-        sigaction(SIGUSR1, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
-        sigaction(SIGUSR2, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
-        sigaction(SIGWINCH, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
+        for signal in [
+            SIGINT, SIGQUIT, SIGHUP, SIGCHLD, SIGCONT, SIGTERM, SIGUSR1, SIGUSR2, SIGWINCH,
+        ] {
+            let _ = set_signal_disposition(signal, SignalDisposition::Default);
+        }
     }
 }
-pub unsafe fn proc_add_peer(
+pub fn proc_add_peer(
     tp: &refbox::Weak<tmuxproc>,
     socket: OwnedFd,
     mut dispatchcb: Box<dyn for<'a> FnMut(PeerMessage<'a>)>,
@@ -442,7 +483,7 @@ pub unsafe fn proc_add_peer(
     proc_update_io(&peer);
     peer
 }
-pub unsafe fn proc_remove_peer(peer: &refbox::Weak<tmuxpeer>) {
+pub fn proc_remove_peer(peer: &refbox::Weak<tmuxpeer>) {
     let parent = with_peer(peer, |peer| peer.parent.clone()).expect("removed peer is live");
     let owned_peer = {
         let mut parent = parent.try_borrow_mut().expect("process exist");
@@ -466,33 +507,27 @@ fn proc_free_peer(owned_peer: refbox::RefBox<tmuxpeer>) {
 pub fn proc_kill_peer(peer: &refbox::Weak<tmuxpeer>) {
     with_peer(peer, |peer| peer.flags |= PEER_BAD).expect("killed peer is live");
 }
-pub unsafe fn proc_toggle_log(tp: &refbox::Weak<tmuxproc>) {
+pub fn proc_toggle_log(tp: &refbox::Weak<tmuxproc>) {
     log_toggle(&tp.try_borrow().expect("process exist").name);
 }
-pub unsafe fn proc_fork_and_daemon() -> (pid_t, OwnedFd) {
+/// Fork the server and detach it; the server child gets pid 0.
+pub fn proc_fork_and_daemon() -> (pid_t, OwnedFd) {
     assert!(
         !tiri_rt::mio::Runtime::is_initialized(),
         "daemonize before initializing the runtime"
     );
     let (parent, child) = tiri_rt::unix::socket_pair()
         .unwrap_or_else(|error| fatal(&error, |out| out.write_all(b"socketpair failed")));
-    let pid = fork() as pid_t;
-    match pid {
-        -1 => {
-            fatal(&std::io::Error::last_os_error(), |out| {
-                out.write_all(b"fork failed")
-            });
-        }
-        0 => {
+    match tiri_rt::unix::fork() {
+        Err(error) => fatal(&error, |out| out.write_all(b"fork failed")),
+        Ok(None) => {
             drop(parent);
-            if daemon(1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int) != 0 as ::core::ffi::c_int {
-                fatal(&std::io::Error::last_os_error(), |out| {
-                    out.write_all(b"daemon failed")
-                });
+            if let Err(error) = tiri_rt::unix::daemonize() {
+                fatal(&error, |out| out.write_all(b"daemon failed"));
             }
             (0, child)
         }
-        _ => {
+        Ok(Some(pid)) => {
             drop(child);
             (pid, parent)
         }

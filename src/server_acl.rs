@@ -1,16 +1,14 @@
 use crate::cmd::queue::cmdq_print;
-use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
 use crate::server_client::Client as _;
 use crate::server_client::ClientRegistry;
 use crate::shared::abi::*;
 use crate::shared::abi::{__gid_t, __uid_t, gid_t, id_t, uid_t};
-use crate::shared::account::{group, passwd};
 use crate::shared::client::ClientRef;
 use crate::shared::client::CLIENT_READONLY;
 use crate::shared::command::cmdq_item;
 use crate::shared::server_acl::SERVER_ACL_IS_GROUP;
-use libc::{getgrgid, getpwuid, getuid};
+use tiri_rt::unix::{group_name, user_id, user_name};
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -124,20 +122,18 @@ fn server_acl_update() {
         c = registry_c_owner.clone();
     }
 }
-pub unsafe fn server_acl_init() {
+pub fn server_acl_init() {
     server_acl_entries::clear();
-    if getuid() != 0 as __uid_t {
+    if user_id() != 0 as __uid_t {
         server_acl_allow(0 as id_t, 0 as ::core::ffi::c_int);
     }
-    server_acl_allow(getuid() as id_t, 0 as ::core::ffi::c_int);
+    server_acl_allow(user_id() as id_t, 0 as ::core::ffi::c_int);
 }
 pub fn server_acl_find(mut id: id_t, mut flags: ::core::ffi::c_int) -> ::core::ffi::c_int {
     server_acl_entries::find(id, flags).is_some() as ::core::ffi::c_int
 }
-pub unsafe fn server_acl_display(item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>) {
-    let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
-    let mut gr: *mut group = ::core::ptr::null_mut::<group>();
-    let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+pub fn server_acl_display(item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>) {
+    let mut name = std::ffi::CString::default();
     let mut type_0: ::core::ffi::c_char = 0;
     let mut current_block_12: u64;
     for loop_0 in server_acl_entries::snapshot() {
@@ -145,36 +141,26 @@ pub unsafe fn server_acl_display(item_handle: &std::rc::Rc<std::cell::RefCell<cm
             if loop_0.id == 0 as id_t {
                 current_block_12 = 14916268686031723178;
             } else {
-                pw = getpwuid(loop_0.id as __uid_t);
-                if !pw.is_null() {
-                    name = (*pw).pw_name;
-                } else {
-                    name = c"unknown".as_ptr();
-                }
+                name = user_name(loop_0.id as __uid_t).unwrap_or_else(|| c"unknown".to_owned());
                 type_0 = 'U' as i32 as ::core::ffi::c_char;
                 current_block_12 = 11050875288958768710;
             }
         } else {
-            gr = getgrgid(loop_0.id as __gid_t);
-            if !gr.is_null() {
-                name = (*gr).gr_name;
-            } else {
-                name = c"unknown".as_ptr();
-            }
+            name = group_name(loop_0.id as __gid_t).unwrap_or_else(|| c"unknown".to_owned());
             type_0 = 'G' as i32 as ::core::ffi::c_char;
             current_block_12 = 11050875288958768710;
         }
         if current_block_12 == 11050875288958768710 {
             if loop_0.flags & SERVER_ACL_READONLY != 0 {
                 cmdq_print(item_handle, |out| {
-                    write_cstr(out, nullable_cstr(name))?;
+                    write_cstr(out, name.as_c_str())?;
                     out.write_all(b" (")?;
                     out.write_all(&[(type_0 as ::core::ffi::c_int) as u8])?;
                     out.write_all(b",R)")
                 });
             } else {
                 cmdq_print(item_handle, |out| {
-                    write_cstr(out, nullable_cstr(name))?;
+                    write_cstr(out, name.as_c_str())?;
                     out.write_all(b" (")?;
                     out.write_all(&[(type_0 as ::core::ffi::c_int) as u8])?;
                     out.write_all(b",W)")

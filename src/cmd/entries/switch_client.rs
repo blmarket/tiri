@@ -9,7 +9,7 @@ use crate::server_fn::server_redraw_window;
 use crate::window::Window as _;
 use crate::window_pane::WindowPane as _;
 use crate::winlink::winlink_window;
-use libc::getuid;
+use tiri_rt::unix::user_id;
 
 use crate::shared::abi::uid_t;
 use crate::shared::abi::*;
@@ -52,7 +52,7 @@ pub static cmd_switch_client_entry: cmd_entry = {
         exec: Some(cmd_switch_client_exec),
     }
 };
-unsafe fn cmd_switch_client_exec(
+fn cmd_switch_client_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
@@ -108,7 +108,7 @@ unsafe fn cmd_switch_client_exec(
     if args_has(args, 'r' as i32 as u_char) != 0 {
         if tc.as_ref().expect("live client").flags() & CLIENT_READONLY as uint64_t != 0 {
             uid = c.as_ref().expect("live client").peer_uid();
-            if uid != getuid() {
+            if uid != user_id() {
                 cmdq_error(item_handle, |out| out.write_all(b"client is read-only"));
                 return CmdOutcome::Error;
             }

@@ -1,5 +1,3 @@
-use crate::ffi::fnmatch::fnmatch_matches;
-use crate::ffi::libc::environ;
 use crate::format::bytes::format_message_with;
 use crate::format::bytes::write_cstr;
 use crate::log::{log_cstr, log_debug};
@@ -7,21 +5,9 @@ use crate::options::{options_get_string, OptionsScope};
 use crate::session::Session;
 use crate::shared::session::SessionRef;
 use crate::tmux::{getversion, global_environ, socket_path_cstr};
-use crate::xmalloc::xcalloc;
-use libc::{free, setenv};
-use std::ffi::{CStr, CString};
-
-struct ProcessEnvironmentSeed(*mut *mut ::core::ffi::c_char);
-
-impl Drop for ProcessEnvironmentSeed {
-    fn drop(&mut self) {
-        unsafe {
-            if environ != self.0 {
-                free(self.0 as *mut ::core::ffi::c_void);
-            }
-        }
-    }
-}
+use std::ffi::{CStr, CString, OsStr};
+use std::os::unix::ffi::{OsStrExt, OsStringExt};
+use tiri_rt::unix::fnmatch;
 
 impl environ {
     pub fn find(&self, name: &CStr) -> Option<&environ_entry> {
@@ -75,7 +61,6 @@ pub fn environ_iter(env: &environ) -> impl Iterator<Item = &environ_entry> {
     env.entries()
 }
 
-use crate::shared::abi::*;
 pub use crate::shared::environment::ENVIRON_HIDDEN;
 pub use crate::shared::environment::{environ, environ_entry};
 
@@ -142,7 +127,7 @@ pub fn environ_update(scope: &OptionsScope, src: &environ, dst: &mut environ) {
     for pattern in patterns {
         let mut found = false;
         for entry in environ_iter(src) {
-            if fnmatch_matches(&pattern, &entry.name, 0) {
+            if fnmatch(&pattern, &entry.name, 0) {
                 environ_set(dst, &entry.name, 0, |out| {
                     write_cstr(out, entry.value.as_deref())
                 });
@@ -158,39 +143,31 @@ pub fn environ_update(scope: &OptionsScope, src: &environ, dst: &mut environ) {
 /// is no substitute: it skips entries without `=` and reparses names that
 /// begin with `=`, while tmux passes every raw string on.
 pub(crate) fn process_environment() -> Vec<CString> {
-    let mut entries = Vec::new();
-    // SAFETY: `environ` is a NULL-terminated array of C strings, and its
-    // writers (environ_push, setenv) run only in forked children or after
-    // the two readers are done.
-    unsafe {
-        let mut var = environ;
-        while !var.is_null() && !(*var).is_null() {
-            entries.push(CStr::from_ptr(*var).to_owned());
-            var = var.add(1);
-        }
-    }
-    entries
+    std::env::vars_os()
+        .map(|(name, value)| {
+            let mut entry = name.into_vec();
+            entry.push(b'=');
+            entry.extend_from_slice(value.as_bytes());
+            CString::new(entry).expect("environment excludes NUL")
+        })
+        .collect()
 }
-pub unsafe fn environ_push(env: &environ) {
-    let seed = xcalloc(::core::mem::size_of::<*mut ::core::ffi::c_char>() as size_t)
-        as *mut *mut ::core::ffi::c_char;
-    environ = seed;
-    let seed_owner = ProcessEnvironmentSeed(seed);
-    for envent in environ_iter(env) {
-        if !envent.value.is_none()
-            && *envent.name.as_ptr() as ::core::ffi::c_int != '\0' as i32
-            && !envent.flags & ENVIRON_HIDDEN != 0
-        {
-            setenv(
-                (envent.name).as_ptr().cast_mut(),
-                (envent.value)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                1 as ::core::ffi::c_int,
-            );
+pub fn environ_push(env: &environ) {
+    let settable = |name: &[u8]| !name.is_empty() && !name.contains(&b'=');
+    for (name, _) in std::env::vars_os() {
+        if settable(name.as_bytes()) {
+            std::env::remove_var(name);
         }
     }
-    drop(seed_owner);
+    for envent in environ_iter(env) {
+        let Some(value) = envent.value.as_deref() else {
+            continue;
+        };
+        let name = envent.name.to_bytes();
+        if settable(name) && !envent.flags & ENVIRON_HIDDEN != 0 {
+            std::env::set_var(OsStr::from_bytes(name), OsStr::from_bytes(value.to_bytes()));
+        }
+    }
 }
 pub fn environ_log(
     env: &environ,
@@ -212,7 +189,6 @@ pub fn environ_for_session(
     s_owner: Option<&SessionRef>,
     mut no_TERM: ::core::ffi::c_int,
 ) -> Box<environ> {
-    let _value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut idx: ::core::ffi::c_int = 0;
     let mut env = environ_create();
     global_environ(|environment| environ_copy(environment, &mut env));

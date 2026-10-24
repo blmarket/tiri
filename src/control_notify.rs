@@ -3,7 +3,6 @@ use crate::events_payload::{
     event_payload_get_client, event_payload_get_pane, event_payload_get_session,
     event_payload_get_string, event_payload_get_window, event_payload_print_owned,
 };
-use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
 use crate::format::{format_create, format_defaults, format_expand_cstring};
 use crate::server_client::Client;
@@ -20,7 +19,7 @@ use std::{ffi::CStr, rc::Rc};
 #[derive(Copy, Clone)]
 pub struct C2RustUnnamed_35 {
     pub name: &'static CStr,
-    pub cb: unsafe fn(&CStr, &mut event_payload),
+    pub cb: fn(&CStr, &mut event_payload),
 }
 
 fn recipients(mut visit: impl FnMut(&ClientRef)) {
@@ -33,14 +32,14 @@ fn recipients(mut visit: impl FnMut(&ClientRef)) {
     }
 }
 
-unsafe fn control_pane_mode_changed_cb(_name: &CStr, payload: &mut event_payload) {
+fn control_pane_mode_changed_cb(_name: &CStr, payload: &mut event_payload) {
     if let Some(pane) = event_payload_get_pane(payload) {
         recipients(|client| client.notify(|out| write!(out, "%pane-mode-changed %{}", pane.id())));
     } else if let Some(value) = event_payload_print_owned(payload) {
         recipients(|client| {
             client.notify(|out| {
                 out.write_all(b"%pane-mode-changed ")?;
-                write_cstr(out, nullable_cstr(value.as_ptr().cast()))
+                write_cstr(out, CStr::from_bytes_until_nul(&value).ok())
             })
         });
     }
@@ -293,10 +292,7 @@ pub fn control_build_events() {
             .wrapping_div(::core::mem::size_of::<C2RustUnnamed_35>() as usize)
     {
         let callback = events[i as usize].cb;
-        events_add_sink(
-            events[i as usize].name,
-            events_callback(move |name, payload| unsafe { callback(name, payload) }),
-        );
+        events_add_sink(events[i as usize].name, events_callback(callback));
         i = i.wrapping_add(1);
     }
 }

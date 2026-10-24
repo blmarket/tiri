@@ -1,5 +1,5 @@
-use super::bytes::cstr_basename;
 use super::bytes::format_cstring;
+use super::bytes::{cstr_basename, cstr_dirname};
 use super::*;
 use crate::compat::strtod::strtod;
 use crate::format::bytes::cstr_suffix;
@@ -12,12 +12,13 @@ use crate::server_client::Client;
 use crate::session::Session;
 use crate::shared::client::ClientRef;
 use crate::shared::session::SessionRef;
-use crate::shared::time::{format_strftime, local_time};
+use crate::shared::time::asctime_text;
 use crate::window::{Window, WindowPane, WindowRef};
 use crate::winlink::winlink_window;
 use std::collections::btree_map;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
+use tiri_rt::unix::{format_time, local_time};
 
 pub(super) fn format_quote_shell(s: &CStr) -> CString {
     let input = s.to_bytes();
@@ -83,7 +84,7 @@ pub(crate) fn format_pretty_time_cstring(mut t: time_t) -> CString {
     } else {
         c"%h%y"
     };
-    format_strftime(&mut s, fmt, &tm);
+    format_time(&mut s, fmt, &tm);
     CStr::from_bytes_until_nul(&s)
         .unwrap_or_default()
         .to_owned()
@@ -246,25 +247,16 @@ pub(super) fn format_find(
                 found = Some(format_time_difference(t));
             } else if modifiers & FORMAT_PRETTY as uint64_t != 0 {
                 found = Some(format_pretty_time_cstring(t));
-            } else {
-                if let Some(time_format) = time_format {
-                    let tm = local_time(t)?;
-                    format_strftime(&mut s, time_format, &tm);
-                } else {
-                    if unsafe { ctime_r(&t, s.as_mut_ptr().cast()) }.is_null() {
-                        return None;
-                    }
-                    let line_end = s
-                        .iter()
-                        .position(|&byte| byte == b'\n' || byte == 0)
-                        .expect("ctime output is terminated");
-                    s[line_end] = 0;
-                }
+            } else if let Some(time_format) = time_format {
+                let tm = local_time(t)?;
+                format_time(&mut s, time_format, &tm);
                 found = Some(
                     CStr::from_bytes_until_nul(&s)
                         .unwrap_or_default()
                         .to_owned(),
                 );
+            } else {
+                found = Some(asctime_text(&local_time(t)?));
             }
             return found;
         }
@@ -277,8 +269,7 @@ pub(super) fn format_find(
             found = cstr_basename(&found);
         }
         if modifiers & FORMAT_DIRNAME as uint64_t != 0 {
-            let mut scratch = found.into_bytes_with_nul();
-            found = unsafe { CStr::from_ptr(dirname(scratch.as_mut_ptr().cast())) }.to_owned();
+            found = cstr_dirname(&found);
         }
         if modifiers & FORMAT_QUOTE_SHELL as uint64_t != 0 {
             found = format_quote_shell(found.as_c_str());
@@ -588,7 +579,7 @@ pub(super) fn format_match(fm: &format_modifier, pattern: &CStr, text: &CStr) ->
         } else {
             0
         };
-        fnmatch_matches(pattern, text, flags)
+        fnmatch(pattern, text, flags)
     };
     if matched {
         c"1".to_owned()
@@ -2402,12 +2393,13 @@ pub(super) fn format_expand1_cstring(es: &mut format_expand_state<'_>, fmt: &[u8
     if es.flags & FORMAT_EXPAND_TIME != 0 && fmt.contains(&b'%') {
         if es.time == 0 as time_t {
             es.time = crate::shared::time::unix_seconds(std::time::SystemTime::now());
-            if let Some(tm) = local_time(es.time) {
-                es.tm = tm;
-            }
+            es.tm = local_time(es.time);
         }
         let time_format = CString::new(fmt).expect("format contains no NUL");
-        let len = format_strftime(&mut expanded, &time_format, &es.tm);
+        let len = es
+            .tm
+            .as_ref()
+            .map_or(0, |tm| format_time(&mut expanded, &time_format, tm));
         if len == 0 as size_t {
             format_log1(es, c"format_expand1", |out| {
                 out.write_all(b"format is too long")

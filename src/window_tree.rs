@@ -50,9 +50,7 @@ use crate::shared::sort::sort_criteria;
 use crate::shared::sort::*;
 use crate::shared::tree::RB_NEGINF;
 use crate::shared::window::WindowRef;
-use crate::shared::window::{
-    window_mode, window_mode_entry, window_mode_screen_payload, winlink, ModeCell,
-};
+use crate::shared::window::{window_mode, window_mode_entry, winlink, ModeCell};
 use crate::sort::{
     sort_get_panes_window, sort_get_sessions, sort_get_winlinks_session,
     sort_would_window_tree_swap,
@@ -742,8 +740,8 @@ fn window_tree_draw_session(
         return;
     };
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut cx: u_int = ctx.screen.cx;
-    let mut cy: u_int = ctx.screen.cy;
+    let mut cx: u_int = ctx.with_screen(|s| s.cx);
+    let mut cy: u_int = ctx.with_screen(|s| s.cy);
     let mut loop_0: u_int = 0;
     let mut total: u_int = 0;
     let mut visible: u_int = 0;
@@ -996,8 +994,8 @@ fn window_tree_draw_window(
     };
     let window = winlink_window(&wl).expect("preview window");
     (|| {
-        let mut cx: u_int = ctx.screen.cx;
-        let mut cy: u_int = ctx.screen.cy;
+        let mut cx: u_int = ctx.with_screen(|s| s.cx);
+        let mut cy: u_int = ctx.with_screen(|s| s.cy);
         let mut loop_0: u_int = 0;
         let mut total: u_int = 0;
         let mut visible: u_int = 0;
@@ -1276,8 +1274,8 @@ fn window_tree_draw_info(
         us: 0,
         link: 0,
     };
-    let mut cx: u_int = ctx.screen.cx;
-    let mut cy: u_int = ctx.screen.cy;
+    let mut cx: u_int = ctx.with_screen(|s| s.cx);
+    let mut cy: u_int = ctx.with_screen(|s| s.cy);
     let mut i: u_int = 0;
     let mut j: u_int = 0;
     let mut k: u_int = 0;
@@ -1799,9 +1797,13 @@ fn window_tree_get_screen(
     else {
         return;
     };
-    let tree_owner = unsafe { window_mode_screen_payload(&mode.data, |data| data.data.clone()) };
+    let tree_owner = mode
+        .data
+        .try_borrow()
+        .ok()
+        .and_then(|data| data.data.clone());
     if let Some(tree_owner) = tree_owner {
-        unsafe { mode_tree_visit_screen(&tree_owner, visit) };
+        mode_tree_visit_screen(&tree_owner, visit);
     }
 }
 
@@ -1936,7 +1938,7 @@ fn window_tree_enqueue_command_done(client_owner: Option<&ClientRef>, mode: &Tre
 }
 /// Prompt input handler that receives the live tree mode owner.
 type window_tree_prompt_fn =
-    unsafe fn(Option<&ClientRef>, &TreeMode, Option<&CStr>, prompt_key_result) -> prompt_result;
+    fn(Option<&ClientRef>, &TreeMode, Option<&CStr>, prompt_key_result) -> prompt_result;
 
 fn window_tree_prompt_callbacks(
     mode: TreeMode,
@@ -1947,7 +1949,7 @@ fn window_tree_prompt_callbacks(
 ) {
     let observer = Rc::downgrade(&mode);
     let input: crate::mode_tree::mode_tree_prompt_input_cb =
-        Some(Box::new(move |client, text, key| unsafe {
+        Some(Box::new(move |client, text, key| {
             let Some(owner) = window_tree_live_mode(&observer) else {
                 return PROMPT_CLOSE;
             };

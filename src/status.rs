@@ -669,7 +669,7 @@ pub fn status_prompt_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
     };
     let prompt = c_owner.prompt_observer();
     let prompt = prompt.try_borrow_mut().expect("unborrowed active prompt");
-    crate::prompt::prompt_draw_cursor_style(&prompt, ctx.screen);
+    ctx.with_screen_mut(|s| crate::prompt::prompt_draw_cursor_style(&prompt, s));
     let prepared = crate::prompt::prompt_prepare_draw(&prompt, ax, aw);
     let prompt_cx = crate::prompt::prompt_draw_prepared(&prompt, &mut ctx, pdd, prepared);
     drop(prompt);

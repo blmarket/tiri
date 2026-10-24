@@ -387,17 +387,14 @@ fn mode_tree_alloc_data() -> std::rc::Rc<std::cell::RefCell<mode_tree_data>> {
 }
 
 /// Visit the tree's screen for the pane. `mode_tree_draw` holds the tree
-/// borrow while it expands formats for this same pane, and those formats read
-/// the displayed screen's mode and cursor state. Such a reentrant visit sees
-/// the screen in its mid-draw state through the cell, as the pane always has;
-/// every other visit goes through the borrow.
-pub unsafe fn mode_tree_visit_screen(
+/// borrow while it expands formats for this same pane; such a reentrant visit
+/// finds no screen rather than one in the middle of a draw.
+pub fn mode_tree_visit_screen(
     owner: &Rc<RefCell<mode_tree_data>>,
     visit: &mut dyn FnMut(&mut screen),
 ) {
-    match owner.try_borrow_mut() {
-        Ok(mut mtd) => visit(&mut mtd.screen),
-        Err(_) => visit(&mut (*owner.as_ptr()).screen),
+    if let Ok(mut mtd) = owner.try_borrow_mut() {
+        visit(&mut mtd.screen);
     }
 }
 
@@ -1163,7 +1160,7 @@ pub fn mode_tree_draw(tree_owner: &Rc<RefCell<mode_tree_data>>) {
     }
     drop(ft_owner);
     if !(mtd.preview == MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int) {
-        sy = ctx.screen.grid().sy;
+        sy = ctx.with_screen(|s| s.grid().sy);
         if !(sy <= 4 as u_int
             || h < 2 as u_int
             || sy.wrapping_sub(h) <= 4 as u_int
@@ -1267,7 +1264,7 @@ pub fn mode_tree_draw(tree_owner: &Rc<RefCell<mode_tree_data>>) {
     if mtd.prompt.is_some() {
         mode_tree_draw_prompt(mtd.prompt_top, &mtd.prompt, &mut mtd.prompt_cx, &mut ctx);
     } else {
-        ctx.screen.mode &= !MODE_CURSOR;
+        ctx.with_screen_mut(|s| s.mode &= !MODE_CURSOR);
         screen_write_cursormove(
             &mut ctx,
             0 as ::core::ffi::c_int,
@@ -1283,8 +1280,8 @@ fn mode_tree_draw_prompt(
     prompt_cx: &mut u_int,
     ctx: &mut screen_write_ctx,
 ) {
-    let mut sx: u_int = ctx.screen.grid().sx;
-    let mut sy: u_int = ctx.screen.grid().sy;
+    let mut sx: u_int = ctx.with_screen(|s| s.grid().sx);
+    let mut sy: u_int = ctx.with_screen(|s| s.grid().sy);
     let mut py: u_int = 0;
     if sx == 0 as u_int || sy == 0 as u_int {
         return;
@@ -1299,7 +1296,7 @@ fn mode_tree_draw_prompt(
         area_width: sx,
         prompt_line: py,
     };
-    ctx.screen.mode |= MODE_CURSOR;
+    ctx.with_screen_mut(|s| s.mode |= MODE_CURSOR);
     *prompt_cx = prompt_draw(
         &prompt
             .as_ref()
@@ -1530,23 +1527,17 @@ fn mode_tree_search_set(tree_owner: &Rc<RefCell<mode_tree_data>>) {
 }
 fn mode_tree_observed_prompt_callback(
     tree: &Rc<RefCell<mode_tree_data>>,
-    callback: unsafe fn(
-        &Rc<RefCell<mode_tree_data>>,
-        Option<&CStr>,
-        prompt_key_result,
-    ) -> prompt_result,
+    callback: fn(&Rc<RefCell<mode_tree_data>>, Option<&CStr>, prompt_key_result) -> prompt_result,
 ) -> mode_tree_prompt_input_cb {
     let observer = Rc::downgrade(tree);
     Some(Box::new(move |_, input, key| {
         let Some(owner) = observer.upgrade() else {
             return PROMPT_CLOSE;
         };
-        unsafe {
-            if owner.borrow().dead != 0 {
-                return PROMPT_CLOSE;
-            }
-            callback(&owner, input, key)
+        if owner.borrow().dead != 0 {
+            return PROMPT_CLOSE;
         }
+        callback(&owner, input, key)
     }))
 }
 
@@ -1785,8 +1776,8 @@ fn mode_tree_draw_help(
     let help = helpcb.map(|callback| callback());
     let lines: &[&'static CStr] = help.map_or(&[], |info| info.lines);
     let item = help.map_or(c"item", |info| info.item);
-    let mut sx: u_int = ctx.screen.grid().sx;
-    let mut sy: u_int = ctx.screen.grid().sy;
+    let mut sx: u_int = ctx.with_screen(|s| s.grid().sx);
+    let mut sy: u_int = ctx.with_screen(|s| s.grid().sy);
     let mut x: u_int = 0;
     let mut y: u_int = 0;
     let mut w = help
@@ -2343,44 +2334,42 @@ mod mode_tree_tests {
 
     #[test]
     fn item_key_label_tracks_repeated_line_builds() {
-        unsafe {
-            let mtd_owner = mode_tree_alloc_data();
-            let mut key = b'x' as key_code;
-            let key_ptr = &raw const key;
-            mtd_owner.borrow_mut().keycb = Some(Box::new(move |_, _| *key_ptr));
-            let item = mtd_owner
-                .borrow_mut()
-                .add(None, ModeTreeItemData::None, 1, c"row", None, 1);
-            for (next, expected) in [
-                (b'x' as key_code, Some(b"x".as_slice())),
-                (KEYC_NONE, None),
-                (b'y' as key_code, Some(b"y".as_slice())),
-            ] {
-                key = next;
-                mtd_owner.borrow_mut().clear_lines();
-                let children = mtd_owner.borrow().children.snapshot();
-                mode_tree_build_lines(&mtd_owner, &children, 0);
-                match expected {
-                    Some(expected) => {
-                        assert_eq!(
-                            (item.borrow().keystr)
-                                .as_deref()
-                                .expect("string is present")
-                                .to_bytes(),
-                            expected
-                        );
-                        assert_eq!(item.borrow().keylen, expected.len());
-                    }
-                    None => {
-                        assert!(item.borrow().keystr.is_none());
-                        assert_eq!(item.borrow().keylen, 0);
-                    }
+        let mtd_owner = mode_tree_alloc_data();
+        let key = std::rc::Rc::new(std::cell::Cell::new(b'x' as key_code));
+        let shared_key = key.clone();
+        mtd_owner.borrow_mut().keycb = Some(Box::new(move |_, _| shared_key.get()));
+        let item = mtd_owner
+            .borrow_mut()
+            .add(None, ModeTreeItemData::None, 1, c"row", None, 1);
+        for (next, expected) in [
+            (b'x' as key_code, Some(b"x".as_slice())),
+            (KEYC_NONE, None),
+            (b'y' as key_code, Some(b"y".as_slice())),
+        ] {
+            key.set(next);
+            mtd_owner.borrow_mut().clear_lines();
+            let children = mtd_owner.borrow().children.snapshot();
+            mode_tree_build_lines(&mtd_owner, &children, 0);
+            match expected {
+                Some(expected) => {
+                    assert_eq!(
+                        (item.borrow().keystr)
+                            .as_deref()
+                            .expect("string is present")
+                            .to_bytes(),
+                        expected
+                    );
+                    assert_eq!(item.borrow().keylen, expected.len());
+                }
+                None => {
+                    assert!(item.borrow().keystr.is_none());
+                    assert_eq!(item.borrow().keylen, 0);
                 }
             }
-            mode_tree_free_items(&mut mtd_owner.borrow_mut().children);
-            mtd_owner.borrow_mut().clear_lines();
-            drop(mtd_owner);
         }
+        mode_tree_free_items(&mut mtd_owner.borrow_mut().children);
+        mtd_owner.borrow_mut().clear_lines();
+        drop(mtd_owner);
     }
 
     fn nested_build(tree: &Rc<RefCell<mode_tree_data>>, empty: bool) {

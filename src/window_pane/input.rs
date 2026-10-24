@@ -46,8 +46,8 @@ use crate::screen_write::{
     screen_write_insertcharacter, screen_write_insertline, screen_write_linefeed,
     screen_write_mode_clear, screen_write_mode_set, screen_write_rawstring, screen_write_reset,
     screen_write_reverseindex, screen_write_scrolldown, screen_write_scrollregion,
-    screen_write_scrollup, screen_write_setselection, screen_write_start,
-    screen_write_start_callback, screen_write_start_pane, screen_write_stop,
+    screen_write_scrollup, screen_write_setselection, screen_write_start_base,
+    screen_write_start_beside, screen_write_start_callback, screen_write_stop,
 };
 use crate::server_client::Client as _;
 use crate::server_client::ClientRegistry;
@@ -160,6 +160,7 @@ fn input_clear_params(ictx: &mut input_ctx) {
 mod input_buffer_ownership_tests {
     use super::*;
     use crate::reactor::bufferevent_new;
+    use crate::screen_write::screen_write_start;
 
     #[test]
     fn palette_source_observes_pane_or_popup_owner() {
@@ -2035,9 +2036,9 @@ fn input_reset_cell(ictx: &mut input_ctx) {
 }
 fn input_save_state(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) {
     ictx.old_cell = ictx.cell;
-    ictx.old_cx = sctx.screen.cx;
-    ictx.old_cy = sctx.screen.cy;
-    ictx.old_mode = sctx.screen.mode;
+    ictx.old_cx = sctx.with_screen(|s| s.cx);
+    ictx.old_cy = sctx.with_screen(|s| s.cy);
+    ictx.old_mode = sctx.with_screen(|s| s.mode);
 }
 fn input_restore_state(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) {
     ictx.cell = ictx.old_cell;
@@ -2077,7 +2078,7 @@ impl Drop for input_ctx {
             drop(input_free_request(self, 0));
         }
         if let Some(pane) = self.wp.upgrade() {
-            pane.stop_sync(None);
+            pane.stop_sync();
         }
     }
 }
@@ -2086,12 +2087,7 @@ pub fn input_reset(ictx: &mut input_ctx, mut clear: ::core::ffi::c_int) {
     input_reset_cell(ictx);
     if let Some(pane) = input_pane_owner.as_ref().filter(|_| clear != 0) {
         let modes_empty = pane.borrow().modes.is_empty();
-        let base = unsafe { &mut (*pane.as_ptr()).base };
-        let mut ctx = if modes_empty {
-            screen_write_start_pane(pane, base)
-        } else {
-            screen_write_start(base)
-        };
+        let mut ctx = screen_write_start_base(pane, modes_empty);
         screen_write_reset(&mut ctx);
         screen_write_stop(ctx);
     }
@@ -2206,18 +2202,7 @@ pub(super) fn input_parse_buffer(
         }
         (wp.id, wp.modes.is_empty())
     };
-    // The context borrows `base` until stop. While it does, nothing else may
-    // read or write `base`: parser callbacks reach the pane through `ictx.wp`
-    // only for its other fields, and sync state goes through the context
-    // (`start_sync`, `screen_write_end_sync`). Known exception: entering or
-    // leaving the alternate screen refits the window, which can resize this
-    // pane's `base` in place through the pane.
-    let base = unsafe { &mut (*wp_owner.as_ptr()).base };
-    let mut ctx = if modes_empty {
-        screen_write_start_pane(wp_owner, base)
-    } else {
-        screen_write_start(base)
-    };
+    let mut ctx = screen_write_start_base(wp_owner, modes_empty);
     log_debug(format_args!(
         "{}: %{} {}, {} bytes: {}",
         "input_parse_buffer",
@@ -2469,13 +2454,13 @@ fn input_c0_dispatch(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) -> ::cor
             screen_write_backspace(sctx);
         }
         9 => {
-            cx = sctx.screen.cx;
-            if !(cx >= sctx.screen.grid().sx.wrapping_sub(1 as u_int)) {
-                line = sctx.screen.cy.wrapping_add(sctx.screen.grid().hsize);
-                grid_get_cell(sctx.screen.grid(), cx, line, &mut first_gc);
+            cx = sctx.with_screen(|s| s.cx);
+            if !(cx >= sctx.with_screen(|s| s.grid().sx.wrapping_sub(1 as u_int))) {
+                line = sctx.with_screen(|s| s.cy.wrapping_add(s.grid().hsize));
+                sctx.with_screen(|s| grid_get_cell(s.grid(), cx, line, &mut first_gc));
                 loop {
                     if has_content == 0 {
-                        grid_get_cell(sctx.screen.grid(), cx, line, &mut gc);
+                        sctx.with_screen(|s| grid_get_cell(s.grid(), cx, line, &mut gc));
                         if gc.data.size as ::core::ffi::c_int != 1 as ::core::ffi::c_int
                             || gc.data.data[0] as ::core::ffi::c_int != ' ' as i32
                             || !grid_cells_look_equal(&gc, &first_gc)
@@ -2484,20 +2469,20 @@ fn input_c0_dispatch(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) -> ::cor
                         }
                     }
                     cx = cx.wrapping_add(1);
-                    if screen_has_tab(&*sctx.screen, cx) {
+                    if sctx.with_screen(|s| screen_has_tab(s, cx)) {
                         break;
                     }
-                    if !(cx < sctx.screen.grid().sx.wrapping_sub(1 as u_int)) {
+                    if !(cx < sctx.with_screen(|s| s.grid().sx.wrapping_sub(1 as u_int))) {
                         break;
                     }
                 }
-                width = cx.wrapping_sub(sctx.screen.cx);
+                width = cx.wrapping_sub(sctx.with_screen(|s| s.cx));
                 if has_content != 0
                     || width as usize > ::core::mem::size_of::<[u_char; 32]>() as usize
                 {
-                    sctx.screen.cx = cx;
+                    sctx.with_screen_mut(|s| s.cx = cx);
                 } else {
-                    grid_get_cell(sctx.screen.grid(), sctx.screen.cx, line, &mut gc);
+                    sctx.with_screen(|s| grid_get_cell(s.grid(), s.cx, line, &mut gc));
                     grid_set_tab(&mut gc, width);
                     screen_write_collect_add(sctx, &gc);
                 }
@@ -2505,7 +2490,7 @@ fn input_c0_dispatch(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) -> ::cor
         }
         10..=12 => {
             screen_write_linefeed(sctx, 0 as ::core::ffi::c_int, ictx.cell.cell.bg as u_int);
-            if sctx.screen.mode & MODE_CRLF != 0 {
+            if sctx.with_screen(|s| s.mode) & MODE_CRLF != 0 {
                 screen_write_carriagereturn(sctx);
             }
         }
@@ -2564,9 +2549,9 @@ fn input_esc_dispatch(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) -> ::co
             screen_write_linefeed(sctx, 0 as ::core::ffi::c_int, ictx.cell.cell.bg as u_int);
         }
         5 => {
-            if sctx.screen.cx < sctx.screen.grid().sx {
-                let column = sctx.screen.cx;
-                screen_set_tab(&mut *sctx.screen, column, true);
+            if sctx.with_screen(|s| s.cx) < sctx.with_screen(|s| s.grid().sx) {
+                let column = sctx.with_screen(|s| s.cx);
+                sctx.with_screen_mut(|s| screen_set_tab(&mut *s, column, true));
             }
         }
         8 => {
@@ -2637,9 +2622,9 @@ fn input_csi_dispatch(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) -> ::co
     };
     match entry.type_0 {
         0 => {
-            cx = sctx.screen.cx;
-            if cx > sctx.screen.grid().sx.wrapping_sub(1 as u_int) {
-                cx = sctx.screen.grid().sx.wrapping_sub(1 as u_int);
+            cx = sctx.with_screen(|s| s.cx);
+            if cx > sctx.with_screen(|s| s.grid().sx.wrapping_sub(1 as u_int)) {
+                cx = sctx.with_screen(|s| s.grid().sx.wrapping_sub(1 as u_int));
             }
             n = input_get(
                 ictx,
@@ -2655,12 +2640,12 @@ fn input_csi_dispatch(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) -> ::co
                 } {
                     loop {
                         cx = cx.wrapping_sub(1);
-                        if !(cx > 0 as u_int && !screen_has_tab(&*sctx.screen, cx)) {
+                        if !(cx > 0 as u_int && !sctx.with_screen(|s| screen_has_tab(s, cx))) {
                             break;
                         }
                     }
                 }
-                sctx.screen.cx = cx;
+                sctx.with_screen_mut(|s| s.cx = cx);
             }
         }
         3 => {
@@ -2877,7 +2862,7 @@ fn input_csi_dispatch(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) -> ::co
                 ictx,
                 1 as u_int,
                 1 as ::core::ffi::c_int,
-                sctx.screen.grid().sy as ::core::ffi::c_int,
+                sctx.with_screen(|s| s.grid().sy) as ::core::ffi::c_int,
             );
             if n != -(1 as ::core::ffi::c_int) && m != -(1 as ::core::ffi::c_int) {
                 screen_write_scrollregion(
@@ -2918,7 +2903,7 @@ fn input_csi_dispatch(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) -> ::co
             );
             match m {
                 4 => {
-                    n = if sctx.screen.mode & MODE_INSERT != 0 {
+                    n = if sctx.with_screen(|s| s.mode) & MODE_INSERT != 0 {
                         1 as ::core::ffi::c_int
                     } else {
                         2 as ::core::ffi::c_int
@@ -2943,7 +2928,7 @@ fn input_csi_dispatch(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) -> ::co
             );
             match m {
                 1 => {
-                    n = if sctx.screen.mode & MODE_KCURSOR != 0 {
+                    n = if sctx.with_screen(|s| s.mode) & MODE_KCURSOR != 0 {
                         1 as ::core::ffi::c_int
                     } else {
                         2 as ::core::ffi::c_int
@@ -2953,25 +2938,25 @@ fn input_csi_dispatch(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) -> ::co
                     n = 4 as ::core::ffi::c_int;
                 }
                 6 => {
-                    n = if sctx.screen.mode & MODE_ORIGIN != 0 {
+                    n = if sctx.with_screen(|s| s.mode) & MODE_ORIGIN != 0 {
                         1 as ::core::ffi::c_int
                     } else {
                         2 as ::core::ffi::c_int
                     };
                 }
                 7 => {
-                    n = if sctx.screen.mode & MODE_WRAP != 0 {
+                    n = if sctx.with_screen(|s| s.mode) & MODE_WRAP != 0 {
                         1 as ::core::ffi::c_int
                     } else {
                         2 as ::core::ffi::c_int
                     };
                 }
                 12 => {
-                    if sctx.screen.cstyle as ::core::ffi::c_uint
+                    if sctx.with_screen(|s| s.cstyle) as ::core::ffi::c_uint
                         != SCREEN_CURSOR_DEFAULT as ::core::ffi::c_int as ::core::ffi::c_uint
-                        || sctx.screen.mode & MODE_CURSOR_BLINKING_SET != 0
+                        || sctx.with_screen(|s| s.mode) & MODE_CURSOR_BLINKING_SET != 0
                     {
-                        n = if sctx.screen.mode & MODE_CURSOR_BLINKING != 0 {
+                        n = if sctx.with_screen(|s| s.mode) & MODE_CURSOR_BLINKING != 0 {
                             1 as ::core::ffi::c_int
                         } else {
                             2 as ::core::ffi::c_int
@@ -3000,77 +2985,77 @@ fn input_csi_dispatch(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) -> ::co
                     }
                 }
                 25 => {
-                    n = if sctx.screen.mode & MODE_CURSOR != 0 {
+                    n = if sctx.with_screen(|s| s.mode) & MODE_CURSOR != 0 {
                         1 as ::core::ffi::c_int
                     } else {
                         2 as ::core::ffi::c_int
                     };
                 }
                 47 | 1047 | 1049 => {
-                    n = if sctx.screen.saved_grid.is_some() {
+                    n = if sctx.with_screen(|s| s.saved_grid.is_some()) {
                         1 as ::core::ffi::c_int
                     } else {
                         2 as ::core::ffi::c_int
                     };
                 }
                 1000 => {
-                    n = if sctx.screen.mode & MODE_MOUSE_STANDARD != 0 {
+                    n = if sctx.with_screen(|s| s.mode) & MODE_MOUSE_STANDARD != 0 {
                         1 as ::core::ffi::c_int
                     } else {
                         2 as ::core::ffi::c_int
                     };
                 }
                 1002 => {
-                    n = if sctx.screen.mode & MODE_MOUSE_BUTTON != 0 {
+                    n = if sctx.with_screen(|s| s.mode) & MODE_MOUSE_BUTTON != 0 {
                         1 as ::core::ffi::c_int
                     } else {
                         2 as ::core::ffi::c_int
                     };
                 }
                 1003 => {
-                    n = if sctx.screen.mode & MODE_MOUSE_ALL != 0 {
+                    n = if sctx.with_screen(|s| s.mode) & MODE_MOUSE_ALL != 0 {
                         1 as ::core::ffi::c_int
                     } else {
                         2 as ::core::ffi::c_int
                     };
                 }
                 1004 => {
-                    n = if sctx.screen.mode & MODE_FOCUSON != 0 {
+                    n = if sctx.with_screen(|s| s.mode) & MODE_FOCUSON != 0 {
                         1 as ::core::ffi::c_int
                     } else {
                         2 as ::core::ffi::c_int
                     };
                 }
                 1005 => {
-                    n = if sctx.screen.mode & MODE_MOUSE_UTF8 != 0 {
+                    n = if sctx.with_screen(|s| s.mode) & MODE_MOUSE_UTF8 != 0 {
                         1 as ::core::ffi::c_int
                     } else {
                         2 as ::core::ffi::c_int
                     };
                 }
                 1006 => {
-                    n = if sctx.screen.mode & MODE_MOUSE_SGR != 0 {
+                    n = if sctx.with_screen(|s| s.mode) & MODE_MOUSE_SGR != 0 {
                         1 as ::core::ffi::c_int
                     } else {
                         2 as ::core::ffi::c_int
                     };
                 }
                 2004 => {
-                    n = if sctx.screen.mode & MODE_BRACKETPASTE != 0 {
+                    n = if sctx.with_screen(|s| s.mode) & MODE_BRACKETPASTE != 0 {
                         1 as ::core::ffi::c_int
                     } else {
                         2 as ::core::ffi::c_int
                     };
                 }
                 2026 => {
-                    n = if sctx.screen.mode & MODE_SYNC != 0 {
+                    n = if sctx.with_screen(|s| s.mode) & MODE_SYNC != 0 {
                         1 as ::core::ffi::c_int
                     } else {
                         2 as ::core::ffi::c_int
                     };
                 }
                 2031 => {
-                    n = if sctx.screen.mode & MODE_THEME_UPDATES != 0 {
+                    n = if sctx.with_screen(|s| s.mode) & MODE_THEME_UPDATES != 0 {
                         1 as ::core::ffi::c_int
                     } else {
                         2 as ::core::ffi::c_int
@@ -3104,8 +3089,8 @@ fn input_csi_dispatch(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) -> ::co
                         write!(
                             out,
                             "\x1B[{};{}R",
-                            { sctx.screen.cy.wrapping_add(1 as u_int) },
-                            { sctx.screen.cx.wrapping_add(1 as u_int) }
+                            { sctx.with_screen(|s| s.cy.wrapping_add(1 as u_int)) },
+                            { sctx.with_screen(|s| s.cx.wrapping_add(1 as u_int)) }
                         )
                     });
                 }
@@ -3227,7 +3212,7 @@ fn input_csi_dispatch(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) -> ::co
                 1 as ::core::ffi::c_int,
             );
             if !(n == -(1 as ::core::ffi::c_int)) {
-                m = sctx.screen.grid().sx.wrapping_sub(sctx.screen.cx) as ::core::ffi::c_int;
+                m = sctx.with_screen(|s| s.grid().sx.wrapping_sub(s.cx)) as ::core::ffi::c_int;
                 if n > m {
                     n = m;
                 }
@@ -3310,13 +3295,13 @@ fn input_csi_dispatch(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) -> ::co
             ) {
                 -1 => {}
                 0 => {
-                    if sctx.screen.cx < sctx.screen.grid().sx {
-                        let column = sctx.screen.cx;
-                        screen_set_tab(&mut *sctx.screen, column, false);
+                    if sctx.with_screen(|s| s.cx) < sctx.with_screen(|s| s.grid().sx) {
+                        let column = sctx.with_screen(|s| s.cx);
+                        sctx.with_screen_mut(|s| screen_set_tab(&mut *s, column, false));
                     }
                 }
                 3 => {
-                    screen_clear_tabs(&mut *sctx.screen);
+                    sctx.with_screen_mut(|s| screen_clear_tabs(&mut *s));
                 }
                 _ => {
                     log_debug(format_args!(
@@ -3351,7 +3336,9 @@ fn input_csi_dispatch(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) -> ::co
                 0 as ::core::ffi::c_int,
             );
             if !(n == -(1 as ::core::ffi::c_int)) {
-                screen_set_cursor_style(n as u_int, &mut sctx.screen.cstyle, &mut sctx.screen.mode);
+                sctx.with_screen_mut(|s| {
+                    screen_set_cursor_style(n as u_int, &mut s.cstyle, &mut s.mode)
+                });
                 if n == 0 as ::core::ffi::c_int {
                     screen_write_mode_clear(sctx, MODE_CURSOR_BLINKING_SET);
                 }
@@ -3581,7 +3568,7 @@ fn input_csi_dispatch_sm_private(ictx: &mut input_ctx, sctx: &mut screen_write_c
             }
             2026 => {
                 if let Some(pane) = input_pane_owner.as_ref() {
-                    pane.start_sync(&mut *sctx.screen);
+                    pane.start_sync();
                 }
             }
             _ => {
@@ -3598,8 +3585,8 @@ fn input_csi_dispatch_sm_private(ictx: &mut input_ctx, sctx: &mut screen_write_c
 fn input_csi_dispatch_sm_graphics() {}
 fn input_csi_dispatch_winops(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) {
     let input_pane_owner = ictx.wp.upgrade();
-    let mut x: u_int = sctx.screen.grid().sx;
-    let mut y: u_int = sctx.screen.grid().sy;
+    let mut x: u_int = sctx.with_screen(|s| s.grid().sx);
+    let mut y: u_int = sctx.with_screen(|s| s.grid().sy);
     let mut n: ::core::ffi::c_int = 0;
     let mut m: ::core::ffi::c_int = 0;
     let window_owner = input_pane_owner
@@ -3696,7 +3683,7 @@ fn input_csi_dispatch_winops(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) 
                 ) {
                     -1 => break,
                     0 | 2 => {
-                        screen_push_title(&mut *sctx.screen);
+                        sctx.with_screen_mut(|s| screen_push_title(&mut *s));
                     }
                     _ => {}
                 }
@@ -3712,11 +3699,12 @@ fn input_csi_dispatch_winops(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) 
                 ) {
                     -1 => break,
                     0 | 2 => {
-                        screen_pop_title(&mut *sctx.screen);
+                        sctx.with_screen_mut(|s| screen_pop_title(&mut *s));
                         if input_pane_owner.is_some() {
+                            let title = sctx.with_screen(|s| s.title.clone());
                             input_fire_pane_title_changed(
                                 input_pane_owner.as_ref().expect("live pane"),
-                                &(sctx.screen.title),
+                                &title,
                             );
                             server_redraw_window_borders(
                                 window_owner.as_ref().expect("pane window"),
@@ -4204,16 +4192,16 @@ fn input_handle_decrqss(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) -> ::
         });
         0 as ::core::ffi::c_int
     } else {
-        if sctx.screen.cstyle as ::core::ffi::c_uint
+        if sctx.with_screen(|s| s.cstyle) as ::core::ffi::c_uint
             == SCREEN_CURSOR_BLOCK as ::core::ffi::c_int as ::core::ffi::c_uint
-            || sctx.screen.cstyle as ::core::ffi::c_uint
+            || sctx.with_screen(|s| s.cstyle) as ::core::ffi::c_uint
                 == SCREEN_CURSOR_UNDERLINE as ::core::ffi::c_int as ::core::ffi::c_uint
-            || sctx.screen.cstyle as ::core::ffi::c_uint
+            || sctx.with_screen(|s| s.cstyle) as ::core::ffi::c_uint
                 == SCREEN_CURSOR_BAR as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            blinking = (sctx.screen.mode & MODE_CURSOR_BLINKING != 0 as ::core::ffi::c_int)
-                as ::core::ffi::c_int;
-            match sctx.screen.cstyle as ::core::ffi::c_uint {
+            blinking = (sctx.with_screen(|s| s.mode) & MODE_CURSOR_BLINKING
+                != 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
+            match sctx.with_screen(|s| s.cstyle) as ::core::ffi::c_uint {
                 1 => {
                     ps = if blinking != 0 {
                         1 as ::core::ffi::c_int
@@ -4260,8 +4248,8 @@ fn input_handle_decrqss(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) -> ::
             "{}: DECRQSS cursor -> Ps={} (cstyle={} mode={})",
             "input_handle_decrqss",
             (ps) as i32,
-            (sctx.screen.cstyle as ::core::ffi::c_uint) as i32,
-            log_hex(((sctx.screen.mode) as u32) as u64)
+            (sctx.with_screen(|s| s.cstyle) as ::core::ffi::c_uint) as i32,
+            log_hex(((sctx.with_screen(|s| s.mode)) as u32) as u64)
         ));
         input_reply(ictx, 1 as ::core::ffi::c_int, |out| {
             write!(out, "\x1BP1$r q{} q\x1B\\", (ps) as i32)
@@ -4370,7 +4358,8 @@ fn input_exit_osc(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) {
         0 | 2 => {
             if let Some(pane) = input_pane_owner.as_ref().filter(|pane| {
                 options_get_number(&pane.borrow_options_mut(), c"allow-set-title") != 0
-                    && screen_set_title(&mut *sctx.screen, p, 1 as ::core::ffi::c_int) != 0
+                    && sctx.with_screen_mut(|s| screen_set_title(s, p, 1 as ::core::ffi::c_int))
+                        != 0
             }) {
                 input_fire_pane_title_changed(pane, p);
                 let window = pane.window_observer().upgrade().expect("live window");
@@ -4384,7 +4373,7 @@ fn input_exit_osc(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) {
         7 => {
             if let Some(pane) = input_pane_owner
                 .as_ref()
-                .filter(|_| screen_set_path(&mut *sctx.screen, p) != 0)
+                .filter(|_| sctx.with_screen_mut(|s| screen_set_path(s, p)) != 0)
             {
                 let window = pane.window_observer().upgrade().expect("live window");
                 server_redraw_window_borders(&window);
@@ -4452,7 +4441,7 @@ fn input_exit_apc(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) {
     let title = CStr::from_bytes_until_nul(&ictx.input_buf).expect("input buffer has a terminator");
     if let Some(pane) = input_pane_owner.as_ref().filter(|pane| {
         options_get_number(&pane.borrow_options_mut(), c"allow-set-title") != 0
-            && screen_set_title(&mut *sctx.screen, title, 1 as ::core::ffi::c_int) != 0
+            && sctx.with_screen_mut(|s| screen_set_title(s, title, 1 as ::core::ffi::c_int)) != 0
     }) {
         input_fire_pane_title_changed(pane, title);
         let window = pane.window_observer().upgrade().expect("live window");
@@ -4671,11 +4660,7 @@ fn input_osc_4(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
     }
 }
 fn input_osc_8(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
-    let hl = sctx
-        .screen
-        .hyperlinks
-        .as_ref()
-        .expect("screen hyperlink table");
+    let hl = sctx.with_screen(|s| s.hyperlinks.clone().expect("screen hyperlink table"));
     let bytes = p.to_bytes();
     let mut start = 0;
     let mut id: Option<std::ffi::CString> = None;
@@ -4706,7 +4691,7 @@ fn input_osc_8(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
             ictx.cell.cell.link = 0 as u_int;
             return;
         }
-        ictx.cell.cell.link = hyperlinks_put(hl, uri, id.as_deref());
+        ictx.cell.cell.link = hyperlinks_put(&hl, uri, id.as_deref());
         match id.as_deref() {
             None => log_debug(format_args!(
                 "hyperlink (anonymous) {} = {}",
@@ -4731,7 +4716,7 @@ fn input_set_progress_bar(
     mut p: ::core::ffi::c_int,
 ) {
     let input_pane_owner = ictx.wp.upgrade();
-    screen_set_progress_bar(&mut *sctx.screen, state, p);
+    sctx.with_screen_mut(|s| screen_set_progress_bar(&mut *s, state, p));
     if let Some(pane) = input_pane_owner.as_ref() {
         let window = pane.window_observer().upgrade().expect("live window");
         server_redraw_window_borders(&window);
@@ -4895,9 +4880,9 @@ fn input_osc_12(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
     let mut c: ::core::ffi::c_int = 0;
     if p == c"?" {
         if input_pane_owner.is_some() {
-            c = sctx.screen.ccolour;
+            c = sctx.with_screen(|s| s.ccolour);
             if c == -(1 as ::core::ffi::c_int) {
-                c = sctx.screen.default_ccolour;
+                c = sctx.with_screen(|s| s.default_ccolour);
             }
             input_osc_colour_reply(
                 ictx,
@@ -4915,11 +4900,11 @@ fn input_osc_12(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
         log_debug(format_args!("bad OSC 12: {}", log_cstr(p)));
         return;
     }
-    screen_set_cursor_colour(&mut *sctx.screen, c);
+    sctx.with_screen_mut(|s| screen_set_cursor_colour(&mut *s, c));
 }
 fn input_osc_112(sctx: &mut screen_write_ctx, p: &CStr) {
     if p.is_empty() {
-        screen_set_cursor_colour(&mut *sctx.screen, -(1 as ::core::ffi::c_int));
+        sctx.with_screen_mut(|s| screen_set_cursor_colour(&mut *s, -(1 as ::core::ffi::c_int)));
     }
 }
 fn input_osc_133_exit_status(p: &CStr) -> ::core::ffi::c_int {
@@ -5043,19 +5028,23 @@ fn input_fire_command_event(wp_owner: &std::rc::Rc<std::cell::RefCell<window_pan
 }
 fn input_osc_133(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
     let input_pane_owner = ictx.wp.upgrade();
-    let cx = sctx.screen.cx;
-    let cy = sctx.screen.cy;
-    let gd = sctx.screen.grid_mut();
-    let mut line: u_int = cy.wrapping_add(gd.hsize);
+    let cx = sctx.with_screen(|s| s.cx);
+    let cy = sctx.with_screen(|s| s.cy);
     let mut status: ::core::ffi::c_int = 0;
-    let line = (line < gd.hsize.wrapping_add(gd.sy)).then_some(line);
+    let line = sctx.with_screen(|s| {
+        let gd = s.grid();
+        let line = cy.wrapping_add(gd.hsize);
+        (line < gd.hsize.wrapping_add(gd.sy)).then_some(line)
+    });
     match p.to_bytes_with_nul()[0] as ::core::ffi::c_int {
         65 | 78 => {
             if let Some(line) = line {
-                let gl = grid_get_line_mut(gd, line);
-                gl.osc133_data = osc133_data::default();
-                gl.osc133_data.prompt_col = cx as u_short;
-                gl.flags = (gl.flags as ::core::ffi::c_int | GRID_LINE_START_PROMPT) as u_short;
+                sctx.with_screen_mut(|s| {
+                    let gl = grid_get_line_mut(s.grid_mut(), line);
+                    gl.osc133_data = osc133_data::default();
+                    gl.osc133_data.prompt_col = cx as u_short;
+                    gl.flags = (gl.flags as ::core::ffi::c_int | GRID_LINE_START_PROMPT) as u_short;
+                });
             }
             if let Some(pane) = input_pane_owner.as_ref() {
                 pane.borrow_mut().last_prompt_time =
@@ -5065,33 +5054,41 @@ fn input_osc_133(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
         }
         80 => {
             if let Some(line) = line {
-                let gl = grid_get_line_mut(gd, line);
-                let bytes = p.to_bytes_with_nul();
-                if bytes
-                    .windows(4)
-                    .position(|window| window == b";k=s")
-                    .is_some_and(|cp| bytes[cp + 4] == b';' || bytes[cp + 4] == b'\0')
-                {
-                    gl.flags =
-                        (gl.flags as ::core::ffi::c_int | GRID_LINE_SECOND_PROMPT) as u_short;
-                } else {
-                    gl.flags = (gl.flags as ::core::ffi::c_int | GRID_LINE_START_PROMPT) as u_short;
-                }
-                gl.osc133_data.prompt_col = cx as u_short;
+                sctx.with_screen_mut(|s| {
+                    let gl = grid_get_line_mut(s.grid_mut(), line);
+                    let bytes = p.to_bytes_with_nul();
+                    if bytes
+                        .windows(4)
+                        .position(|window| window == b";k=s")
+                        .is_some_and(|cp| bytes[cp + 4] == b';' || bytes[cp + 4] == b'\0')
+                    {
+                        gl.flags =
+                            (gl.flags as ::core::ffi::c_int | GRID_LINE_SECOND_PROMPT) as u_short;
+                    } else {
+                        gl.flags =
+                            (gl.flags as ::core::ffi::c_int | GRID_LINE_START_PROMPT) as u_short;
+                    }
+                    gl.osc133_data.prompt_col = cx as u_short;
+                });
             }
         }
         66 | 73 => {
             if let Some(line) = line {
-                let gl = grid_get_line_mut(gd, line);
-                gl.flags = (gl.flags as ::core::ffi::c_int | GRID_LINE_START_COMMAND) as u_short;
-                gl.osc133_data.cmd_col = cx as u_short;
+                sctx.with_screen_mut(|s| {
+                    let gl = grid_get_line_mut(s.grid_mut(), line);
+                    gl.flags =
+                        (gl.flags as ::core::ffi::c_int | GRID_LINE_START_COMMAND) as u_short;
+                    gl.osc133_data.cmd_col = cx as u_short;
+                });
             }
         }
         67 => {
             if let Some(line) = line {
-                let gl = grid_get_line_mut(gd, line);
-                gl.flags = (gl.flags as ::core::ffi::c_int | GRID_LINE_START_OUTPUT) as u_short;
-                gl.osc133_data.out_start_col = cx as u_short;
+                sctx.with_screen_mut(|s| {
+                    let gl = grid_get_line_mut(s.grid_mut(), line);
+                    gl.flags = (gl.flags as ::core::ffi::c_int | GRID_LINE_START_OUTPUT) as u_short;
+                    gl.osc133_data.out_start_col = cx as u_short;
+                });
             }
             if let Some(pane) = input_pane_owner.as_ref() {
                 {
@@ -5118,10 +5115,12 @@ fn input_osc_133(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
                 input_fire_command_event(pane, c"pane-command-finished");
             }
             if let Some(line) = line {
-                let gl = grid_get_line_mut(gd, line);
-                gl.flags = (gl.flags as ::core::ffi::c_int | GRID_LINE_END_OUTPUT) as u_short;
-                gl.osc133_data.out_end_col = cx as u_short;
-                gl.osc133_data.exit_status = status as u_char;
+                sctx.with_screen_mut(|s| {
+                    let gl = grid_get_line_mut(s.grid_mut(), line);
+                    gl.flags = (gl.flags as ::core::ffi::c_int | GRID_LINE_END_OUTPUT) as u_short;
+                    gl.osc133_data.out_end_col = cx as u_short;
+                    gl.osc133_data.exit_status = status as u_char;
+                });
             }
         }
         _ => {}
@@ -5212,10 +5211,8 @@ fn input_osc_52(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, p: &CStr) {
         // The selection carries no screen state, so a fresh context on the
         // screen the parser is writing reaches the pane's clients whether or
         // not a mode is displayed.
-        let mut ctx = screen_write_start_pane(
-            input_pane_owner.as_ref().expect("live input pane"),
-            &mut *sctx.screen,
-        );
+        let mut ctx =
+            screen_write_start_beside(sctx, input_pane_owner.as_ref().expect("live input pane"));
         screen_write_setselection(&mut ctx, clip, &out);
         screen_write_stop(ctx);
         events_fire_pane(

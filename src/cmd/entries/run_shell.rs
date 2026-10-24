@@ -85,7 +85,7 @@ fn cmd_run_shell_args_parse(args: &args, _idx: u_int) -> Result<args_parse_type,
     }
     Ok(ARGS_PARSE_STRING)
 }
-unsafe fn cmd_run_shell_print(
+fn cmd_run_shell_print(
     cdata: &cmd_run_shell_data,
     item: Option<&Weak<std::cell::RefCell<cmdq_item>>>,
     msg: &CStr,
@@ -234,7 +234,7 @@ fn cmd_run_shell_exec(
         }
     }
     if wait == 0 {
-        crate::cmd::queue::cmdq_background(tv, move || unsafe {
+        crate::cmd::queue::cmdq_background(tv, move || {
             if let Some(job) = cmd_run_shell_timer(&mut cdata, None) {
                 job.try_borrow_mut()
                     .expect("newly registered job")
@@ -293,7 +293,7 @@ async fn cmd_run_shell_complete(
         drop(cdata);
         return std::future::pending().await;
     };
-    unsafe { cmd_run_shell_callback(completion, &cdata, Some(&item)) };
+    cmd_run_shell_callback(completion, &cdata, Some(&item));
 }
 /// Start the command, or queue the -C commands. Returns a started job for the
 /// caller to install its completion; job_run does not dispatch callbacks
@@ -379,7 +379,7 @@ fn cmd_run_shell_timer(
     }
     None
 }
-unsafe fn cmd_run_shell_callback(
+fn cmd_run_shell_callback(
     completion: JobCompletion,
     cdata: &cmd_run_shell_data,
     item: Option<&Weak<std::cell::RefCell<cmdq_item>>>,

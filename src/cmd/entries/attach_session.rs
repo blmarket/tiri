@@ -8,8 +8,8 @@ use crate::format::bytes::write_cstr;
 use crate::format::format_single_cstring;
 use crate::server_client::ClientRegistry;
 use crate::window::Window as _;
-use libc::getuid;
 use std::ffi::CStr;
+use tiri_rt::unix::user_id;
 
 use crate::session::sessions;
 use crate::shared::abi::uid_t;
@@ -51,7 +51,7 @@ pub static cmd_attach_session_entry: cmd_entry = {
         exec: Some(cmd_attach_session_exec),
     }
 };
-pub unsafe fn cmd_attach_session(
+pub fn cmd_attach_session(
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
     tflag: Option<&CStr>,
     mut dflag: ::core::ffi::c_int,
@@ -151,7 +151,7 @@ pub unsafe fn cmd_attach_session(
     if rflag != 0 {
         if c.as_ref().expect("live client").flags() & CLIENT_READONLY as uint64_t != 0 {
             uid = c.as_ref().expect("live client").peer_uid();
-            if uid != getuid() {
+            if uid != user_id() {
                 cmdq_error(item_handle, |out| out.write_all(b"client is read-only"));
                 return CmdOutcome::Error;
             }
@@ -273,7 +273,7 @@ pub unsafe fn cmd_attach_session(
     }
     CmdOutcome::Normal
 }
-unsafe fn cmd_attach_session_exec(
+fn cmd_attach_session_exec(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {

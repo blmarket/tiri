@@ -1,5 +1,5 @@
 use crate::format::bytes::{format_message_with, write_cstr};
-use crate::server::server_create_socket;
+use crate::server::server_create_listener;
 use crate::shared::abi::uint64_t;
 use crate::shared::errno::ErrorText;
 use crate::tmux::set_socket_path;
@@ -7,10 +7,11 @@ use ::systemd::daemon::{self, Listening, SocketType};
 use ::systemd::id128::Id128;
 use ::systemd::login::{self, UnitType};
 use libc::E2BIG;
-use libc::{getpid, getppid};
 use std::cell::{Cell, OnceCell};
 use std::ffi::{CStr, CString};
 use std::io;
+use std::os::fd::{AsFd, FromRawFd};
+use std::os::unix::net::UnixListener;
 use std::time::{Duration, Instant};
 use tiri_sdbus::{Bus, Variant};
 
@@ -28,10 +29,10 @@ macro_rules! systemd_error {
 pub fn systemd_activated() -> bool {
     daemon::listen_fds(false).is_ok_and(|fds| !fds.is_empty())
 }
-pub unsafe fn systemd_create_socket(
-    flags: ::core::ffi::c_int,
-) -> Result<::core::ffi::c_int, CString> {
-    let fds = daemon::listen_fds(false).map_or(0, |fds| fds.len());
+/// Adopt the socket systemd passed, unsetting `LISTEN_FDS` so it is adopted
+/// once, or create one when none was passed.
+pub fn systemd_create_socket(flags: uint64_t) -> Result<UnixListener, CString> {
+    let fds = daemon::listen_fds(true).map_or(0, |fds| fds.len());
     let error = if fds > 1 {
         E2BIG
     } else if fds == 1 {
@@ -47,16 +48,17 @@ pub unsafe fn systemd_create_socket(
         ) {
             EPFNOSUPPORT
         } else {
-            match tiri_rt::unix::socket_path(std::os::fd::BorrowedFd::borrow_raw(fd)) {
+            let listener = unsafe { UnixListener::from_raw_fd(fd) };
+            match tiri_rt::unix::socket_path(listener.as_fd()) {
                 Ok(path) => {
                     set_socket_path(path.unwrap_or_default());
-                    return Ok(fd);
+                    return Ok(listener);
                 }
                 Err(error) => error.raw_os_error().unwrap_or(libc::EIO),
             }
         }
     } else {
-        return server_create_socket(flags as uint64_t);
+        return server_create_listener(flags);
     };
     Err(systemd_error!(
         "systemd socket error ({})",
@@ -126,8 +128,8 @@ pub fn systemd_move_to_new_cgroup() -> Result<(), CString> {
                 systemd_error!("failed to start properties array: {}", ErrorText(&e))
             })?;
 
-            let pid = unsafe { getpid() };
-            let parent_pid = unsafe { getppid() };
+            let pid = std::process::id() as libc::pid_t;
+            let parent_pid = std::os::unix::process::parent_id() as libc::pid_t;
             let description = owned_cstring(format!(
                 "tmux child pane {} launched by process {}",
                 pid, parent_pid

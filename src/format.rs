@@ -6,8 +6,6 @@ use crate::cmd::queue::{
 };
 use crate::compat::strtonum::strtonum;
 use crate::environ::{environ_find, environ_iter};
-use crate::ffi::fnmatch::fnmatch_matches;
-use crate::ffi::regex::RegexStorage;
 use crate::format::bytes::format_message_with;
 use crate::format::bytes::write_cstr;
 use crate::format_draw::{format_trim_left_bytes, format_trim_right_bytes, format_width};
@@ -28,7 +26,8 @@ use crate::server::{marked_pane, server_check_marked};
 use crate::shared::window::WindowWeak;
 use crate::window::Window as _;
 use crate::winlink::winlink_window;
-use libc::{ctime_r, dirname, getpwuid, getuid};
+use tiri_rt::unix::fnmatch;
+use tiri_rt::unix::regex::RegexStorage;
 
 use crate::server_client::Client as _;
 use crate::server_fn::server_status_client;
@@ -161,7 +160,7 @@ pub struct format_expand_state<'a> {
     pub start_time: uint64_t,
     pub flags: ::core::ffi::c_int,
     pub time: time_t,
-    pub tm: tm,
+    pub tm: Option<tm>,
 }
 
 impl<'a> format_expand_state<'a> {
@@ -173,7 +172,7 @@ impl<'a> format_expand_state<'a> {
             start_time: get_timer(),
             flags,
             time: 0,
-            tm: unsafe { ::core::mem::zeroed() },
+            tm: None,
         }
     }
 
