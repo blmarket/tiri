@@ -8,7 +8,7 @@
 use std::ffi::{CStr, CString};
 use std::os::unix::ffi::OsStrExt;
 
-use crate::platform::{CurrentPlatform, Platform};
+use tiri_sys::platform::{CurrentPlatform, Platform};
 
 /// A pane's foreground-process identity, captured while the pane was at hand.
 ///

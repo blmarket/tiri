@@ -19,9 +19,8 @@ impl Platform for Linux {
                 .then(|| PathBuf::from(format!("/proc/{pid}/cwd")))
                 .and_then(|path| fs::read_link(path).ok())
         };
-        let foreground_pgrp = tiri_rt::unix::terminal_foreground_group(pty).unwrap_or(-1);
-        read_cwd(foreground_pgrp)
-            .or_else(|| read_cwd(tiri_rt::unix::terminal_session(pty).unwrap_or(-1)))
+        let foreground_pgrp = crate::terminal_foreground_group(pty).unwrap_or(-1);
+        read_cwd(foreground_pgrp).or_else(|| read_cwd(crate::terminal_session(pty).unwrap_or(-1)))
     }
 
     fn process_table() -> Option<Vec<ProcessInfo>> {

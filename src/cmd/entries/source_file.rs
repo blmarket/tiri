@@ -323,7 +323,7 @@ fn cmd_source_file_exec(
                 "cmd_source_file_exec",
                 log_cstr(&pattern)
             ));
-            match tiri_rt::unix::glob(pattern.as_c_str()) {
+            match tiri_sys::glob(pattern.as_c_str()) {
                 Err(result) => {
                     if result != GLOB_NOMATCH || !cdata.flags & CMD_PARSE_QUIET != 0 {
                         let error = if result == GLOB_NOMATCH {

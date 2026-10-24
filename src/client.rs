@@ -44,7 +44,7 @@ use std::ffi::{CStr, CString, OsStr};
 use std::io::{self, Write as _};
 use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
-use tiri_rt::unix::{
+use tiri_sys::{
     copy_speeds, exec, make_raw, send_signal, set_signal_disposition, signal_description, system,
     wait_child, Program, SignalDisposition,
 };
@@ -103,19 +103,19 @@ enum ClientLock {
 
 fn client_get_lock(lockfile: &CStr) -> ClientLock {
     log_debug(format_args!("lock file is {}", log_cstr(lockfile)));
-    let lock = match tiri_rt::unix::open(lockfile, libc::O_WRONLY | libc::O_CREAT, 0o600) {
+    let lock = match tiri_sys::open(lockfile, libc::O_WRONLY | libc::O_CREAT, 0o600) {
         Ok(file) => file,
         Err(error) => {
             log_debug(format_args!("open failed: {error}"));
             return ClientLock::Unavailable;
         }
     };
-    if let Err(error) = tiri_rt::unix::lock(lock.as_fd(), LOCK_EX | LOCK_NB) {
+    if let Err(error) = tiri_sys::lock(lock.as_fd(), LOCK_EX | LOCK_NB) {
         log_debug(format_args!("flock failed: {}", ErrorText(&error)));
         if error.raw_os_error() != Some(EAGAIN) {
             return ClientLock::Acquired(lock);
         }
-        while tiri_rt::unix::lock(lock.as_fd(), LOCK_EX)
+        while tiri_sys::lock(lock.as_fd(), LOCK_EX)
             .is_err_and(|error| error.kind() == io::ErrorKind::Interrupted)
         {}
         return ClientLock::Retry;
@@ -135,7 +135,7 @@ fn client_connect(path: &CStr, flags: uint64_t) -> io::Result<OwnedFd> {
     log_debug(format_args!("socket is {}", log_cstr(path)));
     loop {
         log_debug(format_args!("trying connect"));
-        let error = match tiri_rt::unix::connect(std::path::Path::new(connect_path)) {
+        let error = match tiri_sys::connect(std::path::Path::new(connect_path)) {
             Ok(socket) => {
                 drop(lockfd);
                 setblocking(socket.as_fd(), 0);
@@ -224,8 +224,8 @@ pub fn client_main(
     let mut i: ::core::ffi::c_int = 0;
     let mut ppid: pid_t = 0;
     let mut msg: msgtype = 0 as msgtype;
-    let mut tio = tiri_rt::unix::empty_terminal_attributes();
-    let mut saved_tio = tiri_rt::unix::empty_terminal_attributes();
+    let mut tio = tiri_sys::empty_terminal_attributes();
+    let mut saved_tio = tiri_sys::empty_terminal_attributes();
     let mut size: size_t = 0;
     let mut caps = Vec::new();
     if shell_command().is_some() {
@@ -297,10 +297,10 @@ pub fn client_main(
         let peer = proc_add_peer(&client_proc(), fd, Box::new(client_dispatch));
         CLIENT_PEER.set(peer);
         let cwd = find_cwd().unwrap_or_else(|| find_home_cstr().unwrap_or(c"/").to_owned());
-        let ttynam = tiri_rt::unix::terminal_name(io::stdin().as_fd()).unwrap_or_default();
+        let ttynam = tiri_sys::terminal_name(io::stdin().as_fd()).unwrap_or_default();
         let termname = env_cstring("TERM").unwrap_or_default();
         let termname = termname.as_c_str();
-        if tiri_rt::unix::terminal_attributes(io::stdin().as_fd()).is_ok() && !termname.is_empty() {
+        if tiri_sys::terminal_attributes(io::stdin().as_fd()).is_ok() && !termname.is_empty() {
             match tty_term_read_list(termname) {
                 Ok(read_caps) => caps = read_caps,
                 Err(cause) => {
@@ -521,7 +521,7 @@ fn client_exec(shell: &CStr, shellcmd: &CStr) -> ! {
     setblocking(io::stdin().as_fd(), 1 as ::core::ffi::c_int);
     setblocking(io::stdout().as_fd(), 1 as ::core::ffi::c_int);
     setblocking(io::stderr().as_fd(), 1 as ::core::ffi::c_int);
-    tiri_rt::unix::close_on_exec_from(STDERR_FILENO + 1 as ::core::ffi::c_int);
+    tiri_sys::close_on_exec_from(STDERR_FILENO + 1 as ::core::ffi::c_int);
     let error = exec(Program::Path(shell, &[&argv0, c"-c", shellcmd]));
     fatal(&error, |out| out.write_all(b"execl failed"));
 }

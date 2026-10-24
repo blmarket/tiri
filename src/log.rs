@@ -273,7 +273,7 @@ mod tests {
     #[test]
     fn debug_sink_writes_one_escaped_line_and_preserves_nul_truncation() {
         let mut template = b"/tmp/tiri-log-XXXXXX\0".to_vec();
-        let fd = tiri_rt::unix::make_temporary(&mut template).unwrap();
+        let fd = tiri_sys::make_temporary(&mut template).unwrap();
         let path = CStr::from_bytes_until_nul(&template).unwrap();
         std::fs::remove_file(std::ffi::OsStr::from_bytes(path.to_bytes())).unwrap();
         let mut reader = File::from(fd);

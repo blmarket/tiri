@@ -86,10 +86,10 @@ fn process_groups(pane: &window_pane) -> (Option<i32>, Option<i32>) {
         return (None, None);
     };
     (
-        tiri_rt::unix::terminal_foreground_group(fd.as_fd())
+        tiri_sys::terminal_foreground_group(fd.as_fd())
             .ok()
             .filter(|&pid| pid > 0),
-        tiri_rt::unix::terminal_session(fd.as_fd())
+        tiri_sys::terminal_session(fd.as_fd())
             .ok()
             .filter(|&pid| pid > 0),
     )

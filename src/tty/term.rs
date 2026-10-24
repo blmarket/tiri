@@ -17,7 +17,7 @@ use crate::shared::tty::*;
 use crate::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::tty::features::{tty_apply_features, tty_parse_client_features};
 use std::ffi::{CStr, CString};
-use tiri_rt::unix::fnmatch;
+use tiri_sys::fnmatch;
 
 pub(super) const TTYCODE_FLAG: tty_code_type = 3;
 pub(super) const TTYCODE_NUMBER: tty_code_type = 2;

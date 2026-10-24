@@ -9,7 +9,7 @@ use crate::format::format_single_cstring;
 use crate::server_client::ClientRegistry;
 use crate::window::Window as _;
 use std::ffi::CStr;
-use tiri_rt::unix::user_id;
+use tiri_sys::user_id;
 
 use crate::session::sessions;
 use crate::shared::abi::uid_t;

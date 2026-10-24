@@ -6,7 +6,7 @@ use crate::shared::stdio::EOF;
 use crate::tmux::global_environ;
 use std::ffi::{c_char, CStr, CString};
 use tiri_cmdparse::{Token, TokenText};
-use tiri_rt::unix::{user_home, user_home_by_name, user_id};
+use tiri_sys::{user_home, user_home_by_name, user_id};
 
 type LocatedToken = (usize, Token, usize);
 

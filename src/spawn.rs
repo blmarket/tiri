@@ -185,7 +185,7 @@ pub(crate) fn spawn_editor(
     let result = (|| {
         let mut path: [u8; 19] = *b"/tmp/tmux.XXXXXXXX\0";
         let editor = OptionsScope::GlobalServer.with_local(|oo| options_get_string(oo, c"editor"));
-        let mut stream = File::from(tiri_rt::unix::make_temporary(&mut path).ok()?);
+        let mut stream = File::from(tiri_sys::make_temporary(&mut path).ok()?);
         let path = CStr::from_bytes_with_nul(&path).expect("temporary path is terminated");
         if !write(&mut stream) {
             drop(stream);

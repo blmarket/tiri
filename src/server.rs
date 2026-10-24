@@ -28,7 +28,7 @@ use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
 use std::os::unix::net::UnixListener;
 use std::os::unix::process::ExitStatusExt;
 use std::process::ExitStatus;
-use tiri_rt::unix::{
+use tiri_sys::{
     block_signals, send_group_signal, send_signal, set_signal_mask, set_umask, signal_description,
     trim_heap, wait_child,
 };
@@ -162,7 +162,7 @@ pub(crate) fn server_create_listener(flags: uint64_t) -> Result<UnixListener, CS
         } else {
             set_umask((S_IXUSR | S_IRWXG | S_IRWXO) as __mode_t)
         };
-        let listener = tiri_rt::unix::listen(std::path::Path::new(OsStr::from_bytes(path)), 128);
+        let listener = tiri_sys::listen(std::path::Path::new(OsStr::from_bytes(path)), 128);
         set_umask(mask);
         let listener = listener?;
         Ok(listener)

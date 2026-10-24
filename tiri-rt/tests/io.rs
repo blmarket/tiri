@@ -7,7 +7,7 @@ use std::pin::{Pin, pin};
 use std::task::{Context, Poll, Waker};
 use std::time::{Duration, Instant};
 use tiri_rt::stream::{Reader, Writer};
-use tiri_rt::{AsyncRead, AsyncWrite, Runtime, mio};
+use tiri_rt::{AsyncRead, AsyncWrite, Handle, Runtime, mio};
 
 fn tick(runtime: &mut mio::Runtime) {
     runtime.poll(Some(Duration::ZERO)).unwrap();
@@ -259,7 +259,7 @@ fn disconnected_socket_reports_error_and_shutdown_invalidates_pending_read() {
 }
 
 fn nonblocking(fd: &OwnedFd) {
-    tiri_rt::unix::set_nonblocking(fd.as_fd(), true).unwrap();
+    tiri_sys::set_nonblocking(fd.as_fd(), true).unwrap();
 }
 
 fn pipe() -> (OwnedFd, OwnedFd) {
@@ -271,10 +271,10 @@ fn pipe() -> (OwnedFd, OwnedFd) {
 }
 
 fn pty() -> (OwnedFd, OwnedFd) {
-    let (master, slave) = tiri_rt::unix::open_pty(None).unwrap();
-    let mut termios = tiri_rt::unix::terminal_attributes(slave.as_fd()).unwrap();
-    tiri_rt::unix::make_raw(&mut termios);
-    tiri_rt::unix::set_terminal_attributes(slave.as_fd(), libc::TCSANOW, &termios).unwrap();
+    let (master, slave) = tiri_sys::open_pty(None).unwrap();
+    let mut termios = tiri_sys::terminal_attributes(slave.as_fd()).unwrap();
+    tiri_sys::make_raw(&mut termios);
+    tiri_sys::set_terminal_attributes(slave.as_fd(), libc::TCSANOW, &termios).unwrap();
     nonblocking(&master);
     nonblocking(&slave);
     (master, slave)
@@ -308,4 +308,74 @@ fn pipes_and_ptys_use_the_same_traits_and_reject_fds_before_writing() {
         assert!(received.fd.is_none());
         assert!(poll(pin!(reader.read(&mut buffer))).is_pending());
     }
+}
+
+#[test]
+fn borrowed_driver_waits_for_io_and_timers_without_retaining_its_future() {
+    let mut runtime = mio::Runtime::new().unwrap();
+    let (reader, writer) = tiri_sys::socket_pair().unwrap();
+    tiri_sys::set_nonblocking(reader.as_fd(), true).unwrap();
+    tiri_sys::set_nonblocking(writer.as_fd(), true).unwrap();
+    let reader = mio::Io::new(reader).unwrap();
+    let writer = mio::Io::new(writer).unwrap();
+    let _task = runtime
+        .handle()
+        .spawn(async move {
+            mio::Sleep::new(Instant::now() + Duration::from_millis(5))
+                .await
+                .unwrap();
+            writer
+                .write(&[IoSlice::new(b"borrowed")], None)
+                .await
+                .unwrap();
+        })
+        .unwrap();
+    let mut bytes = [0; 8];
+    assert_eq!(
+        runtime
+            .block_on(reader.read(&mut bytes))
+            .unwrap()
+            .unwrap()
+            .bytes,
+        8
+    );
+    assert_eq!(&bytes, b"borrowed");
+    assert_eq!(
+        runtime
+            .block_on(reader.read(&mut bytes))
+            .unwrap()
+            .unwrap()
+            .bytes,
+        0
+    );
+    runtime.poll(Some(Duration::ZERO)).unwrap();
+}
+
+#[test]
+fn shutdown_write_preserves_incoming_data() {
+    let (socket, peer) = tiri_sys::socket_pair().unwrap();
+    assert!(!tiri_sys::set_nonblocking(socket.as_fd(), true).unwrap());
+    let mut peer = UnixStream::from(peer);
+    let mut runtime = mio::Runtime::new().unwrap();
+    let source = mio::Io::new(socket.as_fd().try_clone_to_owned().unwrap()).unwrap();
+    runtime
+        .block_on(source.write(&[IoSlice::new(b"input")], None))
+        .unwrap()
+        .unwrap();
+    tiri_sys::shutdown_write(socket.as_fd()).unwrap();
+    let mut sent = Vec::new();
+    peer.read_to_end(&mut sent).unwrap();
+    assert_eq!(sent, b"input");
+    peer.write_all(b"reply").unwrap();
+    let mut reply = [0; 5];
+    assert_eq!(
+        runtime
+            .block_on(source.read(&mut reply))
+            .unwrap()
+            .unwrap()
+            .bytes,
+        5
+    );
+    assert_eq!(&reply, b"reply");
+    drop(source);
 }

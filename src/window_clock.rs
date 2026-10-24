@@ -21,7 +21,7 @@ use crate::shared::screen::{screen, MODE_CURSOR};
 use crate::shared::window::{window_mode, window_mode_entry, winlink, ModeDataRef};
 use crate::style::style_apply_with_options;
 use crate::window::Window as _;
-use tiri_rt::unix::{format_time, local_time, utc_time};
+use tiri_sys::{format_time, local_time, utc_time};
 
 use crate::window_pane::WindowPane as _;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};

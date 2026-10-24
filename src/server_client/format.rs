@@ -64,7 +64,7 @@ pub(super) fn value(
             if uid == !0 {
                 return None;
             }
-            let name = tiri_rt::unix::user_name(uid)?;
+            let name = tiri_sys::user_name(uid)?;
             owner.borrow_mut().user = Some(name.clone());
             name
         }

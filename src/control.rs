@@ -652,7 +652,7 @@ pub fn control_wait_exit() {
     use tiri_rt::{AsyncRead as _, Runtime as _};
     let stdin = std::io::stdin();
     let fd = stdin.as_fd();
-    let Ok(was_nonblocking) = tiri_rt::unix::set_nonblocking(fd, true) else {
+    let Ok(was_nonblocking) = tiri_sys::set_nonblocking(fd, true) else {
         return;
     };
     let result = (|| -> std::io::Result<()> {
@@ -679,7 +679,7 @@ pub fn control_wait_exit() {
         })?
     })();
     let _ = result;
-    let _ = tiri_rt::unix::set_nonblocking(fd, was_nonblocking);
+    let _ = tiri_sys::set_nonblocking(fd, was_nonblocking);
 }
 fn control_flush_all_blocks(client: &ClientRef) {
     loop {

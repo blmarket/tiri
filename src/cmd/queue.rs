@@ -38,7 +38,7 @@ use crate::status::status_message_set;
 use crate::text::utf8::utf8_sanitize_cstring;
 use std::ffi::{CStr, CString};
 use tiri_buffer::SegmentedBuf;
-use tiri_rt::unix::{user_id, user_name};
+use tiri_sys::{user_id, user_name};
 
 /// Queue-created command state. Only this module may construct or remove it.
 ///

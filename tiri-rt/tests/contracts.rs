@@ -268,7 +268,7 @@ fn dropping_io_deregisters_before_closing_the_fd() {
     let retained = fd.try_clone().unwrap();
     let source = mio::Io::new(fd).unwrap();
     drop(source);
-    assert!(!tiri_rt::unix::is_open(raw));
+    assert!(!tiri_sys::is_open(raw));
     tick(&mut runtime);
 
     let mut lower = Vec::new();

@@ -30,7 +30,7 @@ use crate::server_client::ClientRegistry;
 use crate::shared::errno::ErrorText;
 use crate::window::Window as _;
 use crate::winlink::winlink_window;
-use tiri_rt::unix::{block_signals, close_on_exec_from, exec, exit_now, set_signal_mask, Program};
+use tiri_sys::{block_signals, close_on_exec_from, exec, exit_now, set_signal_mask, Program};
 
 use crate::session::Session;
 use crate::shared::client::ClientRef;
@@ -683,7 +683,7 @@ mod tests {
 
     fn create_temp_file() -> (std::os::fd::OwnedFd, std::ffi::CString) {
         let mut template = b"/tmp/tiri-editor-owner-XXXXXX\0".to_vec();
-        let fd = tiri_rt::unix::make_temporary(&mut template)
+        let fd = tiri_sys::make_temporary(&mut template)
             .unwrap_or_else(|error| panic!("mkstemp failed: {error}"));
         (
             fd,
@@ -705,14 +705,14 @@ mod tests {
             {
                 let (fd_owner, path) = create_temp_file();
                 let fd = fd_owner.as_raw_fd();
-                let flags = tiri_rt::unix::status_flags(fd_owner.as_fd()).unwrap();
+                let flags = tiri_sys::status_flags(fd_owner.as_fd()).unwrap();
                 assert_eq!(flags & ::libc::O_ACCMODE, ::libc::O_RDWR);
                 assert!(std::path::Path::new(path.to_str().unwrap()).exists());
                 let mut file = fs::File::from(fd_owner);
                 let original = b"created through mkstemp";
                 assert!(crate::spawn::spawn_editor_write(&mut file, original));
                 drop(file);
-                assert!(!tiri_rt::unix::is_open(fd));
+                assert!(!tiri_sys::is_open(fd));
                 assert_eq!(fs::read(path.to_str().unwrap()).unwrap(), original);
 
                 let edited = b"edited by child\0\xff";

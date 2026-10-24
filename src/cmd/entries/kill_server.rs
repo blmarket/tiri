@@ -62,7 +62,7 @@ fn cmd_kill_server_exec(
         cmd_get_entry(&self_0.try_borrow().expect("live command")),
         &cmd_kill_server_entry,
     ) {
-        let _ = tiri_rt::unix::send_signal(std::process::id() as libc::pid_t, SIGTERM);
+        let _ = tiri_sys::send_signal(std::process::id() as libc::pid_t, SIGTERM);
     }
     CmdOutcome::Normal
 }

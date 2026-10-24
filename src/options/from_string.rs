@@ -6,7 +6,7 @@ use crate::compat::strtonum::strtonum;
 use crate::format::bytes::write_cstr;
 use crate::grid::grid_default_cell;
 use crate::key_string::key_string_parse_cstr;
-use tiri_rt::unix::fnmatch;
+use tiri_sys::fnmatch;
 
 use crate::style::colour::colour_parse_cstr;
 use crate::style::{style_parse, style_parse_colour};

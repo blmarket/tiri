@@ -197,7 +197,7 @@ pub fn bufferevent_new(
 ) -> std::io::Result<StreamHandle> {
     let was_nonblocking = match &fd {
         None => true,
-        Some(fd) => tiri_rt::unix::set_nonblocking(fd.as_fd(), true)?,
+        Some(fd) => tiri_sys::set_nonblocking(fd.as_fd(), true)?,
     };
     let source = fd.as_ref().map(|fd| io(fd.as_fd())).transpose();
     let s = Rc::new(StreamState {
@@ -250,7 +250,7 @@ fn free(s: &StreamState) {
     drop(s.task.take());
     if let Some(fd) = &stream.fd {
         if s.pid == std::process::id() && !s.was_nonblocking {
-            let _ = tiri_rt::unix::set_nonblocking(fd.as_fd(), false);
+            let _ = tiri_sys::set_nonblocking(fd.as_fd(), false);
         }
     }
     drop(stream);

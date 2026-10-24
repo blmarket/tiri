@@ -19,7 +19,7 @@ use std::time::{Duration, Instant, SystemTime};
 use tracing::{info, warn};
 
 use crate::observability::v1::{PaneId, PaneObservability, ServerObservability};
-use crate::platform::{CurrentPlatform, Platform};
+use tiri_sys::platform::{CurrentPlatform, Platform};
 
 use manifest::{Bundle, Rules};
 

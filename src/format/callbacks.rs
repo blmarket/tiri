@@ -12,10 +12,10 @@ use std::ffi::{CStr, CString};
 use std::rc::Rc;
 
 fn format_cb_host(_ft: &mut format_tree) -> Option<CString> {
-    Some(tiri_rt::unix::host_name().unwrap_or_default())
+    Some(tiri_sys::host_name().unwrap_or_default())
 }
 fn format_cb_host_short(_ft: &mut format_tree) -> Option<CString> {
-    let host = tiri_rt::unix::host_name().unwrap_or_default();
+    let host = tiri_sys::host_name().unwrap_or_default();
     let host = host.as_bytes();
     let short = host.split(|&byte| byte == b'.').next().unwrap_or(host);
     Some(CString::new(short).expect("hostname contains no NUL"))
@@ -1442,7 +1442,7 @@ fn format_cb_uid(_ft: &mut format_tree) -> Option<CString> {
     Some(
         CString::new(format!(
             "{}",
-            tiri_rt::unix::user_id() as ::core::ffi::c_long
+            tiri_sys::user_id() as ::core::ffi::c_long
         ))
         .expect("formatted numbers contain no NUL"),
     )
@@ -1452,7 +1452,7 @@ fn format_cb_user(_ft: &mut format_tree) -> Option<CString> {
     if let Some(name) = CACHED.get() {
         return Some(name.clone());
     }
-    let name = tiri_rt::unix::user_name(tiri_rt::unix::user_id())?;
+    let name = tiri_sys::user_name(tiri_sys::user_id())?;
     let _ = CACHED.set(name);
     CACHED.get().cloned()
 }

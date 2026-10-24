@@ -35,7 +35,7 @@ fn control_client_ends_with_exit_line() {
 fn control_control_client_ends_with_exit_line_and_string_terminator() {
     let server = Server::new();
     server.success(&["new-session", "-d"]);
-    let (master, slave) = tiri_rt::unix::open_pty(None).expect("open terminal");
+    let (master, slave) = tiri_sys::open_pty(None).expect("open terminal");
     let (mut master, slave) = (File::from(master), File::from(slave));
     let mut child = server
         .command()

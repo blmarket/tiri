@@ -26,8 +26,8 @@ use crate::server::{marked_pane, server_check_marked};
 use crate::shared::window::WindowWeak;
 use crate::window::Window as _;
 use crate::winlink::winlink_window;
-use tiri_rt::unix::fnmatch;
-use tiri_rt::unix::regex::RegexStorage;
+use tiri_sys::fnmatch;
+use tiri_sys::regex::RegexStorage;
 
 use crate::server_client::Client as _;
 use crate::server_fn::server_status_client;

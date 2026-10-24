@@ -502,7 +502,7 @@ impl Screen {
 /// Spawn `command` as a session leader whose controlling terminal is a new
 /// pseudo-terminal of `size`, returning the nonblocking master with the child.
 pub fn spawn_on_terminal(mut command: Command, size: libc::winsize) -> (File, Child) {
-    let (master, slave) = tiri_rt::unix::open_pty(Some(&size)).expect("open terminal");
+    let (master, slave) = tiri_sys::open_pty(Some(&size)).expect("open terminal");
     let (master, slave) = (File::from(master), File::from(slave));
     command
         .stdin(slave.try_clone().expect("clone terminal"))
@@ -517,7 +517,7 @@ pub fn spawn_on_terminal(mut command: Command, size: libc::winsize) -> (File, Ch
         });
     }
     let child = command.spawn().expect("spawn terminal client");
-    tiri_rt::unix::set_nonblocking(master.as_fd(), true).expect("nonblocking terminal");
+    tiri_sys::set_nonblocking(master.as_fd(), true).expect("nonblocking terminal");
     (master, child)
 }
 

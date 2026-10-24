@@ -8,7 +8,7 @@ use crate::shared::client::ClientRef;
 use crate::shared::client::CLIENT_READONLY;
 use crate::shared::command::cmdq_item;
 use crate::shared::server_acl::SERVER_ACL_IS_GROUP;
-use tiri_rt::unix::{group_name, user_id, user_name};
+use tiri_sys::{group_name, user_id, user_name};
 
 #[repr(C)]
 #[derive(Clone, Copy)]

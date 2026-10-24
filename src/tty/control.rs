@@ -68,7 +68,7 @@ pub fn tty_init(owner: &ClientRef) -> ::core::ffi::c_int {
 }
 
 fn tty_initialize_component(terminal: &mut tty, fd: Option<std::os::fd::BorrowedFd<'_>>) -> i32 {
-    let Some(fd) = fd.filter(|&fd| tiri_rt::unix::terminal_attributes(fd).is_ok()) else {
+    let Some(fd) = fd.filter(|&fd| tiri_sys::terminal_attributes(fd).is_ok()) else {
         return -1;
     };
     *terminal = tty::empty();
@@ -453,7 +453,7 @@ pub fn tty_start_tty(owner: &ClientRef) {
         tio.c_cc[VTIME] = 0 as cc_t;
         if let Some(fd) = &fd {
             if crate::shared::terminal::set_attributes(fd.as_fd(), TCSANOW, &tio).is_ok() {
-                let _ = tiri_rt::unix::discard_terminal(fd.as_fd(), TCOFLUSH);
+                let _ = tiri_sys::discard_terminal(fd.as_fd(), TCOFLUSH);
             }
         }
         if OptionsScope::GlobalServer.with_local(|oo| options_get_number(oo, c"clear-on-attach"))
@@ -755,7 +755,7 @@ fn tty_raw(fd: std::os::fd::BorrowedFd<'_>, text: &CStr) {
     use tiri_rt::Runtime as _;
     let bytes = text.to_bytes();
     let borrowed = fd;
-    let Ok(was_nonblocking) = tiri_rt::unix::set_nonblocking(borrowed, true) else {
+    let Ok(was_nonblocking) = tiri_sys::set_nonblocking(borrowed, true) else {
         return;
     };
     let _ = (|| -> std::io::Result<()> {
@@ -792,7 +792,7 @@ fn tty_raw(fd: std::os::fd::BorrowedFd<'_>, text: &CStr) {
             .await
         })?
     })();
-    let _ = tiri_rt::unix::set_nonblocking(borrowed, was_nonblocking);
+    let _ = tiri_sys::set_nonblocking(borrowed, was_nonblocking);
 }
 
 /// The part of the terminal that shows `window`: the window's size, cut to the

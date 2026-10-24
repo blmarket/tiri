@@ -107,7 +107,7 @@ fn parse(path: &Path) -> syn::File {
 
 /// Foreign declarations outside `src/ffi/` that predate the rule, relative to
 /// the workspace root.
-const FOREIGN_OUTSIDE_FFI: &[&str] = &["tiri-rt/src/unix.rs"];
+const FOREIGN_OUTSIDE_FFI: &[&str] = &["tiri-sys/src/lib.rs"];
 
 /// The files among `files` that declare an `extern` block although they are
 /// neither under `src/ffi/` nor in [`FOREIGN_OUTSIDE_FFI`].
@@ -187,6 +187,7 @@ fn foreign_declarations_live_under_src_ffi() {
         "tiri-refbox",
         "tiri-rt",
         "tiri-sdbus",
+        "tiri-sys",
     ] {
         rust_files(&root.join(crate_dir).join("src"), &mut files);
     }

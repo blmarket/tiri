@@ -22,7 +22,7 @@ use crate::tmux::{getversion, socket_path_cstr};
 use refbox::RefBox;
 use std::ffi::{CStr, CString};
 use std::os::fd::{AsFd, AsRawFd, OwnedFd};
-use tiri_rt::unix::{set_signal_disposition, SignalDisposition};
+use tiri_sys::{set_signal_disposition, SignalDisposition};
 use tiri_rt::{AsyncRead as _, AsyncWrite as _, Runtime as _, Signals as _};
 
 pub use ::libc::{SIGPIPE, SIGQUIT};
@@ -332,7 +332,7 @@ pub fn proc_start(name: &CStr) -> RefBox<tmuxproc> {
             .collect();
         CString::new(bytes).expect("bytes before NUL")
     };
-    let (sysname, release, version) = match tiri_rt::unix::uname() {
+    let (sysname, release, version) = match tiri_sys::uname() {
         Ok(u) => (field(&u.sysname), field(&u.release), field(&u.version)),
         Err(_) => Default::default(),
     };
@@ -457,7 +457,7 @@ pub fn proc_add_peer(
     mut dispatchcb: Box<dyn for<'a> FnMut(PeerMessage<'a>)>,
 ) -> refbox::Weak<tmuxpeer> {
     let fd = socket.as_raw_fd();
-    let (uid, gid) = tiri_rt::unix::peer_credentials(socket.as_fd()).unwrap_or((
+    let (uid, gid) = tiri_sys::peer_credentials(socket.as_fd()).unwrap_or((
         -(1 as ::core::ffi::c_int) as uid_t,
         -(1 as ::core::ffi::c_int) as gid_t,
     ));
@@ -516,13 +516,13 @@ pub fn proc_fork_and_daemon() -> (pid_t, OwnedFd) {
         !tiri_rt::mio::Runtime::is_initialized(),
         "daemonize before initializing the runtime"
     );
-    let (parent, child) = tiri_rt::unix::socket_pair()
+    let (parent, child) = tiri_sys::socket_pair()
         .unwrap_or_else(|error| fatal(&error, |out| out.write_all(b"socketpair failed")));
-    match tiri_rt::unix::fork() {
+    match tiri_sys::fork() {
         Err(error) => fatal(&error, |out| out.write_all(b"fork failed")),
         Ok(None) => {
             drop(parent);
-            if let Err(error) = tiri_rt::unix::daemonize() {
+            if let Err(error) = tiri_sys::daemonize() {
                 fatal(&error, |out| out.write_all(b"daemon failed"));
             }
             (0, child)

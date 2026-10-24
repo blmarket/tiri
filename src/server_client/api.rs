@@ -825,7 +825,7 @@ impl Client for ClientRef {
             .fd
             .as_ref()
             .ok_or_else(|| std::io::Error::from_raw_os_error(libc::EBADF))
-            .and_then(|fd| tiri_rt::unix::terminal_attributes(fd.as_fd()))
+            .and_then(|fd| tiri_sys::terminal_attributes(fd.as_fd()))
             .unwrap_or_else(|error| fatal(&error, |out| out.write_all(b"tcgetattr failed")))
     }
     fn name(&self) -> Option<CString> {

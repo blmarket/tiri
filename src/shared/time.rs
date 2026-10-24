@@ -48,9 +48,9 @@ mod tests {
 
     #[test]
     fn asctime_text_uses_fixed_names_and_widths() {
-        let tm = tiri_rt::unix::utc_time(1_700_000_000).unwrap();
+        let tm = tiri_sys::utc_time(1_700_000_000).unwrap();
         assert_eq!(asctime_text(&tm).as_bytes(), b"Tue Nov 14 22:13:20 2023");
-        let tm = tiri_rt::unix::utc_time(0).unwrap();
+        let tm = tiri_sys::utc_time(0).unwrap();
         assert_eq!(asctime_text(&tm).as_bytes(), b"Thu Jan  1 00:00:00 1970");
     }
 

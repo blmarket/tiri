@@ -15,7 +15,7 @@ use crate::shared::command::*;
 use crate::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::shared::server_acl::SERVER_ACL_IS_GROUP;
 use std::ffi::CStr;
-use tiri_rt::unix::{group_id_by_name, user_id, user_id_by_name};
+use tiri_sys::{group_id_by_name, user_id, user_id_by_name};
 pub static cmd_server_access_entry: cmd_entry = {
     cmd_entry {
         name: c"server-access",

@@ -31,7 +31,7 @@ const PROC_PIDFDVNODEPATHINFO: libc::c_int = 2;
 
 impl Platform for Darwin {
     fn pane_cwd(pty: BorrowedFd<'_>) -> Option<PathBuf> {
-        let foreground_pgrp = tiri_rt::unix::terminal_foreground_group(pty).unwrap_or(-1);
+        let foreground_pgrp = crate::terminal_foreground_group(pty).unwrap_or(-1);
         if foreground_pgrp <= 0 {
             return None;
         }

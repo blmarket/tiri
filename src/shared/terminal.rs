@@ -10,12 +10,12 @@ pub struct TerminalAttributes(pub termios);
 
 impl Default for TerminalAttributes {
     fn default() -> Self {
-        Self(tiri_rt::unix::empty_terminal_attributes())
+        Self(tiri_sys::empty_terminal_attributes())
     }
 }
 
 pub(crate) fn read_attributes(fd: BorrowedFd<'_>) -> std::io::Result<termios> {
-    tiri_rt::unix::terminal_attributes(fd)
+    tiri_sys::terminal_attributes(fd)
 }
 
 pub(crate) fn set_attributes(
@@ -23,16 +23,16 @@ pub(crate) fn set_attributes(
     action: i32,
     attributes: &termios,
 ) -> std::io::Result<()> {
-    tiri_rt::unix::set_terminal_attributes(fd, action, attributes)
+    tiri_sys::set_terminal_attributes(fd, action, attributes)
 }
 
 pub(crate) fn read_size(fd: BorrowedFd<'_>) -> std::io::Result<super::posix_terminal::winsize> {
-    tiri_rt::unix::terminal_size(fd)
+    tiri_sys::terminal_size(fd)
 }
 
 pub(crate) fn set_size(
     fd: BorrowedFd<'_>,
     size: &super::posix_terminal::winsize,
 ) -> std::io::Result<()> {
-    tiri_rt::unix::set_terminal_size(fd, size)
+    tiri_sys::set_terminal_size(fd, size)
 }

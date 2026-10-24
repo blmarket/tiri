@@ -40,8 +40,8 @@ use std::os::unix::fs::{DirBuilderExt, MetadataExt};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tiri_rt::unix::reset_timezone;
-use tiri_rt::unix::{locale_codeset, set_locale};
+use tiri_sys::reset_timezone;
+use tiri_sys::{locale_codeset, set_locale};
 
 pub use ::libc::{CLOCK_MONOTONIC, CODESET, LC_CTYPE, LC_TIME};
 
@@ -113,7 +113,7 @@ fn getshell() -> CString {
     if let Some(shell) = env_cstring("SHELL").filter(|shell| checkshell(Some(shell)) != 0) {
         return shell;
     }
-    if let Some(shell) = tiri_rt::unix::user_shell(tiri_rt::unix::user_id())
+    if let Some(shell) = tiri_sys::user_shell(tiri_sys::user_id())
         .filter(|shell| checkshell(Some(shell)) != 0)
     {
         return shell;
@@ -135,7 +135,7 @@ pub fn checkshell(shell: Option<&CStr>) -> ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
     // SAFETY: access only reads the NUL-terminated path.
-    if !tiri_rt::unix::accessible(shell, X_OK) {
+    if !tiri_sys::accessible(shell, X_OK) {
         return 0 as ::core::ffi::c_int;
     }
     1 as ::core::ffi::c_int
@@ -241,7 +241,7 @@ fn make_label_cause(parts: &[&[u8]]) -> CString {
 }
 
 fn make_label(label: Option<&CStr>) -> Result<CString, CString> {
-    let uid: uid_t = tiri_rt::unix::user_id();
+    let uid: uid_t = tiri_sys::user_id();
     let paths = expand_paths(c"$TMUX_TMPDIR:/tmp/", false);
     if paths.is_empty() {
         return Err(c"no suitable socket path".to_owned());
@@ -307,11 +307,11 @@ pub(crate) fn shell_argv0_cstring(shell: &CStr, is_login: bool) -> CString {
     CString::new(argv0).expect("shell path contains no NUL")
 }
 pub fn setblocking(fd: std::os::fd::BorrowedFd<'_>, state: ::core::ffi::c_int) {
-    let _ = tiri_rt::unix::set_nonblocking(fd, state == 0);
+    let _ = tiri_sys::set_nonblocking(fd, state == 0);
 }
 pub fn get_timer() -> uint64_t {
-    let time = tiri_rt::unix::clock_time(CLOCK_MONOTONIC)
-        .or_else(|_| tiri_rt::unix::clock_time(CLOCK_REALTIME))
+    let time = tiri_sys::clock_time(CLOCK_MONOTONIC)
+        .or_else(|_| tiri_sys::clock_time(CLOCK_REALTIME))
         .unwrap_or_default();
     time.as_millis() as uint64_t
 }
@@ -367,7 +367,7 @@ pub(crate) fn find_home_cstr() -> Option<&'static CStr> {
     }
     let owned = match env_cstring("HOME").filter(|home| !home.is_empty()) {
         Some(home) => home,
-        None => tiri_rt::unix::user_home(tiri_rt::unix::user_id())?,
+        None => tiri_sys::user_home(tiri_sys::user_id())?,
     };
     let _ = HOME.set(owned);
     HOME.get().map(CString::as_c_str)

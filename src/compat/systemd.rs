@@ -49,7 +49,7 @@ pub fn systemd_create_socket(flags: uint64_t) -> Result<UnixListener, CString> {
             EPFNOSUPPORT
         } else {
             let listener = unsafe { UnixListener::from_raw_fd(fd) };
-            match tiri_rt::unix::socket_path(listener.as_fd()) {
+            match tiri_sys::socket_path(listener.as_fd()) {
                 Ok(path) => {
                     set_socket_path(path.unwrap_or_default());
                     return Ok(listener);

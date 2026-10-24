@@ -657,6 +657,7 @@ dependencies = [
  "tiri-refbox",
  "tiri-rt",
  "tiri-sdbus",
+ "tiri-sys",
 ]
 
 [[package]]
@@ -666,7 +667,7 @@ dependencies = [
  "libc",
  "regex",
  "serde",
- "tiri-rt",
+ "tiri-sys",
  "toml",
  "tracing",
  "tracing-subscriber",
@@ -698,6 +699,7 @@ dependencies = [
  "libc",
  "mio",
  "signal-hook",
+ "tiri-sys",
 ]
 
 [[package]]
@@ -706,6 +708,13 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "libsystemd-sys",
+]
+
+[[package]]
+name = "tiri-sys"
+version = "0.1.0"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

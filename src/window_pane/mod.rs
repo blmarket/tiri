@@ -58,8 +58,8 @@ use crate::screen::{
     screen_set_title,
 };
 pub use api::WindowPane;
-use tiri_rt::unix::fnmatch;
-use tiri_rt::unix::regex::RegexStorage;
+use tiri_sys::fnmatch;
+use tiri_sys::regex::RegexStorage;
 
 use crate::server::{marked_pane, server_check_marked};
 use crate::server_client::Client;
@@ -319,7 +319,7 @@ fn window_pane_destroy_ready(wp_owner: &Rc<std::cell::RefCell<window_pane>>) -> 
     if wp
         .fd
         .as_ref()
-        .and_then(|fd| tiri_rt::unix::bytes_available(std::os::fd::AsFd::as_fd(fd)).ok())
+        .and_then(|fd| tiri_sys::bytes_available(std::os::fd::AsFd::as_fd(fd)).ok())
         .is_some_and(|n| n > 0)
     {
         return 0 as ::core::ffi::c_int;
@@ -492,7 +492,7 @@ fn window_pane_create(
     let mut wp = owner.borrow_mut();
     screen_init(&mut wp.status_screen, 1 as u_int, 1 as u_int, 0 as u_int);
     style_ranges_init(&mut wp.border_status_line.ranges);
-    if let Ok(host) = tiri_rt::unix::host_name() {
+    if let Ok(host) = tiri_sys::host_name() {
         screen_set_title(&mut wp.base, &host, 0 as ::core::ffi::c_int);
     }
     drop(wp);

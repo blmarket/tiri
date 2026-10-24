@@ -9,7 +9,7 @@ use crate::server_fn::server_redraw_window;
 use crate::window::Window as _;
 use crate::window_pane::WindowPane as _;
 use crate::winlink::winlink_window;
-use tiri_rt::unix::user_id;
+use tiri_sys::user_id;
 
 use crate::shared::abi::uid_t;
 use crate::shared::abi::*;

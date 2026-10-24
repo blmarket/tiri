@@ -18,7 +18,7 @@ use crate::winlink::winlink_window;
 use std::collections::btree_map;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
-use tiri_rt::unix::{format_time, local_time};
+use tiri_sys::{format_time, local_time};
 
 pub(super) fn format_quote_shell(s: &CStr) -> CString {
     let input = s.to_bytes();

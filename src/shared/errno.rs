@@ -12,7 +12,7 @@ impl fmt::Display for ErrorText<'_> {
         let Some(code) = self.0.raw_os_error() else {
             return fmt::Display::fmt(self.0, f);
         };
-        let Some(text) = tiri_rt::unix::error_description(code) else {
+        let Some(text) = tiri_sys::error_description(code) else {
             return write!(f, "Unknown error {code}");
         };
         f.write_str(&text.to_string_lossy())

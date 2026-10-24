@@ -117,7 +117,7 @@ impl AttachedClient {
 
 impl Drop for AttachedClient {
     fn drop(&mut self) {
-        let _ = tiri_rt::unix::send_signal(self.child.id() as libc::pid_t, libc::SIGTERM);
+        let _ = tiri_sys::send_signal(self.child.id() as libc::pid_t, libc::SIGTERM);
         let mut chunk = [0; 8192];
         while matches!(self.child.try_wait(), Ok(None)) {
             let _ = self.master.read(&mut chunk);

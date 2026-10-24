@@ -856,7 +856,7 @@ pub fn file_write_open(
             error = EBADF;
         } else {
             let fd = if msg.fd == -1 {
-                tiri_rt::unix::open(
+                tiri_sys::open(
                     path,
                     libc::O_WRONLY | libc::O_CREAT | msg.flags | O_NONBLOCK,
                     0o644,
@@ -868,7 +868,7 @@ pub fn file_write_open(
                     _ => Err(io::Error::from_raw_os_error(EBADF)),
                 };
                 if close_received != 0 && (msg.fd == STDOUT_FILENO || msg.fd == STDERR_FILENO) {
-                    let _ = tiri_rt::unix::release_standard_stream(msg.fd);
+                    let _ = tiri_sys::release_standard_stream(msg.fd);
                 }
                 duplicate
             };
@@ -1047,14 +1047,14 @@ pub fn file_read_open(
             error = EBADF;
         } else {
             let fd = if msg.fd == -1 {
-                tiri_rt::unix::open(path, libc::O_RDONLY | O_NONBLOCK, 0)
+                tiri_sys::open(path, libc::O_RDONLY | O_NONBLOCK, 0)
             } else {
                 let duplicate = match msg.fd {
                     STDIN_FILENO => io::stdin().as_fd().try_clone_to_owned(),
                     _ => Err(io::Error::from_raw_os_error(EBADF)),
                 };
                 if close_received != 0 && (msg.fd == STDIN_FILENO) {
-                    let _ = tiri_rt::unix::release_standard_stream(msg.fd);
+                    let _ = tiri_sys::release_standard_stream(msg.fd);
                 }
                 duplicate
             };

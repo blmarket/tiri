@@ -6,7 +6,7 @@ description = "Agent detection and pane observability contracts shared by tmux-c
 license = "GPL-3.0-only"
 
 [dependencies]
-tiri-rt = { path = "../tiri-rt" }
+tiri-sys = { path = "../tiri-sys" }
 libc = "0.2"
 regex = "1"
 serde = { version = "1", features = ["derive"] }

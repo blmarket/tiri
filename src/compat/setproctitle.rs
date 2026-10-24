@@ -22,7 +22,7 @@ pub fn setproctitle(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Resu
     let formatted = crate::format::bytes::format_message_with(write);
     let name = process_name(getprogname().to_bytes(), formatted.as_bytes());
     let name = std::ffi::CString::new(name).expect("process name has no NUL");
-    let _ = tiri_rt::unix::set_thread_name(&name);
+    let _ = tiri_sys::set_thread_name(&name);
 }
 // Like tmux's compat fallback, platforms without PR_SET_NAME keep their title.
 #[cfg(not(target_os = "linux"))]

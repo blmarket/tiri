@@ -37,7 +37,7 @@ use std::os::fd::{AsFd, AsRawFd};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::process::ExitStatusExt;
 use std::process::ExitStatus;
-use tiri_rt::unix::{
+use tiri_sys::{
     block_signals, close_on_exec_from, exec, exec_with_stdio, exit_now, fork, send_group_signal,
     send_signal, set_signal_mask, Program, SignalMask,
 };
@@ -137,7 +137,7 @@ pub fn job_run(
         };
         (fdforkpty(&mut tty, &ws), None)
     } else {
-        let Ok((parent, child)) = tiri_rt::unix::socket_pair() else {
+        let Ok((parent, child)) = tiri_sys::socket_pair() else {
             set_signal_mask(&oldset);
             return Weak::new();
         };
@@ -282,7 +282,7 @@ fn job_exec_child(
     if flags & JOB_SHOWSTDERR != 0 {
         exec_with_stdio([child.as_fd(); 3], program);
     }
-    let Ok(null) = tiri_rt::unix::open(_PATH_DEVNULL, O_RDWR, 0) else {
+    let Ok(null) = tiri_sys::open(_PATH_DEVNULL, O_RDWR, 0) else {
         exit_now(1);
     };
     exec_with_stdio([child.as_fd(), child.as_fd(), null.as_fd()], program)
@@ -387,7 +387,7 @@ fn job_write_callback(handle: &Weak<job>) {
     if len == 0 && job.flags & JOB_KEEPWRITE == 0 {
         job.event.with_stream(|stream| {
             let _ =
-                tiri_rt::unix::shutdown_write(stream.fd.as_ref().expect("job descriptor").as_fd());
+                tiri_sys::shutdown_write(stream.fd.as_ref().expect("job descriptor").as_fd());
             bufferevent_disable(stream, EV_WRITE as _);
         });
     }
@@ -560,7 +560,7 @@ mod job_stream_tests {
                     Some(fd)
                 );
                 assert!(callback_event == stream);
-                assert!(tiri_rt::unix::is_open(fd));
+                assert!(tiri_sys::is_open(fd));
                 job_free(&callback_first);
                 job_free(&second);
                 let replacement = jobs::insert(RefBox::new(idle_job()));
@@ -573,7 +573,7 @@ mod job_stream_tests {
             assert!(first.try_borrow_mut().is_err());
             assert!(second_observer.try_borrow_mut().is_err());
             assert!(!event.is_alive());
-            assert!(!tiri_rt::unix::is_open(fd));
+            assert!(!tiri_sys::is_open(fd));
             drop(remote);
             assert!(jobs::snapshot().is_empty());
 

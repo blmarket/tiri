@@ -571,7 +571,7 @@ fn server_client_open(owner: &ClientRef) -> Result<(), CString> {
         ]
         .into_iter()
         .any(|fd| {
-            tiri_rt::unix::terminal_name(fd)
+            tiri_sys::terminal_name(fd)
                 .ok()
                 .is_some_and(|name| Some(name.as_c_str()) == client_name)
         })
@@ -3477,7 +3477,7 @@ fn server_client_dispatch_identify(owner: &ClientRef, imsg: &mut imsg) -> ::core
             let Some(data) = imsg_string(imsg) else {
                 return -(1 as ::core::ffi::c_int);
             };
-            if tiri_rt::unix::accessible(data, X_OK) {
+            if tiri_sys::accessible(data, X_OK) {
                 server_client_set_cwd(&mut owner.borrow_mut(), Some(data.to_owned()));
             } else {
                 if let Some(home) = find_home_cstr() {

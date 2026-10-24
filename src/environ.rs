@@ -7,7 +7,7 @@ use crate::shared::session::SessionRef;
 use crate::tmux::{getversion, global_environ, socket_path_cstr};
 use std::ffi::{CStr, CString, OsStr};
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
-use tiri_rt::unix::fnmatch;
+use tiri_sys::fnmatch;
 
 impl environ {
     pub fn find(&self, name: &CStr) -> Option<&environ_entry> {

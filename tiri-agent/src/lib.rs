@@ -10,4 +10,3 @@
 pub mod integration;
 pub mod observability;
 pub mod pane_class;
-pub mod platform;

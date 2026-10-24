@@ -73,7 +73,7 @@ use libc::{REG_EXTENDED, REG_ICASE};
 use std::borrow::Cow;
 use std::ffi::{CStr, CString};
 use std::time::Duration;
-use tiri_rt::unix::regex::{CompiledRegex, RegexMatch, RegexStorage};
+use tiri_sys::regex::{CompiledRegex, RegexMatch, RegexStorage};
 
 #[repr(C)]
 pub struct window_copy_mode_data {

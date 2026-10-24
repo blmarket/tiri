@@ -25,7 +25,7 @@ use crate::window_pane::WindowPane as _;
 use crate::winlink::winlink_window;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
-use tiri_rt::unix::fnmatch;
+use tiri_sys::fnmatch;
 
 use crate::shared::abi::*;
 use crate::shared::command::*;

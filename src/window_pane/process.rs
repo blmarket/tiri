@@ -27,7 +27,7 @@ use crate::shared::session::SessionRef;
 use crate::shared::window::winlink;
 use crate::tmux::setblocking;
 use std::os::fd::AsFd;
-use tiri_rt::unix::{
+use tiri_sys::{
     block_signals, close_on_exec_from, exec_with_stdio, exit_now, fork, lead_process_group,
     set_signal_mask, Program,
 };
@@ -79,7 +79,7 @@ pub(super) fn pipe_pane(
             in_0 = 0 as ::core::ffi::c_int;
             out = 1 as ::core::ffi::c_int;
         }
-        let (parent, child) = match tiri_rt::unix::socket_pair() {
+        let (parent, child) = match tiri_sys::socket_pair() {
             Ok(pair) => pair,
             Err(error) => {
                 cmdq_error(item_handle, |out| write!(out, "socketpair error: {error}"));
@@ -119,7 +119,7 @@ pub(super) fn pipe_pane(
                 if lead_process_group().is_err() {
                     exit_now(1 as ::core::ffi::c_int);
                 }
-                let Ok(null) = tiri_rt::unix::open(_PATH_DEVNULL, O_WRONLY, 0) else {
+                let Ok(null) = tiri_sys::open(_PATH_DEVNULL, O_WRONLY, 0) else {
                     exit_now(1 as ::core::ffi::c_int);
                 };
                 let stdin = if out != 0 {
@@ -254,10 +254,10 @@ mod pipe_stream_tests {
 
             assert!(!pane.borrow().pipe_event.is_alive());
             assert!(!observer.is_alive());
-            assert!(!tiri_rt::unix::is_open(fd));
+            assert!(!tiri_sys::is_open(fd));
             let replacement = std::fs::File::open("/dev/null").unwrap();
             cmd_pipe_pane_error_callback(&pane);
-            assert!(tiri_rt::unix::is_open(replacement.as_raw_fd()));
+            assert!(tiri_sys::is_open(replacement.as_raw_fd()));
             shutdown_runtime(runtime);
         }
     }

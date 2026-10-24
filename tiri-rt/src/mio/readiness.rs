@@ -195,7 +195,7 @@ impl Drop for IoState {
 /// Unix stream sockets pass one optional FD per operation and suppress SIGPIPE.
 /// Files, pipes, and PTYs return no FDs and reject attached FDs before writing.
 /// For other descriptors the host retains SIGPIPE policy.
-/// Use [`super::Listener`] for accepting connections and [`crate::unix`] for
+/// Use [`super::Listener`] for accepting connections and `tiri_sys` for
 /// descriptor and terminal control. Regular files bypass the readiness poller
 /// and perform synchronous I/O on the runtime thread. Devices rejected by the
 /// poller can also perform immediate I/O, but cannot wait for a later event.
