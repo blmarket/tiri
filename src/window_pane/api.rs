@@ -1337,9 +1337,18 @@ impl WindowPane for Rc<RefCell<window_pane>> {
     }
     fn reset_input(&self) {
         crate::style::colour::colour_palette_clear(Some(&mut self.borrow_mut().palette));
-        // The reset writes the screen through the pane, so no guard is held.
-        let context = unsafe { (*self.as_ptr()).ictx.as_deref_mut() }.expect("pane input context");
-        super::input::input_reset(context, 1);
+        let context = self
+            .borrow()
+            .ictx
+            .as_ref()
+            .map(refbox::RefBox::downgrade)
+            .expect("pane input context");
+        super::input::input_reset(
+            &mut context
+                .try_borrow_mut()
+                .expect("pane input context not already borrowed"),
+            1,
+        );
         self.borrow_mut().flags |= PANE_STYLECHANGED | PANE_THEMECHANGED | PANE_REDRAW;
     }
     fn screen_size(&self, displayed: bool) -> (u32, u32) {

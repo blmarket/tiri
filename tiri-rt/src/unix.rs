@@ -255,3 +255,59 @@ pub fn peer_credentials(fd: BorrowedFd<'_>) -> io::Result<(libc::uid_t, libc::gi
         Ok((uid, gid))
     }
 }
+
+/// A thread signal mask saved by [`block_signals`].
+pub struct SignalMask(libc::sigset_t);
+
+/// Block every signal on the calling thread and return the previous mask.
+pub fn block_signals() -> SignalMask {
+    let mut set = std::mem::MaybeUninit::<libc::sigset_t>::uninit();
+    let mut old = std::mem::MaybeUninit::<libc::sigset_t>::uninit();
+    unsafe {
+        libc::sigfillset(set.as_mut_ptr());
+        libc::sigprocmask(libc::SIG_BLOCK, set.as_ptr(), old.as_mut_ptr());
+        SignalMask(old.assume_init())
+    }
+}
+
+/// Install `mask` as the calling thread's signal mask.
+pub fn set_signal_mask(mask: &SignalMask) {
+    unsafe { libc::sigprocmask(libc::SIG_SETMASK, &mask.0, std::ptr::null_mut()) };
+}
+
+/// Replace the process image with `path`, searched in `PATH` when it has no
+/// slash. Returns only on failure.
+pub fn exec_path(argv: &[&CStr]) -> io::Error {
+    let mut pointers: Vec<*const libc::c_char> = argv.iter().map(|arg| arg.as_ptr()).collect();
+    pointers.push(std::ptr::null());
+    unsafe { libc::execvp(pointers[0], pointers.as_ptr()) };
+    io::Error::last_os_error()
+}
+
+/// Replace the process image with `path`. Returns only on failure.
+pub fn exec(path: &CStr, argv: &[&CStr]) -> io::Error {
+    let mut pointers: Vec<*const libc::c_char> = argv.iter().map(|arg| arg.as_ptr()).collect();
+    pointers.push(std::ptr::null());
+    unsafe { libc::execv(path.as_ptr(), pointers.as_ptr()) };
+    io::Error::last_os_error()
+}
+
+/// Terminate the process without running exit handlers or flushing stdio.
+pub fn exit_now(status: libc::c_int) -> ! {
+    unsafe { libc::_exit(status) }
+}
+
+/// The open file description's status flags (`F_GETFL`).
+pub fn status_flags(fd: BorrowedFd<'_>) -> io::Result<libc::c_int> {
+    check(unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFL) })
+}
+
+/// Whether `fd` names an open descriptor in this process.
+pub fn is_open(fd: RawFd) -> bool {
+    unsafe { libc::fcntl(fd, libc::F_GETFD) >= 0 }
+}
+
+/// Move the calling process into a new process group led by itself.
+pub fn lead_process_group() -> io::Result<()> {
+    check(unsafe { libc::setpgid(0, 0) }).map(|_| ())
+}

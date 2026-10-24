@@ -1,5 +1,5 @@
 #[cfg(target_os = "linux")]
-use crate::ffi::utempter::{utempter_add_record, utempter_remove_record};
+use crate::ffi::utempter::{utempter_add, utempter_remove};
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
 
 /// utempter looks the record up by the master descriptor, so the record is
@@ -20,12 +20,9 @@ impl PanePty {
         if self.utmp {
             return;
         }
-        unsafe {
-            let record = std::ffi::CString::new(format!("tmux({}).%{}", std::process::id(), id))
-                .expect("pane login record contains no NUL");
-            utempter_add_record(self.fd.as_raw_fd(), record.as_ptr());
-            libc::kill(std::process::id() as libc::pid_t, libc::SIGCHLD);
-        }
+        let record = std::ffi::CString::new(format!("tmux({}).%{}", std::process::id(), id))
+            .expect("pane login record contains no NUL");
+        utempter_add(self.fd.as_fd(), &record);
         self.utmp = true;
     }
 
@@ -37,10 +34,7 @@ impl PanePty {
             return;
         }
         #[cfg(target_os = "linux")]
-        unsafe {
-            utempter_remove_record(self.fd.as_raw_fd());
-            libc::kill(std::process::id() as libc::pid_t, libc::SIGCHLD);
-        }
+        utempter_remove(self.fd.as_fd());
         self.utmp = false;
     }
 }

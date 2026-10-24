@@ -55,7 +55,10 @@ use crate::reactor::{
     bufferevent_disable, bufferevent_enable, bufferevent_new, bufferevent_write, evbuffer_drain,
     evbuffer_get_length, evbuffer_pullup,
 };
-use crate::screen::{screen_init, screen_resize, screen_set_default_cursor, screen_set_title};
+use crate::screen::{
+    screen_get_default_cursor, screen_init, screen_resize, screen_set_default_cursor,
+    screen_set_title,
+};
 pub use api::WindowPane;
 
 use crate::server::{marked_pane, server_check_marked};
@@ -127,7 +130,7 @@ struct window_pane_input_data {
 
 impl window_pane_input_data {
     fn into_callback(self: Box<Self>) -> client_file_cb {
-        Some(Box::new(move |event| unsafe {
+        Some(Box::new(move |event| {
             window_pane_input_callback(&self, event.buffer.expect("read callback buffer"));
         }))
     }
@@ -616,7 +619,7 @@ fn window_pane_destroy(pane_owner: &Rc<std::cell::RefCell<window_pane>>) {
     drop(owner);
 }
 
-unsafe fn window_pane_read_callback(owner: &Rc<std::cell::RefCell<window_pane>>) {
+fn window_pane_read_callback(owner: &Rc<std::cell::RefCell<window_pane>>) {
     let (input, pipe, base, pipe_offset, has_pipe) = {
         let pane = owner.borrow();
         (
@@ -674,7 +677,7 @@ fn window_pane_set_event(wp_owner: &Rc<std::cell::RefCell<window_pane>>) {
         .map(|pty| pty.as_fd().try_clone_to_owned())
         .transpose()
         .unwrap_or_else(|error| fatal(&error, |out| out.write_all(b"dup failed")));
-    let read = bufferevent_data_callback(move || unsafe {
+    let read = bufferevent_data_callback(move || {
         if let Some(owner) = read_observer.upgrade() {
             window_pane_read_callback(&owner);
         }
@@ -1477,9 +1480,8 @@ fn window_pane_full_size_offset(
     (xoff, wp.yoff, wp.sx.wrapping_add(sb_w), wp.sy)
 }
 
-unsafe fn window_pane_input_callback(cdata: &window_pane_input_data, buffer: &mut SegmentedBuf) {
+fn window_pane_input_callback(cdata: &window_pane_input_data, buffer: &mut SegmentedBuf) {
     let client = cdata.client.as_ref().expect("pane input client");
-    let buf = evbuffer_pullup(buffer, -1).map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr());
     let len = evbuffer_get_length(buffer);
     let lookup_wp_owner = window_pane_find_by_id(cdata.wp);
     let file = cdata.file.upgrade();
@@ -1492,11 +1494,7 @@ unsafe fn window_pane_input_callback(cdata: &window_pane_input_data, buffer: &mu
         }
         file_cancel(&mut cancelled.borrow_mut());
     } else {
-        let bytes: &[u8] = if buf.is_null() {
-            &[]
-        } else {
-            std::slice::from_raw_parts(buf, len)
-        };
+        let bytes: &[u8] = evbuffer_pullup(buffer, -1).map_or(&[], |bytes| bytes);
         input_parse_buffer(lookup_wp_owner.as_ref().expect("live pane"), bytes);
     }
     evbuffer_drain(buffer, len);
@@ -1590,11 +1588,11 @@ fn window_pane_update_used_data(
 }
 
 fn window_pane_default_cursor(wp_owner: &Rc<std::cell::RefCell<window_pane>>) {
-    let scope = OptionsScope::Pane(Rc::downgrade(wp_owner));
-    unsafe {
-        (*wp_owner.as_ptr()).with_screen_mut(|screen| screen_set_default_cursor(screen, &scope))
-    }
-    .expect("displayed pane screen");
+    let cursor = screen_get_default_cursor(&OptionsScope::Pane(Rc::downgrade(wp_owner)));
+    wp_owner
+        .borrow_mut()
+        .with_screen_mut(|screen| screen_set_default_cursor(screen, cursor))
+        .expect("displayed pane screen");
 }
 
 fn window_pane_mode(wp: &window_pane) -> ::core::ffi::c_int {

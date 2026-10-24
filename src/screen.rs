@@ -120,13 +120,28 @@ pub(crate) fn screen_set_tab(s: &mut screen, column: u_int, set: bool) {
 pub(crate) fn screen_clear_tabs(s: &mut screen) {
     s.tabs.fill(0);
 }
-pub fn screen_set_default_cursor(s: &mut screen, scope: &OptionsScope) {
+#[derive(Clone, Copy)]
+pub struct screen_default_cursor {
+    ccolour: ::core::ffi::c_int,
+    cstyle: screen_cursor_style,
+    mode: ::core::ffi::c_int,
+}
+pub fn screen_get_default_cursor(scope: &OptionsScope) -> screen_default_cursor {
     let mut gc = grid_default_cell;
     style_apply_with_options(&mut gc, c"cursor-colour", None, scope);
-    s.default_ccolour = gc.fg;
     let c = scope.with_local(|oo| options_get_number(oo, c"cursor-style")) as ::core::ffi::c_int;
-    s.default_mode = 0 as ::core::ffi::c_int;
-    screen_set_cursor_style(c as u_int, &mut s.default_cstyle, &mut s.default_mode);
+    let mut cursor = screen_default_cursor {
+        ccolour: gc.fg,
+        cstyle: SCREEN_CURSOR_DEFAULT,
+        mode: 0 as ::core::ffi::c_int,
+    };
+    screen_set_cursor_style(c as u_int, &mut cursor.cstyle, &mut cursor.mode);
+    cursor
+}
+pub fn screen_set_default_cursor(s: &mut screen, cursor: screen_default_cursor) {
+    s.default_ccolour = cursor.ccolour;
+    s.default_cstyle = cursor.cstyle;
+    s.default_mode = cursor.mode;
 }
 pub fn screen_set_cursor_style(
     style: u_int,

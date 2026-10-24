@@ -26,11 +26,11 @@ use crate::shared::posix_io::{
     _PATH_BSHELL, _PATH_DEVNULL, O_WRONLY, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO,
 };
 use crate::shared::session::SessionRef;
-use crate::shared::signal::{sigset_t, SIG_BLOCK, SIG_SETMASK};
 use crate::shared::window::winlink;
 use crate::tmux::setblocking;
-use libc::{_exit, execl, fork, setpgid, sigfillset, sigprocmask};
+use libc::fork;
 use std::os::fd::{AsFd, AsRawFd, IntoRawFd};
+use tiri_rt::unix::{block_signals, exec, exit_now, lead_process_group, set_signal_mask};
 /// Start or stop piping the pane's output through a shell command. The
 /// server is single-threaded, so the forked child may run ordinary code until
 /// it execs.
@@ -39,7 +39,7 @@ pub(super) fn pipe_pane(
     self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::RefCell<cmdq_item>>,
 ) -> CmdOutcome {
-    unsafe {
+    {
         let item = item_handle.borrow();
         let queue_client = cmdq_get_client(Some(&*item));
         let cmd_ref = self_0.try_borrow().expect("live command");
@@ -50,11 +50,8 @@ pub(super) fn pipe_pane(
         let mut s: Option<SessionRef> = target.session_handle();
         let mut wl: refbox::Weak<winlink> = target.winlink_handle();
         let had_pipe = pane_owner.borrow().pipe_event.is_alive();
-        let mut null_fd: ::core::ffi::c_int = 0;
         let mut in_0: ::core::ffi::c_int = 0;
         let mut out: ::core::ffi::c_int = 0;
-        let mut set: sigset_t = ::core::mem::zeroed();
-        let mut oldset: sigset_t = ::core::mem::zeroed();
         if window_pane_exited(&pane_owner.borrow()) != 0 {
             cmdq_error(item_handle, |out| out.write_all(b"target pane has exited"));
             return CmdOutcome::Error;
@@ -68,9 +65,7 @@ pub(super) fn pipe_pane(
             }
         }
         if args_count(args) == 0 as u_int
-            || *args_string(args, 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())
-                as ::core::ffi::c_int
-                == '\0' as i32
+            || args_string(args, 0 as u_int).is_none_or(std::ffi::CStr::is_empty)
         {
             return CmdOutcome::Normal;
         }
@@ -101,17 +96,12 @@ pub(super) fn pipe_pane(
         format_defaults(ft, tc.as_ref(), s.as_ref(), wl.clone(), Some(pane_owner));
         let cmd = format_expand_time_cstring(ft, args_string(args, 0 as u_int).unwrap_or(c""));
         drop(ft_owner);
-        sigfillset(&raw mut set);
-        sigprocmask(SIG_BLOCK, &raw mut set, &raw mut oldset);
-        let pipe_pid = fork() as pid_t;
+        let oldset = block_signals();
+        let pipe_pid = unsafe { fork() } as pid_t;
         pane_owner.borrow_mut().pipe_pid = pipe_pid;
         match pipe_pid {
             -1 => {
-                sigprocmask(
-                    SIG_SETMASK,
-                    &raw mut oldset,
-                    ::core::ptr::null_mut::<sigset_t>(),
-                );
+                set_signal_mask(&oldset);
                 cmdq_error(item_handle, |out| {
                     out.write_all(b"fork error: ")?;
                     write!(out, "{}", ErrorText(&std::io::Error::last_os_error()))
@@ -119,73 +109,42 @@ pub(super) fn pipe_pane(
                 CmdOutcome::Error
             }
             0 => {
-                proc_clear_signals(&server_proc, 1 as ::core::ffi::c_int);
-                sigprocmask(
-                    SIG_SETMASK,
-                    &raw mut oldset,
-                    ::core::ptr::null_mut::<sigset_t>(),
-                );
+                unsafe { proc_clear_signals(&server_proc, 1 as ::core::ffi::c_int) };
+                set_signal_mask(&oldset);
                 drop(parent);
-                if setpgid(0 as __pid_t, 0 as __pid_t) == -(1 as ::core::ffi::c_int) {
-                    _exit(1 as ::core::ffi::c_int);
+                if lead_process_group().is_err() {
+                    exit_now(1 as ::core::ffi::c_int);
                 }
-                null_fd = match tiri_rt::unix::open(_PATH_DEVNULL, O_WRONLY, 0) {
-                    Ok(fd) => fd.into_raw_fd(),
-                    Err(_) => -1,
+                let null = tiri_rt::unix::open(_PATH_DEVNULL, O_WRONLY, 0).ok();
+                let redirect = |fd: Option<std::os::fd::BorrowedFd<'_>>, target| {
+                    if !fd.is_some_and(|fd| unsafe { tiri_rt::unix::redirect(fd, target) }.is_ok())
+                    {
+                        exit_now(1 as ::core::ffi::c_int);
+                    }
                 };
                 if out != 0 {
-                    if tiri_rt::unix::redirect(child.as_fd(), STDIN_FILENO).is_err() {
-                        _exit(1 as ::core::ffi::c_int);
-                    }
-                } else if tiri_rt::unix::redirect(
-                    std::os::fd::BorrowedFd::borrow_raw(null_fd),
-                    STDIN_FILENO,
-                )
-                .is_err()
-                {
-                    _exit(1 as ::core::ffi::c_int);
+                    redirect(Some(child.as_fd()), STDIN_FILENO);
+                } else {
+                    redirect(null.as_ref().map(AsFd::as_fd), STDIN_FILENO);
                 }
                 if in_0 != 0 {
-                    if tiri_rt::unix::redirect(child.as_fd(), STDOUT_FILENO).is_err() {
-                        _exit(1 as ::core::ffi::c_int);
-                    }
+                    redirect(Some(child.as_fd()), STDOUT_FILENO);
                     if child.as_raw_fd() == STDOUT_FILENO {
                         let _ = child.into_raw_fd();
                     } else {
                         drop(child);
                     }
-                } else if tiri_rt::unix::redirect(
-                    std::os::fd::BorrowedFd::borrow_raw(null_fd),
-                    STDOUT_FILENO,
-                )
-                .is_err()
-                {
-                    _exit(1 as ::core::ffi::c_int);
+                } else {
+                    redirect(null.as_ref().map(AsFd::as_fd), STDOUT_FILENO);
                 }
-                if tiri_rt::unix::redirect(
-                    std::os::fd::BorrowedFd::borrow_raw(null_fd),
-                    STDERR_FILENO,
-                )
-                .is_err()
-                {
-                    _exit(1 as ::core::ffi::c_int);
-                }
-                tiri_rt::unix::close_from(STDERR_FILENO + 1 as ::core::ffi::c_int);
-                execl(
-                    _PATH_BSHELL.as_ptr(),
-                    c"sh".as_ptr(),
-                    c"-c".as_ptr(),
-                    cmd.as_ptr(),
-                    NULL as *mut ::core::ffi::c_char,
-                );
-                _exit(1 as ::core::ffi::c_int);
+                redirect(null.as_ref().map(AsFd::as_fd), STDERR_FILENO);
+                let _ = null.map(IntoRawFd::into_raw_fd);
+                unsafe { tiri_rt::unix::close_from(STDERR_FILENO + 1 as ::core::ffi::c_int) };
+                exec(_PATH_BSHELL, &[c"sh", c"-c", &cmd]);
+                exit_now(1 as ::core::ffi::c_int);
             }
             _ => {
-                sigprocmask(
-                    SIG_SETMASK,
-                    &raw mut oldset,
-                    ::core::ptr::null_mut::<sigset_t>(),
-                );
+                set_signal_mask(&oldset);
                 drop(child);
                 setblocking(parent.as_fd(), 0 as ::core::ffi::c_int);
                 let read_observer = std::rc::Rc::downgrade(pane_owner);
@@ -288,7 +247,7 @@ mod pipe_stream_tests {
         use tiri_rt::Runtime as _;
 
         let runtime = tiri_rt::mio::Runtime::new().unwrap();
-        unsafe {
+        {
             let pane = window_pane::new();
             let (socket, _receiver) = UnixStream::pair().unwrap();
             let fd = socket.as_raw_fd();
@@ -300,10 +259,10 @@ mod pipe_stream_tests {
 
             assert!(!pane.borrow().pipe_event.is_alive());
             assert!(!observer.is_alive());
-            assert_eq!(libc::fcntl(fd, libc::F_GETFD), -1);
+            assert!(!tiri_rt::unix::is_open(fd));
             let replacement = std::fs::File::open("/dev/null").unwrap();
             cmd_pipe_pane_error_callback(&pane);
-            assert!(libc::fcntl(replacement.as_raw_fd(), libc::F_GETFD) >= 0);
+            assert!(tiri_rt::unix::is_open(replacement.as_raw_fd()));
             shutdown_runtime(runtime);
         }
     }

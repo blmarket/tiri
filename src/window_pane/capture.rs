@@ -264,7 +264,13 @@ fn cmd_capture_pane_grid(wp: &window_pane) -> Vec<u8> {
 }
 fn cmd_capture_pane_pending(args: &args, wp: &mut window_pane) -> Vec<u8> {
     let mut buf = Vec::new();
-    let pending = input_pending(wp.ictx.as_deref_mut().expect("pane input context"));
+    let mut ictx = wp
+        .ictx
+        .as_ref()
+        .expect("pane input context")
+        .try_borrow_mut()
+        .expect("pane input context not already borrowed");
+    let pending = input_pending(&mut ictx);
     let line: &[u8] = evbuffer_pullup(pending, -1).map_or(&[], |bytes| &*bytes);
     if args_has(args, 'C' as i32 as u_char) != 0 {
         for &byte in line {

@@ -8,7 +8,9 @@ use crate::options::options_get_number;
 use crate::options::OptionsScope;
 use crate::reactor::{bufferevent_get_input, bufferevent_write, evbuffer_drain, evbuffer_pullup};
 use crate::screen::screen_share_hyperlinks;
-use crate::screen::{screen_init, screen_resize, screen_set_default_cursor};
+use crate::screen::{
+    screen_get_default_cursor, screen_init, screen_resize, screen_set_default_cursor,
+};
 use crate::screen_write::{
     screen_write_box, screen_write_clearscreen, screen_write_cursormove, screen_write_fast_copy,
     screen_write_start, screen_write_stop,
@@ -68,7 +70,7 @@ pub struct popup_data {
     pub defaults: grid_cell,
     pub palette: refbox::RefBox<colour_palette>,
     pub job: refbox::Weak<job>,
-    pub ictx: Option<Box<input_ctx>>,
+    pub ictx: Option<refbox::RefBox<input_ctx>>,
     pub status: ::core::ffi::c_int,
     pub px: u_int,
     pub py: u_int,
@@ -748,7 +750,12 @@ unsafe fn popup_job_update_cb(job: &refbox::Weak<job>, popup: &PopupGuard) {
     let render = PopupRenderSnapshot::new(popup);
     client.with_overlay_check_disabled(popup_check_callback(popup.handle()), || {
         input_parse_screen(
-            (*pd).ictx.as_deref_mut().expect("input context"),
+            &mut (*pd)
+                .ictx
+                .as_ref()
+                .expect("input context")
+                .try_borrow_mut()
+                .expect("input context not already borrowed"),
             &mut (*pd).s,
             Some(Box::new(move |ttyctx| render.init_ctx(ttyctx))),
             &data,
@@ -999,7 +1006,10 @@ pub(crate) unsafe fn popup_display(
     }
     (*pd).border_cell.attr = 0 as u_short;
     screen_init(&mut (*pd).s, jx, jy, 0 as u_int);
-    screen_set_default_cursor(&mut (*pd).s, &OptionsScope::GlobalWindow);
+    screen_set_default_cursor(
+        &mut (*pd).s,
+        screen_get_default_cursor(&OptionsScope::GlobalWindow),
+    );
     {
         let mut palette = (*pd).palette.try_borrow_mut().expect("new popup palette");
         colour_palette_init(&mut palette);

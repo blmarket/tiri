@@ -16,7 +16,6 @@ use crate::events_payload::{
     event_payload_set_string, event_payload_set_target, event_payload_set_window,
 };
 use crate::format::bytes::cstr_suffix;
-use crate::format::bytes::nullable_cstr;
 use crate::format::bytes::write_cstr;
 use crate::format::format_single_cstring;
 use crate::log::{log_close, log_cstr, log_debug};
@@ -31,7 +30,7 @@ use crate::server_client::ClientRegistry;
 use crate::shared::errno::ErrorText;
 use crate::window::Window as _;
 use crate::winlink::winlink_window;
-use libc::{_exit, chdir, execl, execvp, getcwd, sigfillset, sigprocmask};
+use tiri_rt::unix::{block_signals, exec, exec_path, exit_now, set_signal_mask};
 
 use crate::session::Session;
 use crate::shared::client::ClientRef;
@@ -51,7 +50,7 @@ use crate::shared::pane::{PANE_EMPTY, PANE_EXITED, PANE_STATUSDRAWN};
 use crate::shared::posix_io::{_PATH_BSHELL, STDERR_FILENO};
 use crate::shared::posix_terminal::{winsize, TCSANOW, VERASE};
 use crate::shared::screen::{MODE_CRLF, MODE_CURSOR};
-use crate::shared::signal::{sigset_t, SIGHUP, SIG_BLOCK, SIG_SETMASK};
+use crate::shared::signal::SIGHUP;
 use crate::shared::spawn::spawn_editor_state;
 use crate::shared::spawn::{
     SPAWN_BEFORE, SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_KILL, SPAWN_NONOTIFY, SPAWN_RESPAWN,
@@ -174,6 +173,9 @@ fn place_new_pane(
     }
     Ok(pane)
 }
+fn change_directory(path: &CStr) -> bool {
+    std::env::set_current_dir(OsStr::from_bytes(path.to_bytes())).is_ok()
+}
 /// Create and place a new pane and start its process, or with SPAWN_RESPAWN
 /// restart the context's source pane. A full layout refuses before any side
 /// effect. The server is single-threaded, so the forked child may run
@@ -181,7 +183,7 @@ fn place_new_pane(
 pub(super) fn spawn_pane(
     sc: &mut spawn_context,
 ) -> Result<std::rc::Rc<std::cell::RefCell<window_pane>>, CString> {
-    unsafe {
+    {
         let source_pane_owner = sc.wp0.upgrade();
         let item_owner = sc.item.upgrade();
         let mut c: Option<ClientRef> = None;
@@ -199,15 +201,9 @@ pub(super) fn spawn_pane(
             };
             let target_session_owner;
             let new_pane_owner;
-            let mut argvp: *mut *mut ::core::ffi::c_char =
-                ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
             let mut cwd: Option<CString> = None;
-            let mut path: [::core::ffi::c_char; 4096] = [0; 4096];
-            let _cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-            let mut home: *const ::core::ffi::c_char =
-                find_home_cstr().map_or(::core::ptr::null(), CStr::as_ptr);
-            let mut actual_cwd: *const ::core::ffi::c_char =
-                ::core::ptr::null::<::core::ffi::c_char>();
+            let home: Option<&CStr> = find_home_cstr();
+            let mut actual_cwd: Option<&CStr> = None;
             let mut idx: u_int = 0;
             let mut ws: winsize = winsize {
                 ws_row: 0,
@@ -215,8 +211,6 @@ pub(super) fn spawn_pane(
                 ws_xpixel: 0,
                 ws_ypixel: 0,
             };
-            let mut set: sigset_t = ::core::mem::zeroed();
-            let mut oldset: sigset_t = ::core::mem::zeroed();
             let mut key: key_code = 0;
             let c_owner;
             if let Some(item_owner) = item_owner.as_ref() {
@@ -407,7 +401,6 @@ pub(super) fn spawn_pane(
                 write_cstr(out, c"spawn_pane")?;
                 out.write_all(b": environment ")
             });
-            ws = ::core::mem::zeroed();
             {
                 let pane = new_pane_owner.borrow();
                 ws.ws_col = pane.base.grid().sx as ::core::ffi::c_ushort;
@@ -423,8 +416,7 @@ pub(super) fn spawn_pane(
                 .1
                 .wrapping_mul(ws.ws_row as u_int)
                 as ::core::ffi::c_ushort;
-            sigfillset(&raw mut set);
-            sigprocmask(SIG_BLOCK, &raw mut set, &raw mut oldset);
+            let oldset = block_signals();
             if sc.flags & SPAWN_EMPTY != 0 {
                 let mut pane = new_pane_owner.borrow_mut();
                 pane.flags |= PANE_EMPTY;
@@ -432,30 +424,19 @@ pub(super) fn spawn_pane(
                 pane.base.mode |= MODE_CRLF;
             } else {
                 new_pane_owner.borrow_mut().flags &= !PANE_EMPTY;
-                if !getcwd(
-                    &raw mut path as *mut ::core::ffi::c_char,
-                    ::core::mem::size_of::<[::core::ffi::c_char; 4096]>() as size_t,
-                )
-                .is_null()
-                {
-                    if chdir(
-                        pane_cwd
-                            .as_ref()
-                            .map_or(::core::ptr::null(), |value| value.as_ptr()),
-                    ) == 0 as ::core::ffi::c_int
-                    {
-                        actual_cwd = pane_cwd
-                            .as_ref()
-                            .map_or(::core::ptr::null(), |value| value.as_ptr());
-                    } else if !home.is_null() && chdir(home) == 0 as ::core::ffi::c_int {
+                let path = std::env::current_dir().ok();
+                if path.is_some() {
+                    if pane_cwd.as_deref().is_some_and(change_directory) {
+                        actual_cwd = pane_cwd.as_deref();
+                    } else if home.is_some_and(change_directory) {
                         actual_cwd = home;
-                    } else if chdir(c"/".as_ptr()) == 0 as ::core::ffi::c_int {
-                        actual_cwd = c"/".as_ptr();
+                    } else if change_directory(c"/") {
+                        actual_cwd = Some(c"/");
                     }
                 }
                 let mut master = -1;
                 let mut tty = new_pane_owner.borrow().tty;
-                let pid = fdforkpty(ptm_fd(), &mut master, &mut tty, &ws);
+                let pid = unsafe { fdforkpty(ptm_fd(), &mut master, &mut tty, &ws) };
                 {
                     let mut pane = new_pane_owner.borrow_mut();
                     pane.tty = tty;
@@ -472,25 +453,22 @@ pub(super) fn spawn_pane(
                             .expect("live window")
                             .remove_pane(&new_pane_owner);
                     }
-                    sigprocmask(
-                        SIG_SETMASK,
-                        &raw mut oldset,
-                        ::core::ptr::null_mut::<sigset_t>(),
-                    );
+                    set_signal_mask(&oldset);
                     return Err(cause);
                 }
                 if pid != 0 as ::core::ffi::c_int {
                     let previous = new_pane_owner
                         .borrow_mut()
                         .fd
-                        .replace(PanePty::new(OwnedFd::from_raw_fd(master)));
+                        .replace(PanePty::new(unsafe { OwnedFd::from_raw_fd(master) }));
                     drop(previous);
-                    if !actual_cwd.is_null()
-                        && chdir(&raw mut path as *mut ::core::ffi::c_char)
-                            != 0 as ::core::ffi::c_int
-                        && (home.is_null() || chdir(home) != 0 as ::core::ffi::c_int)
+                    if actual_cwd.is_some()
+                        && !path
+                            .as_ref()
+                            .is_some_and(|path| std::env::set_current_dir(path).is_ok())
+                        && !home.is_some_and(change_directory)
                     {
-                        chdir(c"/".as_ptr());
+                        change_directory(c"/");
                     }
                 } else {
                     #[cfg(target_os = "linux")]
@@ -503,15 +481,15 @@ pub(super) fn spawn_pane(
                             ));
                         }
                     }
-                    if !actual_cwd.is_null() {
+                    if let Some(actual_cwd) = actual_cwd {
                         environ_set(child, c"PWD", 0 as ::core::ffi::c_int, |out| {
-                            write_cstr(out, nullable_cstr(actual_cwd))
+                            write_cstr(out, Some(actual_cwd))
                         });
                     }
                     let Ok(mut now) = crate::shared::terminal::read_attributes(
                         std::os::fd::AsFd::as_fd(&std::io::stdin()),
                     ) else {
-                        _exit(1 as ::core::ffi::c_int);
+                        exit_now(1 as ::core::ffi::c_int);
                     };
                     if let Some(terminal) = session_owner.termios() {
                         now.c_cc = terminal.c_cc;
@@ -532,28 +510,18 @@ pub(super) fn spawn_pane(
                     )
                     .is_err()
                     {
-                        _exit(1 as ::core::ffi::c_int);
+                        exit_now(1 as ::core::ffi::c_int);
                     }
-                    proc_clear_signals(&server_proc, 1 as ::core::ffi::c_int);
+                    unsafe { proc_clear_signals(&server_proc, 1 as ::core::ffi::c_int) };
                     log_close();
-                    tiri_rt::unix::close_from(STDERR_FILENO + 1 as ::core::ffi::c_int);
-                    sigprocmask(
-                        SIG_SETMASK,
-                        &raw mut oldset,
-                        ::core::ptr::null_mut::<sigset_t>(),
-                    );
-                    environ_push(child);
+                    unsafe { tiri_rt::unix::close_from(STDERR_FILENO + 1 as ::core::ffi::c_int) };
+                    set_signal_mask(&oldset);
+                    unsafe { environ_push(child) };
                     drop(child_owner.take());
                     if pane_argv.len() > 1 {
-                        let mut exec_argv: Vec<_> =
-                            pane_argv.iter().map(|arg| arg.as_ptr()).collect();
-                        exec_argv.push(::core::ptr::null());
-                        argvp = exec_argv.as_mut_ptr().cast();
-                        execvp(
-                            *argvp.offset(0 as ::core::ffi::c_int as isize),
-                            argvp as *const *const ::core::ffi::c_char,
-                        );
-                        _exit(1 as ::core::ffi::c_int);
+                        let argv: Vec<&CStr> = pane_argv.iter().map(CString::as_c_str).collect();
+                        exec_path(&argv);
+                        exit_now(1 as ::core::ffi::c_int);
                     }
                     let shell = pane_shell.as_deref().expect("pane shell");
                     let shell_name = match shell.to_bytes().iter().rposition(|&byte| byte == b'/') {
@@ -563,33 +531,19 @@ pub(super) fn spawn_pane(
                         _ => shell,
                     };
                     if pane_argv.len() == 1 {
-                        execl(
-                            shell.as_ptr(),
-                            shell_name.as_ptr(),
-                            c"-c".as_ptr(),
-                            pane_argv[0].as_ptr(),
-                            NULL as *mut ::core::ffi::c_char,
-                        );
-                        _exit(1 as ::core::ffi::c_int);
+                        exec(shell, &[shell_name, c"-c", &pane_argv[0]]);
+                        exit_now(1 as ::core::ffi::c_int);
                     }
                     let mut login_name = vec![b'-'];
                     login_name.extend_from_slice(shell_name.to_bytes());
                     let argv0 = CString::new(login_name).expect("shell name contains no NUL");
-                    execl(
-                        shell.as_ptr(),
-                        argv0.as_ptr(),
-                        NULL as *mut ::core::ffi::c_char,
-                    );
-                    _exit(1 as ::core::ffi::c_int);
+                    exec(shell, &[&argv0]);
+                    exit_now(1 as ::core::ffi::c_int);
                 }
             }
             new_pane_owner.borrow_mut().flags &= !PANE_EXITED;
             new_pane_owner.refresh_utmp();
-            sigprocmask(
-                SIG_SETMASK,
-                &raw mut oldset,
-                ::core::ptr::null_mut::<sigset_t>(),
-            );
+            set_signal_mask(&oldset);
             window_pane_set_event(&new_pane_owner);
             drop(child_owner.take());
             spawn_fire_pane_created(sc, &new_pane_owner);
@@ -666,10 +620,9 @@ mod tests {
     use crate::shared::spawn::spawn_finish_edit_cb;
     use crate::shared::spawn::EditorHandle;
     use crate::spawn::spawn_editor_finish;
-    use libc::mkstemp;
     use std::ffi::CStr;
     use std::fs;
-    use std::os::fd::AsRawFd;
+    use std::os::fd::{AsFd, AsRawFd};
     use std::process::ExitStatus;
     use std::process::{Command, Stdio};
     use std::thread;
@@ -729,17 +682,15 @@ mod tests {
         assert!(status.success(), "isolated test exited with {status}");
     }
 
-    unsafe fn create_temp_file() -> (OwnedFd, std::ffi::CString) {
+    fn create_temp_file() -> (OwnedFd, std::ffi::CString) {
         let mut template = b"/tmp/tiri-editor-owner-XXXXXX\0".to_vec();
-        let fd = mkstemp(template.as_mut_ptr() as *mut ::core::ffi::c_char);
-        assert!(
-            fd >= 0,
-            "mkstemp failed: {}",
-            std::io::Error::last_os_error()
-        );
+        let fd = tiri_rt::unix::make_temporary(&mut template)
+            .unwrap_or_else(|error| panic!("mkstemp failed: {error}"));
         (
-            OwnedFd::from_raw_fd(fd),
-            CStr::from_ptr(template.as_ptr() as *const ::core::ffi::c_char).to_owned(),
+            fd,
+            CStr::from_bytes_until_nul(&template)
+                .expect("template is terminated")
+                .to_owned(),
         )
     }
 
@@ -752,18 +703,17 @@ mod tests {
     #[test]
     fn editor_completion_reads_and_unlinks() {
         if std::env::var(CHILD_CASE).as_deref() == Ok(SUCCESS_CASE) {
-            unsafe {
+            {
                 let (fd_owner, path) = create_temp_file();
                 let fd = fd_owner.as_raw_fd();
-                let flags = ::libc::fcntl(fd, ::libc::F_GETFL);
-                assert!(flags >= 0);
+                let flags = tiri_rt::unix::status_flags(fd_owner.as_fd()).unwrap();
                 assert_eq!(flags & ::libc::O_ACCMODE, ::libc::O_RDWR);
                 assert!(std::path::Path::new(path.to_str().unwrap()).exists());
                 let mut file = fs::File::from(fd_owner);
                 let original = b"created through mkstemp";
                 assert!(crate::spawn::spawn_editor_write(&mut file, original));
                 drop(file);
-                assert_eq!(::libc::fcntl(fd, ::libc::F_GETFD), -1);
+                assert!(!tiri_rt::unix::is_open(fd));
                 assert_eq!(fs::read(path.to_str().unwrap()).unwrap(), original);
 
                 let edited = b"edited by child\0\xff";

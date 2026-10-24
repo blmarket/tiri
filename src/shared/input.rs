@@ -80,7 +80,8 @@ pub struct input_ctx {
     pub last: utf8_data,
     pub state: &'static input_state,
     pub flags: ::core::ffi::c_int,
-    pub(crate) requests: VecDeque<Box<input_request>>,
+    pub(crate) this: refbox::Weak<input_ctx>,
+    pub(crate) requests: VecDeque<refbox::RefBox<input_request>>,
     pub request_timer: Option<Timer>,
     pub since_ground: Box<SegmentedBuf>,
     pub ground_timer: Option<Timer>,
@@ -90,7 +91,7 @@ pub struct input_ctx {
 pub struct input_request {
     /// Client observation; request/context ownership does not retain the client.
     pub c: ClientWeak,
-    pub ictx: *mut input_ctx,
+    pub ictx: refbox::Weak<input_ctx>,
     pub type_0: input_request_type,
     pub t: uint64_t,
     pub end: input_end_type,
@@ -105,14 +106,14 @@ pub type input_end_type = ::core::ffi::c_uint;
 #[repr(C)]
 pub struct input_state {
     pub name: &'static ::std::ffi::CStr,
-    pub enter: Option<unsafe fn(&mut input_ctx)>,
-    pub exit: Option<unsafe fn(&mut input_ctx, &mut screen_write_ctx)>,
+    pub enter: Option<fn(&mut input_ctx)>,
+    pub exit: Option<fn(&mut input_ctx, &mut screen_write_ctx)>,
     pub transitions: &'static [input_transition],
 }
 
 /// Handles the current byte, writing through the parse's screen context;
 /// nonzero keeps the current state.
-pub type input_handler_cb = unsafe fn(&mut input_ctx, &mut screen_write_ctx) -> ::core::ffi::c_int;
+pub type input_handler_cb = fn(&mut input_ctx, &mut screen_write_ctx) -> ::core::ffi::c_int;
 
 #[derive(Copy, Clone)]
 #[repr(C)]

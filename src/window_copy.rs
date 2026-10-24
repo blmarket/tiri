@@ -31,8 +31,9 @@ use crate::options::{options_get_number, options_get_string};
 use crate::paste::{paste_add_owned, paste_buffer_data, paste_get_top, paste_set_owned};
 use crate::reactor::bufferevent_write;
 use crate::screen::{
-    screen_check_selection, screen_clear_selection, screen_hide_selection, screen_init,
-    screen_resize, screen_resize_cursor, screen_set_default_cursor, screen_set_selection,
+    screen_check_selection, screen_clear_selection, screen_get_default_cursor,
+    screen_hide_selection, screen_init, screen_resize, screen_resize_cursor,
+    screen_set_default_cursor, screen_set_selection,
 };
 use crate::screen_write::{
     screen_write_carriagereturn, screen_write_cell, screen_write_cursormove,
@@ -84,7 +85,7 @@ pub struct window_copy_mode_data {
     /// Owned snapshot for copy mode, or command output for view mode.
     backing: Option<Box<screen>>,
     pub backing_written: ::core::ffi::c_int,
-    pub ictx: Option<Box<input_ctx>>,
+    pub ictx: Option<refbox::RefBox<input_ctx>>,
     pub sync_added: u_int,
     pub sync_collected: u_int,
     pub sync_generation: u_int,
@@ -612,7 +613,10 @@ fn window_copy_common_init(mut wme: refbox::Weak<window_mode_entry>) {
     data.jumptype = WINDOW_COPY_OFF as ::core::ffi::c_int;
     data.line_numbers = 1 as ::core::ffi::c_int;
     screen_init(data.screen.get_mut(), sx, sy, 0 as u_int);
-    screen_set_default_cursor(data.screen.get_mut(), &OptionsScope::GlobalWindow);
+    screen_set_default_cursor(
+        data.screen.get_mut(),
+        screen_get_default_cursor(&OptionsScope::GlobalWindow),
+    );
     data.modekeys = options_get_number(
         &mode_pane_owner
             .window_observer()
@@ -779,7 +783,12 @@ pub unsafe fn window_copy_add(
         if parse != 0 {
             let text = format_message_with(write);
             input_parse_screen(
-                data.ictx.as_deref_mut().expect("input context"),
+                &mut data
+                    .ictx
+                    .as_ref()
+                    .expect("input context")
+                    .try_borrow_mut()
+                    .expect("input context not already borrowed"),
                 &mut *backing_ctx.screen,
                 Some(Box::new(|_| {})),
                 text.as_bytes(),
