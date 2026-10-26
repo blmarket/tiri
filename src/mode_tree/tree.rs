@@ -2,7 +2,7 @@ use super::types::{
     mode_tree_build_cb, mode_tree_data, mode_tree_draw_cb, mode_tree_height_cb, mode_tree_help_cb,
     mode_tree_item, mode_tree_key_cb, mode_tree_line, mode_tree_list, mode_tree_menu_cb,
     mode_tree_prompt, mode_tree_prompt_input_cb, mode_tree_search_cb, mode_tree_search_dir,
-    mode_tree_sort_cb, mode_tree_swap_cb, ModeTreeItemData, ModeTreeItemRef,
+    mode_tree_sort_cb, mode_tree_swap_cb, ModeTreeItemData,
 };
 use crate::arguments::{args, args_get, args_has};
 use crate::cmd::parse::{cmd_parse_and_append, cmd_parse_error_uppercase_first};
@@ -129,11 +129,14 @@ fn mode_tree_is_lowercase(s: &CStr) -> ::core::ffi::c_int {
             == ::core::ffi::c_int::from(byte.to_ascii_lowercase())
     }) as ::core::ffi::c_int
 }
-fn mode_tree_find_item(list: &mode_tree_list, tag: uint64_t) -> Option<ModeTreeItemRef> {
+fn mode_tree_find_item(
+    list: &mode_tree_list,
+    tag: uint64_t,
+) -> Option<refbox::Weak<mode_tree_item>> {
     for item in &list.items {
         let row = item.try_borrow_mut().expect("unborrowed row");
         if row.tag == tag {
-            return Some(ModeTreeItemRef::observe(item));
+            return Some(item.downgrade());
         }
         if let Some(child) = mode_tree_find_item(&row.children, tag) {
             return Some(child);
@@ -148,13 +151,13 @@ fn mode_tree_free_items(list: &mut mode_tree_list) {
 impl mode_tree_data {
     pub fn add(
         &mut self,
-        parent: Option<&ModeTreeItemRef>,
+        parent: Option<&refbox::Weak<mode_tree_item>>,
         itemdata: ModeTreeItemData,
         tag: uint64_t,
         name: &CStr,
         text: Option<&CStr>,
         expanded: i32,
-    ) -> ModeTreeItemRef {
+    ) -> refbox::Weak<mode_tree_item> {
         log_debug(format_args!(
             "mode_tree_add: {tag}, {} {}",
             log_bytes(name.to_bytes()),
@@ -169,8 +172,9 @@ impl mode_tree_data {
             ..mode_tree_item::empty()
         };
         if let Some(saved) = mode_tree_find_item(&self.saved, tag) {
-            let saved = saved.borrow();
-            if parent.is_none_or(|parent| parent.borrow().expanded != 0) {
+            let saved = saved.try_borrow().expect("live mode row");
+            if parent.is_none_or(|parent| parent.try_borrow().expect("live mode row").expanded != 0)
+            {
                 row.tagged = saved.tagged;
             }
             row.expanded = saved.expanded;
@@ -178,19 +182,24 @@ impl mode_tree_data {
             row.expanded = if expanded == -1 { 1 } else { expanded };
         }
         let owner = refbox::RefBox::new(row);
-        let observer = ModeTreeItemRef::observe(&owner);
+        let observer = owner.downgrade();
         if let Some(parent) = parent {
-            parent.borrow_mut().children.items.push(owner);
+            parent
+                .try_borrow_mut()
+                .expect("live mode row")
+                .children
+                .items
+                .push(owner);
         } else {
             self.children.items.push(owner);
         }
         observer
     }
 
-    pub fn remove(&mut self, item: &ModeTreeItemRef) {
-        let parent = item.borrow().parent.clone();
+    pub fn remove(&mut self, item: &refbox::Weak<mode_tree_item>) {
+        let parent = item.try_borrow().expect("live mode row").parent.clone();
         if !parent.is_empty() {
-            let mut parent = parent.borrow_mut();
+            let mut parent = parent.try_borrow_mut().expect("live mode row");
             let position = parent.children.position(item);
             parent.children.items.remove(position);
         } else {
@@ -199,7 +208,7 @@ impl mode_tree_data {
         }
         self.lines.retain(|line| line.item.is_alive());
         for (index, line) in self.lines.iter().enumerate() {
-            line.item.borrow_mut().line = index as u_int;
+            line.item.try_borrow_mut().expect("live mode row").line = index as u_int;
         }
         self.current = self
             .current
@@ -225,7 +234,7 @@ impl mode_tree_data {
         self.lines[self.current as usize]
             .item
             .try_borrow()
-            .map_or_else(CString::default, |row| row.name.clone())
+            .map_or_else(|_| CString::default(), |row| row.name.clone())
     }
 
     pub fn set_current(&mut self, mut tag: uint64_t) -> ::core::ffi::c_int {
@@ -247,7 +256,7 @@ impl mode_tree_data {
     pub fn count_tagged(&self) -> u_int {
         self.lines
             .iter()
-            .filter(|line| line.item.try_borrow().is_some_and(|row| row.tagged != 0))
+            .filter(|line| line.item.try_borrow().is_ok_and(|row| row.tagged != 0))
             .count() as u_int
     }
 
@@ -326,12 +335,16 @@ impl mode_tree_data {
     fn get_tag(&self, tag: uint64_t) -> Option<u_int> {
         self.lines
             .iter()
-            .position(|line| line.item.borrow().tag == tag)
+            .position(|line| line.item.try_borrow().expect("live mode row").tag == tag)
             .map(|index| index as u_int)
     }
 
-    fn sibling(&self, item: &ModeTreeItemRef, forward: bool) -> Option<ModeTreeItemRef> {
-        let parent = item.borrow().parent.clone();
+    fn sibling(
+        &self,
+        item: &refbox::Weak<mode_tree_item>,
+        forward: bool,
+    ) -> Option<refbox::Weak<mode_tree_item>> {
+        let parent = item.try_borrow().expect("live mode row").parent.clone();
         let sibling = |list: &mode_tree_list| {
             if forward {
                 list.next(item)
@@ -340,14 +353,17 @@ impl mode_tree_data {
             }
         };
         if !parent.is_empty() {
-            sibling(&parent.borrow().children)
+            sibling(&parent.try_borrow().expect("live mode row").children)
         } else {
             sibling(&self.children)
         }
     }
 
-    fn search_next(&self, item: &ModeTreeItemRef) -> Option<ModeTreeItemRef> {
-        if let Some(child) = item.borrow().children.first() {
+    fn search_next(
+        &self,
+        item: &refbox::Weak<mode_tree_item>,
+    ) -> Option<refbox::Weak<mode_tree_item>> {
+        if let Some(child) = item.try_borrow().expect("live mode row").children.first() {
             return Some(child);
         }
         let mut current = item.clone();
@@ -355,7 +371,7 @@ impl mode_tree_data {
             if let Some(next) = self.sibling(&current, true) {
                 return Some(next);
             }
-            let parent = current.borrow().parent.clone();
+            let parent = current.try_borrow().expect("live mode row").parent.clone();
             if parent.is_empty() {
                 return self.children.first();
             }
@@ -363,8 +379,11 @@ impl mode_tree_data {
         }
     }
 
-    fn search_previous(&self, item: &ModeTreeItemRef) -> Option<ModeTreeItemRef> {
-        let parent = item.borrow().parent.clone();
+    fn search_previous(
+        &self,
+        item: &refbox::Weak<mode_tree_item>,
+    ) -> Option<refbox::Weak<mode_tree_item>> {
+        let parent = item.try_borrow().expect("live mode row").parent.clone();
         let mut previous = if let Some(previous) = self.sibling(item, false) {
             previous
         } else if !parent.is_empty() {
@@ -373,7 +392,11 @@ impl mode_tree_data {
             self.children.last()?
         };
         loop {
-            let last = previous.borrow().children.last();
+            let last = previous
+                .try_borrow()
+                .expect("live mode row")
+                .children
+                .last();
             let Some(last) = last else {
                 return Some(previous);
             };
@@ -400,7 +423,7 @@ pub fn mode_tree_visit_screen(
 
 fn mode_tree_build_lines(
     tree_owner: &Rc<RefCell<mode_tree_data>>,
-    items: &[ModeTreeItemRef],
+    items: &[refbox::Weak<mode_tree_item>],
     depth: u_int,
 ) {
     {
@@ -428,7 +451,7 @@ fn mode_tree_build_lines(
             line
         };
         let (children, expanded) = {
-            let mut row = item.borrow_mut();
+            let mut row = item.try_borrow_mut().expect("live mode row");
             row.line = line;
             if !row.children.items.is_empty() {
                 flat = 0;
@@ -441,7 +464,7 @@ fn mode_tree_build_lines(
         if tree_owner.borrow().dead != 0 {
             return;
         }
-        let Some(data) = item.try_borrow().map(|row| row.itemdata.clone()) else {
+        let Ok(data) = item.try_borrow().map(|row| row.itemdata.clone()) else {
             continue;
         };
         let callback = tree_owner.borrow_mut().keycb.take();
@@ -470,7 +493,7 @@ fn mode_tree_build_lines(
             return;
         }
         let keystr = (key != KEYC_NONE).then(|| key_string_format(key, false));
-        let Some(mut row) = item.try_borrow() else {
+        let Ok(mut row) = item.try_borrow_mut() else {
             continue;
         };
         row.key = key;
@@ -478,7 +501,7 @@ fn mode_tree_build_lines(
     }
     let mut tree = tree_owner.borrow_mut();
     for item in items {
-        let Some(row) = item.try_borrow() else {
+        let Ok(row) = item.try_borrow() else {
             continue;
         };
         if let Some(line) = tree.lines.get_mut(row.line as usize) {
@@ -523,12 +546,14 @@ fn mode_tree_swap(tree_owner: &Rc<RefCell<mode_tree_data>>, direction: i32) {
         }
         let current = (&mtd.lines)[mtd.current as usize]
             .item
-            .borrow()
+            .try_borrow()
+            .expect("live mode row")
             .itemdata
             .clone();
         let other = (&mtd.lines)[swap_with as usize]
             .item
-            .borrow()
+            .try_borrow()
+            .expect("live mode row")
             .itemdata
             .clone();
         (
@@ -562,8 +587,8 @@ pub fn mode_tree_expand_current(tree_owner: &Rc<RefCell<mode_tree_data>>) {
         let mtd = tree_owner.borrow();
         mtd.lines[mtd.current as usize].item.clone()
     };
-    if item.borrow().expanded == 0 {
-        item.borrow_mut().expanded = 1;
+    if item.try_borrow().expect("live mode row").expanded == 0 {
+        item.try_borrow_mut().expect("live mode row").expanded = 1;
         mode_tree_build(tree_owner);
     }
 }
@@ -575,14 +600,14 @@ pub fn mode_tree_expand(tree_owner: &Rc<RefCell<mode_tree_data>>, tag: uint64_t)
         };
         mtd.lines[index as usize].item.clone()
     };
-    if item.borrow().expanded == 0 {
-        item.borrow_mut().expanded = 1;
+    if item.try_borrow().expect("live mode row").expanded == 0 {
+        item.try_borrow_mut().expect("live mode row").expanded = 1;
         mode_tree_build(tree_owner);
     }
 }
 pub fn mode_tree_each_tagged(
     tree_owner: &std::rc::Rc<std::cell::RefCell<mode_tree_data>>,
-    mut cb: impl FnMut(&ModeTreeItemRef, key_code),
+    mut cb: impl FnMut(&refbox::Weak<mode_tree_item>, key_code),
     key: key_code,
     current: i32,
 ) {
@@ -596,7 +621,7 @@ pub fn mode_tree_each_tagged(
             }
             mtd.lines[index].item.clone()
         };
-        if item.try_borrow().is_some_and(|row| row.tagged != 0) {
+        if item.try_borrow().is_ok_and(|row| row.tagged != 0) {
             fired = true;
             cb(&item, key);
         }
@@ -744,7 +769,13 @@ pub fn mode_tree_build(tree_owner: &Rc<RefCell<mode_tree_data>>) {
         let tag = if tree.lines.is_empty() {
             None
         } else {
-            Some(tree.lines[tree.current as usize].item.borrow().tag)
+            Some(
+                tree.lines[tree.current as usize]
+                    .item
+                    .try_borrow()
+                    .expect("live mode row")
+                    .tag,
+            )
         };
         tree.saved.items.append(&mut tree.children.items);
         if let Some(sort) = tree.sortcb {
@@ -781,7 +812,13 @@ pub fn mode_tree_build(tree_owner: &Rc<RefCell<mode_tree_data>>) {
             return;
         }
         if !tree.lines.is_empty() && tag.is_none() {
-            tag = Some(tree.lines[tree.current as usize].item.borrow().tag);
+            tag = Some(
+                tree.lines[tree.current as usize]
+                    .item
+                    .try_borrow()
+                    .expect("live mode row")
+                    .tag,
+            );
         }
         tree.width = tree.screen.grid().sx;
         if tree.preview == MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int {
@@ -826,14 +863,14 @@ pub fn mode_tree_resize(tree_owner: &Rc<RefCell<mode_tree_data>>, mut sx: u_int,
     mode_tree_draw(tree_owner);
     mode_pane_owner.request_redraw(false);
 }
-pub fn mode_tree_draw_as_parent(item: &ModeTreeItemRef) {
-    item.borrow_mut().draw_as_parent = 1;
+pub fn mode_tree_draw_as_parent(item: &refbox::Weak<mode_tree_item>) {
+    item.try_borrow_mut().expect("live mode row").draw_as_parent = 1;
 }
-pub fn mode_tree_no_tag(item: &ModeTreeItemRef) {
-    item.borrow_mut().no_tag = 1;
+pub fn mode_tree_no_tag(item: &refbox::Weak<mode_tree_item>) {
+    item.try_borrow_mut().expect("live mode row").no_tag = 1;
 }
-pub fn mode_tree_align(item: &ModeTreeItemRef) {
-    item.borrow_mut().align = 1;
+pub fn mode_tree_align(item: &refbox::Weak<mode_tree_item>) {
+    item.try_borrow_mut().expect("live mode row").align = 1;
 }
 fn mode_tree_append_printf_string(bytes: &mut Vec<u8>, value: Option<&CStr>) {
     if let Some(value) = value {
@@ -952,7 +989,10 @@ pub fn mode_tree_draw(tree_owner: &Rc<RefCell<mode_tree_data>>) {
     keylen = 0 as ::core::ffi::c_int;
     i = 0 as u_int;
     while i < (mtd.lines.len() as u_int) {
-        let mti = (&mtd.lines)[i as usize].item.borrow();
+        let mti = (&mtd.lines)[i as usize]
+            .item
+            .try_borrow()
+            .expect("live mode row");
         if !(mti.key == KEYC_NONE as ::core::ffi::c_ulong as key_code)
             && mti.keylen as ::core::ffi::c_int + 3 as ::core::ffi::c_int > keylen
         {
@@ -968,7 +1008,7 @@ pub fn mode_tree_draw(tree_owner: &Rc<RefCell<mode_tree_data>>) {
     i = 0 as u_int;
     while i < (mtd.lines.len() as u_int) {
         let line = (&mtd.lines)[i as usize].clone();
-        let mti = line.item.borrow();
+        let mti = line.item.try_borrow().expect("live mode row");
         if mti.align != 0
             && mti.name.as_bytes().len() as ::core::ffi::c_int > alignlen[line.depth as usize]
         {
@@ -983,7 +1023,7 @@ pub fn mode_tree_draw(tree_owner: &Rc<RefCell<mode_tree_data>>) {
                 break;
             }
             let line = (&mtd.lines)[i as usize].clone();
-            let mti = line.item.borrow();
+            let mti = line.item.try_borrow().expect("live mode row");
             screen_write_cursormove(
                 &mut ctx,
                 0 as ::core::ffi::c_int,
@@ -1015,7 +1055,9 @@ pub fn mode_tree_draw(tree_owner: &Rc<RefCell<mode_tree_data>>) {
                 });
                 format_add(ft, c"mode_tree_branch", |out| out.write_all(b"1"));
                 if !mti.parent.is_empty()
-                    && (&mtd.lines)[mti.parent.borrow().line as usize].last != 0
+                    && (&mtd.lines)[mti.parent.try_borrow().expect("live mode row").line as usize]
+                        .last
+                        != 0
                 {
                     format_add(ft, c"mode_tree_parent_last", |out| out.write_all(b"1"));
                 } else {
@@ -1168,12 +1210,12 @@ pub fn mode_tree_draw(tree_owner: &Rc<RefCell<mode_tree_data>>) {
         {
             let line = (&mtd.lines)[mtd.current as usize].clone();
             let mut owner = line.item.clone();
-            if owner.borrow().draw_as_parent != 0 {
-                let parent = owner.borrow().parent.clone();
+            if owner.try_borrow().expect("live mode row").draw_as_parent != 0 {
+                let parent = owner.try_borrow().expect("live mode row").parent.clone();
                 assert!(!parent.is_empty(), "preview row has a parent");
                 owner = parent;
             }
-            let mti = owner.borrow();
+            let mti = owner.try_borrow().expect("live mode row");
             screen_write_cursormove(
                 &mut ctx,
                 0 as ::core::ffi::c_int,
@@ -1432,17 +1474,21 @@ pub fn mode_tree_set_prompt(
         cmdq_append(client_owner, item_allocation);
     }
 }
-fn mode_tree_search_backward(tree_owner: &Rc<RefCell<mode_tree_data>>) -> Option<ModeTreeItemRef> {
+fn mode_tree_search_backward(
+    tree_owner: &Rc<RefCell<mode_tree_data>>,
+) -> Option<refbox::Weak<mode_tree_item>> {
     mode_tree_search(tree_owner, false)
 }
-fn mode_tree_search_forward(tree_owner: &Rc<RefCell<mode_tree_data>>) -> Option<ModeTreeItemRef> {
+fn mode_tree_search_forward(
+    tree_owner: &Rc<RefCell<mode_tree_data>>,
+) -> Option<refbox::Weak<mode_tree_item>> {
     mode_tree_search(tree_owner, true)
 }
 
 fn mode_tree_search(
     tree_owner: &Rc<RefCell<mode_tree_data>>,
     forward: bool,
-) -> Option<ModeTreeItemRef> {
+) -> Option<refbox::Weak<mode_tree_item>> {
     let (search, icase, last) = {
         let tree = tree_owner.borrow();
         (
@@ -1462,7 +1508,7 @@ fn mode_tree_search(
             return None;
         }
         let (name, itemdata) = {
-            let row = item.borrow();
+            let row = item.try_borrow().expect("live mode row");
             (row.name.clone(), row.itemdata.clone())
         };
         let callback = tree_owner.borrow_mut().searchcb.take();
@@ -1506,11 +1552,11 @@ fn mode_tree_search_set(tree_owner: &Rc<RefCell<mode_tree_data>>) {
     let Some(item) = found else {
         return;
     };
-    let tag = item.borrow().tag;
-    let mut parent = item.borrow().parent.clone();
+    let tag = item.try_borrow().expect("live mode row").tag;
+    let mut parent = item.try_borrow().expect("live mode row").parent.clone();
     while !parent.is_empty() {
         let owner = parent;
-        let mut row = owner.borrow_mut();
+        let mut row = owner.try_borrow_mut().expect("live mode row");
         row.expanded = 1;
         parent = row.parent.clone();
     }
@@ -1672,7 +1718,14 @@ fn mode_tree_display_menu(
     let title = if outside == 0 {
         items = mtd.menu;
         let mut bytes = b"#[align=centre]".to_vec();
-        bytes.extend_from_slice((&mtd.lines)[line as usize].item.borrow().name.to_bytes());
+        bytes.extend_from_slice(
+            (&mtd.lines)[line as usize]
+                .item
+                .try_borrow()
+                .expect("live mode row")
+                .name
+                .to_bytes(),
+        );
         CString::new(bytes).expect("mode tree item names contain no NUL")
     } else {
         items = &mode_tree_menu_items;
@@ -2043,7 +2096,13 @@ pub fn mode_tree_key(
     choice = -(1 as ::core::ffi::c_int);
     i = 0 as u_int;
     while i < line_count {
-        if *key == tree.borrow().lines[i as usize].item.borrow().key {
+        if *key
+            == tree.borrow().lines[i as usize]
+                .item
+                .try_borrow()
+                .expect("live mode row")
+                .key
+        {
             choice = i as ::core::ffi::c_int;
             break;
         } else {
@@ -2114,13 +2173,13 @@ pub fn mode_tree_key(
             }
         }
         116 => {
-            let mut row = current.borrow_mut();
+            let mut row = current.try_borrow_mut().expect("live mode row");
             if row.no_tag == 0 {
                 if row.tagged == 0 {
                     let mut parent = row.parent.clone();
                     while !parent.is_empty() {
                         let owner = parent;
-                        let mut row = owner.borrow_mut();
+                        let mut row = owner.try_borrow_mut().expect("live mode row");
                         row.tagged = 0;
                         parent = row.parent.clone();
                     }
@@ -2137,14 +2196,14 @@ pub fn mode_tree_key(
         }
         84 => {
             for line in &tree.borrow().lines {
-                line.item.borrow_mut().tagged = 0;
+                line.item.try_borrow_mut().expect("live mode row").tagged = 0;
             }
         }
         35184372088948 => {
             for line in &tree.borrow().lines {
-                let mut row = line.item.borrow_mut();
+                let mut row = line.item.try_borrow_mut().expect("live mode row");
                 row.tagged = if !row.parent.is_empty() {
-                    (row.parent.borrow().no_tag != 0) as i32
+                    (row.parent.try_borrow().expect("live mode row").no_tag != 0) as i32
                 } else {
                     (row.no_tag == 0) as i32
                 };
@@ -2162,13 +2221,14 @@ pub fn mode_tree_key(
             mode_tree_build(&tree);
         }
         8589934621 | 104 | 45 => {
-            let target = if line.flat != 0 || current.borrow().expanded == 0 {
-                current.borrow().parent.clone()
-            } else {
-                current.clone()
-            };
+            let target =
+                if line.flat != 0 || current.try_borrow().expect("live mode row").expanded == 0 {
+                    current.try_borrow().expect("live mode row").parent.clone()
+                } else {
+                    current.clone()
+                };
             if !target.is_empty() {
-                let mut row = target.borrow_mut();
+                let mut row = target.try_borrow_mut().expect("live mode row");
                 row.expanded = 0;
                 tree.borrow_mut().current = row.line;
                 drop(row);
@@ -2178,10 +2238,10 @@ pub fn mode_tree_key(
             }
         }
         8589934622 | 108 | 43 => {
-            if line.flat != 0 || current.borrow().expanded != 0 {
+            if line.flat != 0 || current.try_borrow().expect("live mode row").expanded != 0 {
                 tree.borrow_mut().down(0);
             } else {
-                current.borrow_mut().expanded = 1;
+                current.try_borrow_mut().expect("live mode row").expanded = 1;
                 mode_tree_build(&tree);
             }
         }
@@ -2301,14 +2361,14 @@ mod mode_tree_tests {
         for tag in 5..100 {
             add(None, tag, c"other");
         }
-        branch.borrow_mut().expanded = 0;
+        branch.try_borrow_mut().expect("live mode row").expanded = 0;
         let children = mtd_owner.borrow().children.snapshot();
         mode_tree_build_lines(&mtd_owner, &children, 0);
         mtd_owner.borrow_mut().search = Some(c"match".to_owned());
-        mtd_owner.borrow_mut().current = first.borrow().line;
+        mtd_owner.borrow_mut().current = first.try_borrow().expect("live mode row").line;
         assert!(mode_tree_search_forward(&mtd_owner).unwrap() == child);
         assert!(mode_tree_search_backward(&mtd_owner).unwrap() == tail);
-        mtd_owner.borrow_mut().current = tail.borrow().line;
+        mtd_owner.borrow_mut().current = tail.try_borrow().expect("live mode row").line;
         assert!(mode_tree_search_backward(&mtd_owner).unwrap() == child);
         assert!(mode_tree_search_forward(&mtd_owner).unwrap() == first);
         mtd_owner.borrow_mut().search = Some(c"missing".to_owned());
@@ -2316,7 +2376,12 @@ mod mode_tree_tests {
         assert!(mode_tree_search_backward(&mtd_owner).is_none());
 
         mtd_owner.borrow_mut().remove(&child);
-        assert!(branch.borrow().children.items.is_empty());
+        assert!(branch
+            .try_borrow()
+            .expect("live mode row")
+            .children
+            .items
+            .is_empty());
         add(Some(&branch), 100, c"replacement child");
         mtd_owner.borrow_mut().remove(&branch);
         mtd_owner.borrow_mut().remove(&first);
@@ -2353,17 +2418,20 @@ mod mode_tree_tests {
             match expected {
                 Some(expected) => {
                     assert_eq!(
-                        (item.borrow().keystr)
+                        (item.try_borrow().expect("live mode row").keystr)
                             .as_deref()
                             .expect("string is present")
                             .to_bytes(),
                         expected
                     );
-                    assert_eq!(item.borrow().keylen, expected.len());
+                    assert_eq!(
+                        item.try_borrow().expect("live mode row").keylen,
+                        expected.len()
+                    );
                 }
                 None => {
-                    assert!(item.borrow().keystr.is_none());
-                    assert_eq!(item.borrow().keylen, 0);
+                    assert!(item.try_borrow().expect("live mode row").keystr.is_none());
+                    assert_eq!(item.try_borrow().expect("live mode row").keylen, 0);
                 }
             }
         }
@@ -2411,7 +2479,14 @@ mod mode_tree_tests {
         assert_eq!(mtd_owner.borrow().lines[0].depth, 0);
         for i in 1..65 {
             assert_eq!(mtd_owner.borrow().lines[i].depth, 1);
-            assert_eq!(mtd_owner.borrow().lines[i].item.borrow().line, i as u_int);
+            assert_eq!(
+                mtd_owner.borrow().lines[i]
+                    .item
+                    .try_borrow()
+                    .expect("live mode row")
+                    .line,
+                i as u_int
+            );
         }
         assert_eq!(mtd_owner.borrow_mut().set_current(65), 1);
         assert_eq!(mtd_owner.borrow_mut().current, 64);
@@ -2461,8 +2536,8 @@ mod mode_tree_tests {
         let prior = mtd_owner
             .borrow_mut()
             .add(None, ModeTreeItemData::None, 7, c"row", None, 1);
-        prior.borrow_mut().tagged = 1;
-        prior.borrow_mut().expanded = 0;
+        prior.try_borrow_mut().expect("live mode row").tagged = 1;
+        prior.try_borrow_mut().expect("live mode row").expanded = 0;
         {
             let mut mtd = mtd_owner.borrow_mut();
             mtd.saved = std::mem::take(&mut mtd.children);
@@ -2477,14 +2552,14 @@ mod mode_tree_tests {
                 .add(None, ModeTreeItemData::None, 8, c"other", None, 1);
         assert_eq!(
             {
-                let row = restored.borrow();
+                let row = restored.try_borrow().expect("live mode row");
                 (row.tagged, row.expanded)
             },
             (1, 0)
         );
         assert_eq!(
             {
-                let row = different.borrow();
+                let row = different.try_borrow().expect("live mode row");
                 (row.tagged, row.expanded)
             },
             (0, 1)
@@ -2609,7 +2684,7 @@ mod row_owner_tests {
         tree_owner.borrow_mut().current = 1;
         let selected = (&tree_owner.borrow_mut().lines)[1].clone();
         let name = tree_owner.borrow().get_current_name();
-        let borrowed = selected.item.borrow();
+        let borrowed = selected.item.try_borrow().expect("live mode row");
         drop(parent);
         drop(child);
         mode_tree_free(tree_owner);
@@ -2651,7 +2726,10 @@ mod row_owner_tests {
         assert!(!first.is_alive());
         assert_eq!(owner.borrow_mut().lines.len(), 1);
         assert!((&owner.borrow_mut().lines)[0].item == second);
-        assert_eq!(second.borrow().key, b'x' as key_code);
+        assert_eq!(
+            second.try_borrow().expect("live mode row").key,
+            b'x' as key_code
+        );
     }
 
     #[test]
@@ -2686,7 +2764,7 @@ mod row_owner_tests {
         let first = tree_owner
             .borrow_mut()
             .add(None, ModeTreeItemData::None, 1, c"first", None, 1);
-        first.borrow_mut().tagged = 1;
+        first.try_borrow_mut().expect("live mode row").tagged = 1;
         let children = tree_owner.borrow().children.snapshot();
         mode_tree_build_lines(&tree_owner, &children, 0);
         let mut calls = 0;
@@ -2763,12 +2841,12 @@ mod row_owner_tests {
             let first = owner
                 .borrow_mut()
                 .add(None, ModeTreeItemData::None, 1, c"first", None, 1);
-            first.borrow_mut().tagged = tagged as i32;
+            first.try_borrow_mut().expect("live mode row").tagged = tagged as i32;
             let second =
                 owner
                     .borrow_mut()
                     .add(None, ModeTreeItemData::None, 2, c"second", None, 1);
-            second.borrow_mut().tagged = tagged as i32;
+            second.try_borrow_mut().expect("live mode row").tagged = tagged as i32;
             let first_observer = first.clone();
             let second_observer = second.clone();
             let children = owner.borrow().children.snapshot();
@@ -2780,13 +2858,16 @@ mod row_owner_tests {
                 &owner,
                 |row, _| {
                     calls += 1;
-                    row.borrow_mut().tagged = 0;
-                    let name = row.borrow().name.clone();
+                    row.try_borrow_mut().expect("live mode row").tagged = 0;
+                    let name = row.try_borrow().expect("live mode row").name.clone();
                     owner.borrow_mut().clear_lines();
                     mode_tree_free_items(&mut owner.borrow_mut().children);
                     assert!(!first_observer.is_alive());
                     assert!(!second_observer.is_alive());
-                    assert!(row.try_borrow().is_none());
+                    assert!(matches!(
+                        row.try_borrow(),
+                        Err(refbox::BorrowError::Dropped)
+                    ));
                     assert_eq!(name.as_c_str(), c"first");
                 },
                 KEYC_NONE,
@@ -2856,7 +2937,10 @@ mod payload_owner_tests {
         let callback_row = row.clone();
         tree_owner.borrow_mut().keycb = Some(Box::new(move |item, _| {
             let snapshot = item.as_buffer().unwrap();
-            callback_row.borrow_mut().itemdata = ModeTreeItemData::None;
+            callback_row
+                .try_borrow_mut()
+                .expect("live mode row")
+                .itemdata = ModeTreeItemData::None;
             drop(owner.take());
             assert!(item.as_buffer().is_none());
             assert_eq!(snapshot.name.as_c_str(), c"callback snapshot");
@@ -2864,7 +2948,10 @@ mod payload_owner_tests {
         }));
         let children = tree_owner.borrow().children.snapshot();
         mode_tree_build_lines(&tree_owner, &children, 0);
-        assert_eq!(row.borrow().key, b'x' as key_code);
+        assert_eq!(
+            row.try_borrow().expect("live mode row").key,
+            b'x' as key_code
+        );
         assert!(matches!(
             tree_owner.borrow().get_current(),
             ModeTreeItemData::None

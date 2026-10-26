@@ -77,7 +77,7 @@ fn cmd_paste_buffer_exec(
         })
         .to_bytes();
     let bytes = {
-        let buffer = pb.borrow();
+        let buffer = pb.try_borrow().expect("live paste buffer");
         paste_buffer_data(&buffer).unwrap_or_default().to_vec()
     };
     pane_owner.paste_buffer(&bytes, separator, bracket != 0, args_has(args, b'S') != 0);

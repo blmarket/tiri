@@ -76,7 +76,7 @@ use crate::shared::grid::*;
 use crate::shared::job::JOB_NOWAIT;
 use crate::shared::job::{job, job_update_callback, JobCompletion};
 use crate::shared::pane::window_pane;
-use crate::shared::paste::PasteBufferRef;
+use crate::shared::paste::paste_buffer;
 use crate::shared::posix_io::FNM_CASEFOLD;
 use crate::shared::screen::screen;
 use crate::shared::sort::sort_criteria;
@@ -467,7 +467,7 @@ pub fn format_defaults_pane(
     ft.wp = std::rc::Rc::downgrade(wp_owner);
     wp_owner.add_mode_formats(ft);
 }
-pub fn format_defaults_paste_buffer(ft: &mut format_tree, pb: &PasteBufferRef) {
+pub fn format_defaults_paste_buffer(ft: &mut format_tree, pb: &refbox::Weak<paste_buffer>) {
     ft.pb = Some(pb.clone());
 }
 fn format_is_word_separator(ws: &CStr, gc: &grid_cell) -> bool {

@@ -8204,7 +8204,7 @@ fn window_copy_append_selection(mut wme: refbox::Weak<window_mode_entry>) {
         events_fire_pane(c"pane-set-clipboard", mode_pane_owner.clone());
     }
     if let Some(pb) = paste_get_top(Some(&mut bufname)) {
-        let buffer = pb.borrow();
+        let buffer = pb.try_borrow().expect("live paste buffer");
         let bufdata = paste_buffer_data(&buffer).unwrap_or_default();
         let mut appended = bufdata.to_vec();
         appended.extend_from_slice(&buf);

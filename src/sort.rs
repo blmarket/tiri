@@ -12,7 +12,7 @@ use crate::shared::client::{CLIENT_ATTACHED, CLIENT_UNATTACHEDFLAGS};
 use crate::shared::key::*;
 use crate::shared::key::{key_binding, key_table};
 use crate::shared::pane::window_pane;
-use crate::shared::paste::{paste_buffer, PasteBufferRef};
+use crate::shared::paste::paste_buffer;
 use crate::shared::session::SessionRef;
 use crate::shared::sort::sort_criteria;
 use crate::shared::sort::*;
@@ -229,7 +229,7 @@ pub fn sort_would_window_tree_swap(
     (sort_winlink_cmp((wla).clone(), (wlb).clone(), sort_crit) != Ordering::Equal)
         as ::core::ffi::c_int
 }
-pub fn sort_get_buffers(sort_crit: &sort_criteria) -> Vec<PasteBufferRef> {
+pub fn sort_get_buffers(sort_crit: &sort_criteria) -> Vec<refbox::Weak<paste_buffer>> {
     let mut buffers = Vec::new();
     let mut next = paste_walk(None);
     while let Some(pb) = next {
@@ -240,7 +240,11 @@ pub fn sort_get_buffers(sort_crit: &sort_criteria) -> Vec<PasteBufferRef> {
         if a == b {
             Ordering::Equal
         } else {
-            sort_buffer_cmp(&a.borrow(), &b.borrow(), criteria)
+            sort_buffer_cmp(
+                &a.try_borrow().expect("live paste buffer"),
+                &b.try_borrow().expect("live paste buffer"),
+                criteria,
+            )
         }
     });
     buffers

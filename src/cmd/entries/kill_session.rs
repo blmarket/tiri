@@ -52,7 +52,7 @@ fn cmd_kill_session_exec(
     let args = cmd_get_args(&cmd_ref);
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let source = target.s.upgrade().expect("live target session");
-    let mut sg = crate::shared::session::SessionGroupWeak::new();
+    let mut sg = refbox::Weak::new();
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut filter: Option<&CStr> = args_get(args, 'f' as i32 as u_char);
     if filter.is_some()

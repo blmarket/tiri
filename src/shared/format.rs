@@ -9,7 +9,7 @@ use super::command::cmdq_item;
 use super::job::job;
 use super::mouse::mouse_event;
 use super::pane::window_pane;
-use super::paste::PasteBufferRef;
+use super::paste::paste_buffer;
 use super::window::winlink;
 use std::collections::BTreeMap;
 pub const FORMAT_VERBOSE: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
@@ -127,7 +127,7 @@ pub struct format_tree {
     pub wl: refbox::Weak<winlink>,
     pub w: WindowWeak,
     pub wp: std::rc::Weak<RefCell<window_pane>>,
-    pub pb: Option<PasteBufferRef>,
+    pub pb: Option<refbox::Weak<paste_buffer>>,
     /// Queue item used for verbose output, observed without retaining it.
     pub item: std::rc::Weak<std::cell::RefCell<cmdq_item>>,
     pub client: Option<ClientRef>,

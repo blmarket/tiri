@@ -8,6 +8,6 @@ pub use tree::{
     mode_tree_start, mode_tree_visit_screen,
 };
 pub use types::{
-    mode_tree_data, mode_tree_help_info, mode_tree_prompt_input_cb, ModeTreeItemData,
-    ModeTreeItemRef, ModeTreeItemSnapshot,
+    mode_tree_data, mode_tree_help_info, mode_tree_item, mode_tree_prompt_input_cb,
+    ModeTreeItemData, ModeTreeItemSnapshot,
 };

@@ -214,56 +214,16 @@ impl ModeTreeItemData {
     }
 }
 
-/// A row identity. Only its containing list owns the allocation.
-#[derive(Clone, PartialEq, Eq)]
-pub struct ModeTreeItemRef(refbox::Weak<mode_tree_item>);
-
-impl Default for ModeTreeItemRef {
-    fn default() -> Self {
-        Self(refbox::Weak::new())
-    }
-}
-
-impl ModeTreeItemRef {
-    pub(crate) fn observe(owner: &refbox::RefBox<mode_tree_item>) -> Self {
-        Self(owner.downgrade())
-    }
-
-    pub fn is_alive(&self) -> bool {
-        self.0.is_alive()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    pub fn try_borrow(&self) -> Option<refbox::Borrow<'_, mode_tree_item>> {
-        match self.0.try_borrow_mut() {
-            Ok(row) => Some(row),
-            Err(refbox::BorrowError::Dropped) => None,
-            Err(refbox::BorrowError::Borrowed) => panic!("mode row already borrowed"),
-        }
-    }
-
-    pub fn borrow(&self) -> refbox::Borrow<'_, mode_tree_item> {
-        self.try_borrow().expect("live mode row")
-    }
-
-    pub fn borrow_mut(&self) -> refbox::Borrow<'_, mode_tree_item> {
-        self.borrow()
-    }
-}
-
 #[derive(Clone)]
 pub struct mode_tree_line {
-    pub item: ModeTreeItemRef,
+    pub item: refbox::Weak<mode_tree_item>,
     pub depth: u_int,
     pub last: ::core::ffi::c_int,
     pub flat: ::core::ffi::c_int,
 }
 
 pub struct mode_tree_item {
-    pub parent: ModeTreeItemRef,
+    pub parent: refbox::Weak<mode_tree_item>,
     pub itemdata: ModeTreeItemData,
     pub line: u_int,
     pub key: key_code,
@@ -309,36 +269,42 @@ pub struct mode_tree_list {
 }
 
 impl mode_tree_list {
-    pub(crate) fn snapshot(&self) -> Vec<ModeTreeItemRef> {
-        self.items.iter().map(ModeTreeItemRef::observe).collect()
+    pub(crate) fn snapshot(&self) -> Vec<refbox::Weak<mode_tree_item>> {
+        self.items.iter().map(refbox::RefBox::downgrade).collect()
     }
 
-    pub(crate) fn first(&self) -> Option<ModeTreeItemRef> {
-        self.items.first().map(ModeTreeItemRef::observe)
+    pub(crate) fn first(&self) -> Option<refbox::Weak<mode_tree_item>> {
+        self.items.first().map(refbox::RefBox::downgrade)
     }
 
-    pub(crate) fn last(&self) -> Option<ModeTreeItemRef> {
-        self.items.last().map(ModeTreeItemRef::observe)
+    pub(crate) fn last(&self) -> Option<refbox::Weak<mode_tree_item>> {
+        self.items.last().map(refbox::RefBox::downgrade)
     }
 
-    pub(crate) fn position(&self, item: &ModeTreeItemRef) -> usize {
+    pub(crate) fn position(&self, item: &refbox::Weak<mode_tree_item>) -> usize {
         self.items
             .iter()
-            .position(|candidate| item.0.is(candidate))
+            .position(|candidate| item.is(candidate))
             .expect("mode tree item belongs to its parent list")
     }
 
-    pub(crate) fn next(&self, item: &ModeTreeItemRef) -> Option<ModeTreeItemRef> {
+    pub(crate) fn next(
+        &self,
+        item: &refbox::Weak<mode_tree_item>,
+    ) -> Option<refbox::Weak<mode_tree_item>> {
         self.items
             .get(self.position(item) + 1)
-            .map(ModeTreeItemRef::observe)
+            .map(refbox::RefBox::downgrade)
     }
 
-    pub(crate) fn previous(&self, item: &ModeTreeItemRef) -> Option<ModeTreeItemRef> {
+    pub(crate) fn previous(
+        &self,
+        item: &refbox::Weak<mode_tree_item>,
+    ) -> Option<refbox::Weak<mode_tree_item>> {
         self.position(item)
             .checked_sub(1)
             .and_then(|position| self.items.get(position))
-            .map(ModeTreeItemRef::observe)
+            .map(refbox::RefBox::downgrade)
     }
 }
 

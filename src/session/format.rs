@@ -7,7 +7,7 @@ use crate::server::server_check_marked;
 use crate::server_client::Client as _;
 use crate::server_client::ClientRegistry;
 use crate::shared::client::ClientRef;
-use crate::shared::session::SessionRef;
+use crate::shared::session::{session_group, SessionRef};
 use crate::shared::window::{WINLINK_ACTIVITY, WINLINK_BELL, WINLINK_SILENCE};
 use crate::window::winlink_count;
 use std::io::Write as _;
@@ -270,7 +270,7 @@ fn format_cb_session_format(ft: &mut format_tree) -> Option<CString> {
 }
 
 /// The format's session group, when the session is live and grouped.
-fn format_session_group(ft: &format_tree) -> Option<crate::shared::session::SessionGroupWeak> {
+fn format_session_group(ft: &format_tree) -> Option<refbox::Weak<session_group>> {
     ft.s.upgrade()?;
     let sg = session_groups::for_session(&ft.s);
     sg.is_alive().then_some(sg)

@@ -1063,7 +1063,7 @@ fn prompt_paste(pr: &mut prompt) -> ::core::ffi::c_int {
         let Some(buffer) = paste_get_top(None) else {
             return 0;
         };
-        let buffer = buffer.borrow();
+        let buffer = buffer.try_borrow().expect("live paste buffer");
         let bytes = paste_buffer_data(&buffer).unwrap_or_default();
         decoded = prompt_decode_paste(bytes);
         &decoded[..decoded.len() - 1]

@@ -25,7 +25,7 @@ use crate::shared::key::*;
 use crate::shared::menu::menu_item;
 use crate::shared::mouse::mouse_event;
 use crate::shared::pane::window_pane;
-use crate::shared::paste::PasteBufferRef;
+use crate::shared::paste::paste_buffer;
 use crate::shared::screen::screen;
 use crate::shared::screen_write::screen_write_ctx;
 use crate::shared::session::SessionRef;
@@ -72,7 +72,7 @@ pub struct window_buffer_itemdata {
 pub struct window_buffer_editdata {
     pub wp_id: u_int,
     pub name: Option<::std::ffi::CString>,
-    pub pb: PasteBufferRef,
+    pub pb: refbox::Weak<paste_buffer>,
 }
 
 pub const WINDOW_BUFFER_DEFAULT_COMMAND: &std::ffi::CStr = c"paste-buffer -p -b '%%'";
@@ -186,7 +186,7 @@ fn window_buffer_build(
     window_buffer_clear_items(&mut data.item_list);
     let buffers = sort_get_buffers(sort_crit);
     for pb in buffers {
-        let buffer = pb.borrow();
+        let buffer = pb.try_borrow().expect("live paste buffer");
         let name = paste_buffer_name(&buffer);
         window_buffer_add_item(
             &mut data.item_list,
@@ -252,7 +252,7 @@ fn window_buffer_draw(
     let Some(pb) = paste_get_name(&item.name) else {
         return;
     };
-    let buffer = pb.borrow();
+    let buffer = pb.try_borrow().expect("live paste buffer");
     let data = paste_buffer_data(&buffer).unwrap_or_default();
     let mut buf = Vec::<u8>::new();
     for (row, line) in data
@@ -281,7 +281,7 @@ fn window_buffer_search(item: &window_buffer_itemdata, search: &CStr, icase: boo
     if contains(item.name.to_bytes(), search.to_bytes(), icase) {
         return true;
     }
-    let buffer = buffer.borrow();
+    let buffer = buffer.try_borrow().expect("live paste buffer");
     window_buffer_find(
         paste_buffer_data(&buffer).unwrap_or_default(),
         search.to_bytes(),
@@ -562,7 +562,7 @@ fn window_buffer_edit_close_cb(
         return;
     }
     let strip_newline = {
-        let buffer = pb.borrow();
+        let buffer = pb.try_borrow().expect("live paste buffer");
         paste_buffer_data(&buffer)
             .unwrap_or_default()
             .last()
@@ -612,7 +612,7 @@ fn window_buffer_start_edit(
     let Some(pb) = paste_get_name(&item.name) else {
         return;
     };
-    let name = paste_buffer_name(&pb.borrow()).to_owned();
+    let name = paste_buffer_name(&pb.try_borrow().expect("live paste buffer")).to_owned();
     let ed = window_buffer_editdata {
         wp_id: mode_pane_owner.id(),
         name: Some(name),
@@ -620,7 +620,12 @@ fn window_buffer_start_edit(
     };
     let editor = spawn_editor(
         client_owner,
-        |stream| spawn_editor_write(stream, paste_buffer_data(&pb.borrow()).unwrap_or_default()),
+        |stream| {
+            spawn_editor_write(
+                stream,
+                paste_buffer_data(&pb.try_borrow().expect("live paste buffer")).unwrap_or_default(),
+            )
+        },
         Some(Box::new(move |editor, buf| {
             window_buffer_edit_close_cb(editor, buf, ed)
         })),
@@ -684,7 +689,7 @@ fn window_buffer_key(
                 mode_tree_each_tagged(
                     &tree_owner,
                     |row, _| {
-                        let itemdata = row.borrow().itemdata.clone();
+                        let itemdata = row.try_borrow().expect("live mode row").itemdata.clone();
                         window_buffer_do_delete(
                             &tree_owner,
                             &itemdata.as_buffer().expect("buffer row payload"),
@@ -700,7 +705,7 @@ fn window_buffer_key(
                 mode_tree_each_tagged(
                     &tree_owner,
                     |row, _| {
-                        let itemdata = row.borrow().itemdata.clone();
+                        let itemdata = row.try_borrow().expect("live mode row").itemdata.clone();
                         window_buffer_do_paste(
                             &command,
                             &itemdata.as_buffer().expect("buffer row payload"),

@@ -141,7 +141,7 @@ mod tests {
 
     fn buffer(name: &CStr) -> Option<Vec<u8>> {
         let pb = paste_get_name(name)?;
-        let pb = pb.borrow();
+        let pb = pb.try_borrow().expect("live paste buffer");
         Some(paste_buffer_data(&pb).unwrap_or_default().to_vec())
     }
 

@@ -3,12 +3,12 @@ use crate::events_payload::{event_payload_create, event_payload_set_string};
 use crate::options::options_get_number;
 use crate::options::OptionsScope;
 use crate::shared::abi::*;
-use crate::shared::paste::{paste_buffer, PasteBufferRef};
+use crate::shared::paste::paste_buffer;
 use crate::shared::tree::{RB_INF, RB_NEGINF};
 use crate::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::text::utf8::utf8_strvis;
 use crate::tmux::clean_name_cstring;
-use refbox::RefBox;
+use refbox::{RefBox, Weak};
 use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 
@@ -27,7 +27,7 @@ pub struct paste_time_tree {
 }
 #[derive(Default)]
 pub struct paste_name_tree {
-    entries: std::collections::BTreeMap<CString, PasteBufferRef>,
+    entries: std::collections::BTreeMap<CString, Weak<paste_buffer>>,
 }
 
 thread_local! {
@@ -53,15 +53,15 @@ fn paste_replace_name(pb: &mut paste_buffer, name: CString) -> CString {
     std::mem::replace(&mut pb.name, name)
 }
 
-fn paste_name_tree_find(head: &paste_name_tree, name: &CStr) -> Option<PasteBufferRef> {
+fn paste_name_tree_find(head: &paste_name_tree, name: &CStr) -> Option<Weak<paste_buffer>> {
     head.entries.get(name).cloned()
 }
 
 fn paste_name_tree_insert(
     head: &mut paste_name_tree,
-    elm: &PasteBufferRef,
-) -> Option<PasteBufferRef> {
-    let key = elm.borrow().name.clone();
+    elm: &Weak<paste_buffer>,
+) -> Option<Weak<paste_buffer>> {
+    let key = elm.try_borrow().expect("live paste buffer").name.clone();
     match head.entries.entry(key) {
         std::collections::btree_map::Entry::Occupied(entry) => Some(entry.get().clone()),
         std::collections::btree_map::Entry::Vacant(entry) => {
@@ -74,7 +74,7 @@ fn paste_name_tree_insert(
 fn paste_name_tree_remove(
     head: &mut paste_name_tree,
     elm: &paste_buffer,
-) -> Option<PasteBufferRef> {
+) -> Option<Weak<paste_buffer>> {
     head.entries.remove(elm.name.as_c_str())
 }
 
@@ -85,12 +85,10 @@ fn paste_time_key(pb: &paste_buffer) -> std::cmp::Reverse<u_int> {
 fn paste_time_tree_insert(
     head: &mut paste_time_tree,
     elm: RefBox<paste_buffer>,
-) -> Option<PasteBufferRef> {
+) -> Option<Weak<paste_buffer>> {
     let key = paste_time_key(&elm.try_borrow_mut().unwrap());
     match head.entries.entry(key) {
-        std::collections::btree_map::Entry::Occupied(entry) => {
-            Some(PasteBufferRef::observe(entry.get()))
-        }
+        std::collections::btree_map::Entry::Occupied(entry) => Some(entry.get().downgrade()),
         std::collections::btree_map::Entry::Vacant(entry) => {
             entry.insert(elm);
             None
@@ -98,33 +96,33 @@ fn paste_time_tree_insert(
     }
 }
 
-fn paste_time_tree_minmax(head: &paste_time_tree, val: i32) -> Option<PasteBufferRef> {
+fn paste_time_tree_minmax(head: &paste_time_tree, val: i32) -> Option<Weak<paste_buffer>> {
     if val < 0 {
         head.entries.values().next()
     } else {
         head.entries.values().next_back()
     }
-    .map(PasteBufferRef::observe)
+    .map(RefBox::downgrade)
 }
 
-fn paste_time_tree_next(head: &paste_time_tree, elm: &paste_buffer) -> Option<PasteBufferRef> {
+fn paste_time_tree_next(head: &paste_time_tree, elm: &paste_buffer) -> Option<Weak<paste_buffer>> {
     head.entries
         .range((
             std::ops::Bound::Excluded(paste_time_key(elm)),
             std::ops::Bound::Unbounded,
         ))
         .next()
-        .map(|(_, entry)| PasteBufferRef::observe(entry))
+        .map(|(_, entry)| entry.downgrade())
 }
 
-fn paste_time_tree_prev(head: &paste_time_tree, elm: &paste_buffer) -> Option<PasteBufferRef> {
+fn paste_time_tree_prev(head: &paste_time_tree, elm: &paste_buffer) -> Option<Weak<paste_buffer>> {
     head.entries
         .range((
             std::ops::Bound::Unbounded,
             std::ops::Bound::Excluded(paste_time_key(elm)),
         ))
         .next_back()
-        .map(|(_, entry)| PasteBufferRef::observe(entry))
+        .map(|(_, entry)| entry.downgrade())
 }
 
 fn paste_time_tree_remove(
@@ -134,25 +132,25 @@ fn paste_time_tree_remove(
     head.entries.remove(&paste_time_key(elm))
 }
 
-fn paste_name_tree_find_local(name: &CStr) -> Option<PasteBufferRef> {
+fn paste_name_tree_find_local(name: &CStr) -> Option<Weak<paste_buffer>> {
     paste_by_name.with(|head| paste_name_tree_find(&head.borrow(), name))
 }
-fn paste_name_tree_insert_local(elm: &PasteBufferRef) -> Option<PasteBufferRef> {
+fn paste_name_tree_insert_local(elm: &Weak<paste_buffer>) -> Option<Weak<paste_buffer>> {
     paste_by_name.with(|head| paste_name_tree_insert(&mut head.borrow_mut(), elm))
 }
-fn paste_name_tree_remove_local(elm: &paste_buffer) -> Option<PasteBufferRef> {
+fn paste_name_tree_remove_local(elm: &paste_buffer) -> Option<Weak<paste_buffer>> {
     paste_by_name.with(|head| paste_name_tree_remove(&mut head.borrow_mut(), elm))
 }
-fn paste_time_tree_insert_local(elm: RefBox<paste_buffer>) -> Option<PasteBufferRef> {
+fn paste_time_tree_insert_local(elm: RefBox<paste_buffer>) -> Option<Weak<paste_buffer>> {
     paste_by_time.with(|head| paste_time_tree_insert(&mut head.borrow_mut(), elm))
 }
-fn paste_time_tree_minmax_local(val: i32) -> Option<PasteBufferRef> {
+fn paste_time_tree_minmax_local(val: i32) -> Option<Weak<paste_buffer>> {
     paste_by_time.with(|head| paste_time_tree_minmax(&head.borrow(), val))
 }
-fn paste_time_tree_next_local(elm: &paste_buffer) -> Option<PasteBufferRef> {
+fn paste_time_tree_next_local(elm: &paste_buffer) -> Option<Weak<paste_buffer>> {
     paste_by_time.with(|head| paste_time_tree_next(&head.borrow(), elm))
 }
-fn paste_time_tree_prev_local(elm: &paste_buffer) -> Option<PasteBufferRef> {
+fn paste_time_tree_prev_local(elm: &paste_buffer) -> Option<Weak<paste_buffer>> {
     paste_by_time.with(|head| paste_time_tree_prev(&head.borrow(), elm))
 }
 fn paste_time_tree_remove_local(elm: &paste_buffer) -> Option<RefBox<paste_buffer>> {
@@ -219,50 +217,50 @@ pub fn paste_buffer_created(pb: &paste_buffer) -> time_t {
 pub fn paste_buffer_data(pb: &paste_buffer) -> Option<&[u8]> {
     pb.data.as_deref()
 }
-pub fn paste_walk(pb: Option<&PasteBufferRef>) -> Option<PasteBufferRef> {
+pub fn paste_walk(pb: Option<&Weak<paste_buffer>>) -> Option<Weak<paste_buffer>> {
     match pb {
-        Some(pb) => paste_time_tree_next_local(&*pb.try_borrow()?),
+        Some(pb) => paste_time_tree_next_local(&*pb.try_borrow().ok()?),
         None => paste_time_tree_minmax_local(RB_NEGINF),
     }
 }
 pub fn paste_is_empty() -> i32 {
     paste_time_tree_is_empty_local() as i32
 }
-pub(crate) fn paste_get_top(name: Option<&mut Option<CString>>) -> Option<PasteBufferRef> {
+pub(crate) fn paste_get_top(name: Option<&mut Option<CString>>) -> Option<Weak<paste_buffer>> {
     let mut next = paste_time_tree_minmax_local(RB_NEGINF);
     while let Some(pb) = next {
-        if pb.borrow().automatic != 0 {
+        if pb.try_borrow().expect("live paste buffer").automatic != 0 {
             if let Some(name) = name {
-                *name = Some(pb.borrow().name.clone());
+                *name = Some(pb.try_borrow().expect("live paste buffer").name.clone());
             }
             return Some(pb);
         }
-        next = paste_time_tree_next_local(&pb.borrow());
+        next = paste_time_tree_next_local(&pb.try_borrow().expect("live paste buffer"));
     }
     None
 }
-pub fn paste_get_name(name: &CStr) -> Option<PasteBufferRef> {
+pub fn paste_get_name(name: &CStr) -> Option<Weak<paste_buffer>> {
     if name.is_empty() {
         None
     } else {
         paste_name_tree_find_local(name)
     }
 }
-fn paste_is_registered(pb: &PasteBufferRef) -> bool {
+fn paste_is_registered(pb: &Weak<paste_buffer>) -> bool {
     pb.try_borrow()
-        .is_some_and(|buffer| paste_get_name(&buffer.name).is_some_and(|current| current == *pb))
+        .is_ok_and(|buffer| paste_get_name(&buffer.name).is_some_and(|current| current == *pb))
 }
-pub fn paste_free(pb: &PasteBufferRef) {
+pub fn paste_free(pb: &Weak<paste_buffer>) {
     if !paste_is_registered(pb) {
         return;
     }
     paste_fire_event(c"paste-buffer-deleted", |out| {
-        out.write_all(pb.borrow().name.as_bytes())
+        out.write_all(pb.try_borrow().expect("live paste buffer").name.as_bytes())
     });
     if !paste_is_registered(pb) {
         return;
     }
-    let buffer = pb.borrow();
+    let buffer = pb.try_borrow().expect("live paste buffer");
     paste_name_tree_remove_local(&buffer);
     paste_time_tree_remove_local(&buffer);
     if buffer.automatic != 0 {
@@ -283,7 +281,7 @@ pub(crate) fn paste_add_owned(prefix: Option<CString>, data: Box<[u8]>) {
         if paste_automatic_count() < limit {
             break;
         }
-        let Some(buffer) = pb.try_borrow() else {
+        let Ok(buffer) = pb.try_borrow() else {
             next = paste_time_tree_minmax_local(RB_INF);
             continue;
         };
@@ -303,9 +301,9 @@ pub(crate) fn paste_add_owned(prefix: Option<CString>, data: Box<[u8]>) {
             break paste_new_owned(name);
         }
     };
-    let pb = PasteBufferRef::observe(&owner);
+    let pb = owner.downgrade();
     {
-        let mut buffer = pb.borrow_mut();
+        let mut buffer = pb.try_borrow_mut().expect("live paste buffer");
         paste_store_data(&mut buffer, Some(data));
         buffer.automatic = 1;
         paste_automatic_count_increment();
@@ -315,7 +313,7 @@ pub(crate) fn paste_add_owned(prefix: Option<CString>, data: Box<[u8]>) {
     paste_name_tree_insert_local(&pb);
     paste_time_tree_insert_local(owner);
     paste_fire_event(c"paste-buffer-changed", |out| {
-        out.write_all(pb.borrow().name.as_bytes())
+        out.write_all(pb.try_borrow().expect("live paste buffer").name.as_bytes())
     });
 }
 pub fn paste_rename(
@@ -352,9 +350,9 @@ pub fn paste_rename(
             return -1;
         }
     }
-    paste_name_tree_remove_local(&pb.borrow());
+    paste_name_tree_remove_local(&pb.try_borrow().expect("live paste buffer"));
     let previous = {
-        let mut buffer = pb.borrow_mut();
+        let mut buffer = pb.try_borrow_mut().expect("live paste buffer");
         let previous = paste_replace_name(&mut buffer, name);
         if buffer.automatic != 0 {
             paste_automatic_count_decrement();
@@ -363,7 +361,7 @@ pub fn paste_rename(
         previous
     };
     paste_name_tree_insert_local(&pb);
-    let changed_name = pb.borrow().name.clone();
+    let changed_name = pb.try_borrow().expect("live paste buffer").name.clone();
     paste_fire_event(c"paste-buffer-deleted", |out| {
         out.write_all(previous.as_bytes())
     });
@@ -396,27 +394,27 @@ pub(crate) fn paste_set_owned(
         return -1;
     };
     let owner = paste_new_owned(newname);
-    let pb = PasteBufferRef::observe(&owner);
+    let pb = owner.downgrade();
     {
-        let mut buffer = pb.borrow_mut();
+        let mut buffer = pb.try_borrow_mut().expect("live paste buffer");
         paste_store_data(&mut buffer, Some(data));
         buffer.order = paste_next_order_take();
         buffer.created = crate::shared::time::unix_seconds(std::time::SystemTime::now());
     }
-    let old = paste_get_name(&pb.borrow().name);
+    let old = paste_get_name(&pb.try_borrow().expect("live paste buffer").name);
     if let Some(old) = old {
         paste_free(&old);
     }
     paste_name_tree_insert_local(&pb);
     paste_time_tree_insert_local(owner);
     paste_fire_event(c"paste-buffer-changed", |out| {
-        out.write_all(pb.borrow().name.as_bytes())
+        out.write_all(pb.try_borrow().expect("live paste buffer").name.as_bytes())
     });
     0
 }
 /// Replace the bytes while preserving the buffer identity and creation order.
-pub(crate) fn paste_replace_owned(pb: &PasteBufferRef, data: Box<[u8]>) {
-    let Some(mut buffer) = pb.try_borrow() else {
+pub(crate) fn paste_replace_owned(pb: &Weak<paste_buffer>, data: Box<[u8]>) {
+    let Ok(mut buffer) = pb.try_borrow_mut() else {
         return;
     };
     paste_store_data(&mut buffer, Some(data));
@@ -523,10 +521,7 @@ mod tests {
             CString::new("a0").unwrap(),
         ];
         let owners = names.iter().map(named_buffer).collect::<Vec<_>>();
-        let items = owners
-            .iter()
-            .map(PasteBufferRef::observe)
-            .collect::<Vec<_>>();
+        let items = owners.iter().map(RefBox::downgrade).collect::<Vec<_>>();
         let [z, a, a_high, a0] = [&items[0], &items[1], &items[2], &items[3]];
         let duplicate = named_buffer(&CString::new("a").unwrap());
         let mut tree = paste_name_tree::default();
@@ -534,7 +529,7 @@ mod tests {
             assert!(paste_name_tree_insert(&mut tree, item).is_none());
         }
         assert!(PartialEq::eq(
-            &paste_name_tree_insert(&mut tree, &PasteBufferRef::observe(&duplicate)).unwrap(),
+            &paste_name_tree_insert(&mut tree, &duplicate.downgrade()).unwrap(),
             a
         ));
         assert_eq!(
@@ -550,7 +545,8 @@ mod tests {
         ));
         assert!(paste_name_tree_find(&tree, c"missing").is_none());
         assert!(PartialEq::eq(
-            &paste_name_tree_remove(&mut tree, &a_high.borrow()).unwrap(),
+            &paste_name_tree_remove(&mut tree, &a_high.try_borrow().expect("live paste buffer"))
+                .unwrap(),
             a_high
         ));
         assert!(paste_name_tree_find(&tree, &names[2]).is_none());
@@ -562,9 +558,9 @@ mod tests {
         let middle_owner = ordered_buffer(&CString::new("middle").unwrap(), 7);
         let newest_owner = ordered_buffer(&CString::new("newest").unwrap(), 12);
         let duplicate = ordered_buffer(&CString::new("duplicate").unwrap(), 7);
-        let oldest = PasteBufferRef::observe(&oldest_owner);
-        let middle = PasteBufferRef::observe(&middle_owner);
-        let newest = PasteBufferRef::observe(&newest_owner);
+        let oldest = oldest_owner.downgrade();
+        let middle = middle_owner.downgrade();
+        let newest = newest_owner.downgrade();
         let mut tree = paste_time_tree::default();
         for item in [oldest_owner, newest_owner, middle_owner] {
             assert!(paste_time_tree_insert(&mut tree, item).is_none());
@@ -576,55 +572,68 @@ mod tests {
         assert_eq!(
             paste_time_tree_minmax(&tree, RB_NEGINF)
                 .unwrap()
-                .borrow()
+                .try_borrow()
+                .expect("live paste buffer")
                 .order,
             12
         );
         assert_eq!(
-            paste_time_tree_next(&tree, &newest.borrow())
+            paste_time_tree_next(&tree, &newest.try_borrow().expect("live paste buffer"))
                 .unwrap()
-                .borrow()
+                .try_borrow()
+                .expect("live paste buffer")
                 .order,
             7
         );
         assert_eq!(
-            paste_time_tree_next(&tree, &middle.borrow())
+            paste_time_tree_next(&tree, &middle.try_borrow().expect("live paste buffer"))
                 .unwrap()
-                .borrow()
+                .try_borrow()
+                .expect("live paste buffer")
                 .order,
             4
         );
-        assert!(paste_time_tree_next(&tree, &oldest.borrow()).is_none());
+        assert!(
+            paste_time_tree_next(&tree, &oldest.try_borrow().expect("live paste buffer")).is_none()
+        );
         assert_eq!(
             paste_time_tree_minmax(&tree, RB_INF)
                 .unwrap()
-                .borrow()
+                .try_borrow()
+                .expect("live paste buffer")
                 .order,
             4
         );
         assert_eq!(
-            paste_time_tree_prev(&tree, &oldest.borrow())
+            paste_time_tree_prev(&tree, &oldest.try_borrow().expect("live paste buffer"))
                 .unwrap()
-                .borrow()
+                .try_borrow()
+                .expect("live paste buffer")
                 .order,
             7
         );
         assert_eq!(
-            paste_time_tree_prev(&tree, &middle.borrow())
+            paste_time_tree_prev(&tree, &middle.try_borrow().expect("live paste buffer"))
                 .unwrap()
-                .borrow()
+                .try_borrow()
+                .expect("live paste buffer")
                 .order,
             12
         );
-        assert!(paste_time_tree_prev(&tree, &newest.borrow()).is_none());
+        assert!(
+            paste_time_tree_prev(&tree, &newest.try_borrow().expect("live paste buffer")).is_none()
+        );
         assert!(PartialEq::eq(
-            &PasteBufferRef::observe(&paste_time_tree_remove(&mut tree, &middle.borrow()).unwrap()),
+            &paste_time_tree_remove(&mut tree, &middle.try_borrow().expect("live paste buffer"))
+                .unwrap()
+                .downgrade(),
             &middle
         ));
         assert_eq!(
-            paste_time_tree_next(&tree, &newest.borrow())
+            paste_time_tree_next(&tree, &newest.try_borrow().expect("live paste buffer"))
                 .unwrap()
-                .borrow()
+                .try_borrow()
+                .expect("live paste buffer")
                 .order,
             4
         );
@@ -650,7 +659,7 @@ mod tests {
                             buffer.is_some(),
                         ));
                         if let Some(buffer) = buffer {
-                            buffer.borrow_mut().created = 17;
+                            buffer.try_borrow_mut().expect("live paste buffer").created = 17;
                         }
                         if event == c"paste-buffer-changed" && name == c"root" {
                             assert_eq!(

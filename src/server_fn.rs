@@ -230,7 +230,7 @@ pub fn server_kill_window(owner: WindowRef, mut renumber: ::core::ffi::c_int) {
 }
 pub fn server_renumber_session(s_owner: &SessionRef) {
     let s = Some(s_owner.clone());
-    let mut sg = crate::shared::session::SessionGroupWeak::new();
+    let mut sg = refbox::Weak::new();
     if options_get_number(
         &s.as_ref().expect("live session").borrow_options_mut(),
         c"renumber-windows",
@@ -270,8 +270,8 @@ pub fn server_link_window(
     let src = Some(src_owner.clone());
     let dst = Some(dst_owner.clone());
     let mut dstwl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut srcsg = crate::shared::session::SessionGroupWeak::new();
-    let mut dstsg = crate::shared::session::SessionGroupWeak::new();
+    let mut srcsg = refbox::Weak::new();
+    let mut dstsg = refbox::Weak::new();
     srcsg = crate::session::session_groups::for_session(
         &src.as_ref()
             .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
@@ -348,7 +348,7 @@ pub fn server_destroy_pane(
 fn server_destroy_session_group(s_owner: &SessionRef) {
     let s = Some(s_owner.clone());
     let source = s_owner.clone();
-    let mut sg = crate::shared::session::SessionGroupWeak::new();
+    let mut sg = refbox::Weak::new();
     sg = crate::session::session_groups::for_session(
         &s.as_ref()
             .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
@@ -459,7 +459,7 @@ pub fn server_destroy_session(source: &SessionRef) {
 }
 pub fn server_check_unattached() {
     let mut s: Option<SessionRef> = None;
-    let mut sg = crate::shared::session::SessionGroupWeak::new();
+    let mut sg = refbox::Weak::new();
     let mut current_block_4: u64;
     let mut s_owner = sessions::first();
     s = s_owner.clone();

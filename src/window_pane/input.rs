@@ -5137,7 +5137,7 @@ fn input_osc_52_reply(ictx: &mut input_ctx, mut clip: ::core::ffi::c_char) {
         let Some(pb) = paste_get_top(None) else {
             return;
         };
-        let buffer = pb.borrow();
+        let buffer = pb.try_borrow().expect("live paste buffer");
         let buf = paste_buffer_data(&buffer).unwrap_or_default();
         if ictx.input_end as ::core::ffi::c_uint
             == INPUT_END_BEL as ::core::ffi::c_int as ::core::ffi::c_uint

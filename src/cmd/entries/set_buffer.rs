@@ -120,7 +120,9 @@ fn cmd_set_buffer_exec(
     let mut bufdata = Vec::new();
     if args_has(args, b'a') != 0 {
         if let Some(pb) = pb {
-            bufdata.extend_from_slice(paste_buffer_data(&pb.borrow()).unwrap_or_default());
+            bufdata.extend_from_slice(
+                paste_buffer_data(&pb.try_borrow().expect("live paste buffer")).unwrap_or_default(),
+            );
         }
     }
     bufdata.extend_from_slice(new_data);

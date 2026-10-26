@@ -40,8 +40,8 @@ use crate::mode_tree::{
     mode_tree_start, mode_tree_visit_screen,
 };
 use crate::mode_tree::{
-    mode_tree_data, mode_tree_help_info, mode_tree_prompt_input_cb, ModeTreeItemData,
-    ModeTreeItemRef,
+    mode_tree_data, mode_tree_help_info, mode_tree_item, mode_tree_prompt_input_cb,
+    ModeTreeItemData,
 };
 use crate::options::*;
 use crate::options::{
@@ -859,7 +859,7 @@ fn window_customize_key_is_changed(kt: &key_table, bd: &key_binding) -> ::core::
 }
 fn window_customize_build_array(
     data: &mut window_customize_modedata,
-    top: &ModeTreeItemRef,
+    top: &refbox::Weak<mode_tree_item>,
     scope: window_customize_scope,
     owner: &OptionsScope,
     option_name: &CStr,
@@ -946,7 +946,7 @@ fn window_customize_build_array(
 
 fn window_customize_build_option(
     data: &mut window_customize_modedata,
-    top: &ModeTreeItemRef,
+    top: &refbox::Weak<mode_tree_item>,
     mut scope: window_customize_scope,
     owner: &OptionsScope,
     name_owner: &CStr,
@@ -4085,7 +4085,7 @@ fn window_customize_change_tagged_callback(
     mode_tree_each_tagged(
         &window_customize_tree(mode),
         |row, _| {
-            let itemdata = row.borrow().itemdata.clone();
+            let itemdata = row.try_borrow().expect("live mode row").itemdata.clone();
             window_customize_change_each(
                 owner,
                 &itemdata.as_customize().expect("tagged customize row"),

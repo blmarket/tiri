@@ -51,8 +51,8 @@ fn cmd_swap_window_exec(
     let target = crate::cmd::queue::cmdq_get_target(&item);
     let mut src: Option<SessionRef> = source.session_handle();
     let mut dst: Option<SessionRef> = target.session_handle();
-    let mut sg_src = crate::shared::session::SessionGroupWeak::new();
-    let mut sg_dst = crate::shared::session::SessionGroupWeak::new();
+    let mut sg_src = refbox::Weak::new();
+    let mut sg_dst = refbox::Weak::new();
     let mut wl_src: refbox::Weak<winlink> = source.winlink_handle();
     let mut wl_dst: refbox::Weak<winlink> = target.winlink_handle();
     sg_src = crate::session::session_groups::for_session(

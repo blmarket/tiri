@@ -12,7 +12,7 @@ use crate::mode_tree::{
     mode_tree_expand_current, mode_tree_free, mode_tree_key, mode_tree_resize,
     mode_tree_run_command, mode_tree_set_prompt, mode_tree_start, mode_tree_visit_screen,
 };
-use crate::mode_tree::{mode_tree_data, mode_tree_help_info, ModeTreeItemData, ModeTreeItemRef};
+use crate::mode_tree::{mode_tree_data, mode_tree_help_info, mode_tree_item, ModeTreeItemData};
 use crate::options::options_get_string;
 use crate::options::OptionsScope;
 use crate::resize::recalculate_sizes;
@@ -284,7 +284,7 @@ fn window_tree_remove_last_item(
     items: &mut Vec<refbox::RefBox<window_tree_itemdata>>,
     tree: &mut mode_tree_data,
     item: &refbox::Weak<window_tree_itemdata>,
-    mti: &ModeTreeItemRef,
+    mti: &refbox::Weak<mode_tree_item>,
 ) {
     debug_assert!(items.last().is_some_and(|last| item.is(last)));
     tree.remove(mti);
@@ -314,7 +314,7 @@ fn window_tree_build_pane(
     pane_owner: &Rc<RefCell<window_pane>>,
     data: &window_tree_modedata,
     items: &mut Vec<refbox::RefBox<window_tree_itemdata>>,
-    parent: &ModeTreeItemRef,
+    parent: &refbox::Weak<mode_tree_item>,
 ) {
     let s = Some(session_owner.clone());
     let tag = Rc::as_ptr(pane_owner) as uint64_t;
@@ -375,7 +375,7 @@ fn window_tree_build_window(
     data: &window_tree_modedata,
     items: &mut Vec<refbox::RefBox<window_tree_itemdata>>,
     sort_crit: &sort_criteria,
-    parent: &ModeTreeItemRef,
+    parent: &refbox::Weak<mode_tree_item>,
     filter: Option<&CStr>,
 ) -> ::core::ffi::c_int {
     let s = Some(session_owner.clone());
@@ -589,8 +589,8 @@ fn window_tree_build_items(
     let data = &*guard;
     let mut squash_groups: ::core::ffi::c_int = data.squash_groups;
     let mut s: Option<SessionRef> = None;
-    let mut sg = crate::shared::session::SessionGroupWeak::new();
-    let mut current = crate::shared::session::SessionGroupWeak::new();
+    let mut sg = refbox::Weak::new();
+    let mut current = refbox::Weak::new();
     let mut i: u_int = 0;
     current = crate::session::session_groups::for_session(&data.fs.s);
     let l = sort_get_sessions(sort_crit);
@@ -1974,7 +1974,7 @@ fn window_tree_command_callback(
     mode_tree_each_tagged(
         &window_tree_tree(mode_owner),
         |row, _| {
-            let itemdata = row.borrow().itemdata.clone();
+            let itemdata = row.try_borrow().expect("live mode row").itemdata.clone();
             window_tree_command_each(
                 mode_owner,
                 &itemdata.as_tree().expect("tree row payload"),
@@ -2059,7 +2059,7 @@ fn window_tree_kill_tagged_callback(
     mode_tree_each_tagged(
         &window_tree_tree(mode_owner),
         |row, _| {
-            let itemdata = row.borrow().itemdata.clone();
+            let itemdata = row.try_borrow().expect("live mode row").itemdata.clone();
             window_tree_kill_each(&itemdata.as_tree().expect("tree row payload"))
         },
         KEYC_NONE as ::core::ffi::c_ulong as key_code,

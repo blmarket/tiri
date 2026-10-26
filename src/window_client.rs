@@ -741,7 +741,7 @@ fn window_client_key(
             mode_tree_each_tagged(
                 &tree_owner,
                 |row, key| {
-                    let itemdata = row.borrow().itemdata.clone();
+                    let itemdata = row.try_borrow().expect("live mode row").itemdata.clone();
                     window_client_do_detach(
                         &tree_owner,
                         &itemdata.as_client().expect("client row payload"),

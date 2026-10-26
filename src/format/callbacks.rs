@@ -424,13 +424,15 @@ fn format_cb_bracket_paste_flag(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"bracket_paste_flag", ft)
 }
 fn format_cb_buffer_name(ft: &mut format_tree) -> Option<CString> {
-    Some(paste_buffer_name(&*ft.pb.as_ref()?.try_borrow()?).to_owned())
+    Some(paste_buffer_name(&*ft.pb.as_ref()?.try_borrow().ok()?).to_owned())
 }
 fn format_cb_buffer_sample(ft: &mut format_tree) -> Option<CString> {
-    Some(paste_make_sample_cstring(&*ft.pb.as_ref()?.try_borrow()?))
+    Some(paste_make_sample_cstring(
+        &*ft.pb.as_ref()?.try_borrow().ok()?,
+    ))
 }
 fn format_cb_buffer_full(ft: &mut format_tree) -> Option<CString> {
-    let buffer = ft.pb.as_ref()?.try_borrow()?;
+    let buffer = ft.pb.as_ref()?.try_borrow().ok()?;
     let bytes = paste_buffer_data(&buffer)?;
     let end = bytes
         .iter()
@@ -439,7 +441,7 @@ fn format_cb_buffer_full(ft: &mut format_tree) -> Option<CString> {
     Some(CString::new(&bytes[..end]).expect("bounded buffer contains no NUL"))
 }
 fn format_cb_buffer_size(ft: &mut format_tree) -> Option<CString> {
-    let buffer = ft.pb.as_ref()?.try_borrow()?;
+    let buffer = ft.pb.as_ref()?.try_borrow().ok()?;
     Some(CString::new(buffer.size().to_string()).expect("formatted numbers contain no NUL"))
 }
 fn format_cb_client_cell_height(ft: &mut format_tree) -> Option<CString> {
@@ -1217,7 +1219,7 @@ fn format_cb_window_linked(ft: &mut format_tree) -> Option<CString> {
     None
 }
 fn format_cb_window_linked_sessions(ft: &mut format_tree) -> Option<CString> {
-    let mut sg = crate::shared::session::SessionGroupWeak::new();
+    let mut sg = refbox::Weak::new();
     let mut s: Option<SessionRef> = None;
     let mut n: u_int = 0 as u_int;
     if !ft.winlink_handle().is_alive() {
@@ -1372,7 +1374,7 @@ fn format_cb_wrap_flag(ft: &mut format_tree) -> Option<CString> {
     pane_format_string(c"wrap_flag", ft)
 }
 fn format_cb_buffer_created(ft: &mut format_tree) -> Option<time_t> {
-    Some(paste_buffer_created(&*ft.pb.as_ref()?.try_borrow()?) as __time_t as time_t)
+    Some(paste_buffer_created(&*ft.pb.as_ref()?.try_borrow().ok()?) as __time_t as time_t)
 }
 fn format_cb_client_activity(ft: &mut format_tree) -> Option<time_t> {
     match ft.c.upgrade()?.format_value(c"client_activity", ft)? {
@@ -2378,22 +2380,26 @@ mod owned_callback_tests {
     #[test]
     fn buffer_formats_preserve_missing_empty_and_logical_binary_lengths() {
         let owner = refbox::RefBox::new(crate::shared::paste::paste_buffer::empty());
-        let buffer = crate::shared::paste::PasteBufferRef::observe(&owner);
+        let buffer = owner.downgrade();
         {
             let mut ft_owner = format_create(None, None, 0, 0);
             let ft = &mut *ft_owner;
             ft.pb = Some(buffer.clone());
-            assert!(paste_buffer_data(&buffer.borrow()).is_none());
+            assert!(paste_buffer_data(&buffer.try_borrow().expect("live paste buffer")).is_none());
             assert!(format_cb_buffer_full(ft).is_none());
             assert_eq!(format_cb_buffer_size(ft).unwrap().as_c_str(), c"0");
 
-            buffer.borrow_mut().data = Some(Box::default());
-            assert_eq!(paste_buffer_data(&buffer.borrow()), Some(&b""[..]));
+            buffer.try_borrow_mut().expect("live paste buffer").data = Some(Box::default());
+            assert_eq!(
+                paste_buffer_data(&buffer.try_borrow().expect("live paste buffer")),
+                Some(&b""[..])
+            );
             assert_eq!(format_cb_buffer_full(ft).unwrap().as_c_str(), c"");
 
-            buffer.borrow_mut().data = Some(b"A\xff\0B".to_vec().into_boxed_slice());
+            buffer.try_borrow_mut().expect("live paste buffer").data =
+                Some(b"A\xff\0B".to_vec().into_boxed_slice());
             {
-                let value = buffer.borrow();
+                let value = buffer.try_borrow().expect("live paste buffer");
                 let bytes = paste_buffer_data(&value).unwrap();
                 assert_eq!(bytes, b"A\xff\0B");
                 assert_eq!(bytes.as_ptr(), value.data.as_ref().unwrap().as_ptr());
@@ -2401,7 +2407,8 @@ mod owned_callback_tests {
             assert_eq!(format_cb_buffer_full(ft).unwrap().as_bytes(), b"A\xff");
             assert_eq!(format_cb_buffer_size(ft).unwrap().as_c_str(), c"4");
 
-            buffer.borrow_mut().data = Some(b"A".to_vec().into_boxed_slice());
+            buffer.try_borrow_mut().expect("live paste buffer").data =
+                Some(b"A".to_vec().into_boxed_slice());
             assert_eq!(format_cb_buffer_full(ft).unwrap().as_c_str(), c"A");
             assert_eq!(format_cb_buffer_size(ft).unwrap().as_c_str(), c"1");
             ft.pb = None;

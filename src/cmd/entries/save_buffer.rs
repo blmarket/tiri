@@ -124,7 +124,7 @@ fn cmd_save_buffer_exec(
     {
         let mut evb = evbuffer_new();
         {
-            let buffer = pb.borrow();
+            let buffer = pb.try_borrow().expect("live paste buffer");
             let bufdata = paste_buffer_data(&buffer).unwrap_or_default();
             evbuffer_add(&mut evb, bufdata);
         }
@@ -141,7 +141,7 @@ fn cmd_save_buffer_exec(
     } else {
         flags = O_TRUNC;
     }
-    let buffer = pb.borrow();
+    let buffer = pb.try_borrow().expect("live paste buffer");
     let bufdata = paste_buffer_data(&buffer).unwrap_or_default();
     let wait = file_write_wait(queue_client.as_ref(), path, flags, bufdata);
     let waiting_item = std::rc::Rc::downgrade(item_handle);
