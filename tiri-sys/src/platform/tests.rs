@@ -18,6 +18,12 @@ fn a_non_terminal_has_no_pane_cwd<P: Platform>() {
     assert_eq!(P::pane_cwd(near.as_fd()), None);
 }
 
+/// A descriptor that is not a terminal has no foreground process to name.
+fn a_non_terminal_has_no_pane_name<P: Platform>() {
+    let (near, _far) = UnixStream::pair().expect("socket pair");
+    assert_eq!(P::pane_name(near.as_fd()), None);
+}
+
 /// A platform that reports a process table reports this process in it, with a
 /// parent that is not itself.
 fn a_process_table_contains_this_process<P: Platform>() {
@@ -87,6 +93,26 @@ fn a_reported_argument_vector_has_a_program_name<P: Platform>() {
     assert!(!arguments[0].is_empty(), "argv[0] is empty");
 }
 
+/// A platform that reports an environment reports the one a process was
+/// started with.
+fn a_reported_environment_is_the_one_a_process_started_with<P: Platform>() {
+    let mut child = std::process::Command::new("sleep")
+        .arg("30")
+        .env("TIRI_PLATFORM_CONTRACT", "a=b")
+        .spawn()
+        .expect("spawn a child with a known environment");
+    let environ = P::process_environ(child.id());
+    let _ = child.kill();
+    let _ = child.wait();
+    if environ.is_empty() {
+        return;
+    }
+    assert!(
+        environ.contains(&("TIRI_PLATFORM_CONTRACT".into(), "a=b".into())),
+        "environment: {environ:?}"
+    );
+}
+
 /// Nothing is reported for a process that cannot exist. Pid 0 names no
 /// process on any supported platform.
 fn nothing_is_reported_for_a_process_that_is_not_there<P: Platform>() {
@@ -94,6 +120,7 @@ fn nothing_is_reported_for_a_process_that_is_not_there<P: Platform>() {
     assert!(P::process_open_files(0).is_empty());
     assert!(P::process_programs(0).is_empty());
     assert!(P::process_arguments(0).is_empty());
+    assert!(P::process_environ(0).is_empty());
 }
 
 /// Every contract above, against the platform this build compiles for.
@@ -113,11 +140,13 @@ mod current {
 
     for_current_platform!(
         a_non_terminal_has_no_pane_cwd,
+        a_non_terminal_has_no_pane_name,
         a_process_table_contains_this_process,
         a_reported_process_cwd_is_this_directory,
         reported_open_files_include_one_we_hold,
         reported_program_names_are_never_empty,
         a_reported_argument_vector_has_a_program_name,
+        a_reported_environment_is_the_one_a_process_started_with,
         nothing_is_reported_for_a_process_that_is_not_there,
     );
 }

@@ -133,10 +133,85 @@ pub fn fork() -> io::Result<Option<libc::pid_t>> {
 /// Detach from the controlling terminal as `daemon(1, 0)` does: keep the
 /// working directory and redirect stdio to `/dev/null`. Forks, so fails when
 /// the process has more than one thread.
-#[cfg_attr(target_vendor = "apple", allow(deprecated))]
+#[cfg(not(target_os = "macos"))]
 pub fn daemonize() -> io::Result<()> {
     ensure_single_threaded()?;
     check(unsafe { libc::daemon(1, 0) }).map(|_| ())
+}
+
+/// Detach from the controlling terminal as `daemon(1, 0)` does: keep the
+/// working directory and redirect stdio to `/dev/null`. Forks, so fails when
+/// the process has more than one thread.
+///
+/// The system `daemon` moves the process into the root bootstrap namespace,
+/// out of reach of per-user services such as the pasteboard. As tmux's
+/// `compat/daemon.c` does instead, this detaches by hand and then joins the
+/// user's own namespace.
+#[cfg(target_os = "macos")]
+pub fn daemonize() -> io::Result<()> {
+    if fork()?.is_some() {
+        exit_now(0);
+    }
+    check(unsafe { libc::setsid() })?;
+    let null = unsafe { libc::open(c"/dev/null".as_ptr(), libc::O_RDWR) };
+    if null != -1 {
+        for target in [libc::STDIN_FILENO, libc::STDOUT_FILENO, libc::STDERR_FILENO] {
+            unsafe { libc::dup2(null, target) };
+        }
+        if null > libc::STDERR_FILENO {
+            drop(unsafe { OwnedFd::from_raw_fd(null) });
+        }
+    }
+    join_user_bootstrap_namespace();
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+unsafe extern "C" {
+    static mut bootstrap_port: libc::mach_port_t;
+    static mach_task_self_: libc::mach_port_t;
+    fn bootstrap_get_root(
+        bootstrap: libc::mach_port_t,
+        root: *mut libc::mach_port_t,
+    ) -> libc::kern_return_t;
+    fn bootstrap_look_up_per_user(
+        bootstrap: libc::mach_port_t,
+        service_name: *const libc::c_char,
+        target_user: libc::uid_t,
+        service: *mut libc::mach_port_t,
+    ) -> libc::kern_return_t;
+    fn task_set_special_port(
+        task: libc::mach_port_t,
+        which: libc::c_int,
+        port: libc::mach_port_t,
+    ) -> libc::kern_return_t;
+    fn mach_port_deallocate(
+        task: libc::mach_port_t,
+        name: libc::mach_port_t,
+    ) -> libc::kern_return_t;
+}
+
+#[cfg(target_os = "macos")]
+const TASK_BOOTSTRAP_PORT: libc::c_int = 4;
+
+/// Replace this task's bootstrap port with the calling user's per-user
+/// namespace (tmux's `daemon_darwin`). Best effort: on any failure the
+/// process stays where it was.
+#[cfg(target_os = "macos")]
+fn join_user_bootstrap_namespace() {
+    let mut root = 0;
+    let mut user = 0;
+    unsafe {
+        let task = mach_task_self_;
+        if bootstrap_get_root(bootstrap_port, &mut root) == libc::KERN_SUCCESS
+            && bootstrap_look_up_per_user(root, std::ptr::null(), libc::getuid(), &mut user)
+                == libc::KERN_SUCCESS
+            && task_set_special_port(task, TASK_BOOTSTRAP_PORT, user) == libc::KERN_SUCCESS
+            && mach_port_deallocate(task, bootstrap_port) == libc::KERN_SUCCESS
+        {
+            bootstrap_port = user;
+        }
+    }
 }
 
 /// Send EOF to a socket peer while preserving the receiving half.
@@ -517,6 +592,27 @@ pub fn signal_description(signal: libc::c_int) -> CString {
         return CString::default();
     }
     unsafe { CStr::from_ptr(description) }.to_owned()
+}
+
+/// The C library's short name for `signal` (`sys_signame`), on platforms
+/// that have that table.
+#[cfg(target_vendor = "apple")]
+pub fn signal_name(signal: libc::c_int) -> Option<&'static CStr> {
+    const NSIG: usize = 32;
+    unsafe extern "C" {
+        static sys_signame: [*const libc::c_char; NSIG];
+    }
+    let index = usize::try_from(signal)
+        .ok()
+        .filter(|&index| 0 < index && index < NSIG)?;
+    Some(unsafe { CStr::from_ptr(sys_signame[index]) })
+}
+
+/// The C library's short name for `signal` (`sys_signame`), on platforms
+/// that have that table.
+#[cfg(not(target_vendor = "apple"))]
+pub fn signal_name(_signal: libc::c_int) -> Option<&'static CStr> {
+    None
 }
 
 /// Send `signal` to the process `pid` (`kill`).

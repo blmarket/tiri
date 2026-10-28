@@ -1,4 +1,5 @@
 //! Owned, blocking sd-bus client handles.
+#![cfg(target_os = "linux")]
 #![deny(unsafe_op_in_unsafe_fn)]
 
 use libsystemd_sys::bus::{

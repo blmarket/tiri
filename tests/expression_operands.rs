@@ -32,7 +32,11 @@ fn decimal_and_special_operands_follow_strtod() {
         ("#{e|+|:9007199254740993,0}", "9007199254740992"),
         (
             "#{e|+|:123456789012345678901234567890,0}",
-            "-9223372036854775808",
+            if cfg!(target_arch = "x86_64") {
+                "-9223372036854775808"
+            } else {
+                "9223372036854775808"
+            },
         ),
     ] {
         assert_eq!(server.display(format), expected, "{format}");

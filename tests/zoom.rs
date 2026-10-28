@@ -5,7 +5,7 @@
 
 mod common;
 
-use common::Server;
+use common::{process_name, Server};
 use std::time::{Duration, Instant};
 
 fn columns(server: &Server) -> Vec<(u32, u32)> {
@@ -40,7 +40,7 @@ fn cats(server: &Server, panes: &[String]) {
                 "#{pane_current_command}",
             ])
             .trim_end()
-            != "cat"
+            != process_name("cat")
         {
             assert!(Instant::now() < deadline, "{pane} never ran cat");
             std::thread::sleep(Duration::from_millis(20));

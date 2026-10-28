@@ -39,6 +39,26 @@ impl Platform for Darwin {
         process_vnode_cwd(foreground_pgrp)
     }
 
+    fn pane_name(pty: BorrowedFd<'_>) -> Option<OsString> {
+        let foreground_pgrp = crate::terminal_foreground_group(pty).ok()?;
+        let mut info: libc::proc_bsdshortinfo = unsafe { std::mem::zeroed() };
+        let size = std::mem::size_of::<libc::proc_bsdshortinfo>() as libc::c_int;
+        let written = unsafe {
+            libc::proc_pidinfo(
+                foreground_pgrp,
+                libc::PROC_PIDT_SHORTBSDINFO,
+                0,
+                (&mut info as *mut libc::proc_bsdshortinfo).cast(),
+                size,
+            )
+        };
+        if written != size {
+            return None;
+        }
+        let name = bytes_from_c_buffer(&info.pbsi_comm, info.pbsi_comm.len());
+        (!name.is_empty()).then(|| name.to_owned())
+    }
+
     fn process_table() -> Option<Vec<ProcessInfo>> {
         const PROC_ALL_PIDS: u32 = 1;
 
@@ -115,7 +135,13 @@ impl Platform for Darwin {
 
     fn process_arguments(pid: u32) -> Vec<OsString> {
         procargs2(pid)
-            .map(|buffer| parse_procargs2(&buffer))
+            .map(|buffer| parse_procargs2(&buffer).0)
+            .unwrap_or_default()
+    }
+
+    fn process_environ(pid: u32) -> Vec<(OsString, OsString)> {
+        procargs2(pid)
+            .map(|buffer| parse_procargs2(&buffer).1)
             .unwrap_or_default()
     }
 
@@ -141,8 +167,8 @@ impl Platform for Darwin {
 }
 
 /// Fetch the raw `KERN_PROCARGS2` buffer for `pid`: `argc`, the exec path, then
-/// the argument strings, all in one sysctl. The argument vector is parsed out of
-/// this buffer by [`parse_procargs2`].
+/// the argument strings, then the environment strings, all in one sysctl. Both
+/// are parsed out of this buffer by [`parse_procargs2`].
 fn procargs2(pid: u32) -> Option<Vec<u8>> {
     let mut mib = [libc::CTL_KERN, libc::KERN_PROCARGS2, pid as libc::c_int];
     let mut size = 0usize;
@@ -295,13 +321,13 @@ fn bytes_from_c_buffer(buffer: &[libc::c_char], length: usize) -> &OsStr {
     OsStr::from_bytes(&bytes[..end])
 }
 
-fn parse_procargs2(buffer: &[u8]) -> Vec<OsString> {
+fn parse_procargs2(buffer: &[u8]) -> (Vec<OsString>, Vec<(OsString, OsString)>) {
     let Some(argc_bytes) = buffer.get(..std::mem::size_of::<libc::c_int>()) else {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     };
     let argc = libc::c_int::from_ne_bytes(argc_bytes.try_into().unwrap());
     if argc <= 0 {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     }
 
     let mut index = std::mem::size_of::<libc::c_int>();
@@ -325,7 +351,21 @@ fn parse_procargs2(buffer: &[u8]) -> Vec<OsString> {
             args.push(OsString::from(OsStr::from_bytes(&buffer[start..index])));
         }
     }
-    args
+
+    let environ = buffer
+        .get(index + 1..)
+        .unwrap_or_default()
+        .split(|&byte| byte == 0)
+        .take_while(|entry| !entry.is_empty())
+        .filter_map(|entry| {
+            let split = entry.iter().position(|&byte| byte == b'=')?;
+            Some((
+                OsStr::from_bytes(&entry[..split]).to_owned(),
+                OsStr::from_bytes(&entry[split + 1..]).to_owned(),
+            ))
+        })
+        .collect();
+    (args, environ)
 }
 
 #[cfg(test)]
@@ -335,6 +375,15 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
+
+    #[test]
+    fn procargs2_splits_arguments_from_environment() {
+        let mut buffer = 2i32.to_ne_bytes().to_vec();
+        buffer.extend_from_slice(b"/bin/prog\0\0\0\0prog\0x=y\0A=1\0B=\0\0\0");
+        let (args, environ) = parse_procargs2(&buffer);
+        assert_eq!(args, ["prog", "x=y"]);
+        assert_eq!(environ, [("A".into(), "1".into()), ("B".into(), "".into())]);
+    }
 
     #[test]
     fn pane_cwd_absent_for_non_tty() {

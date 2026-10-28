@@ -23,6 +23,13 @@ impl Platform for Linux {
         read_cwd(foreground_pgrp).or_else(|| read_cwd(crate::terminal_session(pty).unwrap_or(-1)))
     }
 
+    fn pane_name(pty: BorrowedFd<'_>) -> Option<OsString> {
+        let foreground_pgrp = crate::terminal_foreground_group(pty).ok()?;
+        let cmdline = fs::read(format!("/proc/{foreground_pgrp}/cmdline")).ok()?;
+        let name = cmdline.split(|&byte| byte == 0).next()?;
+        (!name.is_empty()).then(|| OsString::from_vec(name.to_vec()))
+    }
+
     fn process_table() -> Option<Vec<ProcessInfo>> {
         let entries = fs::read_dir("/proc").ok()?;
         let mut table = Vec::new();

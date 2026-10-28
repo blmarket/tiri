@@ -9,7 +9,7 @@
 
 mod common;
 
-use common::{Server, TerminalClient};
+use common::{process_name, Server, TerminalClient};
 use std::fs;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -106,7 +106,9 @@ fn ctrl_a_keys_drive_the_strip() {
     wait_until("x", || ids(&server) == [panes[0].clone()]);
 
     client.send(b"cat -v\n");
-    wait_until("cat", || server.display("#{pane_current_command}") == "cat");
+    wait_until("cat", || {
+        server.display("#{pane_current_command}") == process_name("cat")
+    });
     client.send(b"\x01\x01\n");
     wait_until("the literal C-a", || {
         server.success(&["capture-pane", "-p"]).contains("^A")
@@ -186,7 +188,9 @@ fn configuration_overrides_the_ctrl_a_keys() {
 
     server.success(&["unbind", "-n", "C-a"]);
     client.send(b"cat -v\n");
-    wait_until("cat", || server.display("#{pane_current_command}") == "cat");
+    wait_until("cat", || {
+        server.display("#{pane_current_command}") == process_name("cat")
+    });
     client.send(b"\x01\n");
     wait_until("the literal C-a", || {
         server.success(&["capture-pane", "-p"]).contains("^A")

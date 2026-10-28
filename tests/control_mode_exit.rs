@@ -48,18 +48,22 @@ fn control_control_client_ends_with_exit_line_and_string_terminator() {
     master
         .write_all(b"kill-server\n")
         .expect("send kill-server");
-    assert!(child.wait().expect("control client exit").success());
-    let mut output = Vec::new();
-    let mut bytes = [0; 4096];
-    loop {
-        match master.read(&mut bytes) {
-            Ok(0) => break,
-            Ok(n) => output.extend_from_slice(&bytes[..n]),
-            Err(error) if error.raw_os_error() == Some(libc::EIO) => break,
-            Err(error) if error.kind() == ErrorKind::Interrupted => {}
-            Err(error) => panic!("terminal read: {error}"),
+    let reader = std::thread::spawn(move || {
+        let mut output = Vec::new();
+        let mut bytes = [0; 4096];
+        loop {
+            match master.read(&mut bytes) {
+                Ok(0) => break,
+                Ok(n) => output.extend_from_slice(&bytes[..n]),
+                Err(error) if error.raw_os_error() == Some(libc::EIO) => break,
+                Err(error) if error.kind() == ErrorKind::Interrupted => {}
+                Err(error) => panic!("terminal read: {error}"),
+            }
         }
-    }
+        output
+    });
+    assert!(child.wait().expect("control client exit").success());
+    let output = reader.join().expect("terminal reader");
     let output = String::from_utf8(output).expect("UTF-8 control output");
     // The client's line discipline echoes input sent before it went raw.
     assert!(output.contains("\x1bP1000p%begin "), "{output:?}");

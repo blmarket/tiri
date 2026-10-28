@@ -34,6 +34,10 @@ pub trait Platform {
     /// the pane represented by `pty`.
     fn pane_cwd(pty: BorrowedFd<'_>) -> Option<PathBuf>;
 
+    /// Return the name of the process occupying the foreground of the pane
+    /// represented by `pty`, as this platform's tmux reports it.
+    fn pane_name(pty: BorrowedFd<'_>) -> Option<OsString>;
+
     /// Return the visible `(pid, parent pid)` process table, when available.
     fn process_table() -> Option<Vec<ProcessInfo>> {
         None

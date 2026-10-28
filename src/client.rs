@@ -320,6 +320,10 @@ pub fn client_main(
             make_raw(&mut tio);
             tio.c_iflag = (ICRNL | IXANY) as tcflag_t;
             tio.c_oflag = (OPOST | ONLCR) as tcflag_t;
+            #[cfg(target_vendor = "apple")]
+            {
+                tio.c_lflag = ::libc::NOKERNINFO;
+            }
             tio.c_cflag = (CREAD | CS8 | HUPCL) as tcflag_t;
             tio.c_cc[VMIN] = 1 as cc_t;
             tio.c_cc[VTIME] = 0 as cc_t;

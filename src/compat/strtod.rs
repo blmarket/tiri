@@ -1,15 +1,18 @@
 use crate::format::bytes::cstr_suffix;
+#[cfg(not(target_vendor = "apple"))]
 use crate::text::numbers::integer_prefix;
 use std::ffi::CStr;
 
-/// glibc strtod(3) in the C locale: convert the longest prefix of `nptr` and
+/// strtod(3) in the C locale, as glibc implements it: convert the longest prefix of `nptr` and
 /// return the value with the rest, as `*endptr` would point to it. The prefix
 /// is optional white space, an optional sign, then a decimal or hexadecimal
 /// number, `inf`, `infinity` or `nan` with an optional `(n-char-sequence)`.
 /// Without a conversion the value is zero and the rest is all of `nptr`.
 ///
 /// Results are correctly rounded to nearest, overflow is infinity and
-/// underflow is zero or subnormal; strtod's `ERANGE` is not reported.
+/// underflow is zero or subnormal; strtod's `ERANGE` is not reported. On
+/// Apple platforms a NaN's parenthesised sequence is read as Apple's libc
+/// reads it, as tmux there would.
 pub fn strtod(nptr: &CStr) -> (f64, &CStr) {
     let s = nptr.to_bytes();
     let mut i = s
@@ -47,23 +50,44 @@ fn digits(s: &[u8], radix: u32) -> usize {
         .count()
 }
 
-/// After `nan`, an `(n-char-sequence)` that reads whole as a base-0
-/// strtoull(3) number puts its low 51 bits in the quiet NaN's payload. A
-/// sequence without the closing parenthesis is not consumed.
+/// After `nan`, an `(n-char-sequence)` puts its low 51 bits in the quiet NaN's
+/// payload. A sequence without the closing parenthesis is not consumed.
 fn nan(after: &[u8]) -> (f64, usize) {
     let quiet = f64::NAN.to_bits();
     if after.first() != Some(&b'(') {
         return (f64::from_bits(quiet), 3);
     }
     let chars = &after[1..];
-    let count = chars
-        .iter()
-        .take_while(|&&byte| byte.is_ascii_alphanumeric() || byte == b'_')
-        .count();
+    let count = n_char_sequence(chars);
     if chars.get(count) != Some(&b')') {
         return (f64::from_bits(quiet), 3);
     }
-    let chars = &chars[..count];
+    let payload = nan_payload(&chars[..count]) & ((1 << 51) - 1);
+    (f64::from_bits(quiet | payload), 3 + 1 + count + 1)
+}
+
+/// glibc's n-char-sequence: letters, digits and underscores.
+#[cfg(not(target_vendor = "apple"))]
+fn n_char_sequence(chars: &[u8]) -> usize {
+    chars
+        .iter()
+        .take_while(|&&byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        .count()
+}
+
+/// Apple's libc takes everything up to the closing parenthesis.
+#[cfg(target_vendor = "apple")]
+fn n_char_sequence(chars: &[u8]) -> usize {
+    chars
+        .iter()
+        .position(|&byte| byte == b')')
+        .unwrap_or(chars.len())
+}
+
+/// glibc reads the sequence as a base-0 strtoull(3) number, saturating, and
+/// uses it only when it is read whole.
+#[cfg(not(target_vendor = "apple"))]
+fn nan_payload(chars: &[u8]) -> u64 {
     let radix = if chars.len() > 2
         && chars[0] == b'0'
         && chars[1].eq_ignore_ascii_case(&b'x')
@@ -76,11 +100,29 @@ fn nan(after: &[u8]) -> (f64, usize) {
         10
     };
     let prefix = integer_prefix(chars, radix);
-    let mut bits = quiet;
-    if prefix.consumed == chars.len() {
-        bits |= prefix.magnitude.unwrap_or(u64::MAX) & ((1 << 51) - 1);
+    if prefix.consumed != chars.len() {
+        return 0;
     }
-    (f64::from_bits(bits), 3 + 1 + count + 1)
+    prefix.magnitude.unwrap_or(u64::MAX)
+}
+
+/// Apple's libc reads digits after a lowercase `0x` as hexadecimal, after a
+/// leading `0` as octal and otherwise as decimal, wrapping on overflow; any
+/// other byte makes the payload zero.
+#[cfg(target_vendor = "apple")]
+fn nan_payload(chars: &[u8]) -> u64 {
+    let (digits, radix) = match chars {
+        [b'0', b'x', rest @ ..] => (rest, 16),
+        [b'0', rest @ ..] => (rest, 8),
+        _ => (chars, 10),
+    };
+    digits
+        .iter()
+        .try_fold(0u64, |value, &byte| {
+            let digit = (byte as char).to_digit(radix)?;
+            Some(value.wrapping_mul(radix.into()).wrapping_add(digit.into()))
+        })
+        .unwrap_or(0)
 }
 
 /// The hexadecimal number after `0x`: the value and the length consumed
@@ -283,6 +325,26 @@ mod tests {
             "NaN(abc)",
             "nan(abc_1)",
             "nan(abc-1)",
+            "nan(a b)",
+            "nan( 1)",
+            "nan(-1)",
+            "nan(a(b)",
+            "nan(()",
+            "nan(a)b)",
+            "nan(12ab)",
+            "nan(0x1g)",
+            "nan(abc",
+            "nan(a-b",
+            "nan(0X1F)",
+            "nan(0x1F)",
+            "nan(0x)",
+            "nan(00)",
+            "nan(010)",
+            "nan(18446744073709551616)",
+            "nan(18446744073709551617)",
+            "nan(99999999999999999999)",
+            "nan(0x10000000000000001)",
+            "nan(2251799813685249)",
             "nan(123)",
             "-nan(0x7ff)",
             "nan(0xffffffffffffffffff)",

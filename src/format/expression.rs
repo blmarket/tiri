@@ -1356,7 +1356,7 @@ pub(super) fn format_loop_clients(
 
 fn format_float(value: f64, precision: ::core::ffi::c_int) -> CString {
     if value.is_nan() {
-        return if value.is_sign_negative() {
+        return if value.is_sign_negative() && cfg!(not(target_vendor = "apple")) {
             c"-nan"
         } else {
             c"nan"
@@ -2631,35 +2631,22 @@ mod format_float_tests {
         ];
         for value in values {
             for precision in [-100, -1, 0, 1, 2, 6, 17, 100] {
-                let expected = if value.is_nan() {
-                    if value.is_sign_negative() {
-                        c"-nan".to_owned()
-                    } else {
-                        c"nan".to_owned()
-                    }
-                } else {
-                    unsafe {
-                        let len = libc::snprintf(
-                            std::ptr::null_mut(),
-                            0,
+                let expected = unsafe {
+                    let len =
+                        libc::snprintf(std::ptr::null_mut(), 0, c"%.*f".as_ptr(), precision, value);
+                    assert!(len >= 0);
+                    let mut bytes = vec![0u8; len as usize + 1];
+                    assert_eq!(
+                        libc::snprintf(
+                            bytes.as_mut_ptr().cast(),
+                            bytes.len(),
                             c"%.*f".as_ptr(),
                             precision,
                             value,
-                        );
-                        assert!(len >= 0);
-                        let mut bytes = vec![0u8; len as usize + 1];
-                        assert_eq!(
-                            libc::snprintf(
-                                bytes.as_mut_ptr().cast(),
-                                bytes.len(),
-                                c"%.*f".as_ptr(),
-                                precision,
-                                value,
-                            ),
-                            len
-                        );
-                        CString::from_vec_with_nul(bytes).unwrap()
-                    }
+                        ),
+                        len
+                    );
+                    CString::from_vec_with_nul(bytes).unwrap()
                 };
                 assert_eq!(
                     format_float(value, precision),

@@ -11,12 +11,18 @@ use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 pub struct Server {
+    binary: PathBuf,
     directory: PathBuf,
     socket: PathBuf,
 }
 
 impl Server {
     pub fn new() -> Self {
+        Self::of(env!("CARGO_BIN_EXE_tiri"))
+    }
+
+    /// A server run by `binary`, a tiri or a tmux.
+    pub fn of(binary: impl Into<PathBuf>) -> Self {
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("clock after epoch")
@@ -25,11 +31,15 @@ impl Server {
             std::env::temp_dir().join(format!("tiri-test-{}-{stamp}", std::process::id()));
         fs::create_dir(&directory).expect("create socket directory");
         let socket = directory.join("socket");
-        Self { directory, socket }
+        Self {
+            binary: binary.into(),
+            directory,
+            socket,
+        }
     }
 
     pub fn command(&self) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_tiri"));
+        let mut command = Command::new(&self.binary);
         command
             .args(["-f", "/dev/null", "-S"])
             .arg(&self.socket)
@@ -639,4 +649,26 @@ impl Drop for TerminalClient {
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
+}
+
+/// The name `#{pane_current_command}` reports for `program` run from `PATH`:
+/// its argv[0] on Linux; on macOS, as tmux's `osdep-darwin.c` reads it, the
+/// kernel's name for the executable it resolves to, cut to `MAXCOMLEN`.
+pub fn process_name(program: &str) -> String {
+    #[cfg(target_os = "macos")]
+    {
+        let path = std::env::var_os("PATH").unwrap_or_default();
+        if let Some(executable) = std::env::split_paths(&path)
+            .map(|directory| directory.join(program))
+            .find(|candidate| candidate.is_file())
+        {
+            let resolved = fs::canonicalize(executable).expect("resolve executable");
+            let name = resolved
+                .file_name()
+                .expect("executable file name")
+                .as_encoded_bytes();
+            return String::from_utf8_lossy(&name[..name.len().min(16)]).into_owned();
+        }
+    }
+    program.to_owned()
 }

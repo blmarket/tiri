@@ -1,6 +1,6 @@
 #![cfg(unix)]
 mod common;
-use common::Server;
+use common::{process_name, Server};
 use std::time::{Duration, Instant};
 
 const QUERY: &str = "printf '\\033]4;1;?\\033\\\\\\033[c'";
@@ -26,6 +26,15 @@ fn recorder(server: &Server, out: &std::path::Path) {
     ]);
 }
 
+fn wait_recording(server: &Server) {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while server.display("#{pane_current_command}") != process_name("dd")
+        && Instant::now() < deadline
+    {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
 fn wait_for(out: &std::path::Path, needle: &[u8], within: Duration) -> Vec<u8> {
     let deadline = Instant::now() + within;
     loop {
@@ -48,7 +57,7 @@ fn input_requests_reply_queue_timeout_cancel_and_drop() {
     let out = dir.join("out");
 
     recorder(&server, &out);
-    std::thread::sleep(Duration::from_millis(150));
+    wait_recording(&server);
     term.drain();
     term.send(PALETTE);
     let got = wait_for(&out, b"\x1b[?1;2c", Duration::from_secs(2));
@@ -71,7 +80,7 @@ fn input_requests_reply_queue_timeout_cancel_and_drop() {
     alive(&server, "timeout");
 
     recorder(&server, &out);
-    std::thread::sleep(Duration::from_millis(100));
+    wait_recording(&server);
     server.success(&["kill-pane", "-a"]);
     server.success(&["respawn-pane", "-k", "sleep 30"]);
     term.drain();
@@ -79,7 +88,7 @@ fn input_requests_reply_queue_timeout_cancel_and_drop() {
     alive(&server, "drop with pending request");
 
     recorder(&server, &out);
-    std::thread::sleep(Duration::from_millis(100));
+    wait_recording(&server);
     server.success(&["detach-client", "-t", &term.tty]);
     alive(&server, "cancel on detach");
     let got = wait_for(&out, b"\x1b[?1;2c", Duration::from_secs(2));

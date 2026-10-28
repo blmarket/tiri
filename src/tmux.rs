@@ -337,7 +337,10 @@ pub fn check_name(name: &CStr) -> bool {
     utf8_isvalid(name)
 }
 pub fn sig2name(signo: ::core::ffi::c_int) -> CString {
-    CString::new(signo.to_string()).expect("decimal number has no NUL")
+    match tiri_sys::signal_name(signo) {
+        Some(name) => name.to_owned(),
+        None => CString::new(signo.to_string()).expect("decimal number has no NUL"),
+    }
 }
 pub fn find_cwd() -> Option<CString> {
     // tmux reads the directory into a PATH_MAX buffer, so a longer one is

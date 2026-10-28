@@ -5,15 +5,10 @@ use std::os::fd::BorrowedFd;
 use std::os::unix::ffi::OsStrExt;
 use tiri_sys::platform::{CurrentPlatform, Platform};
 
-/// The foreground process group's argv[0], as tmux's osdep_get_name.
+/// The foreground process's name, as tmux's osdep_get_name.
 pub(crate) fn osdep_get_name_cstring(fd: BorrowedFd<'_>) -> Option<CString> {
-    let pgrp = tiri_sys::terminal_foreground_group(fd)
-        .ok()
-        .filter(|&pgrp| pgrp > 0)?;
-    let program = CurrentPlatform::process_arguments(pgrp as u32)
-        .into_iter()
-        .next()?;
-    CString::new(program.as_bytes()).ok()
+    let name = CurrentPlatform::pane_name(fd)?;
+    CString::new(name.as_bytes()).ok()
 }
 
 /// The foreground process group's (or session leader's) working directory,
