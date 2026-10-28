@@ -355,6 +355,59 @@ Do you want to proceed? · Esc to cancel";
     }
 
     #[test]
+    fn running_background_shells_report_working_at_the_prompt() {
+        let screen = "\
+✻ Worked for 50m 6s · done 11:05 AM · 1 shell still running
+──────────────────────
+❯ commit this, then pick the next C file to migrate
+──────────────────────
+  /home/blmarket/proj/nox  main  Opus 5.5  ctx 59%
+  ⏵⏵ bypass permissions on · 1 shell · ← 1 agent";
+        assert_eq!(
+            detect(screen, Some("✳ Migrate cnxz")),
+            Detection::State(AgentState::Working)
+        );
+    }
+
+    #[test]
+    fn a_wrapped_background_shell_summary_reports_working() {
+        let screen = "\
+✻ Worked for 50m 6s · done 11:05 AM · 2
+  shells still running
+──────────────────────
+❯ ";
+        assert_eq!(detect(screen, None), Detection::State(AgentState::Working));
+    }
+
+    #[test]
+    fn quoted_or_finished_background_shell_summaries_stay_idle() {
+        for summary in [
+            "  ✻ Worked for 50m 6s · 1 shell still running",
+            "✻ Worked for 50m 6s · 0 shells still running",
+            "· 1 shell still running",
+        ] {
+            let screen = format!("{summary}\n──────────────────────\n❯ ");
+            assert_eq!(
+                detect(&screen, None),
+                Detection::State(AgentState::Idle),
+                "{summary}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_permission_prompt_outranks_running_background_shells() {
+        let screen = "\
+✻ Worked for 50m 6s · 1 shell still running
+Edit file src/main.rs?
+──────────────────────
+❯ 1. Yes
+  2. No
+Do you want to proceed? · Esc to cancel";
+        assert_eq!(detect(screen, None), Detection::State(AgentState::Blocked));
+    }
+
+    #[test]
     fn mcp_elicitation_reports_blocked() {
         for header in [
             "MCP server \"github\" requests your input",
