@@ -426,6 +426,9 @@ impl Runtime {
     }
 
     /// Collect readiness without invoking wakers, callbacks, or futures.
+    /// Readiness that no operation waits for, such as the writable edge after
+    /// every write, does not end the wait: it lasts until there is work to
+    /// run, an error is recorded, or `max_wait` passes.
     fn prepare_poll(&mut self, max_wait: Option<Duration>) -> io::Result<()> {
         self.core.check()?;
         if let Some(error) = self.core.error.borrow_mut().take() {
@@ -449,31 +452,38 @@ impl Runtime {
         };
         let stop = timeout.and_then(|duration| Instant::now().checked_add(duration));
         loop {
-            self.events.clear();
-            let remaining = stop.map(|stop| stop.saturating_duration_since(Instant::now()));
-            match self.poller.poll(&mut self.events, remaining) {
-                Ok(()) => break,
-                Err(error) if error.kind() == io::ErrorKind::Interrupted => {
-                    if stop.is_some_and(|stop| stop <= Instant::now()) {
-                        break;
+            loop {
+                self.events.clear();
+                let remaining = stop.map(|stop| stop.saturating_duration_since(Instant::now()));
+                match self.poller.poll(&mut self.events, remaining) {
+                    Ok(()) => break,
+                    Err(error) if error.kind() == io::ErrorKind::Interrupted => {
+                        if stop.is_some_and(|stop| stop <= Instant::now()) {
+                            break;
+                        }
                     }
+                    Err(error) => return Err(error),
                 }
-                Err(error) => return Err(error),
+            }
+            for event in &self.events {
+                let source = self
+                    .core
+                    .io
+                    .borrow()
+                    .get(&event.token().0)
+                    .and_then(Weak::upgrade);
+                if let Some(source) = source {
+                    source.observe(event)?;
+                }
+            }
+            self.queue_ready_timers();
+            if self.core.runnable()
+                || self.core.error.borrow().is_some()
+                || stop.is_some_and(|stop| stop <= Instant::now())
+            {
+                return Ok(());
             }
         }
-        for event in &self.events {
-            let source = self
-                .core
-                .io
-                .borrow()
-                .get(&event.token().0)
-                .and_then(Weak::upgrade);
-            if let Some(source) = source {
-                source.observe(event)?;
-            }
-        }
-        self.queue_ready_timers();
-        Ok(())
     }
 
     fn queue_ready_timers(&self) {

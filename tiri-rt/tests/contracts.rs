@@ -577,3 +577,24 @@ fn a_forked_child_cannot_schedule_on_the_parents_runtime() {
         }
     }
 }
+
+#[test]
+fn readiness_no_operation_waits_for_does_not_end_a_wait() {
+    let mut runtime = mio::Runtime::new().unwrap();
+    let (mut peer, fd) = pair();
+    let raw = fd.as_raw_fd();
+    let source = mio::Io::new(fd).unwrap();
+    let task = runtime
+        .handle()
+        .spawn(async move {
+            let _ = source.read(&mut [0; 1]).await;
+        })
+        .unwrap();
+    assert_eq!(unsafe { libc::write(raw, b"x".as_ptr().cast(), 1) }, 1);
+    tick(&mut runtime);
+    assert_eq!(peer.read(&mut [0; 1]).unwrap(), 1);
+    let started = Instant::now();
+    runtime.poll(Some(Duration::from_millis(50))).unwrap();
+    assert!(started.elapsed() >= Duration::from_millis(40));
+    drop(task);
+}
