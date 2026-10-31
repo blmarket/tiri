@@ -17,16 +17,29 @@ pub struct window_pane_offset {
     pub used: size_t,
 }
 
-/// Unconsumed output for a copied pane offset, without borrowing a pane model.
-pub fn pane_output_data<'a>(
-    input: &'a mut tiri_buffer::SegmentedBuf,
+/// A copy of the unconsumed output for a copied pane offset, without
+/// borrowing a pane model or making the input contiguous.
+pub fn pane_output_data(
+    input: &tiri_buffer::SegmentedBuf,
     base_offset: size_t,
     offset: &window_pane_offset,
-) -> &'a [u8] {
-    let used = offset.used.wrapping_sub(base_offset);
-    let data = crate::reactor::evbuffer_pullup(input, -1).unwrap_or_default();
-    data.get(used..)
-        .expect("pane offset is within input buffer")
+) -> Vec<u8> {
+    let mut skip = offset.used.wrapping_sub(base_offset);
+    let remaining = tiri_buffer::Buf::remaining(input);
+    let mut data = Vec::with_capacity(
+        remaining
+            .checked_sub(skip)
+            .expect("pane offset is within input buffer"),
+    );
+    for chunk in tiri_buffer::Buffer::chunks(input) {
+        if skip >= chunk.len() {
+            skip -= chunk.len();
+            continue;
+        }
+        data.extend_from_slice(&chunk[skip..]);
+        skip = 0;
+    }
+    data
 }
 
 /// Boxes preserve resize addresses while the queue grows or removes entries.

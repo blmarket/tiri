@@ -633,7 +633,7 @@ fn window_pane_read_callback(owner: &Rc<std::cell::RefCell<window_pane>>) {
     let size = input.input_len().unwrap_or(0);
     if has_pipe {
         let data = input
-            .with_stream(|event| pane_output_data(&mut event.input, base, &pipe_offset).to_vec())
+            .with_stream(|event| pane_output_data(&event.input, base, &pipe_offset))
             .unwrap_or_default();
         let new_size = data.len();
         if new_size > 0 as size_t {
