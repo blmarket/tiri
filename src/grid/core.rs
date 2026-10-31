@@ -179,8 +179,11 @@ fn grid_store_cell(entry: &mut grid_cell_entry, cell: &grid_cell, byte: u_char) 
     });
 }
 fn grid_need_extended_cell(entry: &grid_cell_entry, cell: &grid_cell) -> bool {
-    entry.flags as i32 & GRID_FLAG_EXTENDED != 0
-        || cell.attr > 0xff
+    entry.flags as i32 & GRID_FLAG_EXTENDED != 0 || grid_cell_is_extended(cell)
+}
+/// Whether `cell` needs an extended entry wherever it is stored.
+fn grid_cell_is_extended(cell: &grid_cell) -> bool {
+    cell.attr > 0xff
         || cell.data.size > 1
         || cell.data.width > 1
         || cell.fg & (COLOUR_FLAG_RGB | COLOUR_FLAG_THEME) != 0
@@ -561,12 +564,21 @@ pub fn grid_set_cells(gd: &mut grid, px: u_int, py: u_int, gc: &grid_cell, bytes
     if end > line.cellused as usize {
         line.cellused = end as u_short;
     }
+    let extended = grid_cell_is_extended(gc);
+    let mut stored = grid_cell_entry::default();
+    grid_store_cell(&mut stored, gc, 0);
+    let mut data = stored.c2rust_unnamed.data();
     for (index, &byte) in bytes.iter().enumerate() {
         let column = px.wrapping_add(index as u_int) as usize;
-        if grid_need_extended_cell(&line.celldata[column], gc) {
+        let entry = &mut line.celldata[column];
+        if extended || entry.flags as i32 & GRID_FLAG_EXTENDED != 0 {
             grid_extended_cell(line, column, gc).data = utf8_build_one(byte as u_char);
         } else {
-            grid_store_cell(&mut line.celldata[column], gc, byte as u_char);
+            data.data = byte;
+            *entry = grid_cell_entry {
+                c2rust_unnamed: grid_cell_entry_storage::from_data(data),
+                flags: stored.flags,
+            };
         }
     }
 }
