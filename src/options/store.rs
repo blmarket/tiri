@@ -131,9 +131,18 @@ pub fn options_read_entry<R>(
     if let Some(entry) = table.tree.get(name).map(Box::as_ref) {
         return Some(read(entry));
     }
-    let parent = table.parent.as_ref()?;
-    let source = parent.resolve(name, false)?;
-    source.with_entry(name, |entry| read(entry))
+    let mut scope = table.parent.clone()?;
+    let mut read = Some(read);
+    loop {
+        let parent = scope.with_local(|table| match table.tree.get(name) {
+            Some(entry) => Err(read.take().expect("read once")(entry)),
+            None => Ok(table.parent.clone()),
+        });
+        match parent {
+            Err(value) => return Some(value),
+            Ok(parent) => scope = parent?,
+        }
+    }
 }
 pub fn options_empty<'a>(
     oo: &'a mut options,
