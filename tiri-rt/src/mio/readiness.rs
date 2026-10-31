@@ -146,6 +146,20 @@ impl IoState {
         }
     }
 
+    /// Forget readiness an operation consumed entirely: the descriptor will
+    /// report the next edge. Hangup and error readiness are kept, since no
+    /// further edge follows them.
+    fn drained(&self, direction: Direction) {
+        let state = self.direction(direction);
+        if state
+            .cached
+            .get()
+            .is_some_and(|ready| !ready.closed && !ready.error)
+        {
+            state.cached.set(None);
+        }
+    }
+
     pub(super) fn clear(&self, direction: Direction, generation: usize) {
         let state = self.direction(direction);
         if state.generation.get() == generation {
@@ -303,23 +317,31 @@ impl crate::AsyncRead for Io {
         if buffer.is_empty() {
             return Ok(Received { bytes: 0, fd: None });
         }
-        self.read_with(|| {
-            if self.fd_passing {
-                return fd_passing::read(self.state.raw(), buffer);
-            }
-            let count = unsafe {
-                libc::read(
-                    self.state.raw(),
-                    buffer.as_mut_ptr().cast(),
-                    buffer.len().min(isize::MAX as usize),
-                )
-            };
-            Ok(Received {
-                bytes: syscall_result(count)?,
-                fd: None,
-            })
+        let capacity = buffer.len();
+        let received = self.read_with(|| self.read_now(buffer)).await?;
+        if !self.fd_passing && received.bytes > 0 && received.bytes < capacity {
+            self.state.drained(Direction::Read);
+        }
+        Ok(received)
+    }
+}
+
+impl Io {
+    fn read_now(&self, buffer: &mut [u8]) -> io::Result<Received> {
+        if self.fd_passing {
+            return fd_passing::read(self.state.raw(), buffer);
+        }
+        let count = unsafe {
+            libc::read(
+                self.state.raw(),
+                buffer.as_mut_ptr().cast(),
+                buffer.len().min(isize::MAX as usize),
+            )
+        };
+        Ok(Received {
+            bytes: syscall_result(count)?,
+            fd: None,
         })
-        .await
     }
 }
 
