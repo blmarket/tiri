@@ -42,14 +42,7 @@ pub struct LogCStr<'a> {
 /// Display a byte buffer up to its first NUL, like printf's `%.*s` with the
 /// buffer length as the precision.
 pub fn log_cstr_n(bytes: &[u8]) -> LogCStr<'_> {
-    let len = bytes
-        .iter()
-        .position(|&byte| byte == 0)
-        .unwrap_or(bytes.len());
-    LogCStr {
-        bytes: &bytes[..len],
-        width: 0,
-    }
+    LogCStr { bytes, width: 0 }
 }
 
 /// Display a C string, padding to a byte width before escaping. Negative
