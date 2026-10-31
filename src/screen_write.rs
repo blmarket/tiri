@@ -2704,65 +2704,94 @@ pub fn screen_write_collect_end(ctx: &mut screen_write_ctx) {
     }
 }
 pub fn screen_write_collect_add(ctx: &mut screen_write_ctx, gc: &grid_cell) {
-    let mut sx: u_int = ctx.with_screen(|s| s.grid().sx);
-    let mut collect: ::core::ffi::c_int = 0;
-    collect = 1 as ::core::ffi::c_int;
+    let (mode, selected) = ctx.with_screen(|s| (s.mode, s.sel.is_some()));
     if gc.data.width as ::core::ffi::c_int != 1 as ::core::ffi::c_int
         || gc.data.size as ::core::ffi::c_int != 1 as ::core::ffi::c_int
         || gc.data.data[0] as ::core::ffi::c_int >= 0x7f as ::core::ffi::c_int
         || (gc.flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0)
         || (gc.attr as ::core::ffi::c_int & GRID_ATTR_CHARSET != 0)
-        || (!ctx.with_screen(|s| s.mode) & MODE_WRAP != 0)
-        || (ctx.with_screen(|s| s.mode) & MODE_INSERT != 0)
-        || (!ctx.with_screen(|s| s.sel.is_none()))
+        || (!mode & MODE_WRAP != 0)
+        || (mode & MODE_INSERT != 0)
+        || selected
     {
-        collect = 0 as ::core::ffi::c_int;
-    }
-    if collect == 0 {
         screen_write_collect_end(ctx);
         screen_write_collect_flush(ctx, 0 as ::core::ffi::c_int, "screen_write_collect_add");
         screen_write_cell(ctx, gc);
         return;
     }
-    if ctx.with_screen(|s| s.cx) > sx.wrapping_sub(1 as u_int)
-        || screen_write_current_item(&mut ctx.item).used
-            > sx.wrapping_sub(1 as u_int)
-                .wrapping_sub(ctx.with_screen(|s| s.cx))
-    {
-        screen_write_collect_end(ctx);
-    }
-    if ctx.with_screen(|s| s.cx) > sx.wrapping_sub(1 as u_int) {
-        log_debug(format_args!(
-            "{}: wrapped at {},{}",
-            "screen_write_collect_add",
-            { ctx.with_screen(|s| s.cx) },
-            { ctx.with_screen(|s| s.cy) }
-        ));
-        screen_write_current_item(&mut ctx.item).wrapped = 1 as ::core::ffi::c_int;
-        screen_write_linefeed(ctx, 1 as ::core::ffi::c_int, 8 as u_int);
-        screen_write_set_cursor(ctx, 0 as ::core::ffi::c_int, -(1 as ::core::ffi::c_int));
-    }
-    let width = ctx.with_screen(|s| s.grid().sx) as usize;
-    let (cx, cy) = (ctx.with_screen(|s| s.cx), ctx.with_screen(|s| s.cy));
-    let used = {
-        let ci = screen_write_current_item(&mut ctx.item);
-        if ci.used == 0 {
-            ci.gc = *gc;
-        }
-        let used = ci.used;
-        ci.used = used.wrapping_add(1);
-        used
+    screen_write_collect_bytes(ctx, gc, &[gc.data.data[0]]);
+}
+/// Add printable ASCII `bytes` in `gc`'s style, as one
+/// [`screen_write_collect_add`] per byte would.
+pub fn screen_write_collect_add_run(ctx: &mut screen_write_ctx, gc: &grid_cell, bytes: &[u8]) {
+    let Some(&first) = bytes.first() else {
+        return;
     };
-    ctx.with_screen_mut(|s| {
-        let row = &mut s.write_rows_mut()[cy as usize];
-        if row.data.is_empty() {
-            if width == 0 {
-                fatalx(|out| out.write_all(b"xmalloc: zero size"));
-            }
-            row.data.resize_with(width, || 0);
+    let mut cell = *gc;
+    utf8_set(&mut cell.data, first);
+    let (mode, selected) = ctx.with_screen(|s| (s.mode, s.sel.is_some()));
+    if (gc.flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0)
+        || (gc.attr as ::core::ffi::c_int & GRID_ATTR_CHARSET != 0)
+        || (!mode & MODE_WRAP != 0)
+        || (mode & MODE_INSERT != 0)
+        || selected
+    {
+        for &byte in bytes {
+            utf8_set(&mut cell.data, byte);
+            screen_write_collect_add(ctx, &cell);
         }
-        row.data[cx.wrapping_add(used) as usize] = gc.data.data[0];
-    });
+        return;
+    }
+    screen_write_collect_bytes(ctx, &cell, bytes);
+}
+fn screen_write_collect_bytes(ctx: &mut screen_write_ctx, gc: &grid_cell, mut bytes: &[u8]) {
+    let sx = ctx.with_screen(|s| s.grid().sx);
+    while let Some(&first) = bytes.first() {
+        let mut cx = ctx.with_screen(|s| s.cx);
+        if cx > sx.wrapping_sub(1 as u_int)
+            || screen_write_current_item(&mut ctx.item).used
+                > sx.wrapping_sub(1 as u_int).wrapping_sub(cx)
+        {
+            screen_write_collect_end(ctx);
+            cx = ctx.with_screen(|s| s.cx);
+        }
+        if cx > sx.wrapping_sub(1 as u_int) {
+            log_debug(format_args!(
+                "{}: wrapped at {},{}",
+                "screen_write_collect_add",
+                { ctx.with_screen(|s| s.cx) },
+                { ctx.with_screen(|s| s.cy) }
+            ));
+            screen_write_current_item(&mut ctx.item).wrapped = 1 as ::core::ffi::c_int;
+            screen_write_linefeed(ctx, 1 as ::core::ffi::c_int, 8 as u_int);
+            screen_write_set_cursor(ctx, 0 as ::core::ffi::c_int, -(1 as ::core::ffi::c_int));
+        }
+        let used = {
+            let ci = screen_write_current_item(&mut ctx.item);
+            if ci.used == 0 {
+                ci.gc = *gc;
+                ci.gc.data.data[0] = first;
+            }
+            ci.used
+        };
+        let count = ctx.with_screen_mut(|s| {
+            let (width, cx, cy) = (s.grid().sx as usize, s.cx, s.cy);
+            let row = &mut s.write_rows_mut()[cy as usize];
+            if row.data.is_empty() {
+                if width == 0 {
+                    fatalx(|out| out.write_all(b"xmalloc: zero size"));
+                }
+                row.data.resize_with(width, || 0);
+            }
+            let at = cx.wrapping_add(used) as usize;
+            let count = bytes.len().min(width - at);
+            row.data[at..at + count].copy_from_slice(&bytes[..count]);
+            count
+        });
+        let ci = screen_write_current_item(&mut ctx.item);
+        ci.used = ci.used.wrapping_add(count as u_int);
+        bytes = &bytes[count..];
+    }
 }
 pub fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cell) {
     let write_pane_owner = ctx.wp.upgrade();
