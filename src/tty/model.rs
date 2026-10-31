@@ -87,6 +87,8 @@ pub struct tty {
     pub(super) read_task: Option<tiri_rt::mio::Task>,
     pub(super) in_0: Option<Box<super::input::TerminalInput>>,
     pub(super) write_task: Option<tiri_rt::mio::Task>,
+    /// The writer's waker while it is parked on an empty output buffer.
+    pub(super) write_wake: Option<std::task::LocalWaker>,
     pub(super) io_fd: Option<std::os::fd::OwnedFd>,
     pub(super) out: Option<Box<SegmentedBuf>>,
     pub(super) timer: Option<Timer>,

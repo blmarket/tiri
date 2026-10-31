@@ -335,10 +335,19 @@ fn tty_start_read(terminal: &mut tty, observer: ClientWeak) {
     );
 }
 
+/// Wake the terminal's writer, starting it on first use. The writer keeps one
+/// registration for the terminal's lifetime and parks while the output buffer
+/// is empty, so a write needs no descriptor setup and copies its bytes when
+/// the descriptor is already known to be writable. A failed write ends the
+/// writer; the next queued output starts another.
 pub(super) fn tty_start_write(terminal: &mut tty, observer: ClientWeak) {
     if terminal.write_task.is_some() {
+        if let Some(wake) = terminal.write_wake.take() {
+            wake.wake();
+        }
         return;
     }
+    terminal.write_wake = None;
     let lease = terminal
         .io_fd
         .as_ref()
@@ -348,18 +357,34 @@ pub(super) fn tty_start_write(terminal: &mut tty, observer: ClientWeak) {
         crate::reactor::task_start(move || {
             let source = tiri_rt::mio::Io::new(lease?)?;
             Ok(async move {
-                let bytes = {
+                loop {
+                    let bytes = std::future::poll_fn(|cx| {
+                        let Some(owner) = observer.upgrade() else {
+                            return std::task::Poll::Ready(None);
+                        };
+                        let mut terminal = owner.borrow_terminal_mut();
+                        let out = terminal.out.as_deref().expect("open TTY buffer");
+                        if evbuffer_get_length(out) != 0 {
+                            return std::task::Poll::Ready(Some(reactor::buffer_prefix(out, 65536)));
+                        }
+                        terminal.write_wake = Some(cx.local_waker().clone());
+                        std::task::Poll::Pending
+                    })
+                    .await;
+                    let Some(bytes) = bytes else { return };
+                    let buffers = [std::io::IoSlice::new(&bytes)];
+                    let result = source.write(&buffers, None).await;
                     let Some(owner) = observer.upgrade() else {
                         return;
                     };
-                    let terminal = owner.borrow_terminal();
-                    reactor::buffer_prefix(terminal.out.as_deref().expect("open TTY buffer"), 65536)
-                };
-                let buffers = [std::io::IoSlice::new(&bytes)];
-                let result = source.write(&buffers, None).await;
-                if let Some(owner) = observer.upgrade() {
-                    drop(owner.borrow_terminal_mut().write_task.take());
+                    let failed = result.is_err();
+                    if failed {
+                        drop(owner.borrow_terminal_mut().write_task.take());
+                    }
                     tty_write_callback(&owner, result);
+                    if failed {
+                        return;
+                    }
                 }
             })
         })
