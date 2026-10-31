@@ -37,15 +37,16 @@ use crate::screen_write::{
     screen_write_backspace, screen_write_carriagereturn, screen_write_clearcharacter,
     screen_write_clearendofline, screen_write_clearendofscreen, screen_write_clearhistory,
     screen_write_clearline, screen_write_clearscreen, screen_write_clearstartofline,
-    screen_write_clearstartofscreen, screen_write_collect_add, screen_write_collect_end,
-    screen_write_cursordown, screen_write_cursorleft, screen_write_cursormove,
-    screen_write_cursorright, screen_write_cursorup, screen_write_deletecharacter,
-    screen_write_deleteline, screen_write_end_sync, screen_write_fullredraw,
-    screen_write_insertcharacter, screen_write_insertline, screen_write_linefeed,
-    screen_write_mode_clear, screen_write_mode_set, screen_write_rawstring, screen_write_reset,
-    screen_write_reverseindex, screen_write_scrolldown, screen_write_scrollregion,
-    screen_write_scrollup, screen_write_setselection, screen_write_start_base,
-    screen_write_start_beside, screen_write_start_callback, screen_write_stop,
+    screen_write_clearstartofscreen, screen_write_collect_add, screen_write_collect_add_run,
+    screen_write_collect_end, screen_write_cursordown, screen_write_cursorleft,
+    screen_write_cursormove, screen_write_cursorright, screen_write_cursorup,
+    screen_write_deletecharacter, screen_write_deleteline, screen_write_end_sync,
+    screen_write_fullredraw, screen_write_insertcharacter, screen_write_insertline,
+    screen_write_linefeed, screen_write_mode_clear, screen_write_mode_set, screen_write_rawstring,
+    screen_write_reset, screen_write_reverseindex, screen_write_scrolldown,
+    screen_write_scrollregion, screen_write_scrollup, screen_write_setselection,
+    screen_write_start_base, screen_write_start_beside, screen_write_start_callback,
+    screen_write_stop,
 };
 use crate::server_client::Client as _;
 use crate::server_client::ClientRegistry;
@@ -2106,7 +2107,16 @@ fn input_set_state(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, state: &'s
 fn input_parse(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, buf: &[u8]) {
     let mut state: Option<&'static input_state> = None;
     let mut transition: Option<&'static input_transition> = None;
-    for &byte in buf {
+    let mut index = 0;
+    while let Some(&byte) = buf.get(index) {
+        index += 1;
+        if std::ptr::eq(ictx.state, &input_state_ground) && (0x20..0x7f).contains(&byte) {
+            let printed = input_print_run(ictx, sctx, &buf[index - 1..]);
+            if printed != 0 {
+                index += printed - 1;
+                continue;
+            }
+        }
         ictx.ch = byte as ::core::ffi::c_int;
         if !state.is_some_and(|state| std::ptr::eq(ictx.state, state))
             || !transition.is_some_and(|itr| ictx.ch >= itr.first && ictx.ch <= itr.last)
@@ -2349,13 +2359,47 @@ fn input_print(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) -> ::core::ffi
         ictx.cell.cell.attr =
             (ictx.cell.cell.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
     }
-    utf8_set(&mut ictx.cell.cell.data, ictx.ch as u_char);
+    let mut data = utf8_data {
+        data: [0; 32],
+        have: 1,
+        size: 1,
+        width: 1,
+    };
+    data.data[0] = ictx.ch as u_char;
+    ictx.cell.cell.data = data;
     screen_write_collect_add(sctx, &ictx.cell.cell);
-    ictx.last = utf8_copy(&ictx.cell.cell.data);
+    ictx.last = data;
     ictx.flags |= INPUT_LAST;
     ictx.cell.cell.attr =
         (ictx.cell.cell.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
     0 as ::core::ffi::c_int
+}
+/// Print the run of printable ASCII at the start of `bytes` as
+/// [`input_print`] would byte by byte, returning its length; zero when a
+/// pending UTF-8 character or the line-drawing set needs the byte path.
+fn input_print_run(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, bytes: &[u8]) -> usize {
+    let set = if ictx.cell.set == 0 {
+        ictx.cell.g0set
+    } else {
+        ictx.cell.g1set
+    };
+    if ictx.utf8started != 0 || set == 1 {
+        return 0;
+    }
+    let length = bytes
+        .iter()
+        .position(|byte| !(0x20..0x7f).contains(byte))
+        .unwrap_or(bytes.len());
+    let Some(&last) = bytes[..length].last() else {
+        return 0;
+    };
+    ictx.cell.cell.attr &= !(GRID_ATTR_CHARSET as u_short);
+    screen_write_collect_add_run(sctx, &ictx.cell.cell, &bytes[..length]);
+    utf8_set(&mut ictx.cell.cell.data, last);
+    ictx.last = ictx.cell.cell.data;
+    ictx.flags |= INPUT_LAST;
+    ictx.ch = last as ::core::ffi::c_int;
+    length
 }
 fn input_intermediate(ictx: &mut input_ctx, _sctx: &mut screen_write_ctx) -> ::core::ffi::c_int {
     if ictx.interm_len == (::core::mem::size_of::<[u_char; 4]>() as usize).wrapping_sub(1_usize) {
@@ -5615,6 +5659,58 @@ fn input_report_current_theme(ictx: &mut input_ctx) {
                 ));
             }
             _ => {}
+        }
+    }
+}
+#[cfg(test)]
+mod print_run_tests {
+    use super::*;
+    use crate::grid::{grid_cells_equal, grid_get_cell, grid_get_line};
+    use crate::screen::screen_init;
+
+    fn parsed(chunks: &[&[u8]]) -> screen {
+        crate::options::OptionsScope::GlobalServer.reset_default(
+            crate::options::options_table
+                .iter()
+                .find(|entry| entry.name == Some(c"extended-keys"))
+                .unwrap(),
+        );
+        let mut s = screen::empty();
+        screen_init(&mut s, 10, 4, 100);
+        let owner = input_init(None, Default::default(), Default::default(), None);
+        let mut ictx = owner.try_borrow_mut().unwrap();
+        for chunk in chunks {
+            input_parse_screen(&mut ictx, &mut s, Some(Box::new(|_| {})), chunk);
+        }
+        drop(ictx);
+        s
+    }
+
+    #[test]
+    fn a_printed_run_matches_printing_byte_by_byte() {
+        let input: &[u8] = b"hello world, this wraps around twice\r\nshort\r\n\
+            \x1b[31mred text that is long enough to wrap\x1b[0m\ttab\r\n\
+            \x1b(0qqqx\x1b(Bplain\xc3\xa9after \xe2\x82and on\r\n\
+            12345\x1b[3D\x1b[4hins\x1b[4lover\x1b[2bend\x1b[?7lno wrap past the edge\x1b[?7h\r\n\
+            0123456789x";
+        let whole = parsed(&[input]);
+        let bytes: Vec<&[u8]> = input.chunks(1).collect();
+        let single = parsed(&bytes);
+        assert_eq!((whole.cx, whole.cy), (single.cx, single.cy));
+        let (a, b) = (whole.grid(), single.grid());
+        assert_eq!((a.hsize, a.sy), (b.hsize, b.sy));
+        for y in 0..a.hsize + a.sy {
+            assert_eq!(
+                grid_get_line(a, y).flags,
+                grid_get_line(b, y).flags,
+                "line {y}"
+            );
+            for x in 0..a.sx {
+                let (mut left, mut right) = (grid_default_cell, grid_default_cell);
+                grid_get_cell(a, x, y, &mut left);
+                grid_get_cell(b, x, y, &mut right);
+                assert!(grid_cells_equal(&left, &right), "cell {x},{y}");
+            }
         }
     }
 }
