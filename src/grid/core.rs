@@ -463,9 +463,11 @@ fn grid_expand_line(gd: &mut grid, py: u_int, mut width: u_int, bg: u_int) {
     } else if width < gd.sx {
         width = gd.sx;
     }
+    let used = (line.celldata.len() as u_int).clamp(line.cellsize as u_int, width);
     line.celldata
-        .resize_with(width as usize, grid_cell_entry::default);
-    for column in line.cellsize as u_int..width {
+        .resize_with(width as usize, || grid_cleared_entry);
+    let end = if bg == 8 { used } else { width };
+    for column in line.cellsize as u_int..end {
         grid_clear_cell(line, column, bg, false);
     }
     line.cellsize = width as u_short;
