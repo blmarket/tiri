@@ -124,7 +124,8 @@ impl Buf for SegmentedBuf {
                 break;
             }
             remaining -= available;
-            self.segments.pop_front();
+            let drained = self.segments.pop_front().expect("nonempty buffer");
+            self.recycle(drained.bytes);
         }
     }
 }
@@ -263,6 +264,16 @@ impl SegmentedBuf {
         self.len = len;
         source.len = 0;
         source.scan = None;
+    }
+
+    /// Keep a drained segment's allocation for the next write, so a buffer
+    /// that is filled and drained in turn does not allocate each time.
+    /// Larger adopted allocations are released rather than held while idle.
+    fn recycle(&mut self, mut bytes: Vec<u8>) {
+        if self.spare.capacity() == 0 && bytes.capacity() <= SEGMENT_CAPACITY {
+            bytes.clear();
+            self.spare = bytes;
+        }
     }
 
     fn copy_prefix(&self, count: usize) -> Vec<u8> {
