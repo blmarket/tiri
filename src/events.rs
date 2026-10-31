@@ -85,15 +85,16 @@ impl events {
         })
     }
 
-    /// The callback at `index`: `None` past the end, `Some(None)` if that
-    /// sink does not receive this event.
-    fn callback_at(index: usize, name: &CStr, generation: u_int) -> Option<Option<events_cb>> {
+    /// The first sink at or after `index` that receives this event, with
+    /// the index after it.
+    fn next_callback(index: usize, name: &CStr, generation: u_int) -> Option<(usize, events_cb)> {
         EVENTS.with_borrow(|events| {
-            let sink = events.sinks.get(index)?;
-            Some(
-                (sink.dead == 0 && sink.generation <= generation && sink.name.as_c_str() == name)
-                    .then(|| sink.cb.clone()),
-            )
+            let offset = events.sinks[index.min(events.sinks.len())..]
+                .iter()
+                .position(|sink| {
+                    sink.dead == 0 && sink.generation <= generation && sink.name.as_c_str() == name
+                })?;
+            Some((index + offset + 1, events.sinks[index + offset].cb.clone()))
         })
     }
 
@@ -101,7 +102,7 @@ impl events {
     fn end_dispatch() -> Vec<events_sink> {
         EVENTS.with_borrow_mut(|events| {
             events.dispatching = events.dispatching.wrapping_sub(1);
-            if events.dispatching != 0 {
+            if events.dispatching != 0 || events.sinks.iter().all(|sink| sink.dead == 0) {
                 return Vec::new();
             }
             let (dead, live) = std::mem::take(&mut events.sinks)
@@ -144,11 +145,9 @@ pub fn events_fire(name: &CStr, mut ep: Box<event_payload>) {
     }
     let generation = events::begin_dispatch();
     let mut index = 0;
-    while let Some(callback) = events::callback_at(index, name, generation) {
-        index += 1;
-        if let Some(callback) = callback {
-            callback(name, &mut ep);
-        }
+    while let Some((next, callback)) = events::next_callback(index, name, generation) {
+        index = next;
+        callback(name, &mut ep);
     }
     drop(events::end_dispatch());
     drop(ep);
