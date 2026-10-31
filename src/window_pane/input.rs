@@ -2152,7 +2152,12 @@ fn input_parse(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, buf: &[u8]) {
         }
     }
 }
-pub(super) fn input_parse_pane(wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>) {
+/// Parse the pane's new output into `write`, which the caller stops once
+/// it has parsed all the output it will this turn.
+pub(super) fn input_parse_pane(
+    wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
+    write: &mut Option<screen_write_ctx<'static>>,
+) {
     let (stream, base, offset) = {
         let pane = wp_owner.borrow();
         (pane.event.clone(), pane.base_offset, pane.offset)
@@ -2164,12 +2169,23 @@ pub(super) fn input_parse_pane(wp_owner: &std::rc::Rc<std::cell::RefCell<window_
         wp_owner.borrow_mut().last_output_time =
             crate::shared::time::unix_seconds(std::time::SystemTime::now());
     }
-    input_parse_buffer(wp_owner, &data);
+    input_parse_into(wp_owner, &data, write);
     window_pane_update_used_data(wp_owner, |wp| &mut wp.offset, data.len());
 }
 pub(super) fn input_parse_buffer(
     wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
     buf: &[u8],
+) {
+    let mut write = None;
+    input_parse_into(wp_owner, buf, &mut write);
+    if let Some(ctx) = write {
+        screen_write_stop(ctx);
+    }
+}
+fn input_parse_into(
+    wp_owner: &std::rc::Rc<std::cell::RefCell<window_pane>>,
+    buf: &[u8],
+    write: &mut Option<screen_write_ctx<'static>>,
 ) {
     if buf.is_empty() {
         return;
@@ -2208,7 +2224,14 @@ pub(super) fn input_parse_buffer(
         }
         (wp.id, wp.modes.is_empty())
     };
-    let mut ctx = screen_write_start_base(wp_owner, modes_empty);
+    let observed = write.as_ref().map(|ctx| ctx.wp.strong_count() != 0);
+    if observed != Some(modes_empty) {
+        if let Some(ctx) = write.take() {
+            screen_write_stop(ctx);
+        }
+        *write = Some(screen_write_start_base(wp_owner, modes_empty));
+    }
+    let ctx = write.as_mut().expect("pane screen write");
     log_debug(format_args!(
         "{}: %{} {}, {} bytes: {}",
         "input_parse_buffer",
@@ -2217,8 +2240,7 @@ pub(super) fn input_parse_buffer(
         buf.len(),
         log_cstr_n(buf)
     ));
-    input_parse(ictx, &mut ctx, buf);
-    screen_write_stop(ctx);
+    input_parse(ictx, ctx, buf);
 }
 pub fn input_parse_screen(
     ictx: &mut input_ctx,

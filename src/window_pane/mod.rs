@@ -1,5 +1,6 @@
 //! Pane implementation. Window state is accessed through the Window trait.
 use crate::options::OptionsScope;
+use crate::screen_write::screen_write_stop;
 use crate::server_client::ClientRegistry;
 use crate::session::Session;
 use crate::shared::client::ClientRef;
@@ -619,7 +620,39 @@ fn window_pane_destroy(pane_owner: &Rc<std::cell::RefCell<window_pane>>) {
     drop(owner);
 }
 
+/// Output one read callback parses at most, reading what the pane already
+/// has after each chunk, so one screen write covers a burst.
+const PANE_READ_BATCH: usize = 65536;
+
 fn window_pane_read_callback(owner: &Rc<std::cell::RefCell<window_pane>>) {
+    let input = owner.borrow().event.clone();
+    let mut write = None;
+    let mut read = 0;
+    loop {
+        window_pane_consume_output(owner, &mut write);
+        if read >= PANE_READ_BATCH {
+            break;
+        }
+        match input.read_available() {
+            Ok(count) if count > 0 => read += count,
+            _ => break,
+        }
+    }
+    if let Some(ctx) = write {
+        screen_write_stop(ctx);
+    }
+    let event = owner.borrow().event.clone();
+    let _ = event.with_stream(|event| {
+        bufferevent_disable(event, EV_READ as ::core::ffi::c_short);
+    });
+}
+
+/// Hand the pane's new output to its pipe and control clients, and parse it
+/// into `write`.
+fn window_pane_consume_output(
+    owner: &Rc<std::cell::RefCell<window_pane>>,
+    write: &mut Option<crate::shared::screen_write::screen_write_ctx<'static>>,
+) {
     let (input, pipe, base, pipe_offset, has_pipe) = {
         let pane = owner.borrow();
         (
@@ -648,11 +681,7 @@ fn window_pane_read_callback(owner: &Rc<std::cell::RefCell<window_pane>>) {
         client.control_write_output(owner);
         registry_c_owner = ClientRegistry::next(&client);
     }
-    input_parse_pane(owner);
-    let event = owner.borrow().event.clone();
-    let _ = event.with_stream(|event| {
-        bufferevent_disable(event, EV_READ as ::core::ffi::c_short);
-    });
+    input_parse_pane(owner, write);
 }
 
 fn window_pane_error_callback(owner: &Rc<std::cell::RefCell<window_pane>>) {
