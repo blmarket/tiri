@@ -7,7 +7,6 @@ use crate::grid::{
 };
 use crate::hyperlinks::hyperlinks_get;
 use crate::input::input_pending;
-use crate::reactor::evbuffer_pullup;
 use crate::screen::screen_reset_hyperlinks;
 use crate::shared::abi::*;
 use crate::shared::colour::COLOUR_FLAG_256;
@@ -270,8 +269,7 @@ fn cmd_capture_pane_pending(args: &args, wp: &mut window_pane) -> Vec<u8> {
         .expect("pane input context")
         .try_borrow_mut()
         .expect("pane input context not already borrowed");
-    let pending = input_pending(&mut ictx);
-    let line: &[u8] = evbuffer_pullup(pending, -1).map_or(&[], |bytes| &*bytes);
+    let line = input_pending(&ictx);
     if args_has(args, 'C' as i32 as u_char) != 0 {
         for &byte in line {
             if byte as ::core::ffi::c_char as ::core::ffi::c_int >= ' ' as i32

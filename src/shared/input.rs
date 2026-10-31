@@ -4,7 +4,6 @@ use crate::window_pane::WindowPane as _;
 use crate::shared::client::ClientWeak;
 use std::collections::VecDeque;
 use std::ffi::CString;
-use tiri_buffer::SegmentedBuf;
 
 use super::abi::{size_t, u_char, u_int, uint64_t};
 use super::colour::colour_palette;
@@ -83,7 +82,7 @@ pub struct input_ctx {
     pub(crate) this: refbox::Weak<input_ctx>,
     pub(crate) requests: VecDeque<refbox::RefBox<input_request>>,
     pub request_timer: Option<Timer>,
-    pub since_ground: Box<SegmentedBuf>,
+    pub since_ground: Vec<u8>,
     pub ground_timer: Option<Timer>,
 }
 

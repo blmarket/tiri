@@ -26,9 +26,7 @@ use crate::options::OptionsScope;
 use crate::options::{options_get_number, options_set_number};
 use crate::paste::{paste_add_owned, paste_buffer_data, paste_get_top};
 use crate::reactor::BufferEvent;
-use crate::reactor::{
-    bufferevent_write, evbuffer_add, evbuffer_drain, evbuffer_get_length, evbuffer_new,
-};
+use crate::reactor::bufferevent_write;
 use crate::screen::{screen_clear_tabs, screen_has_tab, screen_set_tab};
 use crate::screen::{
     screen_pop_title, screen_push_title, screen_set_cursor_colour, screen_set_cursor_style,
@@ -71,7 +69,6 @@ use crate::window::WindowPane;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 use std::time::Duration;
-use tiri_buffer::SegmentedBuf;
 
 use crate::shared::abi::*;
 use crate::shared::client::CLIENT_UNATTACHEDFLAGS;
@@ -137,7 +134,7 @@ impl input_ctx {
             this: refbox::Weak::new(),
             requests: VecDeque::new(),
             request_timer: Default::default(),
-            since_ground: evbuffer_new(),
+            since_ground: Vec::new(),
             ground_timer: Default::default(),
         }
     }
@@ -2095,8 +2092,8 @@ pub fn input_reset(ictx: &mut input_ctx, mut clear: ::core::ffi::c_int) {
     ictx.state = &input_state_ground;
     ictx.flags = 0 as ::core::ffi::c_int;
 }
-pub fn input_pending(ictx: &mut input_ctx) -> &mut SegmentedBuf {
-    &mut ictx.since_ground
+pub fn input_pending(ictx: &input_ctx) -> &[u8] {
+    &ictx.since_ground
 }
 fn input_set_state(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, state: &'static input_state) {
     if ictx.state.exit.is_some() {
@@ -2142,7 +2139,7 @@ fn input_parse(ictx: &mut input_ctx, sctx: &mut screen_write_ctx, buf: &[u8]) {
             input_set_state(ictx, sctx, state);
         }
         if !std::ptr::eq(ictx.state, &input_state_ground) {
-            evbuffer_add(&mut ictx.since_ground, &[ictx.ch as u8]);
+            ictx.since_ground.push(ictx.ch as u8);
         }
     }
 }
@@ -2331,10 +2328,11 @@ fn input_clear(ictx: &mut input_ctx) {
     ictx.input_end = INPUT_END_ST;
     ictx.flags &= !INPUT_DISCARD;
 }
+const SINCE_GROUND_KEEP: usize = 4096;
 fn input_ground(ictx: &mut input_ctx) {
     ictx.ground_timer = None;
-    let len = evbuffer_get_length(&ictx.since_ground);
-    evbuffer_drain(&mut ictx.since_ground, len);
+    ictx.since_ground.clear();
+    ictx.since_ground.shrink_to(SINCE_GROUND_KEEP);
     ictx.shrink_buffer();
 }
 fn input_print(ictx: &mut input_ctx, sctx: &mut screen_write_ctx) -> ::core::ffi::c_int {
