@@ -600,6 +600,31 @@ fn a_short_read_waits_for_the_next_edge_but_keeps_a_hangup() {
 }
 
 #[test]
+fn try_read_takes_queued_bytes_after_a_short_read_without_an_edge() {
+    let mut runtime = mio::Runtime::new().unwrap();
+    let (mut writer, fd) = pair();
+    let source = mio::Io::new(fd).unwrap();
+    let mut buffer = [0; 8];
+    assert!(
+        matches!(source.try_read(&mut buffer), Err(e) if e.kind() == io::ErrorKind::WouldBlock)
+    );
+    writer.write_all(b"ab").unwrap();
+    tick(&mut runtime);
+    assert!(matches!(poll(&mut read_bytes(&source, 8)), Poll::Ready(Ok(bytes)) if bytes == b"ab"));
+    writer.write_all(b"cd").unwrap();
+    let received = source.try_read(&mut buffer).unwrap();
+    assert_eq!(&buffer[..received.bytes], b"cd");
+    assert!(
+        matches!(source.try_read(&mut buffer), Err(e) if e.kind() == io::ErrorKind::WouldBlock)
+    );
+    let mut next = read_bytes(&source, 8);
+    assert!(poll(&mut next).is_pending());
+    writer.write_all(b"e").unwrap();
+    tick(&mut runtime);
+    assert!(matches!(poll(&mut next), Poll::Ready(Ok(bytes)) if bytes == b"e"));
+}
+
+#[test]
 fn readiness_no_operation_waits_for_does_not_end_a_wait() {
     let mut runtime = mio::Runtime::new().unwrap();
     let (mut peer, fd) = pair();

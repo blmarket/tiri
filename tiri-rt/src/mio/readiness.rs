@@ -327,6 +327,23 @@ impl crate::AsyncRead for Io {
 }
 
 impl Io {
+    /// Read bytes already available without waiting for readiness, as after
+    /// a read that may have left more queued. `WouldBlock` means none were,
+    /// and the next [`crate::AsyncRead::read`] waits for a new edge.
+    pub fn try_read(&self, buffer: &mut [u8]) -> io::Result<Received> {
+        if self.state.fd.borrow().is_none() {
+            return Err(invalid());
+        }
+        if buffer.is_empty() {
+            return Ok(Received { bytes: 0, fd: None });
+        }
+        let result = self.read_now(buffer);
+        if matches!(&result, Err(error) if error.kind() == io::ErrorKind::WouldBlock) {
+            self.state.drained(Direction::Read);
+        }
+        result
+    }
+
     fn read_now(&self, buffer: &mut [u8]) -> io::Result<Received> {
         if self.fd_passing {
             return fd_passing::read(self.state.raw(), buffer);
