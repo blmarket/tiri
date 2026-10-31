@@ -66,9 +66,7 @@ impl HooksEvents {
 #[repr(C)]
 pub struct hooks_data<'a> {
     pub name: &'a CStr,
-    pub fs: cmd_find_state,
     pub formats: Box<format_tree>,
-    pub oo: Option<OptionsScope>,
     pub client: ClientWeak,
     pub expand: ::core::ffi::c_int,
 }
@@ -131,23 +129,22 @@ fn hooks_parse(hd: &mut hooks_data, fs: &cmd_find_state, value: &CStr) -> cmd_pa
     drop(client_owner);
     pr
 }
-fn hooks_insert(
-    item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
-    hd: &mut hooks_data,
-) {
-    let mut after = item_handle.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
+fn hooks_find(
+    oo: Option<&OptionsScope>,
+    name: &CStr,
+    target: &cmd_find_state,
+) -> Option<(OptionsScope, cmd_find_state)> {
     let mut fs = cmd_find_state::default();
     log_debug(format_args!(
         "hooks_insert: inserting hook {}",
-        crate::log::log_bytes(hd.name.to_bytes())
+        crate::log::log_bytes(name.to_bytes())
     ));
-    if hd.fs.is_empty() || !hd.fs.is_valid() {
+    if target.is_empty() || !target.is_valid() {
         fs = cmd_find_state::find_from_nothing(0).unwrap_or_else(|| cmd_find_state::clear_state(0));
     } else {
-        fs.copy_from(&hd.fs);
+        fs.copy_from(target);
     }
-    let name = hd.name;
-    let source = if let Some(scope) = &hd.oo {
+    let source = if let Some(scope) = oo {
         scope.resolve(name, true)
     } else {
         let scope = if fs.s.strong_count() == 0 {
@@ -171,11 +168,28 @@ fn hooks_insert(
             "hooks_insert: hook {} not found",
             crate::log::log_bytes(name.to_bytes())
         ));
-        return;
+        return None;
     };
-    source
-        .with_entry(name, options_hook_fired)
+    let runnable = source
+        .with_entry(name, |entry| {
+            options_hook_fired(entry);
+            name.to_bytes().starts_with(b"@")
+                || entry
+                    .value
+                    .array()
+                    .is_some_and(|array| array.iter().next().is_some())
+        })
         .expect("resolved hook");
+    runnable.then_some((source, fs))
+}
+fn hooks_insert(
+    item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>,
+    hd: &mut hooks_data,
+    source: OptionsScope,
+    fs: cmd_find_state,
+) {
+    let mut after = item_handle.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
+    let name = hd.name;
     let event = item_handle.map(|item| cmdq_get_event(&item.borrow()));
     let state = cmdq_new_state(Some(&fs), event.as_ref(), CMDQ_STATE_NOHOOKS);
     cmdq_add_formats(&state, &hd.formats);
@@ -272,6 +286,11 @@ fn hooks_insert_event(
     if item_handle.is_some_and(|item| cmdq_get_flags(&item.borrow()) & CMDQ_STATE_NOHOOKS != 0) {
         return;
     }
+    let mut target = cmd_find_state::default();
+    event_payload_get_target(ep, &mut target);
+    let Some((source, fs)) = hooks_find(oo.as_ref(), name, &target) else {
+        return;
+    };
     let c = event_payload_get_client(ep);
     let mut formats = format_create(c, item_handle, FORMAT_NONE, FORMAT_NOJOBS);
     let ft = &mut *formats;
@@ -280,14 +299,11 @@ fn hooks_insert_event(
     format_log_debug(ft, c"hooks_insert_event");
     let mut hd = hooks_data {
         name,
-        fs: cmd_find_state::default(),
         formats,
-        oo,
         client: c.map(std::rc::Rc::downgrade).unwrap_or_default(),
         expand,
     };
-    event_payload_get_target(ep, &mut hd.fs);
-    hooks_insert(item_handle, &mut hd);
+    hooks_insert(item_handle, &mut hd, source, fs);
     drop(hd.formats);
 }
 fn CString_cb(name: &CStr, payload: &mut event_payload) {
@@ -345,26 +361,25 @@ pub fn hooks_build_events() {
     }
 }
 pub fn hooks_run(item_handle: Option<&std::rc::Rc<std::cell::RefCell<cmdq_item>>>, name: &CStr) {
-    let (mut target_state, client) = {
+    let (target_state, client) = {
         let item = item_handle.expect("command queue item").borrow();
         (
             crate::cmd::queue::cmdq_get_target(&item).clone(),
             item.client.clone(),
         )
     };
-    let target = &mut target_state;
+    let Some((source, fs)) = hooks_find(None, name, &target_state) else {
+        return;
+    };
     let mut hd = hooks_data {
         name,
-        fs: cmd_find_state::default(),
         formats: format_create(None, None, 0, FORMAT_NOJOBS),
-        oo: None,
         client,
         expand: 0,
     };
-    hd.fs.copy_from(target);
     format_add(&mut hd.formats, c"hook", |out| write_cstr(out, &*name));
     format_log_debug(&mut hd.formats, c"hooks_run");
-    hooks_insert(item_handle, &mut hd);
+    hooks_insert(item_handle, &mut hd, source, fs);
     drop(hd.formats);
 }
 impl Drop for hooks_monitor {
