@@ -88,6 +88,7 @@ fn start(state: &Rc<StreamState>, source: tiri_rt::mio::Io) -> std::io::Result<(
             Write(std::io::Result<usize>),
         }
         let mut prefer_write = false;
+        let mut input = Vec::new();
         loop {
             let (count, output, write, generation) = {
                 let mut slot = s.stream.borrow_mut();
@@ -111,10 +112,12 @@ fn start(state: &Rc<StreamState>, source: tiri_rt::mio::Io) -> std::io::Result<(
                 };
                 (count, output, write, s.generation.get())
             };
-            let mut input = vec![0; count];
+            if input.len() < count {
+                input.resize(count, 0);
+            }
             let buffers = [std::io::IoSlice::new(&output)];
             let completion = {
-                let mut reader = pin!(source.read(&mut input));
+                let mut reader = pin!(source.read(&mut input[..count]));
                 let mut writer = pin!(source.write(&buffers, None));
                 poll_fn(|cx| {
                     *s.wake.borrow_mut() = Some(cx.local_waker().clone());
@@ -142,8 +145,7 @@ fn start(state: &Rc<StreamState>, source: tiri_rt::mio::Io) -> std::io::Result<(
                 let (data, error) = match completion {
                     Completion::Changed => continue,
                     Completion::Read(Ok(received)) if received.bytes > 0 => {
-                        input.truncate(received.bytes);
-                        b.input.put(SegmentedBuf::from(input));
+                        b.input.put_slice(&input[..received.bytes]);
                         prefer_write = true;
                         let cb = (b.input.remaining() >= b.wm_read.low)
                             .then(|| b.readcb.clone())
