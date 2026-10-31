@@ -185,7 +185,7 @@ impl Drop for IoState {
         let normal = self
             .core
             .upgrade()
-            .is_some_and(|core| core.pid == std::process::id());
+            .is_some_and(|core| core.pid == super::runtime::process_id());
         self.close(normal);
     }
 }

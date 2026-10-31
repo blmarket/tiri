@@ -557,3 +557,23 @@ fn descriptor_eof_is_explicit() {
         Poll::Ready(Ok(Received { bytes: 0, fd })) if fd.is_none()
     ));
 }
+
+#[test]
+fn a_forked_child_cannot_schedule_on_the_parents_runtime() {
+    let runtime = mio::Runtime::new().unwrap();
+    runtime.handle().defer(|| ()).unwrap();
+    match unsafe { libc::fork() } {
+        0 => {
+            let refused = runtime.handle().defer(|| ()).is_err();
+            unsafe { libc::_exit(if refused { 0 } else { 1 }) }
+        }
+        child => {
+            assert!(child > 0);
+            let mut status = 0;
+            assert_eq!(unsafe { libc::waitpid(child, &mut status, 0) }, child);
+            assert!(libc::WIFEXITED(status));
+            assert_eq!(libc::WEXITSTATUS(status), 0);
+            runtime.handle().defer(|| ()).unwrap();
+        }
+    }
+}

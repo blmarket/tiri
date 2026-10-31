@@ -5,6 +5,8 @@ use std::io;
 use std::os::fd::RawFd;
 use std::pin::Pin;
 use std::rc::{Rc, Weak};
+use std::sync::Once;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::task::{ContextBuilder, LocalWake, LocalWaker, Poll, Waker};
 use std::time::{Duration, Instant};
 
@@ -37,6 +39,29 @@ pub(crate) fn invalid() -> io::Error {
     )
 }
 
+static PROCESS_ID: AtomicU32 = AtomicU32::new(0);
+
+extern "C" fn forget_process_id() {
+    PROCESS_ID.store(0, Ordering::Relaxed);
+}
+
+/// The calling process's id without a syscall per call: it is cached, and a
+/// fork handler clears the cache in the child so the child sees its own id.
+pub(crate) fn process_id() -> u32 {
+    let cached = PROCESS_ID.load(Ordering::Relaxed);
+    if cached != 0 {
+        return cached;
+    }
+    static REGISTER: Once = Once::new();
+    REGISTER.call_once(|| {
+        let registered = unsafe { libc::pthread_atfork(None, None, Some(forget_process_id)) };
+        assert_eq!(registered, 0, "pthread_atfork failed");
+    });
+    let pid = std::process::id();
+    PROCESS_ID.store(pid, Ordering::Relaxed);
+    pid
+}
+
 /// Scheduling state accessible independently of the runtime owner.
 pub(crate) struct Core {
     pub(crate) pid: u32,
@@ -55,7 +80,7 @@ pub(crate) struct Core {
 
 impl Core {
     pub(crate) fn check(&self) -> io::Result<()> {
-        if !self.alive.get() || self.pid != std::process::id() {
+        if !self.alive.get() || self.pid != process_id() {
             return Err(invalid());
         }
         if self.poisoned.get() {
@@ -109,7 +134,7 @@ impl Core {
         if !self.alive.replace(false) {
             return;
         }
-        let normal = self.pid == std::process::id();
+        let normal = self.pid == process_id();
         let signals = self
             .signals
             .borrow_mut()
@@ -281,7 +306,7 @@ impl crate::Runtime for Runtime {
         let registry = poller.registry().try_clone()?;
         let runtime = Self {
             core: Rc::new(Core {
-                pid: std::process::id(),
+                pid: process_id(),
                 alive: Cell::new(true),
                 poisoned: Cell::new(false),
                 next_id: Cell::new(1),
