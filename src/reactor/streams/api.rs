@@ -52,6 +52,10 @@ pub trait BufferEvent {
     fn copy_input(&self, offset: usize, dst: &mut [u8]) -> StreamResult<usize>;
     /// Consume up to count bytes and recheck read readiness. Returns bytes drained.
     fn drain_input(&self, count: usize) -> StreamResult<usize>;
+    /// Append input the descriptor already holds, without waiting for it.
+    /// Returns bytes read; zero when none were ready, or at end of file or
+    /// error, which the stream's next read reports.
+    fn read_available(&self) -> StreamResult<usize>;
     /// Copy borrowed bytes into output. Success means queued, not delivered.
     fn write(&self, bytes: &[u8]) -> StreamResult<()>;
 }
@@ -125,6 +129,22 @@ impl BufferEvent for StreamHandle {
             stream.input.advance(count);
             stream.state.wake();
             Ok(count)
+        })
+    }
+
+    fn read_available(&self) -> StreamResult<usize> {
+        self.access(|stream| {
+            let Some(source) = stream.state.source.borrow().upgrade() else {
+                return Ok(0);
+            };
+            let mut buffer = [0; 4096];
+            match source.try_read(&mut buffer) {
+                Ok(received) => {
+                    stream.input.put_slice(&buffer[..received.bytes]);
+                    Ok(received.bytes)
+                }
+                Err(_) => Ok(0),
+            }
         })
     }
 

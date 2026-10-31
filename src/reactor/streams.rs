@@ -22,6 +22,8 @@ pub(crate) struct StreamState {
     write_requested: Cell<bool>,
     wake: RefCell<Option<LocalWaker>>,
     task: RefCell<Option<tiri_rt::mio::Task>>,
+    /// The descriptor the task reads, for reads that do not wait.
+    source: RefCell<Weak<tiri_rt::mio::Io>>,
 }
 
 /// Observe a runtime-owned stream without extending its allocation lifetime.
@@ -80,6 +82,8 @@ pub(super) fn clear() {
 
 fn start(state: &Rc<StreamState>, source: tiri_rt::mio::Io) -> std::io::Result<()> {
     let s = state.clone();
+    let source = Rc::new(source);
+    *state.source.borrow_mut() = Rc::downgrade(&source);
     let handle = tiri_rt::mio::Handle::current();
     let task = handle.spawn(async move {
         enum Completion {
@@ -210,6 +214,7 @@ pub fn bufferevent_new(
         write_requested: Cell::new(false),
         wake: RefCell::new(None),
         task: RefCell::new(None),
+        source: RefCell::new(Weak::new()),
     });
     // The stream owns its state until free breaks this cycle.
     let owner = Box::new(bufferevent {
