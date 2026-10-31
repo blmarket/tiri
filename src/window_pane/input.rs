@@ -658,14 +658,13 @@ fn input_table_find<'a>(
     table: &'a [input_table_entry],
     ictx: &input_ctx,
 ) -> Option<&'a input_table_entry> {
-    let interm =
-        CStr::from_bytes_until_nul(&ictx.interm_buf).expect("intermediate buffer is terminated");
+    let interm = &ictx.interm_buf[..ictx.interm_len];
     table
         .binary_search_by(|entry| {
             entry
                 .ch
                 .cmp(&ictx.ch)
-                .then_with(|| entry.interm.to_bytes().cmp(interm.to_bytes()))
+                .then_with(|| entry.interm.to_bytes().iter().cmp(interm))
         })
         .ok()
         .map(|index| &table[index])
