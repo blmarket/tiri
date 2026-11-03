@@ -1,5 +1,5 @@
 use super::{Bundle, Input, Region, Rules, region};
-use crate::integration::{AgentState, Detection, agy, claude, codex, opencode, pi};
+use crate::integration::{AgentState, Detection, claude, codex, opencode, pi};
 
 fn input(screen: &str) -> Input<'_> {
     Input { screen, title: "" }
@@ -341,7 +341,6 @@ fn bundled_rules_load() {
         &claude::RULES,
         &codex::RULES,
         &pi::RULES,
-        &agy::RULES,
         &opencode::RULES,
     ] {
         if let Err(error) = Rules::load(bundle, None) {

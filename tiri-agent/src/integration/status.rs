@@ -24,9 +24,7 @@ use super::AgentState;
 /// lifecycle state last classified for it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AgentStatus {
-    /// Detector label: `"codex"`, `"claude"`, `"pi"`, `"agy"`, `"jetski"`,
-    /// `"opencode"`, or `""` when no agent is present.
-    pub agent: &'static str,
+    pub agent: String,
     /// OS pid of the matched agent process, when process attribution found one.
     pub pid: Option<u32>,
     /// The agent's session id, resolved from its process metadata when the
@@ -117,9 +115,9 @@ impl Default for StatusHub {
 mod tests {
     use super::*;
 
-    fn status(agent: &'static str, state: AgentState) -> AgentStatus {
+    fn status(agent: &str, state: AgentState) -> AgentStatus {
         AgentStatus {
-            agent,
+            agent: agent.to_owned(),
             pid: None,
             session_id: None,
             model: None,

@@ -23,7 +23,7 @@ use tracing_subscriber::prelude::*;
 
 use super::status::{AgentStatus, StatusHub};
 use super::*;
-use crate::observability::v1::{PaneProcess, ScreenTail};
+use crate::observability::v1::{PaneProcess, ProgramState, ProgramStatus, ScreenTail};
 
 fn poll(
     observability: &dyn ServerObservability,
@@ -199,17 +199,26 @@ impl ProcessSource for FakeProcessSource {
     }
 }
 
-/// One replayed observation: an optional window title and a screen tail.
 #[derive(Clone)]
 struct Frame {
     title: Option<CString>,
     screen: CString,
+    program_status: Option<ProgramStatus>,
 }
 
 fn frame(title: Option<&str>, screen: &str) -> Frame {
     Frame {
         title: title.map(|value| CString::new(value).expect("title")),
         screen: CString::new(screen).expect("screen"),
+        program_status: None,
+    }
+}
+
+fn program_status_frame(state: ProgramState, app: Option<&str>) -> Frame {
+    Frame {
+        title: None,
+        screen: CString::default(),
+        program_status: Some(ProgramStatus::new(state, app.map(str::to_owned))),
     }
 }
 
@@ -268,6 +277,10 @@ impl PaneObservability for ScriptedPane {
 
     fn title(&self) -> io::Result<Option<CString>> {
         Ok(self.current().1.title)
+    }
+
+    fn program_status(&self) -> io::Result<Option<ProgramStatus>> {
+        Ok(self.current().1.program_status)
     }
 }
 
@@ -407,7 +420,7 @@ fn claude_below_shell_is_detected_and_transitions_are_logged() {
     assert_eq!(
         snap.panes.get(&PaneId(0)),
         Some(&AgentStatus {
-            agent: "claude",
+            agent: "claude".into(),
             pid: Some(200),
             session_id: None,
             model: None,
@@ -1105,7 +1118,7 @@ fn pi_lifecycle_and_session_are_published() {
     assert_eq!(
         hub.snapshot().panes.get(&PaneId(0)),
         Some(&AgentStatus {
-            agent: "pi",
+            agent: "pi".into(),
             pid: Some(200),
             session_id: Some(CString::new(session_id).expect("session id")),
             model: None,
@@ -1173,7 +1186,7 @@ fn opencode_below_shell_is_detected_and_transitions_are_logged() {
     assert_eq!(
         hub.snapshot().panes.get(&PaneId(0)),
         Some(&AgentStatus {
-            agent: "opencode",
+            agent: "opencode".into(),
             pid: Some(200),
             session_id: None,
             model: None,
@@ -1188,67 +1201,34 @@ fn opencode_below_shell_is_detected_and_transitions_are_logged() {
     );
 }
 
-/// agy sets no title at all, so its screen alone drives the lifecycle, and its
-/// open conversation database supplies the session id. That database is sqlite,
-/// which the line-oriented session scan cannot read: the model stays empty.
 #[test]
-fn agy_lifecycle_and_session_are_published() {
-    let session_id = "019f9757-7c53-7898-a7d1-c8c780212888";
-    let rule = "────────────────────────────────────────";
-    let source = FakeProcessSource::new(
+fn osc_7501_fallback_publishes_app_and_lifecycle_transitions() {
+    let mut source = FakeProcessSource::new(
         vec![(100, 1), (200, 100)],
         HashMap::from([
             (100u32, vec![OsString::from("zsh")]),
-            (
-                200u32,
-                vec![OsString::from("/run/current-system/sw/bin/agy")],
-            ),
+            (200u32, vec![OsString::from("/usr/local/bin/agy")]),
         ]),
         HashMap::from([(200u32, vec![OsString::from("agy")])]),
         true,
-    )
-    .with_open_file(
-        200,
-        &format!("/home/me/.gemini/antigravity-cli/conversations/{session_id}.db"),
     );
     let pane = ScriptedPane::new(
         100,
         vec![
-            frame(
-                None,
-                &format!(
-                    "Antigravity CLI 1.1.10\n{rule}\n> \n{rule}\n\
-                     ? for shortcuts                Gemini 3.6 Flash · high"
-                ),
-            ),
-            frame(
-                None,
-                &format!(
-                    "⣷  Generating...\n{rule}\n> \n{rule}\n\
-                     esc to cancel                  Gemini 3.6 Flash · high"
-                ),
-            ),
-            frame(
-                None,
-                "● Bash(git status) (ctrl+o to expand)\nRequesting permission for:\ngit status\n\
-                 Do you want to proceed?\n1. Yes\n4. No\n\
-                 ↑/↓ Navigate · tab Amend · ctrl+g edit/expand command",
-            ),
-            frame(
-                None,
-                &format!(
-                    "done\n{rule}\n> \n{rule}\n\
-                     ? for shortcuts                Gemini 3.6 Flash · high"
-                ),
-            ),
+            program_status_frame(ProgramState::Idle, Some("antigravity")),
+            program_status_frame(ProgramState::Working, Some("antigravity")),
+            program_status_frame(ProgramState::Blocked, Some("antigravity")),
+            program_status_frame(ProgramState::Done, Some("antigravity")),
+            program_status_frame(ProgramState::Error, Some("antigravity")),
+            program_status_frame(ProgramState::Idle, Some("antigravity")),
         ],
     );
     let server = FakeServer { pane: pane.clone() };
     let detectors = default_detectors();
     let hub = StatusHub::new();
+    let mut panes = HashMap::new();
 
     let logs = capture_logs(|| {
-        let mut panes = HashMap::new();
         for _ in 0..pane.frames.len() {
             poll(&server, &detectors, &source, Some(&hub), &mut panes);
             pane.step();
@@ -1258,77 +1238,49 @@ fn agy_lifecycle_and_session_are_published() {
     assert_eq!(
         hub.snapshot().panes.get(&PaneId(0)),
         Some(&AgentStatus {
-            agent: "agy",
+            agent: "antigravity".into(),
             pid: Some(200),
-            session_id: Some(CString::new(session_id).expect("session id")),
+            session_id: None,
             model: None,
             state: AgentState::Idle,
         })
     );
     assert_ordered(
         &logs,
-        &["state=Idle", "state=Working", "state=Blocked", "state=Idle"],
+        &[
+            "state=Idle",
+            "state=Working",
+            "state=Blocked",
+            "state=Done",
+            "state=Error",
+            "state=Idle",
+        ],
+    );
+
+    source.table = vec![(100, 1)];
+    source.programs.remove(&200);
+    source.arguments.remove(&200);
+    poll(&server, &detectors, &source, Some(&hub), &mut panes);
+    assert_eq!(
+        hub.snapshot().panes.get(&PaneId(0)),
+        Some(&AgentStatus {
+            agent: String::new(),
+            pid: None,
+            session_id: None,
+            model: None,
+            state: AgentState::Unknown,
+        })
     );
 }
 
 #[test]
-fn jetski_lifecycle_and_session_are_published() {
-    let session_id = "019f9757-7c53-7898-a7d1-c8c780212888";
-    let rule = "────────────────────────────────────────";
-    let cli_path =
-        "/var/tmp/sar.cli_internal.123/cli_internal_impl.runfiles/google3/third_party/jetski/cmd/cli/cli";
-    let source = FakeProcessSource::new(
-        vec![(100, 1), (200, 100)],
-        HashMap::from([
-            (100u32, vec![OsString::from("zsh")]),
-            (
-                200u32,
-                vec![OsString::from("cli"), OsString::from(cli_path)],
-            ),
-        ]),
-        HashMap::from([(
-            200u32,
-            vec![
-                OsString::from(cli_path),
-                OsString::from("--app_data_dir=jetski"),
-            ],
-        )]),
-        true,
-    )
-    .with_open_file(
-        200,
-        &format!("/home/me/.gemini/jetski/conversations/{session_id}.db"),
-    );
+fn osc_7501_fallback_without_process_table_publishes_status() {
+    let source = FakeProcessSource::new(Vec::new(), HashMap::new(), HashMap::new(), false);
     let pane = ScriptedPane::new(
         100,
         vec![
-            frame(
-                None,
-                &format!(
-                    "Antigravity CLI 1.1.10\n{rule}\n> \n{rule}\n\
-                     ? for shortcuts                Gemini 3.6 Flash · high"
-                ),
-            ),
-            frame(
-                None,
-                &format!(
-                    "⣷  Generating...\n{rule}\n> \n{rule}\n\
-                     esc to cancel                  Gemini 3.6 Flash · high"
-                ),
-            ),
-            frame(
-                None,
-                "● Bash(git status) (ctrl+o to expand)\nRequesting permission for:\ngit status\n\
-                 Do you want to proceed?\n1. Yes\n4. No\n\
-                 ↑/↓ Navigate · tab Amend · ctrl+g edit/expand command",
-            ),
-            frame(
-                None,
-                &format!(
-                    "done\n{rule}\n> \n{rule}\n\
-                     ? for shortcuts                Gemini 3.6 Flash · high"
-                ),
-            ),
+            program_status_frame(ProgramState::Working, Some("jetski")),
+            program_status_frame(ProgramState::Done, Some("jetski")),
         ],
     );
     let server = FakeServer { pane: pane.clone() };
@@ -1346,16 +1298,74 @@ fn jetski_lifecycle_and_session_are_published() {
     assert_eq!(
         hub.snapshot().panes.get(&PaneId(0)),
         Some(&AgentStatus {
-            agent: "jetski",
-            pid: Some(200),
-            session_id: Some(CString::new(session_id).expect("session id")),
+            agent: "jetski".into(),
+            pid: None,
+            session_id: None,
             model: None,
-            state: AgentState::Idle,
+            state: AgentState::Done,
         })
     );
-    assert_ordered(
-        &logs,
-        &["state=Idle", "state=Working", "state=Blocked", "state=Idle"],
+    assert_ordered(&logs, &["state=Working", "state=Done"]);
+}
+
+#[test]
+fn attributed_agent_prioritizes_osc_7501_over_screen_and_keeps_session_metadata() {
+    let session_id = "df817fbe-b190-483c-ba9c-a4c5d2f9d04c";
+    let cwd = PathBuf::from("/work/proj");
+    let transcript_dir = claude::transcript_dir(&cwd).expect("HOME set in test environment");
+
+    let source = FakeProcessSource::new(
+        vec![(100, 1), (200, 100)],
+        HashMap::from([
+            (100u32, vec![OsString::from("zsh")]),
+            (200u32, vec![OsString::from("claude")]),
+        ]),
+        HashMap::new(),
+        true,
+    )
+    .with_cwd(200, cwd)
+    .with_files(
+        transcript_dir.clone(),
+        vec![transcript_dir.join(format!("{session_id}.jsonl"))],
+    )
+    .with_file_content(
+        transcript_dir.join(format!("{session_id}.jsonl")),
+        br#"{"type":"assistant","message":{"model":"claude-opus-5","role":"assistant"}}
+"#,
+    );
+
+    let pane = ScriptedPane::new(
+        100,
+        vec![Frame {
+            title: Some(CString::new("✳ tiri").unwrap()),
+            screen: CString::new("earlier output\n──────────\n❯ ").unwrap(),
+            program_status: Some(ProgramStatus::new(ProgramState::Working, None)),
+        }],
+    );
+    let server = FakeServer { pane };
+    let detectors = default_detectors();
+    let hub = StatusHub::new();
+    let mut panes = HashMap::new();
+
+    super::poll(
+        &server,
+        &detectors,
+        &source,
+        Some(&hub),
+        &mut panes,
+        Instant::now(),
+        IDLE_DELAY,
+    );
+
+    assert_eq!(
+        hub.snapshot().panes.get(&PaneId(0)),
+        Some(&AgentStatus {
+            agent: "claude".into(),
+            pid: Some(200),
+            session_id: Some(CString::new(session_id).unwrap()),
+            model: Some(c"claude-opus-5".into()),
+            state: AgentState::Working,
+        })
     );
 }
 
@@ -1447,7 +1457,7 @@ fn headless_codex_is_working_for_the_process_lifetime() {
     assert_eq!(
         hub.snapshot().panes.get(&PaneId(0)),
         Some(&AgentStatus {
-            agent: "codex",
+            agent: "codex".into(),
             pid: Some(200),
             session_id: None,
             model: None,
@@ -1483,7 +1493,7 @@ fn no_process_table_static_title_does_not_identify_codex() {
     assert_eq!(
         hub.snapshot().panes.get(&PaneId(0)),
         Some(&AgentStatus {
-            agent: "",
+            agent: String::new(),
             pid: None,
             session_id: None,
             model: None,
@@ -1597,7 +1607,7 @@ fn steady_server_scans_proc_once_per_poll_not_per_pane_or_output() {
         assert_eq!(
             snap.panes.get(&PaneId(n)),
             Some(&AgentStatus {
-                agent: "claude",
+                agent: "claude".into(),
                 pid: Some((n + 1) * 100 + 1),
                 session_id: None,
                 model: None,

@@ -44,6 +44,7 @@ pub fn screen_init(s: &mut screen, mut sx: u_int, mut sy: u_int, mut hlimit: u_i
     s.sel = None;
     s.write_list = None;
     s.hyperlinks = None;
+    s.program_status = None;
     screen_reinit(s);
 }
 pub fn screen_reinit(s: &mut screen) {
@@ -69,6 +70,7 @@ pub fn screen_reinit(s: &mut screen) {
     screen_clear_selection(s);
     screen_free_titles(s);
     screen_set_progress_bar(s, PROGRESS_BAR_HIDDEN, 0 as ::core::ffi::c_int);
+    s.program_status = None;
     screen_reset_hyperlinks(s);
 }
 pub fn screen_reset_hyperlinks(s: &mut screen) {

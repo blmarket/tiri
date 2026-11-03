@@ -13,7 +13,9 @@ use std::os::fd::AsFd;
 use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
-use tiri_agent::observability::v1::{PaneId, PaneObservability, PaneProcess, ScreenTail};
+use tiri_agent::observability::v1::{
+    PaneId, PaneObservability, PaneProcess, ProgramStatus, ScreenTail,
+};
 use tiri_agent::pane_class::{stringify_argv, PaneProcessProbe};
 
 struct PaneView {
@@ -122,6 +124,32 @@ impl PaneObservability for PaneView {
 
     fn title(&self) -> io::Result<Option<CString>> {
         self.read(|pane| (!pane.base.title.is_empty()).then(|| pane.base.title.clone()))
+    }
+
+    fn program_status(&self) -> io::Result<Option<ProgramStatus>> {
+        let status = self.read(|pane| {
+            let status = pane.base.program_status.clone()?;
+            if pane.fd.is_some() {
+                let (foreground, session_leader) = process_groups(pane);
+                let command = if pane.argv.is_empty() {
+                    pane.shell.clone()
+                } else {
+                    Some(stringify_argv(&pane.argv))
+                };
+                if PaneProcessProbe::new(foreground, session_leader, command).shell_at_prompt() {
+                    return None;
+                }
+            }
+            Some(status)
+        })?;
+        if status.is_none() {
+            if let Some(owner) = window_pane_upgrade(&self.pane) {
+                if let Ok(mut pane) = owner.try_borrow_mut() {
+                    pane.base.program_status = None;
+                }
+            }
+        }
+        Ok(status)
     }
 }
 

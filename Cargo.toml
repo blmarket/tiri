@@ -7,6 +7,7 @@ members = [
     "tiri-refbox",
     "tiri-sdbus",
     "tiri-sys",
+    "tiri-vt",
 ]
 
 [package]
@@ -28,6 +29,7 @@ name = "tiri"
 
 [dependencies]
 tiri-agent = { path = "tiri-agent" }
+tiri-vt = { path = "tiri-vt" }
 futures-core = "0.3"
 tiri-cmdparse = { path = "tiri-cmdparse" }
 tiri-rt = { path = "tiri-rt" }

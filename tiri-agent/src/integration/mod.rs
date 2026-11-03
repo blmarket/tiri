@@ -3,7 +3,7 @@
 //! A single background [`AgentObserver`] polls pane observability and classifies
 //! each pane's agent lifecycle state. Detection is split into a generic harness
 //! (this module) and per-agent [`AgentDetector`]s (e.g. [`codex`], [`claude`],
-//! [`pi`], [`agy`], [`jetski`], and [`opencode`]),
+//! [`pi`], and [`opencode`]),
 //! so adding an agent is a matter of adding a detector rather than another
 //! poller. Running one observer with a detector registry — instead of one thread
 //! per agent — avoids two observers fighting over the same pane, and matches how
@@ -12,21 +12,23 @@
 use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet};
 use std::ffi::{CStr, CString, OsStr, OsString};
+use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime};
 
 use tracing::{info, warn};
 
-use crate::observability::v1::{PaneId, PaneObservability, ServerObservability};
+use crate::observability::v1::{
+    PaneId, PaneObservability, ProgramState, ServerObservability,
+};
+use crate::pane_class::{invoked_with_command_string, is_shell, parse_window_name};
 use tiri_sys::platform::{CurrentPlatform, Platform};
 
 use manifest::{Bundle, Rules};
 
-pub mod agy;
 pub mod claude;
 pub mod codex;
-pub mod jetski;
 mod manifest;
 pub mod opencode;
 pub mod pi;
@@ -55,10 +57,26 @@ pub enum AgentState {
     Idle,
     /// The agent is actively processing or running a tool.
     Working,
+    /// The agent has finished a piece of work the user has not looked at yet.
+    Done,
     /// The agent is waiting for a confirmation or answer.
     Blocked,
+    /// The agent failed and stopped.
+    Error,
     /// The pane's child process has exited.
     Exited,
+}
+
+impl From<ProgramState> for AgentState {
+    fn from(state: ProgramState) -> Self {
+        match state {
+            ProgramState::Idle => AgentState::Idle,
+            ProgramState::Working => AgentState::Working,
+            ProgramState::Done => AgentState::Done,
+            ProgramState::Blocked => AgentState::Blocked,
+            ProgramState::Error => AgentState::Error,
+        }
+    }
 }
 
 impl AgentState {
@@ -72,7 +90,9 @@ impl AgentState {
             AgentState::Unknown => "none",
             AgentState::Idle => "idle",
             AgentState::Working => "working",
+            AgentState::Done => "done",
             AgentState::Blocked => "blocked",
+            AgentState::Error => "error",
             AgentState::Exited => "exited",
         }
     }
@@ -92,7 +112,9 @@ impl AgentState {
             AgentState::Unknown => "",
             AgentState::Idle => "💤",
             AgentState::Working => "🔄",
+            AgentState::Done => "✅",
             AgentState::Blocked => "✋",
+            AgentState::Error => "❌",
             AgentState::Exited => "🏁",
         }
     }
@@ -224,12 +246,6 @@ fn detectors_with(rules: fn(&Bundle) -> Rules) -> Vec<Box<dyn AgentDetector>> {
         Box::new(pi::PiDetector {
             rules: rules(&pi::RULES),
         }),
-        Box::new(agy::AgyDetector {
-            rules: rules(&agy::RULES),
-        }),
-        Box::new(jetski::JetskiDetector {
-            rules: rules(&agy::RULES),
-        }),
         Box::new(opencode::OpencodeDetector {
             rules: rules(&opencode::RULES),
         }),
@@ -319,7 +335,7 @@ impl AgentObserver {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ReportedStatus {
-    agent: Option<&'static str>,
+    agent: Option<String>,
     state: AgentState,
     pid: Option<u32>,
     session_id: Option<CString>,
@@ -542,6 +558,11 @@ fn inspect(
     if process.exited {
         tracked.agent_pid = None;
         tracked.forget_session();
+        let agent = tracked
+            .agent
+            .map(|i| detectors[i].label())
+            .or_else(|| tracked.reported.as_ref().and_then(|r| r.agent.as_deref()))
+            .map(str::to_owned);
         publish(
             id,
             tracked,
@@ -550,7 +571,7 @@ fn inspect(
                 revision: tracked.revision,
                 child_pid: process.child_pid,
                 agent_pid: None,
-                agent: tracked.agent.map(|i| detectors[i].label()),
+                agent: agent.as_deref(),
                 hub,
             },
         );
@@ -577,21 +598,56 @@ fn inspect(
 
     if let TreeScan::NotFound = scan {
         tracked.agent = None;
-        tracked.agent_pid = None;
         tracked.forget_session();
+        let command_pid = process
+            .child_pid
+            .and_then(|pid| active_command_pid(snapshot, pid));
+        let program_status = if command_pid.is_some() {
+            match tracked.pane.program_status() {
+                Ok(status) => status,
+                Err(error) => {
+                    warn!(
+                        target: "tiri::integration",
+                        pane_id = id.0,
+                        %error,
+                        "could not inspect pane program status"
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
         tracked.revision = Some(revision);
-        publish(
-            id,
-            tracked,
-            AgentState::Unknown,
-            PublishMetadata {
-                revision: Some(revision),
-                child_pid: process.child_pid,
-                agent_pid: None,
-                agent: None,
-                hub,
-            },
-        );
+        if let Some(status) = program_status {
+            tracked.agent_pid = command_pid;
+            publish(
+                id,
+                tracked,
+                AgentState::from(status.state()),
+                PublishMetadata {
+                    revision: Some(revision),
+                    child_pid: process.child_pid,
+                    agent_pid: command_pid,
+                    agent: status.app(),
+                    hub,
+                },
+            );
+        } else {
+            tracked.agent_pid = None;
+            publish(
+                id,
+                tracked,
+                AgentState::Unknown,
+                PublishMetadata {
+                    revision: Some(revision),
+                    child_pid: process.child_pid,
+                    agent_pid: None,
+                    agent: None,
+                    hub,
+                },
+            );
+        }
         return;
     }
 
@@ -664,6 +720,41 @@ fn inspect(
         return;
     }
 
+    match tracked.pane.program_status() {
+        Ok(Some(status)) => {
+            let (agent_pid, default_label) = match scan {
+                TreeScan::Found { detector, pid, .. } => {
+                    (Some(pid), Some(detectors[detector].label()))
+                }
+                TreeScan::NoProcessTable => (None, None),
+                TreeScan::NotFound => unreachable!("handled above"),
+            };
+            tracked.revision = Some(revision);
+            publish(
+                id,
+                tracked,
+                AgentState::from(status.state()),
+                PublishMetadata {
+                    revision: Some(revision),
+                    child_pid: process.child_pid,
+                    agent_pid,
+                    agent: status.app().or(default_label),
+                    hub,
+                },
+            );
+            return;
+        }
+        Ok(None) => {}
+        Err(error) => {
+            warn!(
+                target: "tiri::integration",
+                pane_id = id.0,
+                %error,
+                "could not inspect pane program status"
+            );
+        }
+    }
+
     if let TreeScan::Found {
         detector,
         pid,
@@ -732,7 +823,7 @@ fn inspect(
     match detection {
         Detection::State(mut state) => {
             let candidate = ReportedStatus {
-                agent: label,
+                agent: label.map(str::to_owned),
                 state,
                 pid: agent_pid,
                 session_id: tracked.agent_session_id.clone(),
@@ -887,7 +978,7 @@ struct PublishMetadata<'a> {
     revision: Option<u64>,
     child_pid: Option<u32>,
     agent_pid: Option<u32>,
-    agent: Option<&'static str>,
+    agent: Option<&'a str>,
     hub: Option<&'a StatusHub>,
 }
 
@@ -905,7 +996,7 @@ fn publish(
         hub,
     } = metadata;
     let reported = ReportedStatus {
-        agent,
+        agent: agent.map(str::to_owned),
         state,
         pid: agent_pid,
         session_id: tracked.agent_session_id.clone(),
@@ -931,7 +1022,7 @@ fn publish(
         hub.publish(
             id,
             AgentStatus {
-                agent: agent.unwrap_or(""),
+                agent: agent.unwrap_or("").to_owned(),
                 pid: agent_pid,
                 session_id: tracked.agent_session_id.clone(),
                 model: tracked.agent_model.clone(),
@@ -1355,4 +1446,37 @@ fn invocation_matches_any(
     detectors
         .iter()
         .position(|d| d.matches_invocation(arguments))
+}
+
+fn is_interactive_shell(snapshot: &ProcessSnapshot, pid: u32) -> bool {
+    let arguments = snapshot.source.arguments(pid);
+    if invoked_with_command_string(arguments.iter().filter_map(|arg| arg.to_str())) {
+        return false;
+    }
+    let program = arguments
+        .into_iter()
+        .next()
+        .or_else(|| snapshot.source.programs(pid).into_iter().next());
+    let Some(program) = program else {
+        return false;
+    };
+    let Ok(command) = CString::new(program.as_os_str().as_bytes()) else {
+        return false;
+    };
+    is_shell(&parse_window_name(&command))
+}
+
+fn active_command_pid(snapshot: &ProcessSnapshot, root: u32) -> Option<u32> {
+    let mut pending = vec![root];
+    let mut visited = HashSet::new();
+    while let Some(pid) = pending.pop() {
+        if !visited.insert(pid) {
+            continue;
+        }
+        if !is_interactive_shell(snapshot, pid) {
+            return Some(pid);
+        }
+        pending.extend(snapshot.children_of(pid).iter().copied());
+    }
+    None
 }

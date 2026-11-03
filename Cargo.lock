@@ -658,6 +658,7 @@ dependencies = [
  "tiri-rt",
  "tiri-sdbus",
  "tiri-sys",
+ "tiri-vt",
 ]
 
 [[package]]
@@ -668,6 +669,7 @@ dependencies = [
  "regex",
  "serde",
  "tiri-sys",
+ "tiri-vt",
  "toml",
  "tracing",
  "tracing-subscriber",
@@ -716,6 +718,10 @@ version = "0.1.0"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "tiri-vt"
+version = "0.1.0"
 
 [[package]]
 name = "toml"

@@ -39,7 +39,7 @@ use crate::shared::tty::{
 use crate::shared::utf8::UTF8_SIZE;
 use crate::shared::window::WindowRef;
 use crate::status::status_line_size;
-use crate::text::base64;
+use tiri_vt::base64;
 use crate::text::utf8::utf8_set;
 use crate::tmux::setblocking;
 use crate::tty::features::tty_apply_features;

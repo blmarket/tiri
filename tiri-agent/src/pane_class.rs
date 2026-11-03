@@ -104,7 +104,7 @@ impl PaneProcessProbe {
     /// is left, and it is right for the panes that matter — an interactive
     /// shell has no work on its command line, and a shell given some never
     /// returns to a prompt.
-    fn shell_at_prompt(&self) -> bool {
+    pub fn shell_at_prompt(&self) -> bool {
         self.current_command()
             .is_some_and(|command| is_shell(&command))
             && !self.runs_a_command_string()
@@ -157,7 +157,7 @@ impl PaneProcessProbe {
 /// Within the options, only single-dash arguments are short-option bundles, so
 /// `-lc` counts while a long option merely spelled with a `c` in it — `--norc`
 /// — does not.
-fn invoked_with_command_string<'a>(arguments: impl Iterator<Item = &'a str>) -> bool {
+pub(crate) fn invoked_with_command_string<'a>(arguments: impl Iterator<Item = &'a str>) -> bool {
     let mut rest = arguments.skip(1).peekable();
     let mut options = Vec::new();
     while let Some(argument) = rest.peek() {
@@ -184,7 +184,7 @@ fn invoked_with_command_string<'a>(arguments: impl Iterator<Item = &'a str>) -> 
 /// Used only to decide whether a pane holding its own terminal is at a prompt.
 /// An unlisted shell reads as a foreground program instead, which is the same
 /// answer the pane would give while running anything else.
-fn is_shell(command: &CStr) -> bool {
+pub(crate) fn is_shell(command: &CStr) -> bool {
     const SHELLS: [&CStr; 13] = [
         c"sh", c"bash", c"zsh", c"fish", c"dash", c"ash", c"ksh", c"mksh", c"csh", c"tcsh",
         c"elvish", c"nu", c"xonsh",

@@ -72,7 +72,7 @@ fn publish(
     output.set(
         pane,
         c"pane_agent",
-        CString::new(status.map_or("", |s| s.agent)).expect("agent name"),
+        CString::new(status.map_or("", |s| s.agent.as_str())).expect("agent name"),
     )?;
     output.set(
         pane,
@@ -125,7 +125,7 @@ mod tests {
     fn publishes_agent_metadata_and_classifies_non_agent_panes() {
         let mut values = PaneValues::new(VARIABLES);
         let status = AgentStatus {
-            agent: "codex",
+            agent: "codex".into(),
             pid: Some(123),
             session_id: Some(c"session".into()),
             model: Some(c"gpt-luna".into()),

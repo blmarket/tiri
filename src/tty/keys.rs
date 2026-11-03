@@ -38,6 +38,7 @@ use crate::style::colour::{colour_format, colour_parse_x11_logged};
 use crate::text::numbers::{scan_u32_pair, strtol_prefix};
 use crate::text::utf8::{utf8_append, utf8_from_data, utf8_fromwc, utf8_open};
 use crate::tty::features::{tty_default_features, tty_parse_client_features};
+use crate::tty::term::tty_term_has;
 use crate::tty::term::tty_term_owner_ptr;
 use crate::tty::term::tty_term_string;
 
@@ -2553,7 +2554,7 @@ fn tty_keys_clipboard(
     if encoded.is_empty() {
         return 0 as ::core::ffi::c_int;
     }
-    let Some(out) = crate::text::base64::decode(encoded) else {
+    let Some(out) = tiri_vt::base64::decode(encoded) else {
         return 0 as ::core::ffi::c_int;
     };
     log_debug(format_args!(

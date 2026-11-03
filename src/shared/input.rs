@@ -5,19 +5,19 @@ use crate::shared::client::ClientWeak;
 use std::collections::VecDeque;
 use std::ffi::CString;
 
-use super::abi::{size_t, u_char, u_int, uint64_t};
+use super::abi::{u_int, uint64_t};
 use super::colour::colour_palette;
 use super::event::Timer;
 use super::grid::{grid_cell, utf8_data};
 use super::pane::window_pane;
-use super::screen_write::screen_write_ctx;
 pub const INPUT_REQUEST_QUEUE: input_request_type = 2;
 
 pub const INPUT_REQUEST_CLIPBOARD: input_request_type = 1;
 
 pub const INPUT_REQUEST_PALETTE: input_request_type = 0;
 
-pub const INPUT_BUF_DEFAULT_SIZE: ::core::ffi::c_int = 1048576 as ::core::ffi::c_int;
+pub use tiri_vt::INPUT_BUF_DEFAULT_SIZE;
+pub use tiri_vt::InputEndType as input_end_type;
 
 #[derive(Default)]
 pub enum InputPalette {
@@ -64,25 +64,13 @@ pub struct input_ctx {
     pub old_cx: u_int,
     pub old_cy: u_int,
     pub old_mode: ::core::ffi::c_int,
-    pub interm_buf: [u_char; 4],
-    pub interm_len: size_t,
-    pub param_buf: [u_char; 64],
-    pub param_len: size_t,
-    pub input_buf: Vec<u_char>,
-    pub input_len: size_t,
-    pub input_end: input_end_type,
-    pub param_list: [input_param; 24],
-    pub param_list_len: u_int,
     pub utf8data: utf8_data,
     pub utf8started: ::core::ffi::c_int,
-    pub ch: ::core::ffi::c_int,
     pub last: utf8_data,
-    pub state: &'static input_state,
-    pub flags: ::core::ffi::c_int,
+    pub vt: tiri_vt::Parser,
     pub(crate) this: refbox::Weak<input_ctx>,
     pub(crate) requests: VecDeque<refbox::RefBox<input_request>>,
     pub request_timer: Option<Timer>,
-    pub since_ground: Vec<u8>,
     pub ground_timer: Option<Timer>,
 }
 
@@ -97,38 +85,6 @@ pub struct input_request {
     pub idx: ::core::ffi::c_int,
     /// Formatted reply owned by a queued request; absent for terminal queries.
     pub data: Option<CString>,
-}
-
-pub type input_end_type = ::core::ffi::c_uint;
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct input_state {
-    pub name: &'static ::std::ffi::CStr,
-    pub enter: Option<fn(&mut input_ctx)>,
-    pub exit: Option<fn(&mut input_ctx, &mut screen_write_ctx)>,
-    pub transitions: &'static [input_transition],
-}
-
-/// Handles the current byte, writing through the parse's screen context;
-/// nonzero keeps the current state.
-pub type input_handler_cb = fn(&mut input_ctx, &mut screen_write_ctx) -> ::core::ffi::c_int;
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct input_transition {
-    pub first: ::core::ffi::c_int,
-    pub last: ::core::ffi::c_int,
-    pub handler: Option<input_handler_cb>,
-    pub state: Option<&'static input_state>,
-}
-
-#[derive(Default)]
-pub enum input_param {
-    #[default]
-    Missing,
-    Number(::core::ffi::c_int),
-    String(CString),
 }
 
 #[derive(Copy, Clone, Default)]

@@ -18,7 +18,6 @@ them is `src/integration/manifest.rs`.
 | Claude Code | `herdr/claude.toml` | `tiri/claude.toml` |
 | Codex | `herdr/codex.toml` | `tiri/codex.toml` |
 | Pi | `herdr/pi.toml` | `tiri/pi.toml` |
-| Antigravity CLI | `herdr/antigravity.toml` | `tiri/agy.toml` |
 | OpenCode | `herdr/opencode.toml` | `tiri/opencode.toml` |
 
 ## Rules
@@ -60,7 +59,7 @@ against, and loading fails when that version differs.
 
 tiri layers `$XDG_CONFIG_HOME/tiri/agent-detection/<agent>.toml` (default
 `~/.config/tiri/agent-detection/`) over the bundled rules when the server
-starts, where `<agent>` is `claude`, `codex`, `pi`, `agy`, or `opencode`. An
+starts, where `<agent>` is `claude`, `codex`, `pi`, or `opencode`. An
 overlay that fails to load is logged and ignored. A user overlay may omit
 `version`. For example, to read a custom footer as blocked:
 
@@ -77,8 +76,8 @@ contains = ["review requested"]
 
 ## Updating from herdr
 
-1. Copy the five manifests from herdr's `src/detect/manifests/` into `herdr/`
-   (`antigravity.toml` keeps its name) and record the commit above.
+1. Copy the four manifests from herdr's `src/detect/manifests/` into `herdr/`
+   and record the commit above.
 2. Run `cargo test -p tiri-agent`. `bundled_rules_load` fails for every
    overlay whose herdr manifest changed version, and for every overlay naming
    a rule that no longer exists.

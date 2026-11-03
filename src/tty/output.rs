@@ -1460,6 +1460,7 @@ mod xtermjs_wide_tests {
     use crate::grid::view::grid_view_set_cell;
     use crate::grid::view::grid_view_set_padding;
     use crate::screen::screen_init;
+    use crate::shared::screen::screen;
     use crate::server_client::queue_test_clients;
     use crate::tty::control::tty_cell;
     use crate::tty::draw::tty_draw_line;

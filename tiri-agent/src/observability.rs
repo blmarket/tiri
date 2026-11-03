@@ -44,6 +44,8 @@ pub mod v1 {
         pub cursor_shape: u8,
     }
 
+    pub use tiri_vt::{ProgramState, ProgramStatus};
+
     /// Server-level access to observable panes.
     ///
     /// Resolving a pane returns a cheap, cacheable handle. Implementations must
@@ -88,6 +90,10 @@ pub mod v1 {
         /// approval request — in the window title rather than only on screen, so
         /// this is a distinct detection signal from [`screen`](Self::screen).
         fn title(&self) -> io::Result<Option<CString>>;
+
+        fn program_status(&self) -> io::Result<Option<ProgramStatus>> {
+            Ok(None)
+        }
     }
 
     #[cfg(test)]
