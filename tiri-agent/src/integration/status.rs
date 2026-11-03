@@ -24,8 +24,8 @@ use super::AgentState;
 /// lifecycle state last classified for it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AgentStatus {
-    /// Detector label: `"codex"`, `"claude"`, `"pi"`, `"agy"`, `"opencode"`,
-    /// or `""` when no agent is present.
+    /// Detector label: `"codex"`, `"claude"`, `"pi"`, `"agy"`, `"jetski"`,
+    /// `"opencode"`, or `""` when no agent is present.
     pub agent: &'static str,
     /// OS pid of the matched agent process, when process attribution found one.
     pub pid: Option<u32>,

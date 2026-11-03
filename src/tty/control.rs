@@ -2082,6 +2082,10 @@ pub fn tty_cell(owner: &ClientRef, gc: &grid_cell, style_ctx: Option<&tty_style_
                 return;
             }
             tty_putc(terminal, byte);
+        } else if terminal_value!(terminal, flags) & TTY_XTERMJS != 0
+            && tty_xtermjs_ambiguous_wide(&converted.data)
+        {
+            tty_putn_xtermjs_wide(terminal, &converted.data);
         } else {
             tty_putn(
                 terminal,

@@ -2,7 +2,8 @@ use super::control::{tty_check_codeset, tty_fake_bce};
 use super::model::*;
 use super::output::{
     terminal_term, tty_attributes, tty_cursor, tty_default_attributes, tty_margin_off, tty_putc,
-    tty_putcode, tty_putcode_i, tty_putn, tty_region_off, tty_repeat_space, tty_update_mode,
+    tty_putcode, tty_putcode_i, tty_putn, tty_putn_xtermjs_wide, tty_region_off, tty_repeat_space,
+    tty_update_mode, tty_xtermjs_ambiguous_wide,
 };
 use crate::grid::view::grid_view_get_cell;
 use crate::grid::{grid_cells_look_equal, grid_default_cell, grid_get_line};
@@ -214,6 +215,7 @@ pub fn tty_draw_line(
         { defaults.bg }
     ));
     flags = terminal_value!(client, flags) & TTY_NOCURSOR;
+    let xtermjs = terminal_value!(client, flags) & TTY_XTERMJS != 0;
     terminal_set!(client, flags, |=, TTY_NOCURSOR);
     tty_update_mode(client, terminal_value!(client, mode), Some(s.into()));
     tty_region_off(client);
@@ -326,7 +328,11 @@ pub fn tty_draw_line(
                     == TTY_DRAW_LINE_FIRST as ::core::ffi::c_int as ::core::ffi::c_uint
                 {
                     next_state = TTY_DRAW_LINE_SAME;
-                } else if grid_cells_look_equal(gcp, &last) {
+                } else if grid_cells_look_equal(gcp, &last)
+                    && !(xtermjs
+                        && (tty_xtermjs_ambiguous_wide(&gcp.data)
+                            || tty_xtermjs_ambiguous_wide(&last.data)))
+                {
                     if gcp.data.size as usize
                         > (::core::mem::size_of::<[::core::ffi::c_char; 1000]>() as usize)
                             .wrapping_sub(len as usize)
@@ -378,7 +384,11 @@ pub fn tty_draw_line(
                         tty_cursor(client, atx.wrapping_add(i).wrapping_sub(width), aty);
                     }
                     if !(last.attr as ::core::ffi::c_int) & GRID_ATTR_CHARSET != 0 {
-                        tty_putn(client, &buf[..len], width);
+                        if xtermjs && tty_xtermjs_ambiguous_wide(&last.data) {
+                            tty_putn_xtermjs_wide(client, &last.data);
+                        } else {
+                            tty_putn(client, &buf[..len], width);
+                        }
                     } else {
                         j = 0 as u_int;
                         while (j as size_t) < len {

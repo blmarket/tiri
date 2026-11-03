@@ -29,6 +29,7 @@ pub(super) const TTY_WINSIZEQUERY: ::core::ffi::c_int = 0x1000 as ::core::ffi::c
 pub(super) const TTY_WAITFG: ::core::ffi::c_int = 0x2000 as ::core::ffi::c_int;
 pub(super) const TTY_WAITBG: ::core::ffi::c_int = 0x4000 as ::core::ffi::c_int;
 pub(super) const TTY_HAVESYNC: ::core::ffi::c_int = 0x10000 as ::core::ffi::c_int;
+pub(super) const TTY_XTERMJS: ::core::ffi::c_int = 0x20000 as ::core::ffi::c_int;
 pub(super) const TTY_ALL_REQUEST_FLAGS: ::core::ffi::c_int =
     TTY_HAVEDA | TTY_HAVEDA2 | TTY_HAVEXDA | TTY_HAVESYNC;
 pub(super) const TTY_BLOCK_INTERVAL: ::core::ffi::c_int = 100000 as ::core::ffi::c_int;

@@ -32,6 +32,7 @@ use crate::style::colour::{
     colour_256to16, colour_dim, colour_find_rgb, colour_force_rgb, colour_palette_get,
     colour_split_rgb,
 };
+use crate::text::utf8_decode::{decode_utf8, DecodeResult};
 use crate::tty::term::tty_term_owner_ptr;
 use crate::tty::term::{
     tty_term_flag, tty_term_has, tty_term_number, tty_term_string, tty_term_string_i,
@@ -222,6 +223,111 @@ pub(super) fn tty_putn(client: &ClientRef, buf: &[u8], mut width: u_int) {
     } else {
         terminal_set!(client, cx, =, terminal_value!(client, cx).wrapping_add(width));
     };
+}
+
+/// True when `ud` is a 2-column cell whose width in `xterm.js`
+/// (`Unicode11Addon`) may differ from 2 (such as emojis, symbols widened by
+/// `U+FE0F`, ZWJ sequences, or skin-tone modifier sequences). Standard CJK,
+/// Hangul, and Fullwidth single-codepoint cells already have `wcwidth == 2` in
+/// `xterm.js` and return `false` so they incur zero extra output bytes.
+pub(super) fn tty_xtermjs_ambiguous_wide(ud: &utf8_data) -> bool {
+    if ud.width != 2 || ud.size <= 1 {
+        return false;
+    }
+    let Some(bytes) = ud.data.get(..ud.size as usize) else {
+        return false;
+    };
+    let DecodeResult::Complete { codepoint: wc, len } = decode_utf8(bytes) else {
+        return false;
+    };
+    if len < bytes.len() {
+        return true;
+    }
+    !matches!(
+        wc,
+        0x1100..=0x115f
+            | 0x2329..=0x232a
+            | 0x2e80..=0x303e
+            | 0x3040..=0xa4cf
+            | 0xac00..=0xd7a3
+            | 0xf900..=0xfaff
+            | 0xfe10..=0xfe19
+            | 0xfe30..=0xfe6f
+            | 0xff01..=0xff60
+            | 0xffe0..=0xffe6
+            | 0x20000..=0x2fffd
+            | 0x30000..=0x3fffd
+    )
+}
+
+/// Slice of `ud` to emit on `xterm.js`: truncates multi-codepoint grapheme
+/// clusters before any Zero Width Joiner (`U+200D`) or Fitzpatrick skin-tone
+/// modifier (`U+1F3FB..=U+1F3FF`), which `xterm.js` would otherwise render as
+/// additional separate cells beyond the 2-column cell width.
+fn tty_xtermjs_cell_bytes(ud: &utf8_data) -> &[u8] {
+    let size = (ud.size as usize).min(ud.data.len());
+    let bytes = &ud.data[..size];
+    let DecodeResult::Complete { len: first_len, .. } = decode_utf8(bytes) else {
+        return bytes;
+    };
+    if first_len >= bytes.len() {
+        return bytes;
+    }
+    let mut offset = first_len;
+    while offset < bytes.len() {
+        let DecodeResult::Complete { codepoint: wc, len } = decode_utf8(&bytes[offset..]) else {
+            break;
+        };
+        if wc == 0x200d || (0x1f3fb..=0x1f3ff).contains(&wc) {
+            return &bytes[..offset];
+        }
+        offset += len;
+    }
+    bytes
+}
+
+/// Emit a 2-column cell on `xterm.js` whose cursor advance in `xterm.js` may
+/// be 1 column instead of 2: pre-fills both columns with spaces under the
+/// active SGR attributes so the second column has the right background and no
+/// stale glyph, draws the character at `cx`, and aligns the terminal cursor to
+/// `cx + 2`.
+pub(super) fn tty_putn_xtermjs_wide(client: &ClientRef, ud: &utf8_data) {
+    let cx = terminal_value!(client, cx);
+    let cy = terminal_value!(client, cy);
+    let sx = terminal_value!(client, sx);
+    let bytes = tty_xtermjs_cell_bytes(ud);
+    if cx.wrapping_add(2) < sx {
+        tty_add(client, b"  \x08\x08");
+        tty_add(client, bytes);
+        if tty_term_has(&terminal_term(client), TTYC_HPA) != 0 {
+            tty_putcode_i(client, TTYC_HPA, cx.wrapping_add(2) as ::core::ffi::c_int);
+        } else {
+            tty_putcode_ii(
+                client,
+                TTYC_CUP,
+                cy as ::core::ffi::c_int,
+                cx.wrapping_add(2) as ::core::ffi::c_int,
+            );
+        }
+        terminal_set!(client, cx, =, cx.wrapping_add(2));
+    } else if cx.wrapping_add(2) == sx {
+        tty_add(client, b"  ");
+        if tty_term_has(&terminal_term(client), TTYC_HPA) != 0 {
+            tty_putcode_i(client, TTYC_HPA, cx as ::core::ffi::c_int);
+        } else {
+            tty_putcode_ii(
+                client,
+                TTYC_CUP,
+                cy as ::core::ffi::c_int,
+                cx as ::core::ffi::c_int,
+            );
+        }
+        tty_add(client, bytes);
+        terminal_set!(client, cx, =, UINT_MAX);
+        terminal_set!(client, cy, =, UINT_MAX);
+    } else {
+        tty_putn(client, bytes, ud.width as u_int);
+    }
 }
 
 pub(super) fn tty_set_italics(client: &ClientRef) {
@@ -1344,6 +1450,158 @@ pub fn tty_set_progress_bar(client: &ClientRef, pb: &progress_bar) {
             TTYC_SPB,
             pb.state as ::core::ffi::c_int,
             pb.progress,
+        );
+    }
+}
+
+#[cfg(test)]
+mod xtermjs_wide_tests {
+    use super::*;
+    use crate::grid::view::grid_view_set_cell;
+    use crate::grid::view::grid_view_set_padding;
+    use crate::screen::screen_init;
+    use crate::server_client::queue_test_clients;
+    use crate::tty::control::tty_cell;
+    use crate::tty::draw::tty_draw_line;
+
+    fn ud(text: &str, width: u8) -> utf8_data {
+        let mut data = utf8_data::default();
+        data.data[..text.len()].copy_from_slice(text.as_bytes());
+        data.size = text.len() as u8;
+        data.have = text.len() as u8;
+        data.width = width;
+        data
+    }
+
+    fn cell(text: &str, width: u8) -> grid_cell {
+        let mut gc = grid_default_cell;
+        gc.data = ud(text, width);
+        gc
+    }
+
+    fn test_client(xtermjs: bool) -> ClientRef {
+        let owner = queue_test_clients::with_queue();
+        owner.update_flags(CLIENT_UTF8 as u64, 0);
+        let caps = [
+            c"cup=\x1b[%i%p1%d;%p2%dH".to_owned(),
+            c"hpa=\x1b[%i%p1%dG".to_owned(),
+            c"cuf1=\x1b[C".to_owned(),
+            c"cub1=\x08".to_owned(),
+            c"el=\x1b[K".to_owned(),
+            c"sgr0=\x1b[m".to_owned(),
+        ];
+        let term = super::super::term::tty_term_create(&owner, c"xterm-test", &caps).unwrap();
+        {
+            let mut terminal = owner.borrow_terminal_mut();
+            terminal.term = Some(term);
+            terminal.out = Some(Box::default());
+            terminal.sx = 80;
+            terminal.sy = 24;
+            terminal.cx = 0;
+            terminal.cy = 0;
+            terminal.rlower = 23;
+            terminal.rright = 79;
+            terminal.cell = grid_default_cell;
+            if xtermjs {
+                terminal.flags |= TTY_XTERMJS;
+            }
+        }
+        owner
+    }
+
+    fn take_output(owner: &ClientRef) -> Vec<u8> {
+        use tiri_buffer::Buf as _;
+        let mut terminal = owner.borrow_terminal_mut();
+        let out = terminal.out.as_deref_mut().unwrap();
+        let len = out.remaining();
+        let mut bytes = vec![0u8; len];
+        out.copy_to_slice(&mut bytes);
+        bytes
+    }
+
+    #[test]
+    fn classifies_emojis_and_preserves_cjk_hangul_and_ascii() {
+        // ASCII and 1-column UTF-8 are never ambiguous wide.
+        assert!(!tty_xtermjs_ambiguous_wide(&ud("a", 1)));
+        assert!(!tty_xtermjs_ambiguous_wide(&ud("─", 1)));
+        assert!(!tty_xtermjs_ambiguous_wide(&ud("⠀", 1)));
+
+        // Standard CJK, Hangul, and Fullwidth width-2 codepoints are already
+        // width 2 in xterm.js Unicode11Addon and require zero extra bytes.
+        assert!(!tty_xtermjs_ambiguous_wide(&ud("漢", 2)));
+        assert!(!tty_xtermjs_ambiguous_wide(&ud("あ", 2)));
+        assert!(!tty_xtermjs_ambiguous_wide(&ud("한", 2)));
+        assert!(!tty_xtermjs_ambiguous_wide(&ud("！", 2)));
+
+        // Emojis (including Unicode 12+ like U+1FA9F "🪟") and U+FE0F widened
+        // sequences are identified as ambiguous wide on xterm.js.
+        assert!(tty_xtermjs_ambiguous_wide(&ud("🪟", 2)));
+        assert!(tty_xtermjs_ambiguous_wide(&ud("🟢", 2)));
+        assert!(tty_xtermjs_ambiguous_wide(&ud("⚠️", 2)));
+        assert!(tty_xtermjs_ambiguous_wide(&ud("🛡️", 2)));
+        assert!(tty_xtermjs_ambiguous_wide(&ud("☝", 2)));
+
+        // ZWJ and skin-tone modifier clusters are truncated before the
+        // joiner/modifier so xterm.js does not spill extra cells.
+        assert_eq!(tty_xtermjs_cell_bytes(&ud("⚠️", 2)), "⚠️".as_bytes());
+        assert_eq!(tty_xtermjs_cell_bytes(&ud("🪟", 2)), "🪟".as_bytes());
+        assert_eq!(
+            tty_xtermjs_cell_bytes(&ud("👨\u{200d}💻", 2)),
+            "👨".as_bytes()
+        );
+        assert_eq!(
+            tty_xtermjs_cell_bytes(&ud("👍\u{1f3fd}", 2)),
+            "👍".as_bytes()
+        );
+    }
+
+    #[test]
+    fn non_xtermjs_terminals_emit_zero_extra_bytes() {
+        let normal = test_client(false);
+        tty_cell(&normal, &cell("🪟", 2), None);
+        tty_cell(&normal, &cell("A", 1), None);
+        assert_eq!(take_output(&normal), b"\xf0\x9f\xaa\x9fA");
+        assert_eq!(normal.borrow_terminal().cx, 3);
+    }
+
+    #[test]
+    fn xtermjs_enforces_two_columns_for_emojis_and_zero_overhead_for_cjk() {
+        let xtermjs = test_client(true);
+        // CJK emits zero extra bytes even on xterm.js.
+        tty_cell(&xtermjs, &cell("漢", 2), None);
+        assert_eq!(take_output(&xtermjs), "漢".as_bytes());
+        assert_eq!(xtermjs.borrow_terminal().cx, 2);
+
+        // Emoji on xterm.js pre-fills 2 columns, writes the emoji, and aligns
+        // cursor to column 4 (1-based column 5: \x1b[5G).
+        tty_cell(&xtermjs, &cell("🪟", 2), None);
+        tty_cell(&xtermjs, &cell("A", 1), None);
+        assert_eq!(take_output(&xtermjs), b"  \x08\x08\xf0\x9f\xaa\x9f\x1b[5GA");
+        assert_eq!(xtermjs.borrow_terminal().cx, 5);
+    }
+
+    #[test]
+    fn draw_line_isolates_emojis_only_on_xtermjs() {
+        let mut s = screen::default();
+        screen_init(&mut s, 10, 1, 0);
+        {
+            let gd = s.grid_mut();
+            grid_view_set_cell(gd, 0, 0, &cell("🪟", 2));
+            grid_view_set_padding(gd, 1, 0, 8);
+            grid_view_set_cell(gd, 2, 0, &cell("漢", 2));
+            grid_view_set_padding(gd, 3, 0, 8);
+            grid_view_set_cell(gd, 4, 0, &cell("!", 1));
+        }
+
+        let normal = test_client(false);
+        tty_draw_line(&normal, &s, 0, 0, 5, 0, 0, None);
+        assert_eq!(take_output(&normal), "🪟漢!".as_bytes());
+
+        let xtermjs = test_client(true);
+        tty_draw_line(&xtermjs, &s, 0, 0, 5, 0, 0, None);
+        assert_eq!(
+            take_output(&xtermjs),
+            b"  \x08\x08\xf0\x9f\xaa\x9f\x1b[3G\xe6\xbc\xa2!"
         );
     }
 }

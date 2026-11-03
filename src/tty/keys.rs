@@ -2692,6 +2692,7 @@ fn tty_keys_sync(
     ));
     if let 1..=3 = status {
         tty_parse_client_features(terminal_client_owner, c"sync", c",");
+        terminal_client_owner.borrow_terminal_mut().flags &= !TTY_XTERMJS;
         tty_update_features(terminal_client_owner);
     }
     terminal_client_owner.borrow_terminal_mut().flags |= TTY_HAVESYNC;
@@ -2719,6 +2720,16 @@ fn tty_keys_device_attributes2(
     };
     if let Some(terminal) = terminal {
         tty_default_features(terminal_client_owner, terminal);
+    }
+    if params == b"0;276;0" {
+        let mut tty = terminal_client_owner.borrow_terminal_mut();
+        let has_sync = tty
+            .term
+            .as_deref()
+            .is_some_and(|term| tty_term_has(term, TTYC_SYNC) != 0);
+        if tty.flags & TTY_HAVEXDA == 0 && !has_sync {
+            tty.flags |= TTY_XTERMJS;
+        }
     }
     log_debug(format_args!(
         "{}: received secondary DA {}",
@@ -2817,6 +2828,7 @@ fn tty_keys_extended_device_attributes(
     ));
     {
         terminal_client_owner.record_terminal_type(&terminal_type);
+        terminal_client_owner.borrow_terminal_mut().flags &= !TTY_XTERMJS;
         tty_update_features(terminal_client_owner);
         terminal_client_owner.borrow_terminal_mut().flags |= TTY_HAVEXDA;
     }
@@ -3659,6 +3671,45 @@ mod reply_parser_tests {
         assert_eq!(da2(&owner, &report), (1, 0));
         report.push(b'1');
         assert_eq!(da2(&owner, &report), (-1, 0));
+    }
+
+    #[test]
+    fn xtermjs_detection_from_device_attributes() {
+        // ChromeOS Terminal / xterm.js sends DA2 \e[>0;276;0c and does not
+        // respond to XTVERSION or support DECRPM 2026 sync.
+        let owner = client();
+        assert_eq!(da2(&owner, b"\x1b[>0;276;0c"), (0, 11));
+        assert_ne!(owner.borrow_terminal().flags & TTY_XTERMJS, 0);
+        // DECRPM 2026 status 0 (not recognized) preserves TTY_XTERMJS.
+        assert_eq!(sync(&owner, b"\x1b[?2026;0$y"), (0, 11));
+        assert_ne!(owner.borrow_terminal().flags & TTY_XTERMJS, 0);
+
+        // WezTerm also sends DA2 \e[>0;276;0c, followed by XTVERSION and/or
+        // DECRPM 2026 status 2; either clears TTY_XTERMJS.
+        let wezterm = client();
+        assert_eq!(da2(&wezterm, b"\x1b[>0;276;0c"), (0, 11));
+        assert_ne!(wezterm.borrow_terminal().flags & TTY_XTERMJS, 0);
+        assert_eq!(xda(&wezterm, b"\x1bP>|WezTerm 20240203\x1b\\"), (0, 22));
+        assert_eq!(wezterm.borrow_terminal().flags & TTY_XTERMJS, 0);
+
+        let sync_term = client();
+        assert_eq!(da2(&sync_term, b"\x1b[>0;276;0c"), (0, 11));
+        assert_ne!(sync_term.borrow_terminal().flags & TTY_XTERMJS, 0);
+        assert_eq!(sync(&sync_term, b"\x1b[?2026;2$y"), (0, 11));
+        assert_eq!(sync_term.borrow_terminal().flags & TTY_XTERMJS, 0);
+
+        // Other terminals' DA2 replies never set TTY_XTERMJS.
+        for report in [
+            b"\x1b[>0;115;0c".as_slice(),
+            b"\x1b[>1;10;0c",
+            b"\x1b[>1;4000;29c",
+            b"\x1b[>65;7003;1c",
+            b"\x1b[>84;0;0c",
+        ] {
+            let other = client();
+            assert_eq!(da2(&other, report), (0, report.len()));
+            assert_eq!(other.borrow_terminal().flags & TTY_XTERMJS, 0);
+        }
     }
 
     fn xda(owner: &ClientRef, bytes: &[u8]) -> (i32, size_t) {

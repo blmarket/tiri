@@ -3,7 +3,7 @@
 //! A single background [`AgentObserver`] polls pane observability and classifies
 //! each pane's agent lifecycle state. Detection is split into a generic harness
 //! (this module) and per-agent [`AgentDetector`]s (e.g. [`codex`], [`claude`],
-//! [`pi`], [`agy`], and [`opencode`]),
+//! [`pi`], [`agy`], [`jetski`], and [`opencode`]),
 //! so adding an agent is a matter of adding a detector rather than another
 //! poller. Running one observer with a detector registry — instead of one thread
 //! per agent — avoids two observers fighting over the same pane, and matches how
@@ -26,6 +26,7 @@ use manifest::{Bundle, Rules};
 pub mod agy;
 pub mod claude;
 pub mod codex;
+pub mod jetski;
 mod manifest;
 pub mod opencode;
 pub mod pi;
@@ -224,6 +225,9 @@ fn detectors_with(rules: fn(&Bundle) -> Rules) -> Vec<Box<dyn AgentDetector>> {
             rules: rules(&pi::RULES),
         }),
         Box::new(agy::AgyDetector {
+            rules: rules(&agy::RULES),
+        }),
+        Box::new(jetski::JetskiDetector {
             rules: rules(&agy::RULES),
         }),
         Box::new(opencode::OpencodeDetector {

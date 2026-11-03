@@ -1271,6 +1271,94 @@ fn agy_lifecycle_and_session_are_published() {
     );
 }
 
+#[test]
+fn jetski_lifecycle_and_session_are_published() {
+    let session_id = "019f9757-7c53-7898-a7d1-c8c780212888";
+    let rule = "────────────────────────────────────────";
+    let cli_path =
+        "/var/tmp/sar.cli_internal.123/cli_internal_impl.runfiles/google3/third_party/jetski/cmd/cli/cli";
+    let source = FakeProcessSource::new(
+        vec![(100, 1), (200, 100)],
+        HashMap::from([
+            (100u32, vec![OsString::from("zsh")]),
+            (
+                200u32,
+                vec![OsString::from("cli"), OsString::from(cli_path)],
+            ),
+        ]),
+        HashMap::from([(
+            200u32,
+            vec![
+                OsString::from(cli_path),
+                OsString::from("--app_data_dir=jetski"),
+            ],
+        )]),
+        true,
+    )
+    .with_open_file(
+        200,
+        &format!("/home/me/.gemini/jetski/conversations/{session_id}.db"),
+    );
+    let pane = ScriptedPane::new(
+        100,
+        vec![
+            frame(
+                None,
+                &format!(
+                    "Antigravity CLI 1.1.10\n{rule}\n> \n{rule}\n\
+                     ? for shortcuts                Gemini 3.6 Flash · high"
+                ),
+            ),
+            frame(
+                None,
+                &format!(
+                    "⣷  Generating...\n{rule}\n> \n{rule}\n\
+                     esc to cancel                  Gemini 3.6 Flash · high"
+                ),
+            ),
+            frame(
+                None,
+                "● Bash(git status) (ctrl+o to expand)\nRequesting permission for:\ngit status\n\
+                 Do you want to proceed?\n1. Yes\n4. No\n\
+                 ↑/↓ Navigate · tab Amend · ctrl+g edit/expand command",
+            ),
+            frame(
+                None,
+                &format!(
+                    "done\n{rule}\n> \n{rule}\n\
+                     ? for shortcuts                Gemini 3.6 Flash · high"
+                ),
+            ),
+        ],
+    );
+    let server = FakeServer { pane: pane.clone() };
+    let detectors = default_detectors();
+    let hub = StatusHub::new();
+
+    let logs = capture_logs(|| {
+        let mut panes = HashMap::new();
+        for _ in 0..pane.frames.len() {
+            poll(&server, &detectors, &source, Some(&hub), &mut panes);
+            pane.step();
+        }
+    });
+
+    assert_eq!(
+        hub.snapshot().panes.get(&PaneId(0)),
+        Some(&AgentStatus {
+            agent: "jetski",
+            pid: Some(200),
+            session_id: Some(CString::new(session_id).expect("session id")),
+            model: None,
+            state: AgentState::Idle,
+        })
+    );
+    assert_ordered(
+        &logs,
+        &["state=Idle", "state=Working", "state=Blocked", "state=Idle"],
+    );
+}
+
 /// A Codex thread keeps its rollout file open; the filename is a persistent
 /// source that does not depend on observing a short-lived tool subprocess.
 #[test]
